@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -429,4 +430,214 @@ func isTerminalResponseStatus(status string) bool {
 	default:
 		return false
 	}
+}
+
+const responsesConfigPath = configPathPrefix + ".responses"
+
+type savedResponse struct {
+	ResponseID string `json:"responseId"`
+}
+
+type responseStateStore interface {
+	Get(ctx context.Context, agentKey string) (*savedResponse, error)
+	Save(ctx context.Context, agentKey string, record savedResponse) error
+	Delete(ctx context.Context, agentKey string) error
+}
+
+type userConfigResponseStateStore struct {
+	client *azdext.AzdClient
+}
+
+func newUserConfigResponseStateStore(client *azdext.AzdClient) responseStateStore {
+	return &userConfigResponseStateStore{client: client}
+}
+
+func (s *userConfigResponseStateStore) Get(ctx context.Context, agentKey string) (*savedResponse, error) {
+	config, err := azdext.NewConfigHelper(s.client)
+	if err != nil {
+		return nil, fmt.Errorf("create response config helper: %w", err)
+	}
+
+	var records map[string]savedResponse
+	found, err := config.GetUserJSON(ctx, responsesConfigPath, &records)
+	if err != nil {
+		return nil, fmt.Errorf("read responses: %w", err)
+	}
+	if !found || records == nil {
+		return nil, nil
+	}
+	record, ok := records[agentKey]
+	if !ok {
+		return nil, nil
+	}
+	return &record, nil
+}
+
+func (s *userConfigResponseStateStore) Save(ctx context.Context, agentKey string, record savedResponse) error {
+	config, err := azdext.NewConfigHelper(s.client)
+	if err != nil {
+		return fmt.Errorf("create response config helper: %w", err)
+	}
+
+	var records map[string]savedResponse
+	found, err := config.GetUserJSON(ctx, responsesConfigPath, &records)
+	if err != nil {
+		return fmt.Errorf("read responses: %w", err)
+	}
+	if !found || records == nil {
+		records = make(map[string]savedResponse)
+	}
+	records[agentKey] = record
+
+	if err := config.SetUserJSON(ctx, responsesConfigPath, records); err != nil {
+		return fmt.Errorf("write responses: %w", err)
+	}
+	return nil
+}
+
+func (s *userConfigResponseStateStore) Delete(ctx context.Context, agentKey string) error {
+	config, err := azdext.NewConfigHelper(s.client)
+	if err != nil {
+		return fmt.Errorf("create response config helper: %w", err)
+	}
+
+	var records map[string]savedResponse
+	found, err := config.GetUserJSON(ctx, responsesConfigPath, &records)
+	if err != nil {
+		return fmt.Errorf("read responses: %w", err)
+	}
+	if !found || records == nil {
+		return nil
+	}
+	delete(records, agentKey)
+	if err := config.SetUserJSON(ctx, responsesConfigPath, records); err != nil {
+		return fmt.Errorf("write responses: %w", err)
+	}
+	return nil
+}
+
+// followResponse performs one streaming GET. A later command replays the
+// Response from the beginning; azd does not maintain a replay cursor.
+func (a *InvokeAction) followResponse(
+	ctx context.Context,
+	rc *remoteContext,
+	responseID string,
+	writer io.Writer,
+) error {
+	token, err := a.acquireBearerToken(ctx)
+	if err != nil {
+		return err
+	}
+	followURL := buildResponseLifecycleURL(
+		rc.projectEndpoint,
+		rc.name,
+		responseID,
+		rc.apiVersion,
+		true,
+	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, followURL, nil)
+	if err != nil {
+		return fmt.Errorf("create Response follow request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "text/event-stream")
+	applyCustomHeaders(req, a.clientHeaders)
+	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
+
+	//nolint:gosec // URL is built from a validated Foundry endpoint.
+	resp, err := responseStreamHTTPClient().Do(req)
+	if err != nil {
+		return fmt.Errorf("follow Response %s: %w", responseID, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(resp.Body)
+		return &responseLifecycleHTTPError{
+			method:     http.MethodGet,
+			requestURL: followURL,
+			statusCode: resp.StatusCode,
+			status:     resp.Status,
+			body:       body,
+		}
+	}
+
+	if err := readResponsesSSE(
+		ctx,
+		resp.Body,
+		writer,
+		rc.name,
+		responsesSSEOptions{
+			requireTerminal:    true,
+			expectedResponseID: responseID,
+		},
+	); err != nil {
+		if errors.Is(err, errResponsesStreamDisconnected) {
+			return fmt.Errorf(
+				"%w; rerun `azd ai agent responses follow --response-id %s` to replay and follow again",
+				err,
+				responseID,
+			)
+		}
+		return err
+	}
+	return nil
+}
+
+type responseLifecycleHTTPError struct {
+	method     string
+	requestURL string
+	statusCode int
+	status     string
+	body       []byte
+}
+
+func (e *responseLifecycleHTTPError) Error() string {
+	return fmt.Sprintf("%s %s failed with HTTP %d: %s\n%s", e.method, e.requestURL, e.statusCode, e.status, e.body)
+}
+
+func responseStreamHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = 30 * time.Second
+	return &http.Client{Transport: transport}
+}
+
+// buildResponsesURL builds the Foundry "openai/responses" protocol URL for an agent.
+// apiVersion is URL-encoded so unusual characters cannot break out of the query value.
+func buildResponsesURL(projectEndpoint, agentName, apiVersion string) string {
+	if apiVersion == "" {
+		apiVersion = DefaultAgentAPIVersion
+	}
+	return fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/openai/responses?api-version=%s",
+		projectEndpoint, agentName, url.QueryEscape(apiVersion),
+	)
+}
+
+func buildResponseLifecycleURL(
+	projectEndpoint string,
+	agentName string,
+	responseID string,
+	apiVersion string,
+	stream bool,
+) string {
+	if apiVersion == "" {
+		apiVersion = DefaultAgentAPIVersion
+	}
+	base := fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/openai/responses/%s",
+		projectEndpoint,
+		agentName,
+		url.PathEscape(responseID),
+	)
+	query := url.Values{"api-version": []string{apiVersion}}
+	if stream {
+		query.Set("stream", "true")
+	}
+	return base + "?" + query.Encode()
+}
+
+func buildResponseCancelURL(projectEndpoint, agentName, responseID, apiVersion string) string {
+	lifecycleURL := buildResponseLifecycleURL(projectEndpoint, agentName, responseID, apiVersion, false)
+	parts := strings.SplitN(lifecycleURL, "?", 2)
+	return parts[0] + "/cancel?" + parts[1]
 }

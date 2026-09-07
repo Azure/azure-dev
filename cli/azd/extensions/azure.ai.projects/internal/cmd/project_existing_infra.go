@@ -164,6 +164,18 @@ func isFoundryBicepEjection(infraDir, module string) (bool, error) {
 		return false, fmt.Errorf("read ejected infrastructure %q: %w", bicepPath, err)
 	}
 	entrypointText := string(entrypoint)
+	// #nosec G304 -- paths are derived from project infrastructure config.
+	marker, markerErr := os.ReadFile(filepath.Join(infraDir, foundryEjectionMarker))
+	if markerErr == nil && string(marker) == foundryBicepMarkerVersion {
+		return true, nil
+	}
+	if markerErr != nil && !errors.Is(markerErr, fs.ErrNotExist) {
+		return false, fmt.Errorf(
+			"read ejected infrastructure marker %q: %w",
+			filepath.Join(infraDir, foundryEjectionMarker),
+			markerErr,
+		)
+	}
 	for _, signature := range []struct {
 		entrypoint string
 		modulePath string
@@ -951,7 +963,7 @@ func writeExistingProjectBicep(
 				values["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"]
 		}
 	}
-	return writeJSONFile(
+	if err := writeJSONFile(
 		filepath.Join(infraDir, module+".parameters.json"),
 		map[string]any{
 			"$schema": "https://schema.management.azure.com/schemas/" +
@@ -959,7 +971,10 @@ func writeExistingProjectBicep(
 			"contentVersion": "1.0.0.0",
 			"parameters":     projectEjectParameterValues(outputParams),
 		},
-	)
+	); err != nil {
+		return err
+	}
+	return writeBicepEjectionMarker(infraDir)
 }
 
 func projectEjectParameterValues(
@@ -1121,7 +1136,7 @@ func writeExistingProjectTerraform(
 	}
 	// #nosec G306
 	if err := os.WriteFile(
-		filepath.Join(infraDir, foundryTerraformMarker),
+		filepath.Join(infraDir, foundryEjectionMarker),
 		[]byte(foundryTerraformMarkerVersion),
 		0644,
 	); err != nil {

@@ -65,8 +65,9 @@ var projectResourceIDPattern = regexp.MustCompile(
 const foundryProjectResourceType = "Microsoft.CognitiveServices/accounts/projects"
 
 const (
-	foundryTerraformMarker        = ".azd-foundry"
+	foundryEjectionMarker         = ".azd-foundry"
 	foundryTerraformMarkerVersion = "terraform-v1\n"
+	foundryBicepMarkerVersion     = "bicep-v1\n"
 )
 
 // ProjectAddAction implements project add.
@@ -1149,10 +1150,6 @@ func validateFoundryProvider(project *azdext.ProjectConfig) error {
 			"keep the existing provider or remove it before generating Foundry infrastructure",
 		)
 	}
-	if project != nil && project.GetInfra() != nil &&
-		project.GetInfra().GetProvider() != "" {
-		return nil
-	}
 
 	if project != nil && project.GetInfra() != nil &&
 		project.GetInfra().GetPath() != "" {
@@ -1166,6 +1163,10 @@ func validateFoundryProvider(project *azdext.ProjectConfig) error {
 				"remove the custom infrastructure path or keep the existing provider",
 			)
 		}
+	}
+	if project != nil && project.GetInfra() != nil &&
+		project.GetInfra().GetProvider() != "" {
+		return nil
 	}
 	if project != nil && project.GetPath() != "" {
 		if _, err := os.Stat(filepath.Join(project.GetPath(), "infra")); err == nil {
@@ -1274,7 +1275,7 @@ func isFoundryTerraformLayer(projectRoot, path, module string) bool {
 	}
 	infraDir := filepath.Join(projectRoot, filepath.FromSlash(path))
 	// #nosec G304 -- infraDir is derived from project config.
-	marker, err := os.ReadFile(filepath.Join(infraDir, foundryTerraformMarker))
+	marker, err := os.ReadFile(filepath.Join(infraDir, foundryEjectionMarker))
 	if err == nil {
 		return string(marker) == foundryTerraformMarkerVersion
 	}
@@ -1737,11 +1738,26 @@ func ejectProjectInfra(
 		); err != nil {
 			return cleanup(err)
 		}
+		if err := writeBicepEjectionMarker(infraDir); err != nil {
+			return cleanup(err)
+		}
 		if !target.layer {
 			if err := unsetProjectConfigValue(ctx, client, "infra.path"); err != nil {
 				return rollback(fmt.Errorf("remove infra.path: %w", err))
 			}
 		}
+	}
+	return nil
+}
+
+func writeBicepEjectionMarker(infraDir string) error {
+	// #nosec G306
+	if err := os.WriteFile(
+		filepath.Join(infraDir, foundryEjectionMarker),
+		[]byte(foundryBicepMarkerVersion),
+		0644,
+	); err != nil {
+		return fmt.Errorf("write Bicep ownership marker: %w", err)
 	}
 	return nil
 }
@@ -1822,7 +1838,7 @@ func writeTerraformEjectedInfraAt(
 	if layer {
 		// #nosec G306
 		if err := os.WriteFile(
-			filepath.Join(infraDir, foundryTerraformMarker),
+			filepath.Join(infraDir, foundryEjectionMarker),
 			[]byte(foundryTerraformMarkerVersion),
 			0644,
 		); err != nil {

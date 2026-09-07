@@ -874,7 +874,7 @@ func TestValidateFoundryProviderAllowsEjectedTerraformLayer(t *testing.T) {
 	))
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "infra", "foundry"), 0750))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(root, "infra", "foundry", foundryTerraformMarker),
+		filepath.Join(root, "infra", "foundry", foundryEjectionMarker),
 		[]byte(foundryTerraformMarkerVersion),
 		0600,
 	))
@@ -885,11 +885,11 @@ func TestValidateFoundryProviderAllowsEjectedTerraformLayer(t *testing.T) {
 	}))
 }
 
-func TestEjectBicepClearsCustomInfraPath(t *testing.T) {
+func TestProjectAddRejectsCustomRootInfraPathBeforeMutation(t *testing.T) {
 	root := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(root, "azure.yaml"),
-		[]byte(`name: test
+	t.Chdir(root)
+	t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+	azureYAML := []byte(`name: test
 services:
   project:
     host: azure.ai.project
@@ -897,21 +897,34 @@ services:
       - name: chat
         model: {format: OpenAI, name: gpt-4.1, version: "2025-04-14"}
         sku: {name: GlobalStandard, capacity: 10}
-`),
+`)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		azureYAML,
 		0600,
 	))
+	customInfra := filepath.Join(root, "custom-infra")
+	require.NoError(t, os.MkdirAll(customInfra, 0750))
+	customFile := filepath.Join(customInfra, "existing.bicep")
+	require.NoError(t, os.WriteFile(customFile, []byte("existing"), 0600))
 
 	projectServer := &recordingProjectConfigServer{
 		project: &azdext.ProjectConfig{
+			Name: "test",
 			Path: root,
+			Services: map[string]*azdext.ServiceConfig{
+				"project": {Name: "project", Host: aiProjectHost},
+			},
 			Infra: &azdext.InfraOptions{
 				Provider: "microsoft.foundry",
 				Path:     "custom-infra",
 			},
 		},
 	}
+	envServer := &projectAddEnvironmentServer{}
 	server := grpc.NewServer()
 	azdext.RegisterProjectServiceServer(server, projectServer)
+	azdext.RegisterEnvironmentServiceServer(server, envServer)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	go func() {
@@ -926,12 +939,28 @@ services:
 	require.NoError(t, err)
 	t.Cleanup(client.Close)
 
-	require.NoError(t, ejectProjectInfra(
-		t.Context(), client, root, "project", "bicep",
-	))
-	_, err = os.Stat(filepath.Join(root, "infra", "main.bicep"))
-	require.NoError(t, err)
-	assert.Contains(t, projectServer.unsetPaths, "infra.path")
+	action := &ProjectAddAction{
+		client: client,
+		flags: &projectAddFlags{
+			infra:    "bicep",
+			noPrompt: true,
+			output:   "none",
+		},
+		extCtx: &azdext.ExtensionContext{Environment: "test"},
+	}
+	err = action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "custom infrastructure path")
+	assert.Empty(t, projectServer.setRequest)
+	assert.Empty(t, projectServer.unsetPaths)
+	assert.Zero(t, envServer.setCalls)
+	assert.NoDirExists(t, filepath.Join(root, "infra"))
+	assert.FileExists(t, customFile)
+	// #nosec G304 -- path is inside the test project directory.
+	after, readErr := os.ReadFile(filepath.Join(root, "azure.yaml"))
+	require.NoError(t, readErr)
+	assert.Equal(t, azureYAML, after)
+	assert.Equal(t, "custom-infra", projectServer.project.Infra.Path)
 }
 
 func TestEjectBicepUsesFoundryLayerPathAndModule(t *testing.T) {
@@ -994,6 +1023,12 @@ services:
 	require.NoError(t, err)
 	_, err = os.Stat(filepath.Join(root, "infra", "foundry", "project.parameters.json"))
 	require.NoError(t, err)
+	// #nosec G304
+	marker, err := os.ReadFile(
+		filepath.Join(root, "infra", "foundry", foundryEjectionMarker),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, foundryBicepMarkerVersion, string(marker))
 	_, err = os.Stat(filepath.Join(root, "infra", "main.bicep"))
 	assert.ErrorIs(t, err, os.ErrNotExist)
 	assert.NotContains(t, projectServer.unsetPaths, "infra.path")

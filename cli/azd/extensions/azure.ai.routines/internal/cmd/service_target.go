@@ -112,6 +112,8 @@ func (p *routineServiceTarget) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
+	ctx = azdext.WithAccessToken(ctx)
+
 	body, err := parseRoutineServiceConfig(serviceConfig)
 	if err != nil {
 		return nil, err
@@ -135,7 +137,7 @@ func (p *routineServiceTarget) Deploy(
 		progress(fmt.Sprintf("Upserting routine %q", serviceConfig.GetName()))
 	}
 
-	client, err := newRoutineServiceClient(ctx)
+	client, err := p.newRoutineServiceClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -169,12 +171,14 @@ func parseRoutineServiceConfig(svc *azdext.ServiceConfig) (*routines.Routine, er
 	return body, nil
 }
 
-// newRoutineServiceClient resolves the project endpoint (from the active azd
-// environment, global config, or FOUNDRY_PROJECT_ENDPOINT) and an azd developer
-// credential, then builds an authenticated routine client for deploy-time
-// upserts. It mirrors newRoutineClient but takes no cobra command, since a
-// service target has no flags.
-func newRoutineServiceClient(ctx context.Context) (*routines.Client, error) {
+// newRoutineServiceClient resolves a project endpoint and developer
+// credential for deploy. Calls arrive with incoming gRPC metadata, so
+// Deploy attaches the extension token to the outgoing azd context.
+// The credential uses the active subscription's user-access tenant
+// for guest users.
+func (p *routineServiceTarget) newRoutineServiceClient(
+	ctx context.Context,
+) (*routines.Client, error) {
 	requestTimeout, err := routineHTTPTimeoutOverrideFromEnv()
 	if err != nil {
 		return nil, err
@@ -184,7 +188,19 @@ func newRoutineServiceClient(ctx context.Context) (*routines.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{})
+
+	tenantID, err := resolveRoutineServiceTenant(
+		ctx,
+		p.azdClient.Environment(),
+		p.azdClient.Account(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+		TenantID:                   tenantID,
+		AdditionallyAllowedTenants: []string{"*"},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
 	}
@@ -193,6 +209,66 @@ func newRoutineServiceClient(ctx context.Context) (*routines.Client, error) {
 		cred,
 		routineClientOptions(requestTimeout),
 	), nil
+}
+
+type routineEnvironmentReader interface {
+	GetCurrent(
+		ctx context.Context,
+		in *azdext.EmptyRequest,
+		opts ...grpc.CallOption,
+	) (*azdext.EnvironmentResponse, error)
+	GetValue(
+		ctx context.Context,
+		in *azdext.GetEnvRequest,
+		opts ...grpc.CallOption,
+	) (*azdext.KeyValueResponse, error)
+}
+
+type routineAccountReader interface {
+	LookupTenant(
+		ctx context.Context,
+		in *azdext.LookupTenantRequest,
+		opts ...grpc.CallOption,
+	) (*azdext.LookupTenantResponse, error)
+}
+
+// resolveRoutineServiceTenant returns the active subscription's
+// user-access tenant for guest-user deployments.
+func resolveRoutineServiceTenant(
+	ctx context.Context,
+	environment routineEnvironmentReader,
+	account routineAccountReader,
+) (string, error) {
+	current, err := environment.GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return "", fmt.Errorf("resolving current azd environment: %w", err)
+	}
+	envName := current.GetEnvironment().GetName()
+	if envName == "" {
+		return "", fmt.Errorf("current azd environment has no name")
+	}
+
+	subscription, err := environment.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     "AZURE_SUBSCRIPTION_ID",
+	})
+	if err != nil {
+		return "", fmt.Errorf("reading AZURE_SUBSCRIPTION_ID: %w", err)
+	}
+	if subscription.GetValue() == "" {
+		return "", fmt.Errorf("AZURE_SUBSCRIPTION_ID is required for routine deployment")
+	}
+
+	tenant, err := account.LookupTenant(ctx, &azdext.LookupTenantRequest{
+		SubscriptionId: subscription.GetValue(),
+	})
+	if err != nil {
+		return "", fmt.Errorf("resolving user access tenant: %w", err)
+	}
+	if tenant.GetTenantId() == "" {
+		return "", fmt.Errorf("user access tenant is empty")
+	}
+	return tenant.GetTenantId(), nil
 }
 
 // serviceConfigReader is the slice of azdext.ProjectServiceClient

@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -107,4 +108,118 @@ func TestRoutineEnvironmentValuesEmptyDeclaredIsolates(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Empty(t, env)
+}
+
+func TestResolveRoutineServiceTenant(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		environment     *stubRoutineEnvironment
+		account         *stubRoutineAccount
+		wantTenant      string
+		wantErr         string
+		wantEnvironment string
+		wantSubID       string
+	}{
+		{
+			name: "uses user access tenant for active environment subscription",
+			environment: &stubRoutineEnvironment{
+				name:           "dev",
+				subscriptionID: "subscription-id",
+			},
+			account:         &stubRoutineAccount{tenantID: "user-access-tenant"},
+			wantTenant:      "user-access-tenant",
+			wantEnvironment: "dev",
+			wantSubID:       "subscription-id",
+		},
+		{
+			name:        "fails when subscription is missing",
+			environment: &stubRoutineEnvironment{name: "dev"},
+			account:     &stubRoutineAccount{},
+			wantErr:     "AZURE_SUBSCRIPTION_ID is required",
+		},
+		{
+			name: "propagates tenant lookup failure",
+			environment: &stubRoutineEnvironment{
+				name:           "dev",
+				subscriptionID: "subscription-id",
+			},
+			account: &stubRoutineAccount{err: errors.New("lookup failed")},
+			wantErr: "resolving user access tenant: lookup failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tenantID, err := resolveRoutineServiceTenant(
+				t.Context(),
+				tt.environment,
+				tt.account,
+			)
+
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantTenant, tenantID)
+			assert.Equal(t, tt.wantEnvironment, tt.environment.gotEnvironment)
+			assert.Equal(t, tt.wantSubID, tt.account.gotSubscriptionID)
+		})
+	}
+}
+
+type stubRoutineEnvironment struct {
+	name           string
+	subscriptionID string
+	currentErr     error
+	valueErr       error
+	gotEnvironment string
+}
+
+func (s *stubRoutineEnvironment) GetCurrent(
+	context.Context,
+	*azdext.EmptyRequest,
+	...grpc.CallOption,
+) (*azdext.EnvironmentResponse, error) {
+	if s.currentErr != nil {
+		return nil, s.currentErr
+	}
+	return &azdext.EnvironmentResponse{
+		Environment: &azdext.Environment{Name: s.name},
+	}, nil
+}
+
+func (s *stubRoutineEnvironment) GetValue(
+	_ context.Context,
+	request *azdext.GetEnvRequest,
+	_ ...grpc.CallOption,
+) (*azdext.KeyValueResponse, error) {
+	s.gotEnvironment = request.GetEnvName()
+	if s.valueErr != nil {
+		return nil, s.valueErr
+	}
+	return &azdext.KeyValueResponse{Value: s.subscriptionID}, nil
+}
+
+type stubRoutineAccount struct {
+	tenantID          string
+	err               error
+	gotSubscriptionID string
+}
+
+func (s *stubRoutineAccount) LookupTenant(
+	_ context.Context,
+	request *azdext.LookupTenantRequest,
+	_ ...grpc.CallOption,
+) (*azdext.LookupTenantResponse, error) {
+	s.gotSubscriptionID = request.GetSubscriptionId()
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &azdext.LookupTenantResponse{TenantId: s.tenantID}, nil
 }

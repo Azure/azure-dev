@@ -393,11 +393,14 @@ func (a *runOutputExportAction) Run() error {
 	// The document carries every evaluated row, so it holds prompts, answers
 	// and evaluator reasons. os.Create takes the process umask and commonly
 	// leaves that world-readable.
-	var body bytes.Buffer
-	if err := writeExport(&body, doc); err != nil {
-		return err
-	}
-	return writeFileAtomic(a.flags.outFile, body.Bytes())
+	//
+	// Streamed into the temporary file rather than buffered and copied: the
+	// size of a run's export is the service's to decide, not this command's,
+	// and the only reason to hold it whole was to hand it to a writer that
+	// takes bytes.
+	return writeFileAtomicFunc(a.flags.outFile, func(w io.Writer) error {
+		return writeExport(w, doc)
+	})
 }
 
 // resolveEvalID resolves the eval a run command is about, from --eval or from
@@ -584,15 +587,26 @@ func renderOutputItem(w io.Writer, item *eval_api.OutputItem) error {
 	if item == nil {
 		return messages.OutputItemEmpty()
 	}
-	// The listing reports the derived outcome, and the service's own status is
-	// `completed` even for a row whose every result errored, so printing that
-	// alone made a failed row read as a success.
-	if err := emitDetail(w, []field{
-		{"Item", item.ID},
+	outcome := classifyItem(*item)
+
+	// The service's own status is `completed` even for a row whose every result
+	// errored, so it is reported beside the derived outcome rather than instead
+	// of it: printing the lifecycle state alone made a failed row read as a
+	// success, and dropping it hides which of the two the reader is seeing.
+	fmt.Fprint(w, messages.TestCaseHeading(outcome.Status))
+	fields := []field{
+		{"Item ID", item.ID},
 		{"Run", item.RunID},
-		{"Outcome", classifyItem(*item).Status},
-		{"Service Status", item.Status},
-	}); err != nil {
+		{"Status", outcome.Status},
+		{"Results", outcome.ResultsBreakdown()},
+	}
+	if item.Status != "" && item.Status != outcome.Status {
+		fields = append(fields, field{"Service status", item.Status})
+	}
+	if outcome.Reason != "" {
+		fields = append(fields, field{"Reason", outcome.Reason})
+	}
+	if err := emitDetail(w, fields); err != nil {
 		return err
 	}
 
@@ -606,47 +620,82 @@ func renderOutputItem(w io.Writer, item *eval_api.OutputItem) error {
 	}
 
 	for _, name := range order {
-		results := byName[name]
-		fmt.Fprintln(w)
-
-		// The service repeats the evaluator's name in `metric` for a
-		// single-score evaluator, so a group is only worth nesting when its
-		// results name dimensions of their own.
-		if len(results) == 1 && (results[0].Metric == "" || results[0].Metric == name) {
-			r := results[0]
-			fmt.Fprint(w, messages.OutputItemVerdict(
-				name, formatScore(r.Score), verdictWord(r)))
-			if why := resultExplanation(r); why != "" {
-				fmt.Fprint(w, messages.OutputItemReason(why))
-			}
-			continue
-		}
-
-		fmt.Fprint(w, messages.OutputItemEvaluator(name))
-		for _, r := range results {
-			label := r.Metric
-			if label == "" {
-				label = r.Name
-			}
-			fmt.Fprint(w, messages.OutputItemMetric(
-				label, formatScore(r.Score), verdictWord(r)))
-			if why := resultExplanation(r); why != "" {
-				fmt.Fprint(w, messages.OutputItemReason(why))
-			}
+		if err := renderEvaluatorResult(w, name, byName[name]); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-// verdictWord names what the evaluator reported, in the words the rest of the
-// output uses.
+// renderEvaluatorResult prints one evaluator's section of the detail view.
 //
-// It used to print "no verdict" for anything without a boolean, which erased
-// the distinction the service had already drawn: a row it deliberately skipped
-// and a row its evaluator errored on both came out as the same shrug. The
-// outcome is what the service said, so that is what is shown.
-func verdictWord(r eval_api.OutputResult) string {
-	return r.Outcome()
+// Everything it says comes from the result. Reasons are printed whole: this
+// command is the one place they are not truncated, which is the reason to run
+// it at all, and the listing above already showed the clipped version.
+func renderEvaluatorResult(w io.Writer, name string, results []eval_api.OutputResult) error {
+	if len(results) == 0 {
+		return nil
+	}
+	// The service repeats the evaluator's name in `metric` for a single-score
+	// evaluator, so a result only names a dimension when it says something else.
+	dimensions := make([]eval_api.OutputResult, 0, len(results))
+	for _, r := range results {
+		if r.Metric != "" && r.Metric != name {
+			dimensions = append(dimensions, r)
+		}
+	}
+	lead := results[0]
+
+	fmt.Fprint(w, messages.EvaluatorSectionHeading(name))
+	section := []field{{"Status", lead.Outcome()}}
+	if e := lead.SampleError(); e != nil && e.Code != "" {
+		section = append(section, field{"Code", e.Code})
+	}
+	if score := formatScore(lead.Score); score != "-" && len(dimensions) == 0 {
+		section = append(section, field{"Score", score})
+	}
+	if err := emitDetail(w, section); err != nil {
+		return err
+	}
+	if why := resultExplanation(lead); why != "" {
+		fmt.Fprint(w, messages.EvaluatorSectionReason(lead.Outcome(), why))
+	}
+
+	if len(dimensions) == 0 {
+		// Said rather than left blank, and never invented: a reader who cannot
+		// see dimensions needs to know whether this rubric has none or the
+		// service did not return them.
+		if isRubricName(name) {
+			fmt.Fprint(w, messages.RubricDimensionsNotReturned())
+		}
+		return nil
+	}
+
+	rows := make([][]string, 0, len(dimensions))
+	for _, d := range dimensions {
+		rows = append(rows, []string{
+			d.Metric,
+			formatScore(d.Score),
+			d.Outcome(),
+			singleLine(d.Reason),
+		})
+	}
+	fmt.Fprint(w, messages.RubricDimensionsHeading())
+	return emitTable(w, []string{"DIMENSION", "SCORE", "RESULT", "REASON"}, rows)
+}
+
+// isRubricName reports whether a missing dimension list is worth remarking on.
+//
+// Only a rubric has dimensions to be missing. Saying "not returned by service"
+// under every built-in would report an absence that was never expected.
+func isRubricName(name string) bool {
+	return strings.Contains(strings.ToLower(name), "rubric")
+}
+
+// singleLine flattens a reason for a table cell. The whole text is in the
+// section above it and in `-o json`.
+func singleLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // resultExplanation is the line printed under a verdict to say why.

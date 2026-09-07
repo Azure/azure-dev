@@ -879,26 +879,6 @@ func CannotWriteInDirectory(dir string, err error) error {
 	return fmt.Errorf("cannot write in %s: %w", dir, err)
 }
 
-// OutputItemVerdict is one evaluator's line in `run output show`.
-func OutputItemVerdict(evaluator, score, verdict string) string {
-	return fmt.Sprintf("%s  %s  %s\n", evaluator, score, verdict)
-}
-
-// OutputItemEvaluator heads the dimensions of a rubric that scored per metric.
-func OutputItemEvaluator(evaluator string) string {
-	return evaluator + "\n"
-}
-
-// OutputItemMetric is one scored dimension under its evaluator.
-func OutputItemMetric(metric, score, verdict string) string {
-	return fmt.Sprintf("  %s  %s  %s\n", metric, score, verdict)
-}
-
-// OutputItemReason is the judge's explanation, indented under its verdict.
-func OutputItemReason(reason string) string {
-	return fmt.Sprintf("  %s\n", reason)
-}
-
 // EvaluatorReturnedNothing explains a result that arrived with no status, no
 // label and no pass/fail verdict.
 //
@@ -3226,6 +3206,84 @@ const (
 	skippedMark = "(-) Skipped:" // intentionally not done, not a failure
 	failedMark  = "(x) Failed:"  // the step did not complete
 )
+
+// TestCaseHeading opens the detail view with the outcome it is about.
+//
+// The outcome, not the service's lifecycle status: a run whose every result
+// errored still reports the item as `completed`, and leading with that made a
+// failed test case read as a success.
+func TestCaseHeading(outcome string) string {
+	return fmt.Sprintf("\nTEST CASE — %s\n", strings.ToUpper(outcome))
+}
+
+// EvaluatorSectionHeading opens one evaluator's part of the detail view.
+func EvaluatorSectionHeading(name string) string {
+	return fmt.Sprintf("\nEVALUATOR: %s\n", name)
+}
+
+// EvaluatorSectionReason prints the explanation whole, on its own lines.
+//
+// This command is the one place a reason is not truncated, which is the reason
+// to run it: the listing above already showed the clipped version, so repeating
+// that here would leave nowhere to read the rest. Labelled for what it is --
+// an evaluator that failed to run recorded an error, not a judgement.
+func EvaluatorSectionReason(outcome, reason string) string {
+	label := "Reason"
+	if outcome == "errored" {
+		label = "Error"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s:\n", label)
+	for line := range strings.SplitSeq(strings.TrimRight(reason, "\n"), "\n") {
+		fmt.Fprintf(&b, "  %s\n", line)
+	}
+	return b.String()
+}
+
+// RubricDimensionsHeading labels the per-dimension table.
+func RubricDimensionsHeading() string {
+	return "\nRUBRIC DIMENSIONS\n"
+}
+
+// RubricDimensionsNotReturned says the absence is the service's, not ours.
+//
+// Never fabricated: a reader who cannot see dimensions needs to know whether
+// the rubric has none or the response did not carry them, and inventing rows
+// answers a question about the run with something made up here.
+func RubricDimensionsNotReturned() string {
+	return "\nRubric dimensions: not returned by service\n"
+}
+
+// LocalContextHeading opens what init settled without asking.
+func LocalContextHeading() string {
+	return "\nUsing local configuration:\n"
+}
+
+// LocalContextLine is one detected value.
+//
+// Without a success tick. Nothing here was validated remotely -- these are
+// read from azure.yaml and the evaluation config -- and a tick beside a name
+// init merely read out of a file claims more than it knows.
+func LocalContextLine(label, value string) string {
+	if value == "" {
+		value = "not configured"
+	}
+	return fmt.Sprintf("  %-12s %s\n", label+":", value)
+}
+
+// ConfigFileState says whether the file is being created or added to.
+//
+// The eval count comes with it because "existing" alone does not say whether
+// this is the first eval in the project or the fourth.
+func ConfigFileState(path string, existed bool, evals int) string {
+	if !existed {
+		return path + " (new)"
+	}
+	if evals == 1 {
+		return fmt.Sprintf("%s (existing, 1 eval)", path)
+	}
+	return fmt.Sprintf("%s (existing, %d evals)", path, evals)
+}
 
 // Warning reports a problem that is not worth failing the command over.
 func Warning(err error) string {

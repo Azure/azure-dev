@@ -21,6 +21,9 @@ type initContext struct {
 	azdProject *azdext.ProjectConfig
 	evalDir    string
 	configPath string
+	// configExisted distinguishes a file init is adding to from one it is
+	// about to create, which is what the reader is being told.
+	configExisted bool
 	// tracesWired is memoized by the caller, so asking it again inside a
 	// second pass costs nothing.
 	tracesWired func() bool
@@ -78,6 +81,13 @@ func (a *initAction) ask(ctx initContext) (initAnswers, error) {
 		}
 	}
 
+	// Reported here, after the values it names are settled and before the
+	// questions derived from them. A reader answering "which dataset" needs to
+	// know which project and which file they are answering about.
+	if !noPrompt(a.cmd) && !isJSON(a.cmd) {
+		writeLocalContext(a.cmd.OutOrStdout(), ctx, answers.target, answers.judgeModel)
+	}
+
 	// A name someone typed is theirs, so a collision is refused rather than
 	// worked around. A name init suggested is init's problem: suggesting one
 	// already taken and then refusing it is the command failing on its own
@@ -127,6 +137,24 @@ func (a *initAction) ask(ctx initContext) (initAnswers, error) {
 		}
 	}
 	return answers, nil
+}
+
+// writeLocalContext reports what init settled without asking.
+//
+// Printed before the questions, because the first thing a reader needs is
+// which project this is about: init used to detect the agent, the judge model
+// and the configuration file silently, so the only evidence of what it had
+// decided was the summary at the end -- after every prompt had already been
+// answered against assumptions the reader never saw.
+//
+// Deliberately without success ticks. Nothing here was validated remotely, and
+// a tick beside a name init merely read out of a file claims more than it knows.
+func writeLocalContext(out io.Writer, ctx initContext, target, judgeModel string) {
+	fmt.Fprint(out, messages.LocalContextHeading())
+	fmt.Fprint(out, messages.LocalContextLine("Agent", target))
+	fmt.Fprint(out, messages.LocalContextLine("Judge model", judgeModel))
+	fmt.Fprint(out, messages.LocalContextLine("Config file",
+		messages.ConfigFileState(filepath.ToSlash(ctx.configPath), ctx.configExisted, len(ctx.cfg.Evals))))
 }
 
 // What the reader can do with the summary.

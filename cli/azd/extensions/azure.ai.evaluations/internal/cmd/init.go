@@ -182,11 +182,12 @@ func (a *initAction) Run() error {
 		return tracesConnected(commandContext(a.cmd))
 	})
 	ctx := initContext{
-		cfg:         cfg,
-		azdProject:  azdProject,
-		evalDir:     evalDir,
-		configPath:  configPath,
-		tracesWired: tracesWired,
+		cfg:           cfg,
+		azdProject:    azdProject,
+		evalDir:       evalDir,
+		configPath:    configPath,
+		configExisted: configExisted,
+		tracesWired:   tracesWired,
 	}
 
 	answers, err := a.ask(ctx)

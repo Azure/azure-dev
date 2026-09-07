@@ -231,6 +231,21 @@ func requireFlag(name string) error {
 // Every error names the path the caller passed. The temporary file is this
 // function's business and appears nowhere the caller asked for.
 func writeFileAtomic(path string, body []byte) error {
+	return writeFileAtomicFunc(path, func(w io.Writer) error {
+		_, err := w.Write(body)
+		return err
+	})
+}
+
+// writeFileAtomicFunc writes whatever the caller produces, atomically.
+//
+// The caller writes straight into the temporary file rather than into a buffer
+// this then copies: a run's export carries every evaluated row, so holding the
+// whole document in memory to write it is the one case where the size is not
+// the caller's to bound. Nothing appears under the destination name until the
+// write finished, so a failure leaves the previous file intact rather than a
+// truncated one that still parses.
+func writeFileAtomicFunc(path string, produce func(io.Writer) error) error {
 	// Refuse anything that is not a regular file: pointed at a directory, the
 	// replacement below would report a confusing rename failure instead.
 	switch info, err := os.Stat(path); {
@@ -248,7 +263,7 @@ func writeFileAtomic(path string, body []byte) error {
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 
-	if _, err := tmp.Write(body); err != nil {
+	if err := produce(tmp); err != nil {
 		_ = tmp.Close()
 		return messages.Writing(path, err)
 	}

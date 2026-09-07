@@ -78,7 +78,7 @@ func fixedProbe(
 	}
 }
 
-func TestCheckAgentStatus_ProbesPromptVoiceServices(t *testing.T) {
+func TestCheckAgentStatus_SkipsPromptVoiceServices(t *testing.T) {
 	t.Parallel()
 
 	props, err := structpb.NewStruct(map[string]any{"kind": "prompt-voice"})
@@ -102,18 +102,17 @@ func TestCheckAgentStatus_ProbesPromptVoiceServices(t *testing.T) {
 		AzdClient:                   client,
 		filterHostedAgentServicesFn: filterHostedAgentServices,
 		readAgentNameVersionFn: func(context.Context, *azdext.AzdClient, string) (string, string, error) {
-			return "voice", "1", nil
+			t.Fatal("prompt-voice service should not use the hosted NAME/VERSION probe")
+			return "", "", nil
 		},
-		probeAgentStatus: fixedProbe(map[probeKey]agentStatusProbeResult{
-			{"voice", "1"}: {status: "active"},
-		}),
 	}, healthyPriorResults([]string{"voice"}, "https://example.test"))
 
-	require.Equal(t, StatusPass, res.Status)
-	require.Contains(t, res.Message, "active")
+	require.Equal(t, StatusSkip, res.Status)
+	require.Contains(t, res.Message, "no hosted agent services")
+	require.Contains(t, res.Message, "prompt-voice")
 }
 
-func TestCheckAgentStatus_ProbesPromptVoiceOverride(t *testing.T) {
+func TestCheckAgentStatus_SkipsPromptVoiceOverride(t *testing.T) {
 	projectRoot := t.TempDir()
 	override := filepath.Join(projectRoot, "voice.yaml")
 	require.NoError(t, os.WriteFile(override, []byte("kind: prompt-voice\nname: voice\n"), 0600))
@@ -140,15 +139,14 @@ func TestCheckAgentStatus_ProbesPromptVoiceOverride(t *testing.T) {
 		AzdClient:                   client,
 		filterHostedAgentServicesFn: filterHostedAgentServices,
 		readAgentNameVersionFn: func(context.Context, *azdext.AzdClient, string) (string, string, error) {
-			return "voice", "1", nil
+			t.Fatal("prompt-voice override should not use the hosted NAME/VERSION probe")
+			return "", "", nil
 		},
-		probeAgentStatus: fixedProbe(map[probeKey]agentStatusProbeResult{
-			{"voice", "1"}: {status: "active"},
-		}),
 	}, healthyPriorResults([]string{"voice"}, "https://example.test"))
 
-	require.Equal(t, StatusPass, res.Status)
-	require.Contains(t, res.Message, "active")
+	require.Equal(t, StatusSkip, res.Status)
+	require.Contains(t, res.Message, "no hosted agent services")
+	require.Contains(t, res.Message, "prompt-voice")
 }
 
 // runCheckWithDeps invokes the check Fn with the given prior /

@@ -8,12 +8,15 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agentkind"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -257,8 +260,9 @@ func newCheckAgentStatus(deps Dependencies) Check {
 			services = serviceFilter(ctx, deps.AzdClient, services)
 			if len(services) == 0 {
 				return Result{
-					Status:  StatusSkip,
-					Message: "skipped: no hosted or voice agent services to probe.",
+					Status: StatusSkip,
+					Message: "skipped: no hosted agent services to probe; " +
+						"prompt-voice services are not checked by this hosted-agent probe.",
 				}
 			}
 
@@ -698,12 +702,44 @@ func readAgentServices(prior []Result) []string {
 	return nil
 }
 
-// filterHostedAgentServices is kept as a test seam for older tests. Voice
-// wrappers are intentionally no longer filtered: `remote.agent-status` reads
-// `/agents/{name}/versions/{version}`, which is also the minimal readiness check
-// for managed Voice wrappers until a deeper Voice endpoint probe exists.
+// filterHostedAgentServices removes prompt-voice services from the hosted-agent
+// status probe. The remote.agent-status check targets hosted agent versions
+// (`/agents/{name}/versions/{version}`). Prompt-voice deploys record a
+// VERSION, but voice readiness follows its WebSocket endpoint rather than the
+// hosted-agent version lifecycle and should be covered by a voice-specific
+// doctor check in a future PR.
 func filterHostedAgentServices(ctx context.Context, azdClient *azdext.AzdClient, services []string) []string {
-	return services
+	if len(services) == 0 || azdClient == nil {
+		return services
+	}
+
+	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || resp == nil || resp.Project == nil {
+		return services
+	}
+
+	byName := make(map[string]*azdext.ServiceConfig, len(resp.Project.Services))
+	for _, svc := range resp.Project.Services {
+		if svc != nil {
+			byName[svc.GetName()] = svc
+		}
+	}
+
+	hosted := make([]string, 0, len(services))
+	for _, name := range services {
+		svc := byName[name]
+		if svc == nil {
+			hosted = append(hosted, name)
+			continue
+		}
+		isVoice, err := agentkind.IsPromptVoice(svc, resp.Project.GetPath(), os.Getenv("AGENT_DEFINITION_PATH"))
+		if err == nil && isVoice {
+			continue
+		}
+		hosted = append(hosted, name)
+	}
+
+	return hosted
 }
 
 // readAgentNameVersion pulls AGENT_<KEY>_NAME and AGENT_<KEY>_VERSION

@@ -2494,9 +2494,26 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	return &azdext.ServiceDeployResult{Artifacts: artifacts}, nil
 }
 
+type telephonyBindingClient interface {
+	GetTelephonyBinding(
+		ctx context.Context,
+		agentName string,
+		bindingID string,
+		apiVersion string,
+		overriddenHost string,
+	) (*agent_api.TelephonyBinding, error)
+	CreateTelephonyBinding(
+		ctx context.Context,
+		agentName string,
+		request *agent_api.TelephonyBindingRequest,
+		apiVersion string,
+		overriddenHost string,
+	) (*agent_api.TelephonyBinding, error)
+}
+
 func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 	ctx context.Context,
-	agentClient *agent_api.AgentClient,
+	agentClient telephonyBindingClient,
 	voiceAgent agent_yaml.VoiceAgent,
 	agentObject *agent_api.AgentObject,
 	overriddenHost string,
@@ -2525,7 +2542,7 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 				return exterrors.Validation(
 					exterrors.CodeTelephonyBindingDrift,
 					fmt.Sprintf("telephony binding %q already exists with different configuration", bindingID),
-					"delete or update the remote binding, then run azd deploy again",
+					"delete the remote binding, then run azd deploy again",
 				)
 			}
 			fmt.Fprintf(os.Stderr, "Telephony binding '%s' already exists.\n", bindingID)

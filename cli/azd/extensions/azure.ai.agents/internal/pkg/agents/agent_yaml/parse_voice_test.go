@@ -390,6 +390,18 @@ func TestValidateAgentDefinition_PromptVoice_InvalidTelephonyBindings(t *testing
       identifier: 4:+14255550123`,
 			want: "connection is required",
 		},
+		{
+			name: "duplicate binding",
+			yaml: `telephony:
+  bindings:
+    - provider: twilio
+      identifier: +14255550123
+      connection: one
+    - provider: twilio
+      identifier: +14255550123
+      connection: two`,
+			want: "duplicates telephony binding",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

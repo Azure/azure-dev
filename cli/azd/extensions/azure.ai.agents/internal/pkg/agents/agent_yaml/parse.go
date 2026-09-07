@@ -575,10 +575,19 @@ func validateVoiceTelephony(telephony *VoiceTelephony) []string {
 	if len(telephony.Bindings) == 0 {
 		errors = append(errors, "template.telephony.bindings must not be empty")
 	}
+	seen := map[string]struct{}{}
 	for i, binding := range telephony.Bindings {
 		path := fmt.Sprintf("template.telephony.bindings[%d]", i)
 		provider := strings.TrimSpace(binding.Provider)
 		identifier := strings.TrimSpace(binding.Identifier)
+		if provider != "" && identifier != "" {
+			bindingID := telephonyValidationProvider(provider) + ":" + identifier
+			if _, ok := seen[bindingID]; ok {
+				errors = append(errors, path+" duplicates telephony binding "+bindingID)
+			} else {
+				seen[bindingID] = struct{}{}
+			}
+		}
 		if provider == "" {
 			errors = append(errors, path+".provider is required")
 		}
@@ -610,6 +619,13 @@ func validateVoiceTelephony(telephony *VoiceTelephony) []string {
 		}
 	}
 	return errors
+}
+
+func telephonyValidationProvider(provider string) string {
+	if strings.TrimSpace(provider) == "acs" {
+		return "azure-communication-service"
+	}
+	return strings.TrimSpace(provider)
 }
 
 func rawTemplateHasKey(templateBytes []byte, key string) bool {

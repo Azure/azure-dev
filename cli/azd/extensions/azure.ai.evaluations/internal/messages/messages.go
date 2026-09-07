@@ -607,6 +607,80 @@ func SelectingDataset(err error) error {
 	return fmt.Errorf("selecting a dataset to evaluate against: %w", err)
 }
 
+// SelectEvaluationLevelPrompt asks what one evaluated sample represents.
+func SelectEvaluationLevelPrompt() string {
+	return "What should each evaluation sample represent?"
+}
+
+// EvaluationLevelChoice is one level beside what choosing it means.
+//
+// The word alone does not say it: "turn" and "conversation" are the file's
+// vocabulary, not the reader's, and the difference between them is the whole
+// decision.
+func EvaluationLevelChoice(level string) string {
+	switch level {
+	case "conversation":
+		return "Conversation  Evaluate the complete multi-turn interaction"
+	default:
+		return "Turn          Evaluate one request and response"
+	}
+}
+
+// EvaluationLevelNotAChoice reports an --evaluation-level that names neither.
+func EvaluationLevelNotAChoice(given string, levels []string) error {
+	return fmt.Errorf("--evaluation-level %q is not an evaluation level; use %s",
+		given, strings.Join(levels, " or "))
+}
+
+// SelectingEvaluationLevel reports a failed evaluation-level prompt.
+func SelectingEvaluationLevel(err error) error {
+	return fmt.Errorf("selecting an evaluation level: %w", err)
+}
+
+// SelectTraceWindowPrompt asks how far back a trace-backed eval reads.
+func SelectTraceWindowPrompt() string {
+	return "How far back should traces be evaluated?"
+}
+
+// TraceWindowChoice names one window the way a reader thinks of it.
+func TraceWindowChoice(days int) string {
+	switch days {
+	case 1:
+		return "Last 24 hours"
+	case 7:
+		return "Last 7 days"
+	default:
+		return fmt.Sprintf("Last %d days", days)
+	}
+}
+
+// TraceDaysNotAChoice reports a --trace-days outside the offered windows.
+//
+// The three are what the prompt offers, so the flag accepts the same three: a
+// flag that took any number would make `--no-prompt` and the wizard able to
+// write configurations the other could not. Anything else is `lookback_hours`
+// in the file, which is where an arbitrary window belongs.
+func TraceDaysNotAChoice(given int, days []int) error {
+	offered := make([]string, 0, len(days))
+	for _, d := range days {
+		offered = append(offered, strconv.Itoa(d))
+	}
+	return fmt.Errorf(
+		"--trace-days %d is not one of the offered windows (%s); for any other window "+
+			"set lookback_hours on the eval's source in the configuration",
+		given, strings.Join(offered, ", "))
+}
+
+// TraceDaysNeedsTraceSource reports --trace-days without a trace-backed eval.
+func TraceDaysNeedsTraceSource() error {
+	return errors.New("--trace-days bounds a trace-backed eval; pass --source traces")
+}
+
+// SelectingTraceWindow reports a failed trace-window prompt.
+func SelectingTraceWindow(err error) error {
+	return fmt.Errorf("selecting a trace window: %w", err)
+}
+
 // DatasetFileNotFound reports a --dataset path with no file behind it.
 //
 // The configuration would validate and the deploy would then fail on a source

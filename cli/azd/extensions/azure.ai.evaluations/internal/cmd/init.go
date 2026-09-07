@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -37,15 +38,17 @@ const (
 // reproduce them. Editing an eval is a file edit.
 // initFlags carries what `init` was asked for.
 type initFlags struct {
-	evalName   string
-	target     string
-	source     string
-	dataset    string
-	maxTraces  int
-	evaluators []string
-	judgeModel string
-	path       string
-	force      bool
+	evalName        string
+	target          string
+	source          string
+	dataset         string
+	maxTraces       int
+	traceDays       int
+	evaluationLevel string
+	evaluators      []string
+	judgeModel      string
+	path            string
+	force           bool
 }
 
 // initAction scaffolds the eval configuration.
@@ -84,6 +87,12 @@ func newInitCommand() *cobra.Command {
 	cmd.Flags().IntVar(&flags.maxTraces, "max-traces", project.DefaultScaffoldMaxTraces,
 		"Cap on traces read by a --source traces eval. Delete max_traces from the "+
 			"file to take the service default instead.")
+	cmd.Flags().IntVar(&flags.traceDays, "trace-days", defaultTraceWindowDays,
+		"How far back a --source traces eval reads: 1, 7, or 30 days. Set "+
+			"lookback_hours in the file for any other window.")
+	cmd.Flags().StringVar(&flags.evaluationLevel, "evaluation-level", "",
+		"What one evaluated sample is: turn for a single request and response, "+
+			"conversation for the whole multi-turn interaction. Defaults to turn.")
 	cmd.Flags().StringSliceVar(&flags.evaluators, "evaluator", nil,
 		"Evaluator reference, repeatable and comma-separated. Use builtin.<name> for a "+
 			"built-in. Passing this replaces the defaults, so it also opts out of rubric generation.")
@@ -121,6 +130,10 @@ func (a *initAction) Run() error {
 	if err := validateEvaluatorRefs(a.flags.evaluators); err != nil {
 		return err
 	}
+	evaluationLevel, err := resolveEvaluationLevel(a.cmd, a.flags.evaluationLevel)
+	if err != nil {
+		return err
+	}
 	// Asked twice -- once to pick the default source, once to say so --
 	// and each call opens an azd connection. The answer cannot change
 	// mid-command, and a run that never asks never connects.
@@ -128,11 +141,26 @@ func (a *initAction) Run() error {
 		return tracesConnected(commandContext(a.cmd))
 	})
 	settled, err := settleInitSource(
-		source, a.cmd.Flags().Changed("max-traces"), tracesWired)
+		source,
+		a.cmd.Flags().Changed("max-traces"),
+		a.cmd.Flags().Changed("trace-days"),
+		tracesWired)
 	if err != nil {
 		return err
 	}
 	source = settled
+
+	// Only meaningful for a trace-backed eval, and only asked for one: a
+	// dataset-backed scaffold that stopped to ask how far back to read would
+	// be asking about rows it is not going to read.
+	lookbackHours := 0
+	if source == initSourceTraces {
+		lookbackHours, err = resolveTraceWindow(
+			a.cmd, a.flags.traceDays, a.cmd.Flags().Changed("trace-days"))
+		if err != nil {
+			return err
+		}
+	}
 	// The same cascade every other command reads the configuration
 	// through. init merges into the configuration it finds, so a second
 	// `init` in a project scaffolded at ./quality has to find that one --
@@ -270,15 +298,17 @@ func (a *initAction) Run() error {
 	}
 
 	plan, err := planScaffold(scaffoldInput{
-		evalName:   evalName,
-		target:     target,
-		source:     source,
-		dataset:    datasetRef,
-		maxTraces:  a.flags.maxTraces,
-		evaluators: evaluators,
-		judgeModel: judgeModel,
-		evalDir:    evalDir,
-		cfg:        cfg,
+		evalName:        evalName,
+		target:          target,
+		source:          source,
+		dataset:         datasetRef,
+		maxTraces:       a.flags.maxTraces,
+		lookbackHours:   lookbackHours,
+		evaluationLevel: evaluationLevel,
+		evaluators:      evaluators,
+		judgeModel:      judgeModel,
+		evalDir:         evalDir,
+		cfg:             cfg,
 	})
 	if err != nil {
 		return err
@@ -374,6 +404,7 @@ func (a *initAction) Run() error {
 func settleInitSource(
 	explicit string,
 	maxTracesGiven bool,
+	traceDaysGiven bool,
 	tracesWired func() bool,
 ) (string, error) {
 	source := explicit
@@ -390,6 +421,9 @@ func settleInitSource(
 	}
 	if maxTracesGiven && source != initSourceTraces {
 		return "", messages.MaxTracesNeedsTraceSource()
+	}
+	if traceDaysGiven && source != initSourceTraces {
+		return "", messages.TraceDaysNeedsTraceSource()
 	}
 	return source, nil
 }
@@ -451,15 +485,17 @@ func defaultEvalName(target, source string) string {
 // scaffoldInput is everything planScaffold needs, gathered so the signature
 // does not grow a seventh positional string.
 type scaffoldInput struct {
-	evalName   string
-	target     string
-	source     string
-	dataset    string
-	maxTraces  int
-	evaluators []string
-	judgeModel string
-	evalDir    string
-	cfg        *project.EvalConfig
+	evalName        string
+	target          string
+	source          string
+	dataset         string
+	maxTraces       int
+	lookbackHours   int
+	evaluationLevel string
+	evaluators      []string
+	judgeModel      string
+	evalDir         string
+	cfg             *project.EvalConfig
 }
 
 // scaffold is what `init` added, and what it should suggest doing next.
@@ -492,7 +528,7 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 	eval := project.Eval{
 		Name:            in.evalName,
 		Description:     fmt.Sprintf("Basic quality evaluation for %s", in.target),
-		EvaluationLevel: project.EvaluationLevelTurn,
+		EvaluationLevel: cmp.Or(in.evaluationLevel, project.EvaluationLevelTurn),
 		Target: &project.Target{
 			Type: project.TargetTypeAgent,
 			Name: in.target,
@@ -504,9 +540,10 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 		// conversations already happened.
 		eval.Target = nil
 		eval.Source = &project.SourceDecl{
-			Type:      project.SourceTypeTraces,
-			AgentName: in.target,
-			MaxTraces: in.maxTraces,
+			Type:          project.SourceTypeTraces,
+			AgentName:     in.target,
+			MaxTraces:     in.maxTraces,
+			LookbackHours: in.lookbackHours,
 		}
 	} else {
 		datasetName := ""

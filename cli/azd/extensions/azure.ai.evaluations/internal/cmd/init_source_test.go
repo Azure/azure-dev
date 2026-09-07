@@ -27,26 +27,34 @@ func TestSettleInitSource(t *testing.T) {
 		name       string
 		explicit   string
 		maxTraces  bool
+		traceDays  bool
 		traces     bool
 		wantSource string
 		wantErr    bool
 	}{
-		{"explicit traces stands", initSourceTraces, notGiven, notWired, initSourceTraces, false},
-		{"explicit dataset stands", initSourceDataset, notGiven, wired, initSourceDataset, false},
-		{"no source, no traces wired", "", notGiven, notWired, initSourceDataset, false},
-		{"no source, traces wired", "", notGiven, wired, initSourceTraces, false},
+		{"explicit traces stands", initSourceTraces, notGiven, notGiven, notWired, initSourceTraces, false},
+		{"explicit dataset stands", initSourceDataset, notGiven, notGiven, wired, initSourceDataset, false},
+		{"no source, no traces wired", "", notGiven, notGiven, notWired, initSourceDataset, false},
+		{"no source, traces wired", "", notGiven, notGiven, wired, initSourceTraces, false},
 
-		{"--max-traces with explicit traces", initSourceTraces, given, notWired, initSourceTraces, false},
-		{"--max-traces with explicit dataset is refused", initSourceDataset, given, wired, "", true},
-		{"--max-traces where dataset is the default is refused", "", given, notWired, "", true},
+		{"--max-traces with explicit traces", initSourceTraces, given, notGiven, notWired, initSourceTraces, false},
+		{"--max-traces with explicit dataset is refused", initSourceDataset, given, notGiven, wired, "", true},
+		{"--max-traces where dataset is the default is refused", "", given, notGiven, notWired, "", true},
 
 		// The regression.
-		{"--max-traces where traces is the default", "", given, wired, initSourceTraces, false},
+		{"--max-traces where traces is the default", "", given, notGiven, wired, initSourceTraces, false},
+
+		// --trace-days bounds the same rows, so it is refused the same way --
+		// and, for the same reason, only after the source is known.
+		{"--trace-days with explicit traces", initSourceTraces, notGiven, given, notWired, initSourceTraces, false},
+		{"--trace-days with explicit dataset is refused", initSourceDataset, notGiven, given, wired, "", true},
+		{"--trace-days where dataset is the default is refused", "", notGiven, given, notWired, "", true},
+		{"--trace-days where traces is the default", "", notGiven, given, wired, initSourceTraces, false},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := settleInitSource(tc.explicit, tc.maxTraces, func() bool {
+			got, err := settleInitSource(tc.explicit, tc.maxTraces, tc.traceDays, func() bool {
 				return tc.traces
 			})
 			if tc.wantErr {
@@ -54,7 +62,7 @@ func TestSettleInitSource(t *testing.T) {
 					t.Fatalf("wanted a refusal, got source %q", got)
 				}
 				if !strings.Contains(err.Error(), "traces") {
-					t.Errorf("the refusal never says what --max-traces needs: %v", err)
+					t.Errorf("the refusal never says what the flag needs: %v", err)
 				}
 				return
 			}
@@ -76,7 +84,7 @@ func TestSettleInitSourceDoesNotAskWhenItWasTold(t *testing.T) {
 	probe := func() bool { asked++; return true }
 
 	for _, source := range []string{initSourceDataset, initSourceTraces} {
-		if _, err := settleInitSource(source, false, probe); err != nil {
+		if _, err := settleInitSource(source, false, false, probe); err != nil {
 			t.Fatalf("%s: %v", source, err)
 		}
 	}

@@ -52,6 +52,34 @@ func TestRenderRunReportsEveryEvaluator(t *testing.T) {
 			"a bare 7/10 does not say whether the 3 failed or never ran")
 }
 
+// The two tables count different things, so each says which.
+//
+// One test case that failed two evaluators is one row to go and look at and
+// two failing verdicts. Printed side by side and unlabelled, they read as the
+// same number disagreeing with itself.
+func TestRenderRunSeparatesTestCasesFromEvaluatorResults(t *testing.T) {
+	run := finishedRun()
+	run.PerTestingCriteria = []eval_api.EvalRunCriteriaResult{
+		{TestingCriteria: "relevance", Passed: 12, Failed: 2, Skipped: 1, Errored: 0},
+	}
+
+	var out bytes.Buffer
+	require.NoError(t, renderRun(&out, run, nil))
+	text := out.String()
+
+	assert.Contains(t, text, "TEST CASE RESULTS")
+	assert.Contains(t, text, "EVALUATOR RESULTS")
+	assert.Less(t, strings.Index(text, "TEST CASE RESULTS"), strings.Index(text, "EVALUATOR RESULTS"),
+		"the run's own outcome comes before the breakdown of it")
+
+	// A skip is not an error and neither is a failure, so each has a column
+	// rather than being folded into FAIL where it reads as a quality problem.
+	assert.Contains(t, text, "PASS  FAIL  SKIP  ERROR")
+	assert.Contains(t, text, "SCORED")
+	assert.Contains(t, text, "14/15",
+		"the scored count says how much of the run that evaluator actually judged")
+}
+
 // Two runs of the same eval have to read the same way. The service returns the
 // criteria in whatever order it evaluated them, which is not stable.
 func TestRenderRunOrdersEvaluatorsByName(t *testing.T) {
@@ -76,10 +104,12 @@ func TestRenderRunSeparatesErrorsFromFailures(t *testing.T) {
 	require.NoError(t, renderRun(&out, run, nil))
 	text := out.String()
 
-	assert.Contains(t, text, "2 errored")
+	assert.Contains(t, text, "Errored       2",
+		"a run that errored on two rows says so in its own line, not as a footnote")
 	assert.Contains(t, text, "87.5%",
 		"the pass rate is over what was scored, not over what was attempted")
-	assert.Contains(t, text, "errored and were not scored")
+	assert.Contains(t, text, "(7 / (7 passed + 1 failed))",
+		"and names the two rows it divided, so the errored two are visibly outside it")
 }
 
 // A rate over nothing is not zero. Printing 0.0% for a criterion that scored

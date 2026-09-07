@@ -1077,31 +1077,36 @@ func renderRun(
 		fmt.Fprintf(out, "\n%s\n", why)
 	}
 
+	// Counted over test cases, not over verdicts: a sample that failed two
+	// evaluators is one sample to go and look at, and reporting it as two
+	// overstates how much is wrong. The per-evaluator table below counts the
+	// verdicts, and the two are labelled so they cannot be read as the same
+	// number disagreeing with itself.
+	if c := run.ResultCounts; c != nil && c.Total > 0 {
+		errored, skipped := unscoredSplit(c, c.Passed+c.Failed)
+		rate, _, scored := scoredPassRate(c)
+		fmt.Fprint(out, messages.TestCaseResults(
+			c.Total, c.Passed, c.Failed, errored, skipped,
+			passRateText(rate, scored)))
+	}
+
 	renderCriteriaTable(out, run.PerTestingCriteria, means)
 
-	// Counted over samples, not over verdicts: a sample that failed two
-	// evaluators is one sample to go and look at, and reporting it as two
-	// overstates how much is wrong.
-	if c := run.ResultCounts; c != nil && c.Total > 0 {
-		if rate, _, ok := scoredPassRate(c); ok {
-			fmt.Fprint(out, messages.OverallPassRate(
-				fmt.Sprintf("%.1f%%", rate*100), c.Passed, c.Failed))
-		}
-		if errored, skipped := unscoredSplit(c, c.Passed+c.Failed); errored > 0 || skipped > 0 {
-			if errored > 0 {
-				fmt.Fprint(out, messages.SamplesErrored(errored))
-			}
-			if skipped > 0 {
-				fmt.Fprint(out, messages.SamplesSkipped(skipped))
-			}
-		}
-		if c.Failed > 0 {
-			fmt.Fprint(out, messages.ViewFailingSamples())
-		}
+	if c := run.ResultCounts; c != nil && c.Failed > 0 {
+		fmt.Fprint(out, messages.ViewFailingSamples())
 	}
 
 	writePortalLink(out, runLink(run.ReportURL, run.PortalURL))
 	return nil
+}
+
+// passRateText is the rate, or a dash where nothing was scored. A rate over no
+// rows is not zero, it is absent.
+func passRateText(rate float64, scored bool) string {
+	if !scored {
+		return "-"
+	}
+	return fmt.Sprintf("%.1f%%", rate*100)
 }
 
 // renderRunHeader prints the run's identity above the per-evaluator table.
@@ -1119,9 +1124,6 @@ func renderRunHeader(out interface{ Write([]byte) (int, error) }, run *eval_api.
 		fmt.Fprintf(out, "%-10s %s\n", "Dataset", ds)
 	}
 	fmt.Fprintf(out, "%-10s %s\n", "Status", run.Status)
-	if c := run.ResultCounts; c != nil && c.Total > 0 {
-		fmt.Fprintf(out, "%-10s %d\n", "Samples", c.Total)
-	}
 	if d := runDuration(run); d != "" {
 		fmt.Fprintf(out, "%-10s %s\n", "Duration", d)
 	}
@@ -1165,15 +1167,23 @@ func renderCriteriaTable(
 		}
 	}
 
-	fmt.Fprintf(out, "\n%-*s  %4s  %4s  %9s", width, "EVALUATOR", "PASS", "FAIL", "PASS RATE")
+	fmt.Fprint(out, messages.EvaluatorResultsHeading())
+	fmt.Fprintf(out, "%-*s  %4s  %4s  %4s  %5s  %7s  %9s",
+		width, "EVALUATOR", "PASS", "FAIL", "SKIP", "ERROR", "SCORED", "PASS RATE")
 	fmt.Fprintf(out, "%s\n", meanHeader(means))
-	fmt.Fprintf(out, "%s  %s  %s  %s%s\n",
-		strings.Repeat("-", width), "----", "----", "---------", meanRule(means))
+	fmt.Fprintf(out, "%s  %s  %s  %s  %s  %s  %s%s\n",
+		strings.Repeat("-", width), "----", "----", "----", "-----", "-------",
+		"---------", meanRule(means))
 
 	for _, r := range sorted {
 		scored := r.Passed + r.Failed
-		fmt.Fprintf(out, "%-*s  %4d  %4d  %9s",
-			width, r.TestingCriteria, r.Passed, r.Failed, formatRate(r.Passed, scored))
+		// Errors are not failures -- the evaluator never reached a verdict --
+		// and a skip is not an error. Each has its own column, because folding
+		// either into FAIL reports a service problem as a quality problem.
+		fmt.Fprintf(out, "%-*s  %4d  %4d  %4d  %5d  %7s  %9s",
+			width, r.TestingCriteria, r.Passed, r.Failed, r.Skipped, r.Errored,
+			fmt.Sprintf("%d/%d", scored, scored+r.Skipped+r.Errored),
+			formatRate(r.Passed, scored))
 		if means != nil {
 			if mean, ok := means[r.TestingCriteria]; ok {
 				fmt.Fprintf(out, "  %10.1f", mean)
@@ -1182,12 +1192,6 @@ func renderCriteriaTable(
 			}
 		}
 		fmt.Fprintln(out)
-		// Errors are not failures — the evaluator never reached a verdict —
-		// so they are named rather than folded into the fail column, where
-		// they would look like a quality problem.
-		if r.Errored > 0 {
-			fmt.Fprintf(out, "%-*s  %s\n", width, "", errorNote(r.Errored))
-		}
 	}
 }
 
@@ -1236,11 +1240,6 @@ func criteriaMeans(items []eval_api.OutputItem) map[string]float64 {
 		means[name] = sums[name] / float64(n)
 	}
 	return means
-}
-
-// errorNote describes rows an evaluator could not score.
-func errorNote(errored int) string {
-	return messages.ErroredNotScored(errored)
 }
 
 // formatRate renders a share as a percentage, and a rate over nothing as a

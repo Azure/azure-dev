@@ -215,41 +215,53 @@ func RunFinishedWithStatus(runID, status string) error {
 	return fmt.Errorf("run %s finished with status %s", runID, status)
 }
 
-// OverallPassRate reports the share of the test cases that were graded and
-// passed every evaluator.
+// TestCaseResults is the run's outcome counted over test cases.
 //
-// The denominator is spelled out rather than left as a bare fraction. Rows
-// nothing could grade are outside it, so a run that errored on most of its
-// samples can report a high rate, and naming the two terms is what stops that
-// reading as a verdict on the whole run. It is also the figure
-// `--fail-on pass-rate` compares.
-func OverallPassRate(rate string, passed, failed int) string {
-	return fmt.Sprintf("\nOverall pass rate: %s  (%d / (%d passed + %d failed))\n",
-		rate, passed, passed, failed)
+// Printed as its own labelled block above the per-evaluator table because the
+// two count different things: one test case that failed two evaluators is one
+// row to go and look at and two failing verdicts. Side by side and unlabelled,
+// they read as the same number disagreeing with itself.
+//
+// Errored and skipped are their own lines rather than a combined remainder: a
+// run that errored is one to retry and one that skipped is one to look at the
+// data for.
+func TestCaseResults(total, passed, failed, errored, skipped int, rate string) string {
+	var b strings.Builder
+	b.WriteString("\nTEST CASE RESULTS\n")
+	for _, row := range []struct {
+		label string
+		count int
+	}{
+		{"Total", total},
+		{"Passed", passed},
+		{"Failed", failed},
+		{"Errored", errored},
+		{"Skipped", skipped},
+	} {
+		fmt.Fprintf(&b, "%-10s %4d\n", row.label, row.count)
+	}
+	// The denominator is spelled out. Rows nothing could grade are outside it,
+	// so a run that errored on most of its samples can report a high rate, and
+	// naming the two terms is what stops that reading as a verdict on the whole
+	// run. It is also the figure `--fail-on pass-rate` compares.
+	if passed+failed > 0 {
+		fmt.Fprintf(&b, "%-10s %4s (%d / (%d passed + %d failed))\n",
+			"Pass rate", rate, passed, passed, failed)
+	} else {
+		fmt.Fprintf(&b, "%-10s %4s\n", "Pass rate", rate)
+	}
+	return b.String()
 }
 
-// SamplesErrored reports rows the run could not score at all.
-func SamplesErrored(errored int) string {
-	return fmt.Sprintf("%d sample(s) errored and were not scored.\n", errored)
-}
-
-// SamplesSkipped reports rows the run declined to score.
-//
-// Said apart from the errored count because it asks for something different: a
-// skip is a decision about the data, not a failure to run, and folding the two
-// together sent a reader to retry a run that had nothing to retry.
-func SamplesSkipped(skipped int) string {
-	return fmt.Sprintf("%d sample(s) were skipped and were not scored.\n", skipped)
+// EvaluatorResultsHeading labels the table that counts verdicts rather than
+// test cases.
+func EvaluatorResultsHeading() string {
+	return "\nEVALUATOR RESULTS\n"
 }
 
 // ViewFailingSamples points at the command that lists the rows that failed.
 func ViewFailingSamples() string {
 	return "\nView failing samples: azd ai eval run output list --failed-only\n"
-}
-
-// ErroredNotScored annotates an evaluator's row with what it could not score.
-func ErroredNotScored(errored int) string {
-	return fmt.Sprintf("(%d errored, not scored)", errored)
 }
 
 // EvalNotDeployed reports an eval id the project does not hold.

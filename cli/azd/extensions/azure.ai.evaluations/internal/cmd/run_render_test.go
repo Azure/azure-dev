@@ -184,7 +184,8 @@ func TestRenderRunHeaderNamesTheEval(t *testing.T) {
 	assert.Contains(t, text, "Eval       support-agent-smoke",
 		"the declared name is what the author recognizes, not the service id")
 	assert.Contains(t, text, "Status     completed")
-	assert.Contains(t, text, "Samples    15")
+	assert.Contains(t, text, "Total        15",
+		"the sample count is stated once, in the block that also breaks it down")
 	assert.Contains(t, text, "Duration   9m54s")
 }
 

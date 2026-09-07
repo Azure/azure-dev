@@ -79,7 +79,7 @@ func newRunOutputListCommand() *cobra.Command {
 		"Show only items with these outcomes: passed, failed, errored, skipped (comma-separated).")
 	cmd.Flags().StringVar(&flags.outFile, "output-file", "",
 		"Write JSON results to this path. Writes every row unless --limit narrows it.")
-	addPagingFlags(cmd, &flags.limit, &flags.pageToken, &flags.all, defaultPageSize)
+	addPagingFlags(cmd, &flags.limit, &flags.pageToken, &flags.all, outputItemPageSize)
 	addRunFlag(cmd, &flags.run)
 	addEvalFlag(cmd, &flags.groupName)
 	// Registered wherever a declared name is resolved, so a configuration
@@ -123,7 +123,7 @@ func (a *runOutputListAction) Run() error {
 	// totals rather than failing.
 	// A generated dataset runs to a thousand rows, each carrying a
 	// result per evaluator, so an unbounded listing floods the terminal.
-	pageSize := pageSizeOr(a.flags.limit, a.flags.walksEveryPage(a.cmd), defaultPageSize)
+	pageSize := pageSizeOr(a.flags.limit, a.flags.walksEveryPage(a.cmd), outputItemPageSize)
 	items, err := ec.evalClient.ListOutputItemsPage(ctx, evalID, run.ID, pageSize, a.flags.pageToken)
 	if err != nil {
 		return messages.ReadingRunResults(run.ID, err)

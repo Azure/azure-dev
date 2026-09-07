@@ -104,6 +104,11 @@ func pageSizeOr(limit int, all bool, fallback int) int {
 // problem in a different place.
 const defaultPageSize = 20
 
+// outputItemPageSize is smaller than the rest because a test-case row is not a
+// name: it carries a status, its evaluator counts, what needs attention and a
+// reason, so twenty of them is a screen the reader scrolls rather than reads.
+const outputItemPageSize = 10
+
 // addDisplayPagingFlags bounds a listing that already holds every row.
 //
 // These listings walk their next links before rendering, so there is no cursor

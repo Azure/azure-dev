@@ -27,7 +27,7 @@ import (
 	"azureaiagent/internal/telemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	foundrytelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
+	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	goyaml "go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -902,7 +902,7 @@ type recordingWorkflowClient struct {
 
 type recordingUsageReporter struct {
 	ctx   context.Context
-	event foundrytelemetry.Event
+	event foundryTelemetry.Event
 }
 
 type lockedBuffer struct {
@@ -934,7 +934,7 @@ func (c *recordingWorkflowClient) Run(
 	return &azdext.EmptyResponse{}, c.err
 }
 
-func (r *recordingUsageReporter) Report(ctx context.Context, event foundrytelemetry.Event) {
+func (r *recordingUsageReporter) Report(ctx context.Context, event foundryTelemetry.Event) {
 	r.ctx = ctx
 	r.event = event
 }

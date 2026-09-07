@@ -8,11 +8,11 @@ import (
 
 	"azureaiinspector/internal/telemetry"
 
-	foundrytelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
+	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 )
 
 // ReportUsageFunc records one extension-owned usage event.
-type ReportUsageFunc func(event foundrytelemetry.Event)
+type ReportUsageFunc func(event foundryTelemetry.Event)
 
 func newUIReadyReporter(reportUsage ReportUsageFunc) func() {
 	return sync.OnceFunc(func() {

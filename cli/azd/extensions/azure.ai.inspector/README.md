@@ -10,8 +10,8 @@ Extension code reports best-effort usage events through the shared
 `internal/telemetry`:
 
 ```go
-reporter := foundrytelemetry.NewReporter(azdClient.Telemetry(), nil)
-reporter.Report(ctx, extensiontelemetry.InspectorUIReady())
+reporter := foundryTelemetry.NewReporter(azdClient.Telemetry(), nil)
+reporter.Report(ctx, extensionTelemetry.InspectorUIReady())
 ```
 
 `Report` has no return value and never changes Inspector behavior. It applies a

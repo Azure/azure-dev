@@ -7,8 +7,8 @@ Extension code reports best-effort usage events through the shared
 `internal/telemetry`:
 
 ```go
-reporter := foundrytelemetry.NewReporter(azdClient.Telemetry(), nil)
-reporter.Report(ctx, extensiontelemetry.LocalClientRouteSelected(route))
+reporter := foundryTelemetry.NewReporter(azdClient.Telemetry(), nil)
+reporter.Report(ctx, extensionTelemetry.LocalClientRouteSelected(route))
 ```
 
 `Report` has no return value and never changes the command result. It applies a

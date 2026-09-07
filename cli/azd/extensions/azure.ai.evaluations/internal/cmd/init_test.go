@@ -90,10 +90,9 @@ func scaffoldFor(t *testing.T, in scaffoldInput) (scaffold, *project.EvalConfig)
 	if in.evalDir == "" {
 		in.evalDir = project.DefaultEvalDir
 	}
-	if in.rubricName == "" {
-		in.rubricName = in.target + "-quality"
-	}
-	return planScaffold(in), in.cfg
+	plan, err := planScaffold(in)
+	require.NoError(t, err)
+	return plan, in.cfg
 }
 
 // The scaffold must round-trip and validate, otherwise `azd up` fails on a
@@ -104,6 +103,7 @@ func TestScaffold_RoundTripsAndValidates(t *testing.T) {
 		evalName:   "support-agent-smoke",
 		target:     "support-agent",
 		judgeModel: "gpt-4.1-nano",
+		dataset:    "prod-golden",
 		evalDir:    dir,
 	})
 
@@ -125,9 +125,13 @@ func TestScaffold_AppendsToAnExistingConfiguration(t *testing.T) {
 	dir := t.TempDir()
 	_, cfg := scaffoldFor(t, scaffoldInput{
 		evalName: "first", target: "support-agent", judgeModel: "m", evalDir: dir,
+		dataset: "prod-golden",
 	})
+	// A different dataset, or the two evals are identical apart from their
+	// names and the configuration's own validation refuses the pair.
 	_, cfg = scaffoldFor(t, scaffoldInput{
 		evalName: "second", target: "support-agent", judgeModel: "m", evalDir: dir, cfg: cfg,
+		dataset: "nightly-golden",
 	})
 
 	require.Equal(t, []string{"first", "second"}, cfg.EvalNames())
@@ -168,16 +172,15 @@ func TestScaffold_TraceCapIsOmittedWhenZero(t *testing.T) {
 	require.NotContains(t, string(body), "max_traces")
 }
 
-// The default set is a built-in plus a generated rubric: the built-in alone
-// would be generic, and the rubric is what makes the baseline about this agent.
+// The default set is one built-in. It used to add a rubric generated from the
+// agent's instructions, which declared an evaluator file nothing had produced.
 func TestScaffold_DefaultEvaluators(t *testing.T) {
 	plan, _ := scaffoldFor(t, scaffoldInput{
 		evalName: "support-agent-smoke", target: "support-agent", judgeModel: "gpt-5.6-luna",
+		dataset: "prod-golden",
 	})
 
-	require.Equal(t,
-		[]string{"builtin.task_adherence", "support-agent-quality"},
-		plan.evaluatorNames())
+	require.Equal(t, []string{"builtin.task_adherence"}, plan.evaluatorNames())
 
 	// Every evaluator carries the judge deployment, because the judging
 	// built-ins declare it and an eval that leaves it off is rejected.
@@ -187,70 +190,44 @@ func TestScaffold_DefaultEvaluators(t *testing.T) {
 	}
 }
 
-// Passing --evaluator replaces the defaults, which is how a caller opts out of
-// rubric generation.
-func TestScaffold_ExplicitEvaluatorsOptOutOfGeneration(t *testing.T) {
+// Passing --evaluator replaces the defaults.
+func TestScaffold_ExplicitEvaluatorsReplaceTheDefault(t *testing.T) {
 	plan, _ := scaffoldFor(t, scaffoldInput{
 		evalName:   "smoke",
 		target:     "support-agent",
+		dataset:    "prod-golden",
 		evaluators: []string{"builtin.task_adherence"},
 		judgeModel: "m",
 	})
 
 	require.Equal(t, []string{"builtin.task_adherence"}, plan.evaluatorNames())
-	require.False(t, plan.generateRubric, "no rubric is generated when evaluators are given")
 }
 
-// `init` closes by naming what to run next, and only what has something to do.
-// Pointing a caller who supplied their own artifacts at a generation command
-// would submit a billed job for something they already have.
-func TestScaffold_NextStepsOfferOnlyWhatIsScheduled(t *testing.T) {
-	t.Run("nothing supplied", func(t *testing.T) {
-		plan, _ := scaffoldFor(t, scaffoldInput{
-			evalName: "support-agent-smoke", target: "support-agent", judgeModel: "m",
-		})
-		// One command produces both, so there is one step, not two -- and it has
-		// to name what this scaffold just declared. Bare `generate` derives its
-		// own names from the target, so the step published artifacts under
-		// different names than the configuration was waiting for, and the deploy
-		// after it could not find either source.
-		steps := plan.nextSteps("azd ai eval create")
-		require.Len(t, steps, 1)
-		require.Contains(t, steps[0], "--dataset-name "+plan.datasetName)
-		require.Contains(t, steps[0], "--evaluator-name "+plan.rubricName)
-		require.Contains(t, steps[0], "--target support-agent")
-		require.Contains(t, steps[0], "--generation-model m")
+// `init` closes by naming the deploy. It never names a generation command:
+// everything it wrote already resolves, so there is nothing left to produce.
+func TestScaffold_NextStepsNameTheDeploy(t *testing.T) {
+	plan, _ := scaffoldFor(t, scaffoldInput{
+		evalName:   "smoke",
+		target:     "support-agent",
+		dataset:    "prod-golden",
+		evaluators: []string{"builtin.task_adherence"},
+		judgeModel: "m",
 	})
 
-	t.Run("dataset supplied", func(t *testing.T) {
-		plan, _ := scaffoldFor(t, scaffoldInput{
-			evalName: "smoke", target: "support-agent", dataset: "prod-golden", judgeModel: "m",
-		})
-		require.Equal(t,
-			[]string{"azd ai eval generate --evaluator --evaluator-name support-agent-quality " +
-				"--target support-agent --generation-model m"},
-			plan.nextSteps("azd ai eval create"))
-	})
+	// Verified against azd 1.30.0. `azd up` on a project with no infra/
+	// exits 1 compiling a missing infra/main.bicep, and `azd deploy` exits
+	// 1 with "infrastructure has not been provisioned" in an environment
+	// that never provisioned one. `azd ai eval create` needs neither.
+	require.Equal(t, []string{"azd ai eval create", "azd ai eval run start"},
+		plan.nextSteps("azd ai eval create"),
+		"the deploy step is the one the project can actually run")
+	require.Equal(t, []string{"azd up", "azd ai eval run start"},
+		plan.nextSteps("azd up"),
+		"where the project does provision, one command covers both")
 
-	t.Run("everything supplied", func(t *testing.T) {
-		plan, _ := scaffoldFor(t, scaffoldInput{
-			evalName:   "smoke",
-			target:     "support-agent",
-			dataset:    "prod-golden",
-			evaluators: []string{"builtin.task_adherence"},
-			judgeModel: "m",
-		})
-		// Verified against azd 1.30.0. `azd up` on a project with no infra/
-		// exits 1 compiling a missing infra/main.bicep, and `azd deploy` exits
-		// 1 with "infrastructure has not been provisioned" in an environment
-		// that never provisioned one. `azd ai eval create` needs neither.
-		require.Equal(t, []string{"azd ai eval create", "azd ai eval run start"},
-			plan.nextSteps("azd ai eval create"),
-			"the deploy step is the one the project can actually run")
-		require.Equal(t, []string{"azd up", "azd ai eval run start"},
-			plan.nextSteps("azd up"),
-			"where the project does provision, one command covers both")
-	})
+	joined := strings.Join(plan.nextSteps("azd ai eval create"), "\n")
+	require.NotContains(t, joined, "generate",
+		"init writes nothing that has still to be generated")
 }
 
 // Which command deploys is decided in one place, so every message that names
@@ -275,7 +252,6 @@ func TestDeployCommandName(t *testing.T) {
 // is how `azd ai eval dataset generate` survived being deleted.
 func TestScaffold_NextStepsNameCommandsThatExist(t *testing.T) {
 	inputs := []scaffoldInput{
-		{evalName: "smoke", target: "support-agent", judgeModel: "m"},
 		{evalName: "smoke", target: "support-agent", dataset: "prod-golden", judgeModel: "m"},
 		// Reaches the deploy branch, so the command it names is resolved too.
 		{evalName: "smoke", target: "support-agent", dataset: "prod-golden",
@@ -312,32 +288,6 @@ func TestScaffold_NextStepsNameCommandsThatExist(t *testing.T) {
 	}
 }
 
-// The Next: line is what a new user runs immediately after init, and it used to
-// fail twice before it worked: `generate` requires --target and
-// --generation-model, detects neither, and reports them one per invocation.
-// Both values were on screen when init printed the hint.
-func TestScaffold_NextStepsCarryWhatGenerateRequires(t *testing.T) {
-	for _, in := range []scaffoldInput{
-		{evalName: "smoke", target: "support-agent", judgeModel: "gpt-4o-mini"},
-		{evalName: "smoke", target: "support-agent", dataset: "prod-golden", judgeModel: "gpt-4o-mini"},
-	} {
-		plan, _ := scaffoldFor(t, in)
-		seen := 0
-		for _, step := range plan.nextSteps("azd ai eval create") {
-			if !strings.HasPrefix(step, "azd ai eval generate") {
-				continue
-			}
-			seen++
-			require.Containsf(t, step, "--target support-agent",
-				"%q omits the target init had just detected", step)
-			require.Containsf(t, step, "--generation-model gpt-4o-mini",
-				"%q omits the model init had just resolved", step)
-		}
-		require.NotZerof(t, seen,
-			"no generate step was produced, so this asserted nothing: %+v", in)
-	}
-}
-
 // Built-ins are referenced but never declared, so the scaffold must not give
 // one a catalog entry to publish.
 func TestScaffold_BuiltinEvaluatorsGetNoCatalogEntry(t *testing.T) {
@@ -345,9 +295,15 @@ func TestScaffold_BuiltinEvaluatorsGetNoCatalogEntry(t *testing.T) {
 	plan, cfg := scaffoldFor(t, scaffoldInput{
 		evalName:   "smoke",
 		target:     "support-agent",
+		dataset:    "prod-golden",
 		evaluators: []string{"builtin.task_adherence", "my-custom"},
 		judgeModel: "m",
 		evalDir:    dir,
+		// my-custom has to be declared already: init writes only references
+		// that resolve.
+		cfg: &project.EvalConfig{Evaluators: []project.EvaluatorDecl{
+			{Name: "my-custom", Source: "./evaluators/my-custom.json"},
+		}},
 	})
 
 	require.Len(t, plan.eval.Evaluators, 2)
@@ -380,8 +336,6 @@ func TestScaffold_DatasetReferenceForms(t *testing.T) {
 		require.Equal(t, "../tests/golden.jsonl", decl.File,
 			"a dataset outside the eval dir must be reached with ..")
 		require.Equal(t, "golden", plan.eval.Dataset)
-		require.False(t, plan.generateDataset,
-			"a supplied dataset must not be scheduled for generation")
 	})
 
 	t.Run("bare name references a registered dataset", func(t *testing.T) {
@@ -392,19 +346,6 @@ func TestScaffold_DatasetReferenceForms(t *testing.T) {
 		require.True(t, ok)
 		require.Empty(t, decl.File, "a registered dataset must not get a local source")
 		require.Equal(t, "prod-sample", plan.eval.Dataset)
-		require.False(t, plan.generateDataset)
-	})
-
-	t.Run("no dataset flag scaffolds a local path and a generation step", func(t *testing.T) {
-		plan, cfg := scaffoldFor(t, scaffoldInput{
-			evalName: "support-agent-smoke", target: "support-agent",
-		})
-		require.Equal(t, "support-agent-smoke", plan.eval.Dataset,
-			"the dataset is named after the eval")
-		decl, ok := cfg.DatasetDeclaration("support-agent-smoke")
-		require.True(t, ok)
-		require.Contains(t, decl.File, "support-agent-smoke.jsonl")
-		require.True(t, plan.generateDataset)
 	})
 }
 

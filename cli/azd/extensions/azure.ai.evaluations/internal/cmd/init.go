@@ -205,8 +205,7 @@ func (a *initAction) Run() error {
 	evaluatorsWereChosen := len(evaluators) > 0
 	if len(evaluators) == 0 {
 		var asked bool
-		evaluators, asked, err = resolveEvaluators(
-			a.cmd, cfg, target+"-quality", source == initSourceTraces)
+		evaluators, asked, err = resolveEvaluators(a.cmd, cfg)
 		if err != nil {
 			return err
 		}
@@ -256,7 +255,7 @@ func (a *initAction) Run() error {
 		return messages.CreatingEvaluatorsDir(err)
 	}
 
-	plan := planScaffold(scaffoldInput{
+	plan, err := planScaffold(scaffoldInput{
 		evalName:   evalName,
 		target:     target,
 		source:     source,
@@ -264,10 +263,12 @@ func (a *initAction) Run() error {
 		maxTraces:  a.flags.maxTraces,
 		evaluators: evaluators,
 		judgeModel: judgeModel,
-		rubricName: target + "-quality",
 		evalDir:    evalDir,
 		cfg:        cfg,
 	})
+	if err != nil {
+		return err
+	}
 
 	if err := refuseDuplicateEval(path, plan.eval); err != nil {
 		return err
@@ -443,7 +444,6 @@ type scaffoldInput struct {
 	maxTraces  int
 	evaluators []string
 	judgeModel string
-	rubricName string
 	evalDir    string
 	cfg        *project.EvalConfig
 }
@@ -452,27 +452,24 @@ type scaffoldInput struct {
 type scaffold struct {
 	eval        *project.Eval
 	datasetName string
-	rubricName  string
 	target      string
 	judgeModel  string
 	// evalDir is where the configuration was written, so the next steps can
 	// name it when it is not the default.
-	evalDir         string
-	generateDataset bool
-	generateRubric  bool
+	evalDir string
 }
 
 // planScaffold appends one eval to the configuration, adding any catalog
 // entries it needs.
 //
-// The default evaluator set is a built-in plus a generated rubric: the built-in
-// alone would be generic, and the rubric is what makes the baseline about this
-// agent. Passing --evaluator replaces both, which is how a caller opts out of
-// rubric generation.
-func planScaffold(in scaffoldInput) scaffold {
+// Every reference it writes has to resolve to something that exists: a
+// declaration already in the file, a local file it validated, or a registered
+// name the caller supplied. Declaring an artifact that generation would produce
+// later wrote an eval nothing satisfied -- `azd up` then failed on rows that
+// "have not been generated yet", after deploying everything else.
+func planScaffold(in scaffoldInput) (scaffold, error) {
 	cfg := in.cfg
 	out := scaffold{
-		rubricName: in.rubricName,
 		target:     in.target,
 		judgeModel: in.judgeModel,
 		evalDir:    in.evalDir,
@@ -498,11 +495,10 @@ func planScaffold(in scaffoldInput) scaffold {
 			MaxTraces: in.maxTraces,
 		}
 	} else {
-		datasetName := in.evalName
+		datasetName := ""
 		datasetSource := ""
-		out.generateDataset = true
-		if in.dataset != "" {
-			out.generateDataset = false
+		switch {
+		case in.dataset != "":
 			if looksLikeLocalDataset(in.dataset) {
 				// --dataset is given relative to where the user is standing,
 				// but source: resolves relative to the config, so the path has
@@ -514,12 +510,19 @@ func planScaffold(in scaffoldInput) scaffold {
 				// A bare name references an already-registered dataset.
 				datasetName = in.dataset
 			}
-		} else {
-			datasetSource = fmt.Sprintf("./%s/%s.jsonl", project.DefaultDatasetsDir, datasetName)
+		case len(cfg.Datasets) == 1:
+			// The one declaration in the file is not a guess.
+			datasetName = cfg.Datasets[0].Name
+		case len(cfg.Datasets) > 1:
+			return scaffold{}, messages.AmbiguousDeclaredDataset(datasetNames(cfg))
+		default:
+			return scaffold{}, messages.DatasetSourceNeedsADataset()
 		}
 		eval.Dataset = datasetName
 		out.datasetName = datasetName
-		addDatasetDecl(cfg, project.DatasetDecl{Name: datasetName, File: datasetSource})
+		if datasetSource != "" || !declaresDataset(cfg, datasetName) {
+			addDatasetDecl(cfg, project.DatasetDecl{Name: datasetName, File: datasetSource})
+		}
 	}
 
 	// Every evaluator carries the judge deployment, because that is where the
@@ -546,14 +549,6 @@ func planScaffold(in scaffoldInput) scaffold {
 			withModel(evalcore.EvaluatorRef{
 				Evaluator: evalcore.BuiltinPrefix + "task_adherence",
 			}))
-		if in.source != initSourceTraces {
-			refs = append(refs, withModel(evalcore.EvaluatorRef{Evaluator: in.rubricName}))
-			addEvaluatorDecl(cfg, project.EvaluatorDecl{
-				Name:   in.rubricName,
-				Source: fmt.Sprintf("./%s/%s.json", project.DefaultEvaluatorsDir, in.rubricName),
-			})
-			out.generateRubric = true
-		}
 	} else {
 		for _, e := range in.evaluators {
 			ref := evalcore.EvaluatorRef{Evaluator: e}
@@ -561,16 +556,11 @@ func planScaffold(in scaffoldInput) scaffold {
 			if ref.IsBuiltin() {
 				continue
 			}
-			addEvaluatorDecl(cfg, project.EvaluatorDecl{
-				Name:   e,
-				Source: fmt.Sprintf("./%s/%s.json", project.DefaultEvaluatorsDir, e),
-			})
-			// Chosen, not defaulted, but it is still the rubric init offers to
-			// write, so it still has to be generated. Without this the config
-			// declares a file that nothing produces and `create` fails looking
-			// for it.
-			if e == in.rubricName {
-				out.generateRubric = true
+			// Only a declaration already in the file. A custom evaluator init
+			// has not seen is a file nothing has produced, and declaring it
+			// leaves `create` looking for a rubric that does not exist.
+			if _, ok := cfg.EvaluatorDeclaration(e); !ok {
+				return scaffold{}, messages.EvaluatorNotDeclared(e)
 			}
 		}
 	}
@@ -578,7 +568,23 @@ func planScaffold(in scaffoldInput) scaffold {
 
 	cfg.Evals = append(cfg.Evals, eval)
 	out.eval = &cfg.Evals[len(cfg.Evals)-1]
+	return out, nil
+}
+
+// datasetNames lists the declared dataset names, for a refusal that has to name
+// the choices.
+func datasetNames(cfg *project.EvalConfig) []string {
+	out := make([]string, 0, len(cfg.Datasets))
+	for _, d := range cfg.Datasets {
+		out = append(out, d.Name)
+	}
 	return out
+}
+
+// declaresDataset reports whether the configuration already names this dataset.
+func declaresDataset(cfg *project.EvalConfig, name string) bool {
+	_, ok := cfg.DatasetDeclaration(name)
+	return ok
 }
 
 // addDatasetDecl adds a catalog entry unless the name is already declared.
@@ -593,14 +599,6 @@ func addDatasetDecl(cfg *project.EvalConfig, decl project.DatasetDecl) {
 		return
 	}
 	cfg.Datasets = append(cfg.Datasets, decl)
-}
-
-// addEvaluatorDecl adds a catalog entry unless the name is already declared.
-func addEvaluatorDecl(cfg *project.EvalConfig, decl project.EvaluatorDecl) {
-	if _, ok := cfg.EvaluatorDeclaration(decl.Name); ok {
-		return
-	}
-	cfg.Evaluators = append(cfg.Evaluators, decl)
 }
 
 // refuseDuplicateEval stops `init` writing an eval that differs from one
@@ -682,33 +680,13 @@ func (s scaffold) evaluatorNames() []string {
 // requires and does not detect. Omitting them printed a next step that failed
 // twice before it ran, each failure naming one more flag.
 func (s scaffold) nextSteps(deployCmd string) []string {
-	var steps []string
-	switch {
-	case s.generateDataset && s.generateRubric:
-		// One command produces both, which is the whole point of the composite.
-		// It still has to be told the names this scaffold just declared: bare
-		// `generate` derives its own from the target, so the printed step
-		// published `<target>-dataset` while the configuration was waiting for
-		// the name recorded here, and the deploy that followed could not find
-		// either source.
-		steps = append(steps, s.generateCommand(
-			"--dataset-name "+quoteForShell(s.datasetName)+
-				" --evaluator-name "+quoteForShell(s.rubricName)))
-	case s.generateDataset:
-		steps = append(steps, s.generateCommand("--dataset --dataset-name "+quoteForShell(s.datasetName)))
-	case s.generateRubric:
-		steps = append(steps, s.generateCommand("--evaluator --evaluator-name "+quoteForShell(s.rubricName)))
+	// `azd up` reads azure.yaml, which already $refs the configuration
+	// wherever it was written, so it is the one step --path must not join.
+	deploy := deployCmd
+	if deploy != azdUpCommand {
+		deploy = s.withPath(deploy)
 	}
-	if len(steps) == 0 {
-		// `azd up` reads azure.yaml, which already $refs the configuration
-		// wherever it was written, so it is the one step --path must not join.
-		deploy := deployCmd
-		if deploy != azdUpCommand {
-			deploy = s.withPath(deploy)
-		}
-		steps = append(steps, deploy, s.withPath("azd ai eval run start"))
-	}
-	return steps
+	return []string{deploy, s.withPath("azd ai eval run start")}
 }
 
 // withPath appends --path to a step that needs it to run where init wrote.
@@ -732,26 +710,6 @@ func (s scaffold) withPath(step string) string {
 // lives in messages, beside the suggested commands that need the same thing.
 func quoteForShell(v string) string {
 	return messages.ShellArg(v)
-}
-
-// generateCommand builds a `generate` invocation that runs as printed.
-//
-// Every interpolated value is quoted, not just the path: --name is free-form
-// and becomes the dataset name, and a target or a model deployment can carry a
-// space too. Unquoted, `--dataset-name my eval` passed `my` and left `eval` as
-// a positional argument that `generate` refuses without naming the cause.
-func (s scaffold) generateCommand(what string) string {
-	cmd := "azd ai eval generate"
-	if what != "" {
-		cmd += " " + what
-	}
-	if s.target != "" {
-		cmd += " --target " + quoteForShell(s.target)
-	}
-	if s.judgeModel != "" {
-		cmd += " --generation-model " + quoteForShell(s.judgeModel)
-	}
-	return s.withPath(cmd)
 }
 
 // relativeToConfig rewrites a path given relative to the working directory so

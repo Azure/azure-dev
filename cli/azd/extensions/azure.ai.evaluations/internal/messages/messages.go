@@ -530,6 +530,45 @@ func GeneratedNameNotAFileName(kind, name string) error {
 		kind, name)
 }
 
+// DatasetSourceNeedsADataset reports a dataset-backed eval with no dataset to
+// point at.
+//
+// init used to declare `./datasets/<eval>.jsonl` here and leave generation to
+// produce it. That wrote an eval nothing satisfied: `azd up` deployed the rest
+// of the project and then failed on rows that had never been generated.
+func DatasetSourceNeedsADataset() error {
+	return errors.New(
+		"a dataset-backed evaluation needs a dataset that already exists; pass " +
+			"--dataset with a registered name or a local .jsonl file, generate one " +
+			"first with `azd ai eval generate --dataset`, or scaffold a trace-backed " +
+			"evaluation with `azd ai eval init --source traces`")
+}
+
+// AmbiguousDeclaredDataset reports several declared datasets and no way to tell
+// which one the new eval grades.
+func AmbiguousDeclaredDataset(names []string) error {
+	sorted := append([]string(nil), names...)
+	sort.Strings(sorted)
+	return fmt.Errorf(
+		"the configuration declares more than one dataset (%s); pass --dataset to "+
+			"say which one this evaluation grades",
+		strings.Join(sorted, ", "))
+}
+
+// EvaluatorNotDeclared reports a custom evaluator reference with nothing behind
+// it.
+//
+// init writes only references that already resolve. Declaring the file that a
+// generation would have produced left `create` looking for a rubric nothing had
+// written.
+func EvaluatorNotDeclared(name string) error {
+	return fmt.Errorf(
+		"evaluator %q is not declared in this configuration; generate it first with "+
+			"`azd ai eval generate --evaluator --evaluator-name %s`, or choose a "+
+			"builtin.* evaluator",
+		name, name)
+}
+
 // ServiceNameNotAFileName reports a name the service returned that cannot be
 // used as a file name.
 //

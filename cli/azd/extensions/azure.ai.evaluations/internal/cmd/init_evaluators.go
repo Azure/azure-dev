@@ -14,17 +14,14 @@ import (
 )
 
 // defaultEvaluators is what `init` proposes: one built-in that judges whether
-// the agent did what was asked, plus a rubric generated from the agent's own
-// instructions, which is what makes the criteria specific to this agent.
+// the agent did what was asked.
 //
-// The rubric is not offered for a trace-backed eval, which has no target to
-// read instructions from.
-func defaultEvaluators(rubricName string, traceBacked bool) []string {
-	refs := []string{evalcore.BuiltinPrefix + "task_adherence"}
-	if !traceBacked {
-		refs = append(refs, rubricName)
-	}
-	return refs
+// It used to add a rubric generated from the agent's instructions, which meant
+// init declared an evaluator file nothing had produced. The eval then referred
+// to a rubric that did not exist until a separate generate ran, and `azd up`
+// failed on it. Generation is its own command; init writes only what is there.
+func defaultEvaluators() []string {
+	return []string{evalcore.BuiltinPrefix + "task_adherence"}
 }
 
 // evaluatorChoices are the references `init` can offer.
@@ -33,7 +30,7 @@ func defaultEvaluators(rubricName string, traceBacked bool) []string {
 // not knowable here; offering a hardcoded copy of it would drift. What is
 // knowable is the pair init proposes and whatever this configuration already
 // declares. Anything else is reachable with --evaluator.
-func evaluatorChoices(cfg *project.EvalConfig, rubricName string, traceBacked bool) []string {
+func evaluatorChoices(cfg *project.EvalConfig) []string {
 	seen := map[string]bool{}
 	var out []string
 	add := func(ref string) {
@@ -44,7 +41,7 @@ func evaluatorChoices(cfg *project.EvalConfig, rubricName string, traceBacked bo
 		out = append(out, ref)
 	}
 
-	for _, ref := range defaultEvaluators(rubricName, traceBacked) {
+	for _, ref := range defaultEvaluators() {
 		add(ref)
 	}
 	if cfg != nil {
@@ -68,14 +65,12 @@ func evaluatorChoices(cfg *project.EvalConfig, rubricName string, traceBacked bo
 func resolveEvaluators(
 	cmd *cobra.Command,
 	cfg *project.EvalConfig,
-	rubricName string,
-	traceBacked bool,
 ) ([]string, bool, error) {
-	defaults := defaultEvaluators(rubricName, traceBacked)
+	defaults := defaultEvaluators()
 	if noPrompt(cmd) {
 		return defaults, false, nil
 	}
-	chosen, err := promptEvaluators(cmd, evaluatorChoices(cfg, rubricName, traceBacked), defaults)
+	chosen, err := promptEvaluators(cmd, evaluatorChoices(cfg), defaults)
 	if err != nil {
 		return nil, false, err
 	}

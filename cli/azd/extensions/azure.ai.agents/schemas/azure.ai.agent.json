@@ -360,11 +360,21 @@
       "description": "Foundry-side binding from a phone provider identifier to this prompt voice agent.",
       "properties": {
         "provider": { "type": "string", "enum": ["acs", "twilio"] },
-        "identifier": { "type": "string", "description": "ACS/TPE raw ID (28:orgid:<guid>), ACS purchased number (4:+<E.164>), or Twilio E.164 number (+<E.164>)." },
-        "connection": { "type": "string", "description": "Foundry project connection name used by the telephony runtime." },
+        "identifier": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "ACS/TPE raw ID (28:orgid:<guid>), ACS purchased number (4:+<E.164>), or Twilio E.164 number (+<E.164>)." },
+        "connection": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "Foundry project connection name used by the telephony runtime." },
         "transferTargets": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
       },
       "required": ["provider", "identifier", "connection"],
+      "allOf": [
+        {
+          "if": { "properties": { "provider": { "const": "twilio" } }, "required": ["provider"] },
+          "then": { "properties": { "identifier": { "pattern": "^\\+[1-9][0-9]{6,14}$" } } }
+        },
+        {
+          "if": { "properties": { "provider": { "const": "acs" } }, "required": ["provider"] },
+          "then": { "properties": { "identifier": { "pattern": "^(28:orgid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|4:\\+[1-9][0-9]{6,14})$" } } }
+        }
+      ],
       "additionalProperties": false
     },
     "VoiceAudio": {

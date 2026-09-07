@@ -9,9 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 )
@@ -218,16 +220,40 @@ func TestScaffold_NextStepsNameTheDeploy(t *testing.T) {
 	// exits 1 compiling a missing infra/main.bicep, and `azd deploy` exits
 	// 1 with "infrastructure has not been provisioned" in an environment
 	// that never provisioned one. `azd ai eval create` needs neither.
-	require.Equal(t, []string{"azd ai eval create", "azd ai eval run start"},
+	require.Equal(t,
+		[]string{"azd ai eval create smoke", "azd ai eval run start --eval smoke"},
 		plan.nextSteps("azd ai eval create"),
-		"the deploy step is the one the project can actually run")
-	require.Equal(t, []string{"azd up", "azd ai eval run start"},
+		"the deploy step is the one the project can actually run, and it names the eval")
+	require.Equal(t,
+		[]string{"azd up", "azd ai eval run start --eval smoke"},
 		plan.nextSteps("azd up"),
 		"where the project does provision, one command covers both")
 
 	joined := strings.Join(plan.nextSteps("azd ai eval create"), "\n")
 	require.NotContains(t, joined, "generate",
 		"init writes nothing that has still to be generated")
+}
+
+// init adds the eval service to azure.yaml without asking, so the deploy it
+// recommends reconciles every eval in the file -- including ones this run did
+// not add. The spec lets the wiring stay automatic only while that is said out
+// loud and the single-eval alternative is offered beside it.
+func TestScaffold_ProjectDeployDisclosesItsReach(t *testing.T) {
+	plan, _ := scaffoldFor(t, scaffoldInput{
+		evalName:   "smoke",
+		target:     "support-agent",
+		dataset:    "prod-golden",
+		evaluators: []string{"builtin.task_adherence"},
+		judgeModel: "m",
+	})
+
+	disclosure := messages.ProjectDeployAlsoReconciles(azdUpCommand, "evals/azure.eval.yaml")
+	assert.Contains(t, disclosure, "reconciles every eval")
+	assert.Contains(t, disclosure, "evals/azure.eval.yaml")
+
+	alternative := messages.TargetedEvalAlternative(plan.targetedCreate())
+	assert.Contains(t, alternative, "azd ai eval create smoke")
+	assert.Contains(t, alternative, "without deploying other services")
 }
 
 // Which command deploys is decided in one place, so every message that names
@@ -281,8 +307,15 @@ func TestScaffold_NextStepsNameCommandsThatExist(t *testing.T) {
 
 			cmd, rest, err := NewRootCommand().Find(path)
 			require.NoErrorf(t, err, "%q names no command", step)
-			require.Emptyf(t, rest, "%q left %v unresolved, so it is not a command", step, rest)
-			require.Equalf(t, path[len(path)-1], strings.Fields(cmd.Use)[0],
+			// Whatever Find could not resolve is a positional argument, so the
+			// command it did resolve has to accept it -- a step naming an eval
+			// a command takes no argument for would not run as printed.
+			if cmd.Args != nil {
+				require.NoErrorf(t, cmd.Args(cmd, rest),
+					"%q passes %v to %q, which does not take it", step, rest, cmd.Use)
+			}
+			named := path[len(path)-1-len(rest)]
+			require.Equalf(t, named, strings.Fields(cmd.Use)[0],
 				"%q resolved to %q, not the command it names", step, cmd.Use)
 		}
 	}

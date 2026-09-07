@@ -2656,6 +2656,24 @@ func FurtherNextStep(step string) string {
 	return fmt.Sprintf("      %s\n", step)
 }
 
+// ProjectDeployAlsoReconciles says what the project deploy does beyond this eval.
+//
+// init wires the eval service into azure.yaml without asking, so the deploy it
+// then recommends reconciles every eval the file declares -- not the one that
+// was just added. A reader who added one eval to a file holding four has to be
+// told that before they run it, not after.
+func ProjectDeployAlsoReconciles(deployCmd, configPath string) string {
+	return fmt.Sprintf(
+		"\n%s deploys the project and reconciles every eval in %s.\n",
+		deployCmd, configPath)
+}
+
+// TargetedEvalAlternative offers the command that touches only this eval.
+func TargetedEvalAlternative(command string) string {
+	return fmt.Sprintf(
+		"To create only this eval without deploying other services:\n  %s\n", command)
+}
+
 // CreatedCatalogFile reports a configuration created to hold a catalog entry.
 func CreatedCatalogFile(configPath string) string {
 	return fmt.Sprintf("%s Created %s with the catalog entry\n", doneMark, filepath.ToSlash(configPath))

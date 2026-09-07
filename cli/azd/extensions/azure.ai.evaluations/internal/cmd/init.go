@@ -347,10 +347,20 @@ func (a *initAction) Run() error {
 	// Only what was actually scheduled is offered. Suggesting
 	// `dataset generate` for a dataset the caller supplied sends them
 	// to submit a billed job for an artifact they already have.
-	next := plan.nextSteps(deployCommandName(azdProject))
+	deployCmd := deployCommandName(azdProject)
+	next := plan.nextSteps(deployCmd)
 	fmt.Fprint(out, messages.FirstNextStep(next[0]))
 	for _, step := range next[1:] {
 		fmt.Fprint(out, messages.FurtherNextStep(step))
+	}
+	// init wires the eval service into azure.yaml without asking, so the
+	// project deploy now covers evals the reader did not add in this run. The
+	// alternative that touches only this one is printed beside it rather than
+	// left to be discovered.
+	if deployCmd == azdUpCommand {
+		fmt.Fprint(out, messages.ProjectDeployAlsoReconciles(
+			deployCmd, filepath.ToSlash(configPath)))
+		fmt.Fprint(out, messages.TargetedEvalAlternative(plan.targetedCreate()))
 	}
 	return nil
 }
@@ -840,9 +850,26 @@ func (s scaffold) nextSteps(deployCmd string) []string {
 	// wherever it was written, so it is the one step --path must not join.
 	deploy := deployCmd
 	if deploy != azdUpCommand {
-		deploy = s.withPath(deploy)
+		deploy = s.targetedCreate()
 	}
-	return []string{deploy, s.withPath("azd ai eval run start")}
+	return []string{deploy, s.withPath("azd ai eval run start --eval " + s.evalName())}
+}
+
+// targetedCreate reconciles only the eval init just added.
+//
+// Named, because the whole point of offering it beside a project deploy is
+// that it touches one eval: without the name it reconciles whatever the file
+// happens to declare, which is what the reader was choosing to avoid.
+func (s scaffold) targetedCreate() string {
+	return s.withPath("azd ai eval create " + s.evalName())
+}
+
+// evalName is the name of the eval this scaffold adds.
+func (s scaffold) evalName() string {
+	if s.eval == nil {
+		return ""
+	}
+	return s.eval.Name
 }
 
 // withPath appends --path to a step that needs it to run where init wrote.

@@ -1620,7 +1620,10 @@ func applyDeployModeToAdoptedProjectWithSources(
 	projectNeedsACR := false
 	var configuredSourceContainers []string
 	for _, agent := range agentServices {
-		kind := adoptedAgentKind(agent.svc, resp.GetProject().GetPath())
+		kind, err := adoptedAgentKind(agent.svc, resp.GetProject().GetPath())
+		if err != nil {
+			return false, nil, err
+		}
 		if kind != "" && kind != "hosted" {
 			continue
 		}
@@ -1644,12 +1647,12 @@ func applyDeployModeToAdoptedProjectWithSources(
 	return projectNeedsACR, configuredSourceContainers, nil
 }
 
-func adoptedAgentKind(svc *azdext.ServiceConfig, projectRoot string) string {
+func adoptedAgentKind(svc *azdext.ServiceConfig, projectRoot string) (string, error) {
 	kind, err := agentkind.Kind(svc, projectRoot, "")
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("resolving adopted agent kind for service %q: %w", svc.GetName(), err)
 	}
-	return kind
+	return kind, nil
 }
 
 func finalizeAdoptedSourceContainerNetwork(

@@ -226,6 +226,8 @@
             { "required": ["model"] },
             { "required": ["inputSchema"] },
             { "required": ["outputSchema"] },
+            { "required": ["codeConfiguration"] },
+            { "required": ["sessionConfiguration"] },
             { "required": ["policies"] },
             { "required": ["protocols"] },
             { "required": ["instructions"] },

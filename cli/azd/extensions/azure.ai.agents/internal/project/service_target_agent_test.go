@@ -132,6 +132,24 @@ func TestVoiceAgentInlineServicePropertiesRejectsProtocols(t *testing.T) {
 	require.ErrorContains(t, err, "protocols are not supported on prompt voice agents")
 }
 
+func TestVoiceAgentInlineServicePropertiesRejectsCodeAndSessionConfig(t *testing.T) {
+	_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":              "voice",
+		"name":              "voice",
+		"model":             map[string]any{"id": "gpt-realtime"},
+		"codeConfiguration": map[string]any{"runtime": "dotnet_10"},
+	}))
+	require.ErrorContains(t, err, "codeConfiguration is not supported on voice agents")
+
+	_, _, _, _, err = AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":                 "voice",
+		"name":                 "voice",
+		"model":                map[string]any{"id": "gpt-realtime"},
+		"sessionConfiguration": map[string]any{"idleTimeoutMinutes": 10},
+	}))
+	require.ErrorContains(t, err, "sessionConfiguration is not supported on voice agents")
+}
+
 func TestApplyAgentMetadata(t *testing.T) {
 	tests := []struct {
 		name         string

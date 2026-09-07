@@ -2525,8 +2525,8 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 		{fmt.Sprintf("AGENT_%s_NAME", serviceKey), agentObject.Name},
 		{versionKey, versionValue},
 		{fmt.Sprintf("AGENT_%s_PROJECT_ENDPOINT", serviceKey), strings.TrimRight(projectEndpoint, "/")},
-		{fmt.Sprintf("AGENT_%s_TARGET_NAME", serviceKey), hostedVoiceTargetName(hostedTarget)},
-		{fmt.Sprintf("AGENT_%s_TARGET_VERSION", serviceKey), hostedVoiceTargetVersion(hostedTarget)},
+		{fmt.Sprintf("AGENT_%s_VOICE_TARGET_NAME", serviceKey), hostedVoiceTargetName(hostedTarget)},
+		{fmt.Sprintf("AGENT_%s_VOICE_TARGET_VERSION", serviceKey), hostedVoiceTargetVersion(hostedTarget)},
 		{endpointKey, baseEndpoint},
 	} {
 		if _, setErr := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{

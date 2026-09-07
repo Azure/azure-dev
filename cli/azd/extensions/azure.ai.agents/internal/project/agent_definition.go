@@ -803,6 +803,20 @@ func agentDefinitionFromStruct(
 	if inline.Kind != agent_yaml.AgentKindHosted {
 		definition := any(s.AsMap())
 		if agent_yaml.IsVoiceAgentKind(inline.Kind) {
+			if inline.CodeConfiguration != nil {
+				return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					"codeConfiguration is not supported on voice agents",
+					"configure code settings on the hosted target",
+				)
+			}
+			if inline.SessionConfiguration != nil {
+				return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					"sessionConfiguration is not supported on voice agents",
+					"configure session settings on the hosted target",
+				)
+			}
 			if len(inline.Protocols) > 0 {
 				return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
 					exterrors.CodeInvalidAgentManifest,

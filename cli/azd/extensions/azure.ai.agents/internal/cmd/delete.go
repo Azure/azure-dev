@@ -236,8 +236,8 @@ func (a *DeleteAction) cleanupEnvVars(
 		fmt.Sprintf("AGENT_%s_NAME", serviceKey),
 		fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
 		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
-		fmt.Sprintf("AGENT_%s_TARGET_NAME", serviceKey),
-		fmt.Sprintf("AGENT_%s_TARGET_VERSION", serviceKey),
+		fmt.Sprintf("AGENT_%s_VOICE_TARGET_NAME", serviceKey),
+		fmt.Sprintf("AGENT_%s_VOICE_TARGET_VERSION", serviceKey),
 		envkey.AgentProjectEndpoint(serviceName),
 	}
 	for _, protocol := range project.DisplayableProtocolEnvSuffixes() {
@@ -277,8 +277,8 @@ func (a *DeleteAction) clearDeletedVersionMarker(
 	keys := []string{
 		versionKey,
 		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
-		fmt.Sprintf("AGENT_%s_TARGET_NAME", serviceKey),
-		fmt.Sprintf("AGENT_%s_TARGET_VERSION", serviceKey),
+		fmt.Sprintf("AGENT_%s_VOICE_TARGET_NAME", serviceKey),
+		fmt.Sprintf("AGENT_%s_VOICE_TARGET_VERSION", serviceKey),
 	}
 	for _, protocol := range project.DisplayableProtocolEnvSuffixes() {
 		keys = append(keys, fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, protocol.Suffix))

@@ -2476,6 +2476,9 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 			"fix the agent definition in azure.yaml and re-run `azd deploy`",
 		)
 	}
+	if err := validateHostedVoiceWrapperName(request.Name, hostedTarget); err != nil {
+		return nil, err
+	}
 
 	projectEndpoint := azdEnv["FOUNDRY_PROJECT_ENDPOINT"]
 	if projectEndpoint == "" {
@@ -2550,6 +2553,17 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	}}
 
 	return &azdext.ServiceDeployResult{Artifacts: artifacts}, nil
+}
+
+func validateHostedVoiceWrapperName(wrapperName string, target *hostedVoiceTarget) error {
+	if target == nil || !strings.EqualFold(wrapperName, target.AgentName) {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidAgentManifest,
+		fmt.Sprintf("hosted voice wrapper %q cannot use the same Foundry name as its target", wrapperName),
+		"choose a distinct name for the voice wrapper service",
+	)
 }
 
 type getAgentVersionFunc func(

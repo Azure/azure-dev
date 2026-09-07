@@ -71,6 +71,18 @@ func TestHostedVoiceTargetMarkers(t *testing.T) {
 	require.Empty(t, hostedVoiceTargetVersion(nil))
 }
 
+func TestValidateHostedVoiceWrapperNameRejectsTargetName(t *testing.T) {
+	t.Parallel()
+	err := validateHostedVoiceWrapperName("target", &hostedVoiceTarget{AgentName: "target"})
+	require.ErrorContains(t, err, "cannot use the same Foundry name as its target")
+}
+
+func TestValidateHostedVoiceWrapperNameAllowsDistinctName(t *testing.T) {
+	t.Parallel()
+	err := validateHostedVoiceWrapperName("target-voice", &hostedVoiceTarget{AgentName: "target"})
+	require.NoError(t, err)
+}
+
 func compatibleHostedVoiceVersion() *agent_api.AgentVersionObject {
 	return &agent_api.AgentVersionObject{
 		Name:    "target",

@@ -316,7 +316,11 @@ func (a *jobShowAction) Run() error {
 	// The half `generate --no-wait` could not do. Only a job that has finished
 	// has anything to collect; one still running is reported above and left
 	// alone, so this stays safe to run repeatedly while waiting.
-	ref, collectErr := a.collect(ctx, ec, kind, job, out)
+	//
+	// Collection narrates what it wrote, and under -o json that narration lands
+	// on stdout ahead of the document and stops it parsing. The document says
+	// the same things in fields, so the prose is dropped rather than moved.
+	ref, collectErr := a.collect(ctx, ec, kind, job, humanOut(a.cmd, out))
 
 	if isJSON(a.cmd) {
 		// The job is still the document, with the artifact added when there was

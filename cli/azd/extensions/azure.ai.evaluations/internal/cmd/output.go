@@ -24,6 +24,19 @@ import (
 
 const outputJSON = "json"
 
+// humanOut is where prose goes: the caller's stdout, or nowhere under -o json.
+//
+// A command that narrates what it did and then emits a document put the prose
+// on stdout ahead of it, so the output stopped parsing as JSON. The document
+// carries the same facts as fields, so the narration is dropped rather than
+// moved to stderr, where it would be noise nobody asked for.
+func humanOut(cmd *cobra.Command, out io.Writer) io.Writer {
+	if isJSON(cmd) {
+		return io.Discard
+	}
+	return out
+}
+
 // writePortalLink closes a detail view with the asset's portal URL.
 //
 // Last line and cyan, matching the sibling extensions, and silent when there is

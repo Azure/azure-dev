@@ -3408,11 +3408,6 @@ func Creating(path string, err error) error {
 	return fmt.Errorf("creating %q: %w", filepath.ToSlash(path), err)
 }
 
-// Serializing reports a value that could not be written out.
-func Serializing(path string, err error) error {
-	return fmt.Errorf("serializing %q: %w", filepath.ToSlash(path), err)
-}
-
 // Writing reports a file that could not be written.
 func Writing(path string, err error) error {
 	return fmt.Errorf("writing %q: %w", filepath.ToSlash(path), err)

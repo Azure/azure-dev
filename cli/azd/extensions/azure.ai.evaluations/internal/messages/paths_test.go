@@ -68,7 +68,6 @@ func TestPathsInMessagesStayCopyable(t *testing.T) {
 		InstructionFileEmpty(testInstructions),
 		Hashing(testEvaluatorPath, boom),
 		Creating(testOutDir, boom),
-		Serializing(testOutPath, boom),
 		Writing(testOutPath, boom),
 	} {
 		got := err.Error()

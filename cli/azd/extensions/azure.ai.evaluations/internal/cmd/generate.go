@@ -12,6 +12,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -571,20 +573,104 @@ func writeRubric(path string, result json.RawMessage) error {
 		Definition json.RawMessage `json:"definition"`
 	}
 	if err := json.Unmarshal(result, &envelope); err == nil && len(envelope.Definition) > 0 {
-		var probe struct {
-			Dimensions []json.RawMessage `json:"dimensions"`
-		}
-		if json.Unmarshal(envelope.Definition, &probe) == nil && len(probe.Dimensions) > 0 {
-			var pretty bytes.Buffer
-			if err := json.Indent(&pretty, envelope.Definition, "", "  "); err != nil {
-				return messages.Serializing(path, err)
-			}
-			return writeFileAtomic(path, pretty.Bytes())
+		if editable, ok := editableRubric(envelope.Definition); ok {
+			return writeFileAtomic(path, editable)
 		}
 	}
 
 	// Fall back to the raw payload rather than losing the result.
 	return writeFileAtomic(path, result)
+}
+
+// rubricOwnedByTheService names the keys a reader cannot usefully edit.
+//
+// init_parameters, metrics and data_schema are the service's description of how
+// the evaluator is wired, and prompt_text on a rubric is generated from the
+// dimensions rather than authored. Left in the file they outnumbered the
+// dimensions several times over, so the one thing this artifact exists to be
+// edited for was the hardest part of it to find.
+var rubricOwnedByTheService = []string{
+	"init_parameters", "initParameters",
+	"metrics",
+	"data_schema", "dataSchema",
+	"prompt_text", "promptText",
+}
+
+// editableRubric reduces a returned rubric to the part worth editing.
+//
+// It reports false for anything that is not a rubric, so a payload this does
+// not understand is written whole rather than filtered down to nothing: losing
+// a generated artifact is far worse than a wide one.
+func editableRubric(definition json.RawMessage) ([]byte, bool) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(definition, &fields); err != nil {
+		return nil, false
+	}
+	var probe struct {
+		Dimensions []json.RawMessage `json:"dimensions"`
+	}
+	if json.Unmarshal(definition, &probe) != nil || len(probe.Dimensions) == 0 {
+		return nil, false
+	}
+	for _, key := range rubricOwnedByTheService {
+		delete(fields, key)
+	}
+
+	// Ordered, because this file is committed and read in diffs: Go ranges maps
+	// at random, so marshalling the map directly rewrote the whole rubric on
+	// every regeneration whether or not anything about it had changed.
+	pretty, err := json.MarshalIndent(orderedJSON(fields), "", "  ")
+	if err != nil {
+		return nil, false
+	}
+	return append(pretty, '\n'), true
+}
+
+// orderedJSON marshals a decoded object with its keys in a fixed order.
+//
+// The rubric's own three come first, in the order someone reads them, and
+// anything the service adds later follows in sorted order rather than being
+// dropped.
+type orderedJSON map[string]json.RawMessage
+
+func (o orderedJSON) MarshalJSON() ([]byte, error) {
+	leading := []string{"type", "dimensions", "pass_threshold", "passThreshold"}
+	rest := make([]string, 0, len(o))
+	for key := range o {
+		if !slices.Contains(leading, key) {
+			rest = append(rest, key)
+		}
+	}
+	sort.Strings(rest)
+
+	var b bytes.Buffer
+	b.WriteByte('{')
+	first := true
+	write := func(key string) {
+		raw, ok := o[key]
+		if !ok {
+			return
+		}
+		if !first {
+			b.WriteByte(',')
+		}
+		first = false
+		name, err := json.Marshal(key)
+		if err != nil {
+			return
+		}
+		b.Write(name)
+		b.WriteByte(':')
+		b.Write(raw)
+	}
+	for _, key := range leading {
+		write(key)
+	}
+	for _, key := range rest {
+		write(key)
+	}
+	b.WriteByte('}')
+	return b.Bytes(), nil
 }
 
 // relativeSource expresses an artifact path relative to the deployment spec.

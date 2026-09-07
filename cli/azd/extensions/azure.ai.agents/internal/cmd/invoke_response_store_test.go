@@ -14,15 +14,7 @@ func TestUserConfigResponseStateStoreRoundTrip(t *testing.T) {
 	server := newInvokeUserConfigServer()
 	client := newInvokeTestAzdClient(t, server)
 	store := newUserConfigResponseStateStore(client)
-
-	cursor := int64(0)
-	want := savedBackgroundResponse{
-		ResponseID:         "resp_123",
-		LastSequenceNumber: &cursor,
-		Status:             "in_progress",
-		SessionID:          "sess_123",
-		ConversationID:     "conv_123",
-	}
+	want := savedResponse{ResponseID: "resp_123"}
 
 	require.NoError(t, store.Save(t.Context(), "agent-a", want))
 	got, err := store.Get(t.Context(), "agent-a")
@@ -36,28 +28,38 @@ func TestUserConfigResponseStateStoreRoundTrip(t *testing.T) {
 	assert.Nil(t, got)
 }
 
-func TestUserConfigResponseStateStoreCursorIsMonotonic(t *testing.T) {
+func TestUserConfigResponseStateStoreReadsLegacyState(t *testing.T) {
 	server := newInvokeUserConfigServer()
+	server.setJSON(t, responsesConfigPath, map[string]savedResponse{
+		"agent-b": {ResponseID: "resp_current"},
+	})
+	server.setJSON(t, legacyBackgroundResponsesConfigPath, map[string]any{
+		"agent-a": map[string]any{
+			"responseId": "resp_legacy",
+			"cursor":     42,
+			"status":     "in_progress",
+		},
+	})
 	client := newInvokeTestAzdClient(t, server)
 	store := newUserConfigResponseStateStore(client)
-
-	require.NoError(t, store.Save(t.Context(), "agent-a", savedBackgroundResponse{
-		ResponseID:         "resp_123",
-		LastSequenceNumber: new(int64(10)),
-		Status:             "in_progress",
-	}))
-	require.NoError(t, store.Save(t.Context(), "agent-a", savedBackgroundResponse{
-		ResponseID:         "resp_123",
-		LastSequenceNumber: new(int64(5)),
-		Status:             "completed",
-	}))
 
 	got, err := store.Get(t.Context(), "agent-a")
 	require.NoError(t, err)
 	require.NotNil(t, got)
-	require.NotNil(t, got.LastSequenceNumber)
-	assert.Equal(t, int64(10), *got.LastSequenceNumber)
-	assert.Equal(t, "completed", got.Status)
+	assert.Equal(t, "resp_legacy", got.ResponseID)
+}
+
+func TestUserConfigResponseStateStoreReplacesCurrentID(t *testing.T) {
+	server := newInvokeUserConfigServer()
+	client := newInvokeTestAzdClient(t, server)
+	store := newUserConfigResponseStateStore(client)
+
+	require.NoError(t, store.Save(t.Context(), "agent-a", savedResponse{ResponseID: "resp_1"}))
+	require.NoError(t, store.Save(t.Context(), "agent-a", savedResponse{ResponseID: "resp_2"}))
+	got, err := store.Get(t.Context(), "agent-a")
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "resp_2", got.ResponseID)
 }
 
 func TestCleanupAgentStateForKey(t *testing.T) {
@@ -76,7 +78,7 @@ func TestCleanupAgentStateForKey(t *testing.T) {
 		agentKey: "conv_123",
 		otherKey: "conv_other",
 	})
-	server.setJSON(t, backgroundResponsesConfigPath, map[string]savedBackgroundResponse{
+	server.setJSON(t, responsesConfigPath, map[string]savedResponse{
 		agentKey: {ResponseID: "resp_123"},
 		otherKey: {ResponseID: "resp_other"},
 	})
@@ -94,8 +96,8 @@ func TestCleanupAgentStateForKey(t *testing.T) {
 	assert.NotContains(t, conversations, agentKey)
 	assert.Equal(t, "conv_other", conversations[otherKey])
 
-	var responses map[string]savedBackgroundResponse
-	server.getJSON(t, backgroundResponsesConfigPath, &responses)
+	var responses map[string]savedResponse
+	server.getJSON(t, responsesConfigPath, &responses)
 	assert.NotContains(t, responses, agentKey)
 	assert.Equal(t, "resp_other", responses[otherKey].ResponseID)
 }

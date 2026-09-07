@@ -16,7 +16,10 @@ import (
 
 const maxResponsesSSEEventBytes = 4 * 1024 * 1024
 
-var errResponsesStreamEndedBeforeIdentity = errors.New("Responses stream ended before its identity was received")
+var (
+	errResponsesStreamEndedBeforeIdentity = errors.New("Responses stream ended before its identity was received")
+	errResponsesStreamDisconnected        = errors.New("Responses stream disconnected before completion")
+)
 
 type responsesStreamProgress struct {
 	ResponseID string
@@ -281,13 +284,19 @@ func readResponsesSSE(
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("error reading response stream: %w", err)
+		if options.requireTerminal && identity != "" {
+			return errors.Join(errResponsesStreamDisconnected, fmt.Errorf("read Responses stream: %w", err))
+		}
+		return fmt.Errorf("read Responses stream: %w", err)
 	}
 	if options.requireTerminal && identity == "" {
 		return errResponsesStreamEndedBeforeIdentity
 	}
 	if options.requireTerminal && !terminal {
-		return fmt.Errorf("background Response %s disconnected before reaching a terminal state", identity)
+		return errors.Join(
+			errResponsesStreamDisconnected,
+			fmt.Errorf("Response %s disconnected before reaching a terminal state", identity),
+		)
 	}
 	return nil
 }

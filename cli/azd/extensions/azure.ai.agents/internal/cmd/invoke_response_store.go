@@ -10,24 +10,18 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-const backgroundResponsesConfigPath = configPathPrefix + ".backgroundResponses"
+const (
+	responsesConfigPath                 = configPathPrefix + ".responses"
+	legacyBackgroundResponsesConfigPath = configPathPrefix + ".backgroundResponses"
+)
 
-type savedBackgroundResponse struct {
+type savedResponse struct {
 	ResponseID string `json:"responseId"`
-	// LastSequenceNumber is the sequence_number of the last fully processed
-	// Responses SSE event. It is sent as starting_after when the stream is resumed.
-	// A pointer preserves zero, which is a valid sequence number.
-	LastSequenceNumber *int64 `json:"cursor,omitempty"`
-	// Status is the Responses API response.status value: queued, in_progress,
-	// completed, failed, incomplete, or cancelled.
-	Status         string `json:"status,omitempty"`
-	SessionID      string `json:"sessionId,omitempty"`
-	ConversationID string `json:"conversationId,omitempty"`
 }
 
 type responseStateStore interface {
-	Get(ctx context.Context, agentKey string) (*savedBackgroundResponse, error)
-	Save(ctx context.Context, agentKey string, record savedBackgroundResponse) error
+	Get(ctx context.Context, agentKey string) (*savedResponse, error)
+	Save(ctx context.Context, agentKey string, record savedResponse) error
 	Delete(ctx context.Context, agentKey string) error
 }
 
@@ -39,21 +33,34 @@ func newUserConfigResponseStateStore(client *azdext.AzdClient) responseStateStor
 	return &userConfigResponseStateStore{client: client}
 }
 
-func (s *userConfigResponseStateStore) Get(ctx context.Context, agentKey string) (*savedBackgroundResponse, error) {
+func (s *userConfigResponseStateStore) Get(ctx context.Context, agentKey string) (*savedResponse, error) {
 	config, err := azdext.NewConfigHelper(s.client)
 	if err != nil {
-		return nil, fmt.Errorf("create background response config helper: %w", err)
+		return nil, fmt.Errorf("create response config helper: %w", err)
 	}
 
-	var records map[string]savedBackgroundResponse
-	found, err := config.GetUserJSON(ctx, backgroundResponsesConfigPath, &records)
+	var records map[string]savedResponse
+	found, err := config.GetUserJSON(ctx, responsesConfigPath, &records)
 	if err != nil {
-		return nil, fmt.Errorf("read background responses: %w", err)
+		return nil, fmt.Errorf("read responses: %w", err)
+	}
+	if found && records != nil {
+		if record, ok := records[agentKey]; ok {
+			return &record, nil
+		}
+	}
+
+	// Read the preview schema written by versions containing PR #9703.
+	// Unknown cursor/status/context fields are intentionally ignored. Fall back
+	// per key so one newly saved agent does not hide legacy state for another.
+	records = nil
+	found, err = config.GetUserJSON(ctx, legacyBackgroundResponsesConfigPath, &records)
+	if err != nil {
+		return nil, fmt.Errorf("read legacy background responses: %w", err)
 	}
 	if !found || records == nil {
 		return nil, nil
 	}
-
 	record, ok := records[agentKey]
 	if !ok {
 		return nil, nil
@@ -61,34 +68,24 @@ func (s *userConfigResponseStateStore) Get(ctx context.Context, agentKey string)
 	return &record, nil
 }
 
-func (s *userConfigResponseStateStore) Save(
-	ctx context.Context,
-	agentKey string,
-	record savedBackgroundResponse,
-) error {
+func (s *userConfigResponseStateStore) Save(ctx context.Context, agentKey string, record savedResponse) error {
 	config, err := azdext.NewConfigHelper(s.client)
 	if err != nil {
-		return fmt.Errorf("create background response config helper: %w", err)
+		return fmt.Errorf("create response config helper: %w", err)
 	}
 
-	var records map[string]savedBackgroundResponse
-	found, err := config.GetUserJSON(ctx, backgroundResponsesConfigPath, &records)
+	var records map[string]savedResponse
+	found, err := config.GetUserJSON(ctx, responsesConfigPath, &records)
 	if err != nil {
-		return fmt.Errorf("read background responses: %w", err)
+		return fmt.Errorf("read responses: %w", err)
 	}
 	if !found || records == nil {
-		records = make(map[string]savedBackgroundResponse)
-	}
-
-	if current, ok := records[agentKey]; ok && current.ResponseID == record.ResponseID &&
-		current.LastSequenceNumber != nil &&
-		(record.LastSequenceNumber == nil || *record.LastSequenceNumber < *current.LastSequenceNumber) {
-		record.LastSequenceNumber = new(*current.LastSequenceNumber)
+		records = make(map[string]savedResponse)
 	}
 	records[agentKey] = record
 
-	if err := config.SetUserJSON(ctx, backgroundResponsesConfigPath, records); err != nil {
-		return fmt.Errorf("write background responses: %w", err)
+	if err := config.SetUserJSON(ctx, responsesConfigPath, records); err != nil {
+		return fmt.Errorf("write responses: %w", err)
 	}
 	return nil
 }
@@ -96,21 +93,22 @@ func (s *userConfigResponseStateStore) Save(
 func (s *userConfigResponseStateStore) Delete(ctx context.Context, agentKey string) error {
 	config, err := azdext.NewConfigHelper(s.client)
 	if err != nil {
-		return fmt.Errorf("create background response config helper: %w", err)
+		return fmt.Errorf("create response config helper: %w", err)
 	}
 
-	var records map[string]savedBackgroundResponse
-	found, err := config.GetUserJSON(ctx, backgroundResponsesConfigPath, &records)
-	if err != nil {
-		return fmt.Errorf("read background responses: %w", err)
-	}
-	if !found || records == nil {
-		return nil
-	}
-
-	delete(records, agentKey)
-	if err := config.SetUserJSON(ctx, backgroundResponsesConfigPath, records); err != nil {
-		return fmt.Errorf("write background responses: %w", err)
+	for _, path := range []string{responsesConfigPath, legacyBackgroundResponsesConfigPath} {
+		var records map[string]savedResponse
+		found, err := config.GetUserJSON(ctx, path, &records)
+		if err != nil {
+			return fmt.Errorf("read responses at %s: %w", path, err)
+		}
+		if !found || records == nil {
+			continue
+		}
+		delete(records, agentKey)
+		if err := config.SetUserJSON(ctx, path, records); err != nil {
+			return fmt.Errorf("write responses at %s: %w", path, err)
+		}
 	}
 	return nil
 }

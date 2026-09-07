@@ -160,7 +160,7 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 		return classifyDeleteError(err, agentName)
 	}
 
-	// Best-effort: clean up saved session, conversation, and background Response state (same as postdown hook).
+	// Best-effort: clean up saved session, conversation, and current Response state (same as postdown hook).
 	// Must run before cleanupEnvVars since it reads AGENT_{KEY}_ENDPOINT.
 	if envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
 		cleanupAgentState(ctx, azdClient, envResp.Environment.Name, info.ServiceName)

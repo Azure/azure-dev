@@ -8,235 +8,242 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sync"
+	"net/http"
 	"time"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
-const (
-	// Periodic cursor persistence bounds duplicate replay after abrupt termination without a
-	// UserConfig read-modify-write for every SSE event. Identity, lifecycle, and terminal events
-	// persist immediately, and normal exits flush pending state.
-	backgroundCursorPersistInterval   = 3 * time.Second
-	backgroundCursorPersistTimeout    = 30 * time.Second
-	backgroundCursorPersistEventCount = 64
-)
+const maxConsecutiveReconnectFailures = 5
 
-var errBackgroundProgressPersisterClosed = errors.New("background progress persister is closed")
+var errBackgroundNoWait = errors.New("background Response identity saved")
 
-type backgroundPersistTimer interface {
-	Stop() bool
+// responseProgressTracker saves only the current Response identity. Sequence
+// progress remains process-local and is used solely to reconnect the running command.
+type responseProgressTracker struct {
+	store      responseStateStore
+	agentKey   string
+	writer     io.Writer
+	responseID string
+	cursor     *int64
+	status     string
+	saveErr    error
+	printedID  bool
 }
 
-type backgroundPersistTimerFactory func(time.Duration, func()) backgroundPersistTimer
-
-func isTerminalResponseStatus(status string) bool {
-	switch status {
-	case "completed", "failed", "incomplete", "cancelled":
-		return true
-	default:
-		return false
+func (t *responseProgressTracker) Apply(ctx context.Context, progress responsesStreamProgress) error {
+	if progress.Cursor != nil {
+		t.cursor = new(*progress.Cursor)
 	}
-}
-
-// isResponseLifecycleEvent reports whether an event marks a Response being created,
-// queued, started, or entering a terminal state.
-func isResponseLifecycleEvent(eventType string) bool {
-	switch eventType {
-	case "response.created", "response.queued", "response.in_progress",
-		"response.completed", "response.failed", "response.incomplete", "response.cancelled":
-		return true
-	// Output deltas use throttled persistence. Unknown future events remain
-	// non-lifecycle until explicitly supported.
-	default:
-		return false
+	if progress.Status != "" {
+		t.status = progress.Status
 	}
-}
-
-type backgroundProgressPersister struct {
-	mu                 sync.Mutex
-	store              responseStateStore
-	agentKey           string
-	sessionID          string
-	conversationID     string
-	writer             io.Writer
-	now                func() time.Time
-	latest             savedBackgroundResponse
-	persistedResponse  string
-	persistedStatus    string
-	lastPersistedAt    time.Time
-	eventsSincePersist int
-	printedResponseID  bool
-	dirty              bool
-	timerFactory       backgroundPersistTimerFactory
-	timerContext       func(context.Context) (context.Context, context.CancelFunc)
-	timer              backgroundPersistTimer
-	timerGeneration    uint64
-	pendingTimerErr    error
-	closed             bool
-}
-
-func newBackgroundProgressPersister(
-	store responseStateStore,
-	agentKey string,
-	sessionID string,
-	conversationID string,
-	writer io.Writer,
-) *backgroundProgressPersister {
-	return &backgroundProgressPersister{
-		store:          store,
-		agentKey:       agentKey,
-		sessionID:      sessionID,
-		conversationID: conversationID,
-		writer:         writer,
-		now:            time.Now,
-		timerFactory: func(delay time.Duration, callback func()) backgroundPersistTimer {
-			return time.AfterFunc(delay, callback)
-		},
-		timerContext: func(ctx context.Context) (context.Context, context.CancelFunc) {
-			return context.WithTimeout(context.WithoutCancel(ctx), backgroundCursorPersistTimeout)
-		},
-	}
-}
-
-func (p *backgroundProgressPersister) Apply(ctx context.Context, progress responsesStreamProgress) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.closed {
-		return errBackgroundProgressPersisterClosed
-	}
-	if err := p.takeTimerErrorLocked(); err != nil {
-		return err
-	}
-	if progress.ResponseID == "" {
+	if progress.ResponseID == "" || progress.ResponseID == t.responseID {
 		return nil
 	}
-
-	p.latest = savedBackgroundResponse{
-		ResponseID:         progress.ResponseID,
-		LastSequenceNumber: progress.Cursor,
-		Status:             progress.Status,
-		SessionID:          p.sessionID,
-		ConversationID:     p.conversationID,
-	}
-	p.dirty = true
-	p.eventsSincePersist++
-	now := p.now()
-	shouldPersist := p.persistedResponse == "" ||
-		isResponseLifecycleEvent(progress.EventType) ||
-		progress.Status != p.persistedStatus ||
-		progress.Terminal ||
-		p.eventsSincePersist >= backgroundCursorPersistEventCount ||
-		(!p.lastPersistedAt.IsZero() && now.Sub(p.lastPersistedAt) >= backgroundCursorPersistInterval)
-	if !shouldPersist {
-		p.scheduleTimerLocked(ctx, now)
-		return nil
-	}
-	return p.persistLocked(ctx, now)
-}
-
-func (p *backgroundProgressPersister) Flush(ctx context.Context) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.closed {
-		return errBackgroundProgressPersisterClosed
-	}
-	p.stopTimerLocked()
-	if err := p.takeTimerErrorLocked(); err != nil {
-		return err
-	}
-	if !p.dirty {
-		return nil
-	}
-	return p.persistLocked(ctx, p.now())
-}
-
-// Close stops asynchronous persistence and reports any timer error not already
-// observed by Apply or Flush. It intentionally does not flush dirty state when
-// command cancellation caused the stream to exit.
-func (p *backgroundProgressPersister) Close() error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	p.stopTimerLocked()
-	p.closed = true
-	return p.takeTimerErrorLocked()
-}
-
-func (p *backgroundProgressPersister) scheduleTimerLocked(ctx context.Context, now time.Time) {
-	if p.timer != nil || !p.dirty {
-		return
+	if t.responseID != "" {
+		return fmt.Errorf("Responses stream changed response ID from %q to %q", t.responseID, progress.ResponseID)
 	}
 
-	delay := backgroundCursorPersistInterval
-	if !p.lastPersistedAt.IsZero() {
-		delay = max(backgroundCursorPersistInterval-now.Sub(p.lastPersistedAt), 0)
-	}
-	p.timerGeneration++
-	generation := p.timerGeneration
-	p.timer = p.timerFactory(delay, func() {
-		p.persistFromTimer(ctx, generation)
-	})
-}
-
-func (p *backgroundProgressPersister) persistFromTimer(ctx context.Context, generation uint64) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.closed || generation != p.timerGeneration {
-		return
-	}
-	p.timer = nil
-	if !p.dirty || p.pendingTimerErr != nil {
-		return
-	}
-	persistCtx, cancel := p.timerContext(ctx)
-	defer cancel()
-	if err := p.persistLocked(persistCtx, p.now()); err != nil {
-		p.pendingTimerErr = err
-	}
-}
-
-func (p *backgroundProgressPersister) stopTimerLocked() {
-	if p.timer == nil {
-		return
-	}
-	p.timerGeneration++
-	p.timer.Stop()
-	p.timer = nil
-}
-
-func (p *backgroundProgressPersister) takeTimerErrorLocked() error {
-	err := p.pendingTimerErr
-	p.pendingTimerErr = nil
-	return err
-}
-
-func (p *backgroundProgressPersister) persistLocked(ctx context.Context, now time.Time) error {
-	p.stopTimerLocked()
-	if err := p.store.Save(ctx, p.agentKey, p.latest); err != nil {
-		if !p.printedResponseID {
+	t.responseID = progress.ResponseID
+	if t.store != nil && t.agentKey != "" {
+		if err := t.store.Save(ctx, t.agentKey, savedResponse{ResponseID: progress.ResponseID}); err != nil {
 			_, _ = fmt.Fprintf(
-				p.writer,
-				"Response:     %s\nWARNING: This background Response was accepted, but its state was not saved. "+
-					"Save the Response ID before retrying.\n",
-				p.latest.ResponseID,
+				t.writer,
+				"Response:     %s\nWARNING: The Response was accepted, but its ID was not saved: %v\n",
+				progress.ResponseID,
+				err,
 			)
-			p.printedResponseID = true
+			t.printedID = true
+			t.saveErr = fmt.Errorf("save current Response: %w", err)
+			return nil
 		}
-		return err
 	}
-	if !p.printedResponseID {
-		if _, err := fmt.Fprintf(p.writer, "Response:     %s\n", p.latest.ResponseID); err != nil {
+	if !t.printedID {
+		if _, err := fmt.Fprintf(t.writer, "Response:     %s\n", progress.ResponseID); err != nil {
 			return err
 		}
-		p.printedResponseID = true
+		t.printedID = true
 	}
-	p.persistedResponse = p.latest.ResponseID
-	p.persistedStatus = p.latest.Status
-	p.lastPersistedAt = now
-	p.eventsSincePersist = 0
-	p.dirty = false
 	return nil
+}
+
+// followResponse replays and follows a Response. The first request starts from
+// the supplied cursor, which is nil for `responses follow` and may be non-nil
+// when an attached background create reconnects. Later cursors are in-memory only.
+func (a *InvokeAction) followResponse(
+	ctx context.Context,
+	rc *remoteContext,
+	responseID string,
+	cursor *int64,
+	writer io.Writer,
+) error {
+	consecutiveFailures := 0
+	status := ""
+
+	for {
+		token, err := a.acquireBearerToken(ctx)
+		if err != nil {
+			return err
+		}
+		followURL := buildResponseLifecycleURL(
+			rc.projectEndpoint,
+			rc.name,
+			responseID,
+			rc.apiVersion,
+			true,
+			cursor,
+		)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, followURL, nil)
+		if err != nil {
+			return fmt.Errorf("create Response follow request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Accept", "text/event-stream")
+		applyCustomHeaders(req, a.clientHeaders)
+		applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
+
+		//nolint:gosec // URL is built from a validated Foundry endpoint.
+		resp, requestErr := responseStreamHTTPClient().Do(req)
+		if requestErr != nil {
+			consecutiveFailures++
+			if consecutiveFailures >= maxConsecutiveReconnectFailures {
+				return fmt.Errorf(
+					"follow Response %s after %d attempts: %w; inspect it with "+
+						"`azd ai agent responses show --response-id %s` or retry with "+
+						"`azd ai agent responses follow --response-id %s`",
+					responseID,
+					consecutiveFailures,
+					requestErr,
+					responseID,
+					responseID,
+				)
+			}
+			if err := sleepWithContext(ctx, reconnectDelay(consecutiveFailures-1)); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if resp.StatusCode >= http.StatusBadRequest {
+			retryAfter := httputil.RetryAfter(resp)
+			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			httpErr := &responseLifecycleHTTPError{
+				method:     http.MethodGet,
+				requestURL: followURL,
+				statusCode: resp.StatusCode,
+				status:     resp.Status,
+				body:       body,
+			}
+			if !isRetryableResponseStatus(resp.StatusCode) {
+				return httpErr
+			}
+			consecutiveFailures++
+			if consecutiveFailures >= maxConsecutiveReconnectFailures {
+				return followRetryError(httpErr, responseID)
+			}
+			if err := sleepWithContext(ctx, reconnectRetryDelay(retryAfter, consecutiveFailures-1)); err != nil {
+				return err
+			}
+			continue
+		}
+
+		acceptedProgress := false
+		streamErr := readResponsesSSE(
+			ctx,
+			resp.Body,
+			writer,
+			rc.name,
+			responsesSSEOptions{
+				requireTerminal: true,
+				initialState: &responsesStreamInitialState{
+					ResponseID: responseID,
+					Cursor:     cursor,
+					Status:     status,
+				},
+				onProgress: func(progress responsesStreamProgress) error {
+					acceptedProgress = true
+					if progress.Cursor != nil {
+						cursor = new(*progress.Cursor)
+					}
+					if progress.Status != "" {
+						status = progress.Status
+					}
+					return nil
+				},
+			},
+		)
+		_ = resp.Body.Close()
+		if streamErr == nil {
+			return nil
+		}
+		if !errors.Is(streamErr, errResponsesStreamDisconnected) || ctx.Err() != nil {
+			return streamErr
+		}
+		if acceptedProgress {
+			consecutiveFailures = 0
+		}
+		consecutiveFailures++
+		if consecutiveFailures >= maxConsecutiveReconnectFailures {
+			return followRetryError(streamErr, responseID)
+		}
+		if err := sleepWithContext(ctx, reconnectDelay(consecutiveFailures-1)); err != nil {
+			return err
+		}
+	}
+}
+
+func followRetryError(cause error, responseID string) error {
+	return fmt.Errorf(
+		"%w; inspect it with `azd ai agent responses show --response-id %s` or retry with "+
+			"`azd ai agent responses follow --response-id %s`",
+		cause,
+		responseID,
+		responseID,
+	)
+}
+
+type responseLifecycleHTTPError struct {
+	method     string
+	requestURL string
+	statusCode int
+	status     string
+	body       []byte
+}
+
+func (e *responseLifecycleHTTPError) Error() string {
+	return fmt.Sprintf("%s %s failed with HTTP %d: %s\n%s", e.method, e.requestURL, e.statusCode, e.status, e.body)
+}
+
+func responseStreamHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = 30 * time.Second
+	return &http.Client{Transport: transport}
+}
+
+func isRetryableResponseStatus(status int) bool {
+	return status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= 500
+}
+
+func reconnectDelay(attempt int) time.Duration {
+	return min(time.Second<<attempt, 30*time.Second)
+}
+
+func reconnectRetryDelay(retryAfter time.Duration, attempt int) time.Duration {
+	if retryAfter > 0 {
+		return min(retryAfter, 30*time.Second)
+	}
+	return reconnectDelay(attempt)
+}
+
+func sleepWithContext(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }

@@ -10,10 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-const (
-	responsesConfigPath                 = configPathPrefix + ".responses"
-	legacyBackgroundResponsesConfigPath = configPathPrefix + ".backgroundResponses"
-)
+const responsesConfigPath = configPathPrefix + ".responses"
 
 type savedResponse struct {
 	ResponseID string `json:"responseId"`
@@ -43,20 +40,6 @@ func (s *userConfigResponseStateStore) Get(ctx context.Context, agentKey string)
 	found, err := config.GetUserJSON(ctx, responsesConfigPath, &records)
 	if err != nil {
 		return nil, fmt.Errorf("read responses: %w", err)
-	}
-	if found && records != nil {
-		if record, ok := records[agentKey]; ok {
-			return &record, nil
-		}
-	}
-
-	// Read the preview schema written by versions containing PR #9703.
-	// Fields beyond the legacy Response ID are intentionally ignored. Fall back
-	// per key so one newly saved agent does not hide legacy state for another.
-	records = nil
-	found, err = config.GetUserJSON(ctx, legacyBackgroundResponsesConfigPath, &records)
-	if err != nil {
-		return nil, fmt.Errorf("read legacy background responses: %w", err)
 	}
 	if !found || records == nil {
 		return nil, nil
@@ -96,19 +79,17 @@ func (s *userConfigResponseStateStore) Delete(ctx context.Context, agentKey stri
 		return fmt.Errorf("create response config helper: %w", err)
 	}
 
-	for _, path := range []string{responsesConfigPath, legacyBackgroundResponsesConfigPath} {
-		var records map[string]savedResponse
-		found, err := config.GetUserJSON(ctx, path, &records)
-		if err != nil {
-			return fmt.Errorf("read responses at %s: %w", path, err)
-		}
-		if !found || records == nil {
-			continue
-		}
-		delete(records, agentKey)
-		if err := config.SetUserJSON(ctx, path, records); err != nil {
-			return fmt.Errorf("write responses at %s: %w", path, err)
-		}
+	var records map[string]savedResponse
+	found, err := config.GetUserJSON(ctx, responsesConfigPath, &records)
+	if err != nil {
+		return fmt.Errorf("read responses: %w", err)
+	}
+	if !found || records == nil {
+		return nil
+	}
+	delete(records, agentKey)
+	if err := config.SetUserJSON(ctx, responsesConfigPath, records); err != nil {
+		return fmt.Errorf("write responses: %w", err)
 	}
 	return nil
 }

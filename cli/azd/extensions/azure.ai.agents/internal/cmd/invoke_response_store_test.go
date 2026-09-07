@@ -28,27 +28,6 @@ func TestUserConfigResponseStateStoreRoundTrip(t *testing.T) {
 	assert.Nil(t, got)
 }
 
-func TestUserConfigResponseStateStoreReadsLegacyState(t *testing.T) {
-	server := newInvokeUserConfigServer()
-	server.setJSON(t, responsesConfigPath, map[string]savedResponse{
-		"agent-b": {ResponseID: "resp_current"},
-	})
-	server.setJSON(t, legacyBackgroundResponsesConfigPath, map[string]any{
-		"agent-a": map[string]any{
-			"responseId": "resp_legacy",
-			"cursor":     42,
-			"status":     "in_progress",
-		},
-	})
-	client := newInvokeTestAzdClient(t, server)
-	store := newUserConfigResponseStateStore(client)
-
-	got, err := store.Get(t.Context(), "agent-a")
-	require.NoError(t, err)
-	require.NotNil(t, got)
-	assert.Equal(t, "resp_legacy", got.ResponseID)
-}
-
 func TestUserConfigResponseStateStoreReplacesCurrentID(t *testing.T) {
 	server := newInvokeUserConfigServer()
 	client := newInvokeTestAzdClient(t, server)

@@ -59,6 +59,52 @@ func TestGenerateTreatsNoConfigurationAsNoTarget(t *testing.T) {
 	assert.Empty(t, target)
 }
 
+// evalForModelTarget declares an eval whose target is a model deployment.
+func evalForModelTarget(name string) string {
+	return "evals:\n" +
+		"  - name: model-eval\n" +
+		"    target:\n" +
+		"      type: model\n" +
+		"      name: " + name + "\n"
+}
+
+// A model target names a deployment, not an agent. Inferring one handed
+// GetAgent the deployment name, and the miss came back as a missing
+// --generation-model -- an error about a flag the caller had no reason to pass.
+func TestGenerateDoesNotInferAModelTargetAsAnAgent(t *testing.T) {
+	dir := writeEvalConfig(t, evalForModelTarget("gpt-5.6-luna"))
+
+	target, err := declaredTarget(dir)
+
+	require.NoError(t, err)
+	assert.Empty(t, target, "a deployment name is not an agent to generate from")
+}
+
+// And a file carrying one of each is not ambiguous: there is exactly one agent
+// in it. Counting the model as a second target refused a configuration that
+// named its agent perfectly well.
+func TestGenerateInfersTheAgentBesideAModelTarget(t *testing.T) {
+	dir := writeEvalConfig(t,
+		evalsForTargets("checkout-agent")+
+			"  - name: model-eval\n    target:\n      type: model\n      name: gpt-5.6-luna\n")
+
+	target, err := declaredTarget(dir)
+
+	require.NoError(t, err)
+	assert.Equal(t, "checkout-agent", target)
+}
+
+// An absent type is an agent, which is what the schema defaults to and what
+// every configuration written before the field existed relies on.
+func TestGenerateInfersATargetWithNoDeclaredType(t *testing.T) {
+	dir := writeEvalConfig(t, "evals:\n  - name: eval\n    target:\n      name: checkout-agent\n")
+
+	target, err := declaredTarget(dir)
+
+	require.NoError(t, err)
+	assert.Equal(t, "checkout-agent", target)
+}
+
 // --target is the caller saying which one they meant, so an ambiguous
 // configuration must not refuse them.
 func TestAnExplicitTargetIsNotRefusedByAnAmbiguousConfiguration(t *testing.T) {

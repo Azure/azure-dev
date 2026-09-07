@@ -530,6 +530,19 @@ func GeneratedNameNotAFileName(kind, name string) error {
 		kind, name)
 }
 
+// ServiceNameNotAFileName reports a name the service returned that cannot be
+// used as a file name.
+//
+// Separate from GeneratedNameNotAFileName because the caller did not choose
+// this one and cannot correct it: `job show` names the artifact after whatever
+// the finished job reports, so the advice is to name it locally instead.
+func ServiceNameNotAFileName(kind, name string) error {
+	return fmt.Errorf(
+		"the service returned %s name %q, which cannot be used as a file name; "+
+			"re-run the generation with an explicit name",
+		kind, name)
+}
+
 // OutputItemEmpty reports a row the service acknowledged but returned nothing
 // for, which is a service fault rather than a missing item.
 func OutputItemEmpty() error {

@@ -257,6 +257,13 @@ func (ec *evalContext) collectRubric(
 	if name == "" {
 		return nil, messages.RubricJobReturnedNoName()
 	}
+	// Reattaching names the file after whatever the job reports, and that name
+	// has not been through the check the submit path applies. A returned
+	// `../../config` would otherwise be written outside the output directory,
+	// over whatever is already there.
+	if !nameIsAPathComponent(name) {
+		return nil, messages.ServiceNameNotAFileName("evaluator", name)
+	}
 
 	path := project.ArtifactPath(baseDir, outputDir, name, ".json")
 	if err := writeRubric(path, completed.Result); err != nil {
@@ -426,6 +433,12 @@ func (ec *evalContext) collectDataset(
 	localName := declaredName
 	if localName == "" {
 		localName = name
+	}
+	// Checked before the download rather than after: the service's own name has
+	// not been through the submit path's check, and a returned `../../rows`
+	// would be written outside the output directory over whatever is there.
+	if !nameIsAPathComponent(localName) {
+		return nil, messages.ServiceNameNotAFileName("dataset", localName)
 	}
 
 	// Confirm the version exists before reading it, so a missing dataset is

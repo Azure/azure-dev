@@ -61,6 +61,26 @@ func TestListOpenAIEvalsFollowsTheCursor(t *testing.T) {
 	assert.Equal(t, 2, named, "the duplicate on page two is what makes the name ambiguous")
 }
 
+// A positive limit truncates the walk, which is why a client-side filter must
+// not pass its display limit here. `eval list --name` filters these rows itself,
+// and asking for 20 searched only the first 20 evals: a match sitting on the
+// next page was reported as absent by a flag that promises every page.
+func TestListOpenAIEvalsStopsAtAPositiveLimit(t *testing.T) {
+	var pages int
+	c := clientServing(t, func(w http.ResponseWriter, r *http.Request) {
+		pages++
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[{"id":"eval_1","name":"wanted"},{"id":"eval_2","name":"other"}],`+
+			`"has_more":true,"last_id":"eval_2"}`)
+	})
+
+	list, err := c.ListOpenAIEvals(context.Background(), 2)
+
+	require.NoError(t, err)
+	assert.Len(t, list.Data, 2, "the limit is what the walk stops at")
+	assert.Equal(t, 1, pages, "and the page after it is never read")
+}
+
 // The cursor is read only when the service sends one. Without this a service
 // that omits it would loop forever or truncate, depending on the guard.
 func TestListOpenAIEvalsStopsWithoutACursor(t *testing.T) {

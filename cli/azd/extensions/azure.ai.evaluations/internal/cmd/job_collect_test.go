@@ -237,3 +237,53 @@ func TestShowWritesWhereTheCallerAsked(t *testing.T) {
 	_, err = os.Stat(filepath.Join(evalDir, "datasets", "golden.jsonl"))
 	assert.ErrorIs(t, err, os.ErrNotExist, "and not also in the default one")
 }
+
+// Submitting checks the name it is given, because that name becomes a file
+// name. Reattaching has only the job, so the name comes from the service and
+// had never been through that check: a returned `../../config` would be written
+// outside the output directory, and the write is atomic, so it would replace
+// whatever was already there rather than fail.
+func TestCollectingRefusesAServiceNameThatEscapesTheOutputDir(t *testing.T) {
+	evalDir := t.TempDir()
+	guarded := filepath.Join(filepath.Dir(evalDir), "guarded.jsonl")
+	require.NoError(t, os.WriteFile(guarded, []byte("do not overwrite\n"), 0o600))
+
+	srv := generationServer(t, "{\"query\":\"hi\"}\n")
+	var out bytes.Buffer
+
+	_, err := evalContextFor(srv).collectDataset(
+		t.Context(),
+		datasetJobResult("../guarded", "3"),
+		"", evalDir, "datasets", &out,
+	)
+
+	require.Error(t, err, "a name that leaves the directory is not a file name")
+	assert.Contains(t, err.Error(), "cannot be used as a file name")
+
+	body, readErr := os.ReadFile(guarded)
+	require.NoError(t, readErr)
+	assert.Equal(t, "do not overwrite\n", string(body),
+		"the file outside the output directory has to be untouched")
+}
+
+// The rubric half of the same hole. It writes through a different helper, so
+// the check has to be on both paths rather than on the one that was reported.
+func TestCollectingARubricRefusesAServiceNameThatEscapes(t *testing.T) {
+	evalDir := t.TempDir()
+	var out bytes.Buffer
+
+	_, err := (&evalContext{}).collectRubric(
+		&eval_api.GenerationJob{
+			ID:     "job_1",
+			Status: "succeeded",
+			Result: json.RawMessage(`{"name":"../escaped","version":"2","definition":{}}`),
+		},
+		"", evalDir, "evaluators", &out,
+	)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot be used as a file name")
+
+	_, statErr := os.Stat(filepath.Join(filepath.Dir(evalDir), "escaped.json"))
+	assert.ErrorIs(t, statErr, os.ErrNotExist, "nothing may be written outside")
+}

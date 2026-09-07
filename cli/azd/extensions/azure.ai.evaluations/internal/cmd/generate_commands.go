@@ -184,6 +184,13 @@ func declaredTarget(evalDir string) (string, error) {
 		if eval.Target == nil || eval.Target.Name == "" || seen[eval.Target.Name] {
 			continue
 		}
+		// A model target names a deployment, not an agent. Inferring one handed
+		// GetAgent a deployment name and reported the miss as a missing
+		// --generation-model, and a file carrying one of each read as ambiguous.
+		// An absent type is an agent, which is what the schema defaults to.
+		if eval.Target.Type == project.TargetTypeModel {
+			continue
+		}
 		seen[eval.Target.Name] = true
 		targets = append(targets, eval.Target.Name)
 	}

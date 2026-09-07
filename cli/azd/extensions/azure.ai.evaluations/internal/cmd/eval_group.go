@@ -223,9 +223,13 @@ func (a *evalListAction) Run() error {
 	// such eval" for one sitting on the next, which is the opposite of
 	// what it is for. The service filters nothing, so finding a name
 	// costs the full walk; reading a page does not.
+	//
+	// The walk asks for no limit rather than the page size: collectPages stops
+	// once it has gathered that many rows, so a --limit of 20 searched only the
+	// first 20 evals and reported the twenty-first as absent.
 	var page *eval_api.OpenAIEvalList
 	if a.flags.nameFilter != "" || a.flags.all {
-		page, err = ec.evalClient.ListOpenAIEvals(ctx, pageSize)
+		page, err = ec.evalClient.ListOpenAIEvals(ctx, 0)
 	} else {
 		page, err = ec.evalClient.ListOpenAIEvalsPage(ctx, pageSize, a.flags.pageToken)
 	}
@@ -237,6 +241,12 @@ func (a *evalListAction) Run() error {
 	// answer the same question.
 	total := len(page.Data)
 	matched := filterEvalsByName(page.Data, a.flags.nameFilter)
+	// --limit caps what is shown, not what was searched. Applied to matches
+	// here because the walk above had to read every page to know which rows
+	// match at all.
+	if a.flags.nameFilter != "" && !a.flags.all && a.flags.limit > 0 && len(matched) > a.flags.limit {
+		matched = matched[:a.flags.limit]
+	}
 
 	if isJSON(a.cmd) {
 		return emitJSONList(a.cmd.OutOrStdout(), matched)

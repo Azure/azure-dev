@@ -248,6 +248,85 @@ func (ec *evalContext) remember(ctx context.Context, key, value string) {
 	log.Printf("[env] could not record %s: %v", key, err)
 }
 
+// forget drops the reconciliation state recorded for a resource that is gone.
+//
+// A delete used to leave its mappings behind. The state is not shown anywhere,
+// so nothing said the id, fingerprint and version of a deleted resource were
+// still on file -- and the next deploy read them, matched a fingerprint for
+// content the service no longer has, and either bound an eval to a deleted id
+// or reported an artifact as already published when nothing had been.
+//
+// Best effort for the same reason remember is: a delete that succeeded
+// remotely is not undone by an environment that could not be written.
+func (ec *evalContext) forget(ctx context.Context, keys ...string) {
+	err := ec.deletePrivate(ctx, keys...)
+	if err == nil || errors.Is(err, errNoAzdEnvironment) {
+		return
+	}
+	fmt.Fprint(os.Stderr, messages.Warning(err))
+	log.Printf("[env] could not drop %v: %v", keys, err)
+}
+
+// forgetDeletedVersion drops the state recorded for a version that is gone.
+//
+// Only when the recorded version is the one deleted. A dataset carries many
+// versions and the state describes one of them, so clearing it on the removal
+// of an older version would report the current one as never published and
+// publish it again.
+func (ec *evalContext) forgetDeletedVersion(ctx context.Context, kind, name, version string) {
+	if ec.privateValue(ctx, versionKey(kind, name)) != version {
+		return
+	}
+	ec.forget(ctx, versionKey(kind, name), project.FingerprintKey(kind, name))
+}
+
+// deletePrivate removes entries from the reconciliation section.
+//
+// It takes the same lock and re-reads the same baseline as setPrivate, and for
+// the same reason: the section is rewritten whole, so a delete racing a
+// sibling service's write would otherwise drop whatever that one had just
+// recorded.
+func (ec *evalContext) deletePrivate(ctx context.Context, keys ...string) error {
+	if ec.azdClient == nil {
+		return messages.NoAzdEnvironmentToWrite(strings.Join(keys, ", "))
+	}
+	state := ec.loadPrivateState(ctx)
+	if ec.stateErr != nil {
+		return messages.PrivateStateUnreadable(strings.Join(keys, ", "), ec.stateErr)
+	}
+	// Nothing recorded is nothing to drop, and taking the lock to rewrite an
+	// identical section is a round trip for no change.
+	present := false
+	for _, key := range keys {
+		if _, ok := state[key]; ok {
+			present = true
+			break
+		}
+	}
+	if !present {
+		return nil
+	}
+
+	unlock, err := ec.lockPrivateState(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	merged, err := ec.readPrivateState(ctx)
+	if err != nil {
+		return messages.PrivateStateUnreadable(strings.Join(keys, ", "), err)
+	}
+	for _, key := range keys {
+		delete(merged, key)
+	}
+	if err := ec.setEnvConfig(ctx, privateStatePath, merged); err != nil {
+		return messages.WritingEnvValue(strings.Join(keys, ", "), err)
+	}
+	ec.state = merged
+	return nil
+}
+
 // loadPrivateState reads the whole section once per command.
 //
 // A miss is cached as an empty map rather than retried: the caller reads a

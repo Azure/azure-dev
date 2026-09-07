@@ -468,6 +468,14 @@ func (a *evalDeleteAction) Run() error {
 		return messages.DeletingEval(evalID, err)
 	}
 
+	// The eval is gone, so the mappings that pointed at it are wrong rather
+	// than merely stale: left behind, the next deploy binds a new eval of the
+	// same name to an id the service no longer has.
+	ec.forget(ctx,
+		idKey("eval", a.evalID),
+		project.FingerprintKey("eval", a.evalID),
+		idKey("evalrun", evalID))
+
 	if isJSON(a.cmd) {
 		return emitJSON(a.cmd.OutOrStdout(), map[string]string{
 			"id": evalID, "status": "deleted",

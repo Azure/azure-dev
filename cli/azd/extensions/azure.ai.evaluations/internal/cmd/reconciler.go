@@ -13,6 +13,7 @@ import (
 	"maps"
 	"os"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -145,18 +146,72 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 	if err != nil {
 		return evalDecision{}, err
 	}
+	// Only the baseline carries the tag. The digest is also an identity key --
+	// digestIDKey slices it to name the entry a rename looks up -- so changing
+	// its text would point every one of those somewhere else and read a rename
+	// as a delete plus an add.
+	definition = fingerprintEra + definition
 	prior := r.ec.privateValue(ctx, project.FingerprintKey("eval", group.Name))
 
 	decided := evalDecision{
 		digest:     digest,
 		definition: definition,
-		recreate:   prior != "" && prior != definition && prior != digest,
+		recreate:   substanceChanged(prior, definition, digest),
 	}
 	if r.decided == nil {
 		r.decided = map[string]evalDecision{}
 	}
 	r.decided[group.Name] = decided
 	return decided, nil
+}
+
+// fingerprintEra tags a recorded baseline with the hashing that produced it.
+//
+// Recreating an eval is not free: it is a new eval, so every run taken against
+// the old one stops being comparable with the ones taken after. The baseline
+// exists to decide that, and it can only decide it against a hash of the same
+// shape. When the shape changed, an unchanged declaration hashed differently
+// and every eval in the file was recreated by an upgrade nobody asked for.
+const fingerprintEra = "v2:"
+
+// substanceChanged reports whether the declaration differs from what was
+// deployed, or says no when it cannot tell.
+//
+// A baseline written by different hashing says nothing about this declaration,
+// and "cannot tell" is not "changed": duplicating an eval on no evidence is the
+// worse of the two mistakes, and the deploy re-baselines so the next one can
+// compare.
+//
+// Only a baseline carrying a different tag is unreadable. An untagged one
+// predates the tag and was written by this same hashing, so it is still
+// compared by value -- treating it as unreadable would stop every existing
+// environment noticing a real edit, which is the opposite defect.
+func substanceChanged(prior, definition, digest string) bool {
+	if prior == "" {
+		return false
+	}
+	if slices.Contains([]string{
+		definition, digest,
+		strings.TrimPrefix(definition, fingerprintEra),
+	}, prior) {
+		return false
+	}
+	if era := fingerprintEraOf(prior); era != "" && era != fingerprintEraOf(definition) {
+		return false
+	}
+	return true
+}
+
+// fingerprintEraOf reads the tag a baseline was written with, or "" for the
+// untagged values the shipped build produced.
+func fingerprintEraOf(fingerprint string) string {
+	colon := strings.Index(fingerprint, ":")
+	// Only a version tag counts. A hash is hex, so it carries no colon, but a
+	// value from somewhere else might.
+	if colon < 1 || fingerprint[0] != 'v' {
+		return ""
+	}
+	return fingerprint[:colon+1]
 }
 
 // evalDigests hashes a declaration both ways and says whether its substance

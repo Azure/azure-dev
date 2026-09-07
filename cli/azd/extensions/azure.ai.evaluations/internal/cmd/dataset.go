@@ -548,6 +548,8 @@ func (a *datasetDeleteAction) Run() error {
 		return messages.DeletingDatasetVersion(a.name, a.version, err)
 	}
 
+	ec.forgetDeletedVersion(ctx, "dataset", a.name, a.version)
+
 	if isJSON(a.cmd) {
 		return emitJSON(a.cmd.OutOrStdout(), map[string]string{
 			"name": a.name, "version": a.version, "status": "deleted",

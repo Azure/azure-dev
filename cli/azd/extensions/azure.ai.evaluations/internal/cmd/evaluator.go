@@ -620,6 +620,8 @@ func (a *evaluatorDeleteAction) Run() error {
 		return messages.DeletingEvaluatorVersion(a.name, a.version, err)
 	}
 
+	ec.forgetDeletedVersion(ctx, "evaluator", a.name, a.version)
+
 	if isJSON(a.cmd) {
 		return emitJSON(a.cmd.OutOrStdout(), map[string]string{
 			"name": a.name, "version": a.version, "status": "deleted",

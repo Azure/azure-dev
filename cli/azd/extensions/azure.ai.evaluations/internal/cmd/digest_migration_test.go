@@ -87,8 +87,11 @@ func TestAnEnvironmentFromBeforeTheSplitIsNotReadAsAChange(t *testing.T) {
 	assert.Equal(t, "eval_1", id, "the eval already deployed is the one to keep")
 	assert.False(t, wasCreated, "nothing in the file changed")
 	assert.Empty(t, *created, "an upgrade must not recreate an eval nobody edited")
-	assert.Equal(t, definition, env.stored(t, project.FingerprintKey("eval", "nightly")),
-		"and the baseline moves to the definition, so the next deploy compares like with like")
+	assert.Equal(t, fingerprintEra+definition,
+		env.stored(t, project.FingerprintKey("eval", "nightly")),
+		"and the baseline moves to the definition, tagged with the hashing that "+
+			"produced it, so the next change of shape is recognized rather than "+
+			"read as an edit")
 }
 
 // A real edit still recreates, or the escape hatch above would have disabled

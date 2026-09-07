@@ -39,6 +39,7 @@ func TestCommandTreeMatchesTheSpec(t *testing.T) {
 	want := []string{
 		"create",
 		"delete",
+		"download",
 		"list",
 		"show",
 		"update",

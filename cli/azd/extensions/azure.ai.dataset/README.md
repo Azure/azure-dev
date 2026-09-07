@@ -21,8 +21,9 @@ than inside `azure.ai.evaluations`.
 |---|---|
 | `azd ai dataset create <name> --from-file <path>` | Register a dataset, publishing its first version |
 | `azd ai dataset update <name> --from-file <path>` | Publish a further version |
-| `azd ai dataset list` | List the project's datasets |
+| `azd ai dataset list` | List the project's datasets, optionally narrowed by `--tag key=value` |
 | `azd ai dataset show <name>` | Show one dataset |
+| `azd ai dataset download <name>` | Write a version's content to disk |
 | `azd ai dataset delete <name>` | Delete a dataset version |
 | `azd ai dataset versions list <name>` | List a dataset's versions |
 

@@ -61,6 +61,7 @@ func NewRootCommand() *cobra.Command {
 		newDatasetUpdateCommand(),
 		newDatasetListCommand(),
 		newDatasetShowCommand(),
+		newDatasetDownloadCommand(),
 		newDatasetDeleteCommand(),
 		newDatasetVersionsCommand(),
 	)

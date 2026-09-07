@@ -164,9 +164,16 @@ func ListingDatasetVersions(dataset string, err error) error {
 	return fmt.Errorf("listing versions of dataset %q: %w", dataset, err)
 }
 
-// NoDatasets reports a project with no datasets to list.
-func NoDatasets() string {
-	return "No datasets found.\n"
+// NoDatasets reports a listing that found nothing.
+//
+// It repeats the filters when there were any, because "No datasets found."
+// after a --tag reads as an empty project rather than as a filter that
+// excluded everything.
+func NoDatasets(tags ...string) string {
+	if len(tags) == 0 {
+		return "No datasets found.\n"
+	}
+	return fmt.Sprintf("No datasets carry %s.\n", strings.Join(tags, " and "))
 }
 
 // NoDatasetVersions reports a name nothing is published under.
@@ -680,4 +687,100 @@ func ReadingBlobContent(err error) error {
 func ListingTruncated(pages int) error {
 	return fmt.Errorf(
 		"stopped reading the listing after %d pages, so it may be incomplete", pages)
+}
+
+// OutputFileAndDirBothGiven reports two destinations for one download.
+func OutputFileAndDirBothGiven() error {
+	return errors.New(
+		"--output-file and --output-dir both name where to write; pass one")
+}
+
+// OutputFileNeedsSingleFileDataset refuses a folder dataset written to one path.
+//
+// Picking one of its files to satisfy the flag hands back part of the dataset
+// under a name that claims to be all of it.
+func OutputFileNeedsSingleFileDataset(name, version string, files int) error {
+	return fmt.Errorf(
+		"dataset %s version %s holds %d files, so it has no single path to write; "+
+			"use --output-dir", name, version, files)
+}
+
+// DownloadDestinationExists refuses to replace what is already there.
+func DownloadDestinationExists(path string) error {
+	return fmt.Errorf(
+		"%s already exists; pass --force to overwrite it", filepath.ToSlash(path))
+}
+
+// DatasetEntryNotRelative refuses a listed entry that would write outside the
+// destination.
+//
+// The names come from the service's listing, so they are not the command's to
+// trust: an absolute path or one climbing out with `..` writes wherever it
+// says, and the destination is chosen by the caller precisely so that it does
+// not.
+func DatasetEntryNotRelative(name string) error {
+	return fmt.Errorf(
+		"dataset contains an entry named %q, which would be written outside the "+
+			"download directory", name)
+}
+
+// StagingDownload reports a download that could not reserve its workspace.
+func StagingDownload(err error) error {
+	return fmt.Errorf("preparing the download directory: %w", err)
+}
+
+// WritingDownload reports a download that could not be written.
+func WritingDownload(path string, err error) error {
+	return fmt.Errorf("writing %s: %w", filepath.ToSlash(path), err)
+}
+
+// CreatingDirectory reports a directory a download needed and could not make.
+func CreatingDirectory(path string, err error) error {
+	return fmt.Errorf("creating %s: %w", filepath.ToSlash(path), err)
+}
+
+// DownloadingDataset reports a dataset version that could not be fetched.
+func DownloadingDataset(name, version string, err error) error {
+	return fmt.Errorf("downloading dataset %s version %s: %w", name, version, err)
+}
+
+// NoDatasetVersionsToDownload reports a name with nothing registered under it.
+func NoDatasetVersionsToDownload(name string) error {
+	return fmt.Errorf(
+		"dataset %q has no registered versions to download; `azd ai dataset list` "+
+			"names the ones this project holds", name)
+}
+
+// DownloadedDataset reports what landed on disk.
+//
+// It states the shape as well as the path, because a folder dataset and a
+// single file are read back differently and the path alone does not say which
+// arrived.
+func DownloadedDataset(name, version string, singleFile bool, files int, path string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n(%s) Downloaded dataset '%s' version %s\n", "\u2713", name, version)
+	if singleFile {
+		b.WriteString("    Type: single file\n")
+	} else {
+		b.WriteString("    Type: folder\n")
+		fmt.Fprintf(&b, "    Files: %d\n", files)
+	}
+	fmt.Fprintf(&b, "    Path: %s\n", filepath.ToSlash(path))
+	return b.String()
+}
+
+// TagFilterNotAPair reports a --tag the CLI cannot read.
+func TagFilterNotAPair(given string) error {
+	return fmt.Errorf("--tag %q is not a filter; use --tag key=value", given)
+}
+
+// TagFilterRepeatsKey reports one key asked for two values.
+//
+// Repeats narrow, so the same key twice asks for a dataset whose tag is two
+// things at once. Keeping the last one silently answers only half the question.
+func TagFilterRepeatsKey(key, first, second string) error {
+	return fmt.Errorf(
+		"--tag %s was given twice, as %q and %q; a dataset carries one value per "+
+			"key, so no dataset can match both",
+		key, first, second)
 }

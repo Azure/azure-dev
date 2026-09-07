@@ -37,6 +37,11 @@ type Dataset struct {
 	Version string `json:"version"`
 	Type    string `json:"type,omitempty"`
 	Format  string `json:"format,omitempty"`
+	// Tags is how a dataset says where it came from: a generation job records
+	// its id here, and an evaluator-generation artifact records what produced
+	// it. Dropping them from the typed model made `-o json` lose data the
+	// response carried.
+	Tags map[string]string `json:"tags,omitempty"`
 
 	// camelCase spellings (project endpoint).
 	DataURICamel    string `json:"dataUri,omitempty"`

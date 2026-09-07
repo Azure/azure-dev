@@ -306,20 +306,23 @@ func datasetUploadSource(path string) (string, error) {
 type datasetListAction struct {
 	cmd      *cobra.Command
 	endpoint string
+	tags     []string
 }
 
 func newDatasetListCommand() *cobra.Command {
 	var endpointFlg string
+	var tags []string
 
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List the project's datasets.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return (&datasetListAction{cmd: cmd, endpoint: endpointFlg}).Run()
+			return (&datasetListAction{cmd: cmd, endpoint: endpointFlg, tags: tags}).Run()
 		},
 	}
 
+	addTagFilterFlag(cmd, &tags)
 	cmd.Flags().StringVar(&endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	registerOutputFormats(cmd)
 	return cmd
@@ -327,6 +330,12 @@ func newDatasetListCommand() *cobra.Command {
 
 func (a *datasetListAction) Run() error {
 	ctx := a.cmd.Context()
+	// Refused before the call: a listing that spends a round trip to report a
+	// mistyped filter is a slower way of saying the same thing.
+	filters, err := parseTagFilters(a.tags)
+	if err != nil {
+		return err
+	}
 	ec, err := newDatasetContext(ctx, a.endpoint)
 	if err != nil {
 		return err
@@ -337,7 +346,8 @@ func (a *datasetListAction) Run() error {
 	if err != nil {
 		return messages.ListingDatasets(err)
 	}
-	return renderDatasets(a.cmd, list, messages.NoDatasets())
+	return renderDatasets(a.cmd, applyTagFilter(list, filters),
+		messages.NoDatasets(a.tags...))
 }
 
 // newDatasetVersionsCommand groups the version listing, so that `list` means
@@ -437,8 +447,18 @@ func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList, whenEmpty
 		return emitJSONList(cmd.OutOrStdout(), list.Value)
 	}
 	rows := make([][]string, 0, len(list.Value))
+	tagged := false
 	for _, d := range list.Value {
-		rows = append(rows, []string{d.Name, d.Version, d.Type})
+		if len(d.Tags) > 0 {
+			tagged = true
+		}
+	}
+	for _, d := range list.Value {
+		row := []string{d.Name, d.Version, d.Type}
+		if tagged {
+			row = append(row, tagSummary(d.Tags))
+		}
+		rows = append(rows, row)
 	}
 	if len(rows) == 0 {
 		fmt.Fprint(cmd.OutOrStdout(), whenEmpty)
@@ -446,7 +466,13 @@ func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList, whenEmpty
 	}
 	// TYPE, not FORMAT: format is a field this API accepts on upload and never
 	// returns, so the column it filled was empty for every dataset ever listed.
-	return emitTable(cmd.OutOrStdout(), []string{"NAME", "VERSION", "TYPE"}, rows)
+	//
+	// TAGS only when something carries them, for the same reason.
+	headers := []string{"NAME", "VERSION", "TYPE"}
+	if tagged {
+		headers = append(headers, "TAGS")
+	}
+	return emitTable(cmd.OutOrStdout(), headers, rows)
 }
 
 // latestVersionForShow resolves the version `show` reads when none was named.

@@ -29,8 +29,17 @@ type AgentContext struct {
 }
 
 // newAgentContext resolves the project endpoint and returns a fully populated AgentContext.
-func newAgentContext(ctx context.Context, accountName, projectName, name, version string) (*AgentContext, error) {
-	endpoint, err := resolveAgentEndpoint(ctx, accountName, projectName)
+func newAgentContext(
+	ctx context.Context,
+	accountName, projectName, name, version string,
+	environmentName ...string,
+) (*AgentContext, error) {
+	selectedEnvironment := ""
+	if len(environmentName) > 0 {
+		selectedEnvironment = environmentName[0]
+	}
+
+	endpoint, err := resolveAgentEndpointForEnvironment(ctx, accountName, projectName, selectedEnvironment)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +70,8 @@ func buildAgentEndpoint(accountName, projectName string) string {
 type resolveProjectEndpointOpts struct {
 	// FlagValue is the value of the -p / --project-endpoint flag (level 1).
 	// Empty means the flag was not provided.
-	FlagValue string
+	FlagValue       string
+	EnvironmentName string
 }
 
 // resolvedEndpoint holds the result of resolveProjectEndpoint.
@@ -97,7 +107,7 @@ var readAzdHostedSourcesFunc = readAzdHostedSources
 // context in a single client lifetime. Errors talking to the daemon are
 // returned only for non-Unavailable cases on the config read — Unavailable
 // is treated as "no daemon" and the caller falls through to subsequent levels.
-func readAzdHostedSources(ctx context.Context) (azdHostedSources, error) {
+func readAzdHostedSources(ctx context.Context, environmentName string) (azdHostedSources, error) {
 	var out azdHostedSources
 
 	azdClient, err := azdext.NewAzdClient()
@@ -107,9 +117,13 @@ func readAzdHostedSources(ctx context.Context) (azdHostedSources, error) {
 	}
 	defer azdClient.Close()
 
-	if envResp, err := azdClient.Environment().GetCurrent(
-		ctx, &azdext.EmptyRequest{},
-	); err == nil {
+	var envResp *azdext.EnvironmentResponse
+	if environmentName != "" {
+		envResp, err = azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{Name: environmentName})
+	} else {
+		envResp, err = azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	}
+	if err == nil {
 		envVal, valErr := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: envResp.Environment.Name,
 			Key:     "FOUNDRY_PROJECT_ENDPOINT",
@@ -177,7 +191,7 @@ func resolveProjectEndpoint(
 	}
 
 	// Levels 2 + 3: azd-hosted sources (active env, then global config).
-	sources, err := readAzdHostedSourcesFunc(ctx)
+	sources, err := readAzdHostedSourcesFunc(ctx, opts.EnvironmentName)
 	if err != nil {
 		return nil, err
 	}
@@ -229,6 +243,15 @@ func resolveProjectEndpoint(
 // used to construct the endpoint directly (existing behavior). Otherwise the
 // cascade is invoked with no flag value.
 func resolveAgentEndpoint(ctx context.Context, accountName string, projectName string) (string, error) {
+	return resolveAgentEndpointForEnvironment(ctx, accountName, projectName, "")
+}
+
+func resolveAgentEndpointForEnvironment(
+	ctx context.Context,
+	accountName string,
+	projectName string,
+	environmentName string,
+) (string, error) {
 	if accountName != "" && projectName != "" {
 		return buildAgentEndpoint(accountName, projectName), nil
 	}
@@ -237,7 +260,7 @@ func resolveAgentEndpoint(ctx context.Context, accountName string, projectName s
 		return "", fmt.Errorf("both --account-name and --project-name must be provided together")
 	}
 
-	result, err := resolveProjectEndpoint(ctx, resolveProjectEndpointOpts{})
+	result, err := resolveProjectEndpoint(ctx, resolveProjectEndpointOpts{EnvironmentName: environmentName})
 	if err != nil {
 		return "", err
 	}

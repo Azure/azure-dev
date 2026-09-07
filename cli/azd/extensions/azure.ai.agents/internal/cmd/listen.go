@@ -31,40 +31,55 @@ import (
 // from the root command, which handles the surrounding setup (access token,
 // AzdClient creation, and host.Run lifecycle).
 func configureExtensionHost(host *azdext.ExtensionHost) {
+	configureExtensionHostForEnvironment(host, "")
+}
+
+func configureExtensionHostForEnvironment(host *azdext.ExtensionHost, environmentName string) {
 	azdClient := host.Client()
 
 	// IMPORTANT: service target name here must match the name used in the extension manifest.
 	host.
 		WithServiceTarget(AiAgentHost, func() azdext.ServiceTargetProvider {
-			return project.NewAgentServiceTargetProvider(azdClient)
+			return project.NewAgentServiceTargetProvider(azdClient, environmentName)
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-			return preprovisionHandler(ctx, azdClient, args)
+			return preprovisionHandler(ctx, azdClient, environmentName, args)
 		}).
 		WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-			return postprovisionHandler(ctx, azdClient, args)
+			return postprovisionHandler(ctx, azdClient, environmentName, args)
 		}).
 		WithServiceEventHandler("predeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
-			return predeployHandler(ctx, azdClient, args)
+			return predeployHandler(ctx, azdClient, environmentName, args)
 		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
 		WithServiceEventHandler("postdeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
-			return postdeployHandler(ctx, azdClient, args)
+			return postdeployHandler(ctx, azdClient, environmentName, args)
 		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
 		WithProjectEventHandler("postdown", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-			return postdownHandler(ctx, azdClient, args)
+			return postdownHandler(ctx, azdClient, environmentName, args)
 		})
 }
 
-func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+func preprovisionHandler(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	environmentName string,
+	args *azdext.ProjectEventArgs,
+) error {
+	envName, err := resolveActivityEnvironmentName(ctx, azdClient, environmentName)
+	if err != nil {
+		return err
+	}
+
 	// Prompt for Activity bot names at the start of preprovision so the input
 	// appears before longer setup/update steps in this handler.
-	if err := provisionActivityBotNames(ctx, azdClient, args); err != nil {
+	if err := provisionActivityBotNames(ctx, azdClient, envName, args); err != nil {
 		return err
 	}
 
 	if err := updateLegacyProjectDeployments(
 		ctx,
 		azdClient,
+		envName,
 		args.Project.Services,
 		args.Project.Path,
 	); err != nil {
@@ -87,6 +102,7 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args 
 			if err := envUpdate(
 				ctx,
 				azdClient,
+				envName,
 				args.Project,
 				svc,
 				connections,
@@ -102,6 +118,7 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args 
 func postprovisionHandler(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
+	environmentName string,
 	args *azdext.ProjectEventArgs,
 ) error {
 	// Toolboxes are reconciled at deploy time by the azure.ai.toolbox service
@@ -134,7 +151,7 @@ func postprovisionHandler(
 	// the suggestion until the variable is cleared by a future
 	// successful provision (or by the user via `azd env set ... ""`).
 	if hasAgent {
-		envName, err := currentEnvName(ctx, azdClient)
+		envName, err := resolveEnvironmentName(ctx, azdClient, environmentName)
 		switch {
 		case err != nil:
 			log.Printf(
@@ -159,12 +176,15 @@ func postprovisionHandler(
 	return nil
 }
 
-// currentEnvName returns the name of the currently selected azd
-// environment, or empty string + error when no environment is
-// selected. Wraps Environment().GetCurrent so callers (notably
-// postprovisionHandler) can read the current env name without
-// duplicating the request shape.
-func currentEnvName(ctx context.Context, azdClient *azdext.AzdClient) (string, error) {
+func resolveEnvironmentName(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	environmentName string,
+) (string, error) {
+	if envName := strings.TrimSpace(environmentName); envName != "" {
+		return envName, nil
+	}
+
 	resp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return "", err
@@ -178,6 +198,7 @@ func currentEnvName(ctx context.Context, azdClient *azdext.AzdClient) (string, e
 func updateLegacyProjectDeployments(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
+	environmentName string,
 	services map[string]*azdext.ServiceConfig,
 	projectRoot string,
 ) error {
@@ -192,18 +213,11 @@ func updateLegacyProjectDeployments(
 		return nil
 	}
 
-	envName, err := currentEnvName(ctx, azdClient)
-	if err != nil {
-		return fmt.Errorf(
-			"resolving environment for legacy deployments: %w",
-			err,
-		)
-	}
 	return deploymentEnvUpdate(
 		ctx,
 		deployments,
 		azdClient,
-		envName,
+		environmentName,
 	)
 }
 
@@ -223,8 +237,22 @@ var (
 // for each colliding service.
 var duplicateAgentNameWarnOnce sync.Once
 
-func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {
+func predeployHandler(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	environmentName string,
+	args *azdext.ServiceEventArgs,
+) error {
 	svc := args.Service
+	envName, err := resolveEnvironmentName(ctx, azdClient, environmentName)
+	if err != nil || envName == "" {
+		return missingEnvironmentError(
+			err,
+			"no azd environment is selected for deploy",
+			"Select the environment used by this deploy command.",
+			"deploy",
+		)
+	}
 
 	// Warn (once) when multiple agent services resolve to the same Foundry agent
 	// name. Foundry identifies an agent by its name, so such services overwrite
@@ -236,6 +264,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	if err := updateLegacyProjectDeployments(
 		ctx,
 		azdClient,
+		envName,
 		args.Project.Services,
 		args.Project.Path,
 	); err != nil {
@@ -255,6 +284,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	if err := envUpdate(
 		ctx,
 		azdClient,
+		envName,
 		args.Project,
 		svc,
 		connections,
@@ -266,7 +296,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	// version after deploy (see session_carryover.go). Best-effort; hosted
 	// agents only.
 	if isHostedAgentService(svc, args.Project) {
-		captureSessionForCarryover(ctx, azdClient, svc)
+		captureSessionForCarryover(ctx, azdClient, envName, svc)
 	}
 
 	// Run developer RBAC pre-flight checks only for hosted agent deployments.
@@ -274,7 +304,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	// is project-scoped.
 	if isHostedAgentService(svc, args.Project) {
 		developerRBACOnce.Do(func() {
-			developerRBACErr = project.CheckDeveloperRBAC(ctx, azdClient)
+			developerRBACErr = project.CheckDeveloperRBAC(ctx, azdClient, envName)
 		})
 		if developerRBACErr != nil {
 			return developerRBACErr
@@ -364,13 +394,12 @@ func warnDuplicateAgentNames(proj *azdext.ProjectConfig) {
 // it does NOT decide skip-vs-fail, so each caller can apply its own policy to the
 // returned error (the required Teams bot fails; best-effort reporting skips).
 func gatherPostdeployInputs(
-	ctx context.Context, azdClient *azdext.AzdClient,
+	ctx context.Context, azdClient *azdext.AzdClient, environmentName string,
 ) (envName, endpoint, tenant string, cred *azidentity.AzureDeveloperCLICredential, err error) {
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	envName, err = resolveEnvironmentName(ctx, azdClient, environmentName)
 	if err != nil {
-		return "", "", "", nil, fmt.Errorf("failed to get current environment: %w", err)
+		return "", "", "", nil, fmt.Errorf("failed to resolve environment: %w", err)
 	}
-	envName = envResp.Environment.Name
 
 	if endpoint, err = readEnvValue(ctx, azdClient, envName, "FOUNDRY_PROJECT_ENDPOINT"); err != nil {
 		return envName, "", "", nil, err
@@ -391,7 +420,12 @@ func gatherPostdeployInputs(
 	return envName, endpoint, tenant, cred, nil
 }
 
-func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {
+func postdeployHandler(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	environmentName string,
+	args *azdext.ServiceEventArgs,
+) error {
 	svc := args.Service
 
 	// Skip when the service is not a hosted agent.
@@ -403,7 +437,7 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 	// Activity bot provisioning is performed in the service target deploy path
 	// (single source of truth), so postdeploy no longer performs a second bot
 	// configuration pass that can conflict with the deploy-time bot name.
-	envName, endpoint, _, cred, inputErr := gatherPostdeployInputs(ctx, azdClient)
+	envName, endpoint, _, cred, inputErr := gatherPostdeployInputs(ctx, azdClient, environmentName)
 
 	activityProfile, profileErr := resolveServiceActivityProfile(svc, args.Project.Path)
 	if profileErr != nil {
@@ -537,14 +571,17 @@ func warnLegacySimpleTeamsArtifacts(proj *azdext.ProjectConfig, svc *azdext.Serv
 
 // postdownHandler cleans up saved session, conversation, and background Response state for agent services
 // that were torn down. This is best-effort — failures are logged but do not block azd down.
-func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+func postdownHandler(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	environmentName string,
+	args *azdext.ProjectEventArgs,
+) error {
+	envName, err := resolveEnvironmentName(ctx, azdClient, environmentName)
 	if err != nil {
-		log.Printf("postdown: failed to get current environment: %v", err)
+		log.Printf("postdown: failed to resolve environment: %v", err)
 		return nil
 	}
-
-	envName := envResp.Environment.Name
 
 	for _, svc := range args.Project.Services {
 		if svc.Host != AiAgentHost {
@@ -602,6 +639,7 @@ func cleanupAgentStateForKey(ctx context.Context, azdClient *azdext.AzdClient, a
 func envUpdate(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
+	envName string,
 	azdProject *azdext.ProjectConfig,
 	svc *azdext.ServiceConfig,
 	connections []project.Connection,
@@ -612,17 +650,12 @@ func envUpdate(
 		return fmt.Errorf("failed to parse foundry agent config: %w", err)
 	}
 
-	currentEnvResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return err
-	}
-
-	if err := kindEnvUpdate(ctx, azdClient, azdProject, svc, currentEnvResponse.Environment.Name); err != nil {
+	if err := kindEnvUpdate(ctx, azdClient, azdProject, svc, envName); err != nil {
 		return err
 	}
 
 	if foundryAgentConfig != nil && len(foundryAgentConfig.Resources) > 0 {
-		if err := resourcesEnvUpdate(ctx, foundryAgentConfig.Resources, azdClient, currentEnvResponse.Environment.Name); err != nil {
+		if err := resourcesEnvUpdate(ctx, foundryAgentConfig.Resources, azdClient, envName); err != nil {
 			return err
 		}
 	}
@@ -630,7 +663,7 @@ func envUpdate(
 	if len(connections) > 0 {
 		if err := connectionsEnvUpdate(
 			ctx, connections,
-			azdClient, currentEnvResponse.Environment.Name,
+			azdClient, envName,
 		); err != nil {
 			return err
 		}
@@ -639,7 +672,7 @@ func envUpdate(
 	if foundryAgentConfig != nil && len(foundryAgentConfig.ToolConnections) > 0 {
 		if err := toolConnectionsEnvUpdate(
 			ctx, foundryAgentConfig.ToolConnections,
-			azdClient, currentEnvResponse.Environment.Name,
+			azdClient, envName,
 		); err != nil {
 			return err
 		}

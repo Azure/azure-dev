@@ -146,7 +146,7 @@ func TestResolveMonitorAgentInfo_PrefersProjectService(t *testing.T) {
 		t, projectServer, &helpersPromptServer{}, envServer,
 	)
 
-	info, err := resolveMonitorAgentInfo(t.Context(), azdClient, "service-key", true)
+	info, err := resolveMonitorAgentInfo(t.Context(), azdClient, "service-key", true, "")
 	require.NoError(t, err)
 	assert.Equal(t, "service-key", info.ServiceName)
 	assert.Equal(t, "deployed-agent", info.AgentName)
@@ -162,7 +162,7 @@ func TestResolveMonitorAgentInfo_UsesDirectNameWithoutProject(t *testing.T) {
 	}
 	azdClient := newHelpersTestAzdClient(t, projectServer, &helpersPromptServer{})
 
-	info, err := resolveMonitorAgentInfo(t.Context(), azdClient, "hosted-agent", true)
+	info, err := resolveMonitorAgentInfo(t.Context(), azdClient, "hosted-agent", true, "")
 	require.NoError(t, err)
 	assert.Empty(t, info.ServiceName)
 	assert.Equal(t, "hosted-agent", info.AgentName)
@@ -181,7 +181,7 @@ func TestResolveMonitorAgentInfo_DoesNotUseDirectNameInsideProject(t *testing.T)
 	}}
 	azdClient := newHelpersTestAzdClient(t, projectServer, &helpersPromptServer{})
 
-	_, err := resolveMonitorAgentInfo(t.Context(), azdClient, "hosted-agent", true)
+	_, err := resolveMonitorAgentInfo(t.Context(), azdClient, "hosted-agent", true, "")
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "no azure.ai.agent service named 'hosted-agent'")
 }
@@ -194,7 +194,7 @@ func TestResolveMonitorAgentInfo_RequiresNameWithoutProject(t *testing.T) {
 	}
 	azdClient := newHelpersTestAzdClient(t, projectServer, &helpersPromptServer{})
 
-	_, err := resolveMonitorAgentInfo(t.Context(), azdClient, "", true)
+	_, err := resolveMonitorAgentInfo(t.Context(), azdClient, "", true, "")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
@@ -212,7 +212,7 @@ func TestResolveMonitorAgentInfo_DoesNotHideProjectTransportFailure(t *testing.T
 	}
 	azdClient := newHelpersTestAzdClient(t, projectServer, &helpersPromptServer{})
 
-	_, err := resolveMonitorAgentInfo(t.Context(), azdClient, "hosted-agent", true)
+	_, err := resolveMonitorAgentInfo(t.Context(), azdClient, "hosted-agent", true, "")
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "project service unavailable")
 }

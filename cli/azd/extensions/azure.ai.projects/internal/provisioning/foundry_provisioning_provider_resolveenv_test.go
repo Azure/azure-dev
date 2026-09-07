@@ -5,6 +5,7 @@ package provisioning
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -26,15 +27,20 @@ import (
 // empty, which is what triggers the prompt path), and records SetValue writes.
 type resolveEnvStubEnvServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
-	envName string
-	get     map[string]string
-	getErr  map[string]error
-	set     map[string]string
+	envName    string
+	currentErr error
+	get        map[string]string
+	getByEnv   map[string]map[string]string
+	getErr     map[string]error
+	set        map[string]string
 }
 
 func (s *resolveEnvStubEnvServer) GetCurrent(
 	context.Context, *azdext.EmptyRequest,
 ) (*azdext.EnvironmentResponse, error) {
+	if s.currentErr != nil {
+		return nil, s.currentErr
+	}
 	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: s.envName}}, nil
 }
 
@@ -44,7 +50,24 @@ func (s *resolveEnvStubEnvServer) GetValue(
 	if err := s.getErr[req.Key]; err != nil {
 		return nil, err
 	}
+	if values, ok := s.getByEnv[req.EnvName]; ok {
+		return &azdext.KeyValueResponse{Value: values[req.Key]}, nil
+	}
 	return &azdext.KeyValueResponse{Value: s.get[req.Key]}, nil
+}
+
+func (s *resolveEnvStubEnvServer) GetValues(
+	_ context.Context, req *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	values := s.get
+	if envValues, ok := s.getByEnv[req.Name]; ok {
+		values = envValues
+	}
+	keyValues := make([]*azdext.KeyValue, 0, len(values))
+	for key, value := range values {
+		keyValues = append(keyValues, &azdext.KeyValue{Key: key, Value: value})
+	}
+	return &azdext.KeyValueListResponse{KeyValues: keyValues}, nil
 }
 
 func (s *resolveEnvStubEnvServer) SetValue(
@@ -144,6 +167,42 @@ func TestResolveEnv_PromptsAndPersistsSubscriptionAndLocation(t *testing.T) {
 		"location should be persisted to the azd environment")
 }
 
+func TestResolveEnv_UsesCommandEnvironment(t *testing.T) {
+	env := &resolveEnvStubEnvServer{
+		currentErr: errors.New("no persisted environment is selected"),
+		get: map[string]string{
+			envKeySubscriptionID: "00000000-0000-0000-0000-000000000001",
+			envKeyLocation:       "westus2",
+			envKeyFoundryRG:      "rg-platform-foundry",
+		},
+	}
+	client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+	p := &FoundryProvisioningProvider{
+		azdClient:        client,
+		requestedEnvName: " selected ",
+	}
+
+	require.NoError(t, p.resolveEnv(t.Context()))
+	assert.Equal(t, "selected", p.envName)
+}
+
+func TestNetworkEnvMap_UsesResolvedEnvironment(t *testing.T) {
+	env := &resolveEnvStubEnvServer{
+		envName: "default",
+		getByEnv: map[string]map[string]string{
+			"default":  {"NETWORK_RESOURCE_ID": "from-default"},
+			"selected": {"NETWORK_RESOURCE_ID": "from-selected"},
+		},
+	}
+	client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+	p := &FoundryProvisioningProvider{
+		azdClient: client,
+		envName:   "selected",
+	}
+
+	assert.Equal(t, "from-selected", p.networkEnvMap(t.Context())["NETWORK_RESOURCE_ID"])
+}
+
 func TestResolveEnv_UsesVirtualEnvFromPreviousLayer(t *testing.T) {
 	env := &resolveEnvStubEnvServer{envName: "foundry-layer", get: map[string]string{}}
 	prompt := &resolveEnvStubPromptServer{}
@@ -197,6 +256,67 @@ func TestResolveEnv_LayerDefaultResourceGroupIsNotPersistedOrOwned(t *testing.T)
 	assert.NotContains(t, env.set, envKeyFoundryRG)
 }
 
+func TestResolveEnvironmentNameErrorsAreActionable(t *testing.T) {
+	resolvers := []struct {
+		name string
+		run  func(*FoundryProvisioningProvider, context.Context) error
+	}{
+		{
+			name: "greenfield",
+			run: func(provider *FoundryProvisioningProvider, ctx context.Context) error {
+				return provider.resolveEnv(ctx)
+			},
+		},
+		{
+			name: "brownfield",
+			run: func(provider *FoundryProvisioningProvider, ctx context.Context) error {
+				return provider.resolveEnvName(ctx)
+			},
+		},
+	}
+	failures := []struct {
+		name       string
+		currentErr error
+	}{
+		{
+			name:       "no current environment selected",
+			currentErr: status.Error(codes.NotFound, "no current azd environment is selected"),
+		},
+		{
+			name: "environment has no name",
+		},
+	}
+
+	for _, resolver := range resolvers {
+		t.Run(resolver.name, func(t *testing.T) {
+			for _, failure := range failures {
+				t.Run(failure.name, func(t *testing.T) {
+					env := &resolveEnvStubEnvServer{currentErr: failure.currentErr}
+					prompt := &resolveEnvStubPromptServer{}
+					client := newResolveEnvTestClient(t, env, prompt)
+					provider := &FoundryProvisioningProvider{azdClient: client}
+
+					err := resolver.run(provider, t.Context())
+					require.Error(t, err)
+					assert.Equal(t, "azd environment name is required", err.Error())
+
+					var local *azdext.LocalError
+					require.ErrorAs(t, err, &local)
+					assert.Equal(t, exterrors.CodeEnvironmentNotFound, local.Code)
+					assert.Equal(t, azdext.LocalErrorCategoryDependency, local.Category)
+					assert.Contains(t, local.Suggestion, "azd -e dev provision")
+					assert.Contains(t, local.Suggestion, `$env:AZD_ENVIRONMENT = "dev"; azd provision`)
+					assert.Contains(t, local.Suggestion, "azd env select dev")
+					assert.NotEmpty(t, local.Suggestion)
+
+					assert.Zero(t, prompt.subscriptionN)
+					assert.Zero(t, prompt.locationN)
+				})
+			}
+		})
+	}
+}
+
 func TestResolveEnv_NoPromptSubscriptionReturnsActionableError(t *testing.T) {
 	// Under `--no-prompt` the azd host returns a "prompt required" error. The
 	// provider must surface an actionable suggestion naming the env var so CI
@@ -215,7 +335,8 @@ func TestResolveEnv_NoPromptSubscriptionReturnsActionableError(t *testing.T) {
 	require.ErrorAs(t, err, &local)
 	assert.Equal(t, exterrors.CodeMissingAzureSubscription, local.Code)
 	assert.Equal(t, azdext.LocalErrorCategoryDependency, local.Category)
-	assert.Contains(t, local.Suggestion, envKeySubscriptionID)
+	assert.Contains(t, local.Suggestion,
+		`azd -e "foundry-bugbash" env set `+envKeySubscriptionID+" 11111111-1111-1111-1111-111111111111")
 	assert.Empty(t, env.set, "nothing should be persisted when the prompt fails")
 }
 
@@ -240,7 +361,59 @@ func TestResolveEnv_NoPromptLocationReturnsActionableError(t *testing.T) {
 	require.ErrorAs(t, err, &local)
 	assert.Equal(t, exterrors.CodeMissingAzureLocation, local.Code)
 	assert.Equal(t, azdext.LocalErrorCategoryDependency, local.Category)
-	assert.Contains(t, local.Suggestion, envKeyLocation)
+	assert.Contains(t, local.Suggestion, `azd -e "foundry-bugbash" env set `+envKeyLocation+" eastus2")
+}
+
+func TestResolveEnv_PromptFailuresIncludeExactEnvSetCommands(t *testing.T) {
+	tests := []struct {
+		name        string
+		envValues   map[string]string
+		prompt      *resolveEnvStubPromptServer
+		wantCode    string
+		wantCommand string
+	}{
+		{
+			name:      "subscription",
+			envValues: map[string]string{},
+			prompt: &resolveEnvStubPromptServer{
+				subscriptionErr: status.Error(codes.Internal, "subscription prompt failed"),
+			},
+			wantCode: exterrors.CodeMissingAzureSubscription,
+			wantCommand: `azd -e "foundry-bugbash" env set ` + envKeySubscriptionID +
+				" 11111111-1111-1111-1111-111111111111",
+		},
+		{
+			name: "location",
+			envValues: map[string]string{
+				envKeySubscriptionID: "00000000-0000-0000-0000-000000000001",
+			},
+			prompt: &resolveEnvStubPromptServer{
+				locationErr: status.Error(codes.Internal, "location prompt failed"),
+			},
+			wantCode:    exterrors.CodeMissingAzureLocation,
+			wantCommand: `azd -e "foundry-bugbash" env set ` + envKeyLocation + " eastus2",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			env := &resolveEnvStubEnvServer{
+				envName: "foundry-bugbash",
+				get:     test.envValues,
+			}
+			client := newResolveEnvTestClient(t, env, test.prompt)
+			provider := &FoundryProvisioningProvider{azdClient: client}
+
+			err := provider.resolveEnv(t.Context())
+			require.Error(t, err)
+
+			var local *azdext.LocalError
+			require.ErrorAs(t, err, &local)
+			assert.Equal(t, test.wantCode, local.Code)
+			assert.Contains(t, local.Suggestion, test.wantCommand)
+			assert.NotEmpty(t, local.Suggestion)
+		})
+	}
 }
 
 func TestResolveEnv_CancelledSubscriptionPromptReturnsCancelled(t *testing.T) {

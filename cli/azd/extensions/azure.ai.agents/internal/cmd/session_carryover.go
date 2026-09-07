@@ -125,6 +125,7 @@ func classifyStopSessionErr(err error) stopSessionOutcome {
 func captureSessionForCarryover(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
+	envName string,
 	svc *azdext.ServiceConfig,
 ) {
 	if !sessionCarryoverEnabled() || svc == nil || azdClient == nil {
@@ -137,8 +138,7 @@ func captureSessionForCarryover(
 	delete(pendingSessionCarryover.byService, svc.Name)
 	pendingSessionCarryover.Unlock()
 
-	envName, err := currentEnvName(ctx, azdClient)
-	if err != nil || envName == "" {
+	if envName == "" {
 		return
 	}
 

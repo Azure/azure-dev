@@ -100,6 +100,61 @@ func endpointHost(endpoint string) string {
 	return u.Hostname()
 }
 
+func missingAzureSubscriptionIDError(environmentName string) error {
+	const example = "11111111-1111-1111-1111-111111111111"
+	return missingAzdEnvironmentValueError(
+		exterrors.CodeMissingAzureSubscription,
+		"Azure subscription ID",
+		"AZURE_SUBSCRIPTION_ID",
+		example,
+		"AZURE_SUBSCRIPTION_ID is required for agent deployment",
+		environmentName,
+	)
+}
+
+func missingAzureLocationError(environmentName string) error {
+	const example = "eastus2"
+	return missingAzdEnvironmentValueError(
+		exterrors.CodeMissingAzureLocation,
+		"Azure location",
+		"AZURE_LOCATION",
+		example,
+		"AZURE_LOCATION is required for hosted agent code deployment",
+		environmentName,
+	)
+}
+
+func missingFoundryProjectEndpointError(message, environmentName string) error {
+	const example = "https://contoso.services.ai.azure.com/api/projects/my-project"
+	return missingAzdEnvironmentValueError(
+		exterrors.CodeMissingAiProjectEndpoint,
+		"Foundry project endpoint",
+		"FOUNDRY_PROJECT_ENDPOINT",
+		example,
+		message,
+		environmentName,
+	)
+}
+
+func missingAzdEnvironmentValueError(code, inputName, key, exampleValue, message, environmentName string) error {
+	return exterrors.MissingInputDependency(
+		code,
+		message,
+		exterrors.RequiredInput{
+			Name:        inputName,
+			Description: fmt.Sprintf("Set %s in the selected azd environment.", key),
+			Sources: []exterrors.InputSource{
+				{
+					Kind:         exterrors.InputSourceEnvironment,
+					Name:         key,
+					ExampleValue: exampleValue,
+					Example:      fmt.Sprintf("azd -e %q env set %s %s", environmentName, key, exampleValue),
+				},
+			},
+		},
+	)
+}
+
 // buildInvocationsProtocolURL builds the per-agent HTTPS URL for the "invocations" protocol.
 func buildInvocationsProtocolURL(projectEndpoint, agentName string) string {
 	return fmt.Sprintf(
@@ -191,6 +246,7 @@ type AgentServiceTargetProvider struct {
 	projectServices       map[string]*azdext.ServiceConfig
 	dependencyEnabled     dependencyEnabled
 	dependencyEnv         map[string]string
+	environmentName       string
 }
 
 const (
@@ -199,9 +255,10 @@ const (
 )
 
 // NewAgentServiceTargetProvider creates a new AgentServiceTargetProvider instance
-func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTargetProvider {
+func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient, environmentName string) azdext.ServiceTargetProvider {
 	return &AgentServiceTargetProvider{
-		azdClient: azdClient,
+		azdClient:       azdClient,
+		environmentName: strings.TrimSpace(environmentName),
 	}
 }
 
@@ -373,12 +430,7 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 
 	subscriptionId := resp.Value
 	if subscriptionId == "" {
-		return exterrors.Dependency(
-			exterrors.CodeMissingAzureSubscription,
-			"AZURE_SUBSCRIPTION_ID is required: environment variable was not found in the current azd environment",
-			"run 'azd env get-values' to verify environment values, or initialize/project-bind "+
-				"with 'azd ai agent init --project-id ...'",
-		)
+		return missingAzureSubscriptionIDError(p.env.Name)
 	}
 
 	// Get the tenant ID
@@ -494,6 +546,18 @@ func (p *AgentServiceTargetProvider) ensureEnv(ctx context.Context) error {
 	if p.env != nil {
 		return nil
 	}
+	if p.environmentName != "" {
+		envResp, err := p.azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{Name: p.environmentName})
+		if err != nil {
+			return exterrors.Dependency(
+				exterrors.CodeEnvironmentNotFound,
+				fmt.Sprintf("failed to get environment %q: %s", p.environmentName, err),
+				fmt.Sprintf("run 'azd env new %q' to create the environment", p.environmentName),
+			)
+		}
+		p.env = envResp.Environment
+		return nil
+	}
 	currEnv, err := p.azdClient.Environment().GetCurrent(ctx, nil)
 	if err != nil {
 		return exterrors.Dependency(
@@ -600,10 +664,9 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	}
 	// Check if required environment variables are set
 	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
-		return nil, exterrors.Dependency(
-			exterrors.CodeMissingAiProjectEndpoint,
-			"FOUNDRY_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
-			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
+		return nil, missingFoundryProjectEndpointError(
+			"FOUNDRY_PROJECT_ENDPOINT is required to resolve deployed agent endpoints",
+			p.env.Name,
 		)
 	}
 
@@ -1786,11 +1849,9 @@ func (p *AgentServiceTargetProvider) provisionMemoryStores(
 	}
 
 	if projectEndpoint == "" {
-		return exterrors.Dependency(
-			exterrors.CodeMissingAiProjectEndpoint,
+		return missingFoundryProjectEndpointError(
 			"cannot provision memory stores: the Foundry project endpoint is not set",
-			"run 'azd provision' or connect to an existing project via "+
-				"'azd ai agent init --project-id <resource-id>'",
+			p.env.Name,
 		)
 	}
 
@@ -2110,10 +2171,9 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	extraOptions []agent_yaml.AgentBuildOption,
 ) (*deployPrepResult, error) {
 	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
-		return nil, exterrors.Dependency(
-			exterrors.CodeMissingAiProjectEndpoint,
-			"FOUNDRY_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
-			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
+		return nil, missingFoundryProjectEndpointError(
+			"FOUNDRY_PROJECT_ENDPOINT is required for agent deployment",
+			p.env.Name,
 		)
 	}
 
@@ -2445,11 +2505,9 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 
 	projectEndpoint := azdEnv["FOUNDRY_PROJECT_ENDPOINT"]
 	if projectEndpoint == "" {
-		return nil, exterrors.Dependency(
-			exterrors.CodeMissingAiProjectEndpoint,
-			"cannot deploy voice agent: the Foundry project endpoint is not set",
-			"run 'azd provision' or connect to an existing project via "+
-				"'azd ai agent init --project-id <resource-id>'",
+		return nil, missingFoundryProjectEndpointError(
+			"cannot deploy voice agent: FOUNDRY_PROJECT_ENDPOINT is not set",
+			p.env.Name,
 		)
 	}
 
@@ -2947,11 +3005,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	// Validate that AZURE_LOCATION is set (region validation is handled server-side;
 	// code deploy is supported in all hosted-agent regions).
 	if strings.TrimSpace(azdEnv["AZURE_LOCATION"]) == "" {
-		return nil, exterrors.Dependency(
-			exterrors.CodeAgentCreateFailed,
-			"AZURE_LOCATION is not set; the Foundry project region is required for code deploy",
-			"run 'azd provision' or 'azd ai agent init' to set the project location",
-		)
+		return nil, missingAzureLocationError(p.env.Name)
 	}
 
 	// Find the ZIP artifact from Package phase

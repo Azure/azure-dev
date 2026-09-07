@@ -20,7 +20,7 @@ import (
 func stubAzdHostedSources(t *testing.T, sources azdHostedSources, err error) {
 	t.Helper()
 	orig := readAzdHostedSourcesFunc
-	readAzdHostedSourcesFunc = func(context.Context) (azdHostedSources, error) {
+	readAzdHostedSourcesFunc = func(context.Context, string) (azdHostedSources, error) {
 		return sources, err
 	}
 	t.Cleanup(func() { readAzdHostedSourcesFunc = orig })

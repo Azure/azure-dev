@@ -151,6 +151,30 @@ func Test_PromptService_Prompt_NoPromptRequiredWithoutDefault(t *testing.T) {
 	requirePromptRequiredError(t, err, "Enter name:")
 }
 
+func Test_PromptService_Prompt_NoPromptPreservesPromptMessageOverGRPC(t *testing.T) {
+	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
+	promptSvc := NewPromptService(nil, nil, nil, globalOptions)
+	_, ctx, client, cleanup := setupTestServer(t, promptSvc)
+	defer cleanup()
+
+	_, err := client.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:  "Enter name:",
+			Required: true,
+		},
+	})
+	require.Error(t, err)
+
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.FailedPrecondition, st.Code())
+	require.Equal(t, input.DefaultPromptRequiredMessage, st.Message())
+
+	actionable := azdext.ActionableErrorDetailFromStatus(st)
+	require.NotNil(t, actionable)
+	require.Contains(t, actionable.GetSuggestion(), "Enter name:")
+}
+
 func Test_PromptService_Prompt_NoPromptNotRequiredWithoutDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
 	service := NewPromptService(nil, nil, nil, globalOptions)

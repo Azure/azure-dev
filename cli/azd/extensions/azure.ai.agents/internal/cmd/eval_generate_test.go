@@ -54,6 +54,26 @@ func TestNewEvalGenerateCommand_Flags(t *testing.T) {
 	}
 }
 
+func TestMissingEvalGenerateInputError(t *testing.T) {
+	t.Parallel()
+
+	cmd := newEvalGenerateCommand(&azdext.ExtensionContext{})
+	assert.Nil(t, cmd.Flags().Lookup("config"))
+
+	err := missingEvalGenerateInputError()
+	local, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+
+	suggestion := local.Suggestion
+	assert.NotContains(t, suggestion, "--config")
+	assert.NotContains(t, suggestion, "--evaluators")
+	assert.Contains(t, suggestion,
+		`azd ai agent eval generate --gen-instruction "This agent handles restaurant reservations."`)
+	assert.Contains(t, suggestion, "azd ai agent eval generate --gen-instruction-file ./instructions.md")
+	assert.Contains(t, suggestion,
+		`azd ai agent eval generate --dataset ./tests/golden.jsonl --evaluator builtin.task_adherence`)
+}
+
 func TestNewEvalGenerateCommand_NoArgs(t *testing.T) {
 	t.Parallel()
 	cmd := newEvalGenerateCommand(&azdext.ExtensionContext{})

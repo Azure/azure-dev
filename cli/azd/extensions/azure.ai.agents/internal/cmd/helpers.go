@@ -622,6 +622,7 @@ type AgentServiceInfo struct {
 	Version         string // deployed agent version from env
 	AgentEndpoint   string // full AGENT_{SVC}_ENDPOINT URL (includes name + version)
 	ProjectEndpoint string // adopted project endpoint used by a verified brownfield fallback
+	EnvironmentName string // azd environment used to resolve deployment state
 }
 
 // promptForAgentService prompts the user to select one of multiple azure.ai.agent services.
@@ -794,6 +795,7 @@ type brownfieldAgentExistenceResolver func(context.Context, string, string) (boo
 type agentServiceResolutionOptions struct {
 	allowBrownfieldInlineName bool
 	brownfieldAgentExists     brownfieldAgentExistenceResolver
+	environmentName           string
 }
 
 type agentServiceResolutionOption func(*agentServiceResolutionOptions)
@@ -832,6 +834,12 @@ func withBrownfieldAgentExistenceResolver(
 	}
 }
 
+func withEnvironmentName(environmentName string) agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.environmentName = strings.TrimSpace(environmentName)
+	}
+}
+
 // resolveAgentServiceFromProject finds the azure.ai.agent service in azure.yaml
 // and resolves its deployed agent name and version from the azd environment.
 // Callers may explicitly opt into the brownfield inline-name fallback; deployed
@@ -857,19 +865,27 @@ func resolveAgentServiceFromProject(
 
 	// Resolve deployed agent name and version from the azd environment. The
 	// deployed name wins because it reflects the resource actually created.
-	envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	var envResponse *azdext.EnvironmentResponse
+	if resolutionOptions.environmentName != "" {
+		envResponse, err = azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{
+			Name: resolutionOptions.environmentName,
+		})
+	} else {
+		envResponse, err = azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	}
 	if err != nil {
-		if resolutionOptions.allowBrownfieldInlineName {
-			return info, fmt.Errorf("getting current environment for agent service %q: %w", svc.Name, err)
+		if resolutionOptions.environmentName != "" || resolutionOptions.allowBrownfieldInlineName {
+			return info, fmt.Errorf("getting environment for agent service %q: %w", svc.Name, err)
 		}
 		return info, nil
 	}
 	if envResponse == nil || envResponse.Environment == nil || envResponse.Environment.Name == "" {
 		if resolutionOptions.allowBrownfieldInlineName {
-			return info, fmt.Errorf("current environment is not available for agent service %q", svc.Name)
+			return info, fmt.Errorf("environment is not available for agent service %q", svc.Name)
 		}
 		return info, nil
 	}
+	info.EnvironmentName = envResponse.Environment.Name
 
 	serviceKey := toServiceKey(svc.Name)
 	nameKey := fmt.Sprintf("AGENT_%s_NAME", serviceKey)
@@ -1057,6 +1073,59 @@ func toServiceKey(serviceName string) string {
 	key := strings.ReplaceAll(serviceName, " ", "_")
 	key = strings.ReplaceAll(key, "-", "_")
 	return strings.ToUpper(key)
+}
+
+func missingDeployedAgentStateError(serviceName, state, environmentName string) error {
+	return missingDeployedAgentStateErrorWithDescription(serviceName, state, environmentName, "")
+}
+
+func missingCodeDownloadAgentStateError(serviceName, environmentName string) error {
+	return missingDeployedAgentStateErrorWithDescription(
+		serviceName,
+		"name",
+		environmentName,
+		" The positional argument for code download is the azure.yaml service name, not a Foundry agent name.",
+	)
+}
+
+func missingDeployedAgentStateErrorWithDescription(
+	serviceName, state, environmentName, descriptionSuffix string,
+) error {
+	serviceKey := toServiceKey(serviceName)
+	nameKey := fmt.Sprintf("AGENT_%s_NAME", serviceKey)
+	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
+	deployCommand := "azd deploy"
+	if environmentName = strings.TrimSpace(environmentName); environmentName != "" {
+		deployCommand = fmt.Sprintf("azd --environment %q deploy", environmentName)
+	}
+
+	inputName := "deployed agent name"
+	expectedKey := nameKey
+	if state == "version" {
+		inputName = "deployed agent version"
+		expectedKey = versionKey
+	}
+	return exterrors.MissingInputDependency(
+		exterrors.CodeAgentNotDeployed,
+		fmt.Sprintf("%s could not be resolved for service %q", inputName, serviceName),
+		exterrors.RequiredInput{
+			Name: inputName,
+			Description: fmt.Sprintf(
+				"The selected azd environment must contain %s and %s for service %q.%s",
+				nameKey,
+				versionKey,
+				serviceName,
+				descriptionSuffix,
+			),
+			Sources: []exterrors.InputSource{
+				{
+					Kind:    exterrors.InputSourceEnvironment,
+					Name:    expectedKey,
+					Example: deployCommand,
+				},
+			},
+		},
+	)
 }
 
 // resolveStartupCommandForInit detects the startup command from the project source directory.

@@ -75,7 +75,7 @@ func stashedSession(service string) (string, bool) {
 func TestCaptureSessionForCarryover_NotOptedInIsNoOp(t *testing.T) {
 	// Env var unset -> disabled. nil azdClient must not be dereferenced.
 	svc := &azdext.ServiceConfig{Name: "capture-disabled", Host: AiAgentHost}
-	captureSessionForCarryover(t.Context(), nil, svc)
+	captureSessionForCarryover(t.Context(), nil, "", svc)
 
 	if _, ok := stashedSession(svc.Name); ok {
 		t.Fatalf("expected no session stashed when service has not opted in")
@@ -84,7 +84,7 @@ func TestCaptureSessionForCarryover_NotOptedInIsNoOp(t *testing.T) {
 
 func TestCaptureSessionForCarryover_NilServiceIsNoOp(t *testing.T) {
 	// nil service and nil client: must return without panic.
-	captureSessionForCarryover(t.Context(), nil, nil)
+	captureSessionForCarryover(t.Context(), nil, "", nil)
 }
 
 func TestCarryOverSessionAfterDeploy_NotOptedInIsNoOp(t *testing.T) {

@@ -87,6 +87,98 @@ type handlerWrapper struct {
 	progressIndex int // parameter index for progress callback
 }
 
+const maxPendingResponses = 50
+
+type pendingResponse[TMessage any] struct {
+	message  *TMessage
+	progress bool
+}
+
+type responseDispatcher[TMessage any] struct {
+	ctx     context.Context
+	ch      chan *TMessage
+	mu      sync.Mutex
+	queue   []pendingResponse[TMessage]
+	readyCh chan struct{}
+	doneCh  chan struct{}
+	stopped bool
+}
+
+func newResponseDispatcher[TMessage any](ctx context.Context, ch chan *TMessage) *responseDispatcher[TMessage] {
+	dispatcher := &responseDispatcher[TMessage]{
+		ctx:     ctx,
+		ch:      ch,
+		readyCh: make(chan struct{}, 1),
+		doneCh:  make(chan struct{}),
+	}
+	go dispatcher.run()
+	return dispatcher
+}
+
+func (d *responseDispatcher[TMessage]) enqueue(msg *TMessage, progress bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.stopped {
+		return
+	}
+
+	pending := pendingResponse[TMessage]{message: msg, progress: progress}
+	if len(d.queue) < maxPendingResponses {
+		d.queue = append(d.queue, pending)
+	} else if !progress || d.queue[len(d.queue)-1].progress {
+		d.queue[len(d.queue)-1] = pending
+	}
+	select {
+	case d.readyCh <- struct{}{}:
+	default:
+	}
+}
+
+func (d *responseDispatcher[TMessage]) stop() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if !d.stopped {
+		d.stopped = true
+		d.queue = nil
+		close(d.doneCh)
+	}
+}
+
+func (d *responseDispatcher[TMessage]) run() {
+	defer close(d.ch)
+	defer d.stop()
+
+	for {
+		select {
+		case <-d.ctx.Done():
+			return
+		case <-d.doneCh:
+			return
+		case <-d.readyCh:
+			for {
+				d.mu.Lock()
+				if len(d.queue) == 0 {
+					d.mu.Unlock()
+					break
+				}
+				msg := d.queue[0].message
+				d.queue = d.queue[1:]
+				d.mu.Unlock()
+
+				select {
+				case <-d.ctx.Done():
+					return
+				case <-d.doneCh:
+					return
+				case d.ch <- msg:
+				}
+			}
+		}
+	}
+}
+
 // MessageBroker handles bidirectional message routing for gRPC streams.
 // It supports both client pattern (request/response correlation via RequestId)
 // and server pattern (handler registration for incoming requests).
@@ -100,10 +192,10 @@ type MessageBroker[TMessage any] struct {
 	logger        *log.Logger // Private logger for broker trace output; can be silenced independently
 	stream        BidiStream[TMessage]
 	envelope      MessageEnvelope[TMessage]
-	name          string                                     // Name identifier for logging purposes
-	responseChans syncmap.Map[string, chan *TMessage]        // Used for storing response channels by request id
-	handlers      syncmap.Map[reflect.Type, *handlerWrapper] // Used for storing message handlers by request type
-	sendMu        sync.Mutex                                 // Protects concurrent stream.Send() calls
+	name          string                                             // Name identifier for logging purposes
+	responseChans syncmap.Map[string, *responseDispatcher[TMessage]] // Routes responses serially by request id
+	handlers      syncmap.Map[reflect.Type, *handlerWrapper]         // Used for storing message handlers by request type
+	sendMu        sync.Mutex                                         // Protects concurrent stream.Send() calls
 
 	// Ready signaling for when the broker starts receiving messages
 	readyCh   chan struct{} // Closed when Run() starts, signals readiness to all waiters
@@ -232,8 +324,12 @@ func (mb *MessageBroker[TMessage]) SendAndWait(ctx context.Context, msg *TMessag
 	mb.logger.Printf("[%s] [RequestId=%s] Sending request, MessageType=%v", mb.name, requestId, msgType)
 
 	ch := make(chan *TMessage, 1)
-	mb.responseChans.Store(requestId, ch)
-	defer mb.responseChans.Delete(requestId)
+	dispatcher := newResponseDispatcher(ctx, ch)
+	mb.responseChans.Store(requestId, dispatcher)
+	defer func() {
+		mb.responseChans.Delete(requestId)
+		dispatcher.stop()
+	}()
 
 	// Send request in goroutine to ensure we're waiting before response arrives
 	errCh := make(chan error, 1)
@@ -337,11 +433,13 @@ func (mb *MessageBroker[TMessage]) SendAndWaitWithProgress(
 
 	// Use a larger buffer to handle multiple progress messages without blocking the dispatcher
 	ch := make(chan *TMessage, 50)
+	dispatcher := newResponseDispatcher(ctx, ch)
 	mb.logger.Printf("[%s] [RequestId=%s] Registering channel, MessageType=%v", mb.name, requestId, msgType)
-	mb.responseChans.Store(requestId, ch)
+	mb.responseChans.Store(requestId, dispatcher)
 	defer func() {
 		mb.logger.Printf("[%s] [RequestId=%s] Cleaning up channel", mb.name, requestId)
 		mb.responseChans.Delete(requestId)
+		dispatcher.stop()
 	}()
 
 	// Send request in goroutine to ensure we're waiting before response arrives
@@ -485,9 +583,9 @@ func (mb *MessageBroker[TMessage]) Run(ctx context.Context) error {
 				return fmt.Errorf("stream receive failed: %w", err)
 			}
 
-			// Process the received message asynchronously
-			// This allows the dispatcher to continue receiving while handlers execute
-			go mb.processMessage(ctx, resp)
+			// Route received messages in stream order. Request handlers remain
+			// asynchronous so the dispatcher can continue receiving while they execute.
+			mb.processMessage(ctx, resp)
 		}
 	}
 }
@@ -502,14 +600,14 @@ func (mb *MessageBroker[TMessage]) processMessage(ctx context.Context, resp *TMe
 	// Check if this is a progress message - always route to channel, never to handler
 	if mb.envelope.IsProgressMessage(resp) {
 		mb.logger.Printf("[%s] Received progress message: RequestId=%s, MessageType=%v", mb.name, requestId, msgType)
-		if ch, ok := mb.responseChans.Load(requestId); ok {
+		if dispatcher, ok := mb.responseChans.Load(requestId); ok {
 			mb.logger.Printf(
 				"[%s] Dispatching progress message to channel for RequestId=%s, MessageType=%v",
 				mb.name,
 				requestId,
 				msgType,
 			)
-			ch <- resp
+			dispatcher.enqueue(resp, true)
 		} else {
 			mb.logger.Printf(
 				"[%s] WARNING: No channel found for progress message RequestId=%s, MessageType=%v",
@@ -525,29 +623,19 @@ func (mb *MessageBroker[TMessage]) processMessage(ctx context.Context, resp *TMe
 
 	// Try to route to channel first (client pattern - awaiting response)
 	if requestId != "" {
-		if ch, ok := mb.responseChans.Load(requestId); ok {
-			// Warn when channel buffer is actually nearly full
-			if cap(ch) > 1 && len(ch) >= cap(ch)-1 {
-				mb.logger.Printf(
-					"[%s] WARNING: Channel buffer nearly full for RequestId=%s (len=%d, cap=%d)",
-					mb.name,
-					requestId,
-					len(ch),
-					cap(ch),
-				)
-			}
-
+		if dispatcher, ok := mb.responseChans.Load(requestId); ok {
 			mb.logger.Printf("[%s] Dispatching message to channel for RequestId=%s, MessageType=%v",
 				mb.name, requestId, msgType)
-			ch <- resp
+			dispatcher.enqueue(resp, false)
 			mb.logger.Printf("[%s] Message dispatched successfully to RequestId=%s, MessageType=%v",
 				mb.name, requestId, msgType)
 			return
 		}
 	}
 
-	// No channel found, try to route to handler (server pattern - incoming request)
-	mb.processHandlerRequest(ctx, resp, requestId, msgType)
+	// No channel found, route to a handler asynchronously (server pattern -
+	// incoming request) so one long-running handler does not block the stream.
+	go mb.processHandlerRequest(ctx, resp, requestId, msgType)
 }
 
 // processHandlerRequest extracts the inner message, finds the appropriate handler,
@@ -708,8 +796,8 @@ func (mb *MessageBroker[TMessage]) createProgressFunc(ctx context.Context, reque
 // Close gracefully shuts down the broker (optional, for cleanup)
 func (mb *MessageBroker[TMessage]) Close() {
 	// Close all pending channels
-	mb.responseChans.Range(func(key string, ch chan *TMessage) bool {
-		close(ch)
+	mb.responseChans.Range(func(key string, dispatcher *responseDispatcher[TMessage]) bool {
+		dispatcher.stop()
 		mb.responseChans.Delete(key)
 		return true
 	})

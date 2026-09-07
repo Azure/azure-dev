@@ -94,6 +94,47 @@ func TestProjectAddRejectsExplicitForceWithoutTarget(t *testing.T) {
 	assert.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
 }
 
+func TestConfirmExplicitProjectReplacementUsesEnvironmentEndpoint(t *testing.T) {
+	const (
+		oldEndpoint = "https://old.services.ai.azure.com/api/projects/old"
+		newEndpoint = "https://new.services.ai.azure.com/api/projects/new"
+	)
+	target, err := resolvedProjectFromEndpoint(newEndpoint)
+	require.NoError(t, err)
+	values := map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT": oldEndpoint,
+	}
+
+	err = confirmExplicitProjectReplacement(
+		t.Context(),
+		nil,
+		target,
+		nil,
+		values,
+		&projectAddFlags{
+			projectEndpoint: newEndpoint,
+			noPrompt:        true,
+		},
+	)
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, "project_replacement_requires_force", localErr.Code)
+
+	require.NoError(t, confirmExplicitProjectReplacement(
+		t.Context(),
+		nil,
+		target,
+		nil,
+		values,
+		&projectAddFlags{
+			projectEndpoint: newEndpoint,
+			force:           true,
+			noPrompt:        true,
+		},
+	))
+}
+
 func TestWriteTerraformEjectedInfra(t *testing.T) {
 	for _, test := range []struct {
 		name       string

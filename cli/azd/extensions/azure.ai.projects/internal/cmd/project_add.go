@@ -654,6 +654,9 @@ func confirmExplicitProjectReplacement(
 	if service != nil {
 		oldEndpoint = serviceEndpoint(service.Resolved)
 	}
+	if oldEndpoint == "" {
+		oldEndpoint = strings.TrimSpace(values["FOUNDRY_PROJECT_ENDPOINT"])
+	}
 	oldID := strings.TrimSpace(values["AZURE_AI_PROJECT_ID"])
 	if (oldEndpoint == "" && oldID == "") ||
 		(oldEndpoint == "" || equalProjectEndpoint(oldEndpoint, target.Endpoint)) &&
@@ -1835,15 +1838,13 @@ func writeTerraformEjectedInfraAt(
 	if err := writeJSONFile(filepath.Join(infraDir, module+".tfvars.json"), variables); err != nil {
 		return fmt.Errorf("write Terraform variables: %w", err)
 	}
-	if layer {
-		// #nosec G306
-		if err := os.WriteFile(
-			filepath.Join(infraDir, foundryEjectionMarker),
-			[]byte(foundryTerraformMarkerVersion),
-			0644,
-		); err != nil {
-			return fmt.Errorf("write Terraform ownership marker: %w", err)
-		}
+	// #nosec G306
+	if err := os.WriteFile(
+		filepath.Join(infraDir, foundryEjectionMarker),
+		[]byte(foundryTerraformMarkerVersion),
+		0644,
+	); err != nil {
+		return fmt.Errorf("write Terraform ownership marker: %w", err)
 	}
 	return nil
 }

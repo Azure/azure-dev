@@ -751,6 +751,89 @@ services:
 	assert.Equal(t, azureYAML, after)
 }
 
+func TestProjectDeploymentAddRejectsEditedEjectedTerraform(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+	azureYAML := []byte(`name: test
+infra:
+  provider: microsoft.foundry
+services:
+  project:
+    host: azure.ai.project
+    deployments:
+      - name: chat
+        model: {format: OpenAI, name: gpt-4.1, version: "2025-04-14"}
+        sku: {name: GlobalStandard, capacity: 10}
+`)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		azureYAML,
+		0600,
+	))
+
+	client, projectServer, _, aiServer, _ :=
+		newSelfInitializingDeploymentClient(t, root)
+	projectServer.project.Infra = &azdext.InfraOptions{
+		Provider: provisioningFoundryProvider,
+	}
+	projectServer.project.Services["project"] = &azdext.ServiceConfig{
+		Name: "project",
+		Host: aiProjectHost,
+	}
+	projectServer.services["project"] = map[string]any{}
+
+	require.NoError(t, ejectProjectInfra(
+		t.Context(),
+		client,
+		root,
+		"project",
+		"terraform",
+	))
+
+	infraDir := filepath.Join(root, "infra")
+	entrypointPath := filepath.Join(infraDir, "main.tf")
+	// #nosec G304
+	entrypoint, err := os.ReadFile(entrypointPath)
+	require.NoError(t, err)
+	oldAccount := []byte(`resource "azapi_resource" "foundry_account"`)
+	newAccount := []byte(`resource "azapi_resource" "edited_foundry_account"`)
+	oldProject := []byte(`resource "azapi_resource" "project"`)
+	newProject := []byte(`resource "azapi_resource" "edited_project"`)
+	require.Contains(t, string(entrypoint), string(oldAccount))
+	require.Contains(t, string(entrypoint), string(oldProject))
+	entrypoint = bytes.Replace(entrypoint, oldAccount, newAccount, 1)
+	entrypoint = bytes.Replace(entrypoint, oldProject, newProject, 1)
+	// #nosec G703 -- entrypointPath is inside the test project directory.
+	require.NoError(t, os.WriteFile(entrypointPath, entrypoint, 0600))
+
+	action := &ProjectDeploymentAddAction{
+		client: client,
+		flags: &projectDeploymentFlags{
+			model:  "gpt-4.1",
+			output: "none",
+		},
+		extCtx: &azdext.ExtensionContext{
+			Environment:  "test",
+			NoPrompt:     true,
+			OutputFormat: "none",
+		},
+	}
+	err = action.Run(t.Context())
+	require.Error(t, err)
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Equal(t, exterrors.CodeProjectDeploymentEjected, localErr.Code)
+	assert.Contains(t, localErr.Message, "main.tfvars.json")
+	assert.False(t, projectServer.deploymentSet)
+	assert.Equal(t, 0, aiServer.calls)
+
+	// #nosec G304 -- path is inside the test project directory.
+	after, readErr := os.ReadFile(filepath.Join(root, "azure.yaml"))
+	require.NoError(t, readErr)
+	assert.Equal(t, azureYAML, after)
+}
+
 func TestProjectDeploymentEjectedInfraError(t *testing.T) {
 	err := projectDeploymentEjectedInfraError(
 		`C:\project\infra\main.parameters.json`,

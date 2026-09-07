@@ -684,8 +684,10 @@ func confirmExplicitProjectReplacement(
 		Options: &azdext.SelectOptions{
 			Message: fmt.Sprintf(
 				"Replace the configured project %q with %q?",
-				firstNonEmpty(oldEndpoint, oldID),
-				firstNonEmpty(target.Endpoint, target.ResourceId),
+				redactProjectEndpoint(firstNonEmpty(oldEndpoint, oldID)),
+				redactProjectEndpoint(
+					firstNonEmpty(target.Endpoint, target.ResourceId),
+				),
 			),
 			Choices: choices,
 		},

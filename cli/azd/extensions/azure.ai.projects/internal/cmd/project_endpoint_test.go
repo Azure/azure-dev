@@ -98,6 +98,29 @@ func TestResolvedProjectFromEndpointPreservesPathWarning(t *testing.T) {
 	assert.True(t, project.EndpointPathWarning)
 }
 
+func TestRedactProjectEndpoint(t *testing.T) {
+	const (
+		username = "endpoint-user"
+		password = "endpoint-password"
+		token    = "endpoint-token"
+	)
+	raw := "https://" + username + ":" + password +
+		"@account.services.ai.azure.com/api/projects/project" +
+		"?sig=" + token + "#fragment"
+
+	redacted := redactProjectEndpoint(raw)
+
+	assert.Equal(
+		t,
+		"https://account.services.ai.azure.com/api/projects/project",
+		redacted,
+	)
+	assert.NotContains(t, redacted, username)
+	assert.NotContains(t, redacted, password)
+	assert.NotContains(t, redacted, token)
+	assert.NotContains(t, redacted, "fragment")
+}
+
 func TestWriteProjectEndpointWarningOutput(t *testing.T) {
 	tests := []struct {
 		name     string

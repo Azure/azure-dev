@@ -580,6 +580,43 @@ func TestSelectModelDeploymentUsesSkuBaselineForMissingCapacity(t *testing.T) {
 	assert.Equal(t, 100, selected.Deployment.Sku.Capacity)
 }
 
+func TestSelectModelDeploymentRejectsUnappliedCapacity(t *testing.T) {
+	root := t.TempDir()
+	client, _, _, aiServer, _ := newSelfInitializingDeploymentClient(t, root)
+	aiServer.deployment = &azdext.AiModelDeployment{
+		ModelName: "gpt-4.1",
+		Format:    "OpenAI",
+		Version:   "2025-04-14",
+		Location:  "eastus",
+		Sku: &azdext.AiModelSku{
+			Name:            "GlobalStandard",
+			MinCapacity:     100,
+			CapacityStep:    100,
+			DefaultCapacity: 100,
+		},
+		Capacity: 100,
+	}
+
+	_, err := selectModelDeployment(
+		t.Context(),
+		client,
+		&azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				SubscriptionId: "subscription",
+				Location:       "eastus",
+			},
+		},
+		modelSelection{Name: "gpt-4.1"},
+		deploymentSelectionOptions{Capacity: 1},
+		true,
+	)
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, "model_deployment_capacity_invalid", localErr.Code)
+	assert.Contains(t, err.Error(), "capacity 1")
+}
+
 func TestResolveDeploymentCandidatesPreservesFiltersAcrossLocations(t *testing.T) {
 	root := t.TempDir()
 	client, _, _, aiServer, _ := newSelfInitializingDeploymentClient(t, root)

@@ -111,6 +111,30 @@ func selectModelDeployment(
 	if err != nil {
 		return nil, err
 	}
+	if selection.Capacity > 0 {
+		candidates = slices.DeleteFunc(candidates, func(
+			candidate *azdext.AiModelDeployment,
+		) bool {
+			return candidate == nil ||
+				candidate.GetCapacity() != selection.Capacity ||
+				candidate.GetSku() == nil ||
+				!deploymentCapacityValid(
+					candidate.GetSku(),
+					selection.Capacity,
+				)
+		})
+		if len(candidates) == 0 {
+			return nil, exterrors.Validation(
+				"model_deployment_capacity_invalid",
+				fmt.Sprintf(
+					"model %q does not support deployment capacity %d",
+					modelName,
+					selection.Capacity,
+				),
+				"choose a capacity supported by the selected model and SKU",
+			)
+		}
+	}
 	if len(candidates) == 0 {
 		return nil, exterrors.Validation(
 			"model_deployment_unavailable",

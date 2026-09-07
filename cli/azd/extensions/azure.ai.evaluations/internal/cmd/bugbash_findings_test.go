@@ -82,7 +82,7 @@ func TestRefToMarksARelativePath(t *testing.T) {
 func TestGenerateAndLookupAgreeOnAPublishedName(t *testing.T) {
 	const spaced = "my data"
 
-	generated, err := generatedName(spaced, "support-agent", "dataset")
+	generated, err := generatedName(spaced, "support-agent", "dataset", "turn-tests")
 	require.NoError(t, err, "generate accepts a spaced name")
 	require.Equal(t, spaced, generated)
 

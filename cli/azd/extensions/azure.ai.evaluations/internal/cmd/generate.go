@@ -55,6 +55,12 @@ type generationPlan struct {
 	From []string
 	// TraceDays seeds generation from that many days of recent traces.
 	TraceDays int
+	// EvaluationLevel is what one generated row is: a turn, or a seed for a
+	// simulated conversation. Dataset generation only.
+	EvaluationLevel string
+	// InstructionSource says where Instruction came from, for the reader. Empty
+	// when nothing supplied one, which is a fact worth printing on its own.
+	InstructionSource string
 	// Kind is which artifact this plan produces, so one runner can submit both.
 	Kind generateKind
 }
@@ -124,7 +130,8 @@ func declaredInstructions(named, configPath string) (string, error) {
 	return strings.TrimSpace(string(raw)), nil
 }
 
-// resolveGenerationInstruction decides what generation is seeded from.
+// resolveGenerationInstruction decides what generation is seeded from, and
+// says where it came from so the caller can report it.
 //
 // The service accepts an agent source that is meant to pull the agent's own
 // instructions, but it fails for every agent, so the agent's context is read
@@ -140,27 +147,24 @@ func declaredInstructions(named, configPath string) (string, error) {
 // which is the flow `init` sets up.
 func (ec *evalContext) resolveGenerationInstruction(
 	ctx context.Context,
-	explicit, agentName string,
+	explicit, explicitSource, agentName string,
 	out io.Writer,
 	quiet bool,
-) (string, error) {
+) (instruction string, source string, err error) {
 	if explicit != "" {
-		return explicit, nil
+		return explicit, explicitSource, nil
 	}
 
 	if agentName == "" {
-		return "", nil
+		return "", "", nil
 	}
 
 	local, path, err := ec.agentInstructionsFromProject(ctx, agentName)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if local != "" {
-		if !quiet {
-			fmt.Fprint(out, messages.SeedingFromFile(filepath.ToSlash(path)))
-		}
-		return local, nil
+		return local, messages.InstructionSourceFile(path), nil
 	}
 
 	agent, err := ec.evalClient.GetAgent(ctx, agentName, ProjectEndpointAPIVersion)
@@ -173,13 +177,13 @@ func (ec *evalContext) resolveGenerationInstruction(
 		if !quiet {
 			fmt.Fprint(out, messages.WarningAgentUnreadable(agentName, err))
 		}
-		return "", nil
+		return "", "", nil
 	}
 	instructions := agent.Instructions()
-	if instructions != "" && !quiet {
-		fmt.Fprint(out, messages.SeedingFromAgent(agentName))
+	if instructions == "" {
+		return "", "", nil
 	}
-	return instructions, nil
+	return instructions, messages.InstructionSourceAgent(), nil
 }
 
 // agentInstructionsFromProject reads the agent's instructions out of the azd

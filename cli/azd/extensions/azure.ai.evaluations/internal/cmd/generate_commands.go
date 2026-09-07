@@ -102,6 +102,9 @@ func resolvePlan(f *generateFlags, name string, defaultOutputDir string) (genera
 		BaseDir:     project.EvalDirOf(f.path),
 		OutputDir:   firstNonEmpty(f.outputDir, "./"+defaultOutputDir),
 	}
+	if instruction != "" {
+		plan.InstructionSource = messages.InstructionSourceFlag(f.instructionFile)
+	}
 	if plan.Model == "" && plan.Agent == "" {
 		return plan, messages.GenerationModelRequired()
 	}
@@ -122,8 +125,8 @@ func prepareGeneration(
 		return nil, plan, err
 	}
 
-	plan.Instruction, err = ec.resolveGenerationInstruction(
-		ctx, plan.Instruction, plan.Agent, cmd.OutOrStdout(), isJSON(cmd),
+	plan.Instruction, plan.InstructionSource, err = ec.resolveGenerationInstruction(
+		ctx, plan.Instruction, plan.InstructionSource, plan.Agent, cmd.OutOrStdout(), isJSON(cmd),
 	)
 	if err != nil {
 		ec.Close()

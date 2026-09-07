@@ -273,18 +273,34 @@ func TestGenerateTakesTheWaitFlagItDocuments(t *testing.T) {
 	}
 }
 
-// One command now generates both artifacts, but --from and --max-samples shape
-// the dataset only. The help has to say so, or they read as applying to the
-// rubric as well.
+// One command now generates both artifacts, but --from, --max-samples and
+// --evaluation-level shape the dataset only. The help has to say so, or they
+// read as applying to the rubric as well.
 func TestGenerateSaysWhichFlagsAreDatasetOnly(t *testing.T) {
 	flags := find(t, "generate").Flags()
 
-	for _, name := range []string{"from", "max-samples"} {
+	for _, name := range []string{"from", "max-samples", "evaluation-level"} {
 		flag := flags.Lookup(name)
 		require.NotNilf(t, flag, "generate must offer --%s", name)
 		assert.Containsf(t, flag.Usage, "Dataset only",
 			"--%s shapes the dataset only, so its help has to say so", name)
 	}
+}
+
+// A generated dataset is either turn-level rows or conversation seeds, and the
+// two are different shapes rather than different readings of one. init already
+// asks it; generate producing turn rows whatever the eval was set up for is
+// what left a conversation eval with nothing to run against.
+func TestGenerateOffersBothEvaluationLevels(t *testing.T) {
+	flag := find(t, "generate").Flags().Lookup("evaluation-level")
+	require.NotNil(t, flag, "generate must offer --evaluation-level")
+
+	for _, level := range evaluationLevels {
+		assert.Containsf(t, flag.Usage, level,
+			"--evaluation-level has to name %q as a choice", level)
+	}
+	assert.Equal(t, "", flag.DefValue,
+		"unset is what lets the wizard ask; the default is applied after that")
 }
 
 // The selector narrows generation; omitting both is the zero-to-first-eval

@@ -773,6 +773,26 @@ func SelectingEvaluationLevel(err error) error {
 	return fmt.Errorf("selecting an evaluation level: %w", err)
 }
 
+// SelectGenerationLevelPrompt asks what the generated rows have to support.
+//
+// Worded from the data's side rather than the eval's. `init` asks what a
+// sample represents because it is describing an eval that already has data;
+// `generate` is deciding what to synthesize, and the two produce different
+// shapes, not different readings of one shape.
+func SelectGenerationLevelPrompt() string {
+	return "What evaluation level should the generated data support?"
+}
+
+// GenerationLevelChoice is one level beside what generating it produces.
+func GenerationLevelChoice(level string) string {
+	switch level {
+	case "conversation":
+		return "Conversation  Scenario seeds for multi-turn simulation"
+	default:
+		return "Turn          Query-response pairs"
+	}
+}
+
 // SelectTraceWindowPrompt asks how far back a trace-backed eval reads.
 func SelectTraceWindowPrompt() string {
 	return "How far back should traces be evaluated?"
@@ -1076,14 +1096,37 @@ func ReadingInstructions(named string, err error) error {
 	return fmt.Errorf("reading instructions %q: %w", named, err)
 }
 
-// SeedingFromFile names the local file generation was seeded from.
-func SeedingFromFile(path string) string {
-	return fmt.Sprintf("  Seeding generation from %s.\n", filepath.ToSlash(path))
+// InstructionSourceFile names the local file generation was seeded from.
+//
+// A fragment, not a sentence: it is read twice, once in the detection line and
+// once in the confirmation, and a sentence would only fit the first.
+func InstructionSourceFile(path string) string {
+	return filepath.ToSlash(path)
 }
 
-// SeedingFromAgent names the agent whose published instructions seeded generation.
-func SeedingFromAgent(agent string) string {
-	return fmt.Sprintf("  Seeding generation from the instructions of agent %q.\n", agent)
+// InstructionSourceFlag names instructions the caller supplied themselves,
+// preferring the file they named over the flag that named it.
+func InstructionSourceFlag(path string) string {
+	if path != "" {
+		return filepath.ToSlash(path)
+	}
+	return "--agent-instruction"
+}
+
+// InstructionSourceAgent names the published agent whose instructions seeded
+// generation. Not the agent's own name, which the block above already gives:
+// what this line adds is that the text came from what is deployed rather than
+// from anything in the working tree.
+func InstructionSourceAgent() string {
+	return "deployed agent"
+}
+
+// InstructionsPlanValue is the confirmation's reading of the same source.
+func InstructionsPlanValue(source string) string {
+	if source == "" {
+		return "none detected"
+	}
+	return source
 }
 
 // WarningAgentUnreadable reports an agent that could not supply context.
@@ -3279,7 +3322,24 @@ func LocalContextLine(label, value string) string {
 	if value == "" {
 		value = "not configured"
 	}
-	return fmt.Sprintf("  %-12s %s\n", label+":", value)
+	// Wide enough for "Generation model:", the longest label either command
+	// prints, so every value in the block starts in the same column whichever
+	// subset of the lines a given command has to show.
+	return fmt.Sprintf("  %-17s %s\n", label+":", value)
+}
+
+// AgentInstructionsSource says what seeded generation, and admits when nothing did.
+//
+// A separate line rather than another prompt: detection already happened, and
+// confirming it would ask the reader to approve a lookup they did not request.
+// Saying nothing was the older behavior, and it made an ungrounded generation
+// -- the agent had no published instructions and none were authored locally --
+// indistinguishable from a grounded one until the rows came back generic.
+func AgentInstructionsSource(source string) string {
+	if source == "" {
+		return "Agent instructions: not detected\n"
+	}
+	return fmt.Sprintf("Agent instructions: %s (detected)\n", source)
 }
 
 // ConfigFileState says whether the file is being created or added to.
@@ -3341,11 +3401,22 @@ func GenerationPlanDetail(detail string) string {
 	return fmt.Sprintf("  %-13s %s\n", "", detail)
 }
 
-// DatasetPlanDetail says how many rows and from where.
-func DatasetPlanDetail(sampleSize int, from []string) string {
+// DatasetPlanDetail says what the rows are, how many, and where from.
+//
+// The level leads, and the unit follows it. A conversation dataset holds seeds
+// a simulator drives, not finished exchanges, and calling fifteen of those
+// "test cases" promised fifteen ready-to-run comparisons.
+func DatasetPlanDetail(sampleSize int, level string, from []string) string {
+	unit := "test cases"
+	if level == "conversation" {
+		unit = "scenarios"
+	}
 	rows := "service default rows"
 	if sampleSize > 0 {
-		rows = fmt.Sprintf("%d test cases", sampleSize)
+		rows = fmt.Sprintf("%d %s", sampleSize, unit)
+	}
+	if level != "" {
+		rows = level + " · " + rows
 	}
 	if len(from) == 0 {
 		return rows

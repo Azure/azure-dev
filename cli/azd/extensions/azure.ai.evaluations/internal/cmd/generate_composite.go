@@ -32,14 +32,15 @@ import (
 // generateCommandFlags carries what `generate` was asked for: the flags every
 // generating command shares, and the ones only this one registers.
 type generateCommandFlags struct {
-	shared        generateFlags
-	maxSamples    int
-	from          []string
-	traceDays     int
-	wantDataset   bool
-	wantEvaluator bool
-	datasetName   string
-	evaluatorName string
+	shared          generateFlags
+	maxSamples      int
+	from            []string
+	traceDays       int
+	wantDataset     bool
+	wantEvaluator   bool
+	datasetName     string
+	evaluatorName   string
+	evaluationLevel string
 }
 
 // generateAction generates a dataset and a rubric evaluator together.
@@ -74,9 +75,13 @@ func newGenerateCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&flags.wantEvaluator, "evaluator", false,
 		"Generate only the evaluator. Omit both flags to generate both.")
 	cmd.Flags().StringVar(&flags.datasetName, "dataset-name", "",
-		"Name for the generated dataset. Defaults to <target>-dataset.")
+		"Name for the generated dataset. Defaults to <target>-turn-tests or "+
+			"<target>-conversation-tests, following --evaluation-level.")
 	cmd.Flags().StringVar(&flags.evaluatorName, "evaluator-name", "",
 		"Name for the generated evaluator. Defaults to <target>-evaluator.")
+	cmd.Flags().StringVar(&flags.evaluationLevel, "evaluation-level", "",
+		fmt.Sprintf("What one generated row is: %s. Defaults to %s. Dataset only.",
+			strings.Join(evaluationLevels, " or "), project.EvaluationLevelTurn))
 	cmd.Flags().IntVar(&flags.maxSamples, "max-samples", 0,
 		fmt.Sprintf("Rows to synthesize (%d-%d). Defaults to %d. Dataset only.",
 			project.MinSampleSize, project.MaxSampleSize, project.DefaultSampleSize))
@@ -148,42 +153,75 @@ func (a *generateAction) Run() error {
 	// and registers artifacts in a shared project, and none of that was
 	// confirmed: the first thing a reader saw was a job id for work already
 	// submitted, which is why Cancel has to come before any of it.
+	//
+	// Context is resolved before the artifacts are named, because the name of
+	// a generated dataset depends on an answer that block precedes. Naming is
+	// what makes the order matter: building plans first would run the
+	// already-exists check against a name for a level the reader had not been
+	// offered yet, and refuse a collision they never chose.
+	contextPlan, err := resolvePlan(&a.flags.shared, "", project.DefaultDatasetsDir)
+	if err != nil {
+		return err
+	}
+	ec, resolved, err := prepareGeneration(a.cmd, &a.flags.shared, contextPlan)
+	if err != nil {
+		return err
+	}
+	defer ec.Close()
+	a.resolved = resolved
+
+	projectName := projectNameOf(ec.endpoint)
+	if !noPrompt(a.cmd) && !isJSON(a.cmd) {
+		configExists, evals := evalConfigState(a.flags.shared.path)
+		writeGenerateContext(a.cmd.OutOrStdout(), generateContext{
+			agent:        resolved.Agent,
+			model:        resolved.Model,
+			projectName:  projectName,
+			configPath:   a.flags.shared.path,
+			configExists: configExists,
+			evals:        evals,
+		})
+		fmt.Fprint(a.cmd.OutOrStdout(),
+			messages.AgentInstructionsSource(resolved.InstructionSource))
+	}
+
 	choices := generateChoices{dataset: dataset, evaluator: evaluator}
-	var ec *evalContext
 	var plans []generationPlan
+	level := ""
+	levelSettled := false
 	for {
+		// Asked before the dataset is named, because the name says which level
+		// its rows hold. Asked at most once: a second pass through the
+		// confirmation is about scope, and re-asking would turn Change into a
+		// restart of everything already answered.
+		if choices.dataset && !levelSettled {
+			if level, err = resolveGenerationLevel(a.cmd, a.flags.evaluationLevel); err != nil {
+				return err
+			}
+			levelSettled = true
+		}
+
 		plans, err = buildGeneratePlans(generateRequest{
-			flags:         &a.flags.shared,
-			target:        target,
-			dataset:       choices.dataset,
-			evaluator:     choices.evaluator,
-			datasetName:   a.flags.datasetName,
-			evaluatorName: a.flags.evaluatorName,
-			maxSamples:    a.flags.maxSamples,
-			from:          a.flags.from,
-			traceDays:     a.flags.traceDays,
+			flags:           &a.flags.shared,
+			target:          target,
+			dataset:         choices.dataset,
+			evaluator:       choices.evaluator,
+			datasetName:     a.flags.datasetName,
+			evaluatorName:   a.flags.evaluatorName,
+			evaluationLevel: level,
+			maxSamples:      a.flags.maxSamples,
+			from:            a.flags.from,
+			traceDays:       a.flags.traceDays,
 		})
 		if err != nil {
 			return err
 		}
 
-		// Built once and reused across a second pass: resolving the agent's
-		// instructions and deployment is two service reads, and the answer
-		// cannot change while the reader is looking at the plan.
-		if ec == nil {
-			var resolved generationPlan
-			ec, resolved, err = prepareGeneration(a.cmd, &a.flags.shared, plans[0])
-			if err != nil {
-				return err
-			}
-			defer ec.Close()
-			a.resolved = resolved
-		}
-
-		// prepareGeneration settles the inputs only the service can supply.
+		// prepareGeneration settled the inputs only the service can supply.
 		// They are the same for both artifacts, so they are read once.
 		for i := range plans {
 			plans[i].Instruction = a.resolved.Instruction
+			plans[i].InstructionSource = a.resolved.InstructionSource
 			plans[i].Model = a.resolved.Model
 		}
 		if choices.dataset && len(plans[0].From) == 0 {
@@ -193,11 +231,12 @@ func (a *generateAction) Run() error {
 		}
 
 		decision, err := confirmGeneration(a.cmd, a.cmd.OutOrStdout(), generationSummary{
-			plans:      plans,
-			model:      a.resolved.Model,
-			instructed: a.resolved.Instruction != "",
-			configPath: a.flags.shared.path,
-			noWait:     a.flags.shared.noWait,
+			plans:       plans,
+			model:       a.resolved.Model,
+			instructed:  a.resolved.InstructionSource,
+			projectName: projectName,
+			configPath:  a.flags.shared.path,
+			noWait:      a.flags.shared.noWait,
 		})
 		if err != nil {
 			return err
@@ -227,15 +266,16 @@ func selectedArtifacts(dataset, evaluator bool) (bool, bool) {
 }
 
 type generateRequest struct {
-	flags         *generateFlags
-	target        string
-	dataset       bool
-	evaluator     bool
-	datasetName   string
-	evaluatorName string
-	maxSamples    int
-	from          []string
-	traceDays     int
+	flags           *generateFlags
+	target          string
+	dataset         bool
+	evaluator       bool
+	datasetName     string
+	evaluatorName   string
+	evaluationLevel string
+	maxSamples      int
+	from            []string
+	traceDays       int
 }
 
 // artifactScopedFlags are the flags buildGeneratePlans reads only while
@@ -250,6 +290,7 @@ var artifactScopedFlags = []struct {
 	{name: "from", otherFor: "--evaluator"},
 	{name: "max-samples", otherFor: "--evaluator"},
 	{name: "dataset-name", otherFor: "--evaluator"},
+	{name: "evaluation-level", otherFor: "--evaluator"},
 	{name: "trace-days", forEval: true, otherFor: "--dataset"},
 	{name: "evaluator-name", forEval: true, otherFor: "--dataset"},
 }
@@ -274,7 +315,8 @@ func buildGeneratePlans(req generateRequest) ([]generationPlan, error) {
 	plans := make([]generationPlan, 0, 2)
 
 	if req.dataset {
-		name, err := generatedName(req.datasetName, req.target, "dataset")
+		name, err := generatedName(
+			req.datasetName, req.target, "dataset", datasetNameSuffix(req.evaluationLevel))
 		if err != nil {
 			return nil, err
 		}
@@ -284,6 +326,7 @@ func buildGeneratePlans(req generateRequest) ([]generationPlan, error) {
 		}
 		plan.Kind = generateKindDataset
 		plan.From = req.from
+		plan.EvaluationLevel = req.evaluationLevel
 		plan.SampleSize = req.maxSamples
 		if plan.SampleSize == 0 {
 			plan.SampleSize = project.DefaultSampleSize
@@ -301,7 +344,7 @@ func buildGeneratePlans(req generateRequest) ([]generationPlan, error) {
 	}
 
 	if req.evaluator {
-		name, err := generatedName(req.evaluatorName, req.target, "evaluator")
+		name, err := generatedName(req.evaluatorName, req.target, "evaluator", "evaluator")
 		if err != nil {
 			return nil, err
 		}
@@ -328,20 +371,24 @@ func buildGeneratePlans(req generateRequest) ([]generationPlan, error) {
 
 // generatedName is the explicit name, or one derived from the target.
 //
+// kind is the word the refusals use; suffix is what an derived name ends in.
+// They differ for a dataset, whose name says which level its rows are at while
+// the error still has to say which flag would fix it.
+//
 // The name becomes a filename as well as a service asset name, so it is
 // checked here: `--dataset-name ../../x` would otherwise write outside the
 // directory the caller pointed generation at, and `--force` would overwrite
 // whatever is there.
-func generatedName(explicit, target, suffix string) (string, error) {
+func generatedName(explicit, target, kind, suffix string) (string, error) {
 	name := explicit
 	if name == "" {
 		if target == "" {
-			return "", messages.GeneratedNameNeedsATarget(suffix)
+			return "", messages.GeneratedNameNeedsATarget(kind)
 		}
 		name = target + "-" + suffix
 	}
 	if !nameIsAPathComponent(name) {
-		return "", messages.GeneratedNameNotAFileName(suffix, name)
+		return "", messages.GeneratedNameNotAFileName(kind, name)
 	}
 	return name, nil
 }

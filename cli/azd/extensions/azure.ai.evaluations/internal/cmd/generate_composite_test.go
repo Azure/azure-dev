@@ -35,19 +35,25 @@ func TestSelectedArtifacts(t *testing.T) {
 }
 
 // The spec's defaults. Deriving from the target is what lets `generate` take no
-// positional argument at all.
+// positional argument at all, and the dataset's suffix says which level its
+// rows are at so the two levels do not collide on one name.
 func TestGeneratedName_DerivesFromTheTarget(t *testing.T) {
-	name, err := generatedName("", "support-agent", "dataset")
+	name, err := generatedName("", "support-agent", "dataset", datasetNameSuffix("turn"))
 	require.NoError(t, err)
-	assert.Equal(t, "support-agent-dataset", name)
+	assert.Equal(t, "support-agent-turn-tests", name)
 
-	name, err = generatedName("", "support-agent", "evaluator")
+	name, err = generatedName(
+		"", "support-agent", "dataset", datasetNameSuffix("conversation"))
+	require.NoError(t, err)
+	assert.Equal(t, "support-agent-conversation-tests", name)
+
+	name, err = generatedName("", "support-agent", "evaluator", "evaluator")
 	require.NoError(t, err)
 	assert.Equal(t, "support-agent-evaluator", name)
 }
 
 func TestGeneratedName_ExplicitWins(t *testing.T) {
-	name, err := generatedName("golden", "support-agent", "dataset")
+	name, err := generatedName("golden", "support-agent", "dataset", "turn-tests")
 
 	require.NoError(t, err)
 	assert.Equal(t, "golden", name)
@@ -56,7 +62,7 @@ func TestGeneratedName_ExplicitWins(t *testing.T) {
 // With neither there is nothing to name the artifact after, and the refusal has
 // to name both flags that would answer it.
 func TestGeneratedName_NeedsSomethingToNameItAfter(t *testing.T) {
-	_, err := generatedName("", "", "dataset")
+	_, err := generatedName("", "", "dataset", "turn-tests")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--dataset-name")
@@ -66,10 +72,11 @@ func TestGeneratedName_NeedsSomethingToNameItAfter(t *testing.T) {
 // A composite that submits two jobs has to build a plan for each.
 func TestBuildGeneratePlans_BuildsBothPlans(t *testing.T) {
 	plans, err := buildGeneratePlans(generateRequest{
-		flags:     &generateFlags{path: t.TempDir(), target: "support-agent"},
-		target:    "support-agent",
-		dataset:   true,
-		evaluator: true,
+		flags:           &generateFlags{path: t.TempDir(), target: "support-agent"},
+		target:          "support-agent",
+		dataset:         true,
+		evaluator:       true,
+		evaluationLevel: "turn",
 	})
 
 	require.NoError(t, err)
@@ -77,8 +84,25 @@ func TestBuildGeneratePlans_BuildsBothPlans(t *testing.T) {
 	assert.Equal(t, generateKindDataset, plans[0].Kind,
 		"dataset first, which is the order its progress is replayed in")
 	assert.Equal(t, generateKindEvaluator, plans[1].Kind)
-	assert.Equal(t, "support-agent-dataset", plans[0].Name)
+	assert.Equal(t, "support-agent-turn-tests", plans[0].Name)
+	assert.Equal(t, "turn", plans[0].EvaluationLevel,
+		"the level travels with the plan, so the confirmation can say what a row is")
 	assert.Equal(t, "support-agent-evaluator", plans[1].Name)
+}
+
+// A conversation dataset holds simulation seeds, not finished exchanges, so it
+// gets its own name rather than overwriting the turn-level one.
+func TestBuildGeneratePlans_ConversationDatasetIsNamedForItsLevel(t *testing.T) {
+	plans, err := buildGeneratePlans(generateRequest{
+		flags:           &generateFlags{path: t.TempDir(), target: "support-agent"},
+		target:          "support-agent",
+		dataset:         true,
+		evaluationLevel: "conversation",
+	})
+
+	require.NoError(t, err)
+	require.Len(t, plans, 1)
+	assert.Equal(t, "support-agent-conversation-tests", plans[0].Name)
 }
 
 // Narrowing builds one plan, so nothing is submitted for the other.
@@ -110,7 +134,7 @@ func TestGeneratedName_RefusesANameThatWouldLeaveTheDirectory(t *testing.T) {
 
 	for _, name := range escapes {
 		t.Run(name, func(t *testing.T) {
-			_, err := generatedName(name, "support-agent", "dataset")
+			_, err := generatedName(name, "support-agent", "dataset", "turn-tests")
 
 			require.Errorf(t, err, "%q must not be accepted as a file name", name)
 			assert.Contains(t, err.Error(), "file name")
@@ -123,13 +147,13 @@ func TestGeneratedName_RefusesANameThatWouldLeaveTheDirectory(t *testing.T) {
 func TestGeneratedName_AllowsOrdinaryNames(t *testing.T) {
 	for _, name := range []string{
 		"golden",
-		"support-agent-dataset",
+		"support-agent-turn-tests",
 		"support_agent.v2",
 		"caf\u00e9-dataset",
 		"dataset 2",
 	} {
 		t.Run(name, func(t *testing.T) {
-			got, err := generatedName(name, "support-agent", "dataset")
+			got, err := generatedName(name, "support-agent", "dataset", "turn-tests")
 
 			require.NoError(t, err)
 			assert.Equal(t, name, got)

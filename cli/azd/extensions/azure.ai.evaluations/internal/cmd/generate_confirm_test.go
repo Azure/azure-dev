@@ -19,13 +19,15 @@ import (
 func TestTheGenerationPlanStatesWhatWillBeBilled(t *testing.T) {
 	var out bytes.Buffer
 	writeGenerationPlan(&out, generationSummary{
-		model:      "gpt-4o-mini",
-		instructed: true,
-		configPath: "evals/azure.eval.yaml",
+		model:       "gpt-4o-mini",
+		instructed:  "deployed agent",
+		projectName: "contoso-project",
+		configPath:  "evals/azure.eval.yaml",
 		plans: []generationPlan{
 			{
-				Kind: generateKindDataset, Name: "support-agent-dataset",
+				Kind: generateKindDataset, Name: "support-agent-turn-tests",
 				Agent: "support-agent", SampleSize: 15, From: []string{"agent"},
+				EvaluationLevel: "turn",
 			},
 			{Kind: generateKindEvaluator, Name: "support-agent-evaluator", Agent: "support-agent"},
 		},
@@ -33,9 +35,10 @@ func TestTheGenerationPlanStatesWhatWillBeBilled(t *testing.T) {
 
 	text := out.String()
 	for _, want := range []string{
-		"support-agent", "gpt-4o-mini",
-		"support-agent-dataset", "15 test cases", "source: agent",
+		"support-agent", "gpt-4o-mini", "deployed agent",
+		"support-agent-turn-tests", "turn", "15 test cases", "source: agent",
 		"support-agent-evaluator", "traces off",
+		"contoso-project",
 		"evals/azure.eval.yaml",
 	} {
 		assert.Contains(t, text, want,
@@ -43,6 +46,38 @@ func TestTheGenerationPlanStatesWhatWillBeBilled(t *testing.T) {
 	}
 	assert.Contains(t, text, "2 artifact file(s)",
 		"the local writes are named, because they are the half that is not billed")
+}
+
+// A conversation dataset holds seeds a simulator drives, so counting them as
+// test cases promised fifteen ready-to-run comparisons that do not exist.
+func TestTheGenerationPlanCountsScenariosForAConversationDataset(t *testing.T) {
+	var out bytes.Buffer
+	writeGenerationPlan(&out, generationSummary{
+		model:      "gpt-4o-mini",
+		configPath: "evals/azure.eval.yaml",
+		plans: []generationPlan{{
+			Kind: generateKindDataset, Name: "support-agent-conversation-tests",
+			SampleSize: 15, EvaluationLevel: "conversation",
+		}},
+	})
+
+	text := out.String()
+	assert.Contains(t, text, "conversation · 15 scenarios", text)
+	assert.NotContains(t, text, "test cases", text)
+}
+
+// Nothing detected is a fact about the generation, not an absence of one. A
+// blank line here read as though instructions had never come up, and a run
+// seeded by nothing is the one worth pausing over.
+func TestTheGenerationPlanAdmitsWhenNothingSeededIt(t *testing.T) {
+	var out bytes.Buffer
+	writeGenerationPlan(&out, generationSummary{
+		model:      "gpt-4o-mini",
+		configPath: "evals/azure.eval.yaml",
+		plans:      []generationPlan{{Kind: generateKindDataset, Name: "d"}},
+	})
+
+	assert.Contains(t, out.String(), "none detected", out.String())
 }
 
 // --no-wait bills the jobs and writes nothing, and the reader is owed that

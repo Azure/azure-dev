@@ -6,9 +6,13 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"net/url"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"azureaieval/internal/messages"
+	"azureaieval/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -86,11 +90,75 @@ func (a *generateAction) askGenerateArtifacts() (generateChoices, error) {
 
 // generationSummary is what the confirmation reports.
 type generationSummary struct {
-	plans      []generationPlan
-	model      string
-	instructed bool
-	configPath string
-	noWait     bool
+	plans       []generationPlan
+	model       string
+	instructed  string
+	projectName string
+	configPath  string
+	noWait      bool
+}
+
+// generateContext is what generate settled by reading, before it asked
+// anything.
+type generateContext struct {
+	agent        string
+	model        string
+	projectName  string
+	configPath   string
+	configExists bool
+	evals        int
+}
+
+// writeGenerateContext prints what was detected, before the first question.
+//
+// generate used to open on a prompt, which made the reader supply answers
+// without seeing which agent, model and file the command had already picked --
+// and picking the wrong project is the one mistake here that costs money.
+func writeGenerateContext(out io.Writer, c generateContext) {
+	fmt.Fprint(out, messages.LocalContextHeading())
+	fmt.Fprint(out, messages.LocalContextLine("Agent", c.agent))
+	fmt.Fprint(out, messages.LocalContextLine("Generation model", c.model))
+	fmt.Fprint(out, messages.LocalContextLine("Project", c.projectName))
+	fmt.Fprint(out, messages.LocalContextLine("Config file",
+		messages.ConfigFileState(filepath.ToSlash(c.configPath), c.configExists, c.evals)))
+}
+
+// evalConfigState says whether there is already a configuration at path, and
+// how many evals it holds. Best effort: this feeds a display line, and a
+// configuration that will not parse is reported by whatever goes on to need it.
+func evalConfigState(path string) (exists bool, evals int) {
+	configPath, err := project.ResolveEvalConfigPath(path)
+	if err != nil {
+		return false, 0
+	}
+	if _, err := os.Stat(configPath); err != nil {
+		return false, 0
+	}
+	// Nil without an error is how an absent configuration arrives, which the
+	// stat above has already ruled out -- but the count is read through the
+	// pointer, so the case that cannot happen is still not dereferenced.
+	cfg, err := project.OpenEvalConfig(configPath)
+	if err != nil || cfg == nil {
+		return true, 0
+	}
+	return true, len(cfg.Evals)
+}
+
+// projectNameOf is the project segment of a Foundry endpoint.
+//
+// Read from the URL rather than asked for: the endpoint is what every call in
+// this command goes to, so the name in it is the project the reader is about
+// to spend money in, whether it came from a flag, the environment, or azd.
+func projectNameOf(endpoint string) string {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return ""
+	}
+	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(segments) < 2 || segments[len(segments)-2] != "projects" {
+		return ""
+	}
+	return segments[len(segments)-1]
 }
 
 // confirmGeneration shows what is about to be billed and asks whether to.
@@ -160,16 +228,18 @@ func writeGenerationPlan(out io.Writer, s generationSummary) {
 		fmt.Fprint(out, messages.GenerationPlanLine("Agent", agent))
 	}
 	fmt.Fprint(out, messages.GenerationPlanLine("Model", s.model))
-	if s.instructed {
-		fmt.Fprint(out, messages.GenerationPlanLine("Instructions", "detected"))
-	}
+	// Printed either way. Silence when nothing was detected read as though the
+	// question had not come up, and a generation seeded by nothing but the
+	// agent's name is the one a reader most needs warning about.
+	fmt.Fprint(out, messages.GenerationPlanLine(
+		"Instructions", messages.InstructionsPlanValue(s.instructed)))
 
 	for _, p := range s.plans {
 		switch p.Kind {
 		case generateKindDataset:
 			fmt.Fprint(out, messages.GenerationPlanLine("Dataset", p.Name))
 			fmt.Fprint(out, messages.GenerationPlanDetail(
-				messages.DatasetPlanDetail(p.SampleSize, p.From)))
+				messages.DatasetPlanDetail(p.SampleSize, p.EvaluationLevel, p.From)))
 		default:
 			fmt.Fprint(out, messages.GenerationPlanLine("Evaluator", p.Name))
 			fmt.Fprint(out, messages.GenerationPlanDetail(
@@ -177,6 +247,9 @@ func writeGenerationPlan(out io.Writer, s generationSummary) {
 		}
 	}
 
+	if s.projectName != "" {
+		fmt.Fprint(out, messages.GenerationPlanLine("Project", s.projectName))
+	}
 	fmt.Fprint(out, messages.GenerationPlanLine("Local",
 		messages.GenerationPlanLocal(len(s.plans), filepath.ToSlash(s.configPath), s.noWait)))
 	if s.noWait {

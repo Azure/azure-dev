@@ -1124,7 +1124,15 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 		a.noPrompt,
 		resolutionOptions...,
 	)
-	if serviceErr == nil {
+	if serviceErr != nil {
+		if info != nil && a.flags.name != "" {
+			rc.serviceName = info.ServiceName
+		}
+		if err := remoteAgentServiceResolutionError(serviceErr, a.flags.name != ""); err != nil {
+			azdClient.Close()
+			return nil, err
+		}
+	} else {
 		rc.serviceName = info.ServiceName
 		rc.name = remoteAgentNameFromService(rc.name, info, a.protocolServiceName != "")
 		rc.invocableProtocols = invocableProtocolsFromEndpoints(info.ProtocolEndpoints)
@@ -1134,9 +1142,6 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 		if info.ProjectEndpoint != "" {
 			rc.projectEndpoint = info.ProjectEndpoint
 		}
-	} else if err := remoteAgentServiceResolutionError(serviceErr, a.flags.name != ""); err != nil {
-		azdClient.Close()
-		return nil, err
 	}
 	if rc.name == "" {
 		azdClient.Close()

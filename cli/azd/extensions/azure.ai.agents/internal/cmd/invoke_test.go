@@ -22,6 +22,8 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/grpc"
@@ -562,6 +564,144 @@ func TestRemoteAgentServiceResolutionError(t *testing.T) {
 			t.Errorf("direct name should ignore project resolver failure, got %v", err)
 		}
 	})
+}
+
+func TestResolveRemoteContextDirectNameLookupErrorUsesLocalProtocol(t *testing.T) {
+	const (
+		serviceName = "target-agent"
+		agentName   = "inline-agent"
+		projectURL  = "https://account.services.ai.azure.com/api/projects/project"
+	)
+
+	agentProperties, err := projectpkg.AgentDefinitionToServiceProperties(agent_yaml.ContainerAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindHosted,
+			Name: agentName,
+		},
+		Protocols: []agent_yaml.ProtocolVersionRecord{{
+			Protocol: "invocations",
+			Version:  "1.0.0",
+		}},
+	}, nil)
+	if err != nil {
+		t.Fatalf("AgentDefinitionToServiceProperties: %v", err)
+	}
+
+	tests := []struct {
+		name            string
+		environment     azdext.EnvironmentServiceServer
+		projectEndpoint string
+	}{
+		{
+			name: "environment name lookup fails",
+			environment: &helpersFailingEnvironmentServer{
+				testEnvironmentServiceServer: testEnvironmentServiceServer{
+					current: &azdext.Environment{Name: "test"},
+				},
+				getValueErr: errors.New("environment name lookup failed"),
+			},
+		},
+		{
+			name: "brownfield existence lookup fails",
+			environment: &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "test"},
+			},
+			projectEndpoint: "https://[::1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			services := map[string]*azdext.ServiceConfig{
+				serviceName: {
+					Name:                 serviceName,
+					Host:                 AiAgentHost,
+					AdditionalProperties: agentProperties,
+				},
+			}
+			if tt.projectEndpoint != "" {
+				projectProperties, err := projectpkg.MarshalStruct(&projectpkg.ServiceTargetAgentConfig{
+					Endpoint: tt.projectEndpoint,
+				})
+				if err != nil {
+					t.Fatalf("MarshalStruct: %v", err)
+				}
+				services["ai-project"] = &azdext.ServiceConfig{
+					Name:                 "ai-project",
+					Host:                 AiProjectHost,
+					AdditionalProperties: projectProperties,
+				}
+				services[serviceName].Uses = []string{"ai-project"}
+			}
+
+			projectServer := &helpersProjectServer{
+				project: &azdext.ProjectConfig{
+					Path:     t.TempDir(),
+					Services: services,
+				},
+			}
+			address := newInvokeRemoteContextTestAzdServer(t, projectServer, tt.environment)
+			t.Setenv("AZD_SERVER", address)
+			t.Setenv("FOUNDRY_PROJECT_ENDPOINT", projectURL)
+			stubAzdHostedSources(t, azdHostedSources{}, nil)
+
+			action := &InvokeAction{
+				flags:    &invokeFlags{name: serviceName},
+				noPrompt: true,
+			}
+			rc, err := action.resolveRemoteContext(t.Context())
+			if err != nil {
+				t.Fatalf("resolveRemoteContext: %v", err)
+			}
+			defer rc.azdClient.Close()
+
+			if rc.name != serviceName {
+				t.Errorf("remote name = %q, want explicit target %q", rc.name, serviceName)
+			}
+			if rc.serviceName != serviceName {
+				t.Errorf("service name = %q, want %q", rc.serviceName, serviceName)
+			}
+			if len(rc.invocableProtocols) != 0 {
+				t.Fatalf("persisted protocols = %v, want none", rc.invocableProtocols)
+			}
+
+			protocol, err := action.resolveDeployedProtocol(t.Context(), rc)
+			if err != nil {
+				t.Fatalf("resolveDeployedProtocol: %v", err)
+			}
+			if protocol != agent_api.AgentProtocolInvocations {
+				t.Errorf("protocol = %q, want %q", protocol, agent_api.AgentProtocolInvocations)
+			}
+		})
+	}
+}
+
+func newInvokeRemoteContextTestAzdServer(
+	t *testing.T,
+	projectServer *helpersProjectServer,
+	environmentServer azdext.EnvironmentServiceServer,
+) string {
+	t.Helper()
+
+	grpcServer := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(grpcServer, projectServer)
+	azdext.RegisterEnvironmentServiceServer(grpcServer, environmentServer)
+	azdext.RegisterUserConfigServiceServer(grpcServer, newInvokeUserConfigServer())
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	go func() {
+		_ = grpcServer.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+
+	return listener.Addr().String()
 }
 
 func TestInvokeActionServiceNameSelector(t *testing.T) {

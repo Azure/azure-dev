@@ -152,7 +152,7 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if service == nil {
+	if service == nil || service.Legacy {
 		projectAction := &ProjectAddAction{
 			client: client,
 			flags: &projectAddFlags{
@@ -165,6 +165,18 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 			return err
 		}
 
+		project, _, err = ensureProjectWithEnvironment(
+			ctx,
+			client,
+			projectRoot,
+			a.environmentName(),
+		)
+		if err != nil {
+			return err
+		}
+		if project.GetPath() != "" {
+			projectRoot = project.GetPath()
+		}
 		envName, err = resolveProjectEnvironmentName(
 			ctx, client, a.environmentName(), projectRoot,
 		)
@@ -184,7 +196,7 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if service == nil {
+		if service == nil || service.Legacy {
 			return exterrors.Dependency(
 				"project_service_not_found",
 				"project add completed without creating an azure.ai.project service",

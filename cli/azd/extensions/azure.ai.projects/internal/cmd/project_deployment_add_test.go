@@ -406,6 +406,90 @@ func TestProjectDeploymentAddInitializesMissingProjectService(t *testing.T) {
 	}
 }
 
+func TestProjectDeploymentAddMigratesLegacyProjectService(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte("name: test\n"),
+		0600,
+	))
+
+	client, projectServer, _, _, _ := newSelfInitializingDeploymentClient(t, root)
+	projectServer.project.Services["legacy"] = &azdext.ServiceConfig{
+		Name: "legacy",
+		Host: "azure.ai.agent",
+	}
+	projectServer.services["legacy"] = map[string]any{
+		"host": "azure.ai.agent",
+		"network": map[string]any{
+			"mode": "managed",
+		},
+		"customField": "preserve-me",
+		"deployments": []any{
+			map[string]any{
+				"name": "existing",
+				"model": map[string]any{
+					"format":  "OpenAI",
+					"name":    "gpt-4.1",
+					"version": "2025-04-14",
+				},
+				"sku": map[string]any{
+					"name":     "GlobalStandard",
+					"capacity": 1,
+				},
+			},
+		},
+	}
+
+	action := &ProjectDeploymentAddAction{
+		client: client,
+		flags: &projectDeploymentFlags{
+			model:  "gpt-4.1-mini",
+			output: "none",
+		},
+		extCtx: &azdext.ExtensionContext{
+			Environment:  "test",
+			NoPrompt:     true,
+			OutputFormat: "none",
+		},
+	}
+
+	require.NoError(t, action.Run(t.Context()))
+
+	legacyService := projectServer.project.Services["legacy"]
+	require.NotNil(t, legacyService)
+	assert.Equal(t, "azure.ai.agent", legacyService.GetHost())
+	projectService := projectServer.project.Services["test"]
+	require.NotNil(t, projectService)
+	assert.Equal(t, "azure.ai.project", projectService.GetHost())
+
+	migrated := projectServer.services["test"]
+	require.NotNil(t, migrated)
+	assert.Equal(t, "azure.ai.project", migrated["host"])
+	assert.Equal(
+		t,
+		map[string]any{"mode": "managed"},
+		migrated["network"],
+	)
+	assert.Equal(t, "preserve-me", migrated["customField"])
+	deployments, ok := migrated["deployments"].([]any)
+	require.True(t, ok)
+	require.Len(t, deployments, 2)
+	legacyDeployments, ok := projectServer.services["legacy"]["deployments"].([]any)
+	require.True(t, ok)
+	require.Len(t, legacyDeployments, 1)
+	existing, ok := deployments[0].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "existing", existing["name"])
+	added, ok := deployments[1].(map[string]any)
+	require.True(t, ok)
+	model, ok := added["model"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "gpt-4.1", model["name"])
+}
+
 func TestProjectDeploymentAddPersistsPromptedAzureContext(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)

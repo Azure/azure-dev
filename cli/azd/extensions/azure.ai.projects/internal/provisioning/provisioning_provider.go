@@ -30,7 +30,7 @@ var FoundryProjectServiceHosts = []string{FoundryProjectHost}
 
 // FoundryLegacyProvisioningHosts lists pre-split service hosts that can still drive
 // provisioning when no azure.ai.project service exists. network: remains unsupported
-// on these hosts; this compatibility path is only for existing non-network projects.
+// on these hosts when they are the provisioning fallback.
 var FoundryLegacyProvisioningHosts = []string{"azure.ai.agent", "microsoft.foundry"}
 
 // FoundryProvisioningServiceHosts lists every service host accepted by the synthesizer.

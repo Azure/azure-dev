@@ -1235,6 +1235,78 @@ func TestResolveAgentProtocolEndpointsPreservesUnsupportedMetadata(t *testing.T)
 	}
 }
 
+func TestResolveAgentProtocolEndpointsUsesUnmarkedSingleProtocol(t *testing.T) {
+	projectServer := &helpersProjectServer{
+		project: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{}},
+	}
+	environmentServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "test"},
+		values: map[string]map[string]string{
+			"test": {
+				"AGENT_AGENT_SERVICE_INVOCATIONS_ENDPOINT": "https://example.test/invocations",
+			},
+		},
+	}
+	address := newInvokeRemoteContextTestAzdServer(
+		t, projectServer, environmentServer,
+	)
+	t.Setenv("AZD_SERVER", address)
+
+	client, err := azdext.NewAzdClient()
+	if err != nil {
+		t.Fatalf("NewAzdClient: %v", err)
+	}
+	defer client.Close()
+
+	endpoints, present, err := resolveAgentProtocolEndpoints(
+		t.Context(), client, "test", "agent-service",
+	)
+	if err != nil {
+		t.Fatalf("resolveAgentProtocolEndpoints: %v", err)
+	}
+	if endpoints[agent_api.AgentProtocolInvocations] == "" {
+		t.Fatalf("endpoints = %v, want invocations endpoint", endpoints)
+	}
+	if !present {
+		t.Fatal("present = false, want endpoint metadata to be preserved")
+	}
+}
+
+func TestResolveAgentProtocolEndpointsRejectsAmbiguousUnmarkedEndpoints(t *testing.T) {
+	projectServer := &helpersProjectServer{
+		project: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{}},
+	}
+	environmentServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "test"},
+		values: map[string]map[string]string{
+			"test": {
+				"AGENT_AGENT_SERVICE_RESPONSES_ENDPOINT":   "https://example.test/responses",
+				"AGENT_AGENT_SERVICE_INVOCATIONS_ENDPOINT": "https://example.test/invocations",
+			},
+		},
+	}
+	address := newInvokeRemoteContextTestAzdServer(
+		t, projectServer, environmentServer,
+	)
+	t.Setenv("AZD_SERVER", address)
+
+	client, err := azdext.NewAzdClient()
+	if err != nil {
+		t.Fatalf("NewAzdClient: %v", err)
+	}
+	defer client.Close()
+
+	endpoints, present, err := resolveAgentProtocolEndpoints(
+		t.Context(), client, "test", "agent-service",
+	)
+	if err != nil {
+		t.Fatalf("resolveAgentProtocolEndpoints: %v", err)
+	}
+	if endpoints != nil || present {
+		t.Fatalf("endpoints = %v, present = %t, want no trusted metadata", endpoints, present)
+	}
+}
+
 func TestProtocolFlagValidation(t *testing.T) {
 	t.Parallel()
 

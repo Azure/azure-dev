@@ -702,7 +702,12 @@ func resolveAgentProtocolEndpoints(
 	}
 
 	if !complete {
-		return nil, present, nil
+		// Legacy deployments have no completeness marker. Only trust their
+		// endpoints when they identify one protocol unambiguously.
+		if len(invocableProtocolsFromEndpoints(endpoints)) > 1 {
+			return nil, false, nil
+		}
+		return endpoints, present, nil
 	}
 	return endpoints, true, nil
 }

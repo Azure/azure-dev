@@ -276,6 +276,7 @@ func (a *DeleteAction) clearDeletedVersionMarker(
 	keys := []string{
 		versionKey,
 		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
+		envkey.AgentProtocolEndpointsVersion(serviceName),
 	}
 	for _, protocol := range project.DisplayableProtocolEnvSuffixes() {
 		keys = append(keys, fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, protocol.Suffix))

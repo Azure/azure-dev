@@ -40,6 +40,13 @@ func TestErrorTypes(t *testing.T) {
 		assert.Equal(t, innerErr, errors.Unwrap(err))
 	})
 
+	t.Run("nil ConversionError", func(t *testing.T) {
+		var err *ConversionError
+
+		assert.Equal(t, "<nil>", err.SourceTypeName())
+		assert.Equal(t, "<nil>", err.DestinationTypeName())
+	})
+
 	t.Run("Sentinel errors", func(t *testing.T) {
 		assert.NotNil(t, ErrNoMapper)
 		assert.NotNil(t, ErrConversionFailure)

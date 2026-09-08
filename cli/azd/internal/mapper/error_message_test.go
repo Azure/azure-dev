@@ -127,8 +127,11 @@ func TestCleanTypeName(t *testing.T) {
 		{"int", 0, "int"},
 		{"pointer to string", (*string)(nil), "*string"},
 		{"slice of int", []int{}, "[]int"},
+		{"array of int", [3]int{}, "[3]int"},
 		{"map string to int", map[string]int{}, "map[string]int"},
 		{"chan int", make(chan int), "chan int"},
+		{"receive-only chan int", (<-chan int)(make(chan int)), "<-chan int"},
+		{"send-only chan int", (chan<- int)(make(chan int)), "chan<- int"},
 		{"func", func() {}, "func"},
 	}
 

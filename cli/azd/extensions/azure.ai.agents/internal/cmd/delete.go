@@ -237,6 +237,7 @@ func (a *DeleteAction) cleanupEnvVars(
 		fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
 		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
 		envkey.AgentProjectEndpoint(serviceName),
+		envkey.AgentProtocolEndpointsVersion(serviceName),
 	}
 	for _, protocol := range project.DisplayableProtocolEnvSuffixes() {
 		keys = append(keys, fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, protocol.Suffix))

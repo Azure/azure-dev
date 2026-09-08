@@ -1145,7 +1145,8 @@ func TestResolveAgentProtocolEndpointsPreservesUnsupportedMetadata(t *testing.T)
 		current: &azdext.Environment{Name: "test"},
 		values: map[string]map[string]string{
 			"test": {
-				"AGENT_AGENT_SERVICE_INVOCATIONS_WS_ENDPOINT": "https://example.test/invocations_ws",
+				"AGENT_AGENT_SERVICE_INVOCATIONS_WS_ENDPOINT":    "https://example.test/invocations_ws",
+				"AGENT_AGENT_SERVICE_PROTOCOL_ENDPOINTS_VERSION": "1",
 			},
 		},
 	}
@@ -1160,9 +1161,12 @@ func TestResolveAgentProtocolEndpointsPreservesUnsupportedMetadata(t *testing.T)
 	}
 	defer client.Close()
 
-	endpoints, present := resolveAgentProtocolEndpoints(
+	endpoints, present, err := resolveAgentProtocolEndpoints(
 		t.Context(), client, "test", "agent-service",
 	)
+	if err != nil {
+		t.Fatalf("resolveAgentProtocolEndpoints: %v", err)
+	}
 	if endpoints[agent_api.AgentProtocolInvocationsWS] == "" {
 		t.Fatalf("endpoints = %v, want invocations_ws endpoint", endpoints)
 	}

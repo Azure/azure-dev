@@ -603,8 +603,9 @@ func TestResolveAgentServiceFromProject_UsesVerifiedInlineNameForBrownfieldProje
 	envServer := &testEnvironmentServiceServer{
 		current: &azdext.Environment{Name: "test"},
 		values: map[string]map[string]string{"test": {
-			"AGENT_SERVICE_KEY_RESPONSES_ENDPOINT":   projectEndpoint + "/responses",
-			"AGENT_SERVICE_KEY_INVOCATIONS_ENDPOINT": projectEndpoint + "/invocations",
+			"AGENT_SERVICE_KEY_RESPONSES_ENDPOINT":         projectEndpoint + "/responses",
+			"AGENT_SERVICE_KEY_INVOCATIONS_ENDPOINT":       projectEndpoint + "/invocations",
+			"AGENT_SERVICE_KEY_PROTOCOL_ENDPOINTS_VERSION": "1",
 		}},
 	}
 	azdClient := newHelpersTestAzdClient(

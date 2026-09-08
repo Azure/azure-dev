@@ -720,6 +720,14 @@ func DownloadDestinationExists(path string) error {
 		"%s already exists; pass --force to overwrite it", filepath.ToSlash(path))
 }
 
+// DownloadNameNotAPathComponent refuses a name or version that would move the
+// destination somewhere the caller did not point it.
+func DownloadNameNotAPathComponent(value string) error {
+	return fmt.Errorf(
+		"%q cannot be part of a file name; name the destination with "+
+			"--output-dir or --output-file instead", value)
+}
+
 // DatasetEntryNotRelative refuses a listed entry that would write outside the
 // destination.
 //

@@ -3467,9 +3467,9 @@ func upgradeActionResult(
 ) (*actions.ActionResult, error) {
 	summary := extensions.NewUpgradeSummary(results)
 
-	var failures []error
+	var failures []string
 	if summary.Failed > 0 {
-		failures = append(failures, fmt.Errorf(
+		failures = append(failures, fmt.Sprintf(
 			"%d of %d extensions failed to update",
 			summary.Failed, summary.Total,
 		))
@@ -3479,9 +3479,10 @@ func upgradeActionResult(
 		if failed == 1 {
 			noun = "dependency"
 		}
-		failures = append(failures, fmt.Errorf("%d extension %s failed to update", failed, noun))
+		failures = append(failures, fmt.Sprintf("%d extension %s failed to update", failed, noun))
 	}
-	if err := errors.Join(failures...); err != nil {
+	if len(failures) > 0 {
+		message := strings.Join(failures, "\n")
 		var dependencyErrors []error
 		for _, result := range results {
 			if dependencyErr := dependencyUpgradeError(result.DependencyUpgrades); dependencyErr != nil {
@@ -3489,9 +3490,9 @@ func upgradeActionResult(
 			}
 		}
 		if dependencyErr := errors.Join(dependencyErrors...); dependencyErr != nil {
-			return nil, fmt.Errorf("%v: %w", err, dependencyErr)
+			return nil, fmt.Errorf("%s: %w", message, dependencyErr)
 		}
-		return nil, err
+		return nil, errors.New(message)
 	}
 
 	return &actions.ActionResult{

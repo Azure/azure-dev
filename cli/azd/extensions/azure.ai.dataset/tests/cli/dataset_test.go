@@ -23,6 +23,15 @@ type datasetSummary struct {
 	DataURI string `json:"dataUri"`
 }
 
+// datasetPage is the envelope every listing emits, so `--limit` can say what it
+// left out without changing the shape a caller parses.
+type datasetPage struct {
+	Items             []datasetSummary `json:"items"`
+	Count             int              `json:"count"`
+	TotalCount        *int             `json:"total_count,omitempty"`
+	ContinuationToken *string          `json:"continuation_token"`
+}
+
 const oneRow = `{"query":"reset my password","response":"Use Forgot Password."}` + "\n"
 
 // latestVersion reads back what the service assigned. Versions are "1.0", not
@@ -42,7 +51,7 @@ func latestVersion(t *testing.T, name string) string {
 // is shared, and a leaked name is the next person's collision.
 func removeDataset(t *testing.T, name string) {
 	t.Helper()
-	var versions []datasetSummary
+	var versions datasetPage
 	res := run(t, "versions", "list", name, "-o", "json")
 	if res.ExitCode != 0 {
 		t.Errorf("cleanup: listing versions of %s failed (exit %d): %s", name, res.ExitCode, res.Stderr)
@@ -52,7 +61,7 @@ func removeDataset(t *testing.T, name string) {
 		t.Errorf("cleanup: reading versions of %s: %v", name, err)
 		return
 	}
-	for _, v := range versions {
+	for _, v := range versions.Items {
 		if r := run(t, "delete", name, "--version", v.Version, "--force"); r.ExitCode != 0 {
 			t.Errorf("cleanup: deleting %s version %s failed (exit %d): %s",
 				name, v.Version, r.ExitCode, r.Stderr)
@@ -88,11 +97,11 @@ func TestCLIDatasetLifecycle(t *testing.T) {
 	})
 
 	t.Run("it appears in the listing", func(t *testing.T) {
-		var all []datasetSummary
+		var all datasetPage
 		requireSuccess(t, run(t, "list", "-o", "json")).JSON(t, &all)
 
 		found := false
-		for _, d := range all {
+		for _, d := range all.Items {
 			if d.Name == name {
 				found = true
 			}
@@ -108,9 +117,9 @@ func TestCLIDatasetLifecycle(t *testing.T) {
 		require.NotEqual(t, first, second,
 			"update must advance the version rather than overwrite")
 
-		var versions []datasetSummary
+		var versions datasetPage
 		requireSuccess(t, run(t, "versions", "list", name, "-o", "json")).JSON(t, &versions)
-		require.GreaterOrEqual(t, len(versions), 2)
+		require.GreaterOrEqual(t, len(versions.Items), 2)
 	})
 
 	t.Run("the table names its columns", func(t *testing.T) {
@@ -121,14 +130,20 @@ func TestCLIDatasetLifecycle(t *testing.T) {
 	})
 }
 
-// Every list has to be a bare array, or a caller's parsing depends on which
-// service envelope happened to come back.
-func TestCLIJSONListsAreBareArrays(t *testing.T) {
+// Every list emits one page envelope, so a caller's parsing does not depend on
+// which service envelope happened to come back -- and `--limit` can say what it
+// left out without changing the shape.
+func TestCLIJSONListsAreOnePageEnvelope(t *testing.T) {
 	for _, args := range [][]string{{"list", "-o", "json"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			out := requireSuccess(t, run(t, args...)).Stdout
-			require.True(t, strings.HasPrefix(strings.TrimSpace(out), "["),
-				"a list must emit an array, got:\n%s", out)
+			require.True(t, strings.HasPrefix(strings.TrimSpace(out), "{"),
+				"a list must emit a page object, got:\n%s", out)
+
+			var page datasetPage
+			require.NoError(t, json.Unmarshal([]byte(out), &page))
+			require.Equal(t, len(page.Items), page.Count,
+				"count has to agree with the rows it counted")
 		})
 	}
 }

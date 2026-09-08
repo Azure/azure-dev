@@ -10,6 +10,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"time"
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
@@ -111,12 +112,22 @@ func (a *evaluatorWriteAction) Run() error {
 	}
 	defer ec.Close()
 
-	// Asked of the direct read, not the version listing. The listing lags a
-	// publish by up to a second and a half, so an update issued straight after a
-	// create would be told the evaluator it just made does not exist.
+	// This is not a point read, whatever the route looks like: with no version
+	// the client resolves the latest through the version listing, and that
+	// listing lags a publish. A 404 moments after a create therefore means "not
+	// caught up", not "no such evaluator".
 	existing, readErr := ec.evalClient.GetEvaluatorRaw(ctx, a.name, "", ProjectEndpointAPIVersion)
 	if readErr != nil && !eval_api.IsNotFound(readErr) {
 		return messages.CheckingEvaluatorExists(a.name, readErr)
+	}
+	// Only update acts on absence, so only update pays to establish it. Making
+	// create wait would put the settle delay on the common path, where an
+	// absent evaluator is the expected answer and not a suspicious one.
+	if readErr != nil && a.verb == "update" {
+		existing, readErr = settledEvaluatorRead(ctx, ec, a.name)
+		if readErr != nil && !eval_api.IsNotFound(readErr) {
+			return messages.CheckingEvaluatorExists(a.name, readErr)
+		}
 	}
 	// A non-404 already returned above, so reaching here means the read either
 	// found the evaluator or the service said it is unknown.
@@ -142,6 +153,50 @@ func (a *evaluatorWriteAction) Run() error {
 	}
 	fmt.Fprint(a.cmd.OutOrStdout(), messages.EvaluatorRegistered(created.Name, created.Version))
 	return nil
+}
+
+// How long the evaluator version listing is given to catch up before a 404 is
+// believed. The same budget the sibling extension gives a dataset listing.
+//
+// A var so a test can drop the delay: the number of attempts is the behavior
+// worth pinning, and waiting two real seconds to pin it is not.
+var (
+	evaluatorListingSettleAttempts = 5
+	evaluatorListingSettleDelay    = 400 * time.Millisecond
+)
+
+// settledEvaluatorRead re-reads an evaluator the listing has just denied.
+//
+// `evaluator create` followed by `evaluator update` is what a first authoring
+// session looks like, and the listing the read resolves through has not caught
+// up by then. Refusing the update strands the caller behind advice that cannot
+// work either: it says to run `create`, which fails once the listing catches up
+// and reports the name already taken.
+//
+// This narrows the window rather than closing it. A 404 still standing after
+// the last attempt is taken at face value, which is what keeps `update` on a
+// name that really does not exist from quietly creating it.
+func settledEvaluatorRead(
+	ctx context.Context,
+	ec *evalContext,
+	name string,
+) (json.RawMessage, error) {
+	var raw json.RawMessage
+	var err error
+	for attempt := range evaluatorListingSettleAttempts {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(evaluatorListingSettleDelay):
+			}
+		}
+		raw, err = ec.evalClient.GetEvaluatorRaw(ctx, name, "", ProjectEndpointAPIVersion)
+		if err == nil || !eval_api.IsNotFound(err) {
+			return raw, err
+		}
+	}
+	return nil, err
 }
 
 // checkAssetExistence enforces the one difference between create and update.

@@ -274,20 +274,25 @@ func DaemonUnreachable(err error) bool {
 //
 // Unavailable is no daemon at all. NotFound is a daemon with nothing under that
 // name -- kept as a guard, though azd's environment service does not use it
-// today. Unknown is the one that is not obvious: azd answers the ordinary
-// absences with plain Go errors that reach us with no status, and without
-// letting those through, a project with no environment selected -- or a command
-// run outside a project at all, which the atomic commands are meant to support
-// -- could never reach the global config or the host variable. It is admitted
-// only for the three messages above, because Unknown is equally what a failure
-// to load project state arrives as.
+// today. Unimplemented is an azd whose build does not carry the service being
+// asked: it has nothing to say on the subject, which is an answer of "nothing"
+// and not a failure, and treating it as one would make this extension refuse to
+// run against any azd older than the service it calls. Unknown is the one that
+// is not obvious: azd answers the ordinary absences with plain Go errors that
+// reach us with no status, and without letting those through, a project with no
+// environment selected -- or a command run outside a project at all, which the
+// atomic commands are meant to support -- could never reach the global config
+// or the host variable. It is admitted only for the three messages above,
+// because Unknown is equally what a failure to load project state arrives as.
 //
 // Everything else is a failure to answer rather than an answer of "nothing":
 // an expired login, a denial, a cancellation, or a server fault. Falling
 // through on any of those would resolve quietly to a lower-priority endpoint
 // that can belong to a different project.
 func hostedSourceAbsent(err error) bool {
-	if containsGRPCCode(err, codes.Unavailable) || containsGRPCCode(err, codes.NotFound) {
+	if containsGRPCCode(err, codes.Unavailable) ||
+		containsGRPCCode(err, codes.NotFound) ||
+		containsGRPCCode(err, codes.Unimplemented) {
 		return true
 	}
 	// The status the daemon sent, not the flattened text: status.FromError

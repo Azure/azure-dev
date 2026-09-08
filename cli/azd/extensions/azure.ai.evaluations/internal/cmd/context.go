@@ -476,8 +476,16 @@ func (ec *evalContext) setPrivate(ctx context.Context, key, value string) error 
 //
 // Outside an azd project there is nothing to share the section with and no
 // directory to put a lock file in, so the write goes ahead unguarded.
+//
+// A project azd could not be asked about is not that case. The read, merge and
+// write that follow are not atomic, so answering a failed lookup with a no-op
+// lock turns concurrent service deploys into a lost update: one of them reads
+// the section, the other writes it, and the first writes back what it read.
 func (ec *evalContext) lockPrivateState(ctx context.Context) (func(), error) {
-	root := ec.projectRoot(ctx)
+	root, err := ec.projectRoot(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if root == "" {
 		return func() {}, nil
 	}
@@ -486,22 +494,35 @@ func (ec *evalContext) lockPrivateState(ctx context.Context) (func(), error) {
 
 // projectRoot is the directory holding azure.yaml, cached for the command.
 //
-// Empty when azd does not report a project, which is every standalone
-// invocation against the data plane.
-func (ec *evalContext) projectRoot(ctx context.Context) string {
+// Empty when azd reports no project, which is every standalone invocation
+// against the data plane. An unreachable daemon counts as that: nothing spawned
+// us, so there is no project directory to lock in either.
+//
+// Anything else -- a denial, an expired login, a fault -- is returned, and is
+// deliberately not cached. Caching it would answer for the whole process, so
+// one hiccup early on would leave every later write unguarded.
+func (ec *evalContext) projectRoot(ctx context.Context) (string, error) {
 	if ec.rootKnown {
-		return ec.root
+		return ec.root, nil
 	}
-	ec.rootKnown = true
 	if ec.azdClient == nil {
-		return ""
+		ec.rootKnown = true
+		return "", nil
 	}
 	resp, err := ec.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
-	if err != nil || resp.GetProject() == nil {
-		return ""
+	if err != nil {
+		if projectctx.HostedSourceAbsent(err) {
+			ec.rootKnown = true
+			return "", nil
+		}
+		return "", err
+	}
+	ec.rootKnown = true
+	if resp.GetProject() == nil {
+		return "", nil
 	}
 	ec.root = resp.GetProject().GetPath()
-	return ec.root
+	return ec.root, nil
 }
 
 // privateValue reads one entry of reconciliation state.

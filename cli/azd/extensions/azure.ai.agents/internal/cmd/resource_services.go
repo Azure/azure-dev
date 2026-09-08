@@ -112,13 +112,6 @@ func promptResourceServices(
 			resources.ExtraUses = append(resources.ExtraUses, name)
 		}
 	}
-	if promptAgent.Toolbox != nil {
-		name := servicekey.SanitizeServiceName(promptAgent.Toolbox.Connection)
-		if name != "" && serviceHasHost(ctx, azdClient, name, AiConnectionHost) {
-			resources.ExtraUses = append(resources.ExtraUses, name)
-		}
-	}
-
 	return resources, nil
 }
 

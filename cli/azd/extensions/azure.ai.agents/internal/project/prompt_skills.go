@@ -53,9 +53,9 @@ type skillBundle struct {
 
 // toolboxRef identifies an existing toolbox to attach by reference.
 type toolboxRef struct {
-	Name       string
-	Version    string
-	Connection string
+	Name                string
+	Version             string
+	ProjectConnectionID string
 	// MCPEndpoint is the toolbox's MCP url as published by its sibling
 	// `host: azure.ai.toolbox` service, when that service deployed in this
 	// environment. It is authoritative: the toolboxes extension owns the
@@ -66,19 +66,16 @@ type toolboxRef struct {
 }
 
 // toolboxAttachment is the result of registering or resolving a toolbox: the
-// MCP url the agent connects to plus the name of the project connection that
-// authenticates the agent to that endpoint. The connection name is what the
-// injected mcp tool carries as its project_connection_id — without it the agent
-// has no credential to reach the toolbox and its skills are never invoked.
+// MCP URL the agent connects to and, when configured, the project connection
+// name or ID used to authenticate to that endpoint.
 type toolboxAttachment struct {
-	McpURL         string
-	ConnectionName string
+	McpURL              string
+	ProjectConnectionID string
 }
 
 // toolboxBuilder resolves an existing toolbox named by an explicit `toolbox:`
-// reference, returning the toolbox MCP url and the project connection that
-// fronts it. The seam keeps the graph node unit-testable without a live
-// endpoint.
+// reference, returning the toolbox MCP URL and its optional project connection
+// reference. The seam keeps the graph node unit-testable without a live endpoint.
 //
 // There is deliberately no "create a toolbox" operation here. Every harnessed
 // agent already has a system toolbox that the service creates, versions and
@@ -281,13 +278,12 @@ func extractFrontmatter(content string) (frontmatterResult, error) {
 	return frontmatterResult{frontmatter: front, body: after}, nil
 }
 
-// injectMcpTool ensures the agent's tools include an mcp tool for the given
-// toolbox label and MCP url. An existing mcp tool with the same server_url is
-// left in place (not duplicated). When connectionName is non-empty it is set as
-// the tool's project_connection_id so the agent can authenticate to the toolbox
-// MCP endpoint; without it the toolbox skills are never invoked. The managed
-// definition is mutated in place.
-func injectMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL, connectionName string) {
+// injectMcpTool ensures the agent's tools include an MCP tool for the given
+// toolbox label and MCP URL. An existing MCP tool with the same server_url is
+// left in place (not duplicated). When projectConnectionID is non-empty it is
+// set as the tool's project_connection_id. The managed definition is mutated
+// in place.
+func injectMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL, projectConnectionID string) {
 	if managed == nil || strings.TrimSpace(mcpURL) == "" {
 		return
 	}
@@ -302,9 +298,9 @@ func injectMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL, connect
 		if fmt.Sprintf("%v", tool["server_url"]) == mcpURL {
 			// Already present — backfill the connection id if it was missing so
 			// a previously connection-less mcp tool starts authenticating.
-			if strings.TrimSpace(connectionName) != "" {
+			if strings.TrimSpace(projectConnectionID) != "" {
 				if _, has := tool["project_connection_id"]; !has {
-					tool["project_connection_id"] = connectionName
+					tool["project_connection_id"] = projectConnectionID
 				}
 			}
 			return
@@ -316,8 +312,8 @@ func injectMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL, connect
 		"server_url":       mcpURL,
 		"require_approval": "always",
 	}
-	if strings.TrimSpace(connectionName) != "" {
-		mcpTool["project_connection_id"] = connectionName
+	if strings.TrimSpace(projectConnectionID) != "" {
+		mcpTool["project_connection_id"] = projectConnectionID
 	}
 	managed.Tools = append(managed.Tools, mcpTool)
 }
@@ -453,13 +449,6 @@ func toolboxNode(
 					"set toolbox.name in agent.yaml",
 				)
 			}
-			if strings.TrimSpace(ref.Connection) == "" {
-				return exterrors.Validation(
-					exterrors.CodeInvalidAgentManifest,
-					fmt.Sprintf("toolbox %q is missing its connection reference", ref.Name),
-					"set toolbox.connection to the sibling azure.ai.connection service name",
-				)
-			}
 			return nil
 		},
 		Resolve: func(ctx context.Context) error {
@@ -475,17 +464,17 @@ func toolboxNode(
 				return err
 			}
 			attachment, err := builder.ResolveToolbox(ctx, toolboxRef{
-				Name:        ref.Name,
-				Version:     ref.Version,
-				Connection:  ref.Connection,
-				MCPEndpoint: mcpEndpoint,
+				Name:                ref.Name,
+				Version:             ref.Version,
+				ProjectConnectionID: ref.ProjectConnectionID,
+				MCPEndpoint:         mcpEndpoint,
 			})
 			if err != nil {
 				return err
 			}
 
 			g.bindings[toolboxMcpURLBindingKey] = attachment.McpURL
-			injectMcpTool(g.managed, ref.Name, attachment.McpURL, attachment.ConnectionName)
+			injectMcpTool(g.managed, ref.Name, attachment.McpURL, attachment.ProjectConnectionID)
 			return nil
 		},
 	}
@@ -582,7 +571,7 @@ func siblingToolboxEndpoint(name, projectEndpoint string, env map[string]string)
 	return endpoint, nil
 }
 
-// ResolveToolbox consumes endpoint and connection outputs from sibling services.
+// ResolveToolbox consumes the endpoint published by the sibling toolbox service.
 func (b *foundryToolboxBuilder) ResolveToolbox(_ context.Context, ref toolboxRef) (toolboxAttachment, error) {
 	if ref.MCPEndpoint == "" {
 		return toolboxAttachment{}, exterrors.Dependency(
@@ -591,7 +580,7 @@ func (b *foundryToolboxBuilder) ResolveToolbox(_ context.Context, ref toolboxRef
 			fmt.Sprintf("add %q to the agent service's uses list and run 'azd deploy --all'", ref.Name),
 		)
 	}
-	return toolboxAttachment{McpURL: ref.MCPEndpoint, ConnectionName: ref.Connection}, nil
+	return toolboxAttachment{McpURL: ref.MCPEndpoint, ProjectConnectionID: ref.ProjectConnectionID}, nil
 }
 
 // newFoundryToolboxBuilder constructs the live builder from prompt settings.

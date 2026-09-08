@@ -344,18 +344,16 @@ func TestCreatePromptAgentAPIRequest_HarnessLessSkills(t *testing.T) {
 	}
 }
 
-// TestCreatePromptAgentAPIRequest_ToolsPassthrough verifies that tools,
-// tool_choice, and structured_inputs authored in agent.yaml flow through
-// verbatim into the create request definition and are serialized with the
-// API's snake_case shape.
+// TestCreatePromptAgentAPIRequest_ToolsPassthrough verifies that tools and the
+// camelCase authored controls flow into the API's snake_case request shape.
 func TestCreatePromptAgentAPIRequest_ToolsPassthrough(t *testing.T) {
 	yamlContent := []byte(`
 kind: prompt
 name: kitchen-sink-agent
 model: gpt-4o
 instructions: You are a maximally capable assistant.
-tool_choice: auto
-structured_inputs:
+toolChoice: auto
+structuredInputs:
   user_context:
     description: Extra context supplied per invocation
     required: false
@@ -436,6 +434,11 @@ tools:
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("serialized request missing %s:\n%s", want, body)
+		}
+	}
+	for _, unwanted := range []string{`"toolChoice"`, `"topP"`, `"structuredInputs"`} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("serialized API request contains authored key %s:\n%s", unwanted, body)
 		}
 	}
 }

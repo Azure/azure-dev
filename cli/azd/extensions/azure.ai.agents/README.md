@@ -231,6 +231,27 @@ and `subagents`. `default_config.enabled` applies to every built-in; entries in
 `configs` override individual tools. Skills are declared in the top-level
 `skills` list. Harness compute and idle settings are service-managed.
 
+Prompt-agent controls use camelCase in `azure.yaml` and are translated to the
+Foundry API's snake_case fields during deployment:
+
+```yaml
+toolChoice: auto
+temperature: 0
+topP: 0.9
+text:
+  format:
+    type: json_object
+reasoning:
+  effort: low
+structuredInputs:
+  user_context:
+    description: Additional invocation context
+    required: false
+```
+
+Nested tool definitions remain API-owned and use the field names documented by
+the corresponding Foundry tool contract.
+
 ## Content safety policies
 
 A hosted or prompt agent can be bound to an Azure AI Content Safety (RAI) policy so every

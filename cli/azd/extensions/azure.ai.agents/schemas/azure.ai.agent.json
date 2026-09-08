@@ -77,10 +77,10 @@
       "properties": {
         "name": { "type": "string", "minLength": 1 },
         "version": { "type": "string", "minLength": 1 },
-        "connection": {
+        "projectConnectionId": {
           "type": "string",
           "minLength": 1,
-          "description": "Sibling azure.ai.connection service used by prompt agents to call the toolbox MCP endpoint."
+          "description": "Optional Foundry project connection name or ID passed as the toolbox MCP tool's project_connection_id. Omit for toolbox endpoints that do not require project-connection authentication."
         }
       },
       "required": ["name"],
@@ -112,8 +112,26 @@
     },
     "structuredInputs": {
       "type": "object",
-      "description": "Voice agent (kind: prompt-voice) structured prompt inputs. Use description, defaultValue, schema, and required; azd maps defaultValue to the service wire field default_value.",
+      "description": "Structured prompt inputs for prompt and prompt-voice agents.",
       "additionalProperties": true
+    },
+    "temperature": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 2,
+      "description": "Sampling temperature for a prompt agent. Prefer setting either temperature or topP, not both."
+    },
+    "topP": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Nucleus-sampling cutoff for a prompt agent."
+    },
+    "text": {
+      "description": "Prompt-agent text response configuration, including structured output formats."
+    },
+    "reasoning": {
+      "description": "Prompt-agent reasoning configuration, such as reasoning effort."
     },
     "audio": {
       "$ref": "#/definitions/VoiceAudio"
@@ -160,7 +178,7 @@
       "additionalProperties": true
     },
     "toolChoice": {
-      "description": "Voice agent (kind: prompt-voice) tool choice behavior, such as none, auto, required, or a tool choice object."
+      "description": "Tool choice behavior for prompt and prompt-voice agents, such as none, auto, required, or a tool choice object."
     },
     "parallelToolCalls": {
       "type": "boolean",

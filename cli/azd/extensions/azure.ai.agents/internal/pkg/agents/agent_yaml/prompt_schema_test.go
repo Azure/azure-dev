@@ -47,3 +47,35 @@ connections:
 		t.Fatalf("round-tripped connections: got %d, want 2", len(again.Connections))
 	}
 }
+
+func TestPromptAgent_ToolboxProjectConnectionIDRoundTrip(t *testing.T) {
+	yamlContent := []byte(`
+kind: prompt
+name: toolbox-agent
+model: gpt-4.1-mini
+instructions: You are helpful.
+toolbox:
+  name: support-tools
+  projectConnectionId: toolbox-auth
+`)
+
+	var promptDef PromptAgent
+	if err := yaml.Unmarshal(yamlContent, &promptDef); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if promptDef.Toolbox == nil || promptDef.Toolbox.ProjectConnectionID != "toolbox-auth" {
+		t.Fatalf("toolbox: got %+v", promptDef.Toolbox)
+	}
+
+	data, err := yaml.Marshal(promptDef)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var again PromptAgent
+	if err := yaml.Unmarshal(data, &again); err != nil {
+		t.Fatalf("re-unmarshal: %v", err)
+	}
+	if again.Toolbox == nil || again.Toolbox.ProjectConnectionID != "toolbox-auth" {
+		t.Fatalf("round-tripped toolbox: got %+v", again.Toolbox)
+	}
+}

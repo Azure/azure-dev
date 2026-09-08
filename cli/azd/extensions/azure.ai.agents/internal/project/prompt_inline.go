@@ -18,13 +18,10 @@ import (
 // properties on the azure.ai.agent service entry — the same unified shape
 // hosted and voice agents use, so every agent kind is authored in one file.
 //
-// It exists because [agent_yaml.PromptAgent]'s JSON tags are the Foundry wire
-// format rather than the azure.yaml format. `memory` is tagged `json:"-"` there
-// because the prompt-agent API defines no such field (azd provisions the store
-// and injects a memory_search_preview tool instead), so marshaling a
-// PromptAgent straight into service properties would silently drop an authored
-// memory block. Re-declaring Memory at depth zero shadows the embedded field
-// for azure.yaml while leaving the wire type untouched.
+// It exists because `memory` is not a direct Foundry agent-definition field and
+// is therefore tagged `json:"-"` on PromptAgent. Re-declaring Memory at depth
+// zero preserves the authored block in azure.yaml while deploy translates it
+// into its service resources and tool carrier.
 type PromptAgentInline struct {
 	agent_yaml.PromptAgent
 

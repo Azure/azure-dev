@@ -14,7 +14,7 @@ import (
 )
 
 // TestPromptAgentToolsPassthrough_BraydonkDecoder verifies that the tools,
-// tool_choice, and structured_inputs authored in agent.yaml survive the
+// toolChoice and structuredInputs authored in azure.yaml survive the
 // braydonk/yaml decoder used by the deploy path (deployPromptAgent /
 // loadPromptAgentDefinition) and are serialized verbatim into the create
 // request body sent to the managed-agent API.
@@ -28,8 +28,8 @@ kind: prompt
 name: kitchen-sink-agent
 model: gpt-4o
 instructions: You are a maximally capable assistant.
-tool_choice: auto
-structured_inputs:
+toolChoice: auto
+structuredInputs:
   user_context:
     description: Extra context supplied per invocation
     required: false

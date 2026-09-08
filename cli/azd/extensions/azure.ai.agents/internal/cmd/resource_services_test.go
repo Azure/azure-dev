@@ -774,6 +774,18 @@ func TestPromptResourceServices(t *testing.T) {
 		got, err = promptResourceServices(t.Context(), withToolbox, agent, t.TempDir())
 		require.NoError(t, err)
 		assert.Equal(t, []string{"my-toolbox"}, got.ExtraUses)
+
+		// projectConnectionId is an API value, not an azure.yaml service key.
+		agent.Toolbox.ProjectConnectionID = "toolbox-auth"
+		withConnection := newProjectRecorderClient(t, &recordingProjectServer{
+			existing: map[string]*azdext.ServiceConfig{
+				"my-toolbox":   {Name: "my-toolbox", Host: AiToolboxHost},
+				"toolbox-auth": {Name: "toolbox-auth", Host: AiConnectionHost},
+			},
+		})
+		got, err = promptResourceServices(t.Context(), withConnection, agent, t.TempDir())
+		require.NoError(t, err)
+		assert.Equal(t, []string{"my-toolbox"}, got.ExtraUses)
 	})
 }
 

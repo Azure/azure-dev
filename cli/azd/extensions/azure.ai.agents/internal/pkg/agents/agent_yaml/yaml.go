@@ -614,7 +614,7 @@ type PromptAgent struct {
 
 	// ToolChoice controls how/whether the model calls tools (e.g. "auto",
 	// "required", "none", or a specific tool object). Passed through verbatim.
-	ToolChoice any `json:"tool_choice,omitempty" yaml:"tool_choice,omitempty"`
+	ToolChoice any `json:"toolChoice,omitempty" yaml:"toolChoice,omitempty"`
 
 	// Temperature is the sampling temperature. Pointer so an explicit 0 (fully
 	// deterministic) is distinguishable from "not set", which would otherwise
@@ -623,7 +623,7 @@ type PromptAgent struct {
 
 	// TopP is the nucleus-sampling cutoff. Pointer for the same reason as
 	// Temperature. The API accepts both; setting both is usually a mistake.
-	TopP *float64 `json:"top_p,omitempty" yaml:"top_p,omitempty"`
+	TopP *float64 `json:"topP,omitempty" yaml:"topP,omitempty"`
 
 	// Text configures the model's text response, most commonly the structured
 	// output format (e.g. text.format.type: json_schema). Passed through
@@ -636,7 +636,7 @@ type PromptAgent struct {
 
 	// StructuredInputs declares typed inputs the agent accepts per invocation.
 	// Passed through verbatim to the API.
-	StructuredInputs map[string]any `json:"structured_inputs,omitempty" yaml:"structured_inputs,omitempty"`
+	StructuredInputs map[string]any `json:"structuredInputs,omitempty" yaml:"structuredInputs,omitempty"`
 
 	// Policies is an optional list of governance policies (e.g. RAI). This is
 	// how the "guardrails" capability is expressed: a rai_policy entry becomes
@@ -752,9 +752,9 @@ type ToolboxReference struct {
 	// is used.
 	Version string `json:"version,omitempty" yaml:"version,omitempty"`
 
-	// Connection names the sibling azure.ai.connection service that authorizes
-	// a prompt agent to call this toolbox's MCP endpoint.
-	Connection string `json:"connection,omitempty" yaml:"connection,omitempty"`
+	// ProjectConnectionID is the optional Foundry project connection name or ID
+	// passed as the toolbox MCP tool's project_connection_id.
+	ProjectConnectionID string `json:"projectConnectionId,omitempty" yaml:"projectConnectionId,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.

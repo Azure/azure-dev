@@ -4,6 +4,7 @@
 package agent_yaml
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -214,7 +215,7 @@ name: sampling-agent
 model: gpt-4.1-mini
 instructions: You are helpful.
 temperature: 0
-top_p: 0.95
+topP: 0.95
 text:
   format:
     type: json_schema
@@ -244,6 +245,13 @@ reasoning:
 	require.NotNil(t, definition.Temperature)
 	require.Equal(t, 0.0, *definition.Temperature)
 	require.NotNil(t, definition.TopP)
+	require.Equal(t, 0.95, *definition.TopP)
 	require.NotNil(t, definition.Text)
 	require.NotNil(t, definition.Reasoning)
+
+	data, err := json.Marshal(request)
+	require.NoError(t, err)
+	body := string(data)
+	require.Contains(t, body, `"top_p":0.95`)
+	require.NotContains(t, body, `"topP"`)
 }

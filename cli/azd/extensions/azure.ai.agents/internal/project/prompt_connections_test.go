@@ -71,17 +71,12 @@ func TestConnectionsNodeUsesResolvedPromptProject(t *testing.T) {
 	}
 }
 
-func TestConnectionsNodeIncludesToolboxConnection(t *testing.T) {
-	agent := &agent_yaml.PromptAgent{Toolbox: &agent_yaml.ToolboxReference{Name: "tools", Connection: "tools-conn"}}
-	graph := &promptGraph{
-		managed: agent,
-		env: map[string]string{
-			"AZURE_AI_PROJECT_CONNECTION_NAMES": "tools-conn",
-		},
-	}
-
-	if err := connectionsNode(graph).Resolve(t.Context()); err != nil {
-		t.Fatalf("Resolve: %v", err)
+func TestConnectionsNodeIgnoresToolboxProjectConnectionID(t *testing.T) {
+	agent := &agent_yaml.PromptAgent{Toolbox: &agent_yaml.ToolboxReference{
+		Name: "tools", ProjectConnectionID: "external-connection-id",
+	}}
+	if node := connectionsNode(&promptGraph{managed: agent}); node != nil {
+		t.Fatal("toolbox projectConnectionId should not create a sibling service dependency")
 	}
 }
 

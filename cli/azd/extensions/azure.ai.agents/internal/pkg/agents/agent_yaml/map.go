@@ -616,10 +616,8 @@ func CreatePromptAgentAPIRequest(
 		Skills:       PromptAgentSkillReferences(promptAgent),
 	}
 
-	// Tools, tool_choice, and structured_inputs are passed through verbatim so
-	// authors can express any tool type the prompt-agent API accepts without
-	// this layer having to model each one. The YAML is decoded into
-	// JSON-compatible values (maps/slices/scalars) and re-serialized as-is.
+	// Tools and the camelCase authored fields toolChoice and structuredInputs are
+	// passed through to their snake_case Foundry API fields.
 	if len(promptAgent.Tools) > 0 {
 		promptDef.Tools = promptAgent.Tools
 	}

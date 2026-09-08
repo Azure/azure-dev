@@ -27,10 +27,10 @@ func testPromptHarness() *agent_yaml.PromptHarness {
 
 // fakeToolboxBuilder records calls and returns a fixed MCP url.
 type fakeToolboxBuilder struct {
-	mcpURL       string
-	connName     string
-	resolveCalls int
-	lastRef      toolboxRef
+	mcpURL              string
+	projectConnectionID string
+	resolveCalls        int
+	lastRef             toolboxRef
 }
 
 func (b *fakeToolboxBuilder) ResolveToolbox(_ context.Context, ref toolboxRef) (toolboxAttachment, error) {
@@ -39,7 +39,7 @@ func (b *fakeToolboxBuilder) ResolveToolbox(_ context.Context, ref toolboxRef) (
 	if b.mcpURL == "" {
 		b.mcpURL = "https://proj/toolboxes/existing/versions/2/mcp"
 	}
-	return toolboxAttachment{McpURL: b.mcpURL, ConnectionName: b.connName}, nil
+	return toolboxAttachment{McpURL: b.mcpURL, ProjectConnectionID: b.projectConnectionID}, nil
 }
 
 // TestToolboxNode_PrefersSiblingEndpoint verifies the toolbox node hands the
@@ -57,7 +57,9 @@ func TestToolboxNode_PrefersSiblingEndpoint(t *testing.T) {
 	}}
 
 	builder := &fakeToolboxBuilder{}
-	node := toolboxNode(g, &agent_yaml.ToolboxReference{Name: "tb", Connection: "tb-conn"}, func() (toolboxBuilder, error) {
+	node := toolboxNode(g, &agent_yaml.ToolboxReference{
+		Name: "tb", ProjectConnectionID: "tb-conn",
+	}, func() (toolboxBuilder, error) {
 		return builder, nil
 	})
 	if err := node.Resolve(context.Background()); err != nil {
@@ -79,7 +81,9 @@ func TestToolboxNode_RejectsCrossProjectEndpoint(t *testing.T) {
 		"FOUNDRY_PROJECT_ENDPOINT":          "https://acct.services.ai.azure.com/api/projects/p",
 	}}
 
-	node := toolboxNode(g, &agent_yaml.ToolboxReference{Name: "tb", Connection: "tb-conn"}, func() (toolboxBuilder, error) {
+	node := toolboxNode(g, &agent_yaml.ToolboxReference{
+		Name: "tb", ProjectConnectionID: "tb-conn",
+	}, func() (toolboxBuilder, error) {
 		return &fakeToolboxBuilder{}, nil
 	})
 	if err := node.Resolve(context.Background()); err == nil {
@@ -255,9 +259,11 @@ func TestToolboxNode_ReferenceExisting(t *testing.T) {
 	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i"}
 	managed.Name = "agent"
 	g := &promptGraph{managed: managed, bindings: map[string]any{}}
-	fake := &fakeToolboxBuilder{connName: "agent-toolbox"}
+	fake := &fakeToolboxBuilder{projectConnectionID: "agent-toolbox"}
 
-	ref := &agent_yaml.ToolboxReference{Name: "existing-tb", Version: "2", Connection: "agent-toolbox"}
+	ref := &agent_yaml.ToolboxReference{
+		Name: "existing-tb", Version: "2", ProjectConnectionID: "agent-toolbox",
+	}
 	node := toolboxNode(g, ref, func() (toolboxBuilder, error) { return fake, nil })
 	if node == nil {
 		t.Fatal("expected a toolbox node")
@@ -292,6 +298,27 @@ func TestToolboxNode_NoneReturnsNil(t *testing.T) {
 	node := toolboxNode(g, nil, func() (toolboxBuilder, error) { return nil, nil })
 	if node != nil {
 		t.Fatal("expected nil node when no reference")
+	}
+}
+
+func TestToolboxNode_WithoutProjectConnectionID(t *testing.T) {
+	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i"}
+	g := &promptGraph{managed: managed, bindings: map[string]any{}}
+	fake := &fakeToolboxBuilder{}
+
+	node := toolboxNode(g, &agent_yaml.ToolboxReference{Name: "public-tools"}, func() (toolboxBuilder, error) {
+		return fake, nil
+	})
+	if err := node.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if err := node.Resolve(t.Context()); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+
+	tool := managed.Tools[0].(map[string]any)
+	if _, exists := tool["project_connection_id"]; exists {
+		t.Errorf("project_connection_id should be omitted: %+v", tool)
 	}
 }
 
@@ -485,7 +512,9 @@ func TestSkillsShellNode_RejectsToolboxReference(t *testing.T) {
 	managed.Name = "agent"
 	g := &promptGraph{managed: managed, bindings: map[string]any{}}
 
-	ref := &agent_yaml.ToolboxReference{Name: "existing-tb", Version: "2", Connection: "agent-toolbox"}
+	ref := &agent_yaml.ToolboxReference{
+		Name: "existing-tb", Version: "2", ProjectConnectionID: "agent-toolbox",
+	}
 	node := skillsShellNode(g, nil, ref)
 	if node == nil {
 		t.Fatal("expected a skills node")

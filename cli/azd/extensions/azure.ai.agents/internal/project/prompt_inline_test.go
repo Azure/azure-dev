@@ -52,6 +52,8 @@ func TestPromptAgentInlineRoundTripPreservesMemory(t *testing.T) {
 func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 	t.Parallel()
 
+	temperature := 0.0
+	topP := 0.9
 	original := agent_yaml.PromptAgent{
 		AgentDefinition: agent_yaml.AgentDefinition{
 			Kind: agent_yaml.AgentKindPrompt,
@@ -63,11 +65,25 @@ func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 			Type: "github_copilot_preview",
 		},
 		Tools:       []any{map[string]any{"type": "code_interpreter"}},
+		ToolChoice:  "auto",
+		Temperature: &temperature,
+		TopP:        &topP,
+		Text:        map[string]any{"format": map[string]any{"type": "json_object"}},
+		Reasoning:   map[string]any{"effort": "low"},
+		StructuredInputs: map[string]any{
+			"context": map[string]any{"required": false},
+		},
 		Connections: []string{"search"},
 	}
 
 	props, err := PromptAgentDefinitionToServiceProperties(original)
 	require.NoError(t, err)
+	for _, key := range []string{"toolChoice", "temperature", "topP", "text", "reasoning", "structuredInputs"} {
+		require.Contains(t, props.AsMap(), key)
+	}
+	for _, key := range []string{"tool_choice", "top_p", "structured_inputs"} {
+		require.NotContains(t, props.AsMap(), key)
+	}
 
 	svc := &azdext.ServiceConfig{Name: "full-agent", AdditionalProperties: props}
 	got, found, err := PromptAgentFromResolvedService(svc, t.TempDir())
@@ -81,6 +97,12 @@ func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 	require.NotNil(t, got.Harness)
 	require.Equal(t, "github_copilot_preview", got.Harness.Type)
 	require.Len(t, got.Tools, 1)
+	require.Equal(t, original.ToolChoice, got.ToolChoice)
+	require.Equal(t, original.Temperature, got.Temperature)
+	require.Equal(t, original.TopP, got.TopP)
+	require.Equal(t, original.Text, got.Text)
+	require.Equal(t, original.Reasoning, got.Reasoning)
+	require.Equal(t, original.StructuredInputs, got.StructuredInputs)
 	require.Len(t, got.Connections, 1)
 	require.Equal(t, "search", got.Connections[0])
 

@@ -34,9 +34,6 @@ func siblingOwnsConnection(name, projectEndpoint string, env map[string]string) 
 // before the agent is published.
 func connectionsNode(g *promptGraph) *promptNode {
 	connections := g.managed.Connections
-	if g.managed.Toolbox != nil && strings.TrimSpace(g.managed.Toolbox.Connection) != "" {
-		connections = append(connections, g.managed.Toolbox.Connection)
-	}
 	if len(connections) == 0 {
 		return nil
 	}

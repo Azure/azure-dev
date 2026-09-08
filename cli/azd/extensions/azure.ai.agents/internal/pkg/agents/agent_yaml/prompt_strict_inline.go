@@ -30,7 +30,7 @@ import (
 // definition carried on an azure.yaml service entry.
 //
 // props is the raw property bag. Keys the prompt agent forwards verbatim
-// (tools, text, reasoning, structured_inputs) are deliberately not inspected so
+// (tools, text, reasoning, structuredInputs) are deliberately not inspected so
 // a tool type newer than this build still passes through.
 func ValidateInlinePromptAgent(props map[string]any) error {
 	if raw, ok := props["harness"]; ok {

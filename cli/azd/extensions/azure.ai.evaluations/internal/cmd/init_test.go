@@ -205,8 +205,10 @@ func TestScaffold_ExplicitEvaluatorsReplaceTheDefault(t *testing.T) {
 	require.Equal(t, []string{"builtin.task_adherence"}, plan.evaluatorNames())
 }
 
-// `init` closes by naming the deploy. It never names a generation command:
-// everything it wrote already resolves, so there is nothing left to produce.
+// `init` closes by naming the targeted create, and nothing else. It never names
+// a generation command: everything it wrote already resolves, so there is
+// nothing left to produce. It no longer names `run start` either -- that cannot
+// run until the create has, and the two under one heading read as one command.
 func TestScaffold_NextStepsNameTheDeploy(t *testing.T) {
 	plan, _ := scaffoldFor(t, scaffoldInput{
 		evalName:   "smoke",
@@ -216,28 +218,23 @@ func TestScaffold_NextStepsNameTheDeploy(t *testing.T) {
 		judgeModel: "m",
 	})
 
-	// Verified against azd 1.30.0. `azd up` on a project with no infra/
-	// exits 1 compiling a missing infra/main.bicep, and `azd deploy` exits
-	// 1 with "infrastructure has not been provisioned" in an environment
-	// that never provisioned one. `azd ai eval create` needs neither.
 	require.Equal(t,
-		[]string{"azd ai eval create smoke", "azd ai eval run start --eval smoke"},
-		plan.nextSteps("azd ai eval create"),
-		"the deploy step is the one the project can actually run, and it names the eval")
-	require.Equal(t,
-		[]string{"azd up", "azd ai eval run start --eval smoke"},
-		plan.nextSteps("azd up"),
-		"where the project does provision, one command covers both")
+		[]string{"azd ai eval create smoke"},
+		plan.nextSteps(),
+		"the targeted create reconciles the one eval that was just added")
 
-	joined := strings.Join(plan.nextSteps("azd ai eval create"), "\n")
+	joined := strings.Join(plan.nextSteps(), "\n")
 	require.NotContains(t, joined, "generate",
 		"init writes nothing that has still to be generated")
+	require.NotContains(t, joined, "run start",
+		"the run cannot start until the create above has finished")
 }
 
-// init adds the eval service to azure.yaml without asking, so the deploy it
-// recommends reconciles every eval in the file -- including ones this run did
-// not add. The spec lets the wiring stay automatic only while that is said out
-// loud and the single-eval alternative is offered beside it.
+// init adds the eval service to azure.yaml without asking, so `azd up` would
+// reconcile every eval in the file -- including ones this run did not add, and
+// it may provision or deploy other services too. The spec makes the targeted
+// create primary and lets the whole-project deploy appear only under a label
+// that says what it reaches.
 func TestScaffold_ProjectDeployDisclosesItsReach(t *testing.T) {
 	plan, _ := scaffoldFor(t, scaffoldInput{
 		evalName:   "smoke",
@@ -247,13 +244,13 @@ func TestScaffold_ProjectDeployDisclosesItsReach(t *testing.T) {
 		judgeModel: "m",
 	})
 
-	disclosure := messages.ProjectDeployAlsoReconciles(azdUpCommand, "evals/azure.eval.yaml")
-	assert.Contains(t, disclosure, "reconciles every eval")
-	assert.Contains(t, disclosure, "evals/azure.eval.yaml")
+	assert.Equal(t, "azd ai eval create smoke", plan.targetedCreate(),
+		"the targeted create is what init leads with")
 
-	alternative := messages.TargetedEvalAlternative(plan.targetedCreate())
-	assert.Contains(t, alternative, "azd ai eval create smoke")
-	assert.Contains(t, alternative, "without deploying other services")
+	alternative := messages.WholeProjectAlternative(azdUpCommand)
+	assert.Contains(t, alternative, "Alternatively")
+	assert.Contains(t, alternative, "all project services and evals")
+	assert.Contains(t, alternative, azdUpCommand)
 }
 
 // Which command deploys is decided in one place, so every message that names
@@ -286,7 +283,7 @@ func TestScaffold_NextStepsNameCommandsThatExist(t *testing.T) {
 
 	for _, in := range inputs {
 		plan, _ := scaffoldFor(t, in)
-		for _, step := range plan.nextSteps("azd ai eval create") {
+		for _, step := range plan.nextSteps() {
 			// Steps that drive azd itself -- `azd up`, `azd deploy` -- are not
 			// this extension's commands and resolve against a different tree.
 			if !strings.HasPrefix(step, "azd ai eval ") {

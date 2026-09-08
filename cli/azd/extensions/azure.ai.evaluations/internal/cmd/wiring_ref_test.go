@@ -28,18 +28,36 @@ func serviceWithRef(t *testing.T, ref string) *azdext.ServiceConfig {
 }
 
 // The `$ref` an entry already carries decides whether the wiring is present,
-// and it is compared as a path rather than as text.
+// and it is compared as a file identity rather than as text.
 //
 // Matching on name and host alone reported the wiring present after
 // `init --path` moved the configuration, and `azd up` went on deploying the
 // file left behind. Comparing the text alone would have called
-// `evals/azure.eval.yaml` and `./evals/azure.eval.yaml` two different answers.
+// `evals/azure.eval.yaml` and `./evals/azure.eval.yaml` two different answers,
+// and a relative ref and the absolute path it resolves to two different files.
 func TestServiceRefIsComparedAsAPath(t *testing.T) {
-	assert.True(t, sameRefTarget("./evals/azure.eval.yaml", "evals/azure.eval.yaml"),
+	const root = "/proj"
+
+	assert.True(t, sameRefTarget(root, "./evals/azure.eval.yaml", "evals/azure.eval.yaml"),
 		"the same file written two ways is one answer")
-	assert.True(t, sameRefTarget("evals/../evals/azure.eval.yaml", "./evals/azure.eval.yaml"))
-	assert.False(t, sameRefTarget("./evals/azure.eval.yaml", "./quality/azure.eval.yaml"),
+	assert.True(t, sameRefTarget(root, "evals/../evals/azure.eval.yaml", "./evals/azure.eval.yaml"))
+	assert.False(t, sameRefTarget(root, "./evals/azure.eval.yaml", "./quality/azure.eval.yaml"),
 		"a different file is what the guard exists to catch")
+}
+
+// A relative `$ref` and the absolute path it resolves to name one file.
+//
+// `init --path` with an absolute directory wrote an absolute ref, and the next
+// run compared it against the relative form and reported the service as
+// pointing somewhere else -- refusing to scaffold over a configuration it had
+// written itself.
+func TestARelativeRefAndItsAbsolutePathAreOneFile(t *testing.T) {
+	root := t.TempDir()
+	absolute := filepath.Join(root, "evals", "azure.eval.yaml")
+
+	assert.True(t, sameRefTarget(root, "./evals/azure.eval.yaml", filepath.ToSlash(absolute)))
+	assert.True(t, sameRefTarget(root, filepath.ToSlash(absolute), "evals/azure.eval.yaml"))
+	assert.False(t, sameRefTarget(root, "./quality/azure.eval.yaml", filepath.ToSlash(absolute)))
 }
 
 // An entry with no `$ref` has nothing to disagree with.

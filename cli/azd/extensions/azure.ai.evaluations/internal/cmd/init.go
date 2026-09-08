@@ -10,6 +10,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -270,9 +271,20 @@ func (a *initAction) Run() error {
 		return messages.CreatingEvaluatorsDir(err)
 	}
 
+	// --target names the azure.yaml service, which is a local label. The eval's
+	// target has to be the name the agent is published under, or the run grades
+	// a different agent -- or none. Resolved here, once, so the written config
+	// says what it means; a target no local service declares is left as written,
+	// because the configuration is entitled to name a remote agent.
+	remoteTarget, err := project.RemoteAgentName(azdProject, target)
+	if err != nil {
+		return err
+	}
+
 	plan, err := planScaffold(scaffoldInput{
 		evalName:        evalName,
 		target:          target,
+		remoteTarget:    remoteTarget,
 		source:          source,
 		dataset:         datasetRef,
 		maxTraces:       a.flags.maxTraces,
@@ -346,23 +358,18 @@ func (a *initAction) Run() error {
 		fmt.Fprint(out, messages.AlreadyDeclaresServiceLine(rootConfigName, serviceName))
 	}
 
-	// Only what was actually scheduled is offered. Suggesting
-	// `dataset generate` for a dataset the caller supplied sends them
-	// to submit a billed job for an artifact they already have.
+	// The targeted create is the primary next action: it reconciles the one
+	// eval that was just added. `azd up` is offered under a heading that says
+	// what it costs, because init wires the eval service into azure.yaml
+	// without asking and the deploy then covers every eval in the file.
+	//
+	// `run start` is not printed here. It cannot run until the create above
+	// has, and printing the two together under one heading read as a single
+	// two-line command; `eval create` prints it once it has something to run.
 	deployCmd := deployCommandName(azdProject)
-	next := plan.nextSteps(deployCmd)
-	fmt.Fprint(out, messages.FirstNextStep(next[0]))
-	for _, step := range next[1:] {
-		fmt.Fprint(out, messages.FurtherNextStep(step))
-	}
-	// init wires the eval service into azure.yaml without asking, so the
-	// project deploy now covers evals the reader did not add in this run. The
-	// alternative that touches only this one is printed beside it rather than
-	// left to be discovered.
+	fmt.Fprint(out, messages.FirstNextStep(plan.targetedCreate()))
 	if deployCmd == azdUpCommand {
-		fmt.Fprint(out, messages.ProjectDeployAlsoReconciles(
-			deployCmd, filepath.ToSlash(configPath)))
-		fmt.Fprint(out, messages.TargetedEvalAlternative(plan.targetedCreate()))
+		fmt.Fprint(out, messages.WholeProjectAlternative(deployCmd))
 	}
 	return nil
 }
@@ -499,10 +506,15 @@ func usableDatasetCount(cfg *project.EvalConfig, evalDir string) int {
 
 // refTo is the `$ref` value for a configuration at path.
 //
+// Always project-relative when it can be: a `$ref` is read relative to the
+// directory holding azure.yaml, and an absolute one is a path off one machine.
+// Committing `C:/Users/someone/proj/evals/azure.eval.yaml` makes azure.yaml
+// resolve to nothing on anybody else's checkout.
+//
 // Relative paths get `./` so the directive reads as a path rather than a
-// registry name. An absolute one already is a path, and prefixing it produced
-// `.//tmp/evals/azure.eval.yaml`: `init` wrote the configuration where it was
-// asked, and `azd up` then resolved something else under the project.
+// registry name. An absolute one that cannot be rebased -- a different volume,
+// or no project root to rebase onto -- is left as it is, because there is no
+// relative form of it to write, and prefixing it produced `.//tmp/evals/...`.
 //
 // configPath is relative to where the caller stood; a `$ref` is read relative
 // to the directory holding azure.yaml. Written as the one and read as the
@@ -510,10 +522,10 @@ func usableDatasetCount(cfg *project.EvalConfig, evalDir string) int {
 // it had just written under that subdirectory, and `azd up` deployed a file
 // that was never there.
 func refTo(projectRoot, configPath string) string {
-	if filepath.IsAbs(configPath) {
-		return filepath.ToSlash(configPath)
-	}
 	rebased := filepath.ToSlash(relativeToRoot(projectRoot, configPath))
+	if filepath.IsAbs(filepath.FromSlash(rebased)) {
+		return rebased
+	}
 	if rebased == ".." || strings.HasPrefix(rebased, "../") {
 		// Outside the project, but still resolved against the root, so `./`
 		// would only be noise in front of it.
@@ -585,8 +597,13 @@ func trimEvalName(base string, reserve int) string {
 // scaffoldInput is everything planScaffold needs, gathered so the signature
 // does not grow a seventh positional string.
 type scaffoldInput struct {
-	evalName        string
-	target          string
+	evalName string
+	// target is the azure.yaml service key, which is what the author typed.
+	target string
+	// remoteTarget is the name that service publishes the agent under, which is
+	// what the run API invokes. Empty when there is no project to resolve it
+	// against, in which case target stands.
+	remoteTarget    string
 	source          string
 	dataset         string
 	maxTraces       int
@@ -631,7 +648,10 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 		EvaluationLevel: cmp.Or(in.evaluationLevel, project.EvaluationLevelTurn),
 		Target: &project.Target{
 			Type: project.TargetTypeAgent,
-			Name: in.target,
+			// The published name, not the service key: this is what the run
+			// API invokes. The description above keeps the local name, which
+			// is what the author typed and recognizes.
+			Name: cmp.Or(in.remoteTarget, in.target),
 		},
 	}
 
@@ -832,24 +852,14 @@ func (s scaffold) evaluatorNames() []string {
 	return names
 }
 
-// nextSteps are the commands to run after `init`, and only the ones that have
-// something to do.
+// nextSteps are the commands to run after `init`.
 //
-// A caller who supplied both a dataset and their evaluators has nothing left to
-// generate, and pointing them at a generation command would submit a billed job
-// for an artifact they already have.
-//
-// Every generate step carries --target and --generation-model, which `generate`
-// requires and does not detect. Omitting them printed a next step that failed
-// twice before it ran, each failure naming one more flag.
-func (s scaffold) nextSteps(deployCmd string) []string {
-	// `azd up` reads azure.yaml, which already $refs the configuration
-	// wherever it was written, so it is the one step --path must not join.
-	deploy := deployCmd
-	if deploy != azdUpCommand {
-		deploy = s.targetedCreate()
-	}
-	return []string{deploy, s.withPath("azd ai eval run start --eval " + s.evalName())}
+// One command: the targeted create. `run start` used to be printed beneath it
+// under the same `Next:` heading, which read as one two-line command and could
+// not run as shown -- the create has to succeed first. `eval create` prints it
+// when there is something to run.
+func (s scaffold) nextSteps() []string {
+	return []string{s.targetedCreate()}
 }
 
 // targetedCreate reconciles only the eval init just added.
@@ -1091,7 +1101,7 @@ func rootEvalServiceAction(
 	if svc.GetHost() != project.EvalHost {
 		return "", messages.ServiceNameTaken(serviceName, svc.GetHost())
 	}
-	if have := serviceConfigRef(svc); have != "" && !sameRefTarget(have, wantRef) {
+	if have := serviceConfigRef(svc); have != "" && !sameRefTarget(proj.GetPath(), have, wantRef) {
 		return "", messages.ServiceRefPointsElsewhere(serviceName, have, wantRef)
 	}
 	return wiringPresent, nil
@@ -1161,10 +1171,39 @@ func serviceConfigRef(svc *azdext.ServiceConfig) string {
 	return ref
 }
 
-// sameRefTarget compares two $ref values as paths rather than as text, so
-// `evals/azure.eval.yaml` and `./evals/azure.eval.yaml` are one answer.
-func sameRefTarget(a, b string) bool {
-	return filepath.Clean(filepath.FromSlash(a)) == filepath.Clean(filepath.FromSlash(b))
+// sameRefTarget compares two $ref values as file identities rather than as
+// text, so `evals/azure.eval.yaml`, `./evals/azure.eval.yaml` and the absolute
+// path they resolve to are one answer.
+//
+// Both are resolved against the directory azure.yaml sits in, because that is
+// what a `$ref` is read relative to. Comparing them cleaned but unresolved made
+// a relative ref and its own absolute form look like two different files, so
+// `init --path` with an absolute directory reported the service as pointing
+// somewhere else and refused to scaffold over a configuration it had written
+// itself.
+//
+// Case-insensitively on Windows, where `Evals\` and `evals\` name one file and
+// azd, the shell and the user each pick their own capitalization.
+func sameRefTarget(projectRoot, a, b string) bool {
+	return sameFilePath(resolveRef(projectRoot, a), resolveRef(projectRoot, b))
+}
+
+// resolveRef makes a $ref absolute against the directory holding azure.yaml.
+func resolveRef(projectRoot, ref string) string {
+	local := filepath.FromSlash(ref)
+	if filepath.IsAbs(local) || projectRoot == "" {
+		return filepath.Clean(local)
+	}
+	return filepath.Clean(filepath.Join(projectRoot, local))
+}
+
+// sameFilePath compares two resolved paths the way the filesystem under them
+// would.
+func sameFilePath(a, b string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
 }
 
 // evalServiceUses orders the eval after the things it reads.

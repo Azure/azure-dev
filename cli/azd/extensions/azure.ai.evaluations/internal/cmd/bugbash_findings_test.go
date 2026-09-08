@@ -44,19 +44,37 @@ func TestOrdinaryEvaluatorRefsAreStillAccepted(t *testing.T) {
 	}
 }
 
-// An absolute --path is documented as supported. Prefixing it with "./" made
-// the service `$ref` read `.//tmp/evals/azure.eval.yaml`, so `init` wrote the
-// configuration where it was asked and `azd up` resolved a different file under
-// the project -- the scaffold the reader was looking at was never deployed.
-func TestRefToLeavesAnAbsolutePathAlone(t *testing.T) {
-	abs := filepath.Join(t.TempDir(), "evals", "azure.eval.yaml")
+// An absolute --path is documented as supported, and what gets written for it
+// is a project-relative `$ref`.
+//
+// Two things had to be true at once and only one was. Prefixing an absolute
+// path with "./" made the service `$ref` read `.//tmp/evals/azure.eval.yaml`,
+// so `azd up` resolved a different file under the project. Writing it through
+// unchanged fixed that and left `C:/Users/someone/proj/evals/azure.eval.yaml`
+// in a committed azure.yaml, which resolves to nothing on anyone else's
+// checkout. Rebasing onto the project root satisfies both.
+func TestRefToRebasesAnAbsolutePathOntoTheProject(t *testing.T) {
+	root := t.TempDir()
+	abs := filepath.Join(root, "evals", "azure.eval.yaml")
 	require.True(t, filepath.IsAbs(abs), "the fixture has to be absolute to test this")
 
-	got := refTo(t.TempDir(), abs)
+	got := refTo(root, abs)
 
+	assert.Equal(t, "./evals/azure.eval.yaml", got,
+		"a path inside the project is written the way every checkout can read it")
+	assert.NotContains(t, got, ".//", "and never with the doubled separator")
+}
+
+// With no root to rebase onto there is no relative form, so it is written as
+// given rather than prefixed into nonsense.
+func TestRefToLeavesAnUnrebasablePathAbsolute(t *testing.T) {
+	abs := filepath.Join(t.TempDir(), "evals", "azure.eval.yaml")
+
+	got := refTo("", abs)
+
+	assert.Equal(t, filepath.ToSlash(abs), got)
 	assert.False(t, strings.HasPrefix(got, "./"),
 		"an absolute path is already a path; %q is not one", got)
-	assert.Equal(t, filepath.ToSlash(abs), got)
 }
 
 // A relative one still gets the prefix, so the directive reads as a path rather

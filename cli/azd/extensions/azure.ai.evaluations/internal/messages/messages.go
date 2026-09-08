@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -2765,27 +2766,18 @@ func FirstNextStep(step string) string {
 	return fmt.Sprintf("\nNext: %s\n", step)
 }
 
-// FurtherNextStep continues the list of commands to run after a scaffold.
-func FurtherNextStep(step string) string {
-	return fmt.Sprintf("      %s\n", step)
-}
-
-// ProjectDeployAlsoReconciles says what the project deploy does beyond this eval.
+// WholeProjectAlternative offers the deploy that reconciles everything.
 //
-// init wires the eval service into azure.yaml without asking, so the deploy it
-// then recommends reconciles every eval the file declares -- not the one that
-// was just added. A reader who added one eval to a file holding four has to be
-// told that before they run it, not after.
-func ProjectDeployAlsoReconciles(deployCmd, configPath string) string {
+// Labelled as the alternative rather than printed as the next step. `init`
+// wires the eval service into azure.yaml without asking, so this command
+// reconciles every eval the file declares and may provision or deploy other
+// services -- none of which the reader asked for by adding one eval. The
+// targeted create is what they meant, so it goes first and this is offered
+// under a heading that says what it costs.
+func WholeProjectAlternative(deployCmd string) string {
 	return fmt.Sprintf(
-		"\n%s deploys the project and reconciles every eval in %s.\n",
-		deployCmd, configPath)
-}
-
-// TargetedEvalAlternative offers the command that touches only this eval.
-func TargetedEvalAlternative(command string) string {
-	return fmt.Sprintf(
-		"To create only this eval without deploying other services:\n  %s\n", command)
+		"\nAlternatively, reconcile all project services and evals:\n  %s\n",
+		deployCmd)
 }
 
 // CreatedCatalogFile reports a configuration created to hold a catalog entry.
@@ -3145,7 +3137,20 @@ func ServiceRefPointsElsewhere(serviceName, have, want string) error {
 	return fmt.Errorf(
 		"service %q already points at %s, and the configuration just written is "+
 			"%s; point the service's $ref at the one you want, or scaffold with "+
-			"--path %s", serviceName, have, want, have)
+			"--path %s", serviceName, have, want, evalDirOfRef(have))
+}
+
+// evalDirOfRef is the directory a $ref's file sits in.
+//
+// --path names a directory, and the refusal above suggested one by handing back
+// the $ref itself -- so the way out it offered was `--path
+// ./evals/azure.eval.yaml`, which resolves to a directory that does not exist.
+func evalDirOfRef(ref string) string {
+	dir := path.Dir(filepath.ToSlash(ref))
+	if dir == "" || dir == "." {
+		return "."
+	}
+	return dir
 }
 
 // ConfigValueNotAScalar reports an entry whose value is a mapping or sequence

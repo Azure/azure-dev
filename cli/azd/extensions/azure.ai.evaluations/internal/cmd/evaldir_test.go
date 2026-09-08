@@ -303,35 +303,31 @@ func TestEvalPathEnvKey(t *testing.T) {
 // it in.
 func TestNextStepsRunAsPrinted(t *testing.T) {
 	cases := []struct {
-		name      string
-		evalDir   string
-		deployCmd string
-		wantPath  bool
+		name     string
+		evalDir  string
+		wantPath bool
 	}{
 		{
-			name:      "a scaffold outside ./evals names itself",
-			evalDir:   "./quality",
-			deployCmd: "azd ai eval create",
-			wantPath:  true,
+			name:     "a scaffold outside ./evals names itself",
+			evalDir:  "./quality",
+			wantPath: true,
 		},
 		{
-			name:      "the default directory needs no flag",
-			evalDir:   project.DefaultEvalDir,
-			deployCmd: "azd ai eval create",
-			wantPath:  false,
+			name:     "the default directory needs no flag",
+			evalDir:  project.DefaultEvalDir,
+			wantPath: false,
 		},
 		{
-			name:      "an unrecorded directory needs no flag",
-			evalDir:   "",
-			deployCmd: "azd ai eval create",
-			wantPath:  false,
+			name:     "an unrecorded directory needs no flag",
+			evalDir:  "",
+			wantPath: false,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			s := scaffold{eval: &project.Eval{Name: "an-eval"}, evalDir: tc.evalDir}
-			for _, step := range s.nextSteps(tc.deployCmd) {
+			for _, step := range s.nextSteps() {
 				assert.Equal(t, tc.wantPath, strings.Contains(step, "--path "),
 					"step %q", step)
 			}
@@ -339,20 +335,33 @@ func TestNextStepsRunAsPrinted(t *testing.T) {
 	}
 }
 
+// `init` prints one next command. `run start` used to be printed beneath the
+// create under the same heading, which read as a single two-line command and
+// could not run as shown: the create has to succeed first.
+func TestInitPrintsOneNextCommand(t *testing.T) {
+	s := scaffold{eval: &project.Eval{Name: "an-eval"}, evalDir: "./quality"}
+
+	steps := s.nextSteps()
+
+	require.Len(t, steps, 1)
+	assert.Contains(t, steps[0], "azd ai eval create an-eval")
+	assert.NotContains(t, steps[0], "run start",
+		"the run cannot start until the create above has finished")
+}
+
 // `azd up` provisions and then deploys, reading azure.yaml -- which already
 // $refs the configuration wherever it was written. It takes none of this
 // extension's flags, so handing it --path prints a step that fails.
+//
+// It is now offered as a labelled alternative rather than as the next step, so
+// the guard is on the alternative's wording.
 func TestNextStepsNeverFlagAzdUp(t *testing.T) {
-	s := scaffold{eval: &project.Eval{Name: "an-eval"}, evalDir: "./quality"}
+	alternative := messages.WholeProjectAlternative(azdUpCommand)
 
-	steps := s.nextSteps(azdUpCommand)
-	assert.Contains(t, steps, azdUpCommand,
+	assert.Contains(t, alternative, azdUpCommand,
 		"`azd up` should be suggested exactly as it is run")
-	for _, step := range steps {
-		if strings.HasPrefix(step, azdUpCommand) {
-			assert.NotContains(t, step, "--path", "step %q", step)
-		}
-	}
+	assert.NotContains(t, alternative, "--path",
+		"azd up reads azure.yaml, which already $refs the configuration")
 }
 
 // A directory with a space in it printed `--path ./team evals`, which resolves
@@ -402,7 +411,7 @@ func TestNextStepQuotesADirectoryThatNeedsIt(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			s := scaffold{eval: &project.Eval{Name: "an-eval"}, evalDir: tc.evalDir}
-			steps := s.nextSteps("azd ai eval create")
+			steps := s.nextSteps()
 			require.NotEmpty(t, steps)
 			for _, step := range steps {
 				assert.Contains(t, step, tc.want, "step %q", step)

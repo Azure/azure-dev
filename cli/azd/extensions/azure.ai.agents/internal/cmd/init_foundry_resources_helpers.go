@@ -104,6 +104,8 @@ type FoundryDeploymentInfo struct {
 
 const foundryProjectResourceType = "Microsoft.CognitiveServices/accounts/projects"
 
+const foundryProjectNameEnvKey = "AZURE_AI_PROJECT_NAME"
+
 // setEnvValue sets a single environment variable in the azd environment.
 func setEnvValue(ctx context.Context, azdClient *azdext.AzdClient, envName, key, value string) error {
 	_, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
@@ -133,6 +135,67 @@ func getEnvValue(ctx context.Context, azdClient *azdext.AzdClient, envName, key 
 		}
 	}
 	return "", nil
+}
+
+var foundryProjectNameRegex = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{2,31}$`)
+
+func validateNewFoundryProjectName(name string) error {
+	if foundryProjectNameRegex.MatchString(name) {
+		return nil
+	}
+
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		fmt.Sprintf(
+			"invalid Foundry project name %q: use 3-32 letters, "+
+				"numbers, or hyphens, starting with a letter or number",
+			name,
+		),
+		"enter a valid Foundry project name and retry",
+	)
+}
+
+func ensureNewFoundryProjectName(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+) error {
+	configuredName, err := getEnvValue(ctx, azdClient, envName, foundryProjectNameEnvKey)
+	if err != nil {
+		return err
+	}
+
+	defaultName := ""
+	if foundryProjectNameRegex.MatchString(configuredName) {
+		defaultName = configuredName
+	} else if foundryProjectNameRegex.MatchString(envName) {
+		defaultName = envName
+	}
+
+	response, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message: "Enter a name for the new Foundry project",
+			HelpMessage: "Use 3-32 letters, numbers, or hyphens. " +
+				"The name must start with a letter or number.",
+			Required:        true,
+			RequiredMessage: "A Foundry project name is required.",
+			ValidationMessage: "Use 3-32 letters, numbers, or hyphens, " +
+				"starting with a letter or number.",
+			DefaultValue: defaultName,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return exterrors.Cancelled("Foundry project name prompt was cancelled")
+		}
+		return exterrors.FromPrompt(err, "failed to prompt for Foundry project name")
+	}
+
+	if err := validateNewFoundryProjectName(response.Value); err != nil {
+		return err
+	}
+
+	return setEnvValue(ctx, azdClient, envName, foundryProjectNameEnvKey, response.Value)
 }
 
 // projectResourceIdRegex is the precompiled regex for parsing Foundry project ARM resource IDs.
@@ -491,7 +554,7 @@ func configureFoundryProjectEnv(
 		return err
 	}
 
-	if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_PROJECT_NAME", project.ProjectName); err != nil {
+	if err := setEnvValue(ctx, azdClient, envName, foundryProjectNameEnvKey, project.ProjectName); err != nil {
 		return err
 	}
 

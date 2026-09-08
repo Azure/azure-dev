@@ -6,6 +6,25 @@ See the shared [AI extension non-interactive input reference](../ai-non-interact
 for every prompt's flag, environment/configuration input, or deterministic
 no-prompt behavior.
 
+## Choosing a Foundry project name
+
+During interactive `azd ai agent init`, azd prompts for the name of a new
+Microsoft Foundry project. If the current azd environment name is valid for
+the generated infrastructure, it is offered as the default. The name must be
+3-32 characters, start with a letter or number, and contain only letters,
+numbers, or hyphens.
+
+To preconfigure the name, set it in the active azd environment before running
+init:
+
+```bash
+azd env set AZURE_AI_PROJECT_NAME my-foundry-project
+```
+
+An existing `AZURE_AI_PROJECT_NAME` value is offered as the default during
+interactive new-project setup. `--no-prompt` remains non-interactive and keeps
+its existing automatic environment-name fallback.
+
 ## Composing Agent Dependencies
 
 Use the Agent command surface to attach existing Toolbox or Connection services

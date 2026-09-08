@@ -666,7 +666,11 @@ func deletePromptAgentOnDown(
 	// lifecycle path uses. The azure.yaml service key only matches when the
 	// definition omits `name:`, which is true for scaffolded projects but not for
 	// renamed agents.
-	agentName := promptAgentNameForService(svc, projectPath)
+	agentName, err := promptAgentNameForService(svc, projectPath)
+	if err != nil {
+		log.Printf("predown: skipping harness delete for %q: %v", svc.Name, err)
+		return
+	}
 	serviceKey := toServiceKey(svc.Name)
 	deployedName := strings.TrimSpace(envValues[fmt.Sprintf("AGENT_%s_NAME", serviceKey)])
 	if deployedName == "" || deployedName != agentName {

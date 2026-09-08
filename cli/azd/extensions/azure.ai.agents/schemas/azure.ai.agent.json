@@ -29,8 +29,7 @@
     },
     "connections": {
       "type": "array",
-      "description": "List of project connections to create via Bicep provisioning.",
-      "items": { "$ref": "#/definitions/Connection" }
+      "description": "Project connection resources for hosted agents, or sibling azure.ai.connection service names for prompt agents."
     },
     "memoryStores": {
       "type": "array",
@@ -269,7 +268,17 @@
       "then": {
         "required": ["model", "instructions"],
         "properties": {
-          "model": { "type": "string", "minLength": 1, "pattern": "\\S" }
+          "model": { "type": "string", "minLength": 1, "pattern": "\\S" },
+          "connections": {
+            "items": { "type": "string", "minLength": 1, "pattern": "\\S" }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "connections": {
+            "items": { "$ref": "#/definitions/Connection" }
+          }
         }
       }
     },

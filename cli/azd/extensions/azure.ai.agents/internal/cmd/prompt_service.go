@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -27,7 +28,8 @@ type promptServiceContext struct {
 }
 
 // promptDefinitionForService returns the prompt-agent definition backing a
-// service, and whether the service is a prompt agent at all.
+// service, whether the service is a prompt agent at all, and any definition
+// parsing error.
 //
 // The definition is normally inline on the azure.yaml service entry, which is
 // also where `kind: prompt` identifies it; a `$ref:` include is expanded by the
@@ -36,16 +38,20 @@ type promptServiceContext struct {
 func promptDefinitionForService(
 	svc *azdext.ServiceConfig,
 	projectPath, serviceDir string,
-) (agent_yaml.PromptAgent, bool) {
-	if def, found, err := project.PromptAgentFromResolvedService(svc, projectPath); err == nil && found {
-		return def, true
+) (agent_yaml.PromptAgent, bool, error) {
+	def, found, err := project.PromptAgentFromResolvedService(svc, projectPath)
+	if err != nil {
+		return agent_yaml.PromptAgent{}, false, err
+	}
+	if found {
+		return def, true, nil
 	}
 
 	if !project.ServiceIsPromptAgent(svc) {
-		return agent_yaml.PromptAgent{}, false
+		return agent_yaml.PromptAgent{}, false, nil
 	}
 
-	return agent_yaml.PromptAgent{}, false
+	return agent_yaml.PromptAgent{}, false, nil
 }
 
 // resolvePromptAgentService resolves the named (or sole) azure.ai.agent service
@@ -72,19 +78,22 @@ func resolvePromptAgentService(
 		}
 	}
 
-	agentDef, isPrompt := promptDefinitionForService(svc, projectPath, serviceDir)
+	agentDef, isPrompt, err := promptDefinitionForService(svc, projectPath, serviceDir)
+	if err != nil {
+		return nil, false, err
+	}
 	if !isPrompt {
 		return nil, false, nil
 	}
 
 	// Resolve the harness target exactly as deploy does: the subscription,
 	// resource group, workspace, and project endpoint come from the azd
-	// environment. The
-	// environment read is best-effort — when it cannot be read, expansion falls
-	// back to the process environment and unset references collapse to the
-	// defaults, which is what lets these commands run in a project that has not
-	// been provisioned yet.
+	// environment. Lifecycle commands require that environment because it is the
+	// only source of the provisioned Foundry target.
 	envValues, envErr := promptEnvValues(ctx, azdClient)
+	if envErr != nil {
+		return nil, false, fmt.Errorf("reading the azd environment: %w", envErr)
+	}
 	settings, err := project.ResolvePromptAgentSettings(envValues)
 	if err != nil {
 		return nil, false, err
@@ -95,10 +104,8 @@ func resolvePromptAgentService(
 	// workspace route (<account>@<project>@AML) the agent was created on. Without
 	// this, these commands resolve the workspace verbatim and query a
 	// non-existent one, yielding an HTML 404 the client cannot parse.
-	if envErr == nil {
-		if _, mapErr := project.ResolvePromptTargetFromEnv(settings, envValues); mapErr != nil {
-			return nil, false, mapErr
-		}
+	if _, mapErr := project.ResolvePromptTargetFromEnv(settings, envValues); mapErr != nil {
+		return nil, false, mapErr
 	}
 
 	pctx := &promptServiceContext{
@@ -120,19 +127,22 @@ func resolvePromptAgentService(
 // service key. It is the lightweight counterpart of
 // promptServiceContext.AgentName for callers (like the down handlers) that only
 // have a ServiceConfig.
-func promptAgentNameForService(svc *azdext.ServiceConfig, projectPath string) string {
+func promptAgentNameForService(svc *azdext.ServiceConfig, projectPath string) (string, error) {
 	if svc == nil {
-		return ""
+		return "", nil
 	}
 	serviceDir := ""
 	if dir, err := paths.JoinAllowRoot(projectPath, svc.RelativePath); err == nil {
 		serviceDir = dir
 	}
-	def, _ := promptDefinitionForService(svc, projectPath, serviceDir)
-	if name := strings.TrimSpace(def.Name); name != "" {
-		return name
+	def, _, err := promptDefinitionForService(svc, projectPath, serviceDir)
+	if err != nil {
+		return "", err
 	}
-	return svc.Name
+	if name := strings.TrimSpace(def.Name); name != "" {
+		return name, nil
+	}
+	return svc.Name, nil
 }
 
 // AgentName returns the harness agent identity for the resolved service.

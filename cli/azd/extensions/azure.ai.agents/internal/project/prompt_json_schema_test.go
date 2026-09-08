@@ -52,6 +52,33 @@ func TestPromptJSONSchemaAcceptsPromptControls(t *testing.T) {
 	}))
 }
 
+func TestPromptJSONSchemaUsesConnectionServiceReferences(t *testing.T) {
+	schema := loadDocSchema(t, filepath.Join("..", ".."))
+	prompt := map[string]any{
+		"kind":         "prompt",
+		"name":         "assistant",
+		"model":        "gpt-5-mini",
+		"instructions": "Be helpful.",
+		"connections":  []any{"search-connection", "api-connection"},
+	}
+	require.NoError(t, schema.validate(prompt))
+
+	prompt["connections"] = []any{map[string]any{
+		"name": "search-connection", "category": "CognitiveSearch", "target": "https://example.com", "authType": "AAD",
+	}}
+	require.Error(t, schema.validate(prompt))
+}
+
+func TestHostedJSONSchemaUsesConnectionResources(t *testing.T) {
+	schema := loadDocSchema(t, filepath.Join("..", ".."))
+	require.NoError(t, schema.validate(map[string]any{
+		"kind": "hosted",
+		"connections": []any{map[string]any{
+			"name": "search-connection", "category": "CognitiveSearch", "target": "https://example.com", "authType": "AAD",
+		}},
+	}))
+}
+
 func TestPromptJSONSchemaAcceptsOptionalToolboxProjectConnectionID(t *testing.T) {
 	schema := loadDocSchema(t, filepath.Join("..", ".."))
 	base := map[string]any{

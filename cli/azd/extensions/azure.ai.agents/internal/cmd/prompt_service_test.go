@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,7 +12,19 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
+
+type failingPromptEnvironmentServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+}
+
+func (s *failingPromptEnvironmentServer) GetCurrent(
+	context.Context, *azdext.EmptyRequest,
+) (*azdext.EnvironmentResponse, error) {
+	return nil, status.Error(codes.Internal, "environment service unavailable")
+}
 
 // TestPromptDefinitionForServiceInline covers the shape `azd ai agent init`
 // writes today: the definition lives on the azure.yaml service entry and
@@ -32,7 +45,8 @@ func TestPromptDefinitionForServiceInline(t *testing.T) {
 		}),
 	}
 
-	def, isPrompt := promptDefinitionForService(svc, t.TempDir(), "")
+	def, isPrompt, err := promptDefinitionForService(svc, t.TempDir(), "")
+	require.NoError(t, err)
 	require.True(t, isPrompt)
 	assert.Equal(t, "renamed-agent", def.Name)
 	assert.Equal(t, "gpt-5.6-terra", def.Model)
@@ -52,7 +66,8 @@ func TestPromptDefinitionForServiceHosted(t *testing.T) {
 		}),
 	}
 
-	_, isPrompt := promptDefinitionForService(svc, t.TempDir(), "")
+	_, isPrompt, err := promptDefinitionForService(svc, t.TempDir(), "")
+	require.NoError(t, err)
 	assert.False(t, isPrompt)
 }
 
@@ -69,7 +84,8 @@ func TestPromptDefinitionForServiceRequiresExplicitKind(t *testing.T) {
 		Config: mustStruct(t, map[string]any{"startupCommand": "ignored"}),
 	}
 
-	_, isPrompt := promptDefinitionForService(svc, filepath.Dir(serviceDir), serviceDir)
+	_, isPrompt, err := promptDefinitionForService(svc, filepath.Dir(serviceDir), serviceDir)
+	require.NoError(t, err)
 	require.False(t, isPrompt)
 }
 
@@ -86,5 +102,52 @@ func TestPromptAgentNameForServicePrefersDefinition(t *testing.T) {
 		}),
 	}
 
-	assert.Equal(t, "renamed-agent", promptAgentNameForService(svc, t.TempDir()))
+	name, err := promptAgentNameForService(svc, t.TempDir())
+	require.NoError(t, err)
+	assert.Equal(t, "renamed-agent", name)
+}
+
+func TestPromptDefinitionForServiceReturnsInvalidDefinitionError(t *testing.T) {
+	svc := &azdext.ServiceConfig{
+		Name: "invalid-agent",
+		Host: AiAgentHost,
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind":    "prompt",
+			"harness": "github_copilot_preview",
+		}),
+	}
+
+	_, _, err := promptDefinitionForService(svc, t.TempDir(), "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "harness must be a block")
+}
+
+func TestResolvePromptAgentServiceReturnsEnvironmentError(t *testing.T) {
+	projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
+		Path: t.TempDir(),
+		Services: map[string]*azdext.ServiceConfig{
+			"assistant": {
+				Name: "assistant",
+				Host: AiAgentHost,
+				AdditionalProperties: mustStruct(t, map[string]any{
+					"kind":         "prompt",
+					"name":         "assistant",
+					"model":        "gpt-5-mini",
+					"instructions": "Be helpful.",
+				}),
+			},
+		},
+	}}
+	azdClient := newHelpersTestAzdClient(
+		t,
+		projectServer,
+		&helpersPromptServer{},
+		&failingPromptEnvironmentServer{},
+	)
+
+	_, _, err := resolvePromptAgentService(t.Context(), azdClient, "assistant", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reading the azd environment")
+	assert.Contains(t, err.Error(), "environment service unavailable")
+	assert.NotContains(t, err.Error(), "missing required fields")
 }

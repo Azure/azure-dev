@@ -75,8 +75,7 @@
                         "title": "A provisioning layer.",
                         "additionalProperties": false,
                         "required": [
-                            "name",
-                            "path"
+                            "name"
                         ],
                         "properties": {
                             "name": {
@@ -87,7 +86,7 @@
                             "path": {
                                 "type": "string",
                                 "title": "Path to the location that contains Azure provisioning templates",
-                                "description": "The relative folder path to the Azure provisioning templates for the specified provider."
+                                "description": "Optional. The relative folder path to Azure provisioning templates. Providers that do not use local templates may omit it."
                             },
                             "module": {
                                 "type": "string",
@@ -97,7 +96,7 @@
                             "provider": {
                                 "type": "string",
                                 "title": "Type of infrastructure provisioning provider",
-                                "description": "Optional. The infrastructure provisioning provider for this layer. Inherits infra.provider when omitted. Built-in values are 'bicep' and 'terraform'; extensions may register additional providers.",
+                                "description": "The infrastructure provisioning provider for this entry. Entries under infra.layers[] inherit infra.provider when omitted; entries under top-level project layers must specify it. Built-in values are 'bicep' and 'terraform'; extensions may register additional providers.",
                                 "pattern": "^[a-z0-9.]+$",
                                 "examples": [
                                     "bicep",
@@ -116,8 +115,8 @@
                             },
                             "dependsOn": {
                                 "type": "array",
-                                "title": "Layer names this layer must wait for",
-                                "description": "Optional. Names of other layers this layer depends on. Use to declare hook-mediated dependencies (for example, when a postprovision hook in another layer writes an env var that this layer's bicepparam reads at provision time) that azd's static analyzer cannot infer from .bicep / .bicepparam / .parameters.json contents.",
+                                "title": "Infrastructure entry names this entry must wait for",
+                                "description": "Optional. Names of other infrastructure entries this entry depends on. Use to declare hook-mediated dependencies (for example, when a postprovision hook in another entry writes an env var that this entry's bicepparam reads at provision time) that azd's static analyzer cannot infer from .bicep / .bicepparam / .parameters.json contents.",
                                 "uniqueItems": true,
                                 "items": {
                                     "type": "string"

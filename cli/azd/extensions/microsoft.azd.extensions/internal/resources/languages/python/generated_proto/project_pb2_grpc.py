@@ -46,6 +46,26 @@ class ProjectServiceStub(object):
                 request_serializer=project__pb2.AddServiceRequest.SerializeToString,
                 response_deserializer=models__pb2.EmptyResponse.FromString,
                 _registered_method=True)
+        self.SetLayer = channel.unary_unary(
+                '/azdext.ProjectService/SetLayer',
+                request_serializer=project__pb2.SetLayerRequest.SerializeToString,
+                response_deserializer=project__pb2.LayerResponse.FromString,
+                _registered_method=True)
+        self.GetLayer = channel.unary_unary(
+                '/azdext.ProjectService/GetLayer',
+                request_serializer=project__pb2.GetLayerRequest.SerializeToString,
+                response_deserializer=project__pb2.LayerResponse.FromString,
+                _registered_method=True)
+        self.ListLayers = channel.unary_unary(
+                '/azdext.ProjectService/ListLayers',
+                request_serializer=models__pb2.EmptyRequest.SerializeToString,
+                response_deserializer=project__pb2.ListLayersResponse.FromString,
+                _registered_method=True)
+        self.RemoveLayer = channel.unary_unary(
+                '/azdext.ProjectService/RemoveLayer',
+                request_serializer=project__pb2.RemoveLayerRequest.SerializeToString,
+                response_deserializer=project__pb2.RemoveLayerResponse.FromString,
+                _registered_method=True)
 
 
 class ProjectServiceServicer(object):
@@ -53,7 +73,8 @@ class ProjectServiceServicer(object):
     """
 
     def Get(self, request, context):
-        """Gets the current project.
+        """Gets the current flat or infra.layers project.
+        Top-level layers projects must use ListLayers or GetLayer.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -61,6 +82,34 @@ class ProjectServiceServicer(object):
 
     def AddService(self, request, context):
         """AddService adds a new service to the project.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SetLayer(self, request, context):
+        """SetLayer creates or fully replaces a persisted top-level project layer.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetLayer(self, request, context):
+        """GetLayer gets a persisted top-level project layer by name.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListLayers(self, request, context):
+        """ListLayers lists all persisted top-level project layers.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def RemoveLayer(self, request, context):
+        """RemoveLayer removes a project layer and its contents.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -78,6 +127,26 @@ def add_ProjectServiceServicer_to_server(servicer, server):
                     servicer.AddService,
                     request_deserializer=project__pb2.AddServiceRequest.FromString,
                     response_serializer=models__pb2.EmptyResponse.SerializeToString,
+            ),
+            'SetLayer': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetLayer,
+                    request_deserializer=project__pb2.SetLayerRequest.FromString,
+                    response_serializer=project__pb2.LayerResponse.SerializeToString,
+            ),
+            'GetLayer': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetLayer,
+                    request_deserializer=project__pb2.GetLayerRequest.FromString,
+                    response_serializer=project__pb2.LayerResponse.SerializeToString,
+            ),
+            'ListLayers': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListLayers,
+                    request_deserializer=models__pb2.EmptyRequest.FromString,
+                    response_serializer=project__pb2.ListLayersResponse.SerializeToString,
+            ),
+            'RemoveLayer': grpc.unary_unary_rpc_method_handler(
+                    servicer.RemoveLayer,
+                    request_deserializer=project__pb2.RemoveLayerRequest.FromString,
+                    response_serializer=project__pb2.RemoveLayerResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -135,6 +204,114 @@ class ProjectService(object):
             '/azdext.ProjectService/AddService',
             project__pb2.AddServiceRequest.SerializeToString,
             models__pb2.EmptyResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetLayer(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/azdext.ProjectService/SetLayer',
+            project__pb2.SetLayerRequest.SerializeToString,
+            project__pb2.LayerResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetLayer(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/azdext.ProjectService/GetLayer',
+            project__pb2.GetLayerRequest.SerializeToString,
+            project__pb2.LayerResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListLayers(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/azdext.ProjectService/ListLayers',
+            models__pb2.EmptyRequest.SerializeToString,
+            project__pb2.ListLayersResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RemoveLayer(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/azdext.ProjectService/RemoveLayer',
+            project__pb2.RemoveLayerRequest.SerializeToString,
+            project__pb2.RemoveLayerResponse.FromString,
             options,
             channel_credentials,
             insecure,

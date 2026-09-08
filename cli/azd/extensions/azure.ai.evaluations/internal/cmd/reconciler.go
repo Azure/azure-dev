@@ -30,12 +30,17 @@ import (
 type evalReconciler struct {
 	ec *evalContext
 
-	// claimed holds the evals this deploy has already settled, so a second
-	// declaration cannot adopt one. Substance keys are never removed from the
-	// environment, so one left behind by an earlier edit still points at a live
-	// eval -- and adopting it renames that eval and leaves the declaration that
-	// asked for it sharing the other one's runs.
-	claimed map[string]bool
+	// claimedBy maps each eval this deploy has settled on to the declaration
+	// that settled it, so a second declaration cannot take the same one.
+	// Substance keys are never removed from the environment, so one left behind
+	// by an earlier edit still points at a live eval -- and adopting it renames
+	// that eval and leaves the declaration that asked for it sharing the other
+	// one's runs.
+	//
+	// The owner is recorded rather than a bare flag because every declaration
+	// reserves its own id up front: "already claimed" is the normal case, and
+	// only "claimed by someone else" is the collision.
+	claimedBy map[string]string
 
 	// decided holds each declaration's digests, so reservation and
 	// reconciliation cannot answer the question differently.
@@ -52,13 +57,32 @@ func newEvalReconciler(ctx context.Context) (project.Reconciler, error) {
 	return &evalReconciler{ec: ec}, nil
 }
 
-// claim records an eval this deploy has settled on. Built lazily, because the
-// reconciler is also constructed literally in a few places.
-func (r *evalReconciler) claim(id string) {
-	if r.claimed == nil {
-		r.claimed = map[string]bool{}
+// claim records an eval this deploy has settled on, and which declaration
+// settled it. Built lazily, because the reconciler is also constructed
+// literally in a few places.
+//
+// First claim wins. Two declarations reaching one id is the collision this
+// exists to catch, and letting the second overwrite the first would hide it.
+func (r *evalReconciler) claim(id, owner string) {
+	if id == "" {
+		return
 	}
-	r.claimed[id] = true
+	if r.claimedBy == nil {
+		r.claimedBy = map[string]string{}
+	}
+	if _, taken := r.claimedBy[id]; !taken {
+		r.claimedBy[id] = owner
+	}
+}
+
+// ownedByAnother reports an eval a different declaration has already settled
+// on.
+//
+// Not "is it claimed": a declaration reserves its own id before reconciling, so
+// finding its own claim is what reuse looks like when it is working.
+func (r *evalReconciler) ownedByAnother(id, name string) bool {
+	owner, taken := r.claimedBy[id]
+	return taken && owner != name
 }
 
 // ReserveDeclared marks the evals these declarations already resolve to as
@@ -88,7 +112,7 @@ func (r *evalReconciler) ReserveDeclared(ctx context.Context, groups []project.E
 		if id == "" || decision.recreate {
 			continue
 		}
-		r.claim(id)
+		r.claim(id, groups[i].Name)
 	}
 }
 
@@ -108,7 +132,7 @@ func (r *evalReconciler) ReserveDeclared(ctx context.Context, groups []project.E
 func (r *evalReconciler) reserveExplicitIDs(groups []project.Eval) {
 	for i := range groups {
 		if groups[i].ID != "" {
-			r.claim(groups[i].ID)
+			r.claim(groups[i].ID, groups[i].Name)
 		}
 	}
 }
@@ -786,7 +810,7 @@ func (r *evalReconciler) EnsureEval(
 			}
 			return "", false, messages.ReadingEval(group.ID, err)
 		}
-		r.claim(group.ID)
+		r.claim(group.ID, group.Name)
 		return group.ID, false, nil
 	}
 
@@ -814,6 +838,15 @@ func (r *evalReconciler) EnsureEval(
 	}
 
 	cached := r.ec.privateValue(ctx, idKey("eval", group.Name))
+	// A rename records the id under the new name and leaves the old name's entry
+	// pointing at it. Reintroducing that old name then found a live id here and
+	// took it, without ever passing the ownership check adoption makes -- so two
+	// declarations resolved to one eval, renamed it past each other on every
+	// deploy, and shared a run history. The declaration that got there first is
+	// the one that keeps it; this one creates its own.
+	if r.ownedByAnother(cached, group.Name) {
+		cached = ""
+	}
 	if cached == "" && !recreate {
 		// Nothing recorded under this name, but the substance may already be
 		// deployed under the name it had before. The environment records the id
@@ -850,7 +883,7 @@ func (r *evalReconciler) EnsureEval(
 			r.ec.remember(ctx, key, definition)
 			r.ec.remember(ctx, idKey("eval", group.Name), cached)
 			r.ec.remember(ctx, digestIDKey(digest), cached)
-			r.claim(cached)
+			r.claim(cached, group.Name)
 			return cached, false, nil
 		}
 	}
@@ -862,7 +895,7 @@ func (r *evalReconciler) EnsureEval(
 	r.ec.remember(ctx, key, definition)
 	r.ec.remember(ctx, idKey("eval", group.Name), created.ID)
 	r.ec.remember(ctx, digestIDKey(digest), created.ID)
-	r.claim(created.ID)
+	r.claim(created.ID, group.Name)
 	return created.ID, true, nil
 }
 
@@ -880,7 +913,7 @@ func (r *evalReconciler) adoptRenamed(
 	if id == "" {
 		return "", nil
 	}
-	if r.claimed[id] {
+	if r.ownedByAnother(id, group.Name) {
 		// Another declaration in this same file already settled on it. Adopting
 		// it here would rename that eval and leave both declarations sharing
 		// one id and one run history, which is worse than creating a second.

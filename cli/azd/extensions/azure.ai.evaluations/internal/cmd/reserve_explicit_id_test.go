@@ -28,10 +28,10 @@ func TestExplicitIDsAreReserved(t *testing.T) {
 		{Name: "smoke"},
 	})
 
-	require.NotNil(t, r.claimed, "nothing was reserved at all")
-	assert.True(t, r.claimed["eval_pinned"],
+	require.NotNil(t, r.claimedBy, "nothing was reserved at all")
+	assert.Equal(t, "nightly", r.claimedBy["eval_pinned"],
 		"an id the author wrote down must be spoken for before any adoption runs")
-	assert.False(t, r.claimed["smoke"],
+	assert.NotContains(t, r.claimedBy, "smoke",
 		"a declaration with no id reserves nothing, which is what leaves a "+
 			"genuine rename free to adopt")
 }
@@ -46,5 +46,5 @@ func TestExplicitIDReservationReadsNothing(t *testing.T) {
 
 	r.reserveExplicitIDs([]project.Eval{{Name: "nightly", ID: "eval_pinned"}})
 
-	assert.True(t, r.claimed["eval_pinned"])
+	assert.Equal(t, "nightly", r.claimedBy["eval_pinned"])
 }

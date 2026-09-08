@@ -206,6 +206,6 @@ func TestARenameIsStillAdoptedWhenTheOldNameIsRecycled(t *testing.T) {
 func TestClaimingWorksOnAReconcilerBuiltDirectly(t *testing.T) {
 	r := &evalReconciler{}
 
-	assert.NotPanics(t, func() { r.claim("eval_1") })
-	assert.True(t, r.claimed["eval_1"])
+	assert.NotPanics(t, func() { r.claim("eval_1", "morning") })
+	assert.Equal(t, "morning", r.claimedBy["eval_1"])
 }

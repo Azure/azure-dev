@@ -65,7 +65,12 @@
         },
         "version": {
           "type": "string",
-          "description": "Pin to an already-registered version. Omit to publish and track the newest."
+          "description": "Which version this entry is about. With file:, the rows are published as this exact version. Without file:, it pins an already-registered version. Omit to publish and track the newest."
+        },
+        "tags": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Key/value labels applied to the version on deploy. Applied to a dataset this configuration owns; a reference-only declaration is left alone."
         }
       }
     },

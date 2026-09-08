@@ -29,6 +29,9 @@ type DatasetContent struct {
 	// count happens to be: a folder dataset holding one file is still a folder,
 	// and writing it as a bare file loses the name it had inside.
 	SingleFile bool
+	// blobURI records that Container already names the blob, so reading it must
+	// not append an entry name to the path.
+	blobURI bool
 }
 
 // ListDatasetContent enumerates the files a dataset version holds.
@@ -38,11 +41,6 @@ func (c *DatasetClient) ListDatasetContent(
 	version string,
 	apiVersion string,
 ) (*DatasetContent, error) {
-	meta, err := c.GetDataset(ctx, name, version, apiVersion)
-	if err != nil {
-		return nil, err
-	}
-
 	cred, err := c.GetDatasetCredential(ctx, name, version, apiVersion)
 	if err != nil {
 		return nil, messages.ReadingDownloadCredentials(name, err)
@@ -50,6 +48,24 @@ func (c *DatasetClient) ListDatasetContent(
 	sasURI := cred.ResolvedDownloadURI()
 	if sasURI == "" {
 		return nil, messages.NoDownloadURI(name)
+	}
+
+	// An uploaded dataset's URI names the blob itself, and listing one answers
+	// 409 -- so `dataset download` failed for every dataset this CLI published.
+	// OpenDatasetContent already resolves the two shapes; the same rule applies
+	// here, because the extension on the last segment is a guess either way.
+	// Settled before the metadata read, which only the container path needs.
+	if looksLikeBlobURI(sasURI) {
+		if body, err := c.openDataset(ctx, sasURI); err == nil {
+			_ = body.Close()
+			return &DatasetContent{
+				Container:  sasURI,
+				Files:      []string{""},
+				SingleFile: true,
+				blobURI:    true,
+			}, nil
+		}
+		// Not a blob after all: fall through and list it as a container.
 	}
 
 	names, err := c.ListContainerBlobs(ctx, sasURI)
@@ -71,10 +87,13 @@ func (c *DatasetClient) ListDatasetContent(
 	}
 	sort.Strings(files)
 
+	// Not from isSingleFile: a generated container reports it true as well, and
+	// believing it wrote whichever entry sorted first -- `_meta.json` beside the
+	// rows -- as though it were the dataset. What the credential names is the
+	// only thing that actually distinguishes the two shapes.
 	return &DatasetContent{
-		Container:  sasURI,
-		Files:      files,
-		SingleFile: meta.IsSingleFile,
+		Container: sasURI,
+		Files:     files,
 	}, nil
 }
 
@@ -84,6 +103,9 @@ func (c *DatasetClient) Open(
 	content *DatasetContent,
 	file string,
 ) (io.ReadCloser, error) {
+	if content.blobURI {
+		return c.openDataset(ctx, content.Container)
+	}
 	return c.openBlob(ctx, content.Container, file)
 }
 

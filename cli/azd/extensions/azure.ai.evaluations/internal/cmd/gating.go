@@ -169,7 +169,7 @@ func applyGate(cmd *cobra.Command, g gate, run *eval_api.OpenAIEvalRun) {
 		if c := run.ResultCounts; c != nil {
 			if _, scored, ok := scoredPassRate(c); ok && c.Total > scored {
 				errored, skipped := unscoredSplit(c, scored)
-				fmt.Fprint(os.Stderr,
+				fmt.Fprint(cmd.ErrOrStderr(),
 					messages.Warning(messages.GateSawUnscoredRows(errored, skipped, c.Total)))
 			}
 		}
@@ -178,7 +178,7 @@ func applyGate(cmd *cobra.Command, g gate, run *eval_api.OpenAIEvalRun) {
 	if reason == "" {
 		return
 	}
-	fmt.Fprint(os.Stderr, gateBreachMessage(reason))
+	fmt.Fprint(cmd.ErrOrStderr(), gateBreachMessage(reason))
 	os.Exit(exitCodeGateBreached)
 }
 

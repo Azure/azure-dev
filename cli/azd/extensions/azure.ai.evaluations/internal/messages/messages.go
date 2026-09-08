@@ -1336,6 +1336,15 @@ func ArtifactExists(path string) error {
 		path)
 }
 
+// CheckingArtifactPath reports a destination that could not be examined.
+//
+// Only a confirmed absence makes it safe to start a billed job. A permission or
+// I/O error read as "nothing there", so generation ran and the write it was for
+// failed afterwards.
+func CheckingArtifactPath(path string, err error) error {
+	return fmt.Errorf("cannot tell whether %s already exists: %w", path, err)
+}
+
 // JobKindRequired reports a job command that does not say which collection.
 func JobKindRequired() error {
 	return errors.New("pass --dataset or --evaluator to say which generation jobs to act on")

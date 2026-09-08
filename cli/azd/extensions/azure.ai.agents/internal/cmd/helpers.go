@@ -668,7 +668,6 @@ func resolveAgentProtocolEndpoints(
 	}
 
 	endpoints := make(map[agent_api.AgentProtocol]string)
-	present := false
 	serviceKey := toServiceKey(serviceName)
 	versionKey := envkey.AgentProtocolEndpointsVersion(serviceName)
 	version, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
@@ -696,18 +695,14 @@ func resolveAgentProtocolEndpoints(
 			continue
 		}
 		if endpoint := strings.TrimSpace(value.Value); endpoint != "" {
-			present = true
 			endpoints[agent_api.AgentProtocol(protocol.Label)] = endpoint
 		}
 	}
 
 	if !complete {
-		// Legacy deployments have no completeness marker. Only trust their
-		// endpoints when they identify one protocol unambiguously.
-		if len(invocableProtocolsFromEndpoints(endpoints)) > 1 {
-			return nil, false, nil
-		}
-		return endpoints, present, nil
+		// Legacy deployments have no completeness marker, so their endpoint
+		// values may include stale protocols from an earlier deployment.
+		return nil, false, nil
 	}
 	return endpoints, true, nil
 }

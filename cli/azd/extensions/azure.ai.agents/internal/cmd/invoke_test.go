@@ -1235,7 +1235,7 @@ func TestResolveAgentProtocolEndpointsPreservesUnsupportedMetadata(t *testing.T)
 	}
 }
 
-func TestResolveAgentProtocolEndpointsUsesUnmarkedSingleProtocol(t *testing.T) {
+func TestResolveAgentProtocolEndpointsRejectsUnmarkedSingleProtocol(t *testing.T) {
 	projectServer := &helpersProjectServer{
 		project: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{}},
 	}
@@ -1264,11 +1264,8 @@ func TestResolveAgentProtocolEndpointsUsesUnmarkedSingleProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveAgentProtocolEndpoints: %v", err)
 	}
-	if endpoints[agent_api.AgentProtocolInvocations] == "" {
-		t.Fatalf("endpoints = %v, want invocations endpoint", endpoints)
-	}
-	if !present {
-		t.Fatal("present = false, want endpoint metadata to be preserved")
+	if endpoints != nil || present {
+		t.Fatalf("endpoints = %v, present = %t, want no trusted metadata", endpoints, present)
 	}
 }
 

@@ -1161,6 +1161,81 @@ func TestExistingProjectArtifactsNormalizeAcrEndpoint(t *testing.T) {
 	}
 }
 
+func TestExistingProjectWritersIgnoreUnusedAcrEndpoint(t *testing.T) {
+	t.Parallel()
+
+	params := map[string]any{
+		"deployments":           []synthesis.Deployment{},
+		"connections":           []synthesis.Connection{},
+		"connectionCredentials": map[string]map[string]any{},
+	}
+	resourceID := "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.ContainerRegistry/registries/registry"
+	malformedEndpoint := "https://registry.azurecr.io/%zz?sig=" +
+		"unused-secret#fragment"
+	tests := []struct {
+		name      string
+		mode      infraEjectAcrMode
+		wantError bool
+		bicep     bool
+	}{
+		{name: "bicep none", mode: infraEjectAcrNone, bicep: true},
+		{name: "bicep create", mode: infraEjectAcrCreate, bicep: true},
+		{name: "terraform none"},
+		{name: "terraform create", mode: infraEjectAcrCreate},
+		{name: "bicep reuse rejects", mode: infraEjectAcrReuseConnect, wantError: true, bicep: true},
+		{name: "terraform reuse rejects", mode: infraEjectAcrReuseConnect, wantError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			values := []map[string]string{{
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    malformedEndpoint,
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceID,
+			}}
+			var err error
+			var outputPath string
+			if tt.bicep {
+				_, err = ejectExistingProjectBicep(
+					dir,
+					"infra",
+					"main",
+					params,
+					tt.mode,
+					values,
+				)
+				outputPath = filepath.Join(dir, "main.parameters.json")
+			} else {
+				_, err = ejectExistingProjectTerraform(
+					dir,
+					"infra",
+					"main",
+					params,
+					tt.mode,
+					values,
+				)
+				outputPath = filepath.Join(dir, "main.tfvars.json")
+			}
+			if tt.wantError {
+				require.Error(t, err)
+				assert.NotContains(t, err.Error(), "unused-secret")
+				return
+			}
+			require.NoError(t, err)
+
+			output, readErr := os.ReadFile(outputPath) //nolint:gosec
+			require.NoError(t, readErr)
+			assert.NotContains(t, string(output), "unused-secret")
+			if !tt.bicep {
+				var values map[string]any
+				require.NoError(t, json.Unmarshal(output, &values))
+				assert.Equal(t, "", values["existing_acr_endpoint"])
+			}
+		})
+	}
+}
+
 func TestNormalizeContainerRegistryEndpointRejectsMalformedURL(t *testing.T) {
 	_, err := normalizeContainerRegistryEndpoint(
 		"https://registry.azurecr.io/%zz?sig=malformed-secret",
@@ -1389,6 +1464,62 @@ services:
 	tfvars, err := os.ReadFile(filepath.Join(dir, "infra", "main.tfvars.json")) //nolint:gosec
 	require.NoError(t, err)
 	assert.NotContains(t, string(tfvars), `"acr_mode"`)
+}
+
+func TestEjectInfra_ExistingProjectIgnoresUnusedAcrEndpoint(t *testing.T) {
+	t.Parallel()
+
+	const projectYAML = `name: my-project
+services:
+  ai-project:
+    host: azure.ai.project
+    endpoint: https://acct.services.ai.azure.com/api/projects/p1
+  agent:
+    host: azure.ai.agent
+    uses: [ai-project]
+    project: src/agent
+    docker:
+      path: Dockerfile
+`
+	malformedEndpoint := "https://registry.azurecr.io/%zz?sig=" +
+		"unused-secret#fragment"
+	resourceID := "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.ContainerRegistry/registries/registry"
+
+	for _, provider := range []string{"bicep", "terraform"} {
+		t.Run(provider, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), projectYAML)
+			env := map[string]string{
+				"AZD_FOUNDRY_ACR_MODE":                 "none",
+				"FOUNDRY_PROJECT_ENDPOINT":             "https://acct.services.ai.azure.com/api/projects/p1",
+				"AZURE_AI_PROJECT_ID":                  "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/acct/projects/p1",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    malformedEndpoint,
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceID,
+			}
+
+			require.NoError(t, ejectInfra(dir, provider, env))
+			var output []byte
+			var err error
+			if provider == "bicep" {
+				output, err = os.ReadFile(
+					filepath.Join(dir, "infra", "main.parameters.json"), //nolint:gosec
+				)
+			} else {
+				output, err = os.ReadFile(
+					filepath.Join(dir, "infra", "main.tfvars.json"), //nolint:gosec
+				)
+			}
+			require.NoError(t, err)
+			assert.NotContains(t, string(output), "unused-secret")
+			if provider == "terraform" {
+				var values map[string]any
+				require.NoError(t, json.Unmarshal(output, &values))
+				assert.Equal(t, "", values["existing_acr_endpoint"])
+			}
+		})
+	}
 }
 
 func TestEjectInfra_ExistingProjectTerraformDeploymentsRemainEditable(t *testing.T) {

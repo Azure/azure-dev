@@ -716,7 +716,9 @@ func ejectExistingProjectBicep(
 		return nil, err
 	}
 	existingAcrEndpoint := ""
-	if len(environments) > 0 {
+	if len(environments) > 0 &&
+		(acrMode == infraEjectAcrReuseConnect ||
+			acrMode == infraEjectAcrAlreadyConnected) {
 		var err error
 		existingAcrEndpoint, err = normalizeContainerRegistryEndpoint(
 			environments[0]["AZURE_CONTAINER_REGISTRY_ENDPOINT"],
@@ -809,7 +811,9 @@ func ejectExistingProjectTerraform(
 		return nil, err
 	}
 	existingAcrEndpoint := ""
-	if len(environments) > 0 {
+	if len(environments) > 0 &&
+		(acrMode == infraEjectAcrReuseConnect ||
+			acrMode == infraEjectAcrAlreadyConnected) {
 		var err error
 		existingAcrEndpoint, err = normalizeContainerRegistryEndpoint(
 			environments[0]["AZURE_CONTAINER_REGISTRY_ENDPOINT"],

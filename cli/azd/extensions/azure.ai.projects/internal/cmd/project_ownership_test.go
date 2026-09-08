@@ -889,6 +889,124 @@ func TestExistingEndpointModeRejectsPendingAcr(t *testing.T) {
 	))
 }
 
+func TestProjectAddEndpointOnlyPreflightsHostedAgents(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+	tests := []struct {
+		name    string
+		agents  string
+		sibling string
+		reject  bool
+	}{
+		{
+			name:   "inline hosted agent",
+			agents: "    agents:\n      - name: hosted\n        kind: hosted\n",
+			reject: true,
+		},
+		{
+			name:    "sibling hosted agent",
+			sibling: "  agent:\n    host: azure.ai.agent\n",
+			reject:  true,
+		},
+		{
+			name:   "inline image agent",
+			agents: "    agents:\n      - name: image\n        kind: hosted\n        image: registry.example.com/agent:latest\n",
+		},
+		{
+			name:   "inline code agent",
+			agents: "    agents:\n      - name: code\n        kind: hosted\n        codeConfiguration:\n          runtime: python\n          entryPoint: main.py\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			azureYAML := fmt.Sprintf(`name: test
+services:
+  project:
+    host: azure.ai.project
+    endpoint: %s
+%s%s`, endpoint, tt.agents, tt.sibling)
+			require.NoError(t, os.WriteFile(
+				filepath.Join(root, "azure.yaml"),
+				[]byte(azureYAML),
+				0600,
+			))
+
+			section, err := structpb.NewStruct(map[string]any{
+				"project": map[string]any{
+					"host":     aiProjectHost,
+					"endpoint": endpoint,
+				},
+			})
+			require.NoError(t, err)
+			projectServer := &recordingProjectConfigServer{
+				project: &azdext.ProjectConfig{
+					Name: "test",
+					Path: root,
+					Services: map[string]*azdext.ServiceConfig{
+						"project": {Name: "project", Host: aiProjectHost},
+					},
+				},
+				section: section,
+			}
+			envServer := &projectAddEnvironmentServer{
+				values: map[string]string{
+					"AZURE_AI_PROJECT_NAME":                         "project",
+					"FOUNDRY_PROJECT_ENDPOINT":                      endpoint,
+					"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT": endpoint,
+					"USE_EXISTING_AI_PROJECT":                       "true",
+				},
+			}
+			server := grpc.NewServer()
+			azdext.RegisterProjectServiceServer(server, projectServer)
+			azdext.RegisterEnvironmentServiceServer(server, envServer)
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			go func() {
+				_ = server.Serve(listener)
+			}()
+			t.Cleanup(func() {
+				server.Stop()
+				_ = listener.Close()
+			})
+
+			client, err := azdext.NewAzdClient(
+				azdext.WithAddress(listener.Addr().String()),
+			)
+			require.NoError(t, err)
+			t.Cleanup(client.Close)
+
+			action := &ProjectAddAction{
+				client: client,
+				flags: &projectAddFlags{
+					noPrompt: true,
+					output:   "none",
+				},
+				extCtx: &azdext.ExtensionContext{Environment: "test"},
+			}
+			err = action.Run(t.Context())
+			if tt.reject {
+				require.Error(t, err)
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				assert.Equal(
+					t,
+					"project_reconciliation_requires_project_id",
+					localErr.Code,
+				)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Nil(t, projectServer.setRequest)
+			assert.Empty(t, projectServer.unsetPaths)
+			if tt.reject {
+				assert.Zero(t, envServer.setCalls)
+			}
+		})
+	}
+}
+
 func TestValidateFoundryProviderRejectsRootProviderWithLayers(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(

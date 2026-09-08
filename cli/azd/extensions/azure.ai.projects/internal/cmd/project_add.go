@@ -212,6 +212,13 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		); err != nil {
 			return err
 		}
+		if err := validateExistingEndpointAgentAcr(
+			projectRoot,
+			service,
+			oldValues,
+		); err != nil {
+			return err
+		}
 	} else if err := validateFoundryProvider(projectConfig); err != nil {
 		return err
 	}
@@ -1350,6 +1357,56 @@ func validateExistingEndpointMode(
 		)
 	}
 	return nil
+}
+
+func validateExistingEndpointAgentAcr(
+	projectRoot string,
+	service *projectServiceInfo,
+	values map[string]string,
+) error {
+	if service == nil {
+		return nil
+	}
+
+	projectFile, err := projectFilePath(projectRoot)
+	if err != nil {
+		return err
+	}
+	// #nosec G304 -- projectFile is the active project's azure.yaml.
+	rawAzureYAML, err := os.ReadFile(projectFile)
+	if err != nil {
+		return fmt.Errorf("read project file for endpoint-only validation: %w", err)
+	}
+	result, err := synthesis.SynthesizeExistingProject(synthesis.Input{
+		RawAzureYAML:    rawAzureYAML,
+		ServiceName:     service.Name,
+		AcceptedHosts:   provisioning.FoundryProvisioningServiceHosts,
+		Env:             values,
+		PreserveVarRefs: true,
+		ProjectRoot:     projectRoot,
+	})
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAzureYaml,
+			fmt.Sprintf(
+				"synthesize Foundry project service %q: %s",
+				service.Name,
+				err,
+			),
+			"check the endpoint, agents, and connections fields under your Foundry project service",
+		)
+	}
+	includeAcr, _ := result.Parameters["includeAcr"].(bool)
+	if !includeAcr {
+		return nil
+	}
+
+	return exterrors.Dependency(
+		"project_reconciliation_requires_project_id",
+		"endpoint-only setup cannot retain hosted agents that require a container registry",
+		"rerun `azd ai project add --project-id <resource-id>` "+
+			"before retaining hosted agents",
+	)
 }
 
 func hasProjectConnections(project *azdext.ProjectConfig) bool {

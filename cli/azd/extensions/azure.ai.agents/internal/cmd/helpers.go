@@ -625,7 +625,8 @@ type AgentServiceInfo struct {
 	AgentEndpoint            string                             // full AGENT_{SVC}_ENDPOINT URL (includes name + version)
 	ProtocolEndpoints        map[agent_api.AgentProtocol]string // per-protocol deployment endpoint URLs
 	ProtocolEndpointsPresent bool                               // deployment exposed protocol endpoint metadata
-	ProjectEndpoint          string                             // adopted project endpoint for brownfield fallback
+	ProtocolEndpointsStale   bool
+	ProjectEndpoint          string // adopted project endpoint for brownfield fallback
 }
 
 func withDeployedProtocolEndpoints() agentServiceResolutionOption {
@@ -662,9 +663,9 @@ func resolveAgentProtocolEndpoints(
 	azdClient *azdext.AzdClient,
 	envName string,
 	serviceName string,
-) (map[agent_api.AgentProtocol]string, bool, error) {
+) (map[agent_api.AgentProtocol]string, bool, bool, error) {
 	if azdClient == nil || envName == "" || serviceName == "" {
-		return nil, false, nil
+		return nil, false, false, nil
 	}
 
 	endpoints := make(map[agent_api.AgentProtocol]string)
@@ -675,7 +676,7 @@ func resolveAgentProtocolEndpoints(
 		Key:     versionKey,
 	})
 	if err != nil {
-		return nil, false, &agentProtocolEndpointsError{
+		return nil, false, false, &agentProtocolEndpointsError{
 			err: fmt.Errorf("failed to read %s: %w", versionKey, err),
 		}
 	}
@@ -687,7 +688,7 @@ func resolveAgentProtocolEndpoints(
 			Key:     key,
 		})
 		if err != nil {
-			return nil, false, &agentProtocolEndpointsError{
+			return nil, false, false, &agentProtocolEndpointsError{
 				err: fmt.Errorf("failed to read %s: %w", key, err),
 			}
 		}
@@ -702,9 +703,9 @@ func resolveAgentProtocolEndpoints(
 	if !complete {
 		// Legacy deployments have no completeness marker, so their endpoint
 		// values may include stale protocols from an earlier deployment.
-		return nil, false, nil
+		return nil, len(endpoints) > 0, len(endpoints) > 0, nil
 	}
-	return endpoints, true, nil
+	return endpoints, true, false, nil
 }
 
 // promptForAgentService prompts the user to select one of multiple azure.ai.agent services.
@@ -1069,7 +1070,7 @@ func resolveAgentServiceFromProject(
 			info.ProjectEndpoint = reference.projectEndpoint
 			if resolutionOptions.includeProtocolEndpoints {
 				var endpointErr error
-				info.ProtocolEndpoints, info.ProtocolEndpointsPresent, endpointErr =
+				info.ProtocolEndpoints, info.ProtocolEndpointsPresent, info.ProtocolEndpointsStale, endpointErr =
 					resolveAgentProtocolEndpoints(
 						ctx,
 						azdClient,
@@ -1100,7 +1101,7 @@ func resolveAgentServiceFromProject(
 	}
 	if resolutionOptions.includeProtocolEndpoints {
 		var endpointErr error
-		info.ProtocolEndpoints, info.ProtocolEndpointsPresent, endpointErr =
+		info.ProtocolEndpoints, info.ProtocolEndpointsPresent, info.ProtocolEndpointsStale, endpointErr =
 			resolveAgentProtocolEndpoints(
 				ctx,
 				azdClient,

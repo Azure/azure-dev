@@ -92,9 +92,11 @@ argument is provided it is treated as the message and the agent name
 is auto-detected from azure.yaml. With two arguments the first is the
 agent name and the second is the message.
 
-When --protocol is omitted, deployed endpoint data is used when available;
-otherwise the agent definition is used. If neither identifies exactly one
-invocable protocol, pass --protocol explicitly.
+When --protocol is omitted, complete deployed endpoint data is used when
+available. Endpoint data created by an older extension must be refreshed by
+redeploying or bypassed with --protocol. Otherwise the agent definition is
+used. If neither identifies exactly one invocable protocol, pass --protocol
+explicitly.
 
 Use --input-file/-f to send the contents of a file as the request body
 instead of a positional message argument. This is useful for structured
@@ -593,6 +595,20 @@ func (a *InvokeAction) resolveDeployedProtocol(
 	ctx context.Context,
 	rc *remoteContext,
 ) (agent_api.AgentProtocol, error) {
+	if rc.deployedProtocolMetadataStale {
+		return "", exterrors.Compatibility(
+			exterrors.CodeLegacyAgentProtocolMetadata,
+			fmt.Sprintf(
+				"deployed protocol metadata for agent service %q was created by an older extension version",
+				rc.serviceName,
+			),
+			fmt.Sprintf(
+				"run `azd deploy %s` to refresh protocol metadata, or pass --protocol explicitly",
+				rc.serviceName,
+			),
+		)
+	}
+
 	deployed := uniqueAgentProtocols(rc.invocableProtocols)
 	var local []agent_api.AgentProtocol
 	if len(deployed) != 1 && rc.azdClient != nil && rc.serviceName != "" {
@@ -1012,16 +1028,17 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 // directly outside an azd command) azdClient is nil and persistence helpers
 // no-op. agentKey may still be non-empty in that case.
 type remoteContext struct {
-	name                     string
-	serviceName              string
-	agentKey                 string
-	projectEndpoint          string
-	apiVersion               string
-	version                  string
-	invocableProtocols       []agent_api.AgentProtocol
-	deployedProtocolMetadata bool
-	azdClient                *azdext.AzdClient
-	bearerToken              string
+	name                          string
+	serviceName                   string
+	agentKey                      string
+	projectEndpoint               string
+	apiVersion                    string
+	version                       string
+	invocableProtocols            []agent_api.AgentProtocol
+	deployedProtocolMetadata      bool
+	deployedProtocolMetadataStale bool
+	azdClient                     *azdext.AzdClient
+	bearerToken                   string
 }
 
 func (rc *remoteContext) nextStepName() string {
@@ -1145,6 +1162,7 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 		rc.name = remoteAgentNameFromService(rc.name, info, a.protocolServiceName != "")
 		rc.invocableProtocols = invocableProtocolsFromEndpoints(info.ProtocolEndpoints)
 		rc.deployedProtocolMetadata = info.ProtocolEndpointsPresent
+		rc.deployedProtocolMetadataStale = info.ProtocolEndpointsStale
 		if info.AgentEndpoint != "" {
 			rc.agentKey = buildRemoteAgentKeyFromEndpoint(info.AgentEndpoint)
 		}

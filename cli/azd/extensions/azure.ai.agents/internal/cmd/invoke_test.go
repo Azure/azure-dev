@@ -736,6 +736,73 @@ func TestResolveRemoteContextDirectNameEndpointLookupErrorFails(t *testing.T) {
 	}
 }
 
+func TestResolveProtocolRejectsLegacyMetadataBeforeLocalFallback(t *testing.T) {
+	const (
+		serviceName = "target-agent"
+		projectURL  = "https://account.services.ai.azure.com/api/projects/project"
+	)
+
+	agentProperties, err := projectpkg.AgentDefinitionToServiceProperties(agent_yaml.ContainerAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindHosted,
+			Name: "deployed-agent",
+		},
+		Protocols: []agent_yaml.ProtocolVersionRecord{{
+			Protocol: "responses",
+			Version:  "1.0.0",
+		}},
+	}, nil)
+	if err != nil {
+		t.Fatalf("AgentDefinitionToServiceProperties: %v", err)
+	}
+
+	projectServer := &helpersProjectServer{
+		project: &azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				serviceName: {
+					Name:                 serviceName,
+					Host:                 AiAgentHost,
+					AdditionalProperties: agentProperties,
+				},
+			},
+		},
+	}
+	environmentServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "test"},
+		values: map[string]map[string]string{
+			"test": {
+				"AGENT_TARGET_AGENT_NAME":                 "deployed-agent",
+				"AGENT_TARGET_AGENT_INVOCATIONS_ENDPOINT": "https://example.test/invocations",
+			},
+		},
+	}
+	address := newInvokeRemoteContextTestAzdServer(
+		t,
+		projectServer,
+		environmentServer,
+	)
+	t.Setenv("AZD_SERVER", address)
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", projectURL)
+
+	action := &InvokeAction{
+		flags:    &invokeFlags{name: serviceName},
+		noPrompt: true,
+	}
+	_, err = action.resolveProtocol(t.Context())
+	if err == nil {
+		t.Fatal("expected legacy metadata error, got nil")
+	}
+	if !strings.Contains(err.Error(), "older extension version") {
+		t.Errorf("error = %q, want legacy metadata guidance", err)
+	}
+	suggestion := azdext.WrapError(err).GetSuggestion()
+	if !strings.Contains(suggestion, "azd deploy target-agent") ||
+		!strings.Contains(suggestion, "--protocol") {
+		t.Errorf("suggestion = %q, want redeploy and protocol guidance", suggestion)
+	}
+}
+
 func TestResolveRemoteContextMatchesDeployedNameToService(t *testing.T) {
 	const (
 		serviceName  = "agent-service"
@@ -1197,6 +1264,30 @@ func TestResolveDeployedProtocolRejectsUnsupportedPersistedMetadata(t *testing.T
 	}
 }
 
+func TestResolveDeployedProtocolRequiresRefreshForLegacyMetadata(t *testing.T) {
+	t.Parallel()
+
+	action := &InvokeAction{flags: &invokeFlags{}}
+	_, err := action.resolveDeployedProtocol(
+		t.Context(),
+		&remoteContext{
+			serviceName:                   "agent-service",
+			deployedProtocolMetadataStale: true,
+		},
+	)
+	if err == nil {
+		t.Fatal("expected legacy metadata error, got nil")
+	}
+	if !strings.Contains(err.Error(), "older extension version") {
+		t.Errorf("error = %q, want legacy metadata guidance", err)
+	}
+	suggestion := azdext.WrapError(err).GetSuggestion()
+	if !strings.Contains(suggestion, "azd deploy agent-service") ||
+		!strings.Contains(suggestion, "--protocol") {
+		t.Errorf("suggestion = %q, want redeploy and explicit protocol guidance", suggestion)
+	}
+}
+
 func TestResolveAgentProtocolEndpointsPreservesUnsupportedMetadata(t *testing.T) {
 	projectServer := &helpersProjectServer{
 		project: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{}},
@@ -1221,7 +1312,7 @@ func TestResolveAgentProtocolEndpointsPreservesUnsupportedMetadata(t *testing.T)
 	}
 	defer client.Close()
 
-	endpoints, present, err := resolveAgentProtocolEndpoints(
+	endpoints, present, stale, err := resolveAgentProtocolEndpoints(
 		t.Context(), client, "test", "agent-service",
 	)
 	if err != nil {
@@ -1232,6 +1323,9 @@ func TestResolveAgentProtocolEndpointsPreservesUnsupportedMetadata(t *testing.T)
 	}
 	if !present {
 		t.Fatal("present = false, want endpoint metadata to be preserved")
+	}
+	if stale {
+		t.Fatal("stale = true, want complete endpoint metadata")
 	}
 }
 
@@ -1258,14 +1352,19 @@ func TestResolveAgentProtocolEndpointsRejectsUnmarkedSingleProtocol(t *testing.T
 	}
 	defer client.Close()
 
-	endpoints, present, err := resolveAgentProtocolEndpoints(
+	endpoints, present, stale, err := resolveAgentProtocolEndpoints(
 		t.Context(), client, "test", "agent-service",
 	)
 	if err != nil {
 		t.Fatalf("resolveAgentProtocolEndpoints: %v", err)
 	}
-	if endpoints != nil || present {
-		t.Fatalf("endpoints = %v, present = %t, want no trusted metadata", endpoints, present)
+	if endpoints != nil || !present || !stale {
+		t.Fatalf(
+			"endpoints = %v, present = %t, stale = %t, want stale legacy metadata",
+			endpoints,
+			present,
+			stale,
+		)
 	}
 }
 
@@ -1293,14 +1392,19 @@ func TestResolveAgentProtocolEndpointsRejectsAmbiguousUnmarkedEndpoints(t *testi
 	}
 	defer client.Close()
 
-	endpoints, present, err := resolveAgentProtocolEndpoints(
+	endpoints, present, stale, err := resolveAgentProtocolEndpoints(
 		t.Context(), client, "test", "agent-service",
 	)
 	if err != nil {
 		t.Fatalf("resolveAgentProtocolEndpoints: %v", err)
 	}
-	if endpoints != nil || present {
-		t.Fatalf("endpoints = %v, present = %t, want no trusted metadata", endpoints, present)
+	if endpoints != nil || !present || !stale {
+		t.Fatalf(
+			"endpoints = %v, present = %t, stale = %t, want stale legacy metadata",
+			endpoints,
+			present,
+			stale,
+		)
 	}
 }
 

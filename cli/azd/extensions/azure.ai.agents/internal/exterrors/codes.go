@@ -91,7 +91,8 @@ const (
 //
 // These are usually paired with [Compatibility] for version mismatches.
 const (
-	CodeIncompatibleAzdVersion = "incompatible_azd_version"
+	CodeIncompatibleAzdVersion      = "incompatible_azd_version"
+	CodeLegacyAgentProtocolMetadata = "legacy_agent_protocol_metadata"
 )
 
 // Error codes for azd host AI service errors.

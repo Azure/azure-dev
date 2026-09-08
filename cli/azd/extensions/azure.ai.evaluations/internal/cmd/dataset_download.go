@@ -195,27 +195,48 @@ func (a *datasetDownloadAction) write(
 		}
 	}
 
-	// Renaming onto an existing directory fails whatever --force said, so the
-	// old one moves aside first and is discarded only once the new one is in
-	// place. Put back on failure: --force is not permission to lose both.
+	if err := replaceDir(staging, dest); err != nil {
+		return 0, "", err
+	}
+	return len(content.Files), dest, nil
+}
+
+// replaceDir moves staging onto dest, which may already exist.
+//
+// Renaming onto an existing directory fails whatever --force said, so the old
+// one moves aside first and is discarded only once the new one is in place, and
+// is put back if the rename fails: --force is permission to replace the
+// destination, not to lose both.
+//
+// The holding name is created rather than composed. A fixed sibling such as
+// `<dest>.azd-replaced` is a path this command does not own, and clearing it to
+// make room would destroy whatever a caller had already put there.
+func replaceDir(staging, dest string) error {
 	replaced := ""
 	if _, err := os.Lstat(dest); err == nil {
-		replaced = dest + ".azd-replaced"
-		_ = os.RemoveAll(replaced)
-		if err := os.Rename(dest, replaced); err != nil {
-			return 0, "", messages.WritingDownload(dest, err)
+		held, err := os.MkdirTemp(filepath.Dir(dest), ".azd-replaced-*")
+		if err != nil {
+			return messages.CannotWriteInDirectory(filepath.Dir(dest), err)
 		}
+		// Freed so the rename can take the name; it was created only to reserve it.
+		if err := os.Remove(held); err != nil {
+			return messages.WritingDownload(dest, err)
+		}
+		if err := os.Rename(dest, held); err != nil {
+			return messages.WritingDownload(dest, err)
+		}
+		replaced = held
 	}
 	if err := os.Rename(staging, dest); err != nil {
 		if replaced != "" {
 			_ = os.Rename(replaced, dest)
 		}
-		return 0, "", messages.WritingDownload(dest, err)
+		return messages.WritingDownload(dest, err)
 	}
 	if replaced != "" {
 		_ = os.RemoveAll(replaced)
 	}
-	return len(content.Files), dest, nil
+	return nil
 }
 
 // safeJoin resolves a service-supplied entry name under root, or refuses.

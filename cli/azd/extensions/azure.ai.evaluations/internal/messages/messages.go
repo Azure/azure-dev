@@ -1227,6 +1227,46 @@ func InstructionsRequired() error {
 			"--agent-instruction-file <path>")
 }
 
+// GenerationCompleted opens the closing summary of a finished generation.
+func GenerationCompleted() string {
+	return "\nGeneration completed\n"
+}
+
+// GenerationJobLine names the billed job an artifact came from.
+//
+// The id is the only handle on a job after the command exits -- it is what
+// `job show` reattaches with and what a support question has to quote -- and it
+// used to scroll past unlabelled among the progress lines.
+func GenerationJobLine(kind, jobID string) string {
+	return fmt.Sprintf("  %s job: %s\n", kind, jobID)
+}
+
+// InitHandoffCommand is the `eval init` that turns generated artifacts into an
+// eval, with every value already filled in.
+//
+// Printed resolved rather than as a shape. A reader who has just watched the
+// command choose a name, a level and an evaluator should not have to retype
+// any of them, and a line with a placeholder in it reads like a command and is
+// not one.
+func InitHandoffCommand(agent, dataset, level, evaluator string) string {
+	cmd := "azd ai eval init"
+	if agent != "" {
+		cmd += " --target " + ShellArg(agent)
+	}
+	if dataset != "" {
+		cmd += " --source dataset --dataset " + ShellArg(dataset)
+		if level != "" {
+			cmd += " --evaluation-level " + level
+		}
+	}
+	if evaluator != "" {
+		// The built-in comes first because it grades what the agent was asked
+		// to do; the generated rubric grades how well it did it.
+		cmd += " --evaluator builtin.task_completion --evaluator " + ShellArg(evaluator)
+	}
+	return cmd
+}
+
 // WarningAgentUnreadable reports an agent that could not supply context.
 //
 // A misspelled --target is the common cause and answers 404, whose body is ten

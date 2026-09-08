@@ -5,7 +5,9 @@ package cmd
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -520,7 +522,57 @@ func (ec *evalContext) runGenerations(
 	if len(failures) > 0 {
 		return messages.SomeGenerationsFailed(failures)
 	}
+	// What was produced, what it was billed under, and the one command that
+	// turns it into an eval. Generation used to end on the last download line,
+	// so the job ids -- the only handle on a billed job -- scrolled past
+	// unlabelled, and the caller was left to work out that `init` was next and
+	// to retype every name it had just chosen for them.
+	if !isJSON(cmd) && !flags.noWait {
+		writeGenerationCompleted(out, outcomes)
+	}
 	return nil
+}
+
+// writeGenerationCompleted closes a successful generation.
+func writeGenerationCompleted(out io.Writer, outcomes []generationOutcome) {
+	fmt.Fprint(out, messages.GenerationCompleted())
+	for i := range outcomes {
+		if id := outcomes[i].report.jobID; id != "" {
+			fmt.Fprint(out, messages.GenerationJobLine(string(outcomes[i].plan.Kind), id))
+		}
+	}
+	if next := initHandoff(outcomes); next != "" {
+		fmt.Fprint(out, messages.FirstNextStep(next))
+	}
+}
+
+// initHandoff is the `eval init` that turns what was just generated into an
+// eval, with every value it needs already filled in.
+//
+// --target is included even though `init` can detect it: the handoff is
+// documented to run exactly as printed, and the detection depends on the
+// project being readable at the time it is run rather than at the time it was
+// printed.
+func initHandoff(outcomes []generationOutcome) string {
+	var agent, dataset, level, evaluator string
+	for i := range outcomes {
+		o := &outcomes[i]
+		if o.ref == nil {
+			continue
+		}
+		agent = cmp.Or(agent, o.plan.Agent)
+		switch o.plan.Kind {
+		case generateKindDataset:
+			dataset = o.ref.Name
+			level = o.plan.EvaluationLevel
+		default:
+			evaluator = o.ref.Name
+		}
+	}
+	if dataset == "" && evaluator == "" {
+		return ""
+	}
+	return messages.InitHandoffCommand(agent, dataset, level, evaluator)
 }
 
 // generationDocument keys each outcome by the artifact it was for, so a caller

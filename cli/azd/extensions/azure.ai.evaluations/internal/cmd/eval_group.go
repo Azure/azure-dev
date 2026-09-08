@@ -173,6 +173,10 @@ func (a *evalCreateAction) Run() error {
 	} else {
 		fmt.Fprint(out, messages.EvalUnchanged(eval.Name, id))
 	}
+	// An eval that exists has nothing to show until something runs it, and the
+	// scaffold's own next-step block is two commands back by now.
+	fmt.Fprint(out, messages.FirstNextStep(
+		"azd ai eval run start --eval "+messages.ShellArg(eval.Name)))
 	return nil
 }
 

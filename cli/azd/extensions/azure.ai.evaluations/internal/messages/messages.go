@@ -328,8 +328,14 @@ func ListingRuns(evalID string, err error) error {
 }
 
 // EvalHasNoRunsLine reports an eval with no runs to list.
+//
+// With the command that makes one. An eval with no runs is the ordinary state
+// of one that was just scaffolded, so the useful thing to say is what to do
+// about it rather than only that there is nothing there.
 func EvalHasNoRunsLine(evalID string) string {
-	return fmt.Sprintf("Eval %s has no runs yet.\n", evalID)
+	return fmt.Sprintf(
+		"No runs found for eval %q.\n\nStart one with:\n  azd ai eval run start --eval %s\n",
+		evalID, shellArg(evalID))
 }
 
 // EvalHasNoRuns reports an eval with no run to fall back on.
@@ -717,10 +723,12 @@ func ScaffoldCancelChoice() string { return "Cancel" }
 
 // ScaffoldCancelled reports a scaffold nobody approved.
 //
+// ScaffoldCancelled reports a scaffold the reader declined.
+//
 // It says what was not done rather than exiting silently: the command that
 // writes two files has to be distinguishable from the one that wrote neither.
 func ScaffoldCancelled() string {
-	return "\nCancelled. Nothing was written.\n"
+	return "\nCancelled. No files were changed.\n"
 }
 
 // ConfirmingScaffold reports a failed confirmation prompt.
@@ -939,10 +947,32 @@ func PortalLinkAfterRows(url string) string {
 }
 
 // ExportFormatUnsupported reports an --format the export command cannot write.
+//
+// The recipe travels with the refusal. It was in the command's help, which is
+// the one place a reader who just hit this error is not looking.
 func ExportFormatUnsupported(format string, supported ...string) error {
 	return fmt.Errorf(
-		"--format %q is not supported; use %s",
+		"--format %q is not supported; use %s, then derive the shape you want "+
+			"from it, for example `jq -c '.items[]' results.json > results.jsonl`",
 		format, strings.Join(supported, ", "))
+}
+
+// ExportNeedsAnOutputFile reports an export with nowhere to put the document.
+//
+// Defaulting to stdout wrote prompts, answers and evaluator reasons onto the
+// terminal -- and into whatever CI log was capturing it -- for a command whose
+// whole subject is content worth handling deliberately.
+func ExportNeedsAnOutputFile() error {
+	return errors.New(
+		"--output-file is required; name a path, or pass --output-file - to write to stdout")
+}
+
+// ExportCarriesSourceContent says what the file that was just written holds.
+func ExportCarriesSourceContent(path string) string {
+	return fmt.Sprintf(
+		"%s carries the evaluated inputs, the target's answers and every "+
+			"evaluator's reason. Treat it as you would the source data.\n",
+		filepath.ToSlash(path))
 }
 
 // FailOnInvalid reports a --fail-on value that is neither form of threshold.
@@ -1152,10 +1182,35 @@ func notFound(err error) bool {
 }
 
 // WarningAgentSeedFailedRetrying reports the retry that drops the agent source.
-func WarningAgentSeedFailedRetrying(agent string) string {
+// AgentSeedFailedHeading opens the account of the generation that failed,
+// before the reader is asked whether to pay for another one.
+func AgentSeedFailedHeading(agent, jobID string, why error) string {
 	return fmt.Sprintf(
-		"  warning: generating from agent %q failed in the service; "+
-			"retrying from the instruction alone.\n", agent)
+		"\nGenerating the dataset from agent %q failed.\n  Job    %s\n  Error  %v\n",
+		agent, jobID, why)
+}
+
+// ConfirmPromptSourceRetryPrompt asks whether to bill a second job.
+func ConfirmPromptSourceRetryPrompt() string {
+	return "Retry using the prompt source only? (submits another generation job)"
+}
+
+// RetryingWithPromptSource says the second job is going in.
+func RetryingWithPromptSource() string {
+	return "\nRetrying dataset generation with the prompt source...\n"
+}
+
+// ConfirmingPromptSourceRetry reports a failed retry prompt.
+func ConfirmingPromptSourceRetry(err error) error {
+	return fmt.Errorf("confirming the retry: %w", err)
+}
+
+// AgentSeedFailedNoRetry reports an agent-seeded generation nobody agreed to
+// retry, and the flag that asks for the surviving source directly.
+func AgentSeedFailedNoRetry(agent, jobID string) error {
+	return fmt.Errorf(
+		"generating from agent %q failed (job %s); rerun with --from prompt to "+
+			"generate from the instructions alone", agent, jobID)
 }
 
 // WarningAgentSeedSkippedAsync reports the agent source dropped before it is
@@ -1314,6 +1369,14 @@ func JobCancelled(kind, jobID, status string) string {
 // JobDeleted confirms a deleted generation job record.
 func JobDeleted(kind, jobID string) string {
 	return fmt.Sprintf("Deleted %s generation job %s\n", kind, jobID)
+}
+
+// JobDeleteSubject names what a job delete is about to remove, and what it is
+// not: the artifact the job produced is its own versioned resource.
+func JobDeleteSubject(kind, jobID string) string {
+	return fmt.Sprintf(
+		"%s generation job record %q (the generated %s and its versions are not deleted)",
+		kind, jobID, kind)
 }
 
 // JobNotFound reports a job id that is not in this group, naming the other one.
@@ -3199,6 +3262,13 @@ func OutputDirNeedsTheWait() error {
 		"--output-dir has nothing to write to with --no-wait, which returns " +
 			"before the artifact exists. Drop --no-wait, or collect the " +
 			"artifact later with `azd ai eval job show`")
+}
+
+// ForceNeedsTheWait reports an overwrite of a file that will not be written.
+func ForceNeedsTheWait() error {
+	return errors.New(
+		"--force replaces the artifact file, and --no-wait returns before there " +
+			"is one to replace. Drop one of them")
 }
 
 // EndpointEmpty reports a project endpoint given as blank.

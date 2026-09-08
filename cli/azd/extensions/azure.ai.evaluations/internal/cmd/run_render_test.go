@@ -46,8 +46,15 @@ func TestRenderResultsIsOneRowPerSample(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(text, "oi_2"),
 		"a sample that failed two evaluators must still be one row:\n%s", text)
 
-	for _, header := range []string{"ITEM", "STATUS", "RESULTS", "ATTENTION", "REASON"} {
+	for _, header := range []string{"ITEM", "STATUS", "RESULTS"} {
 		assert.Containsf(t, text, header, "the listing lost its %s column", header)
+	}
+	// RESULTS spec 5.2 and 9.1 fix the table at three columns, and 5.2 puts
+	// evaluator names and reasons in `output show`. Both were columns here, and
+	// both were truncated to fit.
+	for _, gone := range []string{"ATTENTION", "REASON"} {
+		assert.NotContainsf(t, text, gone,
+			"%s belongs to `output show`, where it is not cut to a cell", gone)
 	}
 
 	// The old SAMPLE column numbered within the current filter, so the same
@@ -64,18 +71,18 @@ func TestRenderResultsIsOneRowPerSample(t *testing.T) {
 		"an item-level aggregate score names an aggregation the product has not defined")
 }
 
-// The failing row has to name every evaluator that failed it, because that is
-// what says whether the sample is broken or one evaluator is.
+// The failing row states its outcome and the arithmetic behind it. Which
+// evaluator failed is `output show`'s answer, per RESULTS spec 5.2.
 func TestRenderResultsNamesEveryFailedEvaluator(t *testing.T) {
 	var out bytes.Buffer
 	run := &eval_api.OpenAIEvalRun{ID: "evalrun_1", Status: "completed"}
 	require.NoError(t, renderResults(&out, run, scoredRows(), true))
 
 	text := out.String()
-	assert.Contains(t, text, "relevance: failed, coherence: failed",
-		"the column names each non-passing result and what it did")
-	assert.Contains(t, text, "Answered a different question.",
-		"the first failure's reason is what the row is looked at for")
+	assert.Contains(t, text, "2 failed",
+		"the row counts the evaluator results behind its status")
+	assert.NotContains(t, text, "Answered a different question.",
+		"the reason is one evaluator's account of the row, and lives in `output show`")
 	assert.NotContains(t, text, "oi_1", "--failed-only must drop the passing sample")
 	assert.Contains(t, text, "1 of 2 items are failed.")
 }
@@ -119,8 +126,8 @@ func TestErroredRowIsReportedAsErrored(t *testing.T) {
 
 	text := out.String()
 	assert.Contains(t, text, itemErrored, "the status column states the outcome directly")
-	assert.Contains(t, text, "relevance: errored",
-		"and the row names the evaluator that returned nothing")
+	assert.Contains(t, text, "1 error",
+		"and the row counts what stands behind that status")
 	assert.NotContains(t, text, "no verdict",
 		"which is stated as the outcome it is, not as an absence the reader decodes")
 }

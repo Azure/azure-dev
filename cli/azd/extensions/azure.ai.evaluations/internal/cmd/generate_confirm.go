@@ -88,6 +88,42 @@ func (a *generateAction) askGenerateArtifacts() (generateChoices, error) {
 	return offered[index], nil
 }
 
+// promptSourceRetryConsent asks whether to submit the fallback generation job.
+//
+// The service rejects agent-seeded generation while accepting the same request
+// carrying only the prompt, and retrying was automatic: a second job was billed
+// against sources the caller never asked for, on a command they had confirmed
+// once for one job. Under --no-prompt there is nobody to ask, so it does not
+// retry -- the refusal names --from prompt, which asks for the surviving source
+// directly.
+func promptSourceRetryConsent(cmd *cobra.Command) retryConsent {
+	return func(agent, jobID string, why error) (bool, error) {
+		if noPrompt(cmd) || isJSON(cmd) {
+			return false, nil
+		}
+
+		fmt.Fprint(cmd.ErrOrStderr(), messages.AgentSeedFailedHeading(agent, jobID, why))
+
+		azdClient, err := azdext.NewAzdClient()
+		if err != nil {
+			return false, messages.ConnectingToAzd(err)
+		}
+		defer azdClient.Close()
+
+		stop := false
+		resp, err := azdClient.Prompt().Confirm(commandContext(cmd), &azdext.ConfirmRequest{
+			Options: &azdext.ConfirmOptions{
+				Message:      messages.ConfirmPromptSourceRetryPrompt(),
+				DefaultValue: &stop,
+			},
+		})
+		if err != nil {
+			return false, messages.ConfirmingPromptSourceRetry(err)
+		}
+		return resp.GetValue(), nil
+	}
+}
+
 // generationSummary is what the confirmation reports.
 type generationSummary struct {
 	plans       []generationPlan

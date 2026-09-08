@@ -119,7 +119,9 @@ func (a *initAction) Run() error {
 	if source == initSourceTraces && a.flags.dataset != "" {
 		return messages.TracesTakesNoDataset()
 	}
-	if a.flags.maxTraces < 0 {
+	// Zero is not a smaller window, it is an eval with nothing to read. It used
+	// to pass and be written into the scaffold.
+	if a.cmd.Flags().Changed("max-traces") && a.flags.maxTraces <= 0 {
 		return messages.MaxTracesMustBePositive()
 	}
 	// Checked with the other flag-only rules, before anything is asked
@@ -365,19 +367,6 @@ func (a *initAction) Run() error {
 	return nil
 }
 
-// settleInitSource returns the data source the eval will read, and refuses
-// --max-traces when that source will not be traces.
-//
-// The defaulting and the rule live together because they were once apart, and
-// disagreed: the rule ran on the flag as typed, so `init --max-traces 50` with
-// no --source was refused for "not a trace source" even in a project wired for
-// traces, where the very next line was about to choose traces. Reading the flag
-// as its own request for traces would be the other way to fix it, but that
-// silently overrides a project that has no traces to read; refusing after the
-// source is known says the true thing.
-//
-// tracesWired is a function, not a value, so a run that was told its source
-// never opens an azd connection to answer a question nobody asked.
 // initSourceInput is what settling the data source depends on.
 type initSourceInput struct {
 	explicit       string
@@ -716,7 +705,14 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 			refs = append(refs, withModel(evalcore.EvaluatorRef{Evaluator: ref}))
 		}
 	} else {
+		// Deduplicated: the same reference twice makes the service grade every
+		// row twice against one evaluator and report it as two results.
+		seen := map[string]bool{}
 		for _, e := range in.evaluators {
+			if seen[e] {
+				continue
+			}
+			seen[e] = true
 			ref := evalcore.EvaluatorRef{Evaluator: e}
 			refs = append(refs, withModel(ref))
 			if ref.IsBuiltin() {

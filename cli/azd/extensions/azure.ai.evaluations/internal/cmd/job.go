@@ -251,6 +251,10 @@ func (a *jobListAction) Run() error {
 	if trimmed {
 		fmt.Fprint(a.cmd.OutOrStdout(), messages.ShowingSomeOf(len(table), total))
 	}
+	// The selector goes with it: the two job groups share an id shape, so a
+	// hint without it names a command that reads the wrong group.
+	fmt.Fprint(a.cmd.OutOrStdout(), messages.ViewDetailsHint(fmt.Sprintf(
+		"azd ai eval job show %s --%s", shown[0].ID, kind.name)))
 	return nil
 }
 
@@ -429,10 +433,12 @@ type jobDeleteAction struct {
 	cmd   *cobra.Command
 	flags *jobFlags
 	jobID string
+	force bool
 }
 
 func newJobDeleteCommand() *cobra.Command {
 	flags := &jobFlags{}
+	force := false
 
 	cmd := &cobra.Command{
 		Use:   "delete <job-id>",
@@ -442,11 +448,12 @@ func newJobDeleteCommand() *cobra.Command {
 			"and is not affected.",
 		Args: requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return (&jobDeleteAction{cmd: cmd, flags: flags, jobID: args[0]}).Run()
+			return (&jobDeleteAction{cmd: cmd, flags: flags, jobID: args[0], force: force}).Run()
 		},
 	}
 
 	flags.bind(cmd)
+	registerForceFlag(cmd, &force)
 	return cmd
 }
 
@@ -462,6 +469,18 @@ func (a *jobDeleteAction) Run() error {
 		return err
 	}
 	defer ec.Close()
+
+	// The only delete verb that never asked. Every other one confirms, and a
+	// job id is the easiest of them to mistype: the dataset and evaluator
+	// groups share an id shape.
+	subject := messages.JobDeleteSubject(kind.name, a.jobID)
+	goAhead, err := confirmDelete(a.cmd, ec, subject, a.force)
+	if err != nil {
+		return err
+	}
+	if !goAhead {
+		return deleteDeclined(a.cmd, subject)
+	}
 
 	if err := kind.remove(ctx, ec, a.jobID); err != nil {
 		return jobLookupError("deleting", kind, a.jobID, err)

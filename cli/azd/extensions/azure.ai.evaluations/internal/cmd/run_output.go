@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -124,11 +125,6 @@ func (a *runOutputListAction) Run() error {
 	// A generated dataset runs to a thousand rows, each carrying a
 	// result per evaluator, so an unbounded listing floods the terminal.
 	pageSize := pageSizeOr(a.flags.limit, a.flags.walksEveryPage(a.cmd), outputItemPageSize)
-	items, err := ec.evalClient.ListOutputItemsPage(ctx, evalID, run.ID, pageSize, a.flags.pageToken)
-	if err != nil {
-		return messages.ReadingRunResults(run.ID, err)
-	}
-	rows := items.Data
 	// One predicate for both views, so `-o json` and the table cannot
 	// disagree about which rows the filter kept.
 	keep, err := parseStatusFilter(a.flags.status)
@@ -141,15 +137,12 @@ func (a *runOutputListAction) Run() error {
 		}
 		keep[itemFailed] = true
 	}
-	if keep != nil {
-		kept := make([]eval_api.OutputItem, 0, len(rows))
-		for _, it := range rows {
-			if keep[classifyItem(it).Status] {
-				kept = append(kept, it)
-			}
-		}
-		rows = kept
+	items, err := filteredItemPage(
+		ctx, ec.evalClient, evalID, run.ID, pageSize, a.flags.pageToken, keep, fetchItemPage)
+	if err != nil {
+		return messages.ReadingRunResults(run.ID, err)
 	}
+	rows := items.Data
 
 	// A bare array, as every other list emits. Wrapping the rows beside
 	// the run made `-o json` the one listing a script could not iterate,
@@ -297,6 +290,7 @@ type exportDocument struct {
 type runOutputExportFlags struct {
 	format    string
 	outFile   string
+	force     bool
 	endpoint  string
 	groupName string
 	run       string
@@ -340,7 +334,10 @@ Derive any other shape from this file, for example:
 	addRunFlag(cmd, &flags.run)
 	cmd.Flags().StringVar(&flags.format, "format", formatJSON,
 		fmt.Sprintf("Output format. Only %s is supported.", formatJSON))
-	cmd.Flags().StringVar(&flags.outFile, "output-file", "", "Write to this path instead of stdout.")
+	cmd.Flags().StringVar(&flags.outFile, "output-file", "",
+		"Write the document to this path. Required; pass - to write to stdout.")
+	cmd.Flags().BoolVar(&flags.force, "force", false,
+		"Replace an output file that already exists.")
 	addEvalFlag(cmd, &flags.groupName)
 	// Registered wherever a declared name is resolved, so a configuration
 	// outside ./evals can be addressed by every command, not just `run start`.
@@ -352,6 +349,20 @@ Derive any other shape from this file, for example:
 func (a *runOutputExportAction) Run() error {
 	if f := strings.ToLower(strings.TrimSpace(a.flags.format)); f != "" && f != formatJSON {
 		return messages.ExportFormatUnsupported(a.flags.format, formatJSON)
+	}
+
+	// Both settled before the run is read. The document carries every evaluated
+	// row, so where it lands is not a detail to discover after two round trips
+	// -- and a destination that already holds one is refused before anything
+	// could overwrite it.
+	dest := strings.TrimSpace(a.flags.outFile)
+	if dest == "" {
+		return messages.ExportNeedsAnOutputFile()
+	}
+	if dest != exportToStdout {
+		if err := refuseExisting(dest, a.flags.force); err != nil {
+			return err
+		}
 	}
 
 	ctx := a.cmd.Context()
@@ -386,9 +397,12 @@ func (a *runOutputExportAction) Run() error {
 	}
 	doc := exportDocument{Run: rawRun, Items: rawItems}
 
-	if a.flags.outFile == "" {
+	if dest == exportToStdout {
 		return writeExport(a.cmd.OutOrStdout(), doc)
 	}
+
+	// On stderr, so it cannot reach a document being parsed downstream.
+	fmt.Fprint(a.cmd.ErrOrStderr(), messages.ExportCarriesSourceContent(dest))
 
 	// The document carries every evaluated row, so it holds prompts, answers
 	// and evaluator reasons. os.Create takes the process umask and commonly
@@ -398,10 +412,14 @@ func (a *runOutputExportAction) Run() error {
 	// size of a run's export is the service's to decide, not this command's,
 	// and the only reason to hold it whole was to hand it to a writer that
 	// takes bytes.
-	return writeFileAtomicFunc(a.flags.outFile, func(w io.Writer) error {
+	return writeFileAtomicFunc(dest, func(w io.Writer) error {
 		return writeExport(w, doc)
 	})
 }
+
+// exportToStdout is the --output-file value that means "do not write a file".
+// Spelled rather than defaulted, so nothing lands on a terminal by accident.
+const exportToStdout = "-"
 
 // resolveEvalID resolves the eval a run command is about, from --eval or from
 // the declaration the configuration holds.
@@ -847,23 +865,25 @@ func renderResults(
 			// No aggregate score either: averaging evaluators that measure
 			// different things on different scales produces a number no
 			// evaluator reported. Scores live per evaluator in `output show`.
-			rows = append(rows, []string{
-				it.ID,
-				out.Status,
-				out.ResultsBreakdown(),
-				truncate(out.AttentionText(2), 40),
-				truncate(out.Reason, 44),
-			})
+			//
+			// No evaluator names and no reason: both are one evaluator's account
+			// of one row, and a cell truncated to forty characters is the worst
+			// place to read either. They belong to `output show`, which prints
+			// them whole.
+			rows = append(rows, []string{it.ID, out.Status, out.ResultsBreakdown()})
 		}
-		// Only the first failure's reason fits a cell; `run output show` has
-		// the rest.
-		if err := emitTable(w,
-			[]string{"ITEM", "STATUS", "RESULTS", "ATTENTION", "REASON"},
-			rows); err != nil {
+		if err := emitTable(w, []string{"ITEM", "STATUS", "RESULTS"}, rows); err != nil {
 			return err
 		}
 		if failedOnly {
-			fmt.Fprint(w, messages.FilteredItemCount(shown, len(items), itemFailed))
+			// Against the run's own item total, not the rows on screen. The slice
+			// arriving here is already filtered, so counting it both ways printed
+			// "6 of 6" for a run of fifteen.
+			total := len(items)
+			if c := run.ResultCounts; c != nil && c.Total > 0 {
+				total = c.Total
+			}
+			fmt.Fprint(w, messages.FilteredItemCount(shown, total, itemFailed))
 		}
 		if firstItem != "" {
 			// Printed resolved, down to an item that is actually in the table
@@ -880,6 +900,79 @@ func renderResults(
 		fmt.Fprint(w, messages.PortalLinkAfterRows(color.CyanString(url)))
 	}
 	return nil
+}
+
+// itemPager fetches one service page of output items. Named so the walk below
+// can be exercised without a service; production passes fetchItemPage.
+type itemPager func(
+	ctx context.Context,
+	client *eval_api.EvalClient,
+	evalID, runID string,
+	pageSize int,
+	after string,
+) (*eval_api.OutputItemList, error)
+
+func fetchItemPage(
+	ctx context.Context,
+	client *eval_api.EvalClient,
+	evalID, runID string,
+	pageSize int,
+	after string,
+) (*eval_api.OutputItemList, error) {
+	return client.ListOutputItemsPage(ctx, evalID, runID, pageSize, after)
+}
+
+// filteredItemPage fills one page with rows the filter keeps, reading as many
+// service pages as that takes.
+//
+// The output-items endpoint has no status parameter, so a filter can only be
+// applied here. Applying it to a single fetched page meant `--failed-only`
+// answered "no failing rows" whenever the first ten happened to pass, while the
+// failures sat on page two -- a wrong answer to the one question the flag
+// exists for. The walk stops as soon as the page is full, so a failing run
+// still costs one request.
+func filteredItemPage(
+	ctx context.Context,
+	client *eval_api.EvalClient,
+	evalID, runID string,
+	pageSize int,
+	after string,
+	keep map[string]bool,
+	fetch itemPager,
+) (*eval_api.OutputItemList, error) {
+	page, err := fetch(ctx, client, evalID, runID, pageSize, after)
+	if err != nil {
+		return nil, err
+	}
+	// No filter, or no page size to fill: one page is the page.
+	if keep == nil || pageSize <= 0 {
+		return page, nil
+	}
+
+	kept := make([]eval_api.OutputItem, 0, len(page.Data))
+	for {
+		for _, it := range page.Data {
+			if keep[classifyItem(it).Status] {
+				kept = append(kept, it)
+			}
+		}
+		if len(kept) >= pageSize {
+			// The cursor is the last row this page actually shows, so resuming
+			// from it neither repeats nor skips one.
+			kept = kept[:pageSize]
+			return &eval_api.OutputItemList{
+				Data:    kept,
+				HasMore: true,
+				LastID:  kept[len(kept)-1].ID,
+			}, nil
+		}
+		if !page.HasMore || page.LastID == "" {
+			return &eval_api.OutputItemList{Data: kept}, nil
+		}
+		if page, err = fetch(ctx, client, evalID, runID, pageSize, page.LastID); err != nil {
+			return nil, err
+		}
+	}
 }
 
 // runEvalName is the declared name the run belongs to, falling back to the

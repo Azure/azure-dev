@@ -112,6 +112,11 @@ func (a *generateAction) Run() error {
 	if a.flags.shared.noWait && a.cmd.Flags().Changed("output-dir") {
 		return messages.OutputDirNeedsTheWait()
 	}
+	// Same reason: --force asks for a local file to be replaced, and --no-wait
+	// returns before there is one to replace.
+	if a.flags.shared.noWait && a.cmd.Flags().Changed("force") {
+		return messages.ForceNeedsTheWait()
+	}
 	// One command builds two artifacts. --output-dir naming a file
 	// gives both of them the same path -- the extension is recognized
 	// for either kind -- and they are written concurrently, so two
@@ -447,7 +452,8 @@ func (ec *evalContext) runGenerations(
 			switch o.plan.Kind {
 			case generateKindDataset:
 				o.ref, o.err = ec.generateDataset(
-					cmd.Context(), o.plan, &o.output, flags.noWait, &o.report)
+					cmd.Context(), o.plan, &o.output, flags.noWait, &o.report,
+					promptSourceRetryConsent(cmd))
 			default:
 				o.ref, o.err = ec.generateRubric(
 					cmd.Context(), o.plan, &o.output, flags.noWait, &o.report)

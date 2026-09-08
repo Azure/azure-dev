@@ -134,6 +134,8 @@ func (a *runListAction) Run() error {
 	if list.HasMore && list.LastID != "" {
 		fmt.Fprint(a.cmd.OutOrStdout(), messages.MoreRunsToList(list.LastID))
 	}
+	fmt.Fprint(a.cmd.OutOrStdout(), messages.ViewDetailsHint(fmt.Sprintf(
+		"azd ai eval run show %s", list.Data[0].ID)))
 	return nil
 }
 

@@ -373,12 +373,18 @@ func reportSubmitted(out io.Writer, group, jobID string) {
 }
 
 // generateDataset submits the data generation job and downloads the result.
+// retryConsent answers whether to submit the fallback generation job. It bills
+// a second job against sources the caller did not ask for, so it is a question
+// rather than a recovery.
+type retryConsent func(agent, jobID string, why error) (bool, error)
+
 func (ec *evalContext) generateDataset(
 	ctx context.Context,
 	plan generationPlan,
 	out io.Writer,
 	noWait bool,
 	report *generationReport,
+	consent retryConsent,
 ) (*project.ArtifactRef, error) {
 	fmt.Fprint(out, messages.GeneratingDataset(plan.Name, plan.SampleSize))
 
@@ -417,12 +423,20 @@ func (ec *evalContext) generateDataset(
 		ec.evalClient.GetDataGenerationJob)
 	if err != nil && isAgentSeededGenerationFailure(err) {
 		// Agent-seeded generation fails server-side for every agent, while the
-		// same request carrying only the prompt succeeds. Failing the whole
-		// command would block the documented flow on a defect the user cannot
-		// do anything about, so retry without the agent and say so.
+		// same request carrying only the prompt succeeds. Retrying changes the
+		// sources that were asked for and bills a second job, so it is asked
+		// about rather than done: the command had already been confirmed for one
+		// job against one set of sources.
 		promptOnly := eval_api.WithoutAgentSource(sources)
 		if eval_api.HasPromptSource(promptOnly) {
-			fmt.Fprint(out, messages.WarningAgentSeedFailedRetrying(plan.Agent))
+			retry, askErr := consent(plan.Agent, job.ID, err)
+			if askErr != nil {
+				return nil, askErr
+			}
+			if !retry {
+				return nil, messages.AgentSeedFailedNoRetry(plan.Agent, job.ID)
+			}
+			fmt.Fprint(out, messages.RetryingWithPromptSource())
 
 			req = eval_api.NewDataGenerationJobRequest(
 				plan.Name, plan.Model, plan.SampleSize, promptOnly)
@@ -430,6 +444,7 @@ func (ec *evalContext) generateDataset(
 			if err != nil {
 				return nil, messages.SubmittingDataJob(err)
 			}
+			reportSubmitted(out, "dataset", job.ID)
 			// The retry is a second billed job, so the id the caller reports
 			// has to move with it. Leaving it on the abandoned first job points
 			// every resume and every `job show` at the wrong one.

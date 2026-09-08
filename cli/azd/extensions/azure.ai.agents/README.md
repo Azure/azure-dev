@@ -14,7 +14,7 @@ the generated infrastructure, it is offered as the default. The name must be
 3-32 characters, start with a letter or number, and contain only letters,
 numbers, or hyphens.
 
-To preconfigure the name, set it in the active azd environment before running
+To configure the name, set it in the active azd environment before running
 init:
 
 ```bash

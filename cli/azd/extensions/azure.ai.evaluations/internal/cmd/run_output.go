@@ -175,7 +175,7 @@ func (a *runOutputListAction) Run() error {
 		}
 		return emitJSONPage(a.cmd.OutOrStdout(), rows, nil, cursor)
 	}
-	if err := renderResults(a.cmd.OutOrStdout(), run, rows, a.flags.failedOnly); err != nil {
+	if err := renderResults(a.cmd.OutOrStdout(), evalID, run, rows, a.flags.failedOnly); err != nil {
 		return err
 	}
 	if items.HasMore && items.LastID != "" {
@@ -785,10 +785,12 @@ func meanScoreOf(results []eval_api.OutputResult) string {
 
 func renderResults(
 	w io.Writer,
+	resolvedEval string,
 	run *eval_api.OpenAIEvalRun,
 	items []eval_api.OutputItem,
 	failedOnly bool,
 ) error {
+	evalName := runEvalName(run, resolvedEval)
 	fmt.Fprint(w, messages.RunStatusHeading(run.ID, run.Status))
 
 	if c := run.ResultCounts; c != nil {
@@ -839,6 +841,10 @@ func renderResults(
 		} else {
 			fmt.Fprint(w, messages.NoRowsScored())
 		}
+		// The export is the whole run, so it is the answer to "nothing here
+		// matched, where is the rest of it" -- which is exactly the case that
+		// used to be answered with a full stop.
+		fmt.Fprint(w, messages.ExportCompleteResults(evalName, run.ID))
 	} else {
 		fmt.Fprintln(w)
 		rows := make([][]string, 0, len(items))
@@ -896,9 +902,12 @@ func renderResults(
 			// and then retype a row id, is being asked to redo the lookup the
 			// listing just did -- and a line with a placeholder in it reads like
 			// a command and is not one.
-			fmt.Fprint(w, messages.ViewItemDetails(runEvalName(run), run.ID, firstItem))
-			fmt.Fprint(w, messages.ExportCompleteResults(runEvalName(run), run.ID))
+			fmt.Fprint(w, messages.ViewItemDetails(evalName, run.ID, firstItem))
 		}
+		// Offered whether or not a row survived the filter. The export is the
+		// whole run, so it is the answer to "nothing here matched, where is the
+		// rest of it" -- which is exactly when it used to be withheld.
+		fmt.Fprint(w, messages.ExportCompleteResults(evalName, run.ID))
 	}
 
 	if url := runLink(run.ReportURL, run.PortalURL); url != "" {
@@ -981,13 +990,20 @@ func filteredItemPage(
 }
 
 // runEvalName is the declared name the run belongs to, falling back to the
-// service id. The declared one is what the reader recognizes; the id is what
-// the response carries.
-func runEvalName(run *eval_api.OpenAIEvalRun) string {
+// service id and then to the identifier the caller resolved to fetch it.
+//
+// The declared one is what the reader recognizes; the id is what the response
+// carries. The caller's is the backstop, because a run that carries neither
+// printed `--eval ` with nothing after it -- a suggested command that cannot
+// run, in the one place whose whole claim is that it can.
+func runEvalName(run *eval_api.OpenAIEvalRun, resolved string) string {
 	if name := run.Metadata[metaEvalName]; name != "" {
 		return name
 	}
-	return run.EvalID
+	if run.EvalID != "" {
+		return run.EvalID
+	}
+	return resolved
 }
 
 // truncate keeps a table readable when a reason runs to a paragraph. The full

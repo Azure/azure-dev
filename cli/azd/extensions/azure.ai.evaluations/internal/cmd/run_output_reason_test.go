@@ -30,7 +30,7 @@ func TestTheListLeavesReasonsToTheDetailView(t *testing.T) {
 		},
 	}}
 
-	require.NoError(t, renderResults(&out, run, items, false))
+	require.NoError(t, renderResults(&out, "an-eval", run, items, false))
 
 	text := out.String()
 	assert.NotContains(t, text, "Answered a different question.",

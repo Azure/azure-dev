@@ -1444,6 +1444,46 @@ func ArtifactExists(path string) error {
 		path)
 }
 
+// ArtifactCollisionPrompt opens the choice about a name already in use.
+//
+// It states the file before asking, because the answer turns on what is in it:
+// the artifact from a previous run, which regenerating is meant to replace, or
+// somebody else's, which it is not.
+func ArtifactCollisionPrompt(kind, name, path string) string {
+	return fmt.Sprintf("%s %q already exists.\nLocal file: %s\n\nWhat do you want to do?",
+		kind, name, path)
+}
+
+// RegenerateArtifactChoice keeps the name and replaces the file.
+func RegenerateArtifactChoice() string {
+	return "Regenerate as a new version (replaces the local file)"
+}
+
+// RenameArtifactChoice generates alongside what is already there.
+func RenameArtifactChoice(proposed string) string {
+	return fmt.Sprintf("Generate with a new name (%s)", proposed)
+}
+
+// CancelGenerationChoice submits nothing.
+func CancelGenerationChoice() string {
+	return "Cancel"
+}
+
+// ResolvingArtifactCollision reports a failure to ask about a taken name.
+func ResolvingArtifactCollision(err error) error {
+	return fmt.Errorf("asking what to do about the existing artifact: %w", err)
+}
+
+// NoFreeArtifactName reports a name whose numbered forms are all taken.
+//
+// Thirty of them means something other than a name is wrong, and proposing a
+// thirty-first would be answering the wrong question.
+func NoFreeArtifactName(name string) error {
+	return fmt.Errorf(
+		"%q and its numbered forms are all in use; pass --name to choose one, "+
+			"or --output-dir to write elsewhere", name)
+}
+
 // DatasetVersionNotVerified reports a pinned version the service would not
 // confirm, on a deploy that is going ahead with it anyway.
 //

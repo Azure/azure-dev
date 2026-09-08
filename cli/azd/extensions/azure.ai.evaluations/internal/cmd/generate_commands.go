@@ -5,11 +5,8 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
@@ -260,22 +257,4 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-// refuseExistingArtifact stops a generation that would overwrite a checked-in
-// file, because the job is billed and the diff is what the author reviews.
-func refuseExistingArtifact(path string, force bool) error {
-	if force {
-		return nil
-	}
-	// Only a confirmed absence makes it safe to start a billed job. A permission
-	// or I/O error read as "nothing there", so generation ran and the write it
-	// was for failed afterwards.
-	switch _, err := os.Stat(path); {
-	case err == nil:
-		return messages.ArtifactExists(filepath.ToSlash(path))
-	case !errors.Is(err, os.ErrNotExist):
-		return messages.CheckingArtifactPath(filepath.ToSlash(path), err)
-	}
-	return nil
 }

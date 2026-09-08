@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"cmp"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -218,6 +219,7 @@ func (a *generateAction) Run() error {
 
 		plans, err = buildGeneratePlans(generateRequest{
 			flags:           &a.flags.shared,
+			cmd:             a.cmd,
 			target:          target,
 			dataset:         choices.dataset,
 			evaluator:       choices.evaluator,
@@ -229,6 +231,11 @@ func (a *generateAction) Run() error {
 			traceDays:       a.flags.traceDays,
 		})
 		if err != nil {
+			// Cancelling at the collision prompt is an answer, not a failure.
+			if errors.Is(err, errGenerationCancelled) {
+				fmt.Fprint(a.cmd.OutOrStdout(), messages.GenerationCancelled())
+				return nil
+			}
 			return err
 		}
 
@@ -281,7 +288,11 @@ func selectedArtifacts(dataset, evaluator bool) (bool, bool) {
 }
 
 type generateRequest struct {
-	flags           *generateFlags
+	flags *generateFlags
+	// cmd is what the collision prompt asks through, and what --no-prompt is
+	// read from. Nil in tests that only exercise the naming rules, which never
+	// reach a prompt because nothing is on disk to collide with.
+	cmd             *cobra.Command
 	target          string
 	dataset         bool
 	evaluator       bool
@@ -346,12 +357,13 @@ func buildGeneratePlans(req generateRequest) ([]generationPlan, error) {
 		if plan.SampleSize == 0 {
 			plan.SampleSize = project.DefaultSampleSize
 		}
-		if err := refuseExistingArtifact(
+		name, err = resolveArtifactCollision(req.cmd, "Dataset", name,
 			project.ArtifactPath(plan.BaseDir, plan.OutputDir, name, ".jsonl"),
-			req.flags.force,
-		); err != nil {
+			req.flags.force)
+		if err != nil {
 			return nil, err
 		}
+		plan.Name = name
 		if err := refuseUneditableCatalogEntry(plan.BaseDir, "dataset", name); err != nil {
 			return nil, err
 		}
@@ -369,12 +381,13 @@ func buildGeneratePlans(req generateRequest) ([]generationPlan, error) {
 		}
 		plan.Kind = generateKindEvaluator
 		plan.TraceDays = req.traceDays
-		if err := refuseExistingArtifact(
+		name, err = resolveArtifactCollision(req.cmd, "Evaluator", name,
 			project.ArtifactPath(plan.BaseDir, plan.OutputDir, name, ".json"),
-			req.flags.force,
-		); err != nil {
+			req.flags.force)
+		if err != nil {
 			return nil, err
 		}
+		plan.Name = name
 		if err := refuseUneditableCatalogEntry(plan.BaseDir, "evaluator", name); err != nil {
 			return nil, err
 		}

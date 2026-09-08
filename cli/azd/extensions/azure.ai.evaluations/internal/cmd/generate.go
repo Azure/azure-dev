@@ -268,7 +268,7 @@ func (ec *evalContext) generateRubric(
 	}
 	report.warn(completed)
 
-	// generate settled this up front with refuseExistingArtifact, so by here it
+	// generate settled this up front with resolveArtifactCollision, so by here it
 	// either found nothing or the caller passed --force.
 	return ec.collectRubric(completed, plan.Name, plan.BaseDir, plan.OutputDir, out, true)
 }

@@ -27,6 +27,7 @@ services:
 | `metadata` | object | Template metadata (origin template, version) |
 | `resourceGroup` | string | Override the default resource group name |
 | `services` | map | Service definitions keyed by service name |
+| `layers` | list | Alpha. Project layers containing infrastructure and services |
 | `pipeline` | object | CI/CD pipeline configuration |
 | `hooks` | map | Project-level lifecycle hooks |
 | `infra` | object | Infrastructure provider configuration |
@@ -36,6 +37,32 @@ services:
 | `platform` | object | Platform-specific configuration |
 | `workflows` | object | Workflow configuration |
 | `cloud` | object | Cloud environment configuration |
+
+## Project Layers
+
+Project layers group infrastructure and services into lifecycle units. Infrastructure entries and service names must
+be unique across the project. Independent infrastructure entries within a layer may provision concurrently. If an
+infrastructure dependency crosses layer boundaries, the dependent layer waits for the provider layer to complete.
+Every infrastructure entry under a project layer must declare `provider` explicitly. Provider inheritance remains
+available only in the legacy `infra.layers[]` format, where an entry may inherit `infra.provider`.
+
+```yaml
+layers:
+  - name: application
+    infra:
+      - name: app-infra
+        path: ./infra/app
+        provider: bicep
+    services:
+      api:
+        project: ./src/api
+        host: containerapp
+        language: js
+```
+
+The flat `infra` and `services` format and the existing `infra.layers[]` format remain supported. azd normalizes all
+three formats internally and saves legacy projects in their original format. `azd provision <name>` continues to
+select an individual infrastructure entry, including entries nested under a project layer.
 
 ## Service Properties
 
@@ -122,6 +149,7 @@ Available hook points (each supports `pre` and `post` prefixes):
 
 - **Command hooks (project-level):** `build`, `deploy`, `down`, `package`, `provision`, `publish`, `restore`, `up`
 - **Service lifecycle hooks (service-level):** `restore`, `build`, `package`, `publish`, `deploy`
+- **Infrastructure entry hooks:** `provision`
 
 For example, `preprovision` runs before provisioning, `postdeploy` runs after deployment. Service-level hooks are defined under a service's `hooks` section in `azure.yaml` and apply only to that service.
 

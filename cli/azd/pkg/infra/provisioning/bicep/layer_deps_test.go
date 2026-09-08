@@ -91,6 +91,39 @@ func TestAnalyzeLayerDependencies_NoDependencies(t *testing.T) {
 	require.Equal(t, [][]int{{0, 1}}, result.Levels)
 }
 
+func TestAnalyzeLayerDependencies_PromotesCrossProjectLayerEdge(t *testing.T) {
+	layers := []provisioning.Options{
+		{Name: "shared-a", Layer: "shared", Provider: provisioning.Terraform},
+		{Name: "shared-b", Layer: "shared", Provider: provisioning.Terraform},
+		{
+			Name:      "application-a",
+			Layer:     "application",
+			Provider:  provisioning.Terraform,
+			DependsOn: []string{"shared-a"},
+		},
+		{Name: "application-b", Layer: "application", Provider: provisioning.Terraform},
+	}
+
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, t.TempDir())
+
+	require.NoError(t, err)
+	require.Equal(t, [][]int{{0, 1}, {2, 3}}, result.Levels)
+	require.ElementsMatch(t, []int{0, 1}, result.Edges[2])
+	require.ElementsMatch(t, []int{0, 1}, result.Edges[3])
+}
+
+func TestAnalyzeLayerDependencies_SameProjectLayerRemainsConcurrent(t *testing.T) {
+	layers := []provisioning.Options{
+		{Name: "application-a", Layer: "application", Provider: provisioning.Terraform},
+		{Name: "application-b", Layer: "application", Provider: provisioning.Terraform},
+	}
+
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, t.TempDir())
+
+	require.NoError(t, err)
+	require.Equal(t, [][]int{{0, 1}}, result.Levels)
+}
+
 func TestAnalyzeLayerDependencies_LinearChain(t *testing.T) {
 	dir := t.TempDir()
 

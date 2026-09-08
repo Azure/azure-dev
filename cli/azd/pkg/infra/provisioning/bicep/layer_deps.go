@@ -151,6 +151,19 @@ func AnalyzeLayerDependencies(
 		edges:           make(map[int][]int),
 		outputProviders: make(map[string]int),
 	}
+	registerOutputProvider := func(name string, layerIndex int) error {
+		if name == "" {
+			return fmt.Errorf("layer %q declares an empty output environment key", layers[layerIndex].Name)
+		}
+		if previous, exists := g.outputProviders[name]; exists && previous != layerIndex {
+			return fmt.Errorf(
+				"duplicate output %q: produced by both layer %q and layer %q",
+				name, layers[previous].Name, layers[layerIndex].Name,
+			)
+		}
+		g.outputProviders[name] = layerIndex
+		return nil
+	}
 
 	// Phase 1 — Discover outputs from each layer's Bicep file.
 	// Non-Bicep layers (Terraform, Pulumi, etc.) are skipped: they have
@@ -172,22 +185,9 @@ func AnalyzeLayerDependencies(
 			)
 		}
 		for _, name := range outputs {
-			if prev, exists := g.outputProviders[name]; exists && prev != i {
-				// prev comes from outputProviders, which we populate only with
-				// loop indices below. Guard defensively so static analyzers can
-				// see the bounded access.
-				if prev < 0 || prev >= len(layers) {
-					return nil, fmt.Errorf(
-						"internal error: invalid layer index %d recorded for output %q",
-						prev, name,
-					)
-				}
-				return nil, fmt.Errorf(
-					"duplicate output %q: produced by both layer %q and layer %q",
-					name, layers[prev].Name, layer.Name,
-				)
+			if err := registerOutputProvider(name, i); err != nil {
+				return nil, err
 			}
-			g.outputProviders[name] = i
 		}
 	}
 
@@ -266,6 +266,7 @@ func AnalyzeLayerDependencies(
 			g.edges[i] = append(g.edges[i], depIdx)
 		}
 	}
+	promoteProjectLayerEdges(layers, g.edges)
 
 	levels, err := topoSortLevels(g)
 	if err != nil {
@@ -285,6 +286,36 @@ func AnalyzeLayerDependencies(
 	}
 
 	return &LayerDependencies{Levels: levels, Edges: deduped, SafeFallbackLayers: safeFallback}, nil
+}
+
+func promoteProjectLayerEdges(layers []provisioning.Options, edges map[int][]int) {
+	members := make(map[string][]int)
+	for i, layer := range layers {
+		if layer.Layer != "" {
+			members[layer.Layer] = append(members[layer.Layer], i)
+		}
+	}
+
+	type layerEdge struct {
+		consumer string
+		provider string
+	}
+	layerEdges := make(map[layerEdge]struct{})
+	for consumer, providers := range edges {
+		consumerLayer := layers[consumer].Layer
+		for _, provider := range providers {
+			providerLayer := layers[provider].Layer
+			if consumerLayer != "" && providerLayer != "" && consumerLayer != providerLayer {
+				layerEdges[layerEdge{consumer: consumerLayer, provider: providerLayer}] = struct{}{}
+			}
+		}
+	}
+
+	for edge := range layerEdges {
+		for _, consumer := range members[edge.consumer] {
+			edges[consumer] = append(edges[consumer], members[edge.provider]...)
+		}
+	}
 }
 
 // resolveBicepPath returns the absolute path to the layer's main Bicep file.

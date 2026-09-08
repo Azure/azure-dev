@@ -34,12 +34,9 @@ func TestNoopSaveEnvManager(t *testing.T) {
 
 	env := environment.NewWithValues("test", nil)
 
-	// Save and SaveWithOptions must be no-ops — the inner mock should
-	// never be called for these methods.
 	require.NoError(t, noop.Save(t.Context(), env))
 	require.NoError(t, noop.SaveWithOptions(t.Context(), env, nil))
 
-	// Non-save methods delegate to the inner manager.
 	inner.On("Reload", mock.Anything, env).Return(nil)
 	require.NoError(t, noop.Reload(t.Context(), env))
 	inner.AssertCalled(t, "Reload", mock.Anything, env)
@@ -298,22 +295,22 @@ func TestProvisionLayersGraph_DependsOnEdgeOrdering(t *testing.T) {
 	)
 }
 
-// TestMergeLayerOutputsLocked_PreservesSubprocessWrites guards the
+// TestReconcileLayerEnvironmentLocked_PreservesSubprocessWrites guards the
 // hook-mediated env propagation contract documented on
 // [runProvisionSingleLayer] step 4. A layer's pre-hook (or pre-provision
 // event handler) may invoke `azd env set FOO=bar` in a subprocess, which
 // writes FOO=bar to disk via its own envManager. The parent process's
 // in-memory deps.env is not touched by that subprocess. If
-// [mergeLayerOutputsLocked] called envManager.Save without first
+// [reconcileLayerEnvironmentLocked] called envManager.Save without first
 // reloading deps.env, the Save would serialize the stale in-memory state
 // and silently overwrite the subprocess write — making any downstream
 // layer that reads FOO via .bicepparam observe the wrong value.
 //
 // This test forces that scenario: we mutate the disk file behind
-// deps.env's back, call mergeLayerOutputsLocked with a deployment
+// deps.env's back, call reconcileLayerEnvironmentLocked with a deployment
 // output, and assert the disk file still contains the subprocess's
 // FOO=bar AFTER the merge.
-func TestMergeLayerOutputsLocked_PreservesSubprocessWrites(t *testing.T) {
+func TestReconcileLayerEnvironmentLocked_PreservesSubprocessWrites(t *testing.T) {
 	t.Parallel()
 
 	deps, envMu, envPath := newPropagationTestDeps(t)
@@ -328,7 +325,11 @@ func TestMergeLayerOutputsLocked_PreservesSubprocessWrites(t *testing.T) {
 	}
 
 	require.NoError(t,
-		mergeLayerOutputsLocked(t.Context(), deps, envMu, "test-layer", outputs),
+		reconcileLayerEnvironmentLocked(
+			t.Context(), deps, envMu, "test-layer",
+			deps.env.Dotenv(), config.Clone(deps.env.Config),
+			cloneEnvironment(deps.env), outputs,
+		),
 	)
 
 	// Disk must contain BOTH the subprocess write AND the deploy output.
@@ -337,7 +338,7 @@ func TestMergeLayerOutputsLocked_PreservesSubprocessWrites(t *testing.T) {
 	disk := string(contents)
 
 	assert.Contains(t, disk, "FOO=\"bar\"",
-		"subprocess write FOO=bar was clobbered by mergeLayerOutputsLocked — "+
+		"subprocess write FOO=bar was clobbered by reconcileLayerEnvironmentLocked — "+
 			"hook-mediated env values would be silently lost",
 	)
 	assert.Contains(t, disk, "DEPLOY_KEY=\"deploy-value\"",
@@ -350,13 +351,8 @@ func TestMergeLayerOutputsLocked_PreservesSubprocessWrites(t *testing.T) {
 	assert.Equal(t, "deploy-value", dotenv["DEPLOY_KEY"])
 }
 
-// TestReloadSharedEnvLocked_RefreshesDepsEnvFromDisk asserts the
-// behavioral primitive that the hook-mediated propagation contract on
-// [runProvisionSingleLayer] step 8 stands on: after a subprocess writes
-// a key directly to the dotenv file on disk, calling
-// [reloadSharedEnvLocked] must make that key visible in the in-memory
-// deps.env (and therefore in any subsequent
-// `environment.NewWithValues(name, deps.env.Dotenv())` clone).
+// TestReconcileLayerEnvironmentLocked_RefreshesDepsEnvWithoutDelta asserts
+// that step 8 still reloads out-of-process changes when no provider called Save.
 //
 // This is intentionally a unit test of the helper, not of the full
 // runProvisionSingleLayer lifecycle: the lifecycle test would need to
@@ -364,7 +360,7 @@ func TestMergeLayerOutputsLocked_PreservesSubprocessWrites(t *testing.T) {
 // which are mocked here. The full-lifecycle assertion is enforced by
 // inspection — runProvisionSingleLayer's step 8 is the only call site,
 // and the docstring above runProvisionSingleLayer pins the contract.
-func TestReloadSharedEnvLocked_RefreshesDepsEnvFromDisk(t *testing.T) {
+func TestReloadSharedEnvLocked_RefreshesDepsEnv(t *testing.T) {
 	t.Parallel()
 
 	deps, envMu, envPath := newPropagationTestDeps(t)
@@ -386,28 +382,22 @@ func TestReloadSharedEnvLocked_RefreshesDepsEnvFromDisk(t *testing.T) {
 		"precondition: in-memory deps.env should not see subprocess write before reload",
 	)
 
-	// The contract: reloadSharedEnvLocked makes the subprocess write
-	// visible in deps.env — and therefore to any downstream layer that
-	// clones from deps.env.Dotenv() at its own step 0.
+	// The contract: step 8's reload makes the subprocess write visible in
+	// deps.env and therefore in every downstream layer's clone.
 	require.NoError(t, reloadSharedEnvLocked(t.Context(), deps, envMu))
 
-	// Downstream layer's clone (this is exactly what runProvisionSingleLayer
-	// does at the start of B's invocation, line ~847).
-	downstreamLayerEnv := environment.NewWithValues(
-		deps.env.Name(), deps.env.Dotenv(),
-	)
-	assert.Equal(t, "from-a", downstreamLayerEnv.Dotenv()["HOOK_VAL"],
+	assert.Equal(t, "from-a", deps.env.Dotenv()["HOOK_VAL"],
 		"downstream layer did not see layer-A's hook-mediated env write — "+
 			"dependsOn ordering is silently incomplete",
 	)
 }
 
-// TestMergeLayerOutputsLocked_ConcurrentMergesConverge guards against a
+// TestReconcileLayerEnvironmentLocked_ConcurrentOutputsConverge guards against a
 // regression where envMu fails to serialize concurrent merges from
-// sibling layers. Two goroutines call mergeLayerOutputsLocked with
+// sibling layers. Two goroutines reconcile disjoint output maps with
 // disjoint output keys. After both complete, disk must contain the
 // union of both writes (no last-writer-wins clobber).
-func TestMergeLayerOutputsLocked_ConcurrentMergesConverge(t *testing.T) {
+func TestReconcileLayerEnvironmentLocked_ConcurrentOutputsConverge(t *testing.T) {
 	t.Parallel()
 
 	deps, envMu, envPath := newPropagationTestDeps(t)
@@ -424,14 +414,24 @@ func TestMergeLayerOutputsLocked_ConcurrentMergesConverge(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
+	initialValues := deps.env.Dotenv()
+	initialConfig := config.Clone(deps.env.Config)
+	layerA := cloneEnvironment(deps.env)
+	layerB := cloneEnvironment(deps.env)
 	wg.Go(func() {
 		require.NoError(t,
-			mergeLayerOutputsLocked(t.Context(), deps, envMu, "layer-a", outputsA),
+			reconcileLayerEnvironmentLocked(
+				t.Context(), deps, envMu, "layer-a",
+				initialValues, initialConfig, layerA, outputsA,
+			),
 		)
 	})
 	wg.Go(func() {
 		require.NoError(t,
-			mergeLayerOutputsLocked(t.Context(), deps, envMu, "layer-b", outputsB),
+			reconcileLayerEnvironmentLocked(
+				t.Context(), deps, envMu, "layer-b",
+				initialValues, initialConfig, layerB, outputsB,
+			),
 		)
 	})
 	wg.Wait()
@@ -443,6 +443,59 @@ func TestMergeLayerOutputsLocked_ConcurrentMergesConverge(t *testing.T) {
 	assert.Contains(t, disk, "BASE=\"value\"", "seed value lost")
 	assert.Contains(t, disk, "FROM_A=\"a-value\"", "layer-a output clobbered by layer-b merge")
 	assert.Contains(t, disk, "FROM_B=\"b-value\"", "layer-b output clobbered by layer-a merge")
+}
+
+func TestReconcileLayerEnvironmentLocked_ConcurrentLayerChangesConverge(t *testing.T) {
+	t.Parallel()
+
+	deps, envMu, _ := newPropagationTestDeps(t)
+	deps.env.DotenvSet("BASE", "value")
+	require.NoError(t, deps.env.Config.Set("infra.parameters.base", "value"))
+	require.NoError(t, deps.envManager.Save(t.Context(), deps.env))
+
+	initialValues := deps.env.Dotenv()
+	initialConfig := config.Clone(deps.env.Config)
+	layerA := cloneEnvironment(deps.env)
+	layerB := cloneEnvironment(deps.env)
+	layerA.DotenvSet("FROM_A", "a-value")
+	layerB.DotenvSet("FROM_B", "b-value")
+	require.NoError(t, layerA.Config.Set("infra.parameters.a", "a-value"))
+	require.NoError(t, layerB.Config.Set("infra.parameters.b", "b-value"))
+
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		require.NoError(t, reconcileLayerEnvironmentLocked(
+			t.Context(), deps, envMu, "layer-a",
+			initialValues, initialConfig, layerA, nil,
+		))
+	})
+	wg.Go(func() {
+		require.NoError(t, reconcileLayerEnvironmentLocked(
+			t.Context(), deps, envMu, "layer-b",
+			initialValues, initialConfig, layerB, nil,
+		))
+	})
+	wg.Wait()
+
+	assert.Equal(t, "value", deps.env.Getenv("BASE"))
+	assert.Equal(t, "a-value", deps.env.Getenv("FROM_A"))
+	assert.Equal(t, "b-value", deps.env.Getenv("FROM_B"))
+	assert.Equal(t, "value", valueAtConfigPath(t, deps.env.Config, "infra.parameters.base"))
+	assert.Equal(t, "a-value", valueAtConfigPath(t, deps.env.Config, "infra.parameters.a"))
+	assert.Equal(t, "b-value", valueAtConfigPath(t, deps.env.Config, "infra.parameters.b"))
+}
+
+func cloneEnvironment(source *environment.Environment) *environment.Environment {
+	cloned := environment.NewWithValues(source.Name(), source.Dotenv())
+	cloned.Config = config.Clone(source.Config)
+	return cloned
+}
+
+func valueAtConfigPath(t *testing.T, source config.Config, path string) any {
+	t.Helper()
+	value, has := source.Get(path)
+	require.True(t, has)
+	return value
 }
 
 // newPropagationTestDeps builds a minimal provisionLayerDeps backed by a

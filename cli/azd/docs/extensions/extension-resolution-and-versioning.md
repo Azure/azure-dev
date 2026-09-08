@@ -201,7 +201,11 @@ For registry-backed installs, a required dependency must resolve from the parent
 
 Targets are removed in request order, followed by their unused dependency installs, including transitive dependencies. Explicit and shared installations stay.
 
-Before removing dependencies, azd lists them and asks once. `--no-prompt` accepts removal; `--no-dependencies` or declining keeps them. Keeping dependencies must still pass the required-extension checks. Kept dependencies are listed with reasons and, after a declined cleanup, a command to remove them later.
+Before removing unused dependencies, azd lists them and asks once. `--no-prompt` accepts removal. Declining keeps those dependencies installed, lists them as kept, and prints a command to remove them later. Normal cleanup lists removed and retained dependencies with reasons.
+
+`--no-dependencies` keeps dependencies installed without listing them individually. Both this flag and declining cleanup still enforce the required-extension checks.
+
+Unused dependency cycles downstream of a removed target can remain installed because their members still require each other. Remove a cycle by naming its members together, for example `azd extension uninstall extension.a extension.b`. The normal required-extension checks still apply.
 
 `azd extension uninstall --all` removes every installed extension.
 

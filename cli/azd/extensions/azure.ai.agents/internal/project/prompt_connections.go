@@ -10,6 +10,8 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/envkey"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 // siblingOwnsConnection reports whether an azure.ai.connection sibling
@@ -30,6 +32,26 @@ func siblingOwnsConnection(name, projectEndpoint string, env map[string]string) 
 	return false
 }
 
+// promptConnectionName resolves an authored sibling service reference to the
+// configured Foundry connection name, falling back to the service key.
+func promptConnectionName(
+	serviceRef string,
+	services map[string]*azdext.ServiceConfig,
+) string {
+	serviceRef = strings.TrimSpace(serviceRef)
+	service := services[serviceRef]
+	if service == nil {
+		return serviceRef
+	}
+	props := ServiceConfigProps(service)
+	if props != nil {
+		if name := strings.TrimSpace(props.GetFields()["name"].GetStringValue()); name != "" {
+			return name
+		}
+	}
+	return serviceRef
+}
+
 // connectionsNode verifies that every referenced connection sibling completed
 // before the agent is published.
 func connectionsNode(g *promptGraph) *promptNode {
@@ -42,8 +64,8 @@ func connectionsNode(g *promptGraph) *promptNode {
 		Kind: nodeConnection,
 		ID:   "connections",
 		Validate: func() error {
-			for _, name := range connections {
-				if strings.TrimSpace(name) == "" {
+			for _, serviceRef := range connections {
+				if strings.TrimSpace(serviceRef) == "" {
 					return exterrors.Validation(
 						exterrors.CodeInvalidAgentManifest,
 						"connections contains an empty sibling reference",
@@ -54,12 +76,13 @@ func connectionsNode(g *promptGraph) *promptNode {
 			return nil
 		},
 		Resolve: func(context.Context) error {
-			for _, name := range connections {
-				if !siblingOwnsConnection(name, g.projectEndpoint(), g.env) {
+			for _, serviceRef := range connections {
+				connectionName := promptConnectionName(serviceRef, g.projectServices)
+				if !siblingOwnsConnection(connectionName, g.projectEndpoint(), g.env) {
 					return exterrors.Dependency(
 						exterrors.CodeFoundryDependencyNotReady,
-						fmt.Sprintf("connection %q has not been provisioned by an azure.ai.connection service", name),
-						fmt.Sprintf("add %q to the agent service's uses list and run 'azd deploy --all'", name),
+						fmt.Sprintf("connection %q has not been provisioned by an azure.ai.connection service", connectionName),
+						fmt.Sprintf("add %q to the agent service's uses list and run 'azd deploy --all'", serviceRef),
 					)
 				}
 			}

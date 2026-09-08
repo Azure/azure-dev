@@ -8,6 +8,8 @@ import (
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/envkey"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 func TestConnectionsNodeRequiresSiblingMarker(t *testing.T) {
@@ -67,6 +69,35 @@ func TestConnectionsNodeUsesResolvedPromptProject(t *testing.T) {
 	}
 
 	if err := connectionsNode(graph).Resolve(t.Context()); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+}
+
+func TestConnectionsNodeResolvesConfiguredConnectionName(t *testing.T) {
+	agent := &agent_yaml.PromptAgent{Connections: []string{"search-service"}}
+	graph := &promptGraph{
+		managed: agent,
+		projectServices: map[string]*azdext.ServiceConfig{
+			"search-service": {
+				Name: "search-service",
+				Host: foundryConnectionHost,
+				AdditionalProperties: mustStruct(t, map[string]any{
+					"name": "search-resource",
+				}),
+			},
+		},
+		env: map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT":          "https://acct.services.ai.azure.com/api/projects/project",
+			envkey.ConnectionProjectEndpoint:    "https://acct.services.ai.azure.com/api/projects/project",
+			"AZURE_AI_PROJECT_CONNECTION_NAMES": "search-resource",
+		},
+	}
+
+	node := connectionsNode(graph)
+	if err := node.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if err := node.Resolve(t.Context()); err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 }

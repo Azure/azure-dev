@@ -59,8 +59,9 @@ type promptGraph struct {
 	settings *PromptAgentSettings
 
 	// env is a snapshot of azd environment values used to resolve targets.
-	env        map[string]string
-	credential azcore.TokenCredential
+	env             map[string]string
+	projectServices map[string]*azdext.ServiceConfig
+	credential      azcore.TokenCredential
 
 	// bindings holds symbolic outputs produced by resolved nodes (for example
 	// "toolbox_mcp_url") that later nodes read.
@@ -320,6 +321,7 @@ func (p *AgentServiceTargetProvider) resolvePromptAgentGraph(
 	if err != nil {
 		return nil, err
 	}
+	g.projectServices = p.projectServices
 	if err := g.resolve(ctx, progress); err != nil {
 		return nil, err
 	}

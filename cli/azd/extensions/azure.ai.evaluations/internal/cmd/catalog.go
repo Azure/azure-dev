@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"cmp"
 	"fmt"
 	"path/filepath"
 
@@ -24,8 +25,15 @@ func addDatasetToCatalog(cmd *cobra.Command, evalDir string, ref *project.Artifa
 		return nil
 	}
 	// Regeneration overwrites the file in place, so the entry only changes when
-	// the artifact moved -- which UpsertCatalogEntry reports rather than rewrite.
-	return updateCatalog(cmd, evalDir, "dataset", ref, "datasets", "file")
+	// the artifact moved -- which UpsertCatalogFields reports rather than rewrite.
+	//
+	// The level is tagged on the version this publishes. Rows generated for a
+	// turn and seeds for a simulated conversation are different things, and
+	// nothing in the file said which a dataset held.
+	return updateCatalog(cmd, evalDir, "dataset", ref, "datasets", []project.CatalogField{
+		{Key: "file", Value: ref.Source},
+		{Key: "tags.evaluation_level", Value: ref.EvaluationLevel},
+	})
 }
 
 // addEvaluatorToCatalog records a generated evaluator in `evaluators:`.
@@ -33,7 +41,15 @@ func addEvaluatorToCatalog(cmd *cobra.Command, evalDir string, ref *project.Arti
 	if ref == nil {
 		return nil
 	}
-	return updateCatalog(cmd, evalDir, "evaluator", ref, "evaluators", "source")
+	// display_name defaults to the generated name, which is what the catalog
+	// showed before anyone renamed anything; the other two are preserved exactly
+	// as the service returned them, so republishing cannot narrow them.
+	return updateCatalog(cmd, evalDir, "evaluator", ref, "evaluators", []project.CatalogField{
+		{Key: "source", Value: ref.Source},
+		{Key: "display_name", Value: cmp.Or(ref.DisplayName, ref.Name)},
+		{Key: "categories", List: ref.Categories},
+		{Key: "supported_evaluation_levels", List: ref.SupportedEvaluationLevels},
+	})
 }
 
 // checkCatalogEntryIsEditable refuses a name this command cannot rewrite in
@@ -164,7 +180,7 @@ func updateCatalog(
 	kind string,
 	ref *project.ArtifactRef,
 	sequence string,
-	field string,
+	fields []project.CatalogField,
 ) error {
 	// Held across the read and the write: two generates adding different
 	// entries would otherwise both read the same state, and the second write
@@ -183,7 +199,7 @@ func updateCatalog(
 		return err
 	}
 
-	changed, created, err := project.UpsertCatalogEntry(evalDir, sequence, ref.Name, field, ref.Source)
+	changed, created, err := project.UpsertCatalogFields(evalDir, sequence, ref.Name, fields)
 	if err != nil {
 		return err
 	}

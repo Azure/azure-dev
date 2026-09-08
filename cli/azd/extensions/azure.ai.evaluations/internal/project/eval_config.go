@@ -56,10 +56,26 @@ type DatasetDecl struct {
 // key rather than a catch-all: a catch-all would swallow every misspelling in
 // the entry and publish it to the service as rubric content.
 type EvaluatorDecl struct {
-	Name       string         `yaml:"name,omitempty"       json:"name,omitempty"`
-	Source     string         `yaml:"source,omitempty"     json:"source,omitempty"`
-	Version    string         `yaml:"version,omitempty"    json:"version,omitempty"`
-	Definition map[string]any `yaml:"definition,omitempty" json:"definition,omitempty"`
+	Name   string `yaml:"name,omitempty"   json:"name,omitempty"`
+	Source string `yaml:"source,omitempty" json:"source,omitempty"`
+	// DisplayName is what the catalog shows. Kept in the declaration rather than
+	// in the rubric file, which stays focused on what a human edits: type,
+	// dimensions and pass_threshold.
+	DisplayName string `yaml:"display_name,omitempty" json:"display_name,omitempty"`
+	// Categories and SupportedEvaluationLevels are catalog and lifecycle
+	// metadata the service returned when the evaluator was generated. They are
+	// recorded so that publishing a later version keeps them: without them a new
+	// version arrived with a blank catalog name and whatever compatibility the
+	// service inferred, which is narrower than the version before it.
+	//
+	// The complete returned list, not the level of the first eval that happens
+	// to reference it -- narrowing to that makes an evaluator usable at one
+	// level and silently unusable at the other.
+	Categories []string `yaml:"categories,omitempty" json:"categories,omitempty"`
+	//nolint:lll // the key is the service's, and wrapping the tag hides it
+	SupportedEvaluationLevels []string       `yaml:"supported_evaluation_levels,omitempty" json:"supported_evaluation_levels,omitempty"`
+	Version                   string         `yaml:"version,omitempty"    json:"version,omitempty"`
+	Definition                map[string]any `yaml:"definition,omitempty" json:"definition,omitempty"`
 }
 
 // Eval is one evaluation defined over the catalogs.

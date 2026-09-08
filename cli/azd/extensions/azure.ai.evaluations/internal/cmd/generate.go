@@ -335,6 +335,13 @@ func (ec *evalContext) collectRubric(
 		Name:    name,
 		Source:  relativeSource(baseDir, path),
 		Version: version,
+		// Catalog metadata, preserved exactly as the service returned it. The
+		// declaration is what `azd up` republishes from, and a version published
+		// without these arrives with a blank catalog name and narrower level
+		// compatibility than the one before it.
+		DisplayName:               completed.ResultString("display_name"),
+		Categories:                completed.ResultStringList("categories"),
+		SupportedEvaluationLevels: completed.ResultStringList("supported_evaluation_levels"),
 	}, nil
 }
 
@@ -490,7 +497,15 @@ func (ec *evalContext) generateDataset(
 	report.warn(completed)
 
 	// As above: the destination was checked before the job was submitted.
-	return ec.collectDataset(ctx, completed, plan.Name, plan.BaseDir, plan.OutputDir, out, true)
+	ref, err := ec.collectDataset(ctx, completed, plan.Name, plan.BaseDir, plan.OutputDir, out, true)
+	if err != nil || ref == nil {
+		return ref, err
+	}
+	// Carried from the plan rather than read back: the level is what this run
+	// asked for, and it is what the rows are. Reattaching through `job show`
+	// has no plan, so the tag is simply omitted there rather than guessed.
+	ref.EvaluationLevel = plan.EvaluationLevel
+	return ref, nil
 }
 
 // collectDataset downloads a finished data job's dataset and records what a

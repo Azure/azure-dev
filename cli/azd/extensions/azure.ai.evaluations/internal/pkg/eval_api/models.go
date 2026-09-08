@@ -248,6 +248,48 @@ func (j *GenerationJob) resultStringField(key string) string {
 	return ""
 }
 
+// ResultStringList reads a list-of-strings field out of the raw Result JSON,
+// looking in the same two places resultStringField does.
+//
+// The generated evaluator carries catalog metadata -- its categories and the
+// levels it supports -- that the typed EvaluatorResult never modelled, so it
+// was decoded away and the declaration was written without it. Read from the
+// raw result rather than added to that struct, because these are only wanted
+// where a declaration is being written, and the struct is what everything else
+// reads.
+func (j *GenerationJob) ResultStringList(key string) []string {
+	if len(j.Result) == 0 {
+		return nil
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(j.Result, &m); err != nil {
+		return nil
+	}
+	if raw, ok := m[key]; ok {
+		var list []string
+		if err := json.Unmarshal(raw, &list); err == nil && len(list) > 0 {
+			return list
+		}
+	}
+	if rawOutputs, ok := m["outputs"]; ok {
+		var outputs []map[string]json.RawMessage
+		if err := json.Unmarshal(rawOutputs, &outputs); err == nil && len(outputs) > 0 {
+			if raw, ok := outputs[0][key]; ok {
+				var list []string
+				if err := json.Unmarshal(raw, &list); err == nil && len(list) > 0 {
+					return list
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// ResultString reads a string field out of the raw Result JSON.
+func (j *GenerationJob) ResultString(key string) string {
+	return j.resultStringField(key)
+}
+
 // ---------------------------------------------------------------------------
 // Evaluator Generation Jobs
 // ---------------------------------------------------------------------------

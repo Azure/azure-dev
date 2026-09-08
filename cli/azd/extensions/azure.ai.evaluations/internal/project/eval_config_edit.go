@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"strings"
 
 	"azureaieval/internal/messages"
 
@@ -147,10 +148,41 @@ func readConfigDocument(path string) (*yaml.Node, error) {
 // is written back exactly as it was found, whether or not this package knows
 // what it means.
 //
-// kind is the top-level sequence (`datasets` or `evaluators`), field the key to
-// set on the matched entry. Reports whether anything changed, and whether the
-// file had to be created.
+// CatalogField is one key to set on a catalog entry.
+//
+// A declaration carries more than the field naming its artifact: generation
+// returns catalog metadata -- an evaluator's categories and the levels it
+// supports -- that `azd up` republishes, and losing it publishes a version with
+// a blank catalog name and narrower compatibility than the one before it.
+//
+// Key may name a nested key with a dot, which is how `tags.evaluation_level`
+// reaches the map it belongs in. List replaces Value for a sequence. A field
+// with neither writes nothing, so one the service did not return is omitted
+// rather than written blank.
+type CatalogField struct {
+	Key   string
+	Value string
+	List  []string
+}
+
+// empty reports a field with nothing to write.
+func (f CatalogField) empty() bool {
+	return f.Value == "" && len(f.List) == 0
+}
+
+// UpsertCatalogEntry adds or updates one field of a catalog entry.
 func UpsertCatalogEntry(evalDir, kind, name, field, value string) (changed bool, created bool, err error) {
+	return UpsertCatalogFields(evalDir, kind, name, []CatalogField{{Key: field, Value: value}})
+}
+
+// UpsertCatalogFields adds or updates a catalog entry, setting every field.
+//
+// kind is the top-level sequence (`datasets` or `evaluators`). Reports whether
+// anything changed, and whether the file had to be created.
+func UpsertCatalogFields(
+	evalDir, kind, name string,
+	fields []CatalogField,
+) (changed bool, created bool, err error) {
 	if err := checkOneConfig(evalDir); err != nil {
 		return false, false, err
 	}
@@ -178,17 +210,24 @@ func UpsertCatalogEntry(evalDir, kind, name, field, value string) (changed bool,
 	entry := sequenceEntryNamed(seq, name)
 
 	if entry == nil {
-		seq.Content = append(seq.Content, catalogEntryNode(name, field, value))
-	} else {
-		changed, setErr := setMappingScalar(entry, field, value)
+		entry = namedEntryNode(name)
+		seq.Content = append(seq.Content, entry)
+		changed = true
+	}
+	for _, f := range fields {
+		if f.empty() {
+			continue
+		}
+		set, setErr := setCatalogField(entry, f)
 		if setErr != nil {
 			return false, false, setErr
 		}
-		if !changed {
-			// The entry already says this. Rewriting the file to change nothing
-			// would still rewrite it, and this is the repeated-generate path.
-			return false, false, nil
-		}
+		changed = changed || set
+	}
+	if !changed {
+		// The entry already says all of this. Rewriting the file to change
+		// nothing would still rewrite it, and this is the repeated-generate path.
+		return false, false, nil
 	}
 
 	out, err := marshalConfigDocument(doc)
@@ -308,17 +347,98 @@ func setMappingScalar(mapping *yaml.Node, key, value string) (bool, error) {
 	return true, nil
 }
 
-// catalogEntryNode builds the entry appended for a name the file does not
-// declare yet.
-func catalogEntryNode(name, field, value string) *yaml.Node {
+// setCatalogField writes one field, resolving a dotted key into the nested
+// mapping it names.
+func setCatalogField(entry *yaml.Node, f CatalogField) (bool, error) {
+	mapping := entry
+	key := f.Key
+	if parent, leaf, nested := strings.Cut(key, "."); nested {
+		var err error
+		if mapping, err = mappingChild(entry, parent); err != nil {
+			return false, err
+		}
+		key = leaf
+	}
+	if len(f.List) > 0 {
+		return setMappingSequence(mapping, key, f.List)
+	}
+	return setMappingScalar(mapping, key, f.Value)
+}
+
+// mappingChild returns the mapping stored under key, creating it when absent.
+func mappingChild(mapping *yaml.Node, key string) (*yaml.Node, error) {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value != key {
+			continue
+		}
+		if mapping.Content[i+1].Kind != yaml.MappingNode {
+			return nil, messages.ConfigValueNotAScalar(key)
+		}
+		return mapping.Content[i+1], nil
+	}
+	child := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	mapping.Content = append(mapping.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
+		child)
+	return child, nil
+}
+
+// setMappingSequence sets key to a list of strings, reporting whether that
+// changed anything.
+func setMappingSequence(mapping *yaml.Node, key string, values []string) (bool, error) {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value != key {
+			continue
+		}
+		existing := mapping.Content[i+1]
+		if existing.Kind != yaml.SequenceNode {
+			return false, messages.ConfigValueNotAScalar(key)
+		}
+		if sameStringSequence(existing, values) {
+			return false, nil
+		}
+		mapping.Content[i+1] = sequenceNode(values)
+		return true, nil
+	}
+	mapping.Content = append(mapping.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
+		sequenceNode(values))
+	return true, nil
+}
+
+// sequenceNode builds a block sequence of plain strings.
+func sequenceNode(values []string) *yaml.Node {
+	node := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+	for _, v := range values {
+		node.Content = append(node.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v})
+	}
+	return node
+}
+
+// sameStringSequence reports a sequence that already holds exactly these
+// values, in this order.
+func sameStringSequence(node *yaml.Node, values []string) bool {
+	if len(node.Content) != len(values) {
+		return false
+	}
+	for i, child := range node.Content {
+		if child.Kind != yaml.ScalarNode || child.Value != values[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// namedEntryNode builds the entry appended for a name the file does not declare
+// yet, carrying only its name; its fields follow through setCatalogField.
+func namedEntryNode(name string) *yaml.Node {
 	return &yaml.Node{
 		Kind: yaml.MappingNode,
 		Tag:  "!!map",
 		Content: []*yaml.Node{
 			{Kind: yaml.ScalarNode, Tag: "!!str", Value: "name"},
 			{Kind: yaml.ScalarNode, Tag: "!!str", Value: name},
-			{Kind: yaml.ScalarNode, Tag: "!!str", Value: field},
-			{Kind: yaml.ScalarNode, Tag: "!!str", Value: value},
 		},
 	}
 }

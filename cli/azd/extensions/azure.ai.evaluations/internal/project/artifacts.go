@@ -26,6 +26,17 @@ type ArtifactRef struct {
 	// both a `source:` and a `version:`, and pinning a generated dataset would
 	// freeze it against the very edit it exists to be the starting point for.
 	Version string `json:"version,omitempty"`
+	// EvaluationLevel is what one generated row is, recorded as a tag on the
+	// dataset so a later reconciliation and any filtering can tell turn rows
+	// from conversation seeds without opening the file.
+	EvaluationLevel string `json:"evaluationLevel,omitempty"`
+	// DisplayName, Categories and SupportedEvaluationLevels are the catalog
+	// metadata the service returned for a generated evaluator. Written into the
+	// declaration so `azd up` republishes them: without them the next version
+	// arrives with a blank catalog name and narrower compatibility.
+	DisplayName               string   `json:"displayName,omitempty"`
+	Categories                []string `json:"categories,omitempty"`
+	SupportedEvaluationLevels []string `json:"supportedEvaluationLevels,omitempty"`
 }
 
 // Sample-count bounds enforced by the generation service.

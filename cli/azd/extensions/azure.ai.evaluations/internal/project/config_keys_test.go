@@ -84,12 +84,16 @@ func TestSourceDeclKeys(t *testing.T) {
 
 // The catalogs are named, reusable assets. A dataset says where its rows come
 // from. An evaluator says where its rubric is -- named as a file, or written
-// out under `definition`, which a `$ref` may fill from a file of its own.
+// out under `definition`, which a `$ref` may fill from a file of its own -- and
+// carries the catalog metadata a republish would otherwise lose.
 func TestCatalogKeys(t *testing.T) {
 	assert.ElementsMatch(t,
 		[]string{"name", "file", "version", "tags"}, yamlKeys(t, DatasetDecl{}))
 	assert.ElementsMatch(t,
-		[]string{"name", "source", "version", "definition"},
+		[]string{
+			"name", "source", "version", "definition",
+			"display_name", "categories", "supported_evaluation_levels",
+		},
 		yamlKeys(t, EvaluatorDecl{}))
 }
 

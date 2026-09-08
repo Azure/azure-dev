@@ -676,6 +676,66 @@ func TestResolveRemoteContextDirectNameLookupErrorUsesLocalProtocol(t *testing.T
 	}
 }
 
+func TestResolveRemoteContextDirectNameEndpointLookupErrorFails(t *testing.T) {
+	const serviceName = "target-agent"
+
+	agentProperties, err := projectpkg.AgentDefinitionToServiceProperties(agent_yaml.ContainerAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindHosted,
+			Name: "deployed-agent",
+		},
+		Protocols: []agent_yaml.ProtocolVersionRecord{{
+			Protocol: "invocations",
+			Version:  "1.0.0",
+		}},
+	}, nil)
+	if err != nil {
+		t.Fatalf("AgentDefinitionToServiceProperties: %v", err)
+	}
+
+	projectServer := &helpersProjectServer{
+		project: &azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				serviceName: {
+					Name:                 serviceName,
+					Host:                 AiAgentHost,
+					AdditionalProperties: agentProperties,
+				},
+			},
+		},
+	}
+	environmentServer := &helpersFailingEnvironmentServer{
+		testEnvironmentServiceServer: testEnvironmentServiceServer{
+			current: &azdext.Environment{Name: "test"},
+			values: map[string]map[string]string{
+				"test": {
+					"AGENT_TARGET_AGENT_NAME":                       "deployed-agent",
+					"AGENT_TARGET_AGENT_PROTOCOL_ENDPOINTS_VERSION": "1",
+					"AGENT_TARGET_AGENT_RESPONSES_ENDPOINT":         "https://example.test/responses",
+				},
+			},
+		},
+		failKeys: map[string]error{
+			"AGENT_TARGET_AGENT_INVOCATIONS_ENDPOINT": errors.New("endpoint lookup failed"),
+		},
+	}
+	address := newInvokeRemoteContextTestAzdServer(t, projectServer, environmentServer)
+	t.Setenv("AZD_SERVER", address)
+
+	action := &InvokeAction{
+		flags:    &invokeFlags{name: serviceName},
+		noPrompt: true,
+	}
+	_, err = action.resolveRemoteContext(t.Context())
+	if err == nil {
+		t.Fatal("expected endpoint snapshot error, got nil")
+	}
+	if !isAgentProtocolEndpointsError(err) {
+		t.Fatalf("error type = %T, want endpoint snapshot error", err)
+	}
+}
+
 func TestResolveRemoteContextMatchesDeployedNameToService(t *testing.T) {
 	const (
 		serviceName  = "agent-service"

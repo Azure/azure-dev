@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -639,6 +640,23 @@ func withDeployedAgentNameLookup() agentServiceResolutionOption {
 	}
 }
 
+type agentProtocolEndpointsError struct {
+	err error
+}
+
+func (e *agentProtocolEndpointsError) Error() string {
+	return e.err.Error()
+}
+
+func (e *agentProtocolEndpointsError) Unwrap() error {
+	return e.err
+}
+
+func isAgentProtocolEndpointsError(err error) bool {
+	_, ok := errors.AsType[*agentProtocolEndpointsError](err)
+	return ok
+}
+
 func resolveAgentProtocolEndpoints(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -658,7 +676,9 @@ func resolveAgentProtocolEndpoints(
 		Key:     versionKey,
 	})
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to read %s: %w", versionKey, err)
+		return nil, false, &agentProtocolEndpointsError{
+			err: fmt.Errorf("failed to read %s: %w", versionKey, err),
+		}
 	}
 	complete := version != nil && strings.TrimSpace(version.Value) == "1"
 	for _, protocol := range projectpkg.DisplayableProtocolEnvSuffixes() {
@@ -668,7 +688,9 @@ func resolveAgentProtocolEndpoints(
 			Key:     key,
 		})
 		if err != nil {
-			return nil, false, fmt.Errorf("failed to read %s: %w", key, err)
+			return nil, false, &agentProtocolEndpointsError{
+				err: fmt.Errorf("failed to read %s: %w", key, err),
+			}
 		}
 		if value == nil {
 			continue

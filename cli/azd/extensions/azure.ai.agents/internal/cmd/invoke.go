@@ -1129,6 +1129,10 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 		resolutionOptions...,
 	)
 	if serviceErr != nil {
+		if isAgentProtocolEndpointsError(serviceErr) {
+			azdClient.Close()
+			return nil, serviceErr
+		}
 		if info != nil && a.flags.name != "" {
 			rc.serviceName = info.ServiceName
 		}

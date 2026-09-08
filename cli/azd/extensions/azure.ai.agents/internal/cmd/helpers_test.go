@@ -508,12 +508,19 @@ type helpersPromptServer struct {
 type helpersFailingEnvironmentServer struct {
 	testEnvironmentServiceServer
 	getValueErr error
+	failKeys    map[string]error
 }
 
 func (s *helpersFailingEnvironmentServer) GetValue(
-	context.Context, *azdext.GetEnvRequest,
+	ctx context.Context, req *azdext.GetEnvRequest,
 ) (*azdext.KeyValueResponse, error) {
-	return nil, s.getValueErr
+	if s.getValueErr != nil {
+		return nil, s.getValueErr
+	}
+	if err := s.failKeys[req.Key]; err != nil {
+		return nil, err
+	}
+	return s.testEnvironmentServiceServer.GetValue(ctx, req)
 }
 
 func (s *helpersPromptServer) Select(

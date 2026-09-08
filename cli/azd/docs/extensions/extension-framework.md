@@ -1592,6 +1592,13 @@ back through `ProjectService.AddService`, entries whose values are unchanged kee
 `${VAR}` references in `azure.yaml`, while new or changed values are persisted as literals (any
 `$` or `\` in a stored literal is escaped in `azure.yaml` so the value round-trips unchanged).
 
+Layer RPCs preserve raw envsubst syntax for expandable `ServiceConfig` and `DockerProjectOptions`
+values. `SetLayer` treats incoming values as templates, and responses from `SetLayer` and
+`ListLayers` return those templates without expanding them. `GetLayer` also returns raw templates
+by default; set `GetLayerRequest.envsubst` to `true` to expand them against the current session
+environment. This includes resource names, images, Docker registry and tag values, build arguments,
+and service environment variables. `${VAR}` authors a template reference; escape each literal `$` as `$$`.
+
 Because `ServiceConfig.environment` carries expanded values, `AddService` cannot author `${VAR}`
 references: a new service or a new env key is always persisted as a literal. To create or edit
 raw `${VAR}` templates in `azure.yaml`, use the service config RPCs instead —
@@ -1629,7 +1636,8 @@ This service manages project configuration retrieval and related operations, inc
 
 #### Get
 
-Gets the current project configuration.
+Gets the current project configuration for flat and `infra.layers[]` projects. Top-level `layers` projects return
+`FailedPrecondition`; use `ListLayers` or `GetLayer` for those projects.
 
 - **Request:** _EmptyRequest_ (no fields)
 - **Response:** _GetProjectResponse_
@@ -1643,12 +1651,47 @@ Gets the current project configuration.
 
 #### AddService
 
-Adds a new service to the project.
+Adds a new service to a flat project. Top-level layers projects use `SetLayer` instead.
 
 - **Request:** _AddServiceRequest_
   - Contains:
     - `service`: _ServiceConfig_
 - **Response:** _EmptyResponse_
+
+#### SetLayer
+
+Creates or fully replaces one top-level project layer, including its infrastructure and services. The project must
+already use the top-level `layers` format.
+
+- **Request:** _SetLayerRequest_
+  - `layer`: _Layer_ containing the complete `name`, `infra`, and `services` configuration
+- **Response:** _LayerResponse_
+
+#### GetLayer
+
+Gets one persisted project layer by name. The project must use the top-level `layers` format; flat and
+`infra.layers` projects return `FailedPrecondition`.
+
+- **Request:** _GetLayerRequest_
+  - `name` (string): non-empty layer name
+  - `envsubst` (bool): expands environment references when `true`; defaults to `false`
+- **Response:** _LayerResponse_
+
+#### ListLayers
+
+Lists the persisted top-level project layers in declaration order. Flat and `infra.layers` projects return
+`FailedPrecondition`.
+
+- **Request:** _EmptyRequest_
+- **Response:** _ListLayersResponse_
+
+#### RemoveLayer
+
+Removes a top-level project layer and all infrastructure and service definitions it contains.
+This operation does not inspect service or infrastructure dependencies in this revision.
+
+- **Request:** _RemoveLayerRequest_ containing `name`
+- **Response:** _RemoveLayerResponse_ containing the removed service names
 
 #### GetConfigSection
 

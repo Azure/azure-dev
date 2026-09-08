@@ -114,8 +114,9 @@ func promptEvaluators(cmd *cobra.Command, choices, preselected []string) ([]stri
 
 	resp, err := azdClient.Prompt().MultiSelect(commandContext(cmd), &azdext.MultiSelectRequest{
 		Options: &azdext.MultiSelectOptions{
-			Message: messages.SelectEvaluatorsPrompt(),
-			Choices: opts,
+			Message:         messages.SelectEvaluatorsPrompt(),
+			Choices:         opts,
+			EnableFiltering: filteringFor(len(opts)),
 		},
 	})
 	if err != nil {

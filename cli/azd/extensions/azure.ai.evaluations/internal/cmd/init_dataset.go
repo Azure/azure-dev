@@ -63,8 +63,9 @@ func promptDeclaredDataset(cmd *cobra.Command, declared []string) (string, error
 
 	resp, err := azdClient.Prompt().Select(commandContext(cmd), &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message: messages.SelectDatasetPrompt(),
-			Choices: choices,
+			Message:         messages.SelectDatasetPrompt(),
+			Choices:         choices,
+			EnableFiltering: filteringFor(len(choices)),
 		},
 	})
 	if err != nil {

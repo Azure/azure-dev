@@ -453,8 +453,9 @@ func promptInitSource(cmd *cobra.Command, preferred string) (string, error) {
 	}
 
 	options := &azdext.SelectOptions{
-		Message: messages.SelectDataSourcePrompt(),
-		Choices: choices,
+		Message:         messages.SelectDataSourcePrompt(),
+		Choices:         choices,
+		EnableFiltering: filteringFor(len(choices)),
 	}
 	// Left unset where neither signal fired: highlighting one of two sources
 	// on no evidence is a recommendation the command cannot support.

@@ -494,10 +494,14 @@ func RunStatusHeading(runID, status string) string {
 	return fmt.Sprintf("Run %s  status: %s\n", runID, status)
 }
 
-// ItemResultTotals states the run's outcome in items, naming every status the
-// service models rather than the two the table used to carry.
+// ItemResultTotals states the run's outcome in test cases, naming every status
+// the service models rather than the two the table used to carry.
+//
+// "test cases", not "items": a test case is what the run graded, and the results
+// spec uses that word throughout. "Items" also collided with the export's own
+// count of JSON items, which is a different number.
 func ItemResultTotals(total, passed, failed, errored, skipped int) string {
-	return fmt.Sprintf("%d items: %d passed, %d failed, %d errored, %d skipped\n",
+	return fmt.Sprintf("%d test cases: %d passed, %d failed, %d errored, %d skipped\n",
 		total, passed, failed, errored, skipped)
 }
 
@@ -510,7 +514,7 @@ func ScoredPassRateLine(passed, scored int) string {
 	if scored == 0 {
 		return "Pass rate: n/a (nothing was scored)\n"
 	}
-	return fmt.Sprintf("Pass rate: %.1f%% (%d / %d scored items)\n",
+	return fmt.Sprintf("Pass rate: %.1f%% (%d / %d scored test cases)\n",
 		100*float64(passed)/float64(scored), passed, scored)
 }
 
@@ -521,7 +525,7 @@ func ScoredPassRateLine(passed, scored int) string {
 // reports 12 passed and 2 failed is missing one, and nothing on screen says the
 // fifteenth was skipped or that there are two evaluators over the same items.
 func CriterionResultReconciliation(items, evaluators, results int) string {
-	return fmt.Sprintf("%d items x %d evaluators = %d criterion results\n\n",
+	return fmt.Sprintf("%d test cases x %d evaluators = %d evaluator results\n\n",
 		items, evaluators, results)
 }
 
@@ -545,8 +549,12 @@ func NoRowsScored() string {
 //
 // --failed-only used to keep rows nothing had scored and then count them as
 // failures, so the footer contradicted the totals directly above it.
+//
+// Phrased as "6 of 15 test cases failed" rather than "are failed": the status
+// reads as the verb, which is what the results spec prints and what a reader
+// says out loud.
 func FilteredItemCount(shown, total int, status string) string {
-	return fmt.Sprintf("\n%d of %d items are %s.\n", shown, total, status)
+	return fmt.Sprintf("\n%d of %d test cases %s\n", shown, total, status)
 }
 
 // UnknownItemStatus reports a --status value that names no outcome.
@@ -973,6 +981,16 @@ func ExportCarriesSourceContent(path string) string {
 		"%s carries the evaluated inputs, the target's answers and every "+
 			"evaluator's reason. Treat it as you would the source data.\n",
 		filepath.ToSlash(path))
+}
+
+// ExportedTestCases reports what the export actually wrote.
+//
+// The file was announced before it was written and never counted, so a run that
+// returned nothing produced a cheerful line about a document holding no test
+// cases at all -- and there was no way to tell that from a full one without
+// opening it.
+func ExportedTestCases(count int, path string) string {
+	return fmt.Sprintf("Exported %d test cases to %s\n", count, filepath.ToSlash(path))
 }
 
 // FailOnInvalid reports a --fail-on value that is neither form of threshold.

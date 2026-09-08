@@ -64,9 +64,10 @@ func promptTraceWindow(cmd *cobra.Command) (int, error) {
 
 	resp, err := azdClient.Prompt().Select(commandContext(cmd), &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message:       messages.SelectTraceWindowPrompt(),
-			Choices:       choices,
-			SelectedIndex: preselect(selected),
+			Message:         messages.SelectTraceWindowPrompt(),
+			Choices:         choices,
+			SelectedIndex:   preselect(selected),
+			EnableFiltering: filteringFor(len(choices)),
 		},
 	})
 	if err != nil {
@@ -96,4 +97,21 @@ func preselect(i int) *int32 {
 	}
 	n := int32(i)
 	return &n
+}
+
+// filterAbove is the number of choices a picker has to exceed before it offers
+// a search row.
+//
+// A filter over a list you can already see is furniture: it costs a line, it
+// invites typing where an arrow key would do, and on a two-option Traces or
+// Dataset picker it suggests there is more to find.
+const filterAbove = 5
+
+// filteringFor answers whether a picker of this size should offer filtering.
+//
+// Returned as the wire's optional bool so the decision is explicit at every
+// picker rather than left to whatever the host defaults to.
+func filteringFor(choices int) *bool {
+	on := choices > filterAbove
+	return &on
 }

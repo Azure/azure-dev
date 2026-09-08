@@ -65,8 +65,9 @@ func promptAgentTarget(cmd *cobra.Command, agents []string) (string, error) {
 
 	resp, err := azdClient.Prompt().Select(commandContext(cmd), &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message: messages.SelectAgentPrompt(),
-			Choices: choices,
+			Message:         messages.SelectAgentPrompt(),
+			Choices:         choices,
+			EnableFiltering: filteringFor(len(choices)),
 		},
 	})
 	if err != nil {

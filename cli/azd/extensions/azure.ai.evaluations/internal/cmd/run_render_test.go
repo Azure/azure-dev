@@ -84,7 +84,8 @@ func TestRenderResultsNamesEveryFailedEvaluator(t *testing.T) {
 	assert.NotContains(t, text, "Answered a different question.",
 		"the reason is one evaluator's account of the row, and lives in `output show`")
 	assert.NotContains(t, text, "oi_1", "--failed-only must drop the passing sample")
-	assert.Contains(t, text, "1 of 2 items are failed.")
+	assert.Contains(t, text, "1 of 2 test cases failed",
+		"the status reads as the verb, which is what a reader says out loud")
 }
 
 // --failed-only means failed.
@@ -366,7 +367,7 @@ func TestCriterionTableAccountsForEverySample(t *testing.T) {
 
 	// The two tables are read against each other, so the arithmetic between
 	// them has to be on screen rather than inferred.
-	assert.Contains(t, text, "15 items x 2 evaluators = 30 criterion results")
-	assert.Contains(t, text, "15 items: 9 passed, 6 failed, 0 errored, 0 skipped")
+	assert.Contains(t, text, "15 test cases x 2 evaluators = 30 evaluator results")
+	assert.Contains(t, text, "15 test cases: 9 passed, 6 failed, 0 errored, 0 skipped")
 	assert.Contains(t, text, "60.0%", "the run rate is 9 of the 15 it scored")
 }

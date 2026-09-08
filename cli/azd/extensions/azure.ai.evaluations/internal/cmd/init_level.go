@@ -59,6 +59,7 @@ func promptEvaluationLevel(cmd *cobra.Command) (string, error) {
 					Value: project.EvaluationLevelConversation,
 				},
 			},
+			EnableFiltering: filteringFor(2),
 		},
 	})
 	if err != nil {

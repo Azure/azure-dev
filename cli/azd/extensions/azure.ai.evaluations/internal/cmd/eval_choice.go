@@ -53,8 +53,9 @@ func chooseEval(cmd *cobra.Command, cfg *project.EvalConfig, named string) strin
 
 	resp, err := azdClient.Prompt().Select(commandContext(cmd), &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message: messages.SelectEvalPrompt(),
-			Choices: choices,
+			Message:         messages.SelectEvalPrompt(),
+			Choices:         choices,
+			EnableFiltering: filteringFor(len(choices)),
 		},
 	})
 	if err != nil {

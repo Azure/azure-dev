@@ -67,9 +67,10 @@ func (a *generateAction) askGenerateArtifacts() (generateChoices, error) {
 
 	resp, err := azdClient.Prompt().Select(commandContext(a.cmd), &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message:       messages.SelectGenerateScopePrompt(),
-			Choices:       choices,
-			SelectedIndex: preselect(0),
+			Message:         messages.SelectGenerateScopePrompt(),
+			Choices:         choices,
+			SelectedIndex:   preselect(0),
+			EnableFiltering: filteringFor(len(choices)),
 		},
 	})
 	if err != nil {
@@ -227,7 +228,8 @@ func confirmGeneration(cmd *cobra.Command, out io.Writer, s generationSummary) (
 				{Label: messages.GenerateChangeChoice(), Value: "change"},
 				{Label: messages.GenerateCancelChoice(), Value: "cancel"},
 			},
-			SelectedIndex: preselect(generateProceed),
+			SelectedIndex:   preselect(generateProceed),
+			EnableFiltering: filteringFor(3),
 		},
 	})
 	if err != nil {

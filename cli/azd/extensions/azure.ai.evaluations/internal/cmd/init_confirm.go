@@ -200,7 +200,8 @@ func confirmScaffold(cmd *cobra.Command, out io.Writer, s scaffoldSummary) (int,
 				{Label: messages.ScaffoldChangeChoice(), Value: "change"},
 				{Label: messages.ScaffoldCancelChoice(), Value: "cancel"},
 			},
-			SelectedIndex: preselect(scaffoldAdd),
+			SelectedIndex:   preselect(scaffoldAdd),
+			EnableFiltering: filteringFor(3),
 		},
 	})
 	if err != nil {

@@ -52,9 +52,10 @@ func promptGenerationLevel(cmd *cobra.Command) (string, error) {
 
 	resp, err := azdClient.Prompt().Select(commandContext(cmd), &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message:       messages.SelectGenerationLevelPrompt(),
-			Choices:       choices,
-			SelectedIndex: preselect(0),
+			Message:         messages.SelectGenerationLevelPrompt(),
+			Choices:         choices,
+			SelectedIndex:   preselect(0),
+			EnableFiltering: filteringFor(len(choices)),
 		},
 	})
 	if err != nil {

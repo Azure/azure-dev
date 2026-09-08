@@ -412,9 +412,14 @@ func (a *runOutputExportAction) Run() error {
 	// size of a run's export is the service's to decide, not this command's,
 	// and the only reason to hold it whole was to hand it to a writer that
 	// takes bytes.
-	return writeFileAtomicFunc(dest, func(w io.Writer) error {
+	if err := writeFileAtomicFunc(dest, func(w io.Writer) error {
 		return writeExport(w, doc)
-	})
+	}); err != nil {
+		return err
+	}
+	// Counted after the write, so the number describes a file that is there.
+	fmt.Fprint(a.cmd.ErrOrStderr(), messages.ExportedTestCases(len(doc.Items), dest))
+	return nil
 }
 
 // exportToStdout is the --output-file value that means "do not write a file".

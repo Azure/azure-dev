@@ -188,8 +188,9 @@ func promptJudgeModel(cmd *cobra.Command, deployments []string) (string, error) 
 
 	resp, err := azdClient.Prompt().Select(commandContext(cmd), &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message: messages.SelectJudgeModelPrompt(),
-			Choices: choices,
+			Message:         messages.SelectJudgeModelPrompt(),
+			Choices:         choices,
+			EnableFiltering: filteringFor(len(choices)),
 		},
 	})
 	if err != nil {

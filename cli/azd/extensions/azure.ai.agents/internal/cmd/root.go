@@ -54,7 +54,6 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newAgentDeployCommand(extCtx))
 	rootCmd.AddCommand(newRunCommand(extCtx))
 	rootCmd.AddCommand(newInvokeCommand(extCtx))
-	rootCmd.AddCommand(newResponsesCommand(extCtx))
 	rootCmd.AddCommand(newMcpCommand())
 	rootCmd.AddCommand(azdext.NewMetadataCommand("1.0", "azure.ai.agents", func() *cobra.Command {
 		return rootCmd
@@ -67,6 +66,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newMonitorCommand(extCtx))
 	rootCmd.AddCommand(newFilesCommand(extCtx))
 	rootCmd.AddCommand(newSessionCommand(extCtx))
+	rootCmd.AddCommand(newResponsesCommand(extCtx))
 	rootCmd.AddCommand(newSampleCommand(extCtx))
 	rootCmd.AddCommand(newDoctorCommand())
 

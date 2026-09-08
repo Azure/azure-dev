@@ -601,18 +601,6 @@ func responseStreamHTTPClient() *http.Client {
 	return &http.Client{Transport: transport}
 }
 
-// buildResponsesURL builds the Foundry "openai/responses" protocol URL for an agent.
-// apiVersion is URL-encoded so unusual characters cannot break out of the query value.
-func buildResponsesURL(projectEndpoint, agentName, apiVersion string) string {
-	if apiVersion == "" {
-		apiVersion = DefaultAgentAPIVersion
-	}
-	return fmt.Sprintf(
-		"%s/agents/%s/endpoint/protocols/openai/responses?api-version=%s",
-		projectEndpoint, agentName, url.QueryEscape(apiVersion),
-	)
-}
-
 func buildResponseLifecycleURL(
 	projectEndpoint string,
 	agentName string,

@@ -166,6 +166,18 @@ func parseAgentEndpoint(rawURL string) (*parsedAgentEndpoint, error) {
 	}, nil
 }
 
+// buildResponsesURL builds the Foundry "openai/responses" protocol URL for an agent.
+// apiVersion is URL-encoded so unusual characters cannot break out of the query value.
+func buildResponsesURL(projectEndpoint, agentName, apiVersion string) string {
+	if apiVersion == "" {
+		apiVersion = DefaultAgentAPIVersion
+	}
+	return fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/openai/responses?api-version=%s",
+		projectEndpoint, agentName, url.QueryEscape(apiVersion),
+	)
+}
+
 // buildInvocationsURL builds the Foundry "invocations" protocol URL for an agent.
 // When sid is non-empty, an agent_session_id query parameter is appended (URL-encoded).
 func buildInvocationsURL(projectEndpoint, agentName, apiVersion, sid string) string {

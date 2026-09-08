@@ -5,12 +5,14 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"testing"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
@@ -188,6 +190,92 @@ func TestExtensionShowAction_InstalledWithoutRegistryEntry(t *testing.T) {
 	other := runShowJSON(t, manager, sourceManager, "other.ext")
 	require.True(t, other.InstalledAsDependency)
 	require.Equal(t, []extensionShowDependent{{Id: "bundled.ext", Version: "0.1.0"}}, other.RequiredBy)
+}
+
+func TestExtensionShowAction_RegistryLookupFailure(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name            string
+		installedSource string
+		source          string
+		json            bool
+		canceled        bool
+	}{
+		{name: "installed_text", installedSource: extensions.BundleSourceName},
+		{name: "installed_json", installedSource: "test", json: true},
+		{name: "not_installed"},
+		{name: "explicit_source", installedSource: "test", source: "test"},
+		{name: "canceled", installedSource: extensions.BundleSourceName, canceled: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			mockCtx := mocks.NewMockContext(ctx)
+			installed := map[string]*extensions.Extension{}
+			if tt.installedSource != "" {
+				installed["test.ext"] = &extensions.Extension{
+					Id: "test.ext", DisplayName: "Installed extension", Version: "1.0.0", Source: tt.installedSource,
+					InstalledAsDependency: true,
+					Dependencies:          []extensions.ExtensionDependency{{Id: "test.child"}},
+				}
+			}
+			manager, sourceManager := createUpgradeTestManager(
+				t, mockCtx, installed, showTestRegistryURL, extensions.Registry{SchemaVersion: "2.0"},
+			)
+
+			var stdout, stderr bytes.Buffer
+			var formatter output.Formatter = &output.NoneFormatter{}
+			consoleWriter := &stdout
+			if tt.json {
+				formatter = &output.JsonFormatter{}
+				consoleWriter = &stderr
+			}
+			console := input.NewConsole(true, false, input.Writers{Output: consoleWriter}, input.ConsoleHandles{
+				Stdin: &bytes.Buffer{}, Stdout: &stdout, Stderr: &stderr,
+			}, formatter, nil)
+			action := &extensionShowAction{
+				args: []string{"test.ext"},
+				flags: &extensionShowFlags{
+					source: tt.source, global: &internal.GlobalCommandOptions{NoPrompt: true},
+				},
+				console: console, formatter: formatter, writer: &stdout,
+				sourceManager: sourceManager, extensionManager: manager,
+			}
+			if tt.canceled {
+				cancel()
+			}
+
+			_, err := action.Run(ctx)
+			if tt.canceled {
+				require.ErrorIs(t, err, context.Canceled)
+			} else if tt.installedSource == "" || tt.source != "" {
+				require.ErrorAs(t, err, new(*extensions.ErrUnsupportedRegistrySchema))
+			} else {
+				require.NoError(t, err)
+				require.Contains(t, consoleWriter.String(), "Showing installed metadata only.")
+				if tt.json {
+					var item extensionShowItem
+					require.NoError(t, json.Unmarshal(stdout.Bytes(), &item))
+					require.Equal(t, "test.ext", item.Id)
+					require.Equal(t, "1.0.0", item.InstalledVersion)
+					require.True(t, item.InstalledAsDependency)
+					require.Empty(t, item.LatestVersion)
+					require.False(t, item.UpdateAvailable)
+					require.Equal(t, []extensionShowDependency{{Id: "test.child"}}, item.Dependencies)
+				} else {
+					require.Contains(t, stdout.String(), "Installed extension")
+					require.Contains(t, stdout.String(), "1.0.0")
+					require.Contains(t, stdout.String(), "test.child")
+				}
+				return
+			}
+			require.Empty(t, stdout.String())
+			require.Empty(t, stderr.String())
+		})
+	}
 }
 
 func TestExtensionShowAction_PrefersInstalledSource(t *testing.T) {

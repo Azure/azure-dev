@@ -127,6 +127,8 @@ Shows versions, compatibility, dependencies, and installed dependents. Dependenc
 
 Prefers the installed source when several sources match. If no registry lists the extension, uses installed metadata. Legacy dependency details require matching source and version metadata.
 
+If registry lookup returns an error and no `--source` was specified, installed extensions are shown from local metadata with a warning. Registry-only fields, such as the latest available version, are omitted. Cancellation and explicit source requests do not use this fallback.
+
 - `-s, --source` Uses a registered source name or registry location (URL or file path). Locations are queried read-only and are not registered.
 
 #### `azd extension install <extension-ids> [flags]`

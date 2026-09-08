@@ -131,8 +131,11 @@ func (a *datasetDownloadAction) write(
 	if content.SingleFile {
 		dest := a.outFile
 		if dest == "" {
-			dest = filepath.Join(dir,
-				fmt.Sprintf("%s-%s%s", a.name, version, content.Extension()))
+			leaf, err := derivedLeafName(a.name, version, content.Extension())
+			if err != nil {
+				return 0, "", err
+			}
+			dest = filepath.Join(dir, leaf)
 		}
 		if err := refuseExisting(dest, a.force); err != nil {
 			return 0, "", err
@@ -148,7 +151,11 @@ func (a *datasetDownloadAction) write(
 		return 1, dest, nil
 	}
 
-	dest := filepath.Join(dir, fmt.Sprintf("%s-%s", a.name, version))
+	leaf, err := derivedLeafName(a.name, version, "")
+	if err != nil {
+		return 0, "", err
+	}
+	dest := filepath.Join(dir, leaf)
 	if err := refuseExisting(dest, a.force); err != nil {
 		return 0, "", err
 	}
@@ -219,6 +226,22 @@ func refuseExisting(path string, force bool) error {
 		return messages.DownloadDestinationExists(path)
 	}
 	return nil
+}
+
+// derivedLeafName is the file or folder a download lands in when the caller
+// named none.
+//
+// The name is the caller's and the version is the service's, and both were
+// interpolated straight into a path: `--version ../..` resolved outside the
+// output directory, because filepath.Join cleans the `..` rather than refusing
+// it. Neither may be anything but one path component.
+func derivedLeafName(name, version, extension string) (string, error) {
+	for _, part := range []string{name, version} {
+		if !validLookupName(part) {
+			return "", messages.DownloadNameNotAPathComponent(part)
+		}
+	}
+	return fmt.Sprintf("%s-%s%s", name, version, extension), nil
 }
 
 // writeFileAtomically writes body to path via a temporary file in the same

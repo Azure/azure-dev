@@ -3264,6 +3264,14 @@ func OutputDirNeedsTheWait() error {
 			"artifact later with `azd ai eval job show`")
 }
 
+// DownloadNameNotAPathComponent refuses a name or version that would move the
+// destination somewhere the caller did not point it.
+func DownloadNameNotAPathComponent(value string) error {
+	return fmt.Errorf(
+		"%q cannot be part of a file name; name the destination with "+
+			"--output-dir or --output-file instead", value)
+}
+
 // ForceNeedsTheWait reports an overwrite of a file that will not be written.
 func ForceNeedsTheWait() error {
 	return errors.New(

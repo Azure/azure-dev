@@ -486,7 +486,8 @@ func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList, whenEmpty
 		fmt.Fprint(cmd.OutOrStdout(), messages.ShowingSomeOf(len(rows), total))
 	}
 	fmt.Fprint(cmd.OutOrStdout(), messages.ViewDetailsHint(fmt.Sprintf(
-		"azd ai dataset show %s --version %s", shown[0].Name, shown[0].Version)))
+		"azd ai dataset show %s --version %s",
+		messages.ShellArg(shown[0].Name), messages.ShellArg(shown[0].Version))))
 	return nil
 }
 

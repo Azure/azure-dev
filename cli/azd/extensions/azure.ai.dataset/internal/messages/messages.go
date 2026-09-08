@@ -734,6 +734,40 @@ func DownloadNameNotAPathComponent(value string) error {
 			"--output-dir or --output-file instead", value)
 }
 
+// CannotWriteInDirectory reports a directory a download cannot stage into.
+func CannotWriteInDirectory(dir string, err error) error {
+	return fmt.Errorf("cannot write in %s: %w", filepath.ToSlash(dir), err)
+}
+
+// ShellArg quotes a value a printed command carries, so one rule decides how
+// every suggested command quotes what it names.
+//
+// A dataset name or version is the service's, not this command's, and a printed
+// line that claims to run as printed has to survive a space in one. Three
+// characters cannot be made literal by any wrapping that works in bash, zsh,
+// cmd and PowerShell at once -- two expand inside double quotes, and the third
+// ends them -- so a value carrying one is named rather than quoted. The command
+// then fails on that argument, which is the honest outcome: it cannot be made
+// both runnable and safe here.
+func ShellArg(v string) string {
+	if v == "" {
+		return `""`
+	}
+	if strings.ContainsAny(v, "$`\"") {
+		return shellArgNeedsQuoting
+	}
+	if !strings.ContainsAny(v, " \t\n'&|;<>()*?[]#~!") {
+		return v
+	}
+	return `"` + v + `"`
+}
+
+// shellArgNeedsQuoting stands in for a value no portable quoting makes literal.
+// Deliberately inert: it carries no metacharacter, so a reader who pastes the
+// line without noticing gets a command that fails on the name rather than one
+// that runs something the service chose.
+const shellArgNeedsQuoting = "VALUE_NEEDS_QUOTING"
+
 // DatasetEntryNotRelative refuses a listed entry that would write outside the
 // destination.
 //

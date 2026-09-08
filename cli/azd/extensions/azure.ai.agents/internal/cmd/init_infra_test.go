@@ -1848,54 +1848,54 @@ services:
 }
 
 func TestEjectInfra_RejectsConcreteConnectionCredentials(t *testing.T) {
-	const secret = "inline-credential-must-not-leak"
+	const rejectedValue = "inline-value-must-not-leak"
 	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
 
 	tests := []struct {
-		name        string
-		provider    string
-		existing    bool
-		externalRef bool
-		credential  string
-		wantError   bool
+		name            string
+		provider        string
+		existing        bool
+		externalRef     bool
+		connectionValue string
+		wantError       bool
 	}{
 		{
-			name:       "greenfield bicep rejects inline credentials",
-			provider:   "bicep",
-			credential: secret,
-			wantError:  true,
+			name:            "greenfield bicep rejects inline credentials",
+			provider:        "bicep",
+			connectionValue: rejectedValue,
+			wantError:       true,
 		},
 		{
-			name:       "greenfield terraform rejects inline credentials",
-			provider:   "terraform",
-			credential: secret,
-			wantError:  true,
+			name:            "greenfield terraform rejects inline credentials",
+			provider:        "terraform",
+			connectionValue: rejectedValue,
+			wantError:       true,
 		},
 		{
-			name:        "existing bicep rejects external ref credentials",
-			provider:    "bicep",
-			existing:    true,
-			externalRef: true,
-			credential:  secret,
-			wantError:   true,
+			name:            "existing bicep rejects external ref credentials",
+			provider:        "bicep",
+			existing:        true,
+			externalRef:     true,
+			connectionValue: rejectedValue,
+			wantError:       true,
 		},
 		{
-			name:       "existing terraform rejects inline credentials",
-			provider:   "terraform",
-			existing:   true,
-			credential: secret,
-			wantError:  true,
+			name:            "existing terraform rejects inline credentials",
+			provider:        "terraform",
+			existing:        true,
+			connectionValue: rejectedValue,
+			wantError:       true,
 		},
 		{
-			name:       "greenfield bicep preserves environment reference",
-			provider:   "bicep",
-			credential: "${SEARCH_API_KEY}",
+			name:            "greenfield bicep preserves environment reference",
+			provider:        "bicep",
+			connectionValue: "${SEARCH_API_KEY}",
 		},
 		{
-			name:       "existing terraform preserves environment reference",
-			provider:   "terraform",
-			existing:   true,
-			credential: "${SEARCH_API_KEY}",
+			name:            "existing terraform preserves environment reference",
+			provider:        "terraform",
+			existing:        true,
+			connectionValue: "${SEARCH_API_KEY}",
 		},
 	}
 
@@ -1906,7 +1906,7 @@ func TestEjectInfra_RejectsConcreteConnectionCredentials(t *testing.T) {
 			if tt.existing {
 				existing = "    endpoint: " + endpoint + "\n"
 			}
-			credential := "      key: " + tt.credential + "\n"
+			connectionConfig := "      key: " + tt.connectionValue + "\n"
 			if tt.externalRef {
 				mustWriteFile(
 					t,
@@ -1916,16 +1916,16 @@ func TestEjectInfra_RejectsConcreteConnectionCredentials(t *testing.T) {
 						"category: CognitiveSearch\n"+
 						"target: https://search.example.com\n"+
 						"authType: ApiKey\n"+
-						"credentials:\n"+credential,
+						"credentials:\n"+connectionConfig,
 				)
-				credential = "    $ref: ./connection.yaml\n"
+				connectionConfig = "    $ref: ./connection.yaml\n"
 			} else {
-				credential = "    host: azure.ai.connection\n" +
+				connectionConfig = "    host: azure.ai.connection\n" +
 					"    uses: [my-foundry]\n" +
 					"    category: CognitiveSearch\n" +
 					"    target: https://search.example.com\n" +
 					"    authType: ApiKey\n" +
-					"    credentials:\n" + credential
+					"    credentials:\n" + connectionConfig
 			}
 			mustWriteFile(t, filepath.Join(dir, "azure.yaml"),
 				"name: my-project\n"+
@@ -1936,7 +1936,7 @@ func TestEjectInfra_RejectsConcreteConnectionCredentials(t *testing.T) {
 					"    host: azure.ai.project\n"+
 					existing+
 					"  search-conn:\n"+
-					credential,
+					connectionConfig,
 			)
 
 			var err error
@@ -1948,7 +1948,7 @@ func TestEjectInfra_RejectsConcreteConnectionCredentials(t *testing.T) {
 				localErr, ok := errors.AsType[*azdext.LocalError](err)
 				require.True(t, ok, "expected structured error, got %T: %v", err, err)
 				assert.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
-				assert.NotContains(t, err.Error(), secret)
+				assert.NotContains(t, err.Error(), rejectedValue)
 				assert.NoDirExists(t, filepath.Join(dir, "infra"))
 				return
 			}
@@ -1961,7 +1961,7 @@ func TestEjectInfra_RejectsConcreteConnectionCredentials(t *testing.T) {
 			raw, readErr := os.ReadFile(filepath.Join(dir, "infra", parameterFile))
 			require.NoError(t, readErr)
 			assert.Contains(t, string(raw), "${SEARCH_API_KEY}")
-			assert.NotContains(t, string(raw), secret)
+			assert.NotContains(t, string(raw), rejectedValue)
 		})
 	}
 }

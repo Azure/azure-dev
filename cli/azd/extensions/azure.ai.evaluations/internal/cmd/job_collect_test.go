@@ -85,7 +85,7 @@ func TestCollectingASucceededDatasetJobWritesTheArtifact(t *testing.T) {
 	ref, err := ec.collectDataset(
 		t.Context(),
 		datasetJobResult("golden", "3"),
-		"", evalDir, "datasets", &out,
+		"", evalDir, "datasets", &out, false,
 	)
 
 	require.NoError(t, err)
@@ -111,7 +111,7 @@ func TestCollectingASucceededEvaluatorJobWritesTheRubric(t *testing.T) {
 			Status: "succeeded",
 			Result: json.RawMessage(`{"name":"quality","version":"2","definition":{"dimensions":[]}}`),
 		},
-		"", evalDir, "evaluators", &out,
+		"", evalDir, "evaluators", &out, false,
 	)
 
 	require.NoError(t, err)
@@ -139,9 +139,9 @@ func TestCollectingTwiceIsTheSameAsCollectingOnce(t *testing.T) {
 	job := datasetJobResult("golden", "3")
 
 	var out bytes.Buffer
-	first, err := ec.collectDataset(t.Context(), job, "", evalDir, "datasets", &out)
+	first, err := ec.collectDataset(t.Context(), job, "", evalDir, "datasets", &out, false)
 	require.NoError(t, err)
-	second, err := ec.collectDataset(t.Context(), job, "", evalDir, "datasets", &out)
+	second, err := ec.collectDataset(t.Context(), job, "", evalDir, "datasets", &out, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, first, second, "the same job collects to the same place")
@@ -149,6 +149,98 @@ func TestCollectingTwiceIsTheSameAsCollectingOnce(t *testing.T) {
 	entries, err := os.ReadDir(filepath.Join(evalDir, "datasets"))
 	require.NoError(t, err)
 	assert.Len(t, entries, 1, "collecting again must not leave a second file")
+}
+
+// A rubric is meant to be edited -- that is the whole point of the local file
+// -- and `job show` is the command a caller polls, so it gets run again after
+// the artifact has landed. Collecting again wrote the service's copy back over
+// the edits, silently, and the caller had no reason to expect a status command
+// to touch their file at all.
+func TestCollectingAgainLeavesAnEditedRubricAlone(t *testing.T) {
+	ec := &evalContext{}
+	evalDir := t.TempDir()
+	job := &eval_api.GenerationJob{
+		ID:     "job_1",
+		Status: "succeeded",
+		Result: json.RawMessage(`{"name":"quality","version":"2","definition":{"dimensions":[]}}`),
+	}
+
+	var out bytes.Buffer
+	first, err := ec.collectRubric(job, "", evalDir, "evaluators", &out, false)
+	require.NoError(t, err)
+
+	path := filepath.Join(evalDir, "evaluators", first.Name+".json")
+	const edited = "{\"edited\":true}\n"
+	require.NoError(t, os.WriteFile(path, []byte(edited), 0o600))
+
+	out.Reset()
+	second, err := ec.collectRubric(job, "", evalDir, "evaluators", &out, false)
+	require.NoError(t, err, "polling must not turn into an error once the file is there")
+
+	body, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, edited, string(body), "the edits are the reason the file is local")
+	assert.Contains(t, out.String(), "--force", "and the caller is told how to get the copy back")
+
+	assert.Equal(t, first, second,
+		"the catalog entry still has to be returned, or the entry would be dropped")
+}
+
+// The other half of the same promise: --force is what a caller reaches for when
+// they do want the service's copy back, so it has to actually replace.
+func TestCollectingAgainWithForceReplacesTheRubric(t *testing.T) {
+	ec := &evalContext{}
+	evalDir := t.TempDir()
+	job := &eval_api.GenerationJob{
+		ID:     "job_1",
+		Status: "succeeded",
+		Result: json.RawMessage(`{"name":"quality","version":"2","definition":{"dimensions":[]}}`),
+	}
+
+	var out bytes.Buffer
+	ref, err := ec.collectRubric(job, "", evalDir, "evaluators", &out, false)
+	require.NoError(t, err)
+
+	path := filepath.Join(evalDir, "evaluators", ref.Name+".json")
+	require.NoError(t, os.WriteFile(path, []byte("{\"edited\":true}\n"), 0o600))
+
+	_, err = ec.collectRubric(job, "", evalDir, "evaluators", &out, true)
+	require.NoError(t, err)
+
+	body, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "dimensions", "--force asked for the service's copy")
+}
+
+// The dataset half, which matters more than the rubric one: re-collecting
+// downloaded the rows again, so a polled `job show` paid for the transfer on
+// every call as well as overwriting whatever was there.
+func TestCollectingAgainLeavesEditedRowsAloneWithoutDownloading(t *testing.T) {
+	srv := generationServer(t, "{\"query\":\"hi\"}\n")
+	ec := evalContextFor(srv)
+	evalDir := t.TempDir()
+	job := datasetJobResult("golden", "3")
+
+	var out bytes.Buffer
+	first, err := ec.collectDataset(t.Context(), job, "", evalDir, "datasets", &out, false)
+	require.NoError(t, err)
+
+	path := filepath.Join(evalDir, "datasets", "golden.jsonl")
+	const edited = "{\"query\":\"mine\"}\n"
+	require.NoError(t, os.WriteFile(path, []byte(edited), 0o600))
+
+	// Closed, so reaching the download at all fails rather than quietly
+	// succeeding: the skip has to come before the transfer, not after it.
+	srv.Close()
+
+	out.Reset()
+	second, err := ec.collectDataset(t.Context(), job, "", evalDir, "datasets", &out, false)
+	require.NoError(t, err, "a re-collection must not need the service at all")
+
+	body, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, edited, string(body))
+	assert.Equal(t, first, second)
 }
 
 // `job show` is the command a caller polls while waiting, so it is called far
@@ -254,7 +346,7 @@ func TestCollectingRefusesAServiceNameThatEscapesTheOutputDir(t *testing.T) {
 	_, err := evalContextFor(srv).collectDataset(
 		t.Context(),
 		datasetJobResult("../guarded", "3"),
-		"", evalDir, "datasets", &out,
+		"", evalDir, "datasets", &out, false,
 	)
 
 	require.Error(t, err, "a name that leaves the directory is not a file name")
@@ -278,7 +370,7 @@ func TestCollectingARubricRefusesAServiceNameThatEscapes(t *testing.T) {
 			Status: "succeeded",
 			Result: json.RawMessage(`{"name":"../escaped","version":"2","definition":{}}`),
 		},
-		"", evalDir, "evaluators", &out,
+		"", evalDir, "evaluators", &out, false,
 	)
 
 	require.Error(t, err)

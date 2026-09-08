@@ -205,3 +205,32 @@ func declaredAgentName(svc *azdext.ServiceConfig) string {
 	name, _ := props.AsMap()["name"].(string)
 	return name
 }
+
+// RemoteAgentName is the name a target refers to, as the service knows it.
+//
+// `init` writes the azure.yaml service key into `target.name`, because that is
+// what it had: the key is how the project refers to the service locally. The
+// agent is published under the name the service declares, and the two need not
+// agree -- so the key went to the run API as the agent to invoke, and the run
+// graded a different agent, or none.
+//
+// Resolved rather than rewritten at init time, because a service can be renamed
+// after the eval is written and the configuration should not go stale. A target
+// naming an agent this project does not declare is returned untouched: it is a
+// remote agent the configuration is entitled to name, and the service is the
+// one that gets to say whether it exists.
+func RemoteAgentName(proj *azdext.ProjectConfig, targetName string) (string, error) {
+	svc, err := findAgentService(proj, targetName)
+	if err != nil {
+		// Two services answer to this name, and they are different agents.
+		// Picking one grades something the author did not ask for.
+		return "", err
+	}
+	if svc == nil {
+		return targetName, nil
+	}
+	if declared := declaredAgentName(svc); declared != "" {
+		return declared, nil
+	}
+	return targetName, nil
+}

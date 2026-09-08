@@ -575,7 +575,14 @@ func (ec *evalContext) buildRunDataSource(
 	case group.Target.Type == project.TargetTypeModel:
 		ds = eval_api.NewModelTargetDataSource(group.Target.Name)
 	default:
-		ds = eval_api.NewAgentTargetDataSource(group.Target.Name, nil)
+		// `init` writes the azure.yaml service key here, which is a local label.
+		// The agent is published under whatever the service declares, so the key
+		// has to be resolved before it is sent or the run grades another agent.
+		agent, err := ec.remoteAgentName(ctx, group.Target.Name)
+		if err != nil {
+			return nil, messages.InEval(group.Name, err)
+		}
+		ds = eval_api.NewAgentTargetDataSource(agent, nil)
 	}
 
 	if group.Dataset == "" {

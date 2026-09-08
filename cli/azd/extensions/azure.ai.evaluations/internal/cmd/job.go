@@ -38,7 +38,7 @@ type jobKind struct {
 	// because it returns before the job has produced anything.
 	collect func(
 		ctx context.Context, ec *evalContext, job *eval_api.GenerationJob,
-		baseDir, outputDir string, out io.Writer,
+		baseDir, outputDir string, out io.Writer, replaceExisting bool,
 	) (*project.ArtifactRef, error)
 	// outputDir is where this kind's artifact lands when the caller did not name
 	// a directory of their own.
@@ -71,11 +71,11 @@ var datasetJobs = jobKind{
 	},
 	collect: func(
 		ctx context.Context, ec *evalContext, job *eval_api.GenerationJob,
-		baseDir, outputDir string, out io.Writer,
+		baseDir, outputDir string, out io.Writer, replaceExisting bool,
 	) (*project.ArtifactRef, error) {
 		// No declared name: reattaching has only the job, so the service's own
 		// name is what the file is called.
-		return ec.collectDataset(ctx, job, "", baseDir, outputDir, out)
+		return ec.collectDataset(ctx, job, "", baseDir, outputDir, out, replaceExisting)
 	},
 	outputDir:    project.DefaultDatasetsDir,
 	addToCatalog: addDatasetToCatalog,
@@ -101,9 +101,9 @@ var evaluatorJobs = jobKind{
 	},
 	collect: func(
 		_ context.Context, ec *evalContext, job *eval_api.GenerationJob,
-		baseDir, outputDir string, out io.Writer,
+		baseDir, outputDir string, out io.Writer, replaceExisting bool,
 	) (*project.ArtifactRef, error) {
-		return ec.collectRubric(job, "", baseDir, outputDir, out)
+		return ec.collectRubric(job, "", baseDir, outputDir, out, replaceExisting)
 	},
 	outputDir:    project.DefaultEvaluatorsDir,
 	addToCatalog: addEvaluatorToCatalog,
@@ -177,6 +177,9 @@ type jobFlags struct {
 	// flag alongside --no-wait because it returns before there is anything to
 	// write, and points the caller here -- so here has to accept it.
 	outputDir string
+	// force replaces an artifact a previous collection already wrote. Only
+	// `show` collects, so only `show` registers it.
+	force bool
 }
 
 // bind registers them together, so a command cannot declare one and forget
@@ -275,7 +278,9 @@ func newJobShowCommand() *cobra.Command {
 			"`generate --no-wait` returns before the job has produced anything, so " +
 			"the download and the catalog entry are left for this command. A job " +
 			"still running is reported and nothing is written; a job that has " +
-			"succeeded is completed here, and running it again is harmless.",
+			"succeeded is completed here, and running it again is harmless -- an " +
+			"artifact already collected is left as it is, edits and all, unless " +
+			"--force says to replace it.",
 		Args: requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&jobShowAction{cmd: cmd, flags: flags, jobID: args[0]}).Run()
@@ -288,6 +293,8 @@ func newJobShowCommand() *cobra.Command {
 	addEvalPathFlag(cmd, &flags.path)
 	cmd.Flags().StringVar(&flags.outputDir, "output-dir", "",
 		"Directory the collected artifact is written to.")
+	cmd.Flags().BoolVar(&flags.force, "force", false,
+		"Replace an artifact a previous collection already wrote.")
 	return cmd
 }
 
@@ -370,7 +377,7 @@ func (a *jobShowAction) collect(
 		outputDir = kind.outputDir
 	}
 
-	ref, err := kind.collect(ctx, ec, job, baseDir, outputDir, out)
+	ref, err := kind.collect(ctx, ec, job, baseDir, outputDir, out, a.flags.force)
 	if err != nil {
 		return nil, err
 	}

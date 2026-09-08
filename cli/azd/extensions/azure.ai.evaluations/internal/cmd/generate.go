@@ -167,7 +167,17 @@ func (ec *evalContext) resolveGenerationInstruction(
 		return local, messages.InstructionSourceFile(path), nil
 	}
 
-	agent, err := ec.evalClient.GetAgent(ctx, agentName, ProjectEndpointAPIVersion)
+	// The name reaching here can be an azure.yaml service key, which is what
+	// `init` writes into a target and what --target accepts. The service knows
+	// the agent by the name it publishes under, so asking for the key returned
+	// nothing and the caller was warned about an agent that does exist. The
+	// local lookup above takes either form; this one does not.
+	remoteName, err := ec.remoteAgentName(ctx, agentName)
+	if err != nil {
+		return "", "", err
+	}
+
+	agent, err := ec.evalClient.GetAgent(ctx, remoteName, ProjectEndpointAPIVersion)
 	if err != nil {
 		// Reported without stopping, because the model can still be supplied by
 		// --generation-model and the caller has its own checks for what is left
@@ -251,7 +261,9 @@ func (ec *evalContext) generateRubric(
 	}
 	report.warn(completed)
 
-	return ec.collectRubric(completed, plan.Name, plan.BaseDir, plan.OutputDir, out)
+	// generate settled this up front with refuseExistingArtifact, so by here it
+	// either found nothing or the caller passed --force.
+	return ec.collectRubric(completed, plan.Name, plan.BaseDir, plan.OutputDir, out, true)
 }
 
 // record remembers the job the caller can reattach to.
@@ -277,6 +289,7 @@ func (ec *evalContext) collectRubric(
 	completed *eval_api.GenerationJob,
 	name, baseDir, outputDir string,
 	out io.Writer,
+	replaceExisting bool,
 ) (*project.ArtifactRef, error) {
 	resolvedName, version := completed.ResolvedNameVersion()
 	if name == "" {
@@ -294,6 +307,17 @@ func (ec *evalContext) collectRubric(
 	}
 
 	path := project.ArtifactPath(baseDir, outputDir, name, ".json")
+	// A rubric is meant to be edited -- that is what the local file is for -- and
+	// `job show` is documented as safe to re-run while polling. Collecting again
+	// over an edited file made those two claims contradict each other.
+	if !replaceExisting && artifactAlreadyCollected(path) {
+		fmt.Fprint(out, messages.ArtifactLeftAlone(path))
+		return &project.ArtifactRef{
+			Name:    name,
+			Source:  relativeSource(baseDir, path),
+			Version: version,
+		}, nil
+	}
 	if err := writeRubric(path, completed.Result); err != nil {
 		return nil, err
 	}
@@ -458,7 +482,8 @@ func (ec *evalContext) generateDataset(
 	}
 	report.warn(completed)
 
-	return ec.collectDataset(ctx, completed, plan.Name, plan.BaseDir, plan.OutputDir, out)
+	// As above: the destination was checked before the job was submitted.
+	return ec.collectDataset(ctx, completed, plan.Name, plan.BaseDir, plan.OutputDir, out, true)
 }
 
 // collectDataset downloads a finished data job's dataset and records what a
@@ -472,6 +497,7 @@ func (ec *evalContext) collectDataset(
 	completed *eval_api.GenerationJob,
 	declaredName, baseDir, outputDir string,
 	out io.Writer,
+	replaceExisting bool,
 ) (*project.ArtifactRef, error) {
 	name, version := completed.ResolvedNameVersion()
 	if name == "" {
@@ -489,6 +515,19 @@ func (ec *evalContext) collectDataset(
 	// would be written outside the output directory over whatever is there.
 	if !nameIsAPathComponent(localName) {
 		return nil, messages.ServiceNameNotAFileName("dataset", localName)
+	}
+
+	// Before the download, not after: re-running `job show` while polling should
+	// cost nothing and must not write over rows somebody has since edited.
+	if !replaceExisting {
+		if path := project.ArtifactPath(baseDir, outputDir, localName, ".jsonl"); artifactAlreadyCollected(path) {
+			fmt.Fprint(out, messages.ArtifactLeftAlone(path))
+			return &project.ArtifactRef{
+				Name:    localName,
+				Source:  relativeSource(baseDir, path),
+				Version: version,
+			}, nil
+		}
 	}
 
 	// Confirm the version exists before reading it, so a missing dataset is
@@ -527,6 +566,16 @@ func (ec *evalContext) collectDataset(
 		Source:  relativeSource(baseDir, path),
 		Version: version,
 	}, nil
+}
+
+// artifactAlreadyCollected reports a destination a previous collection filled.
+//
+// Only a file that is there. An unreadable one is treated as absent so the
+// collection goes ahead and fails on the write, which says more than refusing
+// on a stat would.
+func artifactAlreadyCollected(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
 
 // isAgentSeededGenerationFailure recognizes the service-side failure that hits

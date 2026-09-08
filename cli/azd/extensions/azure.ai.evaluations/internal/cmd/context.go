@@ -609,6 +609,24 @@ func (ec *evalContext) azdProject(ctx context.Context) (*azdext.ProjectConfig, e
 	return resp.GetProject(), nil
 }
 
+// remoteAgentName resolves an eval target's name to the name the agent answers
+// to, which is not always the azure.yaml service key `init` wrote there.
+//
+// A project that cannot be read leaves the target as written rather than
+// failing the run: outside azd -- which every atomic command supports -- there
+// is no azure.yaml to consult, and the configuration is entitled to name a
+// remote agent that no local service declares. The service is the one that
+// gets to say whether the name exists. Only a project that answers with two
+// services claiming the same name is refused, because that is a question about
+// which agent to bill, and it has no answer here.
+func (ec *evalContext) remoteAgentName(ctx context.Context, targetName string) (string, error) {
+	proj, err := ec.azdProject(ctx)
+	if err != nil || proj == nil {
+		return targetName, nil
+	}
+	return project.RemoteAgentName(proj, targetName)
+}
+
 // deployCommandName is projectCanProvision phrased as the command to run.
 //
 // Without infrastructure the answer is this extension's own command rather than
@@ -820,6 +838,12 @@ func sameEvalLocation(a, b string) bool {
 //
 // Returns empty outside an azd project.
 //
+// A failure to reach azd is not that answer, and is returned. The two used to
+// be collapsed into "no project", which sent the whole cascade to its default:
+// a denied or faulted Get inside a project silently moved every command onto
+// `evals` beside the caller, where `init` would write a second configuration
+// and the deploy would go on using the first.
+//
 // GetServices is a map, so "the first entry that matches" is whichever one Go
 // happened to visit first. A project declaring two evaluation services is a
 // question this cannot answer, so it says so rather than picking one and
@@ -829,7 +853,19 @@ func projectEvalLocation(ctx context.Context, azdClient *azdext.AzdClient) (stri
 		return "", nil
 	}
 	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
-	if err != nil || resp.GetProject() == nil {
+	if err != nil {
+		// HostedSourceAbsent rather than isNoDefaultEnvironmentError, which
+		// excludes an unreachable daemon: there being no azd to ask means the
+		// extension was invoked directly, and `evals` beside the caller is the
+		// right answer for that, not a wrong directory. What must not pass is a
+		// denial, an expired login, or a server fault -- azd failing to say
+		// where the project is, reported as though it had said there is none.
+		if projectctx.HostedSourceAbsent(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	if resp.GetProject() == nil {
 		return "", nil
 	}
 	root := resp.GetProject().GetPath()

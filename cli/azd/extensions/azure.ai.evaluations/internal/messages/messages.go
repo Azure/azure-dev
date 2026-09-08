@@ -1348,6 +1348,18 @@ func DatasetVersionNotVerified(name, version string, err error) error {
 		name, version, err)
 }
 
+// ArtifactLeftAlone reports a destination a previous collection already filled.
+//
+// A rubric is meant to be edited, and `job show` is documented as safe to
+// re-run while polling; collecting again over an edited file made those two
+// claims contradict each other. Said rather than silent, so a reader who wanted
+// the service's copy back knows there is a flag for it.
+func ArtifactLeftAlone(path string) string {
+	return fmt.Sprintf(
+		"%s is already there and was left as it is; pass --force to replace it\n",
+		filepath.ToSlash(path))
+}
+
 // CheckingArtifactPath reports a destination that could not be examined.
 //
 // Only a confirmed absence makes it safe to start a billed job. A permission or

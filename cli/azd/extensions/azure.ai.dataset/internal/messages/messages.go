@@ -620,8 +620,14 @@ func UploadingBlobFailed(err error) error {
 }
 
 // BlobUploadStatus reports storage refusing the upload.
-func BlobUploadStatus(status int, body string) error {
-	return fmt.Errorf("blob upload failed with status %d: %s", status, body)
+//
+// By request id, not by body. Storage's XML echoes the request URL, which
+// carries the SAS token that authorized the upload.
+func BlobUploadStatus(status int, requestID string) error {
+	if requestID == "" {
+		return fmt.Errorf("blob upload failed with status %d", status)
+	}
+	return fmt.Errorf("blob upload failed with status %d (request %s)", status, requestID)
 }
 
 // CreatingDownloadRequest reports the dataset download request failing to build.

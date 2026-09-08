@@ -161,6 +161,13 @@ func (a *datasetDownloadAction) write(
 		return 0, "", err
 	}
 
+	// The single-file branch creates missing parents, so this one has to as
+	// well: --output-dir does not promise the directory already exists, and
+	// MkdirTemp fails outright when its parent does not.
+	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
+		return 0, "", messages.CreatingDirectory(filepath.Dir(dest), err)
+	}
+
 	// Staged beside the destination rather than in the system temp directory:
 	// the rename at the end is only atomic within one filesystem, and a temp
 	// directory on another volume turns it into a copy that can fail halfway.
@@ -189,8 +196,25 @@ func (a *datasetDownloadAction) write(
 		}
 	}
 
+	// Renaming onto an existing directory fails whatever --force said, so the
+	// old one moves aside first and is discarded only once the new one is in
+	// place. Put back on failure: --force is not permission to lose both.
+	replaced := ""
+	if _, err := os.Lstat(dest); err == nil {
+		replaced = dest + ".azd-replaced"
+		_ = os.RemoveAll(replaced)
+		if err := os.Rename(dest, replaced); err != nil {
+			return 0, "", messages.WritingDownload(dest, err)
+		}
+	}
 	if err := os.Rename(staging, dest); err != nil {
+		if replaced != "" {
+			_ = os.Rename(replaced, dest)
+		}
 		return 0, "", messages.WritingDownload(dest, err)
+	}
+	if replaced != "" {
+		_ = os.RemoveAll(replaced)
 	}
 	return len(content.Files), dest, nil
 }

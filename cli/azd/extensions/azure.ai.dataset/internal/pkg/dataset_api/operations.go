@@ -312,8 +312,9 @@ func (c *DatasetClient) UploadBlob(ctx context.Context, containerSASUri, blobNam
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return messages.BlobUploadStatus(resp.StatusCode, string(body))
+		// Without the body. Storage's XML echoes the request URL, which carries
+		// the SAS token that authorized this upload.
+		return messages.BlobUploadStatus(resp.StatusCode, resp.Header.Get("x-ms-request-id"))
 	}
 
 	return nil

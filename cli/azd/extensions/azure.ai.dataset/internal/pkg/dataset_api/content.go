@@ -32,6 +32,9 @@ type DatasetContent struct {
 	// count happens to be: a folder dataset holding one file is still a folder,
 	// and writing it as a bare file loses the name it had inside.
 	SingleFile bool
+	// blobURI records that Container already names the blob, so reading it must
+	// not append an entry name to the path.
+	blobURI bool
 }
 
 // ListDatasetContent enumerates the files a dataset version holds.
@@ -41,11 +44,6 @@ func (c *DatasetClient) ListDatasetContent(
 	version string,
 	apiVersion string,
 ) (*DatasetContent, error) {
-	meta, err := c.GetDataset(ctx, name, version, apiVersion)
-	if err != nil {
-		return nil, err
-	}
-
 	cred, err := c.GetDatasetCredential(ctx, name, version, apiVersion)
 	if err != nil {
 		return nil, messages.ReadingDownloadCredentials(name, err)
@@ -53,6 +51,21 @@ func (c *DatasetClient) ListDatasetContent(
 	sasURI := cred.ResolvedDownloadURI()
 	if sasURI == "" {
 		return nil, messages.NoDownloadURI(name)
+	}
+
+	// An uploaded dataset's URI names the blob itself, and listing one answers
+	// 409 -- so `dataset download` failed for every dataset this CLI published.
+	if looksLikeBlobURI(sasURI) {
+		if body, err := openBlobURL(ctx, sasURI, name); err == nil {
+			_ = body.Close()
+			return &DatasetContent{
+				Container:  sasURI,
+				Files:      []string{""},
+				SingleFile: true,
+				blobURI:    true,
+			}, nil
+		}
+		// Not a blob after all: fall through and list it as a container.
 	}
 
 	names, err := c.ListContainerBlobs(ctx, sasURI)
@@ -74,10 +87,13 @@ func (c *DatasetClient) ListDatasetContent(
 	}
 	sort.Strings(files)
 
+	// Not from isSingleFile: a generated container reports it true as well, and
+	// believing it wrote whichever entry sorted first -- `_meta.json` beside the
+	// rows -- as though it were the dataset. What the credential names is the
+	// only thing that actually distinguishes the two shapes.
 	return &DatasetContent{
-		Container:  sasURI,
-		Files:      files,
-		SingleFile: meta.IsSingleFile,
+		Container: sasURI,
+		Files:     files,
 	}, nil
 }
 
@@ -95,9 +111,21 @@ func (c *DatasetClient) Open(
 	if err != nil {
 		return nil, messages.InvalidContainerURI(urlsafe.Error(err))
 	}
-	u.Path = strings.TrimSuffix(u.Path, "/") + "/" + file
+	// Already the blob when the credential named one; appending an entry would
+	// address a path that does not exist.
+	if !content.blobURI {
+		u.Path = strings.TrimSuffix(u.Path, "/") + "/" + file
+	}
+	return openBlobURL(ctx, u.String(), file)
+}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+// openBlobURL reads one blob by its SAS URL.
+//
+// A plain client, not the SDK pipeline: the SAS in the URL is the credential,
+// and the pipeline's bearer token and correlation headers have no business
+// reaching storage.
+func openBlobURL(ctx context.Context, blobURL, name string) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, blobURL, nil)
 	if err != nil {
 		return nil, messages.CreatingBlobDownloadRequest(urlsafe.Error(err))
 	}
@@ -107,7 +135,7 @@ func (c *DatasetClient) Open(
 	}
 	if resp.StatusCode != http.StatusOK {
 		_ = resp.Body.Close()
-		return nil, messages.BlobDownloadStatusFor(resp.StatusCode, file)
+		return nil, messages.BlobDownloadStatusFor(resp.StatusCode, name)
 	}
 	return resp.Body, nil
 }

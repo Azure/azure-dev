@@ -78,7 +78,7 @@ from an unregistered location show the location itself in the SOURCE column.`,
 			Use:   "show <extension-id>",
 			Short: "Show details for a specific extension.",
 			Long: `Includes version compatibility, dependencies, and installed dependents.
-Uses installed metadata when no registry lists the extension.`,
+Uses installed metadata when no registry lists the extension, or a registry lookup fails without --source.`,
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
@@ -854,6 +854,11 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 		}
 	}
 	extensionId := a.args[0]
+	installedExtension, err := a.extensionManager.GetInstalled(extensions.FilterOptions{Id: extensionId})
+	if err != nil && !errors.Is(err, extensions.ErrInstalledExtensionNotFound) {
+		return nil, fmt.Errorf("failed to get installed extension: %w", err)
+	}
+
 	filterOptions := &extensions.FilterOptions{
 		Source: a.flags.source,
 		Id:     extensionId,
@@ -873,18 +878,21 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 	}
 
 	extensionMatches, err := a.extensionManager.FindExtensions(ctx, filterOptions)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to find extension: %w", err)
+		if installedExtension == nil || a.flags.source != "" ||
+			errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("failed to find extension: %w", err)
+		}
+		a.console.MessageUxItem(ctx, &ux.WarningMessage{
+			Description: "Could not load extension registry information. Showing installed metadata only.",
+		})
+		extensionMatches = nil
 	}
 
-	installedExtension, err := a.extensionManager.GetInstalled(extensions.FilterOptions{Id: extensionId})
-	if err != nil {
-		installedExtension = nil
-	}
-
-	// An installed extension that no configured source lists (bundle install, delisted, or
-	// source removed) is described from its installed record alone, unless --source asked
-	// for a specific source that does not carry it.
+	// Without registry metadata, describe the installed record unless --source requested a different source.
 	var registryExtension *extensions.ExtensionMetadata
 	installedOnly := len(extensionMatches) == 0 && installedExtension != nil &&
 		(a.flags.source == "" || strings.EqualFold(a.flags.source, installedExtension.Source))

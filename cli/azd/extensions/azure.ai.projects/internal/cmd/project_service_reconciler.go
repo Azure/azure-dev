@@ -32,6 +32,7 @@ const (
 type projectServiceInfo struct {
 	Name       string
 	Raw        map[string]any
+	Unexpanded map[string]any
 	Resolved   map[string]any
 	Expanded   *azdext.ServiceConfig
 	ServiceRef string
@@ -44,7 +45,7 @@ type projectServiceReconciler struct {
 	environmentValues map[string]string
 }
 
-// discoverProjectService loads persisted and expanded views.
+// discoverProjectService loads persisted, $ref-resolved, and expanded views.
 // Writes use persisted data; discovery uses expanded data.
 func (r *projectServiceReconciler) discoverProjectService(
 	ctx context.Context,
@@ -124,7 +125,8 @@ func (r *projectServiceReconciler) discoverProjectService(
 			return nil, project, fmt.Errorf("resolve project service %q $ref includes: %w", name, err)
 		}
 	}
-	expanded, err := expandProjectServiceValues(resolved, r.environmentValues)
+	unexpanded := resolved
+	expanded, err := expandProjectServiceValues(unexpanded, r.environmentValues)
 	if err != nil {
 		return nil, project, fmt.Errorf(
 			"expand project service %q environment references: %w",
@@ -146,6 +148,7 @@ func (r *projectServiceReconciler) discoverProjectService(
 	return &projectServiceInfo{
 		Name:       name,
 		Raw:        raw,
+		Unexpanded: unexpanded,
 		Resolved:   resolved,
 		Expanded:   project.GetServices()[name],
 		ServiceRef: serviceRef,
@@ -205,6 +208,13 @@ func (r *projectServiceReconciler) reconcileEndpoint(
 		}, nil
 	}
 
+	persistedEndpoint := unexpandedProjectServiceEndpoint(service)
+	if service.ServiceRef != "" &&
+		projectEndpointHasSensitiveParts(persistedEndpoint) {
+		return "", "", func() error { return nil },
+			projectServiceRefError(service.Name, service.ServiceRef)
+	}
+
 	currentEndpoint := serviceEndpoint(service.Resolved)
 	if endpoint != "" {
 		normalized, _, err := validateProjectEndpoint(endpoint)
@@ -213,7 +223,8 @@ func (r *projectServiceReconciler) reconcileEndpoint(
 		}
 		endpoint = normalized
 	}
-	if equalProjectEndpoint(currentEndpoint, endpoint) {
+	if equalProjectEndpoint(currentEndpoint, endpoint) &&
+		!projectEndpointHasSensitiveParts(persistedEndpoint) {
 		return service.Name, "unchanged", func() error { return nil }, nil
 	}
 	if service.ServiceRef != "" {
@@ -482,6 +493,9 @@ func validateProjectServiceMutation(
 	if service == nil || service.ServiceRef == "" {
 		return nil
 	}
+	if projectEndpointHasSensitiveParts(unexpandedProjectServiceEndpoint(service)) {
+		return projectServiceRefError(service.Name, service.ServiceRef)
+	}
 	if service.Legacy || infra != "" {
 		return projectServiceRefError(service.Name, service.ServiceRef)
 	}
@@ -537,6 +551,16 @@ func serviceEndpoint(service map[string]any) string {
 	}
 	endpoint, _ := service["endpoint"].(string)
 	return endpoint
+}
+
+func unexpandedProjectServiceEndpoint(service *projectServiceInfo) string {
+	if service == nil {
+		return ""
+	}
+	if service.Unexpanded != nil {
+		return serviceEndpoint(service.Unexpanded)
+	}
+	return serviceEndpoint(service.Raw)
 }
 
 func equalProjectEndpoint(left, right string) bool {

@@ -126,6 +126,197 @@ func TestReconcileProjectServiceRollbackRestoresSection(t *testing.T) {
 	}, projectServer.serviceSection.Section.AsMap())
 }
 
+func TestReconcileInlineProjectEndpointRedactsSensitiveParts(t *testing.T) {
+	const canonicalEndpoint = "https://account.services.ai.azure.com/api/projects/project"
+	tests := []struct {
+		name      string
+		endpoint  string
+		sensitive []string
+	}{
+		{
+			name: "userinfo",
+			endpoint: "https://" + "endpoint-user" + ":endpoint-password" +
+				"@account.services.ai.azure.com/api/projects/project",
+			sensitive: []string{
+				"endpoint-user",
+				"endpoint-password",
+			},
+		},
+		{
+			name:     "query",
+			endpoint: "https://account.services.ai.azure.com/api/projects/project?sig=endpoint-token",
+			sensitive: []string{
+				"endpoint-token",
+			},
+		},
+		{
+			name:     "fragment",
+			endpoint: "https://account.services.ai.azure.com/api/projects/project#endpoint-fragment",
+			sensitive: []string{
+				"endpoint-fragment",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			section, err := structpb.NewStruct(map[string]any{
+				"project": map[string]any{"endpoint": test.endpoint},
+			})
+			require.NoError(t, err)
+			projectServer := &transactionProjectServer{
+				project: &azdext.ProjectConfig{
+					Services: map[string]*azdext.ServiceConfig{
+						"project": {Name: "project", Host: aiProjectHost},
+					},
+				},
+				section: section,
+			}
+			client := newTransactionProjectClient(t, projectServer)
+			reconciler := &projectServiceReconciler{client: client}
+
+			name, mutation, rollback, err := reconciler.reconcileEndpoint(
+				t.Context(),
+				"project",
+				canonicalEndpoint,
+				projectModeExistingID,
+			)
+			require.NoError(t, err)
+			assert.Equal(t, "project", name)
+			assert.Equal(t, "updated", mutation)
+			require.NotNil(t, projectServer.serviceValue)
+			persisted, ok := projectServer.serviceValue.Value.AsInterface().(string)
+			require.True(t, ok)
+			assert.Equal(t, canonicalEndpoint, persisted)
+			for _, sensitive := range test.sensitive {
+				assert.NotContains(t, persisted, sensitive)
+			}
+
+			require.NoError(t, rollback())
+			require.NotNil(t, projectServer.serviceSection)
+			assert.Equal(
+				t,
+				test.endpoint,
+				projectServer.serviceSection.Section.AsMap()["endpoint"],
+			)
+		})
+	}
+}
+
+func TestReconcileReferencedProjectEndpointRejectsSensitivePartsBeforeMutation(t *testing.T) {
+	const canonicalEndpoint = "https://account.services.ai.azure.com/api/projects/project"
+	tests := []struct {
+		name      string
+		endpoint  string
+		sensitive []string
+	}{
+		{
+			name: "userinfo",
+			endpoint: "https://" + "endpoint-user" + ":endpoint-password" +
+				"@account.services.ai.azure.com/api/projects/project",
+			sensitive: []string{"endpoint-user", "endpoint-password"},
+		},
+		{
+			name:      "query",
+			endpoint:  "https://account.services.ai.azure.com/api/projects/project?sig=endpoint-token",
+			sensitive: []string{"endpoint-token"},
+		},
+		{
+			name:      "fragment",
+			endpoint:  "https://account.services.ai.azure.com/api/projects/project#endpoint-fragment",
+			sensitive: []string{"endpoint-fragment"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, os.MkdirAll(filepath.Join(root, "services"), 0750))
+			require.NoError(t, os.WriteFile(
+				filepath.Join(root, "services", "project.yaml"),
+				[]byte("endpoint: \""+test.endpoint+"\"\n"),
+				0600,
+			))
+			section, err := structpb.NewStruct(map[string]any{
+				"project": map[string]any{"$ref": "./services/project.yaml"},
+			})
+			require.NoError(t, err)
+			projectServer := &transactionProjectServer{
+				project: &azdext.ProjectConfig{
+					Path: root,
+					Services: map[string]*azdext.ServiceConfig{
+						"project": {Name: "project", Host: aiProjectHost},
+					},
+				},
+				section: section,
+			}
+			client := newTransactionProjectClient(t, projectServer)
+			reconciler := &projectServiceReconciler{
+				client:      client,
+				projectRoot: root,
+			}
+
+			_, _, _, err = reconciler.reconcileEndpoint(
+				t.Context(),
+				"project",
+				canonicalEndpoint,
+				projectModeExistingID,
+			)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "./services/project.yaml")
+			for _, sensitive := range test.sensitive {
+				assert.NotContains(t, err.Error(), sensitive)
+			}
+			assert.Nil(t, projectServer.serviceValue)
+			assert.Nil(t, projectServer.serviceSection)
+			assert.Empty(t, projectServer.serviceValues)
+		})
+	}
+}
+
+func TestReconcileProjectServicePreservesEnvironmentEndpointReference(t *testing.T) {
+	const (
+		environmentEndpoint = "https://" + "endpoint-user:endpoint-password@" +
+			"account.services.ai.azure.com/api/projects/project?sig=endpoint-token#endpoint-fragment"
+		canonicalEndpoint = "https://account.services.ai.azure.com/api/projects/project"
+	)
+	section, err := structpb.NewStruct(map[string]any{
+		"project": map[string]any{
+			"endpoint": "${FOUNDRY_PROJECT_ENDPOINT}",
+		},
+	})
+	require.NoError(t, err)
+	projectServer := &transactionProjectServer{
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"project": {Name: "project", Host: aiProjectHost},
+			},
+		},
+		section: section,
+	}
+	client := newTransactionProjectClient(t, projectServer)
+	reconciler := &projectServiceReconciler{
+		client: client,
+		environmentValues: map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": environmentEndpoint,
+		},
+	}
+
+	name, mutation, rollback, err := reconciler.reconcileEndpoint(
+		t.Context(),
+		"project",
+		canonicalEndpoint,
+		projectModeExistingID,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "project", name)
+	assert.Equal(t, "unchanged", mutation)
+	assert.Nil(t, rollback())
+	assert.Nil(t, projectServer.serviceValue)
+	assert.Nil(t, projectServer.serviceSection)
+	assert.Empty(t, projectServer.serviceValues)
+}
+
 func TestReconcileLegacyProjectRejectsRetiredNetworkBeforeMutation(t *testing.T) {
 	section, err := structpb.NewStruct(map[string]any{
 		"legacy": map[string]any{

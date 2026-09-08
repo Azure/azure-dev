@@ -585,6 +585,61 @@ func TestProjectServiceReferenceMutationPreflight(t *testing.T) {
 	))
 }
 
+func TestProjectServiceReferencePreflightRejectsSensitiveEndpoint(t *testing.T) {
+	const canonicalEndpoint = "https://account.services.ai.azure.com/api/projects/old"
+	tests := []struct {
+		name      string
+		endpoint  string
+		sensitive []string
+	}{
+		{
+			name: "userinfo",
+			endpoint: "https://" + "endpoint-user" + ":endpoint-password" +
+				"@account.services.ai.azure.com/api/projects/old",
+			sensitive: []string{"endpoint-user", "endpoint-password"},
+		},
+		{
+			name:      "query",
+			endpoint:  "https://account.services.ai.azure.com/api/projects/old?sig=endpoint-token",
+			sensitive: []string{"endpoint-token"},
+		},
+		{
+			name:      "fragment",
+			endpoint:  "https://account.services.ai.azure.com/api/projects/old#endpoint-fragment",
+			sensitive: []string{"endpoint-fragment"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			service := &projectServiceInfo{
+				Name: "foundry",
+				Raw: map[string]any{
+					"$ref": "./services/foundry.yaml",
+				},
+				Unexpanded: map[string]any{
+					"endpoint": test.endpoint,
+				},
+				Resolved: map[string]any{
+					"endpoint": canonicalEndpoint,
+				},
+				ServiceRef: "./services/foundry.yaml",
+			}
+
+			err := validateProjectServiceMutation(
+				service,
+				canonicalEndpoint,
+				"",
+			)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "./services/foundry.yaml")
+			for _, sensitive := range test.sensitive {
+				assert.NotContains(t, err.Error(), sensitive)
+			}
+		})
+	}
+}
+
 func TestProjectEnvironmentTransitions(t *testing.T) {
 	const (
 		oldEndpoint = "https://old-account.services.ai.azure.com/api/projects/old-project"

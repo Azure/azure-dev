@@ -106,9 +106,10 @@ func resolvePlan(f *generateFlags, name string, defaultOutputDir string) (genera
 	if instruction != "" {
 		plan.InstructionSource = messages.InstructionSourceFlag(f.instructionFile)
 	}
-	if plan.Model == "" && plan.Agent == "" {
-		return plan, messages.GenerationModelRequired()
-	}
+	// Neither is settled yet: the agent can still come from the project's own
+	// services and the model from the azd environment, and both of those are
+	// looked up in prepareGeneration. Refusing here made a bare `eval generate`
+	// fail in a project that declares exactly one of each.
 	return plan, nil
 }
 
@@ -126,8 +127,19 @@ func prepareGeneration(
 		return nil, plan, err
 	}
 
+	// The eval config named no agent, so ask the project. One declared agent is
+	// a detection; several is a question. Without this a bare `eval generate` in
+	// a single-agent project went on to fail deriving artifact names, having
+	// prompted for everything else first.
+	if plan.Agent == "" {
+		if plan.Agent, err = ec.detectAgentTarget(cmd); err != nil {
+			ec.Close()
+			return nil, plan, err
+		}
+	}
+
 	plan.Instruction, plan.InstructionSource, err = ec.resolveGenerationInstruction(
-		ctx, plan.Instruction, plan.InstructionSource, plan.Agent, cmd.OutOrStdout(), isJSON(cmd),
+		cmd, plan.Instruction, plan.InstructionSource, plan.Agent, cmd.OutOrStdout(), isJSON(cmd),
 	)
 	if err != nil {
 		ec.Close()
@@ -138,10 +150,42 @@ func prepareGeneration(
 		plan.Model = ec.agentDeployment(ctx, plan.Agent, cmd.OutOrStdout(), isJSON(cmd))
 	}
 	if plan.Model == "" {
+		// What `azd ai agent init` chose is recorded in the azd environment, and
+		// binding to an existing Foundry project leaves it as the only record.
+		// Reading it is the difference between a configured project generating
+		// and being told to pass a flag it already knows the answer to.
+		plan.Model = modelDeploymentFromAzdEnv(ctx)
+	}
+	if plan.Model == "" {
 		ec.Close()
 		return nil, plan, messages.GenerationModelRequired()
 	}
 	return ec, plan, nil
+}
+
+// detectAgentTarget settles the agent when nothing named one.
+//
+// The project's own services are the answer `init` already uses, so the two
+// commands agree about what "the agent" means. One is a detection and needs no
+// prompt; several is a question, and under --no-prompt it names the flag.
+// Outside a project there is nothing to detect and generation carries on from
+// the instruction alone, which is what a bare directory supports.
+func (ec *evalContext) detectAgentTarget(cmd *cobra.Command) (string, error) {
+	proj, err := ec.azdProject(cmd.Context())
+	if err != nil || proj == nil {
+		return "", nil
+	}
+	agents := agentServices(proj)
+	switch len(agents) {
+	case 0:
+		return "", nil
+	case 1:
+		return agents[0], nil
+	}
+	if noPrompt(cmd) {
+		return "", messages.AmbiguousAgentTarget(agents)
+	}
+	return promptAgentTarget(cmd, agents)
 }
 
 // agentDeployment reads the deployment the target agent answers with.

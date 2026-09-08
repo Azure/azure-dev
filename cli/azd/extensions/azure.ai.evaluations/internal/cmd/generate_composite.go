@@ -190,7 +190,15 @@ func (a *generateAction) Run() error {
 			messages.AgentInstructionsSource(resolved.InstructionSource))
 	}
 
-	choices := generateChoices{dataset: dataset, evaluator: evaluator}
+	// Asked here, not only on the Change path below. Defaulting to both and
+	// waiting for the reader to say otherwise meant the question was never put:
+	// a bare `generate` submitted two billed jobs having offered the choice
+	// nowhere. askGenerateArtifacts still answers from the flags when either
+	// was given, and still returns both under --no-prompt.
+	choices, err := a.askGenerateArtifacts()
+	if err != nil {
+		return err
+	}
 	var plans []generationPlan
 	level := ""
 	levelSettled := false

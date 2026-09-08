@@ -1178,6 +1178,55 @@ func InstructionsPlanValue(source string) string {
 	return source
 }
 
+// InstructionSourceTyped names instructions the caller typed at the prompt.
+//
+// Named rather than quoted. The answer is prose about what the agent does, and
+// echoing it into the plan turns a confirmation screen into something the
+// reader scrolls past to reach the two lines that say what will be billed.
+func InstructionSourceTyped() string {
+	return "entered interactively"
+}
+
+// InstructionsNotDetected reports that nothing local or published supplied
+// generation context.
+func InstructionsNotDetected() string {
+	return "Agent instructions: not detected\n"
+}
+
+// EnterAgentInstructionPrompt asks what the agent is for.
+func EnterAgentInstructionPrompt() string {
+	return "What does this agent do, and what should good responses do?"
+}
+
+// EnterAgentInstructionHelp says what the answer is used for.
+func EnterAgentInstructionHelp() string {
+	return "Generation uses this to write test cases and grading criteria. " +
+		"One or two sentences is enough."
+}
+
+// AgentInstructionIsRequired is the host's rejection of a blank answer.
+func AgentInstructionIsRequired() string {
+	return "Generation needs something to work from."
+}
+
+// AskingForAgentInstruction reports a prompt that could not be shown.
+func AskingForAgentInstruction(err error) error {
+	return fmt.Errorf("asking what the agent does: %w", err)
+}
+
+// InstructionsRequired refuses a generation with nothing to generate from.
+//
+// Under --no-prompt there is nobody to ask, and generation seeded from nothing
+// comes back marked input_quality -- a billed job whose rubric grades whatever
+// the service inferred. Both flags are named because the one to reach for
+// depends on whether the text is already in a file.
+func InstructionsRequired() error {
+	return errors.New(
+		"no agent instructions were detected, and generation needs something to " +
+			"work from: pass --agent-instruction \"<what the agent does>\", or " +
+			"--agent-instruction-file <path>")
+}
+
 // WarningAgentUnreadable reports an agent that could not supply context.
 //
 // A misspelled --target is the common cause and answers 404, whose body is ten

@@ -22,6 +22,7 @@ import (
 	"azureaieval/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/cobra"
 )
 
 // generatePollBudget replaces the inherited 2s x 300 (10 minute) client budget.
@@ -146,7 +147,7 @@ func declaredInstructions(named, configPath string) (string, error) {
 // The last step is what makes `generate` work with no authored input at all,
 // which is the flow `init` sets up.
 func (ec *evalContext) resolveGenerationInstruction(
-	ctx context.Context,
+	cmd *cobra.Command,
 	explicit, explicitSource, agentName string,
 	out io.Writer,
 	quiet bool,
@@ -155,45 +156,51 @@ func (ec *evalContext) resolveGenerationInstruction(
 		return explicit, explicitSource, nil
 	}
 
-	if agentName == "" {
-		return "", "", nil
-	}
-
-	local, path, err := ec.agentInstructionsFromProject(ctx, agentName)
-	if err != nil {
-		return "", "", err
-	}
-	if local != "" {
-		return local, messages.InstructionSourceFile(path), nil
-	}
-
-	// The name reaching here can be an azure.yaml service key, which is what
-	// `init` writes into a target and what --target accepts. The service knows
-	// the agent by the name it publishes under, so asking for the key returned
-	// nothing and the caller was warned about an agent that does exist. The
-	// local lookup above takes either form; this one does not.
-	remoteName, err := ec.remoteAgentName(ctx, agentName)
-	if err != nil {
-		return "", "", err
-	}
-
-	agent, err := ec.evalClient.GetAgent(ctx, remoteName, ProjectEndpointAPIVersion)
-	if err != nil {
-		// Reported without stopping, because the model can still be supplied by
-		// --generation-model and the caller has its own checks for what is left
-		// missing. Making an absent agent fatal here reads well for a typo but
-		// takes away the only path to "nothing supplied a model", which is the
-		// case the flag validation exists for.
-		if !quiet {
-			fmt.Fprint(out, messages.WarningAgentUnreadable(agentName, err))
+	ctx := cmd.Context()
+	if agentName != "" {
+		local, path, err := ec.agentInstructionsFromProject(ctx, agentName)
+		if err != nil {
+			return "", "", err
 		}
-		return "", "", nil
+		if local != "" {
+			return local, messages.InstructionSourceFile(path), nil
+		}
+
+		// The name reaching here can be an azure.yaml service key, which is what
+		// `init` writes into a target and what --target accepts. The service knows
+		// the agent by the name it publishes under, so asking for the key returned
+		// nothing and the caller was warned about an agent that does exist. The
+		// local lookup above takes either form; this one does not.
+		remoteName, err := ec.remoteAgentName(ctx, agentName)
+		if err != nil {
+			return "", "", err
+		}
+
+		agent, err := ec.evalClient.GetAgent(ctx, remoteName, ProjectEndpointAPIVersion)
+		if err != nil {
+			// Reported without stopping, because the prompt below can still
+			// supply what the agent would have.
+			if !quiet {
+				fmt.Fprint(out, messages.WarningAgentUnreadable(agentName, err))
+			}
+		} else if instructions := agent.Instructions(); instructions != "" {
+			return instructions, messages.InstructionSourceAgent(), nil
+		}
 	}
-	instructions := agent.Instructions()
-	if instructions == "" {
-		return "", "", nil
+
+	// Nothing detected. Generation seeded from nothing produced an evaluator the
+	// service marked input_quality, so this is asked rather than shrugged at:
+	// the caller knows what the agent is for, and one sentence is the whole
+	// difference between a usable rubric and a billed job that grades noise.
+	fmt.Fprint(out, messages.InstructionsNotDetected())
+	if noPrompt(cmd) {
+		return "", "", messages.InstructionsRequired()
 	}
-	return instructions, messages.InstructionSourceAgent(), nil
+	typed, err := promptAgentInstruction(cmd)
+	if err != nil {
+		return "", "", err
+	}
+	return typed, messages.InstructionSourceTyped(), nil
 }
 
 // agentInstructionsFromProject reads the agent's instructions out of the azd

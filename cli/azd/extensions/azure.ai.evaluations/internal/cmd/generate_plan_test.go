@@ -83,14 +83,23 @@ func TestResolvePlan_DefersToTheAgentForTheModel(t *testing.T) {
 	require.Equal(t, "shop-agent", plan.Agent)
 }
 
-// With no target either there is nothing to read a deployment from, so the
-// refusal happens before authentication and names the flag that supplies one.
-func TestResolvePlan_RequiresAGenerationModelWithNoAgent(t *testing.T) {
+// With no target and no model, resolvePlan settles neither and says so by
+// leaving both empty rather than refusing.
+//
+// It used to refuse here, before authentication, which read as the cheaper
+// check. But neither is settled at this point: the agent can still come from
+// the project's own services and the model from the azd environment, and both
+// are looked up once the client exists. Refusing early made a bare
+// `eval generate` fail in a project that declares exactly one of each --
+// everything it needed was on disk.
+func TestResolvePlan_LeavesAnUnsettledModelToTheLookup(t *testing.T) {
 	f := evalsDir(t)
 
-	_, err := resolvePlan(f, "d", project.DefaultDatasetsDir)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "--generation-model")
+	plan, err := resolvePlan(f, "d", project.DefaultDatasetsDir)
+
+	require.NoError(t, err, "the project and the environment have not been asked yet")
+	require.Empty(t, plan.Model)
+	require.Empty(t, plan.Agent)
 }
 
 // An input the caller named and got wrong is reported ahead of one they simply

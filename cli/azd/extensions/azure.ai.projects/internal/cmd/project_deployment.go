@@ -45,12 +45,12 @@ type modelSelection struct {
 	DeploymentName string
 }
 
-func splitModelReference(raw string) (format, name string) {
+func splitModelReference(raw string) (format, name string, qualified bool) {
 	raw = strings.TrimSpace(raw)
 	if slash := strings.IndexByte(raw, '/'); slash > 0 && slash < len(raw)-1 {
-		return raw[:slash], raw[slash+1:]
+		return raw[:slash], raw[slash+1:], true
 	}
-	return "OpenAI", raw
+	return "OpenAI", raw, false
 }
 
 func chooseDeploymentName(requested string, modelName string) string {
@@ -80,7 +80,7 @@ func selectModelDeployment(
 	if err := validateDeploymentSelection(selection); err != nil {
 		return nil, err
 	}
-	modelFormat, modelName := splitModelReference(model.Name)
+	modelFormat, modelName, qualified := splitModelReference(model.Name)
 	if modelName == "" {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
@@ -141,6 +141,25 @@ func selectModelDeployment(
 			fmt.Sprintf("no deployable version or SKU was found for model %q", modelName),
 			"choose a model and location supported by your subscription",
 		)
+	}
+	if qualified {
+		candidates = slices.DeleteFunc(candidates, func(
+			candidate *azdext.AiModelDeployment,
+		) bool {
+			return candidate == nil ||
+				!strings.EqualFold(candidate.GetFormat(), modelFormat)
+		})
+		if len(candidates) == 0 {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf(
+					"model %q is not available in format %q",
+					modelName,
+					modelFormat,
+				),
+				"provide a model reference with a supported format and retry",
+			)
+		}
 	}
 	slices.SortFunc(candidates, func(left, right *azdext.AiModelDeployment) int {
 		leftKey := deploymentCandidateKey(left)

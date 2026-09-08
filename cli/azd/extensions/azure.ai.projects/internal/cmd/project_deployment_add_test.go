@@ -728,6 +728,38 @@ func TestSelectModelDeploymentUsesSkuBaselineForMissingCapacity(t *testing.T) {
 	assert.Equal(t, 100, selected.Deployment.Sku.Capacity)
 }
 
+func TestSelectModelDeploymentRejectsMismatchedModelFormat(t *testing.T) {
+	root := t.TempDir()
+	client, _, _, aiServer, _ := newSelfInitializingDeploymentClient(t, root)
+	aiServer.deployment = &azdext.AiModelDeployment{
+		ModelName: "gpt-4.1",
+		Format:    "OpenAI",
+		Version:   "2025-04-14",
+		Location:  "eastus",
+		Sku: &azdext.AiModelSku{
+			Name:            "GlobalStandard",
+			DefaultCapacity: 1,
+		},
+		Capacity: 1,
+	}
+
+	_, err := selectModelDeployment(
+		t.Context(),
+		client,
+		&azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				SubscriptionId: "subscription",
+				Location:       "eastus",
+			},
+		},
+		modelSelection{Name: "Microsoft/gpt-4.1"},
+		deploymentSelectionOptions{},
+		true,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `not available in format "Microsoft"`)
+}
+
 func TestSelectModelDeploymentRejectsUnappliedCapacity(t *testing.T) {
 	root := t.TempDir()
 	client, _, _, aiServer, _ := newSelfInitializingDeploymentClient(t, root)

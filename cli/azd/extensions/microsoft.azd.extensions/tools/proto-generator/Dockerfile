@@ -1,5 +1,5 @@
 # Run from cli/azd: mage generateProtos (prefers Docker, falls back to WSL Containers)
-FROM golang:1.26-bookworm AS go-tools
+FROM golang:1.26.4-bookworm AS go-tools
 
 ARG PROTOC_GEN_GO_VERSION=v1.36.11
 ARG PROTOC_GEN_GO_GRPC_VERSION=v1.5.1

@@ -424,7 +424,11 @@ func TestProjectDeploymentAddMigratesLegacyProjectService(t *testing.T) {
 	projectServer.services["legacy"] = map[string]any{
 		"host": "azure.ai.agent",
 		"network": map[string]any{
-			"mode": "managed",
+			"peSubnet": map[string]any{
+				"vnet": "/subscriptions/sub/resourceGroups/rg/providers/" +
+					"Microsoft.Network/virtualNetworks/vnet",
+				"name": "pe-subnet",
+			},
 		},
 		"customField": "preserve-me",
 		"deployments": []any{
@@ -470,7 +474,13 @@ func TestProjectDeploymentAddMigratesLegacyProjectService(t *testing.T) {
 	assert.Equal(t, "azure.ai.project", migrated["host"])
 	assert.Equal(
 		t,
-		map[string]any{"mode": "managed"},
+		map[string]any{
+			"peSubnet": map[string]any{
+				"vnet": "/subscriptions/sub/resourceGroups/rg/providers/" +
+					"Microsoft.Network/virtualNetworks/vnet",
+				"name": "pe-subnet",
+			},
+		},
 		migrated["network"],
 	)
 	assert.Equal(t, "preserve-me", migrated["customField"])
@@ -488,6 +498,60 @@ func TestProjectDeploymentAddMigratesLegacyProjectService(t *testing.T) {
 	model, ok := added["model"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "gpt-4.1", model["name"])
+}
+
+func TestProjectDeploymentAddRejectsRetiredLegacyNetworkBeforeMutation(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte("name: test\n"),
+		0600,
+	))
+
+	client, projectServer, environmentServer, aiServer, workflowServer :=
+		newSelfInitializingDeploymentClient(t, root)
+	projectServer.project.Services["legacy"] = &azdext.ServiceConfig{
+		Name: "legacy",
+		Host: "azure.ai.agent",
+	}
+	projectServer.services["legacy"] = map[string]any{
+		"host":    "azure.ai.agent",
+		"network": map[string]any{"mode": "managed"},
+	}
+	environmentServer.values["AZURE_LOCATION"] = "eastus"
+
+	action := &ProjectDeploymentAddAction{
+		client: client,
+		flags: &projectDeploymentFlags{
+			model:  "gpt-4.1-mini",
+			output: "none",
+		},
+		extCtx: &azdext.ExtensionContext{
+			Environment:  "test",
+			NoPrompt:     true,
+			OutputFormat: "none",
+		},
+	}
+
+	err := action.Run(t.Context())
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "expected structured error, got %T: %v", err, err)
+	assert.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
+	assert.Contains(t, localErr.Suggestion, "peSubnet")
+	assert.NotContains(t, projectServer.services, "test")
+	assert.NotContains(t, projectServer.project.Services, "test")
+	assert.False(t, projectServer.providerSet)
+	assert.False(t, projectServer.deploymentSet)
+	assert.Equal(t, "eastus", environmentServer.values["AZURE_LOCATION"])
+	assert.NotContains(t, environmentServer.values, "AZURE_AI_PROJECT_ID")
+	assert.NotContains(t, environmentServer.values, "FOUNDRY_PROJECT_ENDPOINT")
+	assert.NotContains(t, environmentServer.values, "AZURE_AI_MODEL_DEPLOYMENT_NAME")
+	assert.NotContains(t, environmentServer.values, "AZURE_AI_DEPLOYMENTS_LOCATION")
+	assert.Empty(t, workflowServer.args)
+	assert.Zero(t, aiServer.calls)
 }
 
 func TestProjectDeploymentAddPersistsPromptedAzureContext(t *testing.T) {

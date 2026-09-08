@@ -1640,6 +1640,125 @@ services:
 	assert.Equal(t, "${MCP_KEY}", keys["x-api-key"])
 }
 
+func TestEjectInfra_RejectsConcreteConnectionCredentials(t *testing.T) {
+	const secret = "inline-credential-must-not-leak"
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+
+	tests := []struct {
+		name        string
+		provider    string
+		existing    bool
+		externalRef bool
+		credential  string
+		wantError   bool
+	}{
+		{
+			name:       "greenfield bicep rejects inline credentials",
+			provider:   "bicep",
+			credential: secret,
+			wantError:  true,
+		},
+		{
+			name:       "greenfield terraform rejects inline credentials",
+			provider:   "terraform",
+			credential: secret,
+			wantError:  true,
+		},
+		{
+			name:        "existing bicep rejects external ref credentials",
+			provider:    "bicep",
+			existing:    true,
+			externalRef: true,
+			credential:  secret,
+			wantError:   true,
+		},
+		{
+			name:       "existing terraform rejects inline credentials",
+			provider:   "terraform",
+			existing:   true,
+			credential: secret,
+			wantError:  true,
+		},
+		{
+			name:       "greenfield bicep preserves environment reference",
+			provider:   "bicep",
+			credential: "${SEARCH_API_KEY}",
+		},
+		{
+			name:       "existing terraform preserves environment reference",
+			provider:   "terraform",
+			existing:   true,
+			credential: "${SEARCH_API_KEY}",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			existing := ""
+			if tt.existing {
+				existing = "    endpoint: " + endpoint + "\n"
+			}
+			credential := "      key: " + tt.credential + "\n"
+			if tt.externalRef {
+				mustWriteFile(
+					t,
+					filepath.Join(dir, "connection.yaml"),
+					"host: azure.ai.connection\n"+
+						"uses: [my-foundry]\n"+
+						"category: CognitiveSearch\n"+
+						"target: https://search.example.com\n"+
+						"authType: ApiKey\n"+
+						"credentials:\n"+credential,
+				)
+				credential = "    $ref: ./connection.yaml\n"
+			} else {
+				credential = "    host: azure.ai.connection\n" +
+					"    uses: [my-foundry]\n" +
+					"    category: CognitiveSearch\n" +
+					"    target: https://search.example.com\n" +
+					"    authType: ApiKey\n" +
+					"    credentials:\n" + credential
+			}
+			mustWriteFile(t, filepath.Join(dir, "azure.yaml"),
+				"name: my-project\n"+
+					"infra:\n"+
+					"  provider: microsoft.foundry\n"+
+					"services:\n"+
+					"  my-foundry:\n"+
+					"    host: azure.ai.project\n"+
+					existing+
+					"  search-conn:\n"+
+					credential,
+			)
+
+			var err error
+			withCapturedStdout(t, func() {
+				err = ejectInfra(dir, tt.provider)
+			})
+			if tt.wantError {
+				require.Error(t, err)
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok, "expected structured error, got %T: %v", err, err)
+				assert.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
+				assert.NotContains(t, err.Error(), secret)
+				assert.NoDirExists(t, filepath.Join(dir, "infra"))
+				return
+			}
+
+			require.NoError(t, err)
+			parameterFile := "main.parameters.json"
+			if tt.provider == "terraform" {
+				parameterFile = "main.tfvars.json"
+			}
+			raw, readErr := os.ReadFile(filepath.Join(dir, "infra", parameterFile))
+			require.NoError(t, readErr)
+			assert.Contains(t, string(raw), "${SEARCH_API_KEY}")
+			assert.NotContains(t, string(raw), secret)
+		})
+	}
+}
+
 func TestEjectInfra_PreservesNetworkVarRefs(t *testing.T) {
 	// See TestEjectInfra_HappyPath_WritesExpectedFiles for why this is not parallel.
 	// Eject must keep ${VAR} references verbatim in main.parameters.json so the

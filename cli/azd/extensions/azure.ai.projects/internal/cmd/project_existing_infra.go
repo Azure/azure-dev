@@ -369,6 +369,9 @@ func ejectExistingProjectInfra(
 				"under your azure.ai.project service",
 		)
 	}
+	if err := validateEjectedConnectionCredentials(result.Parameters); err != nil {
+		return err
+	}
 
 	acrMode, err := resolveProjectEjectAcrMode(
 		result.Parameters, environment,
@@ -830,6 +833,9 @@ func writeExistingProjectBicep(
 	mode projectEjectAcrMode,
 	values map[string]string,
 ) error {
+	if err := validateEjectedConnectionCredentials(params); err != nil {
+		return err
+	}
 	existingAcrEndpoint := ""
 	if mode == projectEjectAcrReuseConnect ||
 		mode == projectEjectAcrAlreadyConnected {
@@ -993,6 +999,9 @@ func writeExistingProjectTerraform(
 	mode projectEjectAcrMode,
 	values map[string]string,
 ) error {
+	if err := validateEjectedConnectionCredentials(params); err != nil {
+		return err
+	}
 	existingAcrEndpoint := ""
 	if mode == projectEjectAcrReuseConnect ||
 		mode == projectEjectAcrAlreadyConnected {

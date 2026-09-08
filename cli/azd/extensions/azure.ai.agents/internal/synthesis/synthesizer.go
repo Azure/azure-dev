@@ -169,6 +169,87 @@ func JoinConnectionCredentials(
 	return joined
 }
 
+// ValidateEjectionCredentials rejects concrete credential values before they
+// can be written to generated infrastructure files. Environment references
+// and Foundry server-side expressions remain portable and safe to emit.
+func ValidateEjectionCredentials(credentials any) error {
+	if credentials == nil {
+		return nil
+	}
+	if path := concreteCredentialPath(credentials, "connectionCredentials"); path != "" {
+		return fmt.Errorf(
+			"connection credential at %s is concrete",
+			path,
+		)
+	}
+	return nil
+}
+
+func concreteCredentialPath(value any, path string) string {
+	switch value := value.(type) {
+	case nil:
+		return ""
+	case string:
+		if value == "" || isEjectionCredentialReference(value) {
+			return ""
+		}
+		return path
+	case map[string]any:
+		for _, key := range slices.Sorted(maps.Keys(value)) {
+			if badPath := concreteCredentialPath(
+				value[key],
+				path+"."+key,
+			); badPath != "" {
+				return badPath
+			}
+		}
+		return ""
+	case map[string]map[string]any:
+		for _, key := range slices.Sorted(maps.Keys(value)) {
+			if badPath := concreteCredentialPath(
+				value[key],
+				path+"."+key,
+			); badPath != "" {
+				return badPath
+			}
+		}
+		return ""
+	case []any:
+		for index, item := range value {
+			if badPath := concreteCredentialPath(
+				item,
+				fmt.Sprintf("%s[%d]", path, index),
+			); badPath != "" {
+				return badPath
+			}
+		}
+		return ""
+	case []string:
+		for index, item := range value {
+			if badPath := concreteCredentialPath(
+				item,
+				fmt.Sprintf("%s[%d]", path, index),
+			); badPath != "" {
+				return badPath
+			}
+		}
+		return ""
+	default:
+		return path
+	}
+}
+
+var ejectionEnvRefPattern = regexp.MustCompile(`^\$\{[A-Za-z_][A-Za-z0-9_]*\}$`)
+
+func isEjectionCredentialReference(value string) bool {
+	if strings.HasPrefix(value, "${{") &&
+		strings.HasSuffix(value, "}}") &&
+		len(value) > len("${{}}") {
+		return true
+	}
+	return ejectionEnvRefPattern.MatchString(value)
+}
+
 // connectionService is the subset of a host: azure.ai.connection service body
 // the synthesizer reads. The service key (not a body field) is the connection
 // name; see collectConnections.

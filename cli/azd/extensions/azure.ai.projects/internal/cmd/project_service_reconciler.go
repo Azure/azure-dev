@@ -185,6 +185,9 @@ func (r *projectServiceReconciler) reconcileEndpoint(
 			return "", "", func() error { return nil },
 				projectServiceRefError(service.Name, service.ServiceRef)
 		}
+		if err := validateLegacyProjectNetwork(service.Resolved); err != nil {
+			return "", "", func() error { return nil }, err
+		}
 		body, err := legacyProjectServiceBody(service.Raw, endpoint)
 		if err != nil {
 			return "", "", func() error { return nil }, fmt.Errorf(
@@ -240,6 +243,32 @@ func (r *projectServiceReconciler) reconcileEndpoint(
 			)
 		})
 	}, nil
+}
+
+func validateLegacyProjectNetwork(resolved map[string]any) error {
+	network, ok := resolved["network"].(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	var retired []string
+	for _, key := range []string{"mode", "byo", "managed"} {
+		if _, found := network[key]; found {
+			retired = append(retired, key)
+		}
+	}
+	if len(retired) == 0 {
+		return nil
+	}
+
+	return exterrors.Validation(
+		exterrors.CodeInvalidServiceConfig,
+		fmt.Sprintf(
+			"legacy project service network uses retired field(s): %s",
+			strings.Join(retired, ", "),
+		),
+		"update the network block to the current peSubnet schema before retrying",
+	)
 }
 
 func removeProjectService(

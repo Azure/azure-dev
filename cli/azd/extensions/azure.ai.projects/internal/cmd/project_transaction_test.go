@@ -126,6 +126,90 @@ func TestReconcileProjectServiceRollbackRestoresSection(t *testing.T) {
 	}, projectServer.serviceSection.Section.AsMap())
 }
 
+func TestReconcileLegacyProjectRejectsRetiredNetworkBeforeMutation(t *testing.T) {
+	section, err := structpb.NewStruct(map[string]any{
+		"legacy": map[string]any{
+			"host": "azure.ai.agent",
+			"network": map[string]any{
+				"mode":    "managed",
+				"managed": map[string]any{},
+			},
+			"deployments": []any{},
+		},
+	})
+	require.NoError(t, err)
+
+	projectServer := &transactionProjectServer{
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"legacy": {Name: "legacy", Host: "azure.ai.agent"},
+			},
+		},
+		section: section,
+	}
+	client := newTransactionProjectClient(t, projectServer)
+	reconciler := &projectServiceReconciler{client: client}
+
+	_, _, _, err = reconciler.reconcileEndpoint(
+		t.Context(),
+		"legacy",
+		"https://account.services.ai.azure.com/api/projects/new",
+		projectModeExistingID,
+	)
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
+	assert.Contains(t, localErr.Suggestion, "peSubnet")
+	assert.Empty(t, projectServer.addServices)
+	assert.Nil(t, projectServer.serviceSection)
+	assert.Empty(t, projectServer.serviceValues)
+}
+
+func TestReconcileLegacyProjectMigratesCurrentNetworkShape(t *testing.T) {
+	section, err := structpb.NewStruct(map[string]any{
+		"legacy": map[string]any{
+			"host": "azure.ai.agent",
+			"network": map[string]any{
+				"peSubnet": map[string]any{
+					"vnet": "/subscriptions/sub/resourceGroups/rg/providers/" +
+						"Microsoft.Network/virtualNetworks/vnet",
+					"name": "pe-subnet",
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	projectServer := &transactionProjectServer{
+		project: &azdext.ProjectConfig{
+			Services: map[string]*azdext.ServiceConfig{
+				"legacy": {Name: "legacy", Host: "azure.ai.agent"},
+			},
+		},
+		section: section,
+	}
+	client := newTransactionProjectClient(t, projectServer)
+	reconciler := &projectServiceReconciler{client: client}
+
+	name, mutation, _, err := reconciler.reconcileEndpoint(
+		t.Context(),
+		"new project",
+		"https://account.services.ai.azure.com/api/projects/new",
+		projectModeExistingID,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "new-project", name)
+	assert.Equal(t, "migrated", mutation)
+	require.Len(t, projectServer.addServices, 1)
+	require.NotNil(t, projectServer.serviceSection)
+	assert.Equal(
+		t,
+		"pe-subnet",
+		projectServer.serviceSection.Section.AsMap()["network"].(map[string]any)["peSubnet"].(map[string]any)["name"],
+	)
+}
+
 func TestReconcileDeploymentRollbackRestoresDeclaration(t *testing.T) {
 	section, err := structpb.NewStruct(map[string]any{
 		"project": map[string]any{
@@ -716,6 +800,7 @@ type transactionProjectServer struct {
 	azdext.UnimplementedProjectServiceServer
 	project           *azdext.ProjectConfig
 	section           *structpb.Struct
+	addServices       []*azdext.AddServiceRequest
 	serviceValue      *azdext.SetServiceConfigValueRequest
 	serviceValues     []*azdext.SetServiceConfigValueRequest
 	serviceSection    *azdext.SetServiceConfigSectionRequest
@@ -743,9 +828,10 @@ func (s *transactionProjectServer) GetConfigSection(
 }
 
 func (s *transactionProjectServer) AddService(
-	context.Context,
-	*azdext.AddServiceRequest,
+	_ context.Context,
+	request *azdext.AddServiceRequest,
 ) (*azdext.EmptyResponse, error) {
+	s.addServices = append(s.addServices, request)
 	return &azdext.EmptyResponse{}, nil
 }
 

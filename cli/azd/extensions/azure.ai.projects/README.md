@@ -48,6 +48,12 @@ When `azd ai project add --infra` is used with layers, infrastructure is
 ejected into the Foundry layer's configured path and module. The root
 `microsoft.foundry` provider cannot be combined with named layers.
 
+When `project add` migrates a legacy Foundry service, retired
+`network.mode`, `network.byo`, and `network.managed` fields are rejected
+instead of being copied into the new project service. Rewrite the block using
+the current `peSubnet` schema (and `agentSubnet` or `isolationMode` as needed)
+before retrying.
+
 ## Project authoring
 
 Add or adopt a Foundry project in the current azd workspace. If `azure.yaml`
@@ -119,6 +125,13 @@ without managing it. Terraform registry output is always named
 `container-registry.tf`; Bicep uses `modules/container-registry.bicep`.
 Before writing generated files, existing registry endpoints are normalized to
 remove URL credentials, query parameters, and fragments.
+
+Ejection never writes concrete connection credentials to generated files.
+Declare credential values as `${VAR}` environment references or supported
+Foundry server-side references such as
+`${{connections.<name>.credentials.<key>}}`; inline values, including values
+loaded from a local `$ref`, are rejected before any generated infrastructure
+is installed.
 
 Terraform ejection does not support private networking and cannot adopt a
 registry already created by the `microsoft.foundry` provider. After ejection,

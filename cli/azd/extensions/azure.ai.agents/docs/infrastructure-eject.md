@@ -57,6 +57,12 @@ Eject never overwrites generated-file collisions.
 - Generation and installation are staged so failures do not leave a partial
   generated tree or rewrite `azure.yaml`.
 
+Connection credentials are validated before either Bicep or Terraform files
+are generated. Use `${VAR}` environment references or supported Foundry
+server-side references such as
+`${{connections.<name>.credentials.<key>}}`; concrete inline values and
+concrete values loaded through a local `$ref` are rejected.
+
 ## Resource group ownership
 
 A Foundry layer uses `AZURE_FOUNDRY_RESOURCE_GROUP`, which defaults to:
@@ -126,6 +132,9 @@ value.
 
 - Terraform eject does not support a service with a private `network:` block;
   use Bicep for private networking.
+- During migration from a legacy Foundry service, `network.mode`, `network.byo`,
+  and `network.managed` are retired. Move the configuration to the current
+  project `network.peSubnet` schema before running eject.
 - Services that set `endpoint:` to reuse an existing project can eject Bicep or Terraform. The
   generated templates reference the existing account and project without taking
   ownership and manage only declared model deployments, connections, and

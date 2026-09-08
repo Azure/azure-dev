@@ -1131,6 +1131,18 @@ services:
 	require.NoError(t, err)
 	_, err = os.Stat(filepath.Join(root, "infra", "main.tf"))
 	assert.ErrorIs(t, err, os.ErrNotExist)
+	// #nosec G304 -- path is inside the test project directory.
+	rawTfvars, err := os.ReadFile(
+		filepath.Join(root, "infra", "foundry", "main.tfvars.json"),
+	)
+	require.NoError(t, err)
+	tfvars := map[string]any{}
+	require.NoError(t, json.Unmarshal(rawTfvars, &tfvars))
+	assert.Equal(
+		t,
+		"${AZURE_FOUNDRY_RESOURCE_GROUP=rg-${AZURE_ENV_NAME}-foundry}",
+		tfvars["resource_group_name"],
+	)
 	require.NotNil(t, projectServer.setRequest)
 	assert.Equal(t, "infra.layers", projectServer.setRequest.Path)
 	layers, ok := projectServer.setRequest.Value.AsInterface().([]any)

@@ -180,6 +180,11 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if service != nil && service.Legacy {
+		if err := validateLegacyProjectNetwork(service.Resolved); err != nil {
+			return err
+		}
+	}
 
 	target, err := resolveProjectTarget(
 		ctx, client, projectConfig, service, oldValues, a.flags,
@@ -1634,6 +1639,9 @@ func ejectProjectInfra(
 			"fix the project service configuration and retry",
 		)
 	}
+	if err := validateEjectedConnectionCredentials(result.Parameters); err != nil {
+		return err
+	}
 	// #nosec G301
 	if err := os.MkdirAll(infraDir, 0755); err != nil {
 		return fmt.Errorf("create infra directory: %w", err)
@@ -1827,7 +1835,10 @@ func writeTerraformEjectedInfraAt(
 	layer bool,
 	module string,
 ) error {
-	variables, includeAcr, err := terraformEjectionVariables(parameters)
+	if err := validateEjectedConnectionCredentials(parameters); err != nil {
+		return err
+	}
+	variables, includeAcr, err := terraformEjectionVariables(parameters, layer)
 	if err != nil {
 		return err
 	}
@@ -1851,7 +1862,10 @@ func writeTerraformEjectedInfraAt(
 	return nil
 }
 
-func terraformEjectionVariables(parameters map[string]any) (map[string]any, bool, error) {
+func terraformEjectionVariables(
+	parameters map[string]any,
+	layer bool,
+) (map[string]any, bool, error) {
 	includeAcr, ok := parameters["includeAcr"].(bool)
 	if !ok {
 		return nil, false, fmt.Errorf(
@@ -1880,11 +1894,15 @@ func terraformEjectionVariables(parameters map[string]any) (map[string]any, bool
 			parameters["connectionCredentials"],
 		)
 	}
+	resourceGroupName := "${AZURE_RESOURCE_GROUP}"
+	if layer {
+		resourceGroupName = "${AZURE_FOUNDRY_RESOURCE_GROUP=rg-${AZURE_ENV_NAME}-foundry}"
+	}
 	// #nosec G101
 	return map[string]any{
 		"subscription_id":      "${AZURE_SUBSCRIPTION_ID}",
 		"location":             "${AZURE_LOCATION}",
-		"resource_group_name":  "${AZURE_RESOURCE_GROUP}",
+		"resource_group_name":  resourceGroupName,
 		"environment_name":     "${AZURE_ENV_NAME}",
 		"foundry_project_name": "${AZURE_AI_PROJECT_NAME}",
 		"principal_id":         "${AZURE_PRINCIPAL_ID}",

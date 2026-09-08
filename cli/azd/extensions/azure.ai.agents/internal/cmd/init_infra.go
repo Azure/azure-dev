@@ -569,6 +569,9 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 			"check the endpoint, deployments, and network fields under your azure.ai.project service",
 		)
 	}
+	if err := validateEjectedConnectionCredentials(res.Parameters); err != nil {
+		return err
+	}
 	acrMode := infraEjectAcrNone
 	if existingProject {
 		values := environment
@@ -685,6 +688,9 @@ func ejectBicep(
 	layer bool,
 	params map[string]any,
 ) ([]ejectArtifact, error) {
+	if err := validateEjectedConnectionCredentials(params); err != nil {
+		return nil, err
+	}
 	written, err := writeEmbeddedTemplates(infraDir, artifactRoot, module, layer)
 	if err != nil {
 		return nil, err
@@ -706,6 +712,9 @@ func ejectExistingProjectBicep(
 	acrMode infraEjectAcrMode,
 	environments []map[string]string,
 ) ([]ejectArtifact, error) {
+	if err := validateEjectedConnectionCredentials(params); err != nil {
+		return nil, err
+	}
 	acrPullAssigned := len(environments) > 0 && strings.EqualFold(
 		strings.TrimSpace(environments[0]["AZD_FOUNDRY_ACR_PULL_ASSIGNED"]), "true")
 	written, err := writeExistingProjectBicepTemplates(
@@ -749,6 +758,9 @@ func ejectTerraform(
 	layer bool,
 	params map[string]any,
 ) ([]ejectArtifact, error) {
+	if err := validateEjectedConnectionCredentials(params); err != nil {
+		return nil, err
+	}
 	includeAcr, _ := params["includeAcr"].(bool)
 
 	written, err := writeEmbeddedTerraformTemplates(infraDir, artifactRoot, includeAcr)
@@ -783,6 +795,9 @@ func ejectExistingProjectTerraform(
 	acrMode infraEjectAcrMode,
 	environments []map[string]string,
 ) ([]ejectArtifact, error) {
+	if err := validateEjectedConnectionCredentials(params); err != nil {
+		return nil, err
+	}
 	acrPullAssigned := len(environments) > 0 && strings.EqualFold(
 		strings.TrimSpace(environments[0]["AZD_FOUNDRY_ACR_PULL_ASSIGNED"]), "true")
 	written, err := writeExistingProjectTerraformTemplates(

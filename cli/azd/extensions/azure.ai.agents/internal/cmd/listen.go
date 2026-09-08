@@ -32,6 +32,10 @@ import (
 // from the root command, which handles the surrounding setup (access token,
 // AzdClient creation, and host.Run lifecycle).
 func configureExtensionHost(host *azdext.ExtensionHost) {
+	configureExtensionHostWithTelemetry(host, newAgentContextReporter())
+}
+
+func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryReporter *agentContextReporter) {
 	azdClient := host.Client()
 
 	// IMPORTANT: service target name here must match the name used in the extension manifest.
@@ -40,18 +44,21 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 			return project.NewAgentServiceTargetProvider(azdClient)
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			telemetryReporter.reportProjectConfig(ctx, azdClient.Telemetry(), args.Project, "provision")
 			return preprovisionHandler(ctx, azdClient, args)
 		}).
 		WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return postprovisionHandler(ctx, azdClient, args)
 		}).
 		WithServiceEventHandler("predeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+			telemetryReporter.reportService(ctx, azdClient.Telemetry(), args.Project, args.Service, "deploy")
 			return predeployHandler(ctx, azdClient, args)
 		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
 		WithServiceEventHandler("postdeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			return postdeployHandler(ctx, azdClient, args)
 		}, &azdext.ServiceEventOptions{Host: AiAgentHost}).
 		WithProjectEventHandler("predown", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+			telemetryReporter.reportProjectConfig(ctx, azdClient.Telemetry(), args.Project, "down")
 			return predownHandler(ctx, azdClient, args)
 		}).
 		WithProjectEventHandler("postdown", func(ctx context.Context, args *azdext.ProjectEventArgs) error {

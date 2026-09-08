@@ -20,6 +20,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.SilenceUsage = true
 	rootCmd.SilenceErrors = true
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
+	telemetryReporter := newAgentContextReporter()
 
 	// Configure debug logging once on the root command so every subcommand
 	// inherits it (cobra.EnableTraverseRunHooks, set by the SDK, ensures this
@@ -33,7 +34,22 @@ func NewRootCommand() *cobra.Command {
 			}
 		}
 		setupDebugLogging(cmd.Flags())
+		operation := telemetryOperation(cmd.CommandPath())
+		switch operation {
+		case "deploy":
+			telemetryReporter.reportStandaloneDeploy(cmd.Context())
+		case "init", "listen", "metadata", "version":
+		default:
+			telemetryReporter.reportProject(cmd.Context(), operation)
+		}
 		return nil
+	}
+	rootCmd.PersistentPostRun = func(cmd *cobra.Command, _ []string) {
+		// Init may create the project that supplies the resolved agent context.
+		operation := telemetryOperation(cmd.CommandPath())
+		if operation == "init" {
+			telemetryReporter.reportProject(cmd.Context(), operation)
+		}
 	}
 
 	// Show the ASCII art banner above the default help text for the root command
@@ -47,7 +63,9 @@ func NewRootCommand() *cobra.Command {
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 
-	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
+	rootCmd.AddCommand(azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
+		configureExtensionHostWithTelemetry(host, telemetryReporter)
+	}))
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newInitCommand(extCtx))
 	rootCmd.AddCommand(newAgentAddCommand(extCtx))

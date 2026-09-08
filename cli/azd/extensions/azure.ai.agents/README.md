@@ -1,5 +1,22 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Telemetry
+
+When azd telemetry is enabled, the extension reports `agent.context.resolved`
+for each distinct agent classification involved in an invocation. The event
+contains only bounded classifications:
+
+| Attribute | Values | Description |
+|---|---|---|
+| `ext.agent.kind` | `hosted`, `prompt`, `prompt-voice`, `workflow`, `unknown` | Resolved agent kind. |
+| `ext.agent.harness` | `none`, `github_copilot_preview`, `other` | Resolved prompt-agent harness classification. |
+| `ext.agent.operation` | Extension command path | Operation sharing the event's trace. |
+
+The event is correlated with other telemetry from the same azd invocation by
+the OpenTelemetry operation ID. A project with multiple agent classifications
+reports one row for each classification. The event never includes agent names,
+service keys, paths, URLs, prompts, or other customer content.
+
 ## Non-interactive automation
 
 See the shared [AI extension non-interactive input reference](../ai-non-interactive.md)

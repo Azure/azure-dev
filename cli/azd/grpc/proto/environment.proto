@@ -155,3 +155,4 @@ message UnsetConfigRequest {
   string path = 1;
   string env_name = 2; // Optional: Name of the environment. If empty, uses default.
 }
+

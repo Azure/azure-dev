@@ -261,12 +261,13 @@ func TestExecEnvForHosts_no_host(t *testing.T) {
 
 func TestGetExecutionEnvironment_Agents(t *testing.T) {
 	tests := []struct {
-		name      string
-		aiAgent   string
-		envVar    string
-		envValue  string
-		userAgent string
-		want      string
+		name       string
+		aiAgent    string
+		envVar     string
+		envValue   string
+		entrypoint string
+		userAgent  string
+		want       string
 	}{
 		{
 			name:    "GitHub Copilot App",
@@ -279,16 +280,52 @@ func TestGetExecutionEnvironment_Agents(t *testing.T) {
 			want:    fields.EnvGitHubCopilotVSCode,
 		},
 		{
+			name:    "GitHub Copilot cloud agent",
+			aiAgent: "github_copilot_cloud_agent",
+			want:    fields.EnvGitHubCopilotCloudAgent,
+		},
+		{
+			name:    "Pi coding agent",
+			aiAgent: "pi",
+			want:    fields.EnvPi,
+		},
+		{
 			name:     "Codex",
 			envVar:   "CODEX_THREAD_ID",
 			envValue: "thread-id",
 			want:     fields.EnvCodex,
 		},
 		{
+			name:     "Codex Desktop",
+			envVar:   "CODEX_INTERNAL_ORIGINATOR_OVERRIDE",
+			envValue: "Codex Desktop",
+			want:     fields.EnvCodexDesktop,
+		},
+		{
 			name:     "Cursor",
 			envVar:   "CURSOR_AGENT",
 			envValue: "1",
 			want:     fields.EnvCursor,
+		},
+		{
+			name:     "Claude Code",
+			envVar:   "CLAUDECODE",
+			envValue: "1",
+			want:     fields.EnvClaudeCode,
+		},
+		{
+			name:       "Claude Code Desktop",
+			envVar:     "CLAUDECODE",
+			envValue:   "1",
+			entrypoint: "claude-desktop",
+			want:       fields.EnvClaudeCodeDesktop,
+		},
+		{
+			name:       "Claude Code VSCode",
+			envVar:     "CLAUDECODE",
+			envValue:   "1",
+			entrypoint: "claude-vscode",
+			want:       fields.EnvClaudeCodeVSCode,
 		},
 		{
 			name:      "VS Code Azure GitHub Copilot",
@@ -300,15 +337,14 @@ func TestGetExecutionEnvironment_Agents(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			for _, envVar := range []string{
-				"CLAUDE_CODE",
+				"CLAUDECODE",
 				"CLAUDE_CODE_ENTRYPOINT",
+				"CODEX_INTERNAL_ORIGINATOR_OVERRIDE",
 				"CODEX_CI",
 				"CODEX_THREAD_ID",
 				"CODEX_SESSION_ID",
 				"CURSOR_AGENT",
 				"CURSOR_CONVERSATION_ID",
-				"GITHUB_COPILOT_CLI",
-				"GH_COPILOT",
 				"COPILOT_CLI",
 				"GEMINI_CLI",
 				"GEMINI_CLI_NO_RELAUNCH",
@@ -319,6 +355,7 @@ func TestGetExecutionEnvironment_Agents(t *testing.T) {
 			}
 			t.Setenv("AI_AGENT", tt.aiAgent)
 			t.Setenv(internal.AzdUserAgentEnvVar, tt.userAgent)
+			t.Setenv("CLAUDE_CODE_ENTRYPOINT", tt.entrypoint)
 			if tt.envVar != "" {
 				t.Setenv(tt.envVar, tt.envValue)
 			}

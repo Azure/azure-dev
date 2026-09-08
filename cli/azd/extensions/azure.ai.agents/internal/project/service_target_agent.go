@@ -3377,7 +3377,8 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 	progress azdext.ProgressReporter,
 ) (*agent_api.AgentVersionObject, error) {
 	const pollInterval = 10 * time.Second
-	const pollTimeout = 5 * time.Minute
+	// Code agent activation can take several minutes in a busy region.
+	const pollTimeout = 8 * time.Minute
 	const confirmCount = 2 // consecutive times a terminal status must be seen
 
 	deadline := time.Now().Add(pollTimeout)

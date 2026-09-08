@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -327,6 +329,43 @@ func TestRoutineEnvironmentValuesEmptyDeclaredIsolates(t *testing.T) {
 	require.Empty(t, env)
 }
 
+// TestRoutineServiceTargetDeployPropagatesAccessToken covers gRPC auth.
+func TestRoutineServiceTargetDeployPropagatesAccessToken(t *testing.T) {
+	const accessToken = "test-extension-token"
+
+	t.Setenv("AZD_ACCESS_TOKEN", accessToken)
+	stubAzdProjectSources(t, azdProjectSources{
+		EnvValue: "https://test.services.ai.azure.com/api/projects/test",
+	}, nil)
+
+	server := &routineAuthMetadataServer{
+		environmentAuth: make(chan string, 2),
+		accountAuth:     make(chan string, 1),
+	}
+	azdClient := newRoutineAuthAzdClient(t, server)
+	target := &routineServiceTarget{
+		azdClient:     azdClient,
+		projectClient: fakeServiceConfigReader{},
+	}
+
+	_, err := target.Deploy(
+		t.Context(),
+		&azdext.ServiceConfig{
+			Name:        "nightly",
+			Host:        aiRoutineHost,
+			Environment: map[string]string{"TEST_VALUE": "value"},
+		},
+		nil,
+		nil,
+		nil,
+	)
+
+	require.ErrorContains(t, err, "resolving user access tenant")
+	assert.Equal(t, accessToken, <-server.environmentAuth)
+	assert.Equal(t, accessToken, <-server.environmentAuth)
+	assert.Equal(t, accessToken, <-server.accountAuth)
+}
+
 func TestResolveRoutineServiceTenant(t *testing.T) {
 	t.Parallel()
 
@@ -439,4 +478,78 @@ func (s *stubRoutineAccount) LookupTenant(
 		return nil, s.err
 	}
 	return &azdext.LookupTenantResponse{TenantId: s.tenantID}, nil
+}
+
+type routineAuthMetadataServer struct {
+	azdext.UnimplementedAccountServiceServer
+	azdext.UnimplementedEnvironmentServiceServer
+	environmentAuth chan string
+	accountAuth     chan string
+}
+
+func (s *routineAuthMetadataServer) GetCurrent(
+	ctx context.Context,
+	_ *azdext.EmptyRequest,
+) (*azdext.EnvironmentResponse, error) {
+	s.environmentAuth <- incomingAuthorization(ctx)
+	return &azdext.EnvironmentResponse{
+		Environment: &azdext.Environment{Name: "dev"},
+	}, nil
+}
+
+func (s *routineAuthMetadataServer) GetValue(
+	ctx context.Context,
+	_ *azdext.GetEnvRequest,
+) (*azdext.KeyValueResponse, error) {
+	s.environmentAuth <- incomingAuthorization(ctx)
+	return &azdext.KeyValueResponse{Value: "subscription-id"}, nil
+}
+
+func (s *routineAuthMetadataServer) LookupTenant(
+	ctx context.Context,
+	_ *azdext.LookupTenantRequest,
+) (*azdext.LookupTenantResponse, error) {
+	s.accountAuth <- incomingAuthorization(ctx)
+	return nil, errors.New("stop after auth assertion")
+}
+
+func incomingAuthorization(ctx context.Context) string {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ""
+	}
+	values := md.Get("authorization")
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
+func newRoutineAuthAzdClient(
+	t *testing.T,
+	server *routineAuthMetadataServer,
+) *azdext.AzdClient {
+	t.Helper()
+
+	grpcServer := grpc.NewServer()
+	azdext.RegisterAccountServiceServer(grpcServer, server)
+	azdext.RegisterEnvironmentServiceServer(grpcServer, server)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	go func() { _ = grpcServer.Serve(listener) }()
+
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+
+	azdClient, err := azdext.NewAzdClient(
+		azdext.WithAddress(listener.Addr().String()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(azdClient.Close)
+
+	return azdClient
 }

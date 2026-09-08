@@ -32,6 +32,7 @@ type ProjectConfig struct {
 	Metadata          *ProjectMetadata           `yaml:"metadata,omitempty"`
 	Services          map[string]*ServiceConfig  `yaml:"services,omitempty"`
 	Infra             provisioning.Options       `yaml:"infra,omitempty"`
+	Layers            LayerConfigs               `yaml:"layers,omitempty"`
 	Pipeline          PipelineOptions            `yaml:"pipeline,omitempty"`
 	Hooks             HooksConfig                `yaml:"hooks,omitempty"`
 	State             *state.Config              `yaml:"state,omitempty"`
@@ -42,6 +43,12 @@ type ProjectConfig struct {
 
 	// AdditionalProperties captures any unknown YAML fields for extension support
 	AdditionalProperties map[string]any `yaml:",inline"`
+
+	// infraPresent is set if they have an 'infra' node at the top level of the file (used just to
+	// avoid a potential problem where infra: and layers: are present in a file). [Infra], above,
+	// can't distinguish between 'infra: {}' and "no infra attribute".
+	// Only used for validation.
+	infraPresent bool `yaml:"-"`
 
 	*ext.EventDispatcher[ProjectLifecycleEventArgs] `yaml:"-"`
 }
@@ -91,15 +98,33 @@ func (pc *ProjectConfig) CopyRuntimeStateTo(target *ProjectConfig) {
 	}
 
 	if pc.Services == nil || target.Services == nil {
+		copyLayerRuntimeState(pc.Layers, target.Layers)
 		return
 	}
 
-	for serviceName, sourceService := range pc.Services {
-		targetService, has := target.Services[serviceName]
+	copyServiceRuntimeState(pc.Services, target.Services)
+	copyLayerRuntimeState(pc.Layers, target.Layers)
+}
+
+func copyServiceRuntimeState(source, target map[string]*ServiceConfig) {
+	for serviceName, sourceService := range source {
+		targetService, has := target[serviceName]
 		if !has {
 			continue
 		}
 
 		sourceService.CopyRuntimeStateTo(targetService)
+	}
+}
+
+func copyLayerRuntimeState(source, target []*LayerConfig) {
+	targetByName := make(map[string]*LayerConfig, len(target))
+	for _, layer := range target {
+		targetByName[layer.Name] = layer
+	}
+	for _, sourceLayer := range source {
+		if targetLayer, has := targetByName[sourceLayer.Name]; has {
+			copyServiceRuntimeState(sourceLayer.Services, targetLayer.Services)
+		}
 	}
 }

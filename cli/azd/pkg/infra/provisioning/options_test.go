@@ -84,6 +84,12 @@ func TestOptionsGetLayers(t *testing.T) {
 		assert.Equal(t, "infra", layers[0].Path)
 	})
 
+	t.Run("explicit empty layers returns empty", func(t *testing.T) {
+		opts := &Options{Layers: []Options{}}
+
+		require.Empty(t, opts.GetLayers())
+	})
+
 	t.Run("with layers returns layers", func(t *testing.T) {
 		opts := &Options{
 			Layers: []Options{
@@ -243,19 +249,24 @@ func TestOptionsValidate(t *testing.T) {
 			)
 		})
 
-	t.Run("layer without path is invalid",
+	t.Run("provider-managed layer without path is valid",
 		func(t *testing.T) {
 			opts := &Options{
 				Layers: []Options{
-					{Name: "l1"},
+					{Name: "foundry", Provider: ProviderKind("microsoft.foundry")},
 				},
 			}
 			err := opts.Validate()
-			require.Error(t, err)
-			assert.Contains(
-				t, err.Error(), "path must be specified",
-			)
+			require.NoError(t, err)
 		})
+
+	t.Run("built-in layer without path is invalid", func(t *testing.T) {
+		opts := &Options{Layers: []Options{{Name: "bicep", Provider: Bicep}}}
+
+		err := opts.Validate()
+
+		require.ErrorContains(t, err, "path must be specified")
+	})
 
 	t.Run("multiple valid layers", func(t *testing.T) {
 		opts := &Options{

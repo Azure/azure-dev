@@ -21,6 +21,7 @@ trigger:
       - go.mod
       - cli/
       - eng/pipelines/release-cli.yml
+      - eng/pipelines/templates/stages/build-and-test.yml
       - /eng/pipelines/templates/jobs/build-cli.yml
       - /eng/pipelines/templates/jobs/cross-build-cli.yml
       - /eng/pipelines/templates/variables/image.yml
@@ -34,6 +35,7 @@ pr:
       - go.mod
       - cli/
       - eng/pipelines/release-cli.yml
+      - eng/pipelines/templates/stages/build-and-test.yml
       - eng/pipelines/templates/steps/publish-cli.yml
     exclude:
       - cli/azd/docs/**

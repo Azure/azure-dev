@@ -4,9 +4,13 @@
 package cmd
 
 import (
+	"bytes"
 	"os"
 	"testing"
 
+	"azureaiagent/internal/project"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
@@ -25,6 +29,36 @@ func TestAgentDependencyCommandsRemainRegistered(t *testing.T) {
 		require.NoError(t, command.Args(command, []string{"dependency"}))
 		require.Error(t, command.Args(command, nil))
 	}
+}
+
+func TestAgentRootDoesNotExposeStandaloneDeploy(t *testing.T) {
+	// Root construction changes Cobra's global traversal setting.
+	root := NewRootCommand()
+	for _, command := range root.Commands() {
+		assert.NotEqual(t, "deploy", command.Name())
+		assert.NotContains(t, command.Aliases, "deploy")
+	}
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetErr(&output)
+	root.SetArgs([]string{"deploy", "./agent.yaml"})
+	require.ErrorContains(t, root.ExecuteContext(t.Context()), `unknown command "deploy"`)
+}
+
+func TestAgentCoreDeployServiceTargetRemainsRegistered(t *testing.T) {
+	t.Parallel()
+	// Registration and initialization must be local; no daemon or Azure calls.
+	host := azdext.NewExtensionHost(nil)
+	configureExtensionHost(host)
+	targets := host.ServiceTargets()
+	require.Len(t, targets, 1)
+	require.Equal(t, AiAgentHost, targets[0].Host)
+	require.NotNil(t, targets[0].Factory)
+	provider := targets[0].Factory()
+	require.IsType(t, &project.AgentServiceTargetProvider{}, provider)
+	require.NoError(t, provider.Initialize(t.Context(), &azdext.ServiceConfig{
+		Name: "research-agent", Host: AiAgentHost,
+	}))
 }
 
 type resourceExtensionManifest struct {

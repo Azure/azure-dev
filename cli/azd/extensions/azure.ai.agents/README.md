@@ -41,6 +41,29 @@ Connection and Toolbox resources remain supported as inputs to `azd ai agent ini
 which generates split services. Agent runtime `toolConnections` and environment
 references remain agent-owned.
 
+## Deploying Agents
+
+Deploy Agents through the normal azd project lifecycle:
+
+- `azd deploy <service>` deploys the selected `azure.ai.agent` service.
+- `azd deploy --all` deploys all services, with ordering defined by `uses`.
+- `azd up` provisions and deploys the project.
+
+**Breaking change:** `azd ai agent deploy [path]` has been removed. The extension
+still implements Agent deployment as a service target invoked by core azd;
+there is no separate definition-file deployment or sibling-Toolbox orchestration
+path in the Agent command tree.
+
+For an existing standalone agent, use `azd ai agent init` to create/adopt an azd
+project, or declare an `azure.ai.agent` service in `azure.yaml` with its source
+directory and deployment settings. The definition can be inline or referenced
+using `$ref`, following the service schema; declare core-owned fields such as
+`host`, `project`, `language`, and `uses` in `azure.yaml`. Deploy by **service name**,
+not by a definition-file path. A sibling `toolbox.yaml` is not automatically
+deployed: declare a Toolbox service and add it to `uses`. Deploy dependencies
+first or use `azd deploy --all`; a targeted Agent deployment does not deploy its
+dependencies automatically.
+
 ## Running Local Agents
 
 `azd ai agent run` starts the selected agent locally and, by default, opens the

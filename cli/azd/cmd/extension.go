@@ -3482,6 +3482,15 @@ func upgradeActionResult(
 		failures = append(failures, fmt.Errorf("%d extension %s failed to update", failed, noun))
 	}
 	if err := errors.Join(failures...); err != nil {
+		var dependencyErrors []error
+		for _, result := range results {
+			if dependencyErr := dependencyUpgradeError(result.DependencyUpgrades); dependencyErr != nil {
+				dependencyErrors = append(dependencyErrors, dependencyErr)
+			}
+		}
+		if dependencyErr := errors.Join(dependencyErrors...); dependencyErr != nil {
+			return nil, fmt.Errorf("%v: %w", err, dependencyErr)
+		}
 		return nil, err
 	}
 

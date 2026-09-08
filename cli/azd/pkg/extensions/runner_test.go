@@ -421,7 +421,10 @@ func TestRunner_Invoke_EnsureInit_Called(t *testing.T) {
 	runner := NewRunner(cmdRunner)
 
 	// Extension starts uninitialized
-	require.False(t, ext.initialized)
+	require.Nil(t, ext.stdin)
+	require.Nil(t, ext.stdout)
+	require.Nil(t, ext.stderr)
+	require.Nil(t, ext.readySignal)
 
 	cmdRunner.When(func(args exec.RunArgs, command string) bool {
 		return true
@@ -433,5 +436,8 @@ func TestRunner_Invoke_EnsureInit_Called(t *testing.T) {
 	require.NoError(t, err)
 
 	// After Invoke, extension should be initialized
-	require.True(t, ext.initialized)
+	require.NotNil(t, ext.stdin)
+	require.NotNil(t, ext.stdout)
+	require.NotNil(t, ext.stderr)
+	require.NotNil(t, ext.readySignal)
 }

@@ -161,6 +161,11 @@ jobs:
           # Without this disabled, we often see tests failing due to MSBuild worker processes being shared across concurrent tests.
           MSBUILDDISABLENODEREUSE: 1
 
+      - ${{ if eq(parameters.OS, 'linux') }}:
+        - pwsh: go test -race -short ./...
+          workingDirectory: cli/azd
+          displayName: Run race detector tests
+
       - task: PublishTestResults@2
         inputs:
           testResultsFormat: JUnit

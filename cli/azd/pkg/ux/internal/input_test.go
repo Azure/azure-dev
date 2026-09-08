@@ -284,18 +284,6 @@ func TestReadInput_NonNilConfig(t *testing.T) {
 }
 
 func TestReadInput_ContextCancellationReturnsErrCancelled(t *testing.T) {
-	// Not parallel: mutates os.Stdin.
-	r, w, err := os.Pipe()
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_ = r.Close()
-		_ = w.Close()
-	})
-
-	oldStdin := os.Stdin
-	os.Stdin = r
-	t.Cleanup(func() { os.Stdin = oldStdin })
-
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // pre-cancel
 

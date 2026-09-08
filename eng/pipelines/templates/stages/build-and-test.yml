@@ -83,20 +83,6 @@ stages:
             Variables: ${{ build.value.Variables }}
             AzureRecordMode: ${{ parameters.AzureRecordMode }}
 
-      - job: RaceTest
-        displayName: Race detector tests
-        pool:
-          name: $(LINUXPOOL)
-          image: $(LINUXVMIMAGE)
-          os: linux
-        timeoutInMinutes: 180
-        steps:
-          - checkout: self
-          - template: /eng/pipelines/templates/steps/setup-go.yml
-          - pwsh: go test -race -short ./...
-            workingDirectory: cli/azd
-            displayName: Run race detector tests
-
       # This is separated today because Skip.LiveTest is a queue-time variable
       # and cannot be set in a matrix entry.       
       - ${{ each build in parameters.CrossBuildMatrix }}: 

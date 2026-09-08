@@ -157,6 +157,31 @@ func TestExtension_StdErr_ReturnsNonNil(t *testing.T) {
 	require.NotNil(t, writer)
 }
 
+func TestExtension_ConcurrentInitialization(t *testing.T) {
+	t.Parallel()
+
+	ext := &Extension{}
+	const goroutines = 50
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for range goroutines {
+		go func() {
+			defer wg.Done()
+			_ = ext.StdIn()
+			_ = ext.StdOut()
+			_ = ext.StdErr()
+		}()
+	}
+	wg.Wait()
+
+	require.NotNil(t, ext.StdIn())
+	require.NotNil(t, ext.StdOut())
+	require.NotNil(t, ext.StdErr())
+	ext.Initialize()
+	require.NoError(t, ext.WaitUntilReady(t.Context()))
+}
+
 func TestExtension_ReportedError_RoundTrip(t *testing.T) {
 	t.Parallel()
 

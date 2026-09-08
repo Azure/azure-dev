@@ -78,10 +78,8 @@ type clientSideStream struct {
 
 func (c *clientSideStream) Send(msg *TestMessage) error {
 	c.sim.mu.Lock()
-	closed := c.sim.closed
-	c.sim.mu.Unlock()
-
-	if closed {
+	defer c.sim.mu.Unlock()
+	if c.sim.closed {
 		return io.EOF
 	}
 	c.sim.clientToServer <- msg
@@ -102,10 +100,8 @@ type serverSideStream struct {
 
 func (s *serverSideStream) Send(msg *TestMessage) error {
 	s.sim.mu.Lock()
-	closed := s.sim.closed
-	s.sim.mu.Unlock()
-
-	if closed {
+	defer s.sim.mu.Unlock()
+	if s.sim.closed {
 		return io.EOF
 	}
 	s.sim.serverToClient <- msg

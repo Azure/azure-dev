@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -737,9 +738,7 @@ func TestProjectEnvironmentTransitions(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			values := map[string]string{}
-			for key, value := range old {
-				values[key] = value
-			}
+			maps.Copy(values, old)
 			if test.values != nil {
 				test.values(values)
 			}

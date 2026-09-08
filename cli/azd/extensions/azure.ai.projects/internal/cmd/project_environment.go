@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -207,12 +208,8 @@ func applyProjectEnvironmentPlan(
 	plan environmentPlan,
 ) map[string]string {
 	effective := make(map[string]string, len(oldValues)+len(plan.Sets))
-	for key, value := range oldValues {
-		effective[key] = value
-	}
-	for key, value := range plan.Sets {
-		effective[key] = value
-	}
+	maps.Copy(effective, oldValues)
+	maps.Copy(effective, plan.Sets)
 	for _, key := range plan.Unsets {
 		delete(effective, key)
 	}

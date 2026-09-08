@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -670,12 +671,7 @@ func containsAgentProtocol(
 	protocols []agent_api.AgentProtocol,
 	target agent_api.AgentProtocol,
 ) bool {
-	for _, protocol := range protocols {
-		if protocol == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(protocols, target)
 }
 
 func remoteProtocolSelectionError(

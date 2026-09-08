@@ -24,9 +24,8 @@
 #   - Service connection (parameter `serviceConnection`, default `azure-sdk-tests`)
 #     must map to the shared TME test subscription with Contributor + the RBAC
 #     needed to create Foundry projects and deploy models.
-#   - GitHub clones of the starter template authenticate with the azure-sdk org
-#     secret `azuresdk-github-pat` (already provided by the Azure SDK ADO
-#     project) to avoid anonymous rate limits — no extra secret setup required.
+#   - The pipeline mints an installation token for the Azure organization before
+#     cloning the starter template, so no PAT setup is required.
 
 trigger: none
 pr:
@@ -193,6 +192,13 @@ extends:
                     }' > "$HOME/.azd/config.json"
                 displayName: Install azure.ai.agents and azure.ai.projects extensions
 
+              # Mint the GitHub token before the live test. The token is exposed
+              # as the secret GH_TOKEN pipeline variable for later tasks.
+              - template: /eng/common/pipelines/templates/steps/login-to-github.yml
+                parameters:
+                  TokenOwners:
+                    - Azure
+
               # Run the live golden path INSIDE the AzureCLI@2 task so the az CLI
               # session (consumed by azd via auth.useAzCliAuth) stays valid for the
               # whole run. keepAzSessionActive is REQUIRED: the service connection
@@ -242,9 +248,8 @@ extends:
                   E2E_CREATE_PROJECT: "true"
                   E2E_LOCATION: eastus2
                   E2E_USE_AZ_CLI_AUTH: "true"
-                  # azure-sdk org PAT (ambient in the ADO project) used only to
-                  # avoid anonymous GitHub rate limits when cloning the template.
-                  GH_TOKEN: $(azuresdk-github-pat)
+                  # Installation token minted by the preceding login step.
+                  GH_TOKEN: $(GH_TOKEN)
 
               # Safety net for hard crashes / step timeout: the in-test teardown
               # runs `azd down` already, but if the run died mid-way, force-purge

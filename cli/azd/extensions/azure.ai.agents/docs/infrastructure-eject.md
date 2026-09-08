@@ -102,9 +102,9 @@ The generated files never import or take ownership of an existing registry.
 When registry work is required, the generated file is consistently named
 `modules/container-registry.bicep` or `container-registry.tf`, whether the
 registry is created or reused.
-Registry endpoints are sanitized before they are written: userinfo,
-query parameters, and fragments are removed, while malformed endpoint values
-are rejected without echoing their contents.
+Registry endpoints are sanitized before they are written: credentials embedded
+in the URL, query parameters, and fragments are removed, while malformed
+endpoint values are rejected without echoing their contents.
 
 ## Layer dependencies
 

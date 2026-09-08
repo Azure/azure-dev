@@ -38,6 +38,7 @@ words:
   - Canonicalize
   - Chans
   - chinacloudapi
+  - CLAUDECODE
   - ojson
   - otable
   - cmds
@@ -441,9 +442,6 @@ overrides:
   - filename: extensions/azure.ai.agents/internal/cmd/init_locations.go
     words:
       - swedencentral
-  - filename: extensions/azure.ai.agents/docs/infrastructure-eject.md
-    words:
-      - userinfo
   - filename: docs/code-coverage-guide.md
     words:
       - covdata

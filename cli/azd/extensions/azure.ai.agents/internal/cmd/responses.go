@@ -288,7 +288,16 @@ func runResponseCancel(
 		defer rc.azdClient.Close()
 	}
 
-	token, err := action.acquireBearerToken(ctx)
+	return action.cancelResponse(ctx, rc, responseID, writer)
+}
+
+func (a *InvokeAction) cancelResponse(
+	ctx context.Context,
+	rc *remoteContext,
+	responseID string,
+	writer io.Writer,
+) error {
+	token, err := a.acquireBearerToken(ctx)
 	if err != nil {
 		return err
 	}
@@ -298,8 +307,8 @@ func runResponseCancel(
 		return fmt.Errorf("create Response cancel request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	applyCustomHeaders(req, action.clientHeaders)
-	applyRemoteUserIdentityHeader(req, &action.flags.userIdentityFlags)
+	applyCustomHeaders(req, a.clientHeaders)
+	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 
 	//nolint:gosec // URL is built from a validated Foundry endpoint.
 	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
@@ -314,9 +323,11 @@ func runResponseCancel(
 	if resp.StatusCode >= http.StatusBadRequest {
 		// Cancellation is idempotent from the CLI perspective. Confirm a terminal
 		// state from the service rather than trusting stale local status.
-		result, snapshotErr := action.getResponseSnapshot(ctx, rc, responseID)
+		result, snapshotErr := a.getResponseSnapshot(ctx, rc, responseID)
 		if snapshotErr == nil && isTerminalResponseStatus(result.snapshot.Status) {
-			_, err = fmt.Fprintf(writer, "Response %s is already %s; nothing to cancel.\n", responseID, result.snapshot.Status)
+			_, err = fmt.Fprintf(
+				writer, "Response %s is already %s; nothing to cancel.\n", responseID, result.snapshot.Status,
+			)
 			return err
 		}
 		return &responseLifecycleHTTPError{
@@ -383,7 +394,9 @@ func (a *InvokeAction) getResponseSnapshot(
 		actualID = snapshot.ResponseID
 	}
 	if actualID != "" && actualID != responseID {
-		return responseSnapshotResult{}, fmt.Errorf("Response snapshot ID %q does not match requested ID %q", actualID, responseID)
+		return responseSnapshotResult{}, fmt.Errorf(
+			"Response snapshot ID %q does not match requested ID %q", actualID, responseID,
+		)
 	}
 	return responseSnapshotResult{snapshot: snapshot, raw: body}, nil
 }

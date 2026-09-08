@@ -25,6 +25,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -78,6 +79,7 @@ type InvokeAction struct {
 	resolvedBody          []byte
 	resolvedBodyLabel     string
 	bodyResolved          bool
+	credential azcore.TokenCredential
 }
 
 func newInvokeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -1258,9 +1260,13 @@ func createInvokeVersionSessionImpl(
 // validation so that local errors (e.g., a missing --input-file) are surfaced
 // before any auth round-trip is attempted.
 func (a *InvokeAction) acquireBearerToken(ctx context.Context) (string, error) {
-	credential, err := newAgentCredential()
-	if err != nil {
-		return "", err
+	credential := a.credential
+	if credential == nil {
+		var err error
+		credential, err = newAgentCredential()
+		if err != nil {
+			return "", err
+		}
 	}
 	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: []string{"https://ai.azure.com/.default"},

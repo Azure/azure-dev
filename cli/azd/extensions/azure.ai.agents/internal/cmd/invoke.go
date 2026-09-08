@@ -596,6 +596,9 @@ func (a *InvokeAction) resolveDeployedProtocol(
 	deployed := uniqueAgentProtocols(rc.invocableProtocols)
 	var local []agent_api.AgentProtocol
 	if len(deployed) != 1 && rc.azdClient != nil && rc.serviceName != "" {
+		if rc.deployedProtocolMetadata && len(deployed) == 0 {
+			return "", remoteProtocolSelectionError(deployed, "")
+		}
 		var err error
 		local, err = resolveAgentInvocableProtocols(
 			ctx,
@@ -1009,15 +1012,16 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 // directly outside an azd command) azdClient is nil and persistence helpers
 // no-op. agentKey may still be non-empty in that case.
 type remoteContext struct {
-	name               string
-	serviceName        string
-	agentKey           string
-	projectEndpoint    string
-	apiVersion         string
-	version            string
-	invocableProtocols []agent_api.AgentProtocol
-	azdClient          *azdext.AzdClient
-	bearerToken        string
+	name                     string
+	serviceName              string
+	agentKey                 string
+	projectEndpoint          string
+	apiVersion               string
+	version                  string
+	invocableProtocols       []agent_api.AgentProtocol
+	deployedProtocolMetadata bool
+	azdClient                *azdext.AzdClient
+	bearerToken              string
 }
 
 func (rc *remoteContext) nextStepName() string {
@@ -1111,7 +1115,11 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 		withBrownfieldInlineAgentName(),
 	}
 	if a.flags.protocol == "" {
-		resolutionOptions = append(resolutionOptions, withDeployedProtocolEndpoints())
+		resolutionOptions = append(
+			resolutionOptions,
+			withDeployedProtocolEndpoints(),
+			withDeployedAgentNameLookup(),
+		)
 	}
 	info, serviceErr := resolveAgentServiceFromProject(
 		ctx,
@@ -1132,6 +1140,7 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 		rc.serviceName = info.ServiceName
 		rc.name = remoteAgentNameFromService(rc.name, info, a.protocolServiceName != "")
 		rc.invocableProtocols = invocableProtocolsFromEndpoints(info.ProtocolEndpoints)
+		rc.deployedProtocolMetadata = info.ProtocolEndpointsPresent
 		if info.AgentEndpoint != "" {
 			rc.agentKey = buildRemoteAgentKeyFromEndpoint(info.AgentEndpoint)
 		}

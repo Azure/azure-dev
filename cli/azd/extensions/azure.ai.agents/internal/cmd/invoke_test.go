@@ -676,6 +676,60 @@ func TestResolveRemoteContextDirectNameLookupErrorUsesLocalProtocol(t *testing.T
 	}
 }
 
+func TestResolveRemoteContextMatchesDeployedNameToService(t *testing.T) {
+	const (
+		serviceName  = "agent-service"
+		deployedName = "deployed-agent"
+	)
+
+	projectServer := &helpersProjectServer{
+		project: &azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				serviceName: {
+					Name: serviceName,
+					Host: AiAgentHost,
+				},
+			},
+		},
+	}
+	environmentServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "test"},
+		values: map[string]map[string]string{
+			"test": {
+				"AGENT_AGENT_SERVICE_NAME": deployedName,
+			},
+		},
+	}
+	address := newInvokeRemoteContextTestAzdServer(
+		t, projectServer, environmentServer,
+	)
+	t.Setenv("AZD_SERVER", address)
+
+	client, err := azdext.NewAzdClient()
+	if err != nil {
+		t.Fatalf("NewAzdClient: %v", err)
+	}
+	defer client.Close()
+
+	info, err := resolveAgentServiceFromProject(
+		t.Context(),
+		client,
+		deployedName,
+		true,
+		withDeployedAgentNameLookup(),
+	)
+	if err != nil {
+		t.Fatalf("resolveAgentServiceFromProject: %v", err)
+	}
+	if info.ServiceName != serviceName {
+		t.Errorf("service name = %q, want %q", info.ServiceName, serviceName)
+	}
+	if info.AgentName != deployedName {
+		t.Errorf("agent name = %q, want %q", info.AgentName, deployedName)
+	}
+}
+
 func newInvokeRemoteContextTestAzdServer(
 	t *testing.T,
 	projectServer *helpersProjectServer,
@@ -1061,6 +1115,59 @@ func TestResolveDeployedProtocolRequiresExplicitProtocolWithoutMetadata(t *testi
 	}
 	if suggestion := azdext.WrapError(err).GetSuggestion(); !strings.Contains(suggestion, "--protocol") {
 		t.Errorf("suggestion = %q, want explicit protocol guidance", suggestion)
+	}
+}
+
+func TestResolveDeployedProtocolRejectsUnsupportedPersistedMetadata(t *testing.T) {
+	t.Parallel()
+
+	action := &InvokeAction{flags: &invokeFlags{}}
+	_, err := action.resolveDeployedProtocol(
+		t.Context(),
+		&remoteContext{
+			name:                     "agent",
+			deployedProtocolMetadata: true,
+		},
+	)
+	if err == nil {
+		t.Fatal("expected protocol selection error, got nil")
+	}
+	if !strings.Contains(err.Error(), "could not determine an invocable protocol") {
+		t.Errorf("error = %q, want protocol selection guidance", err)
+	}
+}
+
+func TestResolveAgentProtocolEndpointsPreservesUnsupportedMetadata(t *testing.T) {
+	projectServer := &helpersProjectServer{
+		project: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{}},
+	}
+	environmentServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "test"},
+		values: map[string]map[string]string{
+			"test": {
+				"AGENT_AGENT_SERVICE_INVOCATIONS_WS_ENDPOINT": "https://example.test/invocations_ws",
+			},
+		},
+	}
+	address := newInvokeRemoteContextTestAzdServer(
+		t, projectServer, environmentServer,
+	)
+	t.Setenv("AZD_SERVER", address)
+
+	client, err := azdext.NewAzdClient()
+	if err != nil {
+		t.Fatalf("NewAzdClient: %v", err)
+	}
+	defer client.Close()
+
+	endpoints, present := resolveAgentProtocolEndpoints(
+		t.Context(), client, "test", "agent-service",
+	)
+	if endpoints[agent_api.AgentProtocolInvocationsWS] == "" {
+		t.Fatalf("endpoints = %v, want invocations_ws endpoint", endpoints)
+	}
+	if !present {
+		t.Fatal("present = false, want endpoint metadata to be preserved")
 	}
 }
 

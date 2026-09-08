@@ -617,12 +617,13 @@ func fileExists(path string) bool {
 
 // AgentServiceInfo holds the resolved deployment information for an agent service.
 type AgentServiceInfo struct {
-	ServiceName       string                             // azure.yaml service key
-	AgentName         string                             // deployed agent name from env; invoke may opt into brownfield fallback
-	Version           string                             // deployed agent version from env
-	AgentEndpoint     string                             // full AGENT_{SVC}_ENDPOINT URL (includes name + version)
-	ProtocolEndpoints map[agent_api.AgentProtocol]string // per-protocol deployment endpoint URLs
-	ProjectEndpoint   string                             // adopted project endpoint used by a verified brownfield fallback
+	ServiceName              string                             // azure.yaml service key
+	AgentName                string                             // deployed agent name from env; invoke may opt into brownfield fallback
+	Version                  string                             // deployed agent version from env
+	AgentEndpoint            string                             // full AGENT_{SVC}_ENDPOINT URL (includes name + version)
+	ProtocolEndpoints        map[agent_api.AgentProtocol]string // per-protocol deployment endpoint URLs
+	ProtocolEndpointsPresent bool                               // deployment exposed protocol endpoint metadata
+	ProjectEndpoint          string                             // adopted project endpoint used by a verified brownfield fallback
 }
 
 func withDeployedProtocolEndpoints() agentServiceResolutionOption {
@@ -631,17 +632,24 @@ func withDeployedProtocolEndpoints() agentServiceResolutionOption {
 	}
 }
 
+func withDeployedAgentNameLookup() agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.matchDeployedAgentName = true
+	}
+}
+
 func resolveAgentProtocolEndpoints(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	envName string,
 	serviceName string,
-) map[agent_api.AgentProtocol]string {
+) (map[agent_api.AgentProtocol]string, bool) {
 	if azdClient == nil || envName == "" || serviceName == "" {
-		return nil
+		return nil, false
 	}
 
 	endpoints := make(map[agent_api.AgentProtocol]string)
+	present := false
 	serviceKey := toServiceKey(serviceName)
 	for _, protocol := range projectpkg.DisplayableProtocolEnvSuffixes() {
 		key := fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, protocol.Suffix)
@@ -657,14 +665,15 @@ func resolveAgentProtocolEndpoints(
 			continue
 		}
 		if endpoint := strings.TrimSpace(value.Value); endpoint != "" {
+			present = true
 			endpoints[agent_api.AgentProtocol(protocol.Label)] = endpoint
 		}
 	}
 
 	if len(endpoints) == 0 {
-		return nil
+		return nil, present
 	}
-	return endpoints
+	return endpoints, present
 }
 
 // promptForAgentService prompts the user to select one of multiple azure.ai.agent services.
@@ -773,6 +782,64 @@ func resolveAgentService(
 	return svc, projectResponse.Project, nil
 }
 
+func resolveAgentServiceByDeployedName(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	deployedName string,
+) (*azdext.ServiceConfig, *azdext.ProjectConfig, error) {
+	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get project config: %w", err)
+	}
+	if projectResponse.Project == nil {
+		return nil, nil, fmt.Errorf("failed to get project config")
+	}
+
+	envResponse, err := azdClient.Environment().GetCurrent(
+		ctx, &azdext.EmptyRequest{},
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get current environment: %w", err)
+	}
+	if envResponse == nil || envResponse.Environment == nil ||
+		envResponse.Environment.Name == "" {
+		return nil, nil, fmt.Errorf("current environment is not available")
+	}
+
+	var matched *azdext.ServiceConfig
+	for _, service := range projectResponse.Project.Services {
+		if service.Host != AiAgentHost {
+			continue
+		}
+
+		key := fmt.Sprintf("AGENT_%s_NAME", toServiceKey(service.Name))
+		value, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: envResponse.Environment.Name,
+			Key:     key,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("reading %s: %w", key, err)
+		}
+		if value != nil && strings.TrimSpace(value.Value) == deployedName {
+			if matched != nil {
+				return nil, nil, fmt.Errorf(
+					"multiple azure.ai.agent services resolve to deployed agent %q",
+					deployedName,
+				)
+			}
+			matched = service
+		}
+	}
+
+	if matched == nil {
+		return nil, nil, fmt.Errorf(
+			"no azure.ai.agent service resolves to deployed agent %q",
+			deployedName,
+		)
+	}
+	return matched, projectResponse.Project, nil
+}
+
 type brownfieldAgentReference struct {
 	name            string
 	projectEndpoint string
@@ -838,6 +905,7 @@ type agentServiceResolutionOptions struct {
 	allowBrownfieldInlineName bool
 	brownfieldAgentExists     brownfieldAgentExistenceResolver
 	includeProtocolEndpoints  bool
+	matchDeployedAgentName    bool
 }
 
 type agentServiceResolutionOption func(*agentServiceResolutionOptions)
@@ -887,14 +955,22 @@ func resolveAgentServiceFromProject(
 	noPrompt bool,
 	options ...agentServiceResolutionOption,
 ) (*AgentServiceInfo, error) {
-	svc, projectConfig, err := resolveAgentService(ctx, azdClient, name, noPrompt)
-	if err != nil {
-		return nil, err
-	}
-
 	resolutionOptions := agentServiceResolutionOptions{}
 	for _, option := range options {
 		option(&resolutionOptions)
+	}
+
+	svc, projectConfig, err := resolveAgentService(ctx, azdClient, name, noPrompt)
+	if err != nil {
+		if !resolutionOptions.matchDeployedAgentName || name == "" {
+			return nil, err
+		}
+		svc, projectConfig, err = resolveAgentServiceByDeployedName(
+			ctx, azdClient, name,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	info := &AgentServiceInfo{ServiceName: svc.Name}
@@ -961,7 +1037,7 @@ func resolveAgentServiceFromProject(
 			info.AgentName = reference.name
 			info.ProjectEndpoint = reference.projectEndpoint
 			if resolutionOptions.includeProtocolEndpoints {
-				info.ProtocolEndpoints = resolveAgentProtocolEndpoints(
+				info.ProtocolEndpoints, info.ProtocolEndpointsPresent = resolveAgentProtocolEndpoints(
 					ctx,
 					azdClient,
 					envResponse.Environment.Name,
@@ -987,7 +1063,7 @@ func resolveAgentServiceFromProject(
 		info.AgentEndpoint = v.Value
 	}
 	if resolutionOptions.includeProtocolEndpoints {
-		info.ProtocolEndpoints = resolveAgentProtocolEndpoints(
+		info.ProtocolEndpoints, info.ProtocolEndpointsPresent = resolveAgentProtocolEndpoints(
 			ctx,
 			azdClient,
 			envResponse.Environment.Name,

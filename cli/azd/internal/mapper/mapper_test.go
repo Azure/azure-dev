@@ -220,6 +220,15 @@ func TestMapperWithEnvSubst(t *testing.T) {
 	}).WithEnvSubst(false)
 	require.False(t, EnvSubstEnabled(disabled.ctx))
 	require.Equal(t, "resolved-value", GetResolver(disabled.ctx)("value"))
+
+	withoutChanges := disabled.WithResolver(nil)
+	require.False(t, EnvSubstEnabled(withoutChanges.ctx))
+	require.Equal(t, "resolved-value", GetResolver(withoutChanges.ctx)("value"))
+
+	enabled := disabled.WithEnvSubst(true)
+	require.True(t, EnvSubstEnabled(enabled.ctx))
+	require.Equal(t, "resolved-value", GetResolver(enabled.ctx)("value"))
+
 	require.True(t, EnvSubstEnabled(base.ctx))
 	require.Nil(t, GetResolver(base.ctx))
 }

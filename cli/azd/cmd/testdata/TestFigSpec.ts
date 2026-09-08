@@ -6802,7 +6802,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--force', '-f'],
-							description: 'Remove extensions required by other installed extensions',
+							description: 'Uninstall even if other installed extensions depend on it',
 							isDangerous: true,
 						},
 						{

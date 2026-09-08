@@ -6,7 +6,7 @@ Usage
 
 Flags
         --all             	: Uninstall all installed extensions
-    -f, --force           	: Remove extensions required by other installed extensions
+    -f, --force           	: Uninstall even if other installed extensions depend on it
         --no-dependencies 	: Keep dependencies installed for the removed extensions
 
 Global Flags

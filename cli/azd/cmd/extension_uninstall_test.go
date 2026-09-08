@@ -99,8 +99,11 @@ func TestExtensionUninstallAction_ForceWarnsAboutDependents(t *testing.T) {
 		[]string{"azure.ai.agents", "azure.ai.inspector", "azure.ai.skills", "microsoft.foundry"},
 		remainingInstalledIds(t, action.extensionManager),
 	)
-	require.Contains(t, strings.Join(console.Output(), "\n"),
+	messages := console.Output()
+	require.Len(t, messages, 3)
+	require.Contains(t, messages[1],
 		"azure.ai.projects is required by azure.ai.agents, microsoft.foundry")
+	require.Empty(t, messages[2], "separate warnings from uninstall progress")
 }
 
 func TestExtensionUninstallAction_PackRemovesOrphanedDependencies(t *testing.T) {

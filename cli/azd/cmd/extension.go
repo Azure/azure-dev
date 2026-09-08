@@ -2266,7 +2266,7 @@ func newExtensionUninstallFlags(cmd *cobra.Command) *extensionUninstallFlags {
 	flags := &extensionUninstallFlags{}
 	cmd.Flags().BoolVar(&flags.all, "all", false, "Uninstall all installed extensions")
 	cmd.Flags().BoolVarP(&flags.force, "force", "f", false,
-		"Remove extensions required by other installed extensions")
+		"Uninstall even if other installed extensions depend on it")
 	cmd.Flags().BoolVar(&flags.noDependencies, "no-dependencies", false,
 		"Keep dependencies installed for the removed extensions")
 
@@ -2389,6 +2389,9 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 				extensionId, strings.Join(plan.Blocked[extensionId], ", "),
 			),
 		})
+	}
+	if len(plan.Blocked) > 0 {
+		a.console.Message(ctx, "")
 	}
 
 	for _, target := range plan.Targets {

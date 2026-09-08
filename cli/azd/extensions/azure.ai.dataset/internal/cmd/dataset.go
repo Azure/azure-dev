@@ -51,6 +51,13 @@ func newDatasetCreateCommand() *cobra.Command {
 // returned. Treating a 403 or a timeout as "not there" let `create` go on to
 // publish a further version of a dataset that already existed -- the one thing
 // separating create from update, decided by an error nobody looked at.
+//
+// An empty 200 is given the settle loop before it is believed. The point probes
+// only know the versions a *first* publish can carry, so a dataset registered
+// as `create --version 7.0` is invisible to them, and a listing that had not
+// caught up let `create` publish 1.0 over it. The retry costs nothing on the
+// ordinary path: an unknown name answers 404, which is an answer and returns at
+// once.
 func datasetPresence(
 	ctx context.Context,
 	client *dataset_api.DatasetClient,
@@ -73,11 +80,27 @@ func datasetPresence(
 			return false, false, messages.CheckingDataset(name, getErr)
 		}
 	}
+
+	if listErr == nil {
+		// Nothing has proved absence: the listing answered 200 with no rows,
+		// which an unknown dataset and a lagging one both do.
+		settled, err := settledLatestVersion(ctx, client, name)
+		if err != nil {
+			return false, false, err
+		}
+		if settled != "" {
+			return true, false, nil
+		}
+		return false, false, nil
+	}
 	return false, dataset_api.IsNotFound(listErr), nil
 }
 
 // How long a version listing is given to catch up before it is believed.
-const (
+//
+// A var so a test can drop the delay: the number of attempts is the behavior
+// worth pinning, and waiting two real seconds to pin it is not.
+var (
 	versionListingSettleAttempts = 5
 	versionListingSettleDelay    = 400 * time.Millisecond
 )

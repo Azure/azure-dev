@@ -227,9 +227,12 @@ func TestCLIUnknownDatasetIsBrief(t *testing.T) {
 func TestCLIVersionsListOfAnUnknownNameSucceeds(t *testing.T) {
 	r := requireSuccess(t, run(t, "versions", "list", "azdcli-no-such-dataset", "-o", "json"))
 
-	var versions []map[string]any
+	// The envelope, not a bare array: decoding into a slice fails outright, so
+	// this test could only ever have passed by not being run.
+	var versions datasetPage
 	r.JSON(t, &versions)
-	require.Empty(t, versions, "an unknown name lists nothing rather than failing")
+	require.Empty(t, versions.Items, "an unknown name lists nothing rather than failing")
+	require.Zero(t, versions.Count)
 }
 
 // Succeeding quietly is right for a parser and wrong for a reader. The project

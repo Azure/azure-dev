@@ -239,7 +239,7 @@ func TestBlobOperationsRejectAnUnparseableURI(t *testing.T) {
 	_, err = client.ListContainerBlobs(t.Context(), "://nope")
 	require.Error(t, err)
 
-	err = client.UploadBlob(t.Context(), "://nope", "x.jsonl", []byte("{}"))
+	err = client.UploadBlob(t.Context(), "://nope", "x.jsonl", strings.NewReader("{}"))
 	require.Error(t, err)
 }
 

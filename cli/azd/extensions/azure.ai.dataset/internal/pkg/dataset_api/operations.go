@@ -257,7 +257,11 @@ func (c *DatasetClient) UploadVersion(
 
 	// Step 2: Upload the JSONL file to blob storage.
 	blobName := name + ".jsonl"
-	if err := c.UploadBlob(ctx, uploadURI, blobName, []byte(content)); err != nil {
+	// strings.NewReader, not []byte(content): the conversion copies the whole
+	// dataset a second time, so a large one peaked at twice its size for no
+	// reason. The reader keeps Content-Length and the replay body, because
+	// net/http special-cases it the same way it does *bytes.Reader.
+	if err := c.UploadBlob(ctx, uploadURI, blobName, strings.NewReader(content)); err != nil {
 		return nil, messages.UploadingBlob(err)
 	}
 
@@ -289,7 +293,14 @@ func (c *DatasetClient) StartPendingUpload(
 var blobHTTPClient = &http.Client{Timeout: 10 * time.Minute}
 
 // UploadBlob uploads data to a container SAS URI as a block blob.
-func (c *DatasetClient) UploadBlob(ctx context.Context, containerSASUri, blobName string, data []byte) error {
+//
+// Takes a reader rather than a []byte so the caller does not have to hold a
+// second copy of the dataset. It must be one net/http can size and replay --
+// *strings.Reader, *bytes.Reader or *bytes.Buffer -- or the request goes out
+// chunked and cannot be retried.
+func (c *DatasetClient) UploadBlob(
+	ctx context.Context, containerSASUri, blobName string, data io.Reader,
+) error {
 	u, err := url.Parse(containerSASUri)
 	if err != nil {
 		return messages.InvalidContainerURI(urlsafe.Error(err))
@@ -298,7 +309,7 @@ func (c *DatasetClient) UploadBlob(ctx context.Context, containerSASUri, blobNam
 	// Append blob name to the container path.
 	u.Path = strings.TrimSuffix(u.Path, "/") + "/" + blobName
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, u.String(), bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, u.String(), data)
 	if err != nil {
 		return messages.CreatingUploadRequest(urlsafe.Error(err))
 	}

@@ -146,6 +146,13 @@ func (a *datasetDownloadAction) write(
 			return 0, "", messages.DownloadingDataset(a.name, version, err)
 		}
 		defer body.Close()
+		// Asked again, because the check above happened before a transfer that
+		// can run for minutes and writeFileAtomically renames over whatever it
+		// finds. Without --force the caller was promised their file would not be
+		// replaced, and the promise has to hold at the moment of replacing.
+		if err := refuseExisting(dest, a.force); err != nil {
+			return 0, "", err
+		}
 		if err := writeFileAtomically(dest, body); err != nil {
 			return 0, "", err
 		}
@@ -196,7 +203,7 @@ func (a *datasetDownloadAction) write(
 		}
 	}
 
-	if err := replaceDir(staging, dest); err != nil {
+	if err := replaceDir(staging, dest, a.force); err != nil {
 		return 0, "", err
 	}
 	return len(content.Files), dest, nil
@@ -212,9 +219,18 @@ func (a *datasetDownloadAction) write(
 // The holding name is created rather than composed. A fixed sibling such as
 // `<dest>.azd-replaced` is a path this command does not own, and clearing it to
 // make room would destroy whatever a caller had already put there.
-func replaceDir(staging, dest string) error {
+//
+// force is asked here and not only before the download, because the files are
+// fetched in between and a destination can appear while they are. Replacing it
+// then destroys a directory the caller never agreed to lose. This narrows the
+// window rather than closing it -- there is no portable rename that refuses an
+// existing directory -- but it turns silent destruction into a refusal.
+func replaceDir(staging, dest string, force bool) error {
 	replaced := ""
 	if _, err := os.Lstat(dest); err == nil {
+		if !force {
+			return messages.DownloadDestinationExists(dest)
+		}
 		held, err := os.MkdirTemp(filepath.Dir(dest), ".azd-replaced-*")
 		if err != nil {
 			return messages.CannotWriteInDirectory(filepath.Dir(dest), err)

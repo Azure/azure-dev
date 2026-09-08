@@ -30,7 +30,7 @@ func TestReplacingAFolderDoesNotTouchANeighbour(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(staging, "rows.jsonl"), []byte("{}\n"), 0o600))
 
-	require.NoError(t, replaceDir(staging, dest))
+	require.NoError(t, replaceDir(staging, dest, true))
 
 	// #nosec G304 -- both paths are inside this test's own TempDir.
 	body, err := os.ReadFile(neighbour)
@@ -52,7 +52,7 @@ func TestReplacingAFolderLeavesNoHoldingDirectory(t *testing.T) {
 	staging, err := os.MkdirTemp(dir, ".azd-dataset-*")
 	require.NoError(t, err)
 
-	require.NoError(t, replaceDir(staging, dest))
+	require.NoError(t, replaceDir(staging, dest, true))
 
 	entries, err := os.ReadDir(dir)
 	require.NoError(t, err)
@@ -60,4 +60,47 @@ func TestReplacingAFolderLeavesNoHoldingDirectory(t *testing.T) {
 		assert.False(t, strings.HasPrefix(e.Name(), ".azd-replaced"),
 			"the holding name is discarded once the new directory is in place, got %q", e.Name())
 	}
+}
+
+// The destination is checked before the download, but the files are fetched in
+// between and that can take minutes. A directory appearing in the meantime was
+// moved aside and deleted anyway, so a download nobody forced destroyed work
+// the caller had just created.
+func TestReplacingAFolderRefusesWhenNotForced(t *testing.T) {
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "golden-1.0")
+	require.NoError(t, os.MkdirAll(dest, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(dest, "theirs.txt"), []byte("mine"), 0o600))
+
+	staging, err := os.MkdirTemp(dir, ".azd-dataset-*")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(staging, "rows.jsonl"), []byte("{}\n"), 0o600))
+
+	err = replaceDir(staging, dest, false)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--force", "the refusal has to say how to go ahead")
+
+	// #nosec G304 -- both paths are inside this test's own TempDir.
+	body, readErr := os.ReadFile(filepath.Join(dest, "theirs.txt"))
+	require.NoError(t, readErr, "what was there has to still be there")
+	assert.Equal(t, "mine", string(body))
+}
+
+// Nothing was there, so there is nothing to refuse: the ordinary download must
+// not start needing --force.
+func TestReplacingIntoAFreeNameNeedsNoForce(t *testing.T) {
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "golden-1.0")
+
+	staging, err := os.MkdirTemp(dir, ".azd-dataset-*")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(staging, "rows.jsonl"), []byte("{}\n"), 0o600))
+
+	require.NoError(t, replaceDir(staging, dest, false))
+
+	// #nosec G304 -- both paths are inside this test's own TempDir.
+	rows, err := os.ReadFile(filepath.Join(dest, "rows.jsonl"))
+	require.NoError(t, err)
+	assert.Equal(t, "{}\n", string(rows))
 }

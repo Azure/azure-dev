@@ -136,6 +136,7 @@ func TestPresenceProbesTheVersionSomethingElseRegistered(t *testing.T) {
 // `update` working against a service whose listing lags. An empty 200 is not a
 // 404, so the gate must let the update through rather than refuse it.
 func TestPresenceWillNotCallAnEmptyListingProofOfAbsence(t *testing.T) {
+	quickSettle(t)
 	client, _ := newPresenceClient(t, http.StatusOK, `{"value":[]}`, nil)
 
 	exists, absenceCertain, err := datasetPresence(t.Context(), client, "ds")

@@ -45,7 +45,7 @@ func TestRequestConstructionErrorsDoNotCarryTheSAS(t *testing.T) {
 	}{
 		{"DownloadDataset", func() error { _, err := client.DownloadDataset(ctx, raw); return err }},
 		{"DownloadBlob", func() error { _, err := client.DownloadBlob(ctx, raw, "d.jsonl"); return err }},
-		{"UploadBlob", func() error { return client.UploadBlob(ctx, raw, "d.jsonl", []byte("{}")) }},
+		{"UploadBlob", func() error { return client.UploadBlob(ctx, raw, "d.jsonl", strings.NewReader("{}")) }},
 		{"ListContainerBlobs", func() error { _, err := client.ListContainerBlobs(ctx, raw); return err }},
 	}
 

@@ -465,13 +465,17 @@ func TestUpgradeActionResult(t *testing.T) {
 			DependencyUpgrades: []extensions.UpgradeResult{{
 				Status: extensions.UpgradeStatusUpgraded,
 				DependencyUpgrades: []extensions.UpgradeResult{{
-					Status: extensions.UpgradeStatusFailed,
+					ExtensionId: "test.leaf",
+					Status:      extensions.UpgradeStatusFailed,
+					Error:       fmt.Errorf("updating dependency: %w", context.Canceled),
 				}},
 			}},
 		}}
 		result, err := upgradeActionResult(results)
 		require.Nil(t, result)
-		require.EqualError(t, err, "1 extension dependency failed to update")
+		require.ErrorContains(t, err, "1 extension dependency failed to update")
+		require.ErrorContains(t, err, "dependency test.leaf:")
+		require.ErrorIs(t, err, context.Canceled)
 	})
 
 	t.Run(

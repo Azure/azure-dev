@@ -1233,6 +1233,7 @@ func TestExtensionCommands_ReportDependencyFailuresAfterParentUpdate(t *testing.
 			)
 			console := mockinput.NewMockConsole()
 			var buf bytes.Buffer
+			var commandErr error
 			if command == "install" {
 				action := &extensionInstallAction{
 					args: []string{"test.pack"},
@@ -1244,18 +1245,7 @@ func TestExtensionCommands_ReportDependencyFailuresAfterParentUpdate(t *testing.
 				result, err := action.Run(t.Context())
 				require.ErrorContains(t, err, "failed to update dependencies for extension test.pack")
 				require.Nil(t, result)
-				dependencyErr, ok := errors.AsType[*extensions.DependencyVersionNotFoundError](err)
-				require.True(t, ok, "the command must preserve the dependency error for classification")
-				require.Equal(t, "test.child", dependencyErr.DependencyId)
-				require.Equal(t, "test.pack", dependencyErr.ParentId)
-				require.Equal(t, ">=2.0.0", dependencyErr.Constraint)
-
-				span := &mocktracing.Span{}
-				cmdinternal.MapError(err, span)
-				causeSpan := &mocktracing.Span{}
-				cmdinternal.MapError(dependencyErr, causeSpan)
-				require.Equal(t, causeSpan.Status.Description, span.Status.Description)
-				require.NotEqual(t, "internal.unclassified", span.Status.Description)
+				commandErr = err
 			} else {
 				var formatter output.Formatter = &output.NoneFormatter{}
 				if command == "update-json" {
@@ -1272,7 +1262,21 @@ func TestExtensionCommands_ReportDependencyFailuresAfterParentUpdate(t *testing.
 				result, err := action.Run(t.Context())
 				require.ErrorContains(t, err, "1 extension dependency failed to update")
 				require.Nil(t, result)
+				commandErr = err
 			}
+
+			dependencyErr, ok := errors.AsType[*extensions.DependencyVersionNotFoundError](commandErr)
+			require.True(t, ok, "the command must preserve the dependency error for classification")
+			require.Equal(t, "test.child", dependencyErr.DependencyId)
+			require.Equal(t, "test.pack", dependencyErr.ParentId)
+			require.Equal(t, ">=2.0.0", dependencyErr.Constraint)
+
+			span := &mocktracing.Span{}
+			cmdinternal.MapError(commandErr, span)
+			causeSpan := &mocktracing.Span{}
+			cmdinternal.MapError(dependencyErr, causeSpan)
+			require.Equal(t, causeSpan.Status.Description, span.Status.Description)
+			require.NotEqual(t, "internal.unclassified", span.Status.Description)
 
 			parent, err := manager.GetInstalled(extensions.FilterOptions{Id: "test.pack"})
 			require.NoError(t, err)

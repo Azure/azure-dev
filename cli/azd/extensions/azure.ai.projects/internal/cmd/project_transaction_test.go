@@ -82,7 +82,7 @@ func TestReconcileProjectEnvironmentRollbackRestoresValues(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, "westus2", envServer.values["AZURE_LOCATION"])
 	assert.Equal(t, "true", envServer.values["USE_EXISTING_AI_PROJECT"])
-	assert.NotContains(t, envServer.values, "AZURE_AI_DEPLOYMENTS_LOCATION")
+	assert.Equal(t, "", envServer.values["AZURE_AI_DEPLOYMENTS_LOCATION"])
 	assert.Equal(t, 5, envServer.calls)
 }
 
@@ -984,18 +984,6 @@ func (s *transactionEnvironmentServer) SetValue(
 		return nil, errors.New("environment write failed")
 	}
 	s.values[request.Key] = request.Value
-	return &azdext.EmptyResponse{}, nil
-}
-
-func (s *transactionEnvironmentServer) UnsetValue(
-	_ context.Context,
-	request *azdext.GetEnvRequest,
-) (*azdext.EmptyResponse, error) {
-	s.calls++
-	if s.failAt == s.calls {
-		return nil, errors.New("environment write failed")
-	}
-	delete(s.values, request.Key)
 	return &azdext.EmptyResponse{}, nil
 }
 

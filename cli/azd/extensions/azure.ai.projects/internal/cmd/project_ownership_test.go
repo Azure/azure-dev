@@ -761,16 +761,6 @@ func TestProjectEnvironmentTransitions(t *testing.T) {
 			effective := applyProjectEnvironmentPlan(values, plan)
 			for _, key := range resetKeys {
 				if test.wantReplacement {
-					if key == "AZURE_RESOURCE_GROUP" &&
-						test.target.ResourceGroupName != "" {
-						assert.Equal(
-							t,
-							test.target.ResourceGroupName,
-							effective[key],
-						)
-						assert.NotContains(t, plan.Unsets, key)
-						continue
-					}
 					assert.NotContains(t, effective, key)
 					assert.Contains(t, plan.Unsets, key)
 				} else {
@@ -795,51 +785,6 @@ func TestProjectEnvironmentClearsOnlyNonEmptyValues(t *testing.T) {
 	assert.Contains(t, plan.Unsets, "AZURE_AI_PROJECT_ID")
 	assert.Contains(t, plan.Unsets, "AZURE_OPENAI_ENDPOINT")
 	assert.NotContains(t, plan.Unsets, "AZURE_RESOURCE_GROUP")
-}
-
-func TestProjectEnvironmentPreservesSharedResourceGroupWithoutReplacement(t *testing.T) {
-	tests := []struct {
-		name string
-		mode projectMode
-	}{
-		{name: "new project", mode: projectModeNew},
-		{name: "existing endpoint", mode: projectModeExistingEndpoint},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			old := map[string]string{"AZURE_RESOURCE_GROUP": "shared-rg"}
-			plan := planProjectEnvironment(
-				old,
-				test.mode,
-				&resolvedProject{Endpoint: "https://account.services.ai.azure.com/api/projects/p"},
-				false,
-			)
-
-			assert.NotContains(t, plan.Unsets, "AZURE_RESOURCE_GROUP")
-			assert.Equal(
-				t,
-				"shared-rg",
-				applyProjectEnvironmentPlan(old, plan)["AZURE_RESOURCE_GROUP"],
-			)
-		})
-	}
-}
-
-func TestProjectEnvironmentClearsSharedResourceGroupOnReplacement(t *testing.T) {
-	plan := planProjectEnvironment(
-		map[string]string{"AZURE_RESOURCE_GROUP": "old-rg"},
-		projectModeExistingEndpoint,
-		&resolvedProject{Endpoint: "https://new.services.ai.azure.com/api/projects/new"},
-		true,
-	)
-
-	assert.Contains(t, plan.Unsets, "AZURE_RESOURCE_GROUP")
-	assert.NotContains(
-		t,
-		applyProjectEnvironmentPlan(map[string]string{"AZURE_RESOURCE_GROUP": "old-rg"}, plan),
-		"AZURE_RESOURCE_GROUP",
-	)
 }
 
 func TestExistingEndpointModeRejectsManagedDeployments(t *testing.T) {
@@ -1825,7 +1770,7 @@ services:
 		extCtx: &azdext.ExtensionContext{Environment: "test"},
 	}
 	require.Error(t, action.Run(t.Context()))
-	assert.Equal(t, 1, envServer.setCalls)
+	assert.Equal(t, 2, envServer.setCalls)
 	assert.Nil(t, projectServer.setRequest)
 	_, err = os.Stat(filepath.Join(root, "infra"))
 	assert.ErrorIs(t, err, os.ErrNotExist)

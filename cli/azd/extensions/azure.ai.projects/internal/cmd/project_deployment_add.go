@@ -274,26 +274,11 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 			slices.Sort(keys)
 			var restoreErrs []error
 			for _, key := range keys {
-				var err error
-				if value, exists := values[key]; exists {
-					_, err = client.Environment().SetValue(
-						rollbackCtx,
-						&azdext.SetEnvRequest{
-							EnvName: envName,
-							Key:     key,
-							Value:   value,
-						},
-					)
-				} else {
-					_, err = client.Environment().UnsetValue(
-						rollbackCtx,
-						&azdext.GetEnvRequest{
-							EnvName: envName,
-							Key:     key,
-						},
-					)
-				}
-				if err != nil {
+				if _, err := client.Environment().SetValue(rollbackCtx, &azdext.SetEnvRequest{
+					EnvName: envName,
+					Key:     key,
+					Value:   values[key],
+				}); err != nil {
 					restoreErrs = append(
 						restoreErrs,
 						fmt.Errorf("restore environment value %s: %w", key, err),

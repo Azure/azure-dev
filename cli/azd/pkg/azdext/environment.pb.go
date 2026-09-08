@@ -1072,7 +1072,7 @@ const file_environment_proto_rawDesc = "" +
 	"\benv_name\x18\x03 \x01(\tR\aenvName\"C\n" +
 	"\x12UnsetConfigRequest\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x19\n" +
-	"\benv_name\x18\x02 \x01(\tR\aenvName2\x84\a\n" +
+	"\benv_name\x18\x02 \x01(\tR\aenvName2\xc8\x06\n" +
 	"\x12EnvironmentService\x12?\n" +
 	"\n" +
 	"GetCurrent\x12\x14.azdext.EmptyRequest\x1a\x1b.azdext.EnvironmentResponse\x12=\n" +
@@ -1081,9 +1081,7 @@ const file_environment_proto_rawDesc = "" +
 	"\x06Select\x12 .azdext.SelectEnvironmentRequest\x1a\x15.azdext.EmptyResponse\x12H\n" +
 	"\tGetValues\x12\x1d.azdext.GetEnvironmentRequest\x1a\x1c.azdext.KeyValueListResponse\x12;\n" +
 	"\bGetValue\x12\x15.azdext.GetEnvRequest\x1a\x18.azdext.KeyValueResponse\x128\n" +
-	"\bSetValue\x12\x15.azdext.SetEnvRequest\x1a\x15.azdext.EmptyResponse\x12:\n" +
-	"\n" +
-	"UnsetValue\x12\x15.azdext.GetEnvRequest\x1a\x15.azdext.EmptyResponse\x12@\n" +
+	"\bSetValue\x12\x15.azdext.SetEnvRequest\x1a\x15.azdext.EmptyResponse\x12@\n" +
 	"\tGetConfig\x12\x18.azdext.GetConfigRequest\x1a\x19.azdext.GetConfigResponse\x12R\n" +
 	"\x0fGetConfigString\x12\x1e.azdext.GetConfigStringRequest\x1a\x1f.azdext.GetConfigStringResponse\x12U\n" +
 	"\x10GetConfigSection\x12\x1f.azdext.GetConfigSectionRequest\x1a .azdext.GetConfigSectionResponse\x12<\n" +
@@ -1137,27 +1135,25 @@ var file_environment_proto_depIdxs = []int32{
 	0,  // 7: azdext.EnvironmentService.GetValues:input_type -> azdext.GetEnvironmentRequest
 	2,  // 8: azdext.EnvironmentService.GetValue:input_type -> azdext.GetEnvRequest
 	3,  // 9: azdext.EnvironmentService.SetValue:input_type -> azdext.SetEnvRequest
-	2,  // 10: azdext.EnvironmentService.UnsetValue:input_type -> azdext.GetEnvRequest
-	11, // 11: azdext.EnvironmentService.GetConfig:input_type -> azdext.GetConfigRequest
-	13, // 12: azdext.EnvironmentService.GetConfigString:input_type -> azdext.GetConfigStringRequest
-	15, // 13: azdext.EnvironmentService.GetConfigSection:input_type -> azdext.GetConfigSectionRequest
-	17, // 14: azdext.EnvironmentService.SetConfig:input_type -> azdext.SetConfigRequest
-	18, // 15: azdext.EnvironmentService.UnsetConfig:input_type -> azdext.UnsetConfigRequest
-	4,  // 16: azdext.EnvironmentService.GetCurrent:output_type -> azdext.EnvironmentResponse
-	5,  // 17: azdext.EnvironmentService.List:output_type -> azdext.EnvironmentListResponse
-	4,  // 18: azdext.EnvironmentService.Get:output_type -> azdext.EnvironmentResponse
-	20, // 19: azdext.EnvironmentService.Select:output_type -> azdext.EmptyResponse
-	6,  // 20: azdext.EnvironmentService.GetValues:output_type -> azdext.KeyValueListResponse
-	7,  // 21: azdext.EnvironmentService.GetValue:output_type -> azdext.KeyValueResponse
-	20, // 22: azdext.EnvironmentService.SetValue:output_type -> azdext.EmptyResponse
-	20, // 23: azdext.EnvironmentService.UnsetValue:output_type -> azdext.EmptyResponse
-	12, // 24: azdext.EnvironmentService.GetConfig:output_type -> azdext.GetConfigResponse
-	14, // 25: azdext.EnvironmentService.GetConfigString:output_type -> azdext.GetConfigStringResponse
-	16, // 26: azdext.EnvironmentService.GetConfigSection:output_type -> azdext.GetConfigSectionResponse
-	20, // 27: azdext.EnvironmentService.SetConfig:output_type -> azdext.EmptyResponse
-	20, // 28: azdext.EnvironmentService.UnsetConfig:output_type -> azdext.EmptyResponse
-	16, // [16:29] is the sub-list for method output_type
-	3,  // [3:16] is the sub-list for method input_type
+	11, // 10: azdext.EnvironmentService.GetConfig:input_type -> azdext.GetConfigRequest
+	13, // 11: azdext.EnvironmentService.GetConfigString:input_type -> azdext.GetConfigStringRequest
+	15, // 12: azdext.EnvironmentService.GetConfigSection:input_type -> azdext.GetConfigSectionRequest
+	17, // 13: azdext.EnvironmentService.SetConfig:input_type -> azdext.SetConfigRequest
+	18, // 14: azdext.EnvironmentService.UnsetConfig:input_type -> azdext.UnsetConfigRequest
+	4,  // 15: azdext.EnvironmentService.GetCurrent:output_type -> azdext.EnvironmentResponse
+	5,  // 16: azdext.EnvironmentService.List:output_type -> azdext.EnvironmentListResponse
+	4,  // 17: azdext.EnvironmentService.Get:output_type -> azdext.EnvironmentResponse
+	20, // 18: azdext.EnvironmentService.Select:output_type -> azdext.EmptyResponse
+	6,  // 19: azdext.EnvironmentService.GetValues:output_type -> azdext.KeyValueListResponse
+	7,  // 20: azdext.EnvironmentService.GetValue:output_type -> azdext.KeyValueResponse
+	20, // 21: azdext.EnvironmentService.SetValue:output_type -> azdext.EmptyResponse
+	12, // 22: azdext.EnvironmentService.GetConfig:output_type -> azdext.GetConfigResponse
+	14, // 23: azdext.EnvironmentService.GetConfigString:output_type -> azdext.GetConfigStringResponse
+	16, // 24: azdext.EnvironmentService.GetConfigSection:output_type -> azdext.GetConfigSectionResponse
+	20, // 25: azdext.EnvironmentService.SetConfig:output_type -> azdext.EmptyResponse
+	20, // 26: azdext.EnvironmentService.UnsetConfig:output_type -> azdext.EmptyResponse
+	15, // [15:27] is the sub-list for method output_type
+	3,  // [3:15] is the sub-list for method input_type
 	3,  // [3:3] is the sub-list for extension type_name
 	3,  // [3:3] is the sub-list for extension extendee
 	0,  // [0:3] is the sub-list for field type_name

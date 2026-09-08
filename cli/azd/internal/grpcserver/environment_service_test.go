@@ -337,7 +337,7 @@ func Test_EnvironmentService_ResolveEnvironment(t *testing.T) {
 	})
 }
 
-// Test_EnvironmentService_EmptyKeyValidation verifies that GetValue and SetValue
+// Test_EnvironmentService_EmptyKeyValidation verifies that GetValue, SetValue, and UnsetValue
 // return InvalidArgument when called with an empty key.
 func Test_EnvironmentService_EmptyKeyValidation(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
@@ -371,6 +371,7 @@ func Test_EnvironmentService_EmptyKeyValidation(t *testing.T) {
 	}{
 		{"GetValue_empty_key", "GetValue"},
 		{"SetValue_empty_key", "SetValue"},
+		{"UnsetValue_empty_key", "UnsetValue"},
 	}
 
 	for _, tt := range tests {
@@ -382,6 +383,10 @@ func Test_EnvironmentService_EmptyKeyValidation(t *testing.T) {
 			case "SetValue":
 				_, callErr = service.SetValue(
 					ctx, &azdext.SetEnvRequest{Key: "", Value: "v"},
+				)
+			case "UnsetValue":
+				_, callErr = service.UnsetValue(
+					ctx, &azdext.GetEnvRequest{Key: ""},
 				)
 			}
 
@@ -421,6 +426,67 @@ func (m *mockEnvManager) Save(ctx context.Context, env *environment.Environment)
 		return m.saveFunc(ctx, env)
 	}
 	return nil
+}
+
+func TestEnvironmentService_UnsetValue_EnvManagerError(t *testing.T) {
+	t.Parallel()
+	lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
+		return nil, errors.New("env manager error")
+	})
+	svc := NewEnvironmentService(nil, lazyEnvManager)
+
+	_, err := svc.UnsetValue(
+		t.Context(),
+		&azdext.GetEnvRequest{Key: "K", EnvName: "dev"},
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "env manager error")
+}
+
+func TestEnvironmentService_UnsetValue_Success(t *testing.T) {
+	t.Parallel()
+	env := environment.NewWithValues("dev", map[string]string{"K": "V"})
+	mockMgr := &mockEnvManager{
+		getFunc: func(_ context.Context, _ string) (*environment.Environment, error) {
+			return env, nil
+		},
+	}
+	lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
+		return mockMgr, nil
+	})
+	svc := NewEnvironmentService(nil, lazyEnvManager)
+
+	resp, err := svc.UnsetValue(
+		t.Context(),
+		&azdext.GetEnvRequest{Key: "K", EnvName: "dev"},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	_, exists := env.LookupEnv("K")
+	require.False(t, exists)
+}
+
+func TestEnvironmentService_UnsetValue_SaveError(t *testing.T) {
+	t.Parallel()
+	mockMgr := &mockEnvManager{
+		getFunc: func(_ context.Context, name string) (*environment.Environment, error) {
+			return environment.NewWithValues(name, map[string]string{"K": "V"}), nil
+		},
+		saveFunc: func(_ context.Context, _ *environment.Environment) error {
+			return errors.New("save failed")
+		},
+	}
+	lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
+		return mockMgr, nil
+	})
+	svc := NewEnvironmentService(nil, lazyEnvManager)
+
+	_, err := svc.UnsetValue(
+		t.Context(),
+		&azdext.GetEnvRequest{Key: "K", EnvName: "dev"},
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "save failed")
 }
 
 func TestEnvironmentService_Get_LazyEnvManagerError(t *testing.T) {

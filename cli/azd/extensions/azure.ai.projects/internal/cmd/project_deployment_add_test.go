@@ -31,6 +31,7 @@ type selfInitializingProjectServer struct {
 	setConfigErr  error
 	providerSet   bool
 	deploymentSet bool
+	deploymentErr error
 	subscription  *azdext.Subscription
 	location      *azdext.Location
 }
@@ -110,6 +111,9 @@ func (s *selfInitializingProjectServer) SetServiceConfigValue(
 	_ context.Context,
 	request *azdext.SetServiceConfigValueRequest,
 ) (*azdext.EmptyResponse, error) {
+	if s.deploymentErr != nil && request.GetPath() == "deployments" {
+		return nil, s.deploymentErr
+	}
 	body := s.services[request.GetServiceName()]
 	if body == nil {
 		body = map[string]any{}
@@ -186,6 +190,14 @@ func (s *selfInitializingEnvironmentServer) SetValue(
 	request *azdext.SetEnvRequest,
 ) (*azdext.EmptyResponse, error) {
 	s.values[request.GetKey()] = request.GetValue()
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *selfInitializingEnvironmentServer) UnsetValue(
+	_ context.Context,
+	request *azdext.GetEnvRequest,
+) (*azdext.EmptyResponse, error) {
+	delete(s.values, request.GetKey())
 	return &azdext.EmptyResponse{}, nil
 }
 
@@ -317,6 +329,46 @@ func newSelfInitializingDeploymentClient(
 	require.NoError(t, err)
 	t.Cleanup(client.Close)
 	return client, projectServer, environmentServer, aiServer, workflowServer
+}
+
+func TestProjectDeploymentAddRollbackRemovesMissingEnvironmentValues(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte("name: test\n"),
+		0600,
+	))
+
+	client, projectServer, environmentServer, _, _ :=
+		newSelfInitializingDeploymentClient(t, root)
+	projectServer.project.Services["project"] = &azdext.ServiceConfig{
+		Name: "project",
+		Host: "azure.ai.project",
+	}
+	projectServer.services["project"] = map[string]any{}
+	projectServer.deploymentErr = errors.New("deployment write failed")
+	environmentServer.values = map[string]string{
+		"AZURE_SUBSCRIPTION_ID":         "subscription",
+		"AZURE_TENANT_ID":               "tenant",
+		"AZURE_AI_DEPLOYMENTS_LOCATION": "eastus",
+	}
+
+	action := &ProjectDeploymentAddAction{
+		client: client,
+		flags: &projectDeploymentFlags{
+			model:  "gpt-4.1",
+			output: "none",
+		},
+		extCtx: &azdext.ExtensionContext{
+			Environment:  "test",
+			OutputFormat: "none",
+		},
+	}
+
+	require.Error(t, action.Run(t.Context()))
+	assert.NotContains(t, environmentServer.values, "AZURE_LOCATION")
 }
 
 func TestEnsureProjectInitializesEmptyDirectory(t *testing.T) {

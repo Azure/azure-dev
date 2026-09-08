@@ -33,6 +33,7 @@ var projectReplacementEnvironmentKeys = []string{
 	"AZURE_AI_PROJECT_CONNECTION_NAMES",
 	"AZURE_FOUNDRY_RESOURCE_GROUP",
 	"AZD_FOUNDRY_RESOURCE_GROUP_ID",
+	"AZURE_RESOURCE_GROUP",
 }
 
 func projectIdentityChanged(
@@ -169,7 +170,7 @@ func planProjectEnvironment(
 	switch mode {
 	case projectModeNew:
 		for _, key := range []string{
-			"AZURE_AI_PROJECT_ID", "AZURE_RESOURCE_GROUP", "AZURE_AI_ACCOUNT_NAME",
+			"AZURE_AI_PROJECT_ID", "AZURE_AI_ACCOUNT_NAME",
 			"AZURE_AI_PROJECT_NAME", "FOUNDRY_PROJECT_ENDPOINT",
 			"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT", "AZURE_OPENAI_ENDPOINT",
 			"AZURE_AI_DEPLOYMENTS_LOCATION",
@@ -178,7 +179,7 @@ func planProjectEnvironment(
 		}
 	case projectModeExistingEndpoint:
 		for _, key := range []string{
-			"AZURE_AI_PROJECT_ID", "AZURE_RESOURCE_GROUP", "AZURE_AI_ACCOUNT_NAME",
+			"AZURE_AI_PROJECT_ID", "AZURE_AI_ACCOUNT_NAME",
 			"AZURE_OPENAI_ENDPOINT", "AZURE_AI_DEPLOYMENTS_LOCATION",
 		} {
 			deleteKeys[key] = struct{}{}
@@ -264,10 +265,9 @@ func reconcileProjectEnvironmentWithRollback(
 		}
 	}
 	for _, key := range plan.Unsets {
-		if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		if _, err := client.Environment().UnsetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: envName,
 			Key:     key,
-			Value:   "",
 		}); err != nil {
 			operationErr := fmt.Errorf(
 				"clear project environment value %s: %w", key, err,
@@ -338,18 +338,26 @@ func restoreProjectEnvironment(
 	slices.Sort(keys)
 	var restoreErrs []error
 	for _, key := range keys {
-		value := ""
-		if oldValue, exists := old[key]; exists {
-			value = oldValue
+		var err error
+		if value, exists := old[key]; exists {
+			_, err = client.Environment().SetValue(
+				ctx,
+				&azdext.SetEnvRequest{
+					EnvName: envName,
+					Key:     key,
+					Value:   value,
+				},
+			)
+		} else {
+			_, err = client.Environment().UnsetValue(
+				ctx,
+				&azdext.GetEnvRequest{
+					EnvName: envName,
+					Key:     key,
+				},
+			)
 		}
-		if _, err := client.Environment().SetValue(
-			ctx,
-			&azdext.SetEnvRequest{
-				EnvName: envName,
-				Key:     key,
-				Value:   value,
-			},
-		); err != nil {
+		if err != nil {
 			restoreErrs = append(
 				restoreErrs,
 				fmt.Errorf("restore project environment value %s: %w", key, err),

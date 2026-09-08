@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log"
 	"maps"
@@ -260,6 +261,12 @@ func (r *evalReconciler) EnsureDataset(
 		} else if _, err := r.ec.datasetClient.GetDataset(
 			ctx, decl.Name, version, ProjectEndpointAPIVersion,
 		); err != nil {
+			// Only a 404 means the version is not there. Every other failure was
+			// reported as "no such version", which sent a reader looking for a
+			// version that exists and that they simply cannot read.
+			if !dataset_api.IsNotFound(err) {
+				return "", false, messages.DatasetNotLocalNorFound(decl.Name, err)
+			}
 			return "", false, messages.DatasetVersionNotFoundWithHint(decl.Name, version)
 		}
 
@@ -321,7 +328,13 @@ func (r *evalReconciler) EnsureDataset(
 				// failed the deploy. The run reads the pin from the declaration.
 				//
 				// Anything short of a confirmed absence leaves the pin alone
-				// rather than failing a deploy on a transient read.
+				// rather than failing a deploy on a transient read -- but says so,
+				// because otherwise the deploy reports the version verified when
+				// all it did was fail to look.
+				if getErr != nil {
+					fmt.Fprint(warnWriter(ctx), messages.Warning(
+						messages.DatasetVersionNotVerified(decl.Name, decl.Version, getErr)))
+				}
 				return decl.Version, false, nil
 
 			case decl.Version == version:

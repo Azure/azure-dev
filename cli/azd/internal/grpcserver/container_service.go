@@ -161,7 +161,7 @@ func (c *containerService) Build(
 		return nil, err
 	}
 
-	serviceConfig, has := projectConfig.Services[req.ServiceName]
+	serviceConfig, has := projectConfig.ServiceConfigs()[req.ServiceName]
 	if !has {
 		return nil, status.Errorf(codes.NotFound,
 			"service %q not found in project configuration", req.ServiceName)
@@ -216,7 +216,7 @@ func (c *containerService) Package(
 		return nil, err
 	}
 
-	serviceConfig, has := projectConfig.Services[req.ServiceName]
+	serviceConfig, has := projectConfig.ServiceConfigs()[req.ServiceName]
 	if !has {
 		return nil, status.Errorf(codes.NotFound,
 			"service %q not found in project configuration", req.ServiceName)
@@ -271,7 +271,7 @@ func (c *containerService) Publish(
 		return nil, err
 	}
 
-	serviceConfig, has := projectConfig.Services[req.ServiceName]
+	serviceConfig, has := projectConfig.ServiceConfigs()[req.ServiceName]
 	if !has {
 		return nil, status.Errorf(codes.NotFound,
 			"service %q not found in project configuration", req.ServiceName)

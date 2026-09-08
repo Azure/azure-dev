@@ -130,6 +130,43 @@ func TestValidateParsedConfigSortedOutput(t *testing.T) {
 	}
 }
 
+func TestProjectLayerInfrastructureRequiresProvider(t *testing.T) {
+	_, err := Parse(t.Context(), "name: test-proj\n"+
+		"layers:\n"+
+		"  - name: application\n"+
+		"    infra:\n"+
+		"      - name: app\n"+
+		"        path: infra/app\n")
+
+	require.ErrorContains(t, err, `layer "application" infrastructure entry "app" must specify a provider`)
+}
+
+func TestProjectLayerInfrastructureRejectsNestedLayers(t *testing.T) {
+	_, err := Parse(t.Context(), "name: test-proj\n"+
+		"layers:\n"+
+		"  - name: application\n"+
+		"    infra:\n"+
+		"      - name: app\n"+
+		"        provider: bicep\n"+
+		"        layers: []\n")
+
+	require.ErrorContains(t, err, `layer "application" infrastructure entry "app" cannot declare nested layers`)
+}
+
+func TestProjectLayerServiceInfrastructureRejectsNestedLayers(t *testing.T) {
+	_, err := Parse(t.Context(), "name: test-proj\n"+
+		"layers:\n"+
+		"  - name: application\n"+
+		"    services:\n"+
+		"      api:\n"+
+		"        host: containerapp\n"+
+		"        image: example/api:latest\n"+
+		"        infra:\n"+
+		"          layers: []\n")
+
+	require.ErrorContains(t, err, "layer 'application' service 'api' infrastructure cannot declare layers")
+}
+
 // TestValidateHooksNilSlice directly exercises the hookList == nil branch in validateHooks
 // by constructing a ProjectConfig with a nil hook slice (as opposed to a slice containing nil entries).
 // This path is reachable when a *.hooks.yaml infra module file defines a hook name with no body.

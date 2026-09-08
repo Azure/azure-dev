@@ -231,7 +231,7 @@ func (s *eventService) onSubscribeServiceEvent(
 		}
 
 		evt := ext.Event(eventName)
-		for _, serviceConfig := range projectConfig.Services {
+		for _, serviceConfig := range projectConfig.ServiceConfigs() {
 			if subscribeMsg.Language != "" && string(serviceConfig.Language) != subscribeMsg.Language {
 				continue
 			}

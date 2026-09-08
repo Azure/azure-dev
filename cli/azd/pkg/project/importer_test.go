@@ -257,6 +257,50 @@ func TestImportManagerProjectInfrastructure(t *testing.T) {
 	require.Equal(t, expectedDefaultModule, r.Options.Module)
 }
 
+func TestImportManagerProjectInfrastructureProjectLayers(t *testing.T) {
+	t.Parallel()
+
+	manager := NewImportManager(nil)
+	result, err := manager.ProjectInfrastructure(t.Context(), &ProjectConfig{Layers: []*LayerConfig{
+		{Name: "shared", Infra: []provisioning.Options{{Name: "network", Provider: provisioning.Bicep}}},
+		{Name: "application", Infra: []provisioning.Options{
+			{Name: "database", Provider: provisioning.Terraform},
+			{Name: "api", Provider: provisioning.Bicep},
+		}},
+	}})
+
+	require.NoError(t, err)
+	require.Len(t, result.Options.Layers, 3)
+	require.Equal(t, "network", result.Options.Layers[0].Name)
+	require.Equal(t, "shared", result.Options.Layers[0].Layer)
+	require.Equal(t, "database", result.Options.Layers[1].Name)
+	require.Equal(t, "application", result.Options.Layers[1].Layer)
+	require.Equal(t, "api", result.Options.Layers[2].Name)
+	require.Equal(t, "application", result.Options.Layers[2].Layer)
+
+	selected, err := result.Options.GetLayer("api")
+	require.NoError(t, err)
+	require.Equal(t, "api", selected.Name)
+}
+
+func TestImportManagerProjectInfrastructureServiceOnlyProjectHasNoLayers(t *testing.T) {
+	t.Parallel()
+
+	manager := NewImportManager(nil)
+	result, err := manager.ProjectInfrastructure(t.Context(), &ProjectConfig{
+		Layers: LayerConfigs{
+			{
+				Name: "application",
+				Services: map[string]*ServiceConfig{
+					"api": {Name: "api", Host: ContainerAppTarget, Image: osutil.NewExpandableString("example/api")},
+				},
+			},
+		}})
+
+	require.NoError(t, err)
+	require.Empty(t, result.Options.GetLayers())
+}
+
 //go:embed testdata/aspire-simple.json
 var aspireSimpleManifest []byte
 

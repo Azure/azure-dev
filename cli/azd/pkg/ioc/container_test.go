@@ -140,7 +140,81 @@ func Test_Container_Singleton_Instance_Register_Resolve(t *testing.T) {
 		require.Same(t, instance1, instance2)
 	})
 
-	t.Run("Nested Scope", func(t *testing.T) {
+	t.Run("Singleton, resolved", func(t *testing.T) {
+		rootContainer := NewNestedContainer(nil)
+
+		rootInstance := newSingletonService()
+		RegisterInstance(rootContainer, rootInstance)
+
+		scope1, err := rootContainer.NewScope()
+		require.NoError(t, err)
+		scope1Instance := newSingletonService()
+		RegisterInstance(scope1, scope1Instance)
+
+		scope2, err := rootContainer.NewScope()
+		require.NoError(t, err)
+		scope2Instance := newSingletonService()
+		RegisterInstance(scope2, scope2Instance)
+
+		var rootInstanceResolved *singletonService
+		err = rootContainer.Resolve(&rootInstanceResolved)
+		require.NoError(t, err)
+		require.NotNil(t, rootInstanceResolved)
+
+		var scope1Instance1 *singletonService
+		err = scope1.Resolve(&scope1Instance1)
+		require.NoError(t, err)
+		require.NotNil(t, scope1Instance1)
+		require.Same(t, scope1Instance, scope1Instance1)
+
+		var scope2Instance1 *singletonService
+		err = scope2.Resolve(&scope2Instance1)
+		require.NoError(t, err)
+		require.NotNil(t, scope2Instance1)
+		require.Same(t, scope2Instance, scope2Instance1)
+	})
+
+	t.Run("Singleton, resolve at different levels", func(t *testing.T) {
+		t.Run("root first", func(t *testing.T) {
+			rootContainer := NewNestedContainer(nil)
+
+			// register, but not yet resolve, a singleton - we'll try to resolve it at different scopes
+			instance := newSingletonService()
+			RegisterInstance(rootContainer, instance)
+
+			childScope, err := rootContainer.NewScope()
+			require.NoError(t, err)
+
+			var rootResolved *singletonService
+			rootContainer.Resolve(&rootResolved)
+
+			var childResolved *singletonService
+			childScope.Resolve(&childResolved)
+
+			require.Same(t, rootResolved, childResolved)
+		})
+
+		t.Run("child first", func(t *testing.T) {
+			rootContainer := NewNestedContainer(nil)
+
+			// register, but not yet resolve, a singleton - we'll try to resolve it at different scopes
+			instance := newSingletonService()
+			RegisterInstance(rootContainer, instance)
+
+			childScope, err := rootContainer.NewScope()
+			require.NoError(t, err)
+
+			var rootResolved *singletonService
+			childScope.Resolve(&rootResolved)
+
+			var childResolved *singletonService
+			childScope.Resolve(&childResolved)
+
+			require.Same(t, rootResolved, childResolved)
+		})
+	})
+
+	t.Run("Singleton, resolved at child first", func(t *testing.T) {
 		rootContainer := NewNestedContainer(nil)
 
 		rootInstance := newSingletonService()

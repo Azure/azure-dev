@@ -4,9 +4,11 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"text/tabwriter"
 
@@ -19,6 +21,29 @@ import (
 const outputJSON = "json"
 
 const outputTable = "table"
+
+// warnWriterKey carries the command's error writer to the helpers that warn.
+type warnWriterKey struct{}
+
+// withWarnWriter puts the command's error writer where a helper can find it.
+//
+// Threading a writer through would have touched every constructor call site;
+// every one of them already carries the context this rides on. It must not be
+// stdout: `-o json` writes a document there, and a warning mixed into it makes
+// the output unparseable for the caller who asked for JSON precisely so they
+// could parse it.
+func withWarnWriter(ctx context.Context, w io.Writer) context.Context {
+	return context.WithValue(ctx, warnWriterKey{}, w)
+}
+
+// warnWriter is where a warning goes: the command's error writer, or stderr
+// when this ran outside one.
+func warnWriter(ctx context.Context) io.Writer {
+	if w, ok := ctx.Value(warnWriterKey{}).(io.Writer); ok && w != nil {
+		return w
+	}
+	return os.Stderr
+}
 
 // writePortalLink closes a view with the asset's portal URL.
 //

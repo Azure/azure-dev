@@ -41,6 +41,24 @@ const (
 	SourceFoundryEnv EndpointSource = "foundryEnv"
 )
 
+// Describe names where an endpoint came from, for someone who has to go and
+// change it. The constants themselves are identifiers, and telling a reader
+// their endpoint came from "globalConfig" leaves them looking for the file.
+func (s EndpointSource) Describe() string {
+	switch s {
+	case SourceFlag:
+		return "--project-endpoint"
+	case SourceAzdEnv:
+		return "the azd environment"
+	case SourceGlobalConfig:
+		return "~/.azd/config.json"
+	case SourceFoundryEnv:
+		return "the environment"
+	default:
+		return string(s)
+	}
+}
+
 // ResolveOpts controls the 5-level endpoint resolution cascade.
 type ResolveOpts struct {
 	// FlagValue is the value of the --project-endpoint flag (level 1).
@@ -54,6 +72,14 @@ type Resolved struct {
 	Source     EndpointSource
 	AzdEnvName string
 	SetAt      string // RFC3339 timestamp; only meaningful when Source == SourceGlobalConfig
+	// PathWarning is set when the endpoint validated but its path does not look
+	// like /api/projects/<project>.
+	//
+	// Carried rather than discarded because it is the difference between "your
+	// endpoint is wrong" and "the dataset is not there": an account endpoint
+	// answers every call with a 404, and without this the CLI reported a missing
+	// dataset in a project that had it.
+	PathWarning bool
 }
 
 // AzdHostedSources holds the values the resolver reads from azd-managed

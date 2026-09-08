@@ -330,11 +330,13 @@ func containsGRPCCode(err error, code codes.Code) bool {
 func Resolve(ctx context.Context, opts ResolveOpts) (*Resolved, error) {
 	// Level 1: explicit flag.
 	if opts.FlagValue != "" {
-		normalized, _, err := Validate(opts.FlagValue)
+		normalized, pathWarning, err := Validate(opts.FlagValue)
 		if err != nil {
 			return nil, err
 		}
-		return &Resolved{Endpoint: normalized, Source: SourceFlag}, nil
+		return &Resolved{
+			Endpoint: normalized, Source: SourceFlag, PathWarning: pathWarning,
+		}, nil
 	}
 
 	// Levels 2 + 3: azd-hosted sources (active env, then global config).
@@ -346,27 +348,29 @@ func Resolve(ctx context.Context, opts ResolveOpts) (*Resolved, error) {
 	// Level 2: active azd environment's FOUNDRY_PROJECT_ENDPOINT (with the
 	// AZURE_AI_PROJECT_ENDPOINT fallback applied in readAzdHostedSources).
 	if sources.EnvValue != "" {
-		normalized, _, err := Validate(sources.EnvValue)
+		normalized, pathWarning, err := Validate(sources.EnvValue)
 		if err != nil {
 			return nil, err
 		}
 		return &Resolved{
-			Endpoint:   normalized,
-			Source:     SourceAzdEnv,
-			AzdEnvName: sources.EnvName,
+			Endpoint:    normalized,
+			Source:      SourceAzdEnv,
+			AzdEnvName:  sources.EnvName,
+			PathWarning: pathWarning,
 		}, nil
 	}
 
 	// Level 3: global config (~/.azd/config.json).
 	if sources.CfgFound && sources.CfgState.Endpoint != "" {
-		normalized, _, err := Validate(sources.CfgState.Endpoint)
+		normalized, pathWarning, err := Validate(sources.CfgState.Endpoint)
 		if err != nil {
 			return nil, err
 		}
 		return &Resolved{
-			Endpoint: normalized,
-			Source:   SourceGlobalConfig,
-			SetAt:    sources.CfgState.SetAt,
+			Endpoint:    normalized,
+			Source:      SourceGlobalConfig,
+			SetAt:       sources.CfgState.SetAt,
+			PathWarning: pathWarning,
 		}, nil
 	}
 
@@ -377,11 +381,13 @@ func Resolve(ctx context.Context, opts ResolveOpts) (*Resolved, error) {
 		if envVal == "" {
 			continue
 		}
-		normalized, _, err := Validate(envVal)
+		normalized, pathWarning, err := Validate(envVal)
 		if err != nil {
 			return nil, err
 		}
-		return &Resolved{Endpoint: normalized, Source: SourceFoundryEnv}, nil
+		return &Resolved{
+			Endpoint: normalized, Source: SourceFoundryEnv, PathWarning: pathWarning,
+		}, nil
 	}
 
 	// Level 5: structured error.

@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 
@@ -68,6 +69,17 @@ func newDatasetContext(ctx context.Context, endpointFlag string) (*datasetContex
 	}
 	dc.endpoint = strings.TrimSuffix(resolved.Endpoint, "/")
 	log.Printf("[endpoint] resolved from %s", resolved.Source)
+
+	// The validator has always noticed an endpoint that is not shaped like a
+	// project endpoint, and the answer was discarded here. An account endpoint
+	// -- the one the portal shows first -- passes every other check and then
+	// answers every request with 404, which this CLI reported as the dataset
+	// not existing. Said once, at resolution, rather than guessed at from each
+	// failure.
+	if resolved.PathWarning {
+		fmt.Fprint(warnWriter(ctx), messages.Warning(
+			messages.EndpointNotAProjectPath(dc.endpoint, resolved.Source.Describe())))
+	}
 
 	cred, err := newAzdTokenCredential()
 	if err != nil {

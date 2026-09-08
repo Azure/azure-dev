@@ -431,6 +431,27 @@ const (
 	FailedMark  = "(x) Failed:"  // the step did not complete
 )
 
+// EndpointNotAProjectPath reports an endpoint that validated but is not shaped
+// like a project endpoint.
+//
+// The validator has always noticed this and the answer was thrown away, so an
+// account endpoint -- which is what the portal shows first, and what most
+// people paste -- was accepted in silence. Every call against it comes back
+// 404, and the CLI reported that as the dataset not existing: the endpoint was
+// the one thing the caller had no reason to doubt, because nothing had
+// questioned it.
+//
+// A warning and not an error. The path is a convention rather than a rule, and
+// refusing would break anyone whose project is reachable at a shape this does
+// not know about.
+func EndpointNotAProjectPath(endpoint string, source string) error {
+	return fmt.Errorf(
+		"the project endpoint from %s does not look like a project endpoint: %s\n"+
+			"         it should end in /api/projects/<project>, and an account "+
+			"endpoint answers every request with 404",
+		source, endpoint)
+}
+
 // Warning reports a problem that is not worth failing the command over.
 func Warning(err error) string {
 	return fmt.Sprintf("warning: %v\n", err)

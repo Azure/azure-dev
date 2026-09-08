@@ -50,6 +50,11 @@ func NewRootCommand() *cobra.Command {
 		if err := projectctx.VerifySelectedEnvironment(cmd.Context()); err != nil {
 			return err
 		}
+		// Warnings go to the command's error writer rather than process stderr,
+		// so that `-o json` keeps a parseable document on stdout and anything
+		// embedding this can capture them. Set once, here, because the helpers
+		// that warn are reached through a context and not through a writer.
+		cmd.SetContext(withWarnWriter(cmd.Context(), cmd.ErrOrStderr()))
 		setupDebugLogging(cmd.Flags())
 		return nil
 	}

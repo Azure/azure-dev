@@ -111,6 +111,28 @@ func commandContext(cmd *cobra.Command) context.Context {
 	return context.Background()
 }
 
+// warnWriterKey carries the command's error writer to the helpers that warn.
+type warnWriterKey struct{}
+
+// withWarnWriter puts the command's error writer where a helper can find it.
+//
+// Warnings used to go to process-global stderr, which nothing embedding this
+// can capture and which interleaves when two commands run at once. Threading a
+// writer through would have touched twenty-nine constructor call sites; every
+// one of them already carries the context this rides on.
+func withWarnWriter(ctx context.Context, w io.Writer) context.Context {
+	return context.WithValue(ctx, warnWriterKey{}, w)
+}
+
+// warnWriter is where a warning goes: the command's error writer, or stderr
+// when this ran outside one.
+func warnWriter(ctx context.Context) io.Writer {
+	if w, ok := ctx.Value(warnWriterKey{}).(io.Writer); ok && w != nil {
+		return w
+	}
+	return os.Stderr
+}
+
 // emitJSON writes v as indented JSON.
 func emitJSON(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)

@@ -54,6 +54,9 @@ func NewRootCommand() *cobra.Command {
 		if err := projectctx.VerifySelectedEnvironment(cmd.Context()); err != nil {
 			return err
 		}
+		// Once, here, so the helpers that warn reach this invocation's writer
+		// rather than process-global stderr.
+		cmd.SetContext(withWarnWriter(cmd.Context(), cmd.ErrOrStderr()))
 		setupDebugLogging(cmd.Flags())
 		return nil
 	}

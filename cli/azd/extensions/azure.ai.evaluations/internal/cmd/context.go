@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -244,7 +243,7 @@ func (ec *evalContext) remember(ctx context.Context, key, value string) {
 	if err == nil || errors.Is(err, errNoAzdEnvironment) {
 		return
 	}
-	fmt.Fprint(os.Stderr, messages.Warning(err))
+	fmt.Fprint(warnWriter(ctx), messages.Warning(err))
 	log.Printf("[env] could not record %s: %v", key, err)
 }
 
@@ -263,7 +262,7 @@ func (ec *evalContext) forget(ctx context.Context, keys ...string) {
 	if err == nil || errors.Is(err, errNoAzdEnvironment) {
 		return
 	}
-	fmt.Fprint(os.Stderr, messages.Warning(err))
+	fmt.Fprint(warnWriter(ctx), messages.Warning(err))
 	log.Printf("[env] could not drop %v: %v", keys, err)
 }
 
@@ -882,7 +881,7 @@ func (ec *evalContext) evalDir(ctx context.Context, flagValue string) (string, e
 	}, func() (string, error) {
 		return projectEvalLocation(ctx, ec.azdClient)
 	}, func(recorded, declared string) {
-		fmt.Fprint(os.Stderr, messages.Warning(
+		fmt.Fprint(warnWriter(ctx), messages.Warning(
 			messages.StaleRecordedEvalPath(recorded, declared, envKeyEvalPath)))
 	})
 }
@@ -930,7 +929,7 @@ func resolveEvalDir(ctx context.Context, flagValue string) (string, error) {
 		defer azdClient.Close()
 		return projectEvalLocation(ctx, azdClient)
 	}, func(recorded, declared string) {
-		fmt.Fprint(os.Stderr, messages.Warning(
+		fmt.Fprint(warnWriter(ctx), messages.Warning(
 			messages.StaleRecordedEvalPath(recorded, declared, envKeyEvalPath)))
 	})
 }

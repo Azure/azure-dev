@@ -201,6 +201,36 @@ underscore and contain only letters, digits, or underscores. For example,
 `API_KEY` is valid, while `api-key` is not. `azd deploy` validates these names
 before contacting Foundry Agent Service.
 
+## GitHub Copilot harness built-in tools
+
+The harness block selects the managed runtime and contains only its type.
+Configure built-in tools through the prompt agent's top-level `tools` list:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    kind: prompt
+    name: my-agent
+    model: gpt-5-mini
+    instructions: Use web research when requested.
+    harness:
+      type: github_copilot_preview
+    tools:
+      - type: github_copilot_toolset_preview
+        default_config:
+          enabled: false
+        configs:
+          - name: web
+            enabled: true
+```
+
+Built-in tool names are `filesystem_read`, `filesystem_write`, `shell`, `web`,
+and `subagents`. `default_config.enabled` applies to every built-in; entries in
+`configs` override individual tools. Skills are declared in the top-level
+`skills` list. Harness compute and idle settings are service-managed.
+
 ## Content safety policies
 
 A hosted or prompt agent can be bound to an Azure AI Content Safety (RAI) policy so every

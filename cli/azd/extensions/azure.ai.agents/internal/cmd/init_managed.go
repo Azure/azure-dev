@@ -693,22 +693,10 @@ func promptScaffoldInstructions(instructions string) string {
 // promptScaffoldHarness builds the `harness:` block for a scaffolded agent.yaml,
 // or nil for a plain prompt agent so the key is omitted entirely.
 //
-// harnessType is already resolved from --harness and --kind, so it wins over the
-// manifest's own type. The manifest's remaining harness configuration — pinned
-// skills, sandbox sizing, built-in capability filter — is carried through, since
-// dropping it would scaffold an agent that does not match the template the user
-// asked for.
-func promptScaffoldHarness(harnessType string, manifest *promptAgentManifest) *agent_yaml.PromptHarness {
-	harness := agent_yaml.NewPromptHarness(harnessType)
-	if harness == nil {
-		return nil
-	}
-	if manifest != nil && manifest.definition.Harness != nil {
-		harness.Skills = manifest.definition.Harness.Skills
-		harness.Environment = manifest.definition.Harness.Environment
-		harness.BuiltinTools = manifest.definition.Harness.BuiltinTools
-	}
-	return harness
+// harnessType is already resolved from --harness and --kind, so it wins over
+// the manifest's own type.
+func promptScaffoldHarness(harnessType string, _ *promptAgentManifest) *agent_yaml.PromptHarness {
+	return agent_yaml.NewPromptHarness(harnessType)
 }
 
 // printManagedInitSummary prints a concise summary plus next-step hint.

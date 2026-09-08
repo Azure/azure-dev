@@ -32,10 +32,8 @@ func TestPromptHarness_UnknownHarnessTypePassesThrough(t *testing.T) {
 	require.Equal(t, "some_future_harness", agent.Harness.Type)
 }
 
-// TestPromptAgent_RejectsUnknownKeysInAuthoredBlocks covers the blocks azd acts
-// on rather than forwards. A key that binds to nothing in one of these deploys
-// an agent that differs from its manifest with nothing in the output to say so
-// -- `builtin_tool:` for `builtin_tools:` leaves every built-in capability on.
+// TestPromptAgent_RejectsUnknownKeysInAuthoredBlocks covers the strict blocks
+// azd interprets rather than forwarding verbatim.
 func TestPromptAgent_RejectsUnknownKeysInAuthoredBlocks(t *testing.T) {
 	t.Parallel()
 
@@ -46,17 +44,10 @@ func TestPromptAgent_RejectsUnknownKeysInAuthoredBlocks(t *testing.T) {
 		wantHint string
 	}{
 		{
-			name: "harness typo",
+			name: "obsolete harness configuration",
 			yaml: "kind: prompt\nname: a\nmodel: m\n" +
-				"harness:\n  type: github_copilot_preview\n  builtin_tool:\n    allowed: []\n",
-			wantKey:  "builtin_tool",
-			wantHint: "harness:",
-		},
-		{
-			name: "nested environment typo",
-			yaml: "kind: prompt\nname: a\nmodel: m\n" +
-				"harness:\n  type: github_copilot_preview\n  environment:\n    cpus: \"1\"\n",
-			wantKey:  "cpus",
+				"harness:\n  type: github_copilot_preview\n  builtin_tools:\n    allowed: []\n",
+			wantKey:  "builtin_tools",
 			wantHint: "harness:",
 		},
 		{

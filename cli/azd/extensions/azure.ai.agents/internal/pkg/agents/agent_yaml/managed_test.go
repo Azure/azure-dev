@@ -225,6 +225,43 @@ func TestCreatePromptAgentAPIRequest_Harness(t *testing.T) {
 	}
 }
 
+func TestCreatePromptAgentAPIRequest_CopilotToolset(t *testing.T) {
+	promptDef := PromptAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPrompt, Name: "my-agent"},
+		Model:           "gpt-5-mini",
+		Instructions:    "Use web research when requested.",
+		Harness:         NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot),
+		Tools: []any{map[string]any{
+			"type":           githubCopilotToolsetPreview,
+			"default_config": map[string]any{"enabled": false},
+			"configs":        []any{map[string]any{"name": "web", "enabled": true}},
+		}},
+	}
+
+	req, err := CreatePromptAgentAPIRequest(promptDef, nil)
+	if err != nil {
+		t.Fatalf("CreatePromptAgentAPIRequest: %v", err)
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	body := string(data)
+	for _, want := range []string{
+		`"harness":{"type":"github_copilot_preview"}`,
+		`"type":"github_copilot_toolset_preview"`,
+		`"default_config":{"enabled":false}`,
+		`"configs":[{"enabled":true,"name":"web"}]`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("serialized request missing %s:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, `"builtin_tools"`) || strings.Contains(body, `"environment"`) {
+		t.Errorf("harness contains removed configuration fields: %s", body)
+	}
+}
+
 // TestCreatePromptAgentAPIRequest_HarnessSkills pins the REST contract: skills
 // are versioned references at the prompt definition's top level.
 func TestCreatePromptAgentAPIRequest_HarnessSkills(t *testing.T) {
@@ -234,10 +271,10 @@ func TestCreatePromptAgentAPIRequest_HarnessSkills(t *testing.T) {
 		Instructions:    "Be helpful.",
 		Harness:         NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot),
 		Skills:          []string{"duplicate-check"},
-	}
-	promptDef.Harness.Skills = []HarnessSkillRef{
-		{Name: "duplicate-check", Version: "3"},
-		{Name: "severity-triage", Version: "1"},
+		ResolvedSkills: []HarnessSkillRef{
+			{Name: "duplicate-check", Version: "3"},
+			{Name: "severity-triage", Version: "1"},
+		},
 	}
 
 	req, err := CreatePromptAgentAPIRequest(promptDef, nil)

@@ -4,6 +4,7 @@
 package agent_yaml
 
 import (
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -30,6 +31,40 @@ func TestPromptAgent_ValidateTools(t *testing.T) {
 				map[string]any{"type": "file_search"},
 				map[string]any{"type": "memory_search_preview", "memory_store_name": "m"},
 			},
+		},
+		{
+			name:  "copilot toolset requires harness",
+			tools: []any{map[string]any{"type": githubCopilotToolsetPreview}},
+			wantErr: `tools[0] uses "github_copilot_toolset_preview", which requires ` +
+				`harness.type "github_copilot_preview"`,
+		},
+		{
+			name: "copilot toolset rejects unknown tool",
+			tools: []any{map[string]any{
+				"type":    githubCopilotToolsetPreview,
+				"configs": []any{map[string]any{"name": "browser"}},
+			}},
+			wantErr: `tools[0]: configs[0].name "browser" is not a GitHub Copilot built-in tool; ` +
+				`supported tools are filesystem_read, filesystem_write, shell, subagents, web`,
+		},
+		{
+			name: "copilot toolset rejects duplicate tool",
+			tools: []any{map[string]any{
+				"type": githubCopilotToolsetPreview,
+				"configs": []any{
+					map[string]any{"name": "web", "enabled": true},
+					map[string]any{"name": "web", "enabled": false},
+				},
+			}},
+			wantErr: `tools[0]: configs[1].name "web" is duplicated`,
+		},
+		{
+			name: "copilot toolset rejects unknown field",
+			tools: []any{map[string]any{
+				"type":            githubCopilotToolsetPreview,
+				"default_enabled": false,
+			}},
+			wantErr: `tools[0]: unknown field "default_enabled"`,
 		},
 		{
 			// Unrecognized is not an error: the type may simply be newer than
@@ -79,6 +114,9 @@ func TestPromptAgent_ValidateTools(t *testing.T) {
 			t.Parallel()
 
 			agent := &PromptAgent{Tools: test.tools}
+			if strings.HasPrefix(test.name, "copilot toolset rejects") {
+				agent.Harness = NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot)
+			}
 			err := agent.ValidateTools()
 
 			if test.wantErr == "" {
@@ -88,6 +126,19 @@ func TestPromptAgent_ValidateTools(t *testing.T) {
 			require.EqualError(t, err, test.wantErr)
 		})
 	}
+}
+
+func TestPromptAgent_ValidateCopilotToolset(t *testing.T) {
+	t.Parallel()
+	agent := &PromptAgent{
+		Harness: NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot),
+		Tools: []any{map[string]any{
+			"type":           githubCopilotToolsetPreview,
+			"default_config": map[string]any{"enabled": false},
+			"configs":        []any{map[string]any{"name": "web", "enabled": true}},
+		}},
+	}
+	require.NoError(t, agent.ValidateTools())
 }
 
 func TestPromptAgent_UnrecognizedToolTypes(t *testing.T) {

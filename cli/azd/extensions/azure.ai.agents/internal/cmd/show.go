@@ -327,9 +327,7 @@ func harnessTypeFromMap(def map[string]any) string {
 	return strings.TrimSpace(harness.Type)
 }
 
-// printPromptHarness renders the execution harness the agent runs on: its type
-// plus the sandbox configuration the harness owns (pinned skills, compute size,
-// and which built-in capabilities the agent may reach).
+// printPromptHarness renders the execution harness the agent runs on.
 //
 // The deployed block wins because it describes what is actually running, but the
 // locally authored one is used as a fallback so the rows stay populated for an
@@ -344,50 +342,6 @@ func printPromptHarness(w io.Writer, deployed, local *agent_yaml.PromptHarness) 
 	}
 
 	fmt.Fprintf(w, "Harness:\t%s\n", displayHarness(strings.TrimSpace(harness.Type)))
-
-	if len(harness.Skills) > 0 {
-		names := make([]string, 0, len(harness.Skills))
-		for _, skill := range harness.Skills {
-			if version := strings.TrimSpace(skill.Version); version != "" {
-				names = append(names, fmt.Sprintf("%s@%s", skill.Name, version))
-				continue
-			}
-			names = append(names, skill.Name)
-		}
-		fmt.Fprintf(w, "  Skills:\t%s\n", strings.Join(names, ", "))
-	}
-
-	if env := harness.Environment; env != nil {
-		if cpu := strings.TrimSpace(env.Cpu); cpu != "" {
-			fmt.Fprintf(w, "  CPU:\t%s\n", cpu)
-		}
-		if memory := strings.TrimSpace(env.Memory); memory != "" {
-			fmt.Fprintf(w, "  Memory:\t%s\n", memory)
-		}
-		if env.IdleTimeoutSeconds != nil {
-			fmt.Fprintf(w, "  Idle Timeout:\t%ds\n", *env.IdleTimeoutSeconds)
-		}
-	}
-
-	// An explicit empty list is meaningful (`allowed: []` turns every built-in
-	// capability off), so a non-nil pointer always prints, even when empty.
-	if tools := harness.BuiltinTools; tools != nil {
-		if tools.Allowed != nil {
-			fmt.Fprintf(w, "  Built-in Tools Allowed:\t%s\n", displayToolList(*tools.Allowed))
-		}
-		if tools.Excluded != nil {
-			fmt.Fprintf(w, "  Built-in Tools Excluded:\t%s\n", displayToolList(*tools.Excluded))
-		}
-	}
-}
-
-// displayToolList renders a built-in capability list, naming the empty case so
-// "none allowed" is not mistaken for "not configured".
-func displayToolList(tools []string) string {
-	if len(tools) == 0 {
-		return "(none)"
-	}
-	return strings.Join(tools, ", ")
 }
 
 // displayHarness maps a harness identifier to a friendlier label, preserving

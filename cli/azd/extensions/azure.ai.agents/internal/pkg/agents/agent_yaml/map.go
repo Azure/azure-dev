@@ -540,13 +540,7 @@ func mapHarness(promptAgent PromptAgent) *agent_api.ManagedAgentHarness {
 		return nil
 	}
 
-	harness := &agent_api.ManagedAgentHarness{
-		Type:         harnessType,
-		Environment:  mapHarnessEnvironment(promptAgent.Harness.Environment),
-		BuiltinTools: mapHarnessBuiltInTools(promptAgent.Harness.BuiltinTools),
-	}
-
-	return harness
+	return &agent_api.ManagedAgentHarness{Type: harnessType}
 }
 
 // PromptAgentSkillReferences returns the top-level versioned skill references
@@ -569,55 +563,10 @@ func PromptAgentSkillReferences(promptAgent PromptAgent) []agent_api.SkillRefere
 	for _, skill := range promptAgent.ResolvedSkills {
 		add(skill.Name, skill.Version)
 	}
-	if promptAgent.Harness != nil {
-		for _, skill := range promptAgent.Harness.Skills {
-			add(skill.Name, skill.Version)
-		}
-	}
 	for _, skill := range promptAgent.Skills {
 		add(skill, "")
 	}
 	return skills
-}
-
-// mapHarnessEnvironment converts the authored sandbox sizing to its API shape.
-// Empty strings become nil so an omitted knob leaves the service default in
-// place rather than pinning it to "".
-func mapHarnessEnvironment(env *PromptHarnessEnvironment) *agent_api.HarnessEnvironment {
-	if env == nil {
-		return nil
-	}
-	mapped := &agent_api.HarnessEnvironment{IdleTimeoutSeconds: env.IdleTimeoutSeconds}
-	if cpu := strings.TrimSpace(env.Cpu); cpu != "" {
-		mapped.CPU = new(cpu)
-	}
-	if memory := strings.TrimSpace(env.Memory); memory != "" {
-		mapped.Memory = new(memory)
-	}
-	if mapped.CPU == nil && mapped.Memory == nil && mapped.IdleTimeoutSeconds == nil {
-		return nil
-	}
-	return mapped
-}
-
-// mapHarnessBuiltInTools converts the authored built-in capability filter to its
-// API shape, preserving the distinction between an explicitly empty list (turn
-// every capability off) and an omitted one (leave them all on).
-func mapHarnessBuiltInTools(builtin *PromptHarnessBuiltInTools) *agent_api.HarnessBuiltInTools {
-	if builtin == nil {
-		return nil
-	}
-	if builtin.Allowed == nil && builtin.Excluded == nil {
-		return nil
-	}
-	mapped := &agent_api.HarnessBuiltInTools{}
-	if builtin.Allowed != nil {
-		mapped.Allowed = new(slices.Clone(*builtin.Allowed))
-	}
-	if builtin.Excluded != nil {
-		mapped.Excluded = new(slices.Clone(*builtin.Excluded))
-	}
-	return mapped
 }
 
 // API CreateAgentRequest expected by the Foundry prompt-agent endpoint.

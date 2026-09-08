@@ -5,10 +5,23 @@ package agent_yaml
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
+
+	"azureaiagent/internal/pkg/agents/agent_api"
 )
+
+const githubCopilotToolsetPreview = "github_copilot_toolset_preview"
+
+var githubCopilotBuiltInTools = map[string]struct{}{
+	"filesystem_read":  {},
+	"filesystem_write": {},
+	"shell":            {},
+	"web":              {},
+	"subagents":        {},
+}
 
 // knownPromptToolTypes is the set of tool `type` discriminators the Foundry
 // prompt-agent API defines, mirroring the service's ToolType enum.
@@ -39,6 +52,7 @@ var knownPromptToolTypes = map[string]struct{}{
 	"fabric_iq_preview":            {},
 	"file_search":                  {},
 	"function":                     {},
+	githubCopilotToolsetPreview:    {},
 	"image_generation":             {},
 	"local_shell":                  {},
 	"mcp":                          {},
@@ -89,6 +103,84 @@ func (p *PromptAgent) ValidateTools() error {
 			return fmt.Errorf(
 				"tools[%d] uses tool type %q, which the API no longer defines; use %q instead",
 				i, toolType, replacement)
+		}
+		if toolType == githubCopilotToolsetPreview {
+			if p.HarnessType() != agent_api.ManagedAgentHarnessGitHubCopilot {
+				return fmt.Errorf(
+					"tools[%d] uses %q, which requires harness.type %q",
+					i, toolType, agent_api.ManagedAgentHarnessGitHubCopilot)
+			}
+			if err := validateGitHubCopilotToolset(tool); err != nil {
+				return fmt.Errorf("tools[%d]: %w", i, err)
+			}
+		}
+	}
+	return nil
+}
+
+func validateGitHubCopilotToolset(tool map[string]any) error {
+	if err := rejectUnknownToolFields(tool, "type", "default_config", "configs"); err != nil {
+		return err
+	}
+	if raw, ok := tool["default_config"]; ok {
+		config, ok := raw.(map[string]any)
+		if !ok {
+			return fmt.Errorf("default_config must be a mapping, got %T", raw)
+		}
+		if err := rejectUnknownToolFields(config, "enabled"); err != nil {
+			return fmt.Errorf("default_config: %w", err)
+		}
+		if enabled, ok := config["enabled"]; ok {
+			if _, valid := enabled.(bool); !valid {
+				return fmt.Errorf("default_config.enabled must be a boolean, got %T", enabled)
+			}
+		}
+	}
+
+	rawConfigs, ok := tool["configs"]
+	if !ok {
+		return nil
+	}
+	configs, ok := rawConfigs.([]any)
+	if !ok {
+		return fmt.Errorf("configs must be a list, got %T", rawConfigs)
+	}
+	seen := map[string]struct{}{}
+	for i, raw := range configs {
+		config, ok := raw.(map[string]any)
+		if !ok {
+			return fmt.Errorf("configs[%d] must be a mapping, got %T", i, raw)
+		}
+		if err := rejectUnknownToolFields(config, "name", "enabled"); err != nil {
+			return fmt.Errorf("configs[%d]: %w", i, err)
+		}
+		name, ok := config["name"].(string)
+		name = strings.TrimSpace(name)
+		if !ok || name == "" {
+			return fmt.Errorf("configs[%d].name must be a non-empty string", i)
+		}
+		if _, valid := githubCopilotBuiltInTools[name]; !valid {
+			return fmt.Errorf(
+				"configs[%d].name %q is not a GitHub Copilot built-in tool; supported tools are %s",
+				i, name, strings.Join(slices.Sorted(maps.Keys(githubCopilotBuiltInTools)), ", "))
+		}
+		if _, duplicate := seen[name]; duplicate {
+			return fmt.Errorf("configs[%d].name %q is duplicated", i, name)
+		}
+		seen[name] = struct{}{}
+		if enabled, ok := config["enabled"]; ok {
+			if _, valid := enabled.(bool); !valid {
+				return fmt.Errorf("configs[%d].enabled must be a boolean, got %T", i, enabled)
+			}
+		}
+	}
+	return nil
+}
+
+func rejectUnknownToolFields(value map[string]any, allowed ...string) error {
+	for _, key := range slices.Sorted(maps.Keys(value)) {
+		if !slices.Contains(allowed, key) {
+			return fmt.Errorf("unknown field %q", key)
 		}
 	}
 	return nil

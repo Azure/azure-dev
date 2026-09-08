@@ -150,16 +150,16 @@ func TestPromptAgentInlineStrictValidation(t *testing.T) {
 			wantErr: "harness must be a block",
 		},
 		{
-			name: "harness typo binds nothing and is rejected",
+			name: "obsolete harness configuration is rejected",
 			props: map[string]any{
 				"kind": "prompt",
 				"name": "a",
 				"harness": map[string]any{
-					"type":         "github_copilot_preview",
-					"builtin_tool": map[string]any{"excluded": []any{"bash"}},
+					"type":          "github_copilot_preview",
+					"builtin_tools": map[string]any{"excluded": []any{"shell"}},
 				},
 			},
-			wantErr: "builtin_tool",
+			wantErr: "builtin_tools",
 		},
 		{
 			name: "memory typo binds nothing and is rejected",

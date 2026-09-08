@@ -49,6 +49,23 @@
       "description": "The agent kind. 'hosted' for a containerized/code agent; 'prompt' for a declarative prompt agent; 'prompt-voice' for a declarative speech-to-speech voice agent.",
       "enum": ["hosted", "prompt", "prompt-voice"]
     },
+    "harness": {
+      "type": "object",
+      "description": "Managed runtime used to execute a prompt agent. Harness capabilities are configured through top-level skills and tools.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["github_copilot_preview"]
+        }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "skills": {
+      "type": "array",
+      "description": "Foundry skill names available to the prompt agent.",
+      "items": { "type": "string", "minLength": 1, "pattern": "\\S" }
+    },
     "language": {
       "type": "string",
       "description": "Implementation language for a hosted agent.",
@@ -109,8 +126,23 @@
     },
     "tools": {
       "type": "array",
-      "description": "Voice agent (kind: prompt-voice) tools. Direct tool types include function, mcp, system, and toolbox.",
-      "items": { "type": "object", "additionalProperties": true }
+      "description": "Tools available to prompt and prompt-voice agents. Unknown tool types are passed through for forward compatibility.",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/GitHubCopilotToolsetPreview" },
+          {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "not": { "const": "github_copilot_toolset_preview" }
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
+      }
     },
     "avatar": {
       "type": "object",
@@ -314,6 +346,37 @@
     }
   ],
   "definitions": {
+    "GitHubCopilotToolsetPreview": {
+      "type": "object",
+      "description": "Enablement configuration for GitHub Copilot built-in tools.",
+      "properties": {
+        "type": { "const": "github_copilot_toolset_preview" },
+        "default_config": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          },
+          "additionalProperties": false
+        },
+        "configs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": ["filesystem_read", "filesystem_write", "shell", "web", "subagents"]
+              },
+              "enabled": { "type": "boolean" }
+            },
+            "required": ["name"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
     "VoiceModel": {
       "type": "object",
       "description": "Prompt-voice speech-to-speech model.",

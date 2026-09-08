@@ -482,59 +482,14 @@ type HarnessSkillRef struct {
 	Version string `json:"version,omitempty" yaml:"version,omitempty"`
 }
 
-// PromptHarness is the `harness:` block of a prompt agent's agent.yaml.
-//
-// It is an object because the harness owns configuration of its own: which skills are provisioned into its
-// sandbox, how large that sandbox is, and which of its built-in capabilities the
-// agent is allowed to reach. Only Type is required.
+// PromptHarness selects the managed runtime for a prompt agent. Harness
+// capabilities are configured through top-level skills and tools.
 type PromptHarness struct {
 	// Type is the harness discriminator, e.g.
 	// agent_api.ManagedAgentHarnessGitHubCopilot ("github_copilot_preview").
 	// It is passed through verbatim: azd keeps no allowlist of harness names, so
 	// a harness the service gains later needs no change here.
 	Type string `json:"type" yaml:"type"`
-
-	// Skills pins published Foundry skills into the harness sandbox. Skills live
-	// here rather than on the definition because a skill is instructions plus the
-	// scripts they reference, so it needs the sandbox to run at all — a
-	// harness-less prompt agent gets no skill execution.
-	Skills []HarnessSkillRef `json:"skills,omitempty" yaml:"skills,omitempty"`
-
-	// Environment sizes the sandbox. Optional; the platform defaults it.
-	Environment *PromptHarnessEnvironment `json:"environment,omitempty" yaml:"environment,omitempty"`
-
-	// BuiltinTools narrows the harness's built-in capabilities. Optional; every
-	// capability is available when it is omitted.
-	BuiltinTools *PromptHarnessBuiltInTools `json:"builtin_tools,omitempty" yaml:"builtin_tools,omitempty"`
-}
-
-// PromptHarnessEnvironment sizes a harnessed agent's sandbox.
-//
-// The harness supplies its own image, packages, and startup commands, so unlike
-// a hosted agent none of those are customer-configurable here.
-type PromptHarnessEnvironment struct {
-	// Cpu and Memory are the sandbox's compute allocation (e.g. "1" and "2Gi").
-	// The service treats them as a pair: setting one without the other is an
-	// error rather than a partial override.
-	Cpu    string `json:"cpu,omitempty" yaml:"cpu,omitempty"`
-	Memory string `json:"memory,omitempty" yaml:"memory,omitempty"`
-
-	// IdleTimeoutSeconds is how long an idle sandbox is kept warm. A pointer so
-	// an explicit 0 (reclaim immediately) is distinguishable from "not set",
-	// which leaves the service default in place.
-	IdleTimeoutSeconds *int `json:"idle_timeout_seconds,omitempty" yaml:"idle_timeout_seconds,omitempty"`
-}
-
-// PromptHarnessBuiltInTools narrows the built-in capabilities the harness
-// exposes to the agent. The effective set is (Allowed, defaulting to all) minus
-// Excluded; see harnessBuiltInCapabilities for the recognized names.
-//
-// Both fields are pointers to slices so an explicit `allowed: []`, which turns
-// every built-in capability off, stays distinguishable from an omitted
-// `allowed`, which leaves them all on.
-type PromptHarnessBuiltInTools struct {
-	Allowed  *[]string `json:"allowed,omitempty" yaml:"allowed,omitempty"`
-	Excluded *[]string `json:"excluded,omitempty" yaml:"excluded,omitempty"`
 }
 
 // UnmarshalYAML decodes the `harness:` block.
@@ -542,11 +497,9 @@ type PromptHarnessBuiltInTools struct {
 // Two things happen here that a plain struct decode would not do:
 //
 //   - A scalar is rejected with a clear shape error.
-//   - Unknown keys are rejected. Every field of this block changes what the
-//     sandbox can do, so a typo that silently binds nothing — `builtin_tool:`
-//     for `builtin_tools:` — would deploy an agent with capabilities the author
-//     believed they had turned off. Tools stay `[]any` and are unaffected, so a
-//     tool type newer than this build still passes through.
+//   - Unknown keys are rejected so obsolete or misspelled harness configuration
+//     does not silently deploy. Tools stay `[]any` and are unaffected, so a tool
+//     type newer than this build still passes through.
 func (h *PromptHarness) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind == yaml.ScalarNode {
 		return fmt.Errorf("harness must be a block with a `type:` key, got string")

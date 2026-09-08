@@ -1290,10 +1290,6 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
   azd ai agent init --no-prompt --kind prompt --agent-name my-agent \
     --project-id "<resource-id>" --model-deployment gpt-4.1-mini
 
-  # Non-interactive prompt agent with a managed harness
-  azd ai agent init --no-prompt --kind prompt --harness github_copilot_preview \
-    --agent-name my-agent --model gpt-4.1-mini
-
   # Non-interactive prompt agent from a prompt agent template
   azd ai agent init --no-prompt -m ./agent.yaml --project-id "<resource-id>"
 
@@ -1429,15 +1425,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 			}
 
-			// Ask the user which agent kind to initialize, before any
-			// hosted-specific manifest/template detection runs. When the user
-			// has already passed a manifest, --src, or any other hosted-only
-			// signal we skip the prompt and stay on the hosted path; only an
-			// otherwise-blank invocation can branch into the prompt-agent flow.
-			//
 			// With no explicit manifest, --kind selects the runtime directly. A
 			// harness is an optional capability of kind: prompt, not a separate
-			// agent kind.
+			// agent kind. Omitting --kind preserves the existing hosted flow.
 			requestedKind := agentKindChoice(strings.ToLower(strings.TrimSpace(flags.kind)))
 			isPromptVoice := strings.EqualFold(strings.TrimSpace(flags.kind), kindFlagPromptVoice)
 			if err := validateInitKindHarness(requestedKind, flags.kind, flags.harness, isPromptVoice); err != nil {
@@ -1451,25 +1441,6 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					return harnessErr
 				}
 				return runInitManaged(ctx, flags, azdClient, harness, nil)
-			case flags.kind == "":
-				hostedSignalsPresent := userProvidedManifest ||
-					flags.src != "" ||
-					flags.deployMode != "" ||
-					flags.runtime != "" ||
-					flags.entryPoint != ""
-				if !hostedSignalsPresent {
-					kindChoice, kindHarness, kindErr := promptAgentKind(ctx, azdClient, flags.noPrompt)
-					if kindErr != nil {
-						return kindErr
-					}
-					if kindChoice == AgentKindChoicePrompt {
-						harness, harnessErr := resolveInitHarness("", kindHarness)
-						if harnessErr != nil {
-							return harnessErr
-						}
-						return runInitManaged(ctx, flags, azdClient, harness, nil)
-					}
-				}
 			}
 			if strings.TrimSpace(flags.instructions) != "" {
 				return promptOnlyInstructionsError()
@@ -2112,11 +2083,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"voice agent; use --model for the speech-to-speech model and --voice for the output "+
 			"voice agent). When omitted, "+
 			"when --manifest is supplied, the manifest determines the runtime and --kind is ignored; "+
-			"otherwise you are prompted "+
-			"interactively. With --no-prompt, 'prompt' requires --agent-name and "+
+			"otherwise the hosted runtime is used. With --no-prompt, 'prompt' requires --agent-name and "+
 			"either --model or --model-deployment (unless supplied by --manifest).")
 	cmd.Flags().StringVar(&flags.harness, "harness", "",
 		"Optional execution harness for --kind prompt: 'github_copilot_preview' (GitHub Copilot Brain+Hand).")
+	_ = cmd.Flags().MarkHidden("harness")
 	cmd.Flags().StringVar(&flags.infra, "infra", "",
 		"Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and "+
 			"Foundry files are generated as a separate infra/foundry layer. "+

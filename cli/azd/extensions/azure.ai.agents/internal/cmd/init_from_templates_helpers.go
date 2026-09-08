@@ -159,91 +159,10 @@ func resolveInitHarness(harnessFlag, impliedHarness string) (string, error) {
 	)
 }
 
-// kindMenuEntry is one row of the interactive kind picker. A row maps to a
-// (kind, harness) pair rather than to a kind alone, because the harnessed
-// prompt agent differs from the plain one only by its `harness:` block. Keeping
-// the harness on the entry lets the menu offer it as a single choice without
-// reintroducing a "managed" kind that nothing downstream understands.
-type kindMenuEntry struct {
-	label   string
-	kind    agentKindChoice
-	harness string
-}
-
-// agentKindMenu is the ordered set of rows shown by promptAgentKind.
-var agentKindMenu = []kindMenuEntry{
-	{
-		label: "Hosted agent — Bring your own code or framework",
-		kind:  AgentKindChoiceHosted,
-	},
-	{
-		label: "Prompt agent (no code, Foundry-managed) — " +
-			"Configure a model, instructions, and tools",
-		kind: AgentKindChoicePrompt,
-	},
-	{
-		label: "Prompt agent with GitHub Copilot harness (preview) — " +
-			"Configure a model, instructions, tools, and skills",
-		kind:    AgentKindChoicePrompt,
-		harness: agent_api.ManagedAgentHarnessGitHubCopilot,
-	},
-}
-
-// promptAgentKind asks the user which agent kind to initialize, returning the
-// kind and the harness that choice implies. In no-prompt mode it returns
-// AgentKindChoiceHosted to preserve today's behavior for CI callers that do not
-// yet know about the new kinds. The selection is the very first interactive
-// prompt in `azd ai agent init` and routes the rest of the init flow.
-func promptAgentKind(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	noPrompt bool,
-) (agentKindChoice, string, error) {
-	if noPrompt {
-		return AgentKindChoiceHosted, "", nil
-	}
-
-	choices := make([]*azdext.SelectChoice, 0, len(agentKindMenu))
-	for _, entry := range agentKindMenu {
-		choices = append(choices, &azdext.SelectChoice{
-			Label: entry.label,
-			Value: string(entry.kind),
-		})
-	}
-	defaultIndex := int32(0)
-
-	resp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message:       "What type of agent do you want to initialize?",
-			Choices:       choices,
-			SelectedIndex: &defaultIndex,
-		},
-	})
-	if err != nil {
-		if exterrors.IsCancellation(err) {
-			return "", "", exterrors.Cancelled("agent kind selection was cancelled")
-		}
-		return "", "", fmt.Errorf("failed to prompt for agent kind: %w", err)
-	}
-
-	// Resolve by index so each row can carry its implied harness.
-	if resp == nil || resp.Value == nil {
-		return "", "", fmt.Errorf("agent kind selection returned no value")
-	}
-
-	selected := int(*resp.Value)
-	if selected < 0 || selected >= len(agentKindMenu) {
-		return "", "", fmt.Errorf("agent kind selection returned an out-of-range index %d", selected)
-	}
-
-	entry := agentKindMenu[selected]
-	return entry.kind, entry.harness, nil
-}
-
 // warnPromptAgentPreview tells the user that prompt-agent support in azd is
 // still in preview. It is called from the single place every prompt-agent init
-// funnels through, so the notice also reaches flag-driven runs (--kind prompt)
-// and manifest-driven ones, not just the interactive picker.
+// funnels through, so the notice reaches both flag-driven runs (--kind prompt)
+// and manifest-driven ones.
 //
 // This warns rather than blocks: preview is a stability signal, not a gate.
 func warnPromptAgentPreview(writer io.Writer) {

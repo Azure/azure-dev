@@ -32,8 +32,7 @@ func TestResolveInitHarness(t *testing.T) {
 			expected: "",
 		},
 		{
-			// The harnessed menu row and a manifest's `harness:` block both
-			// arrive here as an implied value.
+			// A manifest's `harness:` block arrives here as an implied value.
 			name:           "implied harness is honored",
 			impliedHarness: agent_api.ManagedAgentHarnessGitHubCopilot,
 			expected:       agent_api.ManagedAgentHarnessGitHubCopilot,
@@ -77,31 +76,10 @@ func TestResolveInitHarness(t *testing.T) {
 	}
 }
 
-func TestAgentKindMenuUsesManagedForHarness(t *testing.T) {
-	t.Parallel()
-
-	var harnessed int
-	for _, entry := range agentKindMenu {
-		require.Contains(
-			t,
-			[]agentKindChoice{AgentKindChoiceHosted, AgentKindChoicePrompt},
-			entry.kind,
-			"menu entry %q uses an unsupported kind", entry.label,
-		)
-		if entry.harness != "" {
-			harnessed++
-			require.Equal(t, AgentKindChoicePrompt, entry.kind,
-				"only a prompt agent can carry a harness")
-		}
-	}
-
-	require.Equal(t, 1, harnessed, "expected exactly one harnessed menu entry")
-}
-
 // TestWarnPromptAgentPreview verifies the preview callout renders its
 // emphasized segment intact. It is unconditional: every prompt-agent init
 // funnels through the one call site, so the notice reaches --kind prompt and
-// manifest adoption as well as the interactive picker.
+// manifest adoption.
 func TestWarnPromptAgentPreview(t *testing.T) {
 	t.Parallel()
 

@@ -269,10 +269,10 @@ func resolveRoutineServiceRef(values map[string]any, projectRoot string) (map[st
 }
 
 // newRoutineServiceClient resolves a project endpoint and developer
-// credential for deploy. Calls arrive with incoming gRPC metadata, so
-// Deploy attaches the extension token to the outgoing azd context.
-// The credential uses the active subscription's user-access tenant
-// for guest users.
+// credential for deploy. Deploy attaches the extension token from
+// AZD_ACCESS_TOKEN to the outgoing azd context before making host
+// calls. The credential uses the active subscription's user-access
+// tenant for guest users.
 func (p *routineServiceTarget) newRoutineServiceClient(
 	ctx context.Context,
 ) (*routines.Client, error) {

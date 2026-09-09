@@ -3614,19 +3614,14 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 		identityClientID = strings.TrimSpace(agentVersionResponse.InstanceIdentity.ClientID)
 		identityPrincipalID = strings.TrimSpace(agentVersionResponse.InstanceIdentity.PrincipalID)
 	}
+	protocolVersionKey := envkey.AgentProtocolEndpointsVersion(serviceConfig.Name)
 	envVars := []azdext.SetEnvRequest{
 		{EnvName: p.env.Name, Key: versionKey, Value: ""},
+		{EnvName: p.env.Name, Key: protocolVersionKey, Value: ""},
 		{EnvName: p.env.Name, Key: fmt.Sprintf("AGENT_%s_NAME", serviceKey), Value: agentVersionResponse.Name},
 		{EnvName: p.env.Name, Key: envkey.AgentInstanceIdentityClientID(serviceConfig.Name), Value: identityClientID},
 		{EnvName: p.env.Name, Key: envkey.AgentInstanceIdentityPrincipalID(serviceConfig.Name), Value: identityPrincipalID},
 	}
-
-	protocolVersionKey := envkey.AgentProtocolEndpointsVersion(serviceConfig.Name)
-	envVars = append(envVars, azdext.SetEnvRequest{
-		EnvName: p.env.Name,
-		Key:     protocolVersionKey,
-		Value:   "",
-	})
 
 	// Set the base agent endpoint used for session management (not protocol-specific).
 	baseEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
@@ -3660,8 +3655,16 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 		Value:   "1",
 	})
 	envVars = append(envVars,
-		azdext.SetEnvRequest{EnvName: p.env.Name, Key: envkey.AgentProjectEndpoint(serviceConfig.Name), Value: projectEndpoint},
-		azdext.SetEnvRequest{EnvName: p.env.Name, Key: versionKey, Value: agentVersionResponse.Version},
+		azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     envkey.AgentProjectEndpoint(serviceConfig.Name),
+			Value:   projectEndpoint,
+		},
+		azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     versionKey,
+			Value:   agentVersionResponse.Version,
+		},
 	)
 	if activityBotName != "" {
 		envVars = append(envVars,

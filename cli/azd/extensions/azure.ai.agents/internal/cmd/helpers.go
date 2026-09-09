@@ -668,34 +668,28 @@ func resolveAgentProtocolEndpoints(
 		return nil, false, false, nil
 	}
 
-	endpoints := make(map[agent_api.AgentProtocol]string)
-	serviceKey := toServiceKey(serviceName)
-	versionKey := envkey.AgentProtocolEndpointsVersion(serviceName)
-	version, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envName,
-		Key:     versionKey,
+	resp, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
+		Name: envName,
 	})
 	if err != nil {
 		return nil, false, false, &agentProtocolEndpointsError{
-			err: fmt.Errorf("failed to read %s: %w", versionKey, err),
+			err: fmt.Errorf("failed to read environment values: %w", err),
 		}
 	}
-	complete := version != nil && strings.TrimSpace(version.Value) == "1"
+
+	envMap := make(map[string]string, len(resp.KeyValues))
+	for _, kv := range resp.KeyValues {
+		envMap[kv.Key] = kv.Value
+	}
+
+	serviceKey := toServiceKey(serviceName)
+	versionKey := envkey.AgentProtocolEndpointsVersion(serviceName)
+	complete := strings.TrimSpace(envMap[versionKey]) == "1"
+
+	endpoints := make(map[agent_api.AgentProtocol]string)
 	for _, protocol := range projectpkg.DisplayableProtocolEnvSuffixes() {
 		key := fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, protocol.Suffix)
-		value, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: envName,
-			Key:     key,
-		})
-		if err != nil {
-			return nil, false, false, &agentProtocolEndpointsError{
-				err: fmt.Errorf("failed to read %s: %w", key, err),
-			}
-		}
-		if value == nil {
-			continue
-		}
-		if endpoint := strings.TrimSpace(value.Value); endpoint != "" {
+		if endpoint := strings.TrimSpace(envMap[key]); endpoint != "" {
 			endpoints[agent_api.AgentProtocol(protocol.Label)] = endpoint
 		}
 	}

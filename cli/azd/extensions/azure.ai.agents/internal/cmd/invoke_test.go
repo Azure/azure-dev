@@ -580,7 +580,7 @@ func TestRemoteAgentServiceResolutionError(t *testing.T) {
 	})
 }
 
-func TestResolveRemoteContextDirectNameLookupErrorUsesLocalProtocol(t *testing.T) {
+func TestResolveRemoteContextServiceLookupErrorPropagates(t *testing.T) {
 	const (
 		serviceName = "target-agent"
 		agentName   = "inline-agent"
@@ -663,30 +663,49 @@ func TestResolveRemoteContextDirectNameLookupErrorUsesLocalProtocol(t *testing.T
 				flags:    &invokeFlags{name: serviceName},
 				noPrompt: true,
 			}
-			rc, err := action.resolveRemoteContext(t.Context())
-			if err != nil {
-				t.Fatalf("resolveRemoteContext: %v", err)
-			}
-			defer rc.azdClient.Close()
-
-			if rc.name != serviceName {
-				t.Errorf("remote name = %q, want explicit target %q", rc.name, serviceName)
-			}
-			if rc.serviceName != serviceName {
-				t.Errorf("service name = %q, want %q", rc.serviceName, serviceName)
-			}
-			if len(rc.invocableProtocols) != 0 {
-				t.Fatalf("persisted protocols = %v, want none", rc.invocableProtocols)
-			}
-
-			protocol, err := action.resolveDeployedProtocol(t.Context(), rc)
-			if err != nil {
-				t.Fatalf("resolveDeployedProtocol: %v", err)
-			}
-			if protocol != agent_api.AgentProtocolInvocations {
-				t.Errorf("protocol = %q, want %q", protocol, agent_api.AgentProtocolInvocations)
+			_, err := action.resolveRemoteContext(t.Context())
+			if err == nil {
+				t.Fatalf("resolveRemoteContext succeeded, want error propagating lookup failure")
 			}
 		})
+	}
+}
+
+func TestResolveRemoteContextDirectNameWithoutMatchingServiceSucceeds(t *testing.T) {
+	const (
+		directName = "standalone-agent"
+		projectURL = "https://account.services.ai.azure.com/api/projects/project"
+	)
+
+	projectServer := &helpersProjectServer{
+		project: &azdext.ProjectConfig{
+			Path:     t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{},
+		},
+	}
+	environmentServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "test"},
+	}
+	address := newInvokeRemoteContextTestAzdServer(t, projectServer, environmentServer)
+	t.Setenv("AZD_SERVER", address)
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", projectURL)
+	stubAzdHostedSources(t, azdHostedSources{}, nil)
+
+	action := &InvokeAction{
+		flags:    &invokeFlags{name: directName},
+		noPrompt: true,
+	}
+	rc, err := action.resolveRemoteContext(t.Context())
+	if err != nil {
+		t.Fatalf("resolveRemoteContext: %v", err)
+	}
+	defer rc.azdClient.Close()
+
+	if rc.name != directName {
+		t.Errorf("remote name = %q, want direct target %q", rc.name, directName)
+	}
+	if rc.serviceName != "" {
+		t.Errorf("service name = %q, want empty for direct target", rc.serviceName)
 	}
 }
 
@@ -730,9 +749,7 @@ func TestResolveRemoteContextDirectNameEndpointLookupErrorFails(t *testing.T) {
 				},
 			},
 		},
-		failKeys: map[string]error{
-			"AGENT_TARGET_AGENT_INVOCATIONS_ENDPOINT": errors.New("endpoint lookup failed"),
-		},
+		getValuesErr: errors.New("environment values lookup failed"),
 	}
 	address := newInvokeRemoteContextTestAzdServer(t, projectServer, environmentServer)
 	t.Setenv("AZD_SERVER", address)
@@ -1299,6 +1316,134 @@ func TestResolveDeployedProtocolRequiresRefreshForLegacyMetadata(t *testing.T) {
 	if !strings.Contains(suggestion, "azd deploy agent-service") ||
 		!strings.Contains(suggestion, "--protocol") {
 		t.Errorf("suggestion = %q, want redeploy and explicit protocol guidance", suggestion)
+	}
+}
+
+func TestResolveDeployedProtocolDifferingVersionRequiresExplicitProtocol(t *testing.T) {
+	t.Parallel()
+
+	action := &InvokeAction{flags: &invokeFlags{}}
+	_, err := action.resolveDeployedProtocol(
+		t.Context(),
+		&remoteContext{
+			name:            "agent",
+			version:         "1",
+			deployedVersion: "2",
+			invocableProtocols: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolInvocations,
+			},
+		},
+	)
+	if err == nil {
+		t.Fatal("expected version mismatch error, got nil")
+	}
+	if !strings.Contains(err.Error(), `reflects version "2"`) {
+		t.Errorf("error = %q, want deployed version 2 reference", err)
+	}
+	suggestion := azdext.WrapError(err).GetSuggestion()
+	if !strings.Contains(suggestion, "--protocol") {
+		t.Errorf("suggestion = %q, want explicit protocol guidance", suggestion)
+	}
+}
+
+func TestResolveDeployedProtocolMatchingVersionUsesDeployedProtocol(t *testing.T) {
+	t.Parallel()
+
+	action := &InvokeAction{flags: &invokeFlags{}}
+	protocol, err := action.resolveDeployedProtocol(
+		t.Context(),
+		&remoteContext{
+			name:            "agent",
+			version:         "2",
+			deployedVersion: "2",
+			invocableProtocols: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolInvocations,
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("resolveDeployedProtocol: %v", err)
+	}
+	if protocol != agent_api.AgentProtocolInvocations {
+		t.Errorf("protocol = %q, want %q", protocol, agent_api.AgentProtocolInvocations)
+	}
+}
+
+func TestResolveDeployedProtocolVersionWithoutDeployedVersionRequiresExplicitProtocol(t *testing.T) {
+	t.Parallel()
+
+	action := &InvokeAction{flags: &invokeFlags{}}
+	_, err := action.resolveDeployedProtocol(
+		t.Context(),
+		&remoteContext{
+			name:    "agent",
+			version: "1",
+			invocableProtocols: []agent_api.AgentProtocol{
+				agent_api.AgentProtocolInvocations,
+			},
+		},
+	)
+	if err == nil {
+		t.Fatal("expected version error, got nil")
+	}
+	if !strings.Contains(err.Error(), "the latest deployment") {
+		t.Errorf("error = %q, want latest deployment reference", err)
+	}
+	suggestion := azdext.WrapError(err).GetSuggestion()
+	if !strings.Contains(suggestion, "--protocol") {
+		t.Errorf("suggestion = %q, want explicit protocol guidance", suggestion)
+	}
+}
+
+func TestInvokeAutoDetectedA2AWithClientHeadersClosesAzdClient(t *testing.T) {
+	const (
+		serviceName = "target-agent"
+		projectURL  = "https://account.services.ai.azure.com/api/projects/project"
+	)
+
+	projectServer := &helpersProjectServer{
+		project: &azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				serviceName: {
+					Name: serviceName,
+					Host: AiAgentHost,
+				},
+			},
+		},
+	}
+	environmentServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "test"},
+		values: map[string]map[string]string{
+			"test": {
+				"AGENT_TARGET_AGENT_NAME":                       "target-agent",
+				"AGENT_TARGET_AGENT_PROTOCOL_ENDPOINTS_VERSION": "1",
+				"AGENT_TARGET_AGENT_A2A_ENDPOINT":               "https://example.test/a2a",
+			},
+		},
+	}
+	address := newInvokeRemoteContextTestAzdServer(t, projectServer, environmentServer)
+	t.Setenv("AZD_SERVER", address)
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", projectURL)
+	stubAzdHostedSources(t, azdHostedSources{}, nil)
+
+	header := make(http.Header)
+	header.Set("x-client-test", "val")
+	action := &InvokeAction{
+		flags:         &invokeFlags{name: serviceName},
+		clientHeaders: header,
+		noPrompt:      true,
+	}
+
+	err := action.Run(t.Context())
+	if err == nil {
+		t.Fatal("expected validation error for a2a client headers, got nil")
+	}
+	if !strings.Contains(err.Error(), "--client-header is not supported with the a2a protocol") {
+		t.Fatalf("error = %q, want client header validation error", err)
+	}
+	if action.resolvedRemoteContext != nil && action.resolvedRemoteContext.azdClient != nil {
+		t.Fatal("azdClient was not closed after validation failure")
 	}
 }
 

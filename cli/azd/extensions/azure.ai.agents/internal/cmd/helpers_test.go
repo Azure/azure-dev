@@ -508,8 +508,9 @@ type helpersPromptServer struct {
 
 type helpersFailingEnvironmentServer struct {
 	testEnvironmentServiceServer
-	getValueErr error
-	failKeys    map[string]error
+	getValueErr  error
+	getValuesErr error
+	failKeys     map[string]error
 }
 
 func (s *helpersFailingEnvironmentServer) GetValue(
@@ -522,6 +523,15 @@ func (s *helpersFailingEnvironmentServer) GetValue(
 		return nil, err
 	}
 	return s.testEnvironmentServiceServer.GetValue(ctx, req)
+}
+
+func (s *helpersFailingEnvironmentServer) GetValues(
+	ctx context.Context, req *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	if s.getValuesErr != nil {
+		return nil, s.getValuesErr
+	}
+	return s.testEnvironmentServiceServer.GetValues(ctx, req)
 }
 
 func (s *helpersPromptServer) Select(

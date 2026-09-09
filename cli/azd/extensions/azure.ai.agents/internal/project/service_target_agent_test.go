@@ -1009,6 +1009,8 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 	require.Equal(t, "https://proj.azure.com", envStub.values["AGENT_MY_SVC_PROJECT_ENDPOINT"])
 	require.Equal(t, "AGENT_MY_SVC_VERSION", envStub.writes[0].Key)
 	require.Empty(t, envStub.writes[0].Value)
+	require.Equal(t, "AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION", envStub.writes[1].Key)
+	require.Empty(t, envStub.writes[1].Value)
 	require.Equal(t, "AGENT_MY_SVC_VERSION", envStub.writes[len(envStub.writes)-1].Key)
 	require.Equal(t, "1.0.0", envStub.writes[len(envStub.writes)-1].Value)
 }

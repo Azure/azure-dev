@@ -491,6 +491,7 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	// would be silently dropped, which is the exact silent no-op the guard
 	// intends to prevent.
 	if a.flags.resumable && protocol != agent_api.AgentProtocolResponses {
+		a.closeResolvedRemoteContextClient()
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf("--resumable is not supported with the %s protocol", protocol),
@@ -499,6 +500,7 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	}
 
 	if len(a.clientHeaders) > 0 && protocol == agent_api.AgentProtocolA2A {
+		a.closeResolvedRemoteContextClient()
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"--client-header is not supported with the a2a protocol",
@@ -526,6 +528,13 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		return a.a2aRemote(ctx)
 	default:
 		return a.responsesRemote(ctx)
+	}
+}
+
+func (a *InvokeAction) closeResolvedRemoteContextClient() {
+	if a.resolvedRemoteContext != nil && a.resolvedRemoteContext.azdClient != nil {
+		a.resolvedRemoteContext.azdClient.Close()
+		a.resolvedRemoteContext.azdClient = nil
 	}
 }
 
@@ -654,6 +663,22 @@ func (a *InvokeAction) resolveDeployedProtocol(
 				"run `azd deploy %s` to refresh protocol metadata, or pass --protocol explicitly",
 				rc.serviceName,
 			),
+		)
+	}
+
+	if rc.version != "" && rc.version != rc.deployedVersion {
+		deployedDesc := "the latest deployment"
+		if rc.deployedVersion != "" {
+			deployedDesc = fmt.Sprintf("version %q", rc.deployedVersion)
+		}
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"cannot determine protocol for agent version %q because deployed protocol metadata reflects %s",
+				rc.version,
+				deployedDesc,
+			),
+			"pass --protocol explicitly (for example: --protocol responses)",
 		)
 	}
 
@@ -1082,6 +1107,7 @@ type remoteContext struct {
 	projectEndpoint               string
 	apiVersion                    string
 	version                       string
+	deployedVersion               string
 	invocableProtocols            []agent_api.AgentProtocol
 	deployedProtocolMetadata      bool
 	deployedProtocolMetadataStale bool
@@ -1198,8 +1224,13 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 			azdClient.Close()
 			return nil, serviceErr
 		}
-		if info != nil && a.flags.name != "" {
-			rc.serviceName = info.ServiceName
+		if info != nil {
+			azdClient.Close()
+			return nil, fmt.Errorf(
+				"failed to resolve agent service %q for remote invoke: %w",
+				info.ServiceName,
+				serviceErr,
+			)
 		}
 		if err := remoteAgentServiceResolutionError(serviceErr, a.flags.name != ""); err != nil {
 			azdClient.Close()
@@ -1211,6 +1242,7 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 		rc.invocableProtocols = invocableProtocolsFromEndpoints(info.ProtocolEndpoints)
 		rc.deployedProtocolMetadata = info.ProtocolEndpointsPresent
 		rc.deployedProtocolMetadataStale = info.ProtocolEndpointsStale
+		rc.deployedVersion = info.Version
 		if info.AgentEndpoint != "" {
 			rc.agentKey = buildRemoteAgentKeyFromEndpoint(info.AgentEndpoint)
 		}

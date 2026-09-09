@@ -104,8 +104,9 @@ so the two gate populations do not coexist in a normal project graph.
 
 Projects that explicitly override the MSBuild `BaseOutputPath` or
 `BaseIntermediateOutputPath` properties may bypass the SDK's
-`--artifacts-path` isolation. Set `AZD_DEPLOY_CONCURRENCY=1` for `azd deploy`
-or `AZD_UP_CONCURRENCY=1` for `azd up` when such projects share build outputs.
+`--artifacts-path` isolation. Set `AZD_CONCURRENCY_MAX=1` for `azd deploy`
+or `azd up` when such projects share build outputs. This serializes all graph
+steps even when phase-specific concurrency limits are set.
 
 ### How `uses:` enables parallel deployment
 

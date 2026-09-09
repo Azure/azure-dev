@@ -1628,6 +1628,7 @@ func ejectProjectInfra(
 	ctx context.Context,
 	client *azdext.AzdClient,
 	projectRoot, serviceName, provider string,
+	environments ...map[string]string,
 ) error {
 	projectResponse, projectErr := client.Project().Get(ctx, &azdext.EmptyRequest{})
 	if projectErr != nil {
@@ -1682,10 +1683,15 @@ func ejectProjectInfra(
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("check infrastructure directory: %w", err)
 	}
+	var environment map[string]string
+	if len(environments) > 0 {
+		environment = environments[0]
+	}
 	result, err := synthesis.Synthesize(synthesis.Input{
 		RawAzureYAML:    raw,
 		ServiceName:     serviceName,
 		AcceptedHosts:   provisioning.FoundryProvisioningServiceHosts,
+		Env:             environment,
 		ProjectRoot:     projectRoot,
 		PreserveVarRefs: true,
 	})

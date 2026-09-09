@@ -272,7 +272,9 @@ func ejectProjectInfraWithTarget(
 		)
 	}
 	if configuredEndpoint == "" && strings.TrimSpace(endpoint) == "" {
-		return ejectProjectInfra(ctx, client, projectRoot, serviceName, provider)
+		return ejectProjectInfra(
+			ctx, client, projectRoot, serviceName, provider, environments...,
+		)
 	}
 	if strings.TrimSpace(endpoint) == "" {
 		endpoint = configuredEndpoint

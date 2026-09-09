@@ -1247,6 +1247,65 @@ services:
 	assert.NotContains(t, projectServer.unsetPaths, "infra.path")
 }
 
+func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
+	t.Setenv("ENABLE_CONNECTION", "false")
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte(`name: test
+services:
+  project:
+    host: azure.ai.project
+  active-connection:
+    host: azure.ai.connection
+    condition: ${ENABLE_CONNECTION}
+    category: RemoteTool
+    target: https://example.test
+`),
+		0600,
+	))
+
+	projectServer := &recordingProjectConfigServer{
+		project: &azdext.ProjectConfig{
+			Path:  root,
+			Infra: &azdext.InfraOptions{Provider: provisioningFoundryProvider},
+		},
+	}
+	server := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(
+		azdext.WithAddress(listener.Addr().String()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	require.NoError(t, ejectProjectInfraWithTarget(
+		t.Context(),
+		client,
+		root,
+		"project",
+		"bicep",
+		"",
+		"",
+		map[string]string{"ENABLE_CONNECTION": "true"},
+	))
+
+	// #nosec G304 -- path is inside the test project directory.
+	raw, err := os.ReadFile(filepath.Join(root, "infra", "main.parameters.json"))
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), `"name": "active-connection"`)
+}
+
 func TestEjectTerraformUsesFoundryLayerPathAndProvider(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(

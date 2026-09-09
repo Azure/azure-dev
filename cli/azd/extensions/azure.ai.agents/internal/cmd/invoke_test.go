@@ -1325,6 +1325,32 @@ func TestResolveDeployedProtocolRequiresRefreshForLegacyMetadata(t *testing.T) {
 	}
 }
 
+func TestResolveDeployedProtocolRequiresCompletedMetadata(t *testing.T) {
+	t.Parallel()
+
+	action := &InvokeAction{flags: &invokeFlags{}}
+	_, err := action.resolveDeployedProtocol(
+		t.Context(),
+		&remoteContext{
+			serviceName:                        "agent-service",
+			deployedProtocolMetadataIncomplete: true,
+		},
+	)
+	if err == nil {
+		t.Fatal("expected incomplete metadata error, got nil")
+	}
+	if !strings.Contains(err.Error(), "metadata") ||
+		!strings.Contains(err.Error(), "incomplete") {
+		t.Errorf("error = %q, want incomplete metadata guidance", err)
+	}
+	suggestion := azdext.WrapError(err).GetSuggestion()
+	if !strings.Contains(suggestion, "wait for the deployment") ||
+		!strings.Contains(suggestion, `azd deploy "agent-service"`) ||
+		!strings.Contains(suggestion, "--protocol") {
+		t.Errorf("suggestion = %q, want retry, redeploy, and explicit protocol guidance", suggestion)
+	}
+}
+
 func TestResolveDeployedProtocolDifferingVersionRequiresExplicitProtocol(t *testing.T) {
 	t.Parallel()
 
@@ -1477,7 +1503,7 @@ func TestResolveAgentProtocolEndpointsPreservesUnsupportedMetadata(t *testing.T)
 	}
 	defer client.Close()
 
-	endpoints, present, stale, err := resolveAgentProtocolEndpoints(
+	endpoints, present, stale, incomplete, err := resolveAgentProtocolEndpoints(
 		t.Context(), client, "test", "agent-service",
 	)
 	if err != nil {
@@ -1491,6 +1517,50 @@ func TestResolveAgentProtocolEndpointsPreservesUnsupportedMetadata(t *testing.T)
 	}
 	if stale {
 		t.Fatal("stale = true, want complete endpoint metadata")
+	}
+	if incomplete {
+		t.Fatal("incomplete = true, want complete endpoint metadata")
+	}
+}
+
+func TestResolveAgentProtocolEndpointsRejectsIncompleteMarker(t *testing.T) {
+	projectServer := &helpersProjectServer{
+		project: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{}},
+	}
+	environmentServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "test"},
+		values: map[string]map[string]string{
+			"test": {
+				"AGENT_AGENT_SERVICE_PROTOCOL_ENDPOINTS_VERSION": "",
+			},
+		},
+	}
+	address := newInvokeRemoteContextTestAzdServer(
+		t, projectServer, environmentServer,
+	)
+	t.Setenv("AZD_SERVER", address)
+
+	client, err := azdext.NewAzdClient()
+	if err != nil {
+		t.Fatalf("NewAzdClient: %v", err)
+	}
+	defer client.Close()
+
+	endpoints, present, stale, incomplete, err := resolveAgentProtocolEndpoints(
+		t.Context(), client, "test", "agent-service",
+	)
+	if err != nil {
+		t.Fatalf("resolveAgentProtocolEndpoints: %v", err)
+	}
+	if endpoints != nil || !present || stale || !incomplete {
+		t.Fatalf(
+			"endpoints = %v, present = %t, stale = %t, incomplete = %t, "+
+				"want incomplete metadata",
+			endpoints,
+			present,
+			stale,
+			incomplete,
+		)
 	}
 }
 
@@ -1517,7 +1587,7 @@ func TestResolveAgentProtocolEndpointsRejectsUnmarkedSingleProtocol(t *testing.T
 	}
 	defer client.Close()
 
-	endpoints, present, stale, err := resolveAgentProtocolEndpoints(
+	endpoints, present, stale, incomplete, err := resolveAgentProtocolEndpoints(
 		t.Context(), client, "test", "agent-service",
 	)
 	if err != nil {
@@ -1525,11 +1595,16 @@ func TestResolveAgentProtocolEndpointsRejectsUnmarkedSingleProtocol(t *testing.T
 	}
 	if endpoints != nil || !present || !stale {
 		t.Fatalf(
-			"endpoints = %v, present = %t, stale = %t, want stale legacy metadata",
+			"endpoints = %v, present = %t, stale = %t, incomplete = %t, "+
+				"want stale legacy metadata",
 			endpoints,
 			present,
 			stale,
+			incomplete,
 		)
+	}
+	if incomplete {
+		t.Fatal("incomplete = true, want legacy metadata")
 	}
 }
 
@@ -1557,7 +1632,7 @@ func TestResolveAgentProtocolEndpointsRejectsAmbiguousUnmarkedEndpoints(t *testi
 	}
 	defer client.Close()
 
-	endpoints, present, stale, err := resolveAgentProtocolEndpoints(
+	endpoints, present, stale, incomplete, err := resolveAgentProtocolEndpoints(
 		t.Context(), client, "test", "agent-service",
 	)
 	if err != nil {
@@ -1565,11 +1640,16 @@ func TestResolveAgentProtocolEndpointsRejectsAmbiguousUnmarkedEndpoints(t *testi
 	}
 	if endpoints != nil || !present || !stale {
 		t.Fatalf(
-			"endpoints = %v, present = %t, stale = %t, want stale legacy metadata",
+			"endpoints = %v, present = %t, stale = %t, incomplete = %t, "+
+				"want stale legacy metadata",
 			endpoints,
 			present,
 			stale,
+			incomplete,
 		)
+	}
+	if incomplete {
+		t.Fatal("incomplete = true, want legacy metadata")
 	}
 }
 

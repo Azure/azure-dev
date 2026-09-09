@@ -652,6 +652,20 @@ func (a *InvokeAction) resolveDeployedProtocol(
 	ctx context.Context,
 	rc *remoteContext,
 ) (agent_api.AgentProtocol, error) {
+	if rc.deployedProtocolMetadataIncomplete {
+		return "", exterrors.Compatibility(
+			exterrors.CodeIncompleteAgentProtocolMetadata,
+			fmt.Sprintf(
+				"deployed protocol metadata for agent service %q is incomplete",
+				rc.serviceName,
+			),
+			fmt.Sprintf(
+				"wait for the deployment to finish, run `azd deploy %s` "+
+					"to refresh protocol metadata, or pass --protocol explicitly",
+				strconv.Quote(rc.serviceName),
+			),
+		)
+	}
 	if rc.deployedProtocolMetadataStale {
 		return "", exterrors.Compatibility(
 			exterrors.CodeLegacyAgentProtocolMetadata,
@@ -1101,18 +1115,19 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 // directly outside an azd command) azdClient is nil and persistence helpers
 // no-op. agentKey may still be non-empty in that case.
 type remoteContext struct {
-	name                          string
-	serviceName                   string
-	agentKey                      string
-	projectEndpoint               string
-	apiVersion                    string
-	version                       string
-	deployedVersion               string
-	invocableProtocols            []agent_api.AgentProtocol
-	deployedProtocolMetadata      bool
-	deployedProtocolMetadataStale bool
-	azdClient                     *azdext.AzdClient
-	bearerToken                   string
+	name                               string
+	serviceName                        string
+	agentKey                           string
+	projectEndpoint                    string
+	apiVersion                         string
+	version                            string
+	deployedVersion                    string
+	invocableProtocols                 []agent_api.AgentProtocol
+	deployedProtocolMetadata           bool
+	deployedProtocolMetadataIncomplete bool
+	deployedProtocolMetadataStale      bool
+	azdClient                          *azdext.AzdClient
+	bearerToken                        string
 }
 
 func (rc *remoteContext) nextStepName() string {
@@ -1241,6 +1256,7 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 		rc.name = remoteAgentNameFromService(rc.name, info, a.protocolServiceName != "")
 		rc.invocableProtocols = invocableProtocolsFromEndpoints(info.ProtocolEndpoints)
 		rc.deployedProtocolMetadata = info.ProtocolEndpointsPresent
+		rc.deployedProtocolMetadataIncomplete = info.ProtocolEndpointsIncomplete
 		rc.deployedProtocolMetadataStale = info.ProtocolEndpointsStale
 		rc.deployedVersion = info.Version
 		if info.AgentEndpoint != "" {

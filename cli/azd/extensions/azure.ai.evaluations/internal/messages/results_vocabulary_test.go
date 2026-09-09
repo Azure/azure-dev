@@ -4,6 +4,8 @@
 package messages_test
 
 import (
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"azureaieval/internal/messages"
@@ -37,7 +39,20 @@ func TestAFilteredListingReadsAsASentence(t *testing.T) {
 // returned nothing produced a cheerful line about an empty document.
 func TestTheExportSaysHowMuchItWrote(t *testing.T) {
 	assert.Equal(t, "Exported 15 test cases to out/run.json\n",
-		messages.ExportedTestCases(15, `out\run.json`))
+		messages.ExportedTestCases(15, filepath.Join("out", "run.json")))
 	assert.Contains(t, messages.ExportedTestCases(0, "out.json"), "0 test cases",
 		"an empty export is the one most worth saying out loud")
+}
+
+// The separator conversion only has anything to convert on Windows: on Linux a
+// backslash is an ordinary character in a filename and filepath.ToSlash leaves
+// it alone, correctly. Written as a literal above, this case fails on Linux for
+// a reason that says nothing about the message.
+func TestTheExportedPathReadsWithForwardSlashes(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("filepath.ToSlash only rewrites the platform separator")
+	}
+
+	assert.Equal(t, "Exported 15 test cases to out/run.json\n",
+		messages.ExportedTestCases(15, `out\run.json`))
 }

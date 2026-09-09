@@ -24,6 +24,7 @@
 
 ### Other Changes
 
+- [[#9825]](https://github.com/Azure/azure-dev/pull/9825) Update gRPC to 1.83.1 across azd core and first-party Go extensions to address GHSA-vp52-pcj8-j9qc.
 - [[#9911]](https://github.com/Azure/azure-dev/pull/9911) Stop ambient OpenTelemetry resource attributes from being exported by azd while preserving declared telemetry fields.
 
 ## 1.33.0 (2026-09-02)

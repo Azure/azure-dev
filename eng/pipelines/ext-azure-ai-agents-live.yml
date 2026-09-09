@@ -29,17 +29,7 @@
 #     project) to avoid anonymous rate limits — no extra secret setup required.
 
 trigger: none
-pr:
-  branches:
-    include:
-      - main
-  paths:
-    include:
-      - eng/pipelines/ext-azure-ai-agents-live.yml
-      - cli/azd/go.mod
-      - cli/azd/go.sum
-      - cli/azd/extensions/azure.ai.agents/**
-      - cli/azd/extensions/azure.ai.projects/**
+pr: none
 
 schedules:
   # 7am UTC Monday (offset from other weekly E2E pipelines to reduce contention).

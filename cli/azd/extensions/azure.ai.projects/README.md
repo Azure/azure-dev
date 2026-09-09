@@ -44,11 +44,11 @@ infra:
       provider: microsoft.foundry
 ```
 
-When `azd ai project add --infra` is used with layers, infrastructure is
+When `azd ai project init --infra` is used with layers, infrastructure is
 ejected into the Foundry layer's configured path and module. The root
 `microsoft.foundry` provider cannot be combined with named layers.
 
-When `project add` migrates a legacy Foundry service, retired
+When `project init` migrates a legacy Foundry service, retired
 `network.mode`, `network.byo`, and `network.managed` fields are rejected
 instead of being copied into the new project service. Rewrite the block using
 the current `peSubnet` schema (and `agentSubnet` or `isolationMode` as needed)
@@ -60,15 +60,18 @@ Add or adopt a Foundry project in the current azd workspace. If `azure.yaml`
 is missing, the command first creates a minimal azd project:
 
 ```sh
-azd ai project add
+azd ai project init
 azd ai project deployment add --model <model-name>
 azd provision
 ```
 
-`project deployment add` creates the azd workspace and Foundry project
-configuration when they are missing, then adds the deployment. In automation,
+`project init` creates or updates the projects-owned `azure.ai.project`
+service without changing deployment declarations. The older `project add`
+name remains available as a compatibility alias. `project deployment add`
+creates the azd workspace and Foundry project configuration when they are
+missing, then adds the deployment. In automation,
 provide the project identity and Azure environment values required by
-`project add`; incomplete non-interactive input fails before the deployment is
+`project init`; incomplete non-interactive input fails before the deployment is
 changed.
 
 Managed deployment resolution requires one Azure location. Pass `--location`,
@@ -85,7 +88,7 @@ resource ID. This stores the project identity in the active azd environment
 and allows managed deployment declarations to be reconciled:
 
 ```sh
-azd ai project add --project-id "<project-resource-id>"
+azd ai project init --project-id "<project-resource-id>"
 azd ai project deployment add --model <model-name>
 ```
 
@@ -108,15 +111,15 @@ Generate editable infrastructure for an existing Foundry project with its full
 ARM resource ID:
 
 ```sh
-azd ai project add --project-id "<project-resource-id>" --infra
-azd ai project add --project-id "<project-resource-id>" --infra=terraform
+azd ai project init --project-id "<project-resource-id>" --infra
+azd ai project init --project-id "<project-resource-id>" --infra=terraform
 ```
 
 The default format is Bicep. The generated infrastructure references the
 existing account and project without taking ownership of them. It manages only
 declared model deployments, project connections, and any required container
 registry resources. Endpoint-only setup cannot eject infrastructure; rerun
-`project add` with the full project resource ID.
+`project init` with the full project resource ID.
 
 When an agent needs a registry, ejection preserves the registry state selected
 during initialization: it creates a registry when none exists, connects an

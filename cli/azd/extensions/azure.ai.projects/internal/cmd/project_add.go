@@ -70,7 +70,7 @@ const (
 	foundryBicepMarkerVersion     = "bicep-v1\n"
 )
 
-// ProjectAddAction implements project add.
+// ProjectAddAction implements project initialization.
 type ProjectAddAction struct {
 	client *azdext.AzdClient
 	flags  *projectAddFlags
@@ -78,11 +78,31 @@ type ProjectAddAction struct {
 }
 
 func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	return newProjectAuthoringCommand(
+		extCtx,
+		"add",
+		"Add or update a Microsoft Foundry project.",
+	)
+}
+
+func newProjectInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+	return newProjectAuthoringCommand(
+		extCtx,
+		"init",
+		"Initialize or update a Microsoft Foundry project.",
+	)
+}
+
+func newProjectAuthoringCommand(
+	extCtx *azdext.ExtensionContext,
+	use string,
+	short string,
+) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 	flags := &projectAddFlags{}
 	cmd := &cobra.Command{
-		Use:   "add",
-		Short: "Add or update a Microsoft Foundry project.",
+		Use:   use,
+		Short: short,
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			flags.output = extCtx.OutputFormat
@@ -349,7 +369,7 @@ func rollbackProjectAdd(
 		if err := rollback(); err != nil {
 			rollbackErrs = append(
 				rollbackErrs,
-				fmt.Errorf("rollback project add: %w", err),
+				fmt.Errorf("rollback project initialization: %w", err),
 			)
 		}
 	}
@@ -486,7 +506,7 @@ func promptProjectTarget(
 		return nil, exterrors.Validation(
 			"project_selection_invalid",
 			"the project selection response was invalid",
-			"retry `azd ai project add`",
+			"retry `azd ai project init`",
 		)
 	}
 	if choices[index].GetValue() == "new" {
@@ -541,7 +561,7 @@ func promptProjectTarget(
 		return nil, exterrors.Validation(
 			"project_selection_invalid",
 			"the Foundry project selection response was invalid",
-			"retry `azd ai project add`",
+			"retry `azd ai project init`",
 		)
 	}
 	return &projects[index], nil
@@ -1324,7 +1344,7 @@ func validateExistingEndpointMode(
 		return exterrors.Dependency(
 			exterrors.CodeInfraEjectRequiresProjectID,
 			"infrastructure ejection requires a verified Foundry project resource ID",
-			"rerun `azd ai project add --project-id <resource-id> --infra`",
+			"rerun `azd ai project init --project-id <resource-id> --infra`",
 		)
 	}
 	if hasProjectConnections(project) || hasPendingAcrProvision(values) {
@@ -1332,7 +1352,7 @@ func validateExistingEndpointMode(
 			"project_reconciliation_requires_project_id",
 			"endpoint-only setup cannot reconcile project connections "+
 				"or a pending container registry",
-			"rerun `azd ai project add --project-id <resource-id>` "+
+			"rerun `azd ai project init --project-id <resource-id>` "+
 				"before retaining project resources",
 		)
 	}
@@ -1344,7 +1364,7 @@ func validateExistingEndpointMode(
 		return exterrors.Dependency(
 			"project_reconciliation_requires_project_id",
 			"endpoint-only setup cannot retain managed model deployments",
-			"rerun `azd ai project add --project-id <resource-id>` "+
+			"rerun `azd ai project init --project-id <resource-id>` "+
 				"before managing deployments",
 		)
 	}
@@ -1353,7 +1373,7 @@ func validateExistingEndpointMode(
 		return exterrors.Dependency(
 			"project_reconciliation_requires_project_id",
 			"changing the project endpoint would move managed project configuration",
-			"rerun `azd ai project add --project-id <resource-id>` before changing project identity",
+			"rerun `azd ai project init --project-id <resource-id>` before changing project identity",
 		)
 	}
 	return nil
@@ -1404,7 +1424,7 @@ func validateExistingEndpointAgentAcr(
 	return exterrors.Dependency(
 		"project_reconciliation_requires_project_id",
 		"endpoint-only setup cannot retain hosted agents that require a container registry",
-		"rerun `azd ai project add --project-id <resource-id>` "+
+		"rerun `azd ai project init --project-id <resource-id>` "+
 			"before retaining hosted agents",
 	)
 }

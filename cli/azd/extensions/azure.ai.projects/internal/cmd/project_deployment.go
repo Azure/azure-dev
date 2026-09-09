@@ -483,7 +483,7 @@ func reconcileDeploymentWithRollback(
 		return "", nil, exterrors.Dependency(
 			"project_service_not_found",
 			fmt.Sprintf("project service %q was not found", serviceName),
-			"run `azd ai project add` before adding a deployment",
+			"run `azd ai project init` before adding a deployment",
 		)
 	}
 	rawItems, resolvedItems, err := deploymentItems(service, reconciler.projectRoot)

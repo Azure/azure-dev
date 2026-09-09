@@ -199,8 +199,8 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		if service == nil || service.Legacy {
 			return exterrors.Dependency(
 				"project_service_not_found",
-				"project add completed without creating an azure.ai.project service",
-				"run `azd ai project add` and retry adding the deployment",
+				"project init completed without creating an azure.ai.project service",
+				"run `azd ai project init` and retry adding the deployment",
 			)
 		}
 	}
@@ -219,7 +219,7 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 			"project_deployment_requires_id",
 			"managed model deployments for an existing Foundry project "+
 				"require a resource ID",
-			"rerun `azd ai project add --project-id <resource-id>` "+
+			"rerun `azd ai project init --project-id <resource-id>` "+
 				"before adding managed deployments",
 		)
 	}
@@ -541,7 +541,7 @@ func validateConfiguredProjectIdentity(
 	return exterrors.Validation(
 		"project_target_mismatch",
 		"the configured project endpoint and AZURE_AI_PROJECT_ID identify different projects",
-		"rerun `azd ai project add` with the intended project target",
+		"rerun `azd ai project init` with the intended project target",
 	)
 }
 

@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "4017347415588586555"
+      "templateHash": "11184978301731377195"
     }
   },
   "definitions": {
@@ -114,6 +114,39 @@
       "metadata": {
         "description": "Shape of one Foundry project connection (a host: azure.ai.connection service)."
       }
+    },
+    "agentHostingType": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "bool"
+        },
+        "hostingType": {
+          "type": "string",
+          "allowedValues": [
+            "",
+            "ManagedCluster"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "clusterResourceId": {
+          "type": "string"
+        },
+        "hostingManagementIdentityResourceId": {
+          "type": "string"
+        },
+        "storageAccountResourceId": {
+          "type": "string"
+        },
+        "workloadIdentityResourceId": {
+          "type": "string"
+        }
+      },
+      "metadata": {
+        "description": "Customer-owned AKS configuration for hosting Foundry agents."
+      }
     }
   },
   "parameters": {
@@ -179,6 +212,21 @@
       "defaultValue": {},
       "metadata": {
         "description": "Credentials keyed by Foundry project connection name."
+      }
+    },
+    "agentHosting": {
+      "$ref": "#/definitions/agentHostingType",
+      "defaultValue": {
+        "enabled": false,
+        "hostingType": "",
+        "name": "",
+        "clusterResourceId": "",
+        "hostingManagementIdentityResourceId": "",
+        "storageAccountResourceId": "",
+        "workloadIdentityResourceId": ""
+      },
+      "metadata": {
+        "description": "Customer-owned AKS configuration for hosting Foundry agents."
       }
     },
     "principalId": {
@@ -323,6 +371,9 @@
           "connectionCredentials": {
             "value": "[parameters('connectionCredentials')]"
           },
+          "agentHosting": {
+            "value": "[parameters('agentHosting')]"
+          },
           "principalId": {
             "value": "[parameters('principalId')]"
           },
@@ -374,7 +425,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "14181853768779234991"
+              "templateHash": "1524378032586652217"
             }
           },
           "definitions": {
@@ -482,6 +533,39 @@
               "metadata": {
                 "description": "Shape of one Foundry project connection (a host: azure.ai.connection service)."
               }
+            },
+            "agentHostingType": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "bool"
+                },
+                "hostingType": {
+                  "type": "string",
+                  "allowedValues": [
+                    "",
+                    "ManagedCluster"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "clusterResourceId": {
+                  "type": "string"
+                },
+                "hostingManagementIdentityResourceId": {
+                  "type": "string"
+                },
+                "storageAccountResourceId": {
+                  "type": "string"
+                },
+                "workloadIdentityResourceId": {
+                  "type": "string"
+                }
+              },
+              "metadata": {
+                "description": "Customer-owned AKS configuration for hosting Foundry agents."
+              }
             }
           },
           "parameters": {
@@ -540,6 +624,21 @@
               "defaultValue": {},
               "metadata": {
                 "description": "Credentials keyed by Foundry project connection name."
+              }
+            },
+            "agentHosting": {
+              "$ref": "#/definitions/agentHostingType",
+              "defaultValue": {
+                "enabled": false,
+                "hostingType": "",
+                "name": "",
+                "clusterResourceId": "",
+                "hostingManagementIdentityResourceId": "",
+                "storageAccountResourceId": "",
+                "workloadIdentityResourceId": ""
+              },
+              "metadata": {
+                "description": "Customer-owned AKS configuration for hosting Foundry agents."
               }
             },
             "principalId": {
@@ -665,7 +764,7 @@
                 "batchSize": 1
               },
               "type": "Microsoft.CognitiveServices/accounts/deployments",
-              "apiVersion": "2025-06-01",
+              "apiVersion": "2026-07-15-preview",
               "name": "[format('{0}/{1}', variables('foundryAccountName'), parameters('deployments')[copyIndex()].name)]",
               "properties": {
                 "model": "[parameters('deployments')[copyIndex()].model]"
@@ -677,7 +776,7 @@
             },
             "foundryAccount::project": {
               "type": "Microsoft.CognitiveServices/accounts/projects",
-              "apiVersion": "2025-06-01",
+              "apiVersion": "2026-07-15-preview",
               "name": "[format('{0}/{1}', variables('foundryAccountName'), parameters('foundryProjectName'))]",
               "location": "[parameters('location')]",
               "identity": {
@@ -694,7 +793,7 @@
             },
             "foundryAccount": {
               "type": "Microsoft.CognitiveServices/accounts",
-              "apiVersion": "2025-06-01",
+              "apiVersion": "2026-07-15-preview",
               "name": "[variables('foundryAccountName')]",
               "location": "[parameters('location')]",
               "tags": "[parameters('tags')]",
@@ -702,9 +801,7 @@
                 "name": "S0"
               },
               "kind": "AIServices",
-              "identity": {
-                "type": "SystemAssigned"
-              },
+              "identity": "[if(parameters('agentHosting').enabled, createObject('type', 'SystemAssigned, UserAssigned', 'userAssignedIdentities', createObject(format('{0}', parameters('agentHosting').hostingManagementIdentityResourceId), createObject())), createObject('type', 'SystemAssigned'))]",
               "properties": {
                 "allowProjectManagement": true,
                 "customSubDomainName": "[variables('foundryAccountName')]",
@@ -716,7 +813,8 @@
                   "virtualNetworkRules": [],
                   "ipRules": []
                 },
-                "networkInjections": "[variables('agentNetworkInjections')]"
+                "networkInjections": "[variables('agentNetworkInjections')]",
+                "agentHostingConfigurations": "[if(parameters('agentHosting').enabled, createArray(createObject('hostingType', parameters('agentHosting').hostingType, 'name', parameters('agentHosting').name, 'clusterResourceId', parameters('agentHosting').clusterResourceId, 'hostingManagementIdentityResourceId', parameters('agentHosting').hostingManagementIdentityResourceId, 'storageAccountResourceId', parameters('agentHosting').storageAccountResourceId, 'workloadIdentityResourceId', parameters('agentHosting').workloadIdentityResourceId)), null())]"
               },
               "dependsOn": [
                 "network"
@@ -1092,7 +1190,7 @@
                     "value": "[parameters('foundryProjectName')]"
                   },
                   "foundryProjectPrincipalId": {
-                    "value": "[reference('foundryAccount::project', '2025-06-01', 'full').identity.principalId]"
+                    "value": "[reference('foundryAccount::project', '2026-07-15-preview', 'full').identity.principalId]"
                   },
                   "enableNetworkIsolation": {
                     "value": "[parameters('enableNetworkIsolation')]"

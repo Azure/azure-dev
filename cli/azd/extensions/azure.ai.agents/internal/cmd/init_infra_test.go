@@ -1692,6 +1692,68 @@ services:
 		"dns.resourceGroup selects reference mode")
 }
 
+func TestEjectInfra_PreservesAgentHostingVarRefs(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+services:
+  my-foundry:
+    host: azure.ai.project
+    agentHosting:
+      hostingType: ManagedCluster
+      name: primary
+      clusterResourceId: ${AKS_ID}
+      hostingManagementIdentityResourceId: ${HOSTING_MANAGER_ID}
+      storageAccountResourceId: ${STORAGE_ID}
+      workloadIdentityResourceId: ${WORKLOAD_ID}
+`)
+
+	withCapturedStdout(t, func() {
+		require.NoError(t, ejectInfra(dir, "bicep"))
+	})
+
+	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json")) //nolint:gosec
+	require.NoError(t, err)
+	var bicepDoc struct {
+		Parameters map[string]struct {
+			Value any `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &bicepDoc))
+	hosting, ok := bicepDoc.Parameters["agentHosting"].Value.(map[string]any)
+	require.True(t, ok, "agentHosting should be an object, got %T", bicepDoc.Parameters["agentHosting"].Value)
+	assert.Equal(t, true, hosting["enabled"])
+	assert.Equal(t, "${AKS_ID}", hosting["clusterResourceId"])
+	assert.Equal(t, "${HOSTING_MANAGER_ID}", hosting["hostingManagementIdentityResourceId"])
+	assert.Equal(t, "${STORAGE_ID}", hosting["storageAccountResourceId"])
+	assert.Equal(t, "${WORKLOAD_ID}", hosting["workloadIdentityResourceId"])
+
+	terraformDir := t.TempDir()
+	mustWriteFile(t, filepath.Join(terraformDir, "azure.yaml"), `name: my-project
+services:
+  my-foundry:
+    host: azure.ai.project
+    agentHosting:
+      hostingType: ManagedCluster
+      name: primary
+      clusterResourceId: ${AKS_ID}
+      hostingManagementIdentityResourceId: ${HOSTING_MANAGER_ID}
+      storageAccountResourceId: ${STORAGE_ID}
+      workloadIdentityResourceId: ${WORKLOAD_ID}
+`)
+	withCapturedStdout(t, func() {
+		require.NoError(t, ejectInfra(terraformDir, "terraform"))
+	})
+
+	raw, err = os.ReadFile(filepath.Join(terraformDir, "infra", "main.tfvars.json")) //nolint:gosec
+	require.NoError(t, err)
+	var terraformDoc map[string]any
+	require.NoError(t, json.Unmarshal(raw, &terraformDoc))
+	hosting, ok = terraformDoc["agent_hosting"].(map[string]any)
+	require.True(t, ok, "agent_hosting should be an object, got %T", terraformDoc["agent_hosting"])
+	assert.Equal(t, true, hosting["enabled"])
+	assert.Equal(t, "${AKS_ID}", hosting["clusterResourceId"])
+}
+
 // TestEjectInfra_Bicep_NetworkParamsComplete_Byo ejects a BYO-egress service
 // (agentSubnet + peSubnet, both with prefixes) and asserts the complete network
 // parameter set lands in main.parameters.json. This is the Bicep eject path's

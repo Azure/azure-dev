@@ -45,6 +45,17 @@ type connectionType = {
   metadata: object?
 }
 
+@description('Customer-owned AKS configuration for hosting Foundry agents.')
+type agentHostingType = {
+  enabled: bool
+  hostingType: 'ManagedCluster' | ''
+  name: string
+  clusterResourceId: string
+  hostingManagementIdentityResourceId: string
+  storageAccountResourceId: string
+  workloadIdentityResourceId: string
+}
+
 // Parameters
 
 @description('Azure region for all resources.')
@@ -73,6 +84,17 @@ param connections connectionsType = []
 @description('Credentials keyed by Foundry project connection name.')
 @secure()
 param connectionCredentials object = {}
+
+@description('Customer-owned AKS configuration for hosting Foundry agents.')
+param agentHosting agentHostingType = {
+  enabled: false
+  hostingType: ''
+  name: ''
+  clusterResourceId: ''
+  hostingManagementIdentityResourceId: ''
+  storageAccountResourceId: ''
+  workloadIdentityResourceId: ''
+}
 
 @description('Object id of the developer running azd. When set, grants Cognitive Services User on the project. Empty disables the role assignment so headless / CI runs do not fail.')
 param principalId string = ''
@@ -188,7 +210,7 @@ var agentNetworkInjections = useByoNetwork
         ]
       : null)
 
-resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
+resource foundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-preview' = {
   name: foundryAccountName
   location: location
   tags: tags
@@ -196,9 +218,16 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
     name: 'S0'
   }
   kind: 'AIServices'
-  identity: {
-    type: 'SystemAssigned'
-  }
+  identity: agentHosting.enabled
+    ? {
+        type: 'SystemAssigned, UserAssigned'
+        userAssignedIdentities: {
+          '${agentHosting.hostingManagementIdentityResourceId}': {}
+        }
+      }
+    : {
+        type: 'SystemAssigned'
+      }
   properties: {
     allowProjectManagement: true
     customSubDomainName: foundryAccountName
@@ -211,6 +240,18 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
       ipRules: []
     }
     networkInjections: agentNetworkInjections
+    agentHostingConfigurations: agentHosting.enabled
+      ? [
+          {
+            hostingType: agentHosting.hostingType
+            name: agentHosting.name
+            clusterResourceId: agentHosting.clusterResourceId
+            hostingManagementIdentityResourceId: agentHosting.hostingManagementIdentityResourceId
+            storageAccountResourceId: agentHosting.storageAccountResourceId
+            workloadIdentityResourceId: agentHosting.workloadIdentityResourceId
+          }
+        ]
+      : null
   }
 
   // The account injects into the agent subnet via a deterministic id (above),

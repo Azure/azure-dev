@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -510,6 +511,147 @@ services:
 				}
 				assert.Equal(t, tt.wantConnectionNames, gotNames)
 			}
+		})
+	}
+}
+
+func TestSynthesize_AgentHosting(t *testing.T) {
+	t.Parallel()
+
+	const (
+		clusterID  = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/aks"
+		managerID  = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/manager"
+		storageID  = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/agents"
+		workloadID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/workload"
+	)
+	raw := []byte(`
+services:
+  project:
+    host: azure.ai.project
+    agentHosting:
+      hostingType: ManagedCluster
+      name: primary
+      clusterResourceId: ${AKS_ID}
+      hostingManagementIdentityResourceId: ${MANAGER_ID}
+      storageAccountResourceId: ${STORAGE_ID}
+      workloadIdentityResourceId: ${WORKLOAD_ID}
+`)
+
+	result, err := Synthesize(Input{
+		RawAzureYAML: raw,
+		ServiceName:  "project",
+		Env: map[string]string{
+			"AKS_ID":      clusterID,
+			"MANAGER_ID":  managerID,
+			"STORAGE_ID":  storageID,
+			"WORKLOAD_ID": workloadID,
+		},
+	})
+	require.NoError(t, err)
+
+	hosting, ok := result.Parameters["agentHosting"].(agentHostingParameter)
+	require.True(t, ok, "agentHosting should be agentHostingParameter, got %T", result.Parameters["agentHosting"])
+	assert.Equal(t, agentHostingParameter{
+		Enabled:                             true,
+		HostingType:                         managedClusterHostingType,
+		Name:                                "primary",
+		ClusterResourceID:                   clusterID,
+		HostingManagementIdentityResourceID: managerID,
+		StorageAccountResourceID:            storageID,
+		WorkloadIdentityResourceID:          workloadID,
+	}, hosting)
+}
+
+func TestSynthesize_AgentHostingPreservesReferencesForEject(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte(`
+services:
+  project:
+    host: azure.ai.project
+    agentHosting:
+      hostingType: ManagedCluster
+      name: primary
+      clusterResourceId: ${AKS_ID}
+      hostingManagementIdentityResourceId: ${MANAGER_ID}
+      storageAccountResourceId: ${STORAGE_ID}
+      workloadIdentityResourceId: ${WORKLOAD_ID}
+`)
+	result, err := Synthesize(Input{
+		RawAzureYAML:    raw,
+		ServiceName:     "project",
+		PreserveVarRefs: true,
+	})
+	require.NoError(t, err)
+
+	hosting := result.Parameters["agentHosting"].(agentHostingParameter)
+	assert.Equal(t, "${AKS_ID}", hosting.ClusterResourceID)
+	assert.Equal(t, "${MANAGER_ID}", hosting.HostingManagementIdentityResourceID)
+	assert.Equal(t, "${STORAGE_ID}", hosting.StorageAccountResourceID)
+	assert.Equal(t, "${WORKLOAD_ID}", hosting.WorkloadIdentityResourceID)
+}
+
+func TestSynthesize_AgentHostingValidation(t *testing.T) {
+	t.Parallel()
+
+	valid := `
+services:
+  project:
+    host: azure.ai.project
+    agentHosting:
+      hostingType: ManagedCluster
+      name: primary
+      clusterResourceId: /subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/aks
+      hostingManagementIdentityResourceId: ${MANAGER_ID}
+      storageAccountResourceId: /subscriptions/sub/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/agents
+      workloadIdentityResourceId: ${WORKLOAD_ID}
+`
+	tests := []struct {
+		name       string
+		yaml       string
+		synthesize func(Input) (*Result, error)
+		want       string
+	}{
+		{
+			name:       "unsupported hosting type",
+			yaml:       strings.Replace(valid, "ManagedCluster", "Other", 1),
+			synthesize: Synthesize,
+			want:       `hostingType: "Other" is not supported`,
+		},
+		{
+			name:       "wrong cluster resource type",
+			yaml:       strings.Replace(valid, "Microsoft.ContainerService/managedClusters", "Microsoft.Storage/storageAccounts", 1),
+			synthesize: Synthesize,
+			want:       "clusterResourceId",
+		},
+		{
+			name: "existing project",
+			yaml: strings.Replace(
+				valid,
+				"host: azure.ai.project",
+				"host: azure.ai.project\n    endpoint: https://acct.services.ai.azure.com/api/projects/project",
+				1,
+			),
+			synthesize: SynthesizeExistingProject,
+			want:       "cannot be added to an existing account",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := tt.synthesize(Input{
+				RawAzureYAML: []byte(tt.yaml),
+				ServiceName:  "project",
+				Env: map[string]string{
+					"MANAGER_ID": "/subscriptions/sub/resourceGroups/rg/providers/" +
+						"Microsoft.ManagedIdentity/userAssignedIdentities/manager",
+					"WORKLOAD_ID": "/subscriptions/sub/resourceGroups/rg/providers/" +
+						"Microsoft.ManagedIdentity/userAssignedIdentities/workload",
+				},
+			})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.want)
 		})
 	}
 }
@@ -1736,6 +1878,23 @@ func TestTerraformModule_DerivesNamesWhenEmpty(t *testing.T) {
 		"provider.tf must require Terraform 1.3 for optional object attributes")
 }
 
+func TestTerraformModule_AgentHosting(t *testing.T) {
+	fs := TerraformTemplatesFS()
+
+	variables, err := fs.ReadFile("templates/terraform/variables.tf")
+	require.NoError(t, err)
+	assert.Contains(t, string(variables), `variable "agent_hosting"`)
+	assert.Contains(t, string(variables), "hostingManagementIdentityResourceId")
+
+	main, err := fs.ReadFile("templates/terraform/main.tf")
+	require.NoError(t, err)
+	text := string(main)
+	assert.Contains(t, text, "Microsoft.CognitiveServices/accounts@2026-07-15-preview")
+	assert.Contains(t, text, `identity_ids = var.agent_hosting.enabled`)
+	assert.Contains(t, text, "agentHostingConfigurations")
+	assert.Contains(t, text, "workloadIdentityResourceId")
+}
+
 func TestTerraformConnectionTemplatesPreserveOptionalAuthProperties(t *testing.T) {
 	readers := []struct {
 		name string
@@ -1799,6 +1958,7 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	params, ok := arm["parameters"].(map[string]any)
 	require.True(t, ok, "parameters must be an object")
 	assert.Contains(t, params, "resourceGroupName")
+	assert.Contains(t, params, "agentHosting")
 
 	// connections must remain an array so ejected templates preserve the
 	// connection object shape.
@@ -1836,6 +1996,10 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	// enableNetworkIsolation (not on egress mode), so a network-bound account is
 	// never left public. This is the regression guard for the data-plane fix.
 	text := string(data)
+	assert.Contains(t, text, `"apiVersion": "2026-07-15-preview"`)
+	assert.Contains(t, text, `"agentHostingConfigurations": "[if(parameters('agentHosting').enabled`)
+	assert.Contains(t, text, "'userAssignedIdentities', createObject(format('{0}', "+
+		"parameters('agentHosting').hostingManagementIdentityResourceId)")
 	wantDisable := `"disablePublicDataPlaneAccess": "[parameters('enableNetworkIsolation')]"`
 	wantPublic := `"publicNetworkAccess": "[if(variables('disablePublicDataPlaneAccess'), 'Disabled', 'Enabled')]"`
 	assert.Contains(t, text, wantDisable,

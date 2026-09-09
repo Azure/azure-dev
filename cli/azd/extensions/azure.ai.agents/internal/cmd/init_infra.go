@@ -2316,11 +2316,13 @@ func writeTfvarsFile(
 		doc["foundry_project_name"] = "${AZURE_AI_PROJECT_NAME=}"
 	}
 
-	// deployments and connections are the only synthesizer-derived values
-	// written to tfvars. The Terraform provider resolves ${VAR} references
-	// across the generated file at provision time.
+	// Synthesizer-derived values are written literally. The Terraform provider
+	// resolves ${VAR} references across the generated file at provision time.
 	if v, ok := params["deployments"]; ok {
 		doc["deployments"] = v
+	}
+	if v, ok := params["agentHosting"]; ok {
+		doc["agent_hosting"] = v
 	}
 	connections, ok := params["connections"].([]synthesis.Connection)
 	if !ok {

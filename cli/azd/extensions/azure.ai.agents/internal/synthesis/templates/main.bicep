@@ -48,6 +48,17 @@ type connectionType = {
   metadata: object?
 }
 
+@description('Customer-owned AKS configuration for hosting Foundry agents.')
+type agentHostingType = {
+  enabled: bool
+  hostingType: 'ManagedCluster' | ''
+  name: string
+  clusterResourceId: string
+  hostingManagementIdentityResourceId: string
+  storageAccountResourceId: string
+  workloadIdentityResourceId: string
+}
+
 // Parameters
 
 @description('Azure region for all resources.')
@@ -81,6 +92,17 @@ param connections connectionsType = []
 @description('Credentials keyed by Foundry project connection name.')
 @secure()
 param connectionCredentials object = {}
+
+@description('Customer-owned AKS configuration for hosting Foundry agents.')
+param agentHosting agentHostingType = {
+  enabled: false
+  hostingType: ''
+  name: ''
+  clusterResourceId: ''
+  hostingManagementIdentityResourceId: ''
+  storageAccountResourceId: ''
+  workloadIdentityResourceId: ''
+}
 
 @description('Object id of the developer running azd. When set, grants Cognitive Services User on the project. Empty disables the role assignment so headless / CI runs do not fail.')
 param principalId string = ''
@@ -147,6 +169,7 @@ module resources 'modules/resources.bicep' = {
     includeAcr: includeAcr
     connections: connections
     connectionCredentials: connectionCredentials
+    agentHosting: agentHosting
     principalId: principalId
     principalType: principalType
     enableNetworkIsolation: enableNetworkIsolation

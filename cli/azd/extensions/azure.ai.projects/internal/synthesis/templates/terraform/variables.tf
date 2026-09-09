@@ -77,6 +77,28 @@ variable "connections" {
   default = []
 }
 
+variable "agent_hosting" {
+  description = "Customer-owned AKS configuration for hosting Foundry agents."
+  type = object({
+    enabled                             = bool
+    hostingType                         = string
+    name                                = string
+    clusterResourceId                   = string
+    hostingManagementIdentityResourceId = string
+    storageAccountResourceId            = string
+    workloadIdentityResourceId          = string
+  })
+  default = {
+    enabled                             = false
+    hostingType                         = ""
+    name                                = ""
+    clusterResourceId                   = ""
+    hostingManagementIdentityResourceId = ""
+    storageAccountResourceId            = ""
+    workloadIdentityResourceId          = ""
+  }
+}
+
 variable "principal_id" {
   description = "Object id of the developer running azd. When empty, the developer role assignment is skipped."
   type        = string

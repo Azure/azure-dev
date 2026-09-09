@@ -20,6 +20,9 @@
         ]
       }
     },
+    "agentHosting": {
+      "$ref": "#/definitions/AgentHosting"
+    },
     "network": {
       "type": "object",
       "description": "Private networking for the Foundry account that backs this project. When omitted, the account uses public networking. When present, azd provisions an account private endpoint and disables public data-plane access.",
@@ -65,6 +68,51 @@
     }
   },
   "definitions": {
+    "AgentHosting": {
+      "type": "object",
+      "description": "Customer-owned AKS configuration for hosting agents on a newly created Foundry account. The configuration is immutable after account creation.",
+      "additionalProperties": false,
+      "required": [
+        "hostingType",
+        "name",
+        "clusterResourceId",
+        "hostingManagementIdentityResourceId",
+        "storageAccountResourceId",
+        "workloadIdentityResourceId"
+      ],
+      "properties": {
+        "hostingType": {
+          "type": "string",
+          "enum": ["ManagedCluster"],
+          "description": "Hosting infrastructure type. ManagedCluster selects a customer-owned AKS cluster."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique hosting configuration name within the Foundry account."
+        },
+        "clusterResourceId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Full ARM resource ID of the customer-owned AKS managed cluster."
+        },
+        "hostingManagementIdentityResourceId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Full ARM resource ID of the user-assigned identity used by the Foundry resource provider to manage the hosting configuration."
+        },
+        "storageAccountResourceId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Full ARM resource ID of the storage account used by hosted agents."
+        },
+        "workloadIdentityResourceId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Full ARM resource ID of the separate user-assigned identity federated to AKS service accounts."
+        }
+      }
+    },
     "Deployment": {
       "type": "object",
       "required": ["name", "model", "sku"],

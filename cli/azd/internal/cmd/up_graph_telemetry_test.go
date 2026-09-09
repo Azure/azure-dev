@@ -652,7 +652,7 @@ func TestSyntheticUpUsageAttributesExcludeExtensionDrops(t *testing.T) {
 		fields.ExtensionUsageDroppedCount.Int64(1),
 	)
 
-	attrs := syntheticUpUsageAttributes()
+	attrs := tracing.GetSecondaryUsageAttributes()
 	indexed := map[attribute.Key]attribute.Value{}
 	for _, attr := range attrs {
 		indexed[attr.Key] = attr.Value

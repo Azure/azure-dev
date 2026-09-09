@@ -896,13 +896,16 @@ func readManifestContentForInitDetection(
 		return content, true
 	}
 	cachedContent, cached := readCachedTemplateManifest(manifestPointer)
+	if cached {
+		return cachedContent, true
+	}
 	if azdClient == nil || !strings.Contains(manifestPointer, "://") {
-		return cachedContent, cached
+		return nil, false
 	}
 
 	parsedURL, err := url.Parse(manifestPointer)
 	if err != nil || !strings.Contains(parsedURL.Hostname(), "github") {
-		return cachedContent, cached
+		return nil, false
 	}
 
 	commandRunner := exec.NewCommandRunner(&exec.RunnerOptions{
@@ -924,13 +927,13 @@ func readManifestContentForInitDetection(
 	ghCli := github.NewGitHubCli(console, commandRunner)
 	if err := ghCli.EnsureInstalled(ctx); err != nil {
 		log.Printf("detect unified azure.yaml: ensuring gh is installed: %v", err)
-		return cachedContent, cached
+		return nil, false
 	}
 
 	urlInfo, err := parseGitHubUrlForAdopt(ctx, azdClient, manifestPointer)
 	if err != nil {
 		log.Printf("detect unified azure.yaml: parsing GitHub URL: %v", err)
-		return cachedContent, cached
+		return nil, false
 	}
 
 	apiPath := fmt.Sprintf("/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
@@ -940,7 +943,7 @@ func readManifestContentForInitDetection(
 	content, err := downloadGithubManifest(ctx, urlInfo, apiPath, ghCli)
 	if err != nil {
 		log.Printf("detect unified azure.yaml: downloading GitHub file: %v", err)
-		return cachedContent, cached
+		return nil, false
 	}
 
 	return []byte(content), true
@@ -1417,6 +1420,7 @@ func stageRemoteAzureYaml(
 	fmt.Println(output.WithGrayFormat("Downloading sample from GitHub..."))
 
 	triedPublicDownload := false
+	var publicDownloadErr error
 	if urlInfo := parseGitHubUrlNaive(pointer); urlInfo != nil {
 		triedPublicDownload = true
 		dirPath := parentDirOf(urlInfo.FilePath)
@@ -1434,12 +1438,25 @@ func stageRemoteAzureYaml(
 				}
 				return nil
 			}
+			publicDownloadErr = errors.New("downloaded sample did not contain azure.yaml")
+		} else {
+			publicDownloadErr = err
 		}
 	}
 
 	if triedPublicDownload {
 		if err := clearStagingDirectory(staging); err != nil {
 			return err
+		}
+		if publicDownloadErr != nil {
+			restored, cacheErr := restoreCachedTemplate(pointer, staging)
+			if cacheErr != nil {
+				return fmt.Errorf("%w; cached sample fallback also failed: %v", publicDownloadErr, cacheErr)
+			}
+			if restored {
+				emitTemplateCacheWarning(templateCacheFallbackMessage(pointer, publicDownloadErr))
+				return nil
+			}
 		}
 	}
 

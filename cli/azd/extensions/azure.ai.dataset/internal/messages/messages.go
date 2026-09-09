@@ -812,6 +812,20 @@ func WritingDownload(path string, err error) error {
 	return fmt.Errorf("writing %s: %w", filepath.ToSlash(path), err)
 }
 
+// DownloadLeftDestinationAside reports a failed install whose rollback also
+// failed, so the caller's data is under a name they did not choose.
+//
+// The old directory is moved rather than removed precisely so it can be put
+// back. When putting it back fails too, saying only that the install failed
+// leaves the caller looking at a missing directory with no idea their data
+// still exists -- under a temporary name nothing has told them.
+func DownloadLeftDestinationAside(dest, held string, err error) error {
+	return fmt.Errorf(
+		"writing %s: %w. What was there could not be put back either; it is "+
+			"still on disk as %s -- rename it to recover it",
+		filepath.ToSlash(dest), err, filepath.ToSlash(held))
+}
+
 // CreatingDirectory reports a directory a download needed and could not make.
 func CreatingDirectory(path string, err error) error {
 	return fmt.Errorf("creating %s: %w", filepath.ToSlash(path), err)

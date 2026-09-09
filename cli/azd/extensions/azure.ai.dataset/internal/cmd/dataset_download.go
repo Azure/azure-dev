@@ -246,7 +246,14 @@ func replaceDir(staging, dest string, force bool) error {
 	}
 	if err := os.Rename(staging, dest); err != nil {
 		if replaced != "" {
-			_ = os.Rename(replaced, dest)
+			// The restore is the whole reason the old directory was moved rather
+			// than removed, so a restore that also fails is the case this exists
+			// for -- and discarding its error reported only the install failure
+			// while the caller's data sat under a temporary name they were never
+			// told about. Both are named, and the holding directory with them.
+			if restoreErr := os.Rename(replaced, dest); restoreErr != nil {
+				return messages.DownloadLeftDestinationAside(dest, replaced, err)
+			}
 		}
 		return messages.WritingDownload(dest, err)
 	}

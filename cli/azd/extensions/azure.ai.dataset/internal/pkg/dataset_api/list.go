@@ -60,26 +60,38 @@ func (c *DatasetClient) DeleteDatasetVersion(
 // VersionOrder returns a sortable value for a version string, matching the
 // decimal convention NextVersion produces ("1.0", "2.0"). Unparseable versions
 // sort lowest.
-func VersionOrder(version string) float64 {
+//
+// Compared component by component rather than as a float. ParseFloat reads
+// "1.10" as one-point-one, which sorts it *below* "1.9" -- so after publishing
+// 1.9 and 1.10, `show`, `download` and `delete` all resolved "latest" to 1.9
+// and quietly acted on the older version. A version is a sequence of numbers,
+// not a decimal fraction, and only looks like one while the minor stays under
+// ten.
+func VersionOrder(version string) []int {
 	v := strings.TrimSpace(version)
 	if v == "" {
-		return -1
+		return nil
 	}
-	if f, err := strconv.ParseFloat(v, 64); err == nil {
-		return f
+	parts := strings.Split(v, ".")
+	order := make([]int, 0, len(parts))
+	for _, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			// Fall back to trailing digits, e.g. "v3" -> 3.
+			i := len(p)
+			for i > 0 && p[i-1] >= '0' && p[i-1] <= '9' {
+				i--
+			}
+			if i == len(p) {
+				return nil
+			}
+			if n, err = strconv.Atoi(p[i:]); err != nil {
+				return nil
+			}
+		}
+		order = append(order, n)
 	}
-	// Fall back to trailing digits, e.g. "v3" -> 3.
-	i := len(v)
-	for i > 0 && v[i-1] >= '0' && v[i-1] <= '9' {
-		i--
-	}
-	if i == len(v) {
-		return -1
-	}
-	if n, err := strconv.Atoi(v[i:]); err == nil {
-		return float64(n)
-	}
-	return -1
+	return order
 }
 
 // VersionGreater reports whether a is a strictly newer version than b.
@@ -88,23 +100,39 @@ func VersionOrder(version string) float64 {
 // unparseable version never triggers a drift failure on its own.
 func VersionGreater(a, b string) bool {
 	orderA, orderB := VersionOrder(a), VersionOrder(b)
-	if orderA < 0 || orderB < 0 {
+	if orderA == nil || orderB == nil {
 		return false
 	}
-	return orderA > orderB
+	// A shorter version is the earlier one where they agree so far: 1.2 comes
+	// before 1.2.1, and treating the missing component as zero says so.
+	for i := 0; i < len(orderA) || i < len(orderB); i++ {
+		x, y := 0, 0
+		if i < len(orderA) {
+			x = orderA[i]
+		}
+		if i < len(orderB) {
+			y = orderB[i]
+		}
+		if x != y {
+			return x > y
+		}
+	}
+	return false
 }
 
 // LatestVersion returns the highest version in the list, falling back to the
 // last entry when none of the versions can be ordered.
 func LatestVersion(datasets []Dataset) string {
 	best := ""
-	// VersionOrder returns -1 for anything it cannot order, so the sentinel has
-	// to be -1 rather than lower: below it, the first version it cannot order
-	// becomes the running best and the fallback below never runs.
-	bestOrder := -1.0
 	for _, d := range datasets {
-		if o := VersionOrder(d.Version); o > bestOrder {
-			bestOrder, best = o, d.Version
+		if VersionOrder(d.Version) == nil {
+			continue
+		}
+		// VersionGreater carries the component-wise comparison, so ordering here
+		// and ordering a drift check cannot come to different conclusions about
+		// which of 1.9 and 1.10 is newer.
+		if best == "" || VersionGreater(d.Version, best) {
+			best = d.Version
 		}
 	}
 	if best == "" && len(datasets) > 0 {

@@ -803,50 +803,8 @@ func agentDefinitionFromStruct(
 	if inline.Kind != agent_yaml.AgentKindHosted {
 		definition := any(s.AsMap())
 		if agent_yaml.IsVoiceAgentKind(inline.Kind) {
-			if inline.CodeConfiguration != nil {
-				return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-					exterrors.CodeInvalidAgentManifest,
-					"codeConfiguration is not supported on voice agents",
-					"configure code settings on the hosted target",
-				)
-			}
-			if inline.SessionConfiguration != nil {
-				return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-					exterrors.CodeInvalidAgentManifest,
-					"sessionConfiguration is not supported on voice agents",
-					"configure session settings on the hosted target",
-				)
-			}
-			if len(inline.Protocols) > 0 {
-				return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-					exterrors.CodeInvalidAgentManifest,
-					"protocols are not supported on prompt voice agents",
-					"configure protocols on the hosted target",
-				)
-			}
-			if inline.Toolbox != nil {
-				return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-					exterrors.CodeInvalidAgentManifest,
-					"toolbox is not supported on prompt voice agents",
-					"remove toolbox from the prompt voice agent definition",
-				)
-			}
-			if len(inline.Policies) > 0 {
-				for _, policy := range inline.Policies {
-					if policy.InvocationsModeration != nil {
-						return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-							exterrors.CodeInvalidAgentManifest,
-							"invocationsModeration is only supported for 'hosted' agents",
-							"remove invocationsModeration from the prompt voice agent or move it to a hosted target",
-						)
-					}
-				}
-				return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-					exterrors.CodeInvalidAgentManifest,
-					"policies are not supported on prompt voice agents",
-					"configure content policy fields supported by the Voice API, or move target-owned policy "+
-						"configuration to the hosted target",
-				)
+			if err := validateVoiceInlineAgent(inline); err != nil {
+				return agent_yaml.ContainerAgent{}, false, err
 			}
 			definition = inline.toVoiceAgent()
 		}
@@ -888,6 +846,58 @@ func agentDefinitionFromStruct(
 	}
 
 	return ca, true, nil
+}
+
+func validateVoiceInlineAgent(inline AgentDefinitionInline) error {
+	if inline.CodeConfiguration != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"codeConfiguration is not supported on voice agents",
+			"configure code settings on the hosted target",
+		)
+	}
+	if inline.SessionConfiguration != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"sessionConfiguration is not supported on voice agents",
+			"configure session settings on the hosted target",
+		)
+	}
+	if len(inline.Protocols) > 0 {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"protocols are not supported on voice agents",
+			"configure protocols on the hosted target",
+		)
+	}
+	if inline.Toolbox != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"toolbox is not supported on voice agents",
+			"remove toolbox from the voice agent definition",
+		)
+	}
+	if len(inline.Policies) > 0 {
+		for _, policy := range inline.Policies {
+			if policy.InvocationsModeration != nil {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					"invocationsModeration is only supported for 'hosted' agents",
+					"remove invocationsModeration from the voice agent or move it to a hosted target",
+				)
+			}
+		}
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"policies are not supported on voice agents",
+			"configure content policy fields supported by the Voice API, or move target-owned policy "+
+				"configuration to the hosted target",
+		)
+	}
+	if err := validateAgentServiceDefinition(inline.toVoiceAgent()); err != nil {
+		return err
+	}
+	return nil
 }
 
 func validateAgentServiceDefinition(definition any) error {
@@ -1178,6 +1188,9 @@ func VoiceAgentFromResolvedService(
 				fmt.Sprintf("voice agent service config is not valid: %s", err),
 				"re-run `azd ai agent init` to regenerate the agent service entry",
 			)
+		}
+		if err := validateVoiceInlineAgent(inline); err != nil {
+			return agent_yaml.VoiceAgent{}, false, err
 		}
 		return inline.toVoiceAgent(), true, nil
 	}

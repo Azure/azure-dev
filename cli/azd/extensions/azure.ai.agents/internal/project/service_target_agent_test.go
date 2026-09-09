@@ -129,7 +129,7 @@ func TestVoiceAgentInlineServicePropertiesRejectsProtocols(t *testing.T) {
 			"version":  "1.0.0",
 		}},
 	}))
-	require.ErrorContains(t, err, "protocols are not supported on prompt voice agents")
+	require.ErrorContains(t, err, "protocols are not supported on voice agents")
 }
 
 func TestVoiceAgentInlineServicePropertiesRejectsCodeAndSessionConfig(t *testing.T) {
@@ -148,6 +148,29 @@ func TestVoiceAgentInlineServicePropertiesRejectsCodeAndSessionConfig(t *testing
 		"sessionConfiguration": map[string]any{"idleTimeoutMinutes": 10},
 	}))
 	require.ErrorContains(t, err, "sessionConfiguration is not supported on voice agents")
+}
+
+func TestVoiceAgentFromResolvedServiceRejectsInvalidVoiceFields(t *testing.T) {
+	svc := inlineAgentService(t, map[string]any{
+		"kind":      "voice",
+		"name":      "voice",
+		"modelType": "hosted_agent",
+		"targetAgent": map[string]any{
+			"service": "target",
+			"version": "typo",
+		},
+	})
+	_, _, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.ErrorContains(t, err, "target_agent.version must be 'deployed'")
+
+	svc = inlineAgentService(t, map[string]any{
+		"kind":              "voice",
+		"name":              "voice",
+		"model":             map[string]any{"id": "gpt-realtime"},
+		"codeConfiguration": map[string]any{"runtime": "dotnet_10"},
+	})
+	_, _, err = VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.ErrorContains(t, err, "codeConfiguration is not supported on voice agents")
 }
 
 func TestHostedAgentInlineServicePropertiesRejectsHostedVoiceFields(t *testing.T) {

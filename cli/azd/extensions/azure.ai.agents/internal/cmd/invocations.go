@@ -97,7 +97,8 @@ func newInvocationOperationCommand(
 		"Agent name (matches azure.yaml service name; auto-detected when only one exists)")
 	cmd.Flags().StringVar(&flags.agentEndpoint, "agent-endpoint", "", "Full protocol endpoint URL of a deployed agent")
 	cmd.Flags().StringVar(&flags.id, "id", "", "Service-assigned ID; defaults to the current ID for the agent and protocol")
-	cmd.Flags().StringVarP(&flags.protocol, "protocol", "p", "", "Protocol to use; inferred from the selected agent")
+	cmd.Flags().StringVarP(&flags.protocol, "protocol", "p", "",
+		"Protocol to use: responses, invocations, or a2a (inferred from agent; operation support varies)")
 	cmd.Flags().StringVar(&flags.version, "version", "", "Agent version used to select saved invocation state")
 	cmd.Flags().StringArrayVar(&flags.clientHeaders, "client-header", nil,
 		`Custom x-client-* request header in "Name: Value" format (repeatable)`)

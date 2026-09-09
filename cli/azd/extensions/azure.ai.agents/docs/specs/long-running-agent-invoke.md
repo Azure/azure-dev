@@ -68,7 +68,7 @@ A2A, Activity, WebSocket, and voice lifecycle support is not part of this change
 
 ## Execution and waiting are independent
 
-`--long-running` requests that service-side work continue if the client disconnects. It does not imply a minimum duration, checkpointing, crash recovery, or automatic reconnection. With Responses it sends `store=true` and `background=true`; the service property remains named `background`.
+`--long-running` requests that service-side work continue if the client disconnects. It does not imply a minimum duration, checkpoint recovery, crash recovery, or automatic reconnection. With Responses it sends `store=true` and `background=true`; the service property remains named `background`.
 
 `--no-wait` controls when the CLI returns. It requires `--long-running`, reads through the first complete event containing the Response ID, saves the ID when local state is available, and detaches without rendering subsequent events. A save failure is reported with the ID rather than silently claiming the current selection was saved.
 

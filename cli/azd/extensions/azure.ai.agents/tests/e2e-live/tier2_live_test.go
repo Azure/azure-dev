@@ -131,11 +131,17 @@ func newRunner(t *testing.T, mode string) *runner {
 	env = append(env,
 		"AZD_CONFIG_DIR="+configDir,
 		"AZD_NON_INTERACTIVE=false",
+		"GH_PROMPT_DISABLED=1",
+		"GIT_TERMINAL_PROMPT=0",
 	)
 	if tenant := os.Getenv("E2E_TENANT"); tenant != "" {
 		env = append(env, "AZURE_TENANT_ID="+tenant)
 	}
-	if tok := ghToken(); tok != "" {
+	tok := ghToken()
+	if tok == "" && os.Getenv("TF_BUILD") != "" {
+		t.Fatal("GH_TOKEN/GITHUB_TOKEN is required for Azure DevOps live tests")
+	}
+	if tok != "" {
 		env = append(env, "GH_TOKEN="+tok, "GITHUB_TOKEN="+tok)
 	}
 

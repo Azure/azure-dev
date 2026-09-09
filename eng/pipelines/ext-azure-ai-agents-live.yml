@@ -216,6 +216,32 @@ extends:
                   workingDirectory: cli/azd/extensions/azure.ai.agents
                   inlineScript: |
                     set -euo pipefail
+                    if [ -z "${GH_TOKEN:-}" ]; then
+                      echo "ERROR: azuresdk-github-pat was not injected as GH_TOKEN" >&2
+                      exit 1
+                    fi
+                    if ! command -v gh >/dev/null 2>&1; then
+                      echo "ERROR: GitHub CLI is required to validate GH_TOKEN" >&2
+                      exit 1
+                    fi
+                    github_auth_ok=false
+                    for attempt in 1 2 3; do
+                      if gh api rate_limit >/dev/null 2>&1; then
+                        github_auth_ok=true
+                        break
+                      fi
+                      if [ "$attempt" -lt 3 ]; then
+                        echo "GitHub token validation attempt $attempt failed; retrying..." >&2
+                        sleep 5
+                      fi
+                    done
+                    if [ "$github_auth_ok" != true ]; then
+                      echo "ERROR: GH_TOKEN is invalid or GitHub authentication is unavailable" >&2
+                      exit 1
+                    fi
+                    # GitHub CLI prefers GH_TOKEN, while other GitHub clients
+                    # commonly read GITHUB_TOKEN. Keep both child paths aligned.
+                    export GITHUB_TOKEN="$GH_TOKEN"
                     azd config set auth.useAzCliAuth true
                     # Assign first (not `export X=$(...)`, which hides command
                     # substitution failures from set -e), then verify non-empty.

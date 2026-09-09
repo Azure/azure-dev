@@ -141,8 +141,14 @@ func validateInvocationCommandFlags(cmd *cobra.Command, flags *invocationCommand
 // supportsInvocationOperation describes implemented CLI operations, not the
 // capabilities of every deployed agent. The service may still reject a request.
 func supportsInvocationOperation(protocol agent_api.AgentProtocol, operation invocationOperation) bool {
-	return protocol == agent_api.AgentProtocolResponses &&
-		(operation == invocationShow || operation == invocationFollow || operation == invocationCancel)
+	switch protocol {
+	case agent_api.AgentProtocolResponses:
+		return operation == invocationShow || operation == invocationFollow || operation == invocationCancel
+	case agent_api.AgentProtocolInvocations:
+		return operation == invocationShow || operation == invocationCancel
+	default:
+		return false
+	}
 }
 
 // resolveInvocationCommand resolves a protocol before reading its current ID.
@@ -215,6 +221,14 @@ func resolveCurrentInvocationID(
 		if record != nil {
 			id = record.ResponseID
 		}
+	case agent_api.AgentProtocolInvocations:
+		record, err := newInvocationStateStore(rc.azdClient).Get(ctx, rc.agentKey)
+		if err != nil {
+			return "", classifyInvocationStateReadError(err)
+		}
+		if record != nil {
+			id = record.InvocationID
+		}
 	}
 	if id == "" {
 		return "", exterrors.Validation(exterrors.CodeInvalidParameter,
@@ -253,6 +267,8 @@ func (a *InvokeAction) runInvocationOperation(
 	switch agent_api.AgentProtocol(a.flags.protocol) {
 	case agent_api.AgentProtocolResponses:
 		return a.runResponseOperation(ctx, rc, id, operation, format, writer)
+	case agent_api.AgentProtocolInvocations:
+		return a.runInvocationsProtocolOperation(ctx, rc, id, operation, format, writer)
 	default:
 		return exterrors.Validation(exterrors.CodeInvalidParameter,
 			"unsupported invocation protocol", "select a protocol that supports this operation")

@@ -191,6 +191,30 @@ func buildInvocationsURL(projectEndpoint, agentName, apiVersion, sid string) str
 	return invURL
 }
 
+func buildInvocationLifecycleURL(
+	projectEndpoint string,
+	agentName string,
+	invocationID string,
+	apiVersion string,
+) string {
+	if apiVersion == "" {
+		apiVersion = DefaultAgentAPIVersion
+	}
+	return fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/invocations/%s?api-version=%s",
+		projectEndpoint,
+		agentName,
+		url.PathEscape(invocationID),
+		url.QueryEscape(apiVersion),
+	)
+}
+
+func buildInvocationCancelURL(projectEndpoint, agentName, invocationID, apiVersion string) string {
+	lifecycleURL := buildInvocationLifecycleURL(projectEndpoint, agentName, invocationID, apiVersion)
+	parts := strings.SplitN(lifecycleURL, "?", 2)
+	return parts[0] + "/cancel?" + parts[1]
+}
+
 // buildA2AInvokeURL builds the Foundry "a2a" protocol URL for an agent. When sid
 // is non-empty, an agent_session_id query parameter is appended (URL-encoded) so
 // the request routes to the same agent session, matching the invocations protocol.

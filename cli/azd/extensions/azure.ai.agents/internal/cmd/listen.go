@@ -539,7 +539,7 @@ func warnLegacySimpleTeamsArtifacts(proj *azdext.ProjectConfig, svc *azdext.Serv
 	))
 }
 
-// postdownHandler cleans up saved session, conversation, and current Response state for agent services
+// postdownHandler cleans up saved session, conversation, Response, and Invocation state for agent services
 // that were torn down. This is best-effort — failures are logged but do not block azd down.
 func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
 	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
@@ -556,7 +556,7 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 		}
 
 		if cleanupAgentState(ctx, azdClient, envName, svc.Name) {
-			fmt.Printf("Cleaned up saved session, conversation, and current Response for agent %q\n", svc.Name)
+			fmt.Printf("Cleaned up saved session, conversation, Response, and Invocation state for agent %q\n", svc.Name)
 		}
 	}
 
@@ -567,7 +567,7 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 	return nil
 }
 
-// cleanupAgentState removes saved session, conversation, and current Response state for a
+// cleanupAgentState removes saved session, conversation, Response, and Invocation state for a
 // single agent service. Returns true if cleanup succeeded, false otherwise.
 // Shared by postdownHandler and delete command.
 func cleanupAgentState(ctx context.Context, azdClient *azdext.AzdClient, envName, serviceName string) bool {
@@ -597,6 +597,10 @@ func cleanupAgentStateForKey(ctx context.Context, azdClient *azdext.AzdClient, a
 	}
 	if err := newUserConfigResponseStateStore(azdClient).Delete(ctx, agentKey); err != nil {
 		log.Printf("cleanupAgentState: failed to clean current Response for %s: %v", agentKey, err)
+		failed = true
+	}
+	if err := newInvocationStateStore(azdClient).Delete(ctx, agentKey); err != nil {
+		log.Printf("cleanupAgentState: failed to clean current Invocation for %s: %v", agentKey, err)
 		failed = true
 	}
 

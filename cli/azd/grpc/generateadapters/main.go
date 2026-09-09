@@ -561,7 +561,7 @@ func writeBidiAdapterMethod(
 		stableMethod.request,
 	)
 	fmt.Fprintf(output, "\t\t\tstableRequest := new(v1.%s)\n", stableMethod.request)
-	output.WriteString("\t\t\tif err := transcodeBetaRequest(request, stableRequest); err != nil {\n")
+	output.WriteString("\t\t\tif err := transcodeBetaStreamRequest(request, stableRequest); err != nil {\n")
 	output.WriteString("\t\t\t\treturn nil, err\n\t\t\t}\n")
 	output.WriteString("\t\t\treturn stableRequest, nil\n\t\t},\n")
 	fmt.Fprintf(

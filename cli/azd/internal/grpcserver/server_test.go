@@ -819,7 +819,7 @@ func TestServer_BetaMethodOverride(t *testing.T) {
 
 }
 
-func TestServer_BetaExtensionReportErrorPreservesPreviewDetails(t *testing.T) {
+func TestServer_VersionedExtensionReportErrorPreservesPreviewDetails(t *testing.T) {
 	t.Parallel()
 
 	extension := &extensions.Extension{Id: "azd.internal.test", Namespace: "test"}
@@ -845,50 +845,68 @@ func TestServer_BetaExtensionReportErrorPreservesPreviewDetails(t *testing.T) {
 		require.NoError(t, connection.Close())
 	}()
 
-	client := v1beta.NewExtensionServiceClient(connection)
 	ctx := azdext.WithAccessToken(t.Context(), accessToken)
 
-	_, err = client.ReportError(ctx, &v1beta.ReportErrorRequest{
-		Error: &v1beta.ExtensionError{
-			Message: "agent failed",
-			Origin:  v1beta.ErrorOrigin_ERROR_ORIGIN_LOCAL,
-			Source: &v1beta.ExtensionError_LocalError{
-				LocalError: &v1beta.LocalErrorDetail{
-					Code:       "agent_failed",
-					Category:   "internal",
-					CauseTypes: []string{"*agents.TransportError"},
-				},
-			},
+	reporters := map[string]func(context.Context, *v1beta.ReportErrorRequest) error{
+		"beta": func(ctx context.Context, request *v1beta.ReportErrorRequest) error {
+			_, err := v1beta.NewExtensionServiceClient(connection).ReportError(ctx, request)
+			return err
 		},
-	})
-	require.NoError(t, err)
-
-	installed, err := manager.GetInstalled(extensions.FilterOptions{Id: extension.Id})
-	require.NoError(t, err)
-	localErr, ok := errors.AsType[*azdext.LocalError](installed.GetReportedError())
-	require.True(t, ok)
-	require.Equal(t, []string{"*agents.TransportError"}, localErr.CauseTypes)
-
-	_, err = client.ReportError(ctx, &v1beta.ReportErrorRequest{
-		Error: &v1beta.ExtensionError{
-			Message: "docker failed",
-			Origin:  v1beta.ErrorOrigin_ERROR_ORIGIN_TOOL,
-			Source: &v1beta.ExtensionError_ToolError{
-				ToolError: &v1beta.ToolErrorDetail{
-					ToolName:    "docker",
-					FailureKind: string(azdext.ToolErrorKindFailed),
-					ExitCode:    new(int64(42)),
-				},
-			},
+		"legacy": func(ctx context.Context, request *v1beta.ReportErrorRequest) error {
+			return connection.Invoke(
+				ctx,
+				"/azdext.ExtensionService/ReportError",
+				request,
+				new(v1beta.ReportErrorResponse),
+			)
 		},
-	})
-	require.NoError(t, err)
+	}
 
-	toolErr, ok := errors.AsType[*azdext.ToolError](installed.GetReportedError())
-	require.True(t, ok)
-	require.Equal(t, "docker", toolErr.ToolName)
-	require.Equal(t, azdext.ToolErrorKindFailed, toolErr.Kind)
-	require.Equal(t, 42, *toolErr.ExitCode)
+	for name, report := range reporters {
+		t.Run(name, func(t *testing.T) {
+			err := report(ctx, &v1beta.ReportErrorRequest{
+				Error: &v1beta.ExtensionError{
+					Message: "agent failed",
+					Origin:  v1beta.ErrorOrigin_ERROR_ORIGIN_LOCAL,
+					Source: &v1beta.ExtensionError_LocalError{
+						LocalError: &v1beta.LocalErrorDetail{
+							Code:       "agent_failed",
+							Category:   "internal",
+							CauseTypes: []string{"*agents.TransportError"},
+						},
+					},
+				},
+			})
+			require.NoError(t, err)
+
+			installed, err := manager.GetInstalled(extensions.FilterOptions{Id: extension.Id})
+			require.NoError(t, err)
+			localErr, ok := errors.AsType[*azdext.LocalError](installed.GetReportedError())
+			require.True(t, ok)
+			require.Equal(t, []string{"*agents.TransportError"}, localErr.CauseTypes)
+
+			err = report(ctx, &v1beta.ReportErrorRequest{
+				Error: &v1beta.ExtensionError{
+					Message: "docker failed",
+					Origin:  v1beta.ErrorOrigin_ERROR_ORIGIN_TOOL,
+					Source: &v1beta.ExtensionError_ToolError{
+						ToolError: &v1beta.ToolErrorDetail{
+							ToolName:    "docker",
+							FailureKind: string(azdext.ToolErrorKindFailed),
+							ExitCode:    new(int64(42)),
+						},
+					},
+				},
+			})
+			require.NoError(t, err)
+
+			toolErr, ok := errors.AsType[*azdext.ToolError](installed.GetReportedError())
+			require.True(t, ok)
+			require.Equal(t, "docker", toolErr.ToolName)
+			require.Equal(t, azdext.ToolErrorKindFailed, toolErr.Kind)
+			require.Equal(t, 42, *toolErr.ExitCode)
+		})
+	}
 }
 
 type relayingContainerService struct {

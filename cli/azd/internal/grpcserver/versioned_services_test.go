@@ -18,6 +18,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	v1 "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1"
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 )
@@ -117,6 +118,64 @@ func TestTranscodeBetaRequestDiscardsUnknownPreviewFields(t *testing.T) {
 	require.NoError(t, transcodeBetaRequest(request, stableRequest))
 	require.Equal(t, request.GetTenantId(), stableRequest.GetTenantId())
 	require.Empty(t, stableRequest.ProtoReflect().GetUnknown())
+}
+
+func TestTranscodeBetaStreamRequestPreservesPreviewErrorFields(t *testing.T) {
+	t.Parallel()
+
+	t.Run("broker envelope tool error", func(t *testing.T) {
+		betaRequest := &v1beta.ValidationMessage{
+			Error: &v1beta.ExtensionError{
+				Message: "docker failed",
+				Origin:  v1beta.ErrorOrigin_ERROR_ORIGIN_TOOL,
+				Source: &v1beta.ExtensionError_ToolError{
+					ToolError: &v1beta.ToolErrorDetail{
+						ToolName:    "docker",
+						FailureKind: "failed",
+						ExitCode:    new(int64(42)),
+					},
+				},
+			},
+		}
+		stableRequest := new(v1.ValidationMessage)
+
+		require.NoError(t, transcodeBetaStreamRequest(betaRequest, stableRequest))
+
+		toolErr, ok := errors.AsType[*azdext.ToolError](azdext.UnwrapError(stableRequest.GetError()))
+		require.True(t, ok)
+		require.Equal(t, "docker", toolErr.ToolName)
+		require.Equal(t, azdext.ToolErrorKindFailed, toolErr.Kind)
+		require.Equal(t, 42, *toolErr.ExitCode)
+	})
+
+	t.Run("event status cause types", func(t *testing.T) {
+		betaRequest := &v1beta.EventMessage{
+			MessageType: &v1beta.EventMessage_ProjectHandlerStatus{
+				ProjectHandlerStatus: &v1beta.ProjectHandlerStatus{
+					Status: "failed",
+					Error: &v1beta.ExtensionError{
+						Message: "agent failed",
+						Origin:  v1beta.ErrorOrigin_ERROR_ORIGIN_LOCAL,
+						Source: &v1beta.ExtensionError_LocalError{
+							LocalError: &v1beta.LocalErrorDetail{
+								Category:   "internal",
+								CauseTypes: []string{"*agents.TransportError"},
+							},
+						},
+					},
+				},
+			},
+		}
+		stableRequest := new(v1.EventMessage)
+
+		require.NoError(t, transcodeBetaStreamRequest(betaRequest, stableRequest))
+
+		localErr, ok := errors.AsType[*azdext.LocalError](
+			azdext.UnwrapError(stableRequest.GetProjectHandlerStatus().GetError()),
+		)
+		require.True(t, ok)
+		require.Equal(t, []string{"*agents.TransportError"}, localErr.CauseTypes)
+	})
 }
 
 func TestAdaptBetaUnary(t *testing.T) {

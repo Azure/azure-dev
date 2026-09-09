@@ -11,7 +11,7 @@ import (
 
 // registerLegacyServices is the only host registration point for the temporary
 // pre-versioning compatibility bridge. See legacybridge for removal criteria.
-func (s *Server) registerLegacyServices() error {
+func (s *Server) registerLegacyServices(extensionService v1beta.ExtensionServiceServer) error {
 	return legacybridge.Register(s.grpcServer, map[string]any{
 		azdext.AccountService_ServiceDesc.ServiceName:       s.accountService,
 		azdext.AiModelService_ServiceDesc.ServiceName:       s.aiModelService,
@@ -21,7 +21,7 @@ func (s *Server) registerLegacyServices() error {
 		azdext.DeploymentService_ServiceDesc.ServiceName:    s.deploymentService,
 		azdext.EnvironmentService_ServiceDesc.ServiceName:   s.environmentService,
 		azdext.EventService_ServiceDesc.ServiceName:         s.eventService,
-		azdext.ExtensionService_ServiceDesc.ServiceName:     s.extensionService,
+		v1beta.ExtensionService_ServiceDesc.ServiceName:     extensionService,
 		azdext.FrameworkService_ServiceDesc.ServiceName:     s.frameworkService,
 		azdext.ProjectService_ServiceDesc.ServiceName:       s.projectService,
 		azdext.PromptService_ServiceDesc.ServiceName:        s.promptService,

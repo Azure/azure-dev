@@ -1278,7 +1278,7 @@ func (a *betaEventServiceAdapter) EventStream(
 		operation:    "azd.extensions.v1beta.EventService/EventStream",
 		requestToStable: func(request *v1beta.EventMessage) (*v1.EventMessage, error) {
 			stableRequest := new(v1.EventMessage)
-			if err := transcodeBetaRequest(request, stableRequest); err != nil {
+			if err := transcodeBetaStreamRequest(request, stableRequest); err != nil {
 				return nil, err
 			}
 			return stableRequest, nil
@@ -1360,7 +1360,7 @@ func (a *betaFrameworkServiceAdapter) Stream(
 		operation:    "azd.extensions.v1beta.FrameworkService/Stream",
 		requestToStable: func(request *v1beta.FrameworkServiceMessage) (*v1.FrameworkServiceMessage, error) {
 			stableRequest := new(v1.FrameworkServiceMessage)
-			if err := transcodeBetaRequest(request, stableRequest); err != nil {
+			if err := transcodeBetaStreamRequest(request, stableRequest); err != nil {
 				return nil, err
 			}
 			return stableRequest, nil
@@ -1892,7 +1892,7 @@ func (a *betaProvisioningServiceAdapter) Stream(
 		operation:    "azd.extensions.v1beta.ProvisioningService/Stream",
 		requestToStable: func(request *v1beta.ProvisioningMessage) (*v1.ProvisioningMessage, error) {
 			stableRequest := new(v1.ProvisioningMessage)
-			if err := transcodeBetaRequest(request, stableRequest); err != nil {
+			if err := transcodeBetaStreamRequest(request, stableRequest); err != nil {
 				return nil, err
 			}
 			return stableRequest, nil
@@ -1932,7 +1932,7 @@ func (a *betaServiceTargetServiceAdapter) Stream(
 		operation:    "azd.extensions.v1beta.ServiceTargetService/Stream",
 		requestToStable: func(request *v1beta.ServiceTargetMessage) (*v1.ServiceTargetMessage, error) {
 			stableRequest := new(v1.ServiceTargetMessage)
-			if err := transcodeBetaRequest(request, stableRequest); err != nil {
+			if err := transcodeBetaStreamRequest(request, stableRequest); err != nil {
 				return nil, err
 			}
 			return stableRequest, nil
@@ -2065,7 +2065,7 @@ func (a *betaValidationServiceAdapter) Stream(
 		operation:    "azd.extensions.v1beta.ValidationService/Stream",
 		requestToStable: func(request *v1beta.ValidationMessage) (*v1.ValidationMessage, error) {
 			stableRequest := new(v1.ValidationMessage)
-			if err := transcodeBetaRequest(request, stableRequest); err != nil {
+			if err := transcodeBetaStreamRequest(request, stableRequest); err != nil {
 				return nil, err
 			}
 			return stableRequest, nil

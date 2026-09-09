@@ -89,16 +89,20 @@ func (s *Server) registerServices() error {
 	azdext.RegisterProvisioningServiceServer(s.grpcServer, s.provisioningService)
 	azdext.RegisterValidationServiceServer(s.grpcServer, s.validationService)
 
-	if err := s.registerLegacyServices(); err != nil {
-		return fmt.Errorf("register legacy extension services: %w", err)
-	}
-
 	betaServiceOverrides := maps.Clone(s.betaServiceOverrides)
 	if extensionService, ok := s.extensionService.(*ExtensionService); ok {
 		betaServiceOverrides[BetaExtensionService] = &betaExtensionServiceOverride{
 			service:  extensionService,
 			override: betaServiceOverrides[BetaExtensionService],
 		}
+	}
+
+	legacyExtensionService := &betaExtensionServiceAdapter{
+		stable:   s.extensionService,
+		override: betaServiceOverrides[BetaExtensionService],
+	}
+	if err := s.registerLegacyServices(legacyExtensionService); err != nil {
+		return fmt.Errorf("register legacy extension services: %w", err)
 	}
 
 	return registerBetaServices(
@@ -129,6 +133,10 @@ func (s *Server) registerServices() error {
 
 func transcodeBetaRequest(source, destination proto.Message) error {
 	return transcodeVersionedMessage(source, destination, true)
+}
+
+func transcodeBetaStreamRequest(source, destination proto.Message) error {
+	return transcodeVersionedMessage(source, destination, false)
 }
 
 func transcodeStableResponse(source, destination proto.Message) error {

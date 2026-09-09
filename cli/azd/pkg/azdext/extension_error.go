@@ -7,6 +7,8 @@ import (
 	"errors"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorchain"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -359,6 +361,9 @@ func UnwrapError(msg *ExtensionError) error {
 	}
 
 	links := UnwrapErrorLinks(msg.GetLinks())
+	if previewErr := unwrapPreviewErrorDetails(msg, links); previewErr != nil {
+		return previewErr
+	}
 
 	// Check for service error details
 	if svcErr := msg.GetServiceError(); svcErr != nil {
@@ -415,6 +420,50 @@ func UnwrapError(msg *ExtensionError) error {
 		Suggestion: msg.GetSuggestion(),
 		Links:      links,
 	}
+}
+
+func unwrapPreviewErrorDetails(msg *ExtensionError, links []errorhandler.ErrorLink) error {
+	wire, err := proto.Marshal(msg)
+	if err != nil {
+		return nil
+	}
+
+	preview := new(v1beta.ExtensionError)
+	if err := proto.Unmarshal(wire, preview); err != nil {
+		return nil
+	}
+
+	if localErr := preview.GetLocalError(); localErr != nil && len(localErr.GetCauseTypes()) > 0 {
+		return &LocalError{
+			Message:    preview.GetMessage(),
+			Code:       localErr.GetCode(),
+			Category:   ParseLocalErrorCategory(localErr.GetCategory()),
+			CauseTypes: errorchain.NormalizeCauseTypes(localErr.GetCauseTypes()),
+			Suggestion: preview.GetSuggestion(),
+			Links:      links,
+		}
+	}
+
+	if toolErr := preview.GetToolError(); toolErr != nil {
+		var exitCode *int
+		if toolErr.ExitCode != nil {
+			exitCode = new(int(toolErr.GetExitCode()))
+		}
+		kind := ToolErrorKindFailed
+		if toolErr.GetFailureKind() == string(ToolErrorKindMissing) {
+			kind = ToolErrorKindMissing
+		}
+		return &ToolError{
+			Message:    preview.GetMessage(),
+			ToolName:   toolErr.GetToolName(),
+			Kind:       kind,
+			ExitCode:   exitCode,
+			Suggestion: preview.GetSuggestion(),
+			Links:      links,
+		}
+	}
+
+	return nil
 }
 
 // WrapErrorLinks converts errorhandler.ErrorLink values into proto ErrorLink messages.

@@ -227,12 +227,16 @@ func TestCreateNewEnvironment_ReusesExistingEnvironmentAfterAlreadyExistsError(t
 
 type testEnvironmentServiceServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
-	environments map[string]*azdext.Environment
-	current      *azdext.Environment
-	values       map[string]map[string]string // envName -> key -> value
+	environments    map[string]*azdext.Environment
+	current         *azdext.Environment
+	values          map[string]map[string]string // envName -> key -> value
+	setKeys         []string
+	getCurrentCalls int
+	getValuesCalls  int
 }
 
 func (s *testEnvironmentServiceServer) GetCurrent(context.Context, *azdext.EmptyRequest) (*azdext.EnvironmentResponse, error) {
+	s.getCurrentCalls++
 	if s.current == nil {
 		return nil, status.Error(codes.NotFound, "current environment not found")
 	}
@@ -261,6 +265,7 @@ func (s *testEnvironmentServiceServer) SetValue(
 		s.values[req.EnvName] = make(map[string]string)
 	}
 	s.values[req.EnvName][req.Key] = req.Value
+	s.setKeys = append(s.setKeys, req.Key)
 	return &azdext.EmptyResponse{}, nil
 }
 
@@ -280,6 +285,7 @@ func (s *testEnvironmentServiceServer) GetValue(
 func (s *testEnvironmentServiceServer) GetValues(
 	_ context.Context, req *azdext.GetEnvironmentRequest,
 ) (*azdext.KeyValueListResponse, error) {
+	s.getValuesCalls++
 	values := s.values[req.Name]
 	keyValues := make([]*azdext.KeyValue, 0, len(values))
 	for key, value := range values {

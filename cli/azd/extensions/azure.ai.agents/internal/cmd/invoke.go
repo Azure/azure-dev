@@ -661,7 +661,7 @@ func (a *InvokeAction) resolveDeployedProtocol(
 			),
 			fmt.Sprintf(
 				"run `azd deploy %s` to refresh protocol metadata, or pass --protocol explicitly",
-				rc.serviceName,
+				strconv.Quote(rc.serviceName),
 			),
 		)
 	}

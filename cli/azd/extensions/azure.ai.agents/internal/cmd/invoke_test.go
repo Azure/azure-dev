@@ -828,7 +828,7 @@ func TestResolveProtocolRejectsLegacyMetadataBeforeLocalFallback(t *testing.T) {
 		t.Errorf("error = %q, want legacy metadata guidance", err)
 	}
 	suggestion := azdext.WrapError(err).GetSuggestion()
-	if !strings.Contains(suggestion, "azd deploy target-agent") ||
+	if !strings.Contains(suggestion, `azd deploy "target-agent"`) ||
 		!strings.Contains(suggestion, "--protocol") {
 		t.Errorf("suggestion = %q, want redeploy and protocol guidance", suggestion)
 	}
@@ -885,6 +885,12 @@ func TestResolveRemoteContextMatchesDeployedNameToService(t *testing.T) {
 	}
 	if info.AgentName != deployedName {
 		t.Errorf("agent name = %q, want %q", info.AgentName, deployedName)
+	}
+	if environmentServer.getValuesCalls != 1 {
+		t.Errorf("getValuesCalls = %d, want 1", environmentServer.getValuesCalls)
+	}
+	if environmentServer.getCurrentCalls != 1 {
+		t.Errorf("getCurrentCalls = %d, want 1", environmentServer.getCurrentCalls)
 	}
 }
 
@@ -1313,7 +1319,7 @@ func TestResolveDeployedProtocolRequiresRefreshForLegacyMetadata(t *testing.T) {
 		t.Errorf("error = %q, want legacy metadata guidance", err)
 	}
 	suggestion := azdext.WrapError(err).GetSuggestion()
-	if !strings.Contains(suggestion, "azd deploy agent-service") ||
+	if !strings.Contains(suggestion, `azd deploy "agent-service"`) ||
 		!strings.Contains(suggestion, "--protocol") {
 		t.Errorf("suggestion = %q, want redeploy and explicit protocol guidance", suggestion)
 	}

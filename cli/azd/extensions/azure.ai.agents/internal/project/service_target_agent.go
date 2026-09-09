@@ -3290,6 +3290,7 @@ func agentInvocationEndpoints(
 	agentName string,
 	protocols []agent_yaml.ProtocolVersionRecord,
 ) []protocolEndpointInfo {
+	projectEndpoint = strings.TrimRight(projectEndpoint, "/")
 	var endpoints []protocolEndpointInfo
 	for _, p := range protocols {
 		dp := displayableProtocolFor(p.Protocol)
@@ -3631,7 +3632,7 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	)})
 
 	endpoints := agentInvocationEndpoints(
-		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
+		projectEndpoint,
 		agentVersionResponse.Name,
 		protocols,
 	)

@@ -1037,6 +1037,7 @@ func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {
 	}
 	protocols := []agent_yaml.ProtocolVersionRecord{
 		{Protocol: "responses", Version: "1.0.0"},
+		{Protocol: "a2a", Version: "1.0.0"},
 	}
 	agentVersion := &agent_api.AgentVersionObject{
 		Name:    "my-agent",
@@ -1056,8 +1057,18 @@ func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Trailing slash must not produce a double-slash in the base endpoint
+	// Trailing slash must not produce double slashes.
 	require.Equal(t, "https://proj.azure.com/agents/my-agent/versions/2.0.0", envStub.values["AGENT_MY_SVC_ENDPOINT"])
+	require.Equal(
+		t,
+		"https://proj.azure.com/agents/my-agent/endpoint/protocols/openai/responses?api-version=v1",
+		envStub.values["AGENT_MY_SVC_RESPONSES_ENDPOINT"],
+	)
+	require.Equal(
+		t,
+		"https://proj.azure.com/agents/my-agent/endpoint/protocols/a2a?api-version=v1",
+		envStub.values["AGENT_MY_SVC_A2A_ENDPOINT"],
+	)
 }
 
 func TestRegisterAgentEnvironmentVariables_ClearsRemovedProtocols(t *testing.T) {

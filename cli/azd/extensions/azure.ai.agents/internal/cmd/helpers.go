@@ -840,24 +840,24 @@ func resolveAgentServiceByDeployedName(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	deployedName string,
-) (*azdext.ServiceConfig, *azdext.ProjectConfig, error) {
+) (*azdext.ServiceConfig, *azdext.ProjectConfig, map[string]string, error) {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get project config: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to get project config: %w", err)
 	}
 	if projectResponse.Project == nil {
-		return nil, nil, fmt.Errorf("failed to get project config")
+		return nil, nil, nil, fmt.Errorf("failed to get project config")
 	}
 
 	envResponse, err := azdClient.Environment().GetCurrent(
 		ctx, &azdext.EmptyRequest{},
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get current environment: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to get current environment: %w", err)
 	}
 	if envResponse == nil || envResponse.Environment == nil ||
 		envResponse.Environment.Name == "" {
-		return nil, nil, fmt.Errorf("current environment is not available")
+		return nil, nil, nil, fmt.Errorf("current environment is not available")
 	}
 
 	envValues, err := getAgentEnvironmentValues(
@@ -866,7 +866,7 @@ func resolveAgentServiceByDeployedName(
 		envResponse.Environment.Name,
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("reading environment values: %w", err)
+		return nil, nil, nil, fmt.Errorf("reading environment values: %w", err)
 	}
 
 	var matched *azdext.ServiceConfig
@@ -878,7 +878,7 @@ func resolveAgentServiceByDeployedName(
 		key := fmt.Sprintf("AGENT_%s_NAME", toServiceKey(service.Name))
 		if strings.TrimSpace(envValues[key]) == deployedName {
 			if matched != nil {
-				return nil, nil, fmt.Errorf(
+				return nil, nil, nil, fmt.Errorf(
 					"multiple azure.ai.agent services resolve to deployed agent %q",
 					deployedName,
 				)
@@ -888,12 +888,13 @@ func resolveAgentServiceByDeployedName(
 	}
 
 	if matched == nil {
-		return nil, nil, fmt.Errorf(
+		return nil, nil, nil, fmt.Errorf(
 			"no azure.ai.agent service resolves to deployed agent %q",
 			deployedName,
 		)
 	}
-	return matched, projectResponse.Project, nil
+
+	return matched, projectResponse.Project, envValues, nil
 }
 
 type brownfieldAgentReference struct {
@@ -1016,12 +1017,13 @@ func resolveAgentServiceFromProject(
 		option(&resolutionOptions)
 	}
 
+	var envValues map[string]string
 	svc, projectConfig, err := resolveAgentService(ctx, azdClient, name, noPrompt)
 	if err != nil {
 		if !resolutionOptions.matchDeployedAgentName || name == "" {
 			return nil, err
 		}
-		svc, projectConfig, err = resolveAgentServiceByDeployedName(
+		svc, projectConfig, envValues, err = resolveAgentServiceByDeployedName(
 			ctx, azdClient, name,
 		)
 		if err != nil {
@@ -1031,56 +1033,70 @@ func resolveAgentServiceFromProject(
 
 	info := &AgentServiceInfo{ServiceName: svc.Name}
 
-	// Resolve deployed agent name and version from the azd environment. The
-	// deployed name wins because it reflects the resource actually created.
-	envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		if resolutionOptions.allowBrownfieldInlineName {
-			return info, fmt.Errorf("getting current environment for agent service %q: %w", svc.Name, err)
+	if envValues == nil {
+		// Resolve deployed metadata from azd environment.
+		// Deployed name reflects the created resource.
+		envResponse, err := azdClient.Environment().GetCurrent(
+			ctx, &azdext.EmptyRequest{},
+		)
+		if err != nil {
+			if resolutionOptions.allowBrownfieldInlineName {
+				return info, fmt.Errorf(
+					"getting current environment for agent service %q: %w",
+					svc.Name,
+					err,
+				)
+			}
+			return info, nil
 		}
-		return info, nil
-	}
-	if envResponse == nil || envResponse.Environment == nil || envResponse.Environment.Name == "" {
-		if resolutionOptions.allowBrownfieldInlineName {
-			return info, fmt.Errorf("current environment is not available for agent service %q", svc.Name)
+		if envResponse == nil || envResponse.Environment == nil ||
+			envResponse.Environment.Name == "" {
+			if resolutionOptions.allowBrownfieldInlineName {
+				return info, fmt.Errorf(
+					"current environment is not available for agent service %q",
+					svc.Name,
+				)
+			}
+			return info, nil
 		}
-		return info, nil
+
+		values, err := getAgentEnvironmentValues(
+			ctx,
+			azdClient,
+			envResponse.Environment.Name,
+		)
+		if err != nil {
+			if resolutionOptions.includeProtocolEndpoints {
+				return info, &agentProtocolEndpointsError{
+					err: fmt.Errorf(
+						"failed to read environment values for agent service %q: %w",
+						svc.Name,
+						err,
+					),
+				}
+			}
+			if resolutionOptions.allowBrownfieldInlineName {
+				return info, fmt.Errorf(
+					"reading environment %q for agent service %q: %w",
+					envResponse.Environment.Name,
+					svc.Name,
+					err,
+				)
+			}
+			log.Printf(
+				"resolve agent service %q: failed to read environment values: %v",
+				svc.Name,
+				err,
+			)
+			return info, nil
+		}
+		envValues = values
 	}
 
 	serviceKey := toServiceKey(svc.Name)
 	nameKey := fmt.Sprintf("AGENT_%s_NAME", serviceKey)
 	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 	projectEndpointKey := envkey.AgentProjectEndpoint(svc.Name)
-	envValues, err := getAgentEnvironmentValues(
-		ctx,
-		azdClient,
-		envResponse.Environment.Name,
-	)
-	if err != nil {
-		if resolutionOptions.includeProtocolEndpoints {
-			return info, &agentProtocolEndpointsError{
-				err: fmt.Errorf(
-					"failed to read environment values for agent service %q: %w",
-					svc.Name,
-					err,
-				),
-			}
-		}
-		if resolutionOptions.allowBrownfieldInlineName {
-			return info, fmt.Errorf(
-				"reading environment %q for agent service %q: %w",
-				envResponse.Environment.Name,
-				svc.Name,
-				err,
-			)
-		}
-		log.Printf(
-			"resolve agent service %q: failed to read environment values: %v",
-			svc.Name,
-			err,
-		)
-		return info, nil
-	}
 
 	switch {
 	case strings.TrimSpace(envValues[nameKey]) != "":

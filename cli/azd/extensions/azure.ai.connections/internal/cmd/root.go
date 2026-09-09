@@ -46,13 +46,8 @@ func NewRootCommand() *cobra.Command {
 	return rootCmd
 }
 
-// configureExtensionHost is the listen callback. It registers the
-// azure.ai.connection service target so `azd up`/`azd deploy` upsert connections
-// declared as services in azure.yaml.
-func configureExtensionHost(host *azdext.ExtensionHost) {
-	configureExtensionHostForEnvironment(host, "")
-}
-
+// configureExtensionHostForEnvironment registers the azure.ai.connection target
+// for `azd up`/`azd deploy`, preserving the environment selected by the caller.
 func configureExtensionHostForEnvironment(host *azdext.ExtensionHost, environmentName string) {
 	azdClient := host.Client()
 	host.WithServiceTarget(aiConnectionHost, func() azdext.ServiceTargetProvider {

@@ -579,7 +579,7 @@ func TestResolveAfterInit_BundledToolboxGuidanceMigratesInOrder(t *testing.T) {
 		"edit azure.yaml: create azure.ai.toolbox service \"bundled-tools\"",
 		suggestions[0].Command)
 	assert.Equal(t,
-		"azd ai agent add toolbox 'bundled-tools' --agent 'agent'",
+		"azd ai agent toolbox add 'bundled-tools' --agent 'agent'",
 		suggestions[1].Command)
 	assert.Equal(t, "azd deploy", suggestions[2].Command)
 	assert.Equal(t, "azd ai agent run", suggestions[3].Command)
@@ -622,10 +622,10 @@ func TestResolveAfterInit_BundledToolboxGuidanceAttachesEveryOwner(t *testing.T)
 		"edit azure.yaml: create azure.ai.toolbox service \"bundled-tools\"",
 		suggestions[0].Command)
 	assert.Equal(t,
-		"azd ai agent add toolbox 'bundled-tools' --agent 'agent-a'",
+		"azd ai agent toolbox add 'bundled-tools' --agent 'agent-a'",
 		suggestions[1].Command)
 	assert.Equal(t,
-		"azd ai agent add toolbox 'bundled-tools' --agent 'agent-b'",
+		"azd ai agent toolbox add 'bundled-tools' --agent 'agent-b'",
 		suggestions[2].Command)
 	assert.Equal(t, "azd deploy", suggestions[3].Command)
 
@@ -666,13 +666,13 @@ func TestResolveAfterInit_BundledToolboxGuidanceReplacesEveryOwner(t *testing.T)
 		"edit agent configuration: replace toolbox \"My Tools\" with service key \"MyTools\"",
 		suggestions[1].Command)
 	assert.Equal(t,
-		"azd ai agent add toolbox 'MyTools' --agent 'agent-a'",
+		"azd ai agent toolbox add 'MyTools' --agent 'agent-a'",
 		suggestions[2].Command)
 	assert.Equal(t,
 		"edit agent configuration: replace toolbox \"My Tools\" with service key \"MyTools\"",
 		suggestions[3].Command)
 	assert.Equal(t,
-		"azd ai agent add toolbox 'MyTools' --agent 'agent-b'",
+		"azd ai agent toolbox add 'MyTools' --agent 'agent-b'",
 		suggestions[4].Command)
 }
 
@@ -697,7 +697,7 @@ func TestResolveAfterInit_BundledToolboxGuidanceQuotesSpacedNames(t *testing.T) 
 		"edit agent configuration: replace toolbox \"My Tools\" with service key \"MyTools\"",
 		suggestions[1].Command)
 	assert.Equal(t,
-		"azd ai agent add toolbox 'MyTools' --agent 'My Agent'",
+		"azd ai agent toolbox add 'MyTools' --agent 'My Agent'",
 		suggestions[2].Command)
 }
 
@@ -719,7 +719,7 @@ func TestResolveAfterInit_BundledToolboxGuidanceSurvivesProvisioning(t *testing.
 		"edit azure.yaml: create azure.ai.toolbox service \"bundled-tools\"",
 		suggestions[1].Command)
 	assert.Equal(t,
-		"azd ai agent add toolbox 'bundled-tools' --agent 'agent'",
+		"azd ai agent toolbox add 'bundled-tools' --agent 'agent'",
 		suggestions[2].Command)
 	assert.Equal(t, "azd deploy", suggestions[3].Command)
 

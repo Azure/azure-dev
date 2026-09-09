@@ -20,14 +20,30 @@ func TestAgentDependencyCommandsRemainRegistered(t *testing.T) {
 	// The SDK changes Cobra's global traversal setting when constructing a root.
 	root := NewRootCommand()
 	for _, kind := range []string{"toolbox", "connection"} {
-		command, remaining, err := root.Find([]string{"add", kind})
+		command, remaining, err := root.Find([]string{kind, "add"})
 		require.NoError(t, err)
 		require.Empty(t, remaining)
-		require.Equal(t, kind, command.Name())
+		require.Equal(t, "add", command.Name())
+		require.Equal(t, kind, command.Parent().Name())
+		require.Equal(t, "agent "+kind+" add", command.CommandPath())
 		require.NotNil(t, command.RunE)
 		require.NotNil(t, command.Flags().Lookup("agent"))
+		require.NotNil(t, command.InheritedFlags().Lookup("output"))
 		require.NoError(t, command.Args(command, []string{"dependency"}))
 		require.Error(t, command.Args(command, nil))
+	}
+}
+
+func TestAgentRootRejectsOldAddCommandOrder(t *testing.T) {
+	for _, kind := range []string{"toolbox", "connection"} {
+		t.Run(kind, func(t *testing.T) {
+			root := NewRootCommand()
+			var output bytes.Buffer
+			root.SetOut(&output)
+			root.SetErr(&output)
+			root.SetArgs([]string{"add", kind, "dependency", "--agent", "research-agent"})
+			require.ErrorContains(t, root.ExecuteContext(t.Context()), `unknown command "add"`)
+		})
 	}
 }
 

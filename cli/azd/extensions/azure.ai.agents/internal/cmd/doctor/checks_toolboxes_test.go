@@ -404,7 +404,7 @@ func TestCheckToolboxes_BundledSourceAvoidsManualEndpointGuidance(t *testing.T) 
 		assembleState: fixedAssembler(state),
 	}, nil)
 	require.Equal(t, StatusFail, res.Status)
-	require.Contains(t, res.Suggestion, "azd ai agent add toolbox")
+	require.Contains(t, res.Suggestion, "azd ai agent toolbox add")
 	require.Contains(t, res.Suggestion, "azd deploy")
 	require.NotContains(t, res.Suggestion, "replace the changed agent")
 	require.NotContains(t, res.Suggestion, "azd env set")
@@ -459,7 +459,7 @@ func TestCheckToolboxes_BundledSpacedNameExplainsReferenceMigration(t *testing.T
 	require.Contains(t, res.Suggestion, `"My Tools" in agent "My Agent"`)
 	require.Contains(t, res.Suggestion, `service key "MyTools"`)
 	require.Contains(t, res.Suggestion, "replace the changed agent `toolboxes` entries")
-	require.Contains(t, res.Suggestion, "azd ai agent add toolbox")
+	require.Contains(t, res.Suggestion, "azd ai agent toolbox add")
 }
 
 // ---- Dedup on canonical env key ----

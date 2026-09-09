@@ -12,14 +12,19 @@ Use the Agent command surface to attach existing Toolbox or Connection services
 to an Agent service in `azure.yaml`:
 
 ```bash
-azd ai agent add toolbox support-tools --agent research-agent
-azd ai agent add connection search-connection --agent research-agent
+azd ai agent toolbox add support-tools --agent research-agent
+azd ai agent connection add search-connection --agent research-agent
 ```
 
 These commands add the dependency service key to `services.<agent>.uses`. They
 do not create or deploy the dependency. Toolbox and Connection configuration and
 lifecycle behavior remain owned by the `azure.ai.toolboxes` and
 `azure.ai.connections` extensions.
+
+**Breaking change:** the dependency type now precedes the verb:
+`azd ai agent <toolbox|connection> add <service> --agent <agent>`.
+The previous `azd ai agent add <type> ...` command order is no longer supported;
+only the command hierarchy changes, not the dependency mutation or JSON output.
 
 If a toolbox is declared inline on an agent, move its definition to an
 independent `azure.ai.toolbox` service before deployment. If the new service key

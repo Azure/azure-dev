@@ -306,7 +306,7 @@ func bundledToolboxMigrationSuggestion(
 		suggestion += ", then replace the changed agent `toolboxes` " +
 			"entries (" + strings.Join(replacements, "; ") + ")"
 	}
-	return suggestion + ", run `azd ai agent add toolbox <service> --agent " +
+	return suggestion + ", run `azd ai agent toolbox add <service> --agent " +
 		"<agent>`, then run `azd deploy`."
 }
 

@@ -474,7 +474,7 @@ func appendBundledToolboxGuidance(
 			}
 			*out = append(*out, Suggestion{
 				Command: fmt.Sprintf(
-					"azd ai agent add toolbox %s --agent %s",
+					"azd ai agent toolbox add %s --agent %s",
 					shellEscapeSingleQuoted(serviceKey),
 					shellEscapeSingleQuoted(toolbox.ServiceName),
 				),

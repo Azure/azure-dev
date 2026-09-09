@@ -40,7 +40,8 @@ extension still owns the system ACR connection associated with its registry.
 Upgrade the Agents, Projects, Connections, and Toolboxes extensions together.
 Move bundled Connection and Toolbox definitions into independent
 `azure.ai.connection` and `azure.ai.toolbox` services, and wire Agent dependencies
-using `uses` or `azd ai agent add connection|toolbox`.
+using `uses`, `azd ai agent connection add <service> --agent <agent>`, or
+`azd ai agent toolbox add <service> --agent <agent>`.
 
 For previously ejected infrastructure, remove the old generic Connection modules,
 resources, `connections` / `connectionCredentials` parameters and aggregate

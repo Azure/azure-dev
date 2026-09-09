@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // installedRecord builds an installed extension record with a dependency snapshot.
@@ -650,6 +651,7 @@ func Test_InstalledMetadata_SaveFailurePreservesState(t *testing.T) {
 func Test_ReconcileDependencies_ReportsChildBackfillSaveFailure(t *testing.T) {
 	for _, constraint := range []string{"", ">=1.0.0"} {
 		t.Run("constraint="+constraint, func(t *testing.T) {
+			recorder := recordExtensionTelemetry(t)
 			pack, child := packWithLeaf("1.0.0", "1.0.0")
 			pack.Versions[0].Dependencies[0].Version = constraint
 			child.Versions[0].Dependencies = []ExtensionDependency{{Id: "test.grandchild"}}
@@ -676,6 +678,7 @@ func Test_ReconcileDependencies_ReportsChildBackfillSaveFailure(t *testing.T) {
 			require.ErrorIs(t, results[0].Error, saveErr)
 			require.True(t, NewUpgradeSummary(results).HasFailures())
 			require.ErrorContains(t, results[0].Error, "failed to record dependencies")
+			requireDependencyUpdateSpan(t, recorder, child.Id, pack.Id, codes.Error)
 		})
 	}
 }

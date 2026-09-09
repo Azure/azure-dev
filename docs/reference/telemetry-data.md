@@ -77,6 +77,8 @@ Commands follow the pattern `cmd.<command.path>` where spaces become dots.
 | `ext.promote` | Registry promotion (e.g., dev → main) |
 | `ext.usage` | Usage event reported by an extension through the telemetry service (official-registry extensions only) |
 
+`ext.uninstall` intentionally combines requested removals and automatic unused-dependency cleanup. No event field distinguishes these cases. Internal removals during updates do not emit this event.
+
 ### Agent & Copilot Events
 
 | Event | Description |

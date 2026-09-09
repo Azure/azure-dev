@@ -1255,6 +1255,18 @@ func (m *Manager) evaluateDependencyChanges(
 ) []UpgradeResult {
 	var results []UpgradeResult
 
+	// These failures occur before an actual upgrade starts its own span.
+	recordFailure := func(result UpgradeResult) {
+		_, span := tracing.Start(ctx, events.ExtensionUpdateEvent)
+		span.SetAttributes(
+			fields.ExtensionId.String(result.ExtensionId),
+			fields.ExtensionDependencyOf.String(parentExtension.Id),
+			fields.ExtensionSourceCategory.String(string(result.FromSourceCategory)),
+		)
+		span.EndWithStatus(result.Error)
+		results = append(results, result)
+	}
+
 	for _, dep := range parentVersion.Dependencies {
 		installed, err := m.GetInstalled(FilterOptions{Id: dep.Id})
 		if err != nil || installed == nil {
@@ -1278,7 +1290,7 @@ func (m *Manager) evaluateDependencyChanges(
 		if findErr == nil {
 			installedRelease := FindVersion(childMetadata.Versions, installed.Version)
 			if err := m.BackfillDependencies(dep.Id, childMetadata.Source, installedRelease); err != nil {
-				results = append(results, UpgradeResult{
+				recordFailure(UpgradeResult{
 					ExtensionId:        dep.Id,
 					Status:             UpgradeStatusFailed,
 					FromVersion:        installed.Version,
@@ -1305,7 +1317,7 @@ func (m *Manager) evaluateDependencyChanges(
 					"dependency already pinned it to %s",
 				dep.Id, parentExtension.Id, dep.Version, installed.Version,
 			)
-			results = append(results, UpgradeResult{
+			recordFailure(UpgradeResult{
 				ExtensionId:        dep.Id,
 				Status:             UpgradeStatusFailed,
 				FromVersion:        installed.Version,
@@ -1331,7 +1343,7 @@ func (m *Manager) evaluateDependencyChanges(
 			if suggestionErr, ok := findErr.(interface{ Suggestion() string }); ok {
 				suggestion = suggestionErr.Suggestion()
 			}
-			results = append(results, UpgradeResult{
+			recordFailure(UpgradeResult{
 				ExtensionId:        dep.Id,
 				Status:             UpgradeStatusFailed,
 				FromVersion:        installed.Version,
@@ -1370,7 +1382,7 @@ func (m *Manager) evaluateDependencyChanges(
 				resultErr = compatibilityErr
 				suggestion = compatibilityErr.Suggestion()
 			}
-			results = append(results, UpgradeResult{
+			recordFailure(UpgradeResult{
 				ExtensionId:        dep.Id,
 				Status:             UpgradeStatusFailed,
 				FromVersion:        installed.Version,

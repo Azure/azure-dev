@@ -5,6 +5,7 @@
 package cmd
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,12 +16,20 @@ import (
 
 const templateCacheDirEnv = "AZURE_AI_AGENTS_E2E_TEMPLATE_CACHE_DIR"
 
-func templateCacheDir() string {
+func templateCacheRoot() string {
 	return strings.TrimSpace(os.Getenv(templateCacheDirEnv))
 }
 
-func readCachedTemplateManifest(_ string) ([]byte, bool) {
-	cacheDir := templateCacheDir()
+func templateCacheDir(pointer string) string {
+	root := templateCacheRoot()
+	if root == "" {
+		return ""
+	}
+	return filepath.Join(root, fmt.Sprintf("%x", sha256.Sum256([]byte(pointer))))
+}
+
+func readCachedTemplateManifest(pointer string) ([]byte, bool) {
+	cacheDir := templateCacheDir(pointer)
 	if cacheDir == "" {
 		return nil, false
 	}
@@ -29,8 +38,8 @@ func readCachedTemplateManifest(_ string) ([]byte, bool) {
 	return content, err == nil
 }
 
-func restoreCachedTemplate(_ string, staging string) (bool, error) {
-	cacheDir := templateCacheDir()
+func restoreCachedTemplate(pointer, staging string) (bool, error) {
+	cacheDir := templateCacheDir(pointer)
 	if cacheDir == "" || !fileExists(filepath.Join(cacheDir, "azure.yaml")) {
 		return false, nil
 	}
@@ -43,8 +52,8 @@ func restoreCachedTemplate(_ string, staging string) (bool, error) {
 	return true, nil
 }
 
-func refreshTemplateCache(_ string, staging string) error {
-	cacheDir := templateCacheDir()
+func refreshTemplateCache(pointer, staging string) error {
+	cacheDir := templateCacheDir(pointer)
 	if cacheDir == "" {
 		return nil
 	}

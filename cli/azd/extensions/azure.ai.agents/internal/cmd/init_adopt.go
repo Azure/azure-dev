@@ -899,7 +899,7 @@ func readManifestContentForInitDetection(
 	if cached {
 		return cachedContent, true
 	}
-	if templateCacheDir() != "" {
+	if templateCacheRoot() != "" {
 		return nil, false
 	}
 	if azdClient == nil || !strings.Contains(manifestPointer, "://") {
@@ -1451,7 +1451,7 @@ func stageRemoteAzureYaml(
 		if err := clearStagingDirectory(staging); err != nil {
 			return err
 		}
-		if publicDownloadErr != nil && templateCacheDir() != "" {
+		if publicDownloadErr != nil && templateCacheRoot() != "" {
 			return useCachedTemplateOnDownloadError(pointer, staging, publicDownloadErr)
 		}
 	}

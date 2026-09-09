@@ -5,7 +5,9 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -89,6 +91,178 @@ func TestDeployUpsertsLogicalConnectionAndPublishesMarker(t *testing.T) {
 	assert.Equal(t, "https://account.services.ai.azure.com/api/projects/project", markerProject)
 	require.Len(t, progressMsgs, 1)
 	assert.Contains(t, progressMsgs[0], "Private Registry")
+}
+
+func TestDeployValidatesResolvedDefinitionBeforeUpsert(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name   string
+		fields map[string]any
+		code   string
+		field  string
+	}{
+		{"missing category", map[string]any{"category": ""}, exterrors.CodeMissingConnectionField, "category"},
+		{"missing target", map[string]any{"target": ""}, exterrors.CodeMissingConnectionField, "target"},
+		{"expanded blank target", map[string]any{"target": "${BLANK}"}, exterrors.CodeMissingConnectionField, "target"},
+		{"unknown auth", map[string]any{"authType": "invalid"}, exterrors.CodeInvalidAuthType, "authType"},
+		{"api key missing", map[string]any{"authType": "ApiKey"}, exterrors.CodeMissingConnectionField, "credentials.key"},
+		{
+			"api key expands to blank", map[string]any{
+				"authType": "ApiKey", "credentials": map[string]any{"key": "${BLANK}"},
+			}, exterrors.CodeMissingConnectionField, "credentials.key",
+		},
+		{
+			"custom keys missing", map[string]any{"authType": "CustomKeys"},
+			exterrors.CodeMissingConnectionField, "credentials",
+		},
+		{
+			"custom nested keys empty", map[string]any{
+				"authType": "CustomKeys", "credentials": map[string]any{"keys": map[string]any{}},
+			}, exterrors.CodeMissingConnectionField, "credentials",
+		},
+		{"oauth missing", map[string]any{"authType": "OAuth2"}, exterrors.CodeMissingConnectionField, "OAuth2"},
+		{
+			"oauth conflicting modes", map[string]any{ //nolint:gosec // Synthetic OAuth values, not credentials.
+				"authType": "OAuth2", "connectorName": "github", "tokenUrl": "https://example.test/token",
+			}, exterrors.CodeConflictingArguments, "connectorName",
+		},
+		{
+			"oauth client secret missing", map[string]any{ //nolint:gosec // Synthetic OAuth values, not credentials.
+				"authType": "OAuth2", "authorizationUrl": "https://example.test/auth",
+				"tokenUrl": "https://example.test/token", "credentials": map[string]any{"clientId": "client"},
+			}, exterrors.CodeMissingConnectionField, "credentials.clientSecret",
+		},
+		{
+			"managed oauth with arbitrary credentials", map[string]any{
+				"authType": "OAuth2", "connectorName": "github",
+				"credentials": map[string]any{"nested": map[string]any{"value": "synthetic-private-value"}},
+			}, exterrors.CodeConflictingArguments, "connectorName",
+		},
+		{"oauth fields on None", map[string]any{"scopes": []any{"read"}}, exterrors.CodeConflictingArguments, "scopes"},
+		{"audience on None", map[string]any{"audience": "audience"}, exterrors.CodeConflictingArguments, "audience"},
+	} {
+		for _, fromFile := range []bool{false, true} {
+			name := tt.name + "/inline"
+			if fromFile {
+				name = tt.name + "/ref"
+			}
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				root := t.TempDir()
+				values := map[string]any{"category": "RemoteTool", "target": "https://example.test", "authType": "None"}
+				maps.Copy(values, tt.fields)
+				// Synthetic credential-bearing metadata must never appear in validation errors.
+				values["metadata"] = map[string]any{"private": "synthetic-private-value"}
+				if fromFile {
+					raw, err := json.Marshal(values)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(root, "connection.json"), raw, 0o600))
+					values = map[string]any{"$ref": "./connection.json"}
+				}
+				props, err := structpb.NewStruct(values)
+				require.NoError(t, err)
+				upserted, published := false, false
+				target := &connectionServiceTarget{
+					projectClient: &recordingProjectConfigReader{path: root},
+					environment:   "staging",
+					upsert: func(context.Context, string, string, rawConnectionProperties) (string, error) {
+						upserted = true
+						return "https://account.services.ai.azure.com/api/projects/project", nil
+					},
+					publishMarker: func(context.Context, string, string, string) error { published = true; return nil },
+				}
+				result, err := target.Deploy(t.Context(), &azdext.ServiceConfig{
+					Name: "connection", Host: aiConnectionHost, AdditionalProperties: props,
+					Environment: map[string]string{"BLANK": " \t"},
+				}, nil, nil, nil)
+				require.Nil(t, result)
+				localErr := requireConnectionValidationError(t, err, tt.code, tt.field)
+				assert.NotContains(t, localErr.Message+localErr.Suggestion, "synthetic-private-value")
+				assert.False(t, upserted, "invalid definitions must fail before ARM context resolution or PUT")
+				assert.False(t, published, "invalid definitions must not publish readiness")
+			})
+		}
+	}
+}
+
+func TestDeployValidatesAfterReferenceOverlayAndExpansion(t *testing.T) {
+	t.Parallel()
+	for _, authType := range []string{
+		"None", "ApiKey", "CustomKeys", "OAuth2", "ManagedIdentity", "ServicePrincipal",
+	} {
+		t.Run(authType, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			// The referenced file alone is incomplete; the overlay supplies required fields.
+			require.NoError(t, os.WriteFile(filepath.Join(root, "connection.json"), []byte(`{"target":""}`), 0o600))
+			credentials := map[string]any{
+				"clientId": "${CLIENT_ID}", "clientSecret": "${CLIENT_SECRET}",
+				"nested": []any{"${CLIENT_ID}", true, float64(3)},
+			}
+			values := map[string]any{
+				"$ref": "./connection.json", "category": "RemoteTool", "target": "${TARGET}", "authType": authType,
+			}
+			switch authType {
+			case "ApiKey":
+				credentials["key"] = "${{connections.source.credentials.key}}"
+			case "CustomKeys":
+				credentials["keys"] = map[string]any{"x-key": "${CLIENT_SECRET}"}
+			case "OAuth2":
+				values["connectorName"] = "${CONNECTOR}"
+				credentials = nil
+			case "None":
+				credentials = nil
+			}
+			if credentials != nil {
+				values["credentials"] = credentials
+			}
+			props, err := structpb.NewStruct(values)
+			require.NoError(t, err)
+			var captured rawConnectionProperties
+			upserted, published := false, false
+			target := &connectionServiceTarget{
+				projectClient: &recordingProjectConfigReader{path: root}, environment: "staging",
+				upsert: func(
+					_ context.Context, environment, name string, properties rawConnectionProperties,
+				) (string, error) {
+					upserted = true
+					assert.Equal(t, "staging", environment)
+					assert.Equal(t, "connection", name)
+					captured = properties
+					return "https://account.services.ai.azure.com/api/projects/project", nil
+				},
+				publishMarker: func(context.Context, string, string, string) error { published = true; return nil },
+			}
+			result, err := target.Deploy(t.Context(), &azdext.ServiceConfig{
+				Name: "connection", Host: aiConnectionHost, AdditionalProperties: props,
+				Environment: map[string]string{
+					"TARGET": "https://example.test", "CLIENT_ID": "client",
+					"CLIENT_SECRET": "secret", "CONNECTOR": "github",
+				},
+			}, nil, nil, nil)
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.True(t, upserted)
+			assert.True(t, published)
+			assert.Equal(t, authType, captured.AuthType)
+			assert.Equal(t, "https://example.test", captured.Target)
+			if credentials != nil {
+				require.NotNil(t, captured.Credentials)
+				assert.Equal(t, []any{"client", true, float64(3)}, (*captured.Credentials)["nested"])
+			}
+			if authType == "ApiKey" {
+				assert.Equal(t, "${{connections.source.credentials.key}}", (*captured.Credentials)["key"])
+			}
+			if authType == "CustomKeys" {
+				assert.Equal(t, map[string]any{"x-key": "secret"}, (*captured.Credentials)["keys"])
+			}
+			if authType == "OAuth2" {
+				assert.Equal(t, "github", captured.ConnectorName)
+				require.NotNil(t, captured.Credentials)
+				assert.Empty(t, *captured.Credentials, "managed connectors must send credentials: {}")
+			}
+		})
+	}
 }
 
 func TestDeployMissingEnvironmentEndpointDoesNotUpsertOrPublish(t *testing.T) {

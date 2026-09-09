@@ -151,6 +151,9 @@ func (p *connectionServiceTarget) Deploy(
 	if err != nil {
 		return nil, err
 	}
+	if err := validateConnectionProperties(properties); err != nil {
+		return nil, err
+	}
 	if progress != nil {
 		progress(fmt.Sprintf("Upserting connection %q", name))
 	}

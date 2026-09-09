@@ -32,7 +32,9 @@ func TestConnectionProjectEndpointPreservesExactServiceName(t *testing.T) {
 	t.Parallel()
 
 	seen := map[string]string{}
-	for _, name := range []string{"", "my connection", "my--connection", "my_connection", "my.connection", "A", "a", "\u00e9"} {
+	for _, name := range []string{
+		"", "my connection", "my--connection", "my_connection", "my.connection", "A", "a", "\u00e9",
+	} {
 		key := ConnectionProjectEndpoint(name)
 		assert.Regexp(t, `^[A-Z][A-Z0-9_]*$`, key)
 		// Environment keys are case-insensitive on Windows.

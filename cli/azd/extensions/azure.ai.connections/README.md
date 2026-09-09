@@ -30,6 +30,13 @@ used. Local `$ref` files and nested credential values are resolved by this
 extension. Removing the service from `azure.yaml` stops managing it but does
 not delete the remote Connection; use `azd ai connection delete` to delete it.
 
+After resolving file references and environment variables, deployment validates
+the category, target, and authentication configuration before any ARM write.
+API key and custom-key authentication require credentials; OAuth2 requires either
+a managed connector or complete BYO OAuth2 fields, not both. Invalid definitions
+do not publish readiness markers. This validation is shared with standalone
+create/deploy commands and preserves nested service credential payloads.
+
 The `microsoft.foundry` provider no longer provisions declared Connection
 services in any mode. Embedded, ejected Bicep, and ejected Terraform templates
 contain no generic Connection resources or credential parameters. The Projects
@@ -68,6 +75,11 @@ it does not fall back to a global project context, process variables, or the
 service's `env` block. Provision the selected environment or set its endpoint
 before retrying. Standalone `azd ai connection` commands retain their existing
 endpoint fallback cascade.
+
+The project ARM ID (`AZURE_AI_PROJECT_ID`) and subscription used for tenant
+lookup (`AZURE_SUBSCRIPTION_ID`) are also read together from that environment's
+persisted values, without process-variable fallback. These optional context
+values may be absent; ARM discovery and default credential behavior still apply.
 
 ### Readiness markers
 

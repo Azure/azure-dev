@@ -10,6 +10,7 @@ import (
 	"log"
 	"maps"
 	"os"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -202,8 +203,10 @@ type connectionCreateFlags struct {
 	force            bool
 	projectEndpoint  string
 	output           string
-	clientID         string   // OAuth2 client ID
-	clientSecret     string   // OAuth2 client secret
+	clientID         string // OAuth2 client ID
+	clientSecret     string // OAuth2 client secret
+	clientIDChanged  bool
+	secretChanged    bool
 	audience         string   // Token audience for user-entra-token / agentic-identity / project-managed-identity
 	authorizationURL string   // OAuth2 authorization endpoint
 	tokenURL         string   // OAuth2 token endpoint
@@ -219,112 +222,12 @@ type ConnectionCreateAction struct {
 
 // Run executes the create operation.
 func (a *ConnectionCreateAction) Run(ctx context.Context) error {
-	if a.flags.kind == "" {
-		return exterrors.Validation(
-			exterrors.CodeMissingConnectionField,
-			"Missing required flag --kind.",
-			"Specify the connection kind (e.g., --kind remote-tool).",
-		)
+	props, err := connectionCreateProperties(a.flags)
+	if err != nil {
+		return err
 	}
-	if a.flags.target == "" {
-		return exterrors.Validation(
-			exterrors.CodeMissingConnectionField,
-			"Missing required flag --target.",
-			"Specify the target URL (e.g., --target https://example.com).",
-		)
-	}
-	if a.flags.authType == "api-key" && a.flags.key == "" {
-		return exterrors.Validation(
-			exterrors.CodeMissingConnectionField,
-			"Missing required flag --key for api-key auth.",
-			"Specify the API key value.",
-		)
-	}
-	if a.flags.authType == "custom-keys" && len(a.flags.customKeys) == 0 {
-		return exterrors.Validation(
-			exterrors.CodeMissingConnectionField,
-			"Missing required flag --custom-key for custom-keys auth.",
-			"Specify at least one custom key (e.g., --custom-key x-api-key=value).",
-		)
-	}
-	// OAuth2-only flags must not be used with other auth types.
-	if a.flags.authType != "oauth2" {
-		if a.flags.clientID != "" || a.flags.clientSecret != "" {
-			return exterrors.Validation(
-				exterrors.CodeConflictingArguments,
-				"--client-id and --client-secret are only valid with --auth-type oauth2.",
-				"",
-			)
-		}
-		if a.flags.authorizationURL != "" || a.flags.tokenURL != "" ||
-			a.flags.refreshURL != "" || len(a.flags.scopes) > 0 || a.flags.connectorName != "" {
-			return exterrors.Validation(
-				exterrors.CodeConflictingArguments,
-				"--authorization-url, --token-url, --refresh-url, --scopes, and --connector-name "+
-					"are only valid with --auth-type oauth2.",
-				"",
-			)
-		}
-	}
-	// OAuth2 validation: either --connector-name alone (managed connector) or all of
-	// --authorization-url, --token-url, --refresh-url, --scopes, --client-id, --client-secret.
-	if a.flags.authType == "oauth2" {
-		hasConnector := a.flags.connectorName != ""
-		hasBYO := a.flags.authorizationURL != "" || a.flags.tokenURL != "" ||
-			a.flags.refreshURL != "" || len(a.flags.scopes) > 0 ||
-			a.flags.clientID != "" || a.flags.clientSecret != ""
-
-		if hasConnector && hasBYO {
-			return exterrors.Validation(
-				exterrors.CodeConflictingArguments,
-				"--connector-name cannot be combined with --authorization-url, --token-url, "+
-					"--refresh-url, --scopes, --client-id, or --client-secret. "+
-					"Use --connector-name alone for managed connectors, or provide the other flags for BYO OAuth2.",
-				"",
-			)
-		}
-		if !hasConnector && !hasBYO {
-			return exterrors.Validation(
-				exterrors.CodeMissingConnectionField,
-				"OAuth2 auth requires either --connector-name (managed connector) or "+
-					"--authorization-url, --token-url, --client-id, --client-secret "+
-					"(and optionally --refresh-url, --scopes).",
-				"",
-			)
-		}
-		if !hasConnector {
-			// BYO mode ΓÇö required: authorization-url, token-url, client-id, client-secret.
-			// Optional: refresh-url, scopes.
-			missing := []string{}
-			if a.flags.authorizationURL == "" {
-				missing = append(missing, "--authorization-url")
-			}
-			if a.flags.tokenURL == "" {
-				missing = append(missing, "--token-url")
-			}
-			if a.flags.clientID == "" {
-				missing = append(missing, "--client-id")
-			}
-			if a.flags.clientSecret == "" {
-				missing = append(missing, "--client-secret")
-			}
-			if len(missing) > 0 {
-				return exterrors.Validation(
-					exterrors.CodeMissingConnectionField,
-					"BYO OAuth2 requires: --authorization-url, --token-url, --client-id, "+
-						"--client-secret. Missing: "+strings.Join(missing, ", "),
-					"",
-				)
-			}
-		}
-	}
-	if a.flags.audience != "" && a.flags.authType != "user-entra-token" &&
-		a.flags.authType != "agentic-identity" && a.flags.authType != "project-managed-identity" {
-		return exterrors.Validation(
-			exterrors.CodeConflictingArguments,
-			"--audience is only valid with --auth-type user-entra-token, agentic-identity, or project-managed-identity.",
-			"",
-		)
+	if err := validateConnectionProperties(props); err != nil {
+		return err
 	}
 
 	connCtx, err := resolveConnectionContext(ctx, a.flags.projectEndpoint)
@@ -349,23 +252,6 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 	// Route to raw REST or typed SDK based on auth type
 	switch a.flags.authType {
 	case "oauth2", "user-entra-token", "project-managed-identity", "agentic-identity":
-		props := rawConnectionProperties{
-			AuthType:         normalizeAuthTypeToARM(a.flags.authType),
-			Category:         normalizeKind(a.flags.kind),
-			Target:           a.flags.target,
-			Audience:         a.flags.audience,
-			Metadata:         parseKVMap(a.flags.metadata),
-			AuthorizationURL: a.flags.authorizationURL,
-			TokenURL:         a.flags.tokenURL,
-			RefreshURL:       a.flags.refreshURL,
-			Scopes:           a.flags.scopes,
-			ConnectorName:    a.flags.connectorName,
-		}
-		// For OAuth2, the ARM connections API requires `credentials` to be present in the
-		// request body even when empty (managed-connector / gateway_connector path uses
-		// Microsoft's OAuth app, so no client id/secret is supplied). An empty object `{}`
-		// is valid; omitting the field entirely returns 400 ValidationError.
-		props.Credentials = buildOAuth2Credentials(a.flags.authType, a.flags.clientID, a.flags.clientSecret)
 		err = rawCreateConnection(ctx, connCtx, a.flags.name, props)
 	default:
 		body, buildErr := buildConnectionBody(
@@ -391,6 +277,77 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 	return emitConnectionCreateResult(a.flags.name, connCtx.project, a.flags.output)
 }
 
+// connectionCreateProperties maps CLI flags to ARM properties without I/O. CLI-only
+// restrictions belong here, not in the validator shared with service deployment.
+func connectionCreateProperties(flags *connectionCreateFlags) (rawConnectionProperties, error) {
+	switch flags.authType {
+	case "", "none", "api-key", "custom-keys", "oauth2", "user-entra-token",
+		"project-managed-identity", "agentic-identity":
+	default:
+		return rawConnectionProperties{}, exterrors.Validation(
+			exterrors.CodeInvalidAuthType,
+			"Unsupported auth type for connection create.",
+			"Use --auth-type api-key, custom-keys, none, oauth2, user-entra-token, "+
+				"project-managed-identity, or agentic-identity.",
+		)
+	}
+	// These CLI flags describe OAuth2 credentials. ServicePrincipal and other
+	// service auth types may legitimately carry clientId/clientSecret credentials.
+	if flags.authType != "oauth2" &&
+		(flags.clientID != "" || flags.clientSecret != "" || flags.clientIDChanged || flags.secretChanged) {
+		return rawConnectionProperties{}, exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--client-id and --client-secret are only valid with --auth-type oauth2.",
+			"Remove --client-id and --client-secret or select --auth-type oauth2.",
+		)
+	}
+
+	props := rawConnectionProperties{
+		AuthType:         normalizeAuthTypeToARM(flags.authType),
+		Category:         normalizeKind(flags.kind),
+		Target:           flags.target,
+		Audience:         flags.audience,
+		AuthorizationURL: flags.authorizationURL,
+		TokenURL:         flags.tokenURL,
+		RefreshURL:       flags.refreshURL,
+		Scopes:           slices.Clone(flags.scopes),
+		ConnectorName:    flags.connectorName,
+	}
+	if props.AuthType == "" {
+		props.AuthType = "None"
+	}
+	if len(flags.metadata) > 0 {
+		props.Metadata = make(map[string]string, len(flags.metadata))
+		for _, pair := range flags.metadata {
+			if key, value, found := strings.Cut(pair, "="); found {
+				props.Metadata[key] = value
+			}
+		}
+	}
+	switch flags.authType {
+	case "api-key":
+		props.Credentials = &rawCredentials{"key": flags.key}
+	case "custom-keys":
+		keys := make(map[string]string, len(flags.customKeys))
+		for _, pair := range flags.customKeys {
+			key, value, found := strings.Cut(pair, "=")
+			if !found {
+				return rawConnectionProperties{}, exterrors.Validation(
+					exterrors.CodeMissingConnectionField,
+					"Invalid credentials.keys entry.",
+					"Specify each custom credential as --custom-key name=value.",
+				)
+			}
+			keys[key] = value
+		}
+		props.Credentials = &rawCredentials{"keys": keys}
+	case "oauth2":
+		// Managed connectors require credentials: {}, not an omitted field.
+		props.Credentials = buildOAuth2Credentials(flags.authType, flags.clientID, flags.clientSecret)
+	}
+	return props, nil
+}
+
 func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &connectionCreateFlags{}
 	action := &ConnectionCreateAction{flags: flags}
@@ -410,6 +367,8 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 			flags.name = args[0]
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
 			flags.output = extCtx.OutputFormat
+			flags.clientIDChanged = cmd.Flags().Changed("client-id")
+			flags.secretChanged = cmd.Flags().Changed("client-secret")
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 			return action.Run(ctx)

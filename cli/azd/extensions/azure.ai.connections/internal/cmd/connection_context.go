@@ -191,11 +191,11 @@ type environmentContextReader interface {
 		*azdext.EmptyRequest,
 		...grpc.CallOption,
 	) (*azdext.EnvironmentResponse, error)
-	GetValue(
+	GetValues(
 		context.Context,
-		*azdext.GetEnvRequest,
+		*azdext.GetEnvironmentRequest,
 		...grpc.CallOption,
-	) (*azdext.KeyValueResponse, error)
+	) (*azdext.KeyValueListResponse, error)
 }
 
 type tenantLookup interface {
@@ -223,9 +223,23 @@ func resolveEnvContextWithClients(
 		envName = envResp.GetEnvironment().GetName()
 	}
 
-	out.projectID = envValue(ctx, environmentClient, envName, "AZURE_AI_PROJECT_ID")
-
-	subID := envValue(ctx, environmentClient, envName, "AZURE_SUBSCRIPTION_ID")
+	// Read one persisted snapshot for both ARM context and credential scoping.
+	// GetValue uses Environment.Getenv and can fall back to another environment's
+	// process values even when EnvName is explicitly set.
+	response, err := environmentClient.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: envName})
+	if err != nil {
+		log.Printf("connections: unable to read persisted azd environment context: %v", err)
+		return out
+	}
+	var subID string
+	for _, value := range response.GetKeyValues() {
+		switch value.GetKey() {
+		case "AZURE_AI_PROJECT_ID":
+			out.projectID = value.GetValue()
+		case "AZURE_SUBSCRIPTION_ID":
+			subID = value.GetValue()
+		}
+	}
 	if subID == "" {
 		log.Printf("connections: AZURE_SUBSCRIPTION_ID unavailable; using default tenant")
 		return out
@@ -241,17 +255,4 @@ func resolveEnvContextWithClients(
 	out.tenantID = tenantResp.GetTenantId()
 
 	return out
-}
-
-// envValue reads a single value from the named azd environment, returning ""
-// when the key is unset or the read fails.
-func envValue(ctx context.Context, environmentClient environmentContextReader, envName, key string) string {
-	resp, err := environmentClient.GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envName,
-		Key:     key,
-	})
-	if err != nil {
-		return ""
-	}
-	return resp.GetValue()
 }

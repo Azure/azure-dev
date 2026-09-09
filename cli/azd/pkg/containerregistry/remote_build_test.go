@@ -227,33 +227,65 @@ func TestRunDockerBuildRequestWithLogs_CredentialError(t *testing.T) {
 func TestRunDockerBuildRequestWithLogs_ScheduleRunError(t *testing.T) {
 	t.Parallel()
 
-	mockCtx := mocks.NewMockContext(t.Context())
-	mockCtx.HttpClient.When(func(request *http.Request) bool {
-		return strings.Contains(request.URL.Path, "scheduleRun")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return mocks.CreateHttpResponseWithBody(
-			request, http.StatusBadRequest, map[string]any{
-				"error": map[string]string{
-					"code":    "BadRequest",
-					"message": "invalid build request",
-				},
-			},
-		)
-	})
+	tests := []struct {
+		name            string
+		code            string
+		status          int
+		afterSubmission bool
+		wantUnavailable bool
+	}{
+		{"TasksRefused", "TasksOperationsNotAllowed", http.StatusForbidden, false, true},
+		{"InvalidRequest", "BadRequest", http.StatusBadRequest, false, false},
+		{"AuthorizationFailed", "AuthorizationFailed", http.StatusForbidden, false, false},
+		{"ServerError", "InternalServerError", http.StatusInternalServerError, false, false},
+		{"RefusalAfterSubmission", "TasksOperationsNotAllowed", http.StatusForbidden, true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			mockCtx := mocks.NewMockContext(t.Context())
+			errorResponse := func(request *http.Request) (*http.Response, error) {
+				return mocks.CreateHttpResponseWithBody(request, tt.status, map[string]any{
+					"error": map[string]string{
+						"code":    tt.code,
+						"message": "request refused",
+					},
+				})
+			}
+			mockCtx.HttpClient.When(func(request *http.Request) bool {
+				return strings.Contains(request.URL.Path, "scheduleRun")
+			}).RespondFn(func(request *http.Request) (*http.Response, error) {
+				if !tt.afterSubmission {
+					return errorResponse(request)
+				}
+				return mocks.CreateHttpResponseWithBody(request, http.StatusOK, armcontainerregistry.Run{
+					Properties: &armcontainerregistry.RunProperties{RunID: new("run-id")},
+				})
+			})
+			mockCtx.HttpClient.When(func(request *http.Request) bool {
+				return strings.Contains(request.URL.Path, "listLogSasUrl")
+			}).RespondFn(errorResponse)
 
-	mgr := NewRemoteBuildManager(
-		mockCtx.SubscriptionCredentialProvider,
-		armOptionsNoRetry(mockCtx.HttpClient),
-	)
-
-	err := mgr.RunDockerBuildRequestWithLogs(
-		t.Context(), testSubscriptionID, testResourceGroup, testRegistryName,
-		&armcontainerregistry.DockerBuildRequest{}, io.Discard,
-	)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "BadRequest")
-	var responseErr *azcore.ResponseError
-	require.ErrorAs(t, err, &responseErr)
+			mgr := NewRemoteBuildManager(
+				mockCtx.SubscriptionCredentialProvider,
+				armOptionsNoRetry(mockCtx.HttpClient),
+			)
+			err := mgr.RunDockerBuildRequestWithLogs(
+				t.Context(), testSubscriptionID, testResourceGroup, testRegistryName,
+				&armcontainerregistry.DockerBuildRequest{}, io.Discard,
+			)
+			require.Error(t, err)
+			responseErr, ok := errors.AsType[*azcore.ResponseError](err)
+			require.True(t, ok)
+			require.Equal(t, tt.code, responseErr.ErrorCode)
+			unavailableErr, ok := errors.AsType[*RemoteBuildUnavailableError](err)
+			require.Equal(t, tt.wantUnavailable, ok)
+			if ok {
+				require.Same(t, responseErr, unavailableErr.Unwrap())
+				require.Equal(t, responseErr.Error(), unavailableErr.Error())
+			}
+		})
+	}
 }
 
 func TestRunDockerBuildRequestWithLogs_TerminalStatus(t *testing.T) {

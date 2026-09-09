@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -31,8 +32,10 @@ func NewCli(commandRunner exec.CommandRunner) *Cli {
 }
 
 type Cli struct {
-	commandRunner   exec.CommandRunner
-	containerEngine string // "docker" or "podman", detected during CheckInstalled
+	commandRunner exec.CommandRunner
+
+	engineMu        sync.Mutex // Protects containerEngine and runtime selection, not subprocess execution.
+	containerEngine string
 }
 
 // ContainerEngine returns the detected container engine name ("docker" or "podman").
@@ -42,16 +45,18 @@ type Cli struct {
 // engine name (e.g., dotnet publish with -p:ContainerEngine) get the correct
 // value even when docker.Cli is not in RequiredExternalTools.
 func (d *Cli) ContainerEngine() string {
+	d.engineMu.Lock()
+	defer d.engineMu.Unlock()
+
 	if d.containerEngine == "" {
-		d.detectContainerEngine()
+		d.detectContainerEngineLocked()
 	}
 	return d.containerEngine
 }
 
-// detectContainerEngine performs a lightweight detection of the container engine
-// by checking AZD_CONTAINER_RUNTIME and PATH. Unlike CheckInstalled(), it does
-// not validate versions or daemon readiness.
-func (d *Cli) detectContainerEngine() {
+// detectContainerEngineLocked checks AZD_CONTAINER_RUNTIME and PATH, not readiness.
+// The caller must hold engineMu.
+func (d *Cli) detectContainerEngineLocked() {
 	if runtime := os.Getenv("AZD_CONTAINER_RUNTIME"); runtime == "docker" || runtime == "podman" {
 		d.containerEngine = runtime
 		return
@@ -72,6 +77,9 @@ func (d *Cli) detectContainerEngine() {
 // CheckInstalled() should be called first to detect and set the container engine.
 // If not set, defaults to "docker" for backward compatibility.
 func (d *Cli) getContainerEngine() string {
+	d.engineMu.Lock()
+	defer d.engineMu.Unlock()
+
 	if d.containerEngine == "" {
 		// Default to "docker" for backward compatibility with existing code
 		// that may not call CheckInstalled() first
@@ -81,8 +89,9 @@ func (d *Cli) getContainerEngine() string {
 }
 
 func (d *Cli) Login(ctx context.Context, loginServer string, username string, password string) error {
+	engineName := d.getContainerEngine()
 	runArgs := exec.NewRunArgs(
-		d.getContainerEngine(), "login",
+		engineName, "login",
 		"--username", username,
 		"--password-stdin",
 		loginServer,
@@ -90,7 +99,7 @@ func (d *Cli) Login(ctx context.Context, loginServer string, username string, pa
 
 	_, err := d.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed logging into %s: %w", d.Name(), err)
+		return fmt.Errorf("failed logging into %s: %w", containerEngineDisplayName(engineName), err)
 	}
 
 	return nil
@@ -353,13 +362,26 @@ func isSupportedPodmanVersion(cliOutput string) (bool, error) {
 	return version.GTE(minVersion), nil
 }
 func (d *Cli) CheckInstalled(ctx context.Context) error {
+	engineName, err := d.selectContainerEngine()
+	if err != nil {
+		return err
+	}
+
+	return d.validateContainerEngine(ctx, engineName)
+}
+
+// selectContainerEngine refreshes the selection and returns a snapshot for readiness checks.
+func (d *Cli) selectContainerEngine() (string, error) {
+	d.engineMu.Lock()
+	defer d.engineMu.Unlock()
+
 	// Check for environment variable override first
 	containerRuntime := os.Getenv("AZD_CONTAINER_RUNTIME")
 
 	if containerRuntime != "" {
 		// Validate the specified runtime
 		if containerRuntime != "docker" && containerRuntime != "podman" {
-			return fmt.Errorf(
+			return "", fmt.Errorf(
 				"unsupported container runtime '%s' specified in AZD_CONTAINER_RUNTIME. "+
 					"Supported values: docker, podman",
 				containerRuntime)
@@ -373,23 +395,18 @@ func (d *Cli) CheckInstalled(ctx context.Context) error {
 			d.containerEngine = "podman"
 		} else {
 			// Neither tool is installed
-			return fmt.Errorf(
+			return "", fmt.Errorf(
 				"neither docker nor podman is installed. " +
 					"Please install Docker: https://aka.ms/azure-dev/docker-install " +
 					"or Podman: https://aka.ms/azure-dev/podman-install")
 		}
 	}
 
-	// Now validate the selected engine (version check and daemon/service running)
-	return d.validateContainerEngine(ctx)
+	return d.containerEngine, nil
 }
 
-// validateContainerEngine validates that the selected container engine (docker or podman) meets version
-// and readiness requirements.
-// The engine must have been selected first via CheckInstalled (stored in d.containerEngine).
-func (d *Cli) validateContainerEngine(ctx context.Context) error {
-	engineName := d.getContainerEngine()
-
+// validateContainerEngine checks version and readiness using an engine snapshot without holding engineMu.
+func (d *Cli) validateContainerEngine(ctx context.Context, engineName string) error {
 	// Check version
 	versionOutput, err := tools.ExecuteCommand(ctx, d.commandRunner, engineName, "--version")
 	if err != nil {
@@ -413,7 +430,7 @@ func (d *Cli) validateContainerEngine(ctx context.Context) error {
 		return err
 	}
 	if !supported {
-		return &tools.ErrSemver{ToolName: d.Name(), VersionInfo: versionInfo}
+		return &tools.ErrSemver{ToolName: containerEngineDisplayName(engineName), VersionInfo: versionInfo}
 	}
 
 	// Check if daemon/service is running
@@ -425,14 +442,18 @@ func (d *Cli) validateContainerEngine(ctx context.Context) error {
 }
 
 func (d *Cli) InstallUrl() string {
-	if d.containerEngine == "podman" {
+	if d.getContainerEngine() == "podman" {
 		return "https://aka.ms/azure-dev/podman-install"
 	}
 	return "https://aka.ms/azure-dev/docker-install"
 }
 
 func (d *Cli) Name() string {
-	if d.containerEngine == "podman" {
+	return containerEngineDisplayName(d.getContainerEngine())
+}
+
+func containerEngineDisplayName(engineName string) string {
+	if engineName == "podman" {
 		return "Podman"
 	}
 	return "Docker"
@@ -440,12 +461,14 @@ func (d *Cli) Name() string {
 
 // IsContainerdEnabled checks if Docker is using containerd as the image store
 func (d *Cli) IsContainerdEnabled(ctx context.Context) (bool, error) {
+	engineName := d.getContainerEngine()
 	// Containerd image store is only applicable to Docker, not Podman
-	if d.getContainerEngine() == "podman" {
+	if engineName == "podman" {
 		return false, nil
 	}
 
-	result, err := d.executeCommand(ctx, "", "system", "info", "--format", "{{.DriverStatus}}")
+	result, err := d.commandRunner.Run(ctx,
+		exec.NewRunArgs(engineName, "system", "info", "--format", "{{.DriverStatus}}"))
 	if err != nil {
 		return false, fmt.Errorf("checking docker driver status: %w", err)
 	}

@@ -71,8 +71,12 @@ services:
 | `tag` | string | Tag applied to a built container image |
 | `buildArgs` | list | Arguments passed to the container build |
 | `network` | string | Networking mode for Dockerfile `RUN` instructions |
-| `remoteBuild` | boolean | Build and push with Azure Container Registry remote build instead of building locally |
+| `remoteBuild` | boolean | Prefer building and pushing with Azure Container Registry; fall back locally only when ACR refuses scheduling with `TasksOperationsNotAllowed` |
 | `imagePassthrough` | boolean | Reuse an existing remote service `image` without building or publishing it; `azd deploy --from-package` can override the image for one deployment |
+
+If ACR refuses scheduling with `TasksOperationsNotAllowed`, azd warns and falls back automatically, including in non-interactive runs. Docker or Podman must be installed and running. Fallback publishes a supplied local package or builds and pushes from source.
+
+Other errors, including build failures, cancellation, and failures reading remote logs or status, do not trigger fallback. If fallback also fails, azd preserves both errors. Set `docker.remoteBuild: false` to build locally.
 
 `docker.imagePassthrough` declares that azd does not own the container image lifecycle. It requires the service-level
 `image` property to contain a fully qualified remote image and cannot be combined with `docker.remoteBuild`. During package, publish, and deploy operations, azd

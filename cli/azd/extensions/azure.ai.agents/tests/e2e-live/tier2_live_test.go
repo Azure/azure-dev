@@ -1154,13 +1154,13 @@ func exitCode(err error) int {
 	return -1
 }
 
-// ghToken resolves a usable GitHub token from the environment, falling back to `gh`.
+// ghToken resolves a GitHub token from the environment, falling back to `gh`.
+// The actual download validates the token; a separate network preflight can
+// incorrectly discard a valid token during a transient GitHub failure.
 func ghToken() string {
-	for _, k := range []string{"GITHUB_TOKEN", "GH_TOKEN"} {
-		if v := os.Getenv(k); v != "" {
-			if isUsableGitHubToken(v) {
-				return v
-			}
+	for _, k := range []string{"GH_TOKEN", "GITHUB_TOKEN"} {
+		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+			return v
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -1172,20 +1172,7 @@ func ghToken() string {
 	if err != nil {
 		return ""
 	}
-	token := strings.TrimSpace(string(out))
-	if token == "" || !isUsableGitHubToken(token) {
-		return ""
-	}
-	return token
-}
-
-func isUsableGitHubToken(token string) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	//nolint:gosec // gh is a trusted fixed binary; no user input in args.
-	cmd := exec.CommandContext(ctx, "gh", "auth", "status", "--hostname", "github.com")
-	cmd.Env = append(withoutGitHubTokenEnv(os.Environ()), "GH_TOKEN="+token, "GITHUB_TOKEN="+token)
-	return cmd.Run() == nil
+	return strings.TrimSpace(string(out))
 }
 
 func isInvalidGitHubTokenError(err error) bool {

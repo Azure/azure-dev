@@ -207,28 +207,40 @@ extends:
               - bash: |
                   set -euo pipefail
                   api="$(System.CollectionUri)$(System.TeamProjectId)/_apis/build"
-                  if ! builds=$(curl -fsS \
-                      -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" \
-                      "$api/builds?definitions=$(System.DefinitionId)&statusFilter=completed&queryOrder=finishTimeDescending&%24top=50&api-version=7.1"); then
-                    echo "##vso[task.logissue type=warning]Unable to query previous sample cache builds; continuing uncached."
-                    exit 0
-                  fi
-                  for build_id in $(echo "$builds" | jq -r '.value[].id'); do
-                    if ! artifacts=$(curl -fsS \
-                        -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" \
-                        "$api/builds/$build_id/artifacts?api-version=7.1"); then
-                      echo "##vso[task.logissue type=warning]Unable to inspect sample cache artifacts for build $build_id; trying an older build."
-                      continue
+                  continuation_token=""
+                  headers=$(mktemp)
+                  trap 'rm -f "$headers"' EXIT
+                  while true; do
+                    url="$api/builds?definitions=$(System.DefinitionId)&statusFilter=completed&queryOrder=finishTimeDescending&%24top=100&api-version=7.1"
+                    if [ -n "$continuation_token" ]; then
+                      url="$url&continuationToken=$continuation_token"
                     fi
-                    artifact_name=$(echo "$artifacts" | jq -r '
-                      [.value[].name |
-                        select(. == "azure-ai-agents-template-cache" or
-                          startswith("azure-ai-agents-template-cache-"))][0] // empty')
-                    if [ -n "$artifact_name" ]; then
-                      echo "##vso[task.setvariable variable=SampleCacheBuildId]$build_id"
-                      echo "##vso[task.setvariable variable=SampleCacheArtifactName]$artifact_name"
-                      echo "Using sample cache from build $build_id."
+                    if ! builds=$(curl -fsS -D "$headers" \
+                        -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" "$url"); then
+                      echo "##vso[task.logissue type=warning]Unable to query previous sample cache builds; continuing uncached."
                       exit 0
+                    fi
+                    for build_id in $(echo "$builds" | jq -r '.value[].id'); do
+                      if ! artifacts=$(curl -fsS \
+                          -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" \
+                          "$api/builds/$build_id/artifacts?api-version=7.1"); then
+                        echo "##vso[task.logissue type=warning]Unable to inspect sample cache artifacts for build $build_id; trying an older build."
+                        continue
+                      fi
+                      artifact_name=$(echo "$artifacts" | jq -r '
+                        [.value[].name |
+                          select(. == "azure-ai-agents-template-cache" or
+                            startswith("azure-ai-agents-template-cache-"))][0] // empty')
+                      if [ -n "$artifact_name" ]; then
+                        echo "##vso[task.setvariable variable=SampleCacheBuildId]$build_id"
+                        echo "##vso[task.setvariable variable=SampleCacheArtifactName]$artifact_name"
+                        echo "Using sample cache from build $build_id."
+                        exit 0
+                      fi
+                    done
+                    continuation_token=$(awk 'tolower($1) == "x-ms-continuationtoken:" {gsub("\r", "", $2); print $2}' "$headers")
+                    if [ -z "$continuation_token" ]; then
+                      break
                     fi
                   done
                   echo "No previous sample cache artifact was found."

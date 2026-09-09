@@ -77,7 +77,7 @@ func refreshTemplateCache(pointer, staging string) error {
 func useCachedTemplateOnDownloadError(pointer, staging string, downloadErr error) error {
 	restored, err := restoreCachedTemplate(pointer, staging)
 	if err != nil {
-		return fmt.Errorf("%w; cached sample fallback also failed: %v", downloadErr, err)
+		return fmt.Errorf("%w; cached sample fallback also failed: %w", downloadErr, err)
 	}
 	if !restored {
 		return downloadErr

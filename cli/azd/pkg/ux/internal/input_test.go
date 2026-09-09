@@ -12,6 +12,7 @@ import (
 	"time"
 
 	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
+	"github.com/mattn/go-isatty"
 	"github.com/stretchr/testify/require"
 )
 
@@ -284,6 +285,10 @@ func TestReadInput_NonNilConfig(t *testing.T) {
 }
 
 func TestReadInput_ContextCancellationReturnsErrCancelled(t *testing.T) {
+	if isatty.IsTerminal(os.Stdin.Fd()) || isatty.IsCygwinTerminal(os.Stdin.Fd()) {
+		t.Skip("requires non-TTY stdin to avoid terminal mode side effects")
+	}
+
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // pre-cancel
 

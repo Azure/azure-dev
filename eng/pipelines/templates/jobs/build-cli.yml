@@ -162,7 +162,9 @@ jobs:
           MSBUILDDISABLENODEREUSE: 1
 
       - ${{ if eq(parameters.OS, 'linux') }}:
-        - pwsh: go test -race -short ./...
+        - pwsh: |
+            $env:CGO_ENABLED = "1"
+            go test -race -short ./...
           workingDirectory: cli/azd
           displayName: Run race detector tests
 

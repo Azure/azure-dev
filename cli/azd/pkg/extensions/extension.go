@@ -40,7 +40,7 @@ type Extension struct {
 	errorMu       sync.Mutex // guards reportedError
 }
 
-// init initializes the extension's buffers and signals.
+// ensureInit initializes the extension's buffers and signals once.
 func (e *Extension) ensureInit() {
 	e.initOnce.Do(func() {
 		e.stdin = &bytes.Buffer{}

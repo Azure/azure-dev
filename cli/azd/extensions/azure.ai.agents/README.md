@@ -242,13 +242,14 @@ Details:
 
 Prompt voice agents can declare Foundry-side telephony bindings in `azure.yaml`.
 This lets `azd deploy` bind an existing phone-provider route to the deployed
-agent. Telephony is only supported for `kind: prompt-voice` services.
+agent. Telephony is only supported for voice services. Use `kind: voice` for new
+managed voice agents; `kind: prompt-voice` remains a compatibility alias.
 
 ```yaml
 services:
   support-voice:
     host: azure.ai.agent
-    kind: prompt-voice
+    kind: voice
     name: support-voice
     model:
       id: gpt-realtime

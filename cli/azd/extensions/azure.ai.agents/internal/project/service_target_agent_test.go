@@ -77,6 +77,18 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_BYOM(t *testing.T) {
 	require.Equal(t, "telephony-twilio", got.Telephony.Bindings[0].Connection)
 }
 
+func TestAgentDefinitionFromStruct_RejectsTelephonyOnHosted(t *testing.T) {
+	props, err := structpb.NewStruct(map[string]any{
+		"kind":      "hosted",
+		"name":      "hosted-agent",
+		"telephony": map[string]any{"bindings": []any{}},
+	})
+	require.NoError(t, err)
+
+	_, _, err = agentDefinitionFromStruct(props, "repo.azurecr.io/agent:latest", nil)
+	require.ErrorContains(t, err, "telephony bindings are only supported")
+}
+
 func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgent(t *testing.T) {
 	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
 		AgentDefinition: agent_yaml.AgentDefinition{
@@ -283,6 +295,23 @@ func TestTelephonyBindingMatches_ServiceOmittedFields(t *testing.T) {
 
 	remote.ID = "azure-communication-service:28:orgid:00000000-0000-0000-0000-000000000002"
 	require.False(t, telephonyBindingMatches(remote, desired))
+}
+
+func TestTelephonyBindingMatches_NumericTransferTargets(t *testing.T) {
+	desired := &agent_api.TelephonyBindingRequest{
+		Provider:        "twilio",
+		Identifier:      "+14255550123",
+		ConnectionName:  "telephony-twilio",
+		TransferTargets: []map[string]any{{"digits": 1}},
+	}
+	remote := &agent_api.TelephonyBinding{
+		ID:              "twilio:%2B14255550123",
+		Provider:        "twilio",
+		Identifier:      "+14255550123",
+		ConnectionName:  "telephony-twilio",
+		TransferTargets: []map[string]any{{"digits": float64(1)}},
+	}
+	require.True(t, telephonyBindingMatches(remote, desired))
 }
 
 func TestDeployVoiceTelephonyBindings_CreateWhenMissing(t *testing.T) {

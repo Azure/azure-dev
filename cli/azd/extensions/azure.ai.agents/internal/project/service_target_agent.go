@@ -2703,10 +2703,7 @@ func telephonyBindingMatches(remote *agent_api.TelephonyBinding, desired *agent_
 	if remoteConnection != strings.TrimSpace(desired.ConnectionName) {
 		return false
 	}
-	return reflect.DeepEqual(
-		emptyTransferTargetsAsNil(remote.TransferTargets),
-		emptyTransferTargetsAsNil(desired.TransferTargets),
-	)
+	return jsonEquivalentTransferTargets(remote.TransferTargets, desired.TransferTargets)
 }
 
 func telephonyBindingConnection(remote *agent_api.TelephonyBinding) string {
@@ -2787,6 +2784,25 @@ func validateHostedVoiceTargetVersion(version *agent_api.AgentVersionObject) err
 		return fmt.Errorf("target metadata bridgeProtocolVersion must be 1.0")
 	}
 	return nil
+}
+
+func jsonEquivalentTransferTargets(left, right []map[string]any) bool {
+	left = emptyTransferTargetsAsNil(left)
+	right = emptyTransferTargetsAsNil(right)
+	leftJSON, leftErr := json.Marshal(left)
+	rightJSON, rightErr := json.Marshal(right)
+	if leftErr != nil || rightErr != nil {
+		return false
+	}
+	var leftValue any
+	var rightValue any
+	if err := json.Unmarshal(leftJSON, &leftValue); err != nil {
+		return false
+	}
+	if err := json.Unmarshal(rightJSON, &rightValue); err != nil {
+		return false
+	}
+	return reflect.DeepEqual(leftValue, rightValue)
 }
 
 func validateVoiceAgentDeployResponse(agentObject *agent_api.AgentObject) error {

@@ -825,6 +825,13 @@ func agentDefinitionFromStruct(
 			"move modelType: hosted_agent and targetAgent to a voice wrapper service",
 		)
 	}
+	if inline.Telephony != nil {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"telephony bindings are only supported on voice agents",
+			"move telephony to a service with kind: voice or kind: prompt-voice",
+		)
+	}
 
 	var cfg ServiceTargetAgentConfig
 	if err := UnmarshalStruct(s, &cfg); err != nil {

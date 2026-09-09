@@ -356,7 +356,7 @@
       },
       "then": {
         "properties": {
-          "kind": { "const": "prompt-voice" }
+          "kind": { "enum": ["voice", "prompt-voice"] }
         },
         "required": ["kind"]
       }

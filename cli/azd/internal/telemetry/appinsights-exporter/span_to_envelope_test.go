@@ -152,7 +152,7 @@ func assertAttributeInPropertiesOrMeasurement(
 	switch attrib.Value.Type() {
 	case attribute.BOOL, attribute.STRING:
 		assert.Contains(t, properties, string(attrib.Key))
-		assert.Equal(t, attrib.Value.Emit(), properties[string(attrib.Key)])
+		assert.Equal(t, attrib.Value.String(), properties[string(attrib.Key)])
 	case attribute.INT64:
 		assert.Contains(t, measurements, string(attrib.Key))
 		assert.Equal(t, float64(attrib.Value.AsInt64()), measurements[string(attrib.Key)])

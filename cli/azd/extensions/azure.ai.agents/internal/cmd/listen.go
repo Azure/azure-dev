@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"google.golang.org/protobuf/proto"
 )
 
 // configureExtensionHost wires the service target and event handlers on the
@@ -503,11 +504,13 @@ func resolveAgentServiceConfigWithProjectOverrides(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (*azdext.ServiceConfig, error) {
-	resolvedSvc := *svc
-	if err := project.ResolveServiceConfigInPlace(&resolvedSvc, projectRoot); err != nil {
+	// Resolve project-relative fields on an isolated protobuf copy so listen
+	// does not mutate the shared project service configuration.
+	resolvedSvc := proto.Clone(svc).(*azdext.ServiceConfig)
+	if err := project.ResolveServiceConfigInPlace(resolvedSvc, projectRoot); err != nil {
 		return nil, err
 	}
-	return &resolvedSvc, nil
+	return resolvedSvc, nil
 }
 
 func warnLegacySimpleTeamsArtifacts(proj *azdext.ProjectConfig, svc *azdext.ServiceConfig) {
@@ -535,7 +538,7 @@ func warnLegacySimpleTeamsArtifacts(proj *azdext.ProjectConfig, svc *azdext.Serv
 	))
 }
 
-// postdownHandler cleans up config store entries (sessions, conversations) for agent services
+// postdownHandler cleans up saved session, conversation, and background Response state for agent services
 // that were torn down. This is best-effort — failures are logged but do not block azd down.
 func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
 	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
@@ -551,8 +554,8 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 			continue
 		}
 
-		if cleanupAgentSessionState(ctx, azdClient, envName, svc.Name) {
-			fmt.Printf("Cleaned up saved session and conversation for agent %q\n", svc.Name)
+		if cleanupAgentState(ctx, azdClient, envName, svc.Name) {
+			fmt.Printf("Cleaned up saved session, conversation, and background Response for agent %q\n", svc.Name)
 		}
 	}
 
@@ -563,10 +566,10 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 	return nil
 }
 
-// cleanupAgentSessionState removes saved session and conversation IDs for a
+// cleanupAgentState removes saved session, conversation, and background Response state for a
 // single agent service. Returns true if cleanup succeeded, false otherwise.
 // Shared by postdownHandler and delete command.
-func cleanupAgentSessionState(ctx context.Context, azdClient *azdext.AzdClient, envName, serviceName string) bool {
+func cleanupAgentState(ctx context.Context, azdClient *azdext.AzdClient, envName, serviceName string) bool {
 	serviceKey := toServiceKey(serviceName)
 
 	endpointResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
@@ -578,14 +581,21 @@ func cleanupAgentSessionState(ctx context.Context, azdClient *azdext.AzdClient, 
 	}
 
 	agentKey := buildRemoteAgentKeyFromEndpoint(endpointResp.Value)
+	return cleanupAgentStateForKey(ctx, azdClient, agentKey)
+}
 
+func cleanupAgentStateForKey(ctx context.Context, azdClient *azdext.AzdClient, agentKey string) bool {
 	var failed bool
 	if err := deleteContextValue(ctx, azdClient, "sessions", agentKey); err != nil {
-		log.Printf("cleanupAgentSessionState: failed to clean sessions for %s: %v", agentKey, err)
+		log.Printf("cleanupAgentState: failed to clean sessions for %s: %v", agentKey, err)
 		failed = true
 	}
 	if err := deleteContextValue(ctx, azdClient, "conversations", agentKey); err != nil {
-		log.Printf("cleanupAgentSessionState: failed to clean conversations for %s: %v", agentKey, err)
+		log.Printf("cleanupAgentState: failed to clean conversations for %s: %v", agentKey, err)
+		failed = true
+	}
+	if err := newUserConfigResponseStateStore(azdClient).Delete(ctx, agentKey); err != nil {
+		log.Printf("cleanupAgentState: failed to clean background Response for %s: %v", agentKey, err)
 		failed = true
 	}
 

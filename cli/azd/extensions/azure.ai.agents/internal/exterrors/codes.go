@@ -44,6 +44,8 @@ const (
 	CodeInvalidPositionalArg      = "invalid_positional_arg"
 )
 
+const CodeInvalidBackgroundResponseState = "invalid_background_response_state"
+
 // CodeInvalidEnvironmentVariableName identifies a hosted-agent
 // environment variable name rejected by the service contract.
 const CodeInvalidEnvironmentVariableName = "invalid_environment_variable_name"
@@ -68,6 +70,8 @@ const (
 	CodeGitHubDownloadFailed      = "github_download_failed"
 	CodePromptFailed              = "prompt_failed"
 )
+
+const CodeResponseStateUnavailable = "response_state_unavailable"
 
 // Error codes for ACR dependency errors.
 const (
@@ -115,6 +119,7 @@ const (
 const (
 	CodeAgentNotFound          = "agent_not_found"
 	CodeAgentHasActiveSessions = "agent_has_active_sessions"
+	CodeDeleteRequiresForce    = "delete_requires_force"
 )
 
 // Error codes for file operation errors.
@@ -216,6 +221,8 @@ const (
 	OpPackTeamsApp           = "pack_teams_app"
 	OpPublishTeamsApp        = "publish_teams_app"
 )
+
+const OpReadBackgroundResponseState = "read_background_response_state"
 
 // Error codes for eval and optimize operations.
 const (

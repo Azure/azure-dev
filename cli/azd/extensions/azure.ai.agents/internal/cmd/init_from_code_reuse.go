@@ -156,7 +156,7 @@ func loadAgentDefinitionFile(path string) (*agent_yaml.ContainerAgent, error) {
 				"fix the manifest schema and retry",
 		)
 	}
-	if kind, _ := top["kind"].(string); kind == string(agent_yaml.AgentKindPromptVoice) {
+	if kind, _ := top["kind"].(string); agent_yaml.IsVoiceAgentKind(agent_yaml.AgentKind(kind)) {
 		return nil, fmt.Errorf(
 			"prompt-voice agent definitions cannot be reused through the current-code path; " +
 				"run 'azd ai agent init' and choose 'Create a prompt voice agent', or use " +

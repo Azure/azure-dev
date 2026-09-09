@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +24,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -1474,7 +1476,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		fmt.Println("Loaded custom service target configuration")
 	}
 	addAgentToolboxDependency(serviceTargetConfig, agentDef.Toolbox)
-	activityProfile, err := ResolveActivityProfileWithSettings(agentDef, serviceTargetConfig.Activity)
+	activityProfile, err := ResolveActivityProfileForDeploy(agentDef, serviceTargetConfig.Activity)
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
@@ -1528,14 +1530,15 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, err
 	}
 
+	projectEndpoint := azdEnv["FOUNDRY_PROJECT_ENDPOINT"]
+	agentClient := agent_api.NewAgentClient(
+		projectEndpoint,
+		p.credential,
+	)
+
 	// Poll until agent version is active
 	if result.agentVersion.Status != "active" {
 		progress("Agent version created; waiting for activation")
-		projectEndpoint := azdEnv["FOUNDRY_PROJECT_ENDPOINT"]
-		agentClient := agent_api.NewAgentClient(
-			projectEndpoint,
-			p.credential,
-		)
 		polledVersion, pollErr := p.waitForAgentActive(
 			ctx,
 			agentClient,
@@ -1551,6 +1554,29 @@ func (p *AgentServiceTargetProvider) Deploy(
 	} else {
 		fmt.Fprintf(os.Stderr, "Agent version %s is already active.\n", result.agentVersion.Version)
 	}
+
+	// Read the deployed version so post-deploy behavior uses the service-side
+	// Digital Worker classification rather than only the local authoring intent.
+	deployedVersion, err := agentClient.GetAgentVersion(
+		ctx,
+		result.agentName,
+		result.agentVersion.Version,
+		agent_api.AgentEndpointAPIVersion,
+		true,
+	)
+	if err != nil {
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpGetAgent)
+	}
+	result.agentVersion = deployedVersion
+	activityProfile, err = ResolveDeployedActivityProfile(activityProfile, deployedVersion.DigitalWorkerType)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			err.Error(),
+			digitalWorkerTypeMismatchSuggestion(),
+		)
+	}
+	ensureActivityEndpointAuthSchemeForProfile(result.request, activityProfile)
 
 	// Patch agent-level endpoint/card fields
 	if result.request.AgentEndpoint != nil || result.request.AgentCard != nil {
@@ -2166,6 +2192,19 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	}
 
 	applyAgentMetadata(request)
+	if foundryAgentConfig != nil &&
+		foundryAgentConfig.Activity != nil &&
+		foundryAgentConfig.Activity.DigitalWorkerType == agent_api.DigitalWorkerTypeM365 {
+		request.DigitalWorkerType = agent_api.DigitalWorkerTypeM365
+	}
+	_, err = ResolveActivityProfileForDeploy(agentDef, foundryAgentConfig.Activity)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentRequest,
+			fmt.Sprintf("failed to resolve Activity configuration: %s", err),
+			"check the activity configuration in azure.yaml",
+		)
+	}
 
 	// Default to "responses" protocol when none specified in agent.yaml.
 	protocols := agentDef.Protocols
@@ -2180,6 +2219,19 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		request:         request,
 		protocols:       protocols,
 	}, nil
+}
+
+func ensureActivityEndpointAuthSchemeForProfile(
+	request *agent_api.CreateAgentRequest,
+	profile ActivityProfile,
+) {
+	if !profile.IsActivity {
+		return
+	}
+	if request.AgentEndpoint == nil {
+		return
+	}
+	EnsureActivityEndpointAuthSchemeForProfile(request.AgentEndpoint, profile)
 }
 
 // deployResult holds the intermediate results from a deploy method (code or container)
@@ -2383,13 +2435,48 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 ) (*azdext.ServiceDeployResult, error) {
 	progress("Deploying voice agent")
 
-	request, err := agent_yaml.CreateVoiceAgentAPIRequest(va)
+	var request *agent_api.CreateAgentRequest
+	var hostedTarget *hostedVoiceTarget
+	var err error
+	if va.ModelType == agent_yaml.VoiceModelTypeHostedAgent {
+		if va.TargetAgent != nil && p.dependencyEnabled != nil {
+			enabled, enabledErr := p.dependencyEnabled(ctx, strings.TrimSpace(va.TargetAgent.Service))
+			if enabledErr != nil {
+				return nil, enabledErr
+			}
+			if !enabled {
+				return nil, exterrors.Dependency(
+					exterrors.CodeFoundryDependencyNotReady,
+					fmt.Sprintf("hosted voice target service %q is disabled", va.TargetAgent.Service),
+					"enable the target hosted agent service or remove the voice wrapper",
+				)
+			}
+		}
+		hostedTarget, err = resolveHostedVoiceTarget(
+			serviceConfig, va.TargetAgent, p.projectServices, azdEnv, p.projectPath,
+		)
+		if err != nil {
+			return nil, exterrors.Dependency(
+				exterrors.CodeFoundryDependencyNotReady,
+				fmt.Sprintf("cannot resolve hosted voice target: %s", err),
+				"deploy the target hosted agent in the same project, then retry",
+			)
+		}
+		request, err = agent_yaml.CreateHostedVoiceAgentAPIRequest(va, agent_api.VoiceTargetAgentReference{
+			Name: hostedTarget.AgentName, Version: hostedTarget.AgentVersion,
+		})
+	} else {
+		request, err = agent_yaml.CreateVoiceAgentAPIRequest(va)
+	}
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			fmt.Sprintf("invalid voice agent definition: %s", err),
 			"fix the agent definition in azure.yaml and re-run `azd deploy`",
 		)
+	}
+	if err := validateHostedVoiceWrapperName(request.Name, hostedTarget); err != nil {
+		return nil, err
 	}
 
 	projectEndpoint := azdEnv["FOUNDRY_PROJECT_ENDPOINT"]
@@ -2403,6 +2490,12 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	}
 
 	agentClient := agent_api.NewAgentClient(projectEndpoint, p.credential)
+	if hostedTarget != nil {
+		progress("Validating hosted voice target")
+		if err := fetchAndValidateHostedVoiceTarget(ctx, hostedTarget, agentClient.GetAgentVersion); err != nil {
+			return nil, err
+		}
+	}
 
 	serviceKey := p.getServiceKey(serviceConfig.Name)
 	agentObject, deployOp, err := p.deployVoiceAgentRemote(
@@ -2439,6 +2532,8 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 		{fmt.Sprintf("AGENT_%s_NAME", serviceKey), agentObject.Name},
 		{versionKey, versionValue},
 		{fmt.Sprintf("AGENT_%s_PROJECT_ENDPOINT", serviceKey), strings.TrimRight(projectEndpoint, "/")},
+		{fmt.Sprintf("AGENT_%s_VOICE_TARGET_NAME", serviceKey), hostedVoiceTargetName(hostedTarget)},
+		{fmt.Sprintf("AGENT_%s_VOICE_TARGET_VERSION", serviceKey), hostedVoiceTargetVersion(hostedTarget)},
 		{endpointKey, baseEndpoint},
 	} {
 		if _, setErr := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
@@ -2541,6 +2636,42 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 	return nil
 }
 
+func validateHostedVoiceWrapperName(wrapperName string, target *hostedVoiceTarget) error {
+	if target == nil || !strings.EqualFold(wrapperName, target.AgentName) {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidAgentManifest,
+		fmt.Sprintf("hosted voice wrapper %q cannot use the same Foundry name as its target", wrapperName),
+		"choose a distinct name for the voice wrapper service",
+	)
+}
+
+type getAgentVersionFunc func(
+	context.Context, string, string, string, bool,
+) (*agent_api.AgentVersionObject, error)
+
+func fetchAndValidateHostedVoiceTarget(
+	ctx context.Context,
+	target *hostedVoiceTarget,
+	getVersion getAgentVersionFunc,
+) error {
+	version, err := getVersion(
+		ctx, target.AgentName, target.AgentVersion, agent_api.AgentEndpointAPIVersion, false,
+	)
+	if err != nil {
+		return exterrors.ServiceFromAzure(err, "getting hosted voice target version")
+	}
+	if err := validateHostedVoiceTargetVersion(version); err != nil {
+		return exterrors.Dependency(
+			exterrors.CodeFoundryDependencyNotReady,
+			fmt.Sprintf("hosted voice target is not compatible: %s", err),
+			"deploy an active Voice Bridge 1.0 hosted agent with invocations_ws/1.0.0, then retry",
+		)
+	}
+	return nil
+}
+
 func telephonyWireProvider(provider string) string {
 	switch strings.TrimSpace(provider) {
 	case "acs":
@@ -2607,6 +2738,57 @@ func emptyTransferTargetsAsNil(targets []map[string]any) []map[string]any {
 	return targets
 }
 
+func hostedVoiceTargetName(target *hostedVoiceTarget) string {
+	if target == nil {
+		return ""
+	}
+	return target.AgentName
+}
+
+func hostedVoiceTargetVersion(target *hostedVoiceTarget) string {
+	if target == nil {
+		return ""
+	}
+	return target.AgentVersion
+}
+
+func validateHostedVoiceTargetVersion(version *agent_api.AgentVersionObject) error {
+	if version == nil {
+		return fmt.Errorf("target version response is empty")
+	}
+	if !strings.EqualFold(version.Status, "active") {
+		return fmt.Errorf("target %s:%s has status %q, expected active", version.Name, version.Version, version.Status)
+	}
+	definitionJSON, err := json.Marshal(version.Definition)
+	if err != nil {
+		return fmt.Errorf("reading target definition: %w", err)
+	}
+	var definition agent_api.HostedAgentDefinition
+	if err := json.Unmarshal(definitionJSON, &definition); err != nil {
+		return fmt.Errorf("reading target definition: %w", err)
+	}
+	if definition.Kind != agent_api.AgentKindHosted {
+		return fmt.Errorf("target kind is %q, expected hosted", definition.Kind)
+	}
+	compatibleProtocol := false
+	for _, protocol := range definition.ProtocolVersions {
+		if protocol.Protocol == agent_api.AgentProtocolInvocationsWS && protocol.Version == "1.0.0" {
+			compatibleProtocol = true
+			break
+		}
+	}
+	if !compatibleProtocol {
+		return fmt.Errorf("target does not declare invocations_ws/1.0.0")
+	}
+	if !strings.EqualFold(strings.TrimSpace(version.Metadata["voiceLiveCompatible"]), "true") {
+		return fmt.Errorf("target metadata voiceLiveCompatible must be true")
+	}
+	if strings.TrimSpace(version.Metadata["bridgeProtocolVersion"]) != "1.0" {
+		return fmt.Errorf("target metadata bridgeProtocolVersion must be 1.0")
+	}
+	return nil
+}
+
 func validateVoiceAgentDeployResponse(agentObject *agent_api.AgentObject) error {
 	if agentObject == nil {
 		return fmt.Errorf("malformed voice agent service response: missing agent object")
@@ -2638,7 +2820,9 @@ func (p *AgentServiceTargetProvider) deployVoiceAgentRemote(
 	if shouldUpdate {
 		progress("Updating voice agent using unified API")
 		updateRequest := &agent_api.UpdateAgentRequest{
-			CreateAgentVersionRequest: request.CreateAgentVersionRequest,
+			Description: request.Description,
+			Metadata:    request.Metadata,
+			Definition:  request.Definition,
 		}
 		agentObject, err := agentClient.UpdateVoiceAgent(
 			ctx, request.Name, updateRequest, agent_api.AgentEndpointAPIVersion, overriddenHost,
@@ -3096,9 +3280,10 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Build the metadata for multipart upload
 	versionRequest := &agent_api.CreateAgentVersionRequest{
-		Description: prep.request.Description,
-		Metadata:    prep.request.Metadata,
-		Definition:  prep.request.Definition,
+		Description:       prep.request.Description,
+		Metadata:          prep.request.Metadata,
+		Definition:        prep.request.Definition,
+		DigitalWorkerType: prep.request.DigitalWorkerType,
 	}
 
 	// Create agent client
@@ -3109,7 +3294,16 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Check if agent already exists (GET /agents/{name})
 	progress("Checking existing agent")
-	_, getErr := agentClient.GetAgent(ctx, agentDef.Name, agent_api.AgentEndpointAPIVersion)
+	localProfile := ResolveActivityProfile(agentDef)
+	if versionRequest.DigitalWorkerType == agent_api.DigitalWorkerTypeM365 {
+		localProfile = ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker}
+	}
+	existingAgent, getErr := agentClient.GetAgent(
+		ctx,
+		agentDef.Name,
+		agent_api.AgentEndpointAPIVersion,
+		localProfile.IsActivity,
+	)
 	var agentResp *agent_api.AgentObject
 
 	if getErr != nil {
@@ -3127,11 +3321,23 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 			return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 		}
 	} else {
+		if localProfile.IsActivity {
+			if _, err := ResolveDeployedActivityProfile(localProfile, existingAgent.DigitalWorkerType); err != nil {
+				return nil, exterrors.Validation(
+					exterrors.CodeInvalidServiceConfig,
+					err.Error(),
+					"delete and recreate the agent so its immutable digital_worker_type matches "+
+						"activity.digitalWorkerType",
+				)
+			}
+		}
 		// Agent exists — update
 		progress("Updating existing agent from code package")
 		writeExistingAgentVersionWarning(agentDef.Name)
+		updateVersionRequest := *versionRequest
+		updateVersionRequest.DigitalWorkerType = ""
 		agentResp, err = agentClient.UpdateAgentFromZip(
-			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
+			ctx, agentDef.Name, &updateVersionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
 		)
 		if err != nil {
 			return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
@@ -3467,7 +3673,7 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 		attempt++
 		progress(fmt.Sprintf("Polling agent status (%d/%d)", attempt, maxAttempts))
 
-		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agent_api.AgentEndpointAPIVersion)
+		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agent_api.AgentEndpointAPIVersion, false)
 		if err != nil {
 			lastPollErr = err
 			fmt.Fprintf(os.Stderr, "  Warning: poll failed: %s\n", err)
@@ -3549,13 +3755,25 @@ func (p *AgentServiceTargetProvider) createAgent(
 		p.credential,
 	)
 
-	writeExistingAgentVersionWarningIfPresent(ctx, agentClient, request.Name)
+	updatingExisting, err := reconcileCreateRequestWithDeployedDigitalWorkerType(
+		ctx,
+		agentClient,
+		request,
+		agent_api.AgentEndpointAPIVersion,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if updatingExisting {
+		writeExistingAgentVersionWarning(request.Name)
+	}
 
 	// Extract CreateAgentVersionRequest from CreateAgentRequest
 	versionRequest := &agent_api.CreateAgentVersionRequest{
-		Description: request.Description,
-		Metadata:    request.Metadata,
-		Definition:  request.Definition,
+		Description:       request.Description,
+		Metadata:          request.Metadata,
+		Definition:        request.Definition,
+		DigitalWorkerType: request.DigitalWorkerType,
 	}
 
 	// Create agent version
@@ -3569,6 +3787,48 @@ func (p *AgentServiceTargetProvider) createAgent(
 	fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)
 
 	return agentVersionResponse, nil
+}
+
+func reconcileCreateRequestWithDeployedDigitalWorkerType(
+	ctx context.Context,
+	agentClient *agent_api.AgentClient,
+	request *agent_api.CreateAgentRequest,
+	apiVersion string,
+) (bool, error) {
+	localProfile := activityProfileFromCreateRequest(request)
+	existingAgent, getErr := agentClient.GetAgent(ctx, request.Name, apiVersion, localProfile.IsActivity)
+	if getErr != nil {
+		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok ||
+			respErr.StatusCode != http.StatusNotFound {
+			return false, exterrors.ServiceFromAzure(getErr, exterrors.OpCreateAgent)
+		}
+		return false, nil
+	}
+
+	if localProfile.IsActivity {
+		if _, err := ResolveDeployedActivityProfile(localProfile, existingAgent.DigitalWorkerType); err != nil {
+			return true, exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				err.Error(),
+				"delete and recreate the agent so its immutable digital_worker_type matches "+
+					"activity.digitalWorkerType",
+			)
+		}
+	}
+
+	request.DigitalWorkerType = ""
+	return true, nil
+}
+
+func activityProfileFromCreateRequest(request *agent_api.CreateAgentRequest) ActivityProfile {
+	if request.DigitalWorkerType == agent_api.DigitalWorkerTypeM365 {
+		return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker}
+	}
+	if request.AgentEndpoint != nil &&
+		slices.Contains(request.AgentEndpoint.Protocols, agent_api.AgentEndpointProtocolActivity) {
+		return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple}
+	}
+	return ActivityProfile{}
 }
 
 // displayAgentInfo displays information about the agent being deployed
@@ -3675,19 +3935,14 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 		)
 	}
 	if activityProfile.UseCase == ActivityUseCaseDigitalWorker {
-		if activitySettings == nil || activitySettings.Publish == nil {
-			return fmt.Errorf("Digital Worker publish configuration is missing")
-		}
 		blueprint := agentVersionResponse.Blueprint
-		if blueprint == nil || strings.TrimSpace(blueprint.ClientID) == "" {
-			return fmt.Errorf("Digital Worker agent version is missing Blueprint client ID")
+		if blueprint != nil && strings.TrimSpace(blueprint.ClientID) != "" {
+			envVars = append(envVars, azdext.SetEnvRequest{
+				EnvName: p.env.Name,
+				Key:     envkey.AgentBlueprintClientID(serviceConfig.Name),
+				Value:   blueprint.ClientID,
+			})
 		}
-
-		envVars = append(envVars, azdext.SetEnvRequest{
-			EnvName: p.env.Name,
-			Key:     envkey.AgentBlueprintClientID(serviceConfig.Name),
-			Value:   blueprint.ClientID,
-		})
 	}
 
 	for i := range envVars {

@@ -1,0 +1,59 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext";
+option csharp_namespace = "Microsoft.Azd";
+
+// ErrorOrigin indicates where an error originated from.
+// This helps with telemetry categorization and error handling strategies.
+enum ErrorOrigin {
+  ERROR_ORIGIN_UNSPECIFIED = 0;  // Default/unknown origin
+  ERROR_ORIGIN_LOCAL = 1;        // Local errors
+  ERROR_ORIGIN_SERVICE = 2;      // HTTP/gRPC upstream service errors
+  ERROR_ORIGIN_TOOL = 3;         // Subprocess or external tool errors
+}
+
+// ServiceErrorDetail contains structured service error information.
+message ServiceErrorDetail {
+  string error_code = 1;
+  int32 status_code = 2;
+  string service_name = 3;
+}
+
+// LocalErrorDetail contains structured local error information.
+message LocalErrorDetail {
+  string code = 1;
+  string category = 2;
+  repeated string cause_types = 3;
+}
+
+// ToolErrorDetail contains structured external tool failure information.
+message ToolErrorDetail {
+  string tool_name = 1;
+  string failure_kind = 2;
+  optional int64 exit_code = 3;
+}
+
+// ErrorLink contains a reference link with an optional title.
+message ErrorLink {
+  string url = 1;
+  string title = 2;
+}
+
+// ExtensionError carries structured error information from an extension.
+message ExtensionError {
+  reserved 1, 3;
+  string message = 2;
+  ErrorOrigin origin = 4;
+  string suggestion = 5;
+  repeated ErrorLink links = 6;
+
+  oneof source {
+    ServiceErrorDetail service_error = 10;
+    LocalErrorDetail local_error = 11;
+    ToolErrorDetail tool_error = 12;
+  }
+}

@@ -51,8 +51,9 @@ type InteractiveInfo struct {
 	// CI is true if a CI environment was detected (CI, GITHUB_ACTIONS,
 	// TF_BUILD, JENKINS_URL, etc.).
 	CI bool
-	// Agent is true if an AI coding agent was detected (CLAUDE_CODE,
-	// GITHUB_COPILOT, etc.) — interactions should be non-interactive.
+	// Agent is true if an AI coding agent was detected (CLAUDECODE,
+	// COPILOT_CLI, etc.). This identifies the process environment but
+	// does not override terminal capabilities.
 	Agent bool
 }
 
@@ -62,9 +63,8 @@ type InteractiveInfo struct {
 //  2. stdout is a TTY
 //  3. AZD_NO_PROMPT is not set
 //  4. Not in CI
-//  5. Not invoked by an AI agent
 func (i InteractiveInfo) CanPrompt() bool {
-	return i.StdinTTY && i.StdoutTTY && !i.NoPrompt && !i.CI && !i.Agent
+	return i.StdinTTY && i.StdoutTTY && !i.NoPrompt && !i.CI
 }
 
 // CanColorize reports whether it is safe to use ANSI color/style codes in
@@ -87,7 +87,8 @@ func (i InteractiveInfo) CanColorize() bool {
 //   - AZD_NO_PROMPT environment variable
 //   - CI environment variables: CI, GITHUB_ACTIONS, TF_BUILD, JENKINS_URL,
 //     GITLAB_CI, CIRCLECI, TRAVIS, BUILDKITE, CODEBUILD_BUILD_ID
-//   - Agent environment variables: CLAUDE_CODE, GITHUB_COPILOT_CLI
+//   - Agent environment variables: CLAUDECODE, COPILOT_CLI, and other known
+//     agent markers
 //
 // Platform behavior:
 //   - All platforms: Uses os.File.Stat() ModeCharDevice to detect TTY.
@@ -100,7 +101,7 @@ func DetectInteractive() InteractiveInfo {
 		StderrTTY: IsInteractiveTerminal(os.Stderr),
 		NoPrompt:  isNoPromptEnv(),
 		CI:        isCIEnv(),
-		Agent:     isAgentEnv(),
+		Agent:     detectAgentEnv(),
 	}
 
 	switch {
@@ -156,24 +157,41 @@ func isCIEnv() bool {
 	return false
 }
 
-// agentEnvVars lists environment variables that indicate AI coding agents.
-var agentEnvVars = []string{
-	"CLAUDE_CODE",
-	"CLAUDE_CODE_ENTRYPOINT",
-	"GITHUB_COPILOT_CLI",
-	"GH_COPILOT",
-	"GEMINI_CLI",
-	"GEMINI_CLI_NO_RELAUNCH",
-	"OPENCODE",
-	"AZURE_DEV_AGENT_TYPE",
+type agentEnvPattern struct {
+	envVar        string
+	expectedValue string
 }
 
-// isAgentEnv reports whether the process was invoked by an AI coding agent.
-func isAgentEnv() bool {
-	for _, key := range agentEnvVars {
-		if v := os.Getenv(key); v != "" {
-			return true
+// agentEnvPatterns lists environment variables that indicate AI coding agents.
+var agentEnvPatterns = []agentEnvPattern{
+	{envVar: "AI_AGENT", expectedValue: "github_copilot_app_agent"},
+	{envVar: "AI_AGENT", expectedValue: "github_copilot_vscode_agent"},
+	{envVar: "AI_AGENT", expectedValue: "github_copilot_cloud_agent"},
+	{envVar: "AI_AGENT", expectedValue: "pi"},
+	{envVar: "CODEX_INTERNAL_ORIGINATOR_OVERRIDE", expectedValue: "Codex Desktop"},
+	{envVar: "CODEX_CI", expectedValue: "1"},
+	{envVar: "CODEX_THREAD_ID"},
+	{envVar: "CODEX_SESSION_ID"},
+	{envVar: "CURSOR_AGENT", expectedValue: "1"},
+	{envVar: "CURSOR_CONVERSATION_ID"},
+	{envVar: "CLAUDECODE", expectedValue: "1"},
+	{envVar: "COPILOT_CLI"},
+	{envVar: "GEMINI_CLI"},
+	{envVar: "GEMINI_CLI_NO_RELAUNCH"},
+	{envVar: "OPENCODE"},
+}
+
+// detectAgentEnv reports whether an AI coding agent was detected.
+func detectAgentEnv() bool {
+	for _, pattern := range agentEnvPatterns {
+		value, exists := os.LookupEnv(pattern.envVar)
+		if !exists || value == "" ||
+			(pattern.expectedValue != "" && value != pattern.expectedValue) {
+			continue
 		}
+
+		return true
 	}
+
 	return false
 }

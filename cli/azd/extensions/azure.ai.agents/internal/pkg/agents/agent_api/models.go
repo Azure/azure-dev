@@ -75,6 +75,14 @@ const (
 	AgentKindVoice AgentKind = "voice"
 )
 
+// DigitalWorkerType identifies the service-side Digital Worker classification.
+type DigitalWorkerType string
+
+const (
+	// DigitalWorkerTypeM365 is a Microsoft 365 Digital Worker.
+	DigitalWorkerTypeM365 DigitalWorkerType = "m365"
+)
+
 // AgentEventType represents the types of events that can be handled
 type AgentEventType string
 
@@ -297,7 +305,7 @@ type ContainerConfigurationAPI struct {
 // its own defaults.
 type SessionConfigurationAPI struct {
 	// IdleTimeoutSeconds maps to session_configuration.idle_timeout_seconds. Valid
-	// range is 300–3600 (inclusive). When the field is unset the whole
+	// range is 120–3600 (inclusive). When the field is unset the whole
 	// session_configuration block is omitted and the service default (900) applies.
 	IdleTimeoutSeconds int `json:"idle_timeout_seconds"`
 }
@@ -355,7 +363,16 @@ type VoiceModelType string
 const (
 	VoiceModelTypeManaged      VoiceModelType = "managed"
 	VoiceModelTypeSelfDeployed VoiceModelType = "self_deployed"
+	VoiceModelTypeHostedAgent  VoiceModelType = "hosted_agent"
 )
+
+// VoiceTargetAgentReference is the data-plane target_agent object on a managed
+// voice wrapper. Name identifies the hosted agent that receives Voice Bridge
+// turns; Version optionally pins the wrapper to one immutable hosted version.
+type VoiceTargetAgentReference struct {
+	Name    string `json:"name"`
+	Version string `json:"version,omitempty"`
+}
 
 // VoiceAudioFormat describes a PCM audio stream format (e.g. audio/pcm @ 24 kHz).
 type VoiceAudioFormat struct {
@@ -438,21 +455,22 @@ type VoiceAudioConfig struct {
 // prompt voice agent. Its Kind is always AgentKindVoice ("voice").
 type VoiceAgentDefinition struct {
 	AgentDefinition
-	ModelType         VoiceModelType    `json:"model_type"`
-	Model             string            `json:"model"`
-	Instructions      string            `json:"instructions,omitempty"`
-	StructuredInputs  map[string]any    `json:"structured_inputs,omitempty"`
-	Audio             *VoiceAudioConfig `json:"audio,omitempty"`
-	OutputModalities  []string          `json:"output_modalities,omitempty"`
-	Store             *bool             `json:"store,omitempty"`
-	Tools             []map[string]any  `json:"tools,omitempty"`
-	Avatar            map[string]any    `json:"avatar,omitempty"`
-	Greeting          map[string]any    `json:"greeting,omitempty"`
-	Handoff           map[string]any    `json:"handoff,omitempty"`
-	ToolChoice        any               `json:"tool_choice,omitempty"`
-	ParallelToolCalls *bool             `json:"parallel_tool_calls,omitempty"`
-	MaxOutputTokens   any               `json:"max_output_tokens,omitempty"`
-	Include           []string          `json:"include,omitempty"`
+	ModelType         VoiceModelType             `json:"model_type"`
+	Model             string                     `json:"model,omitempty"`
+	TargetAgent       *VoiceTargetAgentReference `json:"target_agent,omitempty"`
+	Instructions      string                     `json:"instructions,omitempty"`
+	StructuredInputs  map[string]any             `json:"structured_inputs,omitempty"`
+	Audio             *VoiceAudioConfig          `json:"audio,omitempty"`
+	OutputModalities  []string                   `json:"output_modalities,omitempty"`
+	Store             *bool                      `json:"store,omitempty"`
+	Tools             []map[string]any           `json:"tools,omitempty"`
+	Avatar            map[string]any             `json:"avatar,omitempty"`
+	Greeting          map[string]any             `json:"greeting,omitempty"`
+	Handoff           map[string]any             `json:"handoff,omitempty"`
+	ToolChoice        any                        `json:"tool_choice,omitempty"`
+	ParallelToolCalls *bool                      `json:"parallel_tool_calls,omitempty"`
+	MaxOutputTokens   any                        `json:"max_output_tokens,omitempty"`
+	Include           []string                   `json:"include,omitempty"`
 }
 
 // TelephonyBindingRequest creates an agent telephony binding.
@@ -477,9 +495,10 @@ type TelephonyBinding struct {
 
 // CreateAgentVersionRequest represents a request to create an agent version
 type CreateAgentVersionRequest struct {
-	Description *string           `json:"description,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-	Definition  any               `json:"definition"` // Can be any of the agent definition types
+	Description       *string           `json:"description,omitempty"`
+	Metadata          map[string]string `json:"metadata,omitempty"`
+	Definition        any               `json:"definition"` // Can be any of the agent definition types
+	DigitalWorkerType DigitalWorkerType `json:"digital_worker_type,omitempty"`
 }
 
 // CreateAgentRequest represents a request to create an agent
@@ -492,7 +511,9 @@ type CreateAgentRequest struct {
 
 // UpdateAgentRequest represents a request to update an agent
 type UpdateAgentRequest struct {
-	CreateAgentVersionRequest
+	Description *string           `json:"description,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+	Definition  any               `json:"definition"` // Can be any of the agent definition types
 }
 
 // PatchAgentRequest represents a partial update to agent-level fields.
@@ -537,6 +558,7 @@ type AgentVersionObject struct {
 	Blueprint          *BlueprintInfo      `json:"blueprint,omitempty"`
 	BlueprintReference *BlueprintReference `json:"blueprint_reference,omitempty"`
 	AgentGUID          string              `json:"agent_guid,omitempty"`
+	DigitalWorkerType  DigitalWorkerType   `json:"digital_worker_type,omitempty"`
 	// RequestID is populated from the x-request-id response header (not from JSON).
 	RequestID string `json:"-"`
 }
@@ -558,6 +580,7 @@ type AgentObject struct {
 	InstanceIdentity   *AgentIdentityInfo  `json:"instance_identity,omitempty"`
 	Blueprint          *BlueprintInfo      `json:"blueprint,omitempty"`
 	BlueprintReference *BlueprintReference `json:"blueprint_reference,omitempty"`
+	DigitalWorkerType  DigitalWorkerType   `json:"digital_worker_type,omitempty"`
 	Versions           struct {
 		Latest AgentVersionObject `json:"latest"`
 	} `json:"versions"`

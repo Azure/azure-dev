@@ -11,6 +11,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 )
 
 // clearCIEnvVars unsets all CI-related environment variables so tests are deterministic.
@@ -261,12 +265,13 @@ func TestExecEnvForHosts_no_host(t *testing.T) {
 
 func TestGetExecutionEnvironment_Agents(t *testing.T) {
 	tests := []struct {
-		name      string
-		aiAgent   string
-		envVar    string
-		envValue  string
-		userAgent string
-		want      string
+		name       string
+		aiAgent    string
+		envVar     string
+		envValue   string
+		entrypoint string
+		userAgent  string
+		want       string
 	}{
 		{
 			name:    "GitHub Copilot App",
@@ -279,16 +284,52 @@ func TestGetExecutionEnvironment_Agents(t *testing.T) {
 			want:    fields.EnvGitHubCopilotVSCode,
 		},
 		{
+			name:    "GitHub Copilot cloud agent",
+			aiAgent: "github_copilot_cloud_agent",
+			want:    fields.EnvGitHubCopilotCloudAgent,
+		},
+		{
+			name:    "Pi coding agent",
+			aiAgent: "pi",
+			want:    fields.EnvPi,
+		},
+		{
 			name:     "Codex",
 			envVar:   "CODEX_THREAD_ID",
 			envValue: "thread-id",
 			want:     fields.EnvCodex,
 		},
 		{
+			name:     "Codex Desktop",
+			envVar:   "CODEX_INTERNAL_ORIGINATOR_OVERRIDE",
+			envValue: "Codex Desktop",
+			want:     fields.EnvCodexDesktop,
+		},
+		{
 			name:     "Cursor",
 			envVar:   "CURSOR_AGENT",
 			envValue: "1",
 			want:     fields.EnvCursor,
+		},
+		{
+			name:     "Claude Code",
+			envVar:   "CLAUDECODE",
+			envValue: "1",
+			want:     fields.EnvClaudeCode,
+		},
+		{
+			name:       "Claude Code Desktop",
+			envVar:     "CLAUDECODE",
+			envValue:   "1",
+			entrypoint: "claude-desktop",
+			want:       fields.EnvClaudeCodeDesktop,
+		},
+		{
+			name:       "Claude Code VSCode",
+			envVar:     "CLAUDECODE",
+			envValue:   "1",
+			entrypoint: "claude-vscode",
+			want:       fields.EnvClaudeCodeVSCode,
 		},
 		{
 			name:      "VS Code Azure GitHub Copilot",
@@ -300,15 +341,14 @@ func TestGetExecutionEnvironment_Agents(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			for _, envVar := range []string{
-				"CLAUDE_CODE",
+				"CLAUDECODE",
 				"CLAUDE_CODE_ENTRYPOINT",
+				"CODEX_INTERNAL_ORIGINATOR_OVERRIDE",
 				"CODEX_CI",
 				"CODEX_THREAD_ID",
 				"CODEX_SESSION_ID",
 				"CURSOR_AGENT",
 				"CURSOR_CONVERSATION_ID",
-				"GITHUB_COPILOT_CLI",
-				"GH_COPILOT",
 				"COPILOT_CLI",
 				"GEMINI_CLI",
 				"GEMINI_CLI_NO_RELAUNCH",
@@ -319,6 +359,7 @@ func TestGetExecutionEnvironment_Agents(t *testing.T) {
 			}
 			t.Setenv("AI_AGENT", tt.aiAgent)
 			t.Setenv(internal.AzdUserAgentEnvVar, tt.userAgent)
+			t.Setenv("CLAUDE_CODE_ENTRYPOINT", tt.entrypoint)
 			if tt.envVar != "" {
 				t.Setenv(tt.envVar, tt.envValue)
 			}
@@ -376,7 +417,7 @@ func TestExecEnvModifiers(t *testing.T) {
 	}
 }
 
-func TestNew_returns_non_nil_resource(t *testing.T) {
+func TestNewReturnsCanonicalResource(t *testing.T) {
 	clearCIEnvVars(t)
 	t.Setenv("AZD_IN_CLOUDSHELL", "")
 	os.Unsetenv("AZD_IN_CLOUDSHELL")
@@ -384,9 +425,48 @@ func TestNew_returns_non_nil_resource(t *testing.T) {
 	os.Unsetenv("CODESPACES")
 	t.Setenv("AZURE_DEV_USER_AGENT", "")
 	os.Unsetenv("AZURE_DEV_USER_AGENT")
+	t.Setenv(
+		"OTEL_RESOURCE_ATTRIBUTES",
+		"user.email=customer@example.com,custom.resource=value,service.instance.id=customer-instance",
+	)
+	t.Setenv("OTEL_SERVICE_NAME", "ambient-service")
+	t.Setenv("OTEL_GO_X_RESOURCE", "true")
 
 	r := New()
-	if r == nil {
-		t.Fatal("New() returned nil")
+	require.NotNil(t, r)
+	require.Equal(t, semconv.SchemaURL, r.SchemaURL())
+
+	attributes := map[attribute.Key]attribute.Value{}
+	for _, kv := range r.Attributes() {
+		attributes[kv.Key] = kv.Value
 	}
+
+	expectedKeys := []attribute.Key{
+		fields.ServiceNameKey.Key,
+		fields.ServiceVersionKey.Key,
+		fields.OSTypeKey.Key,
+		fields.OSVersionKey.Key,
+		fields.HostArchKey.Key,
+		fields.ProcessRuntimeVersionKey.Key,
+		fields.ExecutionEnvironmentKey.Key,
+		fields.MachineIdKey.Key,
+		fields.InstalledByKey.Key,
+		fields.DevDeviceIdKey.Key,
+		semconv.TelemetrySDKNameKey,
+		semconv.TelemetrySDKLanguageKey,
+		semconv.TelemetrySDKVersionKey,
+	}
+	require.Len(t, attributes, len(expectedKeys))
+	for _, key := range expectedKeys {
+		require.Contains(t, attributes, key)
+	}
+
+	require.Equal(t, fields.ServiceNameAzd, attributes[fields.ServiceNameKey.Key].AsString())
+	require.Equal(t, "opentelemetry", attributes[semconv.TelemetrySDKNameKey].AsString())
+	require.Equal(t, "go", attributes[semconv.TelemetrySDKLanguageKey].AsString())
+	require.Equal(t, sdk.Version(), attributes[semconv.TelemetrySDKVersionKey].AsString())
+
+	require.NotContains(t, attributes, attribute.Key("user.email"))
+	require.NotContains(t, attributes, attribute.Key("custom.resource"))
+	require.NotContains(t, attributes, semconv.ServiceInstanceIDKey)
 }

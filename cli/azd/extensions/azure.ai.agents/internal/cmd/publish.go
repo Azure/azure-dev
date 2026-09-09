@@ -27,13 +27,18 @@ var teamsPublishScopes = []teamsPackScope{
 }
 
 type publishFlags struct {
-	name        string
-	scope       string
-	scopeSet    bool
-	displayName string
-	appVersion  string
-	output      string
-	noPrompt    bool
+	name                        string
+	scope                       string
+	scopeSet                    bool
+	displayName                 string
+	appVersion                  string
+	optionalPermissionScopes    []string
+	optionalPermissionScopesSet bool
+	accessBoundaries            []string
+	accessBoundariesSet         bool
+	clearAccessBoundaries       bool
+	output                      string
+	noPrompt                    bool
 }
 
 func newPublishCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -72,6 +77,8 @@ func newPublishCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 				flags.name = args[0]
 			}
 			flags.scopeSet = cmd.Flags().Changed("scope")
+			flags.optionalPermissionScopesSet = cmd.Flags().Changed("optional-permission-scope")
+			flags.accessBoundariesSet = cmd.Flags().Changed("access-boundary")
 			flags.output = extCtx.OutputFormat
 			flags.noPrompt = extCtx.NoPrompt
 
@@ -89,6 +96,25 @@ func newPublishCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd.Flags().StringVar(&flags.appVersion, "app-version", "",
 		"Version stamped into the Teams app manifest. If specified, it overrides activity.publish.appVersion "+
 			"in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to 1.0.0.")
+	cmd.Flags().StringArrayVar(
+		&flags.optionalPermissionScopes,
+		"optional-permission-scope",
+		nil,
+		"Digital Worker permission in <resource-app-id>=<scope> form. Repeat to select multiple scopes.",
+	)
+	cmd.Flags().StringArrayVar(
+		&flags.accessBoundaries,
+		"access-boundary",
+		nil,
+		"Digital Worker access boundary. Repeat to select multiple developer boundaries.",
+	)
+	cmd.Flags().BoolVar(
+		&flags.clearAccessBoundaries,
+		"clear-access-boundaries",
+		false,
+		"Clear all existing Digital Worker access boundaries.",
+	)
+	cmd.MarkFlagsMutuallyExclusive("access-boundary", "clear-access-boundaries")
 
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
@@ -120,15 +146,20 @@ func (a *PublishAction) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	optionalPermissionScopes, accessBoundaries, err := resolveDigitalWorkerPublishInputs(a.flags, packCtx)
+	if err != nil {
+		return err
+	}
 
 	request := buildTeamsAppPackageRequest(packCtx.botArmID, teamsAppRequestOptions{
-		scope:             scope,
-		agentName:         packCtx.agentName,
-		useCase:           packCtx.activityProfile.UseCase,
-		displayName:       a.flags.displayName,
-		appVersion:        a.flags.appVersion,
-		blueprintClientID: packCtx.blueprintClientID,
-		publish:           activityPublishConfig(packCtx),
+		scope:                    scope,
+		agentName:                packCtx.agentName,
+		useCase:                  packCtx.activityProfile.UseCase,
+		displayName:              a.flags.displayName,
+		appVersion:               a.flags.appVersion,
+		publish:                  activityPublishConfig(packCtx),
+		optionalPermissionScopes: optionalPermissionScopes,
+		accessBoundaries:         accessBoundaries,
 	})
 
 	if a.flags.output != "json" {
@@ -153,6 +184,163 @@ func (a *PublishAction) Run(ctx context.Context) error {
 	return writePublishResult(
 		os.Stdout, a.flags.output, result, scope, request.AgentDisplayName, packCtx.agentName, deepLink, isDigitalWorker,
 	)
+}
+
+func resolveDigitalWorkerPublishInputs(
+	flags *publishFlags,
+	packCtx *teamsPackContext,
+) ([]agent_api.Microsoft365PermissionScopes, *[]string, error) {
+	isDigitalWorker := packCtx.activityProfile.UseCase == project.ActivityUseCaseDigitalWorker
+	publish := activityPublishConfig(packCtx)
+	if !isDigitalWorker {
+		hasDigitalWorkerConfig := publish != nil &&
+			(publish.OptionalPermissionScopes != nil || publish.AccessBoundaries != nil)
+		if flags.optionalPermissionScopesSet || flags.accessBoundariesSet ||
+			flags.clearAccessBoundaries || hasDigitalWorkerConfig {
+			return nil, nil, exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				"Digital Worker permission scopes and access boundaries cannot be used for a simple Activity agent",
+				"remove --optional-permission-scope, --access-boundary, and --clear-access-boundaries, "+
+					"or publish a Digital Worker",
+			)
+		}
+		return nil, nil, nil
+	}
+
+	var permissions []agent_api.Microsoft365PermissionScopes
+	var boundaries *[]string
+	if publish != nil {
+		permissions = make([]agent_api.Microsoft365PermissionScopes, 0, len(publish.OptionalPermissionScopes))
+		for _, permission := range publish.OptionalPermissionScopes {
+			scopes := make([]string, 0, len(permission.Scopes))
+			for _, scope := range permission.Scopes {
+				scopes = append(scopes, strings.TrimSpace(scope))
+			}
+			permissions = append(permissions, agent_api.Microsoft365PermissionScopes{
+				ResourceAppID: strings.TrimSpace(permission.ResourceAppID),
+				Scopes:        scopes,
+			})
+		}
+		if publish.AccessBoundaries != nil {
+			values := make([]string, 0, len(*publish.AccessBoundaries))
+			for _, boundary := range *publish.AccessBoundaries {
+				values = append(values, strings.TrimSpace(boundary))
+			}
+			boundaries = &values
+		}
+	}
+
+	if flags.optionalPermissionScopesSet {
+		var err error
+		permissions, err = parseOptionalPermissionScopeFlags(flags.optionalPermissionScopes)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	if flags.accessBoundariesSet {
+		values := make([]string, 0, len(flags.accessBoundaries))
+		seen := make(map[string]struct{}, len(flags.accessBoundaries))
+		for _, boundary := range flags.accessBoundaries {
+			boundary = strings.TrimSpace(boundary)
+			if _, ok := seen[boundary]; ok {
+				continue
+			}
+			seen[boundary] = struct{}{}
+			values = append(values, boundary)
+		}
+		if err := project.ValidateDigitalWorkerAccessBoundaries(values); err != nil {
+			return nil, nil, exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				fmt.Sprintf("invalid --access-boundary: %s", err),
+				"use a supported *.developers access boundary",
+			)
+		}
+		boundaries = &values
+	} else if flags.clearAccessBoundaries {
+		values := []string{}
+		boundaries = &values
+	}
+
+	effectivePublish := effectiveDigitalWorkerPublishConfig(publish, flags, permissions, boundaries)
+	if effectivePublish != nil {
+		if err := project.ValidateDigitalWorkerPublishConfig(effectivePublish); err != nil {
+			return nil, nil, exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				fmt.Sprintf("invalid Digital Worker publish configuration: %s", err),
+				"fix activity.publish in azure.yaml or pass valid publish override flags",
+			)
+		}
+	}
+	return permissions, boundaries, nil
+}
+
+func effectiveDigitalWorkerPublishConfig(
+	publish *project.ActivityPublishConfig,
+	flags *publishFlags,
+	permissions []agent_api.Microsoft365PermissionScopes,
+	boundaries *[]string,
+) *project.ActivityPublishConfig {
+	if publish == nil && len(permissions) == 0 && boundaries == nil {
+		return nil
+	}
+
+	effective := &project.ActivityPublishConfig{}
+	if publish != nil {
+		*effective = *publish
+	}
+	if flags.scopeSet {
+		effective.PublishScope = ""
+	}
+	if flags.optionalPermissionScopesSet {
+		effective.OptionalPermissionScopes = make([]project.Microsoft365PermissionScopes, 0, len(permissions))
+		for _, permission := range permissions {
+			effective.OptionalPermissionScopes = append(
+				effective.OptionalPermissionScopes,
+				project.Microsoft365PermissionScopes{
+					ResourceAppID: permission.ResourceAppID,
+					Scopes:        append([]string(nil), permission.Scopes...),
+				},
+			)
+		}
+	}
+	if flags.accessBoundariesSet || flags.clearAccessBoundaries {
+		effective.AccessBoundaries = boundaries
+	}
+
+	return effective
+}
+
+func parseOptionalPermissionScopeFlags(values []string) ([]agent_api.Microsoft365PermissionScopes, error) {
+	permissions := make([]agent_api.Microsoft365PermissionScopes, 0)
+	resourceIndexes := make(map[string]int)
+	seen := make(map[string]struct{})
+	for _, value := range values {
+		resourceAppID, scope, found := strings.Cut(value, "=")
+		resourceAppID = strings.TrimSpace(resourceAppID)
+		scope = strings.TrimSpace(scope)
+		if !found || resourceAppID == "" || scope == "" {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				fmt.Sprintf("invalid optional permission scope %q", value),
+				"use --optional-permission-scope <resource-app-id>=<scope>",
+			)
+		}
+		key := resourceAppID + "\x00" + scope
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		index, ok := resourceIndexes[resourceAppID]
+		if !ok {
+			index = len(permissions)
+			resourceIndexes[resourceAppID] = index
+			permissions = append(permissions, agent_api.Microsoft365PermissionScopes{
+				ResourceAppID: resourceAppID,
+			})
+		}
+		permissions[index].Scopes = append(permissions[index].Scopes, scope)
+	}
+	return permissions, nil
 }
 
 func resolvePublishScope(flags *publishFlags, packCtx *teamsPackContext) (teamsPackScope, error) {

@@ -16,13 +16,18 @@ import (
 
 // AgentChecker can look up a named agent in a Foundry project.
 type AgentChecker interface {
-	GetAgent(ctx context.Context, agentName, apiVersion string) (*agent_api.AgentObject, error)
+	GetAgent(
+		ctx context.Context,
+		agentName string,
+		apiVersion string,
+		includeDigitalWorkerType bool,
+	) (*agent_api.AgentObject, error)
 }
 
 // AgentExists reports whether an agent with the given name exists in the Foundry project.
 // It returns false (without error) when the API returns 404, and an error for any other failure.
 func AgentExists(ctx context.Context, client AgentChecker, agentName, apiVersion string) (bool, error) {
-	_, err := client.GetAgent(ctx, agentName, apiVersion)
+	_, err := client.GetAgent(ctx, agentName, apiVersion, false)
 	if err == nil {
 		return true, nil
 	}

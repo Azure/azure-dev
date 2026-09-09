@@ -72,6 +72,20 @@ func (s *invokeUserConfigServer) setJSON(t *testing.T, path string, value any) {
 	s.values[path] = data
 }
 
+func (s *invokeUserConfigServer) getJSON(t *testing.T, path string, value any) {
+	t.Helper()
+
+	s.mu.Lock()
+	data, found := s.values[path]
+	s.mu.Unlock()
+	if !found {
+		t.Fatalf("user config path %q was not saved", path)
+	}
+	if err := json.Unmarshal(data, value); err != nil {
+		t.Fatalf("unmarshal user config path %q: %v", path, err)
+	}
+}
+
 func newInvokeTestAzdClient(t *testing.T, userConfigServer azdext.UserConfigServiceServer) *azdext.AzdClient {
 	t.Helper()
 
@@ -182,7 +196,7 @@ func TestReadSSEStream(t *testing.T) {
 			t.Parallel()
 
 			reader := strings.NewReader(tt.input)
-			err := readSSEStream(reader, "test-agent")
+			err := readResponsesSSE(t.Context(), reader, io.Discard, "test-agent", responsesSSEOptions{})
 
 			if tt.wantErr {
 				if err == nil {

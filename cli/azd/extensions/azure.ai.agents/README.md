@@ -1,5 +1,11 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Non-interactive automation
+
+See the shared [AI extension non-interactive input reference](../ai-non-interactive.md)
+for every prompt's flag, environment/configuration input, or deterministic
+no-prompt behavior.
+
 ## Composing Agent Dependencies
 
 Use the Agent command surface to attach existing Toolbox or Connection services
@@ -14,6 +20,14 @@ These commands add the dependency service key to `services.<agent>.uses`. They
 do not create or deploy the dependency. Toolbox and Connection configuration and
 lifecycle behavior remain owned by the `azure.ai.toolboxes` and
 `azure.ai.connections` extensions.
+
+If a toolbox is declared inline on an agent, move its definition to an
+independent `azure.ai.toolbox` service before deployment. If the new service key
+differs from the original toolbox name (for example, `My Tools` becomes
+`MyTools`), replace the inline entry in the agent's `toolboxes` list with the
+new service key. Then attach that service with the command above and run `azd deploy`.
+The add command only updates the agent's `uses` list; it does not rewrite
+`toolboxes`, create the service, or deploy it.
 
 ## Running Local Agents
 
@@ -46,37 +60,49 @@ services:
       - protocol: activity
         version: 2.0.0
     activity:
-      useCase: digital_worker
+      digitalWorkerType: m365
       publish:
         publishScope: tenant
         agentDisplayName: My Digital Worker
-        agenticUserTemplate:
-          id: digitalWorkerTemplate
-          file: agenticUserTemplateManifest.json
-          schemaVersion: 0.1.0-preview
-          communicationProtocol: activityProtocol
+        optionalPermissionScopes:
+          - resourceAppId: ea9ffc3e-8a23-4a7d-836d-234d7c7565c1
+            scopes:
+              - McpServers.Mail.All
+              - McpServers.Calendar.All
+        accessBoundaries:
+          - read.1on1.developers
+          - write.1on1.developers
 ```
 
 The `activity.publish` block is shared Microsoft 365 app publish metadata for
-Activity use cases (including `simple`). For `digital_worker`, azd enforces
-additional constraints: `publish` must be present, `publishScope` must be
-`tenant`, and `agenticUserTemplate` must include `id`, `file`,
-`schemaVersion`, and `communicationProtocol`. The publish request sets
-`publishAsAutopilot` automatically to `true` for this use case; users do not
-need to declare it in YAML. The Agent Identity Blueprint ID is generated during
-deployment and added to the publish request automatically.
+Activity agents. When `digitalWorkerType` is `m365`, azd enforces tenant scope
+and sends `digital_worker_type: m365` when creating the agent. Omit
+`digitalWorkerType` for simple mode.
+After deployment, the service-returned Digital Worker type controls pack and
+publish behavior. The publish request sets `publishAsAutopilot` automatically;
+the publish block itself is optional.
+
+`optionalPermissionScopes` selects additional Microsoft 365 permissions such as
+WorkIQ MCP scopes. `accessBoundaries` accepts the supported
+`read.1on1.developers`, `write.1on1.developers`,
+`read.group.developers`, and `write.group.developers` values. Omitting
+`accessBoundaries` preserves the current service configuration; an explicit
+empty array clears it.
 
 ```bash
 azd deploy
 azd ai agent publish
 ```
 
-For `simple` Activity agents, `publishScope` accepts `shared` or `tenant`. For
-`digital_worker`, `publishScope` is always `tenant`.
+For simple Activity agents, `publishScope` accepts `shared` or `tenant`. For an
+`m365` Digital Worker, `publishScope` is always `tenant`.
 An explicit `azd ai agent publish --scope <scope>` overrides the configured
 value where allowed by the use case. Use `--display-name` and `--app-version`
 to override the corresponding configured publish metadata for one command
-invocation.
+invocation. Repeat `--optional-permission-scope <resource-app-id>=<scope>` or
+`--access-boundary <boundary>` to replace the configured values for one
+publication. Use `--clear-access-boundaries` to send an explicit empty array and
+clear existing boundaries.
 
 The Agent Inspector UI binds port `8087` by default. Use `--inspector-port` to
 move it, which is what you need when running two agents side by side or when a
@@ -337,6 +363,78 @@ keys throughout this block (`invocations_moderation`, `response_mode`,
 `input_paths`, `stream_selectors`, `event_type`, and so on). The **values**
 (`non_streaming`, `streaming`, `both`, `json`, `text`) are the same in both.
 
+### Hosted voice wrapper (preview)
+
+A hosted voice wrapper keeps Voice Live responsible for VAD, speech-to-text,
+and text-to-speech while routing conversation logic to a hosted agent in the
+same Foundry project. Hosted Voice samples use the same sample `azure.yaml`
+flow as other current Hosted Agent and `invocations_ws` samples:
+
+```powershell
+azd ai agent init -m .\path\to\azure.yaml
+```
+
+The local path can be replaced with its public GitHub URL after the sample is
+published.
+
+When the sample project is already present with its `azure.yaml`, run
+`azd ai agent init` from the project directory to reuse the existing azd
+configuration before provisioning and deployment.
+
+The sample `azure.yaml` contains both services and references the target by its
+service name:
+
+```yaml
+services:
+  ai-project:
+    host: azure.ai.project
+
+  voice-target:
+    host: azure.ai.agent
+    project: ./src/voice-target
+    language: csharp
+    kind: hosted
+    name: voice-target
+    uses:
+      - ai-project
+    protocols:
+      - protocol: invocations_ws
+        version: 1.0.0
+    metadata:
+      voiceLiveCompatible: "true"
+      bridgeProtocolVersion: "1.0"
+    container:
+      resources:
+        cpu: "1"
+        memory: 2Gi
+    codeConfiguration:
+      runtime: dotnet_10
+      entryPoint: VoiceHostedAgent.dll
+      dependencyResolution: bundled
+
+  voice-target-voice:
+    host: azure.ai.agent
+    kind: voice
+    name: voice-target-voice
+    uses:
+      - ai-project
+      - voice-target
+    modelType: hosted_agent
+    targetAgent:
+      service: voice-target
+      version: deployed
+    store: false
+```
+
+The `uses` edge deploys the target before the wrapper. `version: deployed`
+pins the wrapper to the target version produced by the current azd environment.
+Hosted voice wrappers use the unified Voice API.
+
+The target must be active, declare `invocations_ws/1.0.0`, and include
+`voiceLiveCompatible=true` and `bridgeProtocolVersion=1.0` metadata. Model,
+instructions, tools, and other conversation controls belong to the target;
+the wrapper owns audio, voice, store, avatar, and greeting configuration.
+
 ## Session idle timeout
 
 A hosted agent's runtime session sandbox is suspended by Foundry after a period
@@ -362,7 +460,7 @@ seconds).
 
 Details:
 
-- `idleTimeoutSeconds` must be between **300 and 3600** seconds (inclusive).
+- `idleTimeoutSeconds` must be between **120 and 3600** seconds (inclusive).
   Values outside that range are rejected at deploy time and by schema
   validation.
 - In the deprecated on-disk `agent.yaml` shape the keys are snake_case

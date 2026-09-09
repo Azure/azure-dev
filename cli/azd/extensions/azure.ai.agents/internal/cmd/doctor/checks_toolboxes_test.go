@@ -142,6 +142,34 @@ func TestCheckToolboxes_FailsOnToolboxDependencyError(t *testing.T) {
 		res.Details["toolboxDependencyErrors"])
 }
 
+func TestCheckToolboxes_FailsOnToolboxLoadErrorBeforeLookup(t *testing.T) {
+	t.Parallel()
+
+	state := &nextstep.State{
+		ToolboxLoadErrors: []string{
+			`agent service "agent": resolve $ref: file not found`,
+		},
+		Toolboxes: []nextstep.ResourceRef{{
+			Name: "broken-tools",
+		}},
+		HasToolboxes: true,
+	}
+	res := runToolboxesCheck(t, Dependencies{
+		AzdClient:     &azdext.AzdClient{},
+		assembleState: fixedAssembler(state),
+		lookupToolboxEnv: func(context.Context, string) (string, error) {
+			t.Fatal("load errors must be reported before endpoint lookup")
+			return "", nil
+		},
+	}, nil)
+
+	require.Equal(t, StatusFail, res.Status)
+	require.Contains(t, res.Message, "could not load configured toolboxes")
+	require.Contains(t, res.Suggestion, "referenced toolbox files")
+	require.Equal(t, state.ToolboxLoadErrors,
+		res.Details["toolboxLoadErrors"])
+}
+
 func TestCheckToolboxes_FailsWhenAssemblerReturnsNilState(t *testing.T) {
 	t.Parallel()
 	deps := Dependencies{
@@ -356,6 +384,80 @@ func TestCheckToolboxes_MixedSourcesShowBothRemediations(t *testing.T) {
 	require.Equal(t, StatusFail, res.Status)
 	require.Contains(t, res.Suggestion, "azd deploy")
 	require.Contains(t, res.Suggestion, "azd provision")
+}
+
+func TestCheckToolboxes_BundledSourceAvoidsManualEndpointGuidance(t *testing.T) {
+	t.Parallel()
+
+	state := stateWithToolboxes(nextstep.ResourceRef{
+		Name:          "bundled-tools",
+		ServiceName:   "agent",
+		ToolboxSource: nextstep.ToolboxSourceBundled,
+	})
+	state.ToolboxEndpointsChecked = true
+	state.MissingToolboxEndpoints = state.Toolboxes
+
+	res := runToolboxesCheck(t, Dependencies{
+		AzdClient:     &azdext.AzdClient{},
+		assembleState: fixedAssembler(state),
+	}, nil)
+	require.Equal(t, StatusFail, res.Status)
+	require.Contains(t, res.Suggestion, "azd ai agent add toolbox")
+	require.Contains(t, res.Suggestion, "azd deploy")
+	require.NotContains(t, res.Suggestion, "replace the changed agent")
+	require.NotContains(t, res.Suggestion, "azd env set")
+	require.NotContains(t, res.Suggestion, "azd provision")
+}
+
+func TestCheckToolboxes_BundledOwnersKeepAttachGuidance(t *testing.T) {
+	t.Parallel()
+
+	state := stateWithToolboxes(
+		nextstep.ResourceRef{
+			Name:          "My Tools",
+			ServiceName:   "agent-a",
+			ToolboxSource: nextstep.ToolboxSourceBundled,
+		},
+		nextstep.ResourceRef{
+			Name:          "My Tools",
+			ServiceName:   "agent-b",
+			ToolboxSource: nextstep.ToolboxSourceBundled,
+		},
+	)
+	state.ToolboxEndpointsChecked = true
+	state.MissingToolboxEndpoints = state.Toolboxes
+
+	res := runToolboxesCheck(t, Dependencies{
+		AzdClient:     &azdext.AzdClient{},
+		assembleState: fixedAssembler(state),
+	}, nil)
+	require.Equal(t, StatusFail, res.Status)
+	require.Contains(t, res.Message, "1 declared toolbox(es)")
+	require.Contains(t, res.Suggestion, `"My Tools" in agent "agent-a"`)
+	require.Contains(t, res.Suggestion, `"My Tools" in agent "agent-b"`)
+	require.Equal(t, 0, res.Details["matchedCount"])
+}
+
+func TestCheckToolboxes_BundledSpacedNameExplainsReferenceMigration(t *testing.T) {
+	t.Parallel()
+
+	state := stateWithToolboxes(nextstep.ResourceRef{
+		Name:          "My Tools",
+		ServiceName:   "My Agent",
+		ToolboxSource: nextstep.ToolboxSourceBundled,
+	})
+	state.ToolboxEndpointsChecked = true
+	state.MissingToolboxEndpoints = state.Toolboxes
+
+	res := runToolboxesCheck(t, Dependencies{
+		AzdClient:     &azdext.AzdClient{},
+		assembleState: fixedAssembler(state),
+	}, nil)
+	require.Equal(t, StatusFail, res.Status)
+	require.Contains(t, res.Suggestion, `"My Tools" in agent "My Agent"`)
+	require.Contains(t, res.Suggestion, `service key "MyTools"`)
+	require.Contains(t, res.Suggestion, "replace the changed agent `toolboxes` entries")
+	require.Contains(t, res.Suggestion, "azd ai agent add toolbox")
 }
 
 // ---- Dedup on canonical env key ----

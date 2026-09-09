@@ -1,5 +1,22 @@
 # Release History
 
+## 1.0.0-beta.9 (2026-09-04)
+
+### Features Added
+
+- [[#9735]](https://github.com/Azure/azure-dev/pull/9735) Update Foundry project synthesis to support extension-owned Connection definitions and deployment. Thanks @JerryYangKai for the contribution!
+
+### Bugs Fixed
+
+- [[#9720]](https://github.com/Azure/azure-dev/pull/9720) Make Foundry provisioning prompts deterministic in no-prompt mode.
+- [[#9678]](https://github.com/Azure/azure-dev/pull/9678) Honor `condition` on Foundry connection services before provisioning.
+- [[#9741]](https://github.com/Azure/azure-dev/pull/9741) Preserve connection audience and connector name during Foundry project synthesis.
+- [[#9729]](https://github.com/Azure/azure-dev/pull/9729) Provide resource-specific quota guidance only for Cognitive Services errors, with generic guidance otherwise.
+
+### Other Changes
+
+- [[#9825]](https://github.com/Azure/azure-dev/pull/9825) Update gRPC to v1.83.1 to address the GHSA-vp52-pcj8-j9qc security advisory.
+
 ## 1.0.0-beta.8 (2026-08-27)
 
 ### Features Added

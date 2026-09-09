@@ -276,6 +276,74 @@ func (d *YAMLDocument) servicesNode(create bool) (*yaml.Node, error) {
 	return services, nil
 }
 
+// Root returns the document's root mapping, creating it when the document is empty and create
+// is set, or (nil, nil) when it is empty and create is not.
+//
+// The rest of this type speaks in service entries, which is the shape azure.yaml has. An
+// extension that edits a document of its own shape works from here instead, so that loading,
+// saving, and $ref handling stay in one place rather than being reimplemented per extension.
+func (d *YAMLDocument) Root(create bool) (*yaml.Node, error) {
+	return d.rootMapping(create)
+}
+
+// Find returns the node at a yamlnode path such as "evaluators[0].source".
+func (d *YAMLDocument) Find(path string) (*yaml.Node, error) {
+	root, err := d.rootMapping(false)
+	if err != nil {
+		return nil, err
+	}
+	if root == nil {
+		return nil, yamlnode.ErrNodeNotFound
+	}
+	return yamlnode.Find(root, path)
+}
+
+// Set writes value at a yamlnode path.
+//
+// Absent intermediate nodes are not created unless the path marks them with yamlnode's `?`
+// qualifier, so writing into a section that may not exist yet is Set("catalog?.dataset", v).
+// Comments already on the value being replaced are carried over, since the document belongs to
+// whoever wrote it.
+func (d *YAMLDocument) Set(path string, value any) error {
+	root, err := d.rootMapping(true)
+	if err != nil {
+		return err
+	}
+	node, err := yamlnode.Encode(value)
+	if err != nil {
+		return err
+	}
+	if old, findErr := yamlnode.Find(root, path); findErr == nil && old != nil {
+		node.HeadComment = old.HeadComment
+		node.LineComment = old.LineComment
+		node.FootComment = old.FootComment
+	}
+	return yamlnode.Set(root, path, node)
+}
+
+// Append adds value to the sequence at a yamlnode path, creating the sequence when it is
+// absent -- a catalog is written into a file that does not list it yet.
+func (d *YAMLDocument) Append(path string, value any) error {
+	root, err := d.rootMapping(true)
+	if err != nil {
+		return err
+	}
+	node, err := yamlnode.Encode(value)
+	if err != nil {
+		return err
+	}
+	if _, findErr := yamlnode.Find(root, path); errors.Is(findErr, yamlnode.ErrNodeNotFound) {
+		empty, err := yamlnode.Encode([]any{})
+		if err != nil {
+			return err
+		}
+		if err := yamlnode.Set(root, path, empty); err != nil {
+			return err
+		}
+	}
+	return yamlnode.Append(root, path, node)
+}
+
 // rootMapping returns the document's root mapping node, optionally initializing an empty
 // document and root mapping.
 func (d *YAMLDocument) rootMapping(create bool) (*yaml.Node, error) {

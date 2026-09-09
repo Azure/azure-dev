@@ -77,6 +77,130 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_BYOM(t *testing.T) {
 	require.Equal(t, "telephony-twilio", got.Telephony.Bindings[0].Connection)
 }
 
+func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgent(t *testing.T) {
+	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindPromptVoice,
+			Name: "voice-wrapper",
+		},
+		ModelType: agent_yaml.VoiceModelTypeHostedAgent,
+		TargetAgent: &agent_yaml.VoiceTargetAgent{
+			Service: "voice-target",
+			Version: "deployed",
+		},
+	}, nil)
+	require.NoError(t, err)
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "voice-wrapper",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+	got, found, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.VoiceModelTypeHostedAgent, got.ModelType)
+	require.Equal(t, "voice-target", got.TargetAgent.Service)
+	require.Equal(t, "deployed", got.TargetAgent.Version)
+}
+
+func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgentVoiceKind(t *testing.T) {
+	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindVoice, Name: "voice"},
+		ModelType:       agent_yaml.VoiceModelTypeHostedAgent,
+		TargetAgent: &agent_yaml.VoiceTargetAgent{
+			Service: "voice-target",
+			Version: "deployed",
+		},
+	}, nil)
+	require.NoError(t, err)
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "voice",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+	got, found, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.AgentKindVoice, got.Kind)
+	require.Equal(t, "voice-target", got.TargetAgent.Service)
+}
+
+func TestVoiceAgentInlineServicePropertiesRejectsProtocols(t *testing.T) {
+	_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":  "prompt-voice",
+		"name":  "voice",
+		"model": map[string]any{"id": "gpt-realtime"},
+		"protocols": []any{map[string]any{
+			"protocol": "invocations_ws",
+			"version":  "1.0.0",
+		}},
+	}))
+	require.ErrorContains(t, err, "protocols are not supported on voice agents")
+}
+
+func TestVoiceAgentInlineServicePropertiesRejectsCodeAndSessionConfig(t *testing.T) {
+	_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":              "voice",
+		"name":              "voice",
+		"model":             map[string]any{"id": "gpt-realtime"},
+		"codeConfiguration": map[string]any{"runtime": "dotnet_10"},
+	}))
+	require.ErrorContains(t, err, "codeConfiguration is not supported on voice agents")
+
+	_, _, _, _, err = AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":                 "voice",
+		"name":                 "voice",
+		"model":                map[string]any{"id": "gpt-realtime"},
+		"sessionConfiguration": map[string]any{"idleTimeoutMinutes": 10},
+	}))
+	require.ErrorContains(t, err, "sessionConfiguration is not supported on voice agents")
+}
+
+func TestVoiceAgentFromResolvedServiceRejectsInvalidVoiceFields(t *testing.T) {
+	svc := inlineAgentService(t, map[string]any{
+		"kind":      "voice",
+		"name":      "voice",
+		"modelType": "hosted_agent",
+		"targetAgent": map[string]any{
+			"service": "target",
+			"version": "typo",
+		},
+	})
+	_, _, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.ErrorContains(t, err, "target_agent.version must be 'deployed'")
+
+	svc = inlineAgentService(t, map[string]any{
+		"kind":              "voice",
+		"name":              "voice",
+		"model":             map[string]any{"id": "gpt-realtime"},
+		"codeConfiguration": map[string]any{"runtime": "dotnet_10"},
+	})
+	_, _, err = VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.ErrorContains(t, err, "codeConfiguration is not supported on voice agents")
+
+	svc = inlineAgentService(t, map[string]any{
+		"kind":                 "voice",
+		"name":                 "voice",
+		"model":                map[string]any{"id": "gpt-realtime"},
+		"environmentVariables": []any{map[string]any{"name": "SAMPLE", "value": "value"}},
+	})
+	_, _, err = VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.ErrorContains(t, err, "environmentVariables is not supported on voice agents")
+
+}
+
+func TestHostedAgentInlineServicePropertiesRejectsHostedVoiceFields(t *testing.T) {
+	_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":        "hosted",
+		"name":        "target",
+		"modelType":   "hosted_agent",
+		"targetAgent": map[string]any{"service": "other-agent"},
+	}))
+	require.ErrorContains(t, err, "hosted voice wrapper fields are not supported on hosted agents")
+}
+
 func TestApplyAgentMetadata(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -262,6 +386,7 @@ func (f fakeProjectAgentChecker) GetAgent(
 	context.Context,
 	string,
 	string,
+	bool,
 ) (*agent_api.AgentObject, error) {
 	if f.err != nil {
 		return nil, f.err
@@ -1449,10 +1574,7 @@ func TestRegisterAgentEnvironmentVariables_PersistsDigitalWorkerBlueprintClientI
 		azdClient: newEnvTestClient(t, envStub),
 		env:       &azdext.Environment{Name: "test-env"},
 	}
-	publish := &ActivityPublishConfig{
-		PublishAsAutopilot: true,
-		PublishScope:       "tenant",
-	}
+	publish := &ActivityPublishConfig{PublishScope: "tenant"}
 
 	err := provider.registerAgentEnvironmentVariables(
 		t.Context(),
@@ -1470,7 +1592,7 @@ func TestRegisterAgentEnvironmentVariables_PersistsDigitalWorkerBlueprintClientI
 		"",
 		false,
 		ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker},
-		&ActivitySettings{UseCase: ActivityUseCaseDigitalWorker, Publish: publish},
+		&ActivitySettings{DigitalWorkerType: agent_api.DigitalWorkerTypeM365, Publish: publish},
 	)
 	require.NoError(t, err)
 	require.Equal(t, "blueprint-client-id", envStub.values[envkey.AgentBlueprintClientID("my-svc")])
@@ -2070,6 +2192,7 @@ func TestPrepareDeployAppliesDefaultResources(t *testing.T) {
 		Name:                 "basic-agent",
 		AdditionalProperties: props,
 	}
+
 	provider := &AgentServiceTargetProvider{}
 
 	prep, err := provider.prepareDeploy(
@@ -2088,6 +2211,264 @@ func TestPrepareDeployAppliesDefaultResources(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, DefaultCpu, definition.CPU)
 	require.Equal(t, DefaultMemory, definition.Memory)
+}
+
+func TestPrepareDeploySetsDigitalWorkerType(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	agentDef.Protocols = []agent_yaml.ProtocolVersionRecord{{Protocol: "activity", Version: "2.0.0"}}
+	agentDef.AgentEndpoint = &agent_yaml.AgentEndpoint{
+		Protocols: []string{"activity"},
+		AuthorizationSchemes: []agent_yaml.AuthorizationScheme{
+			{Type: string(agent_api.AgentEndpointAuthSchemeBotServiceRbac)},
+		},
+	}
+	props, err := AgentDefinitionToServiceProperties(agentDef, &ServiceTargetAgentConfig{
+		Activity: &ActivitySettings{DigitalWorkerType: agent_api.DigitalWorkerTypeM365},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "digital-worker",
+		AdditionalProperties: props,
+	}
+
+	prep, err := (&AgentServiceTargetProvider{}).prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example"},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/worker:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, agent_api.DigitalWorkerTypeM365, prep.request.DigitalWorkerType)
+	require.NotNil(t, prep.request.AgentEndpoint)
+	require.Equal(
+		t,
+		[]agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
+		prep.request.AgentEndpoint.Protocols,
+	)
+	require.Len(t, prep.request.AgentEndpoint.AuthorizationSchemes, 1)
+	require.Equal(t, agent_api.AgentEndpointAuthSchemeBotServiceRbac, prep.request.AgentEndpoint.AuthorizationSchemes[0].Type)
+}
+
+func TestPrepareDeployLeavesOmittedDigitalWorkerEndpointNil(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	agentDef.Protocols = []agent_yaml.ProtocolVersionRecord{{Protocol: "activity", Version: "2.0.0"}}
+	agentDef.AgentEndpoint = nil
+	agentDef.AgentCard = nil
+	props, err := AgentDefinitionToServiceProperties(agentDef, &ServiceTargetAgentConfig{
+		Activity: &ActivitySettings{DigitalWorkerType: agent_api.DigitalWorkerTypeM365},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "digital-worker",
+		AdditionalProperties: props,
+	}
+
+	prep, err := (&AgentServiceTargetProvider{}).prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example"},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/worker:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, agent_api.DigitalWorkerTypeM365, prep.request.DigitalWorkerType)
+	require.Nil(t, prep.request.AgentEndpoint)
+	require.Nil(t, prep.request.AgentCard)
+}
+
+func TestPrepareDeployPreservesOmittedSimpleActivityAuthorizationSchemes(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	agentDef.Protocols = []agent_yaml.ProtocolVersionRecord{{Protocol: "activity", Version: "2.0.0"}}
+	agentDef.AgentEndpoint = &agent_yaml.AgentEndpoint{Protocols: []string{"activity"}}
+	props, err := AgentDefinitionToServiceProperties(agentDef, nil)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "simple-activity",
+		AdditionalProperties: props,
+	}
+
+	prep, err := (&AgentServiceTargetProvider{}).prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example"},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/activity:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	require.Empty(t, prep.request.DigitalWorkerType)
+	require.NotNil(t, prep.request.AgentEndpoint)
+	require.Equal(
+		t,
+		[]agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
+		prep.request.AgentEndpoint.Protocols,
+	)
+	require.Empty(t, prep.request.AgentEndpoint.AuthorizationSchemes)
+}
+
+func TestEnsureActivityEndpointAuthSchemeForPromotedDigitalWorkerPreservesExplicitScheme(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{
+		AgentEndpoint: &agent_api.AgentEndpoint{
+			Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
+			AuthorizationSchemes: []agent_api.AgentEndpointAuthorizationScheme{
+				{Type: agent_api.AgentEndpointAuthSchemeEntra},
+				{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
+			},
+		},
+	}
+
+	ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
+		IsActivity: true,
+		UseCase:    ActivityUseCaseDigitalWorker,
+	})
+
+	require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
+		{Type: agent_api.AgentEndpointAuthSchemeEntra},
+		{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
+	}, request.AgentEndpoint.AuthorizationSchemes)
+}
+
+func TestEnsureActivityEndpointAuthSchemeForDigitalWorkerUsesServiceDefault(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{}
+
+	ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
+		IsActivity: true,
+		UseCase:    ActivityUseCaseDigitalWorker,
+	})
+
+	require.Nil(t, request.AgentEndpoint)
+}
+
+func TestEnsureActivityEndpointAuthSchemeForDigitalWorkerPreservesEndpointWithoutAddingScheme(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{
+		AgentEndpoint: &agent_api.AgentEndpoint{
+			Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolResponses},
+		},
+	}
+
+	ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
+		IsActivity: true,
+		UseCase:    ActivityUseCaseDigitalWorker,
+	})
+
+	require.Equal(t, []agent_api.AgentEndpointProtocol{
+		agent_api.AgentEndpointProtocolResponses,
+		agent_api.AgentEndpointProtocolActivity,
+	}, request.AgentEndpoint.Protocols)
+	require.Empty(t, request.AgentEndpoint.AuthorizationSchemes)
+}
+
+func TestEnsureActivityEndpointAuthSchemeForSimpleActivityUsesServiceDefault(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{}
+
+	ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
+		IsActivity: true,
+		UseCase:    ActivityUseCaseSimple,
+	})
+
+	require.Nil(t, request.AgentEndpoint)
+}
+
+func TestEnsureActivityEndpointAuthSchemePreservesExplicitLegacyBotService(t *testing.T) {
+	t.Parallel()
+
+	for _, useCase := range []ActivityUseCase{
+		ActivityUseCaseDigitalWorker,
+		ActivityUseCaseSimple,
+	} {
+		t.Run(string(useCase), func(t *testing.T) {
+			request := &agent_api.CreateAgentRequest{
+				AgentEndpoint: &agent_api.AgentEndpoint{
+					AuthorizationSchemes: []agent_api.AgentEndpointAuthorizationScheme{
+						{Type: agent_api.AgentEndpointAuthSchemeEntra},
+						{Type: agent_api.AgentEndpointAuthSchemeBotService},
+					},
+				},
+			}
+
+			ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
+				IsActivity: true,
+				UseCase:    useCase,
+			})
+
+			require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
+				{Type: agent_api.AgentEndpointAuthSchemeEntra},
+				{Type: agent_api.AgentEndpointAuthSchemeBotService},
+			}, request.AgentEndpoint.AuthorizationSchemes)
+		})
+	}
+}
+
+func TestEnsureActivityEndpointAuthSchemeForNonActivityDoesNotCreateEndpoint(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{}
+
+	ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{})
+
+	require.Nil(t, request.AgentEndpoint)
+}
+
+func TestActivityProfileFromCreateRequest(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name    string
+		request *agent_api.CreateAgentRequest
+		want    ActivityProfile
+	}{
+		{
+			name: "digital worker",
+			request: &agent_api.CreateAgentRequest{
+				CreateAgentVersionRequest: agent_api.CreateAgentVersionRequest{
+					DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
+				},
+			},
+			want: ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker},
+		},
+		{
+			name: "simple activity",
+			request: &agent_api.CreateAgentRequest{
+				AgentEndpoint: &agent_api.AgentEndpoint{
+					Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
+				},
+			},
+			want: ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple},
+		},
+		{
+			name: "non activity",
+			request: &agent_api.CreateAgentRequest{
+				AgentEndpoint: &agent_api.AgentEndpoint{
+					Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolResponses},
+				},
+			},
+			want: ActivityProfile{},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, activityProfileFromCreateRequest(test.request))
+		})
+	}
 }
 
 func TestValidateRegistryConnectionDefinition(t *testing.T) {

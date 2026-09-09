@@ -1806,9 +1806,11 @@ func (p *FoundryProvisioningProvider) destroyResult() *azdext.ProvisioningDestro
 // Fails closed in the non-interactive cases so we never silently delete:
 //   - No azd host attached (azdClient == nil): return the actionable
 //     CodeDestroyRequiresForce error.
-//   - Under `--no-prompt` the host returns a "prompt required" error; that is
-//     surfaced as the same CodeDestroyRequiresForce error so CI/scripts stay
-//     deterministic and are told to pass --force.
+//   - Under `--no-prompt`, AZD_NO_PROMPT is propagated to the extension. Check
+//     it before prompting because the host returns the request's default value
+//     instead of a "prompt required" error when one is supplied.
+//   - A host that does return "prompt required" is handled as a compatibility
+//     fallback and surfaces the same CodeDestroyRequiresForce error.
 //
 // A user cancellation (Ctrl-C) or an explicit "no" both return (false, nil) so
 // the caller reports a clean cancellation rather than an error.
@@ -1826,6 +1828,9 @@ func (p *FoundryProvisioningProvider) confirmDestroy(ctx context.Context) (bool,
 	)
 
 	if p.azdClient == nil {
+		return false, forceRequired
+	}
+	if azdext.DetectInteractive().NoPrompt {
 		return false, forceRequired
 	}
 
@@ -2251,20 +2256,19 @@ func findFoundryProjectService(raw []byte) (string, error) {
 			misplacedNetwork = append(misplacedNetwork, name)
 		}
 	}
-	if len(misplacedNetwork) > 0 {
-		slices.Sort(misplacedNetwork)
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidAzureYaml,
-			fmt.Sprintf("network: is only supported on services with host: %s (found on %v)",
-				FoundryProjectHost, misplacedNetwork),
-			"move the network: block to the azure.ai.project service (for example, services.ai-project)",
-		)
-	}
-
 	switch len(matches) {
 	case 1:
 		return matches[0], nil
 	case 0:
+		if len(misplacedNetwork) > 0 {
+			slices.Sort(misplacedNetwork)
+			return "", exterrors.Validation(
+				exterrors.CodeInvalidAzureYaml,
+				fmt.Sprintf("network: is only supported on services with host: %s (found on %v)",
+					FoundryProjectHost, misplacedNetwork),
+				"move the network: block to the azure.ai.project service (for example, services.ai-project)",
+			)
+		}
 		var legacyMatches []string
 		for name, s := range r.Services {
 			if slices.Contains(FoundryLegacyProvisioningHosts, s.Host) {

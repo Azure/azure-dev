@@ -102,7 +102,7 @@ func runEndpointShow(
 		return err
 	}
 
-	agent, err := agentClient.GetAgent(ctx, agentDef.Name, DefaultAgentAPIVersion)
+	agent, err := agentClient.GetAgent(ctx, agentDef.Name, DefaultAgentAPIVersion, false)
 	if err != nil {
 		return fmt.Errorf("failed to get agent %q: %w", agentDef.Name, err)
 	}

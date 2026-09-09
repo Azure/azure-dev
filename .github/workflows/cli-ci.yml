@@ -93,11 +93,20 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: cli/azd/go.mod
+      - uses: arduino/setup-protoc@v3
+        with:
+          version: "32.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install Buf
-        run: go install github.com/bufbuild/buf/cmd/buf@v1.72.0
+        run: |
+          go install github.com/bufbuild/buf/cmd/buf@v1.72.0
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.10
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
       - name: Check protobuf contracts
         working-directory: cli/azd
         run: |
+          make proto
+          git diff --exit-code
           make proto-lint
           if git cat-file -e origin/main:cli/azd/grpc/proto/azd/extensions/v1 2>/dev/null; then
             git branch --force buf-contract-baseline origin/main

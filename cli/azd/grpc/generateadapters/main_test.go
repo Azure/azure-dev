@@ -72,6 +72,26 @@ func TestGenerateCodeAllowsAdditiveBetaMethod(t *testing.T) {
 	require.Contains(t, code, "return validateBetaServiceOverride(")
 }
 
+func TestGenerateCodePreservesUnknownFieldsForSharedStreams(t *testing.T) {
+	t.Parallel()
+
+	services := map[string]service{
+		"ExampleService": {
+			name: "ExampleService",
+			methods: []method{{
+				name:     "Stream",
+				kind:     bidiStreamingMethod,
+				request:  "SharedMessage",
+				response: "SharedMessage",
+			}},
+		},
+	}
+
+	generated, err := generateCode(services, services)
+	require.NoError(t, err)
+	require.Contains(t, string(generated), "transcodeBetaStreamRequest(request, stableRequest)")
+}
+
 func TestGenerateCodeRejectsOverrideForBetaOnlyService(t *testing.T) {
 	t.Parallel()
 

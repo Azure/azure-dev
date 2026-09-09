@@ -88,7 +88,7 @@ var frozenServices = []frozenService{
 		"UnsetConfig",
 	}},
 	{&v1.EventService_ServiceDesc, []string{"EventStream"}},
-	{&v1.ExtensionService_ServiceDesc, []string{"Ready", "ReportError"}},
+	{&v1beta.ExtensionService_ServiceDesc, []string{"Ready", "ReportError"}},
 	{&v1.FrameworkService_ServiceDesc, []string{"Stream"}},
 	{&v1.ProjectService_ServiceDesc, []string{
 		"Get",

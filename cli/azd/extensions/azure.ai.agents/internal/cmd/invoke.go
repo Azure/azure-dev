@@ -50,7 +50,7 @@ type invokeFlags struct {
 	outputFmt       string
 	callID          string
 	clientHeaders   []string
-	background      bool
+	longRunning     bool
 	noWait          bool
 }
 
@@ -137,9 +137,10 @@ behavior and inspecting response headers (for example, the agent version
 header). Friendly summary lines like "Session:" and "Invocation:" are
 suppressed in raw mode.
 
-Use --background with the Responses protocol to start work that continues running in
+Use --long-running with the Responses protocol to start work that continues running in
 the service if this command disconnects. The command remains attached until the work
-finishes. Add --no-wait to return after azd receives the Response ID.`,
+finishes. Add --no-wait to return after azd receives the Response ID.
+This option does not provide crash recovery or automatic reconnection.`,
 		Example: `  # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
   azd ai agent invoke "Hello!"
 
@@ -168,10 +169,10 @@ finishes. Add --no-wait to return after azd receives the Response ID.`,
   azd ai agent invoke my-agent --local "Hello!"
 
   # Start background work and remain attached until it finishes
-  azd ai agent invoke --background "Run the long task"
+  azd ai agent invoke --long-running "Run the long task"
 
   # Start background work and return after its Response ID is received
-  azd ai agent invoke --background --no-wait "Run the long task"
+  azd ai agent invoke --long-running --no-wait "Run the long task"
 
   # Start a new session (discard conversation history)
   azd ai agent invoke --new-session "Hello!"
@@ -286,32 +287,32 @@ finishes. Add --no-wait to return after azd receives the Response ID.`,
 			}
 			action.clientHeaders = clientHeaders
 
-			if flags.noWait && !flags.background {
+			if flags.noWait && !flags.longRunning {
 				return exterrors.Validation(
 					exterrors.CodeConflictingArguments,
-					"--no-wait requires --background",
-					"add --background or remove --no-wait",
+					"--no-wait requires --long-running",
+					"add --long-running or remove --no-wait",
 				)
 			}
-			if flags.background {
+			if flags.longRunning {
 				if cmd.Flags().Changed("timeout") {
 					return exterrors.Validation(
 						exterrors.CodeConflictingArguments,
-						"--timeout cannot be used with --background",
+						"--timeout cannot be used with --long-running",
 						"remove --timeout; background Responses remain attached until completion or interruption",
 					)
 				}
 				if flags.local {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
-						"--background is supported only for remote Responses agents",
+						"--long-running is supported only for remote Responses agents",
 						"remove --local and invoke a deployed Responses agent",
 					)
 				}
 				if flags.outputFmt == outputRaw {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
-						"--output raw is not supported with --background",
+						"--output raw is not supported with --long-running",
 						"remove --output raw so azd can save the Response identity",
 					)
 				}
@@ -369,16 +370,16 @@ finishes. Add --no-wait to return after azd receives the Response ID.`,
 		"Agent version to invoke (creates or reuses a session backed by that version)",
 	)
 	cmd.Flags().BoolVar(
-		&flags.background,
-		"background",
+		&flags.longRunning,
+		"long-running",
 		false,
-		"Continue running in the service if this command disconnects",
+		"Continue service-side execution after disconnection; remain attached unless --no-wait is specified",
 	)
 	cmd.Flags().BoolVar(
 		&flags.noWait,
 		"no-wait",
 		false,
-		"Return after the background Response ID is received",
+		"Return after receiving the service-assigned ID; requires --long-running",
 	)
 
 	// Register `raw` as an additional allowed value on the inherited global
@@ -507,12 +508,12 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	// populated, but a2aRemote never calls applyCustomHeaders — the headers
 	// would be silently dropped, which is the exact silent no-op the guard
 	// intends to prevent.
-	if a.flags.background && protocol != agent_api.AgentProtocolResponses {
+	if a.flags.longRunning && protocol != agent_api.AgentProtocolResponses {
 		a.closeResolvedRemoteContextClient()
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("--background is not supported with the %s protocol", protocol),
-			"use a deployed Responses agent or remove --background",
+			fmt.Sprintf("--long-running is not supported with the %s protocol", protocol),
+			"use a deployed Responses agent or remove --long-running",
 		)
 	}
 

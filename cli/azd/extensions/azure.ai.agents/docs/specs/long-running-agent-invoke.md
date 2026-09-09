@@ -1,4 +1,4 @@
-# Agent protocol primitives
+# Long-running agent invocation primitives
 
 ## Status
 
@@ -8,197 +8,157 @@
 
 ## Goal
 
-Expose orthogonal CLI primitives that closely map to the hosted-agent service APIs. The CLI creates work with `invoke`; protocol-specific command groups retrieve, follow, and cancel that work. The CLI does not impose concurrency or steering policy on top of the service.
+Expose orthogonal primitives for creating and managing agent work without adding a new CLI resource noun for every protocol. `invoke` creates work; the single `invocations` command group shows, follows, and cancels it. Each protocol implementation maps these operations to its service APIs. The CLI does not impose concurrency or steering policy.
 
-## Service behavior
+“Invocation” in the command group is the noun form of `invoke`. It is not limited to the wire protocol named `invocations`.
+
+## Public CLI contract
+
+The following is the target contract after both PRs. PR #9900 implements the shared group and Responses operations; Invocations-protocol show/cancel and persistence arrive in PR #9901.
+
+```bash
+# Create and wait, using the selected agent's protocol
+azd ai agent invoke "message"
+
+# Responses protocol: continue service-side execution after disconnection;
+# remain attached until completion or disconnection
+azd ai agent invoke "message" --long-running
+
+# Return after receiving the service-assigned ID
+azd ai agent invoke "message" --long-running --no-wait
+
+# Manage current work using the selected agent's protocol
+azd ai agent invocations show
+azd ai agent invocations follow
+azd ai agent invocations cancel
+
+# Explicit protocol and service-assigned ID
+azd ai agent invocations show --protocol responses --id <response-id>
+azd ai agent invocations follow --protocol responses --id <response-id>
+azd ai agent invocations cancel --protocol responses --id <response-id>
+
+azd ai agent invoke "message" --protocol invocations
+azd ai agent invocations show --protocol invocations --id <invocation-id>
+azd ai agent invocations cancel --protocol invocations --id <invocation-id>
+```
+
+The Invocations-protocol lifecycle implementation is delivered in the second PR. Its existing synchronous, SSE, raw, and `202 Accepted` polling behavior on create is unchanged.
+
+### Protocol selection
+
+- `--protocol` selects the protocol explicitly, using the same values as `invoke` (`responses`, `invocations`, and `a2a`). Recognition of a protocol does not imply lifecycle support.
+- With `--agent-endpoint`, derive the protocol and target agent from the URL. Reject conflicting `--protocol`, `--agent-name`, or `--version` options.
+- Otherwise infer the protocol from the selected agent, using the existing invoke resolution rules. Multi-protocol agents require explicit selection; do not guess from a resource ID.
+- `--agent-name` selects an agent in a multi-agent project, following the existing `sessions` command convention.
+- Resolve the protocol before looking up the current ID. Unsupported operations fail before lifecycle requests or session/conversation creation.
+
+### Operation support
+
+| Operation | Responses protocol | Invocations protocol |
+| --- | --- | --- |
+| `invoke` | Responses create | Existing sync/SSE/LRO handling |
+| `invoke --long-running` | Supported | Unsupported |
+| `invocations show` | Snapshot GET | One-shot GET (PR #9901) |
+| `invocations follow` | One streaming GET, replay from the beginning | Unsupported |
+| `invocations cancel` | Cancel POST | Cancel POST, if the agent implements it (PR #9901) |
+
+This table describes CLI support, not a guarantee that every deployed agent implements an endpoint. The supplied Invocations reference agent currently returns `cancel_invocation not implemented`; the CLI surfaces that service failure.
+
+A2A, Activity, WebSocket, and voice lifecycle support is not part of this change. Future protocols can implement suitable operations in the shared group without introducing new nouns. Do not invent show/follow/cancel semantics for protocols lacking the corresponding service contract.
+
+## Execution and waiting are independent
+
+`--long-running` requests that service-side work continue if the client disconnects. It does not imply a minimum duration, checkpointing, crash recovery, or automatic reconnection. With Responses it sends `store=true` and `background=true`; the service property remains named `background`.
+
+`--no-wait` controls when the CLI returns. It requires `--long-running`, reads through the first complete event containing the Response ID, saves the ID when local state is available, and detaches without rendering subsequent events. A save failure is reported with the ID rather than silently claiming the current selection was saved.
+
+Without `--no-wait`, the command remains attached until completion or disconnection. It never retries the creating POST. After disconnection, users can run `invocations follow` to replay available output from the beginning.
+
+`--long-running` is remote Responses-only for now. It rejects explicit total `--timeout` and `--output raw`. Normal foreground raw output is unchanged; current-ID extraction is not guaranteed in that raw path.
+
+## Service behavior and steering
 
 ### Responses
 
 - `POST /responses` creates a Response from supplied input.
-- The `background` request property determines whether work continues after the client disconnects.
-- Supplying the same `conversation.id` preserves history. If work is active and the agent supports steering, another POST can steer it. Otherwise the agent and service determine how concurrent Responses are handled.
-- Foreground and background Responses can steer either execution mode.
+- `background` determines whether service-side work continues after disconnection.
+- The same `conversation.id` preserves history. With active work and agent steering support, another POST can steer it. Repeated steering inputs are valid; later input supersedes earlier input.
+- Steering works across both foreground and background execution modes.
+- Without steering support, the service and agent determine how concurrent Responses are handled.
 - `GET /responses/{id}` returns a snapshot.
-- `GET /responses/{id}?stream=true` replays buffered events from the beginning and follows new events.
-- `POST /responses/{id}/cancel` cancels a Response.
+- `GET /responses/{id}?stream=true` replays buffered events and follows new events. The tested service supports this only for Responses created with `background=true`, including completed ones.
+- `POST /responses/{id}/cancel` requests cancellation without stopping the hosted session.
 
 ### Invocations
 
 - `POST /invocations` creates an Invocation.
-- `GET /invocations/{id}` returns an Invocation.
-- `POST /invocations/{id}/cancel` cancels an Invocation.
+- `GET /invocations/{id}` retrieves it.
+- `POST /invocations/{id}/cancel` requests cancellation, subject to agent support.
 
-## Public CLI contract
+azd never checks the previous Response status before creating new work, and never rejects new input merely because a Response is active. Existing session/conversation reuse remains unchanged. There is no separate steering command or flag.
 
-### Responses
+## Current selection and persistence
 
-```bash
-# POST /responses with background=false
-azd ai agent invoke "message"
+`--id` is the service-assigned ID for the selected protocol. If omitted, use that protocol's current ID for the agent. Explicit show/follow/cancel never changes the current selection.
 
-# POST /responses with background=true; remain attached
-azd ai agent invoke "message" --background
+The latest identified foreground or long-running Responses create saves its Response ID. Successful remote Invocations creates save IDs from the response header or accepted response body. Failed creates without an ID leave the previous selection unchanged. Normal attached execution may continue with a warning if saving the ID fails.
 
-# POST /responses with background=true; detach after the Response ID is saved
-azd ai agent invoke "message" --background --no-wait
+There is one current ID per agent context and protocol, using existing context keys. Concurrent creates may overwrite current selection; use explicit IDs when managing concurrent work.
 
-# GET /responses/{id}; omit the ID to use the current Response
-azd ai agent responses show [--response-id <id>]
-
-# GET /responses/{id}?stream=true; replay from the beginning and follow
-azd ai agent responses follow [--response-id <id>]
-
-# POST /responses/{id}/cancel
-azd ai agent responses cancel [--response-id <id>]
-```
-
-### Invocations
-
-```bash
-azd ai agent invoke "message" --protocol invocations
-azd ai agent invocations show [--invocation-id <id>]
-azd ai agent invocations cancel [--invocation-id <id>]
-```
-
-Invocations primitives are delivered in a second stacked PR. Existing synchronous, streaming, and long-running Invocation POST behavior is unchanged.
-
-## Design principles
-
-1. **Creation is independent from lifecycle operations.** `invoke` only creates work.
-2. **Protocol resources have protocol commands.** Responses and Invocations do not share lifecycle flags.
-3. **No client-side concurrency policy.** azd never blocks a new Response because another Response appears active.
-4. **Steering is normal creation.** Posting input with the same conversation is the service steering primitive; azd has no `--steer` flag.
-5. **Execution mode and steering are independent.** Foreground and background only describe client-disconnect behavior.
-6. **Current IDs are conveniences, not lifecycle state.** The latest identified resource is saved for omission of an explicit ID.
-7. **Explicit targeting is side-effect free.** Show, follow, and cancel with an explicit ID never change current selection.
-8. **Replay starts from the beginning.** azd does not maintain a playback cursor.
-
-## Current resource selection
-
-azd stores one current Response ID and one current Invocation ID per existing agent context key.
-
-A successfully identified foreground or background create replaces the corresponding current ID. A create that fails before azd receives an ID leaves the previous current ID unchanged.
-
-Lifecycle commands resolve their target as follows:
-
-1. Use `--response-id` or `--invocation-id` when supplied.
-2. Otherwise load the current ID for the selected agent.
-3. Fail with actionable guidance when neither is available.
-
-Explicit IDs work with `--agent-endpoint` and do not require project-backed local state. Explicit show, follow, and cancel operations do not update current selection.
-
-Response state is intentionally minimal:
-
-```yaml
-extensions:
-  ai-agents:
-    responses:
-      "<agent-key>":
-        responseId: resp_123
-```
-
-No Response status, session, conversation, or event sequence is persisted. Existing session and conversation stores remain responsible for subsequent create context.
-
-## Responses create
-
-All Responses creates use `stream=true` so azd can render output and identify the Response. Background creates additionally send:
+UserConfig remains protocol-specific internally, despite the shared command group:
 
 ```json
 {
-  "store": true,
-  "background": true
+  "extensions": {
+    "ai-agents": {
+      "responses": {
+        "<agent-key>": {"responseId": "resp_123"}
+      },
+      "invocations": {
+        "<agent-key>": {"invocationId": "inv_123"}
+      }
+    }
+  }
 }
 ```
 
-`--no-wait` requires `--background`. It reads complete SSE events through the first event that identifies the Response, saves and prints the ID, then closes the connection and returns success.
+The Invocation map is introduced by the second PR. There is no compatibility migration. No lifecycle status, event cursor, session, or conversation is stored in these records. Existing session/conversation maps are independent create-time context.
 
-A foreground or background create never retrieves or evaluates the status of the previous current Response. Reusing the existing conversation preserves history and lets the service apply steering or concurrency behavior.
+Explicit `--id` with `--agent-endpoint` works without project-backed state. Lifecycle commands must not create sessions or conversations. The current caller must provide the correct authentication, identity, and allowed custom headers.
 
-If an attached background create disconnects after its Response ID is known, azd reports the ID and directs the user to `responses follow`. It does not retry the creating POST or reconnect automatically.
+## Lifecycle behavior
 
-`--output raw` remains unsupported for background create because `--no-wait` and create-to-follow recovery require event parsing. Existing foreground raw output remains unchanged and does not promise current-ID extraction when the wire response cannot be inspected without changing raw output.
+### Show
 
-## Responses show
+One GET retrieves the current service resource. JSON is the default; `--output table` gives a summary consistent with `sessions show`. The command does not use cached status, poll, or change current selection.
 
-`responses show` performs exactly one snapshot GET and prints the service resource:
+### Follow
 
-- JSON by default.
-- Table output with `--output table`, following `sessions show` conventions.
+For Responses, perform exactly one `GET /responses/{id}?stream=true`, never including `starting_after`. Replay starts from the beginning on every command invocation. Do not track sequence numbers, suppress events based on sequence, retry HTTP errors, or reconnect automatically.
 
-It does not use cached status and does not modify current selection.
+If the stream disconnects before a terminal event, report the ID and direct the user to run `invocations follow` again. Do not silently replace follow with a snapshot GET.
 
-## Responses follow
+Retain SSE framing, bounded decoding, identity validation, output rendering, and terminal-event handling. Completed Responses replay and exit successfully. Failed, incomplete, and cancelled outcomes retain their existing error behavior.
 
-The first follow request is:
+### Cancel
 
-```http
-GET /responses/{id}?stream=true
-```
+Call the protocol's cancel endpoint for the explicit or current ID, without changing current selection or stopping the session. If cancellation is rejected, one GET may confirm that work is already terminal; then report that state and succeed. Otherwise preserve the cancellation failure. Do not treat a missing cancel implementation as successful cancellation of active work.
 
-It intentionally omits `starting_after`, including when the Response is already terminal. Buffered events replay from the beginning and the command follows new events until terminal completion.
+## Code organization
 
-The command makes one streaming GET and does not track event sequence numbers or reconnect automatically. If the connection ends before a terminal event, it reports the Response ID and directs the user to rerun `responses follow`, which replays from the beginning.
+Within `internal/cmd/`:
 
-Follow retains SSE framing, bounded event decoding, Response identity validation, and terminal status handling. It does not silently become show or retry the request.
+- `invoke.go`: common invoke command, flags, context, and protocol dispatch.
+- `invocations.go`: shared lifecycle command group, flags, protocol/ID selection, and dispatch.
+- `invoke_response.go`: Responses create and lifecycle implementations, SSE, output, and ID storage.
+- `invoke_invocation.go`: Invocations-protocol create and lifecycle implementations, polling, output, and ID storage.
+- `agent_endpoint.go`: shared endpoint parsing and protocol invoke URL construction.
 
-A completed Response replays and exits successfully. Failed, incomplete, and cancelled terminal outcomes preserve their existing command error behavior after rendering available output.
+No `responses` command group or separate `responses.go` remains. No generic capability framework is required; explicit protocol dispatch is sufficient.
 
-## Responses cancel
+## Validation and delivery
 
-Cancel always targets the explicit or current Response ID and calls the cancel endpoint. It does not rely on locally cached status and does not alter current selection.
+1. **PR #9900:** shared `invocations show|follow|cancel` commands with Responses support, `--long-running`, and removal of the superseded background/cursor implementation from #9703.
+2. **PR #9901:** add Invocations-protocol show/cancel and current-ID storage to that same command group, preserving existing create execution.
 
-Cancellation is idempotent from the CLI perspective. If cancel is rejected because the Response is already terminal, azd may perform one snapshot GET to confirm the terminal service state, report it, and return success.
-
-Cancel never stops or deletes the hosted-agent session.
-
-## Output and identity
-
-Friendly create output prints the Response ID as soon as it has been successfully saved when local state is available. If local state is unavailable, explicit lifecycle commands remain available using the printed ID.
-
-`responses show` follows resource-show output conventions. `responses follow` uses the existing friendly SSE renderer. `responses cancel` prints the resulting or confirmed status.
-
-## Validation
-
-- `--no-wait` requires `--background`.
-- `--background` is remote Responses-only.
-- Background create rejects an explicitly supplied total `--timeout`.
-- Background create rejects raw output.
-- Responses lifecycle commands are remote-only.
-- A lifecycle `--agent-endpoint` must identify a Responses endpoint.
-- An omitted resource ID requires project-backed current state.
-- An explicit resource ID does not require current state.
-
-## Removed implementation policy
-
-This design deliberately removes the earlier resumable-work orchestration introduced with the first implementation slice:
-
-- No `invoke --resume`, `invoke --continue`, `invoke --steer`, or invoke-level `--cancel`.
-- No active-Response guard or snapshot preflight before create.
-- No event cursor, replay offset, or periodic progress persistence.
-- No persisted Response status, session, or conversation metadata.
-- No terminal-state network short circuit.
-- No lifecycle context inheritance from a saved Response record.
-- No follow snapshot fallback.
-
-## Testing
-
-Responses coverage must include:
-
-- Foreground and background request bodies.
-- `--no-wait` identity persistence before detach.
-- A second create while another Response is active, with no preflight GET.
-- Current ID replacement only after identity is received.
-- Explicit and implicit show, follow, and cancel selection.
-- Explicit lifecycle operations with `--agent-endpoint` and no local state.
-- Explicit operations not changing current selection.
-- Show JSON and table output.
-- Follow without `starting_after` or automatic retries.
-- A new follow replaying from the beginning.
-- Terminal replay success.
-- Idempotent terminal cancellation.
-- Existing foreground, local, Invocations, A2A, and raw-output regressions.
-
-## Delivery
-
-1. **Responses primitives:** simplify the merged attached-background implementation, add Responses show/follow/cancel, and retain only in-process follow resilience.
-2. **Invocations primitives:** add Invocation current-ID persistence, show, and cancel without changing existing invoke execution behavior.
+Test protocol selection (explicit, endpoint-derived, inferred, and ambiguous), unsupported operations, long-running/no-wait rules, explicit/current ID selection, no current-state mutation by lifecycle operations, HTTP methods/headers/paths, full replay without retries, terminal-cancel fallback, JSON/table output, and existing invoke regressions. Validate the full extension and use focused race tests for new coverage.

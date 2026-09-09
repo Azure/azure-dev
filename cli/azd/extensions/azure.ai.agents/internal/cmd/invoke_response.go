@@ -15,10 +15,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"azureaiagent/internal/cmd/nextstep"
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -158,7 +161,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 			return err
 		}
 	}
-	reqBody := buildResponsesRequestBody(msg, sid, convID, a.flags.background)
+	reqBody := buildResponsesRequestBody(msg, sid, convID, a.flags.longRunning)
 
 	raw := a.flags.outputFmt == outputRaw
 	if !raw {
@@ -193,7 +196,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 
 	client := &http.Client{Timeout: a.httpTimeout()}
-	if a.flags.background {
+	if a.flags.longRunning {
 		client = responseStreamHTTPClient()
 	}
 	invokeStart := time.Now()
@@ -246,7 +249,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		os.Stdout,
 		rc.name,
 		responsesSSEOptions{
-			requireTerminal: a.flags.background,
+			requireTerminal: a.flags.longRunning,
 			onResponseID: func(responseID string) error {
 				if err := tracker.Apply(ctx, responseID); err != nil {
 					return err
@@ -261,21 +264,13 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 			},
 		},
 	)
-	followCommand := fmt.Sprintf(
-		"azd ai agent responses follow --response-id %s",
-		tracker.responseID,
-	)
-	if a.endpoint != nil {
-		followCommand += fmt.Sprintf(" --agent-endpoint %q", a.flags.agentEndpoint)
-	} else if targetName := rc.nextStepName(); targetName != "" {
-		followCommand += fmt.Sprintf(" --agent-name %q", targetName)
-	}
+	followCommand := a.responseFollowCommand(rc, tracker.responseID)
 	if errors.Is(streamErr, errBackgroundNoWait) {
 		fmt.Printf("\nNext:\n  %s\n", followCommand)
 		return nil
 	}
 	if streamErr != nil {
-		if a.flags.background && tracker.responseID != "" &&
+		if a.flags.longRunning && tracker.responseID != "" &&
 			errors.Is(streamErr, errResponsesStreamDisconnected) {
 			return fmt.Errorf("%w; replay and follow it with `%s`", streamErr, followCommand)
 		}
@@ -834,4 +829,437 @@ func printAgentResponse(result map[string]any, title string) error {
 		fmt.Println(string(jsonBytes))
 	}
 	return nil
+}
+
+func (a *InvokeAction) responseFollowCommand(rc *remoteContext, id string) string {
+	command := fmt.Sprintf("azd ai agent invocations follow --id %q", id)
+	if a.endpoint != nil {
+		return command + fmt.Sprintf(" --agent-endpoint %q", a.flags.agentEndpoint)
+	}
+	command += " --protocol responses"
+	if name := rc.nextStepName(); name != "" {
+		command += fmt.Sprintf(" --agent-name %q", name)
+	}
+	return command
+}
+
+// runResponseOperation implements lifecycle operations for the Responses protocol.
+func (a *InvokeAction) runResponseOperation(
+	ctx context.Context,
+	rc *remoteContext,
+	id string,
+	operation invocationOperation,
+	format string,
+	writer io.Writer,
+) error {
+	switch operation {
+	case invocationShow:
+		result, err := a.getResponseSnapshot(ctx, rc, id)
+		if err != nil {
+			return classifyResponseLifecycleError(err, exterrors.OpShowResponse, "showing Response")
+		}
+		return printResponseSnapshot(writer, result, format)
+	case invocationFollow:
+		return classifyResponseLifecycleError(
+			a.followResponse(ctx, rc, id, writer), exterrors.OpFollowResponse, "following Response",
+		)
+	case invocationCancel:
+		return classifyResponseLifecycleError(
+			a.cancelResponse(ctx, rc, id, writer), exterrors.OpCancelResponse, "cancelling Response",
+		)
+	default:
+		return fmt.Errorf("unsupported Responses operation %q", operation)
+	}
+}
+
+func classifyResponseStateReadError(cause error) error {
+	if _, ok := errors.AsType[*azdext.ConfigError](cause); !ok {
+		return exterrors.FromHost(cause, exterrors.OpReadResponseState, "reading current Response state failed")
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidResponseState,
+		fmt.Sprintf("saved Response state at %q could not be read: %v", responsesConfigPath, cause),
+		fmt.Sprintf(
+			"clear the invalid state with `azd config unset %s`, or repair that config value",
+			responsesConfigPath,
+		),
+	)
+}
+
+func classifyResponseLifecycleError(cause error, operation, label string) error {
+	if cause == nil {
+		return nil
+	}
+	httpErr, ok := errors.AsType[*responseLifecycleHTTPError](cause)
+	if !ok {
+		return cause
+	}
+	serviceName := ""
+	if parsed, err := url.Parse(httpErr.requestURL); err == nil {
+		serviceName = parsed.Hostname()
+	}
+	serviceErr := exterrors.Service(
+		operation,
+		strconv.Itoa(httpErr.statusCode),
+		fmt.Sprintf("%s failed with HTTP %d: %s", label, httpErr.statusCode, httpErr.status),
+		serviceName,
+		"",
+	)
+	serviceErr.StatusCode = httpErr.statusCode
+	if cause.Error() != httpErr.Error() {
+		serviceErr.Suggestion = "use `azd ai agent invocations show --protocol responses` to inspect the Response, or run the follow command again"
+	}
+	return serviceErr
+}
+
+func (a *InvokeAction) cancelResponse(
+	ctx context.Context,
+	rc *remoteContext,
+	responseID string,
+	writer io.Writer,
+) error {
+	token, err := a.acquireBearerToken(ctx)
+	if err != nil {
+		return err
+	}
+	cancelURL := buildResponseCancelURL(rc.projectEndpoint, rc.name, responseID, rc.apiVersion)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cancelURL, nil)
+	if err != nil {
+		return fmt.Errorf("create Response cancel request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	applyCustomHeaders(req, a.clientHeaders)
+	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
+
+	//nolint:gosec // URL is built from a validated Foundry endpoint.
+	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	if err != nil {
+		return fmt.Errorf("cancel Response %s: %w", responseID, err)
+	}
+	defer resp.Body.Close()
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return fmt.Errorf("read Response cancel result: %w", readErr)
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		// Cancellation is idempotent from the CLI perspective. Confirm a terminal
+		// state from the service rather than trusting stale local status.
+		result, snapshotErr := a.getResponseSnapshot(ctx, rc, responseID)
+		if snapshotErr == nil && isTerminalResponseStatus(result.snapshot.Status) {
+			_, err = fmt.Fprintf(
+				writer, "Response %s is already %s; nothing to cancel.\n", responseID, result.snapshot.Status,
+			)
+			return err
+		}
+		return &responseLifecycleHTTPError{
+			method:     http.MethodPost,
+			requestURL: cancelURL,
+			statusCode: resp.StatusCode,
+			status:     resp.Status,
+			body:       body,
+		}
+	}
+
+	result, decodeErr := decodeResponseSnapshot(body)
+	if decodeErr == nil && result.Status != "" {
+		_, err = fmt.Fprintf(writer, "Response %s is %s.\n", responseID, result.Status)
+		return err
+	}
+	_, err = fmt.Fprintf(writer, "Cancellation requested for Response %s.\n", responseID)
+	return err
+}
+
+func (a *InvokeAction) getResponseSnapshot(
+	ctx context.Context,
+	rc *remoteContext,
+	responseID string,
+) (responseSnapshotResult, error) {
+	token, err := a.acquireBearerToken(ctx)
+	if err != nil {
+		return responseSnapshotResult{}, err
+	}
+	snapshotURL := buildResponseLifecycleURL(rc.projectEndpoint, rc.name, responseID, rc.apiVersion, false)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, snapshotURL, nil)
+	if err != nil {
+		return responseSnapshotResult{}, fmt.Errorf("create Response show request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	applyCustomHeaders(req, a.clientHeaders)
+	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
+
+	//nolint:gosec // URL is built from a validated Foundry endpoint.
+	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	if err != nil {
+		return responseSnapshotResult{}, fmt.Errorf("show Response %s: %w", responseID, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return responseSnapshotResult{}, fmt.Errorf("read Response snapshot: %w", err)
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		return responseSnapshotResult{}, &responseLifecycleHTTPError{
+			method:     http.MethodGet,
+			requestURL: snapshotURL,
+			statusCode: resp.StatusCode,
+			status:     resp.Status,
+			body:       body,
+		}
+	}
+	snapshot, err := decodeResponseSnapshot(body)
+	if err != nil {
+		return responseSnapshotResult{}, fmt.Errorf("decode Response snapshot: %w", err)
+	}
+	actualID := snapshot.ID
+	if actualID == "" {
+		actualID = snapshot.ResponseID
+	}
+	if actualID != "" && actualID != responseID {
+		return responseSnapshotResult{}, fmt.Errorf(
+			"Response snapshot ID %q does not match requested ID %q", actualID, responseID,
+		)
+	}
+	return responseSnapshotResult{snapshot: snapshot, raw: body}, nil
+}
+
+func decodeResponseSnapshot(body []byte) (responsesSnapshot, error) {
+	var snapshot responsesSnapshot
+	if err := json.Unmarshal(body, &snapshot); err != nil {
+		return responsesSnapshot{}, err
+	}
+	return snapshot, nil
+}
+
+func printResponseSnapshot(writer io.Writer, result responseSnapshotResult, format string) error {
+	if format != "table" {
+		var formatted any
+		if err := json.Unmarshal(result.raw, &formatted); err != nil {
+			return fmt.Errorf("decode Response JSON: %w", err)
+		}
+		data, err := json.MarshalIndent(formatted, "", "  ")
+		if err != nil {
+			return fmt.Errorf("format Response JSON: %w", err)
+		}
+		_, err = fmt.Fprintln(writer, string(data))
+		return err
+	}
+
+	id := result.snapshot.ID
+	if id == "" {
+		id = result.snapshot.ResponseID
+	}
+	table := tabwriter.NewWriter(writer, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(table, "FIELD\tVALUE")
+	fmt.Fprintln(table, "-----\t-----")
+	fmt.Fprintf(table, "Response ID\t%s\n", id)
+	fmt.Fprintf(table, "Status\t%s\n", result.snapshot.Status)
+	fmt.Fprintf(table, "Session ID\t%s\n", result.snapshot.AgentSessionID)
+	return table.Flush()
+}
+
+func isTerminalResponseStatus(status string) bool {
+	switch status {
+	case "completed", "failed", "incomplete", "cancelled":
+		return true
+	default:
+		return false
+	}
+}
+
+const responsesConfigPath = configPathPrefix + ".responses"
+
+type savedResponse struct {
+	ResponseID string `json:"responseId"`
+}
+
+type responseStateStore interface {
+	Get(ctx context.Context, agentKey string) (*savedResponse, error)
+	Save(ctx context.Context, agentKey string, record savedResponse) error
+	Delete(ctx context.Context, agentKey string) error
+}
+
+type userConfigResponseStateStore struct {
+	client *azdext.AzdClient
+}
+
+func newUserConfigResponseStateStore(client *azdext.AzdClient) responseStateStore {
+	return &userConfigResponseStateStore{client: client}
+}
+
+func (s *userConfigResponseStateStore) Get(ctx context.Context, agentKey string) (*savedResponse, error) {
+	config, err := azdext.NewConfigHelper(s.client)
+	if err != nil {
+		return nil, fmt.Errorf("create response config helper: %w", err)
+	}
+
+	var records map[string]savedResponse
+	found, err := config.GetUserJSON(ctx, responsesConfigPath, &records)
+	if err != nil {
+		return nil, fmt.Errorf("read responses: %w", err)
+	}
+	if !found || records == nil {
+		return nil, nil
+	}
+	record, ok := records[agentKey]
+	if !ok {
+		return nil, nil
+	}
+	return &record, nil
+}
+
+func (s *userConfigResponseStateStore) Save(ctx context.Context, agentKey string, record savedResponse) error {
+	config, err := azdext.NewConfigHelper(s.client)
+	if err != nil {
+		return fmt.Errorf("create response config helper: %w", err)
+	}
+
+	var records map[string]savedResponse
+	found, err := config.GetUserJSON(ctx, responsesConfigPath, &records)
+	if err != nil {
+		return fmt.Errorf("read responses: %w", err)
+	}
+	if !found || records == nil {
+		records = make(map[string]savedResponse)
+	}
+	records[agentKey] = record
+
+	if err := config.SetUserJSON(ctx, responsesConfigPath, records); err != nil {
+		return fmt.Errorf("write responses: %w", err)
+	}
+	return nil
+}
+
+func (s *userConfigResponseStateStore) Delete(ctx context.Context, agentKey string) error {
+	config, err := azdext.NewConfigHelper(s.client)
+	if err != nil {
+		return fmt.Errorf("create response config helper: %w", err)
+	}
+
+	var records map[string]savedResponse
+	found, err := config.GetUserJSON(ctx, responsesConfigPath, &records)
+	if err != nil {
+		return fmt.Errorf("read responses: %w", err)
+	}
+	if !found || records == nil {
+		return nil
+	}
+	delete(records, agentKey)
+	if err := config.SetUserJSON(ctx, responsesConfigPath, records); err != nil {
+		return fmt.Errorf("write responses: %w", err)
+	}
+	return nil
+}
+
+// followResponse performs one streaming GET. A later command replays the
+// Response from the beginning; azd does not maintain a replay cursor.
+func (a *InvokeAction) followResponse(
+	ctx context.Context,
+	rc *remoteContext,
+	responseID string,
+	writer io.Writer,
+) error {
+	token, err := a.acquireBearerToken(ctx)
+	if err != nil {
+		return err
+	}
+	followURL := buildResponseLifecycleURL(
+		rc.projectEndpoint,
+		rc.name,
+		responseID,
+		rc.apiVersion,
+		true,
+	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, followURL, nil)
+	if err != nil {
+		return fmt.Errorf("create Response follow request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "text/event-stream")
+	applyCustomHeaders(req, a.clientHeaders)
+	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
+
+	//nolint:gosec // URL is built from a validated Foundry endpoint.
+	resp, err := responseStreamHTTPClient().Do(req)
+	if err != nil {
+		return fmt.Errorf("follow Response %s: %w", responseID, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(resp.Body)
+		return &responseLifecycleHTTPError{
+			method:     http.MethodGet,
+			requestURL: followURL,
+			statusCode: resp.StatusCode,
+			status:     resp.Status,
+			body:       body,
+		}
+	}
+
+	if err := readResponsesSSE(
+		ctx,
+		resp.Body,
+		writer,
+		rc.name,
+		responsesSSEOptions{
+			requireTerminal:    true,
+			expectedResponseID: responseID,
+		},
+	); err != nil {
+		if errors.Is(err, errResponsesStreamDisconnected) {
+			return fmt.Errorf(
+				"%w; rerun `%s` to replay and follow again",
+				err,
+				a.responseFollowCommand(rc, responseID),
+			)
+		}
+		return err
+	}
+	return nil
+}
+
+type responseLifecycleHTTPError struct {
+	method     string
+	requestURL string
+	statusCode int
+	status     string
+	body       []byte
+}
+
+func (e *responseLifecycleHTTPError) Error() string {
+	return fmt.Sprintf("%s %s failed with HTTP %d: %s\n%s", e.method, e.requestURL, e.statusCode, e.status, e.body)
+}
+
+func responseStreamHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = 30 * time.Second
+	return &http.Client{Transport: transport}
+}
+
+func buildResponseLifecycleURL(
+	projectEndpoint string,
+	agentName string,
+	responseID string,
+	apiVersion string,
+	stream bool,
+) string {
+	if apiVersion == "" {
+		apiVersion = DefaultAgentAPIVersion
+	}
+	base := fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/openai/responses/%s",
+		projectEndpoint,
+		agentName,
+		url.PathEscape(responseID),
+	)
+	query := url.Values{"api-version": []string{apiVersion}}
+	if stream {
+		query.Set("stream", "true")
+	}
+	return base + "?" + query.Encode()
+}
+
+func buildResponseCancelURL(projectEndpoint, agentName, responseID, apiVersion string) string {
+	lifecycleURL := buildResponseLifecycleURL(projectEndpoint, agentName, responseID, apiVersion, false)
+	parts := strings.SplitN(lifecycleURL, "?", 2)
+	return parts[0] + "/cancel?" + parts[1]
 }

@@ -37,30 +37,30 @@ func (s *memoryResponseStore) Delete(context.Context, string) error {
 	return nil
 }
 
-func TestInvokeBackgroundFlags(t *testing.T) {
+func TestInvokeLongRunningFlags(t *testing.T) {
 	cmd := newInvokeCommand(nil)
-	assert.NotNil(t, cmd.Flags().Lookup("background"))
+	assert.NotNil(t, cmd.Flags().Lookup("long-running"))
 	assert.NotNil(t, cmd.Flags().Lookup("no-wait"))
 	assert.Nil(t, cmd.Flags().Lookup("resumable"))
 }
 
-func TestInvokeBackgroundValidation(t *testing.T) {
+func TestInvokeLongRunningValidation(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
 		want string
 	}{
-		{name: "no wait", args: []string{"--no-wait", "hello"}, want: "--no-wait requires --background"},
-		{name: "local", args: []string{"--background", "--local", "hello"}, want: "remote Responses agents"},
+		{name: "no wait", args: []string{"--no-wait", "hello"}, want: "--no-wait requires --long-running"},
+		{name: "local", args: []string{"--long-running", "--local", "hello"}, want: "remote Responses agents"},
 		{
 			name: "invocations",
-			args: []string{"--background", "--protocol", "invocations", "hello"},
-			want: "--background is not supported with the invocations protocol",
+			args: []string{"--long-running", "--protocol", "invocations", "hello"},
+			want: "--long-running is not supported with the invocations protocol",
 		},
 		{
 			name: "timeout",
-			args: []string{"--background", "--timeout", "30", "hello"},
-			want: "--timeout cannot be used with --background",
+			args: []string{"--long-running", "--timeout", "30", "hello"},
+			want: "--timeout cannot be used with --long-running",
 		},
 	}
 	for _, tt := range tests {

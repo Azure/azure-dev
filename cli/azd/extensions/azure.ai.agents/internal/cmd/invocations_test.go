@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -120,7 +122,9 @@ func TestResponsesHTTP(t *testing.T) {
 			store := newUserConfigResponseStateStore(client)
 			require.NoError(t, store.Save(t.Context(), "agent-key", savedResponse{ResponseID: "resp_current"}))
 			action := &InvokeAction{
-				flags:         &invokeFlags{userIdentityFlags: userIdentityFlags{userIdentity: "test-user"}},
+				flags: &invokeFlags{
+					protocol: "responses", userIdentityFlags: userIdentityFlags{userIdentity: "test-user"},
+				},
 				credential:    responseTestCredential{},
 				clientHeaders: http.Header{"X-Client-Request-Id": []string{"request-123"}},
 			}
@@ -128,19 +132,11 @@ func TestResponsesHTTP(t *testing.T) {
 				projectEndpoint: server.URL, name: "agent", apiVersion: "v1", azdClient: client, agentKey: "agent-key",
 			}
 			var output bytes.Buffer
-			var err error
-			switch tt.operation {
-			case "show":
-				var result responseSnapshotResult
-				result, err = action.getResponseSnapshot(t.Context(), rc, "resp_test")
-				if err == nil {
-					err = printResponseSnapshot(&output, result, "json")
-					assert.JSONEq(t, tt.body, output.String())
-				}
-			case "follow":
-				err = action.followResponse(t.Context(), rc, "resp_test", &output)
-			case "cancel":
-				err = action.cancelResponse(t.Context(), rc, "resp_test", &output)
+			err := action.runInvocationOperation(
+				t.Context(), rc, "resp_test", invocationOperation(tt.operation), "json", &output,
+			)
+			if tt.operation == "show" && err == nil {
+				assert.JSONEq(t, tt.body, output.String())
 			}
 			if tt.wantErr == "" {
 				require.NoError(t, err)
@@ -159,7 +155,7 @@ func TestResponsesHTTP(t *testing.T) {
 	}
 }
 
-func TestResolveResponseCommandSelection(t *testing.T) {
+func TestResolveInvocationCommandSelection(t *testing.T) {
 	server := grpc.NewServer()
 	config := newInvokeUserConfigServer()
 	azdext.RegisterUserConfigServiceServer(server, config)
@@ -177,9 +173,9 @@ func TestResolveResponseCommandSelection(t *testing.T) {
 		{name: "explicit", explicitID: "resp_explicit", want: "resp_explicit"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, rc, id, err := resolveResponseCommand(t.Context(), &responseCommandFlags{
-				agentEndpoint: endpoint, responseID: tt.explicitID,
-			})
+			_, rc, id, err := resolveInvocationCommand(t.Context(), &invocationCommandFlags{
+				agentEndpoint: endpoint, id: tt.explicitID,
+			}, invocationShow)
 			require.NoError(t, err)
 			defer rc.azdClient.Close()
 			assert.Equal(t, tt.want, id)
@@ -190,21 +186,67 @@ func TestResolveResponseCommandSelection(t *testing.T) {
 	}
 }
 
-func TestResponsesCommandSubcommands(t *testing.T) {
-	cmd := newResponsesCommand(nil)
+func TestInvocationOperationSupport(t *testing.T) {
+	for _, protocol := range []agent_api.AgentProtocol{
+		agent_api.AgentProtocolResponses, agent_api.AgentProtocolInvocations, agent_api.AgentProtocolA2A,
+		"activity", "invocations_ws", "voice",
+	} {
+		for _, operation := range []invocationOperation{invocationShow, invocationFollow, invocationCancel} {
+			assert.Equal(t, protocol == agent_api.AgentProtocolResponses,
+				supportsInvocationOperation(protocol, operation), "%s %s", protocol, operation)
+		}
+	}
+}
+
+func TestInvocationsCommandValidation(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "empty ID", args: []string{"show", "--id="}, want: "--id requires a non-empty value"},
+		{name: "empty protocol", args: []string{"show", "--protocol="}, want: "--protocol requires a non-empty value"},
+		{name: "invalid version", args: []string{"show", "--version", "../bad"}, want: "unsupported characters"},
+		{name: "unsupported protocol", args: []string{"show", "--protocol", "a2a", "--id", "id"},
+			want: "invocations show is not supported with the a2a protocol"},
+		{name: "unsupported follow", args: []string{"follow", "--protocol", "invocations", "--id", "id"},
+			want: "invocations follow is not supported with the invocations protocol"},
+		{name: "no message", args: []string{"show", "message"}, want: "unknown command"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := newInvocationsCommand(nil)
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+			cmd.SetArgs(tt.args)
+			err := cmd.Execute()
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
+}
+
+func TestCurrentInvocationExplicitIDNeedsNoState(t *testing.T) {
+	id, err := resolveCurrentInvocationID(t.Context(), &remoteContext{}, agent_api.AgentProtocolResponses, "resp_explicit")
+	require.NoError(t, err)
+	assert.Equal(t, "resp_explicit", id)
+	_, err = resolveCurrentInvocationID(t.Context(), &remoteContext{}, agent_api.AgentProtocolResponses, "")
+	require.ErrorContains(t, err, "current invocation state is unavailable")
+}
+
+func TestInvocationsCommandSubcommands(t *testing.T) {
+	cmd := newInvocationsCommand(nil)
 	for _, name := range []string{"show", "follow", "cancel"} {
 		child, _, err := cmd.Find([]string{name})
 		require.NoError(t, err)
 		assert.Equal(t, name, child.Name())
-		assert.NotNil(t, child.Flags().Lookup("response-id"))
+		assert.NotNil(t, child.Flags().Lookup("id"))
 		assert.NotNil(t, child.Flags().Lookup("agent-endpoint"))
 	}
 }
 
-func TestResponsesEndpointRejectsAgentSelector(t *testing.T) {
-	cmd := newResponsesShowCommand(nil)
+func TestInvocationsEndpointRejectsAgentSelector(t *testing.T) {
+	cmd := newInvocationsShowCommand(nil)
 	cmd.SetArgs([]string{
-		"--response-id", "resp_123",
+		"--id", "resp_123",
 		"--agent-name", "agent",
 		"--agent-endpoint",
 		"https://example.services.ai.azure.com/api/projects/project/agents/agent/" +

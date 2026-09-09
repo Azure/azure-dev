@@ -171,12 +171,11 @@ var _ azdext.ServiceTargetProvider = &AgentServiceTargetProvider{}
 
 // AgentServiceTargetProvider is a minimal implementation of ServiceTargetProvider for demonstration
 type AgentServiceTargetProvider struct {
-	azdClient                  *azdext.AzdClient
-	serviceConfig              *azdext.ServiceConfig
-	agentDefinitionPath        string
-	agentDefinitionPathFromEnv bool
-	projectPath                string
-	servicePath                string
+	azdClient           *azdext.AzdClient
+	serviceConfig       *azdext.ServiceConfig
+	agentDefinitionPath string
+	projectPath         string
+	servicePath         string
 	// deployContextReady is set by every successful ensureDeployContext path;
 	// agentDefinitionPath is only set for the file-based and env-override paths
 	// (not the inline unified shape), so both are checked as the idempotency guard.
@@ -433,7 +432,6 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 		}
 
 		p.agentDefinitionPath = envPath
-		p.agentDefinitionPathFromEnv = true
 		fmt.Printf("Using agent definition from environment variable: %s\n", color.New(color.FgHiGreen).Sprint(envPath))
 		p.deployContextReady = true
 		return nil
@@ -1408,14 +1406,6 @@ func (p *AgentServiceTargetProvider) Deploy(
 	if err != nil {
 		return nil, err
 	}
-	if shouldRejectTelephonyForNonVoice(isVoice, p.agentDefinitionPathFromEnv, serviceConfig) {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
-			"telephony bindings are only supported for prompt voice agents",
-			"remove telephony from this service or set kind: prompt-voice",
-		)
-	}
-
 	var agentDef agent_yaml.ContainerAgent
 	if !isVoice {
 		var isContainerAgent bool
@@ -2300,26 +2290,6 @@ func (p *AgentServiceTargetProvider) finalizeDeploy(
 	return &azdext.ServiceDeployResult{
 		Artifacts: artifacts,
 	}, nil
-}
-
-func serviceHasTelephony(serviceConfig *azdext.ServiceConfig) bool {
-	for _, props := range []*structpb.Struct{serviceConfig.GetAdditionalProperties(), serviceConfig.GetConfig()} {
-		if props == nil {
-			continue
-		}
-		if _, ok := props.GetFields()["telephony"]; ok {
-			return true
-		}
-	}
-	return false
-}
-
-func shouldRejectTelephonyForNonVoice(
-	isVoice bool,
-	agentDefinitionPathFromEnv bool,
-	serviceConfig *azdext.ServiceConfig,
-) bool {
-	return !isVoice && !agentDefinitionPathFromEnv && serviceHasTelephony(serviceConfig)
 }
 
 // deployHostedAgent deploys a container-based hosted agent to the Foundry service.

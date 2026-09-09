@@ -11,6 +11,7 @@ words:
   # Voice (prompt-voice) agents
   - BYOM
   - Nanami
+  - orgid
   - pcma
   - pcmu
   - webrtc

@@ -160,6 +160,7 @@ type AgentDefinitionInline struct {
 	ParallelToolCalls *bool                        `json:"parallelToolCalls,omitempty"`
 	MaxOutputTokens   any                          `json:"maxOutputTokens,omitempty"`
 	Include           []string                     `json:"include,omitempty"`
+	Telephony         *agent_yaml.VoiceTelephony   `json:"telephony,omitempty"`
 }
 
 // voiceAgentDefinitionToInline projects a VoiceAgent into the inline definition
@@ -184,6 +185,7 @@ func voiceAgentDefinitionToInline(va agent_yaml.VoiceAgent) AgentDefinitionInlin
 		ParallelToolCalls: va.ParallelToolCalls,
 		MaxOutputTokens:   va.MaxOutputTokens,
 		Include:           va.Include,
+		Telephony:         va.Telephony,
 	}
 }
 
@@ -208,6 +210,7 @@ func (d AgentDefinitionInline) toVoiceAgent() agent_yaml.VoiceAgent {
 		ParallelToolCalls: d.ParallelToolCalls,
 		MaxOutputTokens:   d.MaxOutputTokens,
 		Include:           d.Include,
+		Telephony:         d.Telephony,
 	}
 }
 
@@ -820,6 +823,13 @@ func agentDefinitionFromStruct(
 			exterrors.CodeInvalidAgentManifest,
 			"hosted voice wrapper fields are not supported on hosted agents",
 			"move modelType: hosted_agent and targetAgent to a voice wrapper service",
+		)
+	}
+	if inline.Telephony != nil {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"telephony bindings are only supported on voice agents",
+			"move telephony to a service with kind: voice or kind: prompt-voice",
 		)
 	}
 

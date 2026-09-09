@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -1407,7 +1408,6 @@ func (p *AgentServiceTargetProvider) Deploy(
 	if err != nil {
 		return nil, err
 	}
-
 	var agentDef agent_yaml.ContainerAgent
 	if !isVoice {
 		var isContainerAgent bool
@@ -2507,6 +2507,11 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	if err := validateVoiceAgentDeployResponse(agentObject); err != nil {
 		return nil, err
 	}
+	if err := p.deployVoiceTelephonyBindings(
+		ctx, agentClient, va, agentObject, azdEnv[voiceOverriddenHostEnvKey],
+	); err != nil {
+		return nil, err
+	}
 
 	fmt.Fprintf(os.Stderr, "Voice agent '%s' deployed successfully!\n", agentObject.Name)
 
@@ -2554,6 +2559,83 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	return &azdext.ServiceDeployResult{Artifacts: artifacts}, nil
 }
 
+type telephonyBindingClient interface {
+	GetTelephonyBinding(
+		ctx context.Context,
+		agentName string,
+		bindingID string,
+		apiVersion string,
+		overriddenHost string,
+	) (*agent_api.TelephonyBinding, error)
+	CreateTelephonyBinding(
+		ctx context.Context,
+		agentName string,
+		request *agent_api.TelephonyBindingRequest,
+		apiVersion string,
+		overriddenHost string,
+	) (*agent_api.TelephonyBinding, error)
+}
+
+func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
+	ctx context.Context,
+	agentClient telephonyBindingClient,
+	voiceAgent agent_yaml.VoiceAgent,
+	agentObject *agent_api.AgentObject,
+	overriddenHost string,
+) error {
+	if voiceAgent.Telephony == nil || len(voiceAgent.Telephony.Bindings) == 0 {
+		return nil
+	}
+	for _, binding := range voiceAgent.Telephony.Bindings {
+		request := &agent_api.TelephonyBindingRequest{
+			Provider:        telephonyWireProvider(binding.Provider),
+			Identifier:      strings.TrimSpace(binding.Identifier),
+			ConnectionName:  strings.TrimSpace(binding.Connection),
+			TransferTargets: binding.TransferTargets,
+		}
+
+		bindingID := fmt.Sprintf("%s:%s", request.Provider, request.Identifier)
+		remoteBinding, getErr := agentClient.GetTelephonyBinding(
+			ctx,
+			agentObject.Name,
+			bindingID,
+			agent_api.TelephonyBindingAPIVersion,
+			overriddenHost,
+		)
+		if getErr == nil {
+			if !telephonyBindingMatches(remoteBinding, request) {
+				return exterrors.Validation(
+					exterrors.CodeTelephonyBindingDrift,
+					fmt.Sprintf("telephony binding %q already exists with different configuration", bindingID),
+					"delete the remote binding, then run azd deploy again",
+				)
+			}
+			fmt.Fprintf(os.Stderr, "Telephony binding '%s' already exists.\n", bindingID)
+			continue
+		}
+		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok || respErr.StatusCode != http.StatusNotFound {
+			return exterrors.ServiceFromAzure(getErr, exterrors.OpGetTelephonyBinding)
+		}
+
+		created, err := agentClient.CreateTelephonyBinding(
+			ctx,
+			agentObject.Name,
+			request,
+			agent_api.TelephonyBindingAPIVersion,
+			overriddenHost,
+		)
+		if err != nil {
+			return exterrors.ServiceFromAzure(err, exterrors.OpCreateTelephonyBinding)
+		}
+		id := created.ID
+		if id == "" {
+			id = bindingID
+		}
+		fmt.Fprintf(os.Stderr, "Telephony binding '%s' created.\n", id)
+	}
+	return nil
+}
+
 func validateHostedVoiceWrapperName(wrapperName string, target *hostedVoiceTarget) error {
 	if target == nil || !strings.EqualFold(wrapperName, target.AgentName) {
 		return nil
@@ -2588,6 +2670,69 @@ func fetchAndValidateHostedVoiceTarget(
 		)
 	}
 	return nil
+}
+
+func telephonyWireProvider(provider string) string {
+	switch strings.TrimSpace(provider) {
+	case "acs":
+		return "azure-communication-service"
+	default:
+		return strings.TrimSpace(provider)
+	}
+}
+
+func telephonyBindingMatches(remote *agent_api.TelephonyBinding, desired *agent_api.TelephonyBindingRequest) bool {
+	if remote == nil || desired == nil {
+		return false
+	}
+	desiredID := fmt.Sprintf("%s:%s", strings.TrimSpace(desired.Provider), strings.TrimSpace(desired.Identifier))
+	if remoteID := normalizedTelephonyBindingID(remote.ID); remoteID != desiredID {
+		return false
+	}
+	if strings.TrimSpace(remote.Provider) != "" &&
+		strings.TrimSpace(remote.Provider) != strings.TrimSpace(desired.Provider) &&
+		!(strings.TrimSpace(desired.Provider) == "azure-communication-service" &&
+			strings.TrimSpace(remote.Provider) == "teams_phone_extension") {
+		return false
+	}
+	if strings.TrimSpace(remote.Identifier) != "" &&
+		strings.TrimSpace(remote.Identifier) != strings.TrimSpace(desired.Identifier) {
+		return false
+	}
+	remoteConnection := telephonyBindingConnection(remote)
+	if remoteConnection != strings.TrimSpace(desired.ConnectionName) {
+		return false
+	}
+	return jsonEquivalentTransferTargets(remote.TransferTargets, desired.TransferTargets)
+}
+
+func telephonyBindingConnection(remote *agent_api.TelephonyBinding) string {
+	if remote == nil {
+		return ""
+	}
+	if strings.TrimSpace(remote.ConnectionName) != "" {
+		return strings.TrimSpace(remote.ConnectionName)
+	}
+	return strings.TrimSpace(remote.Connection)
+}
+
+func normalizedTelephonyBindingID(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	unescaped, err := url.PathUnescape(value)
+	if err != nil {
+		return value
+	}
+	return unescaped
+}
+
+func emptyTransferTargetsAsNil(targets []map[string]any) []map[string]any {
+	if len(targets) == 0 {
+		return nil
+	}
+	return targets
 }
 
 func hostedVoiceTargetName(target *hostedVoiceTarget) string {
@@ -2639,6 +2784,25 @@ func validateHostedVoiceTargetVersion(version *agent_api.AgentVersionObject) err
 		return fmt.Errorf("target metadata bridgeProtocolVersion must be 1.0")
 	}
 	return nil
+}
+
+func jsonEquivalentTransferTargets(left, right []map[string]any) bool {
+	left = emptyTransferTargetsAsNil(left)
+	right = emptyTransferTargetsAsNil(right)
+	leftJSON, leftErr := json.Marshal(left)
+	rightJSON, rightErr := json.Marshal(right)
+	if leftErr != nil || rightErr != nil {
+		return false
+	}
+	var leftValue any
+	var rightValue any
+	if err := json.Unmarshal(leftJSON, &leftValue); err != nil {
+		return false
+	}
+	if err := json.Unmarshal(rightJSON, &rightValue); err != nil {
+		return false
+	}
+	return reflect.DeepEqual(leftValue, rightValue)
 }
 
 func validateVoiceAgentDeployResponse(agentObject *agent_api.AgentObject) error {

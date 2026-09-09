@@ -1,0 +1,362 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package experimenttracking
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+type staticCredential struct{}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+func (staticCredential) GetToken(
+	context.Context,
+	policy.TokenRequestOptions,
+) (azcore.AccessToken, error) {
+	return azcore.AccessToken{
+		Token:     "test-token",
+		ExpiresOn: time.Now().Add(time.Hour),
+	}, nil
+}
+
+func TestIngestionRequestsUseExtendedTimeout(t *testing.T) {
+	tests := []struct {
+		name string
+		send func(context.Context, *Client) error
+	}{
+		{
+			name: "protobuf",
+			send: func(ctx context.Context, client *Client) error {
+				_, err := client.DoBytes(
+					ctx,
+					http.MethodPost,
+					"protocols/otlp/v1/traces",
+					nil,
+					nil,
+					"application/x-protobuf",
+					[]byte{0x0a, 0x00},
+				)
+				return err
+			},
+		},
+		{
+			name: "JSON",
+			send: func(ctx context.Context, client *Client) error {
+				_, err := client.DoJSONIngestion(
+					ctx,
+					http.MethodPost,
+					"agents/otel/v1/traces",
+					nil,
+					nil,
+					map[string]any{"resourceSpans": []any{}},
+				)
+				return err
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var deadline time.Time
+			httpClient := &http.Client{
+				Timeout: defaultTimeout,
+				Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+					var ok bool
+					deadline, ok = request.Context().Deadline()
+					require.True(t, ok)
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     make(http.Header),
+						Body:       io.NopCloser(strings.NewReader(`{}`)),
+						Request:    request,
+					}, nil
+				}),
+			}
+			client, err := newClient(
+				"https://account.services.ai.azure.com/api/projects/project",
+				"",
+				"",
+				nil,
+				"project-key",
+				httpClient,
+			)
+			require.NoError(t, err)
+
+			started := time.Now()
+			require.NoError(t, test.send(t.Context(), client))
+			assert.WithinDuration(t, started.Add(ingestionTimeout), deadline, time.Second)
+			assert.Equal(t, defaultTimeout, httpClient.Timeout)
+		})
+	}
+}
+
+func TestNewClientDerivesProjectAndAccountIDs(t *testing.T) {
+	client, err := newClient(
+		"https://sample.services.ai.azure.com/api/projects/my%20project",
+		"",
+		"",
+		staticCredential{},
+		"",
+		http.DefaultClient,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "my project", client.ProjectID())
+	assert.Equal(t, "sample", client.AccountID())
+}
+
+func TestNewClientUsesProjectIDOverride(t *testing.T) {
+	client, err := newClient(
+		"https://sample.services.ai.azure.com/custom/path",
+		"override-project",
+		"2026-01-01-preview",
+		staticCredential{},
+		"",
+		http.DefaultClient,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "override-project", client.ProjectID())
+}
+
+func TestDoJSONAddsAuthVersionAndRepeatedQueryValues(t *testing.T) {
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+		assert.Equal(t, "/api/projects/project/experiment_tracking/runs/run/system-metrics", r.URL.Path)
+		assert.Equal(t, []string{"cpu", "memory"}, r.URL.Query()["names"])
+		assert.Equal(t, "v1", r.URL.Query().Get("api-version"))
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := newClient(
+		server.URL+"/api/projects/project",
+		"",
+		"",
+		staticCredential{},
+		"",
+		server.Client(),
+	)
+	require.NoError(t, err)
+
+	response, err := client.DoJSON(
+		t.Context(),
+		http.MethodPost,
+		"runs/run/system-metrics",
+		map[string][]string{"names": {"cpu", "memory"}},
+		nil,
+		map[string]any{"value": true},
+	)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"ok":true}`, string(response))
+	assert.Equal(t, true, gotBody["value"])
+}
+
+func TestDoJSONReturnsResponseError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error":{"code":"BadFilter","message":"invalid filter"}}`)
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := newClient(
+		server.URL+"/api/projects/project",
+		"",
+		"",
+		staticCredential{},
+		"",
+		server.Client(),
+	)
+	require.NoError(t, err)
+
+	_, err = client.DoJSON(t.Context(), http.MethodGet, "runs", nil, nil, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "BadFilter")
+}
+
+func TestNewLimitedResponseErrorBoundsBody(t *testing.T) {
+	const maxBytes = 8
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(`{"error":"response body is too large"}`)),
+		Request: &http.Request{
+			Method: http.MethodGet,
+			URL:    new(url.URL),
+		},
+	}
+
+	err := newLimitedResponseError(resp, maxBytes)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exceeds 8 bytes")
+	responseErr, ok := errors.AsType[*azcore.ResponseError](err)
+	require.True(t, ok)
+	body, readErr := io.ReadAll(responseErr.RawResponse.Body)
+	require.NoError(t, readErr)
+	assert.Len(t, body, maxBytes)
+}
+
+func TestRunHeaders(t *testing.T) {
+	client, err := newClient(
+		"https://account.services.ai.azure.com/api/projects/project",
+		"",
+		"",
+		staticCredential{},
+		"",
+		http.DefaultClient,
+	)
+	require.NoError(t, err)
+
+	headers := client.RunHeaders("run-1")
+	assert.Equal(t, "account", headers.Get("X-WANDB-USERNAME"))
+	assert.Equal(t, "project", headers.Get("X-Helios-Project-Id"))
+	assert.Equal(t, "run-1", headers.Get("x-helios-run-id"))
+}
+
+func TestNewClientRejectsInvalidDerivedProjectID(t *testing.T) {
+	_, err := newClient(
+		"https://account.services.ai.azure.com/api/projects/a/b",
+		"",
+		"",
+		staticCredential{},
+		"",
+		http.DefaultClient,
+	)
+	require.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "exactly one project ID"))
+}
+
+func TestDoJSONUsesAPIKeyAuthentication(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "", r.Header.Get("Authorization"))
+		assert.Equal(t, "project-key", r.Header.Get("api-key"))
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := newClient(
+		server.URL+"/api/projects/project",
+		"",
+		"",
+		nil,
+		"project-key",
+		server.Client(),
+	)
+	require.NoError(t, err)
+
+	_, err = client.DoJSON(t.Context(), http.MethodGet, "runs", nil, nil, nil)
+	require.NoError(t, err)
+}
+
+func TestDoJSONDoesNotFollowRedirectsWithAPIKey(t *testing.T) {
+	redirectTargetCalled := false
+	redirectTarget := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		redirectTargetCalled = true
+	}))
+	t.Cleanup(redirectTarget.Close)
+
+	redirectSource := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "project-key", r.Header.Get("api-key"))
+		http.Redirect(w, r, redirectTarget.URL, http.StatusFound)
+	}))
+	t.Cleanup(redirectSource.Close)
+
+	client, err := NewClientWithAPIKey(
+		redirectSource.URL+"/api/projects/project",
+		"",
+		"",
+		"project-key",
+	)
+	require.NoError(t, err)
+
+	_, err = client.DoJSON(t.Context(), http.MethodGet, "runs", nil, nil, nil)
+	require.Error(t, err)
+	assert.False(t, redirectTargetCalled)
+}
+
+func TestDoJSONPreservesEscapedPathSegments(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(
+			t,
+			"/api/projects/project/experiment_tracking/runs/run%20one/traces/trace%2Fone",
+			r.URL.EscapedPath(),
+		)
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := newClient(
+		server.URL+"/api/projects/project",
+		"",
+		"",
+		nil,
+		"project-key",
+		server.Client(),
+	)
+	require.NoError(t, err)
+
+	_, err = client.DoJSON(
+		t.Context(),
+		http.MethodGet,
+		"runs/run%20one/traces/trace%2Fone",
+		nil,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+}
+
+func TestDoJSONEscapesDotPathSegmentsWithoutCleaning(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(
+			t,
+			"/api/projects/project/experiment_tracking/runs/%2E%2E/metrics",
+			r.URL.EscapedPath(),
+		)
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := newClient(
+		server.URL+"/api/projects/project",
+		"",
+		"",
+		nil,
+		"project-key",
+		server.Client(),
+	)
+	require.NoError(t, err)
+
+	_, err = client.DoJSON(
+		t.Context(),
+		http.MethodGet,
+		"runs/../metrics",
+		nil,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+}

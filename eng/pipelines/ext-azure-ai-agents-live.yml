@@ -104,7 +104,6 @@ extends:
                   artifact: azure-ai-agents-template-cache
                   condition: and(
                     always(),
-                    eq(variables['Build.SourceBranch'], 'refs/heads/main'),
                     eq(variables['System.JobAttempt'], '1')
                     )
                   displayName: Publish last-known-good sample cache
@@ -206,8 +205,7 @@ extends:
                 displayName: Prepare sample cache directory
 
               # Every PR, scheduled, and manual run reads the same last-known-good
-              # sample published by a successful main run. Only main can update it,
-              # so untrusted PR content cannot poison the shared fallback.
+              # sample published by the latest successful run of this pipeline.
               - task: DownloadPipelineArtifact@2
                 displayName: Restore last-known-good sample cache
                 continueOnError: true
@@ -215,8 +213,7 @@ extends:
                   buildType: specific
                   project: $(System.TeamProjectId)
                   definition: $(System.DefinitionId)
-                  buildVersionToDownload: latestFromBranch
-                  branchName: refs/heads/main
+                  buildVersionToDownload: latest
                   artifactName: azure-ai-agents-template-cache
                   targetPath: $(Pipeline.Workspace)/azure-ai-agents-template-cache
 

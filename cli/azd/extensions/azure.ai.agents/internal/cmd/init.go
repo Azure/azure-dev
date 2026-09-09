@@ -3623,6 +3623,13 @@ func (a *InitAction) addVoiceAgentToProject(
 	if err := yaml.Unmarshal(templateYAML, &voiceDef); err != nil {
 		return fmt.Errorf("parsing voice agent definition: %w", err)
 	}
+	if voiceDef.ModelType == agent_yaml.VoiceModelTypeHostedAgent {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"hosted voice wrappers cannot be initialized from a standalone voice manifest",
+			"use a sample azure.yaml that declares both the hosted target and the voice wrapper",
+		)
+	}
 
 	agentConfig := project.ServiceTargetAgentConfig{}
 	agentProps, err := project.VoiceAgentDefinitionToServiceProperties(voiceDef, &agentConfig)

@@ -5,6 +5,7 @@ package provisioning
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
@@ -50,10 +51,7 @@ func validateProjectResources(resources any, parentType, sourcePath string) erro
 		case "microsoft.cognitiveservices/accounts/connections":
 			return legacyConnectionTemplateError(sourcePath)
 		case "microsoft.cognitiveservices/accounts/projects/connections":
-			// The provider still owns the system registry connection. Its literal
-			// category and managed-identity auth distinguish it from the generic
-			// connection loop (whose properties are an ARM expression).
-			if properties["category"] != "ContainerRegistry" || properties["authType"] != "ManagedIdentity" {
+			if !isSystemAcrConnection(resource) {
 				return legacyConnectionTemplateError(sourcePath)
 			}
 		case "microsoft.resources/deployments":
@@ -82,4 +80,50 @@ func validateProjectResources(resources any, parentType, sourcePath string) erro
 		}
 	}
 	return nil
+}
+
+// isSystemAcrConnection recognizes the registry connection emitted by acr.bicep
+// or foundry-project.bicep. Category/auth and even matching resource IDs alone
+// also describe user-declared connections, so preserve only the generated name,
+// target, project identity and registry ID wiring. Compare ARM expressions, not
+// their evaluated values; this is a migration guard, not an ARM evaluator.
+func isSystemAcrConnection(resource map[string]any) bool {
+	// The system connection is a single resource in its containing deployment's
+	// scope. A copy loop or scope override is not part of that generated shape.
+	for _, field := range []string{"copy", "scope"} {
+		if _, exists := resource[field]; exists {
+			return false
+		}
+	}
+
+	var target, clientID, resourceID string
+	var condition any
+	switch resource["name"] {
+	case "[format('{0}/{1}/{2}', parameters('foundryAccountName'), parameters('foundryProjectName'), " +
+		"format('{0}-conn', parameters('name')))]":
+		target = "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), " +
+			"'2023-07-01').loginServer]"
+		clientID = "[parameters('foundryProjectPrincipalId')]"
+		resourceID = "[resourceId('Microsoft.ContainerRegistry/registries', parameters('name'))]"
+	case "[format('{0}/{1}/{2}', parameters('accountName'), parameters('projectName'), " +
+		"format('{0}-conn', parameters('acrName')))]":
+		target = "[parameters('acrEndpoint')]"
+		clientID = "[reference('foundryAccountPreview::project', '2025-04-01-preview', 'full').identity.principalId]"
+		resourceID = "[parameters('acrResourceId')]"
+		condition = "[parameters('createAcrConnection')]"
+	default:
+		return false
+	}
+
+	return resource["condition"] == condition && reflect.DeepEqual(resource["properties"], map[string]any{
+		"category": "ContainerRegistry",
+		"authType": "ManagedIdentity",
+		"target":   target,
+		"credentials": map[string]any{
+			"clientId":   clientID,
+			"resourceId": resourceID,
+		},
+		"isSharedToAll": true,
+		"metadata":      map[string]any{"ResourceId": resourceID},
+	})
 }

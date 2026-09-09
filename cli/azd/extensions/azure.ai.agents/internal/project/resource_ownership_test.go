@@ -131,15 +131,62 @@ func TestAgentResourceOwnershipAfterFileRefsAndConfigSelection(t *testing.T) {
 
 func TestAgentToolboxNameOnlyFileRef(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(root, "reference.yaml"), []byte("name: tools\n"), 0o600))
-	props, err := structpb.NewStruct(map[string]any{
-		"kind": "hosted", "toolboxes": []any{map[string]any{"$ref": "./reference.yaml"}},
-	})
-	require.NoError(t, err)
-	svc := &azdext.ServiceConfig{Name: "agent", Host: foundryAgentHost, AdditionalProperties: props}
-	require.NoError(t, ResolveServiceConfigInPlace(svc, root))
-	cfg, err := LoadServiceTargetAgentConfig(svc)
-	require.NoError(t, err)
-	require.Equal(t, []Toolbox{{Name: "tools"}}, cfg.Toolboxes)
+	schema := loadDocSchema(t, filepath.Join("..", ".."))
+	for _, tt := range []struct {
+		name, body, override, wantName, wantErr string
+	}{
+		{name: "name-only YAML", body: "name: tools\n", wantName: "tools"},
+		{name: "name-only JSON", body: `{"name":"tools"}`, wantName: "tools"},
+		{name: "name overlay", body: "name: original\n", override: "tools", wantName: "tools"},
+		{name: "bundled tools", body: "name: tools\ntools: []\n", wantErr: "bundled toolbox definitions"},
+		{name: "bundled endpoint", body: "name: tools\nendpoint: https://tools.test/mcp\n",
+			wantErr: "set endpoint on the toolbox service"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(root, "reference.yaml"), []byte(tt.body), 0o600))
+			ref := map[string]any{"$ref": "./reference.yaml"}
+			if tt.override != "" {
+				ref["name"] = tt.override
+			}
+			values := map[string]any{"kind": "hosted", "toolboxes": []any{ref}}
+			// Schema tooling sees the reference before runtime file expansion.
+			require.NoError(t, schema.validate(values))
+			props, err := structpb.NewStruct(values)
+			require.NoError(t, err)
+			svc := &azdext.ServiceConfig{Name: "agent", Host: foundryAgentHost, AdditionalProperties: props}
+			require.NoError(t, ResolveServiceConfigInPlace(svc, root))
+			cfg, err := LoadServiceTargetAgentConfig(svc)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				require.Error(t, schema.validate(svc.AdditionalProperties.AsMap()))
+				return
+			}
+			require.NoError(t, err)
+			require.NoError(t, schema.validate(svc.AdditionalProperties.AsMap()))
+			require.Equal(t, []Toolbox{{Name: tt.wantName}}, cfg.Toolboxes)
+		})
+	}
+}
+
+func TestAgentToolboxFileRefSchemaRejectsInvalidEntries(t *testing.T) {
+	t.Parallel()
+	schema := loadDocSchema(t, filepath.Join("..", ".."))
+	for _, tt := range []struct {
+		name  string
+		entry map[string]any
+	}{
+		{"empty ref", map[string]any{"$ref": ""}},
+		{"blank ref", map[string]any{"$ref": " \t"}},
+		{"non-string ref", map[string]any{"$ref": 42}},
+		{"empty name overlay", map[string]any{"$ref": "./reference.yaml", "name": ""}},
+		{"bundled tools overlay", map[string]any{"$ref": "./reference.yaml", "tools": []any{}}},
+		{"bundled endpoint overlay", map[string]any{"$ref": "./reference.yaml", "endpoint": "https://tools.test/mcp"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Error(t, schema.validate(map[string]any{"toolboxes": []any{tt.entry}}))
+		})
+	}
 }

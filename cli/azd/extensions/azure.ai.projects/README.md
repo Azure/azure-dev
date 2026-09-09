@@ -119,6 +119,11 @@ or `connectionCredentials` are allowed and retain normal parameter substitution;
 parameter names alone do not identify the removed Foundry contract. Linked
 templates are not fetched or inspected by this validation.
 
+Only the generated system ACR connection's name, target, project identity and
+registry resource ID wiring are exempt. Other `ContainerRegistry` connections,
+including those using `ManagedIdentity`, belong in `azure.ai.connection` services.
+Preserve that generated wiring when customizing ejected Bicep, or regenerate it.
+
 Update previously ejected Terraform manually as well, including any
 required state handoff to avoid destroying resources when removing declarations.
 Extension upgrades do not automatically rewrite user-owned IaC.

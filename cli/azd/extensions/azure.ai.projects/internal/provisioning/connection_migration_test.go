@@ -129,6 +129,14 @@ func TestValidateProjectTemplateRejectsGenericConnections(t *testing.T) {
 			"condition":false}]}`},
 		{"non-system registry", `{"resources":[{"type":"Microsoft.CognitiveServices/accounts/projects/connections",
 			"properties":{"category":"ContainerRegistry","authType":"ApiKey"}}]}`},
+		{"non-system managed identity registry", `{"resources":[{
+			"type":"Microsoft.CognitiveServices/accounts/projects/connections","name":"account/project/custom-registry",
+			"properties":{"category":"ContainerRegistry","authType":"ManagedIdentity"}}]}`},
+		{"non-system registry with matching resource IDs", `{"resources":[{
+			"type":"Microsoft.CognitiveServices/accounts/projects/connections","name":"account/project/custom-registry",
+			"properties":{"category":"ContainerRegistry","authType":"ManagedIdentity","isSharedToAll":true,
+			"target":"custom.azurecr.io","credentials":{"clientId":"custom-identity","resourceId":"custom-registry"},
+			"metadata":{"ResourceId":"custom-registry"}}}]}`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := unmarshalARMTemplate(tt.template, "project.bicep")
@@ -218,6 +226,83 @@ func TestValidateProjectTemplatePreservesSystemAcr(t *testing.T) {
 			assert.True(t, bytes.Equal(before, after), "validation must not modify the template")
 		})
 	}
+}
+
+func TestValidateProjectTemplateRejectsModifiedSystemAcr(t *testing.T) {
+	t.Parallel()
+	for _, load := range []struct {
+		name string
+		load func() ([]byte, error)
+	}{
+		{"greenfield", synthesis.ARMTemplate},
+		{"brownfield", synthesis.ExistingProjectARMTemplate},
+	} {
+		t.Run(load.name, func(t *testing.T) {
+			t.Parallel()
+			raw, err := load.load()
+			require.NoError(t, err)
+			for _, tt := range []struct {
+				name  string
+				path  []string
+				value any
+			}{
+				{"different name", []string{"name"}, "account/project/synthetic-private-value"},
+				{"different target", []string{"properties", "target"}, "https://synthetic-private-value.azurecr.io"},
+				{"different identity", []string{"properties", "credentials", "clientId"}, "synthetic-private-value"},
+				{"different registry", []string{"properties", "credentials", "resourceId"}, "synthetic-private-value"},
+				{"different metadata", []string{"properties", "metadata", "ResourceId"}, "synthetic-private-value"},
+				{"different auth", []string{"properties", "authType"}, "ApiKey"},
+				{"different category", []string{"properties", "category"}, "RemoteTool"},
+				{"not shared", []string{"properties", "isSharedToAll"}, false},
+				{"extra credential", []string{"properties", "credentials", "key"}, "synthetic-private-value"},
+				{"different condition", []string{"condition"}, "[parameters('customCondition')]"},
+				{"copy loop", []string{"copy"}, map[string]any{"name": "custom", "count": 2}},
+				{"different scope", []string{"scope"}, "[parameters('customScope')]"},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					t.Parallel()
+					var template map[string]any
+					require.NoError(t, json.Unmarshal(raw, &template))
+					connection := findSystemAcrConnection(t, template)
+					require.True(t, isSystemAcrConnection(connection))
+					object := connection
+					for _, key := range tt.path[:len(tt.path)-1] {
+						child, ok := object[key].(map[string]any)
+						require.True(t, ok, "generated connection must contain object %s", key)
+						object = child
+					}
+					object[tt.path[len(tt.path)-1]] = tt.value
+					requireConnectionMigrationError(t, validateProjectTemplate(template, "project.bicep"))
+				})
+			}
+		})
+	}
+}
+
+// findSystemAcrConnection locates the actual generated resource inside nested
+// deployments without duplicating the shape the migration guard must recognize.
+func findSystemAcrConnection(t *testing.T, template map[string]any) map[string]any {
+	t.Helper()
+	var connections []map[string]any
+	var visit func(any)
+	visit = func(value any) {
+		switch value := value.(type) {
+		case map[string]any:
+			if value["type"] == "Microsoft.CognitiveServices/accounts/projects/connections" {
+				connections = append(connections, value)
+			}
+			for _, child := range value {
+				visit(child)
+			}
+		case []any:
+			for _, child := range value {
+				visit(child)
+			}
+		}
+	}
+	visit(template)
+	require.Len(t, connections, 1, "each generated template must contain exactly one system ACR connection")
+	return connections[0]
 }
 
 func TestLoadOnDiskTemplateGenericSubstitutionUnaffected(t *testing.T) {

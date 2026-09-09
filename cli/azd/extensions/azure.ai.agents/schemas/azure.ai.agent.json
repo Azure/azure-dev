@@ -33,6 +33,16 @@
             "properties": { "name": { "type": "string", "minLength": 1, "pattern": "\\S" } },
             "required": ["name"],
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "description": "Local YAML or JSON file containing a name-only toolbox reference. An optional name overrides the loaded name; full toolbox definitions belong on azure.ai.toolbox services.",
+            "properties": {
+              "$ref": { "type": "string", "minLength": 1, "pattern": "\\S" },
+              "name": { "type": "string", "minLength": 1, "pattern": "\\S" }
+            },
+            "required": ["$ref"],
+            "additionalProperties": false
           }
         ]
       }

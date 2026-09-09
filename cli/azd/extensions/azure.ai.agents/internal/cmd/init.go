@@ -4303,7 +4303,7 @@ func downloadedFilePermissions(path string) os.FileMode {
 
 // extractToolboxAndConnectionConfigs extracts toolbox resource definitions from the agent manifest
 // and converts them into project.Toolbox config entries and project.ToolConnection entries.
-// Tools with a target/authType also produce connection entries for Bicep provisioning.
+// Tools with a target/authType also produce agent-owned runtime toolConnections entries.
 // Built-in tools (bing_grounding, azure_ai_search, etc.) produce toolbox tools but no connections.
 func extractToolboxAndConnectionConfigs(
 	manifest *agent_yaml.AgentManifest,

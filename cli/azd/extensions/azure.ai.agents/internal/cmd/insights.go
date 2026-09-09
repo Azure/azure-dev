@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -223,10 +224,8 @@ func normalizeInsightsFilter(flagName, value string, allowed []string) (string, 
 	if value == "" {
 		return "", nil
 	}
-	for _, candidate := range allowed {
-		if value == candidate {
-			return value, nil
-		}
+	if slices.Contains(allowed, value) {
+		return value, nil
 	}
 	return "", exterrors.Validation(
 		exterrors.CodeInvalidParameter,

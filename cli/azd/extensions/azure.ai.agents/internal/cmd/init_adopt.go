@@ -896,6 +896,13 @@ func readManifestContentForInitDetection(
 	if content, ok := readManifestContentForPeek(ctx, manifestPointer, httpClient); ok {
 		return content, true
 	}
+	cachedContent, cached := readCachedTemplateManifest(manifestPointer)
+	if cached {
+		return cachedContent, true
+	}
+	if templateCacheRoot() != "" {
+		return nil, false
+	}
 	if azdClient == nil || !strings.Contains(manifestPointer, "://") {
 		return nil, false
 	}
@@ -1417,6 +1424,7 @@ func stageRemoteAzureYaml(
 	fmt.Println(output.WithGrayFormat("Downloading sample from GitHub..."))
 
 	triedPublicDownload := false
+	var publicDownloadErr error
 	if urlInfo := parseGitHubUrlNaive(pointer); urlInfo != nil {
 		triedPublicDownload = true
 		dirPath := parentDirOf(urlInfo.FilePath)
@@ -1429,14 +1437,23 @@ func stageRemoteAzureYaml(
 				return normalizeErr
 			}
 			if hasAzureYaml {
+				if cacheErr := refreshTemplateCache(pointer, staging); cacheErr != nil {
+					emitTemplateCacheWarning(fmt.Sprintf("Unable to refresh the sample cache: %s", cacheErr))
+				}
 				return nil
 			}
+			publicDownloadErr = errors.New("downloaded sample did not contain azure.yaml")
+		} else {
+			publicDownloadErr = err
 		}
 	}
 
 	if triedPublicDownload {
 		if err := clearStagingDirectory(staging); err != nil {
 			return err
+		}
+		if publicDownloadErr != nil && templateCacheRoot() != "" {
+			return useCachedTemplateOnDownloadError(pointer, staging, publicDownloadErr)
 		}
 	}
 

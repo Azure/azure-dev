@@ -292,6 +292,19 @@ func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig)
 	return err == nil && isHosted
 }
 
+// hostedAgentServices returns the hosted azure.ai.agent services declared in
+// proj. It is used to detect services that share a source directory (and thus a
+// single .agent_configs/baseline) before advancing an optimization baseline.
+func hostedAgentServices(proj *azdext.ProjectConfig) []*azdext.ServiceConfig {
+	var hosted []*azdext.ServiceConfig
+	for _, svc := range proj.Services {
+		if isHostedAgentService(svc, proj) {
+			hosted = append(hosted, svc)
+		}
+	}
+	return hosted
+}
+
 // duplicateAgentNameGroup is a Foundry agent name referenced by more than one
 // azure.ai.agent service, with the colliding azure.yaml service keys sorted for
 // stable output.
@@ -464,7 +477,7 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 			}
 		}()
 		reportSvcOptimizationDeployment(ctx, azdClient, svc, envName, endpoint,
-			serviceDirFromProject(args.Project.Path, svc),
+			baselineAdvancementDir(args.Project.Path, svc, hostedAgentServices(args.Project)),
 			func(endpoint string) *optimize_api.OptimizeClient {
 				return optimize_api.NewOptimizeClient(endpoint, cred)
 			},

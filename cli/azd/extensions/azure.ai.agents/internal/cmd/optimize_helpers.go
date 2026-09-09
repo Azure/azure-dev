@@ -19,6 +19,7 @@ import (
 	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
+	"azureaiagent/internal/pkg/paths"
 
 	azdext "github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -291,7 +292,7 @@ func reportOptimizationDeployments(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	hostedAgents []*azdext.ServiceConfig,
-	envName, projectEndpoint, projectPath string,
+	envName, projectEndpoint string, projectPath string,
 	newClient func(endpoint string) *optimize_api.OptimizeClient,
 ) {
 	log.Printf("postdeploy: reporting optimization deployments for %d hosted agents", len(hostedAgents))
@@ -303,20 +304,56 @@ func reportOptimizationDeployments(
 					log.Printf("postdeploy: optimization reporting panicked for %s: %v", svc.Name, r)
 				}
 			}()
-			serviceDir := serviceDirFromProject(projectPath, svc)
+			serviceDir := baselineAdvancementDir(projectPath, svc, hostedAgents)
 			reportSvcOptimizationDeployment(ctx, azdClient, svc, envName, projectEndpoint, serviceDir, newClient)
 		}()
 	}
 }
 
-// serviceDirFromProject resolves the absolute service directory for svc within
-// the azd project. Returns "" when projectPath is empty so callers can treat a
-// missing project root as "skip local filesystem work".
-func serviceDirFromProject(projectPath string, svc *azdext.ServiceConfig) string {
+// baselineAdvancementDir resolves the validated local directory used for svc's
+// baseline advancement, or "" when advancement must be skipped.
+//
+// It returns "" (skip, no error surfaced) when:
+//   - projectPath is empty (no local project on disk),
+//   - the service path cannot be safely resolved under the project root — for
+//     example a RelativePath from azure.yaml containing ".." that escapes the
+//     root, or
+//   - svc shares its resolved source directory with another hosted agent. Those
+//     services share a single .agent_configs/baseline, and their deploy steps
+//     may run in parallel, so advancing here would nondeterministically clobber
+//     a peer's promoted baseline.
+func baselineAdvancementDir(
+	projectPath string,
+	svc *azdext.ServiceConfig,
+	hostedAgents []*azdext.ServiceConfig,
+) string {
 	if projectPath == "" {
 		return ""
 	}
-	return filepath.Join(projectPath, svc.GetRelativePath())
+
+	serviceDir, err := paths.JoinAllowRoot(projectPath, svc.GetRelativePath())
+	if err != nil {
+		log.Printf("postdeploy: skipping baseline advancement for %s: %v", svc.Name, err)
+		return ""
+	}
+
+	for _, peer := range hostedAgents {
+		if peer == nil || peer.Name == svc.Name {
+			continue
+		}
+		peerDir, err := paths.JoinAllowRoot(projectPath, peer.GetRelativePath())
+		if err != nil {
+			continue
+		}
+		if isSamePath(peerDir, serviceDir) {
+			log.Printf(
+				"postdeploy: skipping baseline advancement for %s: shares source directory with %s",
+				svc.Name, peer.Name)
+			return ""
+		}
+	}
+
+	return serviceDir
 }
 
 // advanceBaselineToCandidate replaces the service's local baseline agent config
@@ -393,11 +430,13 @@ func isSafePathSegment(name string) bool {
 }
 
 // reportSvcOptimizationDeployment reports a single service's optimization candidate.
+// serviceDir is the validated local service directory used for baseline
+// advancement, or "" to skip it (see baselineAdvancementDir).
 func reportSvcOptimizationDeployment(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	svc *azdext.ServiceConfig,
-	envName, projectEndpoint, serviceDir string,
+	envName, projectEndpoint string, serviceDir string,
 	newClient func(endpoint string) *optimize_api.OptimizeClient,
 ) {
 	serviceKey := toServiceKey(svc.Name)

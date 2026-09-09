@@ -172,7 +172,7 @@ func ensureNewFoundryProjectName(
 		defaultName = envName
 	}
 
-	response, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+	request := &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
 			Message: "Enter a name for the new Foundry project",
 			HelpMessage: "Use 3-32 letters, numbers, or hyphens. " +
@@ -183,19 +183,32 @@ func ensureNewFoundryProjectName(
 				"starting with a letter or number.",
 			DefaultValue: defaultName,
 		},
-	})
-	if err != nil {
-		if exterrors.IsCancellation(err) {
-			return exterrors.Cancelled("Foundry project name prompt was cancelled")
+	}
+
+	for {
+		response, err := azdClient.Prompt().Prompt(ctx, request)
+		if err != nil {
+			if exterrors.IsCancellation(err) {
+				return exterrors.Cancelled("Foundry project name prompt was cancelled")
+			}
+			return exterrors.FromPrompt(err, "failed to prompt for Foundry project name")
 		}
-		return exterrors.FromPrompt(err, "failed to prompt for Foundry project name")
-	}
 
-	if err := validateNewFoundryProjectName(response.Value); err != nil {
-		return err
-	}
+		if err := validateNewFoundryProjectName(response.Value); err == nil {
+			return setEnvValue(
+				ctx,
+				azdClient,
+				envName,
+				foundryProjectNameEnvKey,
+				response.Value,
+			)
+		} else {
+			writeValidationRetryError(err)
+		}
 
-	return setEnvValue(ctx, azdClient, envName, foundryProjectNameEnvKey, response.Value)
+		request.Options.DefaultValue = ""
+		request.Options.Message = "Enter a valid name for the new Foundry project"
+	}
 }
 
 // projectResourceIdRegex is the precompiled regex for parsing Foundry project ARM resource IDs.

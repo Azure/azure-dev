@@ -148,8 +148,9 @@ func TestEnsureNewFoundryProjectName_UsesConfiguredNameAsDefault(t *testing.T) {
 	require.Equal(t, newProjectName, envServer.values[envName][foundryProjectNameEnvKey])
 }
 
-func TestEnsureNewFoundryProjectName_InvalidResponseDoesNotPersist(t *testing.T) {
+func TestEnsureNewFoundryProjectName_InvalidResponseReprompts(t *testing.T) {
 	const envName = "agent-dev"
+	const projectName = "my-foundry-project"
 
 	envServer := &testEnvironmentServiceServer{
 		environments: map[string]*azdext.Environment{
@@ -158,7 +159,7 @@ func TestEnsureNewFoundryProjectName_InvalidResponseDoesNotPersist(t *testing.T)
 		values: map[string]map[string]string{},
 	}
 	promptServer := &testPromptServiceServer{
-		promptResponses: []string{"invalid name"},
+		promptResponses: []string{"invalid name", projectName},
 	}
 	azdClient := newTestAzdClient(
 		t,
@@ -167,9 +168,19 @@ func TestEnsureNewFoundryProjectName_InvalidResponseDoesNotPersist(t *testing.T)
 		promptServer,
 	)
 
-	err := ensureNewFoundryProjectName(t.Context(), azdClient, envName)
-	require.Error(t, err)
-	require.NotContains(t, envServer.values[envName], foundryProjectNameEnvKey)
+	require.NoError(t, ensureNewFoundryProjectName(t.Context(), azdClient, envName))
+	require.Equal(t, projectName, envServer.values[envName][foundryProjectNameEnvKey])
+	require.Len(t, promptServer.promptRequests, 2)
+	require.Equal(
+		t,
+		"",
+		promptServer.promptRequests[1].Options.DefaultValue,
+	)
+	require.Equal(
+		t,
+		"Enter a valid name for the new Foundry project",
+		promptServer.promptRequests[1].Options.Message,
+	)
 }
 
 func TestEnsureNewFoundryProjectName_PromptFailure(t *testing.T) {

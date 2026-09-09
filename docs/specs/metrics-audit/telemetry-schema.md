@@ -289,10 +289,10 @@ guarantees about the whole class:
 | Key namespace | Every caller-supplied key is prefixed with `ext.` by the host, so it can never overwrite a host-owned attribute |
 | Size | At most 32 attributes per event; event name and keys at most 128 UTF-8 bytes; values at most 512 UTF-8 bytes |
 | Volume | At most 100 `ext.usage` spans per `azd` invocation across all extensions; calls beyond that produce no `ext.usage` span, while the command-span drop fields are still recorded |
-| Drop observability | Rejected and dropped calls append one unique `<extension-id-or-unattributed>@<reason>` value to `extension.usage.dropped` on the hosting command span and increment `extension.usage.dropped.count`. IDs appear only after official-source admission; earlier failures use fixed `unattributed`. Synthetic `azd up` phase spans do not copy these fields. Reasons are fixed by the host, and no caller-controlled event or attribute content is copied |
+| Drop observability | Rejected and dropped calls append one unique `<extension-id-or-unattributed>@<reason>` value to `extension.usage.dropped` on the hosting command span and increment `extension.usage.dropped.count`. IDs appear only after official-source admission; earlier failures use fixed `unattributed`. Synthetic `azd up` phase spans and VS RPC spans do not copy these fields. Reasons are fixed by the host, and no caller-controlled event or attribute content is copied |
 | Values | Not enumerated or pattern-checked. The extension author owns what a value means and is responsible for keeping it low cardinality and free of customer content |
 | Classification | Always `SystemMetadata` |
-| Purpose | Always `FeatureInsight` |
+| Purpose | Accepted `ext.usage` fields use `FeatureInsight`; command-span drop fields use `PerformanceAndHealth` |
 | Trust | `extension.id` and `extension.version` are derived from host-signed claims; `extension.source` and eligibility are checked against the installed record and verified source config, never from the request |
 | Review | Extension telemetry is reviewed when the extension is admitted to the official registry, under the same documentation, classification, and privacy rules as core fields. The eligibility rule above is what ties recording to that review |
 

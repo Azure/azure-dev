@@ -532,7 +532,7 @@ calls are summarized on the command span using `extension.usage.dropped` and
 the installed record passes the official-source check; earlier failures use the
 fixed `unattributed` value. It never contains caller-supplied event or attribute
 content. These fields stay on the hosting command span and are not copied to
-the synthetic phase spans emitted by `azd up`.
+the synthetic phase spans emitted by `azd up` or to VS RPC spans.
 
 Reviewed first-party extension usage events currently include:
 

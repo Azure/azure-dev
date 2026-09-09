@@ -232,7 +232,7 @@ requests
 To inspect total volume separately, sum
 `customMeasurements["extension.usage.dropped.count"]`. The fields appear only
 on the command span that hosted the extension; synthetic phase spans created by
-`azd up` do not copy them. The count covers all reasons in an invocation, so do
+`azd up` and VS RPC spans do not copy them. The count covers all reasons in an invocation, so do
 not assign it to one reason when the list contains several values.
 
 Accepted `ext.usage` spans and the command span share `operation_Id`. Use that

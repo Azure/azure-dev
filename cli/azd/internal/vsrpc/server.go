@@ -193,8 +193,7 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 					}
 				}
 
-				// Include any usage attributes set
-				span.SetAttributes(tracing.GetUsageAttributes()...)
+				span.SetAttributes(tracing.GetSecondaryUsageAttributes()...)
 				span.End()
 			}()
 

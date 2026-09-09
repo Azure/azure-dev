@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -34,6 +35,10 @@ func TestResolveConcurrencySettingWarnsForNonPositiveValues(t *testing.T) {
 }
 
 func TestUpGraphRunOptionsUsesActiveEnvironment(t *testing.T) {
+	ostest.Unsetenvs(t, []string{
+		concurrencyMaxEnvVar, packageConcurrencyEnvVar, provisionConcurrencyEnvVar,
+		upConcurrencyEnvVar, deployConcurrencyEnvVar,
+	})
 	t.Setenv(packageConcurrencyEnvVar, "1")
 	t.Setenv(upConcurrencyEnvVar, "2")
 	env := environment.NewWithValues("test", map[string]string{

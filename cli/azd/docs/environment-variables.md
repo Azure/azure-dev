@@ -76,8 +76,6 @@ telemetry by the agent-detection path.
 
 | Variable | Match | Detected agent (`execution.environment`) |
 | --- | --- | --- |
-| `ANTIGRAVITY_AGENT` | Exactly `1` | Antigravity |
-| `ANTIGRAVITY_CONVERSATION_ID` | Non-empty | Antigravity |
 | `AI_AGENT` | Exactly `github_copilot_app_agent` | GitHub Copilot App |
 | `AI_AGENT` | Exactly `github_copilot_vscode_agent` | GitHub Copilot VSCode |
 | `AI_AGENT` | Exactly `github_copilot_cloud_agent` | GitHub Copilot Cloud Agent |
@@ -88,6 +86,8 @@ telemetry by the agent-detection path.
 | `CODEX_SESSION_ID` | Non-empty | Codex |
 | `CURSOR_AGENT` | Exactly `1` | Cursor |
 | `CURSOR_CONVERSATION_ID` | Non-empty | Cursor |
+| `ANTIGRAVITY_AGENT` | Exactly `1` | Antigravity |
+| `ANTIGRAVITY_CONVERSATION_ID` | Non-empty | Antigravity |
 | `CLAUDECODE` | Exactly `1` | Claude Code |
 | `CLAUDE_CODE_ENTRYPOINT` | Exactly `claude-desktop` or `claude-vscode`, with `CLAUDECODE=1` | Claude Code Desktop or Claude Code VSCode |
 | `COPILOT_CLI` | Non-empty | GitHub Copilot CLI |

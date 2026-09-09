@@ -36,9 +36,7 @@ func NewRootCommand() *cobra.Command {
 		setupDebugLogging(cmd.Flags())
 		operation := telemetryOperation(cmd.CommandPath())
 		switch operation {
-		case "deploy":
-			telemetryReporter.reportStandaloneDeploy(cmd.Context())
-		case "init", "listen", "metadata", "version":
+		case "deploy", "init", "listen", "metadata", "version":
 		default:
 			telemetryReporter.reportProject(cmd.Context(), operation)
 		}

@@ -89,21 +89,6 @@ func (r *agentContextReporter) reportService(
 	r.reportProjectConfig(ctx, telemetry, project, operation)
 }
 
-func (r *agentContextReporter) reportStandaloneDeploy(ctx context.Context) {
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		log.Printf("telemetry: failed to create azd client: %v", err)
-		return
-	}
-	defer azdClient.Close()
-
-	r.report(ctx, azdClient.Telemetry(), agentTelemetryContext{
-		kind:      string(agent_yaml.AgentKindHosted),
-		harness:   agentHarnessNone,
-		operation: "deploy",
-	})
-}
-
 func (r *agentContextReporter) report(
 	ctx context.Context,
 	telemetry azdext.TelemetryServiceClient,

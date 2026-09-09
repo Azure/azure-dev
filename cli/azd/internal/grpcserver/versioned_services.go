@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -92,6 +93,14 @@ func (s *Server) registerServices() error {
 		return fmt.Errorf("register legacy extension services: %w", err)
 	}
 
+	betaServiceOverrides := maps.Clone(s.betaServiceOverrides)
+	if extensionService, ok := s.extensionService.(*ExtensionService); ok {
+		betaServiceOverrides[BetaExtensionService] = &betaExtensionServiceOverride{
+			service:  extensionService,
+			override: betaServiceOverrides[BetaExtensionService],
+		}
+	}
+
 	return registerBetaServices(
 		s.grpcServer,
 		map[BetaService]any{
@@ -114,7 +123,7 @@ func (s *Server) registerServices() error {
 			BetaValidationService:    s.validationService,
 			BetaTelemetryService:     s.telemetryService,
 		},
-		s.betaServiceOverrides,
+		betaServiceOverrides,
 	)
 }
 

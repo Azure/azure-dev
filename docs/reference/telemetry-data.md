@@ -252,7 +252,7 @@ Valid values for `project.service.languages` and `project.service.language`:
 | `error.code` | string | Specific error code |
 | `error.type` | string | Same as `ResultCode` — the classified error type |
 | `error.chain.types` | string[] | At most 16 host-reflected Go error type names, outermost first |
-| `error.extension.cause_types` | string[] | Case-insensitive hashes of at most 16 normalized extension-provided cause labels |
+| `error.extension.cause_types` | string[] | Case-insensitive hashes of at most 16 normalized extension-provided cause labels received through the preview `v1beta` extension error contract |
 | `error.mapper.source.type` | string | Sanitized source Go type for a mapper conversion failure |
 | `error.mapper.destination.type` | string | Sanitized destination Go type for a mapper conversion failure |
 
@@ -303,7 +303,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `error.tool.name` | string | Stable identifier for the failed external tool; core missing-tool display names use a fixed mapping, unknown names become `other`, and extension-provided `ToolError` names are limited to 1-64 ASCII characters from `[a-z0-9_-]`. Multiple missing tools remain comma-separated |
+| `error.tool.name` | string | Stable identifier for the failed external tool; core missing-tool display names use a fixed mapping, unknown names become `other`, and extension-provided `ToolError` names received through `v1beta` are limited to 1-64 ASCII characters from `[a-z0-9_-]`. Multiple missing tools remain comma-separated |
 | `error.tool.exitCode` | measurement | Exit code returned by the failed tool |
 
 ### Performance Fields

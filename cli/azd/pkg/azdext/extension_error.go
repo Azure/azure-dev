@@ -7,7 +7,6 @@ import (
 	"errors"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/azure/azure-dev/cli/azd/pkg/errorchain"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -149,30 +148,18 @@ func WrapError(err error) *ExtensionError {
 		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
 		extErr.Source = &ExtensionError_LocalError{
 			LocalError: &LocalErrorDetail{
-				Code:       extLocalErr.Code,
-				Category:   string(normalizedCategory),
-				CauseTypes: errorchain.NormalizeCauseTypes(extLocalErr.CauseTypes),
+				Code:     extLocalErr.Code,
+				Category: string(normalizedCategory),
 			},
 		}
 		return extErr
 	}
 
 	if extToolErr, ok := errors.AsType[*ToolError](err); ok {
-		kind := normalizeToolErrorKind(extToolErr.Kind)
-		toolDetail := &ToolErrorDetail{
-			ToolName:    extToolErr.ToolName,
-			FailureKind: string(kind),
-		}
-		if extToolErr.ExitCode != nil {
-			exitCode := int64(*extToolErr.ExitCode)
-			toolDetail.ExitCode = &exitCode
-		}
-
 		extErr.Message = extToolErr.Message
 		extErr.Suggestion = extToolErr.Suggestion
 		extErr.Links = WrapErrorLinks(extToolErr.Links)
 		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_TOOL
-		extErr.Source = &ExtensionError_ToolError{ToolError: toolDetail}
 		return extErr
 	}
 
@@ -213,11 +200,6 @@ func populateExtensionErrorFromStatus(extErr *ExtensionError, st *status.Status)
 	if relayed != nil {
 		relayedCopy := proto.Clone(relayed).(*ExtensionError)
 		relayedCopy.Message = st.Message()
-		if localErr := relayedCopy.GetLocalError(); localErr != nil {
-			localErr.CauseTypes = errorchain.NormalizeCauseTypes(
-				localErr.GetCauseTypes(),
-			)
-		}
 		if actionable != nil {
 			if relayedCopy.GetSuggestion() == "" {
 				relayedCopy.Suggestion = actionable.GetSuggestion()
@@ -396,23 +378,6 @@ func UnwrapError(msg *ExtensionError) error {
 			Message:    msg.GetMessage(),
 			Code:       localErr.GetCode(),
 			Category:   normalizedCategory,
-			CauseTypes: errorchain.NormalizeCauseTypes(localErr.GetCauseTypes()),
-			Suggestion: msg.GetSuggestion(),
-			Links:      links,
-		}
-	}
-
-	if toolErr := msg.GetToolError(); toolErr != nil {
-		var exitCode *int
-		if toolErr.ExitCode != nil {
-			value := int(toolErr.GetExitCode())
-			exitCode = &value
-		}
-		return &ToolError{
-			Message:    msg.GetMessage(),
-			ToolName:   toolErr.GetToolName(),
-			Kind:       normalizeToolErrorKind(ToolErrorKind(toolErr.GetFailureKind())),
-			ExitCode:   exitCode,
 			Suggestion: msg.GetSuggestion(),
 			Links:      links,
 		}
@@ -450,14 +415,6 @@ func UnwrapError(msg *ExtensionError) error {
 		Suggestion: msg.GetSuggestion(),
 		Links:      links,
 	}
-}
-
-func normalizeToolErrorKind(kind ToolErrorKind) ToolErrorKind {
-	if kind == ToolErrorKindMissing {
-		return ToolErrorKindMissing
-	}
-
-	return ToolErrorKindFailed
 }
 
 // WrapErrorLinks converts errorhandler.ErrorLink values into proto ErrorLink messages.

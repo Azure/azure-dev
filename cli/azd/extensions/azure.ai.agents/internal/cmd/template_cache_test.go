@@ -66,3 +66,30 @@ func TestUseCachedTemplateOnDownloadError(t *testing.T) {
 		require.ErrorIs(t, err, downloadErr)
 	})
 }
+
+func TestRefreshTemplateCachePreservesPreviousCacheOnActivationFailure(t *testing.T) {
+	cacheDir := filepath.Join(t.TempDir(), "cache")
+	t.Setenv(templateCacheDirEnv, cacheDir)
+	pointer := "https://github.com/example/samples/blob/main/basic/azure.yaml"
+
+	previous := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(previous, "azure.yaml"), []byte("name: previous\n"), 0600))
+	require.NoError(t, refreshTemplateCache(pointer, previous))
+
+	originalRename := renameTemplateCachePath
+	renameTemplateCachePath = func(oldPath, newPath string) error {
+		if oldPath == templateCacheDir(pointer)+".new" {
+			return errors.New("simulated activation failure")
+		}
+		return os.Rename(oldPath, newPath)
+	}
+	t.Cleanup(func() { renameTemplateCachePath = originalRename })
+
+	replacement := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(replacement, "azure.yaml"), []byte("name: replacement\n"), 0600))
+	require.Error(t, refreshTemplateCache(pointer, replacement))
+
+	content, ok := readCachedTemplateManifest(pointer)
+	require.True(t, ok)
+	require.Contains(t, string(content), "previous")
+}

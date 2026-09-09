@@ -19,6 +19,8 @@ import (
 const templateCacheDirEnv = "AZURE_AI_AGENTS_E2E_TEMPLATE_CACHE_DIR"
 const templateCacheRefreshedMarker = ".refreshed"
 
+var renameTemplateCachePath = os.Rename
+
 func templateCacheRoot() string {
 	return strings.TrimSpace(os.Getenv(templateCacheDirEnv))
 }
@@ -68,11 +70,30 @@ func refreshTemplateCache(pointer, staging string) error {
 	if err := copyDirectory(staging, tempDir); err != nil {
 		return fmt.Errorf("stage sample cache: %w", err)
 	}
-	if err := os.RemoveAll(cacheDir); err != nil {
-		return fmt.Errorf("replace sample cache: %w", err)
+
+	previousDir := cacheDir + ".previous"
+	if err := os.RemoveAll(previousDir); err != nil {
+		return fmt.Errorf("clear previous sample cache: %w", err)
 	}
-	if err := os.Rename(tempDir, cacheDir); err != nil {
+	hadPrevious := fileExists(filepath.Join(cacheDir, "azure.yaml"))
+	if hadPrevious {
+		if err := renameTemplateCachePath(cacheDir, previousDir); err != nil {
+			return fmt.Errorf("preserve previous sample cache: %w", err)
+		}
+	}
+	if err := renameTemplateCachePath(tempDir, cacheDir); err != nil {
+		if hadPrevious {
+			if restoreErr := renameTemplateCachePath(previousDir, cacheDir); restoreErr != nil {
+				return fmt.Errorf(
+					"activate sample cache and restore previous cache: %w",
+					errors.Join(err, restoreErr),
+				)
+			}
+		}
 		return fmt.Errorf("activate sample cache: %w", err)
+	}
+	if err := os.RemoveAll(previousDir); err != nil {
+		return fmt.Errorf("remove previous sample cache: %w", err)
 	}
 	if err := os.WriteFile(
 		filepath.Join(templateCacheRoot(), templateCacheRefreshedMarker),

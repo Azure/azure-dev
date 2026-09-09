@@ -181,16 +181,6 @@ func TestVoiceAgentFromResolvedServiceRejectsInvalidVoiceFields(t *testing.T) {
 	_, _, err = VoiceAgentFromResolvedService(svc, t.TempDir())
 	require.ErrorContains(t, err, "environmentVariables is not supported on voice agents")
 
-	svc = inlineAgentService(t, map[string]any{
-		"kind":  "voice",
-		"name":  "voice",
-		"model": map[string]any{"id": "gpt-realtime"},
-		"container": map[string]any{
-			"resources": map[string]any{"cpu": "1"},
-		},
-	})
-	_, _, err = VoiceAgentFromResolvedService(svc, t.TempDir())
-	require.ErrorContains(t, err, "container is not supported on voice agents")
 }
 
 func TestHostedAgentInlineServicePropertiesRejectsHostedVoiceFields(t *testing.T) {

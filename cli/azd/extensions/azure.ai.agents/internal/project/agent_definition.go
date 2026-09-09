@@ -871,13 +871,6 @@ func validateVoiceInlineAgent(inline AgentDefinitionInline) error {
 			"configure environment variables on the hosted target",
 		)
 	}
-	if inline.Container != nil {
-		return exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			"container is not supported on voice agents",
-			"configure container settings on the hosted target",
-		)
-	}
 	if len(inline.Protocols) > 0 {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,

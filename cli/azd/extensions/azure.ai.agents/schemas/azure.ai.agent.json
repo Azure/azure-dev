@@ -229,7 +229,6 @@
             { "required": ["codeConfiguration"] },
             { "required": ["sessionConfiguration"] },
             { "required": ["environmentVariables"] },
-            { "required": ["container"] },
             { "required": ["policies"] },
             { "required": ["protocols"] },
             { "required": ["instructions"] },
@@ -258,7 +257,6 @@
               { "required": ["policies"] },
               { "required": ["protocols"] },
               { "required": ["environmentVariables"] },
-              { "required": ["container"] },
               { "required": ["codeConfiguration"] },
               { "required": ["sessionConfiguration"] }
             ]

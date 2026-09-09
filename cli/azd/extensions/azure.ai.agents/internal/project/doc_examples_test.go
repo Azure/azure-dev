@@ -909,11 +909,6 @@ func TestDocSchemaPromptVoiceRejectsToolbox(t *testing.T) {
 		"model":     map[string]any{"id": "gpt-realtime"},
 		"protocols": []any{map[string]any{"protocol": "invocations_ws", "version": "1.0.0"}},
 	}))
-	require.Error(t, schema.validate(map[string]any{
-		"kind":      "voice",
-		"model":     map[string]any{"id": "gpt-realtime"},
-		"container": map[string]any{"resources": map[string]any{"cpu": "1"}},
-	}))
 }
 
 func TestDocSchemaDigitalWorkerPublishFields(t *testing.T) {

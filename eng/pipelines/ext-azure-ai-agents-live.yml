@@ -99,6 +99,15 @@ extends:
                   artifact: tier2-live-logs-$(Build.BuildId)-$(System.JobAttempt)
                   condition: always()
                   displayName: Publish test logs
+                - output: pipelineArtifact
+                  path: $(Pipeline.Workspace)/azure-ai-agents-template-cache
+                  artifact: azure-ai-agents-template-cache
+                  condition: and(
+                    always(),
+                    eq(variables['Build.SourceBranch'], 'refs/heads/main'),
+                    eq(variables['System.JobAttempt'], '1')
+                    )
+                  displayName: Publish last-known-good sample cache
             steps:
               - checkout: self
 
@@ -196,16 +205,20 @@ extends:
               - bash: mkdir -p "$(Pipeline.Workspace)/azure-ai-agents-template-cache"
                 displayName: Prepare sample cache directory
 
-              # Use a unique exact key so a successful download can refresh the
-              # immutable cache after every run. restoreKeys selects the most
-              # recent sample saved by this pipeline when GitHub is unavailable.
-              - task: Cache@2
-                displayName: Restore AI agents sample cache
+              # Every PR, scheduled, and manual run reads the same last-known-good
+              # sample published by a successful main run. Only main can update it,
+              # so untrusted PR content cannot poison the shared fallback.
+              - task: DownloadPipelineArtifact@2
+                displayName: Restore last-known-good sample cache
+                continueOnError: true
                 inputs:
-                  key: '"azure-ai-agents-template-v1" | "$(Agent.OS)" | "$(Build.BuildId)"'
-                  restoreKeys: |
-                    "azure-ai-agents-template-v1" | "$(Agent.OS)"
-                  path: $(Pipeline.Workspace)/azure-ai-agents-template-cache
+                  buildType: specific
+                  project: $(System.TeamProjectId)
+                  definition: $(System.DefinitionId)
+                  buildVersionToDownload: latestFromBranch
+                  branchName: refs/heads/main
+                  artifactName: azure-ai-agents-template-cache
+                  targetPath: $(Pipeline.Workspace)/azure-ai-agents-template-cache
 
               # Run the live golden path INSIDE the AzureCLI@2 task so the az CLI
               # session (consumed by azd via auth.useAzCliAuth) stays valid for the

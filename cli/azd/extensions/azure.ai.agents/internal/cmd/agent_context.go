@@ -62,6 +62,9 @@ type resolveProjectEndpointOpts struct {
 	// FlagValue is the value of the -p / --project-endpoint flag (level 1).
 	// Empty means the flag was not provided.
 	FlagValue string
+	// EnvName selects a specific azd environment for level 2. Empty uses the
+	// current environment.
+	EnvName string
 }
 
 // resolvedEndpoint holds the result of resolveProjectEndpoint.
@@ -73,14 +76,14 @@ type resolvedEndpoint struct {
 }
 
 // azdHostedSources holds the values that the resolver reads from azd-managed
-// sources (the active azd environment and ~/.azd/config.json). It is returned
+// sources (the selected azd environment and ~/.azd/config.json). It is returned
 // as a single struct so that tests can stub the whole lookup via
 // readAzdHostedSourcesFunc.
 type azdHostedSources struct {
-	// EnvValue is the FOUNDRY_PROJECT_ENDPOINT value from the active azd
-	// env, or "" if not set / no active env / no azd client available.
+	// EnvValue is the FOUNDRY_PROJECT_ENDPOINT value from the selected azd
+	// env, or "" if not set / no selected env / no azd client available.
 	EnvValue string
-	// EnvName is the active azd env name. Only meaningful when EnvValue != "".
+	// EnvName is the selected azd env name. Only meaningful when EnvValue != "".
 	EnvName string
 	// CfgState is the project context persisted in global config.
 	CfgState projectContextState
@@ -93,11 +96,11 @@ type azdHostedSources struct {
 var readAzdHostedSourcesFunc = readAzdHostedSources
 
 // readAzdHostedSources dials the azd daemon (if reachable) and reads both
-// the active env's FOUNDRY_PROJECT_ENDPOINT and the global-config project
+// the selected env's FOUNDRY_PROJECT_ENDPOINT and the global-config project
 // context in a single client lifetime. Errors talking to the daemon are
 // returned only for non-Unavailable cases on the config read — Unavailable
 // is treated as "no daemon" and the caller falls through to subsequent levels.
-func readAzdHostedSources(ctx context.Context) (azdHostedSources, error) {
+func readAzdHostedSources(ctx context.Context, envName string) (azdHostedSources, error) {
 	var out azdHostedSources
 
 	azdClient, err := azdext.NewAzdClient()
@@ -107,9 +110,16 @@ func readAzdHostedSources(ctx context.Context) (azdHostedSources, error) {
 	}
 	defer azdClient.Close()
 
-	if envResp, err := azdClient.Environment().GetCurrent(
-		ctx, &azdext.EmptyRequest{},
-	); err == nil {
+	var envResp *azdext.EnvironmentResponse
+	if envName == "" {
+		envResp, err = azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	} else {
+		envResp, err = azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{Name: envName})
+		if err != nil {
+			return out, fmt.Errorf("getting azd environment %q: %w", envName, err)
+		}
+	}
+	if err == nil && envResp != nil && envResp.Environment != nil {
 		envVal, valErr := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: envResp.Environment.Name,
 			Key:     "FOUNDRY_PROJECT_ENDPOINT",
@@ -177,7 +187,7 @@ func resolveProjectEndpoint(
 	}
 
 	// Levels 2 + 3: azd-hosted sources (active env, then global config).
-	sources, err := readAzdHostedSourcesFunc(ctx)
+	sources, err := readAzdHostedSourcesFunc(ctx, opts.EnvName)
 	if err != nil {
 		return nil, err
 	}

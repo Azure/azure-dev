@@ -33,7 +33,9 @@ func newTestClient(t *testing.T, handler http.Handler) *Client {
 	pipeline := runtime.NewPipeline(
 		"test",
 		"v0.0.0",
-		runtime.PipelineOptions{},
+		runtime.PipelineOptions{
+			PerCall: []policy.Policy{foundryFeaturesPolicy{}},
+		},
 		&policy.ClientOptions{},
 	)
 	return NewClientFromPipeline(server.URL+"/api/projects/project", pipeline)
@@ -58,6 +60,7 @@ func TestListMonitors(t *testing.T) {
 		assert.Equal(t, "cursor-1", r.URL.Query().Get("after"))
 		assert.Equal(t, "2", r.URL.Query().Get("limit"))
 		assert.Equal(t, "desc", r.URL.Query().Get("order"))
+		assert.Equal(t, insightsFeatureHeader, r.Header.Get("Foundry-Features"))
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -90,6 +93,7 @@ func TestListInsightsPreservesUnknownFields(t *testing.T) {
 		assert.Equal(t, "desc", r.URL.Query().Get("order"))
 		assert.Equal(t, "cursor-1", r.URL.Query().Get("after"))
 		assert.Equal(t, "100", r.URL.Query().Get("limit"))
+		assert.Equal(t, insightsFeatureHeader, r.Header.Get("Foundry-Features"))
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{

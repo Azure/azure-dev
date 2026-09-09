@@ -29,6 +29,7 @@ const (
 
 type insightsExportFlags struct {
 	name            string
+	envName         string
 	projectEndpoint string
 	outFile         string
 	category        string
@@ -116,6 +117,7 @@ insight descriptions and trace details can contain application or user data.`,
 			if len(args) > 0 {
 				flags.name = args[0]
 			}
+			flags.envName = extCtx.Environment
 			if err := validateInsightsExportFlags(flags); err != nil {
 				return err
 			}
@@ -141,6 +143,7 @@ insight descriptions and trace details can contain application or user data.`,
 
 			resolved, err := resolveProjectEndpoint(ctx, resolveProjectEndpointOpts{
 				FlagValue: flags.projectEndpoint,
+				EnvName:   flags.envName,
 			})
 			if err != nil {
 				return insightsEndpointError(err)
@@ -213,10 +216,13 @@ func resolveInsightsAgentInfo(
 	flags *insightsExportFlags,
 	noPrompt bool,
 ) (*AgentServiceInfo, error) {
-	if flags.projectEndpoint != "" && flags.name != "" {
-		return &AgentServiceInfo{AgentName: flags.name}, nil
-	}
-	return resolveMonitorAgentInfo(ctx, azdClient, flags.name, noPrompt)
+	return resolveMonitorAgentInfo(
+		ctx,
+		azdClient,
+		flags.name,
+		noPrompt,
+		withEnvironmentName(flags.envName),
+	)
 }
 
 func normalizeInsightsFilter(flagName, value string, allowed []string) (string, error) {

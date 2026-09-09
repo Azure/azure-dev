@@ -18,6 +18,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type fakeInsightsClient struct {
@@ -96,16 +98,63 @@ func TestValidateInsightsExportFlagsRejectsUnsupportedValue(t *testing.T) {
 	assert.Equal(t, "invalid_parameter", localErr.Code)
 }
 
-func TestResolveInsightsAgentInfoUsesExplicitAgentWithProjectEndpoint(t *testing.T) {
+func TestResolveInsightsAgentInfoUsesExplicitAgentOutsideProject(t *testing.T) {
+	azdClient := newHelpersTestAzdClient(
+		t,
+		&helpersProjectServer{err: status.Error(codes.NotFound, "project not found")},
+		&helpersPromptServer{},
+	)
 	flags := &insightsExportFlags{
 		name:            "remote-agent",
 		projectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
 	}
 
-	info, err := resolveInsightsAgentInfo(t.Context(), nil, flags, true)
+	info, err := resolveInsightsAgentInfo(t.Context(), azdClient, flags, true)
 
 	require.NoError(t, err)
 	assert.Equal(t, "remote-agent", info.AgentName)
+}
+
+func TestResolveInsightsAgentInfoUsesServiceFromRequestedEnvironment(t *testing.T) {
+	projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
+		Path: t.TempDir(),
+		Services: map[string]*azdext.ServiceConfig{
+			"service-key": {
+				Name: "service-key",
+				Host: AiAgentHost,
+			},
+		},
+	}}
+	envServer := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+		environments: map[string]*azdext.Environment{
+			"staging": {Name: "staging"},
+		},
+		values: map[string]map[string]string{
+			"dev": {
+				"AGENT_SERVICE_KEY_NAME": "dev-agent",
+			},
+			"staging": {
+				"AGENT_SERVICE_KEY_NAME": "staging-agent",
+			},
+		},
+	}
+	azdClient := newHelpersTestAzdClient(
+		t,
+		projectServer,
+		&helpersPromptServer{},
+		envServer,
+	)
+	flags := &insightsExportFlags{
+		name:            "service-key",
+		envName:         "staging",
+		projectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+	}
+
+	info, err := resolveInsightsAgentInfo(t.Context(), azdClient, flags, true)
+
+	require.NoError(t, err)
+	assert.Equal(t, "staging-agent", info.AgentName)
 }
 
 func TestInsightsExportActionWritesAllPagesToStdout(t *testing.T) {

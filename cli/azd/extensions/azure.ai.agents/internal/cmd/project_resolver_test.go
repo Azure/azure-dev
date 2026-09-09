@@ -20,7 +20,7 @@ import (
 func stubAzdHostedSources(t *testing.T, sources azdHostedSources, err error) {
 	t.Helper()
 	orig := readAzdHostedSourcesFunc
-	readAzdHostedSourcesFunc = func(context.Context) (azdHostedSources, error) {
+	readAzdHostedSourcesFunc = func(context.Context, string) (azdHostedSources, error) {
 		return sources, err
 	}
 	t.Cleanup(func() { readAzdHostedSourcesFunc = orig })
@@ -75,6 +75,26 @@ func TestResolveProjectEndpoint_AzdEnvResolves(t *testing.T) {
 	assert.Equal(t, "https://azdenv.services.ai.azure.com/api/projects/p", result.Endpoint)
 	assert.Equal(t, SourceAzdEnv, result.Source)
 	assert.Equal(t, "dev", result.AzdEnvName)
+}
+
+func TestResolveProjectEndpoint_UsesRequestedAzdEnvironment(t *testing.T) {
+	var requestedEnv string
+	orig := readAzdHostedSourcesFunc
+	readAzdHostedSourcesFunc = func(_ context.Context, envName string) (azdHostedSources, error) {
+		requestedEnv = envName
+		return azdHostedSources{
+			EnvValue: "https://staging.services.ai.azure.com/api/projects/p",
+			EnvName:  envName,
+		}, nil
+	}
+	t.Cleanup(func() { readAzdHostedSourcesFunc = orig })
+
+	result, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{EnvName: "staging"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "staging", requestedEnv)
+	assert.Equal(t, "https://staging.services.ai.azure.com/api/projects/p", result.Endpoint)
+	assert.Equal(t, "staging", result.AzdEnvName)
 }
 
 func TestResolveProjectEndpoint_AzdEnvInvalidRejected(t *testing.T) {

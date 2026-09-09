@@ -27,6 +27,9 @@ azd ai agent insights export my-agent `
 $export = Get-Content ".\insights.json" -Raw -Encoding utf8 | ConvertFrom-Json
 ```
 
+Use `azd --environment <name> ai agent insights export` to export from a
+non-current azd environment.
+
 Exports include highlighted traces, linked traces, and proposed fixes by default.
 Use `--include-details=false` for the lightweight insight projection, or filter
 the export with `--category`, `--severity`, and `--status`. Treat exported files

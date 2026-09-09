@@ -157,8 +157,9 @@ func resolveMonitorAgentInfo(
 	azdClient *azdext.AzdClient,
 	name string,
 	noPrompt bool,
+	options ...agentServiceResolutionOption,
 ) (*AgentServiceInfo, error) {
-	info, err := resolveAgentServiceFromProject(ctx, azdClient, name, noPrompt)
+	info, err := resolveAgentServiceFromProject(ctx, azdClient, name, noPrompt, options...)
 	if err == nil {
 		return info, nil
 	}

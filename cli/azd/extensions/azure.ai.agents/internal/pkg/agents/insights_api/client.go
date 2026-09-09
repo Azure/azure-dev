@@ -22,7 +22,17 @@ import (
 	"azureaiagent/internal/pkg/useragent"
 )
 
-const monitorPath = "/agent_insight_monitors"
+const (
+	monitorPath           = "/agent_insight_monitors"
+	insightsFeatureHeader = "AgentInsights=V1Preview"
+)
+
+type foundryFeaturesPolicy struct{}
+
+func (foundryFeaturesPolicy) Do(req *policy.Request) (*http.Response, error) {
+	req.Raw().Header.Set("Foundry-Features", insightsFeatureHeader)
+	return req.Next()
+}
 
 // Client accesses Agent Insights through a Microsoft Foundry project endpoint.
 type Client struct {
@@ -41,6 +51,7 @@ func NewClient(endpoint string, credential azcore.TokenCredential) *Client {
 			runtime.NewBearerTokenPolicy(credential, []string{"https://ai.azure.com/.default"}, nil),
 			azsdk.NewMsCorrelationPolicy(),
 			azsdk.NewUserAgentPolicy(useragent.Default()),
+			foundryFeaturesPolicy{},
 		},
 	}
 

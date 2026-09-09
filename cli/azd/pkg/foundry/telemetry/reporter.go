@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	contracts "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
 )
@@ -31,9 +32,9 @@ type Reporter interface {
 type Client interface {
 	ReportUsage(
 		ctx context.Context,
-		request *azdext.ReportUsageRequest,
+		request *contracts.ReportUsageRequest,
 		options ...grpc.CallOption,
-	) (*azdext.ReportUsageResponse, error)
+	) (*contracts.ReportUsageResponse, error)
 }
 
 // Options configures a Reporter.
@@ -72,7 +73,7 @@ func (r *reporter) Report(ctx context.Context, event Event) {
 	reportCtx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 
-	response, err := r.client.ReportUsage(reportCtx, &azdext.ReportUsageRequest{
+	response, err := r.client.ReportUsage(reportCtx, &contracts.ReportUsageRequest{
 		EventName:  event.Name,
 		Attributes: maps.Clone(event.Attributes),
 	})

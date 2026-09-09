@@ -70,8 +70,10 @@ Pipeline: `eng/pipelines/ext-azure-ai-agents-live.yml` (ADO). The Tier 2 step
 builds `azd` + the extension and runs `go test -run TestTier2Live` inside an
 `AzureCLI@2` task (so the federated az session stays valid for the whole run).
 
+- **On demand (per PR):** comment `/azp run ext-azure-ai-agents-live` on the PR.
+  Requires write permission on the repo.
 - **Scheduled:** weekly, Monday 07:00 UTC against `main`.
-- **Manual:** queue the Azure DevOps pipeline and pick `deployModes` = `both` / `code` /
+- **Manual:** queue the pipeline and pick `deployModes` = `both` / `code` /
   `container`.
 
 Logs for each run are published as the `tier2-live-logs-<BuildId>` artifact.
@@ -79,7 +81,8 @@ Logs for each run are published as the `tier2-live-logs-<BuildId>` artifact.
 ### One-time admin setup
 
 1. **Register the pipeline** in Azure DevOps pointing at
-   `eng/pipelines/ext-azure-ai-agents-live.yml`, named `ext-azure-ai-agents-live`.
+   `eng/pipelines/ext-azure-ai-agents-live.yml`, named `ext-azure-ai-agents-live`
+   (the name used by `/azp run`).
 2. **Service connection** — the `serviceConnection` parameter (default
    `azure-sdk-tests`) must map to the shared **TME test subscription** via OIDC /
    workload-identity federation. The federated identity needs enough RBAC to

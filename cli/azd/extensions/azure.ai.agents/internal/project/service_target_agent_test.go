@@ -173,6 +173,15 @@ func TestVoiceAgentFromResolvedServiceRejectsInvalidVoiceFields(t *testing.T) {
 	require.ErrorContains(t, err, "codeConfiguration is not supported on voice agents")
 
 	svc = inlineAgentService(t, map[string]any{
+		"kind":                 "voice",
+		"name":                 "voice",
+		"model":                map[string]any{"id": "gpt-realtime"},
+		"environmentVariables": []any{map[string]any{"name": "SAMPLE", "value": "value"}},
+	})
+	_, _, err = VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.ErrorContains(t, err, "environmentVariables is not supported on voice agents")
+
+	svc = inlineAgentService(t, map[string]any{
 		"kind":  "voice",
 		"name":  "voice",
 		"model": map[string]any{"id": "gpt-realtime"},

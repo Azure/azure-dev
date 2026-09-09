@@ -228,6 +228,7 @@
             { "required": ["outputSchema"] },
             { "required": ["codeConfiguration"] },
             { "required": ["sessionConfiguration"] },
+            { "required": ["environmentVariables"] },
             { "required": ["container"] },
             { "required": ["policies"] },
             { "required": ["protocols"] },
@@ -256,6 +257,7 @@
               { "required": ["toolbox"] },
               { "required": ["policies"] },
               { "required": ["protocols"] },
+              { "required": ["environmentVariables"] },
               { "required": ["container"] },
               { "required": ["codeConfiguration"] },
               { "required": ["sessionConfiguration"] }

@@ -2105,6 +2105,13 @@ func (a *InitAction) Run(ctx context.Context) error {
 						codeOptions.depResolution = *hostedAgent.CodeConfiguration.DependencyResolution
 					}
 				}
+				if a.flags.noPrompt {
+					if err := validateCodeDeployInput(
+						true, "code", codeOptions.runtime, codeOptions.entryPoint, codeOptions.depResolution,
+					); err != nil {
+						return err
+					}
+				}
 				codeConfig, err := promptCodeConfig(ctx, a.azdClient, targetDir, a.flags.noPrompt, codeDeployOptions{
 					runtime:       codeOptions.runtime,
 					entryPoint:    codeOptions.entryPoint,

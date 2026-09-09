@@ -427,6 +427,9 @@ kind: voice
 name: voice
 model:
   id: gpt-realtime
+environment_variables:
+  - name: SAMPLE
+    value: value
 code_configuration:
   runtime: dotnet_10
 session_configuration:
@@ -436,7 +439,8 @@ container:
     cpu: "1"
 `)
 	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "code_configuration is not supported") ||
+	if err == nil || !strings.Contains(err.Error(), "environment_variables is not supported") ||
+		!strings.Contains(err.Error(), "code_configuration is not supported") ||
 		!strings.Contains(err.Error(), "session_configuration is not supported") ||
 		!strings.Contains(err.Error(), "container is not supported") {
 		t.Fatalf("expected prompt voice code/session config validation errors, got: %v", err)

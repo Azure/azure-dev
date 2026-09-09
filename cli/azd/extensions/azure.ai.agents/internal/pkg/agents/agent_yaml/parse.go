@@ -477,6 +477,11 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 								"template.session_configuration is not supported for a prompt-voice agent; "+
 									"configure session settings on the hosted target")
 						}
+						if _, hasEnvironmentVariables := fields["environment_variables"]; hasEnvironmentVariables {
+							errors = append(errors,
+								"template.environment_variables is not supported for a prompt-voice agent; "+
+									"configure environment variables on the hosted target")
+						}
 						if _, hasContainer := fields["container"]; hasContainer {
 							errors = append(errors,
 								"template.container is not supported for a prompt-voice agent; "+

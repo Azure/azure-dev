@@ -864,6 +864,13 @@ func validateVoiceInlineAgent(inline AgentDefinitionInline) error {
 			"configure session settings on the hosted target",
 		)
 	}
+	if inline.EnvironmentVariables != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"environmentVariables is not supported on voice agents",
+			"configure environment variables on the hosted target",
+		)
+	}
 	if inline.Container != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,

@@ -899,6 +899,9 @@ func readManifestContentForInitDetection(
 	if cached {
 		return cachedContent, true
 	}
+	if templateCacheDir() != "" {
+		return nil, false
+	}
 	if azdClient == nil || !strings.Contains(manifestPointer, "://") {
 		return nil, false
 	}
@@ -1448,15 +1451,8 @@ func stageRemoteAzureYaml(
 		if err := clearStagingDirectory(staging); err != nil {
 			return err
 		}
-		if publicDownloadErr != nil {
-			restored, cacheErr := restoreCachedTemplate(pointer, staging)
-			if cacheErr != nil {
-				return fmt.Errorf("%w; cached sample fallback also failed: %v", publicDownloadErr, cacheErr)
-			}
-			if restored {
-				emitTemplateCacheWarning(templateCacheFallbackMessage(pointer, publicDownloadErr))
-				return nil
-			}
+		if publicDownloadErr != nil && templateCacheDir() != "" {
+			return useCachedTemplateOnDownloadError(pointer, staging, publicDownloadErr)
 		}
 	}
 

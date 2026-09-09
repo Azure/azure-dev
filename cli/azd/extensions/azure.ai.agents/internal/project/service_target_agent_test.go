@@ -69,6 +69,130 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_BYOM(t *testing.T) {
 	require.Equal(t, store, *got.Store)
 }
 
+func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgent(t *testing.T) {
+	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindPromptVoice,
+			Name: "voice-wrapper",
+		},
+		ModelType: agent_yaml.VoiceModelTypeHostedAgent,
+		TargetAgent: &agent_yaml.VoiceTargetAgent{
+			Service: "voice-target",
+			Version: "deployed",
+		},
+	}, nil)
+	require.NoError(t, err)
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "voice-wrapper",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+	got, found, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.VoiceModelTypeHostedAgent, got.ModelType)
+	require.Equal(t, "voice-target", got.TargetAgent.Service)
+	require.Equal(t, "deployed", got.TargetAgent.Version)
+}
+
+func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgentVoiceKind(t *testing.T) {
+	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindVoice, Name: "voice"},
+		ModelType:       agent_yaml.VoiceModelTypeHostedAgent,
+		TargetAgent: &agent_yaml.VoiceTargetAgent{
+			Service: "voice-target",
+			Version: "deployed",
+		},
+	}, nil)
+	require.NoError(t, err)
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "voice",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+	got, found, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.AgentKindVoice, got.Kind)
+	require.Equal(t, "voice-target", got.TargetAgent.Service)
+}
+
+func TestVoiceAgentInlineServicePropertiesRejectsProtocols(t *testing.T) {
+	_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":  "prompt-voice",
+		"name":  "voice",
+		"model": map[string]any{"id": "gpt-realtime"},
+		"protocols": []any{map[string]any{
+			"protocol": "invocations_ws",
+			"version":  "1.0.0",
+		}},
+	}))
+	require.ErrorContains(t, err, "protocols are not supported on voice agents")
+}
+
+func TestVoiceAgentInlineServicePropertiesRejectsCodeAndSessionConfig(t *testing.T) {
+	_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":              "voice",
+		"name":              "voice",
+		"model":             map[string]any{"id": "gpt-realtime"},
+		"codeConfiguration": map[string]any{"runtime": "dotnet_10"},
+	}))
+	require.ErrorContains(t, err, "codeConfiguration is not supported on voice agents")
+
+	_, _, _, _, err = AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":                 "voice",
+		"name":                 "voice",
+		"model":                map[string]any{"id": "gpt-realtime"},
+		"sessionConfiguration": map[string]any{"idleTimeoutMinutes": 10},
+	}))
+	require.ErrorContains(t, err, "sessionConfiguration is not supported on voice agents")
+}
+
+func TestVoiceAgentFromResolvedServiceRejectsInvalidVoiceFields(t *testing.T) {
+	svc := inlineAgentService(t, map[string]any{
+		"kind":      "voice",
+		"name":      "voice",
+		"modelType": "hosted_agent",
+		"targetAgent": map[string]any{
+			"service": "target",
+			"version": "typo",
+		},
+	})
+	_, _, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.ErrorContains(t, err, "target_agent.version must be 'deployed'")
+
+	svc = inlineAgentService(t, map[string]any{
+		"kind":              "voice",
+		"name":              "voice",
+		"model":             map[string]any{"id": "gpt-realtime"},
+		"codeConfiguration": map[string]any{"runtime": "dotnet_10"},
+	})
+	_, _, err = VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.ErrorContains(t, err, "codeConfiguration is not supported on voice agents")
+
+	svc = inlineAgentService(t, map[string]any{
+		"kind":                 "voice",
+		"name":                 "voice",
+		"model":                map[string]any{"id": "gpt-realtime"},
+		"environmentVariables": []any{map[string]any{"name": "SAMPLE", "value": "value"}},
+	})
+	_, _, err = VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.ErrorContains(t, err, "environmentVariables is not supported on voice agents")
+
+}
+
+func TestHostedAgentInlineServicePropertiesRejectsHostedVoiceFields(t *testing.T) {
+	_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":        "hosted",
+		"name":        "target",
+		"modelType":   "hosted_agent",
+		"targetAgent": map[string]any{"service": "other-agent"},
+	}))
+	require.ErrorContains(t, err, "hosted voice wrapper fields are not supported on hosted agents")
+}
+
 func TestApplyAgentMetadata(t *testing.T) {
 	tests := []struct {
 		name         string

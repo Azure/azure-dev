@@ -164,11 +164,11 @@ func CreateAgentAPIRequestFromDefinition(agentTemplate any, options ...AgentBuil
 	case AgentKindHosted:
 		hostedDef := agentTemplate.(ContainerAgent)
 		return CreateHostedAgentAPIRequest(hostedDef, buildConfig)
-	case AgentKindPromptVoice:
+	case AgentKindPromptVoice, AgentKindVoice:
 		voiceDef := agentTemplate.(VoiceAgent)
 		return CreateVoiceAgentAPIRequest(voiceDef)
 	default:
-		return nil, fmt.Errorf("unsupported agent kind: %s. Supported kinds are: hosted, prompt-voice", agentDef.Kind)
+		return nil, fmt.Errorf("unsupported agent kind: %s. Supported kinds are: hosted, prompt-voice, voice", agentDef.Kind)
 	}
 }
 
@@ -734,33 +734,62 @@ func mapVoiceStructuredInputs(inputs map[string]any) map[string]any {
 // voice agent. It translates the authoring kind "prompt-voice" into the
 // data-plane service kind "voice" and defaults the audio pipeline.
 func CreateVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
-	return createVoiceAgentAPIRequest(voiceAgent)
+	return createVoiceAgentAPIRequest(voiceAgent, nil)
 }
 
-func createVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
-	modelID := ""
-	if voiceAgent.Model != nil {
-		modelID = strings.TrimSpace(voiceAgent.Model.Id)
-	}
-	if modelID == "" {
-		return nil, fmt.Errorf("model.id is required for a prompt-voice agent")
-	}
+// CreateHostedVoiceAgentAPIRequest builds a hosted-agent voice wrapper using
+// the deployed target resolved by the project layer.
+func CreateHostedVoiceAgentAPIRequest(
+	voiceAgent VoiceAgent,
+	target agent_api.VoiceTargetAgentReference,
+) (*agent_api.CreateAgentRequest, error) {
+	return createVoiceAgentAPIRequest(voiceAgent, &target)
+}
 
+func createVoiceAgentAPIRequest(
+	voiceAgent VoiceAgent,
+	target *agent_api.VoiceTargetAgentReference,
+) (*agent_api.CreateAgentRequest, error) {
 	modelType := agent_api.VoiceModelTypeManaged
 	if voiceAgent.ModelType != "" {
 		modelType = agent_api.VoiceModelType(voiceAgent.ModelType)
 	}
-	if modelType != agent_api.VoiceModelTypeManaged && modelType != agent_api.VoiceModelTypeSelfDeployed {
+	hostedAgent := modelType == agent_api.VoiceModelTypeHostedAgent
+	if hostedAgent {
+		if target == nil || strings.TrimSpace(target.Name) == "" || strings.TrimSpace(target.Version) == "" {
+			return nil, fmt.Errorf("resolved target agent name and version are required when model_type is 'hosted_agent'")
+		}
+		if voiceAgent.Model != nil || voiceAgent.InputSchema != nil || voiceAgent.OutputSchema != nil ||
+			voiceAgent.Instructions != nil || len(voiceAgent.StructuredInputs) > 0 ||
+			len(voiceAgent.Tools) > 0 || voiceAgent.ToolChoice != nil || voiceAgent.ParallelToolCalls != nil ||
+			voiceAgent.MaxOutputTokens != nil || len(voiceAgent.Include) > 0 || len(voiceAgent.Handoff) > 0 {
+			return nil, fmt.Errorf(
+				"model, input_schema, output_schema, instructions, structured_inputs, tools, tool_choice, " +
+					"parallel_tool_calls, max_output_tokens, include, and handoff belong to the target hosted agent",
+			)
+		}
+	} else if modelType != agent_api.VoiceModelTypeManaged && modelType != agent_api.VoiceModelTypeSelfDeployed {
 		return nil, fmt.Errorf(
-			"model_type '%s' is not supported; use '%s' or '%s'",
-			voiceAgent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed)
+			"model_type '%s' is not supported; use '%s', '%s', or '%s'",
+			voiceAgent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed, VoiceModelTypeHostedAgent)
 	}
 	if errors := validateVoiceAgentAdvancedConfig(voiceAgent); len(errors) > 0 {
 		return nil, fmt.Errorf("invalid prompt-voice configuration: %s", strings.Join(errors, "; "))
 	}
 
-	instructions := defaultVoiceInstructions
-	if voiceAgent.Instructions != nil && *voiceAgent.Instructions != "" {
+	modelID := ""
+	if voiceAgent.Model != nil {
+		modelID = strings.TrimSpace(voiceAgent.Model.Id)
+	}
+	if !hostedAgent && modelID == "" {
+		return nil, fmt.Errorf("model.id is required for a prompt-voice agent")
+	}
+
+	instructions := ""
+	if !hostedAgent {
+		instructions = defaultVoiceInstructions
+	}
+	if !hostedAgent && voiceAgent.Instructions != nil && *voiceAgent.Instructions != "" {
 		instructions = *voiceAgent.Instructions
 	}
 
@@ -815,6 +844,7 @@ func createVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRe
 		},
 		ModelType:        modelType,
 		Model:            modelID,
+		TargetAgent:      target,
 		Instructions:     instructions,
 		StructuredInputs: mapVoiceStructuredInputs(voiceAgent.StructuredInputs),
 		Audio: &agent_api.VoiceAudioConfig{

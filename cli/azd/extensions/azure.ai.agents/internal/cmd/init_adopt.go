@@ -20,6 +20,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 
@@ -1619,6 +1620,13 @@ func applyDeployModeToAdoptedProjectWithSources(
 	projectNeedsACR := false
 	var configuredSourceContainers []string
 	for _, agent := range agentServices {
+		kind, err := adoptedAgentKind(agent.svc, resp.GetProject().GetPath())
+		if err != nil {
+			return false, nil, err
+		}
+		if kind != "" && kind != "hosted" {
+			continue
+		}
 		hadDockerConfig := adoptedServiceHasDocker(agent.svc)
 		serviceNeedsACR, err := applyDeployModeToService(
 			ctx,
@@ -1637,6 +1645,14 @@ func applyDeployModeToAdoptedProjectWithSources(
 		}
 	}
 	return projectNeedsACR, configuredSourceContainers, nil
+}
+
+func adoptedAgentKind(svc *azdext.ServiceConfig, projectRoot string) (string, error) {
+	kind, err := agentkind.Kind(svc, projectRoot, "")
+	if err != nil {
+		return "", fmt.Errorf("resolving adopted agent kind for service %q: %w", svc.GetName(), err)
+	}
+	return kind, nil
 }
 
 func finalizeAdoptedSourceContainerNetwork(

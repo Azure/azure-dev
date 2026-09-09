@@ -5,6 +5,7 @@
 package resource
 
 import (
+	"context"
 	"fmt"
 	"runtime"
 
@@ -15,12 +16,12 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 )
 
-// New creates a resource with all application-level fields populated.
+// New creates the canonical resource for azd telemetry.
 func New() *resource.Resource {
-	r, err := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
+	r, err := resource.New(
+		context.Background(),
+		resource.WithTelemetrySDK(),
+		resource.WithAttributes(
 			fields.ServiceNameKey.String(fields.ServiceNameAzd),
 			fields.ServiceVersionKey.String(internal.VersionInfo().Version.String()),
 			fields.OSTypeKey.String(runtime.GOOS),
@@ -32,12 +33,11 @@ func New() *resource.Resource {
 			fields.InstalledByKey.String(getInstalledBy()),
 			fields.DevDeviceIdKey.String(DevDeviceId()),
 		),
+		resource.WithSchemaURL(semconv.SchemaURL),
 	)
 
-	// One possible reason this might fail is if there's a mismatch between the semconv.SchemaURL and the schema used
-	// by resource.Default(). This can happen if we upgrade our open telemetry package version but don't update the import
-	// path of `semconv` above to point to the correct version. Instead of returning an empty resource without any attributes
-	// just fail eagerly.
+	// One possible reason this might fail is if semconv.SchemaURL does not match the schema used by
+	// resource.WithTelemetrySDK(). Fail eagerly instead of returning a resource without the expected attributes.
 	if err != nil {
 		panic(fmt.Sprintf("failed to create resource: %v", err))
 	}

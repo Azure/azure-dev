@@ -8,6 +8,10 @@ The `azure.ai.projects` extension owns the project service and the `microsoft.fo
 
 When `network:` is present, azd always provisions an **account private endpoint** and disables public data-plane access. Dependent stores (Cosmos DB, AI Search, Storage) stay platform-managed.
 
+Legacy `network.mode`, `network.byo`, and `network.managed` fields are no
+longer migrated into a project service. Rewrite legacy configuration using the
+current `peSubnet` schema before running `project add`.
+
 <!-- azd:doc-example partial -->
 ```yaml
 infra:

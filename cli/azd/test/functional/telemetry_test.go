@@ -92,7 +92,15 @@ func Test_CLI_Telemetry_UsageData_Simple_Command(t *testing.T) {
 
 	cli := azdcli.NewCLI(t)
 	// Always set telemetry opt-inn setting to avoid influence from user settings
-	cli.Env = append(os.Environ(), "AZURE_DEV_COLLECT_TELEMETRY=yes")
+	// and seed unsupported resource attributes to verify they do not reach the trace file.
+	cli.Env = append(
+		os.Environ(),
+		"AZURE_DEV_COLLECT_TELEMETRY=yes",
+		"OTEL_RESOURCE_ATTRIBUTES=user.email=customer@example.com,custom.resource=customer-value,"+
+			"service.instance.id=customer-instance",
+		"OTEL_SERVICE_NAME=customer-service",
+		"OTEL_GO_X_RESOURCE=true",
+	)
 	cli.WorkingDirectory = dir
 
 	envName := randomEnvName()
@@ -121,6 +129,10 @@ func Test_CLI_Telemetry_UsageData_Simple_Command(t *testing.T) {
 		require.NoError(t, err)
 
 		verifyResource(t, cli.Env, span.Resource)
+		resourceAttributes := attributesMap(span.Resource)
+		require.NotContains(t, resourceAttributes, attribute.Key("user.email"))
+		require.NotContains(t, resourceAttributes, attribute.Key("custom.resource"))
+		require.NotContains(t, resourceAttributes, attribute.Key("service.instance.id"))
 		if strings.HasPrefix(span.Name, "cmd.") {
 			usageCmdFound = true
 			m := attributesMap(span.Attributes)

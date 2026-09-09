@@ -117,20 +117,29 @@ services:
 			wantErr: true,
 		},
 		{
-			name: "network on agent service rejected",
+			name: "network on agent service rejected without project service",
 			yaml: `
 services:
   agent:
     host: azure.ai.agent
     network:
       peSubnet: {vnet: /subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/v, name: pe}
-  ai-project:
-    host: azure.ai.project
 `,
 			wantErr: true,
 		},
 		{
-			name: "network on legacy foundry service rejected",
+			name: "network on legacy foundry service rejected without project service",
+			yaml: `
+services:
+  legacy:
+    host: microsoft.foundry
+    network:
+      peSubnet: {vnet: /subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/v, name: pe}
+`,
+			wantErr: true,
+		},
+		{
+			name: "project service wins over legacy network",
 			yaml: `
 services:
   legacy:
@@ -140,7 +149,20 @@ services:
   ai-project:
     host: azure.ai.project
 `,
-			wantErr: true,
+			want: "ai-project",
+		},
+		{
+			name: "project service wins over agent network",
+			yaml: `
+services:
+  agent:
+    host: azure.ai.agent
+    network:
+      peSubnet: {vnet: /subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/v, name: pe}
+  ai-project:
+    host: azure.ai.project
+`,
+			want: "ai-project",
 		},
 	}
 

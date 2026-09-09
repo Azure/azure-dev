@@ -12,7 +12,8 @@
 azd emits OpenTelemetry spans for every command execution. Telemetry flows through a local pipeline:
 
 1. **Instrumentation** — CLI, VS Code extension, and extensions emit OTel spans
-2. **Export** — Spans are converted to Application Insights envelopes and queued to disk
+2. **Export** — Span resources are canonicalized, then spans are converted to Application Insights envelopes and queued
+   to disk
 3. **Upload** — A background process transmits envelopes to Application Insights
 
 > Microsoft-internal dashboards, data pipelines, and reporting infrastructure are documented separately for internal maintainers.
@@ -30,7 +31,10 @@ flowchart TB
     subgraph Export ["CLI Export Pipeline"]
         MW["Command Middleware<br/>cli/azd/cmd/middleware/telemetry.go"]
         OTel["OTel TracerProvider"]
+        Policy["Resource Export Policy<br/>canonical azd resource"]
         AIExp["App Insights Exporter<br/>SpanToEnvelope()"]
+        FileExp["Trace File Exporter<br/>--trace-log-file"]
+        OTLPExp["OTLP HTTP Exporter<br/>--trace-log-url"]
         DiskQ["Disk Queue<br/>~/.azd/telemetry/*.trn"]
         Upload["azd telemetry upload<br/>(background / deferred)"]
     end
@@ -39,7 +43,10 @@ flowchart TB
         AppInsights["Application Insights"]
     end
 
-    CLI --> MW --> OTel --> AIExp --> DiskQ --> Upload --> AppInsights
+    CLI --> MW --> OTel --> Policy
+    Policy --> AIExp --> DiskQ --> Upload --> AppInsights
+    Policy --> FileExp
+    Policy --> OTLPExp
     VSC -->|VS Code telemetry framework| AppInsights
     EXT -->|structured errors via host| MW
 ```
@@ -55,12 +62,34 @@ When `azd` starts, the telemetry subsystem:
 1. Checks `AZURE_DEV_COLLECT_TELEMETRY` — if set to `"no"`, telemetry is disabled entirely
 2. In Cloud Shell, shows a first-run consent notice (creates `~/.azd/first-run` marker)
 3. Creates a `StorageQueue` backed by the filesystem at `~/.azd/telemetry/`
-4. Initializes the **App Insights Exporter** — a custom OTel `SpanExporter` that converts spans to Application Insights envelopes
-5. Optionally adds:
+4. Constructs the canonical azd resource from declared application fields and OpenTelemetry SDK metadata
+5. Initializes the **App Insights Exporter** — a custom OTel `SpanExporter` that converts spans to Application Insights envelopes
+6. Optionally adds:
    - Stdout trace exporter (via `--trace-log-file`)
    - OTLP HTTP exporter (via `--trace-log-url`)
-6. Creates an OTel `TracerProvider` with the configured exporters
-7. Registers the provider globally via `otel.SetTracerProvider(tp)`
+7. Wraps every exporter so provider-injected environment attributes are not included in exported span resources
+8. Creates an OTel `TracerProvider` with the configured exporters
+9. Registers the provider globally via `otel.SetTracerProvider(tp)`
+
+### Exported Resource Policy
+
+OpenTelemetry's Go SDK reads `OTEL_RESOURCE_ATTRIBUTES` and `OTEL_SERVICE_NAME` when a resource is attached to a
+`TracerProvider`. azd therefore enforces its resource policy again at the export boundary rather than relying only on
+resource construction.
+
+For newly generated spans, the Application Insights queue, `--trace-log-file`, and `--trace-log-url` receive the same
+canonical resource:
+
+- The ten azd application fields documented in the [telemetry data reference](../reference/telemetry-data.md)
+- `telemetry.sdk.name`, `telemetry.sdk.language`, and `telemetry.sdk.version`
+
+Ambient resource attributes are omitted, including a customer-supplied `service.name` or `service.instance.id`. Span
+attributes are not filtered by this boundary, so declared core fields and first-party extension `ext.*` usage
+attributes keep their existing behavior. The embedded SDK may still parse the environment variables internally; the
+guarantee is that their values are not included in resources exported by azd.
+
+This policy applies when spans are generated. Telemetry envelopes already serialized to the disk queue by an older
+azd version are not rewritten.
 
 ### 2. Command Execution → Span Creation
 
@@ -223,6 +252,7 @@ cli/azd/
 ├── internal/
 │   ├── telemetry/
 │   │   ├── telemetry.go                  # Pipeline init, env vars, consent
+│   │   ├── resource_exporter.go           # Canonical resource enforcement
 │   │   ├── storage.go                    # Disk queue (FIFO)
 │   │   ├── storage_exporter.go           # OTel exporter → disk queue
 │   │   ├── uploader.go                   # Queue → App Insights upload
@@ -233,6 +263,7 @@ cli/azd/
 │   │       ├── endpoint_config.go        # Connection string parsing
 │   │       └── transmit_payload.go       # NDJSON serialization
 │   └── tracing/
+│       ├── resource/resource.go           # Canonical application resource
 │       ├── tracing.go                    # Global tracer
 │       ├── attributes.go                 # Global/usage baggage
 │       ├── events/events.go              # All event name constants

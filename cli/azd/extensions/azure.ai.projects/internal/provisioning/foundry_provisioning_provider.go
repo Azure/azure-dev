@@ -2173,20 +2173,19 @@ func findFoundryProjectService(raw []byte) (string, error) {
 			misplacedNetwork = append(misplacedNetwork, name)
 		}
 	}
-	if len(misplacedNetwork) > 0 {
-		slices.Sort(misplacedNetwork)
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidAzureYaml,
-			fmt.Sprintf("network: is only supported on services with host: %s (found on %v)",
-				FoundryProjectHost, misplacedNetwork),
-			"move the network: block to the azure.ai.project service (for example, services.ai-project)",
-		)
-	}
-
 	switch len(matches) {
 	case 1:
 		return matches[0], nil
 	case 0:
+		if len(misplacedNetwork) > 0 {
+			slices.Sort(misplacedNetwork)
+			return "", exterrors.Validation(
+				exterrors.CodeInvalidAzureYaml,
+				fmt.Sprintf("network: is only supported on services with host: %s (found on %v)",
+					FoundryProjectHost, misplacedNetwork),
+				"move the network: block to the azure.ai.project service (for example, services.ai-project)",
+			)
+		}
 		var legacyMatches []string
 		for name, s := range r.Services {
 			if slices.Contains(FoundryLegacyProvisioningHosts, s.Host) {

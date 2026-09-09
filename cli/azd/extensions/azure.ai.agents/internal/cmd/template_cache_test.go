@@ -26,6 +26,10 @@ func TestTemplateCacheRoundTrip(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(downloaded, "src", "main.py"), []byte("print('ok')\n"), 0600))
 
 	require.NoError(t, refreshTemplateCache(pointer, downloaded))
+	otherPointer := "https://github.com/example/samples/blob/main/other/azure.yaml"
+	require.NotEqual(t, templateCacheDir(pointer), templateCacheDir(otherPointer))
+	_, ok := readCachedTemplateManifest(otherPointer)
+	require.False(t, ok)
 
 	content, ok := readCachedTemplateManifest(pointer)
 	require.True(t, ok)

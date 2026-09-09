@@ -72,6 +72,8 @@ extends:
         displayName: AI Agents Live Golden Path
         variables:
           - template: /eng/pipelines/templates/variables/image.yml
+          # This Key Vault-backed group exposes only azuresdk-github-pat.
+          - group: Release Secrets for GitHub
         jobs:
           - job: Tier2
             displayName: Tier 2 — init/provision/deploy/invoke/down
@@ -216,7 +218,7 @@ extends:
                   workingDirectory: cli/azd/extensions/azure.ai.agents
                   inlineScript: |
                     set -euo pipefail
-                    if [ -z "${GH_TOKEN:-}" ]; then
+                    if [ -z "${GH_TOKEN:-}" ] || [ "$GH_TOKEN" = '$(azuresdk-github-pat)' ]; then
                       echo "ERROR: azuresdk-github-pat was not injected as GH_TOKEN" >&2
                       exit 1
                     fi

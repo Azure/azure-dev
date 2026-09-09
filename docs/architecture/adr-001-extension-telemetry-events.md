@@ -175,7 +175,7 @@ affected users while a separate bounded measurement preserves total volume.
 The extension ID is included only after the installed record passes the
 official-source gate; failures before admission use a fixed `unattributed`
 identity. The aggregate remains on the hosting command span rather than being
-copied to synthetic `azd up` phase spans, which prevents one invocation from
+copied to synthetic `azd up` phase spans or VS RPC spans, which prevents one invocation from
 multiplying its count downstream.
 
 **Make telemetry a capability.** Rejected per review feedback: capabilities

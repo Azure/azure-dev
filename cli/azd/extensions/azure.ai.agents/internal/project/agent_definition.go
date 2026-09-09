@@ -137,6 +137,7 @@ type AgentDefinitionInline struct {
 	AgentEndpoint        *agent_yaml.AgentEndpoint         `json:"agentEndpoint,omitempty"`
 	AgentCard            *agent_yaml.AgentCard             `json:"agentCard,omitempty"`
 	CodeConfiguration    *agent_yaml.CodeConfiguration     `json:"codeConfiguration,omitempty"`
+	Container            *ContainerSettings                `json:"container,omitempty"`
 	Policies             []agent_yaml.Policy               `json:"policies,omitempty"`
 	SessionConfiguration *agent_yaml.SessionConfiguration  `json:"sessionConfiguration,omitempty"`
 
@@ -861,6 +862,13 @@ func validateVoiceInlineAgent(inline AgentDefinitionInline) error {
 			exterrors.CodeInvalidAgentManifest,
 			"sessionConfiguration is not supported on voice agents",
 			"configure session settings on the hosted target",
+		)
+	}
+	if inline.Container != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"container is not supported on voice agents",
+			"configure container settings on the hosted target",
 		)
 	}
 	if len(inline.Protocols) > 0 {

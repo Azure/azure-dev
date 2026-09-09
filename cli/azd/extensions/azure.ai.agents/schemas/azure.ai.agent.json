@@ -228,6 +228,7 @@
             { "required": ["outputSchema"] },
             { "required": ["codeConfiguration"] },
             { "required": ["sessionConfiguration"] },
+            { "required": ["container"] },
             { "required": ["policies"] },
             { "required": ["protocols"] },
             { "required": ["instructions"] },

@@ -431,10 +431,14 @@ code_configuration:
   runtime: dotnet_10
 session_configuration:
   idleTimeoutMinutes: 10
+container:
+  resources:
+    cpu: "1"
 `)
 	err := ValidateAgentDefinition(yamlContent)
 	if err == nil || !strings.Contains(err.Error(), "code_configuration is not supported") ||
-		!strings.Contains(err.Error(), "session_configuration is not supported") {
+		!strings.Contains(err.Error(), "session_configuration is not supported") ||
+		!strings.Contains(err.Error(), "container is not supported") {
 		t.Fatalf("expected prompt voice code/session config validation errors, got: %v", err)
 	}
 }

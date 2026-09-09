@@ -612,7 +612,7 @@ func TestResolveRemoteContextServiceLookupErrorPropagates(t *testing.T) {
 				testEnvironmentServiceServer: testEnvironmentServiceServer{
 					current: &azdext.Environment{Name: "test"},
 				},
-				getValueErr: errors.New("environment name lookup failed"),
+				getValuesErr: errors.New("environment name lookup failed"),
 			},
 		},
 		{

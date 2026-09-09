@@ -1011,8 +1011,14 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 	require.Empty(t, envStub.writes[0].Value)
 	require.Equal(t, "AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION", envStub.writes[1].Key)
 	require.Empty(t, envStub.writes[1].Value)
-	require.Equal(t, "AGENT_MY_SVC_VERSION", envStub.writes[len(envStub.writes)-1].Key)
-	require.Equal(t, "1.0.0", envStub.writes[len(envStub.writes)-1].Value)
+	require.Equal(t, "AGENT_MY_SVC_VERSION", envStub.writes[len(envStub.writes)-2].Key)
+	require.Equal(t, "1.0.0", envStub.writes[len(envStub.writes)-2].Value)
+	require.Equal(
+		t,
+		"AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION",
+		envStub.writes[len(envStub.writes)-1].Key,
+	)
+	require.Equal(t, "1", envStub.writes[len(envStub.writes)-1].Value)
 }
 
 func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {

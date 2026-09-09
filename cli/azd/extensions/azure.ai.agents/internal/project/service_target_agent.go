@@ -3649,11 +3649,6 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 			Value:   endpointValues[dp.Protocol],
 		})
 	}
-	envVars = append(envVars, azdext.SetEnvRequest{
-		EnvName: p.env.Name,
-		Key:     protocolVersionKey,
-		Value:   "1",
-	})
 	envVars = append(envVars,
 		azdext.SetEnvRequest{
 			EnvName: p.env.Name,
@@ -3695,6 +3690,11 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 			})
 		}
 	}
+	envVars = append(envVars, azdext.SetEnvRequest{
+		EnvName: p.env.Name,
+		Key:     protocolVersionKey,
+		Value:   "1",
+	})
 
 	for i := range envVars {
 		_, err := p.azdClient.Environment().SetValue(ctx, &envVars[i])

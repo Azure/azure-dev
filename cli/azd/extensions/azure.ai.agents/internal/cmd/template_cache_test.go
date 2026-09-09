@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,6 +27,7 @@ func TestTemplateCacheRoundTrip(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(downloaded, "src", "main.py"), []byte("print('ok')\n"), 0600))
 
 	require.NoError(t, refreshTemplateCache(pointer, downloaded))
+	require.FileExists(t, filepath.Join(cacheDir, templateCacheRefreshedMarker))
 	otherPointer := "https://github.com/example/samples/blob/main/other/azure.yaml"
 	require.NotEqual(t, templateCacheDir(pointer), templateCacheDir(otherPointer))
 	_, ok := readCachedTemplateManifest(otherPointer)
@@ -40,4 +42,27 @@ func TestTemplateCacheRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, restored)
 	require.True(t, fileExists(filepath.Join(staging, "src", "main.py")))
+}
+
+func TestUseCachedTemplateOnDownloadError(t *testing.T) {
+	cacheDir := filepath.Join(t.TempDir(), "cache")
+	t.Setenv(templateCacheDirEnv, cacheDir)
+	pointer := "https://github.com/example/samples/blob/main/basic/azure.yaml"
+	downloadErr := errors.New("GitHub unavailable")
+
+	t.Run("cache hit", func(t *testing.T) {
+		downloaded := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(downloaded, "azure.yaml"), []byte("name: cached\n"), 0600))
+		require.NoError(t, refreshTemplateCache(pointer, downloaded))
+
+		staging := t.TempDir()
+		require.NoError(t, useCachedTemplateOnDownloadError(pointer, staging, downloadErr))
+		require.FileExists(t, filepath.Join(staging, "azure.yaml"))
+	})
+
+	t.Run("cache miss", func(t *testing.T) {
+		missingPointer := "https://github.com/example/samples/blob/main/missing/azure.yaml"
+		err := useCachedTemplateOnDownloadError(missingPointer, t.TempDir(), downloadErr)
+		require.ErrorIs(t, err, downloadErr)
+	})
 }

@@ -6,15 +6,18 @@ package cmd
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 const templateCacheDirEnv = "AZURE_AI_AGENTS_E2E_TEMPLATE_CACHE_DIR"
+const templateCacheRefreshedMarker = ".refreshed"
 
 func templateCacheRoot() string {
 	return strings.TrimSpace(os.Getenv(templateCacheDirEnv))
@@ -71,12 +74,25 @@ func refreshTemplateCache(pointer, staging string) error {
 	if err := os.Rename(tempDir, cacheDir); err != nil {
 		return fmt.Errorf("activate sample cache: %w", err)
 	}
+	if err := os.WriteFile(
+		filepath.Join(templateCacheRoot(), templateCacheRefreshedMarker),
+		[]byte("refreshed\n"),
+		0600,
+	); err != nil {
+		return fmt.Errorf("mark refreshed sample cache: %w", err)
+	}
 	return nil
 }
 
 func useCachedTemplateOnDownloadError(pointer, staging string, downloadErr error) error {
 	restored, err := restoreCachedTemplate(pointer, staging)
 	if err != nil {
+		var localErr *azdext.LocalError
+		if errors.As(downloadErr, &localErr) {
+			combinedErr := *localErr
+			combinedErr.Message = fmt.Sprintf("%s; cached sample fallback also failed: %s", localErr.Message, err)
+			return &combinedErr
+		}
 		return fmt.Errorf("%w; cached sample fallback also failed: %w", downloadErr, err)
 	}
 	if !restored {

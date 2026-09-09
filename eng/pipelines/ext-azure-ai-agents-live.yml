@@ -101,11 +101,10 @@ extends:
                   displayName: Publish test logs
                 - output: pipelineArtifact
                   path: $(Pipeline.Workspace)/azure-ai-agents-template-cache
-                  artifact: azure-ai-agents-template-cache
+                  artifact: azure-ai-agents-template-cache-$(System.JobAttempt)
                   condition: and(
                     always(),
-                    eq(variables['PublishTemplateCache'], 'true'),
-                    eq(variables['System.JobAttempt'], '1')
+                    eq(variables['PublishTemplateCache'], 'true')
                     )
                   displayName: Publish last-known-good sample cache
             steps:
@@ -205,21 +204,49 @@ extends:
               - bash: mkdir -p "$(Pipeline.Workspace)/azure-ai-agents-template-cache"
                 displayName: Prepare sample cache directory
 
+              - bash: |
+                  set -euo pipefail
+                  api="$(System.CollectionUri)$(System.TeamProjectId)/_apis/build"
+                  builds=$(curl -fsS \
+                    -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" \
+                    "$api/builds?definitions=$(System.DefinitionId)&statusFilter=completed&queryOrder=finishTimeDescending&%24top=50&api-version=7.1")
+                  for build_id in $(echo "$builds" | jq -r '.value[].id'); do
+                    artifacts=$(curl -fsS \
+                      -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" \
+                      "$api/builds/$build_id/artifacts?api-version=7.1")
+                    artifact_name=$(echo "$artifacts" | jq -r '
+                      [.value[].name |
+                        select(. == "azure-ai-agents-template-cache" or
+                          startswith("azure-ai-agents-template-cache-"))][0] // empty')
+                    if [ -n "$artifact_name" ]; then
+                      echo "##vso[task.setvariable variable=SampleCacheBuildId]$build_id"
+                      echo "##vso[task.setvariable variable=SampleCacheArtifactName]$artifact_name"
+                      echo "Using sample cache from build $build_id."
+                      exit 0
+                    fi
+                  done
+                  echo "No previous sample cache artifact was found."
+                env:
+                  SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+                displayName: Find latest sample cache artifact
+
               # Every PR, scheduled, and manual run reads the same last-known-good
-              # sample published by the latest tagged run of this pipeline.
+              # sample artifact produced by this pipeline, regardless of branch.
               - task: DownloadPipelineArtifact@2
                 displayName: Restore last-known-good sample cache
+                condition: ne(variables['SampleCacheBuildId'], '')
                 continueOnError: true
                 inputs:
                   buildType: specific
                   project: $(System.TeamProjectId)
                   definition: $(System.DefinitionId)
-                  buildVersionToDownload: latest
-                  tags: azure-ai-agents-template-cache
-                  allowPartiallySucceededBuilds: true
-                  allowFailedBuilds: true
-                  artifactName: azure-ai-agents-template-cache
+                  buildVersionToDownload: specific
+                  pipelineId: $(SampleCacheBuildId)
+                  artifactName: $(SampleCacheArtifactName)
                   targetPath: $(Pipeline.Workspace)/azure-ai-agents-template-cache
+
+              - bash: rm -f "$(Pipeline.Workspace)/azure-ai-agents-template-cache/.refreshed"
+                displayName: Reset sample cache refresh marker
 
               # Run the live golden path INSIDE the AzureCLI@2 task so the az CLI
               # session (consumed by azd via auth.useAzCliAuth) stays valid for the
@@ -279,15 +306,15 @@ extends:
               # The extension writes only a complete downloaded sample here.
               - bash: |
                   cache_dir="$(Pipeline.Workspace)/azure-ai-agents-template-cache"
-                  if find "$cache_dir" -name azure.yaml -print -quit | grep -q .; then
+                  if [ -f "$cache_dir/.refreshed" ]; then
                     echo "##vso[task.setvariable variable=PublishTemplateCache]true"
-                    echo "##vso[build.addbuildtag]azure-ai-agents-template-cache"
-                    echo "Valid sample cache will be published from this run."
+                    rm -f "$cache_dir/.refreshed"
+                    echo "Refreshed sample cache will be published from this run."
                   else
-                    echo "No valid sample cache was produced by this run."
+                    echo "No sample cache was refreshed by this run."
                   fi
                 condition: always()
-                displayName: Mark valid sample cache
+                displayName: Mark refreshed sample cache
 
               # Safety net for hard crashes / step timeout: the in-test teardown
               # runs `azd down` already, but if the run died mid-way, force-purge

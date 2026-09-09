@@ -207,13 +207,19 @@ extends:
               - bash: |
                   set -euo pipefail
                   api="$(System.CollectionUri)$(System.TeamProjectId)/_apis/build"
-                  builds=$(curl -fsS \
-                    -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" \
-                    "$api/builds?definitions=$(System.DefinitionId)&statusFilter=completed&queryOrder=finishTimeDescending&%24top=50&api-version=7.1")
-                  for build_id in $(echo "$builds" | jq -r '.value[].id'); do
-                    artifacts=$(curl -fsS \
+                  if ! builds=$(curl -fsS \
                       -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" \
-                      "$api/builds/$build_id/artifacts?api-version=7.1")
+                      "$api/builds?definitions=$(System.DefinitionId)&statusFilter=completed&queryOrder=finishTimeDescending&%24top=50&api-version=7.1"); then
+                    echo "##vso[task.logissue type=warning]Unable to query previous sample cache builds; continuing uncached."
+                    exit 0
+                  fi
+                  for build_id in $(echo "$builds" | jq -r '.value[].id'); do
+                    if ! artifacts=$(curl -fsS \
+                        -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" \
+                        "$api/builds/$build_id/artifacts?api-version=7.1"); then
+                      echo "##vso[task.logissue type=warning]Unable to inspect sample cache artifacts for build $build_id; trying an older build."
+                      continue
+                    fi
                     artifact_name=$(echo "$artifacts" | jq -r '
                       [.value[].name |
                         select(. == "azure-ai-agents-template-cache" or

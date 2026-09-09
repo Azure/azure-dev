@@ -5,6 +5,7 @@
 package cmd
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -106,10 +107,12 @@ func refreshTemplateCache(pointer, staging string) error {
 }
 
 func useCachedTemplateOnDownloadError(pointer, staging string, downloadErr error) error {
+	if errors.Is(downloadErr, context.Canceled) || errors.Is(downloadErr, context.DeadlineExceeded) {
+		return downloadErr
+	}
 	restored, err := restoreCachedTemplate(pointer, staging)
 	if err != nil {
-		var localErr *azdext.LocalError
-		if errors.As(downloadErr, &localErr) {
+		if localErr, ok := errors.AsType[*azdext.LocalError](downloadErr); ok {
 			combinedErr := *localErr
 			combinedErr.Message = fmt.Sprintf("%s; cached sample fallback also failed: %s", localErr.Message, err)
 			return &combinedErr

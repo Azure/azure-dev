@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -64,6 +65,13 @@ func TestUseCachedTemplateOnDownloadError(t *testing.T) {
 		missingPointer := "https://github.com/example/samples/blob/main/missing/azure.yaml"
 		err := useCachedTemplateOnDownloadError(missingPointer, t.TempDir(), downloadErr)
 		require.ErrorIs(t, err, downloadErr)
+	})
+
+	t.Run("cancellation is not replaced by cache", func(t *testing.T) {
+		staging := t.TempDir()
+		err := useCachedTemplateOnDownloadError(pointer, staging, context.Canceled)
+		require.ErrorIs(t, err, context.Canceled)
+		require.NoFileExists(t, filepath.Join(staging, "azure.yaml"))
 	})
 }
 

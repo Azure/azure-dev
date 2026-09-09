@@ -894,6 +894,21 @@ func TestDocSchemaPromptVoiceRejectsToolbox(t *testing.T) {
 		"model":   map[string]any{"id": "gpt-realtime"},
 		"toolbox": map[string]any{"name": "support-tools"},
 	}))
+	require.Error(t, schema.validate(map[string]any{
+		"kind":              "voice",
+		"model":             map[string]any{"id": "gpt-realtime"},
+		"codeConfiguration": map[string]any{"runtime": "dotnet_10"},
+	}))
+	require.Error(t, schema.validate(map[string]any{
+		"kind":                 "voice",
+		"model":                map[string]any{"id": "gpt-realtime"},
+		"sessionConfiguration": map[string]any{"idleTimeoutMinutes": 10},
+	}))
+	require.Error(t, schema.validate(map[string]any{
+		"kind":      "voice",
+		"model":     map[string]any{"id": "gpt-realtime"},
+		"protocols": []any{map[string]any{"protocol": "invocations_ws", "version": "1.0.0"}},
+	}))
 }
 
 func TestDocSchemaDigitalWorkerPublishFields(t *testing.T) {

@@ -253,7 +253,10 @@
             "anyOf": [
               { "required": ["targetAgent"] },
               { "required": ["toolbox"] },
-              { "required": ["policies"] }
+              { "required": ["policies"] },
+              { "required": ["protocols"] },
+              { "required": ["codeConfiguration"] },
+              { "required": ["sessionConfiguration"] }
             ]
           }
         }

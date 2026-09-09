@@ -359,6 +359,12 @@ func (r *evalReconciler) EnsureDataset(
 					fmt.Fprint(warnWriter(ctx), messages.Warning(
 						messages.DatasetVersionNotVerified(decl.Name, decl.Version, getErr)))
 				}
+				// Not "changed", even when the pin moved. The flag chooses
+				// between "Published <kind> <name> version N" and "unchanged at
+				// version N", and re-pinning publishes nothing -- so reporting a
+				// move as a change would announce a publish that did not happen.
+				// The line still carries the pin, so it reads as unchanged at the
+				// version now in force, which is what took effect.
 				return decl.Version, false, nil
 
 			case decl.Version == version:

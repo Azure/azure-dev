@@ -1444,6 +1444,21 @@ func ArtifactExists(path string) error {
 		path)
 }
 
+// ItemPagingDidNotAdvance reports a listing whose cursor stopped moving.
+//
+// The walk exists because the endpoint has no status parameter, so a filter can
+// only be applied here -- which means trusting the cursor. A page that comes
+// back with the cursor it was asked for would be requested forever, and the
+// command would hang issuing paid requests with nothing on screen to say why.
+// Reported rather than answered with a short page: a filtered listing that
+// stopped early is indistinguishable from one that found nothing more.
+func ItemPagingDidNotAdvance(runID string) error {
+	return fmt.Errorf(
+		"listing results for run %s stopped making progress; the service kept "+
+			"reporting more rows without advancing. Narrow the listing with "+
+			"--limit, or read the whole run with `run output export`", runID)
+}
+
 // ArtifactCollisionPrompt opens the choice about a name already in use.
 //
 // It states the file before asking, because the answer turns on what is in it:

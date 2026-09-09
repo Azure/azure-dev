@@ -223,6 +223,15 @@ func (a *initAction) Run() error {
 			return err
 		}
 		serviceName = answers.target + "-evals"
+		// Replanned with the name, not carried over. The wiring describes an
+		// edit to azure.yaml for one service, so a Change that picks a different
+		// agent made the next confirmation describe the previous one's edit --
+		// and skipped every refusal planRootEvalService raises for the new name,
+		// which is the check that stops init writing over somebody else's
+		// service entry.
+		if wiring, err = planRootEvalService(a.cmd.Context(), serviceName, configPath); err != nil {
+			return err
+		}
 	}
 
 	source = answers.source
@@ -658,10 +667,14 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 	if in.source == initSourceTraces {
 		// A trace-backed eval filters by agent rather than invoking one: the
 		// conversations already happened.
+		//
+		// The published name for the same reason the invoked target uses it:
+		// the service matches traces on the name the agent emits them under,
+		// and the local service key selects nothing.
 		eval.Target = nil
 		eval.Source = &project.SourceDecl{
 			Type:          project.SourceTypeTraces,
-			AgentName:     in.target,
+			AgentName:     cmp.Or(in.remoteTarget, in.target),
 			MaxTraces:     in.maxTraces,
 			LookbackHours: in.lookbackHours,
 		}

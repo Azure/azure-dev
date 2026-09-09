@@ -178,6 +178,16 @@ func (a *generateAction) Run() error {
 	defer ec.Close()
 	a.resolved = resolved
 
+	// Detection happens inside prepareGeneration, after target was read from the
+	// flag and the configuration above. Leaving it there meant a bare `generate`
+	// in a project with exactly one agent detected it, printed it, and then
+	// derived its artifact names from nothing -- failing on a target it had just
+	// shown the reader.
+	if target == "" {
+		target = resolved.Agent
+		a.flags.shared.target = target
+	}
+
 	projectName := projectNameOf(ec.endpoint)
 	if !noPrompt(a.cmd) && !isJSON(a.cmd) {
 		configExists, evals := evalConfigState(a.flags.shared.path)

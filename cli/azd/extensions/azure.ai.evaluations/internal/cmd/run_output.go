@@ -936,6 +936,13 @@ func fetchItemPage(
 	return client.ListOutputItemsPage(ctx, evalID, runID, pageSize, after)
 }
 
+// maxFilteredItemPages bounds the walk a filter can drive.
+//
+// A run of a thousand rows at ten a page is a hundred requests, so this is far
+// above anything a real listing needs; it exists so a service that keeps saying
+// HasMore cannot hold the command open indefinitely.
+const maxFilteredItemPages = 200
+
 // filteredItemPage fills one page with rows the filter keeps, reading as many
 // service pages as that takes.
 //
@@ -964,7 +971,12 @@ func filteredItemPage(
 	}
 
 	kept := make([]eval_api.OutputItem, 0, len(page.Data))
-	for {
+	// The walk trusts the service's cursor to advance. A page that comes back
+	// HasMore with the cursor it was asked for -- which an empty page does --
+	// would otherwise be requested forever, and the command would hang issuing
+	// paid requests with nothing on screen to say why.
+	cursor := after
+	for pages := 0; ; pages++ {
 		for _, it := range page.Data {
 			if keep[classifyItem(it).Status] {
 				kept = append(kept, it)
@@ -983,7 +995,14 @@ func filteredItemPage(
 		if !page.HasMore || page.LastID == "" {
 			return &eval_api.OutputItemList{Data: kept}, nil
 		}
-		if page, err = fetch(ctx, client, evalID, runID, pageSize, page.LastID); err != nil {
+		if page.LastID == cursor || pages >= maxFilteredItemPages {
+			// Reported as what it is rather than answered with a short page: a
+			// filtered listing that stopped early is indistinguishable from one
+			// that found nothing more, and the flag exists to be trusted.
+			return &eval_api.OutputItemList{Data: kept}, messages.ItemPagingDidNotAdvance(runID)
+		}
+		cursor = page.LastID
+		if page, err = fetch(ctx, client, evalID, runID, pageSize, cursor); err != nil {
 			return nil, err
 		}
 	}

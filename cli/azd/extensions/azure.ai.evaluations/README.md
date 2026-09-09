@@ -183,7 +183,18 @@ export FOUNDRY_PROJECT_ENDPOINT=https://<account>.services.ai.azure.com/api/proj
 export AZURE_AI_EVAL_MODEL=gpt-4.1-nano       # optional judge model
 export AZURE_AI_EVAL_AGENT=<agent-name>       # optional, enables the run phase
 
-go test -tags live ./internal/cmd/ ./tests/live/
+go test -tags live ./internal/cmd/ ./tests/live/ ./tests/cli/
+```
+
+`./tests/cli/` drives the built binary rather than the packages, so it is the
+half that catches a command wired up wrongly. Omitting it is how a live suite
+that could never have compiled sat green in review.
+
+The hero walkthrough is behind its own tag, because it scaffolds a project
+end to end:
+
+```bash
+go test -tags hero ./tests/hero/
 ```
 
 They clean up every resource they create.

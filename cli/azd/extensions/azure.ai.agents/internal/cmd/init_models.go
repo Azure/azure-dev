@@ -1081,6 +1081,7 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 	// existing-only selection still records the model name, while only NEW
 	// deployments land in deploymentDetails (azure.yaml declarations).
 	referencedDeployments := []project.Deployment{}
+	deploymentReferenceIndices := []int{}
 	paramValues := agent_yaml.ParameterValues{}
 	// anyModelProcessed tracks whether we encountered at least one
 	// model resource (so we know whether to call remove on the
@@ -1123,17 +1124,24 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 					}
 					return nil, nil, fmt.Errorf("failed to get model deployment details: %w", err)
 				}
-				// Reference every selected deployment by name (manifest injection
-				// + env var) regardless of new/existing. Only declare NEW
+				// Reference every selected deployment through its indexed
+				// environment-backed name (manifest injection + env var), regardless
+				// of new/existing. Only declare NEW
 				// deployments under azure.ai.project.deployments: so azd
 				// creates/upserts them; an existing deployment is referenced, not
 				// managed (REFERENCE.md: anything not declared but referenced by
 				// name is treated as existing).
 				referencedDeployments = append(referencedDeployments, *deployment)
-				paramValues[resource.Name] = deployment.Name
+				paramValues[resource.Name] = fmt.Sprintf(
+					"${%s}", deploymentKeys(len(referencedDeployments)-1).deploymentName,
+				)
 				anyModelProcessed = true
 				if isNew {
 					deploymentDetails = append(deploymentDetails, *deployment)
+					deploymentReferenceIndices = append(
+						deploymentReferenceIndices,
+						len(referencedDeployments)-1,
+					)
 					anyNewDeployment = true
 				}
 			}
@@ -1159,12 +1167,8 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 		return nil, nil, fmt.Errorf("failed to inject deployment names into manifest: %w", err)
 	}
 
-	setEnv := func(ctx context.Context, key, value string) error {
-		return setEnvValue(ctx, a.azdClient, a.environment.Name, key, value)
-	}
-	if err := persistFirstDeploymentName(ctx, setEnv, referencedDeployments); err != nil {
-		return nil, nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
-	}
+	a.deploymentReferences = referencedDeployments
+	a.deploymentReferenceIndices = deploymentReferenceIndices
 
 	// Update the AI_AGENT_PENDING_PROVISION signal based on the
 	// aggregate of all model resources processed in this manifest.
@@ -1199,5 +1203,5 @@ func persistFirstDeploymentName(
 		return nil
 	}
 
-	return setEnv(ctx, "AZURE_AI_MODEL_DEPLOYMENT_NAME", deployments[0].Name)
+	return setEnv(ctx, deploymentNameEnvKey, deployments[0].Name)
 }

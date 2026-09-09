@@ -32,6 +32,7 @@ const (
 	CodeEnvironmentValuesFailed     = "environment_values_failed"
 	CodeMissingAzureSubscription    = "missing_azure_subscription_id"
 	CodeMissingAzureLocation        = "missing_azure_location"
+	CodeMissingModelDeployment      = "missing_model_deployment_environment"
 	CodeProvisioningServiceNotFound = "provisioning_service_not_found"
 )
 

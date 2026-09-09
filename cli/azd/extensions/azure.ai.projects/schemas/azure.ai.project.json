@@ -20,6 +20,16 @@
         ]
       }
     },
+    "deploymentReferences": {
+      "type": "array",
+      "description": "Metadata for user-owned deployments selected per azd environment. References validate and resolve environment values but never create, update, delete, or take ownership of deployments.",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/Deployment" },
+          { "$ref": "#/definitions/FileRef" }
+        ]
+      }
+    },
     "network": {
       "type": "object",
       "description": "Private networking for the Foundry account that backs this project. When omitted, the account uses public networking. When present, azd provisions an account private endpoint and disables public data-plane access.",
@@ -89,7 +99,13 @@
           "required": ["capacity", "name"],
           "additionalProperties": false,
           "properties": {
-            "capacity": { "type": "integer", "description": "SKU capacity (TPM units)." },
+            "capacity": {
+              "oneOf": [
+                { "type": "integer" },
+                { "type": "string", "pattern": "^\\$\\{[A-Za-z_][A-Za-z0-9_]*\\}$" }
+              ],
+              "description": "SKU capacity (TPM units), or an azd environment reference."
+            },
             "name": { "type": "string", "description": "SKU name (e.g., 'Standard', 'GlobalStandard', 'GlobalBatch')." }
           }
         }

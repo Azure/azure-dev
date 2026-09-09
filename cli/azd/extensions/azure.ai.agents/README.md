@@ -1,5 +1,33 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Hosted-agent model deployments
+
+Hosted-agent initialization stores generated deployment settings in the active
+azd environment and writes references into `azure.yaml`. The first deployment
+uses `AZURE_AI_MODEL_DEPLOYMENT_NAME`, `AZURE_AI_MODEL_NAME`,
+`AZURE_AI_MODEL_FORMAT`, `AZURE_AI_MODEL_VERSION`,
+`AZURE_AI_MODEL_SKU_NAME`, and `AZURE_AI_MODEL_SKU_CAPACITY`. Additional
+deployments append `_2`, `_3`, and so on to each key.
+
+This keeps deployment settings isolated between azd environments. Provisioning
+validates the complete tuple for the selected subscription, region, model
+catalog, and remaining quota before using it. Static literal deployments and
+custom environment references remain supported.
+
+New deployments are written to the project service's `deployments` list, which
+is azd-managed desired state. When initialization selects an existing
+user-owned deployment, it instead writes a `deploymentReferences` item. A
+reference is resolved and validated for each azd environment, but it never
+causes azd to create, update, delete, or take ownership of that deployment.
+
+To reuse an existing deployment in another environment, configure the target
+Foundry project endpoint in `azure.yaml` and set that environment's
+`AZURE_AI_PROJECT_ID` and matching `FOUNDRY_PROJECT_ENDPOINT`. Provisioning
+then prompts for an existing deployment in that target account when the model
+tuple is unset or incompatible. See the
+[project ownership reference](../azure.ai.projects/README.md#managed-deployments-and-references)
+for the configuration contract.
+
 ## Non-interactive automation
 
 See the shared [AI extension non-interactive input reference](../ai-non-interactive.md)

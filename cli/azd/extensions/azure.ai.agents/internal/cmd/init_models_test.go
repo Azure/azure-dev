@@ -4,15 +4,18 @@
 package cmd
 
 import (
-	"azureaiagent/internal/project"
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 )
 
 func TestResolveNoPromptCapacity(t *testing.T) {
@@ -280,6 +283,278 @@ func TestPersistFirstDeploymentName(t *testing.T) {
 			}
 		})
 	}
+}
+
+type processModelsAiModelServiceServer struct {
+	azdext.UnimplementedAiModelServiceServer
+	deployments     map[string][]*azdext.AiModelDeployment
+	deploymentIndex int
+}
+
+func (s *processModelsAiModelServiceServer) ResolveModelDeployments(
+	_ context.Context,
+	req *azdext.ResolveModelDeploymentsRequest,
+) (*azdext.ResolveModelDeploymentsResponse, error) {
+	deployments := s.deployments[req.ModelName]
+	if s.deploymentIndex >= len(deployments) {
+		return &azdext.ResolveModelDeploymentsResponse{}, nil
+	}
+
+	return &azdext.ResolveModelDeploymentsResponse{
+		Deployments: []*azdext.AiModelDeployment{deployments[s.deploymentIndex]},
+	}, nil
+}
+
+func newProcessModelsTestAzdClient(
+	t *testing.T,
+	envServer azdext.EnvironmentServiceServer,
+	workflowServer azdext.WorkflowServiceServer,
+	aiModelServer azdext.AiModelServiceServer,
+) *azdext.AzdClient {
+	t.Helper()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	grpcServer := grpc.NewServer()
+	azdext.RegisterEnvironmentServiceServer(grpcServer, envServer)
+	azdext.RegisterWorkflowServiceServer(grpcServer, workflowServer)
+	azdext.RegisterAiModelServiceServer(grpcServer, aiModelServer)
+
+	go func() {
+		_ = grpcServer.Serve(listener)
+	}()
+
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+
+	azdClient, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		azdClient.Close()
+	})
+
+	return azdClient
+}
+
+func processModelsTestManifest() *agent_yaml.AgentManifest {
+	environmentVariables := []agent_yaml.EnvironmentVariable{
+		{Name: "PRIMARY_DEPLOYMENT", Value: "{{primary}}"},
+		{Name: "SECONDARY_DEPLOYMENT", Value: "{{secondary}}"},
+	}
+
+	return &agent_yaml.AgentManifest{
+		Name: "test-agent",
+		Template: agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Name: "test-agent",
+				Kind: agent_yaml.AgentKindHosted,
+			},
+			EnvironmentVariables: &environmentVariables,
+		},
+		Resources: []any{
+			agent_yaml.ModelResource{
+				Resource: agent_yaml.Resource{
+					Name: "primary",
+					Kind: agent_yaml.ResourceKindModel,
+				},
+				Id: "model-one",
+			},
+			agent_yaml.ModelResource{
+				Resource: agent_yaml.Resource{
+					Name: "secondary",
+					Kind: agent_yaml.ResourceKindModel,
+				},
+				Id: "model-two",
+			},
+		},
+	}
+}
+
+func TestProcessModelsUsesCanonicalIndexedDeploymentReferences(t *testing.T) {
+	t.Parallel()
+
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{
+			"initial": {},
+			"second":  {},
+		},
+	}
+	aiModelServer := &processModelsAiModelServiceServer{
+		deployments: map[string][]*azdext.AiModelDeployment{
+			"model-one": {{
+				ModelName: "initial-primary",
+				Format:    "OpenAI",
+				Version:   "1",
+				Sku:       &azdext.AiModelSku{Name: "Standard"},
+				Capacity:  10,
+			}, {
+				ModelName: "second-primary",
+				Format:    "OpenAI",
+				Version:   "1",
+				Sku:       &azdext.AiModelSku{Name: "Standard"},
+				Capacity:  10,
+			}},
+			"model-two": {{
+				ModelName: "initial-secondary",
+				Format:    "OpenAI",
+				Version:   "1",
+				Sku:       &azdext.AiModelSku{Name: "Standard"},
+				Capacity:  10,
+			}, {
+				ModelName: "second-secondary",
+				Format:    "OpenAI",
+				Version:   "1",
+				Sku:       &azdext.AiModelSku{Name: "Standard"},
+				Capacity:  10,
+			}},
+		},
+	}
+	azdClient := newProcessModelsTestAzdClient(
+		t,
+		envServer,
+		&testWorkflowServiceServer{},
+		aiModelServer,
+	)
+
+	models := map[string]*azdext.AiModel{
+		"model-one": {Name: "model-one", Locations: []string{"eastus"}},
+		"model-two": {Name: "model-two", Locations: []string{"eastus"}},
+	}
+
+	process := func(
+		environmentName string,
+	) (*InitAction, *agent_yaml.AgentManifest, []project.Deployment) {
+		action := &InitAction{
+			azdClient: azdClient,
+			azureContext: &azdext.AzureContext{
+				Scope: &azdext.AzureScope{Location: "eastus"},
+			},
+			environment: &azdext.Environment{Name: environmentName},
+			flags:       &initFlags{noPrompt: true},
+			models: &modelSelector{
+				azdClient:    azdClient,
+				azureContext: &azdext.AzureContext{Scope: &azdext.AzureScope{Location: "eastus"}},
+				environment:  &azdext.Environment{Name: environmentName},
+				flags:        &initFlags{noPrompt: true},
+				modelCatalog: models,
+			},
+		}
+
+		manifest, deployments, err := action.ProcessModels(
+			t.Context(),
+			processModelsTestManifest(),
+		)
+		require.NoError(t, err)
+		return action, manifest, deployments
+	}
+
+	initialAction, initialManifest, initialDeployments := process("initial")
+	aiModelServer.deploymentIndex = 1
+	secondAction, secondManifest, secondDeployments := process("second")
+
+	require.Len(t, initialDeployments, 2)
+	assert.Equal(t, "initial-primary", initialDeployments[0].Name)
+	assert.Equal(t, "initial-secondary", initialDeployments[1].Name)
+	require.Len(t, secondDeployments, 2)
+	assert.Equal(t, "second-primary", secondDeployments[0].Name)
+	assert.Equal(t, "second-secondary", secondDeployments[1].Name)
+
+	persist := func(action *InitAction) map[string]string {
+		values := map[string]string{}
+		_, err := action.persistDeploymentConfigurations(
+			t.Context(),
+			func(_ context.Context, key, value string) error {
+				values[key] = value
+				return nil
+			},
+		)
+		require.NoError(t, err)
+		return values
+	}
+	initialEnvironment := persist(initialAction)
+	secondEnvironment := persist(secondAction)
+	assert.Equal(t, "initial-primary", initialEnvironment[deploymentNameEnvKey])
+	assert.Equal(t, "initial-secondary", initialEnvironment[deploymentNameEnvKey+"_2"])
+	assert.Equal(t, "second-primary", secondEnvironment[deploymentNameEnvKey])
+	assert.Equal(t, "second-secondary", secondEnvironment[deploymentNameEnvKey+"_2"])
+
+	assertManifestDeploymentReferences(t, initialManifest)
+	assertManifestDeploymentReferences(t, secondManifest)
+	assert.NotContains(t, environmentValue(initialManifest, "PRIMARY_DEPLOYMENT"), "initial-primary")
+	assert.NotContains(t, environmentValue(secondManifest, "PRIMARY_DEPLOYMENT"), "initial-primary")
+	assert.Equal(
+		t,
+		"second-primary",
+		resolveManifestEnvironmentValue(
+			t,
+			"PRIMARY_DEPLOYMENT",
+			environmentValue(secondManifest, "PRIMARY_DEPLOYMENT"),
+			secondEnvironment,
+		),
+	)
+	assert.Equal(
+		t,
+		"second-secondary",
+		resolveManifestEnvironmentValue(
+			t,
+			"SECONDARY_DEPLOYMENT",
+			environmentValue(secondManifest, "SECONDARY_DEPLOYMENT"),
+			secondEnvironment,
+		),
+	)
+}
+
+func assertManifestDeploymentReferences(
+	t *testing.T,
+	manifest *agent_yaml.AgentManifest,
+) {
+	t.Helper()
+
+	container, ok := manifest.Template.(agent_yaml.ContainerAgent)
+	require.True(t, ok)
+	require.NotNil(t, container.EnvironmentVariables)
+	assert.Equal(
+		t,
+		"${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
+		environmentValue(manifest, "PRIMARY_DEPLOYMENT"),
+	)
+	assert.Equal(
+		t,
+		"${AZURE_AI_MODEL_DEPLOYMENT_NAME_2}",
+		environmentValue(manifest, "SECONDARY_DEPLOYMENT"),
+	)
+}
+
+func environmentValue(manifest *agent_yaml.AgentManifest, name string) string {
+	container := manifest.Template.(agent_yaml.ContainerAgent)
+	for _, variable := range *container.EnvironmentVariables {
+		if variable.Name == name {
+			return variable.Value
+		}
+	}
+	return ""
+}
+
+func resolveManifestEnvironmentValue(
+	t *testing.T,
+	name string,
+	value string,
+	environment map[string]string,
+) string {
+	t.Helper()
+	resolved, err := project.ResolveAgentEnvironmentVariable(
+		name,
+		value,
+		nil,
+		func(key string) string {
+			return environment[key]
+		},
+	)
+	require.NoError(t, err)
+	return resolved
 }
 
 func TestUpdateEnvLocation(t *testing.T) {

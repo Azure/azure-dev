@@ -15,6 +15,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestServiceFromAzure_NonCognitiveServicesQuotaUsesGenericGuidance(t *testing.T) {
@@ -169,4 +172,21 @@ func TestServiceFromAzure_QuotaCodeInResourceNameHasNoSuggestion(t *testing.T) {
 	serviceErr, ok := errors.AsType[*azdext.ServiceError](result)
 	require.True(t, ok)
 	assert.Empty(t, serviceErr.Suggestion)
+}
+
+func TestIsPromptRequired(t *testing.T) {
+	structured, err := status.New(codes.FailedPrecondition, "cannot prompt").
+		WithDetails(&errdetails.ErrorInfo{
+			Domain: azdext.AiErrorDomain,
+			Reason: azdext.AiErrorReasonInteractiveRequired,
+		})
+	require.NoError(t, err)
+
+	assert.True(t, IsPromptRequired(structured.Err()))
+	assert.True(t, IsPromptRequired(
+		status.Error(codes.FailedPrecondition, "prompt required"),
+	))
+	assert.False(t, IsPromptRequired(
+		status.Error(codes.FailedPrecondition, "cannot prompt"),
+	))
 }

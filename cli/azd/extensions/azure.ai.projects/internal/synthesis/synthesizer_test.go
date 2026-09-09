@@ -1459,6 +1459,65 @@ services:
 	assert.Equal(t, 10, deployments[0].Sku.Capacity)
 }
 
+func TestProjectDeploymentConfigurationKeepsReferencesOutOfARM(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "deployments"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "deployments", "existing.yaml"),
+		[]byte(
+			"name: existing-chat\n"+
+				"model:\n"+
+				"  name: gpt-4.1\n"+
+				"  format: OpenAI\n"+
+				"  version: \"1\"\n"+
+				"sku:\n"+
+				"  name: GlobalStandard\n"+
+				"  capacity: 10\n",
+		),
+		0o600,
+	))
+	raw := []byte(`
+services:
+  my-project:
+    host: azure.ai.project
+    deployments:
+      - name: managed-chat
+        model:
+          name: gpt-4.1-mini
+          format: OpenAI
+          version: "1"
+        sku:
+          name: GlobalStandard
+          capacity: 10
+    deploymentReferences:
+      - $ref: ./deployments/existing.yaml
+`)
+
+	configuration, err := ProjectDeploymentConfiguration(
+		raw,
+		"my-project",
+		root,
+	)
+	require.NoError(t, err)
+	require.Len(t, configuration.Deployments, 1)
+	require.Len(t, configuration.DeploymentReferences, 1)
+	assert.Equal(t, "managed-chat", configuration.Deployments[0].Name)
+	assert.Equal(t, "existing-chat", configuration.DeploymentReferences[0].Name)
+
+	result, err := Synthesize(Input{
+		RawAzureYAML:  raw,
+		ServiceName:   "my-project",
+		AcceptedHosts: []string{"azure.ai.project"},
+		ProjectRoot:   root,
+	})
+	require.NoError(t, err)
+	deployments, ok := result.Parameters["deployments"].([]Deployment)
+	require.True(t, ok)
+	require.Len(t, deployments, 1)
+	assert.Equal(t, "managed-chat", deployments[0].Name)
+	assert.NotContains(t, result.Parameters, "deploymentReferences")
+}
+
 func TestSynthesize_ResolvesSiblingServiceRefs(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(

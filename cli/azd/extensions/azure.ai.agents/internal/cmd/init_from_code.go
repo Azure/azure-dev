@@ -25,15 +25,17 @@ import (
 )
 
 type InitFromCodeAction struct {
-	azdClient         *azdext.AzdClient
-	flags             *initFlags
-	projectConfig     *azdext.ProjectConfig
-	azureContext      *azdext.AzureContext
-	environment       *azdext.Environment
-	credential        azcore.TokenCredential
-	deploymentDetails []project.Deployment
-	needsProvision    bool
-	httpClient        *http.Client
+	azdClient                  *azdext.AzdClient
+	flags                      *initFlags
+	projectConfig              *azdext.ProjectConfig
+	azureContext               *azdext.AzureContext
+	environment                *azdext.Environment
+	credential                 azcore.TokenCredential
+	deploymentDetails          []project.Deployment
+	deploymentReferences       []project.Deployment
+	deploymentReferenceIndices []int
+	needsProvision             bool
+	httpClient                 *http.Client
 
 	// selectedFoundryProject holds the existing Foundry project resolved during
 	// init (nil when creating a new project). It carries NetworkInjected so
@@ -601,18 +603,24 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 
 	// Add model resource if a model was selected
 	if existingDeployment != nil {
-		// Existing deployment: reference it by name only. Per REFERENCE.md an
-		// existing deployment is NOT declared under azure.ai.project.deployments:
-		// (azd does not create/upsert it) — it is referenced via the agent env
-		// var and verified at deploy time. So do not append to a.deploymentDetails.
+		// Existing deployment: reference its complete tuple, but do not declare
+		// it under azure.ai.project.deployments because azd does not manage it.
 		definition.EnvironmentVariables = appendEnvVar(definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
 			Name:  "AZURE_AI_MODEL_DEPLOYMENT_NAME",
 			Value: "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
 		})
-
-		if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "AZURE_AI_MODEL_DEPLOYMENT_NAME", existingDeployment.Name); err != nil {
-			return nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
-		}
+		a.deploymentReferences = []project.Deployment{{
+			Name: existingDeployment.Name,
+			Model: project.DeploymentModel{
+				Name:    existingDeployment.ModelName,
+				Format:  existingDeployment.ModelFormat,
+				Version: existingDeployment.Version,
+			},
+			Sku: project.DeploymentSku{
+				Name:     existingDeployment.SkuName,
+				Capacity: existingDeployment.SkuCapacity,
+			},
+		}}
 
 		// Existing deployment chosen — clear any prior
 		// model_deployment tag so re-init that swaps from
@@ -629,7 +637,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			return nil, fmt.Errorf("failed to get model deployment details: %w", err)
 		}
 
-		a.deploymentDetails = append(a.deploymentDetails, project.Deployment{
+		newDeployment := project.Deployment{
 			Name: modelDetails.ModelName,
 			Model: project.DeploymentModel{
 				Name:    modelDetails.ModelName,
@@ -640,17 +648,16 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 				Name:     modelDetails.Sku.Name,
 				Capacity: int(modelDetails.Capacity),
 			},
-		})
+		}
+		a.deploymentDetails = append(a.deploymentDetails, newDeployment)
+		a.deploymentReferences = []project.Deployment{newDeployment}
+		a.deploymentReferenceIndices = []int{0}
 		a.needsProvision = true
 
 		definition.EnvironmentVariables = appendEnvVar(definition.EnvironmentVariables, agent_yaml.EnvironmentVariable{
 			Name:  "AZURE_AI_MODEL_DEPLOYMENT_NAME",
 			Value: "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
 		})
-
-		if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "AZURE_AI_MODEL_DEPLOYMENT_NAME", modelDetails.ModelName); err != nil {
-			return nil, fmt.Errorf("failed to set AZURE_AI_MODEL_DEPLOYMENT_NAME: %w", err)
-		}
 
 		// New model deployment configured — record that the
 		// post-init trailer should suggest `azd provision`. See
@@ -850,7 +857,30 @@ func (a *InitFromCodeAction) addToProject(
 		},
 	}
 
-	agentConfig.Deployments = a.deploymentDetails
+	setEnv := func(ctx context.Context, key, value string) error {
+		return setEnvValue(ctx, a.azdClient, a.environment.Name, key, value)
+	}
+	var err error
+	deploymentConfig, err := persistProjectDeploymentConfigurations(
+		ctx,
+		a.azdClient,
+		environmentName(a.environment),
+		setEnv,
+		a.deploymentReferences,
+		a.deploymentReferenceIndices,
+		a.deploymentDetails,
+	)
+	if err != nil {
+		return fmt.Errorf("persist model deployment environment: %w", err)
+	}
+	if err := rewriteContainerDeploymentReferences(
+		definition,
+		deploymentConfig.allReferences,
+	); err != nil {
+		return fmt.Errorf("rewrite agent model deployment references: %w", err)
+	}
+	agentConfig.Deployments = deploymentConfig.managed
+	agentConfig.DeploymentReferences = deploymentConfig.references
 
 	// Detect startup command only for source-container deploys. Code deploy and
 	// pre-built images do not use it.
@@ -865,7 +895,9 @@ func (a *InitFromCodeAction) addToProject(
 	// Move the model deployments out of the agent config into a sibling
 	// azure.ai.project service, emitted after the agent service below.
 	resourceDeployments := agentConfig.Deployments
+	resourceDeploymentReferences := agentConfig.DeploymentReferences
 	agentConfig.Deployments = nil
+	agentConfig.DeploymentReferences = nil
 
 	// Embed the agent definition (formerly written to agent.yaml) as
 	// service-level properties on the azure.ai.agent entry, merged with the
@@ -934,11 +966,11 @@ func (a *InitFromCodeAction) addToProject(
 	// Emit the sibling azure.ai.project service carrying the model deployments
 	// and wire the agent's uses: to it. A selected existing project contributes
 	// its endpoint so provision reuses it instead of creating a new project.
-	if _, err := emitResourceServices(
+	if _, err := emitResourceServicesWithDeploymentReferences(
 		ctx, a.azdClient, agentServiceName,
 		projectNameHint(ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject),
 		a.selectedFoundryProject.Endpoint(),
-		resourceDeployments, nil, nil,
+		resourceDeployments, resourceDeploymentReferences, nil, nil,
 	); err != nil {
 		return err
 	}

@@ -46,16 +46,18 @@ type ServiceTargetAgentConfig struct {
 	// Endpoint, when set on the azure.ai.project service, points at an existing
 	// Foundry project. Its presence is the brownfield signal that makes provision
 	// connect to that project instead of creating a new one.
-	Endpoint        string             `json:"endpoint,omitempty"`
-	Container       *ContainerSettings `json:"container,omitempty"`
-	Deployments     []Deployment       `json:"deployments,omitempty"`
-	Resources       []Resource         `json:"resources,omitempty"`
-	ToolConnections []ToolConnection   `json:"toolConnections,omitempty"`
-	Toolboxes       []Toolbox          `json:"toolboxes,omitempty"`
-	Connections     []Connection       `json:"connections,omitempty"`
-	MemoryStores    []MemoryStore      `json:"memoryStores,omitempty"`
-	StartupCommand  string             `json:"startupCommand,omitempty"`
-	Activity        *ActivitySettings  `json:"activity,omitempty"`
+	Endpoint    string             `json:"endpoint,omitempty"`
+	Container   *ContainerSettings `json:"container,omitempty"`
+	Deployments []Deployment       `json:"deployments,omitempty"`
+	// DeploymentReferences holds selected, non-managed deployments.
+	DeploymentReferences []Deployment      `json:"deploymentReferences,omitempty"`
+	Resources            []Resource        `json:"resources,omitempty"`
+	ToolConnections      []ToolConnection  `json:"toolConnections,omitempty"`
+	Toolboxes            []Toolbox         `json:"toolboxes,omitempty"`
+	Connections          []Connection      `json:"connections,omitempty"`
+	MemoryStores         []MemoryStore     `json:"memoryStores,omitempty"`
+	StartupCommand       string            `json:"startupCommand,omitempty"`
+	Activity             *ActivitySettings `json:"activity,omitempty"`
 }
 
 // ActivitySettings configures the Teams hosting model for an Activity-protocol agent.
@@ -128,8 +130,9 @@ type DeploymentSku struct {
 	// Required. The name of the resource model definition representing SKU.
 	Name string `json:"name" yaml:"name"`
 
-	// The capacity of the resource model definition representing SKU.
-	Capacity int `json:"capacity" yaml:"capacity"`
+	// Capacity accepts legacy integers and references such as
+	// ${MODEL_CAPACITY}.
+	Capacity any `json:"capacity" yaml:"capacity"`
 }
 
 // Resource represents an external resource for agent execution

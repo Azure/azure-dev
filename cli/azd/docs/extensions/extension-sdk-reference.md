@@ -762,6 +762,11 @@ the host records these labels only as case-insensitive hashes in
 `error.extension.cause_types`; they are never added to the reflected
 `error.chain.types` or used as `error.type`.
 
+`CauseTypes` transport is available only in the
+`azd.extensions.v1beta.ExtensionError` contract. The stable
+`azdext.WrapError` helper uses the frozen `v1` contract and does not serialize
+this preview field.
+
 ### ServiceError
 
 ```go
@@ -800,6 +805,11 @@ characters matching `[a-z0-9_-]` are accepted; invalid or oversized values
 are recorded as `other`. This normalization does not change the displayed
 error.
 
+Structured tool metadata transport is available only through
+`azd.extensions.v1beta.ExtensionError`. The frozen `v1` contract preserves
+the tool origin, message, suggestion, and links, but not the preview tool
+detail.
+
 ### LocalErrorCategory
 
 ```go
@@ -819,6 +829,10 @@ const (
 Error categories enable structured telemetry classification and targeted error
 guidance. Use `WrapError(err)` to convert a `LocalError`, `ServiceError`, or
 `ToolError` to the gRPC `ExtensionError` proto for reporting.
+
+`WrapError` produces the stable `v1` message. Extensions using the preview
+`cause_types` or `tool_error` fields must construct and send the generated
+`v1beta.ExtensionError` through the `v1beta.ExtensionService` client.
 
 ---
 

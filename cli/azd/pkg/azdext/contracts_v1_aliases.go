@@ -155,7 +155,6 @@ type (
 	ExtensionError                                           = v1.ExtensionError
 	ExtensionError_LocalError                                = v1.ExtensionError_LocalError
 	ExtensionError_ServiceError                              = v1.ExtensionError_ServiceError
-	ExtensionError_ToolError                                 = v1.ExtensionError_ToolError
 	ExtensionServiceClient                                   = v1.ExtensionServiceClient
 	ExtensionServiceServer                                   = v1.ExtensionServiceServer
 	ExternalTool                                             = v1.ExternalTool
@@ -425,7 +424,6 @@ type (
 	SubscribeServiceEvent                                    = v1.SubscribeServiceEvent
 	Subscription                                             = v1.Subscription
 	TargetResource                                           = v1.TargetResource
-	ToolErrorDetail                                          = v1.ToolErrorDetail
 	UnimplementedAccountServiceServer                        = v1.UnimplementedAccountServiceServer
 	UnimplementedAiModelServiceServer                        = v1.UnimplementedAiModelServiceServer
 	UnimplementedContainerServiceServer                      = v1.UnimplementedContainerServiceServer

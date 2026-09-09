@@ -34,7 +34,8 @@ func TestNonGoScaffoldIncludesStructuredErrorProtocol(t *testing.T) {
 	errorsProto, err := Languages.ReadFile("languages/proto/errors.proto")
 	require.NoError(t, err)
 	require.Contains(t, string(errorsProto), "message ExtensionError")
-	require.Contains(t, string(errorsProto), "optional int64 exit_code = 3;")
+	require.NotContains(t, string(errorsProto), "cause_types")
+	require.NotContains(t, string(errorsProto), "ToolErrorDetail")
 
 	eventProto, err := Languages.ReadFile("languages/proto/event.proto")
 	require.NoError(t, err)

@@ -140,6 +140,11 @@ for unexpected local fallbacks; it does not change the selected
 classification. The host records it only as hashes in
 `error.extension.cause_types`, never as plain text in system metadata.
 
+The `CauseTypes` and structured `ToolError` wire details are preview-only
+fields in `azd.extensions.v1beta.ExtensionError`. Stable `v1` callers retain
+the error origin and user-facing guidance but do not transmit those preview
+details.
+
 ### Telemetry Classification
 
 The host classifies extension errors into telemetry codes using the pattern:

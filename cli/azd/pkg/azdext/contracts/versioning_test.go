@@ -149,6 +149,19 @@ func TestBetaIncludesCurrentStableAdditions(t *testing.T) {
 	require.NotNil(t, telemetry.Methods().ByName("ReportUsage"))
 }
 
+func TestRecentErrorDetailsAreBetaOnly(t *testing.T) {
+	stableLocalError := (&v1.LocalErrorDetail{}).ProtoReflect().Descriptor()
+	betaLocalError := (&v1beta.LocalErrorDetail{}).ProtoReflect().Descriptor()
+	require.Nil(t, stableLocalError.Fields().ByName("cause_types"))
+	require.NotNil(t, betaLocalError.Fields().ByName("cause_types"))
+
+	stableExtensionError := (&v1.ExtensionError{}).ProtoReflect().Descriptor()
+	betaExtensionError := (&v1beta.ExtensionError{}).ProtoReflect().Descriptor()
+	require.Nil(t, stableExtensionError.Fields().ByName("tool_error"))
+	require.NotNil(t, betaExtensionError.Fields().ByName("tool_error"))
+	require.NotNil(t, v1beta.File_azd_extensions_v1beta_errors_proto.Messages().ByName("ToolErrorDetail"))
+}
+
 func validateStableSubset(
 	stableFiles map[string]protoreflect.FileDescriptor,
 	betaFiles map[string]protoreflect.FileDescriptor,

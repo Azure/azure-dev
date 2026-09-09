@@ -819,6 +819,78 @@ func TestServer_BetaMethodOverride(t *testing.T) {
 
 }
 
+func TestServer_BetaExtensionReportErrorPreservesPreviewDetails(t *testing.T) {
+	t.Parallel()
+
+	extension := &extensions.Extension{Id: "azd.internal.test", Namespace: "test"}
+	manager := newStreamTestExtensionManager(t, extension)
+	server := newTestServer(
+		azdext.UnimplementedContainerServiceServer{},
+		NewExtensionService(manager),
+	)
+	serverInfo, err := server.Start()
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, server.Stop())
+	}()
+
+	accessToken, err := GenerateExtensionToken(extension, serverInfo)
+	require.NoError(t, err)
+	connection, err := grpc.NewClient(
+		serverInfo.Address,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, connection.Close())
+	}()
+
+	client := v1beta.NewExtensionServiceClient(connection)
+	ctx := azdext.WithAccessToken(t.Context(), accessToken)
+
+	_, err = client.ReportError(ctx, &v1beta.ReportErrorRequest{
+		Error: &v1beta.ExtensionError{
+			Message: "agent failed",
+			Origin:  v1beta.ErrorOrigin_ERROR_ORIGIN_LOCAL,
+			Source: &v1beta.ExtensionError_LocalError{
+				LocalError: &v1beta.LocalErrorDetail{
+					Code:       "agent_failed",
+					Category:   "internal",
+					CauseTypes: []string{"*agents.TransportError"},
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	installed, err := manager.GetInstalled(extensions.FilterOptions{Id: extension.Id})
+	require.NoError(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](installed.GetReportedError())
+	require.True(t, ok)
+	require.Equal(t, []string{"*agents.TransportError"}, localErr.CauseTypes)
+
+	_, err = client.ReportError(ctx, &v1beta.ReportErrorRequest{
+		Error: &v1beta.ExtensionError{
+			Message: "docker failed",
+			Origin:  v1beta.ErrorOrigin_ERROR_ORIGIN_TOOL,
+			Source: &v1beta.ExtensionError_ToolError{
+				ToolError: &v1beta.ToolErrorDetail{
+					ToolName:    "docker",
+					FailureKind: string(azdext.ToolErrorKindFailed),
+					ExitCode:    new(int64(42)),
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	toolErr, ok := errors.AsType[*azdext.ToolError](installed.GetReportedError())
+	require.True(t, ok)
+	require.Equal(t, "docker", toolErr.ToolName)
+	require.Equal(t, azdext.ToolErrorKindFailed, toolErr.Kind)
+	require.Equal(t, 42, *toolErr.ExitCode)
+}
+
 type relayingContainerService struct {
 	azdext.UnimplementedContainerServiceServer
 	err error
@@ -835,6 +907,18 @@ func newServerWithContainerService(
 	containerService azdext.ContainerServiceServer,
 	options ...ServerOption,
 ) *Server {
+	return newTestServer(
+		containerService,
+		azdext.UnimplementedExtensionServiceServer{},
+		options...,
+	)
+}
+
+func newTestServer(
+	containerService azdext.ContainerServiceServer,
+	extensionService azdext.ExtensionServiceServer,
+	options ...ServerOption,
+) *Server {
 	return NewServer(
 		azdext.UnimplementedProjectServiceServer{},
 		azdext.UnimplementedEnvironmentServiceServer{},
@@ -844,7 +928,7 @@ func newServerWithContainerService(
 		azdext.UnimplementedEventServiceServer{},
 		v1beta.UnimplementedComposeServiceServer{},
 		azdext.UnimplementedWorkflowServiceServer{},
-		azdext.UnimplementedExtensionServiceServer{},
+		extensionService,
 		azdext.UnimplementedServiceTargetServiceServer{},
 		azdext.UnimplementedFrameworkServiceServer{},
 		containerService,
@@ -1124,18 +1208,12 @@ func TestMapHostError_RelaysExtensionToolError(t *testing.T) {
 
 	relayed := requireRelayedExtensionError(t, st)
 	require.Equal(t, azdext.ErrorOrigin_ERROR_ORIGIN_TOOL, relayed.GetOrigin())
-	require.Equal(t, "docker", relayed.GetToolError().GetToolName())
-	require.Equal(t, "failed", relayed.GetToolError().GetFailureKind())
-	require.Equal(t, int64(42), relayed.GetToolError().GetExitCode())
 
 	recovered := azdext.UnwrapError(relayed)
 	var recoveredToolErr *azdext.ToolError
 	require.ErrorAs(t, recovered, &recoveredToolErr)
 	require.Equal(t, toolErr.Message, recoveredToolErr.Message)
-	require.Equal(t, toolErr.ToolName, recoveredToolErr.ToolName)
 	require.Equal(t, toolErr.Kind, recoveredToolErr.Kind)
-	require.NotNil(t, recoveredToolErr.ExitCode)
-	require.Equal(t, *toolErr.ExitCode, *recoveredToolErr.ExitCode)
 	require.Equal(t, toolErr.Suggestion, recoveredToolErr.Suggestion)
 }
 
@@ -1156,7 +1234,6 @@ func TestMapHostError_ToolErrorSurvivesExtensionRoundTrip(t *testing.T) {
 	require.Equal(t, hostStatus.Message(), returnedToExtension.GetMessage())
 	require.Equal(t, azdext.ErrorOrigin_ERROR_ORIGIN_TOOL,
 		returnedToExtension.GetOrigin())
-	require.Equal(t, "docker", returnedToExtension.GetToolError().GetToolName())
 
 	returnedToHost := azdext.UnwrapError(returnedToExtension)
 	roundTripStatus, ok := status.FromError(mapHostError(returnedToHost))
@@ -1164,8 +1241,6 @@ func TestMapHostError_ToolErrorSurvivesExtensionRoundTrip(t *testing.T) {
 	roundTripRelayed := requireRelayedExtensionError(t, roundTripStatus)
 	require.Equal(t, azdext.ErrorOrigin_ERROR_ORIGIN_TOOL,
 		roundTripRelayed.GetOrigin())
-	require.Equal(t, "docker", roundTripRelayed.GetToolError().GetToolName())
-	require.Equal(t, "failed", roundTripRelayed.GetToolError().GetFailureKind())
 }
 
 func TestMapHostError_DoesNotDuplicateRelayedExtensionError(t *testing.T) {

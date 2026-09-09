@@ -304,7 +304,7 @@ func reportOptimizationDeployments(
 					log.Printf("postdeploy: optimization reporting panicked for %s: %v", svc.Name, r)
 				}
 			}()
-			serviceDir := baselineAdvancementDir(projectPath, svc, hostedAgents)
+			serviceDir := baselineAdvancementDir(projectPath, svc)
 			reportSvcOptimizationDeployment(ctx, azdClient, svc, envName, projectEndpoint, serviceDir, newClient)
 		}()
 	}
@@ -317,15 +317,10 @@ func reportOptimizationDeployments(
 //   - projectPath is empty (no local project on disk),
 //   - the service path cannot be safely resolved under the project root — for
 //     example a RelativePath from azure.yaml containing ".." that escapes the
-//     root, or
-//   - svc shares its resolved source directory with another hosted agent. Those
-//     services share a single .agent_configs/baseline, and their deploy steps
-//     may run in parallel, so advancing here would nondeterministically clobber
-//     a peer's promoted baseline.
+//     root.
 func baselineAdvancementDir(
 	projectPath string,
 	svc *azdext.ServiceConfig,
-	hostedAgents []*azdext.ServiceConfig,
 ) string {
 	if projectPath == "" {
 		return ""
@@ -335,22 +330,6 @@ func baselineAdvancementDir(
 	if err != nil {
 		log.Printf("postdeploy: skipping baseline advancement for %s: %v", svc.Name, err)
 		return ""
-	}
-
-	for _, peer := range hostedAgents {
-		if peer == nil || peer.Name == svc.Name {
-			continue
-		}
-		peerDir, err := paths.JoinAllowRoot(projectPath, peer.GetRelativePath())
-		if err != nil {
-			continue
-		}
-		if isSamePath(peerDir, serviceDir) {
-			log.Printf(
-				"postdeploy: skipping baseline advancement for %s: shares source directory with %s",
-				svc.Name, peer.Name)
-			return ""
-		}
 	}
 
 	return serviceDir
@@ -431,7 +410,9 @@ func isSafePathSegment(name string) bool {
 
 // reportSvcOptimizationDeployment reports a single service's optimization candidate.
 // serviceDir is the validated local service directory used for baseline
-// advancement, or "" to skip it (see baselineAdvancementDir).
+// advancement, or "" to skip it (see baselineAdvancementDir). Services that
+// share this directory also share baseline state; users running their
+// optimizations in parallel are responsible for retaining the desired baseline.
 func reportSvcOptimizationDeployment(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,

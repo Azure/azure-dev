@@ -164,23 +164,15 @@ func TestBaselineAdvancementDir(t *testing.T) {
 	t.Parallel()
 
 	// Empty project path short-circuits (no local project on disk).
-	assert.Equal(t, "", baselineAdvancementDir("", &azdext.ServiceConfig{Name: "a"}, nil))
+	assert.Equal(t, "", baselineAdvancementDir("", &azdext.ServiceConfig{Name: "a"}))
 
 	root := t.TempDir()
 
 	// A unique service resolves to its directory under the project root.
 	svcA := &azdext.ServiceConfig{Name: "a", RelativePath: "svc-a"}
-	assert.Equal(t, filepath.Join(root, "svc-a"), baselineAdvancementDir(root, svcA, []*azdext.ServiceConfig{svcA}))
+	assert.Equal(t, filepath.Join(root, "svc-a"), baselineAdvancementDir(root, svcA))
 
 	// A traversing RelativePath escapes the root and is skipped.
 	svcEscape := &azdext.ServiceConfig{Name: "a", RelativePath: "../outside"}
-	assert.Equal(t, "", baselineAdvancementDir(root, svcEscape, []*azdext.ServiceConfig{svcEscape}))
-
-	// Two services sharing a source directory both skip advancement, since they
-	// share a single .agent_configs/baseline and may deploy in parallel.
-	shared1 := &azdext.ServiceConfig{Name: "one", RelativePath: "shared"}
-	shared2 := &azdext.ServiceConfig{Name: "two", RelativePath: "shared"}
-	peers := []*azdext.ServiceConfig{shared1, shared2}
-	assert.Equal(t, "", baselineAdvancementDir(root, shared1, peers))
-	assert.Equal(t, "", baselineAdvancementDir(root, shared2, peers))
+	assert.Equal(t, "", baselineAdvancementDir(root, svcEscape))
 }

@@ -895,13 +895,14 @@ func readManifestContentForInitDetection(
 	if content, ok := readManifestContentForPeek(ctx, manifestPointer, httpClient); ok {
 		return content, true
 	}
+	cachedContent, cached := readCachedTemplateManifest(manifestPointer)
 	if azdClient == nil || !strings.Contains(manifestPointer, "://") {
-		return nil, false
+		return cachedContent, cached
 	}
 
 	parsedURL, err := url.Parse(manifestPointer)
 	if err != nil || !strings.Contains(parsedURL.Hostname(), "github") {
-		return nil, false
+		return cachedContent, cached
 	}
 
 	commandRunner := exec.NewCommandRunner(&exec.RunnerOptions{
@@ -923,13 +924,13 @@ func readManifestContentForInitDetection(
 	ghCli := github.NewGitHubCli(console, commandRunner)
 	if err := ghCli.EnsureInstalled(ctx); err != nil {
 		log.Printf("detect unified azure.yaml: ensuring gh is installed: %v", err)
-		return nil, false
+		return cachedContent, cached
 	}
 
 	urlInfo, err := parseGitHubUrlForAdopt(ctx, azdClient, manifestPointer)
 	if err != nil {
 		log.Printf("detect unified azure.yaml: parsing GitHub URL: %v", err)
-		return nil, false
+		return cachedContent, cached
 	}
 
 	apiPath := fmt.Sprintf("/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
@@ -939,7 +940,7 @@ func readManifestContentForInitDetection(
 	content, err := downloadGithubManifest(ctx, urlInfo, apiPath, ghCli)
 	if err != nil {
 		log.Printf("detect unified azure.yaml: downloading GitHub file: %v", err)
-		return nil, false
+		return cachedContent, cached
 	}
 
 	return []byte(content), true
@@ -1428,6 +1429,9 @@ func stageRemoteAzureYaml(
 				return normalizeErr
 			}
 			if hasAzureYaml {
+				if cacheErr := refreshTemplateCache(pointer, staging); cacheErr != nil {
+					emitTemplateCacheWarning(fmt.Sprintf("Unable to refresh the sample cache: %s", cacheErr))
+				}
 				return nil
 			}
 		}
@@ -1458,26 +1462,28 @@ func stageRemoteAzureYaml(
 	)
 	ghCli := github.NewGitHubCli(console, commandRunner)
 	if err := ghCli.EnsureInstalled(ctx); err != nil {
-		return exterrors.Dependency(
+		downloadErr := exterrors.Dependency(
 			exterrors.CodeGitHubDownloadFailed,
 			fmt.Sprintf("ensuring gh is installed: %s", err),
 			"install the GitHub CLI (gh) from https://cli.github.com",
 		)
+		return useCachedTemplateOnDownloadError(pointer, staging, downloadErr)
 	}
 
 	urlInfo, err := parseGitHubUrlForAdopt(ctx, azdClient, pointer)
 	if err != nil {
-		return err
+		return useCachedTemplateOnDownloadError(pointer, staging, err)
 	}
 	dirPath := parentDirOf(urlInfo.FilePath)
 	if err := downloadDirectoryContents(
 		ctx, urlInfo.Hostname, urlInfo.RepoSlug, dirPath, dirPath, urlInfo.Branch, staging, ghCli, console,
 	); err != nil {
-		return exterrors.Dependency(
+		downloadErr := exterrors.Dependency(
 			exterrors.CodeGitHubDownloadFailed,
 			fmt.Sprintf("downloading sample directory: %s", err),
 			"verify the URL points to a valid azure.yaml in the repository and you have access",
 		)
+		return useCachedTemplateOnDownloadError(pointer, staging, downloadErr)
 	}
 
 	hasAzureYaml, err := ensureStagedAzureYaml(staging)
@@ -1490,6 +1496,9 @@ func stageRemoteAzureYaml(
 			"no azure.yaml was found in the downloaded sample directory",
 			"verify the URL points to a directory that contains an azure.yaml",
 		)
+	}
+	if cacheErr := refreshTemplateCache(pointer, staging); cacheErr != nil {
+		emitTemplateCacheWarning(fmt.Sprintf("Unable to refresh the sample cache: %s", cacheErr))
 	}
 	return nil
 }

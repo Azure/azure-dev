@@ -193,6 +193,20 @@ extends:
                     }' > "$HOME/.azd/config.json"
                 displayName: Install azure.ai.agents and azure.ai.projects extensions
 
+              - bash: mkdir -p "$(Pipeline.Workspace)/azure-ai-agents-template-cache"
+                displayName: Prepare sample cache directory
+
+              # Use a unique exact key so a successful download can refresh the
+              # immutable cache after every run. restoreKeys selects the most
+              # recent sample saved by this pipeline when GitHub is unavailable.
+              - task: Cache@2
+                displayName: Restore AI agents sample cache
+                inputs:
+                  key: '"azure-ai-agents-template-v1" | "$(Agent.OS)" | "$(Build.BuildId)"'
+                  restoreKeys: |
+                    "azure-ai-agents-template-v1" | "$(Agent.OS)"
+                  path: $(Pipeline.Workspace)/azure-ai-agents-template-cache
+
               # Run the live golden path INSIDE the AzureCLI@2 task so the az CLI
               # session (consumed by azd via auth.useAzCliAuth) stays valid for the
               # whole run. keepAzSessionActive is REQUIRED: the service connection
@@ -242,6 +256,9 @@ extends:
                   E2E_CREATE_PROJECT: "true"
                   E2E_LOCATION: eastus2
                   E2E_USE_AZ_CLI_AUTH: "true"
+                  AZURE_AI_AGENTS_E2E_TEMPLATE_CACHE_DIR: $(Pipeline.Workspace)/azure-ai-agents-template-cache
+                  GH_PROMPT_DISABLED: "1"
+                  GIT_TERMINAL_PROMPT: "0"
                   # azure-sdk org PAT (ambient in the ADO project) used only to
                   # avoid anonymous GitHub rate limits when cloning the template.
                   GH_TOKEN: $(azuresdk-github-pat)

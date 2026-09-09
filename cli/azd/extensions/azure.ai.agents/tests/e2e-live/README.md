@@ -135,6 +135,7 @@ safe to include in a normal `go test ./...`.
 | `E2E_USE_AZ_CLI_AUTH`      | —                              | `true` → set `auth.useAzCliAuth` (CI; auto-on under ADO/GHA) |
 | `E2E_TESTDIR`              | `/tmp/e2e-tests/tier2-<mode>`  | Scratch dir for the scaffolded project                      |
 | `E2E_KEEP_ARTIFACTS`       | —                              | `true` → keep the per-run `AZD_CONFIG_DIR` copy for debugging |
+| `AZURE_AI_AGENTS_E2E_TEMPLATE_CACHE_DIR` | —                 | CI cache for the last successfully downloaded sample         |
 | `GH_TOKEN`                 | —                              | GitHub token for template clone (optional)                  |
 
 In CI the driver auto-detects GitHub Actions (`GITHUB_ACTIONS`) and Azure DevOps

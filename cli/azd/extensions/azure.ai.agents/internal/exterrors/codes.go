@@ -67,6 +67,8 @@ const (
 	CodeMissingAgentEnvVars       = "missing_agent_env_vars"
 	CodeFoundryDependencyNotReady = "foundry_dependency_not_ready"
 	CodeMissingProjectEndpoint    = "missing_project_endpoint"
+	CodeInsightMonitorNotFound    = "insight_monitor_not_found"
+	CodeInsightMonitorAmbiguous   = "insight_monitor_ambiguous"
 	CodeGitHubDownloadFailed      = "github_download_failed"
 	CodePromptFailed              = "prompt_failed"
 )
@@ -190,6 +192,7 @@ const (
 	CodeAgentCreateFailed             = "agent_create_failed"
 	CodeMsaAppIDAlreadyInUse          = "msa_app_id_already_in_use"
 	CodeMultipleBotsForMsaAppID       = "multiple_bots_for_msa_app_id"
+	CodeInvalidInsightMonitor         = "invalid_insight_monitor"
 )
 
 // Operation names for [ServiceFromAzure] errors.
@@ -215,6 +218,8 @@ const (
 	OpDeleteSession          = "delete_session"
 	OpStopSession            = "stop_session"
 	OpListSessions           = "list_sessions"
+	OpListInsightMonitors    = "list_insight_monitors"
+	OpListInsights           = "list_insights"
 	OpCreateToolboxVersion   = "create_toolbox_version"
 	OpGetToolbox             = "get_toolbox"
 	OpProvisionMemoryStore   = "provision_memory_store"

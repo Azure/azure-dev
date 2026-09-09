@@ -68,6 +68,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newSessionCommand(extCtx))
 	rootCmd.AddCommand(newSampleCommand(extCtx))
 	rootCmd.AddCommand(newDoctorCommand())
+	rootCmd.AddCommand(newInsightsCommand(extCtx))
 
 	rootCmd.AddCommand(newCodeCommand(extCtx))
 	rootCmd.AddCommand(newEvalCommand(extCtx))

@@ -1260,10 +1260,19 @@ kind: prompt scaffolds a prompt agent (or a managed agent when it also declares
 a harness), carrying over its model, instructions, skills, and tools.
 
 Use --kind prompt-voice to initialize a managed prompt voice agent without
-source code or container scaffolding. Prompt voice agents support model, audio,
-voice, tool, greeting, avatar, handoff, and telephony settings in azure.yaml.
-Hosted voice wrappers use kind: voice in azure.yaml and are typically initialized
-from a sample or existing project manifest.
+source code or container scaffolding.
+The managed model defaults to gpt-realtime and does not require a model deployment.
+--voice sets the output voice only when creating a new prompt voice agent through
+--kind prompt-voice or the interactive voice option.
+Edit azure.yaml to customize existing voice settings.
+
+Prompt voice services support modelType: managed or self_deployed (bring your own model
+deployment), audio input/output, structured inputs, tools, greeting, avatar,
+handoff, and telephony bindings (acs or twilio). Hosted voice wrappers use modelType: hosted_agent
+and targetAgent, and are initialized from a sample azure.yaml containing both
+the hosted target and the voice wrapper. Configure advanced settings in azure.yaml.
+Run 'azd provision' and 'azd deploy' to deploy voice services, then connect to
+the voice WebSocket endpoint with a Voice Live client.
 
 The agent name written to agent.yaml is the Foundry agent identity. Foundry
 agents are unique by name within a project, so deploying with an existing name
@@ -2031,7 +2040,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		fmt.Sprintf(
 			"Name of the AI model to deploy. Defaults to '%s' during interactive model selection; "+
 				"required to deploy a new model with --no-prompt. If --model-deployment is also provided, "+
-				"--model-deployment takes precedence.",
+				"--model-deployment takes precedence. For new managed prompt voice agents, selects the "+
+				"service-hosted model (default: gpt-realtime); no model deployment is created.",
 			defaultAgentModel,
 		))
 
@@ -2075,7 +2085,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"Requires a pre-built image and is incompatible with code deploy.")
 
 	cmd.Flags().StringVar(&flags.voice, "voice", "",
-		"Output voice name for prompt-voice agents (for example, en-US-Ava:DragonHDLatestNeural).")
+		"Output voice for new prompt voice agents (--kind prompt-voice or the interactive voice option). "+
+			"For existing voice services, edit azure.yaml. Example: en-US-Ava:DragonHDLatestNeural.")
 
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Overwrite existing agent definitions or an input manifest inside the generated src tree without prompting. "+

@@ -261,7 +261,8 @@ This option does not provide crash recovery or automatic reconnection.`,
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
 						"voice endpoints require a Voice Live WebSocket client and cannot be invoked with this command",
-						"use the voice WebSocket endpoint shown by 'azd show' or 'azd ai agent show' with a Voice Live client",
+						"use the voice WebSocket endpoint shown by 'azd show' or 'azd ai agent show' "+
+							"with a Voice Live client",
 					)
 				}
 				if !p.IsInvocable() {

@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -147,10 +148,17 @@ func (a *remoteInvokeAction) Run() error {
 	); err != nil {
 		return err
 	}
+	runtimeSession := project.NewWebSocketRuntimeSession(
+		instanceUrl,
+		a.flags.timeout,
+		client.authorizationHeader,
+	)
+	defer runtimeSession.Close()
 	playgroundUrl, stopPlayground, err := remotePlaygroundUrlWithAuthorizationProvider(
 		ctx,
 		instanceUrl,
 		client.authorizationHeader,
+		runtimeSession,
 	)
 	if err != nil {
 		return err
@@ -159,13 +167,11 @@ func (a *remoteInvokeAction) Run() error {
 	if err := ui.OpenBrowser(playgroundUrl); err != nil {
 		_, _ = fmt.Fprintf(a.cmd.ErrOrStderr(), "Warning: failed to open playground UI: %v\n", err)
 	}
-	return project.RunShellWithContextAndAuthorizationProvider(
+	return project.RunWebSocketShellWithSession(
 		ctx,
 		a.cmd.InOrStdin(),
 		a.cmd.OutOrStdout(),
-		instanceUrl,
-		a.flags.timeout,
-		client.authorizationHeader,
+		runtimeSession,
 	)
 }
 
@@ -500,6 +506,7 @@ func remotePlaygroundUrlWithAuthorizationProvider(
 	ctx context.Context,
 	sandboxUrl string,
 	authorizationProvider project.AuthorizationProvider,
+	runtimeSessions ...*project.WebSocketRuntimeSession,
 ) (string, func(), error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -517,6 +524,7 @@ func remotePlaygroundUrlWithAuthorizationProvider(
 			authorizationProvider,
 			listener.Addr().String(),
 			sessionToken,
+			runtimeSessions...,
 		),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
@@ -544,6 +552,7 @@ func remotePlaygroundHandler(
 	authorizationProvider project.AuthorizationProvider,
 	expectedHost string,
 	sessionToken string,
+	runtimeSessions ...*project.WebSocketRuntimeSession,
 ) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -558,7 +567,7 @@ func remotePlaygroundHandler(
 			_, _ = io.WriteString(w, ui.RemotePlaygroundHTML)
 			return
 		}
-		proxyOpenEnvToSandbox(w, r, sandboxUrl, authorizationProvider)
+		proxyOpenEnvToSandbox(w, r, sandboxUrl, authorizationProvider, runtimeSessions...)
 	})
 	return mux
 }
@@ -631,6 +640,7 @@ func proxyOpenEnvToSandbox(
 	r *http.Request,
 	sandboxUrl string,
 	authorizationProvider project.AuthorizationProvider,
+	runtimeSessions ...*project.WebSocketRuntimeSession,
 ) {
 	operation := strings.Trim(r.URL.Path, "/")
 	switch operation {
@@ -646,6 +656,11 @@ func proxyOpenEnvToSandbox(
 		}
 	default:
 		http.NotFound(w, r)
+		return
+	}
+	if len(runtimeSessions) > 0 && runtimeSessions[0] != nil &&
+		(operation == "reset" || operation == "step" || operation == "state") {
+		proxyStatefulOpenEnvOperation(w, r, operation, runtimeSessions[0])
 		return
 	}
 
@@ -685,6 +700,40 @@ func proxyOpenEnvToSandbox(
 	}
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
+}
+
+func proxyStatefulOpenEnvOperation(
+	w http.ResponseWriter,
+	r *http.Request,
+	operation string,
+	runtimeSession *project.WebSocketRuntimeSession,
+) {
+	payload := ""
+	if operation == "reset" || operation == "step" {
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 100*1024*1024))
+		if err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		payload = string(body)
+	}
+	if operation == "step" {
+		var request struct {
+			Action json.RawMessage `json:"action"`
+		}
+		if err := json.Unmarshal([]byte(payload), &request); err != nil || len(request.Action) == 0 {
+			http.Error(w, "step requires an action", http.StatusBadRequest)
+			return
+		}
+		payload = string(request.Action)
+	}
+	response, err := runtimeSession.Call(r.Context(), operation, payload)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = io.WriteString(w, response)
 }
 
 func withFoundryAPIVersion(runtimeUrl string) (string, error) {

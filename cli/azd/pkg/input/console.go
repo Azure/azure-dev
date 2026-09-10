@@ -183,6 +183,7 @@ type AskerConsole struct {
 	previewerRefCount    int // tracks concurrent ShowPreviewer callers; only stop when it reaches 0
 	previewerSuppressed  syncatomic.Bool
 	previewerStopPending bool
+	previewerKeepLogs    bool
 	pendingPreviewOutput []string
 
 	currentIndent *atomic.String
@@ -421,6 +422,7 @@ func (c *AskerConsole) StopPreviewer(ctx context.Context, keepLogs bool) {
 	if c.previewerSuppressed.Load() {
 		// The progress table owns the terminal. Defer teardown until resume.
 		c.previewerStopPending = true
+		c.previewerKeepLogs = keepLogs
 		return
 	}
 
@@ -432,6 +434,7 @@ func (c *AskerConsole) stopPreviewerLocked(ctx context.Context, keepLogs bool) {
 	c.previewer.Store(nil)
 	c.writer = c.defaultWriter
 	c.previewerStopPending = false
+	c.previewerKeepLogs = false
 	c.flushPendingPreviewOutput(ctx)
 
 	_ = c.spinner.Unpause()
@@ -451,7 +454,7 @@ func (c *AskerConsole) ResumePreviewer() {
 
 	c.previewerSuppressed.Store(false)
 	if c.previewerStopPending && c.previewerRefCount == 0 {
-		c.stopPreviewerLocked(context.Background(), false)
+		c.stopPreviewerLocked(context.Background(), c.previewerKeepLogs)
 	} else if c.previewer.Load() == nil {
 		c.flushPendingPreviewOutput(context.Background())
 	}

@@ -708,6 +708,36 @@ func TestAskerConsole_PersistPreviewerOutputAfterPauseAndStop(t *testing.T) {
 	require.Contains(t, lines.lines(), "warning after stop")
 }
 
+func TestAskerConsole_StopPreviewerPreservesKeepLogsWhilePaused(t *testing.T) {
+	formatter, err := output.NewFormatter(string(output.NoneFormat))
+	require.NoError(t, err)
+
+	lines := &lineCapturer{}
+	c := NewConsole(
+		false,
+		false,
+		Writers{Output: lines},
+		ConsoleHandles{
+			Stderr: os.Stderr,
+			Stdin:  os.Stdin,
+			Stdout: lines,
+		},
+		formatter,
+		nil,
+	)
+
+	ctx := t.Context()
+	c.ShowPreviewer(ctx, &ShowPreviewerOptions{Title: "deploy hook"})
+	pauser := c.(PreviewerPauser)
+
+	pauser.PausePreviewer()
+	c.StopPreviewer(ctx, true)
+	require.True(t, c.(*AskerConsole).previewerKeepLogs)
+	pauser.ResumePreviewer()
+
+	require.False(t, c.(*AskerConsole).previewerKeepLogs)
+}
+
 func TestAskerConsole_PersistPreviewerOutputUsesJSONMessage(t *testing.T) {
 	formatter, err := output.NewFormatter(string(output.JsonFormat))
 	require.NoError(t, err)

@@ -23,9 +23,11 @@ import (
 	"testing"
 	"time"
 
+	"azure.ai.rle/internal/project"
 	"azure.ai.rle/internal/ui"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/gorilla/websocket"
 )
 
 const testFoundryProjectPath = "/api/projects/project-1"
@@ -51,6 +53,27 @@ func TestInvokeRemoteCreatesInstanceAndRunsShell(t *testing.T) {
 		switch r.URL.Path {
 		case "/health":
 			_, _ = w.Write([]byte(`{"status":"healthy"}`))
+		case "/ws":
+			connection, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+			if err != nil {
+				t.Errorf("upgrade WebSocket: %v", err)
+				return
+			}
+			defer connection.Close()
+			var request map[string]any
+			if err := connection.ReadJSON(&request); err != nil {
+				t.Errorf("read WebSocket request: %v", err)
+				return
+			}
+			if request["type"] != "state" {
+				t.Errorf("expected state request, got %#v", request)
+			}
+			if err := connection.WriteJSON(map[string]any{
+				"type": "state",
+				"data": map[string]any{"state": "ready"},
+			}); err != nil {
+				t.Errorf("write WebSocket response: %v", err)
+			}
 		default:
 			http.NotFound(w, r)
 		}
@@ -91,7 +114,7 @@ func TestInvokeRemoteCreatesInstanceAndRunsShell(t *testing.T) {
 	useTestProjectEndpoint(t, controlPlane.URL)
 
 	command := newInvokeCommand()
-	command.SetIn(strings.NewReader("health\nexit\n"))
+	command.SetIn(strings.NewReader("state\nexit\n"))
 	var output bytes.Buffer
 	command.SetOut(&output)
 	command.SetErr(&output)
@@ -104,8 +127,8 @@ func TestInvokeRemoteCreatesInstanceAndRunsShell(t *testing.T) {
 	if strings.Contains(output.String(), envServer.URL) {
 		t.Fatalf("expected instance data-plane URL to remain hidden, got %s", output.String())
 	}
-	if !strings.Contains(output.String(), `"status": "healthy"`) {
-		t.Fatalf("expected remote shell health output, got %s", output.String())
+	if !strings.Contains(output.String(), `"state": "ready"`) {
+		t.Fatalf("expected remote shell state output, got %s", output.String())
 	}
 	if !instanceDeleted || !groupDeleted {
 		t.Fatal("expected remote invoke to delete the instance and group")
@@ -925,22 +948,40 @@ func TestRemotePlaygroundProxyForwardsToSandbox(t *testing.T) {
 	requestCount := 0
 	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/web":
+		if r.URL.Path != "/ws" {
 			http.NotFound(w, r)
-		case "/state":
-			_, _ = w.Write([]byte(`{"step_count":3}`))
-		default:
-			http.NotFound(w, r)
+			return
+		}
+		connection, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade WebSocket: %v", err)
+			return
+		}
+		defer connection.Close()
+		var request map[string]any
+		if err := connection.ReadJSON(&request); err != nil {
+			t.Errorf("read WebSocket request: %v", err)
+			return
+		}
+		if request["type"] != "state" {
+			t.Errorf("expected state request, got %#v", request)
+		}
+		if err := connection.WriteJSON(map[string]any{
+			"type": "state",
+			"data": map[string]any{"step_count": 3},
+		}); err != nil {
+			t.Errorf("write WebSocket response: %v", err)
 		}
 	}))
 	defer envServer.Close()
+	runtimeSession := project.NewWebSocketRuntimeSession(envServer.URL, 30, nil)
+	defer runtimeSession.Close()
 
 	playgroundUrl, stop, err := remotePlaygroundUrlWithAuthorizationProvider(
 		t.Context(),
 		envServer.URL,
 		nil,
+		runtimeSession,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -986,8 +1027,9 @@ func TestRemotePlaygroundProxyForwardsToSandbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(body) != `{"step_count":3}` {
-		t.Fatalf("expected proxied state body, got %s", body)
+	var state map[string]any
+	if err := json.Unmarshal(body, &state); err != nil || state["step_count"] != float64(3) {
+		t.Fatalf("expected proxied state body, got %s (err: %v)", body, err)
 	}
 	if requestCount != 1 {
 		t.Fatalf("expected one authorized backend request, got %d", requestCount)

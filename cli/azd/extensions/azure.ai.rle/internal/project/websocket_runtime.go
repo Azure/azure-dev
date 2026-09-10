@@ -127,7 +127,7 @@ func (c *WebSocketRuntimeSession) Call(
 }
 
 // CallAndDrain preserves cancellation until a request is sent, then drains its response
-// so a disconnected HTTP client cannot desynchronize the shared WebSocket session.
+// so a disconnected HTTP client cannot disrupt the shared WebSocket protocol sequence.
 func (c *WebSocketRuntimeSession) CallAndDrain(
 	ctx context.Context,
 	operation string,

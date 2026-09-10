@@ -25,7 +25,7 @@ safe-outputs:
   group-reports: true
   add-labels:
     allowed: [area/extensions, ext-*]
-    max: 10
+    max: 20
 timeout-minutes: 5
 ---
 

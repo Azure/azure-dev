@@ -31,6 +31,11 @@ import (
 
 func TestProjectCommandsRegistered(t *testing.T) {
 	root := NewRootCommand()
+	initCommand, _, err := root.Find([]string{"init"})
+	require.NoError(t, err)
+	assert.Equal(t, "init", initCommand.Name())
+	assertOutputFlagOptions(t, initCommand, "default", []string{"default", "json", "none"})
+
 	addCommand, _, err := root.Find([]string{"add"})
 	require.NoError(t, err)
 	assert.Equal(t, "add", addCommand.Name())
@@ -42,8 +47,11 @@ func TestProjectCommandsRegistered(t *testing.T) {
 	assertOutputFlagOptions(t, addCommand, "default", []string{"default", "json", "none"})
 
 	assert.Equal(t, "bicep", addCommand.Flags().Lookup("infra").NoOptDefVal)
-	_, _, err = root.Find([]string{"init"})
-	require.Error(t, err)
+	internalCommand, _, err := root.Find([]string{"internal", "reconcile"})
+	require.NoError(t, err)
+	assert.Equal(t, "reconcile", internalCommand.Name())
+	assert.True(t, internalCommand.Hidden)
+	assert.NotNil(t, internalCommand.Flags().Lookup("request-file"))
 }
 
 func TestProjectFileExists(t *testing.T) {

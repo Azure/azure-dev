@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,28 +23,20 @@ func (fakeCredential) GetToken(
 	context.Context,
 	policy.TokenRequestOptions,
 ) (azcore.AccessToken, error) {
-	return azcore.AccessToken{Token: "fake-token"}, nil
+	return azcore.AccessToken{Token: "fake-token", ExpiresOn: time.Now().Add(time.Hour)}, nil
 }
 
 func newTestClient(t *testing.T, handler http.Handler) *Client {
 	t.Helper()
-	server := httptest.NewServer(handler)
+	server := httptest.NewTLSServer(handler)
 	t.Cleanup(server.Close)
-	pipeline := runtime.NewPipeline(
-		"test",
-		"v0.0.0",
-		runtime.PipelineOptions{
-			PerCall: []policy.Policy{foundryFeaturesPolicy{}},
-		},
-		&policy.ClientOptions{},
-	)
-	return NewClientFromPipeline(server.URL+"/api/projects/project", pipeline)
+	return NewClient(server.URL+"/api/projects/project", fakeCredential{}, server.Client())
 }
 
 func TestNewClient(t *testing.T) {
 	t.Parallel()
 
-	client := NewClient("https://example.services.ai.azure.com/api/projects/project", fakeCredential{})
+	client := NewClient("https://example.services.ai.azure.com/api/projects/project", fakeCredential{}, nil)
 
 	require.NotNil(t, client)
 	assert.Equal(t, "https://example.services.ai.azure.com/api/projects/project", client.endpoint)
@@ -60,7 +52,8 @@ func TestListMonitors(t *testing.T) {
 		assert.Equal(t, "cursor-1", r.URL.Query().Get("after"))
 		assert.Equal(t, "2", r.URL.Query().Get("limit"))
 		assert.Equal(t, "desc", r.URL.Query().Get("order"))
-		assert.Equal(t, insightsFeatureHeader, r.Header.Get("Foundry-Features"))
+		assert.Equal(t, "AgentInsights=V1Preview", r.Header.Get("Foundry-Features"))
+		assert.Equal(t, "Bearer fake-token", r.Header.Get("Authorization"))
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -93,7 +86,8 @@ func TestListInsightsPreservesUnknownFields(t *testing.T) {
 		assert.Equal(t, "desc", r.URL.Query().Get("order"))
 		assert.Equal(t, "cursor-1", r.URL.Query().Get("after"))
 		assert.Equal(t, "100", r.URL.Query().Get("limit"))
-		assert.Equal(t, insightsFeatureHeader, r.Header.Get("Foundry-Features"))
+		assert.Equal(t, "AgentInsights=V1Preview", r.Header.Get("Foundry-Features"))
+		assert.Equal(t, "Bearer fake-token", r.Header.Get("Authorization"))
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{

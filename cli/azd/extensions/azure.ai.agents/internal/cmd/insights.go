@@ -159,7 +159,7 @@ insight descriptions and trace details can contain application or user data.`,
 			}
 
 			action := &insightsExportAction{
-				client:          insights_api.NewClient(resolved.Endpoint, credential),
+				client:          insights_api.NewClient(resolved.Endpoint, credential, nil),
 				writer:          cmd.OutOrStdout(),
 				now:             time.Now,
 				projectEndpoint: resolved.Endpoint,

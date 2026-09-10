@@ -41,8 +41,10 @@ type Client struct {
 }
 
 // NewClient creates an authenticated Agent Insights client.
-func NewClient(endpoint string, credential azcore.TokenCredential) *Client {
+// A nil transport uses the Azure SDK's default HTTP transport.
+func NewClient(endpoint string, credential azcore.TokenCredential, transport policy.Transporter) *Client {
 	clientOptions := &policy.ClientOptions{
+		Transport: transport,
 		Logging: policy.LogOptions{
 			AllowedHeaders: []string{"X-Ms-Correlation-Request-Id", "X-Request-Id"},
 			IncludeBody:    false,
@@ -63,14 +65,6 @@ func NewClient(endpoint string, credential azcore.TokenCredential) *Client {
 			runtime.PipelineOptions{},
 			clientOptions,
 		),
-	}
-}
-
-// NewClientFromPipeline creates a client with a caller-provided pipeline for tests.
-func NewClientFromPipeline(endpoint string, pipeline runtime.Pipeline) *Client {
-	return &Client{
-		endpoint: endpoint,
-		pipeline: pipeline,
 	}
 }
 

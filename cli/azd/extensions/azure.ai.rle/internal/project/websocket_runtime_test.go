@@ -227,10 +227,10 @@ func TestParseWebSocketResponse(t *testing.T) {
 	for _, code := range []string{"CAPACITY_REACHED", "FACTORY_ERROR", "SESSION_ERROR"} {
 		_, terminal, err = parseWebSocketResponse(
 			"step",
-			[]byte(fmt.Sprintf(`{"type":"error","data":{"code":%q,"detail":"failed"}}`, code)),
+			fmt.Appendf(nil, `{"type":"error","data":{"code":%q,"detail":"failed"}}`, code),
 		)
-		var localError *azdext.LocalError
-		if err == nil || !terminal || !errors.As(err, &localError) ||
+		localError, ok := errors.AsType[*azdext.LocalError](err)
+		if err == nil || !terminal || !ok ||
 			!strings.Contains(localError.Suggestion, "run invoke again") {
 			t.Fatalf("expected %s to be terminal with reinvoke guidance: terminal=%t err=%v", code, terminal, err)
 		}
@@ -240,8 +240,8 @@ func TestParseWebSocketResponse(t *testing.T) {
 		"step",
 		[]byte(`{"type":"error","data":{"code":"VALIDATION_ERROR","detail":"invalid action"}}`),
 	)
-	var localError *azdext.LocalError
-	if err == nil || terminal || !errors.As(err, &localError) ||
+	localError, ok := errors.AsType[*azdext.LocalError](err)
+	if err == nil || terminal || !ok ||
 		!strings.Contains(localError.Suggestion, "payload and retry") {
 		t.Fatalf("expected validation error to be recoverable: terminal=%t err=%v", terminal, err)
 	}

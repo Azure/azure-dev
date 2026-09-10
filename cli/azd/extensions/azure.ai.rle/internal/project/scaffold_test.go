@@ -122,9 +122,8 @@ func TestOpenEnvEnvironmentNotFoundSuggestsClosestCatalogName(t *testing.T) {
 		"ches_env",
 		[]string{"atari_env", "chess_env", "echo_env"},
 	)
-	var localError *azdext.LocalError
-	if !errors.As(err, &localError) ||
-		!strings.Contains(localError.Suggestion, `Did you mean "chess_env"?`) {
+	localError, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok || !strings.Contains(localError.Suggestion, `Did you mean "chess_env"?`) {
 		t.Fatalf("expected closest catalog suggestion, got %v", err)
 	}
 }

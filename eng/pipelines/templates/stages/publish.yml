@@ -1,6 +1,17 @@
+parameters:
+  - name: ReleaseMode
+    type: string
+    default: Standard
+    values:
+      - Standard
+      - Canary
+
 stages:
   - stage: PublishCLI
-    dependsOn: Sign
+    dependsOn:
+      - Sign
+      - ${{ if eq(parameters.ReleaseMode, 'Canary') }}:
+        - Verify_Installers
     condition: >-
       and(
         succeeded(),
@@ -23,6 +34,7 @@ stages:
         condition: >-
           and(
             succeeded(),
+            eq('${{ parameters.ReleaseMode }}', 'Standard'),
             ne('true', variables['Skip.Publish'])
           )
         environment: package-publish
@@ -74,6 +86,7 @@ stages:
         condition: >-
           and(
             succeeded(),
+            eq('${{ parameters.ReleaseMode }}', 'Standard'),
             ne('true', variables['Skip.Publish'])
           )
         environment: package-publish
@@ -103,7 +116,9 @@ stages:
                 - template: /eng/pipelines/templates/steps/publish-cli-choco.yml
 
       - job: Publish_WinGet
-        dependsOn: Publish_Release
+        dependsOn:
+          - ${{ if eq(parameters.ReleaseMode, 'Standard') }}:
+            - Publish_Release
         condition: >-
           and(
             succeeded(),
@@ -115,20 +130,24 @@ stages:
           image: $(WINDOWSVMIMAGE)
           os: windows
 
-        templateContext:
-          outputs:
-            - output: pipelineArtifact
-              artifact: winget-manifest
-              targetPath: winget
+        ${{ if eq(parameters.ReleaseMode, 'Standard') }}:
+          templateContext:
+            outputs:
+              - output: pipelineArtifact
+                artifact: winget-manifest
+                targetPath: winget
 
         steps:
           - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
+            parameters:
+              ValidationMode: ${{ eq(parameters.ReleaseMode, 'Canary') }}
 
       - job: Publish_Brew
         dependsOn: Publish_Release
         condition: >-
           and(
             succeeded(),
+            eq('${{ parameters.ReleaseMode }}', 'Standard'),
             ne('true', variables['Skip.Publish'])
           )
 
@@ -147,6 +166,7 @@ stages:
         condition: >-
           and(
             succeeded(),
+            eq('${{ parameters.ReleaseMode }}', 'Standard'),
             ne('true', variables['Skip.Publish'])
           )
 
@@ -169,6 +189,7 @@ stages:
         condition: >-
           and(
             succeeded(),
+            eq('${{ parameters.ReleaseMode }}', 'Standard'),
             ne('true', variables['Skip.IncrementVersion'])
           )
 
@@ -197,6 +218,7 @@ stages:
         condition: >-
           and(
             succeeded(),
+            eq('${{ parameters.ReleaseMode }}', 'Standard'),
             ne('true', variables['Skip.Publish'])
           )
 
@@ -216,6 +238,7 @@ stages:
     condition: >-
       and(
         succeeded(),
+        eq('${{ parameters.ReleaseMode }}', 'Standard'),
         ne(variables['Skip.Release'], 'true'),
         or(
           eq('Manual', variables['BuildReasonOverride']),
@@ -326,6 +349,11 @@ stages:
 
   - stage: PublishIntegration
     dependsOn: Sign
+    condition: >-
+      and(
+        succeeded(),
+        eq('${{ parameters.ReleaseMode }}', 'Standard')
+      )
 
     variables:
       - template: /eng/pipelines/templates/variables/image.yml
@@ -596,6 +624,7 @@ stages:
     condition: >-
       and(
         succeeded(),
+        eq('${{ parameters.ReleaseMode }}', 'Standard'),
         ne(variables['Skip.Release'], 'true'),
         or(
           eq('Manual', variables['BuildReasonOverride']),
@@ -655,3 +684,4 @@ stages:
                       }
                   env:
                     AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
+

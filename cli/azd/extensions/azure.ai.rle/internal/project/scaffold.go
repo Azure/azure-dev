@@ -40,16 +40,12 @@ func createRleSessionDir(name string, dest string, force bool) (string, error) {
 	return sessionDir, nil
 }
 
-func CheckoutOpenEnvEnvironment(sourceName string, name string, dest string, force bool) (string, error) {
-	sourceName, err := ValidateEnvironmentName(sourceName)
+func CheckoutOpenEnvEnvironment(name string, dest string, force bool) (string, error) {
+	name, err := ValidateEnvironmentName(name)
 	if err != nil {
 		return "", err
 	}
-	name, err = ValidateEnvironmentName(name)
-	if err != nil {
-		return "", err
-	}
-	sourcePath := openEnvEnvironmentPath(sourceName)
+	sourcePath := openEnvEnvironmentPath(name)
 	tempDir, err := os.MkdirTemp("", "azd-rle-open-env-*")
 	if err != nil {
 		return "", err
@@ -69,27 +65,24 @@ func CheckoutOpenEnvEnvironment(sourceName string, name string, dest string, for
 	); err != nil {
 		return "", err
 	}
+	environmentNames, err := listOpenEnvEnvironments(tempDir)
+	if err != nil {
+		return "", err
+	}
+	if !containsString(environmentNames, name) {
+		return "", openEnvEnvironmentNotFoundError(name, environmentNames)
+	}
 	if err := runGitCheckout("-C", tempDir, "sparse-checkout", "set", sourcePath); err != nil {
 		return "", err
 	}
 
 	sourceDir := filepath.Join(tempDir, filepath.FromSlash(sourcePath))
-	return copyOpenEnvEnvironment(sourceDir, sourceName, name, dest, force)
+	return copyOpenEnvEnvironment(sourceDir, name, dest, force)
 }
 
-func copyOpenEnvEnvironment(sourceDir string, sourceName string, name string, dest string, force bool) (string, error) {
+func copyOpenEnvEnvironment(sourceDir string, name string, dest string, force bool) (string, error) {
 	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
-		catalogURL := strings.TrimSuffix(openEnvRepoUrl, ".git")
-		return "", &azdext.LocalError{
-			Message:  fmt.Sprintf("OpenEnv environment %q was not found.", sourceName),
-			Code:     "rle_open_env_environment_not_found",
-			Category: azdext.LocalErrorCategoryUser,
-			Suggestion: fmt.Sprintf(
-				"Choose an environment from %s/tree/%s/envs.",
-				catalogURL,
-				openEnvRepoRef,
-			),
-		}
+		return "", openEnvEnvironmentNotFoundError(name, nil)
 	} else if err != nil {
 		return "", err
 	}
@@ -107,9 +100,90 @@ func openEnvEnvironmentPath(name string) string {
 	return "envs/" + name
 }
 
+func listOpenEnvEnvironments(repoDir string) ([]string, error) {
+	output, err := runGitCommand("-C", repoDir, "ls-tree", "--name-only", openEnvRepoRef+":envs")
+	if err != nil {
+		return nil, err
+	}
+	return strings.Fields(string(output)), nil
+}
+
+func openEnvEnvironmentNotFoundError(name string, environmentNames []string) error {
+	catalogURL := strings.TrimSuffix(openEnvRepoUrl, ".git")
+	suggestion := fmt.Sprintf(
+		"Choose an environment from %s/tree/%s/envs.",
+		catalogURL,
+		openEnvRepoRef,
+	)
+	if closest := closestEnvironmentName(name, environmentNames); closest != "" {
+		suggestion = fmt.Sprintf("Did you mean %q? %s", closest, suggestion)
+	}
+	return &azdext.LocalError{
+		Message:    fmt.Sprintf("OpenEnv environment %q was not found.", name),
+		Code:       "rle_open_env_environment_not_found",
+		Category:   azdext.LocalErrorCategoryUser,
+		Suggestion: suggestion,
+	}
+}
+
+func closestEnvironmentName(name string, environmentNames []string) string {
+	closest := ""
+	closestDistance := len(name) + 1
+	for _, candidate := range environmentNames {
+		distance := editDistance(name, candidate)
+		if distance < closestDistance {
+			closest = candidate
+			closestDistance = distance
+		}
+	}
+	maxDistance := max(2, len(name)/3)
+	if closestDistance > maxDistance {
+		return ""
+	}
+	return closest
+}
+
+func editDistance(left string, right string) int {
+	previous := make([]int, len(right)+1)
+	for index := range previous {
+		previous[index] = index
+	}
+	for leftIndex, leftRune := range left {
+		current := make([]int, len(right)+1)
+		current[0] = leftIndex + 1
+		for rightIndex, rightRune := range right {
+			substitutionCost := 0
+			if leftRune != rightRune {
+				substitutionCost = 1
+			}
+			current[rightIndex+1] = min(
+				current[rightIndex]+1,
+				previous[rightIndex+1]+1,
+				previous[rightIndex]+substitutionCost,
+			)
+		}
+		previous = current
+	}
+	return previous[len(right)]
+}
+
+func containsString(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
+}
+
 func runGitCheckout(args ...string) error {
+	_, err := runGitCommand(args...)
+	return err
+}
+
+func runGitCommand(args ...string) ([]byte, error) {
 	if _, err := exec.LookPath("git"); err != nil {
-		return &azdext.LocalError{
+		return nil, &azdext.LocalError{
 			Message:    "Could not find \"git\" on PATH.",
 			Code:       "rle_git_not_found",
 			Category:   azdext.LocalErrorCategoryUser,
@@ -121,14 +195,14 @@ func runGitCheckout(args ...string) error {
 	process.Env = os.Environ()
 	output, err := process.CombinedOutput()
 	if err != nil {
-		return &azdext.LocalError{
+		return nil, &azdext.LocalError{
 			Message:    fmt.Sprintf("Failed to checkout OpenEnv environment: %v", err),
 			Code:       "rle_open_env_checkout_failed",
 			Category:   azdext.LocalErrorCategoryUser,
 			Suggestion: strings.TrimSpace(string(output)),
 		}
 	}
-	return nil
+	return output, nil
 }
 
 func copyDirectory(sourceDir string, destDir string) error {

@@ -4,10 +4,14 @@
 package project
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 func TestCopyDirectorySkipsGitMetadata(t *testing.T) {
@@ -78,7 +82,7 @@ func TestCheckoutOpenEnvEnvironmentRejectsInvalidNameBeforeChangingDestination(t
 		t.Fatal(err)
 	}
 
-	if _, err := CheckoutOpenEnvEnvironment("../bad", "target", destDir, true); err == nil {
+	if _, err := CheckoutOpenEnvEnvironment("../bad", destDir, true); err == nil {
 		t.Fatal("expected invalid environment name to be rejected")
 	}
 
@@ -104,17 +108,29 @@ func TestCopyOpenEnvEnvironmentValidatesSourceBeforeReplacingDestination(t *test
 		t.Fatal(err)
 	}
 
-	_, err := copyOpenEnvEnvironment(
-		filepath.Join(t.TempDir(), "missing"),
-		"missing_env",
-		"target_env",
-		destDir,
-		true,
-	)
+	_, err := copyOpenEnvEnvironment(filepath.Join(t.TempDir(), "missing"), "missing_env", destDir, true)
 	if err == nil {
 		t.Fatal("expected missing OpenEnv environment to fail")
 	}
 	if _, statErr := os.Stat(sentinel); statErr != nil {
 		t.Fatalf("expected destination to remain unchanged after catalog lookup failure: %v", statErr)
+	}
+}
+
+func TestOpenEnvEnvironmentNotFoundSuggestsClosestCatalogName(t *testing.T) {
+	err := openEnvEnvironmentNotFoundError(
+		"ches_env",
+		[]string{"atari_env", "chess_env", "echo_env"},
+	)
+	var localError *azdext.LocalError
+	if !errors.As(err, &localError) ||
+		!strings.Contains(localError.Suggestion, `Did you mean "chess_env"?`) {
+		t.Fatalf("expected closest catalog suggestion, got %v", err)
+	}
+}
+
+func TestClosestEnvironmentNameRejectsDistantMatch(t *testing.T) {
+	if got := closestEnvironmentName("unknown_env", []string{"chess_env", "echo_env"}); got != "" {
+		t.Fatalf("expected no distant suggestion, got %q", got)
 	}
 }

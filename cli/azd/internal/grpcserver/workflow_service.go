@@ -41,10 +41,17 @@ func (s *workflowService) Run(ctx context.Context, request *azdext.RunWorkflowRe
 	}
 
 	if err := s.runner.Run(ctx, azdWorkflow); err != nil {
+		code := codes.Internal
 		if errors.Is(err, environment.ErrExists) {
-			return nil, status.Errorf(codes.AlreadyExists, "failed to run workflow: %v", err)
+			code = codes.AlreadyExists
 		}
-		return nil, status.Errorf(codes.Internal, "failed to run workflow: %v", err)
+
+		st := status.New(code, "failed to run workflow: "+err.Error())
+		if relayedErr := relayedExtensionError(err); relayedErr != nil {
+			st = withRelayedExtensionErrorDetail(st, relayedErr)
+		}
+
+		return nil, st.Err()
 	}
 
 	return &azdext.EmptyResponse{}, nil

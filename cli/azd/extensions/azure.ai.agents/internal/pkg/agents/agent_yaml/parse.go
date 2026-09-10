@@ -559,7 +559,11 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 						if agent.Model == nil || strings.TrimSpace(agent.Model.Id) == "" {
 							errors = append(errors, "template.model.id is required for a prompt-voice agent")
 						}
-						if agent.TargetAgent != nil || agent.ConversationEngine != nil {
+						if agent.TargetAgent != nil {
+							errors = append(errors,
+								"template.target_agent is only valid when model_type is 'hosted_agent'")
+						}
+						if agent.ConversationEngine != nil {
 							errors = append(errors,
 								"template.conversation_engine is only valid for hosted voice wrappers")
 						}

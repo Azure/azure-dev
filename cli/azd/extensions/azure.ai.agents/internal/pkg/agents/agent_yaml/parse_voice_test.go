@@ -442,6 +442,84 @@ target_agent:
 	}
 }
 
+func TestValidateAgentDefinition_ConversationEngineAccepted(t *testing.T) {
+	yamlContent := []byte(`
+kind: voice
+name: voice-wrapper
+conversation_engine:
+  type: hosted_agent
+  name: voice-target
+  version: deployed
+`)
+	if err := ValidateAgentDefinition(yamlContent); err != nil {
+		t.Fatalf("expected conversation_engine hosted voice definition to be valid, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_ConversationEngineRejectsConflicts(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{
+			name: "model type conflict",
+			yaml: `
+kind: voice
+name: voice-wrapper
+model_type: hosted_agent
+conversation_engine:
+  type: hosted_agent
+  name: target
+`,
+			want: "cannot be combined with model_type or target_agent",
+		},
+		{
+			name: "target agent conflict",
+			yaml: `
+kind: voice
+name: voice-wrapper
+target_agent:
+  service: target
+conversation_engine:
+  type: hosted_agent
+  name: target
+`,
+			want: "cannot be combined with model_type or target_agent",
+		},
+		{
+			name: "missing name",
+			yaml: `
+kind: voice
+name: voice-wrapper
+conversation_engine:
+  type: hosted_agent
+`,
+			want: "conversation_engine.name is required",
+		},
+		{
+			name: "invalid version",
+			yaml: `
+kind: voice
+name: voice-wrapper
+conversation_engine:
+  type: hosted_agent
+  name: target
+  version: typo
+`,
+			want: "conversation_engine.version must be 'deployed'",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := ValidateAgentDefinition([]byte(test.yaml))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected %q, got %v", test.want, err)
+			}
+		})
+	}
+}
+
 func TestValidateAgentDefinition_HostedAgentRejectsHostedVoiceModelType(t *testing.T) {
 	yamlContent := []byte(`
 kind: hosted

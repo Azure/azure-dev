@@ -3,7 +3,7 @@ module azureaiinspector
 go 1.26.4
 
 require (
-	github.com/azure/azure-dev/cli/azd v1.31.0
+	github.com/azure/azure-dev/cli/azd v1.34.0
 	github.com/cli/browser v1.3.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/spf13/cobra v1.10.2

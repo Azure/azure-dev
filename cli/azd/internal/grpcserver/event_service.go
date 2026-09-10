@@ -27,6 +27,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const maxLifecycleOutputBytes = 32 * 1024
+
 // noEnvResolver is a resolver that always returns an empty string.
 // This is used when an environment is not available to resolve environment variables referenced in project config.
 var noEnvResolver = func(name string) string {
@@ -48,8 +50,44 @@ type eventService struct {
 }
 
 type lifecycleOutputCapture struct {
-	buffer bytes.Buffer
 	active int
+	buffer boundedLifecycleOutput
+}
+
+type boundedLifecycleOutput struct {
+	mu        sync.Mutex
+	buffer    bytes.Buffer
+	truncated bool
+}
+
+func (b *boundedLifecycleOutput) Write(data []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.truncated {
+		return len(data), nil
+	}
+
+	remaining := maxLifecycleOutputBytes - b.buffer.Len()
+	if len(data) > remaining {
+		_, _ = b.buffer.Write(data[:remaining])
+		b.truncated = true
+		return len(data), nil
+	}
+
+	_, _ = b.buffer.Write(data)
+	return len(data), nil
+}
+
+func (b *boundedLifecycleOutput) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	output := b.buffer.String()
+	if b.truncated {
+		output += "\n... lifecycle output truncated ..."
+	}
+	return strings.TrimRight(output, "\r\n")
 }
 
 func NewEventService(
@@ -381,7 +419,7 @@ func (s *eventService) syncExtensionOutput(
 	previewWriter := s.console.ShowPreviewer(ctx, previewOptions)
 	extOut.AddWriter(previewWriter)
 
-	var output *bytes.Buffer
+	var output *boundedLifecycleOutput
 	if persistOutput {
 		output = s.beginLifecycleOutputCapture(extension)
 	}
@@ -399,7 +437,7 @@ func (s *eventService) syncExtensionOutput(
 	}
 }
 
-func (s *eventService) beginLifecycleOutputCapture(extension *extensions.Extension) *bytes.Buffer {
+func (s *eventService) beginLifecycleOutputCapture(extension *extensions.Extension) *boundedLifecycleOutput {
 	s.lifecycleOutputMu.Lock()
 	defer s.lifecycleOutputMu.Unlock()
 
@@ -420,7 +458,7 @@ func (s *eventService) beginLifecycleOutputCapture(extension *extensions.Extensi
 
 func (s *eventService) endLifecycleOutputCapture(
 	extension *extensions.Extension,
-	buffer *bytes.Buffer,
+	buffer *boundedLifecycleOutput,
 ) string {
 	s.lifecycleOutputMu.Lock()
 	defer s.lifecycleOutputMu.Unlock()
@@ -437,7 +475,7 @@ func (s *eventService) endLifecycleOutputCapture(
 
 	delete(s.lifecycleOutputCaptures, extension)
 	extension.StdOut().RemoveWriter(&capture.buffer)
-	return strings.TrimRight(capture.buffer.String(), "\r\n")
+	return capture.buffer.String()
 }
 
 func shouldPersistLifecycleOutput(eventName string) bool {

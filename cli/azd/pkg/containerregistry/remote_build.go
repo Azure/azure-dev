@@ -283,6 +283,10 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 				}
 
 				length := *props.ContentLength
+				if length < written {
+					// A restarted ACR build can replace its log with a shorter blob.
+					written = 0
+				}
 				if (length - written) == 0 {
 					if props.Metadata != nil {
 						if _, has := props.Metadata["Complete"]; has {
@@ -298,16 +302,37 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 					continue
 				}
 
-				err = func() error {
-					res, err := blobClient.DownloadStream(ctx, &blob.DownloadStreamOptions{
-						Range: azblob.HTTPRange{
-							Offset: written,
-							Count:  length - written,
+				res, err := blobClient.DownloadStream(ctx, &blob.DownloadStreamOptions{
+					Range: azblob.HTTPRange{
+						Offset: written,
+						Count:  length - written,
+					},
+					AccessConditions: &blob.AccessConditions{
+						ModifiedAccessConditions: &blob.ModifiedAccessConditions{
+							IfMatch: props.ETag,
 						},
-					})
-					if err != nil {
-						return err
+					},
+				})
+				if err != nil {
+					if responseErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+						(responseErr.StatusCode == http.StatusRequestedRangeNotSatisfiable ||
+							responseErr.StatusCode == http.StatusPreconditionFailed) {
+						// The blob changed after HEAD. A rejected range proves the cursor
+						// is no longer valid, even if the replacement grows before our next poll.
+						if responseErr.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+							written = 0
+						}
+						select {
+						case <-ctx.Done():
+							return ctx.Err()
+						case <-time.After(1 * time.Second):
+						}
+						continue
 					}
+					return err
+				}
+
+				err = func() error {
 					defer res.Body.Close()
 					copied, err := io.Copy(writer, res.Body)
 					if err != nil {
@@ -323,6 +348,7 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 		}()
 		if azErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 			if azErr.StatusCode == http.StatusNotFound {
+				written = 0
 				// Mark log not found as a retryable error, we assume that the blob client was formed around a result from
 				// the queue job request and the fact that the log is not found means that the log is not yet available, not
 				// that it will never be available.

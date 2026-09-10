@@ -518,7 +518,7 @@
                         }
                     },
                     {
-                        "comment": "Azure AI Foundry skill host - code-less resource service; the service key is the skill name",
+                        "comment": "Azure AI Foundry skill host - resource service; project optionally scopes file and archive paths",
                         "if": {
                             "properties": {
                                 "host": { "const": "azure.ai.skill" }
@@ -529,7 +529,6 @@
                                 { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.skills/schemas/azure.ai.skill.json" }
                             ],
                             "properties": {
-                                "project": false,
                                 "runtime": false,
                                 "docker": false,
                                 "image": false,

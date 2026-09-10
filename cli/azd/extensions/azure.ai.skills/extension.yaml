@@ -20,6 +20,9 @@ tags:
   - ai
   - skill
 examples:
+  - name: add
+    description: Add a skill service to the current azure.yaml.
+    usage: azd ai skill add my-skill --file ./skills/my-skill
   - name: list
     description: List skills in the current Foundry project.
     usage: azd ai skill list

@@ -438,6 +438,9 @@ func prepareSkillArchive(path string) (*preparedSkillArchive, error) {
 		if err != nil {
 			return nil, classifyArchiveDirectoryError(err, path)
 		}
+		if err := validateSkillArchiveUploadSize(path, int64(len(data))); err != nil {
+			return nil, err
+		}
 		return &preparedSkillArchive{
 			Name:   filepath.Base(filepath.Clean(path)) + ".zip",
 			Reader: io.NopCloser(bytes.NewReader(data)),
@@ -459,12 +462,8 @@ func prepareSkillArchive(path string) (*preparedSkillArchive, error) {
 			"set archive to a .zip file or a directory containing SKILL.md",
 		)
 	}
-	if info.Size() > skill_api.MaxUploadBytes {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidSkillFile,
-			fmt.Sprintf("skill archive %s exceeds the 25 MB upload size limit", path),
-			"reduce the archive size to 25 MB or less",
-		)
+	if err := validateSkillArchiveUploadSize(path, info.Size()); err != nil {
+		return nil, err
 	}
 	file, err := os.Open(path) //nolint:gosec // user-authored azure.yaml path opened on user's behalf
 	if err != nil {
@@ -480,6 +479,17 @@ func prepareSkillArchive(path string) (*preparedSkillArchive, error) {
 	}, nil
 }
 
+func validateSkillArchiveUploadSize(path string, size int64) error {
+	if size <= skill_api.MaxUploadBytes {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidSkillFile,
+		fmt.Sprintf("skill archive %s exceeds the 25 MB upload size limit", path),
+		"reduce the archive size to 25 MB or less",
+	)
+}
+
 // hasParentTraversal reports whether a relative path contains a ".." segment
 // that could escape its base directory, treating both '/' and '\' as separators.
 func hasParentTraversal(p string) bool {
@@ -493,7 +503,7 @@ func hasParentTraversal(p string) bool {
 
 func isInstructionFilePath(instructions string) bool {
 	value := strings.TrimSpace(instructions)
-	if strings.ContainsAny(value, "\r\n") {
+	if strings.ContainsAny(value, " \t\r\n") {
 		return false
 	}
 	switch strings.ToLower(filepath.Ext(value)) {

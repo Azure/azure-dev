@@ -7,6 +7,11 @@ terminal.
 ## Commands
 
 ```bash
+azd ai skill add <name> [--description "..." --instructions "..."]
+azd ai skill add <name> --file ./SKILL.md
+azd ai skill add <name> --file ./skill.zip
+azd ai skill add <name> --file ./skill-src/
+
 azd ai skill create <name> [--description "..." --instructions "..."]
 azd ai skill create <name> --file ./SKILL.md
 azd ai skill create <name> --file ./skill.zip
@@ -27,6 +32,12 @@ version; `update` uploads a new default version (or, with
 `--set-default-version`, just repoints `default_version` at an existing
 version). Names follow the agentskills.io spec
 (`^[a-z0-9]([a-z0-9\-]*[a-z0-9])?$`, max 64 chars).
+
+`add` is declarative. It adds or updates a
+`host: azure.ai.skill` service in the current project's `azure.yaml` without
+mutating the remote skill. Run `azd deploy <name>` or `azd up` afterward to
+reconcile it. Existing `uses:`, `project:`, and unowned service fields are
+preserved.
 
 `create` accepts inline content (`--description` / `--instructions`), a
 single `SKILL.md` file, a `.zip` package, or a directory whose root contains
@@ -49,8 +60,14 @@ All commands accept the standard cross-cutting flags: `-p` / `--project-endpoint
 
 ## Composing skills in `azure.yaml`
 
-Declare a skill as its own service to reconcile it with `azd deploy` or
-`azd up`:
+Use the owning extension to add a skill service, then declare the dependency
+from each consuming agent:
+
+```bash
+azd ai skill add triage-rules \
+  --description "Rules for triaging incoming issues" \
+  --instructions "Classify the issue, identify its owner, and recommend next steps."
+```
 
 ```yaml
 services:
@@ -67,10 +84,17 @@ services:
 
   support-agent:
     host: azure.ai.agent
+    kind: hosted
+    name: support-agent
+    project: ./agents/support-agent
+    image: ghcr.io/example/support-agent:latest
     uses:
       - triage-rules
-    skill: triage-rules
 ```
+
+The skill command does not infer which agents consume the skill. Add the skill
+service name to each consuming agent's `uses:` list to declare deployment
+ordering explicitly.
 
 `instructions` can also reference a `.md` or `.txt` file. To preserve a
 complete skill package, use `archive` instead of the inline fields:
@@ -86,6 +110,10 @@ services:
 Relative instruction and archive paths resolve from the service's `project`
 path when set, otherwise from the directory containing `azure.yaml`. Parent
 traversal (`..`) is rejected.
+
+When `add` receives a ZIP or directory, the source must be inside that service
+directory. The command stores a portable forward-slash relative reference and
+rejects host-name collisions instead of overwriting another service type.
 
 Deploying the skill creates a new immutable default version and publishes
 readiness markers for dependent agent services. A consuming agent must list

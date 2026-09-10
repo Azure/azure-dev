@@ -553,8 +553,8 @@ func resolveAgentServiceConfigWithProjectOverrides(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (*azdext.ServiceConfig, error) {
-	// ServiceConfig is a protobuf message, so clone it rather than dereferencing
-	// (a shallow copy would copy the embedded message state and its mutex).
+	// Resolve project-relative fields on an isolated protobuf copy. A shallow
+	// copy would copy the embedded message state and its mutex.
 	resolvedSvc := proto.Clone(svc).(*azdext.ServiceConfig)
 	if err := project.ResolveServiceConfigInPlace(resolvedSvc, projectRoot); err != nil {
 		return nil, err

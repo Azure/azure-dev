@@ -45,8 +45,8 @@ type RequiredInput struct {
 
 // PromptRequiredError is returned when azd needs interactive input but cannot collect it.
 // This happens in no-prompt mode (whether set explicitly via --no-prompt/--non-interactive or
-// AZD_NON_INTERACTIVE, or auto-enabled for CI/CD or agent environments), where a prompt that has
-// no usable default cannot be satisfied.
+// AZD_NON_INTERACTIVE, or auto-enabled for CI/CD or a detected agent without an interactive
+// terminal), where a prompt that has no usable default cannot be satisfied.
 //
 // Either Inputs or PromptMessage is set, but not both.
 type PromptRequiredError struct {

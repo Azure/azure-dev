@@ -198,14 +198,17 @@ func configureFoundryProject(
 				if err := validateAcrConnectionInput(acrConnection, false, true); err != nil {
 					return nil, err
 				}
+				if err := ensureLocation(ctx, azdClient, azureContext, envName); err != nil {
+					return nil, err
+				}
+				if err := ensureNewFoundryProjectName(ctx, azdClient, envName); err != nil {
+					return nil, err
+				}
 				if err := setEnvValue(ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
 					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 				}
 				if err := updatePendingProjectSignal(ctx, azdClient, envName, false); err != nil {
 					log.Printf("warning: failed to update project provision signal: %v", err)
-				}
-				if err := ensureLocation(ctx, azdClient, azureContext, envName); err != nil {
-					return nil, err
 				}
 			} else {
 				if err := setEnvValue(ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "true"); err != nil {
@@ -228,6 +231,9 @@ func configureFoundryProject(
 			}
 			result.Credential = newCred
 
+			if err := ensureNewFoundryProjectName(ctx, azdClient, envName); err != nil {
+				return nil, err
+			}
 			if err := setEnvValue(ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
 				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 			}

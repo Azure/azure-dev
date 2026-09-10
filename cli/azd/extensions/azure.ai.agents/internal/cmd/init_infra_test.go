@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/pflag"
@@ -1097,6 +1098,156 @@ services:
 	}
 }
 
+func TestExistingProjectArtifactsNormalizeAcrEndpoint(t *testing.T) {
+	t.Parallel()
+
+	const (
+		endpoint = "https://acr-user:acr-password@registry.azurecr.io" +
+			"?sig=acr-query#acr-fragment"
+		resourceID = "/subscriptions/sub/resourceGroups/rg/providers/" +
+			"Microsoft.ContainerRegistry/registries/registry"
+	)
+	values := []map[string]string{{
+		"AZURE_CONTAINER_REGISTRY_ENDPOINT":    endpoint,
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceID,
+	}}
+
+	tests := []struct {
+		name string
+		file string
+		run  func(string, map[string]any, []map[string]string) error
+	}{
+		{
+			name: "bicep",
+			file: "main.parameters.json",
+			run: func(dir string, params map[string]any, values []map[string]string) error {
+				_, err := ejectExistingProjectBicep(
+					dir, "infra", "main", params, infraEjectAcrReuseConnect, values)
+				return err
+			},
+		},
+		{
+			name: "terraform",
+			file: "main.tfvars.json",
+			run: func(dir string, params map[string]any, values []map[string]string) error {
+				_, err := ejectExistingProjectTerraform(
+					dir, "infra", "main", params, infraEjectAcrReuseConnect, values)
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			params := map[string]any{
+				"deployments":           []synthesis.Deployment{},
+				"connections":           []synthesis.Connection{},
+				"connectionCredentials": map[string]map[string]any{},
+			}
+			require.NoError(t, tt.run(dir, params, values))
+
+			raw, err := os.ReadFile(filepath.Join(dir, tt.file)) //nolint:gosec
+			require.NoError(t, err)
+			output := string(raw)
+			assert.Contains(t, output, "https://registry.azurecr.io")
+			for _, secret := range []string{
+				"acr-user", "acr-password", "acr-query", "acr-fragment",
+			} {
+				assert.NotContains(t, output, secret)
+			}
+		})
+	}
+}
+
+func TestExistingProjectWritersIgnoreUnusedAcrEndpoint(t *testing.T) {
+	t.Parallel()
+
+	params := map[string]any{
+		"deployments":           []synthesis.Deployment{},
+		"connections":           []synthesis.Connection{},
+		"connectionCredentials": map[string]map[string]any{},
+	}
+	resourceID := "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.ContainerRegistry/registries/registry"
+	malformedEndpoint := "https://registry.azurecr.io/%zz?sig=" +
+		"unused-secret#fragment"
+	tests := []struct {
+		name      string
+		mode      infraEjectAcrMode
+		wantError bool
+		bicep     bool
+	}{
+		{name: "bicep none", mode: infraEjectAcrNone, bicep: true},
+		{name: "bicep create", mode: infraEjectAcrCreate, bicep: true},
+		{name: "terraform none"},
+		{name: "terraform create", mode: infraEjectAcrCreate},
+		{name: "bicep reuse rejects", mode: infraEjectAcrReuseConnect, wantError: true, bicep: true},
+		{name: "terraform reuse rejects", mode: infraEjectAcrReuseConnect, wantError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			values := []map[string]string{{
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    malformedEndpoint,
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceID,
+			}}
+			var err error
+			var outputPath string
+			if tt.bicep {
+				_, err = ejectExistingProjectBicep(
+					dir,
+					"infra",
+					"main",
+					params,
+					tt.mode,
+					values,
+				)
+				outputPath = filepath.Join(dir, "main.parameters.json")
+			} else {
+				_, err = ejectExistingProjectTerraform(
+					dir,
+					"infra",
+					"main",
+					params,
+					tt.mode,
+					values,
+				)
+				outputPath = filepath.Join(dir, "main.tfvars.json")
+			}
+			if tt.wantError {
+				require.Error(t, err)
+				assert.NotContains(t, err.Error(), "unused-secret")
+				return
+			}
+			require.NoError(t, err)
+
+			output, readErr := os.ReadFile(outputPath) //nolint:gosec
+			require.NoError(t, readErr)
+			assert.NotContains(t, string(output), "unused-secret")
+			if !tt.bicep {
+				var values map[string]any
+				require.NoError(t, json.Unmarshal(output, &values))
+				assert.Equal(t, "", values["existing_acr_endpoint"])
+			}
+		})
+	}
+}
+
+func TestNormalizeContainerRegistryEndpointRejectsMalformedURL(t *testing.T) {
+	_, err := normalizeContainerRegistryEndpoint(
+		"https://registry.azurecr.io/%zz?sig=malformed-secret",
+	)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "malformed-secret")
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
+}
+
 func TestEjectInfra_ExistingProjectBicepModesCompile(t *testing.T) {
 	t.Parallel()
 	bicep := lookupInstalledBicep()
@@ -1313,6 +1464,62 @@ services:
 	tfvars, err := os.ReadFile(filepath.Join(dir, "infra", "main.tfvars.json")) //nolint:gosec
 	require.NoError(t, err)
 	assert.NotContains(t, string(tfvars), `"acr_mode"`)
+}
+
+func TestEjectInfra_ExistingProjectIgnoresUnusedAcrEndpoint(t *testing.T) {
+	t.Parallel()
+
+	const projectYAML = `name: my-project
+services:
+  ai-project:
+    host: azure.ai.project
+    endpoint: https://acct.services.ai.azure.com/api/projects/p1
+  agent:
+    host: azure.ai.agent
+    uses: [ai-project]
+    project: src/agent
+    docker:
+      path: Dockerfile
+`
+	malformedEndpoint := "https://registry.azurecr.io/%zz?sig=" +
+		"unused-secret#fragment"
+	resourceID := "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.ContainerRegistry/registries/registry"
+
+	for _, provider := range []string{"bicep", "terraform"} {
+		t.Run(provider, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), projectYAML)
+			env := map[string]string{
+				"AZD_FOUNDRY_ACR_MODE":                 "none",
+				"FOUNDRY_PROJECT_ENDPOINT":             "https://acct.services.ai.azure.com/api/projects/p1",
+				"AZURE_AI_PROJECT_ID":                  "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/acct/projects/p1",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    malformedEndpoint,
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceID,
+			}
+
+			require.NoError(t, ejectInfra(dir, provider, env))
+			var output []byte
+			var err error
+			if provider == "bicep" {
+				output, err = os.ReadFile(
+					filepath.Join(dir, "infra", "main.parameters.json"), //nolint:gosec
+				)
+			} else {
+				output, err = os.ReadFile(
+					filepath.Join(dir, "infra", "main.tfvars.json"), //nolint:gosec
+				)
+			}
+			require.NoError(t, err)
+			assert.NotContains(t, string(output), "unused-secret")
+			if provider == "terraform" {
+				var values map[string]any
+				require.NoError(t, json.Unmarshal(output, &values))
+				assert.Equal(t, "", values["existing_acr_endpoint"])
+			}
+		})
+	}
 }
 
 func TestEjectInfra_ExistingProjectTerraformDeploymentsRemainEditable(t *testing.T) {
@@ -1638,6 +1845,125 @@ services:
 	mcpCreds := secureCreds["mcp-conn"].(map[string]any)
 	keys := mcpCreds["keys"].(map[string]any)
 	assert.Equal(t, "${MCP_KEY}", keys["x-api-key"])
+}
+
+func TestEjectInfra_RejectsConcreteConnectionCredentials(t *testing.T) {
+	const rejectedValue = "inline-value-must-not-leak"
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+
+	tests := []struct {
+		name            string
+		provider        string
+		existing        bool
+		externalRef     bool
+		connectionValue string
+		wantError       bool
+	}{
+		{
+			name:            "greenfield bicep rejects inline credentials",
+			provider:        "bicep",
+			connectionValue: rejectedValue,
+			wantError:       true,
+		},
+		{
+			name:            "greenfield terraform rejects inline credentials",
+			provider:        "terraform",
+			connectionValue: rejectedValue,
+			wantError:       true,
+		},
+		{
+			name:            "existing bicep rejects external ref credentials",
+			provider:        "bicep",
+			existing:        true,
+			externalRef:     true,
+			connectionValue: rejectedValue,
+			wantError:       true,
+		},
+		{
+			name:            "existing terraform rejects inline credentials",
+			provider:        "terraform",
+			existing:        true,
+			connectionValue: rejectedValue,
+			wantError:       true,
+		},
+		{
+			name:            "greenfield bicep preserves environment reference",
+			provider:        "bicep",
+			connectionValue: "${SEARCH_API_KEY}",
+		},
+		{
+			name:            "existing terraform preserves environment reference",
+			provider:        "terraform",
+			existing:        true,
+			connectionValue: "${SEARCH_API_KEY}",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			existing := ""
+			if tt.existing {
+				existing = "    endpoint: " + endpoint + "\n"
+			}
+			connectionConfig := "      key: " + tt.connectionValue + "\n"
+			if tt.externalRef {
+				mustWriteFile(
+					t,
+					filepath.Join(dir, "connection.yaml"),
+					"host: azure.ai.connection\n"+
+						"uses: [my-foundry]\n"+
+						"category: CognitiveSearch\n"+
+						"target: https://search.example.com\n"+
+						"authType: ApiKey\n"+
+						"credentials:\n"+connectionConfig,
+				)
+				connectionConfig = "    $ref: ./connection.yaml\n"
+			} else {
+				connectionConfig = "    host: azure.ai.connection\n" +
+					"    uses: [my-foundry]\n" +
+					"    category: CognitiveSearch\n" +
+					"    target: https://search.example.com\n" +
+					"    authType: ApiKey\n" +
+					"    credentials:\n" + connectionConfig
+			}
+			mustWriteFile(t, filepath.Join(dir, "azure.yaml"),
+				"name: my-project\n"+
+					"infra:\n"+
+					"  provider: microsoft.foundry\n"+
+					"services:\n"+
+					"  my-foundry:\n"+
+					"    host: azure.ai.project\n"+
+					existing+
+					"  search-conn:\n"+
+					connectionConfig,
+			)
+
+			var err error
+			withCapturedStdout(t, func() {
+				err = ejectInfra(dir, tt.provider)
+			})
+			if tt.wantError {
+				require.Error(t, err)
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok, "expected structured error, got %T: %v", err, err)
+				assert.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
+				assert.NotContains(t, err.Error(), rejectedValue)
+				assert.NoDirExists(t, filepath.Join(dir, "infra"))
+				return
+			}
+
+			require.NoError(t, err)
+			parameterFile := "main.parameters.json"
+			if tt.provider == "terraform" {
+				parameterFile = "main.tfvars.json"
+			}
+			raw, readErr := os.ReadFile(filepath.Join(dir, "infra", parameterFile))
+			require.NoError(t, readErr)
+			assert.Contains(t, string(raw), "${SEARCH_API_KEY}")
+			assert.NotContains(t, string(raw), rejectedValue)
+		})
+	}
 }
 
 func TestEjectInfra_PreservesNetworkVarRefs(t *testing.T) {
@@ -2175,6 +2501,61 @@ services:
 			}
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestFindFoundryServiceForEject_ProjectPrecedesLegacyNetwork(t *testing.T) {
+	for _, legacyHost := range []string{"azure.ai.agent", "microsoft.foundry"} {
+		t.Run(legacyHost, func(t *testing.T) {
+			raw := []byte(`name: my-project
+services:
+  project:
+    host: azure.ai.project
+  legacy:
+    host: ` + legacyHost + `
+    image: registry.example/agent:latest
+    network:
+      mode: managed
+`)
+
+			selected, err := findFoundryServiceForEject(raw)
+			require.NoError(t, err)
+			assert.Equal(t, "project", selected)
+
+			dir := t.TempDir()
+			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), string(raw))
+			withCapturedStdout(t, func() {
+				require.NoError(t, ejectInfra(dir, "bicep"))
+			})
+			assert.FileExists(t, filepath.Join(dir, "infra", "main.bicep"))
+		})
+	}
+}
+
+func TestFindFoundryServiceForEject_RejectsLegacyNetworkWithoutProject(t *testing.T) {
+	for _, legacyHost := range []string{"azure.ai.agent", "microsoft.foundry"} {
+		t.Run(legacyHost, func(t *testing.T) {
+			raw := []byte(`name: my-project
+services:
+  legacy:
+    host: ` + legacyHost + `
+    network:
+      mode: managed
+`)
+
+			_, err := findFoundryServiceForEject(raw)
+			require.Error(t, err)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, exterrors.CodeInvalidAzureYaml, localErr.Code)
+			assert.Contains(t, localErr.Message, "network: is only supported")
+
+			dir := t.TempDir()
+			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), string(raw))
+			err = ejectInfra(dir, "bicep")
+			require.Error(t, err)
+			assert.NoDirExists(t, filepath.Join(dir, "infra"))
 		})
 	}
 }

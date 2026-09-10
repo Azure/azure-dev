@@ -573,6 +573,9 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 			"check the endpoint, deployments, and network fields under your azure.ai.project service",
 		)
 	}
+	if err := validateEjectedConnectionCredentials(res.Parameters); err != nil {
+		return err
+	}
 	acrMode := infraEjectAcrNone
 	if existingProject {
 		values := environment
@@ -689,6 +692,9 @@ func ejectBicep(
 	layer bool,
 	params map[string]any,
 ) ([]ejectArtifact, error) {
+	if err := validateEjectedConnectionCredentials(params); err != nil {
+		return nil, err
+	}
 	written, err := writeEmbeddedTemplates(infraDir, artifactRoot, module, layer)
 	if err != nil {
 		return nil, err
@@ -710,6 +716,21 @@ func ejectExistingProjectBicep(
 	acrMode infraEjectAcrMode,
 	environments []map[string]string,
 ) ([]ejectArtifact, error) {
+	if err := validateEjectedConnectionCredentials(params); err != nil {
+		return nil, err
+	}
+	existingAcrEndpoint := ""
+	if len(environments) > 0 &&
+		(acrMode == infraEjectAcrReuseConnect ||
+			acrMode == infraEjectAcrAlreadyConnected) {
+		var err error
+		existingAcrEndpoint, err = normalizeContainerRegistryEndpoint(
+			environments[0]["AZURE_CONTAINER_REGISTRY_ENDPOINT"],
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
 	acrPullAssigned := len(environments) > 0 && strings.EqualFold(
 		strings.TrimSpace(environments[0]["AZD_FOUNDRY_ACR_PULL_ASSIGNED"]), "true")
 	written, err := writeExistingProjectBicepTemplates(
@@ -727,7 +748,7 @@ func ejectExistingProjectBicep(
 		params["tags"] = map[string]string{"azd-env-name": "${AZURE_ENV_NAME}"}
 	} else if (acrMode == infraEjectAcrReuseConnect || acrMode == infraEjectAcrAlreadyConnected) &&
 		len(environments) > 0 {
-		params["existingAcrEndpoint"] = environments[0]["AZURE_CONTAINER_REGISTRY_ENDPOINT"]
+		params["existingAcrEndpoint"] = existingAcrEndpoint
 		params["existingAcrResourceId"] = environments[0]["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
 		if acrMode == infraEjectAcrAlreadyConnected {
 			params["existingAcrConnectionName"] = environments[0]["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"]
@@ -753,6 +774,9 @@ func ejectTerraform(
 	layer bool,
 	params map[string]any,
 ) ([]ejectArtifact, error) {
+	if err := validateEjectedConnectionCredentials(params); err != nil {
+		return nil, err
+	}
 	includeAcr, _ := params["includeAcr"].(bool)
 
 	written, err := writeEmbeddedTerraformTemplates(infraDir, artifactRoot, includeAcr)
@@ -787,6 +811,21 @@ func ejectExistingProjectTerraform(
 	acrMode infraEjectAcrMode,
 	environments []map[string]string,
 ) ([]ejectArtifact, error) {
+	if err := validateEjectedConnectionCredentials(params); err != nil {
+		return nil, err
+	}
+	existingAcrEndpoint := ""
+	if len(environments) > 0 &&
+		(acrMode == infraEjectAcrReuseConnect ||
+			acrMode == infraEjectAcrAlreadyConnected) {
+		var err error
+		existingAcrEndpoint, err = normalizeContainerRegistryEndpoint(
+			environments[0]["AZURE_CONTAINER_REGISTRY_ENDPOINT"],
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
 	acrPullAssigned := len(environments) > 0 && strings.EqualFold(
 		strings.TrimSpace(environments[0]["AZD_FOUNDRY_ACR_PULL_ASSIGNED"]), "true")
 	written, err := writeExistingProjectTerraformTemplates(
@@ -813,7 +852,7 @@ func ejectExistingProjectTerraform(
 	}
 	written = append(written, outputsArtifact)
 	tfvarsArtifact, err := writeExistingProjectTfvarsFile(
-		infraDir, artifactRoot, module, params, environments)
+		infraDir, artifactRoot, module, params, environments, existingAcrEndpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -1638,35 +1677,34 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 	}
 
 	var matches []string
-	var misplacedNetwork []string
 	for name, s := range r.Services {
 		if slices.Contains(project.FoundryProjectServiceHosts, s.Host) {
 			matches = append(matches, name)
-			continue
 		}
-		if project.IsFoundryNetworkHost(s.Host) && !s.Network.IsZero() {
-			misplacedNetwork = append(misplacedNetwork, name)
-		}
-	}
-	if len(misplacedNetwork) > 0 {
-		slices.Sort(misplacedNetwork)
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidAzureYaml,
-			fmt.Sprintf("network: is only supported on services with host: %s (found on %v)",
-				project.FoundryProjectHost, misplacedNetwork),
-			"move the network: block to the azure.ai.project service (for example, services.ai-project)",
-		)
 	}
 
 	switch len(matches) {
 	case 1:
 		return matches[0], nil
 	case 0:
+		var misplacedNetwork []string
 		var legacyMatches []string
 		for name, s := range r.Services {
+			if project.IsFoundryNetworkHost(s.Host) && !s.Network.IsZero() {
+				misplacedNetwork = append(misplacedNetwork, name)
+			}
 			if slices.Contains(project.FoundryLegacyProvisioningHosts, s.Host) {
 				legacyMatches = append(legacyMatches, name)
 			}
+		}
+		if len(misplacedNetwork) > 0 {
+			slices.Sort(misplacedNetwork)
+			return "", exterrors.Validation(
+				exterrors.CodeInvalidAzureYaml,
+				fmt.Sprintf("network: is only supported on services with host: %s (found on %v)",
+					project.FoundryProjectHost, misplacedNetwork),
+				"move the network: block to the azure.ai.project service (for example, services.ai-project)",
+			)
 		}
 		switch len(legacyMatches) {
 		case 1:
@@ -2110,6 +2148,7 @@ func writeExistingProjectTfvarsFile(
 	module string,
 	params map[string]any,
 	environments []map[string]string,
+	existingAcrEndpoint string,
 ) (ejectArtifact, error) {
 	doc := map[string]any{ //nolint:gosec // environment placeholders, not credentials
 		"subscription_id":     "${AZURE_SUBSCRIPTION_ID}",
@@ -2122,7 +2161,7 @@ func writeExistingProjectTfvarsFile(
 		"resource_token_salt": "${AZD_RESOURCE_TOKEN_SALT}",
 	}
 	if len(environments) > 0 {
-		doc["existing_acr_endpoint"] = environments[0]["AZURE_CONTAINER_REGISTRY_ENDPOINT"]
+		doc["existing_acr_endpoint"] = existingAcrEndpoint
 		doc["existing_acr_resource_id"] = environments[0]["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
 		doc["existing_acr_connection_name"] = environments[0]["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"]
 	}

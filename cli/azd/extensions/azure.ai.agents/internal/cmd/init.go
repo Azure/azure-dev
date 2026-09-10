@@ -394,7 +394,6 @@ func resolveAgentNameFromManifestPointer(
 		flags.agentName = validated
 		return validated, nil
 	}
-
 	peeked := peekManifestName(ctx, manifestPointer, httpClient)
 	if peeked == "" {
 		// Defer to the inner flow which has access to the fully-loaded manifest.
@@ -1225,6 +1224,8 @@ func agentDefiningFlagsSet(flags *initFlags, srcBlocksReuse bool) bool {
 		flags.acrConnection != "" ||
 		flags.image != "" ||
 		flags.registryConnection != "" ||
+		flags.kind != "" ||
+		flags.voice != "" ||
 		srcBlocksReuse ||
 		len(flags.protocols) > 0
 }
@@ -1460,18 +1461,18 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if !promptVoicePreviewEnabled() {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
-						"prompt voice agent init is private preview",
+						fmt.Sprintf("%s agent init is private preview", flags.kind),
 						fmt.Sprintf("set %s=true to enable prompt voice init", promptVoicePreviewEnvVar),
 					)
 				}
-				if flags.image != "" {
+				if strings.EqualFold(flags.kind, kindFlagPromptVoice) && flags.image != "" {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
 						"--kind prompt-voice cannot be combined with --image",
 						"a voice agent is managed and has no container image; drop --image",
 					)
 				}
-				if flags.manifestPointer != "" {
+				if strings.EqualFold(flags.kind, kindFlagPromptVoice) && flags.manifestPointer != "" {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
 						"--kind prompt-voice cannot be combined with --manifest",
@@ -2216,7 +2217,6 @@ func (a *InitAction) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("downloading agent.yaml: %w", err)
 		}
-
 		// Prompt for deploy mode (code vs container) for hosted agents.
 		// Code deploy is supported for Python and .NET projects.
 		if hostedAgent, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok {
@@ -2239,10 +2239,34 @@ func (a *InitAction) Run(ctx context.Context) error {
 
 			if a.isCodeDeploy {
 				// Prompt for code configuration and update the manifest
-				codeConfig, err := promptCodeConfig(ctx, a.azdClient, targetDir, a.flags.noPrompt, codeDeployOptions{
+				codeOptions := codeDeployOptions{
 					runtime:       a.flags.runtime,
 					entryPoint:    a.flags.entryPoint,
 					depResolution: a.flags.depResolution,
+				}
+				if hostedAgent, ok := agentManifest.Template.(agent_yaml.ContainerAgent); ok &&
+					hostedAgent.CodeConfiguration != nil {
+					if codeOptions.runtime == "" {
+						codeOptions.runtime = hostedAgent.CodeConfiguration.Runtime
+					}
+					if codeOptions.entryPoint == "" {
+						codeOptions.entryPoint = hostedAgent.CodeConfiguration.EntryPoint
+					}
+					if codeOptions.depResolution == "" && hostedAgent.CodeConfiguration.DependencyResolution != nil {
+						codeOptions.depResolution = *hostedAgent.CodeConfiguration.DependencyResolution
+					}
+				}
+				if a.flags.noPrompt {
+					if err := validateCodeDeployInput(
+						true, "code", codeOptions.runtime, codeOptions.entryPoint, codeOptions.depResolution,
+					); err != nil {
+						return err
+					}
+				}
+				codeConfig, err := promptCodeConfig(ctx, a.azdClient, targetDir, a.flags.noPrompt, codeDeployOptions{
+					runtime:       codeOptions.runtime,
+					entryPoint:    codeOptions.entryPoint,
+					depResolution: codeOptions.depResolution,
 				}, a.userProvidedManifest)
 				if err != nil {
 					return fmt.Errorf("prompting for code configuration: %w", err)
@@ -2697,7 +2721,7 @@ func (a *InitAction) configureModelChoice(
 	// filtering (isHostedAgent). Best-effort: a parse failure here leaves the
 	// default non-voice behavior unchanged.
 	if kind, err := agentManifestKind(agentManifest); err == nil {
-		a.isVoiceAgent = kind == agent_yaml.AgentKindPromptVoice
+		a.isVoiceAgent = agent_yaml.IsVoiceAgentKind(kind)
 	}
 
 	// When no --project-id flag was given, check whether the azd environment already
@@ -2891,13 +2915,18 @@ func (a *InitAction) configureModelChoice(
 				if err := validateAcrConnectionInput(a.flags.acrConnection, false, true); err != nil {
 					return nil, err
 				}
+				if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
+					return nil, err
+				}
+				if err := ensureNewFoundryProjectName(
+					ctx, a.azdClient, a.environment.Name,
+				); err != nil {
+					return nil, err
+				}
 				if err := setEnvValue(
 					ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
 				); err != nil {
 					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
-				}
-				if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
-					return nil, err
 				}
 			} else {
 				if err := setEnvValue(
@@ -2919,6 +2948,11 @@ func (a *InitAction) configureModelChoice(
 			}
 			a.credential = newCred
 
+			if err := ensureNewFoundryProjectName(
+				ctx, a.azdClient, a.environment.Name,
+			); err != nil {
+				return nil, err
+			}
 			// Creating new resources — clear any stale existing-project flag
 			if err := setEnvValue(
 				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
@@ -3516,7 +3550,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	// Voice agents (kind: prompt-voice) carry no container/image/code config and
 	// take an entirely different service-entry shape. Handle them in an isolated
 	// branch and return early so the container path below is unaffected.
-	if agentDef.Kind == agent_yaml.AgentKindPromptVoice {
+	if agent_yaml.IsVoiceAgentKind(agentDef.Kind) {
 		return a.addVoiceAgentToProject(ctx, targetDir, agentManifest)
 	}
 
@@ -3775,6 +3809,13 @@ func (a *InitAction) addVoiceAgentToProject(
 	var voiceDef agent_yaml.VoiceAgent
 	if err := yaml.Unmarshal(templateYAML, &voiceDef); err != nil {
 		return fmt.Errorf("parsing voice agent definition: %w", err)
+	}
+	if voiceDef.ModelType == agent_yaml.VoiceModelTypeHostedAgent {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"hosted voice wrappers cannot be initialized from a standalone voice manifest",
+			"use a sample azure.yaml that declares both the hosted target and the voice wrapper",
+		)
 	}
 
 	agentConfig := project.ServiceTargetAgentConfig{}
@@ -4893,8 +4934,15 @@ func (a *InitAction) validateCodeDeployFlags() error {
 	); err != nil {
 		return err
 	}
+	noPrompt := a.flags.noPrompt
+	if a.flags.manifestPointer != "" {
+		// A standard manifest can provide runtime, entry point, and dependency
+		// resolution. Validate values now and enforce completeness after the
+		// manifest has been loaded and merged with explicit CLI overrides.
+		noPrompt = false
+	}
 	return validateCodeDeployInput(
-		a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution)
+		noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution)
 }
 
 // validateImageFlag checks that --image is valid when provided.

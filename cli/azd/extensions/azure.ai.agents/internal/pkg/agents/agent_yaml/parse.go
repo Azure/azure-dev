@@ -16,6 +16,10 @@ import (
 )
 
 var validAgentNamePattern = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
+var e164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{6,14}$`)
+var acsTpeRawIDPattern = regexp.MustCompile(
+	`^28:orgid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-` +
+		`[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // LoadAndValidateAgentManifest parses YAML content and validates it as an AgentManifest
 // Returns the parsed manifest and any validation errors
@@ -127,7 +131,7 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 
 		agent.AgentDefinition = agentDef
 		return agent, nil
-	case AgentKindPromptVoice:
+	case AgentKindPromptVoice, AgentKindVoice:
 		var agent VoiceAgent
 		if err := yaml.Unmarshal(templateBytes, &agent); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal to VoiceAgent: %w", err)
@@ -398,13 +402,26 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 				errors = append(errors, fmt.Sprintf("template.name not in valid format: %v", err))
 			}
 
+			var fields map[string]yaml.Node
+			if fieldErr := yaml.Unmarshal(templateBytes, &fields); fieldErr == nil {
+				if modelType, ok := fields["model_type"]; ok &&
+					modelType.Kind == yaml.ScalarNode && modelType.Value == string(VoiceModelTypeHostedAgent) &&
+					!IsVoiceAgentKind(agentDef.Kind) {
+					errors = append(errors,
+						"template.model_type 'hosted_agent' is only valid for voice agents")
+				}
+				if _, ok := fields["target_agent"]; ok && !IsVoiceAgentKind(agentDef.Kind) {
+					errors = append(errors,
+						"template.target_agent is only valid for voice agents")
+				}
+			}
+
 			// Only hosted agents carry policies to the service, so a moderation block on any
 			// other kind would be dropped silently instead of enforced.
 			if agentDef.Kind != AgentKindHosted {
 				errors = append(errors,
 					validateInvocationsModerationKind(templateBytes, agentDef.Kind)...)
 			}
-
 			switch AgentKind(agentDef.Kind) {
 			case AgentKindHosted:
 				var agent ContainerAgent
@@ -489,26 +506,89 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 				} else {
 					errors = append(errors, fmt.Sprintf("failed to unmarshal to PromptAgent: %v", err))
 				}
-			case AgentKindPromptVoice:
+			case AgentKindPromptVoice, AgentKindVoice:
 				var agent VoiceAgent
 				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
 					var fields map[string]yaml.Node
 					if fieldErr := yaml.Unmarshal(templateBytes, &fields); fieldErr == nil {
+						if _, hasCodeConfig := fields["code_configuration"]; hasCodeConfig {
+							errors = append(errors,
+								"template.code_configuration is not supported for a prompt-voice agent; "+
+									"configure code settings on the hosted target")
+						}
+						if _, hasSessionConfig := fields["session_configuration"]; hasSessionConfig {
+							errors = append(errors,
+								"template.session_configuration is not supported for a prompt-voice agent; "+
+									"configure session settings on the hosted target")
+						}
+						if _, hasEnvironmentVariables := fields["environment_variables"]; hasEnvironmentVariables {
+							errors = append(errors,
+								"template.environment_variables is not supported for a prompt-voice agent; "+
+									"configure environment variables on the hosted target")
+						}
 						if _, hasToolbox := fields["toolbox"]; hasToolbox {
 							errors = append(errors,
 								"template.toolbox is not supported for a prompt-voice agent; "+
 									"remove it from the agent definition")
 						}
+						if _, hasProtocols := fields["protocols"]; hasProtocols {
+							errors = append(errors,
+								"template.protocols is not supported for a prompt-voice agent; "+
+									"configure protocols on the hosted target")
+						}
 					}
-					if agent.Model == nil || strings.TrimSpace(agent.Model.Id) == "" {
-						errors = append(errors, "template.model.id is required for a prompt-voice agent")
+					var policyEnvelope struct {
+						Policies []Policy `json:"policies,omitempty" yaml:"policies,omitempty"`
 					}
-					if agent.ModelType != "" &&
-						agent.ModelType != VoiceModelTypeManaged &&
-						agent.ModelType != VoiceModelTypeSelfDeployed {
+					if err := yaml.Unmarshal(templateBytes, &policyEnvelope); err != nil {
+						errors = append(errors, fmt.Sprintf("template.policies is not valid: %v", err))
+					} else if len(policyEnvelope.Policies) > 0 {
+						hasModeration := false
+						for _, policy := range policyEnvelope.Policies {
+							hasModeration = hasModeration || policy.InvocationsModeration != nil
+						}
+						if !hasModeration {
+							errors = append(errors,
+								"template.policies is not supported for prompt-voice agents; "+
+									"move target-owned policies to the hosted target")
+						}
+					}
+					if agent.ModelType == VoiceModelTypeHostedAgent {
+						if agent.TargetAgent == nil ||
+							strings.TrimSpace(agent.TargetAgent.Service) == "" {
+							errors = append(errors,
+								"template.target_agent.service is required when model_type is 'hosted_agent'")
+						}
+						if agent.TargetAgent != nil && agent.TargetAgent.Version != "" &&
+							agent.TargetAgent.Version != "deployed" {
+							errors = append(errors, "template.target_agent.version must be 'deployed' when specified")
+						}
+						if agent.Model != nil {
+							errors = append(errors, "template.model is not allowed when model_type is 'hosted_agent'")
+						}
+						if agent.InputSchema != nil || agent.OutputSchema != nil || agent.Instructions != nil ||
+							len(agent.StructuredInputs) > 0 || len(agent.Tools) > 0 ||
+							agent.ToolChoice != nil || agent.ParallelToolCalls != nil ||
+							agent.MaxOutputTokens != nil ||
+							len(agent.Include) > 0 || len(agent.Handoff) > 0 {
+							errors = append(errors,
+								"input_schema, output_schema, instructions, structured_inputs, tools, tool_choice, "+
+									"parallel_tool_calls, max_output_tokens, include, and handoff belong to the "+
+									"target hosted agent")
+						}
+					} else {
+						if agent.Model == nil || strings.TrimSpace(agent.Model.Id) == "" {
+							errors = append(errors, "template.model.id is required for a prompt-voice agent")
+						}
+						if agent.TargetAgent != nil {
+							errors = append(errors, "template.target_agent is only valid when model_type is 'hosted_agent'")
+						}
+					}
+					if agent.ModelType != "" && agent.ModelType != VoiceModelTypeManaged &&
+						agent.ModelType != VoiceModelTypeSelfDeployed && agent.ModelType != VoiceModelTypeHostedAgent {
 						errors = append(errors, fmt.Sprintf(
-							"template.model_type '%s' is not supported; use '%s' or '%s'",
-							agent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed))
+							"template.model_type '%s' is not supported; use '%s', '%s', or '%s'",
+							agent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed, VoiceModelTypeHostedAgent))
 					}
 					errors = append(errors, validateVoiceAgentAdvancedConfig(agent)...)
 				} else {
@@ -548,6 +628,7 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 	if err := validateVoiceMaxOutputTokens(agent.MaxOutputTokens); err != nil {
 		errors = append(errors, err.Error())
 	}
+	errors = append(errors, validateVoiceTelephony(agent.Telephony)...)
 
 	if agent.Audio == nil {
 		return append(errors, validateVoiceIncludeTranscriptionCompatibility(agent, "")...)
@@ -598,6 +679,67 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 
 func isFinite(value float64) bool {
 	return !math.IsNaN(value) && !math.IsInf(value, 0)
+}
+
+func validateVoiceTelephony(telephony *VoiceTelephony) []string {
+	if telephony == nil {
+		return nil
+	}
+	var errors []string
+	if len(telephony.Bindings) == 0 {
+		errors = append(errors, "template.telephony.bindings must not be empty")
+	}
+	seen := map[string]struct{}{}
+	for i, binding := range telephony.Bindings {
+		path := fmt.Sprintf("template.telephony.bindings[%d]", i)
+		provider := strings.TrimSpace(binding.Provider)
+		identifier := strings.TrimSpace(binding.Identifier)
+		if provider != "" && identifier != "" {
+			bindingID := telephonyValidationProvider(provider) + ":" + identifier
+			if _, ok := seen[bindingID]; ok {
+				errors = append(errors, path+" duplicates telephony binding "+bindingID)
+			} else {
+				seen[bindingID] = struct{}{}
+			}
+		}
+		if provider == "" {
+			errors = append(errors, path+".provider is required")
+		}
+		if identifier == "" {
+			errors = append(errors, path+".identifier is required")
+		}
+		if strings.TrimSpace(binding.Connection) == "" {
+			errors = append(errors, path+".connection is required")
+		}
+		switch provider {
+		case "acs":
+			if identifier == "" {
+				continue
+			}
+			if after, ok := strings.CutPrefix(identifier, "4:"); ok {
+				if !e164Pattern.MatchString(after) {
+					errors = append(errors, path+".identifier must be 4:+<E.164> for acs-purchased numbers")
+				}
+			} else if !acsTpeRawIDPattern.MatchString(identifier) {
+				errors = append(errors, path+".identifier must be 28:orgid:<guid> or 4:+<E.164> for acs")
+			}
+		case "twilio":
+			if identifier != "" && !e164Pattern.MatchString(identifier) {
+				errors = append(errors, path+".identifier must be +<E.164> for twilio")
+			}
+		case "":
+		default:
+			errors = append(errors, path+".provider must be acs or twilio")
+		}
+	}
+	return errors
+}
+
+func telephonyValidationProvider(provider string) string {
+	if strings.TrimSpace(provider) == "acs" {
+		return "azure-communication-service"
+	}
+	return strings.TrimSpace(provider)
 }
 
 func validateVoiceMaxOutputTokens(value any) error {

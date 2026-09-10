@@ -1,0 +1,40 @@
+# Tier 1 (auth, scaffold only) — init from a Python template, stop before provision.
+#
+# Requires Azure login (see README "Authentication"). Reads subscriptions/Foundry
+# projects but does NOT run `azd provision`, so no resources are created and no
+# cost is incurred. All `{name}` placeholders below come from the merged
+# profile (`profile.yaml` + `profile.local.yaml`); the orchestrator passes them
+# as `session_vars` to every MCP call.
+name: "init-template-python"
+command: "azd ai agent init"
+cwd: "~/working/azd-agents-t1-python-{instance}"
+tags: ["tier:1", "cmd:init", "parallel-safe"]
+produces: "~/working/azd-agents-t1-python-{instance}/agent-framework-agent-basic-responses"
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+
+# Start from a clean dir so a prior run's scaffold can't trigger overwrite prompts.
+pre:
+  - run: "rm -rf ~/working/azd-agents-t1-python-{instance}"
+    cwd: "~/working"
+    name: "reset working dir"
+
+goals:
+  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, model deployment, or resource group), give it a name prefixed with '{prefix}-' and suffixed with '-{instance}' so concurrent instances don't collide. Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected. If a name prompt comes pre-filled with a default value, CLEAR it first (select-all then delete, or backspaces) before typing so your name replaces the default instead of appending to it."
+  - "When asked how to initialize, select 'Start new from a template'."
+  - "Select Python as the language."
+  - "Select the 'Basic Responses' template from the list."
+  - "No agent-name prompt should appear. Unified azure.yaml templates retain the agent identity and project directory defined by the catalog unless --agent-name is supplied explicitly. Report a finding if an agent-name prompt appears."
+  - "Deploy mode is auto-selected as 'code' for Python templates — no deploy-mode prompt should appear. Report a finding if one does."
+  - "If asked to select an Azure AI Foundry project, choose to create a new one and name it with the '{prefix}-' prefix."
+  - "A 'Select a tenant' prompt may not appear when the signed-in user has access to only one tenant. If it appears, select the tenant provided with this scenario run. If no tenant was provided, report a failure and do not answer the prompt."
+  - "If asked to select a subscription, search for and select the '{subscription}' subscription."
+  - "If asked for a location/region, search for and select '{region}'."
+  - "When asked to select a model, choose '{model}'."
+  - "Accept the defaults for model version, SKU, capacity. If prompted for a model deployment name, use a '{prefix}-'-prefixed name."
+  - "If asked for container/resource size, select 'Small'. NOTE: with code deploy auto-selected, this prompt is unlikely."
+  - "Wait for initialization to complete — look for 'Next:' or a success message."
+  - "Verify the scaffold at agent-framework-agent-basic-responses/: confirm azure.yaml exists and references an azure.ai.agent service with the agent definition embedded inline (agent name, kind, protocols, and environmentVariables referencing AZURE_AI_MODEL_DEPLOYMENT_NAME for the model)."
+  - "Take a screenshot of the completed init output."
+  - "STOP here — do NOT run 'azd provision'. Report a finding for any confusing prompt, wrong default, or scaffold problem."

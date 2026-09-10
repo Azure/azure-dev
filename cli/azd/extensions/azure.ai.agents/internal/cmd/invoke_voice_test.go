@@ -130,6 +130,33 @@ func TestVoiceInvocationGuidance(t *testing.T) {
 	}
 }
 
+func TestVoiceInvocationOverridePrecedence(t *testing.T) {
+	for _, tt := range []struct {
+		name, inline, override string
+		wantVoice              bool
+	}{
+		{"hosted override wins", "voice", "kind: hosted\n", false},
+		{"voice override wins", "hosted", "kind: voice\n", true},
+		{"alias override wins", "hosted", "kind: prompt-voice\n", true},
+		{"malformed override is not guessed", "voice", "kind: [\n", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, "override.yaml")
+			require.NoError(t, os.WriteFile(path, []byte(tt.override), 0600))
+			t.Setenv("AGENT_DEFINITION_PATH", path)
+			props, err := structpb.NewStruct(map[string]any{"kind": tt.inline})
+			require.NoError(t, err)
+			err = voiceInvocationError(&azdext.ServiceConfig{AdditionalProperties: props}, root)
+			if tt.wantVoice {
+				require.ErrorIs(t, err, errVoiceInvocationUnsupported)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestVoiceInvocationDetectionCompatibility(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []string{"hosted", "workflow", "prompt", "", "unknown"} {

@@ -1021,7 +1021,7 @@ var errVoiceInvocationUnsupported = exterrors.Validation(
 func voiceInvocationError(svc *azdext.ServiceConfig, projectRoot string) error {
 	// Only positively identified voice services are intercepted. Detection failures
 	// and all other kinds retain their existing resolution/validation behavior.
-	if isVoice, err := agentkind.IsPromptVoice(svc, projectRoot, ""); err == nil && isVoice {
+	if isVoice, err := agentkind.IsPromptVoice(svc, projectRoot, os.Getenv("AGENT_DEFINITION_PATH")); err == nil && isVoice {
 		return errVoiceInvocationUnsupported
 	}
 	return nil

@@ -56,7 +56,10 @@ permissions:
   issues: read
   actions: read
 
-engine: copilot
+engine:
+  id: copilot
+  model: copilot/gpt-5.6-sol
+  args: ["--effort", "medium"]
 
 tools:
   # Native GitHub MCP toolsets — no gh/jq/git needed. These let the agent list

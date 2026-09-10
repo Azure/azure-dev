@@ -610,6 +610,98 @@ func TestAskerConsole_PausePreviewer_DiscardsHookOutput(t *testing.T) {
 	c.StopPreviewer(ctx, false)
 }
 
+func TestAskerConsole_PersistPreviewerOutputAfterStop(t *testing.T) {
+	formatter, err := output.NewFormatter(string(output.NoneFormat))
+	require.NoError(t, err)
+
+	lines := &lineCapturer{}
+	c := NewConsole(
+		false,
+		false,
+		Writers{Output: lines},
+		ConsoleHandles{
+			Stderr: os.Stderr,
+			Stdin:  os.Stdin,
+			Stdout: lines,
+		},
+		formatter,
+		nil,
+	)
+
+	persister, ok := c.(PreviewerOutputPersister)
+	require.True(t, ok, "AskerConsole must persist previewer output")
+
+	ctx := t.Context()
+	c.ShowPreviewer(ctx, &ShowPreviewerOptions{
+		Title:        "deploy hook",
+		MaxLineCount: 1,
+	})
+	persister.PersistPreviewerOutput(ctx, "warning from deploy hook")
+
+	require.Empty(t, lines.lines(),
+		"persisted output should wait for the previewer to stop")
+
+	c.StopPreviewer(ctx, false)
+	require.Contains(t, lines.lines(), "warning from deploy hook")
+}
+
+func TestAskerConsole_PersistPreviewerOutputWhilePaused(t *testing.T) {
+	formatter, err := output.NewFormatter(string(output.NoneFormat))
+	require.NoError(t, err)
+
+	lines := &lineCapturer{}
+	c := NewConsole(
+		false,
+		false,
+		Writers{Output: lines},
+		ConsoleHandles{
+			Stderr: os.Stderr,
+			Stdin:  os.Stdin,
+			Stdout: lines,
+		},
+		formatter,
+		nil,
+	)
+
+	persister, ok := c.(PreviewerOutputPersister)
+	require.True(t, ok, "AskerConsole must persist previewer output")
+	pauser, ok := c.(PreviewerPauser)
+	require.True(t, ok, "AskerConsole must pause previewer output")
+
+	pauser.PausePreviewer()
+	persister.PersistPreviewerOutput(t.Context(), "warning while paused")
+	require.Empty(t, lines.lines())
+
+	pauser.ResumePreviewer()
+	require.Contains(t, lines.lines(), "warning while paused")
+}
+
+func TestAskerConsole_PersistPreviewerOutputUsesJSONMessage(t *testing.T) {
+	formatter, err := output.NewFormatter(string(output.JsonFormat))
+	require.NoError(t, err)
+
+	var outputBuffer strings.Builder
+	c := NewConsole(
+		false,
+		false,
+		Writers{Output: &outputBuffer},
+		ConsoleHandles{
+			Stderr: os.Stderr,
+			Stdin:  os.Stdin,
+			Stdout: &outputBuffer,
+		},
+		formatter,
+		nil,
+	)
+
+	persister, ok := c.(PreviewerOutputPersister)
+	require.True(t, ok, "AskerConsole must persist previewer output")
+	persister.PersistPreviewerOutput(t.Context(), "warning in JSON mode")
+
+	require.Contains(t, outputBuffer.String(), `"consoleMessage"`)
+	require.Contains(t, outputBuffer.String(), "warning in JSON mode")
+}
+
 // writerAdapter wraps *strings.Builder to satisfy io.Writer for test purposes.
 type writerAdapter struct {
 	*strings.Builder

@@ -70,6 +70,11 @@ type PreviewerPauser interface {
 	ResumePreviewer()
 }
 
+// PreviewerOutputPersister retains output after a previewer closes.
+type PreviewerOutputPersister interface {
+	PersistPreviewerOutput(ctx context.Context, output string)
+}
+
 type PromptDialog struct {
 	Title       string
 	Description string
@@ -174,9 +179,10 @@ type AskerConsole struct {
 	spinnerTerminalMode yacspin.TerminalMode
 	spinnerCurrentTitle string
 
-	previewer           syncatomic.Pointer[progressLog]
-	previewerRefCount   int // tracks concurrent ShowPreviewer callers; only stop when it reaches 0
-	previewerSuppressed syncatomic.Bool
+	previewer            syncatomic.Pointer[progressLog]
+	previewerRefCount    int // tracks concurrent ShowPreviewer callers; only stop when it reaches 0
+	previewerSuppressed  syncatomic.Bool
+	pendingPreviewOutput []string
 
 	currentIndent *atomic.String
 	// consoleWidth is the width of the underlying console window. The value is updated as the window resized. Nil when
@@ -418,6 +424,7 @@ func (c *AskerConsole) StopPreviewer(ctx context.Context, keepLogs bool) {
 	c.previewer.Load().Stop(keepLogs)
 	c.previewer.Store(nil)
 	c.writer = c.defaultWriter
+	c.flushPendingPreviewOutput(ctx)
 
 	_ = c.spinner.Unpause()
 }
@@ -431,7 +438,38 @@ func (c *AskerConsole) PausePreviewer() {
 
 // ResumePreviewer re-enables previewer rendering.
 func (c *AskerConsole) ResumePreviewer() {
+	c.showProgressMu.Lock()
+	defer c.showProgressMu.Unlock()
+
 	c.previewerSuppressed.Store(false)
+	if c.previewer.Load() == nil {
+		c.flushPendingPreviewOutput(context.Background())
+	}
+}
+
+// PersistPreviewerOutput writes output after preview progress is complete.
+func (c *AskerConsole) PersistPreviewerOutput(ctx context.Context, output string) {
+	if output == "" {
+		return
+	}
+
+	c.showProgressMu.Lock()
+	defer c.showProgressMu.Unlock()
+
+	if c.previewerSuppressed.Load() || c.previewer.Load() != nil {
+		c.pendingPreviewOutput = append(c.pendingPreviewOutput, output)
+		return
+	}
+
+	c.flushPendingPreviewOutput(ctx)
+	c.Message(ctx, output)
+}
+
+func (c *AskerConsole) flushPendingPreviewOutput(ctx context.Context) {
+	for _, output := range c.pendingPreviewOutput {
+		c.Message(ctx, output)
+	}
+	c.pendingPreviewOutput = nil
 }
 
 // truncationDots is the text we use to indicate that text has been truncated.

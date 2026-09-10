@@ -458,6 +458,71 @@ func TestEventService_createServiceEventHandler(t *testing.T) {
 	assert.NotNil(t, handler)
 }
 
+func TestEventService_syncExtensionOutput_PersistsDeployOutput(t *testing.T) {
+	service, _ := createTestEventService()
+	console := service.console.(*mockinput.MockConsole)
+	extension := createTestExtension()
+
+	cleanup := service.syncExtensionOutput(
+		t.Context(),
+		extension,
+		"Test Extension (predeploy)",
+		shouldPersistLifecycleOutput("predeploy"),
+	)
+	_, err := extension.StdOut().Write([]byte("RBAC warning\n"))
+	require.NoError(t, err)
+
+	cleanup()
+
+	require.Contains(t, console.Output(), "RBAC warning")
+}
+
+func TestEventService_syncExtensionOutput_PersistsConcurrentOutputOnce(t *testing.T) {
+	service, _ := createTestEventService()
+	console := service.console.(*mockinput.MockConsole)
+	extension := createTestExtension()
+
+	cleanupA := service.syncExtensionOutput(
+		t.Context(),
+		extension,
+		"Test Extension (predeploy.api)",
+		true,
+	)
+	cleanupB := service.syncExtensionOutput(
+		t.Context(),
+		extension,
+		"Test Extension (predeploy.web)",
+		true,
+	)
+	_, err := extension.StdOut().Write([]byte("shared warning\n"))
+	require.NoError(t, err)
+
+	cleanupA()
+	require.Empty(t, console.Output())
+
+	cleanupB()
+	require.Equal(t, []string{"shared warning"}, console.Output())
+}
+
+func TestEventService_syncExtensionOutput_DoesNotPersistNonDeployOutput(t *testing.T) {
+	service, _ := createTestEventService()
+	console := service.console.(*mockinput.MockConsole)
+	extension := createTestExtension()
+
+	cleanup := service.syncExtensionOutput(
+		t.Context(),
+		extension,
+		"Test Extension (prepackage)",
+		shouldPersistLifecycleOutput("prepackage"),
+	)
+	_, err := extension.StdOut().Write([]byte("package output\n"))
+	require.NoError(t, err)
+
+	cleanup()
+
+	require.Empty(t, console.Output())
+}
+
 func TestEventService_createProjectEventHandler_RoundTripsStructuredError(t *testing.T) {
 	service, _ := createTestEventService()
 	extension := createTestExtension()

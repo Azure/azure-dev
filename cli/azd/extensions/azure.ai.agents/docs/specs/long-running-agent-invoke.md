@@ -150,12 +150,11 @@ Within `internal/cmd/`:
 
 - `invoke.go`: common invoke command, flags, context, dispatch, and existing protocol invoke implementations.
 - `invocations.go`: shared lifecycle command group, flags, protocol/ID selection, and dispatch.
-- `invoke_response.go`: new Responses-specific lifecycle, identity, and guidance helpers.
+- `invoke_response.go`: Responses-specific lifecycle, identity, guidance, SSE parsing, and ID-storage helpers.
 - `invoke_invocation.go`: new Invocations-protocol lifecycle and ID-storage helpers.
-- `invoke_responses_stream.go` and `invoke_response_store.go`: existing Responses parser and state-store locations, with the simplified behavior retained.
 - `agent_endpoint.go`: shared endpoint parsing and protocol invoke URL construction.
 
-Existing code and tests stay in their original files where possible to minimize review-only diff. New protocol-specific code goes in `invoke_<protocol>.go`; this does not require moving existing invoke or polling implementations.
+Existing invoke and polling implementations stay in `invoke.go` to minimize review-only diff. New protocol-specific code goes in `invoke_<protocol>.go`. Responses parser and store helpers are consolidated in `invoke_response.go`, with their tests in `invoke_response_test.go`.
 
 No `responses` command group or separate `responses.go` remains. No generic capability framework is required; explicit protocol dispatch is sufficient.
 

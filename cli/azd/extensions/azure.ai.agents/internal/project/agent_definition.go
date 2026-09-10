@@ -826,7 +826,7 @@ func agentDefinitionFromStruct(
 		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			"hosted voice wrapper fields are not supported on hosted agents",
-			"move conversationEngine or targetAgent to a voice wrapper service",
+			"move modelType, conversationEngine, or targetAgent to a voice wrapper service",
 		)
 	}
 	if inline.Telephony != nil {

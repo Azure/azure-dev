@@ -11,6 +11,6 @@ goals:
   - "Confirm the root description mentions hosted and voice agents, and the init, show, and delete command summaries mention voice agents."
   - "Run 'azd ai agent init --help'; confirm --kind and --voice are visible, --kind prompt-voice is demonstrated, and voice settings are described in azure.yaml with azd provision and azd deploy as the deployment workflow."
   - "Run 'azd ai agent deploy --help'; confirm it does not claim standalone voice deployment and instead directs voice users to azd provision and azd deploy."
-  - "Run 'azd ai agent invoke --help'; confirm voice users are directed to a Voice Live client rather than text invocation."
+  - "Run 'azd ai agent invoke --help'; confirm prompt voice and hosted voice wrapper users are directed to the Microsoft Foundry portal at https://ai.azure.com to try their agent, with Voice Live client guidance for programmatic access."
   - "Take a screenshot of the help output."
   - "Report a finding if any listed command is missing, if the usage text is malformed, or if the command exits non-zero."

@@ -2038,7 +2038,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 	cmd.Flags().StringVar(&flags.model, "model", "",
 		fmt.Sprintf(
-			"Name of the AI model to deploy. Defaults to '%s' during interactive model selection; "+
+			"For hosted agents, name of the AI model to deploy. Defaults to '%s' during interactive model selection; "+
 				"required to deploy a new model with --no-prompt. If --model-deployment is also provided, "+
 				"--model-deployment takes precedence. For new managed prompt voice agents, selects the "+
 				"service-hosted model (default: gpt-realtime); no model deployment is created.",

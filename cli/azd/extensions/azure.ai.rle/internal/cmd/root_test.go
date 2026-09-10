@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,6 +120,9 @@ func TestLifecycleFlagsAlignWithHostedAgentConventions(t *testing.T) {
 	}
 	if flag := initCommand.Flags().Lookup("name"); flag != nil {
 		t.Fatal("expected init not to expose --name")
+	}
+	if flag := initCommand.Flags().Lookup("source"); flag == nil {
+		t.Fatal("expected init to expose --source")
 	}
 
 	runCommand, _, err := rootCmd.Find([]string{"run"})
@@ -280,13 +284,13 @@ func TestInitCopiesOpenEnvEchoSampleByDefault(t *testing.T) {
 	}
 }
 
-func TestInitUsesPositionalNameToSelectOpenEnvEnvironment(t *testing.T) {
+func TestInitPreservesPositionalEnvironmentName(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	stubOpenEnvCheckout(t, "chess_env")
+	stubOpenEnvCheckout(t, "echo_env", "code_rl")
 
 	command := newInitCommand()
-	command.SetArgs([]string{"chess_env"})
+	command.SetArgs([]string{"code_rl"})
 	var output bytes.Buffer
 	command.SetOut(&output)
 	command.SetErr(&output)
@@ -294,9 +298,35 @@ func TestInitUsesPositionalNameToSelectOpenEnvEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sessionDir := filepath.Join(tempDir, "chess_env")
+	sessionDir := filepath.Join(tempDir, "code_rl")
 	// The test reads state from its own temporary session directory.
 	stateBytes, err := os.ReadFile(filepath.Join(sessionDir, rleStateFile)) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state rleState
+	if err := json.Unmarshal(stateBytes, &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.EnvironmentName != "code_rl" {
+		t.Fatalf("expected code_rl environment name, got %q", state.EnvironmentName)
+	}
+}
+
+func TestInitUsesOpenEnvSourceAsDefaultEnvironmentName(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	stubOpenEnvCheckout(t, "chess_env", "chess_env")
+
+	command := newInitCommand()
+	command.SetArgs([]string{"--source", "chess_env"})
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	stateBytes, err := os.ReadFile(filepath.Join(tempDir, "chess_env", rleStateFile)) //nolint:gosec
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,12 +398,15 @@ func TestInitNextStepsUseShellAppropriateSyntax(t *testing.T) {
 	}
 }
 
-func stubOpenEnvCheckout(t *testing.T, expectedName string) {
+func stubOpenEnvCheckout(t *testing.T, expectedSource string, expectedName ...string) {
 	t.Helper()
 	old := checkoutOpenEnvEnvironmentFunc
-	checkoutOpenEnvEnvironmentFunc = func(name string, dest string, force bool) (string, error) {
-		if name != expectedName {
-			t.Fatalf("expected OpenEnv environment %q, got %q", expectedName, name)
+	checkoutOpenEnvEnvironmentFunc = func(sourceName string, name string, dest string, force bool) (string, error) {
+		if sourceName != expectedSource {
+			t.Fatalf("expected OpenEnv source %q, got %q", expectedSource, sourceName)
+		}
+		if len(expectedName) == 1 && name != expectedName[0] {
+			t.Fatalf("expected environment name %q, got %q", expectedName[0], name)
 		}
 		sessionDir := filepath.Join(dest, name)
 		if force {

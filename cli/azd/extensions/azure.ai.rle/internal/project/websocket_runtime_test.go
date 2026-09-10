@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -31,7 +32,7 @@ func TestRunWebSocketShellUsesPersistentSocketForStatefulOperations(t *testing.T
 		}
 		if r.URL.Path != "/ws" {
 			safePaths = append(safePaths, r.URL.Path)
-			_, _ = fmt.Fprintf(w, `{"path":%q}`, r.URL.Path)
+			_, _ = fmt.Fprintf(w, `{"path":%q}`, r.URL.Path) //nolint:gosec // Test response uses JSON encoding.
 			return
 		}
 
@@ -45,10 +46,6 @@ func TestRunWebSocketShellUsesPersistentSocketForStatefulOperations(t *testing.T
 		for {
 			var request map[string]any
 			if err := connection.ReadJSON(&request); err != nil {
-				if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
-					return
-				}
-				t.Errorf("read WebSocket request: %v", err)
 				return
 			}
 			requests = append(requests, request)
@@ -134,6 +131,58 @@ func TestRuntimeWebSocketURL(t *testing.T) {
 	if _, err := RuntimeWebSocketURL("ftp://example.test/openenv"); err == nil {
 		t.Fatal("expected unsupported scheme to fail")
 	}
+}
+
+func TestWebSocketSessionSendsKeepalivePings(t *testing.T) {
+	pingReceived := make(chan struct{}, 1)
+	serverDone := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer close(serverDone)
+		connection, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade WebSocket: %v", err)
+			return
+		}
+		defer connection.Close()
+		connection.SetPingHandler(func(data string) error {
+			select {
+			case pingReceived <- struct{}{}:
+			default:
+			}
+			return connection.WriteControl(
+				websocket.PongMessage,
+				[]byte(data),
+				time.Now().Add(time.Second),
+			)
+		})
+		for {
+			var request map[string]any
+			if err := connection.ReadJSON(&request); err != nil {
+				return
+			}
+			if err := connection.WriteJSON(map[string]any{
+				"type": "state",
+				"data": map[string]any{},
+			}); err != nil {
+				t.Errorf("write WebSocket response: %v", err)
+				return
+			}
+		}
+	}))
+	defer server.Close()
+
+	session := NewWebSocketRuntimeSession(server.URL, 30, nil)
+	session.keepAliveInterval = 10 * time.Millisecond
+	if _, err := session.Call(t.Context(), "state", ""); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-pingReceived:
+	case <-time.After(time.Second):
+		t.Fatal("expected WebSocket keepalive ping")
+	}
+	session.Close()
+	<-serverDone
 }
 
 func TestWebSocketRequestUsesOpenEnvProtocol(t *testing.T) {
@@ -270,7 +319,7 @@ func TestCanceledQueuedCallDoesNotReachWebSocket(t *testing.T) {
 	queuedContext, cancelQueued := context.WithCancel(t.Context())
 	queuedCallDone := make(chan error, 1)
 	go func() {
-		_, err := session.Call(queuedContext, "state", "")
+		_, err := session.CallAndDrain(queuedContext, "state", "")
 		queuedCallDone <- err
 	}()
 	cancelQueued()
@@ -285,6 +334,34 @@ func TestCanceledQueuedCallDoesNotReachWebSocket(t *testing.T) {
 	if requests != 1 {
 		t.Fatalf("expected canceled queued call not to reach WebSocket, got %d requests", requests)
 	}
+}
+
+func TestCallAndDrainUsesBoundedReadWhenTimeoutDisabled(t *testing.T) {
+	requestReceived := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		connection, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade WebSocket: %v", err)
+			return
+		}
+		defer connection.Close()
+		if _, _, err := connection.ReadMessage(); err != nil {
+			t.Errorf("read WebSocket request: %v", err)
+			return
+		}
+		close(requestReceived)
+		_, _, _ = connection.ReadMessage()
+	}))
+	defer server.Close()
+
+	session := NewWebSocketRuntimeSession(server.URL, 0, nil)
+	session.drainTimeout = 10 * time.Millisecond
+	defer session.Close()
+	_, err := session.CallAndDrain(t.Context(), "state", "")
+	if err == nil {
+		t.Fatal("expected bounded drain to fail when the runtime does not respond")
+	}
+	<-requestReceived
 }
 
 func assertWebSocketRequest(

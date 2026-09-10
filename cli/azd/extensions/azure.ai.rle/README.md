@@ -95,11 +95,20 @@ The copied session does not keep `.git` metadata from the upstream repository.
 Copy another environment from the OpenEnv `envs` catalog:
 
 ```powershell
-azd ai rle init chess_env
+azd ai rle init --source chess_env
 cd .\chess_env
 ```
 
-The positional name selects `envs/<environment-name>` from OpenEnv and is also used for the local session directory and RLE environment name.
+The `--source` value selects `envs/<source-name>` from OpenEnv. When the positional environment name is omitted,
+the source name is also used for the local session directory and RLE environment name.
+
+Use a different local and RLE environment name while copying a catalog environment:
+
+```powershell
+azd ai rle init my_chess_env --source chess_env
+```
+
+For compatibility, a positional name without `--source` still copies `echo_env` into a session with that name.
 
 For an existing source folder, skip `init` and run commands directly from that folder.
 

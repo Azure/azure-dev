@@ -727,13 +727,13 @@ func proxyStatefulOpenEnvOperation(
 		}
 		payload = string(request.Action)
 	}
-	response, err := runtimeSession.Call(r.Context(), operation, payload)
+	response, err := runtimeSession.CallAndDrain(r.Context(), operation, payload)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = io.WriteString(w, response)
+	_, _ = io.WriteString(w, response) //nolint:gosec // The response is served as JSON, not executable HTML.
 }
 
 func withFoundryAPIVersion(runtimeUrl string) (string, error) {

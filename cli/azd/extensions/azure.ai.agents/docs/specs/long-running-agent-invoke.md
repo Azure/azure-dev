@@ -42,7 +42,7 @@ azd ai agent invocations show --protocol invocations --id <invocation-id>
 azd ai agent invocations cancel --protocol invocations --id <invocation-id>
 ```
 
-The Invocations-protocol lifecycle implementation is included in PR #9901. Its existing synchronous, SSE, raw, and `202 Accepted` polling behavior on create is unchanged. Creation captures the ID from `x-agent-invocation-id`, or from the `invocation_id` property of a `202 Accepted` body. The body is preserved for the existing polling and raw-output handlers. Show and cancel use the resolved endpoint/API version, without inheriting session context from the create.
+The Invocations-protocol lifecycle commands preserve the existing synchronous, SSE, raw, and `202 Accepted` polling behavior on create. Creation captures the ID from `x-agent-invocation-id`, or from the `invocation_id` property of a `202 Accepted` body. The body is preserved for the existing polling and raw-output handlers. Show and cancel use the resolved endpoint/API version, without inheriting session context from the create.
 
 ### Protocol selection
 

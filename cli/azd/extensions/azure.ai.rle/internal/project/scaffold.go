@@ -13,9 +13,8 @@ import (
 )
 
 const (
-	openEnvRepoUrl        = "https://github.com/huggingface/OpenEnv.git"
-	openEnvRepoRef        = "main"
-	openEnvEchoSamplePath = "envs/echo_env"
+	openEnvRepoUrl = "https://github.com/huggingface/OpenEnv.git"
+	openEnvRepoRef = "main"
 )
 
 func createRleSessionDir(name string, dest string, force bool) (string, error) {
@@ -41,15 +40,12 @@ func createRleSessionDir(name string, dest string, force bool) (string, error) {
 	return sessionDir, nil
 }
 
-func CheckoutOpenEnvEchoSample(name string, dest string, force bool) (string, error) {
+func CheckoutOpenEnvEnvironment(name string, dest string, force bool) (string, error) {
 	name, err := ValidateEnvironmentName(name)
 	if err != nil {
 		return "", err
 	}
-	sessionDir, err := createRleSessionDir(name, dest, force)
-	if err != nil {
-		return "", err
-	}
+	sourcePath := openEnvEnvironmentPath(name)
 	tempDir, err := os.MkdirTemp("", "azd-rle-open-env-*")
 	if err != nil {
 		return "", err
@@ -69,15 +65,37 @@ func CheckoutOpenEnvEchoSample(name string, dest string, force bool) (string, er
 	); err != nil {
 		return "", err
 	}
-	if err := runGitCheckout("-C", tempDir, "sparse-checkout", "set", openEnvEchoSamplePath); err != nil {
+	if err := runGitCheckout("-C", tempDir, "sparse-checkout", "set", sourcePath); err != nil {
 		return "", err
 	}
 
-	sourceDir := filepath.Join(tempDir, filepath.FromSlash(openEnvEchoSamplePath))
+	sourceDir := filepath.Join(tempDir, filepath.FromSlash(sourcePath))
+	return copyOpenEnvEnvironment(sourceDir, name, dest, force)
+}
+
+func copyOpenEnvEnvironment(sourceDir string, name string, dest string, force bool) (string, error) {
+	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
+		return "", &azdext.LocalError{
+			Message:    fmt.Sprintf("OpenEnv environment %q was not found.", name),
+			Code:       "rle_open_env_environment_not_found",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: fmt.Sprintf("Choose an environment from %s/tree/%s/envs.", strings.TrimSuffix(openEnvRepoUrl, ".git"), openEnvRepoRef),
+		}
+	} else if err != nil {
+		return "", err
+	}
+	sessionDir, err := createRleSessionDir(name, dest, force)
+	if err != nil {
+		return "", err
+	}
 	if err := copyDirectory(sourceDir, sessionDir); err != nil {
 		return "", err
 	}
 	return sessionDir, nil
+}
+
+func openEnvEnvironmentPath(name string) string {
+	return "envs/" + name
 }
 
 func runGitCheckout(args ...string) error {
@@ -89,12 +107,12 @@ func runGitCheckout(args ...string) error {
 			Suggestion: "Install Git, then retry azd ai rle init.",
 		}
 	}
-	process := exec.Command("git", args...) //nolint:gosec // args are fixed by init's OpenEnv sample checkout flow.
+	process := exec.Command("git", args...) //nolint:gosec // Arguments are passed directly; the user value is validated as an environment name.
 	process.Env = os.Environ()
 	output, err := process.CombinedOutput()
 	if err != nil {
 		return &azdext.LocalError{
-			Message:    fmt.Sprintf("Failed to checkout OpenEnv echo sample: %v", err),
+			Message:    fmt.Sprintf("Failed to checkout OpenEnv environment: %v", err),
 			Code:       "rle_open_env_checkout_failed",
 			Category:   azdext.LocalErrorCategoryUser,
 			Suggestion: strings.TrimSpace(string(output)),

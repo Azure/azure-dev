@@ -92,11 +92,14 @@ The default echo session downloads the Hugging Face `OpenEnv` repo, copies `envs
 
 The copied session does not keep `.git` metadata from the upstream repository.
 
-Name the copied echo session:
+Copy another environment from the OpenEnv `envs` catalog:
 
 ```powershell
-azd ai rle init code_rl
+azd ai rle init chess_env
+cd .\chess_env
 ```
+
+The positional name selects `envs/<environment-name>` from OpenEnv and is also used for the local session directory and RLE environment name.
 
 For an existing source folder, skip `init` and run commands directly from that folder.
 

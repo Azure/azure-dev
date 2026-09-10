@@ -242,7 +242,7 @@ func TestLifecycleCommandsRejectPositionalArguments(t *testing.T) {
 func TestInitCopiesOpenEnvEchoSampleByDefault(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	stubOpenEnvEchoCheckout(t)
+	stubOpenEnvCheckout(t, "echo_env")
 
 	command := newInitCommand()
 	var output bytes.Buffer
@@ -280,13 +280,13 @@ func TestInitCopiesOpenEnvEchoSampleByDefault(t *testing.T) {
 	}
 }
 
-func TestInitUsesPositionalNameForDefaultSample(t *testing.T) {
+func TestInitUsesPositionalNameToSelectOpenEnvEnvironment(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	stubOpenEnvEchoCheckout(t)
+	stubOpenEnvCheckout(t, "chess_env")
 
 	command := newInitCommand()
-	command.SetArgs([]string{"code_rl"})
+	command.SetArgs([]string{"chess_env"})
 	var output bytes.Buffer
 	command.SetOut(&output)
 	command.SetErr(&output)
@@ -294,7 +294,7 @@ func TestInitUsesPositionalNameForDefaultSample(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sessionDir := filepath.Join(tempDir, "code_rl")
+	sessionDir := filepath.Join(tempDir, "chess_env")
 	// The test reads state from its own temporary session directory.
 	stateBytes, err := os.ReadFile(filepath.Join(sessionDir, rleStateFile)) //nolint:gosec
 	if err != nil {
@@ -304,8 +304,8 @@ func TestInitUsesPositionalNameForDefaultSample(t *testing.T) {
 	if err := json.Unmarshal(stateBytes, &state); err != nil {
 		t.Fatal(err)
 	}
-	if state.EnvironmentName != "code_rl" {
-		t.Fatalf("expected code_rl environment name, got %q", state.EnvironmentName)
+	if state.EnvironmentName != "chess_env" {
+		t.Fatalf("expected chess_env environment name, got %q", state.EnvironmentName)
 	}
 }
 
@@ -368,10 +368,13 @@ func TestInitNextStepsUseShellAppropriateSyntax(t *testing.T) {
 	}
 }
 
-func stubOpenEnvEchoCheckout(t *testing.T) {
+func stubOpenEnvCheckout(t *testing.T, expectedName string) {
 	t.Helper()
-	old := checkoutOpenEnvEchoSampleFunc
-	checkoutOpenEnvEchoSampleFunc = func(name string, dest string, force bool) (string, error) {
+	old := checkoutOpenEnvEnvironmentFunc
+	checkoutOpenEnvEnvironmentFunc = func(name string, dest string, force bool) (string, error) {
+		if name != expectedName {
+			t.Fatalf("expected OpenEnv environment %q, got %q", expectedName, name)
+		}
 		sessionDir := filepath.Join(dest, name)
 		if force {
 			if err := os.RemoveAll(sessionDir); err != nil {
@@ -388,12 +391,12 @@ func stubOpenEnvEchoCheckout(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(serverDir, "Dockerfile"), []byte("FROM scratch\n"), 0600); err != nil {
 			return "", err
 		}
-		if err := os.WriteFile(filepath.Join(sessionDir, "openenv.yaml"), []byte("name: echo_env\n"), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(sessionDir, "openenv.yaml"), []byte("name: "+name+"\n"), 0600); err != nil {
 			return "", err
 		}
 		return sessionDir, nil
 	}
 	t.Cleanup(func() {
-		checkoutOpenEnvEchoSampleFunc = old
+		checkoutOpenEnvEnvironmentFunc = old
 	})
 }

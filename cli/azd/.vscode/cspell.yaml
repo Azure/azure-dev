@@ -79,6 +79,7 @@ words:
   - ppid
   - PPID
   - proto
+  - Protos
   - protobuf
   - protoc
   - protoimpl

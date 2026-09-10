@@ -571,11 +571,34 @@ func TestRemoteAgentServiceResolutionError(t *testing.T) {
 		}
 	})
 
-	t.Run("direct name preserves fallback", func(t *testing.T) {
+	t.Run("direct name propagates operational failure", func(t *testing.T) {
 		t.Parallel()
 
-		if err := remoteAgentServiceResolutionError(resolveErr, true); err != nil {
-			t.Errorf("direct name should ignore project resolver failure, got %v", err)
+		err := remoteAgentServiceResolutionError(resolveErr, true)
+		if !errors.Is(err, resolveErr) {
+			t.Errorf("error %q does not wrap resolver error", err)
+		}
+	})
+
+	t.Run("unmapped direct name preserves fallback", func(t *testing.T) {
+		t.Parallel()
+
+		notFoundErr := &deployedAgentServiceNotFoundError{
+			deployedName: "standalone-agent",
+		}
+		if err := remoteAgentServiceResolutionError(notFoundErr, true); err != nil {
+			t.Errorf("unmapped direct name should preserve fallback, got %v", err)
+		}
+	})
+
+	t.Run("missing project service preserves fallback", func(t *testing.T) {
+		t.Parallel()
+
+		notFoundErr := &projectAgentServiceNotFoundError{
+			serviceName: "standalone-agent",
+		}
+		if err := remoteAgentServiceResolutionError(notFoundErr, true); err != nil {
+			t.Errorf("missing project service should preserve fallback, got %v", err)
 		}
 	})
 }
@@ -691,21 +714,69 @@ func TestResolveRemoteContextDirectNameWithoutMatchingServiceSucceeds(t *testing
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", projectURL)
 	stubAzdHostedSources(t, azdHostedSources{}, nil)
 
+	for _, protocol := range []string{"", "responses"} {
+		t.Run("protocol="+protocol, func(t *testing.T) {
+			action := &InvokeAction{
+				flags: &invokeFlags{
+					name:     directName,
+					protocol: protocol,
+				},
+				noPrompt: true,
+			}
+			rc, err := action.resolveRemoteContext(t.Context())
+			if err != nil {
+				t.Fatalf("resolveRemoteContext: %v", err)
+			}
+			defer rc.azdClient.Close()
+
+			if rc.name != directName {
+				t.Errorf("remote name = %q, want direct target %q", rc.name, directName)
+			}
+			if rc.serviceName != "" {
+				t.Errorf("service name = %q, want empty for direct target", rc.serviceName)
+			}
+		})
+	}
+}
+
+func TestResolveRemoteContextDeployedNameLookupErrorFails(t *testing.T) {
+	const (
+		deployedName = "deployed-agent"
+		projectURL   = "https://account.services.ai.azure.com/api/projects/project"
+	)
+
+	projectServer := &helpersProjectServer{
+		project: &azdext.ProjectConfig{
+			Path: t.TempDir(),
+			Services: map[string]*azdext.ServiceConfig{
+				"target-agent": {
+					Name: "target-agent",
+					Host: AiAgentHost,
+				},
+			},
+		},
+	}
+	lookupErr := errors.New("environment values lookup failed")
+	environmentServer := &helpersFailingEnvironmentServer{
+		testEnvironmentServiceServer: testEnvironmentServiceServer{
+			current: &azdext.Environment{Name: "test"},
+		},
+		getValuesErr: lookupErr,
+	}
+	address := newInvokeRemoteContextTestAzdServer(t, projectServer, environmentServer)
+	t.Setenv("AZD_SERVER", address)
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", projectURL)
+
 	action := &InvokeAction{
-		flags:    &invokeFlags{name: directName},
+		flags:    &invokeFlags{name: deployedName},
 		noPrompt: true,
 	}
-	rc, err := action.resolveRemoteContext(t.Context())
-	if err != nil {
-		t.Fatalf("resolveRemoteContext: %v", err)
+	_, err := action.resolveRemoteContext(t.Context())
+	if err == nil {
+		t.Fatal("expected deployed-name lookup error, got nil")
 	}
-	defer rc.azdClient.Close()
-
-	if rc.name != directName {
-		t.Errorf("remote name = %q, want direct target %q", rc.name, directName)
-	}
-	if rc.serviceName != "" {
-		t.Errorf("service name = %q, want empty for direct target", rc.serviceName)
+	if !strings.Contains(err.Error(), lookupErr.Error()) {
+		t.Errorf("error %q does not contain lookup failure %q", err, lookupErr)
 	}
 }
 

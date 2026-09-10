@@ -1156,12 +1156,16 @@ func remoteAgentNameFromService(
 	return currentName
 }
 
-// remoteAgentServiceResolutionError returns resolver failures unless the user
-// supplied an intentional direct agent name. Protocol selection alone is not
-// enough to ignore a project lookup failure when no target name was provided.
+// remoteAgentServiceResolutionError preserves direct-name fallback only when
+// the deployed name is known not to map to a project service.
 func remoteAgentServiceResolutionError(resolveErr error, directNameProvided bool) error {
-	if resolveErr == nil || directNameProvided {
+	if resolveErr == nil {
 		return nil
+	}
+	if directNameProvided {
+		if _, ok := errors.AsType[agentServiceLookupNotFoundError](resolveErr); ok {
+			return nil
+		}
 	}
 	return fmt.Errorf("failed to resolve agent service for remote invoke: %w", resolveErr)
 }

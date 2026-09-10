@@ -813,7 +813,9 @@ func resolveAgentService(
 			}
 		}
 		if svc == nil {
-			return nil, nil, fmt.Errorf("no azure.ai.agent service named '%s' found in azure.yaml", name)
+			return nil, nil, &projectAgentServiceNotFoundError{
+				serviceName: name,
+			}
 		}
 	} else {
 		var agentServices []*azdext.ServiceConfig
@@ -839,6 +841,37 @@ func resolveAgentService(
 
 	return svc, projectResponse.Project, nil
 }
+
+type agentServiceLookupNotFoundError interface {
+	error
+	agentServiceLookupNotFound()
+}
+
+type projectAgentServiceNotFoundError struct {
+	serviceName string
+}
+
+func (e *projectAgentServiceNotFoundError) Error() string {
+	return fmt.Sprintf(
+		"no azure.ai.agent service named '%s' found in azure.yaml",
+		e.serviceName,
+	)
+}
+
+func (e *projectAgentServiceNotFoundError) agentServiceLookupNotFound() {}
+
+type deployedAgentServiceNotFoundError struct {
+	deployedName string
+}
+
+func (e *deployedAgentServiceNotFoundError) Error() string {
+	return fmt.Sprintf(
+		"no azure.ai.agent service resolves to deployed agent %q",
+		e.deployedName,
+	)
+}
+
+func (e *deployedAgentServiceNotFoundError) agentServiceLookupNotFound() {}
 
 func resolveAgentServiceByDeployedName(
 	ctx context.Context,
@@ -892,10 +925,9 @@ func resolveAgentServiceByDeployedName(
 	}
 
 	if matched == nil {
-		return nil, nil, nil, fmt.Errorf(
-			"no azure.ai.agent service resolves to deployed agent %q",
-			deployedName,
-		)
+		return nil, nil, nil, &deployedAgentServiceNotFoundError{
+			deployedName: deployedName,
+		}
 	}
 
 	return matched, projectResponse.Project, envValues, nil

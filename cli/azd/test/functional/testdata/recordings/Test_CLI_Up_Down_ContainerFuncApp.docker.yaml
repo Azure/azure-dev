@@ -1,0 +1,82 @@
+version: "1.0"
+tool: docker
+interactions:
+    - id: 0
+      args:
+        - login
+        - --username
+        - 00000000-0000-0000-0000-000000000000
+        - --password-stdin
+        - acr3byfkdyh5dhvo.azurecr.io
+      exitCode: 0
+      stdout: |
+        Login Succeeded
+      stderr: ""
+    - id: 1
+      args:
+        - push
+        - acr3byfkdyh5dhvo.azurecr.io/container-function/func-azdtest-wf91d1a:azd-deploy-1784915868
+      exitCode: 0
+      stdout: |
+        The push refers to repository [acr3byfkdyh5dhvo.azurecr.io/container-function/func-azdtest-wf91d1a]
+        c8427225874b: Preparing
+        32e32f0e57a8: Preparing
+        9b16a5a245b5: Preparing
+        5f70bf18a086: Preparing
+        5f70bf18a086: Preparing
+        1912a67eea21: Preparing
+        52ac6a498a03: Preparing
+        87968fffff27: Preparing
+        f7aae33d3499: Preparing
+        be5529f9aa77: Preparing
+        d01f68be7f85: Preparing
+        053439d6860e: Preparing
+        db48528e2b54: Preparing
+        8e0965299d5f: Preparing
+        b5dac8c00299: Preparing
+        709f4e02b3ab: Preparing
+        96dbaf1de84d: Preparing
+        763fbc416962: Preparing
+        a240266af777: Preparing
+        c2ce5139d8fc: Preparing
+        1f88eb931b94: Preparing
+        b05a96227958: Preparing
+        b5dac8c00299: Waiting
+        709f4e02b3ab: Waiting
+        96dbaf1de84d: Waiting
+        763fbc416962: Waiting
+        a240266af777: Waiting
+        c2ce5139d8fc: Waiting
+        1f88eb931b94: Waiting
+        b05a96227958: Waiting
+        87968fffff27: Waiting
+        f7aae33d3499: Waiting
+        053439d6860e: Waiting
+        be5529f9aa77: Waiting
+        d01f68be7f85: Waiting
+        db48528e2b54: Waiting
+        52ac6a498a03: Waiting
+        8e0965299d5f: Waiting
+        9b16a5a245b5: Pushed
+        c8427225874b: Pushed
+        5f70bf18a086: Pushed
+        32e32f0e57a8: Pushed
+        52ac6a498a03: Pushed
+        be5529f9aa77: Pushed
+        d01f68be7f85: Pushed
+        f7aae33d3499: Pushed
+        053439d6860e: Pushed
+        db48528e2b54: Pushed
+        8e0965299d5f: Pushed
+        87968fffff27: Pushed
+        763fbc416962: Pushed
+        709f4e02b3ab: Pushed
+        c2ce5139d8fc: Pushed
+        96dbaf1de84d: Pushed
+        1912a67eea21: Pushed
+        a240266af777: Pushed
+        1f88eb931b94: Pushed
+        b05a96227958: Pushed
+        b5dac8c00299: Pushed
+        azd-deploy-1784915868: digest: sha256:d57a559cd4aee4066f64fa5b715262bb3bf3ae047c6c10275dd827792e1b399e size: 4928
+      stderr: ""

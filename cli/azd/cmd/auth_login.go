@@ -33,7 +33,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 // The parent of the login command.
@@ -378,11 +377,11 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if !isServicePrincipalOrMI {
 		if _, err := la.authManager.LogInDetails(ctx); !errors.Is(err, auth.ErrNoCurrentUser) {
 			if err := la.authManager.CleanAllAuthCache(); err != nil {
-				tracing.SetUsageAttributes(attribute.String("auth.cache_clear_failed", "auth"))
+				tracing.SetUsageAttributes(fields.AuthCacheClearFailedKey.String("auth"))
 				return nil, fmt.Errorf("clearing auth cache: %w", err)
 			}
 			if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
-				tracing.SetUsageAttributes(attribute.String("auth.cache_clear_failed", "subscriptions"))
+				tracing.SetUsageAttributes(fields.AuthCacheClearFailedKey.String("subscriptions"))
 				return nil, fmt.Errorf("clearing subscriptions cache: %w", err)
 			}
 		}

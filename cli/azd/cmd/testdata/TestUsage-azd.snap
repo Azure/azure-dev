@@ -14,7 +14,7 @@ Commands
     deploy      	: Deploy your project code to Azure.
     down        	: Delete your project's Azure resources.
     provision   	: Provision Azure resources for your project.
-    publish     	: Publish a service to a container registry.
+    publish     	: Publish a service image or reuse an existing passthrough image.
 
   Manage and show settings
     completion  	: Generate shell completion scripts.
@@ -54,7 +54,7 @@ Flags
     -C, --cwd string         	: Sets the current working directory.
         --debug              	: Enables debugging and diagnostics logging.
     -e, --environment string 	: The name of the environment to use.
-        --no-prompt          	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+        --no-prompt          	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically. Automatically enabled when azd detects a CI/CD or AI-agent environment; set AZD_NON_INTERACTIVE=false to opt out of that automatic enablement.
 
 Global Flags
         --docs 	: Opens the documentation for azd in your web browser.

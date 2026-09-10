@@ -16,6 +16,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
 
+func newTestCopilotCLI(t *testing.T, mockContext *mocks.MockContext) (*CopilotCLI, string) {
+	t.Helper()
+	testCopilotCLIPath := filepath.Join(t.TempDir(), "copilot")
+	t.Setenv("AZD_COPILOT_CLI_PATH", testCopilotCLIPath)
+	return &CopilotCLI{runner: mockContext.CommandRunner}, testCopilotCLIPath
+}
+
 func TestCopilotCLIPath(t *testing.T) {
 	path, err := copilotCLIPath()
 	require.NoError(t, err)
@@ -96,20 +103,16 @@ func TestConfigKeyComposition(t *testing.T) {
 
 func TestCopilotCLI_ListPlugins(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
+	cli, testCopilotCLIPath := newTestCopilotCLI(t, mockContext)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return args.Cmd == "copilot" && len(args.Args) >= 2 &&
+		return args.Cmd == testCopilotCLIPath && len(args.Args) >= 2 &&
 			args.Args[0] == "plugin" && args.Args[1] == "list"
 	}).Respond(exec.NewRunResult(
 		0,
 		"Installed plugins:\n  • azure (v1.0.1)\n  • wbreza-skills (v1.0.0)\n",
 		"",
 	))
-
-	cli := &CopilotCLI{
-		runner: mockContext.CommandRunner,
-		path:   "copilot", // simulate already resolved
-	}
 
 	installed, err := cli.ListPlugins(*mockContext.Context)
 	require.NoError(t, err)
@@ -120,20 +123,16 @@ func TestCopilotCLI_ListPlugins(t *testing.T) {
 
 func TestCopilotCLI_ListPlugins_Empty(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
+	cli, testCopilotCLIPath := newTestCopilotCLI(t, mockContext)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return args.Cmd == "copilot" && len(args.Args) >= 2 &&
+		return args.Cmd == testCopilotCLIPath && len(args.Args) >= 2 &&
 			args.Args[0] == "plugin" && args.Args[1] == "list"
 	}).Respond(exec.NewRunResult(
 		0,
 		"Installed plugins:\n",
 		"",
 	))
-
-	cli := &CopilotCLI{
-		runner: mockContext.CommandRunner,
-		path:   "copilot",
-	}
 
 	installed, err := cli.ListPlugins(*mockContext.Context)
 	require.NoError(t, err)
@@ -142,17 +141,13 @@ func TestCopilotCLI_ListPlugins_Empty(t *testing.T) {
 
 func TestCopilotCLI_ListPlugins_Error(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
+	cli, testCopilotCLIPath := newTestCopilotCLI(t, mockContext)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return args.Cmd == "copilot"
+		return args.Cmd == testCopilotCLIPath
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(1, "", "command not found"), &exec.ExitError{ExitCode: 1}
 	})
-
-	cli := &CopilotCLI{
-		runner: mockContext.CommandRunner,
-		path:   "copilot",
-	}
 
 	installed, err := cli.ListPlugins(*mockContext.Context)
 	require.Error(t, err)
@@ -162,20 +157,16 @@ func TestCopilotCLI_ListPlugins_Error(t *testing.T) {
 
 func TestCopilotCLI_InstallPlugin(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
+	cli, testCopilotCLIPath := newTestCopilotCLI(t, mockContext)
 
 	var capturedArgs []string
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return args.Cmd == "copilot" && len(args.Args) >= 3 &&
+		return args.Cmd == testCopilotCLIPath && len(args.Args) >= 3 &&
 			args.Args[0] == "plugin" && args.Args[1] == "install"
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		capturedArgs = args.Args
 		return exec.NewRunResult(0, "Plugin \"azure\" installed successfully.", ""), nil
 	})
-
-	cli := &CopilotCLI{
-		runner: mockContext.CommandRunner,
-		path:   "copilot",
-	}
 
 	err := cli.InstallPlugin(*mockContext.Context, "microsoft/GitHub-Copilot-for-Azure:plugin")
 	require.NoError(t, err)
@@ -184,17 +175,13 @@ func TestCopilotCLI_InstallPlugin(t *testing.T) {
 
 func TestCopilotCLI_InstallPlugin_Error(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
+	cli, testCopilotCLIPath := newTestCopilotCLI(t, mockContext)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return args.Cmd == "copilot"
+		return args.Cmd == testCopilotCLIPath
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(1, "", "network error"), &exec.ExitError{ExitCode: 1}
 	})
-
-	cli := &CopilotCLI{
-		runner: mockContext.CommandRunner,
-		path:   "copilot",
-	}
 
 	err := cli.InstallPlugin(*mockContext.Context, "some/plugin")
 	require.Error(t, err)
@@ -212,21 +199,17 @@ func TestCopilotCLI_PathOverride(t *testing.T) {
 
 func TestCopilotCLI_Login(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
+	cli, testCopilotCLIPath := newTestCopilotCLI(t, mockContext)
 
 	var capturedArgs []string
 	var capturedInteractive bool
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return args.Cmd == "copilot" && len(args.Args) >= 1 && args.Args[0] == "login"
+		return args.Cmd == testCopilotCLIPath && len(args.Args) >= 1 && args.Args[0] == "login"
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		capturedArgs = args.Args
 		capturedInteractive = args.Interactive
 		return exec.NewRunResult(0, "Authentication complete.", ""), nil
 	})
-
-	cli := &CopilotCLI{
-		runner: mockContext.CommandRunner,
-		path:   "copilot",
-	}
 
 	err := cli.Login(*mockContext.Context)
 	require.NoError(t, err)
@@ -236,17 +219,13 @@ func TestCopilotCLI_Login(t *testing.T) {
 
 func TestCopilotCLI_Login_Error(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
+	cli, testCopilotCLIPath := newTestCopilotCLI(t, mockContext)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return args.Cmd == "copilot"
+		return args.Cmd == testCopilotCLIPath
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(1, "", "auth failed"), &exec.ExitError{ExitCode: 1}
 	})
-
-	cli := &CopilotCLI{
-		runner: mockContext.CommandRunner,
-		path:   "copilot",
-	}
 
 	err := cli.Login(*mockContext.Context)
 	require.Error(t, err)
@@ -391,12 +370,11 @@ func TestCopilotCLI_ListPlugins_FallbackToDirectoryScan(t *testing.T) {
 	))
 
 	mockContext := mocks.NewMockContext(t.Context())
+	cli, testCopilotCLIPath := newTestCopilotCLI(t, mockContext)
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return args.Cmd == "copilot" && len(args.Args) >= 2 &&
+		return args.Cmd == testCopilotCLIPath && len(args.Args) >= 2 &&
 			args.Args[0] == "plugin" && args.Args[1] == "list"
 	}).Respond(exec.NewRunResult(0, "No plugins installed\n", ""))
-
-	cli := &CopilotCLI{runner: mockContext.CommandRunner, path: "copilot"}
 
 	got, err := cli.ListPlugins(*mockContext.Context)
 	require.NoError(t, err)

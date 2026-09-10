@@ -12,20 +12,61 @@ import (
 
 // envVarPattern maps environment variables to agent types.
 type envVarPattern struct {
-	envVar    string
-	agentType AgentType
+	envVar        string
+	expectedValue string
+	agentType     AgentType
 }
 
 // knownEnvVarPatterns defines environment variables that indicate known AI agents.
 // These are checked in order, so more specific patterns should come first.
 var knownEnvVarPatterns = []envVarPattern{
+	// AI_AGENT identifies the active host and takes precedence over generic markers inherited
+	// from a parent agent process.
+	{
+		envVar:        "AI_AGENT",
+		expectedValue: "github_copilot_app_agent",
+		agentType:     AgentTypeGitHubCopilotApp,
+	},
+	{
+		envVar:        "AI_AGENT",
+		expectedValue: "github_copilot_vscode_agent",
+		agentType:     AgentTypeGitHubCopilotVSCode,
+	},
+	{
+		envVar:        "AI_AGENT",
+		expectedValue: "github_copilot_cloud_agent",
+		agentType:     AgentTypeGitHubCopilotCloudAgent,
+	},
+	{
+		envVar:        "AI_AGENT",
+		expectedValue: "pi",
+		agentType:     AgentTypePi,
+	},
+
+	// Session-scoped Codex and Cursor markers take precedence over Claude markers
+	// that may be inherited by nested tools.
+	// Codex - OpenAI's coding agent
+	{
+		envVar:        "CODEX_INTERNAL_ORIGINATOR_OVERRIDE",
+		expectedValue: "Codex Desktop",
+		agentType:     AgentTypeCodexDesktop,
+	},
+	{envVar: "CODEX_CI", expectedValue: "1", agentType: AgentTypeCodex},
+	{envVar: "CODEX_THREAD_ID", agentType: AgentTypeCodex},
+	{envVar: "CODEX_SESSION_ID", agentType: AgentTypeCodex},
+
+	// Cursor - Cursor's coding agent
+	{envVar: "CURSOR_AGENT", expectedValue: "1", agentType: AgentTypeCursor},
+	{envVar: "CURSOR_CONVERSATION_ID", agentType: AgentTypeCursor},
+
+	// Google Antigravity CLI
+	{envVar: "ANTIGRAVITY_AGENT", expectedValue: "1", agentType: AgentTypeAntigravity},
+	{envVar: "ANTIGRAVITY_CONVERSATION_ID", agentType: AgentTypeAntigravity},
+
 	// Claude Code - Anthropic's coding agent
-	{envVar: "CLAUDE_CODE", agentType: AgentTypeClaudeCode},
-	{envVar: "CLAUDE_CODE_ENTRYPOINT", agentType: AgentTypeClaudeCode},
+	{envVar: "CLAUDECODE", expectedValue: "1", agentType: AgentTypeClaudeCode},
 
 	// GitHub Copilot CLI
-	{envVar: "GITHUB_COPILOT_CLI", agentType: AgentTypeGitHubCopilotCLI},
-	{envVar: "GH_COPILOT", agentType: AgentTypeGitHubCopilotCLI},
 	{envVar: "COPILOT_CLI", agentType: AgentTypeGitHubCopilotCLI},
 
 	// Google Gemini CLI
@@ -39,18 +80,38 @@ var knownEnvVarPatterns = []envVarPattern{
 // detectFromEnvVars checks for known AI agent environment variables.
 func detectFromEnvVars() AgentInfo {
 	for _, pattern := range knownEnvVarPatterns {
-		if _, exists := os.LookupEnv(pattern.envVar); exists {
-			return AgentInfo{
-				Type:     pattern.agentType,
-				Name:     pattern.agentType.DisplayName(),
-				Source:   DetectionSourceEnvVar,
-				Detected: true,
-				Details:  pattern.envVar,
-			}
+		value, exists := os.LookupEnv(pattern.envVar)
+		if !exists || value == "" || (pattern.expectedValue != "" && value != pattern.expectedValue) {
+			continue
+		}
+
+		agentType := refineAgentTypeFromEnv(pattern.agentType)
+		return AgentInfo{
+			Type:     agentType,
+			Name:     agentType.DisplayName(),
+			Source:   DetectionSourceEnvVar,
+			Detected: true,
+			Details:  pattern.envVar,
 		}
 	}
 
 	return NoAgent()
+}
+
+// refineAgentTypeFromEnv applies bounded host-specific refinements after an agent has been detected.
+func refineAgentTypeFromEnv(agentType AgentType) AgentType {
+	if agentType != AgentTypeClaudeCode {
+		return agentType
+	}
+
+	switch os.Getenv("CLAUDE_CODE_ENTRYPOINT") {
+	case "claude-desktop":
+		return AgentTypeClaudeCodeDesktop
+	case "claude-vscode":
+		return AgentTypeClaudeCodeVSCode
+	default:
+		return agentType
+	}
 }
 
 // userAgentPatterns maps user agent substrings to agent types.
@@ -59,12 +120,13 @@ var userAgentPatterns = []struct {
 	substring string
 	agentType AgentType
 }{
-	// VS Code GitHub Copilot extension
+	// GitHub Copilot for Azure extension in VS Code
 	{substring: internal.VsCodeAzureCopilotAgentPrefix, agentType: AgentTypeVSCodeCopilot},
 	{substring: "github-copilot", agentType: AgentTypeGitHubCopilotCLI},
 	{substring: "copilot-cli", agentType: AgentTypeGitHubCopilotCLI},
 	{substring: "claude-code", agentType: AgentTypeClaudeCode},
 	{substring: "claude", agentType: AgentTypeClaudeCode},
+	{substring: "antigravity-cli", agentType: AgentTypeAntigravity},
 	{substring: "gemini", agentType: AgentTypeGemini},
 	{substring: "opencode", agentType: AgentTypeOpenCode},
 }

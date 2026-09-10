@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -21,6 +22,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -55,9 +57,24 @@ func TestInitCommand_ForceFlag(t *testing.T) {
 	}
 }
 
+func TestInitCommand_AcrConnectionFlag(t *testing.T) {
+	cmd := newInitCommand(nil)
+
+	flag := cmd.Flags().Lookup("acr-connection")
+	require.NotNil(t, flag)
+	require.Empty(t, flag.Shorthand)
+	require.Empty(t, flag.DefValue)
+}
+
 // TestHasFoundryProviderDeclared covers the predicate ensureProject
 // uses to suppress the "missing infra/" warning.
 func TestHasFoundryProviderDeclared(t *testing.T) {
+	layeredProject := func(t *testing.T, filename, body string) *azdext.ProjectConfig {
+		t.Helper()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, filename), []byte(body), 0o600))
+		return &azdext.ProjectConfig{Path: dir, Infra: &azdext.InfraOptions{Provider: "bicep"}}
+	}
 	cases := []struct {
 		name string
 		proj *azdext.ProjectConfig
@@ -78,6 +95,32 @@ func TestHasFoundryProviderDeclared(t *testing.T) {
 		{
 			name: "matches",
 			proj: &azdext.ProjectConfig{Infra: &azdext.InfraOptions{Provider: project.FoundryProviderName}},
+			want: true,
+		},
+		{
+			name: "bicep eject layer is not foundry provider",
+			proj: layeredProject(t, "azure.yaml", `name: test
+infra:
+  layers:
+    - name: app
+      path: infra/app
+      provider: bicep
+    - name: foundry
+      path: infra/foundry
+      provider: bicep
+`),
+			want: false,
+		},
+		{
+			name: "foundry layer in azure.yml",
+			proj: layeredProject(t, "azure.yml", `name: test
+infra:
+  provider: bicep
+  layers:
+    - name: foundry
+      path: infra/foundry
+      provider: microsoft.foundry
+`),
 			want: true,
 		},
 	}
@@ -216,6 +259,224 @@ func TestValidateImageFlag(t *testing.T) {
 	}
 }
 
+func TestValidateRegistryConnectionFlag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		connection   string
+		image        string
+		hasManifest  bool
+		deployMode   string
+		kind         string
+		wantContains string
+	}{
+		{name: "unset"},
+		{name: "generic registry image", connection: "private-registry", image: "registry.example.com/org/agent:v1"},
+		{name: "manifest image deferred", connection: "private-registry", hasManifest: true},
+		{name: "missing image", connection: "private-registry", wantContains: "requires --image"},
+		{
+			name: "code deploy", connection: "private-registry", image: "registry.example.com/agent:v1",
+			deployMode: "code", wantContains: "code",
+		},
+		{
+			name: "managed kind", connection: "private-registry", image: "registry.example.com/agent:v1",
+			kind: "prompt-voice", wantContains: "hosted container",
+		},
+		{name: "whitespace", connection: "  ", image: "registry.example.com/agent:v1", wantContains: "cannot be empty"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateRegistryConnectionFlag(
+				tt.connection, tt.image, tt.hasManifest, tt.deployMode, tt.kind,
+			)
+			if tt.wantContains == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tt.wantContains)
+		})
+	}
+}
+
+func TestApplyAndValidateRegistryConnection(t *testing.T) {
+	t.Parallel()
+
+	manifest := func(image, connection string) *agent_yaml.AgentManifest {
+		return &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{
+			Image: image, RegistryConnectionID: connection,
+		}}
+	}
+
+	t.Run("flag overrides manifest and preserves arbitrary registry", func(t *testing.T) {
+		t.Parallel()
+		agentManifest := manifest("registry.example.com/org/agent:v1", "manifest-connection")
+		action := &InitAction{flags: &initFlags{registryConnection: "flag-connection"}}
+		require.NoError(t, action.applyAndValidateRegistryConnection(agentManifest))
+		require.Equal(t, "flag-connection", action.flags.registryConnection)
+		require.Equal(t, "flag-connection",
+			agentManifest.Template.(agent_yaml.ContainerAgent).RegistryConnectionID)
+	})
+
+	t.Run("manifest connection is preserved", func(t *testing.T) {
+		t.Parallel()
+		agentManifest := manifest("registry.example.com/org/agent:v1", "manifest-connection")
+		action := &InitAction{flags: &initFlags{}}
+		require.NoError(t, action.applyAndValidateRegistryConnection(agentManifest))
+		require.Empty(t, action.flags.registryConnection,
+			"a manifest-authored connection must not be recorded as an explicit CLI flag")
+		require.Equal(t, "manifest-connection",
+			agentManifest.Template.(agent_yaml.ContainerAgent).RegistryConnectionID)
+	})
+
+	t.Run("missing image is rejected", func(t *testing.T) {
+		t.Parallel()
+		action := &InitAction{flags: &initFlags{registryConnection: "private-registry"}}
+		require.ErrorContains(t,
+			action.applyAndValidateRegistryConnection(manifest("", "")),
+			"requires a pre-built image")
+	})
+
+	t.Run("unqualified manifest image is rejected", func(t *testing.T) {
+		t.Parallel()
+		action := &InitAction{flags: &initFlags{registryConnection: "private-registry"}}
+		require.ErrorContains(t,
+			action.applyAndValidateRegistryConnection(manifest("agent:v1", "")),
+			"must be in format registry/image[:tag]")
+	})
+
+	t.Run("code deploy is rejected", func(t *testing.T) {
+		t.Parallel()
+		action := &InitAction{
+			flags:        &initFlags{registryConnection: "private-registry"},
+			isCodeDeploy: true,
+		}
+		require.ErrorContains(t,
+			action.applyAndValidateRegistryConnection(manifest("registry.example.com/agent:v1", "")),
+			"code deploy")
+	})
+}
+
+func TestInitCommandRegistersRegistryConnectionFlag(t *testing.T) {
+	t.Parallel()
+
+	cmd := newInitCommand(&azdext.ExtensionContext{})
+	flag := cmd.Flags().Lookup("registry-connection")
+	require.NotNil(t, flag)
+	require.Equal(t, "", flag.DefValue)
+}
+
+func TestRequestedDeployModeForManifest(t *testing.T) {
+	t.Parallel()
+
+	codeAgent := agent_yaml.ContainerAgent{
+		CodeConfiguration: &agent_yaml.CodeConfiguration{},
+	}
+	containerAgent := agent_yaml.ContainerAgent{}
+
+	tests := []struct {
+		name           string
+		flagMode       string
+		flagConnection string
+		agent          agent_yaml.ContainerAgent
+		wantMode       string
+		wantErr        string
+	}{
+		{name: "unspecified container manifest", agent: containerAgent},
+		{name: "code manifest", agent: codeAgent, wantMode: "code"},
+		{
+			name: "manifest image selects container", agent: agent_yaml.ContainerAgent{
+				Image: "registry.example.com/team/agent:v1",
+			}, wantMode: "container",
+		},
+		{
+			name: "authored code config precedes manifest image", agent: agent_yaml.ContainerAgent{
+				CodeConfiguration: &agent_yaml.CodeConfiguration{},
+				Image:             "registry.example.com/team/agent:v1",
+			}, wantMode: "code",
+		},
+		{
+			name: "manifest registry selects container", agent: agent_yaml.ContainerAgent{
+				RegistryConnectionID: "private-registry",
+			}, wantMode: "container",
+		},
+		{
+			name: "flag registry selects container", agent: containerAgent,
+			flagConnection: "private-registry", wantMode: "container",
+		},
+		{
+			name: "code manifest rejects manifest registry", agent: agent_yaml.ContainerAgent{
+				CodeConfiguration:    &agent_yaml.CodeConfiguration{},
+				RegistryConnectionID: "private-registry",
+			}, wantErr: "cannot be used with code deploy",
+		},
+		{
+			name: "code manifest rejects flag registry", agent: codeAgent,
+			flagConnection: "private-registry", wantErr: "cannot be used with code deploy",
+		},
+		{
+			name: "explicit container overrides code manifest with registry", agent: agent_yaml.ContainerAgent{
+				CodeConfiguration:    &agent_yaml.CodeConfiguration{},
+				RegistryConnectionID: "private-registry",
+			}, flagMode: "container", wantMode: "container",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			mode, err := requestedDeployModeForManifest(
+				test.flagMode, test.flagConnection, test.agent,
+			)
+			if test.wantErr != "" {
+				require.ErrorContains(t, err, test.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, test.wantMode, mode)
+		})
+	}
+}
+
+func TestManifestDeclaresRegistryConnection(t *testing.T) {
+	t.Parallel()
+
+	manifest := &agent_yaml.AgentManifest{
+		Template: agent_yaml.ContainerAgent{RegistryConnectionID: "Private Registry"},
+		Resources: []any{agent_yaml.ConnectionResource{
+			Resource: agent_yaml.Resource{Name: "Private Registry"},
+		}},
+	}
+
+	require.Equal(t, "Private Registry", registryConnectionForManifest("", manifest))
+	require.Equal(t, "flag-registry", registryConnectionForManifest("flag-registry", manifest))
+	require.True(t, manifestDeclaresConnection(manifest, "Private Registry"))
+	require.False(t, manifestDeclaresConnection(manifest, "private-registry"),
+		"matching must use the Foundry connection name, not the sanitized service key")
+	require.False(t, manifestDeclaresConnection(manifest, "external-registry"))
+}
+
+func TestVerifyRegistryConnectionSkipsManifestSibling(t *testing.T) {
+	t.Parallel()
+
+	manifest := &agent_yaml.AgentManifest{
+		Template: agent_yaml.ContainerAgent{RegistryConnectionID: "private-registry"},
+		Resources: []any{agent_yaml.ConnectionResource{
+			Resource: agent_yaml.Resource{Name: "private-registry"},
+		}},
+	}
+	action := &InitAction{
+		flags:                  &initFlags{},
+		selectedFoundryProject: &FoundryProjectInfo{},
+	}
+	require.NoError(t, action.verifyRegistryConnection(t.Context(), manifest))
+
+	action.flags.registryConnection = "private-registry"
+	require.NoError(t, action.verifyRegistryConnection(t.Context(), manifest))
+}
+
 func TestPreBuiltImageForInit(t *testing.T) {
 	t.Parallel()
 
@@ -264,10 +525,13 @@ func TestSkipACR(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		isCodeDeploy bool
-		image        string
-		want         bool
+		name               string
+		isCodeDeploy       bool
+		image              string
+		registryConnection string
+		usesPreBuiltImage  bool
+		isVoiceAgent       bool
+		want               bool
 	}{
 		{
 			name:         "code deploy skips ACR",
@@ -288,6 +552,23 @@ func TestSkipACR(t *testing.T) {
 			want:         true,
 		},
 		{
+			name:               "registry connection skips ACR",
+			registryConnection: "private-registry",
+			want:               true,
+		},
+		{
+			name:              "manifest image skips ACR",
+			usesPreBuiltImage: true,
+			want:              true,
+		},
+		{
+			name:         "voice agent skips ACR",
+			isCodeDeploy: false,
+			image:        "",
+			isVoiceAgent: true,
+			want:         true,
+		},
+		{
 			name:         "neither set does not skip ACR",
 			isCodeDeploy: false,
 			image:        "",
@@ -300,11 +581,58 @@ func TestSkipACR(t *testing.T) {
 			t.Parallel()
 
 			action := &InitAction{
-				isCodeDeploy: tt.isCodeDeploy,
-				flags:        &initFlags{image: tt.image},
+				isCodeDeploy:      tt.isCodeDeploy,
+				usesPreBuiltImage: tt.usesPreBuiltImage,
+				isVoiceAgent:      tt.isVoiceAgent,
+				flags: &initFlags{
+					image:              tt.image,
+					registryConnection: tt.registryConnection,
+				},
 			}
 
 			require.Equal(t, tt.want, action.skipACR())
+		})
+	}
+}
+
+// TestIsHostedAgent verifies that isHostedAgent is decoupled from skipACR: a
+// voice agent skips ACR but is not a hosted agent, so it must not be treated as
+// hosted for region filtering.
+func TestIsHostedAgent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name               string
+		isCodeDeploy       bool
+		image              string
+		registryConnection string
+		usesPreBuiltImage  bool
+		isVoiceAgent       bool
+		want               bool
+	}{
+		{name: "code deploy is hosted", isCodeDeploy: true, want: true},
+		{name: "image is hosted", image: "myacr.azurecr.io/agent:v1", want: true},
+		{name: "registry connection is hosted", registryConnection: "private-registry", want: true},
+		{name: "manifest image is hosted", usesPreBuiltImage: true, want: true},
+		{name: "voice is not hosted", isVoiceAgent: true, want: false},
+		{name: "plain container is not hosted", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			action := &InitAction{
+				isCodeDeploy:      tt.isCodeDeploy,
+				usesPreBuiltImage: tt.usesPreBuiltImage,
+				isVoiceAgent:      tt.isVoiceAgent,
+				flags: &initFlags{
+					image:              tt.image,
+					registryConnection: tt.registryConnection,
+				},
+			}
+
+			require.Equal(t, tt.want, action.isHostedAgent())
 		})
 	}
 }
@@ -316,7 +644,7 @@ func TestSynthesizeImageManifestFile(t *testing.T) {
 	const image = "myacr.azurecr.io/agents/my-agent@sha256:" +
 		"76a9463463acf11d4068e8468fb232a3de0709177b6b35de95de6a34b33fa686"
 
-	manifestPath, cleanup, err := synthesizeImageManifestFile(agentName, image)
+	manifestPath, cleanup, err := synthesizeImageManifestFile(agentName, image, nil)
 	require.NoError(t, err)
 	require.NotNil(t, cleanup)
 	require.FileExists(t, manifestPath)
@@ -343,53 +671,196 @@ func TestSynthesizeImageManifestFile(t *testing.T) {
 	require.NoFileExists(t, manifestPath)
 }
 
-func TestAddToProjectPreBuiltImageWritesServiceImage(t *testing.T) {
+func TestSynthesizeImageManifestFile_UsesFlagProtocols(t *testing.T) {
+	t.Parallel()
+
+	const agentName = "my-agent"
 	const image = "myacr.azurecr.io/agents/my-agent:v1"
+
+	manifestPath, cleanup, err := synthesizeImageManifestFile(agentName, image, []string{"invocations_ws"})
+	require.NoError(t, err)
+	defer cleanup()
+
+	content, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+	template, err := agent_yaml.ExtractAgentDefinition(content)
+	require.NoError(t, err)
+
+	containerAgent, ok := template.(agent_yaml.ContainerAgent)
+	require.True(t, ok, "synthesized template should be a ContainerAgent, got %T", template)
+	require.Len(t, containerAgent.Protocols, 1)
+	require.Equal(t, "invocations_ws", containerAgent.Protocols[0].Protocol)
+	require.Equal(t, "2.0.0", containerAgent.Protocols[0].Version)
+}
+
+func TestSynthesizeImageManifestFile_UsesInvocationsProtocol(t *testing.T) {
+	t.Parallel()
+
+	const agentName = "my-agent"
+	const image = "myacr.azurecr.io/agents/my-agent:v1"
+
+	manifestPath, cleanup, err := synthesizeImageManifestFile(agentName, image, []string{"invocations"})
+	require.NoError(t, err)
+	defer cleanup()
+
+	content, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+	template, err := agent_yaml.ExtractAgentDefinition(content)
+	require.NoError(t, err)
+
+	containerAgent, ok := template.(agent_yaml.ContainerAgent)
+	require.True(t, ok, "synthesized template should be a ContainerAgent, got %T", template)
+	require.Equal(t, []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "invocations", Version: "2.0.0"},
+	}, containerAgent.Protocols)
+}
+
+func TestSynthesizeImageManifestFile_RejectsUnknownProtocol(t *testing.T) {
+	t.Parallel()
+
+	manifestPath, cleanup, err := synthesizeImageManifestFile(
+		"my-agent",
+		"myacr.azurecr.io/agents/my-agent:v1",
+		[]string{"unknown"},
+	)
+	require.Error(t, err)
+	require.Empty(t, manifestPath)
+	cleanup()
+	require.Contains(t, err.Error(), "unknown protocol")
+}
+
+func TestSynthesizeImageManifestFile_AcceptsActivityProtocol(t *testing.T) {
+	t.Parallel()
+
+	manifestPath, cleanup, err := synthesizeImageManifestFile(
+		"my-agent",
+		"myacr.azurecr.io/agents/my-agent:v1",
+		[]string{"activity"},
+	)
+	require.NoError(t, err)
+	defer cleanup()
+
+	content, err := os.ReadFile(manifestPath)
+	require.NoError(t, err)
+	template, err := agent_yaml.ExtractAgentDefinition(content)
+	require.NoError(t, err)
+
+	containerAgent, ok := template.(agent_yaml.ContainerAgent)
+	require.True(t, ok, "synthesized template should be a ContainerAgent, got %T", template)
+	require.Equal(t, []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "activity", Version: "2.0.0"},
+	}, containerAgent.Protocols)
+}
+
+func TestAddToProjectPreBuiltImageEnablesPassthrough(t *testing.T) {
+	const image = "registry.example.com/agents/my-agent:v1"
+	tests := []struct {
+		name               string
+		flagImage          string
+		manifestImage      string
+		registryConnection string
+	}{
+		{name: "BYO image flag", flagImage: image},
+		{name: "manifest BYO image", manifestImage: image},
+		{name: "private registry image", flagImage: image, registryConnection: "production-registry"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := &recordingProjectServer{}
+			client := newProjectRecorderClient(t, server)
+			action := &InitAction{
+				azdClient:   client,
+				environment: &azdext.Environment{Name: "test-env"},
+				flags: &initFlags{
+					image:              test.flagImage,
+					registryConnection: test.registryConnection,
+					noPrompt:           true,
+				},
+				serviceNameOverride: "my-agent",
+			}
+			description := "Hosted container agent using a pre-built image"
+			manifest := &agent_yaml.AgentManifest{
+				Template: agent_yaml.ContainerAgent{
+					AgentDefinition: agent_yaml.AgentDefinition{
+						Kind:        agent_yaml.AgentKindHosted,
+						Name:        "my-agent",
+						Description: &description,
+					},
+					Image: test.manifestImage,
+					Protocols: []agent_yaml.ProtocolVersionRecord{
+						{Protocol: "responses", Version: "2.0.0"},
+					},
+					EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
+						{Name: "LOG_LEVEL", Value: "info"},
+					},
+				},
+			}
+
+			output, err := captureStdout(t, func() error {
+				return action.addToProject(t.Context(), "src/my-agent", manifest)
+			})
+			require.NoError(t, err)
+			require.Contains(t, output, "\nAdded agent 'my-agent' to azure.yaml.\n")
+
+			server.mu.Lock()
+			defer server.mu.Unlock()
+
+			var agentService *azdext.ServiceConfig
+			for _, service := range server.added {
+				if service.GetName() == "my-agent" {
+					agentService = service
+					break
+				}
+			}
+			require.NotNil(t, agentService)
+			require.Equal(t, image, agentService.GetImage())
+			require.Equal(t, "docker", agentService.GetLanguage())
+			require.True(t, agentService.GetDocker().GetImagePassthrough())
+			require.False(t, agentService.GetDocker().GetRemoteBuild())
+			require.NotNil(t, agentService.GetAdditionalProperties())
+			require.Empty(t, agentService.GetEnvironment())
+			require.Equal(t, map[string]any{"LOG_LEVEL": "info"}, server.env["my-agent"])
+
+			properties := agentService.GetAdditionalProperties().GetFields()
+			_, hasInlineImage := properties["image"]
+			require.False(t, hasInlineImage, "pre-built image must ride on the top-level service image field")
+			if test.registryConnection == "" {
+				require.NotContains(t, properties, "registryConnectionId")
+			} else {
+				require.Equal(t, test.registryConnection, properties["registryConnectionId"].GetStringValue())
+				require.NotContains(t, agentService.GetUses(), test.registryConnection,
+					"an external connection must not be added to uses")
+			}
+			_, hasInlineEnvironment := properties["environmentVariables"]
+			require.False(t, hasInlineEnvironment)
+		})
+	}
+}
+
+func TestAddToProjectRejectsUnqualifiedManifestImage(t *testing.T) {
 	server := &recordingProjectServer{}
 	client := newProjectRecorderClient(t, server)
 	action := &InitAction{
 		azdClient:           client,
 		environment:         &azdext.Environment{Name: "test-env"},
-		flags:               &initFlags{image: image, noPrompt: true},
+		flags:               &initFlags{noPrompt: true},
 		serviceNameOverride: "my-agent",
 	}
-	description := "Hosted container agent using a pre-built image"
-	manifest := &agent_yaml.AgentManifest{
-		Template: agent_yaml.ContainerAgent{
-			AgentDefinition: agent_yaml.AgentDefinition{
-				Kind:        agent_yaml.AgentKindHosted,
-				Name:        "my-agent",
-				Description: &description,
-			},
-			Protocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "2.0.0"},
-			},
+	manifest := &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindHosted,
+			Name: "my-agent",
 		},
-	}
+		Image: "agent:v1",
+	}}
 
-	_, err := captureStdout(t, func() error {
-		return action.addToProject(t.Context(), "src/my-agent", manifest)
-	})
-	require.NoError(t, err)
+	err := action.addToProject(t.Context(), "src/my-agent", manifest)
+	require.ErrorContains(t, err, "must be in format registry/image[:tag]")
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
-
-	var agentService *azdext.ServiceConfig
-	for _, service := range server.added {
-		if service.GetName() == "my-agent" {
-			agentService = service
-			break
-		}
-	}
-	require.NotNil(t, agentService)
-	require.Equal(t, image, agentService.GetImage())
-	require.Equal(t, "docker", agentService.GetLanguage())
-	require.NotNil(t, agentService.GetDocker())
-	require.NotNil(t, agentService.GetAdditionalProperties())
-
-	_, hasInlineImage := agentService.GetAdditionalProperties().GetFields()["image"]
-	require.False(t, hasInlineImage, "pre-built image must ride on the top-level service image field")
+	require.Empty(t, server.added)
 }
 
 func TestValidateInitAgentName(t *testing.T) {
@@ -566,6 +1037,7 @@ func (f *fakeConflictAgentChecker) GetAgent(
 	_ context.Context,
 	agentName string,
 	_ string,
+	_ bool,
 ) (*agent_api.AgentObject, error) {
 	f.calls = append(f.calls, agentName)
 	if f.err != nil {
@@ -835,6 +1307,89 @@ func TestCopyDirectory_NoOpWhenSamePath(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(dir, "file.txt")); err != nil {
 		t.Fatalf("expected file to still exist: %v", err)
+	}
+}
+
+func TestWriteDownloadedFilePermissions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		fileName        string
+		wantPermissions os.FileMode
+	}{
+		{
+			name:            "shell scripts are executable",
+			fileName:        "postprovision.sh",
+			wantPermissions: osutil.PermissionExecutableFile,
+		},
+		{
+			name:            "shell script extension is case insensitive",
+			fileName:        "predeploy.SH",
+			wantPermissions: osutil.PermissionExecutableFile,
+		},
+		{
+			name:            "other files remain non-executable",
+			fileName:        "azure.yaml",
+			wantPermissions: osutil.PermissionFile,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join(t.TempDir(), tt.fileName)
+			if got := downloadedFilePermissions(path); got != tt.wantPermissions {
+				t.Fatalf("downloadedFilePermissions() = %04o, want %04o", got, tt.wantPermissions)
+			}
+
+			if err := writeDownloadedFile(path, []byte("new")); err != nil {
+				t.Fatal(err)
+			}
+
+			content, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(content) != "new" {
+				t.Fatalf("content = %q, want %q", content, "new")
+			}
+
+			if runtime.GOOS == "windows" {
+				return
+			}
+
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := info.Mode().Perm(); got != tt.wantPermissions {
+				t.Errorf("permissions = %04o, want %04o", got, tt.wantPermissions)
+			}
+		})
+	}
+}
+
+func TestWriteDownloadedFileRefusesToOverwrite(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "postprovision.sh")
+	if err := os.WriteFile(path, []byte("old"), osutil.PermissionFile); err != nil {
+		t.Fatal(err)
+	}
+
+	err := writeDownloadedFile(path, []byte("new"))
+	if !errors.Is(err, fs.ErrExist) {
+		t.Fatalf("writeDownloadedFile() error = %v, want fs.ErrExist", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "old" {
+		t.Fatalf("content = %q, want %q", content, "old")
 	}
 }
 
@@ -1952,6 +2507,45 @@ func TestConfigureModelChoice_NoPromptMissingAzureContextDefersModelResources(t 
 	}
 }
 
+func TestConfigureModelChoiceRejectsAcrConnectionForInteractiveNewProject(t *testing.T) {
+	const envName = "test-env"
+
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{envName: {}},
+	}
+	promptServer := &helpersPromptServer{selectIndex: 1}
+	azdClient := newHelpersTestAzdClient(t, &helpersProjectServer{}, promptServer, envServer)
+	manifest := &agent_yaml.AgentManifest{
+		Name: "test-hosted",
+		Template: agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Name: "test-hosted",
+				Kind: agent_yaml.AgentKindHosted,
+			},
+		},
+		Resources: []any{
+			agent_yaml.ModelResource{
+				Resource: agent_yaml.Resource{
+					Name: "my-model",
+					Kind: agent_yaml.ResourceKindModel,
+				},
+				Id: "gpt-4o",
+			},
+		},
+	}
+	action := &InitAction{
+		azdClient:    azdClient,
+		environment:  &azdext.Environment{Name: envName},
+		azureContext: &azdext.AzureContext{Scope: &azdext.AzureScope{}},
+		flags:        &initFlags{acrConnection: "registry-connection"},
+	}
+
+	_, err := action.configureModelChoice(t.Context(), manifest)
+
+	require.ErrorContains(t, err, "requires an existing Foundry project")
+	require.Equal(t, int32(1), promptServer.selectCalls.Load())
+}
+
 func TestResolvePositionalArg(t *testing.T) {
 	t.Parallel()
 
@@ -2766,6 +3360,18 @@ func TestCodeDeployFlagValidation(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "code deploy with ACR connection fails",
+			flags: initFlags{
+				noPrompt:      true,
+				deployMode:    "code",
+				runtime:       "python_3_13",
+				entryPoint:    "app.py",
+				acrConnection: "registry-connection",
+			},
+			wantErr:        true,
+			wantErrContain: "--acr-connection cannot be used",
+		},
+		{
 			name:           "code deploy without runtime fails",
 			flags:          initFlags{noPrompt: true, deployMode: "code", entryPoint: "app.py"},
 			wantErr:        true,
@@ -2783,8 +3389,31 @@ func TestCodeDeployFlagValidation(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "registry connection with pre-built image passes",
+			flags: initFlags{
+				noPrompt: true, deployMode: "container",
+				image: "registry.example.com/agent:v1", registryConnection: "private-registry",
+			},
+		},
+		{
+			name: "registry connection with code deploy fails",
+			flags: initFlags{
+				noPrompt: true, deployMode: "code", runtime: "python_3_13", entryPoint: "app.py",
+				registryConnection: "private-registry", manifestPointer: "agent.yaml",
+			},
+			wantErr:        true,
+			wantErrContain: "registry-connection",
+		},
+		{
 			name:    "code deploy without noPrompt skips validation",
 			flags:   initFlags{noPrompt: false, deployMode: "code"},
+			wantErr: false,
+		},
+		{
+			name: "no-prompt manifest can provide code configuration",
+			flags: initFlags{
+				noPrompt: true, deployMode: "code", manifestPointer: "agent.manifest.yaml",
+			},
 			wantErr: false,
 		},
 		{
@@ -3620,5 +4249,54 @@ func TestRemoveContainerFiles(t *testing.T) {
 			_, err := os.Stat(filepath.Join(dir, f))
 			require.NoError(t, err, "%s should still exist", f)
 		}
+	})
+}
+
+// TestSynthesizeVoiceManifestFile verifies the --kind prompt-voice scaffold path
+// writes a valid managed voice manifest that round-trips through the real parser,
+// covering the default model, the explicit model/voice overrides, and that no
+// voice key is emitted when none is supplied.
+func TestSynthesizeVoiceManifestFile(t *testing.T) {
+	t.Parallel()
+
+	parse := func(t *testing.T, path string) agent_yaml.VoiceAgent {
+		t.Helper()
+		data, err := os.ReadFile(path) //nolint:gosec // path is produced by the function under test
+		require.NoError(t, err)
+		def, err := agent_yaml.ExtractAgentDefinition(data)
+		require.NoError(t, err)
+		va, ok := def.(agent_yaml.VoiceAgent)
+		require.True(t, ok, "expected VoiceAgent, got %T", def)
+		return va
+	}
+
+	t.Run("defaults model when empty and omits voice", func(t *testing.T) {
+		t.Parallel()
+		path, cleanup, err := synthesizeVoiceManifestFile("my-voice", "", "")
+		require.NoError(t, err)
+		defer cleanup()
+
+		va := parse(t, path)
+		require.Equal(t, agent_yaml.AgentKindPromptVoice, va.Kind)
+		require.Equal(t, agent_yaml.VoiceModelTypeManaged, va.ModelType)
+		require.NotNil(t, va.Model)
+		require.Equal(t, defaultVoiceModel, va.Model.Id)
+		require.Nil(t, va.Voice, "no voice key should be emitted when none is supplied")
+	})
+
+	t.Run("honors explicit model and voice", func(t *testing.T) {
+		t.Parallel()
+		path, cleanup, err := synthesizeVoiceManifestFile(
+			"my-voice", "gpt-realtime-preview", "en-US-Ava:DragonHDLatestNeural",
+		)
+		require.NoError(t, err)
+		defer cleanup()
+
+		va := parse(t, path)
+		require.Equal(t, agent_yaml.VoiceModelTypeManaged, va.ModelType)
+		require.NotNil(t, va.Model)
+		require.Equal(t, "gpt-realtime-preview", va.Model.Id)
+		require.NotNil(t, va.Voice)
+		require.Equal(t, "en-US-Ava:DragonHDLatestNeural", *va.Voice)
 	})
 }

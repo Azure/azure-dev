@@ -178,9 +178,9 @@ All flags persist their values to config, which can also be set directly via `az
 | `brew` | Homebrew cask: trust azd's source (`brew trust azure/azd`), then `brew install/upgrade --cask azure/azd/azd` (stable) or `azure/azd/azd@daily` (daily). Handles channel switching by uninstalling the current formula or cask and installing the target. |
 | `winget` | Shell out: `winget upgrade Microsoft.Azd` |
 | `choco` | Shell out: `choco upgrade azd` |
-| `install-azd.ps1`, `msi` (Windows) | Shell out: `install-azd.ps1` with backup/restore of running executable |
-| `install-azd.sh` (Linux/macOS) | Shell out: `install-azd.sh` with channel and install folder arguments |
-| `deb`, `rpm` | Direct binary download + replace |
+| `install-azd.ps1`, `msi` (Windows) | Shell out: `install-azd.ps1` with backup/restore of running executable, pinned to the resolved version on stable |
+| `install-azd.sh` (Linux/macOS) | Shell out: `install-azd.sh` with version (pinned on stable) and install folder arguments |
+| `deb`, `rpm` | Direct binary download + replace, pinned to the resolved version on stable |
 
 > **Note**: Linux `deb`/`rpm` packages are standalone files from GitHub Releases — there is no managed apt/dnf repository. These users are treated the same as script-installed users for update purposes.
 
@@ -195,8 +195,47 @@ All flags persist their values to config, which can also be set directly via `az
    - Stable: semver comparison (blang/semver)
    - Daily: build number comparison (extracted from the daily.N suffix)
 4. If no update available → "You're up to date"
-5. Dispatch to the appropriate update method based on install type (see below)
+5. Dispatch to the appropriate update method based on install type (see below),
+   passing the resolved version so the install is pinned to it (see Version pinning)
 ```
+
+#### Version Pinning
+
+Stable installs that azd performs itself download the **exact version resolved in step 2**
+(`release/{VERSION}/`) instead of the rolling `release/stable/` folder.
+
+The rolling folder and the version marker azd reads are published by separate steps of the
+release pipeline, so `release/stable/` can hold a newer build than
+`https://aka.ms/azure-dev/versions/cli/latest` advertises. Installing "whatever is in the
+channel folder" then delivers a different version than the one reported to the user —
+see [#9145](https://github.com/Azure/azure-dev/issues/9145). Per-version folders are
+immutable, so pinning makes the advertised version and the installed version identical by
+construction.
+
+Exceptions:
+
+- **Daily** keeps using the rolling `release/daily/` folder — per-version daily archives live
+  outside the release folder the install scripts download from, so there is nothing to pin
+  to. Because another daily publish can advance that folder between the check and the
+  download, azd does not name a version for daily either ("Updating azd (daily)").
+- **Package managers** (`brew`, `winget`, `choco`) cannot be pinned — the package manager
+  decides which version it makes available. For these installs azd does not name a version
+  in its progress or success messages ("Updating azd via winget (stable)", "Updated azd!"),
+  and directs the user to `azd version` to confirm.
+
+A version is reported only when the install is pinned to it — see
+`update.CanPinVersion(installedBy, channel)`, which requires both a self-managed install and
+the stable channel.
+
+**Code**: `pkg/update/manager.go` → `VersionInfo.installVersion()`, `VersionInfo.validate()`,
+`buildDownloadURL()`
+
+`Manager.Update` takes the `*VersionInfo` returned by `CheckForUpdate` rather than a
+channel, so an install can only ever target the version that was actually resolved and
+reported. `Manager.Update` and `Manager.StageUpdate` reject a stable target that carries no
+version, and any target whose channel is neither `stable` nor `daily`: falling back to the
+rolling `release/stable/` folder would silently reintroduce the drift pinning exists to
+prevent, so the update fails instead of installing a version other than the one reported.
 
 #### Windows Update Flow (MSI via `install-azd.ps1`)
 
@@ -211,6 +250,7 @@ Windows updates (for `install-azd.ps1`, `msi`, and other Windows install types) 
    - Copy the backup back as an unlocked safety net at the original path
    - If update fails at any point → restore original from backup automatically
 3. Run install-azd.ps1 with channel-specific arguments
+   - Stable: `-Version '<resolved-version>'` (pinned, see Version Pinning); daily: `-Version 'daily'`
    - Script handles MSI download, verification, and installation
 4. Verify the binary was actually replaced (SHA-256 hash comparison pre vs post)
    - If hashes match → MSI failed silently → abort and restore backup
@@ -224,7 +264,8 @@ For script-based installs (`install-azd.sh`) on Linux/macOS:
 ```
 1. Download install-azd.sh to a temp directory with restrictive permissions (0700)
 2. Make the script executable (0500)
-3. Run: bash install-azd.sh --version <channel> --install-folder <current-install-dir> --symlink-folder ""
+3. Run: bash install-azd.sh --version <resolved-version|daily> --install-folder <current-install-dir> --symlink-folder ""
+   - Stable passes the exact version resolved by the check (see Version Pinning); daily passes "daily"
    - The script handles download, checksum verification, and binary placement
    - Passes through stdin/stdout for sudo prompts if elevation is needed
 4. Done — new version takes effect on next invocation

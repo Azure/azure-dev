@@ -28,3 +28,25 @@ func TestErrorKey(t *testing.T) {
 		})
 	}
 }
+
+func TestExtensionUsageAttribute(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		want attribute.Key
+	}{
+		{"PrependsPrefix", "deploy.mode", "ext.deploy.mode"},
+		{"PrependsPrefixToHostFieldName", "extension.id", "ext.extension.id"},
+		{"PrependsPrefixToAlreadyPrefixedKey", "ext.mode", "ext.ext.mode"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key := ExtensionUsageAttribute(tt.key)
+
+			require.Equal(t, tt.want, key.Key)
+			require.Equal(t, SystemMetadata, key.Classification)
+			require.Equal(t, FeatureInsight, key.Purpose)
+		})
+	}
+}

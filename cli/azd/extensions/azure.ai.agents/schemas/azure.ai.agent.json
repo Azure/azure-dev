@@ -4,13 +4,6 @@
   "description": "Custom configuration for the Azure AI Agent Service target",
   "type": "object",
   "properties": {
-    "env": {
-      "type": "object",
-      "description": "Environment variables as key-value pairs",
-      "additionalProperties": {
-        "type": "string"
-      }
-    },
     "container": {
       "$ref": "#/definitions/ContainerSettings"
     },
@@ -48,10 +41,113 @@
       "type": "string",
       "description": "Command to start the agent server (e.g., 'python main.py'). Used by 'azd ai agent run' for local development."
     },
+    "activity": {
+      "$ref": "#/definitions/ActivitySettings"
+    },
     "kind": {
       "type": "string",
-      "description": "The agent kind. Currently only 'hosted' is supported.",
-      "enum": ["hosted"]
+      "description": "The agent kind. 'hosted' for a containerized/code agent; 'voice' for a managed speech-to-speech voice agent. 'prompt-voice' remains accepted for compatibility.",
+      "enum": ["hosted", "prompt-voice", "voice"]
+    },
+    "language": {
+      "type": "string",
+      "description": "Implementation language for a hosted agent.",
+      "enum": ["python", "csharp", "docker"]
+    },
+    "toolbox": {
+      "type": "object",
+      "description": "Named Foundry toolbox consumed by the agent.",
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    },
+    "modelType": {
+      "type": "string",
+      "description": "Voice agent model-inference mode. 'managed' uses a Voice Live-hosted model; 'self_deployed' references a Foundry model deployment; 'hosted_agent' routes turns to a deployed hosted agent service.",
+      "enum": ["managed", "self_deployed", "hosted_agent"]
+    },
+    "targetAgent": {
+      "$ref": "#/definitions/VoiceTargetAgent"
+    },
+    "model": {
+      "type": "object",
+      "description": "Voice agent (kind: prompt-voice) speech-to-speech model (e.g. id: gpt-realtime).",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "Model name for managed mode (e.g. 'gpt-realtime') or existing Foundry deployment name for self_deployed mode." }
+      },
+      "required": ["id"],
+      "additionalProperties": true
+    },
+    "instructions": {
+      "type": "string",
+      "description": "Voice agent (kind: prompt-voice) system prompt for the assistant."
+    },
+    "voice": {
+      "type": "string",
+      "description": "Voice agent (kind: prompt-voice) output voice name (e.g. 'en-US-Ava:DragonHDLatestNeural' for an Azure Neural voice, or 'alloy' for an OpenAI realtime voice)."
+    },
+    "store": {
+      "type": "boolean",
+      "description": "Voice agent (kind: prompt-voice) server-side logging toggle (transcript + per-turn audio). Defaults to false when omitted."
+    },
+    "structuredInputs": {
+      "type": "object",
+      "description": "Voice agent (kind: prompt-voice) structured prompt inputs. Use description, defaultValue, schema, and required; azd maps defaultValue to the service wire field default_value.",
+      "additionalProperties": true
+    },
+    "audio": {
+      "$ref": "#/definitions/VoiceAudio"
+    },
+    "outputModalities": {
+      "type": "array",
+      "description": "Voice agent (kind: prompt-voice) output modalities. Well-known values are audio, text, animation, and avatar.",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "tools": {
+      "type": "array",
+      "description": "Voice agent (kind: prompt-voice) tools. Direct tool types include function, mcp, system, and toolbox.",
+      "items": { "type": "object", "additionalProperties": true }
+    },
+    "avatar": {
+      "type": "object",
+      "description": "Voice agent (kind: prompt-voice) avatar configuration.",
+      "additionalProperties": true
+    },
+    "greeting": {
+      "type": "object",
+      "description": "Voice agent (kind: prompt-voice) greeting configuration, such as template or llm_generated.",
+      "additionalProperties": true
+    },
+    "handoff": {
+      "type": "object",
+      "description": "Voice agent (kind: prompt-voice) handoff configuration.",
+      "additionalProperties": true
+    },
+    "toolChoice": {
+      "description": "Voice agent (kind: prompt-voice) tool choice behavior, such as none, auto, required, or a tool choice object."
+    },
+    "parallelToolCalls": {
+      "type": "boolean",
+      "description": "Voice agent (kind: prompt-voice) parallel tool call toggle. Currently rejected by azd for prompt voice runtime."
+    },
+    "maxOutputTokens": {
+      "oneOf": [
+        { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        { "type": "string", "enum": ["inf"] }
+      ],
+      "description": "Voice agent (kind: prompt-voice) maximum output tokens. Use an integer from 1 to 2147483647 or the string inf."
+    },
+    "include": {
+      "type": "array",
+      "description": "Voice agent (kind: prompt-voice) extra service response fields to include.",
+      "items": { "type": "string" }
+    },
+    "telephony": {
+      "$ref": "#/definitions/VoiceTelephony"
     },
     "name": {
       "type": "string",
@@ -72,8 +168,14 @@
     },
     "protocols": {
       "type": "array",
-      "description": "Invocation protocols the agent implements (e.g., responses, invocations, a2a).",
+      "description": "Invocation protocols the agent implements (e.g., responses, invocations, invocations_ws, a2a).",
       "items": { "$ref": "#/definitions/ProtocolVersionRecord" }
+    },
+    "registryConnectionId": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Name or ID of a Foundry project connection used to pull a private pre-built container image."
     },
     "agentEndpoint": {
       "type": "object",
@@ -87,6 +189,9 @@
     },
     "codeConfiguration": {
       "$ref": "#/definitions/CodeConfiguration"
+    },
+    "sessionConfiguration": {
+      "$ref": "#/definitions/SessionConfiguration"
     },
     "policies": {
       "type": "array",
@@ -105,12 +210,235 @@
     }
   },
   "additionalProperties": true,
+  "allOf": [
+    {
+      "$comment": "A hosted-agent voice wrapper references a deployed hosted service; other voice modes declare a model. Prompt voice agents cannot use the hosted-agent toolbox reference.",
+      "if": {
+        "properties": {
+          "modelType": { "const": "hosted_agent" }
+        },
+        "required": ["modelType"]
+      },
+      "then": {
+        "properties": {
+          "kind": { "enum": ["prompt-voice", "voice"] }
+        },
+        "required": ["kind", "targetAgent"],
+        "not": {
+          "anyOf": [
+            { "required": ["model"] },
+            { "required": ["inputSchema"] },
+            { "required": ["outputSchema"] },
+            { "required": ["codeConfiguration"] },
+            { "required": ["sessionConfiguration"] },
+            { "required": ["environmentVariables"] },
+            { "required": ["policies"] },
+            { "required": ["protocols"] },
+            { "required": ["instructions"] },
+            { "required": ["structuredInputs"] },
+            { "required": ["tools"] },
+            { "required": ["toolChoice"] },
+            { "required": ["parallelToolCalls"] },
+            { "required": ["maxOutputTokens"] },
+            { "required": ["include"] },
+            { "required": ["handoff"] },
+            { "required": ["toolbox"] }
+          ]
+        }
+      },
+      "else": {
+        "if": {
+          "properties": { "kind": { "enum": ["prompt-voice", "voice"] } },
+          "required": ["kind"]
+        },
+        "then": {
+          "required": ["model"],
+          "not": {
+            "anyOf": [
+              { "required": ["targetAgent"] },
+              { "required": ["toolbox"] },
+              { "required": ["policies"] },
+              { "required": ["protocols"] },
+              { "required": ["environmentVariables"] },
+              { "required": ["codeConfiguration"] },
+              { "required": ["sessionConfiguration"] }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "$comment": "targetAgent is only valid for a hosted-agent voice wrapper.",
+      "if": { "required": ["targetAgent"] },
+      "then": {
+        "properties": {
+          "kind": { "enum": ["prompt-voice", "voice"] },
+          "modelType": { "const": "hosted_agent" }
+        },
+        "required": ["kind", "modelType"]
+      }
+    },
+    {
+      "$comment": "The activity.publish block is shared publish metadata for Activity agents. Microsoft 365 Digital Worker publish is tenant-only; permission scopes and access boundaries are optional.",
+      "if": {
+        "properties": {
+          "activity": {
+            "properties": {
+              "digitalWorkerType": { "const": "m365" }
+            },
+            "required": ["digitalWorkerType"]
+          }
+        },
+        "required": ["activity"]
+      },
+      "then": {
+        "properties": {
+          "activity": {
+            "properties": {
+              "publish": {
+                "properties": {
+                  "publishScope": { "const": "tenant" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "Optional permission scopes and access boundaries apply only to Digital Workers. An omitted activity.digitalWorkerType selects simple mode.",
+      "if": {
+        "properties": {
+          "activity": {
+            "not": {
+              "required": ["digitalWorkerType"]
+            }
+          }
+        },
+        "required": ["activity"]
+      },
+      "then": {
+        "properties": {
+          "activity": {
+            "properties": {
+              "publish": {
+                "not": {
+                  "anyOf": [
+                    { "required": ["optionalPermissionScopes"] },
+                    { "required": ["accessBoundaries"] }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "A registry connection applies only to a hosted container agent, not code or managed voice deploy.",
+      "if": {
+        "required": ["registryConnectionId"]
+      },
+      "then": {
+        "properties": {
+          "kind": { "const": "hosted" }
+        },
+        "required": ["kind"],
+        "not": {
+          "required": ["codeConfiguration"]
+        }
+      }
+    },
+    {
+      "$comment": "Telephony bindings are only supported for prompt voice agents.",
+      "if": {
+        "required": ["telephony"]
+      },
+      "then": {
+        "properties": {
+          "kind": { "enum": ["voice", "prompt-voice"] }
+        },
+        "required": ["kind"]
+      }
+    }
+  ],
   "definitions": {
+    "VoiceTargetAgent": {
+      "type": "object",
+      "description": "Hosted agent service used as the conversation target for a voice wrapper.",
+      "properties": {
+        "service": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "azure.yaml service name of the target hosted agent." },
+        "version": { "type": "string", "enum": ["deployed"], "default": "deployed", "description": "Pin the wrapper to the target version deployed by this azd environment." }
+      },
+      "required": ["service"],
+      "additionalProperties": false
+    },
+    "ActivitySettings": {
+      "type": "object",
+      "description": "Activity-protocol Teams configuration. Omit digitalWorkerType for simple mode; m365 applies Digital Worker constraints via allOf.",
+      "properties": {
+        "digitalWorkerType": { "type": "string", "enum": ["m365"] },
+        "publish": {
+          "$ref": "#/definitions/ActivityPublishConfig",
+          "description": "Shared Microsoft 365 app publish metadata used by Activity use cases. Digital Worker publication is tenant-only."
+        }
+      },
+      "additionalProperties": false
+    },
+    "ActivityPublishConfig": {
+      "type": "object",
+      "properties": {
+        "publishScope": { "type": "string", "enum": ["shared", "tenant"] },
+        "canRespondWithoutMention": { "type": "boolean" },
+        "appVersion": { "type": "string", "minLength": 1 },
+        "agentDisplayName": { "type": "string", "minLength": 1 },
+        "shortDescription": { "type": "string" },
+        "fullDescription": { "type": "string" },
+        "developerName": { "type": "string" },
+        "developerWebsiteUrl": { "type": "string", "format": "uri" },
+        "privacyUrl": { "type": "string", "format": "uri" },
+        "termsOfUseUrl": { "type": "string", "format": "uri" },
+        "optionalPermissionScopes": {
+          "type": "array",
+          "description": "Optional Microsoft 365 permission selections for a Digital Worker.",
+          "items": { "$ref": "#/definitions/Microsoft365PermissionScopes" }
+        },
+        "accessBoundaries": {
+          "type": "array",
+          "description": "Optional Digital Worker access boundaries. An explicit empty array clears existing boundaries.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "read.1on1.developers",
+              "write.1on1.developers",
+              "read.group.developers",
+              "write.group.developers"
+            ]
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "Microsoft365PermissionScopes": {
+      "type": "object",
+      "properties": {
+        "resourceAppId": { "type": "string", "minLength": 1 },
+        "scopes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "required": ["resourceAppId", "scopes"],
+      "additionalProperties": false
+    },
     "ProtocolVersionRecord": {
       "type": "object",
       "description": "A protocol the agent implements, with its version.",
       "properties": {
-        "protocol": { "type": "string", "description": "Protocol name (e.g., 'responses', 'invocations', 'a2a')." },
+        "protocol": { "type": "string", "description": "Protocol name (e.g., 'responses', 'invocations', 'invocations_ws', 'a2a')." },
         "version": { "type": "string", "description": "Protocol version." }
       },
       "required": ["protocol"],
@@ -127,14 +455,239 @@
       "required": ["runtime", "entryPoint"],
       "additionalProperties": false
     },
+    "VoiceTelephony": {
+      "type": "object",
+      "description": "Prompt voice telephony configuration. Only valid for kind: prompt-voice.",
+      "properties": {
+        "bindings": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/VoiceTelephonyBinding" }
+        }
+      },
+      "required": ["bindings"],
+      "additionalProperties": false
+    },
+    "VoiceTelephonyBinding": {
+      "type": "object",
+      "description": "Foundry-side binding from a phone provider identifier to this prompt voice agent.",
+      "properties": {
+        "provider": { "type": "string", "enum": ["acs", "twilio"] },
+        "identifier": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "ACS/TPE raw ID (28:orgid:<guid>), ACS purchased number (4:+<E.164>), or Twilio E.164 number (+<E.164>)." },
+        "connection": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "Foundry project connection name used by the telephony runtime." },
+        "transferTargets": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+      },
+      "required": ["provider", "identifier", "connection"],
+      "allOf": [
+        {
+          "if": { "properties": { "provider": { "const": "twilio" } }, "required": ["provider"] },
+          "then": { "properties": { "identifier": { "pattern": "^\\+[1-9][0-9]{6,14}$" } } }
+        },
+        {
+          "if": { "properties": { "provider": { "const": "acs" } }, "required": ["provider"] },
+          "then": { "properties": { "identifier": { "pattern": "^(28:orgid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|4:\\+[1-9][0-9]{6,14})$" } } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "VoiceAudio": {
+      "type": "object",
+      "description": "Prompt voice input and output audio configuration.",
+      "properties": {
+        "input": { "$ref": "#/definitions/VoiceAudioInput" },
+        "output": { "$ref": "#/definitions/VoiceAudioOutput" }
+      },
+      "additionalProperties": false
+    },
+    "VoiceAudioInput": {
+      "type": "object",
+      "properties": {
+        "format": { "$ref": "#/definitions/VoiceAudioFormat" },
+        "noiseReduction": { "$ref": "#/definitions/VoiceNoiseReduction" },
+        "echoCancellation": { "type": "object", "additionalProperties": true },
+        "turnDetection": { "$ref": "#/definitions/VoiceTurnDetection" },
+        "transcription": { "$ref": "#/definitions/VoiceTranscription" }
+      },
+      "additionalProperties": false
+    },
+    "VoiceAudioOutput": {
+      "type": "object",
+      "properties": {
+        "format": { "$ref": "#/definitions/VoiceAudioFormat" },
+        "voice": { "$ref": "#/definitions/VoiceConfig" },
+        "speed": { "type": "number", "minimum": 0.25, "maximum": 1.5 }
+      },
+      "additionalProperties": false
+    },
+    "VoiceAudioFormat": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["audio/pcm", "audio/pcmu", "audio/pcma"] },
+        "rate": { "type": "integer", "minimum": 1 }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "VoiceNoiseReduction": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "description": "Well-known values include near_field, far_field, and azure_deep_noise_suppression." }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "VoiceTurnDetection": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "description": "Well-known values include server_vad, semantic_vad, and azure_semantic_vad." },
+        "threshold": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "prefixPaddingMs": { "type": "integer", "minimum": 0 },
+        "silenceDurationMs": { "type": "integer", "minimum": 0 },
+        "createResponse": { "type": "boolean" },
+        "eagerness": { "type": "string" },
+        "speechDurationMs": { "type": "integer", "minimum": 0 },
+        "removeFillerWords": { "type": "boolean" },
+        "interruptResponse": { "type": "boolean" },
+        "languages": { "type": "array", "items": { "type": "string" } },
+        "autoTruncate": { "type": "boolean" }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "VoiceTranscription": {
+      "type": "object",
+      "properties": {
+        "model": { "type": "string" },
+        "language": { "type": "string" },
+        "prompt": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "VoiceConfig": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "description": "Voice provider type, such as openai, azure_standard, or azure-standard." },
+        "name": { "type": "string" },
+        "style": { "type": "string" },
+        "pitch": { "type": "string" },
+        "rate": { "type": "string" },
+        "locale": { "type": "string" },
+        "volume": { "type": "string" }
+      },
+      "required": ["type", "name"],
+      "additionalProperties": false
+    },
+    "SessionConfiguration": {
+      "type": "object",
+      "description": "Optional hosted-agent session runtime settings. When omitted, the service applies its defaults (idle timeout 900 seconds).",
+      "properties": {
+        "idleTimeoutSeconds": {
+          "type": "integer",
+          "description": "Idle duration in seconds before a session's sandbox is suspended. Range 120–3600 (inclusive). Defaults to 900 when omitted.",
+          "minimum": 120,
+          "maximum": 3600
+        }
+      },
+      "additionalProperties": false
+    },
     "Policy": {
       "type": "object",
       "description": "A safety or governance policy attached to the agent.",
       "properties": {
         "type": { "type": "string", "description": "Policy type (e.g., 'rai_policy')." },
-        "raiPolicyName": { "type": "string", "description": "ARM resource ID of the RAI policy (for type 'rai_policy')." }
+        "raiPolicyName": { "type": "string", "description": "ARM resource ID of the RAI policy (for type 'rai_policy')." },
+        "invocationsModeration": { "$ref": "#/definitions/InvocationsModeration" }
       },
       "required": ["type"],
+      "additionalProperties": false
+    },
+    "InvocationsModeration": {
+      "type": "object",
+      "description": "Configures how the content-safety proxy extracts the text it submits to the RAI policy. Only supported for agents that expose the 'invocations' protocol; without it an attached RAI policy has nothing to moderate on that path.",
+      "properties": {
+        "inputContentType": {
+          "type": "string",
+          "enum": ["json", "text"],
+          "description": "How the request body is encoded. Defaults to 'json'."
+        },
+        "outputContentType": {
+          "type": "string",
+          "enum": ["json", "text"],
+          "description": "How the response body is encoded. Defaults to 'json'."
+        },
+        "responseMode": {
+          "type": "string",
+          "enum": ["non_streaming", "streaming", "both"],
+          "description": "Response shapes the agent container can produce. This declares a capability, not an input/output switch: the proxy runs exactly one output gate per response, chosen from the actual response Content-Type."
+        },
+        "inputPaths": {
+          "type": "array",
+          "description": "JSONPath expressions selecting request text. Required when inputContentType is 'json' or omitted.",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "outputPaths": {
+          "type": "array",
+          "description": "JSONPath expressions selecting buffered response text. Required when responseMode includes non-streaming and outputContentType is 'json' or omitted.",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "streamSelectors": {
+          "type": "array",
+          "description": "Locates text within server-sent event frames. Required when responseMode includes streaming and outputContentType is 'json' or omitted.",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/SseTextSelector" }
+        }
+      },
+      "required": ["responseMode"],
+      "allOf": [
+        {
+          "if": { "$ref": "#/definitions/InvocationsInputIsJson" },
+          "then": { "required": ["inputPaths"] }
+        },
+        {
+          "if": {
+            "allOf": [
+              { "properties": { "responseMode": { "enum": ["non_streaming", "both"] } }, "required": ["responseMode"] },
+              { "$ref": "#/definitions/InvocationsOutputIsJson" }
+            ]
+          },
+          "then": { "required": ["outputPaths"] }
+        },
+        {
+          "if": {
+            "allOf": [
+              { "properties": { "responseMode": { "enum": ["streaming", "both"] } }, "required": ["responseMode"] },
+              { "$ref": "#/definitions/InvocationsOutputIsJson" }
+            ]
+          },
+          "then": { "required": ["streamSelectors"] }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "InvocationsInputIsJson": {
+      "description": "Matches when inputContentType resolves to 'json', i.e. it is set to 'json' or omitted entirely (the default).",
+      "anyOf": [
+        { "properties": { "inputContentType": { "const": "json" } }, "required": ["inputContentType"] },
+        { "not": { "required": ["inputContentType"] } }
+      ]
+    },
+    "InvocationsOutputIsJson": {
+      "description": "Matches when outputContentType resolves to 'json', i.e. it is set to 'json' or omitted entirely (the default).",
+      "anyOf": [
+        { "properties": { "outputContentType": { "const": "json" } }, "required": ["outputContentType"] },
+        { "not": { "required": ["outputContentType"] } }
+      ]
+    },
+    "SseTextSelector": {
+      "type": "object",
+      "description": "Locates the text to moderate inside a single server-sent event frame.",
+      "properties": {
+        "eventType": { "type": "string", "pattern": "\\S", "description": "SSE event name this selector applies to." },
+        "textField": { "type": "string", "description": "JSONPath expression, relative to the frame payload, holding the text." }
+      },
+      "required": ["eventType"],
       "additionalProperties": false
     },
     "ContainerSettings": {

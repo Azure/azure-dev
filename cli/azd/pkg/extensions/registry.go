@@ -55,7 +55,7 @@ const (
 	// Provision provider enables extensions to provide a custom provisioning experience
 	ProvisioningProviderCapability CapabilityType = "provisioning-provider"
 	// Validation provider enables extensions to contribute validation checks
-	// to azd's validation pipeline (e.g. local-preflight checks during provisioning)
+	// to azd's validation pipeline (e.g. provision checks during provisioning)
 	ValidationProviderCapability CapabilityType = "validation-provider"
 )
 
@@ -64,6 +64,8 @@ type ProviderType string
 const (
 	// Service target provider type for custom deployment targets
 	ServiceTargetProviderType ProviderType = "service-target"
+	// Provisioning provider type for custom infrastructure provisioning experiences
+	ProvisioningProviderType ProviderType = "provisioning-provider"
 )
 
 // Extension represents an extension in the registry
@@ -82,10 +84,20 @@ type ExtensionMetadata struct {
 	Versions []ExtensionVersion `json:"versions"`
 	// Source is used to store the extension source from where the extension is fetched
 	Source string `json:"source,omitempty"`
+	// SourceCategory is the privacy-safe category of the source.
+	SourceCategory SourceCategory `json:"-"`
 	// Tags is a list of tags that can be used to filter extensions
 	Tags []string `json:"tags,omitempty"`
 	// Platforms is a map of platform specific metadata required for extensions
 	Platforms map[string]map[string]any `json:"platforms,omitempty"`
+}
+
+// SourceCategoryOrUnknown returns the source category, defaulting legacy metadata to unknown.
+func (e *ExtensionMetadata) SourceCategoryOrUnknown() SourceCategory {
+	if e == nil {
+		return SourceCategoryUnknown
+	}
+	return normalizeSourceCategory(e.SourceCategory)
 }
 
 // ExtensionDependency represents a dependency of an extension

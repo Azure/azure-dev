@@ -95,7 +95,8 @@ func convertExtensionFlag(flag extensions.Flag) Option {
 	// Handle flag arguments (non-bool flags need args)
 	if flag.Type != "bool" && flag.Type != "" {
 		arg := Arg{
-			Name: flag.Name,
+			Name:       flag.Name,
+			IsOptional: flag.ValueOptional,
 		}
 
 		// Add valid values as suggestions

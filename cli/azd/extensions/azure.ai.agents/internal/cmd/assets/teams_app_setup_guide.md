@@ -3,10 +3,43 @@
 `azd deploy` already did the Azure side for you:
 
 - Azure Bot: `{{.BotName}}` (Microsoft Teams channel enabled)
-- Bot ID (msaAppId): `{{.MsaAppID}}`  <- you will paste this as the bot id
+- Bot ID (msaAppId): `{{.MsaAppID}}`
+{{- if .PackageFile}}
+- Teams app package: `{{.PackageFile}}` (generated next to this guide, ready to sideload)
 
-Two manual steps remain: (A) create a Teams app package, then (B) upload it.
-They are the same for any activity-protocol agent.
+One step remains: sideload the package to try your agent. Pick ONE of the two ways
+below — both are per-user installs and need NO Teams admin.
+
+## Sideload — Teams UI (no extra tooling)
+
+1. In Teams, go to **Apps** -> **Manage your apps** -> **Upload an app**.
+2. Select **Upload a custom app**, choose `{{.PackageFile}}`, then **Add**.
+3. Select **Open**, then send a message to talk to your agent.
+
+Upload a custom app guide: https://learn.microsoft.com/microsoftteams/platform/concepts/deploy-and-publish/apps-upload
+
+## Or sideload — command line (atk)
+
+The Microsoft 365 Agents Toolkit CLI (atk) installs the same package from a terminal.
+`--scope Personal` is a per-user install and needs NO Teams admin:
+
+```sh
+npm install -g @microsoft/m365agentstoolkit-cli   # one-time; requires Node.js
+atk auth login                                     # sign in with your M365 account
+atk install --file-path {{.PackageFile}} --scope Personal
+```
+
+atk prints a TitleId and a Teams deep link you can open to launch the agent.
+atk CLI reference: https://learn.microsoft.com/microsoftteams/platform/toolkit/microsoft-365-agents-toolkit-cli
+
+If **Upload a custom app** is missing or greyed out, custom app upload is turned off for
+your tenant, or you want everyone in your org to get it from the org app catalog. Both need
+a Teams admin: https://learn.microsoft.com/microsoftteams/platform/concepts/build-and-test/prepare-your-o365-tenant
+{{- else}}
+
+azd could not generate the Teams app package automatically, so two manual steps
+remain: (A) create a Teams app package, then (B) upload it. They are the same for
+any activity-protocol agent.
 
 ## A. Create the Teams app package
 
@@ -70,30 +103,4 @@ Upload a custom app guide: https://learn.microsoft.com/microsoftteams/platform/c
 If **Upload a custom app** is missing or greyed out, custom app upload is turned off for
 your tenant, or you want everyone in your org to get it from the org app catalog. Both need
 a Teams admin: https://learn.microsoft.com/microsoftteams/platform/concepts/build-and-test/prepare-your-o365-tenant
-
-## C. Optional — do both from the command line
-
-Steps A and B can be scripted. This is a convenience path for repeat runs; it needs extra
-tooling and does NOT bypass the tenant custom-app-upload setting above.
-
-Package: put the manifest.json from section A (its Bot ID is already filled in) next to your
-two icons, then zip the three files at the root:
-
-```sh
-zip -j {{.AgentName}}-teams-app.zip manifest.json color.png outline.png          # bash
-```
-```powershell
-Compress-Archive manifest.json,color.png,outline.png {{.AgentName}}-teams-app.zip # PowerShell
-```
-
-Sideload for yourself with the Microsoft 365 Agents Toolkit CLI (atk). `--scope Personal` is a
-per-user install and needs NO Teams admin:
-
-```sh
-npm install -g @microsoft/m365agentstoolkit-cli          # one-time; requires Node.js
-atk auth login                                           # sign in with your M365 account
-atk install --file-path {{.AgentName}}-teams-app.zip --scope Personal
-```
-
-atk prints a TitleId and a Teams deep link you can open to launch the agent.
-atk CLI reference: https://learn.microsoft.com/microsoftteams/platform/toolkit/microsoft-365-agents-toolkit-cli
+{{- end}}

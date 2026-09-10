@@ -130,13 +130,13 @@ func TestNewBicepCliWillUpgrade(t *testing.T) {
 
 	require.Equal(t, mockinput.SpinnerOp{
 		Op:      mockinput.SpinnerOpShow,
-		Message: "Upgrading Bicep",
+		Message: "Updating Bicep",
 		Format:  input.Step,
 	}, mockContext.Console.SpinnerOps()[0])
 
 	require.Equal(t, mockinput.SpinnerOp{
 		Op:      mockinput.SpinnerOpStop,
-		Message: "Upgrading Bicep",
+		Message: "Updating Bicep",
 		Format:  input.StepDone,
 	}, mockContext.Console.SpinnerOps()[1])
 

@@ -26,6 +26,19 @@ func isBicepLayer(layer provisioning.Options) bool {
 		layer.Provider == provisioning.Bicep
 }
 
+// mayUseStandardParameters reports whether probing for standard
+// .bicepparam/.parameters.json files is appropriate. Missing files are a
+// no-op; built-in non-Bicep providers remain opaque to preserve their existing
+// behavior.
+func mayUseStandardParameters(layer provisioning.Options) bool {
+	switch layer.Provider {
+	case provisioning.Terraform, provisioning.Pulumi, provisioning.Arm, provisioning.Test:
+		return false
+	default:
+		return true
+	}
+}
+
 // Package-level compiled regexes for output and env-var reference extraction.
 var (
 	bicepOutputRe   = regexp.MustCompile(`(?m)^\s*output\s+(\w+)\s+`)
@@ -178,13 +191,12 @@ func AnalyzeLayerDependencies(
 		}
 	}
 
-	// Phase 2 — Discover input env-var references and build edges.
-	// Non-Bicep layers are skipped: they have no .bicep/.bicepparam/
-	// .parameters.json files to scan for env-var references. Their
-	// dependencies must be declared via explicit dependsOn in azure.yaml.
+	// Phase 2 — Discover input env-var references and build edges for Bicep and
+	// extension providers that use standard parameter files. Built-in non-Bicep
+	// providers retain their existing explicit-dependency behavior.
 	var safeFallback []int
 	for i, layer := range layers {
-		if !isBicepLayer(layer) {
+		if !mayUseStandardParameters(layer) {
 			continue
 		}
 		refs, hasUnknown := discoverParamEnvRefs(ctx, resolved[i], projectPath)
@@ -466,17 +478,18 @@ func discoverParamEnvRefs(
 		hasUnknown = true
 	}
 
-	// Always scan the .bicep file for param defaults that call
-	// readEnvironmentVariable. These are independent of the param file
-	// and silently dropped when only parameter files are inspected.
-	if bicepContent, err := readFileWithContext(ctx,
-		resolveBicepPath(opts, projectPath),
-	); err == nil {
-		r, u := extractBicepParamReadEnvRefs(bicepContent)
-		merge(r, u)
-	} else if !os.IsNotExist(err) {
-		log.Printf("warning: failed to read %s: %v, using safe fallback", resolveBicepPath(opts, projectPath), err)
-		hasUnknown = true
+	if isBicepLayer(opts) {
+		// Bicep parameter defaults are independent of the parameter file and
+		// otherwise silently missed.
+		if bicepContent, err := readFileWithContext(ctx,
+			resolveBicepPath(opts, projectPath),
+		); err == nil {
+			r, u := extractBicepParamReadEnvRefs(bicepContent)
+			merge(r, u)
+		} else if !os.IsNotExist(err) {
+			log.Printf("warning: failed to read %s: %v, using safe fallback", resolveBicepPath(opts, projectPath), err)
+			hasUnknown = true
+		}
 	}
 
 	return refs, hasUnknown

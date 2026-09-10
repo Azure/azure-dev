@@ -33,6 +33,7 @@ Schemas, flags, environment variables, and configuration details.
 - [azure.yaml Schema](reference/azure-yaml-schema.md) — Project configuration file reference
 - [Feature Status](reference/feature-status.md) — Current maturity status of all features
 - [Telemetry Data Reference](reference/telemetry-data.md) — Complete schema of all telemetry events and fields
+- [Network Endpoints](reference/network-endpoints.md) — External hosts `azd` contacts at runtime (for firewall allowlisting)
 
 ## Architecture
 
@@ -43,6 +44,7 @@ System overviews, design context, and decision records.
 - [Extension Framework](architecture/extension-framework.md) — gRPC-based extension system architecture
 - [Provisioning Pipeline](architecture/provisioning-pipeline.md) — How infrastructure provisioning works
 - [Telemetry Architecture](architecture/telemetry.md) — How azd collects and exports telemetry
+- [ADR-001: Extension Telemetry Events](architecture/adr-001-extension-telemetry-events.md) — Why extensions report named events with dynamic attributes
 - [ADR Template](architecture/adr-template.md) — Template for lightweight architecture decision records
 
 ---

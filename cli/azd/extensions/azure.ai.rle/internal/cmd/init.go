@@ -6,6 +6,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"azure.ai.rle/internal/project"
@@ -83,17 +84,73 @@ func (a *initAction) Run() error {
 	}
 
 	displayDir := "." + string(os.PathSeparator) + sessionDir
-	_, err = fmt.Fprintf(
-		a.cmd.OutOrStdout(),
+	_, err = fmt.Fprint(a.cmd.OutOrStdout(), initNextSteps(displayDir, runtime.GOOS, os.Getenv("SHELL")))
+	return err
+}
+
+func initNextSteps(displayDir string, goos string, shell string) string {
+	projectEndpoint := `https://<account>.services.ai.azure.com/api/projects/<project>`
+	registryEndpoint := `<registry>.azurecr.io`
+	setEnvironment := fmt.Sprintf(
+		"  $env:FOUNDRY_PROJECT_ENDPOINT = %q\n  $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = %q\n",
+		projectEndpoint,
+		registryEndpoint,
+	)
+	usePOSIXSyntax := goos != "windows"
+	if isPowerShellExecutable(shell) {
+		usePOSIXSyntax = false
+	} else if isPOSIXShellExecutable(shell) {
+		usePOSIXSyntax = true
+	}
+	if usePOSIXSyntax {
+		setEnvironment = fmt.Sprintf(
+			"  export FOUNDRY_PROJECT_ENDPOINT=%q\n  export AZURE_CONTAINER_REGISTRY_ENDPOINT=%q\n",
+			projectEndpoint,
+			registryEndpoint,
+		)
+	}
+
+	return fmt.Sprintf(
 		"Created OpenEnv-style environment at: %s\n"+
-			"Next steps:\n"+
+			"\nRun locally:\n"+
 			"  cd \"%s\"\n"+
 			"  azd ai rle run\n"+
-			"  $env:FOUNDRY_PROJECT_ENDPOINT = \"https://<account>.services.ai.azure.com/api/projects/<project>\"\n"+
-			"  $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = \"<registry>.azurecr.io\"\n"+
-			"  azd ai rle deploy\n",
+			"\nPublish to RLE when ready:\n"+
+			"%s"+
+			"  azd ai rle publish\n",
 		displayDir,
 		displayDir,
+		setEnvironment,
 	)
-	return err
+}
+
+func isPowerShellExecutable(shell string) bool {
+	switch executableName(shell) {
+	case "pwsh", "pwsh.exe", "powershell", "powershell.exe":
+		return true
+	default:
+		return false
+	}
+}
+
+func isPOSIXShellExecutable(shell string) bool {
+	switch executableName(shell) {
+	case "sh", "sh.exe", "bash", "bash.exe", "zsh", "zsh.exe", "dash", "dash.exe", "fish", "fish.exe":
+		return true
+	default:
+		return false
+	}
+}
+
+func executableName(shell string) string {
+	name := strings.ToLower(strings.TrimSpace(shell))
+	if name == "" {
+		return ""
+	}
+	for _, separator := range []string{`\`, `/`} {
+		if index := strings.LastIndex(name, separator); index >= 0 {
+			name = name[index+1:]
+		}
+	}
+	return name
 }

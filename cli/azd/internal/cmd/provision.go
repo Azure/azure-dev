@@ -230,14 +230,6 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	startTime := time.Now()
 
-	if err := p.projectManager.Initialize(ctx, p.projectConfig); err != nil {
-		return nil, err
-	}
-
-	if err := p.projectManager.EnsureAllTools(ctx, p.projectConfig, nil); err != nil {
-		return nil, err
-	}
-
 	// Apply --subscription and --location flags to the environment before provisioning
 	envChanged := false
 	if p.flags.subscription != "" {
@@ -270,6 +262,19 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		}
 	}
 
+	services, err := p.importManager.ServiceStableFiltered(ctx, p.projectConfig, "", p.env.Getenv)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := p.projectManager.InitializeServices(ctx, services); err != nil {
+		return nil, err
+	}
+
+	if err := p.projectManager.EnsureAllTools(ctx, services); err != nil {
+		return nil, err
+	}
+
 	infra, err := p.importManager.ProjectInfrastructure(ctx, p.projectConfig)
 	if err != nil {
 		return nil, err
@@ -290,6 +295,11 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 		layers = []provisioning.Options{layerOption}
 	}
+
+	// Record the resolved IaC provider(s) directly on the cmd.provision span up front — before the
+	// preview/multi-layer validation and provider work — so the attribute is present on success,
+	// failure, and preview runs alike, scoped to the provisioning lifecycle.
+	p.provisionManager.RecordInfraProviderUsage(ctx, layers)
 
 	if previewMode && len(layers) > 1 {
 		return nil, &internal.ErrorWithSuggestion{

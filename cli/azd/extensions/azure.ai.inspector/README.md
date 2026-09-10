@@ -3,6 +3,28 @@
 Browser-based inspector UI for locally running Foundry agents, packaged as a standalone
 azd extension.
 
+## Extension telemetry API
+
+Extension code reports best-effort usage events through the shared
+`pkg/foundry/telemetry` reporter. Extension-owned event builders remain in
+`internal/telemetry`:
+
+```go
+reporter := foundryTelemetry.NewReporter(azdClient.Telemetry(), nil)
+reporter.Report(ctx, extensionTelemetry.InspectorUIReady())
+```
+
+`Report` has no return value and never changes Inspector behavior. It applies a
+one-second timeout, never retries, and does not log attribute values or transport
+error details. Event names, attribute keys, and bounded values belong in
+`internal/telemetry/events.go`; the server and RPC packages pass typed events and
+must not call `ReportUsage` directly.
+
+Never include ports, URLs, session or conversation IDs, prompts, responses, or
+other customer content. The azd host records events only for extensions installed
+from the official registry. The event currently emitted by this extension is
+documented under [Telemetry](#telemetry).
+
 ## What it does
 
 `azd ai inspector launch` starts a small local HTTP server that:
@@ -39,6 +61,21 @@ azd ai inspector launch --session-id <uuid> --conversation-id <uuid>
 | `--inspector-port` | `8087` | Port the inspector UI listens on. |
 | `--session-id` | _(SPA mints UUID)_ | Optional explicit session ID for the SPA. |
 | `--conversation-id` | _(SPA mints UUID)_ | Optional explicit conversation ID for the SPA. |
+
+## Telemetry
+
+When the SPA sends `setViewReady` after mounting, the extension reports this
+best-effort usage event through azd:
+
+```text
+extension.event = inspector.funnel.stage
+ext.stage = ui_ready
+ext.outcome = succeeded
+```
+
+The event means the Inspector UI loaded. It does not mean that the UI connected
+to the agent or sent a request. No ports, URLs, IDs, prompts, or responses are
+included.
 
 ## Local Development
 

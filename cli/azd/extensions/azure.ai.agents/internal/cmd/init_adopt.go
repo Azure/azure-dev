@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -19,11 +20,14 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agentkind"
+	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -33,51 +37,111 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// foundryServiceHosts are the azure.yaml service `host` values that identify a
-// unified Microsoft Foundry project manifest. The legacy `microsoft.foundry`
-// host is included for backward compatibility with older non-split files.
-var foundryServiceHosts = map[string]struct{}{
-	"azure.ai.agent":      {},
-	"azure.ai.project":    {},
-	"azure.ai.connection": {},
-	"azure.ai.toolbox":    {},
-	"microsoft.foundry":   {},
+type azureYamlManifestInfo struct {
+	hasServices       bool
+	hasAgentService   bool
+	hasUnresolvedRefs bool
 }
 
-// looksLikeFoundryAzureYaml reports whether the given YAML content is a unified
-// Foundry `azure.yaml` project manifest rather than an agent manifest.
+// inspectAzureYaml identifies unified manifests and Agent services.
 //
-// It returns true when the document has a top-level `services:` map in which at
-// least one service declares a Foundry `host:`. Agent manifests have a top-level
-// `template:` and no `services:`, so they never match. This lets `azd ai agent
-// init -m <pointer>` route a unified `azure.yaml` to the adoption path and an
-// agent manifest to the legacy generate path unambiguously.
-func looksLikeFoundryAzureYaml(content []byte) bool {
+// Local references are resolved against projectRoot. Remote references
+// wait for the sample directory download.
+func inspectAzureYaml(content []byte, projectRoot string) (azureYamlManifestInfo, error) {
+	var info azureYamlManifestInfo
 	var top map[string]any
 	if err := yaml.Unmarshal(content, &top); err != nil {
-		return false
+		return info, nil
 	}
 
 	services, ok := top["services"].(map[string]any)
 	if !ok {
-		return false
+		return info, nil
 	}
+	info.hasServices = true
 
-	for _, svc := range services {
+	for serviceName, svc := range services {
 		svcMap, ok := svc.(map[string]any)
 		if !ok {
 			continue
 		}
-		host, ok := svcMap["host"].(string)
-		if !ok {
-			continue
+
+		if hasAzureYamlFileRef(svcMap) {
+			if projectRoot == "" {
+				info.hasUnresolvedRefs = true
+			} else {
+				resolved, err := foundry.ResolveFileRefs(svcMap, projectRoot)
+				if err != nil {
+					return info, fmt.Errorf(
+						"resolving $ref includes for service %q: %w",
+						serviceName,
+						err,
+					)
+				}
+				svcMap = resolved
+			}
 		}
-		if _, isFoundry := foundryServiceHosts[host]; isFoundry {
+
+		host, _ := svcMap["host"].(string)
+		if host == AiAgentHost {
+			info.hasAgentService = true
+		}
+	}
+
+	return info, nil
+}
+
+func hasAzureYamlFileRef(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		if _, ok := typed["$ref"]; ok {
+			return true
+		}
+		for _, child := range typed {
+			if hasAzureYamlFileRef(child) {
+				return true
+			}
+		}
+	case []any:
+		if slices.ContainsFunc(typed, hasAzureYamlFileRef) {
 			return true
 		}
 	}
 
 	return false
+}
+
+func missingAgentServiceError(manifestPointer string) error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidManifestPointer,
+		fmt.Sprintf(
+			"manifest %q is a unified azure.yaml but does not declare an agent service",
+			manifestPointer,
+		),
+		fmt.Sprintf(
+			"add a service with host: %s, or pass an agent manifest",
+			AiAgentHost,
+		),
+	)
+}
+
+func validateStagedAzureYaml(stagingDir, manifestPointer string) error {
+	manifestPath := filepath.Join(stagingDir, "azure.yaml")
+	//nolint:gosec // stagingDir is created or selected by the init flow
+	content, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("reading staged azure.yaml: %w", err)
+	}
+
+	info, err := inspectAzureYaml(content, stagingDir)
+	if err != nil {
+		return err
+	}
+	if !info.hasServices || !info.hasAgentService {
+		return missingAgentServiceError(manifestPointer)
+	}
+
+	return nil
 }
 
 // foundryProjectName returns the top-level `name:` of a unified azure.yaml, used
@@ -492,7 +556,7 @@ func promptAlternativeDeployment(
 	if useCatalog {
 		// Use the full model + deployment prompt which handles version,
 		// SKU, and capacity selection (same as manifest path).
-		defaultModel := "gpt-4.1-mini"
+		defaultModel := defaultAgentModel
 		if modelFlag != "" {
 			defaultModel = modelFlag
 		}
@@ -652,6 +716,172 @@ func updateAzureYamlDeployments(
 	return nil
 }
 
+type adoptedAgentNameResolver func(context.Context, string) (string, error)
+
+func adoptedAgentNameConflictSuggestion() string {
+	return "To create a separate agent, re-run init with --agent-name <unique-name> for single-agent samples, " +
+		"or update each agent service's `name` in the adopted azure.yaml.\n"
+}
+
+// confirmAdoptedAgentNameConflicts checks every agent definition embedded in an
+// adopted azure.yaml against the selected existing Foundry project. The shared
+// resolver warns and asks for confirmation before reusing a name, or prompts
+// for a replacement name and returns it.
+func confirmAdoptedAgentNameConflicts(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	environment *azdext.Environment,
+	credential azcore.TokenCredential,
+	noPrompt bool,
+) error {
+	return updateAdoptedAgentNames(ctx, azdClient, func(ctx context.Context, agentName string) (string, error) {
+		return resolveExistingAgentNameConflict(
+			ctx,
+			azdClient,
+			environment,
+			credential,
+			noPrompt,
+			agentName,
+			withNoPromptAgentNameConflictSuggestion(adoptedAgentNameConflictSuggestion()),
+		)
+	})
+}
+
+// updateAdoptedAgentNames resolves name conflicts for adopted agent services
+// and persists any replacement names in azure.yaml.
+func updateAdoptedAgentNames(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	resolveName adoptedAgentNameResolver,
+) error {
+	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("reading adopted project for agent name conflicts: %w", err)
+	}
+
+	services := resp.GetProject().GetServices()
+	serviceNames := make([]string, 0, len(services))
+	for serviceName, svc := range services {
+		if svc.GetHost() == AiAgentHost {
+			serviceNames = append(serviceNames, serviceName)
+		}
+	}
+	slices.Sort(serviceNames)
+
+	for _, serviceName := range serviceNames {
+		agentName, configPath := adoptedAgentNameConfig(services[serviceName])
+		if agentName == "" {
+			continue
+		}
+
+		resolvedName, err := resolveName(ctx, agentName)
+		if err != nil {
+			return err
+		}
+		if resolvedName == agentName {
+			continue
+		}
+
+		value, err := structpb.NewValue(resolvedName)
+		if err != nil {
+			return fmt.Errorf("encoding replacement name for agent service %q: %w", serviceName, err)
+		}
+		if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+			ServiceName: serviceName,
+			Path:        configPath,
+			Value:       value,
+		}); err != nil {
+			return fmt.Errorf("updating agent name in azure.yaml for service %q: %w", serviceName, err)
+		}
+	}
+
+	return nil
+}
+
+func applyAdoptedAgentNameOverride(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentName string,
+) error {
+	agentName, err := validateInitAgentName(agentName)
+	if err != nil {
+		return err
+	}
+
+	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("reading adopted project for agent name override: %w", err)
+	}
+
+	var serviceName string
+	var configPath string
+	for name, svc := range resp.GetProject().GetServices() {
+		if svc.GetHost() != AiAgentHost {
+			continue
+		}
+		if serviceName != "" {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--agent-name cannot be applied to an adopted azure.yaml with multiple agent services",
+				"update each agent service's `name` in azure.yaml after init, or use a sample with a single agent service",
+			)
+		}
+		serviceName = name
+		configPath = adoptedAgentNameOverrideConfigPath(svc)
+	}
+	if serviceName == "" {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--agent-name could not be applied because the adopted azure.yaml has no agent service",
+			"update the agent service's `name` in azure.yaml after init, or use a sample with an agent service",
+		)
+	}
+
+	value, err := structpb.NewValue(agentName)
+	if err != nil {
+		return fmt.Errorf("encoding agent name override for agent service %q: %w", serviceName, err)
+	}
+	if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+		ServiceName: serviceName,
+		Path:        configPath,
+		Value:       value,
+	}); err != nil {
+		return fmt.Errorf("updating agent name in adopted azure.yaml for service %q: %w", serviceName, err)
+	}
+
+	return nil
+}
+
+func adoptedAgentNameOverrideConfigPath(svc *azdext.ServiceConfig) string {
+	if svc == nil {
+		return "name"
+	}
+	if legacy := svc.GetConfig(); legacy != nil && legacy.GetFields()["kind"].GetStringValue() != "" {
+		return "config.name"
+	}
+	return "name"
+}
+
+// adoptedAgentNameConfig returns the Foundry agent name and its service-relative
+// config path for the unified inline shape or deprecated config-nested shape.
+func adoptedAgentNameConfig(svc *azdext.ServiceConfig) (string, string) {
+	if svc == nil {
+		return "", ""
+	}
+
+	inline := svc.GetAdditionalProperties()
+	if inline != nil && inline.GetFields()["kind"].GetStringValue() != "" {
+		return strings.TrimSpace(inline.GetFields()["name"].GetStringValue()), "name"
+	}
+
+	legacy := svc.GetConfig()
+	if legacy != nil && legacy.GetFields()["kind"].GetStringValue() != "" {
+		return strings.TrimSpace(legacy.GetFields()["name"].GetStringValue()), "config.name"
+	}
+
+	return "", ""
+}
+
 // readManifestContentForInitDetection returns the pointed-at YAML content for
 // init-mode routing. It first uses the cheap peek path; when that cannot read a
 // GitHub URL (for example, a private repository), it falls back to the
@@ -665,6 +895,13 @@ func readManifestContentForInitDetection(
 ) ([]byte, bool) {
 	if content, ok := readManifestContentForPeek(ctx, manifestPointer, httpClient); ok {
 		return content, true
+	}
+	cachedContent, cached := readCachedTemplateManifest(manifestPointer)
+	if cached {
+		return cachedContent, true
+	}
+	if templateCacheRoot() != "" {
+		return nil, false
 	}
 	if azdClient == nil || !strings.Contains(manifestPointer, "://") {
 		return nil, false
@@ -730,7 +967,16 @@ func runInitFromAzureYaml(
 	httpClient *http.Client,
 	content []byte,
 ) error {
-	targetDir, folderDisplay := adoptTargetDir(flags, foundryProjectName(content))
+	projectName := foundryProjectName(content)
+	agentNameOverride, err := adoptedAgentNameOverride(flags)
+	if err != nil {
+		return err
+	}
+	if agentNameOverride != "" {
+		projectName = agentNameOverride
+	}
+
+	targetDir, folderDisplay := adoptTargetDir(flags, projectName)
 
 	// Adoption is a fresh-project operation: it lays down the project-root
 	// azure.yaml. When the target already contains an azd project manifest we
@@ -746,7 +992,6 @@ func runInitFromAzureYaml(
 				"'azd ai agent init -m <agent.manifest.yaml>'",
 		)
 	}
-
 	// Stage the sample as a local template directory (azure.yaml at its root
 	// alongside referenced files) that azd-core can adopt with `azd init -t`.
 	stagingDir, cleanup, err := stageAzureYamlTemplate(ctx, flags, azdClient, httpClient)
@@ -754,6 +999,21 @@ func runInitFromAzureYaml(
 		return err
 	}
 	defer cleanup()
+
+	if err := validateStagedAzureYaml(stagingDir, flags.manifestPointer); err != nil {
+		return err
+	}
+	if agentNameOverride != "" {
+		// Validate against the fully staged template so services whose host lives
+		// inside a local $ref are counted the same way azd-core will load them.
+		stagedContent, err := os.ReadFile(filepath.Join(stagingDir, "azure.yaml"))
+		if err != nil {
+			return fmt.Errorf("reading staged azure.yaml for agent name override: %w", err)
+		}
+		if err := validateAdoptedAgentNameOverride(stagedContent, stagingDir); err != nil {
+			return err
+		}
+	}
 
 	fmt.Println(output.WithGrayFormat("Adopting the sample's azure.yaml as your project manifest..."))
 
@@ -767,6 +1027,11 @@ func runInitFromAzureYaml(
 	// bicep-less by default.
 	if err := ensureFoundryProviderDeclared(ctx, azdClient); err != nil {
 		return err
+	}
+	if agentNameOverride != "" {
+		if err := applyAdoptedAgentNameOverride(ctx, azdClient, agentNameOverride); err != nil {
+			return err
+		}
 	}
 
 	// --- Interactive Azure context setup (subscription, Foundry project) ---
@@ -793,20 +1058,26 @@ func runInitFromAzureYaml(
 	// resolved deploy mode: a container agent on an existing project
 	// needs AZURE_CONTAINER_REGISTRY_ENDPOINT set here, while a code
 	// agent (or a user-supplied --image) does not.
-	usesContainer, err := applyDeployModeToAdoptedProject(ctx, flags, azdClient)
+	projectNeedsACR, configuredSourceContainers, err := applyDeployModeToAdoptedProjectWithSources(
+		ctx, flags, azdClient,
+	)
 	if err != nil {
 		return err
 	}
 
-	// skipACR is false only for a container deploy whose registry azd
-	// manages. Code deploy and --image (bring your own registry) both
-	// skip ACR.
-	skipACR := !usesContainer || flags.image != ""
+	// Only source-container deploys require an ACR. Code deploy and pre-built
+	// images skip it.
+	skipACR := !projectNeedsACR
+	// The adopt path only supports hosted agents today. Hosted-region filtering
+	// is independent from ACR setup; prompt-voice has its own region/onboarding
+	// constraints and does not flow through this path.
+	filterHostedRegions := true
 
 	result, err := configureFoundryProject(
 		ctx, azdClient, azureContext, env.Name,
-		flags.projectResourceId, flags.noPrompt,
+		flags.projectResourceId, flags.acrConnection, flags.noPrompt,
 		skipACR,
+		filterHostedRegions,
 	)
 	if err != nil {
 		if exterrors.IsCancellation(err) {
@@ -819,7 +1090,44 @@ func runInitFromAzureYaml(
 	// azure.ai.project service so the provisioning provider recognizes the
 	// brownfield signal and reuses the project instead of creating a new one.
 	if result.FoundryProject != nil {
+		if err := finalizeAdoptedSourceContainerNetwork(
+			ctx,
+			azdClient,
+			configuredSourceContainers,
+			result.FoundryProject.NetworkInjected,
+		); err != nil {
+			return err
+		}
+		projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+		if err != nil {
+			return fmt.Errorf("reading adopted project registry connections: %w", err)
+		}
+		externalConnections, err := adoptedExternalRegistryConnections(
+			projectResponse.GetProject(), flags.registryConnection,
+		)
+		if err != nil {
+			return err
+		}
+		for _, connectionRef := range externalConnections {
+			if err := verifyRegistryConnectionOnProject(
+				ctx,
+				result.Credential,
+				*result.FoundryProject,
+				connectionRef,
+			); err != nil {
+				return err
+			}
+		}
 		if err := stampProjectEndpoint(ctx, azdClient, result.FoundryProject); err != nil {
+			return err
+		}
+		if err := confirmAdoptedAgentNameConflicts(
+			ctx,
+			azdClient,
+			env,
+			result.Credential,
+			flags.noPrompt,
+		); err != nil {
 			return err
 		}
 	}
@@ -871,6 +1179,17 @@ func runInitFromAzureYaml(
 		}
 	}
 
+	// scaffoldProject changes the extension process into the adopted project root.
+	if err := configureAzureYamlEnvironmentVariables(
+		ctx,
+		azdClient,
+		env.Name,
+		".",
+		flags.noPrompt,
+	); err != nil {
+		return err
+	}
+
 	fmt.Printf(
 		"\nAdopted the sample's azure.yaml as the project manifest at %s.\n",
 		output.WithHighLightFormat("azure.yaml"),
@@ -878,6 +1197,71 @@ func runInitFromAzureYaml(
 
 	printAdoptionNextSteps(ctx, azdClient, folderDisplay)
 	return nil
+}
+
+func validateAdoptedAgentNameOverride(content []byte, projectRoot string) error {
+	var doc map[string]any
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		return fmt.Errorf("parsing adopted azure.yaml for agent name override: %w", err)
+	}
+
+	services, ok := doc["services"].(map[string]any)
+	if !ok {
+		services = map[string]any{}
+	}
+
+	agentServices := 0
+	for serviceName, svc := range services {
+		svcMap, ok := svc.(map[string]any)
+		if !ok {
+			continue
+		}
+		if hasAzureYamlFileRef(svcMap) && projectRoot != "" {
+			resolved, err := foundry.ResolveFileRefs(svcMap, projectRoot)
+			if err != nil {
+				return fmt.Errorf("resolving $ref includes for service %q: %w", serviceName, err)
+			}
+			svcMap = resolved
+		}
+
+		host, _ := svcMap["host"].(string)
+		if host != AiAgentHost {
+			continue
+		}
+		agentServices++
+		if agentServices > 1 {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--agent-name cannot be applied to an adopted azure.yaml with multiple agent services",
+				"update each agent service's `name` in azure.yaml after init, or use a sample with a single agent service",
+			)
+		}
+	}
+	if agentServices == 0 {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--agent-name could not be applied because the adopted azure.yaml has no agent service",
+			"update the agent service's `name` in azure.yaml after init, or use a sample with an agent service",
+		)
+	}
+
+	return nil
+}
+
+func adoptedAgentNameOverride(flags *initFlags) (string, error) {
+	if !flags.agentNameExplicit {
+		return "", nil
+	}
+	agentNameOverride := strings.TrimSpace(flags.agentName)
+	if agentNameOverride == "" {
+		return "", nil
+	}
+	validatedName, err := validateInitAgentName(agentNameOverride)
+	if err != nil {
+		return "", err
+	}
+	flags.agentName = validatedName
+	return validatedName, nil
 }
 
 // adoptTargetDir resolves the directory the adopted project is created in and
@@ -1040,6 +1424,7 @@ func stageRemoteAzureYaml(
 	fmt.Println(output.WithGrayFormat("Downloading sample from GitHub..."))
 
 	triedPublicDownload := false
+	var publicDownloadErr error
 	if urlInfo := parseGitHubUrlNaive(pointer); urlInfo != nil {
 		triedPublicDownload = true
 		dirPath := parentDirOf(urlInfo.FilePath)
@@ -1052,14 +1437,23 @@ func stageRemoteAzureYaml(
 				return normalizeErr
 			}
 			if hasAzureYaml {
+				if cacheErr := refreshTemplateCache(pointer, staging); cacheErr != nil {
+					emitTemplateCacheWarning(fmt.Sprintf("Unable to refresh the sample cache: %s", cacheErr))
+				}
 				return nil
 			}
+			publicDownloadErr = errors.New("downloaded sample did not contain azure.yaml")
+		} else {
+			publicDownloadErr = err
 		}
 	}
 
 	if triedPublicDownload {
 		if err := clearStagingDirectory(staging); err != nil {
 			return err
+		}
+		if publicDownloadErr != nil && templateCacheRoot() != "" {
+			return useCachedTemplateOnDownloadError(pointer, staging, publicDownloadErr)
 		}
 	}
 
@@ -1194,23 +1588,30 @@ func printAdoptionNextSteps(ctx context.Context, azdClient *azdext.AzdClient, fo
 // explicit flag is passed and the service already has a codeConfiguration or
 // docker property, the service is left unchanged (the sample is pre-configured).
 //
-// It reports whether any agent service resolved to a container
-// (Docker) deploy so the caller can decide whether an Azure
-// Container Registry must be wired (existing project) or created
-// on provision.
+// It reports whether any agent service requires an Azure Container Registry
+// for a source-container build.
 func applyDeployModeToAdoptedProject(
 	ctx context.Context,
 	flags *initFlags,
 	azdClient *azdext.AzdClient,
 ) (bool, error) {
+	projectNeedsACR, _, err := applyDeployModeToAdoptedProjectWithSources(ctx, flags, azdClient)
+	return projectNeedsACR, err
+}
+
+func applyDeployModeToAdoptedProjectWithSources(
+	ctx context.Context,
+	flags *initFlags,
+	azdClient *azdext.AzdClient,
+) (bool, []string, error) {
 	// Validate --image flag early (incompatible with --deploy-mode code).
 	if err := validateImageFlag(flags.image, flags.deployMode); err != nil {
-		return false, err
+		return false, nil, err
 	}
 
 	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		return false, fmt.Errorf("reading adopted project: %w", err)
+		return false, nil, fmt.Errorf("reading adopted project: %w", err)
 	}
 
 	// Collect all agent services in the adopted project.
@@ -1226,37 +1627,219 @@ func applyDeployModeToAdoptedProject(
 	}
 	if len(agentServices) == 0 {
 		// No agent service found -- nothing to configure.
-		return false, nil
+		return false, nil, nil
 	}
 
-	// Apply configuration to each agent service, tracking whether any
-	// resolves to a container deploy so the caller can wire an ACR.
-	usesContainer := false
+	// Apply configuration to each agent service, tracking whether the project
+	// contains any source container that requires an ACR. Record only source
+	// containers configured by this init so their remote-build decision can be
+	// finalized after Foundry project network discovery.
+	projectNeedsACR := false
+	var configuredSourceContainers []string
 	for _, agent := range agentServices {
-		container, err := applyDeployModeToService(ctx, flags, azdClient, agent.name, agent.svc)
+		kind, err := adoptedAgentKind(agent.svc, resp.GetProject().GetPath())
 		if err != nil {
-			return false, err
+			return false, nil, err
 		}
-		if container {
-			usesContainer = true
+		if kind != "" && kind != "hosted" {
+			continue
+		}
+		hadDockerConfig := adoptedServiceHasDocker(agent.svc)
+		serviceNeedsACR, err := applyDeployModeToService(
+			ctx,
+			flags,
+			azdClient,
+			resp.GetProject().GetPath(),
+			agent.name,
+			agent.svc,
+		)
+		if err != nil {
+			return false, nil, err
+		}
+		projectNeedsACR = projectNeedsACR || serviceNeedsACR
+		if serviceNeedsACR && (flags.deployMode != "" || !hadDockerConfig) {
+			configuredSourceContainers = append(configuredSourceContainers, agent.name)
 		}
 	}
-	return usesContainer, nil
+	return projectNeedsACR, configuredSourceContainers, nil
+}
+
+func adoptedAgentKind(svc *azdext.ServiceConfig, projectRoot string) (string, error) {
+	kind, err := agentkind.Kind(svc, projectRoot, "")
+	if err != nil {
+		return "", fmt.Errorf("resolving adopted agent kind for service %q: %w", svc.GetName(), err)
+	}
+	return kind, nil
+}
+
+func finalizeAdoptedSourceContainerNetwork(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceNames []string,
+	networkInjected bool,
+) error {
+	if len(serviceNames) == 0 {
+		return nil
+	}
+	dockerMap, err := dockerProjectMapForHostedContainer("", networkInjected)
+	if err != nil {
+		return err
+	}
+	for _, serviceName := range serviceNames {
+		dockerValue, err := structpb.NewValue(dockerMap)
+		if err != nil {
+			return fmt.Errorf("encoding finalized docker configuration: %w", err)
+		}
+		if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+			ServiceName: serviceName,
+			Path:        "docker",
+			Value:       dockerValue,
+		}); err != nil {
+			return fmt.Errorf("finalizing docker property on agent service %q: %w", serviceName, err)
+		}
+	}
+	return nil
+}
+
+func adoptedExternalRegistryConnections(
+	projectConfig *azdext.ProjectConfig,
+	flagConnection string,
+) ([]string, error) {
+	if projectConfig == nil {
+		return nil, nil
+	}
+
+	siblingConnections := map[string]struct{}{}
+	for serviceName, service := range projectConfig.GetServices() {
+		if service.GetHost() != AiConnectionHost {
+			continue
+		}
+		siblingConnections[serviceName] = struct{}{}
+		props, err := resolvedResourceServiceProps(service, projectConfig.GetPath())
+		if err != nil {
+			return nil, fmt.Errorf("resolving connection service %q: %w", serviceName, err)
+		}
+		if props == nil {
+			continue
+		}
+		var connection *project.Connection
+		if err := project.UnmarshalStruct(props, &connection); err != nil {
+			return nil, fmt.Errorf("parsing connection service %q: %w", serviceName, err)
+		}
+		if connection != nil && strings.TrimSpace(connection.Name) != "" {
+			siblingConnections[strings.TrimSpace(connection.Name)] = struct{}{}
+		}
+	}
+
+	externalConnections := map[string]struct{}{}
+	flagConnection = strings.TrimSpace(flagConnection)
+	for serviceName, service := range projectConfig.GetServices() {
+		if service.GetHost() != AiAgentHost {
+			continue
+		}
+		connectionRef := flagConnection
+		if connectionRef == "" {
+			resolvedAgent, _, hasDefinition, _, err := project.AgentDefinitionFromResolvedService(
+				service, projectConfig.GetPath(),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("reading adopted agent service %q: %w", serviceName, err)
+			}
+			if hasDefinition {
+				connectionRef = strings.TrimSpace(resolvedAgent.RegistryConnectionID)
+			}
+		}
+		if connectionRef == "" {
+			continue
+		}
+		if _, ok := siblingConnections[connectionRef]; !ok {
+			externalConnections[connectionRef] = struct{}{}
+		}
+	}
+	return slices.Sorted(maps.Keys(externalConnections)), nil
 }
 
 // applyDeployModeToService applies deploy-mode configuration to a
-// single agent service and reports whether the resolved mode is a
-// container (Docker) deploy. A container deploy that azd builds
-// requires an Azure Container Registry; a code (ZIP) deploy does
-// not. A user-provided --image is a container deploy but uses the
-// caller's own registry, so callers treat --image as skip-ACR.
+// single agent service and reports whether the resolved mode requires an ACR.
+// Source-container builds require one; code deploy and pre-built images do not.
 func applyDeployModeToService(
 	ctx context.Context,
 	flags *initFlags,
 	azdClient *azdext.AzdClient,
+	projectPath string,
 	serviceName string,
 	svc *azdext.ServiceConfig,
 ) (bool, error) {
+	resolvedAgent, isHosted, hasDefinition, _, err := project.AgentDefinitionFromResolvedService(svc, projectPath)
+	if err != nil {
+		return false, fmt.Errorf("reading adopted agent service %q: %w", serviceName, err)
+	}
+	hasCodeConfig := adoptedServiceHasCodeConfig(svc) ||
+		(hasDefinition && resolvedAgent.CodeConfiguration != nil)
+
+	effectiveImage := strings.TrimSpace(flags.image)
+	if effectiveImage == "" {
+		effectiveImage = strings.TrimSpace(svc.GetImage())
+	}
+	if effectiveImage == "" && hasDefinition {
+		effectiveImage = strings.TrimSpace(resolvedAgent.Image)
+	}
+
+	connectionRef := strings.TrimSpace(flags.registryConnection)
+	if flags.registryConnection != "" {
+		if connectionRef == "" {
+			return false, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"registry connection cannot be empty or whitespace",
+				"provide the name or ID of an existing Foundry project connection",
+			)
+		}
+		if hasDefinition && !isHosted {
+			return false, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"a registry connection is only valid for hosted container agents",
+				"use a registry connection with a hosted agent that supplies a pre-built image",
+			)
+		}
+		if flags.deployMode == "code" ||
+			(flags.deployMode == "" && flags.image == "" && hasCodeConfig) {
+			return false, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"a registry connection cannot be used with code deploy",
+				"use the registry connection with a pre-built image or remove it",
+			)
+		}
+
+		if effectiveImage == "" {
+			return false, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"a registry connection requires a pre-built image",
+				"pass --image <registry/image:tag> or provide an image in the hosted-agent manifest",
+			)
+		}
+		if err := validateHostedContainerImage(effectiveImage); err != nil {
+			return false, err
+		}
+	}
+
+	writeRegistryConnection := func() error {
+		if connectionRef == "" {
+			return nil
+		}
+		connectionValue, err := structpb.NewValue(connectionRef)
+		if err != nil {
+			return fmt.Errorf("encoding registry connection value: %w", err)
+		}
+		if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+			ServiceName: serviceName,
+			Path:        "registryConnectionId",
+			Value:       connectionValue,
+		}); err != nil {
+			return fmt.Errorf("writing registry connection to agent service %q: %w", serviceName, err)
+		}
+		return nil
+	}
+
 	// Apply --image override to the agent service when provided.
 	if flags.image != "" {
 		imageValue, err := structpb.NewValue(flags.image)
@@ -1272,22 +1855,58 @@ func applyDeployModeToService(
 		}
 		log.Printf("Applied --image %q to agent service %q", flags.image, serviceName)
 
-		// --image implies container deploy; apply container config and return.
-		if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc); err != nil {
+		// --image implies container deploy; apply image passthrough and return.
+		if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc, flags.image); err != nil {
 			return false, err
 		}
-		return true, nil
+		if err := writeRegistryConnection(); err != nil {
+			return false, err
+		}
+		return false, nil
 	}
 
-	// Check whether the service already specifies its deploy mode.
-	hasCodeConfig := adoptedServiceHasCodeConfig(svc)
+	// Check whether the service already specifies its deploy mode. Code deploy
+	// takes precedence over stale image or docker properties when no override
+	// is requested.
 	hasDocker := adoptedServiceHasDocker(svc)
+	if flags.deployMode == "" && hasCodeConfig {
+		return false, nil
+	}
 
-	// When no explicit --deploy-mode flag is passed and the service
-	// is already configured, respect the sample's existing config. A
-	// pre-configured docker property means container deploy.
-	if flags.deployMode == "" && (hasCodeConfig || hasDocker) {
-		return hasDocker, nil
+	// An adopted service that already declares an image also uses passthrough,
+	// even when --image was not supplied during this init. Legacy definitions
+	// may carry the image in extension properties, so promote the resolved value
+	// to the core service image field. An explicit code mode overrides a leftover image.
+	if effectiveImage != "" && flags.deployMode != "code" {
+		if err := validateHostedContainerImage(effectiveImage); err != nil {
+			return false, err
+		}
+		if strings.TrimSpace(svc.GetImage()) == "" {
+			imageValue, err := structpb.NewValue(effectiveImage)
+			if err != nil {
+				return false, fmt.Errorf("encoding resolved image value: %w", err)
+			}
+			if _, err := azdClient.Project().SetServiceConfigValue(ctx, &azdext.SetServiceConfigValueRequest{
+				ServiceName: serviceName,
+				Path:        "image",
+				Value:       imageValue,
+			}); err != nil {
+				return false, fmt.Errorf("promoting resolved image on agent service %q: %w", serviceName, err)
+			}
+		}
+		if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc, effectiveImage); err != nil {
+			return false, err
+		}
+		if err := writeRegistryConnection(); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+
+	// When no explicit --deploy-mode flag is passed and the service is already
+	// configured for a source-container build, respect that configuration.
+	if flags.deployMode == "" && hasDocker {
+		return true, nil
 	}
 
 	// Use the service's subdirectory for language detection (not project root).
@@ -1295,17 +1914,29 @@ func applyDeployModeToService(
 	if targetDir == "" {
 		targetDir = "."
 	}
-	showCodeDeploy := isPythonProject(targetDir) || isDotnetProject(targetDir)
+	serviceDir, err := paths.JoinAllowRoot(projectPath, targetDir)
+	if err != nil {
+		return false, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("invalid service path for %s: %s", serviceName, err),
+			"update azure.yaml so the agent service path stays within the project directory",
+		)
+	}
+	showCodeDeploy := supportsCodeDeploy(serviceDir)
 	// userProvidedManifest is true: -m was explicitly provided.
-	deployMode, err := promptDeployMode(ctx, azdClient, flags.noPrompt, showCodeDeploy, flags.deployMode, true)
+	deployMode, err := promptDeployMode(
+		ctx, azdClient, flags.noPrompt, showCodeDeploy, flags.deployMode, true,
+	)
 	if err != nil {
 		return false, fmt.Errorf("resolving deploy mode for adopted project: %w", err)
 	}
 
 	if deployMode == "code" {
-		return false, applyCodeDeployToService(ctx, flags, azdClient, serviceName, targetDir, svc)
+		return false, applyCodeDeployToService(
+			ctx, flags, azdClient, serviceName, serviceDir, svc,
+		)
 	}
-	if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc); err != nil {
+	if err := applyContainerDeployToService(ctx, azdClient, serviceName, svc, ""); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -1434,9 +2065,12 @@ func applyContainerDeployToService(
 	azdClient *azdext.AzdClient,
 	serviceName string,
 	svc *azdext.ServiceConfig,
+	image string,
 ) error {
-	// Set docker property with remote build enabled.
-	dockerMap := map[string]any{"remoteBuild": true}
+	dockerMap, err := dockerProjectMapForHostedContainer(image, false)
+	if err != nil {
+		return err
+	}
 	dockerValue, err := structpb.NewValue(dockerMap)
 	if err != nil {
 		return fmt.Errorf("encoding docker configuration: %w", err)

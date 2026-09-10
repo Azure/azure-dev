@@ -92,7 +92,7 @@ func (c *Customizations) GetCommandArgGenerator(ctx *CommandContext, argName str
 		if argName == "extension-id" {
 			return FigGenListExtensions
 		}
-	case "azd extension upgrade", "azd extension uninstall":
+	case "azd extension update", "azd extension uninstall":
 		if argName == "extension-id" {
 			return FigGenListInstalledExtensions
 		}
@@ -141,10 +141,12 @@ func (c *Customizations) GetCommandArgs(ctx *CommandContext) []Arg {
 			{Name: "name", Suggestions: hookNameValues},
 		}
 	case "azd extension install":
-		// The argument is either an extension id or a path to a self-contained
-		// bundle (.zip), so offer both id completion and file-path suggestions.
+		// Bundle URLs share the positional argument with extension IDs and .zip paths.
 		return []Arg{
-			{Name: "extension-id|extension-bundle.zip", Generator: FigGenListExtensions, Template: "filepaths"},
+			{
+				Name:       "extension-id|bundle-path-or-url",
+				Generators: []string{FigGenListExtensions, FigGenFilepathsZip},
+			},
 		}
 	}
 

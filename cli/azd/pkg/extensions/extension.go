@@ -24,6 +24,7 @@ type Extension struct {
 	Usage             string           `json:"usage"`
 	Path              string           `json:"path"`
 	Source            string           `json:"source"`
+	SourceCategory    SourceCategory   `json:"sourceCategory,omitempty"`
 	Providers         []Provider       `json:"providers,omitempty"`
 	McpConfig         *McpConfig       `json:"mcp,omitempty"`
 	LastUpdateWarning string           `json:"lastUpdateWarning,omitempty"`
@@ -38,6 +39,14 @@ type Extension struct {
 
 	reportedError error      // structured error reported by the extension via gRPC
 	errorMu       sync.Mutex // guards reportedError
+}
+
+// SourceCategoryOrUnknown returns the persisted category, defaulting legacy records to unknown.
+func (e *Extension) SourceCategoryOrUnknown() SourceCategory {
+	if e == nil {
+		return SourceCategoryUnknown
+	}
+	return normalizeSourceCategory(e.SourceCategory)
 }
 
 // ensureInit initializes the extension's buffers and signals once.
@@ -113,7 +122,7 @@ func (e *Extension) StdErr() *output.DynamicMultiWriter {
 func (e *Extension) SetReportedError(err error) {
 	e.errorMu.Lock()
 	defer e.errorMu.Unlock()
-	e.reportedError = err
+	e.reportedError = WrapInvocationError(err, e.Id, e.Version, "")
 }
 
 // GetReportedError returns the structured error reported by the extension, if any.

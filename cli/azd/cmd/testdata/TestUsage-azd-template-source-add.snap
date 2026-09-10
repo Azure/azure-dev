@@ -19,7 +19,7 @@ Global Flags
         --docs               	: Opens the documentation for azd template source add in your web browser.
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for add.
-        --no-prompt          	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+        --no-prompt          	: Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically. Automatically enabled when azd detects a CI/CD or AI-agent environment; set AZD_NON_INTERACTIVE=false to opt out of that automatic enablement.
 
 Examples
   Add default azd templates source.

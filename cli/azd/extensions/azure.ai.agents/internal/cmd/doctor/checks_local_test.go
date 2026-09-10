@@ -165,7 +165,7 @@ func TestCheckGRPCAndVersion_BelowFloor_Warns(t *testing.T) {
 	require.Equal(t, StatusWarn, got.Status)
 	require.Contains(t, got.Message, "0.1.26-preview")
 	require.Contains(t, got.Message, MinNewBackendVersion)
-	require.Contains(t, got.Suggestion, "azd ext upgrade azure.ai.agents")
+	require.Contains(t, got.Suggestion, "azd ext update azure.ai.agents")
 	require.Contains(t, got.Links, "https://aka.ms/hostedagents/tsg/readme")
 	require.Equal(t, "0.1.26-preview", got.Details["extensionVersion"])
 	require.Equal(t, MinNewBackendVersion, got.Details["minBackendVersion"])
@@ -455,9 +455,9 @@ func TestNewLocalChecks_OrderAndIDs(t *testing.T) {
 		{"local.environment-selected", "azd environment selected", false},
 		{"local.agent-service-detected", "agent service in azure.yaml", false},
 		{"local.project-endpoint-set", "FOUNDRY_PROJECT_ENDPOINT set", false},
-		{"local.agent-yaml-valid", "agent.yaml valid (per service)", false},
+		{"local.agent-yaml-valid", "agent definition valid (per service)", false},
 		{"local.manual-env-vars", "manual env vars set", false},
-		{"local.toolboxes", "Manifest toolboxes have endpoint env vars set", false},
+		{"local.toolboxes", "Configured toolboxes have endpoint env vars set", false},
 	}
 	for i, w := range want {
 		require.Equal(t, w.id, checks[i].ID, "index %d", i)

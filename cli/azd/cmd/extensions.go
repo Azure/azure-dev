@@ -271,7 +271,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	defer a.azdServer.Stop()
 
-	jwtToken, err := grpcserver.GenerateExtensionToken(extension, serverInfo)
+	jwtToken, err := grpcserver.GenerateExtensionTokenWithContext(ctx, extension, serverInfo)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"generating extension token: %w",

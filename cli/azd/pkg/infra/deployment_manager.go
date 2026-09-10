@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"slices"
 	"strings"
 
@@ -80,6 +79,7 @@ func (dm *DeploymentManager) ResourceGroupDeployment(
 func (dm *DeploymentManager) CompletedDeployments(
 	ctx context.Context,
 	scope Scope,
+	projectName string,
 	envName string,
 	layerName string,
 	hint string,
@@ -102,11 +102,13 @@ func (dm *DeploymentManager) CompletedDeployments(
 		}
 	}
 
-	// Environment matching strategy
-	// 1. Deployment with azd tagged env name + layer name
-	// 2. Exact match on environment name to deployment name (old azd strategy)
-	// 3. Multiple matching names based specified hint (show user prompt)
+	// Deployment matching strategy
+	// 1. Deployment with azd tagged project name + env name + layer name
+	// 2. Deployment without a project tag that matches the previous env/layer strategy
+	// 3. Exact match on environment name to deployment name (old azd strategy)
+	// 4. Multiple matching names based specified hint (show user prompt)
 	matchingDeployments := []*azapi.ResourceDeployment{}
+	var legacyDeployment *azapi.ResourceDeployment
 
 	for _, deployment := range deployments {
 		// We only want to consider deployments that are in a terminal state, not any which may be ongoing.
@@ -115,26 +117,28 @@ func (dm *DeploymentManager) CompletedDeployments(
 			continue
 		}
 
-		// Match on current azd strategy (tags)
-		envTag, envTagHas := deployment.Tags[azure.TagKeyAzdEnvName]
-		layerTag, layerTagHas := deployment.Tags[azure.TagKeyAzdLayerName]
+		projectTag, projectTagHas := deploymentTag(deployment, azure.TagKeyAzdProjectName)
+		if projectName != "" && projectTagHas && projectTag != projectName {
+			// A deployment explicitly owned by another project must never be
+			// considered by the legacy matching strategies below.
+			continue
+		}
 
-		if envTagHas && *envTag == envName {
-			if layerTagHas && *layerTag == layerName {
-				log.Printf("completedDeployments: matched deployment '%s' using layerName: %s", deployment.Name, layerName)
+		if deploymentTagsMatch(deployment, envName, layerName) {
+			if projectName == "" || projectTagHas {
 				return []*azapi.ResourceDeployment{deployment}, nil
 			}
 
-			// If layerName is empty, we match on the envName alone
-			if layerName == "" && !layerTagHas {
-				log.Printf("completedDeployments: matched deployment '%s' using envName", deployment.Name)
-				return []*azapi.ResourceDeployment{deployment}, nil
+			if legacyDeployment == nil {
+				legacyDeployment = deployment
 			}
+			continue
 		}
 
 		// LEGACY: match on deployment name
-		if deployment.Name == envName {
-			return []*azapi.ResourceDeployment{deployment}, nil
+		if (projectName == "" || !projectTagHas) && deployment.Name == envName && legacyDeployment == nil {
+			legacyDeployment = deployment
+			continue
 		}
 
 		// Fallback: Match on hint
@@ -143,9 +147,36 @@ func (dm *DeploymentManager) CompletedDeployments(
 		}
 	}
 
+	if legacyDeployment != nil {
+		return []*azapi.ResourceDeployment{legacyDeployment}, nil
+	}
+
 	if len(matchingDeployments) == 0 {
 		return nil, fmt.Errorf("'%s': %w", hint, ErrDeploymentsNotFound)
 	}
 
 	return matchingDeployments, nil
+}
+
+func deploymentTag(deployment *azapi.ResourceDeployment, key string) (string, bool) {
+	value, hasTag := deployment.Tags[key]
+	if !hasTag || value == nil {
+		return "", false
+	}
+
+	return *value, true
+}
+
+func deploymentTagsMatch(deployment *azapi.ResourceDeployment, envName string, layerName string) bool {
+	envTag, hasEnvTag := deploymentTag(deployment, azure.TagKeyAzdEnvName)
+	if !hasEnvTag || envTag != envName {
+		return false
+	}
+
+	layerTag, hasLayerTag := deploymentTag(deployment, azure.TagKeyAzdLayerName)
+	if hasLayerTag {
+		return layerTag == layerName
+	}
+
+	return layerName == ""
 }

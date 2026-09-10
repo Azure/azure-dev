@@ -106,7 +106,7 @@ func NewPrompt(options *PromptOptions) *Prompt {
 	}
 
 	return &Prompt{
-		input:   internal.NewInput(),
+		input:   internal.NewInput(mergedOptions.Writer),
 		options: &mergedOptions,
 		value:   mergedOptions.DefaultValue,
 	}
@@ -206,10 +206,7 @@ func (p *Prompt) Render(printer Printer) error {
 		return nil
 	}
 
-	printer.Fprintf("%s", output.WithHighLightFormat("? "))
-
-	// Message
-	printer.Fprintf("%s", BoldString("%s: ", p.options.Message))
+	renderPromptMessage(printer, p.options.Message)
 
 	// Cancelled
 	if p.cancelled {

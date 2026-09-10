@@ -59,10 +59,10 @@ container.MustRegisterSingleton(func(dep *Dependency) *MyService {
 
 ### Infrastructure Provisioning
 
-The provisioning pipeline compiles IaC templates, runs preflight checks, deploys to Azure, and tracks state:
+The provisioning pipeline compiles IaC templates, runs local provision validation, deploys to Azure, and tracks state:
 
 1. Compile Bicep/Terraform templates
-2. Run local preflight validation (permissions, AI model quotas, reserved resource names)
+2. Run local provision validation (permissions, AI model quotas, reserved resource names)
 3. Submit deployment to Azure Resource Manager
 4. Track provision state hash for change detection
 

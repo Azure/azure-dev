@@ -3,12 +3,37 @@
 This document defines when a privacy review is required for telemetry changes in `azd`,
 the data classification framework, hashing requirements, and a PR checklist template.
 
+## PR 9810 Review Record
+
+The error-attribution fields introduced by PR 9810 were reviewed against this
+checklist:
+
+| Field or data | Classification | Privacy decision |
+|---------------|----------------|------------------|
+| `error.chain.types` | SystemMetadata | Bounded to 16 host-reflected Go type names from the local error chain; extension-provided `CauseTypes` are excluded |
+| `error.extension.cause_types` | EndUserPseudonymizedInformation | Bounded to 16 normalized extension-provided labels, recorded only as case-insensitive hashes |
+| `error.mapper.source.type` | SystemMetadata | Emits only the sanitized source type name from the registered mapper |
+| `error.mapper.destination.type` | SystemMetadata | Emits only the sanitized destination type name from the registered mapper |
+| `error.tool.name` | SystemMetadata | Core missing-tool display names use a fixed code-defined mapping; unknown values become `other`. Extension-provided `ToolError` names are limited to 1-64 ASCII characters from `[a-z0-9_-]`; invalid or oversized values become `other` |
+| `extension.event` on failed lifecycle-hook `cmd.*` spans | SystemMetadata | Host lifecycle metadata; failed `ext.run` commands carry only extension ID and version, while extension-supplied usage values remain restricted to the reviewed `ext.usage` admission path |
+
+No new event or unbounded user-provided string is introduced. Extension-
+controlled cause labels are hashed before telemetry and are never written to
+the system-metadata type fields. The corresponding unit tests cover
+error-chain bounds, cause-label hashing, type-name validation, mapper
+attribution, tool-name normalization, and extension identity attribution.
+
 ## When to Trigger a Privacy Review
 
 A privacy review **must** be triggered when any of the following conditions are met:
 
-1. **New telemetry field** — Any new attribute key added to `cli/azd/internal/tracing/fields/fields.go` or emitted
-   via `SetUsageAttributes` / `tracing.SetSpanAttributes`.
+1. **New telemetry field** — Any new attribute key added to
+   `cli/azd/internal/tracing/fields/fields.go` or emitted through tracing APIs.
+   Extension-supplied `ext.*` attributes are reviewed with the extension that
+   reports them rather than here, but the same rules apply to their content.
+   Only extensions whose configured source matches the verified official `azd`
+   registry name, type, and normalized URL can record these attributes, so
+   that admission is where the review has to happen.
 
 2. **New event** — Any new event constant added to `cli/azd/internal/tracing/events/events.go` or new span name
    introduced via `tracing.Start`.
@@ -166,7 +191,11 @@ A new field **must** be hashed if any of the following are true:
 
 A new field should **not** be hashed if:
 
-- The value is from a fixed enum (e.g., `auth.method` = `"browser"`).
+- The value is from a fixed enum (e.g., `auth.method` = `"browser"`,
+  `aspire.apphost.language` = `"typescript"` / `"python"` / `"go"` / `"java"` / `"rust"`,
+  `auth.cache_clear_failed` = `"auth"` / `"subscriptions"`, or
+  `skip.reason` = `"cluster_not_provisioned"`), or a boolean
+  (e.g., `container.remotebuild`).
 - The value is a count or duration (measurements).
 - The value is system-generated metadata (e.g., OS type).
 - The value is a hardcoded literal in source code (e.g., `exegraph.step.tags`, which
@@ -174,11 +203,28 @@ A new field should **not** be hashed if:
   If a previously-literal field gains a user-controlled code path, it **must** be
   re-evaluated and likely hashed at that call site.
 
+### Resource Attribute Boundary
+
+Core azd telemetry has a fixed resource schema. New core fields must be declared and reviewed through
+`internal/tracing/fields`; do not use `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_SERVICE_NAME`, or another OpenTelemetry
+resource detector as an emission path. The telemetry exporter boundary removes environment-provided resource fields
+from the Application Insights queue, trace files, and OTLP trace URLs.
+
+This boundary does not filter span attributes. In particular, official-registry extensions can still report reviewed
+usage values through `TelemetryService.ReportUsage`, where the host places caller fields under `ext.*`. That path is
+governed by the extension privacy review described below, not by OpenTelemetry resource configuration.
+
 ## Data Catalog Classification Process
 
 When adding a new telemetry field:
 
-1. **Define the field** in `internal/telemetry/fields/fields.go` using the `NewKey` pattern.
+1. **Define the field** in `internal/tracing/fields/fields.go`. Extension
+   telemetry is different: an extension supplies its own keys and values at
+   runtime, and the host classifies the whole `ext.*` class through
+   `ExtensionUsageAttribute`. The extension author owns each value's content
+   and must apply this checklist to it during their own review, which the host
+   enforces by recording `ext.usage` only when the configured source matches
+   the verified official `azd` registry name, type, and normalized URL.
 2. **Assign classification** — use the decision tree above to determine the correct classification.
 3. **Assign purpose** — select one or more from: `FeatureInsight`, `BusinessInsight`, `PerformanceAndHealth`.
 4. **Determine hashing** — apply hashing rules above.
@@ -186,6 +232,7 @@ When adding a new telemetry field:
    - OTel key name
    - Classification
    - Purpose
+   - Endpoint (only when the value is a known endpoint identifier)
    - Whether it is hashed
    - Whether it is a measurement
    - Allowed values (if enum)
@@ -200,14 +247,18 @@ Copy this checklist into your PR description when making telemetry changes.
 ## Telemetry Change Checklist
 
 ### New Fields
-- [ ] Field defined in `fields/fields.go` with correct classification and purpose
+- [ ] Core field defined in `fields/fields.go`; extension-supplied `ext.*` values are covered by the extension's own review instead
+- [ ] Field has the correct classification and purpose
 - [ ] Field documented in `docs/specs/metrics-audit/telemetry-schema.md`
 - [ ] Hashing applied where required (user-provided values, names, paths)
 - [ ] Measurement fields use correct OTel type (Int64, Float64)
 - [ ] Enum values documented with allowed value set
+- [ ] Extension enum values contain no user-derived or customer content
 
 ### New Events
 - [ ] Event constant defined in `events/events.go`
+- [ ] Event constant is an exported string `const` whose Go identifier contains `Event` (end it with
+      `Prefix` for a prefix-match group) so the GDPR classifier discovers it
 - [ ] Event documented in `docs/specs/metrics-audit/telemetry-schema.md`
 - [ ] Event follows naming convention (`prefix.noun.verb`)
 
@@ -216,12 +267,14 @@ Copy this checklist into your PR description when making telemetry changes.
 - [ ] No `CustomerContent` emitted in telemetry
 - [ ] No unhashed user-provided values
 - [ ] No PII in string attributes (names, emails, paths)
+- [ ] No telemetry field relies on OpenTelemetry environment resource attributes
 - [ ] Privacy review triggered (if required per triggers above)
 
 ### Testing
 - [ ] Unit test verifies attributes are set on the span
 - [ ] Integration test confirms end-to-end emission (if applicable)
 - [ ] Verified field appears correctly in local telemetry output
+- [ ] Resource-policy changes are tested against Application Insights, trace-file, and OTLP exports
 
 ### Downstream
 - [ ] LENS job updated (if field is queried in dashboards)

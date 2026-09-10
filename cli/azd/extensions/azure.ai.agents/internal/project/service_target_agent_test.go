@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,13 +19,199 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/botservice"
+	"azureaiagent/internal/pkg/envkey"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 )
+
+func TestVoiceAgentInlineServicePropertiesRoundTrip_BYOM(t *testing.T) {
+	instructions := "Route callers to the right team."
+	voice := "alloy"
+	store := true
+	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindPromptVoice,
+			Name: "voice-agent",
+		},
+		ModelType:    agent_yaml.VoiceModelTypeSelfDeployed,
+		Model:        &agent_yaml.Model{Id: "my-realtime-deployment"},
+		Instructions: &instructions,
+		Voice:        &voice,
+		Store:        &store,
+		Telephony: &agent_yaml.VoiceTelephony{Bindings: []agent_yaml.VoiceTelephonyBinding{
+			{Provider: "twilio", Identifier: "+14255550123", Connection: "telephony-twilio"},
+		}},
+	}, nil)
+	require.NoError(t, err)
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "voice-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+	got, found, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.AgentKindPromptVoice, got.Kind)
+	require.Equal(t, "voice-agent", got.Name)
+	require.Equal(t, agent_yaml.VoiceModelTypeSelfDeployed, got.ModelType)
+	require.NotNil(t, got.Model)
+	require.Equal(t, "my-realtime-deployment", got.Model.Id)
+	require.NotNil(t, got.Instructions)
+	require.Equal(t, instructions, *got.Instructions)
+	require.NotNil(t, got.Voice)
+	require.Equal(t, voice, *got.Voice)
+	require.NotNil(t, got.Store)
+	require.Equal(t, store, *got.Store)
+	require.NotNil(t, got.Telephony)
+	require.Len(t, got.Telephony.Bindings, 1)
+	require.Equal(t, "twilio", got.Telephony.Bindings[0].Provider)
+	require.Equal(t, "+14255550123", got.Telephony.Bindings[0].Identifier)
+	require.Equal(t, "telephony-twilio", got.Telephony.Bindings[0].Connection)
+}
+
+func TestAgentDefinitionFromStruct_RejectsTelephonyOnHosted(t *testing.T) {
+	props, err := structpb.NewStruct(map[string]any{
+		"kind":      "hosted",
+		"name":      "hosted-agent",
+		"telephony": map[string]any{"bindings": []any{}},
+	})
+	require.NoError(t, err)
+
+	_, _, err = agentDefinitionFromStruct(props, "repo.azurecr.io/agent:latest", nil)
+	require.ErrorContains(t, err, "telephony bindings are only supported")
+}
+
+func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgent(t *testing.T) {
+	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindPromptVoice,
+			Name: "voice-wrapper",
+		},
+		ModelType: agent_yaml.VoiceModelTypeHostedAgent,
+		TargetAgent: &agent_yaml.VoiceTargetAgent{
+			Service: "voice-target",
+			Version: "deployed",
+		},
+	}, nil)
+	require.NoError(t, err)
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "voice-wrapper",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+	got, found, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.VoiceModelTypeHostedAgent, got.ModelType)
+	require.Equal(t, "voice-target", got.TargetAgent.Service)
+	require.Equal(t, "deployed", got.TargetAgent.Version)
+}
+
+func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgentVoiceKind(t *testing.T) {
+	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindVoice, Name: "voice"},
+		ModelType:       agent_yaml.VoiceModelTypeHostedAgent,
+		TargetAgent: &agent_yaml.VoiceTargetAgent{
+			Service: "voice-target",
+			Version: "deployed",
+		},
+	}, nil)
+	require.NoError(t, err)
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "voice",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+	got, found, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.AgentKindVoice, got.Kind)
+	require.Equal(t, "voice-target", got.TargetAgent.Service)
+}
+
+func TestVoiceAgentInlineServicePropertiesRejectsProtocols(t *testing.T) {
+	_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":  "prompt-voice",
+		"name":  "voice",
+		"model": map[string]any{"id": "gpt-realtime"},
+		"protocols": []any{map[string]any{
+			"protocol": "invocations_ws",
+			"version":  "1.0.0",
+		}},
+	}))
+	require.ErrorContains(t, err, "protocols are not supported on voice agents")
+}
+
+func TestVoiceAgentInlineServicePropertiesRejectsCodeAndSessionConfig(t *testing.T) {
+	_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":              "voice",
+		"name":              "voice",
+		"model":             map[string]any{"id": "gpt-realtime"},
+		"codeConfiguration": map[string]any{"runtime": "dotnet_10"},
+	}))
+	require.ErrorContains(t, err, "codeConfiguration is not supported on voice agents")
+
+	_, _, _, _, err = AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":                 "voice",
+		"name":                 "voice",
+		"model":                map[string]any{"id": "gpt-realtime"},
+		"sessionConfiguration": map[string]any{"idleTimeoutMinutes": 10},
+	}))
+	require.ErrorContains(t, err, "sessionConfiguration is not supported on voice agents")
+}
+
+func TestVoiceAgentFromResolvedServiceRejectsInvalidVoiceFields(t *testing.T) {
+	svc := inlineAgentService(t, map[string]any{
+		"kind":      "voice",
+		"name":      "voice",
+		"modelType": "hosted_agent",
+		"targetAgent": map[string]any{
+			"service": "target",
+			"version": "typo",
+		},
+	})
+	_, _, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.ErrorContains(t, err, "target_agent.version must be 'deployed'")
+
+	svc = inlineAgentService(t, map[string]any{
+		"kind":              "voice",
+		"name":              "voice",
+		"model":             map[string]any{"id": "gpt-realtime"},
+		"codeConfiguration": map[string]any{"runtime": "dotnet_10"},
+	})
+	_, _, err = VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.ErrorContains(t, err, "codeConfiguration is not supported on voice agents")
+
+	svc = inlineAgentService(t, map[string]any{
+		"kind":                 "voice",
+		"name":                 "voice",
+		"model":                map[string]any{"id": "gpt-realtime"},
+		"environmentVariables": []any{map[string]any{"name": "SAMPLE", "value": "value"}},
+	})
+	_, _, err = VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.ErrorContains(t, err, "environmentVariables is not supported on voice agents")
+
+}
+
+func TestHostedAgentInlineServicePropertiesRejectsHostedVoiceFields(t *testing.T) {
+	_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":        "hosted",
+		"name":        "target",
+		"modelType":   "hosted_agent",
+		"targetAgent": map[string]any{"service": "other-agent"},
+	}))
+	require.ErrorContains(t, err, "hosted voice wrapper fields are not supported on hosted agents")
+}
 
 func TestApplyAgentMetadata(t *testing.T) {
 	tests := []struct {
@@ -68,6 +255,158 @@ func TestApplyAgentMetadata(t *testing.T) {
 	}
 }
 
+func TestTelephonyBindingMatches(t *testing.T) {
+	desired := &agent_api.TelephonyBindingRequest{
+		Provider:        "twilio",
+		Identifier:      "+14255550123",
+		ConnectionName:  "telephony-twilio",
+		TransferTargets: []map[string]any{{"kind": "phone", "target": "+14255550124"}},
+	}
+	remote := &agent_api.TelephonyBinding{
+		ID:              "twilio:%2B14255550123",
+		Provider:        "twilio",
+		Identifier:      "+14255550123",
+		ConnectionName:  "telephony-twilio",
+		TransferTargets: []map[string]any{{"kind": "phone", "target": "+14255550124"}},
+	}
+	require.True(t, telephonyBindingMatches(remote, desired))
+	remote.ConnectionName = "other"
+	require.False(t, telephonyBindingMatches(remote, desired))
+	remote.ConnectionName = "telephony-twilio"
+	remote.TransferTargets = []map[string]any{}
+	desired.TransferTargets = nil
+	require.True(t, telephonyBindingMatches(remote, desired))
+}
+
+func TestTelephonyBindingMatches_ServiceOmittedFields(t *testing.T) {
+	// ACS binding responses can omit request fields while still returning the stable binding id.
+	desired := &agent_api.TelephonyBindingRequest{
+		Provider:       "azure-communication-service",
+		Identifier:     "28:orgid:00000000-0000-0000-0000-000000000001",
+		ConnectionName: "telephony-acs",
+	}
+	remote := &agent_api.TelephonyBinding{
+		ID:         "azure-communication-service:28:orgid:00000000-0000-0000-0000-000000000001",
+		Provider:   "teams_phone_extension",
+		Connection: "telephony-acs",
+		Status:     "active",
+	}
+	require.True(t, telephonyBindingMatches(remote, desired))
+
+	remote.ID = "azure-communication-service:28:orgid:00000000-0000-0000-0000-000000000002"
+	require.False(t, telephonyBindingMatches(remote, desired))
+}
+
+func TestTelephonyBindingMatches_NumericTransferTargets(t *testing.T) {
+	desired := &agent_api.TelephonyBindingRequest{
+		Provider:        "twilio",
+		Identifier:      "+14255550123",
+		ConnectionName:  "telephony-twilio",
+		TransferTargets: []map[string]any{{"digits": 1}},
+	}
+	remote := &agent_api.TelephonyBinding{
+		ID:              "twilio:%2B14255550123",
+		Provider:        "twilio",
+		Identifier:      "+14255550123",
+		ConnectionName:  "telephony-twilio",
+		TransferTargets: []map[string]any{{"digits": float64(1)}},
+	}
+	require.True(t, telephonyBindingMatches(remote, desired))
+}
+
+func TestDeployVoiceTelephonyBindings_CreateWhenMissing(t *testing.T) {
+	client := &fakeTelephonyBindingClient{getErr: &azcore.ResponseError{StatusCode: http.StatusNotFound}}
+	agentObject := &agent_api.AgentObject{Name: "voice-agent"}
+	agentObject.Versions.Latest.Version = "1"
+	agent := agent_yaml.VoiceAgent{Telephony: &agent_yaml.VoiceTelephony{Bindings: []agent_yaml.VoiceTelephonyBinding{
+		{Provider: "twilio", Identifier: "+14255550123", Connection: "telephony-twilio"},
+	}}}
+
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+		t.Context(), client, agent, agentObject, "regional.hyena.example.com")
+
+	require.NoError(t, err)
+	require.Equal(t, 1, client.getCalls)
+	require.Equal(t, 1, client.createCalls)
+	require.Equal(t, "twilio:+14255550123", client.bindingID)
+	require.Equal(t, "regional.hyena.example.com", client.overriddenHost)
+}
+
+func TestDeployVoiceTelephonyBindings_SkipsMatchingBinding(t *testing.T) {
+	client := &fakeTelephonyBindingClient{remote: &agent_api.TelephonyBinding{
+		ID:             "twilio:%2B14255550123",
+		Provider:       "twilio",
+		Identifier:     "+14255550123",
+		ConnectionName: "telephony-twilio",
+	}}
+	agentObject := &agent_api.AgentObject{Name: "voice-agent"}
+	agentObject.Versions.Latest.Version = "1"
+	agent := agent_yaml.VoiceAgent{Telephony: &agent_yaml.VoiceTelephony{Bindings: []agent_yaml.VoiceTelephonyBinding{
+		{Provider: "twilio", Identifier: "+14255550123", Connection: "telephony-twilio"},
+	}}}
+
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(t.Context(), client, agent, agentObject, "")
+
+	require.NoError(t, err)
+	require.Equal(t, 1, client.getCalls)
+	require.Equal(t, 0, client.createCalls)
+}
+
+func TestDeployVoiceTelephonyBindings_ReturnsNonNotFoundGetError(t *testing.T) {
+	client := &fakeTelephonyBindingClient{getErr: &azcore.ResponseError{StatusCode: http.StatusForbidden}}
+	agentObject := &agent_api.AgentObject{Name: "voice-agent"}
+	agentObject.Versions.Latest.Version = "1"
+	agent := agent_yaml.VoiceAgent{Telephony: &agent_yaml.VoiceTelephony{Bindings: []agent_yaml.VoiceTelephonyBinding{
+		{Provider: "twilio", Identifier: "+14255550123", Connection: "telephony-twilio"},
+	}}}
+
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(t.Context(), client, agent, agentObject, "")
+
+	require.Error(t, err)
+	require.Equal(t, 1, client.getCalls)
+	require.Equal(t, 0, client.createCalls)
+}
+
+type fakeTelephonyBindingClient struct {
+	remote         *agent_api.TelephonyBinding
+	getErr         error
+	createErr      error
+	getCalls       int
+	createCalls    int
+	bindingID      string
+	overriddenHost string
+}
+
+func (c *fakeTelephonyBindingClient) GetTelephonyBinding(
+	ctx context.Context,
+	agentName string,
+	bindingID string,
+	apiVersion string,
+	overriddenHost string,
+) (*agent_api.TelephonyBinding, error) {
+	c.getCalls++
+	c.bindingID = bindingID
+	c.overriddenHost = overriddenHost
+	return c.remote, c.getErr
+}
+
+func (c *fakeTelephonyBindingClient) CreateTelephonyBinding(
+	ctx context.Context,
+	agentName string,
+	request *agent_api.TelephonyBindingRequest,
+	apiVersion string,
+	overriddenHost string,
+) (*agent_api.TelephonyBinding, error) {
+	c.createCalls++
+	c.overriddenHost = overriddenHost
+	return &agent_api.TelephonyBinding{ID: request.Provider + ":" + request.Identifier}, c.createErr
+}
+
+func TestTelephonyWireProvider(t *testing.T) {
+	require.Equal(t, "azure-communication-service", telephonyWireProvider("acs"))
+	require.Equal(t, "twilio", telephonyWireProvider("twilio"))
+}
+
 type fakeProjectAgentChecker struct {
 	err error
 }
@@ -76,6 +415,7 @@ func (f fakeProjectAgentChecker) GetAgent(
 	context.Context,
 	string,
 	string,
+	bool,
 ) (*agent_api.AgentObject, error) {
 	if f.err != nil {
 		return nil, f.err
@@ -94,6 +434,100 @@ func TestWriteExistingAgentVersionWarningIfPresentSkipsErrors(t *testing.T) {
 	)
 
 	require.False(t, wroteWarning)
+}
+
+func TestAgentDeploymentFailedErrorPreservesServiceDetails(t *testing.T) {
+	t.Parallel()
+
+	err := agentDeploymentFailedError(&agent_api.AgentVersionObject{
+		Error: &agent_api.AgentVersionError{
+			Code:    string(nextstep.UserErrorImage),
+			Message: "the image could not be started",
+		},
+		RequestID: "request-id",
+	}, "sample.services.ai.azure.com")
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	require.Equal(t, "create_agent.ImageError", serviceErr.ErrorCode)
+	require.Equal(t, "sample.services.ai.azure.com", serviceErr.ServiceName)
+	require.Contains(t, serviceErr.Message, "[ImageError] the image could not be started")
+	require.Contains(t, serviceErr.Message, "request-id")
+	require.Contains(t, serviceErr.Suggestion, "azd ai agent monitor --type system --follow")
+}
+
+func TestAgentDeploymentFailedErrorUsesFallbackCode(t *testing.T) {
+	t.Parallel()
+
+	err := agentDeploymentFailedError(&agent_api.AgentVersionObject{}, "sample.services.ai.azure.com")
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	require.Equal(t, "create_agent.failed", serviceErr.ErrorCode)
+	require.Equal(
+		t,
+		"run `azd ai agent show` to inspect the latest deployment status",
+		serviceErr.Suggestion,
+	)
+}
+
+func TestClassifyActivityBotErrorUsesMsaAppIDConflictCode(t *testing.T) {
+	t.Parallel()
+
+	err := classifyActivityBotError(errors.New("MsaAppId is already in use"), "client-id-1")
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	require.Equal(t, "ensure_activity_bot.msa_app_id_already_in_use", serviceErr.ErrorCode)
+	require.Equal(t, "botservice", serviceErr.ServiceName)
+	require.Equal(
+		t,
+		"configure the Activity Bot name to use the existing Azure Bot bound to this MsaAppID, "+
+			"or remove that Bot, then retry",
+		serviceErr.Suggestion,
+	)
+}
+
+func TestResolveActivityBotNameReturnsMultipleBotClassification(t *testing.T) {
+	t.Parallel()
+
+	p := &AgentServiceTargetProvider{}
+	_, _, err := p.resolveActivityBotName(
+		t.Context(),
+		fakeActivityBotFinder{err: &botservice.MultipleBotsForMsaAppIDError{}},
+		"my-svc",
+		"agent-a",
+		"client-id-1",
+		"fallback-rg",
+		map[string]string{envkey.AgentBotName("my-svc"): "env-bot"},
+	)
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	require.Equal(t, "get_activity_bot.multiple_bots_for_msa_app_id", serviceErr.ErrorCode)
+	require.Empty(t, serviceErr.ServiceName)
+}
+
+func TestClassifyActivityBotErrorSeparatesTeamsChannelFailures(t *testing.T) {
+	t.Parallel()
+
+	responseErr := &azcore.ResponseError{ErrorCode: "AuthorizationFailed", StatusCode: 403}
+	err := classifyActivityBotError(&botservice.TeamsChannelError{Err: responseErr}, "client-id-1")
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	require.Equal(t, "ensure_teams_channel.AuthorizationFailed", serviceErr.ErrorCode)
+}
+
+func TestClassifyActivityBotErrorPreservesBotServiceFailures(t *testing.T) {
+	t.Parallel()
+
+	responseErr := &azcore.ResponseError{ErrorCode: "InvalidBotConfiguration", StatusCode: 400}
+	err := classifyActivityBotError(responseErr, "client-id-1")
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	require.Equal(t, "ensure_activity_bot.InvalidBotConfiguration", serviceErr.ErrorCode)
 }
 
 func TestGetServiceKey_NormalizesToolboxNames(t *testing.T) {
@@ -123,6 +557,14 @@ func TestGetServiceKey_NormalizesToolboxNames(t *testing.T) {
 	}
 }
 
+func TestDependencyConditionLookupPrefersAzdEnvironment(t *testing.T) {
+	t.Setenv("DEPLOY_TOOLS", "true")
+	provider := &AgentServiceTargetProvider{dependencyEnv: map[string]string{"DEPLOY_TOOLS": "false"}}
+	require.Equal(t, "false", provider.dependencyEnvValue("DEPLOY_TOOLS"))
+	provider.dependencyEnv = nil
+	require.Equal(t, "true", provider.dependencyEnvValue("DEPLOY_TOOLS"))
+}
+
 // --- helpers for Package tests ---
 
 // writeHostedAgentYAML creates a minimal hosted-kind agent.yaml in dir.
@@ -140,14 +582,20 @@ type stubContainerServer struct {
 	buildCalls   atomic.Int32
 	packageCalls atomic.Int32
 	publishCalls atomic.Int32
+	buildRequest *azdext.ContainerBuildRequest
+	packRequest  *azdext.ContainerPackageRequest
+	pubRequest   *azdext.ContainerPublishRequest
+	packageImage string
+	publishImage string
 	publishErr   error
 }
 
 func (s *stubContainerServer) Build(
 	_ context.Context,
-	_ *azdext.ContainerBuildRequest,
+	request *azdext.ContainerBuildRequest,
 ) (*azdext.ContainerBuildResponse, error) {
 	s.buildCalls.Add(1)
+	s.buildRequest = request
 	return &azdext.ContainerBuildResponse{
 		Result: &azdext.ServiceBuildResult{
 			Artifacts: []*azdext.Artifact{{
@@ -160,14 +608,20 @@ func (s *stubContainerServer) Build(
 
 func (s *stubContainerServer) Package(
 	_ context.Context,
-	_ *azdext.ContainerPackageRequest,
+	request *azdext.ContainerPackageRequest,
 ) (*azdext.ContainerPackageResponse, error) {
 	s.packageCalls.Add(1)
+	s.packRequest = request
+	image := s.packageImage
+	if image == "" {
+		image = "myregistry.azurecr.io/test-image:latest"
+	}
 	return &azdext.ContainerPackageResponse{
 		Result: &azdext.ServicePackageResult{
 			Artifacts: []*azdext.Artifact{{
-				Kind:     azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
-				Location: "myregistry.azurecr.io/test-image:latest",
+				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+				Location:     image,
+				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
 			}},
 		},
 	}, nil
@@ -175,18 +629,23 @@ func (s *stubContainerServer) Package(
 
 func (s *stubContainerServer) Publish(
 	_ context.Context,
-	_ *azdext.ContainerPublishRequest,
+	request *azdext.ContainerPublishRequest,
 ) (*azdext.ContainerPublishResponse, error) {
 	s.publishCalls.Add(1)
+	s.pubRequest = request
 	if s.publishErr != nil {
 		return nil, s.publishErr
 	}
 
+	image := s.publishImage
+	if image == "" {
+		image = "myregistry.azurecr.io/test-image:latest"
+	}
 	return &azdext.ContainerPublishResponse{
 		Result: &azdext.ServicePublishResult{
 			Artifacts: []*azdext.Artifact{{
 				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
-				Location:     "myregistry.azurecr.io/test-image:latest",
+				Location:     image,
 				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
 			}},
 		},
@@ -204,6 +663,7 @@ func newServiceTargetTestClient(
 	t *testing.T,
 	containerSrv azdext.ContainerServiceServer,
 	promptSrv azdext.PromptServiceServer,
+	projectSrvs ...azdext.ProjectServiceServer,
 ) *azdext.AzdClient {
 	t.Helper()
 
@@ -213,6 +673,9 @@ func newServiceTargetTestClient(
 	}
 	if promptSrv != nil {
 		azdext.RegisterPromptServiceServer(srv, promptSrv)
+	}
+	if len(projectSrvs) > 0 && projectSrvs[0] != nil {
+		azdext.RegisterProjectServiceServer(srv, projectSrvs[0])
 	}
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -233,7 +696,39 @@ func newServiceTargetTestClient(
 
 type stubProjectServer struct {
 	azdext.UnimplementedProjectServiceServer
-	project *azdext.ProjectConfig
+	project     *azdext.ProjectConfig
+	configValue *structpb.Value
+}
+
+func (s *stubProjectServer) GetServiceConfigValue(
+	context.Context, *azdext.GetServiceConfigValueRequest,
+) (*azdext.GetServiceConfigValueResponse, error) {
+	return &azdext.GetServiceConfigValueResponse{Value: s.configValue, Found: s.configValue != nil}, nil
+}
+
+func TestDependencyConditionScalarValues(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   any
+		enabled bool
+	}{
+		{name: "boolean false", value: false, enabled: false},
+		{name: "boolean true", value: true, enabled: true},
+		{name: "number zero", value: 0, enabled: false},
+		{name: "number one", value: 1, enabled: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			value, err := structpb.NewValue(tt.value)
+			require.NoError(t, err)
+			client := newServiceTargetTestClient(t, nil, nil, &stubProjectServer{configValue: value})
+			provider := &AgentServiceTargetProvider{azdClient: client}
+
+			enabled, err := provider.isDependencyEnabled(t.Context(), "tools")
+			require.NoError(t, err)
+			require.Equal(t, tt.enabled, enabled)
+		})
+	}
 }
 
 func (s *stubProjectServer) Get(
@@ -319,6 +814,38 @@ func newPromptTestClient(t *testing.T, promptSrv azdext.PromptServiceServer) *az
 	return newServiceTargetTestClient(t, nil, promptSrv)
 }
 
+type legacyPreBuiltEnvironmentServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+}
+
+func (s *legacyPreBuiltEnvironmentServer) GetValue(
+	_ context.Context,
+	_ *azdext.GetEnvRequest,
+) (*azdext.KeyValueResponse, error) {
+	return &azdext.KeyValueResponse{Value: "true"}, nil
+}
+
+func newLegacyPreBuiltTestClient(t *testing.T, promptSrv azdext.PromptServiceServer) *azdext.AzdClient {
+	t.Helper()
+
+	srv := grpc.NewServer()
+	azdext.RegisterPromptServiceServer(srv, promptSrv)
+	azdext.RegisterEnvironmentServiceServer(srv, &legacyPreBuiltEnvironmentServer{})
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(func() {
+		srv.Stop()
+		_ = lis.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(lis.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+	return client
+}
+
 func TestInitializeIsCheapAndSideEffectFree(t *testing.T) {
 	// azd-core calls ServiceTargetProvider.Initialize for every service on
 	// every action (provision, deploy, env refresh, show, ...). Initialize
@@ -342,6 +869,125 @@ func TestInitializeIsCheapAndSideEffectFree(t *testing.T) {
 
 	// Same provider, called again with the same service config: still no-op.
 	require.NoError(t, provider.Initialize(t.Context(), &azdext.ServiceConfig{Name: "echo", RelativePath: "svc"}))
+}
+
+func TestInitializeValidatesRegistryConnectionLifecycle(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		registry     bool
+		docker       bool
+		passthrough  bool
+		remoteBuild  bool
+		wantContains string
+	}{
+		{name: "registry with passthrough", registry: true, passthrough: true},
+		{
+			name:         "registry without docker",
+			registry:     true,
+			wantContains: "requires docker.imagePassthrough: true",
+		},
+		{
+			name:         "registry with zero-value docker",
+			registry:     true,
+			docker:       true,
+			wantContains: "requires docker.imagePassthrough: true",
+		},
+		{
+			name:         "registry with remote build",
+			registry:     true,
+			passthrough:  true,
+			remoteBuild:  true,
+			wantContains: "cannot be combined with docker.remoteBuild",
+		},
+		{name: "legacy image without docker"},
+		{name: "legacy image with remote build", docker: true, remoteBuild: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			agentDef := sampleContainerAgent()
+			agentDef.Image = "registry.example.com/agents/my-agent:v1"
+			agentDef.RegistryConnectionID = ""
+			if test.registry {
+				agentDef.RegistryConnectionID = "private-registry"
+			}
+			props, err := AgentDefinitionToServiceProperties(agentDef, nil)
+			require.NoError(t, err)
+
+			var dockerOptions *azdext.DockerProjectOptions
+			if test.docker || test.passthrough || test.remoteBuild {
+				dockerOptions = &azdext.DockerProjectOptions{
+					RemoteBuild:      test.remoteBuild,
+					ImagePassthrough: test.passthrough,
+				}
+			}
+			provider := &AgentServiceTargetProvider{}
+			err = provider.Initialize(t.Context(), &azdext.ServiceConfig{
+				Name:                 "my-agent",
+				Host:                 "azure.ai.agent",
+				Image:                agentDef.Image,
+				Docker:               dockerOptions,
+				AdditionalProperties: props,
+			})
+
+			if test.wantContains != "" {
+				require.ErrorContains(t, err, test.wantContains)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Empty(t, provider.agentDefinitionPath)
+			require.Nil(t, provider.credential)
+			require.Empty(t, provider.tenantId)
+		})
+	}
+}
+
+func TestInitializeValidatesRegistryLifecycleFromRef(t *testing.T) {
+	projectRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "agent.yaml"),
+		[]byte("kind: hosted\nname: ref-agent\nregistryConnectionId: private-registry\n"),
+		0o600,
+	))
+	props, err := structpb.NewStruct(map[string]any{"$ref": "./agent.yaml"})
+	require.NoError(t, err)
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+
+	err = provider.Initialize(t.Context(), &azdext.ServiceConfig{
+		Name:                 "ref-agent",
+		Host:                 foundryAgentHost,
+		Image:                "registry.example.com/team/agent:v1",
+		AdditionalProperties: props,
+	})
+	require.ErrorContains(t, err, "requires docker.imagePassthrough: true")
+}
+
+func TestInitializeValidatesRegistryLifecycleFromLegacyDiskDefinition(t *testing.T) {
+	projectRoot := t.TempDir()
+	serviceDir := filepath.Join(projectRoot, "svc")
+	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(serviceDir, "agent.yaml"),
+		[]byte("kind: hosted\nname: disk-agent\nregistryConnectionId: private-registry\n"),
+		0o600,
+	))
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+
+	err := provider.Initialize(t.Context(), &azdext.ServiceConfig{
+		Name:         "disk-agent",
+		Host:         foundryAgentHost,
+		RelativePath: "svc",
+		Image:        "registry.example.com/team/agent:v1",
+	})
+	require.ErrorContains(t, err, "requires docker.imagePassthrough: true")
 }
 
 func TestInitializeAcceptsProjectLocalAgentYaml(t *testing.T) {
@@ -395,6 +1041,150 @@ func TestInitializeRejectsAgentYamlSymlinkEscapingRoot(t *testing.T) {
 	require.Empty(t, provider.agentDefinitionPath)
 }
 
+func TestDeployTimeServiceConfigReplacesInitializeSnapshot(t *testing.T) {
+	// azd core re-expands ${VAR} against the environment on every
+	// call, so a deploy-time config can carry a value that was still
+	// unset (and therefore expanded to "") when Initialize ran.
+	// `azd up` initializes service targets before provisioning
+	// prompts for a missing subscription or location, so keeping the
+	// Initialize snapshot would deploy those empty strings.
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+
+	projectRoot := t.TempDir()
+	serviceDir := filepath.Join(projectRoot, "svc")
+	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(serviceDir, "agent.yaml"),
+		[]byte("kind: hostedAgent\n"),
+		0o600,
+	))
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+
+	// AGENT_REGION references an unset variable at Initialize time.
+	stale := &azdext.ServiceConfig{
+		Name:         "echo",
+		RelativePath: "svc",
+		Environment:  map[string]string{"AGENT_REGION": ""},
+	}
+	require.NoError(t, provider.Initialize(t.Context(), stale))
+	require.NoError(t, provider.ensureDeployContext(t.Context()))
+
+	// The user is prompted during provision, so core hands the
+	// deploy-time call a config with the persisted value.
+	fresh := &azdext.ServiceConfig{
+		Name:         "echo",
+		RelativePath: "svc",
+		Environment:  map[string]string{"AGENT_REGION": "westus2"},
+	}
+
+	// Deploy must adopt the config it was handed rather than reuse the
+	// snapshot. It still fails further along (this stub has no Foundry
+	// project), which is after the config has been adopted.
+	_, err := provider.Deploy(
+		t.Context(),
+		fresh,
+		&azdext.ServiceContext{},
+		nil,
+		func(string) {},
+	)
+	require.Error(t, err)
+	require.Same(t, fresh, provider.serviceConfig)
+
+	prep, err := provider.prepareDeploy(
+		provider.serviceConfig,
+		sampleContainerAgent(),
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://project.example"},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/agent:latest"),
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "westus2", prep.resolvedEnvVars["AGENT_REGION"])
+}
+
+func TestAdoptServiceConfigIgnoresNilAndKeepsResolvedState(t *testing.T) {
+	t.Parallel()
+
+	existing := &azdext.ServiceConfig{Name: "echo"}
+	provider := &AgentServiceTargetProvider{
+		serviceConfig:         existing,
+		serviceConfigResolved: true,
+	}
+
+	// A nil config (or the same instance) must not drop the resolved
+	// state, otherwise every repeat call would re-expand $ref
+	// includes.
+	provider.adoptServiceConfig(nil)
+	require.Same(t, existing, provider.serviceConfig)
+	require.True(t, provider.serviceConfigResolved)
+
+	provider.adoptServiceConfig(existing)
+	require.True(t, provider.serviceConfigResolved)
+
+	provider.adoptServiceConfig(&azdext.ServiceConfig{Name: "echo"})
+	require.False(t, provider.serviceConfigResolved)
+}
+
+func TestBuildVoiceWSProtocolURL(t *testing.T) {
+	got := buildVoiceWSProtocolURL(
+		"https://acct.services.ai.azure.com/api/projects/proj/",
+		"voice-agent",
+	)
+	require.Equal(
+		t,
+		"wss://acct.services.ai.azure.com/api/projects/proj/agents/voice-agent/endpoint/protocols/voice?api-version=v1",
+		got,
+	)
+}
+
+func TestValidateVoiceAgentDeployResponse(t *testing.T) {
+	t.Run("requires name and latest version", func(t *testing.T) {
+		agent := &agent_api.AgentObject{Name: "voice-agent"}
+		agent.Versions.Latest.Version = "1"
+		err := validateVoiceAgentDeployResponse(agent)
+		require.NoError(t, err)
+	})
+
+	t.Run("missing name rejected", func(t *testing.T) {
+		err := validateVoiceAgentDeployResponse(&agent_api.AgentObject{})
+		require.ErrorContains(t, err, "missing agent name")
+	})
+
+	t.Run("missing version rejected", func(t *testing.T) {
+		err := validateVoiceAgentDeployResponse(&agent_api.AgentObject{Name: "voice-agent"})
+		require.ErrorContains(t, err, "missing latest agent version")
+	})
+}
+
+func TestShouldUpdateVoiceAgent(t *testing.T) {
+	t.Run("remote found updates", func(t *testing.T) {
+		update, err := shouldUpdateVoiceAgent(&agent_api.AgentObject{Name: "voice"}, nil)
+		require.NoError(t, err)
+		require.True(t, update)
+	})
+
+	t.Run("remote nil creates", func(t *testing.T) {
+		update, err := shouldUpdateVoiceAgent(nil, nil)
+		require.NoError(t, err)
+		require.False(t, update)
+	})
+
+	t.Run("not found creates", func(t *testing.T) {
+		update, err := shouldUpdateVoiceAgent(nil, &azcore.ResponseError{StatusCode: http.StatusNotFound})
+		require.NoError(t, err)
+		require.False(t, update)
+	})
+
+	t.Run("other get error returns error", func(t *testing.T) {
+		update, err := shouldUpdateVoiceAgent(nil, &azcore.ResponseError{StatusCode: http.StatusInternalServerError})
+		require.Error(t, err)
+		require.False(t, update)
+	})
+}
+
 func createSymlinkOrSkip(t *testing.T, oldname, newname string) {
 	t.Helper()
 
@@ -411,6 +1201,7 @@ func createSymlinkOrSkip(t *testing.T, oldname, newname string) {
 type stubEnvServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 	values map[string]string
+	writes []*azdext.SetEnvRequest
 }
 
 func (s *stubEnvServer) SetValue(
@@ -420,6 +1211,7 @@ func (s *stubEnvServer) SetValue(
 		s.values = make(map[string]string)
 	}
 	s.values[req.Key] = req.Value
+	s.writes = append(s.writes, req)
 	return &azdext.EmptyResponse{}, nil
 }
 
@@ -479,6 +1271,11 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 		&azdext.ServiceConfig{Name: "my-svc"},
 		agentVersion,
 		protocols,
+		"",
+		"",
+		false,
+		ActivityProfile{},
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -505,6 +1302,80 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 	// Base agent endpoint for session management
 	require.Contains(t, envStub.values, "AGENT_MY_SVC_ENDPOINT")
 	require.Equal(t, "https://proj.azure.com/agents/my-agent/versions/1.0.0", envStub.values["AGENT_MY_SVC_ENDPOINT"])
+	require.Equal(t, "https://proj.azure.com", envStub.values["AGENT_MY_SVC_PROJECT_ENDPOINT"])
+	require.Equal(t, "AGENT_MY_SVC_VERSION", envStub.writes[0].Key)
+	require.Empty(t, envStub.writes[0].Value)
+	require.Equal(t, "AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION", envStub.writes[1].Key)
+	require.Empty(t, envStub.writes[1].Value)
+	require.Equal(t, "AGENT_MY_SVC_VERSION", envStub.writes[len(envStub.writes)-2].Key)
+	require.Equal(t, "1.0.0", envStub.writes[len(envStub.writes)-2].Value)
+	require.Equal(
+		t,
+		"AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION",
+		envStub.writes[len(envStub.writes)-1].Key,
+	)
+	require.Equal(t, "1", envStub.writes[len(envStub.writes)-1].Value)
+}
+
+func TestRegisterVoiceAgentEnvironmentVariablesClearsProtocolSnapshot(t *testing.T) {
+	t.Parallel()
+
+	envStub := &stubEnvServer{values: map[string]string{
+		"AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION": "1",
+		"AGENT_MY_SVC_ENDPOINT":                   "https://old.example/agent",
+		"AGENT_MY_SVC_RESPONSES_ENDPOINT":         "https://old.example/responses",
+		"AGENT_MY_SVC_INVOCATIONS_ENDPOINT":       "https://old.example/invocations",
+		"AGENT_MY_SVC_A2A_ENDPOINT":               "https://old.example/a2a",
+		"AGENT_MY_SVC_INVOCATIONS_WS_ENDPOINT":    "wss://old.example/invocations_ws",
+	}}
+	client := newEnvTestClient(t, envStub)
+	provider := &AgentServiceTargetProvider{
+		azdClient: client,
+		env:       &azdext.Environment{Name: "test-env"},
+	}
+	agentObject := &agent_api.AgentObject{Name: "voice-agent"}
+	agentObject.Versions.Latest.Version = "2.0.0"
+	baseEndpoint := buildVoiceWSProtocolURL("https://proj.azure.com", agentObject.Name)
+
+	err := provider.registerVoiceAgentEnvironmentVariables(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "my-svc"},
+		"https://proj.azure.com/",
+		baseEndpoint,
+		agentObject,
+		nil,
+	)
+	require.NoError(t, err)
+
+	require.Equal(t, "1", envStub.values["AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION"])
+	require.Equal(t, "voice-agent", envStub.values["AGENT_MY_SVC_NAME"])
+	require.Equal(t, "2.0.0", envStub.values["AGENT_MY_SVC_VERSION"])
+	require.Equal(t, "https://proj.azure.com", envStub.values["AGENT_MY_SVC_PROJECT_ENDPOINT"])
+	require.Equal(t, baseEndpoint, envStub.values["AGENT_MY_SVC_ENDPOINT"])
+	for _, dp := range displayableProtocols {
+		key := fmt.Sprintf("AGENT_MY_SVC_%s_ENDPOINT", dp.EnvSuffix)
+		require.Empty(t, envStub.values[key], "stale protocol endpoint %s", key)
+	}
+
+	require.Equal(t, "AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION", envStub.writes[0].Key)
+	require.Empty(t, envStub.writes[0].Value)
+	for i, dp := range displayableProtocols {
+		require.Equal(
+			t,
+			fmt.Sprintf("AGENT_MY_SVC_%s_ENDPOINT", dp.EnvSuffix),
+			envStub.writes[i+1].Key,
+		)
+		require.Empty(t, envStub.writes[i+1].Value)
+	}
+	baseClearIndex := len(displayableProtocols) + 1
+	require.Equal(t, "AGENT_MY_SVC_ENDPOINT", envStub.writes[baseClearIndex].Key)
+	require.Empty(t, envStub.writes[baseClearIndex].Value)
+	require.Equal(
+		t,
+		"AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION",
+		envStub.writes[len(envStub.writes)-1].Key,
+	)
+	require.Equal(t, "1", envStub.writes[len(envStub.writes)-1].Value)
 }
 
 func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {
@@ -523,6 +1394,7 @@ func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {
 	}
 	protocols := []agent_yaml.ProtocolVersionRecord{
 		{Protocol: "responses", Version: "1.0.0"},
+		{Protocol: "a2a", Version: "1.0.0"},
 	}
 	agentVersion := &agent_api.AgentVersionObject{
 		Name:    "my-agent",
@@ -534,11 +1406,279 @@ func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {
 		&azdext.ServiceConfig{Name: "my-svc"},
 		agentVersion,
 		protocols,
+		"",
+		"",
+		false,
+		ActivityProfile{},
+		nil,
 	)
 	require.NoError(t, err)
 
-	// Trailing slash must not produce a double-slash in the base endpoint
+	// Trailing slash must not produce double slashes.
 	require.Equal(t, "https://proj.azure.com/agents/my-agent/versions/2.0.0", envStub.values["AGENT_MY_SVC_ENDPOINT"])
+	require.Equal(
+		t,
+		"https://proj.azure.com/agents/my-agent/endpoint/protocols/openai/responses?api-version=v1",
+		envStub.values["AGENT_MY_SVC_RESPONSES_ENDPOINT"],
+	)
+	require.Equal(
+		t,
+		"https://proj.azure.com/agents/my-agent/endpoint/protocols/a2a?api-version=v1",
+		envStub.values["AGENT_MY_SVC_A2A_ENDPOINT"],
+	)
+}
+
+func TestRegisterAgentEnvironmentVariables_ClearsRemovedProtocols(t *testing.T) {
+	t.Parallel()
+
+	envStub := &stubEnvServer{}
+	provider := &AgentServiceTargetProvider{
+		azdClient: newEnvTestClient(t, envStub),
+		env:       &azdext.Environment{Name: "test-env"},
+	}
+	serviceConfig := &azdext.ServiceConfig{Name: "my-svc"}
+	azdEnv := map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.azure.com",
+	}
+	agentVersion := &agent_api.AgentVersionObject{
+		Name:    "my-agent",
+		Version: "1.0.0",
+	}
+
+	err := provider.registerAgentEnvironmentVariables(
+		t.Context(),
+		azdEnv,
+		serviceConfig,
+		agentVersion,
+		[]agent_yaml.ProtocolVersionRecord{
+			{Protocol: "responses", Version: "1.0.0"},
+			{Protocol: "invocations", Version: "1.0.0"},
+		},
+		"",
+		"",
+		false,
+		ActivityProfile{},
+		nil,
+	)
+	require.NoError(t, err)
+
+	err = provider.registerAgentEnvironmentVariables(
+		t.Context(),
+		azdEnv,
+		serviceConfig,
+		agentVersion,
+		[]agent_yaml.ProtocolVersionRecord{
+			{Protocol: "a2a", Version: "1.0.0"},
+		},
+		"",
+		"",
+		false,
+		ActivityProfile{},
+		nil,
+	)
+	require.NoError(t, err)
+
+	require.Empty(t, envStub.values["AGENT_MY_SVC_RESPONSES_ENDPOINT"])
+	require.Empty(t, envStub.values["AGENT_MY_SVC_INVOCATIONS_ENDPOINT"])
+	require.Empty(t, envStub.values["AGENT_MY_SVC_INVOCATIONS_WS_ENDPOINT"])
+	require.Equal(
+		t,
+		"https://proj.azure.com/agents/my-agent/endpoint/protocols/a2a?api-version=v1",
+		envStub.values["AGENT_MY_SVC_A2A_ENDPOINT"],
+	)
+}
+
+func TestRegisterAgentEnvironmentVariables_PersistsActivityBotName(t *testing.T) {
+	t.Parallel()
+
+	envStub := &stubEnvServer{}
+	provider := &AgentServiceTargetProvider{
+		azdClient: newEnvTestClient(t, envStub),
+		env:       &azdext.Environment{Name: "test-env"},
+	}
+
+	err := provider.registerAgentEnvironmentVariables(
+		t.Context(),
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://proj.azure.com"},
+		&azdext.ServiceConfig{Name: "my-svc"},
+		&agent_api.AgentVersionObject{Name: "my-agent", Version: "1.0.0"},
+		nil,
+		"published-bot",
+		"bot-rg",
+		true,
+		ActivityProfile{},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, "published-bot", envStub.values[envkey.AgentBotName("my-svc")])
+	require.Equal(t, "bot-rg", envStub.values[envkey.AgentBotResourceGroup("my-svc")])
+	require.Equal(t, "true", envStub.values[envkey.AgentBotOwned("my-svc")])
+}
+
+func TestRegisterAgentEnvironmentVariables_PersistsInstanceIdentity(t *testing.T) {
+	t.Parallel()
+
+	envStub := &stubEnvServer{}
+	provider := &AgentServiceTargetProvider{
+		azdClient: newEnvTestClient(t, envStub),
+		env:       &azdext.Environment{Name: "test-env"},
+	}
+
+	err := provider.registerAgentEnvironmentVariables(
+		t.Context(),
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://proj.azure.com"},
+		&azdext.ServiceConfig{Name: "my-svc"},
+		&agent_api.AgentVersionObject{
+			Name:    "my-agent",
+			Version: "1.0.0",
+			InstanceIdentity: &agent_api.AgentIdentityInfo{
+				ClientID:    "client-id-123",
+				PrincipalID: "principal-id-456",
+			},
+		},
+		nil,
+		"",
+		"",
+		false,
+		ActivityProfile{},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		"client-id-123",
+		envStub.values[envkey.AgentInstanceIdentityClientID("my-svc")],
+	)
+	require.Equal(
+		t,
+		"principal-id-456",
+		envStub.values[envkey.AgentInstanceIdentityPrincipalID("my-svc")],
+	)
+}
+
+type fakeActivityBotFinder struct {
+	ref *botservice.BotReference
+	err error
+}
+
+func (f fakeActivityBotFinder) FindByMsaAppID(
+	_ context.Context,
+	_ string,
+) (*botservice.BotReference, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.ref, nil
+}
+
+func TestResolveActivityBotName_PrefersIdentityBoundBot(t *testing.T) {
+	t.Parallel()
+
+	p := &AgentServiceTargetProvider{}
+	name, rg, err := p.resolveActivityBotName(
+		t.Context(),
+		fakeActivityBotFinder{ref: &botservice.BotReference{Name: "identity-bot", ResourceGroup: "identity-rg"}},
+		"my-svc",
+		"agent-a",
+		"client-id-1",
+		"fallback-rg",
+		map[string]string{envkey.AgentBotName("my-svc"): "env-bot"},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "identity-bot", name)
+	require.Equal(t, "identity-rg", rg)
+}
+
+func TestResolveActivityBotName_FallsBackToEnvValue(t *testing.T) {
+	t.Parallel()
+
+	p := &AgentServiceTargetProvider{}
+	name, rg, err := p.resolveActivityBotName(
+		t.Context(),
+		fakeActivityBotFinder{},
+		"my-svc",
+		"agent-a",
+		"client-id-1",
+		"fallback-rg",
+		map[string]string{envkey.AgentBotName("my-svc"): "env-bot"},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "env-bot", name)
+	require.Equal(t, "", rg)
+}
+
+func TestResolveActivityBotName_FallsBackToDefaultName(t *testing.T) {
+	t.Parallel()
+
+	p := &AgentServiceTargetProvider{}
+	name, rg, err := p.resolveActivityBotName(
+		t.Context(),
+		fakeActivityBotFinder{},
+		"my-svc",
+		"agent-a",
+		"client-id-1",
+		"fallback-rg",
+		map[string]string{"AZURE_SUBSCRIPTION_ID": "sub-1"},
+	)
+
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(name, "agent-a-bot-"), name)
+	require.Equal(t, "", rg)
+}
+
+func TestResolveActivityBotName_FallsBackWhenIdentityLookupFails(t *testing.T) {
+	t.Parallel()
+
+	p := &AgentServiceTargetProvider{}
+	name, rg, err := p.resolveActivityBotName(
+		t.Context(),
+		fakeActivityBotFinder{err: errors.New("list not authorized")},
+		"my-svc",
+		"agent-a",
+		"client-id-1",
+		"fallback-rg",
+		map[string]string{envkey.AgentBotName("my-svc"): "env-bot"},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "env-bot", name)
+	require.Equal(t, "", rg)
+}
+
+func TestActivityBotOwnership(t *testing.T) {
+	t.Parallel()
+
+	t.Run("marks a newly created bot as azd-owned", func(t *testing.T) {
+		t.Parallel()
+
+		owned, tags := activityBotOwnership(false, nil)
+
+		require.True(t, owned)
+		require.Equal(t, botservice.OwnershipTagValue, *tags[botservice.OwnershipTag])
+	})
+
+	t.Run("preserves tags on an adopted bot", func(t *testing.T) {
+		t.Parallel()
+
+		existingTags := map[string]*string{"external": new("value")}
+		owned, tags := activityBotOwnership(true, existingTags)
+
+		require.False(t, owned)
+		require.Equal(t, "value", *tags["external"])
+		require.NotContains(t, tags, botservice.OwnershipTag)
+	})
+
+	t.Run("preserves azd ownership across redeploys", func(t *testing.T) {
+		t.Parallel()
+
+		existingTags := map[string]*string{botservice.OwnershipTag: new(botservice.OwnershipTagValue)}
+		owned, tags := activityBotOwnership(true, existingTags)
+
+		require.True(t, owned)
+		require.Equal(t, botservice.OwnershipTagValue, *tags[botservice.OwnershipTag])
+	})
 }
 
 func TestRegisterAgentEnvironmentVariables_EmptyName(t *testing.T) {
@@ -557,6 +1697,11 @@ func TestRegisterAgentEnvironmentVariables_EmptyName(t *testing.T) {
 		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://proj.azure.com"},
 		&azdext.ServiceConfig{Name: "my-svc"},
 		&agent_api.AgentVersionObject{Name: "", Version: "1.0.0"},
+		nil,
+		"",
+		"",
+		false,
+		ActivityProfile{},
 		nil,
 	)
 	require.Error(t, err)
@@ -580,9 +1725,49 @@ func TestRegisterAgentEnvironmentVariables_EmptyVersion(t *testing.T) {
 		&azdext.ServiceConfig{Name: "my-svc"},
 		&agent_api.AgentVersionObject{Name: "my-agent", Version: ""},
 		nil,
+		"",
+		"",
+		false,
+		ActivityProfile{},
+		nil,
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "agent version is empty")
+}
+
+func TestRegisterAgentEnvironmentVariables_PersistsDigitalWorkerBlueprintClientID(t *testing.T) {
+	t.Parallel()
+
+	envStub := &stubEnvServer{}
+	provider := &AgentServiceTargetProvider{
+		azdClient: newEnvTestClient(t, envStub),
+		env:       &azdext.Environment{Name: "test-env"},
+	}
+	publish := &ActivityPublishConfig{PublishScope: "tenant"}
+
+	err := provider.registerAgentEnvironmentVariables(
+		t.Context(),
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://proj.azure.com"},
+		&azdext.ServiceConfig{Name: "my-svc"},
+		&agent_api.AgentVersionObject{
+			Name:    "my-agent",
+			Version: "1.0.0",
+			Blueprint: &agent_api.BlueprintInfo{
+				ClientID: "blueprint-client-id",
+			},
+		},
+		nil,
+		"",
+		"",
+		false,
+		ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker},
+		&ActivitySettings{DigitalWorkerType: agent_api.DigitalWorkerTypeM365, Publish: publish},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "blueprint-client-id", envStub.values[envkey.AgentBlueprintClientID("my-svc")])
+	require.Empty(t, envStub.values[envkey.AgentBotName("my-svc")])
+	require.Empty(t, envStub.values[envkey.AgentBotResourceGroup("my-svc")])
+	require.Empty(t, envStub.values[envkey.AgentBotOwned("my-svc")])
 }
 
 func TestDisplayableProtocolFor(t *testing.T) {
@@ -611,6 +1796,14 @@ func TestDisplayableProtocolFor(t *testing.T) {
 			wantProtocol:    agent_api.AgentProtocolInvocations,
 			wantEnvSuffix:   "INVOCATIONS",
 			wantURLContains: "/agents/my-agent/endpoint/protocols/invocations",
+			wantURLScheme:   "https",
+		},
+		{
+			name:            "a2a",
+			protocol:        "a2a",
+			wantProtocol:    agent_api.AgentProtocolA2A,
+			wantEnvSuffix:   "A2A",
+			wantURLContains: "/agents/my-agent/endpoint/protocols/a2a?api-version=v1",
 			wantURLScheme:   "https",
 		},
 		{
@@ -689,6 +1882,18 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 				{
 					Protocol: "invocations",
 					URL:      baseURL + "invocations?api-version=v1",
+				},
+			},
+		},
+		{
+			name: "single a2a protocol",
+			protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "a2a", Version: "1.0.0"},
+			},
+			expected: []protocolEndpointInfo{
+				{
+					Protocol: "a2a",
+					URL:      baseURL + "a2a?api-version=v1",
 				},
 			},
 		},
@@ -828,6 +2033,7 @@ func TestDeployArtifacts_HostedAgent_ProtocolEndpoints(t *testing.T) {
 		"test-agent", "1.0.0",
 		"", // no project resource ID — skip playground
 		ep,
+		ActivityProfile{},
 		protocols,
 	)
 
@@ -863,6 +2069,7 @@ func TestDeployArtifacts_ResponsesProtocol(t *testing.T) {
 		"prompt-agent", "2.0.0",
 		"", // no project resource ID — skip playground
 		ep,
+		ActivityProfile{},
 		protocols,
 	)
 
@@ -883,9 +2090,33 @@ func TestDeployArtifacts_EmptyProtocols_NoEndpoints(t *testing.T) {
 	artifacts := p.deployArtifacts(
 		"agent", "1.0.0",
 		"", "https://ep.azure.com",
+		ActivityProfile{},
 		nil,
 	)
 	require.Empty(t, artifacts)
+}
+
+func TestDeployArtifacts_ActivityAgent_SkipsPlaygroundPortalLink(t *testing.T) {
+	t.Parallel()
+
+	p := &AgentServiceTargetProvider{}
+	const ep = "https://myproject.services.ai.azure.com"
+
+	protocols := []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "responses", Version: "1.0.0"},
+	}
+
+	artifacts := p.deployArtifacts(
+		"activity-agent", "1.0.0",
+		"/subscriptions/123/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/acct/projects/proj",
+		ep,
+		ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple},
+		protocols,
+	)
+
+	require.Len(t, artifacts, 1)
+	require.Equal(t, "Agent endpoint (responses)", artifacts[0].Metadata["label"])
+	require.NotContains(t, artifacts[0].Location, "/build/agents/")
 }
 
 // TestPackage_NoEarlyFailureWithoutACR is a regression test ensuring that
@@ -993,6 +2224,56 @@ func TestLoadContainerAgentDefinition_MalformedYAMLReturnsError(t *testing.T) {
 	require.Contains(t, err.Error(), "agent.yaml is not valid")
 }
 
+func TestPrepareDeployIncludesServiceEnvironment(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	agentDef.RegistryConnectionID = "private-registry"
+	*agentDef.EnvironmentVariables = append(
+		*agentDef.EnvironmentVariables,
+		agent_yaml.EnvironmentVariable{
+			Name:  "LEGACY_ONLY",
+			Value: "${GLOBAL_VALUE}",
+		},
+		agent_yaml.EnvironmentVariable{
+			Name:  "SHARED",
+			Value: "${SHARED}",
+		},
+	)
+	serviceConfig := &azdext.ServiceConfig{
+		Name: "basic-agent",
+		Environment: map[string]string{
+			"SERVICE_ONLY": "literal ${NOT_A_TEMPLATE}",
+			"SHARED":       "service",
+		},
+	}
+
+	prep, err := (&AgentServiceTargetProvider{}).prepareDeploy(
+		serviceConfig,
+		agentDef,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://project.example",
+			"GLOBAL_VALUE":             "legacy",
+			"SHARED":                   "global",
+		},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/agent:latest"),
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		"literal ${NOT_A_TEMPLATE}",
+		prep.resolvedEnvVars["SERVICE_ONLY"],
+	)
+	require.Equal(t, "service", prep.resolvedEnvVars["SHARED"])
+	require.Equal(t, "legacy", prep.resolvedEnvVars["LEGACY_ONLY"])
+	hostedDefinition, ok := prep.request.Definition.(agent_api.HostedAgentDefinition)
+	require.True(t, ok)
+	require.NotNil(t, hostedDefinition.ContainerConfiguration)
+	require.Equal(t, "private-registry", hostedDefinition.ContainerConfiguration.RegistryConnectionID)
+}
+
 func TestLoadContainerAgentDefinition_EnvPathOverridesInlineDefinition(t *testing.T) {
 	t.Parallel()
 
@@ -1021,6 +2302,424 @@ func TestLoadContainerAgentDefinition_EnvPathOverridesInlineDefinition(t *testin
 	require.Equal(t, "override-agent", got.Name)
 }
 
+func TestLoadContainerAgentDefinition_FileRef(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "agent.yaml"),
+		[]byte(
+			"kind: hosted\n"+
+				"name: referenced-agent\n"+
+				"protocols:\n"+
+				"  - protocol: responses\n"+
+				"    version: \"1.0.0\"\n",
+		),
+		0o600,
+	))
+	props, err := structpb.NewStruct(map[string]any{
+		"$ref": "./agent.yaml",
+	})
+	require.NoError(t, err)
+	provider := &AgentServiceTargetProvider{
+		projectPath: dir,
+		serviceConfig: &azdext.ServiceConfig{
+			Name:                 "referenced-agent",
+			Host:                 "azure.ai.agent",
+			AdditionalProperties: props,
+		},
+	}
+
+	got, isHosted, err := provider.loadContainerAgentDefinition()
+
+	require.NoError(t, err)
+	require.True(t, isHosted)
+	require.Equal(t, "referenced-agent", got.Name)
+}
+
+func TestPackageBuildsContainerAgent(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAML(t, dir)
+	containerStub := &stubContainerServer{}
+	client := newContainerTestClient(t, containerStub)
+	provider := &AgentServiceTargetProvider{
+		azdClient:           client,
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
+		serviceConfig: &azdext.ServiceConfig{
+			Name:         "referenced-agent",
+			Host:         "azure.ai.agent",
+			RelativePath: "src/agent",
+		},
+	}
+
+	_, err := provider.Package(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "referenced-agent"},
+		&azdext.ServiceContext{},
+		func(string) {},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, int32(1), containerStub.buildCalls.Load())
+	require.Equal(t, int32(1), containerStub.packageCalls.Load())
+}
+
+func TestPrepareDeployAppliesDefaultResources(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	agentDef.Resources = nil
+	props, err := AgentDefinitionToServiceProperties(
+		agentDef,
+		&ServiceTargetAgentConfig{},
+	)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		AdditionalProperties: props,
+	}
+
+	provider := &AgentServiceTargetProvider{}
+
+	prep, err := provider.prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://example",
+		},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/agent:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	definition, ok := prep.request.Definition.(agent_api.HostedAgentDefinition)
+	require.True(t, ok)
+	require.Equal(t, DefaultCpu, definition.CPU)
+	require.Equal(t, DefaultMemory, definition.Memory)
+}
+
+func TestPrepareDeploySetsDigitalWorkerType(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	agentDef.Protocols = []agent_yaml.ProtocolVersionRecord{{Protocol: "activity", Version: "2.0.0"}}
+	agentDef.AgentEndpoint = &agent_yaml.AgentEndpoint{
+		Protocols: []string{"activity"},
+		AuthorizationSchemes: []agent_yaml.AuthorizationScheme{
+			{Type: string(agent_api.AgentEndpointAuthSchemeBotServiceRbac)},
+		},
+	}
+	props, err := AgentDefinitionToServiceProperties(agentDef, &ServiceTargetAgentConfig{
+		Activity: &ActivitySettings{DigitalWorkerType: agent_api.DigitalWorkerTypeM365},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "digital-worker",
+		AdditionalProperties: props,
+	}
+
+	prep, err := (&AgentServiceTargetProvider{}).prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example"},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/worker:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, agent_api.DigitalWorkerTypeM365, prep.request.DigitalWorkerType)
+	require.NotNil(t, prep.request.AgentEndpoint)
+	require.Equal(
+		t,
+		[]agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
+		prep.request.AgentEndpoint.Protocols,
+	)
+	require.Len(t, prep.request.AgentEndpoint.AuthorizationSchemes, 1)
+	require.Equal(t, agent_api.AgentEndpointAuthSchemeBotServiceRbac, prep.request.AgentEndpoint.AuthorizationSchemes[0].Type)
+}
+
+func TestPrepareDeployLeavesOmittedDigitalWorkerEndpointNil(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	agentDef.Protocols = []agent_yaml.ProtocolVersionRecord{{Protocol: "activity", Version: "2.0.0"}}
+	agentDef.AgentEndpoint = nil
+	agentDef.AgentCard = nil
+	props, err := AgentDefinitionToServiceProperties(agentDef, &ServiceTargetAgentConfig{
+		Activity: &ActivitySettings{DigitalWorkerType: agent_api.DigitalWorkerTypeM365},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "digital-worker",
+		AdditionalProperties: props,
+	}
+
+	prep, err := (&AgentServiceTargetProvider{}).prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example"},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/worker:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, agent_api.DigitalWorkerTypeM365, prep.request.DigitalWorkerType)
+	require.Nil(t, prep.request.AgentEndpoint)
+	require.Nil(t, prep.request.AgentCard)
+}
+
+func TestPrepareDeployPreservesOmittedSimpleActivityAuthorizationSchemes(t *testing.T) {
+	t.Parallel()
+
+	agentDef := sampleContainerAgent()
+	agentDef.Protocols = []agent_yaml.ProtocolVersionRecord{{Protocol: "activity", Version: "2.0.0"}}
+	agentDef.AgentEndpoint = &agent_yaml.AgentEndpoint{Protocols: []string{"activity"}}
+	props, err := AgentDefinitionToServiceProperties(agentDef, nil)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "simple-activity",
+		AdditionalProperties: props,
+	}
+
+	prep, err := (&AgentServiceTargetProvider{}).prepareDeploy(
+		svc,
+		agentDef,
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example"},
+		[]agent_yaml.AgentBuildOption{
+			agent_yaml.WithImageURL("registry.example/activity:v1"),
+		},
+	)
+
+	require.NoError(t, err)
+	require.Empty(t, prep.request.DigitalWorkerType)
+	require.NotNil(t, prep.request.AgentEndpoint)
+	require.Equal(
+		t,
+		[]agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
+		prep.request.AgentEndpoint.Protocols,
+	)
+	require.Empty(t, prep.request.AgentEndpoint.AuthorizationSchemes)
+}
+
+func TestEnsureActivityEndpointAuthSchemeForPromotedDigitalWorkerPreservesExplicitScheme(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{
+		AgentEndpoint: &agent_api.AgentEndpoint{
+			Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
+			AuthorizationSchemes: []agent_api.AgentEndpointAuthorizationScheme{
+				{Type: agent_api.AgentEndpointAuthSchemeEntra},
+				{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
+			},
+		},
+	}
+
+	ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
+		IsActivity: true,
+		UseCase:    ActivityUseCaseDigitalWorker,
+	})
+
+	require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
+		{Type: agent_api.AgentEndpointAuthSchemeEntra},
+		{Type: agent_api.AgentEndpointAuthSchemeBotServiceRbac},
+	}, request.AgentEndpoint.AuthorizationSchemes)
+}
+
+func TestEnsureActivityEndpointAuthSchemeForDigitalWorkerUsesServiceDefault(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{}
+
+	ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
+		IsActivity: true,
+		UseCase:    ActivityUseCaseDigitalWorker,
+	})
+
+	require.Nil(t, request.AgentEndpoint)
+}
+
+func TestEnsureActivityEndpointAuthSchemeForDigitalWorkerPreservesEndpointWithoutAddingScheme(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{
+		AgentEndpoint: &agent_api.AgentEndpoint{
+			Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolResponses},
+		},
+	}
+
+	ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
+		IsActivity: true,
+		UseCase:    ActivityUseCaseDigitalWorker,
+	})
+
+	require.Equal(t, []agent_api.AgentEndpointProtocol{
+		agent_api.AgentEndpointProtocolResponses,
+		agent_api.AgentEndpointProtocolActivity,
+	}, request.AgentEndpoint.Protocols)
+	require.Empty(t, request.AgentEndpoint.AuthorizationSchemes)
+}
+
+func TestEnsureActivityEndpointAuthSchemeForSimpleActivityUsesServiceDefault(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{}
+
+	ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
+		IsActivity: true,
+		UseCase:    ActivityUseCaseSimple,
+	})
+
+	require.Nil(t, request.AgentEndpoint)
+}
+
+func TestEnsureActivityEndpointAuthSchemePreservesExplicitLegacyBotService(t *testing.T) {
+	t.Parallel()
+
+	for _, useCase := range []ActivityUseCase{
+		ActivityUseCaseDigitalWorker,
+		ActivityUseCaseSimple,
+	} {
+		t.Run(string(useCase), func(t *testing.T) {
+			request := &agent_api.CreateAgentRequest{
+				AgentEndpoint: &agent_api.AgentEndpoint{
+					AuthorizationSchemes: []agent_api.AgentEndpointAuthorizationScheme{
+						{Type: agent_api.AgentEndpointAuthSchemeEntra},
+						{Type: agent_api.AgentEndpointAuthSchemeBotService},
+					},
+				},
+			}
+
+			ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{
+				IsActivity: true,
+				UseCase:    useCase,
+			})
+
+			require.Equal(t, []agent_api.AgentEndpointAuthorizationScheme{
+				{Type: agent_api.AgentEndpointAuthSchemeEntra},
+				{Type: agent_api.AgentEndpointAuthSchemeBotService},
+			}, request.AgentEndpoint.AuthorizationSchemes)
+		})
+	}
+}
+
+func TestEnsureActivityEndpointAuthSchemeForNonActivityDoesNotCreateEndpoint(t *testing.T) {
+	t.Parallel()
+
+	request := &agent_api.CreateAgentRequest{}
+
+	ensureActivityEndpointAuthSchemeForProfile(request, ActivityProfile{})
+
+	require.Nil(t, request.AgentEndpoint)
+}
+
+func TestActivityProfileFromCreateRequest(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name    string
+		request *agent_api.CreateAgentRequest
+		want    ActivityProfile
+	}{
+		{
+			name: "digital worker",
+			request: &agent_api.CreateAgentRequest{
+				CreateAgentVersionRequest: agent_api.CreateAgentVersionRequest{
+					DigitalWorkerType: agent_api.DigitalWorkerTypeM365,
+				},
+			},
+			want: ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker},
+		},
+		{
+			name: "simple activity",
+			request: &agent_api.CreateAgentRequest{
+				AgentEndpoint: &agent_api.AgentEndpoint{
+					Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolActivity},
+				},
+			},
+			want: ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple},
+		},
+		{
+			name: "non activity",
+			request: &agent_api.CreateAgentRequest{
+				AgentEndpoint: &agent_api.AgentEndpoint{
+					Protocols: []agent_api.AgentEndpointProtocol{agent_api.AgentEndpointProtocolResponses},
+				},
+			},
+			want: ActivityProfile{},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, activityProfileFromCreateRequest(test.request))
+		})
+	}
+}
+
+func TestValidateRegistryConnectionDefinition(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		agent       agent_yaml.ContainerAgent
+		wantContain string
+	}{
+		{name: "unset"},
+		{
+			name: "valid",
+			agent: agent_yaml.ContainerAgent{
+				Image: "registry.example.com/agent:v1", RegistryConnectionID: "private-registry",
+			},
+		},
+		{
+			name: "missing image", agent: agent_yaml.ContainerAgent{RegistryConnectionID: "private-registry"},
+			wantContain: "requires a pre-built container image",
+		},
+		{
+			name: "unqualified image",
+			agent: agent_yaml.ContainerAgent{
+				Image: "agent:v1", RegistryConnectionID: "private-registry",
+			},
+			wantContain: "explicit registry host and repository",
+		},
+		{
+			name: "image URL scheme",
+			agent: agent_yaml.ContainerAgent{
+				Image: "https://registry.example.com/agent:v1", RegistryConnectionID: "private-registry",
+			},
+			wantContain: "explicit registry host and repository",
+		},
+		{
+			name: "code deploy",
+			agent: agent_yaml.ContainerAgent{
+				Image: "registry.example.com/agent:v1", RegistryConnectionID: "private-registry",
+				CodeConfiguration: &agent_yaml.CodeConfiguration{},
+			},
+			wantContain: "codeConfiguration",
+		},
+		{
+			name: "whitespace", agent: agent_yaml.ContainerAgent{RegistryConnectionID: "  "},
+			wantContain: "empty or whitespace",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateRegistryConnectionDefinition(test.agent)
+			if test.wantContain == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, test.wantContain)
+		})
+	}
+}
+
 func TestShouldUsePreBuiltImage_NoImageDefaultsToBuild(t *testing.T) {
 	t.Parallel()
 
@@ -1029,6 +2728,64 @@ func TestShouldUsePreBuiltImage_NoImageDefaultsToBuild(t *testing.T) {
 	result, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{})
 	require.NoError(t, err)
 	require.False(t, result, "should default to build when no image is configured")
+}
+
+func TestShouldUsePreBuiltImage_LegacyInitImageUsesCompatibilityMarker(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		docker *azdext.DockerProjectOptions
+	}{
+		{name: "docker absent"},
+		{name: "mapped zero-value docker", docker: &azdext.DockerProjectOptions{}},
+		{name: "configured docker", docker: &azdext.DockerProjectOptions{RemoteBuild: true}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			promptStub := &stubPromptServer{selectedIndex: 0}
+			provider := &AgentServiceTargetProvider{
+				azdClient: newLegacyPreBuiltTestClient(t, promptStub),
+				env:       &azdext.Environment{Name: "test-env"},
+				serviceConfig: &azdext.ServiceConfig{
+					Docker: test.docker,
+				},
+			}
+
+			result, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{
+				Image: "registry.example.com/agent:v1",
+			})
+			require.NoError(t, err)
+			require.True(t, result)
+			require.Equal(t, int32(0), promptStub.selectCalls.Load())
+		})
+	}
+}
+
+func TestShouldUsePreBuiltImage_RegistryConnectionForcesPreBuilt(t *testing.T) {
+	t.Parallel()
+
+	promptStub := &stubPromptServer{selectedIndex: 0}
+	provider := &AgentServiceTargetProvider{azdClient: newPromptTestClient(t, promptStub)}
+	result, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{
+		Image:                "registry.example.com/agent:v1",
+		RegistryConnectionID: "private-registry",
+	})
+	require.NoError(t, err)
+	require.True(t, result)
+	require.Equal(t, int32(0), promptStub.selectCalls.Load(), "registry-backed images must not prompt to build")
+}
+
+func TestShouldUsePreBuiltImage_RegistryConnectionRequiresImage(t *testing.T) {
+	t.Parallel()
+
+	provider := &AgentServiceTargetProvider{}
+	_, err := provider.shouldUsePreBuiltImage(t.Context(), agent_yaml.ContainerAgent{
+		RegistryConnectionID: "private-registry",
+	})
+	require.ErrorContains(t, err, "requires a pre-built container image")
 }
 
 func TestShouldUsePreBuiltImage_SelectsPreBuiltImage(t *testing.T) {
@@ -1119,6 +2876,124 @@ func TestShouldUsePreBuiltImage_PromptErrorCanRetry(t *testing.T) {
 	require.Equal(t, int32(2), promptStub.selectCalls.Load())
 }
 
+func TestPackage_DelegatesImagePassthroughToCore(t *testing.T) {
+	const image = "registry.example.com/agents/my-agent:v1"
+	tests := []struct {
+		name               string
+		registryConnection string
+	}{
+		{name: "BYO image"},
+		{name: "private registry image", registryConnection: "production-registry"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			agentPath := filepath.Join(dir, "agent.yaml")
+			content := fmt.Sprintf("kind: hosted\nname: test-agent\nimage: %s\n", image)
+			if test.registryConnection != "" {
+				content += fmt.Sprintf("registryConnectionId: %s\n", test.registryConnection)
+			}
+			require.NoError(t, os.WriteFile(agentPath, []byte(content), 0o600))
+
+			containerStub := &stubContainerServer{packageImage: image}
+			promptStub := &stubPromptServer{selectedIndex: 0}
+			dockerOptions := &azdext.DockerProjectOptions{ImagePassthrough: true}
+			provider := &AgentServiceTargetProvider{
+				azdClient:           newServiceTargetTestClient(t, containerStub, promptStub),
+				agentDefinitionPath: agentPath,
+				env:                 &azdext.Environment{Name: "test-env"},
+			}
+
+			result, err := provider.Package(
+				t.Context(),
+				&azdext.ServiceConfig{Name: "test-svc", Docker: dockerOptions},
+				&azdext.ServiceContext{},
+				func(string) {},
+			)
+
+			require.NoError(t, err)
+			require.Len(t, result.Artifacts, 1)
+			require.Equal(t, image, result.Artifacts[0].Location)
+			require.Equal(t, azdext.LocationKind_LOCATION_KIND_REMOTE, result.Artifacts[0].LocationKind)
+			require.Equal(t, int32(0), containerStub.buildCalls.Load())
+			require.Equal(t, int32(1), containerStub.packageCalls.Load())
+			require.Equal(t, int32(0), promptStub.selectCalls.Load())
+		})
+	}
+}
+
+func TestPackage_ReusesCoreImagePassthroughArtifact(t *testing.T) {
+	t.Parallel()
+
+	const image = "registry.example.com/agents/my-agent:v1"
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAMLWithImage(t, dir, image)
+	containerStub := &stubContainerServer{packageImage: image}
+	dockerOptions := &azdext.DockerProjectOptions{ImagePassthrough: true}
+	provider := &AgentServiceTargetProvider{
+		azdClient:           newContainerTestClient(t, containerStub),
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
+	}
+	serviceContext := &azdext.ServiceContext{Package: []*azdext.Artifact{{
+		Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+		Location:     image,
+		LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+		Metadata:     map[string]string{"imagePassthrough": "true"},
+	}}}
+
+	result, err := provider.Package(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "test-svc", Docker: dockerOptions},
+		serviceContext,
+		func(string) {},
+	)
+
+	require.NoError(t, err)
+	require.Empty(t, result.Artifacts, "core already added the passthrough artifact to the shared context")
+	require.Len(t, serviceContext.Package, 1)
+	require.Equal(t, int32(0), containerStub.packageCalls.Load())
+}
+
+func TestPackage_CodeDeployTakesPrecedenceOverImagePassthrough(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	agentPath := filepath.Join(dir, "agent.yaml")
+	require.NoError(t, os.WriteFile(agentPath, []byte(`kind: hosted
+name: test-agent
+image: registry.example.com/agents/test-agent:v1
+code_configuration:
+  runtime: python_3_13
+  entry_point: app.py
+`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.py"), []byte("print('hello')\n"), 0o600))
+
+	containerStub := &stubContainerServer{}
+	dockerOptions := &azdext.DockerProjectOptions{ImagePassthrough: true}
+	provider := &AgentServiceTargetProvider{
+		azdClient:           newContainerTestClient(t, containerStub),
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
+	}
+
+	result, err := provider.Package(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "test-svc", Docker: dockerOptions},
+		&azdext.ServiceContext{},
+		func(string) {},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, result.Artifacts, 1)
+	require.Equal(t, azdext.ArtifactKind_ARTIFACT_KIND_ARCHIVE, result.Artifacts[0].Kind)
+	require.Equal(t, "code-zip", result.Artifacts[0].Metadata["type"])
+	require.Equal(t, int32(0), containerStub.buildCalls.Load())
+	require.Equal(t, int32(0), containerStub.packageCalls.Load())
+	t.Cleanup(func() { require.NoError(t, os.Remove(result.Artifacts[0].Location)) })
+}
+
 func TestPackage_SkipsWhenPreBuiltImageChosen(t *testing.T) {
 	t.Parallel()
 
@@ -1182,13 +3057,87 @@ func TestPackage_BuildsWhenUserChoseDockerfile(t *testing.T) {
 	require.Equal(t, int32(1), containerStub.packageCalls.Load())
 }
 
+func TestPublish_DelegatesImagePassthroughToCore(t *testing.T) {
+	t.Parallel()
+
+	const image = "registry.example.com/agents/my-agent:v1"
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAMLWithImage(t, dir, image)
+	containerStub := &stubContainerServer{publishImage: image}
+	dockerOptions := &azdext.DockerProjectOptions{ImagePassthrough: true}
+	provider := &AgentServiceTargetProvider{
+		azdClient:           newContainerTestClient(t, containerStub),
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
+	}
+
+	result, err := provider.Publish(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "test-svc", Docker: dockerOptions},
+		&azdext.ServiceContext{Package: []*azdext.Artifact{{
+			Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+			Location:     image,
+			LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+			Metadata:     map[string]string{"imagePassthrough": "true"},
+		}}},
+		&azdext.TargetResource{},
+		&azdext.PublishOptions{},
+		func(string) {},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, result.Artifacts, 1)
+	require.Equal(t, image, result.Artifacts[0].Location)
+	require.Equal(t, int32(1), containerStub.publishCalls.Load())
+}
+
+func TestPublish_CodeDeployTakesPrecedenceOverPreBuiltArtifact(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	agentPath := filepath.Join(dir, "agent.yaml")
+	require.NoError(t, os.WriteFile(agentPath, []byte(`kind: hosted
+name: test-agent
+image: registry.example.com/agents/test-agent:v1
+code_configuration:
+  runtime: python_3_13
+  entry_point: app.py
+`), 0o600))
+
+	containerStub := &stubContainerServer{}
+	provider := &AgentServiceTargetProvider{
+		azdClient:           newContainerTestClient(t, containerStub),
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
+	}
+
+	result, err := provider.Publish(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "test-svc"},
+		&azdext.ServiceContext{Package: []*azdext.Artifact{
+			preBuiltImageArtifact("registry.example.com/agents/test-agent:v1"),
+		}},
+		&azdext.TargetResource{},
+		&azdext.PublishOptions{},
+		func(string) {},
+	)
+
+	require.NoError(t, err)
+	require.Empty(t, result.Artifacts)
+	require.Equal(t, int32(0), containerStub.publishCalls.Load())
+}
+
 func TestPublish_SkipsWhenPreBuiltImageChosen(t *testing.T) {
 	t.Parallel()
 
 	imageURL := "myregistry.azurecr.io/myimage:v1"
+	dir := t.TempDir()
+	agentPath := writeHostedAgentYAMLWithImage(t, dir, imageURL)
 
 	provider := &AgentServiceTargetProvider{
-		env: &azdext.Environment{Name: "test-env"},
+		azdClient:           newContainerTestClient(t, &stubContainerServer{}),
+		agentDefinitionPath: agentPath,
+		env:                 &azdext.Environment{Name: "test-env"},
 	}
 
 	var progressMessages []string
@@ -1220,6 +3169,10 @@ func TestPublish_PublishesWhenPackageBuiltFromDockerfile(t *testing.T) {
 		azdClient:           client,
 		agentDefinitionPath: agentPath,
 		env:                 &azdext.Environment{Name: "test-env"},
+		serviceConfig: &azdext.ServiceConfig{
+			Name:         "test-svc",
+			RelativePath: "src/agent",
+		},
 	}
 
 	result, err := provider.Publish(
@@ -1524,6 +3477,72 @@ func TestPublish_PreservesNonACRHostActionableGuidance(t *testing.T) {
 	actionable := azdext.ActionableErrorDetailFromError(err)
 	require.NotNil(t, actionable)
 	require.Equal(t, suggestion, actionable.GetSuggestion())
+}
+
+func TestPublish_PreservesHostServiceDetails(t *testing.T) {
+	t.Parallel()
+
+	st := status.New(codes.Unknown, "registry request failed")
+	withDetails, err := st.WithDetails(&azdext.ServiceErrorDetail{
+		ErrorCode:   "TooManyRequests",
+		StatusCode:  429,
+		ServiceName: "management.azure.com",
+	})
+	require.NoError(t, err)
+
+	publishErr := publishWithContainerError(t, withDetails.Err())
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](publishErr)
+	require.True(t, ok)
+	require.Equal(t, "container_publish.TooManyRequests", serviceErr.ErrorCode)
+	require.Equal(t, 429, serviceErr.StatusCode)
+	require.Equal(t, "management.azure.com", serviceErr.ServiceName)
+}
+
+func TestPublish_PreservesRelayedHostServiceError(t *testing.T) {
+	t.Parallel()
+
+	source := &azdext.ServiceError{
+		Message:     "could not get Foundry project",
+		ErrorCode:   "get_foundry_project.AuthorizationFailed",
+		StatusCode:  403,
+		ServiceName: "management.azure.com",
+		Suggestion:  "request the required role",
+	}
+	st, err := status.New(codes.Unknown, "container publish failed").WithDetails(azdext.WrapError(source))
+	require.NoError(t, err)
+
+	publishErr := publishWithContainerError(t, st.Err())
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](publishErr)
+	require.True(t, ok)
+	require.Equal(t, source.Message, serviceErr.Message)
+	require.Equal(t, source.ErrorCode, serviceErr.ErrorCode)
+	require.Equal(t, source.StatusCode, serviceErr.StatusCode)
+	require.Equal(t, source.ServiceName, serviceErr.ServiceName)
+	require.Equal(t, source.Suggestion, serviceErr.Suggestion)
+}
+
+func TestPublish_PreservesRelayedHostLocalError(t *testing.T) {
+	t.Parallel()
+
+	source := &azdext.LocalError{
+		Message:    "invalid Foundry project resource ID",
+		Code:       "invalid_ai_project_id",
+		Category:   azdext.LocalErrorCategoryValidation,
+		Suggestion: "verify AZURE_AI_PROJECT_ID",
+	}
+	st, err := status.New(codes.Unknown, "container publish failed").WithDetails(azdext.WrapError(source))
+	require.NoError(t, err)
+
+	publishErr := publishWithContainerError(t, st.Err())
+
+	localErr, ok := errors.AsType[*azdext.LocalError](publishErr)
+	require.True(t, ok)
+	require.Equal(t, source.Message, localErr.Message)
+	require.Equal(t, source.Code, localErr.Code)
+	require.Equal(t, source.Category, localErr.Category)
+	require.Equal(t, source.Suggestion, localErr.Suggestion)
 }
 
 func publishWithContainerError(t *testing.T, publishErr error) error {
@@ -2005,4 +4024,154 @@ func TestValidatePythonBundledDeps_ErrorCodeCorrect(t *testing.T) {
 	var localErr *azdext.LocalError
 	require.True(t, errors.As(err, &localErr))
 	require.Equal(t, exterrors.CodeBundledDepsNotFound, localErr.Code)
+}
+
+// endpointsTestEnvServer serves GetCurrent/GetValues for Endpoints() tests.
+type endpointsTestEnvServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+	values map[string]string
+}
+
+func (s *endpointsTestEnvServer) GetCurrent(
+	context.Context, *azdext.EmptyRequest,
+) (*azdext.EnvironmentResponse, error) {
+	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: "test-env"}}, nil
+}
+
+func (s *endpointsTestEnvServer) GetValues(
+	context.Context, *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	kvs := make([]*azdext.KeyValue, 0, len(s.values))
+	for k, v := range s.values {
+		kvs = append(kvs, &azdext.KeyValue{Key: k, Value: v})
+	}
+	return &azdext.KeyValueListResponse{KeyValues: kvs}, nil
+}
+
+func newEndpointsTestClient(
+	t *testing.T, projectRoot string, envValues map[string]string,
+) *azdext.AzdClient {
+	t.Helper()
+
+	srv := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(srv, &stubProjectServer{
+		project: &azdext.ProjectConfig{Path: projectRoot},
+	})
+	azdext.RegisterEnvironmentServiceServer(srv, &endpointsTestEnvServer{values: envValues})
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(func() {
+		srv.Stop()
+		_ = lis.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(lis.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+	return client
+}
+
+// TestEndpoints_VoiceManifestOnDisk_ResolvesProjectRoot covers the fresh-process
+// case where Endpoints runs without ensureDeployContext having populated
+// p.projectPath. A legacy-shape prompt-voice service (kind only on disk, no
+// inline kind) may retain NAME+ENDPOINT without VERSION from an earlier deploy;
+// Endpoints must resolve the project root itself so agentkind classifies it as
+// voice and returns the base endpoint instead of the missing-VERSION error.
+func TestEndpoints_VoiceManifestOnDisk_ResolvesProjectRoot(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	serviceDir := filepath.Join(projectRoot, "src", "voice")
+	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(serviceDir, "agent.yaml"),
+		[]byte("kind: prompt-voice\nname: my-voice\n"),
+		0o600,
+	))
+
+	const endpoint = "https://proj.services.ai.azure.com/voice/my-voice"
+	client := newEndpointsTestClient(t, projectRoot, map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com",
+		"AGENT_VOICE_NAME":         "my-voice",
+		"AGENT_VOICE_ENDPOINT":     endpoint,
+		// Deliberately model a legacy persisted environment with no VERSION.
+	})
+
+	// Fresh process: projectPath/agentDefinitionPath are empty, exactly as they
+	// are before any ensureDeployContext call.
+	provider := &AgentServiceTargetProvider{azdClient: client}
+
+	got, err := provider.Endpoints(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "voice", RelativePath: "src/voice"},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{endpoint}, got)
+}
+
+// TestEndpoints_VoiceAgentDefinitionPathOverride covers the fresh-process case
+// where a voice manifest is supplied via the AGENT_DEFINITION_PATH override.
+// Endpoints runs without ensureDeployContext (so p.agentDefinitionPath is empty)
+// and must read the process override to classify a legacy persisted
+// NAME+ENDPOINT environment as voice, rather than classifying the (kind-less)
+// service entry and returning missing-VERSION.
+func TestEndpoints_VoiceAgentDefinitionPathOverride(t *testing.T) {
+	projectRoot := t.TempDir()
+	overridePath := filepath.Join(projectRoot, "custom-voice.yaml")
+	require.NoError(t, os.WriteFile(
+		overridePath,
+		[]byte("kind: prompt-voice\nname: my-voice\n"),
+		0o600,
+	))
+	t.Setenv("AGENT_DEFINITION_PATH", overridePath)
+
+	const endpoint = "https://proj.services.ai.azure.com/voice/my-voice"
+	client := newEndpointsTestClient(t, projectRoot, map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com",
+		"AGENT_VOICE_NAME":         "my-voice",
+		"AGENT_VOICE_ENDPOINT":     endpoint,
+		// Deliberately model a legacy persisted environment with no VERSION.
+	})
+
+	// Fresh process: the service entry carries no kind; only the override does.
+	provider := &AgentServiceTargetProvider{azdClient: client}
+
+	got, err := provider.Endpoints(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "voice", RelativePath: "src/voice"},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{endpoint}, got)
+}
+
+// resolution added for voice does not change hosted behavior: a hosted service
+// (no voice manifest) with a lingering ENDPOINT but no VERSION must still
+// surface the actionable missing-env-vars error.
+func TestEndpoints_HostedMissingVersion_StillErrors(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "src", "hosted"), 0o750))
+
+	client := newEndpointsTestClient(t, projectRoot, map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com",
+		"AGENT_HOSTED_ENDPOINT":    "https://proj.services.ai.azure.com/agents/hosted",
+		// no VERSION and no voice manifest -> must error, not fall through.
+	})
+
+	provider := &AgentServiceTargetProvider{azdClient: client}
+
+	_, err := provider.Endpoints(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "hosted", RelativePath: "src/hosted"},
+		nil,
+	)
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeMissingAgentEnvVars, localErr.Code)
 }

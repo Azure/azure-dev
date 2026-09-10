@@ -4,6 +4,8 @@
 package extensions
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -51,4 +53,68 @@ func TestGetExtension(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrRegistryExtensionNotFound)
 	require.Nil(t, notFoundExtension)
+}
+
+func TestCategorizedSourcePropagatesCategoryAndRegistry(t *testing.T) {
+	t.Parallel()
+
+	registry := &Registry{
+		SchemaVersion: CurrentRegistrySchemaVersion,
+		Extensions: []*ExtensionMetadata{
+			{Id: "ext1", DisplayName: "Extension 1"},
+		},
+	}
+	source, err := newRegistrySource("team-registry", registry)
+	require.NoError(t, err)
+
+	categorized := newCategorizedSource(source, SourceCategoryDev)
+	provider, ok := categorized.(RegistryProvider)
+	require.True(t, ok)
+	require.Same(t, registry, provider.GetRegistry())
+
+	listed, err := categorized.ListExtensions(t.Context())
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	require.Equal(t, "team-registry", listed[0].Source)
+	require.Equal(t, SourceCategoryDev, listed[0].SourceCategory)
+
+	selected, err := categorized.GetExtension(t.Context(), "ext1")
+	require.NoError(t, err)
+	require.Equal(t, SourceCategoryDev, selected.SourceCategory)
+
+	_, err = categorized.GetExtension(t.Context(), "missing")
+	require.ErrorIs(t, err, ErrRegistryExtensionNotFound)
+}
+
+type failingSource struct {
+	listErr error
+	getErr  error
+}
+
+func (s *failingSource) Name() string {
+	return "failing"
+}
+
+func (s *failingSource) ListExtensions(context.Context) ([]*ExtensionMetadata, error) {
+	return nil, s.listErr
+}
+
+func (s *failingSource) GetExtension(context.Context, string) (*ExtensionMetadata, error) {
+	return nil, s.getErr
+}
+
+func TestCategorizedSourcePreservesSourceErrors(t *testing.T) {
+	t.Parallel()
+
+	listErr := errors.New("list failed")
+	getErr := errors.New("get failed")
+	source := newCategorizedSource(&failingSource{listErr: listErr, getErr: getErr}, SourceCategoryOther)
+	_, isRegistryProvider := source.(RegistryProvider)
+	require.False(t, isRegistryProvider)
+
+	_, err := source.ListExtensions(t.Context())
+	require.ErrorIs(t, err, listErr)
+
+	_, err = source.GetExtension(t.Context(), "ext1")
+	require.ErrorIs(t, err, getErr)
 }

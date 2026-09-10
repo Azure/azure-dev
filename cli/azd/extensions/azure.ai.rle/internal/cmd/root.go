@@ -36,9 +36,11 @@ func NewRootCommand() *cobra.Command {
 	})
 
 	userCommands := []*cobra.Command{
-		newDeployCommand(),
+		newListCommand(&extCtx.OutputFormat),
+		newShowCommand(&extCtx.OutputFormat),
 		newInitCommand(),
 		newInvokeCommand(),
+		newPublishCommand(),
 		newRunCommand(),
 	}
 	for _, command := range userCommands {

@@ -4,11 +4,16 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"strings"
 
 	"azure.ai.toolboxes/internal/exterrors"
-	"azure.ai.toolboxes/internal/foundry"
 	"azure.ai.toolboxes/internal/foundry/connections"
 )
 
@@ -28,41 +33,81 @@ type connectionResolver interface {
 	resolveConnection(ctx context.Context, endpoint, name string) (*projectConnection, error)
 }
 
-type defaultConnectionResolver struct{}
+type connectionDescriptorRunner interface {
+	Run(ctx context.Context, args ...string) ([]byte, error)
+}
 
-func (defaultConnectionResolver) resolveConnection(
+type azdConnectionDescriptorRunner struct{}
+
+func (azdConnectionDescriptorRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
+	// #nosec G204 -- the executable is fixed and callers construct the azd argument list without a shell.
+	command := exec.CommandContext(ctx, "azd", args...)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	command.Stdout = &stdout
+	command.Stderr = io.MultiWriter(os.Stderr, &stderr)
+	if err := command.Run(); err != nil {
+		message := strings.TrimSpace(stderr.String())
+		if message == "" {
+			message = err.Error()
+		}
+		return nil, fmt.Errorf("azd %s failed: %s", strings.Join(args, " "), message)
+	}
+	return stdout.Bytes(), nil
+}
+
+type defaultConnectionResolver struct {
+	runner connectionDescriptorRunner
+}
+
+func (r defaultConnectionResolver) resolveConnection(
 	ctx context.Context, endpoint, name string,
 ) (*projectConnection, error) {
-	cred, err := foundry.NewCredential()
+	runner := r.runner
+	if runner == nil {
+		runner = azdConnectionDescriptorRunner{}
+	}
+	output, err := runner.Run(
+		ctx,
+		"ai", "connection", "show", name,
+		"--project-endpoint", endpoint,
+		"--output", "json",
+		"--no-prompt",
+	)
 	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("failed to acquire credential: %s", err),
-			"run `azd auth login` and retry",
+		return nil, exterrors.Dependency(
+			exterrors.CodeConnectionNotFound,
+			fmt.Sprintf("failed to resolve connection %q: %s", name, err),
+			"run `azd ai connection show <name>` to verify the connection, then retry",
 		)
 	}
-	client, err := connections.New(endpoint, cred)
-	if err != nil {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("failed to build a project client for %s: %s", endpoint, err),
-			"verify the project endpoint is well-formed",
+	var descriptor struct {
+		ID     string                     `json:"id"`
+		Name   string                     `json:"name"`
+		Kind   connections.ConnectionType `json:"kind"`
+		Target string                     `json:"target"`
+	}
+	if err := json.Unmarshal(output, &descriptor); err != nil {
+		return nil, exterrors.Internal(
+			exterrors.CodeAzdClientFailed,
+			fmt.Sprintf("connection show returned invalid JSON for %q: %s", name, err),
 		)
 	}
-
-	conn, err := client.Get(ctx, name)
-	if err != nil {
-		if isAzureNotFound(err) {
-			return nil, connectionNotFoundError(name)
-		}
-		return nil, exterrors.ServiceFromAzure(err, exterrors.OpResolveProjectConnection)
+	if strings.TrimSpace(descriptor.Name) == "" || strings.TrimSpace(descriptor.Kind.String()) == "" {
+		return nil, exterrors.Internal(
+			exterrors.CodeAzdClientFailed,
+			fmt.Sprintf("connection show returned an incomplete descriptor for %q", name),
+		)
+	}
+	if descriptor.ID == "" {
+		descriptor.ID = descriptor.Name
 	}
 
 	return &projectConnection{
-		ID:       conn.ID,
-		Category: conn.Type,
-		Name:     conn.Name,
-		Target:   conn.Target,
+		ID:       descriptor.ID,
+		Category: descriptor.Kind,
+		Name:     descriptor.Name,
+		Target:   descriptor.Target,
 	}, nil
 }
 

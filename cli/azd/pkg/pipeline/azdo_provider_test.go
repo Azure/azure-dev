@@ -4,7 +4,6 @@
 package pipeline
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -152,19 +151,24 @@ func Test_azdo_ci_provider_preConfigureCheck(t *testing.T) {
 		require.True(t, updatedConfig)
 	})
 
-	t.Run("fails if auth type is set to federated", func(t *testing.T) {
+	t.Run("succeeds if auth type is set to federated (default for azdo)", func(t *testing.T) {
 		ctx := t.Context()
 
 		testConsole := mockinput.NewMockConsole()
+		testPat := "testPAT12345"
+		testConsole.WhenPrompt(func(options input.ConsoleOptions) bool {
+			return options.Message == "Personal Access Token (PAT):"
+		}).Respond(testPat)
 		pipelineManagerArgs := PipelineManagerArgs{
 			PipelineAuthTypeName: string(AuthTypeFederated),
 		}
 		provider := getAzdoCiProviderTestHarness(testConsole)
 
-		updatedConfig, err := provider.preConfigureCheck(ctx, pipelineManagerArgs, provisioning.Options{}, "")
-		require.Error(t, err)
-		require.False(t, updatedConfig)
-		require.True(t, errors.Is(err, ErrAuthNotSupported))
+		// Azure DevOps supports federated (OIDC) credentials and uses them by default,
+		// so an explicit federated auth type must not be rejected.
+		_, err := provider.preConfigureCheck(ctx, pipelineManagerArgs, provisioning.Options{}, "")
+		require.NoError(t, err)
+		require.NotErrorIs(t, err, ErrAuthNotSupported)
 	})
 }
 

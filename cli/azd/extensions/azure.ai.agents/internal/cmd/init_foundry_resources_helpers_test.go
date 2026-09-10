@@ -5,9 +5,16 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"net"
+	"strconv"
+	"strings"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/azure"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	armcognitiveservices "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -16,6 +23,186 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+func TestValidateNewFoundryProjectName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		value string
+		valid bool
+	}{
+		{name: "minimum length", value: "abc", valid: true},
+		{name: "maximum length", value: strings.Repeat("a", 32), valid: true},
+		{name: "uppercase is preserved", value: "My-Project", valid: true},
+		{name: "too short", value: "ab"},
+		{name: "too long", value: strings.Repeat("a", 33)},
+		{name: "leading hyphen", value: "-my-project"},
+		{name: "spaces", value: "my project"},
+		{name: "underscore", value: "my_project"},
+		{name: "dot", value: "my.project"},
+		{name: "unicode", value: "my-projéct"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateNewFoundryProjectName(tt.value)
+			if tt.valid {
+				require.NoError(t, err)
+				return
+			}
+
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
+		})
+	}
+}
+
+func TestEnsureNewFoundryProjectName_PromptsAndPersists(t *testing.T) {
+	const envName = "agent-dev"
+	const projectName = "my-foundry-project"
+
+	envServer := &testEnvironmentServiceServer{
+		environments: map[string]*azdext.Environment{
+			envName: {Name: envName},
+		},
+		values: map[string]map[string]string{},
+	}
+	promptServer := &testPromptServiceServer{
+		promptResponses: []string{projectName},
+	}
+	azdClient := newTestAzdClient(
+		t,
+		envServer,
+		&testWorkflowServiceServer{},
+		promptServer,
+	)
+
+	require.NoError(t, ensureNewFoundryProjectName(t.Context(), azdClient, envName))
+	require.Equal(t, projectName, envServer.values[envName][foundryProjectNameEnvKey])
+	require.Len(t, promptServer.promptRequests, 1)
+	require.Equal(t, envName, promptServer.promptRequests[0].Options.DefaultValue)
+	require.True(t, promptServer.promptRequests[0].Options.Required)
+	require.Equal(
+		t,
+		"Enter a name for the new Foundry project",
+		promptServer.promptRequests[0].Options.Message,
+	)
+}
+
+func TestEnsureNewFoundryProjectName_InvalidEnvironmentNameHasNoDefault(t *testing.T) {
+	const envName = "agent_dev"
+
+	envServer := &testEnvironmentServiceServer{
+		environments: map[string]*azdext.Environment{
+			envName: {Name: envName},
+		},
+		values: map[string]map[string]string{},
+	}
+	promptServer := &testPromptServiceServer{
+		promptResponses: []string{"my-foundry-project"},
+	}
+	azdClient := newTestAzdClient(
+		t,
+		envServer,
+		&testWorkflowServiceServer{},
+		promptServer,
+	)
+
+	require.NoError(t, ensureNewFoundryProjectName(t.Context(), azdClient, envName))
+	require.Empty(t, promptServer.promptRequests[0].Options.DefaultValue)
+	require.Equal(
+		t,
+		"my-foundry-project",
+		envServer.values[envName][foundryProjectNameEnvKey],
+	)
+}
+
+func TestEnsureNewFoundryProjectName_UsesConfiguredNameAsDefault(t *testing.T) {
+	const envName = "agent-dev"
+	const projectName = "configured-project"
+	const newProjectName = "new-project"
+
+	envServer := &testEnvironmentServiceServer{
+		environments: map[string]*azdext.Environment{
+			envName: {Name: envName},
+		},
+		values: map[string]map[string]string{
+			envName: {foundryProjectNameEnvKey: projectName},
+		},
+	}
+	promptServer := &testPromptServiceServer{
+		promptResponses: []string{newProjectName},
+	}
+	azdClient := newTestAzdClient(
+		t,
+		envServer,
+		&testWorkflowServiceServer{},
+		promptServer,
+	)
+
+	require.NoError(t, ensureNewFoundryProjectName(t.Context(), azdClient, envName))
+	require.Len(t, promptServer.promptRequests, 1)
+	require.Equal(t, projectName, promptServer.promptRequests[0].Options.DefaultValue)
+	require.Equal(t, newProjectName, envServer.values[envName][foundryProjectNameEnvKey])
+}
+
+func TestEnsureNewFoundryProjectName_InvalidResponseReprompts(t *testing.T) {
+	const envName = "agent-dev"
+	const projectName = "my-foundry-project"
+
+	envServer := &testEnvironmentServiceServer{
+		environments: map[string]*azdext.Environment{
+			envName: {Name: envName},
+		},
+		values: map[string]map[string]string{},
+	}
+	promptServer := &testPromptServiceServer{
+		promptResponses: []string{"invalid name", projectName},
+	}
+	azdClient := newTestAzdClient(
+		t,
+		envServer,
+		&testWorkflowServiceServer{},
+		promptServer,
+	)
+
+	require.NoError(t, ensureNewFoundryProjectName(t.Context(), azdClient, envName))
+	require.Equal(t, projectName, envServer.values[envName][foundryProjectNameEnvKey])
+	require.Len(t, promptServer.promptRequests, 2)
+	require.Equal(
+		t,
+		"",
+		promptServer.promptRequests[1].Options.DefaultValue,
+	)
+	require.Equal(
+		t,
+		"Enter a valid name for the new Foundry project",
+		promptServer.promptRequests[1].Options.Message,
+	)
+}
+
+func TestEnsureNewFoundryProjectName_PromptFailure(t *testing.T) {
+	const envName = "agent-dev"
+
+	envServer := &testEnvironmentServiceServer{
+		environments: map[string]*azdext.Environment{
+			envName: {Name: envName},
+		},
+		values: map[string]map[string]string{},
+	}
+	azdClient := newTestAzdClient(
+		t,
+		envServer,
+		&testWorkflowServiceServer{},
+		&testPromptServiceServer{},
+	)
+
+	err := ensureNewFoundryProjectName(t.Context(), azdClient, envName)
+	require.Error(t, err)
+	require.NotContains(t, envServer.values[envName], foundryProjectNameEnvKey)
+}
 
 func TestFoundryProjectInfo_Endpoint(t *testing.T) {
 	t.Parallel()
@@ -39,6 +226,44 @@ func TestFoundryProjectInfo_Endpoint(t *testing.T) {
 			require.Equal(t, tc.want, tc.info.Endpoint())
 		})
 	}
+}
+
+func TestVerifyFoundryProjectConnection(t *testing.T) {
+	t.Parallel()
+
+	project := FoundryProjectInfo{AccountName: "account", ProjectName: "project"}
+	connections := []azure.Connection{
+		{Name: "private-registry", ID: "/connections/private-registry", Type: azure.ConnectionTypeCustomKeys},
+	}
+	loader := func(
+		_ context.Context,
+		_ azcore.TokenCredential,
+		accountName string,
+		projectName string,
+	) ([]azure.Connection, error) {
+		require.Equal(t, "account", accountName)
+		require.Equal(t, "project", projectName)
+		return connections, nil
+	}
+
+	require.NoError(t, verifyFoundryProjectConnection(
+		t.Context(), nil, project, "private-registry", loader,
+	))
+	require.NoError(t, verifyFoundryProjectConnection(
+		t.Context(), nil, project, "/connections/private-registry", loader,
+	))
+
+	err := verifyFoundryProjectConnection(t.Context(), nil, project, "missing", loader)
+	require.ErrorContains(t, err, "was not found")
+
+	loadErr := errors.New("service unavailable")
+	err = verifyFoundryProjectConnection(
+		t.Context(), nil, project, "private-registry",
+		func(context.Context, azcore.TokenCredential, string, string) ([]azure.Connection, error) {
+			return nil, loadErr
+		},
+	)
+	require.ErrorIs(t, err, loadErr)
 }
 
 func TestExtractProjectDetails(t *testing.T) {
@@ -184,12 +409,16 @@ func TestCreateNewEnvironment_ReusesExistingEnvironmentAfterAlreadyExistsError(t
 
 type testEnvironmentServiceServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
-	environments map[string]*azdext.Environment
-	current      *azdext.Environment
-	values       map[string]map[string]string // envName -> key -> value
+	environments    map[string]*azdext.Environment
+	current         *azdext.Environment
+	values          map[string]map[string]string // envName -> key -> value
+	setKeys         []string
+	getCurrentCalls int
+	getValuesCalls  int
 }
 
 func (s *testEnvironmentServiceServer) GetCurrent(context.Context, *azdext.EmptyRequest) (*azdext.EnvironmentResponse, error) {
+	s.getCurrentCalls++
 	if s.current == nil {
 		return nil, status.Error(codes.NotFound, "current environment not found")
 	}
@@ -218,6 +447,7 @@ func (s *testEnvironmentServiceServer) SetValue(
 		s.values[req.EnvName] = make(map[string]string)
 	}
 	s.values[req.EnvName][req.Key] = req.Value
+	s.setKeys = append(s.setKeys, req.Key)
 	return &azdext.EmptyResponse{}, nil
 }
 
@@ -231,12 +461,13 @@ func (s *testEnvironmentServiceServer) GetValue(
 			}
 		}
 	}
-	return nil, status.Error(codes.NotFound, "key not found")
+	return &azdext.KeyValueResponse{}, nil
 }
 
 func (s *testEnvironmentServiceServer) GetValues(
 	_ context.Context, req *azdext.GetEnvironmentRequest,
 ) (*azdext.KeyValueListResponse, error) {
+	s.getValuesCalls++
 	values := s.values[req.Name]
 	keyValues := make([]*azdext.KeyValue, 0, len(values))
 	for key, value := range values {
@@ -273,6 +504,25 @@ func newTestAzdClient(
 ) *azdext.AzdClient {
 	t.Helper()
 
+	address := newTestAzdServer(t, envServer, workflowServer, promptServers...)
+	azdClient, err := azdext.NewAzdClient(azdext.WithAddress(address))
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		azdClient.Close()
+	})
+
+	return azdClient
+}
+
+func newTestAzdServer(
+	t *testing.T,
+	envServer azdext.EnvironmentServiceServer,
+	workflowServer azdext.WorkflowServiceServer,
+	promptServers ...azdext.PromptServiceServer,
+) string {
+	t.Helper()
+
 	grpcServer := grpc.NewServer()
 	azdext.RegisterEnvironmentServiceServer(grpcServer, envServer)
 	azdext.RegisterWorkflowServiceServer(grpcServer, workflowServer)
@@ -300,14 +550,7 @@ func newTestAzdClient(
 		}
 	})
 
-	azdClient, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		azdClient.Close()
-	})
-
-	return azdClient
+	return listener.Addr().String()
 }
 
 func TestFoundryProjectInfoFromResource(t *testing.T) {
@@ -413,6 +656,79 @@ func TestAgentModelFilter(t *testing.T) {
 			require.Equal(t, []string{agentsV2ModelCapability}, filter.Capabilities)
 			require.Equal(t, tt.wantLocations, filter.Locations)
 			require.Equal(t, tt.wantExclude, filter.ExcludeModelNames)
+		})
+	}
+}
+
+type recordingPromptAiModelServer struct {
+	azdext.UnimplementedPromptServiceServer
+	requests []*azdext.PromptAiModelRequest
+}
+
+func (s *recordingPromptAiModelServer) PromptAiModel(
+	_ context.Context,
+	req *azdext.PromptAiModelRequest,
+) (*azdext.PromptAiModelResponse, error) {
+	s.requests = append(s.requests, req)
+	return &azdext.PromptAiModelResponse{
+		Model: &azdext.AiModel{Name: "selected-model"},
+	}, nil
+}
+
+func TestSelectNewModel(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		modelFlag   string
+		wantDefault string
+	}{
+		{
+			name:        "uses default agent model",
+			wantDefault: defaultAgentModel,
+		},
+		{
+			name:        "explicit model wins",
+			modelFlag:   "gpt-5",
+			wantDefault: "gpt-5",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			promptServer := &recordingPromptAiModelServer{}
+			azdClient := newTestAzdClient(
+				t,
+				&testEnvironmentServiceServer{},
+				&testWorkflowServiceServer{},
+				promptServer,
+			)
+			azureContext := &azdext.AzureContext{
+				Scope: &azdext.AzureScope{Location: "eastus"},
+			}
+
+			model, err := selectNewModel(
+				t.Context(),
+				azdClient,
+				azureContext,
+				tt.modelFlag,
+			)
+
+			require.NoError(t, err)
+			require.Equal(t, "selected-model", model.Name)
+			require.Len(t, promptServer.requests, 1)
+
+			req := promptServer.requests[0]
+			require.Equal(t, tt.wantDefault, req.DefaultValue)
+			require.NotNil(t, req.Filter)
+			require.Equal(t, []string{"eastus"}, req.Filter.Locations)
+			require.Equal(
+				t,
+				[]string{agentsV2ModelCapability},
+				req.Filter.Capabilities,
+			)
 		})
 	}
 }
@@ -545,6 +861,7 @@ func TestNormalizeLoginServer(t *testing.T) {
 		{"https://myregistry.azurecr.io", "myregistry.azurecr.io"},
 		{"http://myregistry.azurecr.io", "myregistry.azurecr.io"},
 		{"https://myregistry.azurecr.io/", "myregistry.azurecr.io"},
+		{"HTTPS://MYREGISTRY.AZURECR.IO/", "myregistry.azurecr.io"},
 		{"https://crdyt765he4tmsy.azurecr.io", "crdyt765he4tmsy.azurecr.io"},
 		{"", ""},
 	}
@@ -731,6 +1048,7 @@ func TestConfigureFoundryProjectEnv_BicepLessShortCircuits(t *testing.T) {
 	err := configureFoundryProjectEnv(
 		t.Context(), azdClient, nil, envName,
 		project, project.SubscriptionId,
+		"",
 		true, // skipACR (code deploy)
 		true, // bicepless
 	)
@@ -759,4 +1077,312 @@ func TestConfigureFoundryProjectEnv_BicepLessShortCircuits(t *testing.T) {
 	} {
 		require.Empty(t, written[key], "must not write %q when bicepless+skipACR", key)
 	}
+}
+
+func TestConfigureAcrConnection_ValidatesDiscoveredConnections(t *testing.T) {
+	const (
+		envName    = "test-env"
+		resourceId = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/valid"
+	)
+
+	tests := []struct {
+		name        string
+		connections []azure.Connection
+		registries  map[string]string
+		loadErr     error
+		prompts     []string
+		initial     map[string]string
+		selector    string
+		noPrompt    bool
+		wantErr     string
+		wantValues  map[string]string
+	}{
+		{
+			name: "valid sole connection is selected with resource id",
+			connections: []azure.Connection{{
+				Name: "valid-conn", Target: "https://valid.azurecr.io/",
+			}},
+			registries: map[string]string{"valid.azurecr.io": resourceId},
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "valid-conn",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "valid.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId,
+			},
+		},
+		{
+			name: "re-init preserves create mode for the owned registry connection",
+			connections: []azure.Connection{{
+				Name: "valid-conn", Target: "valid.azurecr.io",
+			}},
+			registries: map[string]string{"valid.azurecr.io": resourceId},
+			initial: map[string]string{
+				"AZD_FOUNDRY_ACR_MODE":                 "create",
+				"AZD_FOUNDRY_RESOURCE_GROUP_ID":        "/subscriptions/sub/resourceGroups/rg",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId,
+			},
+			wantValues: map[string]string{
+				"AZD_FOUNDRY_ACR_MODE":                 "create",
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "valid-conn",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId,
+			},
+		},
+		{
+			name: "stale sole connection falls back to create on provision and clears stale values",
+			connections: []azure.Connection{{
+				Name: "stale-conn", Target: "stale.azurecr.io",
+			}},
+			prompts: []string{""},
+			initial: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "old-conn",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "old.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "old-id",
+			},
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "",
+				"AI_AGENT_PENDING_PROVISION":           "acr",
+			},
+		},
+		{
+			name: "mixed connections skip stale and select valid",
+			connections: []azure.Connection{
+				{Name: "stale-conn", Target: "stale.azurecr.io"},
+				{Name: "valid-conn", Target: "valid.azurecr.io"},
+			},
+			registries: map[string]string{"valid.azurecr.io": resourceId},
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "valid-conn",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "valid.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId,
+			},
+		},
+		{
+			name: "lookup service error stops init",
+			connections: []azure.Connection{{
+				Name: "unknown-conn", Target: "unknown.azurecr.io",
+			}},
+			loadErr: errors.New("authorization failed"),
+			wantErr: "listing container registries for connection validation: authorization failed",
+		},
+		{
+			name: "mismatched host suffix is stale",
+			connections: []azure.Connection{{
+				Name: "invalid-host-conn", Target: "valid.azurecr.io.invalid.example",
+			}},
+			registries: map[string]string{"valid.azurecr.io": resourceId},
+			prompts:    []string{""},
+			wantValues: map[string]string{
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "",
+				"AI_AGENT_PENDING_PROVISION":           "acr",
+			},
+		},
+		{
+			name: "manual fallback writes resource id and clears connection name",
+			connections: []azure.Connection{{
+				Name: "stale-conn", Target: "stale.azurecr.io",
+			}},
+			registries: map[string]string{"valid.azurecr.io": resourceId},
+			prompts:    []string{"valid.azurecr.io"},
+			initial: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "stale-conn",
+			},
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "valid.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId,
+			},
+		},
+		{
+			name: "explicit selector wins for multiple connections",
+			connections: []azure.Connection{
+				{Name: "alpha", Target: "alpha.azurecr.io"},
+				{Name: "beta", Target: "beta.azurecr.io"},
+			},
+			registries: map[string]string{
+				"alpha.azurecr.io": resourceId + "-alpha",
+				"beta.azurecr.io":  resourceId + "-beta",
+			},
+			selector: "beta",
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "beta",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "beta.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId + "-beta",
+			},
+		},
+		{
+			name: "persisted connection wins for multiple connections",
+			connections: []azure.Connection{
+				{Name: "alpha", Target: "alpha.azurecr.io"},
+				{Name: "beta", Target: "beta.azurecr.io"},
+			},
+			registries: map[string]string{
+				"alpha.azurecr.io": resourceId + "-alpha",
+				"beta.azurecr.io":  resourceId + "-beta",
+			},
+			initial: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "beta",
+			},
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "beta",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "beta.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId + "-beta",
+			},
+		},
+		{
+			name: "persisted manual registry is preserved",
+			registries: map[string]string{
+				"manual.azurecr.io": resourceId + "-manual",
+			},
+			initial: map[string]string{
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "manual.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "stale-id",
+				"AZD_FOUNDRY_ACR_MODE":                 "already-connected",
+				"AZD_FOUNDRY_ACR_PULL_ASSIGNED":        "true",
+			},
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "manual.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId + "-manual",
+				"AZD_FOUNDRY_ACR_MODE":                 "reuse-connect",
+				"AZD_FOUNDRY_ACR_PULL_ASSIGNED":        "false",
+			},
+		},
+		{
+			name: "persisted owned registry preserves create mode after connection disappears",
+			registries: map[string]string{
+				"valid.azurecr.io": resourceId,
+			},
+			initial: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "valid-conn",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "valid.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId,
+				"AZD_FOUNDRY_ACR_MODE":                 "create",
+				"AZD_FOUNDRY_RESOURCE_GROUP_ID":        "/subscriptions/sub/resourceGroups/rg",
+				"AZD_FOUNDRY_ACR_PULL_ASSIGNED":        "true",
+			},
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "",
+				"AZD_FOUNDRY_ACR_MODE":                 "create",
+				"AZD_FOUNDRY_ACR_PULL_ASSIGNED":        "false",
+			},
+		},
+		{
+			name: "persisted resource id recovers from stale endpoint",
+			registries: map[string]string{
+				"manual.azurecr.io": resourceId + "-manual",
+			},
+			initial: map[string]string{
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "stale.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId + "-manual",
+			},
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "manual.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId + "-manual",
+			},
+		},
+		{
+			name:       "no prompt create clears stale mode and pull assignment",
+			noPrompt:   true,
+			registries: map[string]string{},
+			initial: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "missing-conn",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "missing.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "missing-id",
+				"AZD_FOUNDRY_ACR_MODE":                 "already-connected",
+				"AZD_FOUNDRY_ACR_PULL_ASSIGNED":        "true",
+			},
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "",
+				"AZD_FOUNDRY_ACR_MODE":                 "create",
+				"AZD_FOUNDRY_ACR_PULL_ASSIGNED":        "false",
+				"AI_AGENT_PENDING_PROVISION":           "acr",
+			},
+		},
+		{
+			name: "no prompt selects first connection alphabetically",
+			connections: []azure.Connection{
+				{Name: "zeta", Target: "zeta.azurecr.io"},
+				{Name: "alpha", Target: "alpha.azurecr.io"},
+			},
+			registries: map[string]string{
+				"zeta.azurecr.io":  resourceId + "-zeta",
+				"alpha.azurecr.io": resourceId + "-alpha",
+			},
+			noPrompt: true,
+			wantValues: map[string]string{
+				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "alpha",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "alpha.azurecr.io",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceId + "-alpha",
+			},
+		},
+		{
+			name: "invalid explicit selector fails",
+			connections: []azure.Connection{{
+				Name: "valid", Target: "valid.azurecr.io",
+			}},
+			registries: map[string]string{"valid.azurecr.io": resourceId},
+			selector:   "missing",
+			wantErr:    "container registry connection \"missing\" was not found or is not valid",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_NO_PROMPT", strconv.FormatBool(tt.noPrompt))
+			envServer := &testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{envName: {Name: envName}},
+				values:       map[string]map[string]string{envName: tt.initial},
+			}
+			prompts := &testPromptServiceServer{promptResponses: tt.prompts}
+			azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{}, prompts)
+
+			loadCalls := 0
+			loader := func(context.Context, azcore.TokenCredential, string) (map[string]string, error) {
+				loadCalls++
+				return tt.registries, tt.loadErr
+			}
+			err := configureAcrConnectionWithRegistryLoader(
+				t.Context(), azdClient, nil, envName, "sub", tt.connections, tt.selector, loader,
+			)
+			require.Equal(t, 1, loadCalls)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			for key, want := range tt.wantValues {
+				require.Equal(t, want, envServer.values[envName][key], "environment value %s", key)
+			}
+		})
+	}
+}
+
+func TestConfigureExistingProjectAcrPreservesConnectionDiscoveryError(t *testing.T) {
+	discoveryErr := errors.New("connection discovery failed")
+	loadConnections := func(
+		context.Context,
+		azcore.TokenCredential,
+		string,
+		string,
+	) ([]azure.Connection, error) {
+		return nil, discoveryErr
+	}
+
+	err := configureExistingProjectAcrWithConnectionsLoader(
+		t.Context(),
+		nil,
+		nil,
+		"",
+		FoundryProjectInfo{ProjectName: "project"},
+		"",
+		"",
+		loadConnections,
+	)
+
+	require.ErrorIs(t, err, discoveryErr)
 }

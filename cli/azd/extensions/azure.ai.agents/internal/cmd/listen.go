@@ -10,17 +10,21 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
+	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"google.golang.org/protobuf/proto"
 )
 
 // configureExtensionHost wires the service target and event handlers on the
@@ -34,9 +38,6 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 	host.
 		WithServiceTarget(AiAgentHost, func() azdext.ServiceTargetProvider {
 			return project.NewAgentServiceTargetProvider(azdClient)
-		}).
-		WithProvisioningProvider(project.FoundryProviderName, func() azdext.ProvisioningProvider {
-			return project.NewFoundryProvisioningProvider(azdClient)
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return preprovisionHandler(ctx, azdClient, args)
@@ -56,11 +57,24 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
-	deployments, err := collectProjectDeployments(args.Project.Services)
-	if err != nil {
+	// Prompt for Activity bot names at the start of preprovision so the input
+	// appears before longer setup/update steps in this handler.
+	if err := provisionActivityBotNames(ctx, azdClient, args); err != nil {
 		return err
 	}
-	connections, err := collectConnections(args.Project.Services)
+
+	if err := updateLegacyProjectDeployments(
+		ctx,
+		azdClient,
+		args.Project.Services,
+		args.Project.Path,
+	); err != nil {
+		return err
+	}
+	connections, err := collectConnections(
+		args.Project.Services,
+		args.Project.Path,
+	)
 	if err != nil {
 		return err
 	}
@@ -68,10 +82,16 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args 
 	for _, svc := range args.Project.Services {
 		switch svc.Host {
 		case AiAgentHost:
-			if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
+			if err := prepareContainerSettings(svc, args.Project.Path); err != nil {
 				return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
 			}
-			if err := envUpdate(ctx, azdClient, args.Project, svc, deployments, connections); err != nil {
+			if err := envUpdate(
+				ctx,
+				azdClient,
+				args.Project,
+				svc,
+				connections,
+			); err != nil {
 				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 			}
 		}
@@ -156,6 +176,38 @@ func currentEnvName(ctx context.Context, azdClient *azdext.AzdClient) (string, e
 	return resp.Environment.Name, nil
 }
 
+func updateLegacyProjectDeployments(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	services map[string]*azdext.ServiceConfig,
+	projectRoot string,
+) error {
+	deployments, err := collectLegacyProjectDeployments(
+		services,
+		projectRoot,
+	)
+	if err != nil {
+		return err
+	}
+	if len(deployments) == 0 {
+		return nil
+	}
+
+	envName, err := currentEnvName(ctx, azdClient)
+	if err != nil {
+		return fmt.Errorf(
+			"resolving environment for legacy deployments: %w",
+			err,
+		)
+	}
+	return deploymentEnvUpdate(
+		ctx,
+		deployments,
+		azdClient,
+		envName,
+	)
+}
+
 // developerRBACOnce ensures CheckDeveloperRBAC runs at most once per extension
 // process lifetime. Service-level predeploy handlers fire per-service, but the
 // RBAC pre-flight check is project-scoped and idempotent — running it once is
@@ -182,20 +234,40 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		warnDuplicateAgentNames(args.Project)
 	})
 
-	deployments, err := collectProjectDeployments(args.Project.Services)
-	if err != nil {
+	if err := updateLegacyProjectDeployments(
+		ctx,
+		azdClient,
+		args.Project.Services,
+		args.Project.Path,
+	); err != nil {
 		return err
 	}
-	connections, err := collectConnections(args.Project.Services)
+	connections, err := collectConnections(
+		args.Project.Services,
+		args.Project.Path,
+	)
 	if err != nil {
 		return err
 	}
 
-	if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
+	if err := prepareContainerSettings(svc, args.Project.Path); err != nil {
 		return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
 	}
-	if err := envUpdate(ctx, azdClient, args.Project, svc, deployments, connections); err != nil {
+	if err := envUpdate(
+		ctx,
+		azdClient,
+		args.Project,
+		svc,
+		connections,
+	); err != nil {
 		return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
+	}
+
+	// Capture the current session so it can be resumed on the newly deployed
+	// version after deploy (see session_carryover.go). Best-effort; hosted
+	// agents only.
+	if isHostedAgentService(svc, args.Project) {
+		captureSessionForCarryover(ctx, azdClient, svc)
 	}
 
 	// Run developer RBAC pre-flight checks only for hosted agent deployments.
@@ -328,46 +400,58 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 		return nil
 	}
 
-	// Whether this service is an activity agent decides how the shared inputs below
-	// are treated: an activity agent requires the Teams bot connector, so a missing
-	// input must fail the deploy; every other agent only feeds best-effort
-	// optimization reporting, which is safe to skip.
-	isActivity := false
-	if ca, isHosted, _, defErr := project.LoadAgentDefinition(svc, args.Project.Path); defErr == nil && isHosted {
-		isActivity = project.ResolveActivityProfile(ca).IsActivity
-	}
+	// Read the inputs used by best-effort optimization reporting.
+	// Activity bot provisioning is performed in the service target deploy path
+	// (single source of truth), so postdeploy no longer performs a second bot
+	// configuration pass that can conflict with the deploy-time bot name.
+	envName, endpoint, _, cred, inputErr := gatherPostdeployInputs(ctx, azdClient)
 
-	// Read the inputs both steps draw from once. Gathering does not decide
-	// skip-vs-fail; each step below applies its own policy to inputErr, so the
-	// required Teams bot never inherits optimization reporting's "log and skip"
-	// preconditions and vice versa.
-	envName, endpoint, tenant, cred, inputErr := gatherPostdeployInputs(ctx, azdClient)
-
-	// Step 1 — activity bot: a required connector, provisioned and validated on its
-	// own terms. A missing prerequisite fails the deploy rather than being skipped,
-	// consistent with the EnsureBot failure handled just below. No-op for other agents.
-	if isActivity {
-		if inputErr != nil {
-			return fmt.Errorf(
-				"agent %q deployed successfully, but its required Microsoft Teams bot could not be "+
-					"configured: %w\n"+
-					"  Ensure the agent is provisioned in this environment, then re-run 'azd deploy'.",
-				svc.Name, inputErr,
+	activityProfile, profileErr := resolveServiceActivityProfile(svc, args.Project.Path)
+	if profileErr != nil {
+		log.Printf("postdeploy: skipping Teams setup for %s: %v", svc.Name, profileErr)
+	} else if activityProfile.IsActivity && activityProfile.UseCase == project.ActivityUseCaseDigitalWorker {
+		warnLegacySimpleTeamsArtifacts(args.Project, svc)
+	} else if activityProfile.IsActivity && activityProfile.UseCase == project.ActivityUseCaseSimple {
+		serviceKey := toServiceKey(svc.Name)
+		agentName, nameErr := readEnvValue(ctx, azdClient, envName, fmt.Sprintf("AGENT_%s_NAME", serviceKey))
+		botName, botErr := readEnvValue(ctx, azdClient, envName, envkey.AgentBotName(svc.Name))
+		msaAppID, idErr := readEnvValue(ctx, azdClient, envName, envkey.AgentInstanceIdentityClientID(svc.Name))
+		if nameErr == nil && botErr == nil && idErr == nil {
+			packagePath := ""
+			if inputErr == nil {
+				subscriptionID, subErr := readEnvValue(ctx, azdClient, envName, "AZURE_SUBSCRIPTION_ID")
+				resourceGroup, rgErr := readEnvValue(ctx, azdClient, envName, "AZURE_RESOURCE_GROUP")
+				if subErr == nil && rgErr == nil {
+					botResourceGroup := readOptionalEnvValue(
+						ctx, azdClient, envName, envkey.AgentBotResourceGroup(svc.Name),
+					)
+					if botResourceGroup != "" {
+						resourceGroup = botResourceGroup
+					}
+					agentClient := agent_api.NewAgentClient(endpoint, cred)
+					packagePath = writeTeamsAppPackage(
+						ctx, agentClient, args.Project, svc, agentName, subscriptionID, resourceGroup, botName,
+					)
+				} else {
+					log.Printf(
+						"postdeploy: skipping Teams app package for %s: subscription: %v, resource group: %v",
+						svc.Name, subErr, rgErr,
+					)
+				}
+			} else {
+				log.Printf("postdeploy: skipping Teams app package for %s: %v", svc.Name, inputErr)
+			}
+			guidePath := writeTeamsSetupGuide(args.Project, svc, agentName, botName, msaAppID, packagePath)
+			printTeamsNextSteps(botName, msaAppID, guidePath, packagePath)
+		} else {
+			log.Printf(
+				"postdeploy: skipping Teams setup guide for %s: agent name: %v, bot name: %v, instance identity: %v",
+				svc.Name, nameErr, botErr, idErr,
 			)
 		}
-		if err := ensureActivityBot(
-			ctx, azdClient, cred, envName, svc, args.Project, endpoint, tenant,
-		); err != nil {
-			return fmt.Errorf(
-				"agent %q deployed successfully, but configuring its Microsoft Teams bot failed: %w\n"+
-					"  The agent version is active — only the Teams channel binding is missing "+
-					"(commonly Azure Bot permissions or quota). Resolve the cause and re-run 'azd deploy'.",
-				svc.Name, err,
-			)
-		}
 	}
 
-	// Step 2 — optimization reporting: best-effort, skipped on its own terms. A
+	// Optimization reporting is best-effort and skipped on missing inputs. A
 	// missing input only logs and skips; it never fails an otherwise-successful
 	// deploy (the client-side agent-identity RBAC assignment was removed).
 	if inputErr != nil {
@@ -381,16 +465,81 @@ func postdeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *a
 			}
 		}()
 		reportSvcOptimizationDeployment(ctx, azdClient, svc, envName, endpoint,
+			baselineAdvancementDir(args.Project.Path, svc),
 			func(endpoint string) *optimize_api.OptimizeClient {
 				return optimize_api.NewOptimizeClient(endpoint, cred)
 			},
 		)
 	}()
 
+	// Resume the pre-deploy session on the newly deployed version so the next
+	// invoke continues on the new code with the session's persisted volume
+	// intact (see session_carryover.go). Best-effort; never blocks deploy.
+	agentClient := agent_api.NewAgentClient(endpoint, cred)
+	carryOverSessionAfterDeploy(ctx, azdClient, agentClient, svc, envName)
+
 	return nil
 }
 
-// postdownHandler cleans up config store entries (sessions, conversations) for agent services
+func resolveServiceActivityProfile(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (project.ActivityProfile, error) {
+	resolvedSvc, err := resolveAgentServiceConfigWithProjectOverrides(svc, projectRoot)
+	if err != nil {
+		return project.ActivityProfile{}, err
+	}
+	agent, isHosted, _, err := project.LoadAgentDefinition(resolvedSvc, projectRoot)
+	if err != nil || !isHosted {
+		return project.ActivityProfile{}, err
+	}
+
+	config, err := project.LoadServiceTargetAgentConfig(resolvedSvc)
+	if err != nil {
+		return project.ActivityProfile{}, err
+	}
+	return project.ResolveActivityProfileWithSettings(agent, config.Activity)
+}
+
+func resolveAgentServiceConfigWithProjectOverrides(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (*azdext.ServiceConfig, error) {
+	// Resolve project-relative fields on an isolated protobuf copy so listen
+	// does not mutate the shared project service configuration.
+	resolvedSvc := proto.Clone(svc).(*azdext.ServiceConfig)
+	if err := project.ResolveServiceConfigInPlace(resolvedSvc, projectRoot); err != nil {
+		return nil, err
+	}
+	return resolvedSvc, nil
+}
+
+func warnLegacySimpleTeamsArtifacts(proj *azdext.ProjectConfig, svc *azdext.ServiceConfig) {
+	if proj == nil || svc == nil {
+		return
+	}
+	artifactDir := filepath.Join(proj.GetPath(), svc.GetRelativePath())
+	artifacts := []string{teamsAppPackageFile, teamsAppPackageMarkerFile, teamsSetupGuideFile}
+	found := make([]string, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		if _, err := os.Stat(filepath.Join(artifactDir, artifact)); err == nil {
+			found = append(found, artifact)
+		}
+	}
+	if len(found) == 0 {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
+		"WARNING: digital worker service %q still has legacy simple-agent Teams artifacts in %q (%s). "+
+			"This transition can leave stale appPackage.zip and TEAMS_APP_SETUP.md files behind. "+
+			"review and remove them manually before retrying the Teams setup flow.\n",
+		svc.GetName(),
+		svc.GetRelativePath(),
+		strings.Join(found, ", "),
+	))
+}
+
+// postdownHandler cleans up saved session, conversation, and background Response state for agent services
 // that were torn down. This is best-effort — failures are logged but do not block azd down.
 func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
 	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
@@ -406,8 +555,8 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 			continue
 		}
 
-		if cleanupAgentSessionState(ctx, azdClient, envName, svc.Name) {
-			fmt.Printf("Cleaned up saved session and conversation for agent %q\n", svc.Name)
+		if cleanupAgentState(ctx, azdClient, envName, svc.Name) {
+			fmt.Printf("Cleaned up saved session, conversation, and background Response for agent %q\n", svc.Name)
 		}
 	}
 
@@ -418,10 +567,10 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 	return nil
 }
 
-// cleanupAgentSessionState removes saved session and conversation IDs for a
+// cleanupAgentState removes saved session, conversation, and background Response state for a
 // single agent service. Returns true if cleanup succeeded, false otherwise.
 // Shared by postdownHandler and delete command.
-func cleanupAgentSessionState(ctx context.Context, azdClient *azdext.AzdClient, envName, serviceName string) bool {
+func cleanupAgentState(ctx context.Context, azdClient *azdext.AzdClient, envName, serviceName string) bool {
 	serviceKey := toServiceKey(serviceName)
 
 	endpointResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
@@ -433,14 +582,21 @@ func cleanupAgentSessionState(ctx context.Context, azdClient *azdext.AzdClient, 
 	}
 
 	agentKey := buildRemoteAgentKeyFromEndpoint(endpointResp.Value)
+	return cleanupAgentStateForKey(ctx, azdClient, agentKey)
+}
 
+func cleanupAgentStateForKey(ctx context.Context, azdClient *azdext.AzdClient, agentKey string) bool {
 	var failed bool
 	if err := deleteContextValue(ctx, azdClient, "sessions", agentKey); err != nil {
-		log.Printf("cleanupAgentSessionState: failed to clean sessions for %s: %v", agentKey, err)
+		log.Printf("cleanupAgentState: failed to clean sessions for %s: %v", agentKey, err)
 		failed = true
 	}
 	if err := deleteContextValue(ctx, azdClient, "conversations", agentKey); err != nil {
-		log.Printf("cleanupAgentSessionState: failed to clean conversations for %s: %v", agentKey, err)
+		log.Printf("cleanupAgentState: failed to clean conversations for %s: %v", agentKey, err)
+		failed = true
+	}
+	if err := newUserConfigResponseStateStore(azdClient).Delete(ctx, agentKey); err != nil {
+		log.Printf("cleanupAgentState: failed to clean background Response for %s: %v", agentKey, err)
 		failed = true
 	}
 
@@ -452,7 +608,6 @@ func envUpdate(
 	azdClient *azdext.AzdClient,
 	azdProject *azdext.ProjectConfig,
 	svc *azdext.ServiceConfig,
-	deployments []project.Deployment,
 	connections []project.Connection,
 ) error {
 
@@ -468,15 +623,6 @@ func envUpdate(
 
 	if err := kindEnvUpdate(ctx, azdClient, azdProject, svc, currentEnvResponse.Environment.Name); err != nil {
 		return err
-	}
-
-	// Deployments and connections are sourced from the sibling
-	// azure.ai.project and azure.ai.connection services. Resources and tool
-	// connections stay on the agent service.
-	if len(deployments) > 0 {
-		if err := deploymentEnvUpdate(ctx, deployments, azdClient, currentEnvResponse.Environment.Name); err != nil {
-			return err
-		}
 	}
 
 	if foundryAgentConfig != nil && len(foundryAgentConfig.Resources) > 0 {
@@ -691,10 +837,37 @@ func setEnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string,
 	return nil
 }
 
-func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient, svc *azdext.ServiceConfig) error {
+func prepareContainerSettings(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) error {
+	rawAdditional := svc.GetAdditionalProperties()
+	rawConfig := svc.GetConfig()
+	hasRootFileRef := rawAdditional != nil &&
+		rawAdditional.GetFields()["$ref"] != nil ||
+		rawConfig != nil && rawConfig.GetFields()["$ref"] != nil
+	if hasRootFileRef {
+		if err := project.ResolveServiceConfigInPlace(
+			svc,
+			projectRoot,
+		); err != nil {
+			return fmt.Errorf(
+				"failed to resolve agent config: %w",
+				err,
+			)
+		}
+	} else if err := project.NormalizeServiceConfigInPlace(svc); err != nil {
+		return fmt.Errorf(
+			"failed to normalize agent config: %w",
+			err,
+		)
+	}
 	foundryAgentConfig, err := project.LoadServiceTargetAgentConfig(svc)
 	if err != nil {
-		return fmt.Errorf("failed to parse foundry agent config: %w", err)
+		return fmt.Errorf(
+			"failed to parse foundry agent config: %w",
+			err,
+		)
 	}
 
 	// Resolve the container resources, applying defaults when unset.
@@ -713,17 +886,13 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 		result.Cpu = project.DefaultCpu
 	}
 
-	// Persist the resolved container settings back onto the service's inline
-	// properties, preserving the agent definition and other config keys.
-	if err := project.SetAgentContainerSettings(svc, &project.ContainerSettings{Resources: result}); err != nil {
+	// Defaults are runtime values. Do not persist them here:
+	// lifecycle hooks must not rewrite user-authored azure.yaml.
+	if err := project.SetAgentContainerSettings(
+		svc,
+		&project.ContainerSettings{Resources: result},
+	); err != nil {
 		return fmt.Errorf("failed to update agent container settings: %w", err)
-	}
-
-	// Need to add the service config back to the project for use further down the pipeline
-	req := &azdext.AddServiceRequest{Service: svc}
-
-	if _, err := azdClient.Project().AddService(ctx, req); err != nil {
-		return fmt.Errorf("adding agent service to project: %w", err)
 	}
 
 	return nil

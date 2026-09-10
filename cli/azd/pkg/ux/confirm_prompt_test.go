@@ -70,6 +70,8 @@ func TestConfirm_Render_initial(t *testing.T) {
 
 	output := buf.String()
 	assert.Contains(t, output, "Continue?")
+	// The message already ends in punctuation, so no colon is appended.
+	assert.NotContains(t, output, "Continue?:")
 	assert.Contains(t, output, "[y/n]")
 }
 

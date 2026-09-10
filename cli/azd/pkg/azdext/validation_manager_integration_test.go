@@ -174,11 +174,11 @@ func TestValidationManager_Register_Integration(t *testing.T) {
 
 	// Register a check (exercises Register end-to-end over the stream).
 	factory := func() ValidationCheckProvider { return &mockProvider{} }
-	err := mgr.Register(ctx, factory, "local-preflight", "rule_1")
+	err := mgr.Register(ctx, factory, "provision", "rule_1")
 	require.NoError(t, err)
 
 	// Registering the same rule again should fail locally (duplicate).
-	err = mgr.Register(ctx, factory, "local-preflight", "rule_1")
+	err = mgr.Register(ctx, factory, "provision", "rule_1")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "already registered")
 }
@@ -200,13 +200,13 @@ func TestValidationManager_Register_ServerError(t *testing.T) {
 	require.NoError(t, mgr.Ready(ctx))
 
 	factory := func() ValidationCheckProvider { return &mockProvider{} }
-	err := mgr.Register(ctx, factory, "local-preflight", "rule_err")
+	err := mgr.Register(ctx, factory, "provision", "rule_err")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "registration rejected by core")
 
 	// The factory should have been rolled back so a retry path is clean.
 	mgr.mu.RLock()
-	_, exists := mgr.factories[validationCheckKey{CheckType: "local-preflight", RuleID: "rule_err"}]
+	_, exists := mgr.factories[validationCheckKey{CheckType: "provision", RuleID: "rule_err"}]
 	mgr.mu.RUnlock()
 	require.False(t, exists, "factory should be removed after failed registration")
 }
@@ -223,7 +223,7 @@ func TestValidationManager_Register_EmptyArgs(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "check type cannot be empty")
 
-	err = mgr.Register(ctx, factory, "local-preflight", "")
+	err = mgr.Register(ctx, factory, "provision", "")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "rule ID cannot be empty")
 }
@@ -250,7 +250,7 @@ func TestValidationManager_Dispatch_Integration(t *testing.T) {
 	factory := func() ValidationCheckProvider {
 		return &recordingProvider{invoked: invoked}
 	}
-	require.NoError(t, mgr.Register(ctx, factory, "local-preflight", "rule_dispatch"))
+	require.NoError(t, mgr.Register(ctx, factory, "provision", "rule_dispatch"))
 
 	// The server pushes a check request; the manager should invoke the provider.
 	select {

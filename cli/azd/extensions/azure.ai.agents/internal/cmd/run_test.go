@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -16,14 +17,17 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/telemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	goyaml "go.yaml.in/yaml/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -237,22 +241,538 @@ func TestWaitForLocalPort(t *testing.T) {
 	})
 }
 
+func TestReportLocalClientRouteSelected(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		activityProfile activityRunProfile
+		suppressClient  bool
+		wantRoute       telemetry.LocalClientRoute
+	}{
+		{
+			name:      "selects Inspector for non-activity agent",
+			wantRoute: telemetry.LocalClientRouteInspector,
+		},
+		{
+			name:            "selects Playground for activity agent",
+			activityProfile: activityRunProfile{IsActivity: true},
+			wantRoute:       telemetry.LocalClientRoutePlayground,
+		},
+		{
+			name:           "selects suppressed for non-activity agent",
+			suppressClient: true,
+			wantRoute:      telemetry.LocalClientRouteSuppressed,
+		},
+		{
+			name:            "suppression overrides activity route",
+			activityProfile: activityRunProfile{IsActivity: true},
+			suppressClient:  true,
+			wantRoute:       telemetry.LocalClientRouteSuppressed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			reporter := &recordingUsageReporter{}
+			reportLocalClientRouteSelected(
+				t.Context(),
+				reporter,
+				tt.activityProfile,
+				tt.suppressClient,
+			)
+
+			wantEvent := telemetry.LocalClientRouteSelected(tt.wantRoute)
+			if reporter.event.Name != wantEvent.Name || !maps.Equal(reporter.event.Attributes, wantEvent.Attributes) {
+				t.Fatalf("event = %#v, want %#v", reporter.event, wantEvent)
+			}
+		})
+	}
+}
+
 func TestLaunchInspectorUsesWorkflowCommand(t *testing.T) {
 	t.Parallel()
 
-	workflow := &recordingWorkflowClient{}
-	if err := launchInspector(t.Context(), workflow, 9090); err != nil {
-		t.Fatalf("launchInspector returned error: %v", err)
+	tests := []struct {
+		name          string
+		agentPort     int
+		inspectorPort int
+		want          []string
+	}{
+		{
+			name:      "inspector port unset is not forwarded",
+			agentPort: 9090,
+			want:      []string{"ai", "inspector", "launch", "--port", "9090", "--silent"},
+		},
+		{
+			name:          "inspector port is forwarded when set",
+			agentPort:     9091,
+			inspectorPort: 9002,
+			want: []string{
+				"ai", "inspector", "launch",
+				"--port", "9091",
+				"--inspector-port", "9002",
+				"--silent",
+			},
+		},
 	}
 
-	if workflow.request == nil || workflow.request.Workflow == nil || len(workflow.request.Workflow.Steps) != 1 {
-		t.Fatalf("unexpected workflow request: %#v", workflow.request)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			workflow := &recordingWorkflowClient{}
+			if err := launchInspector(t.Context(), workflow, tt.agentPort, tt.inspectorPort); err != nil {
+				t.Fatalf("launchInspector returned error: %v", err)
+			}
+
+			if workflow.request == nil || workflow.request.Workflow == nil ||
+				len(workflow.request.Workflow.Steps) != 1 {
+				t.Fatalf("unexpected workflow request: %#v", workflow.request)
+			}
+
+			got := workflow.request.Workflow.Steps[0].Command.Args
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("workflow args = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunCommandInspectorPortFlag(t *testing.T) {
+	t.Parallel()
+
+	cmd := newRunCommand(nil)
+
+	flag := cmd.Flags().Lookup("inspector-port")
+	if flag == nil {
+		t.Fatal("run command should expose --inspector-port")
+	}
+	// Zero means unset so the inspector extension keeps applying its own
+	// default UI port; the effective default is documented in the usage text.
+	if flag.DefValue != "0" {
+		t.Fatalf("--inspector-port default = %q, want %q", flag.DefValue, "0")
+	}
+	if !strings.Contains(flag.Usage, strconv.Itoa(defaultInspectorUIPort)) {
+		t.Fatalf("--inspector-port usage should document the %d default, got %q",
+			defaultInspectorUIPort, flag.Usage)
+	}
+}
+
+func TestValidateInspectorPort(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		port    int
+		set     bool
+		wantErr bool
+	}{
+		{name: "unset is allowed", port: 0},
+		{name: "explicit zero is rejected", port: 0, set: true, wantErr: true},
+		{name: "lower bound", port: 1, set: true},
+		{name: "typical port", port: 9002, set: true},
+		{name: "upper bound", port: 65535, set: true},
+		{name: "negative is rejected", port: -1, set: true, wantErr: true},
+		{name: "above range is rejected", port: 70000, set: true, wantErr: true},
 	}
 
-	got := workflow.request.Workflow.Steps[0].Command.Args
-	want := []string{"ai", "inspector", "launch", "--port", "9090", "--silent"}
-	if !slices.Equal(got, want) {
-		t.Fatalf("workflow args = %v, want %v", got, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateInspectorPort(tt.port, tt.set)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("validateInspectorPort(%d, %t) = nil, want error", tt.port, tt.set)
+				}
+				if !strings.Contains(err.Error(), "--inspector-port") {
+					t.Fatalf("error should name the flag, got %q", err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("validateInspectorPort(%d, %t) = %v, want nil", tt.port, tt.set, err)
+			}
+		})
+	}
+}
+
+func TestValidateInspectorPortFlags(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		flags       runFlags
+		wantErr     bool
+		wantErrPart string
+	}{
+		{
+			name:  "unset flag with suppressed client is allowed",
+			flags: runFlags{port: DefaultPort, noClient: true},
+		},
+		{
+			name:  "distinct ports are allowed",
+			flags: runFlags{port: 9091, inspectorPort: 9002, inspectorPortSet: true},
+		},
+		{
+			name:        "out of range still rejected",
+			flags:       runFlags{port: DefaultPort, inspectorPort: 70000, inspectorPortSet: true},
+			wantErr:     true,
+			wantErrPart: "between 1 and 65535",
+		},
+		{
+			name:        "conflicts with --no-client",
+			flags:       runFlags{port: DefaultPort, inspectorPort: 9002, inspectorPortSet: true, noClient: true},
+			wantErr:     true,
+			wantErrPart: "--no-client",
+		},
+		{
+			name:        "conflicts with deprecated --no-inspector",
+			flags:       runFlags{port: DefaultPort, inspectorPort: 9002, inspectorPortSet: true, noInspector: true},
+			wantErr:     true,
+			wantErrPart: "--no-inspector",
+		},
+		{
+			name: "both suppress flags name the canonical one",
+			flags: runFlags{
+				port: DefaultPort, inspectorPort: 9002, inspectorPortSet: true,
+				noClient: true, noInspector: true,
+			},
+			wantErr:     true,
+			wantErrPart: "--no-client",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			flags := tt.flags
+			err := validateInspectorPortFlags(&flags)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("validateInspectorPortFlags(%+v) = nil, want error", tt.flags)
+				}
+				if !strings.Contains(err.Error(), tt.wantErrPart) {
+					t.Fatalf("error = %q, want it to contain %q", err.Error(), tt.wantErrPart)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("validateInspectorPortFlags(%+v) = %v, want nil", tt.flags, err)
+			}
+		})
+	}
+}
+
+func TestValidateInspectorPortForProfile(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		flags       runFlags
+		isActivity  bool
+		wantErrPart string
+	}{
+		{
+			name:        "non-activity agent rejects equal ports",
+			flags:       runFlags{port: 9091, inspectorPort: 9091, inspectorPortSet: true},
+			wantErrPart: "must differ from --port",
+		},
+		{
+			name:       "activity agent allows equal ports because it opens the Playground",
+			flags:      runFlags{port: 9091, inspectorPort: 9091, inspectorPortSet: true},
+			isActivity: true,
+		},
+		{
+			name:  "non-activity agent allows distinct ports",
+			flags: runFlags{port: 9091, inspectorPort: 9002, inspectorPortSet: true},
+		},
+		{
+			name:  "collision check ignores an unset inspector port",
+			flags: runFlags{port: 0},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			flags := tt.flags
+			err := validateInspectorPortForProfile(&flags, tt.isActivity)
+			if tt.wantErrPart != "" {
+				if err == nil {
+					t.Fatalf("validateInspectorPortForProfile(%+v, %t) = nil, want error", tt.flags, tt.isActivity)
+				}
+				if !strings.Contains(err.Error(), tt.wantErrPart) {
+					t.Fatalf("error = %q, want it to contain %q", err.Error(), tt.wantErrPart)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf(
+					"validateInspectorPortForProfile(%+v, %t) = %v, want nil",
+					tt.flags,
+					tt.isActivity,
+					err,
+				)
+			}
+		})
+	}
+}
+
+func TestRunRun_PortCollisionDoesNotClearStoredSession(t *testing.T) {
+	projectDir := t.TempDir()
+	projectServer := &helpersProjectServer{
+		project: &azdext.ProjectConfig{
+			Name: "test-project",
+			Path: projectDir,
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": {
+					Name:         "agent",
+					Host:         AiAgentHost,
+					RelativePath: ".",
+				},
+			},
+		},
+	}
+	userConfigServer := newInvokeUserConfigServer()
+
+	grpcServer := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(grpcServer, projectServer)
+	azdext.RegisterUserConfigServiceServer(grpcServer, userConfigServer)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	go func() { _ = grpcServer.Serve(listener) }()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+
+	const (
+		port      = 9091
+		sessionID = "existing-session"
+	)
+	agentKey := buildLocalAgentKey(port, "agent", "", projectDir)
+	userConfigServer.setJSON(t, configPath("sessions"), map[string]string{
+		agentKey: sessionID,
+	})
+
+	err = runRun(t.Context(), &runFlags{
+		name:             "agent",
+		port:             port,
+		inspectorPort:    port,
+		inspectorPortSet: true,
+	}, true)
+	if err == nil || !strings.Contains(err.Error(), "must differ from --port") {
+		t.Fatalf("runRun() error = %v, want equal-port validation error", err)
+	}
+
+	userConfigServer.mu.Lock()
+	stored := slices.Clone(userConfigServer.values[configPath("sessions")])
+	userConfigServer.mu.Unlock()
+	if !bytes.Contains(stored, []byte(agentKey)) || !bytes.Contains(stored, []byte(sessionID)) {
+		t.Fatalf("session store = %s, want existing session %q at key %q", stored, sessionID, agentKey)
+	}
+}
+
+func TestRunRun_ReturnsAgentProcessExitError(t *testing.T) {
+	err := runRunWithHelperProcess(t, "exit", "17")
+	if err == nil || !strings.Contains(err.Error(), "agent exited: exit status 17") {
+		t.Fatalf("runRun() error = %v, want agent exit status 17", err)
+	}
+}
+
+func TestRunRun_TreatsInterruptExitAsCancellation(t *testing.T) {
+	if err := runRunWithHelperProcess(t, "interrupt", ""); err != nil {
+		t.Fatalf("runRun() error = %v, want nil for interrupt exit", err)
+	}
+}
+
+func runRunWithHelperProcess(t *testing.T, mode string, exitCode string) error {
+	t.Helper()
+
+	projectDir := t.TempDir()
+	projectServer := &helpersProjectServer{
+		project: &azdext.ProjectConfig{
+			Name: "test-project",
+			Path: projectDir,
+			Services: map[string]*azdext.ServiceConfig{
+				"agent": {
+					Name:         "agent",
+					Host:         AiAgentHost,
+					RelativePath: ".",
+				},
+			},
+		},
+	}
+
+	grpcServer := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(grpcServer, projectServer)
+	azdext.RegisterUserConfigServiceServer(grpcServer, newInvokeUserConfigServer())
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	go func() { _ = grpcServer.Serve(listener) }()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+	t.Setenv("AZD_AGENT_RUN_TEST_HELPER_MODE", mode)
+	t.Setenv("AZD_AGENT_RUN_TEST_EXIT_CODE", exitCode)
+
+	agentListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve agent port: %v", err)
+	}
+	agentPort := agentListener.Addr().(*net.TCPAddr).Port
+	if err := agentListener.Close(); err != nil {
+		t.Fatalf("release agent port: %v", err)
+	}
+
+	startCommand := fmt.Sprintf(`"%s" -test.run=^TestRunRunHelperProcess$`, os.Args[0])
+	return runRun(t.Context(), &runFlags{
+		name:         "agent",
+		port:         agentPort,
+		startCommand: startCommand,
+		noClient:     true,
+	}, true)
+}
+
+func TestRunRunHelperProcess(t *testing.T) {
+	mode := os.Getenv("AZD_AGENT_RUN_TEST_HELPER_MODE")
+	if mode == "" {
+		return
+	}
+
+	if mode == "interrupt" {
+		if runtime.GOOS == "windows" {
+			exitCode := uint32(windowsControlCExitCode)
+			os.Exit(int(exitCode)) //nolint:gosec // preserve the Windows exit code bit pattern
+		}
+
+		time.AfterFunc(5*time.Second, func() {
+			os.Exit(99)
+		})
+		proc, err := os.FindProcess(os.Getpid())
+		if err != nil {
+			t.Fatalf("find helper process: %v", err)
+		}
+		if err := proc.Signal(os.Interrupt); err != nil {
+			t.Fatalf("interrupt helper process: %v", err)
+		}
+		select {}
+	}
+
+	exitCodeValue := os.Getenv("AZD_AGENT_RUN_TEST_EXIT_CODE")
+	if exitCodeValue == "" {
+		t.Fatalf("missing helper exit code for mode %q", mode)
+	}
+
+	exitCode, err := strconv.Atoi(exitCodeValue)
+	if err != nil {
+		t.Fatalf("parse helper exit code: %v", err)
+	}
+	os.Exit(exitCode)
+}
+
+func TestWarnInspectorPortIssues(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name               string
+		flags              runFlags
+		isActivity         bool
+		inspectorInstalled bool
+		wantParts          []string
+		wantSilent         bool
+	}{
+		{
+			name:       "activity agent with an explicit inspector port warns",
+			flags:      runFlags{port: 9091, inspectorPort: 9002, inspectorPortSet: true},
+			isActivity: true,
+			wantParts:  []string{"--inspector-port is ignored", "Playground"},
+		},
+		{
+			name:       "activity agent without the flag is silent",
+			flags:      runFlags{port: 9091},
+			isActivity: true,
+			wantSilent: true,
+		},
+		{
+			name:               "agent port on the inspector default warns when inspector is installed",
+			flags:              runFlags{port: defaultInspectorUIPort},
+			inspectorInstalled: true,
+			wantParts:          []string{"also the Agent Inspector UI's default port", "Pass --inspector-port"},
+		},
+		{
+			name:       "missing inspector suppresses the default collision warning",
+			flags:      runFlags{port: defaultInspectorUIPort},
+			wantSilent: true,
+		},
+		{
+			name:               "explicit inspector port suppresses the default collision warning",
+			flags:              runFlags{port: defaultInspectorUIPort, inspectorPort: 9002, inspectorPortSet: true},
+			inspectorInstalled: true,
+			wantSilent:         true,
+		},
+		{
+			name:               "suppressed client launches no inspector, so nothing can collide",
+			flags:              runFlags{port: defaultInspectorUIPort, noClient: true},
+			inspectorInstalled: true,
+			wantSilent:         true,
+		},
+		{
+			name:               "deprecated suppress flag is also honored",
+			flags:              runFlags{port: defaultInspectorUIPort, noInspector: true},
+			inspectorInstalled: true,
+			wantSilent:         true,
+		},
+		{
+			name:               "unrelated agent port is silent",
+			flags:              runFlags{port: DefaultPort},
+			inspectorInstalled: true,
+			wantSilent:         true,
+		},
+		{
+			name:       "activity agent on the inspector default port is silent",
+			flags:      runFlags{port: defaultInspectorUIPort},
+			isActivity: true,
+			wantSilent: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			flags := tt.flags
+			var stderr bytes.Buffer
+			warnInspectorPortIssues(&flags, tt.isActivity, tt.inspectorInstalled, &stderr)
+
+			got := stderr.String()
+			if tt.wantSilent {
+				if got != "" {
+					t.Fatalf("expected no warning, got %q", got)
+				}
+				return
+			}
+			for _, part := range tt.wantParts {
+				if !strings.Contains(got, part) {
+					t.Fatalf("warning = %q, want it to contain %q", got, part)
+				}
+			}
+		})
 	}
 }
 
@@ -309,6 +829,7 @@ func TestInspectorLaunchFailureOnlyWarns(t *testing.T) {
 		ctx,
 		workflow,
 		ln.Addr().(*net.TCPAddr).Port,
+		0,
 		time.Millisecond,
 		&stderr,
 	)
@@ -364,7 +885,7 @@ func TestNoInspectorSkipsWorkflowLaunch(t *testing.T) {
 	t.Parallel()
 
 	workflow := &recordingWorkflowClient{called: make(chan struct{})}
-	handleInspectorAutoLaunch(t.Context(), workflow, 8088, true, true, nil, io.Discard)
+	handleInspectorAutoLaunch(t.Context(), workflow, 8088, 0, true, true, nil, io.Discard)
 
 	select {
 	case <-workflow.called:
@@ -377,6 +898,11 @@ type recordingWorkflowClient struct {
 	request *azdext.RunWorkflowRequest
 	err     error
 	called  chan struct{}
+}
+
+type recordingUsageReporter struct {
+	ctx   context.Context
+	event foundryTelemetry.Event
 }
 
 type lockedBuffer struct {
@@ -406,6 +932,11 @@ func (c *recordingWorkflowClient) Run(
 		close(c.called)
 	}
 	return &azdext.EmptyResponse{}, c.err
+}
+
+func (r *recordingUsageReporter) Report(ctx context.Context, event foundryTelemetry.Event) {
+	r.ctx = ctx
+	r.event = event
 }
 
 // createVenv sets up a minimal .venv directory structure for testing.
@@ -439,14 +970,15 @@ func createVenv(t *testing.T, projectDir string) string {
 func TestAppendFoundryEnvVars(t *testing.T) {
 	t.Parallel()
 
-	t.Run("does not map FOUNDRY_PROJECT_ENDPOINT to itself", func(t *testing.T) {
+	t.Run("forwards FOUNDRY_PROJECT_ENDPOINT", func(t *testing.T) {
 		t.Parallel()
 		azdEnv := map[string]string{
 			"FOUNDRY_PROJECT_ENDPOINT": "https://myaccount.services.ai.azure.com/api/projects/myproject",
 		}
 		env := appendFoundryEnvVars(nil, azdEnv, "")
-		if len(env) != 0 {
-			t.Errorf("expected no translated env vars, got %v", env)
+		expected := "FOUNDRY_PROJECT_ENDPOINT=https://myaccount.services.ai.azure.com/api/projects/myproject"
+		if !slices.Contains(env, expected) {
+			t.Errorf("expected %q in env, got %v", expected, env)
 		}
 	})
 
@@ -495,12 +1027,12 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 			"AGENT_AGENT1_VERSION":     "v1",
 		}
 		env := appendFoundryEnvVars(nil, azdEnv, "agent1")
-		if len(env) != 3 {
-			t.Errorf("expected 3 env vars, got %d: %v", len(env), env)
+		if len(env) != 4 {
+			t.Errorf("expected 4 env vars, got %d: %v", len(env), env)
 		}
 	})
 
-	t.Run("skips foundry key when already set in azd env", func(t *testing.T) {
+	t.Run("prefers service-specific agent metadata", func(t *testing.T) {
 		t.Parallel()
 		azdEnv := map[string]string{
 			"FOUNDRY_PROJECT_ENDPOINT": "https://explicit.services.ai.azure.com",
@@ -509,20 +1041,26 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 		}
 		env := appendFoundryEnvVars(nil, azdEnv, "my-svc")
 
-		// Neither FOUNDRY_PROJECT_ENDPOINT nor FOUNDRY_AGENT_NAME should be
-		// appended because they already exist in azdEnv (and were thus already
-		// added to the env slice by the caller's loop over azdEnv).
-		for _, entry := range env {
-			if strings.HasPrefix(entry, "FOUNDRY_PROJECT_ENDPOINT=") ||
-				strings.HasPrefix(entry, "FOUNDRY_AGENT_NAME=") {
-				t.Errorf("should not translate when foundry key already in azdEnv, got %q", entry)
-			}
+		if !slices.Contains(
+			env,
+			"FOUNDRY_PROJECT_ENDPOINT=https://explicit.services.ai.azure.com",
+		) {
+			t.Errorf("expected project endpoint in env, got %v", env)
 		}
+		if !slices.Contains(env, "FOUNDRY_AGENT_NAME=my-agent") {
+			t.Errorf("expected service agent name in env, got %v", env)
+		}
+	})
 
-		// AZURE_AI_PROJECT_ID has no explicit FOUNDRY_PROJECT_ARM_ID, so it should still be skipped
-		// (it's not in azdEnv either, so appendFoundryEnvVars skips it because the source key is empty)
-		if len(env) != 0 {
-			t.Errorf("expected no translated env vars, got %v", env)
+	t.Run("forwards application insights", func(t *testing.T) {
+		t.Parallel()
+		azdEnv := map[string]string{
+			"APPLICATIONINSIGHTS_CONNECTION_STRING": "InstrumentationKey=test",
+		}
+		env := appendFoundryEnvVars(nil, azdEnv, "")
+		expected := "APPLICATIONINSIGHTS_CONNECTION_STRING=InstrumentationKey=test"
+		if !slices.Contains(env, expected) {
+			t.Errorf("expected %q in env, got %v", expected, env)
 		}
 	})
 
@@ -570,6 +1108,234 @@ func TestAppendFoundryEnvVars(t *testing.T) {
 			t.Errorf("expected FOUNDRY_AGENT_VERSION to be translated, got %v", env)
 		}
 	})
+}
+
+func TestMergeAgentRunEnvironment(t *testing.T) {
+	t.Parallel()
+
+	value := func(environment []string, key string) (string, bool) {
+		t.Helper()
+		for i := len(environment) - 1; i >= 0; i-- {
+			name, entryValue, found := strings.Cut(environment[i], "=")
+			if found && name == key {
+				return entryValue, true
+			}
+		}
+		return "", false
+	}
+
+	t.Run("service env wins without leaking azd values", func(t *testing.T) {
+		t.Parallel()
+		environment := mergeAgentRunEnvironment(
+			[]string{"FOO=process", "PORT=8088"},
+			map[string]string{
+				"FOO":                      "global",
+				"BAR":                      "global",
+				"UNDECLARED_SECRET":        "hidden",
+				"FOUNDRY_PROJECT_ENDPOINT": "https://project.example",
+			},
+			map[string]string{
+				"FOO":          "service",
+				"BAR":          "service",
+				"EMPTY":        "",
+				"PORT":         "9000",
+				"SERVICE_ONLY": "service-only",
+			},
+			[]string{
+				"FOO=service",
+				"BAR=service",
+				"PORT=9000",
+				"LEGACY=declared",
+			},
+			"agent",
+			true,
+		)
+
+		if got, _ := value(environment, "FOO"); got != "process" {
+			t.Errorf("expected process FOO, got %q", got)
+		}
+		if got, _ := value(environment, "BAR"); got != "service" {
+			t.Errorf("expected service BAR, got %q", got)
+		}
+		if got, _ := value(environment, "PORT"); got != "8088" {
+			t.Errorf("expected command PORT, got %q", got)
+		}
+		if _, found := value(environment, "UNDECLARED_SECRET"); found {
+			t.Errorf("did not expect undeclared azd value in %v", environment)
+		}
+		if got, _ := value(environment, "FOUNDRY_PROJECT_ENDPOINT"); got !=
+			"https://project.example" {
+			t.Errorf("expected Foundry endpoint, got %q", got)
+		}
+		if got, _ := value(environment, "LEGACY"); got != "declared" {
+			t.Errorf("expected declared legacy value, got %q", got)
+		}
+		if got, _ := value(environment, "SERVICE_ONLY"); got != "service-only" {
+			t.Errorf("expected service-only value, got %q", got)
+		}
+		if got, found := value(environment, "EMPTY"); !found || got != "" {
+			t.Errorf("expected empty service value, got %q, found %v", got, found)
+		}
+	})
+
+	t.Run("explicit empty env stays isolated", func(t *testing.T) {
+		t.Parallel()
+		environment := mergeAgentRunEnvironment(
+			[]string{"FOO=process"},
+			map[string]string{"SECRET": "leaked", "OTHER": "leaked"},
+			map[string]string{},
+			nil,
+			"agent",
+			true,
+		)
+		if _, found := value(environment, "SECRET"); found {
+			t.Errorf("did not expect azd value in isolated env %v", environment)
+		}
+		if got, _ := value(environment, "FOO"); got != "process" {
+			t.Errorf("expected process FOO, got %q", got)
+		}
+	})
+
+	t.Run("legacy service keeps azd fallback", func(t *testing.T) {
+		t.Parallel()
+		environment := mergeAgentRunEnvironment(
+			[]string{"FOO=process"},
+			map[string]string{
+				"FOO":        "global",
+				"BAR":        "global",
+				"PROJECT_ID": "project",
+			},
+			nil,
+			[]string{"BAR=inline", "BAZ=inline"},
+			"agent",
+			false,
+		)
+
+		if got, _ := value(environment, "FOO"); got != "process" {
+			t.Errorf("expected process FOO, got %q", got)
+		}
+		if got, _ := value(environment, "BAR"); got != "global" {
+			t.Errorf("expected global BAR, got %q", got)
+		}
+		if got, _ := value(environment, "PROJECT_ID"); got != "project" {
+			t.Errorf("expected legacy azd value, got %q", got)
+		}
+		if got, _ := value(environment, "BAZ"); got != "inline" {
+			t.Errorf("expected inline BAZ, got %q", got)
+		}
+	})
+}
+
+// TestLegacyEnvVarsKeepProjectFallback pins the deliberate gap in
+// the env: scope: an explicit env: {} stops the azd environment
+// from reaching the child, but a ${VAR} the author wrote in the
+// deprecated environment_variables block still resolves against
+// it. Cutting that off would silently empty the value for a
+// project mid-migration, so the fallback stays. Without this
+// test ResolveAgentEnvironmentVariable reads as fully
+// scope-aware, which it is not.
+func TestLegacyEnvVarsKeepProjectFallback(t *testing.T) {
+	t.Parallel()
+
+	azdEnvironment := map[string]string{
+		"FOO":               "project-wide",
+		"UNDECLARED_SECRET": "hidden",
+	}
+	serviceEnvironment := map[string]string{}
+
+	definition := &agent_yaml.ContainerAgent{
+		EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
+			{Name: "TARGET", Value: "${FOO}"},
+		},
+	}
+
+	definitionEnvironment, err := resolveAgentDefinitionEnvVars(
+		t.Context(),
+		definition,
+		serviceEnvironment,
+		azdEnvironment,
+		"",
+	)
+	if err != nil {
+		t.Fatalf("resolveAgentDefinitionEnvVars: %v", err)
+	}
+
+	environment := mergeAgentRunEnvironment(
+		[]string{"PATH=/usr/bin"},
+		azdEnvironment,
+		serviceEnvironment,
+		definitionEnvironment,
+		"agent",
+		true,
+	)
+
+	if !slices.Contains(environment, "TARGET=project-wide") {
+		t.Errorf("expected legacy fallback to resolve, got %v", environment)
+	}
+	for _, entry := range environment {
+		name, _, _ := strings.Cut(entry, "=")
+		if name == "FOO" || name == "UNDECLARED_SECRET" {
+			t.Errorf("did not expect %q in %v", name, environment)
+		}
+	}
+}
+
+func TestResolveLocalServiceEnvironment(t *testing.T) {
+	t.Parallel()
+
+	original := map[string]string{
+		"MODEL_ENDPOINT": "${{project.endpoint}}/models",
+		"LITERAL":        "literal ${NOT_A_TEMPLATE}",
+	}
+	endpoint := localProjectEndpoint(
+		[]string{"FOUNDRY_PROJECT_ENDPOINT=https://process.example"},
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://service.example",
+		},
+		"https://azd.example",
+	)
+	resolved := resolveLocalServiceEnvironment(
+		original,
+		endpoint,
+	)
+
+	if got := resolved["MODEL_ENDPOINT"]; got !=
+		"https://process.example/models" {
+		t.Errorf("expected resolved endpoint, got %q", got)
+	}
+	if got := resolved["LITERAL"]; got != "literal ${NOT_A_TEMPLATE}" {
+		t.Errorf("expected literal value, got %q", got)
+	}
+	if got := original["MODEL_ENDPOINT"]; got !=
+		"${{project.endpoint}}/models" {
+		t.Errorf("expected original map to stay unchanged, got %q", got)
+	}
+
+	serviceEndpoint := localProjectEndpoint(
+		nil,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://service.example",
+		},
+		"https://azd.example",
+	)
+	if serviceEndpoint != "https://service.example" {
+		t.Errorf("expected service endpoint, got %q", serviceEndpoint)
+	}
+}
+
+func TestEnvSliceHasKeyUsesPlatformCasing(t *testing.T) {
+	t.Parallel()
+
+	env := []string{"Path=process-value"}
+	if !envSliceHasKey(env, "Path") {
+		t.Fatal("expected exact-case environment key to match")
+	}
+
+	got := envSliceHasKey(env, "PATH")
+	want := runtime.GOOS == "windows"
+	if got != want {
+		t.Errorf("envSliceHasKey() = %t, want %t", got, want)
+	}
 }
 
 func TestAppendPortEnvVars(t *testing.T) {
@@ -894,7 +1660,7 @@ environment_variables:
     value: debug
 `)
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, nil, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -918,7 +1684,7 @@ environment_variables:
 		azdEnv := map[string]string{
 			"FOUNDRY_PROJECT_ENDPOINT": "https://example.azure.com",
 		}
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, azdEnv, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, azdEnv, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -939,7 +1705,7 @@ environment_variables:
     value: hello
 `)
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, nil, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -955,7 +1721,7 @@ environment_variables:
 	})
 
 	t.Run("returns nil for nil definition", func(t *testing.T) {
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), nil, nil, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), nil, nil, nil, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -967,7 +1733,7 @@ environment_variables:
 	t.Run("returns nil for empty environment_variables", func(t *testing.T) {
 		def := parse(t, "name: test-agent\n")
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, nil, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -983,12 +1749,34 @@ environment_variables:
     value: ${DOES_NOT_EXIST}
 `)
 
-		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, map[string]string{}, "")
+		result, err := resolveAgentDefinitionEnvVars(t.Context(), def, nil, map[string]string{}, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if !slices.Contains(result, "MISSING_REF=") {
 			t.Errorf("expected MISSING_REF= (empty), got %v", result)
+		}
+	})
+
+	t.Run("keeps forwarded core values literal", func(t *testing.T) {
+		def := parse(t, `name: test-agent
+environment_variables:
+  - name: FORWARDED_VALUE
+    value: ${FORWARDED_VALUE}
+`)
+
+		result, err := resolveAgentDefinitionEnvVars(
+			t.Context(),
+			def,
+			map[string]string{"FORWARDED_VALUE": "literal ${NOT_A_TEMPLATE}"},
+			map[string]string{"NOT_A_TEMPLATE": "expanded"},
+			"",
+		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !slices.Contains(result, "FORWARDED_VALUE=literal ${NOT_A_TEMPLATE}") {
+			t.Errorf("expected literal forwarded value, got %v", result)
 		}
 	})
 }
@@ -1009,6 +1797,107 @@ func TestVenvPip(t *testing.T) {
 		if result != expected {
 			t.Errorf("expected %q, got %q", expected, result)
 		}
+	}
+}
+
+func TestUvPythonInstallSteps(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		files     []string
+		wantSteps []dependencyInstallStep
+	}{
+		{
+			name:  "uv lock is authoritative",
+			files: []string{"pyproject.toml", "uv.lock", "requirements.txt"},
+			wantSteps: []dependencyInstallStep{{
+				startMessage:   "Synchronizing dependencies (uv.lock)...",
+				successMessage: "  ✓ Dependencies synchronized (uv.lock)",
+				errorMessage:   "uv sync failed",
+				args: []string{
+					"sync",
+					"--locked",
+					"--python", "python-path",
+					"--quiet",
+				},
+			}},
+		},
+		{
+			name:  "pyproject without lock uses editable install",
+			files: []string{"pyproject.toml"},
+			wantSteps: []dependencyInstallStep{{
+				startMessage:   "Installing dependencies (pyproject.toml)...",
+				successMessage: "  ✓ Dependencies installed (pyproject.toml)",
+				errorMessage:   "uv pip install failed",
+				args: []string{
+					"pip", "install", "-e", ".",
+					"--python", "python-path",
+					"--prerelease", "allow",
+					"--quiet",
+				},
+			}},
+		},
+		{
+			name:  "requirements without lock keeps requirements install",
+			files: []string{"requirements.txt"},
+			wantSteps: []dependencyInstallStep{{
+				startMessage:   "Installing dependencies (requirements.txt)...",
+				successMessage: "  ✓ Dependencies installed (requirements.txt)",
+				errorMessage:   "uv pip install failed",
+				args: []string{
+					"pip", "install", "-r", "requirements.txt",
+					"--python", "python-path",
+					"--prerelease", "allow",
+					"--quiet",
+				},
+			}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			projectDir := t.TempDir()
+			for _, name := range tt.files {
+				if err := os.WriteFile(filepath.Join(projectDir, name), nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			got := uvPythonInstallSteps(projectDir, "python-path")
+			if len(got) != len(tt.wantSteps) {
+				t.Fatalf("got %d steps, want %d: %#v", len(got), len(tt.wantSteps), got)
+			}
+			for i := range got {
+				if got[i].startMessage != tt.wantSteps[i].startMessage ||
+					got[i].successMessage != tt.wantSteps[i].successMessage ||
+					got[i].errorMessage != tt.wantSteps[i].errorMessage ||
+					!slices.Equal(got[i].args, tt.wantSteps[i].args) {
+					t.Errorf("step %d = %#v, want %#v", i, got[i], tt.wantSteps[i])
+				}
+			}
+		})
+	}
+}
+
+func TestInstallPythonDepsRequiresUvForLock(t *testing.T) {
+	projectDir := t.TempDir()
+	for _, name := range []string{"pyproject.toml", "uv.lock"} {
+		if err := os.WriteFile(filepath.Join(projectDir, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Setenv("PATH", t.TempDir())
+
+	err := installPythonDeps(projectDir)
+	if err == nil {
+		t.Fatal("expected locked project without uv to fail")
+	}
+	if !strings.Contains(err.Error(), "uv is required to synchronize dependencies from uv.lock") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

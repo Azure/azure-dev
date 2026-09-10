@@ -47,8 +47,8 @@ func TestWarningMessage_ToString_WithHints(t *testing.T) {
 		Description: "Extension update available",
 		HidePrefix:  false,
 		Hints: []string{
-			"To upgrade: azd extension upgrade test.ext",
-			"To upgrade all: azd extension upgrade --all",
+			"To update: azd extension update test.ext",
+			"To update all: azd extension update --all",
 		},
 	}
 
@@ -56,8 +56,8 @@ func TestWarningMessage_ToString_WithHints(t *testing.T) {
 	require.Contains(t, result, "WARNING:")
 	require.Contains(t, result, "Extension update available")
 	require.Contains(t, result, "•")
-	require.Contains(t, result, "To upgrade: azd extension upgrade test.ext")
-	require.Contains(t, result, "To upgrade all: azd extension upgrade --all")
+	require.Contains(t, result, "To update: azd extension update test.ext")
+	require.Contains(t, result, "To update all: azd extension update --all")
 }
 
 func TestWarningMessage_ToString_WithHintsAndIndentation(t *testing.T) {
@@ -119,8 +119,8 @@ func TestWarningMessage_MarshalJSON_WithHints(t *testing.T) {
 		Description: "Extension update available",
 		HidePrefix:  false,
 		Hints: []string{
-			"To upgrade: azd extension upgrade test.ext",
-			"To upgrade all: azd extension upgrade --all",
+			"To update: azd extension update test.ext",
+			"To update all: azd extension update --all",
 		},
 	}
 
@@ -129,8 +129,8 @@ func TestWarningMessage_MarshalJSON_WithHints(t *testing.T) {
 	jsonStr := string(data)
 	require.Contains(t, jsonStr, "WARNING:")
 	require.Contains(t, jsonStr, "Extension update available")
-	require.Contains(t, jsonStr, "To upgrade: azd extension upgrade test.ext")
-	require.Contains(t, jsonStr, "To upgrade all: azd extension upgrade --all")
+	require.Contains(t, jsonStr, "To update: azd extension update test.ext")
+	require.Contains(t, jsonStr, "To update all: azd extension update --all")
 }
 
 func TestWarningMessage_MarshalJSON_EmptyHints(t *testing.T) {

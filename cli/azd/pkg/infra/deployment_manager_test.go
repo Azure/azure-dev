@@ -192,6 +192,160 @@ func (f *fakeScope) Deployment(name string) Deployment {
 func TestCompletedDeployments(t *testing.T) {
 	now := time.Now().UTC()
 
+	t.Run("prefers current project over newer foreign and legacy deployments", func(t *testing.T) {
+		projectName := "project-a"
+		foreignProjectName := "project-b"
+		envName := "dev"
+		layerName := ""
+		scope := &fakeScope{
+			subscriptionId: "sub-1",
+			deployments: []*azapi.ResourceDeployment{
+				{
+					Name: "project-b-newest",
+					Tags: map[string]*string{
+						azure.TagKeyAzdProjectName: &foreignProjectName,
+						azure.TagKeyAzdEnvName:     &envName,
+						azure.TagKeyAzdLayerName:   &layerName,
+					},
+					ProvisioningState: azapi.DeploymentProvisioningStateSucceeded,
+					Timestamp:         now,
+				},
+				{
+					Name: "legacy-newer",
+					Tags: map[string]*string{
+						azure.TagKeyAzdEnvName:   &envName,
+						azure.TagKeyAzdLayerName: &layerName,
+					},
+					ProvisioningState: azapi.DeploymentProvisioningStateSucceeded,
+					Timestamp:         now.Add(-time.Hour),
+				},
+				{
+					Name: "project-a-older",
+					Tags: map[string]*string{
+						azure.TagKeyAzdProjectName: &projectName,
+						azure.TagKeyAzdEnvName:     &envName,
+						azure.TagKeyAzdLayerName:   &layerName,
+					},
+					ProvisioningState: azapi.DeploymentProvisioningStateSucceeded,
+					Timestamp:         now.Add(-2 * time.Hour),
+				},
+			},
+		}
+
+		dm := NewDeploymentManager(&fakeDeploymentService{}, nil, nil)
+		result, err := dm.CompletedDeployments(
+			t.Context(), scope, projectName, envName, layerName, "")
+
+		require.NoError(t, err)
+		require.Len(t, result, 1)
+		assert.Equal(t, "project-a-older", result[0].Name)
+	})
+
+	t.Run("falls back to newest untagged project deployment", func(t *testing.T) {
+		projectName := "project-a"
+		foreignProjectName := "project-b"
+		envName := "dev"
+		layerName := ""
+		scope := &fakeScope{
+			subscriptionId: "sub-1",
+			deployments: []*azapi.ResourceDeployment{
+				{
+					Name: "project-b-newest",
+					Tags: map[string]*string{
+						azure.TagKeyAzdProjectName: &foreignProjectName,
+						azure.TagKeyAzdEnvName:     &envName,
+						azure.TagKeyAzdLayerName:   &layerName,
+					},
+					ProvisioningState: azapi.DeploymentProvisioningStateSucceeded,
+					Timestamp:         now,
+				},
+				{
+					Name: "legacy-newest",
+					Tags: map[string]*string{
+						azure.TagKeyAzdEnvName:   &envName,
+						azure.TagKeyAzdLayerName: &layerName,
+					},
+					ProvisioningState: azapi.DeploymentProvisioningStateSucceeded,
+					Timestamp:         now.Add(-time.Hour),
+				},
+				{
+					Name: "legacy-older",
+					Tags: map[string]*string{
+						azure.TagKeyAzdEnvName:   &envName,
+						azure.TagKeyAzdLayerName: &layerName,
+					},
+					ProvisioningState: azapi.DeploymentProvisioningStateSucceeded,
+					Timestamp:         now.Add(-2 * time.Hour),
+				},
+			},
+		}
+
+		dm := NewDeploymentManager(&fakeDeploymentService{}, nil, nil)
+		result, err := dm.CompletedDeployments(
+			t.Context(), scope, projectName, envName, layerName, "")
+
+		require.NoError(t, err)
+		require.Len(t, result, 1)
+		assert.Equal(t, "legacy-newest", result[0].Name)
+	})
+
+	t.Run("does not use foreign tagged deployment as legacy fallback", func(t *testing.T) {
+		projectName := "project-a"
+		foreignProjectName := "project-b"
+		envName := "dev"
+		layerName := ""
+		scope := &fakeScope{
+			subscriptionId: "sub-1",
+			deployments: []*azapi.ResourceDeployment{
+				{
+					Name: "dev-project-b",
+					Tags: map[string]*string{
+						azure.TagKeyAzdProjectName: &foreignProjectName,
+						azure.TagKeyAzdEnvName:     &envName,
+						azure.TagKeyAzdLayerName:   &layerName,
+					},
+					ProvisioningState: azapi.DeploymentProvisioningStateSucceeded,
+					Timestamp:         now,
+				},
+			},
+		}
+
+		dm := NewDeploymentManager(&fakeDeploymentService{}, nil, nil)
+		_, err := dm.CompletedDeployments(
+			t.Context(), scope, projectName, envName, layerName, "")
+
+		require.ErrorIs(t, err, ErrDeploymentsNotFound)
+	})
+
+	t.Run("empty project identity preserves environment-only matching", func(t *testing.T) {
+		projectName := "project-b"
+		envName := "dev"
+		layerName := ""
+		scope := &fakeScope{
+			subscriptionId: "sub-1",
+			deployments: []*azapi.ResourceDeployment{
+				{
+					Name: "newest",
+					Tags: map[string]*string{
+						azure.TagKeyAzdProjectName: &projectName,
+						azure.TagKeyAzdEnvName:     &envName,
+						azure.TagKeyAzdLayerName:   &layerName,
+					},
+					ProvisioningState: azapi.DeploymentProvisioningStateSucceeded,
+					Timestamp:         now,
+				},
+			},
+		}
+
+		dm := NewDeploymentManager(&fakeDeploymentService{}, nil, nil)
+		result, err := dm.CompletedDeployments(
+			t.Context(), scope, "", envName, layerName, "")
+
+		require.NoError(t, err)
+		require.Len(t, result, 1)
+		assert.Equal(t, "newest", result[0].Name)
+	})
+
 	t.Run("matches by env tag", func(t *testing.T) {
 		envName := "myenv"
 		tagVal := envName
@@ -213,7 +367,7 @@ func TestCompletedDeployments(t *testing.T) {
 			&fakeDeploymentService{}, nil, nil,
 		)
 		result, err := dm.CompletedDeployments(
-			t.Context(), scope, envName, "", "",
+			t.Context(), scope, "project-a", envName, "", "",
 		)
 		require.NoError(t, err)
 		require.Len(t, result, 1)
@@ -245,7 +399,7 @@ func TestCompletedDeployments(t *testing.T) {
 		)
 		result, err := dm.CompletedDeployments(
 			t.Context(),
-			scope, envName, layerName, "",
+			scope, "project-a", envName, layerName, "",
 		)
 		require.NoError(t, err)
 		require.Len(t, result, 1)
@@ -271,7 +425,7 @@ func TestCompletedDeployments(t *testing.T) {
 				&fakeDeploymentService{}, nil, nil,
 			)
 			result, err := dm.CompletedDeployments(
-				t.Context(), scope, envName, "", "",
+				t.Context(), scope, "project-a", envName, "", "",
 			)
 			require.NoError(t, err)
 			require.Len(t, result, 1)
@@ -309,7 +463,7 @@ func TestCompletedDeployments(t *testing.T) {
 			)
 			result, err := dm.CompletedDeployments(
 				t.Context(),
-				scope, "myenv", "", "",
+				scope, "project-a", "myenv", "", "",
 			)
 			require.NoError(t, err)
 			assert.Len(t, result, 2)
@@ -333,7 +487,7 @@ func TestCompletedDeployments(t *testing.T) {
 		)
 		_, err := dm.CompletedDeployments(
 			t.Context(),
-			scope, "myenv-running", "", "",
+			scope, "project-a", "myenv-running", "", "",
 		)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrDeploymentsNotFound)
@@ -351,7 +505,7 @@ func TestCompletedDeployments(t *testing.T) {
 			)
 			_, err := dm.CompletedDeployments(
 				t.Context(),
-				scope, "myenv", "", "",
+				scope, "project-a", "myenv", "", "",
 			)
 			require.Error(t, err)
 			assert.ErrorIs(t, err, ErrDeploymentsNotFound)
@@ -368,7 +522,7 @@ func TestCompletedDeployments(t *testing.T) {
 		)
 		_, err := dm.CompletedDeployments(
 			t.Context(),
-			scope, "myenv", "", "",
+			scope, "project-a", "myenv", "", "",
 		)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "list failed")

@@ -42,6 +42,25 @@ func TestAnalyzeLayerDependencies_SingleLayer(t *testing.T) {
 	require.Equal(t, [][]int{{0}}, result.Levels)
 }
 
+func TestAnalyzeLayerDependencies_NoLayers(t *testing.T) {
+	result, err := AnalyzeLayerDependencies(t.Context(), nil, t.TempDir())
+	require.NoError(t, err)
+	require.Nil(t, result)
+}
+
+func TestAnalyzeLayerDependencies_MissingBicepSource(t *testing.T) {
+	dir := t.TempDir()
+	mkTestDir(t, filepath.Join(dir, "missing"))
+	mkTestDir(t, filepath.Join(dir, "terraform"))
+
+	layers := []provisioning.Options{
+		{Name: "missing", Path: "missing", Module: "main", Provider: provisioning.Bicep},
+		{Name: "terraform", Path: "terraform", Module: "main", Provider: provisioning.Terraform},
+	}
+	_, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
+	require.ErrorContains(t, err, "extracting outputs for layer \"missing\"")
+}
+
 func TestAnalyzeLayerDependencies_NoDependencies(t *testing.T) {
 	dir := t.TempDir()
 
@@ -701,6 +720,35 @@ func TestDiscoverParamEnvRefs_NonExistentDirectory(t *testing.T) {
 	_ = hasUnknown // accept either true or false
 }
 
+func TestDiscoverParamEnvRefs_ReadErrorsUseSafeFallback(t *testing.T) {
+	tests := []struct {
+		name     string
+		provider provisioning.ProviderKind
+		badPath  string
+	}{
+		{name: "custom bicepparam", provider: "custom", badPath: "main.bicepparam"},
+		{name: "custom parameters JSON", provider: "custom", badPath: "main.parameters.json"},
+		{name: "Bicep source", provider: provisioning.Bicep, badPath: "main.bicep"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			// A directory at the expected file path produces a read error that is
+			// distinct from a missing optional parameter file on every platform.
+			mkTestDir(t, filepath.Join(dir, tt.badPath))
+
+			refs, hasUnknown := discoverParamEnvRefs(t.Context(), provisioning.Options{
+				Path:     dir,
+				Module:   "main",
+				Provider: tt.provider,
+			}, dir)
+			require.Empty(t, refs)
+			require.True(t, hasUnknown)
+		})
+	}
+}
+
 func TestStripBicepLineComments(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -861,6 +909,91 @@ func TestAnalyzeLayerDependencies_MixedProviders(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
 	require.Contains(t, result.Edges[1], 0)
+}
+
+func TestAnalyzeLayerDependencies_FoundryConsumesBicepOutput(t *testing.T) {
+	dir := t.TempDir()
+	networkDir := filepath.Join(dir, "network")
+	foundryDir := filepath.Join(dir, "foundry")
+	mkTestDir(t, networkDir)
+	mkTestDir(t, foundryDir)
+	writeTestFile(t, filepath.Join(networkDir, "main.bicep"),
+		"output AZURE_VNET_ID string = 'id'\n")
+	writeTestFile(t, filepath.Join(foundryDir, "main.parameters.json"),
+		`{"parameters":{"vnetId":{"value":"${AZURE_VNET_ID}"}}}`)
+
+	layers := []provisioning.Options{
+		{Name: "network", Path: "network", Module: "main", Provider: provisioning.Bicep},
+		{Name: "foundry", Path: "foundry", Module: "main", Provider: "microsoft.foundry"},
+	}
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
+	require.NoError(t, err)
+	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
+	require.Equal(t, []int{0}, result.Edges[1])
+}
+
+func TestAnalyzeLayerDependencies_CustomProviderBicepparamConsumesBicepOutput(t *testing.T) {
+	dir := t.TempDir()
+	producerDir := filepath.Join(dir, "producer")
+	consumerDir := filepath.Join(dir, "consumer")
+	mkTestDir(t, producerDir)
+	mkTestDir(t, consumerDir)
+	writeTestFile(t, filepath.Join(producerDir, "main.bicep"),
+		"output PRODUCER_ID string = 'id'\n")
+	writeTestFile(t, filepath.Join(consumerDir, "main.bicepparam"),
+		"using './main.bicep'\nparam id = readEnvironmentVariable('PRODUCER_ID')\n")
+
+	layers := []provisioning.Options{
+		{Name: "producer", Path: "producer", Module: "main", Provider: provisioning.Bicep},
+		{Name: "consumer", Path: "consumer", Module: "main", Provider: "custom"},
+	}
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
+	require.NoError(t, err)
+	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
+	require.Equal(t, []int{0}, result.Edges[1])
+}
+
+func TestAnalyzeLayerDependencies_CustomProviderUnknownReferenceUsesSafeFallback(t *testing.T) {
+	dir := t.TempDir()
+	producerDir := filepath.Join(dir, "producer")
+	consumerDir := filepath.Join(dir, "consumer")
+	mkTestDir(t, producerDir)
+	mkTestDir(t, consumerDir)
+	writeTestFile(t, filepath.Join(producerDir, "main.bicep"),
+		"output PRODUCER_ID string = 'id'\n")
+	writeTestFile(t, filepath.Join(consumerDir, "main.bicepparam"),
+		"using './main.bicep'\nvar envName = 'PRODUCER_ID'\nparam id = readEnvironmentVariable(envName)\n")
+
+	layers := []provisioning.Options{
+		{Name: "producer", Path: "producer", Module: "main", Provider: provisioning.Bicep},
+		{Name: "consumer", Path: "consumer", Module: "main", Provider: "custom"},
+	}
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
+	require.NoError(t, err)
+	require.Equal(t, [][]int{{0}, {1}}, result.Levels)
+	require.Equal(t, []int{0}, result.Edges[1])
+	require.Equal(t, []int{1}, result.SafeFallbackLayers)
+}
+
+func TestAnalyzeLayerDependencies_TerraformParametersRemainOpaque(t *testing.T) {
+	dir := t.TempDir()
+	networkDir := filepath.Join(dir, "network")
+	terraformDir := filepath.Join(dir, "terraform")
+	mkTestDir(t, networkDir)
+	mkTestDir(t, terraformDir)
+	writeTestFile(t, filepath.Join(networkDir, "main.bicep"),
+		"output AZURE_VNET_ID string = 'id'\n")
+	writeTestFile(t, filepath.Join(terraformDir, "main.parameters.json"),
+		`{"parameters":{"vnetId":{"value":"${AZURE_VNET_ID}"}}}`)
+
+	layers := []provisioning.Options{
+		{Name: "network", Path: "network", Module: "main", Provider: provisioning.Bicep},
+		{Name: "terraform", Path: "terraform", Module: "main", Provider: provisioning.Terraform},
+	}
+	result, err := AnalyzeLayerDependencies(t.Context(), layers, dir)
+	require.NoError(t, err)
+	require.Equal(t, [][]int{{0, 1}}, result.Levels)
+	require.Empty(t, result.Edges)
 }
 
 // TestIsBicepLayer verifies the helper classifies providers correctly.

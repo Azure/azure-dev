@@ -144,18 +144,16 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		return nil, err
 	}
 
-	if err := ra.projectManager.Initialize(ctx, ra.projectConfig); err != nil {
-		return nil, err
-	}
-
-	if err := ra.projectManager.EnsureRestoreTools(ctx, ra.projectConfig, func(svc *project.ServiceConfig) bool {
-		return targetServiceName == "" || svc.Name == targetServiceName
-	}); err != nil {
-		return nil, err
-	}
-
 	stableServices, err := ra.importManager.ServiceStableFiltered(ctx, ra.projectConfig, targetServiceName, ra.env.Getenv)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := ra.projectManager.InitializeServices(ctx, stableServices); err != nil {
+		return nil, err
+	}
+
+	if err := ra.projectManager.EnsureRestoreTools(ctx, stableServices); err != nil {
 		return nil, err
 	}
 

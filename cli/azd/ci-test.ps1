@@ -4,7 +4,8 @@ param(
     [string] $IntegrationTestTimeout = '120m',
     [string] $IntegrationTestCoverageDir = 'cover-int',
     [string] $UnitTestTimingFile = 'test-timing-unit.json',
-    [string] $IntegrationTestTimingFile = 'test-timing-int.json'
+    [string] $IntegrationTestTimingFile = 'test-timing-int.json',
+    [string] $IntegrationTestRerunReport = 'test-rerun-int.txt'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -62,7 +63,22 @@ $env:GOCOVERDIR = $intCoverDir.FullName
 $env:GOEXPERIMENT=""
 
 try {
-    & $gotestsum --jsonfile $IntegrationTestTimingFile -- ./... -v -timeout $IntegrationTestTimeout
+    # Integration tests provision live Azure resources and are prone to flaky, environmental
+    # failures (credential token expiry during long provisioning, transient Azure service
+    # capacity such as App Service "No available instances", teardown races). A single such
+    # blip currently reds the whole nightly run. Re-run failed tests once to distinguish flaky
+    # failures from real regressions. See https://github.com/Azure/azure-dev/issues/8386
+    #
+    # --rerun-fails requires the package list to be passed via --packages instead of positionally.
+    # --rerun-fails-max-failures caps reruns so a mass failure (a genuine regression) is not masked.
+    # --rerun-fails-report records which tests were rerun so flaky tests remain visible for triage.
+    & $gotestsum `
+        --jsonfile $IntegrationTestTimingFile `
+        --rerun-fails=1 `
+        --rerun-fails-max-failures=5 `
+        --rerun-fails-report $IntegrationTestRerunReport `
+        --packages "./..." `
+        -- -v -timeout $IntegrationTestTimeout
     if ($LASTEXITCODE) {
         exit $LASTEXITCODE
     }    

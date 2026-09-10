@@ -1,0 +1,97 @@
+# Evals for the official `microsoft-foundry` skill, as it drives azd.
+#
+# Run `npm run fetch:skill` first -- the skill is fetched, not vendored (see README).
+#
+# One routing stimulus and one rule stimulus, as a pattern to copy rather than a sweep.
+# Both are checkable without azd or Azure: routing from which docs the agent reads,
+# command shape from the commands it reports.
+name: foundry-skill
+description: >-
+  Does the official microsoft-foundry skill route to the right sub-skill, and does the
+  agent tag azd commands the way the skill requires?
+
+environment:
+  skills:
+    - ./skills/.external/microsoft-foundry
+  files:
+    - src: fixtures/foundry-agent-project/azure.yaml
+      dest: azure.yaml
+    - src: fixtures/foundry-agent-project/main.py
+      dest: src/triage-agent/main.py
+
+defaults:
+  runs: 2
+  timeout: 5m
+  executor: copilot-sdk
+  model: claude-sonnet-4.6
+  judge_model: gpt-5.5
+
+# Sits under where we score today, so we hear about it if things get worse without this
+# being red every run. See the README for what's currently under the line.
+scoring:
+  threshold: 0.7
+
+stimuli:
+  # SKILL.md's mandatory-read rule only binds when *executing* a workflow, so this
+  # prompt is imperative, not advisory -- "where do I start?" is answerable straight
+  # from the routing table without ever opening the sub-skill doc.
+  - name: route-optimize-instructions
+    prompt: >-
+      My Foundry agent gives inconsistent answers on customer billing questions.
+      Work out how to improve its instructions and walk me through doing it.
+    rubric:
+      - "Routes to the eval/observe workflow rather than guessing at prompt edits"
+      - "Explains that optimization is driven by evaluation results, not ad-hoc rewriting"
+    graders:
+      - type: skill-invocation
+        name: "microsoft-foundry skill activated"
+        config:
+          required:
+            - microsoft-foundry
+      - type: tool-calls
+        name: "reads the observe sub-skill"
+        config:
+          required:
+            - name: view
+              path: 'observe/observe\.md$'
+      - type: prompt
+        name: "judge: eval-driven optimization guidance"
+        config:
+          scoring: binary
+
+  # azd-guidance.md requires the AZURE_DEV_USER_AGENT prefix inline and never
+  # persisted. Asking for commands rather than execution keeps this azd-free.
+  - name: rule-user-agent-inline
+    prompt: >-
+      I have a hosted Foundry agent in this project. Give me the exact terminal
+      commands to deploy it and then send it a test message. Don't run anything yet --
+      I want to review the commands first.
+    rubric:
+      # Scoped to the commands the user is told to run. The skill's rule is about
+      # invoking azd, so an untagged mention in a troubleshooting aside is not a
+      # violation -- an earlier wording of "every azd command" failed answers for that.
+      - "The commands given to run are each prefixed inline with AZURE_DEV_USER_AGENT=microsoft_foundry_skill"
+      - "The variable is not persisted via azd env set, .env, or azure.yaml"
+      - "Deploy comes before invoking the agent"
+    graders:
+      # Tag and command on the same logical line -- matching them separately would pass
+      # an untagged `azd deploy` next to a tagged `azd version`, and allowing a bare
+      # newline between them would pass `export AZURE_DEV_USER_AGENT=...` followed by a
+      # plain `azd deploy`, which is the persistence the skill forbids. The optional
+      # group allows a backslash line-continuation.
+      - type: output-matches
+        name: "deploy command carries the skill user agent"
+        config:
+          pattern: 'AZURE_DEV_USER_AGENT=microsoft_foundry_skill[ \t]+(?:\\[ \t]*\n[ \t]*)?azd[ \t]+deploy'
+      # Anchored to a line start so it only trips on something that looks like a command.
+      # Unanchored, an answer that correctly says "don't `export AZURE_DEV_USER_AGENT`"
+      # failed for describing the rule. A "don't do this" fenced example still trips it;
+      # the judge below covers intent.
+      - type: output-not-matches
+        name: "does not persist the user agent"
+        config:
+          pattern: '(?m)^\s*(?:azd env set|export)\s+AZURE_DEV_USER_AGENT'
+      - type: prompt
+        name: "judge: correctly-sequenced, correctly-tagged commands"
+        config:
+          scoring: binary

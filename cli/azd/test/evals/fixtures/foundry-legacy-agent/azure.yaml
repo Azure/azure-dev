@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+# Legacy shape: the agent definition sits in a nested `config:` block instead of inline
+# on the service entry. azd still loads this, but prints a deprecation warning.
+name: docs-assistant
+
+services:
+  ai-project:
+    host: azure.ai.project
+    deployments:
+      - name: gpt-4o-mini
+        model:
+          format: OpenAI
+          name: gpt-4o-mini
+          version: "2024-07-18"
+        sku:
+          name: GlobalStandard
+          capacity: 30
+
+  docs-agent:
+    host: azure.ai.agent
+    project: ./src/docs-agent
+    uses:
+      - ai-project
+    config:
+      kind: hosted
+      name: docs-agent
+      description: Answers questions about our internal documentation.
+      environmentVariables:
+        - name: LOG_LEVEL
+          value: info

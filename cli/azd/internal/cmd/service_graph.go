@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
@@ -116,6 +117,10 @@ type serviceGraphOptions struct {
 	// deployTimeout bounds each individual deploy step. Must be > 0.
 	deployTimeout time.Duration
 
+	// maxConcurrency is the scheduler concurrency used to execute this graph.
+	// Zero selects the scheduler's bounded default worker count.
+	maxConcurrency int
+
 	// fromPackage — when non-empty — creates a synthetic package artifact at
 	// the supplied path instead of invoking the service packager. Only the
 	// stand-alone `azd deploy` path sets this (the `--from-package` flag);
@@ -155,6 +160,13 @@ type serviceGraphOptions struct {
 	// exceeded. It lets the caller emit a richer UX (e.g., a warning box
 	// with hints) before the error bubbles up. Optional.
 	onDeployTimeout func(ctx context.Context, svc *project.ServiceConfig)
+
+	// packagePublishBuildGateKey groups services whose package or publish
+	// phase may perform a concurrent-unsafe local build. Gates are enabled
+	// only when at least two services share a key and maxConcurrency is not
+	// one. This policy does not affect deploy ordering. If nil, package and
+	// publish contexts are not gated.
+	packagePublishBuildGateKey func(svc *project.ServiceConfig) string
 
 	// buildGateKey groups services that share a concurrent-unsafe build
 	// phase: for each non-empty key, a shared mutex is created and injected
@@ -256,6 +268,33 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 	// unconstrained and run in full parallelism.
 	buildGateMu := make(map[string]*sync.Mutex)
 
+	// Standard .NET package and publish operations use a separate gate map.
+	// Precompute membership before graph execution so worker goroutines only
+	// read these maps.
+	packagePublishBuildGates := make(map[string]*sync.Mutex)
+	packagePublishGateKeys := make(map[string]string)
+	packagePublishGateCounts := make(map[string]int)
+	if opts.packagePublishBuildGateKey != nil && opts.maxConcurrency != 1 {
+		for _, svc := range opts.services {
+			key := opts.packagePublishBuildGateKey(svc)
+			packagePublishGateKeys[svc.Name] = key
+			if key != "" {
+				packagePublishGateCounts[key]++
+			}
+		}
+
+		packagePublishGateMu := make(map[string]*sync.Mutex)
+		for serviceName, key := range packagePublishGateKeys {
+			if key == "" || packagePublishGateCounts[key] < 2 {
+				continue
+			}
+			if packagePublishGateMu[key] == nil {
+				packagePublishGateMu[key] = &sync.Mutex{}
+			}
+			packagePublishBuildGates[serviceName] = packagePublishGateMu[key]
+		}
+	}
+
 	// serviceNames is the set of service names in this graph, used to
 	// resolve service-to-service edges declared via `services.<name>.uses`
 	// in azure.yaml. Resource-valued `uses:` entries (targeting entries
@@ -276,6 +315,7 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 	// build-gate policy is in effect, so we fall back to sequential
 	// deployment in azure.yaml slice order to preserve backward
 	// compatibility with templates that relied on implicit ordering.
+	// Package/publish gates deliberately do not participate.
 	hasExplicitOrdering := false
 
 	// Check (a): service-to-service `uses:` edges.
@@ -385,6 +425,9 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 					progress := newPhaseProgress(pkgSvc.Name, phasePackaging)
 					defer progress.Wait()
 					defer progress.Done()
+					if buildGate := packagePublishBuildGates[pkgSvc.Name]; buildGate != nil {
+						ctx = project.ContextWithBuildGate(ctx, buildGate)
+					}
 					if _, pkgErr := opts.serviceManager.Package(
 						ctx, pkgSvc, sc, progress.Progress, nil,
 					); pkgErr != nil {
@@ -429,6 +472,9 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 				pubCtx, pubCancel := context.WithTimeout(
 					stepCtx, opts.deployTimeout)
 				defer pubCancel()
+				if buildGate := packagePublishBuildGates[pubSvc.Name]; buildGate != nil {
+					pubCtx = project.ContextWithBuildGate(pubCtx, buildGate)
+				}
 
 				progress := newPhaseProgress(pubSvc.Name, phasePublish)
 				defer progress.Wait()
@@ -502,9 +548,9 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 		// order provided (alphabetical via ServiceStable()) so that
 		// templates relying on implicit sequential ordering continue to
 		// work. This preserves backward compatibility with existing
-		// templates while still
-		// allowing parallel deployment for templates that opt in via
-		// `uses:`. Package and publish steps remain parallel regardless.
+		// templates while still allowing parallel deployment for templates
+		// that opt in via `uses:`. Package and publish steps remain parallel
+		// regardless.
 		if !hasExplicitOrdering && len(handles.DeploySteps) >= 2 {
 			prevDeploy := handles.DeploySteps[len(handles.DeploySteps)-2]
 			if !slices.Contains(deployDeps, prevDeploy) {
@@ -592,6 +638,23 @@ func deployTimeoutWarning(svcName string, timeout time.Duration) *ux.WarningMess
 					" or AZD_DEPLOY_TIMEOUT env var (e.g. AZD_DEPLOY_TIMEOUT=%d).",
 				int(timeout.Seconds())*2, int(timeout.Seconds())*2),
 		},
+	}
+}
+
+func displayDeployWarnings(
+	ctx context.Context,
+	console input.Console,
+	services []*project.ServiceConfig,
+	state *deployGraphState,
+) {
+	for _, svc := range services {
+		if result := state.GetResult(svc.Name); result != nil {
+			for _, warning := range result.Warnings {
+				console.MessageUxItem(ctx, &ux.WarningMessage{
+					Description: fmt.Sprintf("Service '%s': %s", svc.Name, warning),
+				})
+			}
+		}
 	}
 }
 

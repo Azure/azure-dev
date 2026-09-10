@@ -1,0 +1,117 @@
+# Evals for authoring Foundry service entries in `azure.yaml`.
+#
+# No skill is loaded on purpose: this doubles as the control arm for
+# eval-foundry.experiments.yaml, which re-runs it with the skill on.
+name: foundry-authoring
+description: >-
+  Can an agent correctly edit Foundry service entries in azure.yaml -- migrating a
+  legacy agent definition, and adding a second agent across several turns?
+
+defaults:
+  runs: 2
+  timeout: 8m
+  executor: copilot-sdk
+  model: claude-sonnet-4.6
+  judge_model: gpt-5.5
+
+# Sits under where we score today, so we hear about it if things get worse without this
+# being red every run. See the README for what's currently under the line.
+scoring:
+  threshold: 0.7
+
+stimuli:
+  # Migration off the deprecated nested `config:` block. The failure worth catching is
+  # a partial migration that hoists kind/name but drops environmentVariables -- it
+  # still parses, and deploys a different agent.
+  - name: migrate-legacy-agent-definition
+    prompt: |
+      When I run azd it warns that my agent is using a deprecated configuration shape
+      and that I should move the definition onto the service entry itself.
+
+      Update azure.yaml so the warning goes away. The agent has to keep behaving
+      exactly as it does today.
+    environment:
+      files:
+        - src: fixtures/foundry-legacy-agent/azure.yaml
+          dest: azure.yaml
+        - src: fixtures/foundry-legacy-agent/main.py
+          dest: src/docs-agent/main.py
+    rubric:
+      - "The agent definition is inline on the azure.ai.agent service entry"
+      - "The nested config: block is gone, with no empty config: key left behind"
+      - "Every setting from the old block is preserved, including environmentVariables"
+    graders:
+      - type: file-not-matches
+        name: "the nested config: block is gone"
+        config:
+          path: "azure.yaml"
+          pattern: '(?m)^\s+config:\s*$'
+      # Exactly four spaces = service level. Six would mean it is still under `config:`.
+      - type: file-matches
+        name: "the definition was hoisted onto the service entry"
+        config:
+          path: "azure.yaml"
+          pattern: '(?m)^    kind:\s*hosted'
+      # Deliberately loose about shape: azd accepts both an `environmentVariables` list
+      # of {name, value} and an `env:` mapping, and either is a correct migration.
+      - type: file-matches
+        name: "environment variables survived the move"
+        config:
+          path: "azure.yaml"
+          pattern: '(?i)LOG_LEVEL[\s\S]{0,30}?info'
+      - type: prompt
+        name: "judge: complete migration with no behavior change"
+        config:
+          scoring: binary
+
+  # The only stimulus exercising vally's `turns:` support and per-turn grading.
+  - name: incremental-second-agent
+    turns:
+      - >-
+        Add a second hosted agent to this project called `escalation-agent`. It should
+        live in src/escalation-agent and use the same Foundry project as the existing
+        agent. Describe it as handling escalated tickets.
+      - >-
+        Now configure that new agent's environment in azure.yaml so it runs with
+        debug-level logging. Don't change its application code.
+      - >-
+        Good. What's the single command I'd run to deploy just that new agent, without
+        touching the existing one?
+    environment:
+      files:
+        - src: fixtures/foundry-agent-project/azure.yaml
+          dest: azure.yaml
+        - src: fixtures/foundry-agent-project/main.py
+          dest: src/triage-agent/main.py
+    rubric:
+      - "escalation-agent is added as an azure.ai.agent service that uses the Foundry project"
+      - "The existing triage-agent service is left intact"
+      - "The debug log level is set through the agent's environment variables"
+      - "The final answer names a deploy command scoped to the single service"
+    graders:
+      # `[ \t]{4,}` walks only lines indented under `escalation-agent:` before looking
+      # for `host:`. A lazy `.*` would pair the name with triage-agent's `host:` and
+      # pass on a malformed new service.
+      - type: file-matches
+        name: "the new agent service exists"
+        config:
+          path: "azure.yaml"
+          pattern: '(?:^|\n)  escalation-agent:[^\n]*\n(?:(?:[ \t]{4,}[^\n]*|[ \t]*)\n)*?[ \t]{4,}host:[ \t]*azure\.ai\.agent'
+      # Block-scoped because turn 2 asks for the *new* agent -- a file-global match
+      # would accept debug logging set on triage-agent instead. Accepts either the
+      # `environmentVariables` list or the `env:` mapping.
+      - type: file-matches
+        name: "debug logging configured on the new agent"
+        config:
+          path: "azure.yaml"
+          pattern: '(?is)\n  escalation-agent:(?:(?:[ \t]{4,}[^\n]*|[ \t]*)\n)*?[ \t]{4,}[^\n]*LOG_LEVEL[\s\S]{0,30}?debug'
+      - type: output-matches
+        name: "final turn names a single-service deploy"
+        # 0-based: the third and final turn.
+        turn: 2
+        config:
+          pattern: 'azd deploy\s+escalation-agent'
+      - type: prompt
+        name: "judge: additive edits, correct scoped deploy"
+        config:
+          scoring: binary

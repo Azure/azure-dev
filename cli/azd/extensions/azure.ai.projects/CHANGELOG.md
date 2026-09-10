@@ -1,5 +1,67 @@
 # Release History
 
+## 1.0.0-beta.9 (2026-09-04)
+
+### Features Added
+
+- [[#9735]](https://github.com/Azure/azure-dev/pull/9735) Update Foundry project synthesis to support extension-owned Connection definitions and deployment. Thanks @JerryYangKai for the contribution!
+
+### Bugs Fixed
+
+- [[#9720]](https://github.com/Azure/azure-dev/pull/9720) Make Foundry provisioning prompts deterministic in no-prompt mode.
+- [[#9678]](https://github.com/Azure/azure-dev/pull/9678) Honor `condition` on Foundry connection services before provisioning.
+- [[#9741]](https://github.com/Azure/azure-dev/pull/9741) Preserve connection audience and connector name during Foundry project synthesis.
+- [[#9729]](https://github.com/Azure/azure-dev/pull/9729) Provide resource-specific quota guidance only for Cognitive Services errors, with generic guidance otherwise.
+
+### Other Changes
+
+- [[#9825]](https://github.com/Azure/azure-dev/pull/9825) Update gRPC to v1.83.1 to address the GHSA-vp52-pcj8-j9qc security advisory.
+
+## 1.0.0-beta.8 (2026-08-27)
+
+### Features Added
+
+- [[#9683]](https://github.com/Azure/azure-dev/pull/9683) Add editable Bicep and Terraform infrastructure ejection for existing Foundry projects while preserving ownership of existing resources.
+
+## 1.0.0-beta.7 (2026-08-24)
+
+### Other Changes
+
+- [[#9580]](https://github.com/Azure/azure-dev/pull/9580) Update the azd extension SDK dependency to v1.31.0 for extension telemetry compatibility.
+
+## 1.0.0-beta.6 (2026-08-13)
+
+### Features Added
+
+- [[#9457]](https://github.com/Azure/azure-dev/pull/9457) Support Foundry provisioning as an isolated infrastructure layer with layer paths, virtual outputs, ownership tracking, repeat provisioning, and teardown behavior.
+
+## 1.0.0-beta.5 (2026-08-06)
+
+### Features Added
+
+- [[#9079]](https://github.com/Azure/azure-dev/pull/9079) Add service-scoped environment support to Foundry project provisioning while preserving raw templates and project-wide fallback behavior.
+
+### Bugs Fixed
+
+- [[#9326]](https://github.com/Azure/azure-dev/pull/9326) Publish Foundry dependency readiness state so agent deployments can fail early with actionable guidance when resources are not ready.
+- [[#9367]](https://github.com/Azure/azure-dev/pull/9367) Fix Foundry project synthesis so network environment references use shared defaults, escaping, and unresolved-variable validation.
+
+## 1.0.0-beta.4 (2026-07-30)
+
+### Bugs Fixed
+
+- [[#9292]](https://github.com/Azure/azure-dev/pull/9292) Fix Foundry ARM deployment names exceeding ARM's 64-character limit when long azd environment names are used. Long environment-name segments are now truncated while retaining deterministic environment and project-path hashes for uniqueness.
+
+## 1.0.0-beta.3 (2026-07-23)
+
+### Features Added
+
+- [[#9133]](https://github.com/Azure/azure-dev/pull/9133) The `azure.ai.projects` extension now owns Foundry project provisioning through the `microsoft.foundry` provider, including updating deployments and connections on existing projects (set `AZURE_AI_PROJECT_ID` to the project ARM resource ID), using the customer VNet region for private endpoints, and blocking automatic Azure Container Registry creation for private-network projects. Release it together with `azure.ai.agents`, since mixing versions can cause both extensions to register the same provider.
+
+### Bugs Fixed
+
+- [[#9149]](https://github.com/Azure/azure-dev/pull/9149) Fix Foundry project synthesis and provisioning not consistently resolving configuration declared inline in `azure.yaml`, via the deprecated `config:` block, or through local `$ref` files.
+
 ## 1.0.0-beta.2 (2026-07-09)
 
 ### Other Changes

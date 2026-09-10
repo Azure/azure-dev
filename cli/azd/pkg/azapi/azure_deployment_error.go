@@ -16,6 +16,10 @@ type DeploymentErrorLine struct {
 	Code string
 	// The message that represents the error
 	Message string
+	// The ARM target associated with the error, if provided.
+	Target string
+	// The resource type associated with Target after deployment context resolution.
+	ResourceType string
 	// Inner errors
 	Inner []*DeploymentErrorLine
 }
@@ -84,13 +88,20 @@ func (e *AzureDeploymentError) Error() string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("\n\n%s:\n", e.Title))
 
-	// Return the original error string if we can't parse the JSON
-	if e.Details == nil {
+	var lines []string
+	if e.Details != nil {
+		lines = generateErrorOutput(e.Details)
+	}
+
+	// Fall back to the raw payload when the JSON could not be parsed, and also when
+	// it parsed into a tree that renders nothing: every node was code-only, blanked
+	// (DeploymentFailed, ResourceDeploymentFailure), or a wrapper whose message held
+	// no nested code/message pair. Without this the heading would be the whole error.
+	if len(lines) == 0 {
 		sb.WriteString(e.Json)
 		return sb.String()
 	}
 
-	lines := generateErrorOutput(e.Details)
 	for _, line := range lines {
 		sb.WriteString(fmt.Sprintln(output.WithErrorFormat(line)))
 	}
@@ -130,7 +141,7 @@ func generateErrorOutput(err *DeploymentErrorLine) []string {
 
 func getErrorsFromMap(errorMap map[string]any) *DeploymentErrorLine {
 	var output *DeploymentErrorLine
-	var code, message string
+	var code, message, target string
 
 	// Size of nested output is not known ahead of time.
 	nestedOutput := []*DeploymentErrorLine{}
@@ -147,6 +158,10 @@ func getErrorsFromMap(errorMap map[string]any) *DeploymentErrorLine {
 				nestedOutput = append(nestedOutput, getErrorsFromMap(messageMap))
 			} else {
 				message = rawMessage
+			}
+		case "target":
+			if value != nil {
+				target = fmt.Sprint(value)
 			}
 		case "error":
 			errorMap, ok := value.(map[string]any)
@@ -178,7 +193,9 @@ func getErrorsFromMap(errorMap map[string]any) *DeploymentErrorLine {
 
 	// Omit generic deployment failed messages
 	if code == "DeploymentFailed" || code == "ResourceDeploymentFailure" {
-		return newErrorLine("", errorMessage, nestedOutput)
+		output = newErrorLine("", errorMessage, nestedOutput)
+		output.Target = target
+		return output
 	}
 
 	if code != "" && message != "" {
@@ -188,6 +205,7 @@ func getErrorsFromMap(errorMap map[string]any) *DeploymentErrorLine {
 	}
 
 	output = newErrorLine(code, errorMessage, nestedOutput)
+	output.Target = target
 
 	return output
 }

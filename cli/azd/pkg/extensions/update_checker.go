@@ -126,10 +126,10 @@ func FormatUpdateWarning(result *UpdateCheckResult) *ux.WarningMessage {
 		),
 		HidePrefix: false,
 		Hints: []string{
-			fmt.Sprintf("To upgrade: %s",
-				output.WithHighLightFormat("azd extension upgrade %s", result.ExtensionId)),
-			fmt.Sprintf("To upgrade all: %s",
-				output.WithHighLightFormat("azd extension upgrade --all")),
+			fmt.Sprintf("To update: %s",
+				output.WithHighLightFormat("azd extension update %s", result.ExtensionId)),
+			fmt.Sprintf("To update all: %s",
+				output.WithHighLightFormat("azd extension update --all")),
 		},
 	}
 }

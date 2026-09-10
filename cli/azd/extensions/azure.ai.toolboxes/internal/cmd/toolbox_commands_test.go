@@ -64,6 +64,7 @@ func TestRunToolboxDeleteWith_Branches(t *testing.T) {
 	})
 
 	t.Run("version_is_only_remaining_with_force_proceeds", func(t *testing.T) {
+		calls := stubToolboxEndpointEnv(t)
 		client := newMockToolboxClient("https://e/")
 		client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
 			Name: "tb", DefaultVersion: "1",
@@ -79,6 +80,7 @@ func TestRunToolboxDeleteWith_Branches(t *testing.T) {
 		require.Len(t, client.deleteVersionCalls, 1)
 		assert.Equal(t, "tb", client.deleteVersionCalls[0].name)
 		assert.Equal(t, "1", client.deleteVersionCalls[0].version)
+		require.Equal(t, []toolboxEnvCall{{name: "tb", value: "", projectScope: "https://e/"}}, *calls)
 	})
 
 	t.Run("non_default_version_with_force_proceeds", func(t *testing.T) {
@@ -431,6 +433,8 @@ func TestRunToolboxCreateWith_FromFileCreatesInitialVersion(t *testing.T) {
 	inputPath := t.TempDir() + "/create.yaml"
 	err := os.WriteFile(inputPath, []byte(`
 description: toolbox from file
+metadata:
+  owner: support
 connections:
   - name: mcp
 `), 0o600)
@@ -443,6 +447,7 @@ connections:
 	require.NoError(t, err)
 	require.Len(t, client.createVersionCalls, 1)
 	assert.Equal(t, "toolbox from file", client.createVersionCalls[0].req.Description)
+	assert.Equal(t, map[string]string{"owner": "support"}, client.createVersionCalls[0].req.Metadata)
 	assert.Len(t, client.createVersionCalls[0].req.Tools, 1)
 
 	// The versioned MCP endpoint is written to the active azd environment.
@@ -631,6 +636,51 @@ tools:
 	require.Len(t, tools, 2)
 	assert.Equal(t, "web_search", tools[0]["type"])
 	assert.Equal(t, "file_search", tools[1]["type"])
+}
+
+// Preview toolbox tools are forwarded in the exact shape defined by the
+// Foundry toolbox API. Type-specific validation remains service-owned.
+func TestRunToolboxCreateWith_NewPreviewTools(t *testing.T) {
+	client := newMockToolboxClient("https://e/")
+
+	inputPath := t.TempDir() + "/create.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(`
+tools:
+  - type: work_iq_preview
+    name: work-iq
+    project_connection_id: /connections/work-iq
+  - type: fabric_iq_preview
+    name: fabric-iq
+    project_connection_id: /connections/fabric-iq
+    server_label: fabric
+    server_url: https://fabric.example.com/mcp
+    require_approval: never
+  - type: toolbox_search_preview
+    name: toolbox-search
+`), 0o600))
+
+	err := runToolboxCreateWith(
+		t.Context(), client, newStubConnectionResolver(), "https://e/", "tb",
+		toolboxCreateFlags{fromFile: inputPath}, toolboxFlags{output: "json"},
+	)
+	require.NoError(t, err)
+	require.Len(t, client.createVersionCalls, 1)
+	assert.Equal(t, []map[string]any{
+		{
+			"type":                  "work_iq_preview",
+			"name":                  "work-iq",
+			"project_connection_id": "/connections/work-iq",
+		},
+		{
+			"type":                  "fabric_iq_preview",
+			"name":                  "fabric-iq",
+			"project_connection_id": "/connections/fabric-iq",
+			"server_label":          "fabric",
+			"server_url":            "https://fabric.example.com/mcp",
+			"require_approval":      "never",
+		},
+		{"type": "toolbox_search_preview", "name": "toolbox-search"},
+	}, client.createVersionCalls[0].req.Tools)
 }
 
 // Connection-backed entries come first, raw tools[] entries after.

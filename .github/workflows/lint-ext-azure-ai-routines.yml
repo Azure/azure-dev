@@ -5,6 +5,7 @@ on:
     paths:
       - "cli/azd/extensions/azure.ai.routines/**"
       - ".github/workflows/lint-ext-azure-ai-routines.yml"
+      - ".github/workflows/verify-ext-providers.yml"
     branches: [main]
 
 concurrency:
@@ -18,5 +19,10 @@ permissions:
 jobs:
   lint:
     uses: ./.github/workflows/lint-go.yml
+    with:
+      working-directory: cli/azd/extensions/azure.ai.routines
+
+  verify-providers:
+    uses: ./.github/workflows/verify-ext-providers.yml
     with:
       working-directory: cli/azd/extensions/azure.ai.routines

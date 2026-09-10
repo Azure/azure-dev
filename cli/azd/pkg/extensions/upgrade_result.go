@@ -49,8 +49,12 @@ type UpgradeResult struct {
 	ToVersion string
 	// FromSource is the registry source before the upgrade.
 	FromSource string
+	// FromSourceCategory is the privacy-safe category before the upgrade.
+	FromSourceCategory SourceCategory
 	// ToSource is the registry source used for the upgrade.
 	ToSource string
+	// ToSourceCategory is the privacy-safe category selected for the upgrade.
+	ToSourceCategory SourceCategory
 	// Status is the outcome of the upgrade attempt.
 	Status UpgradeStatus
 	// Error is the error value if Status is UpgradeStatusFailed, nil otherwise.
@@ -62,7 +66,7 @@ type UpgradeResult struct {
 	Suggestion string
 	// DependencyUpgrades captures upgrade results for dependent extensions
 	// that were upgraded as a side effect of upgrading this extension. Empty
-	// for leaf extensions or when --no-dependency-upgrades is set.
+	// for leaf extensions or when --no-dependency-updates is set.
 	DependencyUpgrades []UpgradeResult
 }
 

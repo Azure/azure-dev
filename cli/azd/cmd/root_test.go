@@ -8,10 +8,26 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRegisterGlobalMiddleware(t *testing.T) {
+	root := actions.NewActionDescriptor("azd", &actions.ActionDescriptorOptions{})
+
+	registerGlobalMiddleware(root)
+
+	names := make([]string, len(root.Middleware()))
+	for i, registration := range root.Middleware() {
+		names[i] = registration.Name
+	}
+
+	require.Equal(t, []string{"debug", "ux", "telemetry", "error", "loginGuard"}, names)
+	require.NotContains(t, names, "toolFirstRun")
+	require.NotContains(t, names, "toolUpdateCheck")
+}
 
 func TestRootCmd_CwdRelativePathResolvedToAbsolute(t *testing.T) {
 	// Regression test: a relative -C path must be resolved to an absolute path

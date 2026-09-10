@@ -463,7 +463,7 @@ All `codeId`, `environmentId`, `computeId` are resolved to full ARM resource IDs
 | `experiment_name` | `experimentName` | Defaults to cwd folder name |
 | `environment_variables` | `environmentVariables` | — |
 | `inputs` | `inputs` | Each has `jobInputType` + `uri`/`value` + `mode` |
-| `outputs` | `outputs` | Each has `jobOutputType` + `mode` |
+| `outputs` | `outputs` | Each has `jobOutputType` + `mode`; optional `asset_name` / `asset_version` map to `assetName` / `assetVersion` for named asset registration |
 | `distribution` | `distribution` | `distributionType`: `PyTorch` / `Mpi` / `TensorFlow` |
 | `resources` | `resources` | `instanceCount`, `instanceType`, `shmSize` |
 | `limits` | `limits` | `timeout` in ISO 8601 duration (e.g., `PT1H`) |

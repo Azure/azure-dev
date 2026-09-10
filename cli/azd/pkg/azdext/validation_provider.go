@@ -41,7 +41,7 @@ type PredictedResource struct {
 // The contents of Data depend on CheckType — use the typed accessors below
 // rather than reading Data directly:
 //
-//   - ValidationCheckTypeLocalPreflight ("local-preflight"): a Bicep-only,
+//   - ValidationCheckTypeArmProvision ("arm-provision"): a Bicep-only,
 //     ARM-rich context. Accessors: ARMTemplate, ARMParameters,
 //     ResourcesSnapshot, PredictedResources (plus EnvLocation).
 //   - ValidationCheckTypeProvision ("provision"): a provider-agnostic, lean
@@ -52,7 +52,7 @@ type PredictedResource struct {
 type ValidationContext struct {
 	// ContextID is the unique identifier for this context delivery.
 	ContextID string
-	// CheckType identifies the validation context (e.g. "local-preflight").
+	// CheckType identifies the validation context (e.g. "arm-provision").
 	CheckType string
 	// Data is the reassembled context map (key → full value).
 	Data map[string][]byte
@@ -165,7 +165,7 @@ func (c *ValidationContext) TargetScope() (string, bool) {
 
 // ValidationCheckProvider is the extension-side interface for a validation check.
 // Extensions implement this to provide custom checks that run during the azd
-// validation pipeline (e.g. local-preflight during provisioning).
+// validation pipeline (e.g. arm-provision during provisioning).
 type ValidationCheckProvider interface {
 	// Validate runs the check against the provided context and returns results.
 	Validate(
@@ -180,7 +180,7 @@ type ValidationCheckProviderFactory func() ValidationCheckProvider
 
 // ValidationCheckRegistration describes a validation check to register with azd core.
 type ValidationCheckRegistration struct {
-	// CheckType identifies the validation context (e.g. "local-preflight").
+	// CheckType identifies the validation context (e.g. "arm-provision").
 	CheckType string
 	// RuleID is a stable, unique identifier for this check rule.
 	RuleID string
@@ -191,17 +191,17 @@ type ValidationCheckRegistration struct {
 // --- Check type constants ---
 
 const (
-	// ValidationCheckTypeLocalPreflight is the check type dispatched by the
-	// Bicep provider during ARM-template preflight validation. Its context
+	// ValidationCheckTypeArmProvision is the check type dispatched by the
+	// Bicep provider during ARM-template provision validation. Its context
 	// carries ARM-specific data (template, parameters, resource snapshot) and
 	// therefore only runs for Bicep-provisioned deployments.
-	ValidationCheckTypeLocalPreflight = "local-preflight"
+	ValidationCheckTypeArmProvision = "arm-provision"
 
 	// ValidationCheckTypeProvision is the provider-agnostic check type
 	// dispatched immediately before provisioning runs, regardless of the
 	// provisioning provider (Bicep, Terraform, or extension-provided providers
 	// such as microsoft.foundry and demo). Its context is "lean" because it
-	// deliberately omits all of the ARM-derived data that "local-preflight"
+	// deliberately omits all of the ARM-derived data that "arm-provision"
 	// carries — there is no ARM template, no resolved parameters, no resources
 	// snapshot, and no predicted resources — since non-ARM providers do not
 	// produce them. It carries only ambient environment values: the
@@ -219,24 +219,24 @@ const (
 	ValidationCheckTypeProvision = "provision"
 )
 
-// --- Context key constants for "local-preflight" checks ---
+// --- Context key constants for "arm-provision" checks ---
 
 const (
 	// ValidationContextResourcesSnapshot is the key for the raw Bicep
-	// snapshot JSON in a "local-preflight" check context.
+	// snapshot JSON in an "arm-provision" check context.
 	ValidationContextResourcesSnapshot = "resources_snapshot"
 	// ValidationContextPredictedResources is the key for the JSON array of
 	// predicted resources extracted from the Bicep snapshot. Each element is
 	// a resource object with type, name, location, properties, etc.
 	ValidationContextPredictedResources = "predicted_resources"
 	// ValidationContextARMTemplate is the key for the compiled ARM
-	// template JSON in a "local-preflight" check context.
+	// template JSON in an "arm-provision" check context.
 	ValidationContextARMTemplate = "arm_template"
 	// ValidationContextARMParameters is the key for the resolved ARM
-	// parameters JSON in a "local-preflight" check context.
+	// parameters JSON in an "arm-provision" check context.
 	ValidationContextARMParameters = "arm_parameters"
 	// ValidationContextEnvLocation is the key for the Azure deployment
-	// location string. It is present in both "local-preflight" and
+	// location string. It is present in both "arm-provision" and
 	// "provision" check contexts.
 	ValidationContextEnvLocation = "env_location"
 )

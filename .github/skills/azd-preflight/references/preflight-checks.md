@@ -1,6 +1,6 @@
 # Preflight Checks Reference
 
-The `mage preflight` command runs these 8 checks in order. Each check, its
+The `mage preflight` command runs these 9 checks in order. Each check, its
 purpose, and the automated fix strategy are listed below.
 
 ## 1. Formatting (`gofmt`)
@@ -33,7 +33,7 @@ issues include:
 - `unused` — remove dead code
 - `staticcheck` — fix static analysis warnings
 
-## 5. Spell Check (`cspell`)
+## 5. Go Spell Check (`cspell`)
 
 **Command**: `cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml --no-progress` (from `cli/azd/`)
 **Passes when**: No unknown words found.
@@ -41,7 +41,15 @@ issues include:
 using file-scoped `overrides` entries (not the global `words` list). For actual
 typos, fix the spelling in source code.
 
-## 6. Build (`go build`)
+## 6. Misc/Docs Spell Check (`cspell-misc`)
+
+**Command**: `cspell lint "**/*" --relative --config ./.vscode/cspell.misc.yaml --no-progress`
+(from the repository root)
+**Passes when**: No unknown words are found in miscellaneous and documentation files.
+**Auto-fix**: Fix typos. Add legitimate terms to file-scoped `overrides` entries in
+`.vscode/cspell.misc.yaml`.
+
+## 7. Build (`go build`)
 
 **Command**: `go build ./...` (from `cli/azd/`)
 **Passes when**: Compilation succeeds with zero errors.
@@ -51,14 +59,14 @@ typos, fix the spelling in source code.
 - Undefined symbols
 - Syntax errors
 
-## 7. Unit Tests (`go test -short`)
+## 8. Unit Tests (`go test -short`)
 
 **Command**: `go test ./... -short -cover -count=1` (from `cli/azd/`)
 **Passes when**: All tests pass.
 **Auto-fix**: Analyze test failures and fix the root cause in source code or
 tests. Do NOT skip or delete failing tests — fix them.
 
-## 8. Playback Tests (Functional)
+## 9. Playback Tests (Functional)
 
 **Command**: Discovers test recordings in `test/functional/testdata/recordings/`
 and runs matching functional tests with `AZURE_RECORD_MODE=playback`.
@@ -68,6 +76,21 @@ recording is stale, add the test name to `excludedPlaybackTests` in
 `cli/azd/magefile.go` with a reason string — but only as a last resort after
 confirming the recording genuinely needs re-recording.
 
+## Conditional: Changed CHANGELOG Spell Check
+
+**Command**: `cspell lint "<changelog-path>" --relative --config "<cspell-config>"
+--no-progress` (from the repository root)
+**Runs when**: One or more tracked or untracked `CHANGELOG.md` files have changed.
+**Passes when**: Every changed changelog has no unknown words.
+**Config resolution**: Starting in the changelog's directory, select the nearest `cspell.yaml`
+or `.vscode/cspell.yaml` while walking toward the repository root. Fall back to
+`cli/azd/.vscode/cspell.yaml` when no nearer config exists.
+**Auto-fix**: Fix typos. For contributor attributions, verify the GitHub username against the
+linked PR author or GitHub account, then add the exact alias to
+`.vscode/cspell-github-user-aliases.txt` in case-insensitive alphabetical order. Do not add
+unverified handles. Add other valid terms to a `CHANGELOG.md` file-scoped override in the
+resolved owning config.
+
 ## Prerequisites
 
 Before running preflight, these tools must be installed:
@@ -75,5 +98,6 @@ Before running preflight, these tools must be installed:
 - **Go** (version matching `cli/azd/go.mod`)
 - **golangci-lint**: `go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.11.4`
 - **cspell**: `npm install -g cspell@8.13.1`
+- **GitHub CLI (`gh`)**: install from https://cli.github.com/
 - **bash or sh**: On Windows, Git for Windows provides this
 - **mage**: `go install github.com/magefile/mage@latest`

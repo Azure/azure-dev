@@ -54,6 +54,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
 - [Error Handling](#error-handling)
   - [LocalError](#localerror)
   - [ServiceError](#serviceerror)
+  - [ToolError](#toolerror)
   - [LocalErrorCategory](#localerrorcategory)
 
 ---
@@ -519,8 +520,95 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Extension()` | `ExtensionServiceClient` |
 | `Account()` | `AccountServiceClient` |
 | `Ai()` | `AiModelServiceClient` |
+| `Telemetry()` | `TelemetryServiceClient` |
 
 Always call `defer client.Close()` after creation.
+
+#### TelemetryService
+
+`Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{EventName, Attributes})`
+lets an authenticated extension report a named usage event with an arbitrary
+`map[string]string` of attributes. Telemetry is a service `azd` offers to
+extensions whose configured source matches the verified official registry
+name, type, and normalized URL.
+
+The host writes `extension.id`, `extension.version`, and `extension.source`
+from the signed claims and the installed record, and `extension.event` from the
+caller's event name, so an extension cannot assert which extension it is. Every
+caller-supplied key is prefixed with `ext.` and can never overwrite a host
+field. Accepted events are recorded on a dedicated `ext.usage` span that shares
+the command's trace, so downstream queries join it to the originating command
+on `operation_Id`. Extensions cannot choose the span, classification, purpose,
+hashing, or aggregation.
+
+Two outcomes are not errors: a report from an extension installed from any
+other source, and a report past the limit of 100 recorded events per `azd`
+invocation. Both return a successful response with `Accepted` set to `false`,
+so the same code path runs during local development and in production. Run
+`azd --debug` to see which applied.
+
+```go
+resp, err := client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
+    EventName:  "deploy.completed",
+    Attributes: map[string]string{"deploy.mode": "container"},
+})
+if err != nil {
+    log.Printf("telemetry unavailable: %v", err)
+} else if !resp.Accepted {
+    log.Printf("telemetry was not accepted by the azd host")
+}
+```
+
+The host bounds shape only: at most 32 attributes, event name and keys at most
+128 UTF-8 bytes, and values at most 512 UTF-8 bytes. It does not inspect what a
+value means, so keeping values low cardinality and free of customer content is
+the extension author's responsibility. See
+[Extension Telemetry](./extension-telemetry.md) for the full rules and review
+process.
+
+For a published extension version that depends on this service, set
+`requiredAzdVersion` to the first azd release that includes `TelemetryService`.
+This is the normal compatibility mechanism used when resolving installs and
+updates:
+
+```yaml
+requiredAzdVersion: ">=1.31.0"
+```
+
+The call remains best-effort for already-installed extensions and extensions
+from non-registry sources, which may still run on an older host and receive
+`Unimplemented`. Treat any failure as a no-op and never let it change command
+behavior. Report an event immediately after the fact it represents is known,
+rather than waiting until the command completes, so a later unrelated failure
+does not lose the signal.
+
+#### Foundry telemetry reporter
+
+Microsoft Foundry extensions should use the shared reporter from
+`pkg/foundry/telemetry` instead of repeating generated-client error handling in
+each independently released extension:
+
+```go
+import "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
+
+reporter := telemetry.NewReporter(client.Telemetry(), nil)
+reporter.Report(ctx, telemetry.Event{
+    Name: "deploy.completed",
+    Attributes: map[string]string{
+        "deploy.mode": "container",
+    },
+})
+```
+
+The reporter applies a one-second timeout, never retries, and never returns an
+error to product code. Rejected reports, unavailable hosts, and transport
+failures cannot change command behavior. Debug diagnostics contain only the
+event name and gRPC status code, never attribute values or raw transport error
+details.
+
+The shared reporter owns transport behavior only. Event names, attribute keys,
+and bounded values remain owned and reviewed by each Foundry extension. Use
+`telemetry.Options` to provide a shorter timeout or an `azdext.Logger` in tests.
 
 ### ConfigHelper
 
@@ -630,7 +718,7 @@ These helpers are intended to remove common extension boilerplate for shell exec
 | API | Description |
 |-----|-------------|
 | `DetectInteractive()` | Detects TTY mode (`full` / `limited` / `none`), `AZD_NO_PROMPT`, CI, and known agent environments. |
-| `InteractiveInfo.CanPrompt()` | Safe prompt gate (`stdin/stdout tty`, not no-prompt, not CI, not agent). |
+| `InteractiveInfo.CanPrompt()` | Safe prompt gate (`stdin/stdout tty`, not no-prompt, not CI). Agent detection is informational and does not disable prompts in an interactive terminal. |
 | `InteractiveInfo.CanColorize()` | Color output gate honoring `FORCE_COLOR` and `NO_COLOR`. |
 
 #### Atomic File Helpers
@@ -653,12 +741,20 @@ type LocalError struct {
     Message    string
     Code       string
     Category   LocalErrorCategory
+    CauseTypes []string
     Suggestion string
 }
 ```
 
 Represents an error originating within the extension. The `Suggestion` field
-provides actionable guidance displayed to the user.
+provides actionable guidance displayed to the user. `CauseTypes` contains
+bounded diagnostic labels for unexpected fallback errors; it is extension-
+provided input and does not determine the error classification. The host
+normalizes these values at both gRPC boundaries by removing generic wrappers,
+duplicates, unsafe names, and values beyond the 16-item limit. For telemetry,
+the host records these labels only as case-insensitive hashes in
+`error.extension.cause_types`; they are never added to the reflected
+`error.chain.types` or used as `error.type`.
 
 ### ServiceError
 
@@ -673,6 +769,30 @@ type ServiceError struct {
 ```
 
 Represents an error from an Azure service call.
+
+### ToolError
+
+```go
+type ToolError struct {
+    Message    string
+    Err        error
+    ToolName   string
+    Kind       ToolErrorKind
+    ExitCode   *int
+    Suggestion string
+    Links      []errorhandler.ErrorLink
+}
+```
+
+Represents a failure from an external tool or subprocess. `Kind` is either
+`ToolErrorKindMissing` when the tool was not found or `ToolErrorKindFailed`
+when the tool ran and returned an error. `ExitCode` is populated only for a
+failed invocation that returned a process exit code. For telemetry, the host
+normalizes `ToolName` by taking the basename from either POSIX or Windows
+paths, removing the executable extension, and lowercasing it. Only 1-64 ASCII
+characters matching `[a-z0-9_-]` are accepted; invalid or oversized values
+are recorded as `other`. This normalization does not change the displayed
+error.
 
 ### LocalErrorCategory
 
@@ -691,8 +811,8 @@ const (
 ```
 
 Error categories enable structured telemetry classification and targeted error
-guidance. Use `WrapError(err)` to convert a `LocalError` or `ServiceError` to
-the gRPC `ExtensionError` proto for reporting.
+guidance. Use `WrapError(err)` to convert a `LocalError`, `ServiceError`, or
+`ToolError` to the gRPC `ExtensionError` proto for reporting.
 
 ---
 

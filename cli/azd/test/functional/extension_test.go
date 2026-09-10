@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/recording"
 	"github.com/stretchr/testify/require"
@@ -27,8 +28,12 @@ func Test_CLI_Extension_ForceInstall(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
+	configDir := tempDirWithDiagnostics(t)
 	cli := azdcli.NewCLI(t)
-	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(os.Environ(),
+		"AZD_CONFIG_DIR="+configDir,
+		"AZURE_DEV_COLLECT_TELEMETRY=no",
+	)
 
 	// Setup: Add local extension source
 	sourcePath := azdcli.GetSourcePath()
@@ -40,9 +45,13 @@ func Test_CLI_Extension_ForceInstall(t *testing.T) {
 	// Cleanup function to ensure extension is uninstalled and source removed
 	defer func() {
 		t.Log("Cleaning up: uninstalling microsoft.azd.demo extension")
-		_, _ = cli.RunCommand(ctx, "ext", "uninstall", "microsoft.azd.demo")
+		if _, err := cli.RunCommand(ctx, "ext", "uninstall", "microsoft.azd.demo"); err != nil {
+			t.Logf("warning: failed to uninstall microsoft.azd.demo: %v", err)
+		}
 		t.Log("Cleaning up: removing test-local source")
-		_, _ = cli.RunCommand(ctx, "ext", "source", "remove", "test-local")
+		if _, err := cli.RunCommand(ctx, "ext", "source", "remove", "test-local"); err != nil {
+			t.Logf("warning: failed to remove test-local source: %v", err)
+		}
 	}()
 
 	// Step 1: Install the latest version of microsoft.azd.demo extension
@@ -104,13 +113,11 @@ func Test_CLI_Extension_ForceInstall(t *testing.T) {
 	t.Logf("Testing reinstall of same version (%s) with --force", targetVersion)
 
 	// Get the extension binary path before deletion
-	homeDir, err := os.UserHomeDir()
-	require.NoError(t, err)
-	extPath := filepath.Join(homeDir, ".azd", "extensions", "microsoft.azd.demo")
+	extPath := filepath.Join(configDir, "extensions", "microsoft.azd.demo")
 
 	// Delete the extension files but keep the metadata
 	t.Log("Deleting extension files to simulate corruption")
-	err = os.RemoveAll(extPath)
+	err = osutil.RemoveAll(t.Context(), extPath)
 	require.NoError(t, err)
 
 	// Try to install without --force (should skip)

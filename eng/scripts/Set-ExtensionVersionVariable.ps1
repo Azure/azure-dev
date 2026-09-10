@@ -3,6 +3,8 @@ param(
     # Defaults to the pipeline-provided values so the script is unit-testable.
     [string] $BuildReason = $env:BUILD_REASON,
     [string] $BuildId = $env:BUILD_BUILDID,
+    [string] $PullRequestNumber = $env:SYSTEM_PULLREQUEST_PULLREQUESTNUMBER,
+    [string] $PullRequestNumberOverride = $env:PRNUMBEROVERRIDE,
     [string] $PublishToRegistry = 'stable'
 )
 
@@ -25,6 +27,28 @@ if ($BuildReason -eq 'Schedule' -or $PublishToRegistry -eq 'nightly') {
     else {
         # Stable base (e.g. 1.2.3): add the prerelease label.
         $extVersion = "$extVersion-nightly.$BuildId"
+    }
+}
+elseif ($BuildReason -eq 'PullRequest') {
+    $effectivePullRequestNumber = if ([string]::IsNullOrWhiteSpace($PullRequestNumberOverride)) {
+        $PullRequestNumber
+    }
+    else {
+        $PullRequestNumberOverride
+    }
+
+    if ([string]::IsNullOrWhiteSpace($effectivePullRequestNumber)) {
+        throw "PullRequestNumber is required for PR versioning but was empty."
+    }
+    if ([string]::IsNullOrWhiteSpace($BuildId)) {
+        throw "BuildId is required for PR versioning but was empty (expected Build.BuildId)."
+    }
+
+    if ($extVersion.Contains('-')) {
+        $extVersion = "$extVersion.pr.$effectivePullRequestNumber.$BuildId"
+    }
+    else {
+        $extVersion = "$extVersion-pr.$effectivePullRequestNumber.$BuildId"
     }
 }
 

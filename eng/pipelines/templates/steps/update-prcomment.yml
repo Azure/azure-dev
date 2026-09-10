@@ -21,6 +21,7 @@ steps:
       $PrNumber = "${{ parameters.PrNumber }}"
       $BodyFile = "${{ parameters.BodyFile }}"
       $Tag = "${{ parameters.Tag }}"
+      $commentsToErase = @()
 
       if ($Tag) {
           # Using --jq formats the JSON objects on separate lines which can be
@@ -32,6 +33,10 @@ steps:
               repos/$Repo/issues/$PrNumber/comments `
               --paginate `
               --jq '.[]'
+          if ($LASTEXITCODE) {
+              throw "Failed to list PR comments."
+          }
+
           $comments = @()
           foreach ($row in $commentsJsonRows) {
               $comments +=@( ConvertFrom-Json $row )
@@ -40,13 +45,20 @@ steps:
           Write-Host "Comments found: $($comments.Length)"
 
           $commentsToErase = $comments.Where({ $_.body.Contains($Tag) })
-          foreach ($comment in $commentsToErase) {
-              Write-Host "Deleting previous tagged comment $($comment.id)"
-              gh api --method DELETE "repos/$Repo/issues/comments/$($comment.id)"
-          }
       }
 
       Write-Host "Posting comment"
       gh pr comment $PRNumber --repo "$Repo" --body-file $BodyFile
+      if ($LASTEXITCODE) {
+          throw "Failed to post PR comment."
+      }
+
+      foreach ($comment in $commentsToErase) {
+          Write-Host "Deleting previous tagged comment $($comment.id)"
+          gh api --method DELETE "repos/$Repo/issues/comments/$($comment.id)"
+          if ($LASTEXITCODE) {
+              throw "Failed to delete previous PR comment $($comment.id)."
+          }
+      }
     env:
       GH_TOKEN: ${{ parameters.GitHubToken }}

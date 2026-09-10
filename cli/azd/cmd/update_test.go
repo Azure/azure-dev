@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/installer"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/update"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
@@ -294,6 +295,106 @@ func Test_UpdateAction_Run_NoChannelNoConfigFlags(t *testing.T) {
 	_, err := action.Run(t.Context())
 	// Will fail at CI check or CheckForUpdate since noopCommandRunner returns error
 	require.Error(t, err)
+}
+
+// A version is named only when azd controls exactly which build lands. Promising one for a
+// package manager, or for daily's rolling folder, is the mismatch this fix removes.
+// See https://github.com/Azure/azure-dev/issues/9145.
+func Test_UpdateMessages_NameVersionOnlyWhenPinnable(t *testing.T) {
+	t.Parallel()
+
+	const stableVersion = "1.28.1"
+	const dailyVersion = "1.29.0-beta.1-daily.6614998"
+
+	stable := &update.VersionInfo{Channel: update.ChannelStable, Version: stableVersion}
+	daily := &update.VersionInfo{Channel: update.ChannelDaily, Version: dailyVersion}
+
+	pinnedHeader := "Updated azd to version " + stableVersion + "! Changes take effect on next invocation."
+	unpinnedHeader := "Updated azd! Changes take effect on next invocation."
+
+	tests := []struct {
+		name        string
+		installedBy installer.InstallType
+		target      *update.VersionInfo
+		wantTitle   string
+		wantHeader  string
+	}{
+		{
+			name:        "stable install script pins the resolved version",
+			installedBy: installer.InstallTypeSh,
+			target:      stable,
+			wantTitle:   "Updating azd to 1.28.1 (stable)",
+			wantHeader:  pinnedHeader,
+		},
+		{
+			name:        "stable ps1 install pins the resolved version",
+			installedBy: installer.InstallTypePs,
+			target:      stable,
+			wantTitle:   "Updating azd to 1.28.1 (stable)",
+			wantHeader:  pinnedHeader,
+		},
+		{
+			name:        "stable deb install pins the resolved version",
+			installedBy: installer.InstallTypeDeb,
+			target:      stable,
+			wantTitle:   "Updating azd to 1.28.1 (stable)",
+			wantHeader:  pinnedHeader,
+		},
+		{
+			name:        "brew names no version",
+			installedBy: installer.InstallTypeBrew,
+			target:      stable,
+			wantTitle:   "Updating azd via brew (stable)",
+			wantHeader:  unpinnedHeader,
+		},
+		{
+			name:        "winget names no version",
+			installedBy: installer.InstallTypeWinget,
+			target:      stable,
+			wantTitle:   "Updating azd via winget (stable)",
+			wantHeader:  unpinnedHeader,
+		},
+		{
+			name:        "choco names no version",
+			installedBy: installer.InstallTypeChoco,
+			target:      stable,
+			wantTitle:   "Updating azd via choco (stable)",
+			wantHeader:  unpinnedHeader,
+		},
+		{
+			// Daily installs from the rolling release/daily/ folder, which another daily
+			// publish can advance between the check and the download.
+			name:        "daily install script names no version",
+			installedBy: installer.InstallTypeSh,
+			target:      daily,
+			wantTitle:   "Updating azd (daily)",
+			wantHeader:  unpinnedHeader,
+		},
+		{
+			name:        "daily brew names no version",
+			installedBy: installer.InstallTypeBrew,
+			target:      daily,
+			wantTitle:   "Updating azd via brew (daily)",
+			wantHeader:  unpinnedHeader,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			title := updateTitle(tt.installedBy, tt.target)
+			header := updatedHeader(tt.installedBy, tt.target)
+
+			require.Equal(t, tt.wantTitle, title)
+			require.Equal(t, tt.wantHeader, header)
+
+			if tt.wantHeader == unpinnedHeader {
+				require.NotContains(t, title, tt.target.Version)
+				require.NotContains(t, header, tt.target.Version)
+			}
+		})
+	}
 }
 
 func Test_UpdateAction_OnlyConfigFlagsSet(t *testing.T) {

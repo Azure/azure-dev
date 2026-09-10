@@ -4,16 +4,31 @@
 package grpcserver
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/golang-jwt/jwt/v5"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 // GenerateExtensionToken generates a JWT token for the extension.
 func GenerateExtensionToken(extension *extensions.Extension, serverInfo *ServerInfo) (string, error) {
+	return GenerateExtensionTokenWithContext(context.Background(), extension, serverInfo)
+}
+
+// GenerateExtensionTokenWithContext signs host trace context into the
+// signed claims so extensions cannot choose a different trace.
+func GenerateExtensionTokenWithContext(
+	ctx context.Context,
+	extension *extensions.Extension,
+	serverInfo *ServerInfo,
+) (string, error) {
+	traceContext := propagation.MapCarrier{}
+	propagation.TraceContext{}.Inject(ctx, traceContext)
+
 	claims := extensions.ExtensionClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "azd",
@@ -23,6 +38,8 @@ func GenerateExtensionToken(extension *extensions.Extension, serverInfo *ServerI
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * 1)),
 		},
 		Capabilities: extension.Capabilities,
+		Traceparent:  traceContext["traceparent"],
+		Tracestate:   traceContext["tracestate"],
 	}
 
 	jwtToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(serverInfo.SigningKey)

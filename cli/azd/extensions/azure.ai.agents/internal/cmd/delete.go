@@ -10,9 +10,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/envkey"
+	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -39,7 +43,8 @@ func newDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 If --version is specified, only that version is deleted (the agent itself remains).
 
 If the agent has active sessions, deletion will fail unless --force is passed.
-Use --force to terminate active sessions and delete the agent.
+Use --force to terminate active sessions and delete the agent. In no-prompt
+mode, --force is also required as explicit consent for deletion.
 
 The agent name is resolved from the azd environment when omitted.`,
 		Example: `  # Delete agent (auto-resolves name from azure.yaml)
@@ -70,7 +75,7 @@ The agent name is resolved from the azd environment when omitted.`,
 
 	cmd.Flags().BoolVar(
 		&flags.force, "force", false,
-		"Force deletion even if the agent has active sessions",
+		"Force deletion even if the agent has active sessions; required as consent in no-prompt mode",
 	)
 
 	cmd.Flags().StringVar(
@@ -114,40 +119,8 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 		)
 	}
 
-	// Confirmation prompt (skip in --no-prompt mode)
-	if !a.flags.noPrompt {
-		var message string
-		if a.flags.version != "" && a.flags.force {
-			message = fmt.Sprintf(
-				"Force-delete version %q of agent %q? This will terminate active sessions on this version.",
-				a.flags.version, agentName,
-			)
-		} else if a.flags.version != "" {
-			message = fmt.Sprintf("Delete version %q of agent %q?", a.flags.version, agentName)
-		} else if a.flags.force {
-			message = fmt.Sprintf(
-				"Force-delete agent %q? This will terminate all active sessions.",
-				agentName,
-			)
-		} else {
-			message = fmt.Sprintf("Delete agent %q and all its versions?", agentName)
-		}
-		defaultValue := false
-		resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-			Options: &azdext.ConfirmOptions{
-				Message:      message,
-				DefaultValue: &defaultValue,
-			},
-		})
-		if promptErr != nil {
-			if exterrors.IsCancellation(promptErr) {
-				return exterrors.Cancelled("delete cancelled")
-			}
-			return fmt.Errorf("prompting for confirmation: %w", promptErr)
-		}
-		if resp.Value == nil || !*resp.Value {
-			return exterrors.Cancelled("delete cancelled by user")
-		}
+	if err := a.confirmDelete(ctx, azdClient, agentName); err != nil {
+		return err
 	}
 
 	endpoint, err := resolveAgentEndpoint(ctx, "", "")
@@ -168,6 +141,7 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 		if err != nil {
 			return classifyDeleteError(err, agentName)
 		}
+		a.clearDeletedVersionMarker(ctx, azdClient, info.ServiceName, a.flags.version, endpoint)
 		switch a.flags.output {
 		case "json":
 			data, jsonErr := json.MarshalIndent(result, "", "  ")
@@ -186,14 +160,14 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 		return classifyDeleteError(err, agentName)
 	}
 
-	// Best-effort: clean up saved session and conversation IDs (same as postdown hook).
+	// Best-effort: clean up saved session, conversation, and background Response state (same as postdown hook).
 	// Must run before cleanupEnvVars since it reads AGENT_{KEY}_ENDPOINT.
 	if envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
-		cleanupAgentSessionState(ctx, azdClient, envResp.Environment.Name, info.ServiceName)
+		cleanupAgentState(ctx, azdClient, envResp.Environment.Name, info.ServiceName)
 	}
 
-	// Best-effort: clear AGENT_{KEY}_NAME, AGENT_{KEY}_VERSION, AGENT_{KEY}_ENDPOINT env vars
-	a.cleanupEnvVars(ctx, azdClient, info.ServiceName)
+	// Best-effort: clear readiness and endpoint state after a successful delete.
+	a.cleanupEnvVars(ctx, azdClient, info.ServiceName, endpoint)
 
 	switch a.flags.output {
 	case "json":
@@ -209,26 +183,197 @@ func (a *DeleteAction) Run(ctx context.Context) error {
 	return nil
 }
 
-// cleanupEnvVars removes AGENT_{KEY}_NAME, AGENT_{KEY}_VERSION, and
-// AGENT_{KEY}_ENDPOINT from the azd environment after a successful delete.
+func (a *DeleteAction) confirmDelete(ctx context.Context, azdClient *azdext.AzdClient, agentName string) error {
+	if a.flags.noPrompt {
+		if a.flags.force {
+			return nil
+		}
+		return exterrors.Validation(
+			exterrors.CodeDeleteRequiresForce,
+			fmt.Sprintf("deleting agent %q requires explicit consent in no-prompt mode", agentName),
+			"re-run with --force to confirm deletion",
+		)
+	}
+
+	var message string
+	if a.flags.version != "" && a.flags.force {
+		message = fmt.Sprintf(
+			"Force-delete version %q of agent %q? This will terminate active sessions on this version.",
+			a.flags.version, agentName,
+		)
+	} else if a.flags.version != "" {
+		message = fmt.Sprintf("Delete version %q of agent %q?", a.flags.version, agentName)
+	} else if a.flags.force {
+		message = fmt.Sprintf(
+			"Force-delete agent %q? This will terminate all active sessions.",
+			agentName,
+		)
+	} else {
+		message = fmt.Sprintf("Delete agent %q and all its versions?", agentName)
+	}
+
+	resp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+		Options: &azdext.ConfirmOptions{
+			Message:      message,
+			DefaultValue: new(false),
+		},
+	})
+	if promptErr != nil {
+		if exterrors.IsCancellation(promptErr) {
+			return exterrors.Cancelled("delete cancelled")
+		}
+		return fmt.Errorf("prompting for confirmation: %w", promptErr)
+	}
+	if resp.Value == nil || !*resp.Value {
+		return exterrors.Cancelled("delete cancelled by user")
+	}
+
+	return nil
+}
+
+// cleanupEnvVars removes agent readiness and endpoint values after a successful delete.
 // The SDK has no DeleteValue API, so we set values to empty string as a workaround.
-func (a *DeleteAction) cleanupEnvVars(ctx context.Context, azdClient *azdext.AzdClient, serviceName string) {
+func (a *DeleteAction) cleanupEnvVars(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	deletedProjectEndpoint string,
+) {
 	if serviceName == "" {
 		return
 	}
+	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil || !agentMarkersBelongToProject(
+		ctx, azdClient, envResp.Environment.Name, serviceName, deletedProjectEndpoint,
+	) {
+		return
+	}
+	serviceKey := toServiceKey(serviceName)
+	keys := []string{
+		envkey.AgentProtocolEndpointsVersion(serviceName),
+		fmt.Sprintf("AGENT_%s_NAME", serviceKey),
+		fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
+		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
+		fmt.Sprintf("AGENT_%s_VOICE_TARGET_NAME", serviceKey),
+		fmt.Sprintf("AGENT_%s_VOICE_TARGET_VERSION", serviceKey),
+		envkey.AgentProjectEndpoint(serviceName),
+	}
+	for _, protocol := range project.DisplayableProtocolEnvSuffixes() {
+		keys = append(keys, fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, protocol.Suffix))
+	}
+	a.clearEnvVars(ctx, azdClient, serviceName, keys)
+}
 
+func (a *DeleteAction) clearDeletedVersionMarker(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	deletedVersion string,
+	deletedProjectEndpoint string,
+) {
+	if serviceName == "" {
+		return
+	}
+	versionKey := fmt.Sprintf("AGENT_%s_VERSION", toServiceKey(serviceName))
+	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return
+	}
+	resp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envResp.Environment.Name,
+		Key:     versionKey,
+	})
+	if err != nil || resp.Value != deletedVersion {
+		return
+	}
+	if !agentMarkersBelongToProject(
+		ctx, azdClient, envResp.Environment.Name, serviceName, deletedProjectEndpoint,
+	) {
+		return
+	}
+	serviceKey := toServiceKey(serviceName)
+	keys := []string{
+		envkey.AgentProtocolEndpointsVersion(serviceName),
+		versionKey,
+		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
+		fmt.Sprintf("AGENT_%s_VOICE_TARGET_NAME", serviceKey),
+		fmt.Sprintf("AGENT_%s_VOICE_TARGET_VERSION", serviceKey),
+	}
+	for _, protocol := range project.DisplayableProtocolEnvSuffixes() {
+		keys = append(keys, fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, protocol.Suffix))
+	}
+	a.clearEnvVars(ctx, azdClient, serviceName, keys)
+}
+
+func agentMarkersBelongToProject(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	serviceName string,
+	deletedProjectEndpoint string,
+) bool {
+	projectResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     envkey.AgentProjectEndpoint(serviceName),
+	})
+	if err != nil {
+		return false
+	}
+	markerEndpoint := projectResp.Value
+	if strings.TrimSpace(markerEndpoint) == "" {
+		endpointResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: envName,
+			Key:     fmt.Sprintf("AGENT_%s_ENDPOINT", toServiceKey(serviceName)),
+		})
+		if err != nil {
+			return false
+		}
+		markerEndpoint = endpointResp.Value
+	}
+	return sameAgentProjectEndpoint(markerEndpoint, deletedProjectEndpoint)
+}
+
+func sameAgentProjectEndpoint(a, b string) bool {
+	if strings.EqualFold(
+		strings.TrimRight(strings.TrimSpace(a), "/"),
+		strings.TrimRight(strings.TrimSpace(b), "/"),
+	) {
+		return true
+	}
+	aHost, aProject := agentProjectIdentity(a)
+	bHost, bProject := agentProjectIdentity(b)
+	return aHost != "" && aProject != "" &&
+		strings.EqualFold(aHost, bHost) && strings.EqualFold(aProject, bProject)
+}
+
+func agentProjectIdentity(endpoint string) (string, string) {
+	u, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil || u.Hostname() == "" {
+		return "", ""
+	}
+	const segment = "/projects/"
+	index := strings.Index(strings.ToLower(u.Path), segment)
+	if index < 0 {
+		return "", ""
+	}
+	projectName := strings.Split(strings.Trim(u.Path[index+len(segment):], "/"), "/")[0]
+	return u.Hostname(), projectName
+}
+
+func (a *DeleteAction) clearEnvVars(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	keys []string,
+) {
+	if serviceName == "" {
+		return
+	}
 	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return
 	}
 	envName := envResp.Environment.Name
-
-	serviceKey := toServiceKey(serviceName)
-	keys := []string{
-		fmt.Sprintf("AGENT_%s_NAME", serviceKey),
-		fmt.Sprintf("AGENT_%s_VERSION", serviceKey),
-		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey),
-	}
 
 	for _, key := range keys {
 		if _, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{

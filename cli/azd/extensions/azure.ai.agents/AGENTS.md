@@ -38,6 +38,86 @@ replace github.com/azure/azure-dev/cli/azd => ../../
 
 That `replace` points this extension at your local `cli/azd` checkout instead of the version in `go.mod`. Do not merge the extension with that `replace` still present.
 
+## Interactive CLI test scenarios
+
+This extension ships a suite of goal-based scenarios for the
+[cli-interactive-tester](https://github.com/coreai-microsoft/cli-interactive-tester)
+MCP server under `tests/cli-interactive-tester-scenarios/`. They drive real
+`azd ai agent` flows end-to-end (init, provision, deploy, invoke, run, sessions,
+files, monitor, endpoint, doctor, down) and are organized by tier:
+
+- **Tier 0** — offline, no Azure auth, no cost (help, version, validation, picker UX)
+- **Tier 1** — local-only with Azure auth (init flows)
+- **Tier 1b** — deploy-verify: provisions a Tier 1 scaffold to confirm it deploys (incurs Azure cost)
+- **Tier 2** — full cloud E2E against a deployed shared agent (incurs Azure cost)
+
+Each scenario carries a set of tags based on what is being tested and how.
+See `tests/cli-interactive-tester-scenarios/README.md` for the tag taxonomy,
+profile setup, and the human authoring contract, and
+`tests/cli-interactive-tester-scenarios/driving-mechanics.md` for the executor
+mechanics. Runs are driven through the `foundry-extension-scenario-orchestrator` agent — it routes
+to the `foundry-extension-scenario-pr-regression` and `foundry-extension-scenario-suite-run` skills and fans work out
+to `foundry-extension-scenario-worker` agents; new scenarios are authored through the
+`foundry-extension-scenario-author` agent / `foundry-extension-scenario-authoring` skill.
+
+### Guidance for coding agents
+
+These scenarios are **never run automatically** — they require the
+cli-interactive-tester MCP server, a populated `profile.local.yaml`, and
+(for Tier 2) real Azure resources. Do not invoke them on your own. Instead:
+
+1. **Surface them to the user** when you make a change that touches a
+   user-facing command path covered by an existing scenario (anything under
+   `internal/cmd/` that maps to a `cmd:*` tag, or shared helpers used by those
+   commands). In your summary, point the user at the relevant scenario(s)
+   and suggest they validate the change by selecting the `foundry-extension-scenario-orchestrator`
+   agent (for a PR, the `foundry-extension-scenario-pr-regression` skill maps the diff to the
+   matching tag set automatically).
+
+2. **Add or update a scenario** when your change introduces a new command,
+   flag, prompt, or user-visible flow — or meaningfully alters an existing
+   one. Use the `foundry-extension-scenario-author` agent (or the `foundry-extension-scenario-authoring` skill) to
+   place the new YAML alongside the others following the tagging taxonomy and
+   authoring contract, and mention the new/changed scenario in the PR
+   description so reviewers know to exercise it.
+
+3. **Do not modify scenarios to match buggy behavior.** Scenarios are
+   user-facing specifications of how the command should behave; if a scenario
+   fails because of your change, prefer fixing the code unless the behavior
+   change is intentional and documented.
+
+## Documentation examples
+
+`azure.yaml` examples in this extension's markdown docs are validated by
+`TestDocExamplesAreValid` (`internal/project/doc_examples_test.go`). Every fenced
+YAML block declaring an `azure.ai.agent` service must:
+
+1. Resolve through `AgentDefinitionFromService` without error, and
+2. Satisfy `schemas/azure.ai.agent.json`, including required fields, types,
+   enums, patterns, and declared properties, and
+3. Parse core-owned service fields (`docker`, `k8s`, `infra`, `hooks`, and the
+   scalar fields) with the same YAML shapes azd core expects.
+
+azd ignores unknown service properties at runtime, so an undocumented key
+deploys cleanly while doing nothing — the test blocks that in our docs.
+
+Snippets that are deliberately incomplete (for example, the network examples in
+`docs/private-networking.md`, which omit `kind` because azd falls back to the
+on-disk `agent.yaml`) opt out of the "must fully resolve" check with a marker on
+the line before the fence:
+
+````markdown
+<!-- azd:doc-example partial -->
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+```
+````
+
+Use the marker only when the snippet is intentionally partial. If a complete
+example fails, fix the example rather than adding the marker.
+
 ## Error handling
 
 This extension uses `internal/exterrors` so the azd host can show a useful message, attach an optional suggestion, and emit stable telemetry.
@@ -107,6 +187,7 @@ func runCommand() error {
 Prefer the dedicated helpers instead of hand-rolling conversions:
 
 - `exterrors.ServiceFromAzure(err, operation)` for `azcore.ResponseError`
+- `exterrors.FromHost(err, operation, context)` for azd host gRPC service calls
 - `exterrors.FromAiService(err, fallbackCode)` for azd host AI service calls
 - `exterrors.FromPrompt(err, contextMessage)` for prompt failures
 
@@ -123,6 +204,10 @@ Define new codes in `internal/exterrors/codes.go`.
 ## Release preparation
 
 A new extension release ships in two PRs:
+
+### Provider handoff release
+
+The release that removes `microsoft.foundry` from this extension must be coordinated with the provider-bearing `azure.ai.projects` release. Publish both artifacts before updating either registry entry, then update both entries and the `microsoft.foundry` meta-package together.
 
 ### PR 1 — Version bump
 

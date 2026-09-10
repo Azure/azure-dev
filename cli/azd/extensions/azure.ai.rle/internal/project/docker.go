@@ -56,7 +56,7 @@ func PushImage(ctx context.Context, stdout io.Writer, stderr io.Writer, image st
 			Message:    fmt.Sprintf("Failed to push Docker image %q: %v", image, err),
 			Code:       "rle_docker_push_failed",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Run az acr login --name <namespace>, then retry.",
+			Suggestion: "Run az acr login --name <registry>, then retry.",
 		}
 	}
 	return nil

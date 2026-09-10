@@ -7,9 +7,11 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
@@ -31,6 +33,7 @@ type projectService struct {
 	importManager       *project.ImportManager
 	lazyProjectConfig   *lazy.Lazy[*project.ProjectConfig]
 	ghCli               *github.Cli
+	configMutationMu    sync.Mutex
 }
 
 // NewProjectService creates a new project service instance with lazy-loaded dependencies.
@@ -171,6 +174,9 @@ func (s *projectService) AddService(ctx context.Context, req *azdext.AddServiceR
 	if req.Service == nil || req.Service.Name == "" {
 		return nil, status.Error(codes.InvalidArgument, "service name cannot be empty")
 	}
+
+	s.configMutationMu.Lock()
+	defer s.configMutationMu.Unlock()
 
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
@@ -376,6 +382,9 @@ func (s *projectService) SetConfigSection(
 		return nil, status.Error(codes.InvalidArgument, "path cannot be empty")
 	}
 
+	s.configMutationMu.Lock()
+	defer s.configMutationMu.Unlock()
+
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
 		return nil, err
@@ -424,6 +433,9 @@ func (s *projectService) SetConfigValue(
 		return nil, status.Error(codes.InvalidArgument, "path cannot be empty")
 	}
 
+	s.configMutationMu.Lock()
+	defer s.configMutationMu.Unlock()
+
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
 		return nil, err
@@ -471,6 +483,9 @@ func (s *projectService) UnsetConfig(
 	if req.Path == "" {
 		return nil, status.Error(codes.InvalidArgument, "path cannot be empty")
 	}
+
+	s.configMutationMu.Lock()
+	defer s.configMutationMu.Unlock()
 
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
@@ -646,6 +661,9 @@ func (s *projectService) SetServiceConfigSection(
 		return nil, status.Error(codes.InvalidArgument, "service name cannot be empty")
 	}
 
+	s.configMutationMu.Lock()
+	defer s.configMutationMu.Unlock()
+
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
 		return nil, err
@@ -710,6 +728,9 @@ func (s *projectService) SetServiceConfigValue(
 		return nil, status.Error(codes.InvalidArgument, "path cannot be empty")
 	}
 
+	s.configMutationMu.Lock()
+	defer s.configMutationMu.Unlock()
+
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
 		return nil, err
@@ -726,12 +747,18 @@ func (s *projectService) SetServiceConfigValue(
 		return nil, err
 	}
 
-	// Construct path to service config value: "services.<serviceName>.<path>"
-	servicePath := fmt.Sprintf("services.%s.%s", req.ServiceName, req.Path)
+	services, ok := cfg.Raw()["services"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("services configuration not found")
+	}
+	serviceConfig, ok := services[req.ServiceName].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("service configuration for '%s' not found", req.ServiceName)
+	}
 
 	// Convert protobuf Value to interface{}
 	value := req.Value.AsInterface()
-	if err := cfg.Set(servicePath, value); err != nil {
+	if err := config.NewConfig(serviceConfig).Set(req.Path, value); err != nil {
 		return nil, fmt.Errorf("failed to set service config value: %w", err)
 	}
 
@@ -770,6 +797,9 @@ func (s *projectService) UnsetServiceConfig(
 	if req.Path == "" {
 		return nil, status.Error(codes.InvalidArgument, "path cannot be empty")
 	}
+
+	s.configMutationMu.Lock()
+	defer s.configMutationMu.Unlock()
 
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {

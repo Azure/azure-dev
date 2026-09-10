@@ -1,3 +1,5 @@
+import { filepaths } from '../helpers/filepaths';
+
 interface AzdEnvListItem {
 	Name: string;
 	DotEnvPath: string;
@@ -223,6 +225,62 @@ const completionSpec: Fig.Spec = {
 					description: 'Ship agents with Microsoft Foundry from your terminal. (Beta)',
 					subcommands: [
 						{
+							name: ['add'],
+							description: 'Add a typed service dependency to an agent.',
+							subcommands: [
+								{
+									name: ['connection'],
+									description: 'Add a connection service dependency to an agent service.',
+									options: [
+										{
+											name: ['--agent'],
+											description: 'Agent service name in azure.yaml.',
+											args: [
+												{
+													name: 'agent',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['toolbox'],
+									description: 'Add a toolbox service dependency to an agent service.',
+									options: [
+										{
+											name: ['--agent'],
+											description: 'Agent service name in azure.yaml.',
+											args: [
+												{
+													name: 'agent',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['code'],
 							description: 'Manage agent source code. (Preview)',
 							subcommands: [
@@ -262,7 +320,7 @@ const completionSpec: Fig.Spec = {
 							options: [
 								{
 									name: ['--force'],
-									description: 'Force deletion even if the agent has active sessions',
+									description: 'Force deletion even if the agent has active sessions; required as consent in no-prompt mode',
 									isDangerous: true,
 								},
 								{
@@ -281,6 +339,40 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['deploy'],
+							description: 'Deploy an agent directly from agent.yaml.',
+							options: [
+								{
+									name: ['--code'],
+									description: 'Path to the hosted-agent source directory.',
+									args: [
+										{
+											name: 'code',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env and project config).',
+									args: [
+										{
+											name: 'project-endpoint',
 										},
 									],
 								},
@@ -464,12 +556,30 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Microsoft Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
 									],
 								},
 								{
 									name: ['run'],
 									description: 'Execute an evaluation run from eval.yaml.',
 									options: [
+										{
+											name: ['--agent'],
+											description: 'Agent service name from azure.yaml, or Foundry agent name outside a project',
+											args: [
+												{
+													name: 'agent',
+												},
+											],
+										},
 										{
 											name: ['--config'],
 											description: 'Local eval config YAML',
@@ -491,6 +601,15 @@ const completionSpec: Fig.Spec = {
 										{
 											name: ['--no-wait'],
 											description: 'Start the run and return immediately without waiting for results',
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Microsoft Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
 										},
 									],
 								},
@@ -525,12 +644,30 @@ const completionSpec: Fig.Spec = {
 												},
 											],
 										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Microsoft Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
 									],
 								},
 								{
 									name: ['update'],
 									description: 'Update evaluators and datasets from local files.',
 									options: [
+										{
+											name: ['--agent'],
+											description: 'Agent service name from azure.yaml, or Foundry agent name outside a project',
+											args: [
+												{
+													name: 'agent',
+												},
+											],
+										},
 										{
 											name: ['--config'],
 											description: 'Local eval config YAML',
@@ -547,6 +684,15 @@ const completionSpec: Fig.Spec = {
 										{
 											name: ['--evaluator-only'],
 											description: 'Only update evaluators',
+										},
+										{
+											name: ['--project-endpoint', '-p'],
+											description: 'Microsoft Foundry project endpoint URL',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
 										},
 									],
 								},
@@ -839,6 +985,15 @@ const completionSpec: Fig.Spec = {
 							description: 'Initialize a new AI agent project. (Preview)',
 							options: [
 								{
+									name: ['--acr-connection'],
+									description: 'Foundry Azure Container Registry connection name to use for an existing project; incompatible with code deploy, --image, and prompt-voice agents',
+									args: [
+										{
+											name: 'acr-connection',
+										},
+									],
+								},
+								{
 									name: ['--agent-name'],
 									description: 'Foundry agent name to write to agent.yaml. Reusing a name creates a new version of the existing agent.',
 									args: [
@@ -876,7 +1031,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--force'],
-									description: 'Overwrite an input manifest that already lives inside the generated src tree without prompting. Required together with --no-prompt when init would otherwise need confirmation.',
+									description: 'Overwrite existing agent definitions or an input manifest inside the generated src tree without prompting. Required together with --no-prompt when init would otherwise need overwrite confirmation.',
 									isDangerous: true,
 								},
 								{
@@ -890,10 +1045,11 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--infra'],
-									description: 'Eject infrastructure-as-code from azure.yaml into ./infra/. A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets infra.provider: terraform; --infra=bicep is explicit Bicep. When azure.yaml already exists, runs as a standalone eject and skips the init prompts.',
+									description: 'Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and Foundry files are generated as a separate infra/foundry layer. A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets the Foundry layer provider to terraform; Bicep keeps the microsoft.foundry provider. --infra=bicep is explicit Bicep. When azure.yaml already declares a Foundry project service, runs as a standalone eject and skips the init prompts; otherwise init runs first and the eject follows it.',
 									args: [
 										{
 											name: 'infra',
+											isOptional: true,
 										},
 									],
 								},
@@ -908,7 +1064,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--model'],
-									description: 'Name of the AI model to use (e.g., \'gpt-4o\'). If not specified, defaults to \'gpt-4.1-mini\'. Mutually exclusive with --model-deployment, with --model-deployment being used if both are provided',
+									description: 'Name of the AI model to deploy. Defaults to \'gpt-5.4-mini\' during interactive model selection; required to deploy a new model with --no-prompt. If --model-deployment is also provided, --model-deployment takes precedence.',
 									args: [
 										{
 											name: 'model',
@@ -935,11 +1091,20 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--protocol'],
-									description: 'Protocols supported by the agent (e.g., \'responses\', \'invocations\'). Can be specified multiple times.',
+									description: 'Protocols supported by the agent (responses, invocations, invocations_ws, activity). Can be specified multiple times.',
 									isRepeatable: true,
 									args: [
 										{
 											name: 'protocol',
+										},
+									],
+								},
+								{
+									name: ['--registry-connection'],
+									description: 'Name or ID of an existing Foundry project connection used to pull a private pre-built container image. Requires a pre-built image and is incompatible with code deploy.',
+									args: [
+										{
+											name: 'registry-connection',
 										},
 									],
 								},
@@ -1052,6 +1217,10 @@ const completionSpec: Fig.Spec = {
 											name: 'protocol',
 										},
 									],
+								},
+								{
+									name: ['--resumable'],
+									description: 'Start resumable work that continues in the service if the command disconnects; remain attached until it finishes',
 								},
 								{
 									name: ['--session-id', '-s'],
@@ -1446,6 +1615,115 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['pack'],
+							description: 'Build a ready-to-sideload Teams app package for an activity agent.',
+							options: [
+								{
+									name: ['--app-version'],
+									description: 'Version stamped into the Teams app manifest. If specified, it overrides activity.publish.appVersion in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to 1.0.0.',
+									args: [
+										{
+											name: 'app-version',
+										},
+									],
+								},
+								{
+									name: ['--display-name'],
+									description: 'Display name for the Teams app. If specified, it overrides activity.publish.agentDisplayName in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to the agent name.',
+									args: [
+										{
+											name: 'display-name',
+										},
+									],
+								},
+								{
+									name: ['--output-dir'],
+									description: 'Directory to write appPackage.zip to (defaults to the agent source directory)',
+									args: [
+										{
+											name: 'output-dir',
+										},
+									],
+								},
+								{
+									name: ['--scope'],
+									description: 'Publish scope for the package (personal: per-user sideload (no admin approval required); shared: shareable link distribution (no tenant-admin approval required); tenant: organization-wide catalog (requires IT-admin approval))',
+									args: [
+										{
+											name: 'scope',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['publish'],
+							description: 'Publish an activity agent as a Teams app to the Microsoft 365 store.',
+							options: [
+								{
+									name: ['--access-boundary'],
+									description: 'Digital Worker access boundary. Repeat to select multiple developer boundaries.',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'access-boundary',
+										},
+									],
+								},
+								{
+									name: ['--app-version'],
+									description: 'Version stamped into the Teams app manifest. If specified, it overrides activity.publish.appVersion in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to 1.0.0.',
+									args: [
+										{
+											name: 'app-version',
+										},
+									],
+								},
+								{
+									name: ['--clear-access-boundaries'],
+									description: 'Clear all existing Digital Worker access boundaries.',
+								},
+								{
+									name: ['--display-name'],
+									description: 'Display name for the Teams app. If specified, it overrides activity.publish.agentDisplayName in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to the agent name.',
+									args: [
+										{
+											name: 'display-name',
+										},
+									],
+								},
+								{
+									name: ['--optional-permission-scope'],
+									description: 'Digital Worker permission in <resource-app-id>=<scope> form. Repeat to select multiple scopes.',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'optional-permission-scope',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'none'],
+										},
+									],
+								},
+								{
+									name: ['--scope'],
+									description: 'Microsoft 365 publish scope (shared: shareable link distribution (no tenant-admin approval required); tenant: organization-wide catalog (requires IT-admin approval; alias: org); Digital Workers require tenant)',
+									args: [
+										{
+											name: 'scope',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['run'],
 							description: 'Run your agent locally for development.',
 							options: [
@@ -1455,6 +1733,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'channel',
+										},
+									],
+								},
+								{
+									name: ['--inspector-port'],
+									description: 'Port the Agent Inspector UI listens on (default: 8087)',
+									args: [
+										{
+											name: 'inspector-port',
 										},
 									],
 								},
@@ -1861,6 +2148,16 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
 									name: ['--project-endpoint', '-p'],
 									description: 'Foundry project endpoint URL (overrides env var and config)',
 									args: [
@@ -1916,6 +2213,31 @@ const completionSpec: Fig.Spec = {
 									name: ['--force'],
 									description: 'Skip confirmation prompt',
 									isDangerous: true,
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['deploy'],
+							description: 'Deploy a local connection definition.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
 								},
 								{
 									name: ['--project-endpoint', '-p'],
@@ -2577,6 +2899,18 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['version'],
 							description: 'Display the extension version',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json'],
+										},
+									],
+								},
+							],
 						},
 					],
 				},
@@ -3438,6 +3772,18 @@ const completionSpec: Fig.Spec = {
 						{
 							name: ['version'],
 							description: 'Display the extension version',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json'],
+										},
+									],
+								},
+							],
 						},
 					],
 				},
@@ -3445,6 +3791,49 @@ const completionSpec: Fig.Spec = {
 					name: ['routine'],
 					description: 'Manage Microsoft Foundry Routines from your terminal. (Beta)',
 					subcommands: [
+						{
+							name: ['add'],
+							description: 'Add or update a routine service in azure.yaml.',
+							options: [
+								{
+									name: ['--file'],
+									description: 'Path to a YAML or JSON routine manifest file',
+									args: [
+										{
+											name: 'file',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL (overrides env var and config)',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--timeout'],
+									description: 'HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.',
+									args: [
+										{
+											name: 'timeout',
+										},
+									],
+								},
+							],
+						},
 						{
 							name: ['context'],
 							description: 'Get the context of the azd project & environment.',
@@ -4479,6 +4868,109 @@ const completionSpec: Fig.Spec = {
 					description: 'Manage Microsoft Foundry Toolboxes from your terminal. (Beta)',
 					subcommands: [
 						{
+							name: ['add'],
+							description: 'Add a reference to a local toolbox definition.',
+							subcommands: [
+								{
+									name: ['connection'],
+									description: 'Add a connection reference to toolbox.yaml.',
+									options: [
+										{
+											name: ['--file'],
+											description: 'Path to the local toolbox definition.',
+											args: [
+												{
+													name: 'file',
+												},
+											],
+										},
+										{
+											name: ['--index'],
+											description: 'Search index name used by a CognitiveSearch connection.',
+											args: [
+												{
+													name: 'index',
+												},
+											],
+										},
+										{
+											name: ['--instance-name'],
+											description: 'Custom search configuration used by a GroundingWithCustomSearch connection.',
+											args: [
+												{
+													name: 'instance-name',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['skill'],
+									description: 'Add a skill reference to toolbox.yaml.',
+									options: [
+										{
+											name: ['--file'],
+											description: 'Path to the local toolbox definition.',
+											args: [
+												{
+													name: 'file',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['table', 'json'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+							],
+							options: [
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['connection'],
 							description: 'Manage the connection-backed tools attached to a toolbox.',
 							subcommands: [
@@ -4492,6 +4984,15 @@ const completionSpec: Fig.Spec = {
 											args: [
 												{
 													name: 'from-file',
+												},
+											],
+										},
+										{
+											name: ['--from-version'],
+											description: 'Version to branch the new version from (defaults to the latest version).',
+											args: [
+												{
+													name: 'from-version',
 												},
 											],
 										},
@@ -4567,6 +5068,15 @@ const completionSpec: Fig.Spec = {
 											name: ['--force'],
 											description: 'Skip confirmation prompts and apply the removal immediately.',
 											isDangerous: true,
+										},
+										{
+											name: ['--from-version'],
+											description: 'Version to branch the new version from (defaults to the latest version).',
+											args: [
+												{
+													name: 'from-version',
+												},
+											],
 										},
 										{
 											name: ['--output', '-o'],
@@ -4676,6 +5186,31 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['deploy'],
+							description: 'Deploy a local toolbox definition.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['table', 'json'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['list'],
 							description: 'List toolboxes on the project.',
 							options: [
@@ -4777,6 +5312,15 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--from-version'],
+											description: 'Version to branch the new version from (defaults to the latest version).',
+											args: [
+												{
+													name: 'from-version',
+												},
+											],
+										},
+										{
 											name: ['--output', '-o'],
 											description: 'The output format',
 											args: [
@@ -4830,6 +5374,15 @@ const completionSpec: Fig.Spec = {
 											name: ['--force'],
 											description: 'Skip confirmation prompts and apply the removal immediately.',
 											isDangerous: true,
+										},
+										{
+											name: ['--from-version'],
+											description: 'Version to branch the new version from (defaults to the latest version).',
+											args: [
+												{
+													name: 'from-version',
+												},
+											],
 										},
 										{
 											name: ['--output', '-o'],
@@ -5471,6 +6024,52 @@ const completionSpec: Fig.Spec = {
 					description: 'Get the context of the azd project & environment.',
 				},
 				{
+					name: ['copilot'],
+					description: 'Interactive Copilot chat loop demonstrating the CopilotService gRPC API.',
+					options: [
+						{
+							name: ['--mode'],
+							description: 'Agent mode (autopilot, interactive, plan)',
+							args: [
+								{
+									name: 'mode',
+								},
+							],
+						},
+						{
+							name: ['--model'],
+							description: 'Model to use (empty = default)',
+							args: [
+								{
+									name: 'model',
+								},
+							],
+						},
+						{
+							name: ['--reasoning-effort'],
+							description: 'Reasoning effort level (low, medium, high)',
+							args: [
+								{
+									name: 'reasoning-effort',
+								},
+							],
+						},
+						{
+							name: ['--resume'],
+							description: 'Resume an existing session',
+						},
+						{
+							name: ['--system-message'],
+							description: 'Custom system message',
+							args: [
+								{
+									name: 'system-message',
+								},
+							],
+						},
+					],
+				},
+				{
 					name: ['gh-url-parse'],
 					description: 'Parse a GitHub URL and extract repository information.',
 				},
@@ -5773,7 +6372,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--version', '-v'],
-							description: 'The version of the extension to install',
+							description: 'The version of the extension to install. Cannot be used with an extension bundle',
 							args: [
 								{
 									name: 'version',
@@ -5782,9 +6381,8 @@ const completionSpec: Fig.Spec = {
 						},
 					],
 					args: {
-						name: 'extension-id|extension-bundle.zip',
-						generators: azdGenerators.listExtensions,
-						template: 'filepaths',
+						name: 'extension-id|bundle-path-or-url',
+						generators: [azdGenerators.listExtensions, filepaths({ extensions: ['zip'] })],
 					},
 				},
 				{
@@ -5854,7 +6452,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--name', '-n'],
-									description: 'The name of the extension source',
+									description: 'The source name: 1-64 lowercase letters, digits, hyphens, or underscores.',
 									args: [
 										{
 											name: 'name',
@@ -5914,20 +6512,20 @@ const completionSpec: Fig.Spec = {
 					},
 				},
 				{
-					name: ['upgrade'],
-					description: 'Upgrade installed extensions to the latest version.',
+					name: ['update', 'upgrade'],
+					description: 'Update installed extensions to the latest version.',
 					options: [
 						{
 							name: ['--all'],
-							description: 'Upgrade all installed extensions',
+							description: 'Update all installed extensions',
 						},
 						{
-							name: ['--no-dependency-upgrades'],
-							description: 'Do not upgrade dependencies when upgrading an extension that has dependencies',
+							name: ['--no-dependency-updates'],
+							description: 'Do not update dependencies when updating an extension that has dependencies',
 						},
 						{
 							name: ['--source', '-s'],
-							description: 'The registered source name or registry location (URL or file path) to use for upgrades.',
+							description: 'The registered source name or registry location (URL or file path) to use for updates.',
 							args: [
 								{
 									name: 'source',
@@ -5936,7 +6534,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--version', '-v'],
-							description: 'The version of the extension to upgrade to',
+							description: 'The version of the extension to update to',
 							args: [
 								{
 									name: 'version',
@@ -6165,7 +6763,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--auth-type'],
-							description: 'The authentication type used between the pipeline provider and Azure for deployment (Only valid for GitHub provider). Valid values: federated, client-credentials.',
+							description: 'The authentication type used between the pipeline provider and Azure for deployment. Valid values: federated, client-credentials. Both the GitHub and Azure DevOps providers default to federated (OIDC) credentials.',
 							args: [
 								{
 									name: 'auth-type',
@@ -6262,7 +6860,7 @@ const completionSpec: Fig.Spec = {
 		},
 		{
 			name: ['publish'],
-			description: 'Publish a service to a container registry.',
+			description: 'Publish a service image or reuse an existing passthrough image.',
 			options: [
 				{
 					name: ['--all'],
@@ -6427,22 +7025,22 @@ const completionSpec: Fig.Spec = {
 					description: 'Install specified tools.',
 					options: [
 						{
+							name: ['--agent'],
+							description: 'Install the skill for the specified agent(s): copilot, claude. Use --agent all for every detected agent (skill tools only)',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'agent',
+								},
+							],
+						},
+						{
 							name: ['--all'],
 							description: 'Install all recommended tools',
 						},
 						{
 							name: ['--dry-run'],
 							description: 'Preview what would be installed without making changes',
-						},
-						{
-							name: ['--host'],
-							description: 'Install the skill for the specified agent host(s): copilot, claude. Use --host all for every detected host (skill tools only)',
-							isRepeatable: true,
-							args: [
-								{
-									name: 'host',
-								},
-							],
 						},
 					],
 					args: {
@@ -6466,22 +7064,22 @@ const completionSpec: Fig.Spec = {
 					description: 'Uninstall installed tools.',
 					options: [
 						{
+							name: ['--agent'],
+							description: 'Uninstall the skill from the specified agent(s): copilot, claude. Use --agent all (or omit --agent) to remove the skill from every agent it is installed through (skill tools only)',
+							isRepeatable: true,
+							args: [
+								{
+									name: 'agent',
+								},
+							],
+						},
+						{
 							name: ['--all'],
 							description: 'Uninstall all installed tools',
 						},
 						{
 							name: ['--dry-run'],
 							description: 'Preview what would be uninstalled without making changes',
-						},
-						{
-							name: ['--host'],
-							description: 'Uninstall the skill from the specified agent host(s): copilot, claude. Use --host all (or omit --host) to remove the skill from every host it is installed through (skill tools only)',
-							isRepeatable: true,
-							args: [
-								{
-									name: 'host',
-								},
-							],
 						},
 					],
 					args: {
@@ -6490,22 +7088,26 @@ const completionSpec: Fig.Spec = {
 					},
 				},
 				{
-					name: ['upgrade'],
-					description: 'Upgrade installed tools.',
+					name: ['update', 'upgrade'],
+					description: 'Update installed tools.',
 					options: [
 						{
-							name: ['--dry-run'],
-							description: 'Preview what would be upgraded without making changes',
-						},
-						{
-							name: ['--host'],
-							description: 'Upgrade the skill for the specified agent host(s): copilot, claude. Use --host all for every detected host (skill tools only)',
+							name: ['--agent'],
+							description: 'Update the skill for the specified agent(s): copilot, claude. Use --agent all for every detected agent (skill tools only)',
 							isRepeatable: true,
 							args: [
 								{
-									name: 'host',
+									name: 'agent',
 								},
 							],
+						},
+						{
+							name: ['--all'],
+							description: 'Update all installed tools',
+						},
+						{
+							name: ['--dry-run'],
+							description: 'Preview what would be updated without making changes',
 						},
 					],
 					args: {
@@ -6600,7 +7202,7 @@ const completionSpec: Fig.Spec = {
 					options: [
 						{
 							name: ['--capabilities'],
-							description: 'The list of capabilities for the extension (e.g., custom-commands,lifecycle-events,mcp-server,service-target-provider,framework-service-provider,metadata,provisioning-provider).',
+							description: 'The list of capabilities for the extension (e.g., custom-commands,lifecycle-events,mcp-server,service-target-provider,framework-service-provider,metadata,provisioning-provider,validation-provider).',
 							isRepeatable: true,
 							args: [
 								{
@@ -6633,7 +7235,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['--language'],
-							description: 'The programming language for the extension (go, dotnet, javascript, python).',
+							description: 'The programming language for the extension (go (recommended), dotnet, javascript, python).',
 							args: [
 								{
 									name: 'language',
@@ -6865,7 +7467,7 @@ const completionSpec: Fig.Spec = {
 		},
 		{
 			name: ['--no-prompt'],
-			description: 'Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.',
+			description: 'Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically. Automatically enabled when azd detects a CI/CD or AI-agent environment; set AZD_NON_INTERACTIVE=false to opt out of that automatic enablement.',
 			isPersistent: true,
 		},
 		{

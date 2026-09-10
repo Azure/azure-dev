@@ -4,6 +4,7 @@
 package extensions
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -45,12 +46,109 @@ type ResolveResult struct {
 //
 // Parameters:
 //   - installed: the currently installed extension (provides Id and stored Source)
-//   - allMatches: extension metadata from all configured sources (result of FindExtensions with no source filter)
+//   - allMatches: extension metadata from configured sources
 //   - flagSource: the value of the --source flag, or "" if not specified
 func ResolveUpgradeSource(
 	installed *Extension,
 	allMatches []*ExtensionMetadata,
 	flagSource string,
+) *ResolveResult {
+	return resolveUpgradeSource(installed, allMatches, flagSource, nil)
+}
+
+// ResolveUpgradeSource selects a registry source using the install-selected release for each match.
+func (r *InstallResolutionResult) ResolveUpgradeSource(installed *Extension, flagSource string) *ResolveResult {
+	if r == nil {
+		return nil
+	}
+	return resolveUpgradeSource(installed, r.Matches, flagSource, func(extension *ExtensionMetadata) *ExtensionVersion {
+		if candidate := r.Candidate(extension); candidate != nil {
+			return candidate.Version
+		}
+		return nil
+	})
+}
+
+// ErrorForUpgradeSources returns a typed resolution error scoped to sources
+// that an update can select without an explicit source change.
+func (r *InstallResolutionResult) ErrorForUpgradeSources(installed *Extension, flagSource string) error {
+	if r == nil {
+		return nil
+	}
+
+	eligibleSources := upgradeEligibleSources(installed, flagSource)
+	filterMatches := func(matches []*ExtensionMetadata) []*ExtensionMetadata {
+		filtered := make([]*ExtensionMetadata, 0, len(matches))
+		for _, match := range matches {
+			if match != nil && slices.ContainsFunc(eligibleSources, func(source string) bool {
+				return strings.EqualFold(match.Source, source)
+			}) {
+				filtered = append(filtered, match)
+			}
+		}
+		return filtered
+	}
+
+	options := r.Options
+	options.Source = flagSource
+	scoped := &InstallResolutionResult{
+		Matches:             filterMatches(r.Matches),
+		VersionMismatches:   filterMatches(r.VersionMismatches),
+		IncompatibleMatches: filterMatches(r.IncompatibleMatches),
+		Options:             options,
+		AzdVersion:          r.AzdVersion,
+	}
+	return scoped.Error()
+}
+
+// ResolveUpgradeSource selects among sources that still have a compatible published version.
+func (e *ExtensionVersionNotFoundError) ResolveUpgradeSource(
+	installed *Extension,
+	flagSource string,
+) *ResolveResult {
+	if e == nil {
+		return nil
+	}
+
+	alternatives := e.Alternatives()
+	matches := make([]*ExtensionMetadata, 0, len(alternatives))
+	selected := make(map[string]*ExtensionVersion, len(alternatives))
+	for _, alternative := range alternatives {
+		match := findMatchBySource(e.Matches, alternative.Source)
+		if match == nil {
+			continue
+		}
+		matches = append(matches, match)
+		selected[strings.ToLower(match.Source)] = &ExtensionVersion{Version: alternative.Version}
+	}
+	return resolveUpgradeSource(installed, matches, flagSource, func(extension *ExtensionMetadata) *ExtensionVersion {
+		if extension == nil {
+			return nil
+		}
+		return selected[strings.ToLower(extension.Source)]
+	})
+}
+
+func upgradeEligibleSources(installed *Extension, flagSource string) []string {
+	if flagSource != "" {
+		return []string{flagSource}
+	}
+
+	storedSource := MainRegistryName
+	if installed != nil && installed.Source != "" {
+		storedSource = installed.Source
+	}
+	if strings.EqualFold(storedSource, MainRegistryName) {
+		return []string{MainRegistryName}
+	}
+	return []string{storedSource, MainRegistryName}
+}
+
+func resolveUpgradeSource(
+	installed *Extension,
+	allMatches []*ExtensionMetadata,
+	flagSource string,
+	selectedVersion func(*ExtensionMetadata) *ExtensionVersion,
 ) *ResolveResult {
 	if len(allMatches) == 0 {
 		return nil
@@ -84,7 +182,7 @@ func ResolveUpgradeSource(
 		if mainMatch != nil {
 			// Promotion is only valid if the main registry version is not a downgrade.
 			// If the stored source also has a match, compare their latest versions.
-			if shouldPromote(storedMatch, mainMatch) {
+			if shouldPromote(storedMatch, mainMatch, selectedVersion) {
 				return &ResolveResult{
 					Extension:   mainMatch,
 					IsPromotion: true,
@@ -139,15 +237,12 @@ func ResolveUpgradeSource(
 	return nil
 }
 
-// shouldPromote determines whether a promotion from a non-main source to the main registry
-// should occur. Promotion happens when:
-//   - The stored source has no match at all (extension removed from dev), OR
-//   - The main registry's latest version is strictly greater than the stored source's latest
-//     version (the extension has advanced in the main registry beyond the non-main source)
-//
-// When both sources have the same latest version, the stored source is preferred
-// to keep the extension "sticky" to its original source.
-func shouldPromote(storedMatch, mainMatch *ExtensionMetadata) bool {
+// shouldPromote reports whether the main registry has a newer selected release.
+// A missing stored match promotes; equal releases remain on the stored source.
+func shouldPromote(
+	storedMatch, mainMatch *ExtensionMetadata,
+	selectedVersion func(*ExtensionMetadata) *ExtensionVersion,
+) bool {
 	if mainMatch == nil {
 		return false
 	}
@@ -157,8 +252,8 @@ func shouldPromote(storedMatch, mainMatch *ExtensionMetadata) bool {
 		return true
 	}
 
-	storedLatest := LatestVersion(storedMatch.Versions)
-	mainLatest := LatestVersion(mainMatch.Versions)
+	storedLatest := versionForUpgradeCompare(storedMatch, selectedVersion)
+	mainLatest := versionForUpgradeCompare(mainMatch, selectedVersion)
 
 	// If main registry has no parsable versions, don't promote
 	if mainLatest == nil {
@@ -182,6 +277,21 @@ func shouldPromote(storedMatch, mainMatch *ExtensionMetadata) bool {
 	// Promote only if main version is strictly greater than stored version.
 	// Equal versions keep the extension on its stored source (source-sticky).
 	return mainSemver.GreaterThan(storedSemver)
+}
+
+func versionForUpgradeCompare(
+	extension *ExtensionMetadata,
+	selectedVersion func(*ExtensionMetadata) *ExtensionVersion,
+) *ExtensionVersion {
+	if extension == nil {
+		return nil
+	}
+	if selectedVersion != nil {
+		if selected := selectedVersion(extension); selected != nil {
+			return selected
+		}
+	}
+	return LatestVersion(extension.Versions)
 }
 
 // findMatchBySource returns the first ExtensionMetadata matching the given source name.

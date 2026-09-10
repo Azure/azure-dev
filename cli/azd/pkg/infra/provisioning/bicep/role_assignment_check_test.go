@@ -10,18 +10,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPreflightCheckFn_SkipsWhenNoRoleAssignments(t *testing.T) {
+func TestProvisionValidationCheckFn_SkipsWhenNoRoleAssignments(t *testing.T) {
 	called := false
-	checkFn := PreflightCheckFn(func(
+	checkFn := ProvisionValidationCheckFn(func(
 		ctx context.Context,
 		valCtx *validationContext,
-	) ([]PreflightCheckResult, error) {
+	) ([]ProvisionValidationCheckResult, error) {
 		called = true
 		if !valCtx.Props.HasRoleAssignments {
 			return nil, nil
 		}
-		return []PreflightCheckResult{{
-			Severity: PreflightCheckError,
+		return []ProvisionValidationCheckResult{{
+			Severity: ProvisionValidationCheckError,
 			Message:  "missing permissions",
 		}}, nil
 	})
@@ -36,16 +36,16 @@ func TestPreflightCheckFn_SkipsWhenNoRoleAssignments(t *testing.T) {
 	require.Nil(t, result)
 }
 
-func TestPreflightCheckFn_ReportsErrorWhenRoleAssignments(t *testing.T) {
-	checkFn := PreflightCheckFn(func(
+func TestProvisionValidationCheckFn_ReportsErrorWhenRoleAssignments(t *testing.T) {
+	checkFn := ProvisionValidationCheckFn(func(
 		ctx context.Context,
 		valCtx *validationContext,
-	) ([]PreflightCheckResult, error) {
+	) ([]ProvisionValidationCheckResult, error) {
 		if !valCtx.Props.HasRoleAssignments {
 			return nil, nil
 		}
-		return []PreflightCheckResult{{
-			Severity: PreflightCheckError,
+		return []ProvisionValidationCheckResult{{
+			Severity: ProvisionValidationCheckError,
 			Message:  "missing role assignment permissions",
 		}}, nil
 	})
@@ -57,6 +57,6 @@ func TestPreflightCheckFn_ReportsErrorWhenRoleAssignments(t *testing.T) {
 	results, err := checkFn(t.Context(), valCtx)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
-	require.Equal(t, PreflightCheckError, results[0].Severity)
+	require.Equal(t, ProvisionValidationCheckError, results[0].Severity)
 	require.Contains(t, results[0].Message, "missing role assignment permissions")
 }

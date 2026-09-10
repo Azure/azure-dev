@@ -230,6 +230,7 @@ func (m *ToolFirstRunMiddleware) runFirstRunExperience(ctx context.Context) erro
 	detectSpinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
 		Text:        "Detecting tools...",
 		ClearOnStop: true,
+		Writer:      m.console.Handles().Stdout,
 	})
 	if err := detectSpinner.Run(ctx, func(ctx context.Context) error {
 		var detectErr error
@@ -416,6 +417,7 @@ func (m *ToolFirstRunMiddleware) offerInstall(
 	installSpinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
 		Text:        "Installing tools...",
 		ClearOnStop: true,
+		Writer:      m.console.Handles().Stdout,
 	})
 	installErr := installSpinner.Run(ctx, func(ctx context.Context) error {
 		var batchErr error

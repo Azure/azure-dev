@@ -1,0 +1,26 @@
+# Tier 0 (offline) — `eval list` outside a project requires a Foundry endpoint.
+#
+# eval commands resolve a Foundry project endpoint. With no azd project to read
+# it from, the command prompts for the endpoint. Submitting an empty value must
+# fail with clear guidance (it must NOT hang, crash, or make a network call).
+name: "eval-context-required"
+command: "azd ai agent eval list"
+cwd: "~/working/azd-agents-validate-eval-{instance}"
+tags: ["tier:0", "cmd:eval", "negative-path", "parallel-safe"]
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+
+# Empty dir is a precondition: no azd project, so no endpoint can be auto-resolved.
+pre:
+  - run: "rm -rf ~/working/azd-agents-validate-eval-{instance}"
+    cwd: "~/working"
+    name: "reset to an empty working dir"
+
+goals:
+  - "Run 'eval list' in an empty directory with no azd project present."
+  - "When prompted for the Foundry project endpoint URL, submit an EMPTY value (just press Enter)."
+  - "Confirm the command exits non-zero with a clear message that a project endpoint is required (e.g. mentioning --project-endpoint or running from an azd project), rather than hanging or crashing."
+  - "Confirm it does NOT attempt a network call or print a stack trace."
+  - "Take a screenshot of the error output."
+  - "Report a finding if it hangs, crashes, makes a network call before validating, or gives an unhelpful error."

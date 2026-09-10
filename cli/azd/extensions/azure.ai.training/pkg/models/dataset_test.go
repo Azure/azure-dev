@@ -86,3 +86,41 @@ func TestDatasetVersionWireFormat(t *testing.T) {
 		require.NotContains(t, wire, "tags")
 	})
 }
+
+func TestPendingUploadRequestWireFormat(t *testing.T) {
+	tests := []struct {
+		name               string
+		connectionName     string
+		expectConnection   bool
+		expectedConnection string
+	}{
+		{
+			name:               "includes configured connection",
+			connectionName:     "project-storage",
+			expectConnection:   true,
+			expectedConnection: "project-storage",
+		},
+		{
+			name: "omits empty connection",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			raw, err := json.Marshal(PendingUploadRequest{
+				PendingUploadType: "BlobReference",
+				ConnectionName:    test.connectionName,
+			})
+			require.NoError(t, err)
+
+			var wire map[string]any
+			require.NoError(t, json.Unmarshal(raw, &wire))
+			require.Equal(t, "BlobReference", wire["pendingUploadType"])
+			if test.expectConnection {
+				require.Equal(t, test.expectedConnection, wire["connectionName"])
+			} else {
+				require.NotContains(t, wire, "connectionName")
+			}
+		})
+	}
+}

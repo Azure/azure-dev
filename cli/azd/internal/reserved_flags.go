@@ -33,7 +33,9 @@ var reservedFlags = []ReservedFlag{
 		Long:  "no-prompt",
 		Short: "",
 		Description: "Runs without prompts. Uses existing values; " +
-			"fails if any required value or decision cannot be resolved automatically.",
+			"fails if any required value or decision cannot be resolved automatically. " +
+			"Automatically enabled when azd detects a CI/CD or AI-agent environment; " +
+			"set AZD_NON_INTERACTIVE=false to opt out of that automatic enablement.",
 	},
 	{Long: "output", Short: "o", Description: "The output format (json, table, none)."},
 	{Long: "help", Short: "h", Description: "Help for the current command."},

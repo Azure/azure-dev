@@ -136,12 +136,12 @@ func sanitizeContainerRegistryListLogSasUrl(i *cassette.Interaction) error {
 }
 
 func sanitizeContainerAppUpdate(i *cassette.Interaction) error {
-	if i.Request.Method == "PATCH" || i.Request.Method == "POST" &&
+	if (i.Request.Method == "PATCH" || i.Request.Method == "POST") &&
 		// TODO: Pull this from config
 		i.Request.Host == "management.azure.com" &&
 		strings.Contains(i.Request.URL, "/Microsoft.App/containerApps/") {
-		split := strings.Split(i.Request.URL, "/Microsoft.App/containerApps/")
-		if strings.Contains(split[1], "/") {
+		_, resourcePath, found := strings.Cut(i.Request.URL, "/Microsoft.App/containerApps/")
+		if !found || strings.Contains(resourcePath, "/") {
 			// This is a containerApps sub-resource level operation
 			return nil
 		}

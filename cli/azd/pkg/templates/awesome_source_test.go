@@ -22,6 +22,11 @@ var testAwesomeAzdTemplates []*awesomeAzdTemplate = []*awesomeAzdTemplate{
 		Description: "Description of template 2",
 		Source:      "htdtp://github.com/user/template2",
 	},
+	{
+		Title:        "agent template",
+		Source:       "https://github.com/microsoft-foundry/foundry-samples/blob/main/azure.yaml",
+		TemplateType: "extension.ai.agent",
+	},
 }
 
 func Test_NewAwesomeAzdTemplateSource_ValidUrl(t *testing.T) {
@@ -35,6 +40,23 @@ func Test_NewAwesomeAzdTemplateSource_ValidUrl(t *testing.T) {
 	require.Nil(t, err)
 
 	require.Equal(t, name, source.Name())
+}
+
+func Test_NewAwesomeAzdTemplateSource_SkipsExtensionTemplates(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	mockAwesomeAzdTemplateSource(mockContext)
+
+	source, err := newAwesomeAzdTemplateSource(
+		t.Context(),
+		"test",
+		"https://aka.ms/awesome-azd/templates.json",
+		mockContext.HttpClient)
+	require.NoError(t, err)
+
+	templates, err := source.ListTemplates(t.Context())
+	require.NoError(t, err)
+	require.Len(t, templates, 2)
+	require.Equal(t, []string{"template1", "template2"}, []string{templates[0].Name, templates[1].Name})
 }
 
 func Test_NewAwesomeAzdTemplateSource_ValidUrl_InvalidJson(t *testing.T) {

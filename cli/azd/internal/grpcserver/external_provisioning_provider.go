@@ -334,18 +334,14 @@ func (p *ExternalProvisioningProvider) PlannedOutputs(
 func convertToProtoOptions(
 	options provisioning.Options,
 ) (*azdext.ProvisioningOptions, error) {
-	deploymentStacks := make(
-		map[string]string, len(options.DeploymentStacks),
-	)
-	for k, v := range options.DeploymentStacks {
-		deploymentStacks[k] = fmt.Sprintf("%v", v)
-	}
-
+	// deploymentStacks is intentionally not forwarded to external providers: it configures the
+	// Azure Deployment Stacks control-plane request and is only valid for the built-in Bicep
+	// provider. The proto field (deployment_stacks) is retained for wire compatibility but left
+	// empty for extension providers.
 	protoOptions := &azdext.ProvisioningOptions{
 		Provider:              string(options.Provider),
 		Path:                  options.Path,
 		Module:                options.Module,
-		DeploymentStacks:      deploymentStacks,
 		IgnoreDeploymentState: options.IgnoreDeploymentState,
 		Name:                  options.Name,
 	}

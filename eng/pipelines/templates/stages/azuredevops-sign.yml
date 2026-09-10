@@ -1,6 +1,18 @@
 stages:
   - stage: Sign
     dependsOn: BuildAndTest
+    # Only sign on release/CI builds. On PR validation builds the BuildAndTest
+    # stage may complete with issues (the azdo-extension npm steps are made
+    # non-blocking while the self-hosted agent npm egress issue persists, see
+    # https://github.com/Azure/azure-dev/issues/9286) and no vsix artifact is
+    # produced, which would make the unconditional DownloadPipelineArtifact step
+    # below fail. Signing is never performed for PR builds anyway, so skip the
+    # whole stage in that case.
+    condition: >-
+      and(
+        succeeded(),
+        in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual')
+      )
     variables: 
       - template: /eng/pipelines/templates/variables/globals.yml
       - template: /eng/pipelines/templates/variables/image.yml

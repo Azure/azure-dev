@@ -1,5 +1,49 @@
 # Release History
 
+## 1.0.0-beta.6 (2026-09-04)
+
+### Features Added
+
+- [[#9735]](https://github.com/Azure/azure-dev/pull/9735) Add local `toolbox.yaml` definitions and `azd ai toolbox deploy` with dependency-aware composition. Thanks @JerryYangKai for the contribution!
+
+### Other Changes
+
+- [[#9825]](https://github.com/Azure/azure-dev/pull/9825) Update gRPC to v1.83.1 to address the GHSA-vp52-pcj8-j9qc security advisory.
+
+## 1.0.0-beta.5 (2026-08-06)
+
+### Features Added
+
+- [[#9079]](https://github.com/Azure/azure-dev/pull/9079) Add service-scoped environment support for Foundry toolbox services while preserving project-wide fallback behavior.
+
+### Bugs Fixed
+
+- [[#9326]](https://github.com/Azure/azure-dev/pull/9326) Track toolbox readiness and cleanup state so dependent agent deployments fail early with actionable guidance.
+
+## 1.0.0-beta.4 (2026-07-23)
+
+### Features Added
+
+- [[#9229]](https://github.com/Azure/azure-dev/pull/9229) `azd ai toolbox` now supports the WorkIQ (`work_iq_preview`), FabricIQ (`fabric_iq_preview`), and toolbox-search (`toolbox_search_preview`) preview tools, and `azd ai toolbox connection list` now surfaces any tool that exposes a project connection.
+
+### Bugs Fixed
+
+- [[#9220]](https://github.com/Azure/azure-dev/pull/9220) Fix `azd ai toolbox create --project-endpoint --from-file` failing when run outside an azd project; the best-effort environment sync now skips silently when no `azure.yaml` is present instead of failing the command.
+
+## 1.0.0-beta.3 (2026-07-16)
+
+### Features Added
+
+- [[#9024]](https://github.com/Azure/azure-dev/pull/9024) `azd deploy` for `host: azure.ai.toolbox` services now supports an `endpoint:` field in `azure.yaml` to reference an existing toolbox by its MCP endpoint URL, skipping version creation. This enables reusing a toolbox managed outside the current project.
+
+### Bugs Fixed
+
+- [[#9013]](https://github.com/Azure/azure-dev/pull/9013) Fix `azd ai toolbox skill add/remove` and `connection add/remove` branching from the toolbox's default version instead of its latest, causing sequential mutations to silently drop earlier changes. Add a `--from-version` flag to override the branch source.
+
+### Other Changes
+
+- [[#9103]](https://github.com/Azure/azure-dev/pull/9103) Pin internal azd module dependency to released version.
+
 ## 1.0.0-beta.2 (2026-07-09)
 
 ### Other Changes

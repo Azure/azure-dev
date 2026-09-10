@@ -4,18 +4,43 @@
 package cmd
 
 import (
-	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+func TestConfirmExistingDefinitionOverwrite_NoPromptRequiresForce(t *testing.T) {
+	srcDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "agent.yaml"), []byte("name: existing\n"), 0o600))
+
+	action := &InitFromCodeAction{flags: &initFlags{noPrompt: true}}
+	err := action.confirmExistingDefinitionOverwrite(t.Context(), srcDir)
+
+	require.Error(t, err)
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	require.Equal(t, exterrors.CodeInvalidAgentManifest, localErr.Code)
+	require.Contains(t, localErr.Suggestion, "--force")
+}
+
+func TestConfirmExistingDefinitionOverwrite_ForcePreConsents(t *testing.T) {
+	srcDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "agent.yaml"), []byte("name: existing\n"), 0o600))
+
+	action := &InitFromCodeAction{flags: &initFlags{noPrompt: true, force: true}}
+	require.NoError(t, action.confirmExistingDefinitionOverwrite(t.Context(), srcDir))
+}
 
 func TestSanitizeAgentName(t *testing.T) {
 	t.Parallel()
@@ -446,6 +471,29 @@ func TestWriteAgentIgnoreToSrcDir(t *testing.T) {
 	})
 }
 
+func TestInitFromCodeAddToProjectRejectsUnqualifiedImage(t *testing.T) {
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+	action := &InitFromCodeAction{
+		azdClient: client,
+		flags:     &initFlags{noPrompt: true},
+	}
+	definition := &agent_yaml.ContainerAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindHosted,
+			Name: "my-agent",
+		},
+		Image: "agent:v1",
+	}
+
+	err := action.addToProject(t.Context(), "src/my-agent", definition, false)
+	require.ErrorContains(t, err, "must be in format registry/image[:tag]")
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Empty(t, server.added)
+}
+
 func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -501,6 +549,39 @@ func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *tes
 			}
 		}
 	}
+}
+
+func TestCreateDefinitionFromLocalAgent_LoadsPersistedProjectBeforeAcrValidation(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.py"), []byte("print('hello')\n"), 0o600))
+
+	const envName = "agent-dev"
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{
+			envName: {"AZURE_AI_PROJECT_ID": "invalid-project-id"},
+		},
+	}
+	action := &InitFromCodeAction{
+		azdClient:   newTestAzdClient(t, envServer, &testWorkflowServiceServer{}),
+		environment: &azdext.Environment{Name: envName},
+		azureContext: &azdext.AzureContext{Scope: &azdext.AzureScope{
+			SubscriptionId: "subscription-id",
+			Location:       "eastus2",
+		}},
+		flags: &initFlags{
+			noPrompt:      true,
+			env:           envName,
+			agentName:     "test-agent",
+			acrConnection: "registry-connection",
+			deployMode:    "container",
+		},
+	}
+
+	_, err := action.createDefinitionFromLocalAgent(t.Context())
+
+	require.ErrorContains(t, err, "invalid --project-id value")
+	require.Equal(t, "invalid-project-id", action.flags.projectResourceId)
 }
 
 func TestFoundryDeploymentInfo(t *testing.T) {
@@ -594,7 +675,14 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 			name:          "invocations only",
 			flagProtocols: []string{"invocations"},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "invocations", Version: "1.0.0"},
+				{Protocol: "invocations", Version: "2.0.0"},
+			},
+		},
+		{
+			name:          "invocations_ws only",
+			flagProtocols: []string{"invocations_ws"},
+			wantProtocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "invocations_ws", Version: "2.0.0"},
 			},
 		},
 		{
@@ -602,7 +690,7 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 			flagProtocols: []string{"responses", "invocations"},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
 				{Protocol: "responses", Version: "2.0.0"},
-				{Protocol: "invocations", Version: "1.0.0"},
+				{Protocol: "invocations", Version: "2.0.0"},
 			},
 		},
 		{
@@ -616,7 +704,7 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 			flagProtocols: []string{"responses", "responses", "invocations"},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
 				{Protocol: "responses", Version: "2.0.0"},
-				{Protocol: "invocations", Version: "1.0.0"},
+				{Protocol: "invocations", Version: "2.0.0"},
 			},
 		},
 		{
@@ -696,6 +784,9 @@ func TestKnownProtocolNames(t *testing.T) {
 	if !strings.Contains(result, "invocations") {
 		t.Errorf("knownProtocolNames() = %q, want to contain 'invocations'", result)
 	}
+	if !strings.Contains(result, "invocations_ws") {
+		t.Errorf("knownProtocolNames() = %q, want to contain 'invocations_ws'", result)
+	}
 	if !strings.Contains(result, "activity") {
 		t.Errorf("knownProtocolNames() = %q, want to contain 'activity'", result)
 	}
@@ -736,12 +827,13 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 					Values: []*azdext.MultiSelectChoice{
 						{Value: "responses", Label: "responses", Selected: true},
 						{Value: "invocations", Label: "invocations", Selected: true},
+						{Value: "invocations_ws", Label: "invocations_ws", Selected: false},
 					},
 				}, nil
 			},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
 				{Protocol: "responses", Version: "2.0.0"},
-				{Protocol: "invocations", Version: "1.0.0"},
+				{Protocol: "invocations", Version: "2.0.0"},
 			},
 		},
 		{
@@ -751,11 +843,31 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 					Values: []*azdext.MultiSelectChoice{
 						{Value: "responses", Label: "responses", Selected: true},
 						{Value: "invocations", Label: "invocations", Selected: false},
+						{Value: "invocations_ws", Label: "invocations_ws", Selected: false},
 					},
 				}, nil
 			},
 			wantProtocols: []agent_yaml.ProtocolVersionRecord{
 				{Protocol: "responses", Version: "2.0.0"},
+			},
+		},
+		{
+			name: "websocket protocol selected",
+			multiSelectFn: func(
+				_ context.Context,
+				_ *azdext.MultiSelectRequest,
+				_ ...grpc.CallOption,
+			) (*azdext.MultiSelectResponse, error) {
+				return &azdext.MultiSelectResponse{
+					Values: []*azdext.MultiSelectChoice{
+						{Value: "responses", Label: "responses", Selected: false},
+						{Value: "invocations", Label: "invocations", Selected: false},
+						{Value: "invocations_ws", Label: "invocations_ws", Selected: true},
+					},
+				}, nil
+			},
+			wantProtocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "invocations_ws", Version: "2.0.0"},
 			},
 		},
 		{
@@ -773,6 +885,7 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 					Values: []*azdext.MultiSelectChoice{
 						{Value: "responses", Label: "responses", Selected: false},
 						{Value: "invocations", Label: "invocations", Selected: false},
+						{Value: "invocations_ws", Label: "invocations_ws", Selected: false},
 					},
 				}, nil
 			},
@@ -817,6 +930,33 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPromptProtocols_ChoicesIncludeInvocationsWsWithoutChangingDefault(t *testing.T) {
+	t.Parallel()
+
+	client := &fakePromptClient{multiSelectFn: func(
+		_ context.Context,
+		in *azdext.MultiSelectRequest,
+		_ ...grpc.CallOption,
+	) (*azdext.MultiSelectResponse, error) {
+		choices := in.Options.Choices
+		require.GreaterOrEqual(t, len(choices), 3)
+		require.Equal(t, "responses", choices[0].Value)
+		require.True(t, choices[0].Selected)
+		require.Equal(t, "invocations", choices[1].Value)
+		require.False(t, choices[1].Selected)
+		require.Equal(t, "invocations_ws", choices[2].Value)
+		require.False(t, choices[2].Selected)
+
+		return &azdext.MultiSelectResponse{Values: choices}, nil
+	}}
+
+	got, err := promptProtocols(t.Context(), client, false, nil)
+	require.NoError(t, err)
+	require.Equal(t, []agent_yaml.ProtocolVersionRecord{
+		{Protocol: "responses", Version: "2.0.0"},
+	}, got)
 }
 
 func TestPromptDeployMode_FlagOverride(t *testing.T) {

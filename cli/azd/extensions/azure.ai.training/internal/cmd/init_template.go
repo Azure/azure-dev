@@ -73,23 +73,17 @@ description: Sample job created by 'azd ai training init'
 command: echo "hello world"
 environment: <user to add>
 compute: <user to add>
+
 resources:
   instance_count: 1
-  instance_type: <user to add>
-  properties:
-    AISuperComputer:
-      imageVersion: ""
-      slaTier: <user to add>
-      priority: <user to add>
 `
 
 // scaffoldDefaultJobYaml writes a starter commandJob template to
 // <workingDir>/config/job.yaml. The template contains <user to add>
 // placeholders for fields that are environment-specific (compute,
-// environment image, instance_type, slaTier, priority); the user is
-// expected to edit these before running 'job submit'. No-op (with a
-// notice) if the file already exists, so re-running 'init' doesn't
-// clobber user edits.
+// environment); the user is expected to edit these before running
+// 'job submit'. No-op (with a notice) if the file already exists, so
+// re-running 'init' doesn't clobber user edits.
 func scaffoldDefaultJobYaml(workingDir string) error {
 	yamlPath := filepath.Join(workingDir, "config", "job.yaml")
 

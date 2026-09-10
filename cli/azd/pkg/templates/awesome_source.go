@@ -20,6 +20,7 @@ type awesomeAzdTemplate struct {
 	Title            string   `json:"title"`
 	Description      string   `json:"description"`
 	Source           string   `json:"source"`
+	TemplateType     string   `json:"templateType"`
 	Tags             []string `json:"tags"`
 	AzureServiceTags []string `json:"azureServices"`
 	LanguageTags     []string `json:"languages"`
@@ -62,6 +63,10 @@ func newAwesomeAzdTemplateSource(
 
 	awesomeAzdTemplates := []*Template{}
 	for _, template := range rawAwesomeAzdTemplates {
+		if template.TemplateType != "" {
+			continue
+		}
+
 		if template.Title == "" || template.Source == "" {
 			log.Println("skipping template. missing required attributes")
 			continue

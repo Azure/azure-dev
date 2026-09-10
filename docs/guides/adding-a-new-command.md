@@ -88,6 +88,13 @@ After adding the command, regenerate CLI snapshots:
 UPDATE_SNAPSHOTS=true go test ./cmd -run 'TestFigSpec|TestUsage'
 ```
 
+### 5. Check reliability boundaries
+
+- Pass the injected `io.Writer` to nested formatters, spinners, and prompts. For terminal UX changes, verify
+  `go test -json` contains only JSON events.
+- Functional tests that modify user-level state must use an isolated `AZD_CONFIG_DIR`. See
+  [Recording functional tests](../../cli/azd/docs/recording-functional-tests-guide.md).
+
 ## Design Principles
 
 - **Verb-first structure:** Use simple verbs (`up`, `add`, `deploy`) with minimal nesting

@@ -48,6 +48,18 @@ func TestBuildOIDCSubject(t *testing.T) {
 			want:       "repo:Azure-Samples/my-repo:pull_request",
 		},
 		{
+			name:     "use_default with subject prefix uses returned prefix",
+			repoSlug: repoSlug,
+			repoInfo: repoInfo,
+			oidcConfig: &OIDCSubjectConfig{
+				UseDefault:     true,
+				SubClaimPrefix: "repo:Azure-Samples@1844662/my-repo@599293758",
+			},
+			suffix: "ref:refs/heads/main",
+			want: "repo:Azure-Samples@1844662/my-repo@599293758:" +
+				"ref:refs/heads/main",
+		},
+		{
 			name:     "custom owner_id and repo_id claims",
 			repoSlug: repoSlug,
 			repoInfo: repoInfo,
@@ -169,6 +181,22 @@ func TestBuildOIDCSubject(t *testing.T) {
 			want:   "repo:Azure-Samples/my-repo:ref:refs/heads/main",
 		},
 		{
+			name:     "custom immutable repo and context use returned prefix",
+			repoSlug: repoSlug,
+			repoInfo: repoInfo,
+			oidcConfig: &OIDCSubjectConfig{
+				UseDefault:     false,
+				SubClaimPrefix: "repo:Azure-Samples@1844662/my-repo@599293758",
+				IncludeClaimKeys: []string{
+					"repo",
+					"context",
+				},
+			},
+			suffix: "ref:refs/heads/main",
+			want: "repo:Azure-Samples@1844662/my-repo@599293758:" +
+				"ref:refs/heads/main",
+		},
+		{
 			name:     "repo claim key without context",
 			repoSlug: repoSlug,
 			repoInfo: repoInfo,
@@ -225,6 +253,12 @@ func TestGetOIDCSubjectConfig(t *testing.T) {
 
 	defaultConfig := OIDCSubjectConfig{UseDefault: true}
 	defaultJSON, _ := json.Marshal(defaultConfig)
+	immutableConfig := OIDCSubjectConfig{
+		UseDefault:          true,
+		UseImmutableSubject: true,
+		SubClaimPrefix:      "repo:Azure-Samples@1844662/my-repo@599293758",
+	}
+	immutableJSON, _ := json.Marshal(immutableConfig)
 
 	tests := []struct {
 		name     string
@@ -255,6 +289,18 @@ func TestGetOIDCSubjectConfig(t *testing.T) {
 				))
 			},
 			wantConf: &defaultConfig,
+		},
+		{
+			name: "repo-level immutable subject fields are returned",
+			setup: func(mc *mocks.MockContext) {
+				mc.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+					return strings.Contains(cmd, "/repos/"+repoSlug+
+						"/actions/oidc/customization/sub")
+				}).Respond(exec.NewRunResult(
+					0, string(immutableJSON), "",
+				))
+			},
+			wantConf: &immutableConfig,
 		},
 		{
 			name: "repo 404 returns default (no org fallback)",

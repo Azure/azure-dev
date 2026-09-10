@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
+
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -45,7 +47,6 @@ type ServiceTargetAgentConfig struct {
 	// Foundry project. Its presence is the brownfield signal that makes provision
 	// connect to that project instead of creating a new one.
 	Endpoint        string             `json:"endpoint,omitempty"`
-	Environment     map[string]string  `json:"env,omitempty"`
 	Container       *ContainerSettings `json:"container,omitempty"`
 	Deployments     []Deployment       `json:"deployments,omitempty"`
 	Resources       []Resource         `json:"resources,omitempty"`
@@ -54,6 +55,37 @@ type ServiceTargetAgentConfig struct {
 	Connections     []Connection       `json:"connections,omitempty"`
 	MemoryStores    []MemoryStore      `json:"memoryStores,omitempty"`
 	StartupCommand  string             `json:"startupCommand,omitempty"`
+	Activity        *ActivitySettings  `json:"activity,omitempty"`
+}
+
+// ActivitySettings configures the Teams hosting model for an Activity-protocol agent.
+type ActivitySettings struct {
+	DigitalWorkerType agent_api.DigitalWorkerType `json:"digitalWorkerType,omitempty"`
+	Publish           *ActivityPublishConfig      `json:"publish,omitempty"`
+}
+
+// ActivityPublishConfig carries Activity-protocol Teams package/publish metadata.
+// Digital Worker-only fields are applied only when the resolved use case is
+// digital_worker.
+type ActivityPublishConfig struct {
+	PublishScope             string                         `json:"publishScope,omitempty"`
+	CanRespondWithoutMention *bool                          `json:"canRespondWithoutMention,omitempty"`
+	AppVersion               string                         `json:"appVersion,omitempty"`
+	AgentDisplayName         string                         `json:"agentDisplayName,omitempty"`
+	ShortDescription         string                         `json:"shortDescription,omitempty"`
+	FullDescription          string                         `json:"fullDescription,omitempty"`
+	DeveloperName            string                         `json:"developerName,omitempty"`
+	DeveloperWebsiteURL      string                         `json:"developerWebsiteUrl,omitempty"`
+	PrivacyURL               string                         `json:"privacyUrl,omitempty"`
+	TermsOfUseURL            string                         `json:"termsOfUseUrl,omitempty"`
+	OptionalPermissionScopes []Microsoft365PermissionScopes `json:"optionalPermissionScopes,omitempty"`
+	AccessBoundaries         *[]string                      `json:"accessBoundaries,omitempty"`
+}
+
+// Microsoft365PermissionScopes selects optional permissions from one resource application.
+type Microsoft365PermissionScopes struct {
+	ResourceAppID string   `json:"resourceAppId"`
+	Scopes        []string `json:"scopes"`
 }
 
 // ContainerSettings provides container configuration for the Azure AI Service target
@@ -111,6 +143,22 @@ type Toolbox struct {
 	Name        string           `json:"name"`
 	Description string           `json:"description,omitempty"`
 	Tools       []map[string]any `json:"tools"`
+}
+
+// UnmarshalJSON accepts split-service names and legacy objects.
+func (t *Toolbox) UnmarshalJSON(data []byte) error {
+	var name string
+	if err := json.Unmarshal(data, &name); err == nil {
+		t.Name = name
+		return nil
+	}
+	type toolbox Toolbox
+	var value toolbox
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	*t = Toolbox(value)
+	return nil
 }
 
 // MemoryStore represents a Foundry memory store provisioned (create-if-not-exists)

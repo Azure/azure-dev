@@ -12,12 +12,31 @@
     },
     "instructions": {
       "type": "string",
-      "description": "Inline instruction text, or a file path (.md, .txt) the extension reads at deploy time. A relative path resolves from the service path when set, otherwise from the current project directory."
+      "description": "Inline instruction text, or a file path (.md, .txt) the extension reads at deploy time. A relative path resolves from the service path when set, otherwise from the directory containing azure.yaml."
+    },
+    "license": {
+      "type": "string",
+      "description": "License name or reference from SKILL.md front matter."
+    },
+    "compatibility": {
+      "type": "string",
+      "description": "Compatibility requirements from SKILL.md front matter."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "String metadata values from SKILL.md front matter.",
+      "additionalProperties": {
+        "type": "string"
+      }
     },
     "tools": {
       "type": "array",
       "description": "Tool type names the skill uses (must be declared on a toolbox the agent references, or attached directly to the agent's tools list).",
       "items": { "type": "string" }
+    },
+    "archive": {
+      "type": "string",
+      "description": "Path to a .zip skill package or a directory containing SKILL.md. Mutually exclusive with inline skill fields. A relative path resolves from the service path when set, otherwise from the directory containing azure.yaml."
     }
   }
 }

@@ -31,7 +31,8 @@ type GlobalCommandOptions struct {
 	//   - --no-prompt flag
 	//   - --non-interactive flag (alias for --no-prompt)
 	//   - AZD_NON_INTERACTIVE=true environment variable
-	//   - Automatic agent detection (lowest priority)
+	//   - Automatic agent or CI/CD detection (lowest priority; opt out with
+	//     AZD_NON_INTERACTIVE=false)
 	NoPrompt bool
 
 	// EnvironmentName holds the value of `-e/--environment` parsed from the command line

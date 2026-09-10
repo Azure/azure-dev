@@ -122,7 +122,11 @@ func Test_CLI_Deploy_SlotDeployment(t *testing.T) {
 	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
-	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+	// Experiment (see issue #9235): use westus3 instead of eastus2 to avoid the recurring
+	// App Service "No available instances to satisfy this request" capacity failures that East US 2
+	// has been hitting on live nightly runs. Playback is unaffected (the recording proxy matches on
+	// method + URL only and no request URL contains the region).
+	cli.Env = append(cli.Env, "AZURE_LOCATION=westus3")
 
 	// Deploy to main app on initial `azd up` — explicit targeting required when slots exist
 	cli.Env = append(cli.Env, "AZD_DEPLOY_API_SLOT_NAME=production")
@@ -298,7 +302,10 @@ func Test_CLI_Deploy_StoppedWebApp(t *testing.T) {
 	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
-	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+	// Experiment (see issue #9235): use westus3 instead of eastus2 to avoid the recurring
+	// App Service "No available instances to satisfy this request" capacity failures that East US 2
+	// has been hitting on live nightly runs. This test is live-only, so there is no cassette to update.
+	cli.Env = append(cli.Env, "AZURE_LOCATION=westus3")
 
 	t.Cleanup(func() {
 		cleanupRg(context.Background(), t, cli, session, "rg-"+envName)

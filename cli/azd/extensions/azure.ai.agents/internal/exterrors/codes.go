@@ -27,6 +27,7 @@ const (
 	CodeInvalidAgentRequest       = "invalid_agent_request"
 	CodeInvalidAgentName          = "invalid_agent_name"
 	CodeInvalidAgentVersion       = "invalid_agent_version"
+	CodeTelephonyBindingDrift     = "telephony_binding_drift"
 	CodeInvalidSessionId          = "invalid_session_id"
 	CodeInvalidParameter          = "invalid_parameter"
 	CodeUnsupportedHost           = "unsupported_host"
@@ -43,6 +44,12 @@ const (
 	CodeInvalidPositionalArg      = "invalid_positional_arg"
 )
 
+const CodeInvalidBackgroundResponseState = "invalid_background_response_state"
+
+// CodeInvalidEnvironmentVariableName identifies a hosted-agent
+// environment variable name rejected by the service contract.
+const CodeInvalidEnvironmentVariableName = "invalid_environment_variable_name"
+
 // Error codes commonly used for dependency errors.
 //
 // These are usually paired with [Dependency] when required external
@@ -58,10 +65,13 @@ const (
 	CodeMissingAiProjectId        = "missing_ai_project_id"
 	CodeMissingAzureSubscription  = "missing_azure_subscription_id"
 	CodeMissingAgentEnvVars       = "missing_agent_env_vars"
+	CodeFoundryDependencyNotReady = "foundry_dependency_not_ready"
 	CodeMissingProjectEndpoint    = "missing_project_endpoint"
 	CodeGitHubDownloadFailed      = "github_download_failed"
 	CodePromptFailed              = "prompt_failed"
 )
+
+const CodeResponseStateUnavailable = "response_state_unavailable"
 
 // Error codes for ACR dependency errors.
 const (
@@ -86,7 +96,9 @@ const (
 //
 // These are usually paired with [Compatibility] for version mismatches.
 const (
-	CodeIncompatibleAzdVersion = "incompatible_azd_version"
+	CodeIncompatibleAzdVersion          = "incompatible_azd_version"
+	CodeIncompleteAgentProtocolMetadata = "incomplete_agent_protocol_metadata"
+	CodeLegacyAgentProtocolMetadata     = "legacy_agent_protocol_metadata"
 )
 
 // Error codes for azd host AI service errors.
@@ -109,6 +121,7 @@ const (
 const (
 	CodeAgentNotFound          = "agent_not_found"
 	CodeAgentHasActiveSessions = "agent_has_active_sessions"
+	CodeDeleteRequiresForce    = "delete_requires_force"
 )
 
 // Error codes for file operation errors.
@@ -121,6 +134,13 @@ const (
 // Error codes for packaging/deploy errors.
 const (
 	CodeBundledDepsNotFound = "bundled_deps_not_found"
+)
+
+// Error codes for Teams app pack/publish operations.
+const (
+	CodeNotActivityAgent    = "not_activity_agent"
+	CodeAgentNotDeployed    = "agent_not_deployed"
+	CodeInvalidPublishScope = "invalid_publish_scope"
 )
 
 // Error codes for $ref file-include resolution.
@@ -170,28 +190,41 @@ const (
 	CodeContainerStartFailed          = "container_start_failed"
 	CodeContainerStartTimeout         = "container_start_timeout"
 	CodeAgentCreateFailed             = "agent_create_failed"
+	CodeMsaAppIDAlreadyInUse          = "msa_app_id_already_in_use"
+	CodeMultipleBotsForMsaAppID       = "multiple_bots_for_msa_app_id"
 )
 
 // Operation names for [ServiceFromAzure] errors.
 // These are prefixed to the Azure error code (e.g., "create_agent.NotFound").
 const (
-	OpGetFoundryProject     = "get_foundry_project"
-	OpContainerBuild        = "container_build"
-	OpContainerPackage      = "container_package"
-	OpContainerPublish      = "container_publish"
-	OpCreateAgent           = "create_agent"
-	OpDeleteAgent           = "delete_agent"
-	OpStartContainer        = "start_container"
-	OpGetContainerOperation = "get_container_operation"
-	OpCreateSession         = "create_session"
-	OpGetSession            = "get_session"
-	OpDeleteSession         = "delete_session"
-	OpStopSession           = "stop_session"
-	OpListSessions          = "list_sessions"
-	OpCreateToolboxVersion  = "create_toolbox_version"
-	OpGetToolbox            = "get_toolbox"
-	OpProvisionMemoryStore  = "provision_memory_store"
+	OpGetFoundryProject      = "get_foundry_project"
+	OpContainerBuild         = "container_build"
+	OpContainerPackage       = "container_package"
+	OpContainerPublish       = "container_publish"
+	OpCreateAgent            = "create_agent"
+	OpCreateTelephonyBinding = "create_telephony_binding"
+	OpGetAgent               = "get_agent"
+	OpGetTelephonyBinding    = "get_telephony_binding"
+	OpUpdateAgent            = "update_agent"
+	OpGetActivityBot         = "get_activity_bot"
+	OpEnsureActivityBot      = "ensure_activity_bot"
+	OpEnsureTeamsChannel     = "ensure_teams_channel"
+	OpDeleteAgent            = "delete_agent"
+	OpStartContainer         = "start_container"
+	OpGetContainerOperation  = "get_container_operation"
+	OpCreateSession          = "create_session"
+	OpGetSession             = "get_session"
+	OpDeleteSession          = "delete_session"
+	OpStopSession            = "stop_session"
+	OpListSessions           = "list_sessions"
+	OpCreateToolboxVersion   = "create_toolbox_version"
+	OpGetToolbox             = "get_toolbox"
+	OpProvisionMemoryStore   = "provision_memory_store"
+	OpPackTeamsApp           = "pack_teams_app"
+	OpPublishTeamsApp        = "publish_teams_app"
 )
+
+const OpReadBackgroundResponseState = "read_background_response_state"
 
 // Error codes for eval and optimize operations.
 const (
@@ -227,10 +260,16 @@ const (
 	CodeInfraEjectNoFoundryService        = "infra_eject_no_foundry_service"
 	CodeInfraEjectMultipleFoundryServices = "infra_eject_multiple_foundry_services"
 	CodeInfraEjectAzureYamlMissing        = "infra_eject_azure_yaml_missing"
+	CodeInfraEjectAzureYamlChanged        = "infra_eject_azure_yaml_changed"
+	CodeInfraEjectMarkerInvalid           = "infra_eject_marker_invalid"
 	CodeInfraEjectWriteFailed             = "infra_eject_write_failed"
 	CodeInfraEjectConflictingArguments    = "infra_eject_conflicting_arguments"
 	CodeInfraEjectNetworkUnsupported      = "infra_eject_network_unsupported"
 	CodeInfraEjectBrownfieldUnsupported   = "infra_eject_brownfield_unsupported"
+	CodeInfraEjectCustomInfraPath         = "infra_eject_custom_infra_path"
+	CodeInfraEjectLayersUnsupported       = "infra_eject_layers_unsupported"
+	CodeInfraEjectProviderConflict        = "infra_eject_provider_conflict"
+	CodeInfraEjectCustomModule            = "infra_eject_custom_module"
 )
 
 // Operation names for the microsoft.foundry provisioning provider.

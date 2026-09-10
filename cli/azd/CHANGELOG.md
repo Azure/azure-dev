@@ -1,10 +1,8 @@
 # Release History
 
-## 1.28.0-beta.1 (Unreleased)
+## 1.35.0-beta.1 (Unreleased)
 
 ### Features Added
-
-- [[#9019]](https://github.com/Azure/azure-dev/pull/9019) Add a provider-agnostic `provision` validation check type dispatched before provisioning for every provider. Extensions with the `validation-provider` capability can now contribute client-side checks that run regardless of the provisioning provider (Bicep, Terraform, or an extension-provided provider), not just during Bicep local preflight.
 
 ### Breaking Changes
 
@@ -12,11 +10,184 @@
 
 ### Other Changes
 
+## 1.34.0 (2026-09-09)
+
+### Features Added
+
+- [[#9897]](https://github.com/Azure/azure-dev/pull/9897) Add support for preserving environment templates in project mappings.
+- [[#9861]](https://github.com/Azure/azure-dev/pull/9861) Add telemetry reporting support for AI-agent extensions through the Foundry extension SDK.
+
+### Bugs Fixed
+
+- [[#9818]](https://github.com/Azure/azure-dev/pull/9818) Fix inherited coding-agent markers causing interactive terminals to run as non-interactive sessions, and improve bounded agent detection.
+- [[#9785]](https://github.com/Azure/azure-dev/pull/9785) Fix extension bundle installs to follow redirects and warn when HTTPS downloads downgrade to HTTP.
+
+### Other Changes
+
+- [[#9825]](https://github.com/Azure/azure-dev/pull/9825) Update gRPC to 1.83.1 across azd core and first-party Go extensions to address GHSA-vp52-pcj8-j9qc.
+- [[#9911]](https://github.com/Azure/azure-dev/pull/9911) Stop ambient OpenTelemetry resource attributes from being exported by azd while preserving declared telemetry fields.
+
+## 1.33.0 (2026-09-02)
+
+### Features Added
+
+- [[#8371]](https://github.com/Azure/azure-dev/pull/8371) Add Unix domain socket and Windows named-pipe transports for external authentication hosts using `AZD_AUTH_ENDPOINT`.
+- [[#9541]](https://github.com/Azure/azure-dev/pull/9541) Add an archived-template warning to `azd init --template` so users can cancel before cloning unmaintained repositories.
+
+### Bugs Fixed
+
+- [[#9678]](https://github.com/Azure/azure-dev/pull/9678) Fix disabled services with `condition` values being initialized or checked before command execution.
+- [[#9729]](https://github.com/Azure/azure-dev/pull/9729) Fix quota guidance to avoid showing Foundry-specific recovery steps for unrelated Azure resource providers.
+- [[#9733]](https://github.com/Azure/azure-dev/pull/9733) Fix extension install, update, init, and auto-install paths to select releases compatible with the running azd version.
+- [[#9737]](https://github.com/Azure/azure-dev/pull/9737) Fix Azure Container Registry remote-build failures to surface stable structured diagnostics while preserving build logs.
+- [[#9764]](https://github.com/Azure/azure-dev/pull/9764) Fix AI coding-agent detection to ignore empty markers, prioritize active Codex and Cursor sessions, and avoid classifying the Cursor desktop app as an agent.
+- [[#9775]](https://github.com/Azure/azure-dev/pull/9775) Fix concurrent .NET service publishes sharing intermediate artifacts by isolating publish artifacts on supported .NET SDKs.
+
+## 1.32.0 (2026-08-26)
+
+### Features Added
+
+- [[#9588]](https://github.com/Azure/azure-dev/pull/9588) Add `docker.imagePassthrough` support to deploy an existing container image by reference without local or remote image operations.
+
+### Bugs Fixed
+
+- [[#9714]](https://github.com/Azure/azure-dev/pull/9714) Fix optional extension flag values in generated shell completions and extension telemetry parsing.
+- [[#9715]](https://github.com/Azure/azure-dev/pull/9715) Fix extension multi-select prompts to consistently validate empty submissions in interactive and no-prompt modes.
+- [[#9675]](https://github.com/Azure/azure-dev/pull/9675) Fix AKS kubeconfig directories and files to use owner-only permissions.
+- [[#9645]](https://github.com/Azure/azure-dev/pull/9645) Fix GitHub Copilot model setup offering unsupported reasoning levels by selecting the model first and using its supported options.
+- [[#9636]](https://github.com/Azure/azure-dev/pull/9636) Fix structured extension errors losing details when relayed across nested gRPC calls.
+
+### Other Changes
+
+- [[#9698]](https://github.com/Azure/azure-dev/pull/9698) Recognize Codex and Cursor as AI-agent execution environments for non-interactive behavior and telemetry.
+- [[#9673]](https://github.com/Azure/azure-dev/pull/9673) Update the bundled GitHub CLI to v2.98.0.
+- [[#9690]](https://github.com/Azure/azure-dev/pull/9690) Fix telemetry measurement metadata to match runtime value types.
+- [[#9693]](https://github.com/Azure/azure-dev/pull/9693) Fix telemetry resource field classification and purpose metadata.
+- [[#9644]](https://github.com/Azure/azure-dev/pull/9644) Update the bundled GitHub Copilot CLI to v1.0.80 and the Copilot SDK to v1.0.11.
+
+## 1.31.2 (2026-08-19)
+
+### Bugs Fixed
+
+- [[#9489]](https://github.com/Azure/azure-dev/pull/9489) Fix App Service deployments hanging when deployment status stops changing by completing with a warning after a five-minute inactivity timeout.
+- [[#9490]](https://github.com/Azure/azure-dev/pull/9490) Fix Bicep refresh, down, and provision-state lookup using another project's deployment history by preferring project-tagged deployments.
+- [[#9504]](https://github.com/Azure/azure-dev/pull/9504) Fix GitHub Copilot desktop terminals being incorrectly detected as Copilot CLI agent sessions, which could incorrectly enable no-prompt behavior in interactive terminals. Thanks @gimenete for the contribution!
+- [[#9537]](https://github.com/Azure/azure-dev/pull/9537) Fix extension dependency resolution to fall back to the official `azd` registry when the parent extension source has no compatible version.
+- [[#9613]](https://github.com/Azure/azure-dev/pull/9613) Fix extension-hosted Azure service errors losing HTTP status and provider error details across the gRPC boundary.
+
+### Other Changes
+
+- [[#9474]](https://github.com/Azure/azure-dev/pull/9474) Improve extension auto-install to show the complete requirement set before prompting, explain why each extension is required, and resolve the full install plan before making changes.
+- [[#9598]](https://github.com/Azure/azure-dev/pull/9598) Fix telemetry for AKS skip reasons, container remote builds, and authentication cache-clear failures being emitted without data-classification metadata.
+
+## 1.31.1 (2026-08-13)
+
+### Bugs Fixed
+
+- [[#9535]](https://github.com/Azure/azure-dev/pull/9535) Fix custom provisioning layers consuming empty or stale Bicep outputs by inferring dependencies from `.bicepparam` and `.parameters.json` parameter references.
+
+## 1.31.0 (2026-08-12)
+
+### Features Added
+
+- [[#9417]](https://github.com/Azure/azure-dev/pull/9417) Add support for installing a self-contained extension bundle directly from an HTTPS URL with `azd extension install`, reusing the existing extraction, registry, and checksum validation path.
+- [[#9174]](https://github.com/Azure/azure-dev/pull/9174) Add a `TelemetryService.ReportUsage` extension gRPC API so extensions installed from official sources can report named usage events with bounded attributes through azd's telemetry pipeline.
+
+### Breaking Changes
+
+- [[#9370]](https://github.com/Azure/azure-dev/pull/9370) Update `azd tool update --output json` to report `"action": "update"` instead of `"action": "upgrade"` for update and dry-run results, including when invoked through the legacy `azd tool upgrade` alias; update scripts that inspect the `action` field.
+- [[#9370]](https://github.com/Azure/azure-dev/pull/9370) Update telemetry identifiers for extension and tool updates to use `update` terminology, including `ext.update`, `extension.update.*`, `extension.dependency_update_count`, and `tool.update.*`; update custom telemetry queries that use the former `upgrade` names.
+- [[#9451]](https://github.com/Azure/azure-dev/pull/9451) Update extension source names to require 1 to 64 lowercase letters, digits, hyphens, or underscores, so names such as `My Source` or `foo.bar` are now rejected instead of silently normalized and existing invalid entries must be removed and re-added.
+
+### Bugs Fixed
+
+- [[#9473]](https://github.com/Azure/azure-dev/pull/9473) Fix azd hanging during Aspire AppHost manifest generation when the Aspire CLI run hook rewrites azd's publish invocation, while keeping CLI-bundle dependency resolution enabled.
+- [[#9495]](https://github.com/Azure/azure-dev/pull/9495) Fix `azd init` and `azd template list` offering awesome-azd templates that require extension-specific initialization and cannot be initialized as standard templates.
+- [[#9476]](https://github.com/Azure/azure-dev/pull/9476) Fix duplicated punctuation in interactive prompts, so messages already ending in punctuation no longer render as `Continue with reset?:` or `Select a deployment to continue::`.
+
+### Other Changes
+
+- [[#9370]](https://github.com/Azure/azure-dev/pull/9370) Update the `azd extension upgrade` and `azd tool upgrade` commands to `azd extension update` and `azd tool update`, keeping the former names as aliases; the extension dependency opt-out flag is now `--no-dependency-updates`, with `--no-dependency-upgrades` remaining as a hidden alias for existing scripts. Thanks @hyoshis for the contribution!
+- [[#9452]](https://github.com/Azure/azure-dev/pull/9452) Update extension telemetry to emit privacy-safe source categories (`azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown`) and remove the raw `extension.source`, `extension.source.from`, and `extension.source.to` fields.
+- [[#9420]](https://github.com/Azure/azure-dev/pull/9420) Update the `execution.environment` telemetry field to report generic GitHub Copilot agent sessions in VS Code as `GitHub Copilot VSCode`, distinct from the GitHub Copilot for Azure extension. Thanks @qinezh for the contribution!
+- [[#9457]](https://github.com/Azure/azure-dev/pull/9457) Add `provider` and `config` to `infra.layers[]` entries in the `azure.yaml` schema so per-layer provisioning providers and their configuration validate in schema-aware editors.
+
+## 1.30.0 (2026-08-05)
+
+### Features Added
+
+- [[#9284]](https://github.com/Azure/azure-dev/pull/9284) Add container image deployment support for `host: function` services using a Dockerfile, prebuilt image, or remote ACR build.
+
+### Bugs Fixed
+
+- [[#9238]](https://github.com/Azure/azure-dev/pull/9238) Fix `${VAR}` substitution in `infra.deploymentStacks` settings such as `denySettings.excludedActions` and `denySettings.excludedPrincipals`.
+- [[#9324]](https://github.com/Azure/azure-dev/pull/9324) Fix `azd provision --preview` to show nested ARM failures such as quota limits and provide relevant recovery guidance.
+- [[#9325]](https://github.com/Azure/azure-dev/pull/9325) Fix `azd update` to install the exact stable version it reports instead of potentially installing a newer release.
+- [[#9329]](https://github.com/Azure/azure-dev/pull/9329) Fix `azd pipeline config --provider azdo --auth-type federated` incorrectly rejecting federated authentication and update the flag's help text to reflect existing Azure DevOps support.
+- [[#9347]](https://github.com/Azure/azure-dev/pull/9347) Fix `azd init --from-code` and `azd infra generate --force` hanging indefinitely on Aspire solutions when persistent MSBuild worker nodes keep output pipes open.
+- [[#9361]](https://github.com/Azure/azure-dev/pull/9361) Fix extension upgrade errors to identify the requested version and the source or registries checked, while preserving source and version values in retry commands.
+- [[#9361]](https://github.com/Azure/azure-dev/pull/9361) Fix extension install and upgrade errors to distinguish a missing dependency from one whose available versions do not satisfy the required constraint.
+- [[#9430]](https://github.com/Azure/azure-dev/pull/9430) Fix GitHub Actions pipeline authentication for repositories using immutable OIDC subject claims.
+- [[#9353]](https://github.com/Azure/azure-dev/pull/9353) Improve `azd init` and `azd up` to detect unsupported non-C# Aspire AppHosts early and show actionable guidance instead of misleading Docker and source-build failures.
+
+### Other Changes
+
+- [[#9380]](https://github.com/Azure/azure-dev/pull/9380) Update the bundled GitHub CLI to v2.97.0.
+
+## 1.29.0 (2026-07-29)
+
+### Features Added
+
+- [[#9125]](https://github.com/Azure/azure-dev/pull/9125) Automatically enable no-prompt mode when azd detects a CI/CD or AI-agent environment, so commands fail fast with a clear error instead of hanging on a prompt. Set `AZD_NON_INTERACTIVE=false` to opt out. Confirmation prompts now also honor their default value when stdin has no more input.
+
+### Bugs Fixed
+
+- [[#9281]](https://github.com/Azure/azure-dev/pull/9281) Fix `azd deploy` for container-based App Service services overwriting unrelated site configuration; the container image is now updated through the dedicated App Service configuration endpoint.
+- [[#9211]](https://github.com/Azure/azure-dev/pull/9211) Fix concurrent extension updates to `azure.yaml` losing service fields by serializing project configuration writes.
+- [[#9218]](https://github.com/Azure/azure-dev/pull/9218) Fix and improve automatic installation of project extension requirements so `azd` resolves every missing provider declared or inferred from `azure.yaml` before project commands run, instead of failing on the first unsupported one.
+
+### Other Changes
+
+- [[#9288]](https://github.com/Azure/azure-dev/pull/9288) Report the GitHub Copilot app separately from the GitHub Copilot CLI in the `execution.environment` telemetry field.
+
+## 1.28.1 (2026-07-22)
+
+### Bugs Fixed
+
+- [[#9143]](https://github.com/Azure/azure-dev/pull/9143) Fix `azd down --no-prompt` hanging in CI/CD for Terraform-based projects by auto-approving the destroy when running non-interactively, and fix `azd down --force` failing with a backend initialization error on a fresh agent.
+- [[#9161]](https://github.com/Azure/azure-dev/pull/9161) Fix `azd extension install` intermittently failing on Windows with an "Access is denied" error when replacing an extension executable held by a transient file lock.
+
+### Other Changes
+
+- [[#9261]](https://github.com/Azure/azure-dev/pull/9261) Stop showing the automatic `azd tool` first-run install prompt and periodic update notifications. Explicit `azd tool` commands are unchanged.
+- [[#9245]](https://github.com/Azure/azure-dev/pull/9245) Update the bundled GitHub CLI to v2.96.0.
+- [[#9091]](https://github.com/Azure/azure-dev/pull/9091) Emit the `infra.provider` telemetry attribute on `provision`, `up`, and `down` so provisioning runs can be segmented by infrastructure provider.
+- [[#9167]](https://github.com/Azure/azure-dev/pull/9167) Recognize azd invocations from Microsoft Foundry Skill in the `execution.environment` telemetry field.
+
+## 1.28.0 (2026-07-15)
+
+### Breaking Changes
+
+ - [[#9045]](https://github.com/Azure/azure-dev/pull/9045) The `--host` skill flag on `azd tool install`, `azd tool upgrade`, and `azd tool uninstall` has been renamed to `--agent`. Installed skills in `azd tool list --output json` and `azd tool check --output json` now expand into one row per agent and include the `agent` field. Update scripts and JSON consumers accordingly.
+
+### Bugs Fixed
+
+- [[#9017]](https://github.com/Azure/azure-dev/pull/9017) Fix `azd env refresh` for projects using extension-provided service hosts or provisioning providers, and report successfully when no deployment exists yet.
+- [[#8887]](https://github.com/Azure/azure-dev/pull/8887) Fix generated `azd extension install` completions to offer extension IDs and `.zip` file paths.
+- [[#9083]](https://github.com/Azure/azure-dev/pull/9083) Fix the `azd update` follow-up command to use `azd version`. Thanks @rguptar for the contribution!
+
+### Other Changes
+
+- [[#9141]](https://github.com/Azure/azure-dev/pull/9141) Send ARM request correlation IDs as a canonical hyphenated GUID (derived losslessly from the OpenTelemetry trace ID) instead of an undecorated 32-character string — covering both the `x-ms-correlation-request-id` header on azd's direct ARM calls and the `ARM_CORRELATION_REQUEST_ID` value passed to the Terraform AzureRM provider. This aligns azd with the ARM spec and other Azure tooling (Terraform AzureRM, Azure SDK for Go) and resolves the historical AKS Deployment Safeguards `GetDeploymentSafeguardsFailed` correlation ID mismatch (#5851).
+- [[#9033]](https://github.com/Azure/azure-dev/pull/9033) Add an extension SDK helper that validates provider declarations in `extension.yaml` against the providers registered by extension code.
+
 ## 1.27.1 (2026-07-09)
 
 ### Features Added
 
 - [[#8927]](https://github.com/Azure/azure-dev/pull/8927) Add `--no-dependencies` flag to `azd extension install` that installs only the named extension without resolving or installing its declared dependencies.
+- [[#9019]](https://github.com/Azure/azure-dev/pull/9019) Add a provider-agnostic `provision` validation check type dispatched before provisioning for every provider. Extensions with the `validation-provider` capability can now contribute client-side checks that run regardless of the provisioning provider (Bicep, Terraform, or an extension-provided provider), not just during Bicep local preflight.
+- [[#8936]](https://github.com/Azure/azure-dev/pull/8936) Add expanded service-level `env` values from `azure.yaml` to the extension service configuration.
 
 ### Bugs Fixed
 

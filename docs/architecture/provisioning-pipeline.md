@@ -9,7 +9,7 @@ The provisioning pipeline creates or updates Azure infrastructure from Infrastru
 ## Pipeline Stages
 
 ```text
-IaC Templates → Compilation → Preflight Checks → Deployment → State Tracking
+IaC Templates → Compilation → Provision Validation → Deployment → State Tracking
 ```
 
 ### 1. Template Compilation
@@ -21,23 +21,24 @@ azd supports two IaC providers:
 
 For Bicep, azd can generate a fully resolved deployment snapshot using `bicep snapshot`, which evaluates expressions, applies conditions, expands copy loops, and flattens nested deployments.
 
-### 2. Preflight Checks
+### 2. Provision Validation
 
-Client-side validation that runs after compilation but before deployment:
+Client-side (local) validation that runs after compilation but before deployment:
 
 - **Role assignment permissions** — Checks if the user has required RBAC roles for role assignments in the template
 - **AI model quota** — Validates that sufficient AI model capacity is available in the target region
 - **Reserved resource names** — Warns when predicted resource names collide with Azure reserved or restricted names
 
-The preflight framework is pluggable — new checks can be added via `AddCheck()`.
+The validation framework is pluggable — new checks can be added via `AddCheck()`.
 
 **UX behavior:**
 
 - No issues → proceed silently
 - Warnings only → display and prompt to continue
-- Errors → display and abort
+- Errors → display and cancel
 
-Disable with: `azd config set provision.preflight off`
+Disable local validation with: `azd config set validation.provision off`.
+(The separate `azd config set provision.preflight off` disables only the server-side ARM preflight call.)
 
 ### 3. Deployment
 
@@ -71,4 +72,4 @@ After deployment, azd stores a hash of the template and parameters. On subsequen
 ## Detailed Reference
 
 - [Provision State](../../cli/azd/docs/provision-state.md) — Hash-based change detection
-- [Local Preflight Validation](../../cli/azd/docs/design/local-preflight-validation.md) — Preflight check design
+- [Provision Validation](../../cli/azd/docs/design/provision-validation.md) — Provision validation design

@@ -218,7 +218,7 @@ func validateExtension(ext *ExtensionMetadata, strict bool) ExtensionValidationR
 
 	// Validate each version
 	for i, ver := range ext.Versions {
-		validateVersion(&result, i, &ver, strict)
+		validateVersion(&result, ext.Id, i, &ver, strict)
 	}
 
 	// Find latest version using semver ordering
@@ -262,7 +262,13 @@ func findLatestVersion(versions []ExtensionVersion) *ExtensionVersion {
 }
 
 // validateVersion validates a single version entry within an extension.
-func validateVersion(result *ExtensionValidationResult, index int, ver *ExtensionVersion, strict bool) {
+func validateVersion(
+	result *ExtensionValidationResult,
+	extensionId string,
+	index int,
+	ver *ExtensionVersion,
+	strict bool,
+) {
 	prefix := fmt.Sprintf("versions[%d]", index)
 
 	// Validate semver format using the semver package

@@ -4,6 +4,33 @@ Manage [Microsoft Foundry](https://learn.microsoft.com/azure/ai-services/) **ski
 (reusable behavioral guidelines an agent can attach at runtime) directly from your
 terminal.
 
+## Extension telemetry API
+
+Extension code can report best-effort usage events through the shared
+`pkg/foundry/telemetry` package:
+
+```go
+reporter := telemetry.NewReporter(azdClient.Telemetry(), nil)
+reporter.Report(ctx, telemetry.Event{
+   Name: "skill.operation.completed",
+   Attributes: map[string]string{
+      "content.mode": "archive",
+   },
+})
+```
+
+The example is illustrative; this extension does not currently emit a product
+usage event. Add an event only after its product question, bounded values,
+documentation, and privacy review are agreed.
+
+`Report` has no return value and never changes command or service-target
+behavior. It uses a one-second timeout, does not retry, and does not log
+attribute values or transport error details. Put approved event builders and
+finite-value types in `internal/telemetry/events.go`; do not call `ReportUsage`
+directly. Never include skill names, descriptions, instructions, file contents,
+IDs, endpoints, paths, URLs, or other customer content. The azd host records
+events only for extensions installed from the official registry.
+
 ## Commands
 
 ```bash
@@ -47,19 +74,67 @@ manual zip step.
 All commands accept the standard cross-cutting flags: `-p` / `--project-endpoint`,
 `--output table|json`, `--no-prompt`, and `--debug`.
 
+## Composing skills in `azure.yaml`
+
+Declare a skill as its own service to reconcile it with `azd deploy` or
+`azd up`:
+
+```yaml
+services:
+  triage-rules:
+    host: azure.ai.skill
+    description: Rules for triaging incoming issues
+    instructions: Classify the issue, identify its owner, and recommend next steps.
+    license: MIT
+    compatibility: gpt-5
+    metadata:
+      owner: support
+    tools:
+      - web_search
+
+  support-agent:
+    host: azure.ai.agent
+    uses:
+      - triage-rules
+    skill: triage-rules
+```
+
+`instructions` can also reference a `.md` or `.txt` file. To preserve a
+complete skill package, use `archive` instead of the inline fields:
+
+```yaml
+services:
+  triage-rules:
+    host: azure.ai.skill
+    archive: ./skills/triage-rules
+```
+
+`archive` accepts a `.zip` file or a directory with `SKILL.md` at its root.
+Relative instruction and archive paths resolve from the service's `project`
+path when set, otherwise from the directory containing `azure.yaml`. Parent
+traversal (`..`) is rejected.
+
+Deploying the skill creates a new immutable default version and publishes
+readiness markers for dependent agent services. A consuming agent must list
+the skill service in `uses:` so azd deploys it first. Removing the service from
+`azure.yaml` stops azd managing the skill but does not delete it; use
+`azd ai skill delete` for deletion.
+
 ## Project endpoint resolution
 
 The Foundry project endpoint is resolved in this order:
 
 1. `-p` / `--project-endpoint` flag on the command.
-2. Active azd env value `AZURE_AI_PROJECT_ENDPOINT`.
+2. Active azd env value `FOUNDRY_PROJECT_ENDPOINT`, falling back to legacy
+   `AZURE_AI_PROJECT_ENDPOINT`.
 3. Global config `extensions.ai-projects.context.endpoint` (written by
    `azd ai project set`). Falls back to the legacy
    `extensions.ai-skills.project.context.endpoint` and
    `extensions.ai-agents.project.context.endpoint` keys so users who
    configured the endpoint via earlier extensions are not forced to re-run
    `set`.
-4. Host environment variable `FOUNDRY_PROJECT_ENDPOINT`.
+4. Host environment variable `FOUNDRY_PROJECT_ENDPOINT`, falling back to legacy
+   `AZURE_AI_PROJECT_ENDPOINT`.
 5. Structured error with an actionable suggestion.
 
 ## Local Development

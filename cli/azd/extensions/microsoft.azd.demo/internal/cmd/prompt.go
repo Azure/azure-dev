@@ -68,7 +68,8 @@ func newPromptCommand() *cobra.Command {
 
 			_, err = azdClient.Prompt().MultiSelect(ctx, &azdext.MultiSelectRequest{
 				Options: &azdext.MultiSelectOptions{
-					Message: "Which Azure services do you use most with azd?",
+					Message:             "Which Azure services do you use most with azd?",
+					AllowEmptySelection: new(true),
 					Choices: []*azdext.MultiSelectChoice{
 						{Label: "Container Apps", Value: "container-apps"},
 						{Label: "Functions", Value: "functions"},

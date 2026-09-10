@@ -4,6 +4,7 @@
 package project
 
 import (
+	"archive/zip"
 	"os"
 	"path/filepath"
 	"testing"
@@ -36,6 +37,10 @@ func TestAgentIgnore_NoFile_UsesDefaults(t *testing.T) {
 	require.True(t, m.ShouldExclude("agent.yaml", false))
 	require.True(t, m.ShouldExclude("agent.manifest.yaml", false))
 	require.True(t, m.ShouldExclude("azure.yaml", false))
+	require.True(t, m.ShouldExclude("connection.yaml", false))
+	require.True(t, m.ShouldExclude("connection.yml", false))
+	require.True(t, m.ShouldExclude("toolbox.yaml", false))
+	require.True(t, m.ShouldExclude("toolbox.yml", false))
 	require.True(t, m.ShouldExclude(".agentignore", false))
 	require.True(t, m.ShouldExclude(".env", false))
 	require.True(t, m.ShouldExclude(".env.local", false))
@@ -70,6 +75,90 @@ func TestAgentIgnore_UserFileOverridesDefaults(t *testing.T) {
 	// Security files are also user-configurable now — not excluded unless user lists them
 	require.False(t, m.ShouldExclude(".env", false))
 	require.False(t, m.ShouldExclude(".git", true))
+
+	// Canonical resource definitions are azd-managed defaults so existing
+	// .agentignore files do not accidentally package Connection credentials.
+	require.True(t, m.ShouldExclude("connection.yaml", false))
+	require.True(t, m.ShouldExclude("toolbox.yaml", false))
+}
+
+func TestAgentIgnore_AlwaysExcludesGeneratedTeamsArtifacts(t *testing.T) {
+	for _, name := range []string{
+		"appPackage.zip",
+		"build/appPackage.zip",
+		".appPackage.zip.azd-generated",
+		"build/.appPackage.zip.azd-generated",
+		"TEAMS_APP_SETUP.md",
+		"build/TEAMS_APP_SETUP.md",
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			err := os.WriteFile(filepath.Join(dir, ".agentignore"), []byte(""), 0600)
+			require.NoError(t, err)
+
+			m, err := newAgentIgnoreMatcher(t.Context(), dir)
+			require.NoError(t, err)
+			require.True(t, m.hasUserIgnore)
+			require.True(t, m.ShouldExclude(name, false))
+		})
+	}
+}
+
+func TestAgentIgnore_GeneratedTeamsArtifactsCanBeNegated(t *testing.T) {
+	dir := t.TempDir()
+	content := "!appPackage.zip\n!TEAMS_APP_SETUP.md\n"
+	err := os.WriteFile(filepath.Join(dir, ".agentignore"), []byte(content), 0600)
+	require.NoError(t, err)
+
+	m, err := newAgentIgnoreMatcher(t.Context(), dir)
+	require.NoError(t, err)
+	require.True(t, m.hasUserIgnore)
+	require.False(t, m.ShouldExclude("appPackage.zip", false))
+	require.False(t, m.ShouldExclude("build/appPackage.zip", false))
+	require.False(t, m.ShouldExclude("TEAMS_APP_SETUP.md", false))
+	require.False(t, m.ShouldExclude("build/TEAMS_APP_SETUP.md", false))
+	require.True(t, m.ShouldExclude(".appPackage.zip.azd-generated", false))
+}
+
+func TestAgentIgnore_ResourceDefinitionsCanBeNegated(t *testing.T) {
+	dir := t.TempDir()
+	content := "!connection.yaml\n!toolbox.yaml\n"
+	err := os.WriteFile(filepath.Join(dir, ".agentignore"), []byte(content), 0600)
+	require.NoError(t, err)
+
+	m, err := newAgentIgnoreMatcher(t.Context(), dir)
+	require.NoError(t, err)
+	require.False(t, m.ShouldExclude("connection.yaml", false))
+	require.False(t, m.ShouldExclude("toolbox.yaml", false))
+}
+
+func TestZipSourceDirExcludesResourceDefinitionsWithExistingIgnore(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"main.py":         "print('ready')\n",
+		"agent.yaml":      "name: test\n",
+		"connection.yaml": "credentials:\n  key: secret\n",
+		"toolbox.yaml":    "name: tools\n",
+		// Simulates an .agentignore generated before the resource definitions
+		// became separate canonical files.
+		".agentignore": "agent.yaml\n.agentignore\n",
+	}
+	for name, content := range files {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0600))
+	}
+
+	zipPath, _, err := zipSourceDir(t.Context(), dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Remove(zipPath) })
+
+	archive, err := zip.OpenReader(zipPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = archive.Close() })
+	names := make([]string, len(archive.File))
+	for i, file := range archive.File {
+		names[i] = file.Name
+	}
+	require.Equal(t, []string{"main.py"}, names)
 }
 
 func TestAgentIgnore_NegationWorks(t *testing.T) {
@@ -125,10 +214,12 @@ func TestAgentIgnore_EmptyFile(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m.hasUserIgnore)
 
-	// Nothing excluded — empty file means include everything
+	// Defaults no longer apply, but azd-generated Teams artifacts are prepended
+	// to avoid bundling them into code deploy packages.
 	require.False(t, m.ShouldExclude("main.py", false))
 	require.False(t, m.ShouldExclude("__pycache__", true))
 	require.False(t, m.ShouldExclude(".env", false))
+	require.True(t, m.ShouldExclude("appPackage.zip", false))
 }
 
 func TestDefaultAgentIgnoreContent(t *testing.T) {
@@ -136,6 +227,10 @@ func TestDefaultAgentIgnoreContent(t *testing.T) {
 	require.Contains(t, content, "__pycache__/")
 	require.Contains(t, content, "node_modules/")
 	require.Contains(t, content, "agent.yaml")
+	require.Contains(t, content, "connection.yaml")
+	require.Contains(t, content, "connection.yml")
+	require.Contains(t, content, "toolbox.yaml")
+	require.Contains(t, content, "toolbox.yml")
 	require.Contains(t, content, ".agentignore")
 	require.Contains(t, content, "bin/")
 	require.Contains(t, content, ".env")
@@ -143,4 +238,7 @@ func TestDefaultAgentIgnoreContent(t *testing.T) {
 	require.Contains(t, content, ".git/")
 	require.Contains(t, content, "Dockerfile")
 	require.Contains(t, content, ".dockerignore")
+	require.Contains(t, content, "appPackage.zip")
+	require.Contains(t, content, ".appPackage.zip.azd-generated")
+	require.Contains(t, content, "TEAMS_APP_SETUP.md")
 }

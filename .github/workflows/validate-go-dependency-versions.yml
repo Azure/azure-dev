@@ -1,0 +1,28 @@
+name: validate-go-dependency-versions
+
+on:
+  pull_request:
+    paths:
+      - "cli/azd/go.mod"
+      - "cli/azd/extensions/*/go.mod"
+      - "cli/azd/extensions/*/go.sum"
+      - "cli/azd/dependency-versions.json"
+      - "cli/azd/dependency_versions.go"
+      - "cli/azd/dependency_versions_test.go"
+      - ".github/workflows/validate-go-dependency-versions.yml"
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check-dependency-version-consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: cli/azd/go.mod
+      - name: Validate dependency version consistency
+        working-directory: cli/azd
+        run: go run github.com/magefile/mage@v1.17.2 checkDependencyVersions

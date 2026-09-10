@@ -359,6 +359,37 @@ func TestPromptInitMode_SelectsVoiceChoice(t *testing.T) {
 	require.Equal(t, "Create a prompt voice agent", prompts.lastSelect.Options.Choices[1].Label)
 }
 
+func TestPromptInitMode_NonEmptyDirectoryChoices(t *testing.T) {
+	for _, tt := range []struct {
+		mode  string
+		index int32
+	}{
+		{initModeFromCode, 0},
+		{initModeTemplate, 1},
+		{initModeVoice, 2},
+	} {
+		t.Run(tt.mode, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Chdir(dir)
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "main.py"), []byte("print('hello')\n"), 0600))
+			prompts := &helpersPromptServer{selectIndex: tt.index}
+			client := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
+
+			mode, err := promptInitMode(t.Context(), client, false)
+			require.NoError(t, err)
+			require.Equal(t, tt.mode, mode)
+			require.NotNil(t, prompts.lastSelect)
+			options := prompts.lastSelect.Options
+			require.Len(t, options.Choices, 3)
+			require.Equal(t, "Use the code in the current directory", options.Choices[0].Label)
+			require.Equal(t, "Start new from a template", options.Choices[1].Label)
+			require.Equal(t, "Create a prompt voice agent", options.Choices[2].Label)
+			require.NotNil(t, options.SelectedIndex)
+			require.Zero(t, *options.SelectedIndex)
+		})
+	}
+}
+
 func TestFindRecommendedIndex(t *testing.T) {
 	t.Parallel()
 

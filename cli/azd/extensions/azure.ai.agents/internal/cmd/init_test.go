@@ -4307,6 +4307,7 @@ func TestSynthesizeVoiceManifestFile(t *testing.T) {
 		defer cleanup()
 
 		va := parse(t, path)
+		require.Equal(t, agent_yaml.AgentKindPromptVoice, va.Kind)
 		require.Equal(t, agent_yaml.VoiceModelTypeManaged, va.ModelType)
 		require.NotNil(t, va.Model)
 		require.Equal(t, "gpt-realtime-preview", va.Model.Id)

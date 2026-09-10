@@ -75,8 +75,9 @@ func TestParseAgentEndpoint(t *testing.T) {
 			wantProto: agent_api.AgentProtocolA2A,
 		},
 		{
-			name:       "voice websocket with api-version",
-			raw:        "wss://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/voice?api-version=v1",
+			name: "voice websocket with api-version",
+			raw: "wss://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/" +
+				"protocols/voice?api-version=v1",
 			wantProj:   "https://acct.services.ai.azure.com/api/projects/proj",
 			wantAgent:  "hello",
 			wantProto:  agent_api.AgentProtocolVoice,

@@ -314,6 +314,116 @@ func TestPersistInlineAgentEnvironmentKeepsLegacyOnEnvFailure(
 	require.Empty(t, server.added)
 }
 
+func TestFindCandidateMutations(t *testing.T) {
+	t.Parallel()
+
+	status := &optimize_api.OptimizeJobStatus{
+		ID: "job-1",
+		Result: &optimize_api.OptimizeResult{
+			Candidates: []optimize_api.CandidateResult{
+				{
+					Name:        "candidate-1",
+					CandidateID: "candidate-id-1",
+					Mutations:   map[string]any{"system_prompt": "updated"},
+				},
+			},
+		},
+	}
+
+	mutations, err := findCandidateMutations(status, "candidate-id-1")
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{"system_prompt": "updated"}, mutations)
+
+	_, err = findCandidateMutations(status, "missing")
+	require.ErrorContains(t, err, `candidate "missing" was not found`)
+}
+
+func TestPersistPromptAgentCandidateMutations(t *testing.T) {
+	t.Parallel()
+
+	props, err := projectpkg.PromptAgentDefinitionToServiceProperties(
+		agent_yaml.PromptAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind: agent_yaml.AgentKindPrompt,
+				Name: "prompt-agent",
+			},
+			Model:        "gpt-4.1-mini",
+			Instructions: "Original instructions.",
+		},
+	)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "prompt-agent",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+
+	candidateConfig := mustMarshal(t, map[string]any{
+		"model":         "gpt-5",
+		"system_prompt": "Optimized instructions.",
+		"tools": []any{
+			map[string]any{"type": "code_interpreter"},
+		},
+	})
+	require.NoError(t, persistPromptAgentCandidateMutations(
+		t.Context(),
+		client,
+		svc,
+		t.TempDir(),
+		candidateConfig,
+		map[string]any{
+			"system_prompt": []any{"rewrite"},
+			"tools":         []any{"update descriptions"},
+		},
+	))
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Equal(t, "Optimized instructions.", server.configValues["instructions"].value)
+	require.Equal(t, []any{
+		map[string]any{"type": "code_interpreter"},
+	}, server.configValues["tools"].value)
+	require.NotContains(t, server.configValues, "model")
+}
+
+func TestPersistPromptAgentCandidateMutationsSkipsVoiceAgent(t *testing.T) {
+	t.Parallel()
+
+	props, err := projectpkg.VoiceAgentDefinitionToServiceProperties(
+		agent_yaml.VoiceAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind: agent_yaml.AgentKindPromptVoice,
+				Name: "voice-agent",
+			},
+			Model: &agent_yaml.Model{Id: "gpt-realtime"},
+		},
+		nil,
+	)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "voice-agent",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+
+	require.NoError(t, persistPromptAgentCandidateMutations(
+		t.Context(),
+		client,
+		svc,
+		t.TempDir(),
+		json.RawMessage(`not-json`),
+		map[string]any{"system_prompt": "updated"},
+	))
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Empty(t, server.configValues)
+}
+
 // ---- printPreviewLines ----
 
 func TestPrintPreviewLines(t *testing.T) {

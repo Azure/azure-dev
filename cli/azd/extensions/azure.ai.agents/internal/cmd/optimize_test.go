@@ -376,6 +376,42 @@ func TestApplyOverrides_NoPrompt_NoDataset_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "a dataset is required")
 }
 
+func TestApplyOverrides_PromptAgentUsesServiceSideDefinition(t *testing.T) {
+	t.Parallel()
+
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent: opt_eval.AgentRef{Name: "prompt-agent"},
+			Dataset: &opt_eval.DatasetRef{
+				Name: "optimization-dataset",
+			},
+			Evaluators: opt_eval.EvaluatorList{
+				{Name: "builtin.task_adherence"},
+			},
+		},
+		Options: &opt_eval.Options{
+			EvalModel:         "gpt-4.1-mini",
+			OptimizationModel: "gpt-5",
+		},
+	}
+	action := &OptimizeAction{
+		flags:       &optimizeFlags{},
+		noPrompt:    true,
+		promptAgent: true,
+	}
+
+	require.NoError(t, action.applyOverrides(t.Context(), cfg, t.TempDir()))
+	require.True(t, cfg.Agent.Instruction.IsEmpty())
+	require.Empty(t, cfg.Agent.Model)
+	require.Empty(t, cfg.SkillDir)
+	require.Empty(t, cfg.ToolsFile)
+	require.Nil(t, cfg.Options.OptimizationConfig)
+
+	request, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+	require.Nil(t, request.Options.OptimizationConfig)
+}
+
 // ---- printOptimizeResults — table format ----
 
 func TestPrintOptimizeResults_TableHasCandidateScorePass(t *testing.T) {

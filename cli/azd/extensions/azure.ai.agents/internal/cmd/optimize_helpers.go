@@ -9,6 +9,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -347,6 +348,13 @@ func baselineAdvancementDir(
 // read it, and the swap is staged so a mid-copy failure leaves the existing
 // baseline intact.
 func advanceBaselineToCandidate(serviceDir, candidateID, jobID string) error {
+	return advanceBaselineToCandidateWithRename(serviceDir, candidateID, jobID, os.Rename)
+}
+
+func advanceBaselineToCandidateWithRename(
+	serviceDir, candidateID, jobID string,
+	rename func(string, string) error,
+) error {
 	if serviceDir == "" || candidateID == "" {
 		return nil
 	}
@@ -362,7 +370,11 @@ func advanceBaselineToCandidate(serviceDir, candidateID, jobID string) error {
 	baselineDir := filepath.Join(configsDir, opt_eval.BaselineDir)
 
 	// Only advance when the candidate config exists locally.
-	if info, err := os.Stat(candidateDir); err != nil || !info.IsDir() {
+	candidateExists, err := candidateConfigExists(candidateDir, os.Stat)
+	if err != nil {
+		return err
+	}
+	if !candidateExists {
 		return nil
 	}
 
@@ -378,17 +390,25 @@ func advanceBaselineToCandidate(serviceDir, candidateID, jobID string) error {
 		return fmt.Errorf("copying candidate config: %w", err)
 	}
 
-	// Retire the previous baseline before installing the new one. Prefer
-	// archiving it as baseline_<job-id> for rollback/audit; fall back to
-	// removal when the job ID is missing or unsafe as a path segment.
+	archiveDir := ""
+	if jobID != "" && isSafePathSegment(jobID) {
+		archiveDir = filepath.Join(configsDir, opt_eval.BaselineDir+"_"+jobID)
+	}
+
+	// Archive the previous baseline only when this job does not already have an
+	// archive. On a retry, preserve the first rollback snapshot and remove the
+	// current baseline before installing the staged candidate.
 	if _, err := os.Stat(baselineDir); err == nil {
-		if jobID != "" && isSafePathSegment(jobID) {
-			archiveDir := filepath.Join(configsDir, opt_eval.BaselineDir+"_"+jobID)
-			// Replace any existing archive for this job so Rename succeeds.
-			if err := os.RemoveAll(archiveDir); err != nil {
-				return fmt.Errorf("clearing previous baseline archive: %w", err)
+		archiveExists := false
+		if archiveDir != "" {
+			if _, err := os.Stat(archiveDir); err == nil {
+				archiveExists = true
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("checking previous baseline archive: %w", err)
 			}
-			if err := os.Rename(baselineDir, archiveDir); err != nil {
+		}
+		if archiveDir != "" && !archiveExists {
+			if err := rename(baselineDir, archiveDir); err != nil {
 				return fmt.Errorf("archiving previous baseline: %w", err)
 			}
 		} else if err := os.RemoveAll(baselineDir); err != nil {
@@ -396,10 +416,36 @@ func advanceBaselineToCandidate(serviceDir, candidateID, jobID string) error {
 		}
 	}
 
-	if err := os.Rename(stageDir, baselineDir); err != nil {
+	if err := rename(stageDir, baselineDir); err != nil {
+		if archiveDir != "" {
+			if restoreErr := copyDirectory(archiveDir, baselineDir); restoreErr != nil {
+				return fmt.Errorf(
+					"promoting baseline: %w; restoring previous baseline: %v",
+					err,
+					restoreErr,
+				)
+			}
+		}
 		return fmt.Errorf("promoting baseline: %w", err)
 	}
 	return nil
+}
+
+func candidateConfigExists(
+	candidateDir string,
+	stat func(string) (os.FileInfo, error),
+) (bool, error) {
+	info, err := stat(candidateDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("accessing candidate config: %w", err)
+	}
+	if !info.IsDir() {
+		return false, fmt.Errorf("candidate config %q is not a directory", candidateDir)
+	}
+	return true, nil
 }
 
 // isSafePathSegment reports whether name is a single, non-traversing path

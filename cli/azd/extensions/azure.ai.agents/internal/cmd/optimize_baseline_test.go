@@ -144,6 +144,49 @@ func TestAdvanceBaselineToCandidate_RestoresBaselineWhenPromotionFails(t *testin
 	assert.Equal(t, "original", string(archive))
 }
 
+func TestAdvanceBaselineToCandidate_RemovesPartialBaselineWhenRestoreFails(t *testing.T) {
+	t.Parallel()
+
+	serviceDir := t.TempDir()
+	configsDir := filepath.Join(serviceDir, opt_eval.AgentConfigsDir)
+	writeAgentConfigDir(t, configsDir, opt_eval.BaselineDir, "original", nil)
+	writeAgentConfigDir(t, configsDir, "candidate_abc", "optimized", nil)
+
+	promotionFailed := false
+	rename := func(oldPath, newPath string) error {
+		if filepath.Base(oldPath) != opt_eval.BaselineDir &&
+			newPath == filepath.Join(configsDir, opt_eval.BaselineDir) &&
+			!promotionFailed {
+			promotionFailed = true
+			return assert.AnError
+		}
+		return os.Rename(oldPath, newPath)
+	}
+	restoreErr := errors.New("restore failed")
+	copyDir := func(src, dst string) error {
+		if filepath.Base(src) == opt_eval.BaselineDir+"_job-1" {
+			require.NoError(t, os.MkdirAll(dst, 0750))
+			require.NoError(t, os.WriteFile(filepath.Join(dst, "partial"), []byte("partial"), 0600))
+			return restoreErr
+		}
+		return copyDirectory(src, dst)
+	}
+
+	err := advanceBaselineToCandidateWithOps(
+		serviceDir,
+		"candidate_abc",
+		"job-1",
+		rename,
+		copyDir,
+	)
+	require.ErrorIs(t, err, assert.AnError)
+	require.ErrorContains(t, err, "restoring previous baseline: restore failed")
+	require.ErrorContains(t, err, "partial baseline removed")
+	assert.NoDirExists(t, filepath.Join(configsDir, opt_eval.BaselineDir))
+	assert.DirExists(t, filepath.Join(configsDir, opt_eval.BaselineDir+"_job-1"))
+	assert.DirExists(t, filepath.Join(configsDir, "candidate_abc"))
+}
+
 func TestAdvanceBaselineToCandidate_NoJobIDRemovesBaseline(t *testing.T) {
 	t.Parallel()
 

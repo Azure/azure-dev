@@ -355,6 +355,14 @@ func advanceBaselineToCandidateWithRename(
 	serviceDir, candidateID, jobID string,
 	rename func(string, string) error,
 ) error {
+	return advanceBaselineToCandidateWithOps(serviceDir, candidateID, jobID, rename, copyDirectory)
+}
+
+func advanceBaselineToCandidateWithOps(
+	serviceDir, candidateID, jobID string,
+	rename func(string, string) error,
+	copyDir func(string, string) error,
+) error {
 	if serviceDir == "" || candidateID == "" {
 		return nil
 	}
@@ -386,7 +394,7 @@ func advanceBaselineToCandidateWithRename(
 	}
 	defer func() { _ = os.RemoveAll(stageDir) }()
 
-	if err := copyDirectory(candidateDir, stageDir); err != nil {
+	if err := copyDir(candidateDir, stageDir); err != nil {
 		return fmt.Errorf("copying candidate config: %w", err)
 	}
 
@@ -418,9 +426,28 @@ func advanceBaselineToCandidateWithRename(
 
 	if err := rename(stageDir, baselineDir); err != nil {
 		if archiveDir != "" {
-			if restoreErr := copyDirectory(archiveDir, baselineDir); restoreErr != nil {
+			if restoreErr := copyDir(archiveDir, baselineDir); restoreErr != nil {
+				if cleanupErr := os.RemoveAll(baselineDir); cleanupErr != nil {
+					log.Printf(
+						"warning: failed to restore previous baseline from %s and failed to remove partial baseline at %s: %v",
+						archiveDir,
+						baselineDir,
+						cleanupErr,
+					)
+					return fmt.Errorf(
+						"promoting baseline: %w; restoring previous baseline: %v; removing partial baseline: %v",
+						err,
+						restoreErr,
+						cleanupErr,
+					)
+				}
+				log.Printf(
+					"warning: failed to restore previous baseline from %s; removed partial baseline at %s",
+					archiveDir,
+					baselineDir,
+				)
 				return fmt.Errorf(
-					"promoting baseline: %w; restoring previous baseline: %v",
+					"promoting baseline: %w; restoring previous baseline: %v; partial baseline removed",
 					err,
 					restoreErr,
 				)

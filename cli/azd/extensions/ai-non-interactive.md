@@ -16,7 +16,7 @@ no non-interactive equivalent is a bug.
 | `ai agent init` | Source, template, or manifest | `--manifest`, `--src`, `--image`, or the hidden automation-only `--kind` | Infers the flow from supplied inputs; otherwise returns actionable missing-input guidance. |
 | `ai agent init` | Reuse or overwrite an existing agent definition | Reuse the detected definition, or pass `--force` to overwrite | Refuses to overwrite unless `--force` is present. |
 | `ai agent init` | Copy a large local manifest directory | `--manifest` and `--src` identify the exact source and destination | Copies the selected directory without an additional prompt. |
-| `ai agent init` | Foundry project: existing or new | `--project-id` selects an existing project; `AZURE_AI_PROJECT_NAME` supplies the new project name | Prompts for a new project name interactively; in no-prompt mode, uses a supplied name or keeps the existing derived-name fallback without prompting. |
+| `ai agent init` | Foundry project: existing or new | `--project-id` selects an existing project | Creates or defers a new project configuration when no project ID is supplied. |
 | `ai agent init` | Azure subscription | `AZURE_SUBSCRIPTION_ID`, or the subscription embedded in `--project-id` | Defers Azure setup with actionable guidance when the value cannot be resolved. |
 | `ai agent init` | Azure location | `AZURE_LOCATION`, `AZURE_AI_DEPLOYMENTS_LOCATION`, or the location of `--project-id` | Uses the configured value or defers Azure setup with actionable guidance. |
 | `ai agent init` | Agent name | `--agent-name`, manifest name, or adopted service name | Uses the supplied/inferred name; errors when a name is required and cannot be inferred. |

@@ -2,6 +2,16 @@
 
 <!-- cspell:ignore Yimin -->
 
+## 1.0.0-beta.6 (2026-09-10)
+
+### Features Added
+
+- [[#9632]](https://github.com/Azure/azure-dev/pull/9632) Update Foundry Routines commands and service-target deployments to use the GA API.
+
+### Bugs Fixed
+
+- [[#9632]](https://github.com/Azure/azure-dev/pull/9632) Fix routine service deployments for guest and multi-tenant users by authenticating through the user-access tenant.
+
 ## 1.0.0-beta.5 (2026-09-04)
 
 ### Features Added

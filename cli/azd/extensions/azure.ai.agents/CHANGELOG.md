@@ -2,6 +2,19 @@
 
 <!-- cspell:ignore Deeksharma JerryYangKai -->
 
+## 1.0.0-beta.15 (2026-09-10)
+
+### Features Added
+
+- [[#9697]](https://github.com/Azure/azure-dev/pull/9697) Add hosted voice agent deployment with managed voice wrappers and configurable voice settings.
+- [[#9804]](https://github.com/Azure/azure-dev/pull/9804) Add Foundry-side ACS and Twilio telephony bindings for prompt voice agents.
+- [[#9905]](https://github.com/Azure/azure-dev/pull/9905) Prompt for a Foundry project name when agent initialization creates a new project.
+
+### Bugs Fixed
+
+- [[#9719]](https://github.com/Azure/azure-dev/pull/9719) Fix agent optimization to advance the local baseline after deploying a successful candidate. Thanks @YoYoJa for the contribution!
+- [[#9808]](https://github.com/Azure/azure-dev/pull/9808) Fix remote agent invocation to detect the deployed protocol when the local agent definition is missing or stale.
+
 ## 1.0.0-beta.14 (2026-09-04)
 
 ### Breaking Changes

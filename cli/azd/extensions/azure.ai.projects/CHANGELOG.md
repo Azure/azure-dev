@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.10 (2026-09-10)
+
+### Features Added
+
+- [[#9559]](https://github.com/Azure/azure-dev/pull/9559) Add `azd ai project add` and project-aware deployment authoring for new, adopted, and endpoint-only Foundry projects.
+
 ## 1.0.0-beta.9 (2026-09-04)
 
 ### Features Added

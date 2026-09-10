@@ -41,11 +41,28 @@ func resolveConnectionContext(
 	ctx context.Context,
 	flagEndpoint string,
 ) (*connectionContext, error) {
-	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{FlagValue: flagEndpoint})
+	return resolveConnectionContextWithEnvironment(ctx, flagEndpoint, "")
+}
+
+// resolveConnectionContextWithEnvironment keeps an explicit selection consistent
+// across endpoint lookup and ARM/tenant context. In particular, a destructive
+// command must not fall back to another project's endpoint when that environment
+// has no endpoint. An explicit endpoint flag still takes precedence; omitting the
+// environment retains the standalone cascade and process-value fallback.
+func resolveConnectionContextWithEnvironment(
+	ctx context.Context,
+	flagEndpoint, environmentName string,
+) (*connectionContext, error) {
+	if environmentName != "" && flagEndpoint == "" {
+		return resolveConnectionContextForEnvironment(ctx, environmentName)
+	}
+	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{
+		FlagValue: flagEndpoint, EnvironmentName: environmentName,
+	})
 	if err != nil {
 		return nil, err
 	}
-	return newConnectionContext(ctx, resolved.Endpoint, "")
+	return newConnectionContext(ctx, resolved.Endpoint, environmentName)
 }
 
 // resolveConnectionContextForEnvironment is the lifecycle-only path. An absent

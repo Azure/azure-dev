@@ -746,7 +746,7 @@ type ConnectionDeleteAction struct {
 
 // Run executes the delete operation.
 func (a *ConnectionDeleteAction) Run(ctx context.Context) error {
-	connCtx, err := resolveConnectionContext(ctx, a.flags.projectEndpoint)
+	connCtx, err := resolveConnectionContextWithEnvironment(ctx, a.flags.projectEndpoint, a.flags.environment)
 	if err != nil {
 		return err
 	}

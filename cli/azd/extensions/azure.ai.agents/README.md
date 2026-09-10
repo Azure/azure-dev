@@ -26,6 +26,9 @@ lifecycle behavior remain owned by the `azure.ai.toolboxes` and
 The previous `azd ai agent add <type> ...` command order is no longer supported;
 only the command hierarchy changes, not the dependency mutation or JSON output.
 
+This hierarchy is the [scoped Agent dependency exception](../../docs/extensions/extensions-style-guide.md#scoped-exception-agent-dependency-composition)
+to the extension command convention; other commands retain the verb-first rule.
+
 If a toolbox is declared inline on an agent, move its definition to an
 independent `azure.ai.toolbox` service before deployment. If the new service key
 differs from the original toolbox name (for example, `My Tools` becomes

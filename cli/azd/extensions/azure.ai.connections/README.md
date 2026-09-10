@@ -100,6 +100,15 @@ read failures still allow ARM discovery and default credential behavior. If the
 azd daemon or active environment is unavailable, standalone commands retain
 those defaults without reading process context values.
 
+For `azd ai connection delete --environment <name>`, the selected environment is
+used for both the remote Connection context and local readiness cleanup. Without
+an explicit `--project-endpoint`, its persisted project endpoint is required;
+a missing endpoint fails before any Connection lookup, marker change, or deletion
+instead of falling back to the default environment or global/process context.
+An explicit `--project-endpoint` still wins, while ARM context and tenant lookup
+use only the selected environment's persisted values. Omitting `--environment`
+retains the standalone fallback behavior described above.
+
 For an existing project with no Connections, discovery cannot infer its ARM
 subscription and resource group from the endpoint alone. Persist the full
 `AZURE_AI_PROJECT_ID` in the selected azd environment, or adopt the project with

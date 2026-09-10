@@ -16,6 +16,11 @@ All commands automatically create a root command event with a `cmd.` namespace p
 
 ## Viewing Traces Locally
 
+The file and OTLP outputs use the same resource policy as azd's Application Insights telemetry. azd exports only its
+declared application resource fields and standard OpenTelemetry SDK metadata. Environment-provided resource values,
+including `OTEL_RESOURCE_ATTRIBUTES` and `OTEL_SERVICE_NAME`, are not included in the exported resource. This does
+not remove declared span attributes or first-party extension `ext.*` usage attributes.
+
 ### Write to file
 
 ```bash

@@ -136,11 +136,14 @@ func initialize() (*TelemetrySystem, error) {
 		return nil, fmt.Errorf("failed to parse appInsights connection string: %w", err)
 	}
 
+	telemetryResource := resource.New()
 	exporter := NewExporter(storageQueue, config.InstrumentationKey)
 
+	// The OTel SDK merges environment resource attributes into the provider resource.
+	// Wrap each configured exporter so it receives only the canonical resource.
 	options := []trace.TracerProviderOption{
-		trace.WithBatcher(exporter),
-		trace.WithResource(resource.New()),
+		trace.WithBatcher(newResourceExporter(exporter, telemetryResource)),
+		trace.WithResource(telemetryResource),
 	}
 
 	logFile, logUrl := getTraceFlags()
@@ -156,7 +159,7 @@ func initialize() (*TelemetrySystem, error) {
 			return nil, fmt.Errorf("failed to create log file exporter: %w", err)
 		}
 
-		options = append(options, trace.WithBatcher(stdoutExporter))
+		options = append(options, trace.WithBatcher(newResourceExporter(stdoutExporter, telemetryResource)))
 	}
 
 	if logUrl != "" {
@@ -195,7 +198,7 @@ func initialize() (*TelemetrySystem, error) {
 			return nil, fmt.Errorf("failed to create http trace exporter: %w", err)
 		}
 
-		options = append(options, trace.WithBatcher(httpExporter))
+		options = append(options, trace.WithBatcher(newResourceExporter(httpExporter, telemetryResource)))
 	}
 
 	tp := trace.NewTracerProvider(options...)

@@ -11,6 +11,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 )
 
 // clearCIEnvVars unsets all CI-related environment variables so tests are deterministic.
@@ -275,6 +279,12 @@ func TestGetExecutionEnvironment_Agents(t *testing.T) {
 			want:    fields.EnvGitHubCopilotApp,
 		},
 		{
+			name:     "Antigravity",
+			envVar:   "ANTIGRAVITY_AGENT",
+			envValue: "1",
+			want:     fields.EnvAntigravity,
+		},
+		{
 			name:    "GitHub Copilot VSCode",
 			aiAgent: "github_copilot_vscode_agent",
 			want:    fields.EnvGitHubCopilotVSCode,
@@ -337,6 +347,8 @@ func TestGetExecutionEnvironment_Agents(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			for _, envVar := range []string{
+				"ANTIGRAVITY_AGENT",
+				"ANTIGRAVITY_CONVERSATION_ID",
 				"CLAUDECODE",
 				"CLAUDE_CODE_ENTRYPOINT",
 				"CODEX_INTERNAL_ORIGINATOR_OVERRIDE",
@@ -413,7 +425,7 @@ func TestExecEnvModifiers(t *testing.T) {
 	}
 }
 
-func TestNew_returns_non_nil_resource(t *testing.T) {
+func TestNewReturnsCanonicalResource(t *testing.T) {
 	clearCIEnvVars(t)
 	t.Setenv("AZD_IN_CLOUDSHELL", "")
 	os.Unsetenv("AZD_IN_CLOUDSHELL")
@@ -421,9 +433,48 @@ func TestNew_returns_non_nil_resource(t *testing.T) {
 	os.Unsetenv("CODESPACES")
 	t.Setenv("AZURE_DEV_USER_AGENT", "")
 	os.Unsetenv("AZURE_DEV_USER_AGENT")
+	t.Setenv(
+		"OTEL_RESOURCE_ATTRIBUTES",
+		"user.email=customer@example.com,custom.resource=value,service.instance.id=customer-instance",
+	)
+	t.Setenv("OTEL_SERVICE_NAME", "ambient-service")
+	t.Setenv("OTEL_GO_X_RESOURCE", "true")
 
 	r := New()
-	if r == nil {
-		t.Fatal("New() returned nil")
+	require.NotNil(t, r)
+	require.Equal(t, semconv.SchemaURL, r.SchemaURL())
+
+	attributes := map[attribute.Key]attribute.Value{}
+	for _, kv := range r.Attributes() {
+		attributes[kv.Key] = kv.Value
 	}
+
+	expectedKeys := []attribute.Key{
+		fields.ServiceNameKey.Key,
+		fields.ServiceVersionKey.Key,
+		fields.OSTypeKey.Key,
+		fields.OSVersionKey.Key,
+		fields.HostArchKey.Key,
+		fields.ProcessRuntimeVersionKey.Key,
+		fields.ExecutionEnvironmentKey.Key,
+		fields.MachineIdKey.Key,
+		fields.InstalledByKey.Key,
+		fields.DevDeviceIdKey.Key,
+		semconv.TelemetrySDKNameKey,
+		semconv.TelemetrySDKLanguageKey,
+		semconv.TelemetrySDKVersionKey,
+	}
+	require.Len(t, attributes, len(expectedKeys))
+	for _, key := range expectedKeys {
+		require.Contains(t, attributes, key)
+	}
+
+	require.Equal(t, fields.ServiceNameAzd, attributes[fields.ServiceNameKey.Key].AsString())
+	require.Equal(t, "opentelemetry", attributes[semconv.TelemetrySDKNameKey].AsString())
+	require.Equal(t, "go", attributes[semconv.TelemetrySDKLanguageKey].AsString())
+	require.Equal(t, sdk.Version(), attributes[semconv.TelemetrySDKVersionKey].AsString())
+
+	require.NotContains(t, attributes, attribute.Key("user.email"))
+	require.NotContains(t, attributes, attribute.Key("custom.resource"))
+	require.NotContains(t, attributes, semconv.ServiceInstanceIDKey)
 }

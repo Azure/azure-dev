@@ -14,6 +14,8 @@ Environment variables that configure Azure Developer CLI behavior. These can be 
 |---|---|
 | `AZD_CONFIG_DIR` | Override the default user configuration directory |
 | `AZURE_DEV_COLLECT_TELEMETRY` | Set to `no` to disable telemetry collection |
+| `OTEL_RESOURCE_ATTRIBUTES` | Read by the OpenTelemetry SDK but not supported for customizing azd telemetry; its values are not included in resources exported by azd |
+| `OTEL_SERVICE_NAME` | Does not override the exported azd service name, which is always `azd` |
 
 ## Behavior
 

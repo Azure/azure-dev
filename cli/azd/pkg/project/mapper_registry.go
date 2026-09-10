@@ -103,32 +103,36 @@ func registerProjectMappings() {
 		resolver := mapper.GetResolver(ctx)
 		envResolver := getEnvResolver(resolver)
 
-		resourceGroupName, err := src.ResourceGroupName.Envsubst(envResolver)
+		resourceGroupName, err := envsubstIfEnabled(ctx, src.ResourceGroupName, envResolver)
 		if err != nil {
 			return nil, fmt.Errorf("envsubst service resource group name: %w", err)
 		}
 
-		resourceName, err := src.ResourceName.Envsubst(envResolver)
+		resourceName, err := envsubstIfEnabled(ctx, src.ResourceName, envResolver)
 		if err != nil {
 			return nil, fmt.Errorf("envsubst service resource name: %w", err)
 		}
 
-		image, err := src.Image.Envsubst(envResolver)
+		image, err := envsubstIfEnabled(ctx, src.Image, envResolver)
 		if err != nil {
 			return nil, fmt.Errorf("envsubst image: %w", err)
 		}
 
 		var serviceEnv map[string]string
 		if len(src.Environment) > 0 {
-			serviceEnv, err = src.Environment.Expand(envResolver)
-			if err != nil {
-				return nil, fmt.Errorf("envsubst service environment: %w", err)
+			if mapper.EnvSubstEnabled(ctx) {
+				serviceEnv, err = src.Environment.Expand(envResolver)
+				if err != nil {
+					return nil, fmt.Errorf("envsubst service environment: %w", err)
+				}
+			} else {
+				serviceEnv = src.Environment.Raw()
 			}
 		}
 
 		// Convert Docker options
 		var docker *azdext.DockerProjectOptions
-		err = mapper.WithResolver(resolver).Convert(src.Docker, &docker)
+		err = mapper.WithContext(ctx).Convert(src.Docker, &docker)
 		if err != nil {
 			return nil, fmt.Errorf("convert docker options: %w", err)
 		}
@@ -176,24 +180,24 @@ func registerProjectMappings() {
 		resolver := mapper.GetResolver(ctx)
 		envResolver := getEnvResolver(resolver)
 
-		registry, err := src.Registry.Envsubst(envResolver)
+		registry, err := envsubstIfEnabled(ctx, src.Registry, envResolver)
 		if err != nil {
 			return nil, fmt.Errorf("envsubst docker registry: %w", err)
 		}
 
-		image, err := src.Image.Envsubst(envResolver)
+		image, err := envsubstIfEnabled(ctx, src.Image, envResolver)
 		if err != nil {
 			return nil, fmt.Errorf("envsubst docker image: %w", err)
 		}
 
-		tag, err := src.Tag.Envsubst(envResolver)
+		tag, err := envsubstIfEnabled(ctx, src.Tag, envResolver)
 		if err != nil {
 			return nil, fmt.Errorf("envsubst docker tag: %w", err)
 		}
 
 		buildArgs := []string{}
 		for _, arg := range src.BuildArgs {
-			resolvedArg, err := arg.Envsubst(envResolver)
+			resolvedArg, err := envsubstIfEnabled(ctx, arg, envResolver)
 			if err != nil {
 				return nil, fmt.Errorf("envsubst docker build arg '%s': %w", arg, err)
 			}
@@ -393,7 +397,7 @@ func registerProjectMappings() {
 		// Convert Docker options if present
 		if src.Docker != nil {
 			var dockerOptions DockerProjectOptions
-			err := mapper.Convert(src.Docker, &dockerOptions)
+			err := mapper.WithContext(ctx).Convert(src.Docker, &dockerOptions)
 			if err != nil {
 				return nil, fmt.Errorf("convert docker options: %w", err)
 			}
@@ -410,11 +414,12 @@ func registerProjectMappings() {
 
 		if len(src.Environment) > 0 {
 			result.Environment = make(osutil.ExpandableMap, len(src.Environment))
+			newEnvironmentValue := osutil.NewLiteralExpandableString
+			if !mapper.EnvSubstEnabled(ctx) {
+				newEnvironmentValue = osutil.NewExpandableString
+			}
 			for key, value := range src.Environment {
-				// Incoming values are expanded literals, not templates: escape them so a
-				// later expansion (or a round trip back into azure.yaml) cannot reinterpret
-				// or corrupt values containing `$`.
-				result.Environment[key] = osutil.NewLiteralExpandableString(value)
+				result.Environment[key] = newEnvironmentValue(value)
 			}
 		}
 
@@ -714,7 +719,7 @@ func registerProjectMappings() {
 		resolver := mapper.GetResolver(ctx)
 		envResolver := getEnvResolver(resolver)
 
-		resourceGroupName, err := src.ResourceGroupName.Envsubst(envResolver)
+		resourceGroupName, err := envsubstIfEnabled(ctx, src.ResourceGroupName, envResolver)
 		if err != nil {
 			return nil, fmt.Errorf("failed resolving ResourceGroupName, %w", err)
 		}
@@ -722,7 +727,7 @@ func registerProjectMappings() {
 		services := make(map[string]*azdext.ServiceConfig, len(src.Services))
 		for i, svc := range src.Services {
 			var serviceConfig *azdext.ServiceConfig
-			if err := mapper.WithResolver(resolver).Convert(svc, &serviceConfig); err != nil {
+			if err := mapper.WithContext(ctx).Convert(svc, &serviceConfig); err != nil {
 				return nil, fmt.Errorf("converting service %q: %w", i, err)
 			}
 
@@ -770,7 +775,7 @@ func registerProjectMappings() {
 		services := make(map[string]*ServiceConfig, len(src.Services))
 		for name, protoSvc := range src.Services {
 			var serviceConfig *ServiceConfig
-			if err := mapper.Convert(protoSvc, &serviceConfig); err != nil {
+			if err := mapper.WithContext(ctx).Convert(protoSvc, &serviceConfig); err != nil {
 				return nil, fmt.Errorf("converting service %s: %w", name, err)
 			}
 			services[name] = serviceConfig
@@ -815,6 +820,17 @@ func getEnvResolver(resolver mapper.Resolver) func(string) string {
 		return func(key string) string { return resolver(key) }
 	}
 	return func(string) string { return "" }
+}
+
+func envsubstIfEnabled(
+	ctx context.Context,
+	value osutil.ExpandableString,
+	resolver func(string) string,
+) (string, error) {
+	if !mapper.EnvSubstEnabled(ctx) {
+		return value.Raw(), nil
+	}
+	return value.Envsubst(resolver)
 }
 
 // getResourceTypeKinds returns the kinds for a given resource type.

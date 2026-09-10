@@ -86,6 +86,8 @@ telemetry by the agent-detection path.
 | `CODEX_SESSION_ID` | Non-empty | Codex |
 | `CURSOR_AGENT` | Exactly `1` | Cursor |
 | `CURSOR_CONVERSATION_ID` | Non-empty | Cursor |
+| `ANTIGRAVITY_AGENT` | Exactly `1` | Antigravity |
+| `ANTIGRAVITY_CONVERSATION_ID` | Non-empty | Antigravity |
 | `CLAUDECODE` | Exactly `1` | Claude Code |
 | `CLAUDE_CODE_ENTRYPOINT` | Exactly `claude-desktop` or `claude-vscode`, with `CLAUDECODE=1` | Claude Code Desktop or Claude Code VSCode |
 | `COPILOT_CLI` | Non-empty | GitHub Copilot CLI |
@@ -93,9 +95,14 @@ telemetry by the agent-detection path.
 | `GEMINI_CLI_NO_RELAUNCH` | Non-empty | Gemini |
 | `OPENCODE` | Non-empty | OpenCode |
 
-As a last resort, parent-process detection recognizes the `codex`, `claude`, `gemini`, `opencode`,
-and GitHub Copilot CLI executable names. It intentionally does not recognize `Cursor.exe`, because
-that name also identifies the regular Cursor desktop application.
+Antigravity's shell tool was validated with PTY-backed stdin and stdout by running local-only
+`azd env new`, `azd env select`, and `azd env remove` prompts. Text input, list selection, and
+confirmation all completed without EOF, hangs, duplicated rendering, or lost responses.
+
+As a last resort, parent-process detection recognizes the exact Antigravity executable name `agy`,
+along with the `codex`, `claude`, `gemini`, `opencode`, and GitHub Copilot CLI executable names.
+It intentionally does not recognize `Cursor.exe`, because that name also identifies the regular
+Cursor desktop application.
 
 ## azd exec
 
@@ -235,8 +242,14 @@ Metadata requests are unauthenticated when no matching token is set.
 | --- | --- |
 | `AZURE_DEV_COLLECT_TELEMETRY` | If false, disables telemetry collection. Telemetry is enabled by default. |
 | `AZURE_DEV_USER_AGENT` | Appends a custom string to the `User-Agent` header sent with Azure requests. It is also inspected for [AI agent detection](#ai-agent-detection) using case-insensitive substring matching. |
+| `OTEL_RESOURCE_ATTRIBUTES` | Read by the embedded OpenTelemetry SDK, but not supported for customizing azd telemetry. Its attributes are not included in resources exported by azd. |
+| `OTEL_SERVICE_NAME` | Read by the embedded OpenTelemetry SDK, but does not override azd's exported `service.name`, which is always `azd`. |
 | `TRACEPARENT` | The W3C Trace Context `traceparent` header for distributed tracing. Automatically set by `azd` on extension processes for trace propagation. Not typically set by users. |
 | `TRACESTATE` | The W3C Trace Context `tracestate` header for vendor-specific trace data. Automatically set by `azd` alongside `TRACEPARENT`. Not typically set by users. |
+
+Output from OpenTelemetry resource detector settings, including `OTEL_GO_X_RESOURCE`, is not included in resources
+exported to the telemetry queue, `--trace-log-file`, or `--trace-log-url`. This restriction applies to resource
+attributes; declared span attributes are unchanged.
 
 ## CI/CD Variables
 

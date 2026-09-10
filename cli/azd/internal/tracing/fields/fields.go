@@ -316,6 +316,7 @@ const (
 	EnvCloudShell         = "Azure CloudShell"
 
 	// AI Coding Agent environments
+	EnvAntigravity             = "Antigravity"
 	EnvClaudeCode              = "Claude Code"
 	EnvClaudeCodeDesktop       = "Claude Code Desktop"
 	EnvClaudeCodeVSCode        = "Claude Code VSCode"

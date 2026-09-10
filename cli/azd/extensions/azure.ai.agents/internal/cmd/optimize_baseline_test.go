@@ -125,7 +125,7 @@ func TestAdvanceBaselineToCandidate_ArchiveCollisionRestoresCurrentBaselineOnPro
 		return os.Rename(oldPath, newPath)
 	}
 
-	err := advanceBaselineToCandidateWithRename(serviceDir, "candidate_abc", "job-1", rename)
+	err := advanceBaselineToCandidateWithOps(serviceDir, "candidate_abc", "job-1", rename, copyDirectory)
 	require.ErrorIs(t, err, assert.AnError)
 
 	baseline, readErr := os.ReadFile(
@@ -158,11 +158,12 @@ func TestAdvanceBaselineToCandidate_RestoresBaselineWhenPromotionFails(t *testin
 		return os.Rename(oldPath, newPath)
 	}
 
-	err := advanceBaselineToCandidateWithRename(
+	err := advanceBaselineToCandidateWithOps(
 		serviceDir,
 		"candidate_abc",
 		"job-1",
 		rename,
+		copyDirectory,
 	)
 	require.ErrorIs(t, err, assert.AnError)
 

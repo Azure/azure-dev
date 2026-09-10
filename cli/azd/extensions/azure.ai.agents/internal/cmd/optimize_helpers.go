@@ -348,14 +348,7 @@ func baselineAdvancementDir(
 // read it, and the swap is staged so a mid-copy failure leaves the existing
 // baseline intact.
 func advanceBaselineToCandidate(serviceDir, candidateID, jobID string) error {
-	return advanceBaselineToCandidateWithRename(serviceDir, candidateID, jobID, os.Rename)
-}
-
-func advanceBaselineToCandidateWithRename(
-	serviceDir, candidateID, jobID string,
-	rename func(string, string) error,
-) error {
-	return advanceBaselineToCandidateWithOps(serviceDir, candidateID, jobID, rename, copyDirectory)
+	return advanceBaselineToCandidateWithOps(serviceDir, candidateID, jobID, os.Rename, copyDirectory)
 }
 
 func advanceBaselineToCandidateWithOps(

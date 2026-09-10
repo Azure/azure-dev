@@ -552,11 +552,12 @@ func warnBaselineAdvancementFailure(
 		"WARNING: candidate %q was promoted for service %q, but the local optimization baseline "+
 			"could not be updated: %v\n"+
 			"Before starting the next optimization round, set this candidate as its baseline by running:\n"+
-			"  azd ai agent optimize apply --candidate %q\n"+
+			"  azd ai agent optimize apply --agent %q --candidate %q\n"+
 			"  azd deploy %q\n",
 		candidateID,
 		serviceName,
 		err,
+		serviceName,
 		candidateID,
 		serviceName,
 	))

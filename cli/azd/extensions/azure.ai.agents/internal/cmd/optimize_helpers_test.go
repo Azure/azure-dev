@@ -32,7 +32,11 @@ func TestWarnBaselineAdvancementFailure(t *testing.T) {
 	assert.Contains(t, output.String(), `candidate "cand-123" was promoted for service "my-agent"`)
 	assert.Contains(t, output.String(), "Before starting the next optimization round")
 	assert.Contains(t, output.String(), "set this candidate as its baseline")
-	assert.Contains(t, output.String(), "azd ai agent optimize apply --candidate \"cand-123\"")
+	assert.Contains(
+		t,
+		output.String(),
+		"azd ai agent optimize apply --agent \"my-agent\" --candidate \"cand-123\"",
+	)
 	assert.Contains(t, output.String(), "azd deploy \"my-agent\"")
 	assert.Contains(t, output.String(), assert.AnError.Error())
 }

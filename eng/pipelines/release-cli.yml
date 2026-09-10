@@ -1,8 +1,11 @@
 parameters:
-  - name: DoPublish
-    displayName: Check to run a release build
-    type: boolean
-    default: false
+  - name: ReleaseMode
+    displayName: Release mode
+    type: string
+    default: Canary
+    values:
+      - Standard
+      - Canary
   - name: AzureRecordMode
     displayName: Azure Record Mode
     type: string
@@ -143,6 +146,11 @@ extends:
 
     # Do not publish on scheduled builds, only release from Azure/azure-dev
     - ${{ if and(ne(variables['Build.Reason'], 'Schedule'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
-      # Only publish if build is manually triggered & DoPublish is true, or if it's a CI build (push to main)
-      - ${{ if or(and(eq('Manual', variables['Build.Reason']), eq('true', parameters.DoPublish)), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'PullRequest')) }}:
+      - ${{ if and(eq(parameters.ReleaseMode, 'Standard'), in(variables['Build.Reason'], 'Manual', 'IndividualCI', 'BatchedCI', 'PullRequest')) }}:
         - template: /eng/pipelines/templates/stages/publish.yml
+
+      # Canary publication is available only for manual runs.
+      - ${{ if and(eq(parameters.ReleaseMode, 'Canary'), eq(variables['Build.Reason'], 'Manual')) }}:
+        - template: /eng/pipelines/templates/stages/publish.yml
+          parameters:
+            ReleaseMode: Canary

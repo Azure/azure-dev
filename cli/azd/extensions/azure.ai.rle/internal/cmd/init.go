@@ -22,24 +22,24 @@ type rleInitFlags struct {
 type initAction struct {
 	cmd             *cobra.Command
 	flags           *rleInitFlags
-	envNameOverride string
+	environmentName string
 }
 
-var checkoutOpenEnvEchoSampleFunc = project.CheckoutOpenEnvEchoSample
+var checkoutOpenEnvEnvironmentFunc = project.CheckoutOpenEnvEnvironment
 
 func newInitCommand() *cobra.Command {
 	flags := &rleInitFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "init",
+		Use:   "init [environment-name]",
 		Short: "Initialize a local RLE environment",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			envNameOverride := ""
+			environmentName := ""
 			if len(args) == 1 {
-				envNameOverride = args[0]
+				environmentName = args[0]
 			}
-			return (&initAction{cmd: cmd, flags: flags, envNameOverride: envNameOverride}).Run()
+			return (&initAction{cmd: cmd, flags: flags, environmentName: environmentName}).Run()
 		},
 	}
 
@@ -62,7 +62,7 @@ func newInitCommand() *cobra.Command {
 }
 
 func (a *initAction) Run() error {
-	envName := firstNonEmpty(a.envNameOverride, "echo_env")
+	envName := firstNonEmpty(a.environmentName, "echo_env")
 	var err error
 	envName, err = project.ValidateEnvironmentName(envName)
 	if err != nil {
@@ -74,7 +74,7 @@ func (a *initAction) Run() error {
 		}
 	}
 
-	sessionDir, err := checkoutOpenEnvEchoSampleFunc(envName, ".", a.flags.force)
+	sessionDir, err := checkoutOpenEnvEnvironmentFunc(envName, ".", a.flags.force)
 	if err != nil {
 		return err
 	}

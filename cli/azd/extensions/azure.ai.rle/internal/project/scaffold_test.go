@@ -71,17 +71,44 @@ func TestCopyDirectoryRejectsFileSource(t *testing.T) {
 	}
 }
 
-func TestCheckoutOpenEnvEchoSampleRejectsInvalidNameBeforeChangingDestination(t *testing.T) {
+func TestCheckoutOpenEnvEnvironmentRejectsInvalidNameBeforeChangingDestination(t *testing.T) {
 	destDir := t.TempDir()
 	sentinel := filepath.Join(destDir, "sentinel.txt")
 	if err := os.WriteFile(sentinel, []byte("keep"), 0600); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := CheckoutOpenEnvEchoSample("../bad", destDir, true); err == nil {
+	if _, err := CheckoutOpenEnvEnvironment("../bad", destDir, true); err == nil {
 		t.Fatal("expected invalid environment name to be rejected")
 	}
+
 	if _, err := os.Stat(sentinel); err != nil {
 		t.Fatalf("expected destination to be unchanged: %v", err)
+	}
+}
+
+func TestOpenEnvEnvironmentPath(t *testing.T) {
+	if got := openEnvEnvironmentPath("chess_env"); got != "envs/chess_env" {
+		t.Fatalf("expected selected OpenEnv environment path, got %q", got)
+	}
+}
+
+func TestCopyOpenEnvEnvironmentValidatesSourceBeforeReplacingDestination(t *testing.T) {
+	destDir := t.TempDir()
+	sessionDir := filepath.Join(destDir, "missing_env")
+	if err := os.MkdirAll(sessionDir, 0750); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(sessionDir, "keep.txt")
+	if err := os.WriteFile(sentinel, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := copyOpenEnvEnvironment(filepath.Join(t.TempDir(), "missing"), "missing_env", destDir, true)
+	if err == nil {
+		t.Fatal("expected missing OpenEnv environment to fail")
+	}
+	if _, statErr := os.Stat(sentinel); statErr != nil {
+		t.Fatalf("expected destination to remain unchanged after catalog lookup failure: %v", statErr)
 	}
 }

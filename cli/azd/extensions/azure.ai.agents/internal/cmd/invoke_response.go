@@ -182,7 +182,7 @@ func classifyResponseLifecycleError(cause error, operation, label, showCommand s
 			switch body.Error.Message {
 			case "This response cannot be streamed because it was not created with stream=true " +
 				"or the stream TTL has expired.":
-				// The service also returns this for cancelled/failed work without a replayable stream.
+				// The service also returns this for cancelled/failed work without a stream available for replay.
 				// It does not prove cancellation, so do not infer a lifecycle status from this error.
 				serviceErr.Message = "Output is unavailable for this invocation. " +
 					"Its stream was not recorded or has expired."

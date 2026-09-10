@@ -79,7 +79,7 @@ type InvokeAction struct {
 	resolvedBody          []byte
 	resolvedBodyLabel     string
 	bodyResolved          bool
-	credential azcore.TokenCredential
+	credential            azcore.TokenCredential
 }
 
 func newInvokeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {

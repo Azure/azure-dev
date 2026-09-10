@@ -171,12 +171,13 @@ func resolveInvocationCommand(
 		return nil, nil, "", err
 	}
 	if !supportsInvocationOperation(protocol, operation) {
+		action.closeResolvedRemoteContextClient()
 		return nil, nil, "", exterrors.Validation(exterrors.CodeInvalidParameter,
 			fmt.Sprintf("invocations %s is not supported with the %s protocol", operation, protocol),
 			"select a protocol that supports this operation")
 	}
 	action.flags.protocol = string(protocol)
-	rc, err := action.resolveRemoteContext(ctx)
+	rc, err := action.resolveRemoteContextForInvoke(ctx)
 	if err != nil {
 		return nil, nil, "", err
 	}

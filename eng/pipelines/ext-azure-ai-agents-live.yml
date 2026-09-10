@@ -264,6 +264,7 @@ extends:
                   targetPath: $(Pipeline.Workspace)/azure-ai-agents-template-cache
 
               - bash: |
+                  set -e
                   rm -f "$(Pipeline.Workspace)/azure-ai-agents-template-cache/.refreshed"
                   if ! (umask 077; : > "$CACHE_WARNINGS_FILE"); then
                     echo "##vso[task.logissue type=warning]Unable to initialize sample cache warning file."

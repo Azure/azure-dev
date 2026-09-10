@@ -36,7 +36,8 @@ func TestHostedVoiceStandaloneInitRejected(t *testing.T) {
 				require.ErrorContains(t, err, "hosted voice wrappers cannot be initialized from a standalone voice manifest")
 				local, ok := errors.AsType[*azdext.LocalError](err)
 				require.True(t, ok)
-				require.Equal(t, "use a sample azure.yaml that declares both the hosted target and the voice wrapper", local.Suggestion)
+				require.Equal(t,
+					"use a sample azure.yaml that declares both the hosted target and the voice wrapper", local.Suggestion)
 			})
 		}
 	}

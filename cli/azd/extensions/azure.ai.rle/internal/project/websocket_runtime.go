@@ -18,7 +18,12 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const maxWebSocketMessageBytes = 100 * 1024 * 1024
+const (
+	maxWebSocketMessageBytes = 100 * 1024 * 1024
+	webSocketPingInterval    = 20 * time.Second
+	webSocketPingTimeout     = 20 * time.Second
+	webSocketDrainTimeout    = 60 * time.Second
+)
 
 type WebSocketRuntimeSession struct {
 	baseURL               string
@@ -27,6 +32,9 @@ type WebSocketRuntimeSession struct {
 	mu                    sync.Mutex
 	exchangeMu            sync.Mutex
 	connection            *websocket.Conn
+	connectionDone        chan struct{}
+	keepAliveInterval     time.Duration
+	drainTimeout          time.Duration
 	terminalError         error
 	closed                bool
 }
@@ -40,6 +48,8 @@ func NewWebSocketRuntimeSession(
 		baseURL:               baseURL,
 		timeout:               timeout,
 		authorizationProvider: authorizationProvider,
+		keepAliveInterval:     webSocketPingInterval,
+		drainTimeout:          webSocketDrainTimeout,
 	}
 }
 
@@ -95,7 +105,7 @@ func (c *WebSocketRuntimeSession) call(
 ) (string, error) {
 	switch operation {
 	case "reset", "step", "state":
-		return c.exchange(ctx, operation, flags)
+		return c.exchange(ctx, operation, flags, true)
 	default:
 		return call(ctx, baseURL, operation, flags, authorizationProvider)
 	}
@@ -116,10 +126,28 @@ func (c *WebSocketRuntimeSession) Call(
 	return c.call(ctx, c.baseURL, operation, flags, c.authorizationProvider)
 }
 
+// CallAndDrain preserves cancellation until a request is sent, then drains its response
+// so a disconnected HTTP client cannot desynchronize the shared WebSocket session.
+func (c *WebSocketRuntimeSession) CallAndDrain(
+	ctx context.Context,
+	operation string,
+	payload string,
+) (string, error) {
+	flags := &callOptions{timeout: c.timeout}
+	switch operation {
+	case "reset":
+		flags.body = payload
+	case "step":
+		flags.action = payload
+	}
+	return c.exchange(ctx, operation, flags, false)
+}
+
 func (c *WebSocketRuntimeSession) exchange(
 	ctx context.Context,
 	operation string,
 	flags *callOptions,
+	cancelAfterSend bool,
 ) (string, error) {
 	c.exchangeMu.Lock()
 	defer c.exchangeMu.Unlock()
@@ -146,6 +174,10 @@ func (c *WebSocketRuntimeSession) exchange(
 	}
 
 	deadline, hasDeadline := operationDeadline(ctx, c.timeout)
+	if !cancelAfterSend && !hasDeadline {
+		deadline = time.Now().Add(c.drainTimeout)
+		hasDeadline = true
+	}
 	if hasDeadline {
 		if err := connection.SetWriteDeadline(deadline); err != nil {
 			return "", c.failConnection(connection, fmt.Errorf("set OpenEnv WebSocket write deadline: %w", err))
@@ -164,22 +196,28 @@ func (c *WebSocketRuntimeSession) exchange(
 			fmt.Errorf("send OpenEnv WebSocket %s request: %w", operation, err),
 		)
 	}
-	exchangeDone := make(chan struct{})
-	cancellationHandled := make(chan struct{})
-	go func() {
-		select {
-		case <-exchangeDone:
-		case <-ctx.Done():
-			c.failConnection(
-				connection,
-				fmt.Errorf("OpenEnv WebSocket %s request canceled: %w", operation, ctx.Err()),
-			)
-		}
-		close(cancellationHandled)
-	}()
+	var exchangeDone chan struct{}
+	var cancellationHandled chan struct{}
+	if cancelAfterSend {
+		exchangeDone = make(chan struct{})
+		cancellationHandled = make(chan struct{})
+		go func() {
+			select {
+			case <-exchangeDone:
+			case <-ctx.Done():
+				_ = c.failConnection(
+					connection,
+					fmt.Errorf("OpenEnv WebSocket %s request canceled: %w", operation, ctx.Err()),
+				)
+			}
+			close(cancellationHandled)
+		}()
+	}
 	messageType, response, err := connection.ReadMessage()
-	close(exchangeDone)
-	<-cancellationHandled
+	if cancelAfterSend {
+		close(exchangeDone)
+		<-cancellationHandled
+	}
 	if err != nil {
 		return "", c.failConnection(
 			connection,
@@ -254,13 +292,33 @@ func (c *WebSocketRuntimeSession) connect(ctx context.Context) error {
 	}
 	connection.SetReadLimit(maxWebSocketMessageBytes)
 	c.connection = connection
+	c.connectionDone = make(chan struct{})
+	go c.keepAlive(connection, c.connectionDone)
 	return nil
+}
+
+func (c *WebSocketRuntimeSession) keepAlive(connection *websocket.Conn, done <-chan struct{}) {
+	ticker := time.NewTicker(c.keepAliveInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			deadline := time.Now().Add(webSocketPingTimeout)
+			if err := connection.WriteControl(websocket.PingMessage, nil, deadline); err != nil {
+				_ = c.failConnection(connection, fmt.Errorf("send OpenEnv WebSocket keepalive: %w", err))
+				return
+			}
+		}
+	}
 }
 
 func (c *WebSocketRuntimeSession) failConnection(connection *websocket.Conn, err error) error {
 	c.mu.Lock()
 	if c.connection == connection {
 		c.connection = nil
+		c.stopKeepAliveLocked()
 	}
 	if c.terminalError == nil {
 		c.terminalError = &azdext.LocalError{
@@ -280,6 +338,7 @@ func (c *WebSocketRuntimeSession) Close() {
 	c.mu.Lock()
 	connection := c.connection
 	c.connection = nil
+	c.stopKeepAliveLocked()
 	c.closed = true
 	if c.terminalError == nil {
 		c.terminalError = &azdext.LocalError{
@@ -300,6 +359,13 @@ func (c *WebSocketRuntimeSession) Close() {
 		deadline,
 	)
 	_ = connection.Close()
+}
+
+func (c *WebSocketRuntimeSession) stopKeepAliveLocked() {
+	if c.connectionDone != nil {
+		close(c.connectionDone)
+		c.connectionDone = nil
+	}
 }
 
 func parseWebSocketResponse(operation string, response []byte) (string, bool, error) {

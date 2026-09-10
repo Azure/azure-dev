@@ -40,12 +40,16 @@ func createRleSessionDir(name string, dest string, force bool) (string, error) {
 	return sessionDir, nil
 }
 
-func CheckoutOpenEnvEnvironment(name string, dest string, force bool) (string, error) {
-	name, err := ValidateEnvironmentName(name)
+func CheckoutOpenEnvEnvironment(sourceName string, name string, dest string, force bool) (string, error) {
+	sourceName, err := ValidateEnvironmentName(sourceName)
 	if err != nil {
 		return "", err
 	}
-	sourcePath := openEnvEnvironmentPath(name)
+	name, err = ValidateEnvironmentName(name)
+	if err != nil {
+		return "", err
+	}
+	sourcePath := openEnvEnvironmentPath(sourceName)
 	tempDir, err := os.MkdirTemp("", "azd-rle-open-env-*")
 	if err != nil {
 		return "", err
@@ -70,16 +74,21 @@ func CheckoutOpenEnvEnvironment(name string, dest string, force bool) (string, e
 	}
 
 	sourceDir := filepath.Join(tempDir, filepath.FromSlash(sourcePath))
-	return copyOpenEnvEnvironment(sourceDir, name, dest, force)
+	return copyOpenEnvEnvironment(sourceDir, sourceName, name, dest, force)
 }
 
-func copyOpenEnvEnvironment(sourceDir string, name string, dest string, force bool) (string, error) {
+func copyOpenEnvEnvironment(sourceDir string, sourceName string, name string, dest string, force bool) (string, error) {
 	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
+		catalogURL := strings.TrimSuffix(openEnvRepoUrl, ".git")
 		return "", &azdext.LocalError{
-			Message:    fmt.Sprintf("OpenEnv environment %q was not found.", name),
-			Code:       "rle_open_env_environment_not_found",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: fmt.Sprintf("Choose an environment from %s/tree/%s/envs.", strings.TrimSuffix(openEnvRepoUrl, ".git"), openEnvRepoRef),
+			Message:  fmt.Sprintf("OpenEnv environment %q was not found.", sourceName),
+			Code:     "rle_open_env_environment_not_found",
+			Category: azdext.LocalErrorCategoryUser,
+			Suggestion: fmt.Sprintf(
+				"Choose an environment from %s/tree/%s/envs.",
+				catalogURL,
+				openEnvRepoRef,
+			),
 		}
 	} else if err != nil {
 		return "", err
@@ -107,7 +116,8 @@ func runGitCheckout(args ...string) error {
 			Suggestion: "Install Git, then retry azd ai rle init.",
 		}
 	}
-	process := exec.Command("git", args...) //nolint:gosec // Arguments are passed directly; the user value is validated as an environment name.
+	// The user-provided sparse path is validated as an environment name before reaching this command.
+	process := exec.Command("git", args...) //nolint:gosec
 	process.Env = os.Environ()
 	output, err := process.CombinedOutput()
 	if err != nil {

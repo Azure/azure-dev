@@ -20,6 +20,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1033,6 +1034,69 @@ func TestRemotePlaygroundProxyForwardsToSandbox(t *testing.T) {
 	}
 	if requestCount != 1 {
 		t.Fatalf("expected one authorized backend request, got %d", requestCount)
+	}
+}
+
+func TestRemotePlaygroundCancellationDoesNotFailSharedSession(t *testing.T) {
+	firstRequestReceived := make(chan struct{})
+	releaseFirstResponse := make(chan struct{})
+	var requestCount atomic.Int32
+	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		connection, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade WebSocket: %v", err)
+			return
+		}
+		defer connection.Close()
+		for {
+			var request map[string]any
+			if err := connection.ReadJSON(&request); err != nil {
+				if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
+					return
+				}
+				t.Errorf("read WebSocket request: %v", err)
+				return
+			}
+			currentRequest := requestCount.Add(1)
+			if currentRequest == 1 {
+				close(firstRequestReceived)
+				<-releaseFirstResponse
+			}
+			if err := connection.WriteJSON(map[string]any{
+				"type": "state",
+				"data": map[string]any{"request": currentRequest},
+			}); err != nil {
+				t.Errorf("write WebSocket response: %v", err)
+				return
+			}
+		}
+	}))
+	defer envServer.Close()
+
+	runtimeSession := project.NewWebSocketRuntimeSession(envServer.URL, 30, nil)
+	defer runtimeSession.Close()
+	requestContext, cancelRequest := context.WithCancel(t.Context())
+	request := httptest.NewRequest(http.MethodGet, "/state", nil).WithContext(requestContext)
+	recorder := httptest.NewRecorder()
+	proxyDone := make(chan struct{})
+	go func() {
+		proxyStatefulOpenEnvOperation(recorder, request, "state", runtimeSession)
+		close(proxyDone)
+	}()
+
+	<-firstRequestReceived
+	cancelRequest()
+	close(releaseFirstResponse)
+	<-proxyDone
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected canceled browser request to drain successfully, got %d", recorder.Code)
+	}
+	if _, err := runtimeSession.Call(t.Context(), "state", ""); err != nil {
+		t.Fatalf("expected shared session to remain usable: %v", err)
+	}
+	if requestCount.Load() != 2 {
+		t.Fatalf("expected two state requests on the shared session, got %d", requestCount.Load())
 	}
 }
 

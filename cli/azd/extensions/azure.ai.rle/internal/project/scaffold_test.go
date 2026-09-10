@@ -78,7 +78,7 @@ func TestCheckoutOpenEnvEnvironmentRejectsInvalidNameBeforeChangingDestination(t
 		t.Fatal(err)
 	}
 
-	if _, err := CheckoutOpenEnvEnvironment("../bad", destDir, true); err == nil {
+	if _, err := CheckoutOpenEnvEnvironment("../bad", "target", destDir, true); err == nil {
 		t.Fatal("expected invalid environment name to be rejected")
 	}
 
@@ -104,7 +104,13 @@ func TestCopyOpenEnvEnvironmentValidatesSourceBeforeReplacingDestination(t *test
 		t.Fatal(err)
 	}
 
-	_, err := copyOpenEnvEnvironment(filepath.Join(t.TempDir(), "missing"), "missing_env", destDir, true)
+	_, err := copyOpenEnvEnvironment(
+		filepath.Join(t.TempDir(), "missing"),
+		"missing_env",
+		"target_env",
+		destDir,
+		true,
+	)
 	if err == nil {
 		t.Fatal("expected missing OpenEnv environment to fail")
 	}

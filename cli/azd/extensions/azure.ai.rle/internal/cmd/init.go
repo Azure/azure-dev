@@ -16,13 +16,14 @@ import (
 )
 
 type rleInitFlags struct {
-	force bool
+	force  bool
+	source string
 }
 
 type initAction struct {
 	cmd             *cobra.Command
 	flags           *rleInitFlags
-	environmentName string
+	envNameOverride string
 }
 
 var checkoutOpenEnvEnvironmentFunc = project.CheckoutOpenEnvEnvironment
@@ -35,11 +36,11 @@ func newInitCommand() *cobra.Command {
 		Short: "Initialize a local RLE environment",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			environmentName := ""
+			envNameOverride := ""
 			if len(args) == 1 {
-				environmentName = args[0]
+				envNameOverride = args[0]
 			}
-			return (&initAction{cmd: cmd, flags: flags, environmentName: environmentName}).Run()
+			return (&initAction{cmd: cmd, flags: flags, envNameOverride: envNameOverride}).Run()
 		},
 	}
 
@@ -50,6 +51,7 @@ func newInitCommand() *cobra.Command {
 		help.WriteString("  rle init [environment-name] [flags]\n")
 		help.WriteString("Flags:\n")
 		help.WriteString("      --force     Overwrite generated files in an existing non-empty session directory\n")
+		help.WriteString("      --source    OpenEnv catalog environment to copy (default \"echo_env\")\n")
 		help.WriteString("  -h, --help      help for init\n")
 		if cmd.InheritedFlags().HasAvailableFlags() {
 			help.WriteString("Global Flags:\n")
@@ -58,11 +60,13 @@ func newInitCommand() *cobra.Command {
 		_, _ = fmt.Fprint(cmd.OutOrStdout(), help.String())
 	})
 	cmd.Flags().BoolVar(&flags.force, "force", false, "Overwrite generated files in an existing non-empty session directory")
+	cmd.Flags().StringVar(&flags.source, "source", "", "OpenEnv catalog environment to copy")
 	return cmd
 }
 
 func (a *initAction) Run() error {
-	envName := firstNonEmpty(a.environmentName, "echo_env")
+	sourceName := firstNonEmpty(a.flags.source, "echo_env")
+	envName := firstNonEmpty(a.envNameOverride, a.flags.source, "echo_env")
 	var err error
 	envName, err = project.ValidateEnvironmentName(envName)
 	if err != nil {
@@ -73,8 +77,17 @@ func (a *initAction) Run() error {
 			Suggestion: "Use snake_case starting with a letter, for example code_rl.",
 		}
 	}
+	sourceName, err = project.ValidateEnvironmentName(sourceName)
+	if err != nil {
+		return &azdext.LocalError{
+			Message:    err.Error(),
+			Code:       "rle_invalid_open_env_source",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Choose an OpenEnv catalog name in snake_case, for example chess_env.",
+		}
+	}
 
-	sessionDir, err := checkoutOpenEnvEnvironmentFunc(envName, ".", a.flags.force)
+	sessionDir, err := checkoutOpenEnvEnvironmentFunc(sourceName, envName, ".", a.flags.force)
 	if err != nil {
 		return err
 	}

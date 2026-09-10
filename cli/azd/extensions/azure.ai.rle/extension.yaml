@@ -14,8 +14,8 @@ usage: azd ai rle <command> [options]
 version: 0.4.0-preview
 examples:
   - name: init
-    description: Copy an environment from the OpenEnv catalog; defaults to echo_env.
-    usage: azd ai rle init [environment-name]
+    description: Initialize an environment from the OpenEnv catalog; defaults to echo_env.
+    usage: azd ai rle init [environment-name] [--source <catalog-name>]
   - name: publish
     description: Build, push, and create or update the RLE environment.
     usage: azd ai rle publish --version-bump major

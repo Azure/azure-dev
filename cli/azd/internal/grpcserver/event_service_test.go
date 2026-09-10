@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
@@ -502,6 +503,28 @@ func TestEventService_syncExtensionOutput_PersistsConcurrentOutputOnce(t *testin
 
 	cleanupB()
 	require.Equal(t, []string{"shared warning"}, console.Output())
+}
+
+func TestEventService_syncExtensionOutput_BoundsPersistedOutput(t *testing.T) {
+	service, _ := createTestEventService()
+	console := service.console.(*mockinput.MockConsole)
+	extension := createTestExtension()
+
+	cleanup := service.syncExtensionOutput(
+		t.Context(),
+		extension,
+		"Test Extension (predeploy)",
+		true,
+	)
+	_, err := extension.StdOut().Write([]byte("warning\n" + strings.Repeat("x", maxLifecycleOutputBytes)))
+	require.NoError(t, err)
+
+	cleanup()
+
+	output := strings.Join(console.Output(), "\n")
+	require.Contains(t, output, "warning")
+	require.Contains(t, output, "lifecycle output truncated")
+	require.LessOrEqual(t, len(output), maxLifecycleOutputBytes+64)
 }
 
 func TestEventService_syncExtensionOutput_DoesNotPersistNonDeployOutput(t *testing.T) {

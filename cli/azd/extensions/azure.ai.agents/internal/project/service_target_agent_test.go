@@ -1343,6 +1343,7 @@ func TestRegisterVoiceAgentEnvironmentVariablesClearsProtocolSnapshot(t *testing
 		"https://proj.azure.com/",
 		baseEndpoint,
 		agentObject,
+		nil,
 	)
 	require.NoError(t, err)
 

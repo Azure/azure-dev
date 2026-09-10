@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestResolveConcurrencySettingWarnsForNonPositiveValues(t *testing.T) {
+func TestResolveConcurrencySettingWarnsForInvalidValues(t *testing.T) {
 	var output bytes.Buffer
 	originalWriter := log.Writer()
 	log.SetOutput(&output)
@@ -21,7 +21,7 @@ func TestResolveConcurrencySettingWarnsForNonPositiveValues(t *testing.T) {
 		log.SetOutput(originalWriter)
 	})
 
-	for _, value := range []string{"0", "-1"} {
+	for _, value := range []string{"0", "-1", "abc", "", "999999999999999999999999999999"} {
 		output.Reset()
 		setting := resolveConcurrencySetting(lookupEnvironment(map[string]string{
 			packageConcurrencyEnvVar: value,
@@ -29,8 +29,14 @@ func TestResolveConcurrencySettingWarnsForNonPositiveValues(t *testing.T) {
 
 		assert.True(t, setting.set)
 		assert.Zero(t, setting.value)
-		assert.Contains(t, output.String(), "value must be greater than zero")
+		assert.Contains(t, output.String(), "warning: ignoring invalid "+packageConcurrencyEnvVar)
+		if value == "0" || value == "-1" {
+			assert.Contains(t, output.String(), "value must be greater than zero")
+		} else {
+			assert.Contains(t, output.String(), "strconv.Atoi")
+		}
 		assert.Contains(t, output.String(), "lower-precedence concurrency settings will not apply")
+		assert.Zero(t, firstConcurrency(setting, concurrencySetting{value: 4, set: true}))
 	}
 }
 

@@ -44,7 +44,10 @@ func resolveConcurrencySetting(lookup environmentLookup, envName string) concurr
 	setting := concurrencySetting{set: true}
 	value, err := strconv.Atoi(envValue)
 	if err != nil {
-		log.Printf("warning: ignoring invalid %s=%q: %v", envName, envValue, err)
+		log.Printf(
+			"warning: ignoring invalid %s=%q: %v; lower-precedence concurrency settings will not apply",
+			envName, envValue, err,
+		)
 		return setting
 	}
 	if value <= 0 {

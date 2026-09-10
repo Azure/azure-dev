@@ -1582,6 +1582,16 @@ func TestSetRunSpanAttributes_RecordsPhaseConcurrency(t *testing.T) {
 	assert.Equal(t, int64(3), stepAttr(t, span, fields.ExeGraphProvisionConcurrencyKey.Key).AsInt64())
 	assert.Equal(t, int64(4), stepAttr(t, span, fields.ExeGraphDeployConcurrencyKey.Key).AsInt64())
 	assert.NotContains(t, span.Attributes, attribute.Int("exegraph.custom_concurrency", 5))
+
+	t.Run("zero limits are emitted", func(t *testing.T) {
+		span := &mocktracing.Span{}
+		setRunSpanAttributes(span, g, RunOptions{
+			GroupConcurrency: map[string]int{"package": 0, "provision": 0, "deploy": 0},
+		})
+		assert.Zero(t, stepAttr(t, span, fields.ExeGraphPackageConcurrencyKey.Key).AsInt64())
+		assert.Zero(t, stepAttr(t, span, fields.ExeGraphProvisionConcurrencyKey.Key).AsInt64())
+		assert.Zero(t, stepAttr(t, span, fields.ExeGraphDeployConcurrencyKey.Key).AsInt64())
+	})
 }
 
 // stepAttr returns the value of the attribute with the given key set on span.

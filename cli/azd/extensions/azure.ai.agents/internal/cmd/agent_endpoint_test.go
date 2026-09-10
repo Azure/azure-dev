@@ -75,15 +75,6 @@ func TestParseAgentEndpoint(t *testing.T) {
 			wantProto: agent_api.AgentProtocolA2A,
 		},
 		{
-			name: "voice websocket with api-version",
-			raw: "wss://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/" +
-				"protocols/voice?api-version=v1",
-			wantProj:   "https://acct.services.ai.azure.com/api/projects/proj",
-			wantAgent:  "hello",
-			wantProto:  agent_api.AgentProtocolVoice,
-			wantAPIVer: "v1",
-		},
-		{
 			name:        "empty url",
 			raw:         "",
 			wantErr:     true,
@@ -93,19 +84,7 @@ func TestParseAgentEndpoint(t *testing.T) {
 			name:        "http scheme rejected",
 			raw:         "http://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/invocations",
 			wantErr:     true,
-			errContains: "https or wss",
-		},
-		{
-			name:        "wss rejected for HTTP protocol endpoint",
-			raw:         "wss://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/invocations",
-			wantErr:     true,
-			errContains: "must use https",
-		},
-		{
-			name:        "https rejected for voice protocol endpoint",
-			raw:         "https://acct.services.ai.azure.com/api/projects/proj/agents/hello/endpoint/protocols/voice",
-			wantErr:     true,
-			errContains: "must use wss",
+			errContains: "https",
 		},
 		{
 			name:        "non-foundry host rejected",

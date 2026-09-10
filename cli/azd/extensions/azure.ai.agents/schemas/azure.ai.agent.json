@@ -242,6 +242,14 @@
             { "required": ["environmentVariables"] },
             { "required": ["policies"] },
             { "required": ["protocols"] },
+            { "required": ["instructions"] },
+            { "required": ["structuredInputs"] },
+            { "required": ["tools"] },
+            { "required": ["toolChoice"] },
+            { "required": ["parallelToolCalls"] },
+            { "required": ["maxOutputTokens"] },
+            { "required": ["include"] },
+            { "required": ["handoff"] },
             { "required": ["toolbox"] }
           ]
         }
@@ -285,7 +293,8 @@
       "else": {
         "if": {
           "properties": { "kind": { "enum": ["prompt-voice", "voice"] } },
-          "required": ["kind"]
+          "required": ["kind"],
+          "not": { "required": ["conversationEngine"] }
         },
         "then": {
           "required": ["model"],

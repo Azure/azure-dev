@@ -681,7 +681,10 @@ func TestCreateHostedVoiceAgentAPIRequest_ConversationEngineWireShape(t *testing
 	require.NoError(t, err)
 	var wire map[string]any
 	require.NoError(t, json.Unmarshal(data, &wire))
-	definition := wire["definition"].(map[string]any)
+	definitionValue, ok := wire["definition"]
+	require.True(t, ok, "wire payload is missing definition: %s", data)
+	definition, ok := definitionValue.(map[string]any)
+	require.True(t, ok, "definition has type %T, want object: %s", definitionValue, data)
 	require.NotContains(t, definition, "model_type")
 	require.NotContains(t, definition, "target_agent")
 	require.Equal(t, map[string]any{

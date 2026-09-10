@@ -517,6 +517,11 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 						}
 					}
 					if isHostedVoiceWrapper(agent) {
+						if agent.ConversationEngine != nil &&
+							(agent.ModelType != "" || agent.TargetAgent != nil) {
+							errors = append(errors,
+								"template.conversation_engine cannot be combined with model_type or target_agent")
+						}
 						if agent.ModelType == VoiceModelTypeHostedAgent &&
 							(agent.TargetAgent == nil || strings.TrimSpace(agent.TargetAgent.Service) == "") {
 							errors = append(errors,

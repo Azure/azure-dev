@@ -754,7 +754,8 @@ func createVoiceAgentAPIRequest(
 	if voiceAgent.ModelType != "" {
 		modelType = agent_api.VoiceModelType(voiceAgent.ModelType)
 	}
-	hostedAgent := modelType == agent_api.VoiceModelTypeHostedAgent || isHostedConversationEngine(voiceAgent.ConversationEngine)
+	hostedAgent := modelType == agent_api.VoiceModelTypeHostedAgent ||
+		isHostedConversationEngine(voiceAgent.ConversationEngine)
 	if hostedAgent {
 		if target == nil || strings.TrimSpace(target.Name) == "" || strings.TrimSpace(target.Version) == "" {
 			return nil, fmt.Errorf("resolved target agent name and version are required when model_type is 'hosted_agent'")

@@ -72,6 +72,9 @@
     "targetAgent": {
       "$ref": "#/definitions/VoiceTargetAgent"
     },
+    "conversationEngine": {
+      "$ref": "#/definitions/VoiceConversationEngine"
+    },
     "model": {
       "type": "object",
       "description": "Voice agent (kind: prompt-voice) speech-to-speech model (e.g. id: gpt-realtime).",
@@ -211,6 +214,39 @@
   },
   "additionalProperties": true,
   "allOf": [
+    {
+      "$comment": "A conversationEngine hosted_agent voice wrapper references a deployed hosted service.",
+      "if": {
+        "properties": {
+          "conversationEngine": {
+            "properties": { "type": { "const": "hosted_agent" } },
+            "required": ["type"]
+          }
+        },
+        "required": ["conversationEngine"]
+      },
+      "then": {
+        "properties": {
+          "kind": { "enum": ["prompt-voice", "voice"] }
+        },
+        "required": ["kind"],
+        "not": {
+          "anyOf": [
+            { "required": ["model"] },
+            { "required": ["modelType"] },
+            { "required": ["targetAgent"] },
+            { "required": ["inputSchema"] },
+            { "required": ["outputSchema"] },
+            { "required": ["codeConfiguration"] },
+            { "required": ["sessionConfiguration"] },
+            { "required": ["environmentVariables"] },
+            { "required": ["policies"] },
+            { "required": ["protocols"] },
+            { "required": ["toolbox"] }
+          ]
+        }
+      }
+    },
     {
       "$comment": "A hosted-agent voice wrapper references a deployed hosted service; other voice modes declare a model. Prompt voice agents cannot use the hosted-agent toolbox reference.",
       "if": {
@@ -371,6 +407,17 @@
         "version": { "type": "string", "enum": ["deployed"], "default": "deployed", "description": "Pin the wrapper to the target version deployed by this azd environment." }
       },
       "required": ["service"],
+      "additionalProperties": false
+    },
+    "VoiceConversationEngine": {
+      "type": "object",
+      "description": "Conversation engine used by a managed Voice wrapper.",
+      "properties": {
+        "type": { "type": "string", "enum": ["hosted_agent"], "description": "Conversation engine type." },
+        "name": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "azure.yaml service name of the hosted target agent." },
+        "version": { "type": "string", "enum": ["deployed"], "default": "deployed", "description": "Pin the wrapper to the target version deployed by this azd environment." }
+      },
+      "required": ["type", "name"],
       "additionalProperties": false
     },
     "ActivitySettings": {

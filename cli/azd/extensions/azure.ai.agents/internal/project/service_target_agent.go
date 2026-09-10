@@ -2438,22 +2438,23 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	var request *agent_api.CreateAgentRequest
 	var hostedTarget *hostedVoiceTarget
 	var err error
-	if va.ModelType == agent_yaml.VoiceModelTypeHostedAgent {
-		if va.TargetAgent != nil && p.dependencyEnabled != nil {
-			enabled, enabledErr := p.dependencyEnabled(ctx, strings.TrimSpace(va.TargetAgent.Service))
+	hostedVoiceTargetRef := hostedVoiceTargetReference(va)
+	if hostedVoiceTargetRef != nil {
+		if p.dependencyEnabled != nil {
+			enabled, enabledErr := p.dependencyEnabled(ctx, strings.TrimSpace(hostedVoiceTargetRef.Service))
 			if enabledErr != nil {
 				return nil, enabledErr
 			}
 			if !enabled {
 				return nil, exterrors.Dependency(
 					exterrors.CodeFoundryDependencyNotReady,
-					fmt.Sprintf("hosted voice target service %q is disabled", va.TargetAgent.Service),
+					fmt.Sprintf("hosted voice target service %q is disabled", hostedVoiceTargetRef.Service),
 					"enable the target hosted agent service or remove the voice wrapper",
 				)
 			}
 		}
 		hostedTarget, err = resolveHostedVoiceTarget(
-			serviceConfig, va.TargetAgent, p.projectServices, azdEnv, p.projectPath,
+			serviceConfig, hostedVoiceTargetRef, p.projectServices, azdEnv, p.projectPath,
 		)
 		if err != nil {
 			return nil, exterrors.Dependency(
@@ -2645,6 +2646,20 @@ func validateHostedVoiceWrapperName(wrapperName string, target *hostedVoiceTarge
 		fmt.Sprintf("hosted voice wrapper %q cannot use the same Foundry name as its target", wrapperName),
 		"choose a distinct name for the voice wrapper service",
 	)
+}
+
+func hostedVoiceTargetReference(va agent_yaml.VoiceAgent) *agent_yaml.VoiceTargetAgent {
+	if va.ConversationEngine != nil && strings.EqualFold(strings.TrimSpace(va.ConversationEngine.Type), "hosted_agent") {
+		version := va.ConversationEngine.Version
+		if version == "" {
+			version = "deployed"
+		}
+		return &agent_yaml.VoiceTargetAgent{Service: va.ConversationEngine.Name, Version: version}
+	}
+	if va.ModelType == agent_yaml.VoiceModelTypeHostedAgent {
+		return va.TargetAgent
+	}
+	return nil
 }
 
 type getAgentVersionFunc func(

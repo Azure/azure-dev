@@ -406,6 +406,10 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 					errors = append(errors,
 						"template.target_agent is only valid for voice agents")
 				}
+				if _, ok := fields["conversation_engine"]; ok && !IsVoiceAgentKind(agentDef.Kind) {
+					errors = append(errors,
+						"template.conversation_engine is only valid for voice agents")
+				}
 			}
 
 			// Only hosted agents carry policies to the service, so a moderation block on any
@@ -512,18 +516,29 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 									"move target-owned policies to the hosted target")
 						}
 					}
-					if agent.ModelType == VoiceModelTypeHostedAgent {
-						if agent.TargetAgent == nil ||
-							strings.TrimSpace(agent.TargetAgent.Service) == "" {
+					if isHostedVoiceWrapper(agent) {
+						if agent.ModelType == VoiceModelTypeHostedAgent &&
+							(agent.TargetAgent == nil || strings.TrimSpace(agent.TargetAgent.Service) == "") {
 							errors = append(errors,
 								"template.target_agent.service is required when model_type is 'hosted_agent'")
+						}
+						if agent.ConversationEngine != nil &&
+							strings.EqualFold(strings.TrimSpace(agent.ConversationEngine.Type), "hosted_agent") &&
+							strings.TrimSpace(agent.ConversationEngine.Name) == "" {
+							errors = append(errors,
+								"template.conversation_engine.name is required when conversation_engine.type is 'hosted_agent'")
 						}
 						if agent.TargetAgent != nil && agent.TargetAgent.Version != "" &&
 							agent.TargetAgent.Version != "deployed" {
 							errors = append(errors, "template.target_agent.version must be 'deployed' when specified")
 						}
+						if agent.ConversationEngine != nil && agent.ConversationEngine.Version != "" &&
+							agent.ConversationEngine.Version != "deployed" {
+							errors = append(errors,
+								"template.conversation_engine.version must be 'deployed' when specified")
+						}
 						if agent.Model != nil {
-							errors = append(errors, "template.model is not allowed when model_type is 'hosted_agent'")
+							errors = append(errors, "template.model is not allowed for hosted voice wrappers")
 						}
 						if agent.InputSchema != nil || agent.OutputSchema != nil || agent.Instructions != nil ||
 							len(agent.StructuredInputs) > 0 || len(agent.Tools) > 0 ||
@@ -539,8 +554,9 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 						if agent.Model == nil || strings.TrimSpace(agent.Model.Id) == "" {
 							errors = append(errors, "template.model.id is required for a prompt-voice agent")
 						}
-						if agent.TargetAgent != nil {
-							errors = append(errors, "template.target_agent is only valid when model_type is 'hosted_agent'")
+						if agent.TargetAgent != nil || agent.ConversationEngine != nil {
+							errors = append(errors,
+								"template.conversation_engine is only valid for hosted voice wrappers")
 						}
 					}
 					if agent.ModelType != "" && agent.ModelType != VoiceModelTypeManaged &&
@@ -567,6 +583,11 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 	}
 
 	return nil
+}
+
+func isHostedVoiceWrapper(agent VoiceAgent) bool {
+	return agent.ModelType == VoiceModelTypeHostedAgent ||
+		(agent.ConversationEngine != nil && strings.EqualFold(strings.TrimSpace(agent.ConversationEngine.Type), "hosted_agent"))
 }
 
 func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {

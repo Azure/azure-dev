@@ -143,74 +143,77 @@ type AgentDefinitionInline struct {
 
 	// Voice-agent fields (kind: prompt-voice). All omitempty so container/
 	// workflow entries are byte-for-byte unchanged.
-	ModelType         agent_yaml.VoiceModelType    `json:"modelType,omitempty"`
-	Model             *agent_yaml.Model            `json:"model,omitempty"`
-	TargetAgent       *agent_yaml.VoiceTargetAgent `json:"targetAgent,omitempty"`
-	Instructions      *string                      `json:"instructions,omitempty"`
-	Voice             *string                      `json:"voice,omitempty"`
-	StructuredInputs  map[string]any               `json:"structuredInputs,omitempty"`
-	Audio             *agent_yaml.VoiceAudio       `json:"audio,omitempty"`
-	OutputModalities  []string                     `json:"outputModalities,omitempty"`
-	Store             *bool                        `json:"store,omitempty"`
-	Tools             []map[string]any             `json:"tools,omitempty"`
-	Avatar            map[string]any               `json:"avatar,omitempty"`
-	Greeting          map[string]any               `json:"greeting,omitempty"`
-	Handoff           map[string]any               `json:"handoff,omitempty"`
-	ToolChoice        any                          `json:"toolChoice,omitempty"`
-	ParallelToolCalls *bool                        `json:"parallelToolCalls,omitempty"`
-	MaxOutputTokens   any                          `json:"maxOutputTokens,omitempty"`
-	Include           []string                     `json:"include,omitempty"`
-	Telephony         *agent_yaml.VoiceTelephony   `json:"telephony,omitempty"`
+	ModelType          agent_yaml.VoiceModelType           `json:"modelType,omitempty"`
+	Model              *agent_yaml.Model                   `json:"model,omitempty"`
+	TargetAgent        *agent_yaml.VoiceTargetAgent        `json:"targetAgent,omitempty"`
+	ConversationEngine *agent_yaml.VoiceConversationEngine `json:"conversationEngine,omitempty"`
+	Instructions       *string                             `json:"instructions,omitempty"`
+	Voice              *string                             `json:"voice,omitempty"`
+	StructuredInputs   map[string]any                      `json:"structuredInputs,omitempty"`
+	Audio              *agent_yaml.VoiceAudio              `json:"audio,omitempty"`
+	OutputModalities   []string                            `json:"outputModalities,omitempty"`
+	Store              *bool                               `json:"store,omitempty"`
+	Tools              []map[string]any                    `json:"tools,omitempty"`
+	Avatar             map[string]any                      `json:"avatar,omitempty"`
+	Greeting           map[string]any                      `json:"greeting,omitempty"`
+	Handoff            map[string]any                      `json:"handoff,omitempty"`
+	ToolChoice         any                                 `json:"toolChoice,omitempty"`
+	ParallelToolCalls  *bool                               `json:"parallelToolCalls,omitempty"`
+	MaxOutputTokens    any                                 `json:"maxOutputTokens,omitempty"`
+	Include            []string                            `json:"include,omitempty"`
+	Telephony          *agent_yaml.VoiceTelephony          `json:"telephony,omitempty"`
 }
 
 // voiceAgentDefinitionToInline projects a VoiceAgent into the inline definition
 // written to azure.yaml. Voice agents carry no container/image/code config.
 func voiceAgentDefinitionToInline(va agent_yaml.VoiceAgent) AgentDefinitionInline {
 	return AgentDefinitionInline{
-		AgentDefinition:   va.AgentDefinition,
-		ModelType:         va.ModelType,
-		Model:             va.Model,
-		TargetAgent:       va.TargetAgent,
-		Instructions:      va.Instructions,
-		Voice:             va.Voice,
-		StructuredInputs:  va.StructuredInputs,
-		Audio:             va.Audio,
-		OutputModalities:  va.OutputModalities,
-		Store:             va.Store,
-		Tools:             va.Tools,
-		Avatar:            va.Avatar,
-		Greeting:          va.Greeting,
-		Handoff:           va.Handoff,
-		ToolChoice:        va.ToolChoice,
-		ParallelToolCalls: va.ParallelToolCalls,
-		MaxOutputTokens:   va.MaxOutputTokens,
-		Include:           va.Include,
-		Telephony:         va.Telephony,
+		AgentDefinition:    va.AgentDefinition,
+		ModelType:          va.ModelType,
+		Model:              va.Model,
+		TargetAgent:        va.TargetAgent,
+		ConversationEngine: va.ConversationEngine,
+		Instructions:       va.Instructions,
+		Voice:              va.Voice,
+		StructuredInputs:   va.StructuredInputs,
+		Audio:              va.Audio,
+		OutputModalities:   va.OutputModalities,
+		Store:              va.Store,
+		Tools:              va.Tools,
+		Avatar:             va.Avatar,
+		Greeting:           va.Greeting,
+		Handoff:            va.Handoff,
+		ToolChoice:         va.ToolChoice,
+		ParallelToolCalls:  va.ParallelToolCalls,
+		MaxOutputTokens:    va.MaxOutputTokens,
+		Include:            va.Include,
+		Telephony:          va.Telephony,
 	}
 }
 
 // toVoiceAgent rebuilds an agent_yaml.VoiceAgent from the inline definition.
 func (d AgentDefinitionInline) toVoiceAgent() agent_yaml.VoiceAgent {
 	return agent_yaml.VoiceAgent{
-		AgentDefinition:   d.AgentDefinition,
-		ModelType:         d.ModelType,
-		Model:             d.Model,
-		TargetAgent:       d.TargetAgent,
-		Instructions:      d.Instructions,
-		Voice:             d.Voice,
-		StructuredInputs:  d.StructuredInputs,
-		Audio:             d.Audio,
-		OutputModalities:  d.OutputModalities,
-		Store:             d.Store,
-		Tools:             d.Tools,
-		Avatar:            d.Avatar,
-		Greeting:          d.Greeting,
-		Handoff:           d.Handoff,
-		ToolChoice:        d.ToolChoice,
-		ParallelToolCalls: d.ParallelToolCalls,
-		MaxOutputTokens:   d.MaxOutputTokens,
-		Include:           d.Include,
-		Telephony:         d.Telephony,
+		AgentDefinition:    d.AgentDefinition,
+		ModelType:          d.ModelType,
+		Model:              d.Model,
+		TargetAgent:        d.TargetAgent,
+		ConversationEngine: d.ConversationEngine,
+		Instructions:       d.Instructions,
+		Voice:              d.Voice,
+		StructuredInputs:   d.StructuredInputs,
+		Audio:              d.Audio,
+		OutputModalities:   d.OutputModalities,
+		Store:              d.Store,
+		Tools:              d.Tools,
+		Avatar:             d.Avatar,
+		Greeting:           d.Greeting,
+		Handoff:            d.Handoff,
+		ToolChoice:         d.ToolChoice,
+		ParallelToolCalls:  d.ParallelToolCalls,
+		MaxOutputTokens:    d.MaxOutputTokens,
+		Include:            d.Include,
+		Telephony:          d.Telephony,
 	}
 }
 
@@ -818,11 +821,12 @@ func agentDefinitionFromStruct(
 		return agent_yaml.ContainerAgent{}, false, nil
 	}
 
-	if inline.ModelType == agent_yaml.VoiceModelTypeHostedAgent || inline.TargetAgent != nil {
+	if inline.ModelType == agent_yaml.VoiceModelTypeHostedAgent || inline.TargetAgent != nil ||
+		inline.ConversationEngine != nil {
 		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			"hosted voice wrapper fields are not supported on hosted agents",
-			"move modelType: hosted_agent and targetAgent to a voice wrapper service",
+			"move conversationEngine or targetAgent to a voice wrapper service",
 		)
 	}
 	if inline.Telephony != nil {

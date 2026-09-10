@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"github.com/stretchr/testify/require"
 )
 
 // ---------------------------------------------------------------------------
@@ -660,6 +661,34 @@ func TestCreateHostedVoiceAgentAPIRequest(t *testing.T) {
 	if _, exists := definition["tools"]; exists {
 		t.Fatalf("hosted wrapper wire payload contains tools: %s", data)
 	}
+}
+
+func TestCreateHostedVoiceAgentAPIRequest_ConversationEngineWireShape(t *testing.T) {
+	t.Parallel()
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "voice"},
+		ConversationEngine: &VoiceConversationEngine{
+			Type: "hosted_agent",
+			Name: "voice-target",
+		},
+	}
+	req, err := CreateHostedVoiceAgentAPIRequest(agent, agent_api.VoiceTargetAgentReference{
+		Name:    "deployed-target",
+		Version: "7",
+	})
+	require.NoError(t, err)
+	data, err := json.Marshal(req)
+	require.NoError(t, err)
+	var wire map[string]any
+	require.NoError(t, json.Unmarshal(data, &wire))
+	definition := wire["definition"].(map[string]any)
+	require.NotContains(t, definition, "model_type")
+	require.NotContains(t, definition, "target_agent")
+	require.Equal(t, map[string]any{
+		"type":    "hosted_agent",
+		"name":    "deployed-target",
+		"version": "7",
+	}, definition["conversation_engine"])
 }
 
 func TestCreateHostedVoiceAgentAPIRequestRequiresResolvedTarget(t *testing.T) {

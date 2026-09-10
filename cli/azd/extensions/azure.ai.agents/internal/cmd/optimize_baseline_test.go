@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/opt_eval"
@@ -107,6 +108,37 @@ func TestAdvanceBaselineToCandidate_ArchiveCollisionPreserved(t *testing.T) {
 	assert.Equal(t, "optimized instructions", string(baseline))
 }
 
+func TestAdvanceBaselineToCandidate_ArchiveCollisionRestoresCurrentBaselineOnPromotionFailure(t *testing.T) {
+	t.Parallel()
+
+	serviceDir := t.TempDir()
+	configsDir := filepath.Join(serviceDir, opt_eval.AgentConfigsDir)
+	writeAgentConfigDir(t, configsDir, opt_eval.BaselineDir+"_job-1", "original baseline", nil)
+	writeAgentConfigDir(t, configsDir, opt_eval.BaselineDir, "current baseline", nil)
+	writeAgentConfigDir(t, configsDir, "candidate_abc", "optimized", nil)
+
+	rename := func(oldPath, newPath string) error {
+		if strings.Contains(filepath.Base(oldPath), ".baseline-stage-") &&
+			newPath == filepath.Join(configsDir, opt_eval.BaselineDir) {
+			return assert.AnError
+		}
+		return os.Rename(oldPath, newPath)
+	}
+
+	err := advanceBaselineToCandidateWithRename(serviceDir, "candidate_abc", "job-1", rename)
+	require.ErrorIs(t, err, assert.AnError)
+
+	baseline, readErr := os.ReadFile(
+		filepath.Join(configsDir, opt_eval.BaselineDir, opt_eval.InstructionFile))
+	require.NoError(t, readErr)
+	assert.Equal(t, "current baseline", string(baseline))
+
+	archive, readErr := os.ReadFile(
+		filepath.Join(configsDir, opt_eval.BaselineDir+"_job-1", opt_eval.InstructionFile))
+	require.NoError(t, readErr)
+	assert.Equal(t, "original baseline", string(archive))
+}
+
 func TestAdvanceBaselineToCandidate_RestoresBaselineWhenPromotionFails(t *testing.T) {
 	t.Parallel()
 
@@ -138,10 +170,7 @@ func TestAdvanceBaselineToCandidate_RestoresBaselineWhenPromotionFails(t *testin
 		filepath.Join(configsDir, opt_eval.BaselineDir, opt_eval.InstructionFile))
 	require.NoError(t, readErr)
 	assert.Equal(t, "original", string(baseline))
-	archive, readErr := os.ReadFile(
-		filepath.Join(configsDir, opt_eval.BaselineDir+"_job-1", opt_eval.InstructionFile))
-	require.NoError(t, readErr)
-	assert.Equal(t, "original", string(archive))
+	assert.NoDirExists(t, filepath.Join(configsDir, opt_eval.BaselineDir+"_job-1"))
 }
 
 func TestAdvanceBaselineToCandidate_RemovesPartialBaselineWhenRestoreFails(t *testing.T) {
@@ -154,17 +183,20 @@ func TestAdvanceBaselineToCandidate_RemovesPartialBaselineWhenRestoreFails(t *te
 
 	promotionFailed := false
 	rename := func(oldPath, newPath string) error {
-		if filepath.Base(oldPath) != opt_eval.BaselineDir &&
-			newPath == filepath.Join(configsDir, opt_eval.BaselineDir) &&
-			!promotionFailed {
-			promotionFailed = true
-			return assert.AnError
+		if newPath == filepath.Join(configsDir, opt_eval.BaselineDir) {
+			if !promotionFailed {
+				promotionFailed = true
+				return assert.AnError
+			}
+			if strings.Contains(filepath.Base(oldPath), ".baseline-rollback-") {
+				return errors.New("restore rename failed")
+			}
 		}
 		return os.Rename(oldPath, newPath)
 	}
-	restoreErr := errors.New("restore failed")
+	restoreErr := errors.New("restore copy failed")
 	copyDir := func(src, dst string) error {
-		if filepath.Base(src) == opt_eval.BaselineDir+"_job-1" {
+		if strings.Contains(filepath.Base(src), ".baseline-rollback-") {
 			require.NoError(t, os.MkdirAll(dst, 0750))
 			require.NoError(t, os.WriteFile(filepath.Join(dst, "partial"), []byte("partial"), 0600))
 			return restoreErr
@@ -180,11 +212,23 @@ func TestAdvanceBaselineToCandidate_RemovesPartialBaselineWhenRestoreFails(t *te
 		copyDir,
 	)
 	require.ErrorIs(t, err, assert.AnError)
-	require.ErrorContains(t, err, "restoring previous baseline: restore failed")
+	require.ErrorContains(t, err, "restoring rollback: restore rename failed")
+	require.ErrorContains(t, err, "copying rollback: restore copy failed")
 	require.ErrorContains(t, err, "partial baseline removed")
 	assert.NoDirExists(t, filepath.Join(configsDir, opt_eval.BaselineDir))
-	assert.DirExists(t, filepath.Join(configsDir, opt_eval.BaselineDir+"_job-1"))
+	assert.NoDirExists(t, filepath.Join(configsDir, opt_eval.BaselineDir+"_job-1"))
 	assert.DirExists(t, filepath.Join(configsDir, "candidate_abc"))
+
+	entries, readErr := os.ReadDir(configsDir)
+	require.NoError(t, readErr)
+	assert.Condition(t, func() bool {
+		for _, entry := range entries {
+			if strings.Contains(entry.Name(), ".baseline-rollback-") {
+				return true
+			}
+		}
+		return false
+	}, "the exact previous baseline should remain in the rollback directory")
 }
 
 func TestAdvanceBaselineToCandidate_NoJobIDRemovesBaseline(t *testing.T) {

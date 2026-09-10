@@ -403,57 +403,86 @@ func advanceBaselineToCandidateWithOps(
 		archiveDir = filepath.Join(configsDir, opt_eval.BaselineDir+"_"+jobID)
 	}
 
-	// Archive the previous baseline only when this job does not already have an
-	// archive. On a retry, preserve the first rollback snapshot and remove the
-	// current baseline before installing the staged candidate.
-	if _, err := os.Stat(baselineDir); err == nil {
-		archiveExists := false
-		if archiveDir != "" {
-			if _, err := os.Stat(archiveDir); err == nil {
-				archiveExists = true
-			} else if !errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("checking previous baseline archive: %w", err)
-			}
-		}
-		if archiveDir != "" && !archiveExists {
-			if err := rename(baselineDir, archiveDir); err != nil {
-				return fmt.Errorf("archiving previous baseline: %w", err)
-			}
-		} else if err := os.RemoveAll(baselineDir); err != nil {
-			return fmt.Errorf("removing old baseline: %w", err)
+	archiveExists := false
+	if archiveDir != "" {
+		if _, err := os.Stat(archiveDir); err == nil {
+			archiveExists = true
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("checking previous baseline archive: %w", err)
 		}
 	}
 
+	// Move the active baseline aside until the staged candidate is installed.
+	// This exact rollback copy is restored if installation fails, including on
+	// retries where an older archive for the same job already exists.
+	rollbackDir := ""
+	if _, err := os.Stat(baselineDir); err == nil {
+		rollbackDir, err = os.MkdirTemp(configsDir, ".baseline-rollback-*")
+		if err != nil {
+			return fmt.Errorf("creating baseline rollback path: %w", err)
+		}
+		if err := os.Remove(rollbackDir); err != nil {
+			return fmt.Errorf("preparing baseline rollback path: %w", err)
+		}
+		if err := rename(baselineDir, rollbackDir); err != nil {
+			return fmt.Errorf("retiring current baseline: %w", err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("checking current baseline: %w", err)
+	}
+
 	if err := rename(stageDir, baselineDir); err != nil {
-		if archiveDir != "" {
-			if restoreErr := copyDir(archiveDir, baselineDir); restoreErr != nil {
-				if cleanupErr := os.RemoveAll(baselineDir); cleanupErr != nil {
+		if rollbackDir != "" {
+			if restoreErr := rename(rollbackDir, baselineDir); restoreErr != nil {
+				if copyErr := copyDir(rollbackDir, baselineDir); copyErr != nil {
+					if cleanupErr := os.RemoveAll(baselineDir); cleanupErr != nil {
+						log.Printf(
+							"warning: baseline restore and partial cleanup failed: rollback=%s baseline=%s error=%v",
+							rollbackDir,
+							baselineDir,
+							cleanupErr,
+						)
+						return fmt.Errorf(
+							"promoting baseline: %w; restoring rollback: %w; copying rollback: %w; "+
+								"removing partial baseline: %w",
+							err,
+							restoreErr,
+							copyErr,
+							cleanupErr,
+						)
+					}
 					log.Printf(
-						"warning: failed to restore previous baseline from %s and failed to remove partial baseline at %s: %v",
-						archiveDir,
-						baselineDir,
-						cleanupErr,
+						"warning: baseline restore failed; removed partial baseline and preserved rollback at %s",
+						rollbackDir,
 					)
 					return fmt.Errorf(
-						"promoting baseline: %w; restoring previous baseline: %v; removing partial baseline: %v",
+						"promoting baseline: %w; restoring rollback: %w; copying rollback: %w; "+
+							"partial baseline removed",
 						err,
 						restoreErr,
+						copyErr,
+					)
+				}
+				if cleanupErr := os.RemoveAll(rollbackDir); cleanupErr != nil {
+					log.Printf(
+						"warning: restored baseline by copy but failed to remove rollback at %s: %v",
+						rollbackDir,
 						cleanupErr,
 					)
 				}
-				log.Printf(
-					"warning: failed to restore previous baseline from %s; removed partial baseline at %s",
-					archiveDir,
-					baselineDir,
-				)
-				return fmt.Errorf(
-					"promoting baseline: %w; restoring previous baseline: %v; partial baseline removed",
-					err,
-					restoreErr,
-				)
 			}
 		}
 		return fmt.Errorf("promoting baseline: %w", err)
+	}
+
+	if rollbackDir != "" {
+		if archiveDir != "" && !archiveExists {
+			if err := rename(rollbackDir, archiveDir); err != nil {
+				return fmt.Errorf("archiving previous baseline: %w", err)
+			}
+		} else if err := os.RemoveAll(rollbackDir); err != nil {
+			return fmt.Errorf("removing baseline rollback: %w", err)
+		}
 	}
 	return nil
 }

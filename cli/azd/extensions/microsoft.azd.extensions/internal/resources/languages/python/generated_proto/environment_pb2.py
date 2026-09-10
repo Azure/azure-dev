@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 import models_pb2 as models__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11\x65nvironment.proto\x12\x06\x61zdext\x1a\x0cmodels.proto\"%\n\x15GetEnvironmentRequest\x12\x0c\n\x04name\x18\x01 \x01(\t\"(\n\x18SelectEnvironmentRequest\x12\x0c\n\x04name\x18\x01 \x01(\t\".\n\rGetEnvRequest\x12\x10\n\x08\x65nv_name\x18\x01 \x01(\t\x12\x0b\n\x03key\x18\x02 \x01(\t\"=\n\rSetEnvRequest\x12\x10\n\x08\x65nv_name\x18\x01 \x01(\t\x12\x0b\n\x03key\x18\x02 \x01(\t\x12\r\n\x05value\x18\x03 \x01(\t\"?\n\x13\x45nvironmentResponse\x12(\n\x0b\x65nvironment\x18\x01 \x01(\x0b\x32\x13.azdext.Environment\"O\n\x17\x45nvironmentListResponse\x12\x34\n\x0c\x65nvironments\x18\x01 \x03(\x0b\x32\x1e.azdext.EnvironmentDescription\"<\n\x14KeyValueListResponse\x12$\n\nkey_values\x18\x01 \x03(\x0b\x32\x10.azdext.KeyValue\".\n\x10KeyValueResponse\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\"\x1b\n\x0b\x45nvironment\x12\x0c\n\x04name\x18\x01 \x01(\t\"V\n\x16\x45nvironmentDescription\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\r\n\x05local\x18\x02 \x01(\x08\x12\x0e\n\x06remote\x18\x03 \x01(\x08\x12\x0f\n\x07\x64\x65\x66\x61ult\x18\x04 \x01(\x08\"&\n\x08KeyValue\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\" \n\x10GetConfigRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\"1\n\x11GetConfigResponse\x12\r\n\x05value\x18\x01 \x01(\x0c\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"&\n\x16GetConfigStringRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\"7\n\x17GetConfigStringResponse\x12\r\n\x05value\x18\x01 \x01(\t\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"\'\n\x17GetConfigSectionRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\":\n\x18GetConfigSectionResponse\x12\x0f\n\x07section\x18\x01 \x01(\x0c\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"/\n\x10SetConfigRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x0c\"\"\n\x12UnsetConfigRequest\x12\x0c\n\x04path\x18\x01 \x01(\t2\xc8\x06\n\x12\x45nvironmentService\x12?\n\nGetCurrent\x12\x14.azdext.EmptyRequest\x1a\x1b.azdext.EnvironmentResponse\x12=\n\x04List\x12\x14.azdext.EmptyRequest\x1a\x1f.azdext.EnvironmentListResponse\x12\x41\n\x03Get\x12\x1d.azdext.GetEnvironmentRequest\x1a\x1b.azdext.EnvironmentResponse\x12\x41\n\x06Select\x12 .azdext.SelectEnvironmentRequest\x1a\x15.azdext.EmptyResponse\x12H\n\tGetValues\x12\x1d.azdext.GetEnvironmentRequest\x1a\x1c.azdext.KeyValueListResponse\x12;\n\x08GetValue\x12\x15.azdext.GetEnvRequest\x1a\x18.azdext.KeyValueResponse\x12\x38\n\x08SetValue\x12\x15.azdext.SetEnvRequest\x1a\x15.azdext.EmptyResponse\x12@\n\tGetConfig\x12\x18.azdext.GetConfigRequest\x1a\x19.azdext.GetConfigResponse\x12R\n\x0fGetConfigString\x12\x1e.azdext.GetConfigStringRequest\x1a\x1f.azdext.GetConfigStringResponse\x12U\n\x10GetConfigSection\x12\x1f.azdext.GetConfigSectionRequest\x1a .azdext.GetConfigSectionResponse\x12<\n\tSetConfig\x12\x18.azdext.SetConfigRequest\x1a\x15.azdext.EmptyResponse\x12@\n\x0bUnsetConfig\x12\x1a.azdext.UnsetConfigRequest\x1a\x15.azdext.EmptyResponseBFZ4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext\xaa\x02\rMicrosoft.Azdb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11\x65nvironment.proto\x12\x06\x61zdext\x1a\x0cmodels.proto\"%\n\x15GetEnvironmentRequest\x12\x0c\n\x04name\x18\x01 \x01(\t\"(\n\x18SelectEnvironmentRequest\x12\x0c\n\x04name\x18\x01 \x01(\t\".\n\rGetEnvRequest\x12\x10\n\x08\x65nv_name\x18\x01 \x01(\t\x12\x0b\n\x03key\x18\x02 \x01(\t\"=\n\rSetEnvRequest\x12\x10\n\x08\x65nv_name\x18\x01 \x01(\t\x12\x0b\n\x03key\x18\x02 \x01(\t\x12\r\n\x05value\x18\x03 \x01(\t\"?\n\x13\x45nvironmentResponse\x12(\n\x0b\x65nvironment\x18\x01 \x01(\x0b\x32\x13.azdext.Environment\"O\n\x17\x45nvironmentListResponse\x12\x34\n\x0c\x65nvironments\x18\x01 \x03(\x0b\x32\x1e.azdext.EnvironmentDescription\"<\n\x14KeyValueListResponse\x12$\n\nkey_values\x18\x01 \x03(\x0b\x32\x10.azdext.KeyValue\".\n\x10KeyValueResponse\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\"\x1b\n\x0b\x45nvironment\x12\x0c\n\x04name\x18\x01 \x01(\t\"V\n\x16\x45nvironmentDescription\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\r\n\x05local\x18\x02 \x01(\x08\x12\x0e\n\x06remote\x18\x03 \x01(\x08\x12\x0f\n\x07\x64\x65\x66\x61ult\x18\x04 \x01(\x08\"&\n\x08KeyValue\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t\"2\n\x10GetConfigRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\x12\x10\n\x08\x65nv_name\x18\x02 \x01(\t\"1\n\x11GetConfigResponse\x12\r\n\x05value\x18\x01 \x01(\x0c\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"8\n\x16GetConfigStringRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\x12\x10\n\x08\x65nv_name\x18\x02 \x01(\t\"7\n\x17GetConfigStringResponse\x12\r\n\x05value\x18\x01 \x01(\t\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"9\n\x17GetConfigSectionRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\x12\x10\n\x08\x65nv_name\x18\x02 \x01(\t\":\n\x18GetConfigSectionResponse\x12\x0f\n\x07section\x18\x01 \x01(\x0c\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"A\n\x10SetConfigRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x0c\x12\x10\n\x08\x65nv_name\x18\x03 \x01(\t\"4\n\x12UnsetConfigRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\x12\x10\n\x08\x65nv_name\x18\x02 \x01(\t2\xc8\x06\n\x12\x45nvironmentService\x12?\n\nGetCurrent\x12\x14.azdext.EmptyRequest\x1a\x1b.azdext.EnvironmentResponse\x12=\n\x04List\x12\x14.azdext.EmptyRequest\x1a\x1f.azdext.EnvironmentListResponse\x12\x41\n\x03Get\x12\x1d.azdext.GetEnvironmentRequest\x1a\x1b.azdext.EnvironmentResponse\x12\x41\n\x06Select\x12 .azdext.SelectEnvironmentRequest\x1a\x15.azdext.EmptyResponse\x12H\n\tGetValues\x12\x1d.azdext.GetEnvironmentRequest\x1a\x1c.azdext.KeyValueListResponse\x12;\n\x08GetValue\x12\x15.azdext.GetEnvRequest\x1a\x18.azdext.KeyValueResponse\x12\x38\n\x08SetValue\x12\x15.azdext.SetEnvRequest\x1a\x15.azdext.EmptyResponse\x12@\n\tGetConfig\x12\x18.azdext.GetConfigRequest\x1a\x19.azdext.GetConfigResponse\x12R\n\x0fGetConfigString\x12\x1e.azdext.GetConfigStringRequest\x1a\x1f.azdext.GetConfigStringResponse\x12U\n\x10GetConfigSection\x12\x1f.azdext.GetConfigSectionRequest\x1a .azdext.GetConfigSectionResponse\x12<\n\tSetConfig\x12\x18.azdext.SetConfigRequest\x1a\x15.azdext.EmptyResponse\x12@\n\x0bUnsetConfig\x12\x1a.azdext.UnsetConfigRequest\x1a\x15.azdext.EmptyResponseBFZ4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext\xaa\x02\rMicrosoft.Azdb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -56,21 +56,21 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_KEYVALUE']._serialized_start=608
   _globals['_KEYVALUE']._serialized_end=646
   _globals['_GETCONFIGREQUEST']._serialized_start=648
-  _globals['_GETCONFIGREQUEST']._serialized_end=680
-  _globals['_GETCONFIGRESPONSE']._serialized_start=682
-  _globals['_GETCONFIGRESPONSE']._serialized_end=731
-  _globals['_GETCONFIGSTRINGREQUEST']._serialized_start=733
-  _globals['_GETCONFIGSTRINGREQUEST']._serialized_end=771
-  _globals['_GETCONFIGSTRINGRESPONSE']._serialized_start=773
-  _globals['_GETCONFIGSTRINGRESPONSE']._serialized_end=828
-  _globals['_GETCONFIGSECTIONREQUEST']._serialized_start=830
-  _globals['_GETCONFIGSECTIONREQUEST']._serialized_end=869
-  _globals['_GETCONFIGSECTIONRESPONSE']._serialized_start=871
-  _globals['_GETCONFIGSECTIONRESPONSE']._serialized_end=929
-  _globals['_SETCONFIGREQUEST']._serialized_start=931
-  _globals['_SETCONFIGREQUEST']._serialized_end=978
-  _globals['_UNSETCONFIGREQUEST']._serialized_start=980
-  _globals['_UNSETCONFIGREQUEST']._serialized_end=1014
-  _globals['_ENVIRONMENTSERVICE']._serialized_start=1017
-  _globals['_ENVIRONMENTSERVICE']._serialized_end=1857
+  _globals['_GETCONFIGREQUEST']._serialized_end=698
+  _globals['_GETCONFIGRESPONSE']._serialized_start=700
+  _globals['_GETCONFIGRESPONSE']._serialized_end=749
+  _globals['_GETCONFIGSTRINGREQUEST']._serialized_start=751
+  _globals['_GETCONFIGSTRINGREQUEST']._serialized_end=807
+  _globals['_GETCONFIGSTRINGRESPONSE']._serialized_start=809
+  _globals['_GETCONFIGSTRINGRESPONSE']._serialized_end=864
+  _globals['_GETCONFIGSECTIONREQUEST']._serialized_start=866
+  _globals['_GETCONFIGSECTIONREQUEST']._serialized_end=923
+  _globals['_GETCONFIGSECTIONRESPONSE']._serialized_start=925
+  _globals['_GETCONFIGSECTIONRESPONSE']._serialized_end=983
+  _globals['_SETCONFIGREQUEST']._serialized_start=985
+  _globals['_SETCONFIGREQUEST']._serialized_end=1050
+  _globals['_UNSETCONFIGREQUEST']._serialized_start=1052
+  _globals['_UNSETCONFIGREQUEST']._serialized_end=1104
+  _globals['_ENVIRONMENTSERVICE']._serialized_start=1107
+  _globals['_ENVIRONMENTSERVICE']._serialized_end=1947
 # @@protoc_insertion_point(module_scope)

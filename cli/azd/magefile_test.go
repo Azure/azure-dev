@@ -6,12 +6,49 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestProtoContainerRuntime(t *testing.T) {
+	tests := []struct {
+		name      string
+		available map[string]bool
+		want      string
+		wantErr   bool
+	}{
+		{name: "prefers docker", available: map[string]bool{"docker": true, "wslc.exe": true}, want: "docker"},
+		{name: "falls back to wslc", available: map[string]bool{"wslc.exe": true}, want: "wslc.exe"},
+		{name: "neither available", available: map[string]bool{}, wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := protoContainerRuntime(func(name string) (string, error) {
+				if test.available[name] {
+					return name, nil
+				}
+				return "", errors.New("not found")
+			})
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("expected an error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != test.want {
+				t.Fatalf("want %q, got %q", test.want, got)
+			}
+		})
+	}
+}
 
 // ----------------------------------------------------------------------------
 // resolveCoverageFile — pure filesystem; covers the env-override + default

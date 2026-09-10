@@ -5,20 +5,25 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	"azure.ai.connections/internal/definition"
 	"azure.ai.connections/internal/exterrors"
-	"azure.ai.connections/internal/foundry/envkey"
+	"azure.ai.connections/internal/pkg/envkey"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // aiConnectionHost is the azure.yaml service host kind owned by this extension.
@@ -131,11 +136,15 @@ func (p *connectionServiceTarget) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
-	input, err := p.parseConnectionServiceConfig(ctx, serviceConfig)
+	environmentName, err := p.environmentName(ctx)
 	if err != nil {
 		return nil, err
 	}
-	environmentName, err := p.environmentName(ctx)
+	// A failed redeployment must not leave readiness from an older definition.
+	if err := p.clearConnectionProjectMarker(ctx, environmentName, serviceConfig.GetName()); err != nil {
+		return nil, err
+	}
+	input, err := p.parseConnectionServiceConfig(ctx, serviceConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -143,9 +152,9 @@ func (p *connectionServiceTarget) Deploy(
 	if err != nil {
 		return nil, err
 	}
-	name := strings.TrimSpace(input.Name)
-	if name == "" {
-		name = serviceConfig.GetName()
+	name := effectiveConnectionName(serviceConfig.GetName(), input)
+	if err := p.validateUniqueConnectionNames(ctx, serviceConfig, input); err != nil {
+		return nil, err
 	}
 	properties, err := connectionServiceProperties(name, input, environment)
 	if err != nil {
@@ -165,6 +174,50 @@ func (p *connectionServiceTarget) Deploy(
 		return nil, err
 	}
 	return &azdext.ServiceDeployResult{}, nil
+}
+
+func effectiveConnectionName(serviceName string, input *definition.Definition) string {
+	if name := strings.TrimSpace(input.Name); name != "" {
+		return name
+	}
+	return serviceName
+}
+
+// validateUniqueConnectionNames checks the project snapshot before any ARM PUT.
+// Distinct service keys do not imply distinct case-insensitive ARM names.
+func (p *connectionServiceTarget) validateUniqueConnectionNames(
+	ctx context.Context,
+	current *azdext.ServiceConfig,
+	input *definition.Definition,
+) error {
+	response, err := p.projectClient.Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return err
+	}
+	services := response.GetProject().GetServices()
+	names := map[string]string{
+		strings.ToLower(effectiveConnectionName(current.GetName(), input)): current.GetName(),
+	}
+	for _, key := range slices.Sorted(maps.Keys(services)) {
+		service := services[key]
+		if key == current.GetName() || service.GetHost() != aiConnectionHost {
+			continue
+		}
+		definition, err := p.parseConnectionServiceConfig(ctx, service)
+		if err != nil {
+			return err
+		}
+		name := strings.ToLower(effectiveConnectionName(key, definition))
+		if previous, found := names[name]; found {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf("connection services %q and %q resolve to the same Connection name", previous, key),
+				"Use unique Connection names across services, including names loaded from $ref files.",
+			)
+		}
+		names[name] = key
+	}
+	return nil
 }
 
 func connectionServiceProperties(
@@ -407,14 +460,62 @@ func (p *connectionServiceTarget) parseConnectionServiceConfig(
 	}
 	resolved, err := foundry.ResolveFileRefs(props.AsMap(), projectResponse.GetProject().GetPath())
 	if err != nil {
-		return nil, fmt.Errorf("resolving connection service %q configuration: %w", serviceConfig.GetName(), err)
+		return nil, err
 	}
-	data, err := json.Marshal(resolved)
+	return decodeResolvedConnectionDefinition(serviceConfig.GetName(), resolved)
+}
+
+// decodeResolvedConnectionDefinition validates only connection-owned fields. Core
+// strips its fields from inline properties before gRPC; fields loaded from a root
+// $ref have not been evaluated by core and must not be silently ignored here.
+func decodeResolvedConnectionDefinition(
+	serviceName string,
+	resolved map[string]any,
+) (*definition.Definition, error) {
+	for _, field := range []string{
+		"env", "host", "uses", "project", "language", "image", "docker", "k8s",
+		"infra", "hooks", "resourceGroup", "resourceName", "apiVersion", "dist",
+		"module", "config", "condition", "remoteBuild",
+	} {
+		if _, found := resolved[field]; found {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf("connection service %q definition contains core-owned field %q", serviceName, field),
+				fmt.Sprintf("Move %q to the service entry in azure.yaml so azd core can evaluate it; "+
+					"referenced resource files must contain only connection definition fields.", field),
+			)
+		}
+	}
+
+	// Editor schema metadata is not a definition field. Do not mutate the caller's
+	// resolved map or filter arbitrary keys inside credentials and metadata.
+	values := maps.Clone(resolved)
+	delete(values, "$schema")
+	data, err := json.Marshal(values)
 	if err != nil {
-		return nil, fmt.Errorf("encoding connection service %q config: %w", serviceConfig.GetName(), err)
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("connection service %q definition contains a non-JSON field value", serviceName),
+			"Use JSON-compatible values in connection definition fields.",
+		)
 	}
-	if err := json.Unmarshal(data, input); err != nil {
-		return nil, fmt.Errorf("parsing connection service %q config: %w", serviceConfig.GetName(), err)
+	input := &definition.Definition{}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(input); err != nil {
+		// Never include raw decoder values: type errors can contain numeric
+		// credentials. Unknown-field errors contain only the field name.
+		detail := "invalid field value"
+		if typeErr, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
+			detail = fmt.Sprintf("invalid type for field %q", typeErr.Field)
+		} else if strings.HasPrefix(err.Error(), "json: unknown field ") {
+			detail = strings.TrimPrefix(err.Error(), "json: ")
+		}
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("connection service %q definition: %s", serviceName, detail),
+			"Use supported connection definition fields and types; correct misspelled fields and retry.",
+		)
 	}
 	return input, nil
 }
@@ -429,16 +530,84 @@ func (p *connectionServiceTarget) setConnectionProjectMarker(
 	if _, err := p.envClient.SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: environmentName,
 		Key:     key,
-		Value:   "",
-	}); err != nil {
-		return fmt.Errorf("clearing Connection project marker %s: %w", key, err)
-	}
-	if _, err := p.envClient.SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: environmentName,
-		Key:     key,
 		Value:   strings.TrimRight(strings.TrimSpace(projectEndpoint), "/"),
 	}); err != nil {
 		return fmt.Errorf("publishing Connection project marker %s: %w", key, err)
+	}
+	return nil
+}
+
+func (p *connectionServiceTarget) clearConnectionProjectMarker(
+	ctx context.Context, environmentName, serviceName string,
+) error {
+	key := envkey.ConnectionProjectEndpoint(serviceName)
+	if _, err := p.envClient.SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: environmentName, Key: key, Value: "",
+	}); err != nil {
+		return fmt.Errorf("clearing Connection project marker %s: %w", key, err)
+	}
+	return nil
+}
+
+// invalidateDeletedConnectionMarkers clears local readiness before deleting the
+// resource. An external-project delete must not invalidate another project's markers.
+func invalidateDeletedConnectionMarkers(ctx context.Context, environmentName, name, endpoint string) error {
+	client, err := azdext.NewAzdClient()
+	if err != nil {
+		// Standalone use outside azd has no local readiness to maintain.
+		return nil
+	}
+	defer client.Close()
+	if environmentName == "" {
+		current, err := client.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		if status.Code(err) == codes.NotFound {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		environmentName = current.GetEnvironment().GetName()
+		if environmentName == "" {
+			return nil
+		}
+	}
+	target := &connectionServiceTarget{
+		projectClient: client.Project(), envClient: client.Environment(),
+	}
+	return target.invalidateMatchingConnectionMarkers(ctx, environmentName, name, endpoint)
+}
+
+func (p *connectionServiceTarget) invalidateMatchingConnectionMarkers(
+	ctx context.Context, environmentName, name, endpoint string,
+) error {
+	response, err := p.envClient.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: environmentName})
+	if err != nil {
+		return err
+	}
+	values := map[string]string{}
+	for _, item := range response.GetKeyValues() {
+		values[item.GetKey()] = item.GetValue()
+	}
+	project, err := p.projectClient.Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return err
+	}
+	for _, key := range slices.Sorted(maps.Keys(project.GetProject().GetServices())) {
+		service := project.GetProject().GetServices()[key]
+		marker := values[envkey.ConnectionProjectEndpoint(key)]
+		if service.GetHost() != aiConnectionHost || strings.TrimRight(strings.TrimSpace(marker), "/") !=
+			strings.TrimRight(strings.TrimSpace(endpoint), "/") || marker == "" {
+			continue
+		}
+		input, err := p.parseConnectionServiceConfig(ctx, service)
+		if err != nil {
+			return err
+		}
+		if strings.EqualFold(effectiveConnectionName(key, input), strings.TrimSpace(name)) {
+			if err := p.clearConnectionProjectMarker(ctx, environmentName, key); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

@@ -6,6 +6,8 @@ package project
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
@@ -13,7 +15,9 @@ import (
 	"azureaiagent/internal/pkg/envkey"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestValidateRegistryConnectionDependency(t *testing.T) {
@@ -27,7 +31,7 @@ func TestValidateRegistryConnectionDependency(t *testing.T) {
 	t.Run("external connection reference does not require uses", func(t *testing.T) {
 		t.Parallel()
 		require.NoError(t, validateRegistryConnectionDependency(
-			t.Context(), agent(), "/connections/external-registry", nil, nil,
+			t.Context(), agent(), "/connections/external-registry", nil, "", nil,
 		))
 	})
 
@@ -35,7 +39,7 @@ func TestValidateRegistryConnectionDependency(t *testing.T) {
 		t.Parallel()
 		err := validateRegistryConnectionDependency(
 			t.Context(), agent(), "private-registry",
-			map[string]*azdext.ServiceConfig{"private-registry": connection}, nil,
+			map[string]*azdext.ServiceConfig{"private-registry": connection}, "", nil,
 		)
 		require.ErrorContains(t, err, "is not declared")
 		require.ErrorContains(t, err, "uses")
@@ -45,7 +49,7 @@ func TestValidateRegistryConnectionDependency(t *testing.T) {
 		t.Parallel()
 		require.NoError(t, validateRegistryConnectionDependency(
 			t.Context(), agent("private-registry"), "private-registry",
-			map[string]*azdext.ServiceConfig{"private-registry": connection}, nil,
+			map[string]*azdext.ServiceConfig{"private-registry": connection}, "", nil,
 		))
 	})
 
@@ -55,7 +59,7 @@ func TestValidateRegistryConnectionDependency(t *testing.T) {
 			t.Context(), agent("private-registry"), "private-registry",
 			map[string]*azdext.ServiceConfig{
 				"private-registry": {Name: "private-registry", Host: foundryToolboxHost},
-			}, nil,
+			}, "", nil,
 		)
 		require.ErrorContains(t, err, foundryConnectionHost)
 	})
@@ -64,11 +68,343 @@ func TestValidateRegistryConnectionDependency(t *testing.T) {
 		t.Parallel()
 		err := validateRegistryConnectionDependency(
 			t.Context(), agent("private-registry"), "private-registry",
-			map[string]*azdext.ServiceConfig{"private-registry": connection},
+			map[string]*azdext.ServiceConfig{"private-registry": connection}, "",
 			func(context.Context, string) (bool, error) { return false, nil },
 		)
 		require.ErrorContains(t, err, "disabled")
 	})
+
+	t.Run("condition error is returned unchanged", func(t *testing.T) {
+		t.Parallel()
+		expected := exterrors.Dependency(
+			exterrors.CodeFoundryDependencyNotReady, "condition lookup failed", "check the service condition",
+		)
+		err := validateRegistryConnectionDependency(
+			t.Context(), agent("private-registry"), "private-registry",
+			map[string]*azdext.ServiceConfig{"private-registry": connection}, "",
+			func(context.Context, string) (bool, error) { return false, expected },
+		)
+		require.Same(t, expected, err)
+	})
+}
+
+func TestValidateRegistryConnectionDependencyPayloadName(t *testing.T) {
+	t.Parallel()
+	for _, source := range []string{"inline", "config", "empty inline"} {
+		t.Run(source, func(t *testing.T) {
+			t.Parallel()
+			props, err := MarshalStruct(new(map[string]any{"name": " production-registry "}))
+			require.NoError(t, err)
+			// The dependency identity must come from the map key, not either name field.
+			connection := &azdext.ServiceConfig{Name: "not-the-map-key", Host: foundryConnectionHost}
+			if source == "inline" {
+				connection.AdditionalProperties = props
+				connection.Config, err = MarshalStruct(new(map[string]any{"name": "ignored-config-name"}))
+				require.NoError(t, err)
+			} else {
+				connection.Config = props
+				if source == "empty inline" {
+					connection.AdditionalProperties, err = MarshalStruct(new(map[string]any{}))
+					require.NoError(t, err)
+				}
+			}
+			services := map[string]*azdext.ServiceConfig{"private-registry": connection}
+			for _, tt := range []struct {
+				name    string
+				ref     string
+				uses    []string
+				enabled bool
+				wantErr string
+			}{
+				{name: "missing uses", ref: "production-registry", wantErr: "is not declared"},
+				{
+					name: "payload name is not a uses key", ref: "production-registry",
+					uses: []string{"production-registry"}, wantErr: "is not declared",
+				},
+				{
+					name: "enabled", ref: " production-registry ",
+					uses: []string{"private-registry"}, enabled: true,
+				},
+				{
+					name: "disabled", ref: "production-registry",
+					uses: []string{"private-registry"}, wantErr: "disabled",
+				},
+				{
+					name: "service key still matches", ref: "private-registry",
+					uses: []string{"private-registry"}, enabled: true,
+				},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					t.Parallel()
+					agent := &azdext.ServiceConfig{Name: "agent", Uses: tt.uses}
+					var checked []string
+					err := validateRegistryConnectionDependency(
+						t.Context(), agent, tt.ref, services, "",
+						func(_ context.Context, key string) (bool, error) {
+							checked = append(checked, key)
+							return tt.enabled, nil
+						},
+					)
+					if tt.wantErr == "is not declared" {
+						require.Empty(t, checked)
+					} else {
+						require.Equal(t, []string{"private-registry"}, checked)
+					}
+					if tt.wantErr == "" {
+						require.NoError(t, err)
+						return
+					}
+					localErr, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok)
+					require.Equal(t, exterrors.CodeFoundryDependencyNotReady, localErr.Code)
+					require.Equal(t, azdext.LocalErrorCategoryDependency, localErr.Category)
+					require.Contains(t, localErr.Message, tt.wantErr)
+					require.Contains(t, localErr.Message, `"private-registry"`)
+					if tt.wantErr == "is not declared" {
+						require.Contains(t, localErr.Suggestion, `add "private-registry"`)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestValidateRegistryConnectionDependencyExternalWithLocalServices(t *testing.T) {
+	t.Parallel()
+	props, err := MarshalStruct(new(map[string]any{"name": "production-registry"}))
+	require.NoError(t, err)
+	config, err := MarshalStruct(new(map[string]any{"name": "ignored-config-name", "$ref": "must-not-read.yaml"}))
+	require.NoError(t, err)
+	toolboxProps, err := MarshalStruct(new(map[string]any{"name": "external-registry", "$ref": "must-not-read.yaml"}))
+	require.NoError(t, err)
+	services := map[string]*azdext.ServiceConfig{
+		"private-registry": {Host: foundryConnectionHost, AdditionalProperties: props, Config: config},
+		"toolbox":          {Host: foundryToolboxHost, AdditionalProperties: toolboxProps},
+		"project":          {Host: foundryProjectHost, AdditionalProperties: toolboxProps},
+		"agent":            {Host: foundryAgentHost, Config: toolboxProps},
+	}
+	for _, ref := range []string{"", "  ", "external-registry", "ignored-config-name", "/connections/production-registry"} {
+		t.Run(ref, func(t *testing.T) {
+			t.Parallel()
+			called := false
+			require.NoError(t, validateRegistryConnectionDependency(
+				t.Context(), &azdext.ServiceConfig{Name: "agent"}, ref, services, "",
+				func(context.Context, string) (bool, error) { called = true; return false, nil },
+			))
+			require.False(t, called)
+		})
+	}
+}
+
+func TestValidateRegistryConnectionDependencyAmbiguousNames(t *testing.T) {
+	t.Parallel()
+	for _, key := range []string{"another-registry", "production-registry"} {
+		t.Run(key, func(t *testing.T) {
+			t.Parallel()
+			props, err := MarshalStruct(new(map[string]any{"name": " production-registry "}))
+			require.NoError(t, err)
+			services := map[string]*azdext.ServiceConfig{
+				key:                {Host: foundryConnectionHost, AdditionalProperties: props},
+				"private-registry": {Host: foundryConnectionHost, Config: props},
+			}
+			agent := &azdext.ServiceConfig{Name: "agent", Uses: []string{key, "private-registry"}}
+			called := false
+			err = validateRegistryConnectionDependency(
+				t.Context(), agent, "production-registry", services, "",
+				func(context.Context, string) (bool, error) { called = true; return true, nil },
+			)
+			require.False(t, called)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, exterrors.CodeFoundryDependencyNotReady, localErr.Code)
+			require.Equal(t, azdext.LocalErrorCategoryDependency, localErr.Category)
+			require.Contains(t, localErr.Message, "ambiguous")
+			require.Contains(t, localErr.Message, key)
+			require.Contains(t, localErr.Message, "private-registry")
+		})
+	}
+}
+
+func TestValidateRegistryConnectionDependencyWrongHostKeyTakesPrecedence(t *testing.T) {
+	t.Parallel()
+	props, err := MarshalStruct(new(map[string]any{"name": "production-registry"}))
+	require.NoError(t, err)
+	services := map[string]*azdext.ServiceConfig{
+		"production-registry": {Host: foundryToolboxHost},
+		"private-registry":    {Host: foundryConnectionHost, AdditionalProperties: props},
+	}
+	err = validateRegistryConnectionDependency(
+		t.Context(), &azdext.ServiceConfig{Name: "agent", Uses: []string{"private-registry"}},
+		"production-registry", services, "", nil,
+	)
+	require.ErrorContains(t, err, `resolves to service host "azure.ai.toolbox" instead of "azure.ai.connection"`)
+}
+
+func TestValidateRegistryConnectionDependencyFileReferences(t *testing.T) {
+	t.Parallel()
+	for _, file := range []struct {
+		name    string
+		content string
+	}{
+		{"registry.yaml", "name: ' file-registry '\ncategory: ContainerRegistry\nauthType: ApiKey\n"},
+		{"registry.json", `{"name":" file-registry ","category":"ContainerRegistry","authType":"ApiKey"}`},
+	} {
+		for _, source := range []string{"inline", "config", "empty inline"} {
+			for _, overlay := range []string{"", "overlay-registry"} {
+				t.Run(file.name+"/"+source+"/name="+overlay, func(t *testing.T) {
+					t.Parallel()
+					root := t.TempDir()
+					require.NoError(t, os.WriteFile(filepath.Join(root, file.name), []byte(file.content), 0o600))
+					values := map[string]any{"$ref": file.name}
+					name := "file-registry"
+					if overlay != "" {
+						values["name"] = " " + overlay + " "
+						name = overlay
+					}
+					props, err := MarshalStruct(&values)
+					require.NoError(t, err)
+					service := &azdext.ServiceConfig{
+						Name: "not-the-map-key", Host: foundryConnectionHost,
+						Uses: []string{"project"}, Environment: map[string]string{"KEY": "unchanged"},
+					}
+					if source == "inline" {
+						service.AdditionalProperties = props
+						service.Config, err = MarshalStruct(new(map[string]any{"$ref": "must-not-read.yaml"}))
+						require.NoError(t, err)
+					} else {
+						service.Config = props
+						if source == "empty inline" {
+							service.AdditionalProperties, err = MarshalStruct(new(map[string]any{}))
+							require.NoError(t, err)
+						}
+					}
+					before := proto.Clone(service)
+					services := map[string]*azdext.ServiceConfig{"private-registry": service}
+					for _, tt := range []struct {
+						name    string
+						uses    []string
+						enabled bool
+						wantErr string
+					}{
+						{name: "missing uses", wantErr: "is not declared"},
+						{name: "payload name is not a uses key", uses: []string{name}, wantErr: "is not declared"},
+						{name: "enabled", uses: []string{"private-registry"}, enabled: true},
+						{name: "disabled", uses: []string{"private-registry"}, wantErr: "disabled"},
+					} {
+						t.Run(tt.name, func(t *testing.T) {
+							t.Parallel()
+							agent := &azdext.ServiceConfig{Name: "agent", Uses: tt.uses}
+							var checked []string
+							err := validateRegistryConnectionDependency(
+								t.Context(), agent, name, services, root,
+								func(_ context.Context, key string) (bool, error) {
+									checked = append(checked, key)
+									return tt.enabled, nil
+								},
+							)
+							require.True(t, proto.Equal(before, service), "sibling configuration must not be mutated")
+							if tt.wantErr == "is not declared" {
+								require.Empty(t, checked)
+							} else {
+								require.Equal(t, []string{"private-registry"}, checked)
+							}
+							if tt.wantErr == "" {
+								require.NoError(t, err)
+								return
+							}
+							localErr, ok := errors.AsType[*azdext.LocalError](err)
+							require.True(t, ok)
+							require.Equal(t, exterrors.CodeFoundryDependencyNotReady, localErr.Code)
+							require.Equal(t, azdext.LocalErrorCategoryDependency, localErr.Category)
+							require.Contains(t, localErr.Message, tt.wantErr)
+							require.Contains(t, localErr.Message, `"private-registry"`)
+						})
+					}
+					if overlay != "" {
+						// The file's original name is external once the inline name overrides it.
+						require.NoError(t, validateRegistryConnectionDependency(
+							t.Context(), &azdext.ServiceConfig{Name: "agent"}, "file-registry", services, root, nil,
+						))
+						require.True(t, proto.Equal(before, service))
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestValidateRegistryConnectionDependencyPreservesReferenceErrors(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name   string
+		values map[string]any
+	}{
+		{"missing file", map[string]any{"$ref": "missing.yaml"}},
+		{"invalid reference type", map[string]any{"$ref": true}},
+		{"empty reference", map[string]any{"$ref": ""}},
+		{"invalid YAML", map[string]any{"$ref": "invalid.yaml"}},
+		{"invalid JSON", map[string]any{"$ref": "invalid.json"}},
+		{"nested reference", map[string]any{"credentials": map[string]any{"$ref": "missing.yaml"}}},
+		{"array reference", map[string]any{"metadata": []any{map[string]any{"$ref": "missing.yaml"}}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(root, "invalid.yaml"), []byte("name: ["), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(root, "invalid.json"), []byte(`{"name":`), 0o600))
+			props, err := MarshalStruct(&tt.values)
+			require.NoError(t, err)
+			service := &azdext.ServiceConfig{Host: foundryConnectionHost, AdditionalProperties: props}
+			before := proto.Clone(service)
+			_, expected := foundry.ResolveFileRefs(props.AsMap(), root)
+			require.Error(t, expected)
+			err = validateRegistryConnectionDependency(
+				t.Context(), &azdext.ServiceConfig{Name: "agent"}, "file-registry",
+				map[string]*azdext.ServiceConfig{"private-registry": service}, root, nil,
+			)
+			require.IsType(t, &azdext.LocalError{}, err, "classified errors must not be wrapped")
+			require.Equal(t, expected, err)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, foundry.CodeInvalidFileRef, localErr.Code)
+			require.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+			require.True(t, proto.Equal(before, service))
+		})
+	}
+}
+
+func TestValidateRegistryConnectionDependencyEmptyProjectRoot(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name   string
+		values map[string]any
+		ref    bool
+	}{
+		{"inline name", map[string]any{"name": "file-registry"}, false},
+		{"root reference", map[string]any{"$ref": "registry.yaml"}, true},
+		{"nested reference", map[string]any{"credentials": map[string]any{"$ref": "registry.yaml"}}, true},
+		{"array reference", map[string]any{"metadata": []any{map[string]any{"$ref": "registry.yaml"}}}, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			props, err := MarshalStruct(&tt.values)
+			require.NoError(t, err)
+			service := &azdext.ServiceConfig{Host: foundryConnectionHost, AdditionalProperties: props}
+			for _, root := range []string{"", " \t "} {
+				err := validateRegistryConnectionDependency(
+					t.Context(), &azdext.ServiceConfig{Name: "agent", Uses: []string{"private-registry"}}, "file-registry",
+					map[string]*azdext.ServiceConfig{"private-registry": service}, root, nil,
+				)
+				if !tt.ref {
+					require.NoError(t, err)
+					continue
+				}
+				require.ErrorContains(t, err, "project root is empty")
+				require.ErrorContains(t, err, "$ref")
+				require.ErrorContains(t, err, `"private-registry"`)
+			}
+		})
+	}
 }
 
 func TestValidateFoundryDependencies(t *testing.T) {

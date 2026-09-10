@@ -6,6 +6,8 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
+	"slices"
+	"strings"
 	"testing"
 
 	"azure.ai.connections/internal/exterrors"
@@ -317,8 +319,14 @@ func TestConnectionCreatePropertiesMatchesSDK(t *testing.T) {
 			t.Parallel()
 			flags := &connectionCreateFlags{
 				kind: "remote-tool", target: "https://example.test", authType: authType,
-				key: " secret ", customKeys: []string{"x-key=value=with=equals", "Authorization=Bearer secret"},
-				metadata: []string{"owner=old", "owner=platform"},
+				metadata: []string{"owner=old", "owner=platform", "empty=", "equals=value=with=equals"},
+			}
+			switch authType {
+			case "api-key":
+				flags.key, flags.keyChanged = " secret ", true
+			case "custom-keys":
+				flags.customKeys = []string{"x-key=value=with=equals", "Authorization=Bearer secret"}
+				flags.customKeyChanged = true
 			}
 			props, err := connectionCreateProperties(flags)
 			require.NoError(t, err)
@@ -347,9 +355,9 @@ func TestConnectionCreatePropertiesRawAuth(t *testing.T) {
 			t.Parallel()
 			flags := &connectionCreateFlags{kind: "remote-a2a", target: "https://example.test", authType: tt.cli}
 			if tt.cli == "oauth2" {
-				flags.connectorName = "github"
+				flags.connectorName, flags.connectorNameChanged = "github", true
 			} else {
-				flags.audience = "audience"
+				flags.audience, flags.audienceChanged = "audience", true
 			}
 			props, err := connectionCreateProperties(flags)
 			require.NoError(t, err)
@@ -370,6 +378,314 @@ func TestConnectionCreatePropertiesRawAuth(t *testing.T) {
 	}
 }
 
+// connectionCreateAuthFlagCases covers every auth-specific create flag. Empty
+// slice cases intentionally use nil so presence cannot be inferred from length.
+func connectionCreateAuthFlagCases() []struct {
+	name      string
+	authTypes []string
+	set       func(*connectionCreateFlags, string, bool)
+} {
+	return []struct {
+		name      string
+		authTypes []string
+		set       func(*connectionCreateFlags, string, bool)
+	}{
+		{"key", []string{"api-key"}, func(f *connectionCreateFlags, value string, changed bool) {
+			f.key, f.keyChanged = value, changed
+		}},
+		{"custom-key", []string{"custom-keys"}, func(f *connectionCreateFlags, value string, changed bool) {
+			f.customKeyChanged = changed
+			if value != "" {
+				f.customKeys = []string{"header=" + value}
+			}
+		}},
+		{"client-id", []string{"oauth2"}, func(f *connectionCreateFlags, value string, changed bool) {
+			f.clientID, f.clientIDChanged = value, changed
+		}},
+		{"client-secret", []string{"oauth2"}, func(f *connectionCreateFlags, value string, changed bool) {
+			f.clientSecret, f.secretChanged = value, changed
+		}},
+		{"authorization-url", []string{"oauth2"}, func(f *connectionCreateFlags, value string, changed bool) {
+			f.authorizationURL, f.authorizationURLChanged = value, changed
+		}},
+		{"token-url", []string{"oauth2"}, func(f *connectionCreateFlags, value string, changed bool) {
+			f.tokenURL, f.tokenURLChanged = value, changed
+		}},
+		{"refresh-url", []string{"oauth2"}, func(f *connectionCreateFlags, value string, changed bool) {
+			f.refreshURL, f.refreshURLChanged = value, changed
+		}},
+		{"scopes", []string{"oauth2"}, func(f *connectionCreateFlags, value string, changed bool) {
+			f.scopesChanged = changed
+			if value != "" {
+				f.scopes = []string{value}
+			}
+		}},
+		{"connector-name", []string{"oauth2"}, func(f *connectionCreateFlags, value string, changed bool) {
+			f.connectorName, f.connectorNameChanged = value, changed
+		}},
+		{
+			"audience", []string{"user-entra-token", "project-managed-identity", "agentic-identity"},
+			func(f *connectionCreateFlags, value string, changed bool) {
+				f.audience, f.audienceChanged = value, changed
+			},
+		},
+	}
+}
+
+func TestConnectionCreatePropertiesRejectsInapplicableAuthFlags(t *testing.T) {
+	t.Parallel()
+
+	const secret = "sensitive-cli-value"
+	for _, authType := range []string{
+		"", "none", "api-key", "custom-keys", "oauth2",
+		"user-entra-token", "project-managed-identity", "agentic-identity",
+	} {
+		for _, flag := range connectionCreateAuthFlagCases() {
+			if slices.Contains(flag.authTypes, authType) {
+				continue
+			}
+			for _, input := range []struct {
+				name    string
+				value   string
+				changed bool
+			}{
+				{"value", "https://user:" + secret + "@example.test?sig=" + secret, false},
+				{"explicit value", secret, true},
+				{"explicit empty", "", true},
+			} {
+				t.Run(authType+"/"+flag.name+"/"+input.name, func(t *testing.T) {
+					t.Parallel()
+					flags := &connectionCreateFlags{
+						kind: "remote-tool", target: "https://example.test", authType: authType,
+					}
+					flag.set(flags, input.value, input.changed)
+					props, err := connectionCreateProperties(flags)
+					require.Equal(t, rawConnectionProperties{}, props)
+					localErr := requireConnectionValidationError(
+						t, err, exterrors.CodeConflictingArguments, "--"+flag.name,
+					)
+					for _, text := range []string{localErr.Error(), localErr.Message, localErr.Suggestion} {
+						require.NotContains(t, text, secret)
+						require.NotContains(t, text, "https://")
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestConnectionCreateCommandRejectsInapplicableAuthFlags(t *testing.T) {
+	t.Parallel()
+
+	const secret = "sensitive-cli-value"
+	for _, authType := range []string{
+		"none", "api-key", "custom-keys", "oauth2",
+		"user-entra-token", "project-managed-identity", "agentic-identity",
+	} {
+		for _, flag := range connectionCreateAuthFlagCases() {
+			if slices.Contains(flag.authTypes, authType) {
+				continue
+			}
+			for _, value := range []string{"", secret} {
+				for _, separate := range []bool{false, true} {
+					name := authType + "/" + flag.name
+					if value == "" {
+						name += "/empty"
+					}
+					if separate {
+						name += "/separate"
+					}
+					t.Run(name, func(t *testing.T) {
+						t.Parallel()
+						cmd := newConnectionCreateCommand(&azdext.ExtensionContext{})
+						cmd.SilenceErrors, cmd.SilenceUsage = true, true
+						var output strings.Builder
+						cmd.SetOut(&output)
+						cmd.SetErr(&output)
+						// Omit required kind/target so even a validation regression cannot reach I/O.
+						args := []string{"example", "--auth-type", authType}
+						if separate {
+							args = append(args, "--"+flag.name, value)
+						} else {
+							args = append(args, "--"+flag.name+"="+value)
+						}
+						cmd.SetArgs(args)
+						err := cmd.ExecuteContext(t.Context())
+						require.True(t, cmd.Flags().Changed(flag.name))
+						localErr := requireConnectionValidationError(
+							t, err, exterrors.CodeConflictingArguments, "--"+flag.name,
+						)
+						for _, text := range []string{
+							localErr.Error(), localErr.Message, localErr.Suggestion, output.String(),
+						} {
+							require.NotContains(t, text, secret)
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
+func TestConnectionCreateManagedOAuthRejectsExplicitBYOFlags(t *testing.T) {
+	t.Parallel()
+
+	for _, flag := range connectionCreateAuthFlagCases() {
+		if flag.name == "connector-name" || !slices.Contains(flag.authTypes, "oauth2") {
+			continue
+		}
+		t.Run(flag.name, func(t *testing.T) {
+			t.Parallel()
+			flags := &connectionCreateFlags{authType: "oauth2", connectorName: "github"}
+			flag.set(flags, "", true)
+			_, err := connectionCreateProperties(flags)
+			localErr := requireConnectionValidationError(t, err, exterrors.CodeConflictingArguments, "--"+flag.name)
+			require.Contains(t, localErr.Message, "--connector-name")
+
+			cmd := newConnectionCreateCommand(&azdext.ExtensionContext{})
+			cmd.SilenceErrors, cmd.SilenceUsage = true, true
+			cmd.SetArgs([]string{"example", "--auth-type=oauth2", "--connector-name=github", "--" + flag.name + "="})
+			err = cmd.ExecuteContext(t.Context())
+			requireConnectionValidationError(t, err, exterrors.CodeConflictingArguments, "--"+flag.name)
+		})
+	}
+	for _, value := range []string{"", " \t"} {
+		t.Run("connector="+value, func(t *testing.T) {
+			t.Parallel()
+			flags := &connectionCreateFlags{authType: "oauth2", connectorName: value, connectorNameChanged: true}
+			_, err := connectionCreateProperties(flags)
+			requireConnectionValidationError(t, err, exterrors.CodeInvalidParameter, "--connector-name")
+
+			cmd := newConnectionCreateCommand(&azdext.ExtensionContext{})
+			cmd.SilenceErrors, cmd.SilenceUsage = true, true
+			cmd.SetArgs([]string{"example", "--auth-type=oauth2", "--connector-name=" + value})
+			err = cmd.ExecuteContext(t.Context())
+			requireConnectionValidationError(t, err, exterrors.CodeInvalidParameter, "--connector-name")
+
+			flags.clientID = "client"
+			_, err = connectionCreateProperties(flags)
+			requireConnectionValidationError(t, err, exterrors.CodeConflictingArguments, "--connector-name")
+			cmd = newConnectionCreateCommand(&azdext.ExtensionContext{})
+			cmd.SilenceErrors, cmd.SilenceUsage = true, true
+			cmd.SetArgs([]string{"example", "--auth-type=oauth2", "--connector-name=" + value, "--client-id=client"})
+			err = cmd.ExecuteContext(t.Context())
+			requireConnectionValidationError(t, err, exterrors.CodeConflictingArguments, "--connector-name")
+		})
+	}
+}
+
+func TestConnectionCreatePropertiesExplicitEmptyValues(t *testing.T) {
+	t.Parallel()
+
+	requiredFields := map[string]string{
+		"key": "credentials.key", "custom-key": "credentials",
+		"client-id": "credentials.clientId", "client-secret": "credentials.clientSecret",
+		"authorization-url": "authorizationUrl", "token-url": "tokenUrl",
+	}
+	for _, flag := range connectionCreateAuthFlagCases() {
+		for _, authType := range flag.authTypes {
+			t.Run(authType+"/"+flag.name, func(t *testing.T) {
+				t.Parallel()
+				flags := &connectionCreateFlags{kind: "remote-tool", target: "https://example.test", authType: authType}
+				if authType == "oauth2" && flag.name != "connector-name" {
+					flags.authorizationURL, flags.tokenURL = "https://example.test/auth", "https://example.test/token"
+					flags.clientID, flags.clientSecret = "client", "test-value"
+				}
+				flag.set(flags, "", true)
+				props, err := connectionCreateProperties(flags)
+				if flag.name == "connector-name" {
+					requireConnectionValidationError(t, err, exterrors.CodeInvalidParameter, "--connector-name")
+					return
+				}
+				require.NoError(t, err)
+				err = validateConnectionProperties(props)
+				switch flag.name {
+				case "refresh-url", "scopes", "audience":
+					require.NoError(t, err, "optional empty values retain their existing semantics")
+				default:
+					requireConnectionValidationError(t, err, exterrors.CodeMissingConnectionField, requiredFields[flag.name])
+				}
+			})
+		}
+	}
+}
+
+func TestConnectionCreatePropertiesKeepsSupportedCLISubset(t *testing.T) {
+	t.Parallel()
+
+	for _, authType := range []string{
+		"AAD", "AccessKey", "AccountKey", "ManagedIdentity", "PAT", "SAS", "ServicePrincipal", "UsernamePassword",
+		"None", "ApiKey", "CustomKeys", "OAuth2", "UserEntraToken", "ProjectManagedIdentity", "AgenticIdentityToken",
+	} {
+		t.Run(authType, func(t *testing.T) {
+			t.Parallel()
+			_, err := connectionCreateProperties(&connectionCreateFlags{authType: authType})
+			requireConnectionValidationError(t, err, exterrors.CodeInvalidAuthType, "auth type")
+		})
+	}
+}
+
+func TestConnectionMetadataParsing(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name  string
+		pairs []string
+		want  map[string]string
+	}{
+		{"nil", nil, nil},
+		{"empty", []string{}, nil},
+		{"empty value", []string{"owner="}, map[string]string{"owner": ""}},
+		{"equals in value", []string{"token=a=b=="}, map[string]string{"token": "a=b=="}},
+		{"last wins", []string{"owner=old", "owner=new"}, map[string]string{"owner": "new"}},
+		{"preserve whitespace", []string{" owner = value "}, map[string]string{" owner ": " value "}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			metadata, err := parseConnectionMetadata(tt.pairs)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, metadata)
+			props, err := connectionCreateProperties(&connectionCreateFlags{authType: "none", metadata: tt.pairs})
+			require.NoError(t, err)
+			require.Equal(t, tt.want, props.Metadata)
+		})
+	}
+}
+
+func TestConnectionCommandsRejectMalformedMetadata(t *testing.T) {
+	t.Parallel()
+
+	const secret = "sensitive-metadata-value"
+	for _, pair := range []string{"", " \t", secret, "=" + secret, " \t=" + secret} {
+		t.Run(pair, func(t *testing.T) {
+			t.Parallel()
+			pairs := []string{"valid=retained", pair}
+			_, err := parseConnectionMetadata(pairs)
+			requireConnectionValidationError(t, err, exterrors.CodeInvalidParameter, "--metadata")
+			_, err = connectionCreateProperties(&connectionCreateFlags{authType: "none", metadata: pairs})
+			requireConnectionValidationError(t, err, exterrors.CodeInvalidParameter, "--metadata")
+			_, err = buildConnectionBody("remote-tool", "https://example.test", "none", "", nil, pairs, "", "")
+			requireConnectionValidationError(t, err, exterrors.CodeInvalidParameter, "--metadata")
+			for _, verb := range []string{"create", "update"} {
+				cmd := newConnectionCreateCommand(&azdext.ExtensionContext{})
+				if verb == "update" {
+					cmd = newConnectionUpdateCommand(&azdext.ExtensionContext{})
+				}
+				cmd.SilenceErrors, cmd.SilenceUsage = true, true
+				var output strings.Builder
+				cmd.SetOut(&output)
+				cmd.SetErr(&output)
+				cmd.SetArgs([]string{"example", "--metadata=valid=retained", "--metadata=" + pair})
+				err := cmd.ExecuteContext(t.Context())
+				localErr := requireConnectionValidationError(t, err, exterrors.CodeInvalidParameter, "--metadata")
+				for _, text := range []string{localErr.Error(), localErr.Message, localErr.Suggestion, output.String()} {
+					require.NotContains(t, text, secret)
+				}
+			}
+		})
+	}
+}
+
 func TestConnectionCreatePropertiesPreservesOAuthValues(t *testing.T) {
 	t.Parallel()
 
@@ -378,6 +694,8 @@ func TestConnectionCreatePropertiesPreservesOAuthValues(t *testing.T) {
 		authorizationURL: "https://example.test/auth", tokenURL: "https://example.test/token",
 		refreshURL: "https://example.test/refresh", scopes: []string{"read", "write"},
 		clientID: " client ", clientSecret: " secret ", metadata: []string{"owner=platform"},
+		clientIDChanged: true, secretChanged: true,
+		authorizationURLChanged: true, tokenURLChanged: true, refreshURLChanged: true, scopesChanged: true,
 	}
 	props, err := connectionCreateProperties(flags)
 	require.NoError(t, err)

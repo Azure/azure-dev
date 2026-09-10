@@ -17,6 +17,7 @@ import (
 	"azure.ai.connections/internal/definition"
 	"azure.ai.connections/internal/exterrors"
 	"azure.ai.connections/internal/foundry/projectctx"
+	"azure.ai.connections/internal/pkg/envkey"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -53,6 +54,7 @@ func TestDeployUpsertsLogicalConnectionAndPublishesMarker(t *testing.T) {
 	var markerEnvironment, markerName, markerProject string
 	target := &connectionServiceTarget{
 		projectClient: &recordingProjectConfigReader{path: t.TempDir()},
+		envClient:     &recordingServiceEnvironmentClient{},
 		environment:   "staging",
 		upsert: func(
 			_ context.Context,
@@ -93,6 +95,284 @@ func TestDeployUpsertsLogicalConnectionAndPublishesMarker(t *testing.T) {
 	assert.Contains(t, progressMsgs[0], "Private Registry")
 }
 
+func TestDeployReadinessMarkerLifecycle(t *testing.T) {
+	t.Parallel()
+	const previousEndpoint = "https://previous.services.ai.azure.com/api/projects/previous"
+	const projectEndpoint = "https://account.services.ai.azure.com/api/projects/project"
+	for _, selection := range []string{"staging", ""} {
+		for _, outcome := range []string{"success", "clear failure", "PUT failure", "publish failure"} {
+			t.Run(outcome+"/environment="+selection, func(t *testing.T) {
+				t.Parallel()
+				environmentName := selection
+				if environmentName == "" {
+					environmentName = "default"
+				}
+				markerKey := envkey.ConnectionProjectEndpoint("search-conn")
+				otherMarkerKey := envkey.ConnectionProjectEndpoint("other-conn")
+				environment := &recordingServiceEnvironmentClient{values: map[string]map[string]string{
+					environmentName: {markerKey: previousEndpoint, otherMarkerKey: previousEndpoint},
+					"production":    {markerKey: previousEndpoint},
+				}}
+				failure := errors.New("synthetic " + outcome)
+				if outcome == "clear failure" {
+					environment.setErr = failure
+				}
+				props, err := structpb.NewStruct(map[string]any{
+					"name": "Logical Search", "category": "RemoteTool", "target": "https://example.test", "authType": "None",
+				})
+				require.NoError(t, err)
+				upsertCalls, publishCalls := 0, 0
+				target := &connectionServiceTarget{
+					projectClient: &recordingProjectConfigReader{path: t.TempDir(), envDeclared: true},
+					envClient:     environment,
+					environment:   selection,
+					upsert: func(
+						_ context.Context, selectedEnvironment, name string, _ rawConnectionProperties,
+					) (string, error) {
+						upsertCalls++
+						assert.Equal(t, environmentName, selectedEnvironment)
+						assert.Equal(t, "Logical Search", name)
+						require.Len(t, environment.setRequests, 1, "clear must be persisted before PUT")
+						assert.Empty(t, environment.setRequests[0].GetValue())
+						assert.Empty(t, environment.values[environmentName][markerKey], "PUT must not see stale readiness")
+						if outcome == "PUT failure" {
+							return "", failure
+						}
+						if outcome == "publish failure" {
+							environment.setErr = failure
+						}
+						return projectEndpoint + "/", nil
+					},
+				}
+				target.publishMarker = func(ctx context.Context, selectedEnvironment, name, endpoint string) error {
+					publishCalls++
+					require.Equal(t, 1, upsertCalls, "publish must follow PUT")
+					require.Len(t, environment.setRequests, 1, "publish must not clear the marker a second time")
+					assert.Empty(t, environment.values[environmentName][markerKey])
+					return target.setConnectionProjectMarker(ctx, selectedEnvironment, name, endpoint)
+				}
+
+				result, err := target.Deploy(t.Context(), &azdext.ServiceConfig{
+					Name: "search-conn", Host: aiConnectionHost, AdditionalProperties: props,
+				}, nil, nil, nil)
+				if outcome == "success" {
+					require.NoError(t, err)
+					require.NotNil(t, result)
+				} else {
+					require.ErrorIs(t, err, failure)
+					require.Nil(t, result)
+				}
+				wantMarker := ""
+				switch outcome {
+				case "clear failure":
+					assert.ErrorContains(t, err, "clearing Connection project marker")
+					assert.Zero(t, upsertCalls, "failed clear must block ARM context resolution and PUT")
+					assert.Zero(t, publishCalls)
+					require.Len(t, environment.setRequests, 1)
+					wantMarker = previousEndpoint // A failed persistence call must not mutate the fixture's state.
+				case "PUT failure":
+					assert.Equal(t, 1, upsertCalls)
+					assert.Zero(t, publishCalls, "a failed PUT must not publish readiness")
+					require.Len(t, environment.setRequests, 1)
+				case "success", "publish failure":
+					assert.Equal(t, 1, upsertCalls)
+					assert.Equal(t, 1, publishCalls)
+					require.Len(t, environment.setRequests, 2)
+					assert.Equal(t, projectEndpoint, environment.setRequests[1].GetValue())
+					if outcome == "success" {
+						wantMarker = projectEndpoint
+					} else {
+						assert.ErrorContains(t, err, "publishing Connection project marker")
+					}
+				}
+				assert.Empty(t, environment.setRequests[0].GetValue())
+				for _, request := range environment.setRequests {
+					assert.Equal(t, environmentName, request.GetEnvName())
+					assert.Equal(t, markerKey, request.GetKey(), "readiness uses the service key, not the logical name")
+				}
+				assert.Equal(t, map[string]string{
+					markerKey: wantMarker, otherMarkerKey: previousEndpoint,
+				}, environment.values[environmentName])
+				assert.Equal(t, map[string]string{markerKey: previousEndpoint}, environment.values["production"])
+			})
+		}
+	}
+}
+
+func TestDeployConnectionNameUniqueness(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name             string
+		currentKey       string
+		currentName      string
+		otherKey         string
+		otherName        string
+		otherServiceName string
+		otherHost        string
+		deployUnrelated  bool
+		wantName         string // Nonempty only when deployment should succeed.
+	}{
+		{
+			name:       "distinct keys with the same explicit name",
+			currentKey: "first", currentName: "shared", otherKey: "second", otherName: "shared",
+		},
+		{
+			name:       "case insensitive explicit names",
+			currentKey: "first", currentName: "Search", otherKey: "second", otherName: "sEaRcH",
+		},
+		{
+			name:       "surrounding whitespace in explicit names",
+			currentKey: "first", currentName: " \tSearch\n", otherKey: "second", otherName: "search \t",
+		},
+		{
+			name:       "explicit name versus omitted name fallback",
+			currentKey: "first", currentName: "search", otherKey: "search",
+		},
+		{
+			name:       "explicit name versus blank name fallback",
+			currentKey: "first", currentName: " SEARCH ", otherKey: "search", otherName: " \t\n",
+		},
+		{
+			name:       "current fallback versus explicit name",
+			currentKey: "search", otherKey: "second", otherName: " SEARCH ",
+		},
+		{
+			name:       "case insensitive service key fallback",
+			currentKey: "Search", otherKey: "search",
+		},
+		{
+			name:       "sibling fallback uses project map key",
+			currentKey: "first", currentName: "search", otherKey: "search", otherServiceName: "not-the-map-key",
+		},
+		{
+			name:       "duplicate peers block an unrelated connection",
+			currentKey: "first", currentName: "shared", otherKey: "second", otherName: "shared",
+			deployUnrelated: true,
+		},
+		{
+			name:       "distinct logical names and current service in snapshot",
+			currentKey: "first", currentName: " First Connection ", otherKey: "second", otherName: "Second Connection",
+			wantName: "First Connection",
+		},
+		{
+			name:       "distinct fallback names",
+			currentKey: "first", otherKey: "second", wantName: "first",
+		},
+		{
+			name:       "explicit name overrides service key",
+			currentKey: "shared", currentName: "unique", otherKey: "second", otherName: "shared", wantName: "unique",
+		},
+		{
+			name:       "other host is not a connection collision",
+			currentKey: "first", currentName: "shared", otherKey: "second", otherName: "shared",
+			otherHost: "azure.ai.agent", wantName: "shared",
+		},
+	} {
+		for _, source := range []string{"inline", "ref", "ref overlay"} {
+			t.Run(tt.name+"/"+source, func(t *testing.T) {
+				t.Parallel()
+				root := t.TempDir()
+				makeService := func(key, name, fileName string) *azdext.ServiceConfig {
+					values := map[string]any{
+						"category": "RemoteTool", "target": "https://example.test", "authType": "None",
+					}
+					if name != "" {
+						values["name"] = name
+					}
+					if source != "inline" {
+						if source == "ref overlay" {
+							values["name"] = "file-only-" + fileName
+						}
+						raw, err := json.Marshal(values)
+						require.NoError(t, err)
+						require.NoError(t, os.WriteFile(filepath.Join(root, fileName), raw, 0o600))
+						values = map[string]any{"$ref": "./" + fileName}
+						if source == "ref overlay" {
+							values["name"] = name
+						}
+					}
+					props, err := structpb.NewStruct(values)
+					require.NoError(t, err)
+					svc := &azdext.ServiceConfig{Name: key, Host: aiConnectionHost}
+					if source == "ref" {
+						svc.Config = props // Also exercise the Config fallback for referenced definitions.
+					} else {
+						svc.AdditionalProperties = props
+					}
+					return svc
+				}
+				current := makeService(tt.currentKey, tt.currentName, "current.json")
+				other := makeService(tt.otherKey, tt.otherName, "other.json")
+				if tt.otherServiceName != "" {
+					other.Name = tt.otherServiceName
+				}
+				if tt.otherHost != "" {
+					other.Host = tt.otherHost
+				}
+				services := map[string]*azdext.ServiceConfig{tt.currentKey: current, tt.otherKey: other}
+				if tt.deployUnrelated {
+					current = makeService("unrelated", "unique", "unrelated.json")
+					services[current.GetName()] = current
+				}
+				const projectEndpoint = "https://account.services.ai.azure.com/api/projects/project"
+				markerKey := envkey.ConnectionProjectEndpoint(current.GetName())
+				environment := &recordingServiceEnvironmentClient{values: map[string]map[string]string{
+					"staging": {markerKey: projectEndpoint},
+				}}
+				upsertCalls, publishCalls := 0, 0
+				target := &connectionServiceTarget{
+					projectClient: &recordingProjectConfigReader{path: root, envDeclared: true, services: services},
+					envClient:     environment,
+					environment:   "staging",
+					upsert: func(
+						_ context.Context, selectedEnvironment, name string, _ rawConnectionProperties,
+					) (string, error) {
+						upsertCalls++
+						assert.Equal(t, "staging", selectedEnvironment)
+						assert.Equal(t, tt.wantName, name, "only unique effective names may reach ARM")
+						return projectEndpoint, nil
+					},
+				}
+				target.publishMarker = func(ctx context.Context, selectedEnvironment, name, endpoint string) error {
+					publishCalls++
+					return target.setConnectionProjectMarker(ctx, selectedEnvironment, name, endpoint)
+				}
+				var progress []string
+				result, err := target.Deploy(t.Context(), current, nil, nil, func(message string) {
+					progress = append(progress, message)
+				})
+				if tt.wantName == "" {
+					require.Nil(t, result)
+					localErr := requireConnectionValidationError(
+						t, err, exterrors.CodeInvalidParameter, "same Connection name",
+					)
+					assert.IsType(t, &azdext.LocalError{}, err)
+					assert.Contains(t, localErr.Message, "\""+tt.currentKey+"\"")
+					assert.Contains(t, localErr.Message, "\""+tt.otherKey+"\"")
+					assert.Zero(t, upsertCalls, "collisions must fail before ARM context resolution or PUT")
+					assert.Zero(t, publishCalls, "collisions must not publish success markers")
+					assert.Empty(t, progress)
+					require.Len(t, environment.setRequests, 1)
+					assert.Equal(t, map[string]string{markerKey: ""}, environment.values["staging"])
+				} else {
+					require.NoError(t, err)
+					require.NotNil(t, result)
+					assert.Equal(t, 1, upsertCalls)
+					assert.Equal(t, 1, publishCalls)
+					require.Len(t, environment.setRequests, 2)
+					assert.Equal(t, projectEndpoint, environment.setRequests[1].GetValue())
+					assert.Equal(t, map[string]string{markerKey: projectEndpoint}, environment.values["staging"])
+				}
+				assert.Empty(t, environment.setRequests[0].GetValue())
+				for _, request := range environment.setRequests {
+					assert.Equal(t, "staging", request.GetEnvName())
+					assert.Equal(t, markerKey, request.GetKey())
+				}
+			})
+		}
+	}
+}
+
 func TestDeployValidatesResolvedDefinitionBeforeUpsert(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
@@ -101,6 +381,8 @@ func TestDeployValidatesResolvedDefinitionBeforeUpsert(t *testing.T) {
 		code   string
 		field  string
 	}{
+		{"unknown field", map[string]any{"authTyp": "None"}, exterrors.CodeInvalidParameter, "authTyp"},
+		{"invalid target type", map[string]any{"target": true}, exterrors.CodeInvalidParameter, "target"},
 		{"missing category", map[string]any{"category": ""}, exterrors.CodeMissingConnectionField, "category"},
 		{"missing target", map[string]any{"target": ""}, exterrors.CodeMissingConnectionField, "target"},
 		{"expanded blank target", map[string]any{"target": "${BLANK}"}, exterrors.CodeMissingConnectionField, "target"},
@@ -162,8 +444,13 @@ func TestDeployValidatesResolvedDefinitionBeforeUpsert(t *testing.T) {
 				props, err := structpb.NewStruct(values)
 				require.NoError(t, err)
 				upserted, published := false, false
+				markerKey := envkey.ConnectionProjectEndpoint("connection")
+				environment := &recordingServiceEnvironmentClient{values: map[string]map[string]string{
+					"staging": {markerKey: "https://account.services.ai.azure.com/api/projects/project"},
+				}}
 				target := &connectionServiceTarget{
 					projectClient: &recordingProjectConfigReader{path: root},
+					envClient:     environment,
 					environment:   "staging",
 					upsert: func(context.Context, string, string, rawConnectionProperties) (string, error) {
 						upserted = true
@@ -180,6 +467,11 @@ func TestDeployValidatesResolvedDefinitionBeforeUpsert(t *testing.T) {
 				assert.NotContains(t, localErr.Message+localErr.Suggestion, "synthetic-private-value")
 				assert.False(t, upserted, "invalid definitions must fail before ARM context resolution or PUT")
 				assert.False(t, published, "invalid definitions must not publish readiness")
+				require.Len(t, environment.setRequests, 1, "clear stale readiness before parsing or validating definitions")
+				assert.Equal(t, "staging", environment.setRequests[0].GetEnvName())
+				assert.Equal(t, markerKey, environment.setRequests[0].GetKey())
+				assert.Empty(t, environment.setRequests[0].GetValue())
+				assert.Empty(t, environment.values["staging"][markerKey], "failed redeploy must not retain readiness")
 			})
 		}
 	}
@@ -221,7 +513,9 @@ func TestDeployValidatesAfterReferenceOverlayAndExpansion(t *testing.T) {
 			var captured rawConnectionProperties
 			upserted, published := false, false
 			target := &connectionServiceTarget{
-				projectClient: &recordingProjectConfigReader{path: root}, environment: "staging",
+				projectClient: &recordingProjectConfigReader{path: root},
+				envClient:     &recordingServiceEnvironmentClient{},
+				environment:   "staging",
 				upsert: func(
 					_ context.Context, environment, name string, properties rawConnectionProperties,
 				) (string, error) {
@@ -446,15 +740,12 @@ func TestSetConnectionProjectMarkerCommitsToSelectedEnvironment(t *testing.T) {
 		"https://account.services.ai.azure.com/api/projects/project/",
 	)
 	require.NoError(t, err)
-	require.Len(t, environment.setRequests, 2)
+	require.Len(t, environment.setRequests, 1)
 	assert.Equal(t, "staging", environment.setRequests[0].GetEnvName())
 	assert.Equal(t, "CONNECTION_V2_6D7920636F6E6E656374696F6E_PROJECT_ENDPOINT", environment.setRequests[0].GetKey())
-	assert.Empty(t, environment.setRequests[0].GetValue())
-	assert.Equal(t, "staging", environment.setRequests[1].GetEnvName())
-	assert.Equal(t, "CONNECTION_V2_6D7920636F6E6E656374696F6E_PROJECT_ENDPOINT", environment.setRequests[1].GetKey())
 	assert.Equal(t,
 		"https://account.services.ai.azure.com/api/projects/project",
-		environment.setRequests[1].GetValue(),
+		environment.setRequests[0].GetValue(),
 	)
 }
 
@@ -482,6 +773,7 @@ func TestPackagePublish_AreNoOps(t *testing.T) {
 type recordingProjectConfigReader struct {
 	path        string
 	envDeclared bool
+	services    map[string]*azdext.ServiceConfig
 }
 
 func (r *recordingProjectConfigReader) Get(
@@ -489,7 +781,7 @@ func (r *recordingProjectConfigReader) Get(
 	*azdext.EmptyRequest,
 	...grpc.CallOption,
 ) (*azdext.GetProjectResponse, error) {
-	return &azdext.GetProjectResponse{Project: &azdext.ProjectConfig{Path: r.path}}, nil
+	return &azdext.GetProjectResponse{Project: &azdext.ProjectConfig{Path: r.path, Services: r.services}}, nil
 }
 
 func (r *recordingProjectConfigReader) GetServiceConfigValue(
@@ -504,6 +796,7 @@ type recordingServiceEnvironmentClient struct {
 	values         map[string]map[string]string
 	valuesRequests []string
 	setRequests    []*azdext.SetEnvRequest
+	setErr         error
 }
 
 func (r *recordingServiceEnvironmentClient) GetCurrent(
@@ -533,5 +826,15 @@ func (r *recordingServiceEnvironmentClient) SetValue(
 	_ ...grpc.CallOption,
 ) (*azdext.EmptyResponse, error) {
 	r.setRequests = append(r.setRequests, request)
+	if r.setErr != nil {
+		return nil, r.setErr
+	}
+	if r.values == nil {
+		r.values = map[string]map[string]string{}
+	}
+	if r.values[request.GetEnvName()] == nil {
+		r.values[request.GetEnvName()] = map[string]string{}
+	}
+	r.values[request.GetEnvName()][request.GetKey()] = request.GetValue()
 	return &azdext.EmptyResponse{}, nil
 }

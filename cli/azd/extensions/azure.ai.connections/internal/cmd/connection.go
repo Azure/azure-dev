@@ -213,6 +213,16 @@ type connectionCreateFlags struct {
 	refreshURL       string   // OAuth2 refresh endpoint
 	scopes           []string // OAuth2 scopes
 	connectorName    string   // Managed connector name
+
+	// Preserve explicit empty values so auth-specific flags cannot be silently ignored.
+	keyChanged              bool
+	customKeyChanged        bool
+	audienceChanged         bool
+	authorizationURLChanged bool
+	tokenURLChanged         bool
+	refreshURLChanged       bool
+	scopesChanged           bool
+	connectorNameChanged    bool
 }
 
 // ConnectionCreateAction implements connection creation.
@@ -291,21 +301,19 @@ func connectionCreateProperties(flags *connectionCreateFlags) (rawConnectionProp
 				"project-managed-identity, or agentic-identity.",
 		)
 	}
-	// These CLI flags describe OAuth2 credentials. ServicePrincipal and other
-	// service auth types may legitimately carry clientId/clientSecret credentials.
-	if flags.authType != "oauth2" &&
-		(flags.clientID != "" || flags.clientSecret != "" || flags.clientIDChanged || flags.secretChanged) {
-		return rawConnectionProperties{}, exterrors.Validation(
-			exterrors.CodeConflictingArguments,
-			"--client-id and --client-secret are only valid with --auth-type oauth2.",
-			"Remove --client-id and --client-secret or select --auth-type oauth2.",
-		)
+	if err := validateConnectionCreateAuthFlags(flags); err != nil {
+		return rawConnectionProperties{}, err
+	}
+	metadata, err := parseConnectionMetadata(flags.metadata)
+	if err != nil {
+		return rawConnectionProperties{}, err
 	}
 
 	props := rawConnectionProperties{
 		AuthType:         normalizeAuthTypeToARM(flags.authType),
 		Category:         normalizeKind(flags.kind),
 		Target:           flags.target,
+		Metadata:         metadata,
 		Audience:         flags.audience,
 		AuthorizationURL: flags.authorizationURL,
 		TokenURL:         flags.tokenURL,
@@ -315,14 +323,6 @@ func connectionCreateProperties(flags *connectionCreateFlags) (rawConnectionProp
 	}
 	if props.AuthType == "" {
 		props.AuthType = "None"
-	}
-	if len(flags.metadata) > 0 {
-		props.Metadata = make(map[string]string, len(flags.metadata))
-		for _, pair := range flags.metadata {
-			if key, value, found := strings.Cut(pair, "="); found {
-				props.Metadata[key] = value
-			}
-		}
 	}
 	switch flags.authType {
 	case "api-key":
@@ -348,6 +348,103 @@ func connectionCreateProperties(flags *connectionCreateFlags) (rawConnectionProp
 	return props, nil
 }
 
+// validateConnectionCreateAuthFlags checks CLI flag presence, including explicit
+// empty values. Keep these restrictions separate from the service schema validator.
+func validateConnectionCreateAuthFlags(flags *connectionCreateFlags) error {
+	for _, flag := range []struct {
+		name     string
+		supplied bool
+		authType string
+	}{
+		{"key", flags.keyChanged || flags.key != "", "api-key"},
+		{"custom-key", flags.customKeyChanged || len(flags.customKeys) > 0, "custom-keys"},
+	} {
+		if flag.supplied && flags.authType != flag.authType {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				fmt.Sprintf("--%s is only valid with --auth-type %s.", flag.name, flag.authType),
+				fmt.Sprintf("Remove --%s or select --auth-type %s.", flag.name, flag.authType),
+			)
+		}
+	}
+
+	var byoFlags []string
+	for _, flag := range []struct {
+		name     string
+		supplied bool
+	}{
+		{"client-id", flags.clientIDChanged || flags.clientID != ""},
+		{"client-secret", flags.secretChanged || flags.clientSecret != ""},
+		{"authorization-url", flags.authorizationURLChanged || flags.authorizationURL != ""},
+		{"token-url", flags.tokenURLChanged || flags.tokenURL != ""},
+		{"refresh-url", flags.refreshURLChanged || flags.refreshURL != ""},
+		{"scopes", flags.scopesChanged || len(flags.scopes) > 0},
+	} {
+		if flag.supplied {
+			byoFlags = append(byoFlags, "--"+flag.name)
+		}
+	}
+	hasConnector := flags.connectorNameChanged || flags.connectorName != ""
+	if flags.authType != "oauth2" && (len(byoFlags) > 0 || hasConnector) {
+		oauthFlags := slices.Clone(byoFlags)
+		if hasConnector {
+			oauthFlags = append(oauthFlags, "--connector-name")
+		}
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			strings.Join(oauthFlags, ", ")+" are only valid with OAuth2 authType (--auth-type oauth2).",
+			"Remove the OAuth2 flags or select --auth-type oauth2.",
+		)
+	}
+	if hasConnector && len(byoFlags) > 0 {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"OAuth2 connectorName cannot be combined with BYO OAuth2 flags: --connector-name conflicts with "+
+				strings.Join(byoFlags, ", ")+".",
+			"Use --connector-name alone for managed OAuth2, or omit it and provide the BYO OAuth2 flags.",
+		)
+	}
+	if flags.connectorNameChanged && strings.TrimSpace(flags.connectorName) == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--connector-name must be a non-blank name.",
+			"Set --connector-name for managed OAuth2, or omit it and provide the BYO OAuth2 flags.",
+		)
+	}
+	if flags.audienceChanged || flags.audience != "" {
+		switch flags.authType {
+		case "user-entra-token", "project-managed-identity", "agentic-identity":
+		default:
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--audience is only valid with --auth-type user-entra-token, project-managed-identity, or agentic-identity.",
+				"Remove --audience or select one of these identity auth types.",
+			)
+		}
+	}
+	return nil
+}
+
+// parseConnectionMetadata rejects malformed CLI pairs without disclosing their contents.
+func parseConnectionMetadata(pairs []string) (map[string]string, error) {
+	if len(pairs) == 0 {
+		return nil, nil
+	}
+	metadata := make(map[string]string, len(pairs))
+	for _, pair := range pairs {
+		key, value, found := strings.Cut(pair, "=")
+		if !found || strings.TrimSpace(key) == "" {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"Invalid --metadata entry: expected key=value with a non-blank key.",
+				"Specify each metadata entry as --metadata key=value; the value may be empty or contain '='.",
+			)
+		}
+		metadata[key] = value
+	}
+	return metadata, nil
+}
+
 func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &connectionCreateFlags{}
 	action := &ConnectionCreateAction{flags: flags}
@@ -367,8 +464,16 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 			flags.name = args[0]
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
 			flags.output = extCtx.OutputFormat
+			flags.keyChanged = cmd.Flags().Changed("key")
+			flags.customKeyChanged = cmd.Flags().Changed("custom-key")
 			flags.clientIDChanged = cmd.Flags().Changed("client-id")
 			flags.secretChanged = cmd.Flags().Changed("client-secret")
+			flags.audienceChanged = cmd.Flags().Changed("audience")
+			flags.authorizationURLChanged = cmd.Flags().Changed("authorization-url")
+			flags.tokenURLChanged = cmd.Flags().Changed("token-url")
+			flags.refreshURLChanged = cmd.Flags().Changed("refresh-url")
+			flags.scopesChanged = cmd.Flags().Changed("scopes")
+			flags.connectorNameChanged = cmd.Flags().Changed("connector-name")
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 			return action.Run(ctx)
@@ -387,7 +492,7 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 	cmd.Flags().StringArrayVar(&flags.customKeys, "custom-key", nil,
 		"Custom key=value (repeatable, for custom-keys auth)")
 	cmd.Flags().StringArrayVar(&flags.metadata, "metadata", nil,
-		"Metadata key=value (repeatable)")
+		"Metadata key=value (repeatable; non-blank key required, empty value allowed)")
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Replace existing connection (upsert)")
 	cmd.Flags().StringVar(&flags.clientID, "client-id", "",
@@ -457,6 +562,9 @@ func (a *ConnectionUpdateAction) Run(ctx context.Context) error {
 			"No fields to update.",
 			"Specify --target, --key, --custom-key, or --metadata.",
 		)
+	}
+	if _, err := parseConnectionMetadata(a.flags.metadata); err != nil {
+		return err
 	}
 
 	connCtx, err := resolveConnectionContext(ctx, a.flags.projectEndpoint)
@@ -616,7 +724,7 @@ Does not accept --auth-type (delete and recreate to change auth type).`,
 	cmd.Flags().StringArrayVar(&flags.customKeys, "custom-key", nil,
 		"Update custom key=value (repeatable, for custom-keys auth)")
 	cmd.Flags().StringArrayVar(&flags.metadata, "metadata", nil,
-		"Set metadata key=value (repeatable, merged with existing metadata)")
+		"Set metadata key=value (repeatable, merged with existing metadata; non-blank key required, empty value allowed)")
 	return cmd
 }
 
@@ -628,6 +736,7 @@ type connectionDeleteFlags struct {
 	force           bool
 	noPrompt        bool
 	projectEndpoint string
+	environment     string
 }
 
 // ConnectionDeleteAction implements connection deletion.
@@ -688,6 +797,9 @@ func (a *ConnectionDeleteAction) Run(ctx context.Context) error {
 		}
 	}
 
+	if err := invalidateDeletedConnectionMarkers(ctx, a.flags.environment, a.flags.name, connCtx.endpoint); err != nil {
+		return err
+	}
 	_, err = connCtx.armClient.Delete(
 		ctx, connCtx.rg, connCtx.account, connCtx.project,
 		a.flags.name, nil,
@@ -713,6 +825,7 @@ func newConnectionDeleteCommand(
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]
 			flags.noPrompt = extCtx.NoPrompt
+			flags.environment = extCtx.Environment
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
 
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -769,7 +882,17 @@ func buildConnectionBody(
 	customKeys, metadata []string,
 	clientID, clientSecret string,
 ) (*armcognitiveservices.ConnectionPropertiesV2BasicResource, error) {
-	metaMap := parseKVPtrMap(metadata)
+	parsedMetadata, err := parseConnectionMetadata(metadata)
+	if err != nil {
+		return nil, err
+	}
+	var metaMap map[string]*string
+	if len(parsedMetadata) > 0 {
+		metaMap = make(map[string]*string, len(parsedMetadata))
+		for key, value := range parsedMetadata {
+			metaMap[key] = new(value)
+		}
+	}
 	cat := armcognitiveservices.ConnectionCategory(normalizeKind(kind))
 
 	// Map CLI kebab-case auth types to ARM SDK values

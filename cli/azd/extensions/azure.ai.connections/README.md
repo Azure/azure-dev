@@ -30,12 +30,26 @@ used. Local `$ref` files and nested credential values are resolved by this
 extension. Removing the service from `azure.yaml` stops managing it but does
 not delete the remote Connection; use `azd ai connection delete` to delete it.
 
+Effective Connection names must be unique across Connection services, including
+names loaded through `$ref`; names that differ only by case also conflict.
+Deployment rejects duplicate names before writing to ARM.
+
+Unknown definition fields are rejected instead of silently defaulting misspelled
+authentication settings. Referenced files contain only Connection definition
+fields. Keep core-owned settings such as `host`, `uses`, and `env` on the service
+entry in `azure.yaml`; even `env: {}` in a referenced file is rejected rather than
+ignored. Arbitrary keys inside `credentials` and `metadata` remain supported.
+
 After resolving file references and environment variables, deployment validates
 the category, target, and authentication configuration before any ARM write.
 API key and custom-key authentication require credentials; OAuth2 requires either
 a managed connector or complete BYO OAuth2 fields, not both. Invalid definitions
 do not publish readiness markers. This validation is shared with standalone
 create/deploy commands and preserves nested service credential payloads.
+
+Standalone commands reject explicitly supplied authentication flags that cannot
+apply to the selected auth type, including explicitly empty values. Metadata
+must use `key=value` entries with non-blank keys; empty values are allowed.
 
 The `microsoft.foundry` provider no longer provisions declared Connection
 services in any mode. Embedded, ejected Bicep, and ejected Terraform templates
@@ -81,13 +95,26 @@ lookup (`AZURE_SUBSCRIPTION_ID`) are also read together from that environment's
 persisted values, without process-variable fallback. These optional context
 values may be absent; ARM discovery and default credential behavior still apply.
 
+For an existing project with no Connections, discovery cannot infer its ARM
+subscription and resource group from the endpoint alone. Persist the full
+`AZURE_AI_PROJECT_ID` in the selected azd environment, or adopt the project with
+`azd ai project add --project-id <project-resource-id>`, before deploying its
+first Connection. The error includes environment-specific setup guidance.
+
 ### Readiness markers
 
-After deployment, the extension writes
+Each deployment attempt first clears the service's previous readiness marker.
+Only after a successful ARM write does the extension publish
 `CONNECTION_V2_<UPPERCASE_HEX_SERVICE_NAME>_PROJECT_ENDPOINT` to the selected azd
 environment. The encoded portion contains the exact UTF-8 service-key bytes,
 preserving punctuation and case so distinct services cannot share a marker.
 The Agents extension uses the same encoding for dependency validation.
+
+`azd ai connection delete` clears matching local service markers before deleting
+the resource, matching both the effective Connection name and project endpoint.
+This includes payload-name overrides and file references; markers for other
+projects or environments are left unchanged. Failure to maintain local markers
+stops deletion rather than leaving a deleted Connection marked ready.
 
 Old normalized per-service markers are not trusted. Redeploy Connections after
 updating the extensions to regenerate their readiness markers. Legacy aggregate

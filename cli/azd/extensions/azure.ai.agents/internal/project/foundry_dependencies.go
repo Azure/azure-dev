@@ -16,6 +16,7 @@ import (
 	"azureaiagent/internal/pkg/envkey"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 )
 
 type dependencyEnabled func(context.Context, string) (bool, error)
@@ -48,14 +49,17 @@ type foundryDependencyFailure struct {
 }
 
 // validateRegistryConnectionDependency ensures a registry connection declared
-// as a sibling azd service is wired through uses. References that do not match a
-// local service are external Foundry connection names or IDs and are left to the
-// service to resolve.
+// as a sibling azd service is wired through uses, matching either its service key
+// or effective payload name. Connection definition file references are resolved
+// against projectRoot without mutating the sibling service configurations.
+// References with no local match are external Foundry connection names or IDs
+// and are left to the service to resolve.
 func validateRegistryConnectionDependency(
 	ctx context.Context,
 	agent *azdext.ServiceConfig,
 	connectionRef string,
 	services map[string]*azdext.ServiceConfig,
+	projectRoot string,
 	isEnabled dependencyEnabled,
 ) error {
 	connectionRef = strings.TrimSpace(connectionRef)
@@ -64,10 +68,7 @@ func validateRegistryConnectionDependency(
 	}
 
 	dependency, exists := services[connectionRef]
-	if !exists {
-		return nil
-	}
-	if dependency.GetHost() != foundryConnectionHost {
+	if exists && dependency.GetHost() != foundryConnectionHost {
 		return exterrors.Dependency(
 			exterrors.CodeFoundryDependencyNotReady,
 			fmt.Sprintf(
@@ -80,17 +81,56 @@ func validateRegistryConnectionDependency(
 				strconv.Quote(connectionRef), strconv.Quote(foundryConnectionHost)),
 		)
 	}
-	if !slices.Contains(agent.GetUses(), connectionRef) {
+
+	var matches []string
+	for key, service := range services {
+		if service.GetHost() != foundryConnectionHost {
+			continue
+		}
+		props := ServiceConfigProps(service).AsMap()
+		if strings.TrimSpace(projectRoot) == "" && containsFileRef(props) {
+			return exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				fmt.Sprintf("cannot resolve $ref for connection service %q: project root is empty", key),
+				"provide the project directory containing azure.yaml to resolve connection definition references",
+			)
+		}
+		resolved, err := foundry.ResolveFileRefs(props, projectRoot)
+		if err != nil {
+			return err
+		}
+		name, _ := resolved["name"].(string)
+		name = strings.TrimSpace(name)
+		if name == "" {
+			name = key
+		}
+		if key == connectionRef || strings.EqualFold(name, connectionRef) {
+			matches = append(matches, key)
+		}
+	}
+	if len(matches) == 0 {
+		return nil
+	}
+	if len(matches) > 1 {
+		slices.Sort(matches)
+		return exterrors.Dependency(
+			exterrors.CodeFoundryDependencyNotReady,
+			fmt.Sprintf("registry connection %q is ambiguous: matches services %q", connectionRef, matches),
+			"use unique Foundry connection names and unambiguous service keys for registry connections",
+		)
+	}
+	serviceKey := matches[0]
+	if !slices.Contains(agent.GetUses(), serviceKey) {
 		return exterrors.Dependency(
 			exterrors.CodeFoundryDependencyNotReady,
 			fmt.Sprintf("registry connection service %s is not declared in %s uses",
-				strconv.Quote(connectionRef), strconv.Quote(agent.GetName())),
+				strconv.Quote(serviceKey), strconv.Quote(agent.GetName())),
 			fmt.Sprintf("add %s to the %s service uses list, run 'azd deploy --all', then retry the agent deployment",
-				strconv.Quote(connectionRef), strconv.Quote(agent.GetName())),
+				strconv.Quote(serviceKey), strconv.Quote(agent.GetName())),
 		)
 	}
 	if isEnabled != nil {
-		enabled, err := isEnabled(ctx, connectionRef)
+		enabled, err := isEnabled(ctx, serviceKey)
 		if err != nil {
 			return err
 		}
@@ -98,12 +138,31 @@ func validateRegistryConnectionDependency(
 			return exterrors.Dependency(
 				exterrors.CodeFoundryDependencyNotReady,
 				fmt.Sprintf("registry connection service %s is disabled by its deployment condition",
-					strconv.Quote(connectionRef)),
+					strconv.Quote(serviceKey)),
 				"enable the registry connection dependency or use an external Foundry connection reference",
 			)
 		}
 	}
 	return nil
+}
+
+// containsFileRef detects references before resolution so an empty project root
+// cannot cause a top-level or nested include to be read from the process cwd.
+func containsFileRef(value any) bool {
+	switch value := value.(type) {
+	case map[string]any:
+		if _, ok := value["$ref"]; ok {
+			return true
+		}
+		for _, child := range value {
+			if containsFileRef(child) {
+				return true
+			}
+		}
+	case []any:
+		return slices.ContainsFunc(value, containsFileRef)
+	}
+	return false
 }
 
 func validateFoundryDependencies(

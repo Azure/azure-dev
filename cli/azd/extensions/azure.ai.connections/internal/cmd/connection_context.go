@@ -19,9 +19,6 @@ import (
 	"google.golang.org/grpc"
 )
 
-// dataClient is a type alias for the data-plane client (used in endpoint.go).
-type dataClient = connections.DataClient
-
 // connectionContext holds the resolved clients and project info for connection operations.
 type connectionContext struct {
 	armClient *armcognitiveservices.ProjectConnectionsClient

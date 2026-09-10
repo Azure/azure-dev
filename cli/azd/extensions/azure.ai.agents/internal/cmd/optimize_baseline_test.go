@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"azureaiagent/internal/pkg/agents/opt_eval"
 
@@ -47,7 +48,7 @@ func TestAdvanceBaselineToCandidate_ReplacesBaseline(t *testing.T) {
 	writeAgentConfigDir(t, configsDir, "candidate_abc", "optimized instructions",
 		map[string]string{filepath.Join(opt_eval.SkillsDir, "new.md"): "new skill"})
 
-	require.NoError(t, advanceBaselineToCandidate(serviceDir, "candidate_abc", "job-1"))
+	require.NoError(t, advanceBaselineToCandidate(configsDir, "candidate_abc", "job-1"))
 
 	baselineDir := filepath.Join(configsDir, opt_eval.BaselineDir)
 
@@ -94,7 +95,7 @@ func TestAdvanceBaselineToCandidate_ArchiveCollisionPreserved(t *testing.T) {
 	writeAgentConfigDir(t, configsDir, opt_eval.BaselineDir, "current baseline", nil)
 	writeAgentConfigDir(t, configsDir, "candidate_abc", "optimized instructions", nil)
 
-	require.NoError(t, advanceBaselineToCandidate(serviceDir, "candidate_abc", "job-1"))
+	require.NoError(t, advanceBaselineToCandidate(configsDir, "candidate_abc", "job-1"))
 
 	// The first archive for the job remains the original rollback snapshot.
 	archived, err := os.ReadFile(
@@ -125,7 +126,7 @@ func TestAdvanceBaselineToCandidate_ArchiveCollisionRestoresCurrentBaselineOnPro
 		return os.Rename(oldPath, newPath)
 	}
 
-	err := advanceBaselineToCandidateWithOps(serviceDir, "candidate_abc", "job-1", rename, copyDirectory)
+	err := advanceBaselineToCandidateWithOps(configsDir, "candidate_abc", "job-1", rename, copyDirectory)
 	require.ErrorIs(t, err, assert.AnError)
 
 	baseline, readErr := os.ReadFile(
@@ -159,7 +160,7 @@ func TestAdvanceBaselineToCandidate_RestoresBaselineWhenPromotionFails(t *testin
 	}
 
 	err := advanceBaselineToCandidateWithOps(
-		serviceDir,
+		configsDir,
 		"candidate_abc",
 		"job-1",
 		rename,
@@ -206,7 +207,7 @@ func TestAdvanceBaselineToCandidate_RemovesPartialBaselineWhenRestoreFails(t *te
 	}
 
 	err := advanceBaselineToCandidateWithOps(
-		serviceDir,
+		configsDir,
 		"candidate_abc",
 		"job-1",
 		rename,
@@ -241,7 +242,7 @@ func TestAdvanceBaselineToCandidate_NoJobIDRemovesBaseline(t *testing.T) {
 	writeAgentConfigDir(t, configsDir, "candidate_abc", "optimized", nil)
 
 	// An unsafe job ID falls back to removal — no archive is created.
-	require.NoError(t, advanceBaselineToCandidate(serviceDir, "candidate_abc", "../evil"))
+	require.NoError(t, advanceBaselineToCandidate(configsDir, "candidate_abc", "../evil"))
 
 	got, err := os.ReadFile(filepath.Join(configsDir, opt_eval.BaselineDir, opt_eval.InstructionFile))
 	require.NoError(t, err)
@@ -257,7 +258,7 @@ func TestAdvanceBaselineToCandidate_NoJobIDRemovesBaseline(t *testing.T) {
 func TestAdvanceBaselineToCandidate_NoOps(t *testing.T) {
 	t.Parallel()
 
-	t.Run("empty service dir", func(t *testing.T) {
+	t.Run("empty configs dir", func(t *testing.T) {
 		t.Parallel()
 		assert.NoError(t, advanceBaselineToCandidate("", "candidate_abc", "job-1"))
 	})
@@ -274,7 +275,7 @@ func TestAdvanceBaselineToCandidate_NoOps(t *testing.T) {
 		configsDir := filepath.Join(serviceDir, opt_eval.AgentConfigsDir)
 		writeAgentConfigDir(t, configsDir, opt_eval.BaselineDir, "original", nil)
 
-		require.NoError(t, advanceBaselineToCandidate(serviceDir, "candidate_missing", "job-1"))
+		require.NoError(t, advanceBaselineToCandidate(configsDir, "candidate_missing", "job-1"))
 
 		got, err := os.ReadFile(filepath.Join(configsDir, opt_eval.BaselineDir, opt_eval.InstructionFile))
 		require.NoError(t, err)
@@ -292,7 +293,7 @@ func TestAdvanceBaselineToCandidate_NoOps(t *testing.T) {
 			0600,
 		))
 
-		err := advanceBaselineToCandidate(serviceDir, "candidate_file", "job-1")
+		err := advanceBaselineToCandidate(configsDir, "candidate_file", "job-1")
 		require.ErrorContains(t, err, "is not a directory")
 	})
 }
@@ -327,11 +328,122 @@ func TestBaselineAdvancementDir(t *testing.T) {
 
 	root := t.TempDir()
 
-	// A unique service resolves to its directory under the project root.
+	// A unique service resolves to its .agent_configs directory under the project root.
 	svcA := &azdext.ServiceConfig{Name: "a", RelativePath: "svc-a"}
-	assert.Equal(t, filepath.Join(root, "svc-a"), baselineAdvancementDir(root, svcA))
+	assert.Equal(
+		t,
+		filepath.Join(root, "svc-a", opt_eval.AgentConfigsDir),
+		baselineAdvancementDir(root, svcA),
+	)
 
 	// A traversing RelativePath escapes the root and is skipped.
 	svcEscape := &azdext.ServiceConfig{Name: "a", RelativePath: "../outside"}
 	assert.Equal(t, "", baselineAdvancementDir(root, svcEscape))
+}
+
+func TestBaselineAdvancementDir_RejectsAgentConfigsSymlinkEscape(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	serviceDir := filepath.Join(root, "svc")
+	require.NoError(t, os.MkdirAll(serviceDir, 0750))
+	outside := t.TempDir()
+	link := filepath.Join(serviceDir, opt_eval.AgentConfigsDir)
+	if err := os.Symlink(outside, link); err != nil {
+		if errors.Is(err, os.ErrPermission) || os.IsPermission(err) ||
+			strings.Contains(strings.ToLower(err.Error()), "privilege") {
+			t.Skipf("symlink creation not permitted: %v", err)
+		}
+		require.NoError(t, err)
+	}
+
+	svc := &azdext.ServiceConfig{Name: "a", RelativePath: "svc"}
+	assert.Equal(t, "", baselineAdvancementDir(root, svc))
+}
+
+func TestBaselineAdvancementDir_CanonicalizesInProjectSymlink(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	realServiceDir := filepath.Join(root, "real-service")
+	configsDir := filepath.Join(realServiceDir, opt_eval.AgentConfigsDir)
+	require.NoError(t, os.MkdirAll(configsDir, 0750))
+	link := filepath.Join(root, "linked-service")
+	if err := os.Symlink(realServiceDir, link); err != nil {
+		if errors.Is(err, os.ErrPermission) || os.IsPermission(err) ||
+			strings.Contains(strings.ToLower(err.Error()), "privilege") {
+			t.Skipf("symlink creation not permitted: %v", err)
+		}
+		require.NoError(t, err)
+	}
+
+	svc := &azdext.ServiceConfig{Name: "a", RelativePath: "linked-service"}
+	assert.Equal(t, configsDir, baselineAdvancementDir(root, svc))
+}
+
+func TestAdvanceBaselineToCandidate_SerializesSharedConfigsDir(t *testing.T) {
+	configsDir := filepath.Join(t.TempDir(), opt_eval.AgentConfigsDir)
+	writeAgentConfigDir(t, configsDir, opt_eval.BaselineDir, "original", nil)
+	writeAgentConfigDir(t, configsDir, "candidate_a", "candidate a", nil)
+	writeAgentConfigDir(t, configsDir, "candidate_b", "candidate b", nil)
+
+	firstCopyStarted := make(chan struct{})
+	releaseFirstCopy := make(chan struct{})
+	secondCopyStarted := make(chan struct{})
+	firstDone := make(chan error, 1)
+	secondDone := make(chan error, 1)
+
+	go func() {
+		firstDone <- advanceBaselineToCandidateWithOps(
+			configsDir,
+			"candidate_a",
+			"job-a",
+			os.Rename,
+			func(src, dst string) error {
+				if filepath.Base(src) == "candidate_a" {
+					close(firstCopyStarted)
+					<-releaseFirstCopy
+				}
+				return copyDirectory(src, dst)
+			},
+		)
+	}()
+	<-firstCopyStarted
+
+	go func() {
+		secondDone <- advanceBaselineToCandidateWithOps(
+			configsDir,
+			"candidate_b",
+			"job-b",
+			os.Rename,
+			func(src, dst string) error {
+				if filepath.Base(src) == "candidate_b" {
+					close(secondCopyStarted)
+				}
+				return copyDirectory(src, dst)
+			},
+		)
+	}()
+
+	select {
+	case <-secondCopyStarted:
+		t.Fatal("second baseline swap entered while the first swap held the directory lock")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(releaseFirstCopy)
+	require.NoError(t, <-firstDone)
+	require.NoError(t, <-secondDone)
+
+	select {
+	case <-secondCopyStarted:
+	default:
+		t.Fatal("second baseline swap did not run after the first swap completed")
+	}
+
+	baseline, err := os.ReadFile(
+		filepath.Join(configsDir, opt_eval.BaselineDir, opt_eval.InstructionFile),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "candidate b", string(baseline))
 }

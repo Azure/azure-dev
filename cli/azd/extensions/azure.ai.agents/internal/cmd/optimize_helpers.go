@@ -15,7 +15,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 
 	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/opt_eval"
@@ -23,6 +25,7 @@ import (
 	"azureaiagent/internal/pkg/paths"
 
 	azdext "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -305,14 +308,14 @@ func reportOptimizationDeployments(
 					log.Printf("postdeploy: optimization reporting panicked for %s: %v", svc.Name, r)
 				}
 			}()
-			serviceDir := baselineAdvancementDir(projectPath, svc)
-			reportSvcOptimizationDeployment(ctx, azdClient, svc, envName, projectEndpoint, serviceDir, newClient)
+			configsDir := baselineAdvancementDir(projectPath, svc)
+			reportSvcOptimizationDeployment(ctx, azdClient, svc, envName, projectEndpoint, configsDir, newClient)
 		}()
 	}
 }
 
-// baselineAdvancementDir resolves the validated local directory used for svc's
-// baseline advancement, or "" when advancement must be skipped.
+// baselineAdvancementDir resolves the validated local .agent_configs directory
+// used for svc's baseline advancement, or "" when advancement must be skipped.
 //
 // It returns "" (skip, no error surfaced) when:
 //   - projectPath is empty (no local project on disk),
@@ -327,13 +330,47 @@ func baselineAdvancementDir(
 		return ""
 	}
 
-	serviceDir, err := paths.JoinAllowRoot(projectPath, svc.GetRelativePath())
+	configsDir, err := paths.JoinAllowRoot(
+		projectPath,
+		svc.GetRelativePath(),
+		opt_eval.AgentConfigsDir,
+	)
 	if err != nil {
 		log.Printf("postdeploy: skipping baseline advancement for %s: %v", svc.Name, err)
 		return ""
 	}
 
-	return serviceDir
+	resolvedConfigsDir, err := filepath.EvalSymlinks(configsDir)
+	if err == nil {
+		return filepath.Clean(resolvedConfigsDir)
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		log.Printf("postdeploy: skipping baseline advancement for %s: %v", svc.Name, err)
+		return ""
+	}
+
+	// .agent_configs may not exist yet. Canonicalize its existing service
+	// directory so aliases still share one lock key when the directory is created.
+	resolvedServiceDir, err := filepath.EvalSymlinks(filepath.Dir(configsDir))
+	if err == nil {
+		return filepath.Join(filepath.Clean(resolvedServiceDir), opt_eval.AgentConfigsDir)
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		log.Printf("postdeploy: skipping baseline advancement for %s: %v", svc.Name, err)
+		return ""
+	}
+	return configsDir
+}
+
+var baselineAdvancementLocks sync.Map
+
+func baselineAdvancementLock(configsDir string) *sync.Mutex {
+	key := filepath.Clean(configsDir)
+	if runtime.GOOS == "windows" {
+		key = strings.ToLower(key)
+	}
+	lock, _ := baselineAdvancementLocks.LoadOrStore(key, &sync.Mutex{})
+	return lock.(*sync.Mutex)
 }
 
 // advanceBaselineToCandidate replaces the service's local baseline agent config
@@ -347,16 +384,16 @@ func baselineAdvancementDir(
 // candidate directory is copied (not moved) so the deploy pipeline can still
 // read it, and the swap is staged so a mid-copy failure leaves the existing
 // baseline intact.
-func advanceBaselineToCandidate(serviceDir, candidateID, jobID string) error {
-	return advanceBaselineToCandidateWithOps(serviceDir, candidateID, jobID, os.Rename, copyDirectory)
+func advanceBaselineToCandidate(configsDir, candidateID, jobID string) error {
+	return advanceBaselineToCandidateWithOps(configsDir, candidateID, jobID, os.Rename, copyDirectory)
 }
 
 func advanceBaselineToCandidateWithOps(
-	serviceDir, candidateID, jobID string,
+	configsDir, candidateID, jobID string,
 	rename func(string, string) error,
 	copyDir func(string, string) error,
 ) error {
-	if serviceDir == "" || candidateID == "" {
+	if configsDir == "" || candidateID == "" {
 		return nil
 	}
 
@@ -366,7 +403,10 @@ func advanceBaselineToCandidateWithOps(
 		return fmt.Errorf("invalid candidate id %q", candidateID)
 	}
 
-	configsDir := filepath.Join(serviceDir, opt_eval.AgentConfigsDir)
+	lock := baselineAdvancementLock(configsDir)
+	lock.Lock()
+	defer lock.Unlock()
+
 	candidateDir := filepath.Join(configsDir, candidateID)
 	baselineDir := filepath.Join(configsDir, opt_eval.BaselineDir)
 
@@ -503,16 +543,35 @@ func isSafePathSegment(name string) bool {
 	return name != "" && name == filepath.Base(name) && name != "." && name != ".."
 }
 
+func warnBaselineAdvancementFailure(
+	writer io.Writer,
+	serviceName, candidateID string,
+	err error,
+) {
+	fmt.Fprintf(writer, "%s", output.WithWarningFormat(
+		"WARNING: candidate %q was promoted for service %q, but the local optimization baseline "+
+			"could not be updated: %v\n"+
+			"Before starting the next optimization round, set this candidate as its baseline by running:\n"+
+			"  azd ai agent optimize apply --candidate %q\n"+
+			"  azd deploy %q\n",
+		candidateID,
+		serviceName,
+		err,
+		candidateID,
+		serviceName,
+	))
+}
+
 // reportSvcOptimizationDeployment reports a single service's optimization candidate.
-// serviceDir is the validated local service directory used for baseline
+// configsDir is the validated local .agent_configs directory used for baseline
 // advancement, or "" to skip it (see baselineAdvancementDir). Services that
-// share this directory also share baseline state; users running their
-// optimizations in parallel are responsible for retaining the desired baseline.
+// share this directory also share baseline state; their local swaps are
+// serialized to prevent interleaved filesystem mutations.
 func reportSvcOptimizationDeployment(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	svc *azdext.ServiceConfig,
-	envName, projectEndpoint string, serviceDir string,
+	envName, projectEndpoint string, configsDir string,
 	newClient func(endpoint string) *optimize_api.OptimizeClient,
 ) {
 	serviceKey := toServiceKey(svc.Name)
@@ -577,9 +636,9 @@ func reportSvcOptimizationDeployment(
 	// subsequent optimization round starts from the deployed configuration
 	// instead of the original. The previous baseline is archived as
 	// baseline_<job-id>. Best-effort; never blocks deploy.
-	if err := advanceBaselineToCandidate(serviceDir, candidateResp.Value, jobID); err != nil {
-		log.Printf("postdeploy: failed to advance baseline for %s: %v", svc.Name, err)
-	} else if serviceDir != "" {
+	if err := advanceBaselineToCandidate(configsDir, candidateResp.Value, jobID); err != nil {
+		warnBaselineAdvancementFailure(os.Stderr, svc.Name, candidateResp.Value, err)
+	} else if configsDir != "" {
 		log.Printf("postdeploy: advanced baseline to candidate %s for %s", candidateResp.Value, svc.Name)
 	}
 

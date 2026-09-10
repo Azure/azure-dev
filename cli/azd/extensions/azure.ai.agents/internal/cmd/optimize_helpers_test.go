@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -21,6 +22,20 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
+
+func TestWarnBaselineAdvancementFailure(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+	warnBaselineAdvancementFailure(&output, "my-agent", "cand-123", assert.AnError)
+
+	assert.Contains(t, output.String(), `candidate "cand-123" was promoted for service "my-agent"`)
+	assert.Contains(t, output.String(), "Before starting the next optimization round")
+	assert.Contains(t, output.String(), "set this candidate as its baseline")
+	assert.Contains(t, output.String(), "azd ai agent optimize apply --candidate \"cand-123\"")
+	assert.Contains(t, output.String(), "azd deploy \"my-agent\"")
+	assert.Contains(t, output.String(), assert.AnError.Error())
+}
 
 func TestOptimizeConnectionFlags_Resolve_AllEmpty(t *testing.T) {
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")

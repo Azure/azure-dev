@@ -67,7 +67,7 @@ func newConnectionContext(ctx context.Context, endpoint, environmentName string)
 		return nil, err
 	}
 
-	// Read the azd environment once for the values needed to build the clients:
+	// Resolve the azd environment context needed to build the clients:
 	// the subscription's user-access tenant (for credential scoping) and the
 	// Foundry project's ARM resource ID (for ARM context on connection-less
 	// projects). Every field is best-effort and may be empty.
@@ -148,14 +148,17 @@ type envContext struct {
 	// subscription or tenant lookup is unavailable.
 	tenantID string
 	// projectID is AZURE_AI_PROJECT_ID (the Foundry project's ARM resource ID);
-	// "" when the azd environment does not have it.
+	// "" when the value is unavailable.
 	projectID string
 }
 
-// resolveEnvContext best-effort reads the active azd environment for the values
+// resolveEnvContext best-effort reads the active or selected azd environment for the values
 // needed to build the connection clients: the subscription's user-access tenant
 // (credential scoping) and the Foundry project's ARM resource ID (ARM context
 // for projects that have no connections yet).
+//
+// Lifecycle calls with an explicit environmentName read only persisted values.
+// Standalone calls retain per-key process fallback after finding the active environment.
 //
 // Every field is optional. On a missing azd daemon, environment, or
 // subscription the corresponding field is left empty and callers fall back to
@@ -188,6 +191,11 @@ type environmentContextReader interface {
 		*azdext.EmptyRequest,
 		...grpc.CallOption,
 	) (*azdext.EnvironmentResponse, error)
+	GetValue(
+		context.Context,
+		*azdext.GetEnvRequest,
+		...grpc.CallOption,
+	) (*azdext.KeyValueResponse, error)
 	GetValues(
 		context.Context,
 		*azdext.GetEnvironmentRequest,
@@ -210,6 +218,7 @@ func resolveEnvContextWithClients(
 	accountClient tenantLookup,
 ) envContext {
 	var out envContext
+	var subID string
 	envName := environmentName
 	if envName == "" {
 		envResp, err := environmentClient.GetCurrent(ctx, &azdext.EmptyRequest{})
@@ -218,23 +227,34 @@ func resolveEnvContextWithClients(
 			return out
 		}
 		envName = envResp.GetEnvironment().GetName()
-	}
 
-	// Read one persisted snapshot for both ARM context and credential scoping.
-	// GetValue uses Environment.Getenv and can fall back to another environment's
-	// process values even when EnvName is explicitly set.
-	response, err := environmentClient.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: envName})
-	if err != nil {
-		log.Printf("connections: unable to read persisted azd environment context: %v", err)
-		return out
-	}
-	var subID string
-	for _, value := range response.GetKeyValues() {
-		switch value.GetKey() {
-		case "AZURE_AI_PROJECT_ID":
-			out.projectID = value.GetValue()
-		case "AZURE_SUBSCRIPTION_ID":
-			subID = value.GetValue()
+		// Preserve standalone GetValue process fallback only after finding an active
+		// environment. Each value is optional and a failed read must not block the other.
+		getOptionalValue := func(key string) string {
+			response, err := environmentClient.GetValue(ctx, &azdext.GetEnvRequest{EnvName: envName, Key: key})
+			if err != nil {
+				log.Printf("connections: unable to read %s from azd environment: %v", key, err)
+				return ""
+			}
+			return response.GetValue()
+		}
+		out.projectID = getOptionalValue("AZURE_AI_PROJECT_ID")
+		subID = getOptionalValue("AZURE_SUBSCRIPTION_ID")
+	} else {
+		// Read one persisted snapshot for lifecycle ARM context and credential scoping.
+		// GetValue can fall back to another environment's process values even with EnvName set.
+		response, err := environmentClient.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: envName})
+		if err != nil {
+			log.Printf("connections: unable to read persisted azd environment context: %v", err)
+			return out
+		}
+		for _, value := range response.GetKeyValues() {
+			switch value.GetKey() {
+			case "AZURE_AI_PROJECT_ID":
+				out.projectID = value.GetValue()
+			case "AZURE_SUBSCRIPTION_ID":
+				subID = value.GetValue()
+			}
 		}
 	}
 	if subID == "" {

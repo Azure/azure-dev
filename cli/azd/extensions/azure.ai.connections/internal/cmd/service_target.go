@@ -456,7 +456,9 @@ func (p *connectionServiceTarget) parseConnectionServiceConfig(
 		return nil, fmt.Errorf("reading project path for connection service %q: %w", serviceConfig.GetName(), err)
 	}
 	if projectResponse.GetProject() == nil || strings.TrimSpace(projectResponse.GetProject().GetPath()) == "" {
-		return nil, fmt.Errorf("reading project path for connection service %q: project path is empty", serviceConfig.GetName())
+		return nil, fmt.Errorf(
+			"reading project path for connection service %q: project path is empty", serviceConfig.GetName(),
+		)
 	}
 	resolved, err := foundry.ResolveFileRefs(props.AsMap(), projectResponse.GetProject().GetPath())
 	if err != nil {

@@ -26,6 +26,8 @@ Files under `internal/cmd/` map to the command they implement:
 | `internal/cmd/sample*.go` | `cmd:sample` | `sample.go`, `sample_list.go`. |
 | `internal/cmd/code*.go` | `cmd:code` | `code.go` (code download). |
 | `internal/cmd/delete*.go` | `cmd:delete` | `delete.go` (agent deletion). |
+| `internal/cmd/add*.go` | `cmd:toolbox`, `cmd:connection` | Offline dependency composition and old-command migration checks (`0.17`–`0.19`). |
+| `internal/cmd/resource_services*.go` | `cmd:init`, `cmd:toolbox`, `cmd:connection` | Split-service authoring and dependency mutation. |
 | `internal/cmd/version.go` | `cmd:version` | |
 | `internal/cmd/root.go` | `cmd:help` + broad | Touches the whole command tree — treat as broad (see §3). |
 | `internal/cmd/listen.go` | — | gRPC host entrypoint; not scenario-testable. |

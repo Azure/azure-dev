@@ -49,8 +49,8 @@ type foundryDependencyFailure struct {
 }
 
 // validateRegistryConnectionDependency ensures a registry connection declared
-// as a sibling azd service is wired through uses, matching either its service key
-// or effective payload name. Connection definition file references are resolved
+// as a sibling azd service is wired through uses and references its effective
+// resource name, not a service key overridden by the payload. File references are resolved
 // against projectRoot without mutating the sibling service configurations.
 // References with no local match are external Foundry connection names or IDs
 // and are left to the service to resolve.
@@ -83,6 +83,7 @@ func validateRegistryConnectionDependency(
 	}
 
 	var matches []string
+	var overriddenName string
 	for key, service := range services {
 		if service.GetHost() != foundryConnectionHost {
 			continue
@@ -104,6 +105,9 @@ func validateRegistryConnectionDependency(
 		if name == "" {
 			name = key
 		}
+		if key == connectionRef && !strings.EqualFold(name, connectionRef) {
+			overriddenName = name
+		}
 		if key == connectionRef || strings.EqualFold(name, connectionRef) {
 			matches = append(matches, key)
 		}
@@ -120,6 +124,13 @@ func validateRegistryConnectionDependency(
 		)
 	}
 	serviceKey := matches[0]
+	if overriddenName != "" {
+		return exterrors.Dependency(
+			exterrors.CodeFoundryDependencyNotReady,
+			fmt.Sprintf("registryConnectionId %q is a service key whose Connection name is %q", serviceKey, overriddenName),
+			fmt.Sprintf("set registryConnectionId to %q and keep %q in the agent uses list", overriddenName, serviceKey),
+		)
+	}
 	if !slices.Contains(agent.GetUses(), serviceKey) {
 		return exterrors.Dependency(
 			exterrors.CodeFoundryDependencyNotReady,

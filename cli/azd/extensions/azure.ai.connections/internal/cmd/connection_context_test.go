@@ -57,6 +57,7 @@ func TestResolveEnvContextUsesSelectedEnvironment(t *testing.T) {
 	assert.Equal(t, 0, environment.currentCalls)
 	assert.Equal(t, []string{"staging"}, environment.requestedEnvironments)
 	assert.Zero(t, environment.getValueCalls)
+	assert.Equal(t, 1, environment.getValuesCalls)
 	assert.Equal(t, []string{"sub"}, account.subscriptions)
 }
 
@@ -86,6 +87,7 @@ func TestResolveEnvContextDoesNotUseProcessFallback(t *testing.T) {
 			assert.Equal(t, tt.wantTenant, resolved.tenantID)
 			assert.Zero(t, environment.currentCalls)
 			assert.Zero(t, environment.getValueCalls)
+			assert.Equal(t, 1, environment.getValuesCalls)
 			assert.Equal(t, []string{"staging"}, environment.requestedEnvironments)
 			if tt.wantTenant == "" {
 				assert.Empty(t, account.subscriptions)
@@ -106,16 +108,152 @@ func TestResolveEnvContextUsesCurrentEnvironmentWhenUnspecified(t *testing.T) {
 	assert.Equal(t, "current-project", resolved.projectID)
 	assert.Equal(t, "tenant", resolved.tenantID)
 	assert.Equal(t, 1, environment.currentCalls)
-	assert.Zero(t, environment.getValueCalls)
-	assert.Equal(t, []string{"default"}, environment.requestedEnvironments)
+	assert.Equal(t, 2, environment.getValueCalls)
+	assert.Zero(t, environment.getValuesCalls)
+	assert.Equal(t, []string{"default", "default"}, environment.requestedEnvironments)
 	assert.Equal(t, []string{"current-sub"}, account.subscriptions)
+}
+
+func TestResolveEnvContextStandaloneProcessFallback(t *testing.T) {
+	t.Setenv("AZURE_AI_PROJECT_ID", "process-project")
+	t.Setenv("AZURE_SUBSCRIPTION_ID", "process-sub")
+	for _, tt := range []struct {
+		name          string
+		values        map[string]string
+		wantProjectID string
+		wantSubID     string
+	}{
+		{name: "neither value persisted", wantProjectID: "process-project", wantSubID: "process-sub"},
+		{name: "project persisted", values: map[string]string{"AZURE_AI_PROJECT_ID": "persisted-project"},
+			wantProjectID: "persisted-project", wantSubID: "process-sub"},
+		{name: "subscription persisted", values: map[string]string{"AZURE_SUBSCRIPTION_ID": "persisted-sub"},
+			wantProjectID: "process-project", wantSubID: "persisted-sub"},
+		{name: "persisted values win", values: map[string]string{
+			"AZURE_AI_PROJECT_ID": "persisted-project", "AZURE_SUBSCRIPTION_ID": "persisted-sub",
+		}, wantProjectID: "persisted-project", wantSubID: "persisted-sub"},
+		{name: "empty persisted values win", values: map[string]string{
+			"AZURE_AI_PROJECT_ID": "", "AZURE_SUBSCRIPTION_ID": "",
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			environment := &recordingEnvironmentContextReader{values: tt.values}
+			account := &recordingTenantLookup{}
+
+			resolved := resolveEnvContextWithClients(t.Context(), "", environment, account)
+
+			assert.Equal(t, tt.wantProjectID, resolved.projectID)
+			assert.Equal(t, 1, environment.currentCalls)
+			assert.Equal(t, 2, environment.getValueCalls)
+			assert.Zero(t, environment.getValuesCalls)
+			assert.Equal(t, []string{"default", "default"}, environment.requestedEnvironments)
+			if tt.wantSubID == "" {
+				assert.Empty(t, resolved.tenantID)
+				assert.Empty(t, account.subscriptions)
+			} else {
+				assert.Equal(t, "tenant", resolved.tenantID)
+				assert.Equal(t, []string{tt.wantSubID}, account.subscriptions)
+			}
+		})
+	}
+}
+
+func TestResolveEnvContextStandaloneOptionalValues(t *testing.T) {
+	t.Setenv("AZURE_AI_PROJECT_ID", "")
+	t.Setenv("AZURE_SUBSCRIPTION_ID", "")
+	for _, tt := range []struct {
+		name          string
+		values        map[string]string
+		valueErrors   map[string]error
+		readErr       error
+		wantProjectID string
+		wantSubID     string
+	}{
+		{name: "both missing"},
+		{name: "project only", values: map[string]string{"AZURE_AI_PROJECT_ID": "current-project"},
+			wantProjectID: "current-project"},
+		{name: "subscription only", values: map[string]string{"AZURE_SUBSCRIPTION_ID": "current-sub"},
+			wantSubID: "current-sub"},
+		{name: "project read fails", values: map[string]string{
+			"AZURE_AI_PROJECT_ID": "ignored-project", "AZURE_SUBSCRIPTION_ID": "current-sub",
+		}, valueErrors: map[string]error{"AZURE_AI_PROJECT_ID": errors.New("unavailable")},
+			wantSubID: "current-sub"},
+		{name: "subscription read fails", values: map[string]string{
+			"AZURE_AI_PROJECT_ID": "current-project", "AZURE_SUBSCRIPTION_ID": "ignored-sub",
+		}, valueErrors: map[string]error{"AZURE_SUBSCRIPTION_ID": errors.New("unavailable")},
+			wantProjectID: "current-project"},
+		{name: "both reads fail", values: map[string]string{
+			"AZURE_AI_PROJECT_ID": "ignored-project", "AZURE_SUBSCRIPTION_ID": "ignored-sub",
+		}, readErr: errors.New("unavailable")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			environment := &recordingEnvironmentContextReader{
+				values: tt.values, valueErrors: tt.valueErrors, valuesErr: tt.readErr,
+			}
+			account := &recordingTenantLookup{}
+
+			resolved := resolveEnvContextWithClients(t.Context(), "", environment, account)
+
+			assert.Equal(t, tt.wantProjectID, resolved.projectID)
+			assert.Equal(t, 1, environment.currentCalls)
+			assert.Equal(t, 2, environment.getValueCalls)
+			assert.Zero(t, environment.getValuesCalls)
+			assert.Equal(t, []string{"default", "default"}, environment.requestedEnvironments)
+			if tt.wantSubID == "" {
+				assert.Empty(t, resolved.tenantID)
+				assert.Empty(t, account.subscriptions)
+			} else {
+				assert.Equal(t, "tenant", resolved.tenantID)
+				assert.Equal(t, []string{tt.wantSubID}, account.subscriptions)
+			}
+		})
+	}
+}
+
+func TestResolveEnvContextStandaloneWithoutCurrentEnvironment(t *testing.T) {
+	t.Setenv("AZURE_AI_PROJECT_ID", "process-project")
+	t.Setenv("AZURE_SUBSCRIPTION_ID", "process-sub")
+	for _, tt := range []struct {
+		name       string
+		currentErr error
+		noCurrent  bool
+	}{
+		{name: "current lookup fails", currentErr: errors.New("unavailable")},
+		{name: "no current environment", noCurrent: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			environment := &recordingEnvironmentContextReader{currentErr: tt.currentErr, noCurrent: tt.noCurrent}
+			account := &recordingTenantLookup{}
+
+			resolved := resolveEnvContextWithClients(t.Context(), "", environment, account)
+
+			assert.Equal(t, envContext{}, resolved)
+			assert.Equal(t, 1, environment.currentCalls)
+			assert.Zero(t, environment.getValueCalls)
+			assert.Zero(t, environment.getValuesCalls)
+			assert.Empty(t, environment.requestedEnvironments)
+			assert.Empty(t, account.subscriptions)
+		})
+	}
+}
+
+func TestResolveEnvContextWithoutDaemon(t *testing.T) {
+	t.Setenv("AZD_SERVER", "")
+	t.Setenv("AZURE_AI_PROJECT_ID", "process-project")
+	t.Setenv("AZURE_SUBSCRIPTION_ID", "process-sub")
+
+	assert.Equal(t, envContext{}, resolveEnvContext(t.Context(), ""))
+	assert.Equal(t, envContext{}, resolveEnvContext(t.Context(), "staging"))
 }
 
 type recordingEnvironmentContextReader struct {
 	values                map[string]string
 	valuesErr             error
+	valueErrors           map[string]error
+	currentErr            error
+	noCurrent             bool
 	currentCalls          int
 	getValueCalls         int
+	getValuesCalls        int
 	requestedEnvironments []string
 }
 
@@ -125,6 +263,12 @@ func (r *recordingEnvironmentContextReader) GetCurrent(
 	...grpc.CallOption,
 ) (*azdext.EnvironmentResponse, error) {
 	r.currentCalls++
+	if r.currentErr != nil {
+		return nil, r.currentErr
+	}
+	if r.noCurrent {
+		return &azdext.EnvironmentResponse{}, nil
+	}
 	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: "default"}}, nil
 }
 
@@ -140,6 +284,9 @@ func (r *recordingEnvironmentContextReader) GetValue(
 	if !exists {
 		value = os.Getenv(request.GetKey())
 	}
+	if err := r.valueErrors[request.GetKey()]; err != nil {
+		return &azdext.KeyValueResponse{Value: value}, err
+	}
 	return &azdext.KeyValueResponse{Value: value}, r.valuesErr
 }
 
@@ -148,6 +295,7 @@ func (r *recordingEnvironmentContextReader) GetValues(
 	request *azdext.GetEnvironmentRequest,
 	_ ...grpc.CallOption,
 ) (*azdext.KeyValueListResponse, error) {
+	r.getValuesCalls++
 	r.requestedEnvironments = append(r.requestedEnvironments, request.GetName())
 	if r.valuesErr != nil {
 		return nil, r.valuesErr

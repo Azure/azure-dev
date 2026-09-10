@@ -130,8 +130,8 @@ func TestValidateRegistryConnectionDependencyPayloadName(t *testing.T) {
 					uses: []string{"private-registry"}, wantErr: "disabled",
 				},
 				{
-					name: "service key still matches", ref: "private-registry",
-					uses: []string{"private-registry"}, enabled: true,
+					name: "overridden service key rejected", ref: "private-registry",
+					uses: []string{"private-registry"}, enabled: true, wantErr: "whose Connection name",
 				},
 			} {
 				t.Run(tt.name, func(t *testing.T) {
@@ -145,7 +145,7 @@ func TestValidateRegistryConnectionDependencyPayloadName(t *testing.T) {
 							return tt.enabled, nil
 						},
 					)
-					if tt.wantErr == "is not declared" {
+					if tt.wantErr != "" && tt.wantErr != "disabled" {
 						require.Empty(t, checked)
 					} else {
 						require.Equal(t, []string{"private-registry"}, checked)
@@ -162,6 +162,10 @@ func TestValidateRegistryConnectionDependencyPayloadName(t *testing.T) {
 					require.Contains(t, localErr.Message, `"private-registry"`)
 					if tt.wantErr == "is not declared" {
 						require.Contains(t, localErr.Suggestion, `add "private-registry"`)
+					}
+					if tt.wantErr == "whose Connection name" {
+						require.Contains(t, localErr.Suggestion, `registryConnectionId to "production-registry"`)
+						require.Contains(t, localErr.Suggestion, `"private-registry" in the agent uses`)
 					}
 				})
 			}
@@ -240,6 +244,43 @@ func TestValidateRegistryConnectionDependencyWrongHostKeyTakesPrecedence(t *test
 	require.ErrorContains(t, err, `resolves to service host "azure.ai.toolbox" instead of "azure.ai.connection"`)
 }
 
+func TestValidateRegistryConnectionDependencyKeyAndEffectiveNameCollision(t *testing.T) {
+	t.Parallel()
+	first, err := MarshalStruct(new(map[string]any{"name": "different-registry"}))
+	require.NoError(t, err)
+	second, err := MarshalStruct(new(map[string]any{"name": "private-registry"}))
+	require.NoError(t, err)
+	services := map[string]*azdext.ServiceConfig{
+		"private-registry": {Host: foundryConnectionHost, AdditionalProperties: first},
+		"other-registry":   {Host: foundryConnectionHost, AdditionalProperties: second},
+	}
+	checked := false
+	err = validateRegistryConnectionDependency(
+		t.Context(), &azdext.ServiceConfig{Name: "agent", Uses: []string{"private-registry", "other-registry"}},
+		"private-registry", services, "",
+		func(context.Context, string) (bool, error) { checked = true; return true, nil },
+	)
+	require.ErrorContains(t, err, "ambiguous")
+	require.False(t, checked, "a key alias must not shadow another service's effective resource name")
+}
+
+func TestValidateRegistryConnectionDependencySameEffectiveName(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"", " \t", "private-registry", " PRIVATE-REGISTRY "} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			props, err := MarshalStruct(new(map[string]any{"name": name}))
+			require.NoError(t, err)
+			require.NoError(t, validateRegistryConnectionDependency(
+				t.Context(), &azdext.ServiceConfig{Name: "agent", Uses: []string{"private-registry"}},
+				"private-registry", map[string]*azdext.ServiceConfig{
+					"private-registry": {Host: foundryConnectionHost, AdditionalProperties: props},
+				}, "", nil,
+			))
+		})
+	}
+}
+
 func TestValidateRegistryConnectionDependencyFileReferences(t *testing.T) {
 	t.Parallel()
 	for _, file := range []struct {
@@ -280,6 +321,13 @@ func TestValidateRegistryConnectionDependencyFileReferences(t *testing.T) {
 					}
 					before := proto.Clone(service)
 					services := map[string]*azdext.ServiceConfig{"private-registry": service}
+					err = validateRegistryConnectionDependency(
+						t.Context(), &azdext.ServiceConfig{Name: "agent", Uses: []string{"private-registry"}},
+						"private-registry", services, root, nil,
+					)
+					require.ErrorContains(t, err, "whose Connection name")
+					require.ErrorContains(t, err, name)
+					require.True(t, proto.Equal(before, service), "validation must not rewrite the definition")
 					for _, tt := range []struct {
 						name    string
 						uses    []string

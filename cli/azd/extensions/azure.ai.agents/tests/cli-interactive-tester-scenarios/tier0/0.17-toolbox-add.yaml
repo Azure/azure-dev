@@ -1,0 +1,60 @@
+# Tier 0 (offline) — noun-first toolbox add, JSON output, and idempotent local composition.
+# Uses installed development binaries only; no Azure auth, network calls, or Azure cost.
+name: "toolbox-add"
+command: "azd ai agent toolbox add support-tools --agent research-agent --output json --no-prompt"
+cwd: "~/working/azd-agents-t0-toolbox-add-{instance}"
+tags: ["tier:0", "cmd:toolbox", "parallel-safe"]
+
+env:
+  AZURE_ENV_NAME: ""
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+
+# Project.Get uses a non-interactive, optional environment lookup; no .azure config is needed.
+# Reset only this scenario instance. Leave the result on disk for inspection (no post hook).
+pre:
+  - run: 'rm -rf -- "$HOME/working/azd-agents-t0-toolbox-add-{instance}"'
+    cwd: "~/working"
+    name: "reset the dedicated offline toolbox-add directory"
+  - run: 'mkdir -p -- "$HOME/working/azd-agents-t0-toolbox-add-{instance}" && cp -R -- "{fixtures_dir}/agent-dependencies/." "$HOME/working/azd-agents-t0-toolbox-add-{instance}/"'
+    cwd: "~/working"
+    name: "seed the local agent and split dependency services"
+
+goals:
+  - >-
+    OFFLINE CONTRACT: No product prompts are allowed, including environment, login, tenant,
+    subscription, or extension-install prompts. Fail without answering any prompt. Do not obtain
+    credentials, install or update extensions, fetch fixture URLs/images, or make Azure calls.
+    Never run init, provision, up, deploy, or other cloud commands. Use only the literal product
+    commands in this scenario and read-only file inspection; do not repair the fixture or substitute commands.
+  - >-
+    Wait for the initial command 'azd ai agent toolbox add support-tools --agent research-agent --output json --no-prompt'
+    to exit with code 0. Confirm its stdout is a JSON object with string fields agent equal to
+    'research-agent', type equal to 'toolbox', dependency equal to 'support-tools', and the boolean
+    field added equal to true. Human-readable success text must not replace or contaminate the JSON.
+  - >-
+    Compare the working azure.yaml with '{fixtures_dir}/agent-dependencies/azure.yaml' as parsed YAML.
+    The only semantic change must be services.research-agent.uses changing from ['ai-project'] to
+    ['ai-project', 'support-tools'], in that order, with each dependency present exactly once.
+    The project name, the complete ai-project, support-tools, and search-connection service definitions,
+    and every other research-agent property must remain unchanged. In particular, research-agent.toolboxes
+    stays an empty list, and no bundled connections or toolbox definitions are added to the agent.
+    YAML formatting, mapping order, and a schema comment may change; those are not semantic mutations.
+  - >-
+    Inspect the working tree, including hidden files. Apart from azure.yaml, the only permitted new
+    project artifact is .azure/agent-add.lock and its containing directory. No environment config,
+    dotenv files, infrastructure, source files, or deployment state may be created. Record the current
+    azure.yaml contents for comparison with the repeated command without writing a snapshot into the project.
+  - >-
+    Run exactly 'azd ai agent toolbox add support-tools --agent research-agent --output json --no-prompt'
+    again in the same cwd. Confirm exit code 0 and a JSON object with agent equal to 'research-agent',
+    type equal to 'toolbox', dependency equal to 'support-tools', and boolean added equal to false.
+    Confirm azure.yaml is byte-for-byte unchanged from the first successful result, uses still contains
+    exactly ['ai-project', 'support-tools'], and no additional project artifacts appeared.
+  - "Take a best-effort screenshot of both JSON results; capture failure is an observation and must not block the remaining goals."
+  - >-
+    Report a finding if noun-first toolbox add is rejected, JSON fields or types differ, repeated add
+    duplicates a dependency, any configuration outside the agent uses list changes, or any prompt,
+    Azure/network activity, deployment work, panic, or stack trace occurs. Do not retry a failed command
+    or work around a failure; the second invocation above tests idempotency only after the first succeeds.

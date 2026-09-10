@@ -90,10 +90,15 @@ service's `env` block. Provision the selected environment or set its endpoint
 before retrying. Standalone `azd ai connection` commands retain their existing
 endpoint fallback cascade.
 
-The project ARM ID (`AZURE_AI_PROJECT_ID`) and subscription used for tenant
-lookup (`AZURE_SUBSCRIPTION_ID`) are also read together from that environment's
-persisted values, without process-variable fallback. These optional context
-values may be absent; ARM discovery and default credential behavior still apply.
+During lifecycle deployment, the project ARM ID (`AZURE_AI_PROJECT_ID`) and
+subscription used for tenant lookup (`AZURE_SUBSCRIPTION_ID`) are also read
+together from the selected environment's persisted values, without
+process-variable fallback. Standalone commands retain their previous per-key
+process-variable fallback after finding the active azd environment; persisted
+values take precedence. These context values remain optional: missing values or
+read failures still allow ARM discovery and default credential behavior. If the
+azd daemon or active environment is unavailable, standalone commands retain
+those defaults without reading process context values.
 
 For an existing project with no Connections, discovery cannot infer its ARM
 subscription and resource group from the endpoint alone. Persist the full

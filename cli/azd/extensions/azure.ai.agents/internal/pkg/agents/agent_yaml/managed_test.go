@@ -317,8 +317,8 @@ func TestCreatePromptAgentAPIRequest_HarnessSkills(t *testing.T) {
 	}
 }
 
-// TestCreatePromptAgentAPIRequest_HarnessLessSkills verifies plain prompt
-// skills use the same top-level reference shape.
+// TestCreatePromptAgentAPIRequest_HarnessLessSkills rejects an authored skill
+// that was not resolved to a published version.
 func TestCreatePromptAgentAPIRequest_HarnessLessSkills(t *testing.T) {
 	promptDef := PromptAgent{
 		AgentDefinition: AgentDefinition{Kind: AgentKindPrompt, Name: "my-agent"},
@@ -327,20 +327,9 @@ func TestCreatePromptAgentAPIRequest_HarnessLessSkills(t *testing.T) {
 		Skills:          []string{"severity-triage"},
 	}
 
-	req, err := CreatePromptAgentAPIRequest(promptDef, nil)
-	if err != nil {
-		t.Fatalf("CreatePromptAgentAPIRequest: %v", err)
-	}
-	def, ok := req.Definition.(agent_api.ManagedAgentDefinition)
-	if !ok {
-		t.Fatalf("definition: got %T, want agent_api.ManagedAgentDefinition", req.Definition)
-	}
-
-	if def.Harness != nil {
-		t.Errorf("expected no harness block, got %+v", def.Harness)
-	}
-	if len(def.Skills) != 1 || def.Skills[0] != (agent_api.SkillReference{Name: "severity-triage"}) {
-		t.Errorf("definition skills: got %+v, want [severity-triage]", def.Skills)
+	_, err := CreatePromptAgentAPIRequest(promptDef, nil)
+	if err == nil || !strings.Contains(err.Error(), "has no published version") {
+		t.Fatalf("expected unresolved skill error, got %v", err)
 	}
 }
 

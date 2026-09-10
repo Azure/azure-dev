@@ -191,11 +191,10 @@ func runInitManaged(
 		return err
 	}
 
-	// Treat a manifest's model as if it had been passed as --model so the whole
-	// downstream resolution (catalog lookup, region availability, quota, SKU)
-	// targets the template's model rather than the generic default.
+	// A prompt manifest's model is a deployment name. Preserve that distinction
+	// from --model, which selects a catalog model to provision.
 	if strings.TrimSpace(flags.model) == "" && strings.TrimSpace(flags.modelDeployment) == "" {
-		flags.model = manifest.model()
+		flags.modelDeployment = manifest.model()
 	}
 
 	// The prompt-agent init experience mirrors hosted:
@@ -260,7 +259,9 @@ func runInitManaged(
 	// it a --no-prompt scaffold would carry only placeholder routing values and
 	// `azd up` would fail to find a Foundry project.
 	var model string
-	deployment, foundryProject, credential, err := resolvePromptHarnessTarget(ctx, azdClient, flags, env, &settings)
+	deployment, provisionDeployment, foundryProject, credential, err := resolvePromptHarnessTarget(
+		ctx, azdClient, flags, env, &settings,
+	)
 	if err != nil {
 		return err
 	}
@@ -311,7 +312,7 @@ func runInitManaged(
 	// so `azd provision` creates the project (and its deployments) first and
 	// `azd deploy` publishes the skills before the agent that references them.
 	var deployments []project.Deployment
-	if deployment != nil {
+	if deployment != nil && provisionDeployment {
 		deployments = []project.Deployment{*deployment}
 	}
 	resources, err := promptResourceServices(ctx, azdClient, &promptAgent, serviceRelPath)

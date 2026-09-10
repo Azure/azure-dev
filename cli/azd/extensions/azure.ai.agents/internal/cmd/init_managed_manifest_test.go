@@ -205,8 +205,10 @@ func TestValidateManagedNoPromptInputs(t *testing.T) {
 			flags: initFlags{noPrompt: true, agentName: "a", model: "gpt-4.1-mini"},
 		},
 		{
-			name:  "no-prompt with name and model deployment",
-			flags: initFlags{noPrompt: true, agentName: "a", modelDeployment: "my-deployment"},
+			name: "no-prompt with name, existing project, and model deployment",
+			flags: initFlags{
+				noPrompt: true, agentName: "a", modelDeployment: "my-deployment", projectResourceId: "/project",
+			},
 		},
 		{
 			name:     "no-prompt satisfied entirely by the manifest",

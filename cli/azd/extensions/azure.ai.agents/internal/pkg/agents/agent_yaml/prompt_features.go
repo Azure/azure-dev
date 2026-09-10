@@ -47,13 +47,23 @@ func ValidateRaiPolicyName(name string) error {
 
 // ValidatePolicies rejects policy entries the service will refuse.
 func (p PromptAgent) ValidatePolicies() error {
+	raiPolicyCount := 0
 	for i, policy := range p.Policies {
-		if policy.Type != PolicyTypeRai {
-			continue
+		switch policy.Type {
+		case PolicyTypeRai:
+			raiPolicyCount++
+		case "":
+			return fmt.Errorf("policies[%d] requires a type", i)
+		default:
+			return fmt.Errorf(
+				"policies[%d] has an unsupported type %q (supported: %s)", i, policy.Type, PolicyTypeRai)
 		}
 		if err := ValidateRaiPolicyName(policy.RaiPolicyName); err != nil {
 			return fmt.Errorf("policies[%d]: %w", i, err)
 		}
+	}
+	if raiPolicyCount > 1 {
+		return fmt.Errorf("policies declares %d policies of type %q, but only one is supported", raiPolicyCount, PolicyTypeRai)
 	}
 	return nil
 }

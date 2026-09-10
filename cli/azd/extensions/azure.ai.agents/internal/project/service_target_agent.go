@@ -760,6 +760,17 @@ func (p *AgentServiceTargetProvider) Endpoints(
 		if err != nil {
 			return nil, err
 		}
+		managed, err := p.loadPromptAgentDefinition()
+		if err != nil {
+			return nil, err
+		}
+		if managed.HarnessType() != "" {
+			name := strings.TrimSpace(managed.Name)
+			if name == "" {
+				name = serviceConfig.GetName()
+			}
+			return []string{buildResponsesProtocolURL(settings.ProjectEndpoint, name)}, nil
+		}
 		return []string{promptAgentResponsesEndpoint(settings)}, nil
 	}
 	if err := p.ensureEnv(ctx); err != nil {

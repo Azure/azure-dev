@@ -101,6 +101,21 @@ func TestPromptJSONSchemaAcceptsOptionalToolboxProjectConnectionID(t *testing.T)
 	require.Error(t, schema.validate(base))
 }
 
+func TestPromptJSONSchemaValidatesMemory(t *testing.T) {
+	schema := loadDocSchema(t, filepath.Join("..", ".."))
+	base := map[string]any{
+		"kind": "prompt", "name": "assistant", "model": "gpt-5-mini", "instructions": "Be helpful.",
+	}
+	base["memory"] = map[string]any{
+		"store": "agent-memory", "chat_model": "gpt-5-mini", "embedding_model": "text-embedding-3-small",
+		"options": map[string]any{"chat_summary_enabled": true},
+	}
+	require.NoError(t, schema.validate(base))
+
+	base["memory"] = map[string]any{"store": "agent-memory", "unknown": true}
+	require.Error(t, schema.validate(base))
+}
+
 func TestPromptJSONSchemaRejectsHarnessConfiguration(t *testing.T) {
 	schema := loadDocSchema(t, filepath.Join("..", ".."))
 	require.Error(t, schema.validate(map[string]any{

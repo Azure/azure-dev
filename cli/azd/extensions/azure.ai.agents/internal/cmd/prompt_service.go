@@ -115,7 +115,10 @@ func resolvePromptAgentService(
 		Settings:    settings,
 		Agent:       agentDef,
 	}
-	if strings.TrimSpace(pctx.Agent.Name) == "" {
+	serviceKey := toServiceKey(svc.Name)
+	if deployedName := strings.TrimSpace(envValues[fmt.Sprintf("AGENT_%s_NAME", serviceKey)]); deployedName != "" {
+		pctx.Agent.Name = deployedName
+	} else if strings.TrimSpace(pctx.Agent.Name) == "" {
 		pctx.Agent.Name = svc.Name
 	}
 

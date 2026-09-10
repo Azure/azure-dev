@@ -632,7 +632,12 @@ func predownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azde
 		if svc.Host != AiAgentHost {
 			continue
 		}
-		if !project.ServiceIsPromptAgent(svc) {
+		resolvedSvc, err := resolveAgentServiceConfigWithProjectOverrides(svc, args.Project.Path)
+		if err != nil {
+			log.Printf("predown: skipping service %q: %v", svc.Name, err)
+			continue
+		}
+		if !project.ServiceIsPromptAgent(resolvedSvc) {
 			continue
 		}
 		// Resolved the same way deploy does: the harness target comes from the
@@ -642,7 +647,7 @@ func predownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azde
 			log.Printf("predown: skipping harness delete for %q: %v", svc.Name, err)
 			continue
 		}
-		deletePromptAgentOnDown(ctx, azdClient, svc, settings, args.Project.Path, envValues)
+		deletePromptAgentOnDown(ctx, azdClient, resolvedSvc, settings, args.Project.Path, envValues)
 	}
 
 	return nil
@@ -669,21 +674,13 @@ func deletePromptAgentOnDown(
 			return
 		}
 	}
-	// Delete by the definition's `name` — the identity every other prompt
-	// lifecycle path uses. The azure.yaml service key only matches when the
-	// definition omits `name:`, which is true for scaffolded projects but not for
-	// renamed agents.
-	agentName, err := promptAgentNameForService(svc, projectPath)
-	if err != nil {
-		log.Printf("predown: skipping harness delete for %q: %v", svc.Name, err)
-		return
-	}
 	serviceKey := toServiceKey(svc.Name)
 	deployedName := strings.TrimSpace(envValues[fmt.Sprintf("AGENT_%s_NAME", serviceKey)])
-	if deployedName == "" || deployedName != agentName {
-		log.Printf("predown: skipping prompt agent %q because its deployed-name ownership marker does not match", agentName)
+	if deployedName == "" {
+		log.Printf("predown: skipping service %q because its deployed-name ownership marker is empty", svc.Name)
 		return
 	}
+	agentName := deployedName
 	projectMarker := strings.TrimSpace(envValues[envkey.AgentProjectEndpoint(svc.Name)])
 	if projectMarker == "" || !strings.EqualFold(
 		strings.TrimRight(projectMarker, "/"),

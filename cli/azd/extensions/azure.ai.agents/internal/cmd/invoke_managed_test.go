@@ -94,6 +94,9 @@ func TestStreamManagedSSE_IgnoresMalformedData(t *testing.T) {
 		"event: response.output_text.delta",
 		`data: {"delta":"ok"}`,
 		"",
+		"event: response.completed",
+		`data: {"response":{"id":"resp_ok"}}`,
+		"",
 	}, "\n")
 
 	var out strings.Builder

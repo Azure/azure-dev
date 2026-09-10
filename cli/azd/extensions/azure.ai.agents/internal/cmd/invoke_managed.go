@@ -161,6 +161,7 @@ func streamManagedSSE(r io.Reader, w io.Writer) (string, error) {
 	var event string
 	var responseID string
 	var streamErr error
+	completed := false
 	wroteText := false
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -183,6 +184,9 @@ func streamManagedSSE(r io.Reader, w io.Writer) (string, error) {
 					streamErr = managedStreamFailure(event, data)
 				}
 			case strings.HasPrefix(event, "response."):
+				if event == "response.completed" {
+					completed = true
+				}
 				// Capture the response id from any lifecycle event that carries
 				// it (e.g. response.created, response.completed). The last one
 				// seen wins so the persisted id reflects the completed turn.
@@ -205,6 +209,9 @@ func streamManagedSSE(r io.Reader, w io.Writer) (string, error) {
 	}
 	if err := scanner.Err(); err != nil {
 		return responseID, err
+	}
+	if streamErr == nil && !completed {
+		return responseID, fmt.Errorf("managed response stream ended before response.completed")
 	}
 	return responseID, streamErr
 }

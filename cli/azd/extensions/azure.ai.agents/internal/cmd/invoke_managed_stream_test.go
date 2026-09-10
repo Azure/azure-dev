@@ -57,6 +57,15 @@ func TestStreamManagedSSE_TerminalEvents(t *testing.T) {
 				`data: {"response":{"id":"resp_3"}}` + "\n\n",
 			wantErr: false,
 		},
+		{
+			name: "stream ends before completion",
+			stream: "event: response.created\n" +
+				`data: {"response":{"id":"resp_4"}}` + "\n\n" +
+				"event: response.output_text.delta\n" +
+				`data: {"delta":"partial"}` + "\n\n",
+			wantErr: true,
+			wantSub: "ended before response.completed",
+		},
 	}
 
 	for _, tt := range tests {

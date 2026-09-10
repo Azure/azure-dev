@@ -4127,3 +4127,29 @@ func TestEndpoints_HostedMissingVersion_StillErrors(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, exterrors.CodeMissingAgentEnvVars, localErr.Code)
 }
+
+func TestEndpoints_HarnessedPromptUsesAgentSpecificEndpoint(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	client := newEndpointsTestClient(t, projectRoot, map[string]string{
+		"AZURE_SUBSCRIPTION_ID":    "subscription",
+		"AZURE_RESOURCE_GROUP":     "resource-group",
+		"FOUNDRY_PROJECT_ENDPOINT": "https://acct.services.ai.azure.com/api/projects/project",
+	})
+	service := inlineAgentService(t, map[string]any{
+		"kind":         "prompt",
+		"name":         "managed-agent",
+		"model":        "gpt-5-mini",
+		"instructions": "Be helpful.",
+		"harness":      map[string]any{"type": "github_copilot_preview"},
+	})
+	provider := &AgentServiceTargetProvider{azdClient: client}
+
+	got, err := provider.Endpoints(t.Context(), service, nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"https://acct.services.ai.azure.com/api/projects/project/agents/managed-agent/" +
+			"endpoint/protocols/openai/responses?api-version=v1",
+	}, got)
+}

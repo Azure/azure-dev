@@ -173,8 +173,7 @@ func TestValidateRaiPolicyName(t *testing.T) {
 	}
 }
 
-// TestPromptAgent_ValidatePolicies checks the per-entry wiring: the index is
-// reported, and a policy of another type is not held to the RAI rule.
+// TestPromptAgent_ValidatePolicies checks the single supported policy contract.
 func TestPromptAgent_ValidatePolicies(t *testing.T) {
 	t.Parallel()
 
@@ -189,5 +188,11 @@ func TestPromptAgent_ValidatePolicies(t *testing.T) {
 	require.Contains(t, err.Error(), "policies[1]")
 
 	other := PromptAgent{Policies: []Policy{{Type: "other", RaiPolicyName: "strict"}}}
-	require.NoError(t, other.ValidatePolicies())
+	require.ErrorContains(t, other.ValidatePolicies(), "unsupported type")
+
+	duplicate := PromptAgent{Policies: []Policy{
+		{Type: PolicyTypeRai, RaiPolicyName: testRaiPolicyID},
+		{Type: PolicyTypeRai, RaiPolicyName: testRaiPolicyID},
+	}}
+	require.ErrorContains(t, duplicate.ValidatePolicies(), "only one is supported")
 }

@@ -455,8 +455,11 @@ func (a *DeleteAction) runPromptDelete(
 		)
 	}
 
-	// Confirmation prompt (skip in --no-prompt mode).
-	if !a.flags.noPrompt {
+	if a.flags.noPrompt {
+		if err := a.confirmDelete(ctx, azdClient, agentName); err != nil {
+			return err
+		}
+	} else {
 		message := fmt.Sprintf("Delete prompt agent %q from the harness?", agentName)
 		if a.flags.force {
 			message = fmt.Sprintf(

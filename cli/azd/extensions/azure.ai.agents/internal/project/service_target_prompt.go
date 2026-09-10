@@ -164,8 +164,7 @@ const raiPolicyEnvVarName = "RAI_POLICY_ID"
 func promptCreateError(err error, managed *agent_yaml.PromptAgent) error {
 	converted := exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 
-	local, ok := errors.AsType[*azdext.LocalError](converted)
-	if !ok || !declaresRaiPolicy(managed) {
+	if !declaresRaiPolicy(managed) {
 		return converted
 	}
 
@@ -177,11 +176,21 @@ func promptCreateError(err error, managed *agent_yaml.PromptAgent) error {
 		suggestion = "This agent declares a Responsible AI policy. Verify the policy ID is correct and " +
 			"reachable from this account, then re-run."
 	}
-	if local.Suggestion != "" {
-		suggestion = local.Suggestion + " " + suggestion
+	if local, ok := errors.AsType[*azdext.LocalError](converted); ok {
+		if local.Suggestion != "" {
+			suggestion = local.Suggestion + " " + suggestion
+		}
+		local.Suggestion = suggestion
+		return local
 	}
-	local.Suggestion = suggestion
-	return local
+	if service, ok := errors.AsType[*azdext.ServiceError](converted); ok {
+		if service.Suggestion != "" {
+			suggestion = service.Suggestion + " " + suggestion
+		}
+		service.Suggestion = suggestion
+		return service
+	}
+	return converted
 }
 
 // declaresRaiPolicy reports whether the agent binds a Responsible AI policy.
@@ -393,7 +402,10 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 		return nil, err
 	}
 
-	request, err := agent_yaml.CreatePromptAgentAPIRequest(managed, nil)
+	request, err := agent_yaml.CreatePromptAgentAPIRequest(
+		managed,
+		&agent_yaml.AgentBuildConfig{EnvironmentVariables: serviceConfig.GetEnvironment()},
+	)
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,

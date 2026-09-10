@@ -20,6 +20,27 @@ type failingPromptEnvironmentServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 }
 
+type promptEnvironmentServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+	values map[string]string
+}
+
+func (s *promptEnvironmentServer) GetCurrent(
+	context.Context, *azdext.EmptyRequest,
+) (*azdext.EnvironmentResponse, error) {
+	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: "test"}}, nil
+}
+
+func (s *promptEnvironmentServer) GetValues(
+	context.Context, *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	values := make([]*azdext.KeyValue, 0, len(s.values))
+	for key, value := range s.values {
+		values = append(values, &azdext.KeyValue{Key: key, Value: value})
+	}
+	return &azdext.KeyValueListResponse{KeyValues: values}, nil
+}
+
 func (s *failingPromptEnvironmentServer) GetCurrent(
 	context.Context, *azdext.EmptyRequest,
 ) (*azdext.EnvironmentResponse, error) {
@@ -150,4 +171,31 @@ func TestResolvePromptAgentServiceReturnsEnvironmentError(t *testing.T) {
 	assert.Contains(t, err.Error(), "reading the azd environment")
 	assert.Contains(t, err.Error(), "environment service unavailable")
 	assert.NotContains(t, err.Error(), "missing required fields")
+}
+
+func TestResolvePromptAgentServicePrefersDeployedName(t *testing.T) {
+	projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
+		Path: t.TempDir(),
+		Services: map[string]*azdext.ServiceConfig{
+			"assistant": {
+				Name: "assistant", Host: AiAgentHost,
+				AdditionalProperties: mustStruct(t, map[string]any{
+					"kind": "prompt", "name": "new-authored-name", "model": "gpt-5-mini",
+					"instructions": "Be helpful.",
+				}),
+			},
+		},
+	}}
+	environment := &promptEnvironmentServer{values: map[string]string{
+		"AZURE_SUBSCRIPTION_ID":    "subscription",
+		"AZURE_RESOURCE_GROUP":     "resource-group",
+		"FOUNDRY_PROJECT_ENDPOINT": "https://acct.services.ai.azure.com/api/projects/project",
+		"AGENT_ASSISTANT_NAME":     "deployed-name",
+	}}
+	azdClient := newHelpersTestAzdClient(t, projectServer, &helpersPromptServer{}, environment)
+
+	pctx, isPrompt, err := resolvePromptAgentService(t.Context(), azdClient, "assistant", true)
+	require.NoError(t, err)
+	require.True(t, isPrompt)
+	require.Equal(t, "deployed-name", pctx.AgentName())
 }

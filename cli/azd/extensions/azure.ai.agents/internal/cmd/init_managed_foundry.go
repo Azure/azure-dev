@@ -43,20 +43,27 @@ func resolvePromptHarnessTarget(
 	flags *initFlags,
 	env *azdext.Environment,
 	settings *project.PromptAgentSettings,
-) (*project.Deployment, *FoundryProjectInfo, azcore.TokenCredential, error) {
+) (*project.Deployment, bool, *FoundryProjectInfo, azcore.TokenCredential, error) {
 	azureContext, err := loadAzureContext(ctx, azdClient, env.Name)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, false, nil, nil, err
 	}
 
 	// A full project resource ID already names its subscription, so seed the
 	// context from it. Without this, `--no-prompt --project-id <id>` against a
 	// fresh environment would fail asking for AZURE_SUBSCRIPTION_ID even though
 	// the caller just supplied it.
-	if strings.TrimSpace(flags.projectResourceId) != "" && azureContext.Scope.SubscriptionId == "" {
+	if strings.TrimSpace(flags.projectResourceId) != "" {
 		if proj, parseErr := extractProjectDetails(flags.projectResourceId); parseErr == nil {
 			azureContext.Scope.SubscriptionId = proj.SubscriptionId
 		}
+	}
+	if strings.TrimSpace(flags.projectResourceId) == "" && strings.TrimSpace(flags.modelDeployment) != "" {
+		return nil, false, nil, nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--model-deployment requires an existing Foundry project",
+			"pass --project-id for the project containing that deployment, or use --model to deploy a new model",
+		)
 	}
 
 	// A non-interactive caller may have neither a project nor an Azure context
@@ -68,9 +75,9 @@ func resolvePromptHarnessTarget(
 	if strings.TrimSpace(flags.projectResourceId) == "" &&
 		shouldDeferInitAzureContext(flags.noPrompt, azureContext) {
 		if err := configureDeferredInitAzureContext(ctx, azdClient, env.Name, azureContext, true); err != nil {
-			return nil, nil, nil, err
+			return nil, false, nil, nil, err
 		}
-		return nil, nil, nil, nil
+		return nil, false, nil, nil, nil
 	}
 
 	// Subscription only — location is resolved per project branch below.
@@ -79,14 +86,14 @@ func resolvePromptHarnessTarget(
 		"Select an Azure subscription to find your Foundry project and models.",
 	)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, false, nil, nil, err
 	}
 
 	proj, err := selectPromptFoundryProject(
 		ctx, azdClient, cred, azureContext, env.Name, flags.projectResourceId, flags.noPrompt,
 	)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, false, nil, nil, err
 	}
 
 	if proj == nil {
@@ -97,10 +104,10 @@ func resolvePromptHarnessTarget(
 				"with the model deployment you choose next.",
 		))
 		if err := ensureLocation(ctx, azdClient, azureContext, env.Name); err != nil {
-			return nil, nil, nil, err
+			return nil, false, nil, nil, err
 		}
 		if err := setEnvValue(ctx, azdClient, env.Name, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
-			return nil, nil, nil, err
+			return nil, false, nil, nil, err
 		}
 		if err := updatePendingProjectSignal(ctx, azdClient, env.Name, false); err != nil {
 			log.Printf("warning: failed to update project provision signal: %v", err)
@@ -108,7 +115,7 @@ func resolvePromptHarnessTarget(
 		// A new project is provisioned by `azd up`; its endpoint is resolved from
 		// the provisioned environment at deploy time.
 		deployment, err := resolvePromptModelDeployment(ctx, azdClient, azureContext, env, flags)
-		return deployment, nil, cred, err
+		return deployment, true, nil, cred, err
 	}
 
 	// Existing project: populate the harness target and derive the location
@@ -125,7 +132,7 @@ func resolvePromptHarnessTarget(
 	azureContext.Scope.Location = proj.Location
 	if proj.Location != "" {
 		if err := setEnvValue(ctx, azdClient, env.Name, "AZURE_AI_DEPLOYMENTS_LOCATION", proj.Location); err != nil {
-			return nil, nil, nil, err
+			return nil, false, nil, nil, err
 		}
 		// Also seed AZURE_LOCATION from the selected project's region. The
 		// infra main.parameters.json resolves `location` from ${AZURE_LOCATION};
@@ -133,22 +140,24 @@ func resolvePromptHarnessTarget(
 		// (and thus the target region) is already known. Deploy the model using
 		// the project's region.
 		if err := setEnvValue(ctx, azdClient, env.Name, "AZURE_LOCATION", proj.Location); err != nil {
-			return nil, nil, nil, err
+			return nil, false, nil, nil, err
 		}
 	}
 
 	if err := setPromptFoundryProjectEnv(ctx, azdClient, env.Name, proj); err != nil {
-		return nil, nil, nil, err
+		return nil, false, nil, nil, err
 	}
 	if err := setEnvValue(ctx, azdClient, env.Name, "USE_EXISTING_AI_PROJECT", "true"); err != nil {
-		return nil, nil, nil, err
+		return nil, false, nil, nil, err
 	}
 	if err := updatePendingProjectSignal(ctx, azdClient, env.Name, true); err != nil {
 		log.Printf("warning: failed to update project provision signal: %v", err)
 	}
 
-	deployment, err := resolvePromptModelForExistingProject(ctx, azdClient, cred, azureContext, env, flags, proj)
-	return deployment, proj, cred, err
+	deployment, provision, err := resolvePromptModelForExistingProject(
+		ctx, azdClient, cred, azureContext, env, flags, proj,
+	)
+	return deployment, provision, proj, cred, err
 }
 
 // selectPromptFoundryProject first asks whether to use an existing project or
@@ -289,13 +298,14 @@ func resolvePromptModelForExistingProject(
 	env *azdext.Environment,
 	flags *initFlags,
 	proj *FoundryProjectInfo,
-) (*project.Deployment, error) {
+) (*project.Deployment, bool, error) {
 	// --model-deployment names an existing deployment in this project to reuse
 	// verbatim, which is the non-interactive equivalent of picking one from the
 	// list below. It wins over --model so `--model-deployment x --model y` does
 	// not silently provision a second deployment.
 	if requested := strings.TrimSpace(flags.modelDeployment); requested != "" {
-		return findExistingPromptDeployment(ctx, credential, proj, requested)
+		deployment, err := findExistingPromptDeployment(ctx, credential, proj, requested)
+		return deployment, false, err
 	}
 
 	// --model short-circuits to the new-deployment configuration so the named
@@ -340,17 +350,18 @@ func resolvePromptModelForExistingProject(
 			})
 			if selErr != nil {
 				if exterrors.IsCancellation(selErr) {
-					return nil, exterrors.Cancelled("model selection was cancelled")
+					return nil, false, exterrors.Cancelled("model selection was cancelled")
 				}
-				return nil, fmt.Errorf("prompting for model deployment: %w", selErr)
+				return nil, false, fmt.Errorf("prompting for model deployment: %w", selErr)
 			}
 			if selected := choices[*resp.Value].Value; selected != newModelValue {
-				return promptDeploymentFromFoundry(byName[selected]), nil
+				return promptDeploymentFromFoundry(byName[selected]), false, nil
 			}
 		}
 	}
 
-	return resolvePromptModelDeployment(ctx, azdClient, azureContext, env, flags)
+	deployment, err := resolvePromptModelDeployment(ctx, azdClient, azureContext, env, flags)
+	return deployment, true, err
 }
 
 // findExistingPromptDeployment resolves a named model deployment in the given
@@ -442,13 +453,8 @@ func resolvePromptModelDeployment(
 	}
 
 	// Deployment name (defaults to the model name), matching hosted.
-	// --model-deployment names the deployment explicitly, which is how a
-	// non-interactive caller controls it on the create-new-project path where
-	// there is no existing deployment to look up.
 	deploymentName := modelDetails.ModelName
-	if requested := strings.TrimSpace(flags.modelDeployment); requested != "" {
-		deploymentName = requested
-	} else if !flags.noPrompt {
+	if !flags.noPrompt {
 		resp, promptErr := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
 				Message: fmt.Sprintf(

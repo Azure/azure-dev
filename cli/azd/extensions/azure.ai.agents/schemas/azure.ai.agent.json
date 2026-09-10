@@ -36,6 +36,9 @@
       "description": "List of Foundry memory stores to provision (create-if-not-exists) during deployment. Memory stores let agents retain context across sessions via the memory_search tool.",
       "items": { "$ref": "#/definitions/MemoryStore" }
     },
+    "memory": {
+      "$ref": "#/definitions/PromptMemory"
+    },
     "startupCommand": {
       "type": "string",
       "description": "Command to start the agent server (e.g., 'python main.py'). Used by 'azd ai agent run' for local development."
@@ -440,6 +443,33 @@
     }
   ],
   "definitions": {
+    "PromptMemory": {
+      "type": "object",
+      "description": "Memory store used by a prompt agent for recall.",
+      "properties": {
+        "store": { "type": "string", "minLength": 1, "pattern": "\\S" },
+        "description": { "type": "string" },
+        "chat_model": { "type": "string", "minLength": 1 },
+        "embedding_model": { "type": "string", "minLength": 1 },
+        "scope": { "type": "string", "minLength": 1 },
+        "update_delay": { "type": "integer", "minimum": 0 },
+        "max_memories": { "type": "integer", "minimum": 1 },
+        "options": { "$ref": "#/definitions/PromptMemoryOptions" }
+      },
+      "required": ["store"],
+      "additionalProperties": false
+    },
+    "PromptMemoryOptions": {
+      "type": "object",
+      "properties": {
+        "chat_summary_enabled": { "type": "boolean" },
+        "user_profile_enabled": { "type": "boolean" },
+        "procedural_memory_enabled": { "type": "boolean" },
+        "default_ttl_seconds": { "type": "integer", "minimum": 0 },
+        "user_profile_details": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
     "GitHubCopilotToolsetPreview": {
       "type": "object",
       "description": "Enablement configuration for GitHub Copilot built-in tools.",

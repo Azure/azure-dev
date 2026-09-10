@@ -604,6 +604,11 @@ func CreatePromptAgentAPIRequest(
 	if err := promptAgent.ValidatePolicies(); err != nil {
 		return nil, err
 	}
+	for _, skill := range PromptAgentSkillReferences(promptAgent) {
+		if strings.TrimSpace(skill.Version) == "" {
+			return nil, fmt.Errorf("prompt skill %q has no published version", skill.Name)
+		}
+	}
 
 	promptDef := agent_api.ManagedAgentDefinition{
 		AgentDefinition: agent_api.AgentDefinition{

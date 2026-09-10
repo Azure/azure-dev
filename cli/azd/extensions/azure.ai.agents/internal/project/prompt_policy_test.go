@@ -5,11 +5,13 @@ package project
 
 import (
 	"errors"
+	"net/http"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 )
@@ -73,6 +75,21 @@ func TestPromptCreateErrorAddsPolicySuggestion(t *testing.T) {
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
 	require.Contains(t, localErr.Suggestion, "Responsible AI policy")
+}
+
+func TestPromptCreateErrorAddsPolicySuggestionToServiceError(t *testing.T) {
+	t.Parallel()
+	managed := agent_yaml.PromptAgent{
+		Harness:  &agent_yaml.PromptHarness{Type: agent_api.ManagedAgentHarnessGitHubCopilot},
+		Policies: []agent_yaml.Policy{{Type: agent_yaml.PolicyTypeRai, RaiPolicyName: raiPolicyID}},
+	}
+	err := promptCreateError(&azcore.ResponseError{
+		StatusCode: http.StatusBadRequest,
+		ErrorCode:  "BadRequest",
+	}, &managed)
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	require.Contains(t, serviceErr.Suggestion, "Responsible AI policy")
 }
 
 func TestPromptCreateErrorWithoutPolicyIsUnchanged(t *testing.T) {

@@ -257,14 +257,6 @@ This option does not provide crash recovery or automatic reconnection.`,
 
 			if flags.protocol != "" {
 				p := agent_api.AgentProtocol(flags.protocol)
-				if p == agent_api.AgentProtocolVoice {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						"voice endpoints require a Voice Live WebSocket client and cannot be invoked with this command",
-						"use the voice WebSocket endpoint shown by 'azd show' or 'azd ai agent show' "+
-							"with a Voice Live client",
-					)
-				}
 				if !p.IsInvocable() {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,

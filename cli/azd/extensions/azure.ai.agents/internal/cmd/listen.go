@@ -703,7 +703,18 @@ func deletePromptAgentOnDown(
 		log.Printf("predown: failed to delete prompt agent %q from harness: %v", agentName, err)
 		return
 	}
+	cleanupPromptAgentState(ctx, azdClient, settings.ProjectEndpoint, agentName)
 	fmt.Printf("Deleted prompt agent %q from the harness\n", agentName)
+}
+
+func cleanupPromptAgentState(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	projectEndpoint string,
+	agentName string,
+) bool {
+	agentKey := buildAgentKey(strings.TrimSpace(projectEndpoint), agentName, "", false)
+	return cleanupAgentStateForKey(ctx, azdClient, agentKey)
 }
 
 // cleanupAgentState removes saved session, conversation, and background Response state for a

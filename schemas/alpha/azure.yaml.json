@@ -105,9 +105,9 @@
                                     "microsoft.foundry"
                                 ]
                             },
-                             "deploymentStacks": {
-                                 "$ref": "#/definitions/deploymentStacksConfig"
-                             },
+                            "deploymentStacks": {
+                                "$ref": "#/definitions/deploymentStacksConfig"
+                            },
                             "config": {
                                 "type": "object",
                                 "title": "Provider-specific configuration",
@@ -182,7 +182,9 @@
                 },
                 {
                     "if": {
-                        "required": ["layers"],
+                        "required": [
+                            "layers"
+                        ],
                         "properties": {
                             "layers": {
                                 "type": "array",
@@ -199,6 +201,14 @@
                     }
                 }
             ]
+        },
+        "layers": {
+            "type": "array",
+            "title": "Layers",
+            "description": "Layers containing infrastructure and services.",
+            "items": {
+                "$ref": "#/definitions/layer"
+            }
         },
         "services": {
             "type": "object",
@@ -378,18 +388,32 @@
                         "comment": "ContainerApp host - supports image OR project, docker config, and apiVersion",
                         "if": {
                             "properties": {
-                                "host": { "const": "containerapp" }
+                                "host": {
+                                    "const": "containerapp"
+                                }
                             }
                         },
                         "then": {
                             "anyOf": [
                                 {
-                                    "required": ["image"],
-                                    "not": { "required": ["project"] }
+                                    "required": [
+                                        "image"
+                                    ],
+                                    "not": {
+                                        "required": [
+                                            "project"
+                                        ]
+                                    }
                                 },
                                 {
-                                    "required": ["project"],
-                                    "not": { "required": ["image"] }
+                                    "required": [
+                                        "project"
+                                    ],
+                                    "not": {
+                                        "required": [
+                                            "image"
+                                        ]
+                                    }
                                 }
                             ],
                             "properties": {
@@ -401,7 +425,9 @@
                         "comment": "AKS host - project is optional, supports docker and k8s config",
                         "if": {
                             "properties": {
-                                "host": { "const": "aks" }
+                                "host": {
+                                    "const": "aks"
+                                }
                             }
                         },
                         "then": {
@@ -416,11 +442,16 @@
                         "comment": "AI Endpoint host - requires project and config, supports docker",
                         "if": {
                             "properties": {
-                                "host": { "const": "ai.endpoint" }
+                                "host": {
+                                    "const": "ai.endpoint"
+                                }
                             }
                         },
                         "then": {
-                            "required": ["project", "config"],
+                            "required": [
+                                "project",
+                                "config"
+                            ],
                             "properties": {
                                 "config": {
                                     "$ref": "#/definitions/aiEndpointConfig",
@@ -438,13 +469,19 @@
                         "comment": "Azure AI Agent host - agent schema composed at the service level; keeps project/runtime/docker/image. config is deprecated: agent settings moved to service level but the old shape stays valid",
                         "if": {
                             "properties": {
-                                "host": { "const": "azure.ai.agent" }
+                                "host": {
+                                    "const": "azure.ai.agent"
+                                }
                             }
                         },
                         "then": {
-                            "required": ["project"],
+                            "required": [
+                                "project"
+                            ],
                             "allOf": [
-                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/schemas/azure.ai.agent.json" }
+                                {
+                                    "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/schemas/azure.ai.agent.json"
+                                }
                             ],
                             "properties": {
                                 "config": {
@@ -461,12 +498,16 @@
                         "comment": "Azure AI Foundry project host - code-less resource service; composes the project schema at the service level and disables source/container properties",
                         "if": {
                             "properties": {
-                                "host": { "const": "azure.ai.project" }
+                                "host": {
+                                    "const": "azure.ai.project"
+                                }
                             }
                         },
                         "then": {
                             "allOf": [
-                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.projects/schemas/azure.ai.project.json" }
+                                {
+                                    "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.projects/schemas/azure.ai.project.json"
+                                }
                             ],
                             "properties": {
                                 "project": false,
@@ -481,12 +522,16 @@
                         "comment": "Azure AI Foundry connection host - code-less resource service; the service key is the connection name",
                         "if": {
                             "properties": {
-                                "host": { "const": "azure.ai.connection" }
+                                "host": {
+                                    "const": "azure.ai.connection"
+                                }
                             }
                         },
                         "then": {
                             "allOf": [
-                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.connections/schemas/azure.ai.connection.json" }
+                                {
+                                    "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.connections/schemas/azure.ai.connection.json"
+                                }
                             ],
                             "properties": {
                                 "project": false,
@@ -501,12 +546,16 @@
                         "comment": "Azure AI Foundry toolbox host - code-less resource service; the service key is the toolbox name",
                         "if": {
                             "properties": {
-                                "host": { "const": "azure.ai.toolbox" }
+                                "host": {
+                                    "const": "azure.ai.toolbox"
+                                }
                             }
                         },
                         "then": {
                             "allOf": [
-                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.toolboxes/schemas/azure.ai.toolbox.json" }
+                                {
+                                    "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.toolboxes/schemas/azure.ai.toolbox.json"
+                                }
                             ],
                             "properties": {
                                 "project": false,
@@ -521,12 +570,16 @@
                         "comment": "Azure AI Foundry skill host - code-less resource service; the service key is the skill name",
                         "if": {
                             "properties": {
-                                "host": { "const": "azure.ai.skill" }
+                                "host": {
+                                    "const": "azure.ai.skill"
+                                }
                             }
                         },
                         "then": {
                             "allOf": [
-                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.skills/schemas/azure.ai.skill.json" }
+                                {
+                                    "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.skills/schemas/azure.ai.skill.json"
+                                }
                             ],
                             "properties": {
                                 "project": false,
@@ -541,12 +594,16 @@
                         "comment": "Azure AI Foundry routine host - code-less resource service; the service key is the routine name and it uses: the agent it invokes",
                         "if": {
                             "properties": {
-                                "host": { "const": "azure.ai.routine" }
+                                "host": {
+                                    "const": "azure.ai.routine"
+                                }
                             }
                         },
                         "then": {
                             "allOf": [
-                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.routines/schemas/azure.ai.routine.json" }
+                                {
+                                    "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.routines/schemas/azure.ai.routine.json"
+                                }
                             ],
                             "properties": {
                                 "project": false,
@@ -561,12 +618,16 @@
                         "comment": "Legacy Microsoft Foundry host - compatibility for old non-network files; new provisioning uses azure.ai.project",
                         "if": {
                             "properties": {
-                                "host": { "const": "microsoft.foundry" }
+                                "host": {
+                                    "const": "microsoft.foundry"
+                                }
                             }
                         },
                         "then": {
                             "allOf": [
-                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/schemas/microsoft.foundry.json" }
+                                {
+                                    "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/schemas/microsoft.foundry.json"
+                                }
                             ],
                             "properties": {
                                 "project": false,
@@ -582,22 +643,38 @@
                         "comment": "Function host - supports code or container deployment from project or image",
                         "if": {
                             "properties": {
-                                "host": { "const": "function" }
+                                "host": {
+                                    "const": "function"
+                                }
                             }
                         },
                         "then": {
                             "anyOf": [
                                 {
-                                    "required": ["image"],
-                                    "not": { "required": ["project"] },
+                                    "required": [
+                                        "image"
+                                    ],
+                                    "not": {
+                                        "required": [
+                                            "project"
+                                        ]
+                                    },
                                     "properties": {
-                                        "language": { "const": "docker" },
+                                        "language": {
+                                            "const": "docker"
+                                        },
                                         "remoteBuild": false
                                     }
                                 },
                                 {
-                                    "required": ["project"],
-                                    "not": { "required": ["image"] }
+                                    "required": [
+                                        "project"
+                                    ],
+                                    "not": {
+                                        "required": [
+                                            "image"
+                                        ]
+                                    }
                                 }
                             ],
                             "allOf": [
@@ -605,15 +682,25 @@
                                     "if": {
                                         "anyOf": [
                                             {
-                                                "required": ["language"],
+                                                "required": [
+                                                    "language"
+                                                ],
                                                 "properties": {
-                                                    "language": { "const": "docker" }
+                                                    "language": {
+                                                        "const": "docker"
+                                                    }
                                                 }
                                             },
                                             {
-                                                "required": ["docker"],
+                                                "required": [
+                                                    "docker"
+                                                ],
                                                 "properties": {
-                                                    "docker": { "required": ["path"] }
+                                                    "docker": {
+                                                        "required": [
+                                                            "path"
+                                                        ]
+                                                    }
                                                 }
                                             }
                                         ]
@@ -636,11 +723,18 @@
                         "comment": "Traditional non-container hosts - require project and disable container-specific properties",
                         "if": {
                             "properties": {
-                                "host": { "enum": ["springapp", "staticwebapp"] }
+                                "host": {
+                                    "enum": [
+                                        "springapp",
+                                        "staticwebapp"
+                                    ]
+                                }
                             }
                         },
                         "then": {
-                            "required": ["project"],
+                            "required": [
+                                "project"
+                            ],
                             "properties": {
                                 "image": false,
                                 "docker": false,
@@ -654,7 +748,9 @@
                         "comment": "App Service supports docker/image/env for containers but not Kubernetes-specific properties",
                         "if": {
                             "properties": {
-                                "host": { "const": "appservice" }
+                                "host": {
+                                    "const": "appservice"
+                                }
                             }
                         },
                         "then": {
@@ -668,7 +764,11 @@
                         "comment": "remoteBuild is only valid for function host",
                         "if": {
                             "properties": {
-                                "host": { "not": { "const": "function" } }
+                                "host": {
+                                    "not": {
+                                        "const": "function"
+                                    }
+                                }
                             }
                         },
                         "then": {
@@ -680,22 +780,32 @@
                     {
                         "comment": "imagePassthrough requires a service image and cannot be combined with docker.remoteBuild",
                         "if": {
-                            "required": ["docker"],
+                            "required": [
+                                "docker"
+                            ],
                             "properties": {
                                 "docker": {
-                                    "required": ["imagePassthrough"],
+                                    "required": [
+                                        "imagePassthrough"
+                                    ],
                                     "properties": {
-                                        "imagePassthrough": { "const": true }
+                                        "imagePassthrough": {
+                                            "const": true
+                                        }
                                     }
                                 }
                             }
                         },
                         "then": {
-                            "required": ["image"],
+                            "required": [
+                                "image"
+                            ],
                             "properties": {
                                 "docker": {
                                     "properties": {
-                                        "remoteBuild": { "const": false }
+                                        "remoteBuild": {
+                                            "const": false
+                                        }
                                     }
                                 }
                             }
@@ -749,20 +859,174 @@
                     }
                 },
                 "allOf": [
-                    { "if": { "properties": { "type": { "const": "host.appservice" } } }, "then": { "$ref": "#/definitions/appServiceResource" } },
-                    { "if": { "properties": { "type": { "const": "host.containerapp" }}}, "then": { "$ref": "#/definitions/containerAppResource" } },
-                    { "if": { "properties": { "type": { "const": "ai.openai.model" }}}, "then": { "$ref": "#/definitions/aiModelResource" } },
-                    { "if": { "properties": { "type": { "const": "ai.project" }}}, "then": { "$ref": "#/definitions/aiProjectResource" } },
-                    { "if": { "properties": { "type": { "const": "ai.search" }}}, "then": { "$ref": "#/definitions/aiSearchResource" } },
-                    { "if": { "properties": { "type": { "const": "db.postgres"  }}}, "then": { "$ref": "#/definitions/genericDbResource"} },
-                    { "if": { "properties": { "type": { "const": "db.mysql"  }}}, "then": { "$ref": "#/definitions/genericDbResource"} },
-                    { "if": { "properties": { "type": { "const": "db.redis"  }}}, "then": { "$ref": "#/definitions/genericDbResource"} },
-                    { "if": { "properties": { "type": { "const": "db.mongo"  }}}, "then": { "$ref": "#/definitions/genericDbResource"} },
-                    { "if": { "properties": { "type": { "const": "db.cosmos" }}}, "then": { "$ref": "#/definitions/cosmosDbResource"} },
-                    { "if": { "properties": { "type": { "const": "messaging.eventhubs" }}}, "then": { "$ref": "#/definitions/eventHubsResource" } },
-                    { "if": { "properties": { "type": { "const": "messaging.servicebus" }}}, "then": { "$ref": "#/definitions/serviceBusResource" } },
-                    { "if": { "properties": { "type": { "const": "storage"  }}}, "then": { "$ref": "#/definitions/storageAccountResource"} },
-                    { "if": { "properties": { "type": { "const": "keyvault" }}}, "then": { "$ref": "#/definitions/keyVaultResource"} }
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "host.appservice"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/appServiceResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "host.containerapp"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/containerAppResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "ai.openai.model"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/aiModelResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "ai.project"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/aiProjectResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "ai.search"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/aiSearchResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "db.postgres"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/genericDbResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "db.mysql"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/genericDbResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "db.redis"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/genericDbResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "db.mongo"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/genericDbResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "db.cosmos"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/cosmosDbResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "messaging.eventhubs"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/eventHubsResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "messaging.servicebus"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/serviceBusResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "storage"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/storageAccountResource"
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "type": {
+                                    "const": "keyvault"
+                                }
+                            }
+                        },
+                        "then": {
+                            "$ref": "#/definitions/keyVaultResource"
+                        }
+                    }
                 ]
             }
         },
@@ -1048,7 +1312,126 @@
             }
         }
     },
+    "allOf": [
+        {
+            "if": {
+                "required": [
+                    "layers"
+                ]
+            },
+            "then": {
+                "properties": {
+                    "infra": false,
+                    "services": false
+                }
+            }
+        }
+    ],
     "definitions": {
+        "layer": {
+            "type": "object",
+            "title": "Application layer",
+            "additionalProperties": false,
+            "required": [
+                "name"
+            ],
+            "anyOf": [
+                {
+                    "required": [
+                        "infra"
+                    ]
+                },
+                {
+                    "required": [
+                        "services"
+                    ]
+                }
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "title": "Layer name"
+                },
+                "infra": {
+                    "type": "array",
+                    "title": "Infrastructure entries in the layer",
+                    "items": {
+                        "$ref": "#/definitions/layerInfrastructure"
+                    }
+                },
+                "services": {
+                    "type": "object",
+                    "title": "Services in the layer",
+                    "additionalProperties": {
+                        "$ref": "#/properties/services/additionalProperties"
+                    }
+                }
+            }
+        },
+        "layerInfrastructure": {
+            "type": "object",
+            "title": "Infrastructure entry",
+            "additionalProperties": false,
+            "required": [
+                "name",
+                "provider"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "title": "Infrastructure entry name"
+                },
+                "provider": {
+                    "type": "string",
+                    "title": "Type of infrastructure provisioning provider",
+                    "pattern": "^[a-z0-9.]+$",
+                    "examples": [
+                        "bicep",
+                        "terraform",
+                        "microsoft.foundry"
+                    ]
+                },
+                "path": {
+                    "type": "string",
+                    "title": "Path to the provisioning templates"
+                },
+                "module": {
+                    "type": "string",
+                    "title": "Name of the default provisioning module"
+                },
+                "deploymentStacks": {
+                    "$ref": "#/definitions/deploymentStacksConfig"
+                },
+                "config": {
+                    "type": "object",
+                    "title": "Provider-specific configuration",
+                    "additionalProperties": true
+                },
+                "dependsOn": {
+                    "type": "array",
+                    "title": "Infrastructure entries this entry depends on",
+                    "uniqueItems": true,
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "hooks": {
+                    "type": "object",
+                    "title": "Infrastructure entry hooks",
+                    "additionalProperties": false,
+                    "properties": {
+                        "preprovision": {
+                            "$ref": "#/definitions/hooks"
+                        },
+                        "postprovision": {
+                            "$ref": "#/definitions/hooks"
+                        }
+                    }
+                }
+            }
+        },
         "hooks": {
             "anyOf": [
                 {
@@ -1221,9 +1604,16 @@
                 {
                     "if": {
                         "properties": {
-                            "kind": { "enum": ["js", "ts"] }
+                            "kind": {
+                                "enum": [
+                                    "js",
+                                    "ts"
+                                ]
+                            }
                         },
-                        "required": ["kind"]
+                        "required": [
+                            "kind"
+                        ]
                     },
                     "then": {
                         "properties": {
@@ -1236,9 +1626,13 @@
                 {
                     "if": {
                         "properties": {
-                            "kind": { "const": "python" }
+                            "kind": {
+                                "const": "python"
+                            }
                         },
-                        "required": ["kind"]
+                        "required": [
+                            "kind"
+                        ]
                     },
                     "then": {
                         "properties": {
@@ -1251,9 +1645,13 @@
                 {
                     "if": {
                         "properties": {
-                            "kind": { "const": "dotnet" }
+                            "kind": {
+                                "const": "dotnet"
+                            }
                         },
-                        "required": ["kind"]
+                        "required": [
+                            "kind"
+                        ]
                     },
                     "then": {
                         "properties": {
@@ -1266,9 +1664,16 @@
                 {
                     "if": {
                         "properties": {
-                            "kind": { "enum": ["sh", "pwsh"] }
+                            "kind": {
+                                "enum": [
+                                    "sh",
+                                    "pwsh"
+                                ]
+                            }
                         },
-                        "required": ["kind"]
+                        "required": [
+                            "kind"
+                        ]
                     },
                     "then": {
                         "properties": {
@@ -2021,7 +2426,12 @@
                     "items": {
                         "type": "object",
                         "additionalProperties": false,
-                        "required": ["name", "version", "format", "sku"],
+                        "required": [
+                            "name",
+                            "version",
+                            "format",
+                            "sku"
+                        ],
                         "properties": {
                             "name": {
                                 "type": "string",
@@ -2043,7 +2453,11 @@
                                 "title": "The SKU configuration for the AI model.",
                                 "description": "Required. The SKU details for the AI model.",
                                 "additionalProperties": false,
-                                "required": ["name", "usageName", "capacity"],
+                                "required": [
+                                    "name",
+                                    "usageName",
+                                    "capacity"
+                                ],
                                 "properties": {
                                     "name": {
                                         "type": "string",
@@ -2251,7 +2665,11 @@
                     "type": "string",
                     "title": "Package manager",
                     "description": "The package manager to use for dependency installation. Overrides auto-detection from lock files.",
-                    "enum": ["npm", "pnpm", "yarn"]
+                    "enum": [
+                        "npm",
+                        "pnpm",
+                        "yarn"
+                    ]
                 }
             }
         },

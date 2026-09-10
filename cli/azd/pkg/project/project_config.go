@@ -44,12 +44,6 @@ type ProjectConfig struct {
 	// AdditionalProperties captures any unknown YAML fields for extension support
 	AdditionalProperties map[string]any `yaml:",inline"`
 
-	// infraPresent is set if they have an 'infra' node at the top level of the file (used just to
-	// avoid a potential problem where infra: and layers: are present in a file). [Infra], above,
-	// can't distinguish between 'infra: {}' and "no infra attribute".
-	// Only used for validation.
-	infraPresent bool `yaml:"-"`
-
 	*ext.EventDispatcher[ProjectLifecycleEventArgs] `yaml:"-"`
 }
 

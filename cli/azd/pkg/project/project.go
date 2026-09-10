@@ -54,11 +54,6 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 			err,
 		)
 	}
-	var topLevelFields map[string]yaml.Node
-	if err := yaml.Unmarshal([]byte(yamlContent), &topLevelFields); err != nil {
-		return nil, fmt.Errorf("unable to inspect azure.yaml fields: %w", err)
-	}
-	_, projectConfig.infraPresent = topLevelFields["infra"]
 
 	if err := projectConfig.Validate(); err != nil {
 		return nil, err
@@ -295,6 +290,10 @@ func SaveConfig(ctx context.Context, config config.Config, projectFilePath strin
 
 // Saves the current instance back to the azure.yaml file
 func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath string) error {
+	if err := projectConfig.Validate(); err != nil {
+		return fmt.Errorf("file failed validation, before saving: %w", err)
+	}
+
 	// We store paths at runtime with os native separators, but want to normalize paths to use forward slashes
 	// before saving so `azure.yaml` is consistent across platforms. To avoid mutating the original projectConfig,
 	// we make a copy.

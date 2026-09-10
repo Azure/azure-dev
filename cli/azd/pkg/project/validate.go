@@ -5,6 +5,7 @@ package project
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -31,7 +32,8 @@ func (e *ConfigValidationError) Error() string {
 // All problems are collected and returned in a single error so the user can fix them at once.
 func validateParsedConfig(config *ProjectConfig) error {
 	var problems []string
-	if config.Layers != nil && (len(config.Services) > 0 || config.infraPresent) {
+	if config.Layers != nil &&
+		(len(config.Services) > 0 || !reflect.ValueOf(config.Infra).IsZero()) {
 		problems = append(problems, "'layers' cannot be combined with top-level 'infra' or 'services'")
 	}
 

@@ -1169,6 +1169,28 @@ func TestProjectConfigMapping(t *testing.T) {
 		}, protoConfig.Services["web"].Environment)
 	})
 
+	t.Run("project layers services", func(t *testing.T) {
+		projectConfig := &ProjectConfig{
+			Layers: LayerConfigs{
+				{
+					Name: "application",
+					Services: map[string]*ServiceConfig{
+						"api": {
+							Name:     "api",
+							Host:     ContainerAppTarget,
+							Language: ServiceLanguagePython,
+						},
+					},
+				},
+			},
+		}
+
+		var protoConfig *azdext.ProjectConfig
+		err := mapper.WithContext(t.Context()).Convert(projectConfig, &protoConfig)
+		require.NoError(t, err)
+		require.Contains(t, protoConfig.Services, "api")
+	})
+
 	t.Run("without envsubst", func(t *testing.T) {
 		projectConfig := &ProjectConfig{
 			ResourceGroupName: osutil.NewExpandableString("rg-${ENV}"),

@@ -4,6 +4,7 @@
 package project
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -66,29 +68,48 @@ func TestParseProjectLayersRejectsMixedFormats(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name  string
-		infra string
+		name     string
+		topLevel string
 	}{
-		{name: "configured infra", infra: "infra:\n  provider: bicep"},
-		{name: "empty infra", infra: "infra: {}"},
+		{name: "configured infra", topLevel: "infra:\n  provider: bicep"},
+		{name: "services", topLevel: "services:\n  worker:\n    host: containerapp\n    image: example/worker:latest"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := Parse(t.Context(), fmt.Sprintf(`name: mixed-project
-%s
+			yaml := fmt.Sprintf("name: mixed-project\n%s\n"+
+				"layers:\n"+
+				"  - name: application\n"+
+				"    services:\n"+
+				"      api:\n"+
+				"        host: containerapp\n"+
+				"        image: example/api:latest\n", test.topLevel)
+			_, err := Parse(t.Context(), yaml)
+
+			require.ErrorContains(t, err, "'layers' cannot be combined with top-level 'infra' or 'services'")
+		})
+	}
+}
+
+func TestParseProjectLayersAllowsEmptyTopLevelInfra(t *testing.T) {
+	t.Parallel()
+
+	// This is a really small edge case, but just documenting it here to establish that it was considered
+	// and it's not a big enough deal to worry about at this time - we just ignore it and use the layers they've
+	// configured.
+	_, err := Parse(t.Context(), `name: layered-project
+# OH NO - AN EMPTY LITERAL!
+infra: {}
 layers:
   - name: application
     services:
       api:
         host: containerapp
         image: example/api:latest
-`, test.infra))
+`)
 
-			require.ErrorContains(t, err, "'layers' cannot be combined with top-level 'infra' or 'services'")
-		})
-	}
+	require.NoError(t, err)
 }
 
 func TestParseProjectLayersRejectsInvalidContainers(t *testing.T) {
@@ -202,6 +223,112 @@ func TestSaveProjectLayersPreservesEmptyLayers(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ProjectFormatLayersV2, reloaded.Format())
 	require.Empty(t, reloaded.Layers)
+}
+
+func TestSaveProjectLayersRejectsMixedFormatsBeforeWrite(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(*ProjectConfig)
+	}{
+		{
+			name: "top-level services",
+			mutate: func(config *ProjectConfig) {
+				config.Services = map[string]*ServiceConfig{"api": {Name: "api"}}
+			},
+		},
+		{
+			name: "top-level infra",
+			mutate: func(config *ProjectConfig) {
+				config.Infra = provisioning.Options{Provider: provisioning.Bicep, Path: "infra"}
+			},
+		},
+		{
+			name: "top-level infra layers",
+			mutate: func(config *ProjectConfig) {
+				config.Infra = provisioning.Options{Layers: []provisioning.Options{
+					{Name: "shared", Provider: provisioning.Bicep, Path: "infra"},
+				}}
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "azure.yaml")
+			projectConfig := &ProjectConfig{
+				Name:   "layered-project",
+				Layers: LayerConfigs{},
+			}
+			require.NoError(t, Save(t.Context(), projectConfig, path))
+
+			before, err := os.ReadFile(path)
+			require.NoError(t, err)
+			test.mutate(projectConfig)
+
+			err = Save(t.Context(), projectConfig, path)
+			require.ErrorContains(t, err, "'layers' cannot be combined with top-level 'infra' or 'services'")
+			after, err := os.ReadFile(path)
+			require.NoError(t, err)
+			require.Equal(t, before, after)
+		})
+	}
+}
+
+func TestProjectLayersAlphaSchema(t *testing.T) {
+	t.Parallel()
+
+	rawSchema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "schemas", "alpha", "azure.yaml.json"))
+	require.NoError(t, err)
+	var schemaDocument map[string]any
+	require.NoError(t, json.Unmarshal(rawSchema, &schemaDocument))
+
+	const resourceURI = "mem://azure.yaml.json"
+	compiler := jsonschema.NewCompiler()
+	require.NoError(t, compiler.AddResource(resourceURI, schemaDocument))
+	repositoryRoot := filepath.Join("..", "..", "..", "..")
+	jsonGlob := filepath.Join(repositoryRoot, "cli", "azd", "extensions", "*", "schemas", "*.json")
+	extensionSchemas, err := filepath.Glob(jsonGlob)
+	require.NoError(t, err)
+	for _, schemaPath := range extensionSchemas {
+		rawExtensionSchema, err := os.ReadFile(schemaPath)
+		require.NoError(t, err)
+		var extensionSchema map[string]any
+		require.NoError(t, json.Unmarshal(rawExtensionSchema, &extensionSchema))
+		relativePath, err := filepath.Rel(repositoryRoot, schemaPath)
+		require.NoError(t, err)
+		require.NoError(t, compiler.AddResource(
+			"https://raw.githubusercontent.com/Azure/azure-dev/main/"+filepath.ToSlash(relativePath),
+			extensionSchema,
+		))
+	}
+	schema, err := compiler.Compile(resourceURI)
+	require.NoError(t, err)
+
+	layer := map[string]any{
+		"name": "application",
+		"infra": []any{map[string]any{
+			"name": "app-infra", "provider": "bicep", "path": "./infra/app",
+		}},
+		"services": map[string]any{
+			"api": map[string]any{"host": "containerapp", "project": "./src/api"},
+		},
+	}
+	require.NoError(t, schema.Validate(map[string]any{
+		"name":   "layered-project",
+		"layers": []any{layer},
+	}))
+
+	for _, incompatibleProperty := range []string{"infra", "services"} {
+		projectDocument := map[string]any{
+			"name":               "layered-project",
+			"layers":             []any{layer},
+			incompatibleProperty: map[string]any{},
+		}
+		require.Error(t, schema.Validate(projectDocument), incompatibleProperty)
+	}
 }
 
 func TestProjectFormatPreservesExplicitEmptyLayerCollections(t *testing.T) {

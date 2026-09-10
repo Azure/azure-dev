@@ -297,6 +297,7 @@ Reviewed first-party event contracts:
 
 | Extension | `extension.event` | Trigger | Extension attributes |
 |-----------|-------------------|---------|----------------------|
+| `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service; one event per distinct kind/harness classification in the invocation | `ext.agent.kind`: fixed enum `hosted`, `prompt`, `prompt-voice`, `workflow`, or `unknown`; `ext.agent.harness`: fixed enum `none`, `github_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; values contain no agent names or customer content |
 | `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; this precedes client availability, agent startup, and client launch | `ext.route`: fixed enum `inspector`, `playground`, or `suppressed`; suppression takes precedence |
 | `azure.ai.inspector` | `inspector.funnel.stage` | The Inspector SPA sends `setViewReady` after mounting | `ext.stage`: fixed enum `ui_ready`; `ext.outcome`: fixed enum `succeeded`; this does not indicate agent connection |
 

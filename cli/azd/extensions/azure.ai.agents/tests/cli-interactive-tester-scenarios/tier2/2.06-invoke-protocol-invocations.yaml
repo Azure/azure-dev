@@ -1,0 +1,32 @@
+# Tier 2 (cloud E2E) — unsupported `invoke --protocol invocations` validation.
+#
+# Precondition: 2.00-setup-deploy-shared-agent.yaml has been run successfully.
+#
+# The shared Basic Responses agent intentionally does not support invocations. This
+# scenario deterministically verifies that requesting the wrong protocol fails
+# cleanly. Positive invocations and session-memory semantics require a separate
+# invocations-capable deployed agent and are not covered by this scenario.
+name: "invoke-protocol-invocations-unsupported"
+command: "azd ai agent invoke --protocol invocations \"Remember the word 'banana'.\""
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:invoke", "serial-only"]
+requires: "tier2/2.00-setup-deploy-shared-agent.yaml"
+
+# Precondition guard: warn (do not hard-fail) if the shared agent is not deployed.
+pre:
+  - run: "test -f ~/working/azd-agents-shared/{shared_agent_name}/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 2.00-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+
+goals:
+  - "Run the invoke command with '--protocol invocations' against the deployed Basic Responses shared agent."
+  - "Confirm the command fails with a CLEAR protocol-mismatch error, not a 500, hang, or stack trace. A successful invocation is a failure because it means the shared-agent protocol contract has changed; do not continue into memory assertions."
+  - "Take a screenshot of the protocol-mismatch error."
+  - "Report a finding if the command succeeds or if the unsupported protocol produces an unclear error."
+
+post:
+  - run: "echo 'invoke-protocol-invocations complete; no local teardown required'"
+    cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+    name: "note: no local teardown required"
+    continue_on_error: true

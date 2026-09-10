@@ -1305,8 +1305,77 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 	require.Equal(t, "https://proj.azure.com", envStub.values["AGENT_MY_SVC_PROJECT_ENDPOINT"])
 	require.Equal(t, "AGENT_MY_SVC_VERSION", envStub.writes[0].Key)
 	require.Empty(t, envStub.writes[0].Value)
-	require.Equal(t, "AGENT_MY_SVC_VERSION", envStub.writes[len(envStub.writes)-1].Key)
-	require.Equal(t, "1.0.0", envStub.writes[len(envStub.writes)-1].Value)
+	require.Equal(t, "AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION", envStub.writes[1].Key)
+	require.Empty(t, envStub.writes[1].Value)
+	require.Equal(t, "AGENT_MY_SVC_VERSION", envStub.writes[len(envStub.writes)-2].Key)
+	require.Equal(t, "1.0.0", envStub.writes[len(envStub.writes)-2].Value)
+	require.Equal(
+		t,
+		"AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION",
+		envStub.writes[len(envStub.writes)-1].Key,
+	)
+	require.Equal(t, "1", envStub.writes[len(envStub.writes)-1].Value)
+}
+
+func TestRegisterVoiceAgentEnvironmentVariablesClearsProtocolSnapshot(t *testing.T) {
+	t.Parallel()
+
+	envStub := &stubEnvServer{values: map[string]string{
+		"AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION": "1",
+		"AGENT_MY_SVC_ENDPOINT":                   "https://old.example/agent",
+		"AGENT_MY_SVC_RESPONSES_ENDPOINT":         "https://old.example/responses",
+		"AGENT_MY_SVC_INVOCATIONS_ENDPOINT":       "https://old.example/invocations",
+		"AGENT_MY_SVC_A2A_ENDPOINT":               "https://old.example/a2a",
+		"AGENT_MY_SVC_INVOCATIONS_WS_ENDPOINT":    "wss://old.example/invocations_ws",
+	}}
+	client := newEnvTestClient(t, envStub)
+	provider := &AgentServiceTargetProvider{
+		azdClient: client,
+		env:       &azdext.Environment{Name: "test-env"},
+	}
+	agentObject := &agent_api.AgentObject{Name: "voice-agent"}
+	agentObject.Versions.Latest.Version = "2.0.0"
+	baseEndpoint := buildVoiceWSProtocolURL("https://proj.azure.com", agentObject.Name)
+
+	err := provider.registerVoiceAgentEnvironmentVariables(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "my-svc"},
+		"https://proj.azure.com/",
+		baseEndpoint,
+		agentObject,
+		nil,
+	)
+	require.NoError(t, err)
+
+	require.Equal(t, "1", envStub.values["AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION"])
+	require.Equal(t, "voice-agent", envStub.values["AGENT_MY_SVC_NAME"])
+	require.Equal(t, "2.0.0", envStub.values["AGENT_MY_SVC_VERSION"])
+	require.Equal(t, "https://proj.azure.com", envStub.values["AGENT_MY_SVC_PROJECT_ENDPOINT"])
+	require.Equal(t, baseEndpoint, envStub.values["AGENT_MY_SVC_ENDPOINT"])
+	for _, dp := range displayableProtocols {
+		key := fmt.Sprintf("AGENT_MY_SVC_%s_ENDPOINT", dp.EnvSuffix)
+		require.Empty(t, envStub.values[key], "stale protocol endpoint %s", key)
+	}
+
+	require.Equal(t, "AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION", envStub.writes[0].Key)
+	require.Empty(t, envStub.writes[0].Value)
+	for i, dp := range displayableProtocols {
+		require.Equal(
+			t,
+			fmt.Sprintf("AGENT_MY_SVC_%s_ENDPOINT", dp.EnvSuffix),
+			envStub.writes[i+1].Key,
+		)
+		require.Empty(t, envStub.writes[i+1].Value)
+	}
+	baseClearIndex := len(displayableProtocols) + 1
+	require.Equal(t, "AGENT_MY_SVC_ENDPOINT", envStub.writes[baseClearIndex].Key)
+	require.Empty(t, envStub.writes[baseClearIndex].Value)
+	require.Equal(
+		t,
+		"AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION",
+		envStub.writes[len(envStub.writes)-1].Key,
+	)
+	require.Equal(t, "1", envStub.writes[len(envStub.writes)-1].Value)
 }
 
 func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {
@@ -1325,6 +1394,7 @@ func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {
 	}
 	protocols := []agent_yaml.ProtocolVersionRecord{
 		{Protocol: "responses", Version: "1.0.0"},
+		{Protocol: "a2a", Version: "1.0.0"},
 	}
 	agentVersion := &agent_api.AgentVersionObject{
 		Name:    "my-agent",
@@ -1344,8 +1414,78 @@ func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Trailing slash must not produce a double-slash in the base endpoint
+	// Trailing slash must not produce double slashes.
 	require.Equal(t, "https://proj.azure.com/agents/my-agent/versions/2.0.0", envStub.values["AGENT_MY_SVC_ENDPOINT"])
+	require.Equal(
+		t,
+		"https://proj.azure.com/agents/my-agent/endpoint/protocols/openai/responses?api-version=v1",
+		envStub.values["AGENT_MY_SVC_RESPONSES_ENDPOINT"],
+	)
+	require.Equal(
+		t,
+		"https://proj.azure.com/agents/my-agent/endpoint/protocols/a2a?api-version=v1",
+		envStub.values["AGENT_MY_SVC_A2A_ENDPOINT"],
+	)
+}
+
+func TestRegisterAgentEnvironmentVariables_ClearsRemovedProtocols(t *testing.T) {
+	t.Parallel()
+
+	envStub := &stubEnvServer{}
+	provider := &AgentServiceTargetProvider{
+		azdClient: newEnvTestClient(t, envStub),
+		env:       &azdext.Environment{Name: "test-env"},
+	}
+	serviceConfig := &azdext.ServiceConfig{Name: "my-svc"}
+	azdEnv := map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.azure.com",
+	}
+	agentVersion := &agent_api.AgentVersionObject{
+		Name:    "my-agent",
+		Version: "1.0.0",
+	}
+
+	err := provider.registerAgentEnvironmentVariables(
+		t.Context(),
+		azdEnv,
+		serviceConfig,
+		agentVersion,
+		[]agent_yaml.ProtocolVersionRecord{
+			{Protocol: "responses", Version: "1.0.0"},
+			{Protocol: "invocations", Version: "1.0.0"},
+		},
+		"",
+		"",
+		false,
+		ActivityProfile{},
+		nil,
+	)
+	require.NoError(t, err)
+
+	err = provider.registerAgentEnvironmentVariables(
+		t.Context(),
+		azdEnv,
+		serviceConfig,
+		agentVersion,
+		[]agent_yaml.ProtocolVersionRecord{
+			{Protocol: "a2a", Version: "1.0.0"},
+		},
+		"",
+		"",
+		false,
+		ActivityProfile{},
+		nil,
+	)
+	require.NoError(t, err)
+
+	require.Empty(t, envStub.values["AGENT_MY_SVC_RESPONSES_ENDPOINT"])
+	require.Empty(t, envStub.values["AGENT_MY_SVC_INVOCATIONS_ENDPOINT"])
+	require.Empty(t, envStub.values["AGENT_MY_SVC_INVOCATIONS_WS_ENDPOINT"])
+	require.Equal(
+		t,
+		"https://proj.azure.com/agents/my-agent/endpoint/protocols/a2a?api-version=v1",
+		envStub.values["AGENT_MY_SVC_A2A_ENDPOINT"],
+	)
 }
 
 func TestRegisterAgentEnvironmentVariables_PersistsActivityBotName(t *testing.T) {
@@ -1659,6 +1799,14 @@ func TestDisplayableProtocolFor(t *testing.T) {
 			wantURLScheme:   "https",
 		},
 		{
+			name:            "a2a",
+			protocol:        "a2a",
+			wantProtocol:    agent_api.AgentProtocolA2A,
+			wantEnvSuffix:   "A2A",
+			wantURLContains: "/agents/my-agent/endpoint/protocols/a2a?api-version=v1",
+			wantURLScheme:   "https",
+		},
+		{
 			name:            "invocations_ws",
 			protocol:        "invocations_ws",
 			wantProtocol:    agent_api.AgentProtocolInvocationsWS,
@@ -1734,6 +1882,18 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 				{
 					Protocol: "invocations",
 					URL:      baseURL + "invocations?api-version=v1",
+				},
+			},
+		},
+		{
+			name: "single a2a protocol",
+			protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "a2a", Version: "1.0.0"},
+			},
+			expected: []protocolEndpointInfo{
+				{
+					Protocol: "a2a",
+					URL:      baseURL + "a2a?api-version=v1",
 				},
 			},
 		},

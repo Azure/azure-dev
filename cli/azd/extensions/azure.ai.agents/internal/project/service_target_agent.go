@@ -80,6 +80,11 @@ var displayableProtocols = []displayableProtocolEntry{
 		BuildURL:  buildInvocationsProtocolURL,
 	},
 	{
+		Protocol:  agent_api.AgentProtocolA2A,
+		EnvSuffix: "A2A",
+		URLPath:   "a2a",
+	},
+	{
 		Protocol:  agent_api.AgentProtocolInvocationsWS,
 		EnvSuffix: "INVOCATIONS_WS",
 		BuildURL:  buildInvocationsWSProtocolURL,
@@ -2497,7 +2502,6 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 		}
 	}
 
-	serviceKey := p.getServiceKey(serviceConfig.Name)
 	agentObject, deployOp, err := p.deployVoiceAgentRemote(
 		ctx, agentClient, request, azdEnv, progress,
 	)
@@ -2518,31 +2522,15 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	// Persist NAME first and ENDPOINT last. ENDPOINT is used as the voice deploy
 	// completion marker by other commands, so avoid writing it before NAME.
 	baseEndpoint := buildVoiceWSProtocolURL(projectEndpoint, agentObject.Name)
-	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
-	versionValue := agentObject.Versions.Latest.Version
-	endpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
-	if _, setErr := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: p.env.Name,
-		Key:     endpointKey,
-		Value:   "",
-	}); setErr != nil {
-		return nil, fmt.Errorf("clearing voice agent environment variable %s: %w", endpointKey, setErr)
-	}
-	for _, envVar := range []struct{ key, value string }{
-		{fmt.Sprintf("AGENT_%s_NAME", serviceKey), agentObject.Name},
-		{versionKey, versionValue},
-		{fmt.Sprintf("AGENT_%s_PROJECT_ENDPOINT", serviceKey), strings.TrimRight(projectEndpoint, "/")},
-		{fmt.Sprintf("AGENT_%s_VOICE_TARGET_NAME", serviceKey), hostedVoiceTargetName(hostedTarget)},
-		{fmt.Sprintf("AGENT_%s_VOICE_TARGET_VERSION", serviceKey), hostedVoiceTargetVersion(hostedTarget)},
-		{endpointKey, baseEndpoint},
-	} {
-		if _, setErr := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-			EnvName: p.env.Name,
-			Key:     envVar.key,
-			Value:   envVar.value,
-		}); setErr != nil {
-			return nil, fmt.Errorf("registering voice agent environment variable %s: %w", envVar.key, setErr)
-		}
+	if err := p.registerVoiceAgentEnvironmentVariables(
+		ctx,
+		serviceConfig,
+		projectEndpoint,
+		baseEndpoint,
+		agentObject,
+		hostedTarget,
+	); err != nil {
+		return nil, err
 	}
 
 	artifacts := []*azdext.Artifact{{
@@ -2557,6 +2545,64 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	}}
 
 	return &azdext.ServiceDeployResult{Artifacts: artifacts}, nil
+}
+
+func (p *AgentServiceTargetProvider) registerVoiceAgentEnvironmentVariables(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+	projectEndpoint string,
+	baseEndpoint string,
+	agentObject *agent_api.AgentObject,
+	hostedTarget *hostedVoiceTarget,
+) error {
+	serviceKey := p.getServiceKey(serviceConfig.Name)
+	protocolVersionKey := envkey.AgentProtocolEndpointsVersion(serviceConfig.Name)
+	endpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
+
+	keysToClear := []string{protocolVersionKey}
+	for _, dp := range displayableProtocols {
+		keysToClear = append(
+			keysToClear,
+			fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, dp.EnvSuffix),
+		)
+	}
+	keysToClear = append(keysToClear, endpointKey)
+	for _, key := range keysToClear {
+		if _, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     key,
+			Value:   "",
+		}); err != nil {
+			return fmt.Errorf("clearing voice agent environment variable %s: %w", key, err)
+		}
+	}
+
+	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
+	for _, envVar := range []struct{ key, value string }{
+		{fmt.Sprintf("AGENT_%s_NAME", serviceKey), agentObject.Name},
+		{versionKey, agentObject.Versions.Latest.Version},
+		{fmt.Sprintf("AGENT_%s_PROJECT_ENDPOINT", serviceKey), strings.TrimRight(projectEndpoint, "/")},
+		{fmt.Sprintf("AGENT_%s_VOICE_TARGET_NAME", serviceKey), hostedVoiceTargetName(hostedTarget)},
+		{fmt.Sprintf("AGENT_%s_VOICE_TARGET_VERSION", serviceKey), hostedVoiceTargetVersion(hostedTarget)},
+		{endpointKey, baseEndpoint},
+	} {
+		if _, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     envVar.key,
+			Value:   envVar.value,
+		}); err != nil {
+			return fmt.Errorf("registering voice agent environment variable %s: %w", envVar.key, err)
+		}
+	}
+
+	if _, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: p.env.Name,
+		Key:     protocolVersionKey,
+		Value:   "1",
+	}); err != nil {
+		return fmt.Errorf("publishing voice agent protocol metadata: %w", err)
+	}
+	return nil
 }
 
 type telephonyBindingClient interface {
@@ -3580,6 +3626,7 @@ func agentInvocationEndpoints(
 	agentName string,
 	protocols []agent_yaml.ProtocolVersionRecord,
 ) []protocolEndpointInfo {
+	projectEndpoint = strings.TrimRight(projectEndpoint, "/")
 	var endpoints []protocolEndpointInfo
 	for _, p := range protocols {
 		dp := displayableProtocolFor(p.Protocol)
@@ -3666,7 +3713,8 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 	progress azdext.ProgressReporter,
 ) (*agent_api.AgentVersionObject, error) {
 	const pollInterval = 10 * time.Second
-	const pollTimeout = 5 * time.Minute
+	// Code agent activation can take several minutes in a busy region.
+	const pollTimeout = 8 * time.Minute
 	const confirmCount = 2 // consecutive times a terminal status must be seen
 
 	deadline := time.Now().Add(pollTimeout)
@@ -3903,8 +3951,10 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 		identityClientID = strings.TrimSpace(agentVersionResponse.InstanceIdentity.ClientID)
 		identityPrincipalID = strings.TrimSpace(agentVersionResponse.InstanceIdentity.PrincipalID)
 	}
+	protocolVersionKey := envkey.AgentProtocolEndpointsVersion(serviceConfig.Name)
 	envVars := []azdext.SetEnvRequest{
 		{EnvName: p.env.Name, Key: versionKey, Value: ""},
+		{EnvName: p.env.Name, Key: protocolVersionKey, Value: ""},
 		{EnvName: p.env.Name, Key: fmt.Sprintf("AGENT_%s_NAME", serviceKey), Value: agentVersionResponse.Name},
 		{EnvName: p.env.Name, Key: envkey.AgentInstanceIdentityClientID(serviceConfig.Name), Value: identityClientID},
 		{EnvName: p.env.Name, Key: envkey.AgentInstanceIdentityPrincipalID(serviceConfig.Name), Value: identityPrincipalID},
@@ -3918,18 +3968,35 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	)})
 
 	endpoints := agentInvocationEndpoints(
-		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
+		projectEndpoint,
 		agentVersionResponse.Name,
 		protocols,
 	)
+	endpointValues := make(map[agent_api.AgentProtocol]string, len(endpoints))
 	for _, ep := range endpoints {
-		suffix := strings.ToUpper(ep.Protocol)
-		key := fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, suffix)
-		envVars = append(envVars, azdext.SetEnvRequest{EnvName: p.env.Name, Key: key, Value: ep.URL})
+		endpointValues[agent_api.AgentProtocol(ep.Protocol)] = ep.URL
+	}
+	// Set every known protocol key on each deployment. Empty values clear
+	// endpoints from a previous deployment when the protocol is removed.
+	for _, dp := range displayableProtocols {
+		key := fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, dp.EnvSuffix)
+		envVars = append(envVars, azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     key,
+			Value:   endpointValues[dp.Protocol],
+		})
 	}
 	envVars = append(envVars,
-		azdext.SetEnvRequest{EnvName: p.env.Name, Key: envkey.AgentProjectEndpoint(serviceConfig.Name), Value: projectEndpoint},
-		azdext.SetEnvRequest{EnvName: p.env.Name, Key: versionKey, Value: agentVersionResponse.Version},
+		azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     envkey.AgentProjectEndpoint(serviceConfig.Name),
+			Value:   projectEndpoint,
+		},
+		azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     versionKey,
+			Value:   agentVersionResponse.Version,
+		},
 	)
 	if activityBotName != "" {
 		envVars = append(envVars,
@@ -3960,6 +4027,11 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 			})
 		}
 	}
+	envVars = append(envVars, azdext.SetEnvRequest{
+		EnvName: p.env.Name,
+		Key:     protocolVersionKey,
+		Value:   "1",
+	})
 
 	for i := range envVars {
 		_, err := p.azdClient.Environment().SetValue(ctx, &envVars[i])

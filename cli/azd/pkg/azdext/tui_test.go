@@ -277,6 +277,15 @@ func TestDetectAgentEnv_RejectsIncorrectClaudeMarkers(t *testing.T) {
 	}
 }
 
+func TestDetectAgentEnv_RejectsIncorrectAntigravityMarker(t *testing.T) {
+	clearAgentEnv(t)
+	t.Setenv("ANTIGRAVITY_AGENT", "true")
+
+	if detectAgentEnv() {
+		t.Error("detectAgentEnv() incorrectly accepted ANTIGRAVITY_AGENT=true")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

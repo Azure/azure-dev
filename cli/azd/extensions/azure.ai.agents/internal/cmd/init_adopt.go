@@ -20,6 +20,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 
@@ -895,6 +896,13 @@ func readManifestContentForInitDetection(
 	if content, ok := readManifestContentForPeek(ctx, manifestPointer, httpClient); ok {
 		return content, true
 	}
+	cachedContent, cached := readCachedTemplateManifest(manifestPointer)
+	if cached {
+		return cachedContent, true
+	}
+	if templateCacheRoot() != "" {
+		return nil, false
+	}
 	if azdClient == nil || !strings.Contains(manifestPointer, "://") {
 		return nil, false
 	}
@@ -1416,6 +1424,7 @@ func stageRemoteAzureYaml(
 	fmt.Println(output.WithGrayFormat("Downloading sample from GitHub..."))
 
 	triedPublicDownload := false
+	var publicDownloadErr error
 	if urlInfo := parseGitHubUrlNaive(pointer); urlInfo != nil {
 		triedPublicDownload = true
 		dirPath := parentDirOf(urlInfo.FilePath)
@@ -1428,14 +1437,23 @@ func stageRemoteAzureYaml(
 				return normalizeErr
 			}
 			if hasAzureYaml {
+				if cacheErr := refreshTemplateCache(pointer, staging); cacheErr != nil {
+					emitTemplateCacheWarning(fmt.Sprintf("Unable to refresh the sample cache: %s", cacheErr))
+				}
 				return nil
 			}
+			publicDownloadErr = errors.New("downloaded sample did not contain azure.yaml")
+		} else {
+			publicDownloadErr = err
 		}
 	}
 
 	if triedPublicDownload {
 		if err := clearStagingDirectory(staging); err != nil {
 			return err
+		}
+		if publicDownloadErr != nil && templateCacheRoot() != "" {
+			return useCachedTemplateOnDownloadError(pointer, staging, publicDownloadErr)
 		}
 	}
 
@@ -1619,6 +1637,13 @@ func applyDeployModeToAdoptedProjectWithSources(
 	projectNeedsACR := false
 	var configuredSourceContainers []string
 	for _, agent := range agentServices {
+		kind, err := adoptedAgentKind(agent.svc, resp.GetProject().GetPath())
+		if err != nil {
+			return false, nil, err
+		}
+		if kind != "" && kind != "hosted" {
+			continue
+		}
 		hadDockerConfig := adoptedServiceHasDocker(agent.svc)
 		serviceNeedsACR, err := applyDeployModeToService(
 			ctx,
@@ -1637,6 +1662,14 @@ func applyDeployModeToAdoptedProjectWithSources(
 		}
 	}
 	return projectNeedsACR, configuredSourceContainers, nil
+}
+
+func adoptedAgentKind(svc *azdext.ServiceConfig, projectRoot string) (string, error) {
+	kind, err := agentkind.Kind(svc, projectRoot, "")
+	if err != nil {
+		return "", fmt.Errorf("resolving adopted agent kind for service %q: %w", svc.GetName(), err)
+	}
+	return kind, nil
 }
 
 func finalizeAdoptedSourceContainerNetwork(

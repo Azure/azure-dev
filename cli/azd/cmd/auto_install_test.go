@@ -1445,6 +1445,25 @@ func TestParseGlobalFlags_AgentDetection(t *testing.T) {
 			expectedNoPrompt: false,
 		},
 		{
+			name:             "Antigravity detached invocation enables no-prompt",
+			args:             []string{"up"},
+			envVars:          map[string]string{"ANTIGRAVITY_AGENT": "1"},
+			expectedNoPrompt: true,
+		},
+		{
+			name:             "Antigravity attached invocation remains interactive",
+			args:             []string{"up"},
+			envVars:          map[string]string{"ANTIGRAVITY_AGENT": "1"},
+			terminal:         true,
+			expectedNoPrompt: false,
+		},
+		{
+			name:             "Antigravity honors explicit --no-prompt=false",
+			args:             []string{"--no-prompt=false", "up"},
+			envVars:          map[string]string{"ANTIGRAVITY_AGENT": "1"},
+			expectedNoPrompt: false,
+		},
+		{
 			name:             "agent detected but --no-prompt=false explicitly set",
 			args:             []string{"--no-prompt=false", "up"},
 			envVars:          map[string]string{"CLAUDECODE": "1"},

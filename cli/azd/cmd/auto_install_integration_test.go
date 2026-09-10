@@ -209,6 +209,21 @@ func TestAgentDetectionIntegration(t *testing.T) {
 			description:      "An inherited Claude Code marker should not disable prompts in a terminal",
 		},
 		{
+			name:             "Antigravity detached invocation enables no-prompt",
+			args:             []string{"version"},
+			envVars:          map[string]string{"ANTIGRAVITY_AGENT": "1"},
+			expectedNoPrompt: true,
+			description:      "A detached Antigravity invocation should automatically enable no-prompt",
+		},
+		{
+			name:             "Antigravity attached invocation remains interactive",
+			args:             []string{"version"},
+			envVars:          map[string]string{"ANTIGRAVITY_AGENT": "1"},
+			terminal:         true,
+			expectedNoPrompt: false,
+			description:      "An attached Antigravity invocation should preserve prompting",
+		},
+		{
 			name:             "Codex enables no-prompt automatically",
 			args:             []string{"deploy"},
 			envVars:          map[string]string{"CODEX_THREAD_ID": "thread-id"},
@@ -325,6 +340,8 @@ func TestAgentDetectionIntegration(t *testing.T) {
 // runs inside a CI/CD provider.
 func clearAgentEnvVarsForTest(t *testing.T) {
 	envVarsToUnset := []string{
+		// Antigravity CLI
+		"ANTIGRAVITY_AGENT", "ANTIGRAVITY_CONVERSATION_ID",
 		// GitHub Copilot hosts
 		"AI_AGENT",
 		// Claude Code

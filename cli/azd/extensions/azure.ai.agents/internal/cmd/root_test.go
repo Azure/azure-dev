@@ -68,6 +68,7 @@ func TestVoicePublicPreviewHelp(t *testing.T) {
 			contains: []string{
 				"--kind", "--voice", "--kind prompt-voice", "azure.yaml", "azd provision", "azd deploy",
 				"managed", "self_deployed", "hosted_agent", "targetAgent", "audio input/output",
+				"conversationEngine.type", "conversationEngine.name", "remains supported for compatibility",
 				"structured inputs", "tools", "greeting", "avatar", "handoff", "telephony", "acs", "twilio",
 				"For existing voice services, edit azure.yaml",
 			},

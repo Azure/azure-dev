@@ -19,6 +19,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/envkey"
+	"azureaiagent/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -146,6 +147,56 @@ func expandPromptAgentPolicies(managed *agent_yaml.PromptAgent, env map[string]s
 		policy.RaiPolicyName = expanded
 	}
 	return nil
+}
+
+// expandPromptAgentTools resolves ${VAR} references in pass-through tool
+// definitions while preserving Foundry server-side ${{...}} expressions.
+func expandPromptAgentTools(managed *agent_yaml.PromptAgent, env map[string]string) error {
+	for i, tool := range managed.Tools {
+		expanded, err := expandPromptAgentToolValue(tool, env, fmt.Sprintf("tools[%d]", i))
+		if err != nil {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				err.Error(),
+				"set the referenced value with `azd env set <name> <value>`, or replace it with a literal",
+			)
+		}
+		managed.Tools[i] = expanded
+	}
+	return nil
+}
+
+func expandPromptAgentToolValue(value any, env map[string]string, path string) (any, error) {
+	switch typed := value.(type) {
+	case string:
+		expanded, err := synthesis.ResolveEnvironmentValue(typed, env)
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand %s: %w", path, err)
+		}
+		return expanded, nil
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, item := range typed {
+			expanded, err := expandPromptAgentToolValue(item, env, path+"."+key)
+			if err != nil {
+				return nil, err
+			}
+			out[key] = expanded
+		}
+		return out, nil
+	case []any:
+		out := make([]any, len(typed))
+		for i, item := range typed {
+			expanded, err := expandPromptAgentToolValue(item, env, fmt.Sprintf("%s[%d]", path, i))
+			if err != nil {
+				return nil, err
+			}
+			out[i] = expanded
+		}
+		return out, nil
+	default:
+		return value, nil
+	}
 }
 
 // raiPolicyEnvVarName is the variable `azd ai agent init` records the resolved
@@ -376,6 +427,9 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	// resolve them against the azd environment before anything validates the
 	// shape of the value.
 	if err := expandPromptAgentPolicies(&managed, env); err != nil {
+		return nil, err
+	}
+	if err := expandPromptAgentTools(&managed, env); err != nil {
 		return nil, err
 	}
 

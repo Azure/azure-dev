@@ -148,11 +148,14 @@ Call the protocol's cancel endpoint for the explicit or current ID, without chan
 
 Within `internal/cmd/`:
 
-- `invoke.go`: common invoke command, flags, context, and protocol dispatch.
+- `invoke.go`: common invoke command, flags, context, dispatch, and existing protocol invoke implementations.
 - `invocations.go`: shared lifecycle command group, flags, protocol/ID selection, and dispatch.
-- `invoke_response.go`: Responses create and lifecycle implementations, SSE, output, and ID storage.
-- `invoke_invocation.go`: Invocations-protocol create and lifecycle implementations, polling, output, and ID storage.
+- `invoke_response.go`: new Responses-specific lifecycle, identity, and guidance helpers.
+- `invoke_invocation.go`: new Invocations-protocol lifecycle and ID-storage helpers.
+- `invoke_responses_stream.go` and `invoke_response_store.go`: existing Responses parser and state-store locations, with the simplified behavior retained.
 - `agent_endpoint.go`: shared endpoint parsing and protocol invoke URL construction.
+
+Existing code and tests stay in their original files where possible to minimize review-only diff. New protocol-specific code goes in `invoke_<protocol>.go`; this does not require moving existing invoke or polling implementations.
 
 No `responses` command group or separate `responses.go` remains. No generic capability framework is required; explicit protocol dispatch is sufficient.
 

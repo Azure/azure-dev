@@ -32,9 +32,24 @@ type KeyPressEventArgs struct {
 	Cancelled bool
 }
 
+type FileReader interface {
+	io.Reader
+	Fd() uintptr
+}
+
+type FileWriter interface {
+	io.Writer
+	Fd() uintptr
+}
+
 type InputConfig struct {
 	InitialValue   string
 	IgnoreHintKeys bool
+
+	// Use these variables if you want to do unit testing.
+	Stdin  FileReader // Optional; defaults to os.Stdin when nil.
+	Stdout FileWriter // Optional; defaults to os.Stdout when nil.
+	Stderr io.Writer  // Optional; defaults to os.Stderr when nil.
 }
 
 // NewInput creates a new Input instance.
@@ -63,6 +78,18 @@ func (i *Input) ReadInput(ctx context.Context, config *InputConfig, handler KeyP
 	if config == nil {
 		config = &InputConfig{}
 	}
+	stdin := config.Stdin
+	if stdin == nil {
+		stdin = os.Stdin
+	}
+	stdout := config.Stdout
+	if stdout == nil {
+		stdout = os.Stdout
+	}
+	stderr := config.Stderr
+	if stderr == nil {
+		stderr = os.Stderr
+	}
 
 	// Create a cancellable context to avoid leaking goroutines.
 	ctx, cancel := context.WithCancel(ctx)
@@ -89,7 +116,7 @@ func (i *Input) ReadInput(ctx context.Context, config *InputConfig, handler KeyP
 		signal.Stop(signalChan)
 	}()
 
-	stdio := surveyterm.Stdio{In: os.Stdin, Out: os.Stdout, Err: os.Stderr}
+	stdio := surveyterm.Stdio{In: stdin, Out: stdout, Err: stderr}
 	rr := surveyterm.NewRuneReader(stdio)
 
 	// Start listening for key presses
@@ -109,7 +136,7 @@ func (i *Input) ReadInput(ctx context.Context, config *InputConfig, handler KeyP
 		// escape sequences. The survey library's RuneReader expects
 		// VK codes for arrow key dispatch. RestoreTermMode() will
 		// restore the original console mode when input completes.
-		if err := disableVirtualTerminalInput(os.Stdin); err != nil {
+		if err := disableVirtualTerminalInput(stdin); err != nil {
 			// Non-fatal: worst case is the pre-existing ANSI leak.
 			_ = err
 		}

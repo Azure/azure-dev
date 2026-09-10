@@ -12,7 +12,6 @@ import (
 	"time"
 
 	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
-	"github.com/mattn/go-isatty"
 	"github.com/stretchr/testify/require"
 )
 
@@ -219,7 +218,6 @@ func TestDisableVirtualTerminalInput_Noop(t *testing.T) {
 }
 
 func TestReadInput_SetTermModeErrorOnNonTTY(t *testing.T) {
-	// Not parallel: mutates os.Stdin.
 	r, w, err := os.Pipe()
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -227,14 +225,10 @@ func TestReadInput_SetTermModeErrorOnNonTTY(t *testing.T) {
 		_ = w.Close()
 	})
 
-	oldStdin := os.Stdin
-	os.Stdin = r
-	t.Cleanup(func() { os.Stdin = oldStdin })
-
 	in := NewInput(io.Discard)
 	done := make(chan error, 1)
 	go func() {
-		done <- in.ReadInput(t.Context(), nil, func(args *KeyPressEventArgs) (bool, error) {
+		done <- in.ReadInput(t.Context(), &InputConfig{Stdin: r}, func(args *KeyPressEventArgs) (bool, error) {
 			return true, nil
 		})
 	}()
@@ -252,7 +246,6 @@ func TestReadInput_SetTermModeErrorOnNonTTY(t *testing.T) {
 }
 
 func TestReadInput_NonNilConfig(t *testing.T) {
-	// Not parallel: mutates os.Stdin.
 	r, w, err := os.Pipe()
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -260,13 +253,9 @@ func TestReadInput_NonNilConfig(t *testing.T) {
 		_ = w.Close()
 	})
 
-	oldStdin := os.Stdin
-	os.Stdin = r
-	t.Cleanup(func() { os.Stdin = oldStdin })
-
 	in := NewInput(io.Discard)
 	done := make(chan error, 1)
-	cfg := &InputConfig{InitialValue: "seed", IgnoreHintKeys: true}
+	cfg := &InputConfig{InitialValue: "seed", IgnoreHintKeys: true, Stdin: r}
 	go func() {
 		done <- in.ReadInput(t.Context(), cfg, func(args *KeyPressEventArgs) (bool, error) {
 			return false, nil
@@ -285,9 +274,12 @@ func TestReadInput_NonNilConfig(t *testing.T) {
 }
 
 func TestReadInput_ContextCancellationReturnsErrCancelled(t *testing.T) {
-	if isatty.IsTerminal(os.Stdin.Fd()) || isatty.IsCygwinTerminal(os.Stdin.Fd()) {
-		t.Skip("requires non-TTY stdin to avoid terminal mode side effects")
-	}
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = r.Close()
+		_ = w.Close()
+	})
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // pre-cancel
@@ -296,7 +288,7 @@ func TestReadInput_ContextCancellationReturnsErrCancelled(t *testing.T) {
 	done := make(chan error, 1)
 	handlerCalled := make(chan struct{}, 1)
 	go func() {
-		done <- in.ReadInput(ctx, nil, func(args *KeyPressEventArgs) (bool, error) {
+		done <- in.ReadInput(ctx, &InputConfig{Stdin: r}, func(args *KeyPressEventArgs) (bool, error) {
 			select {
 			case handlerCalled <- struct{}{}:
 			default:

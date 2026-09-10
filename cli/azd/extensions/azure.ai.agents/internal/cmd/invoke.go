@@ -283,6 +283,13 @@ be combined with --timeout.`,
 			action.clientHeaders = clientHeaders
 
 			if flags.resumable {
+				if flags.protocol != "" && agent_api.AgentProtocol(flags.protocol) != agent_api.AgentProtocolResponses {
+					return exterrors.Validation(
+						exterrors.CodeInvalidParameter,
+						fmt.Sprintf("--resumable is not supported with the %s protocol", flags.protocol),
+						"use a deployed Responses agent or remove --resumable",
+					)
+				}
 				if cmd.Flags().Changed("timeout") {
 					return exterrors.Validation(
 						exterrors.CodeConflictingArguments,
@@ -476,6 +483,26 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	if a.flags.inputFile != "" {
 		if _, _, err := a.resolveBody(); err != nil {
 			return err
+		}
+	}
+
+	// Prompt (kind=managed) agents use a workspace-rooted Responses API on the
+	// harness. When the resolved azure.ai.agent service is a prompt agent we
+	// route there before the hosted protocol resolution — unless the user
+	// explicitly targeted a local server (--local) or a full deployed agent
+	// endpoint (--agent-endpoint), in which case we honor that intent.
+	if a.endpoint == nil && !a.flags.local {
+		azdClient, err := azdext.NewAzdClient()
+		if err != nil {
+			return fmt.Errorf("failed to create azd client: %w", err)
+		}
+		defer azdClient.Close()
+		pctx, isPrompt, pErr := resolvePromptAgentService(ctx, azdClient, a.flags.name, a.noPrompt)
+		if pErr != nil {
+			return fmt.Errorf("failed to resolve prompt agent service: %w", pErr)
+		}
+		if isPrompt {
+			return a.runPromptInvoke(ctx, pctx)
 		}
 	}
 

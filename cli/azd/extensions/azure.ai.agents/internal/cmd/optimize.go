@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"time"
@@ -507,7 +508,8 @@ func (a *OptimizeAction) submitJob(
 		}
 	}
 
-	optimizeReq, warnings, err := cfg.ToRequest()
+	requestConfig := optimizeRequestConfig(cfg, a.promptAgent)
+	optimizeReq, warnings, err := requestConfig.ToRequest()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to build optimization request: %w", err)
 	}
@@ -550,6 +552,33 @@ func (a *OptimizeAction) submitJob(
 	saveLastOptimizeJobID(ctx, optimizeEnvKeyName(a.serviceName, cfg.Agent.Name), resp.OperationID, a.envName)
 
 	return resp, client, nil
+}
+
+func optimizeRequestConfig(cfg *OptimizeConfig, promptAgent bool) *OptimizeConfig {
+	if !promptAgent {
+		return cfg
+	}
+
+	requestConfig := *cfg
+	requestConfig.Agent = cfg.Agent
+	requestConfig.Agent.Model = ""
+	requestConfig.Agent.Instruction = opt_eval.InstructionRef{}
+	requestConfig.SkillDir = ""
+	requestConfig.ToolsFile = ""
+
+	if cfg.Options != nil {
+		options := *cfg.Options
+		options.OptimizationConfig = maps.Clone(cfg.Options.OptimizationConfig)
+		for _, key := range []string{"model", "system_prompt", "skills", "tools"} {
+			delete(options.OptimizationConfig, key)
+		}
+		if len(options.OptimizationConfig) == 0 {
+			options.OptimizationConfig = nil
+		}
+		requestConfig.Options = &options
+	}
+
+	return &requestConfig
 }
 
 // pollOptimizeJob polls the optimization job until it reaches a terminal state.

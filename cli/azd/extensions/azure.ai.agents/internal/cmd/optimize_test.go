@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -410,6 +411,52 @@ func TestApplyOverrides_PromptAgentUsesServiceSideDefinition(t *testing.T) {
 	request, _, err := cfg.ToRequest()
 	require.NoError(t, err)
 	require.Nil(t, request.Options.OptimizationConfig)
+}
+
+func TestOptimizeRequestConfig_PromptAgentOmitsServiceSideDefinition(t *testing.T) {
+	t.Parallel()
+
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent: opt_eval.AgentRef{
+				Name:        "prompt-agent",
+				Model:       "gpt-4.1-mini",
+				Instruction: opt_eval.InstructionRef{File: "missing-instructions.md"},
+			},
+		},
+		SkillDir:  "missing-skills",
+		ToolsFile: "missing-tools.json",
+		Options: &opt_eval.Options{
+			OptimizationConfig: opt_eval.OptimizationConfig{
+				"model":              json.RawMessage(`"gpt-4.1-mini"`),
+				"system_prompt":      json.RawMessage(`"Be helpful."`),
+				"skills":             json.RawMessage(`[{"name":"search"}]`),
+				"tools":              json.RawMessage(`[{"type":"code_interpreter"}]`),
+				"model_search_space": json.RawMessage(`["gpt-4.1-mini","gpt-5"]`),
+			},
+		},
+	}
+
+	requestConfig := optimizeRequestConfig(cfg, true)
+	request, _, err := requestConfig.ToRequest()
+	require.NoError(t, err)
+	require.Equal(t, optimize_api.AgentIdentifier{AgentName: "prompt-agent"}, request.Agent)
+	require.Equal(t, map[string]json.RawMessage{
+		"model_search_space": json.RawMessage(`["gpt-4.1-mini","gpt-5"]`),
+	}, request.Options.OptimizationConfig)
+
+	require.Equal(t, "gpt-4.1-mini", cfg.Agent.Model)
+	require.Equal(t, "missing-instructions.md", cfg.Agent.Instruction.File)
+	require.Equal(t, "missing-skills", cfg.SkillDir)
+	require.Equal(t, "missing-tools.json", cfg.ToolsFile)
+	require.Len(t, cfg.Options.OptimizationConfig, 5)
+}
+
+func TestOptimizeRequestConfig_HostedAgentKeepsLocalDefinition(t *testing.T) {
+	t.Parallel()
+
+	cfg := &OptimizeConfig{}
+	require.Same(t, cfg, optimizeRequestConfig(cfg, false))
 }
 
 // ---- printOptimizeResults — table format ----

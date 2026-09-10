@@ -52,6 +52,9 @@ func (p PromptAgent) ValidatePolicies() error {
 		switch policy.Type {
 		case PolicyTypeRai:
 			raiPolicyCount++
+			if strings.TrimSpace(policy.RaiPolicyName) == "" {
+				return fmt.Errorf("policies[%d] requires a Responsible AI policy name", i)
+			}
 		case "":
 			return fmt.Errorf("policies[%d] requires a type", i)
 		default:

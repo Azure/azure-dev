@@ -421,6 +421,11 @@ Invocations-capable setup and lifecycle.
 
 ## Tags
 
+`cmd:insights` selects the offline export-help and invalid-severity scenarios
+(`tier0/0.17-insights-export-help.yaml` and
+`tier0/0.18-insights-export-validate-severity.yaml`). Live export coverage requires
+an existing Insights monitor and is not part of the shared-agent setup.
+
 Every scenario carries a top-level `tags:` list so an orchestrator can pick
 subsets via the tester's `list_scenarios` MCP tool. The tool's filter is **OR
 across the requested tags, case-sensitive, exact match**: a scenario matches

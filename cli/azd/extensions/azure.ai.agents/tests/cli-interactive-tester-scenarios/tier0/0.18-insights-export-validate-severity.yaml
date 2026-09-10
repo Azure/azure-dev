@@ -1,0 +1,13 @@
+# Tier 0 (offline) - reject invalid severity before authentication or project resolution.
+name: "insights-export-validate-severity"
+command: "azd ai agent insights export --severity critical"
+cwd: "/tmp"
+tags: ["tier:0", "cmd:insights", "negative-path", "parallel-safe"]
+
+goals:
+  - "Wait for the command to reject the unsupported severity value."
+  - "Confirm it exits non-zero with an error naming --severity and listing high, medium, and low as the supported values."
+  - "Confirm no product prompt appears and the error is severity validation, not missing authentication, project configuration, or an Insights monitor."
+  - "Confirm no JSON export is emitted and no stack trace appears."
+  - "Take a screenshot of the error output."
+  - "Report a finding if invalid severity is accepted, a product prompt appears, or resolution or authentication fails before severity validation."

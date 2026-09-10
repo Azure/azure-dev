@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -65,6 +66,9 @@ type resolveProjectEndpointOpts struct {
 	// EnvName selects a specific azd environment for level 2. Empty uses the
 	// current environment.
 	EnvName string
+	// RequireEnvironmentEndpoint prevents pairing an environment-bound resource
+	// with an endpoint from global config or the shell.
+	RequireEnvironmentEndpoint bool
 }
 
 // resolvedEndpoint holds the result of resolveProjectEndpoint.
@@ -97,14 +101,18 @@ var readAzdHostedSourcesFunc = readAzdHostedSources
 
 // readAzdHostedSources dials the azd daemon (if reachable) and reads both
 // the selected env's FOUNDRY_PROJECT_ENDPOINT and the global-config project
-// context in a single client lifetime. Errors talking to the daemon are
-// returned only for non-Unavailable cases on the config read — Unavailable
-// is treated as "no daemon" and the caller falls through to subsequent levels.
-func readAzdHostedSources(ctx context.Context, envName string) (azdHostedSources, error) {
+// context in a single client lifetime. Environment-bound resolution fails on
+// missing values or read errors instead of consulting unrelated fallback sources.
+func readAzdHostedSources(ctx context.Context, opts resolveProjectEndpointOpts) (azdHostedSources, error) {
 	var out azdHostedSources
+	envName := opts.EnvName
+	requireEnvironment := opts.RequireEnvironmentEndpoint || envName != ""
 
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
+		if requireEnvironment {
+			return out, fmt.Errorf("creating azd client for environment resolution: %w", err)
+		}
 		// No azd client at all => no hosted sources, not an error.
 		return out, nil
 	}
@@ -115,19 +123,25 @@ func readAzdHostedSources(ctx context.Context, envName string) (azdHostedSources
 		envResp, err = azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	} else {
 		envResp, err = azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{Name: envName})
-		if err != nil {
-			return out, fmt.Errorf("getting azd environment %q: %w", envName, err)
-		}
 	}
-	if err == nil && envResp != nil && envResp.Environment != nil {
+	if err != nil && requireEnvironment {
+		return out, fmt.Errorf("getting azd environment %q: %w", envName, err)
+	}
+	if err == nil && envResp != nil && envResp.Environment != nil && envResp.Environment.Name != "" {
+		out.EnvName = envResp.Environment.Name
 		envVal, valErr := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 			EnvName: envResp.Environment.Name,
 			Key:     "FOUNDRY_PROJECT_ENDPOINT",
 		})
-		if valErr == nil && envVal.Value != "" {
-			out.EnvValue = envVal.Value
-			out.EnvName = envResp.Environment.Name
+		if valErr != nil && requireEnvironment {
+			return out, fmt.Errorf("reading FOUNDRY_PROJECT_ENDPOINT from environment %q: %w", out.EnvName, valErr)
 		}
+		if valErr == nil && envVal != nil && envVal.Value != "" {
+			out.EnvValue = envVal.Value
+		}
+	}
+	if requireEnvironment {
+		return out, nil
 	}
 
 	state, found, cfgErr := getProjectContext(ctx, azdClient)
@@ -170,6 +184,8 @@ func containsGRPCCode(err error, code codes.Code) bool {
 //  5. Structured error with actionable suggestion
 //
 // Invalid values at any level produce a hard validation error (no silent fallback).
+// An explicit EnvName or RequireEnvironmentEndpoint restricts resolution to the
+// selected environment unless FlagValue explicitly overrides it.
 func resolveProjectEndpoint(
 	ctx context.Context,
 	opts resolveProjectEndpointOpts,
@@ -187,7 +203,7 @@ func resolveProjectEndpoint(
 	}
 
 	// Levels 2 + 3: azd-hosted sources (active env, then global config).
-	sources, err := readAzdHostedSourcesFunc(ctx, opts.EnvName)
+	sources, err := readAzdHostedSourcesFunc(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -203,6 +219,13 @@ func resolveProjectEndpoint(
 			Source:     SourceAzdEnv,
 			AzdEnvName: sources.EnvName,
 		}, nil
+	}
+	if opts.RequireEnvironmentEndpoint || opts.EnvName != "" {
+		return nil, exterrors.Dependency(
+			exterrors.CodeMissingProjectEndpoint,
+			"the selected azd environment has no FOUNDRY_PROJECT_ENDPOINT",
+			"set FOUNDRY_PROJECT_ENDPOINT in that azd environment, or pass --project-endpoint explicitly",
+		)
 	}
 
 	// Level 3: global config (~/.azd/config.json).

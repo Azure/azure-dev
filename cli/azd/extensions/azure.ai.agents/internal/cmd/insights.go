@@ -99,6 +99,9 @@ to export only the lightweight insight fields.
 
 When run from an azd project, the agent is resolved from azure.yaml and the active
 environment. Optionally specify a service name when the project has multiple agents.
+Use --environment to select a different azd environment. Environment-bound exports
+require FOUNDRY_PROJECT_ENDPOINT in that environment or an explicit --project-endpoint;
+they never fall back to the global project context or shell endpoint.
 Outside an azd project, pass the hosted-agent name as the positional argument.
 
 JSON is written to stdout for PowerShell and other automation. Use --out-file to
@@ -141,12 +144,9 @@ insight descriptions and trace details can contain application or user data.`,
 				)
 			}
 
-			resolved, err := resolveProjectEndpoint(ctx, resolveProjectEndpointOpts{
-				FlagValue: flags.projectEndpoint,
-				EnvName:   flags.envName,
-			})
+			resolved, err := resolveInsightsProjectEndpoint(ctx, flags, info)
 			if err != nil {
-				return insightsEndpointError(err)
+				return err
 			}
 
 			credential, err := newAgentCredential()
@@ -223,6 +223,23 @@ func resolveInsightsAgentInfo(
 		noPrompt,
 		withEnvironmentName(flags.envName),
 	)
+}
+
+func resolveInsightsProjectEndpoint(
+	ctx context.Context,
+	flags *insightsExportFlags,
+	info *AgentServiceInfo,
+) (*resolvedEndpoint, error) {
+	environmentBound := info.ServiceName != "" || flags.envName != ""
+	resolved, err := resolveProjectEndpoint(ctx, resolveProjectEndpointOpts{
+		FlagValue:                  flags.projectEndpoint,
+		EnvName:                    flags.envName,
+		RequireEnvironmentEndpoint: environmentBound,
+	})
+	if err != nil && !environmentBound {
+		return nil, insightsEndpointError(err)
+	}
+	return resolved, err
 }
 
 func normalizeInsightsFilter(flagName, value string, allowed []string) (string, error) {

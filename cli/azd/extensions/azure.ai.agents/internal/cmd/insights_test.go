@@ -7,12 +7,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/insights_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -155,6 +157,69 @@ func TestResolveInsightsAgentInfoUsesServiceFromRequestedEnvironment(t *testing.
 
 	require.NoError(t, err)
 	assert.Equal(t, "staging-agent", info.AgentName)
+}
+
+func TestResolveInsightsProjectEndpointBindsEnvironment(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		envName     string
+		serviceName string
+	}{
+		{name: "explicit environment", envName: "staging"},
+		{name: "current project environment", serviceName: "service-key"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://shell.services.ai.azure.com/api/projects/other")
+			original := readAzdHostedSourcesFunc
+			readAzdHostedSourcesFunc = func(
+				_ context.Context, opts resolveProjectEndpointOpts,
+			) (azdHostedSources, error) {
+				assert.True(t, opts.RequireEnvironmentEndpoint)
+				assert.Equal(t, tc.envName, opts.EnvName)
+				return azdHostedSources{
+					CfgFound: true,
+					CfgState: projectContextState{Endpoint: "https://global.services.ai.azure.com/api/projects/other"},
+				}, nil
+			}
+			t.Cleanup(func() { readAzdHostedSourcesFunc = original })
+
+			resolved, err := resolveInsightsProjectEndpoint(t.Context(),
+				&insightsExportFlags{envName: tc.envName}, &AgentServiceInfo{ServiceName: tc.serviceName})
+
+			require.Nil(t, resolved)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, exterrors.CodeMissingProjectEndpoint, localErr.Code)
+			assert.Contains(t, localErr.Suggestion, "--project-endpoint")
+			assert.NotContains(t, localErr.Suggestion, "azd ai project set")
+		})
+	}
+}
+
+func TestResolveInsightsProjectEndpointExplicitOverride(t *testing.T) {
+	stubAzdHostedSources(t, azdHostedSources{}, errors.New("environment must not be read"))
+	endpoint := "https://explicit.services.ai.azure.com/api/projects/project"
+
+	resolved, err := resolveInsightsProjectEndpoint(t.Context(),
+		&insightsExportFlags{envName: "staging", projectEndpoint: endpoint},
+		&AgentServiceInfo{ServiceName: "service-key"})
+
+	require.NoError(t, err)
+	assert.Equal(t, endpoint, resolved.Endpoint)
+	assert.Equal(t, SourceFlag, resolved.Source)
+}
+
+func TestResolveInsightsProjectEndpointStandaloneFallback(t *testing.T) {
+	stubAzdHostedSources(t, azdHostedSources{
+		CfgFound: true,
+		CfgState: projectContextState{Endpoint: "https://global.services.ai.azure.com/api/projects/project"},
+	}, nil)
+
+	resolved, err := resolveInsightsProjectEndpoint(t.Context(),
+		&insightsExportFlags{}, &AgentServiceInfo{AgentName: "remote-agent"})
+
+	require.NoError(t, err)
+	assert.Equal(t, SourceGlobalConfig, resolved.Source)
 }
 
 func TestInsightsExportActionWritesAllPagesToStdout(t *testing.T) {

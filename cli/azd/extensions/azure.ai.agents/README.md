@@ -28,7 +28,11 @@ $export = Get-Content ".\insights.json" -Raw -Encoding utf8 | ConvertFrom-Json
 ```
 
 Use `azd --environment <name> ai agent insights export` to export from a
-non-current azd environment.
+non-current azd environment. When an agent is resolved from an azd project or
+`--environment` is supplied, the endpoint must come from that environment's
+`FOUNDRY_PROJECT_ENDPOINT` or an explicit `--project-endpoint`. A missing or
+unreadable environment endpoint fails rather than falling back to the global
+project context or shell endpoint.
 
 Exports include highlighted traces, linked traces, and proposed fixes by default.
 Use `--include-details=false` for the lightweight insight projection, or filter

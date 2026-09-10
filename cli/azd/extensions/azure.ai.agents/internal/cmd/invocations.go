@@ -30,12 +30,11 @@ type invocationCommandFlags struct {
 	agentEndpoint string
 	id            string
 	protocol      string
-	version       string
-	clientHeaders []string
 	noPrompt      bool
 	output        string
 }
 
+// newInvocationsCommand creates the shared invocation lifecycle command group.
 func newInvocationsCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 	cmd := &cobra.Command{
@@ -56,18 +55,22 @@ protocol. Explicit IDs do not change the saved selection.`,
 	return cmd
 }
 
+// newInvocationsShowCommand creates the snapshot command.
 func newInvocationsShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	return newInvocationOperationCommand(extCtx, invocationShow, "Show the service result for an invocation.")
 }
 
+// newInvocationsFollowCommand creates the output-following command.
 func newInvocationsFollowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	return newInvocationOperationCommand(extCtx, invocationFollow, "Replay and follow invocation output.")
 }
 
+// newInvocationsCancelCommand creates the cancellation command.
 func newInvocationsCancelCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	return newInvocationOperationCommand(extCtx, invocationCancel, "Request cancellation of an invocation.")
 }
 
+// newInvocationOperationCommand wires common flags and lifecycle dispatch.
 func newInvocationOperationCommand(
 	extCtx *azdext.ExtensionContext,
 	operation invocationOperation,
@@ -99,9 +102,6 @@ func newInvocationOperationCommand(
 	cmd.Flags().StringVar(&flags.id, "id", "", "Service-assigned ID; defaults to the current ID for the agent and protocol")
 	cmd.Flags().StringVarP(&flags.protocol, "protocol", "p", "",
 		"Protocol to use: responses, invocations, or a2a (inferred from agent; operation support varies)")
-	cmd.Flags().StringVar(&flags.version, "version", "", "Agent version used to select saved invocation state")
-	cmd.Flags().StringArrayVar(&flags.clientHeaders, "client-header", nil,
-		`Custom x-client-* request header in "Name: Value" format (repeatable)`)
 	addUserIdentityFlag(cmd, &flags.userIdentityFlags)
 
 	formats, defaultFormat := []string{outputDefault}, outputDefault
@@ -114,8 +114,9 @@ func newInvocationOperationCommand(
 	return cmd
 }
 
+// validateInvocationCommandFlags rejects empty values and conflicting selectors.
 func validateInvocationCommandFlags(cmd *cobra.Command, flags *invocationCommandFlags) error {
-	for _, name := range []string{"id", "protocol", "agent-name", "agent-endpoint", "version"} {
+	for _, name := range []string{"id", "protocol", "agent-name", "agent-endpoint"} {
 		value, err := cmd.Flags().GetString(name)
 		if err != nil {
 			return err
@@ -126,17 +127,12 @@ func validateInvocationCommandFlags(cmd *cobra.Command, flags *invocationCommand
 		}
 	}
 	if flags.agentEndpoint != "" {
-		for _, name := range []string{"agent-name", "protocol", "version"} {
+		for _, name := range []string{"agent-name", "protocol"} {
 			if cmd.Flags().Changed(name) {
 				return exterrors.Validation(exterrors.CodeConflictingArguments,
 					fmt.Sprintf("--agent-endpoint cannot be combined with --%s", name),
 					"the endpoint identifies the agent and protocol; remove the conflicting flag")
 			}
-		}
-	}
-	if flags.version != "" {
-		if err := validateInvokeVersionValue(flags.version); err != nil {
-			return exterrors.Validation(exterrors.CodeInvalidAgentVersion, err.Error(), "provide a valid agent version")
 		}
 	}
 	return nil
@@ -156,15 +152,11 @@ func resolveInvocationCommand(
 	flags *invocationCommandFlags,
 	operation invocationOperation,
 ) (*InvokeAction, *remoteContext, string, error) {
-	headers, err := parseCustomHeaders(flags.clientHeaders)
-	if err != nil {
-		return nil, nil, "", err
-	}
 	invokeFlags := &invokeFlags{
-		name: flags.agentName, agentEndpoint: flags.agentEndpoint, version: flags.version, protocol: flags.protocol,
+		name: flags.agentName, agentEndpoint: flags.agentEndpoint, protocol: flags.protocol,
 		userIdentityFlags: flags.userIdentityFlags,
 	}
-	action := &InvokeAction{flags: invokeFlags, noPrompt: flags.noPrompt, clientHeaders: headers}
+	action := &InvokeAction{flags: invokeFlags, noPrompt: flags.noPrompt}
 	if flags.agentEndpoint != "" {
 		parsed, err := parseAgentEndpoint(flags.agentEndpoint)
 		if err != nil {
@@ -198,6 +190,7 @@ func resolveInvocationCommand(
 	return action, rc, id, nil
 }
 
+// resolveCurrentInvocationID uses an explicit ID or the selected protocol's saved ID.
 func resolveCurrentInvocationID(
 	ctx context.Context,
 	rc *remoteContext,
@@ -230,6 +223,7 @@ func resolveCurrentInvocationID(
 	return id, nil
 }
 
+// runInvocationOperation resolves the target and executes its lifecycle operation.
 func runInvocationOperation(
 	ctx context.Context,
 	flags *invocationCommandFlags,
@@ -246,6 +240,7 @@ func runInvocationOperation(
 	return action.runInvocationOperation(ctx, rc, id, operation, flags.output, writer)
 }
 
+// runInvocationOperation dispatches lifecycle work to the selected protocol.
 func (a *InvokeAction) runInvocationOperation(
 	ctx context.Context,
 	rc *remoteContext,

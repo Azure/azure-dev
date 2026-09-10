@@ -126,7 +126,6 @@ func TestResponsesHTTP(t *testing.T) {
 				calls = append(calls, r.Method)
 				assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
 				assert.Equal(t, "test-user", r.Header.Get("x-ms-user-identity"))
-				assert.Equal(t, "request-123", r.Header.Get("x-client-request-id"))
 				assert.Equal(t, "v1", r.URL.Query().Get("api-version"))
 				assert.False(t, r.URL.Query().Has("starting_after"))
 				path := "/agents/agent/endpoint/protocols/openai/responses/resp_test"
@@ -157,8 +156,7 @@ func TestResponsesHTTP(t *testing.T) {
 				flags: &invokeFlags{
 					protocol: "responses", userIdentityFlags: userIdentityFlags{userIdentity: "test-user"},
 				},
-				credential:    responseTestCredential{},
-				clientHeaders: http.Header{"X-Client-Request-Id": []string{"request-123"}},
+				credential: responseTestCredential{},
 			}
 			rc := &remoteContext{
 				projectEndpoint: server.URL, name: "agent", apiVersion: "v1", azdClient: client, agentKey: "agent-key",
@@ -247,7 +245,6 @@ func TestInvocationsCommandValidation(t *testing.T) {
 	}{
 		{name: "empty ID", args: []string{"show", "--id="}, want: "--id requires a non-empty value"},
 		{name: "empty protocol", args: []string{"show", "--protocol="}, want: "--protocol requires a non-empty value"},
-		{name: "invalid version", args: []string{"show", "--version", "../bad"}, want: "unsupported characters"},
 		{name: "unsupported protocol", args: []string{"show", "--protocol", "a2a", "--id", "id"},
 			want: "invocations show is not supported with the a2a protocol"},
 		{name: "unsupported follow", args: []string{"follow", "--protocol", "invocations", "--id", "id"},
@@ -263,6 +260,24 @@ func TestInvocationsCommandValidation(t *testing.T) {
 			require.ErrorContains(t, err, tt.want)
 		})
 	}
+}
+
+func TestInvocationsRejectCreateOnlyFlags(t *testing.T) {
+	for _, operation := range []string{"show", "follow", "cancel"} {
+		for _, flag := range []string{"version", "client-header"} {
+			t.Run(operation+"/"+flag, func(t *testing.T) {
+				cmd := newInvocationsCommand(nil)
+				cmd.SetOut(io.Discard)
+				cmd.SetErr(io.Discard)
+				cmd.SetArgs([]string{operation, "--" + flag, "value"})
+				require.ErrorContains(t, cmd.Execute(), "unknown flag: --"+flag)
+			})
+		}
+	}
+	// These options still belong to create, not lifecycle operations.
+	invoke := newInvokeCommand(nil)
+	assert.NotNil(t, invoke.Flags().Lookup("version"))
+	assert.NotNil(t, invoke.Flags().Lookup("client-header"))
 }
 
 func TestCurrentInvocationExplicitIDNeedsNoState(t *testing.T) {

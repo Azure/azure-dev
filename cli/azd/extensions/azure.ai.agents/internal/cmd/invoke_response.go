@@ -35,6 +35,7 @@ type responseIdentityTracker struct {
 	printedID  bool
 }
 
+// Apply saves and prints the first discovered Response ID.
 func (t *responseIdentityTracker) Apply(ctx context.Context, responseID string) error {
 	if responseID == "" || responseID == t.responseID {
 		return nil
@@ -66,6 +67,7 @@ func (t *responseIdentityTracker) Apply(ctx context.Context, responseID string) 
 	return nil
 }
 
+// buildResponsesRequestBody creates the streaming Responses request payload.
 func buildResponsesRequestBody(message, sessionID, conversationID string, background bool) map[string]any {
 	body := map[string]any{
 		"input":        message,
@@ -82,6 +84,7 @@ func buildResponsesRequestBody(message, sessionID, conversationID string, backgr
 	return body
 }
 
+// responseLifecycleCommand formats guidance for current or explicitly targeted work.
 func (a *InvokeAction) responseLifecycleCommand(
 	rc *remoteContext, id string, operation invocationOperation, useCurrent bool,
 ) string {
@@ -130,6 +133,7 @@ func (a *InvokeAction) runResponseOperation(
 	}
 }
 
+// classifyResponseStateReadError adds guidance to saved-state failures.
 func classifyResponseStateReadError(cause error) error {
 	if _, ok := errors.AsType[*azdext.ConfigError](cause); !ok {
 		return exterrors.FromHost(cause, exterrors.OpReadResponseState, "reading current Response state failed")
@@ -144,6 +148,7 @@ func classifyResponseStateReadError(cause error) error {
 	)
 }
 
+// classifyResponseLifecycleError translates HTTP failures into structured service errors.
 func classifyResponseLifecycleError(cause error, operation, label, showCommand string) error {
 	if cause == nil {
 		return nil
@@ -199,6 +204,7 @@ func classifyResponseLifecycleError(cause error, operation, label, showCommand s
 	return serviceErr
 }
 
+// cancelResponse requests cancellation and confirms terminal state on rejection.
 func (a *InvokeAction) cancelResponse(
 	ctx context.Context,
 	rc *remoteContext,
@@ -215,7 +221,6 @@ func (a *InvokeAction) cancelResponse(
 		return fmt.Errorf("create Response cancel request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	applyCustomHeaders(req, a.clientHeaders)
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 
 	//nolint:gosec // URL is built from a validated Foundry endpoint.
@@ -256,6 +261,7 @@ func (a *InvokeAction) cancelResponse(
 	return err
 }
 
+// getResponseSnapshot retrieves a snapshot and validates its identity.
 func (a *InvokeAction) getResponseSnapshot(
 	ctx context.Context,
 	rc *remoteContext,
@@ -271,7 +277,6 @@ func (a *InvokeAction) getResponseSnapshot(
 		return responseSnapshotResult{}, fmt.Errorf("create Response show request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	applyCustomHeaders(req, a.clientHeaders)
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 
 	//nolint:gosec // URL is built from a validated Foundry endpoint.
@@ -309,6 +314,7 @@ func (a *InvokeAction) getResponseSnapshot(
 	return responseSnapshotResult{snapshot: snapshot, raw: body}, nil
 }
 
+// decodeResponseSnapshot decodes a service Response object.
 func decodeResponseSnapshot(body []byte) (responsesSnapshot, error) {
 	var snapshot responsesSnapshot
 	if err := json.Unmarshal(body, &snapshot); err != nil {
@@ -317,6 +323,7 @@ func decodeResponseSnapshot(body []byte) (responsesSnapshot, error) {
 	return snapshot, nil
 }
 
+// printResponseSnapshot writes a Response as JSON or a table.
 func printResponseSnapshot(writer io.Writer, result responseSnapshotResult, format string) error {
 	if format != "table" {
 		var formatted any
@@ -378,7 +385,6 @@ func (a *InvokeAction) followResponse(
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "text/event-stream")
-	applyCustomHeaders(req, a.clientHeaders)
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 
 	//nolint:gosec // URL is built from a validated Foundry endpoint.
@@ -428,16 +434,19 @@ type responseLifecycleHTTPError struct {
 	body       []byte
 }
 
+// Error describes the failed lifecycle HTTP request.
 func (e *responseLifecycleHTTPError) Error() string {
 	return fmt.Sprintf("%s %s failed with HTTP %d: %s\n%s", e.method, e.requestURL, e.statusCode, e.status, e.body)
 }
 
+// responseStreamHTTPClient bounds header acquisition without limiting stream duration.
 func responseStreamHTTPClient() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.ResponseHeaderTimeout = 30 * time.Second
 	return &http.Client{Transport: transport}
 }
 
+// buildResponseLifecycleURL builds the snapshot or streaming GET URL.
 func buildResponseLifecycleURL(
 	projectEndpoint string,
 	agentName string,
@@ -461,6 +470,7 @@ func buildResponseLifecycleURL(
 	return base + "?" + query.Encode()
 }
 
+// buildResponseCancelURL builds the Response cancellation URL.
 func buildResponseCancelURL(projectEndpoint, agentName, responseID, apiVersion string) string {
 	lifecycleURL := buildResponseLifecycleURL(projectEndpoint, agentName, responseID, apiVersion, false)
 	parts := strings.SplitN(lifecycleURL, "?", 2)

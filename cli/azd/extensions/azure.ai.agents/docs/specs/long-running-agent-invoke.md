@@ -47,7 +47,7 @@ The Invocations-protocol lifecycle implementation is delivered in the second PR.
 ### Protocol selection
 
 - `--protocol` selects the protocol explicitly, using the same values as `invoke` (`responses`, `invocations`, and `a2a`). Recognition of a protocol does not imply lifecycle support.
-- With `--agent-endpoint`, derive the protocol and target agent from the URL. Reject conflicting `--protocol`, `--agent-name`, or `--version` options.
+- With `--agent-endpoint`, derive the protocol and target agent from the URL. Reject conflicting `--protocol` or `--agent-name` options.
 - Otherwise infer the protocol from the selected agent, using the existing invoke resolution rules. Multi-protocol agents require explicit selection; do not guess from a resource ID.
 - `--agent-name` selects an agent in a multi-agent project, following the existing `sessions` command convention.
 - Resolve the protocol before looking up the current ID. Unsupported operations fail before lifecycle requests or session/conversation creation.
@@ -124,7 +124,9 @@ UserConfig remains protocol-specific internally, despite the shared command grou
 
 The Invocation map is introduced by the second PR. There is no compatibility migration. No lifecycle status, event cursor, session, or conversation is stored in these records. Existing session/conversation maps are independent create-time context.
 
-Explicit `--id` with `--agent-endpoint` works without project-backed state. Lifecycle commands must not create sessions or conversations. The current caller must provide the correct authentication, identity, and allowed custom headers.
+Explicit `--id` with `--agent-endpoint` works without project-backed state. Lifecycle commands must not create sessions or conversations. The current caller must provide the correct authentication and `--user-identity` when required.
+
+Lifecycle commands do not accept `--version` or `--client-header`; both remain available on `invoke`. Use an explicit `--id` to target work saved under a different version-scoped create context. Agents that require additional custom headers for lifecycle operations are outside this command surface.
 
 ## Lifecycle behavior
 

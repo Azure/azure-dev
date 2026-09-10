@@ -1268,9 +1268,12 @@ Edit azure.yaml to customize existing voice settings.
 
 Prompt voice services support modelType: managed or self_deployed (bring your own model
 deployment), audio input/output, structured inputs, tools, greeting, avatar,
-handoff, and telephony bindings (acs or twilio). Hosted voice wrappers use modelType: hosted_agent
-and targetAgent, and are initialized from a sample azure.yaml containing both
-the hosted target and the voice wrapper. Configure advanced settings in azure.yaml.
+handoff, and telephony bindings (acs or twilio). Hosted voice wrappers use
+conversationEngine.type: hosted_agent and conversationEngine.name to reference
+the hosted target service in azure.yaml. The older modelType: hosted_agent with
+targetAgent shape remains supported for compatibility. Initialize from a sample
+azure.yaml containing both the hosted target and the voice wrapper.
+Configure advanced settings in azure.yaml.
 Run 'azd provision' and 'azd deploy' to deploy voice services, then connect to
 the voice WebSocket endpoint with a Voice Live client.
 

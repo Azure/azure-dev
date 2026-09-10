@@ -18,9 +18,35 @@ import (
 )
 
 func TestVoiceInvokeCommandPortalGuidance(t *testing.T) {
-	for _, kind := range []string{"voice", "prompt-voice"} {
-		t.Run(kind, func(t *testing.T) {
-			props, err := structpb.NewStruct(map[string]any{"kind": kind, "modelType": "hosted_agent"})
+	for _, tt := range []struct {
+		name   string
+		fields map[string]any
+	}{
+		{"conversation-engine", map[string]any{
+			"kind":               "voice",
+			"conversationEngine": map[string]any{"type": "hosted_agent", "name": "voice-target"},
+		}},
+		{"conversation-engine-kind-alias", map[string]any{
+			"kind":               "prompt-voice",
+			"conversationEngine": map[string]any{"type": "hosted_agent", "name": "voice-target"},
+		}},
+		{"legacy-hosted-wrapper", map[string]any{
+			"kind": "voice", "modelType": "hosted_agent",
+			"targetAgent": map[string]any{"service": "voice-target"},
+		}},
+		{"legacy-hosted-wrapper-kind-alias", map[string]any{
+			"kind": "prompt-voice", "modelType": "hosted_agent",
+			"targetAgent": map[string]any{"service": "voice-target"},
+		}},
+		{"managed-prompt-voice", map[string]any{
+			"kind": "voice", "modelType": "managed", "model": map[string]any{"id": "gpt-realtime"},
+		}},
+		{"byom-prompt-voice", map[string]any{
+			"kind": "prompt-voice", "modelType": "self_deployed", "model": map[string]any{"id": "my-realtime"},
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			props, err := structpb.NewStruct(tt.fields)
 			require.NoError(t, err)
 			project := &helpersProjectServer{project: &azdext.ProjectConfig{
 				Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
@@ -172,7 +198,10 @@ func TestVoiceInvocationGuidancePreservesHostedProtocols(t *testing.T) {
 
 func TestVoiceInvocationGuidanceSelection(t *testing.T) {
 	t.Parallel()
-	voiceProps, err := structpb.NewStruct(map[string]any{"kind": "voice", "modelType": "hosted_agent"})
+	voiceProps, err := structpb.NewStruct(map[string]any{
+		"kind":               "voice",
+		"conversationEngine": map[string]any{"type": "hosted_agent", "name": "a-target"},
+	})
 	require.NoError(t, err)
 	hostedProps, err := structpb.NewStruct(map[string]any{
 		"kind": "hosted", "name": "target",

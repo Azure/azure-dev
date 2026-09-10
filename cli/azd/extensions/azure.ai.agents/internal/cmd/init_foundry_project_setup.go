@@ -21,6 +21,32 @@ type foundryProjectSetupResult struct {
 	FoundryProject *FoundryProjectInfo
 }
 
+func validateAcrConnectionInput(acrConnection string, skipACR, createsNewProject bool) error {
+	if acrConnection == "" {
+		return nil
+	}
+
+	if skipACR {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--acr-connection cannot be used because the selected agent mode skips "+
+				"Azure Container Registry configuration",
+			"Remove --acr-connection, or use a Dockerfile-based container deployment "+
+				"with an existing Foundry project.",
+		)
+	}
+
+	if createsNewProject {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--acr-connection requires an existing Foundry project",
+			"Pass --project-id for an existing project, or omit --acr-connection to create a new project.",
+		)
+	}
+
+	return nil
+}
+
 // configureFoundryProject runs the interactive (or headless) subscription and
 // Foundry project selection flow. It handles three modes:
 //
@@ -38,10 +64,19 @@ func configureFoundryProject(
 	azureContext *azdext.AzureContext,
 	envName string,
 	projectResourceId string,
+	acrConnection string,
 	noPrompt bool,
 	skipACR bool,
 	filterHostedRegions bool,
 ) (*foundryProjectSetupResult, error) {
+	if err := validateAcrConnectionInput(
+		acrConnection,
+		skipACR,
+		noPrompt && projectResourceId == "",
+	); err != nil {
+		return nil, err
+	}
+
 	result := &foundryProjectSetupResult{}
 
 	// When --project-id is provided, validate the ARM format and extract the
@@ -71,6 +106,7 @@ func configureFoundryProject(
 		selectedProject, err := selectFoundryProject(
 			ctx, azdClient, newCred, azureContext, envName,
 			azureContext.Scope.SubscriptionId, projectResourceId,
+			acrConnection,
 			skipACR,
 			filterHostedRegions,
 			true, // bicepless
@@ -145,6 +181,7 @@ func configureFoundryProject(
 			selectedProject, err := selectFoundryProject(
 				ctx, azdClient, newCred, azureContext, envName,
 				azureContext.Scope.SubscriptionId, "",
+				acrConnection,
 				skipACR,
 				filterHostedRegions,
 				true, // bicepless
@@ -158,14 +195,20 @@ func configureFoundryProject(
 				_, _ = color.New(color.Faint).Println(
 					"No existing Foundry project was selected. Falling back to creating new resources.",
 				)
+				if err := validateAcrConnectionInput(acrConnection, false, true); err != nil {
+					return nil, err
+				}
+				if err := ensureLocation(ctx, azdClient, azureContext, envName); err != nil {
+					return nil, err
+				}
+				if err := ensureNewFoundryProjectName(ctx, azdClient, envName); err != nil {
+					return nil, err
+				}
 				if err := setEnvValue(ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
 					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 				}
 				if err := updatePendingProjectSignal(ctx, azdClient, envName, false); err != nil {
 					log.Printf("warning: failed to update project provision signal: %v", err)
-				}
-				if err := ensureLocation(ctx, azdClient, azureContext, envName); err != nil {
-					return nil, err
 				}
 			} else {
 				if err := setEnvValue(ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "true"); err != nil {
@@ -176,6 +219,9 @@ func configureFoundryProject(
 				}
 			}
 		default:
+			if err := validateAcrConnectionInput(acrConnection, false, true); err != nil {
+				return nil, err
+			}
 			newCred, err := ensureSubscriptionAndLocation(
 				ctx, azdClient, azureContext, envName,
 				"Select an Azure subscription to provision your agent and Foundry project resources.",
@@ -185,6 +231,9 @@ func configureFoundryProject(
 			}
 			result.Credential = newCred
 
+			if err := ensureNewFoundryProjectName(ctx, azdClient, envName); err != nil {
+				return nil, err
+			}
 			if err := setEnvValue(ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
 				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 			}

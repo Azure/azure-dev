@@ -192,6 +192,7 @@ message MultiSelectOptions {
   int32 display_count = 5;
   optional bool display_numbers = 6;
   optional bool enable_filtering = 7;
+  optional bool allow_empty_selection = 8;
 }
 
 message PromptResourceOptions {

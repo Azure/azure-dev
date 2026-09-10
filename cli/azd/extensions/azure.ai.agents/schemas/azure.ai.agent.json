@@ -46,13 +46,31 @@
     },
     "kind": {
       "type": "string",
-      "description": "The agent kind. 'hosted' for a containerized/code agent; 'prompt-voice' for a declarative (managed) speech-to-speech voice agent.",
-      "enum": ["hosted", "prompt-voice"]
+      "description": "The agent kind. 'hosted' for a containerized/code agent; 'voice' for a managed speech-to-speech voice agent. 'prompt-voice' remains accepted for compatibility.",
+      "enum": ["hosted", "prompt-voice", "voice"]
+    },
+    "language": {
+      "type": "string",
+      "description": "Implementation language for a hosted agent.",
+      "enum": ["python", "csharp", "docker"]
+    },
+    "toolbox": {
+      "type": "object",
+      "description": "Named Foundry toolbox consumed by the agent.",
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      },
+      "required": ["name"],
+      "additionalProperties": false
     },
     "modelType": {
       "type": "string",
-      "description": "Voice agent (kind: prompt-voice) model-inference mode. 'managed' uses a Voice Live-hosted model; 'self_deployed' (BYOM) references an existing Foundry model deployment.",
-      "enum": ["managed", "self_deployed"]
+      "description": "Voice agent model-inference mode. 'managed' uses a Voice Live-hosted model; 'self_deployed' references a Foundry model deployment; 'hosted_agent' routes turns to a deployed hosted agent service.",
+      "enum": ["managed", "self_deployed", "hosted_agent"]
+    },
+    "targetAgent": {
+      "$ref": "#/definitions/VoiceTargetAgent"
     },
     "model": {
       "type": "object",
@@ -75,6 +93,62 @@
       "type": "boolean",
       "description": "Voice agent (kind: prompt-voice) server-side logging toggle (transcript + per-turn audio). Defaults to false when omitted."
     },
+    "structuredInputs": {
+      "type": "object",
+      "description": "Voice agent (kind: prompt-voice) structured prompt inputs. Use description, defaultValue, schema, and required; azd maps defaultValue to the service wire field default_value.",
+      "additionalProperties": true
+    },
+    "audio": {
+      "$ref": "#/definitions/VoiceAudio"
+    },
+    "outputModalities": {
+      "type": "array",
+      "description": "Voice agent (kind: prompt-voice) output modalities. Well-known values are audio, text, animation, and avatar.",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "tools": {
+      "type": "array",
+      "description": "Voice agent (kind: prompt-voice) tools. Direct tool types include function, mcp, system, and toolbox.",
+      "items": { "type": "object", "additionalProperties": true }
+    },
+    "avatar": {
+      "type": "object",
+      "description": "Voice agent (kind: prompt-voice) avatar configuration.",
+      "additionalProperties": true
+    },
+    "greeting": {
+      "type": "object",
+      "description": "Voice agent (kind: prompt-voice) greeting configuration, such as template or llm_generated.",
+      "additionalProperties": true
+    },
+    "handoff": {
+      "type": "object",
+      "description": "Voice agent (kind: prompt-voice) handoff configuration.",
+      "additionalProperties": true
+    },
+    "toolChoice": {
+      "description": "Voice agent (kind: prompt-voice) tool choice behavior, such as none, auto, required, or a tool choice object."
+    },
+    "parallelToolCalls": {
+      "type": "boolean",
+      "description": "Voice agent (kind: prompt-voice) parallel tool call toggle. Currently rejected by azd for prompt voice runtime."
+    },
+    "maxOutputTokens": {
+      "oneOf": [
+        { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        { "type": "string", "enum": ["inf"] }
+      ],
+      "description": "Voice agent (kind: prompt-voice) maximum output tokens. Use an integer from 1 to 2147483647 or the string inf."
+    },
+    "include": {
+      "type": "array",
+      "description": "Voice agent (kind: prompt-voice) extra service response fields to include.",
+      "items": { "type": "string" }
+    },
+    "telephony": {
+      "$ref": "#/definitions/VoiceTelephony"
+    },
     "name": {
       "type": "string",
       "description": "The agent name."
@@ -96,6 +170,12 @@
       "type": "array",
       "description": "Invocation protocols the agent implements (e.g., responses, invocations, invocations_ws, a2a).",
       "items": { "$ref": "#/definitions/ProtocolVersionRecord" }
+    },
+    "registryConnectionId": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "Name or ID of a Foundry project connection used to pull a private pre-built container image."
     },
     "agentEndpoint": {
       "type": "object",
@@ -132,26 +212,81 @@
   "additionalProperties": true,
   "allOf": [
     {
-      "$comment": "A prompt-voice agent must declare a speech-to-speech model; the deploy path rejects a voice service whose model.id is missing. Keep editor/schema validation aligned with that runtime requirement.",
+      "$comment": "A hosted-agent voice wrapper references a deployed hosted service; other voice modes declare a model. Prompt voice agents cannot use the hosted-agent toolbox reference.",
       "if": {
         "properties": {
-          "kind": { "const": "prompt-voice" }
+          "modelType": { "const": "hosted_agent" }
         },
-        "required": ["kind"]
+        "required": ["modelType"]
       },
       "then": {
-        "required": ["model"]
+        "properties": {
+          "kind": { "enum": ["prompt-voice", "voice"] }
+        },
+        "required": ["kind", "targetAgent"],
+        "not": {
+          "anyOf": [
+            { "required": ["model"] },
+            { "required": ["inputSchema"] },
+            { "required": ["outputSchema"] },
+            { "required": ["codeConfiguration"] },
+            { "required": ["sessionConfiguration"] },
+            { "required": ["environmentVariables"] },
+            { "required": ["policies"] },
+            { "required": ["protocols"] },
+            { "required": ["instructions"] },
+            { "required": ["structuredInputs"] },
+            { "required": ["tools"] },
+            { "required": ["toolChoice"] },
+            { "required": ["parallelToolCalls"] },
+            { "required": ["maxOutputTokens"] },
+            { "required": ["include"] },
+            { "required": ["handoff"] },
+            { "required": ["toolbox"] }
+          ]
+        }
+      },
+      "else": {
+        "if": {
+          "properties": { "kind": { "enum": ["prompt-voice", "voice"] } },
+          "required": ["kind"]
+        },
+        "then": {
+          "required": ["model"],
+          "not": {
+            "anyOf": [
+              { "required": ["targetAgent"] },
+              { "required": ["toolbox"] },
+              { "required": ["policies"] },
+              { "required": ["protocols"] },
+              { "required": ["environmentVariables"] },
+              { "required": ["codeConfiguration"] },
+              { "required": ["sessionConfiguration"] }
+            ]
+          }
+        }
       }
     },
     {
-      "$comment": "The activity.publish block is shared publish metadata for Activity use cases (including simple). Digital Worker adds stricter requirements: publish must exist, publishScope must be tenant, and agenticUserTemplate is required to carry the persisted blueprint identity.",
+      "$comment": "targetAgent is only valid for a hosted-agent voice wrapper.",
+      "if": { "required": ["targetAgent"] },
+      "then": {
+        "properties": {
+          "kind": { "enum": ["prompt-voice", "voice"] },
+          "modelType": { "const": "hosted_agent" }
+        },
+        "required": ["kind", "modelType"]
+      }
+    },
+    {
+      "$comment": "The activity.publish block is shared publish metadata for Activity agents. Microsoft 365 Digital Worker publish is tenant-only; permission scopes and access boundaries are optional.",
       "if": {
         "properties": {
           "activity": {
             "properties": {
-              "useCase": { "const": "digital_worker" }
+              "digitalWorkerType": { "const": "m365" }
             },
-            "required": ["useCase"]
+            "required": ["digitalWorkerType"]
           }
         },
         "required": ["activity"]
@@ -159,29 +294,93 @@
       "then": {
         "properties": {
           "activity": {
-            "required": ["publish"],
             "properties": {
               "publish": {
                 "properties": {
                   "publishScope": { "const": "tenant" }
-                },
-                "required": ["agenticUserTemplate"]
+                }
               }
             }
           }
         }
       }
+    },
+    {
+      "$comment": "Optional permission scopes and access boundaries apply only to Digital Workers. An omitted activity.digitalWorkerType selects simple mode.",
+      "if": {
+        "properties": {
+          "activity": {
+            "not": {
+              "required": ["digitalWorkerType"]
+            }
+          }
+        },
+        "required": ["activity"]
+      },
+      "then": {
+        "properties": {
+          "activity": {
+            "properties": {
+              "publish": {
+                "not": {
+                  "anyOf": [
+                    { "required": ["optionalPermissionScopes"] },
+                    { "required": ["accessBoundaries"] }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "A registry connection applies only to a hosted container agent, not code or managed voice deploy.",
+      "if": {
+        "required": ["registryConnectionId"]
+      },
+      "then": {
+        "properties": {
+          "kind": { "const": "hosted" }
+        },
+        "required": ["kind"],
+        "not": {
+          "required": ["codeConfiguration"]
+        }
+      }
+    },
+    {
+      "$comment": "Telephony bindings are only supported for prompt voice agents.",
+      "if": {
+        "required": ["telephony"]
+      },
+      "then": {
+        "properties": {
+          "kind": { "enum": ["voice", "prompt-voice"] }
+        },
+        "required": ["kind"]
+      }
     }
   ],
   "definitions": {
+    "VoiceTargetAgent": {
+      "type": "object",
+      "description": "Hosted agent service used as the conversation target for a voice wrapper.",
+      "properties": {
+        "service": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "azure.yaml service name of the target hosted agent." },
+        "version": { "type": "string", "enum": ["deployed"], "default": "deployed", "description": "Pin the wrapper to the target version deployed by this azd environment." }
+      },
+      "required": ["service"],
+      "additionalProperties": false
+    },
     "ActivitySettings": {
       "type": "object",
-      "description": "Activity-protocol Teams configuration. The publish block is shared metadata for Activity use cases; digital_worker applies additional constraints via allOf.",
+      "description": "Activity-protocol Teams configuration. Omit digitalWorkerType for simple mode; m365 applies Digital Worker constraints via allOf.",
       "properties": {
-        "useCase": { "type": "string", "enum": ["simple", "digital_worker"] },
+        "digitalWorkerType": { "type": "string", "enum": ["m365"] },
         "publish": {
           "$ref": "#/definitions/ActivityPublishConfig",
-          "description": "Shared Microsoft 365 app publish metadata used by Activity use cases. For digital_worker, publishScope=tenant and agenticUserTemplate are required."
+          "description": "Shared Microsoft 365 app publish metadata used by Activity use cases. Digital Worker publication is tenant-only."
         }
       },
       "additionalProperties": false
@@ -199,19 +398,40 @@
         "developerWebsiteUrl": { "type": "string", "format": "uri" },
         "privacyUrl": { "type": "string", "format": "uri" },
         "termsOfUseUrl": { "type": "string", "format": "uri" },
-        "agenticUserTemplate": { "$ref": "#/definitions/AgenticUserTemplateConfig" }
+        "optionalPermissionScopes": {
+          "type": "array",
+          "description": "Optional Microsoft 365 permission selections for a Digital Worker.",
+          "items": { "$ref": "#/definitions/Microsoft365PermissionScopes" }
+        },
+        "accessBoundaries": {
+          "type": "array",
+          "description": "Optional Digital Worker access boundaries. An explicit empty array clears existing boundaries.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "read.1on1.developers",
+              "write.1on1.developers",
+              "read.group.developers",
+              "write.group.developers"
+            ]
+          },
+          "uniqueItems": true
+        }
       },
       "additionalProperties": false
     },
-    "AgenticUserTemplateConfig": {
+    "Microsoft365PermissionScopes": {
       "type": "object",
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "file": { "type": "string", "minLength": 1 },
-        "schemaVersion": { "type": "string", "minLength": 1 },
-        "communicationProtocol": { "type": "string", "minLength": 1 }
+        "resourceAppId": { "type": "string", "minLength": 1 },
+        "scopes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "uniqueItems": true
+        }
       },
-      "required": ["id", "file", "schemaVersion", "communicationProtocol"],
+      "required": ["resourceAppId", "scopes"],
       "additionalProperties": false
     },
     "ProtocolVersionRecord": {
@@ -235,14 +455,136 @@
       "required": ["runtime", "entryPoint"],
       "additionalProperties": false
     },
+    "VoiceTelephony": {
+      "type": "object",
+      "description": "Prompt voice telephony configuration. Only valid for kind: prompt-voice.",
+      "properties": {
+        "bindings": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/VoiceTelephonyBinding" }
+        }
+      },
+      "required": ["bindings"],
+      "additionalProperties": false
+    },
+    "VoiceTelephonyBinding": {
+      "type": "object",
+      "description": "Foundry-side binding from a phone provider identifier to this prompt voice agent.",
+      "properties": {
+        "provider": { "type": "string", "enum": ["acs", "twilio"] },
+        "identifier": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "ACS/TPE raw ID (28:orgid:<guid>), ACS purchased number (4:+<E.164>), or Twilio E.164 number (+<E.164>)." },
+        "connection": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "Foundry project connection name used by the telephony runtime." },
+        "transferTargets": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+      },
+      "required": ["provider", "identifier", "connection"],
+      "allOf": [
+        {
+          "if": { "properties": { "provider": { "const": "twilio" } }, "required": ["provider"] },
+          "then": { "properties": { "identifier": { "pattern": "^\\+[1-9][0-9]{6,14}$" } } }
+        },
+        {
+          "if": { "properties": { "provider": { "const": "acs" } }, "required": ["provider"] },
+          "then": { "properties": { "identifier": { "pattern": "^(28:orgid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|4:\\+[1-9][0-9]{6,14})$" } } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "VoiceAudio": {
+      "type": "object",
+      "description": "Prompt voice input and output audio configuration.",
+      "properties": {
+        "input": { "$ref": "#/definitions/VoiceAudioInput" },
+        "output": { "$ref": "#/definitions/VoiceAudioOutput" }
+      },
+      "additionalProperties": false
+    },
+    "VoiceAudioInput": {
+      "type": "object",
+      "properties": {
+        "format": { "$ref": "#/definitions/VoiceAudioFormat" },
+        "noiseReduction": { "$ref": "#/definitions/VoiceNoiseReduction" },
+        "echoCancellation": { "type": "object", "additionalProperties": true },
+        "turnDetection": { "$ref": "#/definitions/VoiceTurnDetection" },
+        "transcription": { "$ref": "#/definitions/VoiceTranscription" }
+      },
+      "additionalProperties": false
+    },
+    "VoiceAudioOutput": {
+      "type": "object",
+      "properties": {
+        "format": { "$ref": "#/definitions/VoiceAudioFormat" },
+        "voice": { "$ref": "#/definitions/VoiceConfig" },
+        "speed": { "type": "number", "minimum": 0.25, "maximum": 1.5 }
+      },
+      "additionalProperties": false
+    },
+    "VoiceAudioFormat": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["audio/pcm", "audio/pcmu", "audio/pcma"] },
+        "rate": { "type": "integer", "minimum": 1 }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "VoiceNoiseReduction": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "description": "Well-known values include near_field, far_field, and azure_deep_noise_suppression." }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "VoiceTurnDetection": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "description": "Well-known values include server_vad, semantic_vad, and azure_semantic_vad." },
+        "threshold": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "prefixPaddingMs": { "type": "integer", "minimum": 0 },
+        "silenceDurationMs": { "type": "integer", "minimum": 0 },
+        "createResponse": { "type": "boolean" },
+        "eagerness": { "type": "string" },
+        "speechDurationMs": { "type": "integer", "minimum": 0 },
+        "removeFillerWords": { "type": "boolean" },
+        "interruptResponse": { "type": "boolean" },
+        "languages": { "type": "array", "items": { "type": "string" } },
+        "autoTruncate": { "type": "boolean" }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "VoiceTranscription": {
+      "type": "object",
+      "properties": {
+        "model": { "type": "string" },
+        "language": { "type": "string" },
+        "prompt": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "VoiceConfig": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "description": "Voice provider type, such as openai, azure_standard, or azure-standard." },
+        "name": { "type": "string" },
+        "style": { "type": "string" },
+        "pitch": { "type": "string" },
+        "rate": { "type": "string" },
+        "locale": { "type": "string" },
+        "volume": { "type": "string" }
+      },
+      "required": ["type", "name"],
+      "additionalProperties": false
+    },
     "SessionConfiguration": {
       "type": "object",
       "description": "Optional hosted-agent session runtime settings. When omitted, the service applies its defaults (idle timeout 900 seconds).",
       "properties": {
         "idleTimeoutSeconds": {
           "type": "integer",
-          "description": "Idle duration in seconds before a session's sandbox is suspended. Range 300–3600 (inclusive). Defaults to 900 when omitted.",
-          "minimum": 300,
+          "description": "Idle duration in seconds before a session's sandbox is suspended. Range 120–3600 (inclusive). Defaults to 900 when omitted.",
+          "minimum": 120,
           "maximum": 3600
         }
       },

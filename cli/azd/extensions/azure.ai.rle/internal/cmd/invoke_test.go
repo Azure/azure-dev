@@ -603,9 +603,6 @@ func TestInvokeRemoteByNameUsesExplicitVersionInstanceRoutes(t *testing.T) {
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.Method == http.MethodGet &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0":
-			_, _ = w.Write([]byte(`{"id":"env-1","name":"code_rl","version":"1.0.0","diskImageConversionStatus":"Pending"}`))
 		case r.Method == http.MethodPost &&
 			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups":
 			groupCreateCount++
@@ -698,7 +695,7 @@ func TestInvokeRemoteByNameDoesNotRetryOtherBadRequests(t *testing.T) {
 	}
 }
 
-func TestInvokeRemoteByNameClassifiesVersionFailuresAsServiceErrors(t *testing.T) {
+func TestInvokeRemoteByNameClassifiesVersionRuntimeFailuresAsServiceErrors(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	t.Setenv(
@@ -707,15 +704,12 @@ func TestInvokeRemoteByNameClassifiesVersionFailuresAsServiceErrors(t *testing.T
 	)
 
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodGet &&
-			r.URL.Path == testFoundryProjectPath+environmentCollectionPath+"/code_rl/versions/1.0.0":
-			http.Error(w, "service unavailable", http.StatusServiceUnavailable)
-		default:
+		if r.Method != http.MethodPost ||
+			r.URL.Path != testFoundryProjectPath+
+				environmentCollectionPath+"/code_rl/versions/1.0.0/instance_groups" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
-
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
 	}))
 	defer controlPlane.Close()
 	stubRleClientEndpoint(t, controlPlane.URL)
@@ -743,8 +737,9 @@ func TestInvokeRemoteByNameReportsMissingVersion(t *testing.T) {
 	)
 
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet ||
-			r.URL.Path != testFoundryProjectPath+environmentCollectionPath+"/code_rl/versions/9.9.9" {
+		if r.Method != http.MethodPost ||
+			r.URL.Path != testFoundryProjectPath+
+				environmentCollectionPath+"/code_rl/versions/9.9.9/instance_groups" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 		http.NotFound(w, r)
@@ -804,42 +799,26 @@ func TestInvokeRemoteByNameReportsMissingEnvironment(t *testing.T) {
 	}
 }
 
-func TestInvokeRemoteByNameRejectsMismatchedVersionResponse(t *testing.T) {
+func TestInvokeRemoteUsesSavedEnvironmentNameWithVersion(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	t.Setenv(
-		foundryProjectEndpointEnvVar,
-		"https://account.services.ai.azure.com/api/projects/project-1",
-	)
-
+	if err := saveRleState(rleState{
+		EnvironmentName: "code_rl",
+		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet ||
-			r.URL.Path != testFoundryProjectPath+environmentCollectionPath+"/code_rl/versions/1.0.0" {
+		if r.Method != http.MethodPost ||
+			r.URL.Path != testFoundryProjectPath+
+				environmentCollectionPath+"/code_rl/versions/1.0.0/instance_groups" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(
-			`{"id":"env-1","name":"code_rl","version":"2.0.0","diskImageConversionStatus":"Ready"}`,
-		))
+		http.NotFound(w, r)
 	}))
 	defer controlPlane.Close()
 	stubRleClientEndpoint(t, controlPlane.URL)
 
-	command := newInvokeCommand()
-	command.SetArgs([]string{"code_rl", "--version", "1.0.0"})
-	command.SetOut(io.Discard)
-	command.SetErr(io.Discard)
-	err := command.Execute()
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("expected local error, got %v", err)
-	}
-	if localErr.Code != "rle_environment_version_mismatch" {
-		t.Fatalf("expected environment-version-mismatch error, got %q", localErr.Code)
-	}
-}
-
-func TestInvokeRemoteRejectsVersionWithoutEnvironmentName(t *testing.T) {
 	command := newInvokeCommand()
 	command.SetArgs([]string{"--version", "1.0.0"})
 	command.SetOut(io.Discard)
@@ -850,8 +829,11 @@ func TestInvokeRemoteRejectsVersionWithoutEnvironmentName(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected local error, got %v", err)
 	}
-	if localErr.Code != "rle_environment_name_required" {
-		t.Fatalf("expected environment-name-required error, got %q", localErr.Code)
+	if localErr.Code != "rle_environment_version_not_found" {
+		t.Fatalf("expected environment-version-not-found error, got %q", localErr.Code)
+	}
+	if localErr.Message != `RLE environment "code_rl" with version "1.0.0" was not found in this Foundry project.` {
+		t.Fatalf("unexpected environment-version-not-found message: %q", localErr.Message)
 	}
 }
 
@@ -1306,6 +1288,7 @@ func TestInvokeRemoteFailsWhenInstanceFails(t *testing.T) {
 
 func TestRequireDeployedEnvironmentRejectsMissingEnvironmentId(t *testing.T) {
 	err := requireDeployedEnvironment(rleState{
+		EnvironmentName: "code_rl",
 		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
 	})
 	localErr, ok := errors.AsType[*azdext.LocalError](err)

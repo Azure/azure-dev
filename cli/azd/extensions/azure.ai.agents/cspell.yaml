@@ -6,11 +6,20 @@ words:
   - conncmd
   # Contributors
   - harsheet
+  # Eval / optimize async job ID prefixes and terms
+  - datagen
+  - evaluatorgen
+  - signup
   # Terms
   - Reprompt
+  - MMDDH
   # Voice (prompt-voice) agents
   - BYOM
   - Nanami
+  - orgid
+  - pcma
+  - pcmu
+  - webrtc
   # Azure region names
   - australiaeast
   - brazilsouth
@@ -55,8 +64,10 @@ words:
   - azuresdk
   - bicepless
   - CLIENTSECRET
+  - containerref
   - curr
   - dataagent
+  - defaultyourvalue
   - envkey
   - exterrors
   - goyaml
@@ -81,9 +92,11 @@ words:
   - protocolversionrecord
   - Qdrant
   - schedulerun
+  - servicekey
   - Toolsets
   - underscoped
   - unparseable
+  - uvx
   - Vnext
   - VOICELIVE
   - webp

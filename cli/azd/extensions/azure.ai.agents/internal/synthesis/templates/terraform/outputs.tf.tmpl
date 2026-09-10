@@ -31,12 +31,12 @@ output "FOUNDRY_PROJECT_ENDPOINT" {
   value = "https://${azapi_resource.foundry_account.name}.services.ai.azure.com/api/projects/${azapi_resource.project.name}"
 }
 
-output "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT" {
-  value = "https://${azapi_resource.foundry_account.name}.services.ai.azure.com/api/projects/${azapi_resource.project.name}"
-}
-
 output "AZURE_AI_PROJECT_CONNECTION_NAMES" {
   value = join(",", [for c in azapi_resource.connection : c.name])
+}
+
+output "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT" {
+  value = "https://${azapi_resource.foundry_account.name}.services.ai.azure.com/api/projects/${azapi_resource.project.name}"
 }
 {{ if .IncludeAcr }}
 output "AZURE_CONTAINER_REGISTRY_ENDPOINT" {

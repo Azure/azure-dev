@@ -57,6 +57,8 @@ When investigating a pipeline:
 
 Commands assume you are in `cli/azd`.
 
+Mage is included in `go.mod`. Use `go tool mage <target>` instead of installing or invoking it separately.
+
 ### Build
 
 ```bash
@@ -95,9 +97,10 @@ When writing tests, prefer table-driven tests. Use testify/mock for mocking.
 
 Additional mage targets:
 
-- `mage record` — re-record functional test cassettes against a live Azure subscription. Accepts an optional `-filter=TestName` flag to re-record specific tests. Typically only core maintainers need to run this; external contributors can rely on playback mode (the default) which requires no Azure access. Requires `azd auth login` and a configured test subscription (see `docs/recording-functional-tests-guide.md`).
-- `mage coverage:pr` — preview the CI PR coverage gate locally before pushing. Resolves PR-touched `.go` files via `git merge-base origin/main HEAD` for the per-package summary, runs the diff against the latest `main` baseline, and fails (exit 2) on **either** breach type: any PR-touched package drops more than 0.5 pp, or overall coverage falls below 69% (defaults match CI; override via `COVERAGE_MAX_PACKAGE_DECREASE`, `COVERAGE_MIN_OVERALL`). See `docs/code-coverage-guide.md` for details.
-- `mage updateGoVersion <version>` — bump the pinned Go toolchain version everywhere it is referenced (every `cli/azd` `go.mod`, the ADO `setup-go` template, Dockerfiles, and the devcontainer Go feature). `cli/azd/go.mod` is the source of truth enforced by the `validate-go-version` workflow. This is the single source of truth for the sync logic. Example: `mage updateGoVersion 1.26.4`.
+- `go tool mage record` — re-record functional test cassettes against a live Azure subscription. Accepts an optional `-filter=TestName` flag to re-record specific tests. Typically only core maintainers need to run this; external contributors can rely on playback mode (the default) which requires no Azure access. Requires `azd auth login` and a configured test subscription (see `docs/recording-functional-tests-guide.md`).
+- `go tool mage generateProtos` — regenerate the checked-in Go, Python, and JavaScript protobuf bindings using the pinned containerized toolchain.
+- `go tool mage coverage:pr` — preview the CI PR coverage gate locally before pushing. Resolves PR-touched `.go` files via `git merge-base origin/main HEAD` for the per-package summary, runs the diff against the latest `main` baseline, and fails (exit 2) on **either** breach type: any PR-touched package drops more than 0.5 pp, or overall coverage falls below 69% (defaults match CI; override via `COVERAGE_MAX_PACKAGE_DECREASE`, `COVERAGE_MIN_OVERALL`). See `docs/code-coverage-guide.md` for details.
+- `go tool mage updateGoVersion <version>` — bump the pinned Go toolchain version everywhere it is referenced (every `cli/azd` `go.mod`, the ADO `setup-go` template, Dockerfiles, and the devcontainer Go feature). `cli/azd/go.mod` is the source of truth enforced by the `validate-go-version` workflow. This is the single source of truth for the sync logic. Example: `go tool mage updateGoVersion 1.26.4`.
 
 ```bash
 gofmt -s -w .
@@ -432,7 +435,7 @@ When cutting a release, `eng/scripts/Update-CliVersion.ps1` automatically update
 ### Go Dependency Version Synchronization
 
 `cli/azd/go.mod` is the source of truth for dependencies directly shared by core and first-party Go extensions.
-Run `mage checkDependencyVersions` to validate alignment or `mage syncDependencyVersions` to update unapproved
+Run `go tool mage checkDependencyVersions` to validate alignment or `go tool mage syncDependencyVersions` to update unapproved
 mismatches. Temporary exceptions must be exact, issue-linked entries in `dependency-versions.json`. See
 `docs/dependency-version-sync.md` for the policy and workflow.
 

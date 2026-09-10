@@ -37,6 +37,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newConnectionListCommand(extCtx))
 	rootCmd.AddCommand(newConnectionShowCommand(extCtx))
 	rootCmd.AddCommand(newConnectionCreateCommand(extCtx))
+	rootCmd.AddCommand(newConnectionDeployCommand(extCtx))
 	rootCmd.AddCommand(newConnectionUpdateCommand(extCtx))
 	rootCmd.AddCommand(newConnectionDeleteCommand(extCtx))
 

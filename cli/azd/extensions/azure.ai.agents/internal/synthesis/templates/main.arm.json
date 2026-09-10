@@ -5,8 +5,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.45.15.27210",
-      "templateHash": "1699321523334639873"
+      "version": "0.46.1.21595",
+      "templateHash": "4017347415588586555"
     }
   },
   "definitions": {
@@ -78,6 +78,33 @@
         },
         "authType": {
           "type": "string"
+        },
+        "audience": {
+          "type": "string",
+          "nullable": true
+        },
+        "authorizationUrl": {
+          "type": "string",
+          "nullable": true
+        },
+        "tokenUrl": {
+          "type": "string",
+          "nullable": true
+        },
+        "refreshUrl": {
+          "type": "string",
+          "nullable": true
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "nullable": true
+        },
+        "connectorName": {
+          "type": "string",
+          "nullable": true
         },
         "metadata": {
           "type": "object",
@@ -346,8 +373,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.45.15.27210",
-              "templateHash": "8110487961768042532"
+              "version": "0.46.1.21595",
+              "templateHash": "14181853768779234991"
             }
           },
           "definitions": {
@@ -419,6 +446,33 @@
                 },
                 "authType": {
                   "type": "string"
+                },
+                "audience": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "authorizationUrl": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "tokenUrl": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "refreshUrl": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "scopes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "nullable": true
+                },
+                "connectorName": {
+                  "type": "string",
+                  "nullable": true
                 },
                 "metadata": {
                   "type": "object",
@@ -736,8 +790,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.45.15.27210",
-                      "templateHash": "18361164219559996781"
+                      "version": "0.46.1.21595",
+                      "templateHash": "10967961645819739964"
                     }
                   },
                   "parameters": {
@@ -830,8 +884,8 @@
                           "metadata": {
                             "_generator": {
                               "name": "bicep",
-                              "version": "0.45.15.27210",
-                              "templateHash": "11947348622491745192"
+                              "version": "0.46.1.21595",
+                              "templateHash": "10528013059105939935"
                             }
                           },
                           "parameters": {
@@ -915,8 +969,8 @@
                           "metadata": {
                             "_generator": {
                               "name": "bicep",
-                              "version": "0.45.15.27210",
-                              "templateHash": "11947348622491745192"
+                              "version": "0.46.1.21595",
+                              "templateHash": "10528013059105939935"
                             }
                           },
                           "parameters": {
@@ -1050,8 +1104,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.45.15.27210",
-                      "templateHash": "1414665861706683761"
+                      "version": "0.46.1.21595",
+                      "templateHash": "16746221481092115316"
                     }
                   },
                   "parameters": {
@@ -1221,8 +1275,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.45.15.27210",
-                      "templateHash": "7461045817315422644"
+                      "version": "0.46.1.21595",
+                      "templateHash": "2415286770463307805"
                     }
                   },
                   "parameters": {
@@ -1448,8 +1502,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.45.15.27210",
-                      "templateHash": "14839319862176027437"
+                      "version": "0.46.1.21595",
+                      "templateHash": "3600354597134725502"
                     }
                   },
                   "definitions": {
@@ -1478,6 +1532,51 @@
                           "type": "string",
                           "metadata": {
                             "description": "Auth type: None | ApiKey | CustomKeys | OAuth2 | UserEntraToken | ProjectManagedIdentity | AgenticIdentityToken | ManagedIdentity | ..."
+                          }
+                        },
+                        "audience": {
+                          "type": "string",
+                          "nullable": true,
+                          "metadata": {
+                            "description": "Optional token audience for identity-based authentication."
+                          }
+                        },
+                        "authorizationUrl": {
+                          "type": "string",
+                          "nullable": true,
+                          "metadata": {
+                            "description": "Optional OAuth2 authorization endpoint."
+                          }
+                        },
+                        "tokenUrl": {
+                          "type": "string",
+                          "nullable": true,
+                          "metadata": {
+                            "description": "Optional OAuth2 token endpoint."
+                          }
+                        },
+                        "refreshUrl": {
+                          "type": "string",
+                          "nullable": true,
+                          "metadata": {
+                            "description": "Optional OAuth2 refresh endpoint."
+                          }
+                        },
+                        "scopes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "nullable": true,
+                          "metadata": {
+                            "description": "Optional OAuth2 scopes."
+                          }
+                        },
+                        "connectorName": {
+                          "type": "string",
+                          "nullable": true,
+                          "metadata": {
+                            "description": "Optional managed connector name for OAuth2 authentication."
                           }
                         },
                         "metadata": {
@@ -1551,7 +1650,7 @@
                       "type": "Microsoft.CognitiveServices/accounts/projects/connections",
                       "apiVersion": "2025-04-01-preview",
                       "name": "[format('{0}/{1}/{2}', parameters('foundryAccountName'), parameters('foundryProjectName'), parameters('connections')[copyIndex()].name)]",
-                      "properties": "[union(createObject('category', parameters('connections')[copyIndex()].category, 'target', parameters('connections')[copyIndex()].target, 'authType', parameters('connections')[copyIndex()].authType), if(contains(parameters('connectionCredentials'), parameters('connections')[copyIndex()].name), createObject('credentials', parameters('connectionCredentials')[parameters('connections')[copyIndex()].name]), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'metadata'), null())), createObject('metadata', tryGet(parameters('connections')[copyIndex()], 'metadata')), createObject()))]"
+                      "properties": "[union(createObject('category', parameters('connections')[copyIndex()].category, 'target', parameters('connections')[copyIndex()].target, 'authType', parameters('connections')[copyIndex()].authType), if(contains(parameters('connectionCredentials'), parameters('connections')[copyIndex()].name), createObject('credentials', parameters('connectionCredentials')[parameters('connections')[copyIndex()].name]), createObject()), if(and(equals(toLower(parameters('connections')[copyIndex()].authType), 'oauth2'), not(contains(parameters('connectionCredentials'), parameters('connections')[copyIndex()].name))), createObject('credentials', createObject()), createObject()), if(not(empty(tryGet(parameters('connections')[copyIndex()], 'audience'))), createObject('audience', tryGet(parameters('connections')[copyIndex()], 'audience')), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'authorizationUrl'), null())), createObject('authorizationUrl', tryGet(parameters('connections')[copyIndex()], 'authorizationUrl')), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'tokenUrl'), null())), createObject('tokenUrl', tryGet(parameters('connections')[copyIndex()], 'tokenUrl')), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'refreshUrl'), null())), createObject('refreshUrl', tryGet(parameters('connections')[copyIndex()], 'refreshUrl')), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'scopes'), null())), createObject('scopes', tryGet(parameters('connections')[copyIndex()], 'scopes')), createObject()), if(not(empty(tryGet(parameters('connections')[copyIndex()], 'connectorName'))), createObject('connectorName', tryGet(parameters('connections')[copyIndex()], 'connectorName')), createObject()), if(not(equals(tryGet(parameters('connections')[copyIndex()], 'metadata'), null())), createObject('metadata', tryGet(parameters('connections')[copyIndex()], 'metadata')), createObject()))]"
                     }
                   },
                   "outputs": {
@@ -1668,6 +1767,10 @@
     "AZURE_AI_PROJECT_CONNECTION_NAMES": {
       "type": "string",
       "value": "[reference('resources').outputs.AZURE_AI_PROJECT_CONNECTION_NAMES.value]"
+    },
+    "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT": {
+      "type": "string",
+      "value": "[reference('resources').outputs.FOUNDRY_PROJECT_ENDPOINT.value]"
     },
     "AZURE_FOUNDRY_NETWORK_MODE": {
       "type": "string",

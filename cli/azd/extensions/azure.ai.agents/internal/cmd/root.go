@@ -50,6 +50,8 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newInitCommand(extCtx))
+	rootCmd.AddCommand(newAgentAddCommand(extCtx))
+	rootCmd.AddCommand(newAgentDeployCommand(extCtx))
 	rootCmd.AddCommand(newRunCommand(extCtx))
 	rootCmd.AddCommand(newInvokeCommand(extCtx))
 	rootCmd.AddCommand(newMcpCommand())

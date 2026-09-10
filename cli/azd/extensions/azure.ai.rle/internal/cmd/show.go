@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -16,11 +15,6 @@ type showAction struct {
 	cmd             *cobra.Command
 	outputFormat    *string
 	environmentName string
-}
-
-type showResult struct {
-	Environment environmentResource   `json:"environment"`
-	Versions    []environmentResource `json:"versions"`
 }
 
 func newShowCommand(outputFormat *string) *cobra.Command {
@@ -63,17 +57,17 @@ func (a *showAction) Run() error {
 		ErrWriter: a.cmd.ErrOrStderr(),
 	})
 
-	result, err := a.resolveTarget()
+	versions, err := a.resolveTarget()
 	if err != nil {
 		return err
 	}
 
 	if output.IsJSON() {
-		return output.JSON(result)
+		return output.JSON(versions)
 	}
 
-	rows := make([][]string, 0, len(result.Versions))
-	for _, version := range result.Versions {
+	rows := make([][]string, 0, len(versions))
+	for _, version := range versions {
 		rows = append(rows, []string{
 			version.Version,
 			version.DiskImageConversionStatus,
@@ -81,26 +75,25 @@ func (a *showAction) Run() error {
 			version.UpdatedAt,
 		})
 	}
-	output.Message("")
-	output.Table(
+	renderTableOrNoResults(output,
 		[]string{"VERSION", "DISK IMAGE", "ENVIRONMENT ID", "UPDATED"},
 		rows,
+		noEnvironmentVersionsMessage,
 	)
-	output.Message("")
 	return nil
 }
 
-func (a *showAction) resolveTarget() (showResult, error) {
+func (a *showAction) resolveTarget() ([]environmentResource, error) {
 	environmentName := strings.TrimSpace(a.environmentName)
 	projectEndpoint := ""
 	if environmentName == "" {
 		state, err := loadRleState()
 		if err != nil {
-			return showResult{}, err
+			return nil, err
 		}
 		environmentName = strings.TrimSpace(state.EnvironmentName)
 		if environmentName == "" {
-			return showResult{}, &azdext.LocalError{
+			return nil, &azdext.LocalError{
 				Message:    "The saved RLE environment does not include a name.",
 				Code:       "rle_environment_name_missing",
 				Category:   azdext.LocalErrorCategoryUser,
@@ -109,7 +102,7 @@ func (a *showAction) resolveTarget() (showResult, error) {
 		}
 		projectEndpoint = strings.TrimSpace(state.ProjectEndpoint)
 		if projectEndpoint == "" {
-			return showResult{}, &azdext.LocalError{
+			return nil, &azdext.LocalError{
 				Message:  "The saved RLE environment does not include a Foundry project endpoint.",
 				Code:     "rle_project_required",
 				Category: azdext.LocalErrorCategoryUser,
@@ -123,53 +116,49 @@ func (a *showAction) resolveTarget() (showResult, error) {
 		var err error
 		projectEndpoint, err = resolveEnvironmentListProjectEndpoint()
 		if err != nil {
-			return showResult{}, err
+			return nil, err
 		}
 	}
 	client, err := createRleClient(projectEndpoint)
 	if err != nil {
-		return showResult{}, err
+		return nil, err
 	}
-	environment, err := resolveLatestEnvironmentByName(a.cmd.Context(), client, environmentName)
-	if err != nil {
-		return showResult{}, err
-	}
-	versions, err := resolveEnvironmentVersions(a.cmd.Context(), client, environment)
-	if err != nil {
-		if _, ok := errors.AsType[*azdext.LocalError](err); ok {
-			return showResult{}, err
-		}
-		return showResult{}, serviceError(err)
-	}
-	return showResult{Environment: *environment, Versions: versions}, nil
+	return listAllEnvironmentVersions(a.cmd.Context(), client, environmentName)
 }
 
-func resolveEnvironmentVersions(
+func listAllEnvironmentVersions(
 	ctx context.Context,
 	client *rleClient,
-	current *environmentResource,
+	environmentName string,
 ) ([]environmentResource, error) {
-	var history []environmentVersionResource
-	after := ""
+	history := make([]environmentResource, 0)
+	continuationToken := ""
 	complete := false
 	seenCursors := map[string]struct{}{}
 	for range environmentListMaxPages {
-		page, err := client.listEnvironmentVersions(ctx, current.Name, after, environmentListPageSize)
+		page, err := client.listEnvironmentVersions(ctx, environmentName, continuationToken, environmentListPageSize)
+		if isRleNotFound(err) {
+			return nil, environmentNotFoundError(environmentName)
+		}
 		if err != nil {
-			return nil, err
+			return nil, serviceError(err)
 		}
 		history = append(history, page.Data...)
-		if !page.HasMore {
+		if strings.TrimSpace(page.NextContinuationToken) == "" {
 			complete = true
 			break
 		}
-		after, err = nextPaginationCursor(seenCursors, page.LastId, func() error {
-			return &azdext.LocalError{
-				Message:  "Environment version pagination did not return a new cursor.",
-				Code:     "rle_environment_version_cursor_invalid",
-				Category: azdext.LocalErrorCategoryInternal,
-			}
-		})
+		continuationToken, err = nextPaginationCursor(
+			seenCursors,
+			page.NextContinuationToken,
+			func() error {
+				return &azdext.LocalError{
+					Message:  "Environment version pagination did not return a new continuation token.",
+					Code:     "rle_environment_version_cursor_invalid",
+					Category: azdext.LocalErrorCategoryInternal,
+				}
+			},
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -180,30 +169,5 @@ func resolveEnvironmentVersions(
 			"rle_environment_version_list_safety_limit",
 		)
 	}
-	if len(history) == 0 {
-		return []environmentResource{*current}, nil
-	}
-
-	versions := make([]environmentResource, 0, len(history))
-	for _, summary := range history {
-		var version environmentResource
-		if summary.EnvironmentId == current.Id && summary.Version == current.Version {
-			version = *current
-		} else {
-			resolved, err := client.getEnvironmentVersion(ctx, current.Name, summary.Version)
-			if err != nil {
-				return nil, err
-			}
-			version = *resolved
-		}
-
-		version.Id = firstNonEmpty(version.Id, summary.EnvironmentId)
-		version.Name = firstNonEmpty(version.Name, current.Name)
-		version.Version = firstNonEmpty(version.Version, summary.Version)
-		version.AcrImagePath = firstNonEmpty(version.AcrImagePath, summary.AcrImagePath)
-		version.CreatedAt = firstNonEmpty(version.CreatedAt, summary.CreatedAt)
-		versions = append(versions, version)
-	}
-
-	return versions, nil
+	return history, nil
 }

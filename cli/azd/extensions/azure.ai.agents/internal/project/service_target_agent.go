@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -21,7 +22,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +37,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/pkg/botservice"
+	"azureaiagent/internal/pkg/containerref"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
 
@@ -74,6 +78,11 @@ var displayableProtocols = []displayableProtocolEntry{
 		Protocol:  agent_api.AgentProtocolInvocations,
 		EnvSuffix: "INVOCATIONS",
 		BuildURL:  buildInvocationsProtocolURL,
+	},
+	{
+		Protocol:  agent_api.AgentProtocolA2A,
+		EnvSuffix: "A2A",
+		URLPath:   "a2a",
 	},
 	{
 		Protocol:  agent_api.AgentProtocolInvocationsWS,
@@ -130,6 +139,19 @@ func buildInvocationsWSProtocolURL(projectEndpoint, agentName string) string {
 	)
 }
 
+func buildVoiceWSProtocolURL(projectEndpoint, agentName string) string {
+	projectEndpoint = strings.TrimSpace(projectEndpoint)
+	u, err := url.Parse(projectEndpoint)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		"wss://%s%s/agents/%s/endpoint/protocols/voice?api-version=%s",
+		u.Host, strings.TrimRight(u.Path, "/"), agentName, agent_api.AgentEndpointAPIVersion,
+	)
+}
+
 // ProtocolEnvSuffix pairs a user-facing label with the env var suffix
 // used in AGENT_{KEY}_{SUFFIX}_ENDPOINT variables.
 type ProtocolEnvSuffix struct {
@@ -169,7 +191,7 @@ type AgentServiceTargetProvider struct {
 	// its local $ref includes expanded. Cleared whenever a newer
 	// config is adopted.
 	serviceConfigResolved bool
-	credential            *azidentity.AzureDeveloperCLICredential
+	credential            azcore.TokenCredential
 	tenantId              string
 	env                   *azdext.Environment
 	foundryProject        *arm.ResourceID
@@ -181,12 +203,6 @@ type AgentServiceTargetProvider struct {
 const (
 	preBuiltImageArtifactSourceKey = "azure.ai.agents.imageSource"
 	preBuiltImageArtifactSource    = "agent.yaml"
-)
-
-// containerImageRefRe is a basic pattern for container image references:
-// [registry/]repository[:tag|@digest]
-var containerImageRefRe = regexp.MustCompile(
-	`^[a-zA-Z0-9]([a-zA-Z0-9._-]*/)*[a-zA-Z0-9][a-zA-Z0-9._-]*(:[a-zA-Z0-9._-]+|@sha256:[0-9a-fA-F]{64})?$`,
 )
 
 // NewAgentServiceTargetProvider creates a new AgentServiceTargetProvider instance
@@ -202,6 +218,71 @@ func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTa
 // only when a deploy-time entrypoint needs it.
 func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
 	p.adoptServiceConfig(serviceConfig)
+	props := ServiceConfigProps(serviceConfig)
+	hasRef := props != nil && props.GetFields()["$ref"] != nil
+	needsLegacyLifecycleCheck := props == nil && strings.TrimSpace(serviceConfig.GetImage()) != "" &&
+		!serviceConfig.GetDocker().GetImagePassthrough()
+	if hasRef || needsLegacyLifecycleCheck {
+		proj, err := p.azdClient.Project().Get(ctx, nil)
+		if err != nil {
+			return exterrors.Dependency(
+				exterrors.CodeProjectNotFound,
+				fmt.Sprintf("failed to get project while resolving agent service: %s", err),
+				"run 'azd init' to initialize your project",
+			)
+		}
+		p.projectPath = proj.GetProject().GetPath()
+		if hasRef {
+			if err := p.resolveServiceConfig(); err != nil {
+				return err
+			}
+		} else {
+			agentDef, _, source, err := LoadAgentDefinition(serviceConfig, p.projectPath)
+			if err != nil {
+				return err
+			}
+			if source.IsLegacy() && strings.TrimSpace(agentDef.RegistryConnectionID) != "" {
+				return exterrors.Validation(
+					exterrors.CodeInvalidServiceConfig,
+					"registryConnectionId requires docker.imagePassthrough: true",
+					"enable docker.imagePassthrough for the private pre-built image",
+				)
+			}
+		}
+	}
+	return validateRegistryConnectionServiceConfig(p.serviceConfig)
+}
+
+func validateRegistryConnectionServiceConfig(serviceConfig *azdext.ServiceConfig) error {
+	props := ServiceConfigProps(serviceConfig)
+	if props == nil || props.GetFields()["registryConnectionId"] == nil {
+		return nil
+	}
+
+	dockerOptions := serviceConfig.GetDocker()
+	if !dockerOptions.GetImagePassthrough() {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"registryConnectionId requires docker.imagePassthrough: true",
+			"enable docker.imagePassthrough for the private pre-built image",
+		)
+	}
+	if dockerOptions.GetRemoteBuild() {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"registryConnectionId cannot be combined with docker.remoteBuild",
+			"remove docker.remoteBuild and use image passthrough",
+		)
+	}
+
+	agentDef, _, found, _, err := AgentDefinitionFromService(serviceConfig)
+	if err != nil {
+		return err
+	}
+	if found {
+		return validateRegistryConnectionDefinition(agentDef)
+	}
+
 	return nil
 }
 
@@ -538,15 +619,15 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	agentVersionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 	agentEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
 
-	// Voice agents (kind: prompt-voice) are created synchronously with no
-	// agent-version object and no per-protocol endpoints; they record only NAME
-	// and a base ENDPOINT. Gate the base-endpoint fallback on the service's
-	// actual declared kind (resolved via the shared agentkind lookup, so this
-	// agrees with the deploy path and next-step reader) rather than on the
-	// env-var shape: a hosted agent whose deploy partially failed (or whose vars
-	// were cleaned up) can also present an empty VERSION with a lingering
-	// ENDPOINT, and for that case we must still surface the actionable
-	// CodeMissingAgentEnvVars error below. Kind resolution is best-effort here:
+	// Voice agents (kind: prompt-voice) use the base ENDPOINT as their callable
+	// endpoint and deploy completion marker, and unified deploys also record
+	// VERSION. Gate the base-endpoint path on the service's actual declared
+	// kind (resolved via the shared agentkind lookup, so this agrees with the
+	// deploy path and next-step reader) rather than on the env-var shape: a hosted
+	// agent whose deploy partially failed (or whose vars were cleaned up) can also
+	// present an empty VERSION with a lingering ENDPOINT, and for that case we
+	// must still surface the actionable CodeMissingAgentEnvVars error below.
+	// Kind resolution is best-effort here:
 	// an error (or non-voice result) simply falls through to the hosted guard, so
 	// hosted services keep their prior behavior on a path that never resolved
 	// config before.
@@ -677,8 +758,19 @@ func (p *AgentServiceTargetProvider) Package(
 		return nil, err
 	}
 	serviceConfig = p.serviceConfig
-	// Code deploy: ZIP the source directory
-	if p.isCodeDeployAgent() {
+	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
+	if err != nil {
+		return nil, err
+	}
+	if !isContainerAgent {
+		return &azdext.ServicePackageResult{}, nil
+	}
+	if err := validateRegistryConnectionDefinition(agentDef); err != nil {
+		return nil, err
+	}
+
+	// Code deploy takes precedence over stale or mixed image configuration.
+	if agentDef.CodeConfiguration != nil {
 		progress("Packaging code")
 		zipPath, sha256Hex, err := p.packageCodeDeploy(ctx, serviceConfig)
 		if err != nil {
@@ -700,12 +792,22 @@ func (p *AgentServiceTargetProvider) Package(
 		}, nil
 	}
 
-	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
-	if err != nil {
-		return nil, err
-	}
-	if !isContainerAgent {
-		return &azdext.ServicePackageResult{}, nil
+	// Core image passthrough owns the artifact lifecycle for all pre-built images,
+	// whether the source registry is public or accessed through a Foundry connection.
+	if serviceConfig.GetDocker().GetImagePassthrough() {
+		// The core Docker framework packages before this target and adds its artifact
+		// to the shared context. Do not return it again from the target.
+		if findImagePassthroughArtifact(serviceContext.Package) != nil {
+			return &azdext.ServicePackageResult{}, nil
+		}
+
+		// Keep direct extension callers compatible when core has not packaged first.
+		progress("Packaging pre-built container image")
+		artifacts, err := p.packageContainer(ctx, serviceConfig, serviceContext)
+		if err != nil {
+			return nil, err
+		}
+		return &azdext.ServicePackageResult{Artifacts: artifacts}, nil
 	}
 
 	usePreBuiltImage, err := p.shouldUsePreBuiltImage(ctx, agentDef)
@@ -753,23 +855,33 @@ func (p *AgentServiceTargetProvider) Package(
 			serviceContext.Build = append(serviceContext.Build, buildResponse.Result.Artifacts...)
 		}
 
-		packageRequest := &azdext.ContainerPackageRequest{
-			ServiceName:    serviceConfig.Name,
-			ServiceContext: serviceContext,
-		}
-		packageResponse, err := p.azdClient.
-			Container().
-			Package(ctx, packageRequest)
+		artifacts, err := p.packageContainer(ctx, serviceConfig, serviceContext)
 		if err != nil {
-			return nil, exterrors.FromHost(err, exterrors.OpContainerPackage, "container package failed")
+			return nil, err
 		}
 
-		newArtifacts = append(newArtifacts, packageResponse.Result.Artifacts...)
+		newArtifacts = append(newArtifacts, artifacts...)
 	}
 
 	return &azdext.ServicePackageResult{
 		Artifacts: newArtifacts,
 	}, nil
+}
+
+func (p *AgentServiceTargetProvider) packageContainer(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+	serviceContext *azdext.ServiceContext,
+) ([]*azdext.Artifact, error) {
+	packageResponse, err := p.azdClient.Container().Package(ctx, &azdext.ContainerPackageRequest{
+		ServiceName:    serviceConfig.Name,
+		ServiceContext: serviceContext,
+	})
+	if err != nil {
+		return nil, exterrors.FromHost(err, exterrors.OpContainerPackage, "container package failed")
+	}
+
+	return packageResponse.Result.Artifacts, nil
 }
 
 // Publish performs the publish operation for the agent service
@@ -781,6 +893,20 @@ func (p *AgentServiceTargetProvider) Publish(
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
+	p.adoptServiceConfig(serviceConfig)
+	if err := p.ensureDeployContext(ctx); err != nil {
+		return nil, err
+	}
+	serviceConfig = p.serviceConfig
+
+	agentDef, isContainerAgent, err := p.loadContainerAgentDefinition()
+	if err != nil {
+		return nil, err
+	}
+	if !isContainerAgent || agentDef.CodeConfiguration != nil {
+		return &azdext.ServicePublishResult{}, nil
+	}
+
 	// A pre-built image does not start a container publish operation. Preserve
 	// this fast path; Activity Bot selection still runs in Deploy because the
 	// deployed agent identity is required to prefer an already-bound bot.
@@ -789,24 +915,6 @@ func (p *AgentServiceTargetProvider) Publish(
 		return &azdext.ServicePublishResult{
 			Artifacts: []*azdext.Artifact{preBuiltArtifact},
 		}, nil
-	}
-
-	p.adoptServiceConfig(serviceConfig)
-	if err := p.ensureDeployContext(ctx); err != nil {
-		return nil, err
-	}
-	serviceConfig = p.serviceConfig
-	// Code deploy skips Publish (no ACR needed)
-	if p.isCodeDeployAgent() {
-		return &azdext.ServicePublishResult{}, nil
-	}
-
-	_, isContainerAgent, err := p.loadContainerAgentDefinition()
-	if err != nil {
-		return nil, err
-	}
-	if !isContainerAgent {
-		return &azdext.ServicePublishResult{}, nil
 	}
 
 	progress("Publishing container")
@@ -1101,6 +1209,19 @@ func findPreBuiltImageArtifact(artifacts []*azdext.Artifact) *azdext.Artifact {
 	return nil
 }
 
+func findImagePassthroughArtifact(artifacts []*azdext.Artifact) *azdext.Artifact {
+	for _, artifact := range artifacts {
+		if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER &&
+			artifact.LocationKind == azdext.LocationKind_LOCATION_KIND_REMOTE &&
+			artifact.Location != "" &&
+			artifact.Metadata["imagePassthrough"] == "true" {
+			return artifact
+		}
+	}
+
+	return nil
+}
+
 func findPreBuiltImageArtifactInContext(serviceContext *azdext.ServiceContext) *azdext.Artifact {
 	if serviceContext == nil {
 		return nil
@@ -1292,7 +1413,6 @@ func (p *AgentServiceTargetProvider) Deploy(
 	if err != nil {
 		return nil, err
 	}
-
 	var agentDef agent_yaml.ContainerAgent
 	if !isVoice {
 		var isContainerAgent bool
@@ -1312,6 +1432,9 @@ func (p *AgentServiceTargetProvider) Deploy(
 			serviceConfig.GetEnvironment(),
 			agentDef.EnvironmentVariables,
 		); err != nil {
+			return nil, err
+		}
+		if err := validateRegistryConnectionDefinition(agentDef); err != nil {
 			return nil, err
 		}
 	}
@@ -1357,7 +1480,8 @@ func (p *AgentServiceTargetProvider) Deploy(
 	if serviceTargetConfig != nil {
 		fmt.Println("Loaded custom service target configuration")
 	}
-	activityProfile, err := ResolveActivityProfileWithSettings(agentDef, serviceTargetConfig.Activity)
+	addAgentToolboxDependency(serviceTargetConfig, agentDef.Toolbox)
+	activityProfile, err := ResolveActivityProfileForDeploy(agentDef, serviceTargetConfig.Activity)
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
@@ -1370,6 +1494,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 		fmt.Fprintln(os.Stderr, warning)
 	}
 	progress("Validating service dependencies")
+	if err := validateRegistryConnectionDependency(
+		ctx, serviceConfig, agentDef.RegistryConnectionID, p.projectServices, p.dependencyEnabled,
+	); err != nil {
+		return nil, err
+	}
 	if err := validateFoundryDependencies(
 		ctx, serviceConfig, serviceTargetConfig, p.projectServices, azdEnv, p.dependencyEnabled,
 	); err != nil {
@@ -1386,13 +1515,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, err
 	}
 
-	// Voice agents (kind: prompt-voice) use a fundamentally different data-plane
-	// contract than hosted/workflow agents: a synchronous POST to /voice_agents
-	// that returns an AgentObject directly, with no version/polling model. Resolve
-	// the definition first — honoring the AGENT_DEFINITION_PATH override precedence
-	// so an override drives this dispatch just as it does the container path — and
-	// route voice to an isolated method so the container deploy path below stays
-	// byte-for-byte unchanged.
+	// Voice agents (kind: prompt-voice) use a different data-plane contract than
+	// hosted/workflow agents. Resolve the definition first — honoring the
+	// AGENT_DEFINITION_PATH override precedence so an override drives this dispatch
+	// just as it does the container path — and route voice to an isolated method so
+	// the container deploy path below stays byte-for-byte unchanged.
 	if isVoice {
 		return p.deployVoiceAgent(ctx, serviceConfig, voiceAgent, azdEnv, progress)
 	}
@@ -1408,14 +1535,15 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, err
 	}
 
+	projectEndpoint := azdEnv["FOUNDRY_PROJECT_ENDPOINT"]
+	agentClient := agent_api.NewAgentClient(
+		projectEndpoint,
+		p.credential,
+	)
+
 	// Poll until agent version is active
 	if result.agentVersion.Status != "active" {
 		progress("Agent version created; waiting for activation")
-		projectEndpoint := azdEnv["FOUNDRY_PROJECT_ENDPOINT"]
-		agentClient := agent_api.NewAgentClient(
-			projectEndpoint,
-			p.credential,
-		)
 		polledVersion, pollErr := p.waitForAgentActive(
 			ctx,
 			agentClient,
@@ -1431,6 +1559,29 @@ func (p *AgentServiceTargetProvider) Deploy(
 	} else {
 		fmt.Fprintf(os.Stderr, "Agent version %s is already active.\n", result.agentVersion.Version)
 	}
+
+	// Read the deployed version so post-deploy behavior uses the service-side
+	// Digital Worker classification rather than only the local authoring intent.
+	deployedVersion, err := agentClient.GetAgentVersion(
+		ctx,
+		result.agentName,
+		result.agentVersion.Version,
+		agent_api.AgentEndpointAPIVersion,
+		true,
+	)
+	if err != nil {
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpGetAgent)
+	}
+	result.agentVersion = deployedVersion
+	activityProfile, err = ResolveDeployedActivityProfile(activityProfile, deployedVersion.DigitalWorkerType)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			err.Error(),
+			digitalWorkerTypeMismatchSuggestion(),
+		)
+	}
+	ensureActivityEndpointAuthSchemeForProfile(result.request, activityProfile)
 
 	// Patch agent-level endpoint/card fields
 	if result.request.AgentEndpoint != nil || result.request.AgentCard != nil {
@@ -1557,6 +1708,25 @@ func (p *AgentServiceTargetProvider) Deploy(
 		activityProfile,
 		serviceTargetConfig.Activity,
 	)
+}
+
+func addAgentToolboxDependency(
+	config *ServiceTargetAgentConfig,
+	reference *agent_yaml.ToolboxReference,
+) {
+	if config == nil || reference == nil {
+		return
+	}
+	toolboxName := strings.TrimSpace(reference.Name)
+	if toolboxName == "" {
+		return
+	}
+	for _, toolbox := range config.Toolboxes {
+		if toolbox.Name == toolboxName {
+			return
+		}
+	}
+	config.Toolboxes = append(config.Toolboxes, Toolbox{Name: toolboxName})
 }
 
 func activityBotOwnership(
@@ -1792,9 +1962,48 @@ func memoryStoreOptionsEmpty(options *MemoryStoreOptions) bool {
 		options.UserProfileDetails == ""
 }
 
+func validateRegistryConnectionDefinition(agentDef agent_yaml.ContainerAgent) error {
+	rawConnectionRef := agentDef.RegistryConnectionID
+	connectionRef := strings.TrimSpace(rawConnectionRef)
+	if rawConnectionRef == "" {
+		return nil
+	}
+	if connectionRef == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"registryConnectionId cannot be empty or whitespace",
+			"set registryConnectionId to a Foundry project connection name or ID, or remove it",
+		)
+	}
+	if agentDef.CodeConfiguration != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"registryConnectionId cannot be used with codeConfiguration",
+			"use registryConnectionId with a pre-built image or remove it for code deploy",
+		)
+	}
+	image := strings.TrimSpace(agentDef.Image)
+	if image == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"registryConnectionId requires a pre-built container image",
+			"set image on the azure.ai.agent service or remove registryConnectionId",
+		)
+	}
+	if !containerref.IsFullyQualified(image) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"registryConnectionId requires an image with an explicit registry host and repository",
+			"set image to a fully qualified reference such as registry.example.com/team/agent:v1",
+		)
+	}
+	return nil
+}
+
 // shouldUsePreBuiltImage determines whether to use a pre-built image.
 //
 // Behavior:
+//   - A registry connection requires an image and always selects that pre-built image.
 //   - If no image is configured in the loaded agent definition, always build from Dockerfile.
 //     The image usually comes from the azure.yaml service image field, but can come from
 //     a legacy agent.yaml fallback.
@@ -1807,20 +2016,30 @@ func (p *AgentServiceTargetProvider) shouldUsePreBuiltImage(
 	ctx context.Context,
 	agentDef agent_yaml.ContainerAgent,
 ) (bool, error) {
-	imageURL := agentDef.Image
+	imageURL := strings.TrimSpace(agentDef.Image)
+	if agentDef.RegistryConnectionID != "" {
+		if err := validateRegistryConnectionDefinition(agentDef); err != nil {
+			return false, err
+		}
+		log.Printf("registryConnectionId is configured: using pre-built image from agent definition")
+		return true, nil
+	}
 	if imageURL == "" {
 		return false, nil
 	}
 
-	if p.shouldSkipACRForEnvironment(ctx) {
-		log.Printf("AZD_AGENT_SKIP_ACR=true: using pre-built image from agent definition")
+	// Releases before docker.imagePassthrough represented init --image with a
+	// top-level image plus AZD_AGENT_SKIP_ACR=true. The docker property may be
+	// absent, so preserve that environment marker as the legacy compatibility
+	// contract. New projects use docker.imagePassthrough and do not enter this fallback.
+	if !p.serviceConfig.GetDocker().GetImagePassthrough() &&
+		p.shouldSkipACRForEnvironment(ctx) {
+		log.Printf("legacy pre-built image configuration detected: using configured image")
 		return true, nil
 	}
 
-	// Default to build so the pre-built path requires an explicit choice.
-	// In non-interactive mode (--no-prompt), the framework returns the default
-	// selection (index 0 = build) automatically unless AZD_AGENT_SKIP_ACR=true
-	// was set by init --image.
+	// Default to build so the legacy pre-built path requires an explicit choice.
+	// New projects use docker.imagePassthrough and do not enter this fallback.
 	choices := []*azdext.SelectChoice{
 		{Value: "build", Label: "Build a new image for me"},
 		{Value: "prebuilt", Label: fmt.Sprintf("Create hosted agent from %s", imageURL)},
@@ -1854,16 +2073,6 @@ func (p *AgentServiceTargetProvider) shouldSkipACRForEnvironment(ctx context.Con
 	}
 
 	return strings.EqualFold(strings.TrimSpace(resp.Value), "true")
-}
-
-// isCodeDeployAgent returns true if the agent definition has code_configuration (code deploy mode)
-func (p *AgentServiceTargetProvider) isCodeDeployAgent() bool {
-	agentDef, isHosted, err := p.loadContainerAgentDefinition()
-	if err != nil || !isHosted {
-		return false
-	}
-
-	return agentDef.CodeConfiguration != nil
 }
 
 // deployPrepResult holds the common outputs from prepareDeploy, used by both
@@ -1988,6 +2197,19 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	}
 
 	applyAgentMetadata(request)
+	if foundryAgentConfig != nil &&
+		foundryAgentConfig.Activity != nil &&
+		foundryAgentConfig.Activity.DigitalWorkerType == agent_api.DigitalWorkerTypeM365 {
+		request.DigitalWorkerType = agent_api.DigitalWorkerTypeM365
+	}
+	_, err = ResolveActivityProfileForDeploy(agentDef, foundryAgentConfig.Activity)
+	if err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentRequest,
+			fmt.Sprintf("failed to resolve Activity configuration: %s", err),
+			"check the activity configuration in azure.yaml",
+		)
+	}
 
 	// Default to "responses" protocol when none specified in agent.yaml.
 	protocols := agentDef.Protocols
@@ -2002,6 +2224,19 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		request:         request,
 		protocols:       protocols,
 	}, nil
+}
+
+func ensureActivityEndpointAuthSchemeForProfile(
+	request *agent_api.CreateAgentRequest,
+	profile ActivityProfile,
+) {
+	if !profile.IsActivity {
+		return
+	}
+	if request.AgentEndpoint == nil {
+		return
+	}
+	EnsureActivityEndpointAuthSchemeForProfile(request.AgentEndpoint, profile)
 }
 
 // deployResult holds the intermediate results from a deploy method (code or container)
@@ -2185,19 +2420,17 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	}, nil
 }
 
-// voiceOverriddenHostEnvKey optionally routes the /voice_agents call directly to
-// a regional data-plane host (bypassing the public Foundry APIM, whose voice
-// route may not yet be rolled out). When unset, default endpoint routing is used.
+// voiceOverriddenHostEnvKey optionally routes prompt voice agent calls directly
+// to a regional data-plane host (bypassing the public Foundry APIM when needed).
+// When unset, default endpoint routing is used.
 //
 //nolint:gosec // env var key name, not a credential
 const voiceOverriddenHostEnvKey = "AZURE_VOICE_OVERRIDDEN_HOST"
 
 // deployVoiceAgent deploys a declarative (managed) voice agent (kind:
-// prompt-voice) to the Foundry service. Unlike hosted agents, voice agents are
-// created synchronously via a single POST to /voice_agents that returns the
-// created AgentObject directly — there is no container build, no agent-version
-// object, and no active-state polling. This method is intentionally isolated
-// from the container deploy path so the two contracts never entangle.
+// prompt-voice) to the Foundry service through the unified /agents API. This
+// method is intentionally isolated from the container deploy path so the two
+// contracts never entangle.
 func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
@@ -2207,13 +2440,48 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 ) (*azdext.ServiceDeployResult, error) {
 	progress("Deploying voice agent")
 
-	request, err := agent_yaml.CreateVoiceAgentAPIRequest(va)
+	var request *agent_api.CreateAgentRequest
+	var hostedTarget *hostedVoiceTarget
+	var err error
+	if va.ModelType == agent_yaml.VoiceModelTypeHostedAgent {
+		if va.TargetAgent != nil && p.dependencyEnabled != nil {
+			enabled, enabledErr := p.dependencyEnabled(ctx, strings.TrimSpace(va.TargetAgent.Service))
+			if enabledErr != nil {
+				return nil, enabledErr
+			}
+			if !enabled {
+				return nil, exterrors.Dependency(
+					exterrors.CodeFoundryDependencyNotReady,
+					fmt.Sprintf("hosted voice target service %q is disabled", va.TargetAgent.Service),
+					"enable the target hosted agent service or remove the voice wrapper",
+				)
+			}
+		}
+		hostedTarget, err = resolveHostedVoiceTarget(
+			serviceConfig, va.TargetAgent, p.projectServices, azdEnv, p.projectPath,
+		)
+		if err != nil {
+			return nil, exterrors.Dependency(
+				exterrors.CodeFoundryDependencyNotReady,
+				fmt.Sprintf("cannot resolve hosted voice target: %s", err),
+				"deploy the target hosted agent in the same project, then retry",
+			)
+		}
+		request, err = agent_yaml.CreateHostedVoiceAgentAPIRequest(va, agent_api.VoiceTargetAgentReference{
+			Name: hostedTarget.AgentName, Version: hostedTarget.AgentVersion,
+		})
+	} else {
+		request, err = agent_yaml.CreateVoiceAgentAPIRequest(va)
+	}
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			fmt.Sprintf("invalid voice agent definition: %s", err),
 			"fix the agent definition in azure.yaml and re-run `azd deploy`",
 		)
+	}
+	if err := validateHostedVoiceWrapperName(request.Name, hostedTarget); err != nil {
+		return nil, err
 	}
 
 	projectEndpoint := azdEnv["FOUNDRY_PROJECT_ENDPOINT"]
@@ -2227,34 +2495,42 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	}
 
 	agentClient := agent_api.NewAgentClient(projectEndpoint, p.credential)
-
-	progress("Creating voice agent")
-	agentObject, err := agentClient.CreateVoiceAgent(
-		ctx, request, agent_api.AgentEndpointAPIVersion, azdEnv[voiceOverriddenHostEnvKey],
-	)
-	if err != nil {
-		return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
+	if hostedTarget != nil {
+		progress("Validating hosted voice target")
+		if err := fetchAndValidateHostedVoiceTarget(ctx, hostedTarget, agentClient.GetAgentVersion); err != nil {
+			return nil, err
+		}
 	}
 
-	fmt.Fprintf(os.Stderr, "Voice agent '%s' created successfully!\n", agentObject.Name)
+	agentObject, deployOp, err := p.deployVoiceAgentRemote(
+		ctx, agentClient, request, azdEnv, progress,
+	)
+	if err != nil {
+		return nil, exterrors.ServiceFromAzure(err, deployOp)
+	}
+	if err := validateVoiceAgentDeployResponse(agentObject); err != nil {
+		return nil, err
+	}
+	if err := p.deployVoiceTelephonyBindings(
+		ctx, agentClient, va, agentObject, azdEnv[voiceOverriddenHostEnvKey],
+	); err != nil {
+		return nil, err
+	}
+
+	fmt.Fprintf(os.Stderr, "Voice agent '%s' deployed successfully!\n", agentObject.Name)
 
 	// Persist NAME first and ENDPOINT last. ENDPOINT is used as the voice deploy
 	// completion marker by other commands, so avoid writing it before NAME.
-	serviceKey := p.getServiceKey(serviceConfig.Name)
-	baseEndpoint := fmt.Sprintf(
-		"%s/voice_agents/%s", strings.TrimRight(projectEndpoint, "/"), agentObject.Name,
-	)
-	for _, envVar := range []struct{ key, value string }{
-		{fmt.Sprintf("AGENT_%s_NAME", serviceKey), agentObject.Name},
-		{fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey), baseEndpoint},
-	} {
-		if _, setErr := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-			EnvName: p.env.Name,
-			Key:     envVar.key,
-			Value:   envVar.value,
-		}); setErr != nil {
-			return nil, fmt.Errorf("registering voice agent environment variable %s: %w", envVar.key, setErr)
-		}
+	baseEndpoint := buildVoiceWSProtocolURL(projectEndpoint, agentObject.Name)
+	if err := p.registerVoiceAgentEnvironmentVariables(
+		ctx,
+		serviceConfig,
+		projectEndpoint,
+		baseEndpoint,
+		agentObject,
+		hostedTarget,
+	); err != nil {
+		return nil, err
 	}
 
 	artifacts := []*azdext.Artifact{{
@@ -2269,6 +2545,366 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	}}
 
 	return &azdext.ServiceDeployResult{Artifacts: artifacts}, nil
+}
+
+func (p *AgentServiceTargetProvider) registerVoiceAgentEnvironmentVariables(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+	projectEndpoint string,
+	baseEndpoint string,
+	agentObject *agent_api.AgentObject,
+	hostedTarget *hostedVoiceTarget,
+) error {
+	serviceKey := p.getServiceKey(serviceConfig.Name)
+	protocolVersionKey := envkey.AgentProtocolEndpointsVersion(serviceConfig.Name)
+	endpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
+
+	keysToClear := []string{protocolVersionKey}
+	for _, dp := range displayableProtocols {
+		keysToClear = append(
+			keysToClear,
+			fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, dp.EnvSuffix),
+		)
+	}
+	keysToClear = append(keysToClear, endpointKey)
+	for _, key := range keysToClear {
+		if _, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     key,
+			Value:   "",
+		}); err != nil {
+			return fmt.Errorf("clearing voice agent environment variable %s: %w", key, err)
+		}
+	}
+
+	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
+	for _, envVar := range []struct{ key, value string }{
+		{fmt.Sprintf("AGENT_%s_NAME", serviceKey), agentObject.Name},
+		{versionKey, agentObject.Versions.Latest.Version},
+		{fmt.Sprintf("AGENT_%s_PROJECT_ENDPOINT", serviceKey), strings.TrimRight(projectEndpoint, "/")},
+		{fmt.Sprintf("AGENT_%s_VOICE_TARGET_NAME", serviceKey), hostedVoiceTargetName(hostedTarget)},
+		{fmt.Sprintf("AGENT_%s_VOICE_TARGET_VERSION", serviceKey), hostedVoiceTargetVersion(hostedTarget)},
+		{endpointKey, baseEndpoint},
+	} {
+		if _, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     envVar.key,
+			Value:   envVar.value,
+		}); err != nil {
+			return fmt.Errorf("registering voice agent environment variable %s: %w", envVar.key, err)
+		}
+	}
+
+	if _, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: p.env.Name,
+		Key:     protocolVersionKey,
+		Value:   "1",
+	}); err != nil {
+		return fmt.Errorf("publishing voice agent protocol metadata: %w", err)
+	}
+	return nil
+}
+
+type telephonyBindingClient interface {
+	GetTelephonyBinding(
+		ctx context.Context,
+		agentName string,
+		bindingID string,
+		apiVersion string,
+		overriddenHost string,
+	) (*agent_api.TelephonyBinding, error)
+	CreateTelephonyBinding(
+		ctx context.Context,
+		agentName string,
+		request *agent_api.TelephonyBindingRequest,
+		apiVersion string,
+		overriddenHost string,
+	) (*agent_api.TelephonyBinding, error)
+}
+
+func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
+	ctx context.Context,
+	agentClient telephonyBindingClient,
+	voiceAgent agent_yaml.VoiceAgent,
+	agentObject *agent_api.AgentObject,
+	overriddenHost string,
+) error {
+	if voiceAgent.Telephony == nil || len(voiceAgent.Telephony.Bindings) == 0 {
+		return nil
+	}
+	for _, binding := range voiceAgent.Telephony.Bindings {
+		request := &agent_api.TelephonyBindingRequest{
+			Provider:        telephonyWireProvider(binding.Provider),
+			Identifier:      strings.TrimSpace(binding.Identifier),
+			ConnectionName:  strings.TrimSpace(binding.Connection),
+			TransferTargets: binding.TransferTargets,
+		}
+
+		bindingID := fmt.Sprintf("%s:%s", request.Provider, request.Identifier)
+		remoteBinding, getErr := agentClient.GetTelephonyBinding(
+			ctx,
+			agentObject.Name,
+			bindingID,
+			agent_api.TelephonyBindingAPIVersion,
+			overriddenHost,
+		)
+		if getErr == nil {
+			if !telephonyBindingMatches(remoteBinding, request) {
+				return exterrors.Validation(
+					exterrors.CodeTelephonyBindingDrift,
+					fmt.Sprintf("telephony binding %q already exists with different configuration", bindingID),
+					"delete the remote binding, then run azd deploy again",
+				)
+			}
+			fmt.Fprintf(os.Stderr, "Telephony binding '%s' already exists.\n", bindingID)
+			continue
+		}
+		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok || respErr.StatusCode != http.StatusNotFound {
+			return exterrors.ServiceFromAzure(getErr, exterrors.OpGetTelephonyBinding)
+		}
+
+		created, err := agentClient.CreateTelephonyBinding(
+			ctx,
+			agentObject.Name,
+			request,
+			agent_api.TelephonyBindingAPIVersion,
+			overriddenHost,
+		)
+		if err != nil {
+			return exterrors.ServiceFromAzure(err, exterrors.OpCreateTelephonyBinding)
+		}
+		id := created.ID
+		if id == "" {
+			id = bindingID
+		}
+		fmt.Fprintf(os.Stderr, "Telephony binding '%s' created.\n", id)
+	}
+	return nil
+}
+
+func validateHostedVoiceWrapperName(wrapperName string, target *hostedVoiceTarget) error {
+	if target == nil || !strings.EqualFold(wrapperName, target.AgentName) {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidAgentManifest,
+		fmt.Sprintf("hosted voice wrapper %q cannot use the same Foundry name as its target", wrapperName),
+		"choose a distinct name for the voice wrapper service",
+	)
+}
+
+type getAgentVersionFunc func(
+	context.Context, string, string, string, bool,
+) (*agent_api.AgentVersionObject, error)
+
+func fetchAndValidateHostedVoiceTarget(
+	ctx context.Context,
+	target *hostedVoiceTarget,
+	getVersion getAgentVersionFunc,
+) error {
+	version, err := getVersion(
+		ctx, target.AgentName, target.AgentVersion, agent_api.AgentEndpointAPIVersion, false,
+	)
+	if err != nil {
+		return exterrors.ServiceFromAzure(err, "getting hosted voice target version")
+	}
+	if err := validateHostedVoiceTargetVersion(version); err != nil {
+		return exterrors.Dependency(
+			exterrors.CodeFoundryDependencyNotReady,
+			fmt.Sprintf("hosted voice target is not compatible: %s", err),
+			"deploy an active Voice Bridge 1.0 hosted agent with invocations_ws/1.0.0, then retry",
+		)
+	}
+	return nil
+}
+
+func telephonyWireProvider(provider string) string {
+	switch strings.TrimSpace(provider) {
+	case "acs":
+		return "azure-communication-service"
+	default:
+		return strings.TrimSpace(provider)
+	}
+}
+
+func telephonyBindingMatches(remote *agent_api.TelephonyBinding, desired *agent_api.TelephonyBindingRequest) bool {
+	if remote == nil || desired == nil {
+		return false
+	}
+	desiredID := fmt.Sprintf("%s:%s", strings.TrimSpace(desired.Provider), strings.TrimSpace(desired.Identifier))
+	if remoteID := normalizedTelephonyBindingID(remote.ID); remoteID != desiredID {
+		return false
+	}
+	if strings.TrimSpace(remote.Provider) != "" &&
+		strings.TrimSpace(remote.Provider) != strings.TrimSpace(desired.Provider) &&
+		!(strings.TrimSpace(desired.Provider) == "azure-communication-service" &&
+			strings.TrimSpace(remote.Provider) == "teams_phone_extension") {
+		return false
+	}
+	if strings.TrimSpace(remote.Identifier) != "" &&
+		strings.TrimSpace(remote.Identifier) != strings.TrimSpace(desired.Identifier) {
+		return false
+	}
+	remoteConnection := telephonyBindingConnection(remote)
+	if remoteConnection != strings.TrimSpace(desired.ConnectionName) {
+		return false
+	}
+	return jsonEquivalentTransferTargets(remote.TransferTargets, desired.TransferTargets)
+}
+
+func telephonyBindingConnection(remote *agent_api.TelephonyBinding) string {
+	if remote == nil {
+		return ""
+	}
+	if strings.TrimSpace(remote.ConnectionName) != "" {
+		return strings.TrimSpace(remote.ConnectionName)
+	}
+	return strings.TrimSpace(remote.Connection)
+}
+
+func normalizedTelephonyBindingID(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	unescaped, err := url.PathUnescape(value)
+	if err != nil {
+		return value
+	}
+	return unescaped
+}
+
+func emptyTransferTargetsAsNil(targets []map[string]any) []map[string]any {
+	if len(targets) == 0 {
+		return nil
+	}
+	return targets
+}
+
+func hostedVoiceTargetName(target *hostedVoiceTarget) string {
+	if target == nil {
+		return ""
+	}
+	return target.AgentName
+}
+
+func hostedVoiceTargetVersion(target *hostedVoiceTarget) string {
+	if target == nil {
+		return ""
+	}
+	return target.AgentVersion
+}
+
+func validateHostedVoiceTargetVersion(version *agent_api.AgentVersionObject) error {
+	if version == nil {
+		return fmt.Errorf("target version response is empty")
+	}
+	if !strings.EqualFold(version.Status, "active") {
+		return fmt.Errorf("target %s:%s has status %q, expected active", version.Name, version.Version, version.Status)
+	}
+	definitionJSON, err := json.Marshal(version.Definition)
+	if err != nil {
+		return fmt.Errorf("reading target definition: %w", err)
+	}
+	var definition agent_api.HostedAgentDefinition
+	if err := json.Unmarshal(definitionJSON, &definition); err != nil {
+		return fmt.Errorf("reading target definition: %w", err)
+	}
+	if definition.Kind != agent_api.AgentKindHosted {
+		return fmt.Errorf("target kind is %q, expected hosted", definition.Kind)
+	}
+	compatibleProtocol := false
+	for _, protocol := range definition.ProtocolVersions {
+		if protocol.Protocol == agent_api.AgentProtocolInvocationsWS && protocol.Version == "1.0.0" {
+			compatibleProtocol = true
+			break
+		}
+	}
+	if !compatibleProtocol {
+		return fmt.Errorf("target does not declare invocations_ws/1.0.0")
+	}
+	if !strings.EqualFold(strings.TrimSpace(version.Metadata["voiceLiveCompatible"]), "true") {
+		return fmt.Errorf("target metadata voiceLiveCompatible must be true")
+	}
+	if strings.TrimSpace(version.Metadata["bridgeProtocolVersion"]) != "1.0" {
+		return fmt.Errorf("target metadata bridgeProtocolVersion must be 1.0")
+	}
+	return nil
+}
+
+func jsonEquivalentTransferTargets(left, right []map[string]any) bool {
+	left = emptyTransferTargetsAsNil(left)
+	right = emptyTransferTargetsAsNil(right)
+	leftJSON, leftErr := json.Marshal(left)
+	rightJSON, rightErr := json.Marshal(right)
+	if leftErr != nil || rightErr != nil {
+		return false
+	}
+	var leftValue any
+	var rightValue any
+	if err := json.Unmarshal(leftJSON, &leftValue); err != nil {
+		return false
+	}
+	if err := json.Unmarshal(rightJSON, &rightValue); err != nil {
+		return false
+	}
+	return reflect.DeepEqual(leftValue, rightValue)
+}
+
+func validateVoiceAgentDeployResponse(agentObject *agent_api.AgentObject) error {
+	if agentObject == nil {
+		return fmt.Errorf("malformed voice agent service response: missing agent object")
+	}
+	if strings.TrimSpace(agentObject.Name) == "" {
+		return fmt.Errorf("malformed voice agent service response: missing agent name")
+	}
+	if strings.TrimSpace(agentObject.Versions.Latest.Version) == "" {
+		return fmt.Errorf("malformed voice agent service response: missing latest agent version")
+	}
+	return nil
+}
+
+func (p *AgentServiceTargetProvider) deployVoiceAgentRemote(
+	ctx context.Context,
+	agentClient *agent_api.AgentClient,
+	request *agent_api.CreateAgentRequest,
+	azdEnv map[string]string,
+	progress azdext.ProgressReporter,
+) (*agent_api.AgentObject, string, error) {
+	overriddenHost := azdEnv[voiceOverriddenHostEnvKey]
+	remoteAgent, getErr := agentClient.GetVoiceAgent(
+		ctx, request.Name, agent_api.AgentEndpointAPIVersion, overriddenHost,
+	)
+	shouldUpdate, decisionErr := shouldUpdateVoiceAgent(remoteAgent, getErr)
+	if decisionErr != nil {
+		return nil, exterrors.OpGetAgent, decisionErr
+	}
+	if shouldUpdate {
+		progress("Updating voice agent using unified API")
+		updateRequest := &agent_api.UpdateAgentRequest{
+			Description: request.Description,
+			Metadata:    request.Metadata,
+			Definition:  request.Definition,
+		}
+		agentObject, err := agentClient.UpdateVoiceAgent(
+			ctx, request.Name, updateRequest, agent_api.AgentEndpointAPIVersion, overriddenHost,
+		)
+		return agentObject, exterrors.OpUpdateAgent, err
+	}
+
+	progress("Creating voice agent using unified API")
+	agentObject, err := agentClient.CreateVoiceAgent(ctx, request, agent_api.AgentEndpointAPIVersion, overriddenHost)
+	return agentObject, exterrors.OpCreateAgent, err
+}
+
+func shouldUpdateVoiceAgent(remoteAgent *agent_api.AgentObject, getErr error) (bool, error) {
+	if getErr == nil {
+		return remoteAgent != nil, nil
+	}
+	if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); ok && respErr.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	return false, getErr
 }
 
 // packageCodeDeploy creates a ZIP archive of the agent source code, writes it to a temp file,
@@ -2706,9 +3342,10 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Build the metadata for multipart upload
 	versionRequest := &agent_api.CreateAgentVersionRequest{
-		Description: prep.request.Description,
-		Metadata:    prep.request.Metadata,
-		Definition:  prep.request.Definition,
+		Description:       prep.request.Description,
+		Metadata:          prep.request.Metadata,
+		Definition:        prep.request.Definition,
+		DigitalWorkerType: prep.request.DigitalWorkerType,
 	}
 
 	// Create agent client
@@ -2719,7 +3356,16 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Check if agent already exists (GET /agents/{name})
 	progress("Checking existing agent")
-	_, getErr := agentClient.GetAgent(ctx, agentDef.Name, agent_api.AgentEndpointAPIVersion)
+	localProfile := ResolveActivityProfile(agentDef)
+	if versionRequest.DigitalWorkerType == agent_api.DigitalWorkerTypeM365 {
+		localProfile = ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker}
+	}
+	existingAgent, getErr := agentClient.GetAgent(
+		ctx,
+		agentDef.Name,
+		agent_api.AgentEndpointAPIVersion,
+		localProfile.IsActivity,
+	)
 	var agentResp *agent_api.AgentObject
 
 	if getErr != nil {
@@ -2737,11 +3383,23 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 			return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 		}
 	} else {
+		if localProfile.IsActivity {
+			if _, err := ResolveDeployedActivityProfile(localProfile, existingAgent.DigitalWorkerType); err != nil {
+				return nil, exterrors.Validation(
+					exterrors.CodeInvalidServiceConfig,
+					err.Error(),
+					"delete and recreate the agent so its immutable digital_worker_type matches "+
+						"activity.digitalWorkerType",
+				)
+			}
+		}
 		// Agent exists — update
 		progress("Updating existing agent from code package")
 		writeExistingAgentVersionWarning(agentDef.Name)
+		updateVersionRequest := *versionRequest
+		updateVersionRequest.DigitalWorkerType = ""
 		agentResp, err = agentClient.UpdateAgentFromZip(
-			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
+			ctx, agentDef.Name, &updateVersionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
 		)
 		if err != nil {
 			return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
@@ -2968,6 +3626,7 @@ func agentInvocationEndpoints(
 	agentName string,
 	protocols []agent_yaml.ProtocolVersionRecord,
 ) []protocolEndpointInfo {
+	projectEndpoint = strings.TrimRight(projectEndpoint, "/")
 	var endpoints []protocolEndpointInfo
 	for _, p := range protocols {
 		dp := displayableProtocolFor(p.Protocol)
@@ -3054,7 +3713,8 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 	progress azdext.ProgressReporter,
 ) (*agent_api.AgentVersionObject, error) {
 	const pollInterval = 10 * time.Second
-	const pollTimeout = 5 * time.Minute
+	// Code agent activation can take several minutes in a busy region.
+	const pollTimeout = 8 * time.Minute
 	const confirmCount = 2 // consecutive times a terminal status must be seen
 
 	deadline := time.Now().Add(pollTimeout)
@@ -3077,7 +3737,7 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 		attempt++
 		progress(fmt.Sprintf("Polling agent status (%d/%d)", attempt, maxAttempts))
 
-		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agent_api.AgentEndpointAPIVersion)
+		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agent_api.AgentEndpointAPIVersion, false)
 		if err != nil {
 			lastPollErr = err
 			fmt.Fprintf(os.Stderr, "  Warning: poll failed: %s\n", err)
@@ -3159,13 +3819,25 @@ func (p *AgentServiceTargetProvider) createAgent(
 		p.credential,
 	)
 
-	writeExistingAgentVersionWarningIfPresent(ctx, agentClient, request.Name)
+	updatingExisting, err := reconcileCreateRequestWithDeployedDigitalWorkerType(
+		ctx,
+		agentClient,
+		request,
+		agent_api.AgentEndpointAPIVersion,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if updatingExisting {
+		writeExistingAgentVersionWarning(request.Name)
+	}
 
 	// Extract CreateAgentVersionRequest from CreateAgentRequest
 	versionRequest := &agent_api.CreateAgentVersionRequest{
-		Description: request.Description,
-		Metadata:    request.Metadata,
-		Definition:  request.Definition,
+		Description:       request.Description,
+		Metadata:          request.Metadata,
+		Definition:        request.Definition,
+		DigitalWorkerType: request.DigitalWorkerType,
 	}
 
 	// Create agent version
@@ -3179,6 +3851,48 @@ func (p *AgentServiceTargetProvider) createAgent(
 	fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)
 
 	return agentVersionResponse, nil
+}
+
+func reconcileCreateRequestWithDeployedDigitalWorkerType(
+	ctx context.Context,
+	agentClient *agent_api.AgentClient,
+	request *agent_api.CreateAgentRequest,
+	apiVersion string,
+) (bool, error) {
+	localProfile := activityProfileFromCreateRequest(request)
+	existingAgent, getErr := agentClient.GetAgent(ctx, request.Name, apiVersion, localProfile.IsActivity)
+	if getErr != nil {
+		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok ||
+			respErr.StatusCode != http.StatusNotFound {
+			return false, exterrors.ServiceFromAzure(getErr, exterrors.OpCreateAgent)
+		}
+		return false, nil
+	}
+
+	if localProfile.IsActivity {
+		if _, err := ResolveDeployedActivityProfile(localProfile, existingAgent.DigitalWorkerType); err != nil {
+			return true, exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				err.Error(),
+				"delete and recreate the agent so its immutable digital_worker_type matches "+
+					"activity.digitalWorkerType",
+			)
+		}
+	}
+
+	request.DigitalWorkerType = ""
+	return true, nil
+}
+
+func activityProfileFromCreateRequest(request *agent_api.CreateAgentRequest) ActivityProfile {
+	if request.DigitalWorkerType == agent_api.DigitalWorkerTypeM365 {
+		return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseDigitalWorker}
+	}
+	if request.AgentEndpoint != nil &&
+		slices.Contains(request.AgentEndpoint.Protocols, agent_api.AgentEndpointProtocolActivity) {
+		return ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple}
+	}
+	return ActivityProfile{}
 }
 
 // displayAgentInfo displays information about the agent being deployed
@@ -3237,8 +3951,10 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 		identityClientID = strings.TrimSpace(agentVersionResponse.InstanceIdentity.ClientID)
 		identityPrincipalID = strings.TrimSpace(agentVersionResponse.InstanceIdentity.PrincipalID)
 	}
+	protocolVersionKey := envkey.AgentProtocolEndpointsVersion(serviceConfig.Name)
 	envVars := []azdext.SetEnvRequest{
 		{EnvName: p.env.Name, Key: versionKey, Value: ""},
+		{EnvName: p.env.Name, Key: protocolVersionKey, Value: ""},
 		{EnvName: p.env.Name, Key: fmt.Sprintf("AGENT_%s_NAME", serviceKey), Value: agentVersionResponse.Name},
 		{EnvName: p.env.Name, Key: envkey.AgentInstanceIdentityClientID(serviceConfig.Name), Value: identityClientID},
 		{EnvName: p.env.Name, Key: envkey.AgentInstanceIdentityPrincipalID(serviceConfig.Name), Value: identityPrincipalID},
@@ -3252,18 +3968,35 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	)})
 
 	endpoints := agentInvocationEndpoints(
-		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
+		projectEndpoint,
 		agentVersionResponse.Name,
 		protocols,
 	)
+	endpointValues := make(map[agent_api.AgentProtocol]string, len(endpoints))
 	for _, ep := range endpoints {
-		suffix := strings.ToUpper(ep.Protocol)
-		key := fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, suffix)
-		envVars = append(envVars, azdext.SetEnvRequest{EnvName: p.env.Name, Key: key, Value: ep.URL})
+		endpointValues[agent_api.AgentProtocol(ep.Protocol)] = ep.URL
+	}
+	// Set every known protocol key on each deployment. Empty values clear
+	// endpoints from a previous deployment when the protocol is removed.
+	for _, dp := range displayableProtocols {
+		key := fmt.Sprintf("AGENT_%s_%s_ENDPOINT", serviceKey, dp.EnvSuffix)
+		envVars = append(envVars, azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     key,
+			Value:   endpointValues[dp.Protocol],
+		})
 	}
 	envVars = append(envVars,
-		azdext.SetEnvRequest{EnvName: p.env.Name, Key: envkey.AgentProjectEndpoint(serviceConfig.Name), Value: projectEndpoint},
-		azdext.SetEnvRequest{EnvName: p.env.Name, Key: versionKey, Value: agentVersionResponse.Version},
+		azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     envkey.AgentProjectEndpoint(serviceConfig.Name),
+			Value:   projectEndpoint,
+		},
+		azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     versionKey,
+			Value:   agentVersionResponse.Version,
+		},
 	)
 	if activityBotName != "" {
 		envVars = append(envVars,
@@ -3285,20 +4018,20 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 		)
 	}
 	if activityProfile.UseCase == ActivityUseCaseDigitalWorker {
-		if activitySettings == nil || activitySettings.Publish == nil {
-			return fmt.Errorf("Digital Worker publish configuration is missing")
-		}
 		blueprint := agentVersionResponse.Blueprint
-		if blueprint == nil || strings.TrimSpace(blueprint.ClientID) == "" {
-			return fmt.Errorf("Digital Worker agent version is missing Blueprint client ID")
+		if blueprint != nil && strings.TrimSpace(blueprint.ClientID) != "" {
+			envVars = append(envVars, azdext.SetEnvRequest{
+				EnvName: p.env.Name,
+				Key:     envkey.AgentBlueprintClientID(serviceConfig.Name),
+				Value:   blueprint.ClientID,
+			})
 		}
-
-		envVars = append(envVars, azdext.SetEnvRequest{
-			EnvName: p.env.Name,
-			Key:     envkey.AgentBlueprintClientID(serviceConfig.Name),
-			Value:   blueprint.ClientID,
-		})
 	}
+	envVars = append(envVars, azdext.SetEnvRequest{
+		EnvName: p.env.Name,
+		Key:     protocolVersionKey,
+		Value:   "1",
+	})
 
 	for i := range envVars {
 		_, err := p.azdClient.Environment().SetValue(ctx, &envVars[i])

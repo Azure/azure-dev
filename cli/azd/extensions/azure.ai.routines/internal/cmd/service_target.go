@@ -7,13 +7,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"path/filepath"
+	"regexp"
+	"strings"
 
+	"azure.ai.routines/internal/exterrors"
 	"azure.ai.routines/internal/pkg/routines"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // aiRoutineHost is the azure.yaml service host kind owned by this extension. A
@@ -112,7 +118,13 @@ func (p *routineServiceTarget) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
-	body, err := parseRoutineServiceConfig(serviceConfig)
+	ctx = azdext.WithAccessToken(ctx)
+
+	projectRoot, err := routineProjectRoot(ctx, p.projectClient, serviceConfig)
+	if err != nil {
+		return nil, err
+	}
+	body, err := parseRoutineServiceConfig(serviceConfig, projectRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +147,7 @@ func (p *routineServiceTarget) Deploy(
 		progress(fmt.Sprintf("Upserting routine %q", serviceConfig.GetName()))
 	}
 
-	client, err := newRoutineServiceClient(ctx)
+	client, err := p.newRoutineServiceClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -150,16 +162,21 @@ func (p *routineServiceTarget) Deploy(
 // parseRoutineServiceConfig binds the service-level (inline) routine keys to the
 // routine API model, falling back to the deprecated config: shape for azure.yaml
 // files written before the per-resource service split.
-func parseRoutineServiceConfig(svc *azdext.ServiceConfig) (*routines.Routine, error) {
-	props := svc.GetAdditionalProperties()
-	if props == nil || len(props.GetFields()) == 0 {
-		props = svc.GetConfig()
-	}
+func parseRoutineServiceConfig(svc *azdext.ServiceConfig, projectRoot string) (*routines.Routine, error) {
+	props := routineConfigProperties(svc)
 	body := &routines.Routine{}
 	if props == nil {
 		return body, nil
 	}
-	b, err := json.Marshal(props.AsMap())
+	values := props.AsMap()
+	if _, hasRef := values["$ref"]; hasRef {
+		resolved, err := resolveRoutineServiceRef(values, projectRoot)
+		if err != nil {
+			return nil, err
+		}
+		values = resolved
+	}
+	b, err := json.Marshal(values)
 	if err != nil {
 		return nil, fmt.Errorf("encoding routine service %q config: %w", svc.GetName(), err)
 	}
@@ -169,12 +186,96 @@ func parseRoutineServiceConfig(svc *azdext.ServiceConfig) (*routines.Routine, er
 	return body, nil
 }
 
-// newRoutineServiceClient resolves the project endpoint (from the active azd
-// environment, global config, or FOUNDRY_PROJECT_ENDPOINT) and an azd developer
-// credential, then builds an authenticated routine client for deploy-time
-// upserts. It mirrors newRoutineClient but takes no cobra command, since a
-// service target has no flags.
-func newRoutineServiceClient(ctx context.Context) (*routines.Client, error) {
+// routineServiceHasRef reports whether the routine service uses a file
+// reference instead of inline configuration.
+func routineServiceHasRef(svc *azdext.ServiceConfig) bool {
+	props := routineConfigProperties(svc)
+	if props == nil {
+		return false
+	}
+	_, found := props.GetFields()["$ref"]
+	return found
+}
+
+func routineConfigProperties(svc *azdext.ServiceConfig) *structpb.Struct {
+	properties := svc.GetAdditionalProperties()
+	if properties != nil && len(properties.GetFields()) > 0 {
+		return properties
+	}
+	return svc.GetConfig()
+}
+
+func routineProjectRoot(
+	ctx context.Context,
+	projectClient serviceConfigReader,
+	service *azdext.ServiceConfig,
+) (string, error) {
+	if !routineServiceHasRef(service) {
+		return "", nil
+	}
+	projectResp, err := projectClient.Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return "", fmt.Errorf("reading project for routine %q: %w", service.GetName(), err)
+	}
+	return projectResp.GetProject().GetPath(), nil
+}
+
+var remoteRoutineRefPattern = regexp.MustCompile(`(?i)^[a-z][a-z0-9+.-]*://`)
+
+func resolveRoutineServiceRef(values map[string]any, projectRoot string) (map[string]any, error) {
+	ref, ok := values["$ref"].(string)
+	if !ok || strings.TrimSpace(ref) == "" {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidRoutineManifest,
+			"routine service $ref must be a non-empty string",
+			"set $ref to a local .yaml, .yml, or .json routine manifest",
+		)
+	}
+	refPath := strings.TrimSpace(ref)
+	if !filepath.IsAbs(refPath) {
+		if remoteRoutineRefPattern.MatchString(refPath) {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidRoutineManifest,
+				"remote routine service $ref is not supported",
+				"set $ref to a local .yaml, .yml, or .json routine manifest",
+			)
+		}
+		if projectRoot == "" {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidRoutineManifest,
+				"cannot resolve routine service $ref without an azure.yaml project path",
+				"run the command from an initialized azd project",
+			)
+		}
+		refPath = filepath.Join(projectRoot, refPath)
+	}
+	referenced, err := readRoutineManifest(refPath)
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(referenced)
+	if err != nil {
+		return nil, fmt.Errorf("encoding referenced routine service: %w", err)
+	}
+	resolved := map[string]any{}
+	if err := json.Unmarshal(data, &resolved); err != nil {
+		return nil, fmt.Errorf("decoding referenced routine service: %w", err)
+	}
+
+	overlay := maps.Clone(values)
+	delete(overlay, "$ref")
+	maps.Copy(resolved, overlay)
+	return resolved, nil
+}
+
+// newRoutineServiceClient resolves a project endpoint and developer
+// credential for deploy. Deploy attaches the extension token from
+// AZD_ACCESS_TOKEN to the outgoing azd context before making host
+// calls. The credential uses the active subscription's user-access
+// tenant for guest users.
+func (p *routineServiceTarget) newRoutineServiceClient(
+	ctx context.Context,
+) (*routines.Client, error) {
 	requestTimeout, err := routineHTTPTimeoutOverrideFromEnv()
 	if err != nil {
 		return nil, err
@@ -184,7 +285,19 @@ func newRoutineServiceClient(ctx context.Context) (*routines.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{})
+
+	tenantID, err := resolveRoutineServiceTenant(
+		ctx,
+		p.azdClient.Environment(),
+		p.azdClient.Account(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+		TenantID:                   tenantID,
+		AdditionallyAllowedTenants: []string{"*"},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
 	}
@@ -195,11 +308,76 @@ func newRoutineServiceClient(ctx context.Context) (*routines.Client, error) {
 	), nil
 }
 
+type routineEnvironmentReader interface {
+	GetCurrent(
+		ctx context.Context,
+		in *azdext.EmptyRequest,
+		opts ...grpc.CallOption,
+	) (*azdext.EnvironmentResponse, error)
+	GetValue(
+		ctx context.Context,
+		in *azdext.GetEnvRequest,
+		opts ...grpc.CallOption,
+	) (*azdext.KeyValueResponse, error)
+}
+
+type routineAccountReader interface {
+	LookupTenant(
+		ctx context.Context,
+		in *azdext.LookupTenantRequest,
+		opts ...grpc.CallOption,
+	) (*azdext.LookupTenantResponse, error)
+}
+
+// resolveRoutineServiceTenant returns the active subscription's
+// user-access tenant for guest-user deployments.
+func resolveRoutineServiceTenant(
+	ctx context.Context,
+	environment routineEnvironmentReader,
+	account routineAccountReader,
+) (string, error) {
+	current, err := environment.GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return "", fmt.Errorf("resolving current azd environment: %w", err)
+	}
+	envName := current.GetEnvironment().GetName()
+	if envName == "" {
+		return "", fmt.Errorf("current azd environment has no name")
+	}
+
+	subscription, err := environment.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     "AZURE_SUBSCRIPTION_ID",
+	})
+	if err != nil {
+		return "", fmt.Errorf("reading AZURE_SUBSCRIPTION_ID: %w", err)
+	}
+	if subscription.GetValue() == "" {
+		return "", fmt.Errorf("AZURE_SUBSCRIPTION_ID is required for routine deployment")
+	}
+
+	tenant, err := account.LookupTenant(ctx, &azdext.LookupTenantRequest{
+		SubscriptionId: subscription.GetValue(),
+	})
+	if err != nil {
+		return "", fmt.Errorf("resolving user access tenant: %w", err)
+	}
+	if tenant.GetTenantId() == "" {
+		return "", fmt.Errorf("user access tenant is empty")
+	}
+	return tenant.GetTenantId(), nil
+}
+
 // serviceConfigReader is the slice of azdext.ProjectServiceClient
 // this target uses. Depending on the interface rather than the
 // concrete *azdext.AzdClient lets tests supply a fake: the client's
 // project field is unexported and no option overrides it.
 type serviceConfigReader interface {
+	Get(
+		ctx context.Context,
+		in *azdext.EmptyRequest,
+		opts ...grpc.CallOption,
+	) (*azdext.GetProjectResponse, error)
 	GetServiceConfigValue(
 		ctx context.Context,
 		in *azdext.GetServiceConfigValueRequest,

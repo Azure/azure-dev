@@ -55,19 +55,25 @@ func ExtensionUsageAttribute(key string) AttributeKey {
 
 // Application-level fields. Guaranteed to be set and available for all events.
 var (
-	// Application name. Value is always "azd".
+	// Service name. The application resource uses "azd"; MapError prefixes error details as error.service.name.
 	ServiceNameKey = AttributeKey{
-		Key: semconv.ServiceNameKey, // service.name
+		Key:            semconv.ServiceNameKey, // service.name
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
 	}
 
 	// Application version.
 	ServiceVersionKey = AttributeKey{
-		Key: semconv.ServiceVersionKey, // service.version
+		Key:            semconv.ServiceVersionKey, // service.version
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
 	}
 
 	// The operating system type.
 	OSTypeKey = AttributeKey{
-		Key: semconv.OSTypeKey, // os.type
+		Key:            semconv.OSTypeKey, // os.type
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
 	}
 
 	// The operating system version.
@@ -310,12 +316,20 @@ const (
 	EnvCloudShell         = "Azure CloudShell"
 
 	// AI Coding Agent environments
-	EnvClaudeCode          = "Claude Code"
-	EnvGitHubCopilotCLI    = "GitHub Copilot CLI"
-	EnvGitHubCopilotApp    = "GitHub Copilot App"
-	EnvGitHubCopilotVSCode = "GitHub Copilot VSCode"
-	EnvGemini              = "Gemini"
-	EnvOpenCode            = "OpenCode"
+	EnvAntigravity             = "Antigravity"
+	EnvClaudeCode              = "Claude Code"
+	EnvClaudeCodeDesktop       = "Claude Code Desktop"
+	EnvClaudeCodeVSCode        = "Claude Code VSCode"
+	EnvCodex                   = "Codex"
+	EnvCodexDesktop            = "Codex Desktop"
+	EnvCursor                  = "Cursor"
+	EnvGitHubCopilotCLI        = "GitHub Copilot CLI"
+	EnvGitHubCopilotApp        = "GitHub Copilot App"
+	EnvGitHubCopilotVSCode     = "GitHub Copilot VSCode"
+	EnvGitHubCopilotCloudAgent = "GitHub Copilot Cloud Agent"
+	EnvGemini                  = "Gemini"
+	EnvOpenCode                = "OpenCode"
+	EnvPi                      = "Pi"
 
 	// Continuous Integration environments
 
@@ -793,6 +807,7 @@ var (
 		Key:            attribute.Key("exegraph.max_concurrency"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
 	}
 
 	// ExeGraphErrorPolicyKey records the error policy (fail_fast or continue_on_error).
@@ -919,11 +934,34 @@ var (
 		Purpose:        PerformanceAndHealth,
 	}
 
-	// ErrChainTypes records the wrapped-error type chain (outermost
-	// first). Type names are code-defined and PII-free, so they're
-	// emitted as system metadata for triaging the catch-all bucket.
+	// ErrChainTypes records the host-observed wrapped-error type chain
+	// (outermost first). These reflected type names are system metadata.
 	ErrChainTypes = AttributeKey{
 		Key:            attribute.Key("error.chain.types"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// ErrExtensionCauseTypes records normalized extension-provided cause
+	// types as hashes because the extension controls their contents.
+	ErrExtensionCauseTypes = AttributeKey{
+		Key:            attribute.Key("error.extension.cause_types"),
+		Classification: EndUserPseudonymizedInformation,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// MapperSourceType records the sanitized Go type used as the source of a
+	// mapper conversion failure.
+	MapperSourceType = AttributeKey{
+		Key:            attribute.Key("mapper.source.type"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// MapperDestinationType records the sanitized Go type expected by a mapper
+	// conversion failure.
+	MapperDestinationType = AttributeKey{
+		Key:            attribute.Key("mapper.destination.type"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 	}
@@ -939,15 +977,8 @@ var (
 		Purpose:        PerformanceAndHealth,
 	}
 
-	// Name of the service.
-	ServiceName = AttributeKey{
-		Key:            attribute.Key("service.name"),
-		Classification: SystemMetadata,
-		Purpose:        PerformanceAndHealth,
-	}
-
-	// Status code of a response returned by the service.
-	// For HTTP, this corresponds to the HTTP status code.
+	// Status code of a response returned by the service. Numeric HTTP/service
+	// statuses are measurements; AAD authentication errors use string OAuth statuses.
 	ServiceStatusCode = AttributeKey{
 		Key:            attribute.Key("service.statusCode"),
 		Classification: SystemMetadata,
@@ -969,7 +1000,6 @@ var (
 		Key:            attribute.Key("service.errorCode"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
-		IsMeasurement:  true,
 	}
 
 	// Correlation ID for a request to the service.
@@ -994,6 +1024,7 @@ var (
 		Key:            attribute.Key("tool.exitCode"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
 	}
 )
 
@@ -1199,6 +1230,7 @@ var (
 		Key:            attribute.Key("agent.fix.attempts"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
 	}
 )
 
@@ -1216,9 +1248,8 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionEvent is the event name an extension chose for a usage
-	// event. Extensions own this value; it exists so queries can filter
-	// an extension's events without parsing its attributes.
+	// ExtensionEvent identifies a usage report or failed invocation event.
+	// Extensions own this value, which lets queries filter their events.
 	ExtensionEvent = AttributeKey{
 		Key:            attribute.Key("extension.event"),
 		Classification: SystemMetadata,

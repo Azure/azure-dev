@@ -37,11 +37,11 @@ Run the newly produced `azd` or `azd.exe` binary:
 
 ### Dev Install (build + add to PATH)
 
-Install [mage](https://magefile.org/) (`go install github.com/magefile/mage@latest`), then:
+Mage is included in `cli/azd/go.mod`. Run it with `go tool mage`; you do not need to install it separately.
 
 ```bash
 cd cli/azd
-mage dev:install
+go tool mage dev:install
 ```
 
 This builds `azd-dev` (to avoid conflicting with a production `azd` install) with version
@@ -54,10 +54,10 @@ Run all pre-commit checks (formatting, copyright headers, linting, spell check f
 
 ```bash
 cd cli/azd
-mage preflight
+go tool mage preflight
 ```
 
-> **Tip**: If you're using GitHub Copilot, the `/azd-preflight` skill runs `mage preflight` and auto-fixes any issues it discovers.
+> **Tip**: If you're using GitHub Copilot, the `/azd-preflight` skill runs `go tool mage preflight` and auto-fixes any issues it discovers.
 
 ### Re-recording functional test cassettes
 
@@ -67,8 +67,8 @@ Re-record stale functional test recordings against a live Azure subscription:
 
 ```bash
 cd cli/azd
-mage record                          # re-record all playback tests
-mage record -filter=Test_CLI_Quota   # re-record only matching tests
+go tool mage record                          # re-record all playback tests
+go tool mage record -filter=Test_CLI_Quota   # re-record only matching tests
 ```
 
 Core maintainers configure the test subscription and tenant once via `azd config`:
@@ -127,13 +127,13 @@ azd collects coverage from both unit tests and integration/functional tests. Sev
 
 | Mode | Command | Mage Target | Prerequisites | Speed |
 |------|---------|-------------|--------------|-------|
-| **Unit only** (recommended) | `./eng/scripts/Get-LocalCoverageReport.ps1 -ShowReport -UnitOnly` | `mage coverage:unit` | None | ~5-10 min |
-| **Hybrid** (local unit + CI integration) | `./eng/scripts/Get-LocalCoverageReport.ps1 -ShowReport -MergeWithCI` | `mage coverage:hybrid` | `az login` | ~6-11 min |
-| **Full local** (unit + integration) | `./eng/scripts/Get-LocalCoverageReport.ps1 -ShowReport` | `mage coverage:full` | Azure subscription + service principal | ~30-60 min |
-| **CI baseline** (latest main) | `./eng/scripts/Get-CICoverageReport.ps1 -ShowReport` | `mage coverage:ci` | `az login` | ~1 min |
+| **Unit only** (recommended) | `./eng/scripts/Get-LocalCoverageReport.ps1 -ShowReport -UnitOnly` | `go tool mage coverage:unit` | None | ~5-10 min |
+| **Hybrid** (local unit + CI integration) | `./eng/scripts/Get-LocalCoverageReport.ps1 -ShowReport -MergeWithCI` | `go tool mage coverage:hybrid` | `az login` | ~6-11 min |
+| **Full local** (unit + integration) | `./eng/scripts/Get-LocalCoverageReport.ps1 -ShowReport` | `go tool mage coverage:full` | Azure subscription + service principal | ~30-60 min |
+| **CI baseline** (latest main) | `./eng/scripts/Get-CICoverageReport.ps1 -ShowReport` | `go tool mage coverage:ci` | `az login` | ~1 min |
 
-Additional mage targets: `mage coverage:html` (HTML report), `mage coverage:check` (enforce 50% unit-only threshold; CI gate is 55% combined).
-Override the threshold with: `COVERAGE_MIN=55 mage coverage:check`.
+Additional Mage targets: `go tool mage coverage:html` (HTML report), `go tool mage coverage:check` (enforce 50% unit-only threshold; CI gate is 55% combined).
+Override the threshold with: `COVERAGE_MIN=55 go tool mage coverage:check`.
 
 **Typical workflow**: Use *Unit only* during development for fast feedback. After pushing a PR, use *Hybrid* or check your PR's CI coverage with `Get-CICoverageReport.ps1 -PullRequestId <N> -ShowReport`.
 

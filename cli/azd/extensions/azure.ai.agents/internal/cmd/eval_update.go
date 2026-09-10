@@ -24,6 +24,7 @@ import (
 
 // evalUpdateFlags holds CLI flags for the eval update command.
 type evalUpdateFlags struct {
+	evalContextFlags
 	envName       string // explicit environment name (from -e flag)
 	config        string // eval config path
 	datasetOnly   bool   // only update the dataset
@@ -51,6 +52,7 @@ local changes. Use --dataset-only or --evaluator-only to skip prompts.`,
 			return runEvalUpdate(ctx, flags, extCtx.NoPrompt)
 		},
 	}
+	addEvalContextFlags(cmd, &flags.evalContextFlags)
 	cmd.Flags().StringVar(&flags.config, "config", defaultEvalConfigName, "Local eval config YAML")
 	cmd.Flags().BoolVar(&flags.datasetOnly, "dataset-only", false, "Only update the dataset")
 	cmd.Flags().BoolVar(&flags.evaluatorOnly, "evaluator-only", false, "Only update evaluators")
@@ -58,7 +60,7 @@ local changes. Use --dataset-only or --evaluator-only to skip prompts.`,
 }
 
 func runEvalUpdate(ctx context.Context, flags *evalUpdateFlags, noPrompt bool) error {
-	resolved, err := resolveEvalContext(ctx, evalContextOptions{envName: flags.envName})
+	resolved, err := resolveEvalContext(ctx, flags.evalContextFlags.options(flags.envName, noPrompt, false))
 	if err != nil {
 		return err
 	}

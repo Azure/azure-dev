@@ -17,9 +17,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/terminal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -138,18 +140,22 @@ func findFirstNonFlagArg(args []string, flagsWithValues map[string]bool) (comman
 // from the command arguments. For example, "azd foo demo bar" will check for
 // extensions with namespaces: "foo", "foo.demo", "foo.demo.bar"
 func checkForMatchingExtensions(
-	ctx context.Context, extensionManager *extensions.Manager, args []string) ([]*extensions.ExtensionMetadata, error) {
+	ctx context.Context,
+	extensionManager extensionAutoInstallManager,
+	args []string,
+) ([]*extensions.ExtensionMetadata, error) {
 	if len(args) == 0 {
 		return nil, nil
 	}
 
-	options := &extensions.FilterOptions{}
-	registryExtensions, err := extensionManager.FindExtensions(ctx, options)
+	resolution, err := extensionManager.ResolveExtensions(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	var matchingExtensions []*extensions.ExtensionMetadata
+	var incompatibleExtensions []*extensions.ExtensionMetadata
+	incompatibleNamespace := ""
 
 	// Generate all possible namespace combinations from the command arguments
 	// For "azd something demo foo" -> check "something", "something.demo", "something.demo.foo"
@@ -157,13 +163,26 @@ func checkForMatchingExtensions(
 		candidateNamespace := strings.Join(args[:i], ".")
 
 		// Check if any extension has this exact namespace
-		for _, ext := range registryExtensions {
+		for _, ext := range resolution.Matches {
 			if ext.Namespace == candidateNamespace {
 				matchingExtensions = append(matchingExtensions, ext)
 			}
 		}
+		for _, ext := range resolution.IncompatibleMatches {
+			if ext.Namespace == candidateNamespace {
+				incompatibleExtensions = append(incompatibleExtensions, ext)
+				incompatibleNamespace = candidateNamespace
+			}
+		}
 	}
 
+	if len(matchingExtensions) == 0 && len(incompatibleExtensions) > 0 {
+		return nil, &extensions.ExtensionAzdVersionIncompatibleError{
+			Namespace:  incompatibleNamespace,
+			AzdVersion: extensionManager.AzdVersion(),
+			Matches:    incompatibleExtensions,
+		}
+	}
 	return matchingExtensions, nil
 }
 
@@ -371,6 +390,9 @@ func tryAutoInstallForPartialNamespace(
 
 	extensionMatches, err := checkForMatchingExtensions(ctx, extensionManager, argsForMatching)
 	if err != nil {
+		if _, ok := errors.AsType[*extensions.ExtensionAzdVersionIncompatibleError](err); ok {
+			return autoInstallResult{}, internal.WrapErrorWithSuggestion(err)
+		}
 		log.Printf("failed to check for matching extensions: %v", err)
 		return autoInstallResult{}, nil
 	}
@@ -391,17 +413,30 @@ func tryAutoInstallForPartialNamespace(
 }
 
 type extensionAutoInstallManager interface {
+	AzdVersion() *semver.Version
 	FindExtensions(ctx context.Context, options *extensions.FilterOptions) ([]*extensions.ExtensionMetadata, error)
+	FindInstallableExtensions(
+		ctx context.Context,
+		options *extensions.InstallResolutionOptions,
+	) ([]*extensions.ExtensionMetadata, error)
+	ResolveExtensions(
+		ctx context.Context,
+		options *extensions.InstallResolutionOptions,
+	) (*extensions.InstallResolutionResult, error)
+	ResolveVersion(
+		extension *extensions.ExtensionMetadata,
+		versionPreference string,
+	) (*extensions.ExtensionVersion, error)
 	GetInstalled(options extensions.FilterOptions) (*extensions.Extension, error)
 	ResolveDependency(
 		ctx context.Context,
 		parent *extensions.ExtensionMetadata,
 		dependency extensions.ExtensionDependency,
 	) (*extensions.ExtensionMetadata, error)
-	Install(
+	InstallWithOptions(
 		ctx context.Context,
 		extension *extensions.ExtensionMetadata,
-		versionPreference string,
+		opts extensions.InstallOptions,
 	) (*extensions.ExtensionVersion, error)
 	ListInstalled() (map[string]*extensions.Extension, error)
 }
@@ -436,7 +471,9 @@ func tryAutoInstallExtensionVersion(
 
 	stepMessage := extensionTaskMessage("Installing", extension.Id)
 	console.ShowSpinner(ctx, stepMessage, input.Step)
-	installedVersion, err := extensionManager.Install(ctx, &extension, versionPreference)
+	installedVersion, err := extensionManager.InstallWithOptions(ctx, &extension, extensions.InstallOptions{
+		VersionPreference: versionPreference,
+	})
 	if err != nil {
 		console.StopSpinner(ctx, stepMessage, input.StepFailed)
 		return false, fmt.Errorf("failed to install extension: %w", err)
@@ -707,11 +744,20 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		}
 
 		requiredHost := unsupportedErr.Host
-		availableExtensionsForHost, err := extensionManager.FindExtensions(ctx, &extensions.FilterOptions{
-			Capability: extensions.ServiceTargetProviderCapability,
-			Provider:   requiredHost,
-		})
+		availableExtensionsForHost, err := extensionManager.FindInstallableExtensions(
+			ctx,
+			&extensions.InstallResolutionOptions{FilterOptions: extensions.FilterOptions{
+				Capability: extensions.ServiceTargetProviderCapability,
+				Provider:   requiredHost,
+			}},
+		)
 		if err != nil {
+			if _, ok := errors.AsType[*extensions.ExtensionAzdVersionIncompatibleError](err); ok {
+				wrappedErr := internal.WrapErrorWithSuggestion(err)
+				displayAutoInstallError(ctx, console, wrappedErr)
+				result.Err = wrappedErr
+				return result
+			}
 			// Do not fail if we couldn't check for extensions - just report the command's own failure
 			log.Println("Error: check for extensions. Skipping auto-install:", err)
 			console.Message(ctx, unsupportedErr.ErrorMessage)
@@ -726,13 +772,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			result.Err = commandErr
 			return result
 		}
-		// Offer only the extensions whose selected version supplies the host and that are not
-		// already installed.
-		availableExtensionsForHost = filterExtensionsForProvider(
-			availableExtensionsForHost,
-			extensions.ServiceTargetProviderCapability,
-			requiredHost,
-		)
+		// Remove extensions that are already installed.
 		availableExtensionsForHost = uninstalledExtensionMatches(availableExtensionsForHost, installedExtensions)
 		if len(availableExtensionsForHost) == 0 {
 			// Nothing can be installed to supply the host, so the command's failure stands.
@@ -846,6 +886,12 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		// Check if any commands might match extensions with various namespace lengths
 		extensionMatches, err := checkForMatchingExtensions(ctx, extensionManager, argsForMatching)
 		if err != nil {
+			if _, ok := errors.AsType[*extensions.ExtensionAzdVersionIncompatibleError](err); ok {
+				wrappedErr := internal.WrapErrorWithSuggestion(err)
+				displayAutoInstallError(ctx, console, wrappedErr)
+				result.Err = wrappedErr
+				return result
+			}
 			// Do not fail if we couldn't check for extensions - just proceed to normal execution
 			log.Println("Error: check for extensions. Skipping auto-install:", err)
 			result.Err = rootCmd.ExecuteContext(ctx)
@@ -933,11 +979,19 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 // early access to global flag values for auto-install and other pre-execution logic.
 //
 // Auto no-prompt detection: If --no-prompt is not explicitly set (via flag or the
-// AZD_NON_INTERACTIVE env var) and azd is running in a non-interactive context — an AI coding
-// agent (like Claude Code, GitHub Copilot CLI, Cursor, etc.) or a CI/CD environment — NoPrompt is
-// automatically enabled. Explicit --no-prompt/--non-interactive flags and AZD_NON_INTERACTIVE take
-// precedence; set AZD_NON_INTERACTIVE=false to opt out of this automatic enablement.
+// AZD_NON_INTERACTIVE env var) and azd is running in CI/CD or a detected AI agent without an
+// interactive terminal, NoPrompt is automatically enabled. Explicit --no-prompt/--non-interactive
+// flags and AZD_NON_INTERACTIVE take precedence; set AZD_NON_INTERACTIVE=false to opt out of this
+// automatic enablement.
 func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error {
+	return parseGlobalFlags(args, opts, terminal.IsAttached)
+}
+
+func parseGlobalFlags(
+	args []string,
+	opts *internal.GlobalCommandOptions,
+	isTerminal func(stdoutFd uintptr, stdinFd uintptr) bool,
+) error {
 	globalFlagSet := CreateGlobalFlagSet()
 
 	// Set output to io.Discard to suppress any error messages from pflag
@@ -1030,14 +1084,13 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 	}
 
 	// Auto no-prompt detection: If no explicit flag or env var was set, automatically enable
-	// no-prompt mode when azd runs in a non-interactive context where prompting is not possible —
-	// either an AI coding agent or a CI/CD environment. This makes CI behavior deterministic:
-	// prompts resolve to their defaults (or fail fast with an actionable error) instead of
-	// silently aborting on an EOF stdin. Explicit flags and AZD_NON_INTERACTIVE take precedence;
-	// set AZD_NON_INTERACTIVE=false to opt out of this automatic enablement (NoPrompt stays false).
-	// Note: some commands still avoid interactive prompts in CI/CD by design, independent of this.
+	// no-prompt mode for CI/CD and non-interactive agent invocations. Agent markers are inherited
+	// by descendant processes, so they only affect prompt behavior when stdin and stdout are not
+	// attached to a terminal. Explicit flags and AZD_NON_INTERACTIVE take precedence.
+	agentWithoutTerminal := agentdetect.IsRunningInAgent() &&
+		!isTerminal(os.Stdout.Fd(), os.Stdin.Fd())
 	if !flagExplicitlySet && !envVarPresent &&
-		(agentdetect.IsRunningInAgent() || resource.IsRunningOnCI()) {
+		(agentWithoutTerminal || resource.IsRunningOnCI()) {
 		opts.NoPrompt = true
 	}
 

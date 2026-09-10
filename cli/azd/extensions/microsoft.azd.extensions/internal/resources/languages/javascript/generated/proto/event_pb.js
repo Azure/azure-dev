@@ -23,6 +23,8 @@ var global =
 
 var models_pb = require('./models_pb.js');
 goog.object.extend(proto, models_pb);
+var errors_pb = require('./errors_pb.js');
+goog.object.extend(proto, errors_pb);
 goog.exportSymbol('proto.azdext.EventMessage', null, global);
 goog.exportSymbol('proto.azdext.EventMessage.MessageTypeCase', null, global);
 goog.exportSymbol('proto.azdext.ExtensionReadyEvent', null, global);
@@ -1667,7 +1669,8 @@ proto.azdext.ProjectHandlerStatus.toObject = function(includeInstance, msg) {
   var f, obj = {
 eventName: jspb.Message.getFieldWithDefault(msg, 1, ""),
 status: jspb.Message.getFieldWithDefault(msg, 2, ""),
-message: jspb.Message.getFieldWithDefault(msg, 3, "")
+message: jspb.Message.getFieldWithDefault(msg, 3, ""),
+error: (f = msg.getError()) && errors_pb.ExtensionError.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -1715,6 +1718,11 @@ proto.azdext.ProjectHandlerStatus.deserializeBinaryFromReader = function(msg, re
     case 3:
       var value = /** @type {string} */ (reader.readString());
       msg.setMessage(value);
+      break;
+    case 4:
+      var value = new errors_pb.ExtensionError;
+      reader.readMessage(value,errors_pb.ExtensionError.deserializeBinaryFromReader);
+      msg.setError(value);
       break;
     default:
       reader.skipField();
@@ -1764,6 +1772,14 @@ proto.azdext.ProjectHandlerStatus.serializeBinaryToWriter = function(message, wr
     writer.writeString(
       3,
       f
+    );
+  }
+  f = message.getError();
+  if (f != null) {
+    writer.writeMessage(
+      4,
+      f,
+      errors_pb.ExtensionError.serializeBinaryToWriter
     );
   }
 };
@@ -1823,6 +1839,43 @@ proto.azdext.ProjectHandlerStatus.prototype.setMessage = function(value) {
 };
 
 
+/**
+ * optional ExtensionError error = 4;
+ * @return {?proto.azdext.ExtensionError}
+ */
+proto.azdext.ProjectHandlerStatus.prototype.getError = function() {
+  return /** @type{?proto.azdext.ExtensionError} */ (
+    jspb.Message.getWrapperField(this, errors_pb.ExtensionError, 4));
+};
+
+
+/**
+ * @param {?proto.azdext.ExtensionError|undefined} value
+ * @return {!proto.azdext.ProjectHandlerStatus} returns this
+*/
+proto.azdext.ProjectHandlerStatus.prototype.setError = function(value) {
+  return jspb.Message.setWrapperField(this, 4, value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.azdext.ProjectHandlerStatus} returns this
+ */
+proto.azdext.ProjectHandlerStatus.prototype.clearError = function() {
+  return this.setError(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.azdext.ProjectHandlerStatus.prototype.hasError = function() {
+  return jspb.Message.getField(this, 4) != null;
+};
+
+
 
 
 
@@ -1858,7 +1911,8 @@ proto.azdext.ServiceHandlerStatus.toObject = function(includeInstance, msg) {
 eventName: jspb.Message.getFieldWithDefault(msg, 1, ""),
 serviceName: jspb.Message.getFieldWithDefault(msg, 2, ""),
 status: jspb.Message.getFieldWithDefault(msg, 3, ""),
-message: jspb.Message.getFieldWithDefault(msg, 4, "")
+message: jspb.Message.getFieldWithDefault(msg, 4, ""),
+error: (f = msg.getError()) && errors_pb.ExtensionError.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -1910,6 +1964,11 @@ proto.azdext.ServiceHandlerStatus.deserializeBinaryFromReader = function(msg, re
     case 4:
       var value = /** @type {string} */ (reader.readString());
       msg.setMessage(value);
+      break;
+    case 5:
+      var value = new errors_pb.ExtensionError;
+      reader.readMessage(value,errors_pb.ExtensionError.deserializeBinaryFromReader);
+      msg.setError(value);
       break;
     default:
       reader.skipField();
@@ -1966,6 +2025,14 @@ proto.azdext.ServiceHandlerStatus.serializeBinaryToWriter = function(message, wr
     writer.writeString(
       4,
       f
+    );
+  }
+  f = message.getError();
+  if (f != null) {
+    writer.writeMessage(
+      5,
+      f,
+      errors_pb.ExtensionError.serializeBinaryToWriter
     );
   }
 };
@@ -2040,6 +2107,43 @@ proto.azdext.ServiceHandlerStatus.prototype.getMessage = function() {
  */
 proto.azdext.ServiceHandlerStatus.prototype.setMessage = function(value) {
   return jspb.Message.setProto3StringField(this, 4, value);
+};
+
+
+/**
+ * optional ExtensionError error = 5;
+ * @return {?proto.azdext.ExtensionError}
+ */
+proto.azdext.ServiceHandlerStatus.prototype.getError = function() {
+  return /** @type{?proto.azdext.ExtensionError} */ (
+    jspb.Message.getWrapperField(this, errors_pb.ExtensionError, 5));
+};
+
+
+/**
+ * @param {?proto.azdext.ExtensionError|undefined} value
+ * @return {!proto.azdext.ServiceHandlerStatus} returns this
+*/
+proto.azdext.ServiceHandlerStatus.prototype.setError = function(value) {
+  return jspb.Message.setWrapperField(this, 5, value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.azdext.ServiceHandlerStatus} returns this
+ */
+proto.azdext.ServiceHandlerStatus.prototype.clearError = function() {
+  return this.setError(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.azdext.ServiceHandlerStatus.prototype.hasError = function() {
+  return jspb.Message.getField(this, 5) != null;
 };
 
 

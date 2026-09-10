@@ -1,5 +1,79 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Extension telemetry API
+
+Extension code reports best-effort usage events through the shared
+`pkg/foundry/telemetry` reporter. Extension-owned event builders remain in
+`internal/telemetry`:
+
+```go
+reporter := foundryTelemetry.NewReporter(azdClient.Telemetry(), nil)
+reporter.Report(ctx, extensionTelemetry.LocalClientRouteSelected(route))
+```
+
+`Report` has no return value and never changes the command result. It applies a
+one-second timeout, never retries, and writes only the event name and gRPC status
+code to the debug log when reporting fails. Attribute values and transport error
+details are not logged.
+
+Define event names, attribute keys, and bounded values in
+`internal/telemetry/events.go`. Do not call `ReportUsage` directly from command
+or provider code. Events must contain low-cardinality product metadata only;
+never include prompts, responses, resource or service names, IDs, paths, URLs,
+connection values, or other customer content. The azd host records events only
+for extensions installed from the official registry.
+
+The event currently emitted by this extension is documented under
+[Local client route telemetry](#local-client-route-telemetry).
+
+## Non-interactive automation
+
+See the shared [AI extension non-interactive input reference](../ai-non-interactive.md)
+for every prompt's flag, environment/configuration input, or deterministic
+no-prompt behavior.
+
+## Choosing a Foundry project name
+
+During interactive `azd ai agent init`, azd prompts for the name of a new
+Microsoft Foundry project. If the current azd environment name is valid for
+the generated infrastructure, it is offered as the default. The name must be
+3-32 characters, start with a letter or number, and contain only letters,
+numbers, or hyphens.
+
+To configure the name, set it in the active azd environment before running
+init:
+
+```bash
+azd env set AZURE_AI_PROJECT_NAME my-foundry-project
+```
+
+An existing `AZURE_AI_PROJECT_NAME` value is offered as the default during
+interactive new-project setup. `--no-prompt` remains non-interactive and keeps
+its existing automatic environment-name fallback.
+
+## Composing Agent Dependencies
+
+Use the Agent command surface to attach existing Toolbox or Connection services
+to an Agent service in `azure.yaml`:
+
+```bash
+azd ai agent add toolbox support-tools --agent research-agent
+azd ai agent add connection search-connection --agent research-agent
+```
+
+These commands add the dependency service key to `services.<agent>.uses`. They
+do not create or deploy the dependency. Toolbox and Connection configuration and
+lifecycle behavior remain owned by the `azure.ai.toolboxes` and
+`azure.ai.connections` extensions.
+
+If a toolbox is declared inline on an agent, move its definition to an
+independent `azure.ai.toolbox` service before deployment. If the new service key
+differs from the original toolbox name (for example, `My Tools` becomes
+`MyTools`), replace the inline entry in the agent's `toolboxes` list with the
+new service key. Then attach that service with the command above and run `azd deploy`.
+The add command only updates the agent's `uses` list; it does not rewrite
+`toolboxes`, create the service, or deploy it.
+
 ## Running Local Agents
 
 `azd ai agent run` starts the selected agent locally and, by default, opens the
@@ -31,37 +105,49 @@ services:
       - protocol: activity
         version: 2.0.0
     activity:
-      useCase: digital_worker
+      digitalWorkerType: m365
       publish:
         publishScope: tenant
         agentDisplayName: My Digital Worker
-        agenticUserTemplate:
-          id: digitalWorkerTemplate
-          file: agenticUserTemplateManifest.json
-          schemaVersion: 0.1.0-preview
-          communicationProtocol: activityProtocol
+        optionalPermissionScopes:
+          - resourceAppId: ea9ffc3e-8a23-4a7d-836d-234d7c7565c1
+            scopes:
+              - McpServers.Mail.All
+              - McpServers.Calendar.All
+        accessBoundaries:
+          - read.1on1.developers
+          - write.1on1.developers
 ```
 
 The `activity.publish` block is shared Microsoft 365 app publish metadata for
-Activity use cases (including `simple`). For `digital_worker`, azd enforces
-additional constraints: `publish` must be present, `publishScope` must be
-`tenant`, and `agenticUserTemplate` must include `id`, `file`,
-`schemaVersion`, and `communicationProtocol`. The publish request sets
-`publishAsAutopilot` automatically to `true` for this use case; users do not
-need to declare it in YAML. The Agent Identity Blueprint ID is generated during
-deployment and added to the publish request automatically.
+Activity agents. When `digitalWorkerType` is `m365`, azd enforces tenant scope
+and sends `digital_worker_type: m365` when creating the agent. Omit
+`digitalWorkerType` for simple mode.
+After deployment, the service-returned Digital Worker type controls pack and
+publish behavior. The publish request sets `publishAsAutopilot` automatically;
+the publish block itself is optional.
+
+`optionalPermissionScopes` selects additional Microsoft 365 permissions such as
+WorkIQ MCP scopes. `accessBoundaries` accepts the supported
+`read.1on1.developers`, `write.1on1.developers`,
+`read.group.developers`, and `write.group.developers` values. Omitting
+`accessBoundaries` preserves the current service configuration; an explicit
+empty array clears it.
 
 ```bash
 azd deploy
 azd ai agent publish
 ```
 
-For `simple` Activity agents, `publishScope` accepts `shared` or `tenant`. For
-`digital_worker`, `publishScope` is always `tenant`.
+For simple Activity agents, `publishScope` accepts `shared` or `tenant`. For an
+`m365` Digital Worker, `publishScope` is always `tenant`.
 An explicit `azd ai agent publish --scope <scope>` overrides the configured
 value where allowed by the use case. Use `--display-name` and `--app-version`
 to override the corresponding configured publish metadata for one command
-invocation.
+invocation. Repeat `--optional-permission-scope <resource-app-id>=<scope>` or
+`--access-boundary <boundary>` to replace the configured values for one
+publication. Use `--clear-access-boundaries` to send an explicit empty array and
+clear existing boundaries.
 
 The Agent Inspector UI binds port `8087` by default. Use `--inspector-port` to
 move it, which is what you need when running two agents side by side or when a
@@ -197,6 +283,66 @@ Details:
 > the other inline agent properties such as `codeConfiguration` and
 > `environmentVariables`.
 
+## Prompt voice telephony bindings
+
+Prompt voice agents can declare Foundry-side telephony bindings in `azure.yaml`.
+This lets `azd deploy` bind an existing phone-provider route to the deployed
+agent. Telephony is only supported for voice services. Use `kind: voice` for new
+managed voice agents; `kind: prompt-voice` remains a compatibility alias.
+
+```yaml
+services:
+  support-voice:
+    host: azure.ai.agent
+    kind: voice
+    name: support-voice
+    model:
+      id: gpt-realtime
+    telephony:
+      bindings:
+        - provider: twilio
+          identifier: "+14255550123"
+          connection: telephony-twilio
+        - provider: acs
+          identifier: "28:orgid:00000000-0000-0000-0000-000000000001"
+          connection: telephony-acs
+```
+
+Prerequisites:
+
+- The phone provider account/resource and phone number already exist.
+- The Foundry project connection named by `connection` already exists.
+- Provider-side callbacks, such as Twilio webhooks or ACS Event Subscriptions,
+  are configured by the user/admin.
+
+Supported providers and identifiers:
+
+- `twilio`: use a Twilio phone number in E.164 format, such as `+14255550123`.
+- `acs`: use `28:orgid:<guid>` for Teams Phone Extensibility Resource Accounts
+  or `4:+<E.164>` for ACS-purchased numbers. azd maps `acs` to the service
+  provider value `azure-communication-service`.
+
+Bindings are create-only in this preview. If a remote binding exists and matches
+the YAML, deploy continues. If the remote binding has different configuration,
+azd fails with a remediation message instead of silently keeping stale routing.
+
+Cleanup: delete telephony bindings before deleting test agents. The service may
+leave bindings behind when an agent is deleted, so do not rely on agent deletion
+as binding cleanup.
+
+Delete a binding with the agent-scoped telephony API before deleting the agent:
+
+```bash
+curl -X DELETE \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Foundry-Features: VoiceAgents=V1Preview" \
+  "$PROJECT_ENDPOINT/agents/$AGENT_NAME/telephony/$BINDING_ID?api-version=2025-11-15-preview"
+```
+
+The binding ID is the service provider plus identifier, for example
+`twilio:%2B14255550123` for `+14255550123`, or
+`azure-communication-service:28:orgid:<guid>` for ACS/TPE.
+
 ### Moderating invocations-protocol traffic
 
 For agents that expose the `invocations` protocol, the RAI policy alone is not
@@ -263,6 +409,78 @@ keys throughout this block (`invocations_moderation`, `response_mode`,
 `input_paths`, `stream_selectors`, `event_type`, and so on). The **values**
 (`non_streaming`, `streaming`, `both`, `json`, `text`) are the same in both.
 
+### Hosted voice wrapper (preview)
+
+A hosted voice wrapper keeps Voice Live responsible for VAD, speech-to-text,
+and text-to-speech while routing conversation logic to a hosted agent in the
+same Foundry project. Hosted Voice samples use the same sample `azure.yaml`
+flow as other current Hosted Agent and `invocations_ws` samples:
+
+```powershell
+azd ai agent init -m .\path\to\azure.yaml
+```
+
+The local path can be replaced with its public GitHub URL after the sample is
+published.
+
+When the sample project is already present with its `azure.yaml`, run
+`azd ai agent init` from the project directory to reuse the existing azd
+configuration before provisioning and deployment.
+
+The sample `azure.yaml` contains both services and references the target by its
+service name:
+
+```yaml
+services:
+  ai-project:
+    host: azure.ai.project
+
+  voice-target:
+    host: azure.ai.agent
+    project: ./src/voice-target
+    language: csharp
+    kind: hosted
+    name: voice-target
+    uses:
+      - ai-project
+    protocols:
+      - protocol: invocations_ws
+        version: 1.0.0
+    metadata:
+      voiceLiveCompatible: "true"
+      bridgeProtocolVersion: "1.0"
+    container:
+      resources:
+        cpu: "1"
+        memory: 2Gi
+    codeConfiguration:
+      runtime: dotnet_10
+      entryPoint: VoiceHostedAgent.dll
+      dependencyResolution: bundled
+
+  voice-target-voice:
+    host: azure.ai.agent
+    kind: voice
+    name: voice-target-voice
+    uses:
+      - ai-project
+      - voice-target
+    modelType: hosted_agent
+    targetAgent:
+      service: voice-target
+      version: deployed
+    store: false
+```
+
+The `uses` edge deploys the target before the wrapper. `version: deployed`
+pins the wrapper to the target version produced by the current azd environment.
+Hosted voice wrappers use the unified Voice API.
+
+The target must be active, declare `invocations_ws/1.0.0`, and include
+`voiceLiveCompatible=true` and `bridgeProtocolVersion=1.0` metadata. Model,
+instructions, tools, and other conversation controls belong to the target;
+the wrapper owns audio, voice, store, avatar, and greeting configuration.
+
 ## Session idle timeout
 
 A hosted agent's runtime session sandbox is suspended by Foundry after a period
@@ -288,7 +506,7 @@ seconds).
 
 Details:
 
-- `idleTimeoutSeconds` must be between **300 and 3600** seconds (inclusive).
+- `idleTimeoutSeconds` must be between **120 and 3600** seconds (inclusive).
   Values outside that range are rejected at deploy time and by schema
   validation.
 - In the deprecated on-disk `agent.yaml` shape the keys are snake_case
@@ -328,6 +546,100 @@ Details:
 ## Customize infrastructure
 
 Use `azd ai agent init --infra` to generate editable Foundry Bicep or Terraform. Existing project infrastructure is preserved as a separate layer. See [Customize Foundry infrastructure with `--infra`](docs/infrastructure-eject.md) for migration behavior, file-conflict rules, resource-group ownership, layer dependencies, and limitations.
+
+## Private container registry connections
+
+A hosted agent can reference a pre-built image in a private registry through a
+Foundry project connection. The image must be fully qualified, and
+`docker.imagePassthrough: true` is required so azd preserves the remote image
+reference instead of pulling, building, or publishing it.
+
+The Foundry connection must use metadata understood by the hosted-agent service
+and credentials that let the Foundry project identity authenticate to the
+registry. For OAuth token exchange, configure the registry's identity provider,
+audience, token endpoint, and project-identity binding before deploying.
+
+### External connection
+
+For a connection that already exists in the Foundry project, set
+`registryConnectionId` to its Foundry name or resource ID. An external connection
+does not belong in `uses`:
+
+```yaml
+services:
+  existing-project:
+    host: azure.ai.project
+    endpoint: https://example.services.ai.azure.com/api/projects/example-project
+
+  private-image-agent:
+    host: azure.ai.agent
+    uses:
+      - existing-project
+    kind: hosted
+    name: private-image-agent
+    image: registry.example.com/team/agent:v1
+    docker:
+      imagePassthrough: true
+    registryConnectionId: production-registry
+    protocols:
+      - protocol: invocations
+        version: 1.0.0
+```
+
+You can create the external connection before deployment with
+`azd ai connection create`, or create it through the Foundry portal or API. The
+connection must exist on the selected project before `azd deploy` runs.
+
+### Declarative sibling connection
+
+To let `azd provision` create the connection, declare an
+`azure.ai.connection` sibling. For this declarative path, both the agent's
+`registryConnectionId` and `uses` identify the sibling's azure.yaml service key,
+which is also the Foundry connection name provisioned by the current Projects
+extension:
+
+```yaml
+services:
+  existing-project:
+    host: azure.ai.project
+    endpoint: https://example.services.ai.azure.com/api/projects/example-project
+
+  private-registry:
+    host: azure.ai.connection
+    uses:
+      - existing-project
+    category: CustomKeys
+    target: https://registry.example.com
+    authType: CustomKeys
+    credentials:
+      keys:
+        audience: ${REGISTRY_AUDIENCE}
+        tokenEndpoint: /oauth/token
+        body.provider_name: ${REGISTRY_PROVIDER}
+    metadata:
+      type: registry_connection
+      mode: oauth_token_exchange
+
+  private-image-agent:
+    host: azure.ai.agent
+    uses:
+      - existing-project
+      - private-registry
+    kind: hosted
+    name: private-image-agent
+    image: registry.example.com/team/agent:v1
+    docker:
+      imagePassthrough: true
+    registryConnectionId: private-registry
+    protocols:
+      - protocol: invocations
+        version: 1.0.0
+```
+
+Set the referenced credential environment values, run `azd provision`, and then
+run `azd deploy`. Omitting the sibling from `uses`, disabling it with a deployment
+condition, or omitting image passthrough causes validation to fail before agent
+deployment.
 
 ## Private networking for `host: azure.ai.project`
 

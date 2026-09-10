@@ -12,12 +12,20 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/envkey"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 type dependencyEnabled func(context.Context, string) (bool, error)
+
+type hostedVoiceTarget struct {
+	ServiceName     string
+	AgentName       string
+	AgentVersion    string
+	ProjectEndpoint string
+}
 
 const (
 	foundryProjectHost    = "azure.ai.project"
@@ -37,6 +45,65 @@ type foundryDependencyFailure struct {
 	requiresProvision bool
 	requiresDeploy    bool
 	requiresMigration bool
+}
+
+// validateRegistryConnectionDependency ensures a registry connection declared
+// as a sibling azd service is wired through uses. References that do not match a
+// local service are external Foundry connection names or IDs and are left to the
+// service to resolve.
+func validateRegistryConnectionDependency(
+	ctx context.Context,
+	agent *azdext.ServiceConfig,
+	connectionRef string,
+	services map[string]*azdext.ServiceConfig,
+	isEnabled dependencyEnabled,
+) error {
+	connectionRef = strings.TrimSpace(connectionRef)
+	if connectionRef == "" {
+		return nil
+	}
+
+	dependency, exists := services[connectionRef]
+	if !exists {
+		return nil
+	}
+	if dependency.GetHost() != foundryConnectionHost {
+		return exterrors.Dependency(
+			exterrors.CodeFoundryDependencyNotReady,
+			fmt.Sprintf(
+				"registry connection %s resolves to service host %s instead of %s",
+				strconv.Quote(connectionRef),
+				strconv.Quote(dependency.GetHost()),
+				strconv.Quote(foundryConnectionHost),
+			),
+			fmt.Sprintf("change the %s service host to %s or use an external Foundry connection reference",
+				strconv.Quote(connectionRef), strconv.Quote(foundryConnectionHost)),
+		)
+	}
+	if !slices.Contains(agent.GetUses(), connectionRef) {
+		return exterrors.Dependency(
+			exterrors.CodeFoundryDependencyNotReady,
+			fmt.Sprintf("registry connection service %s is not declared in %s uses",
+				strconv.Quote(connectionRef), strconv.Quote(agent.GetName())),
+			fmt.Sprintf("add %s to the %s service uses list, run 'azd provision', then retry the agent deployment",
+				strconv.Quote(connectionRef), strconv.Quote(agent.GetName())),
+		)
+	}
+	if isEnabled != nil {
+		enabled, err := isEnabled(ctx, connectionRef)
+		if err != nil {
+			return err
+		}
+		if !enabled {
+			return exterrors.Dependency(
+				exterrors.CodeFoundryDependencyNotReady,
+				fmt.Sprintf("registry connection service %s is disabled by its deployment condition",
+					strconv.Quote(connectionRef)),
+				"enable the registry connection dependency or use an external Foundry connection reference",
+			)
+		}
+	}
+	return nil
 }
 
 func validateFoundryDependencies(
@@ -291,6 +358,10 @@ func validateFoundryProjectDependency(_ *azdext.ServiceConfig, env map[string]st
 }
 
 func validateFoundryConnectionDependency(service *azdext.ServiceConfig, env map[string]string) string {
+	connectionProject := strings.TrimSpace(env[envkey.ConnectionProjectEndpoint])
+	if connectionProject != "" && !sameProjectEndpoint(connectionProject, env["FOUNDRY_PROJECT_ENDPOINT"]) {
+		return fmt.Sprintf("%s does not match FOUNDRY_PROJECT_ENDPOINT", envkey.ConnectionProjectEndpoint)
+	}
 	found := false
 	for name := range strings.SplitSeq(env["AZURE_AI_PROJECT_CONNECTION_NAMES"], ",") {
 		if strings.TrimSpace(name) == service.GetName() {
@@ -300,13 +371,6 @@ func validateFoundryConnectionDependency(service *azdext.ServiceConfig, env map[
 	}
 	if !found {
 		return "connection is not listed in AZURE_AI_PROJECT_CONNECTION_NAMES"
-	}
-	// Older project extensions published connection names without a scope marker.
-	if strings.TrimSpace(env[envkey.ConnectionProjectEndpoint]) == "" {
-		return ""
-	}
-	if !sameProjectEndpoint(env[envkey.ConnectionProjectEndpoint], env["FOUNDRY_PROJECT_ENDPOINT"]) {
-		return fmt.Sprintf("%s does not match FOUNDRY_PROJECT_ENDPOINT", envkey.ConnectionProjectEndpoint)
 	}
 	return ""
 }
@@ -349,6 +413,67 @@ func validateFoundryAgentDependency(service *azdext.ServiceConfig, env map[strin
 		return fmt.Sprintf("%s does not match FOUNDRY_PROJECT_ENDPOINT", projectKey)
 	}
 	return ""
+}
+
+func resolveHostedVoiceTarget(
+	wrapper *azdext.ServiceConfig,
+	voiceAgentTarget *agent_yaml.VoiceTargetAgent,
+	services map[string]*azdext.ServiceConfig,
+	env map[string]string,
+	projectRoot string,
+) (*hostedVoiceTarget, error) {
+	if voiceAgentTarget == nil || strings.TrimSpace(voiceAgentTarget.Service) == "" {
+		return nil, fmt.Errorf("targetAgent.service is required when modelType is hosted_agent")
+	}
+	targetServiceName := strings.TrimSpace(voiceAgentTarget.Service)
+	if !slices.Contains(wrapper.GetUses(), targetServiceName) {
+		return nil, fmt.Errorf(
+			"hosted voice target service %q must be declared in the %q service uses list",
+			targetServiceName, wrapper.GetName())
+	}
+	targetService, ok := services[targetServiceName]
+	if !ok {
+		return nil, fmt.Errorf("hosted voice target service %q was not found in azure.yaml", targetServiceName)
+	}
+	if targetService.GetHost() != foundryAgentHost {
+		return nil, fmt.Errorf(
+			"hosted voice target service %q must use host %q, got %q",
+			targetServiceName, foundryAgentHost, targetService.GetHost())
+	}
+	_, isHosted, _, err := LoadAgentDefinition(targetService, projectRoot)
+	if err != nil {
+		return nil, fmt.Errorf("loading hosted voice target service %q: %w", targetServiceName, err)
+	}
+	if !isHosted {
+		return nil, fmt.Errorf("hosted voice target service %q must have kind hosted", targetServiceName)
+	}
+
+	key := normalizeAgentServiceKey(targetServiceName)
+	name := strings.TrimSpace(env[fmt.Sprintf("AGENT_%s_NAME", key)])
+	version := strings.TrimSpace(env[fmt.Sprintf("AGENT_%s_VERSION", key)])
+	projectEndpoint := strings.TrimSpace(env[envkey.AgentProjectEndpoint(targetServiceName)])
+	baseEndpoint := strings.TrimSpace(env[fmt.Sprintf("AGENT_%s_ENDPOINT", key)])
+	if projectEndpoint == "" && endpointBelongsToProject(baseEndpoint, env["FOUNDRY_PROJECT_ENDPOINT"]) {
+		projectEndpoint = strings.TrimRight(strings.TrimSpace(env["FOUNDRY_PROJECT_ENDPOINT"]), "/")
+	}
+	if name == "" || version == "" || projectEndpoint == "" {
+		return nil, fmt.Errorf(
+			"hosted voice target service %q is not deployed; run 'azd deploy %s' or 'azd deploy --all'",
+			targetServiceName, strconv.Quote(targetServiceName))
+	}
+	if !sameProjectEndpoint(projectEndpoint, env["FOUNDRY_PROJECT_ENDPOINT"]) {
+		return nil, fmt.Errorf(
+			"hosted voice target service %q is deployed to a different Foundry project",
+			targetServiceName,
+		)
+	}
+
+	return &hostedVoiceTarget{
+		ServiceName:     targetServiceName,
+		AgentName:       name,
+		AgentVersion:    version,
+		ProjectEndpoint: projectEndpoint,
+	}, nil
 }
 
 func endpointBelongsToProject(resourceEndpoint, projectEndpoint string) bool {

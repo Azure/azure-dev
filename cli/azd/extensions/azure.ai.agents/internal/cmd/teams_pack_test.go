@@ -12,6 +12,7 @@ import (
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/require"
 )
 
 func TestResolveTeamsPackScope(t *testing.T) {
@@ -73,8 +74,8 @@ func TestBuildTeamsAppPackageRequest(t *testing.T) {
 	if req.AppVersion != "1.0.0" {
 		t.Errorf("AppVersion = %q, want default 1.0.0", req.AppVersion)
 	}
-	if !req.CanRespondWithoutMention {
-		t.Error("CanRespondWithoutMention = false, want true")
+	if req.CanRespondWithoutMention != nil {
+		t.Error("CanRespondWithoutMention must be omitted when not configured")
 	}
 }
 
@@ -84,8 +85,11 @@ func TestBuildTeamsAppPackageRequest_DigitalWorkerUsesPublishMetadata(t *testing
 		t.Fatal(err)
 	}
 	canRespond := true
+	boundaries := []string{"read.1on1.developers", "write.group.developers"}
+	permissions := []agent_api.Microsoft365PermissionScopes{
+		{ResourceAppID: "resource-app", Scopes: []string{"McpServers.Mail.All"}},
+	}
 	publish := &project.ActivityPublishConfig{
-		PublishAsAutopilot:       true,
 		PublishScope:             "tenant",
 		CanRespondWithoutMention: &canRespond,
 		AppVersion:               "2.3.4",
@@ -96,39 +100,27 @@ func TestBuildTeamsAppPackageRequest_DigitalWorkerUsesPublishMetadata(t *testing
 		DeveloperWebsiteURL:      "https://contoso.example",
 		PrivacyURL:               "https://contoso.example/privacy",
 		TermsOfUseURL:            "https://contoso.example/terms",
-		AgenticUserTemplate: &project.AgenticUserTemplateConfig{
-			ID:                    "dw-template",
-			File:                  "agenticUserTemplateManifest.json",
-			SchemaVersion:         "0.1.0-preview",
-			CommunicationProtocol: "activityProtocol",
-		},
 	}
 	req := buildTeamsAppPackageRequest("/subscriptions/s/bot", teamsAppRequestOptions{
-		scope:             scope,
-		displayName:       "CLI Overridden",
-		useCase:           project.ActivityUseCaseDigitalWorker,
-		appVersion:        "",
-		blueprintClientID: "blueprint-client-id",
-		publish:           publish,
+		scope:                    scope,
+		displayName:              "CLI Overridden",
+		useCase:                  project.ActivityUseCaseDigitalWorker,
+		appVersion:               "",
+		publish:                  publish,
+		optionalPermissionScopes: permissions,
+		accessBoundaries:         &boundaries,
 	})
 	if !req.PublishAsAutopilot {
 		t.Fatal("PublishAsAutopilot = false, want true")
 	}
-	if !req.UseAgenticUserTemplate {
-		t.Fatal("UseAgenticUserTemplate = false, want true")
-	}
-	if req.AgenticUserTemplate == nil {
-		t.Fatal("AgenticUserTemplate = nil, want template")
-	}
-	if req.AgenticUserTemplate.AgentIdentityBlueprintID != "blueprint-client-id" {
-		t.Errorf(
-			"AgentIdentityBlueprintID = %q, want blueprint-client-id",
-			req.AgenticUserTemplate.AgentIdentityBlueprintID,
-		)
-	}
+	require.NotNil(t, req.CanRespondWithoutMention)
+	require.True(t, *req.CanRespondWithoutMention)
+	require.Equal(t, permissions, req.OptionalPermissionScopes)
+	require.Equal(t, boundaries, *req.AccessBoundaries)
 	if req.PublishScope != "Shared" {
 		t.Errorf("PublishScope = %q, want Shared", req.PublishScope)
 	}
+
 	if req.AgentDisplayName != "CLI Overridden" {
 		t.Errorf("AgentDisplayName = %q, want CLI Overridden", req.AgentDisplayName)
 	}

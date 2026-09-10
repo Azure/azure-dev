@@ -27,6 +27,7 @@ import (
 
 // evalRunFlags holds CLI flags for the eval run command.
 type evalRunFlags struct {
+	evalContextFlags
 	envName string // explicit environment name (from -e flag)
 	config  string // eval config path
 	name    string // eval run name
@@ -47,6 +48,7 @@ func newEvalRunCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			return runEvalRun(ctx, flags, extCtx.NoPrompt)
 		},
 	}
+	addEvalContextFlags(cmd, &flags.evalContextFlags)
 	cmd.Flags().StringVar(&flags.config, "config", defaultEvalConfigName, "Local eval config YAML")
 	cmd.Flags().StringVar(&flags.name, "name", "", "Name for the eval run (defaults to eval config name)")
 	cmd.Flags().BoolVar(&flags.noWait, "no-wait", false, "Start the run and return immediately without waiting for results")
@@ -54,7 +56,7 @@ func newEvalRunCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 }
 
 func runEvalRun(ctx context.Context, flags *evalRunFlags, noPrompt bool) error {
-	resolved, err := resolveEvalContext(ctx, evalContextOptions{envName: flags.envName})
+	resolved, err := resolveEvalContext(ctx, flags.evalContextFlags.options(flags.envName, noPrompt, false))
 	if err != nil {
 		return err
 	}

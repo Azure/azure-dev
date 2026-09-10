@@ -17,6 +17,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestConnectionDetailResultJSONContract(t *testing.T) {
+	t.Parallel()
+
+	data, err := json.Marshal(connectionDetailResult{
+		ID:       "/subscriptions/s/connections/github",
+		Name:     "github",
+		Kind:     "RemoteTool",
+		AuthType: "CustomKeys",
+		Target:   "https://api.githubcopilot.com/mcp/",
+	})
+	require.NoError(t, err)
+
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(data, &result))
+	require.Equal(t, "/subscriptions/s/connections/github", result["id"])
+	require.Equal(t, "RemoteTool", result["kind"])
+	_, hasCredentials := result["credentials"]
+	require.False(t, hasCredentials)
+}
+
 func TestParseEndpointComponents(t *testing.T) {
 	tests := []struct {
 		name        string

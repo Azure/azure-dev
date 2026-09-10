@@ -120,6 +120,7 @@ message DockerProjectOptions {
   bool remote_build = 8;
   repeated string build_args = 9;
   string network = 10;
+  bool image_passthrough = 11;
 }
 
 // ServiceContext defines the shared pipeline state across all phases of the service lifecycle

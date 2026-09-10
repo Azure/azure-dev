@@ -189,9 +189,11 @@ func (dp *dotnetProject) Package(
 	if err != nil {
 		return nil, err
 	}
-	err = dp.dotnetCli.Publish(
-		ctx, projFile, defaultDotNetBuildConfiguration, packageDest, dp.env.Environ(),
-	)
+	err = runIsolatedDotNetBuild(ctx, serviceConfig.Name, dp.dotnetCli, func(buildCtx context.Context) error {
+		return dp.dotnetCli.Publish(
+			buildCtx, projFile, defaultDotNetBuildConfiguration, packageDest, dp.env.Environ(),
+		)
+	})
 	if err != nil {
 		return nil, err
 	}

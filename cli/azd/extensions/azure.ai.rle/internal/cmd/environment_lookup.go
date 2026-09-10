@@ -4,26 +4,10 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
-
-func resolveLatestEnvironmentByName(
-	ctx context.Context,
-	client *rleClient,
-	environmentName string,
-) (*environmentResource, error) {
-	environment, err := client.getEnvironment(ctx, environmentName)
-	if isRleNotFound(err) {
-		return nil, environmentNotFoundError(environmentName)
-	}
-	if err != nil {
-		return nil, serviceError(err)
-	}
-	return environment, nil
-}
 
 func environmentNotFoundError(environmentName string) error {
 	return &azdext.LocalError{
@@ -37,7 +21,7 @@ func environmentNotFoundError(environmentName string) error {
 func environmentVersionNotFoundError(environmentName string, version string) error {
 	return &azdext.LocalError{
 		Message: fmt.Sprintf(
-			"RLE environment %q version %q was not found in this Foundry project.",
+			"RLE environment %q with version %q was not found in this Foundry project.",
 			environmentName,
 			version,
 		),

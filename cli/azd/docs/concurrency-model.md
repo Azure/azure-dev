@@ -26,11 +26,56 @@ backward compatibility with existing templates:
 
 | Scenario | Deploy ordering | Why |
 |----------|----------------|-----|
-| No service declares `uses:` targeting another service | **Sequential** in alphabetical order | Templates relied on implicit ordering; alphabetical matches legacy `ServiceStable()` |
+| No service declares `uses:` targeting another service and no deploy build-gate policy applies | **Sequential** in the service order supplied to the graph | Preserves the earlier implicit deploy ordering |
 | Any service declares `uses: [other-service]` | **Graph-driven** per declared edges | Explicit deps enable safe parallelism |
+| A deploy build-gate policy applies (currently Aspire) | **Graph-driven**, with local image preparation coordinated at runtime | Avoids unnecessarily serializing the subsequent Azure deployments |
 
-**Package and publish steps always run in parallel** regardless of `uses:`
-declarations — only deploy ordering is affected by the fallback.
+Package and publish graph steps remain eligible to run in parallel regardless
+of `uses:` declarations. The standard .NET compatibility fallback described
+below may serialize only the local `dotnet publish` subprocesses.
+
+### .NET build isolation
+
+Parallel .NET publishes can share transitive `ProjectReference` outputs even
+when each command has a different final `--output` directory. Without further
+isolation, those commands can contend on source-tree `bin` and `obj` files.
+
+The service graph coordinates local .NET builds without adding dependency
+edges:
+
+- Every non-Aspire service whose configured language is .NET receives the
+  opaque `"dotnet"` coordination key.
+- The isolation helper is consumed by standard .NET package operations,
+  including Functions and App Service, and by .NET container publishing when
+  no Dockerfile is present. Generic `dotnet restore`, `dotnet build`, and
+  explicit Dockerfile builds are unchanged.
+- When the gate is present and the installed SDK is 8.0.100 or later, each
+  local `dotnet publish` receives a unique temporary `--artifacts-path`.
+  Intermediate outputs are isolated while the existing final package output
+  or container image remains unchanged.
+- With an older SDK, a failed SDK capability probe, or a temporary-directory
+  creation failure, standard .NET operations sharing the key use the same
+  mutex. The lock is held only around the `dotnet publish` subprocess, not the
+  subsequent Azure deployment.
+- Temporary-tree cleanup is attempted after the operation succeeds or fails.
+  A cleanup failure is logged and does not replace the publish result.
+
+The standard .NET package/publish gate is enabled only when at least two
+services receive the `"dotnet"` key and effective graph concurrency is not
+`1`. This gate does not count as explicit deploy ordering, so standard services
+without `uses:` retain the sequential deploy fallback described above.
+
+`azd deploy --from-package` bypasses source packaging and does not enable the
+standard .NET package/publish gate. The existing Aspire deploy-time build gate
+remains separate; this policy does not change Aspire behavior. The importer
+currently rejects an Aspire AppHost alongside another explicitly configured
+service, and every service imported from an AppHost manifest is Aspire-managed,
+so the two gate populations do not coexist in a normal project graph.
+
+Projects that explicitly override the MSBuild `BaseOutputPath` or
+`BaseIntermediateOutputPath` properties may bypass the SDK's
+`--artifacts-path` isolation. Set `AZD_DEPLOY_CONCURRENCY=1` for `azd deploy`
+or `AZD_UP_CONCURRENCY=1` for `azd up` when such projects share build outputs.
 
 ### How `uses:` enables parallel deployment
 
@@ -56,12 +101,11 @@ services:
     # service in the project declares any uses: edges)
 ```
 
-When **no service** in the project declares a `uses:` entry targeting
-another service, the graph builder chains deploy steps in alphabetical
-order (matching the `ServiceStable()` sort used by the legacy sequential
-path). This prevents regressions in templates where one service reads
-environment variables (e.g. `SERVICE_API_ENDPOINT_URL`) set by a
-previously deployed service.
+When **no service** in the project declares a `uses:` entry targeting another
+service and no deploy build-gate policy applies, the graph builder chains
+deploy steps in the service order supplied to the graph. This prevents
+regressions in templates where one service reads environment variables
+(e.g. `SERVICE_API_ENDPOINT_URL`) set by a previously deployed service.
 
 A diagnostic log message is emitted when the sequential fallback activates:
 > `deploying N services sequentially (no uses: edges declared; add uses: to azure.yaml to enable parallel deployment)`

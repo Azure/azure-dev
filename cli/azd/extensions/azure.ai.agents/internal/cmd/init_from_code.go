@@ -81,40 +81,8 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		srcDir = "."
 	}
 
-	// Guard against silently overwriting an existing agent definition. Reached
-	// when the user declined the reuse prompt in RunE or bypassed it; we still
-	// refuse in --no-prompt and confirm interactively.
-	if existing, statErr := findExistingAgentYaml(srcDir); statErr == nil && existing != "" {
-		displayPath, relErr := filepath.Rel(srcDir, existing)
-		if relErr != nil || displayPath == "" {
-			displayPath = existing
-		}
-		if a.flags.noPrompt {
-			return exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("%s already exists at %q", displayPath, existing),
-				fmt.Sprintf(
-					"delete or move the existing %s, or run interactively to confirm overwrite",
-					displayPath,
-				),
-			)
-		}
-
-		confirmResp, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-			Options: &azdext.ConfirmOptions{
-				Message:      fmt.Sprintf("An agent definition already exists at %q. Overwrite?", displayPath),
-				DefaultValue: new(false),
-			},
-		})
-		if err != nil {
-			if exterrors.IsCancellation(err) {
-				return exterrors.Cancelled("overwrite confirmation was cancelled")
-			}
-			return fmt.Errorf("prompting for overwrite confirmation: %w", err)
-		}
-		if !*confirmResp.Value {
-			return exterrors.Cancelled(fmt.Sprintf("%s already exists; overwrite declined", displayPath))
-		}
+	if err := a.confirmExistingDefinitionOverwrite(ctx, srcDir); err != nil {
+		return err
 	}
 
 	// No manifest pointer provided - process local agent code
@@ -158,6 +126,52 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		// partial state per the design spec.
 		state, _ := nextstep.AssembleState(ctx, a.azdClient)
 		_ = printAllNextIfTerminal(os.Stdout, nextstep.ResolveAfterInit(state, readmeExistsForProject(ctx, a.azdClient)))
+	}
+
+	return nil
+}
+
+func (a *InitFromCodeAction) confirmExistingDefinitionOverwrite(ctx context.Context, srcDir string) error {
+	existing, err := findExistingAgentYaml(srcDir)
+	if err != nil || existing == "" {
+		return nil
+	}
+
+	displayPath, relErr := filepath.Rel(srcDir, existing)
+	if relErr != nil || displayPath == "" {
+		displayPath = existing
+	}
+
+	if a.flags.force {
+		log.Printf("--force: overwriting existing agent definition %q", existing)
+		return nil
+	}
+	if a.flags.noPrompt {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("%s already exists at %q", displayPath, existing),
+			fmt.Sprintf(
+				"pass --force to overwrite, delete or move the existing %s, "+
+					"or run interactively to confirm overwrite",
+				displayPath,
+			),
+		)
+	}
+
+	confirmResp, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+		Options: &azdext.ConfirmOptions{
+			Message:      fmt.Sprintf("An agent definition already exists at %q. Overwrite?", displayPath),
+			DefaultValue: new(false),
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return exterrors.Cancelled("overwrite confirmation was cancelled")
+		}
+		return fmt.Errorf("prompting for overwrite confirmation: %w", err)
+	}
+	if confirmResp.Value == nil || !*confirmResp.Value {
+		return exterrors.Cancelled(fmt.Sprintf("%s already exists; overwrite declined", displayPath))
 	}
 
 	return nil
@@ -294,6 +308,22 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		return nil, err
 	}
 
+	if a.flags.projectResourceId == "" {
+		projectResourceId, err := getEnvValue(ctx, a.azdClient, a.environment.Name, "AZURE_AI_PROJECT_ID")
+		if err != nil {
+			return nil, fmt.Errorf("failed to read AZURE_AI_PROJECT_ID: %w", err)
+		}
+		a.flags.projectResourceId = projectResourceId
+	}
+
+	if err := validateAcrConnectionInput(
+		a.flags.acrConnection,
+		deployMode == "code" || a.flags.image != "",
+		a.flags.noPrompt && a.flags.projectResourceId == "",
+	); err != nil {
+		return nil, err
+	}
+
 	// If code deploy, prompt for code configuration details
 	var codeConfig *agent_yaml.CodeConfiguration
 	if deployMode == "code" {
@@ -303,7 +333,6 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		}
 	}
 
-	// Prompt user for supported protocols
 	protocols, err := promptProtocols(ctx, a.azdClient.Prompt(), a.flags.noPrompt, a.flags.protocols)
 	if err != nil {
 		return nil, err
@@ -339,6 +368,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		proj, err := selectFoundryProject(
 			ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 			a.azureContext.Scope.SubscriptionId, a.flags.projectResourceId,
+			a.flags.acrConnection,
 			skipACR,
 			filterHostedRegions,
 			true, // bicepless
@@ -407,6 +437,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			proj, err := selectFoundryProject(
 				ctx, a.azdClient, a.credential, a.azureContext, a.environment.Name,
 				a.azureContext.Scope.SubscriptionId, "",
+				a.flags.acrConnection,
 				deployMode == "code",
 				deployMode == "code", // filterHostedRegions: code deploy targets hosted agents
 				true,                 // bicepless
@@ -419,11 +450,19 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 				fmt.Println(output.WithGrayFormat(
 					"No existing Foundry project was selected. Falling back to creating new resources.",
 				))
-				if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
-					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+				if err := validateAcrConnectionInput(a.flags.acrConnection, false, true); err != nil {
+					return nil, err
 				}
 				if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
 					return nil, err
+				}
+				if err := ensureNewFoundryProjectName(
+					ctx, a.azdClient, a.environment.Name,
+				); err != nil {
+					return nil, err
+				}
+				if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
+					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 				}
 			} else {
 				selectedProject = proj
@@ -432,6 +471,9 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 				}
 			}
 		default:
+			if err := validateAcrConnectionInput(a.flags.acrConnection, false, true); err != nil {
+				return nil, err
+			}
 			newCred, err := ensureSubscriptionAndLocation(
 				ctx, a.azdClient, a.azureContext, a.environment.Name,
 				"Select an Azure subscription to look up available models and provision your Foundry project resources.",
@@ -441,6 +483,11 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			}
 			a.credential = newCred
 
+			if err := ensureNewFoundryProjectName(
+				ctx, a.azdClient, a.environment.Name,
+			); err != nil {
+				return nil, err
+			}
 			if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
 				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 			}
@@ -792,6 +839,7 @@ func (a *InitFromCodeAction) addToProject(
 	isCodeDeploy bool,
 ) error {
 	agentName := definition.Name
+	agentServiceName := strings.ReplaceAll(agentName, " ", "")
 	// If targetDir is ".", resolve the actual relative path from the project root to cwd.
 	// This ensures azure.yaml gets the correct "project:" value when init is run from a subdirectory.
 	if targetDir == "." {
@@ -814,8 +862,9 @@ func (a *InitFromCodeAction) addToProject(
 
 	agentConfig.Deployments = a.deploymentDetails
 
-	// Detect startup command (container deploy only; code deploy does not use startupCommand)
-	if !isCodeDeploy {
+	// Detect startup command only for source-container deploys. Code deploy and
+	// pre-built images do not use it.
+	if !isCodeDeploy && strings.TrimSpace(definition.Image) == "" {
 		startupCmd, err := resolveStartupCommandForInit(ctx, a.azdClient, a.projectConfig.Path, targetDir, a.flags.noPrompt)
 		if err != nil {
 			return err
@@ -844,28 +893,35 @@ func (a *InitFromCodeAction) addToProject(
 		strings.HasPrefix(definition.CodeConfiguration.Runtime, "dotnet_") {
 		language = "csharp"
 	}
+	serviceImage := ""
+	if !isCodeDeploy {
+		serviceImage = strings.TrimSpace(definition.Image)
+	}
 
-	agentServiceName := strings.ReplaceAll(agentName, " ", "")
 	serviceConfig := &azdext.ServiceConfig{
 		Name:                 agentServiceName,
 		RelativePath:         targetDir,
 		Host:                 AiAgentHost,
 		Language:             language,
-		Image:                definition.Image,
+		Image:                serviceImage,
 		AdditionalProperties: agentProps,
 	}
 
-	// For hosted container-based agents, enable remote build by default. It is
-	// silently disabled when the target Foundry account has VNET network injection
-	// configured, since it cannot reach a registry in the VNET.
+	// Pre-built images stay in their source registry. Source builds use ACR Tasks
+	// unless the Foundry account is VNET-injected.
 	if !isCodeDeploy {
 		networkInjected := a.selectedFoundryProject != nil && a.selectedFoundryProject.NetworkInjected
-		serviceConfig.Docker = &azdext.DockerProjectOptions{RemoteBuild: !networkInjected}
+		dockerOptions, err := dockerProjectOptionsForHostedContainer(serviceImage, networkInjected)
+		if err != nil {
+			return err
+		}
+		serviceConfig.Docker = dockerOptions
 	}
 
-	// Set AZD_AGENT_SKIP_ACR so Bicep knows whether to create a container registry.
+	// Set AZD_AGENT_SKIP_ACR so legacy Bicep knows whether to create a container registry.
 	// Set before AddService so env state is consistent even if AddService fails.
-	if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, isCodeDeploy); err != nil {
+	skipACR := isCodeDeploy || serviceImage != ""
+	if err := setACREnvVar(ctx, a.azdClient, a.environment.Name, skipACR); err != nil {
 		return err
 	}
 

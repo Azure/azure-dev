@@ -480,6 +480,33 @@ func TestMergeParameters_NilInputsAreSafe(t *testing.T) {
 	assert.Equal(t, "v", got["k"])
 }
 
+func TestParametersDeclaredByTemplate_FiltersOnlyHostValues(t *testing.T) {
+	host := map[string]any{
+		"projectResourceId": map[string]any{"value": "project"},
+		"acrMode":           map[string]any{"value": "reuse-connect"},
+		"location":          map[string]any{"value": "eastus"},
+	}
+	template := map[string]any{"parameters": map[string]any{
+		"projectResourceId":   map[string]any{"type": "string"},
+		"existingAcrEndpoint": map[string]any{"type": "string"},
+	}}
+
+	got := parametersDeclaredByTemplate(host, template)
+
+	assert.Equal(t, map[string]any{
+		"projectResourceId": map[string]any{"value": "project"},
+	}, got)
+}
+
+func TestParametersDeclaredByTemplate_NoDeclaredParameters(t *testing.T) {
+	got := parametersDeclaredByTemplate(
+		map[string]any{"location": map[string]any{"value": "eastus"}},
+		map[string]any{},
+	)
+
+	assert.Empty(t, got)
+}
+
 func TestTemplateMode_String(t *testing.T) {
 	t.Parallel()
 	// Strings end up in deployment tags and telemetry; lock the

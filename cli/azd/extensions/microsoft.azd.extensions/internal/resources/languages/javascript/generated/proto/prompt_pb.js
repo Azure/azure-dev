@@ -3656,7 +3656,8 @@ requiredMessage: jspb.Message.getFieldWithDefault(msg, 6, ""),
 required: jspb.Message.getBooleanFieldWithDefault(msg, 7, false),
 defaultValue: jspb.Message.getFieldWithDefault(msg, 8, ""),
 clearOnCompletion: jspb.Message.getBooleanFieldWithDefault(msg, 9, false),
-ignoreHintKeys: jspb.Message.getBooleanFieldWithDefault(msg, 10, false)
+ignoreHintKeys: jspb.Message.getBooleanFieldWithDefault(msg, 10, false),
+secret: jspb.Message.getBooleanFieldWithDefault(msg, 11, false)
   };
 
   if (includeInstance) {
@@ -3732,6 +3733,10 @@ proto.azdext.PromptOptions.deserializeBinaryFromReader = function(msg, reader) {
     case 10:
       var value = /** @type {boolean} */ (reader.readBool());
       msg.setIgnoreHintKeys(value);
+      break;
+    case 11:
+      var value = /** @type {boolean} */ (reader.readBool());
+      msg.setSecret(value);
       break;
     default:
       reader.skipField();
@@ -3829,6 +3834,13 @@ proto.azdext.PromptOptions.serializeBinaryToWriter = function(message, writer) {
   if (f) {
     writer.writeBool(
       10,
+      f
+    );
+  }
+  f = message.getSecret();
+  if (f) {
+    writer.writeBool(
+      11,
       f
     );
   }
@@ -4012,6 +4024,24 @@ proto.azdext.PromptOptions.prototype.getIgnoreHintKeys = function() {
  */
 proto.azdext.PromptOptions.prototype.setIgnoreHintKeys = function(value) {
   return jspb.Message.setProto3BooleanField(this, 10, value);
+};
+
+
+/**
+ * optional bool secret = 11;
+ * @return {boolean}
+ */
+proto.azdext.PromptOptions.prototype.getSecret = function() {
+  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 11, false));
+};
+
+
+/**
+ * @param {boolean} value
+ * @return {!proto.azdext.PromptOptions} returns this
+ */
+proto.azdext.PromptOptions.prototype.setSecret = function(value) {
+  return jspb.Message.setProto3BooleanField(this, 11, value);
 };
 
 

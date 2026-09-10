@@ -38,6 +38,7 @@ words:
   - Canonicalize
   - Chans
   - chinacloudapi
+  - CLAUDECODE
   - ojson
   - otable
   - cmds
@@ -49,6 +50,7 @@ words:
   - devcontainers
   - errchain
   - errgroup
+  - errorchain
   - errorhandler
   - extendee
   - eiannone
@@ -77,6 +79,7 @@ words:
   - ppid
   - PPID
   - proto
+  - Protos
   - protobuf
   - protoc
   - protoimpl
@@ -454,6 +457,8 @@ overrides:
       - covcounters
       - covmeta
       - AMRD
+      - coreutils
+      - wslc
   - filename: pkg/infra/provisioning/bicep/bicep_provider.go
     words:
       - BIZSPARK
@@ -501,6 +506,16 @@ overrides:
   - filename: internal/cmd/up_graph.go
     words:
       - finalizer
+  - filename: cmd/auth_transport_peer_linux.go
+    words:
+      - Getsockopt
+      - PEERCRED
+      - Ucred
+  - filename: cmd/auth_transport_peer_darwin.go
+    words:
+      - Getsockopt
+      - PEERCRED
+      - Xucred
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

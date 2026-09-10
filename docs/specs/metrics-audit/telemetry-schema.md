@@ -49,19 +49,47 @@ and purpose that governs how it may be stored, queried, and retained.
 ### Application-Level (Resource Attributes)
 
 These are set once at process startup via `resource.New()` and attached to every span.
+At export time, azd replaces the provider resource with this canonical resource. This is required because the
+OpenTelemetry Go SDK reads `OTEL_RESOURCE_ATTRIBUTES` and `OTEL_SERVICE_NAME` while configuring the provider.
+Environment-provided resource fields, including `service.instance.id`, are not included in resources exported to the
+Application Insights queue, `--trace-log-file`, or `--trace-log-url`. Span attributes are unchanged by this policy.
 
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
-| Service name | `service.name` | — | — | Always `"azd"` |
-| Service version | `service.version` | — | — | Build version string |
-| OS type | `os.type` | — | — | e.g. `linux`, `windows`, `darwin` |
+| Service name | `service.name` | SystemMetadata | PerformanceAndHealth | Always `"azd"` |
+| Service version | `service.version` | SystemMetadata | FeatureInsight | Build version string |
+| OS type | `os.type` | SystemMetadata | FeatureInsight | e.g. `linux`, `windows`, `darwin` |
 | OS version | `os.version` | SystemMetadata | PerformanceAndHealth | Kernel / build version |
 | Host architecture | `host.arch` | SystemMetadata | PerformanceAndHealth | e.g. `amd64`, `arm64` |
 | Runtime version | `process.runtime.version` | SystemMetadata | PerformanceAndHealth | Go version |
 | Machine ID | `machine.id` | EndUserPseudonymizedInformation | BusinessInsight | MAC address hash |
 | Dev Device ID | `machine.devdeviceid` | EndUserPseudonymizedInformation | BusinessInsight | SQM User ID |
-| Execution environment | `execution.environment` | SystemMetadata | BusinessInsight | CI system detection |
+| Execution environment | `execution.environment` | SystemMetadata | BusinessInsight | Bounded execution-context value; see allowed values below |
 | Installer | `service.installer` | SystemMetadata | FeatureInsight | How azd was installed |
+
+The canonical resource also includes the OpenTelemetry SDK's standard metadata. These keys are SDK-managed rather
+than azd `fields.AttributeKey` declarations. Their classification and purpose below reflect the existing completed
+GDPR data-catalog entries rather than metadata declared in source:
+
+| Field | OTel Key | Catalog Classification | Catalog Purpose | Notes |
+|-------|----------|------------------------|-----------------|-------|
+| SDK name | `telemetry.sdk.name` | SystemMetadata | PerformanceAndHealth | Always `opentelemetry` |
+| SDK language | `telemetry.sdk.language` | SystemMetadata | PerformanceAndHealth | Always `go` |
+| SDK version | `telemetry.sdk.version` | SystemMetadata | PerformanceAndHealth | OpenTelemetry Go SDK version |
+
+#### Execution environment allowed values
+
+`execution.environment` contains one base environment and may include semicolon-separated modifiers:
+
+- Local and hosted environments: `Desktop`, `Visual Studio`, `Visual Studio Code`,
+  `VS Code Azure GitHub Copilot`, `Azure CloudShell`, `GitHub Codespaces`.
+- AI coding agents: `Antigravity`, `Claude Code`, `Claude Code Desktop`, `Claude Code VSCode`, `Codex`,
+  `Codex Desktop`, `Cursor`, `GitHub Copilot CLI`, `GitHub Copilot App`, `GitHub Copilot VSCode`,
+  `GitHub Copilot Cloud Agent`, `Gemini`, `OpenCode`, `Pi`.
+- CI environments: `UnknownCI`, `Azure Pipelines`, `GitHub Actions`, `AppVeyor`, `Bamboo`,
+  `BitBucket Pipelines`, `Travis CI`, `Circle CI`, `GitLab CI`, `Jenkins`, `AWS CodeBuild`,
+  `TeamCity`, `JetBrains Space`.
+- Optional modifiers: `Azure App Spaces Portal`, `Microsoft Foundry Skill`.
 
 ### Experimentation
 
@@ -113,7 +141,10 @@ These are set once at process startup via `resource.New()` and attached to every
 | Error category | `error.category` | SystemMetadata | PerformanceAndHealth | |
 | Error code | `error.code` | SystemMetadata | PerformanceAndHealth | |
 | Error type | `error.type` | SystemMetadata | PerformanceAndHealth | ResultCode or Go type for the classified error |
-| Error chain types | `error.chain.types` | SystemMetadata | PerformanceAndHealth | Wrapped Go error type chain, outermost first |
+| Error chain types | `error.chain.types` | SystemMetadata | PerformanceAndHealth | At most 16 host-reflected Go error type names, outermost first |
+| Extension cause types | `error.extension.cause_types` | EndUserPseudonymizedInformation | PerformanceAndHealth | Case-insensitive hashes of at most 16 normalized extension-provided cause labels; never used as `error.type` |
+| Mapper source type | `error.mapper.source.type` | SystemMetadata | PerformanceAndHealth | Sanitized Go source type on a mapper conversion failure |
+| Mapper destination type | `error.mapper.destination.type` | SystemMetadata | PerformanceAndHealth | Sanitized Go destination type on a mapper conversion failure |
 
 Error classification is handled by `MapError` in `internal/cmd/errors.go`, which categorizes
 errors into: update errors, auth errors, service (Azure) errors, deployment errors, extension
@@ -122,8 +153,11 @@ errors, tool errors, sentinel errors, and network errors. Each receives an `erro
 
 Generic-only error chains now use the catch-all ResultCode `internal.unclassified` instead of
 the previous `internal.errors_errorString`. Use `error.chain.types` to inspect the concrete
-wrapper types behind that bucket. The removed `error.inner` and `error.frame` attributes were
-not emitted by azd spans.
+wrapper types behind that bucket. Host-originated gRPC statuses use
+`internal.grpc.<status>` when no more specific mapping applies, and mapper conversion failures
+use `internal.mapper_conversion` with the mapper type fields above. Structured extension
+tool failures use `tool.<name>.missing` or `tool.<name>.failed`. The removed `error.inner` and
+`error.frame` attributes were not emitted by azd spans.
 
 ### Service Attributes
 
@@ -131,17 +165,17 @@ not emitted by azd spans.
 |-------|----------|----------------|---------|-------|
 | Service host | `service.host` | SystemMetadata | PerformanceAndHealth | |
 | Service name | `service.name` | SystemMetadata | PerformanceAndHealth | |
-| Status code | `service.statusCode` | SystemMetadata | PerformanceAndHealth | **Measurement** |
+| Status code | `service.statusCode` | SystemMetadata | PerformanceAndHealth | **Measurement or string** — numeric HTTP/service status codes are measurements; AAD authentication errors emit string OAuth statuses such as `invalid_grant` |
 | Method | `service.method` | SystemMetadata | PerformanceAndHealth | |
-| Error code | `service.errorCode` | SystemMetadata | PerformanceAndHealth | **Measurement**; ARM deployment errors encode JSON objects with `error.code` and `error.arm.frame_index` |
+| Error code | `service.errorCode` | SystemMetadata | PerformanceAndHealth | String; ARM deployment errors encode JSON objects with `error.code` and `error.arm.frame_index` |
 | Correlation ID | `service.correlationId` | SystemMetadata | PerformanceAndHealth | |
 
 ### Tool Attributes
 
-| Field | OTel Key | Classification | Purpose |
-|-------|----------|----------------|---------|
-| Tool name | `tool.name` | SystemMetadata | FeatureInsight |
-| Tool exit code | `tool.exitCode` | SystemMetadata | PerformanceAndHealth |
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| Tool name | `tool.name` | SystemMetadata | PerformanceAndHealth | Stable identifier; core missing-tool display names use a fixed mapping and unknown names become `other`; extension-provided names are limited to 1-64 ASCII characters from `[a-z0-9_-]`; multiple missing tools remain comma-separated |
+| Tool exit code | `tool.exitCode` | SystemMetadata | PerformanceAndHealth | **Measurement** |
 
 ### Performance
 
@@ -208,9 +242,9 @@ not emitted by azd spans.
 
 ### Agent
 
-| Field | OTel Key | Classification | Purpose |
-|-------|----------|----------------|---------|
-| Fix attempts | `agent.fix.attempts` | SystemMetadata | PerformanceAndHealth |
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| Fix attempts | `agent.fix.attempts` | SystemMetadata | FeatureInsight | **Measurement** |
 
 ### Extensions
 
@@ -218,6 +252,7 @@ not emitted by azd spans.
 |-------|----------|----------------|---------|-------|
 | Extension ID | `extension.id` | SystemMetadata | FeatureInsight | |
 | Extension version | `extension.version` | SystemMetadata | FeatureInsight | |
+| Extension event | `extension.event` | SystemMetadata | FeatureInsight | Extension-defined usage event or failed-invocation event |
 | Extension installed | `extension.installed` | SystemMetadata | FeatureInsight | List of installed extensions, each formatted `id@version` |
 | Installed extension source category | `extension.installed.source.category` | SystemMetadata | FeatureInsight | List formatted `id@category`; categories: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
 | Extension version from | `extension.version.from` | SystemMetadata | FeatureInsight | Installed version before an update |
@@ -236,7 +271,11 @@ not emitted by azd spans.
 Extensions do not have individual fields listed in this document. An extension
 reports a named event with an arbitrary attribute map, and `azd` records it on
 an `ext.usage` span alongside `extension.id`, `extension.version`,
-`extension.source`, and `extension.event`.
+`extension.source`, and `extension.event`. Failed extension commands use
+`extension.id` and `extension.version` on the failed `ext.run` span, but do
+not set `extension.event` or create an `ext.usage` span. Failed lifecycle
+hooks use the enclosing `cmd.*` span and include the extension ID, version,
+and lifecycle event.
 
 `azd` core carries no product-specific telemetry semantics for these fields.
 The following rules are enforced by the host and are what this schema
@@ -415,7 +454,7 @@ The execution graph powers the parallel `up` / `provision` / `deploy` engine.
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
 | Step count | `exegraph.step.count` | SystemMetadata | PerformanceAndHealth | **Measurement** — total number of steps in the graph |
-| Max concurrency | `exegraph.max_concurrency` | SystemMetadata | PerformanceAndHealth | Effective concurrency limit used for the run |
+| Max concurrency | `exegraph.max_concurrency` | SystemMetadata | PerformanceAndHealth | **Measurement** — effective concurrency limit used for the run |
 | Error policy | `exegraph.error_policy` | SystemMetadata | PerformanceAndHealth | `fail_fast` or `continue_on_error` |
 | Step name | `exegraph.step.name` | SystemMetadata | PerformanceAndHealth | **Hashed** via `fields.StringHashed` — step names embed user-chosen service / layer names from `azure.yaml` (e.g., `deploy-<svc.Name>`, `<layer.Name>`) |
 | Step deps | `exegraph.step.deps` | SystemMetadata | PerformanceAndHealth | **Hashed slice** via `fields.StringSliceHashed` — each entry is another step name that embeds user-chosen identifiers |
@@ -494,10 +533,11 @@ Fields that are hashed:
 ```
 
 1. **Instrumentation**: Commands create OTel spans with attributes via `tracing.Start` and `SetUsageAttributes`.
-2. **Export**: A custom Application Insights exporter converts spans to App Insights envelopes.
-3. **Queue**: Envelopes are written to disk under `~/.azd/telemetry/`.
-4. **Upload**: The `azd telemetry upload` command (run as a background process) reads the queue and sends data to Azure Monitor.
-5. **Analysis**: Data flows into Kusto tables for dashboarding and analysis via LENS jobs and cooked tables.
+2. **Resource policy**: A shared exporter wrapper replaces the provider resource with the canonical azd resource.
+3. **Export**: A custom Application Insights exporter converts spans to App Insights envelopes.
+4. **Queue**: Envelopes are written to disk under `~/.azd/telemetry/`.
+5. **Upload**: The `azd telemetry upload` command (run as a background process) reads the queue and sends data to Azure Monitor.
+6. **Analysis**: Data flows into Kusto tables for dashboards and analysis via LENS jobs and cooked tables.
 
 ## GDPR Data-Catalog Classification
 

@@ -16,6 +16,10 @@ type DeploymentErrorLine struct {
 	Code string
 	// The message that represents the error
 	Message string
+	// The ARM target associated with the error, if provided.
+	Target string
+	// The resource type associated with Target after deployment context resolution.
+	ResourceType string
 	// Inner errors
 	Inner []*DeploymentErrorLine
 }
@@ -137,7 +141,7 @@ func generateErrorOutput(err *DeploymentErrorLine) []string {
 
 func getErrorsFromMap(errorMap map[string]any) *DeploymentErrorLine {
 	var output *DeploymentErrorLine
-	var code, message string
+	var code, message, target string
 
 	// Size of nested output is not known ahead of time.
 	nestedOutput := []*DeploymentErrorLine{}
@@ -154,6 +158,10 @@ func getErrorsFromMap(errorMap map[string]any) *DeploymentErrorLine {
 				nestedOutput = append(nestedOutput, getErrorsFromMap(messageMap))
 			} else {
 				message = rawMessage
+			}
+		case "target":
+			if value != nil {
+				target = fmt.Sprint(value)
 			}
 		case "error":
 			errorMap, ok := value.(map[string]any)
@@ -185,7 +193,9 @@ func getErrorsFromMap(errorMap map[string]any) *DeploymentErrorLine {
 
 	// Omit generic deployment failed messages
 	if code == "DeploymentFailed" || code == "ResourceDeploymentFailure" {
-		return newErrorLine("", errorMessage, nestedOutput)
+		output = newErrorLine("", errorMessage, nestedOutput)
+		output.Target = target
+		return output
 	}
 
 	if code != "" && message != "" {
@@ -195,6 +205,7 @@ func getErrorsFromMap(errorMap map[string]any) *DeploymentErrorLine {
 	}
 
 	output = newErrorLine(code, errorMessage, nestedOutput)
+	output.Target = target
 
 	return output
 }

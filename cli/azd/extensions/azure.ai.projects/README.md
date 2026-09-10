@@ -47,12 +47,13 @@ services:
       hostingType: ManagedCluster
       name: primary
       clusterResourceId: ${AZURE_AKS_CLUSTER_ID}
+      agentSubnetResourceId: ${AZURE_AGENT_SUBNET_ID}
       hostingManagementIdentityResourceId: ${AZURE_HOSTING_MANAGEMENT_IDENTITY_ID}
       storageAccountResourceId: ${AZURE_HOSTED_AGENTS_STORAGE_ID}
       workloadIdentityResourceId: ${AZURE_HOSTED_AGENTS_WORKLOAD_IDENTITY_ID}
 ```
 
-The referenced cluster, storage account, and two user-assigned managed
+The referenced cluster, agent subnet, storage account, and two user-assigned managed
 identities must already exist. The storage account must be in the same
 subscription and region as the AKS cluster, and its data-plane endpoint must be
 reachable from the workload network. The hosting management identity is

@@ -54,6 +54,7 @@ type agentHostingType = {
   hostingType: 'ManagedCluster' | ''
   name: string
   clusterResourceId: string
+  agentSubnetResourceId: string
   hostingManagementIdentityResourceId: string
   storageAccountResourceId: string
   workloadIdentityResourceId: string
@@ -99,6 +100,7 @@ param agentHosting agentHostingType = {
   hostingType: ''
   name: ''
   clusterResourceId: ''
+  agentSubnetResourceId: ''
   hostingManagementIdentityResourceId: ''
   storageAccountResourceId: ''
   workloadIdentityResourceId: ''

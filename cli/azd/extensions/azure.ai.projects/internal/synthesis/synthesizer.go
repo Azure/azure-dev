@@ -245,6 +245,7 @@ type agentHostingBlock struct {
 	HostingType                         string `yaml:"hostingType"`
 	Name                                string `yaml:"name"`
 	ClusterResourceID                   string `yaml:"clusterResourceId"`
+	AgentSubnetResourceID               string `yaml:"agentSubnetResourceId"`
 	HostingManagementIdentityResourceID string `yaml:"hostingManagementIdentityResourceId"`
 	StorageAccountResourceID            string `yaml:"storageAccountResourceId"`
 	WorkloadIdentityResourceID          string `yaml:"workloadIdentityResourceId"`
@@ -258,6 +259,7 @@ type agentHostingParameter struct {
 	HostingType                         string `json:"hostingType"`
 	Name                                string `json:"name"`
 	ClusterResourceID                   string `json:"clusterResourceId"`
+	AgentSubnetResourceID               string `json:"agentSubnetResourceId"`
 	HostingManagementIdentityResourceID string `json:"hostingManagementIdentityResourceId"`
 	StorageAccountResourceID            string `json:"storageAccountResourceId"`
 	WorkloadIdentityResourceID          string `json:"workloadIdentityResourceId"`
@@ -1264,6 +1266,9 @@ var agentHostingResourceIDPatterns = map[string]*regexp.Regexp{
 	"clusterResourceId": regexp.MustCompile(
 		`(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.ContainerService/managedClusters/[^/]+$`,
 	),
+	"agentSubnetResourceId": regexp.MustCompile(
+		`(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.Network/virtualNetworks/[^/]+/subnets/[^/]+$`,
+	),
 	"hostingManagementIdentityResourceId": regexp.MustCompile(
 		`(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.ManagedIdentity/userAssignedIdentities/[^/]+$`,
 	),
@@ -1321,6 +1326,16 @@ func synthesizeAgentHosting(
 	if err != nil {
 		return agentHostingParameter{}, err
 	}
+	agentSubnetID, err := resolveAgentHostingValue(
+		hosting.AgentSubnetResourceID,
+		fieldPath("agentSubnetResourceId"),
+		env,
+		resolve,
+		agentHostingResourceIDPatterns["agentSubnetResourceId"],
+	)
+	if err != nil {
+		return agentHostingParameter{}, err
+	}
 	managementIdentityID, err := resolveAgentHostingValue(
 		hosting.HostingManagementIdentityResourceID,
 		fieldPath("hostingManagementIdentityResourceId"),
@@ -1357,6 +1372,7 @@ func synthesizeAgentHosting(
 		HostingType:                         managedClusterHostingType,
 		Name:                                name,
 		ClusterResourceID:                   clusterID,
+		AgentSubnetResourceID:               agentSubnetID,
 		HostingManagementIdentityResourceID: managementIdentityID,
 		StorageAccountResourceID:            storageID,
 		WorkloadIdentityResourceID:          workloadIdentityID,

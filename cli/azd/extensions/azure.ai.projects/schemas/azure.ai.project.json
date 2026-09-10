@@ -76,6 +76,7 @@
         "hostingType",
         "name",
         "clusterResourceId",
+        "agentSubnetResourceId",
         "hostingManagementIdentityResourceId",
         "storageAccountResourceId",
         "workloadIdentityResourceId"
@@ -95,6 +96,11 @@
           "type": "string",
           "minLength": 1,
           "description": "Full ARM resource ID of the customer-owned AKS managed cluster."
+        },
+        "agentSubnetResourceId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Full ARM resource ID of the subnet injected into the Foundry agent runtime."
         },
         "hostingManagementIdentityResourceId": {
           "type": "string",

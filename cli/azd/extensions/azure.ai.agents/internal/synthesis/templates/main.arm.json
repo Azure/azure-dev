@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "11184978301731377195"
+      "templateHash": "2102196199801535416"
     }
   },
   "definitions": {
@@ -134,6 +134,9 @@
         "clusterResourceId": {
           "type": "string"
         },
+        "agentSubnetResourceId": {
+          "type": "string"
+        },
         "hostingManagementIdentityResourceId": {
           "type": "string"
         },
@@ -221,6 +224,7 @@
         "hostingType": "",
         "name": "",
         "clusterResourceId": "",
+        "agentSubnetResourceId": "",
         "hostingManagementIdentityResourceId": "",
         "storageAccountResourceId": "",
         "workloadIdentityResourceId": ""
@@ -425,7 +429,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "1524378032586652217"
+              "templateHash": "1181895872771285330"
             }
           },
           "definitions": {
@@ -553,6 +557,9 @@
                 "clusterResourceId": {
                   "type": "string"
                 },
+                "agentSubnetResourceId": {
+                  "type": "string"
+                },
                 "hostingManagementIdentityResourceId": {
                   "type": "string"
                 },
@@ -633,6 +640,7 @@
                 "hostingType": "",
                 "name": "",
                 "clusterResourceId": "",
+                "agentSubnetResourceId": "",
                 "hostingManagementIdentityResourceId": "",
                 "storageAccountResourceId": "",
                 "workloadIdentityResourceId": ""
@@ -753,7 +761,8 @@
             "disablePublicDataPlaneAccess": "[parameters('enableNetworkIsolation')]",
             "cognitiveServicesUserRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'a97b65f3-24c7-4388-baec-2e87135dc908')]",
             "agentSubnetArmId": "[format('{0}/subnets/{1}', parameters('vnetId'), parameters('agentSubnetName'))]",
-            "agentNetworkInjections": "[if(variables('useByoNetwork'), createArray(createObject('scenario', 'agent', 'subnetArmId', variables('agentSubnetArmId'), 'useMicrosoftManagedNetwork', false())), if(variables('useManagedNetwork'), createArray(createObject('scenario', 'agent', 'useMicrosoftManagedNetwork', true())), null()))]"
+            "agentNetworkInjections": "[if(variables('useByoNetwork'), createArray(createObject('scenario', 'agent', 'subnetArmId', variables('agentSubnetArmId'), 'useMicrosoftManagedNetwork', false())), if(variables('useManagedNetwork'), createArray(createObject('scenario', 'agent', 'useMicrosoftManagedNetwork', true())), null()))]",
+            "accountNetworkInjections": "[if(parameters('agentHosting').enabled, createArray(createObject('scenario', 'Agent', 'subnetArmId', parameters('agentHosting').agentSubnetResourceId, 'useMicrosoftManagedNetwork', false())), variables('agentNetworkInjections'))]"
           },
           "resources": {
             "foundryAccount::modelDeployments": {
@@ -813,7 +822,7 @@
                   "virtualNetworkRules": [],
                   "ipRules": []
                 },
-                "networkInjections": "[variables('agentNetworkInjections')]",
+                "networkInjections": "[variables('accountNetworkInjections')]",
                 "agentHostingConfigurations": "[if(parameters('agentHosting').enabled, createArray(createObject('hostingType', parameters('agentHosting').hostingType, 'name', parameters('agentHosting').name, 'clusterResourceId', parameters('agentHosting').clusterResourceId, 'hostingManagementIdentityResourceId', parameters('agentHosting').hostingManagementIdentityResourceId, 'storageAccountResourceId', parameters('agentHosting').storageAccountResourceId, 'workloadIdentityResourceId', parameters('agentHosting').workloadIdentityResourceId)), null())]"
               },
               "dependsOn": [

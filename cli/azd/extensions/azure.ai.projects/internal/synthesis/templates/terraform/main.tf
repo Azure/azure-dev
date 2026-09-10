@@ -56,11 +56,12 @@ resource "azurerm_resource_group" "this" {
 # azapi is used so allowProjectManagement can be set (not exposed by
 # azurerm_cognitive_account).
 resource "azapi_resource" "foundry_account" {
-  type      = "Microsoft.CognitiveServices/accounts@2026-07-15-preview"
-  name      = local.foundry_account_name
-  location  = azurerm_resource_group.this.location
-  parent_id = azurerm_resource_group.this.id
-  tags      = var.tags
+  type                      = "Microsoft.CognitiveServices/accounts@2026-07-15-preview"
+  name                      = local.foundry_account_name
+  location                  = azurerm_resource_group.this.location
+  parent_id                 = azurerm_resource_group.this.id
+  tags                      = var.tags
+  schema_validation_enabled = false
 
   identity {
     type         = var.agent_hosting.enabled ? "SystemAssigned, UserAssigned" : "SystemAssigned"
@@ -82,7 +83,12 @@ resource "azapi_resource" "foundry_account" {
         virtualNetworkRules = []
         ipRules             = []
       }
-    }, var.agent_hosting.enabled ? {
+      }, var.agent_hosting.enabled ? {
+      networkInjections = [{
+        scenario                   = "agent"
+        subnetArmId                = var.agent_hosting.agentSubnetResourceId
+        useMicrosoftManagedNetwork = false
+      }]
       agentHostingConfigurations = [{
         hostingType                         = var.agent_hosting.hostingType
         name                                = var.agent_hosting.name

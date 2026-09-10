@@ -1567,8 +1567,12 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 		"byo egress must inject the agent subnet (useMicrosoftManagedNetwork=false)")
 	assert.Contains(t, text, "'useMicrosoftManagedNetwork', true()",
 		"managed egress must use the Microsoft-managed network (useMicrosoftManagedNetwork=true)")
-	assert.Contains(t, text, `"networkInjections": "[variables('agentNetworkInjections')]"`,
+	assert.Contains(t, text, `"networkInjections": "[variables('accountNetworkInjections')]"`,
 		"account must carry the computed networkInjections")
+	assert.Contains(t, text,
+		"createObject('scenario', 'Agent', 'subnetArmId', parameters('agentHosting').agentSubnetResourceId, "+
+			"'useMicrosoftManagedNetwork', false())",
+		"agent hosting must inject the configured subnet using the service-required Agent scenario")
 
 	// isolationMode must be wired to the V2 managed network child resource
 	// (regression guard: it was previously a no-op echoed only to output).

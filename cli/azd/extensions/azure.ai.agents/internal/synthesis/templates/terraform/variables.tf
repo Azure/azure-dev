@@ -84,6 +84,7 @@ variable "agent_hosting" {
     hostingType                         = string
     name                                = string
     clusterResourceId                   = string
+    agentSubnetResourceId               = string
     hostingManagementIdentityResourceId = string
     storageAccountResourceId            = string
     workloadIdentityResourceId          = string
@@ -93,6 +94,7 @@ variable "agent_hosting" {
     hostingType                         = ""
     name                                = ""
     clusterResourceId                   = ""
+    agentSubnetResourceId               = ""
     hostingManagementIdentityResourceId = ""
     storageAccountResourceId            = ""
     workloadIdentityResourceId          = ""

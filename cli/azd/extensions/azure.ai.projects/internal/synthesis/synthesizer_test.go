@@ -520,6 +520,7 @@ func TestSynthesize_AgentHosting(t *testing.T) {
 
 	const (
 		clusterID  = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/aks"
+		subnetID   = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/agents"
 		managerID  = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/manager"
 		storageID  = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/agents"
 		workloadID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/workload"
@@ -532,6 +533,7 @@ services:
       hostingType: ManagedCluster
       name: primary
       clusterResourceId: ${AKS_ID}
+      agentSubnetResourceId: ${SUBNET_ID}
       hostingManagementIdentityResourceId: ${MANAGER_ID}
       storageAccountResourceId: ${STORAGE_ID}
       workloadIdentityResourceId: ${WORKLOAD_ID}
@@ -542,6 +544,7 @@ services:
 		ServiceName:  "project",
 		Env: map[string]string{
 			"AKS_ID":      clusterID,
+			"SUBNET_ID":   subnetID,
 			"MANAGER_ID":  managerID,
 			"STORAGE_ID":  storageID,
 			"WORKLOAD_ID": workloadID,
@@ -556,6 +559,7 @@ services:
 		HostingType:                         managedClusterHostingType,
 		Name:                                "primary",
 		ClusterResourceID:                   clusterID,
+		AgentSubnetResourceID:               subnetID,
 		HostingManagementIdentityResourceID: managerID,
 		StorageAccountResourceID:            storageID,
 		WorkloadIdentityResourceID:          workloadID,
@@ -573,6 +577,7 @@ services:
       hostingType: ManagedCluster
       name: primary
       clusterResourceId: ${AKS_ID}
+      agentSubnetResourceId: ${SUBNET_ID}
       hostingManagementIdentityResourceId: ${MANAGER_ID}
       storageAccountResourceId: ${STORAGE_ID}
       workloadIdentityResourceId: ${WORKLOAD_ID}
@@ -586,6 +591,7 @@ services:
 
 	hosting := result.Parameters["agentHosting"].(agentHostingParameter)
 	assert.Equal(t, "${AKS_ID}", hosting.ClusterResourceID)
+	assert.Equal(t, "${SUBNET_ID}", hosting.AgentSubnetResourceID)
 	assert.Equal(t, "${MANAGER_ID}", hosting.HostingManagementIdentityResourceID)
 	assert.Equal(t, "${STORAGE_ID}", hosting.StorageAccountResourceID)
 	assert.Equal(t, "${WORKLOAD_ID}", hosting.WorkloadIdentityResourceID)
@@ -602,6 +608,7 @@ services:
       hostingType: ManagedCluster
       name: primary
       clusterResourceId: /subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/aks
+      agentSubnetResourceId: /subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/agents
       hostingManagementIdentityResourceId: ${MANAGER_ID}
       storageAccountResourceId: /subscriptions/sub/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/agents
       workloadIdentityResourceId: ${WORKLOAD_ID}
@@ -623,6 +630,24 @@ services:
 			yaml:       strings.Replace(valid, "Microsoft.ContainerService/managedClusters", "Microsoft.Storage/storageAccounts", 1),
 			synthesize: Synthesize,
 			want:       "clusterResourceId",
+		},
+		{
+			name:       "wrong agent subnet resource type",
+			yaml:       strings.Replace(valid, "Microsoft.Network/virtualNetworks/vnet/subnets", "Microsoft.Storage/storageAccounts", 1),
+			synthesize: Synthesize,
+			want:       "agentSubnetResourceId",
+		},
+		{
+			name: "missing agent subnet",
+			yaml: strings.Replace(
+				valid,
+				"      agentSubnetResourceId: /subscriptions/sub/resourceGroups/rg/providers/"+
+					"Microsoft.Network/virtualNetworks/vnet/subnets/agents\n",
+				"",
+				1,
+			),
+			synthesize: Synthesize,
+			want:       "agentSubnetResourceId: required",
 		},
 		{
 			name: "existing project",
@@ -1885,13 +1910,18 @@ func TestTerraformModule_AgentHosting(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(variables), `variable "agent_hosting"`)
 	assert.Contains(t, string(variables), "hostingManagementIdentityResourceId")
+	assert.Contains(t, string(variables), "agentSubnetResourceId")
 
 	main, err := fs.ReadFile("templates/terraform/main.tf")
 	require.NoError(t, err)
 	text := string(main)
 	assert.Contains(t, text, "Microsoft.CognitiveServices/accounts@2026-07-15-preview")
+	assert.Contains(t, text, "schema_validation_enabled = false")
 	assert.Contains(t, text, `identity_ids = var.agent_hosting.enabled`)
 	assert.Contains(t, text, "agentHostingConfigurations")
+	assert.Contains(t, text, "networkInjections")
+	assert.Contains(t, text, `scenario                   = "agent"`)
+	assert.Contains(t, text, "subnetArmId                = var.agent_hosting.agentSubnetResourceId")
 	assert.Contains(t, text, "workloadIdentityResourceId")
 }
 
@@ -2015,8 +2045,12 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 		"byo egress must inject the agent subnet (useMicrosoftManagedNetwork=false)")
 	assert.Contains(t, text, "'useMicrosoftManagedNetwork', true()",
 		"managed egress must use the Microsoft-managed network (useMicrosoftManagedNetwork=true)")
-	assert.Contains(t, text, `"networkInjections": "[variables('agentNetworkInjections')]"`,
+	assert.Contains(t, text, `"networkInjections": "[variables('accountNetworkInjections')]"`,
 		"account must carry the computed networkInjections")
+	assert.Contains(t, text,
+		"createObject('scenario', 'Agent', 'subnetArmId', parameters('agentHosting').agentSubnetResourceId, "+
+			"'useMicrosoftManagedNetwork', false())",
+		"agent hosting must inject the configured subnet using the service-required Agent scenario")
 
 	// isolationMode must be wired to the V2 managed network child resource
 	// (regression guard: it was previously a no-op echoed only to output).

@@ -1702,6 +1702,7 @@ services:
       hostingType: ManagedCluster
       name: primary
       clusterResourceId: ${AKS_ID}
+      agentSubnetResourceId: ${AGENT_SUBNET_ID}
       hostingManagementIdentityResourceId: ${HOSTING_MANAGER_ID}
       storageAccountResourceId: ${STORAGE_ID}
       workloadIdentityResourceId: ${WORKLOAD_ID}
@@ -1723,6 +1724,7 @@ services:
 	require.True(t, ok, "agentHosting should be an object, got %T", bicepDoc.Parameters["agentHosting"].Value)
 	assert.Equal(t, true, hosting["enabled"])
 	assert.Equal(t, "${AKS_ID}", hosting["clusterResourceId"])
+	assert.Equal(t, "${AGENT_SUBNET_ID}", hosting["agentSubnetResourceId"])
 	assert.Equal(t, "${HOSTING_MANAGER_ID}", hosting["hostingManagementIdentityResourceId"])
 	assert.Equal(t, "${STORAGE_ID}", hosting["storageAccountResourceId"])
 	assert.Equal(t, "${WORKLOAD_ID}", hosting["workloadIdentityResourceId"])
@@ -1736,6 +1738,7 @@ services:
       hostingType: ManagedCluster
       name: primary
       clusterResourceId: ${AKS_ID}
+      agentSubnetResourceId: ${AGENT_SUBNET_ID}
       hostingManagementIdentityResourceId: ${HOSTING_MANAGER_ID}
       storageAccountResourceId: ${STORAGE_ID}
       workloadIdentityResourceId: ${WORKLOAD_ID}
@@ -1752,6 +1755,7 @@ services:
 	require.True(t, ok, "agent_hosting should be an object, got %T", terraformDoc["agent_hosting"])
 	assert.Equal(t, true, hosting["enabled"])
 	assert.Equal(t, "${AKS_ID}", hosting["clusterResourceId"])
+	assert.Equal(t, "${AGENT_SUBNET_ID}", hosting["agentSubnetResourceId"])
 }
 
 // TestEjectInfra_Bicep_NetworkParamsComplete_Byo ejects a BYO-egress service

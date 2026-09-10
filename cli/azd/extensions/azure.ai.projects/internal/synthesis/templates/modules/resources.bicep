@@ -51,6 +51,7 @@ type agentHostingType = {
   hostingType: 'ManagedCluster' | ''
   name: string
   clusterResourceId: string
+  agentSubnetResourceId: string
   hostingManagementIdentityResourceId: string
   storageAccountResourceId: string
   workloadIdentityResourceId: string
@@ -91,6 +92,7 @@ param agentHosting agentHostingType = {
   hostingType: ''
   name: ''
   clusterResourceId: ''
+  agentSubnetResourceId: ''
   hostingManagementIdentityResourceId: ''
   storageAccountResourceId: ''
   workloadIdentityResourceId: ''
@@ -209,6 +211,15 @@ var agentNetworkInjections = useByoNetwork
           }
         ]
       : null)
+var accountNetworkInjections = agentHosting.enabled
+  ? [
+      {
+        scenario: 'Agent'
+        subnetArmId: agentHosting.agentSubnetResourceId
+        useMicrosoftManagedNetwork: false
+      }
+    ]
+  : agentNetworkInjections
 
 resource foundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-preview' = {
   name: foundryAccountName
@@ -239,7 +250,7 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-preview
       virtualNetworkRules: []
       ipRules: []
     }
-    networkInjections: agentNetworkInjections
+    networkInjections: accountNetworkInjections
     agentHostingConfigurations: agentHosting.enabled
       ? [
           {

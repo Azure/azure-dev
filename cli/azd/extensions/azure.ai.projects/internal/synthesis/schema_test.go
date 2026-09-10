@@ -95,6 +95,7 @@ func TestSchema_AgentHostingStructuralInvariants(t *testing.T) {
 		"hostingType",
 		"name",
 		"clusterResourceId",
+		"agentSubnetResourceId",
 		"hostingManagementIdentityResourceId",
 		"storageAccountResourceId",
 		"workloadIdentityResourceId",

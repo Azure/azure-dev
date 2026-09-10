@@ -80,7 +80,10 @@ func TestVoicePublicPreviewHelp(t *testing.T) {
 		},
 		{
 			name: "invoke", path: []string{"invoke"},
-			contains: []string{"Voice Live client", "voice WebSocket endpoint", "HTTP-based"},
+			contains: []string{
+				"Microsoft Foundry portal", "https://ai.azure.com", "prompt voice agents", "hosted voice wrappers",
+				"Voice Live client", "voice WebSocket endpoint", "HTTP-based",
+			},
 		},
 		{
 			name: "show", path: []string{"show"},

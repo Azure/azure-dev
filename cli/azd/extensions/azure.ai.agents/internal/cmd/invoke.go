@@ -102,7 +102,9 @@ redeploying or bypassed with --protocol. Otherwise the agent definition is
 used. If neither identifies exactly one invocable protocol, pass --protocol
 explicitly.
 
-For voice agents, use the voice WebSocket endpoint shown by 'azd show' or
+For prompt voice agents and hosted voice wrappers, open your agent in the
+Microsoft Foundry portal at https://ai.azure.com to try it.
+For programmatic voice access, use the voice WebSocket endpoint shown by 'azd show' or
 'azd ai agent show' with a Voice Live client. Text invoke is for HTTP-based
 hosted agent protocols such as responses, invocations, and a2a.
 
@@ -1204,6 +1206,9 @@ func remoteAgentNameFromService(
 // remoteAgentServiceResolutionError preserves direct-name fallback only when
 // the deployed name is known not to map to a project service.
 func remoteAgentServiceResolutionError(resolveErr error, directNameProvided bool) error {
+	if errors.Is(resolveErr, errVoiceInvocationUnsupported) {
+		return resolveErr
+	}
 	if resolveErr == nil {
 		return nil
 	}
@@ -1268,6 +1273,7 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	// name in the divergent case.
 	resolutionOptions := []agentServiceResolutionOption{
 		withBrownfieldInlineAgentName(),
+		withVoiceInvocationGuidance(),
 	}
 	if a.flags.protocol == "" {
 		resolutionOptions = append(

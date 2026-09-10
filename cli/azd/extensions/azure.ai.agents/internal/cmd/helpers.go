@@ -23,6 +23,7 @@ import (
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
 	projectpkg "azureaiagent/internal/project"
@@ -1004,9 +1005,33 @@ type agentServiceResolutionOptions struct {
 	brownfieldAgentExists     brownfieldAgentExistenceResolver
 	includeProtocolEndpoints  bool
 	matchDeployedAgentName    bool
+	rejectVoiceInvocation     bool
 }
 
 type agentServiceResolutionOption func(*agentServiceResolutionOptions)
+
+// errVoiceInvocationUnsupported is shared by automatic and explicit-protocol
+// invocation so direct-name fallback cannot swallow the voice guidance.
+var errVoiceInvocationUnsupported = exterrors.Validation(
+	exterrors.CodeUnsupportedAgentKind,
+	"voice agents cannot be invoked with this command",
+	"open your voice agent in the Microsoft Foundry portal at https://ai.azure.com to try it",
+)
+
+func voiceInvocationError(svc *azdext.ServiceConfig, projectRoot string) error {
+	// Only positively identified voice services are intercepted. Detection failures
+	// and all other kinds retain their existing resolution/validation behavior.
+	if isVoice, err := agentkind.IsPromptVoice(svc, projectRoot, ""); err == nil && isVoice {
+		return errVoiceInvocationUnsupported
+	}
+	return nil
+}
+
+func withVoiceInvocationGuidance() agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.rejectVoiceInvocation = true
+	}
+}
 
 func resolveBrownfieldAgentExists(
 	ctx context.Context,
@@ -1068,6 +1093,12 @@ func resolveAgentServiceFromProject(
 			ctx, azdClient, name,
 		)
 		if err != nil {
+			return nil, err
+		}
+	}
+
+	if resolutionOptions.rejectVoiceInvocation {
+		if err := voiceInvocationError(svc, projectConfig.Path); err != nil {
 			return nil, err
 		}
 	}
@@ -1379,6 +1410,9 @@ func resolveAgentProtocol(
 		)
 	}
 
+	if err := voiceInvocationError(svc, proj.Path); err != nil {
+		return "", "", err
+	}
 	hosted, isHosted, source, err := projectpkg.LoadAgentDefinition(svc, proj.Path)
 	if err != nil {
 		return "", "", exterrors.Validation(

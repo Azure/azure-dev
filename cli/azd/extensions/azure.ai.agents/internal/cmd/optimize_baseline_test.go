@@ -378,7 +378,9 @@ func TestBaselineAdvancementDir_CanonicalizesInProjectSymlink(t *testing.T) {
 	}
 
 	svc := &azdext.ServiceConfig{Name: "a", RelativePath: "linked-service"}
-	assert.Equal(t, configsDir, baselineAdvancementDir(root, svc))
+	expectedConfigsDir, err := filepath.EvalSymlinks(configsDir)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Clean(expectedConfigsDir), baselineAdvancementDir(root, svc))
 }
 
 func TestAdvanceBaselineToCandidate_SerializesSharedConfigsDir(t *testing.T) {

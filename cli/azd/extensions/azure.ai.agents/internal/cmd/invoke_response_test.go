@@ -37,6 +37,43 @@ func (s *memoryResponseStore) Delete(context.Context, string) error {
 	return nil
 }
 
+func TestResponseLifecycleCommand(t *testing.T) {
+	const endpoint = "https://example.services.ai.azure.com/api/projects/project/agents/agent/" +
+		"endpoint/protocols/openai/responses?api-version=v1"
+	for _, tt := range []struct {
+		name       string
+		useCurrent bool
+		endpoint   string
+		want       string
+	}{
+		{
+			name: "immediate project follow", useCurrent: true,
+			want: "azd ai agent invocations follow",
+		},
+		{
+			name: "recovery requires explicit identity",
+			want: `azd ai agent invocations follow --id "resp_test" --protocol responses --agent-name "resp-test"`,
+		},
+		{
+			name: "endpoint mode retains targeting", useCurrent: true, endpoint: endpoint,
+			want: `azd ai agent invocations follow --id "resp_test" --agent-endpoint "` + endpoint + `"`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			action := &InvokeAction{flags: &invokeFlags{agentEndpoint: tt.endpoint}}
+			if tt.endpoint != "" {
+				action.endpoint = &parsedAgentEndpoint{}
+			}
+			rc := &remoteContext{name: "deployed-agent", serviceName: "resp-test"}
+			assert.Equal(t, tt.want, action.responseLifecycleCommand(rc, "resp_test", invocationFollow, tt.useCurrent))
+			if !tt.useCurrent || tt.endpoint != "" {
+				assert.Equal(t, strings.Replace(tt.want, "invocations follow", "invocations show", 1),
+					action.responseLifecycleCommand(rc, "resp_test", invocationShow, false))
+			}
+		})
+	}
+}
+
 func TestInvokeLongRunningFlags(t *testing.T) {
 	cmd := newInvokeCommand(nil)
 	assert.NotNil(t, cmd.Flags().Lookup("long-running"))
@@ -379,7 +416,7 @@ func TestReadResponsesSSECancelledOutcome(t *testing.T) {
 		requireTerminal bool
 		wantErr         string
 	}{
-		{name: "attached background returns error", requireTerminal: true, wantErr: "response was cancelled"},
+		{name: "attached background returns error", requireTerminal: true, wantErr: "this invocation was cancelled"},
 		{name: "foreground compatibility", requireTerminal: false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -41,15 +42,16 @@ func TestResponsesHTTP(t *testing.T) {
 	const active = "event: response.created\ndata: " +
 		`{"response":{"id":"resp_test","status":"in_progress"}}` + "\n\n"
 	tests := []struct {
-		name      string
-		operation string
-		status    int
-		body      string
-		getStatus int
-		getBody   string
-		wantErr   string
-		wantCalls []string
-		wantText  string
+		name           string
+		operation      string
+		status         int
+		body           string
+		getStatus      int
+		getBody        string
+		wantErr        string
+		wantCalls      []string
+		wantText       string
+		wantSuggestion string
 	}{
 		{name: "show", operation: "show", status: 200, body: snapshot, wantCalls: []string{"GET"}},
 		{
@@ -68,6 +70,36 @@ func TestResponsesHTTP(t *testing.T) {
 		{
 			name: "follow service error does not retry", operation: "follow", status: 503,
 			body: `{"error":"unavailable"}`, wantErr: "HTTP 503", wantCalls: []string{"GET"},
+		},
+		{
+			name: "follow cancelled or expired stream", operation: "follow", status: 400,
+			body: `{"error":{"code":"invalid_request_error","param":"stream","type":"invalid_request_error",` +
+				`"message":"This response cannot be streamed because it was not created with stream=true ` +
+				`or the stream TTL has expired."}}`,
+			wantErr: "Output is unavailable for this invocation", wantCalls: []string{"GET"},
+			wantSuggestion: "invocations show",
+		},
+		{
+			name: "follow foreground stream", operation: "follow", status: 400,
+			body: `{"error":{"code":"invalid_request_error","param":"stream",` +
+				`"message":"This response cannot be streamed because it was not created with background=true."}}`,
+			wantErr: "not started with --long-running", wantCalls: []string{"GET"},
+			wantSuggestion: "invocations show",
+		},
+		{
+			name: "unrelated follow rejection", operation: "follow", status: 400,
+			body:    `{"error":{"code":"invalid_request_error","param":"stream","message":"other error"}}`,
+			wantErr: "following Response failed with HTTP 400", wantCalls: []string{"GET"},
+		},
+		{
+			name: "malformed follow rejection", operation: "follow", status: 400, body: "not JSON",
+			wantErr: "following Response failed with HTTP 400", wantCalls: []string{"GET"},
+		},
+		{
+			name: "cancelled stream event", operation: "follow", status: 200,
+			body: "event: response.cancelled\ndata: " +
+				`{"response":{"id":"resp_test","status":"cancelled","output":[]}}` + "\n\n",
+			wantErr: "this invocation was cancelled", wantCalls: []string{"GET"},
 		},
 		{
 			name: "cancel", operation: "cancel", status: 200, body: `{"id":"resp_test","status":"cancelled"}`,
@@ -142,6 +174,15 @@ func TestResponsesHTTP(t *testing.T) {
 				require.NoError(t, err)
 			} else {
 				require.ErrorContains(t, err, tt.wantErr)
+			}
+			if tt.wantSuggestion != "" {
+				serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+				require.True(t, ok)
+				assert.Equal(t, tt.status, serviceErr.StatusCode)
+				assert.Contains(t, serviceErr.Suggestion, tt.wantSuggestion)
+				assert.Contains(t, serviceErr.Suggestion, `--id "resp_test"`)
+				assert.NotContains(t, serviceErr.Suggestion, "resp_current")
+				assert.NotContains(t, serviceErr.Message, "cancelled", "unavailable replay does not prove cancellation")
 			}
 			assert.Equal(t, tt.wantCalls, calls)
 			if tt.wantText != "" {

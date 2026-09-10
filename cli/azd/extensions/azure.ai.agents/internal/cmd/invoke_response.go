@@ -264,7 +264,8 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 			},
 		},
 	)
-	followCommand := a.responseFollowCommand(rc, tracker.responseID)
+	useCurrent := errors.Is(streamErr, errBackgroundNoWait) && responseStore != nil && tracker.saveErr == nil
+	followCommand := a.responseLifecycleCommand(rc, tracker.responseID, invocationFollow, useCurrent)
 	if errors.Is(streamErr, errBackgroundNoWait) {
 		fmt.Printf("\nNext:\n  %s\n", followCommand)
 		return nil
@@ -476,7 +477,7 @@ func readResponsesSSE(
 			return fmt.Errorf("agent returned incomplete status")
 		}
 		if snapshot.Status == "cancelled" && options.requireTerminal {
-			return errors.New("response was cancelled")
+			return errors.New("this invocation was cancelled")
 		}
 		return nil
 	}
@@ -831,8 +832,14 @@ func printAgentResponse(result map[string]any, title string) error {
 	return nil
 }
 
-func (a *InvokeAction) responseFollowCommand(rc *remoteContext, id string) string {
-	command := fmt.Sprintf("azd ai agent invocations follow --id %q", id)
+func (a *InvokeAction) responseLifecycleCommand(
+	rc *remoteContext, id string, operation invocationOperation, useCurrent bool,
+) string {
+	command := "azd ai agent invocations " + string(operation)
+	if useCurrent && a.endpoint == nil {
+		return command
+	}
+	command += fmt.Sprintf(" --id %q", id)
 	if a.endpoint != nil {
 		return command + fmt.Sprintf(" --agent-endpoint %q", a.flags.agentEndpoint)
 	}
@@ -856,16 +863,17 @@ func (a *InvokeAction) runResponseOperation(
 	case invocationShow:
 		result, err := a.getResponseSnapshot(ctx, rc, id)
 		if err != nil {
-			return classifyResponseLifecycleError(err, exterrors.OpShowResponse, "showing Response")
+			return classifyResponseLifecycleError(err, exterrors.OpShowResponse, "showing Response", "")
 		}
 		return printResponseSnapshot(writer, result, format)
 	case invocationFollow:
 		return classifyResponseLifecycleError(
 			a.followResponse(ctx, rc, id, writer), exterrors.OpFollowResponse, "following Response",
+			a.responseLifecycleCommand(rc, id, invocationShow, false),
 		)
 	case invocationCancel:
 		return classifyResponseLifecycleError(
-			a.cancelResponse(ctx, rc, id, writer), exterrors.OpCancelResponse, "cancelling Response",
+			a.cancelResponse(ctx, rc, id, writer), exterrors.OpCancelResponse, "cancelling Response", "",
 		)
 	default:
 		return fmt.Errorf("unsupported Responses operation %q", operation)
@@ -886,7 +894,7 @@ func classifyResponseStateReadError(cause error) error {
 	)
 }
 
-func classifyResponseLifecycleError(cause error, operation, label string) error {
+func classifyResponseLifecycleError(cause error, operation, label, showCommand string) error {
 	if cause == nil {
 		return nil
 	}
@@ -906,6 +914,35 @@ func classifyResponseLifecycleError(cause error, operation, label string) error 
 		"",
 	)
 	serviceErr.StatusCode = httpErr.statusCode
+	if operation == exterrors.OpFollowResponse && httpErr.statusCode == http.StatusBadRequest {
+		var body struct {
+			Error struct {
+				Code    string `json:"code"`
+				Param   string `json:"param"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(httpErr.body, &body) == nil &&
+			body.Error.Code == "invalid_request_error" && body.Error.Param == "stream" {
+			switch body.Error.Message {
+			case "This response cannot be streamed because it was not created with stream=true " +
+				"or the stream TTL has expired.":
+				// The service also returns this for cancelled/failed work without a replayable stream.
+				// It does not prove cancellation, so do not infer a lifecycle status from this error.
+				serviceErr.Message = "Output is unavailable for this invocation. " +
+					"Its stream was not recorded or has expired."
+				serviceErr.Suggestion = fmt.Sprintf("run `%s` to inspect its current state", showCommand)
+				return serviceErr
+			case "This response cannot be streamed because it was not created with background=true.":
+				serviceErr.Message = "This invocation cannot be followed because it was not started with --long-running."
+				serviceErr.Suggestion = fmt.Sprintf(
+					"run `%s` to inspect the result; use `azd ai agent invoke --long-running` for work you want to follow later",
+					showCommand,
+				)
+				return serviceErr
+			}
+		}
+	}
 	if cause.Error() != httpErr.Error() {
 		serviceErr.Suggestion = "use `azd ai agent invocations show --protocol responses` to inspect the Response, or run the follow command again"
 	}
@@ -1209,7 +1246,7 @@ func (a *InvokeAction) followResponse(
 			return fmt.Errorf(
 				"%w; rerun `%s` to replay and follow again",
 				err,
-				a.responseFollowCommand(rc, responseID),
+				a.responseLifecycleCommand(rc, responseID, invocationFollow, false),
 			)
 		}
 		return err

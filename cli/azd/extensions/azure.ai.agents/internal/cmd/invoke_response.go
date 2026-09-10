@@ -89,10 +89,9 @@ func (a *InvokeAction) responseLifecycleCommand(
 	rc *remoteContext, id string, operation invocationOperation, useCurrent bool,
 ) string {
 	command := "azd ai agent invocations " + string(operation)
-	if useCurrent && a.endpoint == nil {
-		return command
+	if !useCurrent || a.endpoint != nil {
+		command += fmt.Sprintf(" --id %q", id)
 	}
-	command += fmt.Sprintf(" --id %q", id)
 	if a.endpoint != nil {
 		return command + fmt.Sprintf(" --agent-endpoint %q", a.flags.agentEndpoint)
 	}

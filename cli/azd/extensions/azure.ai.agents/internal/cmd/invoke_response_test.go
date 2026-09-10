@@ -47,8 +47,8 @@ func TestResponseLifecycleCommand(t *testing.T) {
 		want       string
 	}{
 		{
-			name: "immediate project follow", useCurrent: true,
-			want: "azd ai agent invocations follow",
+			name: "immediate project follow selects agent and protocol", useCurrent: true,
+			want: `azd ai agent invocations follow --protocol responses --agent-name "resp-test"`,
 		},
 		{
 			name: "recovery requires explicit identity",
@@ -66,10 +66,8 @@ func TestResponseLifecycleCommand(t *testing.T) {
 			}
 			rc := &remoteContext{name: "deployed-agent", serviceName: "resp-test"}
 			assert.Equal(t, tt.want, action.responseLifecycleCommand(rc, "resp_test", invocationFollow, tt.useCurrent))
-			if !tt.useCurrent || tt.endpoint != "" {
-				assert.Equal(t, strings.Replace(tt.want, "invocations follow", "invocations show", 1),
-					action.responseLifecycleCommand(rc, "resp_test", invocationShow, false))
-			}
+			assert.Equal(t, strings.Replace(tt.want, "invocations follow", "invocations show", 1),
+				action.responseLifecycleCommand(rc, "resp_test", invocationShow, tt.useCurrent))
 		})
 	}
 }

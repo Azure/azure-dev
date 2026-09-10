@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
+// invocationIDFromResponse extracts an ID without consuming the accepted response body.
 func invocationIDFromResponse(resp *http.Response) (string, error) {
 	if invocationID := resp.Header.Get("x-agent-invocation-id"); invocationID != "" {
 		return invocationID, nil
@@ -56,6 +57,7 @@ type invocationSnapshotResult struct {
 	raw      []byte
 }
 
+// runInvocationsProtocolOperation executes Invocations-protocol lifecycle requests.
 func (a *InvokeAction) runInvocationsProtocolOperation(
 	ctx context.Context,
 	rc *remoteContext,
@@ -82,6 +84,7 @@ func (a *InvokeAction) runInvocationsProtocolOperation(
 	}
 }
 
+// classifyInvocationStateReadError adds guidance to saved-state failures.
 func classifyInvocationStateReadError(cause error) error {
 	if _, ok := errors.AsType[*azdext.ConfigError](cause); !ok {
 		return exterrors.FromHost(cause, exterrors.OpReadInvocationState, "reading current Invocation state failed")
@@ -93,6 +96,7 @@ func classifyInvocationStateReadError(cause error) error {
 	)
 }
 
+// cancelInvocation requests cancellation and confirms terminal state on rejection.
 func (a *InvokeAction) cancelInvocation(
 	ctx context.Context, rc *remoteContext, invocationID string, writer io.Writer,
 ) error {
@@ -106,7 +110,6 @@ func (a *InvokeAction) cancelInvocation(
 		return fmt.Errorf("create Invocation cancel request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	applyCustomHeaders(req, a.clientHeaders)
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 
 	//nolint:gosec // URL is built from a validated Foundry endpoint.
@@ -148,6 +151,7 @@ func (a *InvokeAction) cancelInvocation(
 	return err
 }
 
+// getInvocation retrieves an Invocation and validates its identity.
 func (a *InvokeAction) getInvocation(
 	ctx context.Context,
 	rc *remoteContext,
@@ -163,7 +167,6 @@ func (a *InvokeAction) getInvocation(
 		return invocationSnapshotResult{}, fmt.Errorf("create Invocation show request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	applyCustomHeaders(req, a.clientHeaders)
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
 
 	//nolint:gosec // URL is built from a validated Foundry endpoint.
@@ -211,10 +214,12 @@ type invocationLifecycleHTTPError struct {
 	body       []byte
 }
 
+// Error describes the failed lifecycle HTTP request.
 func (e *invocationLifecycleHTTPError) Error() string {
 	return fmt.Sprintf("%s %s failed with HTTP %d: %s\n%s", e.method, e.requestURL, e.statusCode, e.status, e.body)
 }
 
+// classifyInvocationLifecycleError translates HTTP failures into structured service errors.
 func classifyInvocationLifecycleError(cause error, operation, label string) error {
 	if cause == nil {
 		return nil
@@ -238,6 +243,7 @@ func classifyInvocationLifecycleError(cause error, operation, label string) erro
 	return serviceErr
 }
 
+// printInvocationSnapshot writes an Invocation as JSON or a table.
 func printInvocationSnapshot(writer io.Writer, result invocationSnapshotResult, format string) error {
 	if format != "table" {
 		var formatted any
@@ -264,6 +270,7 @@ func printInvocationSnapshot(writer io.Writer, result invocationSnapshotResult, 
 	return table.Flush()
 }
 
+// isTerminalInvocationStatus reports whether an Invocation has finished.
 func isTerminalInvocationStatus(status string) bool {
 	switch status {
 	case "completed", "failed", "cancelled", "canceled":
@@ -283,10 +290,12 @@ type invocationStateStore struct {
 	client *azdext.AzdClient
 }
 
+// newInvocationStateStore creates the current-Invocation ID store.
 func newInvocationStateStore(client *azdext.AzdClient) *invocationStateStore {
 	return &invocationStateStore{client: client}
 }
 
+// Get returns the agent's current Invocation, or nil if none is saved.
 func (s *invocationStateStore) Get(ctx context.Context, agentKey string) (*savedInvocation, error) {
 	config, err := azdext.NewConfigHelper(s.client)
 	if err != nil {
@@ -307,6 +316,7 @@ func (s *invocationStateStore) Get(ctx context.Context, agentKey string) (*saved
 	return &record, nil
 }
 
+// Save replaces the agent's current Invocation ID.
 func (s *invocationStateStore) Save(ctx context.Context, agentKey string, record savedInvocation) error {
 	config, err := azdext.NewConfigHelper(s.client)
 	if err != nil {
@@ -327,6 +337,7 @@ func (s *invocationStateStore) Save(ctx context.Context, agentKey string, record
 	return nil
 }
 
+// Delete removes the agent's current Invocation selection.
 func (s *invocationStateStore) Delete(ctx context.Context, agentKey string) error {
 	config, err := azdext.NewConfigHelper(s.client)
 	if err != nil {

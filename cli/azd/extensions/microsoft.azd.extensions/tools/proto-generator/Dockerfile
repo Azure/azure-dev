@@ -7,7 +7,7 @@ ARG PROTOC_GEN_GO_GRPC_VERSION=v1.5.1
 RUN GOBIN=/out go install "google.golang.org/protobuf/cmd/protoc-gen-go@${PROTOC_GEN_GO_VERSION}" \
     && GOBIN=/out go install "google.golang.org/grpc/cmd/protoc-gen-go-grpc@${PROTOC_GEN_GO_GRPC_VERSION}"
 
-FROM node:22-bookworm-slim
+FROM node:24-bookworm-slim
 
 ARG GRPCIO_TOOLS_VERSION=1.71.0
 ARG GRPC_TOOLS_VERSION=1.13.1

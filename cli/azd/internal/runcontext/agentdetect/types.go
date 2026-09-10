@@ -11,6 +11,8 @@ type AgentType string
 const (
 	// AgentTypeUnknown indicates no agent was detected.
 	AgentTypeUnknown AgentType = ""
+	// AgentTypeAntigravity is Google's Antigravity CLI.
+	AgentTypeAntigravity AgentType = "antigravity"
 	// AgentTypeClaudeCode is Anthropic's Claude Code agent.
 	AgentTypeClaudeCode AgentType = "claude-code"
 	// AgentTypeClaudeCodeDesktop is Claude Code launched from Claude Desktop.
@@ -49,6 +51,8 @@ func (a AgentType) String() string {
 // DisplayName returns a human-readable name for the agent type.
 func (a AgentType) DisplayName() string {
 	switch a {
+	case AgentTypeAntigravity:
+		return "Antigravity"
 	case AgentTypeClaudeCode:
 		return "Claude Code"
 	case AgentTypeClaudeCodeDesktop:

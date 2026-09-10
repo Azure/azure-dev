@@ -83,7 +83,9 @@ GDPR data-catalog entries rather than metadata declared in source:
 
 - Local and hosted environments: `Desktop`, `Visual Studio`, `Visual Studio Code`,
   `VS Code Azure GitHub Copilot`, `Azure CloudShell`, `GitHub Codespaces`.
-- AI coding agents: `Claude Code`, `Claude Code Desktop`, `Claude Code VSCode`, `Codex`, `Codex Desktop`, `Cursor`, `GitHub Copilot CLI`, `GitHub Copilot App`, `GitHub Copilot VSCode`, `GitHub Copilot Cloud Agent`, `Gemini`, `OpenCode`, `Pi`.
+- AI coding agents: `Antigravity`, `Claude Code`, `Claude Code Desktop`, `Claude Code VSCode`, `Codex`,
+  `Codex Desktop`, `Cursor`, `GitHub Copilot CLI`, `GitHub Copilot App`, `GitHub Copilot VSCode`,
+  `GitHub Copilot Cloud Agent`, `Gemini`, `OpenCode`, `Pi`.
 - CI environments: `UnknownCI`, `Azure Pipelines`, `GitHub Actions`, `AppVeyor`, `Bamboo`,
   `BitBucket Pipelines`, `Travis CI`, `Circle CI`, `GitLab CI`, `Jenkins`, `AWS CodeBuild`,
   `TeamCity`, `JetBrains Space`.

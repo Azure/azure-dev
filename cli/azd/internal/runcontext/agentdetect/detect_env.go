@@ -59,6 +59,10 @@ var knownEnvVarPatterns = []envVarPattern{
 	{envVar: "CURSOR_AGENT", expectedValue: "1", agentType: AgentTypeCursor},
 	{envVar: "CURSOR_CONVERSATION_ID", agentType: AgentTypeCursor},
 
+	// Google Antigravity CLI
+	{envVar: "ANTIGRAVITY_AGENT", expectedValue: "1", agentType: AgentTypeAntigravity},
+	{envVar: "ANTIGRAVITY_CONVERSATION_ID", agentType: AgentTypeAntigravity},
+
 	// Claude Code - Anthropic's coding agent
 	{envVar: "CLAUDECODE", expectedValue: "1", agentType: AgentTypeClaudeCode},
 
@@ -122,6 +126,7 @@ var userAgentPatterns = []struct {
 	{substring: "copilot-cli", agentType: AgentTypeGitHubCopilotCLI},
 	{substring: "claude-code", agentType: AgentTypeClaudeCode},
 	{substring: "claude", agentType: AgentTypeClaudeCode},
+	{substring: "antigravity-cli", agentType: AgentTypeAntigravity},
 	{substring: "gemini", agentType: AgentTypeGemini},
 	{substring: "opencode", agentType: AgentTypeOpenCode},
 }

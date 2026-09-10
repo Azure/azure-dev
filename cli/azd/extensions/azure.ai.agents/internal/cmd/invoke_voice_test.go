@@ -155,6 +155,31 @@ func TestVoiceInvocationDetectionCompatibility(t *testing.T) {
 	require.NoError(t, voiceInvocationError(nil, root))
 }
 
+func TestVoiceInvocationGuidanceByDeployedName(t *testing.T) {
+	t.Parallel()
+	props, err := structpb.NewStruct(map[string]any{
+		"kind":               "voice",
+		"conversationEngine": map[string]any{"type": "hosted_agent", "name": "target"},
+	})
+	require.NoError(t, err)
+	project := &helpersProjectServer{project: &azdext.ProjectConfig{
+		Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
+			"voice-service": {Name: "voice-service", Host: AiAgentHost, AdditionalProperties: props},
+		},
+	}}
+	env := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "test"},
+		values:  map[string]map[string]string{"test": {"AGENT_VOICE_SERVICE_NAME": "deployed-voice"}},
+	}
+	client := newHelpersTestAzdClient(t, project, &helpersPromptServer{}, env)
+	_, err = resolveAgentServiceFromProject(
+		t.Context(), client, "deployed-voice", true,
+		withDeployedAgentNameLookup(), withDeployedProtocolEndpoints(), withVoiceInvocationGuidance(),
+	)
+	require.ErrorIs(t, err, errVoiceInvocationUnsupported)
+	require.ErrorIs(t, remoteAgentServiceResolutionError(err, true), errVoiceInvocationUnsupported)
+}
+
 func TestVoiceInvocationGuidancePreservesHostedProtocols(t *testing.T) {
 	t.Parallel()
 	for _, protocol := range []string{"responses", "invocations", "a2a", "invocations_ws"} {

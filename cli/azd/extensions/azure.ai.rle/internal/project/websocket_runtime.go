@@ -19,10 +19,11 @@ import (
 )
 
 const (
-	maxWebSocketMessageBytes = 100 * 1024 * 1024
-	webSocketPingInterval    = 20 * time.Second
-	webSocketPingTimeout     = 20 * time.Second
-	webSocketDrainTimeout    = 60 * time.Second
+	maxWebSocketMessageBytes  = 8 * 1024 * 1024
+	webSocketHandshakeTimeout = 30 * time.Second
+	webSocketPingInterval     = 20 * time.Second
+	webSocketPingTimeout      = 20 * time.Second
+	webSocketDrainTimeout     = 60 * time.Second
 )
 
 type WebSocketRuntimeSession struct {
@@ -172,6 +173,19 @@ func (c *WebSocketRuntimeSession) exchange(
 	if err != nil {
 		return "", err
 	}
+	if len(request) > maxWebSocketMessageBytes {
+		return "", &azdext.LocalError{
+			Message: fmt.Sprintf(
+				"OpenEnv WebSocket %s request is %d bytes; the RLE service limit is %d bytes.",
+				operation,
+				len(request),
+				maxWebSocketMessageBytes,
+			),
+			Code:       "rle_open_env_websocket_request_too_large",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Reduce the request payload and retry.",
+		}
+	}
 
 	deadline, hasDeadline := operationDeadline(ctx, c.timeout)
 	if !cancelAfterSend && !hasDeadline {
@@ -268,8 +282,8 @@ func (c *WebSocketRuntimeSession) connect(ctx context.Context) error {
 	}
 
 	dialer := *websocket.DefaultDialer
-	dialer.HandshakeTimeout = 0
-	if c.timeout > 0 {
+	dialer.HandshakeTimeout = webSocketHandshakeTimeout
+	if c.timeout > 0 && time.Duration(c.timeout)*time.Second < dialer.HandshakeTimeout {
 		dialer.HandshakeTimeout = time.Duration(c.timeout) * time.Second
 	}
 	connection, response, err := dialer.DialContext(ctx, endpoint, headers)
@@ -381,11 +395,24 @@ func parseWebSocketResponse(operation string, response []byte) (string, bool, er
 		}
 	}
 	if envelope.Type == "error" {
-		return "", false, &azdext.LocalError{
-			Message:    fmt.Sprintf("Environment runtime rejected the %s request: %s", operation, prettyJson(envelope.Data)),
+		var errorData struct {
+			Code string `json:"code"`
+		}
+		_ = json.Unmarshal(envelope.Data, &errorData)
+		terminal := isTerminalOpenEnvError(errorData.Code)
+		suggestion := "Check the request payload and retry."
+		if terminal {
+			suggestion = "Exit and run invoke again to start a new environment session."
+		}
+		return "", terminal, &azdext.LocalError{
+			Message: fmt.Sprintf(
+				"Environment runtime rejected the %s request: %s",
+				operation,
+				prettyJson(envelope.Data),
+			),
 			Code:       "rle_open_env_websocket_request_failed",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Check the request payload and retry.",
+			Suggestion: suggestion,
 		}
 	}
 	expectedType := "observation"
@@ -405,6 +432,15 @@ func parseWebSocketResponse(operation string, response []byte) (string, bool, er
 		}
 	}
 	return prettyJson(envelope.Data), false, nil
+}
+
+func isTerminalOpenEnvError(code string) bool {
+	switch code {
+	case "CAPACITY_REACHED", "FACTORY_ERROR", "SESSION_ERROR":
+		return true
+	default:
+		return false
+	}
 }
 
 func RuntimeWebSocketURL(baseURL string) (string, error) {

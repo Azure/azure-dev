@@ -41,7 +41,7 @@ var validateSandboxURL = validateRemoteSandboxURL
 
 func newInvokeCommand() *cobra.Command {
 	flags := &remoteInvokeFlags{
-		timeout: 30,
+		timeout: 60,
 	}
 
 	cmd := &cobra.Command{

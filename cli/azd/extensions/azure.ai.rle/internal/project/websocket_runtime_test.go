@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/gorilla/websocket"
 )
 
@@ -222,12 +224,70 @@ func TestParseWebSocketResponse(t *testing.T) {
 		t.Fatalf("unexpected OpenEnv error response: terminal=%t err=%v", terminal, err)
 	}
 
+	for _, code := range []string{"CAPACITY_REACHED", "FACTORY_ERROR", "SESSION_ERROR"} {
+		_, terminal, err = parseWebSocketResponse(
+			"step",
+			[]byte(fmt.Sprintf(`{"type":"error","data":{"code":%q,"detail":"failed"}}`, code)),
+		)
+		var localError *azdext.LocalError
+		if err == nil || !terminal || !errors.As(err, &localError) ||
+			!strings.Contains(localError.Suggestion, "run invoke again") {
+			t.Fatalf("expected %s to be terminal with reinvoke guidance: terminal=%t err=%v", code, terminal, err)
+		}
+	}
+
+	_, terminal, err = parseWebSocketResponse(
+		"step",
+		[]byte(`{"type":"error","data":{"code":"VALIDATION_ERROR","detail":"invalid action"}}`),
+	)
+	var localError *azdext.LocalError
+	if err == nil || terminal || !errors.As(err, &localError) ||
+		!strings.Contains(localError.Suggestion, "payload and retry") {
+		t.Fatalf("expected validation error to be recoverable: terminal=%t err=%v", terminal, err)
+	}
+
 	_, terminal, err = parseWebSocketResponse(
 		"state",
 		[]byte(`{"type":"observation","data":{}}`),
 	)
 	if err == nil || !terminal {
 		t.Fatalf("expected mismatched response type to be terminal, got terminal=%t err=%v", terminal, err)
+	}
+}
+
+func TestWebSocketSessionErrorPreventsReconnect(t *testing.T) {
+	upgrades := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upgrades++
+		connection, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer connection.Close()
+		if _, _, err := connection.ReadMessage(); err != nil {
+			t.Error(err)
+			return
+		}
+		if err := connection.WriteMessage(
+			websocket.TextMessage,
+			[]byte(`{"type":"error","data":{"code":"SESSION_ERROR","detail":"session failed"}}`),
+		); err != nil {
+			t.Error(err)
+		}
+	}))
+	defer server.Close()
+
+	session := NewWebSocketRuntimeSession(server.URL, 30, nil)
+	defer session.Close()
+	if _, err := session.Call(t.Context(), "state", ""); err == nil {
+		t.Fatal("expected the session error to fail the first call")
+	}
+	if _, err := session.Call(t.Context(), "state", ""); err == nil {
+		t.Fatal("expected the terminal session error to fail the second call")
+	}
+	if upgrades != 1 {
+		t.Fatalf("expected no reconnection after session error, got %d connections", upgrades)
 	}
 }
 

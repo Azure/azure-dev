@@ -198,6 +198,7 @@ func buildInvocationsURL(projectEndpoint, agentName, apiVersion, sid string) str
 	return invURL
 }
 
+// buildInvocationLifecycleURL builds the Invocation retrieval URL.
 func buildInvocationLifecycleURL(
 	projectEndpoint string,
 	agentName string,
@@ -216,6 +217,7 @@ func buildInvocationLifecycleURL(
 	)
 }
 
+// buildInvocationCancelURL builds the Invocation cancellation URL.
 func buildInvocationCancelURL(projectEndpoint, agentName, invocationID, apiVersion string) string {
 	lifecycleURL := buildInvocationLifecycleURL(projectEndpoint, agentName, invocationID, apiVersion)
 	parts := strings.SplitN(lifecycleURL, "?", 2)

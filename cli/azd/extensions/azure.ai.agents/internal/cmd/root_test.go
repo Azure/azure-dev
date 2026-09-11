@@ -72,10 +72,14 @@ func TestVoicePublicPreviewHelp(t *testing.T) {
 				"conversationEngine.type", "conversationEngine.name", "not supported; use conversationEngine instead",
 				"structured inputs", "tools", "greeting", "avatar", "handoff", "telephony", "acs", "twilio",
 				"For existing voice services, edit azure.yaml",
+				"For hosted and prompt agents, name of the AI model to deploy",
+				"--model-deployment takes precedence. For new managed prompt voice agents",
+				"service-hosted model (default: gpt-realtime); no model deployment is created",
 				"--harness", "--kind prompt", "--instructions",
 			},
 			absent: []string{
 				"New voice services use kind: voice", "adopted manifest", "remains supported for compatibility",
+				"For hosted agents, name of the AI model to deploy",
 			},
 		},
 		{

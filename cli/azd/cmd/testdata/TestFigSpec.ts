@@ -3947,8 +3947,138 @@ const completionSpec: Fig.Spec = {
 					description: 'Manage Microsoft Foundry Project resources from your terminal. (Beta)',
 					subcommands: [
 						{
+							name: ['add'],
+							description: 'Add or update a Microsoft Foundry project.',
+							options: [
+								{
+									name: ['--force'],
+									description: 'Replace a different configured project',
+									isDangerous: true,
+								},
+								{
+									name: ['--infra'],
+									description: 'Eject Bicep or Terraform infrastructure (optional value)',
+									args: [
+										{
+											name: 'infra',
+											isOptional: true,
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['default', 'json', 'none'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Existing Foundry project endpoint',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--project-id'],
+									description: 'Existing Foundry project ARM resource ID',
+									args: [
+										{
+											name: 'project-id',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['context'],
 							description: 'Get the context of the azd project & environment.',
+						},
+						{
+							name: ['deployment'],
+							description: 'Manage managed model deployments for a Foundry project.',
+							subcommands: [
+								{
+									name: ['add'],
+									description: 'Add an azd-managed model deployment before ejection.',
+									options: [
+										{
+											name: ['--capacity'],
+											description: 'Deployment capacity',
+											args: [
+												{
+													name: 'capacity',
+												},
+											],
+										},
+										{
+											name: ['--force'],
+											description: 'Replace a conflicting inline declaration',
+											isDangerous: true,
+										},
+										{
+											name: ['--location'],
+											description: 'Deployment location',
+											args: [
+												{
+													name: 'location',
+												},
+											],
+										},
+										{
+											name: ['--model'],
+											description: 'Model name or publisher/model',
+											args: [
+												{
+													name: 'model',
+												},
+											],
+										},
+										{
+											name: ['--name'],
+											description: 'Deployment name',
+											args: [
+												{
+													name: 'name',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['default', 'json', 'none'],
+												},
+											],
+										},
+										{
+											name: ['--sku'],
+											description: 'Deployment SKU name',
+											args: [
+												{
+													name: 'sku',
+												},
+											],
+										},
+										{
+											name: ['--version'],
+											description: 'Model version',
+											args: [
+												{
+													name: 'version',
+												},
+											],
+										},
+									],
+								},
+							],
 						},
 						{
 							name: ['set'],

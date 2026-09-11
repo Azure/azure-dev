@@ -12,25 +12,6 @@ This guide provides design guidelines and best practices for developing extensio
 - Use a verb-first structure, where the primary action (e.g., add, create, delete, list) is the top-level command, and the target entity or context follows as an argument or subcommand.
 - Example: `azd add <new-resource-type>` instead of `azd <new-resource-type> add`
 
-#### Scoped exception: Agent dependency composition
-
-The `azure.ai.agents` extension groups local dependency-reference editing under
-the dependency type within its existing `azd ai agent` command namespace:
-
-- `azd ai agent toolbox add <service> --agent <agent>`
-- `azd ai agent connection add <service> --agent <agent>`
-
-These commands only attach an existing service to the Agent's `uses` list. The
-resource-type group distinguishes Agent composition from creating or managing
-the Toolbox or Connection itself in its owning extension. This exception is
-limited to these two Agent dependency groups; it does not change the verb-first
-convention for other commands or add a separate resource deployment lifecycle.
-Core `azd deploy` remains the project deployment entry point.
-
-The former `azd ai agent add <type>` hierarchy is removed without compatibility
-aliases. See the [Agent composition migration guide](../../extensions/azure.ai.agents/README.md#composing-agent-dependencies)
-for the breaking change and the associated offline scenario coverage.
-
 ### 2. **Parameter and Flag Consistency**
 
 - Reuse established parameter patterns across new commands

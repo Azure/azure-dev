@@ -578,7 +578,7 @@ This is the normal compatibility mechanism used when resolving installs and
 updates:
 
 ```yaml
-requiredAzdVersion: ">=1.31.0"
+requiredAzdVersion: ">=1.33.0"
 ```
 
 The call remains best-effort for already-installed extensions and extensions

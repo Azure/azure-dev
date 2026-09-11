@@ -9,7 +9,7 @@ full method name.
 | Stable | `grpc/proto/azd/extensions/v1` | `azd.extensions.v1` | `pkg/azdext/contracts/v1` |
 | Beta | `grpc/proto/azd/extensions/v1beta` | `azd.extensions.v1beta` | `pkg/azdext/contracts/v1beta` |
 
-The handwritten `pkg/azdext` package remains the public Go SDK facade for the
+The handwritten `pkg/azdext` package remains the internal Go SDK facade for the
 stable v1 channel. It forwards its generated contract types, clients, and
 server interfaces from `pkg/azdext/contracts/v1`; protobuf-generated files do
 not share the facade package with handwritten SDK functionality. Go clients
@@ -27,10 +27,12 @@ unknown values, or add new methods without changing existing request and
 response semantics. Never reuse removed field names or numbers.
 
 `v1beta` is a long-lived preview channel, not a sequence of short-lived
-`v2beta1` packages. New additive contract capabilities can incubate there.
-After validation, graduate a capability by adding the same compatible shape
-to `v1`. A beta client continues to use the beta package until it deliberately
-moves to stable.
+`v2beta1` packages. New contract capabilities can incubate there. After
+validation, a capability graduates into the current stable major (`v1`) when
+it can be added compatibly. A future `v2` stable package is introduced only
+when a change cannot preserve `v1` compatibility. A beta client continues to
+use the beta package until it deliberately moves to the corresponding stable
+API.
 
 The original `azdext` wire package is retained only through a temporary frozen
 runtime bridge for already-built extensions. New development must use `v1` or

@@ -1,0 +1,17 @@
+# Tier 0 (offline) — long-running and no-wait option validation, never agent execution.
+name: "invoke-long-running-validation"
+command: 'azd ai agent invoke "hello" --no-wait'
+cwd: "/tmp"
+tags: ["tier:0", "cmd:invoke", "negative-path", "parallel-safe"]
+
+goals:
+  - "Confirm the initial command exits non-zero with '--no-wait requires --long-running'."
+  - "Run 'azd ai agent invoke --help'. Confirm it exits with code 0, advertises --long-running and --no-wait, and explains continued service-side execution after disconnection separately from returning after receiving an ID."
+  - "Confirm invoke help does not advertise --background or --resumable."
+  - "Run 'azd ai agent invoke \"hello\" --long-running --local'. Confirm it exits non-zero and explains that --long-running is supported only for remote Responses agents."
+  - "Run 'azd ai agent invoke \"hello\" --long-running --timeout 30'. Confirm it exits non-zero with '--timeout cannot be used with --long-running'."
+  - "Run 'azd ai agent invoke \"hello\" --long-running --output raw'. Confirm it exits non-zero with '--output raw is not supported with --long-running'."
+  - "Run 'azd ai agent invoke \"hello\" --long-running --protocol invocations'. Confirm it exits non-zero with '--long-running is not supported with the invocations protocol'."
+  - "Confirm every invalid combination is rejected without an agent picker, login prompt, or agent execution. Do not run a valid invocation in this offline scenario."
+  - "Take a screenshot of the help and validation output."
+  - "Report a finding if validation accepts an invalid combination, reports a different error, prompts, or begins agent execution."

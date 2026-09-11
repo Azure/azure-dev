@@ -87,7 +87,14 @@ func validateProjectEndpoint(raw string) (normalized string, pathWarning bool, e
 	}
 
 	host := u.Hostname()
-	if host == "" || !isFoundryHost(host) {
+	if host == "" {
+		return "", false, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"project endpoint host must not be empty",
+			"provide a URL with a hostname",
+		)
+	}
+	if !isFoundryHost(host) {
 		return "", false, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf(
@@ -106,9 +113,14 @@ func validateProjectEndpoint(raw string) (normalized string, pathWarning bool, e
 		)
 	}
 
-	// Normalize: lowercase host, strip trailing slash.
+	// Normalize: lowercase host and strip trailing slash.
+	scheme := strings.ToLower(u.Scheme)
 	path := strings.TrimRight(u.EscapedPath(), "/")
-	normalized = fmt.Sprintf("https://%s%s", strings.ToLower(host), path)
+	hostPart := strings.ToLower(host)
+	if u.Port() != "" {
+		hostPart = fmt.Sprintf("%s:%s", hostPart, u.Port())
+	}
+	normalized = fmt.Sprintf("%s://%s%s", scheme, hostPart, path)
 
 	// Warn when the path does not look like /api/projects/<proj>.
 	if !strings.HasPrefix(path, projectEndpointPathPrefix) ||

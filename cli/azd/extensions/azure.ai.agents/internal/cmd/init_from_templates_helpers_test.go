@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,8 +12,84 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
+
 	"github.com/stretchr/testify/require"
 )
+
+func TestResolveInitHarness(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		harnessFlag    string
+		impliedHarness string
+		expected       string
+		expectErr      bool
+	}{
+		{
+			name:     "no flag and no implied harness scaffolds a plain prompt agent",
+			expected: "",
+		},
+		{
+			// A manifest's `harness:` block arrives here as an implied value.
+			name:           "implied harness is honored",
+			impliedHarness: agent_api.ManagedAgentHarnessGitHubCopilot,
+			expected:       agent_api.ManagedAgentHarnessGitHubCopilot,
+		},
+		{
+			name:        "explicit harness is accepted case-insensitively",
+			harnessFlag: "GitHub_Copilot_Preview",
+			expected:    agent_api.ManagedAgentHarnessGitHubCopilot,
+		},
+		{
+			name:           "none opts out of an implied harness",
+			harnessFlag:    " none ",
+			impliedHarness: agent_api.ManagedAgentHarnessGitHubCopilot,
+			expected:       "",
+		},
+		{
+			name:           "explicit harness overrides a harness-less context",
+			harnessFlag:    agent_api.ManagedAgentHarnessGitHubCopilot,
+			impliedHarness: "",
+			expected:       agent_api.ManagedAgentHarnessGitHubCopilot,
+		},
+		{
+			name:        "unknown harness is rejected",
+			harnessFlag: "bogus",
+			expectErr:   true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			harness, err := resolveInitHarness(tc.harnessFlag, tc.impliedHarness)
+			if tc.expectErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, harness)
+		})
+	}
+}
+
+// TestWarnPromptAgentPreview verifies the preview callout renders its
+// emphasized segment intact. It is unconditional: every prompt-agent init
+// funnels through the one call site, so the notice reaches --kind prompt and
+// manifest adoption.
+func TestWarnPromptAgentPreview(t *testing.T) {
+	t.Parallel()
+
+	buf := &bytes.Buffer{}
+	warnPromptAgentPreview(buf)
+
+	// The emphasized phrase is a separately colored segment, so assert
+	// it survives concatenation intact rather than being split.
+	require.Contains(t, buf.String(), "preview feature of the azd CLI experience")
+}
 
 func TestEffectiveType(t *testing.T) {
 	t.Parallel()

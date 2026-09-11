@@ -1014,6 +1014,118 @@ func TestInitializeAcceptsProjectLocalAgentYaml(t *testing.T) {
 	require.Equal(t, filepath.Join(serviceDir, "agent.yaml"), provider.agentDefinitionPath)
 }
 
+// TestInitializeResolvesPromptAgentFileRef verifies prompt $ref content is
+// expanded into the service definition during initialization.
+func TestInitializeResolvesPromptAgentFileRef(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+
+	projectRoot := t.TempDir()
+	serviceDir := filepath.Join(projectRoot, "svc")
+	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(serviceDir, "triage.yaml"),
+		[]byte("kind: prompt\nname: triage\nmodel: gpt-4.1-mini\ninstructions: hi\n"),
+		0o600,
+	))
+
+	props, err := structpb.NewStruct(map[string]any{"$ref": "./svc/triage.yaml"})
+	require.NoError(t, err)
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+	require.NoError(t, provider.Initialize(t.Context(), &azdext.ServiceConfig{
+		Name:                 "triage",
+		Host:                 "azure.ai.agent",
+		RelativePath:         "svc",
+		AdditionalProperties: props,
+	}))
+
+	require.NoError(t, provider.ensureDeployContext(t.Context()))
+	require.Equal(t, filepath.Join(serviceDir, "triage.yaml"), provider.agentDefinitionPath)
+	require.True(t, ServiceIsPromptAgent(provider.serviceConfig))
+}
+
+func TestLifecycleResolvesFreshPromptAgentRefBeforeDispatch(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+
+	projectRoot := t.TempDir()
+	agentPath := filepath.Join(projectRoot, "agent.yaml")
+	require.NoError(t, os.WriteFile(
+		agentPath,
+		[]byte("kind: prompt\nname: ref-agent\nmodel: gpt-5-mini\ninstructions: hi\n"),
+		0o600,
+	))
+	newConfig := func() *azdext.ServiceConfig {
+		return &azdext.ServiceConfig{
+			Name:                 "ref-agent",
+			Host:                 foundryAgentHost,
+			AdditionalProperties: mustStruct(t, map[string]any{"$ref": "./agent.yaml"}),
+		}
+	}
+
+	provider := &AgentServiceTargetProvider{azdClient: newInitializeTestClient(t, projectRoot)}
+	require.NoError(t, provider.Initialize(t.Context(), newConfig()))
+
+	packageConfig := newConfig()
+	packageResult, err := provider.Package(t.Context(), packageConfig, &azdext.ServiceContext{}, func(string) {})
+	require.NoError(t, err)
+	require.NotNil(t, packageResult)
+	require.True(t, ServiceIsPromptAgent(packageConfig))
+
+	publishConfig := newConfig()
+	publishResult, err := provider.Publish(
+		t.Context(), publishConfig, &azdext.ServiceContext{}, &azdext.TargetResource{},
+		&azdext.PublishOptions{}, func(string) {},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, publishResult)
+	require.True(t, ServiceIsPromptAgent(publishConfig))
+
+	targetConfig := newConfig()
+	defaultCalled := false
+	target, err := provider.GetTargetResource(t.Context(), "subscription", targetConfig, func() (*azdext.TargetResource, error) {
+		defaultCalled = true
+		return nil, errors.New("default resolver must not be called")
+	})
+	require.NoError(t, err)
+	require.False(t, defaultCalled)
+	require.Equal(t, "subscription", target.SubscriptionId)
+	require.True(t, ServiceIsPromptAgent(targetConfig))
+}
+
+// TestInitializeRejectsMissingPromptAgentFileRef pins that a `$ref` naming a file
+// that is not there is a typo, not an opt-out: falling back to the agent.yaml
+// convention would deploy a different definition than azure.yaml names.
+func TestInitializeRejectsMissingPromptAgentFileRef(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+
+	projectRoot := t.TempDir()
+	serviceDir := filepath.Join(projectRoot, "svc")
+	require.NoError(t, os.MkdirAll(serviceDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(serviceDir, "agent.yaml"),
+		[]byte("kind: prompt\nname: triage\nmodel: gpt-4.1-mini\ninstructions: hi\n"),
+		0o600,
+	))
+
+	props, err := structpb.NewStruct(map[string]any{"$ref": "./svc/missing.yaml"})
+	require.NoError(t, err)
+
+	provider := &AgentServiceTargetProvider{
+		azdClient: newInitializeTestClient(t, projectRoot),
+	}
+	err = provider.Initialize(t.Context(), &azdext.ServiceConfig{
+		Name:                 "triage",
+		Host:                 "azure.ai.agent",
+		RelativePath:         "svc",
+		AdditionalProperties: props,
+	})
+
+	require.Error(t, err)
+	require.Empty(t, provider.agentDefinitionPath)
+}
+
 func TestInitializeRejectsAgentYamlSymlinkEscapingRoot(t *testing.T) {
 	t.Setenv("AGENT_DEFINITION_PATH", "")
 
@@ -1103,29 +1215,6 @@ func TestDeployTimeServiceConfigReplacesInitializeSnapshot(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, "westus2", prep.resolvedEnvVars["AGENT_REGION"])
-}
-
-func TestAdoptServiceConfigIgnoresNilAndKeepsResolvedState(t *testing.T) {
-	t.Parallel()
-
-	existing := &azdext.ServiceConfig{Name: "echo"}
-	provider := &AgentServiceTargetProvider{
-		serviceConfig:         existing,
-		serviceConfigResolved: true,
-	}
-
-	// A nil config (or the same instance) must not drop the resolved
-	// state, otherwise every repeat call would re-expand $ref
-	// includes.
-	provider.adoptServiceConfig(nil)
-	require.Same(t, existing, provider.serviceConfig)
-	require.True(t, provider.serviceConfigResolved)
-
-	provider.adoptServiceConfig(existing)
-	require.True(t, provider.serviceConfigResolved)
-
-	provider.adoptServiceConfig(&azdext.ServiceConfig{Name: "echo"})
-	require.False(t, provider.serviceConfigResolved)
 }
 
 func TestBuildVoiceWSProtocolURL(t *testing.T) {
@@ -3157,6 +3246,29 @@ func TestPublish_SkipsWhenPreBuiltImageChosen(t *testing.T) {
 	require.Contains(t, progressMessages, "Using pre-built container image, skipping publish")
 }
 
+func TestGetTargetResource_PromptAgentDoesNotUseTaggedResourceResolver(t *testing.T) {
+	provider := &AgentServiceTargetProvider{}
+	service := &azdext.ServiceConfig{
+		Name: "prompt-agent",
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind":         "prompt",
+			"name":         "prompt-agent",
+			"model":        "gpt-5-mini",
+			"instructions": "Be helpful.",
+		}),
+	}
+	defaultCalled := false
+
+	target, err := provider.GetTargetResource(t.Context(), "subscription", service, func() (*azdext.TargetResource, error) {
+		defaultCalled = true
+		return nil, errors.New("tagged resource not found")
+	})
+
+	require.NoError(t, err)
+	require.False(t, defaultCalled)
+	require.Equal(t, "subscription", target.SubscriptionId)
+}
+
 func TestPublish_PublishesWhenPackageBuiltFromDockerfile(t *testing.T) {
 	t.Parallel()
 
@@ -4174,4 +4286,30 @@ func TestEndpoints_HostedMissingVersion_StillErrors(t *testing.T) {
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
 	require.Equal(t, exterrors.CodeMissingAgentEnvVars, localErr.Code)
+}
+
+func TestEndpoints_HarnessedPromptUsesAgentSpecificEndpoint(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	client := newEndpointsTestClient(t, projectRoot, map[string]string{
+		"AZURE_SUBSCRIPTION_ID":    "subscription",
+		"AZURE_RESOURCE_GROUP":     "resource-group",
+		"FOUNDRY_PROJECT_ENDPOINT": "https://acct.services.ai.azure.com/api/projects/project",
+	})
+	service := inlineAgentService(t, map[string]any{
+		"kind":         "prompt",
+		"name":         "managed-agent",
+		"model":        "gpt-5-mini",
+		"instructions": "Be helpful.",
+		"harness":      map[string]any{"type": "github_copilot_preview"},
+	})
+	provider := &AgentServiceTargetProvider{azdClient: client}
+
+	got, err := provider.Endpoints(t.Context(), service, nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"https://acct.services.ai.azure.com/api/projects/project/agents/managed-agent/" +
+			"endpoint/protocols/openai/responses?api-version=v1",
+	}, got)
 }

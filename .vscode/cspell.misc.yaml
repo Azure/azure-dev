@@ -16,6 +16,10 @@ ignorePaths:
 
     - eng # not required
 overrides:
+    - filename: ./docs/guides/creating-an-extension.md
+      words:
+          - CODEOWNERS
+          - codeowners
     - filename: ./SECURITY.md
       words:
           - MSRC

@@ -1,0 +1,178 @@
+{
+  "$schema": "../schemas/product-rules.schema.json",
+  "schema_version": "1.0",
+  "assessment": {
+    "metric": "TBT",
+    "percentile": "P95",
+    "target_pool_type": "cold"
+  },
+  "flow": {
+    "benchmark_trigger_slo_statuses": ["above_current_offer_target"],
+    "offer_trigger_slo_statuses": ["within_current_offer_target"],
+    "offer_required_goal": "lower_or_predictable_latency"
+  },
+  "sample_requirements": {
+    "minimum_request_samples": 20,
+    "minimum_metric_samples": 20
+  },
+  "benchmark_buckets": {
+    "input_tokens": [
+      {"label": "<2K", "operator": "less_than", "threshold": 2000},
+      {"label": "2-8K", "operator": "less_than", "threshold": 8000},
+      {"label": "8-16K", "operator": "less_than", "threshold": 16000},
+      {"label": ">=16K", "operator": "otherwise"}
+    ],
+    "output_tokens": [
+      {"label": "<500", "operator": "less_than", "threshold": 500},
+      {"label": ">=500", "operator": "otherwise"}
+    ],
+    "streaming_ratio": [
+      {"label": "non-streaming", "operator": "less_than_or_equal", "threshold": 0.2},
+      {"label": "mixed", "operator": "less_than", "threshold": 0.8},
+      {"label": "streaming", "operator": "otherwise"}
+    ],
+    "cache_ratio": [
+      {"label": "<25%", "operator": "less_than", "threshold": 0.25},
+      {"label": "25-60%", "operator": "less_than", "threshold": 0.6},
+      {"label": ">=60%", "operator": "otherwise"}
+    ]
+  },
+  "workload_rules": [
+    {
+      "id": "long-context",
+      "enabled": true,
+      "priority": 100,
+      "metric": "input_tokens_p95",
+      "operator": "greater_than",
+      "threshold": 48000,
+      "observed_pattern": "Long context at the latency tail",
+      "evidence": "Input tokens are {value} at P95, above the {threshold} threshold.",
+      "action": "Test a reduced-context variant: summarize history, remove repeated context, or retrieve only relevant content; compare the latency profile.",
+      "confidence": "High"
+    },
+    {
+      "id": "low-cache-reuse",
+      "enabled": true,
+      "priority": 200,
+      "metric": "cache_hit_ratio",
+      "operator": "less_than",
+      "threshold": 0.25,
+      "observed_pattern": "Low prompt-cache reuse",
+      "evidence": "Prompt-cache usage is {value}, below the {threshold} threshold.",
+      "action": "Use a stable prompt prefix, then rerun the same test.",
+      "confidence": "Medium"
+    },
+    {
+      "id": "large-output",
+      "enabled": true,
+      "priority": 300,
+      "metric": "output_tokens_p95",
+      "operator": "greater_than_or_equal",
+      "threshold": 500,
+      "observed_pattern": "Large output volume",
+      "evidence": "Output tokens are {value} at P95, at or above the {threshold} threshold.",
+      "action": "Ask for a shorter response, then compare total response time.",
+      "confidence": "High"
+    },
+    {
+      "id": "bursty-request-rate",
+      "enabled": true,
+      "priority": 400,
+      "metric": "request_burst_factor",
+      "operator": "greater_than_or_equal",
+      "threshold": 3,
+      "observed_pattern": "Bursty request rate",
+      "evidence": "Peak request rate is {value}x average ({peak_rpm} vs {average_rpm} requests/min).",
+      "action": "Send requests at a steadier rate, then compare latency and throttling.",
+      "confidence": "High"
+    },
+    {
+      "id": "mostly-non-streaming",
+      "enabled": true,
+      "priority": 500,
+      "metric": "streaming_ratio",
+      "operator": "less_than",
+      "threshold": 0.5,
+      "observed_pattern": "Mostly non-streaming interactive traffic",
+      "evidence": "Only {value} of requests use streaming, below the {threshold} threshold.",
+      "action": "Enable streaming for an interactive test cohort and measure time to first visible response.",
+      "confidence": "Medium"
+    }
+  ],
+  "offer_rules": [
+    {
+      "id": "priority-for-bursty-traffic",
+      "enabled": true,
+      "priority": 100,
+      "offer": "Priority Processing",
+      "metric": "request_burst_factor",
+      "operator": "greater_than_or_equal",
+      "threshold": 2,
+      "fit": "Bursty or variable interactive traffic that needs lower latency without reserved capacity.",
+      "action": "Replay the same workload with Priority Processing and compare TBT P95.",
+      "tradeoff": "Higher per-token cost; some requests can fall back to Standard."
+    },
+    {
+      "id": "ptum-for-steady-traffic",
+      "enabled": true,
+      "priority": 200,
+      "offer": "PTU-M",
+      "metric": "request_burst_factor",
+      "operator": "less_than",
+      "threshold": 2,
+      "fit": "Steady, sustained traffic that needs predictable latency and throughput.",
+      "action": "Verify quota and live capacity, create a PTU-M test deployment, and replay the same workload.",
+      "tradeoff": "Requires PTU sizing, available quota, and a capacity commitment."
+    }
+  ],
+  "outcomes": {
+    "missing_request_data": {
+      "observed_pattern": "Request-level latency data is unavailable",
+      "evidence": "{metric} {percentile} and token distributions cannot be computed from platform averages.",
+      "action": "Configure or verify Log Analytics diagnostic settings, collect new representative traffic, and rerun. Logs are not retroactive.",
+      "confidence": "High"
+    },
+    "insufficient_metric_data": {
+      "observed_pattern": "More traffic evidence is required",
+      "evidence": "The selected window contains {metric_sample_count} usable {metric} samples; at least {minimum_metric_samples} are required.",
+      "action": "Collect representative traffic over a normal production window, then rerun.",
+      "confidence": "High"
+    },
+    "insufficient_request_data": {
+      "observed_pattern": "More traffic evidence is required",
+      "evidence": "The selected window contains {request_count} requests; at least {minimum_request_samples} are required.",
+      "action": "Collect representative traffic over a normal production window, then rerun.",
+      "confidence": "High"
+    },
+    "target_unavailable": {
+      "observed_pattern": "Current-offer target is unavailable",
+      "evidence": "No comparable {metric} {percentile} target is available for this model, version, and offer.",
+      "action": "Review the target catalog coverage before drawing a latency conclusion.",
+      "confidence": "High"
+    },
+    "benchmark_coverage_gap": {
+      "observed_pattern": "Benchmark coverage gap",
+      "evidence": "{benchmark_message}",
+      "action": "Attach the evidence package to support and request a comparable benchmark cohort.",
+      "confidence": "High"
+    },
+    "unexplained_gap": {
+      "observed_pattern": "Unexplained residual latency gap",
+      "evidence": "Observed {metric} {percentile} remains above both the current-offer target and the matched benchmark reference.",
+      "action": "Generate the evidence package and contact support before evaluating another offer.",
+      "confidence": "High"
+    },
+    "above_target_explained": {
+      "observed_pattern": "Latency aligns with the matched workload benchmark",
+      "evidence": "Observed {metric} {percentile} is above the current-offer target but at or below the matched benchmark reference.",
+      "action": "Use the benchmark context when deciding whether to optimize the workload or define a stricter application goal.",
+      "confidence": "Medium"
+    },
+    "within_target": {
+      "observed_pattern": "Current latency is within target",
+      "evidence": "Observed {metric} {percentile} is within the current-offer target.",
+      "action": "Continue monitoring representative production windows.",
+      "confidence": "High"
+    }
+  }
+}

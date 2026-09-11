@@ -32,6 +32,20 @@ mkdir -p cli/azd/extensions/my.extension
 cd cli/azd/extensions/my.extension
 ```
 
+For an Azure/azure-dev first-party Go extension, prefer the developer
+extension's scaffold so the module, CI workflow, release pipeline, and
+CODEOWNERS entry stay aligned:
+
+```bash
+azd x init --internal --no-prompt \
+  --id my.extension \
+  --name "My Extension (Preview)" \
+  --namespace my.extension \
+  --language go \
+  --capabilities custom-commands,metadata \
+  --codeowners=@owner
+```
+
 ### 2. Define extension.yaml
 
 Create an `extension.yaml` manifest that declares the extension's metadata and capabilities:

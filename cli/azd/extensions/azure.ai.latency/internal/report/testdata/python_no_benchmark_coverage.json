@@ -1,0 +1,368 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-09-02T08:00:00Z",
+  "mode": "demo",
+  "scenario": "no-benchmark-coverage",
+  "scenario_title": "Above target, no matching benchmark coverage",
+  "data_notice": "Illustrative sample data",
+  "illustrative_components": [
+    "Deployment and telemetry",
+    "Offer eligibility"
+  ],
+  "time_range": {
+    "start_time": "2026-09-01T08:00:00Z",
+    "end_time": "2026-09-02T08:00:00Z",
+    "label": "Last 24 hours"
+  },
+  "traffic_profile": {
+    "deployment": {
+      "deployment_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/model-latency-demo-rg/providers/Microsoft.CognitiveServices/accounts/latency-insights-demo/deployments/gpt-4.1-mini",
+      "subscription_id": "00000000-0000-0000-0000-000000000000",
+      "resource_group": "model-latency-demo-rg",
+      "account_name": "latency-insights-demo",
+      "deployment_name": "gpt-4.1-mini",
+      "model": "gpt-4.1-mini",
+      "model_version": "2025-04-14",
+      "offer": "PayGo",
+      "billing_model": "pay_per_token",
+      "service_tier": "default",
+      "deployment_type": "global_standard",
+      "sku_name": "GlobalStandard",
+      "region": "eastus2",
+      "tpm_rate_limit": null,
+      "rpm_rate_limit": null
+    },
+    "input_tokens": {
+      "average": 18500,
+      "p50": 17800,
+      "p95": 29000,
+      "unit": "tokens"
+    },
+    "output_tokens": {
+      "average": 190,
+      "p50": 180,
+      "p95": 320,
+      "unit": "tokens"
+    },
+    "streaming_ratio": 0.1,
+    "cache_hit_ratio": 0.52,
+    "request_rate": {
+      "average_rpm": 780,
+      "peak_rpm": 1320
+    },
+    "token_rate": {
+      "input_average_tpm": 14430000,
+      "input_peak_tpm": 23496000,
+      "output_average_tpm": 148200,
+      "output_peak_tpm": 237600,
+      "average_tpm": 14578200,
+      "peak_tpm": 23733600,
+      "limit_tpm": 29667000.0,
+      "peak_limit_ratio": 0.8
+    },
+    "request_count": 100000,
+    "ttft_sample_count": 100000,
+    "tbt_sample_count": 100000,
+    "latency": {
+      "ttft": {
+        "average_ms": 2300,
+        "p50_ms": 1900,
+        "p90_ms": null,
+        "p95_ms": 4900
+      },
+      "tbt": {
+        "average_ms": 36,
+        "p50_ms": 28,
+        "p90_ms": null,
+        "p95_ms": 60
+      },
+      "ttlt": {
+        "average_ms": 6600,
+        "p50_ms": 5400,
+        "p90_ms": null,
+        "p95_ms": 12300
+      }
+    },
+    "error_rate": 0.004,
+    "throttling_rate": 0.003,
+    "api_path": "CAPI",
+    "representative_request_ids": [
+      "demo-request-c012"
+    ],
+    "data_availability": [
+      {
+        "source": "ARM deployment metadata",
+        "status": "illustrative",
+        "fields": [
+          "Model",
+          "Model version",
+          "Offer",
+          "Deployment SKU",
+          "Region"
+        ],
+        "note": "Deterministic sample deployment metadata.",
+        "illustrative_data": true
+      },
+      {
+        "source": "Azure Monitor platform metrics",
+        "status": "illustrative",
+        "fields": [
+          "Request rate",
+          "Streaming ratio",
+          "Error rate",
+          "Throttling rate"
+        ],
+        "note": "Deterministic sample aggregate metrics.",
+        "illustrative_data": true
+      },
+      {
+        "source": "Log Analytics request logs",
+        "status": "illustrative",
+        "fields": [
+          "Token distributions",
+          "Cache usage",
+          "TTFT P50/P95",
+          "TBT P50/P95",
+          "TTLT P50/P95"
+        ],
+        "note": "Deterministic sample request-level telemetry.",
+        "illustrative_data": true
+      }
+    ]
+  },
+  "slo_assessment": {
+    "status": "above_current_offer_target",
+    "message": "Above current offer target",
+    "metric": "TBT",
+    "percentile": "P95",
+    "actual_ms": 60,
+    "target_ms": 44.0,
+    "source_label": "ModelTargets snapshot",
+    "contractual_notice": "This is an operating target for the current offer, not a contractual SLA."
+  },
+  "benchmark_comparison": {
+    "status": "coverage_gap",
+    "message": "No cohort matches all strict model, version, offer, streaming, and metric dimensions.",
+    "metric": "TBT_P95",
+    "actual_ms": 60,
+    "benchmark_value_ms": null,
+    "sample_size": null,
+    "confidence": null,
+    "freshness": null,
+    "comparison": null,
+    "workload_profile_explains_gap": null,
+    "selected_cohort": null,
+    "dimensions": [
+      {
+        "dimension": "Model",
+        "workload_value": "gpt-4.1-mini",
+        "benchmark_value": "No matching cohort",
+        "rule": "must be equal",
+        "status": "not_matched"
+      },
+      {
+        "dimension": "Model version",
+        "workload_value": "2025-04-14",
+        "benchmark_value": "No matching cohort",
+        "rule": "must be equal",
+        "status": "not_matched"
+      },
+      {
+        "dimension": "Offer",
+        "workload_value": "PayGo",
+        "benchmark_value": "No matching cohort",
+        "rule": "must be equal",
+        "status": "not_matched"
+      },
+      {
+        "dimension": "Streaming",
+        "workload_value": "non-streaming",
+        "benchmark_value": "No matching cohort",
+        "rule": "must be equal",
+        "status": "not_matched"
+      },
+      {
+        "dimension": "Metric",
+        "workload_value": "TBT_P95",
+        "benchmark_value": "No matching cohort",
+        "rule": "must be equal",
+        "status": "not_matched"
+      },
+      {
+        "dimension": "Offering type",
+        "workload_value": "GlobalStandard",
+        "benchmark_value": "No matching cohort",
+        "rule": "recorded only",
+        "status": "recorded"
+      },
+      {
+        "dimension": "Region",
+        "workload_value": "eastus2",
+        "benchmark_value": "No matching cohort",
+        "rule": "recorded only",
+        "status": "recorded"
+      },
+      {
+        "dimension": "API path",
+        "workload_value": "CAPI",
+        "benchmark_value": "No matching cohort",
+        "rule": "recorded only",
+        "status": "recorded"
+      },
+      {
+        "dimension": "Cache hit rate",
+        "workload_value": "52.0%",
+        "benchmark_value": "No matching cohort",
+        "rule": "recorded only",
+        "status": "recorded"
+      }
+    ],
+    "source_label": "Benchmark cohort catalog"
+  },
+  "recommendations": [
+    {
+      "observed_pattern": "Benchmark coverage gap",
+      "supporting_evidence": "No cohort matches all strict model, version, offer, streaming, and metric dimensions.",
+      "recommended_action": "Attach the evidence package to support and request a comparable benchmark cohort.",
+      "confidence": "High",
+      "category": "escalation",
+      "interpretation": "",
+      "rule_id": "benchmark_coverage_gap"
+    }
+  ],
+  "offer_guidance": {
+    "shown": false,
+    "headline": null,
+    "reason": "Offer guidance is deferred until support investigates the unexplained current-offer target violation.",
+    "options": [],
+    "notice": "Offer fit guidance does not promise a specific latency improvement."
+  },
+  "eligible_offer_options": [],
+  "evidence_package": {
+    "summary": "Current-offer target violation remains unexplained after the available workload and benchmark comparison.",
+    "deployment_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/model-latency-demo-rg/providers/Microsoft.CognitiveServices/accounts/latency-insights-demo/deployments/gpt-4.1-mini",
+    "time_range": {
+      "start_time": "2026-09-01T08:00:00Z",
+      "end_time": "2026-09-02T08:00:00Z",
+      "label": "Last 24 hours"
+    },
+    "model": "gpt-4.1-mini",
+    "model_version": "2025-04-14",
+    "offer": "PayGo",
+    "billing_model": "pay_per_token",
+    "service_tier": "default",
+    "deployment_type": "global_standard",
+    "sku_name": "GlobalStandard",
+    "region": "eastus2",
+    "slo_status": "above_current_offer_target",
+    "actual_ms": 60,
+    "target_ms": 44.0,
+    "benchmark_status": "coverage_gap",
+    "benchmark_metric": "TBT_P95",
+    "benchmark_value_ms": null,
+    "traffic_profile": {
+      "input_tokens_p50": 17800,
+      "input_tokens_p95": 29000,
+      "output_tokens_p50": 180,
+      "output_tokens_p95": 320,
+      "streaming_ratio": 0.1,
+      "cache_hit_ratio": 0.52,
+      "average_requests_per_minute": 780,
+      "peak_requests_per_minute": 1320,
+      "average_tokens_per_minute": 14578200,
+      "peak_tokens_per_minute": 23733600,
+      "average_input_tokens_per_minute": 14430000,
+      "peak_input_tokens_per_minute": 23496000,
+      "average_output_tokens_per_minute": 148200,
+      "peak_output_tokens_per_minute": 237600,
+      "deployment_tpm_limit": 29667000.0,
+      "ttft_p50_ms": 1900,
+      "ttft_p95_ms": 4900,
+      "tbt_p50_ms": 28,
+      "tbt_p95_ms": 60,
+      "ttlt_p50_ms": 5400,
+      "ttlt_p95_ms": 12300,
+      "error_rate": 0.004,
+      "throttling_rate": 0.003
+    },
+    "tested_actions": [],
+    "recommended_tests": [
+      "Attach the evidence package to support and request a comparable benchmark cohort."
+    ],
+    "representative_request_ids": [
+      "demo-request-c012"
+    ],
+    "notice": "Customer-safe workload evidence only. No raw prompts, secrets, internal endpoints, or confirmed platform root cause are included."
+  },
+  "data_availability": [
+    {
+      "source": "ARM deployment metadata",
+      "status": "illustrative",
+      "fields": [
+        "Model",
+        "Model version",
+        "Offer",
+        "Deployment SKU",
+        "Region"
+      ],
+      "note": "Deterministic sample deployment metadata.",
+      "illustrative_data": true
+    },
+    {
+      "source": "Azure Monitor platform metrics",
+      "status": "illustrative",
+      "fields": [
+        "Request rate",
+        "Streaming ratio",
+        "Error rate",
+        "Throttling rate"
+      ],
+      "note": "Deterministic sample aggregate metrics.",
+      "illustrative_data": true
+    },
+    {
+      "source": "Log Analytics request logs",
+      "status": "illustrative",
+      "fields": [
+        "Token distributions",
+        "Cache usage",
+        "TTFT P50/P95",
+        "TBT P50/P95",
+        "TTLT P50/P95"
+      ],
+      "note": "Deterministic sample request-level telemetry.",
+      "illustrative_data": true
+    },
+    {
+      "source": "Current-offer target catalog",
+      "status": "available",
+      "fields": [
+        "TBT P95 target"
+      ],
+      "note": "ModelTargets snapshot: Snapshot of authoritative ModelTargets SLA values. Schema 1.0; data 2026-08-04T20:28:34.6268116Z.",
+      "illustrative_data": false
+    },
+    {
+      "source": "LLM-Runner benchmark cohorts",
+      "status": "available",
+      "fields": [
+        "Benchmark value",
+        "Sample size",
+        "Confidence",
+        "Freshness"
+      ],
+      "note": "Benchmark cohort catalog: Static 16-cell-per-metric PayGo benchmark catalog. Schema 1.0; data 2026-09-03T00:00:00Z.",
+      "illustrative_data": false
+    },
+    {
+      "source": "Offer eligibility catalog",
+      "status": "illustrative",
+      "fields": [
+        "Priority Processing",
+        "PTU-M"
+      ],
+      "note": "Illustrative data: Deterministic demo-only offer eligibility; not used by real assessments. Schema 1.0; data sample-2026-09-03.",
+      "illustrative_data": true
+    }
+  ]
+}

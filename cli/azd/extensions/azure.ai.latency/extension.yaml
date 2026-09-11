@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
+capabilities:
+    - custom-commands
+    - metadata
+description: Assess deployed model workloads, explain latency evidence, and recommend the next test. (Preview)
+displayName: Model Latency Insights (Preview)
+id: azure.ai.latency
+language: go
+namespace: ai.latency
+requiredAzdVersion: ">=1.30.0"
+tags:
+    - ai
+    - latency
+usage: azd ai latency <command> [options]
+version: 0.1.0-preview
+examples:
+    - name: assess
+      description: Assess a deployed Azure OpenAI model workload.
+      usage: azd ai latency assess --deployment-id <resource-id>
+    - name: demo
+      description: Explore a deterministic latency assessment without Azure access.
+      usage: azd ai latency demo --scenario workload-explained
+    - name: version
+      description: Display the extension version.
+      usage: azd ai latency version

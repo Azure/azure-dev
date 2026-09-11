@@ -177,6 +177,45 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: extensions/azure.ai.latency/**/*.go
+    words:
+      - AITTLT
+      - anyif
+      - ASCIIJSON
+      - azlogs
+      - azmetrics
+      - azureprovider
+      - Bursty
+      - countif
+      - datazonebatch
+      - datazoneprovisionedmanaged
+      - datazonestandard
+      - developertier
+      - getschema
+      - gettype
+      - globalbatch
+      - globalprovisionedmanaged
+      - globalstandard
+      - grayscale
+      - isfinite
+      - isnotempty
+      - lookback
+      - minmax
+      - nowrap
+      - provisionedmanaged
+      - ptus
+      - Segoe
+      - TBTP
+      - timespan
+      - topbar
+      - todouble
+      - todynamic
+      - toint
+      - tolower
+      - tostring
+      - TTFTP
+      - TTLTP
+      - fieldset
   - filename: internal/appdetect/aspire_polyglot.go
     words:
       - pylock

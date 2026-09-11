@@ -77,6 +77,7 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Layered Provisioning | Beta |
 | Deployment Stacks | Alpha |
 | Extensions | Alpha |
+| Model Latency Insights extension (`azd ai latency`) | Alpha |
 
 ---
 

@@ -87,6 +87,11 @@ Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC 
 ## First-Party Extensions
 
 First-party extensions live in `cli/azd/extensions/` and are registered in `cli/azd/extensions/registry.json`.
+Preview extensions can be released through the development registry before
+graduating to the official registry. The
+[Model Latency Insights](../../cli/azd/extensions/azure.ai.latency/README.md)
+extension is a Go custom-command example that combines host authentication,
+structured output, and self-contained reports.
 
 ## Detailed Reference
 

@@ -1,0 +1,388 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-09-02T08:00:00Z",
+  "mode": "demo",
+  "scenario": "workload-explained",
+  "scenario_title": "Above target, workload profile explains the difference",
+  "data_notice": "Illustrative sample data",
+  "illustrative_components": [
+    "Deployment and telemetry",
+    "Offer eligibility"
+  ],
+  "time_range": {
+    "start_time": "2026-09-01T08:00:00Z",
+    "end_time": "2026-09-02T08:00:00Z",
+    "label": "Last 24 hours"
+  },
+  "traffic_profile": {
+    "deployment": {
+      "deployment_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/model-latency-demo-rg/providers/Microsoft.CognitiveServices/accounts/latency-insights-demo/deployments/gpt-5.6-luna",
+      "subscription_id": "00000000-0000-0000-0000-000000000000",
+      "resource_group": "model-latency-demo-rg",
+      "account_name": "latency-insights-demo",
+      "deployment_name": "gpt-5.6-luna",
+      "model": "gpt-5.6-luna",
+      "model_version": "2026-07-09",
+      "offer": "PayGo",
+      "billing_model": "pay_per_token",
+      "service_tier": "default",
+      "deployment_type": "global_standard",
+      "sku_name": "GlobalStandard",
+      "region": "eastus2",
+      "tpm_rate_limit": null,
+      "rpm_rate_limit": null
+    },
+    "input_tokens": {
+      "average": 9600,
+      "p50": 9200,
+      "p95": 14500,
+      "unit": "tokens"
+    },
+    "output_tokens": {
+      "average": 520,
+      "p50": 480,
+      "p95": 720,
+      "unit": "tokens"
+    },
+    "streaming_ratio": 0.92,
+    "cache_hit_ratio": 0.12,
+    "request_rate": {
+      "average_rpm": 900,
+      "peak_rpm": 4320
+    },
+    "token_rate": {
+      "input_average_tpm": 8640000,
+      "input_peak_tpm": 39744000,
+      "output_average_tpm": 468000,
+      "output_peak_tpm": 2073600,
+      "average_tpm": 9108000,
+      "peak_tpm": 41817600,
+      "limit_tpm": 52272000.0,
+      "peak_limit_ratio": 0.8
+    },
+    "request_count": 100000,
+    "ttft_sample_count": 100000,
+    "tbt_sample_count": 100000,
+    "latency": {
+      "ttft": {
+        "average_ms": 3900,
+        "p50_ms": 3200,
+        "p90_ms": null,
+        "p95_ms": 6200
+      },
+      "tbt": {
+        "average_ms": 52,
+        "p50_ms": 44,
+        "p90_ms": null,
+        "p95_ms": 82
+      },
+      "ttlt": {
+        "average_ms": 18000,
+        "p50_ms": 14500,
+        "p90_ms": null,
+        "p95_ms": 31000
+      }
+    },
+    "error_rate": 0.007,
+    "throttling_rate": 0.014,
+    "api_path": "CAPI",
+    "representative_request_ids": [],
+    "data_availability": [
+      {
+        "source": "ARM deployment metadata",
+        "status": "illustrative",
+        "fields": [
+          "Model",
+          "Model version",
+          "Offer",
+          "Deployment SKU",
+          "Region"
+        ],
+        "note": "Deterministic sample deployment metadata.",
+        "illustrative_data": true
+      },
+      {
+        "source": "Azure Monitor platform metrics",
+        "status": "illustrative",
+        "fields": [
+          "Request rate",
+          "Streaming ratio",
+          "Error rate",
+          "Throttling rate"
+        ],
+        "note": "Deterministic sample aggregate metrics.",
+        "illustrative_data": true
+      },
+      {
+        "source": "Log Analytics request logs",
+        "status": "illustrative",
+        "fields": [
+          "Token distributions",
+          "Cache usage",
+          "TTFT P50/P95",
+          "TBT P50/P95",
+          "TTLT P50/P95"
+        ],
+        "note": "Deterministic sample request-level telemetry.",
+        "illustrative_data": true
+      }
+    ]
+  },
+  "slo_assessment": {
+    "status": "above_current_offer_target",
+    "message": "Above current offer target",
+    "metric": "TBT",
+    "percentile": "P95",
+    "actual_ms": 82,
+    "target_ms": 80.0,
+    "source_label": "ModelTargets snapshot",
+    "contractual_notice": "This is an operating target for the current offer, not a contractual SLA."
+  },
+  "benchmark_comparison": {
+    "status": "matched",
+    "message": "Observed latency is at or below the benchmark reference for the matched workload cohort.",
+    "metric": "TBT_P95",
+    "actual_ms": 82,
+    "benchmark_value_ms": 90.0,
+    "sample_size": 1535,
+    "confidence": "High",
+    "freshness": "2026-09-03T00:00:00Z",
+    "comparison": "at_or_below_reference",
+    "workload_profile_explains_gap": true,
+    "selected_cohort": {
+      "model": "gpt-5.6-luna",
+      "model_version": "2026-07-09",
+      "offering_type": "GlobalStandard",
+      "region": "eastus2",
+      "api_path": "CAPI",
+      "streaming_mode": "streaming",
+      "input_token_bucket": "8-16K",
+      "output_token_bucket": ">=500",
+      "cache_hit_rate": null,
+      "metric": "TBT_P95",
+      "value_ms": 90.0,
+      "sample_size": 1535,
+      "ingestion_time": "2026-09-03T00:00:00Z"
+    },
+    "dimensions": [
+      {
+        "dimension": "Model",
+        "workload_value": "gpt-5.6-luna",
+        "benchmark_value": "gpt-5.6-luna",
+        "rule": "must be equal",
+        "status": "matched"
+      },
+      {
+        "dimension": "Model version",
+        "workload_value": "2026-07-09",
+        "benchmark_value": "2026-07-09",
+        "rule": "must be equal",
+        "status": "matched"
+      },
+      {
+        "dimension": "Offer",
+        "workload_value": "PayGo",
+        "benchmark_value": "PayGo",
+        "rule": "must be equal",
+        "status": "matched"
+      },
+      {
+        "dimension": "Streaming",
+        "workload_value": "streaming",
+        "benchmark_value": "streaming",
+        "rule": "must be equal",
+        "status": "matched"
+      },
+      {
+        "dimension": "Metric",
+        "workload_value": "TBT_P95",
+        "benchmark_value": "TBT_P95",
+        "rule": "must be equal",
+        "status": "matched"
+      },
+      {
+        "dimension": "Input tokens",
+        "workload_value": "8-16K",
+        "benchmark_value": "8-16K",
+        "rule": "same bucket",
+        "status": "matched"
+      },
+      {
+        "dimension": "Output tokens",
+        "workload_value": ">=500",
+        "benchmark_value": ">=500",
+        "rule": "same bucket",
+        "status": "matched"
+      },
+      {
+        "dimension": "Offering type",
+        "workload_value": "GlobalStandard",
+        "benchmark_value": "GlobalStandard",
+        "rule": "recorded only",
+        "status": "recorded"
+      },
+      {
+        "dimension": "Region",
+        "workload_value": "eastus2",
+        "benchmark_value": "eastus2",
+        "rule": "recorded only",
+        "status": "recorded"
+      },
+      {
+        "dimension": "API path",
+        "workload_value": "CAPI",
+        "benchmark_value": "CAPI",
+        "rule": "recorded only",
+        "status": "recorded"
+      },
+      {
+        "dimension": "Cache hit rate",
+        "workload_value": "12.0%",
+        "benchmark_value": "Unavailable",
+        "rule": "recorded only",
+        "status": "recorded"
+      }
+    ],
+    "source_label": "Benchmark cohort catalog"
+  },
+  "recommendations": [
+    {
+      "observed_pattern": "Low prompt-cache reuse",
+      "supporting_evidence": "Prompt-cache usage is 12.0%, below the 25.0% threshold.",
+      "recommended_action": "Use a stable prompt prefix, then rerun the same test.",
+      "confidence": "Medium",
+      "category": "workload",
+      "interpretation": "Workload hypothesis for the next test; not a confirmed platform root cause.",
+      "rule_id": "low-cache-reuse"
+    },
+    {
+      "observed_pattern": "Large output volume",
+      "supporting_evidence": "Output tokens are 720 at P95, at or above the 500 threshold.",
+      "recommended_action": "Ask for a shorter response, then compare total response time.",
+      "confidence": "High",
+      "category": "workload",
+      "interpretation": "Workload hypothesis for the next test; not a confirmed platform root cause.",
+      "rule_id": "large-output"
+    },
+    {
+      "observed_pattern": "Bursty request rate",
+      "supporting_evidence": "Peak request rate is 4.8x average (4,320 vs 900 requests/min).",
+      "recommended_action": "Send requests at a steadier rate, then compare latency and throttling.",
+      "confidence": "High",
+      "category": "workload",
+      "interpretation": "Workload hypothesis for the next test; not a confirmed platform root cause.",
+      "rule_id": "bursty-request-rate"
+    }
+  ],
+  "offer_guidance": {
+    "shown": false,
+    "headline": null,
+    "reason": "No supported offer-fit signal requires guidance in this assessment.",
+    "options": [],
+    "notice": "Offer fit guidance does not promise a specific latency improvement."
+  },
+  "eligible_offer_options": [
+    {
+      "offer": "Priority Processing",
+      "available": true,
+      "availability": "Available now",
+      "note": "Demo model and region support check passes.",
+      "requires_live_capacity_check": false,
+      "minimum_ptus": null,
+      "target_summary": null,
+      "fit_reason": "Bursty or variable interactive traffic that needs lower latency without reserved capacity.",
+      "tradeoff": "Higher per-token cost; some requests can fall back to Standard.",
+      "next_test": "Replay the same workload with Priority Processing and compare TBT P95.",
+      "recommended": false,
+      "eligibility_summary": "The selected model, version, and deployment type support Priority Processing in this region.",
+      "rule_id": "priority-for-bursty-traffic"
+    },
+    {
+      "offer": "PTU-M",
+      "available": true,
+      "availability": "Available now",
+      "note": "Demo model, quota, and capacity checks pass.",
+      "requires_live_capacity_check": false,
+      "minimum_ptus": 15,
+      "target_summary": null,
+      "fit_reason": "Steady, sustained traffic that needs predictable latency and throughput.",
+      "tradeoff": "Requires PTU sizing, available quota, and a capacity commitment.",
+      "next_test": "Verify quota and live capacity, create a PTU-M test deployment, and replay the same workload. Confirm at least 15 PTUs are available.",
+      "recommended": false,
+      "eligibility_summary": "Current checks found model support, sufficient subscription quota, and regional capacity. Capacity can change.",
+      "rule_id": "ptum-for-steady-traffic"
+    }
+  ],
+  "evidence_package": null,
+  "data_availability": [
+    {
+      "source": "ARM deployment metadata",
+      "status": "illustrative",
+      "fields": [
+        "Model",
+        "Model version",
+        "Offer",
+        "Deployment SKU",
+        "Region"
+      ],
+      "note": "Deterministic sample deployment metadata.",
+      "illustrative_data": true
+    },
+    {
+      "source": "Azure Monitor platform metrics",
+      "status": "illustrative",
+      "fields": [
+        "Request rate",
+        "Streaming ratio",
+        "Error rate",
+        "Throttling rate"
+      ],
+      "note": "Deterministic sample aggregate metrics.",
+      "illustrative_data": true
+    },
+    {
+      "source": "Log Analytics request logs",
+      "status": "illustrative",
+      "fields": [
+        "Token distributions",
+        "Cache usage",
+        "TTFT P50/P95",
+        "TBT P50/P95",
+        "TTLT P50/P95"
+      ],
+      "note": "Deterministic sample request-level telemetry.",
+      "illustrative_data": true
+    },
+    {
+      "source": "Current-offer target catalog",
+      "status": "available",
+      "fields": [
+        "TBT P95 target"
+      ],
+      "note": "ModelTargets snapshot: Snapshot of authoritative ModelTargets SLA values. Schema 1.0; data 2026-08-04T20:28:34.6268116Z.",
+      "illustrative_data": false
+    },
+    {
+      "source": "LLM-Runner benchmark cohorts",
+      "status": "available",
+      "fields": [
+        "Benchmark value",
+        "Sample size",
+        "Confidence",
+        "Freshness"
+      ],
+      "note": "Benchmark cohort catalog: Static 16-cell-per-metric PayGo benchmark catalog. Schema 1.0; data 2026-09-03T00:00:00Z.",
+      "illustrative_data": false
+    },
+    {
+      "source": "Offer eligibility catalog",
+      "status": "illustrative",
+      "fields": [
+        "Priority Processing",
+        "PTU-M"
+      ],
+      "note": "Illustrative data: Deterministic demo-only offer eligibility; not used by real assessments. Schema 1.0; data sample-2026-09-03.",
+      "illustrative_data": true
+    }
+  ]
+}

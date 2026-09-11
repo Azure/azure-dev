@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:model-latency:benchmark-cohorts:1.0",
+  "type": "array",
+  "minItems": 1,
+  "items": {
+    "type": "object",
+    "required": [
+      "model",
+      "model_version",
+      "offering_type",
+      "region",
+      "api_path",
+      "streaming_mode",
+      "input_token_bucket",
+      "output_token_bucket",
+      "cache_hit_rate",
+      "metric",
+      "value",
+      "sample_size",
+      "ingestion_time"
+    ],
+    "properties": {
+      "model": {
+        "type": "string",
+        "minLength": 1
+      },
+      "model_version": {
+        "type": "string",
+        "minLength": 1
+      },
+      "offering_type": {
+        "enum": [
+          "GlobalStandard",
+          "DataZoneStandard",
+          "Standard",
+          "GlobalProvisionedManaged",
+          "DataZoneProvisionedManaged",
+          "ProvisionedManaged"
+        ]
+      },
+      "region": {
+        "type": ["string", "null"]
+      },
+      "api_path": {
+        "type": ["string", "null"]
+      },
+      "streaming_mode": {
+        "enum": ["streaming", "non-streaming"]
+      },
+      "input_token_bucket": {
+        "enum": ["<2K", "2-8K", "8-16K", ">=16K"]
+      },
+      "output_token_bucket": {
+        "enum": ["<500", ">=500"]
+      },
+      "cache_hit_rate": {
+        "type": ["number", "null"],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "metric": {
+        "enum": [
+          "TTFT_P50",
+          "TTFT_P95",
+          "TBT_P50",
+          "TBT_P95"
+        ]
+      },
+      "value": {
+        "type": "number",
+        "minimum": 0
+      },
+      "sample_size": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "ingestion_time": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "additionalProperties": false
+  }
+}

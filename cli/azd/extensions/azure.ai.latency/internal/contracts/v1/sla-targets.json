@@ -1,0 +1,326 @@
+[
+  {
+    "model": "gpt-4.1-mini",
+    "model_version": "2025-04-14",
+    "offering_type": "DataZoneProvisionedManaged",
+    "pool_type": "cold",
+    "target": "SLA_P50_TBT",
+    "value": 11,
+    "ingestion_time": "2026-08-04T20:27:34.2283288Z"
+  },
+  {
+    "model": "gpt-4.1-mini",
+    "model_version": "2025-04-14",
+    "offering_type": "DataZoneProvisionedManaged",
+    "pool_type": "cold",
+    "target": "SLA_P95_TBT",
+    "value": 22,
+    "ingestion_time": "2026-08-04T20:27:34.2283288Z"
+  },
+  {
+    "model": "gpt-4.1-mini",
+    "model_version": "2025-04-14",
+    "offering_type": "DataZoneStandard",
+    "pool_type": "cold",
+    "target": "SLA_P50_TBT",
+    "value": 22,
+    "ingestion_time": "2026-08-04T20:27:34.2283288Z"
+  },
+  {
+    "model": "gpt-4.1-mini",
+    "model_version": "2025-04-14",
+    "offering_type": "DataZoneStandard",
+    "pool_type": "cold",
+    "target": "SLA_P95_TBT",
+    "value": 44,
+    "ingestion_time": "2026-08-04T20:27:34.2283288Z"
+  },
+  {
+    "model": "gpt-4.1-mini",
+    "model_version": "2025-04-14",
+    "offering_type": "DataZoneStandard",
+    "pool_type": "hot",
+    "target": "SLA_P50_TBT",
+    "value": 44,
+    "ingestion_time": "2026-08-04T20:27:34.2283288Z"
+  },
+  {
+    "model": "gpt-4.1-mini",
+    "model_version": "2025-04-14",
+    "offering_type": "DataZoneStandard",
+    "pool_type": "hot",
+    "target": "SLA_P95_TBT",
+    "value": 88,
+    "ingestion_time": "2026-08-04T20:27:34.2283288Z"
+  },
+  {
+    "model": "gpt-4.1-mini",
+    "model_version": "2025-04-14",
+    "offering_type": "GlobalProvisionedManaged",
+    "pool_type": "cold",
+    "target": "SLA_P50_TBT",
+    "value": 11,
+    "ingestion_time": "2026-08-04T20:27:34.2283288Z"
+  },
+  {
+    "model": "gpt-4.1-mini",
+    "model_version": "2025-04-14",
+    "offering_type": "GlobalProvisionedManaged",
+    "pool_type": "cold",
+    "target": "SLA_P95_TBT",
+    "value": 22,
+    "ingestion_time": "2026-08-04T20:27:34.2283288Z"
+  },
+  {
+    "model": "gpt-4.1-mini",
+    "model_version": "2025-04-14",
+    "offering_type": "GlobalStandard",
+    "pool_type": "cold",
+    "target": "SLA_P50_TBT",
+    "value": 22,
+    "ingestion_time": "2026-08-04T20:27:34.2283288Z"
+  },
+  {
+    "model": "gpt-4.1-mini",
+    "model_version": "2025-04-14",
+    "offering_type": "GlobalStandard",
+    "pool_type": "cold",
+    "target": "SLA_P95_TBT",
+    "value": 44,
+    "ingestion_time": "2026-08-04T20:27:34.2283288Z"
+  },
+  {
+    "model": "gpt-4.1-mini",
+    "model_version": "2025-04-14",
+    "offering_type": "GlobalStandard",
+    "pool_type": "hot",
+    "target": "SLA_P50_TBT",
+    "value": 44,
+    "ingestion_time": "2026-08-04T20:27:34.2283288Z"
+  },
+  {
+    "model": "gpt-4.1-mini",
+    "model_version": "2025-04-14",
+    "offering_type": "GlobalStandard",
+    "pool_type": "hot",
+    "target": "SLA_P95_TBT",
+    "value": 88,
+    "ingestion_time": "2026-08-04T20:27:34.2283288Z"
+  },
+  {
+    "model": "gpt-4.1-mini",
+    "model_version": "2025-04-14",
+    "offering_type": "ProvisionedManaged",
+    "pool_type": "cold",
+    "target": "SLA_P50_TBT",
+    "value": 11,
+    "ingestion_time": "2026-08-04T20:27:34.2283288Z"
+  },
+  {
+    "model": "gpt-4.1-mini",
+    "model_version": "2025-04-14",
+    "offering_type": "ProvisionedManaged",
+    "pool_type": "cold",
+    "target": "SLA_P95_TBT",
+    "value": 22,
+    "ingestion_time": "2026-08-04T20:27:34.2283288Z"
+  },
+  {
+    "model": "gpt-4.1-mini",
+    "model_version": "2025-04-14",
+    "offering_type": "Standard",
+    "pool_type": "cold",
+    "target": "SLA_P50_TBT",
+    "value": 22,
+    "ingestion_time": "2026-08-04T20:27:34.2283288Z"
+  },
+  {
+    "model": "gpt-4.1-mini",
+    "model_version": "2025-04-14",
+    "offering_type": "Standard",
+    "pool_type": "cold",
+    "target": "SLA_P95_TBT",
+    "value": 44,
+    "ingestion_time": "2026-08-04T20:27:34.2283288Z"
+  },
+  {
+    "model": "gpt-4.1-mini",
+    "model_version": "2025-04-14",
+    "offering_type": "Standard",
+    "pool_type": "hot",
+    "target": "SLA_P50_TBT",
+    "value": 44,
+    "ingestion_time": "2026-08-04T20:27:34.2283288Z"
+  },
+  {
+    "model": "gpt-4.1-mini",
+    "model_version": "2025-04-14",
+    "offering_type": "Standard",
+    "pool_type": "hot",
+    "target": "SLA_P95_TBT",
+    "value": 88,
+    "ingestion_time": "2026-08-04T20:27:34.2283288Z"
+  },
+  {
+    "model": "gpt-5.6-luna",
+    "model_version": "2026-07-09",
+    "offering_type": "DataZoneProvisionedManaged",
+    "pool_type": "cold",
+    "target": "SLA_P50_TBT",
+    "value": 20,
+    "ingestion_time": "2026-08-04T20:28:34.6268116Z"
+  },
+  {
+    "model": "gpt-5.6-luna",
+    "model_version": "2026-07-09",
+    "offering_type": "DataZoneProvisionedManaged",
+    "pool_type": "cold",
+    "target": "SLA_P95_TBT",
+    "value": 40,
+    "ingestion_time": "2026-08-04T20:28:34.6268116Z"
+  },
+  {
+    "model": "gpt-5.6-luna",
+    "model_version": "2026-07-09",
+    "offering_type": "DataZoneStandard",
+    "pool_type": "cold",
+    "target": "SLA_P50_TBT",
+    "value": 40,
+    "ingestion_time": "2026-08-04T20:28:34.6268116Z"
+  },
+  {
+    "model": "gpt-5.6-luna",
+    "model_version": "2026-07-09",
+    "offering_type": "DataZoneStandard",
+    "pool_type": "cold",
+    "target": "SLA_P95_TBT",
+    "value": 80,
+    "ingestion_time": "2026-08-04T20:28:34.6268116Z"
+  },
+  {
+    "model": "gpt-5.6-luna",
+    "model_version": "2026-07-09",
+    "offering_type": "DataZoneStandard",
+    "pool_type": "hot",
+    "target": "SLA_P50_TBT",
+    "value": 80,
+    "ingestion_time": "2026-08-04T20:28:34.6268116Z"
+  },
+  {
+    "model": "gpt-5.6-luna",
+    "model_version": "2026-07-09",
+    "offering_type": "DataZoneStandard",
+    "pool_type": "hot",
+    "target": "SLA_P95_TBT",
+    "value": 160,
+    "ingestion_time": "2026-08-04T20:28:34.6268116Z"
+  },
+  {
+    "model": "gpt-5.6-luna",
+    "model_version": "2026-07-09",
+    "offering_type": "GlobalProvisionedManaged",
+    "pool_type": "cold",
+    "target": "SLA_P50_TBT",
+    "value": 20,
+    "ingestion_time": "2026-08-04T20:28:34.6268116Z"
+  },
+  {
+    "model": "gpt-5.6-luna",
+    "model_version": "2026-07-09",
+    "offering_type": "GlobalProvisionedManaged",
+    "pool_type": "cold",
+    "target": "SLA_P95_TBT",
+    "value": 40,
+    "ingestion_time": "2026-08-04T20:28:34.6268116Z"
+  },
+  {
+    "model": "gpt-5.6-luna",
+    "model_version": "2026-07-09",
+    "offering_type": "GlobalStandard",
+    "pool_type": "cold",
+    "target": "SLA_P50_TBT",
+    "value": 40,
+    "ingestion_time": "2026-08-04T20:28:34.6268116Z"
+  },
+  {
+    "model": "gpt-5.6-luna",
+    "model_version": "2026-07-09",
+    "offering_type": "GlobalStandard",
+    "pool_type": "cold",
+    "target": "SLA_P95_TBT",
+    "value": 80,
+    "ingestion_time": "2026-08-04T20:28:34.6268116Z"
+  },
+  {
+    "model": "gpt-5.6-luna",
+    "model_version": "2026-07-09",
+    "offering_type": "GlobalStandard",
+    "pool_type": "hot",
+    "target": "SLA_P50_TBT",
+    "value": 80,
+    "ingestion_time": "2026-08-04T20:28:34.6268116Z"
+  },
+  {
+    "model": "gpt-5.6-luna",
+    "model_version": "2026-07-09",
+    "offering_type": "GlobalStandard",
+    "pool_type": "hot",
+    "target": "SLA_P95_TBT",
+    "value": 160,
+    "ingestion_time": "2026-08-04T20:28:34.6268116Z"
+  },
+  {
+    "model": "gpt-5.6-luna",
+    "model_version": "2026-07-09",
+    "offering_type": "ProvisionedManaged",
+    "pool_type": "cold",
+    "target": "SLA_P50_TBT",
+    "value": 20,
+    "ingestion_time": "2026-08-04T20:28:34.6268116Z"
+  },
+  {
+    "model": "gpt-5.6-luna",
+    "model_version": "2026-07-09",
+    "offering_type": "ProvisionedManaged",
+    "pool_type": "cold",
+    "target": "SLA_P95_TBT",
+    "value": 40,
+    "ingestion_time": "2026-08-04T20:28:34.6268116Z"
+  },
+  {
+    "model": "gpt-5.6-luna",
+    "model_version": "2026-07-09",
+    "offering_type": "Standard",
+    "pool_type": "cold",
+    "target": "SLA_P50_TBT",
+    "value": 40,
+    "ingestion_time": "2026-08-04T20:28:34.6268116Z"
+  },
+  {
+    "model": "gpt-5.6-luna",
+    "model_version": "2026-07-09",
+    "offering_type": "Standard",
+    "pool_type": "cold",
+    "target": "SLA_P95_TBT",
+    "value": 80,
+    "ingestion_time": "2026-08-04T20:28:34.6268116Z"
+  },
+  {
+    "model": "gpt-5.6-luna",
+    "model_version": "2026-07-09",
+    "offering_type": "Standard",
+    "pool_type": "hot",
+    "target": "SLA_P50_TBT",
+    "value": 80,
+    "ingestion_time": "2026-08-04T20:28:34.6268116Z"
+  },
+  {
+    "model": "gpt-5.6-luna",
+    "model_version": "2026-07-09",
+    "offering_type": "Standard",
+    "pool_type": "hot",
+    "target": "SLA_P95_TBT",
+    "value": 160,
+    "ingestion_time": "2026-08-04T20:28:34.6268116Z"
+  }
+]

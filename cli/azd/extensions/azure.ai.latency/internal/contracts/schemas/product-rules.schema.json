@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:model-latency:product-rules:1.0",
+  "type": "object",
+  "required": [
+    "$schema",
+    "schema_version",
+    "assessment",
+    "flow",
+    "sample_requirements",
+    "benchmark_buckets",
+    "workload_rules",
+    "offer_rules",
+    "outcomes"
+  ],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema_version": {"const": "1.0"},
+    "assessment": {
+      "type": "object",
+      "required": ["metric", "percentile", "target_pool_type"],
+      "properties": {
+        "metric": {"const": "TBT"},
+        "percentile": {"const": "P95"},
+        "target_pool_type": {"enum": ["cold", "hot"]}
+      },
+      "additionalProperties": false
+    },
+    "flow": {
+      "type": "object",
+      "required": [
+        "benchmark_trigger_slo_statuses",
+        "offer_trigger_slo_statuses",
+        "offer_required_goal"
+      ],
+      "properties": {
+        "benchmark_trigger_slo_statuses": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": [
+              "within_current_offer_target",
+              "above_current_offer_target"
+            ]
+          },
+          "contains": {"const": "above_current_offer_target"}
+        },
+        "offer_trigger_slo_statuses": {
+          "type": "array",
+          "const": ["within_current_offer_target"]
+        },
+        "offer_required_goal": {
+          "const": "lower_or_predictable_latency"
+        }
+      },
+      "additionalProperties": false
+    },
+    "sample_requirements": {
+      "type": "object",
+      "required": ["minimum_request_samples", "minimum_metric_samples"],
+      "properties": {
+        "minimum_request_samples": {"type": "integer", "minimum": 1},
+        "minimum_metric_samples": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "benchmark_buckets": {
+      "type": "object",
+      "required": [
+        "input_tokens",
+        "output_tokens",
+        "streaming_ratio",
+        "cache_ratio"
+      ],
+      "properties": {
+        "input_tokens": {"$ref": "#/$defs/buckets"},
+        "output_tokens": {"$ref": "#/$defs/buckets"},
+        "streaming_ratio": {"$ref": "#/$defs/buckets"},
+        "cache_ratio": {"$ref": "#/$defs/buckets"}
+      },
+      "additionalProperties": false
+    },
+    "workload_rules": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/workloadRule"}
+    },
+    "offer_rules": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/offerRule"}
+    },
+    "outcomes": {
+      "type": "object",
+      "required": [
+        "missing_request_data",
+        "insufficient_metric_data",
+        "insufficient_request_data",
+        "target_unavailable",
+        "benchmark_coverage_gap",
+        "unexplained_gap",
+        "above_target_explained",
+        "within_target"
+      ],
+      "properties": {
+        "missing_request_data": {"$ref": "#/$defs/outcome"},
+        "insufficient_metric_data": {"$ref": "#/$defs/outcome"},
+        "insufficient_request_data": {"$ref": "#/$defs/outcome"},
+        "target_unavailable": {"$ref": "#/$defs/outcome"},
+        "benchmark_coverage_gap": {"$ref": "#/$defs/outcome"},
+        "unexplained_gap": {"$ref": "#/$defs/outcome"},
+        "above_target_explained": {"$ref": "#/$defs/outcome"},
+        "within_target": {"$ref": "#/$defs/outcome"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "buckets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["label", "operator"],
+        "properties": {
+          "label": {"type": "string", "minLength": 1},
+          "operator": {
+            "enum": [
+              "less_than",
+              "less_than_or_equal",
+              "otherwise"
+            ]
+          },
+          "threshold": {"type": "number"}
+        },
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {"properties": {"operator": {"const": "otherwise"}}},
+            "then": {"not": {"required": ["threshold"]}},
+            "else": {"required": ["threshold"]}
+          }
+        ]
+      }
+    },
+    "workloadRule": {
+      "type": "object",
+      "required": [
+        "id",
+        "enabled",
+        "priority",
+        "metric",
+        "operator",
+        "threshold",
+        "observed_pattern",
+        "evidence",
+        "action",
+        "confidence"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "enabled": {"type": "boolean"},
+        "priority": {"type": "integer", "minimum": 0},
+        "metric": {
+          "enum": [
+            "input_tokens_p95",
+            "output_tokens_p95",
+            "cache_hit_ratio",
+            "request_burst_factor",
+            "streaming_ratio"
+          ]
+        },
+        "operator": {"$ref": "#/$defs/operator"},
+        "threshold": {"type": "number"},
+        "observed_pattern": {"type": "string", "minLength": 1},
+        "evidence": {"type": "string", "minLength": 1},
+        "action": {"type": "string", "minLength": 1},
+        "confidence": {"enum": ["High", "Medium", "Low"]}
+      },
+      "additionalProperties": false
+    },
+    "offerRule": {
+      "type": "object",
+      "required": [
+        "id",
+        "enabled",
+        "priority",
+        "offer",
+        "metric",
+        "operator",
+        "threshold",
+        "fit",
+        "action",
+        "tradeoff"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "enabled": {"type": "boolean"},
+        "priority": {"type": "integer", "minimum": 0},
+        "offer": {"enum": ["Priority Processing", "PTU-M"]},
+        "metric": {"enum": ["request_burst_factor"]},
+        "operator": {"$ref": "#/$defs/operator"},
+        "threshold": {"type": "number", "exclusiveMinimum": 0},
+        "fit": {"type": "string", "minLength": 1},
+        "action": {"type": "string", "minLength": 1},
+        "tradeoff": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "outcome": {
+      "type": "object",
+      "required": [
+        "observed_pattern",
+        "evidence",
+        "action",
+        "confidence"
+      ],
+      "properties": {
+        "observed_pattern": {"type": "string", "minLength": 1},
+        "evidence": {"type": "string", "minLength": 1},
+        "action": {"type": "string", "minLength": 1},
+        "confidence": {"enum": ["High", "Medium", "Low"]}
+      },
+      "additionalProperties": false
+    },
+    "operator": {
+      "enum": [
+        "greater_than",
+        "greater_than_or_equal",
+        "less_than",
+        "less_than_or_equal"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,278 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-09-02T08:00:00Z",
+  "mode": "demo",
+  "scenario": "logs-unavailable",
+  "scenario_title": "Log Analytics is not enabled",
+  "data_notice": "Illustrative sample data",
+  "illustrative_components": [
+    "Deployment and telemetry",
+    "Offer eligibility"
+  ],
+  "time_range": {
+    "start_time": "2026-09-01T08:00:00Z",
+    "end_time": "2026-09-02T08:00:00Z",
+    "label": "Last 24 hours"
+  },
+  "traffic_profile": {
+    "deployment": {
+      "deployment_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/model-latency-demo-rg/providers/Microsoft.CognitiveServices/accounts/latency-insights-demo/deployments/gpt-5.6-luna",
+      "subscription_id": "00000000-0000-0000-0000-000000000000",
+      "resource_group": "model-latency-demo-rg",
+      "account_name": "latency-insights-demo",
+      "deployment_name": "gpt-5.6-luna",
+      "model": "gpt-5.6-luna",
+      "model_version": "2026-07-09",
+      "offer": "PayGo",
+      "billing_model": "pay_per_token",
+      "service_tier": "default",
+      "deployment_type": "global_standard",
+      "sku_name": "GlobalStandard",
+      "region": "eastus2",
+      "tpm_rate_limit": null,
+      "rpm_rate_limit": null
+    },
+    "input_tokens": {
+      "average": 9200,
+      "p50": null,
+      "p95": null,
+      "unit": "tokens"
+    },
+    "output_tokens": {
+      "average": 310,
+      "p50": null,
+      "p95": null,
+      "unit": "tokens"
+    },
+    "streaming_ratio": 0.89,
+    "cache_hit_ratio": null,
+    "request_rate": {
+      "average_rpm": 540,
+      "peak_rpm": 1080
+    },
+    "token_rate": {
+      "input_average_tpm": 4968000,
+      "input_peak_tpm": null,
+      "output_average_tpm": 167400,
+      "output_peak_tpm": null,
+      "average_tpm": 5135400,
+      "peak_tpm": null,
+      "limit_tpm": null,
+      "peak_limit_ratio": null
+    },
+    "request_count": null,
+    "ttft_sample_count": null,
+    "tbt_sample_count": null,
+    "latency": {
+      "ttft": {
+        "average_ms": 1600,
+        "p50_ms": null,
+        "p90_ms": null,
+        "p95_ms": null
+      },
+      "tbt": {
+        "average_ms": 41,
+        "p50_ms": null,
+        "p90_ms": null,
+        "p95_ms": null
+      },
+      "ttlt": {
+        "average_ms": 7400,
+        "p50_ms": null,
+        "p90_ms": null,
+        "p95_ms": null
+      }
+    },
+    "error_rate": 0.006,
+    "throttling_rate": 0.005,
+    "api_path": null,
+    "representative_request_ids": [],
+    "data_availability": [
+      {
+        "source": "ARM deployment metadata",
+        "status": "illustrative",
+        "fields": [
+          "Model",
+          "Model version",
+          "Offer",
+          "Deployment SKU",
+          "Region"
+        ],
+        "note": "Deterministic sample deployment metadata.",
+        "illustrative_data": true
+      },
+      {
+        "source": "Azure Monitor platform metrics",
+        "status": "illustrative",
+        "fields": [
+          "Request rate",
+          "Streaming ratio",
+          "Error rate",
+          "Throttling rate"
+        ],
+        "note": "Deterministic sample aggregate metrics.",
+        "illustrative_data": true
+      },
+      {
+        "source": "Log Analytics request logs",
+        "status": "unavailable",
+        "fields": [
+          "Token distributions",
+          "Cache usage",
+          "TTFT P50/P95",
+          "TBT P50/P95",
+          "TTLT P50/P95"
+        ],
+        "note": "Diagnostic settings are not enabled. Configure Azure OpenAI resource logs to a Log Analytics workspace, then rerun.",
+        "illustrative_data": false
+      }
+    ]
+  },
+  "slo_assessment": {
+    "status": "unavailable",
+    "message": "The current-offer target was found, but observed TBT P95 is unavailable because request-level logs are unavailable.",
+    "metric": "TBT",
+    "percentile": "P95",
+    "actual_ms": null,
+    "target_ms": 80.0,
+    "source_label": "ModelTargets snapshot",
+    "contractual_notice": "This is an operating target for the current offer, not a contractual SLA."
+  },
+  "benchmark_comparison": {
+    "status": "not_run",
+    "message": "Benchmark comparison was not run for this assessment.",
+    "metric": "TBT_P95",
+    "actual_ms": null,
+    "benchmark_value_ms": null,
+    "sample_size": null,
+    "confidence": null,
+    "freshness": null,
+    "comparison": null,
+    "workload_profile_explains_gap": null,
+    "selected_cohort": null,
+    "dimensions": [],
+    "source_label": "Benchmark cohort catalog"
+  },
+  "recommendations": [
+    {
+      "observed_pattern": "Request-level latency data is unavailable",
+      "supporting_evidence": "TBT P95 and token distributions cannot be computed from platform averages.",
+      "recommended_action": "Configure or verify Log Analytics diagnostic settings, collect new representative traffic, and rerun. Logs are not retroactive.",
+      "confidence": "High",
+      "category": "data",
+      "interpretation": "",
+      "rule_id": "missing_request_data"
+    }
+  ],
+  "offer_guidance": {
+    "shown": false,
+    "headline": null,
+    "reason": "No supported offer-fit signal requires guidance in this assessment.",
+    "options": [],
+    "notice": "Offer fit guidance does not promise a specific latency improvement."
+  },
+  "eligible_offer_options": [
+    {
+      "offer": "Priority Processing",
+      "available": true,
+      "availability": "Available now",
+      "note": "Demo model and region support check passes.",
+      "requires_live_capacity_check": false,
+      "minimum_ptus": null,
+      "target_summary": null,
+      "fit_reason": "Bursty or variable interactive traffic that needs lower latency without reserved capacity.",
+      "tradeoff": "Higher per-token cost; some requests can fall back to Standard.",
+      "next_test": "Replay the same workload with Priority Processing and compare TBT P95.",
+      "recommended": false,
+      "eligibility_summary": "The selected model, version, and deployment type support Priority Processing in this region.",
+      "rule_id": "priority-for-bursty-traffic"
+    },
+    {
+      "offer": "PTU-M",
+      "available": true,
+      "availability": "Available now",
+      "note": "Demo model, quota, and capacity checks pass.",
+      "requires_live_capacity_check": false,
+      "minimum_ptus": 15,
+      "target_summary": null,
+      "fit_reason": "Steady, sustained traffic that needs predictable latency and throughput.",
+      "tradeoff": "Requires PTU sizing, available quota, and a capacity commitment.",
+      "next_test": "Verify quota and live capacity, create a PTU-M test deployment, and replay the same workload. Confirm at least 15 PTUs are available.",
+      "recommended": false,
+      "eligibility_summary": "Current checks found model support, sufficient subscription quota, and regional capacity. Capacity can change.",
+      "rule_id": "ptum-for-steady-traffic"
+    }
+  ],
+  "evidence_package": null,
+  "data_availability": [
+    {
+      "source": "ARM deployment metadata",
+      "status": "illustrative",
+      "fields": [
+        "Model",
+        "Model version",
+        "Offer",
+        "Deployment SKU",
+        "Region"
+      ],
+      "note": "Deterministic sample deployment metadata.",
+      "illustrative_data": true
+    },
+    {
+      "source": "Azure Monitor platform metrics",
+      "status": "illustrative",
+      "fields": [
+        "Request rate",
+        "Streaming ratio",
+        "Error rate",
+        "Throttling rate"
+      ],
+      "note": "Deterministic sample aggregate metrics.",
+      "illustrative_data": true
+    },
+    {
+      "source": "Log Analytics request logs",
+      "status": "unavailable",
+      "fields": [
+        "Token distributions",
+        "Cache usage",
+        "TTFT P50/P95",
+        "TBT P50/P95",
+        "TTLT P50/P95"
+      ],
+      "note": "Diagnostic settings are not enabled. Configure Azure OpenAI resource logs to a Log Analytics workspace, then rerun.",
+      "illustrative_data": false
+    },
+    {
+      "source": "Current-offer target catalog",
+      "status": "available",
+      "fields": [
+        "TBT P95 target"
+      ],
+      "note": "ModelTargets snapshot: Snapshot of authoritative ModelTargets SLA values. Schema 1.0; data 2026-08-04T20:28:34.6268116Z.",
+      "illustrative_data": false
+    },
+    {
+      "source": "LLM-Runner benchmark cohorts",
+      "status": "available",
+      "fields": [
+        "Benchmark value",
+        "Sample size",
+        "Confidence",
+        "Freshness"
+      ],
+      "note": "Benchmark cohort catalog: Static 16-cell-per-metric PayGo benchmark catalog. Schema 1.0; data 2026-09-03T00:00:00Z.",
+      "illustrative_data": false
+    },
+    {
+      "source": "Offer eligibility catalog",
+      "status": "illustrative",
+      "fields": [
+        "Priority Processing",
+        "PTU-M"
+      ],
+      "note": "Illustrative data: Deterministic demo-only offer eligibility; not used by real assessments. Schema 1.0; data sample-2026-09-03.",
+      "illustrative_data": true
+    }
+  ]
+}

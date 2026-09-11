@@ -35,6 +35,10 @@ the Go contracts under `pkg/azdext/contracts/v1` and
 stable forwarding surface used by the handwritten `pkg/azdext` SDK facade and
 the beta service adapters in
 `internal/grpcserver/versioned_services_generated.go`.
+Before generating bindings, it compiles descriptor sets for the stable
+scaffold protos and canonical `v1` protos and verifies that every scaffold
+message, enum, service, and method remains a wire-compatible subset of the
+canonical contract.
 
 The container invokes `make proto` for the Go artifacts. That target checks
 the pinned `protoc`, `protoc-gen-go`, and `protoc-gen-go-grpc` versions and can

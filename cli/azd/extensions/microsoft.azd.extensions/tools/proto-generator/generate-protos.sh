@@ -20,6 +20,23 @@ for required_dir in \
     fi
 done
 
+protoc \
+    -I "$proto_dir" \
+    --include_imports \
+    --descriptor_set_out=/tmp/scaffold-protos.pb \
+    "$proto_dir"/*.proto
+
+protoc \
+    -I "$azd_dir/grpc/proto" \
+    -I "$azd_dir/grpc/include" \
+    --include_imports \
+    --descriptor_set_out=/tmp/canonical-v1-protos.pb \
+    "$azd_dir/grpc/proto/azd/extensions/v1"/*.proto
+
+validate-scaffold-compatibility.py \
+    /tmp/scaffold-protos.pb \
+    /tmp/canonical-v1-protos.pb
+
 mkdir -p "$python_out" "$javascript_out"
 find "$python_out" -maxdepth 1 -type f \( -name '*_pb2.py' -o -name '*_pb2_grpc.py' \) -delete
 find "$javascript_out" -maxdepth 1 -type f \( -name '*_pb.js' -o -name '*_grpc_pb.js' \) -delete

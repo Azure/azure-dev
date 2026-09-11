@@ -17,12 +17,14 @@ import (
 
 // serverService is the RPC server for the '/ServerService/v1.0' endpoint.
 type serverService struct {
-	server *Server
+	server             *Server
+	getTelemetrySystem func() *telemetry.TelemetrySystem
 }
 
 func newServerService(server *Server) *serverService {
 	return &serverService{
-		server: server,
+		server:             server,
+		getTelemetrySystem: telemetry.GetTelemetrySystem,
 	}
 }
 
@@ -92,7 +94,7 @@ func (s *serverService) StopAsync(ctx context.Context) error {
 	// client terminate `azd` once they know all outstanding RPCs have completed instead of trying to do a graceful
 	// shutdown on our end.
 
-	ts := telemetry.GetTelemetrySystem()
+	ts := s.getTelemetrySystem()
 	// Flush all in-memory telemetry data before stopping.
 	if ts != nil {
 		err := ts.Shutdown(ctx)

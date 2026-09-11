@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/stretchr/testify/require"
 )
 
@@ -106,11 +107,13 @@ func TestNewServerService(t *testing.T) {
 	require.Same(t, s, svc.server)
 }
 
-func TestServerService_StopAsync(t *testing.T) {
+func TestServerService_StopAsync_NoTelemetrySystem(t *testing.T) {
 	s := newTestServer()
-	// Must set cancelTelemetryUpload to avoid nil panic
 	s.cancelTelemetryUpload = func() {}
 	svc := newServerService(s)
+	svc.getTelemetrySystem = func() *telemetry.TelemetrySystem {
+		return nil
+	}
 	rpcConn := connectRPC(t, svc)
 
 	_, err := rpcConn.Call(t.Context(), "StopAsync", []any{}, nil)

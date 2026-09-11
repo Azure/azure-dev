@@ -2698,6 +2698,49 @@ layers:
 	require.NotContains(t, custom, "removable")
 }
 
+func TestProjectService_SetServiceConfigValue_PreservesInfraV1(t *testing.T) {
+	t.Parallel()
+
+	svc := newProjectServiceWithYaml(t, `name: test-project
+infra:
+  provider: bicep
+  layers:
+    - name: network
+      path: infra/network
+    - name: application
+      provider: terraform
+      path: infra/application
+services:
+  api:
+    host: appservice
+    language: python
+    project: ./src/api
+`)
+
+	_, err := svc.SetServiceConfigValue(t.Context(), &azdext.SetServiceConfigValueRequest{
+		ServiceName: "api",
+		Path:        "custom.setting",
+		Value:       structpb.NewStringValue("updated"),
+	})
+	require.NoError(t, err)
+
+	projectService := svc.(*projectService)
+	azdContext, err := projectService.lazyAzdContext.GetValue()
+	require.NoError(t, err)
+
+	reloaded, err := project.Load(t.Context(), azdContext.ProjectPath())
+	require.NoError(t, err)
+
+	require.Equal(t, project.ProjectFormatInfraV1, reloaded.Format())
+	require.Equal(t, provisioning.Bicep, reloaded.Infra.Provider)
+	require.Len(t, reloaded.Infra.Layers, 2)
+	require.Equal(t, "network", reloaded.Infra.Layers[0].Name)
+	require.Equal(t, provisioning.Terraform, reloaded.Infra.Layers[1].Provider)
+	custom, ok := reloaded.Services["api"].AdditionalProperties["custom"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "updated", custom["setting"])
+}
+
 func TestProjectService_SetServiceConfigSection_HappyPath(t *testing.T) {
 	t.Parallel()
 	svc := newProjectServiceWithYaml(t, yamlWithService)

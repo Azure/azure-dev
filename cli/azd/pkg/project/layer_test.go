@@ -364,6 +364,73 @@ func TestExplicitEmptyInfraLayersUsesV1Format(t *testing.T) {
 	require.Equal(t, ProjectFormatInfraV1, config.Format())
 }
 
+func TestProjectConfigAccessorsPreserveNonV2Formats(t *testing.T) {
+	t.Parallel()
+
+	service := &ServiceConfig{Name: "api"}
+	projectConfig := &ProjectConfig{
+		Services: map[string]*ServiceConfig{"api": service},
+		Infra: provisioning.Options{
+			Provider: provisioning.Bicep,
+			Layers: []provisioning.Options{
+				{Name: "network", Provider: provisioning.Terraform},
+				{Name: "application", Provider: provisioning.Bicep},
+			},
+		},
+	}
+
+	require.Equal(t, ProjectFormatInfraV1, projectConfig.Format())
+	require.Same(t, service, projectConfig.ServiceConfigs()["api"])
+	require.Equal(t, projectConfig.Infra.Layers, projectConfig.InfrastructureConfigs())
+}
+
+func TestSaveProjectInfraV1PreservesFormat(t *testing.T) {
+	t.Parallel()
+
+	const projectYaml = `name: test-project
+infra:
+  provider: bicep
+  layers:
+    - name: network
+      path: infra/network
+      module: network
+    - name: application
+      provider: terraform
+      path: infra/application
+services:
+  api:
+    host: appservice
+    language: python
+    project: src/api
+`
+
+	projectConfig, err := Parse(t.Context(), projectYaml)
+	require.NoError(t, err)
+	require.Equal(t, ProjectFormatInfraV1, projectConfig.Format())
+
+	projectFile := filepath.Join(t.TempDir(), "azure.yaml")
+	require.NoError(t, Save(t.Context(), projectConfig, projectFile))
+
+	rawConfig, err := LoadConfig(t.Context(), projectFile)
+	require.NoError(t, err)
+	require.NoError(t, rawConfig.Set("metadata.compatibilityTest", true))
+	require.NoError(t, SaveConfig(t.Context(), rawConfig, projectFile))
+
+	reloaded, err := Load(t.Context(), projectFile)
+	require.NoError(t, err)
+	require.Equal(t, ProjectFormatInfraV1, reloaded.Format())
+	require.Equal(t, provisioning.Bicep, reloaded.Infra.Provider)
+	require.Len(t, reloaded.Infra.Layers, 2)
+	require.Equal(t, "network", reloaded.Infra.Layers[0].Name)
+	require.Equal(t, provisioning.Terraform, reloaded.Infra.Layers[1].Provider)
+	require.Contains(t, reloaded.Services, "api")
+
+	contents, err := os.ReadFile(projectFile)
+	require.NoError(t, err)
+	require.Contains(t, string(contents), "schemas/v1.0/azure.yaml.json")
+	require.NotContains(t, string(contents), "\nlayers:")
+}
+
 func TestValidateLayerGraph_AcceptsV2Project(t *testing.T) {
 	t.Parallel()
 

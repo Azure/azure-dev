@@ -491,6 +491,9 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `extension.event` | string | Extension-chosen usage event on `ext.usage`, or the host-defined lifecycle event on a failed lifecycle-hook `cmd.*` span |
 | `ext.<key>` | string | One extension-supplied attribute on an `ext.usage` span. The key after the `ext.` prefix and the value are chosen by the extension |
 | `ext.route` | string | Local-client route selected by `azure.ai.agents`: `inspector`, `playground`, or `suppressed` (`local_client.route.selected`) |
+| `ext.agent.kind` | string | Agent kind resolved by `azure.ai.agents`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown` (`agent.context.resolved`) |
+| `ext.agent.harness` | string | Prompt-agent harness classification: `none`, `github_copilot_preview`, or `other` (`agent.context.resolved`) |
+| `ext.agent.operation` | string | Fixed extension command path associated with the resolved agent context, such as `deploy` or `files.upload` (`agent.context.resolved`) |
 | `ext.stage` | string | Agent Inspector funnel stage: currently `ui_ready` (`inspector.funnel.stage`) |
 | `ext.outcome` | string | Agent Inspector funnel-stage outcome: currently `succeeded` (`inspector.funnel.stage`) |
 | `extension.installed` | string[] | List of installed extensions (`id@version`) |
@@ -530,6 +533,7 @@ Reviewed first-party extension usage events currently include:
 
 | Extension | `extension.event` | Trigger | Dynamic attributes |
 |-----------|-------------------|---------|--------------------|
+| `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service | `ext.agent.kind`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown`; `ext.agent.harness`: `none`, `github_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; no agent names or customer content |
 | `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; emitted before client availability, agent startup, and client launch | `ext.route`: `inspector`, `playground`, or `suppressed`; suppression takes precedence |
 | `azure.ai.inspector` | `inspector.funnel.stage` | The Inspector SPA sends `setViewReady` after mounting | `ext.stage=ui_ready`; `ext.outcome=succeeded`; this does not indicate agent connection |
 

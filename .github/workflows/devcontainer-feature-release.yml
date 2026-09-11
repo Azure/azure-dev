@@ -23,10 +23,10 @@ jobs:
     environment:
       name: deploy-devcontainer-feature
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: "Publish Features"
-        uses: devcontainers/action@v1
+        uses: devcontainers/action@1082abd5d2bf3a11abccba70eef98df068277772  # v1.4.3
         with:
           publish-features: "true"
           base-path-to-features: "./ext/devcontainer/src"

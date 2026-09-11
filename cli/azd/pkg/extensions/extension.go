@@ -28,6 +28,15 @@ type Extension struct {
 	Providers         []Provider       `json:"providers,omitempty"`
 	McpConfig         *McpConfig       `json:"mcp,omitempty"`
 	LastUpdateWarning string           `json:"lastUpdateWarning,omitempty"`
+	// Dependencies is the dependency list declared by the installed version, recorded at
+	// install time so dependency checks work without registry access (bundles, delisted
+	// extensions). Records written before this field existed have none.
+	Dependencies []ExtensionDependency `json:"dependencies,omitempty"`
+	// InstalledAsDependency is true when the extension was installed only because another
+	// installed extension required it. Explicit installs leave it false, and
+	// Manager.MarkExplicitlyInstalled clears it when the user later asks for the
+	// extension directly.
+	InstalledAsDependency bool `json:"installedAsDependency,omitempty"`
 
 	stdin  *bytes.Buffer
 	stdout *output.DynamicMultiWriter

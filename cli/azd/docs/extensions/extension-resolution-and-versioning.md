@@ -177,7 +177,7 @@ Once a version is resolved, installation proceeds through these steps:
    - `.tar.gz` — extracted as a gzipped tar archive
    - Other — treated as a raw binary and copied directly
 7. **Set permissions** — On Unix-like systems, set the executable permission on the extension binary.
-8. **Update configuration** — Record the installed extension and version in `~/.azd/config.json` under the `extension.installed` section.
+8. **Update configuration**. Save the version, dependencies, and `installedAsDependency` flag under `extension.installed` in `~/.azd/config.json`. See [installed metadata](#installed-metadata) for ownership rules.
 
 ### Re-installing over an existing extension
 
@@ -194,6 +194,30 @@ When the source **is** changing (for example installing a bundle build over a re
 Because each bundle install registers a unique transient source, installing from **any** bundle over an already-installed extension is always treated as a source change — so it prompts even when the bundled version matches the installed one (the two builds may not be byte-identical).
 
 For registry-backed installs, a required dependency must resolve from the parent's source or the main `azd` registry. For self-contained bundles, it must resolve from the bundle itself. If the dependency is not already installed and cannot be resolved from the applicable sources, the install fails with actionable guidance.
+
+## Uninstall flow
+
+`azd extension uninstall <id>` validates the complete removal against installed records, without registry access. Other installed extensions that require a target block removal unless they are also removed or `--force` is set.
+
+Targets are removed in request order, followed by their unused dependency installs, including transitive dependencies. Explicit and shared installations stay.
+
+Before removing unused dependencies, azd lists them and asks once. `--no-prompt` accepts removal. Declining keeps those dependencies installed, lists them as kept, and prints a command to remove them later. Normal cleanup lists removed and retained dependencies with reasons.
+
+`--no-dependencies` keeps dependencies installed without listing them individually. Both this flag and declining cleanup still enforce the required-extension checks.
+
+Unused dependency cycles downstream of a removed target can remain installed because their members still require each other. Remove a cycle by naming its members together, for example `azd extension uninstall extension.a extension.b`. The normal required-extension checks still apply.
+
+`azd extension uninstall --all` removes every installed extension.
+
+### Installed metadata
+
+Explicit installs, named `requiredVersions.extensions` entries, and independently auto-installed providers are kept when a pack is removed. Reusing an existing inferred provider does not change ownership. Updates preserve ownership.
+
+Legacy records are never auto-removed and have no known dependencies. Update backfills the target and directly reconciled children only when metadata matches the installed source and version. Deeper records gain metadata when directly updated, reconciled, or reinstalled. Ownership is never guessed.
+
+## Update results
+
+Any extension or dependency failure returns a nonzero exit code, including with `--output json`. This includes metadata save failures. Completed updates are kept. The JSON summary counts top-level extensions; dependency outcomes appear in `dependencyUpgrades`. The same failure rule applies when installing over an existing extension.
 
 ## Self-Contained Bundles
 

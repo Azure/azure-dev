@@ -740,3 +740,19 @@ func (m *mockExtensionProvider) HasMetadataCapability(extensionId string) bool {
 func (m *mockExtensionProvider) LoadMetadata(extensionId string) (*extensions.ExtensionCommandMetadata, error) {
 	return m.metadata, m.loadErr
 }
+
+func TestGenerateCommandArgs_Variadic(t *testing.T) {
+	sb := &SpecBuilder{}
+
+	args := sb.generateCommandArgs(
+		&cobra.Command{Use: "remove [name...]"},
+		&CommandContext{CommandPath: "azd remove"},
+	)
+	require.Equal(t, []Arg{{Name: "name", IsOptional: true, IsVariadic: true}}, args)
+
+	args = sb.generateCommandArgs(
+		&cobra.Command{Use: "show <name>"},
+		&CommandContext{CommandPath: "azd show"},
+	)
+	require.Equal(t, []Arg{{Name: "name"}}, args)
+}

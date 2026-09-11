@@ -13,13 +13,13 @@
 
 var jspb = require('google-protobuf');
 var goog = jspb;
-var global = (function() {
-  if (this) { return this; }
-  if (typeof window !== 'undefined') { return window; }
-  if (typeof global !== 'undefined') { return global; }
-  if (typeof self !== 'undefined') { return self; }
-  return Function('return this')();
-}.call(null));
+var global =
+    (typeof globalThis !== 'undefined' && globalThis) ||
+    (typeof window !== 'undefined' && window) ||
+    (typeof global !== 'undefined' && global) ||
+    (typeof self !== 'undefined' && self) ||
+    (function () { return this; }).call(null) ||
+    Function('return this')();
 
 var models_pb = require('./models_pb.js');
 goog.object.extend(proto, models_pb);
@@ -231,7 +231,7 @@ proto.azd.extensions.v1.GetUserConfigRequest.prototype.toObject = function(opt_i
  */
 proto.azd.extensions.v1.GetUserConfigRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    path: jspb.Message.getFieldWithDefault(msg, 1, "")
+path: jspb.Message.getFieldWithDefault(msg, 1, "")
   };
 
   if (includeInstance) {
@@ -361,8 +361,8 @@ proto.azd.extensions.v1.GetUserConfigResponse.prototype.toObject = function(opt_
  */
 proto.azd.extensions.v1.GetUserConfigResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    value: msg.getValue_asB64(),
-    found: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
+value: msg.getValue_asB64(),
+found: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
   };
 
   if (includeInstance) {
@@ -545,7 +545,7 @@ proto.azd.extensions.v1.GetUserConfigStringRequest.prototype.toObject = function
  */
 proto.azd.extensions.v1.GetUserConfigStringRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    path: jspb.Message.getFieldWithDefault(msg, 1, "")
+path: jspb.Message.getFieldWithDefault(msg, 1, "")
   };
 
   if (includeInstance) {
@@ -675,8 +675,8 @@ proto.azd.extensions.v1.GetUserConfigStringResponse.prototype.toObject = functio
  */
 proto.azd.extensions.v1.GetUserConfigStringResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    value: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    found: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
+value: jspb.Message.getFieldWithDefault(msg, 1, ""),
+found: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
   };
 
   if (includeInstance) {
@@ -835,7 +835,7 @@ proto.azd.extensions.v1.GetUserConfigSectionRequest.prototype.toObject = functio
  */
 proto.azd.extensions.v1.GetUserConfigSectionRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    path: jspb.Message.getFieldWithDefault(msg, 1, "")
+path: jspb.Message.getFieldWithDefault(msg, 1, "")
   };
 
   if (includeInstance) {
@@ -965,8 +965,8 @@ proto.azd.extensions.v1.GetUserConfigSectionResponse.prototype.toObject = functi
  */
 proto.azd.extensions.v1.GetUserConfigSectionResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    section: msg.getSection_asB64(),
-    found: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
+section: msg.getSection_asB64(),
+found: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
   };
 
   if (includeInstance) {
@@ -1149,8 +1149,8 @@ proto.azd.extensions.v1.SetUserConfigRequest.prototype.toObject = function(opt_i
  */
 proto.azd.extensions.v1.SetUserConfigRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    path: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    value: msg.getValue_asB64()
+path: jspb.Message.getFieldWithDefault(msg, 1, ""),
+value: msg.getValue_asB64()
   };
 
   if (includeInstance) {
@@ -1333,7 +1333,7 @@ proto.azd.extensions.v1.UnsetUserConfigRequest.prototype.toObject = function(opt
  */
 proto.azd.extensions.v1.UnsetUserConfigRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    path: jspb.Message.getFieldWithDefault(msg, 1, "")
+path: jspb.Message.getFieldWithDefault(msg, 1, "")
   };
 
   if (includeInstance) {

@@ -20,22 +20,26 @@ The original unversioned `azdext` protobuf package remains available only as a
 temporary frozen runtime bridge for already-built extensions. It is not a
 source contract or generated SDK package for new development.
 
-## Generate Go contracts
+## Generate contracts
 
 Run generation from `cli/azd`:
 
 ```console
-make proto
+go tool mage generateProtos
 ```
 
-The Makefile checks the pinned `protoc`, `protoc-gen-go`, and
-`protoc-gen-go-grpc` versions already used by this repository. It generates
-only under `pkg/azdext/contracts/v1` and
-`pkg/azdext/contracts/v1beta`. It also regenerates the stable forwarding
-surface used by the handwritten `pkg/azdext` SDK facade and the beta service
-adapters in
-`internal/grpcserver/versioned_services_generated.go`. `make clean` removes
-only these generated outputs.
+The Mage target runs the pinned protobuf toolchain in a container and
+regenerates the stable Python and JavaScript extension scaffold bindings plus
+the Go contracts under `pkg/azdext/contracts/v1` and
+`pkg/azdext/contracts/v1beta`. The Go generation step also regenerates the
+stable forwarding surface used by the handwritten `pkg/azdext` SDK facade and
+the beta service adapters in
+`internal/grpcserver/versioned_services_generated.go`.
+
+The container invokes `make proto` for the Go artifacts. That target checks
+the pinned `protoc`, `protoc-gen-go`, and `protoc-gen-go-grpc` versions and can
+be used directly when only Go contracts need regeneration and those tools are
+already installed. `make clean` removes only the generated Go outputs.
 
 The adapter generator reads the generated `v1` and `v1beta` server interfaces.
 Shared methods transcode protobuf messages to reuse stable business logic.

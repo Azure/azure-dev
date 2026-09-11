@@ -13,13 +13,13 @@
 
 var jspb = require('google-protobuf');
 var goog = jspb;
-var global = (function() {
-  if (this) { return this; }
-  if (typeof window !== 'undefined') { return window; }
-  if (typeof global !== 'undefined') { return global; }
-  if (typeof self !== 'undefined') { return self; }
-  return Function('return this')();
-}.call(null));
+var global =
+    (typeof globalThis !== 'undefined' && globalThis) ||
+    (typeof window !== 'undefined' && window) ||
+    (typeof global !== 'undefined' && global) ||
+    (typeof self !== 'undefined' && self) ||
+    (function () { return this; }).call(null) ||
+    Function('return this')();
 
 goog.exportSymbol('proto.azd.extensions.v1.AzureContext', null, global);
 goog.exportSymbol('proto.azd.extensions.v1.AzureScope', null, global);
@@ -563,11 +563,11 @@ proto.azd.extensions.v1.Subscription.prototype.toObject = function(opt_includeIn
  */
 proto.azd.extensions.v1.Subscription.toObject = function(includeInstance, msg) {
   var f, obj = {
-    id: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    name: jspb.Message.getFieldWithDefault(msg, 2, ""),
-    tenantId: jspb.Message.getFieldWithDefault(msg, 3, ""),
-    userTenantId: jspb.Message.getFieldWithDefault(msg, 4, ""),
-    isDefault: jspb.Message.getBooleanFieldWithDefault(msg, 5, false)
+id: jspb.Message.getFieldWithDefault(msg, 1, ""),
+name: jspb.Message.getFieldWithDefault(msg, 2, ""),
+tenantId: jspb.Message.getFieldWithDefault(msg, 3, ""),
+userTenantId: jspb.Message.getFieldWithDefault(msg, 4, ""),
+isDefault: jspb.Message.getBooleanFieldWithDefault(msg, 5, false)
   };
 
   if (includeInstance) {
@@ -813,9 +813,9 @@ proto.azd.extensions.v1.ResourceGroup.prototype.toObject = function(opt_includeI
  */
 proto.azd.extensions.v1.ResourceGroup.toObject = function(includeInstance, msg) {
   var f, obj = {
-    id: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    name: jspb.Message.getFieldWithDefault(msg, 2, ""),
-    location: jspb.Message.getFieldWithDefault(msg, 3, "")
+id: jspb.Message.getFieldWithDefault(msg, 1, ""),
+name: jspb.Message.getFieldWithDefault(msg, 2, ""),
+location: jspb.Message.getFieldWithDefault(msg, 3, "")
   };
 
   if (includeInstance) {
@@ -1003,9 +1003,9 @@ proto.azd.extensions.v1.Location.prototype.toObject = function(opt_includeInstan
  */
 proto.azd.extensions.v1.Location.toObject = function(includeInstance, msg) {
   var f, obj = {
-    name: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    displayName: jspb.Message.getFieldWithDefault(msg, 2, ""),
-    regionalDisplayName: jspb.Message.getFieldWithDefault(msg, 3, "")
+name: jspb.Message.getFieldWithDefault(msg, 1, ""),
+displayName: jspb.Message.getFieldWithDefault(msg, 2, ""),
+regionalDisplayName: jspb.Message.getFieldWithDefault(msg, 3, "")
   };
 
   if (includeInstance) {
@@ -1193,10 +1193,10 @@ proto.azd.extensions.v1.AzureScope.prototype.toObject = function(opt_includeInst
  */
 proto.azd.extensions.v1.AzureScope.toObject = function(includeInstance, msg) {
   var f, obj = {
-    tenantId: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    subscriptionId: jspb.Message.getFieldWithDefault(msg, 2, ""),
-    location: jspb.Message.getFieldWithDefault(msg, 3, ""),
-    resourceGroup: jspb.Message.getFieldWithDefault(msg, 4, "")
+tenantId: jspb.Message.getFieldWithDefault(msg, 1, ""),
+subscriptionId: jspb.Message.getFieldWithDefault(msg, 2, ""),
+location: jspb.Message.getFieldWithDefault(msg, 3, ""),
+resourceGroup: jspb.Message.getFieldWithDefault(msg, 4, "")
   };
 
   if (includeInstance) {
@@ -1420,8 +1420,8 @@ proto.azd.extensions.v1.AzureContext.prototype.toObject = function(opt_includeIn
  */
 proto.azd.extensions.v1.AzureContext.toObject = function(includeInstance, msg) {
   var f, obj = {
-    scope: (f = msg.getScope()) && proto.azd.extensions.v1.AzureScope.toObject(includeInstance, f),
-    resourcesList: (f = jspb.Message.getRepeatedField(msg, 2)) == null ? undefined : f
+scope: (f = msg.getScope()) && proto.azd.extensions.v1.AzureScope.toObject(includeInstance, f),
+resourcesList: (f = jspb.Message.getRepeatedField(msg, 2)) == null ? undefined : f
   };
 
   if (includeInstance) {
@@ -1620,10 +1620,10 @@ proto.azd.extensions.v1.Resource.prototype.toObject = function(opt_includeInstan
  */
 proto.azd.extensions.v1.Resource.toObject = function(includeInstance, msg) {
   var f, obj = {
-    id: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    name: jspb.Message.getFieldWithDefault(msg, 2, ""),
-    type: jspb.Message.getFieldWithDefault(msg, 3, ""),
-    location: jspb.Message.getFieldWithDefault(msg, 4, "")
+id: jspb.Message.getFieldWithDefault(msg, 1, ""),
+name: jspb.Message.getFieldWithDefault(msg, 2, ""),
+type: jspb.Message.getFieldWithDefault(msg, 3, ""),
+location: jspb.Message.getFieldWithDefault(msg, 4, "")
   };
 
   if (includeInstance) {
@@ -1840,11 +1840,11 @@ proto.azd.extensions.v1.ResourceExtended.prototype.toObject = function(opt_inclu
  */
 proto.azd.extensions.v1.ResourceExtended.toObject = function(includeInstance, msg) {
   var f, obj = {
-    id: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    name: jspb.Message.getFieldWithDefault(msg, 2, ""),
-    type: jspb.Message.getFieldWithDefault(msg, 3, ""),
-    location: jspb.Message.getFieldWithDefault(msg, 4, ""),
-    kind: jspb.Message.getFieldWithDefault(msg, 5, "")
+id: jspb.Message.getFieldWithDefault(msg, 1, ""),
+name: jspb.Message.getFieldWithDefault(msg, 2, ""),
+type: jspb.Message.getFieldWithDefault(msg, 3, ""),
+location: jspb.Message.getFieldWithDefault(msg, 4, ""),
+kind: jspb.Message.getFieldWithDefault(msg, 5, "")
   };
 
   if (includeInstance) {
@@ -2090,12 +2090,12 @@ proto.azd.extensions.v1.ProjectConfig.prototype.toObject = function(opt_includeI
  */
 proto.azd.extensions.v1.ProjectConfig.toObject = function(includeInstance, msg) {
   var f, obj = {
-    name: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    resourceGroupName: jspb.Message.getFieldWithDefault(msg, 2, ""),
-    path: jspb.Message.getFieldWithDefault(msg, 3, ""),
-    metadata: (f = msg.getMetadata()) && proto.azd.extensions.v1.ProjectMetadata.toObject(includeInstance, f),
-    servicesMap: (f = msg.getServicesMap()) ? f.toObject(includeInstance, proto.azd.extensions.v1.ServiceConfig.toObject) : [],
-    infra: (f = msg.getInfra()) && proto.azd.extensions.v1.InfraOptions.toObject(includeInstance, f)
+name: jspb.Message.getFieldWithDefault(msg, 1, ""),
+resourceGroupName: jspb.Message.getFieldWithDefault(msg, 2, ""),
+path: jspb.Message.getFieldWithDefault(msg, 3, ""),
+metadata: (f = msg.getMetadata()) && proto.azd.extensions.v1.ProjectMetadata.toObject(includeInstance, f),
+servicesMap: (f = msg.getServicesMap()) ? f.toObject(includeInstance, proto.azd.extensions.v1.ServiceConfig.toObject) : [],
+infra: (f = msg.getInfra()) && proto.azd.extensions.v1.InfraOptions.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -2343,7 +2343,8 @@ proto.azd.extensions.v1.ProjectConfig.prototype.getServicesMap = function(opt_no
  */
 proto.azd.extensions.v1.ProjectConfig.prototype.clearServicesMap = function() {
   this.getServicesMap().clear();
-  return this;};
+  return this;
+};
 
 
 /**
@@ -2415,7 +2416,7 @@ proto.azd.extensions.v1.RequiredVersions.prototype.toObject = function(opt_inclu
  */
 proto.azd.extensions.v1.RequiredVersions.toObject = function(includeInstance, msg) {
   var f, obj = {
-    azd: jspb.Message.getFieldWithDefault(msg, 1, "")
+azd: jspb.Message.getFieldWithDefault(msg, 1, "")
   };
 
   if (includeInstance) {
@@ -2545,7 +2546,7 @@ proto.azd.extensions.v1.ProjectMetadata.prototype.toObject = function(opt_includ
  */
 proto.azd.extensions.v1.ProjectMetadata.toObject = function(includeInstance, msg) {
   var f, obj = {
-    template: jspb.Message.getFieldWithDefault(msg, 1, "")
+template: jspb.Message.getFieldWithDefault(msg, 1, "")
   };
 
   if (includeInstance) {
@@ -2682,17 +2683,17 @@ proto.azd.extensions.v1.ServiceConfig.prototype.toObject = function(opt_includeI
  */
 proto.azd.extensions.v1.ServiceConfig.toObject = function(includeInstance, msg) {
   var f, obj = {
-    name: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    resourceGroupName: jspb.Message.getFieldWithDefault(msg, 2, ""),
-    resourceName: jspb.Message.getFieldWithDefault(msg, 3, ""),
-    apiVersion: jspb.Message.getFieldWithDefault(msg, 4, ""),
-    relativePath: jspb.Message.getFieldWithDefault(msg, 5, ""),
-    host: jspb.Message.getFieldWithDefault(msg, 6, ""),
-    language: jspb.Message.getFieldWithDefault(msg, 7, ""),
-    outputPath: jspb.Message.getFieldWithDefault(msg, 8, ""),
-    image: jspb.Message.getFieldWithDefault(msg, 9, ""),
-    usesList: (f = jspb.Message.getRepeatedField(msg, 13)) == null ? undefined : f,
-    environmentMap: (f = msg.getEnvironmentMap()) ? f.toObject(includeInstance, undefined) : []
+name: jspb.Message.getFieldWithDefault(msg, 1, ""),
+resourceGroupName: jspb.Message.getFieldWithDefault(msg, 2, ""),
+resourceName: jspb.Message.getFieldWithDefault(msg, 3, ""),
+apiVersion: jspb.Message.getFieldWithDefault(msg, 4, ""),
+relativePath: jspb.Message.getFieldWithDefault(msg, 5, ""),
+host: jspb.Message.getFieldWithDefault(msg, 6, ""),
+language: jspb.Message.getFieldWithDefault(msg, 7, ""),
+outputPath: jspb.Message.getFieldWithDefault(msg, 8, ""),
+image: jspb.Message.getFieldWithDefault(msg, 9, ""),
+usesList: (f = jspb.Message.getRepeatedField(msg, 13)) == null ? undefined : f,
+environmentMap: (f = msg.getEnvironmentMap()) ? f.toObject(includeInstance, undefined) : []
   };
 
   if (includeInstance) {
@@ -3099,7 +3100,8 @@ proto.azd.extensions.v1.ServiceConfig.prototype.getEnvironmentMap = function(opt
  */
 proto.azd.extensions.v1.ServiceConfig.prototype.clearEnvironmentMap = function() {
   this.getEnvironmentMap().clear();
-  return this;};
+  return this;
+};
 
 
 
@@ -3134,9 +3136,9 @@ proto.azd.extensions.v1.InfraOptions.prototype.toObject = function(opt_includeIn
  */
 proto.azd.extensions.v1.InfraOptions.toObject = function(includeInstance, msg) {
   var f, obj = {
-    provider: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    path: jspb.Message.getFieldWithDefault(msg, 2, ""),
-    module: jspb.Message.getFieldWithDefault(msg, 3, "")
+provider: jspb.Message.getFieldWithDefault(msg, 1, ""),
+path: jspb.Message.getFieldWithDefault(msg, 2, ""),
+module: jspb.Message.getFieldWithDefault(msg, 3, "")
   };
 
   if (includeInstance) {

@@ -13,13 +13,13 @@
 
 var jspb = require('google-protobuf');
 var goog = jspb;
-var global = (function() {
-  if (this) { return this; }
-  if (typeof window !== 'undefined') { return window; }
-  if (typeof global !== 'undefined') { return global; }
-  if (typeof self !== 'undefined') { return self; }
-  return Function('return this')();
-}.call(null));
+var global =
+    (typeof globalThis !== 'undefined' && globalThis) ||
+    (typeof window !== 'undefined' && window) ||
+    (typeof global !== 'undefined' && global) ||
+    (typeof self !== 'undefined' && self) ||
+    (function () { return this; }).call(null) ||
+    Function('return this')();
 
 var models_pb = require('./models_pb.js');
 goog.object.extend(proto, models_pb);
@@ -728,7 +728,7 @@ proto.azd.extensions.v1.PromptSubscriptionResponse.prototype.toObject = function
  */
 proto.azd.extensions.v1.PromptSubscriptionResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    subscription: (f = msg.getSubscription()) && models_pb.Subscription.toObject(includeInstance, f)
+subscription: (f = msg.getSubscription()) && models_pb.Subscription.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -879,7 +879,7 @@ proto.azd.extensions.v1.PromptLocationRequest.prototype.toObject = function(opt_
  */
 proto.azd.extensions.v1.PromptLocationRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    azureContext: (f = msg.getAzureContext()) && models_pb.AzureContext.toObject(includeInstance, f)
+azureContext: (f = msg.getAzureContext()) && models_pb.AzureContext.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -1030,7 +1030,7 @@ proto.azd.extensions.v1.PromptLocationResponse.prototype.toObject = function(opt
  */
 proto.azd.extensions.v1.PromptLocationResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    location: (f = msg.getLocation()) && models_pb.Location.toObject(includeInstance, f)
+location: (f = msg.getLocation()) && models_pb.Location.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -1181,7 +1181,7 @@ proto.azd.extensions.v1.PromptResourceGroupRequest.prototype.toObject = function
  */
 proto.azd.extensions.v1.PromptResourceGroupRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    azureContext: (f = msg.getAzureContext()) && models_pb.AzureContext.toObject(includeInstance, f)
+azureContext: (f = msg.getAzureContext()) && models_pb.AzureContext.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -1332,7 +1332,7 @@ proto.azd.extensions.v1.PromptResourceGroupResponse.prototype.toObject = functio
  */
 proto.azd.extensions.v1.PromptResourceGroupResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    resourceGroup: (f = msg.getResourceGroup()) && models_pb.ResourceGroup.toObject(includeInstance, f)
+resourceGroup: (f = msg.getResourceGroup()) && models_pb.ResourceGroup.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -1483,7 +1483,7 @@ proto.azd.extensions.v1.ConfirmRequest.prototype.toObject = function(opt_include
  */
 proto.azd.extensions.v1.ConfirmRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    options: (f = msg.getOptions()) && proto.azd.extensions.v1.ConfirmOptions.toObject(includeInstance, f)
+options: (f = msg.getOptions()) && proto.azd.extensions.v1.ConfirmOptions.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -1634,7 +1634,7 @@ proto.azd.extensions.v1.ConfirmResponse.prototype.toObject = function(opt_includ
  */
 proto.azd.extensions.v1.ConfirmResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    value: jspb.Message.getBooleanFieldWithDefault(msg, 1, false)
+value: (f = jspb.Message.getBooleanField(msg, 1)) == null ? undefined : f
   };
 
   if (includeInstance) {
@@ -1782,7 +1782,7 @@ proto.azd.extensions.v1.PromptRequest.prototype.toObject = function(opt_includeI
  */
 proto.azd.extensions.v1.PromptRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    options: (f = msg.getOptions()) && proto.azd.extensions.v1.PromptOptions.toObject(includeInstance, f)
+options: (f = msg.getOptions()) && proto.azd.extensions.v1.PromptOptions.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -1933,7 +1933,7 @@ proto.azd.extensions.v1.PromptResponse.prototype.toObject = function(opt_include
  */
 proto.azd.extensions.v1.PromptResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    value: jspb.Message.getFieldWithDefault(msg, 1, "")
+value: jspb.Message.getFieldWithDefault(msg, 1, "")
   };
 
   if (includeInstance) {
@@ -2063,7 +2063,7 @@ proto.azd.extensions.v1.SelectRequest.prototype.toObject = function(opt_includeI
  */
 proto.azd.extensions.v1.SelectRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    options: (f = msg.getOptions()) && proto.azd.extensions.v1.SelectOptions.toObject(includeInstance, f)
+options: (f = msg.getOptions()) && proto.azd.extensions.v1.SelectOptions.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -2214,7 +2214,7 @@ proto.azd.extensions.v1.SelectResponse.prototype.toObject = function(opt_include
  */
 proto.azd.extensions.v1.SelectResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    value: jspb.Message.getFieldWithDefault(msg, 1, 0)
+value: (f = jspb.Message.getField(msg, 1)) == null ? undefined : f
   };
 
   if (includeInstance) {
@@ -2362,7 +2362,7 @@ proto.azd.extensions.v1.MultiSelectRequest.prototype.toObject = function(opt_inc
  */
 proto.azd.extensions.v1.MultiSelectRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    options: (f = msg.getOptions()) && proto.azd.extensions.v1.MultiSelectOptions.toObject(includeInstance, f)
+options: (f = msg.getOptions()) && proto.azd.extensions.v1.MultiSelectOptions.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -2520,7 +2520,7 @@ proto.azd.extensions.v1.MultiSelectResponse.prototype.toObject = function(opt_in
  */
 proto.azd.extensions.v1.MultiSelectResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    valuesList: jspb.Message.toObjectList(msg.getValuesList(),
+valuesList: jspb.Message.toObjectList(msg.getValuesList(),
     proto.azd.extensions.v1.MultiSelectChoice.toObject, includeInstance)
   };
 
@@ -2673,8 +2673,8 @@ proto.azd.extensions.v1.PromptSubscriptionResourceRequest.prototype.toObject = f
  */
 proto.azd.extensions.v1.PromptSubscriptionResourceRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    azureContext: (f = msg.getAzureContext()) && models_pb.AzureContext.toObject(includeInstance, f),
-    options: (f = msg.getOptions()) && proto.azd.extensions.v1.PromptResourceOptions.toObject(includeInstance, f)
+azureContext: (f = msg.getAzureContext()) && models_pb.AzureContext.toObject(includeInstance, f),
+options: (f = msg.getOptions()) && proto.azd.extensions.v1.PromptResourceOptions.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -2875,7 +2875,7 @@ proto.azd.extensions.v1.PromptSubscriptionResourceResponse.prototype.toObject = 
  */
 proto.azd.extensions.v1.PromptSubscriptionResourceResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    resource: (f = msg.getResource()) && models_pb.ResourceExtended.toObject(includeInstance, f)
+resource: (f = msg.getResource()) && models_pb.ResourceExtended.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -3026,8 +3026,8 @@ proto.azd.extensions.v1.PromptResourceGroupResourceRequest.prototype.toObject = 
  */
 proto.azd.extensions.v1.PromptResourceGroupResourceRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    azureContext: (f = msg.getAzureContext()) && models_pb.AzureContext.toObject(includeInstance, f),
-    options: (f = msg.getOptions()) && proto.azd.extensions.v1.PromptResourceOptions.toObject(includeInstance, f)
+azureContext: (f = msg.getAzureContext()) && models_pb.AzureContext.toObject(includeInstance, f),
+options: (f = msg.getOptions()) && proto.azd.extensions.v1.PromptResourceOptions.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -3228,7 +3228,7 @@ proto.azd.extensions.v1.PromptResourceGroupResourceResponse.prototype.toObject =
  */
 proto.azd.extensions.v1.PromptResourceGroupResourceResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    resource: (f = msg.getResource()) && models_pb.ResourceExtended.toObject(includeInstance, f)
+resource: (f = msg.getResource()) && models_pb.ResourceExtended.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -3379,11 +3379,11 @@ proto.azd.extensions.v1.ConfirmOptions.prototype.toObject = function(opt_include
  */
 proto.azd.extensions.v1.ConfirmOptions.toObject = function(includeInstance, msg) {
   var f, obj = {
-    defaultValue: jspb.Message.getBooleanFieldWithDefault(msg, 1, false),
-    message: jspb.Message.getFieldWithDefault(msg, 2, ""),
-    helpMessage: jspb.Message.getFieldWithDefault(msg, 3, ""),
-    hint: jspb.Message.getFieldWithDefault(msg, 4, ""),
-    placeholder: jspb.Message.getFieldWithDefault(msg, 5, "")
+defaultValue: (f = jspb.Message.getBooleanField(msg, 1)) == null ? undefined : f,
+message: jspb.Message.getFieldWithDefault(msg, 2, ""),
+helpMessage: jspb.Message.getFieldWithDefault(msg, 3, ""),
+hint: jspb.Message.getFieldWithDefault(msg, 4, ""),
+placeholder: jspb.Message.getFieldWithDefault(msg, 5, "")
   };
 
   if (includeInstance) {
@@ -3647,17 +3647,17 @@ proto.azd.extensions.v1.PromptOptions.prototype.toObject = function(opt_includeI
  */
 proto.azd.extensions.v1.PromptOptions.toObject = function(includeInstance, msg) {
   var f, obj = {
-    message: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    helpMessage: jspb.Message.getFieldWithDefault(msg, 2, ""),
-    hint: jspb.Message.getFieldWithDefault(msg, 3, ""),
-    placeholder: jspb.Message.getFieldWithDefault(msg, 4, ""),
-    validationMessage: jspb.Message.getFieldWithDefault(msg, 5, ""),
-    requiredMessage: jspb.Message.getFieldWithDefault(msg, 6, ""),
-    required: jspb.Message.getBooleanFieldWithDefault(msg, 7, false),
-    defaultValue: jspb.Message.getFieldWithDefault(msg, 8, ""),
-    clearOnCompletion: jspb.Message.getBooleanFieldWithDefault(msg, 9, false),
-    ignoreHintKeys: jspb.Message.getBooleanFieldWithDefault(msg, 10, false),
-    secret: jspb.Message.getBooleanFieldWithDefault(msg, 11, false)
+message: jspb.Message.getFieldWithDefault(msg, 1, ""),
+helpMessage: jspb.Message.getFieldWithDefault(msg, 2, ""),
+hint: jspb.Message.getFieldWithDefault(msg, 3, ""),
+placeholder: jspb.Message.getFieldWithDefault(msg, 4, ""),
+validationMessage: jspb.Message.getFieldWithDefault(msg, 5, ""),
+requiredMessage: jspb.Message.getFieldWithDefault(msg, 6, ""),
+required: jspb.Message.getBooleanFieldWithDefault(msg, 7, false),
+defaultValue: jspb.Message.getFieldWithDefault(msg, 8, ""),
+clearOnCompletion: jspb.Message.getBooleanFieldWithDefault(msg, 9, false),
+ignoreHintKeys: jspb.Message.getBooleanFieldWithDefault(msg, 10, false),
+secret: jspb.Message.getBooleanFieldWithDefault(msg, 11, false)
   };
 
   if (includeInstance) {
@@ -4077,8 +4077,8 @@ proto.azd.extensions.v1.SelectChoice.prototype.toObject = function(opt_includeIn
  */
 proto.azd.extensions.v1.SelectChoice.toObject = function(includeInstance, msg) {
   var f, obj = {
-    value: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    label: jspb.Message.getFieldWithDefault(msg, 2, "")
+value: jspb.Message.getFieldWithDefault(msg, 1, ""),
+label: jspb.Message.getFieldWithDefault(msg, 2, "")
   };
 
   if (includeInstance) {
@@ -4237,9 +4237,9 @@ proto.azd.extensions.v1.MultiSelectChoice.prototype.toObject = function(opt_incl
  */
 proto.azd.extensions.v1.MultiSelectChoice.toObject = function(includeInstance, msg) {
   var f, obj = {
-    value: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    label: jspb.Message.getFieldWithDefault(msg, 2, ""),
-    selected: jspb.Message.getBooleanFieldWithDefault(msg, 3, false)
+value: jspb.Message.getFieldWithDefault(msg, 1, ""),
+label: jspb.Message.getFieldWithDefault(msg, 2, ""),
+selected: jspb.Message.getBooleanFieldWithDefault(msg, 3, false)
   };
 
   if (includeInstance) {
@@ -4434,15 +4434,15 @@ proto.azd.extensions.v1.SelectOptions.prototype.toObject = function(opt_includeI
  */
 proto.azd.extensions.v1.SelectOptions.toObject = function(includeInstance, msg) {
   var f, obj = {
-    selectedIndex: jspb.Message.getFieldWithDefault(msg, 1, 0),
-    message: jspb.Message.getFieldWithDefault(msg, 2, ""),
-    choicesList: jspb.Message.toObjectList(msg.getChoicesList(),
+selectedIndex: (f = jspb.Message.getField(msg, 1)) == null ? undefined : f,
+message: jspb.Message.getFieldWithDefault(msg, 2, ""),
+choicesList: jspb.Message.toObjectList(msg.getChoicesList(),
     proto.azd.extensions.v1.SelectChoice.toObject, includeInstance),
-    helpMessage: jspb.Message.getFieldWithDefault(msg, 4, ""),
-    hint: jspb.Message.getFieldWithDefault(msg, 5, ""),
-    displayCount: jspb.Message.getFieldWithDefault(msg, 6, 0),
-    displayNumbers: jspb.Message.getBooleanFieldWithDefault(msg, 7, false),
-    enableFiltering: jspb.Message.getBooleanFieldWithDefault(msg, 8, false)
+helpMessage: jspb.Message.getFieldWithDefault(msg, 4, ""),
+hint: jspb.Message.getFieldWithDefault(msg, 5, ""),
+displayCount: jspb.Message.getFieldWithDefault(msg, 6, 0),
+displayNumbers: (f = jspb.Message.getBooleanField(msg, 7)) == null ? undefined : f,
+enableFiltering: (f = jspb.Message.getBooleanField(msg, 8)) == null ? undefined : f
   };
 
   if (includeInstance) {
@@ -4858,14 +4858,14 @@ proto.azd.extensions.v1.MultiSelectOptions.prototype.toObject = function(opt_inc
  */
 proto.azd.extensions.v1.MultiSelectOptions.toObject = function(includeInstance, msg) {
   var f, obj = {
-    message: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    choicesList: jspb.Message.toObjectList(msg.getChoicesList(),
+message: jspb.Message.getFieldWithDefault(msg, 1, ""),
+choicesList: jspb.Message.toObjectList(msg.getChoicesList(),
     proto.azd.extensions.v1.MultiSelectChoice.toObject, includeInstance),
-    helpMessage: jspb.Message.getFieldWithDefault(msg, 3, ""),
-    hint: jspb.Message.getFieldWithDefault(msg, 4, ""),
-    displayCount: jspb.Message.getFieldWithDefault(msg, 5, 0),
-    displayNumbers: jspb.Message.getBooleanFieldWithDefault(msg, 6, false),
-    enableFiltering: jspb.Message.getBooleanFieldWithDefault(msg, 7, false)
+helpMessage: jspb.Message.getFieldWithDefault(msg, 3, ""),
+hint: jspb.Message.getFieldWithDefault(msg, 4, ""),
+displayCount: jspb.Message.getFieldWithDefault(msg, 5, 0),
+displayNumbers: (f = jspb.Message.getBooleanField(msg, 6)) == null ? undefined : f,
+enableFiltering: (f = jspb.Message.getBooleanField(msg, 7)) == null ? undefined : f
   };
 
   if (includeInstance) {
@@ -5234,10 +5234,10 @@ proto.azd.extensions.v1.PromptResourceOptions.prototype.toObject = function(opt_
  */
 proto.azd.extensions.v1.PromptResourceOptions.toObject = function(includeInstance, msg) {
   var f, obj = {
-    resourceType: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    kindsList: (f = jspb.Message.getRepeatedField(msg, 2)) == null ? undefined : f,
-    resourceTypeDisplayName: jspb.Message.getFieldWithDefault(msg, 3, ""),
-    selectOptions: (f = msg.getSelectOptions()) && proto.azd.extensions.v1.PromptResourceSelectOptions.toObject(includeInstance, f)
+resourceType: jspb.Message.getFieldWithDefault(msg, 1, ""),
+kindsList: (f = jspb.Message.getRepeatedField(msg, 2)) == null ? undefined : f,
+resourceTypeDisplayName: jspb.Message.getFieldWithDefault(msg, 3, ""),
+selectOptions: (f = msg.getSelectOptions()) && proto.azd.extensions.v1.PromptResourceSelectOptions.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -5494,15 +5494,15 @@ proto.azd.extensions.v1.PromptResourceSelectOptions.prototype.toObject = functio
  */
 proto.azd.extensions.v1.PromptResourceSelectOptions.toObject = function(includeInstance, msg) {
   var f, obj = {
-    forceNewResource: jspb.Message.getBooleanFieldWithDefault(msg, 1, false),
-    allowNewResource: jspb.Message.getBooleanFieldWithDefault(msg, 2, false),
-    newResourceMessage: jspb.Message.getFieldWithDefault(msg, 3, ""),
-    creatingMessage: jspb.Message.getFieldWithDefault(msg, 4, ""),
-    message: jspb.Message.getFieldWithDefault(msg, 5, ""),
-    helpMessage: jspb.Message.getFieldWithDefault(msg, 6, ""),
-    loadingMessage: jspb.Message.getFieldWithDefault(msg, 7, ""),
-    displayNumbers: jspb.Message.getBooleanFieldWithDefault(msg, 8, false),
-    displayCount: jspb.Message.getFieldWithDefault(msg, 9, 0)
+forceNewResource: (f = jspb.Message.getBooleanField(msg, 1)) == null ? undefined : f,
+allowNewResource: (f = jspb.Message.getBooleanField(msg, 2)) == null ? undefined : f,
+newResourceMessage: jspb.Message.getFieldWithDefault(msg, 3, ""),
+creatingMessage: jspb.Message.getFieldWithDefault(msg, 4, ""),
+message: jspb.Message.getFieldWithDefault(msg, 5, ""),
+helpMessage: jspb.Message.getFieldWithDefault(msg, 6, ""),
+loadingMessage: jspb.Message.getFieldWithDefault(msg, 7, ""),
+displayNumbers: (f = jspb.Message.getBooleanField(msg, 8)) == null ? undefined : f,
+displayCount: jspb.Message.getFieldWithDefault(msg, 9, 0)
   };
 
   if (includeInstance) {

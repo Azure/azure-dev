@@ -1576,17 +1576,16 @@ the stable and beta channel policy.
 
 - Stable proto files @ [grpc/proto/azd/extensions/v1](../../grpc/proto/azd/extensions/v1/)
 - Beta proto files @ [grpc/proto/azd/extensions/v1beta](../../grpc/proto/azd/extensions/v1beta/)
-- Make file @ [Makefile](../../Makefile)
+- Generation details @ [Extension protobuf contracts](../../grpc/README.md)
 
-To re-generate gRPC clients:
+To regenerate the checked-in Go, Python, and JavaScript gRPC clients:
 
-- Run `make --version` to check if `make` is installed.
-- Install the pinned `protoc`, `protoc-gen-go`, and
-  `protoc-gen-go-grpc` versions declared in the Makefile. Generation checks
-  them before writing output.
-- Run `make proto` from `cli/azd`.
-- See [Extension protobuf contracts](../../grpc/README.md) for Buf lint and
-  compatibility checks.
+- Ensure Docker or WSL Containers is available.
+- Run `go tool mage generateProtos` from `cli/azd`.
+
+The Mage target runs the pinned protobuf toolchain in a container. See
+[Extension protobuf contracts](../../grpc/README.md) for its generated
+artifacts and the Buf compatibility checks.
 
 ## gRPC Services
 

@@ -13,13 +13,13 @@
 
 var jspb = require('google-protobuf');
 var goog = jspb;
-var global = (function() {
-  if (this) { return this; }
-  if (typeof window !== 'undefined') { return window; }
-  if (typeof global !== 'undefined') { return global; }
-  if (typeof self !== 'undefined') { return self; }
-  return Function('return this')();
-}.call(null));
+var global =
+    (typeof globalThis !== 'undefined' && globalThis) ||
+    (typeof window !== 'undefined' && window) ||
+    (typeof global !== 'undefined' && global) ||
+    (typeof self !== 'undefined' && self) ||
+    (function () { return this; }).call(null) ||
+    Function('return this')();
 
 var models_pb = require('./models_pb.js');
 goog.object.extend(proto, models_pb);
@@ -121,7 +121,7 @@ proto.azd.extensions.v1.GetDeploymentResponse.prototype.toObject = function(opt_
  */
 proto.azd.extensions.v1.GetDeploymentResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    deployment: (f = msg.getDeployment()) && proto.azd.extensions.v1.Deployment.toObject(includeInstance, f)
+deployment: (f = msg.getDeployment()) && proto.azd.extensions.v1.Deployment.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -272,7 +272,7 @@ proto.azd.extensions.v1.GetDeploymentContextResponse.prototype.toObject = functi
  */
 proto.azd.extensions.v1.GetDeploymentContextResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    azurecontext: (f = msg.getAzurecontext()) && models_pb.AzureContext.toObject(includeInstance, f)
+azurecontext: (f = msg.getAzurecontext()) && models_pb.AzureContext.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -430,14 +430,14 @@ proto.azd.extensions.v1.Deployment.prototype.toObject = function(opt_includeInst
  */
 proto.azd.extensions.v1.Deployment.toObject = function(includeInstance, msg) {
   var f, obj = {
-    id: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    location: jspb.Message.getFieldWithDefault(msg, 2, ""),
-    deploymentid: jspb.Message.getFieldWithDefault(msg, 3, ""),
-    name: jspb.Message.getFieldWithDefault(msg, 4, ""),
-    type: jspb.Message.getFieldWithDefault(msg, 5, ""),
-    tagsMap: (f = msg.getTagsMap()) ? f.toObject(includeInstance, undefined) : [],
-    outputsMap: (f = msg.getOutputsMap()) ? f.toObject(includeInstance, undefined) : [],
-    resourcesList: (f = jspb.Message.getRepeatedField(msg, 8)) == null ? undefined : f
+id: jspb.Message.getFieldWithDefault(msg, 1, ""),
+location: jspb.Message.getFieldWithDefault(msg, 2, ""),
+deploymentid: jspb.Message.getFieldWithDefault(msg, 3, ""),
+name: jspb.Message.getFieldWithDefault(msg, 4, ""),
+type: jspb.Message.getFieldWithDefault(msg, 5, ""),
+tagsMap: (f = msg.getTagsMap()) ? f.toObject(includeInstance, undefined) : [],
+outputsMap: (f = msg.getOutputsMap()) ? f.toObject(includeInstance, undefined) : [],
+resourcesList: (f = jspb.Message.getRepeatedField(msg, 8)) == null ? undefined : f
   };
 
   if (includeInstance) {
@@ -701,7 +701,8 @@ proto.azd.extensions.v1.Deployment.prototype.getTagsMap = function(opt_noLazyCre
  */
 proto.azd.extensions.v1.Deployment.prototype.clearTagsMap = function() {
   this.getTagsMap().clear();
-  return this;};
+  return this;
+};
 
 
 /**
@@ -723,7 +724,8 @@ proto.azd.extensions.v1.Deployment.prototype.getOutputsMap = function(opt_noLazy
  */
 proto.azd.extensions.v1.Deployment.prototype.clearOutputsMap = function() {
   this.getOutputsMap().clear();
-  return this;};
+  return this;
+};
 
 
 /**

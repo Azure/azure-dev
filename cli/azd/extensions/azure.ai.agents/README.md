@@ -367,6 +367,96 @@ Details:
 > the other inline agent properties such as `codeConfiguration` and
 > `environmentVariables`.
 
+## Voice agents (public preview)
+
+Voice initialization is available without a private-preview environment switch.
+Use the existing commands to discover options and create a managed prompt voice
+agent:
+
+```bash
+azd ai agent --help
+azd ai agent init --help
+azd ai agent init --kind prompt-voice --agent-name support-voice --model gpt-realtime
+```
+
+Run the deployment commands from the generated project directory containing
+`azure.yaml`:
+
+```bash
+azd provision
+azd deploy
+```
+
+### Managed prompt voice
+
+The following `azure.yaml` example uses a service-hosted model; no separate model
+deployment is required. `kind: voice` and the compatibility alias
+`kind: prompt-voice` are both accepted. Initialization retains its existing
+`prompt-voice` output; changing the kind is not required to use public preview.
+
+```yaml
+name: support-voice
+services:
+  ai-project:
+    host: azure.ai.project
+  support-voice:
+    host: azure.ai.agent
+    kind: voice
+    name: support-voice
+    uses:
+      - ai-project
+    modelType: managed
+    model:
+      id: gpt-realtime
+    instructions: You are a concise customer support assistant.
+    voice: en-US-AvaNeural
+infra:
+  provider: microsoft.foundry
+```
+
+### Bring your own model deployment (BYOM)
+
+For an existing compatible deployment in your Foundry resource, use
+`modelType: self_deployed` and set `model.id` to its **deployment name**, not
+necessarily its model name. Replace the endpoint and deployment name below with
+your own values. The referenced deployment must exist before agent deployment;
+setting these fields does not create a model deployment.
+
+```yaml
+name: support-voice-byom
+services:
+  ai-project:
+    host: azure.ai.project
+    endpoint: https://example.services.ai.azure.com/api/projects/example-project
+  support-voice-byom:
+    host: azure.ai.agent
+    kind: voice
+    name: support-voice-byom
+    uses:
+      - ai-project
+    modelType: self_deployed
+    model:
+      id: my-realtime-deployment
+    instructions: You are a concise customer support assistant.
+    voice: en-US-AvaNeural
+infra:
+  provider: microsoft.foundry
+```
+
+Edit existing voice settings in `azure.yaml`; `--voice` applies when initializing
+a new prompt voice agent. Advanced settings such as `audio`, `structuredInputs`,
+`tools`, `greeting`, `avatar`, and `handoff` are described by the
+[agent service schema](schemas/azure.ai.agent.json).
+See [hosted voice wrappers](#hosted-voice-wrapper-preview) for `conversationEngine`
+and [telephony bindings](#prompt-voice-telephony-bindings) for phone-provider setup.
+
+To try a prompt voice agent or hosted voice wrapper, open your project in the
+[Microsoft Foundry portal](https://ai.azure.com). `azd ai agent invoke` does not
+implement voice conversations; recognized voice services receive portal guidance.
+Programmatic clients use the voice WebSocket endpoint with a Voice Live client.
+Standalone `azd ai agent deploy` is for hosted source-code deployment, not voice
+wrappers; use the project-level `azd deploy` workflow above for voice services.
+
 ## Prompt voice telephony bindings
 
 Prompt voice agents can declare Foundry-side telephony bindings in `azure.yaml`.
@@ -549,16 +639,16 @@ services:
     uses:
       - ai-project
       - voice-target
-    modelType: hosted_agent
-    targetAgent:
-      service: voice-target
+    conversationEngine:
+      type: hosted_agent
+      name: voice-target
       version: deployed
     store: false
 ```
 
-The `uses` edge deploys the target before the wrapper. `version: deployed`
-pins the wrapper to the target version produced by the current azd environment.
-Hosted voice wrappers use the unified Voice API.
+The `uses` edge deploys the target before the wrapper. `conversationEngine`
+points at the hosted target service, and `version: deployed` pins the wrapper
+to the target version produced by the current azd environment.
 
 The target must be active, declare `invocations_ws/1.0.0`, and include
 `voiceLiveCompatible=true` and `bridgeProtocolVersion=1.0` metadata. Model,

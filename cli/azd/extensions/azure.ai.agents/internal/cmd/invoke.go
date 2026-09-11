@@ -88,8 +88,8 @@ func newInvokeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "invoke [name] [message]",
-		Short: "Send a message to your agent.",
-		Long: `Send a message to your agent.
+		Short: "Send a message to your prompt or hosted agent.",
+		Long: `Send a message to your prompt or hosted agent.
 
 By default the agent is invoked remotely on Foundry. When a single
 argument is provided it is treated as the message and the agent name
@@ -101,6 +101,12 @@ available. Endpoint data created by an older extension must be refreshed by
 redeploying or bypassed with --protocol. Otherwise the agent definition is
 used. If neither identifies exactly one invocable protocol, pass --protocol
 explicitly.
+
+For prompt voice agents and hosted voice wrappers, open your agent in the
+Microsoft Foundry portal at https://ai.azure.com to try it.
+For programmatic voice access, use the voice WebSocket endpoint shown by 'azd show' or
+'azd ai agent show' with a Voice Live client. Text invoke is for HTTP-based
+hosted agent protocols such as responses, invocations, and a2a.
 
 Use --input-file/-f to send the contents of a file as the request body
 instead of a positional message argument. This is useful for structured
@@ -1200,6 +1206,9 @@ func remoteAgentNameFromService(
 // remoteAgentServiceResolutionError preserves direct-name fallback only when
 // the deployed name is known not to map to a project service.
 func remoteAgentServiceResolutionError(resolveErr error, directNameProvided bool) error {
+	if errors.Is(resolveErr, errVoiceInvocationUnsupported) {
+		return resolveErr
+	}
 	if resolveErr == nil {
 		return nil
 	}
@@ -1264,6 +1273,7 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	// name in the divergent case.
 	resolutionOptions := []agentServiceResolutionOption{
 		withBrownfieldInlineAgentName(),
+		withVoiceInvocationGuidance(),
 	}
 	if a.flags.protocol == "" {
 		resolutionOptions = append(

@@ -80,9 +80,7 @@ type initFlags struct {
 	// to pull a private pre-built image. The value is passed through as a generic
 	// connection name or ID; azd does not inspect registry-specific configuration.
 	registryConnection string
-	// voice optionally overrides the output voice name for hidden/private
-	// prompt-voice automation. Public interactive flows use the default and let
-	// users edit azure.yaml for customization.
+	// voice optionally overrides the output voice name for prompt-voice agents.
 	voice string
 	// instructions overrides system instructions for prompt and managed agents.
 	instructions string
@@ -1250,8 +1248,8 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init [<path>] [-m <manifest pointer>] [--src <source directory>]",
-		Short: fmt.Sprintf("Initialize a new AI agent project. %s", color.YellowString("(Preview)")),
-		Long: `Initialize a new AI agent project.
+		Short: fmt.Sprintf("Initialize a new prompt, hosted, or voice agent project. %s", color.YellowString("(Preview)")),
+		Long: `Initialize a new prompt, hosted, or voice agent project.
 
 When -m points at a sample's unified azure.yaml (a project manifest that
 declares services with host: azure.ai.project / azure.ai.agent / ...), that
@@ -1260,6 +1258,24 @@ placed at the project root. When -m points at an agent manifest instead, the
 project's azure.yaml is generated from it. An agent manifest that declares
 kind: prompt scaffolds a prompt agent (or a managed agent when it also declares
 a harness), carrying over its model, instructions, skills, and tools.
+
+Use --kind prompt-voice to initialize a managed prompt voice agent without
+source code or container scaffolding.
+The managed model defaults to gpt-realtime and does not require a model deployment.
+--voice sets the output voice only when creating a new prompt voice agent through
+--kind prompt-voice or the interactive voice option.
+Edit azure.yaml to customize existing voice settings.
+
+Prompt voice services support modelType: managed or self_deployed (bring your own model
+deployment), audio input/output, structured inputs, tools, greeting, avatar,
+handoff, and telephony bindings (acs or twilio). Hosted voice wrappers use
+conversationEngine.type: hosted_agent and conversationEngine.name to reference
+the hosted target service in azure.yaml. The old modelType: hosted_agent and
+targetAgent settings are not supported; use conversationEngine instead. Initialize from a sample
+azure.yaml containing both the hosted target and the voice wrapper.
+Configure advanced settings in azure.yaml.
+Run 'azd provision' and 'azd deploy' to deploy voice services, then connect to
+the voice WebSocket endpoint with a Voice Live client.
 
 The agent name written to agent.yaml is the Foundry agent identity. Foundry
 agents are unique by name within a project, so deploying with an existing name
@@ -1282,6 +1298,13 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
   # Initialize from local agent code
   azd ai agent init --src ./src/my-agent --agent-name my-unique-agent
+
+  # Initialize a managed prompt voice agent
+  azd ai agent init --kind prompt-voice --agent-name support-voice
+
+  # Initialize a prompt voice agent with an explicit realtime model and voice
+  azd ai agent init --kind prompt-voice --agent-name support-voice \
+    --model gpt-realtime --voice en-US-Ava:DragonHDLatestNeural
 
   # Non-interactive code deploy (CI/CD)
   azd ai agent init --no-prompt --project-id "<resource-id>" \
@@ -1458,13 +1481,6 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// when the other runs first (e.g. --kind prompt-voice --image would
 			// otherwise silently create a hosted image agent).
 			if isPromptVoice {
-				if !promptVoicePreviewEnabled() {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						fmt.Sprintf("%s agent init is private preview", flags.kind),
-						fmt.Sprintf("set %s=true to enable prompt voice init", promptVoicePreviewEnvVar),
-					)
-				}
 				if strings.EqualFold(flags.kind, kindFlagPromptVoice) && flags.image != "" {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
@@ -2025,9 +2041,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 	cmd.Flags().StringVar(&flags.model, "model", "",
 		fmt.Sprintf(
-			"Name of the AI model to deploy. Defaults to '%s' during interactive model selection; "+
+			"For hosted and prompt agents, name of the AI model to deploy. "+
+				"Defaults to '%s' during interactive model selection; "+
 				"required to deploy a new model with --no-prompt. If --model-deployment is also provided, "+
-				"--model-deployment takes precedence.",
+				"--model-deployment takes precedence. For new managed prompt voice agents, selects the "+
+				"service-hosted model (default: gpt-realtime); no model deployment is created.",
 			defaultAgentModel,
 		))
 
@@ -2071,8 +2089,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"Requires a pre-built image and is incompatible with code deploy.")
 
 	cmd.Flags().StringVar(&flags.voice, "voice", "",
-		"Output voice name for private prompt-voice automation. Hidden until public preview.")
-	_ = cmd.Flags().MarkHidden("voice")
+		"Output voice for new prompt voice agents (--kind prompt-voice or the interactive voice option). "+
+			"For existing voice services, edit azure.yaml. Example: en-US-Ava:DragonHDLatestNeural.")
 
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Overwrite existing agent definitions or an input manifest inside the generated src tree without prompting. "+
@@ -3810,7 +3828,9 @@ func (a *InitAction) addVoiceAgentToProject(
 	if err := yaml.Unmarshal(templateYAML, &voiceDef); err != nil {
 		return fmt.Errorf("parsing voice agent definition: %w", err)
 	}
-	if voiceDef.ModelType == agent_yaml.VoiceModelTypeHostedAgent {
+	if voiceDef.ModelType == agent_yaml.VoiceModelTypeHostedAgent ||
+		(voiceDef.ConversationEngine != nil && strings.EqualFold(
+			strings.TrimSpace(voiceDef.ConversationEngine.Type), "hosted_agent")) {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			"hosted voice wrappers cannot be initialized from a standalone voice manifest",

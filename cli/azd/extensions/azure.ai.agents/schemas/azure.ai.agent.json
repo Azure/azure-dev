@@ -90,11 +90,16 @@
     },
     "modelType": {
       "type": "string",
-      "description": "Voice agent model-inference mode. 'managed' uses a Voice Live-hosted model; 'self_deployed' references a Foundry model deployment; 'hosted_agent' routes turns to a deployed hosted agent service.",
-      "enum": ["managed", "self_deployed", "hosted_agent"]
+      "description": "Voice agent model-inference mode. 'managed' uses a Voice Live-hosted model; 'self_deployed' references a Foundry model deployment. For Hosted Voice wrappers, use conversationEngine instead.",
+      "enum": ["managed", "self_deployed"]
     },
     "targetAgent": {
-      "$ref": "#/definitions/VoiceTargetAgent"
+      "$ref": "#/definitions/VoiceTargetAgent",
+      "deprecated": true,
+      "description": "Unsupported legacy Hosted Voice authoring field. Use conversationEngine instead."
+    },
+    "conversationEngine": {
+      "$ref": "#/definitions/VoiceConversationEngine"
     },
     "model": {
       "description": "Model deployment name for prompt agents, or speech-to-speech model configuration for prompt-voice agents.",
@@ -267,6 +272,60 @@
   "additionalProperties": true,
   "allOf": [
     {
+      "$comment": "The modelType hosted_agent authoring shape is not supported.",
+      "if": {
+        "properties": { "modelType": { "const": "hosted_agent" } },
+        "required": ["modelType"]
+      },
+      "then": { "not": {} }
+    },
+    {
+      "$comment": "The targetAgent authoring shape is not supported.",
+      "if": { "required": ["targetAgent"] },
+      "then": { "not": {} }
+    },
+    {
+      "$comment": "A conversationEngine hosted_agent voice wrapper references a deployed hosted service.",
+      "if": {
+        "properties": {
+          "conversationEngine": {
+            "properties": { "type": { "const": "hosted_agent" } },
+            "required": ["type"]
+          }
+        },
+        "required": ["conversationEngine"]
+      },
+      "then": {
+        "properties": {
+          "kind": { "enum": ["prompt-voice", "voice"] }
+        },
+        "required": ["kind"],
+        "not": {
+          "anyOf": [
+            { "required": ["model"] },
+            { "required": ["modelType"] },
+            { "required": ["targetAgent"] },
+            { "required": ["inputSchema"] },
+            { "required": ["outputSchema"] },
+            { "required": ["codeConfiguration"] },
+            { "required": ["sessionConfiguration"] },
+            { "required": ["environmentVariables"] },
+            { "required": ["policies"] },
+            { "required": ["protocols"] },
+            { "required": ["instructions"] },
+            { "required": ["structuredInputs"] },
+            { "required": ["tools"] },
+            { "required": ["toolChoice"] },
+            { "required": ["parallelToolCalls"] },
+            { "required": ["maxOutputTokens"] },
+            { "required": ["include"] },
+            { "required": ["handoff"] },
+            { "required": ["toolbox"] }
+          ]
+        }
+      }
+    },
+    {
       "$comment": "A prompt agent requires a model deployment name and instructions.",
       "if": {
         "properties": {
@@ -292,70 +351,25 @@
       }
     },
     {
-      "$comment": "A hosted-agent voice wrapper references a deployed hosted service; other voice modes declare a model. Prompt voice agents cannot use the hosted-agent toolbox reference.",
+      "$comment": "Managed and self-deployed voice modes declare a model. Hosted Voice wrappers use conversationEngine instead.",
       "if": {
-        "properties": {
-          "modelType": { "const": "hosted_agent" }
-        },
-        "required": ["modelType"]
+        "properties": { "kind": { "enum": ["prompt-voice", "voice"] } },
+        "required": ["kind"],
+        "not": { "required": ["conversationEngine"] }
       },
       "then": {
-        "properties": {
-          "kind": { "enum": ["prompt-voice", "voice"] }
-        },
-        "required": ["kind", "targetAgent"],
+        "required": ["model"],
         "not": {
           "anyOf": [
-            { "required": ["model"] },
-            { "required": ["inputSchema"] },
-            { "required": ["outputSchema"] },
-            { "required": ["codeConfiguration"] },
-            { "required": ["sessionConfiguration"] },
-            { "required": ["environmentVariables"] },
+            { "required": ["targetAgent"] },
+            { "required": ["toolbox"] },
             { "required": ["policies"] },
             { "required": ["protocols"] },
-            { "required": ["instructions"] },
-            { "required": ["structuredInputs"] },
-            { "required": ["tools"] },
-            { "required": ["toolChoice"] },
-            { "required": ["parallelToolCalls"] },
-            { "required": ["maxOutputTokens"] },
-            { "required": ["include"] },
-            { "required": ["handoff"] },
-            { "required": ["toolbox"] }
+            { "required": ["environmentVariables"] },
+            { "required": ["codeConfiguration"] },
+            { "required": ["sessionConfiguration"] }
           ]
         }
-      },
-      "else": {
-        "if": {
-          "properties": { "kind": { "enum": ["prompt-voice", "voice"] } },
-          "required": ["kind"]
-        },
-        "then": {
-          "required": ["model"],
-          "not": {
-            "anyOf": [
-              { "required": ["targetAgent"] },
-              { "required": ["toolbox"] },
-              { "required": ["policies"] },
-              { "required": ["protocols"] },
-              { "required": ["environmentVariables"] },
-              { "required": ["codeConfiguration"] },
-              { "required": ["sessionConfiguration"] }
-            ]
-          }
-        }
-      }
-    },
-    {
-      "$comment": "targetAgent is only valid for a hosted-agent voice wrapper.",
-      "if": { "required": ["targetAgent"] },
-      "then": {
-        "properties": {
-          "kind": { "enum": ["prompt-voice", "voice"] },
-          "modelType": { "const": "hosted_agent" }
-        },
-        "required": ["kind", "modelType"]
       }
     },
     {
@@ -443,6 +457,17 @@
     }
   ],
   "definitions": {
+    "VoiceConversationEngine": {
+      "type": "object",
+      "description": "Conversation engine used by a managed Voice wrapper.",
+      "properties": {
+        "type": { "type": "string", "enum": ["hosted_agent"], "description": "Conversation engine type." },
+        "name": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "azure.yaml service name of the hosted target agent." },
+        "version": { "type": "string", "enum": ["deployed"], "default": "deployed", "description": "Pin the wrapper to the target version deployed by this azd environment." }
+      },
+      "required": ["type", "name"],
+      "additionalProperties": false
+    },
     "PromptMemory": {
       "type": "object",
       "description": "Memory store used by a prompt agent for recall.",
@@ -511,14 +536,9 @@
       "additionalProperties": true
     },
     "VoiceTargetAgent": {
-      "type": "object",
-      "description": "Hosted agent service used as the conversation target for a voice wrapper.",
-      "properties": {
-        "service": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "azure.yaml service name of the target hosted agent." },
-        "version": { "type": "string", "enum": ["deployed"], "default": "deployed", "description": "Pin the wrapper to the target version deployed by this azd environment." }
-      },
-      "required": ["service"],
-      "additionalProperties": false
+      "description": "Removed authoring field. targetAgent is not supported; use conversationEngine with type: hosted_agent and name set to the hosted target service.",
+      "deprecated": true,
+      "not": {}
     },
     "ActivitySettings": {
       "type": "object",

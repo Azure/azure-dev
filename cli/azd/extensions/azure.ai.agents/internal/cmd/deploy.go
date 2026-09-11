@@ -67,12 +67,15 @@ func newAgentDeployCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &agentDeployFlags{}
 	cmd := &cobra.Command{
 		Use:   "deploy [path]",
-		Short: "Deploy an agent directly from agent.yaml.",
-		Long: `Deploy an agent definition to the configured Foundry project.
+		Short: "Deploy a hosted agent directly from agent.yaml.",
+		Long: `Deploy a hosted agent definition to the configured Foundry project.
 
 The path defaults to ./agent.yaml. A hosted agent uploads source code from the
 definition directory unless --code specifies another path. If toolbox.yaml is
-present next to agent.yaml, it is deployed first through the toolbox extension.`,
+present next to agent.yaml, it is deployed first through the toolbox extension.
+For prompt voice agents and hosted voice wrappers, define the services in
+azure.yaml and use 'azd provision' followed by 'azd deploy'. This standalone
+command supports hosted source-code deployment only.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := "agent.yaml"

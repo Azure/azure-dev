@@ -414,7 +414,7 @@ func TestValidateAgentDefinition_PromptVoice_InvalidTelephonyBindings(t *testing
 	}
 }
 
-func TestValidateAgentDefinition_HostedVoiceAccepted(t *testing.T) {
+func TestValidateAgentDefinition_LegacyHostedVoiceRejected(t *testing.T) {
 	yamlContent := []byte(`
 kind: prompt-voice
 name: voice-wrapper
@@ -423,12 +423,13 @@ target_agent:
   service: voice-target
   version: deployed
 `)
-	if err := ValidateAgentDefinition(yamlContent); err != nil {
-		t.Fatalf("expected hosted voice definition to be valid, got: %v", err)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("expected legacy hosted voice definition to be rejected, got: %v", err)
 	}
 }
 
-func TestValidateAgentDefinition_HostedVoiceAcceptedWithVoiceKind(t *testing.T) {
+func TestValidateAgentDefinition_LegacyHostedVoiceRejectedWithVoiceKind(t *testing.T) {
 	yamlContent := []byte(`
 kind: voice
 name: voice-wrapper
@@ -437,8 +438,99 @@ target_agent:
   service: voice-target
   version: deployed
 `)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("expected legacy hosted voice definition to be rejected, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_ConversationEngineAccepted(t *testing.T) {
+	yamlContent := []byte(`
+kind: voice
+name: voice-wrapper
+conversation_engine:
+  type: hosted_agent
+  name: voice-target
+  version: deployed
+`)
 	if err := ValidateAgentDefinition(yamlContent); err != nil {
-		t.Fatalf("expected hosted voice definition to be valid, got: %v", err)
+		t.Fatalf("expected conversation_engine hosted voice definition to be valid, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_ConversationEngineRejectsConflicts(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{
+			name: "hosted model type conflict",
+			yaml: `
+kind: voice
+name: voice-wrapper
+model_type: hosted_agent
+conversation_engine:
+  type: hosted_agent
+  name: target
+`,
+			want: "not supported",
+		},
+		{
+			name: "managed model type conflict",
+			yaml: `
+kind: voice
+name: voice-wrapper
+model_type: managed
+conversation_engine:
+  type: hosted_agent
+  name: target
+`,
+			want: "cannot be combined with model_type",
+		},
+		{
+			name: "target agent conflict",
+			yaml: `
+kind: voice
+name: voice-wrapper
+target_agent:
+  service: target
+conversation_engine:
+  type: hosted_agent
+  name: target
+`,
+			want: "not supported",
+		},
+		{
+			name: "missing name",
+			yaml: `
+kind: voice
+name: voice-wrapper
+conversation_engine:
+  type: hosted_agent
+`,
+			want: "conversation_engine.name is required",
+		},
+		{
+			name: "invalid version",
+			yaml: `
+kind: voice
+name: voice-wrapper
+conversation_engine:
+  type: hosted_agent
+  name: target
+  version: typo
+`,
+			want: "conversation_engine.version must be 'deployed'",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := ValidateAgentDefinition([]byte(test.yaml))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected %q, got %v", test.want, err)
+			}
+		})
 	}
 }
 
@@ -451,21 +543,46 @@ target_agent:
   service: target
 `)
 	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "model_type 'hosted_agent' is only valid") ||
-		!strings.Contains(err.Error(), "target_agent is only valid") {
+	if err == nil || !strings.Contains(err.Error(), "model_type hosted_agent is not supported") ||
+		!strings.Contains(err.Error(), "target_agent is not supported") {
 		t.Fatalf("expected hosted voice fields on hosted kind to fail, got: %v", err)
 	}
 }
 
-func TestValidateAgentDefinition_HostedVoiceRequiresTarget(t *testing.T) {
+func TestValidateAgentDefinition_LegacyHostedVoiceRequiresConversationEngine(t *testing.T) {
 	yamlContent := []byte(`
 kind: prompt-voice
 name: voice-wrapper
 model_type: hosted_agent
 `)
 	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "target_agent.service is required") {
-		t.Fatalf("expected target agent validation error, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("expected legacy hosted voice validation error, got: %v", err)
+	}
+}
+
+func TestValidateAgentDefinition_LegacyTargetMigrationGuidance(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"voice", "prompt-voice"} {
+		for _, fields := range []string{
+			"target_agent: {}\n",
+			"target_agent:\n  service: target\n",
+			"model_type: managed\nmodel:\n  id: gpt-realtime\ntarget_agent:\n  service: target\n",
+			"model_type: self_deployed\nmodel:\n  id: my-deployment\ntarget_agent:\n  service: target\n",
+			"model_type: hosted_agent\ntarget_agent:\n  service: target\n",
+			"conversation_engine:\n  type: hosted_agent\n  name: target\ntarget_agent:\n  service: target\n",
+		} {
+			t.Run(kind+"/"+fields, func(t *testing.T) {
+				t.Parallel()
+				err := ValidateAgentDefinition([]byte("kind: " + kind + "\nname: wrapper\n" + fields))
+				if err == nil || !strings.Contains(err.Error(), "target_agent are not supported; use conversation_engine") {
+					t.Fatalf("expected conversation_engine migration guidance, got: %v", err)
+				}
+				if strings.Contains(err.Error(), "only valid when model_type is 'hosted_agent'") {
+					t.Fatalf("error recommends rejected authoring: %v", err)
+				}
+			})
+		}
 	}
 }
 

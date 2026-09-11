@@ -5,16 +5,37 @@ package vsrpc
 
 import (
 	"bytes"
+	"context"
+	"sync"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/stretchr/testify/require"
 )
+
+type testTelemetrySystem struct {
+	shutdownCalled         bool
+	backgroundUploadCalled chan struct{}
+	backgroundUploadOnce   sync.Once
+}
+
+func (t *testTelemetrySystem) Shutdown(context.Context) error {
+	t.shutdownCalled = true
+	return nil
+}
+
+func (t *testTelemetrySystem) RunBackgroundUpload(context.Context, bool) error {
+	if t.backgroundUploadCalled != nil {
+		t.backgroundUploadOnce.Do(func() {
+			close(t.backgroundUploadCalled)
+		})
+	}
+	return nil
+}
 
 func TestInitializeAsync_EmptyRootPath_Succeeds(t *testing.T) {
 	t.Parallel()
 	s := newTestServer()
-	svc := newServerService(s)
+	svc := newServerService(s, nil)
 	sess, err := svc.InitializeAsync(t.Context(), "", InitializeServerOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, sess)
@@ -24,7 +45,7 @@ func TestInitializeAsync_EmptyRootPath_Succeeds(t *testing.T) {
 func TestInitializeAsync_WithAuthEndpointAndKey(t *testing.T) {
 	t.Parallel()
 	s := newTestServer()
-	svc := newServerService(s)
+	svc := newServerService(s, nil)
 
 	endpoint := "https://auth.example.com"
 	key := "secret"
@@ -49,7 +70,7 @@ func TestInitializeAsync_CertWithHttpsEndpoint_Succeeds(t *testing.T) {
 	endpoint := "https://svc.example.com"
 
 	s := newTestServer()
-	svc := newServerService(s)
+	svc := newServerService(s, nil)
 
 	sess, err := svc.InitializeAsync(t.Context(), t.TempDir(), InitializeServerOptions{
 		AuthenticationEndpoint:    &endpoint,
@@ -102,7 +123,7 @@ func TestNewWriter_AcceptsAdditionalWriters(t *testing.T) {
 
 func TestNewServerService(t *testing.T) {
 	s := newTestServer()
-	svc := newServerService(s)
+	svc := newServerService(s, nil)
 	require.NotNil(t, svc)
 	require.Same(t, s, svc.server)
 }
@@ -110,12 +131,21 @@ func TestNewServerService(t *testing.T) {
 func TestServerService_StopAsync_NoTelemetrySystem(t *testing.T) {
 	s := newTestServer()
 	s.cancelTelemetryUpload = func() {}
-	svc := newServerService(s)
-	svc.getTelemetrySystem = func() *telemetry.TelemetrySystem {
-		return nil
-	}
+	svc := newServerService(s, nil)
 	rpcConn := connectRPC(t, svc)
 
 	_, err := rpcConn.Call(t.Context(), "StopAsync", []any{}, nil)
 	require.NoError(t, err)
+}
+
+func TestServerService_StopAsync(t *testing.T) {
+	s := newTestServer()
+	s.cancelTelemetryUpload = func() {}
+	ts := &testTelemetrySystem{}
+	svc := newServerService(s, ts)
+	rpcConn := connectRPC(t, svc)
+
+	_, err := rpcConn.Call(t.Context(), "StopAsync", []any{}, nil)
+	require.NoError(t, err)
+	require.True(t, ts.shutdownCalled)
 }

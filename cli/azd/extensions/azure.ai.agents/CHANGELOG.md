@@ -4,8 +4,13 @@
 
 ## 1.0.0-beta.15 (2026-09-10)
 
+### Breaking Changes
+
+- [[#9900]](https://github.com/Azure/azure-dev/pull/9900) Replace `azd ai agent invoke --background` and `--resumable`, plus the public `responses` command group, with unified `--long-running` and `invocations` lifecycle commands.
+
 ### Features Added
 
+- [[#9805]](https://github.com/Azure/azure-dev/pull/9805) Add declarative `kind: prompt` services with optional GitHub Copilot harness support across agent initialization and lifecycle management.
 - [[#9697]](https://github.com/Azure/azure-dev/pull/9697) Add hosted voice agent deployment with managed voice wrappers and configurable voice settings.
 - [[#9804]](https://github.com/Azure/azure-dev/pull/9804) Add Foundry-side ACS and Twilio telephony bindings for prompt voice agents.
 - [[#9905]](https://github.com/Azure/azure-dev/pull/9905) Prompt for a Foundry project name when agent initialization creates a new project.

@@ -750,14 +750,14 @@ func createVoiceAgentAPIRequest(
 	voiceAgent VoiceAgent,
 	target *agent_api.VoiceTargetAgentReference,
 ) (*agent_api.CreateAgentRequest, error) {
+	if voiceAgent.ModelType == VoiceModelTypeHostedAgent || voiceAgent.TargetAgent != nil {
+		return nil, fmt.Errorf("model_type hosted_agent and target_agent are not supported; use conversation_engine")
+	}
 	modelType := agent_api.VoiceModelTypeManaged
 	if voiceAgent.ModelType != "" {
 		modelType = agent_api.VoiceModelType(voiceAgent.ModelType)
 	}
 	hostedAgent := isHostedConversationEngine(voiceAgent.ConversationEngine)
-	if modelType == agent_api.VoiceModelTypeHostedAgent || voiceAgent.TargetAgent != nil {
-		return nil, fmt.Errorf("model_type hosted_agent and target_agent are not supported; use conversation_engine")
-	}
 	if hostedAgent {
 		if target == nil || strings.TrimSpace(target.Name) == "" || strings.TrimSpace(target.Version) == "" {
 			return nil, fmt.Errorf("resolved target agent name and version are required when model_type is 'hosted_agent'")

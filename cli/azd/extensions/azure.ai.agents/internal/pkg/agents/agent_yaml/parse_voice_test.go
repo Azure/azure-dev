@@ -465,7 +465,7 @@ func TestValidateAgentDefinition_ConversationEngineRejectsConflicts(t *testing.T
 		want string
 	}{
 		{
-			name: "model type conflict",
+			name: "hosted model type conflict",
 			yaml: `
 kind: voice
 name: voice-wrapper
@@ -475,6 +475,18 @@ conversation_engine:
   name: target
 `,
 			want: "not supported",
+		},
+		{
+			name: "managed model type conflict",
+			yaml: `
+kind: voice
+name: voice-wrapper
+model_type: managed
+conversation_engine:
+  type: hosted_agent
+  name: target
+`,
+			want: "cannot be combined with model_type",
 		},
 		{
 			name: "target agent conflict",

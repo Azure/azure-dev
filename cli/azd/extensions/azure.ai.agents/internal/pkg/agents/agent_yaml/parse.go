@@ -522,6 +522,11 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 								"template.model_type hosted_agent and target_agent are not supported; "+
 									"use conversation_engine")
 						}
+						if agent.ConversationEngine != nil && agent.ModelType != "" &&
+							agent.ModelType != VoiceModelTypeHostedAgent {
+							errors = append(errors,
+								"template.conversation_engine cannot be combined with model_type")
+						}
 						if agent.ConversationEngine != nil &&
 							strings.EqualFold(strings.TrimSpace(agent.ConversationEngine.Type), "hosted_agent") &&
 							strings.TrimSpace(agent.ConversationEngine.Name) == "" {

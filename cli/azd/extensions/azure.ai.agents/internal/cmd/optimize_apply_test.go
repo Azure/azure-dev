@@ -381,6 +381,8 @@ func TestPersistPromptAgentCandidateMutations(t *testing.T) {
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
+	require.Contains(t, server.configValues, "instructions")
+	require.Contains(t, server.configValues, "tools")
 	require.Equal(t, "Optimized instructions.", server.configValues["instructions"].value)
 	require.Equal(t, []any{
 		map[string]any{"type": "code_interpreter"},

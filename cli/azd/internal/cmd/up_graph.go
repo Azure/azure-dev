@@ -554,8 +554,9 @@ func (u *UpGraphAction) Run(
 	// in parallel with provisioning). This avoids conflicting with
 	// the provisioning progress display.
 	var (
-		tickerOnce sync.Once
-		stopTicker func()
+		tickerOnce      sync.Once
+		stopTicker      func()
+		resumePreviewer func()
 	)
 	if deployTracker != nil {
 		stopTicker = func() {} // no-op until started
@@ -576,10 +577,8 @@ func (u *UpGraphAction) Run(
 		if ps, ok := u.console.(input.PreviewerPauser); ok {
 			ps.PausePreviewer()
 			stop := deployTracker.StartTicker(ctx)
-			stopTicker = func() {
-				stop()
-				ps.ResumePreviewer()
-			}
+			stopTicker = stop
+			resumePreviewer = ps.ResumePreviewer
 		} else {
 			stopTicker = deployTracker.StartTicker(ctx)
 		}
@@ -644,12 +643,15 @@ func (u *UpGraphAction) Run(
 	graphResult = result
 
 	// Stop the progress ticker and render a final summary table.
-	if stopTicker != nil {
-		stopTicker()
-	}
-	if deployTracker != nil && deployTracker.HasActivity() {
-		deployTracker.RenderFinal()
-	}
+	finishDeployProgress(
+		stopTicker,
+		func() {
+			if deployTracker != nil && deployTracker.HasActivity() {
+				deployTracker.RenderFinal()
+			}
+		},
+		resumePreviewer,
+	)
 
 	// Clean up temporary package artifacts regardless of success/failure.
 	state.CleanupTempArtifacts()
@@ -1043,6 +1045,22 @@ func stepUpPhase(st exegraph.StepTiming) string {
 		return "deploy"
 	}
 	return ""
+}
+
+func finishDeployProgress(
+	stopTicker func(),
+	renderFinal func(),
+	resumePreviewer func(),
+) {
+	if stopTicker != nil {
+		stopTicker()
+	}
+	if renderFinal != nil {
+		renderFinal()
+	}
+	if resumePreviewer != nil {
+		resumePreviewer()
+	}
 }
 
 // stepStarted reports whether a step is anything other than a never-started

@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
@@ -456,6 +458,125 @@ func TestEventService_createServiceEventHandler(t *testing.T) {
 
 	// Test that the handler function is created correctly
 	assert.NotNil(t, handler)
+}
+
+func TestEventService_syncExtensionOutput_PersistsDeployOutput(t *testing.T) {
+	service, _ := createTestEventService()
+	console := service.console.(*mockinput.MockConsole)
+	extension := createTestExtension()
+
+	cleanup := service.syncExtensionOutput(
+		t.Context(),
+		extension,
+		"Test Extension (predeploy)",
+		shouldPersistLifecycleOutput("predeploy"),
+	)
+	_, err := extension.StdOut().Write([]byte("RBAC warning\n"))
+	require.NoError(t, err)
+
+	cleanup()
+
+	require.Contains(t, console.Output(), "RBAC warning")
+}
+
+func TestEventService_syncExtensionOutput_PersistsConcurrentOutputOnce(t *testing.T) {
+	service, _ := createTestEventService()
+	console := service.console.(*mockinput.MockConsole)
+	extension := createTestExtension()
+
+	capturesReady := make(chan struct{}, 2)
+	cleanupStart := make(chan struct{})
+	var cleanupWg sync.WaitGroup
+
+	for _, title := range []string{
+		"Test Extension (predeploy.api)",
+		"Test Extension (predeploy.web)",
+	} {
+		cleanupWg.Go(func() {
+			cleanup := service.syncExtensionOutput(
+				t.Context(),
+				extension,
+				title,
+				true,
+			)
+			capturesReady <- struct{}{}
+			<-cleanupStart
+			cleanup()
+		})
+	}
+
+	<-capturesReady
+	<-capturesReady
+
+	writeStart := make(chan struct{})
+	writeReady := make(chan struct{}, 2)
+	writeErrors := make(chan error, 2)
+	var writeWg sync.WaitGroup
+
+	for _, output := range []string{"api warning\n", "web warning\n"} {
+		writeWg.Go(func() {
+			writeReady <- struct{}{}
+			<-writeStart
+			_, err := extension.StdOut().Write([]byte(output))
+			writeErrors <- err
+		})
+	}
+
+	<-writeReady
+	<-writeReady
+	close(writeStart)
+	writeWg.Wait()
+
+	require.NoError(t, <-writeErrors)
+	require.NoError(t, <-writeErrors)
+
+	close(cleanupStart)
+	cleanupWg.Wait()
+
+	require.Len(t, console.Output(), 1)
+	require.Contains(t, console.Output()[0], "api warning")
+	require.Contains(t, console.Output()[0], "web warning")
+}
+
+func TestEventService_syncExtensionOutput_BoundsPersistedOutput(t *testing.T) {
+	service, _ := createTestEventService()
+	console := service.console.(*mockinput.MockConsole)
+	extension := createTestExtension()
+
+	cleanup := service.syncExtensionOutput(
+		t.Context(),
+		extension,
+		"Test Extension (predeploy)",
+		true,
+	)
+	_, err := extension.StdOut().Write([]byte("warning\n" + strings.Repeat("x", maxLifecycleOutputBytes)))
+	require.NoError(t, err)
+
+	cleanup()
+
+	output := strings.Join(console.Output(), "\n")
+	require.Contains(t, output, "warning")
+	require.Contains(t, output, "lifecycle output truncated")
+	require.LessOrEqual(t, len(output), maxLifecycleOutputBytes+64)
+}
+
+func TestEventService_syncExtensionOutput_DoesNotPersistNonDeployOutput(t *testing.T) {
+	service, _ := createTestEventService()
+	console := service.console.(*mockinput.MockConsole)
+	extension := createTestExtension()
+
+	cleanup := service.syncExtensionOutput(
+		t.Context(),
+		extension,
+		"Test Extension (prepackage)",
+		shouldPersistLifecycleOutput("prepackage"),
+	)
+	_, err := extension.StdOut().Write([]byte("package output\n"))
+	require.NoError(t, err)
+
+	cleanup()
+
+	require.Empty(t, console.Output())
 }
 
 func TestEventService_createProjectEventHandler_RoundTripsStructuredError(t *testing.T) {

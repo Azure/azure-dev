@@ -86,6 +86,24 @@ func TestPhaseTimingBreakdown(t *testing.T) {
 	}
 }
 
+func TestFinishDeployProgressRendersBeforeResumingPreviewer(t *testing.T) {
+	var events []string
+
+	finishDeployProgress(
+		func() {
+			events = append(events, "stop")
+		},
+		func() {
+			events = append(events, "render")
+		},
+		func() {
+			events = append(events, "resume")
+		},
+	)
+
+	require.Equal(t, []string{"stop", "render", "resume"}, events)
+}
+
 func TestUpGraphResolveDAGConcurrency(t *testing.T) {
 	tests := []struct {
 		name        string

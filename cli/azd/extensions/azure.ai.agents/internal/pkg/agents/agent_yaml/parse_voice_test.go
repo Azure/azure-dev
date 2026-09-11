@@ -414,7 +414,7 @@ func TestValidateAgentDefinition_PromptVoice_InvalidTelephonyBindings(t *testing
 	}
 }
 
-func TestValidateAgentDefinition_HostedVoiceAccepted(t *testing.T) {
+func TestValidateAgentDefinition_LegacyHostedVoiceRejected(t *testing.T) {
 	yamlContent := []byte(`
 kind: prompt-voice
 name: voice-wrapper
@@ -423,12 +423,13 @@ target_agent:
   service: voice-target
   version: deployed
 `)
-	if err := ValidateAgentDefinition(yamlContent); err != nil {
-		t.Fatalf("expected hosted voice definition to be valid, got: %v", err)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "no longer supported") {
+		t.Fatalf("expected legacy hosted voice definition to be rejected, got: %v", err)
 	}
 }
 
-func TestValidateAgentDefinition_HostedVoiceAcceptedWithVoiceKind(t *testing.T) {
+func TestValidateAgentDefinition_LegacyHostedVoiceRejectedWithVoiceKind(t *testing.T) {
 	yamlContent := []byte(`
 kind: voice
 name: voice-wrapper
@@ -437,8 +438,9 @@ target_agent:
   service: voice-target
   version: deployed
 `)
-	if err := ValidateAgentDefinition(yamlContent); err != nil {
-		t.Fatalf("expected hosted voice definition to be valid, got: %v", err)
+	err := ValidateAgentDefinition(yamlContent)
+	if err == nil || !strings.Contains(err.Error(), "no longer supported") {
+		t.Fatalf("expected legacy hosted voice definition to be rejected, got: %v", err)
 	}
 }
 
@@ -472,7 +474,7 @@ conversation_engine:
   type: hosted_agent
   name: target
 `,
-			want: "cannot be combined with model_type or target_agent",
+			want: "no longer supported",
 		},
 		{
 			name: "target agent conflict",
@@ -485,7 +487,7 @@ conversation_engine:
   type: hosted_agent
   name: target
 `,
-			want: "cannot be combined with model_type or target_agent",
+			want: "no longer supported",
 		},
 		{
 			name: "missing name",
@@ -535,15 +537,15 @@ target_agent:
 	}
 }
 
-func TestValidateAgentDefinition_HostedVoiceRequiresTarget(t *testing.T) {
+func TestValidateAgentDefinition_LegacyHostedVoiceRequiresConversationEngine(t *testing.T) {
 	yamlContent := []byte(`
 kind: prompt-voice
 name: voice-wrapper
 model_type: hosted_agent
 `)
 	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "target_agent.service is required") {
-		t.Fatalf("expected target agent validation error, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "no longer supported") {
+		t.Fatalf("expected legacy hosted voice validation error, got: %v", err)
 	}
 }
 

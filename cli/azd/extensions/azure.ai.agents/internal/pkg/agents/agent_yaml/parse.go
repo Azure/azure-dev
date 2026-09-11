@@ -517,25 +517,16 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 						}
 					}
 					if isHostedVoiceWrapper(agent) {
-						if agent.ConversationEngine != nil &&
-							(agent.ModelType != "" || agent.TargetAgent != nil) {
+						if agent.ModelType == VoiceModelTypeHostedAgent || agent.TargetAgent != nil {
 							errors = append(errors,
-								"template.conversation_engine cannot be combined with model_type or target_agent")
-						}
-						if agent.ModelType == VoiceModelTypeHostedAgent &&
-							(agent.TargetAgent == nil || strings.TrimSpace(agent.TargetAgent.Service) == "") {
-							errors = append(errors,
-								"template.target_agent.service is required when model_type is 'hosted_agent'")
+								"template.model_type hosted_agent and target_agent are no longer supported; "+
+									"use conversation_engine")
 						}
 						if agent.ConversationEngine != nil &&
 							strings.EqualFold(strings.TrimSpace(agent.ConversationEngine.Type), "hosted_agent") &&
 							strings.TrimSpace(agent.ConversationEngine.Name) == "" {
 							errors = append(errors,
 								"template.conversation_engine.name is required when conversation_engine.type is 'hosted_agent'")
-						}
-						if agent.TargetAgent != nil && agent.TargetAgent.Version != "" &&
-							agent.TargetAgent.Version != "deployed" {
-							errors = append(errors, "template.target_agent.version must be 'deployed' when specified")
 						}
 						if agent.ConversationEngine != nil && agent.ConversationEngine.Version != "" &&
 							agent.ConversationEngine.Version != "deployed" {

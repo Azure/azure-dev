@@ -429,9 +429,7 @@ services:
 
 The `uses` edge deploys the target before the wrapper. `conversationEngine`
 points at the hosted target service, and `version: deployed` pins the wrapper
-to the target version produced by the current azd environment. The older
-`modelType: hosted_agent` plus `targetAgent` shape remains supported for
-compatibility.
+to the target version produced by the current azd environment.
 
 The target must be active, declare `invocations_ws/1.0.0`, and include
 `voiceLiveCompatible=true` and `bridgeProtocolVersion=1.0` metadata. Model,

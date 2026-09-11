@@ -408,11 +408,11 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 					modelType.Kind == yaml.ScalarNode && modelType.Value == string(VoiceModelTypeHostedAgent) &&
 					!IsVoiceAgentKind(agentDef.Kind) {
 					errors = append(errors,
-						"template.model_type 'hosted_agent' is only valid for voice agents")
+						"template.model_type hosted_agent is not supported; use conversation_engine")
 				}
 				if _, ok := fields["target_agent"]; ok && !IsVoiceAgentKind(agentDef.Kind) {
 					errors = append(errors,
-						"template.target_agent is only valid for voice agents")
+						"template.target_agent is not supported; use conversation_engine")
 				}
 				if _, ok := fields["conversation_engine"]; ok && !IsVoiceAgentKind(agentDef.Kind) {
 					errors = append(errors,
@@ -598,7 +598,7 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 						}
 						if agent.TargetAgent != nil {
 							errors = append(errors,
-								"template.target_agent is only valid when model_type is 'hosted_agent'")
+								"template.target_agent is not supported; use conversation_engine")
 						}
 						if agent.ConversationEngine != nil {
 							errors = append(errors,

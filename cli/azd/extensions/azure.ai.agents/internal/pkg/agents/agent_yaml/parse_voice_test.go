@@ -543,8 +543,8 @@ target_agent:
   service: target
 `)
 	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "model_type 'hosted_agent' is only valid") ||
-		!strings.Contains(err.Error(), "target_agent is only valid") {
+	if err == nil || !strings.Contains(err.Error(), "model_type hosted_agent is not supported") ||
+		!strings.Contains(err.Error(), "target_agent is not supported") {
 		t.Fatalf("expected hosted voice fields on hosted kind to fail, got: %v", err)
 	}
 }

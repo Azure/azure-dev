@@ -24,4 +24,8 @@ updates:
       default-days: 7
     groups:
       npm-minor-patch:
+        patterns: ["*"]
         update-types: ["minor", "patch"]
+      npm-major:
+        patterns: ["*"]
+        update-types: ["major"]

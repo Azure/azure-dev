@@ -273,6 +273,8 @@ Before merging telemetry changes:
 - [ ] Unit tests pass (`go test ./cmd/... ./internal/tracing/...`)
 - [ ] Functional telemetry tests pass
 - [ ] Local `--trace-log-file` validation for each new field
+- [ ] `OTEL_RESOURCE_ATTRIBUTES` and `OTEL_SERVICE_NAME` cannot alter exported resource fields
+- [ ] Resource-policy changes are covered at the Application Insights, trace-file, and OTLP export boundaries
 - [ ] PR build smoke test with real Azure subscription
 - [ ] Dev telemetry endpoint receives expected attributes (non-prod builds auto-target dev App Insights)
 

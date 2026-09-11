@@ -3410,6 +3410,13 @@ func TestCodeDeployFlagValidation(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "no-prompt manifest can provide code configuration",
+			flags: initFlags{
+				noPrompt: true, deployMode: "code", manifestPointer: "agent.manifest.yaml",
+			},
+			wantErr: false,
+		},
+		{
 			name:           "invalid deploy-mode value fails",
 			flags:          initFlags{noPrompt: true, deployMode: "invalid"},
 			wantErr:        true,

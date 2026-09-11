@@ -1,6 +1,6 @@
 # Release History
 
-## 1.34.0-beta.1 (Unreleased)
+## 1.35.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,23 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 1.34.0 (2026-09-09)
+
+### Features Added
+
+- [[#9897]](https://github.com/Azure/azure-dev/pull/9897) Add support for preserving environment templates in project mappings.
+- [[#9861]](https://github.com/Azure/azure-dev/pull/9861) Add telemetry reporting support for AI-agent extensions through the Foundry extension SDK.
+
+### Bugs Fixed
+
+- [[#9818]](https://github.com/Azure/azure-dev/pull/9818) Fix inherited coding-agent markers causing interactive terminals to run as non-interactive sessions, and improve bounded agent detection.
+- [[#9785]](https://github.com/Azure/azure-dev/pull/9785) Fix extension bundle installs to follow redirects and warn when HTTPS downloads downgrade to HTTP.
+
+### Other Changes
+
+- [[#9825]](https://github.com/Azure/azure-dev/pull/9825) Update gRPC to 1.83.1 across azd core and first-party Go extensions to address GHSA-vp52-pcj8-j9qc.
+- [[#9911]](https://github.com/Azure/azure-dev/pull/9911) Stop ambient OpenTelemetry resource attributes from being exported by azd while preserving declared telemetry fields.
 
 ## 1.33.0 (2026-09-02)
 

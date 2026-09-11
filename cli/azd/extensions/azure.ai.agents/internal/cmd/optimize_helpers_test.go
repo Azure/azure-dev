@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -21,6 +22,24 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
+
+func TestWarnBaselineAdvancementFailure(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+	warnBaselineAdvancementFailure(&output, "my-agent", "cand-123", assert.AnError)
+
+	assert.Contains(t, output.String(), `candidate "cand-123" was promoted for service "my-agent"`)
+	assert.Contains(t, output.String(), "Before starting the next optimization round")
+	assert.Contains(t, output.String(), "set this candidate as its baseline")
+	assert.Contains(
+		t,
+		output.String(),
+		"azd ai agent optimize apply --agent \"my-agent\" --candidate \"cand-123\"",
+	)
+	assert.Contains(t, output.String(), "azd deploy \"my-agent\"")
+	assert.Contains(t, output.String(), assert.AnError.Error())
+}
 
 func TestOptimizeConnectionFlags_Resolve_AllEmpty(t *testing.T) {
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
@@ -128,7 +147,7 @@ func TestReportOptimizationDeployments_NoAgents(t *testing.T) {
 
 	// Should complete without calling any API.
 	reportOptimizationDeployments(
-		t.Context(), azdClient, nil, "dev", "https://unused.example.com",
+		t.Context(), azdClient, nil, "dev", "https://unused.example.com", "",
 		newTestOptimizeClient,
 	)
 }
@@ -160,7 +179,7 @@ func TestReportOptimizationDeployments_Success_ClearsCandidate(t *testing.T) {
 	agents := []*azdext.ServiceConfig{{Name: "my-agent"}}
 
 	reportOptimizationDeployments(
-		t.Context(), azdClient, agents, "dev", srv.URL,
+		t.Context(), azdClient, agents, "dev", srv.URL, "",
 		newTestOptimizeClient,
 	)
 
@@ -196,7 +215,7 @@ func TestReportOptimizationDeployments_MissingCandidateID_Skips(t *testing.T) {
 
 	agents := []*azdext.ServiceConfig{{Name: "svc"}}
 	reportOptimizationDeployments(
-		t.Context(), azdClient, agents, "dev", srv.URL,
+		t.Context(), azdClient, agents, "dev", srv.URL, "",
 		newTestOptimizeClient,
 	)
 
@@ -225,7 +244,7 @@ func TestReportOptimizationDeployments_MissingVersion_Skips(t *testing.T) {
 
 	agents := []*azdext.ServiceConfig{{Name: "svc"}}
 	reportOptimizationDeployments(
-		t.Context(), azdClient, agents, "dev", srv.URL,
+		t.Context(), azdClient, agents, "dev", srv.URL, "",
 		newTestOptimizeClient,
 	)
 
@@ -253,7 +272,7 @@ func TestReportOptimizationDeployments_APIFailure_DoesNotClearCandidate(t *testi
 
 	agents := []*azdext.ServiceConfig{{Name: "svc"}}
 	reportOptimizationDeployments(
-		t.Context(), azdClient, agents, "dev", srv.URL,
+		t.Context(), azdClient, agents, "dev", srv.URL, "",
 		newTestOptimizeClient,
 	)
 
@@ -298,7 +317,7 @@ func TestReportOptimizationDeployments_MultipleAgents(t *testing.T) {
 	}
 
 	reportOptimizationDeployments(
-		t.Context(), azdClient, agents, "dev", srv.URL,
+		t.Context(), azdClient, agents, "dev", srv.URL, "",
 		newTestOptimizeClient,
 	)
 
@@ -336,7 +355,7 @@ func TestReportOptimizationDeployments_ServiceNameWithDashes(t *testing.T) {
 
 	agents := []*azdext.ServiceConfig{{Name: "my-cool-agent"}}
 	reportOptimizationDeployments(
-		t.Context(), azdClient, agents, "dev", srv.URL,
+		t.Context(), azdClient, agents, "dev", srv.URL, "",
 		newTestOptimizeClient,
 	)
 
@@ -363,7 +382,7 @@ func TestReportOptimizationDeployments_PanicRecovery(t *testing.T) {
 	// prevent this from crashing the caller.
 	assert.NotPanics(t, func() {
 		reportOptimizationDeployments(
-			t.Context(), azdClient, agents, "dev", "https://unused",
+			t.Context(), azdClient, agents, "dev", "https://unused", "",
 			func(_ string) *optimize_api.OptimizeClient {
 				panic("boom")
 			},

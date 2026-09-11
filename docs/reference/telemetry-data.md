@@ -10,7 +10,9 @@
 
 ## Data Shape
 
-All azd telemetry is emitted as Application Insights `RequestData` envelopes. Each command execution produces one top-level span, with optional child spans for sub-operations.
+Microsoft-bound azd telemetry is emitted as Application Insights `RequestData` envelopes. Each command execution
+produces one top-level span, with optional child spans for sub-operations. When `--trace-log-file` or `--trace-log-url`
+is used, the same spans are also sent to the requested diagnostic destination.
 
 ### Core Columns
 
@@ -146,6 +148,11 @@ Fields appear as `Properties` (strings/bools) or `Measurements` (numbers).
 
 These are set once at process startup and attached to **every** span.
 
+The exported resource is limited to the fields in this table plus the standard OpenTelemetry SDK fields listed below.
+`OTEL_RESOURCE_ATTRIBUTES`, `OTEL_SERVICE_NAME`, and other resource detectors cannot add or override exported azd
+resource fields. The same boundary applies to the Application Insights queue, trace files, and OTLP trace URLs. Span
+attributes are separate and are not removed by this resource policy.
+
 | Field Key | Type | Description | Example Values |
 |-----------|------|-------------|----------------|
 | `service.name` | string | Always `"azd"` | `azd` |
@@ -158,7 +165,12 @@ These are set once at process startup and attached to **every** span.
 | `machine.devdeviceid` | string | SQM device ID | UUID string |
 | `execution.environment` | string | Where azd is running | See [Execution Environments](#execution-environments) |
 | `service.installer` | string | How azd was installed | `msi`, `brew`, `choco`, `rpm`, `deb` |
-| `exp.assignmentContext` | string | Experimentation platform assignment context. Attached to every event when the experimentation flighting service is enabled. | Opaque assignment string |
+| `telemetry.sdk.name` | string | OpenTelemetry SDK name | `opentelemetry` |
+| `telemetry.sdk.language` | string | OpenTelemetry SDK language | `go` |
+| `telemetry.sdk.version` | string | OpenTelemetry SDK version | Varies by azd release |
+
+`exp.assignmentContext` is a separately managed span attribute attached to events when the experimentation flighting
+service is enabled; it is not part of the canonical resource.
 
 ### Identity & Account Fields
 
@@ -645,13 +657,19 @@ The `execution.environment` field identifies where azd is running. Format: `<env
 | `VS Code Azure GitHub Copilot` | Azure Copilot in VS Code |
 | `GitHub Copilot VSCode` | GitHub Copilot in VS Code |
 | `Azure CloudShell` | Azure Cloud Shell |
+| `Antigravity` | Google Antigravity CLI |
 | `Claude Code` | Claude Code AI agent |
-| `Codex` | Codex AI agent |
+| `Claude Code Desktop` | Best-effort detection of Claude Code launched from Claude Desktop |
+| `Claude Code VSCode` | Best-effort detection of the Claude Code VS Code integration |
+| `Codex` | Codex CLI |
+| `Codex Desktop` | Codex Desktop app |
 | `Cursor` | Cursor AI agent |
 | `GitHub Copilot CLI` | GitHub Copilot CLI |
 | `GitHub Copilot App` | GitHub Copilot App |
+| `GitHub Copilot Cloud Agent` | GitHub Copilot cloud agent |
 | `Gemini` | Gemini AI agent |
 | `OpenCode` | OpenCode AI agent |
+| `Pi` | Pi coding agent |
 | `GitHub Actions` | GitHub Actions CI |
 | `Azure Pipelines` | Azure Pipelines CI |
 | `GitHub Codespaces` | GitHub Codespaces |

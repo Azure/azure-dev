@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -24,6 +25,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -48,7 +50,8 @@ type invokeFlags struct {
 	outputFmt       string
 	callID          string
 	clientHeaders   []string
-	resumable       bool
+	longRunning     bool
+	noWait          bool
 }
 
 // outputRaw is the sentinel value of the inherited --output flag that selects
@@ -67,11 +70,16 @@ const maxInvokeVersionLength = 128
 var createInvokeVersionSession = createInvokeVersionSessionImpl
 
 type InvokeAction struct {
-	flags               *invokeFlags
-	noPrompt            bool
-	endpoint            *parsedAgentEndpoint
-	clientHeaders       http.Header
-	protocolServiceName string
+	flags                 *invokeFlags
+	noPrompt              bool
+	endpoint              *parsedAgentEndpoint
+	clientHeaders         http.Header
+	protocolServiceName   string
+	resolvedRemoteContext *remoteContext
+	resolvedBody          []byte
+	resolvedBodyLabel     string
+	bodyResolved          bool
+	credential            azcore.TokenCredential
 }
 
 func newInvokeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -87,6 +95,12 @@ By default the agent is invoked remotely on Foundry. When a single
 argument is provided it is treated as the message and the agent name
 is auto-detected from azure.yaml. With two arguments the first is the
 agent name and the second is the message.
+
+When --protocol is omitted, complete deployed endpoint data is used when
+available. Endpoint data created by an older extension must be refreshed by
+redeploying or bypassed with --protocol. Otherwise the agent definition is
+used. If neither identifies exactly one invocable protocol, pass --protocol
+explicitly.
 
 Use --input-file/-f to send the contents of a file as the request body
 instead of a positional message argument. This is useful for structured
@@ -123,10 +137,10 @@ behavior and inspecting response headers (for example, the agent version
 header). Friendly summary lines like "Session:" and "Invocation:" are
 suppressed in raw mode.
 
-Use --resumable with the Responses protocol to start work that continues running in
+Use --long-running with the Responses protocol to start work that continues running in
 the service if this command disconnects. The command remains attached until the work
-finishes. Resumable invocation is remote-only, does not support raw output, and cannot
-be combined with --timeout.`,
+finishes. Add --no-wait to return after azd receives the Response ID.
+This option does not provide crash recovery or automatic reconnection.`,
 		Example: `  # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
   azd ai agent invoke "Hello!"
 
@@ -154,9 +168,11 @@ be combined with --timeout.`,
   # Invoke a specific agent locally (useful in multi-agent projects)
   azd ai agent invoke my-agent --local "Hello!"
 
-  # Start work that continues in the service if this command disconnects,
-  # while remaining attached until it finishes
-  azd ai agent invoke --resumable "Run the long task"
+  # Start background work and remain attached until it finishes
+  azd ai agent invoke --long-running "Run the long task"
+
+  # Start background work and return after its Response ID is received
+  azd ai agent invoke --long-running --no-wait "Run the long task"
 
   # Start a new session (discard conversation history)
   azd ai agent invoke --new-session "Hello!"
@@ -271,26 +287,33 @@ be combined with --timeout.`,
 			}
 			action.clientHeaders = clientHeaders
 
-			if flags.resumable {
+			if flags.noWait && !flags.longRunning {
+				return exterrors.Validation(
+					exterrors.CodeConflictingArguments,
+					"--no-wait requires --long-running",
+					"add --long-running or remove --no-wait",
+				)
+			}
+			if flags.longRunning {
 				if cmd.Flags().Changed("timeout") {
 					return exterrors.Validation(
 						exterrors.CodeConflictingArguments,
-						"--timeout cannot be used with --resumable",
+						"--timeout cannot be used with --long-running",
 						"remove --timeout; background Responses remain attached until completion or interruption",
 					)
 				}
 				if flags.local {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
-						"--resumable is supported only for remote Responses agents",
+						"--long-running is supported only for remote Responses agents",
 						"remove --local and invoke a deployed Responses agent",
 					)
 				}
 				if flags.outputFmt == outputRaw {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
-						"--output raw is not supported with --resumable",
-						"remove --output raw so azd can save the Response identity and cursor",
+						"--output raw is not supported with --long-running",
+						"remove --output raw so azd can save the Response identity",
 					)
 				}
 			}
@@ -302,7 +325,9 @@ be combined with --timeout.`,
 	cmd.Flags().BoolVarP(&flags.local, "local", "l", false, "Invoke on localhost instead of Foundry")
 	cmd.Flags().StringVarP(&flags.inputFile, "input-file", "f", "", "Path to a file whose contents are sent as the request body")
 	cmd.Flags().StringVarP(&flags.protocol, "protocol", "p", "",
-		"Protocol to use: responses (default), invocations, or a2a (a2a is remote-only)")
+		"Protocol to use: responses, invocations, or a2a. "+
+			"Auto-detected from deployment data or the agent definition; "+
+			"pass --protocol when it cannot be determined.")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
 	cmd.Flags().IntVarP(
 		&flags.timeout,
@@ -345,10 +370,16 @@ be combined with --timeout.`,
 		"Agent version to invoke (creates or reuses a session backed by that version)",
 	)
 	cmd.Flags().BoolVar(
-		&flags.resumable,
-		"resumable",
+		&flags.longRunning,
+		"long-running",
 		false,
-		"Start resumable work that continues in the service if the command disconnects; remain attached until it finishes",
+		"Continue service-side execution after disconnection; remain attached unless --no-wait is specified",
+	)
+	cmd.Flags().BoolVar(
+		&flags.noWait,
+		"no-wait",
+		false,
+		"Return after receiving the service-assigned ID; requires --long-running",
 	)
 
 	// Register `raw` as an additional allowed value on the inherited global
@@ -460,6 +491,12 @@ func validateAgentEndpointFlags(cmd *cobra.Command, flags *invokeFlags) error {
 }
 
 func (a *InvokeAction) Run(ctx context.Context) error {
+	if a.flags.inputFile != "" {
+		if _, _, err := a.resolveBody(); err != nil {
+			return err
+		}
+	}
+
 	protocol, err := a.resolveProtocol(ctx)
 	if err != nil {
 		return err
@@ -471,15 +508,17 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	// populated, but a2aRemote never calls applyCustomHeaders — the headers
 	// would be silently dropped, which is the exact silent no-op the guard
 	// intends to prevent.
-	if a.flags.resumable && protocol != agent_api.AgentProtocolResponses {
+	if a.flags.longRunning && protocol != agent_api.AgentProtocolResponses {
+		a.closeResolvedRemoteContextClient()
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("--resumable is not supported with the %s protocol", protocol),
-			"use a deployed Responses agent or remove --resumable",
+			fmt.Sprintf("--long-running is not supported with the %s protocol", protocol),
+			"use a deployed Responses agent or remove --long-running",
 		)
 	}
 
 	if len(a.clientHeaders) > 0 && protocol == agent_api.AgentProtocolA2A {
+		a.closeResolvedRemoteContextClient()
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"--client-header is not supported with the a2a protocol",
@@ -507,6 +546,13 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		return a.a2aRemote(ctx)
 	default:
 		return a.responsesRemote(ctx)
+	}
+}
+
+func (a *InvokeAction) closeResolvedRemoteContextClient() {
+	if a.resolvedRemoteContext != nil && a.resolvedRemoteContext.azdClient != nil {
+		a.resolvedRemoteContext.azdClient.Close()
+		a.resolvedRemoteContext.azdClient = nil
 	}
 }
 
@@ -575,16 +621,28 @@ func (a *InvokeAction) emitInvokeFailureNextStep(mode nextstep.InvokeMode, agent
 }
 
 // resolveProtocol returns the protocol to use for this invocation.
-// The explicit --protocol flag takes priority; otherwise the protocol
-// is auto-detected from agent.yaml (local or remote).
-// When the protocol is auto-detected without an explicit agent name, the
-// resolved service name is cached separately so downstream calls do an exact
-// lookup without confusing the service selector for a Foundry agent name.
 func (a *InvokeAction) resolveProtocol(
 	ctx context.Context,
 ) (agent_api.AgentProtocol, error) {
 	if a.flags.protocol != "" {
 		return agent_api.AgentProtocol(a.flags.protocol), nil
+	}
+
+	if !a.flags.local {
+		rc, err := a.resolveRemoteContextForInvoke(ctx)
+		if err != nil {
+			return "", err
+		}
+
+		protocol, err := a.resolveDeployedProtocol(ctx, rc)
+		if err != nil {
+			if rc.azdClient != nil {
+				rc.azdClient.Close()
+			}
+			return "", err
+		}
+		a.resolvedRemoteContext = rc
+		return protocol, nil
 	}
 
 	azdClient, err := azdext.NewAzdClient()
@@ -608,6 +666,181 @@ func (a *InvokeAction) resolveProtocol(
 	return protocol, nil
 }
 
+func (a *InvokeAction) resolveDeployedProtocol(
+	ctx context.Context,
+	rc *remoteContext,
+) (agent_api.AgentProtocol, error) {
+	if rc.deployedProtocolMetadataIncomplete {
+		return "", exterrors.Compatibility(
+			exterrors.CodeIncompleteAgentProtocolMetadata,
+			fmt.Sprintf(
+				"deployed protocol metadata for agent service %q is incomplete",
+				rc.serviceName,
+			),
+			fmt.Sprintf(
+				"wait for the deployment to finish, run `azd deploy %s` "+
+					"to refresh protocol metadata, or pass --protocol explicitly",
+				strconv.Quote(rc.serviceName),
+			),
+		)
+	}
+	if rc.deployedProtocolMetadataStale {
+		return "", exterrors.Compatibility(
+			exterrors.CodeLegacyAgentProtocolMetadata,
+			fmt.Sprintf(
+				"deployed protocol metadata for agent service %q was created by an older extension version",
+				rc.serviceName,
+			),
+			fmt.Sprintf(
+				"run `azd deploy %s` to refresh protocol metadata, or pass --protocol explicitly",
+				strconv.Quote(rc.serviceName),
+			),
+		)
+	}
+
+	if rc.version != "" && rc.version != rc.deployedVersion {
+		deployedDesc := "the latest deployment"
+		if rc.deployedVersion != "" {
+			deployedDesc = fmt.Sprintf("version %q", rc.deployedVersion)
+		}
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf(
+				"cannot determine protocol for agent version %q because deployed protocol metadata reflects %s",
+				rc.version,
+				deployedDesc,
+			),
+			"pass --protocol explicitly (for example: --protocol responses)",
+		)
+	}
+
+	deployed := uniqueAgentProtocols(rc.invocableProtocols)
+	var local []agent_api.AgentProtocol
+	if len(deployed) != 1 && rc.azdClient != nil && rc.serviceName != "" {
+		if rc.deployedProtocolMetadata && len(deployed) == 0 {
+			return "", remoteProtocolSelectionError(deployed, "")
+		}
+		var err error
+		local, err = resolveAgentInvocableProtocols(
+			ctx,
+			rc.azdClient,
+			rc.serviceName,
+			a.noPrompt,
+		)
+		if err != nil {
+			return "", remoteProtocolSelectionError(
+				deployed,
+				fmt.Sprintf("the local definition could not determine the protocol: %v", err),
+			)
+		}
+	}
+
+	return selectRemoteInvokeProtocol(deployed, local)
+}
+
+func selectRemoteInvokeProtocol(
+	deployed []agent_api.AgentProtocol,
+	local []agent_api.AgentProtocol,
+) (agent_api.AgentProtocol, error) {
+	deployed = uniqueAgentProtocols(deployed)
+	local = uniqueAgentProtocols(local)
+	switch len(deployed) {
+	case 0:
+		if len(local) == 1 {
+			return local[0], nil
+		}
+		return "", remoteProtocolSelectionError(deployed, "")
+	case 1:
+		return deployed[0], nil
+	}
+
+	if len(local) == 1 && containsAgentProtocol(deployed, local[0]) {
+		return local[0], nil
+	}
+	return "", remoteProtocolSelectionError(deployed, "")
+}
+
+func uniqueAgentProtocols(
+	protocols []agent_api.AgentProtocol,
+) []agent_api.AgentProtocol {
+	unique := make([]agent_api.AgentProtocol, 0, len(protocols))
+	seen := make(map[agent_api.AgentProtocol]struct{}, len(protocols))
+	for _, protocol := range protocols {
+		if _, ok := seen[protocol]; ok {
+			continue
+		}
+		seen[protocol] = struct{}{}
+		unique = append(unique, protocol)
+	}
+	return unique
+}
+
+func invocableProtocolsFromEndpoints(
+	endpoints map[agent_api.AgentProtocol]string,
+) []agent_api.AgentProtocol {
+	if len(endpoints) == 0 {
+		return nil
+	}
+
+	var protocols []agent_api.AgentProtocol
+	for _, protocol := range agent_api.InvocableProtocols() {
+		if strings.TrimSpace(endpoints[protocol]) != "" {
+			protocols = append(protocols, protocol)
+		}
+	}
+	return protocols
+}
+
+func containsAgentProtocol(
+	protocols []agent_api.AgentProtocol,
+	target agent_api.AgentProtocol,
+) bool {
+	return slices.Contains(protocols, target)
+}
+
+func remoteProtocolSelectionError(
+	protocols []agent_api.AgentProtocol,
+	reason string,
+) error {
+	if len(protocols) == 0 {
+		message := "could not determine an invocable protocol for the deployed agent"
+		if reason != "" {
+			message += ": " + reason
+		}
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			message,
+			"pass --protocol responses, --protocol invocations, or --protocol a2a",
+		)
+	}
+
+	names := make([]string, len(protocols))
+	for i, protocol := range protocols {
+		names[i] = string(protocol)
+	}
+	message := fmt.Sprintf(
+		"the deployed agent exposes multiple invocable protocols: %s",
+		strings.Join(names, ", "),
+	)
+	if reason != "" {
+		message += "; " + reason
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		message,
+		"pass --protocol to choose one of the deployed protocols",
+	)
+}
+
+func (a *InvokeAction) resolveRemoteContextForInvoke(
+	ctx context.Context,
+) (*remoteContext, error) {
+	if a.resolvedRemoteContext != nil {
+		return a.resolvedRemoteContext, nil
+	}
+	return a.resolveRemoteContext(ctx)
+}
+
 func (a *InvokeAction) serviceNameSelector() string {
 	if a.protocolServiceName != "" {
 		return a.protocolServiceName
@@ -625,15 +858,26 @@ func (a *InvokeAction) httpTimeout() time.Duration {
 // resolveBody returns the request body for invoke calls.
 // When --input-file is set, the file contents are returned; otherwise the message string is used.
 func (a *InvokeAction) resolveBody() ([]byte, string, error) {
+	if a.bodyResolved {
+		return a.resolvedBody, a.resolvedBodyLabel, nil
+	}
+
 	if a.flags.inputFile != "" {
 		//nolint:gosec // G304: inputFile is a user-provided CLI flag
 		data, err := os.ReadFile(a.flags.inputFile)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to read input file %q: %w", a.flags.inputFile, err)
 		}
-		return data, fmt.Sprintf("(from file %s)", a.flags.inputFile), nil
+		a.resolvedBody = data
+		a.resolvedBodyLabel = fmt.Sprintf("(from file %s)", a.flags.inputFile)
+		a.bodyResolved = true
+		return a.resolvedBody, a.resolvedBodyLabel, nil
 	}
-	return []byte(a.flags.message), fmt.Sprintf("%q", a.flags.message), nil
+
+	a.resolvedBody = []byte(a.flags.message)
+	a.resolvedBodyLabel = fmt.Sprintf("%q", a.flags.message)
+	a.bodyResolved = true
+	return a.resolvedBody, a.resolvedBodyLabel, nil
 }
 
 // contentTypeForBody returns "application/json" if data is valid JSON,
@@ -889,14 +1133,19 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 // directly outside an azd command) azdClient is nil and persistence helpers
 // no-op. agentKey may still be non-empty in that case.
 type remoteContext struct {
-	name            string
-	serviceName     string
-	agentKey        string
-	projectEndpoint string
-	apiVersion      string
-	version         string
-	azdClient       *azdext.AzdClient
-	bearerToken     string
+	name                               string
+	serviceName                        string
+	agentKey                           string
+	projectEndpoint                    string
+	apiVersion                         string
+	version                            string
+	deployedVersion                    string
+	invocableProtocols                 []agent_api.AgentProtocol
+	deployedProtocolMetadata           bool
+	deployedProtocolMetadataIncomplete bool
+	deployedProtocolMetadataStale      bool
+	azdClient                          *azdext.AzdClient
+	bearerToken                        string
 }
 
 func (rc *remoteContext) nextStepName() string {
@@ -925,12 +1174,16 @@ func remoteAgentNameFromService(
 	return currentName
 }
 
-// remoteAgentServiceResolutionError returns resolver failures unless the user
-// supplied an intentional direct agent name. Protocol selection alone is not
-// enough to ignore a project lookup failure when no target name was provided.
+// remoteAgentServiceResolutionError preserves direct-name fallback only when
+// the deployed name is known not to map to a project service.
 func remoteAgentServiceResolutionError(resolveErr error, directNameProvided bool) error {
-	if resolveErr == nil || directNameProvided {
+	if resolveErr == nil {
 		return nil
+	}
+	if directNameProvided {
+		if _, ok := errors.AsType[agentServiceLookupNotFoundError](resolveErr); ok {
+			return nil
+		}
 	}
 	return fmt.Errorf("failed to resolve agent service for remote invoke: %w", resolveErr)
 }
@@ -986,25 +1239,54 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	// so post-success next-step suggestions emit the service name; show
 	// keys on s.Name in azure.yaml and would 404 on the deployed Foundry
 	// name in the divergent case.
+	resolutionOptions := []agentServiceResolutionOption{
+		withBrownfieldInlineAgentName(),
+	}
+	if a.flags.protocol == "" {
+		resolutionOptions = append(
+			resolutionOptions,
+			withDeployedProtocolEndpoints(),
+			withDeployedAgentNameLookup(),
+		)
+	}
 	info, serviceErr := resolveAgentServiceFromProject(
 		ctx,
 		azdClient,
 		a.serviceNameSelector(),
 		a.noPrompt,
-		withBrownfieldInlineAgentName(),
+		resolutionOptions...,
 	)
-	if serviceErr == nil {
+	if serviceErr != nil {
+		if isAgentProtocolEndpointsError(serviceErr) {
+			azdClient.Close()
+			return nil, serviceErr
+		}
+		if info != nil {
+			azdClient.Close()
+			return nil, fmt.Errorf(
+				"failed to resolve agent service %q for remote invoke: %w",
+				info.ServiceName,
+				serviceErr,
+			)
+		}
+		if err := remoteAgentServiceResolutionError(serviceErr, a.flags.name != ""); err != nil {
+			azdClient.Close()
+			return nil, err
+		}
+	} else {
 		rc.serviceName = info.ServiceName
 		rc.name = remoteAgentNameFromService(rc.name, info, a.protocolServiceName != "")
+		rc.invocableProtocols = invocableProtocolsFromEndpoints(info.ProtocolEndpoints)
+		rc.deployedProtocolMetadata = info.ProtocolEndpointsPresent
+		rc.deployedProtocolMetadataIncomplete = info.ProtocolEndpointsIncomplete
+		rc.deployedProtocolMetadataStale = info.ProtocolEndpointsStale
+		rc.deployedVersion = info.Version
 		if info.AgentEndpoint != "" {
 			rc.agentKey = buildRemoteAgentKeyFromEndpoint(info.AgentEndpoint)
 		}
 		if info.ProjectEndpoint != "" {
 			rc.projectEndpoint = info.ProjectEndpoint
 		}
-	} else if err := remoteAgentServiceResolutionError(serviceErr, a.flags.name != ""); err != nil {
-		azdClient.Close()
-		return nil, err
 	}
 	if rc.name == "" {
 		azdClient.Close()
@@ -1129,9 +1411,13 @@ func createInvokeVersionSessionImpl(
 // validation so that local errors (e.g., a missing --input-file) are surfaced
 // before any auth round-trip is attempted.
 func (a *InvokeAction) acquireBearerToken(ctx context.Context) (string, error) {
-	credential, err := newAgentCredential()
-	if err != nil {
-		return "", err
+	credential := a.credential
+	if credential == nil {
+		var err error
+		credential, err = newAgentCredential()
+		if err != nil {
+			return "", err
+		}
 	}
 	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: []string{"https://ai.azure.com/.default"},
@@ -1161,7 +1447,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return err
 	}
 
-	rc, err := a.resolveRemoteContext(ctx)
+	rc, err := a.resolveRemoteContextForInvoke(ctx)
 	if err != nil {
 		return err
 	}
@@ -1175,14 +1461,8 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 
 	var responseStore responseStateStore
-	if a.flags.resumable {
-		if rc.azdClient == nil || agentKey == "" {
-			return responseStateUnavailable(nil)
-		}
+	if rc.azdClient != nil && agentKey != "" {
 		responseStore = newUserConfigResponseStateStore(rc.azdClient)
-		if _, err := responseStore.Get(ctx, agentKey); err != nil {
-			return classifyBackgroundResponseStateReadError(err)
-		}
 	}
 
 	// Acquire the bearer token after body validation so a local input error
@@ -1195,24 +1475,11 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 
 	msg := string(body)
 
-	// Build request body — uses streaming to receive the full agent response.
-	reqBody := map[string]any{
-		"input":  msg,
-		"stream": true,
-	}
-
 	// Session ID — routes to the same microVM container instance.
 	// When empty, let the server assign one.
 	sid, err := a.resolveRemoteSessionID(ctx, rc)
 	if err != nil {
 		return err
-	}
-	if sid != "" {
-		reqBody["agent_session_id"] = sid
-	}
-	if a.flags.resumable {
-		reqBody["store"] = true
-		reqBody["background"] = true
 	}
 
 	// Conversation ID — enables multi-turn memory via Foundry Conversations API.
@@ -1249,7 +1516,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 			return err
 		}
 	}
-	reqBody["conversation"] = map[string]string{"id": convID}
+	reqBody := buildResponsesRequestBody(msg, sid, convID, a.flags.longRunning)
 
 	raw := a.flags.outputFmt == outputRaw
 	if !raw {
@@ -1284,10 +1551,8 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 
 	client := &http.Client{Timeout: a.httpTimeout()}
-	if a.flags.resumable {
-		transport := http.DefaultTransport.(*http.Transport).Clone()
-		transport.ResponseHeaderTimeout = 30 * time.Second
-		client = &http.Client{Transport: transport}
+	if a.flags.longRunning {
+		client = responseStreamHTTPClient()
 	}
 	invokeStart := time.Now()
 	//nolint:gosec // G704: URL is built from a validated Foundry endpoint (env or --agent-endpoint)
@@ -1328,82 +1593,52 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		a.emitInvokeFailureNextStep(nextstep.InvokeRemote, rc.nextStepName(), resp.Header.Get("x-adc-response-details"))
 		return fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", respURL, resp.StatusCode, resp.Status, string(respBody))
 	}
-	// Parse SSE stream for agent output.
-	if !a.flags.resumable {
-		if err := readResponsesSSE(ctx, resp.Body, os.Stdout, rc.name, responsesSSEOptions{}); err != nil {
-			return err
-		}
-	} else {
-		effectiveSessionID := sid
-		if assigned := resp.Header.Get("x-agent-session-id"); assigned != "" {
-			effectiveSessionID = assigned
-		}
-		progressPersister := newBackgroundProgressPersister(
-			responseStore,
-			agentKey,
-			effectiveSessionID,
-			convID,
-			os.Stdout,
-		)
-		streamErr := readResponsesSSE(
-			ctx,
-			resp.Body,
-			os.Stdout,
-			rc.name,
-			responsesSSEOptions{
-				requireTerminal: true,
-				onProgress: func(progress responsesStreamProgress) error {
-					return progressPersister.Apply(ctx, progress)
-				},
+	tracker := &responseIdentityTracker{
+		store:    responseStore,
+		agentKey: agentKey,
+		writer:   os.Stdout,
+	}
+	streamErr := readResponsesSSE(
+		ctx,
+		resp.Body,
+		os.Stdout,
+		rc.name,
+		responsesSSEOptions{
+			requireTerminal: a.flags.longRunning,
+			onResponseID: func(responseID string) error {
+				if err := tracker.Apply(ctx, responseID); err != nil {
+					return err
+				}
+				if a.flags.noWait && tracker.saveErr != nil {
+					return tracker.saveErr
+				}
+				if a.flags.noWait {
+					return errBackgroundNoWait
+				}
+				return nil
 			},
-		)
-		var flushErr error
-		if ctx.Err() == nil {
-			flushErr = progressPersister.Flush(ctx)
+		},
+	)
+	useCurrent := errors.Is(streamErr, errBackgroundNoWait) && responseStore != nil && tracker.saveErr == nil
+	followCommand := a.responseLifecycleCommand(rc, tracker.responseID, invocationFollow, useCurrent)
+	if a.flags.noWait && tracker.responseID != "" {
+		if errors.Is(streamErr, errBackgroundNoWait) {
+			streamErr = nil
 		}
-		closeErr := progressPersister.Close()
-		if streamErr != nil || flushErr != nil || closeErr != nil {
-			return errors.Join(streamErr, flushErr, closeErr)
+		_, guidanceErr := fmt.Fprintf(os.Stdout, "\nNext:\n  %s\n", followCommand)
+		return errors.Join(streamErr, guidanceErr)
+	}
+	if streamErr != nil {
+		if a.flags.longRunning && tracker.responseID != "" &&
+			errors.Is(streamErr, errResponsesStreamDisconnected) {
+			return fmt.Errorf("%w; replay and follow it with `%s`", streamErr, followCommand)
 		}
+		return streamErr
 	}
 	totalDuration := time.Since(invokeStart)
 	printInvokeTiming(os.Stdout, totalDuration, ttfb)
 	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
 	return nil
-}
-
-func responseStateUnavailable(cause error) error {
-	message := "remote Responses require access to azd state"
-	if cause != nil {
-		message = fmt.Sprintf("%s: %v", message, cause)
-	}
-	return exterrors.Dependency(
-		exterrors.CodeResponseStateUnavailable,
-		message,
-		"run this command through azd instead of executing the extension binary directly",
-	)
-}
-
-func classifyBackgroundResponseStateReadError(cause error) error {
-	if _, ok := errors.AsType[*azdext.ConfigError](cause); !ok {
-		return exterrors.FromHost(
-			cause,
-			exterrors.OpReadBackgroundResponseState,
-			"reading saved background Response state failed",
-		)
-	}
-	return exterrors.Validation(
-		exterrors.CodeInvalidBackgroundResponseState,
-		fmt.Sprintf(
-			"saved background Response state at %q could not be read: %v",
-			backgroundResponsesConfigPath,
-			cause,
-		),
-		fmt.Sprintf(
-			"clear the invalid state with `azd config unset %s`, or repair that config value before invoking",
-			backgroundResponsesConfigPath,
-		),
-	)
 }
 
 func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
@@ -1528,7 +1763,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		return err
 	}
 
-	rc, err := a.resolveRemoteContext(ctx)
+	rc, err := a.resolveRemoteContextForInvoke(ctx)
 	if err != nil {
 		return err
 	}

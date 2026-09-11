@@ -45,6 +45,9 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_BYOM(t *testing.T) {
 		Instructions: &instructions,
 		Voice:        &voice,
 		Store:        &store,
+		Telephony: &agent_yaml.VoiceTelephony{Bindings: []agent_yaml.VoiceTelephonyBinding{
+			{Provider: "twilio", Identifier: "+14255550123", Connection: "telephony-twilio"},
+		}},
 	}, nil)
 	require.NoError(t, err)
 
@@ -67,6 +70,147 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_BYOM(t *testing.T) {
 	require.Equal(t, voice, *got.Voice)
 	require.NotNil(t, got.Store)
 	require.Equal(t, store, *got.Store)
+	require.NotNil(t, got.Telephony)
+	require.Len(t, got.Telephony.Bindings, 1)
+	require.Equal(t, "twilio", got.Telephony.Bindings[0].Provider)
+	require.Equal(t, "+14255550123", got.Telephony.Bindings[0].Identifier)
+	require.Equal(t, "telephony-twilio", got.Telephony.Bindings[0].Connection)
+}
+
+func TestAgentDefinitionFromStruct_RejectsTelephonyOnHosted(t *testing.T) {
+	props, err := structpb.NewStruct(map[string]any{
+		"kind":      "hosted",
+		"name":      "hosted-agent",
+		"telephony": map[string]any{"bindings": []any{}},
+	})
+	require.NoError(t, err)
+
+	_, _, err = agentDefinitionFromStruct(props, "repo.azurecr.io/agent:latest", nil)
+	require.ErrorContains(t, err, "telephony bindings are only supported")
+}
+
+func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgent(t *testing.T) {
+	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindPromptVoice,
+			Name: "voice-wrapper",
+		},
+		ModelType: agent_yaml.VoiceModelTypeHostedAgent,
+		TargetAgent: &agent_yaml.VoiceTargetAgent{
+			Service: "voice-target",
+			Version: "deployed",
+		},
+	}, nil)
+	require.NoError(t, err)
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "voice-wrapper",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+	got, found, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.VoiceModelTypeHostedAgent, got.ModelType)
+	require.Equal(t, "voice-target", got.TargetAgent.Service)
+	require.Equal(t, "deployed", got.TargetAgent.Version)
+}
+
+func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgentVoiceKind(t *testing.T) {
+	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindVoice, Name: "voice"},
+		ModelType:       agent_yaml.VoiceModelTypeHostedAgent,
+		TargetAgent: &agent_yaml.VoiceTargetAgent{
+			Service: "voice-target",
+			Version: "deployed",
+		},
+	}, nil)
+	require.NoError(t, err)
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "voice",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+	got, found, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.AgentKindVoice, got.Kind)
+	require.Equal(t, "voice-target", got.TargetAgent.Service)
+}
+
+func TestVoiceAgentInlineServicePropertiesRejectsProtocols(t *testing.T) {
+	_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":  "prompt-voice",
+		"name":  "voice",
+		"model": map[string]any{"id": "gpt-realtime"},
+		"protocols": []any{map[string]any{
+			"protocol": "invocations_ws",
+			"version":  "1.0.0",
+		}},
+	}))
+	require.ErrorContains(t, err, "protocols are not supported on voice agents")
+}
+
+func TestVoiceAgentInlineServicePropertiesRejectsCodeAndSessionConfig(t *testing.T) {
+	_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":              "voice",
+		"name":              "voice",
+		"model":             map[string]any{"id": "gpt-realtime"},
+		"codeConfiguration": map[string]any{"runtime": "dotnet_10"},
+	}))
+	require.ErrorContains(t, err, "codeConfiguration is not supported on voice agents")
+
+	_, _, _, _, err = AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":                 "voice",
+		"name":                 "voice",
+		"model":                map[string]any{"id": "gpt-realtime"},
+		"sessionConfiguration": map[string]any{"idleTimeoutMinutes": 10},
+	}))
+	require.ErrorContains(t, err, "sessionConfiguration is not supported on voice agents")
+}
+
+func TestVoiceAgentFromResolvedServiceRejectsInvalidVoiceFields(t *testing.T) {
+	svc := inlineAgentService(t, map[string]any{
+		"kind":      "voice",
+		"name":      "voice",
+		"modelType": "hosted_agent",
+		"targetAgent": map[string]any{
+			"service": "target",
+			"version": "typo",
+		},
+	})
+	_, _, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.ErrorContains(t, err, "target_agent.version must be 'deployed'")
+
+	svc = inlineAgentService(t, map[string]any{
+		"kind":              "voice",
+		"name":              "voice",
+		"model":             map[string]any{"id": "gpt-realtime"},
+		"codeConfiguration": map[string]any{"runtime": "dotnet_10"},
+	})
+	_, _, err = VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.ErrorContains(t, err, "codeConfiguration is not supported on voice agents")
+
+	svc = inlineAgentService(t, map[string]any{
+		"kind":                 "voice",
+		"name":                 "voice",
+		"model":                map[string]any{"id": "gpt-realtime"},
+		"environmentVariables": []any{map[string]any{"name": "SAMPLE", "value": "value"}},
+	})
+	_, _, err = VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.ErrorContains(t, err, "environmentVariables is not supported on voice agents")
+
+}
+
+func TestHostedAgentInlineServicePropertiesRejectsHostedVoiceFields(t *testing.T) {
+	_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":        "hosted",
+		"name":        "target",
+		"modelType":   "hosted_agent",
+		"targetAgent": map[string]any{"service": "other-agent"},
+	}))
+	require.ErrorContains(t, err, "hosted voice wrapper fields are not supported on hosted agents")
 }
 
 func TestApplyAgentMetadata(t *testing.T) {
@@ -109,6 +253,158 @@ func TestApplyAgentMetadata(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTelephonyBindingMatches(t *testing.T) {
+	desired := &agent_api.TelephonyBindingRequest{
+		Provider:        "twilio",
+		Identifier:      "+14255550123",
+		ConnectionName:  "telephony-twilio",
+		TransferTargets: []map[string]any{{"kind": "phone", "target": "+14255550124"}},
+	}
+	remote := &agent_api.TelephonyBinding{
+		ID:              "twilio:%2B14255550123",
+		Provider:        "twilio",
+		Identifier:      "+14255550123",
+		ConnectionName:  "telephony-twilio",
+		TransferTargets: []map[string]any{{"kind": "phone", "target": "+14255550124"}},
+	}
+	require.True(t, telephonyBindingMatches(remote, desired))
+	remote.ConnectionName = "other"
+	require.False(t, telephonyBindingMatches(remote, desired))
+	remote.ConnectionName = "telephony-twilio"
+	remote.TransferTargets = []map[string]any{}
+	desired.TransferTargets = nil
+	require.True(t, telephonyBindingMatches(remote, desired))
+}
+
+func TestTelephonyBindingMatches_ServiceOmittedFields(t *testing.T) {
+	// ACS binding responses can omit request fields while still returning the stable binding id.
+	desired := &agent_api.TelephonyBindingRequest{
+		Provider:       "azure-communication-service",
+		Identifier:     "28:orgid:00000000-0000-0000-0000-000000000001",
+		ConnectionName: "telephony-acs",
+	}
+	remote := &agent_api.TelephonyBinding{
+		ID:         "azure-communication-service:28:orgid:00000000-0000-0000-0000-000000000001",
+		Provider:   "teams_phone_extension",
+		Connection: "telephony-acs",
+		Status:     "active",
+	}
+	require.True(t, telephonyBindingMatches(remote, desired))
+
+	remote.ID = "azure-communication-service:28:orgid:00000000-0000-0000-0000-000000000002"
+	require.False(t, telephonyBindingMatches(remote, desired))
+}
+
+func TestTelephonyBindingMatches_NumericTransferTargets(t *testing.T) {
+	desired := &agent_api.TelephonyBindingRequest{
+		Provider:        "twilio",
+		Identifier:      "+14255550123",
+		ConnectionName:  "telephony-twilio",
+		TransferTargets: []map[string]any{{"digits": 1}},
+	}
+	remote := &agent_api.TelephonyBinding{
+		ID:              "twilio:%2B14255550123",
+		Provider:        "twilio",
+		Identifier:      "+14255550123",
+		ConnectionName:  "telephony-twilio",
+		TransferTargets: []map[string]any{{"digits": float64(1)}},
+	}
+	require.True(t, telephonyBindingMatches(remote, desired))
+}
+
+func TestDeployVoiceTelephonyBindings_CreateWhenMissing(t *testing.T) {
+	client := &fakeTelephonyBindingClient{getErr: &azcore.ResponseError{StatusCode: http.StatusNotFound}}
+	agentObject := &agent_api.AgentObject{Name: "voice-agent"}
+	agentObject.Versions.Latest.Version = "1"
+	agent := agent_yaml.VoiceAgent{Telephony: &agent_yaml.VoiceTelephony{Bindings: []agent_yaml.VoiceTelephonyBinding{
+		{Provider: "twilio", Identifier: "+14255550123", Connection: "telephony-twilio"},
+	}}}
+
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+		t.Context(), client, agent, agentObject, "regional.hyena.example.com")
+
+	require.NoError(t, err)
+	require.Equal(t, 1, client.getCalls)
+	require.Equal(t, 1, client.createCalls)
+	require.Equal(t, "twilio:+14255550123", client.bindingID)
+	require.Equal(t, "regional.hyena.example.com", client.overriddenHost)
+}
+
+func TestDeployVoiceTelephonyBindings_SkipsMatchingBinding(t *testing.T) {
+	client := &fakeTelephonyBindingClient{remote: &agent_api.TelephonyBinding{
+		ID:             "twilio:%2B14255550123",
+		Provider:       "twilio",
+		Identifier:     "+14255550123",
+		ConnectionName: "telephony-twilio",
+	}}
+	agentObject := &agent_api.AgentObject{Name: "voice-agent"}
+	agentObject.Versions.Latest.Version = "1"
+	agent := agent_yaml.VoiceAgent{Telephony: &agent_yaml.VoiceTelephony{Bindings: []agent_yaml.VoiceTelephonyBinding{
+		{Provider: "twilio", Identifier: "+14255550123", Connection: "telephony-twilio"},
+	}}}
+
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(t.Context(), client, agent, agentObject, "")
+
+	require.NoError(t, err)
+	require.Equal(t, 1, client.getCalls)
+	require.Equal(t, 0, client.createCalls)
+}
+
+func TestDeployVoiceTelephonyBindings_ReturnsNonNotFoundGetError(t *testing.T) {
+	client := &fakeTelephonyBindingClient{getErr: &azcore.ResponseError{StatusCode: http.StatusForbidden}}
+	agentObject := &agent_api.AgentObject{Name: "voice-agent"}
+	agentObject.Versions.Latest.Version = "1"
+	agent := agent_yaml.VoiceAgent{Telephony: &agent_yaml.VoiceTelephony{Bindings: []agent_yaml.VoiceTelephonyBinding{
+		{Provider: "twilio", Identifier: "+14255550123", Connection: "telephony-twilio"},
+	}}}
+
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(t.Context(), client, agent, agentObject, "")
+
+	require.Error(t, err)
+	require.Equal(t, 1, client.getCalls)
+	require.Equal(t, 0, client.createCalls)
+}
+
+type fakeTelephonyBindingClient struct {
+	remote         *agent_api.TelephonyBinding
+	getErr         error
+	createErr      error
+	getCalls       int
+	createCalls    int
+	bindingID      string
+	overriddenHost string
+}
+
+func (c *fakeTelephonyBindingClient) GetTelephonyBinding(
+	ctx context.Context,
+	agentName string,
+	bindingID string,
+	apiVersion string,
+	overriddenHost string,
+) (*agent_api.TelephonyBinding, error) {
+	c.getCalls++
+	c.bindingID = bindingID
+	c.overriddenHost = overriddenHost
+	return c.remote, c.getErr
+}
+
+func (c *fakeTelephonyBindingClient) CreateTelephonyBinding(
+	ctx context.Context,
+	agentName string,
+	request *agent_api.TelephonyBindingRequest,
+	apiVersion string,
+	overriddenHost string,
+) (*agent_api.TelephonyBinding, error) {
+	c.createCalls++
+	c.overriddenHost = overriddenHost
+	return &agent_api.TelephonyBinding{ID: request.Provider + ":" + request.Identifier}, c.createErr
+}
+
+func TestTelephonyWireProvider(t *testing.T) {
+	require.Equal(t, "azure-communication-service", telephonyWireProvider("acs"))
+	require.Equal(t, "twilio", telephonyWireProvider("twilio"))
 }
 
 type fakeProjectAgentChecker struct {
@@ -1009,8 +1305,77 @@ func TestRegisterAgentEnvironmentVariables(t *testing.T) {
 	require.Equal(t, "https://proj.azure.com", envStub.values["AGENT_MY_SVC_PROJECT_ENDPOINT"])
 	require.Equal(t, "AGENT_MY_SVC_VERSION", envStub.writes[0].Key)
 	require.Empty(t, envStub.writes[0].Value)
-	require.Equal(t, "AGENT_MY_SVC_VERSION", envStub.writes[len(envStub.writes)-1].Key)
-	require.Equal(t, "1.0.0", envStub.writes[len(envStub.writes)-1].Value)
+	require.Equal(t, "AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION", envStub.writes[1].Key)
+	require.Empty(t, envStub.writes[1].Value)
+	require.Equal(t, "AGENT_MY_SVC_VERSION", envStub.writes[len(envStub.writes)-2].Key)
+	require.Equal(t, "1.0.0", envStub.writes[len(envStub.writes)-2].Value)
+	require.Equal(
+		t,
+		"AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION",
+		envStub.writes[len(envStub.writes)-1].Key,
+	)
+	require.Equal(t, "1", envStub.writes[len(envStub.writes)-1].Value)
+}
+
+func TestRegisterVoiceAgentEnvironmentVariablesClearsProtocolSnapshot(t *testing.T) {
+	t.Parallel()
+
+	envStub := &stubEnvServer{values: map[string]string{
+		"AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION": "1",
+		"AGENT_MY_SVC_ENDPOINT":                   "https://old.example/agent",
+		"AGENT_MY_SVC_RESPONSES_ENDPOINT":         "https://old.example/responses",
+		"AGENT_MY_SVC_INVOCATIONS_ENDPOINT":       "https://old.example/invocations",
+		"AGENT_MY_SVC_A2A_ENDPOINT":               "https://old.example/a2a",
+		"AGENT_MY_SVC_INVOCATIONS_WS_ENDPOINT":    "wss://old.example/invocations_ws",
+	}}
+	client := newEnvTestClient(t, envStub)
+	provider := &AgentServiceTargetProvider{
+		azdClient: client,
+		env:       &azdext.Environment{Name: "test-env"},
+	}
+	agentObject := &agent_api.AgentObject{Name: "voice-agent"}
+	agentObject.Versions.Latest.Version = "2.0.0"
+	baseEndpoint := buildVoiceWSProtocolURL("https://proj.azure.com", agentObject.Name)
+
+	err := provider.registerVoiceAgentEnvironmentVariables(
+		t.Context(),
+		&azdext.ServiceConfig{Name: "my-svc"},
+		"https://proj.azure.com/",
+		baseEndpoint,
+		agentObject,
+		nil,
+	)
+	require.NoError(t, err)
+
+	require.Equal(t, "1", envStub.values["AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION"])
+	require.Equal(t, "voice-agent", envStub.values["AGENT_MY_SVC_NAME"])
+	require.Equal(t, "2.0.0", envStub.values["AGENT_MY_SVC_VERSION"])
+	require.Equal(t, "https://proj.azure.com", envStub.values["AGENT_MY_SVC_PROJECT_ENDPOINT"])
+	require.Equal(t, baseEndpoint, envStub.values["AGENT_MY_SVC_ENDPOINT"])
+	for _, dp := range displayableProtocols {
+		key := fmt.Sprintf("AGENT_MY_SVC_%s_ENDPOINT", dp.EnvSuffix)
+		require.Empty(t, envStub.values[key], "stale protocol endpoint %s", key)
+	}
+
+	require.Equal(t, "AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION", envStub.writes[0].Key)
+	require.Empty(t, envStub.writes[0].Value)
+	for i, dp := range displayableProtocols {
+		require.Equal(
+			t,
+			fmt.Sprintf("AGENT_MY_SVC_%s_ENDPOINT", dp.EnvSuffix),
+			envStub.writes[i+1].Key,
+		)
+		require.Empty(t, envStub.writes[i+1].Value)
+	}
+	baseClearIndex := len(displayableProtocols) + 1
+	require.Equal(t, "AGENT_MY_SVC_ENDPOINT", envStub.writes[baseClearIndex].Key)
+	require.Empty(t, envStub.writes[baseClearIndex].Value)
+	require.Equal(
+		t,
+		"AGENT_MY_SVC_PROTOCOL_ENDPOINTS_VERSION",
+		envStub.writes[len(envStub.writes)-1].Key,
+	)
+	require.Equal(t, "1", envStub.writes[len(envStub.writes)-1].Value)
 }
 
 func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {
@@ -1029,6 +1394,7 @@ func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {
 	}
 	protocols := []agent_yaml.ProtocolVersionRecord{
 		{Protocol: "responses", Version: "1.0.0"},
+		{Protocol: "a2a", Version: "1.0.0"},
 	}
 	agentVersion := &agent_api.AgentVersionObject{
 		Name:    "my-agent",
@@ -1048,8 +1414,78 @@ func TestRegisterAgentEnvironmentVariables_TrailingSlash(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Trailing slash must not produce a double-slash in the base endpoint
+	// Trailing slash must not produce double slashes.
 	require.Equal(t, "https://proj.azure.com/agents/my-agent/versions/2.0.0", envStub.values["AGENT_MY_SVC_ENDPOINT"])
+	require.Equal(
+		t,
+		"https://proj.azure.com/agents/my-agent/endpoint/protocols/openai/responses?api-version=v1",
+		envStub.values["AGENT_MY_SVC_RESPONSES_ENDPOINT"],
+	)
+	require.Equal(
+		t,
+		"https://proj.azure.com/agents/my-agent/endpoint/protocols/a2a?api-version=v1",
+		envStub.values["AGENT_MY_SVC_A2A_ENDPOINT"],
+	)
+}
+
+func TestRegisterAgentEnvironmentVariables_ClearsRemovedProtocols(t *testing.T) {
+	t.Parallel()
+
+	envStub := &stubEnvServer{}
+	provider := &AgentServiceTargetProvider{
+		azdClient: newEnvTestClient(t, envStub),
+		env:       &azdext.Environment{Name: "test-env"},
+	}
+	serviceConfig := &azdext.ServiceConfig{Name: "my-svc"}
+	azdEnv := map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.azure.com",
+	}
+	agentVersion := &agent_api.AgentVersionObject{
+		Name:    "my-agent",
+		Version: "1.0.0",
+	}
+
+	err := provider.registerAgentEnvironmentVariables(
+		t.Context(),
+		azdEnv,
+		serviceConfig,
+		agentVersion,
+		[]agent_yaml.ProtocolVersionRecord{
+			{Protocol: "responses", Version: "1.0.0"},
+			{Protocol: "invocations", Version: "1.0.0"},
+		},
+		"",
+		"",
+		false,
+		ActivityProfile{},
+		nil,
+	)
+	require.NoError(t, err)
+
+	err = provider.registerAgentEnvironmentVariables(
+		t.Context(),
+		azdEnv,
+		serviceConfig,
+		agentVersion,
+		[]agent_yaml.ProtocolVersionRecord{
+			{Protocol: "a2a", Version: "1.0.0"},
+		},
+		"",
+		"",
+		false,
+		ActivityProfile{},
+		nil,
+	)
+	require.NoError(t, err)
+
+	require.Empty(t, envStub.values["AGENT_MY_SVC_RESPONSES_ENDPOINT"])
+	require.Empty(t, envStub.values["AGENT_MY_SVC_INVOCATIONS_ENDPOINT"])
+	require.Empty(t, envStub.values["AGENT_MY_SVC_INVOCATIONS_WS_ENDPOINT"])
+	require.Equal(
+		t,
+		"https://proj.azure.com/agents/my-agent/endpoint/protocols/a2a?api-version=v1",
+		envStub.values["AGENT_MY_SVC_A2A_ENDPOINT"],
+	)
 }
 
 func TestRegisterAgentEnvironmentVariables_PersistsActivityBotName(t *testing.T) {
@@ -1363,6 +1799,14 @@ func TestDisplayableProtocolFor(t *testing.T) {
 			wantURLScheme:   "https",
 		},
 		{
+			name:            "a2a",
+			protocol:        "a2a",
+			wantProtocol:    agent_api.AgentProtocolA2A,
+			wantEnvSuffix:   "A2A",
+			wantURLContains: "/agents/my-agent/endpoint/protocols/a2a?api-version=v1",
+			wantURLScheme:   "https",
+		},
+		{
 			name:            "invocations_ws",
 			protocol:        "invocations_ws",
 			wantProtocol:    agent_api.AgentProtocolInvocationsWS,
@@ -1438,6 +1882,18 @@ func TestAgentInvocationEndpoints(t *testing.T) {
 				{
 					Protocol: "invocations",
 					URL:      baseURL + "invocations?api-version=v1",
+				},
+			},
+		},
+		{
+			name: "single a2a protocol",
+			protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "a2a", Version: "1.0.0"},
+			},
+			expected: []protocolEndpointInfo{
+				{
+					Protocol: "a2a",
+					URL:      baseURL + "a2a?api-version=v1",
 				},
 			},
 		},

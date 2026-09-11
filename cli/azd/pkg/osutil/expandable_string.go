@@ -44,6 +44,11 @@ func (e ExpandableString) IsZero() bool {
 	return e.Empty()
 }
 
+// Raw returns the unexpanded template.
+func (e ExpandableString) Raw() string {
+	return e.template
+}
+
 // Envsubst evaluates the template, substituting values as [envsubst.Eval] would.
 func (e ExpandableString) Envsubst(mapping func(string) string) (string, error) {
 	return envsubst.Eval(e.template, mapping)

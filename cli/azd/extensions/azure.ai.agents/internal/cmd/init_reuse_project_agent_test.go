@@ -259,6 +259,8 @@ func TestAgentDefiningFlagsSet(t *testing.T) {
 		{name: "project-id", flags: &initFlags{projectResourceId: "/subscriptions/x"}, want: true},
 		{name: "acr-connection", flags: &initFlags{acrConnection: "my-acr"}, want: true},
 		{name: "image", flags: &initFlags{image: "myacr.azurecr.io/agent:1"}, want: true},
+		{name: "kind", flags: &initFlags{kind: "prompt-voice"}, want: true},
+		{name: "voice", flags: &initFlags{voice: "en-US-AvaNeural"}, want: true},
 		{name: "registry connection", flags: &initFlags{registryConnection: "private-registry"}, want: true},
 		{name: "protocol", flags: &initFlags{protocols: []string{"responses"}}, want: true},
 

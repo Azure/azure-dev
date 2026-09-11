@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
@@ -483,26 +484,62 @@ func TestEventService_syncExtensionOutput_PersistsConcurrentOutputOnce(t *testin
 	console := service.console.(*mockinput.MockConsole)
 	extension := createTestExtension()
 
-	cleanupA := service.syncExtensionOutput(
-		t.Context(),
-		extension,
+	capturesReady := make(chan struct{}, 2)
+	cleanupStart := make(chan struct{})
+	var cleanupWg sync.WaitGroup
+	cleanupWg.Add(2)
+
+	for _, title := range []string{
 		"Test Extension (predeploy.api)",
-		true,
-	)
-	cleanupB := service.syncExtensionOutput(
-		t.Context(),
-		extension,
 		"Test Extension (predeploy.web)",
-		true,
-	)
-	_, err := extension.StdOut().Write([]byte("shared warning\n"))
-	require.NoError(t, err)
+	} {
+		go func() {
+			defer cleanupWg.Done()
+			cleanup := service.syncExtensionOutput(
+				t.Context(),
+				extension,
+				title,
+				true,
+			)
+			capturesReady <- struct{}{}
+			<-cleanupStart
+			cleanup()
+		}()
+	}
 
-	cleanupA()
-	require.Empty(t, console.Output())
+	<-capturesReady
+	<-capturesReady
 
-	cleanupB()
-	require.Equal(t, []string{"shared warning"}, console.Output())
+	writeStart := make(chan struct{})
+	writeReady := make(chan struct{}, 2)
+	writeErrors := make(chan error, 2)
+	var writeWg sync.WaitGroup
+	writeWg.Add(2)
+
+	for _, output := range []string{"api warning\n", "web warning\n"} {
+		go func() {
+			defer writeWg.Done()
+			writeReady <- struct{}{}
+			<-writeStart
+			_, err := extension.StdOut().Write([]byte(output))
+			writeErrors <- err
+		}()
+	}
+
+	<-writeReady
+	<-writeReady
+	close(writeStart)
+	writeWg.Wait()
+
+	require.NoError(t, <-writeErrors)
+	require.NoError(t, <-writeErrors)
+
+	close(cleanupStart)
+	cleanupWg.Wait()
+
+	require.Len(t, console.Output(), 1)
+	require.Contains(t, console.Output()[0], "api warning")
+	require.Contains(t, console.Output()[0], "web warning")
 }
 
 func TestEventService_syncExtensionOutput_BoundsPersistedOutput(t *testing.T) {

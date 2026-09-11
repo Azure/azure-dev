@@ -7,7 +7,7 @@ updates:
       - "/cli/azd/extensions/azure.coding-agent/internal/cmd/templates"
       - "/cli/azd/resources/pipeline/.github/workflows"
     schedule:
-      interval: "daily"
+      interval: "weekly"
     cooldown:
       default-days: 7
     groups:
@@ -22,7 +22,7 @@ updates:
       - "/ext/azuredevops/setupAzd"
       - "/cli/azd/test/evals"
     schedule:
-      interval: "daily"
+      interval: "weekly"
     cooldown:
       default-days: 7
     groups:

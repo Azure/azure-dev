@@ -492,7 +492,7 @@ type recordingProjectServer struct {
 // configValueRecord captures a single SetServiceConfigValue call.
 type configValueRecord struct {
 	serviceName string
-	value       string
+	value       any
 }
 
 func (s *recordingProjectServer) Get(
@@ -581,11 +581,9 @@ func (s *recordingProjectServer) SetServiceConfigValue(
 			}
 		}
 	} else if req.Value != nil {
-		if str, ok := req.Value.AsInterface().(string); ok {
-			s.configValues[req.Path] = configValueRecord{
-				serviceName: req.ServiceName,
-				value:       str,
-			}
+		s.configValues[req.Path] = configValueRecord{
+			serviceName: req.ServiceName,
+			value:       req.Value.AsInterface(),
 		}
 	}
 	return &azdext.EmptyResponse{}, nil

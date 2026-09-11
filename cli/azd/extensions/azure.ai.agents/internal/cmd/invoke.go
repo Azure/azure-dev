@@ -25,6 +25,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -49,7 +50,8 @@ type invokeFlags struct {
 	outputFmt       string
 	callID          string
 	clientHeaders   []string
-	resumable       bool
+	longRunning     bool
+	noWait          bool
 }
 
 // outputRaw is the sentinel value of the inherited --output flag that selects
@@ -77,6 +79,7 @@ type InvokeAction struct {
 	resolvedBody          []byte
 	resolvedBodyLabel     string
 	bodyResolved          bool
+	credential            azcore.TokenCredential
 }
 
 func newInvokeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -134,10 +137,10 @@ behavior and inspecting response headers (for example, the agent version
 header). Friendly summary lines like "Session:" and "Invocation:" are
 suppressed in raw mode.
 
-Use --resumable with the Responses protocol to start work that continues running in
+Use --long-running with the Responses protocol to start work that continues running in
 the service if this command disconnects. The command remains attached until the work
-finishes. Resumable invocation is remote-only, does not support raw output, and cannot
-be combined with --timeout.`,
+finishes. Add --no-wait to return after azd receives the Response ID.
+This option does not provide crash recovery or automatic reconnection.`,
 		Example: `  # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
   azd ai agent invoke "Hello!"
 
@@ -165,9 +168,11 @@ be combined with --timeout.`,
   # Invoke a specific agent locally (useful in multi-agent projects)
   azd ai agent invoke my-agent --local "Hello!"
 
-  # Start work that continues in the service if this command disconnects,
-  # while remaining attached until it finishes
-  azd ai agent invoke --resumable "Run the long task"
+  # Start background work and remain attached until it finishes
+  azd ai agent invoke --long-running "Run the long task"
+
+  # Start background work and return after its Response ID is received
+  azd ai agent invoke --long-running --no-wait "Run the long task"
 
   # Start a new session (discard conversation history)
   azd ai agent invoke --new-session "Hello!"
@@ -282,26 +287,33 @@ be combined with --timeout.`,
 			}
 			action.clientHeaders = clientHeaders
 
-			if flags.resumable {
+			if flags.noWait && !flags.longRunning {
+				return exterrors.Validation(
+					exterrors.CodeConflictingArguments,
+					"--no-wait requires --long-running",
+					"add --long-running or remove --no-wait",
+				)
+			}
+			if flags.longRunning {
 				if cmd.Flags().Changed("timeout") {
 					return exterrors.Validation(
 						exterrors.CodeConflictingArguments,
-						"--timeout cannot be used with --resumable",
+						"--timeout cannot be used with --long-running",
 						"remove --timeout; background Responses remain attached until completion or interruption",
 					)
 				}
 				if flags.local {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
-						"--resumable is supported only for remote Responses agents",
+						"--long-running is supported only for remote Responses agents",
 						"remove --local and invoke a deployed Responses agent",
 					)
 				}
 				if flags.outputFmt == outputRaw {
 					return exterrors.Validation(
 						exterrors.CodeInvalidParameter,
-						"--output raw is not supported with --resumable",
-						"remove --output raw so azd can save the Response identity and cursor",
+						"--output raw is not supported with --long-running",
+						"remove --output raw so azd can save the Response identity",
 					)
 				}
 			}
@@ -358,10 +370,16 @@ be combined with --timeout.`,
 		"Agent version to invoke (creates or reuses a session backed by that version)",
 	)
 	cmd.Flags().BoolVar(
-		&flags.resumable,
-		"resumable",
+		&flags.longRunning,
+		"long-running",
 		false,
-		"Start resumable work that continues in the service if the command disconnects; remain attached until it finishes",
+		"Continue service-side execution after disconnection; remain attached unless --no-wait is specified",
+	)
+	cmd.Flags().BoolVar(
+		&flags.noWait,
+		"no-wait",
+		false,
+		"Return after receiving the service-assigned ID; requires --long-running",
 	)
 
 	// Register `raw` as an additional allowed value on the inherited global
@@ -490,12 +508,12 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	// populated, but a2aRemote never calls applyCustomHeaders — the headers
 	// would be silently dropped, which is the exact silent no-op the guard
 	// intends to prevent.
-	if a.flags.resumable && protocol != agent_api.AgentProtocolResponses {
+	if a.flags.longRunning && protocol != agent_api.AgentProtocolResponses {
 		a.closeResolvedRemoteContextClient()
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("--resumable is not supported with the %s protocol", protocol),
-			"use a deployed Responses agent or remove --resumable",
+			fmt.Sprintf("--long-running is not supported with the %s protocol", protocol),
+			"use a deployed Responses agent or remove --long-running",
 		)
 	}
 
@@ -1393,9 +1411,13 @@ func createInvokeVersionSessionImpl(
 // validation so that local errors (e.g., a missing --input-file) are surfaced
 // before any auth round-trip is attempted.
 func (a *InvokeAction) acquireBearerToken(ctx context.Context) (string, error) {
-	credential, err := newAgentCredential()
-	if err != nil {
-		return "", err
+	credential := a.credential
+	if credential == nil {
+		var err error
+		credential, err = newAgentCredential()
+		if err != nil {
+			return "", err
+		}
 	}
 	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: []string{"https://ai.azure.com/.default"},
@@ -1439,14 +1461,8 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 
 	var responseStore responseStateStore
-	if a.flags.resumable {
-		if rc.azdClient == nil || agentKey == "" {
-			return responseStateUnavailable(nil)
-		}
+	if rc.azdClient != nil && agentKey != "" {
 		responseStore = newUserConfigResponseStateStore(rc.azdClient)
-		if _, err := responseStore.Get(ctx, agentKey); err != nil {
-			return classifyBackgroundResponseStateReadError(err)
-		}
 	}
 
 	// Acquire the bearer token after body validation so a local input error
@@ -1459,24 +1475,11 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 
 	msg := string(body)
 
-	// Build request body — uses streaming to receive the full agent response.
-	reqBody := map[string]any{
-		"input":  msg,
-		"stream": true,
-	}
-
 	// Session ID — routes to the same microVM container instance.
 	// When empty, let the server assign one.
 	sid, err := a.resolveRemoteSessionID(ctx, rc)
 	if err != nil {
 		return err
-	}
-	if sid != "" {
-		reqBody["agent_session_id"] = sid
-	}
-	if a.flags.resumable {
-		reqBody["store"] = true
-		reqBody["background"] = true
 	}
 
 	// Conversation ID — enables multi-turn memory via Foundry Conversations API.
@@ -1513,7 +1516,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 			return err
 		}
 	}
-	reqBody["conversation"] = map[string]string{"id": convID}
+	reqBody := buildResponsesRequestBody(msg, sid, convID, a.flags.longRunning)
 
 	raw := a.flags.outputFmt == outputRaw
 	if !raw {
@@ -1548,10 +1551,8 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 
 	client := &http.Client{Timeout: a.httpTimeout()}
-	if a.flags.resumable {
-		transport := http.DefaultTransport.(*http.Transport).Clone()
-		transport.ResponseHeaderTimeout = 30 * time.Second
-		client = &http.Client{Transport: transport}
+	if a.flags.longRunning {
+		client = responseStreamHTTPClient()
 	}
 	invokeStart := time.Now()
 	//nolint:gosec // G704: URL is built from a validated Foundry endpoint (env or --agent-endpoint)
@@ -1592,82 +1593,52 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		a.emitInvokeFailureNextStep(nextstep.InvokeRemote, rc.nextStepName(), resp.Header.Get("x-adc-response-details"))
 		return fmt.Errorf("POST %s failed with HTTP %d: %s\n%s", respURL, resp.StatusCode, resp.Status, string(respBody))
 	}
-	// Parse SSE stream for agent output.
-	if !a.flags.resumable {
-		if err := readResponsesSSE(ctx, resp.Body, os.Stdout, rc.name, responsesSSEOptions{}); err != nil {
-			return err
-		}
-	} else {
-		effectiveSessionID := sid
-		if assigned := resp.Header.Get("x-agent-session-id"); assigned != "" {
-			effectiveSessionID = assigned
-		}
-		progressPersister := newBackgroundProgressPersister(
-			responseStore,
-			agentKey,
-			effectiveSessionID,
-			convID,
-			os.Stdout,
-		)
-		streamErr := readResponsesSSE(
-			ctx,
-			resp.Body,
-			os.Stdout,
-			rc.name,
-			responsesSSEOptions{
-				requireTerminal: true,
-				onProgress: func(progress responsesStreamProgress) error {
-					return progressPersister.Apply(ctx, progress)
-				},
+	tracker := &responseIdentityTracker{
+		store:    responseStore,
+		agentKey: agentKey,
+		writer:   os.Stdout,
+	}
+	streamErr := readResponsesSSE(
+		ctx,
+		resp.Body,
+		os.Stdout,
+		rc.name,
+		responsesSSEOptions{
+			requireTerminal: a.flags.longRunning,
+			onResponseID: func(responseID string) error {
+				if err := tracker.Apply(ctx, responseID); err != nil {
+					return err
+				}
+				if a.flags.noWait && tracker.saveErr != nil {
+					return tracker.saveErr
+				}
+				if a.flags.noWait {
+					return errBackgroundNoWait
+				}
+				return nil
 			},
-		)
-		var flushErr error
-		if ctx.Err() == nil {
-			flushErr = progressPersister.Flush(ctx)
+		},
+	)
+	useCurrent := errors.Is(streamErr, errBackgroundNoWait) && responseStore != nil && tracker.saveErr == nil
+	followCommand := a.responseLifecycleCommand(rc, tracker.responseID, invocationFollow, useCurrent)
+	if a.flags.noWait && tracker.responseID != "" {
+		if errors.Is(streamErr, errBackgroundNoWait) {
+			streamErr = nil
 		}
-		closeErr := progressPersister.Close()
-		if streamErr != nil || flushErr != nil || closeErr != nil {
-			return errors.Join(streamErr, flushErr, closeErr)
+		_, guidanceErr := fmt.Fprintf(os.Stdout, "\nNext:\n  %s\n", followCommand)
+		return errors.Join(streamErr, guidanceErr)
+	}
+	if streamErr != nil {
+		if a.flags.longRunning && tracker.responseID != "" &&
+			errors.Is(streamErr, errResponsesStreamDisconnected) {
+			return fmt.Errorf("%w; replay and follow it with `%s`", streamErr, followCommand)
 		}
+		return streamErr
 	}
 	totalDuration := time.Since(invokeStart)
 	printInvokeTiming(os.Stdout, totalDuration, ttfb)
 	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
 	return nil
-}
-
-func responseStateUnavailable(cause error) error {
-	message := "remote Responses require access to azd state"
-	if cause != nil {
-		message = fmt.Sprintf("%s: %v", message, cause)
-	}
-	return exterrors.Dependency(
-		exterrors.CodeResponseStateUnavailable,
-		message,
-		"run this command through azd instead of executing the extension binary directly",
-	)
-}
-
-func classifyBackgroundResponseStateReadError(cause error) error {
-	if _, ok := errors.AsType[*azdext.ConfigError](cause); !ok {
-		return exterrors.FromHost(
-			cause,
-			exterrors.OpReadBackgroundResponseState,
-			"reading saved background Response state failed",
-		)
-	}
-	return exterrors.Validation(
-		exterrors.CodeInvalidBackgroundResponseState,
-		fmt.Sprintf(
-			"saved background Response state at %q could not be read: %v",
-			backgroundResponsesConfigPath,
-			cause,
-		),
-		fmt.Sprintf(
-			"clear the invalid state with `azd config unset %s`, or repair that config value before invoking",
-			backgroundResponsesConfigPath,
-		),
-	)
 }
 
 func (a *InvokeAction) invocationsLocal(ctx context.Context) error {

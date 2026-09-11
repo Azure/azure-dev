@@ -6,16 +6,20 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"maps"
+	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
 	"azure.ai.connections/internal/exterrors"
 	"azure.ai.connections/internal/pkg/connections"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -202,14 +206,26 @@ type connectionCreateFlags struct {
 	force            bool
 	projectEndpoint  string
 	output           string
-	clientID         string   // OAuth2 client ID
-	clientSecret     string   // OAuth2 client secret
+	clientID         string // OAuth2 client ID
+	clientSecret     string // OAuth2 client secret
+	clientIDChanged  bool
+	secretChanged    bool
 	audience         string   // Token audience for user-entra-token / agentic-identity / project-managed-identity
 	authorizationURL string   // OAuth2 authorization endpoint
 	tokenURL         string   // OAuth2 token endpoint
 	refreshURL       string   // OAuth2 refresh endpoint
 	scopes           []string // OAuth2 scopes
 	connectorName    string   // Managed connector name
+
+	// Preserve explicit empty values so auth-specific flags cannot be silently ignored.
+	keyChanged              bool
+	customKeyChanged        bool
+	audienceChanged         bool
+	authorizationURLChanged bool
+	tokenURLChanged         bool
+	refreshURLChanged       bool
+	scopesChanged           bool
+	connectorNameChanged    bool
 }
 
 // ConnectionCreateAction implements connection creation.
@@ -219,112 +235,12 @@ type ConnectionCreateAction struct {
 
 // Run executes the create operation.
 func (a *ConnectionCreateAction) Run(ctx context.Context) error {
-	if a.flags.kind == "" {
-		return exterrors.Validation(
-			exterrors.CodeMissingConnectionField,
-			"Missing required flag --kind.",
-			"Specify the connection kind (e.g., --kind remote-tool).",
-		)
+	props, err := connectionCreateProperties(a.flags)
+	if err != nil {
+		return err
 	}
-	if a.flags.target == "" {
-		return exterrors.Validation(
-			exterrors.CodeMissingConnectionField,
-			"Missing required flag --target.",
-			"Specify the target URL (e.g., --target https://example.com).",
-		)
-	}
-	if a.flags.authType == "api-key" && a.flags.key == "" {
-		return exterrors.Validation(
-			exterrors.CodeMissingConnectionField,
-			"Missing required flag --key for api-key auth.",
-			"Specify the API key value.",
-		)
-	}
-	if a.flags.authType == "custom-keys" && len(a.flags.customKeys) == 0 {
-		return exterrors.Validation(
-			exterrors.CodeMissingConnectionField,
-			"Missing required flag --custom-key for custom-keys auth.",
-			"Specify at least one custom key (e.g., --custom-key x-api-key=value).",
-		)
-	}
-	// OAuth2-only flags must not be used with other auth types.
-	if a.flags.authType != "oauth2" {
-		if a.flags.clientID != "" || a.flags.clientSecret != "" {
-			return exterrors.Validation(
-				exterrors.CodeConflictingArguments,
-				"--client-id and --client-secret are only valid with --auth-type oauth2.",
-				"",
-			)
-		}
-		if a.flags.authorizationURL != "" || a.flags.tokenURL != "" ||
-			a.flags.refreshURL != "" || len(a.flags.scopes) > 0 || a.flags.connectorName != "" {
-			return exterrors.Validation(
-				exterrors.CodeConflictingArguments,
-				"--authorization-url, --token-url, --refresh-url, --scopes, and --connector-name "+
-					"are only valid with --auth-type oauth2.",
-				"",
-			)
-		}
-	}
-	// OAuth2 validation: either --connector-name alone (managed connector) or all of
-	// --authorization-url, --token-url, --refresh-url, --scopes, --client-id, --client-secret.
-	if a.flags.authType == "oauth2" {
-		hasConnector := a.flags.connectorName != ""
-		hasBYO := a.flags.authorizationURL != "" || a.flags.tokenURL != "" ||
-			a.flags.refreshURL != "" || len(a.flags.scopes) > 0 ||
-			a.flags.clientID != "" || a.flags.clientSecret != ""
-
-		if hasConnector && hasBYO {
-			return exterrors.Validation(
-				exterrors.CodeConflictingArguments,
-				"--connector-name cannot be combined with --authorization-url, --token-url, "+
-					"--refresh-url, --scopes, --client-id, or --client-secret. "+
-					"Use --connector-name alone for managed connectors, or provide the other flags for BYO OAuth2.",
-				"",
-			)
-		}
-		if !hasConnector && !hasBYO {
-			return exterrors.Validation(
-				exterrors.CodeMissingConnectionField,
-				"OAuth2 auth requires either --connector-name (managed connector) or "+
-					"--authorization-url, --token-url, --client-id, --client-secret "+
-					"(and optionally --refresh-url, --scopes).",
-				"",
-			)
-		}
-		if !hasConnector {
-			// BYO mode ΓÇö required: authorization-url, token-url, client-id, client-secret.
-			// Optional: refresh-url, scopes.
-			missing := []string{}
-			if a.flags.authorizationURL == "" {
-				missing = append(missing, "--authorization-url")
-			}
-			if a.flags.tokenURL == "" {
-				missing = append(missing, "--token-url")
-			}
-			if a.flags.clientID == "" {
-				missing = append(missing, "--client-id")
-			}
-			if a.flags.clientSecret == "" {
-				missing = append(missing, "--client-secret")
-			}
-			if len(missing) > 0 {
-				return exterrors.Validation(
-					exterrors.CodeMissingConnectionField,
-					"BYO OAuth2 requires: --authorization-url, --token-url, --client-id, "+
-						"--client-secret. Missing: "+strings.Join(missing, ", "),
-					"",
-				)
-			}
-		}
-	}
-	if a.flags.audience != "" && a.flags.authType != "user-entra-token" &&
-		a.flags.authType != "agentic-identity" && a.flags.authType != "project-managed-identity" {
-		return exterrors.Validation(
-			exterrors.CodeConflictingArguments,
-			"--audience is only valid with --auth-type user-entra-token, agentic-identity, or project-managed-identity.",
-			"",
-		)
+	if err := validateConnectionProperties(props); err != nil {
+		return err
 	}
 
 	connCtx, err := resolveConnectionContext(ctx, a.flags.projectEndpoint)
@@ -349,23 +265,6 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 	// Route to raw REST or typed SDK based on auth type
 	switch a.flags.authType {
 	case "oauth2", "user-entra-token", "project-managed-identity", "agentic-identity":
-		props := rawConnectionProperties{
-			AuthType:         normalizeAuthTypeToARM(a.flags.authType),
-			Category:         normalizeKind(a.flags.kind),
-			Target:           a.flags.target,
-			Audience:         a.flags.audience,
-			Metadata:         parseKVMap(a.flags.metadata),
-			AuthorizationURL: a.flags.authorizationURL,
-			TokenURL:         a.flags.tokenURL,
-			RefreshURL:       a.flags.refreshURL,
-			Scopes:           a.flags.scopes,
-			ConnectorName:    a.flags.connectorName,
-		}
-		// For OAuth2, the ARM connections API requires `credentials` to be present in the
-		// request body even when empty (managed-connector / gateway_connector path uses
-		// Microsoft's OAuth app, so no client id/secret is supplied). An empty object `{}`
-		// is valid; omitting the field entirely returns 400 ValidationError.
-		props.Credentials = buildOAuth2Credentials(a.flags.authType, a.flags.clientID, a.flags.clientSecret)
 		err = rawCreateConnection(ctx, connCtx, a.flags.name, props)
 	default:
 		body, buildErr := buildConnectionBody(
@@ -391,6 +290,164 @@ func (a *ConnectionCreateAction) Run(ctx context.Context) error {
 	return emitConnectionCreateResult(a.flags.name, connCtx.project, a.flags.output)
 }
 
+// connectionCreateProperties maps CLI flags to ARM properties without I/O. CLI-only
+// restrictions belong here, not in the validator shared with service deployment.
+func connectionCreateProperties(flags *connectionCreateFlags) (rawConnectionProperties, error) {
+	switch flags.authType {
+	case "", "none", "api-key", "custom-keys", "oauth2", "user-entra-token",
+		"project-managed-identity", "agentic-identity":
+	default:
+		return rawConnectionProperties{}, exterrors.Validation(
+			exterrors.CodeInvalidAuthType,
+			"Unsupported auth type for connection create.",
+			"Use --auth-type api-key, custom-keys, none, oauth2, user-entra-token, "+
+				"project-managed-identity, or agentic-identity.",
+		)
+	}
+	if err := validateConnectionCreateAuthFlags(flags); err != nil {
+		return rawConnectionProperties{}, err
+	}
+	metadata, err := parseConnectionMetadata(flags.metadata)
+	if err != nil {
+		return rawConnectionProperties{}, err
+	}
+
+	props := rawConnectionProperties{
+		AuthType:         normalizeAuthTypeToARM(flags.authType),
+		Category:         normalizeKind(flags.kind),
+		Target:           flags.target,
+		Metadata:         metadata,
+		Audience:         flags.audience,
+		AuthorizationURL: flags.authorizationURL,
+		TokenURL:         flags.tokenURL,
+		RefreshURL:       flags.refreshURL,
+		Scopes:           slices.Clone(flags.scopes),
+		ConnectorName:    flags.connectorName,
+	}
+	if props.AuthType == "" {
+		props.AuthType = "None"
+	}
+	switch flags.authType {
+	case "api-key":
+		props.Credentials = &rawCredentials{"key": flags.key}
+	case "custom-keys":
+		keys := make(map[string]string, len(flags.customKeys))
+		for _, pair := range flags.customKeys {
+			key, value, found := strings.Cut(pair, "=")
+			if !found {
+				return rawConnectionProperties{}, exterrors.Validation(
+					exterrors.CodeMissingConnectionField,
+					"Invalid credentials.keys entry.",
+					"Specify each custom credential as --custom-key name=value.",
+				)
+			}
+			keys[key] = value
+		}
+		props.Credentials = &rawCredentials{"keys": keys}
+	case "oauth2":
+		// Managed connectors require credentials: {}, not an omitted field.
+		props.Credentials = buildOAuth2Credentials(flags.authType, flags.clientID, flags.clientSecret)
+	}
+	return props, nil
+}
+
+// validateConnectionCreateAuthFlags checks CLI flag presence, including explicit
+// empty values. Keep these restrictions separate from the service schema validator.
+func validateConnectionCreateAuthFlags(flags *connectionCreateFlags) error {
+	for _, flag := range []struct {
+		name     string
+		supplied bool
+		authType string
+	}{
+		{"key", flags.keyChanged || flags.key != "", "api-key"},
+		{"custom-key", flags.customKeyChanged || len(flags.customKeys) > 0, "custom-keys"},
+	} {
+		if flag.supplied && flags.authType != flag.authType {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				fmt.Sprintf("--%s is only valid with --auth-type %s.", flag.name, flag.authType),
+				fmt.Sprintf("Remove --%s or select --auth-type %s.", flag.name, flag.authType),
+			)
+		}
+	}
+
+	var byoFlags []string
+	for _, flag := range []struct {
+		name     string
+		supplied bool
+	}{
+		{"client-id", flags.clientIDChanged || flags.clientID != ""},
+		{"client-secret", flags.secretChanged || flags.clientSecret != ""},
+		{"authorization-url", flags.authorizationURLChanged || flags.authorizationURL != ""},
+		{"token-url", flags.tokenURLChanged || flags.tokenURL != ""},
+		{"refresh-url", flags.refreshURLChanged || flags.refreshURL != ""},
+		{"scopes", flags.scopesChanged || len(flags.scopes) > 0},
+	} {
+		if flag.supplied {
+			byoFlags = append(byoFlags, "--"+flag.name)
+		}
+	}
+	hasConnector := flags.connectorNameChanged || flags.connectorName != ""
+	if flags.authType != "oauth2" && (len(byoFlags) > 0 || hasConnector) {
+		oauthFlags := slices.Clone(byoFlags)
+		if hasConnector {
+			oauthFlags = append(oauthFlags, "--connector-name")
+		}
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			strings.Join(oauthFlags, ", ")+" are only valid with OAuth2 authType (--auth-type oauth2).",
+			"Remove the OAuth2 flags or select --auth-type oauth2.",
+		)
+	}
+	if hasConnector && len(byoFlags) > 0 {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"OAuth2 connectorName cannot be combined with BYO OAuth2 flags: --connector-name conflicts with "+
+				strings.Join(byoFlags, ", ")+".",
+			"Use --connector-name alone for managed OAuth2, or omit it and provide the BYO OAuth2 flags.",
+		)
+	}
+	if flags.connectorNameChanged && strings.TrimSpace(flags.connectorName) == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--connector-name must be a non-blank name.",
+			"Set --connector-name for managed OAuth2, or omit it and provide the BYO OAuth2 flags.",
+		)
+	}
+	if flags.audienceChanged || flags.audience != "" {
+		switch flags.authType {
+		case "user-entra-token", "project-managed-identity", "agentic-identity":
+		default:
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--audience is only valid with --auth-type user-entra-token, project-managed-identity, or agentic-identity.",
+				"Remove --audience or select one of these identity auth types.",
+			)
+		}
+	}
+	return nil
+}
+
+// parseConnectionMetadata rejects malformed CLI pairs without disclosing their contents.
+func parseConnectionMetadata(pairs []string) (map[string]string, error) {
+	if len(pairs) == 0 {
+		return nil, nil
+	}
+	metadata := make(map[string]string, len(pairs))
+	for _, pair := range pairs {
+		key, value, found := strings.Cut(pair, "=")
+		if !found || strings.TrimSpace(key) == "" {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"Invalid --metadata entry: expected key=value with a non-blank key.",
+				"Specify each metadata entry as --metadata key=value; the value may be empty or contain '='.",
+			)
+		}
+		metadata[key] = value
+	}
+	return metadata, nil
+}
+
 func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	flags := &connectionCreateFlags{}
 	action := &ConnectionCreateAction{flags: flags}
@@ -410,6 +467,16 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 			flags.name = args[0]
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
 			flags.output = extCtx.OutputFormat
+			flags.keyChanged = cmd.Flags().Changed("key")
+			flags.customKeyChanged = cmd.Flags().Changed("custom-key")
+			flags.clientIDChanged = cmd.Flags().Changed("client-id")
+			flags.secretChanged = cmd.Flags().Changed("client-secret")
+			flags.audienceChanged = cmd.Flags().Changed("audience")
+			flags.authorizationURLChanged = cmd.Flags().Changed("authorization-url")
+			flags.tokenURLChanged = cmd.Flags().Changed("token-url")
+			flags.refreshURLChanged = cmd.Flags().Changed("refresh-url")
+			flags.scopesChanged = cmd.Flags().Changed("scopes")
+			flags.connectorNameChanged = cmd.Flags().Changed("connector-name")
 
 			ctx := azdext.WithAccessToken(cmd.Context())
 			return action.Run(ctx)
@@ -428,7 +495,7 @@ func newConnectionCreateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 	cmd.Flags().StringArrayVar(&flags.customKeys, "custom-key", nil,
 		"Custom key=value (repeatable, for custom-keys auth)")
 	cmd.Flags().StringArrayVar(&flags.metadata, "metadata", nil,
-		"Metadata key=value (repeatable)")
+		"Metadata key=value (repeatable; non-blank key required, empty value allowed)")
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Replace existing connection (upsert)")
 	cmd.Flags().StringVar(&flags.clientID, "client-id", "",
@@ -498,6 +565,9 @@ func (a *ConnectionUpdateAction) Run(ctx context.Context) error {
 			"No fields to update.",
 			"Specify --target, --key, --custom-key, or --metadata.",
 		)
+	}
+	if _, err := parseConnectionMetadata(a.flags.metadata); err != nil {
+		return err
 	}
 
 	connCtx, err := resolveConnectionContext(ctx, a.flags.projectEndpoint)
@@ -657,7 +727,7 @@ Does not accept --auth-type (delete and recreate to change auth type).`,
 	cmd.Flags().StringArrayVar(&flags.customKeys, "custom-key", nil,
 		"Update custom key=value (repeatable, for custom-keys auth)")
 	cmd.Flags().StringArrayVar(&flags.metadata, "metadata", nil,
-		"Set metadata key=value (repeatable, merged with existing metadata)")
+		"Set metadata key=value (repeatable, merged with existing metadata; non-blank key required, empty value allowed)")
 	return cmd
 }
 
@@ -669,6 +739,7 @@ type connectionDeleteFlags struct {
 	force           bool
 	noPrompt        bool
 	projectEndpoint string
+	environment     string
 }
 
 // ConnectionDeleteAction implements connection deletion.
@@ -678,16 +749,31 @@ type ConnectionDeleteAction struct {
 
 // Run executes the delete operation.
 func (a *ConnectionDeleteAction) Run(ctx context.Context) error {
-	connCtx, err := resolveConnectionContext(ctx, a.flags.projectEndpoint)
+	connCtx, err := resolveConnectionContextWithEnvironment(ctx, a.flags.projectEndpoint, a.flags.environment)
 	if err != nil {
 		return err
 	}
+	return a.runWithContext(ctx, connCtx)
+}
 
+// runWithContext executes deletion against the resolved project context. Keeping
+// resolution separate lets tests exercise the real SDK and readiness cleanup
+// without using Azure credentials or remote resources.
+func (a *ConnectionDeleteAction) runWithContext(ctx context.Context, connCtx *connectionContext) error {
 	resp, err := connCtx.armClient.Get(
 		ctx, connCtx.rg, connCtx.account, connCtx.project,
 		a.flags.name, nil,
 	)
 	if err != nil {
+		if isConnectionNotFound(err) {
+			if err := invalidateDeletedConnectionMarkers(
+				ctx, a.flags.environment, a.flags.name, connCtx.endpoint,
+			); err != nil {
+				return err
+			}
+			fmt.Printf("Connection %q is already deleted.\n", a.flags.name)
+			return nil
+		}
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetConnection)
 	}
 
@@ -729,16 +815,24 @@ func (a *ConnectionDeleteAction) Run(ctx context.Context) error {
 		}
 	}
 
+	if err := invalidateDeletedConnectionMarkers(ctx, a.flags.environment, a.flags.name, connCtx.endpoint); err != nil {
+		return err
+	}
 	_, err = connCtx.armClient.Delete(
 		ctx, connCtx.rg, connCtx.account, connCtx.project,
 		a.flags.name, nil,
 	)
-	if err != nil {
+	if err != nil && !isConnectionNotFound(err) {
 		return exterrors.ServiceFromAzure(err, exterrors.OpDeleteConnection)
 	}
 
 	fmt.Printf("Connection %q deleted.\n", a.flags.name)
 	return nil
+}
+
+func isConnectionNotFound(err error) bool {
+	response, ok := errors.AsType[*azcore.ResponseError](err)
+	return ok && response.StatusCode == http.StatusNotFound
 }
 
 func newConnectionDeleteCommand(
@@ -750,10 +844,13 @@ func newConnectionDeleteCommand(
 	cmd := &cobra.Command{
 		Use:   "delete <name>",
 		Short: "Delete a connection.",
-		Args:  cobra.ExactArgs(1),
+		Long: "Delete a connection and clear its matching local readiness markers. " +
+			"If the connection is already absent, clear stale markers and succeed without prompting.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]
 			flags.noPrompt = extCtx.NoPrompt
+			flags.environment = extCtx.Environment
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
 
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -810,7 +907,17 @@ func buildConnectionBody(
 	customKeys, metadata []string,
 	clientID, clientSecret string,
 ) (*armcognitiveservices.ConnectionPropertiesV2BasicResource, error) {
-	metaMap := parseKVPtrMap(metadata)
+	parsedMetadata, err := parseConnectionMetadata(metadata)
+	if err != nil {
+		return nil, err
+	}
+	var metaMap map[string]*string
+	if len(parsedMetadata) > 0 {
+		metaMap = make(map[string]*string, len(parsedMetadata))
+		for key, value := range parsedMetadata {
+			metaMap[key] = new(value)
+		}
+	}
 	cat := armcognitiveservices.ConnectionCategory(normalizeKind(kind))
 
 	// Map CLI kebab-case auth types to ARM SDK values
@@ -1003,6 +1110,12 @@ func normalizeAuthType(armAuthType string) string {
 // Used for auth types that lack ARM SDK structs and require raw REST.
 func normalizeAuthTypeToARM(cliAuthType string) string {
 	switch cliAuthType {
+	case "api-key":
+		return "ApiKey"
+	case "custom-keys":
+		return "CustomKeys"
+	case "none":
+		return "None"
 	case "oauth2":
 		return "OAuth2"
 	case "user-entra-token":

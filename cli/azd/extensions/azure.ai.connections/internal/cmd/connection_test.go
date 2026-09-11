@@ -8,9 +8,9 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"strings"
 	"testing"
 
+	"azure.ai.connections/internal/exterrors"
 	"azure.ai.connections/internal/pkg/connections"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -229,16 +229,11 @@ func TestBuildConnectionBody_UnsupportedAuthType(t *testing.T) {
 
 func TestOAuth2Validation(t *testing.T) {
 	runValidation := func(flags *connectionCreateFlags) error {
-		action := &ConnectionCreateAction{flags: flags}
-		// Run calls resolveConnectionContext which needs real infra, so we only
-		// test the validation prefix by calling Run and checking for validation errors.
-		// Any error that is NOT a validation error means we passed validation.
-		err := action.Run(t.Context())
-		return err
-	}
-
-	isValidationError := func(err error, substr string) bool {
-		return err != nil && strings.Contains(err.Error(), substr)
+		props, err := connectionCreateProperties(flags)
+		if err != nil {
+			return err
+		}
+		return validateConnectionProperties(props)
 	}
 
 	t.Run("reject connector-name combined with BYO flags", func(t *testing.T) {
@@ -250,7 +245,7 @@ func TestOAuth2Validation(t *testing.T) {
 			authorizationURL: "https://example.com/auth",
 		}
 		err := runValidation(flags)
-		require.True(t, isValidationError(err, "--connector-name cannot be combined with"))
+		requireConnectionValidationError(t, err, exterrors.CodeConflictingArguments, "connectorName cannot be combined")
 	})
 
 	t.Run("reject empty oauth2 - neither connector nor BYO", func(t *testing.T) {
@@ -260,7 +255,7 @@ func TestOAuth2Validation(t *testing.T) {
 			authType: "oauth2",
 		}
 		err := runValidation(flags)
-		require.True(t, isValidationError(err, "OAuth2 auth requires either"))
+		requireConnectionValidationError(t, err, exterrors.CodeMissingConnectionField, "OAuth2 auth requires either")
 	})
 
 	t.Run("reject partial BYO - missing required fields", func(t *testing.T) {
@@ -272,7 +267,9 @@ func TestOAuth2Validation(t *testing.T) {
 			// missing token-url, client-id, client-secret
 		}
 		err := runValidation(flags)
-		require.True(t, isValidationError(err, "Missing: --token-url"))
+		localErr := requireConnectionValidationError(t, err, exterrors.CodeMissingConnectionField, "tokenUrl")
+		require.Contains(t, localErr.Message, "credentials.clientId")
+		require.Contains(t, localErr.Message, "credentials.clientSecret")
 	})
 
 	t.Run("accept connector-name only", func(t *testing.T) {
@@ -283,9 +280,7 @@ func TestOAuth2Validation(t *testing.T) {
 			connectorName: "github",
 		}
 		err := runValidation(flags)
-		// Should pass validation ΓÇö any error here is from resolveConnectionContext, not validation
-		require.False(t, isValidationError(err, "connector-name"))
-		require.False(t, isValidationError(err, "Missing"))
+		require.NoError(t, err)
 	})
 
 	t.Run("accept full BYO without optional refresh-url", func(t *testing.T) {
@@ -299,9 +294,7 @@ func TestOAuth2Validation(t *testing.T) {
 			clientSecret:     "csec",
 		}
 		err := runValidation(flags)
-		// Should pass validation ΓÇö any error here is from resolveConnectionContext, not validation
-		require.False(t, isValidationError(err, "Missing"))
-		require.False(t, isValidationError(err, "requires"))
+		require.NoError(t, err)
 	})
 
 	t.Run("accept full BYO with all fields", func(t *testing.T) {
@@ -317,8 +310,7 @@ func TestOAuth2Validation(t *testing.T) {
 			clientSecret:     "csec",
 		}
 		err := runValidation(flags)
-		require.False(t, isValidationError(err, "Missing"))
-		require.False(t, isValidationError(err, "requires"))
+		require.NoError(t, err)
 	})
 
 	t.Run("reject oauth2 flags with non-oauth2 auth type", func(t *testing.T) {
@@ -330,7 +322,7 @@ func TestOAuth2Validation(t *testing.T) {
 			scopes:   []string{"read"},
 		}
 		err := runValidation(flags)
-		require.True(t, isValidationError(err, "only valid with --auth-type oauth2"))
+		requireConnectionValidationError(t, err, exterrors.CodeConflictingArguments, "only valid with OAuth2 authType")
 	})
 }
 
@@ -345,8 +337,8 @@ func TestRawConnectionBody_OAuth2_FullFields(t *testing.T) {
 		RefreshURL:       "https://github.com/login/oauth/access_token",
 		Scopes:           []string{"read:user", "user:email"},
 		Credentials: &rawCredentials{
-			ClientID:     "test-cid",
-			ClientSecret: "test-csec",
+			"clientId":     "test-cid",
+			"clientSecret": "test-csec",
 		},
 	}
 	body := rawConnectionBody{Properties: props}
@@ -590,8 +582,8 @@ func TestBuildOAuth2Credentials(t *testing.T) {
 				return
 			}
 			require.NotNil(t, got)
-			require.Equal(t, tt.wantID, got.ClientID)
-			require.Equal(t, tt.wantSecret, got.ClientSecret)
+			require.Equal(t, tt.wantID, got.clientIDOrEmpty())
+			require.Equal(t, tt.wantSecret, got.clientSecretOrEmpty())
 		})
 	}
 }

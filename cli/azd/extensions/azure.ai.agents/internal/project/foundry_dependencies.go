@@ -16,6 +16,7 @@ import (
 	"azureaiagent/internal/pkg/envkey"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 )
 
 type dependencyEnabled func(context.Context, string) (bool, error)
@@ -48,14 +49,17 @@ type foundryDependencyFailure struct {
 }
 
 // validateRegistryConnectionDependency ensures a registry connection declared
-// as a sibling azd service is wired through uses. References that do not match a
-// local service are external Foundry connection names or IDs and are left to the
-// service to resolve.
+// as a sibling azd service is wired through uses and references its effective
+// resource name, not a service key overridden by the payload. File references are resolved
+// against projectRoot without mutating the sibling service configurations.
+// References with no local match are external Foundry connection names or IDs
+// and are left to the service to resolve.
 func validateRegistryConnectionDependency(
 	ctx context.Context,
 	agent *azdext.ServiceConfig,
 	connectionRef string,
 	services map[string]*azdext.ServiceConfig,
+	projectRoot string,
 	isEnabled dependencyEnabled,
 ) error {
 	connectionRef = strings.TrimSpace(connectionRef)
@@ -64,10 +68,7 @@ func validateRegistryConnectionDependency(
 	}
 
 	dependency, exists := services[connectionRef]
-	if !exists {
-		return nil
-	}
-	if dependency.GetHost() != foundryConnectionHost {
+	if exists && dependency.GetHost() != foundryConnectionHost {
 		return exterrors.Dependency(
 			exterrors.CodeFoundryDependencyNotReady,
 			fmt.Sprintf(
@@ -80,17 +81,67 @@ func validateRegistryConnectionDependency(
 				strconv.Quote(connectionRef), strconv.Quote(foundryConnectionHost)),
 		)
 	}
-	if !slices.Contains(agent.GetUses(), connectionRef) {
+
+	var matches []string
+	var overriddenName string
+	for key, service := range services {
+		if service.GetHost() != foundryConnectionHost {
+			continue
+		}
+		props := ServiceConfigProps(service).AsMap()
+		if strings.TrimSpace(projectRoot) == "" && containsFileRef(props) {
+			return exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				fmt.Sprintf("cannot resolve $ref for connection service %q: project root is empty", key),
+				"provide the project directory containing azure.yaml to resolve connection definition references",
+			)
+		}
+		resolved, err := foundry.ResolveFileRefs(props, projectRoot)
+		if err != nil {
+			return err
+		}
+		name, _ := resolved["name"].(string)
+		name = strings.TrimSpace(name)
+		if name == "" {
+			name = key
+		}
+		if key == connectionRef && !strings.EqualFold(name, connectionRef) {
+			overriddenName = name
+		}
+		if key == connectionRef || strings.EqualFold(name, connectionRef) {
+			matches = append(matches, key)
+		}
+	}
+	if len(matches) == 0 {
+		return nil
+	}
+	if len(matches) > 1 {
+		slices.Sort(matches)
+		return exterrors.Dependency(
+			exterrors.CodeFoundryDependencyNotReady,
+			fmt.Sprintf("registry connection %q is ambiguous: matches services %q", connectionRef, matches),
+			"use unique Foundry connection names and unambiguous service keys for registry connections",
+		)
+	}
+	serviceKey := matches[0]
+	if overriddenName != "" {
+		return exterrors.Dependency(
+			exterrors.CodeFoundryDependencyNotReady,
+			fmt.Sprintf("registryConnectionId %q is a service key whose Connection name is %q", serviceKey, overriddenName),
+			fmt.Sprintf("set registryConnectionId to %q and keep %q in the agent uses list", overriddenName, serviceKey),
+		)
+	}
+	if !slices.Contains(agent.GetUses(), serviceKey) {
 		return exterrors.Dependency(
 			exterrors.CodeFoundryDependencyNotReady,
 			fmt.Sprintf("registry connection service %s is not declared in %s uses",
-				strconv.Quote(connectionRef), strconv.Quote(agent.GetName())),
-			fmt.Sprintf("add %s to the %s service uses list, run 'azd provision', then retry the agent deployment",
-				strconv.Quote(connectionRef), strconv.Quote(agent.GetName())),
+				strconv.Quote(serviceKey), strconv.Quote(agent.GetName())),
+			fmt.Sprintf("add %s to the %s service uses list, run 'azd deploy --all', then retry the agent deployment",
+				strconv.Quote(serviceKey), strconv.Quote(agent.GetName())),
 		)
 	}
 	if isEnabled != nil {
-		enabled, err := isEnabled(ctx, connectionRef)
+		enabled, err := isEnabled(ctx, serviceKey)
 		if err != nil {
 			return err
 		}
@@ -98,12 +149,31 @@ func validateRegistryConnectionDependency(
 			return exterrors.Dependency(
 				exterrors.CodeFoundryDependencyNotReady,
 				fmt.Sprintf("registry connection service %s is disabled by its deployment condition",
-					strconv.Quote(connectionRef)),
+					strconv.Quote(serviceKey)),
 				"enable the registry connection dependency or use an external Foundry connection reference",
 			)
 		}
 	}
 	return nil
+}
+
+// containsFileRef detects references before resolution so an empty project root
+// cannot cause a top-level or nested include to be read from the process cwd.
+func containsFileRef(value any) bool {
+	switch value := value.(type) {
+	case map[string]any:
+		if _, ok := value["$ref"]; ok {
+			return true
+		}
+		for _, child := range value {
+			if containsFileRef(child) {
+				return true
+			}
+		}
+	case []any:
+		return slices.ContainsFunc(value, containsFileRef)
+	}
+	return false
 }
 
 func validateFoundryDependencies(
@@ -141,13 +211,12 @@ func validateFoundryDependencies(
 		detail := validateFoundryDependency(dependency, env)
 		if detail != "" {
 			failures = append(failures, foundryDependencyFailure{
-				name:   dependencyName,
-				host:   host,
-				detail: detail,
-				requiresProvision: host == foundryProjectHost || host == legacyFoundryHost ||
-					host == foundryConnectionHost,
-				requiresDeploy: host == foundryToolboxHost || host == foundryAgentHost ||
-					host == foundrySkillHost,
+				name:              dependencyName,
+				host:              host,
+				detail:            detail,
+				requiresProvision: host == foundryProjectHost || host == legacyFoundryHost,
+				requiresDeploy: host == foundryConnectionHost || host == foundryToolboxHost ||
+					host == foundryAgentHost || host == foundrySkillHost,
 			})
 		}
 	}
@@ -193,32 +262,11 @@ func validateFoundryDependencies(
 				})
 				continue
 			}
-			key := envkey.ToolboxMCPEndpoint(toolbox.Name)
-			if strings.TrimSpace(env[key]) == "" {
-				failures = append(failures, foundryDependencyFailure{
-					name:              toolbox.Name,
-					host:              foundryToolboxHost,
-					detail:            fmt.Sprintf("legacy bundled toolbox has no endpoint in %s", key),
-					requiresMigration: true,
-				})
-				continue
-			}
-			projectKey := envkey.ToolboxProjectEndpoint(toolbox.Name)
-			if strings.TrimSpace(env[projectKey]) != "" {
-				if !sameProjectEndpoint(env[projectKey], env["FOUNDRY_PROJECT_ENDPOINT"]) {
-					failures = append(failures, foundryDependencyFailure{
-						name: toolbox.Name, host: foundryToolboxHost,
-						detail:            fmt.Sprintf("legacy bundled toolbox %s does not match FOUNDRY_PROJECT_ENDPOINT", projectKey),
-						requiresMigration: true,
-					})
-				}
-			} else if !endpointBelongsToProject(env[key], env["FOUNDRY_PROJECT_ENDPOINT"]) {
-				failures = append(failures, foundryDependencyFailure{
-					name: toolbox.Name, host: foundryToolboxHost,
-					detail:            "legacy bundled toolbox endpoint does not belong to FOUNDRY_PROJECT_ENDPOINT",
-					requiresMigration: true,
-				})
-			}
+			failures = append(failures, foundryDependencyFailure{
+				name: toolbox.Name, host: foundryToolboxHost,
+				detail:            "toolbox reference has no azure.ai.toolbox service; legacy endpoint markers are not supported",
+				requiresMigration: true,
+			})
 		}
 	}
 
@@ -249,7 +297,8 @@ func validateFoundryDependencies(
 
 	actions := slices.Clone(configurationFixes)
 	if requiresMigration {
-		actions = append(actions, "migrate bundled toolboxes to azure.ai.toolbox services")
+		actions = append(actions, "declare azure.ai.toolbox services and add them to the agent uses list "+
+			"(set endpoint on the toolbox service to reuse an existing toolbox)")
 	}
 	if requiresProvision {
 		actions = append(actions, "run 'azd provision'")
@@ -358,19 +407,13 @@ func validateFoundryProjectDependency(_ *azdext.ServiceConfig, env map[string]st
 }
 
 func validateFoundryConnectionDependency(service *azdext.ServiceConfig, env map[string]string) string {
-	connectionProject := strings.TrimSpace(env[envkey.ConnectionProjectEndpoint])
-	if connectionProject != "" && !sameProjectEndpoint(connectionProject, env["FOUNDRY_PROJECT_ENDPOINT"]) {
-		return fmt.Sprintf("%s does not match FOUNDRY_PROJECT_ENDPOINT", envkey.ConnectionProjectEndpoint)
+	serviceProjectKey := envkey.ConnectionServiceProjectEndpoint(service.GetName())
+	serviceProject := strings.TrimSpace(env[serviceProjectKey])
+	if serviceProject == "" {
+		return fmt.Sprintf("%s is not set", serviceProjectKey)
 	}
-	found := false
-	for name := range strings.SplitSeq(env["AZURE_AI_PROJECT_CONNECTION_NAMES"], ",") {
-		if strings.TrimSpace(name) == service.GetName() {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return "connection is not listed in AZURE_AI_PROJECT_CONNECTION_NAMES"
+	if !sameProjectEndpoint(serviceProject, env["FOUNDRY_PROJECT_ENDPOINT"]) {
+		return fmt.Sprintf("%s does not match FOUNDRY_PROJECT_ENDPOINT", serviceProjectKey)
 	}
 	return ""
 }
@@ -379,6 +422,9 @@ func validateFoundryToolboxDependency(service *azdext.ServiceConfig, env map[str
 	key := envkey.ToolboxMCPEndpoint(service.GetName())
 	if strings.TrimSpace(env[key]) == "" {
 		return fmt.Sprintf("%s is not set", key)
+	}
+	if strings.TrimSpace(env["FOUNDRY_PROJECT_ENDPOINT"]) == "" {
+		return "FOUNDRY_PROJECT_ENDPOINT is not set"
 	}
 	projectKey := envkey.ToolboxProjectEndpoint(service.GetName())
 	if strings.TrimSpace(env[projectKey]) == "" && endpointBelongsToProject(env[key], env["FOUNDRY_PROJECT_ENDPOINT"]) {

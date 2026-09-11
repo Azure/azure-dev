@@ -70,25 +70,6 @@ variable "deployments" {
   default = []
 }
 
-variable "connections" {
-  description = "Connections to provision on the existing Foundry project."
-  type = list(object({
-    name             = string
-    category         = string
-    target           = string
-    authType         = string
-    credentials      = optional(any)
-    metadata         = optional(map(string))
-    audience         = optional(string)
-    authorizationUrl = optional(string)
-    tokenUrl         = optional(string)
-    refreshUrl       = optional(string)
-    scopes           = optional(list(string))
-    connectorName    = optional(string)
-  }))
-  default = []
-}
-
 variable "existing_acr_endpoint" {
   type    = string
   default = ""

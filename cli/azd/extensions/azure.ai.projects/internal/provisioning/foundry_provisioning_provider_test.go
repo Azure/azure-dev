@@ -20,7 +20,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -208,196 +207,6 @@ func TestFoundryProvider_ImplementsContract(t *testing.T) {
 	assert.NotNil(t, p)
 }
 
-func TestProjectServiceEnvironments(t *testing.T) {
-	t.Parallel()
-
-	projectServer := &validateStubProjectServer{
-		project: &azdext.ProjectConfig{
-			Services: map[string]*azdext.ServiceConfig{
-				"connection": {
-					Environment: map[string]string{
-						"ENDPOINT": "https://service.example",
-					},
-				},
-				"legacy": {},
-			},
-		},
-	}
-	client := newValidateTestClient(
-		t,
-		projectServer,
-		&validateStubEnvServer{},
-	)
-	provider := &FoundryProvisioningProvider{azdClient: client}
-
-	environments, err := provider.projectServiceEnvironments(t.Context())
-	require.NoError(t, err)
-	require.Equal(
-		t,
-		map[string]map[string]string{
-			"connection": {
-				"ENDPOINT": "https://service.example",
-			},
-		},
-		environments,
-	)
-}
-
-func TestInitializeUsesConnectionServiceEnvironment(t *testing.T) {
-	t.Parallel()
-
-	projectPath := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectPath, "azure.yaml"),
-		[]byte(`
-services:
-  project:
-    host: azure.ai.project
-  connection:
-    host: azure.ai.connection
-    uses: [project]
-    env:
-      ENDPOINT: ${SEARCH_ENDPOINT}
-    category: CognitiveSearch
-    target: ${ENDPOINT}
-    authType: None
-`),
-		0o600,
-	))
-
-	projectServer := &validateStubProjectServer{
-		project: &azdext.ProjectConfig{
-			Path: projectPath,
-			Services: map[string]*azdext.ServiceConfig{
-				"connection": {
-					Environment: map[string]string{
-						"ENDPOINT": "https://service.example",
-					},
-				},
-			},
-		},
-	}
-	client := newValidateTestClient(
-		t,
-		projectServer,
-		&validateStubEnvServer{
-			envName: "test",
-			get: map[string]string{
-				envKeySubscriptionID: "00000000-0000-0000-0000-000000000000",
-				envKeyLocation:       "eastus",
-			},
-		},
-	)
-	provider := &FoundryProvisioningProvider{azdClient: client}
-
-	err := provider.Initialize(
-		t.Context(),
-		projectPath,
-		&azdext.ProvisioningOptions{Provider: FoundryProviderName},
-	)
-	require.NoError(t, err)
-	require.NotNil(t, provider.synthResult)
-	connections, ok := provider.synthResult.Parameters["connections"].([]synthesis.Connection)
-	require.True(t, ok)
-	require.Len(t, connections, 1)
-	require.Equal(t, "https://service.example", connections[0].Target)
-}
-
-func TestResolveTemplateUsesOnDiskConnectionServiceEnvironment(
-	t *testing.T,
-) {
-	t.Parallel()
-
-	projectPath := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectPath, "azure.yaml"),
-		[]byte(`
-services:
-  project:
-    host: azure.ai.project
-  connection:
-    host: azure.ai.connection
-    env:
-      ENDPOINT: ${SEARCH_ENDPOINT}
-`),
-		0o600,
-	))
-	infraDir := filepath.Join(projectPath, onDiskInfraDir)
-	require.NoError(t, os.MkdirAll(infraDir, 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(infraDir, onDiskBicepFile),
-		[]byte("// bicep\n"),
-		0o600,
-	))
-	params := minimalARMParametersFile(t, map[string]any{
-		"connections": []map[string]any{
-			{"name": "connection", "target": "${ENDPOINT}"},
-		},
-	})
-	require.NoError(t, os.WriteFile(
-		filepath.Join(infraDir, onDiskParamsFile),
-		[]byte(params),
-		0o600,
-	))
-
-	projectServer := &validateStubProjectServer{
-		project: &azdext.ProjectConfig{
-			Path: projectPath,
-			Services: map[string]*azdext.ServiceConfig{
-				"connection": {
-					Environment: map[string]string{
-						"ENDPOINT": "https://service.example",
-					},
-				},
-			},
-		},
-	}
-	client := newValidateTestClient(
-		t,
-		projectServer,
-		&validateStubEnvServer{
-			envName: "test",
-			get: map[string]string{
-				envKeySubscriptionID: "sub-id",
-				envKeyLocation:       "eastus",
-			},
-		},
-	)
-	provider := &FoundryProvisioningProvider{
-		azdClient: client,
-		bicepCliInstance: &stubCompiler{
-			buildResult: bicep.BuildResult{
-				Compiled: minimalARMTemplate(),
-			},
-		},
-	}
-
-	require.NoError(t, provider.Initialize(
-		t.Context(),
-		projectPath,
-		&azdext.ProvisioningOptions{Provider: FoundryProviderName},
-	))
-	source, err := provider.resolveTemplate(
-		t.Context(),
-		func(string) {},
-	)
-	require.NoError(t, err)
-
-	connectionEntry, ok :=
-		source.parameters["connections"].(map[string]any)
-	require.True(t, ok)
-	connections, ok := connectionEntry["value"].([]any)
-	require.True(t, ok)
-	require.Len(t, connections, 1)
-	connection, ok := connections[0].(map[string]any)
-	require.True(t, ok)
-	assert.Equal(
-		t,
-		"https://service.example",
-		connection["target"],
-	)
-}
-
 func TestArmOutputsToProto(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -460,10 +269,10 @@ func TestArmOutputsToProto(t *testing.T) {
 // The fix is in armOutputsToProto: case-insensitive lookup against
 // canonicalOutputNames, then emit the canonical name. Unknown keys
 // pass through verbatim so we never silently lose an output.
-func TestInvalidatedEnvKeysClearsConnectionReadinessRecord(t *testing.T) {
+func TestInvalidatedEnvKeysLeavesConnectionReadinessToOwningExtension(t *testing.T) {
 	result := invalidatedEnvKeysResult()
-	assert.Contains(t, result.InvalidatedEnvKeys, "AZURE_AI_PROJECT_CONNECTION_NAMES")
-	assert.Contains(t, result.InvalidatedEnvKeys, "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT")
+	assert.NotContains(t, result.InvalidatedEnvKeys, "AZURE_AI_PROJECT_CONNECTION_NAMES")
+	assert.NotContains(t, result.InvalidatedEnvKeys, "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT")
 }
 
 func TestArmOutputsToProto_RepairsMangledKeyCase(t *testing.T) {
@@ -493,9 +302,9 @@ func TestArmOutputsToProto_RepairsMangledKeyCase(t *testing.T) {
 			wantKey: "AZURE_FOUNDRY_MANAGED_ISOLATION_MODE",
 		},
 		{
-			name:    "ARM-mangled AZURE_AI_PROJECT_CONNECTION_NAMES -> canonical",
+			name:    "legacy Connection output is no longer canonicalized",
 			inKey:   "azurE_AI_PROJECT_CONNECTION_NAMES",
-			wantKey: "AZURE_AI_PROJECT_CONNECTION_NAMES",
+			wantKey: "azurE_AI_PROJECT_CONNECTION_NAMES",
 		},
 		{
 			name:    "already-canonical key passes through unchanged",
@@ -980,11 +789,11 @@ func TestArmParameters_NilSafeOnMissingSynthResult(t *testing.T) {
 		"synthesizer-derived parameters should be absent when synthResult is nil")
 }
 
-func TestArmParameters_UseValueEnvelopeForSecureConnections(t *testing.T) {
+func TestArmParameters_UseValueEnvelopeForDeployments(t *testing.T) {
 	p := &FoundryProvisioningProvider{
 		synthResult: &synthesis.Result{
 			Parameters: map[string]any{
-				"connections": `[{"name":"search-conn"}]`,
+				"deployments": []synthesis.Deployment{{Name: "model"}},
 			},
 		},
 	}
@@ -993,8 +802,8 @@ func TestArmParameters_UseValueEnvelopeForSecureConnections(t *testing.T) {
 
 	assert.Equal(
 		t,
-		map[string]any{"value": `[{"name":"search-conn"}]`},
-		out["connections"],
+		map[string]any{"value": []synthesis.Deployment{{Name: "model"}}},
+		out["deployments"],
 	)
 }
 
@@ -1404,7 +1213,8 @@ func TestPlannedOutputsMatchSelectedTemplate(t *testing.T) {
 			}
 			assert.Contains(t, names, tt.want)
 			assert.NotContains(t, names, tt.doNotWant)
-			assert.Contains(t, names, "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT")
+			assert.NotContains(t, names, "AZURE_AI_PROJECT_CONNECTION_NAMES")
+			assert.NotContains(t, names, "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT")
 		})
 	}
 }
@@ -1412,8 +1222,8 @@ func TestPlannedOutputsMatchSelectedTemplate(t *testing.T) {
 func TestDestroyPreservesExistingProjectBindings(t *testing.T) {
 	t.Parallel()
 	p := &FoundryProvisioningProvider{
-		brownfieldEndpoint:            "https://account.services.ai.azure.com/api/projects/project",
-		existingProjectConnectionOnly: true,
+		brownfieldEndpoint:       "https://account.services.ai.azure.com/api/projects/project",
+		existingProjectReuseOnly: true,
 	}
 	result, err := p.Destroy(
 		t.Context(),
@@ -1467,9 +1277,9 @@ func TestDestroyRefusesExistingProjectReuseConnect(t *testing.T) {
 	assert.Equal(t, exterrors.CodeInvalidServiceConfig, local.Code)
 }
 
-func TestPreviewPreservesConnectionOnlyExistingProject(t *testing.T) {
+func TestPreviewPreservesReuseOnlyExistingProject(t *testing.T) {
 	t.Parallel()
-	p := &FoundryProvisioningProvider{existingProjectConnectionOnly: true}
+	p := &FoundryProvisioningProvider{existingProjectReuseOnly: true}
 	var messages []string
 
 	result, err := p.Preview(t.Context(), func(message string) {
@@ -1534,7 +1344,7 @@ func TestWithTenantOutput(t *testing.T) {
 	})
 }
 
-func TestConnectionOnlyOutputsPreserveExistingTenant(t *testing.T) {
+func TestReuseOnlyOutputsPreserveExistingTenant(t *testing.T) {
 	t.Parallel()
 	env := &resolveEnvStubEnvServer{envName: "dev", get: map[string]string{envKeyTenantID: "tenant-123"}}
 	client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
@@ -1545,8 +1355,8 @@ func TestConnectionOnlyOutputsPreserveExistingTenant(t *testing.T) {
 		brownfieldEndpoint: "https://account.services.ai.azure.com/api/projects/project",
 	}
 
-	require.NoError(t, p.resolveConnectionOnlyTenant(t.Context()))
-	outputs := p.existingProjectConnectionOutputs()
+	require.NoError(t, p.resolveReuseOnlyTenant(t.Context()))
+	outputs := p.existingProjectReuseOutputs()
 	assert.Equal(t, "tenant-123", outputs[envKeyTenantID].Value)
 }
 

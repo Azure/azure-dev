@@ -1495,7 +1495,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	}
 	progress("Validating service dependencies")
 	if err := validateRegistryConnectionDependency(
-		ctx, serviceConfig, agentDef.RegistryConnectionID, p.projectServices, p.dependencyEnabled,
+		ctx, serviceConfig, agentDef.RegistryConnectionID, p.projectServices, p.projectPath, p.dependencyEnabled,
 	); err != nil {
 		return nil, err
 	}

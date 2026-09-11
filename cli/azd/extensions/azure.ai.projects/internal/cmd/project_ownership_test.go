@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"net"
 	"os"
@@ -28,6 +29,158 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+func TestEjectProjectInfraIgnoresSplitConnectionSecrets(t *testing.T) {
+	const (
+		endpoint   = "https://account.services.ai.azure.com/api/projects/project"
+		resourceID = "/subscriptions/sub/resourceGroups/rg/providers/" +
+			"Microsoft.CognitiveServices/accounts/account/projects/project"
+		connectionFile = "category: CognitiveSearch\nauthType: ApiKey\n" +
+			"target: https://search.example.com\ncredentials:\n  key: split-reference-secret\n"
+	)
+	t.Setenv("SPLIT_CONNECTION_SECRET", "split-process-secret")
+	for _, target := range []struct {
+		name     string
+		provider string
+		existing bool
+	}{
+		{name: "greenfield Bicep", provider: "bicep"},
+		{name: "greenfield Terraform", provider: "terraform"},
+		{name: "existing Bicep", provider: "bicep", existing: true},
+		{name: "existing Terraform", provider: "terraform", existing: true},
+	} {
+		t.Run(target.name, func(t *testing.T) {
+			for _, connection := range []struct {
+				name string
+				body string
+			}{
+				{
+					name: "concrete credential",
+					body: "    credentials:\n      key: split-inline-secret\n",
+				},
+				{
+					name: "environment credential",
+					body: "    credentials:\n      key: ${SPLIT_CONNECTION_SECRET}\n",
+				},
+				{
+					name: "referenced credential",
+					body: "    $ref: ./connection.yaml\n",
+				},
+				{
+					name: "condition and reference owned by Connections",
+					body: "    condition: {value: split-condition-secret}\n" +
+						"    $ref: ./missing-connection.yaml\n",
+				},
+			} {
+				t.Run(connection.name, func(t *testing.T) {
+					root := t.TempDir()
+					endpointLine, selectedEndpoint, selectedID := "", "", ""
+					if target.existing {
+						endpointLine = "    endpoint: " + endpoint + "\n"
+						selectedEndpoint, selectedID = endpoint, resourceID
+					}
+					azureYAML := []byte("name: test\nservices:\n  project:\n    host: azure.ai.project\n" + endpointLine +
+						"    deployments:\n      - name: chat\n" +
+						"        model: {format: OpenAI, name: gpt-4.1, version: \"2025-04-14\"}\n" +
+						"        sku: {name: GlobalStandard, capacity: 10}\n" +
+						"  split-search:\n    host: azure.ai.connection\n    category: CognitiveSearch\n" +
+						"    target: https://search.example.com\n    authType: ApiKey\n" + connection.body)
+					require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), azureYAML, 0600))
+					refPath := filepath.Join(root, "connection.yaml")
+					require.NoError(t, os.WriteFile(refPath, []byte(connectionFile), 0600))
+					projectServer := &transactionProjectServer{
+						project: &azdext.ProjectConfig{
+							Name:  "test",
+							Path:  root,
+							Infra: &azdext.InfraOptions{Provider: provisioningFoundryProvider},
+						},
+					}
+					client := newTransactionProjectClient(t, projectServer)
+					require.NoError(t, ejectProjectInfraWithTarget(
+						t.Context(), client, root, "project", target.provider,
+						selectedEndpoint, selectedID,
+						// #nosec G101 -- synthetic secret used only to assert it is never emitted.
+						map[string]string{"SPLIT_CONNECTION_SECRET": "split-environment-secret"},
+					))
+
+					infraDir := filepath.Join(root, "infra")
+					assertProjectEjectionOmitsConnections(t, infraDir,
+						"split-search", "split-inline-secret", "SPLIT_CONNECTION_SECRET",
+						"split-process-secret", "split-environment-secret", "split-reference-secret",
+						"split-condition-secret", "connection.yaml",
+					)
+					parameterFile := "main.tfvars.json"
+					markerVersion := foundryTerraformMarkerVersion
+					if target.provider == "bicep" {
+						parameterFile = "main.parameters.json"
+						markerVersion = foundryBicepMarkerVersion
+					}
+					// #nosec G304 -- paths are inside the test project directory.
+					raw, err := os.ReadFile(filepath.Join(infraDir, parameterFile))
+					require.NoError(t, err)
+					var document struct {
+						Deployments []synthesis.Deployment `json:"deployments"`
+						Parameters  struct {
+							Deployments struct {
+								Value []synthesis.Deployment `json:"value"`
+							} `json:"deployments"`
+						} `json:"parameters"`
+					}
+					require.NoError(t, json.Unmarshal(raw, &document))
+					deployments := document.Deployments
+					if target.provider == "bicep" {
+						deployments = document.Parameters.Deployments.Value
+					}
+					assert.Equal(t, []synthesis.Deployment{synthesisDeploymentForTest()}, deployments)
+					// #nosec G304 -- path is inside the test project directory.
+					marker, err := os.ReadFile(filepath.Join(infraDir, foundryEjectionMarker))
+					require.NoError(t, err)
+					assert.Equal(t, markerVersion, string(marker))
+					assert.Equal(t, azureYAML, mustReadProjectFile(t, root))
+					// #nosec G304 -- path is inside the test project directory.
+					reference, err := os.ReadFile(refPath)
+					require.NoError(t, err)
+					assert.Equal(t, connectionFile, string(reference))
+					staged, err := filepath.Glob(filepath.Join(root, ".azd-foundry-eject-*"))
+					require.NoError(t, err)
+					assert.Empty(t, staged)
+				})
+			}
+		})
+	}
+}
+
+// assertProjectEjectionOmitsConnections checks every emitted artifact, including
+// copied modules, while allowing the project-owned system ACR connection.
+func assertProjectEjectionOmitsConnections(t *testing.T, infraDir string, secrets ...string) {
+	t.Helper()
+	forbidden := append([]string{
+		`"connections"`, "connectionCredentials", "param connections ",
+		"connections:", "var.connections", "local.connections", "resource connections ",
+	}, secrets...)
+	root, err := os.OpenRoot(infraDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, root.Close()) })
+	files := 0
+	require.NoError(t, fs.WalkDir(root.FS(), ".", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		raw, err := root.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		files++
+		for _, value := range forbidden {
+			assert.NotContains(t, string(raw), value, "unexpected generic connection data in %s", path)
+		}
+		return nil
+	}))
+	require.Positive(t, files, "ejection must produce files to check")
+}
 
 func TestProjectCommandsRegistered(t *testing.T) {
 	root := NewRootCommand()
@@ -158,15 +311,6 @@ func TestWriteTerraformEjectedInfra(t *testing.T) {
 					},
 					Sku: synthesis.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
 				}},
-				"connections": []synthesis.Connection{{
-					Name:     "search",
-					Category: "CognitiveSearch",
-					Target:   "https://search.example.com",
-					AuthType: "ApiKey",
-				}},
-				"connectionCredentials": map[string]map[string]any{
-					"search": {"key": "${SEARCH_API_KEY}"},
-				},
 			}
 
 			require.NoError(t, writeTerraformEjectedInfra(infraDir, parameters))
@@ -197,17 +341,20 @@ func TestWriteTerraformEjectedInfra(t *testing.T) {
 			assert.Equal(t, "${AZURE_AI_PROJECT_NAME}", tfvars["foundry_project_name"])
 			assert.Equal(t, "${AZURE_PRINCIPAL_ID}", tfvars["principal_id"])
 			assert.Equal(t, "${AZD_RESOURCE_TOKEN_SALT}", tfvars["resource_token_salt"])
+			assert.NotContains(t, tfvars, "connections")
 			assert.NotContains(t, tfvars, "connectionCredentials")
 			assert.NotContains(t, tfvars, "includeAcr")
 
-			connections, ok := tfvars["connections"].([]any)
+			deployments, ok := tfvars["deployments"].([]any)
 			require.True(t, ok)
-			require.Len(t, connections, 1)
-			connection, ok := connections[0].(map[string]any)
+			require.Len(t, deployments, 1)
+			deployment, ok := deployments[0].(map[string]any)
 			require.True(t, ok)
-			credentials, ok := connection["credentials"].(map[string]any)
+			assert.Equal(t, "chat", deployment["name"])
+			model, ok := deployment["model"].(map[string]any)
 			require.True(t, ok)
-			assert.Equal(t, "${SEARCH_API_KEY}", credentials["key"])
+			assert.Equal(t, "gpt-4.1", model["name"])
+			assertProjectEjectionOmitsConnections(t, infraDir)
 		})
 	}
 }
@@ -799,7 +946,7 @@ func TestExistingEndpointModeRejectsManagedDeployments(t *testing.T) {
 		},
 	}
 
-	err := validateExistingEndpointMode(service, endpoint, "", nil, nil)
+	err := validateExistingEndpointMode(service, endpoint, "", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot retain managed model deployments")
 }
@@ -807,7 +954,7 @@ func TestExistingEndpointModeRejectsManagedDeployments(t *testing.T) {
 func TestExistingEndpointModeRejectsInfrastructureWithoutProjectID(t *testing.T) {
 	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
 
-	err := validateExistingEndpointMode(nil, endpoint, "bicep", nil, nil)
+	err := validateExistingEndpointMode(nil, endpoint, "bicep", nil)
 	require.Error(t, err)
 
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
@@ -833,7 +980,7 @@ func TestExistingEndpointModeAllowsNetworkOnlyService(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, validateExistingEndpointMode(service, endpoint, "", nil, nil))
+	require.NoError(t, validateExistingEndpointMode(service, endpoint, "", nil))
 }
 
 func TestProjectEjectIdentityRejectsEndpointMismatch(t *testing.T) {
@@ -854,17 +1001,82 @@ func TestProjectEjectIdentityRejectsEndpointMismatch(t *testing.T) {
 	assert.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
 }
 
-func TestExistingEndpointModeRejectsConnections(t *testing.T) {
+func TestProjectAddEndpointOnlyIgnoresSplitConnections(t *testing.T) {
 	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
-	project := &azdext.ProjectConfig{
-		Services: map[string]*azdext.ServiceConfig{
-			"search": {Host: "azure.ai.connection"},
+	root := t.TempDir()
+	t.Chdir(root)
+	azureYAML := []byte(`name: test
+services:
+  project:
+    host: azure.ai.project
+    endpoint: ` + endpoint + `
+  search:
+    host: azure.ai.connection
+    category: CognitiveSearch
+    target: https://search.example.com
+    authType: ApiKey
+    credentials:
+      key: split-connection-secret
+`)
+	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), azureYAML, 0600))
+	section, err := structpb.NewStruct(map[string]any{
+		"project": map[string]any{"host": aiProjectHost, "endpoint": endpoint},
+		"search": map[string]any{
+			"host":        "azure.ai.connection",
+			"category":    "CognitiveSearch",
+			"target":      "https://search.example.com",
+			"authType":    "ApiKey",
+			"credentials": map[string]any{"key": "split-connection-secret"},
+		},
+	})
+	require.NoError(t, err)
+	projectServer := &transactionProjectServer{
+		project: &azdext.ProjectConfig{
+			Name: "test",
+			Path: root,
+			Services: map[string]*azdext.ServiceConfig{
+				"project": {Name: "project", Host: aiProjectHost},
+				"search":  {Name: "search", Host: "azure.ai.connection"},
+			},
+		},
+		section: section,
+	}
+	envServer := &projectAddEnvironmentServer{
+		values: map[string]string{
+			"AZURE_AI_PROJECT_NAME":    "p",
+			"FOUNDRY_PROJECT_ENDPOINT": endpoint,
+			"USE_EXISTING_AI_PROJECT":  "true",
 		},
 	}
+	server := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	azdext.RegisterEnvironmentServiceServer(server, envServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
 
-	err := validateExistingEndpointMode(nil, endpoint, "", project, nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "project connections")
+	action := &ProjectAddAction{
+		client: client,
+		flags:  &projectAddFlags{noPrompt: true, output: "none"},
+		extCtx: &azdext.ExtensionContext{Environment: "test"},
+	}
+	require.NoError(t, action.Run(t.Context()))
+	assert.Empty(t, projectServer.setConfig)
+	assert.Empty(t, projectServer.addServices)
+	assert.Nil(t, projectServer.serviceValue)
+	assert.Nil(t, projectServer.serviceSection)
+	assert.Empty(t, projectServer.unsetPaths)
+	assert.Equal(t, azureYAML, mustReadProjectFile(t, root))
+	assert.NoDirExists(t, filepath.Join(root, "infra"))
 }
 
 func TestExistingEndpointModeRejectsPendingAcr(t *testing.T) {
@@ -873,14 +1085,13 @@ func TestExistingEndpointModeRejectsPendingAcr(t *testing.T) {
 		"AI_AGENT_PENDING_PROVISION": "model_deployment,acr",
 	}
 
-	err := validateExistingEndpointMode(nil, endpoint, "", nil, values)
+	err := validateExistingEndpointMode(nil, endpoint, "", values)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "pending container registry")
 	require.NoError(t, validateExistingEndpointMode(
 		nil,
 		endpoint,
 		"",
-		nil,
 		map[string]string{
 			"AI_AGENT_PENDING_PROVISION":        "acr",
 			"AZURE_CONTAINER_REGISTRY_ENDPOINT": "registry.azurecr.io",
@@ -1248,20 +1459,12 @@ services:
 }
 
 func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
-	t.Setenv("ENABLE_CONNECTION", "false")
+	t.Setenv("ENABLE_AGENT", "false")
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(
 		filepath.Join(root, "azure.yaml"),
-		[]byte(`name: test
-services:
-  project:
-    host: azure.ai.project
-  active-connection:
-    host: azure.ai.connection
-    condition: ${ENABLE_CONNECTION}
-    category: RemoteTool
-    target: https://example.test
-`),
+		[]byte("name: test\nservices:\n  project:\n    host: azure.ai.project\n"+
+			"  active-agent:\n    host: azure.ai.agent\n    condition: ${ENABLE_AGENT}\n"),
 		0600,
 	))
 
@@ -1297,13 +1500,20 @@ services:
 		"bicep",
 		"",
 		"",
-		map[string]string{"ENABLE_CONNECTION": "true"},
+		map[string]string{"ENABLE_AGENT": "true"},
 	))
 
 	// #nosec G304 -- path is inside the test project directory.
 	raw, err := os.ReadFile(filepath.Join(root, "infra", "main.parameters.json"))
 	require.NoError(t, err)
-	assert.Contains(t, string(raw), `"name": "active-connection"`)
+	var parameters struct {
+		Parameters map[string]struct {
+			Value any `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &parameters))
+	assert.Equal(t, true, parameters.Parameters["includeAcr"].Value)
+	assertProjectEjectionOmitsConnections(t, filepath.Join(root, "infra"))
 }
 
 func TestEjectTerraformUsesFoundryLayerPathAndProvider(t *testing.T) {

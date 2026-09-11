@@ -306,9 +306,11 @@ func TestCheckConnections_FailsWithMissing(t *testing.T) {
 	require.Contains(t, res.Message, "openai-default [AzureOpenAI | https://openai.test] (service chat)")
 	require.Contains(t, res.Message, "search-conn [CognitiveSearch | search.test] (service search)")
 	require.NotContains(t, res.Message, "blob-storage")
-	require.Contains(t, res.Suggestion, "azd provision")
-	require.NotContains(t, res.Suggestion, "azd deploy")
-	require.Contains(t, res.Suggestion, "configured connection services")
+	require.Contains(t, res.Suggestion, "azd deploy --all")
+	require.Contains(t, res.Suggestion, "azure.ai.connection services")
+	require.NotContains(t, res.Suggestion, "azd provision")
+	require.Contains(t, res.Suggestion, "Migrate bundled or legacy")
+	require.Contains(t, res.Suggestion, "agent uses before deploying")
 	require.EqualValues(t, 1, res.Details["matchedCount"])
 }
 

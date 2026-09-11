@@ -569,9 +569,6 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 			"check the endpoint, deployments, and network fields under your azure.ai.project service",
 		)
 	}
-	if err := validateEjectedConnectionCredentials(res.Parameters); err != nil {
-		return err
-	}
 	acrMode := infraEjectAcrNone
 	if existingProject {
 		values := environment
@@ -688,9 +685,6 @@ func ejectBicep(
 	layer bool,
 	params map[string]any,
 ) ([]ejectArtifact, error) {
-	if err := validateEjectedConnectionCredentials(params); err != nil {
-		return nil, err
-	}
 	written, err := writeEmbeddedTemplates(infraDir, artifactRoot, module, layer)
 	if err != nil {
 		return nil, err
@@ -712,9 +706,6 @@ func ejectExistingProjectBicep(
 	acrMode infraEjectAcrMode,
 	environments []map[string]string,
 ) ([]ejectArtifact, error) {
-	if err := validateEjectedConnectionCredentials(params); err != nil {
-		return nil, err
-	}
 	existingAcrEndpoint := ""
 	if len(environments) > 0 &&
 		(acrMode == infraEjectAcrReuseConnect ||
@@ -770,9 +761,6 @@ func ejectTerraform(
 	layer bool,
 	params map[string]any,
 ) ([]ejectArtifact, error) {
-	if err := validateEjectedConnectionCredentials(params); err != nil {
-		return nil, err
-	}
 	includeAcr, _ := params["includeAcr"].(bool)
 
 	written, err := writeEmbeddedTerraformTemplates(infraDir, artifactRoot, includeAcr)
@@ -807,9 +795,6 @@ func ejectExistingProjectTerraform(
 	acrMode infraEjectAcrMode,
 	environments []map[string]string,
 ) ([]ejectArtifact, error) {
-	if err := validateEjectedConnectionCredentials(params); err != nil {
-		return nil, err
-	}
 	existingAcrEndpoint := ""
 	if len(environments) > 0 &&
 		(acrMode == infraEjectAcrReuseConnect ||
@@ -2164,21 +2149,6 @@ func writeExistingProjectTfvarsFile(
 	if v, ok := params["deployments"]; ok {
 		doc["deployments"] = v
 	}
-	connections, ok := params["connections"].([]synthesis.Connection)
-	if !ok {
-		return ejectArtifact{}, exterrors.Internal(
-			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf("connections parameter has unexpected type %T", params["connections"]),
-		)
-	}
-	credentials, ok := params["connectionCredentials"].(map[string]map[string]any)
-	if !ok {
-		return ejectArtifact{}, exterrors.Internal(
-			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf("connectionCredentials parameter has unexpected type %T", params["connectionCredentials"]),
-		)
-	}
-	doc["connections"] = synthesis.JoinConnectionCredentials(connections, credentials)
 	return writeJSONArtifact(infraDir, artifactRoot, module+".tfvars.json", doc)
 }
 
@@ -2324,8 +2294,8 @@ func resolveInfraEjectAcrMode(params map[string]any, values map[string]string) (
 
 // writeTfvarsFile emits infra/main.tfvars.json. azd-core's Terraform provider
 // reads this file and substitutes the ${...} placeholders from the azd
-// environment at provision time. The synthesizer-known values `deployments`
-// and `connections` are written literally; deploy-time inputs (location,
+// environment at provision time. The synthesized `deployments` are written
+// literally; deploy-time inputs (location,
 // resource_group_name, foundry_project_name, principal_id, subscription_id,
 // environment_name, resource_token_salt) are left as azd environment placeholders.
 //
@@ -2355,34 +2325,12 @@ func writeTfvarsFile(
 		doc["foundry_project_name"] = "${AZURE_AI_PROJECT_NAME=}"
 	}
 
-	// deployments and connections are the only synthesizer-derived values
+	// Model deployments are the only synthesizer-derived values
 	// written to tfvars. The Terraform provider resolves ${VAR} references
 	// across the generated file at provision time.
 	if v, ok := params["deployments"]; ok {
 		doc["deployments"] = v
 	}
-	connections, ok := params["connections"].([]synthesis.Connection)
-	if !ok {
-		return ejectArtifact{}, exterrors.Internal(
-			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf("connections parameter has unexpected type %T", params["connections"]),
-		)
-	}
-	connectionCredentials, ok := params["connectionCredentials"].(map[string]map[string]any)
-	if !ok {
-		return ejectArtifact{}, exterrors.Internal(
-			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf(
-				"connectionCredentials parameter has unexpected type %T",
-				params["connectionCredentials"],
-			),
-		)
-	}
-	doc["connections"] = synthesis.JoinConnectionCredentials(
-		connections,
-		connectionCredentials,
-	)
-
 	filename := module + ".tfvars.json"
 	return writeJSONArtifact(infraDir, artifactRoot, filename, doc)
 }

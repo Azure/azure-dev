@@ -5,13 +5,14 @@ package provisioning
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -386,31 +387,17 @@ func TestResolveEnv_EmptyLocationResponseReturnsError(t *testing.T) {
 	assert.Empty(t, env.set, "an empty location name must not be persisted")
 }
 
-// promptOrderStubProjectServer models azd core expanding ${VAR} in a
-// service env at call time: the connection endpoint reads as empty
-// until the prompted location has been persisted to the azd
-// environment.
-type promptOrderStubProjectServer struct {
+// forbiddenProjectServer proves Initialize never asks core to expand service env.
+type forbiddenProjectServer struct {
 	azdext.UnimplementedProjectServiceServer
-	projectPath string
-	env         *resolveEnvStubEnvServer
+	calls atomic.Int32
 }
 
-func (s *promptOrderStubProjectServer) Get(
+func (s *forbiddenProjectServer) Get(
 	context.Context, *azdext.EmptyRequest,
 ) (*azdext.GetProjectResponse, error) {
-	endpoint := ""
-	if location := s.env.set[envKeyLocation]; location != "" {
-		endpoint = "https://search." + location + ".example"
-	}
-	return &azdext.GetProjectResponse{Project: &azdext.ProjectConfig{
-		Path: s.projectPath,
-		Services: map[string]*azdext.ServiceConfig{
-			"connection": {
-				Environment: map[string]string{"ENDPOINT": endpoint},
-			},
-		},
-	}}, nil
+	s.calls.Add(1)
+	return nil, status.Error(codes.Internal, "Projects must not request expanded service environments")
 }
 
 // newPromptOrderTestClient serves the project, environment and prompt
@@ -444,57 +431,75 @@ func newPromptOrderTestClient(
 	return client
 }
 
-func TestInitializeResolvesEnvBeforeReadingServiceEnvironments(t *testing.T) {
-	// Greenfield: neither AZURE_SUBSCRIPTION_ID nor AZURE_LOCATION is
-	// set, so Initialize must prompt first. Reading service
-	// environments before the prompt would synthesize the connection
-	// with an empty target.
-	projectPath := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectPath, "azure.yaml"),
-		[]byte(`
-services:
-  project:
-    host: azure.ai.project
+func TestInitializeLeavesSplitConnectionEnvironmentToOwningExtension(t *testing.T) {
+	for _, mode := range []string{"greenfield", "brownfield-reuse", "brownfield-models"} {
+		for _, onDisk := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/ondisk=%t", mode, onDisk), func(t *testing.T) {
+				projectPath := t.TempDir()
+				projectConfig := ""
+				const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+				if mode != "greenfield" {
+					projectConfig = "    endpoint: " + endpoint + "\n"
+				}
+				if mode == "brownfield-models" {
+					projectConfig += "    deployments:\n" +
+						"      - name: model\n" +
+						"        model: {name: gpt-4.1-mini, format: OpenAI, version: '2025-04-14'}\n" +
+						"        sku: {name: GlobalStandard, capacity: 1}\n"
+				}
+				// Missing file refs, an invalid payload and unresolvable env are
+				// intentionally owned by Connections, never by Projects.
+				raw := "services:\n  project:\n    host: azure.ai.project\n" + projectConfig + `
   connection:
     host: azure.ai.connection
     uses: [project]
+    $ref: ./missing-connection.yaml
     env:
-      ENDPOINT: ${SEARCH_ENDPOINT}
-    category: CognitiveSearch
-    target: ${ENDPOINT}
-    authType: None
-`),
-		0o600,
-	))
+      $ref: ./missing-connection-env.yaml
+    target: ${UNRESOLVED_CONNECTION_ENDPOINT}
+    credentials: ${UNRESOLVED_CONNECTION_CREDENTIALS}
+    category: {invalid: payload}
+  isolated:
+    host: azure.ai.connection
+    env: {}
+    target: ${UNRESOLVED_CONNECTION_ENDPOINT}
+`
+				require.NoError(t, os.WriteFile(filepath.Join(projectPath, "azure.yaml"), []byte(raw), 0o600))
+				if onDisk {
+					infraDir := filepath.Join(projectPath, onDiskInfraDir)
+					require.NoError(t, os.MkdirAll(infraDir, 0o750))
+					require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepFile), []byte("// project"), 0o600))
+				}
+				env := &resolveEnvStubEnvServer{envName: "test", get: map[string]string{
+					"AZURE_AI_PROJECT_ID": "/subscriptions/00000000-0000-0000-0000-000000000001/" +
+						"resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/projects/project",
+					"FOUNDRY_PROJECT_ENDPOINT": endpoint,
+				}}
+				prompt := &resolveEnvStubPromptServer{
+					subscriptionID: "00000000-0000-0000-0000-000000000001",
+					location:       "westus2",
+				}
+				project := &forbiddenProjectServer{}
+				client := newPromptOrderTestClient(t, project, env, prompt)
+				provider := &FoundryProvisioningProvider{azdClient: client}
 
-	env := &resolveEnvStubEnvServer{envName: "test", get: map[string]string{}}
-	prompt := &resolveEnvStubPromptServer{
-		subscriptionID: "00000000-0000-0000-0000-000000000001",
-		location:       "westus2",
+				require.NoError(t, provider.Initialize(t.Context(), projectPath,
+					&azdext.ProvisioningOptions{Provider: FoundryProviderName}))
+				assert.Zero(t, project.calls.Load())
+				reuseOnly := mode == "brownfield-reuse" && !onDisk
+				assert.Equal(t, reuseOnly, provider.existingProjectReuseOnly)
+				wantPrompts := 1
+				if reuseOnly {
+					wantPrompts = 0
+				}
+				assert.Equal(t, wantPrompts, prompt.subscriptionN)
+				assert.Equal(t, wantPrompts, prompt.locationN)
+				require.NotNil(t, provider.synthResult)
+				assert.NotContains(t, provider.synthResult.Parameters, "connections")
+				assert.NotContains(t, provider.synthResult.Parameters, "connectionCredentials")
+			})
+		}
 	}
-	client := newPromptOrderTestClient(
-		t,
-		&promptOrderStubProjectServer{projectPath: projectPath, env: env},
-		env,
-		prompt,
-	)
-	provider := &FoundryProvisioningProvider{azdClient: client}
-
-	err := provider.Initialize(
-		t.Context(),
-		projectPath,
-		&azdext.ProvisioningOptions{Provider: FoundryProviderName},
-	)
-	require.NoError(t, err)
-	assert.Equal(t, 1, prompt.subscriptionN)
-	assert.Equal(t, 1, prompt.locationN)
-
-	require.NotNil(t, provider.synthResult)
-	connections, ok := provider.synthResult.Parameters["connections"].([]synthesis.Connection)
-	require.True(t, ok)
-	require.Len(t, connections, 1)
-	assert.Equal(t, "https://search.westus2.example", connections[0].Target)
 }
 
 func TestInitializeValidatesConfigBeforePrompting(t *testing.T) {

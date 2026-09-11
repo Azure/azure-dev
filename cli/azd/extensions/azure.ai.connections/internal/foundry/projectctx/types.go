@@ -48,6 +48,9 @@ type ResolveOpts struct {
 	// FlagValue is the value of the --project-endpoint flag (level 1).
 	// Empty means the flag was not provided.
 	FlagValue string
+	// EnvironmentName selects the azd environment for endpoint lookup. Empty
+	// preserves standalone command behavior by using the persisted current env.
+	EnvironmentName string
 }
 
 // Resolved holds the result of Resolve.

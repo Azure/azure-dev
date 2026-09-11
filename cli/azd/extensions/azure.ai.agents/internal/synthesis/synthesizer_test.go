@@ -6,7 +6,6 @@ package synthesis
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,9 +25,6 @@ func TestSynthesize(t *testing.T) {
 		wantIncludeAcr bool
 		// wantDeployName0, if non-empty, asserts the name of the first deployment.
 		wantDeployName0 string
-		// wantConnectionNames, if non-nil, asserts the exact names (sorted) of
-		// the synthesized connections.
-		wantConnectionNames []string
 	}{
 		{
 			name: "greenfield hosted agent with docker",
@@ -368,7 +364,7 @@ services:
 			wantIncludeAcr: false,
 		},
 		{
-			name: "ignores inline connections/toolboxes/skills on the project (deploy-time concerns)",
+			name: "ignores inline skills and routines",
 			yaml: `
 services:
   my-project:
@@ -377,14 +373,6 @@ services:
       - name: gpt-4.1-mini
         model: {format: OpenAI, name: gpt-4.1-mini, version: "2025-04-14"}
         sku: {capacity: 10, name: GlobalStandard}
-    connections:
-      - name: github-mcp-conn
-        category: CustomKeys
-        target: https://api.githubcopilot.com/mcp
-        authType: CustomKeys
-    toolboxes:
-      - name: t1
-        tools: [{type: web_search}]
     skills:
       - name: s1
         instructions: hi
@@ -397,13 +385,12 @@ services:
         kind: prompt
         instructions: hi
 `,
-			serviceName:         "my-project",
-			wantDeployLen:       1,
-			wantIncludeAcr:      false,
-			wantConnectionNames: []string{},
+			serviceName:    "my-project",
+			wantDeployLen:  1,
+			wantIncludeAcr: false,
 		},
 		{
-			name: "collects sibling azure.ai.connection services (sorted by name)",
+			name: "ignores sibling azure.ai.connection services",
 			yaml: `
 services:
   my-project:
@@ -423,13 +410,12 @@ services:
     target: https://api.bing.microsoft.com
     authType: ApiKey
 `,
-			serviceName:         "my-project",
-			wantDeployLen:       0,
-			wantIncludeAcr:      false,
-			wantConnectionNames: []string{"bing-conn", "search-conn"},
+			serviceName:    "my-project",
+			wantDeployLen:  0,
+			wantIncludeAcr: false,
 		},
 		{
-			name: "no connections yields empty slice",
+			name: "model-only project",
 			yaml: `
 services:
   my-project:
@@ -439,9 +425,8 @@ services:
         model: {format: OpenAI, name: gpt-4.1-mini, version: "2025-04-14"}
         sku: {capacity: 10, name: GlobalStandard}
 `,
-			serviceName:         "my-project",
-			wantDeployLen:       1,
-			wantConnectionNames: []string{},
+			serviceName:   "my-project",
+			wantDeployLen: 1,
 		},
 		{
 			name: "brownfield: endpoint set => ErrEndpointBrownfield",
@@ -533,504 +518,10 @@ services:
 			require.True(t, ok, "includeAcr param should be bool")
 			assert.Equal(t, tt.wantIncludeAcr, includeAcr)
 
-			connections := resultConnections(t, res)
-			if tt.wantConnectionNames != nil {
-				gotNames := make([]string, len(connections))
-				for i, c := range connections {
-					gotNames[i] = c.Name
-				}
-				assert.Equal(t, tt.wantConnectionNames, gotNames)
-			}
+			assert.NotContains(t, res.Parameters, "connections")
+			assert.NotContains(t, res.Parameters, "connectionCredentials")
 		})
 	}
-}
-
-// TestSynthesize_Connections covers the ${VAR} resolve-vs-preserve behavior for
-// connection target and credential values, mirroring the network path.
-func TestSynthesize_Connections(t *testing.T) {
-	const yaml = `
-services:
-  my-project:
-    host: azure.ai.project
-  mcp-conn:
-    host: azure.ai.connection
-    uses: [my-project]
-    category: RemoteTool
-    target: ${MCP_URL}
-    authType: CustomKeys
-    credentials:
-      keys:
-        x-api-key: ${MCP_KEY}
-        body.provider: ${REGISTRY_PROVIDER}
-    metadata:
-      owner: ${MCP_OWNER}
-`
-	env := map[string]string{
-		"MCP_URL":           "https://mcp.example.com/mcp",
-		"MCP_KEY":           "secret-value",
-		"MCP_OWNER":         "team-ai",
-		"REGISTRY_PROVIDER": "generic-provider",
-	}
-
-	getConn := func(t *testing.T, res *Result) Connection {
-		t.Helper()
-		conns := resultConnections(t, res)
-		require.Len(t, conns, 1)
-		return conns[0]
-	}
-
-	t.Run("provision path resolves ${VAR}", func(t *testing.T) {
-		res, err := Synthesize(Input{
-			RawAzureYAML:  []byte(yaml),
-			ServiceName:   "my-project",
-			AcceptedHosts: []string{"azure.ai.project"},
-			Env:           env,
-		})
-		require.NoError(t, err)
-
-		c := getConn(t, res)
-		assert.Equal(t, "https://mcp.example.com/mcp", c.Target)
-		keys, ok := c.Credentials["keys"].(map[string]any)
-		require.True(t, ok, "keys should be a nested map, got %T", c.Credentials["keys"])
-		assert.Equal(t, "secret-value", keys["x-api-key"])
-		assert.Equal(t, "generic-provider", keys["body.provider"])
-		assert.Equal(t, "team-ai", c.Metadata["owner"])
-
-		publicConnections := res.Parameters["connections"].([]Connection)
-		assert.Nil(t, publicConnections[0].Credentials)
-		secureCredentials := res.Parameters["connectionCredentials"].(map[string]map[string]any)
-		assert.Equal(t, "secret-value", secureCredentials["mcp-conn"]["keys"].(map[string]any)["x-api-key"])
-	})
-
-	t.Run("eject path preserves ${VAR} verbatim", func(t *testing.T) {
-		res, err := Synthesize(Input{
-			RawAzureYAML:    []byte(yaml),
-			ServiceName:     "my-project",
-			AcceptedHosts:   []string{"azure.ai.project"},
-			Env:             env,
-			PreserveVarRefs: true,
-		})
-		require.NoError(t, err)
-
-		c := getConn(t, res)
-		assert.Equal(t, "${MCP_URL}", c.Target)
-		keys, ok := c.Credentials["keys"].(map[string]any)
-		require.True(t, ok)
-		assert.Equal(t, "${MCP_KEY}", keys["x-api-key"])
-		assert.Equal(t, "${REGISTRY_PROVIDER}", keys["body.provider"])
-		assert.Equal(t, "${MCP_OWNER}", c.Metadata["owner"])
-	})
-
-	t.Run("Foundry ${{...}} expressions survive provision-path expansion", func(t *testing.T) {
-		const serverSideYAML = `
-services:
-  my-project:
-    host: azure.ai.project
-  mcp-conn:
-    host: azure.ai.connection
-    uses: [my-project]
-    category: RemoteTool
-    target: https://mcp.example.com/mcp
-    authType: CustomKeys
-    credentials:
-      keys:
-        x-api-key: ${{connections.other.credentials.key}}
-`
-		res, err := Synthesize(Input{
-			RawAzureYAML:  []byte(serverSideYAML),
-			ServiceName:   "my-project",
-			AcceptedHosts: []string{"azure.ai.project"},
-			Env:           env,
-		})
-		require.NoError(t, err)
-
-		c := getConn(t, res)
-		keys := c.Credentials["keys"].(map[string]any)
-		assert.Equal(t, "${{connections.other.credentials.key}}", keys["x-api-key"])
-	})
-
-	t.Run("missing ${VAR} on provision path resolves to empty (matches deploy-time ExpandEnv)", func(t *testing.T) {
-		// foundry.ExpandEnv (drone/envsubst) treats an unset variable as empty
-		// rather than an error, matching the deploy-time azure.ai.connection
-		// service target's resolveConnectionEnv. A missing secret therefore
-		// yields an empty value, not a synthesis failure.
-		res, err := Synthesize(Input{
-			RawAzureYAML:  []byte(yaml),
-			ServiceName:   "my-project",
-			AcceptedHosts: []string{"azure.ai.project"},
-			Env:           map[string]string{}, // nothing set
-		})
-		require.NoError(t, err)
-
-		c := getConn(t, res)
-		assert.Equal(t, "", c.Target)
-		keys := c.Credentials["keys"].(map[string]any)
-		assert.Equal(t, "", keys["x-api-key"])
-	})
-}
-
-func TestSynthesize_ConnectionExtendedFields(t *testing.T) {
-	const yaml = `
-services:
-  my-project:
-    host: azure.ai.project
-  mcp-conn:
-    host: azure.ai.connection
-    uses: [my-project]
-    category: RemoteTool
-    target: https://mcp.example.com/mcp
-    authType: OAuth2
-    audience: ${OAUTH_AUDIENCE}
-    connectorName: ${OAUTH_CONNECTOR_NAME}
-`
-	env := map[string]string{
-		"OAUTH_AUDIENCE":       "https://mcp.example.com",
-		"OAUTH_CONNECTOR_NAME": "managed-mcp",
-	}
-
-	t.Run("provision resolves fields", func(t *testing.T) {
-		res, err := Synthesize(Input{
-			RawAzureYAML:  []byte(yaml),
-			ServiceName:   "my-project",
-			AcceptedHosts: []string{"azure.ai.project"},
-			Env:           env,
-		})
-		require.NoError(t, err)
-		conn := resultConnections(t, res)[0]
-		assert.Equal(t, env["OAUTH_AUDIENCE"], conn.Audience)
-		assert.Equal(t, env["OAUTH_CONNECTOR_NAME"], conn.ConnectorName)
-	})
-
-	t.Run("eject preserves references", func(t *testing.T) {
-		res, err := Synthesize(Input{
-			RawAzureYAML:    []byte(yaml),
-			ServiceName:     "my-project",
-			AcceptedHosts:   []string{"azure.ai.project"},
-			Env:             env,
-			PreserveVarRefs: true,
-		})
-		require.NoError(t, err)
-		conn := resultConnections(t, res)[0]
-		assert.Equal(t, "${OAUTH_AUDIENCE}", conn.Audience)
-		assert.Equal(t, "${OAUTH_CONNECTOR_NAME}", conn.ConnectorName)
-	})
-}
-
-func TestSynthesizeNormalizesLegacyAgenticIdentity(t *testing.T) {
-	const yaml = `
-services:
-  my-project:
-    host: azure.ai.project
-  token-conn:
-    host: azure.ai.connection
-    uses: [my-project]
-    category: RemoteTool
-    target: https://mcp.example.com/mcp
-    authType: AgenticIdentity
-`
-
-	res, err := Synthesize(Input{
-		RawAzureYAML:  []byte(yaml),
-		ServiceName:   "my-project",
-		AcceptedHosts: []string{"azure.ai.project"},
-	})
-	require.NoError(t, err)
-	connections := resultConnections(t, res)
-	require.Len(t, connections, 1)
-	assert.Equal(t, "AgenticIdentityToken", connections[0].AuthType)
-}
-
-func TestSynthesize_ConnectionConditions(t *testing.T) {
-	t.Run("whitespace condition disables connection", func(t *testing.T) {
-		const yaml = `
-services:
-  my-project:
-    host: azure.ai.project
-  whitespace-conn:
-    host: azure.ai.connection
-    condition: "  "
-    target: ${MISSING_TARGET}
-`
-		res, err := Synthesize(Input{
-			RawAzureYAML:  []byte(yaml),
-			ServiceName:   "my-project",
-			AcceptedHosts: []string{"azure.ai.project"},
-			Env:           map[string]string{},
-		})
-		require.NoError(t, err)
-		assert.Empty(t, resultConnections(t, res))
-	})
-
-	t.Run("numeric condition preserves YAML text", func(t *testing.T) {
-		const yamlTemplate = `
-services:
-  my-project:
-    host: azure.ai.project
-  numeric-conn:
-    host: azure.ai.connection
-    condition: %s
-    target: https://example
-`
-		for _, condition := range []string{"1.0", "01", "0x1"} {
-			t.Run(condition, func(t *testing.T) {
-				res, err := Synthesize(Input{
-					RawAzureYAML: fmt.Appendf(nil, yamlTemplate, condition),
-					ServiceName:  "my-project",
-					AcceptedHosts: []string{
-						"azure.ai.project",
-					},
-				})
-				require.NoError(t, err)
-				assert.Empty(t, resultConnections(t, res))
-			})
-		}
-	})
-
-	t.Run("root false skips missing payload ref", func(t *testing.T) {
-		const yaml = `
-services:
-  my-project:
-    host: azure.ai.project
-  skipped-conn:
-    host: azure.ai.connection
-    condition: false
-    $ref: ./missing-connection.yaml
-`
-		res, err := Synthesize(Input{
-			RawAzureYAML:  []byte(yaml),
-			ServiceName:   "my-project",
-			AcceptedHosts: []string{"azure.ai.project"},
-			ProjectRoot:   t.TempDir(),
-		})
-		require.NoError(t, err)
-		assert.Empty(t, resultConnections(t, res))
-	})
-
-	t.Run("ref-only false skips missing payload ref", func(t *testing.T) {
-		const yaml = `
-services:
-  my-project:
-    host: azure.ai.project
-  skipped-conn:
-    condition: false
-    $ref: ./missing-connection.yaml
-`
-		res, err := Synthesize(Input{
-			RawAzureYAML:  []byte(yaml),
-			ServiceName:   "my-project",
-			AcceptedHosts: []string{"azure.ai.project"},
-			ProjectRoot:   t.TempDir(),
-		})
-		require.NoError(t, err)
-		assert.Empty(t, resultConnections(t, res))
-	})
-
-	t.Run("root condition wins over payload condition", func(t *testing.T) {
-		root := t.TempDir()
-		require.NoError(t, os.WriteFile(
-			filepath.Join(root, "connection.yaml"),
-			[]byte(`host: azure.ai.connection
-condition: false
-category: ApiKey
-target: https://example
-`),
-			0o600,
-		))
-		raw := []byte(`services:
-  my-project:
-    host: azure.ai.project
-  root-conditioned:
-    host: azure.ai.connection
-    condition: true
-    $ref: ./connection.yaml
-`)
-
-		res, err := Synthesize(Input{
-			RawAzureYAML:  raw,
-			ServiceName:   "my-project",
-			AcceptedHosts: []string{"azure.ai.project"},
-			ProjectRoot:   root,
-		})
-		require.NoError(t, err)
-		assert.Len(t, resultConnections(t, res), 1)
-	})
-
-	t.Run("ref-only condition returns configuration error", func(t *testing.T) {
-		root := t.TempDir()
-		require.NoError(t, os.WriteFile(
-			filepath.Join(root, "connection.yaml"),
-			[]byte(`host: azure.ai.connection
-condition: false
-category: ApiKey
-target: https://example
-`),
-			0o600,
-		))
-		raw := []byte(`services:
-  my-project:
-    host: azure.ai.project
-  ref-only:
-    $ref: ./connection.yaml
-`)
-
-		_, err := Synthesize(Input{
-			RawAzureYAML:  raw,
-			ServiceName:   "my-project",
-			AcceptedHosts: []string{"azure.ai.project"},
-			ProjectRoot:   root,
-		})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "put condition beside host in azure.yaml")
-	})
-}
-
-func TestSynthesizeConnectionsAtRootResolvesFileRef(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(root, "connection.yaml"),
-		[]byte(`host: azure.ai.connection
-category: CognitiveSearch
-target: https://search.example
-authType: ApiKey
-credentials:
-  key: ${SEARCH_KEY}
-`),
-		0o600,
-	))
-	raw := []byte(`services:
-  project:
-    host: azure.ai.project
-  search:
-    uses: [project]
-    $ref: ./connection.yaml
-`)
-
-	result, err := Synthesize(Input{
-		RawAzureYAML:  raw,
-		ServiceName:   "project",
-		AcceptedHosts: []string{"azure.ai.project"},
-		ProjectRoot:   root,
-		Env:           map[string]string{"SEARCH_KEY": "secret"},
-	})
-
-	require.NoError(t, err)
-	connections := resultConnections(t, result)
-	require.Len(t, connections, 1)
-	assert.Equal(t, "search", connections[0].Name)
-	assert.Equal(t, "CognitiveSearch", connections[0].Category)
-	assert.Equal(t, "https://search.example", connections[0].Target)
-	assert.Equal(t, "secret", connections[0].Credentials["key"])
-}
-
-func resultConnections(t *testing.T, result *Result) []Connection {
-	t.Helper()
-
-	connections, ok := result.Parameters["connections"].([]Connection)
-	require.True(t, ok, "connections param should be []Connection")
-	credentials, ok := result.Parameters["connectionCredentials"].(map[string]map[string]any)
-	require.True(t, ok, "connectionCredentials param should be a credential map")
-	return JoinConnectionCredentials(connections, credentials)
-}
-
-// TestBrownfieldConnections verifies connection services are collected for a
-// brownfield (endpoint:) project, with ${VAR} resolved (brownfield provisions
-// so references must be concrete) and Foundry ${{...}} preserved.
-func TestBrownfieldConnections(t *testing.T) {
-	const yaml = `
-services:
-  my-project:
-    host: azure.ai.project
-    endpoint: https://existing.services.ai.azure.com/api/projects/p1
-  search-conn:
-    host: azure.ai.connection
-    uses: [my-project]
-    category: CognitiveSearch
-    target: https://my-search.search.windows.net
-    authType: ApiKey
-    credentials:
-      key: ${SEARCH_API_KEY}
-  bing-conn:
-    host: azure.ai.connection
-    uses: [my-project]
-    category: ApiKey
-    target: https://api.bing.microsoft.com
-    authType: ApiKey
-`
-
-	t.Run("collects and resolves connections (sorted)", func(t *testing.T) {
-		conns, err := BrownfieldConnections(
-			[]byte(yaml),
-			map[string]string{"SEARCH_API_KEY": "secret"},
-			nil,
-			"",
-		)
-		require.NoError(t, err)
-		require.Len(t, conns, 2)
-		assert.Equal(t, "bing-conn", conns[0].Name)
-		assert.Equal(t, "search-conn", conns[1].Name)
-		assert.Equal(t, "CognitiveSearch", conns[1].Category)
-		assert.Equal(t, "secret", conns[1].Credentials["key"])
-	})
-
-	t.Run("no connection services yields empty slice", func(t *testing.T) {
-		const noConns = `
-services:
-  my-project:
-    host: azure.ai.project
-    endpoint: https://existing.services.ai.azure.com/api/projects/p1
-`
-		conns, err := BrownfieldConnections(
-			[]byte(noConns),
-			nil,
-			nil,
-			"",
-		)
-		require.NoError(t, err)
-		assert.Empty(t, conns)
-	})
-
-	t.Run("empty raw errors", func(t *testing.T) {
-		_, err := BrownfieldConnections(nil, nil, nil, "")
-		require.Error(t, err)
-	})
-
-	t.Run("resolves connection file references", func(t *testing.T) {
-		t.Parallel()
-		root := t.TempDir()
-		require.NoError(t, os.WriteFile(
-			filepath.Join(root, "connection.yaml"),
-			[]byte(`category: CognitiveSearch
-target: https://search.example
-authType: ApiKey
-credentials:
-  key: ${SEARCH_KEY}
-`),
-			0o600,
-		))
-		raw := []byte(`services:
-  project:
-    host: azure.ai.project
-    endpoint: https://existing.example/api/projects/p1
-  search:
-    host: azure.ai.connection
-    uses: [project]
-    $ref: ./connection.yaml
-`)
-
-		connections, err := BrownfieldConnections(
-			raw,
-			map[string]string{"SEARCH_KEY": "secret"},
-			nil,
-			root,
-		)
-
-		require.NoError(t, err)
-		require.Len(t, connections, 1)
-		assert.Equal(t, "CognitiveSearch", connections[0].Category)
-		assert.Equal(t, "secret", connections[0].Credentials["key"])
-	})
 }
 
 func TestBrownfieldDeployments(t *testing.T) {
@@ -1430,7 +921,6 @@ func TestTemplatesFS_Embedded(t *testing.T) {
 		"templates/abbreviations.json",
 		"templates/modules/acr.bicep",
 		"templates/modules/acr-pull-role-assignment.bicep",
-		"templates/modules/connections.bicep",
 		"templates/modules/network.bicep",
 		"templates/modules/subnet.bicep",
 		"templates/modules/private-endpoint-dns.bicep",
@@ -1452,7 +942,6 @@ func TestTerraformTemplatesFS_Embedded(t *testing.T) {
 		"templates/terraform/variables.tf",
 		"templates/terraform/main.tf",
 		"templates/terraform/container-registry.tf",
-		"templates/terraform/connections.tf",
 		"templates/terraform/outputs.tf.tmpl",
 	}
 	for _, p := range wantFiles {
@@ -1528,9 +1017,8 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	require.True(t, ok, "parameters must be an object")
 	assert.Contains(t, params, "resourceGroupName")
 
-	// connections carries the synthesized host: azure.ai.connection services so
-	// the connections module can create them at provision time.
-	assert.Contains(t, params, "connections", "connections param must be declared in the ARM template")
+	assert.NotContains(t, params, "connections")
+	assert.NotContains(t, params, "connectionCredentials")
 
 	// Network isolation parameters must exist so the synthesizer's network
 	// param set is accepted by ARM (extra params would fail the deployment).

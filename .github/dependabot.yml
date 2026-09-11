@@ -20,6 +20,7 @@ updates:
       - "/eng/common/spelling"
       - "/ext/vscode"
       - "/ext/azuredevops/setupAzd"
+      - "/cli/azd/test/evals"
     schedule:
       interval: "daily"
     cooldown:

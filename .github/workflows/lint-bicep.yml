@@ -8,6 +8,8 @@ on:
       - .github/workflows/lint-bicep.yml
     
 
+permissions:
+  contents: read
 
 jobs:
   bicep-lint:

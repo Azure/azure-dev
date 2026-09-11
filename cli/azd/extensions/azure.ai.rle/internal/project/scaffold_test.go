@@ -5,8 +5,10 @@ package project
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"testing"
 )
 
@@ -71,17 +73,105 @@ func TestCopyDirectoryRejectsFileSource(t *testing.T) {
 	}
 }
 
-func TestCheckoutOpenEnvEchoSampleRejectsInvalidNameBeforeChangingDestination(t *testing.T) {
+func TestRleSampleCatalogUsesSparseCheckout(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	sourceRepo := t.TempDir()
+	runTestGit(t, sourceRepo, "init", "--initial-branch=main")
+	for _, sampleName := range []string{"code_rl", "math_rl"} {
+		sampleDir := filepath.Join(sourceRepo, "envs", sampleName)
+		if err := os.MkdirAll(sampleDir, 0750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(sampleDir, "sample.txt"), []byte(sampleName), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(sourceRepo, "README.md"), []byte("samples"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runTestGit(t, sourceRepo, "add", ".")
+	runTestGit(
+		t,
+		sourceRepo,
+		"-c", "user.name=RLE Tests",
+		"-c", "user.email=rle-tests@example.com",
+		"commit", "-m", "Add samples",
+	)
+
+	catalog, err := loadRleSampleCatalog(sourceRepo, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := catalog.Close(); err != nil {
+			t.Errorf("close sample catalog: %v", err)
+		}
+	})
+	if !slices.Equal(catalog.SampleNames(), []string{"code_rl", "math_rl"}) {
+		t.Fatalf("expected sorted sample names, got %v", catalog.SampleNames())
+	}
+	if _, err := os.Stat(filepath.Join(catalog.repoDir, "envs")); !os.IsNotExist(err) {
+		t.Fatalf("expected sample contents not to be checked out before selection, got err=%v", err)
+	}
+
+	sessionDir, err := catalog.Copy("math_rl", "training_env", t.TempDir(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(sessionDir, "sample.txt")); err != nil {
+		t.Fatalf("expected selected sample to be copied: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(catalog.repoDir, "envs", "code_rl")); !os.IsNotExist(err) {
+		t.Fatalf("expected unselected sample not to be checked out, got err=%v", err)
+	}
+}
+
+func TestCopyRleSampleRenamesDestination(t *testing.T) {
+	sourceDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(sourceDir, "sample.txt"), []byte("content"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	destDir := t.TempDir()
-	sentinel := filepath.Join(destDir, "sentinel.txt")
+	sessionDir, err := copyRleSample(sourceDir, "my_environment", destDir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sessionDir != filepath.Join(destDir, "my_environment") {
+		t.Fatalf("expected renamed destination, got %q", sessionDir)
+	}
+	if _, err := os.Stat(filepath.Join(sessionDir, "sample.txt")); err != nil {
+		t.Fatalf("expected sample file in renamed destination: %v", err)
+	}
+}
+
+func runTestGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	command := exec.Command("git", args...) //nolint:gosec
+	command.Dir = dir
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, output)
+	}
+}
+
+func TestCopyRleSampleValidatesSourceBeforeReplacingDestination(t *testing.T) {
+	destDir := t.TempDir()
+	sessionDir := filepath.Join(destDir, "my_environment")
+	if err := os.MkdirAll(sessionDir, 0750); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(sessionDir, "keep.txt")
 	if err := os.WriteFile(sentinel, []byte("keep"), 0600); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := CheckoutOpenEnvEchoSample("../bad", destDir, true); err == nil {
-		t.Fatal("expected invalid environment name to be rejected")
+	_, err := copyRleSample(filepath.Join(t.TempDir(), "missing"), "my_environment", destDir, true)
+	if err == nil {
+		t.Fatal("expected missing RLE sample to fail")
 	}
-	if _, err := os.Stat(sentinel); err != nil {
-		t.Fatalf("expected destination to be unchanged: %v", err)
+	if _, statErr := os.Stat(sentinel); statErr != nil {
+		t.Fatalf("expected destination to remain unchanged after sample lookup failure: %v", statErr)
 	}
 }

@@ -164,11 +164,20 @@ func (o *Options) GetLayer(name string) (Options, error) {
 //
 // This should be called immediately right after Unmarshal() before any defaulting is performed.
 func (o *Options) Validate() error {
+	return o.validate(false)
+}
+
+// ValidateProjectLayers validates infrastructure entries declared under top-level project layers.
+func (o *Options) ValidateProjectLayers() error {
+	return o.validate(true)
+}
+
+func (o *Options) validate(allowPathlessExtensionProviders bool) error {
 	if len(o.Hooks) > 0 {
 		return validateErr("infra", "'hooks' can only be declared under 'infra.layers[]'")
 	}
 
-	if len(o.Layers) > 0 {
+	if o.Layers != nil {
 		anyIncompatibleFieldsSet := func() bool {
 			return o.Name != "" || o.Layer != "" || o.Module != "" || o.Path != "" || o.DeploymentStacks != nil ||
 				len(o.Config) > 0
@@ -178,7 +187,7 @@ func (o *Options) Validate() error {
 			return validateErr("infra", "properties on 'infra' cannot be declared when 'infra.layers' is declared")
 		}
 
-		if err := o.validateLayers(); err != nil {
+		if err := o.validateLayers(allowPathlessExtensionProviders); err != nil {
 			return wrapValidateErr("infra.layers", err)
 		}
 	}
@@ -198,7 +207,7 @@ func validateErr(scope, format string, args ...any) error {
 	return wrapValidateErr(scope, fmt.Errorf(format, args...))
 }
 
-func (o *Options) validateLayers() error {
+func (o *Options) validateLayers(allowPathlessExtensionProviders bool) error {
 	validateHooks := func(scope string, hooks HooksConfig) error {
 		for hookName := range hooks {
 			hookType, eventName := ext.InferHookType(hookName)
@@ -225,7 +234,8 @@ func (o *Options) validateLayers() error {
 		// NOTE: I'm treating 'NotSpecified' as 'bicep' - there's some downstream code that does that in
 		// 'provisioning/manager'.
 		// It might be nice to think about doing this earlier, or having that validation occurring in the providers instead.
-		if layer.Path == "" && (layer.Provider == NotSpecified || slices.Contains(builtInProviderKinds, layer.Provider)) {
+		if layer.Path == "" && (!allowPathlessExtensionProviders ||
+			layer.Provider == NotSpecified || slices.Contains(builtInProviderKinds, layer.Provider)) {
 			return fmt.Errorf("%s: path must be specified", layer.Name)
 		}
 

@@ -92,6 +92,24 @@ func TestParseProjectLayersRejectsMixedFormats(t *testing.T) {
 	}
 }
 
+func TestParseProjectLayersRejectsResources(t *testing.T) {
+	t.Parallel()
+
+	_, err := Parse(t.Context(), `name: layered-project
+layers:
+  - name: application
+    services:
+      api:
+        host: containerapp
+        image: example/api:latest
+resources:
+  storage:
+    type: storage
+`)
+
+	require.ErrorContains(t, err, "'layers' cannot be combined with top-level 'resources'")
+}
+
 func TestParseProjectLayersAllowsEmptyTopLevelInfra(t *testing.T) {
 	t.Parallel()
 
@@ -321,7 +339,50 @@ func TestProjectLayersAlphaSchema(t *testing.T) {
 		"layers": []any{layer},
 	}))
 
-	for _, incompatibleProperty := range []string{"infra", "services"} {
+	// bicep and terraform require a 'path' attribute
+	for _, provider := range []string{"bicep", "terraform"} {
+		require.Error(t, schema.Validate(map[string]any{
+			"name": "layered-project",
+			"layers": []any{map[string]any{
+				"name": "application",
+				"infra": []any{map[string]any{
+					"name":     "app-infra",
+					"provider": provider,
+				}},
+			}},
+		}), provider)
+	}
+
+	// custom providers don't. If they actually did need that, they do have a config attribute they can use for parameters they need.
+	require.NoError(t, schema.Validate(map[string]any{
+		"name": "layered-project",
+		"layers": []any{map[string]any{
+			"name": "application",
+			"infra": []any{map[string]any{
+				"name":     "foundry",
+				"provider": "microsoft.foundry",
+			}},
+		}},
+	}))
+
+	for _, test := range []struct {
+		property string
+		value    any
+	}{
+		{property: "infra", value: []any{}},
+		{property: "services", value: map[string]any{}},
+	} {
+		projectDocument := map[string]any{
+			"name": "layered-project",
+			"layers": []any{map[string]any{
+				"name":        "application",
+				test.property: test.value,
+			}},
+		}
+		require.Error(t, schema.Validate(projectDocument), test.property)
+	}
+
+	for _, incompatibleProperty := range []string{"infra", "resources", "services"} {
 		projectDocument := map[string]any{
 			"name":               "layered-project",
 			"layers":             []any{layer},
@@ -468,6 +529,23 @@ func TestValidateLayerGraph_RejectsLayerCycle(t *testing.T) {
 	err := ValidateLayerGraph(projectConfig)
 
 	require.ErrorContains(t, err, "circular dependency")
+}
+
+func TestValidateLayerGraph_AcceptsAcyclicEntriesAcrossLayers(t *testing.T) {
+	t.Parallel()
+
+	projectConfig := &ProjectConfig{Layers: []*LayerConfig{
+		{Name: "a", Infra: []provisioning.Options{
+			{Name: "a1"},
+			{Name: "a2", DependsOn: []string{"b1"}},
+		}},
+		{Name: "b", Infra: []provisioning.Options{
+			{Name: "b1"},
+			{Name: "b2", DependsOn: []string{"a1"}},
+		}},
+	}}
+
+	require.NoError(t, ValidateLayerGraph(projectConfig))
 }
 
 func TestValidateLayerGraph_RejectsIntraLayerInfrastructureCycle(t *testing.T) {

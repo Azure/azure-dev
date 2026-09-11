@@ -36,6 +36,9 @@ func validateParsedConfig(config *ProjectConfig) error {
 		(len(config.Services) > 0 || !reflect.ValueOf(config.Infra).IsZero()) {
 		problems = append(problems, "'layers' cannot be combined with top-level 'infra' or 'services'")
 	}
+	if config.Layers != nil && len(config.Resources) > 0 {
+		problems = append(problems, "'layers' cannot be combined with top-level 'resources'")
+	}
 
 	for key, svc := range config.Services {
 		if svc == nil {
@@ -154,7 +157,7 @@ func (config *ProjectConfig) Validate() error {
 			}
 		}
 		infra := provisioning.Options{Layers: layer.Infra}
-		if err := infra.Validate(); err != nil {
+		if err := infra.ValidateProjectLayers(); err != nil {
 			return fmt.Errorf("validating layer %q: %w", layer.Name, err)
 		}
 	}

@@ -249,7 +249,7 @@ func TestOptionsValidate(t *testing.T) {
 			)
 		})
 
-	t.Run("provider-managed layer without path is valid",
+	t.Run("provider-managed legacy layer without path is invalid",
 		func(t *testing.T) {
 			opts := &Options{
 				Layers: []Options{
@@ -257,8 +257,22 @@ func TestOptionsValidate(t *testing.T) {
 				},
 			}
 			err := opts.Validate()
-			require.NoError(t, err)
+			require.ErrorContains(t, err, "path must be specified")
 		})
+
+	t.Run("provider-managed project layer without path is valid", func(t *testing.T) {
+		opts := &Options{Layers: []Options{
+			{Name: "foundry", Provider: ProviderKind("microsoft.foundry")},
+		}}
+
+		require.NoError(t, opts.ValidateProjectLayers())
+	})
+
+	t.Run("explicit empty layers cannot be mixed with root fields", func(t *testing.T) {
+		opts := &Options{Path: "infra", Layers: []Options{}}
+
+		require.ErrorContains(t, opts.Validate(), "properties on 'infra' cannot be declared")
+	})
 
 	t.Run("built-in layer without path is invalid", func(t *testing.T) {
 		opts := &Options{Layers: []Options{{Name: "bicep", Provider: Bicep}}}

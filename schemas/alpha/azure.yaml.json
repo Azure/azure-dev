@@ -1322,6 +1322,7 @@
             "then": {
                 "properties": {
                     "infra": false,
+                    "resources": false,
                     "services": false
                 }
             }
@@ -1356,6 +1357,7 @@
                 "infra": {
                     "type": "array",
                     "title": "Infrastructure entries in the layer",
+                    "minItems": 1,
                     "items": {
                         "$ref": "#/definitions/layerInfrastructure"
                     }
@@ -1363,6 +1365,7 @@
                 "services": {
                     "type": "object",
                     "title": "Services in the layer",
+                    "minProperties": 1,
                     "additionalProperties": {
                         "$ref": "#/properties/services/additionalProperties"
                     }
@@ -1376,6 +1379,25 @@
             "required": [
                 "name",
                 "provider"
+            ],
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "provider": {
+                                "enum": [
+                                    "bicep",
+                                    "terraform"
+                                ]
+                            }
+                        }
+                    },
+                    "then": {
+                        "required": [
+                            "path"
+                        ]
+                    }
+                }
             ],
             "properties": {
                 "name": {

@@ -37,15 +37,11 @@ func ValidateLayerGraph(projectConfig *ProjectConfig) error {
 		}
 	}
 
-	return validateLayerGraph(layerNames, infraEntries)
+	return validateLayerGraph(infraEntries)
 }
 
-func validateLayerGraph(
-	layerNames map[string]struct{},
-	infraEntries []provisioning.Options,
-) error {
+func validateLayerGraph(infraEntries []provisioning.Options) error {
 	infraByName := make(map[string]provisioning.Options, len(infraEntries))
-	infraOwnerByName := make(map[string]string, len(infraEntries))
 	infraDependencySets := make(map[string]map[string]struct{}, len(infraEntries))
 	for _, infra := range infraEntries {
 		if infra.Name == "" {
@@ -55,13 +51,7 @@ func validateLayerGraph(
 			return fmt.Errorf("duplicate infrastructure entry %q", infra.Name)
 		}
 		infraByName[infra.Name] = infra
-		infraOwnerByName[infra.Name] = infra.Layer
 		infraDependencySets[infra.Name] = map[string]struct{}{}
-	}
-
-	dependencySets := make(map[string]map[string]struct{}, len(layerNames))
-	for name := range layerNames {
-		dependencySets[name] = map[string]struct{}{}
 	}
 
 	for _, infra := range infraEntries {
@@ -76,18 +66,9 @@ func validateLayerGraph(
 				)
 			}
 			infraDependencySets[infra.Name][dependencyName] = struct{}{}
-
-			owner := infra.Layer
-			dependencyOwner := infraOwnerByName[dependencyName]
-			if dependencyOwner != owner {
-				dependencySets[owner][dependencyOwner] = struct{}{}
-			}
 		}
 	}
 	if err := validateDependencyGraph(infraDependencySets, "infrastructure layer"); err != nil {
-		return err
-	}
-	if err := validateDependencyGraph(dependencySets, "layer"); err != nil {
 		return err
 	}
 

@@ -15,8 +15,6 @@ updates:
   - package-ecosystem: "npm"
     directories:
       - "/.github/scripts"
-      - "/eng/common/tsp-client"
-      - "/eng/common/spelling"
       - "/ext/vscode"
       - "/ext/azuredevops/setupAzd"
       - "/cli/azd/test/evals"

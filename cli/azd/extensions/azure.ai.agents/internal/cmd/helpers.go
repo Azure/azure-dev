@@ -628,6 +628,11 @@ type AgentServiceInfo struct {
 	ProtocolEndpointsIncomplete bool                               // marker exists but is incomplete
 	ProtocolEndpointsStale      bool
 	ProjectEndpoint             string // adopted project endpoint for brownfield fallback
+	// ServiceDir is the absolute path to the service's source directory
+	// (project.Path joined with svc.RelativePath). It points at the folder
+	// that contains the service's agent.yaml, when one was scaffolded by
+	// `azd ai agent init`. May be empty if the resolver could not compute it.
+	ServiceDir string
 }
 
 func withDeployedProtocolEndpoints() agentServiceResolutionOption {

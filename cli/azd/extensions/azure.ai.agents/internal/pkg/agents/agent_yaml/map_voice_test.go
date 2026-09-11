@@ -623,7 +623,7 @@ func TestCreateHostedVoiceAgentAPIRequest_LegacyAuthoringRejected(t *testing.T) 
 		Name:    "deployed-target",
 		Version: "7",
 	})
-	if err == nil || !strings.Contains(err.Error(), "no longer supported") {
+	if err == nil || !strings.Contains(err.Error(), "not supported") {
 		t.Fatalf("expected legacy hosted voice authoring error, got: %v", err)
 	}
 }

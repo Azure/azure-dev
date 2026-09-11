@@ -519,7 +519,7 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 					if isHostedVoiceWrapper(agent) {
 						if agent.ModelType == VoiceModelTypeHostedAgent || agent.TargetAgent != nil {
 							errors = append(errors,
-								"template.model_type hosted_agent and target_agent are no longer supported; "+
+								"template.model_type hosted_agent and target_agent are not supported; "+
 									"use conversation_engine")
 						}
 						if agent.ConversationEngine != nil &&

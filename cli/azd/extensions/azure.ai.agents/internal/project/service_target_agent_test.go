@@ -202,7 +202,7 @@ func TestVoiceAgentFromResolvedServiceRejectsInvalidVoiceFields(t *testing.T) {
 		},
 	})
 	_, _, err := VoiceAgentFromResolvedService(svc, t.TempDir())
-	require.ErrorContains(t, err, "no longer supported")
+	require.ErrorContains(t, err, "not supported")
 
 	svc = inlineAgentService(t, map[string]any{
 		"kind":              "voice",

@@ -424,7 +424,7 @@ target_agent:
   version: deployed
 `)
 	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "no longer supported") {
+	if err == nil || !strings.Contains(err.Error(), "not supported") {
 		t.Fatalf("expected legacy hosted voice definition to be rejected, got: %v", err)
 	}
 }
@@ -439,7 +439,7 @@ target_agent:
   version: deployed
 `)
 	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "no longer supported") {
+	if err == nil || !strings.Contains(err.Error(), "not supported") {
 		t.Fatalf("expected legacy hosted voice definition to be rejected, got: %v", err)
 	}
 }
@@ -474,7 +474,7 @@ conversation_engine:
   type: hosted_agent
   name: target
 `,
-			want: "no longer supported",
+			want: "not supported",
 		},
 		{
 			name: "target agent conflict",
@@ -487,7 +487,7 @@ conversation_engine:
   type: hosted_agent
   name: target
 `,
-			want: "no longer supported",
+			want: "not supported",
 		},
 		{
 			name: "missing name",
@@ -544,7 +544,7 @@ name: voice-wrapper
 model_type: hosted_agent
 `)
 	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "no longer supported") {
+	if err == nil || !strings.Contains(err.Error(), "not supported") {
 		t.Fatalf("expected legacy hosted voice validation error, got: %v", err)
 	}
 }

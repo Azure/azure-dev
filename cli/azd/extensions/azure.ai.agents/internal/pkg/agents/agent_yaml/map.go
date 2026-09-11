@@ -754,8 +754,10 @@ func createVoiceAgentAPIRequest(
 	if voiceAgent.ModelType != "" {
 		modelType = agent_api.VoiceModelType(voiceAgent.ModelType)
 	}
-	hostedAgent := modelType == agent_api.VoiceModelTypeHostedAgent ||
-		isHostedConversationEngine(voiceAgent.ConversationEngine)
+	hostedAgent := isHostedConversationEngine(voiceAgent.ConversationEngine)
+	if modelType == agent_api.VoiceModelTypeHostedAgent || voiceAgent.TargetAgent != nil {
+		return nil, fmt.Errorf("model_type hosted_agent and target_agent are not supported; use conversation_engine")
+	}
 	if hostedAgent {
 		if target == nil || strings.TrimSpace(target.Name) == "" || strings.TrimSpace(target.Version) == "" {
 			return nil, fmt.Errorf("resolved target agent name and version are required when model_type is 'hosted_agent'")
@@ -843,9 +845,9 @@ func createVoiceAgentAPIRequest(
 			// Translate authoring kind prompt-voice -> service kind voice.
 			Kind: agent_api.AgentKindVoice,
 		},
-		ModelType:          voiceWireModelType(modelType, isHostedConversationEngine(voiceAgent.ConversationEngine)),
+		ModelType:          voiceWireModelType(modelType, hostedAgent),
 		Model:              modelID,
-		TargetAgent:        voiceWireTargetAgent(voiceAgent, target),
+		TargetAgent:        nil,
 		ConversationEngine: voiceWireConversationEngine(voiceAgent.ConversationEngine, target),
 		Instructions:       instructions,
 		StructuredInputs:   mapVoiceStructuredInputs(voiceAgent.StructuredInputs),
@@ -901,16 +903,6 @@ func voiceWireConversationEngine(
 		Name:    target.Name,
 		Version: target.Version,
 	}
-}
-
-func voiceWireTargetAgent(
-	voiceAgent VoiceAgent,
-	target *agent_api.VoiceTargetAgentReference,
-) *agent_api.VoiceTargetAgentReference {
-	if isHostedConversationEngine(voiceAgent.ConversationEngine) {
-		return nil
-	}
-	return target
 }
 
 // createAgentAPIRequest is a helper function to create the final request with common fields.

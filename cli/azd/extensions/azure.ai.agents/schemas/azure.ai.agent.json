@@ -215,6 +215,19 @@
   "additionalProperties": true,
   "allOf": [
     {
+      "$comment": "The modelType hosted_agent authoring shape is not supported.",
+      "if": {
+        "properties": { "modelType": { "const": "hosted_agent" } },
+        "required": ["modelType"]
+      },
+      "then": { "not": {} }
+    },
+    {
+      "$comment": "The targetAgent authoring shape is not supported.",
+      "if": { "required": ["targetAgent"] },
+      "then": { "not": {} }
+    },
+    {
       "$comment": "A conversationEngine hosted_agent voice wrapper references a deployed hosted service.",
       "if": {
         "properties": {

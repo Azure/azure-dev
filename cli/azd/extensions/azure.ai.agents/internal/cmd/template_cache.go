@@ -18,6 +18,7 @@ import (
 )
 
 const templateCacheDirEnv = "AZURE_AI_AGENTS_E2E_TEMPLATE_CACHE_DIR"
+const templateCacheWarningsFileEnv = "AZURE_AI_AGENTS_E2E_TEMPLATE_CACHE_WARNINGS_FILE"
 const templateCacheRefreshedMarker = ".refreshed"
 
 var renameTemplateCachePath = os.Rename
@@ -122,17 +123,36 @@ func useCachedTemplateOnDownloadError(pointer, staging string, downloadErr error
 	if !restored {
 		return downloadErr
 	}
-	emitTemplateCacheWarning(
-		fmt.Sprintf("GitHub sample download failed; using the cached sample. Details: %s", downloadErr),
-	)
+	message := fmt.Sprintf("GitHub sample download failed; using the cached sample. Details: %s", downloadErr)
+	emitTemplateCacheWarning(message)
+	if path := os.Getenv(templateCacheWarningsFileEnv); path != "" && os.Getenv("TF_BUILD") != "" {
+		if err := appendTemplateCacheWarning(path, templateCacheWarningCommand(message)); err != nil {
+			fmt.Println(output.WithWarningFormat("Unable to persist sample cache fallback warning: %s", err))
+		}
+	}
 	return nil
 }
 
 func emitTemplateCacheWarning(message string) {
 	if os.Getenv("TF_BUILD") != "" {
-		message = strings.NewReplacer("%", "%AZP25", "\r", "%0D", "\n", "%0A", "]", "%5D").Replace(message)
-		fmt.Printf("##vso[task.logissue type=warning]%s\n", message)
+		fmt.Print(templateCacheWarningCommand(message))
 		return
 	}
+
 	fmt.Println(output.WithWarningFormat("WARNING: %s", message))
+}
+
+func templateCacheWarningCommand(message string) string {
+	message = strings.NewReplacer("%", "%AZP25", "\r", "%0D", "\n", "%0A", "]", "%5D").Replace(message)
+	return fmt.Sprintf("##vso[task.logissue type=warning]%s\n", message)
+}
+
+func appendTemplateCacheWarning(path, line string) error {
+	//nolint:gosec // The live-test pipeline supplies this per-job diagnostic path.
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		return err
+	}
+	_, writeErr := file.WriteString(line)
+	return errors.Join(writeErr, file.Close())
 }

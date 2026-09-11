@@ -1567,19 +1567,19 @@ if err := host.Run(ctx); err != nil {
 
 ## Developer Artifacts
 
-`azd` leverages gRPC for the communication protocol between Core `azd` and extensions. gRPC client & server components are automatically generated from profile files.
+The `azd` CLI and its extensions communicate over gRPC. The client and server code is generated from protobuf files.
 
 - Proto files @ [grpc/proto](../../grpc/proto/)
 - Generated files @ [pkg/azdext](../../pkg/azdext)
-- Make file @ [Makefile](../../Makefile)
 
-To re-generate gRPC clients:
+To regenerate the checked-in Go, Python, and JavaScript protobuf bindings, run this command from `cli/azd`:
 
-- Run `protoc --version` to check if `protoc` is installed. If not, download and install it from [GitHub](https://github.com/protocolbuffers/protobuf/releases).
-- Run `make --version` to check if `make` is installed.
-- Run `go install google.golang.org/protobuf/cmd/protoc-gen-go@latest` and `go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest` to install the required Go tools.
-- Run `make proto` from the `~/cli/azd` folder of the repo in `Git Bash`.
-- Run `../../eng/scripts/copyright-check.sh . --fix` to add copyright.
+```bash
+go tool mage generateProtos
+```
+
+Mage is included in `go.mod`, so you do not need to install it separately. The target runs the pinned protobuf
+tools in a container and writes the generated files back to the repository.
 
 ## gRPC Services
 

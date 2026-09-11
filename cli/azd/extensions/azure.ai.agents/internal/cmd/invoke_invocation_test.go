@@ -5,12 +5,16 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -99,6 +103,91 @@ func TestInvocationsProtocolDispatchHTTP(t *testing.T) {
 				assert.Empty(t, methods)
 			}
 		})
+	}
+}
+
+func TestInvocationSnapshotIdentityHTTP(t *testing.T) {
+	for _, tt := range []struct {
+		name, header, body, wantErr string
+	}{
+		{name: "header only", header: "inv_test", body: `{"status":"completed","result":"done"}`},
+		{name: "header overrides handler IDs", header: "inv_test",
+			body: `{"id":123,"invocation_id":"handler-owned-id","status":"completed"}`},
+		{name: "header mismatch even with matching body", header: "inv_other",
+			body: `{"invocation_id":"inv_test","status":"completed"}`, wantErr: "does not match requested ID"},
+		{name: "body invocation ID fallback", body: `{"invocation_id":"inv_test","status":"completed"}`},
+		{name: "body ID fallback", body: `{"id":"inv_test","status":"completed"}`},
+		{name: "body mismatch", body: `{"invocation_id":"inv_other"}`, wantErr: "does not match requested ID"},
+		{name: "requested ID when no identity supplied", body: `{"status":"completed","result":"done"}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				assert.Equal(t, http.MethodGet, r.Method)
+				assert.Equal(t, "/agents/agent/endpoint/protocols/invocations/inv_test", r.URL.Path)
+				if tt.header != "" {
+					w.Header().Set("x-agent-invocation-id", tt.header)
+				}
+				_, _ = io.WriteString(w, tt.body)
+			}))
+			defer server.Close()
+			action := &InvokeAction{flags: &invokeFlags{protocol: "invocations"}, credential: responseTestCredential{}}
+			rc := &remoteContext{projectEndpoint: server.URL, name: "agent", apiVersion: "v1"}
+			result, err := action.getInvocation(t.Context(), rc, "inv_test")
+			assert.Equal(t, 1, calls)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.body, string(result.raw), "do not rewrite the handler's JSON")
+			var output bytes.Buffer
+			require.NoError(t, printInvocationSnapshot(&output, result, "table"))
+			assert.Contains(t, output.String(), "Invocation ID  inv_test")
+			output.Reset()
+			require.NoError(t, printInvocationSnapshot(&output, result, "json"))
+			assert.JSONEq(t, tt.body, output.String())
+		})
+	}
+}
+
+func TestInvocationCancelUnsupportedHTTP(t *testing.T) {
+	var methods []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		methods = append(methods, r.Method)
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, `{"error":{"code":"not_found","message":"cancel_invocation not implemented"}}`)
+			return
+		}
+		w.Header().Set("x-agent-invocation-id", "inv_test")
+		_, _ = io.WriteString(w, `{"status":"running"}`)
+	}))
+	defer server.Close()
+	action := &InvokeAction{flags: &invokeFlags{protocol: "invocations"}, credential: responseTestCredential{}}
+	rc := &remoteContext{projectEndpoint: server.URL, name: "agent", apiVersion: "v1"}
+	err := action.runInvocationOperation(t.Context(), rc, "inv_test", invocationCancel, "", io.Discard)
+	require.EqualError(t, err, "This agent does not support cancelling invocations.")
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	assert.Equal(t, http.StatusNotFound, serviceErr.StatusCode)
+	assert.NotEmpty(t, serviceErr.ServiceName)
+	assert.Equal(t, []string{"POST", "GET"}, methods)
+}
+
+func TestInvocationErrorDetailRemainsBounded(t *testing.T) {
+	for _, body := range []string{
+		`{"error":{"code":"not_found","message":"private handler content"}}`,
+		`not JSON`,
+		`{"error":{"code":"not_found","message":"cancel_invocation not implemented"},"padding":"` +
+			strings.Repeat("x", 16*1024) + `"}`,
+	} {
+		err := classifyInvocationLifecycleError(&invocationLifecycleHTTPError{
+			method: http.MethodPost, requestURL: "https://example.test/invocations/inv_test/cancel",
+			statusCode: http.StatusNotFound, status: "404 Not Found", body: []byte(body),
+		}, exterrors.OpCancelInvocation, "cancelling Invocation")
+		require.EqualError(t, err, "cancelling Invocation failed with HTTP 404: 404 Not Found")
 	}
 }
 

@@ -536,14 +536,9 @@
       "additionalProperties": true
     },
     "VoiceTargetAgent": {
-      "type": "object",
-      "description": "Hosted agent service used as the conversation target for a voice wrapper.",
-      "properties": {
-        "service": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "azure.yaml service name of the target hosted agent." },
-        "version": { "type": "string", "enum": ["deployed"], "default": "deployed", "description": "Pin the wrapper to the target version deployed by this azd environment." }
-      },
-      "required": ["service"],
-      "additionalProperties": false
+      "description": "Removed authoring field. targetAgent is not supported; use conversationEngine with type: hosted_agent and name set to the hosted target service.",
+      "deprecated": true,
+      "not": {}
     },
     "ActivitySettings": {
       "type": "object",

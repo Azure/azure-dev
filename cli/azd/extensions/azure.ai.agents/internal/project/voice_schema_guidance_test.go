@@ -18,10 +18,10 @@ func TestVoiceSchemaAuthoringGuidance(t *testing.T) {
 	require.Contains(t, modelType["description"], "conversationEngine")
 	target, ok := schema.property("targetAgent")
 	require.True(t, ok)
-	target = schema.resolve(target)
 	require.Equal(t, true, target["deprecated"])
-	require.Contains(t, target["description"], "not supported")
+	require.Contains(t, target["description"], "Unsupported")
 	require.Contains(t, target["description"], "conversationEngine")
+	target = schema.resolve(target)
 	require.NotContains(t, target, "properties", "removed target must not offer service/version completion")
 
 	for _, kind := range []string{"voice", "prompt-voice"} {
@@ -53,6 +53,9 @@ func TestVoiceSchemaAuthoringGuidance(t *testing.T) {
 			}
 		})
 	}
+	require.NoError(t, schema.validate(map[string]any{
+		"kind": "prompt", "name": "prompt-agent", "model": "my-deployment", "instructions": "Be helpful.",
+	}))
 	require.NoError(t, schema.validate(map[string]any{
 		"kind": "hosted", "name": "target",
 		"codeConfiguration": map[string]any{"runtime": "python_3_13", "entryPoint": "app.py"},

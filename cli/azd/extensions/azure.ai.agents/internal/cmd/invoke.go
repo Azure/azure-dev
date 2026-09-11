@@ -88,8 +88,8 @@ func newInvokeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "invoke [name] [message]",
-		Short: "Send a message to your hosted agent.",
-		Long: `Send a message to your hosted agent.
+		Short: "Send a message to your prompt or hosted agent.",
+		Long: `Send a message to your prompt or hosted agent.
 
 By default the agent is invoked remotely on Foundry. When a single
 argument is provided it is treated as the message and the agent name

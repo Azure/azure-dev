@@ -159,6 +159,23 @@ func TestVoiceInvocationOverridePrecedence(t *testing.T) {
 	}
 }
 
+func TestVoiceInvocationGuidanceDoesNotClassifyManagedPrompt(t *testing.T) {
+	t.Parallel()
+	for _, withHarness := range []bool{false, true} {
+		fields := map[string]any{
+			"kind": "prompt", "name": "managed-prompt", "model": "my-deployment", "instructions": "Be helpful.",
+		}
+		if withHarness {
+			fields["harness"] = map[string]any{"type": "github_copilot"}
+		}
+		props, err := structpb.NewStruct(fields)
+		require.NoError(t, err)
+		require.NoError(t, voiceInvocationError(&azdext.ServiceConfig{
+			Name: "managed-prompt", Host: AiAgentHost, AdditionalProperties: props,
+		}, t.TempDir()))
+	}
+}
+
 func TestVoiceInvocationDetectionCompatibility(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []string{"hosted", "workflow", "prompt", "", "unknown"} {

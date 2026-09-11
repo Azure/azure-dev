@@ -1248,8 +1248,8 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init [<path>] [-m <manifest pointer>] [--src <source directory>]",
-		Short: fmt.Sprintf("Initialize a new hosted or voice agent project. %s", color.YellowString("(Preview)")),
-		Long: `Initialize a new hosted or voice agent project.
+		Short: fmt.Sprintf("Initialize a new prompt, hosted, or voice agent project. %s", color.YellowString("(Preview)")),
+		Long: `Initialize a new prompt, hosted, or voice agent project.
 
 When -m points at a sample's unified azure.yaml (a project manifest that
 declares services with host: azure.ai.project / azure.ai.agent / ...), that

@@ -39,18 +39,18 @@ jobs:
 {{- end }}
     steps:
       - name: Checkout
-        uses: {{.Actions.Checkout}}
+        uses: actions/checkout@v4
       - name: Install azd
-        uses: {{.Actions.SetupAzd}}
+        uses: Azure/setup-azd@v2
 {{- if .IsTerraform}}
       - name: Install Terraform
-        uses: {{.Actions.SetupTerraform}}
+        uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.0
 {{ end }}
 {{- if .InstallDotNetForAspire}}
       - name: Setup .NET
-        uses: {{.Actions.SetupDotNet}}
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: | 
             8.x

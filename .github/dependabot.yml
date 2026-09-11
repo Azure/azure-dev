@@ -5,7 +5,6 @@ updates:
       - "/"
       - "/.github/actions/vally-eval"
       - "/cli/azd/extensions/azure.coding-agent/internal/cmd/templates"
-      - "/cli/azd/resources/pipeline/.github/workflows"
     schedule:
       interval: "weekly"
     cooldown:

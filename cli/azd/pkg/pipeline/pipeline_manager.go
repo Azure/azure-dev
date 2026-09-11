@@ -5,7 +5,6 @@ package pipeline
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"html/template"
@@ -40,7 +39,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/google/uuid"
 	"github.com/sethvargo/go-retry"
-	"go.yaml.in/yaml/v3"
 )
 
 type PipelineAuthType string
@@ -1286,15 +1284,6 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 	if err != nil {
 		return fmt.Errorf("parsing embedded file %s: %w", embedFilePath, err)
 	}
-
-	var actionVersions pipelineActionVersions
-	if props.CiProvider == ciProviderGitHubActions {
-		actionVersions, err = loadPipelineActionVersions()
-		if err != nil {
-			return fmt.Errorf("loading GitHub Actions versions: %w", err)
-		}
-	}
-
 	builder := strings.Builder{}
 	tmplContext := struct {
 		BranchName             string
@@ -1304,7 +1293,6 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		Secrets                []string
 		AlphaFeatures          []string
 		IsTerraform            bool
-		Actions                pipelineActionVersions
 	}{
 		BranchName:             props.BranchName,
 		FedCredLogIn:           props.AuthType == AuthTypeFederated,
@@ -1313,7 +1301,6 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		Secrets:                props.Secrets,
 		AlphaFeatures:          props.RequiredAlphaFeatures,
 		IsTerraform:            props.InfraProvider == infraProviderTerraform,
-		Actions:                actionVersions,
 	}
 
 	// Apply provider parameters
@@ -1347,109 +1334,6 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 	if err := os.WriteFile(path, contents, osutil.PermissionFile); err != nil {
 		return fmt.Errorf("creating file %s: %w", path, err)
 	}
-	return nil
-}
-
-type pipelineActionVersions struct {
-	Checkout       string
-	SetupAzd       string
-	SetupTerraform string
-	SetupDotNet    string
-}
-
-type pipelineActionReference struct {
-	value   string
-	comment string
-}
-
-func (r *pipelineActionReference) UnmarshalYAML(node *yaml.Node) error {
-	if node.Kind != yaml.ScalarNode {
-		return fmt.Errorf("expected a scalar action reference")
-	}
-
-	r.value = node.Value
-	r.comment = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(node.LineComment), "#"))
-	return nil
-}
-
-func (r pipelineActionReference) String() string {
-	if r.comment == "" {
-		return r.value
-	}
-	return fmt.Sprintf("%s  # %s", r.value, r.comment)
-}
-
-func loadPipelineActionVersions() (pipelineActionVersions, error) {
-	const manifestPath = "pipeline/.github/workflows/azure-dev-actions.yml"
-
-	contents, err := resources.PipelineFiles.ReadFile(manifestPath)
-	if err != nil {
-		return pipelineActionVersions{}, fmt.Errorf("reading embedded file %s: %w", manifestPath, err)
-	}
-
-	var manifest struct {
-		Jobs map[string]struct {
-			Steps []struct {
-				ID   string                  `yaml:"id"`
-				Uses pipelineActionReference `yaml:"uses"`
-			} `yaml:"steps"`
-		} `yaml:"jobs"`
-	}
-	if err := yaml.Unmarshal(contents, &manifest); err != nil {
-		return pipelineActionVersions{}, fmt.Errorf("parsing embedded file %s: %w", manifestPath, err)
-	}
-
-	job, ok := manifest.Jobs["action-versions"]
-	if !ok {
-		return pipelineActionVersions{}, fmt.Errorf("job action-versions is missing from %s", manifestPath)
-	}
-
-	references := make(map[string]pipelineActionReference, len(job.Steps))
-	for _, step := range job.Steps {
-		references[step.ID] = step.Uses
-	}
-
-	required := []struct {
-		id     string
-		action string
-	}{
-		{id: "checkout", action: "actions/checkout"},
-		{id: "setup-azd", action: "Azure/setup-azd"},
-		{id: "setup-terraform", action: "hashicorp/setup-terraform"},
-		{id: "setup-dotnet", action: "actions/setup-dotnet"},
-	}
-	for _, requirement := range required {
-		reference, ok := references[requirement.id]
-		if !ok {
-			return pipelineActionVersions{}, fmt.Errorf("step %s is missing from %s", requirement.id, manifestPath)
-		}
-		if err := validatePipelineActionReference(reference.value, requirement.action); err != nil {
-			return pipelineActionVersions{}, fmt.Errorf("step %s in %s: %w", requirement.id, manifestPath, err)
-		}
-	}
-
-	return pipelineActionVersions{
-		Checkout:       references["checkout"].String(),
-		SetupAzd:       references["setup-azd"].String(),
-		SetupTerraform: references["setup-terraform"].String(),
-		SetupDotNet:    references["setup-dotnet"].String(),
-	}, nil
-}
-
-func validatePipelineActionReference(reference string, expectedAction string) error {
-	prefix := expectedAction + "@"
-	if !strings.HasPrefix(reference, prefix) {
-		return fmt.Errorf("expected action %s, got %s", expectedAction, reference)
-	}
-
-	sha := strings.TrimPrefix(reference, prefix)
-	if len(sha) != 40 {
-		return fmt.Errorf("expected a full 40-character commit SHA, got %s", reference)
-	}
-	if _, err := hex.DecodeString(sha); err != nil {
-		return fmt.Errorf("invalid commit SHA in %s: %w", reference, err)
-	}
-
 	return nil
 }
 

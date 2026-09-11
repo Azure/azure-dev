@@ -93,7 +93,8 @@ func (a *InvokeAction) responseLifecycleCommand(
 		command += fmt.Sprintf(" --id %q", id)
 	}
 	if a.endpoint != nil {
-		return command + fmt.Sprintf(" --agent-endpoint %q", a.flags.agentEndpoint)
+		endpoint := buildResponsesURL(a.endpoint.ProjectEndpoint, a.endpoint.AgentName, a.endpoint.APIVersion)
+		return command + fmt.Sprintf(" --agent-endpoint %q", endpoint)
 	}
 	command += " --protocol responses"
 	if name := rc.nextStepName(); name != "" {

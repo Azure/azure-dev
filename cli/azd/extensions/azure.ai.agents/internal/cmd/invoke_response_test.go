@@ -9,8 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -58,11 +64,19 @@ func TestResponseLifecycleCommand(t *testing.T) {
 			name: "endpoint mode retains targeting", useCurrent: true, endpoint: endpoint,
 			want: `azd ai agent invocations follow --id "resp_test" --agent-endpoint "` + endpoint + `"`,
 		},
+		{
+			name: "endpoint credentials are not disclosed", useCurrent: true,
+			endpoint: strings.Replace(endpoint, "https://", "https://private-user:private-password@", 1) +
+				"&sig=private-signature&token=private-token#private-fragment",
+			want: `azd ai agent invocations follow --id "resp_test" --agent-endpoint "` + endpoint + `"`,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			action := &InvokeAction{flags: &invokeFlags{agentEndpoint: tt.endpoint}}
 			if tt.endpoint != "" {
-				action.endpoint = &parsedAgentEndpoint{}
+				parsed, err := parseAgentEndpoint(tt.endpoint)
+				require.NoError(t, err)
+				action.endpoint = parsed
 			}
 			rc := &remoteContext{name: "deployed-agent", serviceName: "resp-test"}
 			assert.Equal(t, tt.want, action.responseLifecycleCommand(rc, "resp_test", invocationFollow, tt.useCurrent))
@@ -146,6 +160,54 @@ func TestResponseIdentityTrackerRecordsSaveFailure(t *testing.T) {
 	require.Error(t, tracker.saveErr)
 	assert.Contains(t, output.String(), "resp_123")
 	assert.Contains(t, output.String(), "was not saved")
+}
+
+type failingResponseConfigServer struct {
+	*invokeUserConfigServer
+}
+
+func (s *failingResponseConfigServer) Set(
+	ctx context.Context, req *azdext.SetUserConfigRequest,
+) (*azdext.EmptyResponse, error) {
+	if req.Path == responsesConfigPath {
+		return nil, status.Error(codes.Unavailable, "test state write failure")
+	}
+	return s.invokeUserConfigServer.Set(ctx, req)
+}
+
+func TestResponsesRemoteNoWaitSaveFailurePrintsRecovery(t *testing.T) {
+	config := &failingResponseConfigServer{invokeUserConfigServer: newInvokeUserConfigServer()}
+	config.setJSON(t, responsesConfigPath, map[string]savedResponse{"agent-key": {ResponseID: "resp_previous"}})
+	client := newInvokeTestAzdClient(t, config)
+	var methods []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		methods = append(methods, r.Method)
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/agents/agent/endpoint/protocols/openai/responses", r.URL.Path)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "event: response.created\ndata: "+
+			`{"response":{"id":"resp_accepted","status":"queued"}}`+"\n\n"+
+			"event: response.output_text.delta\ndata: "+`{"delta":"must not render"}`+"\n\n")
+	}))
+	defer server.Close()
+	action := &InvokeAction{
+		flags:      &invokeFlags{message: "hello", longRunning: true, noWait: true, session: "sess", conversation: "conv"},
+		credential: responseTestCredential{},
+		resolvedRemoteContext: &remoteContext{
+			projectEndpoint: server.URL, name: "agent", serviceName: "resp-test", apiVersion: "v1",
+			agentKey: "agent-key", azdClient: client,
+		},
+	}
+	var invokeErr error
+	output := withCapturedStdout(t, func() { invokeErr = action.responsesRemote(t.Context()) })
+	require.ErrorContains(t, invokeErr, "test state write failure")
+	assert.Contains(t, output, "Next:\n  "+
+		`azd ai agent invocations follow --id "resp_accepted" --protocol responses --agent-name "resp-test"`)
+	assert.NotContains(t, output, "must not render")
+	assert.Equal(t, []string{"POST"}, methods)
+	var saved map[string]savedResponse
+	config.getJSON(t, responsesConfigPath, &saved)
+	assert.Equal(t, "resp_previous", saved["agent-key"].ResponseID)
 }
 
 func TestNoWaitSavesIdentityAndStopsBeforeOutput(t *testing.T) {

@@ -1621,9 +1621,12 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	)
 	useCurrent := errors.Is(streamErr, errBackgroundNoWait) && responseStore != nil && tracker.saveErr == nil
 	followCommand := a.responseLifecycleCommand(rc, tracker.responseID, invocationFollow, useCurrent)
-	if errors.Is(streamErr, errBackgroundNoWait) {
-		fmt.Printf("\nNext:\n  %s\n", followCommand)
-		return nil
+	if a.flags.noWait && tracker.responseID != "" {
+		if errors.Is(streamErr, errBackgroundNoWait) {
+			streamErr = nil
+		}
+		_, guidanceErr := fmt.Fprintf(os.Stdout, "\nNext:\n  %s\n", followCommand)
+		return errors.Join(streamErr, guidanceErr)
 	}
 	if streamErr != nil {
 		if a.flags.longRunning && tracker.responseID != "" &&

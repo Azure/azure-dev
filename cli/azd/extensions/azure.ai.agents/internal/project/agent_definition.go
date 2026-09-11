@@ -360,14 +360,22 @@ func environmentVariablesFromMap(
 // the marker that an agent definition is present in a service entry's inline or
 // config properties.
 func structHasKind(s *structpb.Struct) bool {
+	return structKind(s) != ""
+}
+
+// structKind returns the string `kind` a service entry's properties carry, or
+// "" when the field is absent or is not a string. Callers use it to pick the
+// right definition shape before decoding, because the kinds share the entry's
+// key space but not its types.
+func structKind(s *structpb.Struct) string {
 	if s == nil {
-		return false
+		return ""
 	}
 	v, ok := s.Fields["kind"]
 	if !ok {
-		return false
+		return ""
 	}
-	return v.GetStringValue() != ""
+	return v.GetStringValue()
 }
 
 // LoadAgentDefinition resolves the hosted-agent definition for an azure.ai.agent
@@ -517,17 +525,39 @@ func AgentDefinitionFromService(
 // service-level properties, falling back to the deprecated config-nested shape.
 // Callers resolve file references before loading the effective configuration.
 // Connections and toolbox definitions belong to standalone services, not agents.
+// Prompt connection names stay on the definition for its own validation graph;
+// they are not decoded as generic Connection resources here.
 func LoadServiceTargetAgentConfig(svc *azdext.ServiceConfig) (*ServiceTargetAgentConfig, error) {
 	s := ServiceConfigProps(svc)
 	cfg := &ServiceTargetAgentConfig{}
 	if s == nil {
 		return cfg, nil
 	}
-	if s.GetFields()["connections"] != nil {
-		return nil, fmt.Errorf(
-			"bundled connections on agent service %q are not supported; move them to azure.ai.connection services, "+
-				"add them to the agent uses list, and run 'azd deploy --all'", svc.GetName(),
-		)
+	if connections := s.GetFields()["connections"]; connections != nil {
+		if structKind(s) != string(agent_yaml.AgentKindPrompt) {
+			return nil, fmt.Errorf(
+				"bundled connections on agent service %q are not supported; move them to azure.ai.connection services, "+
+					"add them to the agent uses list, and run 'azd deploy --all'", svc.GetName(),
+			)
+		}
+		if connections.GetListValue() == nil {
+			return nil, fmt.Errorf(
+				"connections on prompt agent service %q must be an array of azure.ai.connection service names",
+				svc.GetName(),
+			)
+		}
+		for i, connection := range connections.GetListValue().GetValues() {
+			if strings.TrimSpace(connection.GetStringValue()) == "" {
+				return nil, fmt.Errorf(
+					"connections[%d] on prompt agent service %q must be a non-empty azure.ai.connection service name; "+
+						"Connection objects are not supported", i, svc.GetName(),
+				)
+			}
+		}
+		// Do not mutate the original properties: the prompt loader still needs
+		// these references when it builds the prompt-specific dependency graph.
+		s = &structpb.Struct{Fields: maps.Clone(s.GetFields())}
+		delete(s.Fields, "connections")
 	}
 	for _, toolbox := range s.GetFields()["toolboxes"].GetListValue().GetValues() {
 		if name, ok := toolbox.Kind.(*structpb.Value_StringValue); ok && strings.TrimSpace(name.StringValue) != "" {
@@ -767,7 +797,12 @@ func InlineAgentEnvironmentVariables(
 	if props == nil || len(props.GetFields()) == 0 {
 		return nil, nil
 	}
-	var inline AgentDefinitionInline
+	// Decode only the one deprecated field. The full inline shape is the hosted
+	// agent's, and a prompt or voice entry would fail to decode against it over
+	// fields this function never reads.
+	var inline struct {
+		EnvironmentVariables *[]agent_yaml.EnvironmentVariable `json:"environmentVariables,omitempty"`
+	}
 	if err := UnmarshalStruct(props, &inline); err != nil {
 		return nil, err
 	}
@@ -817,6 +852,15 @@ func agentDefinitionFromStruct(
 	coreImage string,
 	environment map[string]string,
 ) (agent_yaml.ContainerAgent, bool, error) {
+	// The kind gate has to come before the decode, not after it. Every agent
+	// kind lands in the same property bag but they do not agree on types: a
+	// prompt agent's `model` is a deployment name, while the hosted and voice
+	// shapes model it as an object. Decoding first would reject a perfectly
+	// valid prompt agent with a type error naming a field it does not have.
+	if structKind(s) == string(agent_yaml.AgentKindPrompt) {
+		return agent_yaml.ContainerAgent{}, false, nil
+	}
+
 	var inline AgentDefinitionInline
 	if err := UnmarshalStruct(s, &inline); err != nil {
 		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(

@@ -210,14 +210,7 @@ func validateFoundryDependencies(
 		host := dependency.GetHost()
 		detail := validateFoundryDependency(dependency, env)
 		if detail != "" {
-			failures = append(failures, foundryDependencyFailure{
-				name:              dependencyName,
-				host:              host,
-				detail:            detail,
-				requiresProvision: host == foundryProjectHost || host == legacyFoundryHost,
-				requiresDeploy: host == foundryConnectionHost || host == foundryToolboxHost ||
-					host == foundryAgentHost || host == foundrySkillHost,
-			})
+			failures = append(failures, newFoundryDependencyFailure(dependencyName, host, detail))
 		}
 	}
 
@@ -270,6 +263,27 @@ func validateFoundryDependencies(
 		}
 	}
 
+	return foundryDependenciesError(agent, services, failures)
+}
+
+func newFoundryDependencyFailure(name, host, detail string) foundryDependencyFailure {
+	return foundryDependencyFailure{
+		name:              name,
+		host:              host,
+		detail:            detail,
+		requiresProvision: host == foundryProjectHost || host == legacyFoundryHost,
+		// Connections, toolboxes, agents, skills and routines are applied during
+		// deploy, so their remediation must not send the user to provision.
+		requiresDeploy: host == foundryConnectionHost || host == foundryToolboxHost ||
+			host == foundryAgentHost || host == foundrySkillHost || host == foundryRoutineHost,
+	}
+}
+
+func foundryDependenciesError(
+	agent *azdext.ServiceConfig,
+	services map[string]*azdext.ServiceConfig,
+	failures []foundryDependencyFailure,
+) error {
 	if len(failures) == 0 {
 		return nil
 	}
@@ -343,6 +357,13 @@ func validateFoundryDependency(
 		return validateFoundryAgentDependency(service, env)
 	case foundrySkillHost:
 		return validateFoundrySkillDependency(service, env)
+	case foundryRoutineHost:
+		// A routine names the agent it dispatches, so the dependency edge points
+		// from the routine to the agent, not the other way around. The host is
+		// listed here so a hand-authored `uses:` entry is recognized rather than
+		// falling through to the default; there is nothing to check because the
+		// routine extension publishes no readiness marker.
+		return ""
 	default:
 		return ""
 	}

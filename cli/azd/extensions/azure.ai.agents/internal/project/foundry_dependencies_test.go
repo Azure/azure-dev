@@ -672,6 +672,42 @@ func TestValidateFoundryDependencies(t *testing.T) {
 	}
 }
 
+func TestFoundryDependencyDeploymentSuggestions(t *testing.T) {
+	t.Parallel()
+	for _, host := range []string{
+		foundryConnectionHost, foundryToolboxHost, foundryAgentHost, foundrySkillHost, foundryRoutineHost,
+	} {
+		t.Run(host, func(t *testing.T) {
+			t.Parallel()
+			agent := &azdext.ServiceConfig{Name: "agent", Host: foundryAgentHost, Uses: []string{"dependency"}}
+			services := map[string]*azdext.ServiceConfig{
+				"dependency": {Name: "dependency", Host: host},
+			}
+			// Routines publish no readiness marker today. Exercise the same
+			// classification and error builder without inventing a marker contract.
+			failure := newFoundryDependencyFailure("dependency", host, "dependency is not ready")
+			require.True(t, failure.requiresDeploy)
+			require.False(t, failure.requiresProvision)
+			err := foundryDependenciesError(agent, services, []foundryDependencyFailure{failure})
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, exterrors.CodeFoundryDependencyNotReady, localErr.Code)
+			require.Contains(t, localErr.Suggestion, `azd deploy "dependency"`)
+			require.Contains(t, localErr.Suggestion, `azd deploy "agent"`)
+			require.NotContains(t, localErr.Suggestion, "azd provision")
+		})
+	}
+}
+
+func TestValidateFoundryDependenciesRoutineDoesNotRequireReadinessMarker(t *testing.T) {
+	t.Parallel()
+	agent := &azdext.ServiceConfig{Name: "agent", Host: foundryAgentHost, Uses: []string{"routine"}}
+	services := map[string]*azdext.ServiceConfig{
+		"routine": {Name: "routine", Host: foundryRoutineHost},
+	}
+	require.NoError(t, validateFoundryDependencies(t.Context(), agent, nil, services, nil, nil))
+}
+
 func TestValidateFoundryDependenciesLegacyToolbox(t *testing.T) {
 	t.Parallel()
 

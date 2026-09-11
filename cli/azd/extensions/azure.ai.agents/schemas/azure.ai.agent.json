@@ -47,10 +47,18 @@
         ]
       }
     },
+    "connections": {
+      "type": "array",
+      "description": "Prompt-only references to sibling azure.ai.connection service names. Add these services to the agent uses list and deploy them with azd deploy --all. Connection resource definitions are not supported on agents.",
+      "items": { "type": "string", "minLength": 1, "pattern": "\\S" }
+    },
     "memoryStores": {
       "type": "array",
       "description": "List of Foundry memory stores to provision (create-if-not-exists) during deployment. Memory stores let agents retain context across sessions via the memory_search tool.",
       "items": { "$ref": "#/definitions/MemoryStore" }
+    },
+    "memory": {
+      "$ref": "#/definitions/PromptMemory"
     },
     "startupCommand": {
       "type": "string",
@@ -61,8 +69,25 @@
     },
     "kind": {
       "type": "string",
-      "description": "The agent kind. 'hosted' for a containerized/code agent; 'voice' for a managed speech-to-speech voice agent. 'prompt-voice' remains accepted for compatibility.",
-      "enum": ["hosted", "prompt-voice", "voice"]
+      "description": "The agent kind. 'hosted' for a containerized/code agent; 'prompt' for a declarative prompt agent; 'voice' for a managed speech-to-speech voice agent. 'prompt-voice' remains accepted for compatibility.",
+      "enum": ["hosted", "prompt", "prompt-voice", "voice"]
+    },
+    "harness": {
+      "type": "object",
+      "description": "Managed runtime used to execute a prompt agent. Harness capabilities are configured through top-level skills and tools.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["github_copilot_preview"]
+        }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "skills": {
+      "type": "array",
+      "description": "Foundry skill names available to the prompt agent.",
+      "items": { "type": "string", "minLength": 1, "pattern": "\\S" }
     },
     "language": {
       "type": "string",
@@ -74,7 +99,12 @@
       "description": "Named Foundry toolbox consumed by the agent.",
       "properties": {
         "name": { "type": "string", "minLength": 1 },
-        "version": { "type": "string", "minLength": 1 }
+        "version": { "type": "string", "minLength": 1 },
+        "projectConnectionId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional Foundry project connection name or ID passed as the toolbox MCP tool's project_connection_id. Omit for toolbox endpoints that do not require project-connection authentication."
+        }
       },
       "required": ["name"],
       "additionalProperties": false
@@ -88,17 +118,15 @@
       "$ref": "#/definitions/VoiceTargetAgent"
     },
     "model": {
-      "type": "object",
-      "description": "Voice agent (kind: prompt-voice) speech-to-speech model (e.g. id: gpt-realtime).",
-      "properties": {
-        "id": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "Model name for managed mode (e.g. 'gpt-realtime') or existing Foundry deployment name for self_deployed mode." }
-      },
-      "required": ["id"],
-      "additionalProperties": true
+      "description": "Model deployment name for prompt agents, or speech-to-speech model configuration for prompt-voice agents.",
+      "oneOf": [
+        { "type": "string", "minLength": 1, "pattern": "\\S" },
+        { "$ref": "#/definitions/VoiceModel" }
+      ]
     },
     "instructions": {
       "type": "string",
-      "description": "Voice agent (kind: prompt-voice) system prompt for the assistant."
+      "description": "System prompt for prompt and prompt-voice agents."
     },
     "voice": {
       "type": "string",
@@ -110,8 +138,26 @@
     },
     "structuredInputs": {
       "type": "object",
-      "description": "Voice agent (kind: prompt-voice) structured prompt inputs. Use description, defaultValue, schema, and required; azd maps defaultValue to the service wire field default_value.",
+      "description": "Structured prompt inputs for prompt and prompt-voice agents.",
       "additionalProperties": true
+    },
+    "temperature": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 2,
+      "description": "Sampling temperature for a prompt agent. Prefer setting either temperature or topP, not both."
+    },
+    "topP": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Nucleus-sampling cutoff for a prompt agent."
+    },
+    "text": {
+      "description": "Prompt-agent text response configuration, including structured output formats."
+    },
+    "reasoning": {
+      "description": "Prompt-agent reasoning configuration, such as reasoning effort."
     },
     "audio": {
       "$ref": "#/definitions/VoiceAudio"
@@ -124,8 +170,23 @@
     },
     "tools": {
       "type": "array",
-      "description": "Voice agent (kind: prompt-voice) tools. Direct tool types include function, mcp, system, and toolbox.",
-      "items": { "type": "object", "additionalProperties": true }
+      "description": "Tools available to prompt and prompt-voice agents. Unknown tool types are passed through for forward compatibility.",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/GitHubCopilotToolsetPreview" },
+          {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "not": { "const": "github_copilot_toolset_preview" }
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
+      }
     },
     "avatar": {
       "type": "object",
@@ -143,7 +204,7 @@
       "additionalProperties": true
     },
     "toolChoice": {
-      "description": "Voice agent (kind: prompt-voice) tool choice behavior, such as none, auto, required, or a tool choice object."
+      "description": "Tool choice behavior for prompt and prompt-voice agents, such as none, auto, required, or a tool choice object."
     },
     "parallelToolCalls": {
       "type": "boolean",
@@ -227,8 +288,24 @@
   "additionalProperties": true,
   "allOf": [
     {
-      "$comment": "Bundled connections are not supported. Declare azure.ai.connection services and add them to agent uses; Connections owns their deployment.",
-      "not": { "required": ["connections"] }
+      "$comment": "A prompt agent requires a model deployment name and instructions.",
+      "if": {
+        "properties": {
+          "kind": { "const": "prompt" }
+        },
+        "required": ["kind"]
+      },
+      "then": {
+        "required": ["model", "instructions"],
+        "properties": {
+          "model": { "type": "string", "minLength": 1, "pattern": "\\S" },
+          "instructions": { "type": "string", "minLength": 1, "pattern": "\\S" }
+        }
+      },
+      "else": {
+        "$comment": "Only prompt agents accept connection name references. Other agents declare dependencies through uses; Connection resources belong to azure.ai.connection services.",
+        "not": { "required": ["connections"] }
+      }
     },
     {
       "$comment": "A hosted-agent voice wrapper references a deployed hosted service; other voice modes declare a model. Prompt voice agents cannot use the hosted-agent toolbox reference.",
@@ -382,6 +459,73 @@
     }
   ],
   "definitions": {
+    "PromptMemory": {
+      "type": "object",
+      "description": "Memory store used by a prompt agent for recall.",
+      "properties": {
+        "store": { "type": "string", "minLength": 1, "pattern": "\\S" },
+        "description": { "type": "string" },
+        "chat_model": { "type": "string", "minLength": 1 },
+        "embedding_model": { "type": "string", "minLength": 1 },
+        "scope": { "type": "string", "minLength": 1 },
+        "update_delay": { "type": "integer", "minimum": 0 },
+        "max_memories": { "type": "integer", "minimum": 1 },
+        "options": { "$ref": "#/definitions/PromptMemoryOptions" }
+      },
+      "required": ["store"],
+      "additionalProperties": false
+    },
+    "PromptMemoryOptions": {
+      "type": "object",
+      "properties": {
+        "chat_summary_enabled": { "type": "boolean" },
+        "user_profile_enabled": { "type": "boolean" },
+        "procedural_memory_enabled": { "type": "boolean" },
+        "default_ttl_seconds": { "type": "integer", "minimum": 0 },
+        "user_profile_details": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "GitHubCopilotToolsetPreview": {
+      "type": "object",
+      "description": "Enablement configuration for GitHub Copilot built-in tools.",
+      "properties": {
+        "type": { "const": "github_copilot_toolset_preview" },
+        "default_config": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          },
+          "additionalProperties": false
+        },
+        "configs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": ["filesystem_read", "filesystem_write", "shell", "web", "subagents"]
+              },
+              "enabled": { "type": "boolean" }
+            },
+            "required": ["name"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "VoiceModel": {
+      "type": "object",
+      "description": "Prompt-voice speech-to-speech model.",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "pattern": "\\S" }
+      },
+      "required": ["id"],
+      "additionalProperties": true
+    },
     "VoiceTargetAgent": {
       "type": "object",
       "description": "Hosted agent service used as the conversation target for a voice wrapper.",

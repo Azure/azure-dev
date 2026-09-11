@@ -203,7 +203,11 @@ func Synthesize(in Input) (*Result, error) {
 	if len(in.AcceptedHosts) > 0 && !slices.Contains(in.AcceptedHosts, svc.Host) {
 		return nil, ErrServiceNotFound
 	}
-	if strings.TrimSpace(svc.Endpoint) != "" {
+	endpoint, err := expandEndpoint(svc.Endpoint, in.Env)
+	if err != nil {
+		return nil, err
+	}
+	if endpoint != "" {
 		return nil, ErrEndpointBrownfield
 	}
 
@@ -319,12 +323,14 @@ func BrownfieldDeployments(
 	return svc.Deployments, nil
 }
 
-// ProjectEndpoint returns the endpoint configured on a Foundry project service.
-// It resolves $ref includes before decoding the service body.
+// ProjectEndpoint returns the endpoint configured on a Foundry project service,
+// with ${VAR} references resolved from env. It resolves $ref includes before
+// decoding the service body.
 func ProjectEndpoint(
 	raw []byte,
 	serviceName string,
 	projectRoot string,
+	env map[string]string,
 ) (string, error) {
 	if len(raw) == 0 {
 		return "", errors.New("synthesis: raw azure.yaml is empty")
@@ -339,7 +345,22 @@ func ProjectEndpoint(
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(svc.Endpoint), nil
+	return expandEndpoint(svc.Endpoint, env)
+}
+
+func expandEndpoint(raw string, env map[string]string) (string, error) {
+	mapping := func(name string) string {
+		if value, found := env[name]; found {
+			return value
+		}
+		value, _ := os.LookupEnv(name)
+		return value
+	}
+	expanded, err := foundry.ExpandEnv(strings.TrimSpace(raw), mapping)
+	if err != nil {
+		return "", fmt.Errorf("expand endpoint: %w", err)
+	}
+	return strings.TrimSpace(expanded), nil
 }
 
 // loadProjectService decodes a service after resolving any local $ref includes.
@@ -352,7 +373,7 @@ func loadProjectService(
 	if !ok {
 		return projectService{}, ErrServiceNotFound
 	}
-	if err := rejectBundledDeclarations(node, serviceName); err != nil {
+	if err := rejectBundledDeclarations(node, serviceName, projectRoot != ""); err != nil {
 		return projectService{}, err
 	}
 	if projectRoot != "" {
@@ -362,7 +383,7 @@ func loadProjectService(
 			return projectService{}, err
 		}
 	}
-	if err := rejectBundledDeclarations(node, serviceName); err != nil {
+	if err := rejectBundledDeclarations(node, serviceName, false); err != nil {
 		return projectService{}, err
 	}
 
@@ -374,16 +395,30 @@ func loadProjectService(
 }
 
 // rejectBundledDeclarations rejects legacy resource payloads, not agent references
-// to independently owned resources. Check before expanding nested payload refs.
-func rejectBundledDeclarations(node yaml.Node, path string) error {
+// to independently owned resources. Before expanding refs, string connection names
+// may defer the kind check to a referenced definition. Always recheck after resolution.
+func rejectBundledDeclarations(node yaml.Node, path string, resolvingRefs bool) error {
 	var fields map[string]yaml.Node
 	if err := node.Decode(&fields); err != nil {
 		return nil
 	}
+	kind, hasKind := fields["kind"]
+	prompt := kind.Kind == yaml.ScalarNode && kind.Tag == "!!str" &&
+		strings.EqualFold(strings.TrimSpace(kind.Value), "prompt")
+	ref := fields["$ref"]
+	deferredKind := resolvingRefs && !hasKind && ref.Kind == yaml.ScalarNode &&
+		ref.Tag == "!!str" && strings.TrimSpace(ref.Value) != ""
 	for _, field := range []string{"connections", "toolboxes"} {
 		value, ok := fields[field]
 		if !ok {
 			continue
+		}
+		if field == "connections" && (prompt || deferredKind) && value.Kind == yaml.SequenceNode {
+			if !slices.ContainsFunc(value.Content, func(item *yaml.Node) bool {
+				return item.Kind != yaml.ScalarNode || item.Tag != "!!str" || strings.TrimSpace(item.Value) == ""
+			}) {
+				continue
+			}
 		}
 		if field == "toolboxes" && value.Kind == yaml.SequenceNode {
 			if !slices.ContainsFunc(value.Content, func(item *yaml.Node) bool {
@@ -408,13 +443,13 @@ func rejectBundledDeclarations(node yaml.Node, path string) error {
 			"migrate them to independent azure.ai.connection or azure.ai.toolbox services", path, field)
 	}
 	if config, ok := fields["config"]; ok {
-		if err := rejectBundledDeclarations(config, path+".config"); err != nil {
+		if err := rejectBundledDeclarations(config, path+".config", resolvingRefs); err != nil {
 			return err
 		}
 	}
 	if agents, ok := fields["agents"]; ok && agents.Kind == yaml.SequenceNode {
 		for i, agent := range agents.Content {
-			if err := rejectBundledDeclarations(*agent, fmt.Sprintf("%s.agents[%d]", path, i)); err != nil {
+			if err := rejectBundledDeclarations(*agent, fmt.Sprintf("%s.agents[%d]", path, i), resolvingRefs); err != nil {
 				return err
 			}
 		}
@@ -581,7 +616,7 @@ func deriveIncludeAcr(
 		if !enabled {
 			continue
 		}
-		if err := rejectBundledDeclarations(node, serviceName); err != nil {
+		if err := rejectBundledDeclarations(node, serviceName, projectRoot != ""); err != nil {
 			return false, err
 		}
 		node, matches, err := serviceForHost(node, projectRoot, serviceName, "azure.ai.agent")
@@ -591,7 +626,7 @@ func deriveIncludeAcr(
 		if !matches {
 			continue
 		}
-		if err := rejectBundledDeclarations(node, serviceName); err != nil {
+		if err := rejectBundledDeclarations(node, serviceName, false); err != nil {
 			return false, err
 		}
 		var service serviceBlock

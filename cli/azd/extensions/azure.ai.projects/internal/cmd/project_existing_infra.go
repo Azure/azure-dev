@@ -260,9 +260,11 @@ func ejectProjectInfraWithTarget(
 		return fmt.Errorf("read %s for infrastructure ejection: %w", projectFile, err)
 	}
 
-	configuredEndpoint, err := synthesis.ProjectEndpoint(
-		raw, serviceName, projectRoot,
-	)
+	var environment map[string]string
+	if len(environments) > 0 {
+		environment = environments[0]
+	}
+	configuredEndpoint, err := synthesis.ProjectEndpoint(raw, serviceName, projectRoot, environment)
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,

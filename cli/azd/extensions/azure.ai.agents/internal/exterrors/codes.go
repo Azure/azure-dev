@@ -70,6 +70,7 @@ const (
 	CodeMissingProjectEndpoint    = "missing_project_endpoint"
 	CodeGitHubDownloadFailed      = "github_download_failed"
 	CodePromptFailed              = "prompt_failed"
+	CodeRaiPolicyNotFound         = "rai_policy_not_found"
 )
 
 // Error codes for ACR dependency errors.
@@ -149,8 +150,7 @@ const (
 
 // Error codes for toolbox operations.
 const (
-	CodeInvalidToolbox             = "invalid_toolbox"
-	CodeCreateToolboxVersionFailed = "create_toolbox_version_failed"
+	CodeInvalidToolbox = "invalid_toolbox"
 )
 
 // Error codes for connection operations.

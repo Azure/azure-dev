@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"runtime"
@@ -20,34 +21,40 @@ type rleInitFlags struct {
 }
 
 type initAction struct {
-	cmd             *cobra.Command
-	flags           *rleInitFlags
-	environmentName string
+	cmd        *cobra.Command
+	flags      *rleInitFlags
+	folderName string
 }
 
-var checkoutOpenEnvEnvironmentFunc = project.CheckoutOpenEnvEnvironment
+type rleSampleCatalog interface {
+	SampleNames() []string
+	Copy(sampleName string, folderName string, dest string, force bool) (string, error)
+	Close() error
+}
+
+var loadRleSampleCatalogFunc = func() (rleSampleCatalog, error) {
+	return project.LoadRleSampleCatalog()
+}
+
+var selectRleSampleFunc = selectRleSample
 
 func newInitCommand() *cobra.Command {
 	flags := &rleInitFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "init [environment-name]",
-		Short: "Initialize a local RLE environment",
-		Args:  cobra.MaximumNArgs(1),
+		Use:   "init <folder-name>",
+		Short: "Initialize a local RLE environment from a sample",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			environmentName := ""
-			if len(args) == 1 {
-				environmentName = args[0]
-			}
-			return (&initAction{cmd: cmd, flags: flags, environmentName: environmentName}).Run()
+			return (&initAction{cmd: cmd, flags: flags, folderName: args[0]}).Run()
 		},
 	}
 
 	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		var help strings.Builder
-		help.WriteString("Initialize a local RLE environment\n")
+		help.WriteString("Initialize a local RLE environment from a sample\n")
 		help.WriteString("Usage:\n")
-		help.WriteString("  rle init [environment-name] [flags]\n")
+		help.WriteString("  rle init <folder-name> [flags]\n")
 		help.WriteString("Flags:\n")
 		help.WriteString("      --force     Overwrite generated files in an existing non-empty session directory\n")
 		help.WriteString("  -h, --help      help for init\n")
@@ -62,9 +69,7 @@ func newInitCommand() *cobra.Command {
 }
 
 func (a *initAction) Run() error {
-	envName := firstNonEmpty(a.environmentName, "echo_env")
-	var err error
-	envName, err = project.ValidateEnvironmentName(envName)
+	folderName, err := project.ValidateEnvironmentName(a.folderName)
 	if err != nil {
 		return &azdext.LocalError{
 			Message:    err.Error(),
@@ -74,18 +79,68 @@ func (a *initAction) Run() error {
 		}
 	}
 
-	sessionDir, err := checkoutOpenEnvEnvironmentFunc(envName, ".", a.flags.force)
+	catalog, err := loadRleSampleCatalogFunc()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = catalog.Close()
+	}()
+	sampleName, err := selectRleSampleFunc(a.cmd.Context(), catalog.SampleNames())
+	if err != nil {
+		return err
+	}
+	sessionDir, err := catalog.Copy(sampleName, folderName, ".", a.flags.force)
 	if err != nil {
 		return err
 	}
 
-	if err := saveRleStateIn(sessionDir, defaultRleState(envName)); err != nil {
+	if err := saveRleStateIn(sessionDir, defaultRleState(folderName)); err != nil {
 		return err
 	}
 
 	displayDir := "." + string(os.PathSeparator) + sessionDir
+	if _, err := fmt.Fprintf(a.cmd.OutOrStdout(), "Copied RLE sample %q.\n", sampleName); err != nil {
+		return err
+	}
 	_, err = fmt.Fprint(a.cmd.OutOrStdout(), initNextSteps(displayDir, runtime.GOOS, os.Getenv("SHELL")))
 	return err
+}
+
+func selectRleSample(ctx context.Context, sampleNames []string) (string, error) {
+	if len(sampleNames) == 0 {
+		return "", &azdext.LocalError{
+			Message:    "No RLE samples are available.",
+			Code:       "rle_samples_empty",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Add a sample to the RLE samples repository, then retry.",
+		}
+	}
+	choices := make([]*azdext.SelectChoice, len(sampleNames))
+	for index, sampleName := range sampleNames {
+		choices[index] = &azdext.SelectChoice{Label: sampleName, Value: sampleName}
+	}
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return "", fmt.Errorf("create azd client for sample selection: %w", err)
+	}
+	defer azdClient.Close()
+	response, err := azdClient.Prompt().Select(azdext.WithAccessToken(ctx), &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:         "Select an RLE sample",
+			Choices:         choices,
+			DisplayNumbers:  new(true),
+			EnableFiltering: new(true),
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("select RLE sample: %w", err)
+	}
+	selectedIndex := int(response.GetValue())
+	if selectedIndex < 0 || selectedIndex >= len(sampleNames) {
+		return "", fmt.Errorf("invalid RLE sample selection index: %d", selectedIndex)
+	}
+	return sampleNames[selectedIndex], nil
 }
 
 func initNextSteps(displayDir string, goos string, shell string) string {
@@ -111,7 +166,7 @@ func initNextSteps(displayDir string, goos string, shell string) string {
 	}
 
 	return fmt.Sprintf(
-		"Created OpenEnv-style environment at: %s\n"+
+		"Created RLE environment at: %s\n"+
 			"\nRun locally:\n"+
 			"  cd \"%s\"\n"+
 			"  azd ai rle run\n"+

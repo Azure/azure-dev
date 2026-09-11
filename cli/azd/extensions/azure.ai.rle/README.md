@@ -10,7 +10,7 @@ Install:
 - Azure CLI (`az`): https://learn.microsoft.com/cli/azure/install-azure-cli
 - Docker Desktop: https://www.docker.com/products/docker-desktop/
 - Go, if building from source: https://go.dev/doc/install
-- Git, if building from source: https://git-scm.com/downloads
+- Git, required by `azd ai rle init` to download samples: https://git-scm.com/downloads
 
 Verify:
 
@@ -81,26 +81,18 @@ az acr login --name <registry>
 
 ### 1. Initialize an environment session
 
-Default echo session:
+Choose the local folder name:
 
 ```powershell
-azd ai rle init
-cd .\echo_env
+azd ai rle init my_environment
 ```
 
-The default echo session downloads the Hugging Face `OpenEnv` repo, copies `envs/echo_env` into the session folder, and writes `.azd-rle.json` with the local `environmentName`. Existing state files that use the legacy `name` property remain supported.
+`init` reads the available environments from
+[rle-samples](https://github.com/sujit-kamireddy/rle-samples) and prompts you to select one.
+Only the selected sample is downloaded and copied into `.\my_environment`, and `.azd-rle.json`
+stores `my_environment` as the RLE environment name.
 
-The copied session does not keep `.git` metadata from the upstream repository.
-
-Copy another environment from the OpenEnv `envs` catalog:
-
-```powershell
-azd ai rle init chess_env
-cd .\chess_env
-```
-
-The positional name selects `envs/<environment-name>` from OpenEnv and is also used for the local session directory
-and RLE environment name. If the name is not present in the catalog, `init` suggests the closest available name.
+The copied session does not keep `.git` metadata from the sample repository.
 
 For an existing source folder, skip `init` and run commands directly from that folder.
 

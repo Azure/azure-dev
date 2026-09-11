@@ -213,7 +213,11 @@ func TestValidateManagedNoPromptInputs(t *testing.T) {
 		},
 		{
 			name:     "no-prompt satisfied entirely by the manifest",
+<<<<<<< HEAD
 			flags:    initFlags{noPrompt: true, projectResourceId: "/project"},
+=======
+			flags:    initFlags{noPrompt: true},
+>>>>>>> c81a173f3f7d32eb7372ee4432a63097f47d0762
 			manifest: promptManifest("a", "gpt-4.1-mini"),
 		},
 		{
@@ -236,6 +240,7 @@ func TestValidateManagedNoPromptInputs(t *testing.T) {
 		})
 	}
 }
+<<<<<<< HEAD
 
 func TestPromptProjectLayoutUsesParentProject(t *testing.T) {
 	projectRoot := t.TempDir()
@@ -251,3 +256,5 @@ func TestPromptProjectLayoutUsesParentProject(t *testing.T) {
 	require.Equal(t, "nested/assistant", rel)
 	require.Equal(t, filepath.Join(projectRoot, "nested", "assistant"), source)
 }
+=======
+>>>>>>> c81a173f3f7d32eb7372ee4432a63097f47d0762

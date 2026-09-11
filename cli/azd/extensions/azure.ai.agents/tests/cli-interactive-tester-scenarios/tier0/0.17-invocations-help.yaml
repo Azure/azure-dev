@@ -1,0 +1,16 @@
+# Tier 0 (offline) — discover the shared invocation lifecycle commands.
+name: "invocations-help"
+command: "azd ai agent invocations --help"
+cwd: "/tmp"
+tags: ["tier:0", "cmd:invocations", "cmd:help", "parallel-safe"]
+
+goals:
+  - "Wait for the help output and confirm the command exits with code 0."
+  - "Confirm the available subcommands include show, follow, and cancel."
+  - "Confirm the description explains that the protocol is inferred from the agent or --agent-endpoint, and that omitting --id uses the saved current ID for the selected agent and protocol."
+  - "Run 'azd ai agent invocations show --help', 'azd ai agent invocations follow --help', and 'azd ai agent invocations cancel --help'. Each must exit with code 0 and show --id, --protocol/-p, --agent-name/-n, --agent-endpoint, and --user-identity."
+  - "Confirm show help lists json and table as supported --output formats and json as the default."
+  - "Confirm none of the lifecycle subcommands advertises --version, --client-header, --response-id, or --invocation-id."
+  - "Confirm no agent picker, login prompt, or Azure operation is started; execute only the help commands above."
+  - "Take a screenshot of the command-group and show help output."
+  - "Report a finding if any expected command or flag is missing, an obsolete flag is advertised, any product prompt appears, or a help command exits non-zero."

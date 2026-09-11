@@ -327,9 +327,17 @@ in any order, any time.
 | `tier0/0.14-endpoint-show-help.yaml` | `endpoint show --help` |
 | `tier0/0.15-code-download-help.yaml` | `code download --help` |
 | `tier0/0.16-delete-help.yaml` | `delete --help` |
+| `tier0/0.17-invocations-help.yaml` | Shared `invocations show/follow/cancel` discovery, flags, and output formats |
 | `tier0/0.17-toolbox-add.yaml` | `toolbox add` (noun-first, local `uses` edit, JSON, idempotency) |
 | `tier0/0.18-connection-add.yaml` | `connection add` (noun-first, local `uses` edit, JSON, idempotency) |
+| `tier0/0.18-invoke-long-running-validation.yaml` | `invoke --long-running` / `--no-wait` help and invalid combinations |
+| `tier0/0.19-invocations-validation.yaml` | Unsupported lifecycle protocols, empty selectors, and removed flags |
 | `tier0/0.19-standalone-deploy-migration.yaml` | Removed standalone `agent deploy` and old `agent add <type>` rejection; agent command discovery and core `azd deploy --help` only |
+
+The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
+They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP
+lifecycle behavior is covered by the extension's Go tests with scripted local servers; no successful
+cloud create/follow/cancel flow is claimed by these scenarios.
 
 ### Tier 1 — Auth, scaffold only (`tier1/`)
 Requires Azure login (reads subscriptions/Foundry projects) but **does not
@@ -435,7 +443,7 @@ grouping — colons are treated as ordinary characters by the filter):
 | Namespace | Values | Meaning |
 |---|---|---|
 | `tier:N` | `tier:0`, `tier:1`, `tier:1b`, `tier:2` | The tier the scenario belongs to (same axis as the directory's four sections above). Use this to express cost / auth profile in one tag. |
-| `cmd:*` | `cmd:init`, `cmd:show`, `cmd:invoke`, `cmd:sessions`, `cmd:files`, `cmd:monitor`, `cmd:endpoint`, `cmd:run`, `cmd:doctor`, `cmd:eval`, `cmd:optimize`, `cmd:sample`, `cmd:down`, `cmd:provision`, `cmd:deploy`, `cmd:version`, `cmd:help`, `cmd:code`, `cmd:delete`, `cmd:toolbox`, `cmd:connection` | The top-level `azd ai agent` (or `azd`) command(s) the scenario exercises. Multi-command scenarios (e.g. `2.12-run-local-and-invoke-local` runs both `run` and `invoke --local`; `2.00-setup` runs `init` + `provision` + `deploy`) carry multiple `cmd:*` tags. `cmd:toolbox` and `cmd:connection` cover Agent dependency composition, not the sibling extensions' resource lifecycle commands. |
+| `cmd:*` | `cmd:init`, `cmd:show`, `cmd:invoke`, `cmd:invocations`, `cmd:sessions`, `cmd:files`, `cmd:monitor`, `cmd:endpoint`, `cmd:run`, `cmd:doctor`, `cmd:eval`, `cmd:optimize`, `cmd:sample`, `cmd:down`, `cmd:provision`, `cmd:deploy`, `cmd:version`, `cmd:help`, `cmd:code`, `cmd:delete`, `cmd:toolbox`, `cmd:connection` | The top-level `azd ai agent` (or `azd`) command(s) the scenario exercises. Multi-command scenarios (e.g. `2.12-run-local-and-invoke-local` runs both `run` and `invoke --local`; `2.00-setup` runs `init` + `provision` + `deploy`) carry multiple `cmd:*` tags. `cmd:toolbox` and `cmd:connection` cover Agent dependency composition, not the sibling extensions' resource lifecycle commands. |
 | traits | `parallel-safe`, `serial-only`, `negative-path`, `picker`, `verify-deploy` | `parallel-safe` ↔ `serial-only` are mutually exclusive: all Tier 0 / Tier 1 / Tier 1b scenarios are `parallel-safe`, all Tier 2 are `serial-only`. `negative-path` flags arg-/CLI-validation scenarios that assert errors or non-zero exit codes rather than happy-path success. `picker` flags scenarios whose primary purpose is exercising interactive picker UX. `verify-deploy` flags Tier 1b scenarios that verify a Tier 1 scaffold deploys. |
 
 **Examples** (the tool's `tags:` parameter is OR across the list):

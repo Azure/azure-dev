@@ -46,6 +46,17 @@ Capture these results separately from the nine `mage preflight` checks. This con
 required because the repository-wide misc config excludes directories that have their own cspell
 configuration, including `cli/`.
 
+Inspect `git status --porcelain=v1 -z --untracked-files=all -- cli/azd/resources/pipeline/.github/workflows/azure-dev-actions.yml`.
+If it lists that file as changed (and not deleted), run:
+
+```bash
+cd cli/azd && go test ./pkg/pipeline -run '^Test_ActionPinManifest_MatchesTemplate$' -v
+```
+
+Capture this result separately as the **pipeline-action-pin-sync** check. This conditional check is
+required because `azure-dev.ymlt` is a Go template, not valid YAML, so nothing else in the nine
+standard checks re-derives its action pins from the manifest.
+
 ### Step 3 — Parse Results
 
 The preflight output ends with a summary block listing each check as `✓` (pass) or `✗` (fail):
@@ -61,9 +72,11 @@ The preflight output ends with a summary block listing each check as `✓` (pass
 ```
 
 Parse this summary to identify which checks passed (`✓`) and which failed (`✗`).
-Also parse the targeted changelog spell-check results when changed changelogs were found.
+Also parse the targeted changelog spell-check results when changed changelogs were found, and the
+pipeline-action-pin-sync result when the action manifest changed.
 
-**If all checks pass** and every changed changelog is clean: Report success and stop. No fixes needed.
+**If all checks pass**, every changed changelog is clean, and the pipeline-action-pin-sync check
+(when applicable) passes: Report success and stop. No fixes needed.
 
 **If any check fails**: Proceed to Step 4 for each failing check, in order.
 
@@ -73,7 +86,9 @@ For each failing check, apply the fix strategy from the references. Process chec
 their original order (1-9) because earlier fixes can resolve later failures (e.g., `gofmt`
 fixes may resolve `lint` issues, `build` fixes resolve `test` failures).
 
-After the nine standard checks, fix any targeted changelog spelling failures.
+After the nine standard checks, fix any targeted changelog spelling failures. If the
+pipeline-action-pin-sync check failed, apply the "Generated Pipeline Action Pins — Auto-fix"
+strategy, then re-run `Test_ActionPinManifest_MatchesTemplate` to confirm the fix.
 
 {{ references/fix-strategies.md }}
 
@@ -85,7 +100,8 @@ After applying all fixes, re-run the full preflight:
 cd cli/azd && mage preflight
 ```
 
-Re-run the targeted spell check for every changed changelog.
+Re-run the targeted spell check for every changed changelog, and re-run
+`Test_ActionPinManifest_MatchesTemplate` if the pipeline-action-pin-sync check previously failed.
 
 **If all checks pass** and every changed changelog is clean: Report success and stop.
 

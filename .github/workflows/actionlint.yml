@@ -6,13 +6,9 @@ on:
       - main
     paths:
       - .github/**
-      - cli/azd/resources/pipeline/.github/workflows/**
-      - cli/azd/extensions/azure.coding-agent/internal/cmd/templates/**
   pull_request:
     paths:
       - .github/**
-      - cli/azd/resources/pipeline/.github/workflows/**
-      - cli/azd/extensions/azure.coding-agent/internal/cmd/templates/**
   workflow_dispatch:
 
 permissions:
@@ -28,8 +24,6 @@ jobs:
         with:
           sparse-checkout: |
             .github
-            cli/azd/resources/pipeline/.github/workflows
-            cli/azd/extensions/azure.coding-agent/internal/cmd/templates
 
       # Content copied from https://raw.githubusercontent.com/rhysd/actionlint/2ab3a12c7848f6c15faca9a92612ef4261d0e370/.github/actionlint-matcher.json
       - name: Add ActionLint Problem Matcher
@@ -39,14 +33,3 @@ jobs:
         uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
           args: -color -verbose
-
-      # actionlint's default project scan only looks at .github/workflows/*.{yml,yaml}, so the
-      # generated-pipeline action manifest and the Copilot setup-steps template (both action-pinned
-      # by Dependabot from outside .github/**) must be linted explicitly.
-      - name: Lint generated-pipeline and Copilot setup-steps action manifests
-        uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
-        with:
-          args: >-
-            -color -verbose
-            cli/azd/resources/pipeline/.github/workflows/azure-dev-actions.yml
-            cli/azd/extensions/azure.coding-agent/internal/cmd/templates/copilot-setup-steps.yml

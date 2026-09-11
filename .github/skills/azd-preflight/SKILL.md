@@ -2,7 +2,7 @@
 name: azd-preflight
 license: MIT
 metadata:
-  version: "1.4"
+  version: "1.3"
   # Bump major on breaking prompt/trigger changes; bump minor on new references or fix strategies.
 description: >-
   **WORKFLOW SKILL** — Runs `mage preflight` from `cli/azd/` and auto-fixes failures.

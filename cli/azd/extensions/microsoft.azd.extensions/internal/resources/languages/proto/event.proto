@@ -77,6 +77,8 @@ message ProjectHandlerStatus {
   string message = 3;
   // Optional structured error details (set when status is "failed").
   ExtensionError error = 4;
+  // Optional follow-up guidance from a successful project handler.
+  optional string follow_up = 5;
 }
 
 // Client sends status updates for service events

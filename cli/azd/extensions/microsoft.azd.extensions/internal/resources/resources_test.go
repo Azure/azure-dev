@@ -26,7 +26,7 @@ func TestGitignoreEmbedded(t *testing.T) {
 	}
 }
 
-func TestNonGoScaffoldIncludesStructuredErrorProtocol(t *testing.T) {
+func TestNonGoScaffoldIncludesEventProtocol(t *testing.T) {
 	errorsProto, err := Languages.ReadFile("languages/proto/errors.proto")
 	require.NoError(t, err)
 	require.Contains(t, string(errorsProto), "message ExtensionError")
@@ -38,6 +38,43 @@ func TestNonGoScaffoldIncludesStructuredErrorProtocol(t *testing.T) {
 	require.Contains(t, eventContents, `import "errors.proto";`)
 	require.Contains(t, eventContents, "ExtensionError error = 4;")
 	require.Contains(t, eventContents, "ExtensionError error = 5;")
+	require.Contains(t, eventContents, "optional string follow_up = 5;")
+
+	for _, test := range []struct {
+		language string
+		file     string
+		contains string
+	}{
+		{
+			language: "javascript",
+			file:     "languages/javascript/eventManager.js",
+			contains: "statusMsg.setFollowUp(followUp);",
+		},
+		{
+			language: "python",
+			file:     "languages/python/event_manager.py",
+			contains: `status_fields["follow_up"] = follow_up`,
+		},
+		{
+			language: "dotnet",
+			file:     "languages/dotnet/EventManager.cs",
+			contains: "statusMessage.FollowUp = followUp;",
+		},
+	} {
+		t.Run(test.language, func(t *testing.T) {
+			contents, err := Languages.ReadFile(test.file)
+			require.NoError(t, err)
+			require.Contains(t, string(contents), test.contains)
+		})
+	}
+
+	for _, file := range []string{
+		"languages/javascript/generated/proto/errors_pb.js",
+		"languages/python/generated_proto/errors_pb2.py",
+	} {
+		_, err := Languages.ReadFile(file)
+		require.NoError(t, err)
+	}
 }
 
 // TestGoGitignoreExcludesBin ensures the generated Go extension ignores the build

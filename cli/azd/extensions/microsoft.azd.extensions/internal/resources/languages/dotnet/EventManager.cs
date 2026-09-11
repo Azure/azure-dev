@@ -10,6 +10,7 @@ namespace Microsoft.Azd
     public class ProjectEventArgs
     {
         public ProjectConfig Project { get; set; } = default!;
+        public string? FollowUp { get; set; }
     }
 
     public class ServiceEventArgs
@@ -139,16 +140,26 @@ namespace Microsoft.Azd
             });
         }
 
-        private async Task SendProjectHandlerStatusAsync(string eventName, string status, string message)
+        private async Task SendProjectHandlerStatusAsync(
+            string eventName,
+            string status,
+            string message,
+            string? followUp = null)
         {
+            var statusMessage = new ProjectHandlerStatus
+            {
+                EventName = eventName,
+                Status = status,
+                Message = message
+            };
+            if (followUp is not null)
+            {
+                statusMessage.FollowUp = followUp;
+            }
+
             await _stream!.RequestStream.WriteAsync(new EventMessage
             {
-                ProjectHandlerStatus = new ProjectHandlerStatus
-                {
-                    EventName = eventName,
-                    Status = status,
-                    Message = message
-                }
+                ProjectHandlerStatus = statusMessage
             });
         }
 
@@ -172,13 +183,16 @@ namespace Microsoft.Azd
             {
                 var status = "completed";
                 var message = "";
+                string? followUp = null;
+                var eventArgs = new ProjectEventArgs
+                {
+                    Project = invokeMsg.Project
+                };
 
                 try
                 {
-                    await handler(new ProjectEventArgs
-                    {
-                        Project = invokeMsg.Project
-                    });
+                    await handler(eventArgs);
+                    followUp = eventArgs.FollowUp;
                 }
                 catch (Exception ex)
                 {
@@ -187,7 +201,11 @@ namespace Microsoft.Azd
                     Console.WriteLine($"[ProjectHandler] Error: {ex}");
                 }
 
-                await SendProjectHandlerStatusAsync(invokeMsg.EventName, status, message);
+                await SendProjectHandlerStatusAsync(
+                    invokeMsg.EventName,
+                    status,
+                    message,
+                    followUp);
             }
         }
 

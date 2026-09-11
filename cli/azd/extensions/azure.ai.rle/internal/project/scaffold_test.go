@@ -4,14 +4,12 @@
 package project
 
 import (
-	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
+	"slices"
 	"testing"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 func TestCopyDirectorySkipsGitMetadata(t *testing.T) {
@@ -75,31 +73,92 @@ func TestCopyDirectoryRejectsFileSource(t *testing.T) {
 	}
 }
 
-func TestCheckoutOpenEnvEnvironmentRejectsInvalidNameBeforeChangingDestination(t *testing.T) {
-	destDir := t.TempDir()
-	sentinel := filepath.Join(destDir, "sentinel.txt")
-	if err := os.WriteFile(sentinel, []byte("keep"), 0600); err != nil {
+func TestRleSampleCatalogUsesSparseCheckout(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	sourceRepo := t.TempDir()
+	runTestGit(t, sourceRepo, "init", "--initial-branch=main")
+	for _, sampleName := range []string{"code_rl", "math_rl"} {
+		sampleDir := filepath.Join(sourceRepo, "envs", sampleName)
+		if err := os.MkdirAll(sampleDir, 0750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(sampleDir, "sample.txt"), []byte(sampleName), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(sourceRepo, "README.md"), []byte("samples"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	runTestGit(t, sourceRepo, "add", ".")
+	runTestGit(
+		t,
+		sourceRepo,
+		"-c", "user.name=RLE Tests",
+		"-c", "user.email=rle-tests@example.com",
+		"commit", "-m", "Add samples",
+	)
 
-	if _, err := CheckoutOpenEnvEnvironment("../bad", destDir, true); err == nil {
-		t.Fatal("expected invalid environment name to be rejected")
+	catalog, err := loadRleSampleCatalog(sourceRepo, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := catalog.Close(); err != nil {
+			t.Errorf("close sample catalog: %v", err)
+		}
+	})
+	if !slices.Equal(catalog.SampleNames(), []string{"code_rl", "math_rl"}) {
+		t.Fatalf("expected sorted sample names, got %v", catalog.SampleNames())
+	}
+	if _, err := os.Stat(filepath.Join(catalog.repoDir, "envs")); !os.IsNotExist(err) {
+		t.Fatalf("expected sample contents not to be checked out before selection, got err=%v", err)
 	}
 
-	if _, err := os.Stat(sentinel); err != nil {
-		t.Fatalf("expected destination to be unchanged: %v", err)
+	sessionDir, err := catalog.Copy("math_rl", "training_env", t.TempDir(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(sessionDir, "sample.txt")); err != nil {
+		t.Fatalf("expected selected sample to be copied: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(catalog.repoDir, "envs", "code_rl")); !os.IsNotExist(err) {
+		t.Fatalf("expected unselected sample not to be checked out, got err=%v", err)
 	}
 }
 
-func TestOpenEnvEnvironmentPath(t *testing.T) {
-	if got := openEnvEnvironmentPath("chess_env"); got != "envs/chess_env" {
-		t.Fatalf("expected selected OpenEnv environment path, got %q", got)
+func TestCopyRleSampleRenamesDestination(t *testing.T) {
+	sourceDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(sourceDir, "sample.txt"), []byte("content"), 0600); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestCopyOpenEnvEnvironmentValidatesSourceBeforeReplacingDestination(t *testing.T) {
 	destDir := t.TempDir()
-	sessionDir := filepath.Join(destDir, "missing_env")
+	sessionDir, err := copyRleSample(sourceDir, "my_environment", destDir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sessionDir != filepath.Join(destDir, "my_environment") {
+		t.Fatalf("expected renamed destination, got %q", sessionDir)
+	}
+	if _, err := os.Stat(filepath.Join(sessionDir, "sample.txt")); err != nil {
+		t.Fatalf("expected sample file in renamed destination: %v", err)
+	}
+}
+
+func runTestGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	command := exec.Command("git", args...) //nolint:gosec
+	command.Dir = dir
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, output)
+	}
+}
+
+func TestCopyRleSampleValidatesSourceBeforeReplacingDestination(t *testing.T) {
+	destDir := t.TempDir()
+	sessionDir := filepath.Join(destDir, "my_environment")
 	if err := os.MkdirAll(sessionDir, 0750); err != nil {
 		t.Fatal(err)
 	}
@@ -108,28 +167,11 @@ func TestCopyOpenEnvEnvironmentValidatesSourceBeforeReplacingDestination(t *test
 		t.Fatal(err)
 	}
 
-	_, err := copyOpenEnvEnvironment(filepath.Join(t.TempDir(), "missing"), "missing_env", destDir, true)
+	_, err := copyRleSample(filepath.Join(t.TempDir(), "missing"), "my_environment", destDir, true)
 	if err == nil {
-		t.Fatal("expected missing OpenEnv environment to fail")
+		t.Fatal("expected missing RLE sample to fail")
 	}
 	if _, statErr := os.Stat(sentinel); statErr != nil {
-		t.Fatalf("expected destination to remain unchanged after catalog lookup failure: %v", statErr)
-	}
-}
-
-func TestOpenEnvEnvironmentNotFoundSuggestsClosestCatalogName(t *testing.T) {
-	err := openEnvEnvironmentNotFoundError(
-		"ches_env",
-		[]string{"atari_env", "chess_env", "echo_env"},
-	)
-	localError, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok || !strings.Contains(localError.Suggestion, `Did you mean "chess_env"?`) {
-		t.Fatalf("expected closest catalog suggestion, got %v", err)
-	}
-}
-
-func TestClosestEnvironmentNameRejectsDistantMatch(t *testing.T) {
-	if got := closestEnvironmentName("unknown_env", []string{"chess_env", "echo_env"}); got != "" {
-		t.Fatalf("expected no distant suggestion, got %q", got)
+		t.Fatalf("expected destination to remain unchanged after sample lookup failure: %v", statErr)
 	}
 }

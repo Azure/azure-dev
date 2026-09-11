@@ -14,9 +14,14 @@ import (
 )
 
 const (
-	openEnvRepoUrl = "https://github.com/huggingface/OpenEnv.git"
-	openEnvRepoRef = "main"
+	rleSamplesRepoURL = "https://github.com/sujit-kamireddy/rle-samples.git"
+	rleSamplesRepoRef = "main"
 )
+
+type RleSampleCatalog struct {
+	repoDir     string
+	sampleNames []string
+}
 
 func createRleSessionDir(name string, dest string, force bool) (string, error) {
 	sessionDir := filepath.Join(dest, name)
@@ -41,53 +46,108 @@ func createRleSessionDir(name string, dest string, force bool) (string, error) {
 	return sessionDir, nil
 }
 
-func CheckoutOpenEnvEnvironment(name string, dest string, force bool) (string, error) {
-	name, err := ValidateEnvironmentName(name)
-	if err != nil {
-		return "", err
-	}
-	sourcePath := openEnvEnvironmentPath(name)
-	tempDir, err := os.MkdirTemp("", "azd-rle-open-env-*")
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		_ = os.RemoveAll(tempDir)
-	}()
+func LoadRleSampleCatalog() (*RleSampleCatalog, error) {
+	return loadRleSampleCatalog(rleSamplesRepoURL, rleSamplesRepoRef)
+}
 
-	if err := runGitCheckout(
+func loadRleSampleCatalog(repoURL string, repoRef string) (*RleSampleCatalog, error) {
+	tempDir, err := os.MkdirTemp("", "azd-rle-samples-*")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := runGitCommand(
 		"clone",
 		"--depth", "1",
 		"--filter=blob:none",
 		"--sparse",
-		"--branch", openEnvRepoRef,
-		openEnvRepoUrl,
+		"--branch", repoRef,
+		"--single-branch",
+		repoURL,
 		tempDir,
 	); err != nil {
-		return "", err
+		_ = os.RemoveAll(tempDir)
+		return nil, err
 	}
-	environmentNames, err := listOpenEnvEnvironments(tempDir)
+
+	sampleNames, err := listRleSamples(tempDir, repoRef)
+	if err != nil {
+		_ = os.RemoveAll(tempDir)
+		return nil, err
+	}
+	if len(sampleNames) == 0 {
+		_ = os.RemoveAll(tempDir)
+		return nil, &azdext.LocalError{
+			Message:  "The RLE samples repository does not contain any sample environments.",
+			Code:     "rle_samples_empty",
+			Category: azdext.LocalErrorCategoryUser,
+			Suggestion: fmt.Sprintf(
+				"Add sample directories to %s, then retry.",
+				strings.TrimSuffix(rleSamplesRepoURL, ".git"),
+			),
+		}
+	}
+	return &RleSampleCatalog{
+		repoDir:     tempDir,
+		sampleNames: sampleNames,
+	}, nil
+}
+
+func (c *RleSampleCatalog) SampleNames() []string {
+	return slices.Clone(c.sampleNames)
+}
+
+func (c *RleSampleCatalog) Copy(sampleName string, folderName string, dest string, force bool) (string, error) {
+	folderName, err := ValidateEnvironmentName(folderName)
 	if err != nil {
 		return "", err
 	}
-	if !containsString(environmentNames, name) {
-		return "", openEnvEnvironmentNotFoundError(name, environmentNames)
-	}
-	if err := runGitCheckout("-C", tempDir, "sparse-checkout", "set", sourcePath); err != nil {
+	sourcePath := filepath.ToSlash(filepath.Join("envs", sampleName))
+	if _, err := runGitCommand("-C", c.repoDir, "sparse-checkout", "set", sourcePath); err != nil {
 		return "", err
 	}
-
-	sourceDir := filepath.Join(tempDir, filepath.FromSlash(sourcePath))
-	return copyOpenEnvEnvironment(sourceDir, name, dest, force)
+	sourceDir := filepath.Join(c.repoDir, filepath.FromSlash(sourcePath))
+	return copyRleSample(sourceDir, folderName, dest, force)
 }
 
-func copyOpenEnvEnvironment(sourceDir string, name string, dest string, force bool) (string, error) {
-	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
-		return "", openEnvEnvironmentNotFoundError(name, nil)
+func (c *RleSampleCatalog) Close() error {
+	return os.RemoveAll(c.repoDir)
+}
+
+func listRleSamples(repoDir string, repoRef string) ([]string, error) {
+	output, err := runGitCommand(
+		"-C",
+		repoDir,
+		"ls-tree",
+		"-d",
+		"--name-only",
+		repoRef+":envs",
+	)
+	if err != nil {
+		return nil, err
+	}
+	sampleNames := strings.Fields(string(output))
+	sampleNames = slices.DeleteFunc(sampleNames, func(name string) bool {
+		return strings.HasPrefix(name, ".")
+	})
+	slices.Sort(sampleNames)
+	return sampleNames, nil
+}
+
+func copyRleSample(sourceDir string, folderName string, dest string, force bool) (string, error) {
+	sourceInfo, err := os.Stat(sourceDir)
+	if os.IsNotExist(err) {
+		return "", &azdext.LocalError{
+			Message:    fmt.Sprintf("RLE sample source %q was not found.", sourceDir),
+			Code:       "rle_sample_source_not_found",
+			Category:   azdext.LocalErrorCategoryInternal,
+			Suggestion: "Run azd ai rle init again to refresh the sample list.",
+		}
 	} else if err != nil {
 		return "", err
+	} else if !sourceInfo.IsDir() {
+		return "", fmt.Errorf("RLE sample source %q is not a directory", sourceDir)
 	}
-	sessionDir, err := createRleSessionDir(name, dest, force)
+	sessionDir, err := createRleSessionDir(folderName, dest, force)
 	if err != nil {
 		return "", err
 	}
@@ -95,86 +155,6 @@ func copyOpenEnvEnvironment(sourceDir string, name string, dest string, force bo
 		return "", err
 	}
 	return sessionDir, nil
-}
-
-func openEnvEnvironmentPath(name string) string {
-	return "envs/" + name
-}
-
-func listOpenEnvEnvironments(repoDir string) ([]string, error) {
-	output, err := runGitCommand("-C", repoDir, "ls-tree", "--name-only", openEnvRepoRef+":envs")
-	if err != nil {
-		return nil, err
-	}
-	return strings.Fields(string(output)), nil
-}
-
-func openEnvEnvironmentNotFoundError(name string, environmentNames []string) error {
-	catalogURL := strings.TrimSuffix(openEnvRepoUrl, ".git")
-	suggestion := fmt.Sprintf(
-		"Choose an environment from %s/tree/%s/envs.",
-		catalogURL,
-		openEnvRepoRef,
-	)
-	if closest := closestEnvironmentName(name, environmentNames); closest != "" {
-		suggestion = fmt.Sprintf("Did you mean %q? %s", closest, suggestion)
-	}
-	return &azdext.LocalError{
-		Message:    fmt.Sprintf("OpenEnv environment %q was not found.", name),
-		Code:       "rle_open_env_environment_not_found",
-		Category:   azdext.LocalErrorCategoryUser,
-		Suggestion: suggestion,
-	}
-}
-
-func closestEnvironmentName(name string, environmentNames []string) string {
-	closest := ""
-	closestDistance := len(name) + 1
-	for _, candidate := range environmentNames {
-		distance := editDistance(name, candidate)
-		if distance < closestDistance {
-			closest = candidate
-			closestDistance = distance
-		}
-	}
-	maxDistance := max(2, len(name)/3)
-	if closestDistance > maxDistance {
-		return ""
-	}
-	return closest
-}
-
-func editDistance(left string, right string) int {
-	previous := make([]int, len(right)+1)
-	for index := range previous {
-		previous[index] = index
-	}
-	for leftIndex, leftRune := range left {
-		current := make([]int, len(right)+1)
-		current[0] = leftIndex + 1
-		for rightIndex, rightRune := range right {
-			substitutionCost := 0
-			if leftRune != rightRune {
-				substitutionCost = 1
-			}
-			current[rightIndex+1] = min(
-				current[rightIndex]+1,
-				previous[rightIndex+1]+1,
-				previous[rightIndex]+substitutionCost,
-			)
-		}
-		previous = current
-	}
-	return previous[len(right)]
-}
-
-func containsString(values []string, expected string) bool {
-	return slices.Contains(values, expected)
-}
-
-func runGitCheckout(args ...string) error {
-	_, err := runGitCommand(args...)
-	return err
 }
 
 func runGitCommand(args ...string) ([]byte, error) {
@@ -186,14 +166,13 @@ func runGitCommand(args ...string) ([]byte, error) {
 			Suggestion: "Install Git, then retry azd ai rle init.",
 		}
 	}
-	// The user-provided sparse path is validated as an environment name before reaching this command.
 	process := exec.Command("git", args...) //nolint:gosec
 	process.Env = os.Environ()
 	output, err := process.CombinedOutput()
 	if err != nil {
 		return nil, &azdext.LocalError{
-			Message:    fmt.Sprintf("Failed to checkout OpenEnv environment: %v", err),
-			Code:       "rle_open_env_checkout_failed",
+			Message:    fmt.Sprintf("Failed to download RLE samples: %v", err),
+			Code:       "rle_samples_download_failed",
 			Category:   azdext.LocalErrorCategoryUser,
 			Suggestion: strings.TrimSpace(string(output)),
 		}

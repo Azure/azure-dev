@@ -572,7 +572,8 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 							strings.EqualFold(strings.TrimSpace(agent.ConversationEngine.Type), "hosted_agent") &&
 							strings.TrimSpace(agent.ConversationEngine.Name) == "" {
 							errors = append(errors,
-								"template.conversation_engine.name is required when conversation_engine.type is 'hosted_agent'")
+								"template.conversation_engine.name is required when "+
+									"conversation_engine.type is 'hosted_agent'")
 						}
 						if agent.ConversationEngine != nil && agent.ConversationEngine.Version != "" &&
 							agent.ConversationEngine.Version != "deployed" {
@@ -634,7 +635,8 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 
 func isHostedVoiceWrapper(agent VoiceAgent) bool {
 	return agent.ModelType == VoiceModelTypeHostedAgent ||
-		(agent.ConversationEngine != nil && strings.EqualFold(strings.TrimSpace(agent.ConversationEngine.Type), "hosted_agent"))
+		(agent.ConversationEngine != nil &&
+			strings.EqualFold(strings.TrimSpace(agent.ConversationEngine.Type), "hosted_agent"))
 }
 
 func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {

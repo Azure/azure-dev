@@ -1270,8 +1270,8 @@ Prompt voice services support modelType: managed or self_deployed (bring your ow
 deployment), audio input/output, structured inputs, tools, greeting, avatar,
 handoff, and telephony bindings (acs or twilio). Hosted voice wrappers use
 conversationEngine.type: hosted_agent and conversationEngine.name to reference
-the hosted target service in azure.yaml. The older modelType: hosted_agent with
-targetAgent shape remains supported for compatibility. Initialize from a sample
+the hosted target service in azure.yaml. The old modelType: hosted_agent and
+targetAgent settings are not supported; use conversationEngine instead. Initialize from a sample
 azure.yaml containing both the hosted target and the voice wrapper.
 Configure advanced settings in azure.yaml.
 Run 'azd provision' and 'azd deploy' to deploy voice services, then connect to

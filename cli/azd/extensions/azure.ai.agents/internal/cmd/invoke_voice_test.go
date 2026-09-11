@@ -30,11 +30,13 @@ func TestVoiceInvokeCommandPortalGuidance(t *testing.T) {
 			"kind":               "prompt-voice",
 			"conversationEngine": map[string]any{"type": "hosted_agent", "name": "voice-target"},
 		}},
-		{"legacy-hosted-wrapper", map[string]any{
+		// Unsupported old authoring still identifies a voice service for invoke guidance;
+		// these cases do not assert that this shape can be initialized or deployed.
+		{"unsupported-old-hosted-wrapper", map[string]any{
 			"kind": "voice", "modelType": "hosted_agent",
 			"targetAgent": map[string]any{"service": "voice-target"},
 		}},
-		{"legacy-hosted-wrapper-kind-alias", map[string]any{
+		{"unsupported-old-hosted-wrapper-kind-alias", map[string]any{
 			"kind": "prompt-voice", "modelType": "hosted_agent",
 			"targetAgent": map[string]any{"service": "voice-target"},
 		}},

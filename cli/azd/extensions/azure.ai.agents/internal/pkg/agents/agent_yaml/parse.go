@@ -567,8 +567,9 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 					if agent.ModelType != "" && agent.ModelType != VoiceModelTypeManaged &&
 						agent.ModelType != VoiceModelTypeSelfDeployed && agent.ModelType != VoiceModelTypeHostedAgent {
 						errors = append(errors, fmt.Sprintf(
-							"template.model_type '%s' is not supported; use '%s', '%s', or '%s'",
-							agent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed, VoiceModelTypeHostedAgent))
+							"template.model_type '%s' is not supported; use '%s' or '%s'. "+
+								"For hosted voice, use conversation_engine.",
+							agent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed))
 					}
 					errors = append(errors, validateVoiceAgentAdvancedConfig(agent)...)
 				} else {

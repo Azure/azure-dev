@@ -773,8 +773,8 @@ func createVoiceAgentAPIRequest(
 		}
 	} else if modelType != agent_api.VoiceModelTypeManaged && modelType != agent_api.VoiceModelTypeSelfDeployed {
 		return nil, fmt.Errorf(
-			"model_type '%s' is not supported; use '%s', '%s', or '%s'",
-			voiceAgent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed, VoiceModelTypeHostedAgent)
+			"model_type '%s' is not supported; use '%s' or '%s'. For hosted voice, use conversation_engine",
+			voiceAgent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed)
 	}
 	if errors := validateVoiceAgentAdvancedConfig(voiceAgent); len(errors) > 0 {
 		return nil, fmt.Errorf("invalid prompt-voice configuration: %s", strings.Join(errors, "; "))

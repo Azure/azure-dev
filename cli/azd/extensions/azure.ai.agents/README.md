@@ -549,16 +549,16 @@ services:
     uses:
       - ai-project
       - voice-target
-    modelType: hosted_agent
-    targetAgent:
-      service: voice-target
+    conversationEngine:
+      type: hosted_agent
+      name: voice-target
       version: deployed
     store: false
 ```
 
-The `uses` edge deploys the target before the wrapper. `version: deployed`
-pins the wrapper to the target version produced by the current azd environment.
-Hosted voice wrappers use the unified Voice API.
+The `uses` edge deploys the target before the wrapper. `conversationEngine`
+points at the hosted target service, and `version: deployed` pins the wrapper
+to the target version produced by the current azd environment.
 
 The target must be active, declare `invocations_ws/1.0.0`, and include
 `voiceLiveCompatible=true` and `bridgeProtocolVersion=1.0` metadata. Model,

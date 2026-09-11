@@ -52,6 +52,15 @@ type VoiceTargetAgent struct {
 	Version string `json:"version,omitempty" yaml:"version,omitempty"`
 }
 
+// VoiceConversationEngine identifies the conversation engine for a managed Voice
+// agent. hosted_agent uses a local azure.yaml hosted-agent service name; azd
+// resolves it to the deployed target name/version at deploy time.
+type VoiceConversationEngine struct {
+	Type    string `json:"type" yaml:"type"`
+	Name    string `json:"name" yaml:"name"`
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
+}
+
 // IsValidAgentKind checks if the provided AgentKind is valid
 func IsValidAgentKind(kind AgentKind) bool {
 	return slices.Contains(ValidAgentKinds(), kind)
@@ -249,6 +258,8 @@ type VoiceAgent struct {
 	Model *Model `json:"model,omitempty" yaml:"model,omitempty"`
 	// TargetAgent references the hosted agent service used when model_type is hosted_agent.
 	TargetAgent *VoiceTargetAgent `json:"targetAgent,omitempty" yaml:"target_agent,omitempty"`
+	// ConversationEngine references the hosted agent service used by Hosted Voice wrappers.
+	ConversationEngine *VoiceConversationEngine `json:"conversationEngine,omitempty" yaml:"conversation_engine,omitempty"`
 	// Instructions is the system prompt for the voice assistant.
 	Instructions *string `json:"instructions,omitempty" yaml:"instructions,omitempty"`
 	// Voice is the output voice name (e.g. "en-US-Ava:DragonHDLatestNeural" for

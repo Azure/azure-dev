@@ -3810,7 +3810,9 @@ func (a *InitAction) addVoiceAgentToProject(
 	if err := yaml.Unmarshal(templateYAML, &voiceDef); err != nil {
 		return fmt.Errorf("parsing voice agent definition: %w", err)
 	}
-	if voiceDef.ModelType == agent_yaml.VoiceModelTypeHostedAgent {
+	if voiceDef.ModelType == agent_yaml.VoiceModelTypeHostedAgent ||
+		(voiceDef.ConversationEngine != nil && strings.EqualFold(
+			strings.TrimSpace(voiceDef.ConversationEngine.Type), "hosted_agent")) {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			"hosted voice wrappers cannot be initialized from a standalone voice manifest",

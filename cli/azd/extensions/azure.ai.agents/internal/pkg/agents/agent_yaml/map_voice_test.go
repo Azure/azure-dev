@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"github.com/stretchr/testify/require"
 )
 
 // ---------------------------------------------------------------------------
@@ -609,7 +610,7 @@ func TestCreateVoiceAgentAPIRequest_InvalidModelType(t *testing.T) {
 	}
 }
 
-func TestCreateHostedVoiceAgentAPIRequest(t *testing.T) {
+func TestCreateHostedVoiceAgentAPIRequest_LegacyAuthoringRejected(t *testing.T) {
 	t.Parallel()
 	store := false
 	agent := VoiceAgent{
@@ -618,55 +619,54 @@ func TestCreateHostedVoiceAgentAPIRequest(t *testing.T) {
 		TargetAgent:     &VoiceTargetAgent{Service: "voice-target", Version: "deployed"},
 		Store:           &store,
 	}
+	_, err := CreateHostedVoiceAgentAPIRequest(agent, agent_api.VoiceTargetAgentReference{
+		Name:    "deployed-target",
+		Version: "7",
+	})
+	if err == nil || !strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("expected legacy hosted voice authoring error, got: %v", err)
+	}
+}
+
+func TestCreateHostedVoiceAgentAPIRequest_ConversationEngineWireShape(t *testing.T) {
+	t.Parallel()
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "voice"},
+		ConversationEngine: &VoiceConversationEngine{
+			Type: "hosted_agent",
+			Name: "voice-target",
+		},
+	}
 	req, err := CreateHostedVoiceAgentAPIRequest(agent, agent_api.VoiceTargetAgentReference{
 		Name:    "deployed-target",
 		Version: "7",
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	def := req.Definition.(agent_api.VoiceAgentDefinition)
-	if def.ModelType != agent_api.VoiceModelTypeHostedAgent {
-		t.Fatalf("ModelType = %q, want hosted_agent", def.ModelType)
-	}
-	if def.TargetAgent == nil || def.TargetAgent.Name != "deployed-target" || def.TargetAgent.Version != "7" {
-		t.Fatalf("TargetAgent = %+v", def.TargetAgent)
-	}
-	if def.Model != "" || def.Instructions != "" || len(def.Tools) != 0 {
-		t.Fatalf("hosted wrapper contains target-owned fields: %+v", def)
-	}
+	require.NoError(t, err)
 	data, err := json.Marshal(req)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	var wire map[string]any
-	if err := json.Unmarshal(data, &wire); err != nil {
-		t.Fatal(err)
-	}
-	definitionValue, exists := wire["definition"]
-	if !exists {
-		t.Fatalf("hosted wrapper wire payload is missing definition: %s", data)
-	}
+	require.NoError(t, json.Unmarshal(data, &wire))
+	definitionValue, ok := wire["definition"]
+	require.True(t, ok, "wire payload is missing definition: %s", data)
 	definition, ok := definitionValue.(map[string]any)
-	if !ok {
-		t.Fatalf("hosted wrapper definition has type %T, want object: %s", definitionValue, data)
-	}
-	if _, exists := definition["model"]; exists {
-		t.Fatalf("hosted wrapper wire payload contains model: %s", data)
-	}
-	if _, exists := definition["instructions"]; exists {
-		t.Fatalf("hosted wrapper wire payload contains instructions: %s", data)
-	}
-	if _, exists := definition["tools"]; exists {
-		t.Fatalf("hosted wrapper wire payload contains tools: %s", data)
-	}
+	require.True(t, ok, "definition has type %T, want object: %s", definitionValue, data)
+	require.NotContains(t, definition, "model_type")
+	require.NotContains(t, definition, "target_agent")
+	require.Equal(t, map[string]any{
+		"type":    "hosted_agent",
+		"name":    "deployed-target",
+		"version": "7",
+	}, definition["conversation_engine"])
 }
 
 func TestCreateHostedVoiceAgentAPIRequestRequiresResolvedTarget(t *testing.T) {
 	t.Parallel()
 	agent := VoiceAgent{
 		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-wrapper"},
-		ModelType:       VoiceModelTypeHostedAgent,
+		ConversationEngine: &VoiceConversationEngine{
+			Type: "hosted_agent",
+			Name: "voice-target",
+		},
 	}
 	if _, err := CreateHostedVoiceAgentAPIRequest(agent, agent_api.VoiceTargetAgentReference{}); err == nil {
 		t.Fatal("expected missing resolved target error")

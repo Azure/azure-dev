@@ -51,7 +51,7 @@ When investigating a pipeline:
 - Otherwise, locate the relevant pipeline in the folders above.
 - Correlate runs using the pull request number, commit SHA, and source branch.
 - Inspect the failed or running job logs first. Distinguish the root failure from secondary warnings, infrastructure noise, or downstream failures.
-- For releases, distinguish publishing from validation using the source branch and template parameters. For the core CLI pipeline, `DoPublish=true` identifies a publishing release run.
+- For releases, distinguish publishing from validation using the source branch and template parameters. For the core CLI pipeline, `ReleaseMode=Standard` identifies a production publication and `ReleaseMode=Canary` identifies canary validation.
 
 ## Development
 

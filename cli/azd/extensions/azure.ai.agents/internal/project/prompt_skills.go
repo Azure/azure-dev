@@ -15,6 +15,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/envkey"
+	"azureaiagent/internal/pkg/servicekey"
 
 	"github.com/braydonk/yaml"
 )
@@ -406,10 +407,7 @@ func validateSkillDependencies(ctx context.Context, g *promptGraph, skills []ski
 		return nil
 	}
 	for _, skill := range skills {
-		name := strings.TrimSpace(skill.Meta.Name)
-		if name == "" {
-			name = skill.Dir
-		}
+		name := promptSkillServiceName(skill)
 		service, exists := g.projectServices[name]
 		if !exists || service.GetHost() != foundrySkillHost {
 			return exterrors.Dependency(
@@ -440,6 +438,14 @@ func validateSkillDependencies(ctx context.Context, g *promptGraph, skills []ski
 		}
 	}
 	return nil
+}
+
+func promptSkillServiceName(skill skillBundle) string {
+	name := strings.TrimSpace(skill.Meta.Name)
+	if name == "" {
+		name = skill.Dir
+	}
+	return servicekey.SanitizeServiceName(name)
 }
 
 func addResolvedPromptSkill(agent *agent_yaml.PromptAgent, name, version string) {
@@ -557,10 +563,7 @@ func resolveSkillMarkers(
 ) ([]resolvedSkill, error) {
 	resolved := make([]resolvedSkill, 0, len(skills))
 	for _, s := range skills {
-		name := strings.TrimSpace(s.Meta.Name)
-		if name == "" {
-			name = s.Dir
-		}
+		name := promptSkillServiceName(s)
 		versionKey := envkey.SkillVersion(name)
 		version := strings.TrimSpace(env[versionKey])
 		if version == "" {

@@ -89,6 +89,7 @@ func TestAgentContextReporterCollapsesDuplicateClassifications(t *testing.T) {
 	client := &telemetryRecordingClient{}
 
 	reporter.reportProjectConfig(t.Context(), client, project, "provision")
+	reporter.reportService(t.Context(), client, project, project.Services["one"], "deploy")
 
 	require.Len(t, client.requests, 1)
 }

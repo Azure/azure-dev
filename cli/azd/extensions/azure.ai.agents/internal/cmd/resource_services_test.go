@@ -830,6 +830,24 @@ func TestEmitResourceServices_EmitsSkillServices(t *testing.T) {
 	assert.Equal(t, []string{aiProjectServiceName}, server.uses["code-review"])
 }
 
+func TestEmitResourceServicesSanitizesSkillServiceName(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+	_, err := emitResourceServices(t.Context(), client, "myagent", "", foundryResources{
+		Skills: map[string]project.SkillService{
+			"code review": {Description: "reviews code", Archive: "./skills/code-review"},
+		},
+	})
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	assert.Contains(t, server.uses["myagent"], "codereview")
+	assert.Equal(t, []string{aiProjectServiceName}, server.uses["codereview"])
+}
+
 // TestEmitResourceServices_ExtraUsesAreWired verifies a name passed as ExtraUses
 // joins the agent's uses: without a service being emitted for it. A prompt
 // agent's toolbox: references a toolbox someone else defines, so there is

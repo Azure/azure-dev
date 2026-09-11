@@ -17,6 +17,7 @@ import (
 	"azureaiagent/internal/pkg/envkey"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/require"
 )
 
 // testPromptHarness returns a minimal harness block. Each caller gets its own
@@ -501,6 +502,16 @@ func TestResolveSkillMarkers_RejectsCrossProjectVersion(t *testing.T) {
 	if _, err := resolveSkillMarkers(skills, env["FOUNDRY_PROJECT_ENDPOINT"], env); err == nil {
 		t.Fatal("expected a marker from another project to be rejected")
 	}
+}
+
+func TestResolveSkillMarkersUsesSanitizedServiceName(t *testing.T) {
+	t.Parallel()
+
+	env := skillMarkers(map[string]string{"codereview": "7"})
+	skills := []skillBundle{{Dir: "code-review", Meta: skillMeta{Name: "code review"}}}
+	resolved, err := resolveSkillMarkers(skills, "", env)
+	require.NoError(t, err)
+	require.Equal(t, []resolvedSkill{{Name: "codereview", Version: "7"}}, resolved)
 }
 
 // TestSkillsShellNode_RejectsToolboxReference pins the mutual exclusion between

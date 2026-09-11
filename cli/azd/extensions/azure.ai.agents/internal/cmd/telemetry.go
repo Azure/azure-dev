@@ -7,6 +7,7 @@ import (
 	"context"
 	"log"
 	"strings"
+	"sync"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -34,10 +35,12 @@ type agentTelemetryContext struct {
 }
 
 type agentContextReporter struct {
+	mu   sync.Mutex
+	seen map[string]struct{}
 }
 
 func newAgentContextReporter() *agentContextReporter {
-	return &agentContextReporter{}
+	return &agentContextReporter{seen: map[string]struct{}{}}
 }
 
 func (r *agentContextReporter) reportProject(ctx context.Context, operation string) {
@@ -62,13 +65,17 @@ func (r *agentContextReporter) reportProjectConfig(
 	project *azdext.ProjectConfig,
 	operation string,
 ) {
-	seen := map[string]struct{}{}
 	for _, agentCtx := range agentTelemetryContexts(project, operation) {
 		key := agentCtx.kind + "\x00" + agentCtx.harness
-		if _, exists := seen[key]; exists {
+		r.mu.Lock()
+		_, exists := r.seen[key]
+		if !exists {
+			r.seen[key] = struct{}{}
+		}
+		r.mu.Unlock()
+		if exists {
 			continue
 		}
-		seen[key] = struct{}{}
 		r.report(ctx, telemetry, agentCtx)
 	}
 }

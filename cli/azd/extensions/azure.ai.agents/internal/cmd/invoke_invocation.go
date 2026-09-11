@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -188,20 +189,38 @@ func (a *InvokeAction) getInvocation(
 			body:       body,
 		}
 	}
-	var snapshot invocationSnapshot
-	if err := json.Unmarshal(body, &snapshot); err != nil {
-		return invocationSnapshotResult{}, fmt.Errorf("decode Invocation: %w", err)
-	}
-	actualID := snapshot.ID
-	if actualID == "" {
-		actualID = snapshot.InvocationID
-	}
+	actualID := resp.Header.Get("x-agent-invocation-id")
 	if actualID != "" && actualID != invocationID {
 		return invocationSnapshotResult{}, fmt.Errorf(
-			"Invocation ID %q does not match requested ID %q",
-			actualID,
-			invocationID,
+			"Invocation ID %q does not match requested ID %q", actualID, invocationID,
 		)
+	}
+	var snapshot invocationSnapshot
+	if actualID != "" {
+		// Payload IDs belong to the handler; the protocol header takes precedence.
+		var result struct {
+			Status string `json:"status"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil {
+			return invocationSnapshotResult{}, fmt.Errorf("decode Invocation: %w", err)
+		}
+		snapshot = invocationSnapshot{InvocationID: actualID, Status: result.Status}
+	} else {
+		if err := json.Unmarshal(body, &snapshot); err != nil {
+			return invocationSnapshotResult{}, fmt.Errorf("decode Invocation: %w", err)
+		}
+		actualID = snapshot.ID
+		if actualID == "" {
+			actualID = snapshot.InvocationID
+		}
+		if actualID != "" && actualID != invocationID {
+			return invocationSnapshotResult{}, fmt.Errorf(
+				"Invocation ID %q does not match requested ID %q", actualID, invocationID,
+			)
+		}
+		if actualID == "" {
+			snapshot.InvocationID = invocationID
+		}
 	}
 	return invocationSnapshotResult{snapshot: snapshot, raw: body}, nil
 }
@@ -240,6 +259,20 @@ func classifyInvocationLifecycleError(cause error, operation, label string) erro
 		"",
 	)
 	serviceErr.StatusCode = httpErr.statusCode
+	// Recognize the known agent-server rejection without exposing arbitrary handler content.
+	if operation == exterrors.OpCancelInvocation && httpErr.statusCode == http.StatusNotFound &&
+		len(httpErr.body) <= 16*1024 {
+		var body struct {
+			Error struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(httpErr.body, &body) == nil && body.Error.Code == "not_found" &&
+			strings.TrimSpace(body.Error.Message) == "cancel_invocation not implemented" {
+			serviceErr.Message = "This agent does not support cancelling invocations."
+		}
+	}
 	return serviceErr
 }
 

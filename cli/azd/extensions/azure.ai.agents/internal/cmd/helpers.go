@@ -1002,6 +1002,7 @@ type brownfieldAgentExistenceResolver func(context.Context, string, string) (boo
 type agentServiceResolutionOptions struct {
 	allowBrownfieldInlineName bool
 	brownfieldAgentExists     brownfieldAgentExistenceResolver
+	environmentName           string
 	includeProtocolEndpoints  bool
 	matchDeployedAgentName    bool
 }
@@ -1042,6 +1043,12 @@ func withBrownfieldAgentExistenceResolver(
 	}
 }
 
+func withEnvironmentName(name string) agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.environmentName = name
+	}
+}
+
 // resolveAgentServiceFromProject finds the azure.ai.agent service in azure.yaml
 // and resolves its deployed agent name and version from the azd environment.
 // Callers may explicitly opt into the brownfield inline-name fallback; deployed
@@ -1077,10 +1084,23 @@ func resolveAgentServiceFromProject(
 	if envValues == nil {
 		// Resolve deployed metadata from azd environment.
 		// Deployed name reflects the created resource.
-		envResponse, err := azdClient.Environment().GetCurrent(
-			ctx, &azdext.EmptyRequest{},
-		)
+		var envResponse *azdext.EnvironmentResponse
+		if resolutionOptions.environmentName == "" {
+			envResponse, err = azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		} else {
+			envResponse, err = azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{
+				Name: resolutionOptions.environmentName,
+			})
+		}
 		if err != nil {
+			if resolutionOptions.environmentName != "" {
+				return info, fmt.Errorf(
+					"getting environment %q for agent service %q: %w",
+					resolutionOptions.environmentName,
+					svc.Name,
+					err,
+				)
+			}
 			if resolutionOptions.allowBrownfieldInlineName {
 				return info, fmt.Errorf(
 					"getting current environment for agent service %q: %w",
@@ -1092,6 +1112,13 @@ func resolveAgentServiceFromProject(
 		}
 		if envResponse == nil || envResponse.Environment == nil ||
 			envResponse.Environment.Name == "" {
+			if resolutionOptions.environmentName != "" {
+				return info, fmt.Errorf(
+					"environment %q is not available for agent service %q",
+					resolutionOptions.environmentName,
+					svc.Name,
+				)
+			}
 			if resolutionOptions.allowBrownfieldInlineName {
 				return info, fmt.Errorf(
 					"current environment is not available for agent service %q",

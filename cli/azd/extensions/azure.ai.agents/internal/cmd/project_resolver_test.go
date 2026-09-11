@@ -13,6 +13,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // stubAzdHostedSources replaces readAzdHostedSourcesFunc for the duration of
@@ -20,7 +22,7 @@ import (
 func stubAzdHostedSources(t *testing.T, sources azdHostedSources, err error) {
 	t.Helper()
 	orig := readAzdHostedSourcesFunc
-	readAzdHostedSourcesFunc = func(context.Context) (azdHostedSources, error) {
+	readAzdHostedSourcesFunc = func(context.Context, resolveProjectEndpointOpts) (azdHostedSources, error) {
 		return sources, err
 	}
 	t.Cleanup(func() { readAzdHostedSourcesFunc = orig })
@@ -75,6 +77,83 @@ func TestResolveProjectEndpoint_AzdEnvResolves(t *testing.T) {
 	assert.Equal(t, "https://azdenv.services.ai.azure.com/api/projects/p", result.Endpoint)
 	assert.Equal(t, SourceAzdEnv, result.Source)
 	assert.Equal(t, "dev", result.AzdEnvName)
+}
+
+func TestResolveProjectEndpoint_UsesRequestedAzdEnvironment(t *testing.T) {
+	var requestedEnv string
+	orig := readAzdHostedSourcesFunc
+	readAzdHostedSourcesFunc = func(_ context.Context, opts resolveProjectEndpointOpts) (azdHostedSources, error) {
+		requestedEnv = opts.EnvName
+		return azdHostedSources{
+			EnvValue: "https://staging.services.ai.azure.com/api/projects/p",
+			EnvName:  opts.EnvName,
+		}, nil
+	}
+	t.Cleanup(func() { readAzdHostedSourcesFunc = orig })
+
+	result, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{EnvName: "staging"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "staging", requestedEnv)
+	assert.Equal(t, "https://staging.services.ai.azure.com/api/projects/p", result.Endpoint)
+	assert.Equal(t, "staging", result.AzdEnvName)
+}
+
+func TestResolveProjectEndpoint_EnvironmentBoundLookup(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		envName   string
+		endpoint  string
+		readError bool
+		wantError string
+	}{
+		{name: "selected", envName: "staging", endpoint: "https://staging.services.ai.azure.com/api/projects/p"},
+		{name: "current", endpoint: "https://dev.services.ai.azure.com/api/projects/p"},
+		{name: "missing selected value", envName: "staging", wantError: "no FOUNDRY_PROJECT_ENDPOINT"},
+		{name: "missing current value", wantError: "no FOUNDRY_PROJECT_ENDPOINT"},
+		{name: "missing environment", envName: "missing", wantError: "getting azd environment"},
+		{name: "value read failure", envName: "staging", readError: true, wantError: "reading FOUNDRY_PROJECT_ENDPOINT"},
+		{name: "invalid value", envName: "staging", endpoint: "http://invalid", wantError: "https"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			selected := tc.envName
+			if selected == "" {
+				selected = "dev"
+			}
+			env := testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "dev"},
+				environments: map[string]*azdext.Environment{
+					"staging": {Name: "staging"},
+				},
+				values: map[string]map[string]string{
+					selected: {"FOUNDRY_PROJECT_ENDPOINT": tc.endpoint},
+				},
+			}
+			var envServer azdext.EnvironmentServiceServer = &env
+			if tc.readError {
+				envServer = &helpersFailingEnvironmentServer{
+					testEnvironmentServiceServer: env,
+					getValueErr:                  status.Error(codes.Unavailable, "read failed"),
+				}
+			}
+			address := newTestAzdServer(t, envServer, &testWorkflowServiceServer{})
+			t.Setenv("AZD_SERVER", address)
+			t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://shell.services.ai.azure.com/api/projects/other")
+
+			resolved, err := resolveProjectEndpoint(t.Context(), resolveProjectEndpointOpts{
+				EnvName: tc.envName, RequireEnvironmentEndpoint: true,
+			})
+
+			if tc.wantError != "" {
+				require.ErrorContains(t, err, tc.wantError)
+				require.Nil(t, resolved)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tc.endpoint, resolved.Endpoint)
+				assert.Equal(t, selected, resolved.AzdEnvName)
+			}
+		})
+	}
 }
 
 func TestResolveProjectEndpoint_AzdEnvInvalidRejected(t *testing.T) {

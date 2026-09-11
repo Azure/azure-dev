@@ -92,10 +92,10 @@ func addEvalContextFlags(cmd *cobra.Command, flags *evalContextFlags) {
 		"",
 		"Agent service name from azure.yaml, or Foundry agent name outside a project",
 	)
-	addEvalProjectEndpointFlag(cmd, &flags.projectEndpoint)
+	addProjectEndpointFlag(cmd, &flags.projectEndpoint)
 }
 
-func addEvalProjectEndpointFlag(cmd *cobra.Command, projectEndpoint *string) {
+func addProjectEndpointFlag(cmd *cobra.Command, projectEndpoint *string) {
 	cmd.Flags().StringVarP(
 		projectEndpoint,
 		"project-endpoint",

@@ -41,7 +41,7 @@ func newEvalListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			return runEvalList(ctx, flags, extCtx.NoPrompt)
 		},
 	}
-	addEvalProjectEndpointFlag(cmd, &flags.projectEndpoint)
+	addProjectEndpointFlag(cmd, &flags.projectEndpoint)
 	cmd.Flags().IntVar(&flags.limit, "limit", 10, "Maximum number of evals to return")
 	return cmd
 }

@@ -1,10 +1,55 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Extension telemetry API
+
+Extension code reports best-effort usage events through the shared
+`pkg/foundry/telemetry` reporter. Extension-owned event builders remain in
+`internal/telemetry`:
+
+```go
+reporter := foundryTelemetry.NewReporter(azdClient.Telemetry(), nil)
+reporter.Report(ctx, extensionTelemetry.LocalClientRouteSelected(route))
+```
+
+`Report` has no return value and never changes the command result. It applies a
+one-second timeout, never retries, and writes only the event name and gRPC status
+code to the debug log when reporting fails. Attribute values and transport error
+details are not logged.
+
+Define event names, attribute keys, and bounded values in
+`internal/telemetry/events.go`. Do not call `ReportUsage` directly from command
+or provider code. Events must contain low-cardinality product metadata only;
+never include prompts, responses, resource or service names, IDs, paths, URLs,
+connection values, or other customer content. The azd host records events only
+for extensions installed from the official registry.
+
+The event currently emitted by this extension is documented under
+[Local client route telemetry](#local-client-route-telemetry).
+
 ## Non-interactive automation
 
 See the shared [AI extension non-interactive input reference](../ai-non-interactive.md)
 for every prompt's flag, environment/configuration input, or deterministic
 no-prompt behavior.
+
+## Choosing a Foundry project name
+
+During interactive `azd ai agent init`, azd prompts for the name of a new
+Microsoft Foundry project. If the current azd environment name is valid for
+the generated infrastructure, it is offered as the default. The name must be
+3-32 characters, start with a letter or number, and contain only letters,
+numbers, or hyphens.
+
+To configure the name, set it in the active azd environment before running
+init:
+
+```bash
+azd env set AZURE_AI_PROJECT_NAME my-foundry-project
+```
+
+An existing `AZURE_AI_PROJECT_NAME` value is offered as the default during
+interactive new-project setup. `--no-prompt` remains non-interactive and keeps
+its existing automatic environment-name fallback.
 
 ## Composing Agent Dependencies
 

@@ -79,6 +79,7 @@ words:
   - ppid
   - PPID
   - proto
+  - Protos
   - protobuf
   - protoc
   - protoimpl
@@ -456,6 +457,8 @@ overrides:
       - covcounters
       - covmeta
       - AMRD
+      - coreutils
+      - wslc
   - filename: pkg/infra/provisioning/bicep/bicep_provider.go
     words:
       - BIZSPARK

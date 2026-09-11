@@ -2771,13 +2771,18 @@ func (a *InitAction) configureModelChoice(
 				if err := validateAcrConnectionInput(a.flags.acrConnection, false, true); err != nil {
 					return nil, err
 				}
+				if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
+					return nil, err
+				}
+				if err := ensureNewFoundryProjectName(
+					ctx, a.azdClient, a.environment.Name,
+				); err != nil {
+					return nil, err
+				}
 				if err := setEnvValue(
 					ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",
 				); err != nil {
 					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
-				}
-				if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
-					return nil, err
 				}
 			} else {
 				if err := setEnvValue(
@@ -2799,6 +2804,11 @@ func (a *InitAction) configureModelChoice(
 			}
 			a.credential = newCred
 
+			if err := ensureNewFoundryProjectName(
+				ctx, a.azdClient, a.environment.Name,
+			); err != nil {
+				return nil, err
+			}
 			// Creating new resources — clear any stale existing-project flag
 			if err := setEnvValue(
 				ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false",

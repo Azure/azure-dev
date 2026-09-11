@@ -3,19 +3,16 @@
 
 package inspector
 
-import "sync"
+import (
+	"sync"
 
-const (
-	inspectorFunnelStageEvent       = "inspector.funnel.stage"
-	inspectorFunnelStageAttribute   = "stage"
-	inspectorFunnelOutcomeAttribute = "outcome"
+	"azureaiinspector/internal/telemetry"
 
-	inspectorFunnelStageUIReady = "ui_ready"
-	inspectorFunnelSucceeded    = "succeeded"
+	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 )
 
 // ReportUsageFunc records one extension-owned usage event.
-type ReportUsageFunc func(eventName string, attributes map[string]string)
+type ReportUsageFunc func(event foundryTelemetry.Event)
 
 func newUIReadyReporter(reportUsage ReportUsageFunc) func() {
 	return sync.OnceFunc(func() {
@@ -23,9 +20,6 @@ func newUIReadyReporter(reportUsage ReportUsageFunc) func() {
 			return
 		}
 
-		reportUsage(inspectorFunnelStageEvent, map[string]string{
-			inspectorFunnelStageAttribute:   inspectorFunnelStageUIReady,
-			inspectorFunnelOutcomeAttribute: inspectorFunnelSucceeded,
-		})
+		reportUsage(telemetry.InspectorUIReady())
 	})
 }

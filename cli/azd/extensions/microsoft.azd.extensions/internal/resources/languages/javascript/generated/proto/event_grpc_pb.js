@@ -1,28 +1,29 @@
-// source: event.proto
 // GENERATED CODE -- DO NOT EDIT!
-/* eslint-disable */
-// @ts-nocheck
-"use strict";
 
-const grpc = require("@grpc/grpc-js");
-const event_pb = require("./event_pb.js");
-const models_pb = require("./models_pb.js");
+'use strict';
+var grpc = require('@grpc/grpc-js');
+var event_pb = require('./event_pb.js');
+var models_pb = require('./models_pb.js');
+var errors_pb = require('./errors_pb.js');
 
 function serialize_azdext_EventMessage(arg) {
-  if (!arg instanceof event_pb.EventMessage) {
-    throw new Error("Expected argument of type azdext.EventMessage");
+  if (!(arg instanceof event_pb.EventMessage)) {
+    throw new Error('Expected argument of type azdext.EventMessage');
   }
-
   return Buffer.from(arg.serializeBinary());
 }
 
-function deserialize_azdext_EventMessage(arg) {
-  return event_pb.EventMessage.deserializeBinary(new Uint8Array(arg));
+function deserialize_azdext_EventMessage(buffer_arg) {
+  return event_pb.EventMessage.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
-const EventServiceService = exports.EventServiceService = {
-  eventStream: {
-    path: "/azdext.EventService/EventStream",
+
+// EventService defines methods for event subscription, invocation, and status updates.
+// Clients can subscribe to events and receive notifications via a bidirectional stream.
+var EventServiceService = exports.EventServiceService = {
+  // Bidirectional stream for event subscription, invocation, and status updates.
+eventStream: {
+    path: '/azdext.EventService/EventStream',
     requestStream: true,
     responseStream: true,
     requestType: event_pb.EventMessage,
@@ -30,8 +31,8 @@ const EventServiceService = exports.EventServiceService = {
     requestSerialize: serialize_azdext_EventMessage,
     requestDeserialize: deserialize_azdext_EventMessage,
     responseSerialize: serialize_azdext_EventMessage,
-    responseDeserialize: deserialize_azdext_EventMessage
+    responseDeserialize: deserialize_azdext_EventMessage,
   },
 };
 
-exports.EventServiceClient = grpc.makeGenericClientConstructor(EventServiceService);
+exports.EventServiceClient = grpc.makeGenericClientConstructor(EventServiceService, 'EventService');

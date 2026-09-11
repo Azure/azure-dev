@@ -9,10 +9,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,6 +27,7 @@ func TestRunWebSocketShellUsesPersistentSocketForStatefulOperations(t *testing.T
 	var requests []map[string]any
 	var safePaths []string
 	upgrades := 0
+	var captureMu sync.Mutex
 	upgrader := websocket.Upgrader{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("api-version") != "test-version" {
@@ -33,12 +37,16 @@ func TestRunWebSocketShellUsesPersistentSocketForStatefulOperations(t *testing.T
 			t.Errorf("unexpected authorization header %q", r.Header.Get("Authorization"))
 		}
 		if r.URL.Path != "/ws" {
+			captureMu.Lock()
 			safePaths = append(safePaths, r.URL.Path)
+			captureMu.Unlock()
 			_, _ = fmt.Fprintf(w, `{"path":%q}`, r.URL.Path) //nolint:gosec // Test response uses JSON encoding.
 			return
 		}
 
+		captureMu.Lock()
 		upgrades++
+		captureMu.Unlock()
 		connection, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			t.Errorf("upgrade WebSocket: %v", err)
@@ -50,7 +58,9 @@ func TestRunWebSocketShellUsesPersistentSocketForStatefulOperations(t *testing.T
 			if err := connection.ReadJSON(&request); err != nil {
 				return
 			}
+			captureMu.Lock()
 			requests = append(requests, request)
+			captureMu.Unlock()
 			responseType := "observation"
 			if request["type"] == "state" {
 				responseType = "state"
@@ -87,23 +97,189 @@ func TestRunWebSocketShellUsesPersistentSocketForStatefulOperations(t *testing.T
 		t.Fatal(err)
 	}
 
-	if upgrades != 1 {
-		t.Fatalf("expected one persistent WebSocket, got %d", upgrades)
+	captureMu.Lock()
+	capturedUpgrades := upgrades
+	capturedRequests := slices.Clone(requests)
+	capturedSafePaths := slices.Clone(safePaths)
+	captureMu.Unlock()
+	if capturedUpgrades != 1 {
+		t.Fatalf("expected one persistent WebSocket, got %d", capturedUpgrades)
 	}
-	if len(requests) != 3 {
-		t.Fatalf("expected three WebSocket requests, got %#v", requests)
+	if len(capturedRequests) != 3 {
+		t.Fatalf("expected three WebSocket requests, got %#v", capturedRequests)
 	}
-	assertWebSocketRequest(t, requests[0], "reset", map[string]any{"seed": float64(42)})
-	assertWebSocketRequest(t, requests[1], "step", map[string]any{"message": "hello"})
-	assertWebSocketRequest(t, requests[2], "state", nil)
-	if !slices.Equal(safePaths, []string{"/health", "/metadata", "/schema"}) {
-		t.Fatalf("unexpected safe HTTP operations: %v", safePaths)
+	assertWebSocketRequest(t, capturedRequests[0], "reset", map[string]any{"seed": float64(42)})
+	assertWebSocketRequest(t, capturedRequests[1], "step", map[string]any{"message": "hello"})
+	assertWebSocketRequest(t, capturedRequests[2], "state", nil)
+	if !slices.Equal(capturedSafePaths, []string{"/health", "/metadata", "/schema"}) {
+		t.Fatalf("unexpected safe HTTP operations: %v", capturedSafePaths)
 	}
 	if authorizationCalls != 4 {
 		t.Fatalf("expected one WebSocket and three HTTP authorization calls, got %d", authorizationCalls)
 	}
 	if !strings.Contains(output.String(), `"requestType": "step"`) {
 		t.Fatalf("expected formatted WebSocket response, got %s", output.String())
+	}
+}
+
+func TestWebSocketHandshakeRetriesTransientFailures(t *testing.T) {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if attempts.Add(1) < 3 {
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		connection, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade WebSocket: %v", err)
+			return
+		}
+		defer connection.Close()
+		if _, _, err := connection.ReadMessage(); err != nil {
+			return
+		}
+		if err := connection.WriteJSON(map[string]any{"type": "state", "data": map[string]any{}}); err != nil {
+			t.Errorf("write WebSocket response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	session := NewWebSocketRuntimeSession(server.URL, 30, nil)
+	session.handshakeRetryDelays = []time.Duration{time.Millisecond, time.Millisecond}
+	defer session.Close()
+	if _, err := session.Call(t.Context(), "state", ""); err != nil {
+		t.Fatal(err)
+	}
+	if attempts.Load() != 3 {
+		t.Fatalf("expected three handshake attempts, got %d", attempts.Load())
+	}
+}
+
+func TestWebSocketHandshakeDoesNotRetryPermanentFailure(t *testing.T) {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	session := NewWebSocketRuntimeSession(server.URL, 30, nil)
+	session.handshakeRetryDelays = []time.Duration{time.Millisecond, time.Millisecond}
+	defer session.Close()
+	if _, err := session.Call(t.Context(), "state", ""); err == nil {
+		t.Fatal("expected WebSocket handshake to fail")
+	}
+	if attempts.Load() != 1 {
+		t.Fatalf("expected one handshake attempt, got %d", attempts.Load())
+	}
+}
+
+func TestWebSocketHandshakeStopsAfterRetryLimit(t *testing.T) {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	session := NewWebSocketRuntimeSession(server.URL, 30, nil)
+	session.handshakeRetryDelays = []time.Duration{time.Millisecond, time.Millisecond}
+	defer session.Close()
+	if _, err := session.Call(t.Context(), "state", ""); err == nil {
+		t.Fatal("expected WebSocket handshake to fail")
+	}
+	if attempts.Load() != 3 {
+		t.Fatalf("expected three handshake attempts, got %d", attempts.Load())
+	}
+}
+
+func TestWebSocketHandshakeCancellationStopsBackoff(t *testing.T) {
+	attemptReceived := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-attemptReceived:
+		default:
+			close(attemptReceived)
+		}
+		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	session := NewWebSocketRuntimeSession(server.URL, 30, nil)
+	session.handshakeRetryDelays = []time.Duration{time.Hour, time.Hour}
+	defer session.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	callDone := make(chan error, 1)
+	go func() {
+		_, err := session.Call(ctx, "state", "")
+		callDone <- err
+	}()
+	<-attemptReceived
+	cancel()
+	select {
+	case err := <-callDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context cancellation, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected cancellation to stop handshake backoff")
+	}
+}
+
+func TestWebSocketHandshakeRetriesShareOperationTimeout(t *testing.T) {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if attempts.Add(1) == 1 {
+			time.Sleep(600 * time.Millisecond)
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		connection, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade WebSocket: %v", err)
+			return
+		}
+		defer connection.Close()
+		if _, _, err := connection.ReadMessage(); err != nil {
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+		_ = connection.WriteJSON(map[string]any{"type": "state", "data": map[string]any{}})
+	}))
+	defer server.Close()
+
+	session := NewWebSocketRuntimeSession(server.URL, 1, nil)
+	session.handshakeRetryDelays = []time.Duration{time.Millisecond, time.Millisecond}
+	defer session.Close()
+	started := time.Now()
+	if _, err := session.Call(t.Context(), "state", ""); err == nil {
+		t.Fatal("expected shared operation timeout to expire")
+	}
+	if elapsed := time.Since(started); elapsed > 1500*time.Millisecond {
+		t.Fatalf("expected handshake retries to share the operation timeout, took %s", elapsed)
+	}
+}
+
+func TestRetryableWebSocketHandshakeStatuses(t *testing.T) {
+	retryable := []int{408, 429, 500, 502, 503, 504}
+	for _, statusCode := range retryable {
+		if !isRetryableWebSocketHandshakeStatus(statusCode) {
+			t.Errorf("expected status %d to be retryable", statusCode)
+		}
+	}
+	for _, statusCode := range []int{400, 401, 403, 404} {
+		if isRetryableWebSocketHandshakeStatus(statusCode) {
+			t.Errorf("expected status %d not to be retryable", statusCode)
+		}
+	}
+}
+
+func TestRetryableWebSocketHandshakeErrors(t *testing.T) {
+	if !isRetryableWebSocketHandshakeError(&net.DNSError{Err: "temporary failure", IsTemporary: true}) {
+		t.Fatal("expected network error to be retryable")
+	}
+	if isRetryableWebSocketHandshakeError(errors.New("invalid proxy configuration")) {
+		t.Fatal("expected local configuration error not to be retryable")
 	}
 }
 
@@ -396,7 +572,33 @@ func TestCanceledQueuedCallDoesNotReachWebSocket(t *testing.T) {
 	}
 }
 
-func TestCallAndDrainUsesBoundedReadWhenTimeoutDisabled(t *testing.T) {
+func TestCallAndDrainHasNoImplicitTimeoutWhenDisabled(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		connection, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade WebSocket: %v", err)
+			return
+		}
+		defer connection.Close()
+		if _, _, err := connection.ReadMessage(); err != nil {
+			t.Errorf("read WebSocket request: %v", err)
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+		if err := connection.WriteJSON(map[string]any{"type": "state", "data": map[string]any{}}); err != nil {
+			t.Errorf("write WebSocket response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	session := NewWebSocketRuntimeSession(server.URL, 0, nil)
+	defer session.Close()
+	if _, err := session.CallAndDrain(t.Context(), "state", ""); err != nil {
+		t.Fatalf("expected timeout-disabled call to wait for its response: %v", err)
+	}
+}
+
+func TestCallAndDrainBoundsResponseDrainAfterCancellation(t *testing.T) {
 	requestReceived := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		connection, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
@@ -417,11 +619,22 @@ func TestCallAndDrainUsesBoundedReadWhenTimeoutDisabled(t *testing.T) {
 	session := NewWebSocketRuntimeSession(server.URL, 0, nil)
 	session.drainTimeout = 10 * time.Millisecond
 	defer session.Close()
-	_, err := session.CallAndDrain(t.Context(), "state", "")
-	if err == nil {
-		t.Fatal("expected bounded drain to fail when the runtime does not respond")
-	}
+	ctx, cancel := context.WithCancel(t.Context())
+	callDone := make(chan error, 1)
+	go func() {
+		_, err := session.CallAndDrain(ctx, "state", "")
+		callDone <- err
+	}()
 	<-requestReceived
+	cancel()
+	select {
+	case err := <-callDone:
+		if err == nil {
+			t.Fatal("expected response drain to end after cancellation")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected cancellation to bound the response drain")
+	}
 }
 
 func assertWebSocketRequest(

@@ -7,11 +7,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 func TestNewRootCommandIncludesExpectedCommands(t *testing.T) {
@@ -236,8 +239,8 @@ func TestLifecycleCommandsRejectPositionalArguments(t *testing.T) {
 	if err := initCommand.Args(initCommand, []string{"custom_env"}); err != nil {
 		t.Fatalf("expected init to accept one positional folder name: %v", err)
 	}
-	if err := initCommand.Args(initCommand, nil); err == nil {
-		t.Fatal("expected init to require a folder name")
+	if err := initCommand.Args(initCommand, nil); err != nil {
+		t.Fatalf("expected interactive init to allow an omitted folder name: %v", err)
 	}
 	if err := initCommand.Args(initCommand, []string{"one", "two"}); err == nil {
 		t.Fatal("expected init to reject multiple positional arguments")
@@ -249,7 +252,8 @@ func TestInitSelectsSampleAndCopiesItToNamedFolder(t *testing.T) {
 	t.Chdir(tempDir)
 	stubRleSampleCatalog(t, []string{"echo", "wordle"}, "wordle", "training_env")
 
-	command := newInitCommand()
+	noPrompt := false
+	command := newInitCommand(&noPrompt)
 	command.SetArgs([]string{"training_env"})
 	var output bytes.Buffer
 	command.SetOut(&output)
@@ -286,6 +290,73 @@ func TestInitSelectsSampleAndCopiesItToNamedFolder(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), `Copied RLE sample "wordle".`) {
 		t.Fatalf("expected selected sample in output, got %s", output.String())
+	}
+}
+
+func TestInitWithoutFolderUsesSelectedSampleName(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	stubRleSampleCatalog(t, []string{"echo", "wordle"}, "wordle", "wordle")
+
+	noPrompt := false
+	command := newInitCommand(&noPrompt)
+	command.SetArgs(nil)
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(tempDir, "wordle", rleStateFile)); err != nil {
+		t.Fatalf("expected selected sample folder and state: %v", err)
+	}
+}
+
+func TestInitNoPromptUsesPositionalNameAsSampleAndFolder(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv(rleEnableEnvVar, "true")
+
+	oldLoad := loadRleSampleCatalogFunc
+	oldSelect := selectRleSampleFunc
+	loadRleSampleCatalogFunc = func() (rleSampleCatalog, error) {
+		return &testRleSampleCatalog{
+			t:                  t,
+			sampleNames:        []string{"echo", "wordle"},
+			expectedSampleName: "wordle",
+			expectedFolderName: "wordle",
+		}, nil
+	}
+	selectRleSampleFunc = func(context.Context, []string) (string, error) {
+		t.Fatal("expected no-prompt init to bypass the prompt")
+		return "", nil
+	}
+	t.Cleanup(func() {
+		loadRleSampleCatalogFunc = oldLoad
+		selectRleSampleFunc = oldSelect
+	})
+
+	command := NewRootCommand()
+	command.SetArgs([]string{"init", "wordle", "--no-prompt"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInitNoPromptRequiresPositionalSampleName(t *testing.T) {
+	t.Setenv(rleEnableEnvVar, "true")
+	command := NewRootCommand()
+	command.SetArgs([]string{"init", "--no-prompt"})
+	err := command.Execute()
+	localError, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok || localError.Code != "rle_sample_name_required" {
+		t.Fatalf("expected missing no-prompt sample error, got %v", err)
+	}
+}
+
+func TestResolveRleSampleRejectsUnknownNonInteractiveSample(t *testing.T) {
+	_, err := resolveRleSample(t.Context(), "missing", []string{"echo", "wordle"})
+	localError, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok || localError.Code != "rle_sample_not_found" ||
+		!strings.Contains(localError.Suggestion, "echo, wordle") {
+		t.Fatalf("expected available sample guidance, got %v", err)
 	}
 }
 

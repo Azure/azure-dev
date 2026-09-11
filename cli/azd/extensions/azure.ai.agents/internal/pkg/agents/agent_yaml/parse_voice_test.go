@@ -561,6 +561,31 @@ model_type: hosted_agent
 	}
 }
 
+func TestValidateAgentDefinition_LegacyTargetMigrationGuidance(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"voice", "prompt-voice"} {
+		for _, fields := range []string{
+			"target_agent: {}\n",
+			"target_agent:\n  service: target\n",
+			"model_type: managed\nmodel:\n  id: gpt-realtime\ntarget_agent:\n  service: target\n",
+			"model_type: self_deployed\nmodel:\n  id: my-deployment\ntarget_agent:\n  service: target\n",
+			"model_type: hosted_agent\ntarget_agent:\n  service: target\n",
+			"conversation_engine:\n  type: hosted_agent\n  name: target\ntarget_agent:\n  service: target\n",
+		} {
+			t.Run(kind+"/"+fields, func(t *testing.T) {
+				t.Parallel()
+				err := ValidateAgentDefinition([]byte("kind: " + kind + "\nname: wrapper\n" + fields))
+				if err == nil || !strings.Contains(err.Error(), "target_agent are not supported; use conversation_engine") {
+					t.Fatalf("expected conversation_engine migration guidance, got: %v", err)
+				}
+				if strings.Contains(err.Error(), "only valid when model_type is 'hosted_agent'") {
+					t.Fatalf("error recommends rejected authoring: %v", err)
+				}
+			})
+		}
+	}
+}
+
 func TestValidateAgentDefinition_HostedVoiceRejectsTargetOwnedFields(t *testing.T) {
 	yamlContent := []byte(`
 kind: prompt-voice

@@ -597,10 +597,6 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 						if agent.Model == nil || strings.TrimSpace(agent.Model.Id) == "" {
 							errors = append(errors, "template.model.id is required for a prompt-voice agent")
 						}
-						if agent.TargetAgent != nil {
-							errors = append(errors,
-								"template.target_agent is not supported; use conversation_engine")
-						}
 						if agent.ConversationEngine != nil {
 							errors = append(errors,
 								"template.conversation_engine is only valid for hosted voice wrappers")
@@ -634,7 +630,7 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 }
 
 func isHostedVoiceWrapper(agent VoiceAgent) bool {
-	return agent.ModelType == VoiceModelTypeHostedAgent ||
+	return agent.ModelType == VoiceModelTypeHostedAgent || agent.TargetAgent != nil ||
 		(agent.ConversationEngine != nil &&
 			strings.EqualFold(strings.TrimSpace(agent.ConversationEngine.Type), "hosted_agent"))
 }

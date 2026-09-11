@@ -13,13 +13,13 @@
 
 var jspb = require('google-protobuf');
 var goog = jspb;
-var global = (function() {
-  if (this) { return this; }
-  if (typeof window !== 'undefined') { return window; }
-  if (typeof global !== 'undefined') { return global; }
-  if (typeof self !== 'undefined') { return self; }
-  return Function('return this')();
-}.call(null));
+var global =
+    (typeof globalThis !== 'undefined' && globalThis) ||
+    (typeof window !== 'undefined' && window) ||
+    (typeof global !== 'undefined' && global) ||
+    (typeof self !== 'undefined' && self) ||
+    (function () { return this; }).call(null) ||
+    Function('return this')();
 
 var models_pb = require('./models_pb.js');
 goog.object.extend(proto, models_pb);
@@ -143,7 +143,7 @@ proto.azd.extensions.v1.RunWorkflowRequest.prototype.toObject = function(opt_inc
  */
 proto.azd.extensions.v1.RunWorkflowRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    workflow: (f = msg.getWorkflow()) && proto.azd.extensions.v1.Workflow.toObject(includeInstance, f)
+workflow: (f = msg.getWorkflow()) && proto.azd.extensions.v1.Workflow.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -301,8 +301,8 @@ proto.azd.extensions.v1.Workflow.prototype.toObject = function(opt_includeInstan
  */
 proto.azd.extensions.v1.Workflow.toObject = function(includeInstance, msg) {
   var f, obj = {
-    name: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    stepsList: jspb.Message.toObjectList(msg.getStepsList(),
+name: jspb.Message.getFieldWithDefault(msg, 1, ""),
+stepsList: jspb.Message.toObjectList(msg.getStepsList(),
     proto.azd.extensions.v1.WorkflowStep.toObject, includeInstance)
   };
 
@@ -484,7 +484,7 @@ proto.azd.extensions.v1.WorkflowStep.prototype.toObject = function(opt_includeIn
  */
 proto.azd.extensions.v1.WorkflowStep.toObject = function(includeInstance, msg) {
   var f, obj = {
-    command: (f = msg.getCommand()) && proto.azd.extensions.v1.WorkflowCommand.toObject(includeInstance, f)
+command: (f = msg.getCommand()) && proto.azd.extensions.v1.WorkflowCommand.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -642,7 +642,7 @@ proto.azd.extensions.v1.WorkflowCommand.prototype.toObject = function(opt_includ
  */
 proto.azd.extensions.v1.WorkflowCommand.toObject = function(includeInstance, msg) {
   var f, obj = {
-    argsList: (f = jspb.Message.getRepeatedField(msg, 1)) == null ? undefined : f
+argsList: (f = jspb.Message.getRepeatedField(msg, 1)) == null ? undefined : f
   };
 
   if (includeInstance) {

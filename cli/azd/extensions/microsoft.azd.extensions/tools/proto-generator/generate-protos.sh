@@ -3,14 +3,17 @@
 set -eu
 
 repo_root="${1:-/workspace}"
+azd_dir="$repo_root/cli/azd"
 languages_dir="$repo_root/cli/azd/extensions/microsoft.azd.extensions/internal/resources/languages"
 proto_dir="$languages_dir/proto"
 python_out="$languages_dir/python/generated_proto"
 javascript_out="$languages_dir/javascript/generated/proto"
-go_proto_dir="$repo_root/cli/azd/grpc/proto"
-go_out="$repo_root/cli/azd/pkg/azdext"
 
-for required_dir in "$proto_dir" "$go_proto_dir" "$go_out"; do
+for required_dir in \
+    "$proto_dir" \
+    "$azd_dir/grpc/proto/azd/extensions/v1" \
+    "$azd_dir/grpc/proto/azd/extensions/v1beta" \
+    "$azd_dir/pkg/azdext"; do
     if [ ! -d "$required_dir" ]; then
         echo "required directory not found: $required_dir" >&2
         exit 1
@@ -27,8 +30,20 @@ python -m grpc_tools.protoc \
     -I "$proto_dir" \
     -I "$python_proto_include" \
     --python_out="$python_out" \
-    --grpc_python_out="$python_out" \
     "$proto_dir"/*.proto
+
+set --
+for proto_file in "$proto_dir"/*.proto; do
+    if grep -q '^service ' "$proto_file"; then
+        set -- "$@" "$proto_file"
+    fi
+done
+
+python -m grpc_tools.protoc \
+    -I "$proto_dir" \
+    -I "$python_proto_include" \
+    --grpc_python_out="$python_out" \
+    "$@"
 
 protoc \
     -I "$proto_dir" \
@@ -51,23 +66,4 @@ grpc_tools_node_protoc \
     --grpc_out="grpc_js:$javascript_out" \
     "$@"
 
-protoc \
-    -I "$go_proto_dir" \
-    --plugin="protoc-gen-go=$(command -v protoc-gen-go)" \
-    --go_out="$go_out" \
-    --go_opt=paths=source_relative \
-    "$go_proto_dir"/*.proto
-
-set --
-for proto_file in "$go_proto_dir"/*.proto; do
-    if grep -q '^service ' "$proto_file"; then
-        set -- "$@" "$proto_file"
-    fi
-done
-
-protoc \
-    -I "$go_proto_dir" \
-    --plugin="protoc-gen-go-grpc=$(command -v protoc-gen-go-grpc)" \
-    --go-grpc_out="$go_out" \
-    --go-grpc_opt=paths=source_relative \
-    "$@"
+make -C "$azd_dir" proto

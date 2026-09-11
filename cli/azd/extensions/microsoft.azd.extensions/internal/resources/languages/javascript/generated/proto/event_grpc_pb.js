@@ -4,6 +4,7 @@
 var grpc = require('@grpc/grpc-js');
 var event_pb = require('./event_pb.js');
 var models_pb = require('./models_pb.js');
+var errors_pb = require('./errors_pb.js');
 
 function serialize_azd_extensions_v1_EventMessage(arg) {
   if (!(arg instanceof event_pb.EventMessage)) {

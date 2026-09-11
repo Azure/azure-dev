@@ -13,16 +13,18 @@
 
 var jspb = require('google-protobuf');
 var goog = jspb;
-var global = (function() {
-  if (this) { return this; }
-  if (typeof window !== 'undefined') { return window; }
-  if (typeof global !== 'undefined') { return global; }
-  if (typeof self !== 'undefined') { return self; }
-  return Function('return this')();
-}.call(null));
+var global =
+    (typeof globalThis !== 'undefined' && globalThis) ||
+    (typeof window !== 'undefined' && window) ||
+    (typeof global !== 'undefined' && global) ||
+    (typeof self !== 'undefined' && self) ||
+    (function () { return this; }).call(null) ||
+    Function('return this')();
 
 var models_pb = require('./models_pb.js');
 goog.object.extend(proto, models_pb);
+var errors_pb = require('./errors_pb.js');
+goog.object.extend(proto, errors_pb);
 goog.exportSymbol('proto.azd.extensions.v1.EventMessage', null, global);
 goog.exportSymbol('proto.azd.extensions.v1.EventMessage.MessageTypeCase', null, global);
 goog.exportSymbol('proto.azd.extensions.v1.InvokeProjectHandler', null, global);
@@ -240,12 +242,12 @@ proto.azd.extensions.v1.EventMessage.prototype.toObject = function(opt_includeIn
  */
 proto.azd.extensions.v1.EventMessage.toObject = function(includeInstance, msg) {
   var f, obj = {
-    subscribeProjectEvent: (f = msg.getSubscribeProjectEvent()) && proto.azd.extensions.v1.SubscribeProjectEvent.toObject(includeInstance, f),
-    invokeProjectHandler: (f = msg.getInvokeProjectHandler()) && proto.azd.extensions.v1.InvokeProjectHandler.toObject(includeInstance, f),
-    projectHandlerStatus: (f = msg.getProjectHandlerStatus()) && proto.azd.extensions.v1.ProjectHandlerStatus.toObject(includeInstance, f),
-    subscribeServiceEvent: (f = msg.getSubscribeServiceEvent()) && proto.azd.extensions.v1.SubscribeServiceEvent.toObject(includeInstance, f),
-    invokeServiceHandler: (f = msg.getInvokeServiceHandler()) && proto.azd.extensions.v1.InvokeServiceHandler.toObject(includeInstance, f),
-    serviceHandlerStatus: (f = msg.getServiceHandlerStatus()) && proto.azd.extensions.v1.ServiceHandlerStatus.toObject(includeInstance, f)
+subscribeProjectEvent: (f = msg.getSubscribeProjectEvent()) && proto.azd.extensions.v1.SubscribeProjectEvent.toObject(includeInstance, f),
+invokeProjectHandler: (f = msg.getInvokeProjectHandler()) && proto.azd.extensions.v1.InvokeProjectHandler.toObject(includeInstance, f),
+projectHandlerStatus: (f = msg.getProjectHandlerStatus()) && proto.azd.extensions.v1.ProjectHandlerStatus.toObject(includeInstance, f),
+subscribeServiceEvent: (f = msg.getSubscribeServiceEvent()) && proto.azd.extensions.v1.SubscribeServiceEvent.toObject(includeInstance, f),
+invokeServiceHandler: (f = msg.getInvokeServiceHandler()) && proto.azd.extensions.v1.InvokeServiceHandler.toObject(includeInstance, f),
+serviceHandlerStatus: (f = msg.getServiceHandlerStatus()) && proto.azd.extensions.v1.ServiceHandlerStatus.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -653,7 +655,7 @@ proto.azd.extensions.v1.SubscribeProjectEvent.prototype.toObject = function(opt_
  */
 proto.azd.extensions.v1.SubscribeProjectEvent.toObject = function(includeInstance, msg) {
   var f, obj = {
-    eventNamesList: (f = jspb.Message.getRepeatedField(msg, 1)) == null ? undefined : f
+eventNamesList: (f = jspb.Message.getRepeatedField(msg, 1)) == null ? undefined : f
   };
 
   if (includeInstance) {
@@ -809,9 +811,9 @@ proto.azd.extensions.v1.SubscribeServiceEvent.prototype.toObject = function(opt_
  */
 proto.azd.extensions.v1.SubscribeServiceEvent.toObject = function(includeInstance, msg) {
   var f, obj = {
-    eventNamesList: (f = jspb.Message.getRepeatedField(msg, 1)) == null ? undefined : f,
-    language: jspb.Message.getFieldWithDefault(msg, 2, ""),
-    host: jspb.Message.getFieldWithDefault(msg, 3, "")
+eventNamesList: (f = jspb.Message.getRepeatedField(msg, 1)) == null ? undefined : f,
+language: jspb.Message.getFieldWithDefault(msg, 2, ""),
+host: jspb.Message.getFieldWithDefault(msg, 3, "")
   };
 
   if (includeInstance) {
@@ -1018,8 +1020,8 @@ proto.azd.extensions.v1.InvokeProjectHandler.prototype.toObject = function(opt_i
  */
 proto.azd.extensions.v1.InvokeProjectHandler.toObject = function(includeInstance, msg) {
   var f, obj = {
-    eventName: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    project: (f = msg.getProject()) && models_pb.ProjectConfig.toObject(includeInstance, f)
+eventName: jspb.Message.getFieldWithDefault(msg, 1, ""),
+project: (f = msg.getProject()) && models_pb.ProjectConfig.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -1199,9 +1201,9 @@ proto.azd.extensions.v1.InvokeServiceHandler.prototype.toObject = function(opt_i
  */
 proto.azd.extensions.v1.InvokeServiceHandler.toObject = function(includeInstance, msg) {
   var f, obj = {
-    eventName: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    project: (f = msg.getProject()) && models_pb.ProjectConfig.toObject(includeInstance, f),
-    service: (f = msg.getService()) && models_pb.ServiceConfig.toObject(includeInstance, f)
+eventName: jspb.Message.getFieldWithDefault(msg, 1, ""),
+project: (f = msg.getProject()) && models_pb.ProjectConfig.toObject(includeInstance, f),
+service: (f = msg.getService()) && models_pb.ServiceConfig.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -1431,9 +1433,10 @@ proto.azd.extensions.v1.ProjectHandlerStatus.prototype.toObject = function(opt_i
  */
 proto.azd.extensions.v1.ProjectHandlerStatus.toObject = function(includeInstance, msg) {
   var f, obj = {
-    eventName: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    status: jspb.Message.getFieldWithDefault(msg, 2, ""),
-    message: jspb.Message.getFieldWithDefault(msg, 3, "")
+eventName: jspb.Message.getFieldWithDefault(msg, 1, ""),
+status: jspb.Message.getFieldWithDefault(msg, 2, ""),
+message: jspb.Message.getFieldWithDefault(msg, 3, ""),
+error: (f = msg.getError()) && errors_pb.ExtensionError.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -1481,6 +1484,11 @@ proto.azd.extensions.v1.ProjectHandlerStatus.deserializeBinaryFromReader = funct
     case 3:
       var value = /** @type {string} */ (reader.readString());
       msg.setMessage(value);
+      break;
+    case 4:
+      var value = new errors_pb.ExtensionError;
+      reader.readMessage(value,errors_pb.ExtensionError.deserializeBinaryFromReader);
+      msg.setError(value);
       break;
     default:
       reader.skipField();
@@ -1530,6 +1538,14 @@ proto.azd.extensions.v1.ProjectHandlerStatus.serializeBinaryToWriter = function(
     writer.writeString(
       3,
       f
+    );
+  }
+  f = message.getError();
+  if (f != null) {
+    writer.writeMessage(
+      4,
+      f,
+      errors_pb.ExtensionError.serializeBinaryToWriter
     );
   }
 };
@@ -1589,6 +1605,43 @@ proto.azd.extensions.v1.ProjectHandlerStatus.prototype.setMessage = function(val
 };
 
 
+/**
+ * optional ExtensionError error = 4;
+ * @return {?proto.azd.extensions.v1.ExtensionError}
+ */
+proto.azd.extensions.v1.ProjectHandlerStatus.prototype.getError = function() {
+  return /** @type{?proto.azd.extensions.v1.ExtensionError} */ (
+    jspb.Message.getWrapperField(this, errors_pb.ExtensionError, 4));
+};
+
+
+/**
+ * @param {?proto.azd.extensions.v1.ExtensionError|undefined} value
+ * @return {!proto.azd.extensions.v1.ProjectHandlerStatus} returns this
+*/
+proto.azd.extensions.v1.ProjectHandlerStatus.prototype.setError = function(value) {
+  return jspb.Message.setWrapperField(this, 4, value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.azd.extensions.v1.ProjectHandlerStatus} returns this
+ */
+proto.azd.extensions.v1.ProjectHandlerStatus.prototype.clearError = function() {
+  return this.setError(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.azd.extensions.v1.ProjectHandlerStatus.prototype.hasError = function() {
+  return jspb.Message.getField(this, 4) != null;
+};
+
+
 
 
 
@@ -1621,10 +1674,11 @@ proto.azd.extensions.v1.ServiceHandlerStatus.prototype.toObject = function(opt_i
  */
 proto.azd.extensions.v1.ServiceHandlerStatus.toObject = function(includeInstance, msg) {
   var f, obj = {
-    eventName: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    serviceName: jspb.Message.getFieldWithDefault(msg, 2, ""),
-    status: jspb.Message.getFieldWithDefault(msg, 3, ""),
-    message: jspb.Message.getFieldWithDefault(msg, 4, "")
+eventName: jspb.Message.getFieldWithDefault(msg, 1, ""),
+serviceName: jspb.Message.getFieldWithDefault(msg, 2, ""),
+status: jspb.Message.getFieldWithDefault(msg, 3, ""),
+message: jspb.Message.getFieldWithDefault(msg, 4, ""),
+error: (f = msg.getError()) && errors_pb.ExtensionError.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -1676,6 +1730,11 @@ proto.azd.extensions.v1.ServiceHandlerStatus.deserializeBinaryFromReader = funct
     case 4:
       var value = /** @type {string} */ (reader.readString());
       msg.setMessage(value);
+      break;
+    case 5:
+      var value = new errors_pb.ExtensionError;
+      reader.readMessage(value,errors_pb.ExtensionError.deserializeBinaryFromReader);
+      msg.setError(value);
       break;
     default:
       reader.skipField();
@@ -1732,6 +1791,14 @@ proto.azd.extensions.v1.ServiceHandlerStatus.serializeBinaryToWriter = function(
     writer.writeString(
       4,
       f
+    );
+  }
+  f = message.getError();
+  if (f != null) {
+    writer.writeMessage(
+      5,
+      f,
+      errors_pb.ExtensionError.serializeBinaryToWriter
     );
   }
 };
@@ -1806,6 +1873,43 @@ proto.azd.extensions.v1.ServiceHandlerStatus.prototype.getMessage = function() {
  */
 proto.azd.extensions.v1.ServiceHandlerStatus.prototype.setMessage = function(value) {
   return jspb.Message.setProto3StringField(this, 4, value);
+};
+
+
+/**
+ * optional ExtensionError error = 5;
+ * @return {?proto.azd.extensions.v1.ExtensionError}
+ */
+proto.azd.extensions.v1.ServiceHandlerStatus.prototype.getError = function() {
+  return /** @type{?proto.azd.extensions.v1.ExtensionError} */ (
+    jspb.Message.getWrapperField(this, errors_pb.ExtensionError, 5));
+};
+
+
+/**
+ * @param {?proto.azd.extensions.v1.ExtensionError|undefined} value
+ * @return {!proto.azd.extensions.v1.ServiceHandlerStatus} returns this
+*/
+proto.azd.extensions.v1.ServiceHandlerStatus.prototype.setError = function(value) {
+  return jspb.Message.setWrapperField(this, 5, value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.azd.extensions.v1.ServiceHandlerStatus} returns this
+ */
+proto.azd.extensions.v1.ServiceHandlerStatus.prototype.clearError = function() {
+  return this.setError(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.azd.extensions.v1.ServiceHandlerStatus.prototype.hasError = function() {
+  return jspb.Message.getField(this, 5) != null;
 };
 
 

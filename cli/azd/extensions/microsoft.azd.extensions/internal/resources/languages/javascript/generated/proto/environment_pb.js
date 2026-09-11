@@ -13,13 +13,13 @@
 
 var jspb = require('google-protobuf');
 var goog = jspb;
-var global = (function() {
-  if (this) { return this; }
-  if (typeof window !== 'undefined') { return window; }
-  if (typeof global !== 'undefined') { return global; }
-  if (typeof self !== 'undefined') { return self; }
-  return Function('return this')();
-}.call(null));
+var global =
+    (typeof globalThis !== 'undefined' && globalThis) ||
+    (typeof window !== 'undefined' && window) ||
+    (typeof global !== 'undefined' && global) ||
+    (typeof self !== 'undefined' && self) ||
+    (function () { return this; }).call(null) ||
+    Function('return this')();
 
 var models_pb = require('./models_pb.js');
 goog.object.extend(proto, models_pb);
@@ -473,7 +473,7 @@ proto.azd.extensions.v1.GetEnvironmentRequest.prototype.toObject = function(opt_
  */
 proto.azd.extensions.v1.GetEnvironmentRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    name: jspb.Message.getFieldWithDefault(msg, 1, "")
+name: jspb.Message.getFieldWithDefault(msg, 1, "")
   };
 
   if (includeInstance) {
@@ -603,7 +603,7 @@ proto.azd.extensions.v1.SelectEnvironmentRequest.prototype.toObject = function(o
  */
 proto.azd.extensions.v1.SelectEnvironmentRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    name: jspb.Message.getFieldWithDefault(msg, 1, "")
+name: jspb.Message.getFieldWithDefault(msg, 1, "")
   };
 
   if (includeInstance) {
@@ -733,8 +733,8 @@ proto.azd.extensions.v1.GetEnvRequest.prototype.toObject = function(opt_includeI
  */
 proto.azd.extensions.v1.GetEnvRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    envName: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    key: jspb.Message.getFieldWithDefault(msg, 2, "")
+envName: jspb.Message.getFieldWithDefault(msg, 1, ""),
+key: jspb.Message.getFieldWithDefault(msg, 2, "")
   };
 
   if (includeInstance) {
@@ -893,9 +893,9 @@ proto.azd.extensions.v1.SetEnvRequest.prototype.toObject = function(opt_includeI
  */
 proto.azd.extensions.v1.SetEnvRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    envName: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    key: jspb.Message.getFieldWithDefault(msg, 2, ""),
-    value: jspb.Message.getFieldWithDefault(msg, 3, "")
+envName: jspb.Message.getFieldWithDefault(msg, 1, ""),
+key: jspb.Message.getFieldWithDefault(msg, 2, ""),
+value: jspb.Message.getFieldWithDefault(msg, 3, "")
   };
 
   if (includeInstance) {
@@ -1083,7 +1083,7 @@ proto.azd.extensions.v1.EnvironmentResponse.prototype.toObject = function(opt_in
  */
 proto.azd.extensions.v1.EnvironmentResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    environment: (f = msg.getEnvironment()) && proto.azd.extensions.v1.Environment.toObject(includeInstance, f)
+environment: (f = msg.getEnvironment()) && proto.azd.extensions.v1.Environment.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -1241,7 +1241,7 @@ proto.azd.extensions.v1.EnvironmentListResponse.prototype.toObject = function(op
  */
 proto.azd.extensions.v1.EnvironmentListResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    environmentsList: jspb.Message.toObjectList(msg.getEnvironmentsList(),
+environmentsList: jspb.Message.toObjectList(msg.getEnvironmentsList(),
     proto.azd.extensions.v1.EnvironmentDescription.toObject, includeInstance)
   };
 
@@ -1401,7 +1401,7 @@ proto.azd.extensions.v1.KeyValueListResponse.prototype.toObject = function(opt_i
  */
 proto.azd.extensions.v1.KeyValueListResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    keyValuesList: jspb.Message.toObjectList(msg.getKeyValuesList(),
+keyValuesList: jspb.Message.toObjectList(msg.getKeyValuesList(),
     proto.azd.extensions.v1.KeyValue.toObject, includeInstance)
   };
 
@@ -1554,8 +1554,8 @@ proto.azd.extensions.v1.KeyValueResponse.prototype.toObject = function(opt_inclu
  */
 proto.azd.extensions.v1.KeyValueResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    key: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    value: jspb.Message.getFieldWithDefault(msg, 2, "")
+key: jspb.Message.getFieldWithDefault(msg, 1, ""),
+value: jspb.Message.getFieldWithDefault(msg, 2, "")
   };
 
   if (includeInstance) {
@@ -1714,7 +1714,7 @@ proto.azd.extensions.v1.Environment.prototype.toObject = function(opt_includeIns
  */
 proto.azd.extensions.v1.Environment.toObject = function(includeInstance, msg) {
   var f, obj = {
-    name: jspb.Message.getFieldWithDefault(msg, 1, "")
+name: jspb.Message.getFieldWithDefault(msg, 1, "")
   };
 
   if (includeInstance) {
@@ -1844,10 +1844,10 @@ proto.azd.extensions.v1.EnvironmentDescription.prototype.toObject = function(opt
  */
 proto.azd.extensions.v1.EnvironmentDescription.toObject = function(includeInstance, msg) {
   var f, obj = {
-    name: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    local: jspb.Message.getBooleanFieldWithDefault(msg, 2, false),
-    remote: jspb.Message.getBooleanFieldWithDefault(msg, 3, false),
-    pb_default: jspb.Message.getBooleanFieldWithDefault(msg, 4, false)
+name: jspb.Message.getFieldWithDefault(msg, 1, ""),
+local: jspb.Message.getBooleanFieldWithDefault(msg, 2, false),
+remote: jspb.Message.getBooleanFieldWithDefault(msg, 3, false),
+pb_default: jspb.Message.getBooleanFieldWithDefault(msg, 4, false)
   };
 
   if (includeInstance) {
@@ -2064,8 +2064,8 @@ proto.azd.extensions.v1.KeyValue.prototype.toObject = function(opt_includeInstan
  */
 proto.azd.extensions.v1.KeyValue.toObject = function(includeInstance, msg) {
   var f, obj = {
-    key: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    value: jspb.Message.getFieldWithDefault(msg, 2, "")
+key: jspb.Message.getFieldWithDefault(msg, 1, ""),
+value: jspb.Message.getFieldWithDefault(msg, 2, "")
   };
 
   if (includeInstance) {
@@ -2224,8 +2224,8 @@ proto.azd.extensions.v1.GetConfigRequest.prototype.toObject = function(opt_inclu
  */
 proto.azd.extensions.v1.GetConfigRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    path: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    envName: jspb.Message.getFieldWithDefault(msg, 2, "")
+path: jspb.Message.getFieldWithDefault(msg, 1, ""),
+envName: jspb.Message.getFieldWithDefault(msg, 2, "")
   };
 
   if (includeInstance) {
@@ -2384,8 +2384,8 @@ proto.azd.extensions.v1.GetConfigResponse.prototype.toObject = function(opt_incl
  */
 proto.azd.extensions.v1.GetConfigResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    value: msg.getValue_asB64(),
-    found: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
+value: msg.getValue_asB64(),
+found: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
   };
 
   if (includeInstance) {
@@ -2568,8 +2568,8 @@ proto.azd.extensions.v1.GetConfigStringRequest.prototype.toObject = function(opt
  */
 proto.azd.extensions.v1.GetConfigStringRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    path: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    envName: jspb.Message.getFieldWithDefault(msg, 2, "")
+path: jspb.Message.getFieldWithDefault(msg, 1, ""),
+envName: jspb.Message.getFieldWithDefault(msg, 2, "")
   };
 
   if (includeInstance) {
@@ -2728,8 +2728,8 @@ proto.azd.extensions.v1.GetConfigStringResponse.prototype.toObject = function(op
  */
 proto.azd.extensions.v1.GetConfigStringResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    value: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    found: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
+value: jspb.Message.getFieldWithDefault(msg, 1, ""),
+found: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
   };
 
   if (includeInstance) {
@@ -2888,8 +2888,8 @@ proto.azd.extensions.v1.GetConfigSectionRequest.prototype.toObject = function(op
  */
 proto.azd.extensions.v1.GetConfigSectionRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    path: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    envName: jspb.Message.getFieldWithDefault(msg, 2, "")
+path: jspb.Message.getFieldWithDefault(msg, 1, ""),
+envName: jspb.Message.getFieldWithDefault(msg, 2, "")
   };
 
   if (includeInstance) {
@@ -3048,8 +3048,8 @@ proto.azd.extensions.v1.GetConfigSectionResponse.prototype.toObject = function(o
  */
 proto.azd.extensions.v1.GetConfigSectionResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    section: msg.getSection_asB64(),
-    found: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
+section: msg.getSection_asB64(),
+found: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
   };
 
   if (includeInstance) {
@@ -3232,9 +3232,9 @@ proto.azd.extensions.v1.SetConfigRequest.prototype.toObject = function(opt_inclu
  */
 proto.azd.extensions.v1.SetConfigRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    path: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    value: msg.getValue_asB64(),
-    envName: jspb.Message.getFieldWithDefault(msg, 3, "")
+path: jspb.Message.getFieldWithDefault(msg, 1, ""),
+value: msg.getValue_asB64(),
+envName: jspb.Message.getFieldWithDefault(msg, 3, "")
   };
 
   if (includeInstance) {
@@ -3446,8 +3446,8 @@ proto.azd.extensions.v1.UnsetConfigRequest.prototype.toObject = function(opt_inc
  */
 proto.azd.extensions.v1.UnsetConfigRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    path: jspb.Message.getFieldWithDefault(msg, 1, ""),
-    envName: jspb.Message.getFieldWithDefault(msg, 2, "")
+path: jspb.Message.getFieldWithDefault(msg, 1, ""),
+envName: jspb.Message.getFieldWithDefault(msg, 2, "")
   };
 
   if (includeInstance) {

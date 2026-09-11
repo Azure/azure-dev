@@ -13,13 +13,13 @@
 
 var jspb = require('google-protobuf');
 var goog = jspb;
-var global = (function() {
-  if (this) { return this; }
-  if (typeof window !== 'undefined') { return window; }
-  if (typeof global !== 'undefined') { return global; }
-  if (typeof self !== 'undefined') { return self; }
-  return Function('return this')();
-}.call(null));
+var global =
+    (typeof globalThis !== 'undefined' && globalThis) ||
+    (typeof window !== 'undefined' && window) ||
+    (typeof global !== 'undefined' && global) ||
+    (typeof self !== 'undefined' && self) ||
+    (function () { return this; }).call(null) ||
+    Function('return this')();
 
 var models_pb = require('./models_pb.js');
 goog.object.extend(proto, models_pb);
@@ -99,7 +99,7 @@ proto.azd.extensions.v1.GetProjectResponse.prototype.toObject = function(opt_inc
  */
 proto.azd.extensions.v1.GetProjectResponse.toObject = function(includeInstance, msg) {
   var f, obj = {
-    project: (f = msg.getProject()) && models_pb.ProjectConfig.toObject(includeInstance, f)
+project: (f = msg.getProject()) && models_pb.ProjectConfig.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -250,7 +250,7 @@ proto.azd.extensions.v1.AddServiceRequest.prototype.toObject = function(opt_incl
  */
 proto.azd.extensions.v1.AddServiceRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-    service: (f = msg.getService()) && models_pb.ServiceConfig.toObject(includeInstance, f)
+service: (f = msg.getService()) && models_pb.ServiceConfig.toObject(includeInstance, f)
   };
 
   if (includeInstance) {

@@ -9,7 +9,7 @@ ADAPTER_FILE := internal/grpcserver/versioned_services_generated.go
 GO_MODULE := github.com/azure/azure-dev/cli/azd
 
 PROTOC_VERSION := libprotoc 32.1
-PROTOC_GEN_GO_VERSION := protoc-gen-go v1.36.10
+PROTOC_GEN_GO_VERSION := protoc-gen-go v1.36.11
 PROTOC_GEN_GO_GRPC_VERSION := protoc-gen-go-grpc 1.5.1
 BUF ?= buf
 

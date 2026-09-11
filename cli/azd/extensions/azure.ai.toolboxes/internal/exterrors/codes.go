@@ -23,10 +23,11 @@ const (
 
 // Error codes for auth failures.
 const (
-	CodeNotLoggedIn              = "not_logged_in"
-	CodeLoginExpired             = "login_expired"
-	CodeAuthFailed               = "auth_failed"
-	CodeTenantLookupFailed       = "tenant_lookup_failed"
+	CodeNotLoggedIn        = "not_logged_in"
+	CodeLoginExpired       = "login_expired"
+	CodeAuthFailed         = "auth_failed"
+	CodeTenantLookupFailed = "tenant_lookup_failed"
+	// #nosec G101 -- stable telemetry error code, not a credential.
 	CodeCredentialCreationFailed = "credential_creation_failed"
 )
 

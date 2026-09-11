@@ -16,7 +16,7 @@ func NewRootCommand() *cobra.Command {
 		Name: "agent",
 		Use:  "agent <command> [options]",
 		Short: fmt.Sprintf(
-			"Ship hosted and voice agents with Microsoft Foundry from your terminal. %s", color.YellowString("(Preview)"),
+			"Ship prompt, hosted, and voice agents with Microsoft Foundry from your terminal. %s", color.YellowString("(Preview)"),
 		),
 	})
 	rootCmd.SilenceUsage = true

@@ -33,6 +33,7 @@ func TestRootCommand_PublicPreviewCommandsVisible(t *testing.T) {
 		"files",
 		"init",
 		"invoke",
+		"invocations",
 		"monitor",
 		"optimize",
 		"pack",
@@ -59,8 +60,8 @@ func TestVoicePublicPreviewHelp(t *testing.T) {
 		{
 			name: "root",
 			contains: []string{
-				"Ship hosted and voice agents", "Initialize a new hosted or voice agent project",
-				"Show the status of a hosted or voice agent", "Delete a hosted or voice agent",
+				"Ship prompt, hosted, and voice agents", "Initialize a new prompt, hosted, or voice agent project",
+				"Show the status of a prompt, hosted, or voice agent", "Delete a prompt, hosted, or voice agent",
 			},
 		},
 		{
@@ -71,6 +72,7 @@ func TestVoicePublicPreviewHelp(t *testing.T) {
 				"conversationEngine.type", "conversationEngine.name", "not supported; use conversationEngine instead",
 				"structured inputs", "tools", "greeting", "avatar", "handoff", "telephony", "acs", "twilio",
 				"For existing voice services, edit azure.yaml",
+				"--harness", "--kind prompt", "--instructions",
 			},
 			absent: []string{
 				"New voice services use kind: voice", "adopted manifest", "remains supported for compatibility",
@@ -90,11 +92,11 @@ func TestVoicePublicPreviewHelp(t *testing.T) {
 		},
 		{
 			name: "show", path: []string{"show"},
-			contains: []string{"hosted or voice agent"},
+			contains: []string{"prompt, hosted, or voice agent"},
 		},
 		{
 			name: "delete", path: []string{"delete"},
-			contains: []string{"hosted or voice agent", "telephony bindings", "does not guarantee binding cleanup"},
+			contains: []string{"prompt, hosted, or voice agent", "telephony bindings", "does not guarantee binding cleanup"},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

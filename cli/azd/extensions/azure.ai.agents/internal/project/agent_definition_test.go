@@ -254,6 +254,63 @@ func TestInlineAgentEnvironmentVariables(t *testing.T) {
 		"SHARED_KEY": "legacy",
 	}, got)
 }
+
+// TestAgentDefinitionFromService_PromptAgentStringModel guards the kind gate in
+// agentDefinitionFromStruct. Every agent kind shares the service entry's
+// property bag but they disagree on types: a prompt agent's `model` is a
+// deployment name, while the hosted and voice shapes model it as an object.
+// Decoding before checking the kind rejected a valid prompt agent with
+// "cannot unmarshal string into Go struct field AgentDefinitionInline.model".
+func TestAgentDefinitionFromService_PromptAgentStringModel(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"kind":         "prompt",
+		"name":         "my-prompt-agent",
+		"model":        "gpt-4.1-mini",
+		"instructions": "You are a helpful assistant.",
+	})
+	require.NoError(t, err)
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "my-prompt-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+
+	_, isHosted, found, _, err := AgentDefinitionFromService(svc)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.False(t, isHosted)
+}
+
+func TestAgentDefinitionFromService_PromptAgentRaiPolicy(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"kind":         "prompt",
+		"name":         "my-prompt-agent",
+		"model":        "gpt-5-mini",
+		"instructions": "Be helpful.",
+		"policies": []any{map[string]any{
+			"type":          "rai_policy",
+			"raiPolicyName": "${RAI_POLICY_ID}",
+		}},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "my-prompt-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+
+	_, isHosted, found, _, err := AgentDefinitionFromService(svc)
+
+	require.NoError(t, err)
+	require.True(t, found)
+	require.False(t, isHosted)
+}
+
 func TestResolveAgentEnvironmentVariable(t *testing.T) {
 	t.Parallel()
 
@@ -922,13 +979,6 @@ func TestWarnOrphanedConfigEnvOutput(t *testing.T) {
 		})
 	})
 	require.Empty(t, quiet)
-}
-
-func mustStruct(t *testing.T, value map[string]any) *structpb.Struct {
-	t.Helper()
-	s, err := structpb.NewStruct(value)
-	require.NoError(t, err)
-	return s
 }
 
 // captureStdout collects everything fn writes to os.Stdout.

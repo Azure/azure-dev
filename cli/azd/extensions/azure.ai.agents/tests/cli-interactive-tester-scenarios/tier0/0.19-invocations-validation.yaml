@@ -1,0 +1,16 @@
+# Tier 0 (offline) — reject unsupported lifecycle operations and invalid selectors.
+name: "invocations-validation"
+command: "azd ai agent invocations follow --protocol invocations --id inv_test"
+cwd: "/tmp"
+tags: ["tier:0", "cmd:invocations", "negative-path", "parallel-safe"]
+
+goals:
+  - "Confirm the initial command exits non-zero with 'invocations follow is not supported with the invocations protocol'."
+  - "Run 'azd ai agent invocations show --protocol a2a --id task_test'. Confirm it exits non-zero with 'invocations show is not supported with the a2a protocol'."
+  - "Run 'azd ai agent invocations show --id='. Confirm it exits non-zero with '--id requires a non-empty value'."
+  - "Run 'azd ai agent invocations cancel --protocol='. Confirm it exits non-zero with '--protocol requires a non-empty value'."
+  - "Run 'azd ai agent invocations show --version 1'. Confirm it rejects --version as an unknown flag."
+  - "Run 'azd ai agent invocations cancel --client-header x-client-request-id:test'. Confirm it rejects --client-header as an unknown flag."
+  - "Confirm every command fails before any agent picker, login prompt, or lifecycle request. Do not substitute supported protocols or real IDs to get past validation."
+  - "Take a screenshot of the validation output."
+  - "Report a finding if an unsupported operation or removed flag is accepted, validation reports a different error, or any product prompt or lifecycle request occurs."

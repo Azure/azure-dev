@@ -6,6 +6,7 @@ package project
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -1240,7 +1241,9 @@ func Test_Save_PreservesPermissions(t *testing.T) {
 
 	info, err := os.Stat(filePath)
 	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	if runtime.GOOS != "windows" {
+		require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	}
 }
 
 func Test_Save_OmitsEmptyServiceSourceFields(t *testing.T) {

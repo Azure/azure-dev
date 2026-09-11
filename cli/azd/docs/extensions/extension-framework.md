@@ -2386,12 +2386,6 @@ Clients can subscribe to events and receive notifications via a bidirectional st
 
   Contains:
   - Uses a oneof field to encapsulate different event types.
-- **ExtensionReadyEvent**
-  Signals that an extension is ready, including any status updates.
-
-  Contains:
-  - `status`: Indicates the readiness state of the extension.
-  - `message`: Provides additional details.
 - **SubscribeProjectEvent**
   Allows clients to subscribe to events specific to project lifecycle changes.
 

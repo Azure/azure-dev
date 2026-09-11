@@ -1,0 +1,29 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directories:
+      - "/"
+      - "/.github/actions/vally-eval"
+      - "/cli/azd/extensions/azure.coding-agent/internal/cmd/templates"
+      - "/cli/azd/resources/pipeline/.github/workflows"
+    schedule:
+      interval: "daily"
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
+  - package-ecosystem: "npm"
+    directories:
+      - "/.github/scripts"
+      - "/eng/common/tsp-client"
+      - "/eng/common/spelling"
+      - "/ext/vscode"
+      - "/ext/azuredevops/setupAzd"
+    schedule:
+      interval: "daily"
+    cooldown:
+      default-days: 7
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]

@@ -98,10 +98,13 @@ The host appends this text to the parent command's human-readable completion
 message. It treats the text as opaque, collects only successful project
 `post*` events that set `FollowUp`, and leaves JSON output unchanged. Nil
 means no contribution. Within one command, a later lifecycle event replaces
-the earlier result from that extension; an empty value retracts it. Concurrent
-layers of the same event resolve by stable layer identity, not completion
-time. Other extensions and existing core follow-up text are preserved. Do not
-use it for service-level events or for error messages.
+the earlier result from that extension; an empty value retracts it. In a custom
+workflow, a later command step replaces an earlier result. Lifecycle events
+within one command use the stable order restore, build, package, provision,
+publish, deploy. Concurrent layers of the same event resolve by stable layer
+identity, not completion time. Other extensions and existing core follow-up
+text are preserved. Do not use it for service-level events or for error
+messages.
 
 ## Extension Design Guidelines
 

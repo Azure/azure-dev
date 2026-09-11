@@ -16,11 +16,20 @@ func addFollowUp(
 	collector *FollowUpCollector,
 	extensionID, eventName, layer, text string,
 ) {
+	addFollowUpWithOrder(collector, 0, extensionID, eventName, layer, text)
+}
+
+func addFollowUpWithOrder(
+	collector *FollowUpCollector,
+	commandOrder uint64,
+	extensionID, eventName, layer, text string,
+) {
 	collector.Add(FollowUp{
-		ExtensionID: extensionID,
-		EventName:   eventName,
-		Layer:       layer,
-		Text:        text,
+		ExtensionID:  extensionID,
+		CommandOrder: commandOrder,
+		EventName:    eventName,
+		Layer:        layer,
+		Text:         text,
 	})
 }
 
@@ -40,6 +49,64 @@ func TestFollowUpCollector_EventOrderIgnoresCompletionOrder(t *testing.T) {
 	addFollowUp(collector, "test.extension", "postprovision", "", "provision")
 
 	require.Equal(t, "deploy", collector.Text())
+}
+
+func TestFollowUpCollector_CommandOrderOverridesEventOrder(t *testing.T) {
+	collector := NewFollowUpCollector()
+
+	addFollowUpWithOrder(
+		collector, 1, "test.extension", "postpackage", "", "package",
+	)
+	addFollowUpWithOrder(
+		collector, 2, "test.extension", "postprovision", "", "provision",
+	)
+
+	require.Equal(t, "provision", collector.Text())
+
+	collector = NewFollowUpCollector()
+	addFollowUpWithOrder(
+		collector, 1, "test.extension", "postprovision", "", "provision",
+	)
+	addFollowUpWithOrder(
+		collector, 2, "test.extension", "postpackage", "", "package",
+	)
+
+	require.Equal(t, "package", collector.Text())
+}
+
+func TestFollowUpCollector_CommandOrderRetractsEarlierContribution(t *testing.T) {
+	collector := NewFollowUpCollector()
+
+	addFollowUpWithOrder(
+		collector, 1, "test.extension", "postpackage", "", "old",
+	)
+	addFollowUpWithOrder(
+		collector, 2, "test.extension", "postprovision", "", "",
+	)
+
+	require.Empty(t, collector.Text())
+}
+
+func TestFollowUpCollector_CompletionOrderDoesNotAffectCommandOrder(t *testing.T) {
+	collector := NewFollowUpCollector()
+
+	addFollowUpWithOrder(
+		collector, 2, "test.extension", "postprovision", "", "later",
+	)
+	addFollowUpWithOrder(
+		collector, 1, "test.extension", "postpackage", "", "earlier",
+	)
+
+	require.Equal(t, "later", collector.Text())
+}
+
+func TestFollowUpCollector_DefaultUpLifecycleOrder(t *testing.T) {
+	collector := NewFollowUpCollector()
+
+	addFollowUp(collector, "test.extension", "postprovision", "", "provision")
+	addFollowUp(collector, "test.extension", "postpackage", "", "package")
+
+	require.Equal(t, "provision", collector.Text())
 }
 
 func TestFollowUpCollector_SortsExtensions(t *testing.T) {
@@ -155,4 +222,19 @@ func TestFollowUpCollector_Context(t *testing.T) {
 
 	require.Same(t, collector, FollowUpCollectorFromContext(ctx))
 	require.Nil(t, FollowUpCollectorFromContext(t.Context()))
+}
+
+func TestFollowUpCollector_CommandOrder(t *testing.T) {
+	collector := NewFollowUpCollector()
+	ctx := WithFollowUpCollector(t.Context(), collector)
+
+	require.Zero(t, FollowUpCommandOrderFromContext(ctx))
+
+	first := collector.NextCommandOrder()
+	second := collector.NextCommandOrder()
+	ctx = WithFollowUpCommandOrder(ctx, second)
+
+	require.Equal(t, uint64(1), first)
+	require.Equal(t, uint64(2), second)
+	require.Equal(t, uint64(2), FollowUpCommandOrderFromContext(ctx))
 }

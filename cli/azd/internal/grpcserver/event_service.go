@@ -214,10 +214,11 @@ func (s *eventService) createProjectEventHandler(
 			handlerFollowUp != nil {
 			if collector := commandresult.FollowUpCollectorFromContext(ctx); collector != nil {
 				collector.Add(commandresult.FollowUp{
-					ExtensionID: extension.Id,
-					EventName:   eventName,
-					Layer:       followUpLayer(args),
-					Text:        *handlerFollowUp,
+					ExtensionID:  extension.Id,
+					CommandOrder: commandresult.FollowUpCommandOrderFromContext(ctx),
+					EventName:    eventName,
+					Layer:        followUpLayer(args),
+					Text:         *handlerFollowUp,
 				})
 			}
 		}

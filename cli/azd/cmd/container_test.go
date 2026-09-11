@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -454,6 +455,7 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 		// Simulate the full workflow execution path: package → provision → deploy
 		// Verify each step's command runs with the child action context and fresh tree
 		var executedCommands []string
+		var commandOrders []uint64
 
 		newCommand := func() *cobra.Command {
 			rootCmd := &cobra.Command{Use: "root"}
@@ -467,6 +469,10 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 						require.True(t, middleware.IsChildAction(ctx),
 							"Step %q should have child action context", name)
 						executedCommands = append(executedCommands, name)
+						commandOrders = append(
+							commandOrders,
+							commandresult.FollowUpCommandOrderFromContext(ctx),
+						)
 						return nil
 					},
 				}
@@ -479,7 +485,10 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 		}
 
 		adapter := &workflowCmdAdapter{newCommand: newCommand}
-		ctx := context.WithoutCancel(t.Context())
+		ctx := commandresult.WithFollowUpCollector(
+			context.WithoutCancel(t.Context()),
+			commandresult.NewFollowUpCollector(),
+		)
 
 		// Simulate the default "up" workflow steps
 		steps := [][]string{
@@ -495,6 +504,8 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 
 		require.Equal(t, []string{"package", "provision", "deploy"}, executedCommands,
 			"All workflow steps should execute in order")
+		require.Equal(t, []uint64{1, 2, 3}, commandOrders,
+			"Workflow steps should receive increasing command orders")
 	})
 }
 

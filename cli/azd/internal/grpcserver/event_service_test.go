@@ -610,6 +610,53 @@ func TestEventService_createProjectEventHandler_CollectsLayerFollowUp(t *testing
 	require.Equal(t, "from-data", collector.Text())
 }
 
+func TestEventService_createProjectEventHandler_UsesCommandOrder(t *testing.T) {
+	service, _ := createTestEventService()
+	extension := createTestExtension()
+	projectConfig, err := service.lazyProject.GetValue()
+	require.NoError(t, err)
+
+	broker, streamCtx, cleanup := createBrokerForEventHandler(
+		t,
+		extension.Id,
+		func(msg *azdext.EventMessage) *azdext.EventMessage {
+			invoke := msg.GetInvokeProjectHandler()
+			require.NotNil(t, invoke)
+
+			return &azdext.EventMessage{
+				MessageType: &azdext.EventMessage_ProjectHandlerStatus{
+					ProjectHandlerStatus: &azdext.ProjectHandlerStatus{
+						EventName: invoke.EventName,
+						Status:    "completed",
+						FollowUp:  new("new"),
+					},
+				},
+			}
+		},
+	)
+	defer cleanup()
+
+	handler := service.createProjectEventHandler(
+		streamCtx,
+		extension,
+		"postpackage",
+		broker,
+	)
+	collector := commandresult.NewFollowUpCollector()
+	collector.Add(commandresult.FollowUp{
+		ExtensionID:  extension.Id,
+		CommandOrder: 1,
+		EventName:    "postprovision",
+		Text:         "old",
+	})
+	ctx := commandresult.WithFollowUpCollector(t.Context(), collector)
+	ctx = commandresult.WithFollowUpCommandOrder(ctx, 2)
+
+	err = handler(ctx, project.ProjectLifecycleEventArgs{Project: projectConfig})
+	require.NoError(t, err)
+	require.Equal(t, "new", collector.Text())
+}
+
 func TestEventService_createServiceEventHandler(t *testing.T) {
 	service, _ := createTestEventService()
 	extension := createTestExtension()

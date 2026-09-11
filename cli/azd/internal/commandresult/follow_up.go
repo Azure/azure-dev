@@ -12,27 +12,31 @@ import (
 )
 
 type followUpCollectorKey struct{}
+type followUpCommandOrderKey struct{}
 
 // FollowUp is one explicit contribution from a completed
 // project post* handler.
 type FollowUp struct {
-	ExtensionID string
-	EventName   string
-	Layer       string
-	Text        string
+	ExtensionID  string
+	CommandOrder uint64
+	EventName    string
+	Layer        string
+	Text         string
 }
 
 type followUpKey struct {
-	extensionID string
-	eventName   string
-	layer       string
+	extensionID  string
+	commandOrder uint64
+	eventName    string
+	layer        string
 }
 
 // FollowUpCollector gathers extension follow-up text for one
 // command.
 type FollowUpCollector struct {
-	mu            sync.RWMutex
-	contributions map[followUpKey]string
+	mu               sync.RWMutex
+	nextCommandOrder uint64
+	contributions    map[followUpKey]string
 }
 
 // NewFollowUpCollector creates an empty command follow-up
@@ -56,6 +60,29 @@ func FollowUpCollectorFromContext(ctx context.Context) *FollowUpCollector {
 	return collector
 }
 
+// NextCommandOrder returns the next workflow command order.
+func (c *FollowUpCollector) NextCommandOrder() uint64 {
+	if c == nil {
+		return 0
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.nextCommandOrder++
+	return c.nextCommandOrder
+}
+
+// WithFollowUpCommandOrder stores a workflow command order.
+func WithFollowUpCommandOrder(ctx context.Context, order uint64) context.Context {
+	return context.WithValue(ctx, followUpCommandOrderKey{}, order)
+}
+
+// FollowUpCommandOrderFromContext returns the workflow command order.
+func FollowUpCommandOrderFromContext(ctx context.Context) uint64 {
+	order, _ := ctx.Value(followUpCommandOrderKey{}).(uint64)
+	return order
+}
+
 // Add records an explicit follow-up. Empty text retracts that
 // extension's value for this event and layer. Callers must
 // invoke Add only when follow_up was set.
@@ -70,9 +97,10 @@ func (c *FollowUpCollector) Add(item FollowUp) {
 		c.contributions = make(map[followUpKey]string)
 	}
 	c.contributions[followUpKey{
-		extensionID: item.ExtensionID,
-		eventName:   item.EventName,
-		layer:       item.Layer,
+		extensionID:  item.ExtensionID,
+		commandOrder: item.CommandOrder,
+		eventName:    item.EventName,
+		layer:        item.Layer,
 	}] = item.Text
 }
 
@@ -80,9 +108,9 @@ func (c *FollowUpCollector) Add(item FollowUp) {
 // events replace earlier ones for the same extension.
 var postEventRank = map[string]int{
 	"postrestore":   1,
-	"postprovision": 2,
-	"postbuild":     3,
-	"postpackage":   4,
+	"postbuild":     2,
+	"postpackage":   3,
+	"postprovision": 4,
 	"postpublish":   5,
 	"postdeploy":    6,
 }
@@ -95,6 +123,10 @@ func eventOrder(eventName string) (int, string) {
 }
 
 func laterFollowUp(candidate, current followUpKey) bool {
+	if candidate.commandOrder != current.commandOrder {
+		return candidate.commandOrder > current.commandOrder
+	}
+
 	candidateRank, candidateEvent := eventOrder(candidate.eventName)
 	currentRank, currentEvent := eventOrder(current.eventName)
 	if candidateRank != currentRank {
@@ -106,11 +138,11 @@ func laterFollowUp(candidate, current followUpKey) bool {
 	return candidate.layer > current.layer
 }
 
-// Text resolves contributions after the command. For each
-// extension, the latest lifecycle event wins. Within that
-// event, the last layer in lexicographic order wins. Empty
-// winning text retracts the extension. Remaining texts are
-// joined in extension ID order.
+// Text resolves contributions after the command. Later workflow
+// commands win before lifecycle order is considered. Within one
+// command, later lifecycle events win, then the last layer in
+// lexicographic order. Empty winning text retracts the extension.
+// Remaining texts are joined in extension ID order.
 func (c *FollowUpCollector) Text() string {
 	if c == nil {
 		return ""

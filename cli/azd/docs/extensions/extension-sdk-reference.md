@@ -230,12 +230,13 @@ host.WithProjectEventHandler("postdeploy",
 The host appends the text to the parent command's human-readable completion
 message and combines contributions from multiple extensions in a deterministic
 order. It ignores `pre*` and failed handler messages. The text is opaque to the
-host and is not included in JSON output. Nil means no contribution. Within one
-command, a later lifecycle event replaces the earlier result from that
-extension. An empty `FollowUp` retracts that extension's earlier contribution
-without affecting other extensions. Concurrent layers of the same event
-resolve by stable layer identity, not completion time. Older hosts ignore this
-optional field.
+host and is not included in JSON output. Nil means no contribution. Within a
+custom workflow, a later command step replaces an earlier result from that
+extension. Within one command, lifecycle events use the stable order
+restore, build, package, provision, publish, deploy. An empty `FollowUp`
+retracts that extension's earlier contribution without affecting other
+extensions. Concurrent layers of the same event resolve by stable layer
+identity, not completion time. Older hosts ignore this optional field.
 
 ### NewMetadataCommand
 

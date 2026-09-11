@@ -218,12 +218,13 @@ host.WithProjectEventHandler("postprovision",
 azd appends the opaque text to the parent command's human-readable completion
 message. It combines contributions from multiple extensions, ignores
 `pre*` and failed handlers, and does not include the text in JSON output.
-Nil means no contribution. Within one command, a later lifecycle event
-replaces the earlier result from that extension. An empty `FollowUp` retracts
-that extension's earlier contribution without affecting other extensions.
-Concurrent layers of the same event resolve by stable layer identity, not
-completion time. Older hosts ignore this optional field. Service handlers do
-not contribute to this field.
+Nil means no contribution. In a custom workflow, a later command step replaces
+an earlier result from that extension. Within one command, lifecycle events use
+the stable order restore, build, package, provision, publish, deploy. An empty
+`FollowUp` retracts that extension's earlier contribution without affecting
+other extensions. Concurrent layers of the same event resolve by stable layer
+identity, not completion time. Older hosts ignore this optional field. Service
+handlers do not contribute to this field.
 
 #### Service Target Providers
 

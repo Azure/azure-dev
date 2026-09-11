@@ -8,7 +8,7 @@ contains only bounded classifications:
 
 | Attribute | Values | Description |
 |---|---|---|
-| `ext.agent.kind` | `hosted`, `prompt`, `prompt-voice`, `workflow`, `unknown` | Resolved agent kind. |
+| `ext.agent.kind` | `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, `unknown` | Resolved agent kind. |
 | `ext.agent.harness` | `none`, `github_copilot_preview`, `other` | Resolved prompt-agent harness classification. |
 | `ext.agent.operation` | Extension command path | Operation sharing the event's trace. |
 

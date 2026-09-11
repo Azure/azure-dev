@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -212,7 +213,7 @@ func TestValidateManagedNoPromptInputs(t *testing.T) {
 		},
 		{
 			name:     "no-prompt satisfied entirely by the manifest",
-			flags:    initFlags{noPrompt: true},
+			flags:    initFlags{noPrompt: true, projectResourceId: "/project"},
 			manifest: promptManifest("a", "gpt-4.1-mini"),
 		},
 		{
@@ -234,4 +235,19 @@ func TestValidateManagedNoPromptInputs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPromptProjectLayoutUsesParentProject(t *testing.T) {
+	projectRoot := t.TempDir()
+	cwd := filepath.Join(projectRoot, "nested")
+	require.NoError(t, os.MkdirAll(cwd, 0o750))
+
+	existing, target, rel, source, err := promptProjectLayout(
+		&azdext.ProjectConfig{Path: projectRoot}, nil, cwd, "assistant",
+	)
+	require.NoError(t, err)
+	require.True(t, existing)
+	require.Equal(t, ".", target)
+	require.Equal(t, "nested/assistant", rel)
+	require.Equal(t, filepath.Join(projectRoot, "nested", "assistant"), source)
 }

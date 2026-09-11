@@ -205,11 +205,9 @@ func runInitManaged(
 	// --model-deployment, --model) instead of prompting.
 	settings := project.DefaultPromptAgentSettings()
 
-	// Decide where the project lives and where the agent.yaml goes within it.
-	// When an azd project already exists in the cwd we add the agent as a new
-	// service in a subfolder; otherwise we scaffold a brand-new project folder
-	// named after the agent and place agent.yaml at its root.
-	existingProject := fileExists("azure.yaml")
+	// Decide where the project lives and where the agent definition goes within
+	// it. Project().Get resolves a parent project when init runs in a subfolder.
+	projectResponse, projectErr := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	folderName := sanitizeAgentName(agentName)
 	if folderName == "" || folderName == "." || folderName == ".." || strings.ContainsAny(folderName, `/\`) {
 		return exterrors.Validation(
@@ -219,13 +217,15 @@ func runInitManaged(
 		)
 	}
 
-	var projectTargetDir, serviceRelPath string
-	if existingProject {
-		projectTargetDir = "."
-		serviceRelPath = folderName
-	} else {
-		projectTargetDir = folderName
-		serviceRelPath = "."
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("resolving current directory: %w", err)
+	}
+	existingProject, projectTargetDir, serviceRelPath, serviceSourceDir, err := promptProjectLayout(
+		projectResponse.GetProject(), projectErr, cwd, folderName,
+	)
+	if err != nil {
+		return err
 	}
 
 	// Resolve the instructions before ensureProject changes the working
@@ -286,8 +286,8 @@ func runInitManaged(
 
 	// cwd is now the project root. Create the service directory when nested.
 	if serviceRelPath != "." {
-		if err := os.MkdirAll(serviceRelPath, osutil.PermissionDirectory); err != nil {
-			return fmt.Errorf("creating service folder %q: %w", serviceRelPath, err)
+		if err := os.MkdirAll(serviceSourceDir, osutil.PermissionDirectory); err != nil {
+			return fmt.Errorf("creating service folder %q: %w", serviceSourceDir, err)
 		}
 	}
 
@@ -315,7 +315,7 @@ func runInitManaged(
 	if deployment != nil && provisionDeployment {
 		deployments = []project.Deployment{*deployment}
 	}
-	resources, err := promptResourceServices(ctx, azdClient, &promptAgent, serviceRelPath)
+	resources, err := promptResourceServices(ctx, azdClient, &promptAgent, serviceSourceDir, serviceRelPath)
 	if err != nil {
 		return err
 	}
@@ -342,6 +342,32 @@ func runInitManaged(
 
 	printManagedInitSummary(agentName, model, harness, serviceRelPath, projectTargetDir, existingProject, &settings)
 	return nil
+}
+
+func promptProjectLayout(
+	projectConfig *azdext.ProjectConfig,
+	projectErr error,
+	cwd string,
+	folderName string,
+) (bool, string, string, string, error) {
+	if projectErr != nil || projectConfig == nil {
+		return false, folderName, ".", ".", nil
+	}
+	projectRoot, err := filepath.Abs(projectConfig.GetPath())
+	if err != nil {
+		return false, "", "", "", fmt.Errorf("resolving project root: %w", err)
+	}
+	relativeCwd, err := filepath.Rel(projectRoot, cwd)
+	if err != nil || relativeCwd == ".." || strings.HasPrefix(relativeCwd, ".."+string(filepath.Separator)) {
+		return false, "", "", "", exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"current directory is outside the resolved azd project",
+			"run the command from the project directory or one of its subdirectories",
+		)
+	}
+	serviceRelPath := filepath.ToSlash(filepath.Join(relativeCwd, folderName))
+	serviceSourceDir := filepath.Join(projectRoot, filepath.FromSlash(serviceRelPath))
+	return true, ".", serviceRelPath, serviceSourceDir, nil
 }
 
 func promptAgentForScaffold(
@@ -426,6 +452,17 @@ func validateManagedNoPromptInputs(flags *initFlags, manifest *promptAgentManife
 			exterrors.CodeInvalidParameter,
 			"--agent-name is required in non-interactive mode for prompt agents",
 			"pass --agent-name <name>, or supply a manifest with --manifest that declares name:",
+		)
+	}
+	deploymentName := strings.TrimSpace(flags.modelDeployment)
+	if deploymentName == "" {
+		deploymentName = manifest.model()
+	}
+	if deploymentName != "" && strings.TrimSpace(flags.projectResourceId) == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--model-deployment and manifest model references require an existing Foundry project",
+			"pass --project-id for the project containing that deployment, or use --model to deploy a new model",
 		)
 	}
 	if strings.TrimSpace(flags.model) == "" &&

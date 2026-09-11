@@ -148,6 +148,7 @@ func telemetryAgentKind(kind string) string {
 	case string(agent_yaml.AgentKindHosted),
 		string(agent_yaml.AgentKindPrompt),
 		string(agent_yaml.AgentKindPromptVoice),
+		string(agent_yaml.AgentKindVoice),
 		string(agent_yaml.AgentKindWorkflow):
 		return normalized
 	default:

@@ -58,14 +58,6 @@ func resolvePromptHarnessTarget(
 			azureContext.Scope.SubscriptionId = proj.SubscriptionId
 		}
 	}
-	if strings.TrimSpace(flags.projectResourceId) == "" && strings.TrimSpace(flags.modelDeployment) != "" {
-		return nil, false, nil, nil, exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			"--model-deployment requires an existing Foundry project",
-			"pass --project-id for the project containing that deployment, or use --model to deploy a new model",
-		)
-	}
-
 	// A non-interactive caller may have neither a project nor an Azure context
 	// yet (a fresh environment in CI). Rather than aborting after the project
 	// scaffold has already been written, mirror the hosted flow: finish the
@@ -97,6 +89,13 @@ func resolvePromptHarnessTarget(
 	}
 
 	if proj == nil {
+		if strings.TrimSpace(flags.modelDeployment) != "" {
+			return nil, false, nil, nil, exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"the selected new project cannot reuse an existing model deployment",
+				"select an existing project containing that deployment, or use --model to deploy a new model",
+			)
+		}
 		// Create-new path. Prompt for a location (a new project needs one) and
 		// signal Bicep to create the project + a model deployment.
 		fmt.Println(output.WithGrayFormat(

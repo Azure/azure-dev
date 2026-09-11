@@ -80,6 +80,7 @@ func promptResourceServices(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	promptAgent *agent_yaml.PromptAgent,
+	serviceSourceDir string,
 	serviceRelPath string,
 ) (foundryResources, error) {
 	resources := foundryResources{}
@@ -91,7 +92,7 @@ func promptResourceServices(
 		}
 	}
 
-	bundles, err := project.ScanSkillBundles(serviceRelPath)
+	bundles, err := project.ScanSkillBundles(serviceSourceDir)
 	if err != nil {
 		return foundryResources{}, err
 	}

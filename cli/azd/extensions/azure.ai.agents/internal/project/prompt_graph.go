@@ -59,9 +59,11 @@ type promptGraph struct {
 	settings *PromptAgentSettings
 
 	// env is a snapshot of azd environment values used to resolve targets.
-	env             map[string]string
-	projectServices map[string]*azdext.ServiceConfig
-	credential      azcore.TokenCredential
+	env               map[string]string
+	projectServices   map[string]*azdext.ServiceConfig
+	agentService      *azdext.ServiceConfig
+	dependencyEnabled dependencyEnabled
+	credential        azcore.TokenCredential
 
 	// bindings holds symbolic outputs produced by resolved nodes (for example
 	// "toolbox_mcp_url") that later nodes read.
@@ -189,6 +191,13 @@ func (g *promptGraph) agentNode() promptNode {
 		Kind: nodeAgent,
 		ID:   g.managed.Name,
 		Validate: func() error {
+			if err := g.managed.ValidateHarnessBlock(); err != nil {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					err.Error(),
+					"set harness.type, or remove the harness block to run as a plain prompt agent",
+				)
+			}
 			if err := agent_yaml.ValidateAgentName(g.managed.Name); err != nil {
 				return exterrors.Validation(
 					exterrors.CodeInvalidAgentManifest,
@@ -322,6 +331,8 @@ func (p *AgentServiceTargetProvider) resolvePromptAgentGraph(
 		return nil, err
 	}
 	g.projectServices = p.projectServices
+	g.agentService = p.serviceConfig
+	g.dependencyEnabled = p.dependencyEnabled
 	if err := g.resolve(ctx, progress); err != nil {
 		return nil, err
 	}

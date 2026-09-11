@@ -8,6 +8,8 @@ import (
 	"maps"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -95,4 +97,5 @@ func TestTelemetryClassificationsBoundCustomerValues(t *testing.T) {
 	require.Equal(t, agentKindUnknown, telemetryAgentKind("customer-kind"))
 	require.Equal(t, agentHarnessOther, telemetryAgentHarness("customer-harness"))
 	require.Equal(t, "files.upload", telemetryOperation("agent files upload"))
+	require.Equal(t, string(agent_yaml.AgentKindVoice), telemetryAgentKind(string(agent_yaml.AgentKindVoice)))
 }

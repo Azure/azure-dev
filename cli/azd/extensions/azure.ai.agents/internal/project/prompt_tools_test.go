@@ -16,6 +16,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestPromptToolEnvironmentServiceValuesOverrideProject(t *testing.T) {
+	t.Parallel()
+
+	merged := promptToolEnvironment(
+		map[string]string{"MCP_HOST": "project.example", "PROJECT_ONLY": "set"},
+		map[string]string{"MCP_HOST": "service.example"},
+	)
+	require.Equal(t, "service.example", merged["MCP_HOST"])
+	require.Equal(t, "set", merged["PROJECT_ONLY"])
+}
+
 func TestExpandPromptAgentTools(t *testing.T) {
 	t.Parallel()
 	agent := agent_yaml.PromptAgent{Tools: []any{

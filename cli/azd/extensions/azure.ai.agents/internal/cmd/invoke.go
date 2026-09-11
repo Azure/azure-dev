@@ -499,7 +499,9 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		defer azdClient.Close()
 		pctx, isPrompt, pErr := resolvePromptAgentService(ctx, azdClient, a.flags.name, a.noPrompt)
 		if pErr != nil {
-			return fmt.Errorf("failed to resolve prompt agent service: %w", pErr)
+			if _, ok := errors.AsType[agentServiceLookupNotFoundError](pErr); !ok || a.flags.name == "" {
+				return fmt.Errorf("failed to resolve prompt agent service: %w", pErr)
+			}
 		}
 		if isPrompt {
 			return a.runPromptInvoke(ctx, pctx)

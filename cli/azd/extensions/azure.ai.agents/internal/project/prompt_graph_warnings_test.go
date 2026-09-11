@@ -169,6 +169,18 @@ func TestAgentNode_RejectsMalformedTools(t *testing.T) {
 	require.Contains(t, err.Error(), "missing a 'type' key")
 }
 
+func TestAgentNodeRejectsHarnessWithoutType(t *testing.T) {
+	t.Parallel()
+
+	managed := &agent_yaml.PromptAgent{
+		Model: "gpt-4.1-mini", Instructions: "You are helpful.", Harness: &agent_yaml.PromptHarness{},
+	}
+	managed.Name = "agent-1"
+
+	err := (&promptGraph{managed: managed, bindings: map[string]any{}}).agentNode().Validate()
+	require.ErrorContains(t, err, "harness with no type")
+}
+
 // TestAgentNode_AllowsUnrecognizedToolType verifies an unfamiliar tool type is
 // not a hard failure. `tools:` is pass-through so authors can use service
 // features newer than their azd build; failing here would make every new tool

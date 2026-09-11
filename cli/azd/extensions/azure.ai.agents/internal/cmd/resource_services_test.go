@@ -740,7 +740,7 @@ func TestPromptResourceServices(t *testing.T) {
 			Connections: []string{"search"},
 		}
 
-		got, err := promptResourceServices(t.Context(), client, agent, dir)
+		got, err := promptResourceServices(t.Context(), client, agent, dir, dir)
 		require.NoError(t, err)
 
 		require.Empty(t, got.Connections)
@@ -762,7 +762,8 @@ func TestPromptResourceServices(t *testing.T) {
 		// A dangling uses: entry would fail the project load, so a toolbox with
 		// no service in azure.yaml contributes no edge at all.
 		client := newProjectRecorderClient(t, &recordingProjectServer{})
-		got, err := promptResourceServices(t.Context(), client, agent, t.TempDir())
+		dir := t.TempDir()
+		got, err := promptResourceServices(t.Context(), client, agent, dir, dir)
 		require.NoError(t, err)
 		assert.Empty(t, got.ExtraUses)
 
@@ -771,7 +772,7 @@ func TestPromptResourceServices(t *testing.T) {
 				"my-toolbox": {Name: "my-toolbox", Host: AiToolboxHost},
 			},
 		})
-		got, err = promptResourceServices(t.Context(), withToolbox, agent, t.TempDir())
+		got, err = promptResourceServices(t.Context(), withToolbox, agent, dir, dir)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"my-toolbox"}, got.ExtraUses)
 
@@ -783,7 +784,7 @@ func TestPromptResourceServices(t *testing.T) {
 				"toolbox-auth": {Name: "toolbox-auth", Host: AiConnectionHost},
 			},
 		})
-		got, err = promptResourceServices(t.Context(), withConnection, agent, t.TempDir())
+		got, err = promptResourceServices(t.Context(), withConnection, agent, dir, dir)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"my-toolbox"}, got.ExtraUses)
 	})

@@ -351,7 +351,10 @@ func skillsShellNode(
 			}
 			return validateSkillBundleInstructions(skills)
 		},
-		Resolve: func(_ context.Context) error {
+		Resolve: func(ctx context.Context) error {
+			if err := validateSkillDependencies(ctx, g, skills); err != nil {
+				return err
+			}
 			resolved, err := resolveSkillMarkers(skills, g.projectEndpoint(), g.env)
 			if err != nil {
 				return err
@@ -382,7 +385,10 @@ func skillsHarnessNode(
 		Kind:     nodeSkill,
 		ID:       promptSkillsDirName,
 		Validate: func() error { return validateSkillBundleInstructions(skills) },
-		Resolve: func(_ context.Context) error {
+		Resolve: func(ctx context.Context) error {
+			if err := validateSkillDependencies(ctx, g, skills); err != nil {
+				return err
+			}
 			resolved, err := resolveSkillMarkers(skills, g.projectEndpoint(), g.env)
 			if err != nil {
 				return err
@@ -393,6 +399,47 @@ func skillsHarnessNode(
 			return nil
 		},
 	}
+}
+
+func validateSkillDependencies(ctx context.Context, g *promptGraph, skills []skillBundle) error {
+	if g == nil || g.agentService == nil || g.projectServices == nil {
+		return nil
+	}
+	for _, skill := range skills {
+		name := strings.TrimSpace(skill.Meta.Name)
+		if name == "" {
+			name = skill.Dir
+		}
+		service, exists := g.projectServices[name]
+		if !exists || service.GetHost() != foundrySkillHost {
+			return exterrors.Dependency(
+				exterrors.CodeFoundryDependencyNotReady,
+				fmt.Sprintf("skill %q has no enabled %s sibling service", name, foundrySkillHost),
+				fmt.Sprintf("add an %s service named %q and run 'azd deploy --all'", foundrySkillHost, name),
+			)
+		}
+		if !slices.Contains(g.agentService.GetUses(), name) {
+			return exterrors.Dependency(
+				exterrors.CodeFoundryDependencyNotReady,
+				fmt.Sprintf("skill service %q is not declared in agent service %q uses", name, g.agentService.GetName()),
+				fmt.Sprintf("add %q to the agent service's uses list and run 'azd deploy --all'", name),
+			)
+		}
+		if g.dependencyEnabled != nil {
+			enabled, err := g.dependencyEnabled(ctx, name)
+			if err != nil {
+				return err
+			}
+			if !enabled {
+				return exterrors.Dependency(
+					exterrors.CodeFoundryDependencyNotReady,
+					fmt.Sprintf("skill service %q is disabled by its deployment condition", name),
+					"enable the skill dependency and run 'azd deploy --all'",
+				)
+			}
+		}
+	}
+	return nil
 }
 
 func addResolvedPromptSkill(agent *agent_yaml.PromptAgent, name, version string) {

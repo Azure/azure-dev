@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -164,6 +165,12 @@ func expandPromptAgentTools(managed *agent_yaml.PromptAgent, env map[string]stri
 		managed.Tools[i] = expanded
 	}
 	return nil
+}
+
+func promptToolEnvironment(projectEnv, serviceEnv map[string]string) map[string]string {
+	merged := maps.Clone(projectEnv)
+	maps.Copy(merged, serviceEnv)
+	return merged
 }
 
 func expandPromptAgentToolValue(value any, env map[string]string, path string) (any, error) {
@@ -417,6 +424,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	if err != nil {
 		return nil, fmt.Errorf("reading the azd environment: %w", err)
 	}
+	toolEnv := promptToolEnvironment(env, serviceConfig.GetEnvironment())
 
 	settings, err := p.promptAgentSettings(env)
 	if err != nil {
@@ -429,7 +437,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	if err := expandPromptAgentPolicies(&managed, env); err != nil {
 		return nil, err
 	}
-	if err := expandPromptAgentTools(&managed, env); err != nil {
+	if err := expandPromptAgentTools(&managed, toolEnv); err != nil {
 		return nil, err
 	}
 

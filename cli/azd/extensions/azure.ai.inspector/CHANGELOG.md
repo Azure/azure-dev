@@ -2,6 +2,12 @@
 
 <!-- cspell:ignore herohua -->
 
+## 1.0.0-beta.7 (2026-09-10)
+
+### Features Added
+
+- [[#9943]](https://github.com/Azure/azure-dev/pull/9943) Refresh the embedded Agent Inspector UI with run filtering, improved accessibility and exports, connection recovery, and detailed failure timelines. Thanks @herohua for the contribution!
+
 ## 1.0.0-beta.6 (2026-09-04)
 
 ### Features Added

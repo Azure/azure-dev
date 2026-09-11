@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 
 	"azure.ai.rle/internal/project"
@@ -24,6 +25,7 @@ type initAction struct {
 	cmd        *cobra.Command
 	flags      *rleInitFlags
 	folderName string
+	noPrompt   bool
 }
 
 type rleSampleCatalog interface {
@@ -38,15 +40,24 @@ var loadRleSampleCatalogFunc = func() (rleSampleCatalog, error) {
 
 var selectRleSampleFunc = selectRleSample
 
-func newInitCommand() *cobra.Command {
+func newInitCommand(noPrompt *bool) *cobra.Command {
 	flags := &rleInitFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "init <folder-name>",
+		Use:   "init [folder-name]",
 		Short: "Initialize a local RLE environment from a sample",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return (&initAction{cmd: cmd, flags: flags, folderName: args[0]}).Run()
+			folderName := ""
+			if len(args) == 1 {
+				folderName = args[0]
+			}
+			return (&initAction{
+				cmd:        cmd,
+				flags:      flags,
+				folderName: folderName,
+				noPrompt:   noPrompt != nil && *noPrompt,
+			}).Run()
 		},
 	}
 
@@ -54,7 +65,7 @@ func newInitCommand() *cobra.Command {
 		var help strings.Builder
 		help.WriteString("Initialize a local RLE environment from a sample\n")
 		help.WriteString("Usage:\n")
-		help.WriteString("  rle init <folder-name> [flags]\n")
+		help.WriteString("  rle init [folder-name] [flags]\n")
 		help.WriteString("Flags:\n")
 		help.WriteString("      --force     Overwrite generated files in an existing non-empty session directory\n")
 		help.WriteString("  -h, --help      help for init\n")
@@ -69,13 +80,20 @@ func newInitCommand() *cobra.Command {
 }
 
 func (a *initAction) Run() error {
-	folderName, err := project.ValidateEnvironmentName(a.folderName)
-	if err != nil {
+	if a.noPrompt && a.folderName == "" {
 		return &azdext.LocalError{
-			Message:    err.Error(),
-			Code:       "rle_invalid_environment_name",
+			Message:    "A sample name is required when prompts are disabled.",
+			Code:       "rle_sample_name_required",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Use snake_case starting with a letter, for example code_rl.",
+			Suggestion: "Run azd ai rle init <sample-name> --no-prompt.",
+		}
+	}
+	folderName := a.folderName
+	if folderName != "" {
+		var err error
+		folderName, err = validateRleFolderName(folderName)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -86,9 +104,19 @@ func (a *initAction) Run() error {
 	defer func() {
 		_ = catalog.Close()
 	}()
-	sampleName, err := selectRleSampleFunc(a.cmd.Context(), catalog.SampleNames())
+	requestedSample := ""
+	if a.noPrompt {
+		requestedSample = folderName
+	}
+	sampleName, err := resolveRleSample(a.cmd.Context(), requestedSample, catalog.SampleNames())
 	if err != nil {
 		return err
+	}
+	if folderName == "" {
+		folderName, err = validateRleFolderName(sampleName)
+		if err != nil {
+			return err
+		}
 	}
 	sessionDir, err := catalog.Copy(sampleName, folderName, ".", a.flags.force)
 	if err != nil {
@@ -105,6 +133,34 @@ func (a *initAction) Run() error {
 	}
 	_, err = fmt.Fprint(a.cmd.OutOrStdout(), initNextSteps(displayDir, runtime.GOOS, os.Getenv("SHELL")))
 	return err
+}
+
+func validateRleFolderName(folderName string) (string, error) {
+	validated, err := project.ValidateEnvironmentName(folderName)
+	if err == nil {
+		return validated, nil
+	}
+	return "", &azdext.LocalError{
+		Message:    err.Error(),
+		Code:       "rle_invalid_environment_name",
+		Category:   azdext.LocalErrorCategoryUser,
+		Suggestion: "Use snake_case starting with a letter, for example code_rl.",
+	}
+}
+
+func resolveRleSample(ctx context.Context, requestedSample string, sampleNames []string) (string, error) {
+	if requestedSample == "" {
+		return selectRleSampleFunc(ctx, sampleNames)
+	}
+	if slices.Contains(sampleNames, requestedSample) {
+		return requestedSample, nil
+	}
+	return "", &azdext.LocalError{
+		Message:    fmt.Sprintf("RLE sample %q was not found.", requestedSample),
+		Code:       "rle_sample_not_found",
+		Category:   azdext.LocalErrorCategoryUser,
+		Suggestion: fmt.Sprintf("Choose one of the available samples: %s.", strings.Join(sampleNames, ", ")),
+	}
 }
 
 func selectRleSample(ctx context.Context, sampleNames []string) (string, error) {

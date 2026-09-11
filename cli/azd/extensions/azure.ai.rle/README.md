@@ -81,16 +81,28 @@ az acr login --name <registry>
 
 ### 1. Initialize an environment session
 
-Choose the local folder name:
+Select a sample and use its name for the local folder and RLE environment:
+
+```powershell
+azd ai rle init
+```
+
+`init` reads the available environments from
+[rle-samples](https://github.com/sujit-kamireddy/rle-samples) and prompts you to select one.
+Only the selected sample is downloaded. For example, selecting `code_rl` copies it into `.\code_rl`
+and stores `code_rl` as the RLE environment name in `.azd-rle.json`.
+
+To use a different local folder and RLE environment name, provide it before selecting a sample:
 
 ```powershell
 azd ai rle init my_environment
 ```
 
-`init` reads the available environments from
-[rle-samples](https://github.com/sujit-kamireddy/rle-samples) and prompts you to select one.
-Only the selected sample is downloaded and copied into `.\my_environment`, and `.azd-rle.json`
-stores `my_environment` as the RLE environment name.
+When prompts are disabled, the required positional name selects the sample and is also used for the folder:
+
+```powershell
+azd ai rle init code_rl --no-prompt
+```
 
 The copied session does not keep `.git` metadata from the sample repository.
 

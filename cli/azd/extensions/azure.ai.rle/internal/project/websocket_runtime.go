@@ -6,8 +6,10 @@ package project
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -26,6 +28,8 @@ const (
 	webSocketDrainTimeout     = 60 * time.Second
 )
 
+var defaultWebSocketHandshakeRetryDelays = []time.Duration{time.Second, 2 * time.Second}
+
 type WebSocketRuntimeSession struct {
 	baseURL               string
 	timeout               int
@@ -35,6 +39,7 @@ type WebSocketRuntimeSession struct {
 	connection            *websocket.Conn
 	connectionDone        chan struct{}
 	keepAliveInterval     time.Duration
+	handshakeRetryDelays  []time.Duration
 	drainTimeout          time.Duration
 	terminalError         error
 	closed                bool
@@ -50,6 +55,7 @@ func NewWebSocketRuntimeSession(
 		timeout:               timeout,
 		authorizationProvider: authorizationProvider,
 		keepAliveInterval:     webSocketPingInterval,
+		handshakeRetryDelays:  defaultWebSocketHandshakeRetryDelays,
 		drainTimeout:          webSocketDrainTimeout,
 	}
 }
@@ -152,10 +158,17 @@ func (c *WebSocketRuntimeSession) exchange(
 ) (string, error) {
 	c.exchangeMu.Lock()
 	defer c.exchangeMu.Unlock()
-	if err := ctx.Err(); err != nil {
+	deadline, hasDeadline := operationDeadline(ctx, c.timeout)
+	operationCtx := ctx
+	cancel := func() {}
+	if hasDeadline {
+		operationCtx, cancel = context.WithDeadline(ctx, deadline)
+	}
+	defer cancel()
+	if err := operationCtx.Err(); err != nil {
 		return "", err
 	}
-	if err := c.connect(ctx); err != nil {
+	if err := c.connect(operationCtx); err != nil {
 		return "", err
 	}
 	c.mu.Lock()
@@ -187,11 +200,6 @@ func (c *WebSocketRuntimeSession) exchange(
 		}
 	}
 
-	deadline, hasDeadline := operationDeadline(ctx, c.timeout)
-	if !cancelAfterSend && !hasDeadline {
-		deadline = time.Now().Add(c.drainTimeout)
-		hasDeadline = true
-	}
 	if hasDeadline {
 		if err := connection.SetWriteDeadline(deadline); err != nil {
 			return "", c.failConnection(connection, fmt.Errorf("set OpenEnv WebSocket write deadline: %w", err))
@@ -210,28 +218,30 @@ func (c *WebSocketRuntimeSession) exchange(
 			fmt.Errorf("send OpenEnv WebSocket %s request: %w", operation, err),
 		)
 	}
-	var exchangeDone chan struct{}
-	var cancellationHandled chan struct{}
-	if cancelAfterSend {
-		exchangeDone = make(chan struct{})
-		cancellationHandled = make(chan struct{})
-		go func() {
-			select {
-			case <-exchangeDone:
-			case <-ctx.Done():
+	exchangeDone := make(chan struct{})
+	cancellationHandled := make(chan struct{})
+	go func() {
+		select {
+		case <-exchangeDone:
+		case <-ctx.Done():
+			if cancelAfterSend {
 				_ = c.failConnection(
 					connection,
 					fmt.Errorf("OpenEnv WebSocket %s request canceled: %w", operation, ctx.Err()),
 				)
+			} else {
+				drainDeadline := time.Now().Add(c.drainTimeout)
+				if hasDeadline && deadline.Before(drainDeadline) {
+					drainDeadline = deadline
+				}
+				_ = connection.SetReadDeadline(drainDeadline)
 			}
-			close(cancellationHandled)
-		}()
-	}
+		}
+		close(cancellationHandled)
+	}()
 	messageType, response, err := connection.ReadMessage()
-	if cancelAfterSend {
-		close(exchangeDone)
-		<-cancellationHandled
-	}
+	close(exchangeDone)
+	<-cancellationHandled
 	if err != nil {
 		return "", c.failConnection(
 			connection,
@@ -266,6 +276,13 @@ func (c *WebSocketRuntimeSession) connect(ctx context.Context) error {
 		return nil
 	}
 
+	connectCtx := ctx
+	cancel := func() {}
+	if deadline, hasDeadline := operationDeadline(ctx, c.timeout); hasDeadline {
+		connectCtx, cancel = context.WithDeadline(ctx, deadline)
+	}
+	defer cancel()
+
 	endpoint, err := RuntimeWebSocketURL(c.baseURL)
 	if err != nil {
 		return err
@@ -286,14 +303,24 @@ func (c *WebSocketRuntimeSession) connect(ctx context.Context) error {
 	if c.timeout > 0 && time.Duration(c.timeout)*time.Second < dialer.HandshakeTimeout {
 		dialer.HandshakeTimeout = time.Duration(c.timeout) * time.Second
 	}
-	connection, response, err := dialer.DialContext(ctx, endpoint, headers)
-	if err != nil {
+
+	for attempt := 0; ; attempt++ {
+		connection, response, err := dialer.DialContext(connectCtx, endpoint, headers)
+		if err == nil {
+			connection.SetReadLimit(maxWebSocketMessageBytes)
+			c.connection = connection
+			c.connectionDone = make(chan struct{})
+			go c.keepAlive(connection, c.connectionDone)
+			return nil
+		}
 		detail := ""
+		retryable := isRetryableWebSocketHandshakeError(err)
 		if response != nil {
+			retryable = isRetryableWebSocketHandshakeStatus(response.StatusCode)
 			detail = readHealthErrorDetail(response.Body)
 			_ = response.Body.Close()
 		}
-		return &azdext.LocalError{
+		connectionError := &azdext.LocalError{
 			Message: fmt.Sprintf(
 				"Environment runtime WebSocket connection failed%s: %v",
 				detail,
@@ -303,12 +330,38 @@ func (c *WebSocketRuntimeSession) connect(ctx context.Context) error {
 			Category:   azdext.LocalErrorCategoryUser,
 			Suggestion: "Check the remote RLE instance status and retry invoke.",
 		}
+		if !retryable || attempt >= len(c.handshakeRetryDelays) {
+			return connectionError
+		}
+		timer := time.NewTimer(c.handshakeRetryDelays[attempt])
+		select {
+		case <-timer.C:
+		case <-connectCtx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return connectCtx.Err()
+		}
 	}
-	connection.SetReadLimit(maxWebSocketMessageBytes)
-	c.connection = connection
-	c.connectionDone = make(chan struct{})
-	go c.keepAlive(connection, c.connectionDone)
-	return nil
+}
+
+func isRetryableWebSocketHandshakeError(err error) bool {
+	_, ok := errors.AsType[net.Error](err)
+	return ok
+}
+
+func isRetryableWebSocketHandshakeStatus(statusCode int) bool {
+	switch statusCode {
+	case http.StatusRequestTimeout,
+		http.StatusTooManyRequests,
+		http.StatusInternalServerError,
+		http.StatusBadGateway,
+		http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *WebSocketRuntimeSession) keepAlive(connection *websocket.Conn, done <-chan struct{}) {

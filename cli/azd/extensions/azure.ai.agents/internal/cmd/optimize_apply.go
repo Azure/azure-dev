@@ -5,10 +5,10 @@
 // an optimization candidate and applies it locally to the azd project.
 //
 // It writes the candidate's instruction, skills, and tool definitions
-// into .agent_configs/<candidate-id>/, updates the agent definition's
+// into .agent_configs/<candidate-id>/ and updates the agent definition's
 // environment variables (inline in azure.yaml, or legacy agent.yaml on
-// disk), and shows a diff summary (prompt and skills) against the
-// baseline.
+// disk). For managed prompt agents, it also writes the candidate's model,
+// instructions, and tools into the inline azure.yaml definition.
 
 package cmd
 
@@ -55,6 +55,9 @@ func newOptimizeApplyCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Apply optimized candidate configuration locally to your azd project.",
 		Long: `Download the optimized configuration and skill files from an optimization
 candidate and write them into your local azd project under .agent_configs/.
+
+For managed prompt agents, this also updates the model, instructions, and tools
+in the inline azure.yaml service definition.
 
 After applying, run 'azd deploy' to deploy the optimized agent version.`,
 		Example: `  # Apply candidate config locally, then deploy
@@ -173,18 +176,6 @@ func (a *OptimizeApplyAction) apply(
 	if err != nil {
 		return fmt.Errorf("failed to fetch candidate config: %w", err)
 	}
-	var candidateMutations map[string]any
-	if isPromptAgent {
-		jobStatus, err := optClient.GetOptimizeStatus(ctx, jobID)
-		if err != nil {
-			return fmt.Errorf("failed to fetch optimization job: %w", err)
-		}
-		candidateMutations, err = findCandidateMutations(jobStatus, a.flags.candidate)
-		if err != nil {
-			return err
-		}
-	}
-
 	if err := os.MkdirAll(candidateDir, 0750); err != nil {
 		return fmt.Errorf("failed to create optimization directory: %w", err)
 	}
@@ -204,15 +195,14 @@ func (a *OptimizeApplyAction) apply(
 	fmt.Fprintf(out, "  → %s\n", filepath.Join(candidateDir, opt_eval.MetadataFile))
 
 	// Step 3: Prompt agents deploy directly from their inline azure.yaml
-	// definition, so persist the candidate's supported mutations there.
+	// definition, so persist the candidate's complete supported configuration.
 	if isPromptAgent {
-		if err := persistPromptAgentCandidateMutations(
+		if err := persistPromptAgentCandidateConfig(
 			ctx,
 			azdClient,
 			svc,
 			project.Path,
 			candidateConfig,
-			candidateMutations,
 		); err != nil {
 			return err
 		}
@@ -286,39 +276,13 @@ func (a *OptimizeApplyAction) apply(
 	return nil
 }
 
-func findCandidateMutations(
-	status *optimize_api.OptimizeJobStatus,
-	candidateRef string,
-) (map[string]any, error) {
-	if status == nil {
-		return nil, fmt.Errorf("optimization job status is unavailable")
-	}
-	candidates := status.Candidates()
-	for i := range candidates {
-		candidate := &candidates[i]
-		if candidate.CandidateID == candidateRef || candidate.Name == candidateRef {
-			return candidate.Mutations, nil
-		}
-	}
-	return nil, fmt.Errorf(
-		"candidate %q was not found in optimization job %q",
-		candidateRef,
-		status.ID,
-	)
-}
-
-func persistPromptAgentCandidateMutations(
+func persistPromptAgentCandidateConfig(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	svc *azdext.ServiceConfig,
 	projectPath string,
 	candidateConfig json.RawMessage,
-	mutations map[string]any,
 ) error {
-	if len(mutations) == 0 {
-		return nil
-	}
-
 	if _, found, err := projectpkg.PromptAgentFromResolvedService(svc, projectPath); err != nil {
 		return fmt.Errorf("failed to read prompt agent definition: %w", err)
 	} else if !found {
@@ -330,20 +294,27 @@ func persistPromptAgentCandidateMutations(
 		return fmt.Errorf("failed to parse candidate config: %w", err)
 	}
 
-	updates := map[string]any{}
-	if hasCandidateMutation(mutations, "system_prompt", "systemPrompt", "instructions") {
-		if value, found := candidateConfigValue(config, "system_prompt", "systemPrompt", "instructions"); found {
-			updates["instructions"] = value
-		}
+	model, found := candidateConfigValue(config, "model")
+	if !found || model == nil {
+		return fmt.Errorf("candidate config does not contain a model")
 	}
-	if hasCandidateMutation(mutations, "model") {
-		if value, found := candidateConfigValue(config, "model"); found {
-			updates["model"] = value
-		}
+	if modelName, ok := model.(string); !ok || strings.TrimSpace(modelName) == "" {
+		return fmt.Errorf("candidate config contains an invalid model")
 	}
-	if hasCandidateMutation(mutations, "tools") {
-		if value, found := candidateConfigValue(config, "tools"); found {
-			updates["tools"] = value
+
+	// Skills are intentionally excluded because skill optimization is not yet
+	// supported for managed prompt agents. Prompt deploy resolves azure.ai.skill
+	// services from the project instead of candidate files under .agent_configs.
+	updates := map[string]any{"model": model}
+	var removals []string
+	for path, keys := range map[string][]string{
+		"instructions": {"system_prompt", "systemPrompt", "instructions"},
+		"tools":        {"tools"},
+	} {
+		if value, found := candidateConfigValue(config, keys...); found && value != nil {
+			updates[path] = value
+		} else {
+			removals = append(removals, path)
 		}
 	}
 
@@ -368,16 +339,25 @@ func persistPromptAgentCandidateMutations(
 		}
 	}
 
-	return nil
-}
-
-func hasCandidateMutation(mutations map[string]any, keys ...string) bool {
-	for _, key := range keys {
-		if _, found := mutations[key]; found {
-			return true
+	slices.Sort(removals)
+	for _, path := range removals {
+		if _, err := azdClient.Project().UnsetServiceConfig(
+			ctx,
+			&azdext.UnsetServiceConfigRequest{
+				ServiceName: svc.Name,
+				Path:        path,
+			},
+		); err != nil {
+			return fmt.Errorf(
+				"removing prompt agent property %q from %q in azure.yaml: %w",
+				path,
+				svc.Name,
+				err,
+			)
 		}
 	}
-	return false
+
+	return nil
 }
 
 func candidateConfigValue(config map[string]any, keys ...string) (any, bool) {

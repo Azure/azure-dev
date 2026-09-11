@@ -314,31 +314,7 @@ func TestPersistInlineAgentEnvironmentKeepsLegacyOnEnvFailure(
 	require.Empty(t, server.added)
 }
 
-func TestFindCandidateMutations(t *testing.T) {
-	t.Parallel()
-
-	status := &optimize_api.OptimizeJobStatus{
-		ID: "job-1",
-		Result: &optimize_api.OptimizeResult{
-			Candidates: []optimize_api.CandidateResult{
-				{
-					Name:        "candidate-1",
-					CandidateID: "candidate-id-1",
-					Mutations:   map[string]any{"system_prompt": "updated"},
-				},
-			},
-		},
-	}
-
-	mutations, err := findCandidateMutations(status, "candidate-id-1")
-	require.NoError(t, err)
-	require.Equal(t, map[string]any{"system_prompt": "updated"}, mutations)
-
-	_, err = findCandidateMutations(status, "missing")
-	require.ErrorContains(t, err, `candidate "missing" was not found`)
-}
-
-func TestPersistPromptAgentCandidateMutations(t *testing.T) {
+func TestPersistPromptAgentCandidateConfig(t *testing.T) {
 	t.Parallel()
 
 	props, err := projectpkg.PromptAgentDefinitionToServiceProperties(
@@ -366,17 +342,16 @@ func TestPersistPromptAgentCandidateMutations(t *testing.T) {
 		"tools": []any{
 			map[string]any{"type": "code_interpreter"},
 		},
+		"skills": []any{
+			map[string]any{"name": "unsupported-prompt-skill"},
+		},
 	})
-	require.NoError(t, persistPromptAgentCandidateMutations(
+	require.NoError(t, persistPromptAgentCandidateConfig(
 		t.Context(),
 		client,
 		svc,
 		t.TempDir(),
 		candidateConfig,
-		map[string]any{
-			"system_prompt": []any{"rewrite"},
-			"tools":         []any{"update descriptions"},
-		},
 	))
 
 	server.mu.Lock()
@@ -387,10 +362,85 @@ func TestPersistPromptAgentCandidateMutations(t *testing.T) {
 	require.Equal(t, []any{
 		map[string]any{"type": "code_interpreter"},
 	}, server.configValues["tools"].value)
-	require.NotContains(t, server.configValues, "model")
+	require.Equal(t, "gpt-5", server.configValues["model"].value)
+	require.NotContains(t, server.configValues, "skills")
+	require.Empty(t, server.unsetPaths)
 }
 
-func TestPersistPromptAgentCandidateMutationsSkipsVoiceAgent(t *testing.T) {
+func TestPersistPromptAgentCandidateConfigRemovesAbsentOptionalFields(t *testing.T) {
+	t.Parallel()
+
+	props, err := projectpkg.PromptAgentDefinitionToServiceProperties(
+		agent_yaml.PromptAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind: agent_yaml.AgentKindPrompt,
+				Name: "prompt-agent",
+			},
+			Model:        "gpt-5",
+			Instructions: "Optimized instructions.",
+			Tools:        []any{map[string]any{"type": "code_interpreter"}},
+		},
+	)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "prompt-agent",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+
+	require.NoError(t, persistPromptAgentCandidateConfig(
+		t.Context(),
+		client,
+		svc,
+		t.TempDir(),
+		mustMarshal(t, map[string]any{"model": "gpt-4.1-mini"}),
+	))
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Equal(t, "gpt-4.1-mini", server.configValues["model"].value)
+	require.ElementsMatch(t, []string{"instructions", "tools"}, server.unsetPaths)
+}
+
+func TestPersistPromptAgentCandidateConfigRejectsMissingModel(t *testing.T) {
+	t.Parallel()
+
+	props, err := projectpkg.PromptAgentDefinitionToServiceProperties(
+		agent_yaml.PromptAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind: agent_yaml.AgentKindPrompt,
+				Name: "prompt-agent",
+			},
+			Model: "gpt-4.1-mini",
+		},
+	)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "prompt-agent",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+
+	err = persistPromptAgentCandidateConfig(
+		t.Context(),
+		client,
+		svc,
+		t.TempDir(),
+		mustMarshal(t, map[string]any{"system_prompt": "Missing model."}),
+	)
+	require.ErrorContains(t, err, "candidate config does not contain a model")
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Empty(t, server.configValues)
+	require.Empty(t, server.unsetPaths)
+}
+
+func TestPersistPromptAgentCandidateConfigSkipsVoiceAgent(t *testing.T) {
 	t.Parallel()
 
 	props, err := projectpkg.VoiceAgentDefinitionToServiceProperties(
@@ -412,13 +462,12 @@ func TestPersistPromptAgentCandidateMutationsSkipsVoiceAgent(t *testing.T) {
 	server := &recordingProjectServer{}
 	client := newProjectRecorderClient(t, server)
 
-	require.NoError(t, persistPromptAgentCandidateMutations(
+	require.NoError(t, persistPromptAgentCandidateConfig(
 		t.Context(),
 		client,
 		svc,
 		t.TempDir(),
 		json.RawMessage(`not-json`),
-		map[string]any{"system_prompt": "updated"},
 	))
 
 	server.mu.Lock()

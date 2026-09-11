@@ -1,0 +1,47 @@
+name: ext-azure-ai-evaluations-ci
+
+on:
+  pull_request:
+    paths:
+      - "cli/azd/extensions/azure.ai.evaluations/**"
+      - ".github/workflows/lint-ext-azure-ai-evaluations.yml"
+      - ".github/workflows/verify-ext-providers.yml"
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write # required by reusable workflow lint-go.yml
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint-go.yml
+    with:
+      working-directory: cli/azd/extensions/azure.ai.evaluations
+
+  verify-providers:
+    uses: ./.github/workflows/verify-ext-providers.yml
+    with:
+      working-directory: cli/azd/extensions/azure.ai.evaluations
+
+  test:
+    name: unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/azd/extensions/azure.ai.evaluations/go.mod
+          cache-dependency-path: cli/azd/extensions/azure.ai.evaluations/go.sum
+      # The untagged suite needs no credentials. The tagged suites are only
+      # compiled, so a live test that stopped building is caught here rather
+      # than the next time somebody runs one.
+      - name: go test
+        working-directory: cli/azd/extensions/azure.ai.evaluations
+        run: go test ./...
+      - name: type-check tagged suites
+        working-directory: cli/azd/extensions/azure.ai.evaluations
+        run: go vet -tags=live,hero ./...

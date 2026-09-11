@@ -2503,6 +2503,7 @@ func (p *AgentServiceTargetProvider) finalizeDeploy(
 		azdEnv["FOUNDRY_PROJECT_ENDPOINT"],
 		activityProfile,
 		protocols,
+		p.projectDeclaresEvalService(ctx),
 	)
 
 	// Best-effort: enrich the last endpoint artifact's note with a
@@ -3597,8 +3598,39 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	}, nil
 }
 
+// evalServiceHost is the host the evaluations extension registers. Matched by
+// value rather than imported: the two extensions are separate modules, and one
+// string does not justify a dependency between them.
+const evalServiceHost = "azure.ai.eval"
+
+// projectDeclaresEvalService reports whether azure.yaml already wires up
+// evaluations.
+//
+// Best effort. A project azd cannot be asked about is treated as having none,
+// which is the state the note was written for -- being unable to check is not a
+// reason to withhold guidance that is usually right.
+func (p *AgentServiceTargetProvider) projectDeclaresEvalService(ctx context.Context) bool {
+	if p.azdClient == nil {
+		return false
+	}
+	resp, err := p.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || resp.GetProject() == nil {
+		return false
+	}
+	for _, svc := range resp.GetProject().GetServices() {
+		if svc.GetHost() == evalServiceHost {
+			return true
+		}
+	}
+	return false
+}
+
 // deployArtifacts constructs the artifacts list for deployment results.
 // It produces one endpoint artifact per displayable protocol.
+//
+// hasEvalService suppresses the evaluation-setup note: a project that already
+// declares an `azure.ai.eval` service is already set up, and telling its author
+// to set it up reads as though the deploy did not notice.
 func (p *AgentServiceTargetProvider) deployArtifacts(
 	agentName string,
 	agentVersion string,
@@ -3606,6 +3638,7 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 	projectEndpoint string,
 	activityProfile ActivityProfile,
 	protocols []agent_yaml.ProtocolVersionRecord,
+	hasEvalService bool,
 ) []*azdext.Artifact {
 	artifacts := []*azdext.Artifact{}
 
@@ -3646,9 +3679,17 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 		// Attach the informational note to the last endpoint only, to avoid repetition.
 		if len(endpoints) > 0 {
 			last := artifacts[len(artifacts)-1]
-			last.Metadata["note"] = "For information on invoking the agent, see " + output.WithLinkFormat(
-				"https://aka.ms/azd-agents-invoke") +
-				"\n\nSet up an evaluation suite to measure quality and impact in one step with " + output.WithHighLightFormat("azd ai agent eval generate")
+			note := "For information on invoking the agent, see " + output.WithLinkFormat(
+				"https://aka.ms/azd-agents-invoke")
+			// `azd ai agent eval generate` is deprecated and this line was still
+			// sending every deploy to it. The evaluations extension owns the
+			// surface now, and a project that already declares an eval service
+			// needs no invitation to set one up.
+			if !hasEvalService {
+				note += "\n\nSet up an evaluation suite to measure quality and impact in one step with " +
+					output.WithHighLightFormat("azd ai eval init")
+			}
+			last.Metadata["note"] = note
 		}
 	}
 

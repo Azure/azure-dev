@@ -190,6 +190,9 @@ overrides:
   - filename: cmd/middleware/ux.go
     words:
       - commandresult
+  - filename: cmd/container.go
+    words:
+      - commandresult
   - filename: internal/commandresult/follow_up.go
     words:
       - commandresult

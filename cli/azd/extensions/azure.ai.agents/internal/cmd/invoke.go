@@ -1842,15 +1842,21 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	ttfb := time.Since(invokeStart)
 	defer resp.Body.Close()
 
-	// Print the invocation ID if the agent returned one. We do not persist it
-	// to the per-user config: the config store only supports the "sessions"
-	// and "conversations" maps (see validateStoreField), and invocation IDs
-	// are not used to drive any subsequent invoke -- they are emitted purely
-	// for trace correlation.
-	if !raw {
-		if invID := resp.Header.Get("x-agent-invocation-id"); invID != "" {
-			fmt.Printf("Invocation:   %s\n", invID)
+	invocationID, err := invocationIDFromResponse(resp)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < http.StatusBadRequest && invocationID != "" && rc.azdClient != nil && agentKey != "" {
+		if err := newInvocationStateStore(rc.azdClient).Save(
+			ctx,
+			agentKey,
+			savedInvocation{InvocationID: invocationID},
+		); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: Invocation %s was accepted, but its ID was not saved: %v\n", invocationID, err)
 		}
+	}
+	if !raw && invocationID != "" {
+		fmt.Printf("Invocation:   %s\n", invocationID)
 	}
 
 	// Always capture session state from response headers (needed even in raw mode

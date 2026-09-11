@@ -44,8 +44,11 @@ const (
 	CodeInvalidPositionalArg      = "invalid_positional_arg"
 )
 
-// CodeInvalidResponseState identifies malformed locally saved Response state.
-const CodeInvalidResponseState = "invalid_response_state"
+// Error codes for malformed locally saved protocol resource state.
+const (
+	CodeInvalidResponseState   = "invalid_response_state"
+	CodeInvalidInvocationState = "invalid_invocation_state"
+)
 
 // CodeInvalidEnvironmentVariableName identifies a hosted-agent
 // environment variable name rejected by the service contract.
@@ -223,12 +226,15 @@ const (
 	OpPublishTeamsApp        = "publish_teams_app"
 )
 
-// Operation names for Responses protocol resources.
+// Operation names for Responses and Invocations protocol resources.
 const (
-	OpReadResponseState = "read_response_state"
-	OpShowResponse      = "show_response"
-	OpFollowResponse    = "follow_response"
-	OpCancelResponse    = "cancel_response"
+	OpReadResponseState   = "read_response_state"
+	OpShowResponse        = "show_response"
+	OpFollowResponse      = "follow_response"
+	OpCancelResponse      = "cancel_response"
+	OpReadInvocationState = "read_invocation_state"
+	OpShowInvocation      = "show_invocation"
+	OpCancelInvocation    = "cancel_invocation"
 )
 
 // Error codes for eval and optimize operations.

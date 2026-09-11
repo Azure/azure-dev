@@ -7,12 +7,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"html/template"
 	"log"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -107,6 +108,7 @@ type PipelineManager struct {
 	msiService        armmsi.ArmMsiService
 	prompter          prompt.Prompter
 	dotnetCli         *dotnet.Cli
+	gitHubEnvironment string
 }
 
 func NewPipelineManager(
@@ -254,12 +256,6 @@ func (pm *PipelineManager) Configure(
 		return result, err
 	}
 
-	// pipeline definition files
-	err = pm.ensurePipelineDefinition(ctx)
-	if err != nil {
-		return result, fmt.Errorf("ensuring pipeline definition: %w", err)
-	}
-
 	// ServiceManagementReference can be set as user config (~/.azd/config.json)
 	userConfig, err := pm.userConfigManager.Load()
 	if err != nil {
@@ -286,6 +282,28 @@ func (pm *PipelineManager) Configure(
 	gitRepoInfo, err := pm.getGitRepoDetails(ctx)
 	if err != nil {
 		return result, fmt.Errorf("ensuring git remote: %w", err)
+	}
+
+	if environmentProvider, ok := pm.ciProvider.(ciEnvironmentProvider); ok {
+		pm.gitHubEnvironment, err = environmentProvider.resolveEnvironment(ctx, gitRepoInfo)
+		if err != nil {
+			return result, fmt.Errorf("resolving GitHub environment: %w", err)
+		}
+	}
+
+	// Generate or validate the pipeline definition after the repository and GitHub environment are known.
+	if err := pm.ensurePipelineDefinition(ctx); err != nil {
+		return result, fmt.Errorf("ensuring pipeline definition: %w", err)
+	}
+
+	if environmentProvider, ok := pm.ciProvider.(ciEnvironmentProvider); ok {
+		if err := environmentProvider.ensureEnvironment(ctx, gitRepoInfo); err != nil {
+			return result, fmt.Errorf("ensuring GitHub environment: %w", err)
+		}
+		pm.env.DotenvSet(gitHubEnvironmentPersistedKey, pm.gitHubEnvironment)
+		if err := pm.envManager.Save(ctx, pm.env); err != nil {
+			return result, fmt.Errorf("saving GitHub environment mapping: %w", err)
+		}
 	}
 
 	if pm.args.PipelineServicePrincipalName != "" && pm.args.PipelineServicePrincipalId != "" {
@@ -1276,31 +1294,50 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectPr
 }
 
 func generatePipelineDefinition(path string, props projectProperties) error {
+	contents, err := renderPipelineDefinition(props)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Creating file %s", path)
+	if err := os.WriteFile(path, contents, osutil.PermissionFile); err != nil {
+		return fmt.Errorf("creating file %s: %w", path, err)
+	}
+	return nil
+}
+
+func renderPipelineDefinition(props projectProperties) ([]byte, error) {
 	embedFilePath := fmt.Sprintf("pipeline/.%s/azure-dev.ymlt", props.CiProvider)
 	tmpl, err := template.
 		New("azure-dev.yml").
 		Option("missingkey=error").
 		ParseFS(resources.PipelineFiles, embedFilePath)
 	if err != nil {
-		return fmt.Errorf("parsing embedded file %s: %w", embedFilePath, err)
+		return nil, fmt.Errorf("parsing embedded file %s: %w", embedFilePath, err)
 	}
 	builder := strings.Builder{}
 	tmplContext := struct {
-		BranchName             string
-		FedCredLogIn           bool
-		InstallDotNetForAspire bool
-		Variables              []string
-		Secrets                []string
-		AlphaFeatures          []string
-		IsTerraform            bool
+		BranchName                  string
+		GitHubEnvironment           string
+		GitHubEnvironmentYaml       string
+		GitHubEnvironmentExpression string
+		FedCredLogIn                bool
+		InstallDotNetForAspire      bool
+		Variables                   []string
+		Secrets                     []string
+		AlphaFeatures               []string
+		IsTerraform                 bool
 	}{
-		BranchName:             props.BranchName,
-		FedCredLogIn:           props.AuthType == AuthTypeFederated,
-		InstallDotNetForAspire: props.HasAppHost,
-		Variables:              props.Variables,
-		Secrets:                props.Secrets,
-		AlphaFeatures:          props.RequiredAlphaFeatures,
-		IsTerraform:            props.InfraProvider == infraProviderTerraform,
+		BranchName:                  props.BranchName,
+		GitHubEnvironment:           props.GitHubEnvironment,
+		GitHubEnvironmentYaml:       strconv.Quote(props.GitHubEnvironment),
+		GitHubEnvironmentExpression: strings.ReplaceAll(props.GitHubEnvironment, "'", "''"),
+		FedCredLogIn:                props.AuthType == AuthTypeFederated,
+		InstallDotNetForAspire:      props.HasAppHost,
+		Variables:                   props.Variables,
+		Secrets:                     props.Secrets,
+		AlphaFeatures:               props.RequiredAlphaFeatures,
+		IsTerraform:                 props.InfraProvider == infraProviderTerraform,
 	}
 
 	// Apply provider parameters
@@ -1324,17 +1361,12 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		}
 	}
 
-	err = tmpl.Execute(&builder, tmplContext)
+	err = tmpl.ExecuteTemplate(&builder, "azure-dev.yml", tmplContext)
 	if err != nil {
-		return fmt.Errorf("executing template: %w", err)
+		return nil, fmt.Errorf("executing template: %w", err)
 	}
 
-	contents := []byte(builder.String())
-	log.Printf("Creating file %s", path)
-	if err := os.WriteFile(path, contents, osutil.PermissionFile); err != nil {
-		return fmt.Errorf("creating file %s: %w", path, err)
-	}
-	return nil
+	return []byte(builder.String()), nil
 }
 
 // hasPipelineFile checks if any pipeline files exist for the given provider in the specified repository root.
@@ -1474,22 +1506,29 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 	// default auth type for all providers
 	authType := AuthTypeFederated
 
+	props := projectProperties{
+		CiProvider:            pm.ciProviderType,
+		RepoRoot:              repoRoot,
+		InfraProvider:         infraProvider,
+		HasAppHost:            hasAppHost,
+		BranchName:            branchName,
+		GitHubEnvironment:     pm.gitHubEnvironment,
+		AuthType:              authType,
+		Variables:             pm.prjConfig.Pipeline.Variables,
+		Secrets:               pm.prjConfig.Pipeline.Secrets,
+		RequiredAlphaFeatures: requiredAlphaFeatures,
+		providerParameters:    pm.configOptions.providerParameters,
+	}
+
 	// Check and prompt for missing CI/CD files
-	err = pm.checkAndPromptForProviderFiles(
-		ctx, projectProperties{
-			CiProvider:            pm.ciProviderType,
-			RepoRoot:              repoRoot,
-			InfraProvider:         infraProvider,
-			HasAppHost:            hasAppHost,
-			BranchName:            branchName,
-			AuthType:              authType,
-			Variables:             pm.prjConfig.Pipeline.Variables,
-			Secrets:               pm.prjConfig.Pipeline.Secrets,
-			RequiredAlphaFeatures: requiredAlphaFeatures,
-			providerParameters:    pm.configOptions.providerParameters,
-		})
+	err = pm.checkAndPromptForProviderFiles(ctx, props)
 	if err != nil {
 		return err
+	}
+	if props.CiProvider == ciProviderGitHubActions && props.GitHubEnvironment != "" {
+		if err := pm.validateGitHubWorkflow(ctx, props); err != nil {
+			return err
+		}
 	}
 	pm.configOptions.projectSecrets = slices.Clone(pm.prjConfig.Pipeline.Secrets)
 	pm.configOptions.projectVariables = slices.Clone(pm.prjConfig.Pipeline.Variables)

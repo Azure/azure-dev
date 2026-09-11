@@ -141,6 +141,11 @@ type CiProvider interface {
 	) (*CredentialOptions, error)
 }
 
+type ciEnvironmentProvider interface {
+	resolveEnvironment(ctx context.Context, repoDetails *gitRepositoryDetails) (string, error)
+	ensureEnvironment(ctx context.Context, repoDetails *gitRepositoryDetails) error
+}
+
 // mergeProjectVariablesAndSecrets returns the list of variables and secrets to be used in the pipeline
 // The initial values reference azd known values, which are merged with the ones defined on azure.yaml by the user and the
 // provider parameters.
@@ -274,16 +279,17 @@ func escapeValuesForPipeline(values map[string]string) {
 }
 
 const (
-	gitHubDisplayName string = "GitHub"
-	gitHubCode               = "github"
-	gitHubRoot        string = ".github"
-	gitHubWorkflows   string = "workflows"
-	azdoDisplayName   string = "Azure DevOps"
-	azdoCode                 = "azdo"
-	azdoRoot          string = ".azdo"
-	azdoRootAlt       string = ".azuredevops"
-	azdoPipelines     string = "pipelines"
-	envPersistedKey   string = "AZD_PIPELINE_PROVIDER"
+	gitHubDisplayName             string = "GitHub"
+	gitHubCode                           = "github"
+	gitHubRoot                    string = ".github"
+	gitHubWorkflows               string = "workflows"
+	azdoDisplayName               string = "Azure DevOps"
+	azdoCode                             = "azdo"
+	azdoRoot                      string = ".azdo"
+	azdoRootAlt                   string = ".azuredevops"
+	azdoPipelines                 string = "pipelines"
+	envPersistedKey               string = "AZD_PIPELINE_PROVIDER"
+	gitHubEnvironmentPersistedKey        = "AZD_PIPELINE_GITHUB_ENVIRONMENT"
 )
 
 var (
@@ -364,6 +370,7 @@ type projectProperties struct {
 	RepoRoot              string
 	HasAppHost            bool
 	BranchName            string
+	GitHubEnvironment     string
 	AuthType              PipelineAuthType
 	Variables             []string
 	Secrets               []string

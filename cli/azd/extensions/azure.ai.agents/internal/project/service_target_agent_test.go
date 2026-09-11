@@ -95,9 +95,9 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgent(t *testing.T) {
 			Kind: agent_yaml.AgentKindPromptVoice,
 			Name: "voice-wrapper",
 		},
-		ModelType: agent_yaml.VoiceModelTypeHostedAgent,
-		TargetAgent: &agent_yaml.VoiceTargetAgent{
-			Service: "voice-target",
+		ConversationEngine: &agent_yaml.VoiceConversationEngine{
+			Type:    "hosted_agent",
+			Name:    "voice-target",
 			Version: "deployed",
 		},
 	}, nil)
@@ -111,17 +111,17 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgent(t *testing.T) {
 	got, found, err := VoiceAgentFromResolvedService(svc, t.TempDir())
 	require.NoError(t, err)
 	require.True(t, found)
-	require.Equal(t, agent_yaml.VoiceModelTypeHostedAgent, got.ModelType)
-	require.Equal(t, "voice-target", got.TargetAgent.Service)
-	require.Equal(t, "deployed", got.TargetAgent.Version)
+	require.Equal(t, "hosted_agent", got.ConversationEngine.Type)
+	require.Equal(t, "voice-target", got.ConversationEngine.Name)
+	require.Equal(t, "deployed", got.ConversationEngine.Version)
 }
 
 func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgentVoiceKind(t *testing.T) {
 	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
 		AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindVoice, Name: "voice"},
-		ModelType:       agent_yaml.VoiceModelTypeHostedAgent,
-		TargetAgent: &agent_yaml.VoiceTargetAgent{
-			Service: "voice-target",
+		ConversationEngine: &agent_yaml.VoiceConversationEngine{
+			Type:    "hosted_agent",
+			Name:    "voice-target",
 			Version: "deployed",
 		},
 	}, nil)
@@ -136,7 +136,28 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgentVoiceKind(t *test
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, agent_yaml.AgentKindVoice, got.Kind)
-	require.Equal(t, "voice-target", got.TargetAgent.Service)
+	require.Equal(t, "voice-target", got.ConversationEngine.Name)
+}
+
+func TestVoiceAgentInlineServicePropertiesRoundTrip_ConversationEngine(t *testing.T) {
+	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindVoice, Name: "voice"},
+		ConversationEngine: &agent_yaml.VoiceConversationEngine{
+			Type: "hosted_agent",
+			Name: "voice-target",
+		},
+	}, nil)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "voice",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+	got, found, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, "hosted_agent", got.ConversationEngine.Type)
+	require.Equal(t, "voice-target", got.ConversationEngine.Name)
 }
 
 func TestVoiceAgentInlineServicePropertiesRejectsProtocols(t *testing.T) {
@@ -181,7 +202,7 @@ func TestVoiceAgentFromResolvedServiceRejectsInvalidVoiceFields(t *testing.T) {
 		},
 	})
 	_, _, err := VoiceAgentFromResolvedService(svc, t.TempDir())
-	require.ErrorContains(t, err, "target_agent.version must be 'deployed'")
+	require.ErrorContains(t, err, "not supported")
 
 	svc = inlineAgentService(t, map[string]any{
 		"kind":              "voice",

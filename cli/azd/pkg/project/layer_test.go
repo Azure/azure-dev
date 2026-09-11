@@ -353,7 +353,7 @@ func TestProjectLayersAlphaSchema(t *testing.T) {
 		}), provider)
 	}
 
-	// custom providers don't. If they actually did need that, they do have a config attribute they can use for parameters they need.
+	// Custom providers don't. If they need a path, they can define one in their provider-specific config.
 	require.NoError(t, schema.Validate(map[string]any{
 		"name": "layered-project",
 		"layers": []any{map[string]any{

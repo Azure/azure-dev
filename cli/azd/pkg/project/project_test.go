@@ -1232,6 +1232,17 @@ func Test_Save(t *testing.T) {
 	assert.Equal(t, dir, prjConfig.Path)
 }
 
+func Test_Save_PreservesPermissions(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "azure.yaml")
+	require.NoError(t, os.WriteFile(filePath, []byte("name: original"), 0o600))
+
+	require.NoError(t, Save(t.Context(), &ProjectConfig{Name: "updated"}, filePath))
+
+	info, err := os.Stat(filePath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+}
+
 func Test_Save_OmitsEmptyServiceSourceFields(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "azure.yaml")

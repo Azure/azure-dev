@@ -21,7 +21,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/blang/semver/v4"
 	"github.com/braydonk/yaml"
 )
@@ -354,7 +353,7 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 	}
 
 	// Atomic write so readers never observe a partially written azure.yaml.
-	err = azdext.WriteFileAtomic(projectFilePath, projectFileContents.Bytes(), osutil.PermissionFile)
+	err = azdext.WriteFileAtomic(projectFilePath, projectFileContents.Bytes(), 0)
 	if err != nil {
 		return fmt.Errorf("saving project file: %w", err)
 	}

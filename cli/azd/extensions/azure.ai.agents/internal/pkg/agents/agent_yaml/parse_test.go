@@ -1240,7 +1240,7 @@ policies:
       input_paths: ["$.input"]
       stream_selectors:
         - event_type: response.output_text.delta
-          text_field: $.delta
+          text_field: delta
 `),
 		},
 		{
@@ -1250,7 +1250,7 @@ policies:
       output_paths: ["$.output"]
       stream_selectors:
         - event_type: response.output_text.delta
-          text_field: $.delta
+          text_field: delta
 `),
 		},
 		{
@@ -1320,9 +1320,19 @@ policies:
 			yaml: invocationsAgent(`      response_mode: streaming
       input_paths: ["$.input"]
       stream_selectors:
-        - text_field: $.delta
+        - text_field: delta
 `),
 			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].eventType is required",
+		},
+		{
+			name: "stream selector text_field rejects a selector expression",
+			yaml: invocationsAgent(`      response_mode: streaming
+      input_paths: ["$.input"]
+      stream_selectors:
+        - event_type: response.output_text.delta
+          text_field: $.delta
+`),
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].textField must be a field name",
 		},
 		{
 			name: "rejected on an agent that does not expose the invocations protocol",

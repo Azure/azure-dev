@@ -20,7 +20,7 @@ template:
           - $.output
         stream_selectors:
           - event_type: response.output_text.delta
-            text_field: $.delta
+            text_field: delta
   protocols:
     - protocol: invocations
       version: "1.0.0"

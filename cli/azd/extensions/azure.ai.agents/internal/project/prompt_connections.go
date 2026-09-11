@@ -15,21 +15,15 @@ import (
 )
 
 // siblingOwnsConnection reports whether an azure.ai.connection sibling
-// provisioned name into the same Foundry project targeted by this agent.
-func siblingOwnsConnection(name, projectEndpoint string, env map[string]string) bool {
-	if env == nil {
+// deployed into the same Foundry project targeted by this agent. The marker is
+// keyed by the service reference, not its possibly overridden resource name.
+func siblingOwnsConnection(serviceRef, projectEndpoint string, env map[string]string) bool {
+	if strings.TrimSpace(projectEndpoint) == "" {
 		return false
 	}
-	declared := strings.TrimSpace(env[envkey.ConnectionProjectEndpoint])
-	if declared != "" && !sameProjectEndpoint(declared, projectEndpoint) {
-		return false
-	}
-	for entry := range strings.SplitSeq(env["AZURE_AI_PROJECT_CONNECTION_NAMES"], ",") {
-		if strings.EqualFold(strings.TrimSpace(entry), strings.TrimSpace(name)) {
-			return true
-		}
-	}
-	return false
+	marker := envkey.ConnectionServiceProjectEndpoint(strings.TrimSpace(serviceRef))
+	declared := strings.TrimSpace(env[marker])
+	return declared != "" && sameProjectEndpoint(declared, projectEndpoint)
 }
 
 // promptConnectionName resolves an authored sibling service reference to the
@@ -78,10 +72,10 @@ func connectionsNode(g *promptGraph) *promptNode {
 		Resolve: func(context.Context) error {
 			for _, serviceRef := range connections {
 				connectionName := promptConnectionName(serviceRef, g.projectServices)
-				if !siblingOwnsConnection(connectionName, g.projectEndpoint(), g.env) {
+				if !siblingOwnsConnection(serviceRef, g.projectEndpoint(), g.env) {
 					return exterrors.Dependency(
 						exterrors.CodeFoundryDependencyNotReady,
-						fmt.Sprintf("connection %q has not been provisioned by an azure.ai.connection service", connectionName),
+						fmt.Sprintf("connection %q has not been deployed by an azure.ai.connection service", connectionName),
 						fmt.Sprintf("add %q to the agent service's uses list and run 'azd deploy --all'", serviceRef),
 					)
 				}

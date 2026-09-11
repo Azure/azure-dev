@@ -17,26 +17,9 @@ type deploymentType = {
   }
 }
 
-type connectionType = {
-  name: string
-  category: string
-  target: string
-  authType: string
-  audience: string?
-  authorizationUrl: string?
-  tokenUrl: string?
-  refreshUrl: string?
-  scopes: string[]?
-  connectorName: string?
-  metadata: object?
-}
-
 param projectResourceId string
 param deployments deploymentType[] = []
 param projectEndpoint string
-param connections connectionType[] = []
-@secure()
-param connectionCredentials object = {}
 {{- if eq .AcrMode "create" }}
 param resourceGroupName string
 param location string
@@ -109,8 +92,6 @@ module projectResources 'modules/foundry-project.bicep' = {
     accountName: accountName
     projectName: projectName
     deployments: deployments
-    connections: connections
-    connectionCredentials: connectionCredentials
 {{- if eq .AcrMode "create" }}
     acrName: containerRegistry.outputs.registryName
     acrEndpoint: containerRegistry.outputs.endpoint
@@ -136,6 +117,4 @@ output AZURE_FOUNDRY_RESOURCE_GROUP string = {{ if eq .AcrMode "create" }}resour
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = {{ if eq .AcrMode "create" }}containerRegistry.outputs.endpoint{{ else if or (eq .AcrMode "reuse-connect") (eq .AcrMode "already-connected") }}existingAcrEndpoint{{ else }}''{{ end }}
 output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = {{ if eq .AcrMode "create" }}containerRegistry.outputs.resourceId{{ else if or (eq .AcrMode "reuse-connect") (eq .AcrMode "already-connected") }}existingAcrResourceId{{ else }}''{{ end }}
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = projectResources.outputs.acrConnectionName
-output AZURE_AI_PROJECT_CONNECTION_NAMES string = projectResources.outputs.connectionNames
-output AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT string = projectEndpoint
 output AZD_FOUNDRY_ACR_MODE string = '{{ .AcrMode }}'

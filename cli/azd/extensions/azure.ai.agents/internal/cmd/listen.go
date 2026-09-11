@@ -25,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // configureExtensionHost wires the service target and event handlers on the
@@ -81,14 +82,6 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args 
 	); err != nil {
 		return err
 	}
-	connections, err := collectConnections(
-		args.Project.Services,
-		args.Project.Path,
-	)
-	if err != nil {
-		return err
-	}
-
 	agentServiceCount := 0
 	hostedAgentCount := 0
 
@@ -114,7 +107,6 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args 
 				azdClient,
 				args.Project,
 				svc,
-				connections,
 			); err != nil {
 				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 			}
@@ -285,14 +277,6 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	); err != nil {
 		return err
 	}
-	connections, err := collectConnections(
-		args.Project.Services,
-		args.Project.Path,
-	)
-	if err != nil {
-		return err
-	}
-
 	// Prompt (kind=prompt) agents have no container settings — the harness owns
 	// the runtime. Without this guard SetAgentContainerSettings writes default
 	// memory/cpu onto the service and persists them into azure.yaml for an agent
@@ -307,7 +291,6 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		azdClient,
 		args.Project,
 		svc,
-		connections,
 	); err != nil {
 		return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 	}
@@ -759,7 +742,6 @@ func envUpdate(
 	azdClient *azdext.AzdClient,
 	azdProject *azdext.ProjectConfig,
 	svc *azdext.ServiceConfig,
-	connections []project.Connection,
 ) error {
 
 	foundryAgentConfig, err := project.LoadServiceTargetAgentConfig(svc)
@@ -778,15 +760,6 @@ func envUpdate(
 
 	if foundryAgentConfig != nil && len(foundryAgentConfig.Resources) > 0 {
 		if err := resourcesEnvUpdate(ctx, foundryAgentConfig.Resources, azdClient, currentEnvResponse.Environment.Name); err != nil {
-			return err
-		}
-	}
-
-	if len(connections) > 0 {
-		if err := connectionsEnvUpdate(
-			ctx, connections,
-			azdClient, currentEnvResponse.Environment.Name,
-		); err != nil {
 			return err
 		}
 	}
@@ -882,68 +855,6 @@ func resourcesEnvUpdate(ctx context.Context, resources []project.Resource, azdCl
 	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_DEPENDENT_RESOURCES", escapedJsonString)
 }
 
-func connectionsEnvUpdate(
-	ctx context.Context,
-	connections []project.Connection,
-	azdClient *azdext.AzdClient,
-	envName string,
-) error {
-	// Strip credentials from the connections env var — Bicep's ConnectionConfig
-	// type doesn't include credentials (they're a separate @secure param).
-	// Including them causes "unable to deserialize request body" errors.
-	stripped := make([]project.Connection, len(connections))
-	copy(stripped, connections)
-	for i := range stripped {
-		stripped[i].Credentials = nil
-	}
-
-	if err := marshalAndSetEnvVar(ctx, azdClient, envName, "AI_PROJECT_CONNECTIONS", stripped); err != nil {
-		return err
-	}
-
-	return connectionCredentialsEnvUpdate(ctx, connections, azdClient, envName)
-}
-
-// connectionCredentialsEnvUpdate builds a dictionary of connection name → credentials
-// and serializes it to AI_PROJECT_CONNECTION_CREDENTIALS. Credential values may contain
-// ${VAR} env var references (from externalization during init); these are resolved to
-// their actual values before serialization so Bicep receives real secrets.
-func connectionCredentialsEnvUpdate(
-	ctx context.Context,
-	connections []project.Connection,
-	azdClient *azdext.AzdClient,
-	envName string,
-) error {
-	credMap := buildConnectionCredentials(connections)
-	if len(credMap) == 0 {
-		return nil
-	}
-
-	// Resolve ${VAR} references in credential values to actual secrets.
-	azdEnv, err := getAllEnvVars(ctx, azdClient, envName)
-	if err != nil {
-		return fmt.Errorf("loading env vars for credential resolution: %w", err)
-	}
-	for connName, creds := range credMap {
-		credMap[connName] = resolveMapValues(creds, azdEnv)
-	}
-
-	return marshalAndSetEnvVar(ctx, azdClient, envName, "AI_PROJECT_CONNECTION_CREDENTIALS", credMap)
-}
-
-// buildConnectionCredentials returns a map of connection name → credentials object
-// for all connections that have non-empty credentials.
-func buildConnectionCredentials(connections []project.Connection) map[string]map[string]any {
-	result := map[string]map[string]any{}
-	for _, conn := range connections {
-		if len(conn.Credentials) > 0 {
-			result[conn.Name] = conn.Credentials
-		}
-	}
-
-	return result
-}
-
 // toolConnectionsEnvUpdate serializes tool connections to AI_PROJECT_TOOL_CONNECTIONS env var.
 func toolConnectionsEnvUpdate(
 	ctx context.Context,
@@ -992,12 +903,16 @@ func prepareContainerSettings(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) error {
-	rawAdditional := svc.GetAdditionalProperties()
-	rawConfig := svc.GetConfig()
-	hasRootFileRef := rawAdditional != nil &&
-		rawAdditional.GetFields()["$ref"] != nil ||
-		rawConfig != nil && rawConfig.GetFields()["$ref"] != nil
-	if hasRootFileRef {
+	// Resolve toolbox reference files before ownership validation so name-only
+	// references stay supported and full definitions cannot hide behind $ref.
+	hasFileRef := false
+	for _, props := range []*structpb.Struct{svc.GetAdditionalProperties(), svc.GetConfig()} {
+		hasFileRef = hasFileRef || props.GetFields()["$ref"] != nil
+		for _, toolbox := range props.GetFields()["toolboxes"].GetListValue().GetValues() {
+			hasFileRef = hasFileRef || toolbox.GetStructValue().GetFields()["$ref"] != nil
+		}
+	}
+	if hasFileRef {
 		if err := project.ResolveServiceConfigInPlace(
 			svc,
 			projectRoot,
@@ -1199,24 +1114,4 @@ func resolveAnyValue(v any, azdEnv map[string]string) any {
 	default:
 		return v
 	}
-}
-
-// getAllEnvVars loads all environment variables from the azd environment.
-func getAllEnvVars(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	envName string,
-) (map[string]string, error) {
-	resp, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
-		Name: envName,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	envMap := make(map[string]string, len(resp.KeyValues))
-	for _, kv := range resp.KeyValues {
-		envMap[kv.Key] = kv.Value
-	}
-	return envMap, nil
 }

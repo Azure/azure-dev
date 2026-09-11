@@ -555,12 +555,16 @@ func TestEjectExistingProjectRollbackRemovesStagedFiles(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(
 		filepath.Join(root, "azure.yaml"),
-		[]byte(`name: test
-services:
-  project:
-    host: azure.ai.project
-    endpoint: https://account.services.ai.azure.com/api/projects/project
-`),
+		[]byte("name: test\nservices:\n"+
+			"  project:\n"+
+			"    host: azure.ai.project\n"+
+			"    endpoint: https://account.services.ai.azure.com/api/projects/project\n"+
+			"  search:\n"+
+			"    host: azure.ai.connection\n"+
+			"    category: CognitiveSearch\n"+
+			"    target: https://search.example.com\n"+
+			"    authType: ApiKey\n"+
+			"    credentials:\n      key: split-connection-secret\n"),
 		0600,
 	))
 	projectServer := &transactionProjectServer{
@@ -570,6 +574,7 @@ services:
 	client := newTransactionProjectClient(t, projectServer)
 	resourceID := "/subscriptions/sub/resourceGroups/rg/providers/" +
 		"Microsoft.CognitiveServices/accounts/account/projects/project"
+	before := mustReadProjectFile(t, root)
 
 	err := ejectExistingProjectInfra(
 		t.Context(),
@@ -584,15 +589,19 @@ services:
 	)
 
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "stamp failed")
+	assert.NotContains(t, err.Error(), "split-connection-secret")
 	assert.NoDirExists(t, filepath.Join(root, "infra"))
 	assert.Len(t, projectServer.unsetPaths, 3)
+	assert.Equal(t, before, mustReadProjectFile(t, root))
+	staged, err := filepath.Glob(filepath.Join(root, ".azd-foundry-eject-*"))
+	require.NoError(t, err)
+	assert.Empty(t, staged)
 }
 
 func TestWriteExistingProjectTerraformAcrModes(t *testing.T) {
 	params := map[string]any{
-		"deployments":           []synthesis.Deployment{},
-		"connections":           []synthesis.Connection{},
-		"connectionCredentials": map[string]map[string]any{},
+		"deployments": []synthesis.Deployment{},
 	}
 	tests := []struct {
 		name       string
@@ -632,6 +641,7 @@ func TestWriteExistingProjectTerraformAcrModes(t *testing.T) {
 			outputs, err := os.ReadFile(filepath.Join(dir, "outputs.tf"))
 			require.NoError(t, err)
 			assert.Contains(t, string(outputs), `AZD_FOUNDRY_ACR_MODE`)
+			assertProjectEjectionOmitsConnections(t, dir)
 		})
 	}
 }
@@ -727,10 +737,8 @@ func TestExistingProjectEjectionDoesNotEmitReplacedRegistryState(t *testing.T) {
 			"Microsoft.CognitiveServices/accounts/new-account/projects/new-project"
 	)
 	params := map[string]any{
-		"includeAcr":            true,
-		"deployments":           []synthesis.Deployment{},
-		"connections":           []synthesis.Connection{},
-		"connectionCredentials": map[string]map[string]any{},
+		"includeAcr":  true,
+		"deployments": []synthesis.Deployment{},
 	}
 	oldValues := map[string]string{
 		"AZURE_AI_PROJECT_ID":                  oldProjectID,
@@ -815,15 +823,14 @@ func TestExistingProjectEjectionDoesNotEmitReplacedRegistryState(t *testing.T) {
 			assert.NotContains(t, output, oldEndpoint)
 			assert.NotContains(t, output, oldResource)
 			assert.NotContains(t, output, "old-connection")
+			assertProjectEjectionOmitsConnections(t, dir)
 		})
 	}
 }
 
 func TestWriteExistingProjectBicepAcrModes(t *testing.T) {
 	params := map[string]any{
-		"deployments":           []synthesis.Deployment{},
-		"connections":           []synthesis.Connection{},
-		"connectionCredentials": map[string]map[string]any{},
+		"deployments": []synthesis.Deployment{},
 	}
 	tests := []struct {
 		name     string
@@ -875,15 +882,14 @@ func TestWriteExistingProjectBicepAcrModes(t *testing.T) {
 			assert.NoFileExists(t, filepath.Join(
 				dir, "modules", "network.bicep",
 			))
+			assertProjectEjectionOmitsConnections(t, dir)
 		})
 	}
 }
 
 func TestExistingProjectArtifactsNormalizeAcrEndpoint(t *testing.T) {
 	params := map[string]any{
-		"deployments":           []synthesis.Deployment{},
-		"connections":           []synthesis.Connection{},
-		"connectionCredentials": map[string]map[string]any{},
+		"deployments": []synthesis.Deployment{},
 	}
 	values := map[string]string{
 		"AZURE_CONTAINER_REGISTRY_ENDPOINT": "https://user:password@" +

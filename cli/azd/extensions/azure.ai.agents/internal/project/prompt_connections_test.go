@@ -10,6 +10,7 @@ import (
 	"azureaiagent/internal/pkg/envkey"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConnectionsNodeRequiresSiblingMarker(t *testing.T) {
@@ -17,8 +18,7 @@ func TestConnectionsNodeRequiresSiblingMarker(t *testing.T) {
 	graph := &promptGraph{
 		managed: agent,
 		env: map[string]string{
-			"FOUNDRY_PROJECT_ENDPOINT":       "https://acct.services.ai.azure.com/api/projects/project",
-			envkey.ConnectionProjectEndpoint: "https://acct.services.ai.azure.com/api/projects/project",
+			"FOUNDRY_PROJECT_ENDPOINT": "https://acct.services.ai.azure.com/api/projects/project",
 		},
 	}
 
@@ -33,7 +33,7 @@ func TestConnectionsNodeRequiresSiblingMarker(t *testing.T) {
 		t.Fatal("expected missing sibling marker error")
 	}
 
-	graph.env["AZURE_AI_PROJECT_CONNECTION_NAMES"] = "other,search"
+	graph.env[envkey.ConnectionServiceProjectEndpoint("search")] = graph.projectEndpoint()
 	if err := node.Resolve(t.Context()); err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -44,9 +44,8 @@ func TestConnectionsNodeRejectsCrossProjectMarker(t *testing.T) {
 	graph := &promptGraph{
 		managed: agent,
 		env: map[string]string{
-			"AZURE_AI_PROJECT_CONNECTION_NAMES": "search",
-			"FOUNDRY_PROJECT_ENDPOINT":          "https://acct.services.ai.azure.com/api/projects/current",
-			envkey.ConnectionProjectEndpoint:    "https://acct.services.ai.azure.com/api/projects/other",
+			"FOUNDRY_PROJECT_ENDPOINT":                        "https://acct.services.ai.azure.com/api/projects/current",
+			envkey.ConnectionServiceProjectEndpoint("search"): "https://acct.services.ai.azure.com/api/projects/other",
 		},
 	}
 
@@ -62,9 +61,8 @@ func TestConnectionsNodeUsesResolvedPromptProject(t *testing.T) {
 		managed:  agent,
 		settings: &PromptAgentSettings{ProjectEndpoint: projectEndpoint},
 		env: map[string]string{
-			"AZURE_AI_PROJECT_CONNECTION_NAMES": "search",
-			"FOUNDRY_PROJECT_ENDPOINT":          "https://acct.services.ai.azure.com/api/projects/environment",
-			envkey.ConnectionProjectEndpoint:    projectEndpoint,
+			"FOUNDRY_PROJECT_ENDPOINT":                        "https://acct.services.ai.azure.com/api/projects/environment",
+			envkey.ConnectionServiceProjectEndpoint("search"): projectEndpoint,
 		},
 	}
 
@@ -87,12 +85,11 @@ func TestConnectionsNodeResolvesConfiguredConnectionName(t *testing.T) {
 			},
 		},
 		env: map[string]string{
-			"FOUNDRY_PROJECT_ENDPOINT":          "https://acct.services.ai.azure.com/api/projects/project",
-			envkey.ConnectionProjectEndpoint:    "https://acct.services.ai.azure.com/api/projects/project",
-			"AZURE_AI_PROJECT_CONNECTION_NAMES": "search-resource",
+			"FOUNDRY_PROJECT_ENDPOINT": "https://acct.services.ai.azure.com/api/projects/project",
 		},
 	}
 
+	graph.env[envkey.ConnectionServiceProjectEndpoint("search-service")] = graph.projectEndpoint()
 	node := connectionsNode(graph)
 	if err := node.Validate(); err != nil {
 		t.Fatalf("Validate: %v", err)
@@ -114,5 +111,60 @@ func TestConnectionsNodeIgnoresToolboxProjectConnectionID(t *testing.T) {
 func TestConnectionsNodeNoneReturnsNil(t *testing.T) {
 	if connectionsNode(&promptGraph{managed: &agent_yaml.PromptAgent{}}) != nil {
 		t.Fatal("expected nil node")
+	}
+}
+
+func TestConnectionsNodeRejectsLegacyAndOtherServiceMarkers(t *testing.T) {
+	t.Parallel()
+	const endpoint = "https://acct.services.ai.azure.com/api/projects/project"
+	for _, tt := range []struct {
+		name string
+		env  map[string]string
+	}{
+		{
+			name: "aggregate markers",
+			env: map[string]string{
+				"FOUNDRY_PROJECT_ENDPOINT":                      endpoint,
+				"AZURE_AI_PROJECT_CONNECTION_NAMES":             "search-resource",
+				"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT": endpoint,
+			},
+		},
+		{
+			name: "resource name instead of service key",
+			env: map[string]string{
+				"FOUNDRY_PROJECT_ENDPOINT":                                 endpoint,
+				envkey.ConnectionServiceProjectEndpoint("search-resource"): endpoint,
+			},
+		},
+		{
+			name: "case-colliding service key",
+			env: map[string]string{
+				"FOUNDRY_PROJECT_ENDPOINT":                                endpoint,
+				envkey.ConnectionServiceProjectEndpoint("Search-service"): endpoint,
+			},
+		},
+		{
+			name: "service marker without active project",
+			env: map[string]string{
+				envkey.ConnectionServiceProjectEndpoint("search-service"): endpoint,
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			graph := &promptGraph{
+				managed: &agent_yaml.PromptAgent{Connections: []string{"search-service"}},
+				projectServices: map[string]*azdext.ServiceConfig{
+					"search-service": {
+						Name: "search-service", Host: foundryConnectionHost,
+						AdditionalProperties: mustStruct(t, map[string]any{"name": "search-resource"}),
+					},
+				},
+				env: tt.env,
+			}
+			node := connectionsNode(graph)
+			require.NoError(t, node.Validate())
+			require.ErrorContains(t, node.Resolve(t.Context()), `connection "search-resource" has not been deployed`)
+		})
 	}
 }

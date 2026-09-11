@@ -75,14 +75,19 @@ Use the Agent command surface to attach existing Toolbox or Connection services
 to an Agent service in `azure.yaml`:
 
 ```bash
-azd ai agent add toolbox support-tools --agent research-agent
-azd ai agent add connection search-connection --agent research-agent
+azd ai agent toolbox add support-tools --agent research-agent
+azd ai agent connection add search-connection --agent research-agent
 ```
 
 These commands add the dependency service key to `services.<agent>.uses`. They
 do not create or deploy the dependency. Toolbox and Connection configuration and
 lifecycle behavior remain owned by the `azure.ai.toolboxes` and
 `azure.ai.connections` extensions.
+
+**Breaking change:** the dependency type now precedes the verb:
+`azd ai agent <toolbox|connection> add <service> --agent <agent>`.
+The previous `azd ai agent add <type> ...` command order is no longer supported;
+only the command hierarchy changes, not the dependency mutation or JSON output.
 
 If a toolbox is declared inline on an agent, move its definition to an
 independent `azure.ai.toolbox` service before deployment. If the new service key
@@ -91,6 +96,48 @@ differs from the original toolbox name (for example, `My Tools` becomes
 new service key. Then attach that service with the command above and run `azd deploy`.
 The add command only updates the agent's `uses` list; it does not rewrite
 `toolboxes`, create the service, or deploy it.
+
+Bundled `connections` and full `toolboxes` definitions on `azure.ai.agent` are
+not supported, including definitions loaded through `$ref`. Move connections
+to `azure.ai.connection` services and attach them through `uses`. Agent
+`toolboxes` accepts strings or name-only objects referencing local
+`azure.ai.toolbox` services, including name-only objects loaded through local
+`$ref` files (with an optional `name` override). Referenced full definitions
+remain unsupported. To reuse an external toolbox, set `endpoint` on
+its split toolbox service instead of setting a legacy MCP environment marker.
+Run `azd deploy --all` to reconcile these dependencies before their agents;
+`azd provision` does not create Connections or Toolboxes. Agent manifest
+Connection and Toolbox resources remain supported as inputs to `azd ai agent init`,
+which generates split services. Agent runtime `toolConnections` and environment
+references remain agent-owned.
+
+Prompt agents (`kind: prompt`) may also declare `connections` as a list of
+sibling `azure.ai.connection` service names. These are references, not resource
+definitions: the siblings must be in `uses` and deployed to the same project
+before the prompt agent. Connection objects remain unsupported on any agent.
+
+## Deploying Agents
+
+Deploy Agents through the normal azd project lifecycle:
+
+- `azd deploy <service>` deploys the selected `azure.ai.agent` service.
+- `azd deploy --all` deploys all services, with ordering defined by `uses`.
+- `azd up` provisions and deploys the project.
+
+**Breaking change:** `azd ai agent deploy [path]` has been removed. The extension
+still implements Agent deployment as a service target invoked by core azd;
+there is no separate definition-file deployment or sibling-Toolbox orchestration
+path in the Agent command tree.
+
+For an existing standalone agent, use `azd ai agent init` to create/adopt an azd
+project, or declare an `azure.ai.agent` service in `azure.yaml` with its source
+directory and deployment settings. The definition can be inline or referenced
+using `$ref`, following the service schema; declare core-owned fields such as
+`host`, `project`, `language`, and `uses` in `azure.yaml`. Deploy by **service name**,
+not by a definition-file path. A sibling `toolbox.yaml` is not automatically
+deployed: declare a Toolbox service and add it to `uses`. Deploy dependencies
+first or use `azd deploy --all`; a targeted Agent deployment does not deploy its
+dependencies automatically.
 
 ## Running Local Agents
 
@@ -676,11 +723,12 @@ connection must exist on the selected project before `azd deploy` runs.
 
 ### Declarative sibling connection
 
-To let `azd provision` create the connection, declare an
-`azure.ai.connection` sibling. For this declarative path, both the agent's
-`registryConnectionId` and `uses` identify the sibling's azure.yaml service key,
-which is also the Foundry connection name provisioned by the current Projects
-extension:
+To let the Connections extension reconcile the connection during `azd deploy`,
+declare an `azure.ai.connection` sibling and add its service key to the agent's
+`uses` list. Set `registryConnectionId` to the actual Foundry connection name.
+In this example, the sibling omits `name`, so its service key is also its Foundry
+connection name. If the sibling declares a different `name`, use that name in
+`registryConnectionId` while keeping the service key in `uses`:
 
 ```yaml
 services:
@@ -720,8 +768,10 @@ services:
         version: 1.0.0
 ```
 
-Set the referenced credential environment values, run `azd provision`, and then
-run `azd deploy`. Omitting the sibling from `uses`, disabling it with a deployment
+Set the referenced credential environment values, run `azd provision` for the
+Project, then run `azd deploy --all` to deploy the connection before the agent.
+Provisioning alone does not create the connection. Omitting the sibling from
+`uses`, disabling it with a deployment
 condition, or omitting image passthrough causes validation to fail before agent
 deployment.
 

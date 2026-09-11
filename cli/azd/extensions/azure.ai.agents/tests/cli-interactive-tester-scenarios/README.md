@@ -328,8 +328,11 @@ in any order, any time.
 | `tier0/0.15-code-download-help.yaml` | `code download --help` |
 | `tier0/0.16-delete-help.yaml` | `delete --help` |
 | `tier0/0.17-invocations-help.yaml` | Shared `invocations show/follow/cancel` discovery, flags, and output formats |
+| `tier0/0.17-toolbox-add.yaml` | `toolbox add` (noun-first, local `uses` edit, JSON, idempotency) |
+| `tier0/0.18-connection-add.yaml` | `connection add` (noun-first, local `uses` edit, JSON, idempotency) |
 | `tier0/0.18-invoke-long-running-validation.yaml` | `invoke --long-running` / `--no-wait` help and invalid combinations |
 | `tier0/0.19-invocations-validation.yaml` | Unsupported lifecycle protocols, empty selectors, and removed flags |
+| `tier0/0.19-standalone-deploy-migration.yaml` | Removed standalone `agent deploy` and old `agent add <type>` rejection; agent command discovery and core `azd deploy --help` only |
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
 They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP
@@ -440,7 +443,7 @@ grouping — colons are treated as ordinary characters by the filter):
 | Namespace | Values | Meaning |
 |---|---|---|
 | `tier:N` | `tier:0`, `tier:1`, `tier:1b`, `tier:2` | The tier the scenario belongs to (same axis as the directory's four sections above). Use this to express cost / auth profile in one tag. |
-| `cmd:*` | `cmd:init`, `cmd:show`, `cmd:invoke`, `cmd:invocations`, `cmd:sessions`, `cmd:files`, `cmd:monitor`, `cmd:endpoint`, `cmd:run`, `cmd:doctor`, `cmd:eval`, `cmd:optimize`, `cmd:sample`, `cmd:down`, `cmd:provision`, `cmd:deploy`, `cmd:version`, `cmd:help`, `cmd:code`, `cmd:delete` | The top-level `azd ai agent` (or `azd`) command(s) the scenario exercises. Multi-command scenarios (e.g. `2.12-run-local-and-invoke-local` runs both `run` and `invoke --local`; `2.00-setup` runs `init` + `provision` + `deploy`) carry multiple `cmd:*` tags. |
+| `cmd:*` | `cmd:init`, `cmd:show`, `cmd:invoke`, `cmd:invocations`, `cmd:sessions`, `cmd:files`, `cmd:monitor`, `cmd:endpoint`, `cmd:run`, `cmd:doctor`, `cmd:eval`, `cmd:optimize`, `cmd:sample`, `cmd:down`, `cmd:provision`, `cmd:deploy`, `cmd:version`, `cmd:help`, `cmd:code`, `cmd:delete`, `cmd:toolbox`, `cmd:connection` | The top-level `azd ai agent` (or `azd`) command(s) the scenario exercises. Multi-command scenarios (e.g. `2.12-run-local-and-invoke-local` runs both `run` and `invoke --local`; `2.00-setup` runs `init` + `provision` + `deploy`) carry multiple `cmd:*` tags. `cmd:toolbox` and `cmd:connection` cover Agent dependency composition, not the sibling extensions' resource lifecycle commands. |
 | traits | `parallel-safe`, `serial-only`, `negative-path`, `picker`, `verify-deploy` | `parallel-safe` ↔ `serial-only` are mutually exclusive: all Tier 0 / Tier 1 / Tier 1b scenarios are `parallel-safe`, all Tier 2 are `serial-only`. `negative-path` flags arg-/CLI-validation scenarios that assert errors or non-zero exit codes rather than happy-path success. `picker` flags scenarios whose primary purpose is exercising interactive picker UX. `verify-deploy` flags Tier 1b scenarios that verify a Tier 1 scaffold deploys. |
 
 **Examples** (the tool's `tags:` parameter is OR across the list):
@@ -643,6 +646,34 @@ The orchestrator computes `fixtures_dir` as the tester-side absolute path of the
 `fixtures/` subdirectory inside the scenarios directory (WSL-translated on Windows,
 native on Linux/macOS) and passes it as a `session_var` alongside the other profile
 variables.
+
+### Offline dependency composition fixture
+
+[`fixtures/agent-dependencies/azure.yaml`](fixtures/agent-dependencies/azure.yaml) is a local-only
+project with a hosted `research-agent`, an `ai-project` dependency, and separate `support-tools`
+Toolbox and `search-connection` Connection services. It has no credentials, environment files,
+or executable hooks. Its reserved `.invalid` endpoints and image are inert test data, not a
+deployable scaffold; never fetch them or pass this fixture to init, provision, or deployment.
+
+`0.17-toolbox-add` and `0.18-connection-add` each seed their own instance-isolated copy. They
+verify the four JSON fields (`agent`, `type`, `dependency`, `added`), the exact `uses` append,
+unchanged sibling definitions, and a no-op second add (`added: false`). Compare YAML semantics
+after the first add: core saving may reformat the document or add a schema comment. The existing
+local `.azure/agent-add.lock` mechanism is allowed; environment or deployment state is not.
+
+No `.azure/config.json` or dotenv seed is needed: core `Project.Get` resolves the environment
+non-interactively and falls back to empty substitution values when none is selected. The fixture
+contains no environment substitutions, and these scenarios clear inherited `AZURE_ENV_NAME`.
+They assume the development core and Agents extension are already installed; setup, extension
+installation, credentials, and remote-state configuration are not part of these offline flows.
+Telemetry and update checks are disabled in the scenario environment.
+
+`0.19-standalone-deploy-migration` isolates the negative migration flow from both happy paths.
+It rejects standalone Agent deploy and both old add-order commands, verifies no project mutation
+(not even a lock directory), and checks command discovery and core deploy **help only**. It does
+not require a migration hint in the unknown-command error. All three scenarios forbid every
+product prompt and Azure/network activity, use pre-reset only, and declare no cloud cleanup,
+`requires`, or `produces`.
 
 ## Re-running scenarios (idempotency)
 

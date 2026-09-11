@@ -524,13 +524,57 @@ func AgentDefinitionFromService(
 
 // LoadServiceTargetAgentConfig reads the agent service's deploy/provision config
 // (container settings, tool resources, tool connections, startup command, and —
-// for pre-split projects — bundled deployments/connections/toolboxes) from the
+// for pre-split projects — bundled deployments) from the
 // service-level properties, falling back to the deprecated config-nested shape.
+// Callers resolve file references before loading the effective configuration.
+// Connections and toolbox definitions belong to standalone services, not agents.
+// Prompt connection names stay on the definition for its own validation graph;
+// they are not decoded as generic Connection resources here.
 func LoadServiceTargetAgentConfig(svc *azdext.ServiceConfig) (*ServiceTargetAgentConfig, error) {
 	s := ServiceConfigProps(svc)
 	cfg := &ServiceTargetAgentConfig{}
 	if s == nil {
 		return cfg, nil
+	}
+	if connections := s.GetFields()["connections"]; connections != nil {
+		if structKind(s) != string(agent_yaml.AgentKindPrompt) {
+			return nil, fmt.Errorf(
+				"bundled connections on agent service %q are not supported; move them to azure.ai.connection services, "+
+					"add them to the agent uses list, and run 'azd deploy --all'", svc.GetName(),
+			)
+		}
+		if connections.GetListValue() == nil {
+			return nil, fmt.Errorf(
+				"connections on prompt agent service %q must be an array of azure.ai.connection service names",
+				svc.GetName(),
+			)
+		}
+		for i, connection := range connections.GetListValue().GetValues() {
+			if strings.TrimSpace(connection.GetStringValue()) == "" {
+				return nil, fmt.Errorf(
+					"connections[%d] on prompt agent service %q must be a non-empty azure.ai.connection service name; "+
+						"Connection objects are not supported", i, svc.GetName(),
+				)
+			}
+		}
+		// Do not mutate the original properties: the prompt loader still needs
+		// these references when it builds the prompt-specific dependency graph.
+		s = &structpb.Struct{Fields: maps.Clone(s.GetFields())}
+		delete(s.Fields, "connections")
+	}
+	for _, toolbox := range s.GetFields()["toolboxes"].GetListValue().GetValues() {
+		if name, ok := toolbox.Kind.(*structpb.Value_StringValue); ok && strings.TrimSpace(name.StringValue) != "" {
+			continue
+		}
+		fields := toolbox.GetStructValue().GetFields()
+		if len(fields) == 1 && strings.TrimSpace(fields["name"].GetStringValue()) != "" {
+			continue
+		}
+		return nil, fmt.Errorf(
+			"bundled toolbox definitions on agent service %q are not supported; move them to azure.ai.toolbox services, "+
+				"keep only strings or name-only objects in agent toolboxes, add them to uses, and run 'azd deploy --all'; "+
+				"set endpoint on the toolbox service to reuse an existing toolbox", svc.GetName(),
+		)
 	}
 	if activity := s.GetFields()["activity"].GetStructValue(); activity.GetFields()["useCase"] != nil {
 		return nil, fmt.Errorf(

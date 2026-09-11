@@ -69,9 +69,9 @@ func TestPromptJSONSchemaUsesConnectionServiceReferences(t *testing.T) {
 	require.Error(t, schema.validate(prompt))
 }
 
-func TestHostedJSONSchemaUsesConnectionResources(t *testing.T) {
+func TestHostedJSONSchemaRejectsConnectionResources(t *testing.T) {
 	schema := loadDocSchema(t, filepath.Join("..", ".."))
-	require.NoError(t, schema.validate(map[string]any{
+	require.Error(t, schema.validate(map[string]any{
 		"kind": "hosted",
 		"connections": []any{map[string]any{
 			"name": "search-connection", "category": "CognitiveSearch", "target": "https://example.com", "authType": "AAD",

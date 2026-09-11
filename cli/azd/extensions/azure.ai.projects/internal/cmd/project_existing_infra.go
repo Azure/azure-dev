@@ -369,12 +369,9 @@ func ejectExistingProjectInfra(
 			exterrors.CodeInvalidAzureYaml,
 			fmt.Sprintf("synthesize Foundry project service %q: %s",
 				serviceName, err),
-			"check the endpoint, deployments, and connections fields "+
+			"check the endpoint, deployments, and agents fields "+
 				"under your azure.ai.project service",
 		)
-	}
-	if err := validateEjectedConnectionCredentials(result.Parameters); err != nil {
-		return err
 	}
 
 	acrMode, err := resolveProjectEjectAcrMode(
@@ -837,9 +834,6 @@ func writeExistingProjectBicep(
 	mode projectEjectAcrMode,
 	values map[string]string,
 ) error {
-	if err := validateEjectedConnectionCredentials(params); err != nil {
-		return err
-	}
 	existingAcrEndpoint := ""
 	if mode == projectEjectAcrReuseConnect ||
 		mode == projectEjectAcrAlreadyConnected {
@@ -1003,9 +997,6 @@ func writeExistingProjectTerraform(
 	mode projectEjectAcrMode,
 	values map[string]string,
 ) error {
-	if err := validateEjectedConnectionCredentials(params); err != nil {
-		return err
-	}
 	existingAcrEndpoint := ""
 	if mode == projectEjectAcrReuseConnect ||
 		mode == projectEjectAcrAlreadyConnected {
@@ -1125,23 +1116,6 @@ func writeExistingProjectTerraform(
 	if deployments, ok := params["deployments"]; ok {
 		tfvars["deployments"] = deployments
 	}
-	connections, ok := params["connections"].([]synthesis.Connection)
-	if !ok {
-		return fmt.Errorf(
-			"connections parameter has unexpected type %T",
-			params["connections"],
-		)
-	}
-	credentials, ok := params["connectionCredentials"].(map[string]map[string]any)
-	if !ok {
-		return fmt.Errorf(
-			"connectionCredentials parameter has unexpected type %T",
-			params["connectionCredentials"],
-		)
-	}
-	tfvars["connections"] = synthesis.JoinConnectionCredentials(
-		connections, credentials,
-	)
 	if err := writeJSONFile(
 		filepath.Join(infraDir, module+".tfvars.json"), tfvars,
 	); err != nil {

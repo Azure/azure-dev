@@ -202,7 +202,7 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		}
 		out = append(out, Suggestion{
 			Command:     "azd provision",
-			Description: "set up your Foundry project, models, and connections",
+			Description: "set up your Foundry project and models; deploy connections with 'azd deploy --all'",
 			Priority:    priority,
 		})
 		priority++
@@ -247,9 +247,8 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		// Toolbox sub-branch: configured toolboxes declare one or more
 		// whose azd-injected TOOLBOX_<NAME>_MCP_ENDPOINT variable is
 		// not yet present in the azd environment. The variable is
-		// written by `azd provision` (listen.go::registerToolboxEnvVars)
-		// after the azure.ai.toolbox service target publishes the toolbox version,
-		// so the canonical fix is provision — NOT `azd env set`, which
+		// written when the azure.ai.toolbox service target deploys the toolbox,
+		// so the canonical fix is deploy — NOT `azd env set`, which
 		// the generic manual-vars sub-branch below would otherwise
 		// suggest. We also surface `azd ai agent doctor` as a follow-up
 		// so the user can check whether the toolbox already exists in
@@ -266,8 +265,8 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 		}
 		if hasToolboxEndpoints && hasLegacyToolboxEndpoints {
 			out = append(out, Suggestion{
-				Command:     "azd provision",
-				Description: "create your legacy toolbox(es) in Foundry",
+				Command:     "edit azure.yaml: migrate legacy toolboxes to azure.ai.toolbox services and add them to agent uses",
+				Description: "set endpoint on a toolbox service to reuse an existing toolbox; then run 'azd deploy --all'",
 				Priority:    priority,
 			})
 			priority++
@@ -316,7 +315,7 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 			})
 			priority++
 		}
-		// Follow-up: once the user finishes the steps above (provision
+		// Follow-up: once the user finishes the steps above (deploy
 		// for toolboxes, env-set for manual vars), the next productive
 		// command is `azd ai agent run` and the invoke-local secondary.
 		// Suppressed when placeholders are also unresolved because
@@ -475,7 +474,7 @@ func appendBundledToolboxGuidance(
 			}
 			*out = append(*out, Suggestion{
 				Command: fmt.Sprintf(
-					"azd ai agent add toolbox %s --agent %s",
+					"azd ai agent toolbox add %s --agent %s",
 					shellEscapeSingleQuoted(serviceKey),
 					shellEscapeSingleQuoted(toolbox.ServiceName),
 				),
@@ -578,7 +577,7 @@ func runFollowUpDescription(
 	case hasBundledToolboxEndpoints && hasToolboxEndpoints:
 		return "start the agent locally once toolbox migration and deployment complete"
 	case hasToolboxEndpoints:
-		return "start the agent locally once provision completes"
+		return "start the agent locally once toolbox migration and deployment complete"
 	case hasManualVars:
 		return "start the agent locally once the values above are set"
 	default:

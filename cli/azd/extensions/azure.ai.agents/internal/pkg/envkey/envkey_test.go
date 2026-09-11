@@ -61,5 +61,20 @@ func TestReadinessScopeKeys(t *testing.T) {
 	require.Equal(t, "TOOLBOX_MY_TOOL_PROJECT_ENDPOINT", ToolboxProjectEndpoint("my-tool"))
 	require.Equal(t, "AGENT_MY_AGENT_PROJECT_ENDPOINT", AgentProjectEndpoint("my-agent"))
 	require.Equal(t, "AGENT_MY_AGENT_BLUEPRINT_CLIENT_ID", AgentBlueprintClientID("my-agent"))
-	require.Equal(t, "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT", ConnectionProjectEndpoint)
+}
+
+func TestConnectionServiceProjectEndpoint(t *testing.T) {
+	t.Parallel()
+
+	// Keep these wire-format vectors in sync with the Connections producer tests.
+	tests := map[string]string{
+		"search":         "CONNECTION_V2_736561726368_PROJECT_ENDPOINT",
+		"my connection":  "CONNECTION_V2_6D7920636F6E6E656374696F6E_PROJECT_ENDPOINT",
+		"my--connection": "CONNECTION_V2_6D792D2D636F6E6E656374696F6E_PROJECT_ENDPOINT",
+		"A":              "CONNECTION_V2_41_PROJECT_ENDPOINT",
+		"a":              "CONNECTION_V2_61_PROJECT_ENDPOINT",
+	}
+	for name, expected := range tests {
+		require.Equal(t, expected, ConnectionServiceProjectEndpoint(name))
+	}
 }

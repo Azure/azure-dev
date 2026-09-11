@@ -64,7 +64,8 @@ const (
 // managed agent needs from its scaffolded definition and folder layout, so a
 // prompt agent's azure.yaml carries the same hosts as a hosted agent's.
 //
-//   - Each entry under connections: becomes an azure.ai.connection service.
+//   - Each connection name adds a uses: edge when that azure.ai.connection
+//     service already exists; name references do not define new resources.
 //   - Each skills/<dir>/ folder becomes an azure.ai.skill service keyed by the
 //     name its SKILL.md declares. The agents extension never uploads a bundle
 //     itself; at deploy time it attaches the version the skill service
@@ -669,9 +670,7 @@ func collectLegacyProjectDeployments(
 }
 
 // collectConnections gathers the connections declared across all
-// azure.ai.connection services. Falls back to the connections bundled on the
-// agent service when no connection service carries any, so a pre-split
-// azure.yaml still provisions without re-running init.
+// azure.ai.connection services without projecting them into provisioning state.
 func collectConnections(
 	services map[string]*azdext.ServiceConfig,
 	projectRoot string,
@@ -702,69 +701,6 @@ func collectConnections(
 			out = append(out, *conn)
 		}
 	}
-	if len(out) > 0 {
-		return out, nil
-	}
-	legacy, err := collectLegacyAgentConfigs(
-		services,
-		projectRoot,
-	)
-	if err != nil {
-		return nil, err
-	}
-	for _, cfg := range legacy {
-		out = append(out, cfg.Connections...)
-	}
-	return out, nil
-}
-
-// collectToolboxes gathers the toolboxes declared across all azure.ai.toolbox
-// services. Falls back to the toolboxes bundled on the agent service when no
-// toolbox service carries any, so a pre-split azure.yaml still provisions
-// without re-running init.
-func collectToolboxes(
-	services map[string]*azdext.ServiceConfig,
-	projectRoot string,
-) ([]project.Toolbox, error) {
-	var out []project.Toolbox
-	for _, svc := range sortedServices(services) {
-		if svc.Host != AiToolboxHost {
-			continue
-		}
-		props, err := resolvedResourceServiceProps(
-			svc,
-			projectRoot,
-		)
-		if err != nil {
-			return nil, err
-		}
-		if props == nil {
-			continue
-		}
-		var toolbox *project.Toolbox
-		if err := project.UnmarshalStruct(props, &toolbox); err != nil {
-			return nil, fmt.Errorf("parsing toolbox service %q config: %w", svc.Name, err)
-		}
-		if toolbox != nil {
-			if toolbox.Name == "" {
-				toolbox.Name = svc.Name
-			}
-			out = append(out, *toolbox)
-		}
-	}
-	if len(out) > 0 {
-		return out, nil
-	}
-	legacy, err := collectLegacyAgentConfigs(
-		services,
-		projectRoot,
-	)
-	if err != nil {
-		return nil, err
-	}
-	for _, cfg := range legacy {
-		out = append(out, cfg.Toolboxes...)
-	}
 	return out, nil
 }
 
@@ -787,11 +723,10 @@ func collectAgentToolConnections(
 	return out, nil
 }
 
-// collectLegacyAgentConfigs parses the bundled ServiceTargetAgentConfig from
-// every agent service, in sorted name order. Tool connections always live here;
-// projects created before the per-resource split also carry their deployments,
-// connections, and toolboxes here rather than in sibling azure.ai.<kind>
-// services, so the collectors fall back to these when no sibling service exists.
+// collectLegacyAgentConfigs parses ServiceTargetAgentConfig from every agent
+// service in sorted name order, including legacy project deployment settings.
+// Runtime tool connections remain agent-owned; bundled Connection and Toolbox
+// definitions are rejected by LoadServiceTargetAgentConfig.
 func collectLegacyAgentConfigs(
 	services map[string]*azdext.ServiceConfig,
 	projectRoot string,

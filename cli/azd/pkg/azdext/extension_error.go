@@ -288,8 +288,14 @@ func ExtensionErrorFromStatus(st *status.Status) *ExtensionError {
 	}
 
 	for _, detail := range st.Details() {
-		if extensionErr, ok := detail.(*ExtensionError); ok {
-			return extensionErr
+		switch typed := detail.(type) {
+		case *ExtensionError:
+			return typed
+		case *v1beta.ExtensionError:
+			extensionErr := &ExtensionError{}
+			if transcodeStatusDetail(typed, extensionErr) {
+				return extensionErr
+			}
 		}
 	}
 
@@ -303,8 +309,14 @@ func ServiceErrorDetailFromStatus(st *status.Status) *ServiceErrorDetail {
 	}
 
 	for _, detail := range st.Details() {
-		if serviceErr, ok := detail.(*ServiceErrorDetail); ok {
-			return serviceErr
+		switch typed := detail.(type) {
+		case *ServiceErrorDetail:
+			return typed
+		case *v1beta.ServiceErrorDetail:
+			serviceErr := &ServiceErrorDetail{}
+			if transcodeStatusDetail(typed, serviceErr) {
+				return serviceErr
+			}
 		}
 	}
 
@@ -328,12 +340,26 @@ func ActionableErrorDetailFromStatus(st *status.Status) *ActionableErrorDetail {
 	}
 
 	for _, detail := range st.Details() {
-		if actionable, ok := detail.(*ActionableErrorDetail); ok {
-			return actionable
+		switch typed := detail.(type) {
+		case *ActionableErrorDetail:
+			return typed
+		case *v1beta.ActionableErrorDetail:
+			actionable := &ActionableErrorDetail{}
+			if transcodeStatusDetail(typed, actionable) {
+				return actionable
+			}
 		}
 	}
 
 	return nil
+}
+
+func transcodeStatusDetail(source, destination proto.Message) bool {
+	data, err := proto.Marshal(source)
+	if err != nil {
+		return false
+	}
+	return proto.Unmarshal(data, destination) == nil
 }
 
 func authLocalErrorCode(st *status.Status) string {

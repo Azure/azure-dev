@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -365,6 +366,41 @@ func TestErrorDetailsFromStatus(t *testing.T) {
 	assert.Nil(t, ExtensionErrorFromStatus(st))
 	assert.Nil(t, ExtensionErrorFromStatus(nil))
 	assert.Nil(t, ServiceErrorDetailFromStatus(nil))
+
+	betaExtensionErr := &v1beta.ExtensionError{
+		Message:    "beta extension failed",
+		Origin:     v1beta.ErrorOrigin_ERROR_ORIGIN_LOCAL,
+		Suggestion: "fix the beta input",
+		Source: &v1beta.ExtensionError_LocalError{
+			LocalError: &v1beta.LocalErrorDetail{
+				Code:       "invalid_beta_input",
+				Category:   "validation",
+				CauseTypes: []string{"*errors.errorString"},
+			},
+		},
+	}
+	st, err = status.New(codes.Unknown, "beta extension failed").WithDetails(betaExtensionErr)
+	require.NoError(t, err)
+
+	relayed := ExtensionErrorFromStatus(st)
+	require.NotNil(t, relayed)
+	assert.Equal(t, betaExtensionErr.GetMessage(), relayed.GetMessage())
+	assert.Equal(t, betaExtensionErr.GetSuggestion(), relayed.GetSuggestion())
+	assert.Equal(t, betaExtensionErr.GetLocalError().GetCode(), relayed.GetLocalError().GetCode())
+
+	betaServiceDetail := &v1beta.ServiceErrorDetail{
+		ErrorCode:   "BetaServiceFailure",
+		StatusCode:  503,
+		ServiceName: "preview.example.com",
+	}
+	st, err = status.New(codes.Unavailable, "beta service failed").WithDetails(betaServiceDetail)
+	require.NoError(t, err)
+
+	serviceDetail = ServiceErrorDetailFromStatus(st)
+	require.NotNil(t, serviceDetail)
+	assert.Equal(t, betaServiceDetail.GetErrorCode(), serviceDetail.GetErrorCode())
+	assert.Equal(t, betaServiceDetail.GetStatusCode(), serviceDetail.GetStatusCode())
+	assert.Equal(t, betaServiceDetail.GetServiceName(), serviceDetail.GetServiceName())
 }
 
 func TestWrapError_RelaysStructuredStatusDetails(t *testing.T) {
@@ -540,6 +576,22 @@ func TestActionableErrorDetailFromStatus(t *testing.T) {
 		actionable := ActionableErrorDetailFromStatus(st)
 		require.NotNil(t, actionable)
 		assert.Equal(t, "try harder", actionable.GetSuggestion())
+	})
+
+	t.Run("status with beta ActionableErrorDetail returns stable facade detail", func(t *testing.T) {
+		err := mustStatusErrorWithDetails(codes.Unknown, "boom", &v1beta.ActionableErrorDetail{
+			Suggestion: "use the preview recovery path",
+			Links: []*v1beta.ErrorLink{{
+				Url:   "https://aka.ms/azd-preview-errors",
+				Title: "Preview error help",
+			}},
+		})
+		st, _ := status.FromError(err)
+		actionable := ActionableErrorDetailFromStatus(st)
+		require.NotNil(t, actionable)
+		assert.Equal(t, "use the preview recovery path", actionable.GetSuggestion())
+		require.Len(t, actionable.GetLinks(), 1)
+		assert.Equal(t, "https://aka.ms/azd-preview-errors", actionable.GetLinks()[0].GetUrl())
 	})
 }
 

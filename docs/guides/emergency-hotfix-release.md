@@ -1,6 +1,7 @@
 # Release an emergency hotfix
 
-Use this process to release a small, urgent patch without including unrelated changes from `main`.
+Use this process to release a small, urgent patch for the latest stable release without including
+unrelated changes from `main`.
 The core CLI release pipeline supports manual releases from branches other than `main`.
 
 Follow the Azure SDK
@@ -12,13 +13,18 @@ unless this guide gives azd-specific instructions.
 Use the standard release process when changes can wait for the next planned release. Use a hotfix only
 when delaying the fix presents more risk than releasing an out-of-band patch.
 
-The standard hotfix process services the current stable release. The release pipeline updates the
-global `release/latest` channel and, for a stable version, the global `release/stable` channel. Contact
-the engineering systems team before servicing an older release line because publishing it through the
-standard pipeline can move those channels backward.
+This procedure supports only the latest stable release. Do not use it to service an older version.
+The release pipeline updates the global `release/latest` and `release/stable` channels, including
+the public `version.txt` used for upgrade discovery. Publishing an older version can suppress upgrade
+notifications or direct users to a version older than the latest release.
 
-Choose the next patch version. For example, use `1.32.1` to hotfix `1.32.0`. Confirm that the
-`azure-dev-cli_1.32.0` source release exists and that `1.32.1` has not already been released.
+Older-version servicing requires a separate publishing procedure, agreed with the engineering systems
+team, that preserves the global channels and upgrade metadata and accounts for package-manager
+publication. It is outside the scope of this guide.
+
+Choose the next patch version. The examples below assume `1.32.0` is the latest stable release and
+use `1.32.1` for the hotfix. Substitute the actual latest stable version and next patch version.
+Confirm that the source release exists and that the target patch version has not already been released.
 
 ## Create the shared hotfix branch
 
@@ -36,6 +42,12 @@ Azure Pipelines loads its templates from the selected hotfix branch. Confirm tha
 change in the hotfix pull request. Without it, GitHub creates the release tag from `main` instead of
 the commit that produced the hotfix artifacts.
 
+Have the engineering systems team review whether the branch's release infrastructure is compatible
+with current build and publishing requirements. Infrastructure changes since the source release may
+require additional backports from `main`, including changes under `eng/`. Review and validate those
+backports with the product fixes; do not assume that adding the target argument alone is sufficient
+or replace the entire `eng/` directory without that review.
+
 ## Apply and review the fix
 
 Cherry-pick only the approved fix commits:
@@ -48,7 +60,8 @@ Resolve conflicts against the released code, not against current behavior on `ma
 tests, and other validation that cover the changed code.
 
 Review the complete hotfix range before preparing the release. The comparison view for the hotfix
-pull request should contain only the intended fixes and release preparation.
+pull request should contain only the intended fixes, required release-infrastructure backports, and
+release preparation.
 
 The hotfix branch must not include unrelated changes from `main`.
 
@@ -82,8 +95,17 @@ After the pull request merges, manually queue the Azure DevOps pipeline defined 
 5. Review the selected branch, version, and publish setting before starting the run.
 
 The `PublishCLI` deployment uses the `package-publish` environment gate. Complete the required
-approval and monitor every publishing job. The release tag is created at the exact commit identified
-by `Build.SourceVersion` for the selected branch.
+approval and monitor every publishing job. Immediately before approving publication, reconfirm with
+the release owner that the source release is still the latest stable release and the target version
+is unused. Coordinate other releases to avoid concurrent publication. If a newer stable release has
+shipped while the hotfix was being prepared, stop and prepare the fix against that release instead.
+The release tag is created at the exact commit identified by `Build.SourceVersion` for the selected
+branch.
+
+`Skip.IncrementVersion=true` only suppresses the next-development-version pull request. It does not
+skip `PublishVersionTxt` or prevent updates to public upgrade metadata. Skipping `PublishVersionTxt`
+alone would not make older-version servicing safe: `PublishCLI` also uploads release artifacts to the
+global latest and stable channels. Keep the normal publication stages for a latest-stable hotfix.
 
 ## Verify and clean up
 

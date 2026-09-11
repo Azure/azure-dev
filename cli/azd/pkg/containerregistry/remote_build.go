@@ -126,6 +126,22 @@ func (r *RemoteBuildManager) UploadBuildSource(
 	return sourceUploadRes.SourceUploadDefinition, nil
 }
 
+// RemoteBuildUnavailableError indicates that ACR explicitly refused to schedule a build.
+// Callers may attempt a local build instead. Errors after submission do not use this type.
+type RemoteBuildUnavailableError struct {
+	Err error
+}
+
+// Error returns the original scheduling error.
+func (e *RemoteBuildUnavailableError) Error() string {
+	return e.Err.Error()
+}
+
+// Unwrap preserves the original Azure service error.
+func (e *RemoteBuildUnavailableError) Unwrap() error {
+	return e.Err
+}
+
 // RemoteBuildRunError represents a terminal failure reported by an Azure Container Registry remote build.
 type RemoteBuildRunError struct {
 	Status   armcontainerregistry.RunStatus
@@ -195,6 +211,10 @@ func (r *RemoteBuildManager) RunDockerBuildRequestWithLogs(
 
 	runPoller, err := regClient.BeginScheduleRun(ctx, resourceGroupName, registryName, buildRequest, nil)
 	if err != nil {
+		if responseErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+			responseErr.ErrorCode == "TasksOperationsNotAllowed" {
+			return &RemoteBuildUnavailableError{Err: err}
+		}
 		return err
 	}
 

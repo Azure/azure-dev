@@ -404,6 +404,15 @@ func (ch *ContainerHelper) Build(
 		return &ServiceBuildResult{}, nil
 	}
 
+	return ch.buildLocalImage(ctx, serviceConfig, env, progress)
+}
+
+func (ch *ContainerHelper) buildLocalImage(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	env *environment.Environment,
+	progress *async.Progress[ServiceProgress],
+) (*ServiceBuildResult, error) {
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 	resolveDockerPaths(serviceConfig, &dockerOptions)
 
@@ -601,6 +610,16 @@ func (ch *ContainerHelper) Package(
 		return &ServicePackageResult{}, nil
 	}
 
+	return ch.packageLocalImage(ctx, serviceConfig, serviceContext, env, progress)
+}
+
+func (ch *ContainerHelper) packageLocalImage(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+	env *environment.Environment,
+	progress *async.Progress[ServiceProgress],
+) (*ServicePackageResult, error) {
 	var imageId string
 	var sourceImage string
 	var imageHash string
@@ -779,6 +798,10 @@ func (ch *ContainerHelper) Publish(
 		fields.ContainerRemoteBuildKey.Bool(serviceConfig.Docker.RemoteBuild),
 	)
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	var remoteImage string
 
 	if err := validatePublishOptions(serviceConfig, options); err != nil {
@@ -807,20 +830,29 @@ func (ch *ContainerHelper) Publish(
 	} else if serviceConfig.Docker.RemoteBuild {
 		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, env, progress, imageOverride)
 		if err != nil {
-			// Check if a local container runtime (Docker/Podman) is available before falling back
-			if dockerErr := ch.docker.CheckInstalled(ctx); dockerErr != nil {
-				return nil, fmt.Errorf(
-					"remote build failed: %w\n\nLocal fallback unavailable: %w",
-					err, dockerErr)
+			remoteErr := err
+			if errors.Is(remoteErr, context.Canceled) || errors.Is(remoteErr, context.DeadlineExceeded) {
+				return nil, remoteErr
+			}
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, fmt.Errorf("remote build failed: %w\n\nPublish canceled: %w", remoteErr, ctxErr)
+			}
+			if _, ok := errors.AsType[*containerregistry.RemoteBuildUnavailableError](remoteErr); !ok {
+				return nil, remoteErr
 			}
 
-			ch.console.MessageUxItem(ctx, &ux.WarningMessage{
-				Description: fmt.Sprintf(
-					"Remote build failed: %s\nFalling back to local Docker build.", err),
-				HidePrefix: false,
-			})
-			remoteImage, err = ch.publishLocalImage(
+			remoteImage, err = ch.publishLocalFallback(
 				ctx, serviceConfig, serviceContext, env, progress, imageOverride)
+			if err != nil {
+				err = fmt.Errorf("remote build failed: %w\n\nLocal fallback failed: %w", remoteErr, err)
+				if suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
+					// Rich CLI output renders suggestion.Err rather than its outer wrappers.
+					combined := *suggestion
+					combined.Err = err
+					return nil, &combined
+				}
+				return nil, err
+			}
 		}
 	} else if useDotnetPublishForDockerBuild(serviceConfig) {
 		remoteImage, err = ch.runDotnetPublish(ctx, serviceConfig, targetResource, env, progress)
@@ -848,7 +880,70 @@ func (ch *ContainerHelper) Publish(
 	}, nil
 }
 
-// publishLocalImage builds the image locally and pushes it to the remote registry, it returns the full remote image name.
+func (ch *ContainerHelper) publishLocalFallback(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+	env *environment.Environment,
+	progress *async.Progress[ServiceProgress],
+	imageOverride *imageOverride,
+) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if err := ch.docker.CheckInstalled(ctx); err != nil {
+		return "", fmt.Errorf("local container runtime unavailable: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
+	var hasPackage bool
+	if serviceContext != nil {
+		artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer))
+		hasPackage = found
+		if found && artifact.LocationKind == LocationKindRemote {
+			return "", errors.New("local fallback requires a local container package")
+		}
+	}
+
+	action := fmt.Sprintf("Building locally with %s.", ch.docker.Name())
+	if hasPackage {
+		action = fmt.Sprintf("Publishing the existing local image with %s.", ch.docker.Name())
+	}
+	ch.console.MessageUxItem(ctx, &ux.WarningMessage{
+		Description: fmt.Sprintf("ACR refused the build request with TasksOperationsNotAllowed. %s", action),
+	})
+
+	if !hasPackage {
+		// Remote mode skips local build/package. Keep fallback artifacts separate from completed lifecycle state.
+		serviceContext = NewServiceContext()
+		buildResult, err := ch.buildLocalImage(ctx, serviceConfig, env, progress)
+		if err != nil {
+			return "", fmt.Errorf("building local image: %w", err)
+		}
+		if err := serviceContext.Build.Add(buildResult.Artifacts...); err != nil {
+			return "", fmt.Errorf("adding local build artifacts: %w", err)
+		}
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		packageResult, err := ch.packageLocalImage(ctx, serviceConfig, serviceContext, env, progress)
+		if err != nil {
+			return "", fmt.Errorf("packaging local image: %w", err)
+		}
+		if err := serviceContext.Package.Add(packageResult.Artifacts...); err != nil {
+			return "", fmt.Errorf("adding local package artifacts: %w", err)
+		}
+	}
+
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return ch.publishLocalImage(ctx, serviceConfig, serviceContext, env, progress, imageOverride)
+}
+
+// publishLocalImage publishes a prepared container package and returns the full remote image name.
 func (ch *ContainerHelper) publishLocalImage(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

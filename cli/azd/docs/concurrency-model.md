@@ -185,6 +185,29 @@ race on `env` (one writing `KUBECONFIG=…`, the other reading it for an
 
 ---
 
+## `pkg/tools/docker.Cli`
+
+| Lock | Protects | Acquired by |
+|------|----------|-------------|
+| `engineMu sync.Mutex` | `containerEngine` and runtime selection | `ContainerEngine`, `selectContainerEngine`, `getContainerEngine` |
+
+**Contract**: Every read and write of `containerEngine` holds `engineMu`.
+`ContainerEngine` holds it across the cache check, environment/PATH detection,
+and publication. `detectContainerEngineLocked` requires the caller to hold it.
+`CheckInstalled` uses `selectContainerEngine` to select and snapshot under the
+lock, then validates that snapshot, including error names, without the lock.
+Each call repeats selection and readiness checks; failures are not cached.
+
+`Name`, `InstallUrl`, and container operations read through
+`getContainerEngine`, which snapshots under the lock without detection and
+defaults to Docker before selection. No engine lock is held during version
+checks, daemon checks, builds, or other container subprocesses.
+
+**Why it matters**: Parallel services and remote-build fallbacks share the
+singleton `docker.Cli`.
+
+---
+
 ## `pkg/project.containerAppTarget` and `pkg/project.aksTarget`
 
 These targets no longer carry package-level `envMu` / `aksEnvMu` mutexes

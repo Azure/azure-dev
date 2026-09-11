@@ -6,6 +6,10 @@
 
 - [[#9559]](https://github.com/Azure/azure-dev/pull/9559) Add `azd ai project add` and project-aware deployment authoring for new, adopted, and endpoint-only Foundry projects.
 
+### Bugs Fixed
+
+- [[#9805]](https://github.com/Azure/azure-dev/pull/9805) Fix existing Foundry project endpoints that use environment references during provisioning, infrastructure ejection, and resource group location checks.
+
 ## 1.0.0-beta.9 (2026-09-04)
 
 ### Features Added

@@ -17,6 +17,7 @@
 
 ### Bugs Fixed
 
+- [[#9559]](https://github.com/Azure/azure-dev/pull/9559) Fix agent infrastructure ejection to reject concrete connection credentials and remove credentials from existing container registry endpoints.
 - [[#9719]](https://github.com/Azure/azure-dev/pull/9719) Fix agent optimization to advance the local baseline after deploying a successful candidate. Thanks @YoYoJa for the contribution!
 - [[#9808]](https://github.com/Azure/azure-dev/pull/9808) Fix remote agent invocation to detect the deployed protocol when the local agent definition is missing or stale.
 

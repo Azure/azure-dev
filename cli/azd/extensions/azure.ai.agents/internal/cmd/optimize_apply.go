@@ -5,10 +5,10 @@
 // an optimization candidate and applies it locally to the azd project.
 //
 // It writes the candidate's instruction, skills, and tool definitions
-// into .agent_configs/<candidate-id>/, updates the agent definition's
+// into .agent_configs/<candidate-id>/ and updates the agent definition's
 // environment variables (inline in azure.yaml, or legacy agent.yaml on
-// disk), and shows a diff summary (prompt and skills) against the
-// baseline.
+// disk). For managed prompt agents, it also writes the candidate's model,
+// instructions, and tools into the inline azure.yaml definition.
 
 package cmd
 
@@ -20,6 +20,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/opt_eval"
@@ -32,6 +33,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // agentConfigsDir aliases the shared constant for local use.
@@ -53,6 +55,9 @@ func newOptimizeApplyCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Apply optimized candidate configuration locally to your azd project.",
 		Long: `Download the optimized configuration and skill files from an optimization
 candidate and write them into your local azd project under .agent_configs/.
+
+For managed prompt agents, this also updates the model, instructions, and tools
+in the inline azure.yaml service definition.
 
 After applying, run 'azd deploy' to deploy the optimized agent version.`,
 		Example: `  # Apply candidate config locally, then deploy
@@ -139,6 +144,10 @@ func (a *OptimizeApplyAction) apply(
 			svc.Name,
 		)
 	}
+	_, isPromptAgent, err := projectpkg.PromptAgentFromResolvedService(svc, project.Path)
+	if err != nil {
+		return fmt.Errorf("failed to read prompt agent definition: %w", err)
+	}
 	servicePath := svc.GetRelativePath()
 	serviceDir, err := paths.JoinAllowRoot(project.Path, servicePath)
 	if err != nil {
@@ -167,7 +176,6 @@ func (a *OptimizeApplyAction) apply(
 	if err != nil {
 		return fmt.Errorf("failed to fetch candidate config: %w", err)
 	}
-
 	if err := os.MkdirAll(candidateDir, 0750); err != nil {
 		return fmt.Errorf("failed to create optimization directory: %w", err)
 	}
@@ -186,7 +194,21 @@ func (a *OptimizeApplyAction) apply(
 	}
 	fmt.Fprintf(out, "  → %s\n", filepath.Join(candidateDir, opt_eval.MetadataFile))
 
-	// Step 3: Persist OPTIMIZATION_LOCAL_DIR and OPTIMIZATION_CANDIDATE_ID onto the
+	// Step 3: Prompt agents deploy directly from their inline azure.yaml
+	// definition, so persist the candidate's complete supported configuration.
+	if isPromptAgent {
+		if err := persistPromptAgentCandidateConfig(
+			ctx,
+			azdClient,
+			svc,
+			project.Path,
+			candidateConfig,
+		); err != nil {
+			return err
+		}
+	}
+
+	// Step 4: Persist OPTIMIZATION_LOCAL_DIR and OPTIMIZATION_CANDIDATE_ID onto the
 	// agent definition so the deploy pipeline knows which local optimization
 	// config to use. New projects carry the definition inline in azure.yaml;
 	// older projects still keep it in an on-disk agent.yaml.
@@ -217,7 +239,7 @@ func (a *OptimizeApplyAction) apply(
 		}
 	}
 
-	// Step 4: Store candidate ID in the azd environment for tracking.
+	// Step 5: Store candidate ID in the azd environment for tracking.
 	serviceKey := toServiceKey(svc.Name)
 	env := getExistingEnvironment(ctx, a.envName, azdClient)
 	if env == nil {
@@ -252,6 +274,99 @@ func (a *OptimizeApplyAction) apply(
 	fmt.Fprintf(out, "    Optimized: %s\n", color.CyanString(candidatePath))
 
 	return nil
+}
+
+func persistPromptAgentCandidateConfig(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	svc *azdext.ServiceConfig,
+	projectPath string,
+	candidateConfig json.RawMessage,
+) error {
+	if _, found, err := projectpkg.PromptAgentFromResolvedService(svc, projectPath); err != nil {
+		return fmt.Errorf("failed to read prompt agent definition: %w", err)
+	} else if !found {
+		return nil
+	}
+
+	var config map[string]any
+	if err := json.Unmarshal(candidateConfig, &config); err != nil {
+		return fmt.Errorf("failed to parse candidate config: %w", err)
+	}
+
+	model, found := candidateConfigValue(config, "model")
+	if !found || model == nil {
+		return fmt.Errorf("candidate config does not contain a model")
+	}
+	if modelName, ok := model.(string); !ok || strings.TrimSpace(modelName) == "" {
+		return fmt.Errorf("candidate config contains an invalid model")
+	}
+
+	// Skills are intentionally excluded because skill optimization is not yet
+	// supported for managed prompt agents. Prompt deploy resolves azure.ai.skill
+	// services from the project instead of candidate files under .agent_configs.
+	updates := map[string]any{"model": model}
+	var removals []string
+	for path, keys := range map[string][]string{
+		"instructions": {"system_prompt", "systemPrompt", "instructions"},
+		"tools":        {"tools"},
+	} {
+		if value, found := candidateConfigValue(config, keys...); found && value != nil {
+			updates[path] = value
+		} else {
+			removals = append(removals, path)
+		}
+	}
+
+	for _, path := range slices.Sorted(maps.Keys(updates)) {
+		value, err := structpb.NewValue(updates[path])
+		if err != nil {
+			return fmt.Errorf("encoding candidate mutation %q: %w", path, err)
+		}
+		if _, err := azdClient.Project().SetServiceConfigValue(
+			ctx,
+			&azdext.SetServiceConfigValueRequest{
+				ServiceName: svc.Name,
+				Path:        path,
+				Value:       value,
+			},
+		); err != nil {
+			return fmt.Errorf(
+				"updating prompt agent %q in azure.yaml: %w",
+				svc.Name,
+				err,
+			)
+		}
+	}
+
+	slices.Sort(removals)
+	for _, path := range removals {
+		if _, err := azdClient.Project().UnsetServiceConfig(
+			ctx,
+			&azdext.UnsetServiceConfigRequest{
+				ServiceName: svc.Name,
+				Path:        path,
+			},
+		); err != nil {
+			return fmt.Errorf(
+				"removing prompt agent property %q from %q in azure.yaml: %w",
+				path,
+				svc.Name,
+				err,
+			)
+		}
+	}
+
+	return nil
+}
+
+func candidateConfigValue(config map[string]any, keys ...string) (any, bool) {
+	for _, key := range keys {
+		if value, found := config[key]; found {
+			return value, true
+		}
+	}
+	return nil, false
 }
 
 func persistInlineAgentEnvironment(

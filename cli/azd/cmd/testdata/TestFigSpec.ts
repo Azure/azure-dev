@@ -316,7 +316,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['delete'],
-							description: 'Delete a hosted agent.',
+							description: 'Delete an agent.',
 							options: [
 								{
 									name: ['--force'],
@@ -995,7 +995,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--agent-name'],
-									description: 'Foundry agent name to write to agent.yaml. Reusing a name creates a new version of the existing agent.',
+									description: 'Foundry agent name to write to azure.yaml. Reusing a name creates a new version of the existing agent.',
 									args: [
 										{
 											name: 'agent-name',
@@ -1017,6 +1017,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'deploy-mode',
+										},
+									],
+								},
+								{
+									name: ['--description'],
+									description: 'Prompt-agent description to write to azure.yaml. Used as the agent\'s human-readable summary.',
+									args: [
+										{
+											name: 'description',
 										},
 									],
 								},
@@ -1054,8 +1063,26 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--instructions'],
+									description: 'System instructions for a prompt agent, including one using --harness. Written to azure.yaml; not supported for hosted agents.',
+									args: [
+										{
+											name: 'instructions',
+										},
+									],
+								},
+								{
+									name: ['--kind'],
+									description: 'Agent runtime to initialize: \'hosted\' (bring your own code/container), \'prompt\' (model + instructions; Foundry runs the agent), or \'prompt-voice\' (a declarative voice agent; use --model for the speech-to-speech model and --voice for the output voice agent). When omitted, when --manifest is supplied, the manifest determines the runtime and --kind is ignored; otherwise the hosted runtime is used. With --no-prompt, \'prompt\' requires --agent-name and either --model or --model-deployment (unless supplied by --manifest).',
+									args: [
+										{
+											name: 'kind',
+										},
+									],
+								},
+								{
 									name: ['--manifest', '-m'],
-									description: 'Path or URI to an agent manifest, or to a sample\'s unified azure.yaml to adopt as the project manifest',
+									description: 'Path or URI to an agent manifest (hosted or \'kind: prompt\'), or to a sample\'s unified azure.yaml to adopt as the project manifest',
 									args: [
 										{
 											name: 'manifest',
@@ -1100,6 +1127,15 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--rai-policy'],
+									description: 'Responsible AI policy for a prompt or managed agent: \'none\' to inherit the account\'s default content filters, a policy name on the selected Foundry account, or a policy\'s full ARM resource ID. The policy must already exist; azd attaches it, it does not create it. When omitted, you are prompted to pick from the policies on the account; with --no-prompt no policy is attached. Ignored for hosted agents and when --manifest already declares policies.',
+									args: [
+										{
+											name: 'rai-policy',
+										},
+									],
+								},
+								{
 									name: ['--registry-connection'],
 									description: 'Name or ID of an existing Foundry project connection used to pull a private pre-built container image. Requires a pre-built image and is incompatible with code deploy.',
 									args: [
@@ -1123,6 +1159,195 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'src',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['invocations'],
+							description: 'Inspect and manage work created by invoking an agent.',
+							subcommands: [
+								{
+									name: ['cancel'],
+									description: 'Request cancellation of an invocation.',
+									options: [
+										{
+											name: ['--agent-endpoint'],
+											description: 'Full protocol endpoint URL of a deployed agent',
+											args: [
+												{
+													name: 'agent-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--agent-name', '-n'],
+											description: 'Agent name (matches azure.yaml service name; auto-detected when only one exists)',
+											args: [
+												{
+													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--id'],
+											description: 'Service-assigned ID; defaults to the current ID for the agent and protocol',
+											args: [
+												{
+													name: 'id',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['default'],
+												},
+											],
+										},
+										{
+											name: ['--protocol', '-p'],
+											description: 'Protocol to use: responses, invocations, or a2a (inferred from agent; operation support varies)',
+											args: [
+												{
+													name: 'protocol',
+												},
+											],
+										},
+										{
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
+											args: [
+												{
+													name: 'user-identity',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['follow'],
+									description: 'Replay and follow invocation output.',
+									options: [
+										{
+											name: ['--agent-endpoint'],
+											description: 'Full protocol endpoint URL of a deployed agent',
+											args: [
+												{
+													name: 'agent-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--agent-name', '-n'],
+											description: 'Agent name (matches azure.yaml service name; auto-detected when only one exists)',
+											args: [
+												{
+													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--id'],
+											description: 'Service-assigned ID; defaults to the current ID for the agent and protocol',
+											args: [
+												{
+													name: 'id',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['default'],
+												},
+											],
+										},
+										{
+											name: ['--protocol', '-p'],
+											description: 'Protocol to use: responses, invocations, or a2a (inferred from agent; operation support varies)',
+											args: [
+												{
+													name: 'protocol',
+												},
+											],
+										},
+										{
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
+											args: [
+												{
+													name: 'user-identity',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['show'],
+									description: 'Show the service result for an invocation.',
+									options: [
+										{
+											name: ['--agent-endpoint'],
+											description: 'Full protocol endpoint URL of a deployed agent',
+											args: [
+												{
+													name: 'agent-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--agent-name', '-n'],
+											description: 'Agent name (matches azure.yaml service name; auto-detected when only one exists)',
+											args: [
+												{
+													name: 'agent-name',
+												},
+											],
+										},
+										{
+											name: ['--id'],
+											description: 'Service-assigned ID; defaults to the current ID for the agent and protocol',
+											args: [
+												{
+													name: 'id',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+										{
+											name: ['--protocol', '-p'],
+											description: 'Protocol to use: responses, invocations, or a2a (inferred from agent; operation support varies)',
+											args: [
+												{
+													name: 'protocol',
+												},
+											],
+										},
+										{
+											name: ['--user-identity'],
+											description: 'User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)',
+											args: [
+												{
+													name: 'user-identity',
+												},
+											],
 										},
 									],
 								},
@@ -1183,12 +1408,20 @@ const completionSpec: Fig.Spec = {
 									description: 'Invoke on localhost instead of Foundry',
 								},
 								{
+									name: ['--long-running'],
+									description: 'Continue service-side execution after disconnection; remain attached unless --no-wait is specified',
+								},
+								{
 									name: ['--new-conversation'],
 									description: 'Force a new conversation (discard saved one)',
 								},
 								{
 									name: ['--new-session'],
 									description: 'Force a new session (discard saved one)',
+								},
+								{
+									name: ['--no-wait'],
+									description: 'Return after receiving the service-assigned ID; requires --long-running',
 								},
 								{
 									name: ['--output', '-o'],
@@ -1211,16 +1444,12 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--protocol', '-p'],
-									description: 'Protocol to use: responses (default), invocations, or a2a (a2a is remote-only)',
+									description: 'Protocol to use: responses, invocations, or a2a. Auto-detected from deployment data or the agent definition; pass --protocol when it cannot be determined.',
 									args: [
 										{
 											name: 'protocol',
 										},
 									],
-								},
-								{
-									name: ['--resumable'],
-									description: 'Start resumable work that continues in the service if the command disconnects; remain attached until it finishes',
 								},
 								{
 									name: ['--session-id', '-s'],
@@ -2007,7 +2236,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['show'],
-							description: 'Show the status of a hosted agent.',
+							description: 'Show the status of an agent.',
 							options: [
 								{
 									name: ['--output', '-o'],

@@ -99,9 +99,11 @@ class EventManager {
 
     let status = "completed";
     let message = "";
+    let followUp;
 
     try {
       await handler(args);
+      followUp = args.followUp;
     } catch (err) {
       status = "failed";
       message = err.message;
@@ -111,7 +113,12 @@ class EventManager {
       });
     }
 
-    return this._sendProjectHandlerStatus(eventName, status, message);
+    return this._sendProjectHandlerStatus(
+      eventName,
+      status,
+      message,
+      followUp
+    );
   }
 
   async _invokeServiceHandler(invokeMsg) {
@@ -152,13 +159,16 @@ class EventManager {
     );
   }
 
-  _sendProjectHandlerStatus(eventName, status, message) {
+  _sendProjectHandlerStatus(eventName, status, message, followUp) {
     const event = new EventMessage();
     const statusMsg = new ProjectHandlerStatus();
 
     statusMsg.setEventName(eventName);
     statusMsg.setStatus(status);
     statusMsg.setMessage(message);
+    if (followUp !== undefined) {
+      statusMsg.setFollowUp(followUp);
+    }
 
     event.setProjectHandlerStatus(statusMsg);
     this._logEvent("SEND", event.toObject());

@@ -3,6 +3,8 @@
 
 package project
 
+import "maps"
+
 import "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 
 // ProjectFormat identifies the persisted project layout.
@@ -82,9 +84,7 @@ func (pc *ProjectConfig) ServiceConfigs() map[string]*ServiceConfig {
 
 	services := make(map[string]*ServiceConfig)
 	for _, layer := range pc.Layers {
-		for name, service := range layer.Services {
-			services[name] = service
-		}
+		maps.Copy(services, layer.Services)
 	}
 	return services
 }

@@ -50,6 +50,7 @@ ENV HOME=/tmp
 ENV PATH="/usr/local/go/bin:/opt/proto-tools/bin:${PATH}"
 
 COPY --chmod=0755 generate-protos.sh /usr/local/bin/generate-protos
+COPY --chmod=0755 validate-scaffold-compatibility.py /usr/local/bin/validate-scaffold-compatibility.py
 
 WORKDIR /workspace
 ENTRYPOINT ["/usr/local/bin/generate-protos"]

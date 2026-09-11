@@ -94,9 +94,11 @@ func (s *serverService) StopAsync(ctx context.Context) error {
 
 	ts := telemetry.GetTelemetrySystem()
 	// Flush all in-memory telemetry data before stopping.
-	err := ts.Shutdown(ctx)
-	if err != nil {
-		log.Printf("error shutting down telemetry: %v", err)
+	if ts != nil {
+		err := ts.Shutdown(ctx)
+		if err != nil {
+			log.Printf("error shutting down telemetry: %v", err)
+		}
 	}
 
 	// Graceful telemetry cancellation.

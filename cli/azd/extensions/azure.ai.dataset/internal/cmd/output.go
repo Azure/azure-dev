@@ -1,0 +1,220 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"text/tabwriter"
+
+	"azureaidataset/internal/messages"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/cobra"
+)
+
+const outputJSON = "json"
+
+const outputTable = "table"
+
+// warnWriterKey carries the command's error writer to the helpers that warn.
+type warnWriterKey struct{}
+
+// withWarnWriter puts the command's error writer where a helper can find it.
+//
+// Threading a writer through would have touched every constructor call site;
+// every one of them already carries the context this rides on. It must not be
+// stdout: `-o json` writes a document there, and a warning mixed into it makes
+// the output unparseable for the caller who asked for JSON precisely so they
+// could parse it.
+func withWarnWriter(ctx context.Context, w io.Writer) context.Context {
+	return context.WithValue(ctx, warnWriterKey{}, w)
+}
+
+// warnWriter is where a warning goes: the command's error writer, or stderr
+// when this ran outside one.
+func warnWriter(ctx context.Context) io.Writer {
+	if w, ok := ctx.Value(warnWriterKey{}).(io.Writer); ok && w != nil {
+		return w
+	}
+	return os.Stderr
+}
+
+// writePortalLink closes a view with the asset's portal URL.
+//
+// Silent when there is no URL: the link is a convenience on top of work already
+// done, so its absence must not look like a failure.
+func writePortalLink(w io.Writer, url string) {
+	if url == "" {
+		return
+	}
+	fmt.Fprint(w, messages.PortalLink(url))
+}
+
+// registerOutputFormats constrains -o/--output to the formats these commands
+// implement.
+//
+// Anything that is not "json" renders as a table, so `--output yaml` was
+// accepted and quietly answered in a format nobody asked for. Declaring the
+// values rejects that at parse time, and puts them in help, metadata and
+// completion at the same time.
+func registerOutputFormats(cmd *cobra.Command) {
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name:          "output",
+		AllowedValues: []string{outputJSON, outputTable},
+		Default:       outputTable,
+	})
+}
+
+// outputFormat reads the inherited -o/--output flag.
+func outputFormat(cmd *cobra.Command) string {
+	if cmd == nil {
+		return ""
+	}
+	v, err := cmd.Flags().GetString("output")
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(v)
+}
+
+// isJSON reports whether the command should emit machine-readable output.
+func isJSON(cmd *cobra.Command) bool {
+	return outputFormat(cmd) == outputJSON
+}
+
+// noPrompt reports whether the caller asked for no interaction.
+//
+// JSON output counts: a question written into a document nobody is reading is a
+// hang rather than a prompt.
+//
+// The flag is only half of it. azd folds CI detection, agent detection,
+// --non-interactive and AZD_NON_INTERACTIVE into the AZD_NO_PROMPT it sets in
+// the extension's environment, and never sets this cobra flag -- so reading the
+// flag alone let an unattended delete take the confirm RPC's default of no,
+// report the dataset left alone, and exit 0 instead of asking for --force.
+func noPrompt(cmd *cobra.Command) bool {
+	if isJSON(cmd) {
+		return true
+	}
+	if azdext.DetectInteractive().NoPrompt {
+		return true
+	}
+	value, err := cmd.Flags().GetBool("no-prompt")
+	return err == nil && value
+}
+
+// emitJSON writes v as indented JSON.
+func emitJSON(w io.Writer, v any) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}
+
+// emitJSONList writes items as a JSON array.
+//
+// List commands emit a bare array rather than the envelope the service replied
+// with. The envelopes disagree with each other — the OpenAI-shaped APIs wrap
+// results in `data`, the ARM-shaped ones in `value` — so passing them through
+// would make a caller's parsing depend on which service happens to back a given
+// command. They also carry paging fields that this extension does not follow,
+// which would suggest there is more to fetch when there is not.
+//
+// A nil slice encodes as `null`, so it is normalized to an empty array: a
+// caller iterating the result should see no elements, not a type error.
+func emitJSONList[T any](w io.Writer, items []T) error {
+	if items == nil {
+		items = []T{}
+	}
+	return emitJSON(w, items)
+}
+
+// jsonListPage is the envelope every machine listing answers with.
+//
+// A bare array cannot say that it is one page of several, so `--limit` either
+// had to be ignored for `-o json` -- leaving the flag doing nothing on half the
+// surface -- or had to hand a script a short list it would read as the whole
+// collection. The envelope is what lets the flag work: count is what arrived,
+// total_count is what there was, and continuation_token is null only on the
+// last page.
+type jsonListPage[T any] struct {
+	Items             []T     `json:"items"`
+	Count             int     `json:"count"`
+	TotalCount        *int    `json:"total_count,omitempty"`
+	ContinuationToken *string `json:"continuation_token"`
+}
+
+// emitJSONPage writes one page of a listing.
+//
+// totalCount is nil where the service does not report one; the key is then
+// absent rather than zero, because "none" and "not said" are different answers.
+func emitJSONPage[T any](w io.Writer, items []T, totalCount *int, continuation string) error {
+	if items == nil {
+		items = []T{}
+	}
+	page := jsonListPage[T]{Items: items, Count: len(items), TotalCount: totalCount}
+	if continuation != "" {
+		page.ContinuationToken = &continuation
+	}
+	return emitJSON(w, page)
+}
+
+// emitTable writes a list view: uppercase headers over a rule, tab-aligned.
+//
+// The rule is what separates the header from the data at a glance, and it is
+// what `azure.ai.skills` prints, so a reader moving between the Foundry
+// extensions sees one table.
+func emitTable(w io.Writer, headers []string, rows [][]string) error {
+	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
+	if _, err := fmt.Fprintln(tw, strings.Join(headers, "\t")); err != nil {
+		return err
+	}
+	rule := make([]string, len(headers))
+	for i, h := range headers {
+		rule[i] = strings.Repeat("-", len(h))
+	}
+	if _, err := fmt.Fprintln(tw, strings.Join(rule, "\t")); err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if _, err := fmt.Fprintln(tw, strings.Join(row, "\t")); err != nil {
+			return err
+		}
+	}
+	return tw.Flush()
+}
+
+// field is one row of a detail view.
+type field struct {
+	Key   string // Title Case, per the azd style guide
+	Value string
+}
+
+// emitDetail writes a two-column key/value view, the shape `show` uses.
+//
+// Empty values are dropped rather than printed blank: a detail view is read to
+// learn what a thing is, and a column of empty keys says only that the writer
+// did not know which fields this kind has.
+func emitDetail(w io.Writer, fields []field) error {
+	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', 0)
+	for _, f := range fields {
+		if f.Value == "" {
+			continue
+		}
+		if _, err := fmt.Fprintf(tw, "%s\t%s\n", f.Key, f.Value); err != nil {
+			return err
+		}
+	}
+	return tw.Flush()
+}
+
+// requireFlag returns an error naming a flag the command needs and has no way
+// to settle for itself.
+func requireFlag(name string) error {
+	return messages.FlagRequired(name)
+}

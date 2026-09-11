@@ -1,0 +1,228 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"strings"
+
+	"azureaidataset/internal/foundry/projectctx"
+	"azureaidataset/internal/messages"
+	"azureaidataset/internal/pkg/dataset_api"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+)
+
+// projectEndpointEnvKey is the azd environment key holding the Foundry project
+// endpoint the data-plane clients target.
+const projectEndpointEnvKey = "FOUNDRY_PROJECT_ENDPOINT"
+
+// projectResourceIDEnvKey holds the project's ARM resource ID, which is what the
+// Foundry portal addresses a project by. azd provisioning writes it, and the
+// sibling extensions read the same key to build the same links.
+const projectResourceIDEnvKey = "AZURE_AI_PROJECT_ID"
+
+// datasetContext carries everything the commands need to reach the data plane.
+type datasetContext struct {
+	azdClient *azdext.AzdClient
+	endpoint  string
+	envName   string
+	cred      azcore.TokenCredential
+
+	datasetClient *dataset_api.DatasetClient
+}
+
+// newDatasetContext resolves the project endpoint and builds the data-plane
+// clients. The resolution order is projectctx's, so that every Foundry
+// extension answers the same question the same way:
+//
+//  1. --project-endpoint
+//  2. the active azd environment (FOUNDRY_PROJECT_ENDPOINT, then AZURE_AI_PROJECT_ENDPOINT)
+//  3. global config: extensions.ai-projects.context.endpoint
+//  4. the host environment variables of the same two names
+//  5. otherwise an error naming how to set one
+func newDatasetContext(ctx context.Context, endpointFlag string) (*datasetContext, error) {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return nil, messages.ConnectingToAzd(err)
+	}
+
+	dc := &datasetContext{azdClient: azdClient}
+
+	// The environment name is resolved regardless of where the endpoint came
+	// from: it is what cached version numbers are read from and written to.
+	_, envName := lookupEndpointFromAzd(ctx, azdClient)
+	dc.envName = envName
+
+	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{FlagValue: endpointFlag})
+	if err != nil {
+		// The caller only defers Close on a context it was handed, so every
+		// path that abandons this one has to close it here.
+		dc.Close()
+		return nil, err
+	}
+	dc.endpoint = strings.TrimSuffix(resolved.Endpoint, "/")
+	log.Printf("[endpoint] resolved from %s", resolved.Source)
+
+	// The validator has always noticed an endpoint that is not shaped like a
+	// project endpoint, and the answer was discarded here. An account endpoint
+	// -- the one the portal shows first -- passes every other check and then
+	// answers every request with 404, which this CLI reported as the dataset
+	// not existing. Said once, at resolution, rather than guessed at from each
+	// failure.
+	if resolved.PathWarning {
+		fmt.Fprint(warnWriter(ctx), messages.Warning(
+			messages.EndpointNotAProjectPath(dc.endpoint, resolved.Source.Describe())))
+	}
+
+	cred, err := newAzdTokenCredential()
+	if err != nil {
+		dc.Close()
+		return nil, err
+	}
+	dc.cred = cred
+
+	dc.datasetClient = dataset_api.NewDatasetClient(dc.endpoint, cred)
+
+	return dc, nil
+}
+
+// newAzdTokenCredential returns the azd credential already wrapped in its
+// retry. Handing back the wrapper rather than the raw credential is what keeps
+// the retry wired: in the sibling extension an earlier version assigned the
+// wrapper to the context and then built its clients from the unwrapped one, so
+// nothing retried and four tests still passed.
+func newAzdTokenCredential() (azcore.TokenCredential, error) {
+	cred, err := azidentity.NewAzureDeveloperCLICredential(
+		&azidentity.AzureDeveloperCLICredentialOptions{},
+	)
+	if err != nil {
+		return nil, messages.CreatingCredential(err)
+	}
+	return azdTokenRetry{inner: cred}, nil
+}
+
+// azdTokenRetry retries a failed token request once. azidentity gives the azd
+// subprocess a fixed 10 second timeout and discards its stderr, so an azd that
+// overruns surfaces as "exit status 1" with no cause; the next call usually
+// finds a warm token. Without this a slow token turns into a failed command.
+type azdTokenRetry struct{ inner azcore.TokenCredential }
+
+func (c azdTokenRetry) GetToken(
+	ctx context.Context,
+	opts policy.TokenRequestOptions,
+) (azcore.AccessToken, error) {
+	tok, err := c.inner.GetToken(ctx, opts)
+	if err == nil || ctx.Err() != nil {
+		return tok, err
+	}
+	log.Printf("[auth] token request failed (%v); retrying once", err)
+	return c.inner.GetToken(ctx, opts)
+}
+
+// azdEnvironmentName is the environment this invocation acts on: the one
+// -e/--environment named, or azd's current one when it named none.
+//
+// Answered here rather than at each reader. -e was parsed by the SDK and then
+// discarded, so `azd ai dataset create -e staging` read its endpoint out of the
+// default environment and wrote its version back there, and `-e a-name-azd-
+// rejects` was accepted in silence.
+//
+// Empty means there is no environment to act on, which is ordinary: these
+// commands work standalone against the data plane.
+func azdEnvironmentName(ctx context.Context, azdClient *azdext.AzdClient) string {
+	if name := projectctx.SelectedEnvironment(ctx); name != "" {
+		return name
+	}
+	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil || envResp.GetEnvironment() == nil {
+		return ""
+	}
+	return envResp.Environment.Name
+}
+
+// lookupEndpointFromAzd reads the endpoint from that environment, returning
+// empty strings when there is none.
+func lookupEndpointFromAzd(ctx context.Context, azdClient *azdext.AzdClient) (endpoint, envName string) {
+	envName = azdEnvironmentName(ctx, azdClient)
+	if envName == "" {
+		return "", ""
+	}
+	val, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     projectEndpointEnvKey,
+	})
+	if err != nil || val == nil || val.Value == "" {
+		return "", envName
+	}
+	return val.Value, envName
+}
+
+// errNoAzdEnvironment reports that there is no azd environment to persist into.
+//
+// These commands work standalone against the data plane, so running outside a
+// project is ordinary rather than a problem worth reporting.
+var errNoAzdEnvironment = messages.ErrNoAzdEnvironment
+
+// portalPrefix builds the portal link base from the project's ARM id, or nil.
+//
+// Best effort by design: the link is a convenience on top of work already done,
+// so a project whose id azd never recorded gets output without it rather than a
+// failure. Outside an azd environment there is nothing to read at all.
+func (dc *datasetContext) portalPrefix(ctx context.Context) *dataset_api.PortalPrefix {
+	if dc.azdClient == nil {
+		return nil
+	}
+	envName := dc.envName
+	if envName == "" {
+		envName = azdEnvironmentName(ctx, dc.azdClient)
+	}
+	if envName == "" {
+		return nil
+	}
+	val, err := dc.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     projectResourceIDEnvKey,
+	})
+	if err != nil || val == nil || val.Value == "" {
+		return nil
+	}
+	prefix, err := dataset_api.NewPortalPrefix(val.Value)
+	if err != nil {
+		log.Printf("[portal] %s is not a project resource ID: %v", projectResourceIDEnvKey, err)
+		return nil
+	}
+	return prefix
+}
+
+// setEnvValue persists a value into the active azd environment.
+func (dc *datasetContext) setEnvValue(ctx context.Context, key, value string) error {
+	if dc.envName == "" {
+		envResp, err := dc.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		if err != nil || envResp == nil || envResp.Environment == nil {
+			return messages.NoAzdEnvironmentToWrite(key)
+		}
+		dc.envName = envResp.Environment.Name
+	}
+	_, err := dc.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: dc.envName,
+		Key:     key,
+		Value:   value,
+	})
+	if err != nil {
+		return messages.WritingEnvValue(key, err)
+	}
+	return nil
+}
+
+func (dc *datasetContext) Close() {
+	if dc.azdClient != nil {
+		dc.azdClient.Close()
+	}
+}

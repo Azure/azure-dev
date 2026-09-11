@@ -1,10 +1,73 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Extension telemetry API
+
+Extension code reports best-effort usage events through the shared
+`pkg/foundry/telemetry` reporter. Extension-owned event builders remain in
+`internal/telemetry`:
+
+```go
+reporter := foundryTelemetry.NewReporter(azdClient.Telemetry(), nil)
+reporter.Report(ctx, extensionTelemetry.LocalClientRouteSelected(route))
+```
+
+`Report` has no return value and never changes the command result. It applies a
+one-second timeout, never retries, and writes only the event name and gRPC status
+code to the debug log when reporting fails. Attribute values and transport error
+details are not logged.
+
+Define event names, attribute keys, and bounded values in
+`internal/telemetry/events.go`. Do not call `ReportUsage` directly from command
+or provider code. Events must contain low-cardinality product metadata only;
+never include prompts, responses, resource or service names, IDs, paths, URLs,
+connection values, or other customer content. The azd host records events only
+for extensions installed from the official registry.
+
+The events currently emitted by this extension are documented under
+[Agent context telemetry](#agent-context-telemetry) and
+[Local client route telemetry](#local-client-route-telemetry).
+
+### Agent context telemetry
+
+When azd telemetry is enabled, the extension reports `agent.context.resolved`
+for each distinct agent classification involved in an invocation. The event
+contains only bounded classifications:
+
+| Attribute | Values | Description |
+|---|---|---|
+| `ext.agent.kind` | `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, `unknown` | Resolved agent kind. |
+| `ext.agent.harness` | `none`, `github_copilot_preview`, `other` | Resolved prompt-agent harness classification. |
+| `ext.agent.operation` | Extension command path | Operation sharing the event's trace. |
+
+The event is correlated with other telemetry from the same azd invocation by
+the OpenTelemetry operation ID. A project with multiple agent classifications
+reports one row for each classification. The event never includes agent names,
+service keys, paths, URLs, prompts, or other customer content.
+
 ## Non-interactive automation
 
 See the shared [AI extension non-interactive input reference](../ai-non-interactive.md)
 for every prompt's flag, environment/configuration input, or deterministic
 no-prompt behavior.
+
+## Choosing a Foundry project name
+
+During interactive `azd ai agent init`, azd prompts for the name of a new
+Microsoft Foundry project. If the current azd environment name is valid for
+the generated infrastructure, it is offered as the default. The name must be
+3-32 characters, start with a letter or number, and contain only letters,
+numbers, or hyphens.
+
+To configure the name, set it in the active azd environment before running
+init:
+
+```bash
+azd env set AZURE_AI_PROJECT_NAME my-foundry-project
+```
+
+An existing `AZURE_AI_PROJECT_NAME` value is offered as the default during
+interactive new-project setup. `--no-prompt` remains non-interactive and keeps
+its existing automatic environment-name fallback.
 
 ## Composing Agent Dependencies
 
@@ -201,9 +264,60 @@ underscore and contain only letters, digits, or underscores. For example,
 `API_KEY` is valid, while `api-key` is not. `azd deploy` validates these names
 before contacting Foundry Agent Service.
 
+## GitHub Copilot harness built-in tools
+
+The harness block selects the managed runtime and contains only its type.
+Configure built-in tools through the prompt agent's top-level `tools` list:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    kind: prompt
+    name: my-agent
+    model: gpt-5-mini
+    instructions: Use web research when requested.
+    harness:
+      type: github_copilot_preview
+    tools:
+      - type: github_copilot_toolset_preview
+        default_config:
+          enabled: false
+        configs:
+          - name: web
+            enabled: true
+```
+
+Built-in tool names are `filesystem_read`, `filesystem_write`, `shell`, `web`,
+and `subagents`. `default_config.enabled` applies to every built-in; entries in
+`configs` override individual tools. Skills are declared in the top-level
+`skills` list. Harness compute and idle settings are service-managed.
+
+Prompt-agent controls use camelCase in `azure.yaml` and are translated to the
+Foundry API's snake_case fields during deployment:
+
+```yaml
+toolChoice: auto
+temperature: 0
+topP: 0.9
+text:
+  format:
+    type: json_object
+reasoning:
+  effort: low
+structuredInputs:
+  user_context:
+    description: Additional invocation context
+    required: false
+```
+
+Nested tool definitions remain API-owned and use the field names documented by
+the corresponding Foundry tool contract.
+
 ## Content safety policies
 
-A hosted agent can be bound to an Azure AI Content Safety (RAI) policy so every
+A hosted or prompt agent can be bound to an Azure AI Content Safety (RAI) policy so every
 request and response it handles is screened by that policy. Declare it with a
 `policies` list on the `azure.ai.agent` service entry in `azure.yaml`:
 
@@ -219,9 +333,22 @@ services:
         raiPolicyName: /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account-name>/raiPolicies/<policy-name>
 ```
 
-`policies` applies to both deploy modes — container images and code deploys
-(`codeConfiguration`) alike. It is optional; agents without it deploy exactly as
-before.
+For prompt agents, use the same `policies` entry with `kind: prompt`:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    kind: prompt
+    model: gpt-4.1-mini
+    instructions: You are a helpful assistant.
+    policies:
+      - type: rai_policy
+        raiPolicyName: /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account-name>/raiPolicies/<policy-name>
+```
+
+`policies` is optional. For hosted agents, it applies to both deploy modes —
+container images and code deploys (`codeConfiguration`) alike.
 
 Details:
 
@@ -231,7 +358,9 @@ Details:
   `Microsoft.DefaultV2` still need the full ID, with the account that hosts them
   in the path.
 - Create or list policies on the Foundry account first — azd does not create the
-  policy, it only associates the agent with an existing one.
+  policy, it only associates the agent with an existing one. For prompt and
+  managed agents, `azd ai agent init` lists the policies on the selected account
+  and can bind one for you; see `--rai-policy`.
 
 > **Note:** In the deprecated on-disk `agent.yaml` shape the key is snake_case
 > (`rai_policy_name`). In `azure.yaml` it is camelCase (`raiPolicyName`), like
@@ -300,7 +429,7 @@ The binding ID is the service provider plus identifier, for example
 
 ### Moderating invocations-protocol traffic
 
-For agents that expose the `invocations` protocol, the RAI policy alone is not
+For hosted agents that expose the `invocations` protocol, the RAI policy alone is not
 enough: the content-safety proxy needs to be told **where the text lives** in the
 request and response bodies. Without that it has nothing to submit to the policy,
 so no content is actually screened. Supply an `invocationsModeration` block on the

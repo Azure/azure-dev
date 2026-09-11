@@ -453,11 +453,16 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 				if err := validateAcrConnectionInput(a.flags.acrConnection, false, true); err != nil {
 					return nil, err
 				}
-				if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
-					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
-				}
 				if err := ensureLocation(ctx, a.azdClient, a.azureContext, a.environment.Name); err != nil {
 					return nil, err
+				}
+				if err := ensureNewFoundryProjectName(
+					ctx, a.azdClient, a.environment.Name,
+				); err != nil {
+					return nil, err
+				}
+				if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
+					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 				}
 			} else {
 				selectedProject = proj
@@ -478,6 +483,11 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			}
 			a.credential = newCred
 
+			if err := ensureNewFoundryProjectName(
+				ctx, a.azdClient, a.environment.Name,
+			); err != nil {
+				return nil, err
+			}
 			if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
 				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 			}
@@ -931,12 +941,18 @@ func (a *InitFromCodeAction) addToProject(
 
 	// Emit the sibling azure.ai.project service carrying the model deployments
 	// and wire the agent's uses: to it. A selected existing project contributes
-	// its endpoint so provision reuses it instead of creating a new project.
+	// its endpoint so provision reuses it instead of creating a new project. The
+	// endpoint itself lives in the azd environment; azure.yaml only references it.
+	endpointRef, err := recordFoundryProjectEnv(
+		ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject,
+	)
+	if err != nil {
+		return err
+	}
 	if _, err := emitResourceServices(
 		ctx, a.azdClient, agentServiceName,
-		projectNameHint(ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject),
-		a.selectedFoundryProject.Endpoint(),
-		resourceDeployments, nil, nil,
+		endpointRef,
+		foundryResources{Deployments: resourceDeployments},
 	); err != nil {
 		return err
 	}

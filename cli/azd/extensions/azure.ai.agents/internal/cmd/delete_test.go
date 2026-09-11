@@ -36,6 +36,7 @@ func TestDeleteMarkerCleanup(t *testing.T) {
 			"AGENT_MY_AGENT_VOICE_TARGET_NAME",
 			"AGENT_MY_AGENT_VOICE_TARGET_VERSION",
 			"AGENT_MY_AGENT_PROJECT_ENDPOINT",
+			"AGENT_MY_AGENT_PROTOCOL_ENDPOINTS_VERSION",
 			"AGENT_MY_AGENT_RESPONSES_ENDPOINT",
 			"AGENT_MY_AGENT_INVOCATIONS_ENDPOINT",
 			"AGENT_MY_AGENT_INVOCATIONS_WS_ENDPOINT",
@@ -44,6 +45,14 @@ func TestDeleteMarkerCleanup(t *testing.T) {
 			require.True(t, ok, "%s was not cleared", key)
 			require.Equal(t, "", got, key)
 		}
+		// Clear protocol snapshot marker first.
+		require.NotEmpty(t, envServer.setKeys)
+		require.Equal(
+			t,
+			"AGENT_MY_AGENT_PROTOCOL_ENDPOINTS_VERSION",
+			envServer.setKeys[0],
+			"protocol endpoints version marker must be cleared first",
+		)
 	})
 
 	t.Run("whole agent markers are preserved for another project", func(t *testing.T) {
@@ -84,6 +93,7 @@ func TestDeleteMarkerCleanup(t *testing.T) {
 		for _, key := range []string{
 			"AGENT_MY_AGENT_VERSION",
 			"AGENT_MY_AGENT_ENDPOINT",
+			"AGENT_MY_AGENT_PROTOCOL_ENDPOINTS_VERSION",
 			"AGENT_MY_AGENT_VOICE_TARGET_NAME",
 			"AGENT_MY_AGENT_VOICE_TARGET_VERSION",
 			"AGENT_MY_AGENT_RESPONSES_ENDPOINT",
@@ -94,6 +104,14 @@ func TestDeleteMarkerCleanup(t *testing.T) {
 			require.True(t, ok, "%s was not cleared", key)
 			require.Equal(t, "", got, key)
 		}
+		// Clear protocol snapshot marker first.
+		require.NotEmpty(t, envServer.setKeys)
+		require.Equal(
+			t,
+			"AGENT_MY_AGENT_PROTOCOL_ENDPOINTS_VERSION",
+			envServer.setKeys[0],
+			"protocol endpoints version marker must be cleared first",
+		)
 	})
 
 	t.Run("version marker uses legacy agent endpoint scope", func(t *testing.T) {

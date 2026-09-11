@@ -8,7 +8,7 @@ package nextstep
 // String values must stay byte-for-byte identical to the platform's
 // `UserErrorCode`, `SessionErrorCode`, and `AgentVersionStatus` enums.
 //
-// Authoritative sources (vienna repo):
+// Authoritative sources (managed harness service):
 //   - Services/HostedAgents/Common/Exceptions/UserErrorCode.cs
 //   - Services/HostedAgents/Session/Exceptions/SessionErrorCode.cs
 //   - Contracts/V2/Generated/Agents/AgentVersionStatus.cs

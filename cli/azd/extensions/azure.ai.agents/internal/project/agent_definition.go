@@ -363,14 +363,22 @@ func environmentVariablesFromMap(
 // the marker that an agent definition is present in a service entry's inline or
 // config properties.
 func structHasKind(s *structpb.Struct) bool {
+	return structKind(s) != ""
+}
+
+// structKind returns the string `kind` a service entry's properties carry, or
+// "" when the field is absent or is not a string. Callers use it to pick the
+// right definition shape before decoding, because the kinds share the entry's
+// key space but not its types.
+func structKind(s *structpb.Struct) string {
 	if s == nil {
-		return false
+		return ""
 	}
 	v, ok := s.Fields["kind"]
 	if !ok {
-		return false
+		return ""
 	}
-	return v.GetStringValue() != ""
+	return v.GetStringValue()
 }
 
 // LoadAgentDefinition resolves the hosted-agent definition for an azure.ai.agent
@@ -748,7 +756,12 @@ func InlineAgentEnvironmentVariables(
 	if props == nil || len(props.GetFields()) == 0 {
 		return nil, nil
 	}
-	var inline AgentDefinitionInline
+	// Decode only the one deprecated field. The full inline shape is the hosted
+	// agent's, and a prompt or voice entry would fail to decode against it over
+	// fields this function never reads.
+	var inline struct {
+		EnvironmentVariables *[]agent_yaml.EnvironmentVariable `json:"environmentVariables,omitempty"`
+	}
 	if err := UnmarshalStruct(props, &inline); err != nil {
 		return nil, err
 	}
@@ -798,6 +811,15 @@ func agentDefinitionFromStruct(
 	coreImage string,
 	environment map[string]string,
 ) (agent_yaml.ContainerAgent, bool, error) {
+	// The kind gate has to come before the decode, not after it. Every agent
+	// kind lands in the same property bag but they do not agree on types: a
+	// prompt agent's `model` is a deployment name, while the hosted and voice
+	// shapes model it as an object. Decoding first would reject a perfectly
+	// valid prompt agent with a type error naming a field it does not have.
+	if structKind(s) == string(agent_yaml.AgentKindPrompt) {
+		return agent_yaml.ContainerAgent{}, false, nil
+	}
+
 	var inline AgentDefinitionInline
 	if err := UnmarshalStruct(s, &inline); err != nil {
 		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(

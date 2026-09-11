@@ -44,7 +44,8 @@ const (
 	CodeInvalidPositionalArg      = "invalid_positional_arg"
 )
 
-const CodeInvalidBackgroundResponseState = "invalid_background_response_state"
+// CodeInvalidResponseState identifies malformed locally saved Response state.
+const CodeInvalidResponseState = "invalid_response_state"
 
 // CodeInvalidEnvironmentVariableName identifies a hosted-agent
 // environment variable name rejected by the service contract.
@@ -69,9 +70,8 @@ const (
 	CodeMissingProjectEndpoint    = "missing_project_endpoint"
 	CodeGitHubDownloadFailed      = "github_download_failed"
 	CodePromptFailed              = "prompt_failed"
+	CodeRaiPolicyNotFound         = "rai_policy_not_found"
 )
-
-const CodeResponseStateUnavailable = "response_state_unavailable"
 
 // Error codes for ACR dependency errors.
 const (
@@ -96,7 +96,9 @@ const (
 //
 // These are usually paired with [Compatibility] for version mismatches.
 const (
-	CodeIncompatibleAzdVersion = "incompatible_azd_version"
+	CodeIncompatibleAzdVersion          = "incompatible_azd_version"
+	CodeIncompleteAgentProtocolMetadata = "incomplete_agent_protocol_metadata"
+	CodeLegacyAgentProtocolMetadata     = "legacy_agent_protocol_metadata"
 )
 
 // Error codes for azd host AI service errors.
@@ -148,8 +150,7 @@ const (
 
 // Error codes for toolbox operations.
 const (
-	CodeInvalidToolbox             = "invalid_toolbox"
-	CodeCreateToolboxVersionFailed = "create_toolbox_version_failed"
+	CodeInvalidToolbox = "invalid_toolbox"
 )
 
 // Error codes for connection operations.
@@ -222,7 +223,13 @@ const (
 	OpPublishTeamsApp        = "publish_teams_app"
 )
 
-const OpReadBackgroundResponseState = "read_background_response_state"
+// Operation names for Responses protocol resources.
+const (
+	OpReadResponseState = "read_response_state"
+	OpShowResponse      = "show_response"
+	OpFollowResponse    = "follow_response"
+	OpCancelResponse    = "cancel_response"
+)
 
 // Error codes for eval and optimize operations.
 const (

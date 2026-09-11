@@ -44,7 +44,8 @@ const (
 	CodeInvalidPositionalArg      = "invalid_positional_arg"
 )
 
-const CodeInvalidBackgroundResponseState = "invalid_background_response_state"
+// CodeInvalidResponseState identifies malformed locally saved Response state.
+const CodeInvalidResponseState = "invalid_response_state"
 
 // CodeInvalidEnvironmentVariableName identifies a hosted-agent
 // environment variable name rejected by the service contract.
@@ -71,8 +72,6 @@ const (
 	CodePromptFailed              = "prompt_failed"
 	CodeRaiPolicyNotFound         = "rai_policy_not_found"
 )
-
-const CodeResponseStateUnavailable = "response_state_unavailable"
 
 // Error codes for ACR dependency errors.
 const (
@@ -224,7 +223,13 @@ const (
 	OpPublishTeamsApp        = "publish_teams_app"
 )
 
-const OpReadBackgroundResponseState = "read_background_response_state"
+// Operation names for Responses protocol resources.
+const (
+	OpReadResponseState = "read_response_state"
+	OpShowResponse      = "show_response"
+	OpFollowResponse    = "follow_response"
+	OpCancelResponse    = "cancel_response"
+)
 
 // Error codes for eval and optimize operations.
 const (

@@ -16,7 +16,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Excluded from race builds until ReadInput cancellation stops leaking its input goroutine (https://github.com/Azure/azure-dev/issues/9995).
+// Excluding this test from the go test -race runs.
+// It has a race condition that requires a deeper fix (try running
+// it with -count 1000!)
+// Filed this issue to track it:
+// See https://github.com/Azure/azure-dev/issues/9995.
 func TestReadInput_ContextCancellationReturnsErrCancelled(t *testing.T) {
 	r, w, err := os.Pipe()
 	require.NoError(t, err)

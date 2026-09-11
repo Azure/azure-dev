@@ -487,14 +487,12 @@ func TestEventService_syncExtensionOutput_PersistsConcurrentOutputOnce(t *testin
 	capturesReady := make(chan struct{}, 2)
 	cleanupStart := make(chan struct{})
 	var cleanupWg sync.WaitGroup
-	cleanupWg.Add(2)
 
 	for _, title := range []string{
 		"Test Extension (predeploy.api)",
 		"Test Extension (predeploy.web)",
 	} {
-		go func() {
-			defer cleanupWg.Done()
+		cleanupWg.Go(func() {
 			cleanup := service.syncExtensionOutput(
 				t.Context(),
 				extension,
@@ -504,7 +502,7 @@ func TestEventService_syncExtensionOutput_PersistsConcurrentOutputOnce(t *testin
 			capturesReady <- struct{}{}
 			<-cleanupStart
 			cleanup()
-		}()
+		})
 	}
 
 	<-capturesReady
@@ -514,16 +512,14 @@ func TestEventService_syncExtensionOutput_PersistsConcurrentOutputOnce(t *testin
 	writeReady := make(chan struct{}, 2)
 	writeErrors := make(chan error, 2)
 	var writeWg sync.WaitGroup
-	writeWg.Add(2)
 
 	for _, output := range []string{"api warning\n", "web warning\n"} {
-		go func() {
-			defer writeWg.Done()
+		writeWg.Go(func() {
 			writeReady <- struct{}{}
 			<-writeStart
 			_, err := extension.StdOut().Write([]byte(output))
 			writeErrors <- err
-		}()
+		})
 	}
 
 	<-writeReady

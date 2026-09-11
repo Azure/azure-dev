@@ -16,15 +16,18 @@ const (
 
 // Error codes for dependency failures (missing resources, services, env values).
 const (
-	CodeAzdClientFailed        = "azd_client_failed"
-	CodeMissingProjectEndpoint = "missing_project_endpoint"
+	CodeAzdClientFailed          = "azd_client_failed"
+	CodeMissingAzureSubscription = "missing_azure_subscription"
+	CodeMissingProjectEndpoint   = "missing_project_endpoint"
 )
 
 // Error codes for auth failures.
 const (
-	CodeNotLoggedIn  = "not_logged_in"
-	CodeLoginExpired = "login_expired"
-	CodeAuthFailed   = "auth_failed"
+	CodeNotLoggedIn              = "not_logged_in"
+	CodeLoginExpired             = "login_expired"
+	CodeAuthFailed               = "auth_failed"
+	CodeTenantLookupFailed       = "tenant_lookup_failed"
+	CodeCredentialCreationFailed = "credential_creation_failed"
 )
 
 // Error codes for toolbox operations.

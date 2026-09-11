@@ -18,10 +18,13 @@ import (
 // NewCredential returns the credential used by Foundry data-plane clients.
 //
 // This is the toolboxes-extension copy of azure.ai.agents' newAgentCredential.
-func NewCredential() (azcore.TokenCredential, error) {
-	cred, err := azidentity.NewAzureDeveloperCLICredential(
-		&azidentity.AzureDeveloperCLICredentialOptions{},
-	)
+func NewCredential(tenantID string) (azcore.TokenCredential, error) {
+	options := &azidentity.AzureDeveloperCLICredentialOptions{}
+	if tenantID != "" {
+		options.TenantID = tenantID
+		options.AdditionallyAllowedTenants = []string{"*"}
+	}
+	cred, err := azidentity.NewAzureDeveloperCLICredential(options)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
 	}

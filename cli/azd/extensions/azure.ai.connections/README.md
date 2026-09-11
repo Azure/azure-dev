@@ -130,6 +130,10 @@ This includes payload-name overrides and file references; markers for other
 projects or environments are left unchanged. Failure to maintain local markers
 stops deletion rather than leaving a deleted Connection marked ready.
 
+If the Connection is already absent (including deletion outside azd), delete
+still clears matching markers and succeeds without confirmation. Other lookup
+errors are returned without changing markers; marker-cleanup errors remain failures.
+
 Old normalized per-service markers are not trusted. Redeploy Connections after
 updating the extensions to regenerate their readiness markers. Legacy aggregate
 markers from infrastructure provisioning are no longer accepted.

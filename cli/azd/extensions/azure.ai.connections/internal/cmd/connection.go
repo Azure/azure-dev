@@ -6,9 +6,11 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"maps"
+	"net/http"
 	"os"
 	"slices"
 	"strings"
@@ -17,6 +19,7 @@ import (
 	"azure.ai.connections/internal/exterrors"
 	"azure.ai.connections/internal/pkg/connections"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -750,12 +753,27 @@ func (a *ConnectionDeleteAction) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	return a.runWithContext(ctx, connCtx)
+}
 
+// runWithContext executes deletion against the resolved project context. Keeping
+// resolution separate lets tests exercise the real SDK and readiness cleanup
+// without using Azure credentials or remote resources.
+func (a *ConnectionDeleteAction) runWithContext(ctx context.Context, connCtx *connectionContext) error {
 	resp, err := connCtx.armClient.Get(
 		ctx, connCtx.rg, connCtx.account, connCtx.project,
 		a.flags.name, nil,
 	)
 	if err != nil {
+		if isConnectionNotFound(err) {
+			if err := invalidateDeletedConnectionMarkers(
+				ctx, a.flags.environment, a.flags.name, connCtx.endpoint,
+			); err != nil {
+				return err
+			}
+			fmt.Printf("Connection %q is already deleted.\n", a.flags.name)
+			return nil
+		}
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetConnection)
 	}
 
@@ -804,12 +822,17 @@ func (a *ConnectionDeleteAction) Run(ctx context.Context) error {
 		ctx, connCtx.rg, connCtx.account, connCtx.project,
 		a.flags.name, nil,
 	)
-	if err != nil {
+	if err != nil && !isConnectionNotFound(err) {
 		return exterrors.ServiceFromAzure(err, exterrors.OpDeleteConnection)
 	}
 
 	fmt.Printf("Connection %q deleted.\n", a.flags.name)
 	return nil
+}
+
+func isConnectionNotFound(err error) bool {
+	response, ok := errors.AsType[*azcore.ResponseError](err)
+	return ok && response.StatusCode == http.StatusNotFound
 }
 
 func newConnectionDeleteCommand(
@@ -821,7 +844,9 @@ func newConnectionDeleteCommand(
 	cmd := &cobra.Command{
 		Use:   "delete <name>",
 		Short: "Delete a connection.",
-		Args:  cobra.ExactArgs(1),
+		Long: "Delete a connection and clear its matching local readiness markers. " +
+			"If the connection is already absent, clear stale markers and succeed without prompting.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]
 			flags.noPrompt = extCtx.NoPrompt

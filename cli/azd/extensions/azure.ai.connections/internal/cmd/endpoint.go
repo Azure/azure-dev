@@ -107,7 +107,7 @@ func discoverARMContext(
 				"in the selected azd environment (not only in the shell): "+
 				"run 'azd env set AZURE_AI_PROJECT_ID \"<project-resource-id>\" --environment \"<environment>\"', "+
 				"or 'azd ai project add --project-id \"<project-resource-id>\" --environment \"<environment>\"'. "+
-				"Then run 'azd deploy --environment \"<environment>\"'.",
+				"Then retry the Connection command or deployment that produced this error.",
 		)
 	}
 

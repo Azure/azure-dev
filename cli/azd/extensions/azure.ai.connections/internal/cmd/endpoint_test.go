@@ -73,7 +73,8 @@ func TestResolveARMContext_EmptyProjectRequiresResourceID(t *testing.T) {
 		"azd env set AZURE_AI_PROJECT_ID \"<project-resource-id>\" --environment \"<environment>\"")
 	assert.Contains(t, localErr.Suggestion,
 		"azd ai project add --project-id \"<project-resource-id>\" --environment \"<environment>\"")
-	assert.Contains(t, localErr.Suggestion, "azd deploy --environment \"<environment>\"")
+	assert.Contains(t, localErr.Suggestion, "retry the Connection command or deployment that produced this error")
+	assert.NotContains(t, localErr.Suggestion, "azd deploy")
 	for _, sensitive := range []string{
 		endpoint, account, project, "secret-user", "secret-password", "secret-signature", "secret-fragment",
 	} {

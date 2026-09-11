@@ -95,12 +95,20 @@ jobs:
           go-version-file: cli/azd/go.mod
       - name: Install Buf
         run: go install github.com/bufbuild/buf/cmd/buf@v1.72.0
-      - name: Check protobuf contracts
+      - name: Regenerate protobuf artifacts
+        working-directory: cli/azd
+        run: go tool mage generateProtos
+      - name: Verify generated protobuf artifacts are current
+        run: git diff --exit-code
+      - name: Lint protobuf contracts
+        working-directory: cli/azd
+        run: make proto-lint
+      - name: Verify v1 is compatible with v1beta
+        working-directory: cli/azd
+        run: make proto-version-compatibility
+      - name: Check protobuf history for breaking changes
         working-directory: cli/azd
         run: |
-          go tool mage generateProtos
-          git diff --exit-code
-          make proto-lint
           if git cat-file -e origin/main:cli/azd/grpc/proto/azd/extensions/v1 2>/dev/null; then
             git branch --force buf-contract-baseline origin/main
             make proto-breaking BUF_BREAKING_AGAINST='../../.git#branch=buf-contract-baseline,subdir=cli/azd/grpc'

@@ -228,6 +228,9 @@ func TestServe_WithDebugEndpoints(t *testing.T) {
 	t.Setenv("AZD_DEBUG_SERVER_DEBUG_ENDPOINTS", "true")
 
 	s := newTestServer()
+	s.getTelemetrySystem = func() telemetrySystem {
+		return nil
+	}
 
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -254,6 +257,7 @@ func TestNewServer(t *testing.T) {
 	require.NotNil(t, s)
 	require.NotNil(t, s.sessions)
 	require.Empty(t, s.sessions)
+	require.NotNil(t, s.getTelemetrySystem)
 }
 
 func TestServeRpc_MethodNotFound(t *testing.T) {

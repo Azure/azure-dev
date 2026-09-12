@@ -11,18 +11,19 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 // serverService is the RPC server for the '/ServerService/v1.0' endpoint.
 type serverService struct {
-	server *Server
+	server          *Server
+	telemetrySystem telemetrySystem
 }
 
-func newServerService(server *Server) *serverService {
+func newServerService(server *Server, telemetrySystem telemetrySystem) *serverService {
 	return &serverService{
-		server: server,
+		server:          server,
+		telemetrySystem: telemetrySystem,
 	}
 }
 
@@ -92,11 +93,12 @@ func (s *serverService) StopAsync(ctx context.Context) error {
 	// client terminate `azd` once they know all outstanding RPCs have completed instead of trying to do a graceful
 	// shutdown on our end.
 
-	ts := telemetry.GetTelemetrySystem()
 	// Flush all in-memory telemetry data before stopping.
-	err := ts.Shutdown(ctx)
-	if err != nil {
-		log.Printf("error shutting down telemetry: %v", err)
+	if s.telemetrySystem != nil {
+		err := s.telemetrySystem.Shutdown(ctx)
+		if err != nil {
+			log.Printf("error shutting down telemetry: %v", err)
+		}
 	}
 
 	// Graceful telemetry cancellation.

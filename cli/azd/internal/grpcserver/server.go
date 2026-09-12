@@ -10,8 +10,11 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/grpcserver/legacybridge"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -34,7 +37,7 @@ type Server struct {
 	userConfigService    azdext.UserConfigServiceServer
 	deploymentService    azdext.DeploymentServiceServer
 	eventService         azdext.EventServiceServer
-	composeService       azdext.ComposeServiceServer
+	composeService       v1beta.ComposeServiceServer
 	workflowService      azdext.WorkflowServiceServer
 	extensionService     azdext.ExtensionServiceServer
 	serviceTargetService azdext.ServiceTargetServiceServer
@@ -42,10 +45,11 @@ type Server struct {
 	containerService     azdext.ContainerServiceServer
 	accountService       azdext.AccountServiceServer
 	aiModelService       azdext.AiModelServiceServer
-	copilotService       azdext.CopilotServiceServer
+	copilotService       v1beta.CopilotServiceServer
 	provisioningService  azdext.ProvisioningServiceServer
 	validationService    azdext.ValidationServiceServer
-	telemetryService     azdext.TelemetryServiceServer
+	telemetryService     v1beta.TelemetryServiceServer
+	betaServiceOverrides map[BetaService]any
 }
 
 func NewServer(
@@ -55,7 +59,7 @@ func NewServer(
 	userConfigService azdext.UserConfigServiceServer,
 	deploymentService azdext.DeploymentServiceServer,
 	eventService azdext.EventServiceServer,
-	composeService azdext.ComposeServiceServer,
+	composeService v1beta.ComposeServiceServer,
 	workflowService azdext.WorkflowServiceServer,
 	extensionService azdext.ExtensionServiceServer,
 	serviceTargetService azdext.ServiceTargetServiceServer,
@@ -63,10 +67,10 @@ func NewServer(
 	containerService azdext.ContainerServiceServer,
 	accountService azdext.AccountServiceServer,
 	aiModelService azdext.AiModelServiceServer,
-	copilotService azdext.CopilotServiceServer,
+	copilotService v1beta.CopilotServiceServer,
 	provisioningService azdext.ProvisioningServiceServer,
 	validationService azdext.ValidationServiceServer,
-	telemetryService azdext.TelemetryServiceServer,
+	telemetryService v1beta.TelemetryServiceServer,
 ) *Server {
 	return &Server{
 		projectService:       projectService,
@@ -87,7 +91,18 @@ func NewServer(
 		provisioningService:  provisioningService,
 		validationService:    validationService,
 		telemetryService:     telemetryService,
+		betaServiceOverrides: map[BetaService]any{},
 	}
+}
+
+// WithOptions applies optional beta service configuration before the server starts.
+func (s *Server) WithOptions(options ...ServerOption) *Server {
+	for _, option := range options {
+		if option != nil {
+			option(s)
+		}
+	}
+	return s
 }
 
 func (s *Server) Start() (*ServerInfo, error) {
@@ -103,13 +118,19 @@ func (s *Server) Start() (*ServerInfo, error) {
 			s.errorWrappingInterceptor(),
 			s.tokenAuthInterceptor(&serverInfo),
 			s.traceContextInterceptor(),
+			legacybridge.UnaryUsageInterceptor(),
 		),
 		grpc.ChainStreamInterceptor(
 			s.errorWrappingStreamInterceptor(),
 			s.tokenAuthStreamInterceptor(&serverInfo),
 			s.traceContextStreamInterceptor(),
+			legacybridge.StreamUsageInterceptor(),
 		),
 	)
+
+	if err := s.registerServices(); err != nil {
+		return nil, fmt.Errorf("failed to register gRPC services: %w", err)
+	}
 
 	// Use ":0" to let the system assign an available random port
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -119,26 +140,6 @@ func (s *Server) Start() (*ServerInfo, error) {
 
 	// Get the assigned random port
 	randomPort := listener.Addr().(*net.TCPAddr).Port
-
-	// Register the azd services with the gRPC server
-	azdext.RegisterProjectServiceServer(s.grpcServer, s.projectService)
-	azdext.RegisterEnvironmentServiceServer(s.grpcServer, s.environmentService)
-	azdext.RegisterPromptServiceServer(s.grpcServer, s.promptService)
-	azdext.RegisterUserConfigServiceServer(s.grpcServer, s.userConfigService)
-	azdext.RegisterDeploymentServiceServer(s.grpcServer, s.deploymentService)
-	azdext.RegisterEventServiceServer(s.grpcServer, s.eventService)
-	azdext.RegisterComposeServiceServer(s.grpcServer, s.composeService)
-	azdext.RegisterWorkflowServiceServer(s.grpcServer, s.workflowService)
-	azdext.RegisterExtensionServiceServer(s.grpcServer, s.extensionService)
-	azdext.RegisterServiceTargetServiceServer(s.grpcServer, s.serviceTargetService)
-	azdext.RegisterFrameworkServiceServer(s.grpcServer, s.frameworkService)
-	azdext.RegisterContainerServiceServer(s.grpcServer, s.containerService)
-	azdext.RegisterAccountServiceServer(s.grpcServer, s.accountService)
-	azdext.RegisterAiModelServiceServer(s.grpcServer, s.aiModelService)
-	azdext.RegisterCopilotServiceServer(s.grpcServer, s.copilotService)
-	azdext.RegisterProvisioningServiceServer(s.grpcServer, s.provisioningService)
-	azdext.RegisterValidationServiceServer(s.grpcServer, s.validationService)
-	azdext.RegisterTelemetryServiceServer(s.grpcServer, s.telemetryService)
 
 	serverInfo.Address = fmt.Sprintf("127.0.0.1:%d", randomPort)
 	serverInfo.Port = randomPort
@@ -181,6 +182,11 @@ func (s *Server) errorWrappingInterceptor() grpc.UnaryServerInterceptor {
 		resp, err := handler(ctx, req)
 		if err != nil {
 			err = mapHostError(err)
+			if strings.HasPrefix(info.FullMethod, "/azd.extensions.v1beta.") {
+				err = translateBetaStatusDetails(err)
+			} else if legacybridge.IsLegacyMethod(info.FullMethod) {
+				err = legacybridge.TranslateStatusDetails(err)
+			}
 		}
 		return resp, err
 	}
@@ -197,6 +203,11 @@ func (s *Server) errorWrappingStreamInterceptor() grpc.StreamServerInterceptor {
 		err := handler(srv, ss)
 		if err != nil {
 			err = mapHostError(err)
+			if strings.HasPrefix(info.FullMethod, "/azd.extensions.v1beta.") {
+				err = translateBetaStatusDetails(err)
+			} else if legacybridge.IsLegacyMethod(info.FullMethod) {
+				err = legacybridge.TranslateStatusDetails(err)
+			}
 		}
 		return err
 	}

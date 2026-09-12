@@ -1272,6 +1272,13 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
+	// ExtensionLegacyGrpcCallCount counts calls made through the temporary pre-versioning gRPC bridge.
+	ExtensionLegacyGrpcCallCount = AttributeKey{
+		Key:            attribute.Key("extension.grpc.legacy_call_count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
 	// ExtensionEvent identifies a usage report or failed invocation event.
 	// Extensions own this value, which lets queries filter their events.
 	ExtensionEvent = AttributeKey{

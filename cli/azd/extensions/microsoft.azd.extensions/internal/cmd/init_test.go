@@ -394,6 +394,7 @@ func TestCollectExtensionMetadataFromFlagsInternalDefaultsToGo(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "go", metadata.Language)
 	assert.Equal(t, "0.0.1", metadata.Version)
+	assert.Equal(t, ">=1.33.0", metadata.RequiredAzdVersion)
 }
 
 func TestCollectExtensionMetadataFromFlagsInternalRejectsNonGo(t *testing.T) {

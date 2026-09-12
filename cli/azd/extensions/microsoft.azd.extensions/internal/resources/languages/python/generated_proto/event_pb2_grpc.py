@@ -37,7 +37,7 @@ class EventServiceStub(object):
             channel: A grpc.Channel.
         """
         self.EventStream = channel.stream_stream(
-                '/azdext.EventService/EventStream',
+                '/azd.extensions.v1.EventService/EventStream',
                 request_serializer=event__pb2.EventMessage.SerializeToString,
                 response_deserializer=event__pb2.EventMessage.FromString,
                 _registered_method=True)
@@ -65,9 +65,9 @@ def add_EventServiceServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'azdext.EventService', rpc_method_handlers)
+            'azd.extensions.v1.EventService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('azdext.EventService', rpc_method_handlers)
+    server.add_registered_method_handlers('azd.extensions.v1.EventService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -90,7 +90,7 @@ class EventService(object):
         return grpc.experimental.stream_stream(
             request_iterator,
             target,
-            '/azdext.EventService/EventStream',
+            '/azd.extensions.v1.EventService/EventStream',
             event__pb2.EventMessage.SerializeToString,
             event__pb2.EventMessage.FromString,
             options,

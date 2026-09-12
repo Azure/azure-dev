@@ -25,6 +25,7 @@ Each eval definition targets a different azd scenario. Run them via npm:
 | `npm run eval:simple`            | `eval.yaml` — starter example showing Vally features (fixtures, worktrees)                   |
 | `npm run eval:qna`               | `eval-azd-qna.yaml` — asking the LLM about azd, but without any files (pure Q&A)             |
 | `npm run eval:deploy`            | `eval-azd-deploy.yaml` — does the model suggest azd for an app + Azure, skill loaded         |
+| `npm run eval:grpc-contracts`    | `eval-azd-grpc-contracts.yaml` — validates v1/v1beta contract lifecycle guidance             |
 | `npm run eval:experiment`        | `eval-azd.experiments.yaml` — skills on/off baseline (see the file header)                   |
 | `npm run eval:foundry:skill`     | `eval-foundry-skill.yaml` — does the official Foundry skill route and comply with its own rules |
 | `npm run eval:foundry:authoring` | `eval-foundry-authoring.yaml` — editing Foundry service entries in `azure.yaml`              |
@@ -42,6 +43,7 @@ evals/
 ├── eval.yaml                     # starter example (npm run eval:simple)
 ├── eval-azd-qna.yaml             # Q&A / error scenarios
 ├── eval-azd-deploy.yaml          # deploy + environment scenarios
+├── eval-azd-grpc-contracts.yaml  # v1/v1beta contract lifecycle skill
 ├── eval-azd.experiments.yaml     # skills on/off experiment
 ├── eval-foundry-skill.yaml       # Foundry skill routing + rule compliance
 ├── eval-foundry-authoring.yaml   # Foundry azure.yaml authoring

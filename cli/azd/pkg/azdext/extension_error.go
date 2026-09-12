@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorchain"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"google.golang.org/grpc/codes"
@@ -149,30 +150,18 @@ func WrapError(err error) *ExtensionError {
 		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_LOCAL
 		extErr.Source = &ExtensionError_LocalError{
 			LocalError: &LocalErrorDetail{
-				Code:       extLocalErr.Code,
-				Category:   string(normalizedCategory),
-				CauseTypes: errorchain.NormalizeCauseTypes(extLocalErr.CauseTypes),
+				Code:     extLocalErr.Code,
+				Category: string(normalizedCategory),
 			},
 		}
 		return extErr
 	}
 
 	if extToolErr, ok := errors.AsType[*ToolError](err); ok {
-		kind := normalizeToolErrorKind(extToolErr.Kind)
-		toolDetail := &ToolErrorDetail{
-			ToolName:    extToolErr.ToolName,
-			FailureKind: string(kind),
-		}
-		if extToolErr.ExitCode != nil {
-			exitCode := int64(*extToolErr.ExitCode)
-			toolDetail.ExitCode = &exitCode
-		}
-
 		extErr.Message = extToolErr.Message
 		extErr.Suggestion = extToolErr.Suggestion
 		extErr.Links = WrapErrorLinks(extToolErr.Links)
 		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_TOOL
-		extErr.Source = &ExtensionError_ToolError{ToolError: toolDetail}
 		return extErr
 	}
 
@@ -213,11 +202,6 @@ func populateExtensionErrorFromStatus(extErr *ExtensionError, st *status.Status)
 	if relayed != nil {
 		relayedCopy := proto.Clone(relayed).(*ExtensionError)
 		relayedCopy.Message = st.Message()
-		if localErr := relayedCopy.GetLocalError(); localErr != nil {
-			localErr.CauseTypes = errorchain.NormalizeCauseTypes(
-				localErr.GetCauseTypes(),
-			)
-		}
 		if actionable != nil {
 			if relayedCopy.GetSuggestion() == "" {
 				relayedCopy.Suggestion = actionable.GetSuggestion()
@@ -304,8 +288,14 @@ func ExtensionErrorFromStatus(st *status.Status) *ExtensionError {
 	}
 
 	for _, detail := range st.Details() {
-		if extensionErr, ok := detail.(*ExtensionError); ok {
-			return extensionErr
+		switch typed := detail.(type) {
+		case *ExtensionError:
+			return typed
+		case *v1beta.ExtensionError:
+			extensionErr := &ExtensionError{}
+			if transcodeStatusDetail(typed, extensionErr) {
+				return extensionErr
+			}
 		}
 	}
 
@@ -319,8 +309,14 @@ func ServiceErrorDetailFromStatus(st *status.Status) *ServiceErrorDetail {
 	}
 
 	for _, detail := range st.Details() {
-		if serviceErr, ok := detail.(*ServiceErrorDetail); ok {
-			return serviceErr
+		switch typed := detail.(type) {
+		case *ServiceErrorDetail:
+			return typed
+		case *v1beta.ServiceErrorDetail:
+			serviceErr := &ServiceErrorDetail{}
+			if transcodeStatusDetail(typed, serviceErr) {
+				return serviceErr
+			}
 		}
 	}
 
@@ -344,12 +340,26 @@ func ActionableErrorDetailFromStatus(st *status.Status) *ActionableErrorDetail {
 	}
 
 	for _, detail := range st.Details() {
-		if actionable, ok := detail.(*ActionableErrorDetail); ok {
-			return actionable
+		switch typed := detail.(type) {
+		case *ActionableErrorDetail:
+			return typed
+		case *v1beta.ActionableErrorDetail:
+			actionable := &ActionableErrorDetail{}
+			if transcodeStatusDetail(typed, actionable) {
+				return actionable
+			}
 		}
 	}
 
 	return nil
+}
+
+func transcodeStatusDetail(source, destination proto.Message) bool {
+	data, err := proto.Marshal(source)
+	if err != nil {
+		return false
+	}
+	return proto.Unmarshal(data, destination) == nil
 }
 
 func authLocalErrorCode(st *status.Status) string {
@@ -377,6 +387,9 @@ func UnwrapError(msg *ExtensionError) error {
 	}
 
 	links := UnwrapErrorLinks(msg.GetLinks())
+	if previewErr := unwrapPreviewErrorDetails(msg, links); previewErr != nil {
+		return previewErr
+	}
 
 	// Check for service error details
 	if svcErr := msg.GetServiceError(); svcErr != nil {
@@ -396,23 +409,6 @@ func UnwrapError(msg *ExtensionError) error {
 			Message:    msg.GetMessage(),
 			Code:       localErr.GetCode(),
 			Category:   normalizedCategory,
-			CauseTypes: errorchain.NormalizeCauseTypes(localErr.GetCauseTypes()),
-			Suggestion: msg.GetSuggestion(),
-			Links:      links,
-		}
-	}
-
-	if toolErr := msg.GetToolError(); toolErr != nil {
-		var exitCode *int
-		if toolErr.ExitCode != nil {
-			value := int(toolErr.GetExitCode())
-			exitCode = &value
-		}
-		return &ToolError{
-			Message:    msg.GetMessage(),
-			ToolName:   toolErr.GetToolName(),
-			Kind:       normalizeToolErrorKind(ToolErrorKind(toolErr.GetFailureKind())),
-			ExitCode:   exitCode,
 			Suggestion: msg.GetSuggestion(),
 			Links:      links,
 		}
@@ -452,12 +448,48 @@ func UnwrapError(msg *ExtensionError) error {
 	}
 }
 
-func normalizeToolErrorKind(kind ToolErrorKind) ToolErrorKind {
-	if kind == ToolErrorKindMissing {
-		return ToolErrorKindMissing
+func unwrapPreviewErrorDetails(msg *ExtensionError, links []errorhandler.ErrorLink) error {
+	wire, err := proto.Marshal(msg)
+	if err != nil {
+		return nil
 	}
 
-	return ToolErrorKindFailed
+	preview := new(v1beta.ExtensionError)
+	if err := proto.Unmarshal(wire, preview); err != nil {
+		return nil
+	}
+
+	if localErr := preview.GetLocalError(); localErr != nil && len(localErr.GetCauseTypes()) > 0 {
+		return &LocalError{
+			Message:    preview.GetMessage(),
+			Code:       localErr.GetCode(),
+			Category:   ParseLocalErrorCategory(localErr.GetCategory()),
+			CauseTypes: errorchain.NormalizeCauseTypes(localErr.GetCauseTypes()),
+			Suggestion: preview.GetSuggestion(),
+			Links:      links,
+		}
+	}
+
+	if toolErr := preview.GetToolError(); toolErr != nil {
+		var exitCode *int
+		if toolErr.ExitCode != nil {
+			exitCode = new(int(toolErr.GetExitCode()))
+		}
+		kind := ToolErrorKindFailed
+		if toolErr.GetFailureKind() == string(ToolErrorKindMissing) {
+			kind = ToolErrorKindMissing
+		}
+		return &ToolError{
+			Message:    preview.GetMessage(),
+			ToolName:   toolErr.GetToolName(),
+			Kind:       kind,
+			ExitCode:   exitCode,
+			Suggestion: preview.GetSuggestion(),
+			Links:      links,
+		}
+	}
+
+	return nil
 }
 
 // WrapErrorLinks converts errorhandler.ErrorLink values into proto ErrorLink messages.

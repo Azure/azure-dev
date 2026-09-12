@@ -25,30 +25,30 @@ _sym_db = _symbol_database.Default()
 import models_pb2 as models__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11user_config.proto\x12\x06\x61zdext\x1a\x0cmodels.proto\"$\n\x14GetUserConfigRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\"5\n\x15GetUserConfigResponse\x12\r\n\x05value\x18\x01 \x01(\x0c\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"*\n\x1aGetUserConfigStringRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\";\n\x1bGetUserConfigStringResponse\x12\r\n\x05value\x18\x01 \x01(\t\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"+\n\x1bGetUserConfigSectionRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\">\n\x1cGetUserConfigSectionResponse\x12\x0f\n\x07section\x18\x01 \x01(\x0c\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"3\n\x14SetUserConfigRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x0c\"&\n\x16UnsetUserConfigRequest\x12\x0c\n\x04path\x18\x01 \x01(\t2\x82\x03\n\x11UserConfigService\x12\x42\n\x03Get\x12\x1c.azdext.GetUserConfigRequest\x1a\x1d.azdext.GetUserConfigResponse\x12T\n\tGetString\x12\".azdext.GetUserConfigStringRequest\x1a#.azdext.GetUserConfigStringResponse\x12W\n\nGetSection\x12#.azdext.GetUserConfigSectionRequest\x1a$.azdext.GetUserConfigSectionResponse\x12:\n\x03Set\x12\x1c.azdext.SetUserConfigRequest\x1a\x15.azdext.EmptyResponse\x12>\n\x05Unset\x12\x1e.azdext.UnsetUserConfigRequest\x1a\x15.azdext.EmptyResponseBFZ4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext\xaa\x02\rMicrosoft.Azdb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11user_config.proto\x12\x11\x61zd.extensions.v1\x1a\x0cmodels.proto\"$\n\x14GetUserConfigRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\"5\n\x15GetUserConfigResponse\x12\r\n\x05value\x18\x01 \x01(\x0c\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"*\n\x1aGetUserConfigStringRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\";\n\x1bGetUserConfigStringResponse\x12\r\n\x05value\x18\x01 \x01(\t\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"+\n\x1bGetUserConfigSectionRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\">\n\x1cGetUserConfigSectionResponse\x12\x0f\n\x07section\x18\x01 \x01(\x0c\x12\r\n\x05\x66ound\x18\x02 \x01(\x08\"3\n\x14SetUserConfigRequest\x12\x0c\n\x04path\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x0c\"&\n\x16UnsetUserConfigRequest\x12\x0c\n\x04path\x18\x01 \x01(\t2\xf0\x03\n\x11UserConfigService\x12X\n\x03Get\x12\'.azd.extensions.v1.GetUserConfigRequest\x1a(.azd.extensions.v1.GetUserConfigResponse\x12j\n\tGetString\x12-.azd.extensions.v1.GetUserConfigStringRequest\x1a..azd.extensions.v1.GetUserConfigStringResponse\x12m\n\nGetSection\x12..azd.extensions.v1.GetUserConfigSectionRequest\x1a/.azd.extensions.v1.GetUserConfigSectionResponse\x12P\n\x03Set\x12\'.azd.extensions.v1.SetUserConfigRequest\x1a .azd.extensions.v1.EmptyResponse\x12T\n\x05Unset\x12).azd.extensions.v1.UnsetUserConfigRequest\x1a .azd.extensions.v1.EmptyResponseBOZ=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1\xaa\x02\rMicrosoft.Azdb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'user_config_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'Z4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext\252\002\rMicrosoft.Azd'
-  _globals['_GETUSERCONFIGREQUEST']._serialized_start=43
-  _globals['_GETUSERCONFIGREQUEST']._serialized_end=79
-  _globals['_GETUSERCONFIGRESPONSE']._serialized_start=81
-  _globals['_GETUSERCONFIGRESPONSE']._serialized_end=134
-  _globals['_GETUSERCONFIGSTRINGREQUEST']._serialized_start=136
-  _globals['_GETUSERCONFIGSTRINGREQUEST']._serialized_end=178
-  _globals['_GETUSERCONFIGSTRINGRESPONSE']._serialized_start=180
-  _globals['_GETUSERCONFIGSTRINGRESPONSE']._serialized_end=239
-  _globals['_GETUSERCONFIGSECTIONREQUEST']._serialized_start=241
-  _globals['_GETUSERCONFIGSECTIONREQUEST']._serialized_end=284
-  _globals['_GETUSERCONFIGSECTIONRESPONSE']._serialized_start=286
-  _globals['_GETUSERCONFIGSECTIONRESPONSE']._serialized_end=348
-  _globals['_SETUSERCONFIGREQUEST']._serialized_start=350
-  _globals['_SETUSERCONFIGREQUEST']._serialized_end=401
-  _globals['_UNSETUSERCONFIGREQUEST']._serialized_start=403
-  _globals['_UNSETUSERCONFIGREQUEST']._serialized_end=441
-  _globals['_USERCONFIGSERVICE']._serialized_start=444
-  _globals['_USERCONFIGSERVICE']._serialized_end=830
+  _globals['DESCRIPTOR']._serialized_options = b'Z=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1\252\002\rMicrosoft.Azd'
+  _globals['_GETUSERCONFIGREQUEST']._serialized_start=54
+  _globals['_GETUSERCONFIGREQUEST']._serialized_end=90
+  _globals['_GETUSERCONFIGRESPONSE']._serialized_start=92
+  _globals['_GETUSERCONFIGRESPONSE']._serialized_end=145
+  _globals['_GETUSERCONFIGSTRINGREQUEST']._serialized_start=147
+  _globals['_GETUSERCONFIGSTRINGREQUEST']._serialized_end=189
+  _globals['_GETUSERCONFIGSTRINGRESPONSE']._serialized_start=191
+  _globals['_GETUSERCONFIGSTRINGRESPONSE']._serialized_end=250
+  _globals['_GETUSERCONFIGSECTIONREQUEST']._serialized_start=252
+  _globals['_GETUSERCONFIGSECTIONREQUEST']._serialized_end=295
+  _globals['_GETUSERCONFIGSECTIONRESPONSE']._serialized_start=297
+  _globals['_GETUSERCONFIGSECTIONRESPONSE']._serialized_end=359
+  _globals['_SETUSERCONFIGREQUEST']._serialized_start=361
+  _globals['_SETUSERCONFIGREQUEST']._serialized_end=412
+  _globals['_UNSETUSERCONFIGREQUEST']._serialized_start=414
+  _globals['_UNSETUSERCONFIGREQUEST']._serialized_end=452
+  _globals['_USERCONFIGSERVICE']._serialized_start=455
+  _globals['_USERCONFIGSERVICE']._serialized_end=951
 # @@protoc_insertion_point(module_scope)

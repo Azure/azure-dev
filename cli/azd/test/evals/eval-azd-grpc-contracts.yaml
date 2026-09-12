@@ -1,0 +1,112 @@
+# Evaluates the repository-local azd gRPC contract lifecycle skill.
+name: azd-grpc-contracts
+description: >-
+  Can an agent inspect the stable and preview extension contracts, plan safe
+  v1beta additions, and graduate compatible functionality into v1?
+
+environment:
+  git:
+    type: worktree
+    ref: HEAD
+    source: "."
+  skills:
+    - ../../../../.github/skills/azd-grpc-contracts
+
+defaults:
+  runs: 2
+  timeout: 8m
+  executor: copilot-sdk
+  model: gpt-5.6-sol
+  judge_model: gpt-5.5
+
+scoring:
+  threshold: 0.8
+
+stimuli:
+  - name: inspect-contract-state
+    prompt: >-
+      Inspect the current azd extension protobuf contracts. Tell me which
+      services are beta-only, summarize how v1 and v1beta compatibility is
+      validated, and give me the fastest command to check the current
+      cross-channel invariant. Do not change files.
+    rubric:
+      - "Identifies beta-only services from the repository rather than assuming all services are shared"
+      - "Explains that v1 must remain a compatible subset of v1beta"
+      - "Names the dedicated local compatibility command"
+    graders:
+      - type: skill-invocation
+        name: "azd grpc contracts skill activated"
+        config:
+          required:
+            - azd-grpc-contracts
+      - type: output-matches
+        name: "reports beta-only services"
+        config:
+          pattern: '(?is)(?=.*ComposeService)(?=.*CopilotService)(?=.*TelemetryService)'
+      - type: output-contains
+        name: "names the cross-channel check"
+        config:
+          substring: "make proto-version-compatibility"
+          case_sensitive: true
+      - type: prompt
+        name: "judge: accurate current-state diagnosis"
+        config:
+          scoring: binary
+
+  - name: add-preview-field
+    prompt: >-
+      I want to add a v1beta-only request field to an existing stable extension
+      service and make azd core act on it. Give me the implementation and
+      validation plan. Do not edit files yet.
+    rubric:
+      - "Keeps the preview field out of v1"
+      - "Explains that stable transcoding discards unknown beta request fields"
+      - "Requires a focused beta method override and tests both stable and beta routes"
+      - "Includes generation, cross-channel, historical compatibility, and runtime tests"
+    graders:
+      - type: skill-invocation
+        name: "azd grpc contracts skill activated"
+        config:
+          required:
+            - azd-grpc-contracts
+      - type: output-matches
+        name: "requires focused override"
+        config:
+          pattern: 'Beta[A-Za-z]+[A-Za-z]+Override|focused beta override'
+      - type: output-matches
+        name: "keeps stable contract unchanged"
+        config:
+          pattern: '(?is)(keep|leave|do not).*v1.*(unchanged|out|modify)'
+      - type: prompt
+        name: "judge: safe beta addition plan"
+        config:
+          scoring: binary
+
+  - name: graduate-beta-service
+    prompt: >-
+      Plan how to graduate an existing beta-only gRPC service into stable v1
+      without breaking extensions already compiled against v1beta. Include SDK
+      API concerns and exact validation commands. Do not edit files.
+    rubric:
+      - "Copies the compatible wire shape into v1 while retaining the v1beta service and route"
+      - "Moves default behavior to the stable implementation and regenerates the adapter"
+      - "Flags changing an existing Go accessor return type as a source compatibility decision"
+      - "Includes proto-version-compatibility and historical Buf checks"
+    graders:
+      - type: skill-invocation
+        name: "azd grpc contracts skill activated"
+        config:
+          required:
+            - azd-grpc-contracts
+      - type: output-matches
+        name: "preserves beta clients"
+        config:
+          pattern: '(?is)(keep|retain|preserve).*v1beta.*(route|client|service)'
+      - type: output-matches
+        name: "flags accessor compatibility"
+        config:
+          pattern: '(?is)(accessor|return type).*(source.break|breaking)'
+      - type: prompt
+        name: "judge: safe graduation plan"
+        config:
+          scoring: binary

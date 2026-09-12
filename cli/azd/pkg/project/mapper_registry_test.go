@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
@@ -521,6 +522,48 @@ func TestServiceConfigRoundTripMapping(t *testing.T) {
 	nestedData, ok := roundTripServiceConfig.AdditionalProperties["nestedData"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "value", nestedData["key"])
+}
+
+func TestInfraOptionsReverseMapping(t *testing.T) {
+	t.Run("maps all supported fields", func(t *testing.T) {
+		config, err := structpb.NewStruct(map[string]any{
+			"sku":     "standard",
+			"enabled": true,
+		})
+		require.NoError(t, err)
+
+		protoOptions := &azdext.InfraOptions{
+			Provider:  "bicep",
+			Path:      "infra/application",
+			Module:    "main.bicep",
+			Config:    config,
+			Name:      "application-infra",
+			DependsOn: []string{"shared-infra"},
+		}
+
+		var actual provisioning.Options
+		err = mapper.Convert(protoOptions, &actual)
+		require.NoError(t, err)
+		expected := provisioning.Options{
+			Provider:  provisioning.Bicep,
+			Path:      "infra/application",
+			Module:    "main.bicep",
+			Config:    map[string]any{"sku": "standard", "enabled": true},
+			Name:      "application-infra",
+			DependsOn: []string{"shared-infra"},
+		}
+		require.Equal(t, expected, actual)
+
+		protoOptions.DependsOn[0] = "changed"
+		require.Equal(t, []string{"shared-infra"}, actual.DependsOn)
+	})
+
+	t.Run("maps nil options", func(t *testing.T) {
+		var actual provisioning.Options
+		err := mapper.Convert((*azdext.InfraOptions)(nil), &actual)
+		require.NoError(t, err)
+		require.Equal(t, provisioning.Options{}, actual)
+	})
 }
 
 func TestDockerProjectOptionsMapping(t *testing.T) {

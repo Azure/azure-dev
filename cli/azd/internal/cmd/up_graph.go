@@ -190,7 +190,7 @@ func (u *UpGraphAction) Run(
 		// Apply usage attributes (e.g. EnvNameKey) at end so they include
 		// any values set during Run. Globals (e.g. SubscriptionIdKey) are
 		// applied automatically by wrapperSpan.End().
-		usageAttrs := tracing.GetUsageAttributes()
+		usageAttrs := tracing.GetSecondaryUsageAttributes()
 
 		// Reflect the real package-phase outcome. Before this, the synthetic
 		// span always closed with an Unset status (=> Success in the AppInsights

@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -31,6 +32,7 @@ const testExtensionId = "azd.internal.telemetry"
 type stubExtensionLookup struct {
 	extension     *extensions.Extension
 	err           error
+	sourceErr     error
 	sourceConfigs map[string]*extensions.SourceConfig
 }
 
@@ -52,6 +54,10 @@ func (s stubExtensionLookup) IsOfficialRegistrySource(
 	ctx context.Context,
 	name string,
 ) (bool, error) {
+	if s.sourceErr != nil {
+		return false, s.sourceErr
+	}
+
 	if s.sourceConfigs == nil {
 		return strings.EqualFold(name, extensions.MainRegistryName), nil
 	}
@@ -147,6 +153,35 @@ func attributesOf(span tracesdk.ReadOnlySpan) map[attribute.Key]attribute.Value 
 	}
 
 	return indexed
+}
+
+func requireUsageDrop(
+	t *testing.T,
+	extensionId string,
+	reasons []extensionUsageDropReason,
+	count int64,
+) {
+	t.Helper()
+
+	expected := make([]string, len(reasons))
+	for i, reason := range reasons {
+		expected[i] = extensionId + "@" + string(reason)
+	}
+	requireUsageDropEntries(t, expected, count)
+}
+
+func requireUsageDropEntries(t *testing.T, expected []string, count int64) {
+	t.Helper()
+
+	attributes := map[attribute.Key]attribute.Value{}
+	for _, attr := range tracing.GetUsageAttributes() {
+		attributes[attr.Key] = attr.Value
+	}
+
+	require.Contains(t, attributes, fields.ExtensionUsageDropped.Key)
+	require.Contains(t, attributes, fields.ExtensionUsageDroppedCount.Key)
+	require.ElementsMatch(t, expected, attributes[fields.ExtensionUsageDropped.Key].AsStringSlice())
+	require.Equal(t, count, attributes[fields.ExtensionUsageDroppedCount.Key].AsInt64())
 }
 
 func requireCode(t *testing.T, err error, expected codes.Code) {
@@ -314,27 +349,33 @@ func Test_TelemetryService_RejectsPollutedMainSource(t *testing.T) {
 	require.Empty(t, usageSpansIn(command.SpanContext().TraceID()))
 }
 
-func Test_TelemetryService_ValidatesBeforeSourceGate(t *testing.T) {
-	t.Parallel()
+func Test_TelemetryService_AppliesSourceGateBeforeValidation(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+	t.Cleanup(tracing.ResetUsageAttributesForTest)
 
 	extension := testExtension()
 	extension.Source = "dev"
 	service := newTelemetryService(stubExtensionLookup{extension: extension})
 
-	_, err := callServiceWithContext(t, service, t.Context(), extension,
+	resp, err := callServiceWithContext(t, service, t.Context(), extension,
 		&azdext.ReportUsageRequest{
 			EventName: "deploy.completed",
 			Attributes: map[string]string{
 				"deploy.mode": strings.Repeat("v", maxUsageValueBytes+1),
 			},
 		})
-	requireCode(t, err, codes.InvalidArgument)
+	require.NoError(t, err)
+	require.False(t, resp.Accepted)
 	require.Zero(t, service.recorded.Load())
+	requireUsageDrop(t, unattributedExtensionId,
+		[]extensionUsageDropReason{extensionUsageDropReasonSourceIneligible}, 1)
 
-	resp, err := callServiceWithContext(t, service, t.Context(), extension,
+	resp, err = callServiceWithContext(t, service, t.Context(), extension,
 		&azdext.ReportUsageRequest{EventName: "deploy.completed"})
 	require.NoError(t, err)
 	require.False(t, resp.Accepted)
+	requireUsageDrop(t, unattributedExtensionId,
+		[]extensionUsageDropReason{extensionUsageDropReasonSourceIneligible}, 2)
 }
 
 func Test_TelemetryService_CapsEventsPerInvocation(t *testing.T) {
@@ -447,6 +488,148 @@ func Test_TelemetryService_RecordsNoSpanWhenRejected(t *testing.T) {
 	require.Empty(t, usageSpansIn(command.SpanContext().TraceID()))
 }
 
+func Test_TelemetryService_RecordsOperationalDropReasons(t *testing.T) {
+	tests := []struct {
+		name           string
+		lookup         stubExtensionLookup
+		withoutClaims  bool
+		recorded       int64
+		expectedCode   codes.Code
+		expectedId     string
+		expectedReason extensionUsageDropReason
+	}{
+		{
+			name:           "unauthenticated",
+			lookup:         stubExtensionLookup{extension: testExtension()},
+			withoutClaims:  true,
+			expectedCode:   codes.Unauthenticated,
+			expectedId:     unattributedExtensionId,
+			expectedReason: extensionUsageDropReasonUnauthenticated,
+		},
+		{
+			name:           "not installed",
+			lookup:         stubExtensionLookup{},
+			expectedCode:   codes.PermissionDenied,
+			expectedId:     unattributedExtensionId,
+			expectedReason: extensionUsageDropReasonNotInstalled,
+		},
+		{
+			name: "lookup failed",
+			lookup: stubExtensionLookup{
+				err: errors.New("failed to read installed config"),
+			},
+			expectedCode:   codes.Internal,
+			expectedId:     unattributedExtensionId,
+			expectedReason: extensionUsageDropReasonLookupFailed,
+		},
+		{
+			name: "source check failed",
+			lookup: stubExtensionLookup{
+				extension: testExtension(),
+				sourceErr: errors.New("failed to read source config"),
+			},
+			expectedCode:   codes.OK,
+			expectedId:     unattributedExtensionId,
+			expectedReason: extensionUsageDropReasonSourceCheckFailed,
+		},
+		{
+			name: "source ineligible",
+			lookup: stubExtensionLookup{
+				extension: &extensions.Extension{
+					Id:      testExtensionId,
+					Version: "1.0.0",
+					Source:  "dev",
+				},
+			},
+			expectedCode:   codes.OK,
+			expectedId:     unattributedExtensionId,
+			expectedReason: extensionUsageDropReasonSourceIneligible,
+		},
+		{
+			name:           "budget exhausted",
+			lookup:         stubExtensionLookup{extension: testExtension()},
+			recorded:       maxUsageEventsPerInvocation,
+			expectedCode:   codes.OK,
+			expectedId:     testExtensionId,
+			expectedReason: extensionUsageDropReasonBudgetExhausted,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			tracing.ResetUsageAttributesForTest()
+			t.Cleanup(tracing.ResetUsageAttributesForTest)
+
+			service := newTelemetryService(test.lookup)
+			service.recorded.Store(test.recorded)
+
+			ctx := t.Context()
+			if !test.withoutClaims {
+				ctx = extensions.WithClaimsContext(ctx, &extensions.ExtensionClaims{
+					RegisteredClaims: jwt.RegisteredClaims{Subject: testExtensionId},
+				})
+			}
+
+			resp, err := service.ReportUsage(ctx, &azdext.ReportUsageRequest{
+				EventName: "deploy.completed",
+			})
+			if test.expectedCode == codes.OK {
+				require.NoError(t, err)
+				require.False(t, resp.Accepted)
+			} else {
+				requireCode(t, err, test.expectedCode)
+			}
+
+			requireUsageDrop(t, test.expectedId, []extensionUsageDropReason{test.expectedReason}, 1)
+		})
+	}
+}
+
+func Test_TelemetryService_AggregatesAndDeduplicatesDrops(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+	t.Cleanup(tracing.ResetUsageAttributesForTest)
+
+	extension := testExtension()
+	extension.Source = "dev"
+	ineligibleService := newTelemetryService(stubExtensionLookup{extension: extension})
+
+	for range 2 {
+		resp, err := callServiceWithContext(t, ineligibleService, t.Context(), extension,
+			&azdext.ReportUsageRequest{EventName: "deploy.completed"})
+		require.NoError(t, err)
+		require.False(t, resp.Accepted)
+	}
+
+	officialExtension := testExtension()
+	officialService := newTelemetryService(stubExtensionLookup{extension: officialExtension})
+	_, err := callServiceWithContext(t, officialService, t.Context(), officialExtension,
+		&azdext.ReportUsageRequest{
+			EventName: "deploy.completed",
+			Attributes: map[string]string{
+				"deploy.mode": strings.Repeat("v", maxUsageValueBytes+1),
+			},
+		})
+	requireCode(t, err, codes.InvalidArgument)
+
+	requireUsageDropEntries(t, []string{
+		unattributedExtensionId + "@" + string(extensionUsageDropReasonSourceIneligible),
+		officialExtension.Id + "@" + string(extensionUsageDropReasonAttributeValueTooLong),
+	}, 3)
+}
+
+func Test_TelemetryService_AcceptedReportDoesNotRecordDrop(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+	t.Cleanup(tracing.ResetUsageAttributesForTest)
+
+	resp, err := callWith(t, testExtension(), &azdext.ReportUsageRequest{
+		EventName: "deploy.completed",
+	})
+
+	require.NoError(t, err)
+	require.True(t, resp.Accepted)
+	require.Empty(t, tracing.GetUsageAttributes())
+}
+
 func Test_TelemetryService_RequiresClaims(t *testing.T) {
 	t.Parallel()
 
@@ -459,47 +642,80 @@ func Test_TelemetryService_RequiresClaims(t *testing.T) {
 }
 
 func Test_TelemetryService_RejectsInvalidRequests(t *testing.T) {
-	t.Parallel()
-
 	tooManyAttributes := map[string]string{}
 	for i := range maxUsageAttributes + 1 {
 		tooManyAttributes[fmt.Sprintf("key%d", i)] = "value"
 	}
 
-	tests := map[string]*azdext.ReportUsageRequest{
-		"nil":               nil,
-		"missing eventName": {},
+	tests := map[string]struct {
+		request *azdext.ReportUsageRequest
+		reason  extensionUsageDropReason
+	}{
+		"nil": {
+			reason: extensionUsageDropReasonEventNameInvalid,
+		},
+		"missing eventName": {
+			request: &azdext.ReportUsageRequest{},
+			reason:  extensionUsageDropReasonEventNameInvalid,
+		},
 		"long eventName": {
-			EventName: strings.Repeat("e", maxUsageEventNameBytes+1),
+			request: &azdext.ReportUsageRequest{
+				EventName: strings.Repeat("e", maxUsageEventNameBytes+1),
+			},
+			reason: extensionUsageDropReasonEventNameInvalid,
 		},
 		"empty key": {
-			EventName:  "deploy.completed",
-			Attributes: map[string]string{"": "container"},
+			request: &azdext.ReportUsageRequest{
+				EventName:  "deploy.completed",
+				Attributes: map[string]string{"": "container"},
+			},
+			reason: extensionUsageDropReasonAttributeKeyInvalid,
 		},
 		"long key": {
-			EventName: "deploy.completed",
-			Attributes: map[string]string{
-				strings.Repeat("k", maxUsageKeyBytes+1): "container",
+			request: &azdext.ReportUsageRequest{
+				EventName: "deploy.completed",
+				Attributes: map[string]string{
+					strings.Repeat("k", maxUsageKeyBytes+1): "container",
+				},
 			},
+			reason: extensionUsageDropReasonAttributeKeyInvalid,
 		},
 		"long value": {
-			EventName: "deploy.completed",
-			Attributes: map[string]string{
-				"deploy.mode": strings.Repeat("v", maxUsageValueBytes+1),
+			request: &azdext.ReportUsageRequest{
+				EventName: "deploy.completed",
+				Attributes: map[string]string{
+					"deploy.mode": strings.Repeat("v", maxUsageValueBytes+1),
+				},
 			},
+			reason: extensionUsageDropReasonAttributeValueTooLong,
+		},
+		"invalid key takes precedence over long value": {
+			request: &azdext.ReportUsageRequest{
+				EventName: "deploy.completed",
+				Attributes: map[string]string{
+					"":            "container",
+					"deploy.mode": strings.Repeat("v", maxUsageValueBytes+1),
+				},
+			},
+			reason: extensionUsageDropReasonAttributeKeyInvalid,
 		},
 		"too many attributes": {
-			EventName:  "deploy.completed",
-			Attributes: tooManyAttributes,
+			request: &azdext.ReportUsageRequest{
+				EventName:  "deploy.completed",
+				Attributes: tooManyAttributes,
+			},
+			reason: extensionUsageDropReasonAttributeCountExceeded,
 		},
 	}
 
-	for name, req := range tests {
+	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
+			tracing.ResetUsageAttributesForTest()
+			t.Cleanup(tracing.ResetUsageAttributesForTest)
 
-			_, err := callWith(t, testExtension(), req)
+			_, err := callWith(t, testExtension(), test.request)
 			requireCode(t, err, codes.InvalidArgument)
+			requireUsageDrop(t, testExtensionId, []extensionUsageDropReason{test.reason}, 1)
 		})
 	}
 }

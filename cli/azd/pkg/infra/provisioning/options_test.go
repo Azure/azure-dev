@@ -84,10 +84,20 @@ func TestOptionsGetLayers(t *testing.T) {
 		assert.Equal(t, "infra", layers[0].Path)
 	})
 
-	t.Run("explicit empty layers returns empty", func(t *testing.T) {
-		opts := &Options{Layers: []Options{}}
+	// NOTE: It's 100% possible this fallback was never used by customers, but it is
+	// explicitly coded to work that way.
+	t.Run("explicit empty layers preserve legacy single entry", func(t *testing.T) {
+		opts := &Options{
+			Provider: Bicep,
+			Path:     "infra",
+			Layers:   []Options{}}
 
-		require.Empty(t, opts.GetLayers())
+		// Keep the existing fallback: an empty infra.layers list is treated the same as no list
+		// and returns the root infrastructure entry.
+		layers := opts.GetLayers()
+		require.Len(t, layers, 1)
+		require.Equal(t, Bicep, layers[0].Provider)
+		require.Equal(t, "infra", layers[0].Path)
 	})
 
 	t.Run("with layers returns layers", func(t *testing.T) {
@@ -268,10 +278,19 @@ func TestOptionsValidate(t *testing.T) {
 		require.NoError(t, opts.ValidateProjectLayers())
 	})
 
-	t.Run("explicit empty layers cannot be mixed with root fields", func(t *testing.T) {
+	t.Run("legacy layers allow root provider config", func(t *testing.T) {
+		opts := &Options{
+			Config: map[string]any{"setting": "value"},
+			Layers: []Options{{Name: "foundry", Path: "infra/foundry"}},
+		}
+
+		require.NoError(t, opts.Validate())
+	})
+
+	t.Run("explicit empty layers preserve legacy root fields", func(t *testing.T) {
 		opts := &Options{Path: "infra", Layers: []Options{}}
 
-		require.ErrorContains(t, opts.Validate(), "properties on 'infra' cannot be declared")
+		require.NoError(t, opts.Validate())
 	})
 
 	t.Run("built-in layer without path is invalid", func(t *testing.T) {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/braydonk/yaml"
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -420,9 +421,28 @@ func TestProjectFormatPreservesExplicitEmptyLayerCollections(t *testing.T) {
 func TestExplicitEmptyInfraLayersUsesV1Format(t *testing.T) {
 	t.Parallel()
 
-	config, err := Parse(t.Context(), "name: test-project\ninfra:\n  layers: []\n")
+	projectConfig := map[string]any{
+		"name": "test-project",
+		"infra": map[string]any{
+			"path":   "infra",
+			"layers": []any{},
+		},
+	}
+	projectYaml, err := yaml.Marshal(projectConfig)
 	require.NoError(t, err)
+	require.Contains(t, string(projectYaml), "layers: []")
+
+	config, err := Parse(t.Context(), string(projectYaml))
+	require.NoError(t, err)
+
+	// The presence of infra.layers identifies the legacy v1 format, even when the list is empty.
 	require.Equal(t, ProjectFormatInfraV1, config.Format())
+	require.Empty(t, config.Infra.Layers)
+
+	// A zero-length legacy layer list falls back to the root infra entry.
+	entries := config.InfrastructureConfigs()
+	require.Len(t, entries, 1)
+	require.Equal(t, "infra", entries[0].Path)
 }
 
 func TestProjectConfigAccessorsPreserveNonV2Formats(t *testing.T) {

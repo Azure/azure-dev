@@ -283,7 +283,7 @@ func TestImportManagerProjectInfrastructureProjectLayers(t *testing.T) {
 	require.Equal(t, "api", selected.Name)
 }
 
-func TestImportManagerProjectInfrastructureServiceOnlyProjectHasNoLayers(t *testing.T) {
+func TestImportManagerProjectInfrastructureServiceOnlyProjectUsesLegacyFallback(t *testing.T) {
 	t.Parallel()
 
 	manager := NewImportManager(nil)
@@ -298,7 +298,11 @@ func TestImportManagerProjectInfrastructureServiceOnlyProjectHasNoLayers(t *test
 		}})
 
 	require.NoError(t, err)
-	require.Empty(t, result.Options.GetLayers())
+	require.Empty(t, result.Options.Layers)
+
+	// TODO(https://github.com/Azure/azure-dev/issues/10018): Decide whether a layers v2 project with no
+	// infrastructure should provision the legacy root entry or perform no provisioning.
+	require.Len(t, result.Options.GetLayers(), 1)
 }
 
 //go:embed testdata/aspire-simple.json

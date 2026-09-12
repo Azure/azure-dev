@@ -126,13 +126,11 @@ func (o Options) AbsolutePath(projectPath string) string {
 //
 // The ordering is stable; and reflects the order defined in azure.yaml.
 func (o *Options) GetLayers() []Options {
-	if o.Layers == nil {
+	if len(o.Layers) == 0 {
 		return []Options{*o}
 	}
 
-	if len(o.Layers) > 0 {
-		tracing.AppendUsageAttributeUnique(fields.FeaturesKey.String(fields.FeatLayers))
-	}
+	tracing.AppendUsageAttributeUnique(fields.FeaturesKey.String(fields.FeatLayers))
 	return o.Layers
 }
 
@@ -177,10 +175,9 @@ func (o *Options) validate(allowPathlessExtensionProviders bool) error {
 		return validateErr("infra", "'hooks' can only be declared under 'infra.layers[]'")
 	}
 
-	if o.Layers != nil {
+	if len(o.Layers) > 0 {
 		anyIncompatibleFieldsSet := func() bool {
-			return o.Name != "" || o.Layer != "" || o.Module != "" || o.Path != "" || o.DeploymentStacks != nil ||
-				len(o.Config) > 0
+			return o.Name != "" || o.Module != "" || o.Path != "" || o.DeploymentStacks != nil
 		}
 
 		if anyIncompatibleFieldsSet() {

@@ -53,11 +53,12 @@ var (
 // Retrieves the list of services in the project, in a stable ordering that is deterministic.
 func (im *ImportManager) ServiceStable(ctx context.Context, projectConfig *ProjectConfig) ([]*ServiceConfig, error) {
 	allServices := make(map[string]*ServiceConfig)
+	configuredServices := projectConfig.ServiceConfigs()
 
-	for name, svcConfig := range projectConfig.Services {
+	for name, svcConfig := range configuredServices {
 		if svcConfig.Language == ServiceLanguageDotNet {
 			if canImport, err := im.dotNetImporter.CanImport(ctx, svcConfig.Path()); canImport {
-				if len(projectConfig.Services) != 1 {
+				if len(configuredServices) != 1 {
 					return nil, errNoMultipleServicesWithAppHost
 				}
 
@@ -268,7 +269,7 @@ func (im *ImportManager) validateServiceDependencies(services []*ServiceConfig, 
 
 // HasAppHost returns true when there is one AppHost (Aspire) in the project.
 func (im *ImportManager) HasAppHost(ctx context.Context, projectConfig *ProjectConfig) bool {
-	for _, svcConfig := range projectConfig.Services {
+	for _, svcConfig := range projectConfig.ServiceConfigs() {
 		if svcConfig.Language == ServiceLanguageDotNet {
 			if canImport, err := im.dotNetImporter.CanImport(ctx, svcConfig.Path()); canImport {
 				return true
@@ -292,6 +293,17 @@ var (
 // The configuration can be explicitly defined on azure.yaml using path and module, or in case these values
 // are not explicitly defined, the project importer uses default values to find the infrastructure.
 func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (*Infra, error) {
+	if projectConfig.Format() == ProjectFormatLayersV2 {
+		entries := make([]provisioning.Options, 0)
+		for _, layer := range projectConfig.Layers {
+			for _, infra := range layer.Infra {
+				infra.Layer = layer.Name
+				entries = append(entries, infra)
+			}
+		}
+		return &Infra{Options: provisioning.Options{Layers: entries}}, nil
+	}
+
 	infraOptions, err := projectConfig.Infra.GetWithDefaults()
 	if err != nil {
 		return nil, err
@@ -316,6 +328,9 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 
 	// short-circuit: If layers are defined, we know it's an explicit infrastructure
 	if len(infraOptions.Layers) > 0 {
+		for i := range infraOptions.Layers {
+			infraOptions.Layers[i].Layer = infraOptions.Layers[i].Name
+		}
 		return &Infra{
 			Options: infraOptions,
 		}, nil
@@ -330,10 +345,11 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 	}
 
 	// Temp infra from AppHost
-	for _, svcConfig := range projectConfig.Services {
+	configuredServices := projectConfig.ServiceConfigs()
+	for _, svcConfig := range configuredServices {
 		if svcConfig.Language == ServiceLanguageDotNet {
 			if canImport, err := im.dotNetImporter.CanImport(ctx, svcConfig.Path()); canImport {
-				if len(projectConfig.Services) != 1 {
+				if len(configuredServices) != 1 {
 					return nil, errNoMultipleServicesWithAppHost
 				}
 
@@ -426,10 +442,11 @@ func pathHasModule(path, module string) (bool, error) {
 // GenerateAllInfrastructure returns a file system containing all infrastructure for the project,
 // rooted at the project directory.
 func (im *ImportManager) GenerateAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
-	for _, svcConfig := range projectConfig.Services {
+	configuredServices := projectConfig.ServiceConfigs()
+	for _, svcConfig := range configuredServices {
 		if svcConfig.Language == ServiceLanguageDotNet {
 			if canImport, err := im.dotNetImporter.CanImport(ctx, svcConfig.Path()); canImport {
-				if len(projectConfig.Services) != 1 {
+				if len(configuredServices) != 1 {
 					return nil, errNoMultipleServicesWithAppHost
 				}
 

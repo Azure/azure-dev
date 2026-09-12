@@ -2623,6 +2623,124 @@ services:
     project: ./src/api
 `
 
+func TestProjectService_LayeredServiceConfig(t *testing.T) {
+	t.Parallel()
+
+	const yamlWithLayeredService = `name: test-project
+layers:
+  - name: app
+    services:
+      my.agent:
+        host: appservice
+        language: python
+        project: ./src/api
+        custom:
+          setting: original
+          removable: value
+`
+
+	svc := newProjectServiceWithYaml(t, yamlWithLayeredService)
+
+	// Service names (currently) are still globally unique, even when in layers, so the layer is not
+	// needed for this lookup. When services become layer-scoped, this unqualified lookup should become
+	// ambiguous and the test should change with the API.
+	section, err := svc.GetServiceConfigSection(t.Context(), &azdext.GetServiceConfigSectionRequest{
+		ServiceName: "my.agent",
+		Path:        "custom",
+	})
+	require.NoError(t, err)
+	require.True(t, section.Found)
+	require.Equal(t, "original", section.Section.AsMap()["setting"])
+
+	_, err = svc.SetServiceConfigValue(t.Context(), &azdext.SetServiceConfigValueRequest{
+		ServiceName: "my.agent",
+		Path:        "custom.setting",
+		Value:       structpb.NewStringValue("updated"),
+	})
+	require.NoError(t, err)
+
+	_, err = svc.UnsetServiceConfig(t.Context(), &azdext.UnsetServiceConfigRequest{
+		ServiceName: "my.agent",
+		Path:        "custom.removable",
+	})
+	require.NoError(t, err)
+
+	value, err := svc.GetServiceConfigValue(t.Context(), &azdext.GetServiceConfigValueRequest{
+		ServiceName: "my.agent",
+		Path:        "custom.setting",
+	})
+	require.NoError(t, err)
+	require.True(t, value.Found)
+	require.Equal(t, "updated", value.Value.AsInterface())
+
+	_, err = svc.AddService(t.Context(), &azdext.AddServiceRequest{Service: &azdext.ServiceConfig{Name: "web"}})
+	require.Error(t, err)
+	require.Equal(t, codes.Unimplemented, status.Code(err))
+
+	projectService := svc.(*projectService)
+	azdContext, err := projectService.lazyAzdContext.GetValue()
+	require.NoError(t, err)
+	saved, err := project.LoadConfig(t.Context(), azdContext.ProjectPath())
+	require.NoError(t, err)
+	_, hasFlatServices := saved.Raw()["services"]
+	require.False(t, hasFlatServices)
+	layers, ok := saved.Raw()["layers"].([]any)
+	require.True(t, ok)
+	layer, ok := layers[0].(map[string]any)
+	require.True(t, ok)
+	services, ok := layer["services"].(map[string]any)
+	require.True(t, ok)
+	serviceConfig, ok := services["my.agent"].(map[string]any)
+	require.True(t, ok)
+	custom, ok := serviceConfig["custom"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "updated", custom["setting"])
+	require.NotContains(t, custom, "removable")
+}
+
+func TestProjectService_SetServiceConfigValue_PreservesInfraV1(t *testing.T) {
+	t.Parallel()
+
+	svc := newProjectServiceWithYaml(t, `name: test-project
+infra:
+  provider: bicep
+  layers:
+    - name: network
+      path: infra/network
+    - name: application
+      provider: terraform
+      path: infra/application
+services:
+  api:
+    host: appservice
+    language: python
+    project: ./src/api
+`)
+
+	_, err := svc.SetServiceConfigValue(t.Context(), &azdext.SetServiceConfigValueRequest{
+		ServiceName: "api",
+		Path:        "custom.setting",
+		Value:       structpb.NewStringValue("updated"),
+	})
+	require.NoError(t, err)
+
+	projectService := svc.(*projectService)
+	azdContext, err := projectService.lazyAzdContext.GetValue()
+	require.NoError(t, err)
+
+	reloaded, err := project.Load(t.Context(), azdContext.ProjectPath())
+	require.NoError(t, err)
+
+	require.Equal(t, project.ProjectFormatInfraV1, reloaded.Format())
+	require.Equal(t, provisioning.Bicep, reloaded.Infra.Provider)
+	require.Len(t, reloaded.Infra.Layers, 2)
+	require.Equal(t, "network", reloaded.Infra.Layers[0].Name)
+	require.Equal(t, provisioning.Terraform, reloaded.Infra.Layers[1].Provider)
+	custom, ok := reloaded.Services["api"].AdditionalProperties["custom"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "updated", custom["setting"])
+}
+
 func TestProjectService_SetServiceConfigSection_HappyPath(t *testing.T) {
 	t.Parallel()
 	svc := newProjectServiceWithYaml(t, yamlWithService)

@@ -431,7 +431,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 				}
 
 				featureCustomLanguage := alpha.MustFeatureKey("language.custom")
-				for sName, sConfig := range projectConfig.Services {
+				for sName, sConfig := range projectConfig.ServiceConfigs() {
 					if sConfig.Language == project.ServiceLanguageCustom &&
 						!alphaManager.IsEnabled(featureCustomLanguage) {
 						return nil, fmt.Errorf(

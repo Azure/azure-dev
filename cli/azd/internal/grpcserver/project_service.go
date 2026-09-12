@@ -6,7 +6,9 @@ package grpcserver
 import (
 	"context"
 	"fmt"
+	"iter"
 	"log"
+	"maps"
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
@@ -109,11 +111,65 @@ func (s *projectService) validateServiceExists(ctx context.Context, serviceName 
 		return err
 	}
 
-	if projectConfig.Services == nil || projectConfig.Services[serviceName] == nil {
+	if projectConfig.ServiceConfigs()[serviceName] == nil {
 		return fmt.Errorf("service '%s' not found", serviceName)
 	}
 
 	return nil
+}
+
+func allLayerServiceConfigs(layers []any) iter.Seq2[string, config.Config] {
+	return func(yield func(string, config.Config) bool) {
+		for _, rawLayer := range layers {
+			layer, ok := rawLayer.(map[string]any)
+			if !ok {
+				continue
+			}
+			services, ok := layer["services"].(map[string]any)
+			if !ok {
+				continue
+			}
+			for name, rawService := range services {
+				service, ok := rawService.(map[string]any)
+				if ok && !yield(name, config.NewConfig(service)) {
+					return
+				}
+			}
+		}
+	}
+}
+
+func (s *projectService) serviceConfig(cfg config.Config, serviceName string) (config.Config, error) {
+	projectConfig, err := s.lazyProjectConfig.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
+	if projectConfig.Format() != project.ProjectFormatLayersV2 {
+		services, ok := cfg.Raw()["services"].(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("services configuration not found")
+		}
+		service, ok := services[serviceName].(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("service configuration for '%s' not found", serviceName)
+		}
+		return config.NewConfig(service), nil
+	}
+
+	layers, ok := cfg.Raw()["layers"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("layers configuration not found")
+	}
+
+	// NOTE: this is temporary. We'll make these services layer-scoped later instead of flattening them into one map.
+	for name, service := range allLayerServiceConfigs(layers) {
+		if name == serviceName {
+			return service, nil
+		}
+	}
+
+	return nil, fmt.Errorf("service '%s' not found", serviceName)
 }
 
 // Get retrieves the complete project configuration including all services and metadata.
@@ -194,6 +250,9 @@ func (s *projectService) AddService(ctx context.Context, req *azdext.AddServiceR
 	projectConfig, err := s.lazyProjectConfig.GetValue()
 	if err != nil {
 		return nil, err
+	}
+	if projectConfig.Format() == project.ProjectFormatLayersV2 {
+		return nil, status.Error(codes.Unimplemented, "adding services to layered projects is not supported")
 	}
 
 	serviceConfig := &project.ServiceConfig{}
@@ -552,13 +611,15 @@ func (s *projectService) GetServiceConfigSection(
 		return nil, err
 	}
 
-	// Construct path to service config section: "services.<serviceName>.<path>"
-	servicePath := fmt.Sprintf("services.%s", req.ServiceName)
-	if req.Path != "" {
-		servicePath = fmt.Sprintf("%s.%s", servicePath, req.Path)
+	serviceConfig, err := s.serviceConfig(cfg, req.ServiceName)
+	if err != nil {
+		return nil, err
 	}
 
-	section, found := cfg.GetMap(servicePath)
+	section, found := serviceConfig.GetMap(req.Path)
+	if req.Path == "" {
+		section, found = serviceConfig.Raw(), true
+	}
 
 	if !found {
 		return &azdext.GetServiceConfigSectionResponse{
@@ -619,10 +680,12 @@ func (s *projectService) GetServiceConfigValue(
 		return nil, err
 	}
 
-	// Construct path to service config value: "services.<serviceName>.<path>"
-	servicePath := fmt.Sprintf("services.%s.%s", req.ServiceName, req.Path)
+	serviceConfig, err := s.serviceConfig(cfg, req.ServiceName)
+	if err != nil {
+		return nil, err
+	}
 
-	value, ok := cfg.Get(servicePath)
+	value, ok := serviceConfig.Get(req.Path)
 
 	if !ok {
 		return &azdext.GetServiceConfigValueResponse{
@@ -680,15 +743,17 @@ func (s *projectService) SetServiceConfigSection(
 		return nil, err
 	}
 
-	// Construct path to service config section: "services.<serviceName>.<path>"
-	servicePath := fmt.Sprintf("services.%s", req.ServiceName)
-	if req.Path != "" {
-		servicePath = fmt.Sprintf("%s.%s", servicePath, req.Path)
+	serviceConfig, err := s.serviceConfig(cfg, req.ServiceName)
+	if err != nil {
+		return nil, err
 	}
 
 	// Convert protobuf Struct to map
 	sectionMap := req.Section.AsMap()
-	if err := cfg.Set(servicePath, sectionMap); err != nil {
+	if req.Path == "" {
+		clear(serviceConfig.Raw())
+		maps.Copy(serviceConfig.Raw(), sectionMap)
+	} else if err := serviceConfig.Set(req.Path, sectionMap); err != nil {
 		return nil, fmt.Errorf("failed to set service config section: %w", err)
 	}
 
@@ -747,18 +812,14 @@ func (s *projectService) SetServiceConfigValue(
 		return nil, err
 	}
 
-	services, ok := cfg.Raw()["services"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("services configuration not found")
-	}
-	serviceConfig, ok := services[req.ServiceName].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("service configuration for '%s' not found", req.ServiceName)
+	serviceConfig, err := s.serviceConfig(cfg, req.ServiceName)
+	if err != nil {
+		return nil, err
 	}
 
 	// Convert protobuf Value to interface{}
 	value := req.Value.AsInterface()
-	if err := config.NewConfig(serviceConfig).Set(req.Path, value); err != nil {
+	if err := serviceConfig.Set(req.Path, value); err != nil {
 		return nil, fmt.Errorf("failed to set service config value: %w", err)
 	}
 
@@ -817,10 +878,12 @@ func (s *projectService) UnsetServiceConfig(
 		return nil, err
 	}
 
-	// Construct path to service config: "services.<serviceName>.<path>"
-	servicePath := fmt.Sprintf("services.%s.%s", req.ServiceName, req.Path)
+	serviceConfig, err := s.serviceConfig(cfg, req.ServiceName)
+	if err != nil {
+		return nil, err
+	}
 
-	if err := cfg.Unset(servicePath); err != nil {
+	if err := serviceConfig.Unset(req.Path); err != nil {
 		return nil, fmt.Errorf("failed to unset service config: %w", err)
 	}
 
@@ -920,7 +983,7 @@ func (s *projectService) GetServiceTargetResource(
 	}
 
 	// Validate the service exists
-	serviceConfig, exists := projectConfig.Services[req.ServiceName]
+	serviceConfig, exists := projectConfig.ServiceConfigs()[req.ServiceName]
 	if !exists {
 		return nil, status.Errorf(codes.NotFound, "service '%s' not found in project", req.ServiceName)
 	}

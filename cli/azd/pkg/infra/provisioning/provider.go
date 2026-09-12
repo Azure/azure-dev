@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"dario.cat/mergo"
@@ -50,21 +51,23 @@ const (
 
 // Options for a provisioning provider.
 type Options struct {
-	Provider         ProviderKind            `yaml:"provider,omitempty"`
-	Path             string                  `yaml:"path,omitempty"`
-	Module           string                  `yaml:"module,omitempty"`
-	Name             string                  `yaml:"name,omitempty"`
+	Provider ProviderKind `yaml:"provider,omitempty"`
+	Path     string       `yaml:"path,omitempty"`
+	Module   string       `yaml:"module,omitempty"`
+	Name     string       `yaml:"name,omitempty"`
+	// Layer is assigned from the containing project layer.
+	Layer            string                  `yaml:"-" json:"layer,omitempty"`
 	Hooks            HooksConfig             `yaml:"hooks,omitempty"`
 	DeploymentStacks *DeploymentStacksConfig `yaml:"deploymentStacks,omitempty"`
 	// Config holds provider-specific configuration options
 	Config map[string]any `yaml:"config,omitempty"`
-	// DependsOn lists the names of other layers this layer must wait for
+	// DependsOn lists the names of other infrastructure entries this entry must wait for
 	// before being provisioned. Use this to declare hook-mediated edges
-	// (for example, when a postprovision hook in another layer writes an
-	// env var that this layer's bicepparam reads at provision time)
+	// (for example, when a postprovision hook in another entry writes an
+	// env var that this entry's bicepparam reads at provision time)
 	// that the static analyzer cannot infer from .bicep / .bicepparam /
-	// .parameters.json contents alone. Only valid on layer entries under
-	// the `infra.layers` array.
+	// .parameters.json contents alone. Valid under both `infra.layers[]`
+	// and `layers[].infra[]`.
 	DependsOn []string `yaml:"dependsOn,omitempty" json:"dependsOn,omitempty"`
 	// Provisioning options for each individually defined layer.
 	Layers []Options `yaml:"layers,omitempty"`
@@ -159,6 +162,15 @@ func (o *Options) GetLayer(name string) (Options, error) {
 //
 // This should be called immediately right after Unmarshal() before any defaulting is performed.
 func (o *Options) Validate() error {
+	return o.validate(false)
+}
+
+// ValidateProjectLayers validates infrastructure entries declared under top-level project layers.
+func (o *Options) ValidateProjectLayers() error {
+	return o.validate(true)
+}
+
+func (o *Options) validate(allowPathlessExtensionProviders bool) error {
 	if len(o.Hooks) > 0 {
 		return validateErr("infra", "'hooks' can only be declared under 'infra.layers[]'")
 	}
@@ -172,7 +184,7 @@ func (o *Options) Validate() error {
 			return validateErr("infra", "properties on 'infra' cannot be declared when 'infra.layers' is declared")
 		}
 
-		if err := o.validateLayers(); err != nil {
+		if err := o.validateLayers(allowPathlessExtensionProviders); err != nil {
 			return wrapValidateErr("infra.layers", err)
 		}
 	}
@@ -192,7 +204,7 @@ func validateErr(scope, format string, args ...any) error {
 	return wrapValidateErr(scope, fmt.Errorf(format, args...))
 }
 
-func (o *Options) validateLayers() error {
+func (o *Options) validateLayers(allowPathlessExtensionProviders bool) error {
 	validateHooks := func(scope string, hooks HooksConfig) error {
 		for hookName := range hooks {
 			hookType, eventName := ext.InferHookType(hookName)
@@ -216,7 +228,11 @@ func (o *Options) validateLayers() error {
 
 		seenLayers[layer.Name] = struct{}{}
 
-		if layer.Path == "" {
+		// NOTE: I'm treating 'NotSpecified' as 'bicep' - there's some downstream code that does that in
+		// 'provisioning/manager'.
+		// It might be nice to think about doing this earlier, or having that validation occurring in the providers instead.
+		if layer.Path == "" && (!allowPathlessExtensionProviders ||
+			layer.Provider == NotSpecified || slices.Contains(builtInProviderKinds, layer.Provider)) {
 			return fmt.Errorf("%s: path must be specified", layer.Name)
 		}
 

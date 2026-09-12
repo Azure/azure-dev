@@ -1670,7 +1670,8 @@ proto.azdext.ProjectHandlerStatus.toObject = function(includeInstance, msg) {
 eventName: jspb.Message.getFieldWithDefault(msg, 1, ""),
 status: jspb.Message.getFieldWithDefault(msg, 2, ""),
 message: jspb.Message.getFieldWithDefault(msg, 3, ""),
-error: (f = msg.getError()) && errors_pb.ExtensionError.toObject(includeInstance, f)
+error: (f = msg.getError()) && errors_pb.ExtensionError.toObject(includeInstance, f),
+followUp: (f = jspb.Message.getField(msg, 5)) == null ? undefined : f
   };
 
   if (includeInstance) {
@@ -1723,6 +1724,10 @@ proto.azdext.ProjectHandlerStatus.deserializeBinaryFromReader = function(msg, re
       var value = new errors_pb.ExtensionError;
       reader.readMessage(value,errors_pb.ExtensionError.deserializeBinaryFromReader);
       msg.setError(value);
+      break;
+    case 5:
+      var value = /** @type {string} */ (reader.readString());
+      msg.setFollowUp(value);
       break;
     default:
       reader.skipField();
@@ -1780,6 +1785,13 @@ proto.azdext.ProjectHandlerStatus.serializeBinaryToWriter = function(message, wr
       4,
       f,
       errors_pb.ExtensionError.serializeBinaryToWriter
+    );
+  }
+  f = /** @type {string} */ (jspb.Message.getField(message, 5));
+  if (f != null) {
+    writer.writeString(
+      5,
+      f
     );
   }
 };
@@ -1873,6 +1885,42 @@ proto.azdext.ProjectHandlerStatus.prototype.clearError = function() {
  */
 proto.azdext.ProjectHandlerStatus.prototype.hasError = function() {
   return jspb.Message.getField(this, 4) != null;
+};
+
+
+/**
+ * optional string follow_up = 5;
+ * @return {string}
+ */
+proto.azdext.ProjectHandlerStatus.prototype.getFollowUp = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 5, ""));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.azdext.ProjectHandlerStatus} returns this
+ */
+proto.azdext.ProjectHandlerStatus.prototype.setFollowUp = function(value) {
+  return jspb.Message.setField(this, 5, value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.azdext.ProjectHandlerStatus} returns this
+ */
+proto.azdext.ProjectHandlerStatus.prototype.clearFollowUp = function() {
+  return jspb.Message.setField(this, 5, undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.azdext.ProjectHandlerStatus.prototype.hasFollowUp = function() {
+  return jspb.Message.getField(this, 5) != null;
 };
 
 

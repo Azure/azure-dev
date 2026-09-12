@@ -27,6 +27,12 @@ type EventManager struct {
 
 type ProjectEventArgs struct {
 	Project *ProjectConfig
+
+	// FollowUp is optional command completion text. Nil
+	// means no contribution. A later lifecycle event
+	// replaces this extension's value. An explicit empty
+	// string retracts it.
+	FollowUp *string
 }
 
 type ServiceEventArgs struct {
@@ -230,6 +236,7 @@ func (em *EventManager) onInvokeProjectHandler(
 	handlerStatus := "completed"
 	handlerMessage := ""
 	var handlerError *ExtensionError
+	var handlerFollowUp *string
 
 	// Call the project event handler
 	err := handler(ctx, args)
@@ -238,6 +245,8 @@ func (em *EventManager) onInvokeProjectHandler(
 		handlerMessage = err.Error()
 		handlerError = WrapError(err)
 		log.Printf("invokeProjectHandler error for event %s: %v", req.EventName, err)
+	} else {
+		handlerFollowUp = args.FollowUp
 	}
 
 	// Return status message
@@ -248,6 +257,7 @@ func (em *EventManager) onInvokeProjectHandler(
 				Status:    handlerStatus,
 				Message:   handlerMessage,
 				Error:     handlerError,
+				FollowUp:  handlerFollowUp,
 			},
 		},
 	}, nil

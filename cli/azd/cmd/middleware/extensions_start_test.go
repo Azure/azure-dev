@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	contracts "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -29,7 +30,7 @@ func newExtensionsMiddlewareTestServer() *grpcserver.Server {
 		azdext.UnimplementedUserConfigServiceServer{},
 		azdext.UnimplementedDeploymentServiceServer{},
 		azdext.UnimplementedEventServiceServer{},
-		azdext.UnimplementedComposeServiceServer{},
+		contracts.UnimplementedComposeServiceServer{},
 		azdext.UnimplementedWorkflowServiceServer{},
 		azdext.UnimplementedExtensionServiceServer{},
 		azdext.UnimplementedServiceTargetServiceServer{},
@@ -37,10 +38,10 @@ func newExtensionsMiddlewareTestServer() *grpcserver.Server {
 		azdext.UnimplementedContainerServiceServer{},
 		azdext.UnimplementedAccountServiceServer{},
 		azdext.UnimplementedAiModelServiceServer{},
-		azdext.UnimplementedCopilotServiceServer{},
+		contracts.UnimplementedCopilotServiceServer{},
 		azdext.UnimplementedProvisioningServiceServer{},
 		azdext.UnimplementedValidationServiceServer{},
-		azdext.UnimplementedTelemetryServiceServer{},
+		contracts.UnimplementedTelemetryServiceServer{},
 	)
 }
 

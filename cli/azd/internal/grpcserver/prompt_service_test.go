@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -611,7 +612,7 @@ func setupTestServer(t *testing.T, promptSvc azdext.PromptServiceServer) (
 		azdext.UnimplementedUserConfigServiceServer{},
 		azdext.UnimplementedDeploymentServiceServer{},
 		azdext.UnimplementedEventServiceServer{},
-		azdext.UnimplementedComposeServiceServer{},
+		v1beta.UnimplementedComposeServiceServer{},
 		azdext.UnimplementedWorkflowServiceServer{},
 		azdext.UnimplementedExtensionServiceServer{},
 		azdext.UnimplementedServiceTargetServiceServer{},
@@ -619,10 +620,10 @@ func setupTestServer(t *testing.T, promptSvc azdext.PromptServiceServer) (
 		azdext.UnimplementedContainerServiceServer{},
 		azdext.UnimplementedAccountServiceServer{},
 		azdext.UnimplementedAiModelServiceServer{},
-		azdext.UnimplementedCopilotServiceServer{},
+		v1beta.UnimplementedCopilotServiceServer{},
 		azdext.UnimplementedProvisioningServiceServer{},
 		azdext.UnimplementedValidationServiceServer{},
-		azdext.UnimplementedTelemetryServiceServer{},
+		v1beta.UnimplementedTelemetryServiceServer{},
 	)
 
 	serverInfo, err := server.Start()
@@ -1420,25 +1421,25 @@ func TestBuildAgentOptions_Partial(t *testing.T) {
 
 func TestConvertFileChangeType_Created(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, azdext.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_CREATED,
+	assert.Equal(t, v1beta.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_CREATED,
 		convertFileChangeType(watch.FileCreated))
 }
 
 func TestConvertFileChangeType_Modified(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, azdext.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_MODIFIED,
+	assert.Equal(t, v1beta.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_MODIFIED,
 		convertFileChangeType(watch.FileModified))
 }
 
 func TestConvertFileChangeType_Deleted(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, azdext.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_DELETED,
+	assert.Equal(t, v1beta.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_DELETED,
 		convertFileChangeType(watch.FileDeleted))
 }
 
 func TestConvertFileChangeType_Unknown(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, azdext.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_UNSPECIFIED,
+	assert.Equal(t, v1beta.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_UNSPECIFIED,
 		convertFileChangeType(watch.FileChangeType(999)))
 }
 
@@ -1461,8 +1462,8 @@ func TestConvertFileChanges_WithChanges(t *testing.T) {
 	}
 	result := convertFileChanges(changes)
 	require.Len(t, result, 2)
-	assert.Equal(t, azdext.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_CREATED, result[0].ChangeType)
-	assert.Equal(t, azdext.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_MODIFIED, result[1].ChangeType)
+	assert.Equal(t, v1beta.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_CREATED, result[0].ChangeType)
+	assert.Equal(t, v1beta.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_MODIFIED, result[1].ChangeType)
 }
 
 // --- convertUsageMetrics tests ---

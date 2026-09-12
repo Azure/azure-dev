@@ -58,6 +58,9 @@ const (
 
 	// defaultExtensionVersion is the initial version for newly scaffolded extensions.
 	defaultExtensionVersion = "0.0.1"
+
+	// minimumScaffoldAzdVersion is the first azd release that hosts the versioned extension gRPC endpoints.
+	minimumScaffoldAzdVersion = ">=1.33.0"
 )
 
 const internalScaffoldResourceBase = "internal/go"
@@ -611,16 +614,17 @@ func collectExtensionMetadataFromFlags(flags *initFlags) (*models.ExtensionSchem
 	}
 
 	return &models.ExtensionSchema{
-		Id:           flags.id,
-		DisplayName:  flags.name,
-		Description:  description,
-		Namespace:    namespace,
-		Capabilities: capabilities,
-		Language:     language,
-		Tags:         tags,
-		Usage:        formatUsage(namespace),
-		Version:      defaultExtensionVersion,
-		Path:         absExtensionPath,
+		Id:                 flags.id,
+		DisplayName:        flags.name,
+		Description:        description,
+		Namespace:          namespace,
+		Capabilities:       capabilities,
+		Language:           language,
+		Tags:               tags,
+		Usage:              formatUsage(namespace),
+		Version:            defaultExtensionVersion,
+		RequiredAzdVersion: minimumScaffoldAzdVersion,
+		Path:               absExtensionPath,
 	}, nil
 }
 
@@ -770,16 +774,17 @@ func collectExtensionMetadata(
 	}
 
 	return &models.ExtensionSchema{
-		Id:           idPrompt.Value,
-		DisplayName:  displayNamePrompt.Value,
-		Description:  descriptionPrompt.Value,
-		Namespace:    namespace,
-		Capabilities: capabilities,
-		Language:     language,
-		Tags:         tags,
-		Usage:        formatUsage(namespace),
-		Version:      defaultExtensionVersion,
-		Path:         absExtensionPath,
+		Id:                 idPrompt.Value,
+		DisplayName:        displayNamePrompt.Value,
+		Description:        descriptionPrompt.Value,
+		Namespace:          namespace,
+		Capabilities:       capabilities,
+		Language:           language,
+		Tags:               tags,
+		Usage:              formatUsage(namespace),
+		Version:            defaultExtensionVersion,
+		RequiredAzdVersion: minimumScaffoldAzdVersion,
+		Path:               absExtensionPath,
 	}, nil
 }
 

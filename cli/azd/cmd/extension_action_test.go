@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -64,7 +65,7 @@ func newExtensionActionTestServer() *grpcserver.Server {
 		&azdext.UnimplementedUserConfigServiceServer{},
 		&azdext.UnimplementedDeploymentServiceServer{},
 		&azdext.UnimplementedEventServiceServer{},
-		&azdext.UnimplementedComposeServiceServer{},
+		&v1beta.UnimplementedComposeServiceServer{},
 		&azdext.UnimplementedWorkflowServiceServer{},
 		&azdext.UnimplementedExtensionServiceServer{},
 		&azdext.UnimplementedServiceTargetServiceServer{},
@@ -72,10 +73,10 @@ func newExtensionActionTestServer() *grpcserver.Server {
 		&azdext.UnimplementedContainerServiceServer{},
 		&azdext.UnimplementedAccountServiceServer{},
 		&azdext.UnimplementedAiModelServiceServer{},
-		&azdext.UnimplementedCopilotServiceServer{},
+		&v1beta.UnimplementedCopilotServiceServer{},
 		&azdext.UnimplementedProvisioningServiceServer{},
 		&azdext.UnimplementedValidationServiceServer{},
-		&azdext.UnimplementedTelemetryServiceServer{},
+		&v1beta.UnimplementedTelemetryServiceServer{},
 	)
 }
 

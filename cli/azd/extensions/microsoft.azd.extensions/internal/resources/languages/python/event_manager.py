@@ -107,9 +107,6 @@ class EventManager:
         """Start receiving messages from the stream."""
         await self.ensure_initialized()
 
-        # Send ready event immediately
-        await self.send_ready_event()
-
         logger.info("[EventManager] Listening for events...")
         try:
             # Process incoming messages using a standard loop like Go
@@ -201,21 +198,6 @@ class EventManager:
         """Remove a service event handler."""
         logger.info(f"[EventManager] Removing service handler: {event_name}")
         self._service_handlers.pop(event_name, None)
-
-    async def send_ready_event(self):
-        """Send the ready event to signal the extension is ready to receive events."""
-        logger.info("[EventManager] Sending ExtensionReadyEvent")
-
-        # Create ready event exactly as Go does
-        message = event_pb2.EventMessage(
-            extension_ready_event=event_pb2.ExtensionReadyEvent(
-                status="ready"
-            )
-        )
-
-        # Send message and log success
-        await self._send_message(message)
-        logger.info("[EventManager] ExtensionReadyEvent sent")
 
     async def send_project_handler_status(self, event_name: str, status: str, message: str):
         """Send status of project event handling."""

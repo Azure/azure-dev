@@ -1130,7 +1130,7 @@ func Test_MapError_RemoteCauseTypes(t *testing.T) {
 		"CustomerTokenABC123")
 }
 
-func Test_MapError_GRPCStatusRemoteCauseTypes(t *testing.T) {
+func Test_MapError_GRPCStatusStableLocalError(t *testing.T) {
 	t.Parallel()
 
 	statusErr, err := status.New(codes.Unknown, "extension failed").WithDetails(
@@ -1141,10 +1141,6 @@ func Test_MapError_GRPCStatusRemoteCauseTypes(t *testing.T) {
 				LocalError: &azdext.LocalErrorDetail{
 					Code:     "invalid_project",
 					Category: "validation",
-					CauseTypes: []string{
-						"*fmt.wrapError",
-						"*agents.RemoteError",
-					},
 				},
 			},
 		},
@@ -1161,11 +1157,7 @@ func Test_MapError_GRPCStatusRemoteCauseTypes(t *testing.T) {
 
 	require.Equal(t, "ext.validation.invalid_project", span.Status.Description)
 	require.NotContains(t, attributes, fields.ErrType.Key)
-	require.NotContains(t, attributes[fields.ErrChainTypes.Key].AsStringSlice(),
-		"*agents.RemoteError")
-	require.Equal(t,
-		[]string{fields.CaseInsensitiveHash("*agents.RemoteError")},
-		attributes[fields.ErrExtensionCauseTypes.Key].AsStringSlice())
+	require.NotContains(t, attributes, fields.ErrExtensionCauseTypes.Key)
 }
 
 func Test_MapError_ChainTypesCapsMergedRemoteTypes(t *testing.T) {
@@ -1321,11 +1313,11 @@ func TestMapError_GRPCStatus(t *testing.T) {
 			},
 		},
 		{
-			name:     "RelayedToolDetail",
+			name:     "RelayedStableToolOrigin",
 			err:      toolStatus.Err(),
-			wantCode: "tool.docker.failed",
+			wantCode: "tool.other.failed",
 			wantAttrs: []attribute.KeyValue{
-				fields.ErrorKey(fields.ToolName.Key).String("docker"),
+				fields.ErrorKey(fields.ToolName.Key).String("other"),
 			},
 		},
 	}

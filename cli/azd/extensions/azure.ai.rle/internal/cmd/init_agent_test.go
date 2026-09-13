@@ -12,26 +12,32 @@ import (
 	"strings"
 	"testing"
 
+	"azure.ai.rle/internal/project"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-func TestRleInitTypeOptionsGateAgentChoices(t *testing.T) {
-	withoutAgents := rleInitTypeOptions(false)
+func TestRleInitTargetOptionsGateAgentChoices(t *testing.T) {
+	withoutAgents := rleInitTargetOptions(false)
 	if len(withoutAgents) != 1 ||
-		withoutAgents[0].initType != rleInitTypeGymOpenEnv ||
+		withoutAgents[0].target != gymOpenEnvInitTarget ||
 		withoutAgents[0].label != "Gym, OpenEnv" {
 		t.Fatalf("expected only Gym/OpenEnv by default, got %#v", withoutAgents)
 	}
 
-	withAgents := rleInitTypeOptions(true)
+	withAgents := rleInitTargetOptions(true)
 	if len(withAgents) != 3 {
 		t.Fatalf("expected three init choices with agent preview enabled, got %#v", withAgents)
 	}
-	if withAgents[1].initType != rleInitTypeHostedAgent || withAgents[1].label != "Agent, Hosted Agent" {
-		t.Fatalf("unexpected Hosted Agent choice: %#v", withAgents[1])
+	if withAgents[1].target != (rleInitTarget{
+		rleType: project.RleTypeAgent, rleSubtype: project.RleSubtypeHostedAgent,
+	}) || withAgents[1].label != "Agent, HostedAgent" {
+		t.Fatalf("unexpected HostedAgent choice: %#v", withAgents[1])
 	}
-	if withAgents[2].initType != rleInitTypeBYOH || withAgents[2].label != "Agent, BYOH" {
-		t.Fatalf("unexpected BYOH choice: %#v", withAgents[2])
+	if withAgents[2].target != (rleInitTarget{
+		rleType: project.RleTypeAgent, rleSubtype: project.RleSubtypeBYOA,
+	}) || withAgents[2].label != "Agent, BYOA" {
+		t.Fatalf("unexpected BYOA choice: %#v", withAgents[2])
 	}
 }
 
@@ -40,16 +46,18 @@ func TestInitInteractiveHostedAgentScaffoldsUsingPromptedValues(t *testing.T) {
 	t.Chdir(tempDir)
 	t.Setenv(rleAgentInitEnableEnvVar, "true")
 
-	oldSelectType := selectRleInitTypeFunc
+	oldSelectTarget := selectRleInitTargetFunc
 	oldPrompt := promptRleValueFunc
 	oldLoadCatalog := loadRleSampleCatalogFunc
-	selectRleInitTypeFunc = func(_ context.Context, includeAgentTypes bool) (rleInitType, error) {
+	selectRleInitTargetFunc = func(_ context.Context, includeAgentTypes bool) (rleInitTarget, error) {
 		if !includeAgentTypes {
-			t.Fatal("expected Hosted Agent selection to be enabled")
+			t.Fatal("expected HostedAgent selection to be enabled")
 		}
-		return rleInitTypeHostedAgent, nil
+		return rleInitTarget{
+			rleType: project.RleTypeAgent, rleSubtype: project.RleSubtypeHostedAgent,
+		}, nil
 	}
-	promptValues := []string{"Support Agent", "v3"}
+	promptValues := []string{"Support Agent", "3"}
 	promptRleValueFunc = func(_ context.Context, _ string) (string, error) {
 		if len(promptValues) == 0 {
 			t.Fatal("unexpected extra input prompt")
@@ -63,7 +71,7 @@ func TestInitInteractiveHostedAgentScaffoldsUsingPromptedValues(t *testing.T) {
 		return nil, nil
 	}
 	t.Cleanup(func() {
-		selectRleInitTypeFunc = oldSelectType
+		selectRleInitTargetFunc = oldSelectTarget
 		promptRleValueFunc = oldPrompt
 		loadRleSampleCatalogFunc = oldLoadCatalog
 	})
@@ -77,48 +85,48 @@ func TestInitInteractiveHostedAgentScaffoldsUsingPromptedValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(promptValues) != 0 {
-		t.Fatalf("expected all Hosted Agent prompts to be consumed, remaining %v", promptValues)
+		t.Fatalf("expected all HostedAgent prompts to be consumed, remaining %v", promptValues)
 	}
 
 	sessionDir := filepath.Join(tempDir, "support_agent")
-	config, err := os.ReadFile(filepath.Join(sessionDir, "rle.toml"))
+	config, err := os.ReadFile(filepath.Join(sessionDir, project.RleConfigFile))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
-		`name = "support_agent"`,
-		`kind = "hosted_agent"`,
-		`name = "Support Agent"`,
-		`version = "v3"`,
+		`name = 'support_agent'`,
+		`version = '1.0.0'`,
+		`type = 'Agent'`,
+		`subtype = 'HostedAgent'`,
+		`agentName = 'Support Agent'`,
+		`agentVersion = '3'`,
 	} {
 		if !strings.Contains(string(config), expected) {
 			t.Fatalf("expected config to contain %q, got:\n%s", expected, config)
 		}
 	}
-	if !strings.Contains(output.String(), "Created Hosted Agent RLE scaffold.") {
-		t.Fatalf("expected Hosted Agent scaffold confirmation, got %s", output.String())
+	if !strings.Contains(output.String(), "Created HostedAgent RLE scaffold.") {
+		t.Fatalf("expected HostedAgent scaffold confirmation, got %s", output.String())
 	}
-	stateBytes, err := os.ReadFile(filepath.Join(sessionDir, rleStateFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(stateBytes), `"environmentName": "support_agent"`) {
-		t.Fatalf("expected initialized RLE state, got:\n%s", stateBytes)
+	if _, err := os.Stat(filepath.Join(sessionDir, ".azd-rle.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected no legacy state file, got %v", err)
 	}
 }
 
-func TestInitInteractiveBYOHScaffoldsUsingPromptedValues(t *testing.T) {
+func TestInitInteractiveBYOAScaffoldsUsingPromptedValues(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	t.Setenv(rleAgentInitEnableEnvVar, "true")
 
-	oldSelectType := selectRleInitTypeFunc
+	oldSelectTarget := selectRleInitTargetFunc
 	oldPrompt := promptRleValueFunc
-	selectRleInitTypeFunc = func(_ context.Context, includeAgentTypes bool) (rleInitType, error) {
+	selectRleInitTargetFunc = func(_ context.Context, includeAgentTypes bool) (rleInitTarget, error) {
 		if !includeAgentTypes {
-			t.Fatal("expected BYOH selection to be enabled")
+			t.Fatal("expected BYOA selection to be enabled")
 		}
-		return rleInitTypeBYOH, nil
+		return rleInitTarget{
+			rleType: project.RleTypeAgent, rleSubtype: project.RleSubtypeBYOA,
+		}, nil
 	}
 	promptValues := []string{"customer_rle", "https://agent.example.com/v1/"}
 	promptRleValueFunc = func(_ context.Context, _ string) (string, error) {
@@ -127,7 +135,7 @@ func TestInitInteractiveBYOHScaffoldsUsingPromptedValues(t *testing.T) {
 		return value, nil
 	}
 	t.Cleanup(func() {
-		selectRleInitTypeFunc = oldSelectType
+		selectRleInitTargetFunc = oldSelectTarget
 		promptRleValueFunc = oldPrompt
 	})
 
@@ -138,16 +146,16 @@ func TestInitInteractiveBYOHScaffoldsUsingPromptedValues(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	config, err := os.ReadFile(filepath.Join(tempDir, "customer_rle", "rle.toml"))
+	config, err := os.ReadFile(filepath.Join(tempDir, "customer_rle", project.RleConfigFile))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(config), `base_url = "https://agent.example.com/v1"`) {
-		t.Fatalf("expected normalized BYOH base URL, got:\n%s", config)
+	if !strings.Contains(string(config), `baseUrl = 'https://agent.example.com/v1/'`) {
+		t.Fatalf("expected normalized BYOA base URL, got:\n%s", config)
 	}
 }
 
-func TestInitNoPromptHostedAgentUsesExplicitFlags(t *testing.T) {
+func TestInitNoPromptHostedAgentUsesControlPlaneFlags(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	t.Setenv(rleAgentInitEnableEnvVar, "true")
@@ -156,41 +164,48 @@ func TestInitNoPromptHostedAgentUsesExplicitFlags(t *testing.T) {
 	command := newInitCommand(&noPrompt)
 	command.SetArgs([]string{
 		"support_rle",
-		"--type", "hosted-agent",
+		"--type", "Agent",
+		"--subtype", "HostedAgent",
+		"--rle-version", "1.0.0",
 		"--agent-name", "support-agent",
-		"--agent-version", "2026.09",
+		"--agent-version", "202609",
 	})
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(tempDir, "support_rle", "server", "env.py")); err != nil {
-		t.Fatalf("expected Hosted Agent scaffold to be created: %v", err)
+		t.Fatalf("expected HostedAgent scaffold to be created: %v", err)
 	}
 }
 
-func TestInitNoPromptBYOHRequiresFolderName(t *testing.T) {
+func TestInitNoPromptBYOARequiresFolderName(t *testing.T) {
 	t.Setenv(rleAgentInitEnableEnvVar, "true")
 
 	noPrompt := true
 	command := newInitCommand(&noPrompt)
-	command.SetArgs([]string{"--type", "byoh", "--base-url", "https://agent.example.com"})
+	command.SetArgs([]string{
+		"--type", "Agent",
+		"--subtype", "BYOA",
+		"--base-url", "https://agent.example.com",
+	})
 	err := command.Execute()
 	localError, ok := errors.AsType[*azdext.LocalError](err)
 	if !ok || localError.Code != "rle_environment_name_required" {
-		t.Fatalf("expected missing BYOH folder name error, got %v", err)
+		t.Fatalf("expected missing BYOA folder name error, got %v", err)
 	}
 }
 
-func TestInitAgentTypeRequiresPreviewFlag(t *testing.T) {
+func TestInitAgentTargetRequiresPreviewFlag(t *testing.T) {
 	t.Setenv(rleAgentInitEnableEnvVar, "")
 
 	noPrompt := true
 	command := newInitCommand(&noPrompt)
 	command.SetArgs([]string{
 		"support_rle",
-		"--type", "hosted-agent",
+		"--type", "Agent",
+		"--subtype", "HostedAgent",
 		"--agent-name", "support-agent",
-		"--agent-version", "v1",
+		"--agent-version", "1",
 	})
 	err := command.Execute()
 	localError, ok := errors.AsType[*azdext.LocalError](err)
@@ -199,18 +214,20 @@ func TestInitAgentTypeRequiresPreviewFlag(t *testing.T) {
 	}
 }
 
-func TestInitSelectedAgentTypeRequiresPreviewFlag(t *testing.T) {
+func TestInitSelectedAgentTargetRequiresPreviewFlag(t *testing.T) {
 	t.Setenv(rleAgentInitEnableEnvVar, "")
 
-	oldSelectType := selectRleInitTypeFunc
-	selectRleInitTypeFunc = func(_ context.Context, includeAgentTypes bool) (rleInitType, error) {
+	oldSelectTarget := selectRleInitTargetFunc
+	selectRleInitTargetFunc = func(_ context.Context, includeAgentTypes bool) (rleInitTarget, error) {
 		if includeAgentTypes {
 			t.Fatal("expected agent init choices to be disabled")
 		}
-		return rleInitTypeHostedAgent, nil
+		return rleInitTarget{
+			rleType: project.RleTypeAgent, rleSubtype: project.RleSubtypeHostedAgent,
+		}, nil
 	}
 	t.Cleanup(func() {
-		selectRleInitTypeFunc = oldSelectType
+		selectRleInitTargetFunc = oldSelectTarget
 	})
 
 	noPrompt := false
@@ -219,5 +236,61 @@ func TestInitSelectedAgentTypeRequiresPreviewFlag(t *testing.T) {
 	localError, ok := errors.AsType[*azdext.LocalError](err)
 	if !ok || localError.Code != "rle_agent_init_disabled" {
 		t.Fatalf("expected disabled selected agent type error, got %v", err)
+	}
+}
+
+func TestParseRleInitTargetUsesControlPlanePairs(t *testing.T) {
+	tests := []struct {
+		name      string
+		rleType   string
+		subtype   string
+		expected  rleInitTarget
+		errorCode string
+	}{
+		{
+			name:     "gym defaults to openenv",
+			rleType:  "Gym",
+			expected: gymOpenEnvInitTarget,
+		},
+		{
+			name:     "hosted agent",
+			rleType:  "Agent",
+			subtype:  "HostedAgent",
+			expected: rleInitTarget{rleType: project.RleTypeAgent, rleSubtype: project.RleSubtypeHostedAgent},
+		},
+		{
+			name:      "agent needs subtype",
+			rleType:   "Agent",
+			errorCode: "rle_init_subtype_required",
+		},
+		{
+			name:      "invalid pair",
+			rleType:   "Gym",
+			subtype:   "BYOA",
+			errorCode: "rle_init_type_configuration_invalid",
+		},
+		{
+			name:      "legacy combined target is rejected",
+			rleType:   "hosted-agent",
+			errorCode: "rle_init_type_invalid",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			target, err := parseRleInitTarget(test.rleType, test.subtype)
+			if test.errorCode == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if target != test.expected {
+					t.Fatalf("expected %#v, got %#v", test.expected, target)
+				}
+				return
+			}
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			if !ok || localErr.Code != test.errorCode {
+				t.Fatalf("expected %s, got %v", test.errorCode, err)
+			}
+		})
 	}
 }

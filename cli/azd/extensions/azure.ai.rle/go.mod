@@ -8,6 +8,7 @@ require (
 	github.com/azure/azure-dev/cli/azd v1.25.0
 	github.com/fatih/color v1.18.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/spf13/cobra v1.10.1
 )
 

@@ -37,6 +37,12 @@ type remoteInvokeAction struct {
 	environmentName string
 }
 
+type remoteInvokeTarget struct {
+	environmentName string
+	projectEndpoint string
+	version         string
+}
+
 var validateSandboxURL = validateRemoteSandboxURL
 
 func newInvokeCommand() *cobra.Command {
@@ -49,10 +55,9 @@ func newInvokeCommand() *cobra.Command {
 		Short: "Open a remote OpenEnv runtime shell",
 		Long: `Open a remote OpenEnv runtime shell.
 
-With no environment name, invoke uses the environment saved in .azd-rle.json.
-To invoke an existing environment without local source or state, provide its name
-and set FOUNDRY_PROJECT_ENDPOINT. Use --version to select a specific published
-version; otherwise, the latest version returned by the project is used.`,
+With no environment name, invoke uses rle.name and rle.version from the current
+folder's rle.toml. To invoke an environment without local source, provide both
+its name and --version, then set FOUNDRY_PROJECT_ENDPOINT.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			environmentName := ""
@@ -83,7 +88,7 @@ version; otherwise, the latest version returned by the project is used.`,
 }
 
 func (a *remoteInvokeAction) Run() error {
-	state, client, err := a.resolveTarget()
+	target, client, err := a.resolveTarget()
 	if err != nil {
 		return err
 	}
@@ -91,18 +96,15 @@ func (a *remoteInvokeAction) Run() error {
 	ctx, stopSignals := signal.NotifyContext(a.cmd.Context(), os.Interrupt)
 	defer stopSignals()
 
-	runtimeTarget := fmt.Sprintf("environment %s using the latest version", state.EnvironmentName)
-	if state.runtimeRouteVersion != "" {
-		runtimeTarget = fmt.Sprintf("environment %s version %s", state.EnvironmentName, state.runtimeRouteVersion)
-	}
+	runtimeTarget := fmt.Sprintf("environment %s version %s", target.environmentName, target.version)
 	if _, err := fmt.Fprintf(a.cmd.OutOrStdout(), "Creating runtime for %s ...\n", runtimeTarget); err != nil {
 		return err
 	}
 
-	runtime, err := createRemoteRuntime(ctx, client, state, a.cmd.OutOrStdout())
+	runtime, err := createRemoteRuntime(ctx, client, target, a.cmd.OutOrStdout())
 	if runtime != nil {
 		defer func() {
-			writeCleanupResult(a.cmd.ErrOrStderr(), cleanupRemoteRuntime(client, state.EnvironmentName, runtime))
+			writeCleanupResult(a.cmd.ErrOrStderr(), cleanupRemoteRuntime(client, target.environmentName, runtime))
 		}()
 	}
 	if err != nil {
@@ -110,16 +112,13 @@ func (a *remoteInvokeAction) Run() error {
 			return err
 		}
 		if isRleNotFound(err) {
-			if state.runtimeRouteVersion != "" {
-				return environmentVersionNotFoundError(state.EnvironmentName, state.runtimeRouteVersion)
-			}
-			return environmentNotFoundError(state.EnvironmentName)
+			return environmentVersionNotFoundError(target.environmentName, target.version)
 		}
 		return serviceError(err)
 	}
 
 	instanceUrl := strings.TrimRight(runtime.instance.BaseUrl, "/")
-	if err := validateSandboxURL(instanceUrl, state.ProjectEndpoint); err != nil {
+	if err := validateSandboxURL(instanceUrl, target.projectEndpoint); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintln(
@@ -143,7 +142,7 @@ func (a *remoteInvokeAction) Run() error {
 	if _, err := fmt.Fprintf(
 		a.cmd.OutOrStdout(),
 		"Environment %s version %s ready\n",
-		state.EnvironmentName,
+		target.environmentName,
 		runtime.group.EnvironmentVersion,
 	); err != nil {
 		return err
@@ -175,57 +174,50 @@ func (a *remoteInvokeAction) Run() error {
 	)
 }
 
-func (a *remoteInvokeAction) resolveTarget() (rleState, *rleClient, error) {
+func (a *remoteInvokeAction) resolveTarget() (remoteInvokeTarget, *rleClient, error) {
 	requestedVersion := strings.TrimSpace(a.flags.version)
 	if a.cmd.Flags().Changed("version") && requestedVersion == "" {
-		return rleState{}, nil, &azdext.LocalError{
+		return remoteInvokeTarget{}, nil, &azdext.LocalError{
 			Message:    "--version requires a non-empty environment version.",
 			Code:       "rle_environment_version_required",
 			Category:   azdext.LocalErrorCategoryUser,
 			Suggestion: "Provide a semantic version, for example --version 2.1.0.",
 		}
 	}
-	if strings.TrimSpace(a.environmentName) == "" {
-		state, err := loadRleState()
-		if err != nil {
-			return rleState{}, nil, err
-		}
-		if requestedVersion == "" {
-			if err := requireDeployedEnvironment(state); err != nil {
-				return rleState{}, nil, err
-			}
-			state.runtimeRouteVersion = state.EnvironmentVersion
-		} else {
-			if err := requireRemoteEnvironmentTarget(state); err != nil {
-				return rleState{}, nil, err
-			}
-			state.runtimeRouteVersion = requestedVersion
-		}
-		client, err := createRleClient(state.ProjectEndpoint)
-		return state, client, err
-	}
-
 	environmentName := strings.TrimSpace(a.environmentName)
+	if environmentName == "" {
+		config, err := project.LoadRleConfig(".")
+		if err != nil {
+			return remoteInvokeTarget{}, nil, err
+		}
+		environmentName = config.Rle.Name
+		if requestedVersion == "" {
+			requestedVersion = config.Rle.Version
+		}
+	} else if requestedVersion == "" {
+		return remoteInvokeTarget{}, nil, &azdext.LocalError{
+			Message:    "A published RLE version is required when invoking by environment name.",
+			Code:       "rle_environment_version_required",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Pass --version <major.minor.patch>, or run from a folder with rle.toml.",
+		}
+	}
+	version, err := project.NormalizeRleVersion(requestedVersion)
+	if err != nil {
+		return remoteInvokeTarget{}, nil, err
+	}
 	projectEndpoint, err := resolveEnvironmentListProjectEndpoint()
 	if err != nil {
-		return rleState{}, nil, err
+		return remoteInvokeTarget{}, nil, err
 	}
 	client, err := createRleClient(projectEndpoint)
 	if err != nil {
-		return rleState{}, nil, err
+		return remoteInvokeTarget{}, nil, err
 	}
-
-	if requestedVersion == "" {
-		return rleState{
-			EnvironmentName: environmentName,
-			ProjectEndpoint: projectEndpoint,
-		}, client, nil
-	}
-
-	return rleState{
-		EnvironmentName:     environmentName,
-		ProjectEndpoint:     projectEndpoint,
-		runtimeRouteVersion: requestedVersion,
+	return remoteInvokeTarget{
+		environmentName: environmentName,
+		projectEndpoint: projectEndpoint,
+		version:         version,
 	}, client, nil
 }
 
@@ -253,22 +245,22 @@ type remoteRuntime struct {
 func createRemoteRuntime(
 	ctx context.Context,
 	client *rleClient,
-	state rleState,
+	target remoteInvokeTarget,
 	output io.Writer,
 ) (*remoteRuntime, error) {
-	group, err := createRemoteInstanceGroup(ctx, client, state, output)
+	group, err := createRemoteInstanceGroup(ctx, client, target, output)
 	if err != nil {
 		return nil, err
 	}
 	runtime := &remoteRuntime{
 		group:        group,
-		routeVersion: state.runtimeRouteVersion,
+		routeVersion: target.version,
 	}
-	if err := validateInstanceGroupIdentity(state, group); err != nil {
+	if err := validateInstanceGroupIdentity(target, group); err != nil {
 		return runtime, err
 	}
 
-	instance, err := client.createInstance(ctx, state.EnvironmentName, group.EnvironmentVersion, group.Id)
+	instance, err := client.createInstance(ctx, target.environmentName, group.EnvironmentVersion, group.Id)
 	if err != nil {
 		return runtime, err
 	}
@@ -281,14 +273,14 @@ func createRemoteRuntime(
 			Suggestion: "Check the RLE service instance response, then retry.",
 		}
 	}
-	readyInstance, err := waitForRemoteInstance(ctx, client, state.EnvironmentName, group, instance)
+	readyInstance, err := waitForRemoteInstance(ctx, client, target.environmentName, group, instance)
 	if readyInstance != nil {
 		runtime.instance = readyInstance
 	}
 	return runtime, err
 }
 
-func validateInstanceGroupIdentity(state rleState, group *instanceGroupResource) error {
+func validateInstanceGroupIdentity(target remoteInvokeTarget, group *instanceGroupResource) error {
 	if strings.TrimSpace(group.Id) == "" {
 		return &azdext.LocalError{
 			Message:    "RLE service did not return an instance group id.",
@@ -298,12 +290,12 @@ func validateInstanceGroupIdentity(state rleState, group *instanceGroupResource)
 		}
 	}
 	if responseName := strings.TrimSpace(group.EnvironmentName); responseName != "" &&
-		responseName != state.EnvironmentName {
+		responseName != target.environmentName {
 		return &azdext.LocalError{
 			Message: fmt.Sprintf(
 				"RLE service returned environment %q for requested environment %q.",
 				responseName,
-				state.EnvironmentName,
+				target.environmentName,
 			),
 			Code:       "rle_instance_group_environment_mismatch",
 			Category:   azdext.LocalErrorCategoryInternal,
@@ -318,13 +310,12 @@ func validateInstanceGroupIdentity(state rleState, group *instanceGroupResource)
 			Suggestion: "Check the RLE service instance group response, then retry.",
 		}
 	}
-	if requestedVersion := strings.TrimSpace(state.runtimeRouteVersion); requestedVersion != "" &&
-		group.EnvironmentVersion != requestedVersion {
+	if group.EnvironmentVersion != target.version {
 		return &azdext.LocalError{
 			Message: fmt.Sprintf(
 				"RLE service returned environment version %q for requested version %q.",
 				group.EnvironmentVersion,
-				requestedVersion,
+				target.version,
 			),
 			Code:       "rle_instance_group_version_mismatch",
 			Category:   azdext.LocalErrorCategoryInternal,
@@ -337,11 +328,11 @@ func validateInstanceGroupIdentity(state rleState, group *instanceGroupResource)
 func createRemoteInstanceGroup(
 	ctx context.Context,
 	client *rleClient,
-	state rleState,
+	target remoteInvokeTarget,
 	output io.Writer,
 ) (*instanceGroupResource, error) {
 	for attempt := 0; ; attempt++ {
-		group, err := client.createInstanceGroup(ctx, state.EnvironmentName, state.runtimeRouteVersion)
+		group, err := client.createInstanceGroup(ctx, target.environmentName, target.version)
 		if !isEnvironmentNotReadyError(err) {
 			return group, err
 		}
@@ -349,14 +340,14 @@ func createRemoteInstanceGroup(
 			return nil, &azdext.LocalError{
 				Message: fmt.Sprintf(
 					"Environment %q was not ready after %d retries while creating the runtime.",
-					state.EnvironmentName,
+					target.environmentName,
 					remoteReadinessRetryCount,
 				),
 				Code:     "rle_environment_readiness_timeout",
 				Category: azdext.LocalErrorCategoryUser,
 				Suggestion: fmt.Sprintf(
 					"Run azd ai rle show %s to inspect the disk image status, then retry.",
-					state.EnvironmentName,
+					target.environmentName,
 				),
 			}
 		}
@@ -767,49 +758,6 @@ func validateRemoteSandboxURL(sandboxUrl string, projectEndpoint string) error {
 			Code:       "rle_sandbox_url_untrusted",
 			Category:   azdext.LocalErrorCategoryInternal,
 			Suggestion: "Check the RLE service runtime response, then retry.",
-		}
-	}
-	return nil
-}
-
-func requireDeployedEnvironment(state rleState) error {
-	if err := requireRemoteEnvironmentTarget(state); err != nil {
-		return err
-	}
-	if strings.TrimSpace(state.EnvironmentId) == "" {
-		return &azdext.LocalError{
-			Message:    "RLE environment has not been deployed.",
-			Code:       "rle_environment_not_deployed",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Run azd ai rle publish from this environment folder first.",
-		}
-	}
-	if strings.TrimSpace(state.EnvironmentVersion) == "" {
-		return &azdext.LocalError{
-			Message:    "The deployed RLE environment does not include a version.",
-			Code:       "rle_environment_version_missing",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Run azd ai rle publish again to refresh the local deployment state.",
-		}
-	}
-	return nil
-}
-
-func requireRemoteEnvironmentTarget(state rleState) error {
-	if strings.TrimSpace(state.ProjectEndpoint) == "" {
-		return &azdext.LocalError{
-			Message:    "Foundry project endpoint is required for remote invoke.",
-			Code:       "rle_project_required",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Run azd ai rle publish first with FOUNDRY_PROJECT_ENDPOINT set.",
-		}
-	}
-	if strings.TrimSpace(state.EnvironmentName) == "" {
-		return &azdext.LocalError{
-			Message:    "The deployed RLE environment does not include a name.",
-			Code:       "rle_environment_name_missing",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Run azd ai rle publish again to refresh the local deployment state.",
 		}
 	}
 	return nil

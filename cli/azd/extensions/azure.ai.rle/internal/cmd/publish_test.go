@@ -4,73 +4,125 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"azure.ai.rle/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-func TestNormalizeVersionBumpFlag(t *testing.T) {
-	cases := []struct {
-		name     string
-		value    string
-		expected string
-	}{
-		{name: "default major", value: "major", expected: "Major"},
-		{name: "minor", value: "minor", expected: "Minor"},
-		{name: "patch", value: "patch", expected: "Patch"},
-		{name: "trimmed uppercase", value: "  MAJOR  ", expected: "Major"},
+func TestBuildEnvironmentCreateRequestMapsManifestConfiguration(t *testing.T) {
+	agentName := "support-agent"
+	agentVersion := "12"
+	config := project.RleConfig{
+		Rle: project.RleManifest{
+			Name:         "support_rle",
+			Version:      "1.0.1",
+			Type:         project.RleTypeAgent,
+			Subtype:      project.RleSubtypeHostedAgent,
+			AgentName:    &agentName,
+			AgentVersion: &agentVersion,
+		},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := normalizeVersionBumpFlag(tc.value)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got != tc.expected {
-				t.Fatalf("expected %q, got %q", tc.expected, got)
-			}
-		})
+	request := buildEnvironmentCreateRequest(config, "example.azurecr.io/support_rle:1.0.1", "Patch")
+	if request.Name != "support_rle" ||
+		request.VersionBump != "Patch" ||
+		request.Type != "Agent" ||
+		request.Subtype != "HostedAgent" ||
+		request.AgentName == nil || *request.AgentName != agentName ||
+		request.AgentVersion == nil || *request.AgentVersion != agentVersion ||
+		request.BaseURL != nil {
+		t.Fatalf("expected manifest data to map to create request, got %#v", request)
+	}
+
+	data, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	for key, expected := range map[string]string{
+		"name":         "support_rle",
+		"versionBump":  "Patch",
+		"type":         "Agent",
+		"subtype":      "HostedAgent",
+		"agentName":    agentName,
+		"agentVersion": agentVersion,
+	} {
+		if payload[key] != expected {
+			t.Fatalf("expected %s=%q, got %#v", key, expected, payload[key])
+		}
+	}
+	if _, exists := payload["baseUrl"]; exists {
+		t.Fatalf("expected HostedAgent request to omit baseUrl, got %s", data)
 	}
 }
 
-func TestNormalizeVersionBumpFlagRejectsInvalidValue(t *testing.T) {
-	_, err := normalizeVersionBumpFlag("gold")
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("expected LocalError, got %T", err)
+func TestResolvePublishImageUsesManifestVersion(t *testing.T) {
+	t.Setenv("AZURE_CONTAINER_REGISTRY_ENDPOINT", "example.azurecr.io")
+
+	image, err := resolvePublishImage(
+		"code_rl",
+		"1.2.0",
+		"https://account.services.ai.azure.com/api/projects/project-name",
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if localErr.Code != "rle_invalid_version_bump" {
-		t.Fatalf("expected invalid version bump code, got %q", localErr.Code)
+	if image != "example.azurecr.io/project-name-code-rl:1.2.0" {
+		t.Fatalf("unexpected versioned image name %q", image)
 	}
 }
 
-func TestPublishRejectsInvalidVersionBumpBeforeResolvingState(t *testing.T) {
+func TestResolvePublishImageRequiresAcrRegistryForManifest(t *testing.T) {
+	t.Setenv("AZURE_CONTAINER_REGISTRY_ENDPOINT", "")
+	_, err := resolvePublishImage(
+		"code_rl",
+		"1.0.0",
+		"https://account.services.ai.azure.com/api/projects/project-name",
+	)
+	var localErr *azdext.LocalError
+	if !errors.As(err, &localErr) || localErr.Code != "rle_acr_registry_required" {
+		t.Fatalf("expected ACR registry error, got %v", err)
+	}
+}
+
+func TestVerifyPublishedEnvironmentRequiresManifestIdentity(t *testing.T) {
+	manifest := project.RleManifest{
+		Name:    "code_rl",
+		Version: "1.0.0",
+		Type:    project.RleTypeGym,
+		Subtype: project.RleSubtypeOpenEnv,
+	}
+	err := verifyPublishedEnvironment(manifest, &environmentResource{
+		Name:    "code_rl",
+		Version: "1.0.1",
+		Type:    "Gym",
+		Subtype: "OpenEnv",
+	})
+	var localErr *azdext.LocalError
+	if !errors.As(err, &localErr) || localErr.Code != "rle_published_environment_mismatch" {
+		t.Fatalf("expected published identity mismatch, got %v", err)
+	}
+}
+
+func TestPublishRequiresManifestBeforeProjectConfiguration(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
+	t.Setenv(foundryProjectEndpointEnvVar, "")
 
 	command := newPublishCommand()
-	command.SetArgs([]string{"--version-bump", "gold"})
-	command.SetOut(&bytes.Buffer{})
-	command.SetErr(&bytes.Buffer{})
-
 	err := command.Execute()
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("expected LocalError, got %T", err)
-	}
-	if localErr.Code != "rle_invalid_version_bump" {
-		t.Fatalf("expected invalid version bump code, got %q", localErr.Code)
-	}
-}
-
-func TestBuildEnvironmentCreateRequestIncludesVersionBump(t *testing.T) {
-	request := buildEnvironmentCreateRequest("echo_env", "example.azurecr.io/echo_env:latest", "Patch")
-	if request.VersionBump != "Patch" {
-		t.Fatalf("expected version bump to be included, got %#v", request)
+	var localErr *azdext.LocalError
+	if !errors.As(err, &localErr) || localErr.Code != "rle_manifest_missing" {
+		t.Fatalf("expected missing manifest error, got %v", err)
 	}
 }
 
@@ -79,6 +131,8 @@ func TestEnvironmentOutputUsesEnvironmentNameField(t *testing.T) {
 		EnvironmentId:      "env-1",
 		EnvironmentVersion: "1.0.0",
 		EnvironmentName:    "echo_env",
+		Type:               "Gym",
+		Subtype:            "OpenEnv",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -93,5 +147,41 @@ func TestEnvironmentOutputUsesEnvironmentNameField(t *testing.T) {
 	}
 	if _, exists := payload["name"]; exists {
 		t.Fatalf("expected legacy name field to be omitted, got %v", payload)
+	}
+}
+
+func TestResolvePublishTargetRequiresInitialManifestVersion(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv(foundryProjectEndpointEnvVar, "https://account.services.ai.azure.com/api/projects/project")
+	if err := project.WriteRleConfig(tempDir, project.RleConfig{
+		Rle: project.RleManifest{
+			Name:    "code_rl",
+			Version: "0.1.0",
+			Type:    project.RleTypeGym,
+			Subtype: project.RleSubtypeOpenEnv,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet ||
+			r.URL.Path != testFoundryProjectPath+environmentCollectionPath+"/code_rl" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		http.NotFound(w, r)
+	}))
+	defer controlPlane.Close()
+	stubRleClientEndpoint(t, controlPlane.URL)
+
+	_, _, _, _, _, err := resolvePublishTarget(t.Context())
+	var localErr *azdext.LocalError
+	if !errors.As(err, &localErr) || localErr.Code != "rle_manifest_initial_version_invalid" {
+		t.Fatalf("expected invalid initial version error, got %v", err)
+	}
+
+	if _, err := project.LoadRleConfig(tempDir); err != nil {
+		t.Fatalf("expected manifest to remain unchanged after failed preflight: %v", err)
 	}
 }

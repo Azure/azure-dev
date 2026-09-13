@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"azure.ai.rle/internal/project"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
@@ -99,11 +101,10 @@ func TestEnvironmentListListsProjectEnvironments(t *testing.T) {
 func TestEnvironmentListSupportsJSONOutput(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	if err := saveRleState(rleState{
-		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/saved-project",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/project-from-env",
+	)
 
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -687,16 +688,20 @@ func TestResolveEnvironmentVersionsStopsAtSafetyLimit(t *testing.T) {
 	}
 }
 
-func TestShowUsesEnvironmentNameAndProjectEndpointFromState(t *testing.T) {
+func TestShowUsesEnvironmentNameFromManifestAndRuntimeProjectEndpoint(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	t.Setenv(
 		foundryProjectEndpointEnvVar,
-		"https://other.services.ai.azure.com/api/projects/different-project",
+		"https://account.services.ai.azure.com/api/projects/project-from-env",
 	)
-	if err := saveRleState(rleState{
-		EnvironmentName: "echo_env",
-		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/saved-project",
+	if err := project.WriteRleConfig(tempDir, project.RleConfig{
+		Rle: project.RleManifest{
+			Name:    "echo_env",
+			Version: "1.0.0",
+			Type:    project.RleTypeGym,
+			Subtype: project.RleSubtypeOpenEnv,
+		},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -742,13 +747,17 @@ func TestShowUsesEnvironmentNameAndProjectEndpointFromState(t *testing.T) {
 	if strings.Contains(output.String(), "echo_env") {
 		t.Fatalf("expected environment name to be omitted from the version table, got %s", output.String())
 	}
-	if resolvedProjectEndpoint != "https://account.services.ai.azure.com/api/projects/saved-project" {
-		t.Fatalf("expected saved project endpoint, got %q", resolvedProjectEndpoint)
+	if resolvedProjectEndpoint != "https://account.services.ai.azure.com/api/projects/project-from-env" {
+		t.Fatalf("expected runtime project endpoint, got %q", resolvedProjectEndpoint)
 	}
 }
 
 func stubRleClientEndpoint(t *testing.T, endpoint string) {
 	t.Helper()
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/project-1",
+	)
 	oldCreateRleClient := createRleClient
 	oldValidateSandboxURL := validateSandboxURL
 	validateSandboxURL = func(string, string) error {

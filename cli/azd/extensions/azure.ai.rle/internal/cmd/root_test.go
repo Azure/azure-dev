@@ -6,13 +6,14 @@ package cmd
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"azure.ai.rle/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -91,10 +92,8 @@ func TestPublishExposesStandaloneFlags(t *testing.T) {
 	if flag := command.Flags().Lookup("dockerfile"); flag == nil {
 		t.Fatal("expected publish to expose --dockerfile")
 	}
-	if flag := command.Flags().Lookup("version-bump"); flag == nil {
-		t.Fatal("expected publish to expose --version-bump")
-	} else if got := flag.DefValue; got != "major" {
-		t.Fatalf("expected --version-bump default to be major, got %q", got)
+	if flag := command.Flags().Lookup("version-bump"); flag != nil {
+		t.Fatal("expected publish not to expose --version-bump")
 	}
 	if flag := command.Flags().Lookup("name"); flag != nil {
 		t.Fatal("expected publish not to expose --name")
@@ -263,17 +262,12 @@ func TestInitSelectsSampleAndCopiesItToNamedFolder(t *testing.T) {
 	}
 
 	sessionDir := filepath.Join(tempDir, "training_env")
-	// The test reads state from its own temporary session directory.
-	stateBytes, err := os.ReadFile(filepath.Join(sessionDir, rleStateFile)) //nolint:gosec
+	config, err := project.LoadRleConfig(sessionDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var state rleState
-	if err := json.Unmarshal(stateBytes, &state); err != nil {
-		t.Fatal(err)
-	}
-	if state.EnvironmentName != "training_env" {
-		t.Fatalf("expected training_env environment name, got %q", state.EnvironmentName)
+	if config.Rle.Name != "training_env" {
+		t.Fatalf("expected training_env environment name, got %q", config.Rle.Name)
 	}
 	if _, err := os.Stat(filepath.Join(sessionDir, "server", "Dockerfile")); err != nil {
 		t.Fatalf("expected copied RLE sample server Dockerfile: %v", err)
@@ -304,8 +298,8 @@ func TestInitWithoutFolderUsesSelectedSampleName(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(tempDir, "wordle", rleStateFile)); err != nil {
-		t.Fatalf("expected selected sample folder and state: %v", err)
+	if _, err := os.Stat(filepath.Join(tempDir, "wordle", project.RleConfigFile)); err != nil {
+		t.Fatalf("expected selected sample folder and manifest: %v", err)
 	}
 }
 
@@ -455,6 +449,16 @@ func (c *testRleSampleCatalog) Copy(
 	if err := os.WriteFile(filepath.Join(sessionDir, "server", "Dockerfile"), []byte("FROM scratch\n"), 0600); err != nil {
 		return "", err
 	}
+	if err := project.WriteRleConfig(sessionDir, project.RleConfig{
+		Rle: project.RleManifest{
+			Name:    sampleName,
+			Version: project.DefaultRleVersion,
+			Type:    project.RleTypeGym,
+			Subtype: project.RleSubtypeOpenEnv,
+		},
+	}); err != nil {
+		return "", err
+	}
 	return sessionDir, nil
 }
 
@@ -472,7 +476,7 @@ func stubRleSampleCatalog(
 	t.Setenv(rleAgentInitEnableEnvVar, "")
 	oldLoad := loadRleSampleCatalogFunc
 	oldSelect := selectRleSampleFunc
-	oldSelectType := selectRleInitTypeFunc
+	oldSelectTarget := selectRleInitTargetFunc
 	loadRleSampleCatalogFunc = func() (rleSampleCatalog, error) {
 		return &testRleSampleCatalog{
 			t:                  t,
@@ -487,15 +491,15 @@ func stubRleSampleCatalog(
 		}
 		return selectedSampleName, nil
 	}
-	selectRleInitTypeFunc = func(_ context.Context, includeAgentTypes bool) (rleInitType, error) {
+	selectRleInitTargetFunc = func(_ context.Context, includeAgentTypes bool) (rleInitTarget, error) {
 		if includeAgentTypes {
 			t.Fatal("expected Gym/OpenEnv regression tests to run with agent init disabled")
 		}
-		return rleInitTypeGymOpenEnv, nil
+		return gymOpenEnvInitTarget, nil
 	}
 	t.Cleanup(func() {
 		loadRleSampleCatalogFunc = oldLoad
 		selectRleSampleFunc = oldSelect
-		selectRleInitTypeFunc = oldSelectType
+		selectRleInitTargetFunc = oldSelectTarget
 	})
 }

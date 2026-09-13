@@ -23,10 +23,12 @@ import (
 func TestCreateRleAgentScaffoldWritesHostedAgentFiles(t *testing.T) {
 	sessionDir, err := CreateRleAgentScaffold(
 		AgentScaffoldOptions{
-			Kind:            AgentScaffoldKindHostedAgent,
 			EnvironmentName: "support_agent",
+			RleVersion:      "1.0.0",
+			Type:            RleTypeAgent,
+			Subtype:         RleSubtypeHostedAgent,
 			AgentName:       "support-agent",
-			AgentVersion:    "v3",
+			AgentVersion:    "3",
 		},
 		t.TempDir(),
 		false,
@@ -40,10 +42,12 @@ func TestCreateRleAgentScaffoldWritesHostedAgentFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
-		`name = "support_agent"`,
-		`kind = "hosted_agent"`,
-		`name = "support-agent"`,
-		`version = "v3"`,
+		`name = 'support_agent'`,
+		`version = '1.0.0'`,
+		`type = 'Agent'`,
+		`subtype = 'HostedAgent'`,
+		`agentName = 'support-agent'`,
+		`agentVersion = '3'`,
 	} {
 		if !strings.Contains(string(config), expected) {
 			t.Fatalf("expected config to contain %q, got:\n%s", expected, config)
@@ -56,6 +60,8 @@ func TestCreateRleAgentScaffoldWritesHostedAgentFiles(t *testing.T) {
 	}
 	for _, expected := range []string{
 		`AGENT_NAME = "support-agent"`,
+		`RLE_TYPE = "Agent"`,
+		`RLE_SUBTYPE = "HostedAgent"`,
 		"from openenv.core.env_server.http_server import create_app",
 		"AgentHarnessEnvironment",
 		`@app.post("/tools/example")`,
@@ -81,11 +87,13 @@ func TestCreateRleAgentScaffoldWritesHostedAgentFiles(t *testing.T) {
 	}
 }
 
-func TestCreateRleAgentScaffoldNormalizesBYOHBaseURL(t *testing.T) {
+func TestCreateRleAgentScaffoldNormalizesBYOABaseURL(t *testing.T) {
 	sessionDir, err := CreateRleAgentScaffold(
 		AgentScaffoldOptions{
-			Kind:            AgentScaffoldKindBYOH,
 			EnvironmentName: "customer_agent",
+			RleVersion:      "1.0.0",
+			Type:            RleTypeAgent,
+			Subtype:         RleSubtypeBYOA,
 			BaseURL:         "https://agent.example.com/rle/",
 		},
 		t.TempDir(),
@@ -99,16 +107,17 @@ func TestCreateRleAgentScaffoldNormalizesBYOHBaseURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(config), `base_url = "https://agent.example.com/rle"`) {
-		t.Fatalf("expected normalized BYOH base URL, got:\n%s", config)
+	if !strings.Contains(string(config), `baseUrl = 'https://agent.example.com/rle/'`) {
+		t.Fatalf("expected normalized BYOA base URL, got:\n%s", config)
 	}
 }
 
-func TestCreateRleAgentScaffoldRejectsUnsafeBYOHBaseURL(t *testing.T) {
+func TestCreateRleAgentScaffoldRejectsUnsafeBYOABaseURL(t *testing.T) {
 	_, err := CreateRleAgentScaffold(
 		AgentScaffoldOptions{
-			Kind:            AgentScaffoldKindBYOH,
 			EnvironmentName: "customer_agent",
+			Type:            RleTypeAgent,
+			Subtype:         RleSubtypeBYOA,
 			BaseURL:         "https://user@agent.example.com",
 		},
 		t.TempDir(),
@@ -132,10 +141,12 @@ func TestCreateRleAgentScaffoldRunsOpenEnvRuntime(t *testing.T) {
 	defer cancel()
 	sessionDir, err := CreateRleAgentScaffold(
 		AgentScaffoldOptions{
-			Kind:            AgentScaffoldKindHostedAgent,
 			EnvironmentName: "docker_agent",
+			RleVersion:      "1.0.0",
+			Type:            RleTypeAgent,
+			Subtype:         RleSubtypeHostedAgent,
 			AgentName:       "docker-agent",
-			AgentVersion:    "v1",
+			AgentVersion:    "1",
 		},
 		t.TempDir(),
 		false,

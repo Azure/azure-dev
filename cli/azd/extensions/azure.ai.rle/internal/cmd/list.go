@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -120,24 +119,12 @@ func resolveEnvironmentListProjectEndpoint() (string, error) {
 		return endpoint, nil
 	}
 
-	state, stateErr := loadRleState()
-	if stateErr == nil && strings.TrimSpace(state.ProjectEndpoint) != "" {
-		return state.ProjectEndpoint, nil
-	}
-	if stateErr != nil {
-		var localErr *azdext.LocalError
-		if !errors.As(stateErr, &localErr) || localErr.Code != "rle_project_not_initialized" {
-			return "", stateErr
-		}
-	}
-
 	return "", &azdext.LocalError{
 		Message:  "Foundry project endpoint is required to list RLE environments.",
 		Code:     "rle_project_required",
 		Category: azdext.LocalErrorCategoryUser,
 		Suggestion: fmt.Sprintf(
-			"Set %s=https://<account>.services.ai.azure.com/api/projects/<project>, "+
-				"or run this command from a deployed RLE environment folder.",
+			"Set %s=https://<account>.services.ai.azure.com/api/projects/<project>.",
 			foundryProjectEndpointEnvVar,
 		),
 	}

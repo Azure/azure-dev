@@ -212,45 +212,6 @@ func TestServiceErrorUsesServiceFailureSuggestion(t *testing.T) {
 	}
 }
 
-func TestResolvePublishStateUsesFoundryProjectEndpointEnvironment(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	t.Setenv(foundryProjectEndpointEnvVar, "https://ACCOUNT.services.ai.azure.com/api/projects/project-from-env/")
-
-	state, initialized, err := resolvePublishState()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if initialized {
-		t.Fatal("expected no saved state")
-	}
-	if state.ProjectEndpoint != "https://account.services.ai.azure.com/api/projects/project-from-env" {
-		t.Fatalf("expected normalized project endpoint, got %q", state.ProjectEndpoint)
-	}
-}
-
-func TestResolvePublishStateUsesSavedProjectEndpointFallback(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	if err := saveRleState(rleState{
-		EnvironmentName: "saved-env",
-		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/saved-project",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	state, initialized, err := resolvePublishState()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !initialized {
-		t.Fatal("expected saved state")
-	}
-	if state.ProjectEndpoint != "https://account.services.ai.azure.com/api/projects/saved-project" {
-		t.Fatalf("expected saved project endpoint fallback, got %q", state.ProjectEndpoint)
-	}
-}
-
 func TestProjectNameFromFoundryEndpoint(t *testing.T) {
 	projectName, err := projectNameFromFoundryEndpoint(
 		"https://account.services.ai.azure.com/api/projects/my-project",

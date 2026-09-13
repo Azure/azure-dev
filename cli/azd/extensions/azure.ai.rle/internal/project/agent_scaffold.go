@@ -5,7 +5,6 @@ package project
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,28 +13,23 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-type AgentScaffoldKind string
-
-const (
-	AgentScaffoldKindHostedAgent AgentScaffoldKind = "hosted_agent"
-	AgentScaffoldKindBYOH        AgentScaffoldKind = "byoh"
-)
-
 type AgentScaffoldOptions struct {
-	Kind            AgentScaffoldKind
 	EnvironmentName string
+	RleVersion      string
+	Type            RleType
+	Subtype         RleSubtype
 	AgentName       string
 	AgentVersion    string
 	BaseURL         string
 }
 
 func CreateRleAgentScaffold(options AgentScaffoldOptions, dest string, force bool) (string, error) {
-	normalized, err := normalizeAgentScaffoldOptions(options)
+	config, err := normalizeAgentScaffoldOptions(options)
 	if err != nil {
 		return "", err
 	}
 
-	sessionDir, err := createRleSessionDir(normalized.EnvironmentName, dest, force)
+	sessionDir, err := createRleSessionDir(config.Rle.Name, dest, force)
 	if err != nil {
 		return "", err
 	}
@@ -47,124 +41,57 @@ func CreateRleAgentScaffold(options AgentScaffoldOptions, dest string, force boo
 		path    string
 		content string
 	}{
-		{path: "rle.toml", content: renderAgentRleConfig(normalized)},
 		{path: "Dockerfile", content: agentDockerfile},
 		{path: filepath.Join("server", "__init__.py"), content: ""},
-		{path: filepath.Join("server", "env.py"), content: renderAgentServer(normalized)},
+		{path: filepath.Join("server", "env.py"), content: renderAgentServer(config.Rle)},
 	}
 	for _, file := range files {
 		if err := os.WriteFile(filepath.Join(sessionDir, file.path), []byte(file.content), 0644); err != nil {
 			return "", err
 		}
 	}
+	if err := WriteRleConfig(sessionDir, config); err != nil {
+		return "", err
+	}
 	return sessionDir, nil
 }
 
-func normalizeAgentScaffoldOptions(options AgentScaffoldOptions) (AgentScaffoldOptions, error) {
-	environmentName, err := ValidateEnvironmentName(options.EnvironmentName)
-	if err != nil {
-		return AgentScaffoldOptions{}, &azdext.LocalError{
-			Message:    err.Error(),
-			Code:       "rle_invalid_environment_name",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Use snake_case starting with a letter, for example support_agent.",
-		}
+func normalizeAgentScaffoldOptions(options AgentScaffoldOptions) (RleConfig, error) {
+	if strings.TrimSpace(options.RleVersion) == "" {
+		options.RleVersion = DefaultRleVersion
 	}
-	options.EnvironmentName = environmentName
-	options.AgentName = strings.TrimSpace(options.AgentName)
-	options.AgentVersion = strings.TrimSpace(options.AgentVersion)
+	manifest := RleManifest{
+		Name:    options.EnvironmentName,
+		Version: options.RleVersion,
+		Type:    options.Type,
+		Subtype: options.Subtype,
+	}
+	if strings.TrimSpace(options.AgentName) != "" {
+		agentName := options.AgentName
+		manifest.AgentName = &agentName
+	}
+	if strings.TrimSpace(options.AgentVersion) != "" {
+		agentVersion := options.AgentVersion
+		manifest.AgentVersion = &agentVersion
+	}
+	if strings.TrimSpace(options.BaseURL) != "" {
+		baseURL := options.BaseURL
+		manifest.BaseURL = &baseURL
+	}
 
-	switch options.Kind {
-	case AgentScaffoldKindHostedAgent:
-		if options.AgentName == "" {
-			return AgentScaffoldOptions{}, requiredAgentScaffoldFieldError(
-				"agent name",
-				"rle_agent_name_required",
-				"Provide --agent-name or select an agent name when prompted.",
-			)
-		}
-		if options.AgentVersion == "" {
-			return AgentScaffoldOptions{}, requiredAgentScaffoldFieldError(
-				"agent version",
-				"rle_agent_version_required",
-				"Provide --agent-version or select an agent version when prompted.",
-			)
-		}
-	case AgentScaffoldKindBYOH:
-		baseURL, err := normalizeAgentBaseURL(options.BaseURL)
-		if err != nil {
-			return AgentScaffoldOptions{}, err
-		}
-		options.BaseURL = baseURL
-	default:
-		return AgentScaffoldOptions{}, &azdext.LocalError{
-			Message:    fmt.Sprintf("Unsupported RLE agent scaffold type %q.", options.Kind),
+	config, err := NormalizeRleConfig(RleConfig{Rle: manifest})
+	if err != nil {
+		return RleConfig{}, err
+	}
+	if config.Rle.Type != RleTypeAgent {
+		return RleConfig{}, &azdext.LocalError{
+			Message:    fmt.Sprintf("RLE agent scaffolds require type Agent, got %q.", config.Rle.Type),
 			Code:       "rle_agent_scaffold_type_invalid",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Choose Hosted Agent or BYOH.",
+			Suggestion: `Set type to "Agent" and select HostedAgent or BYOA.`,
 		}
 	}
-	return options, nil
-}
-
-func requiredAgentScaffoldFieldError(name string, code string, suggestion string) error {
-	return &azdext.LocalError{
-		Message:    fmt.Sprintf("An %s is required for this RLE scaffold.", name),
-		Code:       code,
-		Category:   azdext.LocalErrorCategoryUser,
-		Suggestion: suggestion,
-	}
-}
-
-func normalizeAgentBaseURL(value string) (string, error) {
-	value = strings.TrimSpace(value)
-	parsed, err := url.ParseRequestURI(value)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" ||
-		(strings.ToLower(parsed.Scheme) != "https" && strings.ToLower(parsed.Scheme) != "http") ||
-		parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", &azdext.LocalError{
-			Message:    "The BYOH agent base URL must be an absolute HTTP or HTTPS URL without credentials, query, or fragment.",
-			Code:       "rle_agent_base_url_invalid",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Use a URL such as https://agent.example.com.",
-		}
-	}
-	return strings.TrimRight(value, "/"), nil
-}
-
-func renderAgentRleConfig(options AgentScaffoldOptions) string {
-	var builder strings.Builder
-	builder.WriteString("[rle]\n")
-	builder.WriteString("name = ")
-	builder.WriteString(tomlString(options.EnvironmentName))
-	builder.WriteString("\nkind = ")
-	builder.WriteString(tomlString(string(options.Kind)))
-	builder.WriteString("\n\n[agent]\n")
-	switch options.Kind {
-	case AgentScaffoldKindHostedAgent:
-		builder.WriteString("name = ")
-		builder.WriteString(tomlString(options.AgentName))
-		builder.WriteString("\nversion = ")
-		builder.WriteString(tomlString(options.AgentVersion))
-	case AgentScaffoldKindBYOH:
-		builder.WriteString("base_url = ")
-		builder.WriteString(tomlString(options.BaseURL))
-	}
-	builder.WriteString("\n")
-	return builder.String()
-}
-
-func tomlString(value string) string {
-	replacer := strings.NewReplacer(
-		`\`, `\\`,
-		`"`, `\"`,
-		"\b", `\b`,
-		"\t", `\t`,
-		"\n", `\n`,
-		"\f", `\f`,
-		"\r", `\r`,
-	)
-	return `"` + replacer.Replace(value) + `"`
+	return config, nil
 }
 
 const agentDockerfile = `FROM python:3.12-slim
@@ -193,7 +120,7 @@ EXPOSE 8000
 CMD ["uvicorn", "server.env:app", "--host", "0.0.0.0", "--port", "8000"]
 `
 
-const agentServerTemplate = `"""Starter RLE harness for a %s target."""
+const agentServerTemplate = `"""Starter RLE harness for a %s/%s target."""
 
 from __future__ import annotations
 
@@ -206,7 +133,8 @@ from openenv.core.env_server.http_server import create_app
 from openenv.core.env_server.interfaces import Environment
 from openenv.core.env_server.types import Action, EnvironmentMetadata, Observation, State
 
-TARGET_KIND = %s
+RLE_TYPE = %s
+RLE_SUBTYPE = %s
 AGENT_NAME = %s
 AGENT_VERSION = %s
 AGENT_BASE_URL = %s
@@ -279,7 +207,7 @@ class AgentHarnessEnvironment(Environment[AgentAction, AgentObservation, State])
     def get_metadata(self) -> EnvironmentMetadata:
         return EnvironmentMetadata(
             name=%s,
-            description="RLE harness for a " + TARGET_KIND + " target.",
+            description="RLE harness for a " + RLE_TYPE + "/" + RLE_SUBTYPE + " target.",
             version="0.1.0",
         )
 
@@ -307,27 +235,29 @@ async def grade_rollout(rollout: dict[str, Any]) -> dict[str, Any]:
     return {"reward": 0.0, "reason": "Implement the RLE grader for this agent."}
 `
 
-func renderAgentServer(options AgentScaffoldOptions) string {
+func renderAgentServer(manifest RleManifest) string {
 	agentName := "None"
 	agentVersion := "None"
 	baseURL := "None"
-	if options.AgentName != "" {
-		agentName = strconv.Quote(options.AgentName)
+	if manifest.AgentName != nil {
+		agentName = strconv.Quote(*manifest.AgentName)
 	}
-	if options.AgentVersion != "" {
-		agentVersion = strconv.Quote(options.AgentVersion)
+	if manifest.AgentVersion != nil {
+		agentVersion = strconv.Quote(*manifest.AgentVersion)
 	}
-	if options.BaseURL != "" {
-		baseURL = strconv.Quote(options.BaseURL)
+	if manifest.BaseURL != nil {
+		baseURL = strconv.Quote(*manifest.BaseURL)
 	}
 	return fmt.Sprintf(
 		agentServerTemplate,
-		strings.ReplaceAll(string(options.Kind), "_", " "),
-		strconv.Quote(string(options.Kind)),
+		manifest.Type,
+		manifest.Subtype,
+		strconv.Quote(string(manifest.Type)),
+		strconv.Quote(string(manifest.Subtype)),
 		agentName,
 		agentVersion,
 		baseURL,
-		strconv.Quote(options.EnvironmentName),
-		strconv.Quote(options.EnvironmentName),
+		strconv.Quote(manifest.Name),
+		strconv.Quote(manifest.Name),
 	)
 }

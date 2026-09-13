@@ -6,11 +6,14 @@
 - Use `/rl_environments` consistently for environment and instance lifecycle APIs.
 - Manage remote invoke through temporary instance groups and instances instead of direct sandbox lifecycle APIs.
 - Retry runtime creation while a published environment's disk image is still being prepared.
-- Use saved-state and explicit versions when present; otherwise let unversioned group creation resolve the latest version.
+- Replace `.azd-rle.json` with a host-agnostic `rle.toml` manifest as the sole local RLE identity.
+- Define RLE releases with control-plane `type` and `subtype` values: `Gym`/`OpenEnv`, `Agent`/`HostedAgent`, and `Agent`/`BYOA`.
+- Pin local invoke to the manifest's `(name, version)` identity and require `--version` for source-free invocation.
+- Derive an explicit service version bump from the manifest version and verify the published release identity.
+- Tag published ACR images with the manifest RLE version rather than `latest`.
 - Delete the temporary instance and group on exit with Ctrl+C-independent cleanup and concise terminal status.
-- Persist the environment name as `environmentName` while continuing to read legacy `name` state files.
 - Authenticate and API-version OpenEnv gateway requests on the configured Foundry project origin, wait for runtime health before reporting readiness, and route the browser playground through an authenticated local proxy.
-- Initialize a required local folder by interactively selecting and sparsely downloading an environment from the RLE samples repository.
+- Initialize a required local folder by interactively selecting and sparsely downloading an environment from the RLE samples repository, including its manifest.
 
 ## 0.3.0-preview
 

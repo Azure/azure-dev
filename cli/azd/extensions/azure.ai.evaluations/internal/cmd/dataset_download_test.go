@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,7 +78,7 @@ func TestWriteFileAtomicallyLeavesNothingBehindOnFailure(t *testing.T) {
 	dir := t.TempDir()
 	dest := filepath.Join(dir, "rows.jsonl")
 
-	require.Error(t, writeFileAtomically(dest, failingReader{}))
+	require.Error(t, writeFileAtomically(dest, failingReader{}, false))
 	_, err := os.Stat(dest)
 	assert.True(t, os.IsNotExist(err), "a failed write must not leave the destination behind")
 
@@ -85,10 +86,59 @@ func TestWriteFileAtomicallyLeavesNothingBehindOnFailure(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, entries, "and must not leave its temporary file behind either")
 
-	require.NoError(t, writeFileAtomically(dest, strings.NewReader("{}\n")))
+	require.NoError(t, writeFileAtomically(dest, strings.NewReader("{}\n"), false))
 	body, err := os.ReadFile(dest)
 	require.NoError(t, err)
 	assert.Equal(t, "{}\n", string(body))
+}
+
+// appearingReader creates path partway through being read, which is the window
+// between refuseExisting and the rename that installs the download.
+type appearingReader struct {
+	t    *testing.T
+	path string
+	rest io.Reader
+	done bool
+}
+
+func (r *appearingReader) Read(p []byte) (int, error) {
+	if !r.done {
+		r.done = true
+		require.NoError(r.t, os.WriteFile(r.path, []byte("not yours\n"), 0o600))
+	}
+	return r.rest.Read(p)
+}
+
+// refuseExisting runs before a transfer that may take minutes, and the install
+// used to rename over whatever it found by then. Without --force the promise
+// has to hold at the moment of replacing, not only when the command started.
+func TestWriteFileAtomicallyWillNotReplaceAFileThatAppearedDuringTheCopy(t *testing.T) {
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "rows.jsonl")
+
+	body := &appearingReader{t: t, path: dest, rest: strings.NewReader("{}\n")}
+	err := writeFileAtomically(dest, body, false)
+
+	require.Error(t, err, "the name was taken by the time the download was ready to land")
+	assert.Contains(t, err.Error(), "--force")
+
+	kept, readErr := os.ReadFile(dest)
+	require.NoError(t, readErr)
+	assert.Equal(t, "not yours\n", string(kept), "the file that appeared is untouched")
+}
+
+// --force is the caller saying to replace it, so the same race resolves the
+// other way.
+func TestWriteFileAtomicallyReplacesWhenForced(t *testing.T) {
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "rows.jsonl")
+
+	body := &appearingReader{t: t, path: dest, rest: strings.NewReader("{}\n")}
+	require.NoError(t, writeFileAtomically(dest, body, true))
+
+	kept, err := os.ReadFile(dest)
+	require.NoError(t, err)
+	assert.Equal(t, "{}\n", string(kept))
 }
 
 type failingReader struct{}

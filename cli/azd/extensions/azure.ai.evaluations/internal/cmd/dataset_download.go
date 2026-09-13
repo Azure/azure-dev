@@ -5,8 +5,10 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -145,7 +147,7 @@ func (a *datasetDownloadAction) write(
 			return 0, "", messages.DownloadingDataset(a.name, version, err)
 		}
 		defer body.Close()
-		if err := writeFileAtomically(dest, body); err != nil {
+		if err := writeFileAtomically(dest, body, a.force); err != nil {
 			return 0, "", err
 		}
 		return 1, dest, nil
@@ -188,7 +190,9 @@ func (a *datasetDownloadAction) write(
 		if err != nil {
 			return 0, "", messages.DownloadingDataset(a.name, version, err)
 		}
-		err = writeFileAtomically(local, body)
+		// Into the staging directory this call created, so there is no file of
+		// the caller's to protect; replaceDir guards the install at the end.
+		err = writeFileAtomically(local, body, true)
 		_ = body.Close()
 		if err != nil {
 			return 0, "", err
@@ -292,7 +296,13 @@ func derivedLeafName(name, version, extension string) (string, error) {
 // writeFileAtomically writes body to path via a temporary file in the same
 // directory, so a failed or interrupted write leaves nothing behind under the
 // name a reader would trust.
-func writeFileAtomically(path string, body io.Reader) error {
+//
+// replace is --force. Without it the name is claimed rather than merely
+// checked: refuseExisting runs before a transfer that may take minutes, and the
+// rename below replaces whatever it finds by then, so a file created during the
+// download was destroyed by a command that promised not to. O_EXCL either takes
+// the name or reports that something holds it, with no gap in between.
+func writeFileAtomically(path string, body io.Reader, replace bool) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return messages.CreatingDirectory(dir, err)
@@ -314,7 +324,29 @@ func writeFileAtomically(path string, body io.Reader) error {
 	if err := os.Chmod(tmpName, 0o600); err != nil {
 		return messages.WritingDownload(path, err)
 	}
+
+	if !replace {
+		// #nosec G304 -- path is the destination the caller named, opened
+		// exclusively to claim the name rather than to read anything.
+		claim, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err != nil {
+			if errors.Is(err, fs.ErrExist) {
+				return messages.DownloadDestinationExists(path)
+			}
+			return messages.WritingDownload(path, err)
+		}
+		if err := claim.Close(); err != nil {
+			_ = os.Remove(path)
+			return messages.WritingDownload(path, err)
+		}
+	}
+
 	if err := os.Rename(tmpName, path); err != nil {
+		if !replace {
+			// The empty claim is this call's own, and the only thing it may
+			// take back: anything else under that name predates it.
+			_ = os.Remove(path)
+		}
 		return messages.WritingDownload(path, err)
 	}
 	return nil

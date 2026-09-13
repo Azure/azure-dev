@@ -515,8 +515,13 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 			return fmt.Errorf("failed to create azd client: %w", err)
 		}
 		defer azdClient.Close()
-		pctx, isPrompt, pErr := resolvePromptAgentService(ctx, azdClient, a.flags.name, a.noPrompt)
+		pctx, isPrompt, pErr := resolvePromptAgentService(
+			ctx, azdClient, a.flags.name, a.noPrompt, withVoiceInvocationGuidance(),
+		)
 		if pErr != nil {
+			if errors.Is(pErr, errVoiceInvocationUnsupported) {
+				return pErr
+			}
 			if _, ok := errors.AsType[agentServiceLookupNotFoundError](pErr); !ok || a.flags.name == "" {
 				return fmt.Errorf("failed to resolve prompt agent service: %w", pErr)
 			}

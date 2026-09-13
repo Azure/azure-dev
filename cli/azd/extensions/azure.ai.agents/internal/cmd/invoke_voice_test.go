@@ -144,6 +144,58 @@ func TestVoiceInvocationDetectionErrorsStopRemoteInvoke(t *testing.T) {
 	}
 }
 
+func TestPromptInvokeHonorsVoiceAndInvalidOverrides(t *testing.T) {
+	for _, tt := range []struct {
+		name, override string
+		voice          bool
+	}{
+		{"voice", "kind: voice\n", true},
+		{"voice-alias", "kind: prompt-voice\n", true},
+		{"malformed", "kind: [\n", false},
+		{"missing", "", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, "override.yaml")
+			if tt.override != "" {
+				require.NoError(t, os.WriteFile(path, []byte(tt.override), 0600))
+			}
+			t.Setenv("AGENT_DEFINITION_PATH", path)
+			props, err := structpb.NewStruct(map[string]any{
+				"kind": "prompt", "name": "prompt-agent", "model": "deployment", "instructions": "Be helpful.",
+			})
+			require.NoError(t, err)
+			server := grpc.NewServer()
+			azdext.RegisterProjectServiceServer(server, &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: root, Services: map[string]*azdext.ServiceConfig{
+					"prompt-agent": {Name: "prompt-agent", Host: AiAgentHost, AdditionalProperties: props},
+				},
+			}})
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			go func() { _ = server.Serve(listener) }()
+			t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+			t.Setenv("AZD_SERVER", listener.Addr().String())
+			for _, args := range [][]string{
+				{"hello"}, {"prompt-agent", "hello"},
+				{"--protocol", "responses", "prompt-agent", "hello"},
+			} {
+				command := newInvokeCommand(nil)
+				var buf bytes.Buffer
+				command.SetOut(&buf)
+				command.SetErr(&buf)
+				command.SetArgs(args)
+				err := command.Execute()
+				if tt.voice {
+					require.ErrorIs(t, err, errVoiceInvocationUnsupported)
+				} else {
+					require.ErrorContains(t, err, "determining agent kind for invocation")
+				}
+			}
+		})
+	}
+}
+
 func TestVoiceInvocationGuidance(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []string{"voice", "prompt-voice"} {

@@ -24,6 +24,7 @@
 package hero
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -186,7 +187,7 @@ func requireCurrentInstall(hosted string) error {
 	build := exec.Command("go", "build", "-o", binary, ".")
 	build.Dir = "../.."
 	if out, err := build.CombinedOutput(); err != nil {
-		return fmt.Errorf("building this working tree to compare against: %v\n%s", err, out)
+		return fmt.Errorf("building this working tree to compare against: %w\n%s", err, out)
 	}
 
 	local, err := exec.Command(binary, "init", "--help").CombinedOutput()
@@ -242,8 +243,8 @@ func azdEval(t *testing.T, dir string, args ...string) (string, int) {
 
 	code := 0
 	if err := cmd.Run(); err != nil {
-		exitErr, ok := err.(*exec.ExitError)
-		if !ok {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
 			t.Fatalf("could not run azd ai eval %v: %v", args, err)
 		}
 		code = exitErr.ExitCode()

@@ -105,8 +105,8 @@ func pageSizeOr(limit int, all bool, fallback int) int {
 const defaultPageSize = 20
 
 // outputItemPageSize is smaller than the rest because a test-case row is not a
-// name: it carries a status, its evaluator counts, what needs attention and a
-// reason, so twenty of them is a screen the reader scrolls rather than reads.
+// name: it carries a status and the evaluator counts behind it, so twenty of
+// them is a screen the reader scrolls rather than reads.
 const outputItemPageSize = 10
 
 // addDisplayPagingFlags bounds a listing that already holds every row.

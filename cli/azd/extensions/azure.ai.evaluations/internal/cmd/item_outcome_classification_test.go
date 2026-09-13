@@ -60,8 +60,8 @@ func TestItemStatusKeepsWhatTheServiceSaidAndDerivesTheRest(t *testing.T) {
 		"and nothing but skips is a skip, not a failure to run")
 }
 
-// The row's counts have to reconcile against what the evaluators returned, and
-// the ATTENTION column has to name which of them is why.
+// The row's counts have to reconcile against what the evaluators returned: a
+// deliberate skip and a failure to run are different outcomes.
 func TestClassifyItemSeparatesSkipsFromErrors(t *testing.T) {
 	got := classifyItem(eval_api.OutputItem{
 		ID:     "oi_1",
@@ -78,10 +78,6 @@ func TestClassifyItemSeparatesSkipsFromErrors(t *testing.T) {
 	assert.Equal(t, itemFailed, got.Status)
 	assert.Equal(t, 4, got.Total())
 	assert.Equal(t, "1 passed, 1 failed, 1 skipped, 1 error", got.ResultsBreakdown())
-	assert.Equal(t,
-		[]string{"relevance: failed", "fluency: skipped", "groundedness: errored"},
-		got.Attention,
-		"a passing evaluator is not something to look at")
 	assert.Equal(t, "Answered a different question.", got.Reason,
 		"the failure is what the reader came for, whichever result arrived first")
 }

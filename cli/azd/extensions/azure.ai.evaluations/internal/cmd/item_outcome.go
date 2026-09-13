@@ -41,10 +41,7 @@ type itemOutcome struct {
 	Failed  int
 	Skipped int
 	Errored int
-	// Attention names only the results not passing, which is the column the
-	// old EVALUATORS heading described inaccurately.
-	Attention []string
-	Reason    string
+	Reason  string
 }
 
 // Total is the number of criterion results this item carries.
@@ -69,16 +66,13 @@ func classifyItem(item eval_api.OutputItem) itemOutcome {
 			out.Passed++
 		case eval_api.ResultFailed:
 			out.Failed++
-			out.Attention = append(out.Attention, r.Name+": failed")
 			if failedReason == "" {
 				failedReason = r.Reason
 			}
 		case eval_api.ResultSkipped:
 			out.Skipped++
-			out.Attention = append(out.Attention, r.Name+": skipped")
 		default:
 			out.Errored++
-			out.Attention = append(out.Attention, r.Name+": errored")
 		}
 		if anyReason == "" {
 			anyReason = r.Reason
@@ -143,22 +137,6 @@ func (o itemOutcome) ResultsBreakdown() string {
 		parts = append(parts, fmt.Sprintf("%d %s", o.Errored, word))
 	}
 	return strings.Join(parts, ", ")
-}
-
-// AttentionText lists the results worth looking at, kept to a cell.
-//
-// A row evaluated by forty evaluators must not widen the table, so the names
-// past the first few collapse into a count and `run output show` carries the
-// rest.
-func (o itemOutcome) AttentionText(max int) string {
-	if len(o.Attention) == 0 {
-		return "-"
-	}
-	if len(o.Attention) <= max {
-		return strings.Join(o.Attention, ", ")
-	}
-	shown := strings.Join(o.Attention[:max], ", ")
-	return fmt.Sprintf("%s, +%d more", shown, len(o.Attention)-max)
 }
 
 // parseStatusFilter reads --status into the set of outcomes to keep.

@@ -519,6 +519,14 @@ func ScoredPassRateLine(passed, scored int) string {
 		100*float64(passed)/float64(scored), passed, scored)
 }
 
+// countOf names a count and its noun, pluralized by adding "s".
+func countOf(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
+}
+
 // CriterionResultReconciliation states how items multiply out into criterion
 // results, so the two tables below can be added up and compared.
 //
@@ -526,8 +534,10 @@ func ScoredPassRateLine(passed, scored int) string {
 // reports 12 passed and 2 failed is missing one, and nothing on screen says the
 // fifteenth was skipped or that there are two evaluators over the same items.
 func CriterionResultReconciliation(items, evaluators, results int) string {
-	return fmt.Sprintf("%d test cases x %d evaluators = %d evaluator results\n\n",
-		items, evaluators, results)
+	return fmt.Sprintf("%s x %s = %s\n\n",
+		countOf(items, "test case"),
+		countOf(evaluators, "evaluator"),
+		countOf(results, "evaluator result"))
 }
 
 // NoFailingRows reports a --failed-only listing with nothing in it.

@@ -26,6 +26,15 @@ func TestResultsSpeakInTestCases(t *testing.T) {
 		messages.CriterionResultReconciliation(15, 2, 30))
 }
 
+// A run with one evaluator is the common case, and "18 test cases x 1
+// evaluators" reads as a bug in the line that exists to be read carefully.
+func TestTheReconciliationCountsSingularNouns(t *testing.T) {
+	assert.Equal(t, "18 test cases x 1 evaluator = 18 evaluator results\n\n",
+		messages.CriterionResultReconciliation(18, 1, 18))
+	assert.Equal(t, "1 test case x 1 evaluator = 1 evaluator result\n\n",
+		messages.CriterionResultReconciliation(1, 1, 1))
+}
+
 // "3 of 15 items are failed" made the status an adjective and needed a reader
 // to translate it. The status is the verb.
 func TestAFilteredListingReadsAsASentence(t *testing.T) {

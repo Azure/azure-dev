@@ -557,8 +557,9 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 									"move target-owned policies to the hosted target")
 						}
 					}
-					if isHostedVoiceWrapper(agent) {
-						if agent.ModelType == VoiceModelTypeHostedAgent || agent.TargetAgent != nil {
+					_, hasLegacyTarget := fields["target_agent"]
+					if isHostedVoiceWrapper(agent) || hasLegacyTarget {
+						if agent.ModelType == VoiceModelTypeHostedAgent || hasLegacyTarget {
 							errors = append(errors,
 								"template.model_type hosted_agent and target_agent are not supported; "+
 									"use conversation_engine")

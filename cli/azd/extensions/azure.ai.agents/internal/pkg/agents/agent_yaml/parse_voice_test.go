@@ -566,6 +566,9 @@ func TestValidateAgentDefinition_LegacyTargetMigrationGuidance(t *testing.T) {
 	for _, kind := range []string{"voice", "prompt-voice"} {
 		for _, fields := range []string{
 			"target_agent: {}\n",
+			"target_agent: null\nmodel_type: managed\nmodel:\n  id: gpt-realtime\n",
+			"target_agent: ~\nmodel_type: self_deployed\nmodel:\n  id: my-deployment\n",
+			"target_agent:\nmodel:\n  id: gpt-realtime\n",
 			"target_agent:\n  service: target\n",
 			"model_type: managed\nmodel:\n  id: gpt-realtime\ntarget_agent:\n  service: target\n",
 			"model_type: self_deployed\nmodel:\n  id: my-deployment\ntarget_agent:\n  service: target\n",

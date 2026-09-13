@@ -14,4 +14,4 @@ goals:
   - "Run 'azd ai agent invoke --help'; confirm prompt voice and hosted voice wrapper users are directed to the Microsoft Foundry portal at https://ai.azure.com to try their agent, with Voice Live client guidance for programmatic access."
   - "Run 'azd ai agent init --kind hosted --voice en-US-AvaNeural' and 'azd ai agent init -m azure.yaml --voice en-US-AvaNeural'; each must reject --voice with new-prompt-voice guidance before authentication, downloading files, or changing the project."
   - "Take a screenshot of the help output."
-  - "Report a finding if any listed command is missing, if the usage text is malformed, or if the command exits non-zero."
+  - "Report a finding if any listed command is missing, usage is malformed, or a help command exits non-zero. The two invalid --voice commands must exit non-zero with the expected guidance; report a finding if either succeeds, gives an unrelated error, or modifies files."

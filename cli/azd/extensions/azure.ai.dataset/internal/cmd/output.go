@@ -140,8 +140,12 @@ func emitJSONList[T any](w io.Writer, items []T) error {
 // had to be ignored for `-o json` -- leaving the flag doing nothing on half the
 // surface -- or had to hand a script a short list it would read as the whole
 // collection. The envelope is what lets the flag work: count is what arrived,
-// total_count is what there was, and continuation_token is null only on the
-// last page.
+// and total_count is what there was.
+//
+// continuation_token stays null here: these listings fetch in full and trim for
+// display, so there is no service cursor to resume from, and count short of
+// total_count is what says rows were left out. The key is kept so the envelope
+// is one shape across the Foundry extensions.
 type jsonListPage[T any] struct {
 	Items             []T     `json:"items"`
 	Count             int     `json:"count"`

@@ -142,7 +142,7 @@ func NormalizeRleConfig(config RleConfig) (RleConfig, error) {
 			return RleConfig{}, localError(
 				"agentName, agentVersion, and baseUrl are allowed only when rle.type is Harness.",
 				"rle_manifest_type_configuration_invalid",
-				"Remove harness configuration from this Gym/OpenEnv manifest.",
+				"Remove harness configuration from this Gym: OpenEnv manifest.",
 			)
 		}
 	case RleTypeHarness:

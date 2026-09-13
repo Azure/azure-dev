@@ -506,7 +506,7 @@ func stubRleSampleCatalog(
 	}
 	selectRleInitTargetFunc = func(_ context.Context, includeAgentTypes bool) (rleInitTarget, error) {
 		if includeAgentTypes {
-			t.Fatal("expected Gym/OpenEnv regression tests to run with agent init disabled")
+			t.Fatal("expected Gym: OpenEnv regression tests to run with agent init disabled")
 		}
 		return gymOpenEnvInitTarget, nil
 	}

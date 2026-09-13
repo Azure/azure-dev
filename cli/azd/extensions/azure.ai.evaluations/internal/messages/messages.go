@@ -3268,6 +3268,22 @@ func AmbiguousEvalServices(refs []string) error {
 		strings.Join(refs, " and "))
 }
 
+// EvalConfigHeldInline refuses a service that carries its configuration in
+// azure.yaml rather than in a file.
+//
+// `azd up` deploys that shape -- it reads the entry's own properties -- so the
+// service is not wrong, and saying nothing was worse than refusing: there is no
+// file to return, and answering with the default beneath the project root sent
+// `create`, `generate` and `run` to a configuration the author never wrote,
+// while the deploy went on using the inline one.
+func EvalConfigHeldInline(services []string) error {
+	return fmt.Errorf(
+		"the evaluation service %s holds its configuration inline in azure.yaml, "+
+			"which this command cannot read. Move it into its own file and point the "+
+			"service at it with `$ref`, or name a file with --path",
+		strings.Join(services, " and "))
+}
+
 // InstructionFileUnreadable reports optimize metadata pointing at a missing file.
 func InstructionFileUnreadable(metadataPath, named string, err error) error {
 	return fmt.Errorf(

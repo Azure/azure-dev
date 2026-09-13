@@ -892,7 +892,7 @@ func projectEvalLocation(ctx context.Context, azdClient *azdext.AzdClient) (stri
 	root := resp.GetProject().GetPath()
 
 	seen := map[string]bool{}
-	var refs []string
+	var refs, inline []string
 	for _, svc := range resp.GetProject().GetServices() {
 		if svc.GetHost() != project.EvalHost {
 			continue
@@ -901,8 +901,18 @@ func projectEvalLocation(ctx context.Context, azdClient *azdext.AzdClient) (stri
 		if props == nil {
 			continue
 		}
-		ref, _ := props.AsMap()["$ref"].(string)
+		values := props.AsMap()
+		ref, _ := values["$ref"].(string)
 		if ref == "" {
+			// The inline shape, which `azd up` deploys straight off the entry.
+			// It names no file, and the default beneath the root is a different
+			// configuration from the one the author wrote.
+			for _, key := range []string{"datasets", "evaluators", "evals"} {
+				if _, ok := values[key]; ok {
+					inline = append(inline, svc.GetName())
+					break
+				}
+			}
 			continue
 		}
 		cleaned := filepath.Clean(filepath.FromSlash(ref))
@@ -913,18 +923,21 @@ func projectEvalLocation(ctx context.Context, azdClient *azdext.AzdClient) (stri
 		refs = append(refs, cleaned)
 	}
 
-	switch len(refs) {
-	case 0:
-		// In a project, but nothing declares the eval host yet -- which is where
-		// `init` is about to write, and it writes under the project root.
-		return project.UnderRoot(root, project.DefaultEvalDir), nil
-	case 1:
-		return project.UnderRoot(root, refs[0]), nil
-	default:
+	switch {
+	case len(refs) > 1:
 		// The refs are reported as the author wrote them, not as resolved paths:
 		// the reader has to find them in azure.yaml.
 		sort.Strings(refs)
 		return "", messages.AmbiguousEvalServices(refs)
+	case len(refs) == 1:
+		return project.UnderRoot(root, refs[0]), nil
+	case len(inline) > 0:
+		sort.Strings(inline)
+		return "", messages.EvalConfigHeldInline(inline)
+	default:
+		// In a project, but nothing declares the eval host yet -- which is where
+		// `init` is about to write, and it writes under the project root.
+		return project.UnderRoot(root, project.DefaultEvalDir), nil
 	}
 }
 

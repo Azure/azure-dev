@@ -521,6 +521,13 @@ func collectPages(
 
 		added, hasMore, lastID, err := fetch(query)
 		if err != nil {
+			// The first page answered, so the thing being listed exists: a 404
+			// on a continuation is the walk failing, not the eval being absent.
+			// Unwrapped, it reached IsNotFound and `run output` told the caller
+			// to deploy an eval the service had just listed runs for.
+			if after != "" {
+				return pageWalkError{cause: err}
+			}
 			return err
 		}
 		gathered += added

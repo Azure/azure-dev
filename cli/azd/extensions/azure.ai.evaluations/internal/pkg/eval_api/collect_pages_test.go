@@ -4,9 +4,11 @@
 package eval_api
 
 import (
+	"net/http"
 	"strconv"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -62,5 +64,41 @@ func TestAListingThatCannotFinishIsAnError(t *testing.T) {
 		})
 
 		require.NoError(t, err, "the caller asked for two rows and got them; the rest is not missing")
+	})
+}
+
+// A 404 on a continuation is the walk breaking, not the resource being absent.
+//
+// `run output list` maps IsNotFound onto "this eval is not deployed, run azd
+// up". Returned unwrapped, a second page that 404s sent the caller to deploy an
+// eval whose first page of runs had just been listed. walkNextLinks already
+// wrapped for this reason; the cursor walk did not.
+func TestALaterPageFailingIsNotTheResourceBeingAbsent(t *testing.T) {
+	notFound := &azcore.ResponseError{StatusCode: http.StatusNotFound}
+
+	t.Run("the first page", func(t *testing.T) {
+		err := collectPages(0, func(map[string]string) (int, bool, string, error) {
+			return 0, false, "", notFound
+		})
+
+		require.Error(t, err)
+		assert.True(t, IsNotFound(err),
+			"nothing answered, so the listing really is of something absent")
+	})
+
+	t.Run("a continuation page", func(t *testing.T) {
+		page := 0
+		err := collectPages(0, func(map[string]string) (int, bool, string, error) {
+			page++
+			if page == 1 {
+				return 2, true, "first", nil
+			}
+			return 0, false, "", notFound
+		})
+
+		require.Error(t, err)
+		assert.False(t, IsNotFound(err),
+			"the first page listed rows, so the eval exists and the walk is what broke")
+		assert.ErrorIs(t, err, notFound, "the cause stays reachable for everything else")
 	})
 }

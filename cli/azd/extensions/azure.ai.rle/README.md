@@ -59,7 +59,7 @@ $env:AZD_AI_RLE_HARNESS_INIT_ENABLE = "true"
 `HostedAgent` denotes the Foundry Hosted Agent backing a harness; the subtype
 does not embed a platform name so the manifest remains host-agnostic.
 
-A Gym/OpenEnv environment:
+A Gym: OpenEnv environment:
 
 ```toml
 [rle]
@@ -118,13 +118,13 @@ and therefore never appear in `rle.toml`.
 
 ## Initialize an RLE
 
-Run `init` and select `Gym, OpenEnv`, then select a sample:
+Run `init` and select `Gym: OpenEnv`, then select a sample:
 
 ```powershell
 azd ai rle init
 ```
 
-The Gym/OpenEnv path reads the available environments from
+The Gym: OpenEnv path reads the available environments from
 [rle-samples](https://github.com/sujit-kamireddy/rle-samples). It downloads
 only the selected sample, including its manifest. When a target folder is
 specified, `init` updates `rle.name` to match that folder:
@@ -141,7 +141,7 @@ azd ai rle init code_rl --no-prompt
 ```
 
 With `AZD_AI_RLE_HARNESS_INIT_ENABLE=true`, `init` also offers
-`Harness, HostedAgent` and `Harness, BYOH`. Supply control-plane type/subtype
+`Harness: HostedAgent` and `Harness: BYOH`. Supply control-plane type/subtype
 values explicitly when scripting:
 
 ```powershell

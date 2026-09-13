@@ -21,8 +21,8 @@ func TestRleInitTargetOptionsGateHarnessChoices(t *testing.T) {
 	withoutHarnesses := rleInitTargetOptions(false)
 	if len(withoutHarnesses) != 1 ||
 		withoutHarnesses[0].target != gymOpenEnvInitTarget ||
-		withoutHarnesses[0].label != "Gym, OpenEnv" {
-		t.Fatalf("expected only Gym/OpenEnv by default, got %#v", withoutHarnesses)
+		withoutHarnesses[0].label != "Gym: OpenEnv" {
+		t.Fatalf("expected only Gym: OpenEnv by default, got %#v", withoutHarnesses)
 	}
 
 	withHarnesses := rleInitTargetOptions(true)
@@ -31,12 +31,12 @@ func TestRleInitTargetOptionsGateHarnessChoices(t *testing.T) {
 	}
 	if withHarnesses[1].target != (rleInitTarget{
 		rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeHostedAgent,
-	}) || withHarnesses[1].label != "Harness, HostedAgent" {
+	}) || withHarnesses[1].label != "Harness: HostedAgent" {
 		t.Fatalf("unexpected HostedAgent choice: %#v", withHarnesses[1])
 	}
 	if withHarnesses[2].target != (rleInitTarget{
 		rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeBYOH,
-	}) || withHarnesses[2].label != "Harness, BYOH" {
+	}) || withHarnesses[2].label != "Harness: BYOH" {
 		t.Fatalf("unexpected BYOH choice: %#v", withHarnesses[2])
 	}
 }

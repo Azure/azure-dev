@@ -404,7 +404,7 @@ func (a *initAction) hasHarnessInputFlags() bool {
 func rleInitTargetOptions(includeHarnessTypes bool) []rleInitTargetOption {
 	options := []rleInitTargetOption{{
 		target: gymOpenEnvInitTarget,
-		label:  "Gym, OpenEnv",
+		label:  "Gym: OpenEnv",
 	}}
 	if includeHarnessTypes {
 		options = append(options,
@@ -413,14 +413,14 @@ func rleInitTargetOptions(includeHarnessTypes bool) []rleInitTargetOption {
 					rleType:    project.RleTypeHarness,
 					rleSubtype: project.RleSubtypeHostedAgent,
 				},
-				label: "Harness, HostedAgent",
+				label: "Harness: HostedAgent",
 			},
 			rleInitTargetOption{
 				target: rleInitTarget{
 					rleType:    project.RleTypeHarness,
 					rleSubtype: project.RleSubtypeBYOH,
 				},
-				label: "Harness, BYOH",
+				label: "Harness: BYOH",
 			},
 		)
 	}
@@ -520,7 +520,7 @@ func parseRleInitTarget(typeValue string, subtypeValue string) (rleInitTarget, e
 		Message:    fmt.Sprintf("RLE subtype %s is not supported for type %s.", subtype, rleType),
 		Code:       "rle_init_type_configuration_invalid",
 		Category:   azdext.LocalErrorCategoryUser,
-		Suggestion: `Use Gym/OpenEnv, Harness/HostedAgent, or Harness/BYOH.`,
+		Suggestion: `Use Gym: OpenEnv, Harness: HostedAgent, or Harness: BYOH.`,
 	}
 }
 

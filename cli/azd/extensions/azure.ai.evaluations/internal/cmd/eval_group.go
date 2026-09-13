@@ -254,7 +254,13 @@ func (a *evalListAction) Run() error {
 	}
 
 	if isJSON(a.cmd) {
-		return emitJSONPage(a.cmd.OutOrStdout(), matched, &total, "")
+		// Only the paged branch above has a cursor to hand back; a filtered or
+		// --all listing walked every page, and leaves HasMore false.
+		cursor := ""
+		if page.HasMore {
+			cursor = page.LastID
+		}
+		return emitJSONPage(a.cmd.OutOrStdout(), matched, &total, cursor)
 	}
 	out := a.cmd.OutOrStdout()
 	if len(matched) == 0 {

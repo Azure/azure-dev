@@ -45,13 +45,15 @@ First release of the Foundry evaluations extension.
         $ref: ./evaluators/quality.json
   ```
 
-- Results are reported per criterion and per item: pass, fail, skip and error
-  counts, a scored pass rate, and the reason a row needs a look. `--status` and
-  `--failed-only` narrow the view, and one predicate decides both the table and
-  `-o json` so the two cannot disagree.
-- Every listing is read a page at a time rather than walking the whole history:
-  `--limit` bounds a page, `--after` continues from the last one, and `--all`
-  asks for everything deliberately.
+- Results are reported per evaluator and per test case: pass, fail, skip and
+  error counts, a scored pass rate, and, in `run output show`, the reason
+  behind every result. `--status` and `--failed-only` narrow the view, and one
+  predicate decides both the table and `-o json` so the two cannot disagree.
+- Eval, run and run-output listings are read a page at a time rather than
+  walking the whole history: `--limit` bounds a page, `--after` continues from
+  the cursor the previous page returned, and `--all` asks for everything
+  deliberately. Dataset, evaluator and job listings are fetched in full so a
+  name can be found wherever it sits, and there `--limit` bounds what is shown.
 - `run output export` writes the run and its items as a single JSON document.
 - Reconciliation state is kept in the extension's own private store rather than
   written into the azd environment, so `azd env get-values` shows only what the

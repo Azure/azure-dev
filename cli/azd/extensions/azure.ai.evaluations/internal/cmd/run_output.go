@@ -826,7 +826,7 @@ func renderResults(
 		}
 		if len(rows) > 0 {
 			if err := emitTable(w,
-				[]string{"CRITERION", "PASS", "FAIL", "SKIP", "ERROR", "SCORED", "PASS RATE"},
+				[]string{"EVALUATOR", "PASS", "FAIL", "SKIP", "ERROR", "SCORED", "PASS RATE"},
 				rows); err != nil {
 				return err
 			}

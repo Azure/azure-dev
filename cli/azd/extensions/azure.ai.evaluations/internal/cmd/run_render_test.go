@@ -357,9 +357,11 @@ func TestCriterionTableAccountsForEverySample(t *testing.T) {
 	require.NoError(t, renderResults(&out, "an-eval", run, nil, false))
 	text := out.String()
 
-	for _, header := range []string{"PASS", "FAIL", "SKIP", "ERROR", "SCORED", "PASS RATE"} {
+	for _, header := range []string{"EVALUATOR", "PASS", "FAIL", "SKIP", "ERROR", "SCORED", "PASS RATE"} {
 		assert.Containsf(t, text, header, "the criterion table lost its %s column:\n%s", header, text)
 	}
+	assert.NotContains(t, text, "CRITERION",
+		"RESULTS spec 5.1 heads this table EVALUATOR; the run counts evaluator results")
 	assert.Contains(t, text, "14/15",
 		"SCORED states how much of the run the evaluator actually judged")
 	assert.Contains(t, text, "85.7%",

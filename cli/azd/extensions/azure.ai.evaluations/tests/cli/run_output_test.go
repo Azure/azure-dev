@@ -60,17 +60,19 @@ func TestCLIResultsShowRendersTheRows(t *testing.T) {
 	r := requireSuccess(t, run(t, "run", "output", "list", f.FirstRunID, "--eval", f.EvalID))
 
 	require.Contains(t, r.Stdout, f.FirstRunID)
-	require.Contains(t, r.Stdout, "Totals:")
-	require.Contains(t, r.Stdout, "CRITERION")
+	require.Contains(t, r.Stdout, "test cases")
+	require.Contains(t, r.Stdout, "EVALUATOR")
 	require.Contains(t, r.Stdout, f.EvaluatorName)
 
 	// One row per evaluated sample, which is what makes "how many should I go
 	// and look at" answerable by counting lines.
-	for _, header := range []string{"ITEM", "SAMPLE", "FAILED EVALUATORS", "REASON"} {
+	for _, header := range []string{"ITEM", "STATUS", "RESULTS"} {
 		require.Containsf(t, r.Stdout, header, "the listing lost its %s column", header)
 	}
-	require.NotContains(t, r.Stdout, "EVALUATOR  ",
-		"a per-verdict table would list a sample once per evaluator")
+	for _, gone := range []string{"SAMPLE", "FAILED EVALUATORS", "ATTENTION", "REASON"} {
+		require.NotContainsf(t, r.Stdout, gone,
+			"%s belongs to `output show`, where it is not cut to a cell", gone)
+	}
 
 	// The fixture's rows all pass, so every row names no failing evaluator.
 	require.Contains(t, r.Stdout, "Report:")

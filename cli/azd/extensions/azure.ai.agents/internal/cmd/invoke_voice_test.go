@@ -58,6 +58,10 @@ func TestVoiceInvokeCommandPortalGuidance(t *testing.T) {
 			server := grpc.NewServer()
 			azdext.RegisterProjectServiceServer(server, project)
 			azdext.RegisterPromptServiceServer(server, &helpersPromptServer{})
+			azdext.RegisterEnvironmentServiceServer(server, &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "test"},
+				values:  map[string]map[string]string{"test": {"AGENT_VOICE_SERVICE_NAME": "deployed-voice"}},
+			})
 			listener, err := net.Listen("tcp", "127.0.0.1:0")
 			require.NoError(t, err)
 			go func() { _ = server.Serve(listener) }()
@@ -71,6 +75,9 @@ func TestVoiceInvokeCommandPortalGuidance(t *testing.T) {
 				{"--protocol", "responses", "voice-service", "hello"},
 				{"--protocol", "invocations", "voice-service", "hello"},
 				{"--protocol", "a2a", "voice-service", "hello"},
+				{"--protocol", "responses", "deployed-voice", "hello"},
+				{"--protocol", "invocations", "deployed-voice", "hello"},
+				{"--protocol", "a2a", "deployed-voice", "hello"},
 			} {
 				command := newInvokeCommand(nil)
 				var buf bytes.Buffer
@@ -89,6 +96,50 @@ func TestVoiceInvokeCommandPortalGuidance(t *testing.T) {
 			command.SetErr(&buf)
 			command.SetArgs([]string{})
 			require.ErrorContains(t, command.Execute(), "a message argument or --input-file is required")
+		})
+	}
+}
+
+func TestVoiceInvocationDetectionErrorsStopRemoteInvoke(t *testing.T) {
+	for _, malformed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "missing", true: "malformed"}[malformed], func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, "override.yaml")
+			if malformed {
+				require.NoError(t, os.WriteFile(path, []byte("kind: [\n"), 0600))
+			}
+			t.Setenv("AGENT_DEFINITION_PATH", path)
+			props, err := structpb.NewStruct(map[string]any{"kind": "hosted"})
+			require.NoError(t, err)
+			project := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: root, Services: map[string]*azdext.ServiceConfig{
+					"agent": {Name: "agent", Host: AiAgentHost, AdditionalProperties: props},
+				},
+			}}
+			server := grpc.NewServer()
+			azdext.RegisterProjectServiceServer(server, project)
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			go func() { _ = server.Serve(listener) }()
+			t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+			t.Setenv("AZD_SERVER", listener.Addr().String())
+			for _, args := range [][]string{
+				{"agent", "hello"}, {"--protocol", "responses", "agent", "hello"},
+				{"--protocol", "invocations", "agent", "hello"}, {"--protocol", "a2a", "agent", "hello"},
+			} {
+				command := newInvokeCommand(nil)
+				var buf bytes.Buffer
+				command.SetOut(&buf)
+				command.SetErr(&buf)
+				command.SetArgs(args)
+				err := command.Execute()
+				require.ErrorContains(t, err, "determining agent kind for invocation")
+				require.NotErrorIs(t, err, errVoiceInvocationUnsupported)
+				if !malformed {
+					require.ErrorIs(t, err, os.ErrNotExist)
+				}
+				// No environment/auth services registered: the request must stop before either is used.
+			}
 		})
 	}
 }
@@ -140,7 +191,6 @@ func TestVoiceInvocationOverridePrecedence(t *testing.T) {
 		{"hosted override wins", "voice", "kind: hosted\n", false},
 		{"voice override wins", "hosted", "kind: voice\n", true},
 		{"alias override wins", "hosted", "kind: prompt-voice\n", true},
-		{"malformed override is not guessed", "voice", "kind: [\n", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -197,7 +247,7 @@ func TestVoiceInvocationDetectionCompatibility(t *testing.T) {
 	require.ErrorIs(t, voiceInvocationError(&azdext.ServiceConfig{Config: legacy}, root), errVoiceInvocationUnsupported)
 	missing, err := structpb.NewStruct(map[string]any{"$ref": "missing.yaml"})
 	require.NoError(t, err)
-	require.NoError(t, voiceInvocationError(&azdext.ServiceConfig{AdditionalProperties: missing}, root))
+	require.Error(t, voiceInvocationError(&azdext.ServiceConfig{AdditionalProperties: missing}, root))
 	require.NoError(t, voiceInvocationError(nil, root))
 }
 

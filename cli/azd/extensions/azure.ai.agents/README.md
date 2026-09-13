@@ -491,7 +491,8 @@ infra:
 ```
 
 Edit existing voice settings in `azure.yaml`; `--voice` applies when initializing
-a new prompt voice agent. Advanced settings such as `audio`, `structuredInputs`,
+a new prompt voice agent and is rejected when the chosen init flow cannot use it.
+Advanced settings such as `audio`, `structuredInputs`,
 `tools`, `greeting`, `avatar`, and `handoff` are described by the
 [agent service schema](schemas/azure.ai.agent.json).
 See [hosted voice wrappers](#hosted-voice-wrapper-preview) for `conversationEngine`
@@ -501,8 +502,7 @@ To try a prompt voice agent or hosted voice wrapper, open your project in the
 [Microsoft Foundry portal](https://ai.azure.com). `azd ai agent invoke` does not
 implement voice conversations; recognized voice services receive portal guidance.
 Programmatic clients use the voice WebSocket endpoint with a Voice Live client.
-Standalone `azd ai agent deploy` is for hosted source-code deployment, not voice
-wrappers; use the project-level `azd deploy` workflow above for voice services.
+Use the project-level `azd deploy` workflow above for voice services.
 
 ## Prompt voice telephony bindings
 

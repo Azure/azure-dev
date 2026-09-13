@@ -173,10 +173,6 @@ func warnPromptAgentPreview(writer io.Writer) {
 	)
 }
 
-// promptInitMode asks the user whether to use existing code or start from a template.
-// If the current directory is empty, automatically returns initModeTemplate.
-// In no-prompt mode with existing local files, defaults to using the current directory.
-// Returns initModeFromCode or initModeTemplate.
 // voiceInitChoice is the interactive menu entry for creating a prompt voice agent.
 var voiceInitChoice = &azdext.SelectChoice{
 	Label: "Create a prompt voice agent",

@@ -1326,19 +1326,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
     --image registry.example.com/agents/my-agent:v1 --registry-connection production-registry`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := azdext.WithAccessToken(cmd.Context())
-			azdClient, err := azdext.NewAzdClient()
-			if err != nil {
-				return exterrors.Internal(exterrors.CodeAzdClientFailed, fmt.Sprintf("failed to create azd client: %s", err))
-			}
-			defer azdClient.Close()
-
 			flags.noPrompt = extCtx.NoPrompt
 			if flags.env == "" {
 				flags.env = extCtx.Environment
 			}
-
-			printBanner(cmd.OutOrStdout())
 
 			// Resolve optional positional argument into --manifest or --src
 			if len(args) == 1 {
@@ -1351,6 +1342,18 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// or positional argument) BEFORE the auto-detection logic below may also
 			// set flags.manifestPointer. This drives the opinionated-defaults path.
 			userProvidedManifest := flags.manifestPointer != ""
+			voiceSpecified := cmd.Flags().Changed("voice")
+			if err := validateInitVoiceInput(flags, voiceSpecified); err != nil {
+				return err
+			}
+
+			ctx := azdext.WithAccessToken(cmd.Context())
+			azdClient, err := azdext.NewAzdClient()
+			if err != nil {
+				return exterrors.Internal(exterrors.CodeAzdClientFailed, fmt.Sprintf("failed to create azd client: %s", err))
+			}
+			defer azdClient.Close()
+			printBanner(cmd.OutOrStdout())
 
 			// Resolve the eject provider once (when --infra was passed) so an
 			// invalid value fails fast regardless of whether azure.yaml exists
@@ -1585,6 +1588,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						useExisting = *confirmResp.Value
 					}
 					if useExisting {
+						if voiceSpecified {
+							return unusedInitVoiceError()
+						}
 						flags.manifestPointer = detected
 						if flags.src == "" {
 							flags.src = checkDir
@@ -1624,7 +1630,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// `--no-prompt --deploy-mode code --runtime ...` in a repo that
 			// already declares an agent would silently no-op instead of
 			// honoring the flags the caller passed.
-			if canReuseExistingAgentConfiguration(
+			if !voiceSpecified && canReuseExistingAgentConfiguration(
 				flags,
 				manifestDetectedButDeclined,
 				cmd.Flags().Changed("src"),
@@ -1670,7 +1676,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// to reuse (issue #7268). Skips the init-mode prompt and from-code
 			// scaffolding. Bypassed when the user already declined a manifest
 			// above or supplied agent-defining flags that reuse would ignore.
-			if canReuseExistingAgentConfiguration(
+			if !voiceSpecified && canReuseExistingAgentConfiguration(
 				flags,
 				manifestDetectedButDeclined,
 				false,
@@ -1837,7 +1843,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 			} else {
 				// No manifest provided - prompt user for init mode
-				initMode, err := promptInitMode(ctx, azdClient, flags.noPrompt)
+				initMode, err := promptInitModeForVoice(ctx, azdClient, flags.noPrompt, voiceSpecified)
 				if err != nil {
 					if exterrors.IsCancellation(err) {
 						return exterrors.Cancelled("initialization was cancelled")
@@ -2090,7 +2096,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 	cmd.Flags().StringVar(&flags.voice, "voice", "",
 		"Output voice for new prompt voice agents (--kind prompt-voice or the interactive voice option). "+
-			"For existing voice services, edit azure.yaml. Example: en-US-Ava:DragonHDLatestNeural.")
+			"Rejected for other init flows. For existing voice services, edit azure.yaml. "+
+			"Example: en-US-Ava:DragonHDLatestNeural.")
 
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"Overwrite existing agent definitions or an input manifest inside the generated src tree without prompting. "+
@@ -2128,6 +2135,42 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"Ignored for hosted agents and when --manifest already declares policies.")
 
 	return cmd
+}
+
+func unusedInitVoiceError() error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		"--voice is only supported when creating a new prompt voice agent",
+		"use --kind prompt-voice or select the interactive voice option; "+
+			"otherwise remove --voice and edit voice settings in azure.yaml",
+	)
+}
+
+// validateInitVoiceInput rejects known no-op paths before authentication or file
+// downloads. With no explicit kind, interactive voice selection remains valid.
+func validateInitVoiceInput(flags *initFlags, specified bool) error {
+	if !specified {
+		return nil
+	}
+	voiceKind := strings.EqualFold(strings.TrimSpace(flags.kind), kindFlagPromptVoice)
+	if flags.manifestPointer != "" || flags.image != "" ||
+		(flags.kind != "" && !voiceKind) || (flags.noPrompt && !voiceKind) {
+		return unusedInitVoiceError()
+	}
+	return nil
+}
+
+func promptInitModeForVoice(
+	ctx context.Context, client *azdext.AzdClient, noPrompt, voiceSpecified bool,
+) (string, error) {
+	mode, err := promptInitMode(ctx, client, noPrompt)
+	if err != nil {
+		return "", err
+	}
+	if voiceSpecified && mode != initModeVoice {
+		return "", unusedInitVoiceError()
+	}
+	return mode, nil
 }
 
 func warnManifestOverridesKind(writer io.Writer, flags *initFlags) {

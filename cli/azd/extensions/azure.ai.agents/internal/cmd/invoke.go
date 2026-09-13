@@ -1274,12 +1274,12 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	resolutionOptions := []agentServiceResolutionOption{
 		withBrownfieldInlineAgentName(),
 		withVoiceInvocationGuidance(),
+		withDeployedAgentNameLookup(),
 	}
 	if a.flags.protocol == "" {
 		resolutionOptions = append(
 			resolutionOptions,
 			withDeployedProtocolEndpoints(),
-			withDeployedAgentNameLookup(),
 		)
 	}
 	info, serviceErr := resolveAgentServiceFromProject(

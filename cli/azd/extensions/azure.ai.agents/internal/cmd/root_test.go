@@ -23,10 +23,9 @@ func TestRootCommand_PublicPreviewCommandsVisible(t *testing.T) {
 	}
 
 	for _, name := range []string{
-		"add",
 		"code",
+		"connection",
 		"delete",
-		"deploy",
 		"doctor",
 		"endpoint",
 		"eval",
@@ -42,6 +41,7 @@ func TestRootCommand_PublicPreviewCommandsVisible(t *testing.T) {
 		"sample",
 		"sessions",
 		"show",
+		"toolbox",
 	} {
 		if !slices.Contains(visible, name) {
 			t.Fatalf("expected visible root subcommand %q in %v", name, visible)
@@ -75,17 +75,12 @@ func TestVoicePublicPreviewHelp(t *testing.T) {
 				"For hosted and prompt agents, name of the AI model to deploy",
 				"--model-deployment takes precedence. For new managed prompt voice agents",
 				"service-hosted model (default: gpt-realtime); no model deployment is created",
-				"--harness", "--kind prompt", "--instructions",
+				"--kind prompt", "--instructions", "Rejected for other init flows",
 			},
 			absent: []string{
 				"New voice services use kind: voice", "adopted manifest", "remains supported for compatibility",
 				"For hosted agents, name of the AI model to deploy",
 			},
-		},
-		{
-			name: "deploy", path: []string{"deploy"},
-			contains: []string{"hosted source-code deployment only", "azure.yaml", "azd provision", "azd deploy"},
-			absent:   []string{"Deploy a hosted or voice agent"},
 		},
 		{
 			name: "invoke", path: []string{"invoke"},

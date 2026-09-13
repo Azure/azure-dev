@@ -72,7 +72,7 @@ func TestInitVoiceInputAllowsOnlySupportedNewVoiceFlows(t *testing.T) {
 func TestInitVoiceFlagInteractiveSelection(t *testing.T) {
 	for _, nonempty := range []bool{false, true} {
 		for _, specified := range []bool{false, true} {
-			count := 2
+			count := int32(2)
 			if nonempty {
 				count = 3
 			}
@@ -82,7 +82,7 @@ func TestInitVoiceFlagInteractiveSelection(t *testing.T) {
 					if nonempty {
 						require.NoError(t, os.WriteFile("main.py", []byte("# sample"), 0600))
 					}
-					prompts := &helpersPromptServer{selectIndex: int32(index)}
+					prompts := &helpersPromptServer{selectIndex: index}
 					client := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
 					mode, err := promptInitModeForVoice(t.Context(), client, false, specified)
 					if specified && index != count-1 {

@@ -28,6 +28,13 @@ az login
 
 The extension also supports credentials from `azd auth login` and the other development credentials in Azure's default credential chain.
 
+`init` always offers a `Gym, OpenEnv` starter path. Agent RLE scaffolds are separately preview-gated;
+enable them in the terminal only when you want to create a Hosted Agent or BYOH harness:
+
+```powershell
+$env:AZD_AI_RLE_AGENT_INIT_ENABLE = "true"
+```
+
 ## Install the extension from the nightly registry
 
 ```powershell
@@ -81,13 +88,13 @@ az acr login --name <registry>
 
 ### 1. Initialize an environment session
 
-Select a sample and use its name for the local folder and RLE environment:
+Run `init` and choose `Gym, OpenEnv`, then select a sample:
 
 ```powershell
 azd ai rle init
 ```
 
-`init` reads the available environments from
+The Gym/OpenEnv path reads the available environments from
 [rle-samples](https://github.com/sujit-kamireddy/rle-samples) and prompts you to select one.
 Only the selected sample is downloaded. For example, selecting `code_rl` copies it into `.\code_rl`
 and stores `code_rl` as the RLE environment name in `.azd-rle.json`.
@@ -105,6 +112,40 @@ azd ai rle init code_rl --no-prompt
 ```
 
 The copied session does not keep `.git` metadata from the sample repository.
+
+### Agent RLE scaffolds (preview)
+
+Set `AZD_AI_RLE_AGENT_INIT_ENABLE=true` before running `init` to add these target choices:
+
+| Choice | Required information | Generated target configuration |
+|---|---|---|
+| `Agent, Hosted Agent` | Agent name and immutable agent version | `rle.toml` records the Hosted Agent name and version. |
+| `Agent, BYOH` | RLE environment name and RLE-compatible base URL | `rle.toml` records the customer-managed base URL. |
+
+Both paths create an editable harness:
+
+```text
+<environment-name>/
+├── .azd-rle.json
+├── rle.toml
+├── Dockerfile
+└── server/
+    └── env.py
+```
+
+`server/env.py` uses OpenEnv's supported app factory, exposing `/health`, `/schema`, `/metadata`,
+`/ws`, and the local `/web` playground, plus `/reset`, `/step`, `/grade`, and an example mock-tool
+endpoint. Update it with task setup, mocks that preserve the production tool contracts, and your
+grader before publishing.
+For BYOH, the configured base URL is expected to serve the synchronous version-pinned invocation route:
+`POST {base_url}/rles/{rle_name}/versions/{version}/invocations`.
+
+For scripting, pass the target-specific values explicitly:
+
+```powershell
+azd ai rle init support_rle --type hosted-agent --agent-name support-agent --agent-version v3 --no-prompt
+azd ai rle init customer_rle --type byoh --base-url https://agent.example.com --no-prompt
+```
 
 For an existing source folder, skip `init` and run commands directly from that folder.
 

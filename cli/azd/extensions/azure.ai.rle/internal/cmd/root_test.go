@@ -469,8 +469,10 @@ func stubRleSampleCatalog(
 	expectedFolderName string,
 ) {
 	t.Helper()
+	t.Setenv(rleAgentInitEnableEnvVar, "")
 	oldLoad := loadRleSampleCatalogFunc
 	oldSelect := selectRleSampleFunc
+	oldSelectType := selectRleInitTypeFunc
 	loadRleSampleCatalogFunc = func() (rleSampleCatalog, error) {
 		return &testRleSampleCatalog{
 			t:                  t,
@@ -485,8 +487,15 @@ func stubRleSampleCatalog(
 		}
 		return selectedSampleName, nil
 	}
+	selectRleInitTypeFunc = func(_ context.Context, includeAgentTypes bool) (rleInitType, error) {
+		if includeAgentTypes {
+			t.Fatal("expected Gym/OpenEnv regression tests to run with agent init disabled")
+		}
+		return rleInitTypeGymOpenEnv, nil
+	}
 	t.Cleanup(func() {
 		loadRleSampleCatalogFunc = oldLoad
 		selectRleSampleFunc = oldSelect
+		selectRleInitTypeFunc = oldSelectType
 	})
 }

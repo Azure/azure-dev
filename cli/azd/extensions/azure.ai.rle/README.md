@@ -1,7 +1,7 @@
 # Azure AI RLE extension for azd
 
 The `azd ai rle` preview extension manages a versioned RLE lifecycle: initialize
-an environment or agent scaffold, run it locally, and publish the declared
+an environment or harness scaffold, run it locally, and publish the declared
 release to an RLE-enabled Foundry project.
 
 Every source folder is defined by a host-agnostic `rle.toml` manifest. The
@@ -39,10 +39,10 @@ The lifecycle commands are preview-gated:
 $env:AZD_AI_RLE_ENABLE = "true"
 ```
 
-Agent scaffolds are separately preview-gated:
+Harness scaffolds are separately preview-gated:
 
 ```powershell
-$env:AZD_AI_RLE_AGENT_INIT_ENABLE = "true"
+$env:AZD_AI_RLE_HARNESS_INIT_ENABLE = "true"
 ```
 
 ## Manifest contract
@@ -52,8 +52,12 @@ $env:AZD_AI_RLE_AGENT_INIT_ENABLE = "true"
 | `rle.type` | `rle.subtype` | Required fields |
 | --- | --- | --- |
 | `Gym` | `OpenEnv` | None |
-| `Agent` | `HostedAgent` | `agentName`, `agentVersion` |
-| `Agent` | `BYOA` | `baseUrl` |
+| `Harness` | `HostedAgent` | `agentName`, `agentVersion` |
+| `Harness` | `BYOH` | `baseUrl` |
+
+`BYOH` is the concise wire abbreviation for Bring Your Own Harness.
+`HostedAgent` denotes the Foundry Hosted Agent backing a harness; the subtype
+does not embed a platform name so the manifest remains host-agnostic.
 
 A Gym/OpenEnv environment:
 
@@ -65,33 +69,33 @@ type = "Gym"
 subtype = "OpenEnv"
 ```
 
-A Foundry Hosted Agent:
+A Foundry Hosted Agent-backed harness:
 
 ```toml
 [rle]
 name = "support_rle"
 version = "1.0.0"
-type = "Agent"
+type = "Harness"
 subtype = "HostedAgent"
 agentName = "support-agent"
 agentVersion = "12"
 ```
 
-A bring-your-own agent:
+A bring-your-own harness (BYOH):
 
 ```toml
 [rle]
 name = "customer_rle"
 version = "1.0.0"
-type = "Agent"
-subtype = "BYOA"
-baseUrl = "https://agent.example.com/rle/"
+type = "Harness"
+subtype = "BYOH"
+baseUrl = "https://harness.example.com/rle/"
 ```
 
 `rle.version` is the RLE release version and is distinct from
-`agentVersion`, which identifies a Hosted Agent version. RLE versions must be
+`agentVersion`, which identifies the Hosted Agent backing a harness. RLE versions must be
 `major.minor.patch`. Hosted Agent versions must be a positive integer or
-`draft-<positive-unix-timestamp>`. BYOA URLs must be absolute HTTPS URLs
+`draft-<positive-unix-timestamp>`. BYOH harness URLs must be absolute HTTPS URLs
 without credentials, a query string, or a fragment.
 
 ## Configure runtime deployment context
@@ -136,25 +140,25 @@ sample and target folder:
 azd ai rle init code_rl --no-prompt
 ```
 
-With `AZD_AI_RLE_AGENT_INIT_ENABLE=true`, `init` also offers
-`Agent, HostedAgent` and `Agent, BYOA`. Supply control-plane type/subtype
+With `AZD_AI_RLE_HARNESS_INIT_ENABLE=true`, `init` also offers
+`Harness, HostedAgent` and `Harness, BYOH`. Supply control-plane type/subtype
 values explicitly when scripting:
 
 ```powershell
 azd ai rle init support_rle `
-  --type Agent --subtype HostedAgent `
+  --type Harness --subtype HostedAgent `
   --rle-version 1.0.0 `
   --agent-name support-agent --agent-version 12 `
   --no-prompt
 
 azd ai rle init customer_rle `
-  --type Agent --subtype BYOA `
+  --type Harness --subtype BYOH `
   --rle-version 1.0.0 `
-  --base-url https://agent.example.com/rle/ `
+  --base-url https://harness.example.com/rle/ `
   --no-prompt
 ```
 
-Agent scaffolds contain:
+Harness scaffolds contain:
 
 ```text
 <environment-name>/
@@ -223,7 +227,7 @@ version-tagged as:
 ```
 
 The published request includes `type`, `subtype`, and the applicable
-HostedAgent or BYOA configuration from the manifest.
+HostedAgent or BYOH configuration from the manifest.
 
 ## Inspect and invoke releases
 

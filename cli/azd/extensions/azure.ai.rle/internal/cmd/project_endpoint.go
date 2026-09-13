@@ -68,8 +68,8 @@ func projectNameFromFoundryEndpoint(endpoint string) (string, error) {
 	return projectName, nil
 }
 
-func projectRouteSegment(state rleState) (string, error) {
-	return projectNameFromFoundryEndpoint(state.ProjectEndpoint)
+func projectRouteSegment(projectEndpoint string) (string, error) {
+	return projectNameFromFoundryEndpoint(projectEndpoint)
 }
 
 func invalidProjectEndpointError(message string) error {

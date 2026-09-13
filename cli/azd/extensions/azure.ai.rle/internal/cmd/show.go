@@ -7,6 +7,8 @@ import (
 	"context"
 	"strings"
 
+	"azure.ai.rle/internal/project"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -24,8 +26,8 @@ func newShowCommand(outputFormat *string) *cobra.Command {
 		Long: `Show RLE environment details.
 
 The command resolves the environment from the Foundry project and includes its
-full version history. With no environment name, it uses the name saved in
-.azd-rle.json.`,
+full version history. With no environment name, it uses rle.name from the
+current folder's rle.toml.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			environmentName := ""
@@ -85,39 +87,16 @@ func (a *showAction) Run() error {
 
 func (a *showAction) resolveTarget() ([]environmentResource, error) {
 	environmentName := strings.TrimSpace(a.environmentName)
-	projectEndpoint := ""
 	if environmentName == "" {
-		state, err := loadRleState()
+		config, err := project.LoadRleConfig(".")
 		if err != nil {
 			return nil, err
 		}
-		environmentName = strings.TrimSpace(state.EnvironmentName)
-		if environmentName == "" {
-			return nil, &azdext.LocalError{
-				Message:    "The saved RLE environment does not include a name.",
-				Code:       "rle_environment_name_missing",
-				Category:   azdext.LocalErrorCategoryUser,
-				Suggestion: "Provide an environment name: azd ai rle show <environment-name>.",
-			}
-		}
-		projectEndpoint = strings.TrimSpace(state.ProjectEndpoint)
-		if projectEndpoint == "" {
-			return nil, &azdext.LocalError{
-				Message:  "The saved RLE environment does not include a Foundry project endpoint.",
-				Code:     "rle_project_required",
-				Category: azdext.LocalErrorCategoryUser,
-				Suggestion: "Run azd ai rle publish first, or provide an environment name " +
-					"with FOUNDRY_PROJECT_ENDPOINT set.",
-			}
-		}
+		environmentName = config.Rle.Name
 	}
-
-	if projectEndpoint == "" {
-		var err error
-		projectEndpoint, err = resolveEnvironmentListProjectEndpoint()
-		if err != nil {
-			return nil, err
-		}
+	projectEndpoint, err := resolveEnvironmentListProjectEndpoint()
+	if err != nil {
+		return nil, err
 	}
 	client, err := createRleClient(projectEndpoint)
 	if err != nil {

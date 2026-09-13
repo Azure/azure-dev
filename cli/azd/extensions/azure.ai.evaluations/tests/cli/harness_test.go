@@ -22,6 +22,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -71,7 +72,7 @@ func TestMain(m *testing.M) {
 	// The shared eval outlives any single test, so it cannot be released with
 	// t.Cleanup without taking it away from the tests that run after.
 	runTeardown()
-	os.RemoveAll(dir)
+	_ = os.RemoveAll(dir)
 	os.Exit(code)
 }
 
@@ -170,7 +171,8 @@ func invoke(t *testing.T, dir string, args ...string) result {
 
 	err := cmd.Run()
 	code := 0
-	if exitErr, ok := err.(*exec.ExitError); ok {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
 		code = exitErr.ExitCode()
 	} else if err != nil {
 		t.Fatalf("could not run %v: %v", full, err)

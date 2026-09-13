@@ -19,6 +19,13 @@ linters:
         text: G304
         linters:
           - gosec
+      # G204 cannot apply to the live harness building and running the
+      # extension binary at a path it computed itself. No production code
+      # launches a subprocess, so nothing real is silenced here.
+      - path: _test\.go$
+        text: G204
+        linters:
+          - gosec
 
 formatters:
   enable:

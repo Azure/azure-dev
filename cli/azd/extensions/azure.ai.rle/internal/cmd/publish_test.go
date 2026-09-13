@@ -22,7 +22,7 @@ func TestBuildEnvironmentCreateRequestMapsManifestConfiguration(t *testing.T) {
 		Rle: project.RleManifest{
 			Name:         "support_rle",
 			Version:      "1.0.1",
-			Type:         project.RleTypeAgent,
+			Type:         project.RleTypeHarness,
 			Subtype:      project.RleSubtypeHostedAgent,
 			AgentName:    &agentName,
 			AgentVersion: &agentVersion,
@@ -32,7 +32,7 @@ func TestBuildEnvironmentCreateRequestMapsManifestConfiguration(t *testing.T) {
 	request := buildEnvironmentCreateRequest(config, "example.azurecr.io/support_rle:1.0.1", "Patch")
 	if request.Name != "support_rle" ||
 		request.VersionBump != "Patch" ||
-		request.Type != "Agent" ||
+		request.Type != "Harness" ||
 		request.Subtype != "HostedAgent" ||
 		request.AgentName == nil || *request.AgentName != agentName ||
 		request.AgentVersion == nil || *request.AgentVersion != agentVersion ||
@@ -51,7 +51,7 @@ func TestBuildEnvironmentCreateRequestMapsManifestConfiguration(t *testing.T) {
 	for key, expected := range map[string]string{
 		"name":         "support_rle",
 		"versionBump":  "Patch",
-		"type":         "Agent",
+		"type":         "Harness",
 		"subtype":      "HostedAgent",
 		"agentName":    agentName,
 		"agentVersion": agentVersion,
@@ -62,6 +62,28 @@ func TestBuildEnvironmentCreateRequestMapsManifestConfiguration(t *testing.T) {
 	}
 	if _, exists := payload["baseUrl"]; exists {
 		t.Fatalf("expected HostedAgent request to omit baseUrl, got %s", data)
+	}
+}
+
+func TestBuildEnvironmentCreateRequestMapsByohHarnessConfiguration(t *testing.T) {
+	baseURL := "https://harness.example.com/rollouts/"
+	config := project.RleConfig{
+		Rle: project.RleManifest{
+			Name:    "customer_harness",
+			Version: "1.0.1",
+			Type:    project.RleTypeHarness,
+			Subtype: project.RleSubtypeBYOH,
+			BaseURL: &baseURL,
+		},
+	}
+
+	request := buildEnvironmentCreateRequest(config, "example.azurecr.io/customer_harness:1.0.1", "Patch")
+	if request.Type != "Harness" ||
+		request.Subtype != "BYOH" ||
+		request.BaseURL == nil || *request.BaseURL != baseURL ||
+		request.AgentName != nil ||
+		request.AgentVersion != nil {
+		t.Fatalf("expected BYOH manifest data to map to create request, got %#v", request)
 	}
 }
 

@@ -17,44 +17,44 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-func TestRleInitTargetOptionsGateAgentChoices(t *testing.T) {
-	withoutAgents := rleInitTargetOptions(false)
-	if len(withoutAgents) != 1 ||
-		withoutAgents[0].target != gymOpenEnvInitTarget ||
-		withoutAgents[0].label != "Gym, OpenEnv" {
-		t.Fatalf("expected only Gym/OpenEnv by default, got %#v", withoutAgents)
+func TestRleInitTargetOptionsGateHarnessChoices(t *testing.T) {
+	withoutHarnesses := rleInitTargetOptions(false)
+	if len(withoutHarnesses) != 1 ||
+		withoutHarnesses[0].target != gymOpenEnvInitTarget ||
+		withoutHarnesses[0].label != "Gym, OpenEnv" {
+		t.Fatalf("expected only Gym/OpenEnv by default, got %#v", withoutHarnesses)
 	}
 
-	withAgents := rleInitTargetOptions(true)
-	if len(withAgents) != 3 {
-		t.Fatalf("expected three init choices with agent preview enabled, got %#v", withAgents)
+	withHarnesses := rleInitTargetOptions(true)
+	if len(withHarnesses) != 3 {
+		t.Fatalf("expected three init choices with harness preview enabled, got %#v", withHarnesses)
 	}
-	if withAgents[1].target != (rleInitTarget{
-		rleType: project.RleTypeAgent, rleSubtype: project.RleSubtypeHostedAgent,
-	}) || withAgents[1].label != "Agent, HostedAgent" {
-		t.Fatalf("unexpected HostedAgent choice: %#v", withAgents[1])
+	if withHarnesses[1].target != (rleInitTarget{
+		rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeHostedAgent,
+	}) || withHarnesses[1].label != "Harness, HostedAgent" {
+		t.Fatalf("unexpected HostedAgent choice: %#v", withHarnesses[1])
 	}
-	if withAgents[2].target != (rleInitTarget{
-		rleType: project.RleTypeAgent, rleSubtype: project.RleSubtypeBYOA,
-	}) || withAgents[2].label != "Agent, BYOA" {
-		t.Fatalf("unexpected BYOA choice: %#v", withAgents[2])
+	if withHarnesses[2].target != (rleInitTarget{
+		rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeBYOH,
+	}) || withHarnesses[2].label != "Harness, BYOH" {
+		t.Fatalf("unexpected BYOH choice: %#v", withHarnesses[2])
 	}
 }
 
 func TestInitInteractiveHostedAgentScaffoldsUsingPromptedValues(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	t.Setenv(rleAgentInitEnableEnvVar, "true")
+	t.Setenv(rleHarnessInitEnableEnvVar, "true")
 
 	oldSelectTarget := selectRleInitTargetFunc
 	oldPrompt := promptRleValueFunc
 	oldLoadCatalog := loadRleSampleCatalogFunc
-	selectRleInitTargetFunc = func(_ context.Context, includeAgentTypes bool) (rleInitTarget, error) {
-		if !includeAgentTypes {
+	selectRleInitTargetFunc = func(_ context.Context, includeHarnessTypes bool) (rleInitTarget, error) {
+		if !includeHarnessTypes {
 			t.Fatal("expected HostedAgent selection to be enabled")
 		}
 		return rleInitTarget{
-			rleType: project.RleTypeAgent, rleSubtype: project.RleSubtypeHostedAgent,
+			rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeHostedAgent,
 		}, nil
 	}
 	promptValues := []string{"Support Agent", "3"}
@@ -67,7 +67,7 @@ func TestInitInteractiveHostedAgentScaffoldsUsingPromptedValues(t *testing.T) {
 		return value, nil
 	}
 	loadRleSampleCatalogFunc = func() (rleSampleCatalog, error) {
-		t.Fatal("agent initialization must not load the sample catalog")
+		t.Fatal("harness initialization must not load the sample catalog")
 		return nil, nil
 	}
 	t.Cleanup(func() {
@@ -96,7 +96,7 @@ func TestInitInteractiveHostedAgentScaffoldsUsingPromptedValues(t *testing.T) {
 	for _, expected := range []string{
 		`name = 'support_agent'`,
 		`version = '1.0.0'`,
-		`type = 'Agent'`,
+		`type = 'Harness'`,
 		`subtype = 'HostedAgent'`,
 		`agentName = 'Support Agent'`,
 		`agentVersion = '3'`,
@@ -113,22 +113,22 @@ func TestInitInteractiveHostedAgentScaffoldsUsingPromptedValues(t *testing.T) {
 	}
 }
 
-func TestInitInteractiveBYOAScaffoldsUsingPromptedValues(t *testing.T) {
+func TestInitInteractiveBYOHScaffoldsUsingPromptedValues(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	t.Setenv(rleAgentInitEnableEnvVar, "true")
+	t.Setenv(rleHarnessInitEnableEnvVar, "true")
 
 	oldSelectTarget := selectRleInitTargetFunc
 	oldPrompt := promptRleValueFunc
-	selectRleInitTargetFunc = func(_ context.Context, includeAgentTypes bool) (rleInitTarget, error) {
-		if !includeAgentTypes {
-			t.Fatal("expected BYOA selection to be enabled")
+	selectRleInitTargetFunc = func(_ context.Context, includeHarnessTypes bool) (rleInitTarget, error) {
+		if !includeHarnessTypes {
+			t.Fatal("expected BYOH selection to be enabled")
 		}
 		return rleInitTarget{
-			rleType: project.RleTypeAgent, rleSubtype: project.RleSubtypeBYOA,
+			rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeBYOH,
 		}, nil
 	}
-	promptValues := []string{"customer_rle", "https://agent.example.com/v1/"}
+	promptValues := []string{"customer_rle", "https://harness.example.com/v1/"}
 	promptRleValueFunc = func(_ context.Context, _ string) (string, error) {
 		value := promptValues[0]
 		promptValues = promptValues[1:]
@@ -150,21 +150,21 @@ func TestInitInteractiveBYOAScaffoldsUsingPromptedValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(config), `baseUrl = 'https://agent.example.com/v1/'`) {
-		t.Fatalf("expected normalized BYOA base URL, got:\n%s", config)
+	if !strings.Contains(string(config), `baseUrl = 'https://harness.example.com/v1/'`) {
+		t.Fatalf("expected normalized BYOH base URL, got:\n%s", config)
 	}
 }
 
 func TestInitNoPromptHostedAgentUsesControlPlaneFlags(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	t.Setenv(rleAgentInitEnableEnvVar, "true")
+	t.Setenv(rleHarnessInitEnableEnvVar, "true")
 
 	noPrompt := true
 	command := newInitCommand(&noPrompt)
 	command.SetArgs([]string{
 		"support_rle",
-		"--type", "Agent",
+		"--type", "Harness",
 		"--subtype", "HostedAgent",
 		"--rle-version", "1.0.0",
 		"--agent-name", "support-agent",
@@ -178,52 +178,52 @@ func TestInitNoPromptHostedAgentUsesControlPlaneFlags(t *testing.T) {
 	}
 }
 
-func TestInitNoPromptBYOARequiresFolderName(t *testing.T) {
-	t.Setenv(rleAgentInitEnableEnvVar, "true")
+func TestInitNoPromptBYOHRequiresFolderName(t *testing.T) {
+	t.Setenv(rleHarnessInitEnableEnvVar, "true")
 
 	noPrompt := true
 	command := newInitCommand(&noPrompt)
 	command.SetArgs([]string{
-		"--type", "Agent",
-		"--subtype", "BYOA",
-		"--base-url", "https://agent.example.com",
+		"--type", "Harness",
+		"--subtype", "BYOH",
+		"--base-url", "https://harness.example.com",
 	})
 	err := command.Execute()
 	localError, ok := errors.AsType[*azdext.LocalError](err)
 	if !ok || localError.Code != "rle_environment_name_required" {
-		t.Fatalf("expected missing BYOA folder name error, got %v", err)
+		t.Fatalf("expected missing BYOH folder name error, got %v", err)
 	}
 }
 
-func TestInitAgentTargetRequiresPreviewFlag(t *testing.T) {
-	t.Setenv(rleAgentInitEnableEnvVar, "")
+func TestInitHarnessTargetRequiresPreviewFlag(t *testing.T) {
+	t.Setenv(rleHarnessInitEnableEnvVar, "")
 
 	noPrompt := true
 	command := newInitCommand(&noPrompt)
 	command.SetArgs([]string{
 		"support_rle",
-		"--type", "Agent",
+		"--type", "Harness",
 		"--subtype", "HostedAgent",
 		"--agent-name", "support-agent",
 		"--agent-version", "1",
 	})
 	err := command.Execute()
 	localError, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok || localError.Code != "rle_agent_init_disabled" {
-		t.Fatalf("expected disabled agent init error, got %v", err)
+	if !ok || localError.Code != "rle_harness_init_disabled" {
+		t.Fatalf("expected disabled harness init error, got %v", err)
 	}
 }
 
-func TestInitSelectedAgentTargetRequiresPreviewFlag(t *testing.T) {
-	t.Setenv(rleAgentInitEnableEnvVar, "")
+func TestInitSelectedHarnessTargetRequiresPreviewFlag(t *testing.T) {
+	t.Setenv(rleHarnessInitEnableEnvVar, "")
 
 	oldSelectTarget := selectRleInitTargetFunc
-	selectRleInitTargetFunc = func(_ context.Context, includeAgentTypes bool) (rleInitTarget, error) {
-		if includeAgentTypes {
-			t.Fatal("expected agent init choices to be disabled")
+	selectRleInitTargetFunc = func(_ context.Context, includeHarnessTypes bool) (rleInitTarget, error) {
+		if includeHarnessTypes {
+			t.Fatal("expected harness init choices to be disabled")
 		}
 		return rleInitTarget{
-			rleType: project.RleTypeAgent, rleSubtype: project.RleSubtypeHostedAgent,
+			rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeHostedAgent,
 		}, nil
 	}
 	t.Cleanup(func() {
@@ -234,8 +234,8 @@ func TestInitSelectedAgentTargetRequiresPreviewFlag(t *testing.T) {
 	command := newInitCommand(&noPrompt)
 	err := command.Execute()
 	localError, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok || localError.Code != "rle_agent_init_disabled" {
-		t.Fatalf("expected disabled selected agent type error, got %v", err)
+	if !ok || localError.Code != "rle_harness_init_disabled" {
+		t.Fatalf("expected disabled selected harness type error, got %v", err)
 	}
 }
 
@@ -253,21 +253,33 @@ func TestParseRleInitTargetUsesControlPlanePairs(t *testing.T) {
 			expected: gymOpenEnvInitTarget,
 		},
 		{
-			name:     "hosted agent",
-			rleType:  "Agent",
+			name:     "hosted agent harness",
+			rleType:  "Harness",
 			subtype:  "HostedAgent",
-			expected: rleInitTarget{rleType: project.RleTypeAgent, rleSubtype: project.RleSubtypeHostedAgent},
+			expected: rleInitTarget{rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeHostedAgent},
 		},
 		{
-			name:      "agent needs subtype",
-			rleType:   "Agent",
+			name:      "harness needs subtype",
+			rleType:   "Harness",
 			errorCode: "rle_init_subtype_required",
 		},
 		{
 			name:      "invalid pair",
 			rleType:   "Gym",
-			subtype:   "BYOA",
+			subtype:   "BYOH",
 			errorCode: "rle_init_type_configuration_invalid",
+		},
+		{
+			name:      "legacy agent type is rejected",
+			rleType:   "Agent",
+			subtype:   "HostedAgent",
+			errorCode: "rle_init_type_invalid",
+		},
+		{
+			name:      "legacy byoa subtype is rejected",
+			rleType:   "Harness",
+			subtype:   "BYOA",
+			errorCode: "rle_init_subtype_invalid",
 		},
 		{
 			name:      "legacy combined target is rejected",

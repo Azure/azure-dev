@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	rleEnableEnvVar          = "AZD_AI_RLE_ENABLE"
-	rleAgentInitEnableEnvVar = "AZD_AI_RLE_AGENT_INIT_ENABLE"
+	rleEnableEnvVar            = "AZD_AI_RLE_ENABLE"
+	rleHarnessInitEnableEnvVar = "AZD_AI_RLE_HARNESS_INIT_ENABLE"
 )
 
 func NewRootCommand() *cobra.Command {
@@ -61,7 +61,7 @@ func rleCommandsEnabled() bool {
 	return err == nil && enabled
 }
 
-func rleAgentInitEnabled() bool {
-	enabled, err := strconv.ParseBool(os.Getenv(rleAgentInitEnableEnvVar))
+func rleHarnessInitEnabled() bool {
+	enabled, err := strconv.ParseBool(os.Getenv(rleHarnessInitEnableEnvVar))
 	return err == nil && enabled
 }

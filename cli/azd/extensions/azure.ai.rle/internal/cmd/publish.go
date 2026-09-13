@@ -243,7 +243,7 @@ func verifyPublishedEnvironment(manifest project.RleManifest, environment *envir
 	}
 	if manifest.BaseURL != nil && environment.BaseURL != *manifest.BaseURL {
 		return publishedEnvironmentMismatchError(
-			"RLE service returned a different BYOA baseUrl than rle.toml.",
+			"RLE service returned a different BYOH baseUrl than rle.toml.",
 			"Check the RLE service response and retry.",
 		)
 	}

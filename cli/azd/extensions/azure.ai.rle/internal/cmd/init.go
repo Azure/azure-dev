@@ -65,14 +65,14 @@ var selectRleInitTargetFunc = selectRleInitTarget
 
 var promptRleValueFunc = promptRleValue
 
-var createRleAgentScaffoldFunc = project.CreateRleAgentScaffold
+var createRleHarnessScaffoldFunc = project.CreateRleHarnessScaffold
 
 func newInitCommand(noPrompt *bool) *cobra.Command {
 	flags := &rleInitFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "init [folder-name]",
-		Short: "Initialize a local RLE environment from a sample or agent scaffold",
+		Short: "Initialize a local RLE environment from a sample or harness scaffold",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			folderName := ""
@@ -90,17 +90,17 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 
 	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		var help strings.Builder
-		help.WriteString("Initialize a local RLE environment from a sample or agent scaffold\n")
+		help.WriteString("Initialize a local RLE environment from a sample or harness scaffold\n")
 		help.WriteString("Usage:\n")
 		help.WriteString("  rle init [folder-name] [flags]\n")
 		help.WriteString("Flags:\n")
 		help.WriteString("      --agent-name string      HostedAgent name\n")
 		help.WriteString("      --agent-version string   HostedAgent version\n")
-		help.WriteString("      --base-url string        BYOA agent base URL\n")
+		help.WriteString("      --base-url string        BYOH harness base URL\n")
 		help.WriteString("      --force                  Overwrite generated files in an existing non-empty session directory\n")
-		help.WriteString("      --rle-version string     RLE semantic version (defaults to 1.0.0 for an agent scaffold)\n")
-		help.WriteString("      --subtype string         RLE control-plane subtype: OpenEnv, HostedAgent, or BYOA\n")
-		help.WriteString("      --type string            RLE control-plane type: Gym or Agent\n")
+		help.WriteString("      --rle-version string     RLE semantic version (defaults to 1.0.0 for a harness scaffold)\n")
+		help.WriteString("      --subtype string         RLE control-plane subtype: OpenEnv, HostedAgent, or BYOH\n")
+		help.WriteString("      --type string            RLE control-plane type: Gym or Harness\n")
 		help.WriteString("  -h, --help                   help for init\n")
 		if cmd.InheritedFlags().HasAvailableFlags() {
 			help.WriteString("Global Flags:\n")
@@ -109,12 +109,12 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 		_, _ = fmt.Fprint(cmd.OutOrStdout(), help.String())
 	})
 	cmd.Flags().BoolVar(&flags.force, "force", false, "Overwrite generated files in an existing non-empty session directory")
-	cmd.Flags().StringVar(&flags.rleType, "type", "", "RLE control-plane type: Gym or Agent")
-	cmd.Flags().StringVar(&flags.rleSubtype, "subtype", "", "RLE control-plane subtype: OpenEnv, HostedAgent, or BYOA")
+	cmd.Flags().StringVar(&flags.rleType, "type", "", "RLE control-plane type: Gym or Harness")
+	cmd.Flags().StringVar(&flags.rleSubtype, "subtype", "", "RLE control-plane subtype: OpenEnv, HostedAgent, or BYOH")
 	cmd.Flags().StringVar(&flags.rleVersion, "rle-version", "", "RLE semantic version")
 	cmd.Flags().StringVar(&flags.agentName, "agent-name", "", "HostedAgent name")
 	cmd.Flags().StringVar(&flags.agentVersion, "agent-version", "", "HostedAgent version")
-	cmd.Flags().StringVar(&flags.baseURL, "base-url", "", "BYOA agent base URL")
+	cmd.Flags().StringVar(&flags.baseURL, "base-url", "", "BYOH harness base URL")
 	return cmd
 }
 
@@ -127,17 +127,17 @@ func (a *initAction) Run() error {
 	switch target {
 	case gymOpenEnvInitTarget:
 		return a.initializeGymOpenEnv(target)
-	case rleInitTarget{rleType: project.RleTypeAgent, rleSubtype: project.RleSubtypeHostedAgent}:
+	case rleInitTarget{rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeHostedAgent}:
 		return a.initializeHostedAgent(target)
-	case rleInitTarget{rleType: project.RleTypeAgent, rleSubtype: project.RleSubtypeBYOA}:
-		return a.initializeBYOA(target)
+	case rleInitTarget{rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeBYOH}:
+		return a.initializeBYOH(target)
 	default:
 		return fmt.Errorf("unsupported RLE init target %s/%s", target.rleType, target.rleSubtype)
 	}
 }
 
 func (a *initAction) resolveInitTarget() (rleInitTarget, error) {
-	agentInitEnabled := rleAgentInitEnabled()
+	harnessInitEnabled := rleHarnessInitEnabled()
 	typeValue := strings.TrimSpace(a.flags.rleType)
 	subtypeValue := strings.TrimSpace(a.flags.rleSubtype)
 
@@ -147,31 +147,31 @@ func (a *initAction) resolveInitTarget() (rleInitTarget, error) {
 		if a.noPrompt {
 			return gymOpenEnvInitTarget, nil
 		}
-		target, err = selectRleInitTargetFunc(a.cmd.Context(), agentInitEnabled)
+		target, err = selectRleInitTargetFunc(a.cmd.Context(), harnessInitEnabled)
 	} else {
 		target, err = parseRleInitTarget(typeValue, subtypeValue)
 	}
 	if err != nil {
 		return rleInitTarget{}, err
 	}
-	if isAgentRleInitTarget(target) && !agentInitEnabled {
+	if isHarnessRleInitTarget(target) && !harnessInitEnabled {
 		return rleInitTarget{}, &azdext.LocalError{
 			Message:    fmt.Sprintf("RLE init target %s/%s is currently disabled.", target.rleType, target.rleSubtype),
-			Code:       "rle_agent_init_disabled",
+			Code:       "rle_harness_init_disabled",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: fmt.Sprintf("Set %s=true to enable agent RLE scaffolds.", rleAgentInitEnableEnvVar),
+			Suggestion: fmt.Sprintf("Set %s=true to enable harness RLE scaffolds.", rleHarnessInitEnableEnvVar),
 		}
 	}
 	return target, nil
 }
 
 func (a *initAction) initializeGymOpenEnv(target rleInitTarget) error {
-	if a.hasAgentInputFlags() {
+	if a.hasHarnessInputFlags() {
 		return &azdext.LocalError{
-			Message:    "Agent-specific flags can only be used with --type Agent and an agent --subtype.",
-			Code:       "rle_agent_options_not_supported",
+			Message:    "Harness-specific flags can only be used with --type Harness and a harness --subtype.",
+			Code:       "rle_harness_options_not_supported",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: `Remove the agent flags or select --type Agent with --subtype HostedAgent or BYOA.`,
+			Suggestion: `Remove the harness flags or select --type Harness with --subtype HostedAgent or BYOH.`,
 		}
 	}
 	if a.noPrompt && a.folderName == "" {
@@ -271,10 +271,10 @@ func (a *initAction) initializeHostedAgent(target rleInitTarget) error {
 	}
 	if strings.TrimSpace(a.flags.baseURL) != "" {
 		return &azdext.LocalError{
-			Message:    "--base-url can only be used with --type Agent --subtype BYOA.",
-			Code:       "rle_base_url_not_supported",
+			Message:    "--base-url can only be used with --type Harness --subtype BYOH.",
+			Code:       "rle_harness_base_url_not_supported",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Remove --base-url or select --type Agent --subtype BYOA.",
+			Suggestion: "Remove --base-url or select --type Harness --subtype BYOH.",
 		}
 	}
 
@@ -282,7 +282,7 @@ func (a *initAction) initializeHostedAgent(target rleInitTarget) error {
 	if folderName == "" {
 		folderName = defaultRleFolderName(agentName)
 	}
-	return a.createAgentScaffold(target, project.AgentScaffoldOptions{
+	return a.createHarnessScaffold(target, project.HarnessScaffoldOptions{
 		EnvironmentName: folderName,
 		RleVersion:      a.resolveRleVersion(),
 		Type:            target.rleType,
@@ -292,13 +292,13 @@ func (a *initAction) initializeHostedAgent(target rleInitTarget) error {
 	})
 }
 
-func (a *initAction) initializeBYOA(target rleInitTarget) error {
+func (a *initAction) initializeBYOH(target rleInitTarget) error {
 	if strings.TrimSpace(a.flags.agentName) != "" || strings.TrimSpace(a.flags.agentVersion) != "" {
 		return &azdext.LocalError{
-			Message:    "--agent-name and --agent-version can only be used with --type Agent --subtype HostedAgent.",
+			Message:    "--agent-name and --agent-version can only be used with --type Harness --subtype HostedAgent.",
 			Code:       "rle_hosted_agent_options_not_supported",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Remove the HostedAgent flags or select --type Agent --subtype HostedAgent.",
+			Suggestion: "Remove the HostedAgent flags or select --type Harness --subtype HostedAgent.",
 		}
 	}
 
@@ -308,7 +308,7 @@ func (a *initAction) initializeBYOA(target rleInitTarget) error {
 		folderName, err = a.resolveRequiredInput(
 			"",
 			"Enter RLE environment name",
-			"An RLE environment name is required for a BYOA scaffold.",
+			"An RLE environment name is required for a BYOH scaffold.",
 			"rle_environment_name_required",
 			"Provide a folder name or run the command interactively.",
 		)
@@ -318,15 +318,15 @@ func (a *initAction) initializeBYOA(target rleInitTarget) error {
 	}
 	baseURL, err := a.resolveRequiredInput(
 		a.flags.baseURL,
-		"Enter BYOA agent base URL",
-		"A BYOA agent base URL is required for a BYOA RLE scaffold.",
-		"rle_agent_base_url_required",
+		"Enter BYOH harness base URL",
+		"A BYOH harness base URL is required for a BYOH RLE scaffold.",
+		"rle_harness_base_url_required",
 		"Provide --base-url or run the command interactively.",
 	)
 	if err != nil {
 		return err
 	}
-	return a.createAgentScaffold(target, project.AgentScaffoldOptions{
+	return a.createHarnessScaffold(target, project.HarnessScaffoldOptions{
 		EnvironmentName: folderName,
 		RleVersion:      a.resolveRleVersion(),
 		Type:            target.rleType,
@@ -335,11 +335,11 @@ func (a *initAction) initializeBYOA(target rleInitTarget) error {
 	})
 }
 
-func (a *initAction) createAgentScaffold(target rleInitTarget, options project.AgentScaffoldOptions) error {
+func (a *initAction) createHarnessScaffold(target rleInitTarget, options project.HarnessScaffoldOptions) error {
 	if _, err := normalizeInitRleVersion(options.RleVersion); err != nil {
 		return err
 	}
-	sessionDir, err := createRleAgentScaffoldFunc(options, ".", a.flags.force)
+	sessionDir, err := createRleHarnessScaffoldFunc(options, ".", a.flags.force)
 	if err != nil {
 		return err
 	}
@@ -395,40 +395,40 @@ func (a *initAction) resolveRequiredInput(
 	return value, nil
 }
 
-func (a *initAction) hasAgentInputFlags() bool {
+func (a *initAction) hasHarnessInputFlags() bool {
 	return strings.TrimSpace(a.flags.agentName) != "" ||
 		strings.TrimSpace(a.flags.agentVersion) != "" ||
 		strings.TrimSpace(a.flags.baseURL) != ""
 }
 
-func rleInitTargetOptions(includeAgentTypes bool) []rleInitTargetOption {
+func rleInitTargetOptions(includeHarnessTypes bool) []rleInitTargetOption {
 	options := []rleInitTargetOption{{
 		target: gymOpenEnvInitTarget,
 		label:  "Gym, OpenEnv",
 	}}
-	if includeAgentTypes {
+	if includeHarnessTypes {
 		options = append(options,
 			rleInitTargetOption{
 				target: rleInitTarget{
-					rleType:    project.RleTypeAgent,
+					rleType:    project.RleTypeHarness,
 					rleSubtype: project.RleSubtypeHostedAgent,
 				},
-				label: "Agent, HostedAgent",
+				label: "Harness, HostedAgent",
 			},
 			rleInitTargetOption{
 				target: rleInitTarget{
-					rleType:    project.RleTypeAgent,
-					rleSubtype: project.RleSubtypeBYOA,
+					rleType:    project.RleTypeHarness,
+					rleSubtype: project.RleSubtypeBYOH,
 				},
-				label: "Agent, BYOA",
+				label: "Harness, BYOH",
 			},
 		)
 	}
 	return options
 }
 
-func selectRleInitTarget(ctx context.Context, includeAgentTypes bool) (rleInitTarget, error) {
-	options := rleInitTargetOptions(includeAgentTypes)
+func selectRleInitTarget(ctx context.Context, includeHarnessTypes bool) (rleInitTarget, error) {
+	options := rleInitTargetOptions(includeHarnessTypes)
 	choices := make([]*azdext.SelectChoice, len(options))
 	for index, option := range options {
 		choices[index] = &azdext.SelectChoice{Label: option.label, Value: option.label}
@@ -462,7 +462,7 @@ func parseRleInitTarget(typeValue string, subtypeValue string) (rleInitTarget, e
 			Message:    "--subtype requires --type.",
 			Code:       "rle_init_type_required",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Set --type Gym or --type Agent.",
+			Suggestion: "Set --type Gym or --type Harness.",
 		}
 	}
 
@@ -470,14 +470,14 @@ func parseRleInitTarget(typeValue string, subtypeValue string) (rleInitTarget, e
 	switch strings.ToLower(strings.TrimSpace(typeValue)) {
 	case "gym":
 		rleType = project.RleTypeGym
-	case "agent":
-		rleType = project.RleTypeAgent
+	case "harness":
+		rleType = project.RleTypeHarness
 	default:
 		return rleInitTarget{}, &azdext.LocalError{
 			Message:    fmt.Sprintf("Unsupported RLE type %q.", typeValue),
 			Code:       "rle_init_type_invalid",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Use Gym or Agent.",
+			Suggestion: "Use Gym or Harness.",
 		}
 	}
 
@@ -486,10 +486,10 @@ func parseRleInitTarget(typeValue string, subtypeValue string) (rleInitTarget, e
 			return gymOpenEnvInitTarget, nil
 		}
 		return rleInitTarget{}, &azdext.LocalError{
-			Message:    "--subtype is required when --type is Agent.",
+			Message:    "--subtype is required when --type is Harness.",
 			Code:       "rle_init_subtype_required",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Set --subtype HostedAgent or --subtype BYOA.",
+			Suggestion: "Set --subtype HostedAgent or --subtype BYOH.",
 		}
 	}
 
@@ -499,33 +499,33 @@ func parseRleInitTarget(typeValue string, subtypeValue string) (rleInitTarget, e
 		subtype = project.RleSubtypeOpenEnv
 	case "hostedagent":
 		subtype = project.RleSubtypeHostedAgent
-	case "byoa":
-		subtype = project.RleSubtypeBYOA
+	case "byoh":
+		subtype = project.RleSubtypeBYOH
 	default:
 		return rleInitTarget{}, &azdext.LocalError{
 			Message:    fmt.Sprintf("Unsupported RLE subtype %q.", subtypeValue),
 			Code:       "rle_init_subtype_invalid",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Use OpenEnv, HostedAgent, or BYOA.",
+			Suggestion: "Use OpenEnv, HostedAgent, or BYOH.",
 		}
 	}
 
 	target := rleInitTarget{rleType: rleType, rleSubtype: subtype}
 	if target == gymOpenEnvInitTarget ||
-		target == (rleInitTarget{rleType: project.RleTypeAgent, rleSubtype: project.RleSubtypeHostedAgent}) ||
-		target == (rleInitTarget{rleType: project.RleTypeAgent, rleSubtype: project.RleSubtypeBYOA}) {
+		target == (rleInitTarget{rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeHostedAgent}) ||
+		target == (rleInitTarget{rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeBYOH}) {
 		return target, nil
 	}
 	return rleInitTarget{}, &azdext.LocalError{
 		Message:    fmt.Sprintf("RLE subtype %s is not supported for type %s.", subtype, rleType),
 		Code:       "rle_init_type_configuration_invalid",
 		Category:   azdext.LocalErrorCategoryUser,
-		Suggestion: `Use Gym/OpenEnv, Agent/HostedAgent, or Agent/BYOA.`,
+		Suggestion: `Use Gym/OpenEnv, Harness/HostedAgent, or Harness/BYOH.`,
 	}
 }
 
-func isAgentRleInitTarget(target rleInitTarget) bool {
-	return target.rleType == project.RleTypeAgent
+func isHarnessRleInitTarget(target rleInitTarget) bool {
+	return target.rleType == project.RleTypeHarness
 }
 
 func defaultRleFolderName(agentName string) string {
@@ -541,10 +541,10 @@ func defaultRleFolderName(agentName string) string {
 
 func rleInitTargetLabel(target rleInitTarget) string {
 	switch target {
-	case rleInitTarget{rleType: project.RleTypeAgent, rleSubtype: project.RleSubtypeHostedAgent}:
+	case rleInitTarget{rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeHostedAgent}:
 		return "HostedAgent"
-	case rleInitTarget{rleType: project.RleTypeAgent, rleSubtype: project.RleSubtypeBYOA}:
-		return "BYOA"
+	case rleInitTarget{rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeBYOH}:
+		return "BYOH"
 	default:
 		return string(target.rleSubtype)
 	}

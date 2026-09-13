@@ -13,7 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-type AgentScaffoldOptions struct {
+type HarnessScaffoldOptions struct {
 	EnvironmentName string
 	RleVersion      string
 	Type            RleType
@@ -23,8 +23,8 @@ type AgentScaffoldOptions struct {
 	BaseURL         string
 }
 
-func CreateRleAgentScaffold(options AgentScaffoldOptions, dest string, force bool) (string, error) {
-	config, err := normalizeAgentScaffoldOptions(options)
+func CreateRleHarnessScaffold(options HarnessScaffoldOptions, dest string, force bool) (string, error) {
+	config, err := normalizeHarnessScaffoldOptions(options)
 	if err != nil {
 		return "", err
 	}
@@ -41,9 +41,9 @@ func CreateRleAgentScaffold(options AgentScaffoldOptions, dest string, force boo
 		path    string
 		content string
 	}{
-		{path: "Dockerfile", content: agentDockerfile},
+		{path: "Dockerfile", content: harnessDockerfile},
 		{path: filepath.Join("server", "__init__.py"), content: ""},
-		{path: filepath.Join("server", "env.py"), content: renderAgentServer(config.Rle)},
+		{path: filepath.Join("server", "env.py"), content: renderHarnessServer(config.Rle)},
 	}
 	for _, file := range files {
 		if err := os.WriteFile(filepath.Join(sessionDir, file.path), []byte(file.content), 0644); err != nil {
@@ -56,7 +56,7 @@ func CreateRleAgentScaffold(options AgentScaffoldOptions, dest string, force boo
 	return sessionDir, nil
 }
 
-func normalizeAgentScaffoldOptions(options AgentScaffoldOptions) (RleConfig, error) {
+func normalizeHarnessScaffoldOptions(options HarnessScaffoldOptions) (RleConfig, error) {
 	if strings.TrimSpace(options.RleVersion) == "" {
 		options.RleVersion = DefaultRleVersion
 	}
@@ -83,18 +83,18 @@ func normalizeAgentScaffoldOptions(options AgentScaffoldOptions) (RleConfig, err
 	if err != nil {
 		return RleConfig{}, err
 	}
-	if config.Rle.Type != RleTypeAgent {
+	if config.Rle.Type != RleTypeHarness {
 		return RleConfig{}, &azdext.LocalError{
-			Message:    fmt.Sprintf("RLE agent scaffolds require type Agent, got %q.", config.Rle.Type),
-			Code:       "rle_agent_scaffold_type_invalid",
+			Message:    fmt.Sprintf("RLE harness scaffolds require type Harness, got %q.", config.Rle.Type),
+			Code:       "rle_harness_scaffold_type_invalid",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: `Set type to "Agent" and select HostedAgent or BYOA.`,
+			Suggestion: `Set type to "Harness" and select HostedAgent or BYOH.`,
 		}
 	}
 	return config, nil
 }
 
-const agentDockerfile = `FROM python:3.12-slim
+const harnessDockerfile = `FROM python:3.12-slim
 
 ARG PIP_INDEX_URL=https://pypi.org/simple
 ARG PIP_FALLBACK_INDEX_URL=https://packagefeedproxy.microsoft.io/pypi/simple/
@@ -120,7 +120,7 @@ EXPOSE 8000
 CMD ["uvicorn", "server.env:app", "--host", "0.0.0.0", "--port", "8000"]
 `
 
-const agentServerTemplate = `"""Starter RLE harness for a %s/%s target."""
+const harnessServerTemplate = `"""Starter RLE harness for a %s/%s target."""
 
 from __future__ import annotations
 
@@ -137,25 +137,25 @@ RLE_TYPE = %s
 RLE_SUBTYPE = %s
 AGENT_NAME = %s
 AGENT_VERSION = %s
-AGENT_BASE_URL = %s
+HARNESS_BASE_URL = %s
 
-class AgentAction(Action):
-    """One rollout action supplied by the configured agent."""
+class HarnessAction(Action):
+    """One rollout action supplied to the configured harness."""
 
-    message: str = Field(default="", description="Agent response or action text.")
+    message: str = Field(default="", description="Model response or action text.")
     tool_calls: list[dict[str, Any]] = Field(
         default_factory=list,
         description="Optional parsed tool calls from the agent response.",
     )
 
 
-class AgentObservation(Observation):
-    """Agent-visible messages emitted by the harness."""
+class HarnessObservation(Observation):
+    """Rollout-visible messages emitted by the harness."""
 
     messages: list[dict[str, Any]] = Field(default_factory=list)
 
 
-class AgentHarnessEnvironment(Environment[AgentAction, AgentObservation, State]):
+class RleHarnessEnvironment(Environment[HarnessAction, HarnessObservation, State]):
     """One isolated RLE episode served through OpenEnv."""
 
     def __init__(self) -> None:
@@ -168,7 +168,7 @@ class AgentHarnessEnvironment(Environment[AgentAction, AgentObservation, State])
         seed: Optional[int] = None,
         episode_id: Optional[str] = None,
         **task_data: Any,
-    ) -> AgentObservation:
+    ) -> HarnessObservation:
         del seed
         self._task_data = task_data
         self._state = State(episode_id=episode_id or str(uuid4()), step_count=0)
@@ -177,25 +177,25 @@ class AgentHarnessEnvironment(Environment[AgentAction, AgentObservation, State])
         if agent_input is not None:
             messages.append({"role": "user", "content": str(agent_input)})
         # TODO: initialize task-specific mock tools and grading state here.
-        return AgentObservation(done=False, reward=None, messages=messages)
+        return HarnessObservation(done=False, reward=None, messages=messages)
 
     def step(
         self,
-        action: AgentAction,
+        action: HarnessAction,
         timeout_s: Optional[float] = None,
         **kwargs: Any,
-    ) -> AgentObservation:
+    ) -> HarnessObservation:
         del timeout_s, kwargs
         self._state.step_count += 1
-        # TODO: exercise agent tool calls against harness mocks before grading.
-        return AgentObservation(
+        # TODO: exercise model tool calls against harness mocks before grading.
+        return HarnessObservation(
             done=True,
             reward=self.grade(action),
             messages=[],
             metadata={"step": self._state.step_count},
         )
 
-    def grade(self, action: AgentAction) -> float:
+    def grade(self, action: HarnessAction) -> float:
         del action
         # TODO: score the final agent response and recorded mock-tool effects.
         return 0.0
@@ -214,9 +214,9 @@ class AgentHarnessEnvironment(Environment[AgentAction, AgentObservation, State])
 
 # OpenEnv owns /health, /schema, /metadata, /ws, and the optional /web UI.
 app = create_app(
-    AgentHarnessEnvironment,
-    AgentAction,
-    AgentObservation,
+    RleHarnessEnvironment,
+    HarnessAction,
+    HarnessObservation,
     env_name=%s,
     max_concurrent_envs=1,
 )
@@ -232,10 +232,10 @@ async def example_tool(arguments: dict[str, Any]) -> dict[str, Any]:
 async def grade_rollout(rollout: dict[str, Any]) -> dict[str, Any]:
     del rollout
     # TODO: score a completed rollout for RLE's grader integration.
-    return {"reward": 0.0, "reason": "Implement the RLE grader for this agent."}
+    return {"reward": 0.0, "reason": "Implement the RLE grader for this harness."}
 `
 
-func renderAgentServer(manifest RleManifest) string {
+func renderHarnessServer(manifest RleManifest) string {
 	agentName := "None"
 	agentVersion := "None"
 	baseURL := "None"
@@ -249,7 +249,7 @@ func renderAgentServer(manifest RleManifest) string {
 		baseURL = strconv.Quote(*manifest.BaseURL)
 	}
 	return fmt.Sprintf(
-		agentServerTemplate,
+		harnessServerTemplate,
 		manifest.Type,
 		manifest.Subtype,
 		strconv.Quote(string(manifest.Type)),

@@ -20,12 +20,12 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-func TestCreateRleAgentScaffoldWritesHostedAgentFiles(t *testing.T) {
-	sessionDir, err := CreateRleAgentScaffold(
-		AgentScaffoldOptions{
+func TestCreateRleHarnessScaffoldWritesHostedAgentFiles(t *testing.T) {
+	sessionDir, err := CreateRleHarnessScaffold(
+		HarnessScaffoldOptions{
 			EnvironmentName: "support_agent",
 			RleVersion:      "1.0.0",
-			Type:            RleTypeAgent,
+			Type:            RleTypeHarness,
 			Subtype:         RleSubtypeHostedAgent,
 			AgentName:       "support-agent",
 			AgentVersion:    "3",
@@ -44,7 +44,7 @@ func TestCreateRleAgentScaffoldWritesHostedAgentFiles(t *testing.T) {
 	for _, expected := range []string{
 		`name = 'support_agent'`,
 		`version = '1.0.0'`,
-		`type = 'Agent'`,
+		`type = 'Harness'`,
 		`subtype = 'HostedAgent'`,
 		`agentName = 'support-agent'`,
 		`agentVersion = '3'`,
@@ -60,10 +60,10 @@ func TestCreateRleAgentScaffoldWritesHostedAgentFiles(t *testing.T) {
 	}
 	for _, expected := range []string{
 		`AGENT_NAME = "support-agent"`,
-		`RLE_TYPE = "Agent"`,
+		`RLE_TYPE = "Harness"`,
 		`RLE_SUBTYPE = "HostedAgent"`,
 		"from openenv.core.env_server.http_server import create_app",
-		"AgentHarnessEnvironment",
+		"RleHarnessEnvironment",
 		`@app.post("/tools/example")`,
 		`@app.post("/grade")`,
 	} {
@@ -87,14 +87,14 @@ func TestCreateRleAgentScaffoldWritesHostedAgentFiles(t *testing.T) {
 	}
 }
 
-func TestCreateRleAgentScaffoldNormalizesBYOABaseURL(t *testing.T) {
-	sessionDir, err := CreateRleAgentScaffold(
-		AgentScaffoldOptions{
+func TestCreateRleHarnessScaffoldNormalizesBYOHBaseURL(t *testing.T) {
+	sessionDir, err := CreateRleHarnessScaffold(
+		HarnessScaffoldOptions{
 			EnvironmentName: "customer_agent",
 			RleVersion:      "1.0.0",
-			Type:            RleTypeAgent,
-			Subtype:         RleSubtypeBYOA,
-			BaseURL:         "https://agent.example.com/rle/",
+			Type:            RleTypeHarness,
+			Subtype:         RleSubtypeBYOH,
+			BaseURL:         "https://harness.example.com/rle/",
 		},
 		t.TempDir(),
 		false,
@@ -107,29 +107,29 @@ func TestCreateRleAgentScaffoldNormalizesBYOABaseURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(config), `baseUrl = 'https://agent.example.com/rle/'`) {
-		t.Fatalf("expected normalized BYOA base URL, got:\n%s", config)
+	if !strings.Contains(string(config), `baseUrl = 'https://harness.example.com/rle/'`) {
+		t.Fatalf("expected normalized BYOH base URL, got:\n%s", config)
 	}
 }
 
-func TestCreateRleAgentScaffoldRejectsUnsafeBYOABaseURL(t *testing.T) {
-	_, err := CreateRleAgentScaffold(
-		AgentScaffoldOptions{
+func TestCreateRleHarnessScaffoldRejectsUnsafeBYOHBaseURL(t *testing.T) {
+	_, err := CreateRleHarnessScaffold(
+		HarnessScaffoldOptions{
 			EnvironmentName: "customer_agent",
-			Type:            RleTypeAgent,
-			Subtype:         RleSubtypeBYOA,
-			BaseURL:         "https://user@agent.example.com",
+			Type:            RleTypeHarness,
+			Subtype:         RleSubtypeBYOH,
+			BaseURL:         "https://user@harness.example.com",
 		},
 		t.TempDir(),
 		false,
 	)
 	localError, ok := err.(*azdext.LocalError)
-	if !ok || localError.Code != "rle_agent_base_url_invalid" {
+	if !ok || localError.Code != "rle_harness_base_url_invalid" {
 		t.Fatalf("expected invalid base URL error, got %v", err)
 	}
 }
 
-func TestCreateRleAgentScaffoldRunsOpenEnvRuntime(t *testing.T) {
+func TestCreateRleHarnessScaffoldRunsOpenEnvRuntime(t *testing.T) {
 	if os.Getenv("AZD_TEST_RLE_DOCKER_E2E") != "1" {
 		t.Skip("Skipping RLE Docker integration test. Set AZD_TEST_RLE_DOCKER_E2E=1 to enable.")
 	}
@@ -139,11 +139,11 @@ func TestCreateRleAgentScaffoldRunsOpenEnvRuntime(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
 	defer cancel()
-	sessionDir, err := CreateRleAgentScaffold(
-		AgentScaffoldOptions{
+	sessionDir, err := CreateRleHarnessScaffold(
+		HarnessScaffoldOptions{
 			EnvironmentName: "docker_agent",
 			RleVersion:      "1.0.0",
-			Type:            RleTypeAgent,
+			Type:            RleTypeHarness,
 			Subtype:         RleSubtypeHostedAgent,
 			AgentName:       "docker-agent",
 			AgentVersion:    "1",
@@ -156,8 +156,8 @@ func TestCreateRleAgentScaffoldRunsOpenEnvRuntime(t *testing.T) {
 	}
 
 	suffix := fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano())
-	imageName := "azd-rle-agent-scaffold-" + suffix
-	containerName := "azd-rle-agent-scaffold-" + suffix
+	imageName := "azd-rle-harness-scaffold-" + suffix
+	containerName := "azd-rle-harness-scaffold-" + suffix
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cleanupCancel()

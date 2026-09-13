@@ -7,7 +7,7 @@
 - Manage remote invoke through temporary instance groups and instances instead of direct sandbox lifecycle APIs.
 - Retry runtime creation while a published environment's disk image is still being prepared.
 - Replace `.azd-rle.json` with a host-agnostic `rle.toml` manifest as the sole local RLE identity.
-- Define RLE releases with control-plane `type` and `subtype` values: `Gym`/`OpenEnv`, `Agent`/`HostedAgent`, and `Agent`/`BYOA`.
+- Define RLE releases with control-plane `type` and `subtype` values: `Gym`/`OpenEnv`, `Harness`/`HostedAgent`, and `Harness`/`BYOH`.
 - Pin local invoke to the manifest's `(name, version)` identity and require `--version` for source-free invocation.
 - Derive an explicit service version bump from the manifest version and verify the published release identity.
 - Tag published ACR images with the manifest RLE version rather than `latest`.

@@ -19,18 +19,18 @@ import (
 )
 
 const (
-	RleConfigFile      = "rle.toml"
-	DefaultRleVersion  = "1.0.0"
-	maxAgentNameLength = 256
-	maxAgentVersionLen = 128
-	maxAgentBaseURLLen = 2048
+	RleConfigFile        = "rle.toml"
+	DefaultRleVersion    = "1.0.0"
+	maxAgentNameLength   = 256
+	maxAgentVersionLen   = 128
+	maxHarnessBaseURLLen = 2048
 )
 
 type RleType string
 
 const (
-	RleTypeGym   RleType = "Gym"
-	RleTypeAgent RleType = "Agent"
+	RleTypeGym     RleType = "Gym"
+	RleTypeHarness RleType = "Harness"
 )
 
 type RleSubtype string
@@ -38,7 +38,7 @@ type RleSubtype string
 const (
 	RleSubtypeOpenEnv     RleSubtype = "OpenEnv"
 	RleSubtypeHostedAgent RleSubtype = "HostedAgent"
-	RleSubtypeBYOA        RleSubtype = "BYOA"
+	RleSubtypeBYOH        RleSubtype = "BYOH"
 )
 
 // RleConfig is the host-agnostic source configuration for one immutable RLE release.
@@ -140,19 +140,19 @@ func NormalizeRleConfig(config RleConfig) (RleConfig, error) {
 		}
 		if manifest.AgentName != nil || manifest.AgentVersion != nil || manifest.BaseURL != nil {
 			return RleConfig{}, localError(
-				"agentName, agentVersion, and baseUrl are allowed only when rle.type is Agent.",
+				"agentName, agentVersion, and baseUrl are allowed only when rle.type is Harness.",
 				"rle_manifest_type_configuration_invalid",
-				"Remove agent configuration from this Gym/OpenEnv manifest.",
+				"Remove harness configuration from this Gym/OpenEnv manifest.",
 			)
 		}
-	case RleTypeAgent:
+	case RleTypeHarness:
 		switch manifest.Subtype {
 		case RleSubtypeHostedAgent:
 			if manifest.BaseURL != nil {
 				return RleConfig{}, localError(
 					"baseUrl must be omitted when rle.subtype is HostedAgent.",
 					"rle_manifest_type_configuration_invalid",
-					"Remove baseUrl or set rle.subtype to BYOA.",
+					"Remove baseUrl or set rle.subtype to BYOH.",
 				)
 			}
 			agentName, err := normalizeRequiredAgentField(
@@ -182,31 +182,31 @@ func NormalizeRleConfig(config RleConfig) (RleConfig, error) {
 			}
 			manifest.AgentName = &agentName
 			manifest.AgentVersion = &agentVersion
-		case RleSubtypeBYOA:
+		case RleSubtypeBYOH:
 			if manifest.AgentName != nil || manifest.AgentVersion != nil {
 				return RleConfig{}, localError(
-					"agentName and agentVersion must be omitted when rle.subtype is BYOA.",
+					"agentName and agentVersion must be omitted when rle.subtype is BYOH.",
 					"rle_manifest_type_configuration_invalid",
 					"Remove the Hosted Agent fields or set rle.subtype to HostedAgent.",
 				)
 			}
-			baseURL, err := normalizeAgentBaseURL(manifest.BaseURL)
+			baseURL, err := normalizeHarnessBaseURL(manifest.BaseURL)
 			if err != nil {
 				return RleConfig{}, err
 			}
 			manifest.BaseURL = &baseURL
 		default:
 			return RleConfig{}, localError(
-				"Only the HostedAgent and BYOA subtypes are supported when rle.type is Agent.",
+				"Only the HostedAgent and BYOH subtypes are supported when rle.type is Harness.",
 				"rle_manifest_type_configuration_invalid",
-				`Set rle.subtype to "HostedAgent" or "BYOA".`,
+				`Set rle.subtype to "HostedAgent" or "BYOH".`,
 			)
 		}
 	default:
 		return RleConfig{}, localError(
-			"rle.type must be Gym or Agent.",
+			"rle.type must be Gym or Harness.",
 			"rle_manifest_type_invalid",
-			`Set rle.type to "Gym" or "Agent".`,
+			`Set rle.type to "Gym" or "Harness".`,
 		)
 	}
 
@@ -295,13 +295,13 @@ func normalizeRleType(value RleType) (RleType, error) {
 	switch strings.ToLower(strings.TrimSpace(string(value))) {
 	case "gym":
 		return RleTypeGym, nil
-	case "agent":
-		return RleTypeAgent, nil
+	case "harness":
+		return RleTypeHarness, nil
 	default:
 		return "", localError(
-			"rle.type must be Gym or Agent.",
+			"rle.type must be Gym or Harness.",
 			"rle_manifest_type_invalid",
-			`Set rle.type to "Gym" or "Agent".`,
+			`Set rle.type to "Gym" or "Harness".`,
 		)
 	}
 }
@@ -312,13 +312,13 @@ func normalizeRleSubtype(value RleSubtype) (RleSubtype, error) {
 		return RleSubtypeOpenEnv, nil
 	case "hostedagent":
 		return RleSubtypeHostedAgent, nil
-	case "byoa":
-		return RleSubtypeBYOA, nil
+	case "byoh":
+		return RleSubtypeBYOH, nil
 	default:
 		return "", localError(
-			"rle.subtype must be OpenEnv, HostedAgent, or BYOA.",
+			"rle.subtype must be OpenEnv, HostedAgent, or BYOH.",
 			"rle_manifest_subtype_invalid",
-			`Set rle.subtype to "OpenEnv", "HostedAgent", or "BYOA".`,
+			`Set rle.subtype to "OpenEnv", "HostedAgent", or "BYOH".`,
 		)
 	}
 }
@@ -342,19 +342,19 @@ func normalizeRequiredAgentField(value *string, fieldName string, maximumLength 
 	return normalized, nil
 }
 
-func normalizeAgentBaseURL(value *string) (string, error) {
+func normalizeHarnessBaseURL(value *string) (string, error) {
 	if value == nil || strings.TrimSpace(*value) == "" {
 		return "", localError(
-			"baseUrl is required when rle.subtype is BYOA.",
-			"rle_agent_base_url_required",
+			"baseUrl is required when rle.subtype is BYOH.",
+			"rle_harness_base_url_required",
 			"Add an absolute HTTPS baseUrl to rle.toml.",
 		)
 	}
 	normalized := strings.TrimSpace(*value)
-	if utf16Length(normalized) > maxAgentBaseURLLen {
+	if utf16Length(normalized) > maxHarnessBaseURLLen {
 		return "", localError(
-			fmt.Sprintf("baseUrl must be at most %d characters.", maxAgentBaseURLLen),
-			"rle_agent_base_url_invalid",
+			fmt.Sprintf("baseUrl must be at most %d characters.", maxHarnessBaseURLLen),
+			"rle_harness_base_url_invalid",
 			"Use a shorter absolute HTTPS baseUrl without credentials, query, or fragment.",
 		)
 	}
@@ -371,8 +371,8 @@ func normalizeAgentBaseURL(value *string) (string, error) {
 		parsed.Opaque != "" {
 		return "", localError(
 			"baseUrl must be an absolute HTTPS URL without credentials, query, or fragment.",
-			"rle_agent_base_url_invalid",
-			"Use a URL such as https://agent.example.com/rle/.",
+			"rle_harness_base_url_invalid",
+			"Use a URL such as https://harness.example.com/rle/.",
 		)
 	}
 	parsed.Scheme = "https"

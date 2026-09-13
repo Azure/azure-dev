@@ -2,7 +2,7 @@
 capabilities:
   - custom-commands
   - metadata
-description: Manage versioned RLE resources from a host-agnostic rle.toml manifest. Commands are hidden by default; set AZD_AI_RLE_ENABLE=true to enable them. Set AZD_AI_RLE_AGENT_INIT_ENABLE=true to preview agent scaffolds. (Preview)
+description: Manage versioned RLE resources from a host-agnostic rle.toml manifest. Commands are hidden by default; set AZD_AI_RLE_ENABLE=true to enable them. Set AZD_AI_RLE_HARNESS_INIT_ENABLE=true to preview harness scaffolds. (Preview)
 displayName: RLE (Preview)
 id: azure.ai.rle
 language: go
@@ -14,7 +14,7 @@ usage: azd ai rle <command> [options]
 version: 0.4.1-preview
 examples:
   - name: init
-    description: Select a Gym/OpenEnv sample or, with the agent preview flag, scaffold an Agent/HostedAgent or Agent/BYOA RLE.
+    description: Select a Gym/OpenEnv sample or, with the harness preview flag, scaffold a Harness/HostedAgent or Harness/BYOH RLE.
     usage: azd ai rle init [folder-name]
   - name: publish
     description: Build, push, and publish the RLE release declared in rle.toml.

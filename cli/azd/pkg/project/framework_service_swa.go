@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"io"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -108,7 +109,9 @@ func (p *swaProject) Build(
 		previewerWriter,
 		p.env.Environ(),
 	)
-	p.console.StopPreviewer(ctx, false)
+	if previewerWriter != io.Discard {
+		p.console.StopPreviewer(ctx, false)
+	}
 
 	if err != nil {
 		return nil, err

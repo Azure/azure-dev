@@ -113,7 +113,9 @@ This lets the host retain deploy lifecycle output without mixing it with
 output from another concurrent handler or service target. Outside a lifecycle
 invocation, the writer falls back to `os.Stdout`.
 Large writes are split into smaller progress messages before they are sent to
-the host.
+the host. Invalid UTF-8 bytes are replaced with the Unicode replacement
+character for the host progress messages; the original bytes are still written
+to the local output writer.
 
 Use the writer supplied by the context for lifecycle output. Direct writes to
 process-wide output writers cannot be correlated with a specific invocation.

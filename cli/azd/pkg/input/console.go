@@ -355,13 +355,13 @@ func defaultShowPreviewerOptions() *ShowPreviewerOptions {
 }
 
 func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) io.Writer {
+	c.showProgressMu.Lock()
+	defer c.showProgressMu.Unlock()
+
 	if c.previewerSuppressed.Load() {
 		log.Printf("ShowPreviewer suppressed — progress table active")
 		return io.Discard
 	}
-
-	c.showProgressMu.Lock()
-	defer c.showProgressMu.Unlock()
 
 	if c.previewer.Load() != nil {
 		// Previewer already active from a concurrent caller (e.g. concurrent graph steps).

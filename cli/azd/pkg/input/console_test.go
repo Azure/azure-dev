@@ -496,6 +496,43 @@ func TestAskerConsole_Previewer_SingleUser(t *testing.T) {
 	require.Equal(t, len("late write\n"), n)
 }
 
+func TestAskerConsole_Previewer_SuppressedShowDoesNotReleaseActiveOwner(t *testing.T) {
+	formatter, err := output.NewFormatter(string(output.NoneFormat))
+	require.NoError(t, err)
+
+	lines := &lineCapturer{}
+	c := NewConsole(
+		false,
+		false,
+		Writers{Output: lines},
+		ConsoleHandles{
+			Stderr: os.Stderr,
+			Stdin:  os.Stdin,
+			Stdout: lines,
+		},
+		formatter,
+		nil,
+	)
+	ctx := t.Context()
+
+	activeWriter := c.ShowPreviewer(ctx, nil)
+	require.NotEqual(t, io.Discard, activeWriter)
+
+	ps, ok := c.(PreviewerPauser)
+	require.True(t, ok)
+	ps.PausePreviewer()
+	suppressedWriter := c.ShowPreviewer(ctx, nil)
+	require.Equal(t, io.Discard, suppressedWriter)
+
+	// A suppressed ShowPreviewer does not acquire ownership, so its caller
+	// must not call StopPreviewer. The active owner can still release safely.
+	c.StopPreviewer(ctx, false)
+	require.NotNil(t, c.(*AskerConsole).previewer.Load())
+
+	ps.ResumePreviewer()
+	require.Nil(t, c.(*AskerConsole).previewer.Load())
+}
+
 // TestAskerConsole_Previewer_ConcurrentWriteStress runs many goroutines writing
 // and stopping concurrently to verify there are no data races.
 func TestAskerConsole_Previewer_ConcurrentWriteStress(t *testing.T) {

@@ -234,6 +234,8 @@ func TestParseExtensionUsages(t *testing.T) {
 	}
 	if err := os.WriteFile(source, []byte(`package demo
 
+import azdext "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
 var request = &azdext.ReportUsageRequest{
 	EventName: "demo.event",
 	Attributes: map[string]string{
@@ -270,8 +272,9 @@ func TestParseExtensionTelemetryEvent(t *testing.T) {
 		[]byte(`package demo
 
 import (
-	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
-	otherTelemetry "example.com/other/telemetry"
+		otherAzdext "example.com/other/azdext"
+		foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
+		otherTelemetry "example.com/other/telemetry"
 )
 
 const (
@@ -316,6 +319,13 @@ func unrelatedEvent() otherTelemetry.Event {
 			"other.field": "other",
 		},
 	}
+}
+
+var unrelatedRequest = &otherAzdext.ReportUsageRequest{
+	EventName: "other.request",
+	Attributes: map[string]string{
+		"other.request.field": "other",
+	},
 }
 `),
 		0o600,
@@ -365,8 +375,11 @@ var attributes = map[string]string{
 		t.Fatalf("unexpected definitions: %#v", usages[0].definitions)
 	}
 	if values["extension event:other.event"] ||
-		values["extension field:other.field"] {
-		t.Fatalf("unrelated Event type was recognized: %#v", usages[0].definitions)
+		values["extension field:other.field"] ||
+		values["extension event:other.request"] ||
+		values["extension field:other.request.field"] {
+		t.Fatalf("unrelated telemetry type was recognized: %#v",
+			usages[0].definitions)
 	}
 }
 

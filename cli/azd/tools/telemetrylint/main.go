@@ -11,7 +11,7 @@ import (
 	"go/token"
 	"io/fs"
 	"os"
-	pathpkg "path"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -20,10 +20,12 @@ import (
 )
 
 const (
-	eventsSource = "cli/azd/internal/tracing/events/events.go"
-	fieldsSource = "cli/azd/internal/tracing/fields/fields.go"
-	schemaDoc    = "docs/specs/metrics-audit/telemetry-schema.md"
-	referenceDoc = "docs/reference/telemetry-data.md"
+	eventsSource           = "cli/azd/internal/tracing/events/events.go"
+	fieldsSource           = "cli/azd/internal/tracing/fields/fields.go"
+	schemaDoc              = "docs/specs/metrics-audit/telemetry-schema.md"
+	referenceDoc           = "docs/reference/telemetry-data.md"
+	azdextImport           = "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	foundryTelemetryImport = "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 )
 
 type definition struct {
@@ -613,7 +615,7 @@ func parseExtensionUsages(root string) ([]extensionUsage, error) {
 
 			var definitions []definition
 			switch {
-			case isReportUsageRequest(literal.Type):
+			case isReportUsageRequest(source.file, literal.Type):
 				definitions = reportUsageDefinitions(
 					literal, source.path, source.fileSet, source.data)
 			case isTelemetryEventLiteral(source.file, literal):
@@ -1083,7 +1085,7 @@ func isTelemetryEventLiteral(file *ast.File, literal *ast.CompositeLit) bool {
 	if !ok || !isImportedPackage(
 		file,
 		packageName.Name,
-		"github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry",
+		foundryTelemetryImport,
 	) {
 		return false
 	}
@@ -1118,7 +1120,7 @@ func isImportedPackage(file *ast.File, packageName, importPath string) bool {
 		if specification.Name != nil {
 			return specification.Name.Name == packageName
 		}
-		return pathpkg.Base(currentPath) == packageName
+		return path.Base(currentPath) == packageName
 	}
 	return false
 }
@@ -1369,14 +1371,18 @@ func isLiteralAttributeCall(call *ast.CallExpr) bool {
 	}
 }
 
-func isReportUsageRequest(expression ast.Expr) bool {
+func isReportUsageRequest(file *ast.File, expression ast.Expr) bool {
 	switch current := expression.(type) {
 	case *ast.StarExpr:
-		return isReportUsageRequest(current.X)
+		return isReportUsageRequest(file, current.X)
 	case *ast.SelectorExpr:
-		return current.Sel.Name == "ReportUsageRequest"
+		packageName, ok := current.X.(*ast.Ident)
+		return ok &&
+			current.Sel.Name == "ReportUsageRequest" &&
+			isImportedPackage(file, packageName.Name, azdextImport)
 	case *ast.Ident:
-		return current.Name == "ReportUsageRequest"
+		return current.Name == "ReportUsageRequest" &&
+			isImportedPackage(file, ".", azdextImport)
 	default:
 		return false
 	}

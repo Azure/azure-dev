@@ -1010,14 +1010,13 @@ func validateAgentServiceDefinition(definition any) error {
 	return nil
 }
 
-// agentDefinitionFromDisk reads a legacy agent.yaml/agent.yml from the service
-// directory. This is the deprecation fallback for projects written before the
-// definition moved into azure.yaml.
+// agentDefinitionFromDisk reads a legacy definition and companion manifest
+// from the service directory.
 func agentDefinitionFromDisk(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (agent_yaml.ContainerAgent, bool, AgentDefinitionSource, error) {
-	for _, name := range []string{"agent.yaml", "agent.yml"} {
+	for _, name := range []string{"agent.yaml", "agent.yml", "agent.manifest.yaml", "agent.manifest.yml"} {
 		defPath, err := paths.JoinAllowRoot(projectRoot, svc.GetRelativePath(), name)
 		if err != nil {
 			return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceDisk, exterrors.Validation(
@@ -1026,12 +1025,25 @@ func agentDefinitionFromDisk(
 				"update azure.yaml so the agent service path stays within the project directory",
 			)
 		}
-		data, err := os.ReadFile(defPath) //nolint:gosec // path derived from azd project config
-		if err != nil {
+		data, err := os.ReadFile(defPath) //nolint:gosec // The path is scoped to the configured service directory.
+		if os.IsNotExist(err) {
 			continue
 		}
-		ca, isHosted, err := parseContainerAgentYAML(data)
-		return ca, isHosted, AgentDefinitionSourceDisk, err
+		if err != nil {
+			return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceDisk,
+				fmt.Errorf("inspect agent definition %q: %w", defPath, err)
+		}
+		var header agent_yaml.AgentDefinition
+		if err := yaml.Unmarshal(data, &header); err == nil &&
+			header.Kind != "" && header.Kind != agent_yaml.AgentKindHosted {
+			definition, hosted, err := parseContainerAgentYAML(data)
+			return definition, hosted, AgentDefinitionSourceDisk, err
+		}
+		loaded, err := LoadAgentPreviewDefinition(defPath, nil)
+		if err != nil {
+			return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceDisk, err
+		}
+		return loaded.Definition, true, AgentDefinitionSourceDisk, nil
 	}
 
 	return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceDisk, exterrors.Dependency(

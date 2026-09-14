@@ -7,6 +7,7 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Feature | Stage |
 |---|---|
 | `add` | Beta |
+| [`ai agent deploy --dry-run`](../../cli/azd/extensions/azure.ai.agents/README.md#previewing-an-agent-deployment) (legacy/current hosted-agent configuration and image preview) | Beta |
 | `auth` | Stable |
 | `config` | Stable |
 | `deploy` | Stable |

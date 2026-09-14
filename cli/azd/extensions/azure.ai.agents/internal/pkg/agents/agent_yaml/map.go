@@ -1067,6 +1067,16 @@ func createAgentAPIRequest(
 		}
 		// Copy other metadata as strings
 		for key, value := range *agentDefinition.Metadata {
+			if key == "tags" {
+				tags, err := serializeMetadataTags(value)
+				if err != nil {
+					return nil, err
+				}
+				if tags != "" {
+					metadata[key] = tags
+				}
+				continue
+			}
 			if key != "authors" {
 				if strValue, ok := value.(string); ok {
 					metadata[key] = strValue

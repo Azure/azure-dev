@@ -2298,6 +2298,31 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	azdEnv map[string]string,
 	extraOptions []agent_yaml.AgentBuildOption,
 ) (*deployPrepResult, error) {
+	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] != "" {
+		if p.agentDefinitionPath != "" {
+			fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
+		}
+		fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["FOUNDRY_PROJECT_ENDPOINT"])
+		fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
+	}
+
+	result, err := prepareDeployRequest(serviceConfig, agentDef, azdEnv, extraOptions)
+	if err != nil {
+		return nil, err
+	}
+	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
+	WarnOrphanedConfigEnv(serviceConfig)
+	return result, nil
+}
+
+// prepareDeployRequest builds the same request for deploy and preview without
+// logging, provisioning resources, or modifying the project or environment.
+func prepareDeployRequest(
+	serviceConfig *azdext.ServiceConfig,
+	agentDef agent_yaml.ContainerAgent,
+	azdEnv map[string]string,
+	extraOptions []agent_yaml.AgentBuildOption,
+) (*deployPrepResult, error) {
 	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeMissingAiProjectEndpoint,
@@ -2305,12 +2330,6 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
 		)
 	}
-
-	if p.agentDefinitionPath != "" {
-		fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
-	}
-	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["FOUNDRY_PROJECT_ENDPOINT"])
-	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
 	// Seed core-expanded values before resolving legacy variables.
 	resolvedEnvVars := maps.Clone(serviceConfig.GetEnvironment())
@@ -2322,7 +2341,7 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 			if _, found := resolvedEnvVars[envVar.Name]; found {
 				continue
 			}
-			resolvedEnvVars[envVar.Name] = p.resolveEnvironmentVariables(
+			resolvedEnvVars[envVar.Name] = resolveEnvironmentVariables(
 				envVar.Name,
 				envVar.Value,
 				serviceConfig.GetEnvironment(),
@@ -2340,9 +2359,6 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 			"check the service configuration in azure.yaml",
 		)
 	}
-	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
-	WarnOrphanedConfigEnv(serviceConfig)
-
 	var cpu, memory string
 	if foundryAgentConfig != nil && foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
 		cpu = foundryAgentConfig.Container.Resources.Cpu
@@ -2353,9 +2369,15 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	// and inline services consistent.
 	if cpu == "" {
 		cpu = DefaultCpu
+		if agentDef.Resources != nil && agentDef.Resources.Cpu != "" {
+			cpu = agentDef.Resources.Cpu
+		}
 	}
 	if memory == "" {
 		memory = DefaultMemory
+		if agentDef.Resources != nil && agentDef.Resources.Memory != "" {
+			memory = agentDef.Resources.Memory
+		}
 	}
 
 	// Build options: env vars + cpu/memory (if set) + caller-provided extras
@@ -4240,7 +4262,7 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 }
 
 // resolveEnvironmentVariables expands legacy inline templates.
-func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(
+func resolveEnvironmentVariables(
 	name string,
 	value string,
 	serviceEnvironment map[string]string,

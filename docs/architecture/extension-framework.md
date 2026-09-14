@@ -88,6 +88,15 @@ Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC 
 
 First-party extensions live in `cli/azd/extensions/` and are registered in `cli/azd/extensions/registry.json`.
 
+The agents extension exposes a read-only
+[`azd ai agent deploy --dry-run`](../../cli/azd/extensions/azure.ai.agents/README.md#previewing-an-agent-deployment)
+custom command option. It compares hosted-agent configuration from an initialized
+project, standalone definition, and companion manifest with the latest Foundry
+agent version, and plans container image build/push work without executing it.
+Conflicting source settings are reported explicitly. A missing remote agent
+produces a creation preview. This does not add a service-target preview capability or enable
+`azd deploy --preview`.
+
 ## Detailed Reference
 
 - [Extension Framework Guide](../../cli/azd/docs/extensions/extension-framework.md) — Getting started

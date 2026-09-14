@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"os"
 	"sync"
 	"testing"
 
@@ -89,6 +90,13 @@ func workflowArgs(
 	return server.requests[index].Workflow.Steps[0].Command.Args
 }
 
+func expectedProjectWorkflowArgs(t *testing.T, args ...string) []string {
+	t.Helper()
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	return append(args, "--cwd", cwd)
+}
+
 func TestAuthorFoundryProjectUsesPublicCommand(t *testing.T) {
 	t.Parallel()
 
@@ -104,7 +112,7 @@ func TestAuthorFoundryProjectUsesPublicCommand(t *testing.T) {
 	}
 	require.NoError(t, authorFoundryProject(t.Context(), client, target))
 
-	assert.Equal(t, []string{
+	assert.Equal(t, expectedProjectWorkflowArgs(t,
 		"ai",
 		"project",
 		"add",
@@ -113,7 +121,7 @@ func TestAuthorFoundryProjectUsesPublicCommand(t *testing.T) {
 		"none",
 		"--project-id",
 		target.ResourceId,
-	}, workflowArgs(t, workflowServer, 0))
+	), workflowArgs(t, workflowServer, 0))
 	assert.Empty(t, projectServer.added)
 }
 
@@ -132,7 +140,7 @@ func TestAuthorFoundryProjectUsesEndpointFlag(t *testing.T) {
 
 	require.NoError(t, authorFoundryProject(t.Context(), client, target))
 
-	assert.Equal(t, []string{
+	assert.Equal(t, expectedProjectWorkflowArgs(t,
 		"ai",
 		"project",
 		"add",
@@ -141,7 +149,7 @@ func TestAuthorFoundryProjectUsesEndpointFlag(t *testing.T) {
 		"none",
 		"--project-endpoint",
 		target.Endpoint(),
-	}, workflowArgs(t, workflowServer, 0))
+	), workflowArgs(t, workflowServer, 0))
 	assert.Empty(t, projectServer.added)
 }
 
@@ -171,7 +179,7 @@ func TestAuthorFoundryDeploymentsUsesPublicCommand(t *testing.T) {
 		[]project.Deployment{deployment},
 	))
 
-	assert.Equal(t, []string{
+	assert.Equal(t, expectedProjectWorkflowArgs(t,
 		"ai",
 		"project",
 		"deployment",
@@ -189,7 +197,7 @@ func TestAuthorFoundryDeploymentsUsesPublicCommand(t *testing.T) {
 		"GlobalStandard",
 		"--capacity",
 		"50",
-	}, workflowArgs(t, workflowServer, 0))
+	), workflowArgs(t, workflowServer, 0))
 	assert.Empty(t, projectServer.added)
 }
 

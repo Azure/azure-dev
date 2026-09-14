@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -151,6 +153,15 @@ func runProjectWorkflow(
 	operation string,
 	errorCode string,
 ) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return exterrors.Dependency(
+			errorCode,
+			fmt.Sprintf("%s failed: resolving the project directory: %s", operation, err),
+			"retry the command from the azd project directory",
+		)
+	}
+	args = append(slices.Clone(args), "--cwd", cwd)
 	workflow := &azdext.Workflow{
 		Name: operation,
 		Steps: []*azdext.WorkflowStep{

@@ -930,14 +930,6 @@ func (a *InitFromCodeAction) addToProject(
 	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
-	if err := setServiceEnvironment(
-		ctx,
-		a.azdClient,
-		agentServiceName,
-		agentEnvironment,
-	); err != nil {
-		return err
-	}
 
 	if err := recordFoundryProjectEnv(
 		ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject,
@@ -956,6 +948,17 @@ func (a *InitFromCodeAction) addToProject(
 		a.azdClient,
 		a.environment.Name,
 		resourceDeployments,
+	); err != nil {
+		return err
+	}
+	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
+		return fmt.Errorf("restoring agent service after project authoring: %w", err)
+	}
+	if err := setServiceEnvironment(
+		ctx,
+		a.azdClient,
+		agentServiceName,
+		agentEnvironment,
 	); err != nil {
 		return err
 	}

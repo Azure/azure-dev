@@ -331,6 +331,9 @@ func runInitManaged(
 	); err != nil {
 		return err
 	}
+	if err := addPromptAgentService(ctx, azdClient, agentName, serviceRelPath, &promptAgent); err != nil {
+		return err
+	}
 	if _, err := emitResourceServices(
 		ctx, azdClient, agentName,
 		resources,

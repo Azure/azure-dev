@@ -1057,12 +1057,41 @@ func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) 
 	rootCmd := w.newCommand()
 	// Always set args explicitly to prevent Cobra from falling back to os.Args[1:].
 	// Cobra uses os.Args when cmd.args is nil (but not when it's an empty slice).
-	mergedArgs := append(slices.Clone(args), w.globalArgs...)
+	globalArgs := w.globalArgs
+	if hasWorkflowCwdArg(args) {
+		globalArgs = withoutWorkflowCwdArg(globalArgs)
+	}
+	mergedArgs := append(slices.Clone(args), globalArgs...)
 	if mergedArgs == nil {
 		mergedArgs = []string{}
 	}
 	rootCmd.SetArgs(mergedArgs)
 	return rootCmd.ExecuteContext(childCtx)
+}
+
+func hasWorkflowCwdArg(args []string) bool {
+	return slices.ContainsFunc(args, func(arg string) bool {
+		return arg == "--cwd" || arg == "-C" ||
+			strings.HasPrefix(arg, "--cwd=") ||
+			strings.HasPrefix(arg, "-C=")
+	})
+}
+
+func withoutWorkflowCwdArg(args []string) []string {
+	filtered := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--cwd" || arg == "-C" {
+			i++
+			continue
+		}
+		if strings.HasPrefix(arg, "--cwd=") ||
+			strings.HasPrefix(arg, "-C=") {
+			continue
+		}
+		filtered = append(filtered, arg)
+	}
+	return filtered
 }
 
 // extractGlobalArgs extracts global flag arguments from the process command line.

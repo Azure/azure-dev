@@ -15,6 +15,13 @@ var processNamePatterns = []struct {
 	agentType  AgentType
 	exactMatch bool
 }{
+	// Google Antigravity CLI
+	{
+		patterns:  []string{"agy"},
+		agentType: AgentTypeAntigravity,
+		// Avoid classifying unrelated executable paths containing the short "agy" name.
+		exactMatch: true,
+	},
 	// Codex - OpenAI's coding agent
 	{
 		patterns:  []string{"codex"},

@@ -23,6 +23,7 @@ import (
 	"azureaiagent/internal/pkg/paths"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
@@ -100,7 +101,7 @@ func PlanAgentDeploy(ctx context.Context, options AgentDeployPlanOptions) (*Agen
 	if agentDef.CodeConfiguration != nil {
 		artifact.Type = "codePackage"
 		artifact.WouldUpload = true
-		zipPath, sha256Hex, packageErr := packageStandaloneCode(ctx, codePath, agentDef)
+		zipPath, sha256Hex, packageErr := packageDeployPlanCode(ctx, codePath, agentDef)
 		if packageErr != nil {
 			return nil, packageErr
 		}
@@ -148,7 +149,9 @@ func PlanAgentDeploy(ctx context.Context, options AgentDeployPlanOptions) (*Agen
 
 	lookup := options.Lookup
 	if lookup == nil {
-		credential, credentialErr := newStandaloneCredential()
+		credential, credentialErr := azidentity.NewAzureDeveloperCLICredential(
+			&azidentity.AzureDeveloperCLICredentialOptions{},
+		)
 		if credentialErr != nil {
 			return nil, exterrors.Auth(
 				exterrors.CodeCredentialCreationFailed,
@@ -194,10 +197,11 @@ func resolveDeployPlanInput(
 		if definitionPath == "" {
 			definitionPath = "agent.yaml"
 		}
-		agentDef, environment, err := prepareStandaloneHostedDefinition(definitionPath, options.Environment)
+		agentDef, environment, err := prepareDeployPlanStandaloneDefinition(definitionPath, options.Environment)
 		if err != nil {
 			return agent_yaml.ContainerAgent{}, "", "", "", nil, err
 		}
+
 		codePath := strings.TrimSpace(options.CodePath)
 		if codePath == "" {
 			codePath = filepath.Dir(definitionPath)
@@ -260,6 +264,111 @@ func resolveDeployPlanInput(
 		sourceName = "agent.yaml"
 	}
 	return agentDef, sourceName, options.ServiceConfig.Name, codePath, nil, nil
+}
+
+func prepareDeployPlanStandaloneDefinition(
+	path string,
+	overrides map[string]string,
+) (agent_yaml.ContainerAgent, map[string]string, error) {
+	// #nosec G304 -- reading the user-selected definition is the purpose of this operation.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return agent_yaml.ContainerAgent{}, nil, exterrors.Dependency(
+			exterrors.CodeAgentDefinitionNotFound,
+			fmt.Sprintf("failed to read agent definition %q: %s", path, err),
+			"run the command from the agent directory or pass an explicit agent.yaml path",
+		)
+	}
+	agentDefinition, isHosted, err := parseContainerAgentYAML(data)
+	if err != nil {
+		return agent_yaml.ContainerAgent{}, nil, err
+	}
+	if !isHosted {
+		return agent_yaml.ContainerAgent{}, nil, exterrors.Validation(
+			exterrors.CodeUnsupportedAgentKind,
+			"agent deploy --dry-run currently supports hosted agents only",
+			"use a hosted agent definition or preview a hosted service from azure.yaml",
+		)
+	}
+	if agentDefinition.CodeConfiguration == nil && agentDefinition.Image == "" {
+		language := strings.ToLower(strings.TrimSpace(agentDefinition.Language))
+		if language == "" {
+			language = "python"
+		}
+		if language != "python" {
+			return agent_yaml.ContainerAgent{}, nil, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("language %q requires an explicit code_configuration", language),
+				"set code_configuration.runtime and code_configuration.entry_point in agent.yaml",
+			)
+		}
+		agentDefinition.Language = language
+		agentDefinition.CodeConfiguration = &agent_yaml.CodeConfiguration{
+			Runtime:    "python_3_13",
+			EntryPoint: "main.py",
+		}
+	}
+	if agentDefinition.Resources == nil {
+		agentDefinition.Resources = &agent_yaml.ContainerResources{Cpu: DefaultCpu, Memory: DefaultMemory}
+	} else {
+		if agentDefinition.Resources.Cpu == "" {
+			agentDefinition.Resources.Cpu = DefaultCpu
+		}
+		if agentDefinition.Resources.Memory == "" {
+			agentDefinition.Resources.Memory = DefaultMemory
+		}
+	}
+
+	environment := maps.Clone(overrides)
+	if environment == nil {
+		environment = map[string]string{}
+	}
+	if agentDefinition.EnvironmentVariables != nil {
+		for _, variable := range *agentDefinition.EnvironmentVariables {
+			if _, overridden := environment[variable.Name]; overridden {
+				continue
+			}
+			resolved, resolveErr := ResolveAgentEnvironmentVariable(
+				variable.Name,
+				variable.Value,
+				nil,
+				os.Getenv,
+			)
+			if resolveErr != nil {
+				return agent_yaml.ContainerAgent{}, nil, exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					fmt.Sprintf("failed to resolve environment variable %s: %s", variable.Name, resolveErr),
+					"fix the environment-variable expression in agent.yaml",
+				)
+			}
+			environment[variable.Name] = resolved
+		}
+	}
+	return agentDefinition, environment, nil
+}
+
+func packageDeployPlanCode(
+	ctx context.Context,
+	codePath string,
+	agentDefinition agent_yaml.ContainerAgent,
+) (string, string, error) {
+	dependencyResolution := agent_yaml.DefaultDependencyResolution
+	if agentDefinition.CodeConfiguration.DependencyResolution != nil &&
+		strings.TrimSpace(*agentDefinition.CodeConfiguration.DependencyResolution) != "" {
+		dependencyResolution = *agentDefinition.CodeConfiguration.DependencyResolution
+	}
+	if dependencyResolution != "bundled" {
+		return zipSourceDir(ctx, codePath)
+	}
+	if strings.HasPrefix(agentDefinition.CodeConfiguration.Runtime, "dotnet_") {
+		return (&AgentServiceTargetProvider{}).packageDotnetBundled(codePath)
+	}
+	if strings.HasPrefix(agentDefinition.CodeConfiguration.Runtime, "python_") {
+		if err := validatePythonBundledDeps(codePath); err != nil {
+			return "", "", err
+		}
+	}
+	return zipSourceDir(ctx, codePath)
 }
 
 func resolveDeployPlanEnvironment(

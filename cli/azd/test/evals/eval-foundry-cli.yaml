@@ -26,7 +26,7 @@ defaults:
   runs: 1
   timeout: 10m
   executor: copilot-sdk
-  model: claude-sonnet-4.6
+  model: gpt-5.6-terra
   judge_model: gpt-5.5
 
 # Sits under where we score today, so we hear about it if things get worse without this

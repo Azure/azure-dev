@@ -164,6 +164,8 @@ type agentEnvPattern struct {
 
 // agentEnvPatterns lists environment variables that indicate AI coding agents.
 var agentEnvPatterns = []agentEnvPattern{
+	{envVar: "ANTIGRAVITY_AGENT", expectedValue: "1"},
+	{envVar: "ANTIGRAVITY_CONVERSATION_ID"},
 	{envVar: "AI_AGENT", expectedValue: "github_copilot_app_agent"},
 	{envVar: "AI_AGENT", expectedValue: "github_copilot_vscode_agent"},
 	{envVar: "AI_AGENT", expectedValue: "github_copilot_cloud_agent"},

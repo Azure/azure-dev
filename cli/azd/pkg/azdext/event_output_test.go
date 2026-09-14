@@ -105,5 +105,9 @@ func TestEventOutputWriter_ReplacesInvalidProgressUTF8(t *testing.T) {
 	require.Equal(t, len(data), written)
 	progressOutput := strings.Join(progress, "")
 	require.True(t, utf8.ValidString(progressOutput))
-	require.Equal(t, strings.Repeat("a", maxProgressMessageBytes-1)+"\uFFFD", progressOutput)
+	require.Equal(
+		t,
+		strings.Repeat("a", maxProgressMessageBytes-1)+string(utf8.RuneError),
+		progressOutput,
+	)
 }

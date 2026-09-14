@@ -77,7 +77,7 @@ func splitProgressOutput(data []byte) []string {
 
 	output := string(data)
 	if !utf8.ValidString(output) {
-		output = strings.ToValidUTF8(output, "\uFFFD")
+		output = strings.ToValidUTF8(output, string(utf8.RuneError))
 	}
 
 	var chunks []string

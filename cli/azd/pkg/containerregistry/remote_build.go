@@ -32,11 +32,19 @@ import (
 
 const logCursorValidationBytes = 64 * 1024
 
-type rollingTail struct {
+type logCursorFingerprint struct {
+	head []byte
 	data []byte
 }
 
-func (w *rollingTail) Write(p []byte) (int, error) {
+func (w *logCursorFingerprint) Write(p []byte) (int, error) {
+	if remaining := logCursorValidationBytes - len(w.head); remaining > 0 {
+		if remaining > len(p) {
+			remaining = len(p)
+		}
+		w.head = append(w.head, p[:remaining]...)
+	}
+
 	if len(p) >= logCursorValidationBytes {
 		w.data = append(w.data[:0], p[len(p)-logCursorValidationBytes:]...)
 		return len(p), nil
@@ -51,7 +59,8 @@ func (w *rollingTail) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (w *rollingTail) Reset() {
+func (w *logCursorFingerprint) Reset() {
+	w.head = w.head[:0]
 	w.data = w.data[:0]
 }
 
@@ -292,11 +301,11 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 	const maxPollIterations = 1200 // ~20 minutes at 1s intervals
 
 	var written int64 = 0
-	writtenTail := &rollingTail{}
+	writtenFingerprint := &logCursorFingerprint{}
 	var writtenETag *azcore.ETag
 	resetCursor := func() {
 		written = 0
-		writtenTail.Reset()
+		writtenFingerprint.Reset()
 		writtenETag = nil
 	}
 	return retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
@@ -321,41 +330,67 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 				}
 				if written > 0 && props.ETag != nil &&
 					(writtenETag == nil || *props.ETag != *writtenETag) {
-					validationLength := int64(len(writtenTail.data))
-					res, err := blobClient.DownloadStream(ctx, &blob.DownloadStreamOptions{
-						Range: azblob.HTTPRange{
-							Offset: written - validationLength,
-							Count:  validationLength,
-						},
-						AccessConditions: &blob.AccessConditions{
-							ModifiedAccessConditions: &blob.ModifiedAccessConditions{
-								IfMatch: props.ETag,
-							},
-						},
-					})
-					if err != nil {
-						if responseErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
-							(responseErr.StatusCode == http.StatusRequestedRangeNotSatisfiable ||
-								responseErr.StatusCode == http.StatusPreconditionFailed) {
-							select {
-							case <-ctx.Done():
-								return ctx.Err()
-							case <-time.After(1 * time.Second):
-							}
-							continue
-						}
-						return err
+					ranges := []struct {
+						offset   int64
+						expected []byte
+					}{
+						{expected: writtenFingerprint.head},
+					}
+					tailOffset := written - int64(len(writtenFingerprint.data))
+					if tailOffset > 0 {
+						ranges = append(ranges, struct {
+							offset   int64
+							expected []byte
+						}{offset: tailOffset, expected: writtenFingerprint.data})
 					}
 
-					tail, err := io.ReadAll(res.Body)
-					closeErr := res.Body.Close()
-					if err != nil {
-						return err
+					cursorValid := true
+					retryPoll := false
+					for _, validationRange := range ranges {
+						res, err := blobClient.DownloadStream(ctx, &blob.DownloadStreamOptions{
+							Range: azblob.HTTPRange{
+								Offset: validationRange.offset,
+								Count:  int64(len(validationRange.expected)),
+							},
+							AccessConditions: &blob.AccessConditions{
+								ModifiedAccessConditions: &blob.ModifiedAccessConditions{
+									IfMatch: props.ETag,
+								},
+							},
+						})
+						if err != nil {
+							if responseErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+								(responseErr.StatusCode == http.StatusRequestedRangeNotSatisfiable ||
+									responseErr.StatusCode == http.StatusPreconditionFailed) {
+								select {
+								case <-ctx.Done():
+									return ctx.Err()
+								case <-time.After(1 * time.Second):
+								}
+								retryPoll = true
+								break
+							}
+							return err
+						}
+
+						actual, err := io.ReadAll(res.Body)
+						closeErr := res.Body.Close()
+						if err != nil {
+							return err
+						}
+						if closeErr != nil {
+							return closeErr
+						}
+						if !bytes.Equal(actual, validationRange.expected) {
+							cursorValid = false
+							break
+						}
 					}
-					if closeErr != nil {
-						return closeErr
+					if retryPoll {
+						continue
 					}
-					if !bytes.Equal(tail, writtenTail.data) {
+
+					if !cursorValid {
 						resetCursor()
 					} else {
 						etag := *props.ETag
@@ -409,7 +444,7 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 
 				err = func() error {
 					defer res.Body.Close()
-					copied, err := io.Copy(io.MultiWriter(writer, writtenTail), res.Body)
+					copied, err := io.Copy(io.MultiWriter(writer, writtenFingerprint), res.Body)
 					if err != nil {
 						return err
 					}

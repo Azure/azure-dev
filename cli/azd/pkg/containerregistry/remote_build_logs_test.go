@@ -127,6 +127,12 @@ func TestStreamLogs_ChangingBlob(t *testing.T) {
 					{method: http.MethodHead, body: oldLog + "b", etag: `"2"`},
 					{
 						method:    http.MethodGet,
+						body:      oldLog[:logCursorValidationBytes],
+						byteRange: "bytes=0-65535",
+						ifMatch:   `"2"`,
+					},
+					{
+						method:    http.MethodGet,
 						body:      oldLog[1:],
 						byteRange: "bytes=1-65536",
 						ifMatch:   `"2"`,
@@ -136,6 +142,29 @@ func TestStreamLogs_ChangingBlob(t *testing.T) {
 				}
 			}(),
 			output: strings.Repeat("a", logCursorValidationBytes+1) + "b",
+		},
+		{
+			name: "larger replacement with unchanged tail is read from zero",
+			responses: func() []logBlobResponse {
+				commonTail := strings.Repeat("x", logCursorValidationBytes)
+				oldLog := "old\n" + commonTail
+				newLog := "new\n" + commonTail + "more"
+				return []logBlobResponse{
+					{method: http.MethodHead, body: oldLog, etag: `"1"`},
+					{method: http.MethodGet, body: oldLog, byteRange: "bytes=0-65539", ifMatch: `"1"`},
+					{method: http.MethodHead, body: newLog, etag: `"2"`},
+					{
+						method:    http.MethodGet,
+						body:      newLog[:logCursorValidationBytes],
+						byteRange: "bytes=0-65535",
+						ifMatch:   `"2"`,
+					},
+					{method: http.MethodGet, body: newLog, byteRange: "bytes=0-65543", ifMatch: `"2"`},
+					{method: http.MethodHead, body: newLog, etag: `"2"`, complete: true},
+				}
+			}(),
+			output: "old\n" + strings.Repeat("x", logCursorValidationBytes) +
+				"new\n" + strings.Repeat("x", logCursorValidationBytes) + "more",
 		},
 		{
 			name: "truncated log starts from zero",

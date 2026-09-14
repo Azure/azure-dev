@@ -187,6 +187,37 @@ func TestAuthorFoundryDeploymentsUsesPublicCommand(t *testing.T) {
 	assert.Empty(t, projectServer.added)
 }
 
+func TestAuthorFoundryDeploymentsPreservesDefault(t *testing.T) {
+	t.Parallel()
+
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{
+			"test": {
+				"AZURE_AI_MODEL_DEPLOYMENT_NAME": "first",
+			},
+		},
+	}
+	workflowServer := &recordingProjectWorkflowServer{}
+	client := newTestAzdClient(t, envServer, workflowServer)
+
+	require.NoError(t, authorFoundryDeploymentsPreservingDefault(
+		t.Context(),
+		client,
+		"test",
+		[]project.Deployment{
+			{Name: "first", Model: project.DeploymentModel{Name: "first"}},
+			{Name: "second", Model: project.DeploymentModel{Name: "second"}},
+		},
+	))
+
+	assert.Equal(
+		t,
+		"first",
+		envServer.values["test"]["AZURE_AI_MODEL_DEPLOYMENT_NAME"],
+	)
+	assert.Len(t, workflowServer.requests, 2)
+}
+
 func TestProjectWorkflowPropagatesFailures(t *testing.T) {
 	t.Parallel()
 

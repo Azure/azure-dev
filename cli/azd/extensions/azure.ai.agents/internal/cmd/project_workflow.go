@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -93,6 +94,46 @@ func authorFoundryDeployments(
 		}
 	}
 	return nil
+}
+
+func authorFoundryDeploymentsPreservingDefault(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	deployments []project.Deployment,
+) error {
+	if len(deployments) < 2 {
+		return authorFoundryDeployments(ctx, azdClient, deployments)
+	}
+	defaultName, err := getEnvValue(
+		ctx,
+		azdClient,
+		envName,
+		"AZURE_AI_MODEL_DEPLOYMENT_NAME",
+	)
+	if err != nil {
+		return err
+	}
+	defaultName = strings.TrimSpace(defaultName)
+	restoreDefault := func() error {
+		if defaultName == "" {
+			return nil
+		}
+		return setEnvValue(
+			ctx,
+			azdClient,
+			envName,
+			"AZURE_AI_MODEL_DEPLOYMENT_NAME",
+			defaultName,
+		)
+	}
+	if err := authorFoundryDeployments(ctx, azdClient, deployments); err != nil {
+		if restoreErr := restoreDefault(); restoreErr != nil {
+			return errors.Join(err, restoreErr)
+		}
+		return err
+	}
+	return restoreDefault()
 }
 
 func runProjectWorkflow(

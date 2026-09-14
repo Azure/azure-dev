@@ -323,7 +323,12 @@ func runInitManaged(
 	if err := authorFoundryProject(ctx, azdClient, foundryProject); err != nil {
 		return err
 	}
-	if err := authorFoundryDeployments(ctx, azdClient, deployments); err != nil {
+	if err := authorFoundryDeploymentsPreservingDefault(
+		ctx,
+		azdClient,
+		env.Name,
+		deployments,
+	); err != nil {
 		return err
 	}
 	if _, err := emitResourceServices(

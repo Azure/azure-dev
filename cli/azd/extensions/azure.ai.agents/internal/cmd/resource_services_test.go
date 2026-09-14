@@ -644,6 +644,10 @@ func newProjectRecorderClient(
 	grpcServer := grpc.NewServer()
 	azdext.RegisterProjectServiceServer(grpcServer, server)
 	azdext.RegisterWorkflowServiceServer(grpcServer, &testWorkflowServiceServer{})
+	azdext.RegisterEnvironmentServiceServer(
+		grpcServer,
+		&testEnvironmentServiceServer{},
+	)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

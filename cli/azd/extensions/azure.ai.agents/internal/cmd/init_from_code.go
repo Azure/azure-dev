@@ -951,9 +951,10 @@ func (a *InitFromCodeAction) addToProject(
 	); err != nil {
 		return err
 	}
-	if err := authorFoundryDeployments(
+	if err := authorFoundryDeploymentsPreservingDefault(
 		ctx,
 		a.azdClient,
+		a.environment.Name,
 		resourceDeployments,
 	); err != nil {
 		return err

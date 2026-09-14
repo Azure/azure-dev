@@ -292,6 +292,47 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if err != nil {
 		return rollbackProjectAdd(err, restoreService, restoreProvider)
 	}
+	restoreDeploymentDefault := func() error { return nil }
+	if reconciledService, _, discoverErr := reconciler.discoverProjectService(ctx); discoverErr != nil {
+		return rollbackProjectAdd(
+			discoverErr,
+			restoreEnvironment,
+			restoreService,
+			restoreProvider,
+		)
+	} else if reconciledService != nil &&
+		firstProjectDeploymentName(reconciledService.Resolved) != "" &&
+		strings.TrimSpace(effectiveValues["AZURE_AI_MODEL_DEPLOYMENT_NAME"]) == "" {
+		defaultName := firstProjectDeploymentName(reconciledService.Resolved)
+		if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: envName,
+			Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+			Value:   defaultName,
+		}); err != nil {
+			return rollbackProjectAdd(
+				fmt.Errorf(
+					"set default project deployment: %w",
+					err,
+				),
+				restoreEnvironment,
+				restoreService,
+				restoreProvider,
+			)
+		}
+		restoreDeploymentDefault = func() error {
+			return withProjectRollbackContext(ctx, func(rollbackCtx context.Context) error {
+				_, err := client.Environment().SetValue(
+					rollbackCtx,
+					&azdext.SetEnvRequest{
+						EnvName: envName,
+						Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+						Value:   "",
+					},
+				)
+				return err
+			})
+		}
+	}
 	if infra := a.flags.infra; infra != "" {
 		if err := ejectProjectInfraWithTarget(
 			ctx,
@@ -304,7 +345,11 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			effectiveValues,
 		); err != nil {
 			return rollbackProjectAdd(
-				err, restoreEnvironment, restoreService, restoreInfra,
+				err,
+				restoreDeploymentDefault,
+				restoreEnvironment,
+				restoreService,
+				restoreInfra,
 			)
 		}
 	}

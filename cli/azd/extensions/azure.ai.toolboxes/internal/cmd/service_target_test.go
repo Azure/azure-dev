@@ -32,10 +32,20 @@ func TestParseToolboxServiceConfig_ServiceLevel(t *testing.T) {
 
 	props, err := structpb.NewStruct(map[string]any{
 		"description": "research tools",
+		"connections": []any{
+			map[string]any{"name": "search", "index": "docs"},
+		},
+		"skills": []any{
+			map[string]any{"name": "summarize", "version": "2"},
+		},
 		"tools": []any{
 			map[string]any{"type": "web_search"},
 			map[string]any{"type": "mcp", "connection": "github-mcp"},
 		},
+		"policies": map[string]any{
+			"rai_config": map[string]any{"rai_policy_name": "default"},
+		},
+		"metadata": map[string]any{"owner": "platform"},
 	})
 	require.NoError(t, err)
 
@@ -46,9 +56,19 @@ func TestParseToolboxServiceConfig_ServiceLevel(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "research tools", cfg.Description)
+	require.Len(t, cfg.Connections, 1)
+	assert.Equal(t, "search", cfg.Connections[0].Name)
+	assert.Equal(t, "docs", cfg.Connections[0].Index)
+	require.Len(t, cfg.Skills, 1)
+	assert.Equal(t, "summarize", cfg.Skills[0].Name)
+	assert.Equal(t, "2", cfg.Skills[0].Version)
 	require.Len(t, cfg.Tools, 2)
 	assert.Equal(t, "web_search", cfg.Tools[0]["type"])
 	assert.Equal(t, "github-mcp", cfg.Tools[1]["connection"])
+	require.NotNil(t, cfg.Policies)
+	require.NotNil(t, cfg.Policies.RaiConfig)
+	assert.Equal(t, "default", cfg.Policies.RaiConfig.RaiPolicyName)
+	assert.Equal(t, map[string]string{"owner": "platform"}, cfg.Metadata)
 }
 
 func TestParseToolboxServiceConfig_Endpoint(t *testing.T) {

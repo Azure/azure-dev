@@ -10,6 +10,9 @@ const (
 	// TagKeyAzdLayerName is the name of the key in the tags map of a resource
 	// used to store the azd provisioning layer a resource is associated with.
 	TagKeyAzdLayerName = "azd-layer-name"
+	// TagKeyAzdProjectName is the name of the key in the tags map of a deployment
+	// used to store the azd project a deployment is associated with.
+	TagKeyAzdProjectName = "azd-project-name"
 	/* #nosec G101 - Potential hardcoded credentials - false positive */
 	// TagKeyAzdDeploymentStateParamHashName is the name of the key in the tags map of a deployment
 	// used to store the parameters hash.

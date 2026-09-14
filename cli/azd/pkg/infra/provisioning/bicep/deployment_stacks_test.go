@@ -39,6 +39,25 @@ func enableDeploymentStacks(t *testing.T) {
 	t.Setenv("AZD_ALPHA_ENABLE_DEPLOYMENT_STACKS", "true")
 }
 
+func TestDeploymentProjectName(t *testing.T) {
+	t.Run("standard deployment uses project identity", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
+		provider.projectName = "project-a"
+
+		require.Equal(t, "project-a", provider.deploymentProjectName())
+	})
+
+	t.Run("deployment stacks omit project identity", func(t *testing.T) {
+		enableDeploymentStacks(t)
+		mockContext := mocks.NewMockContext(t.Context())
+		provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)
+		provider.projectName = "project-a"
+
+		require.Empty(t, provider.deploymentProjectName())
+	})
+}
+
 func TestResolveDeploymentStacksMap_Nil(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)

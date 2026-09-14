@@ -63,6 +63,32 @@ identity fields — a key of `extension.id` is recorded as `ext.extension.id`.
 
 ## Reporting an event
 
+Microsoft Foundry extensions should use the shared reporter in
+`pkg/foundry/telemetry` instead of calling the generated gRPC client directly:
+
+```go
+import "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
+
+reporter := telemetry.NewReporter(client.Telemetry(), nil)
+reporter.Report(ctx, telemetry.Event{
+  Name: "deploy.completed",
+  Attributes: map[string]string{
+    "deploy.mode": "container",
+    "retries":     "2",
+  },
+})
+```
+
+`Report` is best effort and has no return value. It applies a one-second
+timeout, does not retry, treats `Accepted: false` as a normal result, and writes
+only the event name and gRPC status code to the debug log when reporting fails.
+It never logs attribute values or raw transport error details. Each Foundry
+extension should keep its approved event builders and bounded value types in
+the extension that owns those product semantics.
+
+Other extension families can call the generated client directly until they
+have an appropriate shared package:
+
 ```go
 if _, err := client.Telemetry().ReportUsage(
     ctx,

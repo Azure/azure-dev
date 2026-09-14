@@ -84,6 +84,13 @@ stages:
               SetExecutableBit: true
               AZURE_DEV_CI_OS: mac-arm64
 
+  - ${{ if eq(variables['System.TeamProject'], 'internal') }}:
+    - template: /eng/pipelines/templates/stages/publish-extension-pr.yml
+      parameters:
+        AzdExtensionId: ${{ parameters.AzdExtensionId }}
+        AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
+        SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
+
   # Sign and release on manual builds (stable/dev/nightly release) and scheduled
   # builds (nightly) from internal. Nightly builds reuse the same sign + package +
   # publish path; publish-extension.yml branches its behavior on both the schedule

@@ -7,8 +7,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -25,9 +27,12 @@ func sampleContainerAgent() agent_yaml.ContainerAgent {
 			Name:        "basic-agent",
 			Description: new("A basic agent hosted by Foundry."),
 		},
+		Language: "python",
+		Toolbox:  &agent_yaml.ToolboxReference{Name: "support-tools", Version: "2"},
 		Protocols: []agent_yaml.ProtocolVersionRecord{
 			{Protocol: "responses", Version: "2.0.0"},
 		},
+		RegistryConnectionID: "private-registry",
 		EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
 			{Name: "FOUNDRY_MODEL_DEPLOYMENT_NAME", Value: "gpt-4.1-mini"},
 		},
@@ -55,6 +60,7 @@ func TestAgentDefinitionRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	_, hasInlineEnvironment := props.GetFields()["environmentVariables"]
 	require.False(t, hasInlineEnvironment)
+	require.Equal(t, "private-registry", props.GetFields()["registryConnectionId"].GetStringValue())
 
 	svc := &azdext.ServiceConfig{
 		Name:                 "basic-agent",
@@ -74,6 +80,11 @@ func TestAgentDefinitionRoundTrip(t *testing.T) {
 	require.NotNil(t, got.Description)
 	require.Equal(t, "A basic agent hosted by Foundry.", *got.Description)
 	require.Equal(t, ca.Protocols, got.Protocols)
+	require.Equal(t, "python", got.Language)
+	require.NotNil(t, got.Toolbox)
+	require.Equal(t, "support-tools", got.Toolbox.Name)
+	require.Equal(t, "2", got.Toolbox.Version)
+	require.Equal(t, ca.RegistryConnectionID, got.RegistryConnectionID)
 	require.NotNil(t, got.EnvironmentVariables)
 	require.Equal(t, *ca.EnvironmentVariables, *got.EnvironmentVariables)
 	// CPU/memory round-trips through the `container` config.
@@ -92,6 +103,56 @@ func TestAgentDefinitionRoundTrip(t *testing.T) {
 	require.NotNil(t, cfg.Container)
 	require.NotNil(t, cfg.Container.Resources)
 	require.Equal(t, "1", cfg.Container.Resources.Cpu)
+}
+
+func TestLoadServiceTargetAgentConfigDigitalWorkerType(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"activity": map[string]any{"digitalWorkerType": "m365"},
+	})
+	require.NoError(t, err)
+
+	cfg, err := LoadServiceTargetAgentConfig(&azdext.ServiceConfig{AdditionalProperties: props})
+	require.NoError(t, err)
+	require.Equal(t, agent_api.DigitalWorkerTypeM365, cfg.Activity.DigitalWorkerType)
+}
+
+func TestLoadServiceTargetAgentConfigRejectsUseCase(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"activity": map[string]any{"useCase": "digital_worker"},
+	})
+	require.NoError(t, err)
+
+	_, err = LoadServiceTargetAgentConfig(&azdext.ServiceConfig{AdditionalProperties: props})
+	require.ErrorContains(t, err, "activity.useCase is not supported")
+	require.ErrorContains(t, err, "activity.digitalWorkerType: m365")
+}
+
+// TestAgentDefinitionRoundTrip_SessionConfiguration verifies the optional
+// sessionConfiguration.idleTimeoutSeconds survives the inline marshal/unmarshal.
+func TestAgentDefinitionRoundTrip_SessionConfiguration(t *testing.T) {
+	ca := sampleContainerAgent()
+	ca.SessionConfiguration = &agent_yaml.SessionConfiguration{IdleTimeoutSeconds: new(600)}
+
+	props, err := AgentDefinitionToServiceProperties(ca, nil)
+	require.NoError(t, err)
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "basic-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+		Environment:          AgentEnvironment(ca),
+	}
+
+	got, _, found, _, err := AgentDefinitionFromService(svc)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.NotNil(t, got.SessionConfiguration)
+	require.NotNil(t, got.SessionConfiguration.IdleTimeoutSeconds)
+	require.Equal(t, 600, *got.SessionConfiguration.IdleTimeoutSeconds)
 }
 
 // TestAgentDefinitionFromService_LegacyConfigShape verifies that a definition
@@ -193,6 +254,63 @@ func TestInlineAgentEnvironmentVariables(t *testing.T) {
 		"SHARED_KEY": "legacy",
 	}, got)
 }
+
+// TestAgentDefinitionFromService_PromptAgentStringModel guards the kind gate in
+// agentDefinitionFromStruct. Every agent kind shares the service entry's
+// property bag but they disagree on types: a prompt agent's `model` is a
+// deployment name, while the hosted and voice shapes model it as an object.
+// Decoding before checking the kind rejected a valid prompt agent with
+// "cannot unmarshal string into Go struct field AgentDefinitionInline.model".
+func TestAgentDefinitionFromService_PromptAgentStringModel(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"kind":         "prompt",
+		"name":         "my-prompt-agent",
+		"model":        "gpt-4.1-mini",
+		"instructions": "You are a helpful assistant.",
+	})
+	require.NoError(t, err)
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "my-prompt-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+
+	_, isHosted, found, _, err := AgentDefinitionFromService(svc)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.False(t, isHosted)
+}
+
+func TestAgentDefinitionFromService_PromptAgentRaiPolicy(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"kind":         "prompt",
+		"name":         "my-prompt-agent",
+		"model":        "gpt-5-mini",
+		"instructions": "Be helpful.",
+		"policies": []any{map[string]any{
+			"type":          "rai_policy",
+			"raiPolicyName": "${RAI_POLICY_ID}",
+		}},
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:                 "my-prompt-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+
+	_, isHosted, found, _, err := AgentDefinitionFromService(svc)
+
+	require.NoError(t, err)
+	require.True(t, found)
+	require.False(t, isHosted)
+}
+
 func TestResolveAgentEnvironmentVariable(t *testing.T) {
 	t.Parallel()
 
@@ -374,6 +492,30 @@ func TestAgentDefinition_ImageRidesOnCoreServiceField(t *testing.T) {
 	require.Empty(t, gotNoImage.Image)
 }
 
+func TestAgentDefinitionFromService_ValidImages(t *testing.T) {
+	props, err := AgentDefinitionToServiceProperties(sampleContainerAgent(), nil)
+	require.NoError(t, err)
+
+	images := []string{
+		"localhost:5000/agent:v1",
+		"[2001:db8::1]:5000/team/agent:v1",
+		"registry.example.com/agent:v1@sha256:" + strings.Repeat("a", 64),
+	}
+	for _, image := range images {
+		t.Run(image, func(t *testing.T) {
+			svc := &azdext.ServiceConfig{
+				Name:                 "basic-agent",
+				Host:                 "azure.ai.agent",
+				Image:                image,
+				AdditionalProperties: props,
+			}
+			got, _, _, _, err := AgentDefinitionFromService(svc)
+			require.NoError(t, err)
+			require.Equal(t, image, got.Image)
+		})
+	}
+}
+
 // TestAgentDefinitionFromService_InvalidImage verifies the image reference (from
 // the core service field) is still validated for the inline shape.
 func TestAgentDefinitionFromService_InvalidImage(t *testing.T) {
@@ -515,7 +657,9 @@ func TestLoadAgentDefinition_ToolboxServiceReference(t *testing.T) {
 // fallback used during the migration window.
 func TestLoadAgentDefinition_DiskFallback(t *testing.T) {
 	dir := t.TempDir()
-	yaml := "kind: hosted\nname: disk-agent\nprotocols:\n  - protocol: responses\n    version: \"1.0.0\"\n"
+	image := "registry.example.com/agent:v1@sha256:" + strings.Repeat("a", 64)
+	yaml := "kind: hosted\nname: disk-agent\nimage: " + image + "\nregistryConnectionId: private-registry\n" +
+		"protocols:\n  - protocol: responses\n    version: \"1.0.0\"\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(yaml), 0o600))
 
 	svc := &azdext.ServiceConfig{Name: "disk-agent", Host: "azure.ai.agent", RelativePath: "."}
@@ -525,6 +669,8 @@ func TestLoadAgentDefinition_DiskFallback(t *testing.T) {
 	require.Equal(t, AgentDefinitionSourceDisk, source)
 	require.True(t, source.IsLegacy())
 	require.Equal(t, "disk-agent", got.Name)
+	require.Equal(t, image, got.Image)
+	require.Equal(t, "private-registry", got.RegistryConnectionID)
 }
 
 func TestLoadAgentDefinition_FileRef(t *testing.T) {
@@ -833,13 +979,6 @@ func TestWarnOrphanedConfigEnvOutput(t *testing.T) {
 		})
 	})
 	require.Empty(t, quiet)
-}
-
-func mustStruct(t *testing.T, value map[string]any) *structpb.Struct {
-	t.Helper()
-	s, err := structpb.NewStruct(value)
-	require.NoError(t, err)
-	return s
 }
 
 // captureStdout collects everything fn writes to os.Stdout.

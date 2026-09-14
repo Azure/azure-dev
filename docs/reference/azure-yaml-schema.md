@@ -58,6 +58,52 @@ services:
 | `uses` | list | Service dependencies |
 | `remoteBuild` | boolean | Enable remote build for code-based Azure Functions |
 
+### Docker Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `path` | string | Path to the Dockerfile |
+| `context` | string | Docker build context path |
+| `platform` | string | Container platform target |
+| `target` | string | Dockerfile build target |
+| `registry` | string | Destination container registry |
+| `image` | string | Name applied to a built container image |
+| `tag` | string | Tag applied to a built container image |
+| `buildArgs` | list | Arguments passed to the container build |
+| `network` | string | Networking mode for Dockerfile `RUN` instructions |
+| `remoteBuild` | boolean | Build and push with Azure Container Registry remote build instead of building locally |
+| `imagePassthrough` | boolean | Reuse an existing remote service `image` without building or publishing it; `azd deploy --from-package` can override the image for one deployment |
+
+`docker.imagePassthrough` declares that azd does not own the container image lifecycle. It requires the service-level
+`image` property to contain a fully qualified remote image and cannot be combined with `docker.remoteBuild`. During package, publish, and deploy operations, azd
+uses the configured image as the existing remote image without building, pulling, tagging, copying, or publishing it:
+
+```yaml
+services:
+  api:
+    host: containerapp
+    image: registry.example.com/apps/api:1.0
+    docker:
+      imagePassthrough: true
+```
+
+The service `image` is the default. A fully qualified remote image supplied to `azd deploy --from-package` overrides it
+for that deployment and is also passed through unchanged:
+
+```bash
+azd deploy api --from-package other-registry.example.com/apps/api:2.0
+```
+
+Passthrough overrides do not support local image names, archives, or directories. The `--from-package` override above
+applies only to `azd deploy`; `azd publish --from-package` and `azd publish --to` are not supported for passthrough
+services. Running `azd publish` without either flag reuses the configured remote image and does not publish it.
+
+azd does not sign in to the source registry or verify access to it in this mode. The destination platform must already
+have permission to pull the image through its managed identity or registry credentials.
+
+When `imagePassthrough` is omitted or `false`, an external service image can still be pulled and copied into the
+configured destination registry.
+
 ## Hooks
 
 Hooks run user-defined scripts at lifecycle points:

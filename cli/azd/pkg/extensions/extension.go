@@ -126,7 +126,7 @@ func (e *Extension) StdErr() *output.DynamicMultiWriter {
 func (e *Extension) SetReportedError(err error) {
 	e.errorMu.Lock()
 	defer e.errorMu.Unlock()
-	e.reportedError = err
+	e.reportedError = WrapInvocationError(err, e.Id, e.Version, "")
 }
 
 // GetReportedError returns the structured error reported by the extension, if any.

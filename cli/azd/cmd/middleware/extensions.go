@@ -127,7 +127,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 		debug:       debugEnabled,
 		cwd:         cwd,
 		environment: envName,
-		// Use globalOptions.NoPrompt which includes agent detection, not just the --no-prompt CLI flag
+		// Use globalOptions.NoPrompt, which includes CI and non-interactive agent detection.
 		noPrompt:   m.globalOptions.NoPrompt,
 		forceColor: forceColor,
 	}

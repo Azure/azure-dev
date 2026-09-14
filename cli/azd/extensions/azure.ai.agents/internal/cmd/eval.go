@@ -75,8 +75,44 @@ type evalContextOptions struct {
 	envName         string // explicit environment name (from -e flag)
 	agent           string // explicit agent name (from --agent flag)
 	projectEndpoint string // explicit project endpoint (from --project-endpoint flag)
+	skipAgent       bool   // skip agent service and deployment metadata resolution
 	requireAgent    bool   // fail if agent name cannot be resolved
 	noPrompt        bool   // skip interactive prompts
+}
+
+type evalContextFlags struct {
+	agent           string
+	projectEndpoint string
+}
+
+func addEvalContextFlags(cmd *cobra.Command, flags *evalContextFlags) {
+	cmd.Flags().StringVar(
+		&flags.agent,
+		"agent",
+		"",
+		"Agent service name from azure.yaml, or Foundry agent name outside a project",
+	)
+	addEvalProjectEndpointFlag(cmd, &flags.projectEndpoint)
+}
+
+func addEvalProjectEndpointFlag(cmd *cobra.Command, projectEndpoint *string) {
+	cmd.Flags().StringVarP(
+		projectEndpoint,
+		"project-endpoint",
+		"p",
+		"",
+		"Microsoft Foundry project endpoint URL",
+	)
+}
+
+func (f evalContextFlags) options(envName string, noPrompt, requireAgent bool) evalContextOptions {
+	return evalContextOptions{
+		envName:         envName,
+		agent:           f.agent,
+		projectEndpoint: f.projectEndpoint,
+		requireAgent:    requireAgent,
+		noPrompt:        noPrompt,
+	}
 }
 
 func newEvalCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -161,22 +197,27 @@ func resolveEvalContext(ctx context.Context, options evalContextOptions) (*evalR
 		return v.Value
 	}
 
-	var svc *azdext.ServiceConfig
-	var info *AgentServiceInfo
-	svc, _, err = resolveAgentService(ctx, azdClient, options.agent, options.noPrompt)
-	if err == nil {
-		// Resolve deployed agent name/version from azd environment.
-		info = &AgentServiceInfo{ServiceName: svc.Name}
-		serviceKey := toServiceKey(svc.Name)
-		if v := getEnvValue(fmt.Sprintf("AGENT_%s_NAME", serviceKey)); v != "" {
-			info.AgentName = v
+	var (
+		svc  *azdext.ServiceConfig
+		info *AgentServiceInfo
+	)
+	if !options.skipAgent {
+		svc, err = resolveEvalAgentService(ctx, azdClient, options)
+		if err != nil {
+			azdClient.Close()
+			return nil, err
 		}
-		if v := getEnvValue(fmt.Sprintf("AGENT_%s_VERSION", serviceKey)); v != "" {
-			info.Version = v
+		if svc != nil {
+			// Resolve deployed agent name/version from azd environment.
+			info = &AgentServiceInfo{ServiceName: svc.Name}
+			serviceKey := toServiceKey(svc.Name)
+			if v := getEnvValue(fmt.Sprintf("AGENT_%s_NAME", serviceKey)); v != "" {
+				info.AgentName = v
+			}
+			if v := getEnvValue(fmt.Sprintf("AGENT_%s_VERSION", serviceKey)); v != "" {
+				info.Version = v
+			}
 		}
-	} else if options.agent == "" && options.requireAgent {
-		azdClient.Close()
-		return nil, evalAgentContextError(err)
 	}
 
 	fmt.Println(output.WithGrayFormat("  Resolving Foundry project endpoint..."))
@@ -297,6 +338,18 @@ func resolveEvalContext(ctx context.Context, options evalContextOptions) (*evalR
 		projectEndpointSource: projectEndpointSource,
 		envName:               envName,
 	}, nil
+}
+
+func resolveEvalAgentService(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	options evalContextOptions,
+) (*azdext.ServiceConfig, error) {
+	svc, _, err := resolveAgentService(ctx, azdClient, options.agent, options.noPrompt)
+	if err != nil && (options.agent != "" || options.requireAgent) {
+		return nil, evalAgentContextError(err)
+	}
+	return svc, nil
 }
 
 // resolveEvalContextWithoutProject prompts the user for essential inputs when

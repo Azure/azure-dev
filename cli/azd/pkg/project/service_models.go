@@ -81,4 +81,5 @@ type ServicePublishResult struct {
 // ServiceDeployResult is the result of a successful Deploy operation
 type ServiceDeployResult struct {
 	Artifacts ArtifactCollection `json:"artifacts"`
+	Warnings  []string           `json:"warnings,omitempty"`
 }

@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -15,6 +17,8 @@ import (
 
 // ParameterValues represents the user-provided values for manifest parameters
 type ParameterValues map[string]any
+
+const manifestParameterEnvPrefix = "AZD_AI_AGENT_MANIFEST_PARAMETER_"
 
 // ProcessManifestParameters prompts the user for parameter values and injects them into the template
 func ProcessManifestParameters(
@@ -148,20 +152,56 @@ func promptForYamlParameterValues(
 
 		fmt.Println()
 
-		// Prompt for value
+		isRequired := property.Required != nil && *property.Required
+		parameterEnvVar := manifestParameterEnvPrefix + property.Name
+
+		if envValue, found := os.LookupEnv(parameterEnvVar); found {
+			if isRequired && envValue == "" {
+				return nil, fmt.Errorf(
+					"environment variable %s is empty but parameter '%s' is required",
+					parameterEnvVar,
+					property.Name,
+				)
+			}
+			if len(enumValues) > 0 && !slices.Contains(enumValues, envValue) {
+				return nil, fmt.Errorf(
+					"environment variable %s has invalid value %q for parameter '%s'; expected one of %v",
+					parameterEnvVar,
+					envValue,
+					property.Name,
+					enumValues,
+				)
+			}
+
+			fmt.Printf("Using value from environment variable %s.\n\n", parameterEnvVar)
+			paramValues[property.Name] = envValue
+			continue
+		}
+
+		if noPrompt {
+			switch {
+			case defaultValue != nil:
+				paramValues[property.Name] = defaultValue
+			case len(enumValues) > 0:
+				paramValues[property.Name] = enumValues[0]
+			case isRequired:
+				return nil, fmt.Errorf(
+					"parameter '%s' is required in no-prompt mode; set environment variable %s",
+					property.Name,
+					parameterEnvVar,
+				)
+			default:
+				paramValues[property.Name] = ""
+			}
+			continue
+		}
+
+		// Prompt for value.
 		var value any
 		var err error
-		isRequired := property.Required != nil && *property.Required
-		isSecret := property.Secret != nil && *property.Secret
 		if len(enumValues) > 0 {
 			// Use selection for enum parameters
 			value, err = promptForEnumValue(ctx, property.Name, enumValues, defaultValue, azdClient, noPrompt)
-		} else if isSecret && noPrompt {
-			return nil, fmt.Errorf(
-				"unable to prompt for secret parameter '%s' in no-prompt mode; "+
-					"provide the value via environment variable",
-				property.Name,
-			)
 		} else {
 			value, err = promptForTextValue(ctx, property.Name, defaultValue, isRequired, azdClient)
 		}

@@ -5,12 +5,14 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"azure.ai.routines/internal/pkg/routines"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -69,7 +71,10 @@ action:
 func TestReadRoutineManifest_FileNotFound(t *testing.T) {
 	t.Parallel()
 	_, err := readRoutineManifest("/nonexistent/path/routine.yaml")
-	assert.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Contains(t, localErr.Suggestion, "verify the path exists")
+	assert.NotContains(t, localErr.Suggestion, "--file")
 }
 
 func TestReadRoutineManifest_UnsupportedExtension(t *testing.T) {

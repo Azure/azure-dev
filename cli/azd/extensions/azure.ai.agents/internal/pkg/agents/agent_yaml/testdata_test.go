@@ -37,6 +37,12 @@ func TestFixtures_ValidYAML(t *testing.T) {
 			wantKind: AgentKindHosted,
 			wantName: "hosted-rai-agent",
 		},
+		{
+			name:     "hosted agent with invocations moderation",
+			file:     filepath.Join("testdata", "hosted-agent-with-invocations-moderation.yaml"),
+			wantKind: AgentKindHosted,
+			wantName: "hosted-invocations-moderation-agent",
+		},
 	}
 
 	for _, tc := range tests {

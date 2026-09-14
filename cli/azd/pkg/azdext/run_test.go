@@ -51,6 +51,14 @@ func TestErrorSuggestion(t *testing.T) {
 			expected: "",
 		},
 		{
+			name: "ToolErrorWithSuggestion",
+			err: &ToolError{
+				Message:    "docker failed",
+				Suggestion: "Check that Docker is running",
+			},
+			expected: "Check that Docker is running",
+		},
+		{
 			name:     "GenericError",
 			err:      errors.New("generic"),
 			expected: "",
@@ -112,6 +120,13 @@ func TestErrorMessage(t *testing.T) {
 				Message: "service unavailable",
 			},
 			expected: "service unavailable",
+		},
+		{
+			name: "ToolError",
+			err: &ToolError{
+				Message: "tool failed",
+			},
+			expected: "tool failed",
 		},
 		{
 			name: "LocalErrorEmptyMessage",
@@ -193,6 +208,17 @@ func TestErrorLinks(t *testing.T) {
 			}},
 		},
 		{
+			name: "ToolErrorWithLinks",
+			err: &ToolError{
+				Links: []errorhandler.ErrorLink{{
+					URL: "https://aka.ms/azd-errors#tool",
+				}},
+			},
+			expected: []errorhandler.ErrorLink{{
+				URL: "https://aka.ms/azd-errors#tool",
+			}},
+		},
+		{
 			name:     "GenericError",
 			err:      errors.New("generic"),
 			expected: nil,
@@ -222,6 +248,7 @@ func TestErrorLinks(t *testing.T) {
 func TestIsStructuredError(t *testing.T) {
 	require.True(t, IsStructuredError(&LocalError{}))
 	require.True(t, IsStructuredError(&ServiceError{}))
+	require.True(t, IsStructuredError(&ToolError{}))
 	require.True(t, IsStructuredError(fmt.Errorf("wrapped: %w", &LocalError{})))
 	require.False(t, IsStructuredError(errors.New("plain")))
 	require.False(t, IsStructuredError(nil))

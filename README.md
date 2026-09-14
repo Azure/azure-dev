@@ -29,6 +29,8 @@
 
 **Contributing to this repo?** See [AGENTS.md](AGENTS.md) for coding standards and [docs/](docs/README.md) for contributor documentation.
 
+**Microsoft contributor?** The repository's [`agency.toml`](agency.toml) configures [Agency](https://aka.ms/agency) with Azure DevOps and Kusto MCP tools.
+
 **Using `azd` with an AI coding assistant?** Check out the [docs](https://aka.ms/azd) and [templates](https://azure.github.io/awesome-azd/).
 
 ---

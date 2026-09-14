@@ -123,9 +123,10 @@ func (at *containerAppTarget) Publish(
 	}
 
 	// Skip publishing to the container registry if packagePath is a remote image reference,
-	// such as when called through `azd deploy --from-package <image>`
-	if parsedImage, err := docker.ParseContainerImage(packagePath); err == nil {
-		if parsedImage.Registry != "" {
+	// such as when called through `azd deploy --from-package <image>`. Image passthrough
+	// is handled by ContainerHelper.Publish so validation and artifact metadata stay consistent.
+	if !serviceConfig.Docker.ImagePassthrough {
+		if parsedImage, err := docker.ParseContainerImage(packagePath); err == nil && parsedImage.Registry != "" {
 			publishResult = &ServicePublishResult{
 				Artifacts: ArtifactCollection{
 					{

@@ -136,6 +136,7 @@ func TestResolveJobDefinition_PassesThroughRemoteCodeURI(t *testing.T) {
 
 	cases := []string{
 		"azureml://something",
+		"azureai://accounts/account/projects/project/data/code/versions/1",
 		"https://example.com/code.tar.gz",
 		"http://example.com/code.tar.gz",
 		"git://github.com/example/repo",
@@ -197,12 +198,19 @@ func TestResolveJobDefinition_PassesThroughRemoteInputPath(t *testing.T) {
 
 	jd := &utils.JobDefinition{
 		Inputs: map[string]utils.InputDefinition{
-			"data": {Type: "uri_folder", Path: "azureml://datastores/x/paths/y"},
+			"data": {
+				Type: "uri_folder",
+				Path: "azureai://accounts/account/projects/project/data/training/versions/1",
+			},
 		},
 	}
 	require.NoError(t, r.ResolveJobDefinition(context.Background(), jd))
 
-	assert.Equal(t, "azureml://datastores/x/paths/y", jd.Inputs["data"].Path)
+	assert.Equal(
+		t,
+		"azureai://accounts/account/projects/project/data/training/versions/1",
+		jd.Inputs["data"].Path,
+	)
 	assert.Equal(t, 0, input.calls)
 }
 

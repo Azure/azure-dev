@@ -594,6 +594,22 @@ func Test_DockerProject_Build(t *testing.T) {
 	}
 }
 
+func Test_DockerProject_Build_ImagePassthrough(t *testing.T) {
+	t.Parallel()
+
+	env := environment.NewWithValues("test", nil)
+	project := NewDockerProject(env, nil, &ContainerHelper{}, nil, nil, nil)
+	serviceConfig := &ServiceConfig{
+		RelativePath: "./src/api",
+		Image:        osutil.NewExpandableString("private.example.com/team/agent:v1"),
+		Docker:       DockerProjectOptions{ImagePassthrough: true},
+	}
+
+	result, err := project.Build(t.Context(), serviceConfig, NewServiceContext(), nil)
+	require.NoError(t, err)
+	require.Empty(t, result.Artifacts)
+}
+
 func Test_DockerProject_Package(t *testing.T) {
 	tests := []struct {
 		name                   string
@@ -671,6 +687,25 @@ func Test_DockerProject_Package(t *testing.T) {
 			},
 			expectDockerPullCalled: true,
 			expectDockerTagCalled:  true,
+		},
+		{
+			name:  "image passthrough",
+			image: "private.example.com/team/agent:v1",
+			docker: DockerProjectOptions{
+				ImagePassthrough: true,
+			},
+			expectedArtifact: Artifact{
+				Kind:         ArtifactKindContainer,
+				Location:     "private.example.com/team/agent:v1",
+				LocationKind: LocationKindRemote,
+				Metadata: map[string]string{
+					"imagePassthrough": "true",
+					"remoteImage":      "private.example.com/team/agent:v1",
+					"sourceImage":      "private.example.com/team/agent:v1",
+				},
+			},
+			expectDockerPullCalled: false,
+			expectDockerTagCalled:  false,
 		},
 		{
 			name:  "fully qualified image with custom docker options",
@@ -771,9 +806,16 @@ func Test_DockerProject_Package(t *testing.T) {
 
 			// Compare the artifact with expected values
 			require.Equal(t, tt.expectedArtifact.Location, artifact.Location)
+			if tt.expectedArtifact.LocationKind != "" {
+				require.Equal(t, tt.expectedArtifact.LocationKind, artifact.LocationKind)
+			}
 			require.Equal(t, tt.expectedArtifact.Metadata["imageHash"], artifact.Metadata["imageHash"])
 			require.Equal(t, tt.expectedArtifact.Metadata["sourceImage"], artifact.Metadata["sourceImage"])
 			require.Equal(t, tt.expectedArtifact.Metadata["targetImage"], artifact.Metadata["targetImage"])
+			if tt.expectedArtifact.Metadata["imagePassthrough"] != "" {
+				require.Equal(t, tt.expectedArtifact.Metadata["imagePassthrough"], artifact.Metadata["imagePassthrough"])
+				require.Equal(t, tt.expectedArtifact.Metadata["remoteImage"], artifact.Metadata["remoteImage"])
+			}
 
 			_, dockerPullCalled := mockResults["docker-pull"]
 			_, dockerTagCalled := mockResults["docker-tag"]
@@ -810,6 +852,20 @@ func Test_dockerProject_RequiredExternalTools_RemoteBuild(t *testing.T) {
 	ctx := t.Context()
 	tools := p.(FrameworkService).RequiredExternalTools(ctx, svcConfig)
 	// Remote build => no external tools
+	assert.Empty(t, tools)
+}
+
+func Test_dockerProject_RequiredExternalTools_ImagePassthrough(t *testing.T) {
+	env := environment.NewWithValues("test-env", nil)
+	ch := &ContainerHelper{}
+	p := NewDockerProject(env, nil, ch, nil, nil, nil)
+
+	svcConfig := &ServiceConfig{
+		Image:  osutil.NewExpandableString("private.example.com/team/agent:v1"),
+		Docker: DockerProjectOptions{ImagePassthrough: true},
+	}
+
+	tools := p.(FrameworkService).RequiredExternalTools(t.Context(), svcConfig)
 	assert.Empty(t, tools)
 }
 

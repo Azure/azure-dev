@@ -852,13 +852,18 @@ Returns `204 No Content` on success.
 
 **CLI impact:** No metrics command in V1. `job get` will show job status and duration but no training metrics.
 
-### 4.3 Model Output — Dataset API Limitation
+### 4.3 Named Output Asset Registration
 
-**Status:** Current dataset API supports custom model as output type, but the new API requires **job service to create model assets**. Changes are being investigated.
+**Status:** Supported by the job service for outputs that include `assetName`
+and, optionally, `assetVersion`.
 
-**Impact:** Job outputs that produce trained models may not be automatically registered as model assets in Foundry. Users may need to manually register models after job completion (using `azd ai models custom create --blob-uri`).
+**Impact:** YAML `asset_name` and `asset_version` values are forwarded to the
+job payload. The job service registers the named output asset; when
+`asset_version` is omitted, the service assigns the version.
 
-**CLI impact:** `job download` can download raw output files, but automatic model registration from job outputs is deferred until the job service supports model asset creation.
+**CLI impact:** Users can register `custom_model` and `uri_folder` outputs as
+named assets directly from the submitted job. Outputs without `asset_name`
+remain anonymous job outputs and can still be retrieved with `job download`.
 
 ### 4.4 MFE Payload Schema — Unconfirmed
 
@@ -878,7 +883,7 @@ Returns `204 No Content` on success.
 | Log streaming | ✅ Supported (polling-based) | Artifact APIs (PR) |
 | Job download | ✅ Supported | Artifact SAS URI APIs (PR) |
 | Metrics logging | ❌ Not available | No MLFlow in Foundry |
-| Model output registration | ❌ Deferred | Job service model asset creation TBD |
+| Named output asset registration | ✅ Supported | Jobs API `assetName` / `assetVersion` |
 
 ---
 

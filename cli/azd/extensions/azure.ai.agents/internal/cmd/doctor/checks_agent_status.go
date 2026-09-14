@@ -41,9 +41,7 @@ const agentStatusProbeTimeout = 6 * time.Second
 const probeConcurrency = 4
 
 // agentStatusKindActive / Creating / Failed / Deleting are the
-// canonical lifecycle values emitted by the Foundry agents service
-// (vienna:
-// `Contracts/V2/Generated/Agents/AgentVersionStatus.cs`). Matched
+// canonical lifecycle values emitted by the Foundry agents service. Matched
 // case-insensitively because Foundry has historically been
 // inconsistent about casing on similar fields (e.g., the run.go
 // invocation flow normalizes status with `strings.EqualFold`).
@@ -704,9 +702,10 @@ func readAgentServices(prior []Result) []string {
 
 // filterHostedAgentServices removes prompt-voice services from the hosted-agent
 // status probe. The remote.agent-status check targets hosted agent versions
-// (`/agents/{name}/versions/{version}`) and relies on AGENT_<KEY>_VERSION; a
-// prompt-voice deploy writes NAME+ENDPOINT only and should be covered by a
-// voice-specific doctor check in a future PR.
+// (`/agents/{name}/versions/{version}`). Prompt-voice deploys record a
+// VERSION, but voice readiness follows its WebSocket endpoint rather than the
+// hosted-agent version lifecycle and should be covered by a voice-specific
+// doctor check in a future PR.
 func filterHostedAgentServices(ctx context.Context, azdClient *azdext.AzdClient, services []string) []string {
 	if len(services) == 0 || azdClient == nil {
 		return services
@@ -824,7 +823,7 @@ func makeRealProbeAgentStatus(
 
 		client := agent_api.NewAgentClient(endpoint, cred)
 		v, err := client.GetAgentVersion(
-			ctx, agentName, agentVersion, apiVersion)
+			ctx, agentName, agentVersion, apiVersion, false)
 		if err != nil {
 			if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 				return agentStatusProbeResult{

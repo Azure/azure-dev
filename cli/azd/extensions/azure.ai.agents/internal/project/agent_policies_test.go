@@ -16,7 +16,7 @@ import (
 )
 
 // raiPolicyID is a representative RAI policy ARM resource ID, the value users
-// put in `raiPolicyName`.
+// put in `raiPolicyName` in azure.yaml.
 const raiPolicyID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/" +
 	"my-rg/providers/Microsoft.CognitiveServices/accounts/my-account/raiPolicies/Microsoft.DefaultV2"
 
@@ -38,8 +38,7 @@ func inlineAgentService(t *testing.T, values map[string]any) *azdext.ServiceConf
 
 // TestAgentPoliciesRoundTrip verifies governance policies survive a marshal into
 // the inline service properties and back, and that they are persisted under the
-// camelCase `raiPolicyName` key that azure.yaml authors use — not the
-// `rai_policy_name` key of the deprecated on-disk agent.yaml.
+// `raiPolicyName` key used by azure.yaml.
 func TestAgentPoliciesRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -56,8 +55,6 @@ func TestAgentPoliciesRoundTrip(t *testing.T) {
 	policy := policies[0].GetStructValue().GetFields()
 	require.Equal(t, "rai_policy", policy["type"].GetStringValue())
 	require.Equal(t, raiPolicyID, policy["raiPolicyName"].GetStringValue())
-	require.NotContains(t, policy, "rai_policy_name",
-		"azure.yaml uses the camelCase raiPolicyName key")
 
 	svc := &azdext.ServiceConfig{
 		Name:                 "rai-agent",
@@ -160,7 +157,7 @@ func TestAgentPoliciesNoRaiConfigWhenAbsent(t *testing.T) {
 
 // TestAgentPoliciesValidation verifies malformed policies authored inline in
 // azure.yaml are rejected, and that the missing-name error names the
-// azure.yaml key (raiPolicyName) rather than only the agent.yaml one.
+// `raiPolicyName` key.
 func TestAgentPoliciesValidation(t *testing.T) {
 	t.Parallel()
 
@@ -172,7 +169,7 @@ func TestAgentPoliciesValidation(t *testing.T) {
 		{
 			name:         "missing policy name",
 			policy:       map[string]any{"type": "rai_policy"},
-			wantErrSubst: "'raiPolicyName' in azure.yaml",
+			wantErrSubst: "requires a policy name",
 		},
 		{
 			name:         "missing type",
@@ -198,4 +195,236 @@ func TestAgentPoliciesValidation(t *testing.T) {
 			require.ErrorContains(t, err, test.wantErrSubst)
 		})
 	}
+}
+
+// sampleInvocationsModeration is a fully-populated moderation block covering both
+// the buffered and streaming output paths.
+func sampleInvocationsModeration() *agent_yaml.InvocationsModeration {
+	return &agent_yaml.InvocationsModeration{
+		InputContentType:  agent_yaml.InvocationContentTypeJSON,
+		OutputContentType: agent_yaml.InvocationContentTypeJSON,
+		ResponseMode:      agent_yaml.InvocationResponseModeBoth,
+		InputPaths:        []string{"$.input"},
+		OutputPaths:       []string{"$.output"},
+		StreamSelectors: []agent_yaml.SseTextSelector{
+			{EventType: "response.output_text.delta", TextField: "$.delta"},
+		},
+	}
+}
+
+// TestAgentPoliciesInvocationsModerationRoundTrip verifies the nested moderation
+// block survives the inline azure.yaml service-property marshal and back, and is
+// persisted under camelCase keys like the rest of the unified azure.yaml shape.
+func TestAgentPoliciesInvocationsModerationRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	ca := sampleContainerAgent()
+	ca.Protocols = []agent_yaml.ProtocolVersionRecord{
+		{Protocol: agent_yaml.InvocationsProtocol, Version: "1.0.0"},
+	}
+	ca.Policies = []agent_yaml.Policy{
+		{
+			Type:                  agent_yaml.PolicyTypeRai,
+			RaiPolicyName:         raiPolicyID,
+			InvocationsModeration: sampleInvocationsModeration(),
+		},
+	}
+
+	props, err := AgentDefinitionToServiceProperties(ca, nil)
+	require.NoError(t, err)
+
+	policy := props.GetFields()["policies"].GetListValue().GetValues()[0].GetStructValue().GetFields()
+	moderation := policy["invocationsModeration"].GetStructValue().GetFields()
+	require.NotEmpty(t, moderation, "invocationsModeration must survive the inline marshal")
+	require.Equal(t, "both", moderation["responseMode"].GetStringValue())
+	require.NotContains(t, moderation, "response_mode",
+		"azure.yaml uses camelCase keys")
+
+	selector := moderation["streamSelectors"].GetListValue().GetValues()[0].GetStructValue().GetFields()
+	require.Equal(t, "response.output_text.delta", selector["eventType"].GetStringValue())
+	require.NotContains(t, selector, "event_type")
+
+	svc := &azdext.ServiceConfig{
+		Name:                 "rai-agent",
+		Host:                 "azure.ai.agent",
+		AdditionalProperties: props,
+	}
+
+	got, isHosted, found, _, err := AgentDefinitionFromService(svc)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.True(t, isHosted)
+	require.Equal(t, ca.Policies, got.Policies)
+}
+
+// TestAgentPoliciesInvocationsModerationReachesRaiConfig is the end-to-end check
+// that a moderation block authored inline in azure.yaml reaches the Foundry data
+// plane as snake_case `rai_config.invocations_moderation`.
+func TestAgentPoliciesInvocationsModerationReachesRaiConfig(t *testing.T) {
+	t.Parallel()
+
+	agentDef, isHosted, found, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":      "hosted",
+		"name":      "rai-agent",
+		"protocols": []any{map[string]any{"protocol": "invocations", "version": "1.0.0"}},
+		"policies": []any{
+			map[string]any{
+				"type":          "rai_policy",
+				"raiPolicyName": raiPolicyID,
+				"invocationsModeration": map[string]any{
+					"responseMode": "non_streaming",
+					"inputPaths":   []any{"$.input"},
+					"outputPaths":  []any{"$.output"},
+				},
+			},
+		},
+	}))
+	require.NoError(t, err)
+	require.True(t, found)
+	require.True(t, isHosted)
+
+	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(
+		agentDef, agent_yaml.WithImageURL("myregistry.azurecr.io/img:v1"))
+	require.NoError(t, err)
+
+	definition, ok := request.Definition.(agent_api.HostedAgentDefinition)
+	require.True(t, ok)
+	require.NotNil(t, definition.RaiConfig)
+	require.NotNil(t, definition.RaiConfig.InvocationsModeration)
+	require.Equal(t, raiPolicyID, definition.RaiConfig.RaiPolicyName)
+	require.Equal(t, "non_streaming", string(definition.RaiConfig.InvocationsModeration.ResponseMode))
+	require.Equal(t, []string{"$.input"}, definition.RaiConfig.InvocationsModeration.InputPaths)
+	require.Equal(t, []string{"$.output"}, definition.RaiConfig.InvocationsModeration.OutputPaths)
+}
+
+// TestAgentPoliciesInvocationsModerationInlineValidation verifies the new
+// validation rules fire for blocks authored inline in azure.yaml, not just for
+// the deprecated on-disk agent.yaml.
+func TestAgentPoliciesInvocationsModerationInlineValidation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		protocols    []any
+		moderation   map[string]any
+		wantErrSubst string
+	}{
+		{
+			name:      "protocol not exposed",
+			protocols: []any{map[string]any{"protocol": "responses", "version": "1.0.0"}},
+			moderation: map[string]any{
+				"responseMode": "non_streaming",
+				"inputPaths":   []any{"$.input"},
+				"outputPaths":  []any{"$.output"},
+			},
+			wantErrSubst: "only supported for agents that expose the 'invocations' protocol",
+		},
+		{
+			name:      "missing response mode",
+			protocols: []any{map[string]any{"protocol": "invocations", "version": "1.0.0"}},
+			moderation: map[string]any{
+				"inputPaths":  []any{"$.input"},
+				"outputPaths": []any{"$.output"},
+			},
+			wantErrSubst: "policies[0] invocationsModeration.responseMode",
+		},
+		{
+			name:      "missing stream selectors",
+			protocols: []any{map[string]any{"protocol": "invocations", "version": "1.0.0"}},
+			moderation: map[string]any{
+				"responseMode": "streaming",
+				"inputPaths":   []any{"$.input"},
+			},
+			wantErrSubst: "streamSelectors is required",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+				"kind":      "hosted",
+				"name":      "rai-agent",
+				"protocols": test.protocols,
+				"policies": []any{
+					map[string]any{
+						"type":                  "rai_policy",
+						"raiPolicyName":         raiPolicyID,
+						"invocationsModeration": test.moderation,
+					},
+				},
+			}))
+			require.ErrorContains(t, err, test.wantErrSubst)
+		})
+	}
+}
+
+// TestAgentPoliciesInvocationsModerationNonHostedInline covers the production entry point for
+// the non-hosted kinds. Those services are validated from the raw inline property map, so the
+// validator sees the camelCase keys the user authored rather than the snake_case YAML tags —
+// a block reaching the service would be dropped instead of enforced.
+func TestAgentPoliciesInvocationsModerationNonHostedInline(t *testing.T) {
+	t.Parallel()
+
+	for _, kind := range []string{"workflow", "prompt-voice"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+
+			properties := map[string]any{
+				"kind": kind,
+				"name": "rai-agent",
+				"policies": []any{
+					map[string]any{
+						"type":          "rai_policy",
+						"raiPolicyName": raiPolicyID,
+						"invocationsModeration": map[string]any{
+							"responseMode": "non_streaming",
+							"inputPaths":   []any{"$.input"},
+							"outputPaths":  []any{"$.output"},
+						},
+					},
+				},
+			}
+			if kind == "prompt-voice" {
+				properties["model"] = map[string]any{"id": "gpt-realtime"}
+			}
+			_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, properties))
+			require.ErrorContains(t, err, "invocationsModeration is only supported for 'hosted' agents")
+		})
+	}
+}
+
+// TestAgentPoliciesSingleRaiPolicyInline pins the one-policy rule on the inline shape, where a
+// second rai_policy would otherwise validate cleanly and then be dropped by the mapper.
+func TestAgentPoliciesSingleRaiPolicyInline(t *testing.T) {
+	t.Parallel()
+
+	_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":  "hosted",
+		"name":  "rai-agent",
+		"image": "myregistry.azurecr.io/agent:v1",
+		"policies": []any{
+			map[string]any{"type": "rai_policy", "raiPolicyName": raiPolicyID},
+			map[string]any{"type": "rai_policy", "raiPolicyName": raiPolicyID + "-2"},
+		},
+	}))
+	require.ErrorContains(t, err, "only one is supported")
+}
+
+// TestAgentPoliciesRaiPolicyNameKey covers the azure.yaml camelCase shape.
+func TestAgentPoliciesRaiPolicyNameKey(t *testing.T) {
+	t.Parallel()
+
+	agentDef, _, found, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+		"kind":  "hosted",
+		"name":  "rai-agent",
+		"image": "myregistry.azurecr.io/agent:v1",
+		"policies": []any{
+			map[string]any{"type": "rai_policy", "raiPolicyName": raiPolicyID},
+		},
+	}))
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, raiPolicyID, agentDef.Policies[0].RaiPolicyName)
 }

@@ -131,7 +131,7 @@ Shows detailed information for a specific extension, including description, tags
 
 Installs one or more extensions from any configured extension source.
 
-- `-v, --version` Specifies the exact version to install.
+- `-v, --version` Specifies the exact version to install. It cannot be used with an extension bundle.
 - `-s, --source` Specifies the extension source used for installations. In addition to registered source names, this accepts a registry location (URL or file path). `azd` registers the location as a source, prompting for a name and confirming first for URLs, then installs from it:
 
   ```bash
@@ -350,7 +350,7 @@ The metadata JSON includes:
   - `usage`: Usage template string
   - `examples`: Example usages with description and command
   - `args`: Positional arguments with name, description, required flag
-  - `flags`: Command flags with name, shorthand, type, default, validValues
+  - `flags`: Command flags with name, shorthand, type, default, and validValues. `valueOptional` marks a value-taking flag that can be used without an explicit value.
   - `subcommands`: Nested subcommand definitions
   - `hidden`, `aliases`, `deprecated`: Optional command metadata
 - **`configuration`**: Optional configuration schemas:
@@ -1567,19 +1567,19 @@ if err := host.Run(ctx); err != nil {
 
 ## Developer Artifacts
 
-`azd` leverages gRPC for the communication protocol between Core `azd` and extensions. gRPC client & server components are automatically generated from profile files.
+The `azd` CLI and its extensions communicate over gRPC. The client and server code is generated from protobuf files.
 
 - Proto files @ [grpc/proto](../../grpc/proto/)
 - Generated files @ [pkg/azdext](../../pkg/azdext)
-- Make file @ [Makefile](../../Makefile)
 
-To re-generate gRPC clients:
+To regenerate the checked-in Go, Python, and JavaScript protobuf bindings, run this command from `cli/azd`:
 
-- Run `protoc --version` to check if `protoc` is installed. If not, download and install it from [GitHub](https://github.com/protocolbuffers/protobuf/releases).
-- Run `make --version` to check if `make` is installed.
-- Run `go install google.golang.org/protobuf/cmd/protoc-gen-go@latest` and `go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest` to install the required Go tools.
-- Run `make proto` from the `~/cli/azd` folder of the repo in `Git Bash`.
-- Run `../../eng/scripts/copyright-check.sh . --fix` to add copyright.
+```bash
+go tool mage generateProtos
+```
+
+Mage is included in `go.mod`, so you do not need to install it separately. The target runs the pinned protobuf
+tools in a container and writes the generated files back to the repository.
 
 ## gRPC Services
 
@@ -2072,6 +2072,7 @@ Prompts the user to select multiple options from a list.
     - `help_message` (string)
     - `hint` (string)
     - `display_count` (int32)
+    - `allow_empty_selection` (optional bool): Whether the prompt can be submitted without a selection (default: `false`)
 - **Response:** _MultiSelectResponse_
   - Contains a list of selected **MultiSelectChoice** items
 

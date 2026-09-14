@@ -126,6 +126,27 @@ func validateProjectEndpoint(raw string) (normalized string, pathWarning bool, e
 	return normalized, pathWarning, nil
 }
 
+func redactProjectEndpoint(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "<redacted endpoint>"
+	}
+	u.User = nil
+	u.RawQuery = ""
+	u.ForceQuery = false
+	u.Fragment = ""
+	u.RawFragment = ""
+	return u.String()
+}
+
+func projectEndpointHasSensitiveParts(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	return u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != ""
+}
+
 // noProjectEndpointError returns the structured dependency error used when no
 // project endpoint could be resolved from any source.
 func noProjectEndpointError() error {

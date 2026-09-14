@@ -15,7 +15,8 @@ All `azd` commands automatically create a **root command event** with a namespac
 
 - **Trace** – Represents an entire operation or command (e.g., running `azd up`).
 - **Span** (also **Event**) – Represents a single unit of work within that operation (e.g., deploying resources).
-- **Attribute** – Metadata attached to a span (e.g., environment name, subscription ID).
+- **Span attribute** – Metadata attached to a specific span (e.g., environment name, subscription ID).
+- **Resource attribute** – Metadata describing the azd process that produced every span (e.g., CLI version, OS type).
 
 For general OpenTelemetry background, see the official [Traces documentation](https://opentelemetry.io/docs/concepts/signals/traces/).
 
@@ -91,6 +92,12 @@ string literals in extension `ReportUsageRequest` values. It understands
 documented `cmd.`, `mcp.`, and `vsrpc.` event families, but dynamic
 extension keys and values referenced through constants cannot be enumerated
 and must be documented by the extension author.
+
+Resource attributes are not an azd telemetry extensibility point. Although the embedded OpenTelemetry SDK reads
+`OTEL_RESOURCE_ATTRIBUTES` and `OTEL_SERVICE_NAME`, azd wraps each trace exporter so it receives the canonical
+resource. Values from these environment variables are therefore not included in the telemetry queue,
+`--trace-log-file`, or `--trace-log-url`. This policy does not change span attributes created through the APIs above,
+including first-party extension `ext.*` usage attributes.
 
 ---
 
@@ -180,6 +187,9 @@ azd up --trace-log-file trace.json
 ```
 
 Then open the file in your favorite text editor.
+
+The file contains azd's filtered exported resource, so it can be used to verify which resource fields azd exports.
+Its stdouttrace JSON format is not byte-identical to the Application Insights envelope format.
 
 ### 2. Remote Observation (Released Builds)
 

@@ -135,6 +135,8 @@ safe to include in a normal `go test ./...`.
 | `E2E_USE_AZ_CLI_AUTH`      | —                              | `true` → set `auth.useAzCliAuth` (CI; auto-on under ADO/GHA) |
 | `E2E_TESTDIR`              | `/tmp/e2e-tests/tier2-<mode>`  | Scratch dir for the scaffolded project                      |
 | `E2E_KEEP_ARTIFACTS`       | —                              | `true` → keep the per-run `AZD_CONFIG_DIR` copy for debugging |
+| `AZURE_AI_AGENTS_E2E_TEMPLATE_CACHE_DIR` | —                 | CI cache for the last successfully downloaded sample         |
+| `AZURE_AI_AGENTS_E2E_TEMPLATE_CACHE_WARNINGS_FILE` | —      | ADO-only per-job file for replaying successful cache fallback warnings outside the interactive PTY; keep outside the shared cache |
 | `GH_TOKEN`                 | —                              | GitHub token for template clone (optional)                  |
 
 In CI the driver auto-detects GitHub Actions (`GITHUB_ACTIONS`) and Azure DevOps
@@ -142,6 +144,13 @@ In CI the driver auto-detects GitHub Actions (`GITHUB_ACTIONS`) and Azure DevOps
 resources down interactively (answering the confirmation prompt), and a
 `t.Cleanup` force teardown (`azd down --force --purge`) always runs on top, even
 on failure.
+
+The live pipeline clears the warning file before testing and replays it from an
+always-run post-test step, even when no sample was refreshed. Only successful cache
+fallback warnings are appended as escaped Azure Pipelines logging commands so both
+deploy modes retain their diagnostics. The file is not part of the shared sample
+artifact; reporting failures do not turn a successful cache fallback into an init
+failure.
 
 ## Files
 

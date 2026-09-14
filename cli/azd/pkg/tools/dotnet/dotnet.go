@@ -35,7 +35,9 @@ const (
 var DotNetProjectExtensions = []string{".csproj", ".fsproj", ".vbproj"}
 
 type Cli struct {
-	commandRunner exec.CommandRunner
+	commandRunner  exec.CommandRunner
+	sdkVersionInit osutil.LazyRetryInit
+	sdkVersion     semver.Version
 }
 
 type responseContainerConfiguration struct {
@@ -74,15 +76,13 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	dotnetRes, err := cli.commandRunner.Run(ctx, newDotNetRunArgs("--version"))
+
+	dotnetSemver, err := cli.SdkVersion(ctx)
 	if err != nil {
-		return fmt.Errorf("checking %s version: %w", cli.Name(), err)
+		return err
 	}
-	log.Printf("dotnet version: %s", dotnetRes.Stdout)
-	dotnetSemver, err := tools.ExtractVersion(dotnetRes.Stdout)
-	if err != nil {
-		return fmt.Errorf("converting to semver version fails: %w", err)
-	}
+	log.Printf("dotnet version: %s", dotnetSemver)
+
 	updateDetail := cli.versionInfo()
 	if dotnetSemver.LT(updateDetail.MinimumVersion) {
 		return &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
@@ -91,17 +91,40 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 }
 
 // SdkVersion returns the installed .NET SDK version by running
-// `dotnet --version` and parsing the output as semver.
+// `dotnet --version` and parsing the output as semver. Successful probes are
+// cached, while failed probes may be retried.
 func (cli *Cli) SdkVersion(ctx context.Context) (semver.Version, error) {
-	res, err := cli.commandRunner.Run(ctx, newDotNetRunArgs("--version"))
+	err := cli.sdkVersionInit.Do(func() error {
+		res, err := cli.commandRunner.Run(ctx, newDotNetRunArgs("--version"))
+		if err != nil {
+			return fmt.Errorf("checking %s version: %w", cli.Name(), err)
+		}
+
+		ver, err := tools.ExtractVersion(res.Stdout)
+		if err != nil {
+			return fmt.Errorf("parsing .NET SDK version from %q: %w", res.Stdout, err)
+		}
+
+		cli.sdkVersion = ver
+		return nil
+	})
 	if err != nil {
-		return semver.Version{}, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+		return semver.Version{}, err
 	}
-	ver, err := tools.ExtractVersion(res.Stdout)
+
+	return cli.sdkVersion, nil
+}
+
+// SupportsArtifactsPath reports whether the installed .NET SDK supports
+// `dotnet publish --artifacts-path`.
+func (cli *Cli) SupportsArtifactsPath(ctx context.Context) (bool, error) {
+	version, err := cli.SdkVersion(ctx)
 	if err != nil {
-		return semver.Version{}, fmt.Errorf("parsing .NET SDK version from %q: %w", res.Stdout, err)
+		return false, err
 	}
-	return ver, nil
+
+	minimumVersion := semver.Version{Major: 8, Minor: 0, Patch: 100}
+	return !version.LT(minimumVersion), nil
 }
 
 func (cli *Cli) Restore(ctx context.Context, project string, env []string) error {
@@ -148,6 +171,8 @@ func (cli *Cli) Publish(ctx context.Context, project string, configuration strin
 	if output != "" {
 		runArgs = runArgs.AppendParams("--output", output)
 	}
+
+	runArgs = appendArtifactsPath(ctx, runArgs)
 
 	// Append user env vars to preserve base env set by newDotNetRunArgs (DOTNET_NOLOGO, etc.)
 	if len(env) > 0 {

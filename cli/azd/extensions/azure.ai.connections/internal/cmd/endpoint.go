@@ -9,6 +9,9 @@ import (
 	"log"
 	"net/url"
 	"strings"
+
+	"azure.ai.connections/internal/exterrors"
+	"azure.ai.connections/internal/pkg/connections"
 )
 
 // parseEndpointComponents extracts account and project names from the endpoint URL.
@@ -47,6 +50,10 @@ type armContext struct {
 	ProjectName    string
 }
 
+type connectionLister interface {
+	ListConnections(context.Context) ([]connections.Connection, error)
+}
+
 // resolveARMContext resolves the ARM subscription + resource group for the
 // project.
 //
@@ -60,7 +67,7 @@ type armContext struct {
 func resolveARMContext(
 	ctx context.Context,
 	projectID, account, project string,
-	dpClient *dataClient,
+	dpClient connectionLister,
 ) (*armContext, error) {
 	if projectID != "" {
 		armCtx, err := parseARMResourceID(projectID)
@@ -84,7 +91,7 @@ func resolveARMContext(
 // resource group from the ARM resource IDs embedded in connection responses.
 func discoverARMContext(
 	ctx context.Context,
-	dpClient *dataClient,
+	dpClient connectionLister,
 ) (*armContext, error) {
 	conns, err := dpClient.ListConnections(ctx)
 	if err != nil {
@@ -92,10 +99,15 @@ func discoverARMContext(
 	}
 
 	if len(conns) == 0 {
-		return nil, fmt.Errorf(
-			"no connections found in project; cannot discover ARM context. " +
-				"Create a connection via the Foundry portal first, " +
-				"or pass the project endpoint that already has connections",
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"AZURE_AI_PROJECT_ID is required when the project has no connections; "+
+				"the endpoint alone cannot provide the ARM subscription and resource group.",
+			"Persist AZURE_AI_PROJECT_ID as the full ARM resource ID of the project matching the endpoint "+
+				"in the selected azd environment (not only in the shell): "+
+				"run 'azd env set AZURE_AI_PROJECT_ID \"<project-resource-id>\" --environment \"<environment>\"', "+
+				"or 'azd ai project add --project-id \"<project-resource-id>\" --environment \"<environment>\"'. "+
+				"Then retry the Connection command or deployment that produced this error.",
 		)
 	}
 

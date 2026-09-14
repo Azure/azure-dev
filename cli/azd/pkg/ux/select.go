@@ -352,9 +352,12 @@ func (p *Select) renderMessage(printer Printer) {
 
 	printer.Fprintln()
 
+	if !p.cancelled && !p.complete {
+		printer.Fprintln()
+	}
+
 	// Filter
 	if !p.cancelled && !p.complete && *p.options.EnableFiltering {
-		printer.Fprintln()
 		printer.Fprintf("  Filter: ")
 
 		if p.filter == "" {

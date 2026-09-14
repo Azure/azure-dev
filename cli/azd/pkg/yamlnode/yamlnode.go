@@ -111,7 +111,7 @@ func Set(root *yaml.Node, path string, value *yaml.Node) error {
 			return fmt.Errorf("%w: %s is not a sequence node", ErrNodeWrongKind, parts[len(parts)-2].key)
 		}
 
-		if part.idx < 0 || part.idx > len(anchor.Content) {
+		if part.idx < 0 || part.idx >= len(anchor.Content) {
 			return fmt.Errorf("sequence index out of bounds: %d", part.idx)
 		}
 
@@ -217,7 +217,9 @@ func find(current *yaml.Node, parts []pathElem, findOnly bool) (*yaml.Node, erro
 		current.Content = append(current.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: part.key})
 		current.Content = append(current.Content, node)
 	case yaml.SequenceNode:
-		current.Content[part.idx] = node
+		// Only an index past the end reaches here; the traversal above took every
+		// index that exists, so there is no element to make optional.
+		return nil, fmt.Errorf("sequence index out of bounds: %d", part.idx)
 	}
 
 	if len(parts) == 0 {

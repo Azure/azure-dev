@@ -7,8 +7,31 @@ import (
 	"testing"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/stretchr/testify/require"
 )
+
+func TestCurrentAzdVersion(t *testing.T) {
+	originalVersion := internal.Version
+	t.Cleanup(func() {
+		internal.Version = originalVersion
+	})
+
+	t.Run("development build skips compatibility", func(t *testing.T) {
+		internal.Version = "0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)"
+		require.Nil(t, CurrentAzdVersion())
+	})
+
+	t.Run("stable build", func(t *testing.T) {
+		internal.Version = "1.24.3 (commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)"
+		require.Equal(t, "1.24.3", CurrentAzdVersion().String())
+	})
+
+	t.Run("prerelease build uses base version", func(t *testing.T) {
+		internal.Version = "1.25.0-beta.1-pr.12345 (commit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)"
+		require.Equal(t, "1.25.0", CurrentAzdVersion().String())
+	})
+}
 
 func Test_VersionIsCompatible(t *testing.T) {
 	tests := []struct {

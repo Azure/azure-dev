@@ -1,5 +1,50 @@
 # Release History
 
+## 1.0.0-beta.10 (2026-09-10)
+
+### Features Added
+
+- [[#9559]](https://github.com/Azure/azure-dev/pull/9559) Add `azd ai project add` and project-aware deployment authoring for new, adopted, and endpoint-only Foundry projects.
+
+### Bugs Fixed
+
+- [[#9805]](https://github.com/Azure/azure-dev/pull/9805) Fix existing Foundry project endpoints that use environment references during provisioning, infrastructure ejection, and resource group location checks.
+
+## 1.0.0-beta.9 (2026-09-04)
+
+### Features Added
+
+- [[#9735]](https://github.com/Azure/azure-dev/pull/9735) Update Foundry project synthesis to support extension-owned Connection definitions and deployment. Thanks @JerryYangKai for the contribution!
+
+### Bugs Fixed
+
+- [[#9720]](https://github.com/Azure/azure-dev/pull/9720) Make Foundry provisioning prompts deterministic in no-prompt mode.
+- [[#9678]](https://github.com/Azure/azure-dev/pull/9678) Honor `condition` on Foundry connection services before provisioning.
+- [[#9741]](https://github.com/Azure/azure-dev/pull/9741) Preserve connection audience and connector name during Foundry project synthesis.
+- [[#9729]](https://github.com/Azure/azure-dev/pull/9729) Provide resource-specific quota guidance only for Cognitive Services errors, with generic guidance otherwise.
+
+### Other Changes
+
+- [[#9825]](https://github.com/Azure/azure-dev/pull/9825) Update gRPC to v1.83.1 to address the GHSA-vp52-pcj8-j9qc security advisory.
+
+## 1.0.0-beta.8 (2026-08-27)
+
+### Features Added
+
+- [[#9683]](https://github.com/Azure/azure-dev/pull/9683) Add editable Bicep and Terraform infrastructure ejection for existing Foundry projects while preserving ownership of existing resources.
+
+## 1.0.0-beta.7 (2026-08-24)
+
+### Other Changes
+
+- [[#9580]](https://github.com/Azure/azure-dev/pull/9580) Update the azd extension SDK dependency to v1.31.0 for extension telemetry compatibility.
+
+## 1.0.0-beta.6 (2026-08-13)
+
+### Features Added
+
+- [[#9457]](https://github.com/Azure/azure-dev/pull/9457) Support Foundry provisioning as an isolated infrastructure layer with layer paths, virtual outputs, ownership tracking, repeat provisioning, and teardown behavior.
+
 ## 1.0.0-beta.5 (2026-08-06)
 
 ### Features Added

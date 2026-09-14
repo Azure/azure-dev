@@ -69,10 +69,13 @@ func (a *publishAction) Run() error {
 
 	if state.ProjectEndpoint == "" {
 		return &azdext.LocalError{
-			Message:    "Foundry project endpoint is required for publish.",
-			Code:       "rle_project_required",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: fmt.Sprintf("Set %s=https://<account>.services.ai.azure.com/api/projects/<project>.", foundryProjectEndpointEnvVar),
+			Message:  "Foundry project endpoint is required for publish.",
+			Code:     "rle_project_required",
+			Category: azdext.LocalErrorCategoryUser,
+			Suggestion: fmt.Sprintf(
+				"Set %s=https://<account>.services.ai.azure.com/api/projects/<project>.",
+				foundryProjectEndpointEnvVar,
+			),
 		}
 	}
 
@@ -88,10 +91,16 @@ func (a *publishAction) Run() error {
 			Suggestion: "Set AZURE_CONTAINER_REGISTRY_ENDPOINT=<registry>.azurecr.io, then run publish again.",
 		}
 	}
-	if err := project.BuildRuntimeImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image, project.BuildOptions{
-		Source:     ".",
-		Dockerfile: a.flags.dockerfile,
-	}); err != nil {
+	if err := project.BuildRuntimeImage(
+		a.cmd.Context(),
+		a.cmd.OutOrStdout(),
+		a.cmd.ErrOrStderr(),
+		image,
+		project.BuildOptions{
+			Source:     ".",
+			Dockerfile: a.flags.dockerfile,
+		},
+	); err != nil {
 		return err
 	}
 	if err := project.PushImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image); err != nil {
@@ -101,7 +110,7 @@ func (a *publishAction) Run() error {
 	if err != nil {
 		return err
 	}
-	request := buildEnvironmentCreateRequest(state.Name, image, versionBump)
+	request := buildEnvironmentCreateRequest(state.EnvironmentName, image, versionBump)
 
 	var environment *environmentResource
 	created := state.EnvironmentId == ""
@@ -114,7 +123,7 @@ func (a *publishAction) Run() error {
 		a.cmd.OutOrStdout(),
 		"%s environment '%s' (image=%s) ...\n",
 		action,
-		state.Name,
+		state.EnvironmentName,
 		image,
 	); err != nil {
 		return err
@@ -123,7 +132,7 @@ func (a *publishAction) Run() error {
 	if err != nil {
 		return serviceError(err)
 	}
-	state.Name = environment.Name
+	state.EnvironmentName = environment.Name
 	state.EnvironmentId = environment.Id
 	state.EnvironmentVersion = environment.Version
 	if err := saveRleState(state); err != nil {
@@ -138,7 +147,7 @@ func (a *publishAction) Run() error {
 		a.cmd.OutOrStdout(),
 		"\n%s environment '%s' (%s).\n",
 		label,
-		state.Name,
+		state.EnvironmentName,
 		state.EnvironmentId,
 	); err != nil {
 		return err
@@ -146,7 +155,7 @@ func (a *publishAction) Run() error {
 	body, err := json.MarshalIndent(environmentOutput{
 		EnvironmentId:          environment.Id,
 		EnvironmentVersion:     state.EnvironmentVersion,
-		Name:                   environment.Name,
+		EnvironmentName:        environment.Name,
 		FoundryProjectEndpoint: state.ProjectEndpoint,
 		AcrImage:               environment.AcrImagePath,
 		CreatedAt:              environment.CreatedAt,
@@ -198,7 +207,7 @@ func resolvePublishState() (rleState, bool, error) {
 		state = defaultRleState(defaultSourceName("."))
 	}
 
-	state.Name = firstNonEmpty(state.Name, defaultSourceName("."))
+	state.EnvironmentName = firstNonEmpty(state.EnvironmentName, defaultSourceName("."))
 
 	projectEndpoint, err := resolveFoundryProjectEndpoint()
 	if err != nil {
@@ -225,13 +234,18 @@ func resolvePublishImage(state rleState) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s/%s-%s:latest", registry, project.Slug(projectName), project.Slug(state.Name)), nil
+	return fmt.Sprintf(
+		"%s/%s-%s:latest",
+		registry,
+		project.Slug(projectName),
+		project.Slug(state.EnvironmentName),
+	), nil
 }
 
 type environmentOutput struct {
 	EnvironmentId          string `json:"environmentId"`
 	EnvironmentVersion     string `json:"environmentVersion"`
-	Name                   string `json:"name"`
+	EnvironmentName        string `json:"environmentName"`
 	FoundryProjectEndpoint string `json:"foundryProjectEndpoint"`
 	AcrImage               string `json:"acrImage"`
 	CreatedAt              string `json:"createdAt"`

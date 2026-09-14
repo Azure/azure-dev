@@ -28,10 +28,11 @@ const (
 // Operation names for ServiceFromAzure errors. Prefixed to the Azure code,
 // e.g. "create_skill.NotFound".
 const (
-	OpCreateSkill   = "create_skill"
-	OpUpdateSkill   = "update_skill"
-	OpDeleteSkill   = "delete_skill"
-	OpGetSkill      = "get_skill"
-	OpListSkills    = "list_skills"
-	OpDownloadSkill = "download_skill"
+	OpCreateSkill    = "create_skill"
+	OpUpdateSkill    = "update_skill"
+	OpDeleteSkill    = "delete_skill"
+	OpGetSkill       = "get_skill"
+	OpListSkills     = "list_skills"
+	OpDownloadSkill  = "download_skill"
+	OpReconcileSkill = "reconcile_skill"
 )

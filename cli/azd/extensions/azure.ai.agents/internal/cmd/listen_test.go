@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -295,6 +296,36 @@ func TestPrepareContainerSettings_PreservesNestedFileRef(t *testing.T) {
 	require.NotNil(t, cfg.Container.Resources)
 	require.Equal(t, project.DefaultCpu, cfg.Container.Resources.Cpu)
 	require.Equal(t, project.DefaultMemory, cfg.Container.Resources.Memory)
+}
+
+func TestPrepareContainerSettings_ToolboxFileRefOwnership(t *testing.T) {
+	t.Parallel()
+	for _, definition := range []bool{false, true} {
+		t.Run(strconv.FormatBool(definition), func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			contents := "name: tools\n"
+			if definition {
+				contents += "tools: []\n"
+			}
+			require.NoError(t, os.WriteFile(filepath.Join(root, "toolbox.yaml"), []byte(contents), 0o600))
+			props, err := structpb.NewStruct(map[string]any{
+				"kind": "hosted", "name": "agent",
+				"toolboxes": []any{map[string]any{"$ref": "./toolbox.yaml"}},
+			})
+			require.NoError(t, err)
+			svc := &azdext.ServiceConfig{Name: "agent", Host: AiAgentHost, AdditionalProperties: props}
+			err = prepareContainerSettings(svc, root)
+			if definition {
+				require.ErrorContains(t, err, "azure.ai.toolbox services")
+			} else {
+				require.NoError(t, err)
+				cfg, err := project.LoadServiceTargetAgentConfig(svc)
+				require.NoError(t, err)
+				require.Equal(t, []project.Toolbox{{Name: "tools"}}, cfg.Toolboxes)
+			}
+		})
+	}
 }
 
 func TestPrepareContainerSettings_NormalizesInlineEnvironment(t *testing.T) {
@@ -597,72 +628,46 @@ func TestResolveTemplateRef(t *testing.T) {
 	}
 }
 
-func TestBuildConnectionCredentials(t *testing.T) {
+func TestAgentListenersDoNotProjectSplitConnections(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name        string
-		connections []project.Connection
-		wantKeys    []string
-		wantEmpty   bool
-	}{
-		{
-			name:      "empty connections",
-			wantEmpty: true,
-		},
-		{
-			name: "connections with credentials",
-			connections: []project.Connection{
-				{
-					Name:        "my-openai",
-					Credentials: map[string]any{"key": "${OPENAI_API_KEY}"},
-				},
-				{
-					Name:        "github-mcp",
-					Credentials: map[string]any{"pat": "${GITHUB_PAT}"},
-				},
-			},
-			wantKeys: []string{"my-openai", "github-mcp"},
-		},
-		{
-			name: "skips connections without credentials",
-			connections: []project.Connection{
-				{
-					Name:        "no-creds",
-					Credentials: nil,
-				},
-				{
-					Name:        "has-creds",
-					Credentials: map[string]any{"secret": "val"},
-				},
-			},
-			wantKeys: []string{"has-creds"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, event := range []string{"preprovision", "predeploy"} {
+		t.Run(event, func(t *testing.T) {
 			t.Parallel()
-
-			result := buildConnectionCredentials(tt.connections)
-
-			if tt.wantEmpty {
-				if len(result) != 0 {
-					t.Fatalf("expected empty map, got %v", result)
-				}
-				return
+			envServer := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "dev"},
+				values: map[string]map[string]string{"dev": {
+					"AI_PROJECT_CONNECTIONS":            "owned-by-connections",
+					"AI_PROJECT_CONNECTION_CREDENTIALS": "owned-secret-state",
+				}},
 			}
-
-			if len(result) != len(tt.wantKeys) {
-				t.Fatalf("expected %d entries, got %d: %v",
-					len(tt.wantKeys), len(result), result)
+			client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+			agent := agentService(t, "agent", project.ToolConnection{Name: "runtime", Target: "${AGENT_ENDPOINT}"})
+			agent.Config.Fields["kind"] = structpb.NewStringValue("prompt-voice")
+			agent.Config.Fields["name"] = structpb.NewStringValue("agent")
+			agent.Config.Fields["model"], _ = structpb.NewValue(map[string]any{"id": "gpt-realtime"})
+			connection := connectionService(t, "search", project.Connection{
+				Name: "search", Target: "${SEARCH_ENDPOINT}", Credentials: map[string]any{"key": "${SEARCH_KEY}"},
+			})
+			// Invalid sibling refs must be left for the owning extension too.
+			invalid, err := structpb.NewStruct(map[string]any{"$ref": "./missing-connection.yaml"})
+			require.NoError(t, err)
+			proj := &azdext.ProjectConfig{Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
+				"agent": agent, "search": connection,
+				"unresolved": {Name: "unresolved", Host: AiConnectionHost, AdditionalProperties: invalid},
+			}}
+			before := connection.GetConfig().AsMap()
+			if event == "preprovision" {
+				err = preprovisionHandler(t.Context(), client, &azdext.ProjectEventArgs{Project: proj})
+			} else {
+				err = predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: proj, Service: agent})
 			}
-
-			for _, key := range tt.wantKeys {
-				if _, ok := result[key]; !ok {
-					t.Errorf("expected key %q in result", key)
-				}
-			}
+			require.NoError(t, err)
+			require.Equal(t, before, connection.GetConfig().AsMap())
+			require.Equal(t, "owned-by-connections", envServer.values["dev"]["AI_PROJECT_CONNECTIONS"])
+			require.Equal(t, "owned-secret-state", envServer.values["dev"]["AI_PROJECT_CONNECTION_CREDENTIALS"])
+			require.Contains(t, envServer.values["dev"]["AI_PROJECT_TOOL_CONNECTIONS"], "runtime")
+			require.Contains(t, envServer.values["dev"]["AI_PROJECT_TOOL_CONNECTIONS"], "${AGENT_ENDPOINT}")
 		})
 	}
 }

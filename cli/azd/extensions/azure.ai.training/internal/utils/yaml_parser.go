@@ -14,27 +14,29 @@ import (
 
 // JobDefinition represents a job defined in a YAML file (AML-compatible format).
 type JobDefinition struct {
-	Schema               string                       `yaml:"$schema"`
-	Type                 string                       `yaml:"type"`
-	Name                 string                       `yaml:"name"`
-	DisplayName          string                       `yaml:"display_name"`
-	ExperimentName       string                       `yaml:"experiment_name"`
-	Description          string                       `yaml:"description"`
-	Command              string                       `yaml:"command" validate:"required"`
-	Environment          string                       `yaml:"environment" validate:"required"`
-	Compute              string                       `yaml:"compute" validate:"required"`
-	Code                 string                       `yaml:"code"`
-	Inputs               map[string]InputDefinition   `yaml:"inputs"`
-	Outputs              map[string]OutputDefinition  `yaml:"outputs"`
-	Distribution         *DistributionDefinition      `yaml:"distribution"`
-	Resources            *ResourceDefinition          `yaml:"resources"`
-	InstanceCount        int                          `yaml:"instance_count"`
-	GPUCount             int                          `yaml:"gpu_count"`
-	EnvironmentVariables map[string]string            `yaml:"environment_variables"`
-	Identity             string                       `yaml:"identity"`
-	Timeout              string                       `yaml:"timeout"`
-	Tags                 map[string]string            `yaml:"tags"`
-	Services             map[string]ServiceDefinition `yaml:"services"`
+	Schema                string                       `yaml:"$schema"`
+	Type                  string                       `yaml:"type"`
+	Name                  string                       `yaml:"name"`
+	DisplayName           string                       `yaml:"display_name"`
+	ExperimentName        string                       `yaml:"experiment_name"`
+	Description           string                       `yaml:"description"`
+	Command               string                       `yaml:"command" validate:"required"`
+	Environment           string                       `yaml:"environment" validate:"required"`
+	Compute               string                       `yaml:"compute" validate:"required"`
+	Code                  string                       `yaml:"code"`
+	Inputs                map[string]InputDefinition   `yaml:"inputs"`
+	Outputs               map[string]OutputDefinition  `yaml:"outputs"`
+	Distribution          *DistributionDefinition      `yaml:"distribution"`
+	Resources             *ResourceDefinition          `yaml:"resources"`
+	InstanceCount         int                          `yaml:"instance_count"`
+	GPUCount              int                          `yaml:"gpu_count"`
+	Priority              string                       `yaml:"priority"`
+	EnvironmentVariables  map[string]string            `yaml:"environment_variables"`
+	Identity              string                       `yaml:"identity"`
+	StorageConnectionName string                       `yaml:"storage_connection_name"`
+	Timeout               string                       `yaml:"timeout"`
+	Tags                  map[string]string            `yaml:"tags"`
+	Services              map[string]ServiceDefinition `yaml:"services"`
 }
 
 // DistributionDefinition represents the distributed training launcher config in YAML.
@@ -77,12 +79,12 @@ type ServiceDefinition struct {
 }
 
 // ResourceDefinition represents the compute resource configuration in a YAML job definition.
+// Only instance_count is honored; instance_type, slaTier, priority and the AISuperComputer
+// properties block have been removed — the service now infers the SKU from the compute
+// cluster, priority is a top-level job field, and users specify partial GPU allocations
+// via the top-level gpu_count field (GPU clusters only).
 type ResourceDefinition struct {
-	InstanceCount int            `yaml:"instance_count"`
-	InstanceType  string         `yaml:"instance_type"`
-	ShmSize       string         `yaml:"shm_size"`
-	DockerArgs    string         `yaml:"docker_args"`
-	Properties    map[string]any `yaml:"properties"`
+	InstanceCount int `yaml:"instance_count"`
 }
 
 // InputDefinition represents an input in the YAML job definition.
@@ -95,9 +97,11 @@ type InputDefinition struct {
 
 // OutputDefinition represents an output in the YAML job definition.
 type OutputDefinition struct {
-	Type string `yaml:"type"`
-	Path string `yaml:"path"`
-	Mode string `yaml:"mode"`
+	Type         string `yaml:"type"`
+	Path         string `yaml:"path"`
+	Mode         string `yaml:"mode"`
+	AssetName    string `yaml:"asset_name"`
+	AssetVersion string `yaml:"asset_version"`
 }
 
 // ParseJobFile reads and parses a YAML job definition file.
@@ -117,7 +121,7 @@ func ParseJobFile(path string) (*JobDefinition, error) {
 }
 
 // ResolveRelativePaths converts relative paths in the job definition to absolute paths
-// based on the YAML file's directory. Remote URIs (azureml://, https://, http://) are left as-is.
+// based on the YAML file's directory. Remote URIs (azureml://, azureai://, https://, http://) are left as-is.
 func (j *JobDefinition) ResolveRelativePaths(yamlDir string) {
 	if j.Code != "" && !filepath.IsAbs(j.Code) && !IsRemoteURI(j.Code) {
 		j.Code = filepath.Join(yamlDir, j.Code)
@@ -134,6 +138,7 @@ func (j *JobDefinition) ResolveRelativePaths(yamlDir string) {
 func IsRemoteURI(s string) bool {
 	lower := strings.ToLower(s)
 	return strings.HasPrefix(lower, "azureml://") ||
+		strings.HasPrefix(lower, "azureai://") ||
 		strings.HasPrefix(lower, "https://") ||
 		strings.HasPrefix(lower, "http://") ||
 		strings.HasPrefix(lower, "git://") ||

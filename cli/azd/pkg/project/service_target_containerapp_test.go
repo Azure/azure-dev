@@ -22,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -236,6 +237,64 @@ func Test_ContainerApp_Publish(t *testing.T) {
 	publishArtifacts := publishResult.Artifacts.Find()
 	require.Greater(t, len(publishArtifacts), 0)
 	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", publishArtifacts[0].Location)
+}
+
+func Test_ContainerApp_Publish_ImagePassthrough(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		packageArtifact *Artifact
+		wantImage       string
+	}{
+		{
+			name:            "configured image",
+			packageArtifact: imagePassthroughArtifact("private.example.com/team/agent:v1"),
+			wantImage:       "private.example.com/team/agent:v1",
+		},
+		{
+			name: "from package override",
+			packageArtifact: &Artifact{
+				Kind:         ArtifactKindContainer,
+				Location:     "other.example.com/team/agent:v2",
+				LocationKind: LocationKindLocal,
+			},
+			wantImage: "other.example.com/team/agent:v2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			mockContext := mocks.NewMockContext(t.Context())
+			setupMocksForContainerAppTarget(mockContext)
+			env := createEnv()
+			serviceTarget := createContainerAppServiceTarget(mockContext, env)
+			serviceConfig := createTestServiceConfig("", ContainerAppTarget, ServiceLanguageDocker)
+			serviceConfig.Image = osutil.NewExpandableString("private.example.com/team/agent:v1")
+			serviceConfig.Docker.ImagePassthrough = true
+			serviceContext := NewServiceContext()
+			serviceContext.Package = ArtifactCollection{tt.packageArtifact}
+			targetResource := environment.NewTargetResource(
+				"SUBSCRIPTION_ID",
+				"RESOURCE_GROUP",
+				"CONTAINER_APP",
+				string(azapi.AzureResourceTypeContainerApp),
+			)
+
+			result, err := logProgress(
+				t, func(progress *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
+					return serviceTarget.Publish(
+						*mockContext.Context, serviceConfig, serviceContext, targetResource, progress, &PublishOptions{})
+				},
+			)
+			require.NoError(t, err)
+			require.Len(t, result.Artifacts, 1)
+			require.Equal(t, tt.wantImage, result.Artifacts[0].Location)
+			require.Equal(t, "true", result.Artifacts[0].Metadata[MetadataKeyImagePassthrough])
+			require.Equal(t, tt.wantImage, env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME"))
+		})
+	}
 }
 
 func createContainerAppServiceTarget(

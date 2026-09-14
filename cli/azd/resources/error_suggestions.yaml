@@ -111,12 +111,28 @@ rules:
   # ============================================================================
 
   - errorType: "DeploymentErrorLine"
+    regex: true
+    properties:
+      Code: "(?i)^InsufficientQuota$"
+      ResourceType: '(?i)^Microsoft\.CognitiveServices/accounts$'
+    message: "Your Cognitive Services account may have insufficient regional or subscription quota."
+    suggestion: >
+      Check Cognitive Services usage for the deployment region with
+      'az cognitiveservices usage list --location <region>' or request a
+      quota increase in the Azure portal.
+    links:
+      - url: "https://learn.microsoft.com/azure/ai-services/quotas-limits"
+        title: "Azure AI Services quotas and limits"
+      - url: "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal"
+        title: "Increase Azure subscription quotas"
+
+  - errorType: "DeploymentErrorLine"
     properties:
       Code: "InsufficientQuota"
     message: "Your subscription has insufficient quota for this resource."
     suggestion: >
-      Check current usage with 'az vm list-usage --location <region>'
-      or request a quota increase in the Azure portal.
+      Check the quota and current usage for the affected resource provider in
+      the Azure portal, or request a quota increase.
     links:
       - url: "https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal"
         title: "Increase Azure subscription quotas"

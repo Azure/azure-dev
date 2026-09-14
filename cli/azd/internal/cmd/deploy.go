@@ -242,13 +242,17 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 	}
 
-	if err := da.projectManager.Initialize(ctx, da.projectConfig); err != nil {
+	stableServices, err := da.importManager.ServiceStableFiltered(
+		ctx, da.projectConfig, targetServiceName, da.env.Getenv)
+	if err != nil {
 		return nil, err
 	}
 
-	if err := da.projectManager.EnsureServiceTargetTools(ctx, da.projectConfig, func(svc *project.ServiceConfig) bool {
-		return targetServiceName == "" || svc.Name == targetServiceName
-	}); err != nil {
+	if err := da.projectManager.InitializeServices(ctx, stableServices); err != nil {
+		return nil, err
+	}
+
+	if err := da.projectManager.EnsureServiceTargetTools(ctx, stableServices); err != nil {
 		return nil, err
 	}
 
@@ -259,25 +263,26 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	startTime := time.Now()
 
-	stableServices, err := da.importManager.ServiceStableFiltered(ctx, da.projectConfig, targetServiceName, da.env.Getenv)
-	if err != nil {
-		return nil, err
-	}
-
 	// Always deploy through the service execution graph. The graph handles
 	// any service count (including N=1) with a uniform progress tracker
 	// and the same package → publish → deploy step topology.
 	return da.deployServicesGraph(ctx, stableServices, startTime)
 }
 
+// dotNetPackagePublishBuildGateKey groups standard .NET services whose
+// package or publish phase can run dotnet publish locally.
+func dotNetPackagePublishBuildGateKey(svc *project.ServiceConfig) string {
+	if svc != nil && svc.DotNetContainerApp == nil && svc.Language.IsDotNet() {
+		return "dotnet"
+	}
+	return ""
+}
+
 // deployServicesGraph builds an execution graph of service deployments and runs them in
-// parallel via the execution graph scheduler. Services that share a non-empty
-// [serviceGraphOptions.buildGateKey] share a runtime mutex that serializes only
-// their image-preparation phase (dotnet publish); the Azure deployment portion
-// runs fully in parallel. Today that policy only fires for Aspire services
-// (DotNetContainerApp != nil), which share .NET project references whose obj/
-// directories collide under parallel `dotnet publish`. Every other service runs
-// fully in parallel with no inter-service edges.
+// parallel via the execution graph scheduler. Concurrent local .NET publishes
+// receive an isolated artifacts path when supported, with a shared runtime
+// mutex as the compatibility fallback. The mutex is released before Azure
+// deployment work begins.
 func (da *DeployAction) deployServicesGraph(
 	ctx context.Context,
 	stableServices []*project.ServiceConfig,
@@ -287,6 +292,7 @@ func (da *DeployAction) deployServicesGraph(
 	if err != nil {
 		return nil, err
 	}
+	concurrency := resolveDeployGraphConcurrency(da.env.LookupEnv)
 
 	// Wrap console for thread-safe output during parallel deployment.
 	// Graph step callbacks may call ShowSpinner/StopSpinner/Message which are
@@ -328,17 +334,23 @@ func (da *DeployAction) deployServicesGraph(
 
 	g := exegraph.NewGraph()
 	state := newDeployGraphState(stableServices)
+	var packagePublishBuildGateKey func(*project.ServiceConfig) string
+	if da.flags.fromPackage == "" {
+		packagePublishBuildGateKey = dotNetPackagePublishBuildGateKey
+	}
 
 	if _, err := addServiceStepsToGraph(g, serviceGraphOptions{
-		services:       stableServices,
-		serviceManager: da.serviceManager,
-		deployTimeout:  deployTimeout,
-		fromPackage:    da.flags.fromPackage,
-		state:          state,
+		services:                   stableServices,
+		serviceManager:             da.serviceManager,
+		deployTimeout:              deployTimeout,
+		maxConcurrency:             concurrency.max,
+		fromPackage:                da.flags.fromPackage,
+		state:                      state,
+		packagePublishBuildGateKey: packagePublishBuildGateKey,
+		buildGateKey:               aspireBuildGateKey,
 		onDeployTimeout: func(ctx context.Context, svc *project.ServiceConfig) {
 			da.console.MessageUxItem(ctx, deployTimeoutWarning(svc.Name, deployTimeout))
 		},
-		buildGateKey: aspireBuildGateKey,
 		onPhaseProgress: func(svcName string, phase deployPhase, detail string) {
 			// Forward intra-phase progress (e.g. "Pushing image…") to the
 			// tracker so the table's Detail column reflects what each step
@@ -353,8 +365,9 @@ func (da *DeployAction) deployServicesGraph(
 	// Wire progress tracker to graph step lifecycle callbacks.
 	// Step names are "package-<svc>", "publish-<svc>", "deploy-<svc>".
 	opts := exegraph.RunOptions{
-		MaxConcurrency: da.resolveDAGConcurrency(),
-		ErrorPolicy:    exegraph.FailFast,
+		MaxConcurrency:   concurrency.max,
+		GroupConcurrency: concurrency.groups,
+		ErrorPolicy:      exegraph.FailFast,
 		OnStepStart: func(stepName string) {
 			if svc, ok := strings.CutPrefix(stepName, "package-"); ok {
 				da.updateProgress(svc, phasePackaging, "")
@@ -436,6 +449,10 @@ func (da *DeployAction) deployServicesGraph(
 		return nil, err
 	}
 
+	if da.formatter.Kind() != output.JsonFormat {
+		displayDeployWarnings(ctx, da.console, stableServices, state)
+	}
+
 	// Display service endpoint artifacts collected during deploy steps.
 	if da.formatter.Kind() != output.JsonFormat {
 		for _, svc := range stableServices {
@@ -482,23 +499,6 @@ func (da *DeployAction) deployServicesGraph(
 			),
 		},
 	}, nil
-}
-
-// resolveDAGConcurrency reads AZD_DEPLOY_CONCURRENCY from the environment.
-// Returns 0 (unlimited) if the variable is unset or invalid.
-func (da *DeployAction) resolveDAGConcurrency() int {
-	if envVal, ok := os.LookupEnv("AZD_DEPLOY_CONCURRENCY"); ok {
-		if n, err := strconv.Atoi(envVal); err != nil {
-			log.Printf("warning: ignoring invalid AZD_DEPLOY_CONCURRENCY=%q: %v", envVal, err)
-		} else if n > 0 {
-			clamped := min(n, 64)
-			if clamped < n {
-				log.Printf("clamping deploy concurrency from %d to %d", n, clamped)
-			}
-			return clamped
-		}
-	}
-	return 0
 }
 
 func (da *DeployAction) resolveDeployTimeout() (time.Duration, error) {

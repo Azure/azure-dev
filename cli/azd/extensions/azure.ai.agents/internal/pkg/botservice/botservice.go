@@ -138,6 +138,16 @@ func BotScopeSalt(subscriptionID, resourceGroup string) string {
 	return subscriptionID + "/" + resourceGroup
 }
 
+// BotArmID returns the ARM resource id of the Azure Bot Service for the given
+// scope and bot name. The Microsoft 365 packaging API records it on the generated
+// Teams app.
+func BotArmID(subscriptionID, resourceGroup, botName string) string {
+	return fmt.Sprintf(
+		"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.BotService/botServices/%s",
+		subscriptionID, resourceGroup, botName,
+	)
+}
+
 // MessagingEndpoint returns the activity-protocol messaging endpoint URL the bot
 // forwards inbound Teams activities to.
 func MessagingEndpoint(projectEndpoint, agentName string) string {

@@ -89,6 +89,12 @@ overrides:
           - azureai
           - entra
           - flexconsumption
+    - filename: .github/instructions/**/*.md
+      words:
+          - azdext
+          - Chdir
+          - exterrors
+          - userinfo
     - filename: docs/architecture/**/*.md
       words:
           - azapi
@@ -157,3 +163,7 @@ overrides:
           - usgovcloudapi
           - vsrpc
           - whatif
+    - filename: ./agency.toml
+      words:
+          - mcps
+          - toolsets

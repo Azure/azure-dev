@@ -688,6 +688,51 @@ func TestClose_RemovesAllResponseChannels(t *testing.T) {
 	assert.Equal(t, 0, count, "All channels should be removed from the map")
 }
 
+func TestSendAndWait_ReturnsBufferedResponseAfterBrokerClose(t *testing.T) {
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+
+	envelope := &SimpleMessageEnvelope{}
+	broker := NewMessageBroker(sim.ClientStream(), envelope, "client", nil)
+	ctx := t.Context()
+	const requestID = "buffered-final-response"
+
+	type result struct {
+		response *TestMessage
+		err      error
+	}
+	resultCh := make(chan result, 1)
+	go func() {
+		response, err := broker.SendAndWait(ctx, &TestMessage{
+			RequestId: requestID,
+			InnerMsg:  &TestRequest{Value: "request"},
+		})
+		resultCh <- result{response: response, err: err}
+	}()
+
+	var response *responseChannel[TestMessage]
+	require.Eventually(t, func() bool {
+		var ok bool
+		response, ok = broker.responseChans.Load(requestID)
+		return ok
+	}, time.Second, 5*time.Millisecond)
+
+	finalResponse := &TestMessage{
+		RequestId: requestID,
+		InnerMsg:  &TestResponse{Result: "response"},
+	}
+	require.True(t, response.send(finalResponse))
+	broker.Close()
+
+	select {
+	case result := <-resultCh:
+		require.NoError(t, result.err)
+		require.Same(t, finalResponse, result.response)
+	case <-time.After(time.Second):
+		t.Fatal("SendAndWait did not return the buffered response")
+	}
+}
+
 func TestProcessMessage_CancellationUnblocksFullResponseChannel(t *testing.T) {
 	sim := NewSimulatedBidiStream()
 	defer sim.Close()

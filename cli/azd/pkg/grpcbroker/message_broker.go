@@ -88,27 +88,56 @@ type handlerWrapper struct {
 }
 
 type responseChannel[TMessage any] struct {
-	messages    chan *TMessage
-	requestDone <-chan struct{}
-	closed      chan struct{}
-	closeOnce   sync.Once
+	messages      chan *TMessage
+	requestDone   <-chan struct{}
+	closed        chan struct{}
+	closeOnce     sync.Once
+	mu            sync.Mutex
+	closedState   bool
+	activeSenders int
+	closedCond    *sync.Cond
 }
 
 func newResponseChannel[TMessage any](ctx context.Context, bufferSize int) *responseChannel[TMessage] {
-	return &responseChannel[TMessage]{
+	response := &responseChannel[TMessage]{
 		messages:    make(chan *TMessage, bufferSize),
 		requestDone: ctx.Done(),
 		closed:      make(chan struct{}),
 	}
+	response.closedCond = sync.NewCond(&response.mu)
+	return response
 }
 
 func (c *responseChannel[TMessage]) close() {
 	c.closeOnce.Do(func() {
+		c.mu.Lock()
+		c.closedState = true
 		close(c.closed)
+		for c.activeSenders > 0 {
+			c.closedCond.Wait()
+		}
+		close(c.messages)
+		c.mu.Unlock()
 	})
 }
 
 func (c *responseChannel[TMessage]) send(message *TMessage) bool {
+	c.mu.Lock()
+	if c.closedState {
+		c.mu.Unlock()
+		return false
+	}
+	c.activeSenders++
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		c.activeSenders--
+		if c.closedState && c.activeSenders == 0 {
+			c.closedCond.Broadcast()
+		}
+		c.mu.Unlock()
+	}()
+
 	select {
 	case c.messages <- message:
 		return true
@@ -297,10 +326,11 @@ func (mb *MessageBroker[TMessage]) SendAndWait(ctx context.Context, msg *TMessag
 				return nil, err
 			}
 			mb.logger.Printf("[%s] [RequestId=%s] Request sent successfully, MessageType=%v", mb.name, requestId, msgType)
-		case <-response.closed:
-			mb.logger.Printf("[%s] [RequestId=%s] Channel closed (broker stopped)", mb.name, requestId)
-			return nil, errors.New("channel closed by broker")
-		case resp := <-response.messages:
+		case resp, ok := <-response.messages:
+			if !ok {
+				mb.logger.Printf("[%s] [RequestId=%s] Channel closed (broker stopped)", mb.name, requestId)
+				return nil, errors.New("channel closed by broker")
+			}
 			respInner := mb.envelope.GetInnerMessage(resp)
 			respType := reflect.TypeOf(respInner)
 			mb.logger.Printf("[%s] [RequestId=%s] Received response, MessageType=%v", mb.name, requestId, respType)
@@ -418,14 +448,15 @@ func (mb *MessageBroker[TMessage]) SendAndWaitWithProgress(
 				requestId,
 				msgType,
 			)
-		case <-response.closed:
-			mb.logger.Printf(
-				"[%s] [RequestId=%s] Channel closed (dispatcher likely stopped)",
-				mb.name,
-				requestId,
-			)
-			return nil, errors.New("channel closed by dispatcher")
-		case resp := <-response.messages:
+		case resp, ok := <-response.messages:
+			if !ok {
+				mb.logger.Printf(
+					"[%s] [RequestId=%s] Channel closed (dispatcher likely stopped)",
+					mb.name,
+					requestId,
+				)
+				return nil, errors.New("channel closed by dispatcher")
+			}
 
 			respInner := mb.envelope.GetInnerMessage(resp)
 			respType := reflect.TypeOf(respInner)

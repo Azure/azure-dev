@@ -78,6 +78,19 @@ func TestExtensionRunError_NilInner(t *testing.T) {
 	require.Nil(t, e.Unwrap())
 }
 
+func TestExtensionRunError_InvocationMetadata(t *testing.T) {
+	t.Parallel()
+
+	e := &ExtensionRunError{ExtensionId: "test-ext", ExtensionVersion: "1.2.3"}
+	require.Equal(t, "test-ext", e.InvocationExtensionId())
+	require.Equal(t, "1.2.3", e.InvocationExtensionVersion())
+	require.Empty(t, e.InvocationEvent())
+
+	var nilError *ExtensionRunError
+	require.Empty(t, nilError.InvocationExtensionId())
+	require.Empty(t, nilError.InvocationExtensionVersion())
+}
+
 // ---------------------------------------------------------------------------
 // NewRunner
 // ---------------------------------------------------------------------------

@@ -34,15 +34,20 @@ func (ops *EventMessageEnvelope) getExtensionIdFromContext(ctx context.Context) 
 }
 
 // GetRequestId generates a correlation key from the message content and context.
-// For EventMessage, the correlation key is generated from extension.Id (from context) + eventName + serviceName.
+// Handler output uses its request ID; other messages derive a key
+// from context.
 func (ops *EventMessageEnvelope) GetRequestId(ctx context.Context, msg *EventMessage) string {
+	innerMsg := ops.GetInnerMessage(msg)
+	if output, ok := innerMsg.(*HandlerOutput); ok {
+		return output.RequestId
+	}
+
 	extensionId := ops.getExtensionIdFromContext(ctx)
 	if extensionId == "" {
 		return ""
 	}
 
 	// Generate correlation key based on message type
-	innerMsg := ops.GetInnerMessage(msg)
 	if innerMsg == nil {
 		return ""
 	}
@@ -79,8 +84,8 @@ func (ops *EventMessageEnvelope) GetRequestId(ctx context.Context, msg *EventMes
 	return ""
 }
 
-// SetRequestId is a no-op for EventMessage as it doesn't have a RequestId field.
-// Correlation is managed through message content (event names).
+// SetRequestId is a no-op for messages with derived correlation.
+// Handler output already carries its request ID.
 func (ops *EventMessageEnvelope) SetRequestId(ctx context.Context, msg *EventMessage, id string) {
 	// No-op: EventMessage doesn't have a RequestId field
 }
@@ -112,23 +117,36 @@ func (ops *EventMessageEnvelope) GetInnerMessage(msg *EventMessage) any {
 		return m.InvokeServiceHandler
 	case *EventMessage_ServiceHandlerStatus:
 		return m.ServiceHandlerStatus
+	case *EventMessage_HandlerOutput:
+		return m.HandlerOutput
 	default:
 		// Return nil for unhandled message types
 		return nil
 	}
 }
 
-// IsProgressMessage returns false as EventMessage doesn't support progress messages
+// IsProgressMessage reports whether the message contains handler
+// output.
 func (ops *EventMessageEnvelope) IsProgressMessage(msg *EventMessage) bool {
-	return false
+	return msg.GetHandlerOutput() != nil
 }
 
-// GetProgressMessage returns empty string as EventMessage doesn't support progress messages
+// GetProgressMessage extracts handler output text.
 func (ops *EventMessageEnvelope) GetProgressMessage(msg *EventMessage) string {
+	if output := msg.GetHandlerOutput(); output != nil {
+		return output.Output
+	}
 	return ""
 }
 
-// CreateProgressMessage returns nil as EventMessage doesn't support progress messages
+// CreateProgressMessage creates a handler output message.
 func (ops *EventMessageEnvelope) CreateProgressMessage(requestId string, message string) *EventMessage {
-	return nil
+	return &EventMessage{
+		MessageType: &EventMessage_HandlerOutput{
+			HandlerOutput: &HandlerOutput{
+				RequestId: requestId,
+				Output:    message,
+			},
+		},
+	}
 }

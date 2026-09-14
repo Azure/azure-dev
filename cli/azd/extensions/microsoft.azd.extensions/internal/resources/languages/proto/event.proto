@@ -25,6 +25,7 @@ message EventMessage {
     InvokeServiceHandler invoke_service_handler = 5;
     ServiceHandlerStatus service_handler_status = 6;
     ExtensionReadyEvent extension_ready_event = 7;
+    HandlerOutput handler_output = 8;
   }
 }
 
@@ -33,6 +34,14 @@ message ExtensionReadyEvent {
   string status = 1;
   // Message provides additional details.
   string message = 2;
+}
+
+// Output emitted by a lifecycle handler.
+message HandlerOutput {
+  // Request ID of the handler invocation that produced the output.
+  string request_id = 1;
+  // Output text emitted by the handler.
+  string output = 2;
 }
 
 // Client subscribes to project-related events

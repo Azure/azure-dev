@@ -44,14 +44,6 @@ type eventService struct {
 	lazyEnvManager *lazy.Lazy[environment.Manager]
 	lazyProject    *lazy.Lazy[*project.ProjectConfig]
 	lazyEnv        *lazy.Lazy[*environment.Environment]
-
-	lifecycleOutputMu       sync.Mutex
-	lifecycleOutputCaptures map[*extensions.Extension]*lifecycleOutputCapture
-}
-
-type lifecycleOutputCapture struct {
-	active int
-	buffer boundedLifecycleOutput
 }
 
 type boundedLifecycleOutput struct {
@@ -90,6 +82,18 @@ func (b *boundedLifecycleOutput) String() string {
 	return strings.TrimRight(output, "\r\n")
 }
 
+func lifecycleOutputProgress(
+	output *boundedLifecycleOutput,
+) grpcbroker.ProgressFunc {
+	if output == nil {
+		return nil
+	}
+
+	return func(message string) {
+		_, _ = output.Write([]byte(message))
+	}
+}
+
 func NewEventService(
 	extensionManager *extensions.Manager,
 	lazyEnvManager *lazy.Lazy[environment.Manager],
@@ -98,12 +102,11 @@ func NewEventService(
 	console input.Console,
 ) azdext.EventServiceServer {
 	return &eventService{
-		extensionManager:        extensionManager,
-		lazyEnvManager:          lazyEnvManager,
-		lazyProject:             lazyProject,
-		lazyEnv:                 lazyEnv,
-		console:                 console,
-		lifecycleOutputCaptures: make(map[*extensions.Extension]*lifecycleOutputCapture),
+		extensionManager: extensionManager,
+		lazyEnvManager:   lazyEnvManager,
+		lazyProject:      lazyProject,
+		lazyEnv:          lazyEnv,
+		console:          console,
 	}
 }
 
@@ -194,12 +197,13 @@ func (s *eventService) createProjectEventHandler(
 	return func(ctx context.Context, args project.ProjectLifecycleEventArgs) error {
 		err := func() error {
 			previewTitle := fmt.Sprintf("%s (%s)", extension.DisplayName, eventName)
-			defer s.syncExtensionOutput(
+			cleanupPreview, output := s.syncExtensionOutput(
 				ctx,
 				extension,
 				previewTitle,
 				shouldPersistLifecycleOutput(eventName),
-			)()
+			)
+			defer cleanupPreview()
 
 			resolver := noEnvResolver
 			env, err := s.lazyEnv.GetValue()
@@ -224,7 +228,11 @@ func (s *eventService) createProjectEventHandler(
 
 			return s.runWithEnvReload(ctx, func() error {
 				// Use streamCtx which has extension claims for correlation
-				response, err := broker.SendAndWait(streamCtx, invokeMsg)
+				response, err := broker.SendAndWaitWithProgress(
+					streamCtx,
+					invokeMsg,
+					lifecycleOutputProgress(output),
+				)
 				if err != nil {
 					return fmt.Errorf("failed to send invoke message for event %s: %w", eventName, err)
 				}
@@ -316,12 +324,13 @@ func (s *eventService) createServiceEventHandler(
 	return func(ctx context.Context, args project.ServiceLifecycleEventArgs) error {
 		err := func() error {
 			previewTitle := fmt.Sprintf("%s (%s.%s)", extension.DisplayName, args.Service.Name, eventName)
-			defer s.syncExtensionOutput(
+			cleanupPreview, output := s.syncExtensionOutput(
 				ctx,
 				extension,
 				previewTitle,
 				shouldPersistLifecycleOutput(eventName),
-			)()
+			)
+			defer cleanupPreview()
 
 			resolver := noEnvResolver
 			env, err := s.lazyEnv.GetValue()
@@ -360,7 +369,11 @@ func (s *eventService) createServiceEventHandler(
 
 			return s.runWithEnvReload(ctx, func() error {
 				// Use streamCtx which has extension claims for correlation
-				response, err := broker.SendAndWait(streamCtx, invokeMsg)
+				response, err := broker.SendAndWaitWithProgress(
+					streamCtx,
+					invokeMsg,
+					lifecycleOutputProgress(output),
+				)
 				if err != nil {
 					return fmt.Errorf("failed to send invoke message for service event %s: %w", eventName, err)
 				}
@@ -406,7 +419,7 @@ func (s *eventService) syncExtensionOutput(
 	extension *extensions.Extension,
 	previewTitle string,
 	persistOutput bool,
-) func() {
+) (func(), *boundedLifecycleOutput) {
 	// Display the extension output in the preview experience
 	previewOptions := &input.ShowPreviewerOptions{
 		Prefix:       "  ",
@@ -421,7 +434,7 @@ func (s *eventService) syncExtensionOutput(
 
 	var output *boundedLifecycleOutput
 	if persistOutput {
-		output = s.beginLifecycleOutputCapture(extension)
+		output = &boundedLifecycleOutput{}
 	}
 
 	// Stop the previewer when the function exits.
@@ -432,50 +445,9 @@ func (s *eventService) syncExtensionOutput(
 		extOut.RemoveWriter(previewWriter)
 
 		if persistOutput {
-			s.persistExtensionOutput(ctx, s.endLifecycleOutputCapture(extension, output))
+			s.persistExtensionOutput(ctx, output.String())
 		}
-	}
-}
-
-func (s *eventService) beginLifecycleOutputCapture(extension *extensions.Extension) *boundedLifecycleOutput {
-	s.lifecycleOutputMu.Lock()
-	defer s.lifecycleOutputMu.Unlock()
-
-	if s.lifecycleOutputCaptures == nil {
-		s.lifecycleOutputCaptures = make(map[*extensions.Extension]*lifecycleOutputCapture)
-	}
-
-	capture, ok := s.lifecycleOutputCaptures[extension]
-	if !ok {
-		capture = &lifecycleOutputCapture{}
-		s.lifecycleOutputCaptures[extension] = capture
-		extension.StdOut().AddWriter(&capture.buffer)
-	}
-
-	capture.active++
-	return &capture.buffer
-}
-
-func (s *eventService) endLifecycleOutputCapture(
-	extension *extensions.Extension,
-	buffer *boundedLifecycleOutput,
-) string {
-	s.lifecycleOutputMu.Lock()
-	defer s.lifecycleOutputMu.Unlock()
-
-	capture, ok := s.lifecycleOutputCaptures[extension]
-	if !ok || &capture.buffer != buffer {
-		return ""
-	}
-
-	capture.active--
-	if capture.active > 0 {
-		return ""
-	}
-
-	delete(s.lifecycleOutputCaptures, extension)
-	extension.StdOut().RemoveWriter(&capture.buffer)
-	return capture.buffer.String()
+	}, output
 }
 
 func shouldPersistLifecycleOutput(eventName string) bool {

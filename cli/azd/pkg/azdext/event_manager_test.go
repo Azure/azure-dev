@@ -171,6 +171,32 @@ func TestEventManager_onInvokeProjectHandler_Success(t *testing.T) {
 	assert.Equal(t, "", status.Message)
 }
 
+func TestEventManager_onInvokeProjectHandler_ReportsOutput(t *testing.T) {
+	ctx := t.Context()
+	eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
+	var progress []string
+
+	eventManager.projectEvents["predeploy"] = func(ctx context.Context, args *ProjectEventArgs) error {
+		_, err := EventOutput(ctx).Write([]byte("lifecycle warning\n"))
+		return err
+	}
+
+	resp, err := eventManager.onInvokeProjectHandlerWithProgress(
+		ctx,
+		&InvokeProjectHandler{
+			EventName: "predeploy",
+			Project:   createTestProjectConfigForEvents(),
+		},
+		func(message string) {
+			progress = append(progress, message)
+		},
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp.GetProjectHandlerStatus())
+	require.Equal(t, []string{"lifecycle warning\n"}, progress)
+}
+
 // Test onInvokeProjectHandler with handler error
 func TestEventManager_onInvokeProjectHandler_HandlerError(t *testing.T) {
 	ctx := t.Context()

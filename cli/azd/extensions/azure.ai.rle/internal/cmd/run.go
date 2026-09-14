@@ -115,7 +115,14 @@ func (a *localRunAction) Run() error {
 	if err := ui.OpenBrowser(webUrl); err != nil {
 		_, _ = fmt.Fprintf(a.cmd.ErrOrStderr(), "Warning: failed to open playground UI: %v\n", err)
 	}
-	shellErr := project.RunShellWithContext(ctx, a.cmd.InOrStdin(), a.cmd.OutOrStdout(), baseUrl, 0)
+	shellErr := project.RunWebSocketShellWithContextAndAuthorizationProvider(
+		ctx,
+		a.cmd.InOrStdin(),
+		a.cmd.OutOrStdout(),
+		baseUrl,
+		0,
+		nil,
+	)
 	if a.flags.watch {
 		select {
 		case err := <-watchDone:

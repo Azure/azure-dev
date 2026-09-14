@@ -56,13 +56,22 @@ because a group references the versions the first two resolve to.
 Relative paths inside the `$ref`'d configuration resolve against **that file's**
 directory, so `./datasets/x.jsonl` above means `evals/datasets/x.jsonl`.
 
-That holds for the configuration as a whole. It does **not** hold for a `$ref`
-on a single catalog entry: azd rebases only the path keys it owns, so a relative
-`source:` written inside `evals/evaluators/quality.yaml` still resolves against
-`azure.eval.yaml` and will not be found.
+The same holds for a `$ref` on a single catalog entry: `file:` and `source:` are
+registered as this extension's path keys, so a relative `source:` written inside
+`evals/evaluators/quality.yaml` means `evals/evaluators/quality.json` — beside
+the file it was written in, wherever that file is pulled in from.
 
-A `$ref` fills the field that holds it, so a rubric kept in its own file is
-pulled in at `definition:` — no second file to find, and nothing to rebase:
+A rubric kept in its own file is named by `source:`, which is what `generate`
+writes:
+
+```yaml
+evaluators:
+  - name: quality
+    source: ./evaluators/quality.json
+```
+
+`definition:` takes the rubric itself rather than a path, and a `$ref` there
+fills that field with the file's contents:
 
 ```yaml
 evaluators:

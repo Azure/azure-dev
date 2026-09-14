@@ -61,7 +61,7 @@
         },
         "file": {
           "type": "string",
-          "description": "Path to a local .jsonl whose rows are uploaded on deploy, resolved against the evaluation configuration -- also when this entry arrived through a $ref, because a spliced path is not rebased to the file it was written in. Deliberately not a $ref: the rows are a data artifact to publish, not a definition to splice in, and a .jsonl is neither YAML nor JSON. Omit to use a dataset already registered under this name."
+          "description": "Path to a local .jsonl whose rows are uploaded on deploy, resolved against the file it is written in -- the evaluation configuration, or the entry's own file when this entry arrived through a $ref. Deliberately not a $ref: the rows are a data artifact to publish, not a definition to splice in, and a .jsonl is neither YAML nor JSON. Omit to use a dataset already registered under this name."
         },
         "version": {
           "type": "string",
@@ -85,7 +85,7 @@
         },
         "source": {
           "type": "string",
-          "description": "Path to a local .json rubric -- a list of weighted scoring dimensions -- resolved against the evaluation configuration. To keep a rubric in its own file, prefer a nested $ref under definition, which fills that field with the file's contents and leaves no second path to resolve. Published on deploy and fingerprinted locally so a later deploy can tell an edit here from a version published elsewhere."
+          "description": "Path to a local .json rubric -- a list of weighted scoring dimensions -- resolved against the file it is written in: the evaluation configuration for an inline entry, or the entry's own file when this entry arrived through a $ref. This is what `azd ai eval generate` writes. Use definition instead to carry the rubric itself rather than a path to one. Published on deploy and fingerprinted locally so a later deploy can tell an edit here from a version published elsewhere."
         },
         "definition": {
           "description": "The rubric, written out here or pulled in from its own file with a nested $ref. Its keys belong to the evaluator service, so they are not constrained here.",

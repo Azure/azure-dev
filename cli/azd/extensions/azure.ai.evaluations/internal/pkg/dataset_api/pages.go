@@ -67,12 +67,15 @@ func (c *DatasetClient) followPages(ctx context.Context, first *DatasetList) (*D
 			return nil, pageWalkError{cause: err}
 		}
 		var page DatasetList
-		// A page that answers 200 with no body ends the walk; unmarshaling it
-		// would throw away every page already collected.
-		if len(body) > 0 {
-			if err := json.Unmarshal(body, &page); err != nil {
-				return nil, pageWalkError{cause: messages.ParsingResponse(err)}
-			}
+		// The previous page named this link, so the service said there was more
+		// and then sent none. Ending the walk here returned a short listing
+		// indistinguishable from a complete one, and these rows choose the
+		// version a publish lands on.
+		if len(body) == 0 {
+			return nil, pageWalkError{cause: messages.ContinuationPageWasEmpty()}
+		}
+		if err := json.Unmarshal(body, &page); err != nil {
+			return nil, pageWalkError{cause: messages.ParsingResponse(err)}
 		}
 		out.Value = append(out.Value, page.Value...)
 		next = page.NextLink

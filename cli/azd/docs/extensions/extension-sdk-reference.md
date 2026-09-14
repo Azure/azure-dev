@@ -98,6 +98,8 @@ func EventOutput(ctx context.Context) io.Writer
 Use `EventOutput(ctx)` for output produced by project and service lifecycle
 handlers:
 
+<!-- cspell:ignore Fprintln -->
+
 ```go
 func postdeploy(ctx context.Context, args *azdext.ProjectEventArgs) error {
     _, err := fmt.Fprintln(azdext.EventOutput(ctx), "The next step is ...")

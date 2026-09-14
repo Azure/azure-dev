@@ -48,10 +48,20 @@ type extensionUsage struct {
 	definitions []definition
 }
 
+type attributeMapReferenceKey struct {
+	path string
+	pos  token.Pos
+}
+
+type attributeScope struct {
+	bindings map[string][]definition
+}
+
 type extensionStaticData struct {
-	constants             map[string]string
-	attributeMaps         map[string][]definition
-	attributeMapsByObject map[*ast.Object][]definition
+	constants                  map[string]string
+	attributeMaps              map[string][]definition
+	attributeMapReferences     map[attributeMapReferenceKey][]definition
+	attributeMapReferenceKnown map[attributeMapReferenceKey]bool
 }
 
 type extensionSourceFile struct {
@@ -551,9 +561,10 @@ func parseExtensionUsages(root string) ([]extensionUsage, error) {
 		data := staticData[dataKey]
 		if data == nil {
 			data = &extensionStaticData{
-				constants:             make(map[string]string),
-				attributeMaps:         make(map[string][]definition),
-				attributeMapsByObject: make(map[*ast.Object][]definition),
+				constants:                  make(map[string]string),
+				attributeMaps:              make(map[string][]definition),
+				attributeMapReferences:     make(map[attributeMapReferenceKey][]definition),
+				attributeMapReferenceKnown: make(map[attributeMapReferenceKey]bool),
 			}
 			staticData[dataKey] = data
 		}
@@ -792,8 +803,35 @@ func collectAttributeMaps(
 		}
 	}
 
+	var nodes []ast.Node
+	var scopes []*attributeScope
 	ast.Inspect(file, func(node ast.Node) bool {
+		if node == nil {
+			last := nodes[len(nodes)-1]
+			nodes = nodes[:len(nodes)-1]
+			if startsAttributeScope(last) {
+				scopes = scopes[:len(scopes)-1]
+			}
+			return true
+		}
+
+		nodes = append(nodes, node)
 		switch current := node.(type) {
+		case *ast.FuncDecl:
+			scope := newAttributeScope()
+			bindAttributeFields(scope, current.Recv)
+			bindAttributeFields(scope, current.Type.Params)
+			bindAttributeFields(scope, current.Type.Results)
+			scopes = append(scopes, scope)
+		case *ast.FuncLit:
+			scope := newAttributeScope()
+			bindAttributeFields(scope, current.Type.Params)
+			bindAttributeFields(scope, current.Type.Results)
+			scopes = append(scopes, scope)
+		case *ast.BlockStmt, *ast.IfStmt, *ast.ForStmt,
+			*ast.SwitchStmt, *ast.TypeSwitchStmt,
+			*ast.SelectStmt, *ast.CaseClause, *ast.CommClause:
+			scopes = append(scopes, newAttributeScope())
 		case *ast.ValueSpec:
 			for index, name := range current.Names {
 				var definitions []definition
@@ -802,12 +840,11 @@ func collectAttributeMaps(
 						current.Values[index], path, fileSet, data,
 					)
 				}
-				setAttributeMap(
-					data,
-					name,
-					definitions,
-					packageValueSpecs[current],
-				)
+				if packageValueSpecs[current] {
+					data.attributeMaps[name.Name] = definitions
+				} else if scope := currentAttributeScope(scopes); scope != nil {
+					scope.bindings[name.Name] = definitions
+				}
 			}
 		case *ast.AssignStmt:
 			for index, left := range current.Lhs {
@@ -821,25 +858,119 @@ func collectAttributeMaps(
 				definitions, _ := attributeDefinitionsFromMap(
 					current.Rhs[index], path, fileSet, data,
 				)
-				setAttributeMap(data, name, definitions, false)
+				setAttributeBinding(
+					scopes,
+					data,
+					name.Name,
+					definitions,
+					current.Tok == token.DEFINE,
+				)
+			}
+		case *ast.RangeStmt:
+			scopes = append(scopes, newAttributeScope())
+			if current.Tok == token.DEFINE {
+				scope := currentAttributeScope(scopes)
+				if scope != nil {
+					bindAttributeName(scope, current.Key)
+					bindAttributeName(scope, current.Value)
+				}
+			}
+		case *ast.Ident:
+			if definitions, found := resolveAttributeBinding(
+				scopes,
+				data,
+				current.Name,
+			); found {
+				key := attributeMapReferenceKey{
+					path: path,
+					pos:  current.Pos(),
+				}
+				data.attributeMapReferences[key] = definitions
+				data.attributeMapReferenceKnown[key] = true
 			}
 		}
 		return true
 	})
 }
 
-func setAttributeMap(
+func startsAttributeScope(node ast.Node) bool {
+	switch node.(type) {
+	case *ast.FuncDecl, *ast.FuncLit, *ast.BlockStmt,
+		*ast.IfStmt, *ast.ForStmt, *ast.RangeStmt,
+		*ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt,
+		*ast.CaseClause, *ast.CommClause:
+		return true
+	default:
+		return false
+	}
+}
+
+func newAttributeScope() *attributeScope {
+	return &attributeScope{bindings: make(map[string][]definition)}
+}
+
+func currentAttributeScope(scopes []*attributeScope) *attributeScope {
+	if len(scopes) == 0 {
+		return nil
+	}
+	return scopes[len(scopes)-1]
+}
+
+func bindAttributeFields(scope *attributeScope, fields *ast.FieldList) {
+	if fields == nil {
+		return
+	}
+	for _, field := range fields.List {
+		for _, name := range field.Names {
+			scope.bindings[name.Name] = nil
+		}
+	}
+}
+
+func bindAttributeName(scope *attributeScope, expression ast.Expr) {
+	name, ok := expression.(*ast.Ident)
+	if ok {
+		scope.bindings[name.Name] = nil
+	}
+}
+
+func setAttributeBinding(
+	scopes []*attributeScope,
 	data *extensionStaticData,
-	name *ast.Ident,
+	name string,
 	definitions []definition,
-	packageScope bool,
+	declare bool,
 ) {
-	if name.Obj != nil {
-		data.attributeMapsByObject[name.Obj] = definitions
+	if declare {
+		if scope := currentAttributeScope(scopes); scope != nil {
+			scope.bindings[name] = definitions
+		}
+		return
 	}
-	if packageScope {
-		data.attributeMaps[name.Name] = definitions
+
+	for index := len(scopes) - 1; index >= 0; index-- {
+		if _, exists := scopes[index].bindings[name]; exists {
+			scopes[index].bindings[name] = definitions
+			return
+		}
 	}
+	if _, exists := data.attributeMaps[name]; exists {
+		data.attributeMaps[name] = definitions
+	}
+}
+
+func resolveAttributeBinding(
+	scopes []*attributeScope,
+	data *extensionStaticData,
+	name string,
+) ([]definition, bool) {
+	for index := len(scopes) - 1; index >= 0; index-- {
+		if definitions, exists := scopes[index].bindings[name]; exists {
+			return definitions, true
+		}
+	}
+	definitions, exists := data.attributeMaps[name]
+	return definitions, exists
 }
 
 func attributeDefinitions(
@@ -850,10 +981,12 @@ func attributeDefinitions(
 	data *extensionStaticData,
 ) []definition {
 	if name, ok := expression.(*ast.Ident); ok {
-		if name.Obj != nil {
-			if definitions, exists := data.attributeMapsByObject[name.Obj]; exists {
-				return definitionsWithKind(definitions, kind)
-			}
+		key := attributeMapReferenceKey{path: path, pos: name.Pos()}
+		if data.attributeMapReferenceKnown[key] {
+			return definitionsWithKind(
+				data.attributeMapReferences[key],
+				kind,
+			)
 		}
 		return definitionsWithKind(data.attributeMaps[name.Name], kind)
 	}

@@ -86,7 +86,7 @@ func (em *EventManager) ensureStream(ctx context.Context) error {
 	}
 
 	// Create broker with client stream
-	envelope := &EventMessageEnvelope{}
+	envelope := newEventMessageEnvelope(em.extensionId)
 	// Use client as name since we're on the client side (extension process)
 	em.broker = grpcbroker.NewMessageBroker(stream, envelope, em.extensionId, em.brokerLogger)
 

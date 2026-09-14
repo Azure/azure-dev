@@ -45,3 +45,7 @@ docs/
 - Keep tables and lists scannable
 - Include code examples where they aid understanding
 - Verify environment-variable docs against source behavior and generated config shapes. Distinguish values that `azd` reads directly from template substitutions, and document Bicep parameter files using the nested `parameters.<name>.value` shape rather than flattened JSON.
+- Keep changelog entries, help text, and pull request descriptions scoped to behavior that actually
+  ships in the change. Do not add entries to a completed release or claim support for a broader
+  feature variant than the implementation exposes.
+  _Source: #9719, #9958_

@@ -32,3 +32,11 @@ all existing imports or declarations.
 - When reviewing command input resolution, explicit CLI args and flags should win over defaults. Do not prompt the user toward a different default when they provided a valid new value; reserve prompts for ambiguous choices and preserve deterministic `--no-prompt` behavior for CI/scripts.
 - When reviewing flag validation: if a flag was explicitly set (verifiable via `cmd.Flags().Changed("<name>")`) but the code path would silently ignore it, that is a bug. Reject the combination with a clear error — "success with dropped flags" breaks automation scripts.
 - When filtering AI models or quota data by location, keep location-specific usage data associated with only the models available in that location. Empty or unknown usage data from an unrelated location must not make a model eligible elsewhere; add regression coverage for cross-location quota cases.
+
+## Layered concurrency settings
+
+- Resolve layered concurrency settings once using the active azd environment lookup so project
+  values retain precedence over process defaults. Preserve independent global and group limits,
+  explain invalid or ignored values without silently changing fallback behavior, and emit only
+  fixed, bounded telemetry keys for the effective limits.
+  _Source: #9752_

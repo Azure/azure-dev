@@ -58,7 +58,7 @@ func resolveOptimizeAgent(ctx context.Context, flagValue, envName string, noProm
 		if svcErr == nil && svc != nil && project != nil {
 			agentProject := filepath.Join(project.Path, svc.RelativePath)
 			serviceKey := toServiceKey(svc.Name)
-			kind, kindErr := agentkind.Kind(svc, project.Path, "")
+			kind, kindErr := agentkind.Kind(svc, project.Path, os.Getenv("AGENT_DEFINITION_PATH"))
 			if kindErr != nil {
 				return nil, fmt.Errorf("failed to resolve agent kind: %w", kindErr)
 			}

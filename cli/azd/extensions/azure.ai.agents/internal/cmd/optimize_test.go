@@ -18,7 +18,76 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
+
+func TestResolveOptimizeAgent_DefinitionOverride(t *testing.T) {
+	tests := []struct {
+		name         string
+		inlineKind   string
+		overrideKind string
+		wantPrompt   bool
+	}{
+		{"prompt with hosted override", "prompt", "hosted", false},
+		{"hosted with prompt override", "hosted", "prompt", true},
+		{"prompt without override", "prompt", "", true},
+		{"hosted without override", "hosted", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			props, err := structpb.NewStruct(map[string]any{"kind": tt.inlineKind})
+			require.NoError(t, err)
+			server := &recordingProjectServer{
+				projectPath: root,
+				existing: map[string]*azdext.ServiceConfig{
+					"assistant": {Name: "assistant", Host: AiAgentHost, AdditionalProperties: props},
+				},
+			}
+			envServer := &testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{"dev": {Name: "dev"}},
+				values: map[string]map[string]string{
+					"dev": {"AGENT_ASSISTANT_NAME": "deployed-agent", "AGENT_ASSISTANT_VERSION": "2"},
+				},
+			}
+			t.Setenv("AZD_SERVER", newProjectRecorderServer(t, server, envServer))
+			override := ""
+			if tt.overrideKind != "" {
+				override = filepath.Join(root, "override.yaml")
+				require.NoError(t, os.WriteFile(override, []byte("kind: "+tt.overrideKind+"\n"), 0600))
+			}
+			t.Setenv("AGENT_DEFINITION_PATH", override)
+
+			resolved, err := resolveOptimizeAgent(t.Context(), "assistant", "dev", true)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantPrompt, resolved.promptAgent)
+			require.Equal(t, "deployed-agent", resolved.agentName)
+			require.Equal(t, "2", resolved.agentVersion)
+			require.Equal(t, "assistant", resolved.serviceName)
+			cfg := &OptimizeConfig{
+				Config: opt_eval.Config{Agent: opt_eval.AgentRef{Name: resolved.agentName}},
+				Options: &opt_eval.Options{OptimizationConfig: opt_eval.OptimizationConfig{
+					"model":              json.RawMessage(`"gpt-5"`),
+					"system_prompt":      json.RawMessage(`"Be helpful."`),
+					"tools":              json.RawMessage(`[]`),
+					"skills":             json.RawMessage(`[]`),
+					"model_search_space": json.RawMessage(`["gpt-5"]`),
+				}},
+			}
+			request, _, err := optimizeRequestConfig(cfg, resolved.promptAgent).ToRequest()
+			require.NoError(t, err)
+			for _, key := range []string{"model", "system_prompt", "tools", "skills"} {
+				if tt.wantPrompt {
+					require.NotContains(t, request.Options.OptimizationConfig, key)
+				} else {
+					require.Contains(t, request.Options.OptimizationConfig, key)
+				}
+			}
+			require.Contains(t, request.Options.OptimizationConfig, "model_search_space")
+			require.Len(t, cfg.Options.OptimizationConfig, 5)
+		})
+	}
+}
 
 func TestOptimizeCommand_HasExpectedSubCommands(t *testing.T) {
 	cmd := newOptimizeCommand(&azdext.ExtensionContext{})

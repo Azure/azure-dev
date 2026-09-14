@@ -664,8 +664,26 @@ func newProjectRecorderClient(
 ) *azdext.AzdClient {
 	t.Helper()
 
+	address := newProjectRecorderServer(t, server)
+	client, err := azdext.NewAzdClient(azdext.WithAddress(address))
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+
+	return client
+}
+
+func newProjectRecorderServer(
+	t *testing.T,
+	server azdext.ProjectServiceServer,
+	environmentServers ...azdext.EnvironmentServiceServer,
+) string {
+	t.Helper()
+
 	grpcServer := grpc.NewServer()
 	azdext.RegisterProjectServiceServer(grpcServer, server)
+	if len(environmentServers) > 0 {
+		azdext.RegisterEnvironmentServiceServer(grpcServer, environmentServers[0])
+	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -687,11 +705,7 @@ func newProjectRecorderClient(
 		}
 	})
 
-	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
-	require.NoError(t, err)
-	t.Cleanup(func() { client.Close() })
-
-	return client
+	return listener.Addr().String()
 }
 
 // TestEmitResourceServices_AlwaysEmitsProjectService verifies the ai-project

@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -317,6 +319,131 @@ func TestPersistInlineAgentEnvironmentKeepsLegacyOnEnvFailure(
 func TestPersistPromptAgentCandidateConfig(t *testing.T) {
 	t.Parallel()
 
+	for _, legacy := range []bool{false, true} {
+		for _, instructionKey := range []string{"system_prompt", "systemPrompt", "instructions"} {
+			t.Run(fmt.Sprintf("legacy=%t/%s", legacy, instructionKey), func(t *testing.T) {
+				t.Parallel()
+				svc := newPromptCandidateTestService(t, legacy)
+				server := &recordingProjectServer{}
+				client := newProjectRecorderClient(t, server)
+				tools := []any{map[string]any{"type": "code_interpreter"}}
+
+				require.NoError(t, persistPromptAgentCandidateConfig(
+					t.Context(), client, svc, t.TempDir(), mustMarshal(t, map[string]any{
+						"model":        "gpt-5",
+						instructionKey: "Optimized instructions.",
+						"tools":        tools,
+						"skills":       []any{map[string]any{"name": "unsupported-prompt-skill"}},
+					}),
+				))
+
+				prefix := ""
+				if legacy {
+					prefix = "config."
+				}
+				server.mu.Lock()
+				defer server.mu.Unlock()
+				require.Equal(t, map[string]configValueRecord{
+					prefix + "model":        {serviceName: svc.Name, value: "gpt-5"},
+					prefix + "instructions": {serviceName: svc.Name, value: "Optimized instructions."},
+					prefix + "tools":        {serviceName: svc.Name, value: tools},
+				}, server.configValues)
+				require.Empty(t, server.unsetPaths)
+			})
+		}
+	}
+}
+
+func TestPersistPromptAgentCandidateConfigOptionalTools(t *testing.T) {
+	t.Parallel()
+
+	for _, legacy := range []bool{false, true} {
+		for _, toolsCase := range []string{"missing", "null", "empty"} {
+			t.Run(fmt.Sprintf("legacy=%t/%s", legacy, toolsCase), func(t *testing.T) {
+				t.Parallel()
+				svc := newPromptCandidateTestService(t, legacy)
+				server := &recordingProjectServer{}
+				client := newProjectRecorderClient(t, server)
+				config := map[string]any{"model": "gpt-5", "instructions": "Baseline instructions."}
+				switch toolsCase {
+				case "null":
+					config["tools"] = nil
+				case "empty":
+					config["tools"] = []any{}
+				}
+
+				require.NoError(t, persistPromptAgentCandidateConfig(
+					t.Context(), client, svc, t.TempDir(), mustMarshal(t, config),
+				))
+
+				prefix := ""
+				if legacy {
+					prefix = "config."
+				}
+				server.mu.Lock()
+				defer server.mu.Unlock()
+				require.Contains(t, server.configValues, prefix+"model")
+				require.Contains(t, server.configValues, prefix+"instructions")
+				require.Equal(t, "gpt-5", server.configValues[prefix+"model"].value)
+				require.Equal(t, "Baseline instructions.", server.configValues[prefix+"instructions"].value)
+				if toolsCase == "empty" {
+					require.Contains(t, server.configValues, prefix+"tools")
+					require.Equal(t, []any{}, server.configValues[prefix+"tools"].value)
+					require.Empty(t, server.unsetPaths)
+				} else {
+					require.NotContains(t, server.configValues, prefix+"tools")
+					require.Equal(t, []string{prefix + "tools"}, server.unsetPaths)
+				}
+			})
+		}
+	}
+}
+
+func TestPersistPromptAgentCandidateConfigRejectsInvalidFields(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		config string
+		err    string
+	}{
+		{"invalid JSON", `{`, "failed to parse candidate config"},
+		{"missing model", `{"instructions":"Keep this."}`, "does not contain a model"},
+		{"null model", `{"model":null,"instructions":"Keep this."}`, "does not contain a model"},
+		{"empty model", `{"model":"","instructions":"Keep this."}`, "invalid model"},
+		{"whitespace model", `{"model":" \t","instructions":"Keep this."}`, "invalid model"},
+		{"non-string model", `{"model":42,"instructions":"Keep this."}`, "invalid model"},
+		{"missing instructions", `{"model":"gpt-5"}`, "does not contain non-empty instructions"},
+		{"null instructions", `{"model":"gpt-5","instructions":null}`, "does not contain non-empty instructions"},
+		{"empty instructions", `{"model":"gpt-5","instructions":""}`, "does not contain non-empty instructions"},
+		{"whitespace instructions", `{"model":"gpt-5","instructions":" \t\n"}`, "does not contain non-empty instructions"},
+		{"numeric instructions", `{"model":"gpt-5","instructions":42}`, "does not contain non-empty instructions"},
+		{"object instructions", `{"model":"gpt-5","instructions":{}}`, "does not contain non-empty instructions"},
+		{"array instructions", `{"model":"gpt-5","instructions":[]}`, "does not contain non-empty instructions"},
+		{"null preferred alias", `{"model":"gpt-5","system_prompt":null,"instructions":"Fallback"}`,
+			"does not contain non-empty instructions"},
+		{"non-array tools", `{"model":"gpt-5","instructions":"Keep this.","tools":{}}`, "tools must be an array"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			server := &recordingProjectServer{}
+			client := newProjectRecorderClient(t, server)
+			err := persistPromptAgentCandidateConfig(
+				t.Context(), client, newPromptCandidateTestService(t, false), t.TempDir(), json.RawMessage(tt.config),
+			)
+			require.ErrorContains(t, err, tt.err)
+			server.mu.Lock()
+			defer server.mu.Unlock()
+			require.Empty(t, server.configValues)
+			require.Empty(t, server.unsetPaths)
+			require.Empty(t, server.env)
+		})
+	}
+}
+
+func newPromptCandidateTestService(t *testing.T, legacy bool) *azdext.ServiceConfig {
+	t.Helper()
 	props, err := projectpkg.PromptAgentDefinitionToServiceProperties(
 		agent_yaml.PromptAgent{
 			AgentDefinition: agent_yaml.AgentDefinition{
@@ -325,59 +452,6 @@ func TestPersistPromptAgentCandidateConfig(t *testing.T) {
 			},
 			Model:        "gpt-4.1-mini",
 			Instructions: "Original instructions.",
-		},
-	)
-	require.NoError(t, err)
-	svc := &azdext.ServiceConfig{
-		Name:                 "prompt-agent",
-		Host:                 AiAgentHost,
-		AdditionalProperties: props,
-	}
-	server := &recordingProjectServer{}
-	client := newProjectRecorderClient(t, server)
-
-	candidateConfig := mustMarshal(t, map[string]any{
-		"model":         "gpt-5",
-		"system_prompt": "Optimized instructions.",
-		"tools": []any{
-			map[string]any{"type": "code_interpreter"},
-		},
-		"skills": []any{
-			map[string]any{"name": "unsupported-prompt-skill"},
-		},
-	})
-	require.NoError(t, persistPromptAgentCandidateConfig(
-		t.Context(),
-		client,
-		svc,
-		t.TempDir(),
-		candidateConfig,
-	))
-
-	server.mu.Lock()
-	defer server.mu.Unlock()
-	require.Contains(t, server.configValues, "instructions")
-	require.Contains(t, server.configValues, "tools")
-	require.Equal(t, "Optimized instructions.", server.configValues["instructions"].value)
-	require.Equal(t, []any{
-		map[string]any{"type": "code_interpreter"},
-	}, server.configValues["tools"].value)
-	require.Equal(t, "gpt-5", server.configValues["model"].value)
-	require.NotContains(t, server.configValues, "skills")
-	require.Empty(t, server.unsetPaths)
-}
-
-func TestPersistPromptAgentCandidateConfigRemovesAbsentOptionalFields(t *testing.T) {
-	t.Parallel()
-
-	props, err := projectpkg.PromptAgentDefinitionToServiceProperties(
-		agent_yaml.PromptAgent{
-			AgentDefinition: agent_yaml.AgentDefinition{
-				Kind: agent_yaml.AgentKindPrompt,
-				Name: "prompt-agent",
-			},
-			Model:        "gpt-5",
-			Instructions: "Optimized instructions.",
 			Tools:        []any{map[string]any{"type": "code_interpreter"}},
 		},
 	)
@@ -387,57 +461,11 @@ func TestPersistPromptAgentCandidateConfigRemovesAbsentOptionalFields(t *testing
 		Host:                 AiAgentHost,
 		AdditionalProperties: props,
 	}
-	server := &recordingProjectServer{}
-	client := newProjectRecorderClient(t, server)
-
-	require.NoError(t, persistPromptAgentCandidateConfig(
-		t.Context(),
-		client,
-		svc,
-		t.TempDir(),
-		mustMarshal(t, map[string]any{"model": "gpt-4.1-mini"}),
-	))
-
-	server.mu.Lock()
-	defer server.mu.Unlock()
-	require.Equal(t, "gpt-4.1-mini", server.configValues["model"].value)
-	require.ElementsMatch(t, []string{"instructions", "tools"}, server.unsetPaths)
-}
-
-func TestPersistPromptAgentCandidateConfigRejectsMissingModel(t *testing.T) {
-	t.Parallel()
-
-	props, err := projectpkg.PromptAgentDefinitionToServiceProperties(
-		agent_yaml.PromptAgent{
-			AgentDefinition: agent_yaml.AgentDefinition{
-				Kind: agent_yaml.AgentKindPrompt,
-				Name: "prompt-agent",
-			},
-			Model: "gpt-4.1-mini",
-		},
-	)
-	require.NoError(t, err)
-	svc := &azdext.ServiceConfig{
-		Name:                 "prompt-agent",
-		Host:                 AiAgentHost,
-		AdditionalProperties: props,
+	if legacy {
+		svc.Config = props
+		svc.AdditionalProperties = nil
 	}
-	server := &recordingProjectServer{}
-	client := newProjectRecorderClient(t, server)
-
-	err = persistPromptAgentCandidateConfig(
-		t.Context(),
-		client,
-		svc,
-		t.TempDir(),
-		mustMarshal(t, map[string]any{"system_prompt": "Missing model."}),
-	)
-	require.ErrorContains(t, err, "candidate config does not contain a model")
-
-	server.mu.Lock()
-	defer server.mu.Unlock()
-	require.Empty(t, server.configValues)
-	require.Empty(t, server.unsetPaths)
+	return svc
 }
 
 func TestPersistPromptAgentCandidateConfigSkipsVoiceAgent(t *testing.T) {
@@ -473,6 +501,214 @@ func TestPersistPromptAgentCandidateConfigSkipsVoiceAgent(t *testing.T) {
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	require.Empty(t, server.configValues)
+}
+
+func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
+	tests := []struct {
+		name   string
+		kind   string
+		legacy bool
+		disk   bool
+	}{
+		{name: "prompt", kind: "prompt"},
+		{name: "legacy prompt", kind: "prompt", legacy: true},
+		{name: "hosted", kind: "hosted"},
+		{name: "voice", kind: "prompt-voice"},
+		{name: "file-backed hosted", kind: "hosted", disk: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("NO_COLOR", "1")
+			svc := newPromptCandidateTestService(t, tt.legacy)
+			svc.RelativePath = "."
+			if tt.kind != "prompt" {
+				values := map[string]any{"kind": tt.kind, "name": svc.Name}
+				if tt.kind == "prompt-voice" {
+					values["model"] = map[string]any{"id": "gpt-realtime"}
+				}
+				props, err := structpb.NewStruct(values)
+				require.NoError(t, err)
+				svc.AdditionalProperties = props
+			}
+			svc.Environment = map[string]string{"CUSTOM_SETTING": "keep"}
+			root := t.TempDir()
+			if tt.disk {
+				svc.AdditionalProperties = nil
+				require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"),
+					[]byte("kind: hosted\nname: prompt-agent\n"), 0600))
+			}
+			projectServer := &recordingProjectServer{
+				rawEnv: map[string]map[string]any{svc.Name: {"CUSTOM_SETTING": "${CUSTOM_SETTING}"}},
+			}
+			envServer := &testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{"dev": {Name: "dev"}},
+				values: map[string]map[string]string{
+					"dev": {optimizeJobIDKeyForAgent(svc.Name): "opt-1"},
+				},
+			}
+			address := newProjectRecorderServer(t, projectServer, envServer)
+			t.Setenv("AZD_SERVER", address)
+			client, err := azdext.NewAzdClient()
+			require.NoError(t, err)
+			t.Cleanup(func() { client.Close() })
+
+			requests := make(chan string, 4)
+			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests <- r.URL.Path
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/agent_optimization_jobs/opt-1/candidates/candidate-1/config":
+					_, err := w.Write([]byte(`{"model":"gpt-5","system_prompt":"Optimized instructions.","tools":[]}`))
+					assert.NoError(t, err)
+				case "/agent_optimization_jobs/opt-1/candidates/candidate-1":
+					_, err := w.Write([]byte(`{"files":[]}`))
+					assert.NoError(t, err)
+				default:
+					t.Errorf("unexpected API request: %s", r.URL.Path)
+					http.NotFound(w, r)
+				}
+			}))
+			t.Cleanup(api.Close)
+			action := &OptimizeApplyAction{
+				flags: &optimizeApplyFlags{
+					candidate: "candidate-1", optimizeConnectionFlags: optimizeConnectionFlags{projectEndpoint: api.URL},
+				},
+				envName: "dev",
+				client:  newTestOptimizeClient(api.URL),
+			}
+			var out bytes.Buffer
+			require.NoError(t, action.apply(t.Context(), client, svc,
+				&azdext.ProjectConfig{Path: root}, &out, color.New(color.Bold)))
+			require.Len(t, requests, 2, "apply must not fetch job status or mutation metadata")
+			require.FileExists(t, filepath.Join(root, agentConfigsDir, "candidate-1", opt_eval.MetadataFile))
+			require.Equal(t, "candidate-1", envServer.values["dev"]["AGENT_PROMPT_AGENT_OPTIMIZATION_CANDIDATE_ID"])
+			require.Contains(t, out.String(), "applied to")
+			require.Equal(t, map[string]string{"CUSTOM_SETTING": "keep"}, svc.Environment)
+
+			projectServer.mu.Lock()
+			defer projectServer.mu.Unlock()
+			if tt.kind == "prompt" {
+				prefix := ""
+				if tt.legacy {
+					prefix = "config."
+				}
+				require.Equal(t, map[string]configValueRecord{
+					prefix + "model":        {serviceName: svc.Name, value: "gpt-5"},
+					prefix + "instructions": {serviceName: svc.Name, value: "Optimized instructions."},
+					prefix + "tools":        {serviceName: svc.Name, value: []any{}},
+				}, projectServer.configValues)
+				require.Empty(t, projectServer.env)
+				require.Empty(t, projectServer.unsetPaths)
+			} else if tt.disk {
+				content, err := os.ReadFile(filepath.Join(root, "agent.yaml"))
+				require.NoError(t, err)
+				require.Contains(t, string(content), "OPTIMIZATION_LOCAL_DIR")
+				require.Contains(t, string(content), "candidate-1")
+				require.Empty(t, projectServer.configValues)
+			} else {
+				require.Empty(t, projectServer.configValues)
+				require.Equal(t, map[string]any{
+					"CUSTOM_SETTING":            "${CUSTOM_SETTING}",
+					"OPTIMIZATION_LOCAL_DIR":    agentConfigsDir,
+					"OPTIMIZATION_CANDIDATE_ID": "candidate-1",
+				}, projectServer.env[svc.Name])
+			}
+		})
+	}
+}
+
+func TestOptimizeApply_InvalidPromptCandidateDoesNotWrite(t *testing.T) {
+	svc := newPromptCandidateTestService(t, false)
+	root := t.TempDir()
+	server := &recordingProjectServer{}
+	envServer := &testEnvironmentServiceServer{
+		environments: map[string]*azdext.Environment{"dev": {Name: "dev"}},
+		values: map[string]map[string]string{
+			"dev": {
+				optimizeJobIDKeyForAgent(svc.Name):             "opt-1",
+				"AGENT_PROMPT_AGENT_OPTIMIZATION_CANDIDATE_ID": "previous",
+			},
+		},
+	}
+	t.Setenv("AZD_SERVER", newProjectRecorderServer(t, server, envServer))
+	client, err := azdext.NewAzdClient()
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/agent_optimization_jobs/opt-1/candidates/candidate-1/config", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write([]byte(`{"model":"gpt-5"}`))
+		assert.NoError(t, err)
+	}))
+	t.Cleanup(api.Close)
+	action := &OptimizeApplyAction{
+		flags: &optimizeApplyFlags{
+			candidate: "candidate-1", optimizeConnectionFlags: optimizeConnectionFlags{projectEndpoint: api.URL},
+		},
+		envName: "dev",
+		client:  newTestOptimizeClient(api.URL),
+	}
+	var out bytes.Buffer
+	err = action.apply(t.Context(), client, svc, &azdext.ProjectConfig{Path: root}, &out, color.New(color.Bold))
+	require.ErrorContains(t, err, "does not contain non-empty instructions")
+	require.NoDirExists(t, filepath.Join(root, agentConfigsDir))
+	require.Empty(t, envServer.setKeys)
+	require.Equal(t, "previous", envServer.values["dev"]["AGENT_PROMPT_AGENT_OPTIMIZATION_CANDIDATE_ID"])
+	require.NotContains(t, out.String(), "applied to")
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Empty(t, server.configValues)
+	require.Empty(t, server.unsetPaths)
+	require.Empty(t, server.env)
+}
+
+func TestOptimizeApply_ReferencedDefinitionGuidance(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"prompt", "hosted"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			definition := fmt.Sprintf("kind: %s\nname: assistant\nmodel: gpt-5\ninstructions: Be helpful.\n", kind)
+			definitionPath := filepath.Join(root, "assistant.yaml")
+			require.NoError(t, os.WriteFile(definitionPath, []byte(definition), 0600))
+			props, err := structpb.NewStruct(map[string]any{"$ref": "assistant.yaml"})
+			require.NoError(t, err)
+			svc := &azdext.ServiceConfig{Name: "assistant", Host: AiAgentHost, AdditionalProperties: props}
+			server := &recordingProjectServer{}
+			client := newProjectRecorderClient(t, server)
+			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				t.Errorf("referenced definition must fail before calling optimization API: %s", r.URL.Path)
+				http.NotFound(w, r)
+			}))
+			t.Cleanup(api.Close)
+			action := &OptimizeApplyAction{
+				flags: &optimizeApplyFlags{
+					candidate: "candidate-1", optimizeConnectionFlags: optimizeConnectionFlags{projectEndpoint: api.URL},
+				},
+				client: newTestOptimizeClient(api.URL),
+			}
+			var out bytes.Buffer
+			err = action.apply(t.Context(), client, svc, &azdext.ProjectConfig{Path: root}, &out, color.New(color.Bold))
+			require.ErrorContains(t, err, `agent service "assistant" defines its agent via $ref`)
+			if kind == "prompt" {
+				require.ErrorContains(t, err, "Inline the definition in azure.yaml and rerun 'optimize apply'")
+				require.ErrorContains(t, err, "manually update model, instructions, and tools in the referenced file")
+				require.NotContains(t, err.Error(), "OPTIMIZATION_")
+			} else {
+				require.ErrorContains(t, err, "Add OPTIMIZATION_LOCAL_DIR and OPTIMIZATION_CANDIDATE_ID")
+			}
+			require.NoDirExists(t, filepath.Join(root, agentConfigsDir))
+			content, readErr := os.ReadFile(definitionPath)
+			require.NoError(t, readErr)
+			require.Equal(t, definition, string(content))
+			require.Empty(t, out.String())
+			server.mu.Lock()
+			defer server.mu.Unlock()
+			require.Empty(t, server.configValues)
+			require.Empty(t, server.unsetPaths)
+			require.Empty(t, server.env)
+		})
+	}
 }
 
 // ---- printPreviewLines ----

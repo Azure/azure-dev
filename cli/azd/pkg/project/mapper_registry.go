@@ -724,8 +724,9 @@ func registerProjectMappings() {
 			return nil, fmt.Errorf("failed resolving ResourceGroupName, %w", err)
 		}
 
-		services := make(map[string]*azdext.ServiceConfig, len(src.Services))
-		for i, svc := range src.Services {
+		serviceConfigs := src.ServiceConfigs()
+		services := make(map[string]*azdext.ServiceConfig, len(serviceConfigs))
+		for i, svc := range serviceConfigs {
 			var serviceConfig *azdext.ServiceConfig
 			if err := mapper.WithContext(ctx).Convert(svc, &serviceConfig); err != nil {
 				return nil, fmt.Errorf("converting service %q: %w", i, err)

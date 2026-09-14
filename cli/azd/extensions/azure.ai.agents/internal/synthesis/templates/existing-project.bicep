@@ -17,20 +17,6 @@ type deploymentType = {
   }
 }
 
-type connectionType = {
-  name: string
-  category: string
-  target: string
-  authType: string
-  audience: string?
-  authorizationUrl: string?
-  tokenUrl: string?
-  refreshUrl: string?
-  scopes: string[]?
-  connectorName: string?
-  metadata: object?
-}
-
 param projectResourceId string
 param resourceGroupName string
 param location string
@@ -49,9 +35,6 @@ param existingAcrEndpoint string = ''
 param existingAcrConnectionName string = ''
 param acrPullAssigned bool = false
 param projectEndpoint string
-param connections connectionType[] = []
-@secure()
-param connectionCredentials object = {}
 
 var projectIdParts = split(projectResourceId, '/')
 var projectSubscriptionId = projectIdParts[2]
@@ -118,8 +101,6 @@ module projectResources 'modules/foundry-project.bicep' = {
     accountName: accountName
     projectName: projectName
     deployments: deployments
-    connections: connections
-    connectionCredentials: connectionCredentials
     acrName: effectiveAcrName
     acrEndpoint: effectiveAcrEndpoint
     acrResourceId: effectiveAcrResourceId
@@ -141,6 +122,4 @@ output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = acrMode == 'none'
   ? ''
   : effectiveAcrResourceId
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = projectResources.outputs.acrConnectionName
-output AZURE_AI_PROJECT_CONNECTION_NAMES string = projectResources.outputs.connectionNames
-output AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT string = projectEndpoint
 output AZD_FOUNDRY_ACR_MODE string = acrMode

@@ -23,13 +23,16 @@ type agentAddDependencyFlags struct {
 	agent string
 }
 
-func newAgentAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
+func newAgentDependencyCommand(
+	extCtx *azdext.ExtensionContext,
+	dependencyType string,
+	expectedHost string,
+) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "add <type> <service>",
-		Short: "Add a typed service dependency to an agent.",
+		Use:   dependencyType + " <command>",
+		Short: fmt.Sprintf("Manage %s service dependencies for an agent.", dependencyType),
 	}
-	cmd.AddCommand(newAgentAddDependencyCommand(extCtx, "toolbox", AiToolboxHost))
-	cmd.AddCommand(newAgentAddDependencyCommand(extCtx, "connection", AiConnectionHost))
+	cmd.AddCommand(newAgentAddDependencyCommand(extCtx, dependencyType, expectedHost))
 	return cmd
 }
 
@@ -40,7 +43,7 @@ func newAgentAddDependencyCommand(
 ) *cobra.Command {
 	flags := &agentAddDependencyFlags{}
 	cmd := &cobra.Command{
-		Use:   dependencyType + " <service>",
+		Use:   "add <service>",
 		Short: fmt.Sprintf("Add a %s service dependency to an agent service.", dependencyType),
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

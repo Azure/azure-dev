@@ -287,8 +287,16 @@ func Test_EnvSetAction_FileNotFound(t *testing.T) {
 	azdCtx := newTestAzdContext(t)
 	env := environment.NewWithValues("test", map[string]string{})
 	mgr := newTestEnvManager()
+	missingFile := filepath.Join(t.TempDir(), "missing.env")
 
-	action := newEnvSetAction(azdCtx, env, mgr, mockinput.NewMockConsole(), &envSetFlags{file: "/nonexistent"}, nil)
+	action := newEnvSetAction(
+		azdCtx,
+		env,
+		mgr,
+		mockinput.NewMockConsole(),
+		&envSetFlags{file: missingFile},
+		nil,
+	)
 	_, err := action.Run(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to open file")

@@ -54,6 +54,16 @@ func (s *validateStubEnvServer) GetValue(
 	return &azdext.KeyValueResponse{Value: s.get[req.Key]}, nil
 }
 
+func (s *validateStubEnvServer) GetValues(
+	context.Context, *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	pairs := make([]*azdext.KeyValue, 0, len(s.get))
+	for key, value := range s.get {
+		pairs = append(pairs, &azdext.KeyValue{Key: key, Value: value})
+	}
+	return &azdext.KeyValueListResponse{KeyValues: pairs}, nil
+}
+
 // newValidateTestClient spins up a gRPC server exposing the given project and
 // environment stubs and returns an AzdClient connected to it.
 func newValidateTestClient(
@@ -168,6 +178,27 @@ services:
 		require.NoError(t, err)
 		assert.Empty(t, resp.Results)
 		assert.False(t, called, "resource group lookup must not run for a brownfield project")
+	})
+
+	t.Run("checks greenfield when portable endpoint variable is unset", func(t *testing.T) {
+		proj := &validateStubProjectServer{project: &azdext.ProjectConfig{
+			Path:  writeAzureYAML(t, "${FOUNDRY_PROJECT_ENDPOINT}"),
+			Infra: &azdext.InfraOptions{Provider: FoundryProviderName},
+		}}
+		env := &validateStubEnvServer{envName: "rgloc-test", get: map[string]string{}}
+		client := newValidateTestClient(t, proj, env)
+
+		var called bool
+		c := &ResourceGroupLocationCheck{azdClient: client}
+		c.resourceGroupLocation = func(context.Context, string, string) (string, bool, error) {
+			called = true
+			return "westus2", true, nil
+		}
+
+		_, err := c.Validate(
+			t.Context(), provisionContext(sub, "westus2", "rg-x"), &azdext.ValidationCheckRequest{})
+		require.NoError(t, err)
+		assert.True(t, called, "an unset endpoint variable must select the greenfield check")
 	})
 
 	t.Run("checks brownfield adjunct resource group in create mode", func(t *testing.T) {

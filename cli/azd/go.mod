@@ -2,6 +2,8 @@ module github.com/azure/azure-dev/cli/azd
 
 go 1.26.4
 
+tool github.com/magefile/mage
+
 require (
 	dario.cat/mergo v1.0.2
 	github.com/AlecAivazis/survey/v2 v2.3.7

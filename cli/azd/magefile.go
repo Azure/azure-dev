@@ -448,6 +448,65 @@ func Record(filter *string) error {
 	})
 }
 
+// GenerateProtos regenerates the checked-in Go, Python, and JavaScript extension
+// protocol bindings using the pinned containerized toolchain.
+//
+// Usage: mage generateProtos
+func GenerateProtos() error {
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		return err
+	}
+	containerRuntime, err := protoContainerRuntime(exec.LookPath)
+	if err != nil {
+		return err
+	}
+
+	const image = "azd-extension-proto-gen:local"
+	generatorDir := filepath.Join(
+		repoRoot,
+		"cli", "azd", "extensions", "microsoft.azd.extensions", "tools", "proto-generator",
+	)
+	if err := runStreaming(repoRoot, containerRuntime, "build", "-t", image, generatorDir); err != nil {
+		return fmt.Errorf("building protobuf generator image: %w", err)
+	}
+
+	runArgs := []string{"run", "--rm"}
+	if runtime.GOOS != "windows" {
+		if err := requireTool("id", "install GNU coreutils"); err != nil {
+			return err
+		}
+		uid, err := runCapture(repoRoot, "id", "-u")
+		if err != nil {
+			return fmt.Errorf("getting current user ID: %w", err)
+		}
+		gid, err := runCapture(repoRoot, "id", "-g")
+		if err != nil {
+			return fmt.Errorf("getting current group ID: %w", err)
+		}
+		runArgs = append(runArgs, "--user", strings.TrimSpace(uid)+":"+strings.TrimSpace(gid))
+	}
+	runArgs = append(runArgs, "-v", repoRoot+":/workspace", image)
+	if err := runStreaming(
+		repoRoot,
+		containerRuntime,
+		runArgs...,
+	); err != nil {
+		return fmt.Errorf("generating extension protocol clients: %w", err)
+	}
+
+	return nil
+}
+
+func protoContainerRuntime(lookPath func(string) (string, error)) (string, error) {
+	for _, name := range []string{"docker", "wslc.exe"} {
+		if _, err := lookPath(name); err == nil {
+			return name, nil
+		}
+	}
+	return "", errors.New("protobuf generation requires docker or wslc.exe on PATH")
+}
+
 // UpdateGoVersion updates the pinned Go toolchain version across the repository
 // so that every cli/azd go.mod (core, extensions, and testdata samples), the
 // ADO setup-go pipeline template, Dockerfiles, and the devcontainer Go feature

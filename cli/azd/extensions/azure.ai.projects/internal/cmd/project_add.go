@@ -227,7 +227,6 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			service,
 			target.Endpoint,
 			a.flags.infra,
-			projectConfig,
 			oldValues,
 		); err != nil {
 			return err
@@ -1337,7 +1336,6 @@ func validateExistingEndpointMode(
 	service *projectServiceInfo,
 	endpoint string,
 	infra string,
-	project *azdext.ProjectConfig,
 	values map[string]string,
 ) error {
 	if infra != "" {
@@ -1347,11 +1345,11 @@ func validateExistingEndpointMode(
 			"rerun `azd ai project init --project-id <resource-id> --infra`",
 		)
 	}
-	if hasProjectConnections(project) || hasPendingAcrProvision(values) {
+	// Split connection services are reconciled by their own provider, not Projects.
+	if hasPendingAcrProvision(values) {
 		return exterrors.Dependency(
 			"project_reconciliation_requires_project_id",
-			"endpoint-only setup cannot reconcile project connections "+
-				"or a pending container registry",
+			"endpoint-only setup cannot reconcile a pending container registry",
 			"rerun `azd ai project init --project-id <resource-id>` "+
 				"before retaining project resources",
 		)
@@ -1413,7 +1411,7 @@ func validateExistingEndpointAgentAcr(
 				service.Name,
 				err,
 			),
-			"check the endpoint, agents, and connections fields under your Foundry project service",
+			"check the endpoint and agents fields under your Foundry project service",
 		)
 	}
 	includeAcr, _ := result.Parameters["includeAcr"].(bool)
@@ -1427,22 +1425,6 @@ func validateExistingEndpointAgentAcr(
 		"rerun `azd ai project init --project-id <resource-id>` "+
 			"before retaining hosted agents",
 	)
-}
-
-func hasProjectConnections(project *azdext.ProjectConfig) bool {
-	if project == nil {
-		return false
-	}
-	for _, service := range project.GetServices() {
-		if service != nil &&
-			strings.EqualFold(
-				strings.TrimSpace(service.GetHost()),
-				"azure.ai.connection",
-			) {
-			return true
-		}
-	}
-	return false
 }
 
 func hasPendingAcrProvision(values map[string]string) bool {
@@ -1722,9 +1704,6 @@ func ejectProjectInfra(
 			"fix the project service configuration and retry",
 		)
 	}
-	if err := validateEjectedConnectionCredentials(result.Parameters); err != nil {
-		return err
-	}
 	// #nosec G301
 	if err := os.MkdirAll(infraDir, 0755); err != nil {
 		return fmt.Errorf("create infra directory: %w", err)
@@ -1918,9 +1897,6 @@ func writeTerraformEjectedInfraAt(
 	layer bool,
 	module string,
 ) error {
-	if err := validateEjectedConnectionCredentials(parameters); err != nil {
-		return err
-	}
 	variables, includeAcr, err := terraformEjectionVariables(parameters, layer)
 	if err != nil {
 		return err
@@ -1963,20 +1939,6 @@ func terraformEjectionVariables(
 			parameters["deployments"],
 		)
 	}
-	connections, ok := parameters["connections"].([]synthesis.Connection)
-	if !ok {
-		return nil, false, fmt.Errorf(
-			"connections parameter has unexpected type %T",
-			parameters["connections"],
-		)
-	}
-	credentials, ok := parameters["connectionCredentials"].(map[string]map[string]any)
-	if !ok {
-		return nil, false, fmt.Errorf(
-			"connectionCredentials parameter has unexpected type %T",
-			parameters["connectionCredentials"],
-		)
-	}
 	resourceGroupName := "${AZURE_RESOURCE_GROUP}"
 	if layer {
 		resourceGroupName = "${AZURE_FOUNDRY_RESOURCE_GROUP=rg-${AZURE_ENV_NAME}-foundry}"
@@ -1991,7 +1953,6 @@ func terraformEjectionVariables(
 		"principal_id":         "${AZURE_PRINCIPAL_ID}",
 		"resource_token_salt":  "${AZD_RESOURCE_TOKEN_SALT}",
 		"deployments":          deployments,
-		"connections":          synthesis.JoinConnectionCredentials(connections, credentials),
 	}, includeAcr, nil
 }
 

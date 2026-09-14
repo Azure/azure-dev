@@ -68,6 +68,11 @@ type AgentKind string
 const (
 	AgentKindHosted   AgentKind = "hosted"
 	AgentKindWorkflow AgentKind = "workflow"
+	// AgentKindPrompt is the Foundry prompt agent kind backed by the Prompt
+	// Execution Service (PES). "prompt" is the wire discriminator for both the
+	// plain and the harnessed ("managed") flavor — a harness is a property of
+	// the agent, not a kind of its own.
+	AgentKindPrompt AgentKind = "prompt"
 	// AgentKindVoice is the data-plane (service) kind for a declarative voice
 	// (speech-to-speech) agent. The azd manifest authoring kind is "prompt-voice"
 	// (agent_yaml.AgentKindPromptVoice), which the map layer translates to this
@@ -355,6 +360,73 @@ func (d *HostedAgentDefinition) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// ManagedPackages describes packages to install in the managed agent sandbox.
+type ManagedPackages struct {
+	Pip []string `json:"pip,omitempty"`
+	Apt []string `json:"apt,omitempty"`
+}
+
+// ManagedEnvironment describes the runtime environment for a managed agent's Hand sandbox.
+// All fields are optional; the platform applies sensible defaults when unset.
+type ManagedEnvironment struct {
+	BaseImage            *string           `json:"base_image,omitempty"`
+	Image                *string           `json:"image,omitempty"`
+	Packages             *ManagedPackages  `json:"packages,omitempty"`
+	CPU                  *string           `json:"cpu,omitempty"`
+	Memory               *string           `json:"memory,omitempty"`
+	EgressPolicy         *string           `json:"egress_policy,omitempty"`
+	EnvironmentVariables map[string]string `json:"environment_variables,omitempty"`
+}
+
+// ManagedAgentHarnessGitHubCopilot is the discriminator sent in the managed
+// agent definition's `harness.type` field to run the agent on the GitHub
+// Copilot harness.
+//
+// This is the spelling the managed-agent spec defines, and the `_preview`
+// suffix is part of it: the harness is in preview and the service will version
+// the discriminator when it leaves preview.
+const ManagedAgentHarnessGitHubCopilot = "github_copilot_preview"
+
+// SkillReference identifies a Foundry skill available to a prompt agent.
+//
+// Version is not optional in practice. The API contract says an omitted version
+// resolves to the skill's current default, but the service currently returns a
+// 500 for a reference without one, so callers must supply the version they
+// published. Skills are published before the agent version is created, so the
+// version is always known by then.
+type SkillReference struct {
+	Name    string `json:"name"`
+	Version string `json:"version,omitempty"`
+}
+
+// ManagedAgentHarness is the `harness` block of a managed agent definition.
+type ManagedAgentHarness struct {
+	Type string `json:"type"`
+}
+
+// ManagedAgentDefinition represents a Foundry "managed" agent — a prompt agent
+// that names an execution harness. Managed agents declare a model plus
+// instructions and optionally tools, skills, and environment overrides. The
+// platform provisions Brain+Hand sandboxes on demand to execute the agent.
+type ManagedAgentDefinition struct {
+	AgentDefinition
+	Model string `json:"model"`
+	// Harness identifies the execution harness the platform should use to run
+	// the managed agent. Nil for a plain prompt agent, which Foundry runs directly.
+	Harness          *ManagedAgentHarness `json:"harness,omitempty"`
+	Instructions     string               `json:"instructions,omitempty"`
+	Tools            []any                `json:"tools,omitempty"`
+	ToolChoice       any                  `json:"tool_choice,omitempty"`
+	Temperature      *float64             `json:"temperature,omitempty"`
+	TopP             *float64             `json:"top_p,omitempty"`
+	Text             any                  `json:"text,omitempty"`
+	Reasoning        any                  `json:"reasoning,omitempty"`
+	Skills           []SkillReference     `json:"skills,omitempty"`
+	StructuredInputs map[string]any       `json:"structured_inputs,omitempty"`
+	Environment      *ManagedEnvironment  `json:"environment,omitempty"`
+	Files            map[string]string    `json:"files,omitempty"`
+}
+
 // VoiceModelType selects the model-inference mode for a voice agent.
 //   - "managed": Voice Live-hosted — the service runs the model on its own infra.
 //   - "self_deployed": BYOM — the service calls the customer's own Foundry deployment.
@@ -363,7 +435,24 @@ type VoiceModelType string
 const (
 	VoiceModelTypeManaged      VoiceModelType = "managed"
 	VoiceModelTypeSelfDeployed VoiceModelType = "self_deployed"
+	VoiceModelTypeHostedAgent  VoiceModelType = "hosted_agent"
 )
+
+// VoiceTargetAgentReference is the data-plane target_agent object on a managed
+// voice wrapper. Name identifies the hosted agent that receives Voice Bridge
+// turns; Version optionally pins the wrapper to one immutable hosted version.
+type VoiceTargetAgentReference struct {
+	Name    string `json:"name"`
+	Version string `json:"version,omitempty"`
+}
+
+// VoiceConversationEngine is the data-plane conversation_engine object on a
+// managed Voice wrapper.
+type VoiceConversationEngine struct {
+	Type    string `json:"type"`
+	Name    string `json:"name"`
+	Version string `json:"version,omitempty"`
+}
 
 // VoiceAudioFormat describes a PCM audio stream format (e.g. audio/pcm @ 24 kHz).
 type VoiceAudioFormat struct {
@@ -446,21 +535,43 @@ type VoiceAudioConfig struct {
 // prompt voice agent. Its Kind is always AgentKindVoice ("voice").
 type VoiceAgentDefinition struct {
 	AgentDefinition
-	ModelType         VoiceModelType    `json:"model_type"`
-	Model             string            `json:"model"`
-	Instructions      string            `json:"instructions,omitempty"`
-	StructuredInputs  map[string]any    `json:"structured_inputs,omitempty"`
-	Audio             *VoiceAudioConfig `json:"audio,omitempty"`
-	OutputModalities  []string          `json:"output_modalities,omitempty"`
-	Store             *bool             `json:"store,omitempty"`
-	Tools             []map[string]any  `json:"tools,omitempty"`
-	Avatar            map[string]any    `json:"avatar,omitempty"`
-	Greeting          map[string]any    `json:"greeting,omitempty"`
-	Handoff           map[string]any    `json:"handoff,omitempty"`
-	ToolChoice        any               `json:"tool_choice,omitempty"`
-	ParallelToolCalls *bool             `json:"parallel_tool_calls,omitempty"`
-	MaxOutputTokens   any               `json:"max_output_tokens,omitempty"`
-	Include           []string          `json:"include,omitempty"`
+	ModelType          VoiceModelType             `json:"model_type,omitempty"`
+	Model              string                     `json:"model,omitempty"`
+	TargetAgent        *VoiceTargetAgentReference `json:"target_agent,omitempty"`
+	ConversationEngine *VoiceConversationEngine   `json:"conversation_engine,omitempty"`
+	Instructions       string                     `json:"instructions,omitempty"`
+	StructuredInputs   map[string]any             `json:"structured_inputs,omitempty"`
+	Audio              *VoiceAudioConfig          `json:"audio,omitempty"`
+	OutputModalities   []string                   `json:"output_modalities,omitempty"`
+	Store              *bool                      `json:"store,omitempty"`
+	Tools              []map[string]any           `json:"tools,omitempty"`
+	Avatar             map[string]any             `json:"avatar,omitempty"`
+	Greeting           map[string]any             `json:"greeting,omitempty"`
+	Handoff            map[string]any             `json:"handoff,omitempty"`
+	ToolChoice         any                        `json:"tool_choice,omitempty"`
+	ParallelToolCalls  *bool                      `json:"parallel_tool_calls,omitempty"`
+	MaxOutputTokens    any                        `json:"max_output_tokens,omitempty"`
+	Include            []string                   `json:"include,omitempty"`
+}
+
+// TelephonyBindingRequest creates an agent telephony binding.
+type TelephonyBindingRequest struct {
+	Provider        string           `json:"provider"`
+	Identifier      string           `json:"identifier"`
+	ConnectionName  string           `json:"connection_name,omitempty"`
+	TransferTargets []map[string]any `json:"transfer_targets,omitempty"`
+}
+
+// TelephonyBinding describes a Foundry-side phone number binding.
+type TelephonyBinding struct {
+	ID              string           `json:"id,omitempty"`
+	Provider        string           `json:"provider,omitempty"`
+	Identifier      string           `json:"identifier,omitempty"`
+	Status          string           `json:"status,omitempty"`
+	Connection      string           `json:"connection,omitempty"`
+	ConnectionName  string           `json:"connection_name,omitempty"`
+	TransferTargets []map[string]any `json:"transfer_targets,omitempty"`
+	ETag            string           `json:"etag,omitempty"`
 }
 
 // CreateAgentVersionRequest represents a request to create an agent version

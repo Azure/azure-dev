@@ -351,10 +351,8 @@ func (c *ResourceGroupLocationCheck) foundryProviderUsage(ctx context.Context) (
 }
 
 // isBrownfieldFoundryProject reports whether the current project's Foundry
-// service is brownfield — i.e. it sets `endpoint:` to connect to an existing
-// Foundry project. It reuses the same helpers the provider uses so the two stay
-// in sync: findFoundryProjectService locates the service and foundryServiceEndpoint
-// reports whether `endpoint:` is set. It is best-effort: if the project or
+// service is brownfield — i.e. its resolved `endpoint:` connects to an existing
+// Foundry project. It is best-effort: if the project, environment, or
 // azure.yaml cannot be read, or no Foundry service is found, it returns false so
 // the check proceeds (the greenfield path, which is where the region conflict can
 // actually occur).
@@ -375,10 +373,21 @@ func (c *ResourceGroupLocationCheck) isBrownfieldFoundryProject(ctx context.Cont
 		return false
 	}
 
-	endpoint, err := foundryServiceEndpointAtRoot(
+	envClient := c.azdClient.Environment()
+	current, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil || current.GetEnvironment().GetName() == "" {
+		return false
+	}
+	env := readEnvironmentValues(ctx, envClient, current.GetEnvironment().GetName())
+	if env == nil {
+		return false
+	}
+
+	endpoint, err := resolvedFoundryServiceEndpointAtRoot(
 		rawYAML,
 		projectPath,
 		svcName,
+		env,
 	)
 	return err == nil && endpoint != ""
 }

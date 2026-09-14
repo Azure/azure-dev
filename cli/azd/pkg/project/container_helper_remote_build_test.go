@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
@@ -103,12 +104,20 @@ func TestContainerHelperRemoteBuildFallback(t *testing.T) {
 			wantOps: []string{"schedule"},
 		},
 		{
+			name: "CanceledAfterRemoteRefusal", cancelAt: "remote", wantError: "Local fallback failed",
+			wantOps: []string{"schedule"},
+		},
+		{
 			name: "CanceledAfterReadiness", cancelAt: "ps", wantError: "Local fallback failed",
 			wantOps: []string{"schedule", "--version", "ps"},
 		},
 		{
 			name: "CanceledAfterBuild", cancelAt: "build", wantError: "Local fallback failed",
 			wantOps: []string{"schedule", "--version", "ps", "build"},
+		},
+		{
+			name: "CanceledAfterPackage", cancelAt: "package", wantError: "Local fallback failed",
+			wantOps: []string{"schedule", "--version", "ps", "build", "package"},
 		},
 	}
 	for _, tt := range tests {
@@ -129,6 +138,9 @@ func TestContainerHelperRemoteBuildFallback(t *testing.T) {
 			ctx, cancel := context.WithCancel(*f.mocks.Context)
 			defer cancel()
 			f.cancel = cancel
+			if tt.cancelAt == "remote" {
+				f.helper.console = &remoteBuildCancelConsole{Console: f.mocks.Console, cancel: cancel}
+			}
 			f.options.Image = tt.imageOverride
 
 			progress := async.NewNoopProgress[ServiceProgress]()
@@ -171,7 +183,8 @@ func TestContainerHelperRemoteBuildFallback(t *testing.T) {
 			if tt.wantError != "" {
 				require.ErrorContains(t, err, tt.wantError)
 				require.Nil(t, result)
-				if tt.failure == "--version" || tt.failure == "ps" || tt.cancelAt == "schedule" || tt.cancelAt == "ps" {
+				if tt.failure == "--version" || tt.failure == "ps" ||
+					tt.cancelAt == "schedule" || tt.cancelAt == "remote" || tt.cancelAt == "ps" {
 					require.Empty(t, f.mocks.Console.Output())
 				}
 				if tt.cancelAt == "schedule" {
@@ -357,6 +370,28 @@ func (f *remoteBuildFixture) publish(ctx context.Context) (*ServicePublishResult
 	return f.helper.Publish(ctx, f.config, f.serviceContext, f.target, f.env, progress, f.options)
 }
 
+type remoteBuildCommandRunner struct {
+	exec.CommandRunner
+}
+
+func (r *remoteBuildCommandRunner) Run(ctx context.Context, args exec.RunArgs) (exec.RunResult, error) {
+	// The shared mock ignores context; real commands do not start after cancellation.
+	if err := ctx.Err(); err != nil {
+		return exec.RunResult{}, err
+	}
+	return r.CommandRunner.Run(ctx, args)
+}
+
+type remoteBuildCancelConsole struct {
+	input.Console
+	cancel context.CancelFunc
+}
+
+func (c *remoteBuildCancelConsole) StopPreviewer(ctx context.Context, keepLogs bool) {
+	c.Console.StopPreviewer(ctx, keepLogs)
+	c.cancel()
+}
+
 func newRemoteBuildFixture(t *testing.T) *remoteBuildFixture {
 	t.Helper()
 	m := mocks.NewMockContext(t.Context())
@@ -415,10 +450,11 @@ func newRemoteBuildFixture(t *testing.T) *remoteBuildFixture {
 		Return(nil).Run(func(mock.Arguments) {
 		_ = f.record("login")
 	})
+	runner := &remoteBuildCommandRunner{CommandRunner: m.CommandRunner}
 	f.helper = NewContainerHelper(
 		clock.NewMock(), registry,
 		containerregistry.NewRemoteBuildManager(m.SubscriptionCredentialProvider, m.ArmClientOptions),
-		m.CommandRunner, docker.NewCli(m.CommandRunner), dotnet.NewCli(m.CommandRunner), m.Console, cloud.AzurePublic(),
+		runner, docker.NewCli(runner), dotnet.NewCli(runner), m.Console, cloud.AzurePublic(),
 	)
 	m.HttpClient.When(func(*http.Request) bool { return true }).RespondFn(f.respond)
 	return f

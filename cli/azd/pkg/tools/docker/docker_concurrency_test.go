@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,25 +23,25 @@ func TestContainerEngineConcurrent(t *testing.T) {
 		name       string
 		override   string
 		dockerErr  error
-		engine     string
+		engine     tools.ContainerEngine
 		engineName string
 		version    string
 	}{
 		{
-			name: "docker first", engine: "docker", engineName: "Docker",
+			name: "docker first", engine: tools.ContainerEngineDocker, engineName: "Docker",
 			version: "Docker version 20.10.17, build 100c701",
 		},
 		{
 			name: "podman discovery", dockerErr: errors.New("docker not found"),
-			engine: "podman", engineName: "Podman", version: "podman version 4.3.1",
+			engine: tools.ContainerEnginePodman, engineName: "Podman", version: "podman version 4.3.1",
 		},
 		{
 			name: "podman override", override: "podman",
-			engine: "podman", engineName: "Podman", version: "podman version 4.3.1",
+			engine: tools.ContainerEnginePodman, engineName: "Podman", version: "podman version 4.3.1",
 		},
 		{
 			name: "docker override", override: "docker",
-			engine: "docker", engineName: "Docker", version: "Docker version 20.10.17, build 100c701",
+			engine: tools.ContainerEngineDocker, engineName: "Docker", version: "Docker version 20.10.17, build 100c701",
 		},
 	}
 
@@ -51,15 +52,14 @@ func TestContainerEngineConcurrent(t *testing.T) {
 			runner.MockToolInPath("docker", tt.dockerErr)
 			runner.MockToolInPath("podman", nil)
 			runner.When(func(args exec.RunArgs, command string) bool {
-				return command == tt.engine+" --version"
+				return command == string(tt.engine)+" --version"
 			}).Respond(exec.RunResult{Stdout: tt.version})
 			runner.When(func(args exec.RunArgs, command string) bool {
-				return command == tt.engine+" ps" || command == tt.engine+" pull image"
+				return command == string(tt.engine)+" ps" || command == string(tt.engine)+" pull image"
 			}).Respond(exec.RunResult{})
 
-			cli := NewCli(runner)
-			require.Equal(t, "Docker", cli.Name())
-			require.Equal(t, "https://aka.ms/azure-dev/docker-install", cli.InstallUrl())
+			countingRunner := &engineLookupRunner{CommandRunner: runner}
+			cli := NewCli(countingRunner)
 
 			// Register all mocks before starting concurrent readers.
 			start := make(chan struct{})
@@ -68,21 +68,39 @@ func TestContainerEngineConcurrent(t *testing.T) {
 				wg.Go(func() {
 					<-start
 					for range 10 {
+						assert.Equal(t, tt.engineName, cli.Name())
 						assert.Equal(t, tt.engine, cli.ContainerEngine())
 						assert.NoError(t, cli.CheckInstalled(t.Context()))
-						assert.Equal(t, tt.engineName, cli.Name())
-						assert.Equal(t, "https://aka.ms/azure-dev/"+tt.engine+"-install", cli.InstallUrl())
+						assert.Equal(t, "https://aka.ms/azure-dev/"+string(tt.engine)+"-install", cli.InstallUrl())
 						assert.NoError(t, cli.Pull(t.Context(), "image"))
 					}
 				})
 			}
 			close(start)
 			wg.Wait()
+			wantLookups := int32(0)
+			if tt.override == "" {
+				wantLookups = 1
+				if tt.dockerErr != nil {
+					wantLookups++
+				}
+			}
+			require.Equal(t, wantLookups, countingRunner.lookups.Load())
 		})
 	}
 }
 
-func TestCheckInstalledSnapshotAndRetry(t *testing.T) {
+type engineLookupRunner struct {
+	exec.CommandRunner
+	lookups atomic.Int32
+}
+
+func (r *engineLookupRunner) ToolInPath(name string) error {
+	r.lookups.Add(1)
+	return r.CommandRunner.ToolInPath(name)
+}
+
+func TestCheckInstalledConcurrentReadiness(t *testing.T) {
 	tests := []struct {
 		name           string
 		blockedCommand string
@@ -96,6 +114,10 @@ func TestCheckInstalledSnapshotAndRetry(t *testing.T) {
 		{
 			name: "version failure", blockedCommand: "--version", firstErr: errors.New("version unavailable"),
 			wantError: "checking podman version: version unavailable",
+		},
+		{
+			name: "canceled check", blockedCommand: "--version", firstErr: context.Canceled,
+			wantError: "checking podman version: context canceled",
 		},
 		{
 			name: "unsupported version", blockedCommand: "--version", firstVersion: "podman version 2.9.0",
@@ -120,13 +142,10 @@ func TestCheckInstalledSnapshotAndRetry(t *testing.T) {
 			runner := mockexec.NewMockCommandRunner()
 			cli := NewCli(runner)
 			runner.When(func(args exec.RunArgs, command string) bool {
-				return command == "docker --version"
-			}).Respond(exec.RunResult{Stdout: "Docker version 20.10.17, build 100c701"})
-			runner.When(func(args exec.RunArgs, command string) bool {
 				return command == "podman --version"
 			}).Respond(exec.RunResult{Stdout: "podman version 4.3.1"})
 			runner.When(func(args exec.RunArgs, command string) bool {
-				return command == "docker ps" || command == "podman ps" || command == "docker pull image"
+				return command == "podman ps" || command == "podman pull image"
 			}).Respond(exec.RunResult{})
 			runner.When(func(args exec.RunArgs, command string) bool {
 				return command == "podman "+tt.blockedCommand
@@ -143,12 +162,8 @@ func TestCheckInstalledSnapshotAndRetry(t *testing.T) {
 				return exec.RunResult{Stdout: "podman version 4.3.1"}, nil
 			})
 			runner.When(func(args exec.RunArgs, command string) bool {
-				return args.Cmd == "docker" && len(args.Args) > 0 && args.Args[0] == "build"
+				return args.Cmd == "podman" && len(args.Args) > 0 && args.Args[0] == "build"
 			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				if !cli.engineMu.TryLock() {
-					return exec.RunResult{}, errors.New("engine lock held during build")
-				}
-				cli.engineMu.Unlock()
 				return exec.RunResult{}, errors.New("build stopped")
 			})
 
@@ -162,13 +177,13 @@ func TestCheckInstalledSnapshotAndRetry(t *testing.T) {
 				t.Fatal("readiness check did not reach the subprocess")
 			}
 
-			// Reselect while the first readiness subprocess is blocked. Neither
-			// another check nor container operations may wait for that subprocess.
+			// Selection is immutable, but readiness checks and operations must
+			// remain independent of the blocked readiness subprocess.
 			t.Setenv("AZD_CONTAINER_RUNTIME", "docker")
 			require.NoError(t, cli.CheckInstalled(ctx))
-			require.Equal(t, "docker", cli.ContainerEngine())
-			require.Equal(t, "Docker", cli.Name())
-			require.Equal(t, "https://aka.ms/azure-dev/docker-install", cli.InstallUrl())
+			require.Equal(t, tools.ContainerEnginePodman, cli.ContainerEngine())
+			require.Equal(t, "Podman", cli.Name())
+			require.Equal(t, "https://aka.ms/azure-dev/podman-install", cli.InstallUrl())
 			require.NoError(t, cli.Pull(ctx, "image"))
 			_, err := cli.Build(ctx, ".", "Dockerfile", "", "", ".", "", nil, nil, nil, "", nil)
 			require.EqualError(t, err, "building image: build stopped")
@@ -185,12 +200,43 @@ func TestCheckInstalledSnapshotAndRetry(t *testing.T) {
 			} else {
 				require.ErrorContains(t, err, tt.wantError)
 			}
-			require.Equal(t, "docker", cli.ContainerEngine())
+			if tt.firstErr != nil {
+				require.ErrorIs(t, err, tt.firstErr)
+			}
+			require.Equal(t, tools.ContainerEnginePodman, cli.ContainerEngine())
+
+			require.NoError(t, cli.CheckInstalled(ctx))
+			require.Equal(t, int32(3), calls.Load(), "readiness checks must run again after success or failure")
+			require.Equal(t, tools.ContainerEnginePodman, cli.ContainerEngine())
+		})
+	}
+}
+
+func TestContainerEngineSelectionErrors(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		override  string
+		wantError string
+	}{
+		{name: "invalid override", override: "invalid", wantError: "unsupported container runtime"},
+		{name: "neither installed", wantError: "neither docker nor podman is installed"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_CONTAINER_RUNTIME", tt.override)
+			runner := mockexec.NewMockCommandRunner()
+			runner.MockToolInPath("docker", errors.New("not found"))
+			runner.MockToolInPath("podman", errors.New("not found"))
+			cli := NewCli(runner)
+
+			require.Equal(t, tools.ContainerEngineDocker, cli.ContainerEngine())
+			err := cli.CheckInstalled(t.Context())
+			require.ErrorContains(t, err, tt.wantError)
 
 			t.Setenv("AZD_CONTAINER_RUNTIME", "podman")
-			require.NoError(t, cli.CheckInstalled(ctx))
-			require.Equal(t, int32(2), calls.Load(), "readiness checks must run again after success or failure")
-			require.Equal(t, "podman", cli.ContainerEngine())
+			runner.MockToolInPath("podman", nil)
+			require.ErrorIs(t, cli.CheckInstalled(t.Context()), err)
+			require.Equal(t, tools.ContainerEngineDocker, cli.ContainerEngine())
+			require.Equal(t, tools.ContainerEnginePodman, NewCli(runner).ContainerEngine())
 		})
 	}
 }

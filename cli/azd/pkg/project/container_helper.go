@@ -85,7 +85,7 @@ func NewContainerHelper(
 }
 
 // ContainerEngine returns the detected container engine name ("docker" or "podman").
-func (ch *ContainerHelper) ContainerEngine() string {
+func (ch *ContainerHelper) ContainerEngine() tools.ContainerEngine {
 	return ch.docker.ContainerEngine()
 }
 
@@ -831,12 +831,6 @@ func (ch *ContainerHelper) Publish(
 		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, env, progress, imageOverride)
 		if err != nil {
 			remoteErr := err
-			if errors.Is(remoteErr, context.Canceled) || errors.Is(remoteErr, context.DeadlineExceeded) {
-				return nil, remoteErr
-			}
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return nil, fmt.Errorf("remote build failed: %w\n\nPublish canceled: %w", remoteErr, ctxErr)
-			}
 			if _, ok := errors.AsType[*containerregistry.RemoteBuildUnavailableError](remoteErr); !ok {
 				return nil, remoteErr
 			}
@@ -844,14 +838,14 @@ func (ch *ContainerHelper) Publish(
 			remoteImage, err = ch.publishLocalFallback(
 				ctx, serviceConfig, serviceContext, env, progress, imageOverride)
 			if err != nil {
-				err = fmt.Errorf("remote build failed: %w\n\nLocal fallback failed: %w", remoteErr, err)
-				if suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err); ok {
+				fallbackErr := fmt.Errorf("remote build failed: %w\n\nLocal fallback failed: %w", remoteErr, err)
+				if suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](fallbackErr); ok {
 					// Rich CLI output renders suggestion.Err rather than its outer wrappers.
 					combined := *suggestion
-					combined.Err = err
+					combined.Err = fallbackErr
 					return nil, &combined
 				}
-				return nil, err
+				return nil, fallbackErr
 			}
 		}
 	} else if useDotnetPublishForDockerBuild(serviceConfig) {
@@ -880,6 +874,8 @@ func (ch *ContainerHelper) Publish(
 	}, nil
 }
 
+// publishLocalFallback builds and packages locally if no container package was supplied,
+// then publishes the image after ACR has refused to schedule a remote build.
 func (ch *ContainerHelper) publishLocalFallback(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -888,12 +884,10 @@ func (ch *ContainerHelper) publishLocalFallback(
 	progress *async.Progress[ServiceProgress],
 	imageOverride *imageOverride,
 ) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
 	if err := ch.docker.CheckInstalled(ctx); err != nil {
 		return "", fmt.Errorf("local container runtime unavailable: %w", err)
 	}
+	// Do not announce or prepare a fallback if cancellation arrived during the readiness check.
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -925,9 +919,6 @@ func (ch *ContainerHelper) publishLocalFallback(
 		if err := serviceContext.Build.Add(buildResult.Artifacts...); err != nil {
 			return "", fmt.Errorf("adding local build artifacts: %w", err)
 		}
-		if err := ctx.Err(); err != nil {
-			return "", err
-		}
 		packageResult, err := ch.packageLocalImage(ctx, serviceConfig, serviceContext, env, progress)
 		if err != nil {
 			return "", fmt.Errorf("packaging local image: %w", err)
@@ -937,9 +928,6 @@ func (ch *ContainerHelper) publishLocalFallback(
 		}
 	}
 
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
 	return ch.publishLocalImage(ctx, serviceConfig, serviceContext, env, progress, imageOverride)
 }
 

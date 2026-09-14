@@ -187,21 +187,15 @@ race on `env` (one writing `KUBECONFIG=…`, the other reading it for an
 
 ## `pkg/tools/docker.Cli`
 
-| Lock | Protects | Acquired by |
-|------|----------|-------------|
-| `engineMu sync.Mutex` | `containerEngine` and runtime selection | `ContainerEngine`, `selectContainerEngine`, `getContainerEngine` |
+| Synchronization | Protects | Used by |
+|-----------------|----------|---------|
+| `engineOnce sync.Once` | Initialization of `containerEngine` and `engineErr` | `selectContainerEngine` |
 
-**Contract**: Every read and write of `containerEngine` holds `engineMu`.
-`ContainerEngine` holds it across the cache check, environment/PATH detection,
-and publication. `detectContainerEngineLocked` requires the caller to hold it.
-`CheckInstalled` uses `selectContainerEngine` to select and snapshot under the
-lock, then validates that snapshot, including error names, without the lock.
-Each call repeats selection and readiness checks; failures are not cached.
+**Contract**: Runtime selection happens once per `Cli`, on the first call that needs an engine name. `selectContainerEngine` reads `AZD_CONTAINER_RUNTIME` and PATH inside `engineOnce.Do`, then publishes an immutable engine name and selection error. Every reader goes through `selectContainerEngine`; no other code may write these fields. Changing the environment or PATH requires a new `Cli`.
 
-`Name`, `InstallUrl`, and container operations read through
-`getContainerEngine`, which snapshots under the lock without detection and
-defaults to Docker before selection. No engine lock is held during version
-checks, daemon checks, builds, or other container subprocesses.
+The selected value uses the shared `tools.ContainerEngine` type and its Docker/Podman constants through `ContainerHelper` and the .NET container methods. String conversion happens when constructing external commands. The .NET methods also accept the zero value to use the SDK's default runtime.
+
+`ContainerEngine`, `Name`, `InstallUrl`, and container operations use that same selection. Lightweight name lookup defaults to Docker if selection fails; `CheckInstalled` reports the cached selection error. Each `CheckInstalled` call repeats version and daemon checks outside `sync.Once`, so readiness failures and cancellations are not cached. Builds and other container subprocesses also run outside `sync.Once`.
 
 **Why it matters**: Parallel services and remote-build fallbacks share the
 singleton `docker.Cli`.

@@ -8,6 +8,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -36,6 +38,7 @@ type SpinnerOp struct {
 type MockConsole struct {
 	expressions []*MockConsoleExpression
 	log         []string
+	logMu       sync.Mutex
 	spinnerOps  []SpinnerOp
 	noPrompt    bool
 	isTerminal  bool
@@ -64,7 +67,9 @@ func (c *MockConsole) SetWriter(writer io.Writer) {
 }
 
 func (c *MockConsole) Output() []string {
-	return c.log
+	c.logMu.Lock()
+	defer c.logMu.Unlock()
+	return slices.Clone(c.log)
 }
 
 func (c *MockConsole) SpinnerOps() []SpinnerOp {
@@ -81,7 +86,7 @@ func (c *MockConsole) Handles() input.ConsoleHandles {
 
 // Prints a message to the console
 func (c *MockConsole) Message(ctx context.Context, message string) {
-	c.log = append(c.log, message)
+	c.appendLog(message)
 }
 
 func (c *MockConsole) WarnForFeature(ctx context.Context, id alpha.FeatureId) {
@@ -133,7 +138,7 @@ func (c *MockConsole) SetTerminal(isTerminal bool) {
 
 // Prints a confirmation message to the console for the user to confirm
 func (c *MockConsole) Confirm(ctx context.Context, options input.ConsoleOptions) (bool, error) {
-	c.log = append(c.log, options.Message)
+	c.appendLog(options.Message)
 	value, err := c.respond("Confirm", options)
 	return value.(bool), err
 }
@@ -163,33 +168,39 @@ func (c *MockConsole) PromptDialog(ctx context.Context, dialog input.PromptDialo
 
 // Writes a single answer prompt to the console for the user to complete
 func (c *MockConsole) Prompt(ctx context.Context, options input.ConsoleOptions) (string, error) {
-	c.log = append(c.log, options.Message)
+	c.appendLog(options.Message)
 	value, err := c.respond("Prompt", options)
 	return value.(string), err
 }
 
 func (c *MockConsole) PromptFs(ctx context.Context, options input.ConsoleOptions, fs input.FsOptions) (string, error) {
-	c.log = append(c.log, options.Message)
+	c.appendLog(options.Message)
 	value, err := c.respond("PromptFs", options)
 	return value.(string), err
 }
 
 // Writes a multiple choice selection to the console for the user to choose
 func (c *MockConsole) Select(ctx context.Context, options input.ConsoleOptions) (int, error) {
-	c.log = append(c.log, options.Message)
+	c.appendLog(options.Message)
 	value, err := c.respond("Select", options)
 	return value.(int), err
 }
 
 // Writes a multiple choice selection to the console for the user to choose
 func (c *MockConsole) MultiSelect(ctx context.Context, options input.ConsoleOptions) ([]string, error) {
-	c.log = append(c.log, options.Message)
+	c.appendLog(options.Message)
 	value, err := c.respond("MultiSelect", options)
 	return value.([]string), err
 }
 
 // Writes messages to the underlying writer
 func (c *MockConsole) Flush() {
+}
+
+func (c *MockConsole) appendLog(message string) {
+	c.logMu.Lock()
+	defer c.logMu.Unlock()
+	c.log = append(c.log, message)
 }
 
 // DoInteraction executes the provided action function and returns any error encountered

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -177,6 +178,7 @@ func TestEventManager_EventOutputRoundTripWithoutClaims(t *testing.T) {
 	defer cancel()
 
 	eventManager := NewEventManager(extensionID, client, nil)
+	eventManager.outputWriter = io.Discard
 	receiveErr := make(chan error, 1)
 	go func() {
 		receiveErr <- eventManager.Receive(ctx)
@@ -215,6 +217,51 @@ func TestEventManager_EventOutputRoundTripWithoutClaims(t *testing.T) {
 		t,
 		"completed",
 		serviceResult.response.GetServiceHandlerStatus().GetStatus(),
+	)
+
+	eventManager.Close()
+	cancel()
+	select {
+	case err := <-receiveErr:
+		require.True(t, errors.Is(err, context.Canceled) || errors.Is(err, io.EOF))
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for event manager shutdown")
+	}
+}
+
+func TestEventManager_EventOutputRoundTripSplitsLargeWrites(t *testing.T) {
+	const extensionID = "microsoft.azd.demo"
+
+	client, server, cleanup := startEventIntegrationServer(t, extensionID)
+	defer cleanup()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	eventManager := NewEventManager(extensionID, client, nil)
+	eventManager.outputWriter = io.Discard
+	receiveErr := make(chan error, 1)
+	go func() {
+		receiveErr <- eventManager.Receive(ctx)
+	}()
+	require.NoError(t, eventManager.Ready(ctx))
+
+	largeOutput := strings.Repeat("x", 4*1024*1024+1)
+	projectHandler := func(ctx context.Context, args *ProjectEventArgs) error {
+		_, err := EventOutput(ctx).Write([]byte(largeOutput))
+		return err
+	}
+	require.NoError(t, eventManager.AddProjectEventHandler(ctx, "predeploy", projectHandler))
+	close(server.projectTrigger)
+
+	projectResult := waitForEventRoundTrip(t, server.projectResults)
+	require.NoError(t, projectResult.err)
+	require.Equal(t, largeOutput, strings.Join(projectResult.progress, ""))
+	require.NotNil(t, projectResult.response)
+	require.Equal(
+		t,
+		"completed",
+		projectResult.response.GetProjectHandlerStatus().GetStatus(),
 	)
 
 	eventManager.Close()

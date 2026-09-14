@@ -5,15 +5,22 @@ package azdext
 
 import (
 	"bytes"
-	"os"
+	"io"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestEventOutput_DefaultsToStdout(t *testing.T) {
-	//nolint:forbidigo // Verifies the documented stdout fallback.
-	require.Same(t, os.Stdout, EventOutput(t.Context()))
+	var stdout bytes.Buffer
+	previousFallback := eventOutputFallback
+	eventOutputFallback = &stdout
+	t.Cleanup(func() {
+		eventOutputFallback = previousFallback
+	})
+
+	require.Same(t, &stdout, EventOutput(t.Context()))
 }
 
 func TestEventOutputWriter_ForwardsOutput(t *testing.T) {
@@ -39,4 +46,24 @@ func TestEventOutputWriter_IsSafeWithoutProgress(t *testing.T) {
 	_, err := writer.Write([]byte("status\n"))
 	require.NoError(t, err)
 	require.Equal(t, "status\n", stdout.String())
+}
+
+func TestEventOutputWriter_SplitsLargeProgressWrites(t *testing.T) {
+	data := bytes.Repeat([]byte("x"), maxProgressMessageBytes*2+1)
+	var progress []string
+	writer := &eventOutputWriter{
+		writer: io.Discard,
+		progress: func(message string) {
+			progress = append(progress, message)
+		},
+	}
+
+	written, err := writer.Write(data)
+	require.NoError(t, err)
+	require.Equal(t, len(data), written)
+	require.Len(t, progress, 3)
+	require.Equal(t, string(data), strings.Join(progress, ""))
+	for _, message := range progress {
+		require.LessOrEqual(t, len(message), maxProgressMessageBytes)
+	}
 }

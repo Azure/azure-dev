@@ -645,8 +645,8 @@ func TestRun_GracefulShutdown_EOF(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestClose_ClosesAllChannels tests that Close properly cleans up
-func TestClose_ClosesAllChannels(t *testing.T) {
+// TestClose_RemovesAllResponseChannels tests that Close properly cleans up.
+func TestClose_RemovesAllResponseChannels(t *testing.T) {
 	sim := NewSimulatedBidiStream()
 	defer sim.Close()
 
@@ -669,7 +669,7 @@ func TestClose_ClosesAllChannels(t *testing.T) {
 	// Wait for both response channels to register in responseChans.
 	require.Eventually(t, func() bool {
 		count := 0
-		broker.responseChans.Range(func(_ string, _ chan *TestMessage) bool {
+		broker.responseChans.Range(func(_ string, _ *responseChannel[TestMessage]) bool {
 			count++
 			return true
 		})
@@ -681,11 +681,57 @@ func TestClose_ClosesAllChannels(t *testing.T) {
 
 	// Verify all channels are removed
 	count := 0
-	broker.responseChans.Range(func(_ string, _ chan *TestMessage) bool {
+	broker.responseChans.Range(func(_ string, _ *responseChannel[TestMessage]) bool {
 		count++
 		return true
 	})
 	assert.Equal(t, 0, count, "All channels should be removed from the map")
+}
+
+func TestProcessMessage_CancellationUnblocksFullResponseChannel(t *testing.T) {
+	sim := NewSimulatedBidiStream()
+	defer sim.Close()
+
+	envelope := &SimpleMessageEnvelope{}
+	broker := NewMessageBroker(sim.ServerStream(), envelope, "server", nil)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	const requestID = "canceled-progress-request"
+	response := newResponseChannel[TestMessage](ctx, 1)
+	response.messages <- &TestMessage{
+		RequestId:  requestID,
+		IsProgress: true,
+	}
+	broker.responseChans.Store(requestID, response)
+	defer func() {
+		broker.responseChans.Delete(requestID)
+		response.close()
+	}()
+
+	dispatchDone := make(chan struct{})
+	go func() {
+		broker.processMessage(ctx, &TestMessage{
+			RequestId:    requestID,
+			IsProgress:   true,
+			ProgressText: "discarded",
+		})
+		close(dispatchDone)
+	}()
+
+	select {
+	case <-dispatchDone:
+		t.Fatal("dispatcher should wait while the response channel is full")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	cancel()
+
+	select {
+	case <-dispatchDone:
+	case <-time.After(time.Second):
+		t.Fatal("dispatcher remained blocked after request cancellation")
+	}
 }
 
 // TestEndToEnd_HandlerPanic verifies that when a handler panics, the client receives

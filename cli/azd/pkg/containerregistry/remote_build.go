@@ -6,6 +6,7 @@ package containerregistry
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -267,6 +268,8 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 	const maxPollIterations = 1200 // ~20 minutes at 1s intervals
 
 	var written int64 = 0
+	writtenHash := sha256.New()
+	validateWrittenPrefix := false
 	return retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
 		err := func() error {
 			for iteration := 0; ; iteration++ {
@@ -286,6 +289,48 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 				if length < written {
 					// A restarted ACR build can replace its log with a shorter blob.
 					written = 0
+					writtenHash.Reset()
+					validateWrittenPrefix = false
+				}
+				if validateWrittenPrefix && written > 0 {
+					res, err := blobClient.DownloadStream(ctx, &blob.DownloadStreamOptions{
+						Range: azblob.HTTPRange{
+							Count: written,
+						},
+						AccessConditions: &blob.AccessConditions{
+							ModifiedAccessConditions: &blob.ModifiedAccessConditions{
+								IfMatch: props.ETag,
+							},
+						},
+					})
+					if err != nil {
+						if responseErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+							(responseErr.StatusCode == http.StatusRequestedRangeNotSatisfiable ||
+								responseErr.StatusCode == http.StatusPreconditionFailed) {
+							select {
+							case <-ctx.Done():
+								return ctx.Err()
+							case <-time.After(1 * time.Second):
+							}
+							continue
+						}
+						return err
+					}
+
+					prefixHash := sha256.New()
+					copied, err := io.Copy(prefixHash, res.Body)
+					closeErr := res.Body.Close()
+					if err != nil {
+						return err
+					}
+					if closeErr != nil {
+						return closeErr
+					}
+					if copied != written || !bytes.Equal(prefixHash.Sum(nil), writtenHash.Sum(nil)) {
+						written = 0
+						writtenHash.Reset()
+					}
+					validateWrittenPrefix = false
 				}
 				if (length - written) == 0 {
 					if props.Metadata != nil {
@@ -321,6 +366,9 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 						// is no longer valid, even if the replacement grows before our next poll.
 						if responseErr.StatusCode == http.StatusRequestedRangeNotSatisfiable {
 							written = 0
+							writtenHash.Reset()
+						} else {
+							validateWrittenPrefix = written > 0
 						}
 						select {
 						case <-ctx.Done():
@@ -334,7 +382,7 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 
 				err = func() error {
 					defer res.Body.Close()
-					copied, err := io.Copy(writer, res.Body)
+					copied, err := io.Copy(io.MultiWriter(writer, writtenHash), res.Body)
 					if err != nil {
 						return err
 					}
@@ -349,6 +397,8 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 		if azErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 			if azErr.StatusCode == http.StatusNotFound {
 				written = 0
+				writtenHash.Reset()
+				validateWrittenPrefix = false
 				// Mark log not found as a retryable error, we assume that the blob client was formed around a result from
 				// the queue job request and the fact that the log is not found means that the log is not yet available, not
 				// that it will never be available.

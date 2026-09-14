@@ -144,10 +144,11 @@ func (a *runOutputListAction) Run() error {
 	}
 	rows := items.Data
 
-	// A bare array, as every other list emits. Wrapping the rows beside
-	// the run made `-o json` the one listing a script could not iterate,
-	// and it failed silently: the loop walked the two keys instead. The
-	// run itself is what `run show` answers.
+	// The file holds the rows and nothing else. Wrapping them beside the run
+	// made `-o json` the one listing a script could not iterate, and it failed
+	// silently: the loop walked the two keys instead. The run itself is what
+	// `run show` answers. Stdout below carries the same rows in the page
+	// envelope every listing uses, because there a cursor still has to fit.
 	if a.flags.outFile != "" {
 		// These rows carry prompts, answers and the reasons an evaluator gave.
 		// os.Create takes the process umask, which commonly leaves them

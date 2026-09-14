@@ -344,7 +344,7 @@ func (a *datasetVersionsListAction) Run() error {
 		return messages.ListingDatasetVersions(a.name, err)
 	}
 	// An unknown name lists nothing and succeeds; it is not an error. `-o json`
-	// callers range over the array, and `dataset delete` is checked for
+	// callers read the envelope's `items`, and `dataset delete` is checked for
 	// idempotence by listing what is left. The empty sentence names the dataset,
 	// though: the project may hold plenty of others, so "No datasets found."
 	// would be answering a different question.

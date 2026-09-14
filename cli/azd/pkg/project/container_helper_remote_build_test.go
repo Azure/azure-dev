@@ -370,18 +370,6 @@ func (f *remoteBuildFixture) publish(ctx context.Context) (*ServicePublishResult
 	return f.helper.Publish(ctx, f.config, f.serviceContext, f.target, f.env, progress, f.options)
 }
 
-type remoteBuildCommandRunner struct {
-	exec.CommandRunner
-}
-
-func (r *remoteBuildCommandRunner) Run(ctx context.Context, args exec.RunArgs) (exec.RunResult, error) {
-	// The shared mock ignores context; real commands do not start after cancellation.
-	if err := ctx.Err(); err != nil {
-		return exec.RunResult{}, err
-	}
-	return r.CommandRunner.Run(ctx, args)
-}
-
 type remoteBuildCancelConsole struct {
 	input.Console
 	cancel context.CancelFunc
@@ -450,11 +438,10 @@ func newRemoteBuildFixture(t *testing.T) *remoteBuildFixture {
 		Return(nil).Run(func(mock.Arguments) {
 		_ = f.record("login")
 	})
-	runner := &remoteBuildCommandRunner{CommandRunner: m.CommandRunner}
 	f.helper = NewContainerHelper(
 		clock.NewMock(), registry,
 		containerregistry.NewRemoteBuildManager(m.SubscriptionCredentialProvider, m.ArmClientOptions),
-		runner, docker.NewCli(runner), dotnet.NewCli(runner), m.Console, cloud.AzurePublic(),
+		m.CommandRunner, docker.NewCli(m.CommandRunner), dotnet.NewCli(m.CommandRunner), m.Console, cloud.AzurePublic(),
 	)
 	m.HttpClient.When(func(*http.Request) bool { return true }).RespondFn(f.respond)
 	return f

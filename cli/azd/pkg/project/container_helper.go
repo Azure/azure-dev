@@ -884,6 +884,10 @@ func (ch *ContainerHelper) publishLocalFallback(
 	progress *async.Progress[ServiceProgress],
 	imageOverride *imageOverride,
 ) (string, error) {
+	// Shell commands may start despite cancellation; keep these stage guards until Azure/azure-dev#10035 is fixed.
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if err := ch.docker.CheckInstalled(ctx); err != nil {
 		return "", fmt.Errorf("local container runtime unavailable: %w", err)
 	}
@@ -919,6 +923,9 @@ func (ch *ContainerHelper) publishLocalFallback(
 		if err := serviceContext.Build.Add(buildResult.Artifacts...); err != nil {
 			return "", fmt.Errorf("adding local build artifacts: %w", err)
 		}
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		packageResult, err := ch.packageLocalImage(ctx, serviceConfig, serviceContext, env, progress)
 		if err != nil {
 			return "", fmt.Errorf("packaging local image: %w", err)
@@ -928,6 +935,9 @@ func (ch *ContainerHelper) publishLocalFallback(
 		}
 	}
 
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	return ch.publishLocalImage(ctx, serviceConfig, serviceContext, env, progress, imageOverride)
 }
 

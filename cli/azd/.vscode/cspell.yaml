@@ -383,6 +383,9 @@ overrides:
   - filename: magefile.go
     words:
       - telemetrylint
+  - filename: docs/tracing-in-azd.md
+    words:
+      - telemetrylint
   - filename: tools/telemetrylint/**
     words:
       - Elts

@@ -6,7 +6,6 @@ package containerregistry
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +29,31 @@ import (
 	"github.com/google/uuid"
 	"github.com/sethvargo/go-retry"
 )
+
+const logCursorValidationBytes = 64 * 1024
+
+type rollingTail struct {
+	data []byte
+}
+
+func (w *rollingTail) Write(p []byte) (int, error) {
+	if len(p) >= logCursorValidationBytes {
+		w.data = append(w.data[:0], p[len(p)-logCursorValidationBytes:]...)
+		return len(p), nil
+	}
+
+	overflow := len(w.data) + len(p) - logCursorValidationBytes
+	if overflow > 0 {
+		copy(w.data, w.data[overflow:])
+		w.data = w.data[:len(w.data)-overflow]
+	}
+	w.data = append(w.data, p...)
+	return len(p), nil
+}
+
+func (w *rollingTail) Reset() {
+	w.data = w.data[:0]
+}
 
 // uniqueCorrelationPolicy is an azcore PerCall policy that overrides the x-ms-correlation-request-id header with a
 // freshly generated UUID on every outgoing HTTP request.
@@ -268,11 +292,11 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 	const maxPollIterations = 1200 // ~20 minutes at 1s intervals
 
 	var written int64 = 0
-	writtenHash := sha256.New()
+	writtenTail := &rollingTail{}
 	var writtenETag *azcore.ETag
 	resetCursor := func() {
 		written = 0
-		writtenHash.Reset()
+		writtenTail.Reset()
 		writtenETag = nil
 	}
 	return retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
@@ -297,9 +321,11 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 				}
 				if written > 0 && props.ETag != nil &&
 					(writtenETag == nil || *props.ETag != *writtenETag) {
+					validationLength := int64(len(writtenTail.data))
 					res, err := blobClient.DownloadStream(ctx, &blob.DownloadStreamOptions{
 						Range: azblob.HTTPRange{
-							Count: written,
+							Offset: written - validationLength,
+							Count:  validationLength,
 						},
 						AccessConditions: &blob.AccessConditions{
 							ModifiedAccessConditions: &blob.ModifiedAccessConditions{
@@ -321,8 +347,7 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 						return err
 					}
 
-					prefixHash := sha256.New()
-					copied, err := io.Copy(prefixHash, res.Body)
+					tail, err := io.ReadAll(res.Body)
 					closeErr := res.Body.Close()
 					if err != nil {
 						return err
@@ -330,7 +355,7 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 					if closeErr != nil {
 						return closeErr
 					}
-					if copied != written || !bytes.Equal(prefixHash.Sum(nil), writtenHash.Sum(nil)) {
+					if !bytes.Equal(tail, writtenTail.data) {
 						resetCursor()
 					} else {
 						etag := *props.ETag
@@ -384,7 +409,7 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 
 				err = func() error {
 					defer res.Body.Close()
-					copied, err := io.Copy(io.MultiWriter(writer, writtenHash), res.Body)
+					copied, err := io.Copy(io.MultiWriter(writer, writtenTail), res.Body)
 					if err != nil {
 						return err
 					}

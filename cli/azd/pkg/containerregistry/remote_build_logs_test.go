@@ -118,6 +118,26 @@ func TestStreamLogs_ChangingBlob(t *testing.T) {
 			output: "one\ntwo\n",
 		},
 		{
+			name: "append validates only the bounded cursor tail",
+			responses: func() []logBlobResponse {
+				oldLog := strings.Repeat("a", logCursorValidationBytes+1)
+				return []logBlobResponse{
+					{method: http.MethodHead, body: oldLog, etag: `"1"`},
+					{method: http.MethodGet, body: oldLog, byteRange: "bytes=0-65536", ifMatch: `"1"`},
+					{method: http.MethodHead, body: oldLog + "b", etag: `"2"`},
+					{
+						method:    http.MethodGet,
+						body:      oldLog[1:],
+						byteRange: "bytes=1-65536",
+						ifMatch:   `"2"`,
+					},
+					{method: http.MethodGet, body: "b", byteRange: "bytes=65537-65537", ifMatch: `"2"`},
+					{method: http.MethodHead, body: oldLog + "b", etag: `"2"`, complete: true},
+				}
+			}(),
+			output: strings.Repeat("a", logCursorValidationBytes+1) + "b",
+		},
+		{
 			name: "truncated log starts from zero",
 			responses: []logBlobResponse{
 				{method: http.MethodHead, body: "old attempt\n", etag: `"1"`},

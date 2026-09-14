@@ -36,13 +36,14 @@ First release of the Foundry evaluations extension.
   `instruction_id_list` -- work by binding them to dataset columns. A required
   column the dataset does not carry is reported before the request is sent, and
   the message names the column.
-- A rubric kept in its own file is referenced at the field it fills:
+- A rubric kept in its own file is named by `source:`, which is what `generate`
+  writes. A `$ref` at `definition:` works too, and is what to use when the
+  rubric is written out in the configuration:
 
   ```yaml
   evaluators:
     - name: quality
-      definition:
-        $ref: ./evaluators/quality.json
+      source: ./evaluators/quality.json
   ```
 
 - Results are reported per evaluator and per test case: pass, fail, skip and

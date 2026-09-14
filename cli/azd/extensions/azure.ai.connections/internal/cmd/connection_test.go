@@ -176,6 +176,7 @@ func TestNormalizeAuthType(t *testing.T) {
 		{"UserEntraToken", "user-entra-token"},
 		{"ProjectManagedIdentity", "project-managed-identity"},
 		{"AgenticIdentityToken", "agentic-identity"},
+		{"AgenticIdentity", "agentic-identity"},
 		// Unknown ΓÇö pass through
 		{"AAD", "AAD"},
 		{"", ""},

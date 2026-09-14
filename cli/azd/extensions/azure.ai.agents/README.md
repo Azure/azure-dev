@@ -124,6 +124,44 @@ effect: activity-protocol agents open the Microsoft 365 Agents Playground rather
 than the Agent Inspector, and `--port 8087` on its own collides with the
 inspector's own default UI port.
 
+## Previewing a hosted-agent deployment
+
+Use `azd ai agent deploy --dry-run` to validate and preview a hosted-agent
+deployment without creating an agent version, uploading code, building or
+pushing an image, deploying a toolbox, patching endpoint settings, or changing
+the azd environment.
+
+In a current project, the command reads the `azure.ai.agent` service directly
+from `azure.yaml`:
+
+```bash
+azd ai agent deploy --dry-run
+azd ai agent deploy --dry-run --service my-agent
+azd ai agent deploy --dry-run --output json
+```
+
+The preview reports whether the deployment would create an agent or create a
+new version, along with changes to metadata, protocols, resources, environment
+variable names, the model deployment, and the deployment artifact. Environment
+variable values are redacted, except for the model deployment name.
+
+Legacy projects remain supported. When `azure.yaml` references an on-disk
+`agent.yaml`, the dry run uses that definition. In a historical sample that has
+`agent.yaml` and `agent.manifest.yaml` but has not been initialized as an azd
+project, the command falls back to `./agent.yaml`; an explicit path also works:
+
+```bash
+azd ai agent deploy ./agent.yaml --dry-run
+```
+
+`agent.manifest.yaml` remains an initialization/import manifest and is not the
+runtime deployment definition.
+
+For a newly initialized project that has not been provisioned, the dry run
+still validates and packages the local service. It reports `create` with remote
+comparison `unavailableUntilProvision` instead of requiring a Foundry project
+endpoint.
+
 ### Local client route telemetry
 
 When installed from the official registry, the extension reports the

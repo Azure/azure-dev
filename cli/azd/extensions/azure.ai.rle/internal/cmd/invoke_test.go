@@ -37,14 +37,7 @@ func TestInvokeRemoteCreatesInstanceAndRunsShell(t *testing.T) {
 	captureBrowserOpen(t)
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	if err := saveRleState(rleState{
-		EnvironmentName:    "code_rl",
-		ProjectEndpoint:    "https://account.services.ai.azure.com/api/projects/project-1",
-		EnvironmentId:      "env-1",
-		EnvironmentVersion: "v1",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	writeRleTestConfig(t, "code_rl", "1.0.0")
 
 	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("api-version"); got != foundryAPIVersion {
@@ -87,24 +80,24 @@ func TestInvokeRemoteCreatesInstanceAndRunsShell(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/v1/instance_groups":
+			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups":
 			_, _ = w.Write([]byte(
 				`{"id":"group-1","environmentName":"code_rl",` +
-					`"environmentVersion":"v1","maxActiveInstances":1}`,
+					`"environmentVersion":"1.0.0","maxActiveInstances":1}`,
 			))
 		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/v1/instance_groups/group-1/instances":
+			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances":
 			_, _ = w.Write([]byte(
 				`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` +
 					strconv.Quote(envServer.URL) + `}`,
 			))
 		case r.Method == http.MethodDelete &&
 			r.URL.Path == testFoundryProjectPath+
-				"/rl_environments/code_rl/versions/v1/instance_groups/group-1/instances/instance-1":
+				"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances/instance-1":
 			instanceDeleted = true
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/v1/instance_groups/group-1":
+			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1":
 			groupDeleted = true
 			w.WriteHeader(http.StatusNoContent)
 		default:
@@ -122,7 +115,7 @@ func TestInvokeRemoteCreatesInstanceAndRunsShell(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), "Environment code_rl version v1 ready") {
+	if !strings.Contains(output.String(), "Environment code_rl version 1.0.0 ready") {
 		t.Fatalf("expected environment ready output, got %s", output.String())
 	}
 	if strings.Contains(output.String(), envServer.URL) {
@@ -286,22 +279,15 @@ func TestWriteCleanupResultDoesNotExposeResourceDetails(t *testing.T) {
 	}
 }
 
-func TestInvokeRemoteFromStateDoesNotFallBackInstanceGroupsToLegacyPrefix(t *testing.T) {
+func TestInvokeRemoteFromManifestDoesNotFallBackInstanceGroupsToLegacyPrefix(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := saveRleState(rleState{
-		EnvironmentName:    "code_rl",
-		ProjectEndpoint:    "https://account.services.ai.azure.com/api/projects/project-1",
-		EnvironmentId:      "env-1",
-		EnvironmentVersion: "v1",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	writeRleTestConfig(t, "code_rl", "1.0.0")
 
 	requestCount := 0
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
 		if r.Method != http.MethodPost ||
-			r.URL.Path != testFoundryProjectPath+"/rl_environments/code_rl/versions/v1/instance_groups" {
+			r.URL.Path != testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 		http.NotFound(w, r)
@@ -325,7 +311,7 @@ func TestInvokeRemoteFromStateDoesNotFallBackInstanceGroupsToLegacyPrefix(t *tes
 	}
 }
 
-func TestInvokeRemoteByNameUsesLatestListedVersionWithoutLocalState(t *testing.T) {
+func TestInvokeRemoteByNameUsesExplicitVersionWithoutLocalManifest(t *testing.T) {
 	captureBrowserOpen(t)
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
@@ -350,7 +336,7 @@ func TestInvokeRemoteByNameUsesLatestListedVersionWithoutLocalState(t *testing.T
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/instance_groups":
+			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups":
 			_, _ = w.Write([]byte(
 				`{"id":"group-1","environmentName":"code_rl",` +
 					`"environmentVersion":"2.0.0","maxActiveInstances":1}`,
@@ -376,7 +362,7 @@ func TestInvokeRemoteByNameUsesLatestListedVersionWithoutLocalState(t *testing.T
 	stubRleClientEndpoint(t, controlPlane.URL)
 
 	command := newInvokeCommand()
-	command.SetArgs([]string{"code_rl"})
+	command.SetArgs([]string{"code_rl", "--version", "2.0.0"})
 	command.SetIn(strings.NewReader("exit\n"))
 	var output bytes.Buffer
 	command.SetOut(&output)
@@ -384,11 +370,11 @@ func TestInvokeRemoteByNameUsesLatestListedVersionWithoutLocalState(t *testing.T
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), "Creating runtime for environment code_rl using the latest version") {
-		t.Fatalf("expected latest-version runtime output, got %s", output.String())
+	if !strings.Contains(output.String(), "Creating runtime for environment code_rl version 2.0.0") {
+		t.Fatalf("expected version-pinned runtime output, got %s", output.String())
 	}
-	if _, err := os.Stat(stateFilePath(".")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("expected cloud-only invoke not to create local state, got %v", err)
+	if _, err := os.Stat(filepath.Join(tempDir, ".azd-rle.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected cloud-only invoke not to create legacy state, got %v", err)
 	}
 }
 
@@ -408,7 +394,7 @@ func TestInvokeRemoteByNameTimesOutWhileWaitingForEnvironmentReadiness(t *testin
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method != http.MethodPost ||
-			r.URL.Path != testFoundryProjectPath+"/rl_environments/code_rl/instance_groups" {
+			r.URL.Path != testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 		groupCreateCount++
@@ -422,7 +408,7 @@ func TestInvokeRemoteByNameTimesOutWhileWaitingForEnvironmentReadiness(t *testin
 	stubRleClientEndpoint(t, controlPlane.URL)
 
 	command := newInvokeCommand()
-	command.SetArgs([]string{"code_rl"})
+	command.SetArgs([]string{"code_rl", "--version", "2.0.0"})
 	command.SetIn(strings.NewReader("exit\n"))
 	var output bytes.Buffer
 	command.SetOut(&output)
@@ -474,7 +460,7 @@ func TestInvokeRemoteByNameRetriesEnvironmentReadinessUntilSuccess(t *testing.T)
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/instance_groups":
+			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups":
 			groupCreateCount++
 			if groupCreateCount < 3 {
 				http.Error(
@@ -509,7 +495,7 @@ func TestInvokeRemoteByNameRetriesEnvironmentReadinessUntilSuccess(t *testing.T)
 	stubRleClientEndpoint(t, controlPlane.URL)
 
 	command := newInvokeCommand()
-	command.SetArgs([]string{"code_rl"})
+	command.SetArgs([]string{"code_rl", "--version", "2.0.0"})
 	command.SetIn(strings.NewReader("exit\n"))
 	var output bytes.Buffer
 	command.SetOut(&output)
@@ -552,7 +538,7 @@ func TestInvokeRemoteDoesNotReportReadyBeforeRuntimeHealthSucceeds(t *testing.T)
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/instance_groups":
+			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups":
 			_, _ = w.Write([]byte(
 				`{"id":"group-1","environmentName":"code_rl",` +
 					`"environmentVersion":"2.0.0","maxActiveInstances":1}`,
@@ -578,7 +564,7 @@ func TestInvokeRemoteDoesNotReportReadyBeforeRuntimeHealthSucceeds(t *testing.T)
 	stubRleClientEndpoint(t, controlPlane.URL)
 
 	command := newInvokeCommand()
-	command.SetArgs([]string{"code_rl"})
+	command.SetArgs([]string{"code_rl", "--version", "2.0.0"})
 	command.SetIn(strings.NewReader("exit\n"))
 	var output bytes.Buffer
 	command.SetOut(&output)
@@ -693,7 +679,7 @@ func TestInvokeRemoteByNameDoesNotRetryOtherBadRequests(t *testing.T) {
 	groupCreateCount := 0
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost ||
-			r.URL.Path != testFoundryProjectPath+"/rl_environments/code_rl/instance_groups" {
+			r.URL.Path != testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 		groupCreateCount++
@@ -703,7 +689,7 @@ func TestInvokeRemoteByNameDoesNotRetryOtherBadRequests(t *testing.T) {
 	stubRleClientEndpoint(t, controlPlane.URL)
 
 	command := newInvokeCommand()
-	command.SetArgs([]string{"code_rl"})
+	command.SetArgs([]string{"code_rl", "--version", "1.0.0"})
 	command.SetOut(io.Discard)
 	command.SetErr(io.Discard)
 	err := command.Execute()
@@ -752,7 +738,7 @@ func TestInvokeRemoteByNameClassifiesVersionRuntimeFailuresAsServiceErrors(t *te
 	}
 }
 
-func TestInvokeRemoteByNameReportsMissingVersion(t *testing.T) {
+func TestInvokeRemoteByNameReportsMissingEnvironmentVersion(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	t.Setenv(
@@ -788,7 +774,7 @@ func TestInvokeRemoteByNameReportsMissingVersion(t *testing.T) {
 	}
 }
 
-func TestInvokeRemoteByNameReportsMissingEnvironment(t *testing.T) {
+func TestInvokeRemoteByNameReportsMissingVersion(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	t.Setenv(
@@ -798,7 +784,7 @@ func TestInvokeRemoteByNameReportsMissingEnvironment(t *testing.T) {
 
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost ||
-			r.URL.Path != testFoundryProjectPath+environmentCollectionPath+"/missing_env/instance_groups" {
+			r.URL.Path != testFoundryProjectPath+environmentCollectionPath+"/missing_env/versions/1.0.0/instance_groups" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 		http.NotFound(w, r)
@@ -807,7 +793,7 @@ func TestInvokeRemoteByNameReportsMissingEnvironment(t *testing.T) {
 	stubRleClientEndpoint(t, controlPlane.URL)
 
 	command := newInvokeCommand()
-	command.SetArgs([]string{"missing_env"})
+	command.SetArgs([]string{"missing_env", "--version", "1.0.0"})
 	command.SetOut(io.Discard)
 	command.SetErr(io.Discard)
 	err := command.Execute()
@@ -815,23 +801,18 @@ func TestInvokeRemoteByNameReportsMissingEnvironment(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected LocalError, got %T: %v", err, err)
 	}
-	if localErr.Code != "rle_environment_not_found" {
-		t.Fatalf("expected environment-not-found code, got %q", localErr.Code)
+	if localErr.Code != "rle_environment_version_not_found" {
+		t.Fatalf("expected environment-version-not-found code, got %q", localErr.Code)
 	}
-	if localErr.Suggestion != "Run azd ai rle list to see the available environments." {
-		t.Fatalf("unexpected environment-not-found suggestion: %q", localErr.Suggestion)
+	if !strings.Contains(localErr.Suggestion, "azd ai rle show missing_env") {
+		t.Fatalf("unexpected environment-version-not-found suggestion: %q", localErr.Suggestion)
 	}
 }
 
-func TestInvokeRemoteUsesSavedEnvironmentNameWithVersion(t *testing.T) {
+func TestInvokeRemoteUsesManifestEnvironmentNameWithVersion(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	if err := saveRleState(rleState{
-		EnvironmentName: "code_rl",
-		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	writeRleTestConfig(t, "code_rl", "1.0.0")
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost ||
 			r.URL.Path != testFoundryProjectPath+
@@ -865,14 +846,7 @@ func TestInvokeRemoteUsesAuthenticatedPlaygroundProxy(t *testing.T) {
 	openedUrl := captureBrowserOpen(t)
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	if err := saveRleState(rleState{
-		EnvironmentName:    "code_rl",
-		ProjectEndpoint:    "https://account.services.ai.azure.com/api/projects/project-1",
-		EnvironmentId:      "env-1",
-		EnvironmentVersion: "1.0.0",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	writeRleTestConfig(t, "code_rl", "1.0.0")
 
 	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer test-token" {
@@ -1233,14 +1207,7 @@ func TestInvokeRemotePollsStoppedInstanceUntilRunning(t *testing.T) {
 	captureBrowserOpen(t)
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	if err := saveRleState(rleState{
-		EnvironmentName:    "code_rl",
-		ProjectEndpoint:    "https://account.services.ai.azure.com/api/projects/project-1",
-		EnvironmentId:      "env-1",
-		EnvironmentVersion: "1.0.0",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	writeRleTestConfig(t, "code_rl", "1.0.0")
 
 	oldPollInterval := remoteInstancePollInterval
 	remoteInstancePollInterval = time.Millisecond
@@ -1332,14 +1299,7 @@ func TestWaitForRemoteInstanceRejectsDeletedInstance(t *testing.T) {
 func TestInvokeRemoteFailsWhenInstanceFails(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	if err := saveRleState(rleState{
-		EnvironmentName:    "code_rl",
-		ProjectEndpoint:    "https://account.services.ai.azure.com/api/projects/project-1",
-		EnvironmentId:      "env-1",
-		EnvironmentVersion: "1.0.0",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	writeRleTestConfig(t, "code_rl", "1.0.0")
 
 	instanceDeleted := false
 	groupDeleted := false
@@ -1392,32 +1352,23 @@ func TestInvokeRemoteFailsWhenInstanceFails(t *testing.T) {
 	}
 }
 
-func TestRequireDeployedEnvironmentRejectsMissingEnvironmentId(t *testing.T) {
-	err := requireDeployedEnvironment(rleState{
-		EnvironmentName: "code_rl",
-		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
-	})
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("expected LocalError, got %T", err)
-	}
-	if localErr.Code != "rle_environment_not_deployed" {
-		t.Fatalf("expected not deployed code, got %q", localErr.Code)
-	}
-}
+func TestInvokeRemoteByNameRequiresVersion(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/project-1",
+	)
 
-func TestRequireDeployedEnvironmentRejectsMissingEnvironmentVersion(t *testing.T) {
-	err := requireDeployedEnvironment(rleState{
-		EnvironmentName: "code_rl",
-		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
-		EnvironmentId:   "env-1",
-	})
+	command := newInvokeCommand()
+	command.SetArgs([]string{"code_rl"})
+	err := command.Execute()
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	if !ok {
 		t.Fatalf("expected LocalError, got %T", err)
 	}
-	if localErr.Code != "rle_environment_version_missing" {
-		t.Fatalf("expected environment-version-missing code, got %q", localErr.Code)
+	if localErr.Code != "rle_environment_version_required" {
+		t.Fatalf("expected version-required code, got %q", localErr.Code)
 	}
 }
 
@@ -1456,7 +1407,7 @@ func TestEnsurePortAvailableRejectsBoundPort(t *testing.T) {
 	}
 }
 
-func TestResolvePortDefaultsTo8000WithoutPersistedState(t *testing.T) {
+func TestResolvePortDefaultsTo8000(t *testing.T) {
 	if port := resolvePort(&localRunFlags{}); port != defaultPort {
 		t.Fatalf("expected default port %d, got %d", defaultPort, port)
 	}
@@ -1465,52 +1416,31 @@ func TestResolvePortDefaultsTo8000WithoutPersistedState(t *testing.T) {
 	}
 }
 
-func TestLoadLocalRunStateDefaultsToExistingFolderWithoutInit(t *testing.T) {
+func TestLoadLocalRunConfigUsesManifest(t *testing.T) {
 	tempDir := filepath.Join(t.TempDir(), "My Env")
 	if err := os.MkdirAll(tempDir, 0750); err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(tempDir)
+	writeRleTestConfig(t, "my_env", "1.0.0")
 
-	var output bytes.Buffer
-	state, err := loadLocalRunState(&localRunFlags{source: "."}, &output)
+	config, err := loadLocalRunConfig(&localRunFlags{source: "."})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.EnvironmentName != "my-env" {
-		t.Fatalf("expected source-folder name, got %q", state.EnvironmentName)
+	if config.Rle.Name != "my_env" {
+		t.Fatalf("expected manifest environment name, got %q", config.Rle.Name)
 	}
-	image := localRuntimeImageForRun(&localRunFlags{source: "."}, state)
+	image := localRuntimeImageForRun(config.Rle.Name)
 	if image != "my-env:local" {
-		t.Fatalf("expected default local image, got %q", image)
-	}
-	if !strings.Contains(output.String(), "No .azd-rle.json found; using current folder as the RLE source.") {
-		t.Fatalf("expected missing state transparency message, got %q", output.String())
-	}
-	var saved rleState
-	data, err := os.ReadFile(stateFilePath("."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(data, &saved); err != nil {
-		t.Fatal(err)
-	}
-	if saved != (rleState{EnvironmentName: "my-env"}) {
-		t.Fatalf("expected saved state with only name, got %#v", saved)
+		t.Fatalf("expected manifest-derived local image, got %q", image)
 	}
 }
 
 func TestInvokeRemoteRejectsMismatchedPinnedGroupVersionAndCleansUpRequestedRoute(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	if err := saveRleState(rleState{
-		EnvironmentName:    "code_rl",
-		ProjectEndpoint:    "https://account.services.ai.azure.com/api/projects/project-1",
-		EnvironmentId:      "env-1",
-		EnvironmentVersion: "1.0.0",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	writeRleTestConfig(t, "code_rl", "1.0.0")
 
 	instanceCreateCount := 0
 	groupDeleteCount := 0
@@ -1560,7 +1490,7 @@ func TestInvokeRemoteRejectsMismatchedPinnedGroupVersionAndCleansUpRequestedRout
 
 func TestValidateInstanceGroupIdentityRejectsMismatchedEnvironment(t *testing.T) {
 	err := validateInstanceGroupIdentity(
-		rleState{EnvironmentName: "code_rl"},
+		remoteInvokeTarget{environmentName: "code_rl", version: "1.0.0"},
 		&instanceGroupResource{
 			Id:                 "group-1",
 			EnvironmentName:    "other_environment",
@@ -1579,14 +1509,7 @@ func TestValidateInstanceGroupIdentityRejectsMismatchedEnvironment(t *testing.T)
 func TestRemoteInvokeDoesNotRetryInstanceGroupConflicts(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	if err := saveRleState(rleState{
-		EnvironmentName:    "code_rl",
-		ProjectEndpoint:    "https://account.services.ai.azure.com/api/projects/project-1",
-		EnvironmentId:      "env-1",
-		EnvironmentVersion: "1.0.0",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	writeRleTestConfig(t, "code_rl", "1.0.0")
 
 	createCount := 0
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1689,102 +1612,22 @@ func useTestProjectEndpoint(t *testing.T, endpoint string) {
 		createRleClient = oldCreateRleClient
 		validateSandboxURL = oldValidateSandboxURL
 	})
-
-	state, err := loadRleState()
-	if err != nil {
-		t.Fatal(err)
-	}
-	state.ProjectEndpoint = endpoint
-	if err := saveRleState(state); err != nil {
-		t.Fatal(err)
-	}
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/project-1",
+	)
 }
 
-func TestResolvePublishStateDefaultsToExistingFolderWithoutInit(t *testing.T) {
-	tempDir := filepath.Join(t.TempDir(), "My Env")
-	if err := os.MkdirAll(tempDir, 0750); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(tempDir)
-	t.Setenv(foundryProjectEndpointEnvVar, "https://account.services.ai.azure.com/api/projects/project-1")
-
-	state, initialized, err := resolvePublishState()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if initialized {
-		t.Fatal("expected no saved state")
-	}
-	if state.EnvironmentName != "my-env" {
-		t.Fatalf("expected source-folder name, got %q", state.EnvironmentName)
-	}
-	if state.ProjectEndpoint != "https://account.services.ai.azure.com/api/projects/project-1" {
-		t.Fatalf("expected saved project endpoint, got %q", state.ProjectEndpoint)
-	}
-}
-
-func TestResolvePublishImageUsesTerminalAcrRegistryEnvironment(t *testing.T) {
-	t.Setenv("AZURE_CONTAINER_REGISTRY_ENDPOINT", "example.azurecr.io")
-
-	image, err := resolvePublishImage(
-		rleState{
-			EnvironmentName: "My Env",
-			ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/Project 1",
+func writeRleTestConfig(t *testing.T, name string, version string) {
+	t.Helper()
+	if err := project.WriteRleConfig(".", project.RleConfig{
+		Rle: project.RleManifest{
+			Name:    name,
+			Version: version,
+			Type:    project.RleTypeGym,
+			Subtype: project.RleSubtypeOpenEnv,
 		},
-	)
-	if err != nil {
+	}); err != nil {
 		t.Fatal(err)
-	}
-	if image != "example.azurecr.io/project-1-my-env:latest" {
-		t.Fatalf("expected derived ACR image, got %q", image)
-	}
-}
-
-func TestResolvePublishImageRequiresAcrRegistry(t *testing.T) {
-	_, err := resolvePublishImage(
-		rleState{
-			EnvironmentName: "my-env",
-			ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
-		},
-	)
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("expected LocalError, got %T", err)
-	}
-	if localErr.Code != "rle_acr_registry_required" {
-		t.Fatalf("expected registry required code, got %q", localErr.Code)
-	}
-}
-
-func TestResolvePublishImageUsesRegistryEvenWhenStateExists(t *testing.T) {
-	t.Setenv("AZURE_CONTAINER_REGISTRY_ENDPOINT", "example.azurecr.io")
-
-	image, err := resolvePublishImage(
-		rleState{
-			EnvironmentName: "my-env",
-			ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
-			EnvironmentId:   "env-1",
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if image != "example.azurecr.io/project-1-my-env:latest" {
-		t.Fatalf("expected registry-derived image, got %q", image)
-	}
-}
-
-func TestLocalRuntimeImageForRunDefaultsToSourceFolder(t *testing.T) {
-	tempDir := filepath.Join(t.TempDir(), "My Env")
-	if err := os.MkdirAll(tempDir, 0750); err != nil {
-		t.Fatal(err)
-	}
-
-	image := localRuntimeImageForRun(
-		&localRunFlags{source: tempDir},
-		rleState{EnvironmentName: defaultSourceName(tempDir)},
-	)
-	if image != "my-env:local" {
-		t.Fatalf("expected source folder image, got %q", image)
 	}
 }

@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -76,16 +75,16 @@ func (a *localRunAction) Run() error {
 	ctx, stopSignals := signal.NotifyContext(a.cmd.Context(), os.Interrupt)
 	defer stopSignals()
 
-	baseUrl, err := ensureLocalContainerEndpoint(a.cmd, a.flags)
+	config, err := loadLocalRunConfig(a.flags)
 	if err != nil {
 		return err
 	}
-	state, err := loadLocalRunState(a.flags, a.cmd.OutOrStdout())
+	baseUrl, err := ensureLocalContainerEndpointForName(a.cmd, a.flags, config.Rle.Name)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if err := stopLocalContainer(a.cmd, state.EnvironmentName); err != nil {
+		if err := stopLocalContainer(a.cmd, config.Rle.Name); err != nil {
 			_, _ = fmt.Fprintf(a.cmd.ErrOrStderr(), "Warning: failed to stop local container: %v\n", err)
 		} else {
 			_, _ = fmt.Fprintln(a.cmd.ErrOrStderr(), "Local runtime container stopped successfully.")
@@ -116,7 +115,14 @@ func (a *localRunAction) Run() error {
 	if err := ui.OpenBrowser(webUrl); err != nil {
 		_, _ = fmt.Fprintf(a.cmd.ErrOrStderr(), "Warning: failed to open playground UI: %v\n", err)
 	}
-	shellErr := project.RunShellWithContext(ctx, a.cmd.InOrStdin(), a.cmd.OutOrStdout(), baseUrl, 0)
+	shellErr := project.RunWebSocketShellWithContextAndAuthorizationProvider(
+		ctx,
+		a.cmd.InOrStdin(),
+		a.cmd.OutOrStdout(),
+		baseUrl,
+		0,
+		nil,
+	)
 	if a.flags.watch {
 		select {
 		case err := <-watchDone:
@@ -135,10 +141,18 @@ const (
 )
 
 func ensureLocalContainerEndpoint(cmd *cobra.Command, flags *localRunFlags) (string, error) {
-	state, err := loadLocalRunState(flags, cmd.OutOrStdout())
+	config, err := loadLocalRunConfig(flags)
 	if err != nil {
 		return "", err
 	}
+	return ensureLocalContainerEndpointForName(cmd, flags, config.Rle.Name)
+}
+
+func ensureLocalContainerEndpointForName(
+	cmd *cobra.Command,
+	flags *localRunFlags,
+	environmentName string,
+) (string, error) {
 	port := resolvePort(flags)
 	if port <= 0 {
 		return "", &azdext.LocalError{
@@ -157,8 +171,8 @@ func ensureLocalContainerEndpoint(cmd *cobra.Command, flags *localRunFlags) (str
 		}
 	}
 
-	image := localRuntimeImageForRun(flags, state)
-	container := localContainerName(state.EnvironmentName)
+	image := localRuntimeImageForRun(environmentName)
+	container := localContainerName(environmentName)
 	baseUrl := fmt.Sprintf("http://localhost:%d", port)
 
 	if running, exists := project.ContainerStatus(cmd.Context(), container); exists {
@@ -248,56 +262,16 @@ func stopLocalContainer(cmd *cobra.Command, environmentName string) error {
 	return project.RunDocker(cmd.Context(), io.Discard, cmd.ErrOrStderr(), "rm", "-f", container)
 }
 
-func loadLocalRunState(flags *localRunFlags, output io.Writer) (rleState, error) {
-	state, err := loadRleState()
-	if err != nil {
-		if localErr, ok := errors.AsType[*azdext.LocalError](err); !ok ||
-			localErr.Code != "rle_project_not_initialized" {
-			return rleState{}, err
-		}
-		state = defaultRleState(defaultSourceName(flags.source))
-		if _, err := fmt.Fprintf(
-			output,
-			"No %s found; using current folder as the RLE source.\n",
-			rleStateFile,
-		); err != nil {
-			return rleState{}, err
-		}
-		if err := saveRleState(state); err != nil {
-			return rleState{}, err
-		}
-		if _, err := fmt.Fprintf(
-			output,
-			"Created %s with environment name %q.\n",
-			rleStateFile,
-			state.EnvironmentName,
-		); err != nil {
-			return rleState{}, err
-		}
-	}
-
-	state.EnvironmentName = firstNonEmpty(state.EnvironmentName, defaultSourceName(flags.source))
-	return state, nil
-}
-
-func localRuntimeImageForRun(flags *localRunFlags, state rleState) string {
-	return project.Slug(firstNonEmpty(state.EnvironmentName, defaultSourceName(flags.source))) + ":local"
-}
-
-func defaultSourceName(source string) string {
-	source = strings.TrimSpace(source)
+func loadLocalRunConfig(flags *localRunFlags) (project.RleConfig, error) {
+	source := strings.TrimSpace(flags.source)
 	if source == "" {
 		source = "."
 	}
-	abs, err := filepath.Abs(source)
-	if err != nil {
-		return "rle_env"
-	}
-	name := filepath.Base(abs)
-	if name == "." || name == string(filepath.Separator) || name == "" {
-		return "rle_env"
-	}
-	return project.Slug(name)
+	return project.LoadRleConfig(source)
+}
+
+func localRuntimeImageForRun(environmentName string) string {
+	return project.Slug(environmentName) + ":local"
 }
 
 func watchLocalContainer(cmd *cobra.Command, flags *localRunFlags) error {

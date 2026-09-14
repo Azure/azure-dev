@@ -503,10 +503,7 @@ func TestPreviewStandaloneHostedAgentNoChangesAndCredentialFailure(t *testing.T)
 	path := filepath.Join(t.TempDir(), "agent.yaml")
 	require.NoError(t, os.WriteFile(path, []byte("name: research-agent\nkind: hosted\n"), 0o600))
 	options := DirectDeployOptions{DefinitionPath: path, ProjectEndpoint: "https://example.com"}
-	prepared, err := loadStandaloneHostedAgent(options)
-	require.NoError(t, err)
-	request, err := standaloneAgentRequest(prepared.definition, prepared.environment)
-	require.NoError(t, err)
+	request, _ := legacyDeploymentRequest(t, path, nil)
 	reader := &previewAgentReader{result: deployedPreviewAgent(t, request)}
 
 	result, err := previewStandaloneHostedAgent(t.Context(), options, nil,

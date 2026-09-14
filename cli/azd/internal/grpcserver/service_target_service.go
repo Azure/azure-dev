@@ -118,6 +118,7 @@ func (s *ServiceTargetService) onRegisterRequest(
 	}
 
 	// Register external service target with DI container, passing the broker
+	supportsPreview := req.GetSupportsPreview()
 	err := s.container.RegisterNamedSingleton(hostType, func(
 		console input.Console,
 		prompter prompt.Prompter,
@@ -130,6 +131,7 @@ func (s *ServiceTargetService) onRegisterRequest(
 			console,
 			prompter,
 			s.lazyEnv,
+			supportsPreview,
 		)
 	})
 

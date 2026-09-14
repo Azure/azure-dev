@@ -102,7 +102,7 @@ func planPreviewImage(
 	}
 	if image == "" {
 		envName := environment["AZURE_ENV_NAME"]
-		if projectName == "" || service.Name == "" || envName == "" {
+		if projectName == "" || (service != nil && service.Name == "") || envName == "" {
 			return plan, nil
 		}
 		image = strings.ToLower(fmt.Sprintf("%s/%s-%s", projectName, service.Name, envName))

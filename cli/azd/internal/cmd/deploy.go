@@ -36,6 +36,7 @@ import (
 type DeployFlags struct {
 	ServiceName string
 	All         bool
+	Preview     bool
 	Timeout     int
 	fromPackage string
 	flagSet     *pflag.FlagSet
@@ -48,6 +49,12 @@ const defaultDeployTimeoutSeconds = 1200
 func (d *DeployFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	d.BindNonCommon(local, global)
 	d.bindCommon(local, global)
+	local.BoolVar(
+		&d.Preview,
+		"preview",
+		false,
+		"Previews deployment for supported service hosts without building, publishing, or deploying.",
+	)
 }
 
 func (d *DeployFlags) BindNonCommon(
@@ -206,6 +213,10 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	targetServiceName := da.flags.ServiceName
 	if len(da.args) == 1 {
 		targetServiceName = da.args[0]
+	}
+
+	if da.flags.Preview {
+		return da.preview(ctx, targetServiceName)
 	}
 
 	if da.env.GetSubscriptionId() == "" {
@@ -546,6 +557,9 @@ func GetCmdDeployHelpDescription(*cobra.Command) string {
 			fmt.Sprintf("When %s is set, only the specific service is deployed.", output.WithHighLightFormat("<service>"))),
 		formatHelpNote("After the deployment is complete, the endpoint is printed. To start the service, select" +
 			" the endpoint or paste it in a browser."),
+		formatHelpNote("Use --preview to preview deployment without running hooks, building, publishing, or deploying." +
+			" Preview requires a service host that supports it and does not import generated services." +
+			" The --timeout option also limits each service preview."),
 	})
 }
 
@@ -562,6 +576,9 @@ func GetCmdDeployHelpFooter(*cobra.Command) string {
 		),
 		"Deploy the service named 'api' to Azure from a previously generated package.": output.WithHighLightFormat(
 			"azd deploy api --from-package <package-path>",
+		),
+		"Preview deployment of the service named 'api' when its host supports preview.": output.WithHighLightFormat(
+			"azd deploy api --preview",
 		),
 	})
 }

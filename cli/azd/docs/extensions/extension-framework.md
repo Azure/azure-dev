@@ -1567,6 +1567,27 @@ if err := host.Run(ctx); err != nil {
 
 ## Developer Artifacts
 
+### Deployment preview
+
+Service targets can opt into `azd deploy --preview` by registering with
+`ExtensionHost.WithServiceTargetPreview` and implementing the optional
+`ServiceTargetPreviewProvider` interface:
+
+```go
+Preview(ctx context.Context, serviceConfig *azdext.ServiceConfig) (*azdext.ServiceDeployPreviewResult, error)
+```
+
+Return a `Message` for terminal output and a `Data` protobuf struct for machine-readable
+results. Core owns service selection and emits JSON under `services.<service>.data`.
+Preview is a separate protocol operation: it must not invoke `Initialize`, hooks,
+framework setup, package, publish, deploy, or target provisioning. The preview provider
+must resolve its required context using read-only APIs. Return errors explicitly;
+do not turn unsupported or failed previews into successful empty results.
+
+Preview support is negotiated during provider registration. Older extensions default
+to unsupported, and core never sends a deploy request as a fallback. Infrastructure-only
+targets can explicitly implement a no-op preview when they have no deployment work.
+
 The `azd` CLI and its extensions communicate over gRPC. The client and server code is generated from protobuf files.
 
 - Proto files @ [grpc/proto](../../grpc/proto/)

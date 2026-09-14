@@ -91,11 +91,8 @@ func TestPreviewLegacySplitDefinitionAndManifest(t *testing.T) {
 	assert.Equal(t, agentBefore, agentAfter)
 	assert.Equal(t, manifestBefore, manifestAfter)
 
-	// The real standalone deploy loader now uses the same companion metadata.
-	loaded, environment, err := prepareStandaloneHostedDefinition(path, nil)
-	require.NoError(t, err)
-	request, err := standaloneAgentRequest(loaded, environment)
-	require.NoError(t, err)
+	// The project deployment loader uses the same companion metadata.
+	request, _ := legacyDeploymentRequest(t, path, nil)
 	assert.Equal(t, `["Streaming","Test"]`, request.Metadata["tags"])
 }
 

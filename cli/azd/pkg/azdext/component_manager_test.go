@@ -73,6 +73,135 @@ func TestComponentManager_RegisterFactory(t *testing.T) {
 	assert.False(t, manager.HasFactory("python"))
 }
 
+func TestComponentManager_CreateInstance(t *testing.T) {
+	t.Parallel()
+
+	manager := NewComponentManager[*MockProvider](mockFactoryKeyProvider, "test")
+	serviceConfig := createTestServiceConfig("web-service", "go")
+	factoryCalls := 0
+	factory := func() *MockProvider {
+		factoryCalls++
+		return &MockProvider{name: "preview-provider"}
+	}
+	manager.RegisterFactory("go", factory)
+
+	first, err := manager.CreateInstance(serviceConfig)
+	require.NoError(t, err)
+	second, err := manager.CreateInstance(serviceConfig)
+	require.NoError(t, err)
+	require.NotSame(t, first, second)
+	assert.Empty(t, first.Calls, "creating an instance must not initialize it")
+	assert.Empty(t, second.Calls, "creating an instance must not initialize it")
+	assert.Empty(t, manager.instances)
+	assert.Equal(t, 2, factoryCalls)
+
+	cachedProvider := &MockProvider{name: "deployment-provider"}
+	cachedProvider.On("Initialize", t.Context(), serviceConfig).Return(nil).Once()
+	manager.RegisterFactory("go", func() *MockProvider { return cachedProvider })
+	cached, err := manager.GetOrCreateInstance(t.Context(), serviceConfig)
+	require.NoError(t, err)
+	manager.RegisterFactory("go", factory)
+
+	fresh, err := manager.CreateInstance(serviceConfig)
+	require.NoError(t, err)
+	assert.NotSame(t, cached, fresh)
+	assert.Empty(t, fresh.Calls)
+	assert.Equal(t, 3, factoryCalls)
+
+	stored, err := manager.GetInstance(serviceConfig.Name)
+	require.NoError(t, err)
+	assert.Same(t, cached, stored, "creating a fresh instance must not replace the cached deployment provider")
+	cachedProvider.AssertExpectations(t)
+}
+
+func TestComponentManager_CreateInstance_Errors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		serviceConfig *ServiceConfig
+		wantError     string
+	}{
+		{
+			name:      "NilServiceConfig",
+			wantError: "service config is required",
+		},
+		{
+			name:          "NoFactory",
+			serviceConfig: createTestServiceConfig("web-service", "missing"),
+			wantError:     "no factory registered for test: missing",
+		},
+		{
+			name:          "NilFactory",
+			serviceConfig: createTestServiceConfig("web-service", "nil-factory"),
+			wantError:     "no factory registered for test: nil-factory",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			manager := NewComponentManager[*MockProvider](mockFactoryKeyProvider, "test")
+			manager.RegisterFactory("nil-factory", nil)
+
+			instance, err := manager.CreateInstance(tt.serviceConfig)
+			require.EqualError(t, err, tt.wantError)
+			assert.Nil(t, instance)
+			assert.Empty(t, manager.instances)
+		})
+	}
+}
+
+func TestComponentManager_CreateInstance_FactoryOutsideLock(t *testing.T) {
+	t.Parallel()
+
+	manager := NewComponentManager[*MockProvider](mockFactoryKeyProvider, "test")
+	provider := &MockProvider{}
+	manager.RegisterFactory("go", func() *MockProvider {
+		require.True(t, manager.mutex.TryLock(), "the factory must run without the manager's read or write lock")
+		manager.mutex.Unlock()
+		manager.RegisterFactory("other", func() *MockProvider { return &MockProvider{} })
+		return provider
+	})
+
+	instance, err := manager.CreateInstance(createTestServiceConfig("web-service", "go"))
+	require.NoError(t, err)
+	assert.Same(t, provider, instance)
+	assert.True(t, manager.HasFactory("other"))
+}
+
+func TestComponentManager_CreateInstance_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
+
+	manager := NewComponentManager[*MockProvider](mockFactoryKeyProvider, "test")
+	serviceConfig := createTestServiceConfig("web-service", "go")
+	factory := func() *MockProvider { return &MockProvider{} }
+	manager.RegisterFactory("go", factory)
+
+	const count = 10
+	instances := make([]*MockProvider, count)
+	errs := make([]error, count)
+	var wg sync.WaitGroup
+	for i := range count {
+		wg.Go(func() {
+			manager.RegisterFactory("go", factory)
+			instances[i], errs[i] = manager.CreateInstance(serviceConfig)
+		})
+	}
+	wg.Wait()
+
+	seen := make(map[*MockProvider]bool)
+	for i, instance := range instances {
+		require.NoError(t, errs[i])
+		require.NotNil(t, instance)
+		assert.False(t, seen[instance], "each call must create a fresh provider")
+		seen[instance] = true
+		assert.Empty(t, instance.Calls)
+	}
+	assert.Empty(t, manager.instances)
+}
+
 func TestComponentManager_GetOrCreateInstance_Success(t *testing.T) {
 	t.Parallel()
 

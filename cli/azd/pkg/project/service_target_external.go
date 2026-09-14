@@ -23,12 +23,13 @@ import (
 )
 
 type ExternalServiceTarget struct {
-	extension  *extensions.Extension
-	targetName string
-	targetKind ServiceTargetKind
-	console    input.Console
-	prompters  prompt.Prompter
-	lazyEnv    *lazy.Lazy[*environment.Environment]
+	extension        *extensions.Extension
+	targetName       string
+	targetKind       ServiceTargetKind
+	console          input.Console
+	prompters        prompt.Prompter
+	lazyEnv          *lazy.Lazy[*environment.Environment]
+	previewSupported bool
 
 	broker *grpcbroker.MessageBroker[azdext.ServiceTargetMessage]
 }
@@ -42,7 +43,8 @@ type TargetResourceResolver interface {
 	) (*environment.TargetResource, error)
 }
 
-// NewExternalServiceTarget creates a new external service target
+// NewExternalServiceTarget creates a new external service target.
+// Preview is disabled unless the optional previewSupported argument is true.
 func NewExternalServiceTarget(
 	name string,
 	kind ServiceTargetKind,
@@ -51,15 +53,17 @@ func NewExternalServiceTarget(
 	console input.Console,
 	prompters prompt.Prompter,
 	lazyEnv *lazy.Lazy[*environment.Environment],
+	previewSupported ...bool,
 ) ServiceTarget {
 	target := &ExternalServiceTarget{
-		extension:  extension,
-		targetName: name,
-		targetKind: kind,
-		console:    console,
-		prompters:  prompters,
-		lazyEnv:    lazyEnv,
-		broker:     broker,
+		extension:        extension,
+		targetName:       name,
+		targetKind:       kind,
+		console:          console,
+		prompters:        prompters,
+		lazyEnv:          lazyEnv,
+		previewSupported: len(previewSupported) > 0 && previewSupported[0],
+		broker:           broker,
 	}
 
 	return target
@@ -69,6 +73,47 @@ func NewExternalServiceTarget(
 // expandable values against the environment for the current session.
 func (est *ExternalServiceTarget) toProtoServiceConfig(serviceConfig *ServiceConfig) (*azdext.ServiceConfig, error) {
 	return serviceConfigToProto(est.lazyEnv, serviceConfig)
+}
+
+// Preview requests a read-only deployment preview only when the provider advertised support.
+func (est *ExternalServiceTarget) Preview(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) (*ServiceDeployPreviewResult, error) {
+	if !est.previewSupported {
+		return nil, fmt.Errorf("service host '%s' does not support deployment preview", est.targetKind)
+	}
+	if serviceConfig == nil {
+		return nil, errors.New("service configuration is required")
+	}
+
+	protoServiceConfig, err := est.toProtoServiceConfig(serviceConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	req := &azdext.ServiceTargetMessage{
+		RequestId: uuid.NewString(),
+		MessageType: &azdext.ServiceTargetMessage_PreviewRequest{
+			PreviewRequest: &azdext.ServiceTargetPreviewRequest{
+				ServiceConfig: protoServiceConfig,
+			},
+		},
+	}
+
+	resp, err := est.broker.SendAndWait(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	previewResponse := resp.GetPreviewResponse()
+	if previewResponse == nil || previewResponse.Result == nil {
+		return nil, errors.New("invalid preview response: missing preview result")
+	}
+
+	return &ServiceDeployPreviewResult{
+		Message: previewResponse.Result.Message,
+		Data:    previewResponse.Result.Data.AsMap(),
+	}, nil
 }
 
 // Publish implements ServiceTarget.

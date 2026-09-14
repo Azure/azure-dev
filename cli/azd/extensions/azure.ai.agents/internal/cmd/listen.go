@@ -41,7 +41,7 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 
 	// IMPORTANT: service target name here must match the name used in the extension manifest.
 	host.
-		WithServiceTarget(AiAgentHost, func() azdext.ServiceTargetProvider {
+		WithServiceTargetPreview(AiAgentHost, func() azdext.ServiceTargetProvider {
 			return project.NewAgentServiceTargetProvider(azdClient)
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {

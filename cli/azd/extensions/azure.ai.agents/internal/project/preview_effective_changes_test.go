@@ -34,13 +34,10 @@ func TestPreviewEffectiveEnvironmentAndTagChanges(t *testing.T) {
 			map[string]any{"name": "ANY_THING", "value": "manifest-only-value"},
 		}},
 	})
-	definition, environment, err := prepareStandaloneHostedDefinition(path, nil)
-	require.NoError(t, err)
+	request, environment := legacyDeploymentRequest(t, path, nil)
 	assert.Equal(t, map[string]string{
 		"KEEP": "same", "CHANGE": "selected-value", "ANY_THING": "manifest-only-value",
 	}, environment, "real deployment must use the same named-variable merge as preview")
-	request, err := standaloneAgentRequest(definition, environment)
-	require.NoError(t, err)
 	assert.Equal(t, `["Test"]`, request.Metadata["tags"], "tag lists replace lower-priority lists")
 
 	remote := deployedPreviewAgent(t, request)
@@ -103,11 +100,9 @@ func TestPreviewExplicitEnvironmentClear(t *testing.T) {
 					},
 				},
 			})
-			definition, values, err := prepareStandaloneHostedDefinition(path, nil)
-			require.NoError(t, err)
+			_, values := legacyDeploymentRequest(t, path, nil)
 			assert.Empty(t, values)
-			request, err := standaloneAgentRequest(definition, map[string]string{"REMOVE": "remote-value"})
-			require.NoError(t, err)
+			request, _ := legacyDeploymentRequest(t, path, map[string]string{"REMOVE": "remote-value"})
 			reader := &previewAgentReader{result: deployedPreviewAgent(t, request)}
 			result, err := previewStandaloneHostedAgent(t.Context(), DirectDeployOptions{
 				DefinitionPath: path, ProjectEndpoint: "https://example.com",
@@ -156,10 +151,7 @@ func TestPreviewSourcePathsAreClean(t *testing.T) {
 		"name": "research-agent", "description": "overridden", "template": map[string]any{"kind": "hosted"},
 	})
 	uncleanPath := directory + string(filepath.Separator) + "." + string(filepath.Separator) + "agent.yaml"
-	definition, env, err := prepareStandaloneHostedDefinition(path, nil)
-	require.NoError(t, err)
-	request, err := standaloneAgentRequest(definition, env)
-	require.NoError(t, err)
+	request, _ := legacyDeploymentRequest(t, path, nil)
 	reader := &previewAgentReader{result: deployedPreviewAgent(t, request)}
 	result, err := previewStandaloneHostedAgent(t.Context(), DirectDeployOptions{
 		DefinitionPath: uncleanPath, ProjectEndpoint: "https://example.com",

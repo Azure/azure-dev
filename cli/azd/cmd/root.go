@@ -366,7 +366,7 @@ func newRootCmd(
 			},
 			RequireLogin: true,
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddlewareWhen("hooks", middleware.NewHooksMiddleware, deploymentHooksEnabled).
 		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.

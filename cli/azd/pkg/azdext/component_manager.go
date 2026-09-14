@@ -43,6 +43,26 @@ func (m *ComponentManager[T]) RegisterFactory(factoryKey string, factory func() 
 	m.factories[factoryKey] = factory
 }
 
+// CreateInstance creates a fresh, uninitialized provider without reading or updating cached instances.
+// The factory is invoked outside the manager lock.
+func (m *ComponentManager[T]) CreateInstance(serviceConfig *ServiceConfig) (T, error) {
+	var zero T
+
+	if serviceConfig == nil {
+		return zero, fmt.Errorf("service config is required")
+	}
+
+	factoryKey := m.factoryKeyFunc(serviceConfig)
+	m.mutex.RLock()
+	factory, exists := m.factories[factoryKey]
+	m.mutex.RUnlock()
+	if !exists || factory == nil {
+		return zero, fmt.Errorf("no factory registered for %s: %s", m.managerTypeName, factoryKey)
+	}
+
+	return factory(), nil
+}
+
 // GetOrCreateInstance gets an existing instance or creates a new one using the factory
 func (m *ComponentManager[T]) GetOrCreateInstance(ctx context.Context, serviceConfig *ServiceConfig) (T, error) {
 	var zero T

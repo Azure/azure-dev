@@ -11,12 +11,33 @@ import (
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+func legacyDeploymentRequest(
+	t *testing.T, path string, environment map[string]string,
+) (*agent_api.CreateAgentRequest, map[string]string) {
+	t.Helper()
+	service := &azdext.ServiceConfig{Name: "research-agent", RelativePath: ".", Environment: environment}
+	definition, hosted, _, err := LoadAgentDefinition(service, filepath.Dir(path))
+	require.NoError(t, err)
+	require.True(t, hosted)
+	if definition.CodeConfiguration == nil {
+		definition.CodeConfiguration = &agent_yaml.CodeConfiguration{Runtime: "python_3_13", EntryPoint: "main.py"}
+	}
+	prepared, err := prepareDeployRequest(service, definition,
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": "https://example.com"}, nil)
+	require.NoError(t, err)
+	hostedDefinition, ok := prepared.request.Definition.(agent_api.HostedAgentDefinition)
+	require.True(t, ok)
+	return prepared.request, hostedDefinition.EnvironmentVariables
+}
 
 func TestPreviewStandaloneHostedAgentTagsAndCPU(t *testing.T) {
 	t.Parallel()
@@ -33,10 +54,7 @@ resources:
 	require.NoError(t, os.WriteFile(path, []byte(original), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(path), "agent.manifest.yaml"),
 		[]byte("metadata:\n  tags:\n    - ManifestOnly\n"), 0o600))
-	definition, environment, err := prepareStandaloneHostedDefinition(path, nil)
-	require.NoError(t, err)
-	beforeRequest, err := standaloneAgentRequest(definition, environment)
-	require.NoError(t, err)
+	beforeRequest, _ := legacyDeploymentRequest(t, path, nil)
 	reader := &previewAgentReader{result: deployedPreviewAgent(t, beforeRequest)}
 	updated := strings.ReplaceAll(original, `"0.25"`, `"0.5"`)
 	updated = strings.ReplaceAll(updated, "    - Streaming", "    - Streaming\n    - Test")
@@ -59,10 +77,7 @@ resources:
 	assert.Contains(t, string(wire), "ManifestOnly", "conflicting companion metadata must be compared, not ignored")
 	require.Len(t, result.SourceConflicts, 1)
 
-	definition, environment, err = prepareStandaloneHostedDefinition(path, nil)
-	require.NoError(t, err)
-	deployRequest, err := standaloneAgentRequest(definition, environment)
-	require.NoError(t, err)
+	deployRequest, _ := legacyDeploymentRequest(t, path, nil)
 	assert.Equal(t, `["Streaming","Test"]`, deployRequest.Metadata["tags"])
 	reader.result = deployedPreviewAgent(t, deployRequest)
 	result, err = previewStandaloneHostedAgent(t.Context(), options, nil,

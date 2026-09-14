@@ -93,7 +93,9 @@ For extensions that are still in development or preview, consider publishing to 
   persist deployment state; report values that require deployment as pending.
   The agents extension's
   [agent deployment preview](../../cli/azd/extensions/azure.ai.agents/README.md#previewing-an-agent-deployment)
-  demonstrates this pattern without changing the service-target SDK contract.
+  demonstrates the optional `ServiceTargetPreviewProvider` contract. Register it
+  with `WithServiceTargetPreview` to expose `azd deploy --preview`; its `Preview`
+  method must be self-contained because deployment `Initialize` is not called.
 
 ## Detailed Reference
 

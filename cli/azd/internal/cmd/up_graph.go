@@ -552,25 +552,25 @@ func (u *UpGraphAction) Run(
 	// in parallel with provisioning). This avoids conflicting with
 	// the provisioning progress display.
 	var (
-		tickerOnce sync.Once
-		stopTicker func()
+		tickerOnce              sync.Once
+		stopTicker              func()
+		deployProgressFinalized bool
 	)
 	if deployTracker != nil {
-		stopTicker = func() {} // no-op until started
+		stopTicker = func() {}
 	}
 
-	// startDeployTicker is called once (via tickerOnce) when the first publish or deploy
-	// step begins. It starts the progress table ticker and suppresses the console previewer
-	// so that DI-injected ShowPreviewer callers (e.g. ContainerHelper's Docker output)
-	// don't corrupt the progress table display.
-	// Previewer is not paused during the earlier provision + hook phases so that
-	// preprovision/postprovision hook output remains visible (fixes #8237).
+	finalizeDeployProgress := func() {
+		finalizeUpDeployProgress(deployTracker, stopTicker, &deployProgressFinalized)
+	}
+
+	// startDeployTicker is called once when the first publish or deploy step
+	// begins. It suppresses previewer output while the progress table owns the
+	// terminal. Earlier hooks remain visible because they run before this point.
 	startDeployTicker := func() {
 		if deployTracker == nil {
 			return
 		}
-		// Pause the previewer before starting the ticker to avoid a window where
-		// the progress table renders while ShowPreviewer is still active.
 		if ps, ok := u.console.(input.PreviewerPauser); ok {
 			ps.PausePreviewer()
 			stop := deployTracker.StartTicker(ctx)
@@ -586,25 +586,21 @@ func (u *UpGraphAction) Run(
 	baseOnStepStart := opts.OnStepStart
 	baseOnStepDone := opts.OnStepDone
 
-	opts.OnStepStart = func(stepName string) {
-		if baseOnStepStart != nil {
-			baseOnStepStart(stepName)
+	showDeployHookStart := func(stepName string) {
+		if u.formatter.Kind() == output.JsonFormat {
+			return
 		}
-		// Update deploy progress tracker for service steps.
-		// Packaging runs in parallel with provisioning, so only update the
-		// data model silently. Start the visual ticker when the first
-		// publish or deploy step begins — these gate on provision completion,
-		// avoiding conflicts with the provisioning progress display.
-		if svc, ok := strings.CutPrefix(stepName, "package-"); ok {
-			updateDeployProgress(svc, phasePackaging, "")
-		} else if svc, ok := strings.CutPrefix(stepName, "publish-"); ok {
-			tickerOnce.Do(startDeployTicker)
-			updateDeployProgress(svc, phasePublish, "")
-		} else if svc, ok := strings.CutPrefix(stepName, "deploy-"); ok {
-			tickerOnce.Do(startDeployTicker)
-			updateDeployProgress(svc, phaseDeploying, "")
+		if message := deployHookStartMessage(u.projectConfig.Hooks, stepName); message != "" {
+			safeCon.Message(ctx, message)
 		}
 	}
+	opts.OnStepStart = newUpDeployStepStartHandler(
+		baseOnStepStart,
+		finalizeDeployProgress,
+		showDeployHookStart,
+		func() { tickerOnce.Do(startDeployTicker) },
+		updateDeployProgress,
+	)
 	opts.OnStepDone = func(stepName string, err error) {
 		if baseOnStepDone != nil {
 			baseOnStepDone(stepName, err)
@@ -640,13 +636,9 @@ func (u *UpGraphAction) Run(
 	// per-phase outcome (issue #9054).
 	graphResult = result
 
-	// Stop the progress ticker and render a final summary table.
-	if stopTicker != nil {
-		stopTicker()
-	}
-	if deployTracker != nil && deployTracker.HasActivity() {
-		deployTracker.RenderFinal()
-	}
+	// Stop the progress ticker and render a final summary table if it was not
+	// already finalized before the postdeploy command hook.
+	finalizeDeployProgress()
 
 	// Clean up temporary package artifacts regardless of success/failure.
 	state.CleanupTempArtifacts()
@@ -781,6 +773,74 @@ func phaseDurations(steps []exegraph.StepTiming) (provision, deploy time.Duratio
 		deploy = deployEnd.Sub(deployStart)
 	}
 	return provision, deploy
+}
+
+func finalizeUpDeployProgress(
+	tracker *deployProgressTracker,
+	stopTicker func(),
+	finalized *bool,
+) {
+	if *finalized {
+		return
+	}
+	*finalized = true
+
+	if stopTicker != nil {
+		stopTicker()
+	}
+	if tracker != nil && tracker.HasActivity() {
+		tracker.RenderFinal()
+	}
+}
+
+func deployHookStartMessage(hooks map[string][]*ext.HookConfig, stepName string) string {
+	var hookName string
+	switch stepName {
+	case preDeployHookStep:
+		hookName = string(ext.HookTypePre) + string(project.ProjectEventDeploy)
+	case postDeployHookStep:
+		hookName = string(ext.HookTypePost) + string(project.ProjectEventDeploy)
+	default:
+		return ""
+	}
+
+	hookCount := len(hooks[hookName])
+	if hookCount == 0 {
+		return ""
+	}
+	noun := "hook"
+	if hookCount > 1 {
+		noun = "hooks"
+	}
+	return fmt.Sprintf("Running %s %s...", hookName, noun)
+}
+
+func newUpDeployStepStartHandler(
+	base func(string),
+	finalizeDeployProgress func(),
+	showDeployHookStart func(string),
+	startDeployTicker func(),
+	updateDeployProgress func(string, deployPhase, string),
+) func(string) {
+	return func(stepName string) {
+		if base != nil {
+			base(stepName)
+		}
+		if stepName == postDeployHookStep {
+			finalizeDeployProgress()
+		}
+		showDeployHookStart(stepName)
+
+		if svc, ok := strings.CutPrefix(stepName, "package-"); ok {
+			updateDeployProgress(svc, phasePackaging, "")
+		} else if svc, ok := strings.CutPrefix(stepName, "publish-"); ok {
+			startDeployTicker()
+			updateDeployProgress(svc, phasePublish, "")
+		} else if svc, ok := strings.CutPrefix(stepName, "deploy-"); ok {
+			startDeployTicker()
+			updateDeployProgress(svc, phaseDeploying, "")
+		}
+	}
 }
 
 // changedFlagNames returns the names of flags that were explicitly set on

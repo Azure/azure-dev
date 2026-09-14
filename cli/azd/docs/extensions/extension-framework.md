@@ -37,7 +37,7 @@ Table of Contents
 
 ## Getting Started
 
-`azd` extensions are currently a beta feature (Public Preview) within `azd`.
+The `azd` extension framework is generally available. Individual extensions or capabilities might have their own preview status.
 
 - Official extensions must be developed in a fork of the [azure/azure-dev](https://github.com/azure/azure-dev) github repo.
 - Extension binaries are shipped as Github releases to the same repo through our official pipelines.
@@ -648,7 +648,7 @@ Once installed the extension registers a suite of commands under the `x` namespa
 
 Usage: `azd x init`
 
-- Collects information for the extension and scaffolds and extension in a specified language of choice.
+- Collects information for the extension and scaffolds an extension in a specified language of choice.
 - Go is the recommended language and is preselected in the language prompt; it has the most complete and actively maintained template.
 - Creates local extension source if it doesn't already exist
 - Builds initial binaries for extension

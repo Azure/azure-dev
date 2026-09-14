@@ -30,24 +30,6 @@ type deploymentType = {
   }
 }
 
-@description('Shape of a list of Foundry project connections.')
-type connectionsType = connectionType[]
-
-@description('Shape of one Foundry project connection (a host: azure.ai.connection service).')
-type connectionType = {
-  name: string
-  category: string
-  target: string
-  authType: string
-  audience: string?
-  authorizationUrl: string?
-  tokenUrl: string?
-  refreshUrl: string?
-  scopes: string[]?
-  connectorName: string?
-  metadata: object?
-}
-
 // Parameters
 
 @description('Azure region for all resources.')
@@ -74,13 +56,6 @@ param deployments deploymentsType = []
 
 @description('Include an Azure Container Registry. Set true when any agent uses docker:.')
 param includeAcr bool = false
-
-@description('Foundry project connections to create (host: azure.ai.connection services).')
-param connections connectionsType = []
-
-@description('Credentials keyed by Foundry project connection name.')
-@secure()
-param connectionCredentials object = {}
 
 @description('Object id of the developer running azd. When set, grants Cognitive Services User on the project. Empty disables the role assignment so headless / CI runs do not fail.')
 param principalId string = ''
@@ -145,8 +120,6 @@ module resources 'modules/resources.bicep' = {
     foundryProjectName: foundryProjectName
     deployments: deployments
     includeAcr: includeAcr
-    connections: connections
-    connectionCredentials: connectionCredentials
     principalId: principalId
     principalType: principalType
     enableNetworkIsolation: enableNetworkIsolation
@@ -176,7 +149,5 @@ output FOUNDRY_PROJECT_ENDPOINT string = resources.outputs.FOUNDRY_PROJECT_ENDPO
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = resources.outputs.AZURE_CONTAINER_REGISTRY_RESOURCE_ID
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = resources.outputs.AZURE_AI_PROJECT_ACR_CONNECTION_NAME
-output AZURE_AI_PROJECT_CONNECTION_NAMES string = resources.outputs.AZURE_AI_PROJECT_CONNECTION_NAMES
-output AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT string = resources.outputs.FOUNDRY_PROJECT_ENDPOINT
 output AZURE_FOUNDRY_NETWORK_MODE string = resources.outputs.AZURE_FOUNDRY_NETWORK_MODE
 output AZURE_FOUNDRY_MANAGED_ISOLATION_MODE string = resources.outputs.AZURE_FOUNDRY_MANAGED_ISOLATION_MODE

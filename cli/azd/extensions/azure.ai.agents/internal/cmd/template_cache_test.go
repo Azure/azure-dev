@@ -8,10 +8,74 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestTemplateCacheWarningFile(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		tfBuild     string
+		cacheHit    bool
+		downloadErr error
+		wantWarning bool
+	}{
+		{"fallback", "True", true, errors.New("GitHub 503: 50%\r\nretry]"), true},
+		{"cache miss", "True", false, errors.New("GitHub unavailable"), false},
+		{"canceled", "True", true, context.Canceled, false},
+		{"deadline", "True", true, context.DeadlineExceeded, false},
+		{"outside ADO", "", true, errors.New("GitHub unavailable"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("TF_BUILD", tc.tfBuild)
+			warningsFile := filepath.Join(t.TempDir(), "warnings.log")
+			t.Setenv(templateCacheWarningsFileEnv, warningsFile)
+			t.Setenv(templateCacheDirEnv, t.TempDir())
+			emitTemplateCacheWarning("Unable to refresh sample cache")
+			require.NoFileExists(t, warningsFile, "only successful fallback warnings should be persisted")
+			pointer := "https://github.com/example/samples/blob/main/basic/azure.yaml"
+			if tc.cacheHit {
+				downloaded := t.TempDir()
+				require.NoError(t, os.WriteFile(filepath.Join(downloaded, "azure.yaml"), []byte("name: cached\n"), 0600))
+				require.NoError(t, refreshTemplateCache(pointer, downloaded))
+				require.NoFileExists(t, warningsFile, "successful downloads should not emit fallback warnings")
+			}
+			for range 2 {
+				err := useCachedTemplateOnDownloadError(pointer, t.TempDir(), tc.downloadErr)
+				if tc.cacheHit && !errors.Is(tc.downloadErr, context.Canceled) &&
+					!errors.Is(tc.downloadErr, context.DeadlineExceeded) {
+					require.NoError(t, err)
+				} else {
+					require.ErrorIs(t, err, tc.downloadErr)
+				}
+			}
+			if !tc.wantWarning {
+				require.NoFileExists(t, warningsFile)
+				return
+			}
+			data, err := os.ReadFile(warningsFile)
+			require.NoError(t, err)
+			line := "##vso[task.logissue type=warning]GitHub sample download failed; " +
+				"using the cached sample. Details: GitHub 503: 50%AZP25%0D%0Aretry%5D\n"
+			require.Equal(t, strings.Repeat(line, 2), string(data))
+		})
+	}
+}
+
+func TestTemplateCacheWarningWriteFailureDoesNotFailFallback(t *testing.T) {
+	t.Setenv("TF_BUILD", "True")
+	t.Setenv(templateCacheWarningsFileEnv, t.TempDir()) // A directory cannot be opened as a warning file.
+	t.Setenv(templateCacheDirEnv, t.TempDir())
+	pointer := "https://github.com/example/samples/blob/main/basic/azure.yaml"
+	downloaded := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(downloaded, "azure.yaml"), []byte("name: cached\n"), 0600))
+	require.NoError(t, refreshTemplateCache(pointer, downloaded))
+	staging := t.TempDir()
+	require.NoError(t, useCachedTemplateOnDownloadError(pointer, staging, errors.New("GitHub unavailable")))
+	require.FileExists(t, filepath.Join(staging, "azure.yaml"))
+}
 
 func TestTemplateCacheRoundTrip(t *testing.T) {
 	cacheDir := filepath.Join(t.TempDir(), "cache")

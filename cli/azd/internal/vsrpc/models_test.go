@@ -299,7 +299,7 @@ func TestAspireHost_Fields(t *testing.T) {
 func TestInitializeAsync_RootPath_NotExists(t *testing.T) {
 	t.Parallel()
 	s := newTestServer()
-	svc := newServerService(s)
+	svc := newServerService(s, nil)
 	_, err := svc.InitializeAsync(t.Context(), filepath.Join(t.TempDir(), "no-such-dir"), InitializeServerOptions{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid root path")
@@ -312,7 +312,7 @@ func TestInitializeAsync_RootPath_NotDirectory(t *testing.T) {
 	require.NoError(t, os.WriteFile(file, []byte("x"), 0o600))
 
 	s := newTestServer()
-	svc := newServerService(s)
+	svc := newServerService(s, nil)
 	_, err := svc.InitializeAsync(t.Context(), file, InitializeServerOptions{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not a directory")
@@ -321,7 +321,7 @@ func TestInitializeAsync_RootPath_NotDirectory(t *testing.T) {
 func TestInitializeAsync_WithInvalidCertificate(t *testing.T) {
 	t.Parallel()
 	s := newTestServer()
-	svc := newServerService(s)
+	svc := newServerService(s, nil)
 
 	badCert := "this-is-not-a-cert"
 	_, err := svc.InitializeAsync(t.Context(), t.TempDir(), InitializeServerOptions{
@@ -355,7 +355,7 @@ func TestInitializeAsync_CertWithNonHttpsEndpoint(t *testing.T) {
 	endpoint := "http://example.com"
 
 	s := newTestServer()
-	svc := newServerService(s)
+	svc := newServerService(s, nil)
 
 	_, err := svc.InitializeAsync(t.Context(), t.TempDir(), InitializeServerOptions{
 		AuthenticationEndpoint:    &endpoint,
@@ -372,7 +372,7 @@ func TestInitializeAsync_CertWithUnparseableEndpoint(t *testing.T) {
 	endpoint := "http://invalid\x7f/"
 
 	s := newTestServer()
-	svc := newServerService(s)
+	svc := newServerService(s, nil)
 
 	_, err := svc.InitializeAsync(t.Context(), t.TempDir(), InitializeServerOptions{
 		AuthenticationEndpoint:    &endpoint,
@@ -382,32 +382,60 @@ func TestInitializeAsync_CertWithUnparseableEndpoint(t *testing.T) {
 }
 
 func TestServe_ClosedListenerReturns(t *testing.T) {
-	t.Setenv("AZD_DEBUG_SERVER_DEBUG_ENDPOINTS", "false")
+	testServe := func(t *testing.T, s *Server) {
+		t.Helper()
+		t.Setenv("AZD_DEBUG_SERVER_DEBUG_ENDPOINTS", "false")
 
-	s := newTestServer()
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
 
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
+		done := make(chan error, 1)
+		go func() {
+			done <- s.Serve(l)
+		}()
 
-	done := make(chan error, 1)
-	go func() {
-		done <- s.Serve(l)
-	}()
+		// Close the listener immediately; Serve should return.
+		require.NoError(t, l.Close())
 
-	// Close the listener immediately; Serve should return.
-	require.NoError(t, l.Close())
+		select {
+		case err := <-done:
+			// Any error is fine; we're primarily verifying Serve returns.
+			require.Error(t, err)
+		case <-time.After(5 * time.Second):
+			t.Fatal("Serve did not return after listener close")
+		}
 
-	select {
-	case err := <-done:
-		// Any error is fine; we're primarily verifying Serve returns.
-		require.Error(t, err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("Serve did not return after listener close")
+		// cancelTelemetryUpload should have been installed.
+		require.NotNil(t, s.cancelTelemetryUpload)
+		s.cancelTelemetryUpload()
 	}
 
-	// cancelTelemetryUpload should have been installed.
-	require.NotNil(t, s.cancelTelemetryUpload)
-	s.cancelTelemetryUpload()
+	t.Run("WithTelemetrySystem", func(t *testing.T) {
+		ts := &testTelemetrySystem{
+			backgroundUploadCalled: make(chan struct{}),
+		}
+		s := newTestServer()
+		s.getTelemetrySystem = func() telemetrySystem {
+			return ts
+		}
+
+		testServe(t, s)
+
+		select {
+		case <-ts.backgroundUploadCalled:
+		case <-time.After(5 * time.Second):
+			t.Fatal("background telemetry upload was not started")
+		}
+	})
+
+	t.Run("WithoutTelemetrySystem", func(t *testing.T) {
+		s := newTestServer()
+		s.getTelemetrySystem = func() telemetrySystem {
+			return nil
+		}
+
+		testServe(t, s)
+	})
 }
 
 func TestValidateSession_EmptyId(t *testing.T) {
@@ -516,7 +544,7 @@ func TestEnvironmentService_ServeHTTP(t *testing.T) {
 
 func TestServerService_ServeHTTP(t *testing.T) {
 	s := newTestServer()
-	svc := newServerService(s)
+	svc := newServerService(s, nil)
 	rpcConn := connectRPC(t, svc)
 
 	_, err := rpcConn.Call(t.Context(), "InitializeAsync", "not-an-array", nil)
@@ -809,7 +837,7 @@ func TestAspireService_RenameAspireHostAsync_InvalidSession(t *testing.T) {
 
 func TestServerService_InitializeAsync_InvalidParams(t *testing.T) {
 	s := newTestServer()
-	svc := newServerService(s)
+	svc := newServerService(s, nil)
 	rpcConn := connectRPC(t, svc)
 
 	// InitializeAsync expects (rootPath string, options InitializeServerOptions)

@@ -1,0 +1,70 @@
+# Tier 0 (offline) — breaking-command migration: reject standalone deploy and old add ordering.
+# One migration flow, separate from the happy-path composition scenarios; all commands are local.
+# The removed deploy invocation must fail at command resolution, never execute deployment work.
+name: "standalone-deploy-migration"
+command: "azd ai agent deploy . --no-prompt"
+cwd: "~/working/azd-agents-t0-standalone-deploy-migration-{instance}"
+tags: ["tier:0", "cmd:deploy", "cmd:toolbox", "cmd:connection", "cmd:help", "negative-path", "parallel-safe"]
+
+env:
+  AZURE_ENV_NAME: ""
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+
+pre:
+  - run: 'rm -rf -- "$HOME/working/azd-agents-t0-standalone-deploy-migration-{instance}"'
+    cwd: "~/working"
+    name: "reset the dedicated offline migration directory"
+  - run: 'mkdir -p -- "$HOME/working/azd-agents-t0-standalone-deploy-migration-{instance}" && cp -R -- "{fixtures_dir}/agent-dependencies/." "$HOME/working/azd-agents-t0-standalone-deploy-migration-{instance}/"'
+    cwd: "~/working"
+    name: "seed a project whose configuration must remain untouched"
+
+goals:
+  - >-
+    OFFLINE CONTRACT: No product prompts are allowed, including environment, login, tenant,
+    subscription, or extension-install prompts. Fail without answering any prompt. Do not obtain
+    credentials, install or update extensions, fetch fixture URLs/images, or make Azure calls.
+    The standalone deploy command below is an unknown-command assertion only. If it begins any
+    deployment, build, or provisioning work, stop and fail immediately. Never run actual core deploy,
+    init, provision, up, or another cloud operation. Only the literal product commands below and
+    read-only file inspection are permitted; do not repair the fixture or substitute commands.
+  - >-
+    Wait for the initial command 'azd ai agent deploy . --no-prompt' to exit non-zero. Confirm the
+    error contains 'unknown command "deploy"'. An authentication, environment, missing-file, or
+    deployment-validation error is not a pass: the standalone command must be absent. No migration
+    hint is required in this error; do not assert guidance that the command has not implemented.
+  - >-
+    Immediately verify azure.yaml is byte-for-byte identical to
+    '{fixtures_dir}/agent-dependencies/azure.yaml', with research-agent.uses still exactly ['ai-project'].
+    Verify the entire working tree matches the seeded fixture: no files or directories were added,
+    removed, or changed, including hidden files. In particular, .azure must not exist, and no lock,
+    environment, infrastructure, or deployment state may be created. Keep evidence outside the project.
+  - >-
+    Run exactly 'azd ai agent add toolbox support-tools --agent research-agent --output json --no-prompt'
+    in the same cwd. Confirm a non-zero exit and an error containing 'unknown command "add"', rather
+    than a successful add, an alias redirect, or a prompt. Recheck that azure.yaml and the entire
+    working tree are unchanged from the fixture, with no .azure directory.
+  - >-
+    Run exactly 'azd ai agent add connection search-connection --agent research-agent --output json --no-prompt'
+    in the same cwd. Confirm a non-zero exit and an error containing 'unknown command "add"', rather
+    than a successful add, an alias redirect, or a prompt. Recheck that azure.yaml and the entire
+    working tree are unchanged from the fixture, with no .azure directory.
+  - >-
+    Run exactly 'azd ai agent --help'. Confirm exit code 0, toolbox and connection appear as command
+    groups, and neither deploy nor add appears as a root agent command. Judge the command list, not
+    incidental mentions of deployment in descriptions or examples.
+  - >-
+    Run exactly 'azd deploy --help'. Confirm exit code 0, usage contains 'deploy <service>', and the
+    --all flag is documented for deploying all services. This checks the replacement core project
+    lifecycle interface only. Do not execute any deployment examples printed by help and do not
+    infer that a targeted Agent deployment deploys its dependencies.
+  - >-
+    After both help commands, confirm azure.yaml and the entire working tree remain identical to the
+    fixture, including absence of .azure. Take best-effort screenshots of the rejection errors and
+    core deploy help; capture failure is an observation and must not block the remaining goals.
+  - >-
+    Report a finding if a removed command is accepted, rejection is not an unknown-command error,
+    root command discovery or core help differs, local project state changes, or any prompt,
+    Azure/network activity, build/deployment work, panic, or stack trace occurs. Never retry a failed
+    goal or work around a failure by switching commands, logging in, or initializing an environment.

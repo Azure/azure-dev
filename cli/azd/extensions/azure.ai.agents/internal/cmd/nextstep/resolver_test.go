@@ -118,12 +118,12 @@ func TestResolveAfterInit(t *testing.T) {
 			wantTrailing:   "azd deploy",
 		},
 		{
-			name: "new connection in existing project → provision",
+			name: "split connections in existing project need deploy, not provision",
 			state: &State{
-				HasProjectEndpoint:      true,
-				PendingProvisionReasons: []string{"connection"},
+				HasProjectEndpoint: true,
+				HasConnections:     true,
 			},
-			wantPrimaryHas: "azd provision",
+			wantPrimaryHas: "azd ai agent run",
 			wantTrailing:   "azd deploy",
 		},
 		{
@@ -452,7 +452,7 @@ func TestResolveAfterInit_EverythingReady_EmitsInvokeLocalSecondary(t *testing.T
 // BOTH an unresolved manifest placeholder AND a manifest-declared
 // toolbox whose azd-injected endpoint env var is unset. The rendered
 // "Next:" block must surface the placeholder fix-up AND route the
-// missing toolbox endpoint to `azd provision` (NOT to `azd env set`),
+// missing toolbox endpoint to split-service migration (NOT to `azd env set`),
 // plus the trailing `azd deploy` reminder.
 //
 // Before #8198's toolbox-endpoint partition this would have rendered
@@ -477,8 +477,8 @@ func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
 	assert.Contains(t, rendered,
 		"edit agent configuration: replace {{TOOLBOX_ENDPOINT}} with the actual value",
 		"placeholder fix-up missing")
-	assert.Contains(t, rendered, "azd provision",
-		"toolbox-endpoint branch should route to azd provision")
+	assert.Contains(t, rendered, "migrate legacy toolboxes to azure.ai.toolbox services")
+	assert.NotContains(t, rendered, "azd provision")
 	assert.Contains(t, rendered, "azd ai agent doctor",
 		"toolbox-endpoint branch should surface doctor as an existence-check follow-up")
 	// Historical bug: the resolver used to emit `azd env set` for
@@ -499,18 +499,14 @@ func TestResolveAfterInit_ToolboxReproRendersAllCategories(t *testing.T) {
 // pending provision reasons), the resolver must render the full
 // post-init sequence:
 //
-//  1. `azd provision`               — create the toolbox in Foundry
+//  1. Migrate to a split toolbox service, then deploy it
 //  2. `azd ai agent doctor`         — optional existence-check follow-up
-//  3. `azd ai agent run`            — start locally once provision completes
+//  3. `azd ai agent run`            — start locally once migration and deploy complete
 //  4. `azd ai agent invoke --local` — secondary; test the running agent
 //  5. `azd deploy`                  — trailing reminder
 //
-// Steps 3 and 4 are crucial: once provision finishes, main.py's
-// runtime fallback (constructed from FOUNDRY_PROJECT_ENDPOINT +
-// TOOLBOX_NAME) satisfies the agent even without the user setting
-// the azd-injected endpoint var, so the local-test commands MUST
-// appear here just as they do in the MissingManualVars branch.
-// Dropping them was the regression this test guards against.
+// Steps 3 and 4 remain available after the required migration and deployment,
+// just as they do after setting missing values in the MissingManualVars branch.
 func TestResolveAfterInit_ToolboxEndpointsEmitsRunAndInvokeLocal(t *testing.T) {
 	t.Parallel()
 
@@ -525,14 +521,14 @@ func TestResolveAfterInit_ToolboxEndpointsEmitsRunAndInvokeLocal(t *testing.T) {
 	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
 	rendered := buf.String()
 
-	assert.Contains(t, rendered, "azd provision",
-		"toolbox-endpoint branch should route to azd provision")
+	assert.Contains(t, rendered, "migrate legacy toolboxes to azure.ai.toolbox services")
+	assert.NotContains(t, rendered, "azd provision")
 	assert.Contains(t, rendered, "azd ai agent doctor",
 		"toolbox-endpoint branch should surface doctor as an existence-check follow-up")
 	assert.Contains(t, rendered, "azd ai agent run",
-		"toolbox-endpoint branch should emit local run follow-up once provision completes")
-	assert.Contains(t, rendered, "once provision completes",
-		"toolbox-only run description must name provision as the prerequisite")
+		"toolbox-endpoint branch should emit local run follow-up once deployment completes")
+	assert.Contains(t, rendered, "once toolbox migration and deployment complete",
+		"toolbox-only run description must name migration and deployment as prerequisites")
 	assert.Contains(t, rendered, "azd ai agent invoke --local",
 		"toolbox-endpoint branch should emit invoke-local secondary")
 	assert.NotContains(t, rendered,
@@ -583,7 +579,7 @@ func TestResolveAfterInit_BundledToolboxGuidanceMigratesInOrder(t *testing.T) {
 		"edit azure.yaml: create azure.ai.toolbox service \"bundled-tools\"",
 		suggestions[0].Command)
 	assert.Equal(t,
-		"azd ai agent add toolbox 'bundled-tools' --agent 'agent'",
+		"azd ai agent toolbox add 'bundled-tools' --agent 'agent'",
 		suggestions[1].Command)
 	assert.Equal(t, "azd deploy", suggestions[2].Command)
 	assert.Equal(t, "azd ai agent run", suggestions[3].Command)
@@ -626,10 +622,10 @@ func TestResolveAfterInit_BundledToolboxGuidanceAttachesEveryOwner(t *testing.T)
 		"edit azure.yaml: create azure.ai.toolbox service \"bundled-tools\"",
 		suggestions[0].Command)
 	assert.Equal(t,
-		"azd ai agent add toolbox 'bundled-tools' --agent 'agent-a'",
+		"azd ai agent toolbox add 'bundled-tools' --agent 'agent-a'",
 		suggestions[1].Command)
 	assert.Equal(t,
-		"azd ai agent add toolbox 'bundled-tools' --agent 'agent-b'",
+		"azd ai agent toolbox add 'bundled-tools' --agent 'agent-b'",
 		suggestions[2].Command)
 	assert.Equal(t, "azd deploy", suggestions[3].Command)
 
@@ -670,13 +666,13 @@ func TestResolveAfterInit_BundledToolboxGuidanceReplacesEveryOwner(t *testing.T)
 		"edit agent configuration: replace toolbox \"My Tools\" with service key \"MyTools\"",
 		suggestions[1].Command)
 	assert.Equal(t,
-		"azd ai agent add toolbox 'MyTools' --agent 'agent-a'",
+		"azd ai agent toolbox add 'MyTools' --agent 'agent-a'",
 		suggestions[2].Command)
 	assert.Equal(t,
 		"edit agent configuration: replace toolbox \"My Tools\" with service key \"MyTools\"",
 		suggestions[3].Command)
 	assert.Equal(t,
-		"azd ai agent add toolbox 'MyTools' --agent 'agent-b'",
+		"azd ai agent toolbox add 'MyTools' --agent 'agent-b'",
 		suggestions[4].Command)
 }
 
@@ -701,7 +697,7 @@ func TestResolveAfterInit_BundledToolboxGuidanceQuotesSpacedNames(t *testing.T) 
 		"edit agent configuration: replace toolbox \"My Tools\" with service key \"MyTools\"",
 		suggestions[1].Command)
 	assert.Equal(t,
-		"azd ai agent add toolbox 'MyTools' --agent 'My Agent'",
+		"azd ai agent toolbox add 'MyTools' --agent 'My Agent'",
 		suggestions[2].Command)
 }
 
@@ -723,7 +719,7 @@ func TestResolveAfterInit_BundledToolboxGuidanceSurvivesProvisioning(t *testing.
 		"edit azure.yaml: create azure.ai.toolbox service \"bundled-tools\"",
 		suggestions[1].Command)
 	assert.Equal(t,
-		"azd ai agent add toolbox 'bundled-tools' --agent 'agent'",
+		"azd ai agent toolbox add 'bundled-tools' --agent 'agent'",
 		suggestions[2].Command)
 	assert.Equal(t, "azd deploy", suggestions[3].Command)
 
@@ -846,7 +842,7 @@ func TestResolveAfterInit_ToolboxDependencyErrorBlocksRemediation(t *testing.T) 
 // Expected output for state with one toolbox + one unrelated manual
 // var (e.g. an API key):
 //
-//  1. `azd provision`              — create the toolbox in Foundry
+//  1. Migrate to a split toolbox service, then deploy it
 //  2. `azd ai agent doctor`        — optional existence-check follow-up
 //  3. `azd env set MY_API_KEY …`   — surface the manual var
 //  4. `azd ai agent run`           — start locally once the steps above are complete
@@ -870,8 +866,8 @@ func TestResolveAfterInit_ToolboxAndManualVarsCoexist(t *testing.T) {
 	require.NoError(t, PrintAllNext(&buf, ResolveAfterInit(state, nil)))
 	rendered := buf.String()
 
-	assert.Contains(t, rendered, "azd provision",
-		"coexistence: toolbox sub-branch must still emit provision")
+	assert.Contains(t, rendered, "migrate legacy toolboxes to azure.ai.toolbox services")
+	assert.NotContains(t, rendered, "azd provision")
 	assert.Contains(t, rendered, "azd ai agent doctor",
 		"coexistence: toolbox sub-branch must still emit doctor follow-up")
 	assert.Contains(t, rendered, "azd env set MY_API_KEY <value>",
@@ -879,7 +875,7 @@ func TestResolveAfterInit_ToolboxAndManualVarsCoexist(t *testing.T) {
 	assert.Contains(t, rendered, "azd ai agent run",
 		"coexistence: run follow-up must be emitted (no placeholders blocking)")
 	assert.Contains(t, rendered, "once the steps above are complete",
-		"coexistence: run description must reflect that both provision and env-set are prerequisites")
+		"coexistence: run description must reflect that both migration and env-set are prerequisites")
 	assert.Contains(t, rendered, "azd ai agent invoke --local",
 		"coexistence: invoke-local secondary must be emitted")
 	assert.NotContains(t, rendered,
@@ -912,8 +908,8 @@ func TestResolveAfterInit_ToolboxAndManualVarsCoexistWithPlaceholders(t *testing
 	assert.Contains(t, rendered,
 		"edit agent configuration: replace {{AGENT_NAME}} with the actual value",
 		"placeholder fix-up missing")
-	assert.Contains(t, rendered, "azd provision",
-		"coexistence+placeholders: toolbox sub-branch must still emit provision")
+	assert.Contains(t, rendered, "migrate legacy toolboxes to azure.ai.toolbox services")
+	assert.NotContains(t, rendered, "azd provision")
 	assert.Contains(t, rendered, "azd ai agent doctor",
 		"coexistence+placeholders: toolbox sub-branch must still emit doctor follow-up")
 	assert.Contains(t, rendered, "azd env set MY_API_KEY <value>",
@@ -963,7 +959,7 @@ func TestRunFollowUpDescription(t *testing.T) {
 		{
 			name:               "legacy toolbox only",
 			hasToolboxEndpoint: true,
-			want:               "start the agent locally once provision completes",
+			want:               "start the agent locally once toolbox migration and deployment complete",
 		},
 		{
 			name:          "manual only",

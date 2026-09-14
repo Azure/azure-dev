@@ -336,10 +336,10 @@ func classifyConnections(
 		Message: fmt.Sprintf(
 			"%d configured connection(s) are missing on project %s: %s",
 			len(missing), project, sb.String()),
-		Suggestion: "Run `azd provision` to create or reconcile the " +
-			"missing connection(s), or update the configured connection " +
-			"services or legacy manifest resources to match connections " +
-			"that already exist on the Foundry project.",
+		Suggestion: "Run `azd deploy --all` to create or reconcile the " +
+			"missing azure.ai.connection services. Migrate bundled or legacy " +
+			"connection resources to azure.ai.connection services and add them " +
+			"to agent uses before deploying.",
 		Details: map[string]any{
 			"missingConnections": missing,
 			"matchedCount":       matched,

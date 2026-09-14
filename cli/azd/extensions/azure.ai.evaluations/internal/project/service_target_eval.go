@@ -336,20 +336,21 @@ func serviceProps(svc *azdext.ServiceConfig) *structpb.Struct {
 
 // serviceRelativeDir returns the directory that `source:` paths resolve against.
 //
-// When the service is authored as `host:` + `$ref: ./evals/azure.yaml`, the
-// paths inside that file are written relative to the file itself, so the
-// include's own directory is the base. ResolveFileRefs inlines the content
-// without rebasing paths, so the base has to be recovered from the `$ref`
-// value before resolution.
+// A `$ref`ed configuration answers the project root, because `resolveEvalRefs`
+// names `file` and `source` with WithPathKeys and core has already rebased them
+// onto the root it was given. Joining them against the include's own directory
+// as well resolved `evals/datasets/rows.jsonl` under `<root>/evals`, and `azd
+// up` reported every scaffolded dataset as missing.
+//
+// Inline paths are not rebased -- core leaves a value authored directly in
+// azure.yaml exactly as written -- so those keep the service's own directory.
 func serviceRelativeDir(svc *azdext.ServiceConfig) string {
 	if svc == nil {
 		return "."
 	}
 	if props := serviceProps(svc); props != nil {
 		if ref, ok := props.AsMap()["$ref"].(string); ok && ref != "" {
-			if dir := filepath.Dir(filepath.FromSlash(ref)); dir != "" {
-				return dir
-			}
+			return "."
 		}
 	}
 	if p := svc.GetRelativePath(); p != "" {

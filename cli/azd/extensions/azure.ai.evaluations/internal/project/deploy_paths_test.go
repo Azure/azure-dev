@@ -4,6 +4,7 @@
 package project
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -15,11 +16,13 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-// serviceRelativeDir answers relative to the project, because that is what a
-// service's $ref and relativePath are written relative to. Resolved against the
-// process's working directory instead, `azd up` from any subdirectory reported
-// every dataset as not yet generated and offered to bill a generation job to
-// rewrite a file already on disk.
+// A declared path resolves against the project, not the process's working
+// directory. Resolved against the latter, `azd up` from any subdirectory
+// reported every dataset as not yet generated and offered to bill a generation
+// job to rewrite a file already on disk.
+//
+// Core rebases `file` and `source` onto the root it was given, so what reaches
+// here is already project-relative and the base is the root itself.
 func TestSourcePathsResolveAgainstTheProjectAndNotTheWorkingDirectory(t *testing.T) {
 	svc := &azdext.ServiceConfig{Name: "evals", Host: "azure.ai.eval"}
 	props, err := structpb.NewStruct(map[string]any{"$ref": "evals/azure.eval.yaml"})
@@ -27,13 +30,13 @@ func TestSourcePathsResolveAgainstTheProjectAndNotTheWorkingDirectory(t *testing
 	svc.Config = props
 
 	root := filepath.Join(string(filepath.Separator), "work", "proj")
-	base := filepath.Join(root, serviceRelativeDir(svc))
+	base := baseDirUnder(root, svc)
 
-	assert.Equal(t, filepath.Join(root, "evals"), base,
-		"the base a source: resolves against has to be under the project")
+	assert.Equal(t, root, base,
+		"a $ref'd config is rebased onto the root, so the root is the base")
 	assert.Equal(t,
 		filepath.Join(root, "evals", "datasets", "rows.jsonl"),
-		ResolveSource(base, "./datasets/rows.jsonl"),
+		ResolveSource(base, filepath.ToSlash(filepath.Join("evals", "datasets", "rows.jsonl"))),
 		"a relative source is the project's, wherever the caller happened to be standing")
 }
 
@@ -47,33 +50,48 @@ func TestAnAbsoluteSourceIsNotRerooted(t *testing.T) {
 		ResolveSource(filepath.Join(string(filepath.Separator), "work", "proj", "evals"), absolute))
 }
 
-// azd does not re-root an absolute `$ref` or an absolute `project:`, so neither
-// may the base a `source:` resolves against: joining one under the project
-// produced <root>/C:/shared/evals, which is the same failure the join was added
-// to fix, reached from a different input.
-func TestAnAbsoluteServiceRefIsNotJoinedUnderTheProject(t *testing.T) {
-	shared := filepath.Join(t.TempDir(), "shared", "evals")
+// A configuration kept outside the project still finds its own files.
+//
+// The base is the project root even here, because core expresses an out-of-tree
+// include relative to that root -- `../shared/evals/datasets/rows.jsonl` -- so
+// joining it lands back outside. Taking the include's own directory as the base
+// instead would apply the rebase twice.
+func TestAnAbsoluteServiceRefStillFindsItsOwnFiles(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+
+	require.NoError(t, os.MkdirAll(filepath.Join(outside, "datasets"), 0o750))
+	rows := filepath.Join(outside, "datasets", "rows.jsonl")
+	require.NoError(t, os.WriteFile(rows, []byte("{}\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "azure.eval.yaml"), []byte(`datasets:
+  - name: golden
+    file: ./datasets/rows.jsonl
+evals:
+  - name: nightly
+    dataset: golden
+`), 0o600))
 
 	svc := &azdext.ServiceConfig{Name: "evals", Host: "azure.ai.eval"}
 	props, err := structpb.NewStruct(map[string]any{
-		"$ref": filepath.ToSlash(filepath.Join(shared, "azure.eval.yaml")),
+		"$ref": filepath.ToSlash(filepath.Join(outside, "azure.eval.yaml")),
 	})
 	require.NoError(t, err)
 	svc.Config = props
 
-	relative := serviceRelativeDir(svc)
-	require.True(t, filepath.IsAbs(relative), "the fixture has to exercise the absolute branch")
+	cfg, err := EvalConfigFromService(svc, root)
+	require.NoError(t, err)
+	require.Len(t, cfg.Datasets, 1)
 
-	// A project root that is not empty, or evalBaseDir returns early on the
-	// fallback and the guard under test is never reached.
-	assert.Equal(t, relative,
-		baseDirUnder(filepath.Join(string(filepath.Separator), "work", "proj"), svc),
-		"an absolute ref names its own directory, wherever the project is")
+	resolved := ResolveSource(baseDirUnder(root, svc), cfg.Datasets[0].File)
+	assert.Equal(t, rows, resolved,
+		"an out-of-tree include names files beside itself, not under the project")
+	assert.FileExists(t, resolved)
 
-	// And a relative ref is still joined, which is what the guard must not undo.
+	// A service without a $ref keeps its own directory: those paths are authored
+	// in azure.yaml and core leaves them exactly as written.
 	relativeSvc := &azdext.ServiceConfig{Name: "evals", Host: "azure.ai.eval", RelativePath: "evals"}
-	root := filepath.Join(string(filepath.Separator), "work", "proj")
-	assert.Equal(t, filepath.Join(root, "evals"), baseDirUnder(root, relativeSvc))
+	flat := filepath.Join(string(filepath.Separator), "work", "proj")
+	assert.Equal(t, filepath.Join(flat, "evals"), baseDirUnder(flat, relativeSvc))
 }
 
 // max_samples and source: cap and window a run. Neither reaches the eval the

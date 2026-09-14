@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 )
@@ -66,4 +67,43 @@ func TestEventOutputWriter_SplitsLargeProgressWrites(t *testing.T) {
 	for _, message := range progress {
 		require.LessOrEqual(t, len(message), maxProgressMessageBytes)
 	}
+}
+
+func TestEventOutputWriter_SplitsProgressAtUTF8Boundaries(t *testing.T) {
+	data := []byte(strings.Repeat("a", maxProgressMessageBytes-1) + "\u20ac")
+	var progress []string
+	writer := &eventOutputWriter{
+		writer: io.Discard,
+		progress: func(message string) {
+			progress = append(progress, message)
+		},
+	}
+
+	written, err := writer.Write(data)
+	require.NoError(t, err)
+	require.Equal(t, len(data), written)
+	require.Len(t, progress, 2)
+	for _, message := range progress {
+		require.True(t, utf8.ValidString(message))
+		require.LessOrEqual(t, len(message), maxProgressMessageBytes)
+	}
+	require.Equal(t, string(data), strings.Join(progress, ""))
+}
+
+func TestEventOutputWriter_ReplacesInvalidProgressUTF8(t *testing.T) {
+	data := append(bytes.Repeat([]byte("a"), maxProgressMessageBytes-1), 0xff)
+	var progress []string
+	writer := &eventOutputWriter{
+		writer: io.Discard,
+		progress: func(message string) {
+			progress = append(progress, message)
+		},
+	}
+
+	written, err := writer.Write(data)
+	require.NoError(t, err)
+	require.Equal(t, len(data), written)
+	progressOutput := strings.Join(progress, "")
+	require.True(t, utf8.ValidString(progressOutput))
+	require.Equal(t, strings.Repeat("a", maxProgressMessageBytes-1)+"\uFFFD", progressOutput)
 }

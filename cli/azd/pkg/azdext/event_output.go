@@ -7,7 +7,9 @@ import (
 	"context"
 	"io"
 	"os"
+	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 )
@@ -60,16 +62,33 @@ func (w *eventOutputWriter) Write(data []byte) (int, error) {
 
 	output := data
 	if w.progress != nil {
-		if len(data) == 0 {
-			w.progress("")
-		} else {
-			for len(data) > 0 {
-				chunkSize := min(len(data), maxProgressMessageBytes)
-				w.progress(string(data[:chunkSize]))
-				data = data[chunkSize:]
-			}
+		for _, chunk := range splitProgressOutput(data) {
+			w.progress(chunk)
 		}
 	}
 
 	return w.writer.Write(output)
+}
+
+func splitProgressOutput(data []byte) []string {
+	if len(data) == 0 {
+		return []string{""}
+	}
+
+	output := string(data)
+	if !utf8.ValidString(output) {
+		output = strings.ToValidUTF8(output, "\uFFFD")
+	}
+
+	var chunks []string
+	for len(output) > 0 {
+		chunkSize := min(len(output), maxProgressMessageBytes)
+		for chunkSize < len(output) && !utf8.RuneStart(output[chunkSize]) {
+			chunkSize--
+		}
+		chunks = append(chunks, output[:chunkSize])
+		output = output[chunkSize:]
+	}
+
+	return chunks
 }

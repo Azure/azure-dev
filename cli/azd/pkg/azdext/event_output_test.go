@@ -12,6 +12,7 @@ import (
 )
 
 func TestEventOutput_DefaultsToStdout(t *testing.T) {
+	//nolint:forbidigo // Verifies the documented stdout fallback.
 	require.Same(t, os.Stdout, EventOutput(t.Context()))
 }
 

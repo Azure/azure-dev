@@ -31,3 +31,6 @@ examples:
   - name: init
     description: Initialize a new AI agent project.
     usage: azd ai agent init
+  - name: export-insights
+    description: Export an agent's current insights as JSON.
+    usage: azd ai agent insights export --out-file ./insights.json

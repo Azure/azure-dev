@@ -51,7 +51,7 @@ If eval-id is omitted, the most recent eval from the current environment is used
 			return runEvalShow(ctx, evalID, flags, extCtx.NoPrompt)
 		},
 	}
-	addEvalProjectEndpointFlag(cmd, &flags.projectEndpoint)
+	addProjectEndpointFlag(cmd, &flags.projectEndpoint)
 	cmd.Flags().StringVar(&flags.evalRunID, "eval-run-id", "", "Show details for a specific eval run")
 	cmd.Flags().IntVar(&flags.limit, "limit", 20, "Maximum number of runs to show")
 	cmd.Flags().StringVarP(&flags.output, "out-file", "O", "", "Export full run results to a JSON file")

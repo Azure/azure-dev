@@ -1,0 +1,14 @@
+# Tier 0 (offline) - verify Insights export command discovery and documented flags.
+name: "insights-export-help"
+command: "azd ai agent insights export --help"
+cwd: "/tmp"
+tags: ["tier:0", "cmd:insights", "parallel-safe"]
+
+goals:
+  - "Wait for the help text to render."
+  - "Confirm the output describes exporting insights as JSON and shows export [name] in the usage line."
+  - "Confirm the output lists --out-file, --project-endpoint, --category, --severity, --status, and --include-details."
+  - "Confirm the help explains environment-bound endpoint resolution and includes a PowerShell ConvertFrom-Json example."
+  - "Confirm the process exits with code 0 without prompting for authentication, selecting a project, or producing a stack trace."
+  - "Take a screenshot of the help output."
+  - "Report a finding if the command is unknown, expected help is missing, a product prompt appears, or the exit code is non-zero."

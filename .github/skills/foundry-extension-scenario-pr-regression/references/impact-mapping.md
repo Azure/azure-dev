@@ -19,6 +19,7 @@ Files under `internal/cmd/` map to the command they implement:
 | `internal/cmd/session.go` | `cmd:sessions` | |
 | `internal/cmd/files.go` | `cmd:files` | |
 | `internal/cmd/monitor*.go` | `cmd:monitor` | `monitor.go`, `monitor_format.go`. |
+| `internal/cmd/insights*.go`, `internal/pkg/agents/insights_api/**` | `cmd:insights` | Tier 0 export help and invalid-severity validation. Live export requires a project with an Insights monitor; no cloud scenario is currently defined. |
 | `internal/cmd/update.go` | `cmd:endpoint` | `update.go` defines `endpoint update`. |
 | `internal/cmd/doctor*.go` | `cmd:doctor` | `doctor.go`, `doctor_format.go`. |
 | `internal/cmd/eval*.go` | `cmd:eval` | `eval.go`, `eval_init.go`, `eval_run.go`, `eval_list.go`, `eval_show.go`, etc. Tier 2 (needs a deployed agent + Foundry endpoint). |

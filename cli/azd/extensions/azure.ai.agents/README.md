@@ -50,6 +50,40 @@ See the shared [AI extension non-interactive input reference](../ai-non-interact
 for every prompt's flag, environment/configuration input, or deterministic
 no-prompt behavior.
 
+## Exporting Agent Insights
+
+Export the current insights for a hosted agent as machine-readable JSON:
+
+```powershell
+$export = azd ai agent insights export | ConvertFrom-Json
+$export.insights | Where-Object severity -eq "high"
+```
+
+The command resolves the agent and `FOUNDRY_PROJECT_ENDPOINT` from the current
+azd project and environment. Outside an azd project, pass the Foundry agent name
+and project endpoint explicitly:
+
+```powershell
+azd ai agent insights export my-agent `
+  --project-endpoint "https://<account>.services.ai.azure.com/api/projects/<project>" `
+  --out-file ".\insights.json"
+
+$export = Get-Content ".\insights.json" -Raw -Encoding utf8 | ConvertFrom-Json
+```
+
+Use `azd --environment <name> ai agent insights export` to export from a
+non-current azd environment. When an agent is resolved from an azd project or
+`--environment` is supplied, the endpoint must come from that environment's
+`FOUNDRY_PROJECT_ENDPOINT` or an explicit `--project-endpoint`. A missing or
+unreadable environment endpoint fails rather than falling back to the global
+project context or shell endpoint.
+
+Exports include highlighted traces, linked traces, and proposed fixes by default.
+Use `--include-details=false` for the lightweight insight projection, or filter
+the export with `--category`, `--severity`, and `--status`. Treat exported files
+as sensitive because insight descriptions and trace details can contain
+application or user data.
+
 ## Choosing a Foundry project name
 
 During interactive `azd ai agent init`, azd prompts for the name of a new

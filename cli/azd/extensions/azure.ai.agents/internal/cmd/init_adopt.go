@@ -547,6 +547,12 @@ func runInitFromAzureYaml(
 		}
 		return err
 	}
+	if err := validateAdoptedModelDeploymentTarget(
+		flags,
+		result.FoundryProject,
+	); err != nil {
+		return err
+	}
 
 	// When an existing project was selected, record its endpoint in the azd
 	// environment, then let the projects extension reconcile the project
@@ -644,6 +650,21 @@ func runInitFromAzureYaml(
 
 	printAdoptionNextSteps(ctx, azdClient, folderDisplay, promptOnly)
 	return nil
+}
+
+func validateAdoptedModelDeploymentTarget(
+	flags *initFlags,
+	projectInfo *FoundryProjectInfo,
+) error {
+	if strings.TrimSpace(flags.modelDeployment) == "" ||
+		projectInfo != nil {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeConflictingArguments,
+		"--model-deployment requires an existing Foundry project",
+		"select an existing project or use --model to deploy a new model",
+	)
 }
 
 func configureAdoptedModelDeployment(

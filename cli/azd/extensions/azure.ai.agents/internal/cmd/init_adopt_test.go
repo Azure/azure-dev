@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -650,6 +651,59 @@ func TestValidateImageFlagInAdoptionPath(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid image URL")
 	})
+}
+
+func TestValidateAdoptedModelDeploymentTarget(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		deployment  string
+		projectInfo *FoundryProjectInfo
+		wantErr     bool
+	}{
+		{
+			name:       "new project rejects explicit deployment",
+			deployment: "existing-deployment",
+			wantErr:    true,
+		},
+		{
+			name:        "existing project accepts explicit deployment",
+			deployment:  "existing-deployment",
+			projectInfo: &FoundryProjectInfo{},
+		},
+		{
+			name: "new project without deployment is accepted",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateAdoptedModelDeploymentTarget(
+				&initFlags{modelDeployment: tt.deployment},
+				tt.projectInfo,
+			)
+			if !tt.wantErr {
+				require.NoError(t, err)
+				return
+			}
+
+			require.ErrorContains(
+				t,
+				err,
+				"--model-deployment requires an existing Foundry project",
+			)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(
+				t,
+				exterrors.CodeConflictingArguments,
+				localErr.Code,
+			)
+		})
+	}
 }
 
 func TestAdoptedAgentNameConfig(t *testing.T) {

@@ -6,6 +6,7 @@ package azdext
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"sync"
 
@@ -20,6 +21,8 @@ type EventManager struct {
 	serviceEvents map[string]ServiceEventHandler
 	eventsMutex   sync.RWMutex // Protects both projectEvents and serviceEvents maps
 	brokerLogger  *log.Logger
+
+	outputWriter io.Writer
 
 	// Synchronization for concurrent access
 	mu sync.RWMutex
@@ -46,6 +49,7 @@ func NewEventManager(extensionId string, azdClient *AzdClient, brokerLogger *log
 		projectEvents: make(map[string]ProjectEventHandler),
 		serviceEvents: make(map[string]ServiceEventHandler),
 		brokerLogger:  brokerLogger,
+		outputWriter:  eventOutputFallback,
 	}
 }
 
@@ -248,7 +252,7 @@ func (em *EventManager) invokeProjectHandler(
 	var handlerError *ExtensionError
 
 	// Call the project event handler
-	err := handler(withEventOutput(ctx, progress), args)
+	err := handler(withEventOutput(ctx, em.outputWriter, progress), args)
 	if err != nil {
 		handlerStatus = "failed"
 		handlerMessage = err.Error()
@@ -316,7 +320,7 @@ func (em *EventManager) invokeServiceHandler(
 	var handlerError *ExtensionError
 
 	// Call the service event handler
-	err := handler(withEventOutput(ctx, progress), args)
+	err := handler(withEventOutput(ctx, em.outputWriter, progress), args)
 	if err != nil {
 		handlerStatus = "failed"
 		handlerMessage = err.Error()

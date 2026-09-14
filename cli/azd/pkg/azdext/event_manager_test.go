@@ -4,6 +4,7 @@
 package azdext
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
@@ -174,6 +175,8 @@ func TestEventManager_onInvokeProjectHandler_Success(t *testing.T) {
 func TestEventManager_onInvokeProjectHandler_ReportsOutput(t *testing.T) {
 	ctx := t.Context()
 	eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
+	var stdout bytes.Buffer
+	eventManager.outputWriter = &stdout
 	var progress []string
 
 	eventManager.projectEvents["predeploy"] = func(ctx context.Context, args *ProjectEventArgs) error {
@@ -195,6 +198,7 @@ func TestEventManager_onInvokeProjectHandler_ReportsOutput(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp.GetProjectHandlerStatus())
 	require.Equal(t, []string{"lifecycle warning\n"}, progress)
+	require.Equal(t, "lifecycle warning\n", stdout.String())
 }
 
 // Test onInvokeProjectHandler with handler error

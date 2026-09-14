@@ -2440,6 +2440,8 @@ Go lifecycle handlers should write user-facing output through
 forwards that output to the host with the invocation request ID and also keeps
 the normal live terminal output. The host retains bounded output from deploy
 lifecycle events so it remains visible after progress rendering completes.
+The SDK splits large writes into smaller progress messages before forwarding
+them to the host.
 Output written directly to a process-wide writer or by older extensions remains
 live output, but cannot be correlated safely when lifecycle events run
 concurrently.

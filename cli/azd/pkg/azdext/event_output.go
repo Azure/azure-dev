@@ -20,6 +20,10 @@ type eventOutputWriter struct {
 	mu       sync.Mutex
 }
 
+const maxProgressMessageBytes = 32 * 1024
+
+var eventOutputFallback io.Writer = os.Stdout
+
 // EventOutput returns the writer for output from a lifecycle handler.
 //
 // Output written during an active lifecycle invocation is sent to the
@@ -32,15 +36,20 @@ func EventOutput(ctx context.Context) io.Writer {
 		}
 	}
 
-	return os.Stdout
+	return eventOutputFallback
 }
 
 func withEventOutput(
 	ctx context.Context,
+	writer io.Writer,
 	progress grpcbroker.ProgressFunc,
 ) context.Context {
+	if writer == nil {
+		writer = eventOutputFallback
+	}
+
 	return context.WithValue(ctx, eventOutputContextKey{}, &eventOutputWriter{
-		writer:   os.Stdout,
+		writer:   writer,
 		progress: progress,
 	})
 }
@@ -49,9 +58,18 @@ func (w *eventOutputWriter) Write(data []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	output := data
 	if w.progress != nil {
-		w.progress(string(data))
+		if len(data) == 0 {
+			w.progress("")
+		} else {
+			for len(data) > 0 {
+				chunkSize := min(len(data), maxProgressMessageBytes)
+				w.progress(string(data[:chunkSize]))
+				data = data[chunkSize:]
+			}
+		}
 	}
 
-	return w.writer.Write(data)
+	return w.writer.Write(output)
 }

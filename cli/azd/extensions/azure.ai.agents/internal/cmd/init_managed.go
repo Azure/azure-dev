@@ -238,7 +238,10 @@ func runInitManaged(
 
 	// Scaffold or locate the azd project + infra. On a fresh scaffold this
 	// downloads the starter template and changes into the new project folder.
-	if _, err := ensureProject(ctx, flags, azdClient, projectTargetDir); err != nil {
+	projectConfig, err := ensureProject(
+		ctx, flags, azdClient, projectTargetDir,
+	)
+	if err != nil {
 		return err
 	}
 
@@ -320,18 +323,18 @@ func runInitManaged(
 	); err != nil {
 		return err
 	}
-	if err := authorFoundryProject(ctx, azdClient, foundryProject); err != nil {
+	if err := authorFoundryProject(
+		ctx, azdClient, foundryProject, projectConfig.GetPath(),
+	); err != nil {
 		return err
 	}
 	if err := authorFoundryDeploymentsPreservingDefault(
 		ctx,
 		azdClient,
 		env.Name,
+		projectConfig.GetPath(),
 		deployments,
 	); err != nil {
-		return err
-	}
-	if err := addPromptAgentService(ctx, azdClient, agentName, serviceRelPath, &promptAgent); err != nil {
 		return err
 	}
 	if _, err := emitResourceServices(

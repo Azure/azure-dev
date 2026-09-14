@@ -3722,6 +3722,14 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
+	if err := setServiceEnvironment(
+		ctx,
+		a.azdClient,
+		a.serviceNameOverride,
+		agentEnvironment,
+	); err != nil {
+		return err
+	}
 
 	if err := recordFoundryProjectEnv(
 		ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject,
@@ -3732,6 +3740,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		ctx,
 		a.azdClient,
 		a.selectedFoundryProject,
+		a.projectConfig.GetPath(),
 	); err != nil {
 		return err
 	}
@@ -3739,20 +3748,8 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		ctx,
 		a.azdClient,
 		a.environment.Name,
+		a.projectConfig.GetPath(),
 		resourceDeployments,
-	); err != nil {
-		return err
-	}
-	// Nested project workflows can reload the project manifest. Re-add the
-	// agent afterward so its service is present before wiring uses.
-	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
-		return fmt.Errorf("restoring agent service after project authoring: %w", err)
-	}
-	if err := setServiceEnvironment(
-		ctx,
-		a.azdClient,
-		a.serviceNameOverride,
-		agentEnvironment,
 	); err != nil {
 		return err
 	}
@@ -3850,11 +3847,9 @@ func (a *InitAction) addVoiceAgentToProject(
 		ctx,
 		a.azdClient,
 		a.selectedFoundryProject,
+		a.projectConfig.GetPath(),
 	); err != nil {
 		return err
-	}
-	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
-		return fmt.Errorf("restoring voice agent service after project authoring: %w", err)
 	}
 	if _, err := emitResourceServices(
 		ctx, a.azdClient, a.serviceNameOverride,

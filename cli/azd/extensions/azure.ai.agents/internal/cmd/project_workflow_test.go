@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 	"net"
-	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -90,11 +90,15 @@ func workflowArgs(
 	return server.requests[index].Workflow.Steps[0].Command.Args
 }
 
-func expectedProjectWorkflowArgs(t *testing.T, args ...string) []string {
+func expectedProjectWorkflowArgs(
+	t *testing.T,
+	projectRoot string,
+	args ...string,
+) []string {
 	t.Helper()
-	cwd, err := os.Getwd()
+	projectRoot, err := filepath.Abs(projectRoot)
 	require.NoError(t, err)
-	return append(args, "--cwd", cwd)
+	return append(args, "--cwd", projectRoot)
 }
 
 func TestAuthorFoundryProjectUsesPublicCommand(t *testing.T) {
@@ -110,9 +114,12 @@ func TestAuthorFoundryProjectUsesPublicCommand(t *testing.T) {
 		ResourceId: "/subscriptions/sub/resourceGroups/rg/providers/" +
 			"Microsoft.CognitiveServices/accounts/account/projects/project",
 	}
-	require.NoError(t, authorFoundryProject(t.Context(), client, target))
+	projectRoot := t.TempDir()
+	require.NoError(t, authorFoundryProject(
+		t.Context(), client, target, projectRoot,
+	))
 
-	assert.Equal(t, expectedProjectWorkflowArgs(t,
+	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
 		"ai",
 		"project",
 		"add",
@@ -138,9 +145,12 @@ func TestAuthorFoundryProjectUsesEndpointFlag(t *testing.T) {
 		ProjectName: "project",
 	}
 
-	require.NoError(t, authorFoundryProject(t.Context(), client, target))
+	projectRoot := t.TempDir()
+	require.NoError(t, authorFoundryProject(
+		t.Context(), client, target, projectRoot,
+	))
 
-	assert.Equal(t, expectedProjectWorkflowArgs(t,
+	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
 		"ai",
 		"project",
 		"add",
@@ -173,13 +183,16 @@ func TestAuthorFoundryDeploymentsUsesPublicCommand(t *testing.T) {
 		},
 	}
 
+	projectRoot := t.TempDir()
 	require.NoError(t, authorFoundryDeployments(
 		t.Context(),
 		client,
+		projectRoot,
 		[]project.Deployment{deployment},
 	))
 
-	assert.Equal(t, expectedProjectWorkflowArgs(t,
+	assert.Equal(t, expectedProjectWorkflowArgs(
+		t, projectRoot,
 		"ai",
 		"project",
 		"deployment",
@@ -218,6 +231,7 @@ func TestAuthorFoundryDeploymentsPreservesDefault(t *testing.T) {
 		t.Context(),
 		client,
 		"test",
+		t.TempDir(),
 		[]project.Deployment{
 			{Name: "first", Model: project.DeploymentModel{Name: "first"}},
 			{Name: "second", Model: project.DeploymentModel{Name: "second"}},
@@ -259,6 +273,7 @@ func TestAuthorFoundryDeploymentsRestoresDefaultAfterCancellation(t *testing.T) 
 		ctx,
 		client,
 		"test",
+		t.TempDir(),
 		[]project.Deployment{
 			{Name: "first", Model: project.DeploymentModel{Name: "first"}},
 			{Name: "second", Model: project.DeploymentModel{Name: "second"}},
@@ -284,7 +299,9 @@ func TestProjectWorkflowPropagatesFailures(t *testing.T) {
 		workflowServer,
 	)
 
-	err := authorFoundryProject(t.Context(), client, nil)
+	err := authorFoundryProject(
+		t.Context(), client, nil, t.TempDir(),
+	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "authoring the Foundry project failed")
 	assert.Contains(t, err.Error(), sentinel.Error())
@@ -302,7 +319,9 @@ func TestProjectWorkflowPreservesCancellation(t *testing.T) {
 		workflowServer,
 	)
 
-	err := authorFoundryProject(t.Context(), client, nil)
+	err := authorFoundryProject(
+		t.Context(), client, nil, t.TempDir(),
+	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "authoring the Foundry project was cancelled")
 }

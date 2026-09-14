@@ -1058,7 +1058,7 @@ func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) 
 	// Always set args explicitly to prevent Cobra from falling back to os.Args[1:].
 	// Cobra uses os.Args when cmd.args is nil (but not when it's an empty slice).
 	globalArgs := w.globalArgs
-	if hasWorkflowCwdArg(args) {
+	if hasCwdArg(args) {
 		globalArgs = withoutWorkflowCwdArg(globalArgs)
 	}
 	mergedArgs := append(slices.Clone(args), globalArgs...)
@@ -1069,11 +1069,13 @@ func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) 
 	return rootCmd.ExecuteContext(childCtx)
 }
 
-func hasWorkflowCwdArg(args []string) bool {
+func hasCwdArg(args []string) bool {
 	return slices.ContainsFunc(args, func(arg string) bool {
 		return arg == "--cwd" || arg == "-C" ||
 			strings.HasPrefix(arg, "--cwd=") ||
-			strings.HasPrefix(arg, "-C=")
+			strings.HasPrefix(arg, "-C=") ||
+			(len(arg) > 2 && strings.HasPrefix(arg, "-C") &&
+				arg[2] != '-')
 	})
 }
 

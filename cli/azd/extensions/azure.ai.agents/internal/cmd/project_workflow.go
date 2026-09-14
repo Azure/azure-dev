@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -28,6 +28,7 @@ func authorFoundryProject(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	target *FoundryProjectInfo,
+	projectRoot string,
 ) error {
 	args := []string{
 		"ai",
@@ -48,6 +49,7 @@ func authorFoundryProject(
 		ctx,
 		azdClient,
 		args,
+		projectRoot,
 		"authoring the Foundry project",
 		exterrors.CodeProjectAuthoringFailed,
 	)
@@ -58,6 +60,7 @@ func authorFoundryProject(
 func authorFoundryDeployments(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
+	projectRoot string,
 	deployments []project.Deployment,
 ) error {
 	for _, deployment := range deployments {
@@ -92,6 +95,7 @@ func authorFoundryDeployments(
 			ctx,
 			azdClient,
 			args,
+			projectRoot,
 			fmt.Sprintf("authoring model deployment %q", deployment.Name),
 			exterrors.CodeDeploymentAuthoringFailed,
 		); err != nil {
@@ -105,10 +109,13 @@ func authorFoundryDeploymentsPreservingDefault(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	envName string,
+	projectRoot string,
 	deployments []project.Deployment,
 ) error {
 	if len(deployments) < 2 {
-		return authorFoundryDeployments(ctx, azdClient, deployments)
+		return authorFoundryDeployments(
+			ctx, azdClient, projectRoot, deployments,
+		)
 	}
 	defaultName, err := getEnvValue(
 		ctx,
@@ -137,7 +144,9 @@ func authorFoundryDeploymentsPreservingDefault(
 			defaultName,
 		)
 	}
-	if err := authorFoundryDeployments(ctx, azdClient, deployments); err != nil {
+	if err := authorFoundryDeployments(
+		ctx, azdClient, projectRoot, deployments,
+	); err != nil {
 		if restoreErr := restoreDefault(); restoreErr != nil {
 			return errors.Join(err, restoreErr)
 		}
@@ -150,10 +159,11 @@ func runProjectWorkflow(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	args []string,
+	projectRoot string,
 	operation string,
 	errorCode string,
 ) error {
-	cwd, err := os.Getwd()
+	projectRoot, err := filepath.Abs(projectRoot)
 	if err != nil {
 		return exterrors.Dependency(
 			errorCode,
@@ -161,7 +171,7 @@ func runProjectWorkflow(
 			"retry the command from the azd project directory",
 		)
 	}
-	args = append(slices.Clone(args), "--cwd", cwd)
+	args = append(slices.Clone(args), "--cwd", projectRoot)
 	workflow := &azdext.Workflow{
 		Name: operation,
 		Steps: []*azdext.WorkflowStep{

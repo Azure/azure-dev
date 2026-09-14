@@ -558,6 +558,13 @@ func runInitFromAzureYaml(
 	// environment, then let the projects extension reconcile the project
 	// service. Agents preserve that service but do not author its shape.
 	if result.FoundryProject != nil {
+		projectRoot, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf(
+				"resolving the adopted project directory: %w",
+				err,
+			)
+		}
 		if err := recordFoundryProjectEnv(
 			ctx,
 			azdClient,
@@ -570,6 +577,7 @@ func runInitFromAzureYaml(
 			ctx,
 			azdClient,
 			result.FoundryProject,
+			projectRoot,
 		); err != nil {
 			return err
 		}

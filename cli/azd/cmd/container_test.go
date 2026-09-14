@@ -507,6 +507,47 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 		require.Equal(t, []uint64{1, 2, 3}, commandOrders,
 			"Workflow steps should receive increasing command orders")
 	})
+
+	t.Run("NestedCommandsInheritWorkflowStepOrder", func(t *testing.T) {
+		var adapter *workflowCmdAdapter
+		var commandOrders []uint64
+
+		newCommand := func() *cobra.Command {
+			rootCmd := &cobra.Command{Use: "root"}
+			rootCmd.AddCommand(
+				&cobra.Command{
+					Use: "build",
+					RunE: func(cmd *cobra.Command, args []string) error {
+						commandOrders = append(
+							commandOrders,
+							commandresult.FollowUpCommandOrderFromContext(cmd.Context()),
+						)
+						return adapter.ExecuteContext(cmd.Context(), []string{"restore"})
+					},
+				},
+				&cobra.Command{
+					Use: "restore",
+					RunE: func(cmd *cobra.Command, args []string) error {
+						commandOrders = append(
+							commandOrders,
+							commandresult.FollowUpCommandOrderFromContext(cmd.Context()),
+						)
+						return nil
+					},
+				},
+			)
+			return rootCmd
+		}
+
+		adapter = &workflowCmdAdapter{newCommand: newCommand}
+		ctx := commandresult.WithFollowUpCollector(
+			context.WithoutCancel(t.Context()),
+			commandresult.NewFollowUpCollector(),
+		)
+
+		require.NoError(t, adapter.ExecuteContext(ctx, []string{"build"}))
+		require.Equal(t, []uint64{1, 1}, commandOrders)
+	})
 }
 
 func Test_NewRootCmd_ReregistrationReplacesProjectConfig(t *testing.T) {

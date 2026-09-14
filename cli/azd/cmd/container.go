@@ -1052,7 +1052,8 @@ func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) 
 	// Cancel the child context when the step completes so that any event handlers
 	// registered during this step (e.g. by service target Initialize methods) are
 	// marked as expired and cleaned up on the next RaiseEvent call.
-	if collector := commandresult.FollowUpCollectorFromContext(ctx); collector != nil {
+	if collector := commandresult.FollowUpCollectorFromContext(ctx); collector != nil &&
+		commandresult.FollowUpCommandOrderFromContext(ctx) == 0 {
 		ctx = commandresult.WithFollowUpCommandOrder(
 			ctx,
 			collector.NextCommandOrder(),

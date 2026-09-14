@@ -269,16 +269,52 @@ func TestParseExtensionTelemetryEvent(t *testing.T) {
 		filepath.Join(extension, "a_telemetry.go"),
 		[]byte(`package demo
 
-import foundryTelemetry "example.com/foundry/telemetry"
+import (
+	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
+	otherTelemetry "example.com/other/telemetry"
+)
 
 const (
-	eventName = forwardEvent
+	eventName       = forwardEvent
+	firstEventName  = "demo.first"
+	secondEventName = "demo.second"
+	firstField      = "demo.first.field"
+	secondField     = "demo.second.field"
 )
 
 func event() foundryTelemetry.Event {
 	return foundryTelemetry.Event{
 		Name:       eventName,
 		Attributes: attributes,
+	}
+}
+
+func firstEvent() foundryTelemetry.Event {
+	attributes := map[string]string{
+		firstField: "first",
+	}
+	return foundryTelemetry.Event{
+		Name:       firstEventName,
+		Attributes: attributes,
+	}
+}
+
+func secondEvent() foundryTelemetry.Event {
+	attributes := map[string]string{
+		secondField: "second",
+	}
+	return foundryTelemetry.Event{
+		Name:       secondEventName,
+		Attributes: attributes,
+	}
+}
+
+func unrelatedEvent() otherTelemetry.Event {
+	return otherTelemetry.Event{
+		Name: "other.event",
+		Attributes: map[string]string{
+			"other.field": "other",
+		},
 	}
 }
 `),
@@ -321,8 +357,16 @@ var attributes = map[string]string{
 	}
 	if !values["extension event:demo.event"] ||
 		!values["extension field:demo.mode"] ||
-		!values["extension field:demo.repeated"] {
+		!values["extension field:demo.repeated"] ||
+		!values["extension event:demo.first"] ||
+		!values["extension event:demo.second"] ||
+		!values["extension field:demo.first.field"] ||
+		!values["extension field:demo.second.field"] {
 		t.Fatalf("unexpected definitions: %#v", usages[0].definitions)
+	}
+	if values["extension event:other.event"] ||
+		values["extension field:other.field"] {
+		t.Fatalf("unrelated Event type was recognized: %#v", usages[0].definitions)
 	}
 }
 

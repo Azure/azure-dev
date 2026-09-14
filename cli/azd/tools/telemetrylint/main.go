@@ -11,6 +11,7 @@ import (
 	"go/token"
 	"io/fs"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -48,8 +49,9 @@ type extensionUsage struct {
 }
 
 type extensionStaticData struct {
-	constants     map[string]string
-	attributeMaps map[string][]definition
+	constants             map[string]string
+	attributeMaps         map[string][]definition
+	attributeMapsByObject map[*ast.Object][]definition
 }
 
 type extensionSourceFile struct {
@@ -549,8 +551,9 @@ func parseExtensionUsages(root string) ([]extensionUsage, error) {
 		data := staticData[dataKey]
 		if data == nil {
 			data = &extensionStaticData{
-				constants:     make(map[string]string),
-				attributeMaps: make(map[string][]definition),
+				constants:             make(map[string]string),
+				attributeMaps:         make(map[string][]definition),
+				attributeMapsByObject: make(map[*ast.Object][]definition),
 			}
 			staticData[dataKey] = data
 		}
@@ -602,7 +605,7 @@ func parseExtensionUsages(root string) ([]extensionUsage, error) {
 			case isReportUsageRequest(literal.Type):
 				definitions = reportUsageDefinitions(
 					literal, source.path, source.fileSet, source.data)
-			case isTelemetryEventLiteral(literal):
+			case isTelemetryEventLiteral(source.file, literal):
 				definitions = telemetryEventDefinitions(
 					literal, source.path, source.fileSet, source.data)
 			default:
@@ -775,18 +778,36 @@ func collectAttributeMaps(
 	fileSet *token.FileSet,
 	data *extensionStaticData,
 ) {
+	packageValueSpecs := make(map[*ast.ValueSpec]bool)
+	for _, declaration := range file.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.VAR {
+			continue
+		}
+		for _, specification := range general.Specs {
+			values, ok := specification.(*ast.ValueSpec)
+			if ok {
+				packageValueSpecs[values] = true
+			}
+		}
+	}
+
 	ast.Inspect(file, func(node ast.Node) bool {
 		switch current := node.(type) {
 		case *ast.ValueSpec:
 			for index, name := range current.Names {
-				if index >= len(current.Values) {
-					continue
+				var definitions []definition
+				if index < len(current.Values) {
+					definitions, _ = attributeDefinitionsFromMap(
+						current.Values[index], path, fileSet, data,
+					)
 				}
-				if definitions, ok := attributeDefinitionsFromMap(
-					current.Values[index], path, fileSet, data,
-				); ok {
-					data.attributeMaps[name.Name] = definitions
-				}
+				setAttributeMap(
+					data,
+					name,
+					definitions,
+					packageValueSpecs[current],
+				)
 			}
 		case *ast.AssignStmt:
 			for index, left := range current.Lhs {
@@ -797,15 +818,28 @@ func collectAttributeMaps(
 				if !ok {
 					continue
 				}
-				if definitions, ok := attributeDefinitionsFromMap(
+				definitions, _ := attributeDefinitionsFromMap(
 					current.Rhs[index], path, fileSet, data,
-				); ok {
-					data.attributeMaps[name.Name] = definitions
-				}
+				)
+				setAttributeMap(data, name, definitions, false)
 			}
 		}
 		return true
 	})
+}
+
+func setAttributeMap(
+	data *extensionStaticData,
+	name *ast.Ident,
+	definitions []definition,
+	packageScope bool,
+) {
+	if name.Obj != nil {
+		data.attributeMapsByObject[name.Obj] = definitions
+	}
+	if packageScope {
+		data.attributeMaps[name.Name] = definitions
+	}
 }
 
 func attributeDefinitions(
@@ -816,6 +850,11 @@ func attributeDefinitions(
 	data *extensionStaticData,
 ) []definition {
 	if name, ok := expression.(*ast.Ident); ok {
+		if name.Obj != nil {
+			if definitions, exists := data.attributeMapsByObject[name.Obj]; exists {
+				return definitionsWithKind(definitions, kind)
+			}
+		}
 		return definitionsWithKind(data.attributeMaps[name.Name], kind)
 	}
 
@@ -902,9 +941,17 @@ func resolveExtensionString(
 	}
 }
 
-func isTelemetryEventLiteral(literal *ast.CompositeLit) bool {
+func isTelemetryEventLiteral(file *ast.File, literal *ast.CompositeLit) bool {
 	selector, ok := literal.Type.(*ast.SelectorExpr)
 	if !ok || selector.Sel.Name != "Event" {
+		return false
+	}
+	packageName, ok := selector.X.(*ast.Ident)
+	if !ok || !isImportedPackage(
+		file,
+		packageName.Name,
+		"github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry",
+	) {
 		return false
 	}
 
@@ -926,6 +973,21 @@ func isTelemetryEventLiteral(literal *ast.CompositeLit) bool {
 		}
 	}
 	return hasName && hasAttributes
+}
+
+func isImportedPackage(file *ast.File, packageName, importPath string) bool {
+	for _, specification := range file.Imports {
+		currentPath, err := strconv.Unquote(specification.Path.Value)
+		if err != nil || currentPath != importPath {
+			continue
+		}
+
+		if specification.Name != nil {
+			return specification.Name.Name == packageName
+		}
+		return pathpkg.Base(currentPath) == packageName
+	}
+	return false
 }
 
 func newDocument(path, content string) document {

@@ -87,11 +87,12 @@ go run ./tools/telemetrylint
 ```
 
 The checker reads the event and field declarations, scans direct string
-literals in `tracing.Start` and `attribute.*` calls, and checks direct
-string literals in extension `ReportUsageRequest` values. It understands
-documented `cmd.`, `mcp.`, and `vsrpc.` event families, but dynamic
-extension keys and values referenced through constants cannot be enumerated
-and must be documented by the extension author.
+literals in `tracing.Start` and `attribute.*` calls, and checks recognized
+`ReportUsageRequest` and `telemetry.Event` values in extensions. It resolves
+package-local string constants and statically defined attribute maps. It
+understands documented `cmd.`, `mcp.`, and `vsrpc.` event families, but
+dynamic extension keys and values that cannot be resolved statically remain
+the extension author's responsibility.
 
 Resource attributes are not an azd telemetry extensibility point. Although the embedded OpenTelemetry SDK reads
 `OTEL_RESOURCE_ATTRIBUTES` and `OTEL_SERVICE_NAME`, azd wraps each trace exporter so it receives the canonical

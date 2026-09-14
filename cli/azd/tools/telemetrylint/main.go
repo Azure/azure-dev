@@ -47,6 +47,19 @@ type extensionUsage struct {
 	definitions []definition
 }
 
+type extensionStaticData struct {
+	constants     map[string]string
+	attributeMaps map[string][]definition
+}
+
+type extensionSourceFile struct {
+	root    string
+	path    string
+	file    *ast.File
+	fileSet *token.FileSet
+	data    *extensionStaticData
+}
+
 func main() {
 	repoRootFlag := flag.String(
 		"repo-root",
@@ -522,29 +535,86 @@ func parseLiteralEvents(root string) ([]definition, error) {
 
 func parseExtensionUsages(root string) ([]extensionUsage, error) {
 	byRoot := map[string][]definition{}
+	staticData := map[string]*extensionStaticData{}
+	var files []extensionSourceFile
+
 	err := walkGoFiles(root, func(path string) error {
+		extensionRoot := firstPathSegment(root, path)
 		file, fileSet, err := parseGoFile(path)
 		if err != nil {
 			return err
 		}
 
-		extensionRoot := firstPathSegment(root, path)
-		ast.Inspect(file, func(node ast.Node) bool {
-			literal, ok := node.(*ast.CompositeLit)
-			if !ok || !isReportUsageRequest(literal.Type) {
-				return true
+		dataKey := extensionDataKey(extensionRoot, path)
+		data := staticData[dataKey]
+		if data == nil {
+			data = &extensionStaticData{
+				constants:     make(map[string]string),
+				attributeMaps: make(map[string][]definition),
 			}
-			definitions := reportUsageDefinitions(literal, path, fileSet)
-			byRoot[extensionRoot] = append(
-				byRoot[extensionRoot],
-				definitions...,
-			)
-			return true
+			staticData[dataKey] = data
+		}
+		collectStringConstants(file, data.constants)
+		files = append(files, extensionSourceFile{
+			root:    extensionRoot,
+			path:    path,
+			file:    file,
+			fileSet: fileSet,
+			data:    data,
 		})
 		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	for {
+		changed := false
+		for _, source := range files {
+			changed = collectStringConstants(
+				source.file,
+				source.data.constants,
+			) || changed
+		}
+		if !changed {
+			break
+		}
+	}
+
+	for _, source := range files {
+		collectAttributeMaps(
+			source.file,
+			source.path,
+			source.fileSet,
+			source.data,
+		)
+	}
+
+	for _, source := range files {
+		ast.Inspect(source.file, func(node ast.Node) bool {
+			literal, ok := node.(*ast.CompositeLit)
+			if !ok {
+				return true
+			}
+
+			var definitions []definition
+			switch {
+			case isReportUsageRequest(literal.Type):
+				definitions = reportUsageDefinitions(
+					literal, source.path, source.fileSet, source.data)
+			case isTelemetryEventLiteral(literal):
+				definitions = telemetryEventDefinitions(
+					literal, source.path, source.fileSet, source.data)
+			default:
+				return true
+			}
+
+			byRoot[source.root] = append(
+				byRoot[source.root],
+				definitions...,
+			)
+			return true
+		})
 	}
 
 	roots := make([]string, 0, len(byRoot))
@@ -563,10 +633,49 @@ func parseExtensionUsages(root string) ([]extensionUsage, error) {
 	return usages, nil
 }
 
+func extensionDataKey(root, path string) string {
+	return root + "\x00" + filepath.Dir(path)
+}
+
 func reportUsageDefinitions(
 	literal *ast.CompositeLit,
 	path string,
 	fileSet *token.FileSet,
+	data *extensionStaticData,
+) []definition {
+	return usageDefinitions(
+		literal,
+		"extension event",
+		"extension field",
+		path,
+		fileSet,
+		data,
+	)
+}
+
+func telemetryEventDefinitions(
+	literal *ast.CompositeLit,
+	path string,
+	fileSet *token.FileSet,
+	data *extensionStaticData,
+) []definition {
+	return usageDefinitions(
+		literal,
+		"extension event",
+		"extension field",
+		path,
+		fileSet,
+		data,
+	)
+}
+
+func usageDefinitions(
+	literal *ast.CompositeLit,
+	eventKind string,
+	fieldKind string,
+	path string,
+	fileSet *token.FileSet,
+	data *extensionStaticData,
 ) []definition {
 	var definitions []definition
 	for _, element := range literal.Elts {
@@ -581,38 +690,242 @@ func reportUsageDefinitions(
 
 		switch fieldName.Name {
 		case "EventName":
-			if value, ok := stringLiteral(keyValue.Value); ok {
+			if value, ok := resolveExtensionString(
+				keyValue.Value, data.constants,
+			); ok {
 				definitions = append(definitions, definition{
-					kind:   "extension event",
+					kind:   eventKind,
+					value:  value,
+					source: path,
+					line:   fileSet.Position(keyValue.Pos()).Line,
+				})
+			}
+		case "Name":
+			if value, ok := resolveExtensionString(
+				keyValue.Value, data.constants,
+			); ok {
+				definitions = append(definitions, definition{
+					kind:   eventKind,
 					value:  value,
 					source: path,
 					line:   fileSet.Position(keyValue.Pos()).Line,
 				})
 			}
 		case "Attributes":
-			attributes, ok := keyValue.Value.(*ast.CompositeLit)
-			if !ok {
-				continue
-			}
-			for _, attributeElement := range attributes.Elts {
-				attribute, ok := attributeElement.(*ast.KeyValueExpr)
-				if !ok {
-					continue
-				}
-				value, ok := stringLiteral(attribute.Key)
-				if !ok {
-					continue
-				}
-				definitions = append(definitions, definition{
-					kind:   "extension field",
-					value:  value,
-					source: path,
-					line:   fileSet.Position(attribute.Pos()).Line,
-				})
-			}
+			definitions = append(
+				definitions,
+				attributeDefinitions(
+					keyValue.Value,
+					fieldKind,
+					path,
+					fileSet,
+					data,
+				)...,
+			)
 		}
 	}
 	return definitions
+}
+
+func collectStringConstants(
+	file *ast.File,
+	constants map[string]string,
+) bool {
+	changed := false
+	for _, declaration := range file.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok || general.Tok != token.CONST {
+			continue
+		}
+
+		var previousValues []ast.Expr
+		for _, specification := range general.Specs {
+			values, ok := specification.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+
+			expressions := values.Values
+			if len(expressions) == 0 {
+				expressions = previousValues
+			} else {
+				previousValues = expressions
+			}
+			for index, name := range values.Names {
+				if index >= len(expressions) {
+					continue
+				}
+				if value, ok := resolveExtensionString(
+					expressions[index], constants,
+				); ok {
+					if existing, exists := constants[name.Name]; !exists || existing != value {
+						constants[name.Name] = value
+						changed = true
+					}
+				}
+			}
+		}
+	}
+	return changed
+}
+
+func collectAttributeMaps(
+	file *ast.File,
+	path string,
+	fileSet *token.FileSet,
+	data *extensionStaticData,
+) {
+	ast.Inspect(file, func(node ast.Node) bool {
+		switch current := node.(type) {
+		case *ast.ValueSpec:
+			for index, name := range current.Names {
+				if index >= len(current.Values) {
+					continue
+				}
+				if definitions, ok := attributeDefinitionsFromMap(
+					current.Values[index], path, fileSet, data,
+				); ok {
+					data.attributeMaps[name.Name] = definitions
+				}
+			}
+		case *ast.AssignStmt:
+			for index, left := range current.Lhs {
+				if index >= len(current.Rhs) {
+					continue
+				}
+				name, ok := left.(*ast.Ident)
+				if !ok {
+					continue
+				}
+				if definitions, ok := attributeDefinitionsFromMap(
+					current.Rhs[index], path, fileSet, data,
+				); ok {
+					data.attributeMaps[name.Name] = definitions
+				}
+			}
+		}
+		return true
+	})
+}
+
+func attributeDefinitions(
+	expression ast.Expr,
+	kind string,
+	path string,
+	fileSet *token.FileSet,
+	data *extensionStaticData,
+) []definition {
+	if name, ok := expression.(*ast.Ident); ok {
+		return definitionsWithKind(data.attributeMaps[name.Name], kind)
+	}
+
+	definitions, ok := attributeDefinitionsFromMap(
+		expression, path, fileSet, data,
+	)
+	if !ok {
+		return nil
+	}
+	return definitionsWithKind(definitions, kind)
+}
+
+func attributeDefinitionsFromMap(
+	expression ast.Expr,
+	path string,
+	fileSet *token.FileSet,
+	data *extensionStaticData,
+) ([]definition, bool) {
+	attributes, ok := expression.(*ast.CompositeLit)
+	if !ok {
+		return nil, false
+	}
+	if _, ok := attributes.Type.(*ast.MapType); !ok {
+		return nil, false
+	}
+
+	var definitions []definition
+	for _, element := range attributes.Elts {
+		attribute, ok := element.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		value, ok := resolveExtensionString(
+			attribute.Key, data.constants,
+		)
+		if !ok {
+			continue
+		}
+		definitions = append(definitions, definition{
+			kind:   "extension field",
+			value:  value,
+			source: path,
+			line:   fileSet.Position(attribute.Pos()).Line,
+		})
+	}
+	return definitions, true
+}
+
+func definitionsWithKind(
+	definitions []definition,
+	kind string,
+) []definition {
+	if len(definitions) == 0 {
+		return nil
+	}
+
+	result := make([]definition, len(definitions))
+	copy(result, definitions)
+	for index := range result {
+		result[index].kind = kind
+	}
+	return result
+}
+
+func resolveExtensionString(
+	expression ast.Expr,
+	constants map[string]string,
+) (string, bool) {
+	switch current := expression.(type) {
+	case *ast.BasicLit:
+		return stringLiteral(current)
+	case *ast.Ident:
+		value, ok := constants[current.Name]
+		return value, ok
+	case *ast.BinaryExpr:
+		if current.Op != token.ADD {
+			return "", false
+		}
+		left, leftOK := resolveExtensionString(current.X, constants)
+		right, rightOK := resolveExtensionString(current.Y, constants)
+		return left + right, leftOK && rightOK
+	default:
+		return "", false
+	}
+}
+
+func isTelemetryEventLiteral(literal *ast.CompositeLit) bool {
+	selector, ok := literal.Type.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "Event" {
+		return false
+	}
+
+	var hasName, hasAttributes bool
+	for _, element := range literal.Elts {
+		keyValue, ok := element.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		key, ok := keyValue.Key.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		switch key.Name {
+		case "Name":
+			hasName = true
+		case "Attributes":
+			hasAttributes = true
+		}
+	}
+	return hasName && hasAttributes
 }
 
 func newDocument(path, content string) document {
@@ -680,6 +993,11 @@ func isDocumented(doc document, current definition) bool {
 		return true
 	}
 
+	if current.kind == "extension field" {
+		_, ok := doc.values["ext."+current.value]
+		return ok
+	}
+
 	if current.kind != "event" {
 		return false
 	}
@@ -689,7 +1007,10 @@ func isDocumented(doc document, current definition) bool {
 			continue
 		}
 		for value := range doc.values {
-			if strings.HasPrefix(value, prefix) {
+			if value == prefix ||
+				(strings.HasPrefix(value, prefix) &&
+					strings.HasPrefix(value[len(prefix):], "<") &&
+					strings.HasSuffix(value, ">")) {
 				return true
 			}
 		}

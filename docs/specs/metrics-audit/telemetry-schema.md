@@ -13,13 +13,14 @@ go run ./tools/telemetrylint
 
 The checker parses event constants in `internal/tracing/events/events.go`, field
 keys in `internal/tracing/fields/fields.go`, and direct string literals in
-production Go telemetry calls. It also checks direct string literals in
-extension `ReportUsageRequest` events and attributes against Markdown files in
-the extension directory. Every recognized core item must appear in both this
-schema and the [public telemetry reference](../../reference/telemetry-data.md).
+production Go telemetry calls. It also checks recognized extension
+`ReportUsageRequest` and `telemetry.Event` values, resolving package-local
+string constants and statically defined attribute maps, against Markdown files
+in the extension directory. Every recognized core item must appear in both
+this schema and the [public telemetry reference](../../reference/telemetry-data.md).
 Dynamic `cmd.`, `mcp.`, and `vsrpc.` event names are covered by their
-documented event family; dynamic extension keys and values referenced through
-constants remain the responsibility of the extension author.
+documented event family; extension keys and values that cannot be resolved
+statically remain the responsibility of the extension author.
 
 ## Events
 

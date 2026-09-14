@@ -32,6 +32,18 @@ func TestIsDocumented(t *testing.T) {
 			want:       true,
 		},
 		{
+			name:       "dynamic event family marker",
+			content:    "| `mcp.` |",
+			definition: definition{kind: "event", value: "mcp.new_tool"},
+			want:       true,
+		},
+		{
+			name:       "unrelated value does not document dynamic event",
+			content:    "| `mcp.client.name` |",
+			definition: definition{kind: "event", value: "mcp.new_tool"},
+			want:       false,
+		},
+		{
 			name:       "unrelated prefix",
 			content:    "| `cmd.<command>` |",
 			definition: definition{kind: "event", value: "other.event"},
@@ -63,6 +75,15 @@ func TestIsDocumented(t *testing.T) {
 				value: "vsrpc.custom",
 			},
 			want: false,
+		},
+		{
+			name:    "extension runtime field name",
+			content: "| `ext.demo.mode` |",
+			definition: definition{
+				kind:  "extension field",
+				value: "demo.mode",
+			},
+			want: true,
 		},
 	}
 
@@ -232,6 +253,75 @@ var request = &azdext.ReportUsageRequest{
 	}
 	if usages[0].definitions[0].value != "demo.event" ||
 		usages[0].definitions[1].value != "demo.mode" {
+		t.Fatalf("unexpected definitions: %#v", usages[0].definitions)
+	}
+}
+
+func TestParseExtensionTelemetryEvent(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	extension := filepath.Join(root, "demo")
+	if err := os.MkdirAll(extension, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(extension, "a_telemetry.go"),
+		[]byte(`package demo
+
+import foundryTelemetry "example.com/foundry/telemetry"
+
+const (
+	eventName = forwardEvent
+)
+
+func event() foundryTelemetry.Event {
+	return foundryTelemetry.Event{
+		Name:       eventName,
+		Attributes: attributes,
+	}
+}
+`),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(extension, "z_constants.go"),
+		[]byte(`package demo
+
+const (
+	forwardEvent = "demo.event"
+	modeKey      = "demo.mode"
+	repeatedKey = "demo.repeated"
+	repeatedKeyAgain
+)
+
+var attributes = map[string]string{
+	modeKey:          "safe",
+	repeatedKeyAgain: "also-safe",
+}
+`),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	usages, err := parseExtensionUsages(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(usages) != 1 {
+		t.Fatalf("parseExtensionUsages() returned %d usages, want 1", len(usages))
+	}
+
+	values := make(map[string]bool)
+	for _, definition := range usages[0].definitions {
+		values[definition.kind+":"+definition.value] = true
+	}
+	if !values["extension event:demo.event"] ||
+		!values["extension field:demo.mode"] ||
+		!values["extension field:demo.repeated"] {
 		t.Fatalf("unexpected definitions: %#v", usages[0].definitions)
 	}
 }

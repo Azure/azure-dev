@@ -73,6 +73,9 @@ ext.stage = ui_ready
 ext.outcome = succeeded
 ```
 
+The telemetry identifiers are `inspector.funnel.stage`, `stage`, and
+`outcome`. The host stores the attributes as `ext.stage` and `ext.outcome`.
+
 The event means the Inspector UI loaded. It does not mean that the UI connected
 to the agent or sent a request. No ports, URLs, IDs, prompts, or responses are
 included.

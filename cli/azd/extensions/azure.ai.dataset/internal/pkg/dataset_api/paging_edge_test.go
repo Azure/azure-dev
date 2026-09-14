@@ -32,9 +32,11 @@ func TestListDatasetsFollowsARelativeNextLink(t *testing.T) {
 	assert.Equal(t, "two", list.Value[1].Name)
 }
 
-// An empty 200 ends the walk. Unmarshaling it would fail and throw away every
-// page already collected.
-func TestListDatasetsKeepsEarlierPagesWhenAPageComesBackEmpty(t *testing.T) {
+// The page before it named this link, so an empty answer is the walk breaking
+// rather than ending. Returned as success it was a short listing no caller
+// could tell from a complete one, and these rows choose the version a publish
+// lands on.
+func TestListDatasetsRefusesAnEmptyContinuationPage(t *testing.T) {
 	var base string
 	client, srv := pagingClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("page") == "" {
@@ -46,10 +48,11 @@ func TestListDatasetsKeepsEarlierPagesWhenAPageComesBackEmpty(t *testing.T) {
 	base = srv.URL
 
 	list, err := client.ListDatasets(t.Context(), testAPIVersion)
-	require.NoError(t, err, "an empty page ends the walk rather than failing it")
-	require.NotNil(t, list)
-	require.Len(t, list.Value, 1)
-	assert.Equal(t, "kept", list.Value[0].Name)
+
+	require.Error(t, err, "the service offered another page and then sent none")
+	assert.Contains(t, err.Error(), "incomplete")
+	assert.Nil(t, list, "a partial listing must not reach the caller as an answer")
+	assert.False(t, IsNotFound(err), "a walk that broke is not the dataset being absent")
 }
 
 // followPages must not append into the first page's backing array, which the

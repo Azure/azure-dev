@@ -725,6 +725,17 @@ func ListingTruncated(pages int) error {
 		"stopped reading the listing after %d pages, so it may be incomplete", pages)
 }
 
+// ContinuationPageWasEmpty reports a nextLink that answered with nothing.
+//
+// The page before it named that link, so the service said there was more and
+// then sent none. Read as the end of the walk it produced a short listing no
+// caller could tell from a complete one.
+func ContinuationPageWasEmpty() error {
+	return errors.New(
+		"the service offered another page of the listing and then returned it " +
+			"empty, so the results so far are incomplete")
+}
+
 // OutputFileAndDirBothGiven reports two destinations for one download.
 func OutputFileAndDirBothGiven() error {
 	return errors.New(

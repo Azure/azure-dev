@@ -29,6 +29,35 @@ new service key. Then attach that service with the command above and run `azd de
 The add command only updates the agent's `uses` list; it does not rewrite
 `toolboxes`, create the service, or deploy it.
 
+## Invoke latency diagnostics
+
+Remote `azd ai agent invoke` calls using Responses or Invocations request platform
+latency diagnostics by default. Successful calls show a compact summary after the
+client timing line, for example:
+
+```text
+Platform latency (cold): response headers 3000 ms
+  preprocess 28 ms | infra 900 ms | readiness 1700 ms | container 372 ms
+```
+
+Use `azd ai agent invoke --debug-latency=false "Hello"` to disable collection and
+the summary. The setting is independent of the global `--debug` logging flag.
+`--output raw` includes the returned HTTP headers without adding a formatted
+summary. Local and A2A invokes do not request platform diagnostics.
+
+The platform values describe the original invocation, not CLI startup, token
+acquisition, or separate conversation/session creation. Response headers are not
+the first response body byte or the first model token. Container response time
+also includes request forwarding, connections, retries, and policy buffering; it
+is not a model-only inference measurement.
+
+Warm requests omit infrastructure setup and container readiness instead of
+reporting zero. Missing fields are not synthesized. Background Responses and
+`202` Invocations show platform overhead only; existing invocation polling can
+pick up the original POST's persisted metrics, without an additional request.
+Unavailable or invalid diagnostics do not turn a successful agent call into an
+error. This summary does not wait for trailers or change SSE termination.
+
 ## Running Local Agents
 
 `azd ai agent run` starts the selected agent locally and, by default, opens the

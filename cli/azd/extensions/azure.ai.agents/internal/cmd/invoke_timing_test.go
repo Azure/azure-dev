@@ -46,7 +46,7 @@ func TestPrintInvokeTiming(t *testing.T) {
 	printInvokeTiming(&buf, 19734*time.Millisecond, 13697*time.Millisecond)
 	got := buf.String()
 
-	for _, want := range []string{"Server responded in", "19.734s", "first byte: 13.697s"} {
+	for _, want := range []string{"Server responded in", "19.734s", "response headers: 13.697s"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output %q missing %q", got, want)
 		}
@@ -72,7 +72,10 @@ func TestResponsesLocal_Timing(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get(invokeLatencyHeaderPrefix+"enabled") != "" {
+					t.Error("local Responses requests must not enable platform diagnostics")
+				}
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(tc.status)
 				fmt.Fprint(w, tc.body)
@@ -85,11 +88,17 @@ func TestResponsesLocal_Timing(t *testing.T) {
 			}
 
 			action := &InvokeAction{
-				flags:    &invokeFlags{message: "hi", port: testPort(t, srv.URL), local: true, protocol: "responses", outputFmt: outputFmt},
+				flags: &invokeFlags{
+					message: "hi", port: testPort(t, srv.URL), local: true, protocol: "responses",
+					outputFmt: outputFmt, debugLatency: true,
+				},
 				noPrompt: true,
 			}
 
 			output := withCapturedStdout(t, func() { _ = action.responsesLocal(t.Context()) })
+			if strings.Contains(output, "Platform latency") {
+				t.Errorf("unexpected platform diagnostics for local invocation:\n%s", output)
+			}
 
 			if tc.wantTimer && !strings.Contains(output, "Server responded in") {
 				t.Errorf("expected timing, got:\n%s", output)
@@ -119,6 +128,9 @@ func TestInvocationsLocal_Timing(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get(invokeLatencyHeaderPrefix+"enabled") != "" {
+					t.Error("local Invocations requests must not enable platform diagnostics")
+				}
 				if strings.Contains(r.URL.Path, "/openapi") {
 					w.WriteHeader(404)
 					return
@@ -135,11 +147,17 @@ func TestInvocationsLocal_Timing(t *testing.T) {
 			}
 
 			action := &InvokeAction{
-				flags:    &invokeFlags{message: "hi", port: testPort(t, srv.URL), local: true, protocol: "invocations", outputFmt: outputFmt},
+				flags: &invokeFlags{
+					message: "hi", port: testPort(t, srv.URL), local: true, protocol: "invocations",
+					outputFmt: outputFmt, debugLatency: true,
+				},
 				noPrompt: true,
 			}
 
 			output := withCapturedStdout(t, func() { _ = action.invocationsLocal(t.Context()) })
+			if strings.Contains(output, "Platform latency") {
+				t.Errorf("unexpected platform diagnostics for local invocation:\n%s", output)
+			}
 
 			if tc.wantTimer && !strings.Contains(output, "Server responded in") {
 				t.Errorf("expected timing, got:\n%s", output)

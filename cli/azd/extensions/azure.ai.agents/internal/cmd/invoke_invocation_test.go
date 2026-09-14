@@ -68,6 +68,116 @@ func TestInvocationIDFromResponse(t *testing.T) {
 	})
 }
 
+func TestInvocationsRemotePersistsCurrentID(t *testing.T) {
+	const agentKey = "target-agent"
+	const invocationID = "inv_created"
+	for _, tt := range []struct {
+		name        string
+		status      int
+		headerID    string
+		contentType string
+		body        string
+		wantID      string
+		wantOutput  string
+	}{
+		{
+			name: "sync header ID", status: http.StatusOK, headerID: invocationID,
+			body: `{"result":"sync-result"}`, wantID: invocationID, wantOutput: "sync-result",
+		},
+		{
+			name: "stream header ID", status: http.StatusOK, headerID: invocationID,
+			contentType: "text/event-stream", body: "data: stream-result\n\ndata: [DONE]\n\n",
+			wantID: invocationID, wantOutput: "stream-result",
+		},
+		{
+			name: "accepted body ID", status: http.StatusAccepted,
+			body:   `{"invocation_id":"inv_created","status":"running","result":"accepted-result"}`,
+			wantID: invocationID, wantOutput: "terminal-result",
+		},
+		{
+			name: "HTTP failure preserves selection", status: http.StatusInternalServerError, headerID: invocationID,
+			body: `{"error":{"message":"request rejected"}}`, wantID: "inv_previous",
+		},
+		{
+			name: "missing ID preserves selection", status: http.StatusOK,
+			body: `{"result":"sync-result"}`, wantID: "inv_previous", wantOutput: "sync-result",
+		},
+	} {
+		for _, format := range []string{"default", outputRaw} {
+			t.Run(tt.name+"/"+format, func(t *testing.T) {
+				config := newInvokeUserConfigServer()
+				config.setJSON(t, invocationsConfigPath, map[string]savedInvocation{
+					agentKey: {InvocationID: "inv_previous"}, "other-agent": {InvocationID: "inv_other"},
+				})
+				config.setJSON(t, responsesConfigPath, map[string]savedResponse{
+					agentKey: {ResponseID: "resp_previous"},
+				})
+				client := newInvokeTestAzdClient(t, config)
+				var methods []string
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					methods = append(methods, r.Method)
+					assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+					assert.Equal(t, "v1", r.URL.Query().Get("api-version"))
+					path := "/agents/agent/endpoint/protocols/invocations"
+					if r.Method == http.MethodGet {
+						assert.Equal(t, http.StatusAccepted, tt.status)
+						assert.Equal(t, path+"/"+invocationID, r.URL.Path)
+						_, _ = io.WriteString(w,
+							`{"invocation_id":"inv_created","status":"completed","result":"terminal-result"}`)
+						return
+					}
+					assert.Equal(t, http.MethodPost, r.Method)
+					assert.Equal(t, path, r.URL.Path)
+					if tt.headerID != "" {
+						w.Header().Set("x-agent-invocation-id", tt.headerID)
+					}
+					if tt.contentType != "" {
+						w.Header().Set("Content-Type", tt.contentType)
+					}
+					w.WriteHeader(tt.status)
+					_, _ = io.WriteString(w, tt.body)
+				}))
+				defer server.Close()
+				action := &InvokeAction{
+					flags:      &invokeFlags{message: `{"input":"test"}`, protocol: "invocations", outputFmt: format},
+					credential: responseTestCredential{},
+					// Endpoint mode avoids project-only OpenAPI caching in this HTTP/config integration test.
+					endpoint: &parsedAgentEndpoint{},
+					resolvedRemoteContext: &remoteContext{
+						projectEndpoint: server.URL, name: "agent", serviceName: "service", apiVersion: "v1",
+						agentKey: agentKey, azdClient: client,
+					},
+				}
+				var invokeErr error
+				output := withCapturedStdout(t, func() { invokeErr = action.invocationsRemote(t.Context()) })
+				if tt.status >= http.StatusBadRequest {
+					require.ErrorContains(t, invokeErr, "HTTP 500")
+				} else {
+					require.NoError(t, invokeErr)
+					assert.Contains(t, output, tt.wantOutput)
+				}
+				wantMethods := []string{"POST"}
+				if tt.status == http.StatusAccepted {
+					wantMethods = append(wantMethods, "GET")
+				}
+				assert.Equal(t, wantMethods, methods)
+				if format == outputRaw {
+					assert.Contains(t, output, tt.body, "ID extraction must preserve the original response body")
+					assert.NotContains(t, output, "Invocation:   ")
+				}
+				var saved map[string]savedInvocation
+				config.getJSON(t, invocationsConfigPath, &saved)
+				assert.Equal(t, map[string]savedInvocation{
+					agentKey: {InvocationID: tt.wantID}, "other-agent": {InvocationID: "inv_other"},
+				}, saved)
+				var responses map[string]savedResponse
+				config.getJSON(t, responsesConfigPath, &responses)
+				assert.Equal(t, map[string]savedResponse{agentKey: {ResponseID: "resp_previous"}}, responses)
+			})
+		}
+	}
+}
+
 func TestInvocationsProtocolDispatchHTTP(t *testing.T) {
 	for _, operation := range []invocationOperation{invocationShow, invocationCancel, invocationFollow} {
 		t.Run(string(operation), func(t *testing.T) {
@@ -174,6 +284,69 @@ func TestInvocationCancelUnsupportedHTTP(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, serviceErr.StatusCode)
 	assert.NotEmpty(t, serviceErr.ServiceName)
 	assert.Equal(t, []string{"POST", "GET"}, methods)
+}
+
+func TestInvocationCancelTerminalFallbackHTTP(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		status     string
+		getStatus  int
+		headerID   string
+		wantNoWork bool
+	}{
+		{name: "completed", status: "completed", wantNoWork: true},
+		{name: "failed", status: "failed", wantNoWork: true},
+		{name: "cancelled", status: "cancelled", wantNoWork: true},
+		{name: "canceled alias", status: "canceled", wantNoWork: true},
+		{name: "still active", status: "running"},
+		{name: "GET failed", getStatus: http.StatusNotFound},
+		{name: "terminal response for wrong ID", status: "completed", headerID: "inv_other"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var methods []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				methods = append(methods, r.Method)
+				assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+				assert.Equal(t, "v1", r.URL.Query().Get("api-version"))
+				assert.Empty(t, r.URL.Query().Get("agent_session_id"))
+				path := "/agents/agent/endpoint/protocols/invocations/inv_test"
+				if r.Method == http.MethodPost {
+					assert.Equal(t, path+"/cancel", r.URL.Path)
+					w.WriteHeader(http.StatusConflict)
+					_, _ = io.WriteString(w, `{"error":{"message":"cancellation rejected"}}`)
+					return
+				}
+				assert.Equal(t, http.MethodGet, r.Method)
+				assert.Equal(t, path, r.URL.Path)
+				if tt.getStatus != 0 {
+					w.WriteHeader(tt.getStatus)
+					return
+				}
+				headerID := tt.headerID
+				if headerID == "" {
+					headerID = "inv_test"
+				}
+				w.Header().Set("x-agent-invocation-id", headerID)
+				_, _ = io.WriteString(w, `{"status":"`+tt.status+`"}`)
+			}))
+			defer server.Close()
+			action := &InvokeAction{flags: &invokeFlags{protocol: "invocations"}, credential: responseTestCredential{}}
+			rc := &remoteContext{projectEndpoint: server.URL, name: "agent", apiVersion: "v1"}
+			var output bytes.Buffer
+			err := action.runInvocationOperation(t.Context(), rc, "inv_test", invocationCancel, "", &output)
+			assert.Equal(t, []string{"POST", "GET"}, methods)
+			if tt.wantNoWork {
+				require.NoError(t, err)
+				assert.Equal(t, "Invocation inv_test is already "+tt.status+"; nothing to cancel.\n", output.String())
+			} else {
+				require.Error(t, err)
+				serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+				require.True(t, ok)
+				assert.Equal(t, http.StatusConflict, serviceErr.StatusCode, "preserve the original cancel rejection")
+				assert.Empty(t, output.String())
+			}
+		})
+	}
 }
 
 func TestInvocationErrorDetailRemainsBounded(t *testing.T) {

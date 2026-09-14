@@ -443,10 +443,6 @@ func TestEndToEnd_SendAndWaitWithProgress(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
 
-	// Give a small delay to ensure all progress messages are delivered
-	// (the final progress message might still be in flight when SendAndWaitWithProgress returns)
-	time.Sleep(20 * time.Millisecond)
-
 	// Verify progress updates were received
 	progressMu.Lock()
 	assert.Equal(t, []string{"Starting...", "50% done", "Almost there..."}, progressUpdates)

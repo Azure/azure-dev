@@ -26,6 +26,7 @@ type recordingProjectWorkflowServer struct {
 	mu       sync.Mutex
 	requests []*azdext.RunWorkflowRequest
 	err      error
+	runHook  func(int) error
 }
 
 func (s *recordingProjectWorkflowServer) Run(
@@ -35,6 +36,11 @@ func (s *recordingProjectWorkflowServer) Run(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.requests = append(s.requests, req)
+	if s.runHook != nil {
+		if err := s.runHook(len(s.requests)); err != nil {
+			return nil, err
+		}
+	}
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -216,6 +222,47 @@ func TestAuthorFoundryDeploymentsPreservesDefault(t *testing.T) {
 		envServer.values["test"]["AZURE_AI_MODEL_DEPLOYMENT_NAME"],
 	)
 	assert.Len(t, workflowServer.requests, 2)
+}
+
+func TestAuthorFoundryDeploymentsRestoresDefaultAfterCancellation(t *testing.T) {
+	t.Parallel()
+
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{
+			"test": {
+				"AZURE_AI_MODEL_DEPLOYMENT_NAME": "first",
+			},
+		},
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	workflowServer := &recordingProjectWorkflowServer{
+		runHook: func(call int) error {
+			if call != 2 {
+				return nil
+			}
+			envServer.values["test"]["AZURE_AI_MODEL_DEPLOYMENT_NAME"] = "second"
+			cancel()
+			return status.Error(codes.Canceled, "cancelled")
+		},
+	}
+	client := newTestAzdClient(t, envServer, workflowServer)
+
+	err := authorFoundryDeploymentsPreservingDefault(
+		ctx,
+		client,
+		"test",
+		[]project.Deployment{
+			{Name: "first", Model: project.DeploymentModel{Name: "first"}},
+			{Name: "second", Model: project.DeploymentModel{Name: "second"}},
+		},
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "was cancelled")
+	assert.Equal(
+		t,
+		"first",
+		envServer.values["test"]["AZURE_AI_MODEL_DEPLOYMENT_NAME"],
+	)
 }
 
 func TestProjectWorkflowPropagatesFailures(t *testing.T) {

@@ -9,12 +9,15 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
+
+const projectWorkflowRollbackTimeout = 30 * time.Second
 
 // authorFoundryProject delegates project-service authoring to the
 // projects extension. Agents select the target and wire the
@@ -119,8 +122,13 @@ func authorFoundryDeploymentsPreservingDefault(
 		if defaultName == "" {
 			return nil
 		}
+		rollbackCtx, cancel := context.WithTimeout(
+			context.WithoutCancel(ctx),
+			projectWorkflowRollbackTimeout,
+		)
+		defer cancel()
 		return setEnvValue(
-			ctx,
+			rollbackCtx,
 			azdClient,
 			envName,
 			"AZURE_AI_MODEL_DEPLOYMENT_NAME",

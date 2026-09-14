@@ -37,9 +37,9 @@ issues include:
 
 **Command**: `go run ./tools/telemetrylint` (from `cli/azd/`)
 
-**Passes when**: Every core event and field appears in both telemetry
-reference documents, and static extension usage items appear in extension
-Markdown documentation.
+**Passes when**: Every recognized core event and field appears in both
+telemetry reference documents, and recognized extension usage literals appear
+in extension Markdown documentation.
 
 **Auto-fix**: Add the missing event or field to the relevant documentation.
 

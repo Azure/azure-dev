@@ -54,8 +54,9 @@ cd cli/azd && go run ./tools/telemetrylint 2>&1
 ```
 
 Add each missing core event or field to both telemetry reference documents.
-Add each missing extension event or field to Markdown in that extension's
-directory. Re-run the checker after updating the documentation.
+Add each missing recognized extension event or field to at least one Markdown
+file in that extension's directory. Re-run the checker after updating the
+documentation.
 
 ## Go Spell Check (`cspell`) — Analyze and Fix
 

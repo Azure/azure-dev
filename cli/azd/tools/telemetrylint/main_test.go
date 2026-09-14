@@ -14,42 +14,70 @@ func TestIsDocumented(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		content string
-		value   string
-		want    bool
+		name       string
+		content    string
+		definition definition
+		want       bool
 	}{
 		{
-			name:    "exact value",
-			content: "| `demo.event` |",
-			value:   "demo.event",
-			want:    true,
+			name:       "exact value",
+			content:    "| `demo.event` |",
+			definition: definition{kind: "event", value: "demo.event"},
+			want:       true,
 		},
 		{
-			name:    "dynamic command event",
-			content: "| `cmd.` |",
-			value:   "cmd.provision",
-			want:    true,
+			name:       "dynamic command event",
+			content:    "| `cmd.<command>` |",
+			definition: definition{kind: "event", value: "cmd.provision"},
+			want:       true,
 		},
 		{
-			name:    "unrelated prefix",
-			content: "| `cmd.` |",
-			value:   "other.event",
-			want:    false,
+			name:       "unrelated prefix",
+			content:    "| `cmd.<command>` |",
+			definition: definition{kind: "event", value: "other.event"},
+			want:       false,
+		},
+		{
+			name:       "substring collision",
+			content:    "| `auth.cache_clear_failed` |",
+			definition: definition{kind: "field", value: "auth.cache"},
+			want:       false,
+		},
+		{
+			name:       "plain text is not a documented value",
+			content:    "The demo.event event is emitted.",
+			definition: definition{kind: "event", value: "demo.event"},
+			want:       false,
+		},
+		{
+			name:       "prefix does not document a field",
+			content:    "| `mcp.client.name` |",
+			definition: definition{kind: "field", value: "mcp.tool.name"},
+			want:       false,
+		},
+		{
+			name:    "prefix does not document an extension event",
+			content: "| `vsrpc.<method>` |",
+			definition: definition{
+				kind:  "extension event",
+				value: "vsrpc.custom",
+			},
+			want: false,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			if got := isDocumented(test.content, test.value); got != test.want {
+			doc := newDocument("telemetry.md", test.content)
+			if got := isDocumented(doc, test.definition); got != test.want {
 				t.Fatalf("isDocumented() = %v, want %v", got, test.want)
 			}
 		})
 	}
 }
 
-func TestCheckDefinitions(t *testing.T) {
+func TestCheckDefinitionsInEveryDocument(t *testing.T) {
 	t.Parallel()
 
 	definitions := []definition{
@@ -57,16 +85,66 @@ func TestCheckDefinitions(t *testing.T) {
 		{kind: "field", value: "demo.field", source: "fields.go", line: 20},
 	}
 	documents := []document{
-		{path: "reference.md", content: "`demo.event`"},
-		{path: "schema.md", content: "`demo.field`"},
+		newDocument("reference.md", "`demo.event`"),
+		newDocument("schema.md", "`demo.field`"),
 	}
 
-	issues := checkDefinitions(definitions, documents)
+	issues := checkDefinitionsInEveryDocument(definitions, documents)
 	if len(issues) != 2 {
-		t.Fatalf("checkDefinitions() returned %d issues, want 2", len(issues))
+		t.Fatalf(
+			"checkDefinitionsInEveryDocument() returned %d issues, want 2",
+			len(issues),
+		)
 	}
 	if issues[0].doc != "schema.md" || issues[1].doc != "reference.md" {
 		t.Fatalf("unexpected issues: %#v", issues)
+	}
+}
+
+func TestCheckDefinitionsInAnyDocument(t *testing.T) {
+	t.Parallel()
+
+	definitions := []definition{
+		{kind: "extension event", value: "demo.event", source: "telemetry.go"},
+		{kind: "extension field", value: "demo.field", source: "telemetry.go"},
+		{kind: "extension field", value: "demo.missing", source: "telemetry.go"},
+	}
+	documents := []document{
+		newDocument("README.md", "`demo.event`"),
+		newDocument("telemetry.md", "`demo.field`"),
+		newDocument("CONTRIBUTING.md", "Contribution guide."),
+	}
+
+	issues := checkDefinitionsInAnyDocument(
+		definitions,
+		documents,
+		"README.md",
+	)
+	if len(issues) != 1 {
+		t.Fatalf(
+			"checkDefinitionsInAnyDocument() returned %d issues, want 1",
+			len(issues),
+		)
+	}
+	if issues[0].doc != "README.md" ||
+		issues[0].def.value != "demo.missing" {
+		t.Fatalf("unexpected issues: %#v", issues)
+	}
+}
+
+func TestExtractDocumentedValues(t *testing.T) {
+	t.Parallel()
+
+	content := "plain demo.event `demo.event` and `demo.field`"
+	values := extractDocumentedValues(content)
+	if _, ok := values["demo.event"]; !ok {
+		t.Fatal("extractDocumentedValues() did not find demo.event")
+	}
+	if _, ok := values["demo.field"]; !ok {
+		t.Fatal("extractDocumentedValues() did not find demo.field")
+	}
+	if _, ok := values["plain demo.event"]; ok {
+		t.Fatal("extractDocumentedValues() included plain text")
 	}
 }
 

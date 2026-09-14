@@ -33,8 +33,8 @@ type definition struct {
 }
 
 type document struct {
-	path    string
-	content string
+	path   string
+	values map[string]struct{}
 }
 
 type issue struct {
@@ -161,7 +161,7 @@ func lintRepository(repoRoot string) ([]issue, error) {
 		append(eventDefinitions, fieldDefinitions...),
 		append(rawFieldDefinitions, literalEventDefinitions...)...,
 	))
-	issues := checkDefinitions(coreDefinitions, documents)
+	issues := checkDefinitionsInEveryDocument(coreDefinitions, documents)
 
 	extensionUsages, err := parseExtensionUsages(
 		filepath.Join(repoRoot, "cli", "azd", "extensions"),
@@ -175,10 +175,11 @@ func lintRepository(repoRoot string) ([]issue, error) {
 		if err != nil {
 			return nil, err
 		}
-		issues = append(
-			issues,
-			checkDefinitions(usage.definitions, extensionDocuments)...,
-		)
+		issues = append(issues, checkDefinitionsInAnyDocument(
+			usage.definitions,
+			extensionDocuments,
+			filepath.Join(usage.root, "README.md"),
+		)...)
 	}
 
 	sortIssues(issues, repoRoot)
@@ -192,10 +193,7 @@ func loadDocuments(paths ...string) ([]document, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", path, err)
 		}
-		documents = append(documents, document{
-			path:    path,
-			content: string(content),
-		})
+		documents = append(documents, newDocument(path, string(content)))
 	}
 	return documents, nil
 }
@@ -227,10 +225,7 @@ func loadMarkdownDocuments(root string) ([]document, error) {
 		if err != nil {
 			return err
 		}
-		documents = append(documents, document{
-			path:    path,
-			content: string(content),
-		})
+		documents = append(documents, newDocument(path, string(content)))
 		return nil
 	})
 	if err != nil {
@@ -620,7 +615,14 @@ func reportUsageDefinitions(
 	return definitions
 }
 
-func checkDefinitions(
+func newDocument(path, content string) document {
+	return document{
+		path:   path,
+		values: extractDocumentedValues(content),
+	}
+}
+
+func checkDefinitionsInEveryDocument(
 	definitions []definition,
 	documents []document,
 ) []issue {
@@ -638,7 +640,7 @@ func checkDefinitions(
 	var issues []issue
 	for _, current := range definitions {
 		for _, doc := range documents {
-			if !isDocumented(doc.content, current.value) {
+			if !isDocumented(doc, current) {
 				issues = append(issues, issue{
 					def: current,
 					doc: doc.path,
@@ -649,18 +651,79 @@ func checkDefinitions(
 	return issues
 }
 
-func isDocumented(content, value string) bool {
-	if strings.Contains(content, value) {
+func checkDefinitionsInAnyDocument(
+	definitions []definition,
+	documents []document,
+	suggestedDocument string,
+) []issue {
+	var issues []issue
+	for _, current := range definitions {
+		documented := false
+		for _, doc := range documents {
+			if isDocumented(doc, current) {
+				documented = true
+				break
+			}
+		}
+		if !documented {
+			issues = append(issues, issue{
+				def: current,
+				doc: suggestedDocument,
+			})
+		}
+	}
+	return issues
+}
+
+func isDocumented(doc document, current definition) bool {
+	if _, ok := doc.values[current.value]; ok {
 		return true
 	}
 
+	if current.kind != "event" {
+		return false
+	}
+
 	for _, prefix := range []string{"cmd.", "mcp.", "vsrpc."} {
-		if strings.HasPrefix(value, prefix) &&
-			strings.Contains(content, "`"+prefix) {
-			return true
+		if !strings.HasPrefix(current.value, prefix) {
+			continue
+		}
+		for value := range doc.values {
+			if strings.HasPrefix(value, prefix) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+func extractDocumentedValues(content string) map[string]struct{} {
+	values := make(map[string]struct{})
+	for index := 0; index < len(content); {
+		if content[index] != '`' {
+			index++
+			continue
+		}
+
+		start := index
+		for index < len(content) && content[index] == '`' {
+			index++
+		}
+		delimiterLength := index - start
+		delimiter := strings.Repeat("`", delimiterLength)
+		end := strings.Index(content[index:], delimiter)
+		if end < 0 {
+			break
+		}
+
+		value := content[index : index+end]
+		if delimiterLength < 3 &&
+			!strings.ContainsAny(value, "\r\n") {
+			values[value] = struct{}{}
+		}
+		index += end + delimiterLength
+	}
+	return values
 }
 
 func uniqueDefinitions(definitions []definition) []definition {

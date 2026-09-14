@@ -283,8 +283,8 @@ Set **only when an external command-line tool invocation fails**, during error c
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `error.tool.name` | string | Name of the failed external tool (comma-separated list when multiple required tools are missing) |
-| `error.tool.exitCode` | measurement | Exit code returned by the failed tool |
+| `tool.name` | string | Name of the failed external tool (comma-separated list when multiple required tools are missing); emitted as `error.tool.name` |
+| `tool.exitCode` | measurement | Exit code returned by the failed tool; emitted as `error.tool.exitCode` |
 
 ### Performance Fields
 

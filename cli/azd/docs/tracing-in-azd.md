@@ -85,11 +85,12 @@ Run the completeness checker from `cli/azd`:
 go run ./tools/telemetrylint
 ```
 
-The checker reads the event and field declarations, scans static
-`tracing.Start` and `attribute.*` literals, and checks static extension
-`ReportUsageRequest` values. It understands the documented `cmd.`, `mcp.`,
-and `vsrpc.` prefixes, but dynamic extension keys cannot be enumerated and
-must be documented by the extension author.
+The checker reads the event and field declarations, scans direct string
+literals in `tracing.Start` and `attribute.*` calls, and checks direct
+string literals in extension `ReportUsageRequest` values. It understands
+documented `cmd.`, `mcp.`, and `vsrpc.` event families, but dynamic
+extension keys and values referenced through constants cannot be enumerated
+and must be documented by the extension author.
 
 ---
 

@@ -140,8 +140,11 @@ The command reports a single `demo.telemetry.reported` event with two fixed, low
 
 The attributes are:
 
-- `demo.mode`: the fixed demo mode, currently `safe`
-- `demo.outcome`: whether the demo telemetry call was `accepted` or `dropped`
+- `demo.mode`: the fixed demo mode, currently `sample`
+- `demo.outcome`: the fixed demo outcome, currently `completed`
+
+The `demo.outcome` value describes the sample operation. Whether the host
+records the event is reported separately by the `Accepted` response field.
 
 This example shows two things:
 

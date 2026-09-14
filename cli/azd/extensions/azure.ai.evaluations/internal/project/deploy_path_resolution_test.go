@@ -61,7 +61,7 @@ evals:
 	require.Len(t, cfg.Evaluators, 1)
 
 	// Exactly what Deploy does with the decoded declarations.
-	baseDir := baseDirUnder(root, svc)
+	baseDir := root
 
 	assert.Equal(t, rows, ResolveSource(baseDir, cfg.Datasets[0].File))
 	assert.FileExists(t, ResolveSource(baseDir, cfg.Datasets[0].File),

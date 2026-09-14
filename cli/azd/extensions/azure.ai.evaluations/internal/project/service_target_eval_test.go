@@ -4,6 +4,7 @@
 package project
 
 import (
+	"path/filepath"
 	"testing"
 
 	"azureaieval/internal/pkg/evalcore"
@@ -20,30 +21,29 @@ func propsFrom(t *testing.T, values map[string]any) *structpb.Struct {
 	return s
 }
 
-// A service authored as `host:` + `$ref: ./evals/azure.yaml` has the paths
-// inside that file rebased onto the project root by core, because
-// resolveEvalRefs names `file` and `source` with WithPathKeys. The base here is
-// therefore the root; using the include's directory would apply the rebase
-// twice.
-func TestServiceRelativeDirIsTheRootForARefedConfig(t *testing.T) {
+// A service authored as `host:` + `$ref: ./evals/azure.yaml` lives in the
+// include's directory. That is where a directory convention beside it is found,
+// which is what AgentInstructionsFromProject needs; it is not the base for
+// paths decoded out of the configuration, which core has already rebased.
+func TestServiceRelativeDirUsesRefDirectory(t *testing.T) {
 	svc := &azdext.ServiceConfig{
 		Name: "evals",
 		AdditionalProperties: propsFrom(t, map[string]any{
 			"$ref": "./evals/azure.yaml",
 		}),
 	}
-	require.Equal(t, ".", serviceRelativeDir(svc))
+	require.Equal(t, filepath.FromSlash("evals"), serviceRelativeDir(svc))
 }
 
-// A nested include is rebased the same way, so it answers the same.
-func TestServiceRelativeDirIsTheRootForANestedRef(t *testing.T) {
+// A nested include keeps its own directory.
+func TestServiceRelativeDirUsesNestedRefDirectory(t *testing.T) {
 	svc := &azdext.ServiceConfig{
 		Name: "evals",
 		AdditionalProperties: propsFrom(t, map[string]any{
 			"$ref": "./config/evals/azure.yaml",
 		}),
 	}
-	require.Equal(t, ".", serviceRelativeDir(svc))
+	require.Equal(t, filepath.FromSlash("config/evals"), serviceRelativeDir(svc))
 }
 
 // Without a $ref the service's own relative path is the base.

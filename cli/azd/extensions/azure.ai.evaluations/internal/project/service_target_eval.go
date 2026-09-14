@@ -163,7 +163,13 @@ func (p *EvalServiceTargetProvider) Deploy(
 		return nil, err
 	}
 
-	baseDir := baseDirUnder(projectRoot, serviceConfig)
+	// The project root, because `resolveEvalRefs` names `file` and `source` with
+	// WithPathKeys and core has already rebased them onto it -- including an
+	// out-of-tree include, which comes back with `..` segments. Joining them
+	// against the service's own directory as well resolved
+	// `evals/datasets/rows.jsonl` under `<root>/evals`, and every scaffolded
+	// dataset read as missing.
+	baseDir := projectRoot
 
 	// 1. Datasets the configuration owns. Paths are kept so an eval that names
 	// one can derive its columns without reading the blob back.
@@ -334,23 +340,25 @@ func serviceProps(svc *azdext.ServiceConfig) *structpb.Struct {
 	return svc.GetConfig()
 }
 
-// serviceRelativeDir returns the directory that `source:` paths resolve against.
+// serviceRelativeDir returns a service's own directory within the project.
 //
-// A `$ref`ed configuration answers the project root, because `resolveEvalRefs`
-// names `file` and `source` with WithPathKeys and core has already rebased them
-// onto the root it was given. Joining them against the include's own directory
-// as well resolved `evals/datasets/rows.jsonl` under `<root>/evals`, and `azd
-// up` reported every scaffolded dataset as missing.
+// When the service is authored as `host:` + `$ref: ./evals/azure.yaml`, that is
+// the include's directory. It answers where the service lives, which is what a
+// directory convention beside it needs -- `AgentInstructionsFromProject` looks
+// for the optimizer's baseline there.
 //
-// Inline paths are not rebased -- core leaves a value authored directly in
-// azure.yaml exactly as written -- so those keep the service's own directory.
+// It is NOT the base for paths decoded out of the configuration. Core rebases
+// `file` and `source` onto the root it is given, so those resolve from the
+// project root; joining them here as well applied the rebase twice.
 func serviceRelativeDir(svc *azdext.ServiceConfig) string {
 	if svc == nil {
 		return "."
 	}
 	if props := serviceProps(svc); props != nil {
 		if ref, ok := props.AsMap()["$ref"].(string); ok && ref != "" {
-			return "."
+			if dir := filepath.Dir(filepath.FromSlash(ref)); dir != "" {
+				return dir
+			}
 		}
 	}
 	if p := svc.GetRelativePath(); p != "" {

@@ -30,14 +30,15 @@ func TestSourcePathsResolveAgainstTheProjectAndNotTheWorkingDirectory(t *testing
 	svc.Config = props
 
 	root := filepath.Join(string(filepath.Separator), "work", "proj")
-	base := baseDirUnder(root, svc)
 
-	assert.Equal(t, root, base,
-		"a $ref'd config is rebased onto the root, so the root is the base")
 	assert.Equal(t,
 		filepath.Join(root, "evals", "datasets", "rows.jsonl"),
-		ResolveSource(base, filepath.ToSlash(filepath.Join("evals", "datasets", "rows.jsonl"))),
+		ResolveSource(root, filepath.ToSlash(filepath.Join("evals", "datasets", "rows.jsonl"))),
 		"a relative source is the project's, wherever the caller happened to be standing")
+
+	// The service still knows its own directory; that is for finding conventions
+	// beside it, not for resolving what core already rebased.
+	assert.Equal(t, filepath.FromSlash("evals"), serviceRelativeDir(svc))
 }
 
 // An absolute source is still taken as written, project root or not.
@@ -82,13 +83,13 @@ evals:
 	require.NoError(t, err)
 	require.Len(t, cfg.Datasets, 1)
 
-	resolved := ResolveSource(baseDirUnder(root, svc), cfg.Datasets[0].File)
+	resolved := ResolveSource(root, cfg.Datasets[0].File)
 	assert.Equal(t, rows, resolved,
 		"an out-of-tree include names files beside itself, not under the project")
 	assert.FileExists(t, resolved)
 
-	// A service without a $ref keeps its own directory: those paths are authored
-	// in azure.yaml and core leaves them exactly as written.
+	// baseDirUnder still places a service under the project, which is what
+	// AgentInstructionsFromProject uses to find the optimizer's baseline.
 	relativeSvc := &azdext.ServiceConfig{Name: "evals", Host: "azure.ai.eval", RelativePath: "evals"}
 	flat := filepath.Join(string(filepath.Separator), "work", "proj")
 	assert.Equal(t, filepath.Join(flat, "evals"), baseDirUnder(flat, relativeSvc))

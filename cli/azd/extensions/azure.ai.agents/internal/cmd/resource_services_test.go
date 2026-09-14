@@ -508,7 +508,12 @@ type recordingProjectServer struct {
 	uses  map[string][]string
 	env   map[string]map[string]any
 	// configValues records non-"uses" SetServiceConfigValue calls keyed by path.
-	configValues map[string]configValueRecord
+	configValues        map[string]configValueRecord
+	rawSections         map[string]map[string]*structpb.Struct
+	configSectionReads  []*azdext.GetServiceConfigSectionRequest
+	configSections      []*azdext.SetServiceConfigSectionRequest
+	getConfigSectionErr error
+	setConfigSectionErr error
 	// existing is returned by Get to simulate services already present in the
 	// project (e.g. a prior init's azure.ai.project service).
 	existing map[string]*azdext.ServiceConfig
@@ -631,6 +636,20 @@ func (s *recordingProjectServer) SetServiceConfigSection(
 ) (*azdext.EmptyResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if req.Path != "env" {
+		s.configSections = append(s.configSections, req)
+		if s.setConfigSectionErr != nil {
+			return nil, s.setConfigSectionErr
+		}
+		if s.rawSections == nil {
+			s.rawSections = map[string]map[string]*structpb.Struct{}
+		}
+		if s.rawSections[req.ServiceName] == nil {
+			s.rawSections[req.ServiceName] = map[string]*structpb.Struct{}
+		}
+		s.rawSections[req.ServiceName][req.Path] = req.Section
+		return &azdext.EmptyResponse{}, nil
+	}
 	if s.setEnvironmentErr != nil {
 		return nil, s.setEnvironmentErr
 	}
@@ -641,6 +660,20 @@ func (s *recordingProjectServer) SetServiceConfigSection(
 		s.env[req.ServiceName] = req.Section.AsMap()
 	}
 	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *recordingProjectServer) GetServiceConfigSection(
+	_ context.Context,
+	req *azdext.GetServiceConfigSectionRequest,
+) (*azdext.GetServiceConfigSectionResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.configSectionReads = append(s.configSectionReads, req)
+	if s.getConfigSectionErr != nil {
+		return nil, s.getConfigSectionErr
+	}
+	section, found := s.rawSections[req.ServiceName][req.Path]
+	return &azdext.GetServiceConfigSectionResponse{Found: found, Section: section}, nil
 }
 
 func (s *recordingProjectServer) UnsetServiceConfig(

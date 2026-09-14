@@ -324,7 +324,8 @@ func TestPersistPromptAgentCandidateConfig(t *testing.T) {
 			t.Run(fmt.Sprintf("legacy=%t/%s", legacy, instructionKey), func(t *testing.T) {
 				t.Parallel()
 				svc := newPromptCandidateTestService(t, legacy)
-				server := &recordingProjectServer{}
+				server, path := newPromptCandidateTestServer(t, svc, legacy)
+				expected := server.rawSections[svc.Name][path].AsMap()
 				client := newProjectRecorderClient(t, server)
 				tools := []any{map[string]any{"type": "code_interpreter"}}
 
@@ -337,17 +338,19 @@ func TestPersistPromptAgentCandidateConfig(t *testing.T) {
 					}),
 				))
 
-				prefix := ""
-				if legacy {
-					prefix = "config."
-				}
+				expected["model"] = "gpt-5"
+				expected["instructions"] = "Optimized instructions."
+				expected["tools"] = tools
 				server.mu.Lock()
 				defer server.mu.Unlock()
-				require.Equal(t, map[string]configValueRecord{
-					prefix + "model":        {serviceName: svc.Name, value: "gpt-5"},
-					prefix + "instructions": {serviceName: svc.Name, value: "Optimized instructions."},
-					prefix + "tools":        {serviceName: svc.Name, value: tools},
-				}, server.configValues)
+				require.Len(t, server.configSectionReads, 1)
+				require.Equal(t, svc.Name, server.configSectionReads[0].ServiceName)
+				require.Equal(t, path, server.configSectionReads[0].Path)
+				require.Len(t, server.configSections, 1)
+				require.Equal(t, svc.Name, server.configSections[0].ServiceName)
+				require.Equal(t, path, server.configSections[0].Path)
+				require.Equal(t, expected, server.configSections[0].Section.AsMap())
+				require.Empty(t, server.configValues)
 				require.Empty(t, server.unsetPaths)
 			})
 		}
@@ -362,7 +365,8 @@ func TestPersistPromptAgentCandidateConfigOptionalTools(t *testing.T) {
 			t.Run(fmt.Sprintf("legacy=%t/%s", legacy, toolsCase), func(t *testing.T) {
 				t.Parallel()
 				svc := newPromptCandidateTestService(t, legacy)
-				server := &recordingProjectServer{}
+				server, path := newPromptCandidateTestServer(t, svc, legacy)
+				expected := server.rawSections[svc.Name][path].AsMap()
 				client := newProjectRecorderClient(t, server)
 				config := map[string]any{"model": "gpt-5", "instructions": "Baseline instructions."}
 				switch toolsCase {
@@ -376,24 +380,21 @@ func TestPersistPromptAgentCandidateConfigOptionalTools(t *testing.T) {
 					t.Context(), client, svc, t.TempDir(), mustMarshal(t, config),
 				))
 
-				prefix := ""
-				if legacy {
-					prefix = "config."
+				expected["model"] = "gpt-5"
+				expected["instructions"] = "Baseline instructions."
+				if toolsCase == "empty" {
+					expected["tools"] = []any{}
+				} else {
+					delete(expected, "tools")
 				}
 				server.mu.Lock()
 				defer server.mu.Unlock()
-				require.Contains(t, server.configValues, prefix+"model")
-				require.Contains(t, server.configValues, prefix+"instructions")
-				require.Equal(t, "gpt-5", server.configValues[prefix+"model"].value)
-				require.Equal(t, "Baseline instructions.", server.configValues[prefix+"instructions"].value)
-				if toolsCase == "empty" {
-					require.Contains(t, server.configValues, prefix+"tools")
-					require.Equal(t, []any{}, server.configValues[prefix+"tools"].value)
-					require.Empty(t, server.unsetPaths)
-				} else {
-					require.NotContains(t, server.configValues, prefix+"tools")
-					require.Equal(t, []string{prefix + "tools"}, server.unsetPaths)
-				}
+				require.Len(t, server.configSections, 1)
+				require.Equal(t, svc.Name, server.configSections[0].ServiceName)
+				require.Equal(t, path, server.configSections[0].Path)
+				require.Equal(t, expected, server.configSections[0].Section.AsMap())
+				require.Empty(t, server.configValues)
+				require.Empty(t, server.unsetPaths)
 			})
 		}
 	}
@@ -436,6 +437,8 @@ func TestPersistPromptAgentCandidateConfigRejectsInvalidFields(t *testing.T) {
 			server.mu.Lock()
 			defer server.mu.Unlock()
 			require.Empty(t, server.configValues)
+			require.Empty(t, server.configSectionReads)
+			require.Empty(t, server.configSections)
 			require.Empty(t, server.unsetPaths)
 			require.Empty(t, server.env)
 		})
@@ -466,6 +469,35 @@ func newPromptCandidateTestService(t *testing.T, legacy bool) *azdext.ServiceCon
 		svc.AdditionalProperties = nil
 	}
 	return svc
+}
+
+func newPromptCandidateTestServer(
+	t *testing.T, svc *azdext.ServiceConfig, legacy bool,
+) (*recordingProjectServer, string) {
+	t.Helper()
+	values := map[string]any{
+		"kind":         "prompt",
+		"model":        "${MODEL_DEPLOYMENT}",
+		"instructions": "${AGENT_INSTRUCTIONS}",
+		"tools":        []any{map[string]any{"type": "code_interpreter"}},
+		"description":  "${AGENT_DESCRIPTION}",
+		"skills":       []any{map[string]any{"name": "existing-skill"}},
+	}
+	path := ""
+	if legacy {
+		path = "config"
+	} else {
+		values["host"] = AiAgentHost
+		values["project"] = "."
+		values["uses"] = []any{"foundry", "existing-skill"}
+		values["env"] = map[string]any{"CUSTOM_SETTING": "${CUSTOM_SETTING}"}
+		values["hooks"] = map[string]any{"predeploy": map[string]any{"shell": "sh", "run": "echo ready"}}
+	}
+	section, err := structpb.NewStruct(values)
+	require.NoError(t, err)
+	return &recordingProjectServer{
+		rawSections: map[string]map[string]*structpb.Struct{svc.Name: {path: section}},
+	}, path
 }
 
 func TestPersistPromptAgentCandidateConfigSkipsVoiceAgent(t *testing.T) {
@@ -501,24 +533,29 @@ func TestPersistPromptAgentCandidateConfigSkipsVoiceAgent(t *testing.T) {
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	require.Empty(t, server.configValues)
+	require.Empty(t, server.configSectionReads)
+	require.Empty(t, server.configSections)
 }
 
 func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 	tests := []struct {
-		name   string
-		kind   string
-		legacy bool
-		disk   bool
+		name     string
+		kind     string
+		legacy   bool
+		disk     bool
+		override bool
 	}{
 		{name: "prompt", kind: "prompt"},
 		{name: "legacy prompt", kind: "prompt", legacy: true},
 		{name: "hosted", kind: "hosted"},
+		{name: "hosted with override", kind: "hosted", override: true},
 		{name: "voice", kind: "prompt-voice"},
 		{name: "file-backed hosted", kind: "hosted", disk: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("NO_COLOR", "1")
+			t.Setenv("AGENT_DEFINITION_PATH", "")
 			svc := newPromptCandidateTestService(t, tt.legacy)
 			svc.RelativePath = "."
 			if tt.kind != "prompt" {
@@ -537,9 +574,15 @@ func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 				require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"),
 					[]byte("kind: hosted\nname: prompt-agent\n"), 0600))
 			}
-			projectServer := &recordingProjectServer{
-				rawEnv: map[string]map[string]any{svc.Name: {"CUSTOM_SETTING": "${CUSTOM_SETTING}"}},
+			var overridePath string
+			if tt.override {
+				overridePath = filepath.Join(root, "override.yaml")
+				require.NoError(t, os.WriteFile(overridePath, []byte("kind: hosted\nname: override-agent\n"), 0600))
+				t.Setenv("AGENT_DEFINITION_PATH", overridePath)
 			}
+			projectServer, path := newPromptCandidateTestServer(t, svc, tt.legacy)
+			projectServer.rawEnv = map[string]map[string]any{svc.Name: {"CUSTOM_SETTING": "${CUSTOM_SETTING}"}}
+			expected := projectServer.rawSections[svc.Name][path].AsMap()
 			envServer := &testEnvironmentServiceServer{
 				environments: map[string]*azdext.Environment{"dev": {Name: "dev"}},
 				values: map[string]map[string]string{
@@ -584,19 +627,23 @@ func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 			require.Equal(t, "candidate-1", envServer.values["dev"]["AGENT_PROMPT_AGENT_OPTIMIZATION_CANDIDATE_ID"])
 			require.Contains(t, out.String(), "applied to")
 			require.Equal(t, map[string]string{"CUSTOM_SETTING": "keep"}, svc.Environment)
+			if tt.override {
+				content, err := os.ReadFile(overridePath)
+				require.NoError(t, err)
+				require.Equal(t, "kind: hosted\nname: override-agent\n", string(content))
+			}
 
 			projectServer.mu.Lock()
 			defer projectServer.mu.Unlock()
+			require.Empty(t, projectServer.configValues)
 			if tt.kind == "prompt" {
-				prefix := ""
-				if tt.legacy {
-					prefix = "config."
-				}
-				require.Equal(t, map[string]configValueRecord{
-					prefix + "model":        {serviceName: svc.Name, value: "gpt-5"},
-					prefix + "instructions": {serviceName: svc.Name, value: "Optimized instructions."},
-					prefix + "tools":        {serviceName: svc.Name, value: []any{}},
-				}, projectServer.configValues)
+				expected["model"] = "gpt-5"
+				expected["instructions"] = "Optimized instructions."
+				expected["tools"] = []any{}
+				require.Len(t, projectServer.configSections, 1)
+				require.Equal(t, svc.Name, projectServer.configSections[0].ServiceName)
+				require.Equal(t, path, projectServer.configSections[0].Path)
+				require.Equal(t, expected, projectServer.configSections[0].Section.AsMap())
 				require.Empty(t, projectServer.env)
 				require.Empty(t, projectServer.unsetPaths)
 			} else if tt.disk {
@@ -604,9 +651,9 @@ func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 				require.NoError(t, err)
 				require.Contains(t, string(content), "OPTIMIZATION_LOCAL_DIR")
 				require.Contains(t, string(content), "candidate-1")
-				require.Empty(t, projectServer.configValues)
+				require.Empty(t, projectServer.configSections)
 			} else {
-				require.Empty(t, projectServer.configValues)
+				require.Empty(t, projectServer.configSections)
 				require.Equal(t, map[string]any{
 					"CUSTOM_SETTING":            "${CUSTOM_SETTING}",
 					"OPTIMIZATION_LOCAL_DIR":    agentConfigsDir,
@@ -618,6 +665,7 @@ func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 }
 
 func TestOptimizeApply_InvalidPromptCandidateDoesNotWrite(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
 	svc := newPromptCandidateTestService(t, false)
 	root := t.TempDir()
 	server := &recordingProjectServer{}
@@ -658,8 +706,164 @@ func TestOptimizeApply_InvalidPromptCandidateDoesNotWrite(t *testing.T) {
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	require.Empty(t, server.configValues)
+	require.Empty(t, server.configSectionReads)
+	require.Empty(t, server.configSections)
 	require.Empty(t, server.unsetPaths)
 	require.Empty(t, server.env)
+}
+
+func TestOptimizeApply_PromptPersistenceFailureDoesNotTrack(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		for _, failure := range []string{"read", "missing section", "nil section", "write"} {
+			t.Run(fmt.Sprintf("legacy=%t/%s", legacy, failure), func(t *testing.T) {
+				t.Setenv("AGENT_DEFINITION_PATH", "")
+				svc := newPromptCandidateTestService(t, legacy)
+				server, path := newPromptCandidateTestServer(t, svc, legacy)
+				expectedWrites := 0
+				wantErr := "not found in azure.yaml"
+				switch failure {
+				case "read":
+					server.getConfigSectionErr = fmt.Errorf("raw read failed")
+					wantErr = "raw read failed"
+				case "missing section":
+					delete(server.rawSections[svc.Name], path)
+				case "nil section":
+					server.rawSections[svc.Name][path] = nil
+				case "write":
+					server.setConfigSectionErr = fmt.Errorf("section save failed")
+					wantErr = "section save failed"
+					expectedWrites = 1
+				}
+				before := server.rawSections[svc.Name][path].AsMap()
+				candidateKey := fmt.Sprintf("AGENT_%s_OPTIMIZATION_CANDIDATE_ID", toServiceKey(svc.Name))
+				envServer := &testEnvironmentServiceServer{
+					environments: map[string]*azdext.Environment{"dev": {Name: "dev"}},
+					values: map[string]map[string]string{
+						"dev": {optimizeJobIDKeyForAgent(svc.Name): "opt-1", candidateKey: "previous"},
+					},
+				}
+				t.Setenv("AZD_SERVER", newProjectRecorderServer(t, server, envServer))
+				client, err := azdext.NewAzdClient()
+				require.NoError(t, err)
+				t.Cleanup(func() { client.Close() })
+				api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					switch r.URL.Path {
+					case "/agent_optimization_jobs/opt-1/candidates/candidate-1/config":
+						_, err := w.Write([]byte(`{"model":"gpt-5","instructions":"Optimized instructions."}`))
+						assert.NoError(t, err)
+					case "/agent_optimization_jobs/opt-1/candidates/candidate-1":
+						_, err := w.Write([]byte(`{"files":[]}`))
+						assert.NoError(t, err)
+					default:
+						t.Errorf("unexpected API request: %s", r.URL.Path)
+						http.NotFound(w, r)
+					}
+				}))
+				t.Cleanup(api.Close)
+				root := t.TempDir()
+				action := &OptimizeApplyAction{
+					flags: &optimizeApplyFlags{
+						candidate: "candidate-1", optimizeConnectionFlags: optimizeConnectionFlags{projectEndpoint: api.URL},
+					},
+					envName: "dev",
+					client:  newTestOptimizeClient(api.URL),
+				}
+				var out bytes.Buffer
+				err = action.apply(t.Context(), client, svc, &azdext.ProjectConfig{Path: root}, &out, color.New(color.Bold))
+				require.ErrorContains(t, err, wantErr)
+				require.FileExists(t, filepath.Join(root, agentConfigsDir, "candidate-1", opt_eval.MetadataFile))
+				require.Empty(t, envServer.setKeys)
+				require.Equal(t, "previous", envServer.values["dev"][candidateKey])
+				require.NotContains(t, out.String(), "applied to")
+				server.mu.Lock()
+				defer server.mu.Unlock()
+				require.Len(t, server.configSectionReads, 1)
+				require.Len(t, server.configSections, expectedWrites)
+				require.Equal(t, before, server.rawSections[svc.Name][path].AsMap())
+				require.Empty(t, server.configValues)
+				require.Empty(t, server.unsetPaths)
+				require.Empty(t, server.env)
+			})
+		}
+	}
+}
+
+func TestOptimizeApply_RejectsUnsupportedPromptDefinition(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		for _, override := range []string{"prompt", "hosted", "missing file", "whitespace", "dotted service"} {
+			t.Run(fmt.Sprintf("legacy=%t/%s", legacy, override), func(t *testing.T) {
+				root := t.TempDir()
+				svc := newPromptCandidateTestService(t, legacy)
+				if override == "dotted service" {
+					svc.Name = "my.agent"
+				}
+				server, path := newPromptCandidateTestServer(t, svc, legacy)
+				before := server.rawSections[svc.Name][path].AsMap()
+				definitionPath := filepath.Join(root, "override.yaml")
+				definition := "kind: " + override + "\n"
+				switch override {
+				case "dotted service":
+					t.Setenv("AGENT_DEFINITION_PATH", "")
+				case "whitespace":
+					t.Setenv("AGENT_DEFINITION_PATH", " ")
+				case "missing file":
+					t.Setenv("AGENT_DEFINITION_PATH", definitionPath)
+				default:
+					require.NoError(t, os.WriteFile(definitionPath, []byte(definition), 0600))
+					t.Setenv("AGENT_DEFINITION_PATH", definitionPath)
+				}
+				candidateKey := fmt.Sprintf("AGENT_%s_OPTIMIZATION_CANDIDATE_ID", toServiceKey(svc.Name))
+				envServer := &testEnvironmentServiceServer{
+					environments: map[string]*azdext.Environment{"dev": {Name: "dev"}},
+					values:       map[string]map[string]string{"dev": {candidateKey: "previous"}},
+				}
+				t.Setenv("AZD_SERVER", newProjectRecorderServer(t, server, envServer))
+				client, err := azdext.NewAzdClient()
+				require.NoError(t, err)
+				t.Cleanup(func() { client.Close() })
+				api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					t.Errorf("unsupported prompt definition must fail before calling optimization API: %s", r.URL.Path)
+					http.NotFound(w, r)
+				}))
+				t.Cleanup(api.Close)
+				action := &OptimizeApplyAction{
+					flags: &optimizeApplyFlags{
+						candidate: "candidate-1", optimizeConnectionFlags: optimizeConnectionFlags{projectEndpoint: api.URL},
+					},
+					envName: "dev",
+					client:  newTestOptimizeClient(api.URL),
+				}
+				var out bytes.Buffer
+				err = action.apply(t.Context(), client, svc, &azdext.ProjectConfig{Path: root}, &out, color.New(color.Bold))
+				if override == "dotted service" {
+					require.ErrorContains(t, err, "dots in service names")
+				} else {
+					require.ErrorContains(t, err, "uses AGENT_DEFINITION_PATH")
+					require.ErrorContains(t, err, "unset AGENT_DEFINITION_PATH")
+					require.ErrorContains(t, err, "manually update model, instructions, and tools")
+					require.NotContains(t, err.Error(), "OPTIMIZATION_")
+				}
+				if override == "prompt" || override == "hosted" {
+					content, err := os.ReadFile(definitionPath)
+					require.NoError(t, err)
+					require.Equal(t, definition, string(content))
+				}
+				require.NoDirExists(t, filepath.Join(root, agentConfigsDir))
+				require.Empty(t, out.String())
+				require.Empty(t, envServer.setKeys)
+				require.Equal(t, "previous", envServer.values["dev"][candidateKey])
+				server.mu.Lock()
+				defer server.mu.Unlock()
+				require.Equal(t, before, server.rawSections[svc.Name][path].AsMap())
+				require.Empty(t, server.configValues)
+				require.Empty(t, server.configSectionReads)
+				require.Empty(t, server.configSections)
+				require.Empty(t, server.unsetPaths)
+				require.Empty(t, server.env)
+			})
+		}
+	}
 }
 
 func TestOptimizeApply_ReferencedDefinitionGuidance(t *testing.T) {
@@ -705,6 +909,8 @@ func TestOptimizeApply_ReferencedDefinitionGuidance(t *testing.T) {
 			server.mu.Lock()
 			defer server.mu.Unlock()
 			require.Empty(t, server.configValues)
+			require.Empty(t, server.configSectionReads)
+			require.Empty(t, server.configSections)
 			require.Empty(t, server.unsetPaths)
 			require.Empty(t, server.env)
 		})

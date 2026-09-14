@@ -20,7 +20,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/opt_eval"
@@ -61,6 +60,8 @@ in the azure.yaml service definition, including the deprecated config section.
 Candidates must contain a non-empty model and instructions. Missing or null
 tools remove the existing tools. Optimized prompt-agent skills are not supported.
 Referenced definitions ($ref) must be inlined or updated manually.
+Prompt apply also requires AGENT_DEFINITION_PATH to be unset or empty and a
+service name without dots.
 
 After applying, run 'azd deploy' to deploy the optimized agent version.`,
 		Example: `  # Apply candidate config locally, then deploy
@@ -153,6 +154,23 @@ func (a *OptimizeApplyAction) apply(
 			"agent service %q defines its agent via $ref; "+
 				"'optimize apply' cannot update a referenced file. %s",
 			svc.Name, guidance,
+		)
+	}
+	if isPromptAgent && os.Getenv("AGENT_DEFINITION_PATH") != "" {
+		return fmt.Errorf(
+			"prompt agent service %q uses AGENT_DEFINITION_PATH; "+
+				"'optimize apply' cannot update the selected external file. "+
+				"Inline the definition in azure.yaml and unset AGENT_DEFINITION_PATH, "+
+				"or manually update model, instructions, and tools in the selected file",
+			svc.Name,
+		)
+	}
+	if isPromptAgent && strings.Contains(svc.Name, ".") {
+		return fmt.Errorf(
+			"cannot apply prompt configuration to service %q: "+
+				"azd section updates interpret dots in service names as nested paths. "+
+				"Use a service name without dots or manually update model, instructions, and tools",
+			svc.Name,
 		)
 	}
 	servicePath := svc.GetRelativePath()
@@ -305,48 +323,38 @@ func persistPromptAgentCandidateConfig(
 	if err != nil {
 		return fmt.Errorf("failed to read agent definition: %w", err)
 	}
-	prefix := ""
+	path := ""
 	if source == projectpkg.AgentDefinitionSourceLegacyConfig {
-		prefix = "config."
+		path = "config"
 	}
 
-	for _, path := range slices.Sorted(maps.Keys(updates)) {
-		value, err := structpb.NewValue(updates[path])
-		if err != nil {
-			return fmt.Errorf("encoding candidate property %q: %w", path, err)
-		}
-		if _, err := azdClient.Project().SetServiceConfigValue(
-			ctx,
-			&azdext.SetServiceConfigValueRequest{
-				ServiceName: svc.Name,
-				Path:        prefix + path,
-				Value:       value,
-			},
-		); err != nil {
-			return fmt.Errorf(
-				"updating prompt agent %q in azure.yaml: %w",
-				svc.Name,
-				err,
-			)
-		}
+	// Preserve authored templates and unrelated fields, not the resolved service values.
+	response, err := azdClient.Project().GetServiceConfigSection(ctx, &azdext.GetServiceConfigSectionRequest{
+		ServiceName: svc.Name,
+		Path:        path,
+	})
+	if err != nil {
+		return fmt.Errorf("reading raw prompt agent %q from azure.yaml: %w", svc.Name, err)
+	}
+	if !response.GetFound() || response.GetSection() == nil {
+		return fmt.Errorf("raw prompt agent section %q for service %q not found in azure.yaml", path, svc.Name)
 	}
 
+	merged := response.Section.AsMap()
+	maps.Copy(merged, updates)
 	if _, hasTools := updates["tools"]; !hasTools {
-		path := prefix + "tools"
-		if _, err := azdClient.Project().UnsetServiceConfig(
-			ctx,
-			&azdext.UnsetServiceConfigRequest{
-				ServiceName: svc.Name,
-				Path:        path,
-			},
-		); err != nil {
-			return fmt.Errorf(
-				"removing prompt agent property %q from %q in azure.yaml: %w",
-				path,
-				svc.Name,
-				err,
-			)
-		}
+		delete(merged, "tools")
+	}
+	section, err := structpb.NewStruct(merged)
+	if err != nil {
+		return fmt.Errorf("encoding prompt agent %q: %w", svc.Name, err)
+	}
+	if _, err := azdClient.Project().SetServiceConfigSection(ctx, &azdext.SetServiceConfigSectionRequest{
+		ServiceName: svc.Name,
+		Path:        path,
+		Section:     section,
+	}); err != nil {
+		return fmt.Errorf("updating prompt agent %q in azure.yaml: %w", svc.Name, err)
 	}
 
 	return nil

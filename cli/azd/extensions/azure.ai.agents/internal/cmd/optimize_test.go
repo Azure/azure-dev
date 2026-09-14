@@ -27,22 +27,36 @@ func TestResolveOptimizeAgent_DefinitionOverride(t *testing.T) {
 		inlineKind   string
 		overrideKind string
 		wantPrompt   bool
+		source       string
 	}{
-		{"prompt with hosted override", "prompt", "hosted", false},
-		{"hosted with prompt override", "hosted", "prompt", true},
-		{"prompt without override", "prompt", "", true},
-		{"hosted without override", "hosted", "", false},
+		{"prompt with hosted override", "prompt", "hosted", true, "inline"},
+		{"hosted with prompt override", "hosted", "prompt", false, "inline"},
+		{"prompt without override", "prompt", "", true, "inline"},
+		{"hosted without override", "hosted", "", false, "inline"},
+		{"legacy prompt with hosted override", "prompt", "hosted", true, "config"},
+		{"legacy hosted with prompt override", "hosted", "prompt", false, "config"},
+		{"referenced prompt with hosted override", "prompt", "hosted", true, "$ref"},
+		{"referenced hosted with prompt override", "hosted", "prompt", false, "$ref"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
 			props, err := structpb.NewStruct(map[string]any{"kind": tt.inlineKind})
 			require.NoError(t, err)
+			svc := &azdext.ServiceConfig{Name: "assistant", Host: AiAgentHost, AdditionalProperties: props}
+			switch tt.source {
+			case "config":
+				svc.Config = props
+				svc.AdditionalProperties = nil
+			case "$ref":
+				require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"),
+					[]byte("kind: "+tt.inlineKind+"\n"), 0600))
+				svc.AdditionalProperties, err = structpb.NewStruct(map[string]any{"$ref": "agent.yaml"})
+				require.NoError(t, err)
+			}
 			server := &recordingProjectServer{
 				projectPath: root,
-				existing: map[string]*azdext.ServiceConfig{
-					"assistant": {Name: "assistant", Host: AiAgentHost, AdditionalProperties: props},
-				},
+				existing:    map[string]*azdext.ServiceConfig{"assistant": svc},
 			}
 			envServer := &testEnvironmentServiceServer{
 				environments: map[string]*azdext.Environment{"dev": {Name: "dev"}},

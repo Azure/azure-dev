@@ -456,8 +456,8 @@ func (a *datasetVersionsListAction) Run() error {
 		return err
 	}
 	// An unknown name lists nothing and succeeds; it is not an error. `-o json`
-	// callers range over the array, and a delete is checked for idempotence by
-	// listing what is left. The empty sentence names the dataset, though: the
+	// callers read the envelope's `items`, and a delete is checked for idempotence
+	// by listing what is left. The empty sentence names the dataset, though: the
 	// project may hold plenty of others, so "No datasets found." would be
 	// answering a different question.
 	return renderDatasets(a.cmd, list, messages.NoDatasetVersions(a.name))
@@ -468,7 +468,7 @@ func (a *datasetVersionsListAction) Run() error {
 // name's versions come to the same renderer but not to the same sentence.
 func renderDatasets(cmd *cobra.Command, list *dataset_api.DatasetList, whenEmpty string) error {
 	// JSON is decided before emptiness: a caller piping this into a parser needs
-	// an empty array, not the sentence a human would read.
+	// the envelope with no items, not the sentence a human would read.
 	if list == nil {
 		list = &dataset_api.DatasetList{}
 	}

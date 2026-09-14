@@ -5,7 +5,7 @@ go 1.26.4
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.20.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
-	github.com/azure/azure-dev/cli/azd v1.28.0
+	github.com/azure/azure-dev/cli/azd v1.34.0
 	github.com/braydonk/yaml v0.9.0
 	github.com/fatih/color v1.18.0
 	github.com/gofrs/flock v0.12.1

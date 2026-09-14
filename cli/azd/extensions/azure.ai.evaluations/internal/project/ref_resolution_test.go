@@ -47,13 +47,13 @@ evals:
 	require.Len(t, cfg.Evaluators, 1)
 	assert.Equal(t, "support-agent-quality", cfg.Evaluators[0].Name,
 		"the referenced file's content replaces the directive")
-	// Verbatim, deliberately: core rebases only the two path keys it owns, so a
-	// relative `source:` written beside the referenced file arrives unchanged and
-	// is then resolved against azure.eval.yaml. That is a known limitation, not
-	// the behaviour this asserts -- carrying the rubric under `definition:`
-	// avoids it, and EvaluatorNotGeneratedYet names it when the path misses.
-	assert.Equal(t, "./quality.json", cfg.Evaluators[0].Source,
-		"a spliced path is not rebased; see the note above before changing this")
+	// Rebased, because this extension names `file` and `source` with
+	// WithPathKeys. `./quality.json` was written beside quality.yaml and means
+	// evaluators/quality.json; before core could be told about these keys it
+	// arrived verbatim and resolved beside azure.eval.yaml instead.
+	assert.Equal(t, filepath.ToSlash(filepath.Join("evaluators", "quality.json")),
+		filepath.ToSlash(cfg.Evaluators[0].Source),
+		"a path written beside the referenced file still means that file's directory")
 }
 
 // A `$ref` can name the rubric itself, not only a pointer to one.

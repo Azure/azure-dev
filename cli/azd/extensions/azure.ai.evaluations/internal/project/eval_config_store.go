@@ -265,12 +265,11 @@ func resolveConfigRefs(data []byte, baseDir, name string) ([]byte, error) {
 // CLI command refused, and later the reverse. Callers differ in how they obtain
 // the map and what they do with it; everything between is here.
 func resolveEvalRefs(values map[string]any, baseDir string) (map[string]any, error) {
-	// TODO: pass foundry.WithPathKeys("file", "source") once this module moves
-	// off azd v1.28.0, which predates the option. Until then a `source:` written
-	// inside a `$ref` file arrives verbatim and resolves against the
-	// configuration rather than against that file, which is why a rubric kept in
-	// its own file belongs under `definition:`.
-	resolved, err := foundry.ResolveFileRefs(values, baseDir)
+	// `file` and `source` are this extension's path keys, and core rebases only
+	// the two it owns unless told about more. Without this a `source:` written
+	// inside a `$ref`ed file arrived verbatim and resolved against the
+	// configuration rather than against the file it was written in.
+	resolved, err := foundry.ResolveFileRefs(values, baseDir, foundry.WithPathKeys("file", "source"))
 	if err != nil {
 		return nil, messages.ResolvingServiceRefs(err)
 	}

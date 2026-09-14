@@ -24,9 +24,8 @@ func TestEveryEntryCoreCanSpliceCanAlsoBeEdited(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "parts"), 0o750))
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "parts", "golden.yaml"),
-		// Relative to the configuration, not to this file: core rebases only the
-		// path keys it owns, so a path written beside this file would be resolved
-		// beside azure.eval.yaml and not found.
+		// Written beside this file, and rebased to mean that: `file` is one of the
+		// path keys this extension declares with WithPathKeys.
 		[]byte("name: golden\nfile: ./datasets/golden.jsonl\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "parts", "nightly.yaml"),
 		[]byte("name: nightly\ndataset: golden\n"), 0o600))
@@ -44,8 +43,9 @@ evals:
 	require.NoError(t, err, "the resolving route has always accepted this")
 	require.Len(t, resolved.Datasets, 1)
 	assert.Equal(t, "golden", resolved.Datasets[0].Name)
-	assert.Equal(t, "./datasets/golden.jsonl", resolved.Datasets[0].File,
-		"the spliced path is resolved against the configuration, so it is written that way")
+	assert.Equal(t, filepath.ToSlash(filepath.Join("parts", "datasets", "golden.jsonl")),
+		filepath.ToSlash(resolved.Datasets[0].File),
+		"the spliced path is rebased onto the directory it was written in")
 	require.Len(t, resolved.Evals, 1)
 	assert.Equal(t, "nightly", resolved.Evals[0].Name)
 

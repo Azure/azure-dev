@@ -68,6 +68,12 @@ func AgentProjectEndpoint(agentName string) string {
 	return fmt.Sprintf("AGENT_%s_PROJECT_ENDPOINT", sanitized)
 }
 
+// AgentProtocolEndpointsVersion marks a complete protocol endpoint snapshot.
+func AgentProtocolEndpointsVersion(agentName string) string {
+	sanitized := strings.NewReplacer(" ", "_", "-", "_").Replace(strings.ToUpper(agentName))
+	return fmt.Sprintf("AGENT_%s_PROTOCOL_ENDPOINTS_VERSION", sanitized)
+}
+
 // AgentBotName persists the Azure Bot resource name used by an Activity agent.
 func AgentBotName(agentName string) string {
 	sanitized := strings.NewReplacer(" ", "_", "-", "_").Replace(strings.ToUpper(agentName))
@@ -107,5 +113,10 @@ func AgentBlueprintClientID(agentName string) string {
 	return fmt.Sprintf("AGENT_%s_BLUEPRINT_CLIENT_ID", sanitized)
 }
 
-// ConnectionProjectEndpoint scopes provisioned connection names to a Foundry project.
-const ConnectionProjectEndpoint = "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT"
+// ConnectionServiceProjectEndpoint scopes one Connection service deployment
+// marker to the Foundry project where the owning extension reconciled it.
+// Encode the exact service-name bytes as uppercase hex, matching the Connections
+// producer. Do not fall back to ambiguous keys from the old normalization.
+func ConnectionServiceProjectEndpoint(connectionName string) string {
+	return fmt.Sprintf("CONNECTION_V2_%X_PROJECT_ENDPOINT", []byte(connectionName))
+}

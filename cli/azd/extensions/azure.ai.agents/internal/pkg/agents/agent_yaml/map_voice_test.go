@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"github.com/stretchr/testify/require"
 )
 
 // ---------------------------------------------------------------------------
@@ -606,5 +607,68 @@ func TestCreateVoiceAgentAPIRequest_InvalidModelType(t *testing.T) {
 	}
 	if _, err := CreateVoiceAgentAPIRequest(agent); err == nil {
 		t.Error("expected error for unsupported model_type")
+	}
+}
+
+func TestCreateHostedVoiceAgentAPIRequest_LegacyAuthoringRejected(t *testing.T) {
+	t.Parallel()
+	store := false
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-wrapper"},
+		ModelType:       VoiceModelTypeHostedAgent,
+		TargetAgent:     &VoiceTargetAgent{Service: "voice-target", Version: "deployed"},
+		Store:           &store,
+	}
+	_, err := CreateHostedVoiceAgentAPIRequest(agent, agent_api.VoiceTargetAgentReference{
+		Name:    "deployed-target",
+		Version: "7",
+	})
+	if err == nil || !strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("expected legacy hosted voice authoring error, got: %v", err)
+	}
+}
+
+func TestCreateHostedVoiceAgentAPIRequest_ConversationEngineWireShape(t *testing.T) {
+	t.Parallel()
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "voice"},
+		ConversationEngine: &VoiceConversationEngine{
+			Type: "hosted_agent",
+			Name: "voice-target",
+		},
+	}
+	req, err := CreateHostedVoiceAgentAPIRequest(agent, agent_api.VoiceTargetAgentReference{
+		Name:    "deployed-target",
+		Version: "7",
+	})
+	require.NoError(t, err)
+	data, err := json.Marshal(req)
+	require.NoError(t, err)
+	var wire map[string]any
+	require.NoError(t, json.Unmarshal(data, &wire))
+	definitionValue, ok := wire["definition"]
+	require.True(t, ok, "wire payload is missing definition: %s", data)
+	definition, ok := definitionValue.(map[string]any)
+	require.True(t, ok, "definition has type %T, want object: %s", definitionValue, data)
+	require.NotContains(t, definition, "model_type")
+	require.NotContains(t, definition, "target_agent")
+	require.Equal(t, map[string]any{
+		"type":    "hosted_agent",
+		"name":    "deployed-target",
+		"version": "7",
+	}, definition["conversation_engine"])
+}
+
+func TestCreateHostedVoiceAgentAPIRequestRequiresResolvedTarget(t *testing.T) {
+	t.Parallel()
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-wrapper"},
+		ConversationEngine: &VoiceConversationEngine{
+			Type: "hosted_agent",
+			Name: "voice-target",
+		},
+	}
+	if _, err := CreateHostedVoiceAgentAPIRequest(agent, agent_api.VoiceTargetAgentReference{}); err == nil {
+		t.Fatal("expected missing resolved target error")
 	}
 }

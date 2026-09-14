@@ -4,13 +4,17 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"os"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+	projectpkg "azureaiagent/internal/project"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -397,4 +401,94 @@ func TestResolveNextStepFromStatus_NonActiveBranches(t *testing.T) {
 			assert.Equal(t, tt.want, out[0].Command)
 		})
 	}
+}
+
+func TestDisplayHarness(t *testing.T) {
+	assert.Equal(t, "GitHub Copilot (github_copilot_preview)", displayHarness("github_copilot_preview"))
+	assert.Equal(t, "custom-harness", displayHarness("custom-harness"))
+}
+
+func TestHarnessTypeFromMap(t *testing.T) {
+	assert.Equal(t, "github_copilot_preview", harnessTypeFromMap(map[string]any{
+		"harness": map[string]any{"type": "github_copilot_preview"},
+	}))
+	assert.Equal(t, "", harnessTypeFromMap(map[string]any{"harness": map[string]any{}}))
+	assert.Equal(t, "", harnessTypeFromMap(nil))
+}
+
+func TestPromptDefinitionMap(t *testing.T) {
+	version := agent_api.AgentVersionObject{
+		Definition: map[string]any{"harness": map[string]any{"type": "github_copilot_preview"}},
+	}
+	assert.NotNil(t, promptDefinitionMap(version)["harness"])
+
+	// Non-map definition yields nil, and stringFromMap tolerates nil.
+	assert.Nil(t, promptDefinitionMap(agent_api.AgentVersionObject{Definition: "not-a-map"}))
+	assert.Equal(t, "", stringFromMap(nil, "harness"))
+}
+
+// TestPromptHarnessFromMap asserts the final type-only harness block round-trips.
+func TestPromptHarnessFromMap(t *testing.T) {
+	harness := promptHarnessFromMap(map[string]any{
+		"harness": map[string]any{
+			"type": "github_copilot_preview",
+		},
+	})
+	require.NotNil(t, harness)
+	assert.Equal(t, "github_copilot_preview", harness.Type)
+
+	assert.Nil(t, promptHarnessFromMap(nil))
+	assert.Nil(t, promptHarnessFromMap(map[string]any{}))
+}
+
+func TestPrintPromptHarness(t *testing.T) {
+	deployed := &agent_yaml.PromptHarness{Type: "github_copilot_preview"}
+
+	var buf bytes.Buffer
+	printPromptHarness(&buf, deployed, nil)
+	assert.Equal(t, "Harness:\tGitHub Copilot (github_copilot_preview)\n", buf.String())
+}
+
+// TestPrintPromptHarnessFallsBackToLocal covers an agent deployed before the
+// harness block existed: the locally authored definition keeps the row honest.
+func TestPrintPromptHarnessFallsBackToLocal(t *testing.T) {
+	var buf bytes.Buffer
+	printPromptHarness(&buf, nil, &agent_yaml.PromptHarness{Type: "github_copilot_preview"})
+	assert.Contains(t, buf.String(), "Harness:\tGitHub Copilot (github_copilot_preview)\n")
+
+	buf.Reset()
+	printPromptHarness(&buf, nil, nil)
+	assert.Empty(t, buf.String())
+}
+
+func TestPrintPromptToolboxTools(t *testing.T) {
+	def := map[string]any{
+		"tools": []any{
+			map[string]any{"type": "function", "name": "calc"}, // skipped
+			map[string]any{
+				"type":                  "mcp",
+				"server_label":          "agent-toolbox-01",
+				"server_url":            "https://proj/toolboxes/agent-toolbox-01/mcp?api-version=v1",
+				"project_connection_id": "agent-toolbox-01-toolbox",
+			},
+		},
+	}
+
+	var sb strings.Builder
+	printPromptToolboxTools(&sb, def)
+	out := sb.String()
+
+	assert.Contains(t, out, "Toolbox (agent-toolbox-01):")
+	assert.Contains(t, out, "https://proj/toolboxes/agent-toolbox-01/mcp?api-version=v1")
+	assert.Contains(t, out, "Connection:")
+	assert.Contains(t, out, "agent-toolbox-01-toolbox")
+	assert.NotContains(t, out, "calc")
+}
+
+func TestPromptAgentEndpoint(t *testing.T) {
+	assert.Equal(t, "https://proj/api/projects/p", promptAgentEndpoint(
+		&projectpkg.PromptAgentSettings{ProjectEndpoint: "https://proj/api/projects/p"},
+	))
+	assert.Equal(t, "", promptAgentEndpoint(&projectpkg.PromptAgentSettings{}))
+	assert.Equal(t, "", promptAgentEndpoint(nil))
 }

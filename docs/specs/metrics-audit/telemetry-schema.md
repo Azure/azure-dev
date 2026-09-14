@@ -49,6 +49,10 @@ and purpose that governs how it may be stored, queried, and retained.
 ### Application-Level (Resource Attributes)
 
 These are set once at process startup via `resource.New()` and attached to every span.
+At export time, azd replaces the provider resource with this canonical resource. This is required because the
+OpenTelemetry Go SDK reads `OTEL_RESOURCE_ATTRIBUTES` and `OTEL_SERVICE_NAME` while configuring the provider.
+Environment-provided resource fields, including `service.instance.id`, are not included in resources exported to the
+Application Insights queue, `--trace-log-file`, or `--trace-log-url`. Span attributes are unchanged by this policy.
 
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
@@ -63,13 +67,25 @@ These are set once at process startup via `resource.New()` and attached to every
 | Execution environment | `execution.environment` | SystemMetadata | BusinessInsight | Bounded execution-context value; see allowed values below |
 | Installer | `service.installer` | SystemMetadata | FeatureInsight | How azd was installed |
 
+The canonical resource also includes the OpenTelemetry SDK's standard metadata. These keys are SDK-managed rather
+than azd `fields.AttributeKey` declarations. Their classification and purpose below reflect the existing completed
+GDPR data-catalog entries rather than metadata declared in source:
+
+| Field | OTel Key | Catalog Classification | Catalog Purpose | Notes |
+|-------|----------|------------------------|-----------------|-------|
+| SDK name | `telemetry.sdk.name` | SystemMetadata | PerformanceAndHealth | Always `opentelemetry` |
+| SDK language | `telemetry.sdk.language` | SystemMetadata | PerformanceAndHealth | Always `go` |
+| SDK version | `telemetry.sdk.version` | SystemMetadata | PerformanceAndHealth | OpenTelemetry Go SDK version |
+
 #### Execution environment allowed values
 
 `execution.environment` contains one base environment and may include semicolon-separated modifiers:
 
 - Local and hosted environments: `Desktop`, `Visual Studio`, `Visual Studio Code`,
   `VS Code Azure GitHub Copilot`, `Azure CloudShell`, `GitHub Codespaces`.
-- AI coding agents: `Claude Code`, `Claude Code Desktop`, `Claude Code VSCode`, `Codex`, `Codex Desktop`, `Cursor`, `GitHub Copilot CLI`, `GitHub Copilot App`, `GitHub Copilot VSCode`, `GitHub Copilot Cloud Agent`, `Gemini`, `OpenCode`, `Pi`.
+- AI coding agents: `Antigravity`, `Claude Code`, `Claude Code Desktop`, `Claude Code VSCode`, `Codex`,
+  `Codex Desktop`, `Cursor`, `GitHub Copilot CLI`, `GitHub Copilot App`, `GitHub Copilot VSCode`,
+  `GitHub Copilot Cloud Agent`, `Gemini`, `OpenCode`, `Pi`.
 - CI environments: `UnknownCI`, `Azure Pipelines`, `GitHub Actions`, `AppVeyor`, `Bamboo`,
   `BitBucket Pipelines`, `Travis CI`, `Circle CI`, `GitLab CI`, `Jenkins`, `AWS CodeBuild`,
   `TeamCity`, `JetBrains Space`.
@@ -281,6 +297,7 @@ Reviewed first-party event contracts:
 
 | Extension | `extension.event` | Trigger | Extension attributes |
 |-----------|-------------------|---------|----------------------|
+| `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service; one event per distinct kind/harness classification in the invocation | `ext.agent.kind`: fixed enum `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown`; `ext.agent.harness`: fixed enum `none`, `github_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; values contain no agent names or customer content |
 | `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; this precedes client availability, agent startup, and client launch | `ext.route`: fixed enum `inspector`, `playground`, or `suppressed`; suppression takes precedence |
 | `azure.ai.inspector` | `inspector.funnel.stage` | The Inspector SPA sends `setViewReady` after mounting | `ext.stage`: fixed enum `ui_ready`; `ext.outcome`: fixed enum `succeeded`; this does not indicate agent connection |
 
@@ -439,6 +456,9 @@ The execution graph powers the parallel `up` / `provision` / `deploy` engine.
 |-------|----------|----------------|---------|-------|
 | Step count | `exegraph.step.count` | SystemMetadata | PerformanceAndHealth | **Measurement** — total number of steps in the graph |
 | Max concurrency | `exegraph.max_concurrency` | SystemMetadata | PerformanceAndHealth | **Measurement** — effective concurrency limit used for the run |
+| Package concurrency | `exegraph.package_concurrency` | SystemMetadata | PerformanceAndHealth | **Measurement** — resolved package phase concurrency limit; `0` means no dedicated phase limit |
+| Provision concurrency | `exegraph.provision_concurrency` | SystemMetadata | PerformanceAndHealth | **Measurement** — resolved provision phase concurrency limit; `0` means no dedicated phase limit |
+| Deploy concurrency | `exegraph.deploy_concurrency` | SystemMetadata | PerformanceAndHealth | **Measurement** — resolved deploy phase concurrency limit; `0` means no dedicated phase limit |
 | Error policy | `exegraph.error_policy` | SystemMetadata | PerformanceAndHealth | `fail_fast` or `continue_on_error` |
 | Step name | `exegraph.step.name` | SystemMetadata | PerformanceAndHealth | **Hashed** via `fields.StringHashed` — step names embed user-chosen service / layer names from `azure.yaml` (e.g., `deploy-<svc.Name>`, `<layer.Name>`) |
 | Step deps | `exegraph.step.deps` | SystemMetadata | PerformanceAndHealth | **Hashed slice** via `fields.StringSliceHashed` — each entry is another step name that embeds user-chosen identifiers |
@@ -517,10 +537,11 @@ Fields that are hashed:
 ```
 
 1. **Instrumentation**: Commands create OTel spans with attributes via `tracing.Start` and `SetUsageAttributes`.
-2. **Export**: A custom Application Insights exporter converts spans to App Insights envelopes.
-3. **Queue**: Envelopes are written to disk under `~/.azd/telemetry/`.
-4. **Upload**: The `azd telemetry upload` command (run as a background process) reads the queue and sends data to Azure Monitor.
-5. **Analysis**: Data flows into Kusto tables for dashboarding and analysis via LENS jobs and cooked tables.
+2. **Resource policy**: A shared exporter wrapper replaces the provider resource with the canonical azd resource.
+3. **Export**: A custom Application Insights exporter converts spans to App Insights envelopes.
+4. **Queue**: Envelopes are written to disk under `~/.azd/telemetry/`.
+5. **Upload**: The `azd telemetry upload` command (run as a background process) reads the queue and sends data to Azure Monitor.
+6. **Analysis**: Data flows into Kusto tables for dashboards and analysis via LENS jobs and cooked tables.
 
 ## GDPR Data-Catalog Classification
 

@@ -10,7 +10,9 @@
 
 ## Data Shape
 
-All azd telemetry is emitted as Application Insights `RequestData` envelopes. Each command execution produces one top-level span, with optional child spans for sub-operations.
+Microsoft-bound azd telemetry is emitted as Application Insights `RequestData` envelopes. Each command execution
+produces one top-level span, with optional child spans for sub-operations. When `--trace-log-file` or `--trace-log-url`
+is used, the same spans are also sent to the requested diagnostic destination.
 
 ### Core Columns
 
@@ -146,6 +148,11 @@ Fields appear as `Properties` (strings/bools) or `Measurements` (numbers).
 
 These are set once at process startup and attached to **every** span.
 
+The exported resource is limited to the fields in this table plus the standard OpenTelemetry SDK fields listed below.
+`OTEL_RESOURCE_ATTRIBUTES`, `OTEL_SERVICE_NAME`, and other resource detectors cannot add or override exported azd
+resource fields. The same boundary applies to the Application Insights queue, trace files, and OTLP trace URLs. Span
+attributes are separate and are not removed by this resource policy.
+
 | Field Key | Type | Description | Example Values |
 |-----------|------|-------------|----------------|
 | `service.name` | string | Always `"azd"` | `azd` |
@@ -158,7 +165,12 @@ These are set once at process startup and attached to **every** span.
 | `machine.devdeviceid` | string | SQM device ID | UUID string |
 | `execution.environment` | string | Where azd is running | See [Execution Environments](#execution-environments) |
 | `service.installer` | string | How azd was installed | `msi`, `brew`, `choco`, `rpm`, `deb` |
-| `exp.assignmentContext` | string | Experimentation platform assignment context. Attached to every event when the experimentation flighting service is enabled. | Opaque assignment string |
+| `telemetry.sdk.name` | string | OpenTelemetry SDK name | `opentelemetry` |
+| `telemetry.sdk.language` | string | OpenTelemetry SDK language | `go` |
+| `telemetry.sdk.version` | string | OpenTelemetry SDK version | Varies by azd release |
+
+`exp.assignmentContext` is a separately managed span attribute attached to events when the experimentation flighting
+service is enabled; it is not part of the canonical resource.
 
 ### Identity & Account Fields
 
@@ -479,6 +491,9 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `extension.event` | string | Extension-chosen usage event on `ext.usage`, or the host-defined lifecycle event on a failed lifecycle-hook `cmd.*` span |
 | `ext.<key>` | string | One extension-supplied attribute on an `ext.usage` span. The key after the `ext.` prefix and the value are chosen by the extension |
 | `ext.route` | string | Local-client route selected by `azure.ai.agents`: `inspector`, `playground`, or `suppressed` (`local_client.route.selected`) |
+| `ext.agent.kind` | string | Agent kind resolved by `azure.ai.agents`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown` (`agent.context.resolved`) |
+| `ext.agent.harness` | string | Prompt-agent harness classification: `none`, `github_copilot_preview`, or `other` (`agent.context.resolved`) |
+| `ext.agent.operation` | string | Fixed extension command path associated with the resolved agent context, such as `deploy` or `files.upload` (`agent.context.resolved`) |
 | `ext.stage` | string | Agent Inspector funnel stage: currently `ui_ready` (`inspector.funnel.stage`) |
 | `ext.outcome` | string | Agent Inspector funnel-stage outcome: currently `succeeded` (`inspector.funnel.stage`) |
 | `extension.installed` | string[] | List of installed extensions (`id@version`) |
@@ -518,6 +533,7 @@ Reviewed first-party extension usage events currently include:
 
 | Extension | `extension.event` | Trigger | Dynamic attributes |
 |-----------|-------------------|---------|--------------------|
+| `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service | `ext.agent.kind`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown`; `ext.agent.harness`: `none`, `github_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; no agent names or customer content |
 | `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; emitted before client availability, agent startup, and client launch | `ext.route`: `inspector`, `playground`, or `suppressed`; suppression takes precedence |
 | `azure.ai.inspector` | `inspector.funnel.stage` | The Inspector SPA sends `setViewReady` after mounting | `ext.stage=ui_ready`; `ext.outcome=succeeded`; this does not indicate agent connection |
 
@@ -587,6 +603,9 @@ The first-run middleware is not currently registered, so these fields are not em
 |-----------|------|-------------|
 | `exegraph.step.count` | measurement | Total steps in graph |
 | `exegraph.max_concurrency` | measurement | Effective concurrency limit |
+| `exegraph.package_concurrency` | measurement | Resolved package phase concurrency limit for `up` and `deploy`; `0` means no dedicated phase limit |
+| `exegraph.provision_concurrency` | measurement | Resolved provision phase concurrency limit for `up` and `provision`; `0` means no dedicated phase limit |
+| `exegraph.deploy_concurrency` | measurement | Resolved combined publish/deploy phase concurrency limit for `up` and `deploy`; `0` means no dedicated phase limit |
 | `exegraph.error_policy` | string | `fail_fast` or `continue_on_error` |
 | `exegraph.step.name` | string | Step name. **SHA-256 hashed** — embeds user-defined service/layer names from `azure.yaml` |
 | `exegraph.step.deps` | string[] | Step dependencies (other step names). **SHA-256 hashed** for the same reason |
@@ -645,6 +664,7 @@ The `execution.environment` field identifies where azd is running. Format: `<env
 | `VS Code Azure GitHub Copilot` | Azure Copilot in VS Code |
 | `GitHub Copilot VSCode` | GitHub Copilot in VS Code |
 | `Azure CloudShell` | Azure Cloud Shell |
+| `Antigravity` | Google Antigravity CLI |
 | `Claude Code` | Claude Code AI agent |
 | `Claude Code Desktop` | Best-effort detection of Claude Code launched from Claude Desktop |
 | `Claude Code VSCode` | Best-effort detection of the Claude Code VS Code integration |

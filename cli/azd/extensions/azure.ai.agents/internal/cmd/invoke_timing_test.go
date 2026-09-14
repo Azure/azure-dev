@@ -43,13 +43,11 @@ func TestFormatDuration(t *testing.T) {
 
 func TestPrintInvokeTiming(t *testing.T) {
 	var buf bytes.Buffer
-	printInvokeTiming(&buf, 19734*time.Millisecond, 13697*time.Millisecond)
+	printInvokeTiming(&buf, 9172*time.Millisecond)
 	got := buf.String()
 
-	for _, want := range []string{"Server responded in", "19.734s", "response headers: 13.697s"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("output %q missing %q", got, want)
-		}
+	if want := "\nClient elapsed: 9.172s\n"; got != want {
+		t.Errorf("output %q, want %q", got, want)
 	}
 }
 
@@ -100,10 +98,10 @@ func TestResponsesLocal_Timing(t *testing.T) {
 				t.Errorf("unexpected platform diagnostics for local invocation:\n%s", output)
 			}
 
-			if tc.wantTimer && !strings.Contains(output, "Server responded in") {
+			if tc.wantTimer && !strings.Contains(output, "Client elapsed:") {
 				t.Errorf("expected timing, got:\n%s", output)
 			}
-			if !tc.wantTimer && strings.Contains(output, "Server responded in") {
+			if !tc.wantTimer && strings.Contains(output, "Client elapsed:") {
 				t.Errorf("unexpected timing in output:\n%s", output)
 			}
 		})
@@ -159,10 +157,10 @@ func TestInvocationsLocal_Timing(t *testing.T) {
 				t.Errorf("unexpected platform diagnostics for local invocation:\n%s", output)
 			}
 
-			if tc.wantTimer && !strings.Contains(output, "Server responded in") {
+			if tc.wantTimer && !strings.Contains(output, "Client elapsed:") {
 				t.Errorf("expected timing, got:\n%s", output)
 			}
-			if !tc.wantTimer && strings.Contains(output, "Server responded in") {
+			if !tc.wantTimer && strings.Contains(output, "Client elapsed:") {
 				t.Errorf("unexpected timing in output:\n%s", output)
 			}
 		})

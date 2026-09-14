@@ -119,6 +119,11 @@ func (t *deployProgressTracker) Update(
 	}
 	svc := t.services[i]
 
+	// Skipped downstream steps must not erase an earlier failure for this service.
+	if svc.phase == phaseFailed && phase == phaseSkipped {
+		return
+	}
+
 	if svc.startedAt.IsZero() && phase != phaseWaiting && phase != phasePackaging {
 		svc.startedAt = time.Now()
 	}

@@ -298,7 +298,7 @@ if (goog.DEBUG && !COMPILED) {
  * @constructor
  */
 proto.azdext.ServiceConfig = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
+  jspb.Message.initialize(this, opt_data, 0, -1, proto.azdext.ServiceConfig.repeatedFields_, null);
 };
 goog.inherits(proto.azdext.ServiceConfig, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
@@ -2645,6 +2645,13 @@ proto.azdext.ProjectMetadata.prototype.setTemplate = function(value) {
 
 
 
+/**
+ * List of repeated fields within this message type.
+ * @private {!Array<number>}
+ * @const
+ */
+proto.azdext.ServiceConfig.repeatedFields_ = [13];
+
 
 
 if (jspb.Message.GENERATE_TO_OBJECT) {
@@ -2684,7 +2691,9 @@ relativePath: jspb.Message.getFieldWithDefault(msg, 5, ""),
 host: jspb.Message.getFieldWithDefault(msg, 6, ""),
 language: jspb.Message.getFieldWithDefault(msg, 7, ""),
 outputPath: jspb.Message.getFieldWithDefault(msg, 8, ""),
-image: jspb.Message.getFieldWithDefault(msg, 9, "")
+image: jspb.Message.getFieldWithDefault(msg, 9, ""),
+usesList: (f = jspb.Message.getRepeatedField(msg, 13)) == null ? undefined : f,
+environmentMap: (f = msg.getEnvironmentMap()) ? f.toObject(includeInstance, undefined) : []
   };
 
   if (includeInstance) {
@@ -2756,6 +2765,16 @@ proto.azdext.ServiceConfig.deserializeBinaryFromReader = function(msg, reader) {
     case 9:
       var value = /** @type {string} */ (reader.readString());
       msg.setImage(value);
+      break;
+    case 13:
+      var value = /** @type {string} */ (reader.readString());
+      msg.addUses(value);
+      break;
+    case 14:
+      var value = msg.getEnvironmentMap();
+      reader.readMessage(value, function(message, reader) {
+        jspb.Map.deserializeBinary(message, reader, jspb.BinaryReader.prototype.readString, jspb.BinaryReader.prototype.readString, null, "", "");
+         });
       break;
     default:
       reader.skipField();
@@ -2848,6 +2867,17 @@ proto.azdext.ServiceConfig.serializeBinaryToWriter = function(message, writer) {
       9,
       f
     );
+  }
+  f = message.getUsesList();
+  if (f.length > 0) {
+    writer.writeRepeatedString(
+      13,
+      f
+    );
+  }
+  f = message.getEnvironmentMap(true);
+  if (f && f.getLength() > 0) {
+    f.serializeBinary(14, writer, jspb.BinaryWriter.prototype.writeString, jspb.BinaryWriter.prototype.writeString);
   }
 };
 
@@ -3011,6 +3041,66 @@ proto.azdext.ServiceConfig.prototype.getImage = function() {
  */
 proto.azdext.ServiceConfig.prototype.setImage = function(value) {
   return jspb.Message.setProto3StringField(this, 9, value);
+};
+
+
+/**
+ * repeated string uses = 13;
+ * @return {!Array<string>}
+ */
+proto.azdext.ServiceConfig.prototype.getUsesList = function() {
+  return /** @type {!Array<string>} */ (jspb.Message.getRepeatedField(this, 13));
+};
+
+
+/**
+ * @param {!Array<string>} value
+ * @return {!proto.azdext.ServiceConfig} returns this
+ */
+proto.azdext.ServiceConfig.prototype.setUsesList = function(value) {
+  return jspb.Message.setField(this, 13, value || []);
+};
+
+
+/**
+ * @param {string} value
+ * @param {number=} opt_index
+ * @return {!proto.azdext.ServiceConfig} returns this
+ */
+proto.azdext.ServiceConfig.prototype.addUses = function(value, opt_index) {
+  return jspb.Message.addToRepeatedField(this, 13, value, opt_index);
+};
+
+
+/**
+ * Clears the list making it empty but non-null.
+ * @return {!proto.azdext.ServiceConfig} returns this
+ */
+proto.azdext.ServiceConfig.prototype.clearUsesList = function() {
+  return this.setUsesList([]);
+};
+
+
+/**
+ * map<string, string> environment = 14;
+ * @param {boolean=} opt_noLazyCreate Do not create the map if
+ * empty, instead returning `undefined`
+ * @return {!jspb.Map<string,string>}
+ */
+proto.azdext.ServiceConfig.prototype.getEnvironmentMap = function(opt_noLazyCreate) {
+  return /** @type {!jspb.Map<string,string>} */ (
+      jspb.Message.getMapField(this, 14, opt_noLazyCreate,
+      null));
+};
+
+
+/**
+ * Clears values from the map. The map will be non-null.
+ * @return {!proto.azdext.ServiceConfig} returns this
+ */
+proto.azdext.ServiceConfig.prototype.clearEnvironmentMap = function() {
+  this.getEnvironmentMap().clear();
+  return this;
 };
 
 

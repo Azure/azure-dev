@@ -316,6 +316,7 @@ const (
 	EnvCloudShell         = "Azure CloudShell"
 
 	// AI Coding Agent environments
+	EnvAntigravity             = "Antigravity"
 	EnvClaudeCode              = "Claude Code"
 	EnvClaudeCodeDesktop       = "Claude Code Desktop"
 	EnvClaudeCodeVSCode        = "Claude Code VSCode"
@@ -804,6 +805,30 @@ var (
 	// ExeGraphMaxConcurrencyKey records the effective concurrency limit used.
 	ExeGraphMaxConcurrencyKey = AttributeKey{
 		Key:            attribute.Key("exegraph.max_concurrency"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// ExeGraphPackageConcurrencyKey records the resolved package phase concurrency limit.
+	ExeGraphPackageConcurrencyKey = AttributeKey{
+		Key:            attribute.Key("exegraph.package_concurrency"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// ExeGraphProvisionConcurrencyKey records the resolved provision phase concurrency limit.
+	ExeGraphProvisionConcurrencyKey = AttributeKey{
+		Key:            attribute.Key("exegraph.provision_concurrency"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// ExeGraphDeployConcurrencyKey records the resolved deploy phase concurrency limit.
+	ExeGraphDeployConcurrencyKey = AttributeKey{
+		Key:            attribute.Key("exegraph.deploy_concurrency"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 		IsMeasurement:  true,

@@ -74,6 +74,57 @@ func TestDeployProgressTracker_RenderFinal(t *testing.T) {
 	assert.Contains(t, output, "✗") // failed icon
 }
 
+func TestDeployProgressTracker_FailureSurvivesSkippedSteps(t *testing.T) {
+	tests := []struct {
+		name         string
+		failedPhase  deployPhase
+		skippedSteps int
+		interactive  bool
+	}{
+		{"package_noninteractive", phasePackaging, 2, false},
+		{"publish_noninteractive", phasePublish, 1, false},
+		{"package_interactive", phasePackaging, 2, true},
+		{"publish_interactive", phasePublish, 1, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			tracker := newDeployProgressTracker(&buf, tt.interactive, []string{"web", "api"})
+			detail := string(tt.failedPhase) + " failed"
+
+			tracker.Update("web", tt.failedPhase, "")
+			tracker.Update("web", phaseFailed, detail)
+			failedStatus := *tracker.services[0]
+			failedOutput := buf.String()
+
+			for range tt.skippedSteps {
+				tracker.Update("web", phaseSkipped, "")
+				assert.Equal(t, failedStatus, *tracker.services[0],
+					"skipped follow-up steps must preserve the failure, detail, and timing")
+				assert.Equal(t, failedOutput, buf.String(),
+					"skipped follow-up steps must not emit a contradictory status")
+			}
+
+			tracker.Update("api", phaseSkipped, "")
+			assert.Equal(t, phaseSkipped, tracker.services[1].phase)
+
+			if tt.interactive {
+				tracker.Render()
+				assert.Contains(t, buf.String(), detail)
+				buf.Reset()
+				tracker.RenderFinal()
+				assert.Regexp(t, `web\s+Failed`, buf.String())
+				assert.Regexp(t, `api\s+Skipped`, buf.String())
+			} else {
+				assert.Contains(t, buf.String(), "web: Failed ("+detail+")")
+				assert.NotContains(t, buf.String(), "web: Skipped")
+				assert.Contains(t, buf.String(), "api: Skipped")
+			}
+		})
+	}
+}
+
 func TestDeployProgressTracker_Elapsed(t *testing.T) {
 	svc := &serviceStatus{
 		name:      "test",

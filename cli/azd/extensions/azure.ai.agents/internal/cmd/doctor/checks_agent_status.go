@@ -41,9 +41,7 @@ const agentStatusProbeTimeout = 6 * time.Second
 const probeConcurrency = 4
 
 // agentStatusKindActive / Creating / Failed / Deleting are the
-// canonical lifecycle values emitted by the Foundry agents service
-// (vienna:
-// `Contracts/V2/Generated/Agents/AgentVersionStatus.cs`). Matched
+// canonical lifecycle values emitted by the Foundry agents service. Matched
 // case-insensitively because Foundry has historically been
 // inconsistent about casing on similar fields (e.g., the run.go
 // invocation flow normalizes status with `strings.EqualFold`).

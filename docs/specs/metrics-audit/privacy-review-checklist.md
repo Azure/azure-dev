@@ -203,6 +203,17 @@ A new field should **not** be hashed if:
   If a previously-literal field gains a user-controlled code path, it **must** be
   re-evaluated and likely hashed at that call site.
 
+### Resource Attribute Boundary
+
+Core azd telemetry has a fixed resource schema. New core fields must be declared and reviewed through
+`internal/tracing/fields`; do not use `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_SERVICE_NAME`, or another OpenTelemetry
+resource detector as an emission path. The telemetry exporter boundary removes environment-provided resource fields
+from the Application Insights queue, trace files, and OTLP trace URLs.
+
+This boundary does not filter span attributes. In particular, official-registry extensions can still report reviewed
+usage values through `TelemetryService.ReportUsage`, where the host places caller fields under `ext.*`. That path is
+governed by the extension privacy review described below, not by OpenTelemetry resource configuration.
+
 ## Data Catalog Classification Process
 
 When adding a new telemetry field:
@@ -256,12 +267,14 @@ Copy this checklist into your PR description when making telemetry changes.
 - [ ] No `CustomerContent` emitted in telemetry
 - [ ] No unhashed user-provided values
 - [ ] No PII in string attributes (names, emails, paths)
+- [ ] No telemetry field relies on OpenTelemetry environment resource attributes
 - [ ] Privacy review triggered (if required per triggers above)
 
 ### Testing
 - [ ] Unit test verifies attributes are set on the span
 - [ ] Integration test confirms end-to-end emission (if applicable)
 - [ ] Verified field appears correctly in local telemetry output
+- [ ] Resource-policy changes are tested against Application Insights, trace-file, and OTLP exports
 
 ### Downstream
 - [ ] LENS job updated (if field is queried in dashboards)

@@ -5,14 +5,17 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,7 +37,7 @@ func TestNewInvokeLatency(t *testing.T) {
 	t.Parallel()
 
 	for _, enabled := range []bool{false, true} {
-		t.Run(map[bool]string{false: "disabled", true: "enabled"}[enabled], func(t *testing.T) {
+		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
 			t.Parallel()
 			req := httptest.NewRequest(http.MethodPost, "https://example.com/responses", nil)
 			req.Header.Set("Authorization", "Bearer test-token")
@@ -315,6 +318,164 @@ func TestInvokeLatencyLROPolling(t *testing.T) {
 	require.NoError(t, latency.writeTo(&output))
 	require.Equal(t, "Platform latency (cold, async; platform overhead only)\n"+
 		"  preprocess 25 ms | infra 100 ms | readiness 200 ms\n", output.String())
+}
+
+func TestResponsesRemoteLatency(t *testing.T) {
+	const stream = "event: response.created\ndata: " +
+		`{"response":{"id":"resp_latency","status":"in_progress"}}` + "\n\n" +
+		"event: response.output_text.delta\ndata: " + `{"delta":"agent-result"}` + "\n\n" +
+		"event: response.completed\ndata: " +
+		`{"response":{"id":"resp_latency","status":"completed"}}` + "\n\n"
+
+	for _, tt := range []struct {
+		name        string
+		enabled     bool
+		raw         bool
+		longRunning bool
+		noWait      bool
+		httpError   bool
+		noMetrics   bool
+	}{
+		{name: "foreground", enabled: true},
+		{name: "disabled"},
+		{name: "raw", enabled: true, raw: true},
+		{name: "raw disabled", raw: true},
+		{name: "background", enabled: true, longRunning: true},
+		{name: "background no wait", enabled: true, longRunning: true, noWait: true},
+		{name: "background no wait disabled", longRunning: true, noWait: true},
+		{name: "HTTP error", enabled: true, httpError: true},
+		{name: "missing metrics", enabled: true, noMetrics: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				assert.Equal(t, http.MethodPost, r.Method)
+				assert.Equal(t, "/agents/agent/endpoint/protocols/openai/responses", r.URL.Path)
+				assert.Equal(t, tt.enabled, r.Header.Get(invokeLatencyHeaderPrefix+"enabled") == "true")
+				var body map[string]any
+				if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&body)) {
+					return
+				}
+				assert.Equal(t, "hello", body["input"])
+				assert.Equal(t, true, body["stream"])
+				assert.Equal(t, "sess_test", body["agent_session_id"])
+				assert.Equal(t, map[string]any{"id": "conv_test"}, body["conversation"])
+				assert.Equal(t, tt.longRunning, body["background"] == true)
+				if tt.enabled && !tt.noMetrics {
+					w.Header().Set(invokeLatencyHeaderPrefix+"session-start-type", "warm")
+					w.Header().Set(invokeLatencyHeaderPrefix+"platform-preprocessing-ms", "10")
+					w.Header().Set(invokeLatencyHeaderPrefix+"container-response-ms", "190")
+					w.Header().Set(invokeLatencyHeaderPrefix+"response-begin-ms", "200")
+				}
+				if tt.httpError {
+					http.Error(w, "test failure", http.StatusInternalServerError)
+					return
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(w, stream)
+			}))
+			defer server.Close()
+			format := outputDefault
+			if tt.raw {
+				format = outputRaw
+			}
+			action := &InvokeAction{
+				flags: &invokeFlags{
+					message: "hello", protocol: "responses", outputFmt: format, debugLatency: tt.enabled,
+					longRunning: tt.longRunning, noWait: tt.noWait, session: "sess_test", conversation: "conv_test",
+				},
+				credential: responseTestCredential{},
+				resolvedRemoteContext: &remoteContext{
+					projectEndpoint: server.URL, name: "agent", serviceName: "agent", apiVersion: "v1",
+				},
+			}
+			var invokeErr error
+			output := withCapturedStdout(t, func() { invokeErr = action.responsesRemote(t.Context()) })
+			require.EqualValues(t, 1, calls.Load(), "latency must not add a diagnostic request")
+			if tt.httpError {
+				require.ErrorContains(t, invokeErr, "HTTP 500")
+			} else {
+				require.NoError(t, invokeErr)
+			}
+			assert.Equal(t, !tt.httpError && !tt.noWait, strings.Contains(output, "agent-result"))
+			assert.Equal(t, !tt.httpError && !tt.raw && !tt.noWait, strings.Contains(output, "Client elapsed:"))
+			assert.NotContains(t, output, "Server responded in")
+			assert.NotContains(t, output, "first byte:")
+			assert.Equal(t, tt.enabled && !tt.raw && !tt.httpError, strings.Contains(output, "Platform latency"))
+			if tt.enabled && !tt.raw && !tt.httpError {
+				switch {
+				case tt.noMetrics:
+					assert.Contains(t, output, "Platform latency: not returned by the service.")
+				case tt.longRunning:
+					assert.Contains(t, output, "Platform latency (warm, async; platform overhead only)")
+					assert.Contains(t, output, "preprocess 10 ms")
+					assert.NotContains(t, output, "container 190 ms")
+				default:
+					assert.Contains(t, output, "Platform latency (warm): response headers 200 ms")
+					assert.Contains(t, output, "preprocess 10 ms | container 190 ms")
+				}
+			}
+			if tt.raw {
+				assert.Contains(t, output, stream)
+				assert.Equal(t, tt.enabled, strings.Contains(output, "X-Ms-Debug-Latency-"))
+			}
+		})
+	}
+}
+
+func TestInvocationsRemoteLatency(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		for _, enabled := range []bool{false, true} {
+			for _, format := range []string{outputDefault, outputRaw} {
+				name := strconv.FormatBool(streaming) + "/" + strconv.FormatBool(enabled) + "/" + format
+				t.Run(name, func(t *testing.T) {
+					var calls atomic.Int32
+					body := `{"result":"agent-result"}`
+					contentType := "application/json"
+					if streaming {
+						body = "data: agent-result\n\ndata: [DONE]\n\n"
+						contentType = "text/event-stream"
+					}
+					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						calls.Add(1)
+						assert.Equal(t, http.MethodPost, r.Method)
+						assert.Equal(t, "/agents/agent/endpoint/protocols/invocations", r.URL.Path)
+						assert.Equal(t, enabled, r.Header.Get(invokeLatencyHeaderPrefix+"enabled") == "true")
+						w.Header().Set("Content-Type", contentType)
+						if enabled {
+							w.Header().Set(invokeLatencyHeaderPrefix+"session-start-type", "warm")
+							w.Header().Set(invokeLatencyHeaderPrefix+"platform-preprocessing-ms", "10")
+							w.Header().Set(invokeLatencyHeaderPrefix+"container-response-ms", "190")
+							w.Header().Set(invokeLatencyHeaderPrefix+"response-begin-ms", "200")
+						}
+						_, _ = io.WriteString(w, body)
+					}))
+					defer server.Close()
+					action := &InvokeAction{
+						flags: &invokeFlags{
+							message: "hello", protocol: "invocations", outputFmt: format, debugLatency: enabled,
+						},
+						credential: responseTestCredential{},
+						resolvedRemoteContext: &remoteContext{
+							projectEndpoint: server.URL, name: "agent", apiVersion: "v1",
+						},
+					}
+					var invokeErr error
+					output := withCapturedStdout(t, func() { invokeErr = action.invocationsRemote(t.Context()) })
+					require.NoError(t, invokeErr)
+					require.EqualValues(t, 1, calls.Load(), "latency must not add a diagnostic request")
+					assert.Contains(t, output, "agent-result")
+					assert.Equal(t, format != outputRaw, strings.Contains(output, "Client elapsed:"))
+					assert.Equal(t, enabled && format != outputRaw, strings.Contains(output, "Platform latency"))
+					if format == outputRaw {
+						assert.Contains(t, output, body)
+						assert.Equal(t, enabled, strings.Contains(output, "X-Ms-Debug-Latency-"))
+					}
+				})
+			}
+		}
+	}
 }
 
 func latencyTestResponse(status int, fields map[string]string) *http.Response {

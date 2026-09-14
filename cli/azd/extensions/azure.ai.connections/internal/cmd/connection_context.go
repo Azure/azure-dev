@@ -16,10 +16,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/grpc"
 )
-
-// dataClient is a type alias for the data-plane client (used in endpoint.go).
-type dataClient = connections.DataClient
 
 // connectionContext holds the resolved clients and project info for connection operations.
 type connectionContext struct {
@@ -30,6 +28,7 @@ type connectionContext struct {
 	project   string
 	sub       string                 // subscription ID for raw REST calls
 	cred      azcore.TokenCredential // credential for raw REST calls
+	endpoint  string                 // Foundry project endpoint for readiness markers
 }
 
 // resolveConnectionContext resolves the project endpoint, discovers ARM context,
@@ -42,22 +41,54 @@ func resolveConnectionContext(
 	ctx context.Context,
 	flagEndpoint string,
 ) (*connectionContext, error) {
-	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{FlagValue: flagEndpoint})
+	return resolveConnectionContextWithEnvironment(ctx, flagEndpoint, "")
+}
+
+// resolveConnectionContextWithEnvironment keeps an explicit selection consistent
+// across endpoint lookup and ARM/tenant context. In particular, a destructive
+// command must not fall back to another project's endpoint when that environment
+// has no endpoint. An explicit endpoint flag still takes precedence; omitting the
+// environment retains the standalone cascade and process-value fallback.
+func resolveConnectionContextWithEnvironment(
+	ctx context.Context,
+	flagEndpoint, environmentName string,
+) (*connectionContext, error) {
+	if environmentName != "" && flagEndpoint == "" {
+		return resolveConnectionContextForEnvironment(ctx, environmentName)
+	}
+	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{
+		FlagValue: flagEndpoint, EnvironmentName: environmentName,
+	})
 	if err != nil {
 		return nil, err
 	}
-	endpoint := resolved.Endpoint
+	return newConnectionContext(ctx, resolved.Endpoint, environmentName)
+}
 
+// resolveConnectionContextForEnvironment is the lifecycle-only path. An absent
+// endpoint must fail before creating clients or discovering ARM resources.
+func resolveConnectionContextForEnvironment(
+	ctx context.Context,
+	environmentName string,
+) (*connectionContext, error) {
+	resolved, err := projectctx.ResolveEnvironment(ctx, environmentName)
+	if err != nil {
+		return nil, err
+	}
+	return newConnectionContext(ctx, resolved.Endpoint, environmentName)
+}
+
+func newConnectionContext(ctx context.Context, endpoint, environmentName string) (*connectionContext, error) {
 	account, project, err := parseEndpointComponents(endpoint)
 	if err != nil {
 		return nil, err
 	}
 
-	// Read the azd environment once for the values needed to build the clients:
+	// Resolve the azd environment context needed to build the clients:
 	// the subscription's user-access tenant (for credential scoping) and the
 	// Foundry project's ARM resource ID (for ARM context on connection-less
 	// projects). Every field is best-effort and may be empty.
-	envCtx := resolveEnvContext(ctx)
+	envCtx := resolveEnvContext(ctx, environmentName)
 
 	// Scope the credential to the subscription's user-access tenant so tokens are
 	// issued for the tenant that owns the Foundry resource. Multi-tenant / guest
@@ -98,6 +129,7 @@ func resolveConnectionContext(
 		project:   project,
 		sub:       armCtx.SubscriptionID,
 		cred:      cred,
+		endpoint:  endpoint,
 	}, nil
 }
 
@@ -133,14 +165,17 @@ type envContext struct {
 	// subscription or tenant lookup is unavailable.
 	tenantID string
 	// projectID is AZURE_AI_PROJECT_ID (the Foundry project's ARM resource ID);
-	// "" when the azd environment does not have it.
+	// "" when the value is unavailable.
 	projectID string
 }
 
-// resolveEnvContext best-effort reads the active azd environment for the values
+// resolveEnvContext best-effort reads the active or selected azd environment for the values
 // needed to build the connection clients: the subscription's user-access tenant
 // (credential scoping) and the Foundry project's ARM resource ID (ARM context
 // for projects that have no connections yet).
+//
+// Lifecycle calls with an explicit environmentName read only persisted values.
+// Standalone calls retain per-key process fallback after finding the active environment.
 //
 // Every field is optional. On a missing azd daemon, environment, or
 // subscription the corresponding field is left empty and callers fall back to
@@ -149,7 +184,7 @@ type envContext struct {
 // subscription, which is the tenant that owns the Foundry resource - so
 // multi-tenant / guest users get a token for that tenant instead of their home
 // tenant.
-func resolveEnvContext(ctx context.Context) envContext {
+func resolveEnvContext(ctx context.Context, environmentName string) envContext {
 	var out envContext
 
 	azdClient, err := azdext.NewAzdClient()
@@ -159,22 +194,92 @@ func resolveEnvContext(ctx context.Context) envContext {
 	}
 	defer azdClient.Close()
 
-	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || envResp.GetEnvironment() == nil {
-		log.Printf("connections: no active azd environment: %v", err)
-		return out
+	return resolveEnvContextWithClients(
+		ctx,
+		environmentName,
+		azdClient.Environment(),
+		azdClient.Account(),
+	)
+}
+
+type environmentContextReader interface {
+	GetCurrent(
+		context.Context,
+		*azdext.EmptyRequest,
+		...grpc.CallOption,
+	) (*azdext.EnvironmentResponse, error)
+	GetValue(
+		context.Context,
+		*azdext.GetEnvRequest,
+		...grpc.CallOption,
+	) (*azdext.KeyValueResponse, error)
+	GetValues(
+		context.Context,
+		*azdext.GetEnvironmentRequest,
+		...grpc.CallOption,
+	) (*azdext.KeyValueListResponse, error)
+}
+
+type tenantLookup interface {
+	LookupTenant(
+		context.Context,
+		*azdext.LookupTenantRequest,
+		...grpc.CallOption,
+	) (*azdext.LookupTenantResponse, error)
+}
+
+func resolveEnvContextWithClients(
+	ctx context.Context,
+	environmentName string,
+	environmentClient environmentContextReader,
+	accountClient tenantLookup,
+) envContext {
+	var out envContext
+	var subID string
+	envName := environmentName
+	if envName == "" {
+		envResp, err := environmentClient.GetCurrent(ctx, &azdext.EmptyRequest{})
+		if err != nil || envResp.GetEnvironment() == nil {
+			log.Printf("connections: no active azd environment: %v", err)
+			return out
+		}
+		envName = envResp.GetEnvironment().GetName()
+
+		// Preserve standalone GetValue process fallback only after finding an active
+		// environment. Each value is optional and a failed read must not block the other.
+		getOptionalValue := func(key string) string {
+			response, err := environmentClient.GetValue(ctx, &azdext.GetEnvRequest{EnvName: envName, Key: key})
+			if err != nil {
+				log.Printf("connections: unable to read %s from azd environment: %v", key, err)
+				return ""
+			}
+			return response.GetValue()
+		}
+		out.projectID = getOptionalValue("AZURE_AI_PROJECT_ID")
+		subID = getOptionalValue("AZURE_SUBSCRIPTION_ID")
+	} else {
+		// Read one persisted snapshot for lifecycle ARM context and credential scoping.
+		// GetValue can fall back to another environment's process values even with EnvName set.
+		response, err := environmentClient.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: envName})
+		if err != nil {
+			log.Printf("connections: unable to read persisted azd environment context: %v", err)
+			return out
+		}
+		for _, value := range response.GetKeyValues() {
+			switch value.GetKey() {
+			case "AZURE_AI_PROJECT_ID":
+				out.projectID = value.GetValue()
+			case "AZURE_SUBSCRIPTION_ID":
+				subID = value.GetValue()
+			}
+		}
 	}
-	envName := envResp.GetEnvironment().GetName()
-
-	out.projectID = envValue(ctx, azdClient, envName, "AZURE_AI_PROJECT_ID")
-
-	subID := envValue(ctx, azdClient, envName, "AZURE_SUBSCRIPTION_ID")
 	if subID == "" {
 		log.Printf("connections: AZURE_SUBSCRIPTION_ID unavailable; using default tenant")
 		return out
 	}
 
-	tenantResp, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+	tenantResp, err := accountClient.LookupTenant(ctx, &azdext.LookupTenantRequest{
 		SubscriptionId: subID,
 	})
 	if err != nil {
@@ -184,17 +289,4 @@ func resolveEnvContext(ctx context.Context) envContext {
 	out.tenantID = tenantResp.GetTenantId()
 
 	return out
-}
-
-// envValue reads a single value from the named azd environment, returning ""
-// when the key is unset or the read fails.
-func envValue(ctx context.Context, azdClient *azdext.AzdClient, envName, key string) string {
-	resp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envName,
-		Key:     key,
-	})
-	if err != nil {
-		return ""
-	}
-	return resp.GetValue()
 }

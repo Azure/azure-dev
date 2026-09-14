@@ -305,12 +305,8 @@ func runInitManaged(
 		return err
 	}
 
-	// Model deployments, connections and skills live on sibling Foundry
-	// services, not on the agent service, so a prompt agent's azure.yaml has the
-	// same shape as a hosted agent's and each host is owned by the extension
-	// that implements it. emitResourceServices also wires the agent's uses: list
-	// so `azd provision` creates the project (and its deployments) first and
-	// `azd deploy` publishes the skills before the agent that references them.
+	// Connections and skills live on sibling services, while project
+	// authoring is delegated to the projects extension.
 	var deployments []project.Deployment
 	if deployment != nil && provisionDeployment {
 		deployments = []project.Deployment{*deployment}
@@ -319,14 +315,19 @@ func runInitManaged(
 	if err != nil {
 		return err
 	}
-	resources.Deployments = deployments
-	endpointRef, err := recordFoundryProjectEnv(ctx, azdClient, env.Name, foundryProject)
-	if err != nil {
+	if err := recordFoundryProjectEnv(
+		ctx, azdClient, env.Name, foundryProject,
+	); err != nil {
+		return err
+	}
+	if err := authorFoundryProject(ctx, azdClient, foundryProject); err != nil {
+		return err
+	}
+	if err := authorFoundryDeployments(ctx, azdClient, deployments); err != nil {
 		return err
 	}
 	if _, err := emitResourceServices(
 		ctx, azdClient, agentName,
-		endpointRef,
 		resources,
 	); err != nil {
 		return err
@@ -407,8 +408,7 @@ func promptAgentForScaffold(
 // read from there at deploy time, keeping azure.yaml portable.
 //
 // Model deployments are deliberately NOT recorded here: they belong to the
-// sibling azure.ai.project service that emitResourceServices writes, the
-// same shape hosted agents use.
+// azure.ai.project service authored by the projects extension.
 func addPromptAgentService(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,

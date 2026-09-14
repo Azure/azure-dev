@@ -872,8 +872,8 @@ func (a *InitFromCodeAction) addToProject(
 		agentConfig.StartupCommand = startupCmd
 	}
 
-	// Move the model deployments out of the agent config into a sibling
-	// azure.ai.project service, emitted after the agent service below.
+	// Keep managed model deployments for the projects workflow. They
+	// are not embedded in the agent service.
 	resourceDeployments := agentConfig.Deployments
 	agentConfig.Deployments = nil
 
@@ -939,20 +939,28 @@ func (a *InitFromCodeAction) addToProject(
 		return err
 	}
 
-	// Emit the sibling azure.ai.project service carrying the model deployments
-	// and wire the agent's uses: to it. A selected existing project contributes
-	// its endpoint so provision reuses it instead of creating a new project. The
-	// endpoint itself lives in the azd environment; azure.yaml only references it.
-	endpointRef, err := recordFoundryProjectEnv(
+	if err := recordFoundryProjectEnv(
 		ctx, a.azdClient, a.environment.Name, a.selectedFoundryProject,
-	)
-	if err != nil {
+	); err != nil {
+		return err
+	}
+	if err := authorFoundryProject(
+		ctx,
+		a.azdClient,
+		a.selectedFoundryProject,
+	); err != nil {
+		return err
+	}
+	if err := authorFoundryDeployments(
+		ctx,
+		a.azdClient,
+		resourceDeployments,
+	); err != nil {
 		return err
 	}
 	if _, err := emitResourceServices(
 		ctx, a.azdClient, agentServiceName,
-		endpointRef,
-		foundryResources{Deployments: resourceDeployments},
+		foundryResources{},
 	); err != nil {
 		return err
 	}

@@ -44,8 +44,8 @@ type FoundryProjectInfo struct {
 
 // Endpoint returns the Foundry project data-plane endpoint derived from the
 // account and project names, or "" when the project is nil or either name is
-// missing. The endpoint is the brownfield signal written onto the
-// azure.ai.project service so provision connects to the existing project.
+// missing. The projects extension uses this endpoint to select an
+// existing project during authoring.
 func (p *FoundryProjectInfo) Endpoint() string {
 	if p == nil || p.AccountName == "" || p.ProjectName == "" {
 		return ""

@@ -11,8 +11,6 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/project"
-
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -654,146 +652,6 @@ func TestValidateImageFlagInAdoptionPath(t *testing.T) {
 	})
 }
 
-func TestFoundryDeployments(t *testing.T) {
-	tests := []struct {
-		name    string
-		content string
-		want    []foundryDeploymentEntry
-	}{
-		{
-			name: "single deployment under ai-project",
-			content: `name: foundry-simple
-services:
-  ai-project:
-    host: azure.ai.project
-    deployments:
-      - name: gpt-4o-mini
-        model:
-          format: OpenAI
-          name: gpt-4o-mini
-          version: "2024-07-18"
-        sku:
-          name: GlobalStandard
-          capacity: 50
-  assistant:
-    host: azure.ai.agent
-`,
-			want: []foundryDeploymentEntry{
-				{
-					ServiceName: "ai-project",
-					Deployment: project.Deployment{
-						Name:  "gpt-4o-mini",
-						Model: project.DeploymentModel{Format: "OpenAI", Name: "gpt-4o-mini", Version: "2024-07-18"},
-						Sku:   project.DeploymentSku{Name: "GlobalStandard", Capacity: 50},
-					},
-				},
-			},
-		},
-		{
-			name: "multiple deployments",
-			content: `name: multi-model
-services:
-  ai-project:
-    host: azure.ai.project
-    deployments:
-      - name: gpt-4o
-        model:
-          format: OpenAI
-          name: gpt-4o
-          version: "2024-08-06"
-        sku:
-          name: GlobalStandard
-          capacity: 100
-      - name: text-embedding
-        model:
-          format: OpenAI
-          name: text-embedding-ada-002
-          version: "2"
-        sku:
-          name: Standard
-          capacity: 10
-`,
-			want: []foundryDeploymentEntry{
-				{
-					ServiceName: "ai-project",
-					Deployment: project.Deployment{
-						Name:  "gpt-4o",
-						Model: project.DeploymentModel{Format: "OpenAI", Name: "gpt-4o", Version: "2024-08-06"},
-						Sku:   project.DeploymentSku{Name: "GlobalStandard", Capacity: 100},
-					},
-				},
-				{
-					ServiceName: "ai-project",
-					Deployment: project.Deployment{
-						Name:  "text-embedding",
-						Model: project.DeploymentModel{Format: "OpenAI", Name: "text-embedding-ada-002", Version: "2"},
-						Sku:   project.DeploymentSku{Name: "Standard", Capacity: 10},
-					},
-				},
-			},
-		},
-		{
-			name: "no deployments section",
-			content: `name: no-deploy
-services:
-  ai-project:
-    host: azure.ai.project
-`,
-			want: nil,
-		},
-		{
-			name: "non-project host ignored",
-			content: `name: agent-only
-services:
-  assistant:
-    host: azure.ai.agent
-    deployments:
-      - name: should-be-ignored
-        model:
-          name: gpt-4o
-`,
-			want: nil,
-		},
-		{
-			name:    "empty content",
-			content: "",
-			want:    nil,
-		},
-		{
-			name:    "malformed yaml",
-			content: "name: [oops",
-			want:    nil,
-		},
-		{
-			name: "missing model and sku fields",
-			content: `name: partial
-services:
-  ai-project:
-    host: azure.ai.project
-    deployments:
-      - name: bare-deploy
-`,
-			want: []foundryDeploymentEntry{
-				{
-					ServiceName: "ai-project",
-					Deployment: project.Deployment{
-						Name:  "bare-deploy",
-						Model: project.DeploymentModel{},
-						Sku:   project.DeploymentSku{},
-					},
-				},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := foundryDeployments([]byte(tt.content))
-			require.Equal(t, tt.want, got)
-		})
-	}
-}
-
 func TestAdoptedAgentNameConfig(t *testing.T) {
 	t.Parallel()
 
@@ -1299,10 +1157,7 @@ services:
 	require.Contains(t, err.Error(), "no agent service")
 }
 
-// TestStampProjectEndpoint_WritesEndpoint verifies that stampProjectEndpoint
-// writes the portable endpoint reference to the existing azure.ai.project
-// service via SetServiceConfigValue.
-func TestStampProjectEndpoint_WritesEndpoint(t *testing.T) {
+func TestResolveProjectServiceKeyPreservesExistingService(t *testing.T) {
 	t.Parallel()
 
 	server := &recordingProjectServer{
@@ -1312,41 +1167,12 @@ func TestStampProjectEndpoint_WritesEndpoint(t *testing.T) {
 	}
 	client := newProjectRecorderClient(t, server)
 
-	err := stampProjectEndpoint(t.Context(), client, projectEndpointRef)
+	key, err := resolveProjectServiceKey(t.Context(), client)
 	require.NoError(t, err)
-
-	server.mu.Lock()
-	defer server.mu.Unlock()
-
-	// azure.yaml gets the ${VAR} reference, never the literal URL: the concrete
-	// endpoint lives in the azd environment so the project stays portable.
-	require.Equal(t, "ai-project", server.configValues["endpoint"].serviceName)
-	require.Equal(t, "${FOUNDRY_PROJECT_ENDPOINT}", server.configValues["endpoint"].value)
+	require.Equal(t, "ai-project", key)
 }
 
-// TestStampProjectEndpoint_NilProject verifies stampProjectEndpoint is a no-op
-// when there is no endpoint to stamp (user chose "Create new").
-func TestStampProjectEndpoint_NilProject(t *testing.T) {
-	t.Parallel()
-
-	server := &recordingProjectServer{
-		existing: map[string]*azdext.ServiceConfig{
-			"ai-project": {Name: "ai-project", Host: AiProjectHost},
-		},
-	}
-	client := newProjectRecorderClient(t, server)
-
-	err := stampProjectEndpoint(t.Context(), client, "")
-	require.NoError(t, err)
-
-	server.mu.Lock()
-	defer server.mu.Unlock()
-	require.Empty(t, server.configValues, "no SetServiceConfigValue calls expected without an endpoint")
-}
-
-// TestStampProjectEndpoint_NoExistingService verifies stampProjectEndpoint is a
-// no-op when no azure.ai.project service exists in the project yet.
-func TestStampProjectEndpoint_NoExistingService(t *testing.T) {
+func TestResolveProjectServiceKeyRequiresProjectsAuthoring(t *testing.T) {
 	t.Parallel()
 
 	server := &recordingProjectServer{
@@ -1356,10 +1182,7 @@ func TestStampProjectEndpoint_NoExistingService(t *testing.T) {
 	}
 	client := newProjectRecorderClient(t, server)
 
-	err := stampProjectEndpoint(t.Context(), client, projectEndpointRef)
-	require.NoError(t, err)
-
-	server.mu.Lock()
-	defer server.mu.Unlock()
-	require.Empty(t, server.configValues, "no SetServiceConfigValue calls expected when no project service exists")
+	_, err := resolveProjectServiceKey(t.Context(), client)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "azure.ai.project")
 }

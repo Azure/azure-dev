@@ -28,6 +28,7 @@ import (
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/google/uuid"
 	"golang.org/x/term"
@@ -961,16 +962,31 @@ func brownfieldInlineAgentReference(
 		if projectService == nil || projectService.GetHost() != AiProjectHost {
 			continue
 		}
-		cfg, err := projectpkg.LoadServiceTargetAgentConfig(projectService)
-		if err != nil {
-			log.Printf(
-				"resolve agent service %q: failed to read project dependency %q: %v",
-				svc.Name, dependency, err,
-			)
+		props := projectpkg.ServiceConfigProps(projectService)
+		if props == nil {
 			continue
 		}
-		if cfg != nil && strings.TrimSpace(cfg.Endpoint) != "" {
-			projectEndpoint = strings.TrimSpace(cfg.Endpoint)
+		values := props.AsMap()
+		if projectConfig.GetPath() != "" {
+			resolved, err := foundry.ResolveFileRefs(
+				values,
+				projectConfig.GetPath(),
+			)
+			if err != nil {
+				log.Printf(
+					"resolve agent service %q: failed to read project "+
+						"dependency %q: %v",
+					svc.Name,
+					dependency,
+					err,
+				)
+				continue
+			}
+			values = resolved
+		}
+		if endpoint, ok := values["endpoint"].(string); ok &&
+			strings.TrimSpace(endpoint) != "" {
+			projectEndpoint = strings.TrimSpace(endpoint)
 			break
 		}
 	}

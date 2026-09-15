@@ -15,6 +15,9 @@ Files under `internal/cmd/` map to the command they implement:
 | `internal/cmd/init*.go` | `cmd:init` | Includes `init_from_code*`, `init_from_templates*`, `init_models`, `init_locations`, `init_validate`, `init_copy`, `init_foundry_resources_helpers`. |
 | `internal/cmd/show.go` | `cmd:show` | |
 | `internal/cmd/invoke*.go` | `cmd:invoke` | `invoke.go`, `invoke_raw.go`. |
+| `internal/cmd/invocations*.go` | `cmd:invocations` | Shared invocation lifecycle commands. |
+| `internal/cmd/invoke_response*.go` | `cmd:invoke`, `cmd:invocations` | Responses helpers used by creation and lifecycle commands. |
+| `internal/cmd/invoke_invocation*.go` | `cmd:invoke`, `cmd:invocations` | Invocations-protocol helpers used by creation and lifecycle commands. |
 | `internal/cmd/run.go` | `cmd:run` | |
 | `internal/cmd/session.go` | `cmd:sessions` | |
 | `internal/cmd/files.go` | `cmd:files` | |

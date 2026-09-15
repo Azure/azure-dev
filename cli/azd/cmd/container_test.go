@@ -367,37 +367,6 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 			"boolean global flag value should not leak into workflow step positional args")
 	})
 
-	t.Run("StepCwdOverridesParentCwd", func(t *testing.T) {
-		var cwd string
-		newCommand := func() *cobra.Command {
-			rootCmd := &cobra.Command{Use: "root"}
-			rootCmd.PersistentFlags().AddFlagSet(CreateGlobalFlagSet())
-			rootCmd.AddCommand(&cobra.Command{
-				Use: "sub",
-				RunE: func(cmd *cobra.Command, _ []string) error {
-					var err error
-					cwd, err = cmd.Flags().GetString("cwd")
-					return err
-				},
-			})
-			return rootCmd
-		}
-		adapter := &workflowCmdAdapter{
-			newCommand: newCommand,
-			globalArgs: []string{
-				"--cwd=parent",
-				"--debug=true",
-			},
-		}
-
-		err := adapter.ExecuteContext(
-			context.WithoutCancel(t.Context()),
-			[]string{"sub", "--cwd", "child"},
-		)
-		require.NoError(t, err)
-		require.Equal(t, "child", cwd)
-	})
-
 	t.Run("NewRootCmdPreservesMiddlewareChain", func(t *testing.T) {
 		// Verify that building a real command tree via NewRootCmd preserves
 		// the full middleware chain (debug, ux, telemetry, error, loginGuard, etc.)

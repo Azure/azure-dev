@@ -242,20 +242,6 @@ func TestStripCwdFlag(t *testing.T) {
 	}
 }
 
-func TestCwdForExtension(t *testing.T) {
-	target := t.TempDir()
-	t.Chdir(target)
-
-	require.Equal(t, target, cwdForExtension(
-		[]string{"ai", "project", "add", "--cwd", "project"},
-		"parent",
-	))
-	require.Equal(t, "parent", cwdForExtension(
-		[]string{"ai", "project", "add"},
-		"parent",
-	))
-}
-
 func Test_ExtensionAction_MissingAnnotation(t *testing.T) {
 	t.Parallel()
 	cmd := &cobra.Command{Use: "test"}

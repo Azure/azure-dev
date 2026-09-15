@@ -72,16 +72,6 @@ func stripCwdFlag(args []string) []string {
 	return result
 }
 
-func cwdForExtension(args []string, fallback string) string {
-	if hasCwdArg(args) {
-		if cwd, err := os.Getwd(); err == nil {
-			return cwd
-		}
-	}
-
-	return fallback
-}
-
 // bindExtension binds the extension to the root command
 func bindExtension(
 	root *actions.ActionDescriptor,
@@ -320,7 +310,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		// Use globalOptions.NoPrompt which includes agent detection,
 		// not just the --no-prompt CLI flag
 		NoPrompt:    a.globalOptions.NoPrompt,
-		Cwd:         cwdForExtension(a.args, a.globalOptions.Cwd),
+		Cwd:         a.globalOptions.Cwd,
 		Environment: a.globalOptions.EnvironmentName,
 	}
 

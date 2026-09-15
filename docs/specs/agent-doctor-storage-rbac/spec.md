@@ -16,8 +16,10 @@ azd ai agent doctor
 | User identity to Project | Required permissions to access the project | Existing |
 | Project managed identity to relevant Storage | `Storage Blob Data Contributor` or a built-in role providing the same required access | Proposed |
 
-- Skip the storage check when no applicable customer-owned Storage is required.
-   If permissions cannot be verified, warn rather than report them as missing.
+- Apply this role check only to Storage accessed with the project managed
+   identity. Skip account-key authentication and scenarios where no applicable
+   customer-owned Storage is required. If the authentication mode or permissions
+   cannot be verified, warn rather than report them as missing.
 - Diagnose problems and suggest manual fixes only; do not grant permissions or
    create resources. Passing the role checks does not guarantee actual access or
    that `azd ai agent optimize` will succeed.
@@ -75,5 +77,5 @@ checks and the final report summary are omitted. Identifiers are placeholders:
 Remote
    (x) Project storage permissions
        Required storage role is missing for <project-identity> on <storage-account>.
-       fix: Ask a storage administrator to grant Storage Blob Data Contributor to <project-identity> on <storage-account>.
+      fix: Ask an administrator with permission to assign roles on <storage-account> to grant Storage Blob Data Contributor to <project-identity>.
 ```

@@ -116,7 +116,7 @@ func TestAuthorFoundryProjectUsesPublicCommand(t *testing.T) {
 	}
 	projectRoot := t.TempDir()
 	require.NoError(t, authorFoundryProject(
-		t.Context(), client, target, projectRoot, false,
+		t.Context(), client, target, projectRoot, projectAuthoringExisting,
 	))
 
 	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
@@ -148,7 +148,7 @@ func TestAuthorFoundryProjectUsesEndpointFlag(t *testing.T) {
 
 	projectRoot := t.TempDir()
 	require.NoError(t, authorFoundryProject(
-		t.Context(), client, target, projectRoot, false,
+		t.Context(), client, target, projectRoot, projectAuthoringExisting,
 	))
 
 	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
@@ -179,7 +179,7 @@ func TestAuthorFoundryProjectUsesNewProjectFlag(t *testing.T) {
 	projectRoot := t.TempDir()
 
 	require.NoError(t, authorFoundryProject(
-		t.Context(), client, nil, projectRoot, true,
+		t.Context(), client, nil, projectRoot, projectAuthoringNew,
 	))
 
 	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
@@ -228,6 +228,45 @@ func TestAuthorNewFoundryProjectPreservesSelection(t *testing.T) {
 	), workflowArgs(t, workflowServer, 0))
 	assert.Equal(t, "new-project", envServer.values["test"]["AZURE_AI_PROJECT_NAME"])
 	assert.Equal(t, "new-rg", envServer.values["test"]["AZURE_RESOURCE_GROUP"])
+	assert.Equal(t, "eastus", envServer.values["test"]["AZURE_LOCATION"])
+	assert.Equal(
+		t,
+		"eastus",
+		envServer.values["test"]["AZURE_AI_DEPLOYMENTS_LOCATION"],
+	)
+}
+
+func TestAuthorNewFoundryProjectRestoresValuesAfterProjectsMutation(t *testing.T) {
+	t.Parallel()
+
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{
+			"test": {
+				"AZURE_AI_PROJECT_NAME":         "new-project",
+				"AZURE_RESOURCE_GROUP":          "new-rg",
+				"AZURE_AI_ACCOUNT_NAME":         "new-account",
+				"AZURE_LOCATION":                "eastus",
+				"AZURE_AI_DEPLOYMENTS_LOCATION": "eastus",
+			},
+		},
+	}
+	workflowServer := &recordingProjectWorkflowServer{
+		runHook: func(_ int) error {
+			for _, key := range newProjectEnvironmentKeys {
+				delete(envServer.values["test"], key)
+			}
+			return nil
+		},
+	}
+	client := newTestAzdClient(t, envServer, workflowServer)
+
+	require.NoError(t, authorNewFoundryProject(
+		t.Context(), client, "test", t.TempDir(),
+	))
+
+	assert.Equal(t, "new-project", envServer.values["test"]["AZURE_AI_PROJECT_NAME"])
+	assert.Equal(t, "new-rg", envServer.values["test"]["AZURE_RESOURCE_GROUP"])
+	assert.Equal(t, "new-account", envServer.values["test"]["AZURE_AI_ACCOUNT_NAME"])
 	assert.Equal(t, "eastus", envServer.values["test"]["AZURE_LOCATION"])
 	assert.Equal(
 		t,
@@ -434,7 +473,7 @@ func TestProjectWorkflowPropagatesFailures(t *testing.T) {
 	)
 
 	err := authorFoundryProject(
-		t.Context(), client, nil, t.TempDir(), false,
+		t.Context(), client, nil, t.TempDir(), projectAuthoringCurrent,
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "authoring the Foundry project failed")
@@ -454,7 +493,7 @@ func TestProjectWorkflowPreservesCancellation(t *testing.T) {
 	)
 
 	err := authorFoundryProject(
-		t.Context(), client, nil, t.TempDir(), false,
+		t.Context(), client, nil, t.TempDir(), projectAuthoringCurrent,
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "authoring the Foundry project was cancelled")

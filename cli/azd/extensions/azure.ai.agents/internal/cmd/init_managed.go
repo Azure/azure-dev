@@ -325,7 +325,15 @@ func runInitManaged(
 	}
 	if err := authorSelectedFoundryProject(
 		ctx, azdClient, env.Name, foundryProject, projectConfig.GetPath(),
-		foundryProject == nil && credential != nil,
+		func() projectAuthoringMode {
+			if foundryProject == nil && credential != nil {
+				return projectAuthoringNew
+			}
+			if foundryProject != nil {
+				return projectAuthoringExisting
+			}
+			return projectAuthoringCurrent
+		}(),
 	); err != nil {
 		return err
 	}

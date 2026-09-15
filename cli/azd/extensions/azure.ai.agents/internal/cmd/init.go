@@ -3742,7 +3742,15 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		a.environment.Name,
 		a.selectedFoundryProject,
 		a.projectConfig.GetPath(),
-		a.selectedFoundryProject == nil && a.credential != nil,
+		func() projectAuthoringMode {
+			if a.selectedFoundryProject != nil {
+				return projectAuthoringExisting
+			}
+			if a.credential != nil {
+				return projectAuthoringNew
+			}
+			return projectAuthoringCurrent
+		}(),
 	); err != nil {
 		return err
 	}
@@ -3851,7 +3859,15 @@ func (a *InitAction) addVoiceAgentToProject(
 		a.environment.Name,
 		a.selectedFoundryProject,
 		a.projectConfig.GetPath(),
-		a.selectedFoundryProject == nil && a.credential != nil,
+		func() projectAuthoringMode {
+			if a.selectedFoundryProject != nil {
+				return projectAuthoringExisting
+			}
+			if a.credential != nil {
+				return projectAuthoringNew
+			}
+			return projectAuthoringCurrent
+		}(),
 	); err != nil {
 		return err
 	}

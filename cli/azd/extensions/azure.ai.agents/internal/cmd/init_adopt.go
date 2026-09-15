@@ -579,7 +579,7 @@ func runInitFromAzureYaml(
 			env.Name,
 			result.FoundryProject,
 			projectRoot,
-			false,
+			projectAuthoringExisting,
 		); err != nil {
 			return err
 		}

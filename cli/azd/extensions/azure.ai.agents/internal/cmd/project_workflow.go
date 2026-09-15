@@ -21,6 +21,14 @@ import (
 
 const projectWorkflowRollbackTimeout = 30 * time.Second
 
+type projectAuthoringMode string
+
+const (
+	projectAuthoringCurrent  projectAuthoringMode = "current"
+	projectAuthoringExisting projectAuthoringMode = "existing"
+	projectAuthoringNew      projectAuthoringMode = "new"
+)
+
 // authorFoundryProject delegates project-service authoring to the
 // projects extension. Agents select the target and wire the
 // resulting service.
@@ -29,8 +37,31 @@ func authorFoundryProject(
 	azdClient *azdext.AzdClient,
 	target *FoundryProjectInfo,
 	projectRoot string,
-	newProject bool,
+	mode projectAuthoringMode,
 ) error {
+	if mode != projectAuthoringCurrent &&
+		mode != projectAuthoringExisting &&
+		mode != projectAuthoringNew {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("unknown Foundry project authoring mode %q", mode),
+			"retry the agent initialization command",
+		)
+	}
+	if mode == projectAuthoringExisting && target == nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"an existing Foundry project target is required",
+			"select an existing Foundry project and retry",
+		)
+	}
+	if mode != projectAuthoringExisting && target != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"an existing Foundry project target cannot be used in this mode",
+			"select an existing project or create a new one",
+		)
+	}
 	args := []string{
 		"ai",
 		"project",
@@ -39,10 +70,10 @@ func authorFoundryProject(
 		"--output",
 		"none",
 	}
-	if newProject {
+	if mode == projectAuthoringNew {
 		args = append(args, "--new-project")
 	}
-	if target != nil {
+	if mode == projectAuthoringExisting {
 		if resourceID := strings.TrimSpace(target.ResourceId); resourceID != "" {
 			args = append(args, "--project-id", resourceID, "--force")
 		} else if endpoint := strings.TrimSpace(target.Endpoint()); endpoint != "" {
@@ -65,12 +96,12 @@ func authorSelectedFoundryProject(
 	envName string,
 	target *FoundryProjectInfo,
 	projectRoot string,
-	newProject bool,
+	mode projectAuthoringMode,
 ) error {
-	if newProject {
+	if mode == projectAuthoringNew {
 		return authorNewFoundryProject(ctx, azdClient, envName, projectRoot)
 	}
-	return authorFoundryProject(ctx, azdClient, target, projectRoot, false)
+	return authorFoundryProject(ctx, azdClient, target, projectRoot, mode)
 }
 
 var newProjectEnvironmentKeys = []string{
@@ -106,7 +137,7 @@ func authorNewFoundryProject(
 	}
 
 	authorErr := authorFoundryProject(
-		ctx, azdClient, nil, projectRoot, true,
+		ctx, azdClient, nil, projectRoot, projectAuthoringNew,
 	)
 	var restoreErrs []error
 	for _, key := range newProjectEnvironmentKeys {

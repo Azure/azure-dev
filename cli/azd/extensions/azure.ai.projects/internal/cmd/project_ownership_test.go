@@ -195,6 +195,7 @@ func TestProjectCommandsRegistered(t *testing.T) {
 	assertOutputFlagOptions(t, addCommand, "default", []string{"default", "json", "none"})
 
 	assert.Equal(t, "bicep", addCommand.Flags().Lookup("infra").NoOptDefVal)
+	assert.NotNil(t, addCommand.Flags().Lookup("new-project"))
 	_, _, err = root.Find([]string{"init"})
 	require.Error(t, err)
 }

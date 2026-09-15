@@ -954,7 +954,15 @@ func (a *InitFromCodeAction) addToProject(
 		a.environment.Name,
 		a.selectedFoundryProject,
 		a.projectConfig.GetPath(),
-		a.newProjectSelected,
+		func() projectAuthoringMode {
+			if a.newProjectSelected {
+				return projectAuthoringNew
+			}
+			if a.selectedFoundryProject != nil {
+				return projectAuthoringExisting
+			}
+			return projectAuthoringCurrent
+		}(),
 	); err != nil {
 		return err
 	}

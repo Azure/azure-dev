@@ -128,6 +128,7 @@ func TestAuthorFoundryProjectUsesPublicCommand(t *testing.T) {
 		"none",
 		"--project-id",
 		target.ResourceId,
+		"--force",
 	), workflowArgs(t, workflowServer, 0))
 	assert.Empty(t, projectServer.added)
 }
@@ -159,6 +160,7 @@ func TestAuthorFoundryProjectUsesEndpointFlag(t *testing.T) {
 		"none",
 		"--project-endpoint",
 		target.Endpoint(),
+		"--force",
 	), workflowArgs(t, workflowServer, 0))
 	assert.Empty(t, projectServer.added)
 }
@@ -194,6 +196,7 @@ func TestAuthorNewFoundryProjectPreservesSelection(t *testing.T) {
 		"--no-prompt",
 		"--output",
 		"none",
+		"--new-project",
 	), workflowArgs(t, workflowServer, 0))
 	assert.Equal(t, "new-project", envServer.values["test"]["AZURE_AI_PROJECT_NAME"])
 	assert.Equal(t, "new-rg", envServer.values["test"]["AZURE_RESOURCE_GROUP"])
@@ -216,6 +219,7 @@ func TestAuthorFoundryDeploymentsUsesPublicCommand(t *testing.T) {
 	deployment := project.Deployment{
 		Name: "gpt-4o",
 		Model: project.DeploymentModel{
+			Format:  "AzureOpenAI",
 			Name:    "gpt-4o",
 			Version: "2024-08-06",
 		},
@@ -243,7 +247,7 @@ func TestAuthorFoundryDeploymentsUsesPublicCommand(t *testing.T) {
 		"--output",
 		"none",
 		"--model",
-		"gpt-4o",
+		"AzureOpenAI/gpt-4o",
 		"--name",
 		"gpt-4o",
 		"--version",

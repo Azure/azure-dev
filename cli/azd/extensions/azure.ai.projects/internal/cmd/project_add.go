@@ -36,6 +36,7 @@ import (
 type projectAddFlags struct {
 	projectID       string
 	projectEndpoint string
+	newProject      bool
 	infra           string
 	force           bool
 	forceSet        bool
@@ -94,6 +95,7 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&flags.projectID, "project-id", "", "Existing Foundry project ARM resource ID")
 	cmd.Flags().StringVar(&flags.projectEndpoint, "project-endpoint", "", "Existing Foundry project endpoint")
+	cmd.Flags().BoolVar(&flags.newProject, "new-project", false, "Create a new Foundry project")
 	cmd.Flags().StringVar(
 		&flags.infra, "infra", "", "Eject Bicep or Terraform infrastructure (optional value)",
 	)
@@ -112,6 +114,14 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if a.flags == nil {
 		a.flags = &projectAddFlags{}
+	}
+	if a.flags.newProject &&
+		(a.flags.projectID != "" || a.flags.projectEndpoint != "") {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--new-project cannot be combined with --project-id or --project-endpoint",
+			"specify a new project or an existing project target",
+		)
 	}
 	if a.flags.projectID != "" && a.flags.projectEndpoint != "" {
 		return exterrors.Validation(
@@ -449,6 +459,9 @@ func resolveProjectTarget(
 	flags *projectAddFlags,
 ) (*resolvedProject, error) {
 	projectID, endpoint := flags.projectID, flags.projectEndpoint
+	if flags.newProject {
+		return &resolvedProject{Mode: projectModeNew}, nil
+	}
 	if projectID != "" {
 		return lookupResolvedProject(ctx, client, projectID)
 	}

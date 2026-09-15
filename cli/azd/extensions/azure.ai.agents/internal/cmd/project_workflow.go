@@ -30,6 +30,16 @@ func authorFoundryProject(
 	target *FoundryProjectInfo,
 	projectRoot string,
 ) error {
+	return authorFoundryProjectMode(ctx, azdClient, target, projectRoot, false)
+}
+
+func authorFoundryProjectMode(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	target *FoundryProjectInfo,
+	projectRoot string,
+	newProject bool,
+) error {
 	args := []string{
 		"ai",
 		"project",
@@ -38,11 +48,14 @@ func authorFoundryProject(
 		"--output",
 		"none",
 	}
+	if newProject {
+		args = append(args, "--new-project")
+	}
 	if target != nil {
 		if resourceID := strings.TrimSpace(target.ResourceId); resourceID != "" {
-			args = append(args, "--project-id", resourceID)
+			args = append(args, "--project-id", resourceID, "--force")
 		} else if endpoint := strings.TrimSpace(target.Endpoint()); endpoint != "" {
-			args = append(args, "--project-endpoint", endpoint)
+			args = append(args, "--project-endpoint", endpoint, "--force")
 		}
 	}
 	return runProjectWorkflow(
@@ -87,7 +100,9 @@ func authorNewFoundryProject(
 		}
 	}
 
-	authorErr := authorFoundryProject(ctx, azdClient, nil, projectRoot)
+	authorErr := authorFoundryProjectMode(
+		ctx, azdClient, nil, projectRoot, true,
+	)
 	var restoreErrs []error
 	for _, key := range newProjectEnvironmentKeys {
 		value := strings.TrimSpace(values[key])
@@ -113,6 +128,10 @@ func authorFoundryDeployments(
 	deployments []project.Deployment,
 ) error {
 	for _, deployment := range deployments {
+		model := deployment.Model.Name
+		if format := strings.TrimSpace(deployment.Model.Format); format != "" {
+			model = format + "/" + model
+		}
 		args := []string{
 			"ai",
 			"project",
@@ -122,7 +141,7 @@ func authorFoundryDeployments(
 			"--output",
 			"none",
 			"--model",
-			deployment.Model.Name,
+			model,
 		}
 		if deployment.Name != "" {
 			args = append(args, "--name", deployment.Name)

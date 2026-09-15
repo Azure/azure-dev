@@ -248,6 +248,41 @@ func TestProjectAddRejectsExplicitForceWithoutTarget(t *testing.T) {
 	assert.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
 }
 
+func TestProjectAddRejectsNewProjectWithExistingTarget(t *testing.T) {
+	action := &ProjectAddAction{
+		flags: &projectAddFlags{
+			newProject:      true,
+			projectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+		},
+	}
+
+	err := action.Run(t.Context())
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+}
+
+func TestResolveProjectTargetExplicitNewProjectIgnoresExistingConfiguration(t *testing.T) {
+	target, err := resolveProjectTarget(
+		t.Context(),
+		nil,
+		nil,
+		&projectServiceInfo{
+			Resolved: map[string]any{
+				"endpoint": "https://old.services.ai.azure.com/api/projects/old",
+			},
+		},
+		map[string]string{
+			"AZURE_AI_PROJECT_ID": "/subscriptions/sub/resourceGroups/rg/providers/" +
+				"Microsoft.CognitiveServices/accounts/account/projects/old",
+		},
+		&projectAddFlags{newProject: true, noPrompt: true},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, projectModeNew, target.Mode)
+}
+
 func TestConfirmExplicitProjectReplacementUsesEnvironmentEndpoint(t *testing.T) {
 	const (
 		oldEndpoint = "https://old.services.ai.azure.com/api/projects/old"

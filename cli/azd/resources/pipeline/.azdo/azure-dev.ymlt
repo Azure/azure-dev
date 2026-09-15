@@ -19,6 +19,7 @@ steps:
     inputs:
       targetType: 'inline'
       script: |
+        set -e
 {{- range $extension := .RequiredExtensions }}
         azd extension install {{ $extension.Id }}{{ if $extension.Version }} --version {{ $extension.Version }} --force{{ end }} --no-prompt
 {{- end }}

@@ -682,6 +682,7 @@ func Test_promptForCiFiles(t *testing.T) {
 		require.NoError(t, err)
 		generated := string(content)
 		assert.Contains(t, generated, "Install required azd extensions")
+		assert.Contains(t, generated, "set -e")
 		assert.Contains(t, generated,
 			"azd extension install azure.ai.agents --version 1.0.0-beta.9 --force --no-prompt")
 		assert.Contains(t, generated,

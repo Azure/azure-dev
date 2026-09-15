@@ -622,6 +622,7 @@ func fileExists(path string) bool {
 
 // AgentServiceInfo holds the resolved deployment information for an agent service.
 type AgentServiceInfo struct {
+	IsVoice                     bool                               // populated only when voice classification is requested
 	ServiceName                 string                             // azure.yaml service key
 	AgentName                   string                             // deployed name; may use brownfield fallback
 	Version                     string                             // deployed agent version from env
@@ -1030,9 +1031,16 @@ type agentServiceResolutionOptions struct {
 	matchDeployedAgentName         bool
 	rejectVoiceInvocation          bool
 	allowMissingDefaultEnvironment bool
+	includeVoiceKind               bool
 }
 
 type agentServiceResolutionOption func(*agentServiceResolutionOptions)
+
+func withVoiceKind() agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.includeVoiceKind = true
+	}
+}
 
 // errVoiceInvocationUnsupported is shared by automatic and explicit-protocol
 // invocation so direct-name fallback cannot swallow the voice guidance.
@@ -1132,6 +1140,13 @@ func resolveAgentServiceFromProject(
 	}
 
 	info := &AgentServiceInfo{ServiceName: svc.Name}
+	if resolutionOptions.includeVoiceKind {
+		isVoice, err := agentkind.IsPromptVoice(svc, projectConfig.Path, os.Getenv("AGENT_DEFINITION_PATH"))
+		if err != nil {
+			return nil, fmt.Errorf("determining agent kind: %w", err)
+		}
+		info.IsVoice = isVoice
+	}
 
 	if envValues == nil {
 		// Resolve deployed metadata from azd environment.

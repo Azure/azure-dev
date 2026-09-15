@@ -26,8 +26,8 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 	host.WithServiceTarget(project.EvalHost, func() azdext.ServiceTargetProvider {
 		return project.NewEvalServiceTargetProvider(
 			azdClient,
-			func(ctx context.Context) (project.Reconciler, error) {
-				return newEvalReconciler(ctx)
+			func(ctx context.Context, scope string) (project.Reconciler, error) {
+				return newEvalReconciler(ctx, scope)
 			},
 		)
 	})

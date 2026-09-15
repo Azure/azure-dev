@@ -45,16 +45,20 @@ type evalReconciler struct {
 	// decided holds each declaration's digests, so reservation and
 	// reconciliation cannot answer the question differently.
 	decided map[string]evalDecision
+
+	// scope is the configuration these ids belong to. Empty outside a deploy,
+	// where there is one configuration in play and nothing to tell apart.
+	scope string
 }
 
 var _ project.Reconciler = (*evalReconciler)(nil)
 
-func newEvalReconciler(ctx context.Context) (project.Reconciler, error) {
+func newEvalReconciler(ctx context.Context, scope string) (project.Reconciler, error) {
 	ec, err := newEvalContext(ctx, "")
 	if err != nil {
 		return nil, err
 	}
-	return &evalReconciler{ec: ec}, nil
+	return &evalReconciler{ec: ec, scope: scope}, nil
 }
 
 // claim records an eval this deploy has settled on, and which declaration
@@ -108,7 +112,7 @@ func (r *evalReconciler) ReserveDeclared(ctx context.Context, groups []project.E
 			// EnsureEval, where it can fail the deploy.
 			continue
 		}
-		id := r.ec.privateValue(ctx, idKey("eval", groups[i].Name))
+		id := r.ec.scopedValue(ctx, idKey("eval", groups[i].Name), r.scope)
 		if id == "" || decision.recreate {
 			continue
 		}
@@ -843,7 +847,7 @@ func (r *evalReconciler) EnsureEval(
 		return "", false, err
 	}
 
-	cached := r.ec.privateValue(ctx, idKey("eval", group.Name))
+	cached := r.ec.scopedValue(ctx, idKey("eval", group.Name), r.scope)
 	// A rename records the id under the new name and leaves the old name's entry
 	// pointing at it. Reintroducing that old name then found a live id here and
 	// took it, without ever passing the ownership check adoption makes -- so two
@@ -887,8 +891,8 @@ func (r *evalReconciler) EnsureEval(
 			// later edits go undetected. The identity digest is recorded beside
 			// it, which is what recognizes this declaration after a rename.
 			r.ec.remember(ctx, key, definition)
-			r.ec.remember(ctx, idKey("eval", group.Name), cached)
-			r.ec.remember(ctx, digestIDKey(digest), cached)
+			r.ec.rememberScoped(ctx, idKey("eval", group.Name), r.scope, cached)
+			r.ec.rememberScoped(ctx, digestIDKey(digest), r.scope, cached)
 			r.claim(cached, group.Name)
 			return cached, false, nil
 		}
@@ -899,8 +903,8 @@ func (r *evalReconciler) EnsureEval(
 		return "", false, err
 	}
 	r.ec.remember(ctx, key, definition)
-	r.ec.remember(ctx, idKey("eval", group.Name), created.ID)
-	r.ec.remember(ctx, digestIDKey(digest), created.ID)
+	r.ec.rememberScoped(ctx, idKey("eval", group.Name), r.scope, created.ID)
+	r.ec.rememberScoped(ctx, digestIDKey(digest), r.scope, created.ID)
 	r.claim(created.ID, group.Name)
 	return created.ID, true, nil
 }
@@ -915,7 +919,7 @@ func (r *evalReconciler) adoptRenamed(
 	group project.Eval,
 	digest string,
 ) (string, error) {
-	id := r.ec.privateValue(ctx, digestIDKey(digest))
+	id := r.ec.scopedValue(ctx, digestIDKey(digest), r.scope)
 	if id == "" {
 		return "", nil
 	}

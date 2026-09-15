@@ -52,8 +52,10 @@ type Reconciler interface {
 // ordering across services through `uses:`; this provider owns only the order
 // within the eval service itself.
 type EvalServiceTargetProvider struct {
-	azdClient     *azdext.AzdClient
-	newReconciler func(ctx context.Context) (Reconciler, error)
+	azdClient *azdext.AzdClient
+	// scope identifies the configuration being deployed, so ids recorded under
+	// an eval's name can be told apart when two services declare the same one.
+	newReconciler func(ctx context.Context, scope string) (Reconciler, error)
 
 	serviceConfig *azdext.ServiceConfig
 }
@@ -62,7 +64,7 @@ type EvalServiceTargetProvider struct {
 // lazily so the data-plane clients are only created when a deploy actually runs.
 func NewEvalServiceTargetProvider(
 	azdClient *azdext.AzdClient,
-	newReconciler func(ctx context.Context) (Reconciler, error),
+	newReconciler func(ctx context.Context, scope string) (Reconciler, error),
 ) *EvalServiceTargetProvider {
 	return &EvalServiceTargetProvider{azdClient: azdClient, newReconciler: newReconciler}
 }
@@ -158,7 +160,7 @@ func (p *EvalServiceTargetProvider) Deploy(
 		return nil, messages.EvalConfigInvalid(err)
 	}
 
-	reconciler, err := p.newReconciler(ctx)
+	reconciler, err := p.newReconciler(ctx, EvalScopeOfService(serviceConfig, projectRoot))
 	if err != nil {
 		return nil, err
 	}

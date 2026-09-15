@@ -58,7 +58,8 @@ func (ec *evalContext) resolveEvalRef(
 		eval, err := cfg.Eval(nameOrID)
 		switch {
 		case err == nil:
-			id := ec.recordedEvalID(ctx, eval.Name)
+			scope := ec.evalScopeOf(ctx, configPath)
+			id := ec.recordedEvalID(ctx, eval.Name, scope)
 			if id == "" {
 				// Nothing recorded is not the same as nothing published. The
 				// id is kept in the azd environment, so a run against
@@ -100,7 +101,7 @@ func (ec *evalContext) resolveEvalRef(
 				// leaves it empty, and recordedEvalID answers "" without
 				// asking when it is. Now that there is a name, ask properly
 				// before reporting a deployed eval as missing.
-				if id = ec.recordedEvalID(ctx, eval.Name); id == "" {
+				if id = ec.recordedEvalID(ctx, eval.Name, scope); id == "" {
 					return evalRef{}, messages.EvalNotDeployedYet(
 						eval.Name, ec.deployCommand(ctx))
 				}
@@ -129,8 +130,20 @@ func (ec *evalContext) resolveEvalRef(
 // had been swapped for a different one ran the previous eval's criteria over
 // the new one's rows, reported as success. A miss falls through to the service
 // listing by name, which answers the question the id was standing in for.
-func (ec *evalContext) recordedEvalID(ctx context.Context, evalName string) string {
-	return ec.privateValue(ctx, idKey("eval", evalName))
+func (ec *evalContext) recordedEvalID(ctx context.Context, evalName, scope string) string {
+	return ec.scopedValue(ctx, idKey("eval", evalName), scope)
+}
+
+// evalScopeOf names the configuration an id lookup is about, the same way the
+// deploy that recorded it did. Empty when the project root cannot be read,
+// which answers with the unqualified key -- the one a single-configuration
+// project has always used.
+func (ec *evalContext) evalScopeOf(ctx context.Context, configPath string) string {
+	root, err := ec.projectRoot(ctx)
+	if err != nil {
+		return ""
+	}
+	return project.EvalScope(root, configPath)
 }
 
 // evalIDNamed finds the id of the eval the service lists under this name.

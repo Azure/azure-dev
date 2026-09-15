@@ -31,7 +31,7 @@ func TestRecordedEvalIDIgnoresTheSharedKey(t *testing.T) {
 	}}
 	ec := &evalContext{azdClient: newTestAzdClient(t, env), envName: "test"}
 
-	assert.Empty(t, ec.recordedEvalID(context.Background(), "nightly"),
+	assert.Empty(t, ec.recordedEvalID(context.Background(), "nightly", ""),
 		"a shared key cannot say which declaration it belongs to")
 
 	// The entry recorded under the eval's own name does answer, which is what
@@ -39,5 +39,5 @@ func TestRecordedEvalIDIgnoresTheSharedKey(t *testing.T) {
 	// second context because the first cached the state it read.
 	env.state[idKey("eval", "nightly")] = "evalgroup_nightly"
 	fresh := &evalContext{azdClient: newTestAzdClient(t, env), envName: "test"}
-	require.Equal(t, "evalgroup_nightly", fresh.recordedEvalID(context.Background(), "nightly"))
+	require.Equal(t, "evalgroup_nightly", fresh.recordedEvalID(context.Background(), "nightly", ""))
 }

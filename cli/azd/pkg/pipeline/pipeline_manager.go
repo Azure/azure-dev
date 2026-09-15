@@ -1303,7 +1303,7 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		Secrets:                props.Secrets,
 		RequiredExtensions:     props.RequiredExtensions,
 		AlphaFeatures:          props.RequiredAlphaFeatures,
-		IsTerraform:            props.InfraProvider == infraProviderTerraform,
+		IsTerraform:            props.UsesTerraform || props.InfraProvider == infraProviderTerraform,
 	}
 
 	// Apply provider parameters
@@ -1317,7 +1317,7 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		}
 	}
 
-	if props.InfraProvider == infraProviderTerraform {
+	if tmplContext.IsTerraform {
 		// terraform provider does not resolve this variables automatically, AZD needs to define them
 		tmplContext.Variables = append(tmplContext.Variables, "AZURE_LOCATION")
 		tmplContext.Variables = append(tmplContext.Variables, "AZURE_ENV_NAME")
@@ -1504,6 +1504,7 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 			CiProvider:            pm.ciProviderType,
 			RepoRoot:              repoRoot,
 			InfraProvider:         infraProvider,
+			UsesTerraform:         usesTerraform(pm.infra.Options),
 			HasAppHost:            hasAppHost,
 			BranchName:            branchName,
 			AuthType:              authType,

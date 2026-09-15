@@ -367,9 +367,16 @@ func toInfraProviderType(provider string) (infraProviderType, error) {
 	return infraProviderCustom, nil
 }
 
+func usesTerraform(options provisioning.Options) bool {
+	return slices.ContainsFunc(options.GetLayers(), func(layer provisioning.Options) bool {
+		return layer.Provider == provisioning.Terraform
+	})
+}
+
 type projectProperties struct {
 	CiProvider            ciProviderType
 	InfraProvider         infraProviderType
+	UsesTerraform         bool
 	RepoRoot              string
 	HasAppHost            bool
 	BranchName            string

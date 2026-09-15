@@ -609,6 +609,27 @@ func Test_promptForCiFiles(t *testing.T) {
 		))
 	})
 
+	t.Run("terraform layer installs terraform for github", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectories[0])
+		require.NoError(t, os.MkdirAll(path, osutil.PermissionDirectory))
+		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
+
+		err := generatePipelineDefinition(expectedPath, projectProperties{
+			CiProvider:    ciProviderGitHubActions,
+			InfraProvider: infraProviderCustom,
+			UsesTerraform: true,
+			RepoRoot:      tempDir,
+			BranchName:    "main",
+			AuthType:      AuthTypeFederated,
+		})
+
+		require.NoError(t, err)
+		content, err := os.ReadFile(expectedPath)
+		require.NoError(t, err)
+		assert.Contains(t, string(content), "uses: hashicorp/setup-terraform@v3")
+	})
+
 	t.Run("required extensions are installed for azdo", func(t *testing.T) {
 		tempDir := t.TempDir()
 		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].PipelineDirectories[0])
@@ -625,6 +646,27 @@ func Test_promptForCiFiles(t *testing.T) {
 				{Id: "azure.ai.agents", Version: "1.0.0-beta.9"},
 				{Id: "azure.ai.projects", Version: "1.0.0-beta.10"},
 			},
+		})
+
+		t.Run("terraform layer installs terraform for azdo", func(t *testing.T) {
+			tempDir := t.TempDir()
+			path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].PipelineDirectories[0])
+			require.NoError(t, os.MkdirAll(path, osutil.PermissionDirectory))
+			expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].Files[0])
+
+			err := generatePipelineDefinition(expectedPath, projectProperties{
+				CiProvider:    ciProviderAzureDevOps,
+				InfraProvider: infraProviderCustom,
+				UsesTerraform: true,
+				RepoRoot:      tempDir,
+				BranchName:    "main",
+				AuthType:      AuthTypeFederated,
+			})
+
+			require.NoError(t, err)
+			content, err := os.ReadFile(expectedPath)
+			require.NoError(t, err)
+			assert.Contains(t, string(content), "task: TerraformInstaller@1")
 		})
 
 		require.NoError(t, err)

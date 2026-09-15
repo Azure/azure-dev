@@ -126,6 +126,21 @@ func Test_toInfraProviderType(t *testing.T) {
 	}
 }
 
+func TestUsesTerraform(t *testing.T) {
+	assert.True(t, usesTerraform(provisioning.Options{
+		Layers: []provisioning.Options{
+			{Provider: provisioning.ProviderKind("microsoft.foundry")},
+			{Provider: provisioning.Terraform},
+		},
+	}))
+	assert.False(t, usesTerraform(provisioning.Options{
+		Layers: []provisioning.Options{
+			{Provider: provisioning.ProviderKind("microsoft.foundry")},
+			{Provider: provisioning.Bicep},
+		},
+	}))
+}
+
 // ------------------------------------------------------------------
 // generateFilePaths
 // ------------------------------------------------------------------

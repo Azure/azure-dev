@@ -985,6 +985,31 @@ func TestExistingEndpointModeAllowsUnchangedManagedDeployments(t *testing.T) {
 	require.NoError(t, validateExistingEndpointMode(service, endpoint, "", nil))
 }
 
+func TestExistingEndpointModeRejectsClearingIdentityWithUnchangedDeployments(
+	t *testing.T,
+) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
+	service := &projectServiceInfo{
+		Raw: map[string]any{
+			"endpoint":    endpoint,
+			"deployments": []any{map[string]any{"name": "chat"}},
+		},
+		Resolved: map[string]any{
+			"endpoint":    endpoint,
+			"deployments": []any{map[string]any{"name": "chat"}},
+		},
+	}
+
+	err := validateExistingEndpointMode(
+		service,
+		endpoint,
+		"",
+		map[string]string{"AZURE_AI_PROJECT_ID": "project-id"},
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "while clearing project identity")
+}
+
 func TestExistingEndpointModeRejectsManagedDeploymentsWhenEndpointChanges(t *testing.T) {
 	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
 	service := &projectServiceInfo{
@@ -1159,10 +1184,12 @@ func TestExistingEndpointModeRejectsPendingAcr(t *testing.T) {
 func TestProjectAddEndpointOnlyPreflightsHostedAgents(t *testing.T) {
 	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
 	tests := []struct {
-		name    string
-		agents  string
-		sibling string
-		reject  bool
+		name               string
+		agents             string
+		sibling            string
+		managedDeployments bool
+		projectID          string
+		reject             bool
 	}{
 		{
 			name:   "inline hosted agent",
@@ -1182,6 +1209,13 @@ func TestProjectAddEndpointOnlyPreflightsHostedAgents(t *testing.T) {
 			name:   "inline code agent",
 			agents: "    agents:\n      - name: code\n        kind: hosted\n        codeConfiguration:\n          runtime: python\n          entryPoint: main.py\n",
 		},
+		{
+			name:               "managed deployments with project identity",
+			managedDeployments: true,
+			projectID: "/subscriptions/sub/resourceGroups/rg/providers/" +
+				"Microsoft.CognitiveServices/accounts/account/projects/project",
+			reject: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1200,11 +1234,17 @@ services:
 				0600,
 			))
 
+			projectService := map[string]any{
+				"host":     aiProjectHost,
+				"endpoint": endpoint,
+			}
+			if tt.managedDeployments {
+				projectService["deployments"] = []any{
+					map[string]any{"name": "chat"},
+				}
+			}
 			section, err := structpb.NewStruct(map[string]any{
-				"project": map[string]any{
-					"host":     aiProjectHost,
-					"endpoint": endpoint,
-				},
+				"project": projectService,
 			})
 			require.NoError(t, err)
 			projectServer := &recordingProjectConfigServer{
@@ -1224,6 +1264,9 @@ services:
 					"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT": endpoint,
 					"USE_EXISTING_AI_PROJECT":                       "true",
 				},
+			}
+			if tt.projectID != "" {
+				envServer.values["AZURE_AI_PROJECT_ID"] = tt.projectID
 			}
 			server := grpc.NewServer()
 			azdext.RegisterProjectServiceServer(server, projectServer)
@@ -1247,8 +1290,10 @@ services:
 			action := &ProjectAddAction{
 				client: client,
 				flags: &projectAddFlags{
-					noPrompt: true,
-					output:   "none",
+					projectEndpoint: endpoint,
+					force:           tt.projectID != "",
+					noPrompt:        true,
+					output:          "none",
 				},
 				extCtx: &azdext.ExtensionContext{Environment: "test"},
 			}

@@ -1396,12 +1396,14 @@ func validateExistingEndpointMode(
 		return nil
 	}
 	sameEndpoint := equalProjectEndpoint(serviceEndpoint(service.Resolved), endpoint)
-	if !sameEndpoint &&
-		(hasManagedDeployments(service.Resolved) ||
-			hasManagedDeployments(service.Raw)) {
+	hasDeployments := hasManagedDeployments(service.Resolved) ||
+		hasManagedDeployments(service.Raw)
+	if hasDeployments &&
+		(!sameEndpoint || strings.TrimSpace(values["AZURE_AI_PROJECT_ID"]) != "") {
 		return exterrors.Dependency(
 			"project_reconciliation_requires_project_id",
-			"endpoint-only setup cannot retain managed model deployments",
+			"endpoint-only setup cannot retain managed model deployments "+
+				"while clearing project identity",
 			"rerun `azd ai project add --project-id <resource-id>` "+
 				"before managing deployments",
 		)

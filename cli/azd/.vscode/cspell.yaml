@@ -108,6 +108,7 @@ words:
   - santhosh
   - tekuri
   - jsonschema
+  - innererror
   - rustc
   - figspec
   - finetune
@@ -499,6 +500,9 @@ overrides:
     words:
       - forbidigo
       - Logf
+  - filename: extensions/azure.ai.dataset/README.md
+    words:
+      - CODEOWNERS
   - filename: .golangci.yaml
     words:
       - forbidigo

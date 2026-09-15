@@ -95,6 +95,11 @@ func (s *Server) registerServices() error {
 			service:  extensionService,
 			override: betaServiceOverrides[BetaExtensionService],
 		}
+		if serviceTargetService, ok := s.serviceTargetService.(*ServiceTargetService); ok {
+			betaServiceOverrides[BetaServiceTargetService] = &betaServiceTargetServiceOverride{
+				service: serviceTargetService,
+			}
+		}
 	}
 
 	legacyExtensionService := &betaExtensionServiceAdapter{

@@ -24,23 +24,24 @@ type AzdClientOption func(*AzdClient) error
 
 // AzdClient is the client for the `azd` gRPC server.
 type AzdClient struct {
-	connection          *grpc.ClientConn
-	projectClient       ProjectServiceClient
-	environmentClient   EnvironmentServiceClient
-	userConfigClient    UserConfigServiceClient
-	promptClient        PromptServiceClient
-	deploymentClient    DeploymentServiceClient
-	eventsClient        EventServiceClient
-	composeClient       v1beta.ComposeServiceClient
-	workflowClient      WorkflowServiceClient
-	extensionClient     ExtensionServiceClient
-	serviceTargetClient ServiceTargetServiceClient
-	containerClient     ContainerServiceClient
-	accountClient       AccountServiceClient
-	aiClient            AiModelServiceClient
-	copilotClient       v1beta.CopilotServiceClient
-	provisioningClient  ProvisioningServiceClient
-	validationClient    ValidationServiceClient
+	connection              *grpc.ClientConn
+	projectClient           ProjectServiceClient
+	environmentClient       EnvironmentServiceClient
+	userConfigClient        UserConfigServiceClient
+	promptClient            PromptServiceClient
+	deploymentClient        DeploymentServiceClient
+	eventsClient            EventServiceClient
+	composeClient           v1beta.ComposeServiceClient
+	workflowClient          WorkflowServiceClient
+	extensionClient         ExtensionServiceClient
+	serviceTargetClient     ServiceTargetServiceClient
+	betaServiceTargetClient v1beta.ServiceTargetServiceClient
+	containerClient         ContainerServiceClient
+	accountClient           AccountServiceClient
+	aiClient                AiModelServiceClient
+	copilotClient           v1beta.CopilotServiceClient
+	provisioningClient      ProvisioningServiceClient
+	validationClient        ValidationServiceClient
 }
 
 // WithAddress sets the address of the `azd` gRPC server.
@@ -237,6 +238,14 @@ func (c *AzdClient) ServiceTarget() ServiceTargetServiceClient {
 		c.serviceTargetClient = NewServiceTargetServiceClient(c.connection)
 	}
 	return c.serviceTargetClient
+}
+
+// BetaServiceTarget returns the preview service target client.
+func (c *AzdClient) BetaServiceTarget() v1beta.ServiceTargetServiceClient {
+	if c.betaServiceTargetClient == nil {
+		c.betaServiceTargetClient = v1beta.NewServiceTargetServiceClient(c.connection)
+	}
+	return c.betaServiceTargetClient
 }
 
 // FrameworkService returns the framework service client.

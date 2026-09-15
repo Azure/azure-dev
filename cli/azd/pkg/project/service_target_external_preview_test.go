@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
@@ -24,26 +25,26 @@ import (
 
 type externalPreviewStream struct {
 	ctx       context.Context
-	requests  chan *azdext.ServiceTargetMessage
-	responses chan *azdext.ServiceTargetMessage
-	response  *azdext.ServiceTargetMessage
+	requests  chan *v1beta.ServiceTargetMessage
+	responses chan *v1beta.ServiceTargetMessage
+	response  *v1beta.ServiceTargetMessage
 	sendErr   error
 }
 
-func (s *externalPreviewStream) Send(request *azdext.ServiceTargetMessage) error {
+func (s *externalPreviewStream) Send(request *v1beta.ServiceTargetMessage) error {
 	s.requests <- request
 	if s.sendErr != nil {
 		return s.sendErr
 	}
 	if s.response != nil {
-		response := proto.Clone(s.response).(*azdext.ServiceTargetMessage)
+		response := proto.Clone(s.response).(*v1beta.ServiceTargetMessage)
 		response.RequestId = request.RequestId
 		s.responses <- response
 	}
 	return nil
 }
 
-func (s *externalPreviewStream) Recv() (*azdext.ServiceTargetMessage, error) {
+func (s *externalPreviewStream) Recv() (*v1beta.ServiceTargetMessage, error) {
 	select {
 	case <-s.ctx.Done():
 		return nil, io.EOF
@@ -54,20 +55,20 @@ func (s *externalPreviewStream) Recv() (*azdext.ServiceTargetMessage, error) {
 
 func newExternalPreviewTarget(
 	t *testing.T,
-	response *azdext.ServiceTargetMessage,
+	response *v1beta.ServiceTargetMessage,
 	sendErr error,
 ) (*ExternalServiceTarget, *externalPreviewStream) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	stream := &externalPreviewStream{
 		ctx:       ctx,
-		requests:  make(chan *azdext.ServiceTargetMessage, 4),
-		responses: make(chan *azdext.ServiceTargetMessage, 4),
+		requests:  make(chan *v1beta.ServiceTargetMessage, 4),
+		responses: make(chan *v1beta.ServiceTargetMessage, 4),
 		response:  response,
 		sendErr:   sendErr,
 	}
 	broker := grpcbroker.NewMessageBroker(
-		stream, azdext.NewServiceTargetEnvelope(), "preview-test", log.New(io.Discard, "", 0),
+		stream, azdext.NewBetaServiceTargetEnvelope(), "preview-test", log.New(io.Discard, "", 0),
 	)
 	done := make(chan error, 1)
 	go func() { done <- broker.Run(ctx) }()
@@ -84,9 +85,9 @@ func newExternalPreviewTarget(
 		}
 	})
 	env := environment.NewWithValues("test", map[string]string{"IMAGE_NAME": "example/image:v1"})
-	target := NewExternalServiceTarget(
+	target := NewBetaExternalServiceTarget(
 		"custom", ServiceTargetKind("custom"), &extensions.Extension{Id: "test.extension"},
-		broker, nil, nil, lazy.From(env), true,
+		broker, nil, nil, lazy.From(env),
 	).(*ExternalServiceTarget)
 	return target, stream
 }
@@ -130,10 +131,10 @@ func TestExternalServiceTargetPreviewUsesOnlyPreviewRequest(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	target, stream := newExternalPreviewTarget(t, &azdext.ServiceTargetMessage{
-		MessageType: &azdext.ServiceTargetMessage_PreviewResponse{
-			PreviewResponse: &azdext.ServiceTargetPreviewResponse{
-				Result: &azdext.ServiceDeployPreviewResult{Message: "Read-only plan", Data: data},
+	target, stream := newExternalPreviewTarget(t, &v1beta.ServiceTargetMessage{
+		MessageType: &v1beta.ServiceTargetMessage_PreviewResponse{
+			PreviewResponse: &v1beta.ServiceTargetPreviewResponse{
+				Result: &v1beta.ServiceDeployPreviewResult{Message: "Read-only plan", Data: data},
 			},
 		},
 	}, nil)
@@ -159,21 +160,21 @@ func TestExternalServiceTargetPreviewInvalidResponse(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name     string
-		response *azdext.ServiceTargetMessage
+		response *v1beta.ServiceTargetMessage
 	}{
 		{
 			name: "MissingResponse",
-			response: &azdext.ServiceTargetMessage{
-				MessageType: &azdext.ServiceTargetMessage_InitializeResponse{
-					InitializeResponse: &azdext.ServiceTargetInitializeResponse{},
+			response: &v1beta.ServiceTargetMessage{
+				MessageType: &v1beta.ServiceTargetMessage_InitializeResponse{
+					InitializeResponse: &v1beta.ServiceTargetInitializeResponse{},
 				},
 			},
 		},
 		{
 			name: "MissingResult",
-			response: &azdext.ServiceTargetMessage{
-				MessageType: &azdext.ServiceTargetMessage_PreviewResponse{
-					PreviewResponse: &azdext.ServiceTargetPreviewResponse{},
+			response: &v1beta.ServiceTargetMessage{
+				MessageType: &v1beta.ServiceTargetMessage_PreviewResponse{
+					PreviewResponse: &v1beta.ServiceTargetPreviewResponse{},
 				},
 			},
 		},
@@ -191,10 +192,10 @@ func TestExternalServiceTargetPreviewInvalidResponse(t *testing.T) {
 
 func TestExternalServiceTargetPreviewEmptyData(t *testing.T) {
 	t.Parallel()
-	target, _ := newExternalPreviewTarget(t, &azdext.ServiceTargetMessage{
-		MessageType: &azdext.ServiceTargetMessage_PreviewResponse{
-			PreviewResponse: &azdext.ServiceTargetPreviewResponse{
-				Result: &azdext.ServiceDeployPreviewResult{},
+	target, _ := newExternalPreviewTarget(t, &v1beta.ServiceTargetMessage{
+		MessageType: &v1beta.ServiceTargetMessage_PreviewResponse{
+			PreviewResponse: &v1beta.ServiceTargetPreviewResponse{
+				Result: &v1beta.ServiceDeployPreviewResult{},
 			},
 		},
 	}, nil)
@@ -216,9 +217,9 @@ func TestExternalServiceTargetPreviewErrors(t *testing.T) {
 	})
 	t.Run("Provider", func(t *testing.T) {
 		t.Parallel()
-		target, _ := newExternalPreviewTarget(t, &azdext.ServiceTargetMessage{
-			Error: azdext.WrapError(errors.New("provider read failed")),
-		}, nil)
+		response := new(v1beta.ServiceTargetMessage)
+		azdext.NewBetaServiceTargetEnvelope().SetError(response, errors.New("provider read failed"))
+		target, _ := newExternalPreviewTarget(t, response, nil)
 		_, err := target.Preview(t.Context(), &ServiceConfig{Name: "api"})
 		require.ErrorContains(t, err, "provider read failed")
 	})

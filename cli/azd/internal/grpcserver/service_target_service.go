@@ -29,7 +29,7 @@ type ServiceTargetService struct {
 	container        *ioc.NestedContainer
 	extensionManager *extensions.Manager
 	lazyEnv          *lazy.Lazy[*environment.Environment]
-	providerMap      map[string]*grpcbroker.MessageBroker[azdext.ServiceTargetMessage]
+	providerMap      map[string]struct{}
 	providerMapMu    sync.Mutex
 }
 
@@ -43,7 +43,7 @@ func NewServiceTargetService(
 		container:        container,
 		extensionManager: extensionManager,
 		lazyEnv:          lazyEnv,
-		providerMap:      make(map[string]*grpcbroker.MessageBroker[azdext.ServiceTargetMessage]),
+		providerMap:      make(map[string]struct{}),
 	}
 }
 
@@ -118,7 +118,6 @@ func (s *ServiceTargetService) onRegisterRequest(
 	}
 
 	// Register external service target with DI container, passing the broker
-	supportsPreview := req.GetSupportsPreview()
 	err := s.container.RegisterNamedSingleton(hostType, func(
 		console input.Console,
 		prompter prompt.Prompter,
@@ -131,7 +130,6 @@ func (s *ServiceTargetService) onRegisterRequest(
 			console,
 			prompter,
 			s.lazyEnv,
-			supportsPreview,
 		)
 	})
 
@@ -139,7 +137,7 @@ func (s *ServiceTargetService) onRegisterRequest(
 		return nil, status.Errorf(codes.Internal, "failed to register service target: %s", err.Error())
 	}
 
-	s.providerMap[hostType] = broker
+	s.providerMap[hostType] = struct{}{}
 	*registeredHostType = hostType
 	log.Printf("Registered service target: %s", hostType)
 

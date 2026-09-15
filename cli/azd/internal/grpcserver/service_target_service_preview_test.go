@@ -6,7 +6,7 @@ package grpcserver
 import (
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -20,39 +20,46 @@ type previewRegistrationPrompter struct {
 	prompt.Prompter
 }
 
-func TestServiceTargetServiceRegistersPreviewCapability(t *testing.T) {
+func TestBetaServiceTargetServiceRegistersPreviewCapability(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct {
-		name            string
-		supportsPreview bool
-		wantError       string
-	}{
-		{name: "LegacyProvider", wantError: "does not support deployment preview"},
-		{name: "PreviewProvider", supportsPreview: true, wantError: "service configuration is required"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			container := ioc.NewNestedContainer(nil)
-			ioc.RegisterInstance[input.Console](container, mockinput.NewMockConsole())
-			ioc.RegisterInstance[prompt.Prompter](container, &previewRegistrationPrompter{})
-			server := NewServiceTargetService(container, nil, nil).(*ServiceTargetService)
-			req := &azdext.RegisterServiceTargetRequest{Host: "custom", SupportsPreview: tc.supportsPreview}
-			host := ""
-			response, err := server.onRegisterRequest(
-				t.Context(), req, &extensions.Extension{Id: "test.extension"}, nil, &host,
-			)
-			require.NoError(t, err)
-			require.NotNil(t, response.GetRegisterServiceTargetResponse())
-			require.Equal(t, "custom", host)
+	container := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance[input.Console](container, mockinput.NewMockConsole())
+	ioc.RegisterInstance[prompt.Prompter](container, &previewRegistrationPrompter{})
+	service := NewServiceTargetService(container, nil, nil).(*ServiceTargetService)
+	override := &betaServiceTargetServiceOverride{service: service}
+	host := ""
+	response, err := override.onRegisterRequest(
+		t.Context(),
+		&v1beta.RegisterServiceTargetRequest{Host: "custom", SupportsPreview: true},
+		&extensions.Extension{Id: "test.extension"},
+		nil,
+		&host,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, response.GetRegisterServiceTargetResponse())
+	require.Equal(t, "custom", host)
 
-			// Registration captures the negotiated capability, not the mutable request object.
-			req.SupportsPreview = !req.SupportsPreview
-			var target project.ServiceTarget
-			require.NoError(t, container.ResolveNamed(host, &target))
-			previewer, ok := target.(project.ServiceTargetPreviewer)
-			require.True(t, ok)
-			_, err = previewer.Preview(t.Context(), nil)
-			require.ErrorContains(t, err, tc.wantError)
-		})
-	}
+	var target project.ServiceTarget
+	require.NoError(t, container.ResolveNamed(host, &target))
+	capability, ok := target.(project.ServiceTargetPreviewCapability)
+	require.True(t, ok)
+	require.True(t, capability.SupportsPreview())
+	previewer, ok := target.(project.ServiceTargetPreviewer)
+	require.True(t, ok)
+	_, err = previewer.Preview(t.Context(), nil)
+	require.ErrorContains(t, err, "service configuration is required")
+}
+
+func TestBetaServiceTargetServiceRejectsMissingPreviewCapability(t *testing.T) {
+	t.Parallel()
+	service := NewServiceTargetService(ioc.NewNestedContainer(nil), nil, nil).(*ServiceTargetService)
+	override := &betaServiceTargetServiceOverride{service: service}
+	_, err := override.onRegisterRequest(
+		t.Context(),
+		&v1beta.RegisterServiceTargetRequest{Host: "custom"},
+		&extensions.Extension{Id: "test.extension"},
+		nil,
+		new(string),
+	)
+	require.ErrorContains(t, err, "must advertise deployment preview support")
 }

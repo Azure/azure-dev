@@ -8,9 +8,11 @@ import (
 	"errors"
 	"testing"
 
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -556,17 +558,23 @@ func TestServiceTargetManager_PreviewRequest(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			manager := createTestServiceTargetManager()
+			manager := &BetaServiceTargetManager{handler: createTestServiceTargetManager()}
 			serviceConfig := createTestServiceConfigForServiceTarget("web-service", "custom")
+			betaServiceConfig := new(v1beta.ServiceConfig)
+			require.NoError(t, convertServiceTargetMessage(serviceConfig, betaServiceConfig))
 			provider := &mockServiceTargetPreviewProvider{}
-			provider.On("Preview", t.Context(), serviceConfig).Return(tt.result, tt.providerError).Once()
+			provider.On("Preview", t.Context(), mock.MatchedBy(func(actual *ServiceConfig) bool {
+				return proto.Equal(serviceConfig, actual)
+			})).Return(tt.result, tt.providerError).Once()
 			factoryCalls := 0
-			manager.componentManager.RegisterFactory("custom", func() ServiceTargetProvider {
+			manager.handler.componentManager.RegisterFactory("custom", func() ServiceTargetProvider {
 				factoryCalls++
 				return provider
 			})
 
-			response, err := manager.onPreview(t.Context(), &ServiceTargetPreviewRequest{ServiceConfig: serviceConfig})
+			response, err := manager.onPreview(t.Context(), &v1beta.ServiceTargetPreviewRequest{
+				ServiceConfig: betaServiceConfig,
+			})
 
 			switch {
 			case tt.providerError != nil:
@@ -578,11 +586,12 @@ func TestServiceTargetManager_PreviewRequest(t *testing.T) {
 			default:
 				require.NoError(t, err)
 				require.NotNil(t, response.GetPreviewResponse())
-				assert.Same(t, tt.result, response.GetPreviewResponse().Result)
+				assert.Equal(t, tt.result.Message, response.GetPreviewResponse().Result.Message)
+				assert.Equal(t, tt.result.Data, response.GetPreviewResponse().Result.Data)
 				assert.Nil(t, response.GetDeployResponse())
 			}
 			assert.Equal(t, 1, factoryCalls)
-			assert.Empty(t, manager.componentManager.instances)
+			assert.Empty(t, manager.handler.componentManager.instances)
 			for _, method := range []string{"Initialize", "GetTargetResource", "Endpoints", "Package", "Publish", "Deploy"} {
 				provider.AssertNumberOfCalls(t, method, 0)
 			}
@@ -596,33 +605,33 @@ func TestServiceTargetManager_PreviewRequest_Validation(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		request   *ServiceTargetPreviewRequest
+		request   *v1beta.ServiceTargetPreviewRequest
 		wantError string
 	}{
 		{name: "NilRequest", wantError: "service config is required for preview request"},
 		{
 			name:      "NilServiceConfig",
-			request:   &ServiceTargetPreviewRequest{},
+			request:   &v1beta.ServiceTargetPreviewRequest{},
 			wantError: "service config is required for preview request",
 		},
 		{
 			name: "NoFactory",
-			request: &ServiceTargetPreviewRequest{
-				ServiceConfig: createTestServiceConfigForServiceTarget("web-service", "missing"),
+			request: &v1beta.ServiceTargetPreviewRequest{
+				ServiceConfig: &v1beta.ServiceConfig{Name: "web-service", Host: "missing"},
 			},
 			wantError: "no factory registered for service target: missing",
 		},
 		{
 			name: "Unsupported",
-			request: &ServiceTargetPreviewRequest{
-				ServiceConfig: createTestServiceConfigForServiceTarget("web-service", "legacy"),
+			request: &v1beta.ServiceTargetPreviewRequest{
+				ServiceConfig: &v1beta.ServiceConfig{Name: "web-service", Host: "legacy"},
 			},
 			wantError: "service target 'legacy' does not support deployment preview",
 		},
 		{
 			name: "NilProvider",
-			request: &ServiceTargetPreviewRequest{
-				ServiceConfig: createTestServiceConfigForServiceTarget("web-service", "nil-provider"),
+			request: &v1beta.ServiceTargetPreviewRequest{
+				ServiceConfig: &v1beta.ServiceConfig{Name: "web-service", Host: "nil-provider"},
 			},
 			wantError: "service target 'nil-provider' does not support deployment preview",
 		},
@@ -632,16 +641,19 @@ func TestServiceTargetManager_PreviewRequest_Validation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			manager := createTestServiceTargetManager()
+			manager := &BetaServiceTargetManager{handler: createTestServiceTargetManager()}
 			legacyProvider := &MockServiceTargetProvider{}
-			manager.componentManager.RegisterFactory("legacy", func() ServiceTargetProvider { return legacyProvider })
-			manager.componentManager.RegisterFactory("nil-provider", func() ServiceTargetProvider { return nil })
+			manager.handler.componentManager.RegisterFactory(
+				"legacy",
+				func() ServiceTargetProvider { return legacyProvider },
+			)
+			manager.handler.componentManager.RegisterFactory("nil-provider", func() ServiceTargetProvider { return nil })
 
 			response, err := manager.onPreview(t.Context(), tt.request)
 			require.EqualError(t, err, tt.wantError)
 			assert.Nil(t, response)
 			assert.Empty(t, legacyProvider.Calls)
-			assert.Empty(t, manager.componentManager.instances)
+			assert.Empty(t, manager.handler.componentManager.instances)
 		})
 	}
 }
@@ -649,23 +661,29 @@ func TestServiceTargetManager_PreviewRequest_Validation(t *testing.T) {
 func TestServiceTargetManager_PreviewRequest_DoesNotReuseDeploymentInstance(t *testing.T) {
 	t.Parallel()
 
-	manager := createTestServiceTargetManager()
+	manager := &BetaServiceTargetManager{handler: createTestServiceTargetManager()}
 	serviceConfig := createTestServiceConfigForServiceTarget("web-service", "custom")
+	betaServiceConfig := new(v1beta.ServiceConfig)
+	require.NoError(t, convertServiceTargetMessage(serviceConfig, betaServiceConfig))
 	deploymentProvider := &MockServiceTargetProvider{}
 	deploymentProvider.On("Initialize", t.Context(), serviceConfig).Return(nil).Once()
-	manager.componentManager.RegisterFactory("custom", func() ServiceTargetProvider { return deploymentProvider })
-	_, err := manager.onInitialize(t.Context(), &ServiceTargetInitializeRequest{ServiceConfig: serviceConfig})
+	manager.handler.componentManager.RegisterFactory("custom", func() ServiceTargetProvider { return deploymentProvider })
+	_, err := manager.handler.onInitialize(t.Context(), &ServiceTargetInitializeRequest{ServiceConfig: serviceConfig})
 	require.NoError(t, err)
 
 	var previewProviders []*mockServiceTargetPreviewProvider
-	manager.componentManager.RegisterFactory("custom", func() ServiceTargetProvider {
+	manager.handler.componentManager.RegisterFactory("custom", func() ServiceTargetProvider {
 		provider := &mockServiceTargetPreviewProvider{}
-		provider.On("Preview", t.Context(), serviceConfig).Return(&ServiceDeployPreviewResult{}, nil).Once()
+		provider.On("Preview", t.Context(), mock.MatchedBy(func(actual *ServiceConfig) bool {
+			return proto.Equal(serviceConfig, actual)
+		})).Return(&ServiceDeployPreviewResult{}, nil).Once()
 		previewProviders = append(previewProviders, provider)
 		return provider
 	})
 	for range 2 {
-		response, err := manager.onPreview(t.Context(), &ServiceTargetPreviewRequest{ServiceConfig: serviceConfig})
+		response, err := manager.onPreview(t.Context(), &v1beta.ServiceTargetPreviewRequest{
+			ServiceConfig: betaServiceConfig,
+		})
 		require.NoError(t, err)
 		require.NotNil(t, response.GetPreviewResponse())
 	}
@@ -676,7 +694,7 @@ func TestServiceTargetManager_PreviewRequest_DoesNotReuseDeploymentInstance(t *t
 		require.Len(t, provider.Calls, 1, "preview must be the only lifecycle method called on the fresh instance")
 		provider.AssertExpectations(t)
 	}
-	cached, err := manager.componentManager.GetInstance(serviceConfig.Name)
+	cached, err := manager.handler.componentManager.GetInstance(serviceConfig.Name)
 	require.NoError(t, err)
 	assert.Same(t, deploymentProvider, cached)
 	require.Len(t, deploymentProvider.Calls, 1, "preview must not invoke the cached deployment provider")

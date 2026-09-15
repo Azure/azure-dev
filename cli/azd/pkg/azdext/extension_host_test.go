@@ -199,7 +199,11 @@ func TestExtensionHost_ServiceTargetPreviewRegistration(t *testing.T) {
 			manager.On("Close").Return(nil).Once()
 
 			host := NewExtensionHost(newTestAzdClient())
-			host.serviceTargetManager = manager
+			if supportsPreview {
+				host.betaServiceTargetManager = manager
+			} else {
+				host.serviceTargetManager = manager
+			}
 			factoryCalls := 0
 			factory := func() ServiceTargetProvider {
 				factoryCalls++

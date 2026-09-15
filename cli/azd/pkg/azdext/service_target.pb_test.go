@@ -6,6 +6,7 @@ package azdext
 import (
 	"testing"
 
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -165,30 +166,32 @@ func TestServiceTargetEnvelope_PreviewRoundTrip(t *testing.T) {
 		"changes":  []any{"create", "configure"},
 	})
 	require.NoError(t, err)
-	request := &ServiceTargetPreviewRequest{
-		ServiceConfig: &ServiceConfig{Name: "web-service", Host: "custom"},
+	request := &v1beta.ServiceTargetPreviewRequest{
+		ServiceConfig: &v1beta.ServiceConfig{Name: "web-service", Host: "custom"},
 	}
-	response := &ServiceTargetPreviewResponse{
-		Result: &ServiceDeployPreviewResult{Message: "Deployment preview", Data: data},
+	response := &v1beta.ServiceTargetPreviewResponse{
+		Result: &v1beta.ServiceDeployPreviewResult{Message: "Deployment preview", Data: data},
 	}
 	tests := []struct {
 		name        string
-		message     *ServiceTargetMessage
+		message     *v1beta.ServiceTargetMessage
 		inner       proto.Message
 		fieldName   protoreflect.Name
 		fieldNumber protoreflect.FieldNumber
 	}{
 		{
-			name:        "Request",
-			message:     &ServiceTargetMessage{MessageType: &ServiceTargetMessage_PreviewRequest{PreviewRequest: request}},
+			name: "Request",
+			message: &v1beta.ServiceTargetMessage{
+				MessageType: &v1beta.ServiceTargetMessage_PreviewRequest{PreviewRequest: request},
+			},
 			inner:       request,
 			fieldName:   "preview_request",
 			fieldNumber: 21,
 		},
 		{
 			name: "Response",
-			message: &ServiceTargetMessage{
-				MessageType: &ServiceTargetMessage_PreviewResponse{PreviewResponse: response},
+			message: &v1beta.ServiceTargetMessage{
+				MessageType: &v1beta.ServiceTargetMessage_PreviewResponse{PreviewResponse: response},
 			},
 			inner:       response,
 			fieldName:   "preview_response",
@@ -200,12 +203,12 @@ func TestServiceTargetEnvelope_PreviewRoundTrip(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			env := NewServiceTargetEnvelope()
+			env := NewBetaServiceTargetEnvelope()
 			env.SetRequestId(t.Context(), tt.message, "preview-1")
 			require.Equal(t, tt.fieldNumber, tt.message.ProtoReflect().Descriptor().Fields().ByName(tt.fieldName).Number())
 			wire, err := proto.Marshal(tt.message)
 			require.NoError(t, err)
-			var decoded ServiceTargetMessage
+			var decoded v1beta.ServiceTargetMessage
 			require.NoError(t, proto.Unmarshal(wire, &decoded))
 			require.True(t, proto.Equal(tt.message, &decoded))
 			inner, ok := env.GetInnerMessage(&decoded).(proto.Message)

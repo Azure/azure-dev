@@ -90,7 +90,9 @@ First-party extensions live in `cli/azd/extensions/` and are registered in `cli/
 
 Service targets can opt into the read-only `azd deploy --preview` path with
 `WithServiceTargetPreview` and the optional `ServiceTargetPreviewProvider`
-interface. Preview uses a dedicated request, negotiated at provider registration;
+interface. This high-level SDK path uses the `azd.extensions.v1beta`
+`ServiceTargetService` contract; stable `v1` registrations remain unchanged.
+Preview uses a dedicated request, negotiated at provider registration;
 an older or unsupported extension cannot accidentally execute `Deploy`.
 Core checks that capability before dispatch and skips unsupported targets, without
 requiring those extensions to add no-op preview handlers. JSON records skipped

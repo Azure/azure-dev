@@ -64,9 +64,8 @@ type UpgradeResult struct {
 	// Suggestion is an optional actionable hint shown alongside SkipReason or Error
 	// in interactive output. Not serialized to JSON; may contain ANSI formatting.
 	Suggestion string
-	// DependencyUpgrades captures upgrade results for dependent extensions
-	// that were upgraded as a side effect of upgrading this extension. Empty
-	// for leaf extensions or when --no-dependency-updates is set.
+	// DependencyUpgrades captures dependency reconciliation results, including
+	// skipped upgrades and failed metadata writes when dependency updates are disabled.
 	DependencyUpgrades []UpgradeResult
 }
 
@@ -115,6 +114,11 @@ type UpgradeSummary struct {
 	Failed                     int                   `json:"failed"`
 	DependencyUpgrades         int                   `json:"dependencyUpgrades,omitempty"`
 	DependencyUpgradesByStatus map[UpgradeStatus]int `json:"-"`
+}
+
+// HasFailures reports whether a top-level extension or any dependency failed.
+func (s UpgradeSummary) HasFailures() bool {
+	return s.Failed > 0 || s.DependencyUpgradesByStatus[UpgradeStatusFailed] > 0
 }
 
 // NewUpgradeSummary computes aggregate counts from a slice of UpgradeResult.

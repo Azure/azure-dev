@@ -31,6 +31,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
@@ -207,11 +208,7 @@ func Test_List_Install_Uninstall_Flow(t *testing.T) {
 }
 
 func TestInstallEmitsSourceCategoryTelemetry(t *testing.T) {
-	recorder := tracetest.NewSpanRecorder()
-	provider := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(recorder))
-	previousProvider := otel.GetTracerProvider()
-	otel.SetTracerProvider(provider)
-	t.Cleanup(func() { otel.SetTracerProvider(previousProvider) })
+	recorder := recordExtensionTelemetry(t)
 
 	mockContext := mocks.NewMockContext(t.Context())
 	createRegistryMocks(mockContext)
@@ -256,6 +253,72 @@ func TestInstallEmitsSourceCategoryTelemetry(t *testing.T) {
 		require.NotContains(t, attr.Value.String(), "private-source")
 		require.NotContains(t, attr.Value.String(), extensionRegistryUrl)
 	}
+}
+
+// tracing caches its tracer, so tests share a provider and register separate recorders.
+var extensionTelemetryProvider = tracesdk.NewTracerProvider()
+
+func recordExtensionTelemetry(t *testing.T) *tracetest.SpanRecorder {
+	t.Helper()
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	recorder := tracetest.NewSpanRecorder()
+	extensionTelemetryProvider.RegisterSpanProcessor(recorder)
+	previousProvider := otel.GetTracerProvider()
+	otel.SetTracerProvider(extensionTelemetryProvider)
+	t.Cleanup(func() {
+		extensionTelemetryProvider.UnregisterSpanProcessor(recorder)
+		otel.SetTracerProvider(previousProvider)
+	})
+	return recorder
+}
+
+func requireDependencyUpdateSpan(
+	t *testing.T,
+	recorder *tracetest.SpanRecorder,
+	id, parentID string,
+	status codes.Code,
+) tracesdk.ReadOnlySpan {
+	t.Helper()
+	var matches []tracesdk.ReadOnlySpan
+	for _, span := range recorder.Ended() {
+		if span.Name() != events.ExtensionUpdateEvent {
+			continue
+		}
+		attributes := span.Attributes()
+		if extensionTelemetryAttribute(t, attributes, fields.ExtensionId.Key).Value.AsString() == id &&
+			extensionTelemetryAttribute(t, attributes, fields.ExtensionDependencyOf.Key).Value.AsString() == parentID {
+			matches = append(matches, span)
+		}
+	}
+	require.Len(t, matches, 1, "expected exactly one update span for %s required by %s", id, parentID)
+	require.Equal(t, status, matches[0].Status().Code)
+	if status == codes.Error {
+		require.NotEmpty(t, matches[0].Status().Description)
+		chain := extensionTelemetryAttribute(t, matches[0].Attributes(), fields.ErrChainTypes.Key)
+		require.NotEmpty(t, chain.Value.AsStringSlice())
+	}
+	return matches[0]
+}
+
+func Test_Upgrade_DependencyUpgrade_InstallFailureTelemetry(t *testing.T) {
+	recorder := recordExtensionTelemetry(t)
+	pack, child := packWithLeaf("1.0.0", "1.0.0", "2.0.0")
+	pack.Versions[0].Dependencies[0].Version = ">=2.0.0"
+	child.Versions[1].Artifacts = map[string]ExtensionArtifact{"unsupported-platform": {}}
+	manager := newInstallTestManager(t, &mockSource{
+		name: MainRegistryName, extensions: []*ExtensionMetadata{pack, child},
+	})
+	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+		pack.Id:  installedRecord(pack.Id, "1.0.0", false, child.Id),
+		child.Id: installedRecord(child.Id, "1.0.0", true),
+	}))
+
+	_, results, err := manager.ReconcileDependencies(t.Context(), pack, DefaultUpgradeOptions(""))
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, UpgradeStatusFailed, results[0].Status)
+	require.ErrorContains(t, results[0].Error, "failed to find artifact for current OS")
+	requireDependencyUpdateSpan(t, recorder, child.Id, pack.Id, codes.Error)
 }
 
 func extensionTelemetryAttribute(
@@ -3062,7 +3125,7 @@ func Test_Upgrade_DependencyUpgrade_FallsBackWhenParentSourceRequiresNewerAzd(t 
 }
 
 func Test_Upgrade_DependencyUpgrade_BundleIsolationPropagatesToNestedDependencies(t *testing.T) {
-	t.Parallel()
+	recorder := recordExtensionTelemetry(t)
 
 	parent := &ExtensionMetadata{
 		Id:     "test.pack",
@@ -3137,6 +3200,10 @@ func Test_Upgrade_DependencyUpgrade_BundleIsolationPropagatesToNestedDependencie
 	require.Len(t, depUpgrades[0].DependencyUpgrades, 1)
 	require.Equal(t, UpgradeStatusFailed, depUpgrades[0].DependencyUpgrades[0].Status)
 	require.ErrorAs(t, depUpgrades[0].DependencyUpgrades[0].Error, new(*DependencyVersionNotFoundError))
+
+	childSpan := requireDependencyUpdateSpan(t, recorder, "test.child", "test.pack", codes.Ok)
+	leafSpan := requireDependencyUpdateSpan(t, recorder, "test.leaf", "test.child", codes.Error)
+	require.Equal(t, childSpan.SpanContext().SpanID(), leafSpan.Parent().SpanID())
 
 	leaf, err := manager.GetInstalled(FilterOptions{Id: "test.leaf"})
 	require.NoError(t, err)
@@ -3224,6 +3291,7 @@ func Test_Upgrade_DependencyUpgrade_RefusesToDowngradeOutsideConstraint(t *testi
 }
 
 func Test_Upgrade_DependencyUpgrade_NoPublishedVersionSatisfiesConstraint(t *testing.T) {
+	recorder := recordExtensionTelemetry(t)
 	mockContext := mocks.NewMockContext(t.Context())
 
 	registry := Registry{
@@ -3290,9 +3358,11 @@ func Test_Upgrade_DependencyUpgrade_NoPublishedVersionSatisfiesConstraint(t *tes
 	require.Contains(t, depUpgrades[0].Suggestion, "test.child")
 	require.Contains(t, depUpgrades[0].Suggestion, ">=2.0.0")
 	require.Contains(t, depUpgrades[0].Suggestion, "test.pack")
+	requireDependencyUpdateSpan(t, recorder, "test.child", "test.pack", codes.Error)
 }
 
 func Test_Upgrade_DependencyUpgrade_RequiresNewerAzd(t *testing.T) {
+	recorder := recordExtensionTelemetry(t)
 	mockContext := mocks.NewMockContext(t.Context())
 
 	registry := Registry{
@@ -3372,6 +3442,7 @@ func Test_Upgrade_DependencyUpgrade_RequiresNewerAzd(t *testing.T) {
 	require.Equal(t, ">=2.0.0", compatibilityErr.RequiredAzdVersion)
 	require.Contains(t, depUpgrades[0].Suggestion, "Use an azd version")
 	require.Contains(t, depUpgrades[0].Suggestion, ">=2.0.0")
+	requireDependencyUpdateSpan(t, recorder, "test.child", "test.pack", codes.Error)
 }
 
 func TestDependencyAzdVersionIncompatibleError_UpperBoundSuggestion(t *testing.T) {
@@ -3932,6 +4003,7 @@ func Test_Install_DependencyCycle_Bounded(t *testing.T) {
 }
 
 func Test_Upgrade_DependencyUpgrade_ConstraintConflict(t *testing.T) {
+	recorder := recordExtensionTelemetry(t)
 	mockContext := mocks.NewMockContext(t.Context())
 
 	// Pack A v2 depends on { B: ">=2.0.0", C: ">=2.0.0" }.
@@ -4047,6 +4119,9 @@ func Test_Upgrade_DependencyUpgrade_ConstraintConflict(t *testing.T) {
 	require.Error(t, cEntry.Error)
 	require.Contains(t, cEntry.Error.Error(), "constraint conflict")
 	require.Contains(t, cEntry.Error.Error(), "leaf.c")
+	requireDependencyUpdateSpan(t, recorder, "pack.b", "pack.a", codes.Ok)
+	requireDependencyUpdateSpan(t, recorder, "leaf.c", "pack.b", codes.Ok)
+	requireDependencyUpdateSpan(t, recorder, "leaf.c", "pack.a", codes.Error)
 }
 
 // Test_Upgrade_DependencyUpgrade_NoOpStillPinsForSiblings exercises the case

@@ -415,7 +415,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `skip.reason` | string | Reason AKS postprovision skipped Kubernetes context setup |
+| `skip.reason` | string | Bounded code explaining why AKS postprovision skipped Kubernetes context setup; currently `cluster_not_provisioned` |
 </details>
 
 <details>

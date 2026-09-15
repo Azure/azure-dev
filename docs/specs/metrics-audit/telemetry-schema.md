@@ -404,7 +404,7 @@ operation-specific attributes at their instrumentation site.
 | Field | OTel Key | Classification | Purpose | Values |
 |-------|----------|----------------|---------|--------|
 | Foundry network mode | `provision.network_mode` | SystemMetadata | FeatureInsight | `none`, `byo`, or `managed` |
-| AKS skip reason | `skip.reason` | SystemMetadata | FeatureInsight | Reason Kubernetes context setup was skipped |
+| AKS skip reason | `skip.reason` | SystemMetadata | FeatureInsight | `cluster_not_provisioned` |
 
 ### App Service Deploy
 

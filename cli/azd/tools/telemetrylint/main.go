@@ -24,8 +24,10 @@ const (
 	fieldsSource           = "cli/azd/internal/tracing/fields/fields.go"
 	schemaDoc              = "docs/specs/metrics-audit/telemetry-schema.md"
 	referenceDoc           = "docs/reference/telemetry-data.md"
+	attributeImport        = "go.opentelemetry.io/otel/attribute"
 	azdextImport           = "github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	foundryTelemetryImport = "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
+	tracingImport          = "github.com/azure/azure-dev/cli/azd/internal/tracing"
 )
 
 type definition struct {
@@ -72,6 +74,12 @@ type extensionSourceFile struct {
 	file    *ast.File
 	fileSet *token.FileSet
 	data    *extensionStaticData
+}
+
+type goSourceFile struct {
+	path    string
+	file    *ast.File
+	fileSet *token.FileSet
 }
 
 func main() {
@@ -307,6 +315,11 @@ func parseFields(path string) ([]definition, error) {
 	if err != nil {
 		return nil, err
 	}
+	constants := resolvePackageConstants([]goSourceFile{{
+		path:    path,
+		file:    file,
+		fileSet: fileSet,
+	}})
 
 	var definitions []definition
 	for _, declaration := range file.Decls {
@@ -328,6 +341,7 @@ func parseFields(path string) ([]definition, error) {
 					name.Name,
 					file,
 					fileSet,
+					constants,
 				)
 				if err != nil {
 					return nil, fmt.Errorf("%s:%d: %w",
@@ -352,6 +366,7 @@ func fieldKeys(
 	name string,
 	file *ast.File,
 	fileSet *token.FileSet,
+	constants map[string]string,
 ) ([]string, error) {
 	switch current := expression.(type) {
 	case *ast.CompositeLit:
@@ -369,6 +384,7 @@ func fieldKeys(
 				keyValue.Value,
 				file,
 				fileSet,
+				constants,
 			)
 			if err != nil {
 				return nil, err
@@ -379,10 +395,15 @@ func fieldKeys(
 		}
 		return keys, nil
 	case *ast.CallExpr:
-		if !isAttributeKeyCall(current) || len(current.Args) == 0 {
+		if !isAttributeKeyCall(file, current) || len(current.Args) == 0 {
 			return nil, nil
 		}
-		key, err := resolveKeyExpression(current.Args[0], file, fileSet)
+		key, err := resolveKeyExpression(
+			current.Args[0],
+			file,
+			fileSet,
+			constants,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -403,16 +424,27 @@ func resolveKeyExpression(
 	expression ast.Expr,
 	file *ast.File,
 	fileSet *token.FileSet,
+	constants map[string]string,
 ) (string, error) {
 	if value, ok := stringLiteral(expression); ok {
 		return value, nil
 	}
+	if identifier, ok := expression.(*ast.Ident); ok {
+		if value, ok := constants[identifier.Name]; ok {
+			return value, nil
+		}
+	}
 
 	if call, ok := expression.(*ast.CallExpr); ok {
-		if !isAttributeKeyCall(call) || len(call.Args) == 0 {
+		if !isAttributeKeyCall(file, call) || len(call.Args) == 0 {
 			return "", nil
 		}
-		return resolveKeyExpression(call.Args[0], file, fileSet)
+		return resolveKeyExpression(
+			call.Args[0],
+			file,
+			fileSet,
+			constants,
+		)
 	}
 
 	selector, ok := expression.(*ast.SelectorExpr)
@@ -471,78 +503,136 @@ func inlineCommentKey(
 	return ""
 }
 
-func parseRawAttributes(root, fieldsPath string) ([]definition, error) {
-	var definitions []definition
+func parseGoSources(root string) ([]goSourceFile, error) {
+	var sources []goSourceFile
 	err := walkGoFiles(root, func(path string) error {
-		if samePath(path, fieldsPath) {
-			return nil
-		}
-
 		file, fileSet, err := parseGoFile(path)
 		if err != nil {
 			return err
 		}
-		ast.Inspect(file, func(node ast.Node) bool {
-			call, ok := node.(*ast.CallExpr)
-			if !ok || !isLiteralAttributeCall(call) {
-				return true
-			}
-			value, ok := stringLiteral(call.Args[0])
-			if !ok {
-				return true
-			}
-			definitions = append(definitions, definition{
-				kind:   "field",
-				value:  value,
-				source: path,
-				line:   fileSet.Position(call.Pos()).Line,
-			})
-			return true
+		sources = append(sources, goSourceFile{
+			path:    path,
+			file:    file,
+			fileSet: fileSet,
 		})
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
+	return sources, nil
+}
+
+func groupGoSources(sources []goSourceFile) [][]goSourceFile {
+	groups := make([][]goSourceFile, 0)
+	groupIndexes := make(map[string]int)
+	for _, source := range sources {
+		key := filepath.Dir(source.path) + "\x00" + source.file.Name.Name
+		index, ok := groupIndexes[key]
+		if !ok {
+			index = len(groups)
+			groupIndexes[key] = index
+			groups = append(groups, nil)
+		}
+		groups[index] = append(groups[index], source)
+	}
+	return groups
+}
+
+func resolvePackageConstants(sources []goSourceFile) map[string]string {
+	constants := make(map[string]string)
+	for {
+		changed := false
+		for _, source := range sources {
+			changed = collectStringConstants(source.file, constants) || changed
+		}
+		if !changed {
+			return constants
+		}
+	}
+}
+
+func parseRawAttributes(root, fieldsPath string) ([]definition, error) {
+	sources, err := parseGoSources(root)
+	if err != nil {
+		return nil, err
+	}
+
+	var definitions []definition
+	for _, group := range groupGoSources(sources) {
+		constants := resolvePackageConstants(group)
+		for _, source := range group {
+			if samePath(source.path, fieldsPath) {
+				continue
+			}
+			ast.Inspect(source.file, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok || !isLiteralAttributeCall(source.file, call) {
+					return true
+				}
+				value, ok := resolveExtensionString(
+					call.Args[0],
+					constants,
+				)
+				if !ok {
+					return true
+				}
+				definitions = append(definitions, definition{
+					kind:   "field",
+					value:  value,
+					source: source.path,
+					line:   source.fileSet.Position(call.Pos()).Line,
+				})
+				return true
+			})
+		}
+	}
 	return uniqueDefinitions(definitions), nil
 }
 
 func parseLiteralEvents(root string) ([]definition, error) {
-	var definitions []definition
-	err := walkGoFiles(root, func(path string) error {
-		file, fileSet, err := parseGoFile(path)
-		if err != nil {
-			return err
-		}
-		ast.Inspect(file, func(node ast.Node) bool {
-			call, ok := node.(*ast.CallExpr)
-			if !ok || len(call.Args) < 2 {
-				return true
-			}
-			selector, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || selector.Sel.Name != "Start" {
-				return true
-			}
-			packageName, ok := selector.X.(*ast.Ident)
-			if !ok || packageName.Name != "tracing" {
-				return true
-			}
-			value, ok := stringLiteral(call.Args[1])
-			if !ok {
-				return true
-			}
-			definitions = append(definitions, definition{
-				kind:   "event",
-				value:  value,
-				source: path,
-				line:   fileSet.Position(call.Pos()).Line,
-			})
-			return true
-		})
-		return nil
-	})
+	sources, err := parseGoSources(root)
 	if err != nil {
 		return nil, err
+	}
+
+	var definitions []definition
+	for _, group := range groupGoSources(sources) {
+		constants := resolvePackageConstants(group)
+		for _, source := range group {
+			ast.Inspect(source.file, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok || len(call.Args) < 2 {
+					return true
+				}
+				selector, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok || selector.Sel.Name != "Start" {
+					return true
+				}
+				packageName, ok := selector.X.(*ast.Ident)
+				if !ok || !isImportedPackage(
+					source.file,
+					packageName.Name,
+					tracingImport,
+				) {
+					return true
+				}
+				value, ok := resolveExtensionString(
+					call.Args[1],
+					constants,
+				)
+				if !ok {
+					return true
+				}
+				definitions = append(definitions, definition{
+					kind:   "event",
+					value:  value,
+					source: source.path,
+					line:   source.fileSet.Position(call.Pos()).Line,
+				})
+				return true
+			})
+		}
 	}
 	return uniqueDefinitions(definitions), nil
 }
@@ -1090,7 +1180,7 @@ func isTelemetryEventLiteral(file *ast.File, literal *ast.CompositeLit) bool {
 		return false
 	}
 
-	var hasName, hasAttributes bool
+	var hasName bool
 	for _, element := range literal.Elts {
 		keyValue, ok := element.(*ast.KeyValueExpr)
 		if !ok {
@@ -1103,11 +1193,9 @@ func isTelemetryEventLiteral(file *ast.File, literal *ast.CompositeLit) bool {
 		switch key.Name {
 		case "Name":
 			hasName = true
-		case "Attributes":
-			hasAttributes = true
 		}
 	}
-	return hasName && hasAttributes
+	return hasName
 }
 
 func isImportedPackage(file *ast.File, packageName, importPath string) bool {
@@ -1339,16 +1427,16 @@ func stringLiteral(expression ast.Expr) (string, bool) {
 	return value, err == nil
 }
 
-func isAttributeKeyCall(call *ast.CallExpr) bool {
+func isAttributeKeyCall(file *ast.File, call *ast.CallExpr) bool {
 	selector, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok || selector.Sel.Name != "Key" {
 		return false
 	}
 	packageName, ok := selector.X.(*ast.Ident)
-	return ok && packageName.Name == "attribute"
+	return ok && isImportedPackage(file, packageName.Name, attributeImport)
 }
 
-func isLiteralAttributeCall(call *ast.CallExpr) bool {
+func isLiteralAttributeCall(file *ast.File, call *ast.CallExpr) bool {
 	if len(call.Args) == 0 {
 		return false
 	}
@@ -1357,7 +1445,7 @@ func isLiteralAttributeCall(call *ast.CallExpr) bool {
 		return false
 	}
 	packageName, ok := selector.X.(*ast.Ident)
-	if !ok || packageName.Name != "attribute" {
+	if !ok || !isImportedPackage(file, packageName.Name, attributeImport) {
 		return false
 	}
 

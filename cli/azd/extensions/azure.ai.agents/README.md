@@ -206,8 +206,8 @@ reference is pending; unchanged code-mode and prebuilt-image plans are omitted.
 - **Prebuilt image:** compares the configured reference, with no build or push.
 - **Container build:** reports that an image would be built and pushed. Explicit
   image/tag/registry settings are resolved using azd's image naming rules.
-  Default tags use `azd-deploy-<timestamp>`, so a future tag or unprovisioned
-  registry is reported as pending, not as a made-up image reference.
+  Default tags use `azd-deploy-<timestamp>`, so a future tag or a registry that
+  has not been provisioned is reported as pending, not as a made-up image reference.
 
 For a project with a configured image but no explicit passthrough/registry
 connection, preview follows the non-interactive default of building an image

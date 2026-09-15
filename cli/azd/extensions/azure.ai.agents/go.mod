@@ -2,6 +2,10 @@ module azureaiagent
 
 go 1.26.4
 
+// Temporary for draft PR #10041: preview requires the core SDK changes in this checkout.
+// Remove after those changes are released and the SDK requirement below is updated.
+replace github.com/azure/azure-dev/cli/azd => ../../
+
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.22.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.0

@@ -1586,9 +1586,9 @@ do not turn unsupported or failed previews into successful empty results.
 
 Preview support is negotiated during provider registration. Older extensions default
 to unsupported, and core skips them before dispatch rather than sending a preview
-or deploy request. `skippedServices` in JSON identifies those uninspected services;
+or deploy request. `skippedServices` in JSON identifies those skipped services;
 terminal output contains only supported targets' results. Unsupported selections
-with no previewable service still fail, as do real errors from supported providers.
+with no service that supports preview still fail, as do real errors from supported providers.
 Extensions without deployment-preview work do not need a no-op implementation.
 
 The `azd` CLI and its extensions communicate over gRPC. The client and server code is generated from protobuf files.

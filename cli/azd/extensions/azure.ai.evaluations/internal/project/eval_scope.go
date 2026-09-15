@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -24,8 +25,14 @@ const EvalScopeSuffix = "_SCOPE"
 //
 // Relative to the project root rather than absolute, so moving or cloning the
 // tree still reads as the same configuration and the ids recorded for it stay
-// reachable. Lowercased because the two sides of this can spell the same path
-// differently on Windows.
+// reachable.
+//
+// Case is folded only where the filesystem folds it. Folding everywhere made
+// `evals/A/azure.eval.yaml` and `evals/a/azure.eval.yaml` -- two files on Linux
+// -- one scope, which is the collision this exists to prevent. The opposite
+// mistake is the safe one: a configuration reached by an unexpected spelling
+// records nothing under it, and the lookup falls through to asking the service
+// by name.
 func EvalScope(projectRoot, configPath string) string {
 	if configPath == "" {
 		return ""
@@ -36,8 +43,19 @@ func EvalScope(projectRoot, configPath string) string {
 			rel = r
 		}
 	}
-	return strings.ToLower(filepath.ToSlash(rel))
+	rel = filepath.ToSlash(rel)
+	if pathsAreCaseInsensitive {
+		rel = strings.ToLower(rel)
+	}
+	return rel
 }
+
+// pathsAreCaseInsensitive reports whether two spellings of a path name one file.
+//
+// Windows only. macOS is usually case insensitive too but can be formatted
+// either way, and guessing wrong there costs a collision rather than a missed
+// lookup.
+var pathsAreCaseInsensitive = runtime.GOOS == "windows"
 
 // EvalScopeTag is the part of a state key that names a scope, short enough to
 // leave the key readable.

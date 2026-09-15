@@ -5,6 +5,8 @@ package cmd
 
 import (
 	"context"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"azureaieval/internal/project"
@@ -142,22 +144,44 @@ func TestTwoScopesProduceDifferentKeys(t *testing.T) {
 
 // The scope is computed on both sides of the deploy/lookup split, so it has to
 // survive the two ways the same path gets spelled.
+//
+// Built from t.TempDir rather than a `C:\proj` literal: on Linux that literal
+// is an ordinary relative filename, so filepath.Rel answers `../C:\proj\...`
+// and the test would exercise nothing while appearing to pass or fail for the
+// wrong reason.
 func TestTheScopeIsTheSameOnBothSidesOfThePath(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "evals/azure.eval.yaml",
-		project.EvalScope(`C:\proj`, `C:\proj\evals\azure.eval.yaml`),
+	root := t.TempDir()
+	config := filepath.Join(root, "evals", "azure.eval.yaml")
+
+	assert.Equal(t, "evals/azure.eval.yaml", project.EvalScope(root, config),
 		"relative to the root, forward slashed")
 
-	assert.Equal(t,
-		project.EvalScope(`C:\proj`, `C:\proj\Evals\Azure.Eval.Yaml`),
-		project.EvalScope(`C:\proj`, `C:\proj\evals\azure.eval.yaml`),
-		"the same file spelled two ways is one configuration")
-
 	assert.NotEqual(t,
-		project.EvalScope(`C:\proj`, `C:\proj\evals\azure.eval.yaml`),
-		project.EvalScope(`C:\proj`, `C:\proj\support\evals\azure.eval.yaml`),
+		project.EvalScope(root, config),
+		project.EvalScope(root, filepath.Join(root, "support", "evals", "azure.eval.yaml")),
 		"two configurations are two scopes")
 
-	assert.Empty(t, project.EvalScope(`C:\proj`, ""), "nothing to identify")
+	assert.Empty(t, project.EvalScope(root, ""), "nothing to identify")
+}
+
+// Case is the filesystem's business. Folding it everywhere made two files on
+// Linux -- `evals/A/...` and `evals/a/...` -- one scope, so each would read and
+// overwrite the other's recorded ids: the collision this whole mechanism exists
+// to prevent, reintroduced by the normalization meant to help it.
+func TestCaseIsFoldedOnlyWhereTheFilesystemFoldsIt(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	lower := project.EvalScope(root, filepath.Join(root, "evals", "a", "azure.eval.yaml"))
+	upper := project.EvalScope(root, filepath.Join(root, "evals", "A", "azure.eval.yaml"))
+
+	if runtime.GOOS == "windows" {
+		assert.Equal(t, lower, upper,
+			"one file spelled two ways is one configuration here")
+		return
+	}
+	assert.NotEqual(t, lower, upper,
+		"two files are two configurations, and must not share recorded ids")
 }

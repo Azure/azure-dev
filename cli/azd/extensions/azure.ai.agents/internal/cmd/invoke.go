@@ -141,7 +141,8 @@ suppressed in raw mode.
 Remote Hosted Agent Responses and Invocations requests include platform latency diagnostics
 by default. A compact summary is shown after a successful invocation when the
 service returns timing headers. Use --debug-latency=false to disable collection
-and the summary. Local, prompt-agent, and a2a invokes do not collect platform latency.
+and the summary. This is independent of the global --debug logging flag.
+Local, prompt-agent, and a2a invokes do not collect platform latency.
 Raw output includes the returned headers without a formatted latency summary.
 
 Use --long-running with the Responses protocol to start work that continues running in

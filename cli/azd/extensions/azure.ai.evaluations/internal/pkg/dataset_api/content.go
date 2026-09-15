@@ -55,7 +55,9 @@ func (c *DatasetClient) ListDatasetContent(
 	// OpenDatasetContent already resolves the two shapes; the same rule applies
 	// here, because the extension on the last segment is a guess either way.
 	// Settled before the metadata read, which only the container path needs.
+	probedAsBlob := false
 	if looksLikeBlobURI(sasURI) {
+		probedAsBlob = true
 		if body, err := c.openDataset(ctx, sasURI); err == nil {
 			_ = body.Close()
 			return &DatasetContent{
@@ -70,6 +72,21 @@ func (c *DatasetClient) ListDatasetContent(
 
 	names, err := c.ListContainerBlobs(ctx, sasURI)
 	if err != nil {
+		// A blob name does not have to carry an extension, so the guess above can
+		// send a single blob down the container path. The listing failing is what
+		// says so -- ask storage before reporting a dataset that reads fine as
+		// one that cannot be listed.
+		if !probedAsBlob {
+			if body, probeErr := c.openDataset(ctx, sasURI); probeErr == nil {
+				_ = body.Close()
+				return &DatasetContent{
+					Container:  sasURI,
+					Files:      []string{""},
+					SingleFile: true,
+					blobURI:    true,
+				}, nil
+			}
+		}
 		return nil, messages.ListingDatasetContent(name, err)
 	}
 

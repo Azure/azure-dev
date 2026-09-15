@@ -160,12 +160,49 @@ func (a *ExtensionActivator) ExtensionsForProvisioningProviders(
 		return nil, err
 	}
 
-	matches := extensionsForProviders(installed, names)
+	matches := extensionsForCapabilityProviders(
+		installed,
+		names,
+		extensions.ProvisioningProviderCapability,
+	)
 	extensionIds := make([]string, len(matches))
 	for i, extension := range matches {
 		extensionIds[i] = extension.Id
 	}
 
+	return extensionIds, nil
+}
+
+// ExtensionsForProject returns the extension IDs that a project needs in another environment,
+// including explicit requiredVersions entries and installed extensions that own its provisioning
+// providers or service target hosts.
+func (a *ExtensionActivator) ExtensionsForProject(
+	provisioningProviderNames []string,
+	serviceTargetProviderNames []string,
+	requiredExtensionIds []string,
+) ([]string, error) {
+	installed, err := a.extensionManager.ListInstalled()
+	if err != nil {
+		return nil, err
+	}
+
+	byId := make(map[string]string, len(requiredExtensionIds))
+	for _, extensionId := range requiredExtensionIds {
+		if extensionId = strings.TrimSpace(extensionId); extensionId != "" {
+			byId[strings.ToLower(extensionId)] = extensionId
+		}
+	}
+
+	addMatches := func(providerNames []string, capability extensions.CapabilityType) {
+		for _, extension := range extensionsForCapabilityProviders(installed, providerNames, capability) {
+			byId[strings.ToLower(extension.Id)] = extension.Id
+		}
+	}
+	addMatches(provisioningProviderNames, extensions.ProvisioningProviderCapability)
+	addMatches(serviceTargetProviderNames, extensions.ServiceTargetProviderCapability)
+
+	extensionIds := slices.Collect(maps.Values(byId))
+	slices.Sort(extensionIds)
 	return extensionIds, nil
 }
 
@@ -235,13 +272,25 @@ func extensionsForProviders(
 	installed map[string]*extensions.Extension,
 	providerNames []string,
 ) []*extensions.Extension {
+	return extensionsForCapabilityProviders(
+		installed,
+		providerNames,
+		extensions.ProvisioningProviderCapability,
+	)
+}
+
+func extensionsForCapabilityProviders(
+	installed map[string]*extensions.Extension,
+	providerNames []string,
+	capability extensions.CapabilityType,
+) []*extensions.Extension {
 	installedIds := slices.Sorted(maps.Keys(installed))
 
 	byId := map[string]*extensions.Extension{}
 	for _, name := range providerNames {
 		for _, id := range installedIds {
 			ext := installed[id]
-			if !ext.HasCapability(extensions.ProvisioningProviderCapability) {
+			if !ext.HasCapability(capability) {
 				continue
 			}
 			if providerFromExtension(ext, name) {

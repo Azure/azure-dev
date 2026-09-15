@@ -588,7 +588,7 @@ func Test_promptForCiFiles(t *testing.T) {
 			RepoRoot:           tempDir,
 			BranchName:         "main",
 			AuthType:           AuthTypeFederated,
-			RequiredExtensions: []string{"azure.ai.projects"},
+			RequiredExtensions: []string{"azure.ai.agents", "azure.ai.projects"},
 		})
 
 		require.NoError(t, err)
@@ -596,6 +596,7 @@ func Test_promptForCiFiles(t *testing.T) {
 		require.NoError(t, err)
 		generated := string(content)
 		assert.Contains(t, generated, "Install required azd extensions")
+		assert.Contains(t, generated, "azd extension install azure.ai.agents --no-prompt")
 		assert.Contains(t, generated, "azd extension install azure.ai.projects --no-prompt")
 		assert.Less(t, strings.Index(generated, "uses: Azure/setup-azd@v2"), strings.Index(
 			generated,
@@ -615,7 +616,7 @@ func Test_promptForCiFiles(t *testing.T) {
 			RepoRoot:           tempDir,
 			BranchName:         "main",
 			AuthType:           AuthTypeFederated,
-			RequiredExtensions: []string{"azure.ai.projects"},
+			RequiredExtensions: []string{"azure.ai.agents", "azure.ai.projects"},
 		})
 
 		require.NoError(t, err)
@@ -623,6 +624,7 @@ func Test_promptForCiFiles(t *testing.T) {
 		require.NoError(t, err)
 		generated := string(content)
 		assert.Contains(t, generated, "Install required azd extensions")
+		assert.Contains(t, generated, "azd extension install azure.ai.agents --no-prompt")
 		assert.Contains(t, generated, "azd extension install azure.ai.projects --no-prompt")
 		assert.Less(t, strings.Index(generated, "task: setup-azd@1"), strings.Index(
 			generated,

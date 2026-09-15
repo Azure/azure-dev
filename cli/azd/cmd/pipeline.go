@@ -140,7 +140,11 @@ type pipelineConfigAction struct {
 
 type pipelineProvisioningProviderActivator interface {
 	EnsureProvisioningProviders(ctx context.Context, providerNames []string, environmentName string) (func(), error)
-	ExtensionsForProvisioningProviders(providerNames []string) ([]string, error)
+	ExtensionsForProject(
+		provisioningProviderNames []string,
+		serviceTargetProviderNames []string,
+		requiredExtensionIds []string,
+	) ([]string, error)
 }
 
 func newPipelineConfigAction(
@@ -204,9 +208,26 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 	}
 	defer cleanupProviders()
 
-	requiredExtensions, err := p.extensionActivator.ExtensionsForProvisioningProviders(providerNames)
+	serviceTargetProviderNames := make([]string, 0, len(p.projectConfig.Services))
+	for _, service := range p.projectConfig.Services {
+		serviceTargetProviderNames = append(serviceTargetProviderNames, string(service.Host))
+	}
+
+	var requiredExtensionIds []string
+	if p.projectConfig.RequiredVersions != nil {
+		requiredExtensionIds = make([]string, 0, len(p.projectConfig.RequiredVersions.Extensions))
+		for extensionId := range p.projectConfig.RequiredVersions.Extensions {
+			requiredExtensionIds = append(requiredExtensionIds, extensionId)
+		}
+	}
+
+	requiredExtensions, err := p.extensionActivator.ExtensionsForProject(
+		providerNames,
+		serviceTargetProviderNames,
+		requiredExtensionIds,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("resolving provisioning provider extensions: %w", err)
+		return nil, fmt.Errorf("resolving project extensions: %w", err)
 	}
 	p.manager.SetRequiredExtensions(requiredExtensions)
 

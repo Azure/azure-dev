@@ -226,6 +226,40 @@ func Test_ExtensionsForProvisioningProviders(t *testing.T) {
 	require.Equal(t, []string{"a.extension", "z.extension"}, extensionIds)
 }
 
+func Test_ExtensionsForProject(t *testing.T) {
+	t.Parallel()
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	installed := map[string]*extensions.Extension{
+		"azure.ai.agents": {
+			Id:           "azure.ai.agents",
+			Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
+			Providers:    []extensions.Provider{{Name: "azure.ai.agent"}},
+		},
+		"azure.ai.projects": {
+			Id: "azure.ai.projects",
+			Capabilities: []extensions.CapabilityType{
+				extensions.ProvisioningProviderCapability,
+				extensions.ServiceTargetProviderCapability,
+			},
+			Providers: []extensions.Provider{
+				{Name: "microsoft.foundry"},
+				{Name: "azure.ai.project"},
+			},
+		},
+	}
+	activator := newTestExtensionActivator(t, mockCtx, installed)
+
+	extensionIds, err := activator.ExtensionsForProject(
+		[]string{"microsoft.foundry"},
+		[]string{"azure.ai.project", "azure.ai.agent"},
+		[]string{"azure.ai.agents", "custom.required"},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"azure.ai.agents", "azure.ai.projects", "custom.required"}, extensionIds)
+}
+
 func Test_SuggestExtensionForProvider(t *testing.T) {
 	t.Parallel()
 

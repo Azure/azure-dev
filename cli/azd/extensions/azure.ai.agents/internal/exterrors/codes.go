@@ -44,7 +44,11 @@ const (
 	CodeInvalidPositionalArg      = "invalid_positional_arg"
 )
 
-const CodeInvalidBackgroundResponseState = "invalid_background_response_state"
+// Error codes for malformed locally saved protocol resource state.
+const (
+	CodeInvalidResponseState   = "invalid_response_state"
+	CodeInvalidInvocationState = "invalid_invocation_state"
+)
 
 // CodeInvalidEnvironmentVariableName identifies a hosted-agent
 // environment variable name rejected by the service contract.
@@ -69,9 +73,8 @@ const (
 	CodeMissingProjectEndpoint    = "missing_project_endpoint"
 	CodeGitHubDownloadFailed      = "github_download_failed"
 	CodePromptFailed              = "prompt_failed"
+	CodeRaiPolicyNotFound         = "rai_policy_not_found"
 )
-
-const CodeResponseStateUnavailable = "response_state_unavailable"
 
 // Error codes for ACR dependency errors.
 const (
@@ -150,8 +153,7 @@ const (
 
 // Error codes for toolbox operations.
 const (
-	CodeInvalidToolbox             = "invalid_toolbox"
-	CodeCreateToolboxVersionFailed = "create_toolbox_version_failed"
+	CodeInvalidToolbox = "invalid_toolbox"
 )
 
 // Error codes for connection operations.
@@ -224,7 +226,16 @@ const (
 	OpPublishTeamsApp        = "publish_teams_app"
 )
 
-const OpReadBackgroundResponseState = "read_background_response_state"
+// Operation names for Responses and Invocations protocol resources.
+const (
+	OpReadResponseState   = "read_response_state"
+	OpShowResponse        = "show_response"
+	OpFollowResponse      = "follow_response"
+	OpCancelResponse      = "cancel_response"
+	OpReadInvocationState = "read_invocation_state"
+	OpShowInvocation      = "show_invocation"
+	OpCancelInvocation    = "cancel_invocation"
+)
 
 // Error codes for eval and optimize operations.
 const (

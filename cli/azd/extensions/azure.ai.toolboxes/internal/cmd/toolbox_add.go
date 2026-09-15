@@ -31,8 +31,11 @@ func newToolboxAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Add a reference to a local toolbox definition.",
 		Long: `Add a connection or skill reference to a local toolbox definition.
 
-This command edits toolbox.yaml only. Run 'azd ai toolbox deploy' to create a
-new toolbox version from the updated definition.`,
+This command only edits the local file (toolbox.yaml by default).
+To create a new toolbox, run 'azd ai toolbox create <name> --from-file <path>'.
+For ongoing deployment, declare the definition fields inline in an
+azure.ai.toolbox service in azure.yaml and run 'azd deploy <service>'.
+Toolbox services do not load the local file automatically or support a root $ref.`,
 	}
 	cmd.AddCommand(newToolboxAddSkillCommand(extCtx))
 	cmd.AddCommand(newToolboxAddConnectionCommand(extCtx))

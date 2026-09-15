@@ -661,16 +661,17 @@ func missingProjectExtensions(
 		return nil
 	}
 
-	for _, serviceName := range slices.Sorted(maps.Keys(projectConfig.Services)) {
+	services := projectConfig.ServiceConfigs()
+	for _, serviceName := range slices.Sorted(maps.Keys(services)) {
 		if err := addProvider(
 			extensions.ServiceTargetProviderCapability,
-			string(projectConfig.Services[serviceName].Host),
+			string(services[serviceName].Host),
 		); err != nil {
 			return nil, err
 		}
 	}
 
-	for _, infra := range projectConfig.Infra.GetLayers() {
+	for _, infra := range projectConfig.InfrastructureConfigs() {
 		if err := addProvider(extensions.ProvisioningProviderCapability, string(infra.Provider)); err != nil {
 			return nil, err
 		}

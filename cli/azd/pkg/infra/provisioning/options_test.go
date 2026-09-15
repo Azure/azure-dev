@@ -84,6 +84,22 @@ func TestOptionsGetLayers(t *testing.T) {
 		assert.Equal(t, "infra", layers[0].Path)
 	})
 
+	// NOTE: It's 100% possible this fallback was never used by customers, but it is
+	// explicitly coded to work that way.
+	t.Run("explicit empty layers preserve legacy single entry", func(t *testing.T) {
+		opts := &Options{
+			Provider: Bicep,
+			Path:     "infra",
+			Layers:   []Options{}}
+
+		// Keep the existing fallback: an empty infra.layers list is treated the same as no list
+		// and returns the root infrastructure entry.
+		layers := opts.GetLayers()
+		require.Len(t, layers, 1)
+		require.Equal(t, Bicep, layers[0].Provider)
+		require.Equal(t, "infra", layers[0].Path)
+	})
+
 	t.Run("with layers returns layers", func(t *testing.T) {
 		opts := &Options{
 			Layers: []Options{
@@ -243,19 +259,47 @@ func TestOptionsValidate(t *testing.T) {
 			)
 		})
 
-	t.Run("layer without path is invalid",
+	t.Run("provider-managed legacy layer without path is invalid",
 		func(t *testing.T) {
 			opts := &Options{
 				Layers: []Options{
-					{Name: "l1"},
+					{Name: "foundry", Provider: ProviderKind("microsoft.foundry")},
 				},
 			}
 			err := opts.Validate()
-			require.Error(t, err)
-			assert.Contains(
-				t, err.Error(), "path must be specified",
-			)
+			require.ErrorContains(t, err, "path must be specified")
 		})
+
+	t.Run("provider-managed project layer without path is valid", func(t *testing.T) {
+		opts := &Options{Layers: []Options{
+			{Name: "foundry", Provider: ProviderKind("microsoft.foundry")},
+		}}
+
+		require.NoError(t, opts.ValidateProjectLayers())
+	})
+
+	t.Run("legacy layers allow root provider config", func(t *testing.T) {
+		opts := &Options{
+			Config: map[string]any{"setting": "value"},
+			Layers: []Options{{Name: "foundry", Path: "infra/foundry"}},
+		}
+
+		require.NoError(t, opts.Validate())
+	})
+
+	t.Run("explicit empty layers preserve legacy root fields", func(t *testing.T) {
+		opts := &Options{Path: "infra", Layers: []Options{}}
+
+		require.NoError(t, opts.Validate())
+	})
+
+	t.Run("built-in layer without path is invalid", func(t *testing.T) {
+		opts := &Options{Layers: []Options{{Name: "bicep", Provider: Bicep}}}
+
+		err := opts.Validate()
+
+		require.ErrorContains(t, err, "path must be specified")
+	})
 
 	t.Run("multiple valid layers", func(t *testing.T) {
 		opts := &Options{

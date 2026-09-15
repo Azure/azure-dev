@@ -4,9 +4,6 @@
 // Package definition owns the source-controlled connection definition model.
 package definition
 
-// DefaultPath is the connection definition used when no explicit path is supplied.
-const DefaultPath = "connection.yaml"
-
 // Definition is the deploy-ready representation of a Foundry project connection.
 type Definition struct {
 	Name             string            `json:"name" yaml:"name"`

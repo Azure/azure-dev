@@ -123,6 +123,14 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 
 		agent.AgentDefinition = agentDef
 		return agent, nil
+	case AgentKindPrompt:
+		var agent PromptAgent
+		if err := yaml.Unmarshal(templateBytes, &agent); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal to PromptAgent: %w", err)
+		}
+
+		agent.AgentDefinition = agentDef
+		return agent, nil
 	case AgentKindPromptVoice, AgentKindVoice:
 		var agent VoiceAgent
 		if err := yaml.Unmarshal(templateBytes, &agent); err != nil {
@@ -400,11 +408,15 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 					modelType.Kind == yaml.ScalarNode && modelType.Value == string(VoiceModelTypeHostedAgent) &&
 					!IsVoiceAgentKind(agentDef.Kind) {
 					errors = append(errors,
-						"template.model_type 'hosted_agent' is only valid for voice agents")
+						"template.model_type hosted_agent is not supported; use conversation_engine")
 				}
 				if _, ok := fields["target_agent"]; ok && !IsVoiceAgentKind(agentDef.Kind) {
 					errors = append(errors,
-						"template.target_agent is only valid for voice agents")
+						"template.target_agent is not supported; use conversation_engine")
+				}
+				if _, ok := fields["conversation_engine"]; ok && !IsVoiceAgentKind(agentDef.Kind) {
+					errors = append(errors,
+						"template.conversation_engine is only valid for voice agents")
 				}
 			}
 
@@ -428,6 +440,8 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 									"policies[%d] of type '%s' requires a policy name "+
 										"('raiPolicyName' in azure.yaml, 'rai_policy_name' in agent.yaml)",
 									i, policy.Type))
+							} else if err := ValidateRaiPolicyName(policy.RaiPolicyName); err != nil {
+								errors = append(errors, fmt.Sprintf("policies[%d]: %v", i, err))
 							}
 							errors = append(errors,
 								validateInvocationsModeration(i, policy.InvocationsModeration, agent.Protocols)...)
@@ -464,6 +478,37 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 					// Workflow doesn't have models, so no model validation needed
 				} else {
 					errors = append(errors, fmt.Sprintf("failed to unmarshal to Workflow: %v", err))
+				}
+			case AgentKindPrompt:
+				var agent PromptAgent
+				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
+					if strings.TrimSpace(agent.Model) == "" {
+						errors = append(errors, "template.model is required for prompt agents")
+					}
+					if strings.TrimSpace(agent.Instructions) == "" {
+						errors = append(errors, "template.instructions is required for prompt agents")
+					}
+					for i, policy := range agent.Policies {
+						switch policy.Type {
+						case PolicyTypeRai:
+							if policy.RaiPolicyName == "" {
+								errors = append(errors, fmt.Sprintf(
+									"policies[%d] of type '%s' requires a policy name (rai_policy_name)",
+									i, policy.Type))
+							} else if err := ValidateRaiPolicyName(policy.RaiPolicyName); err != nil {
+								errors = append(errors, fmt.Sprintf("policies[%d]: %v", i, err))
+							}
+						case "":
+							errors = append(errors, fmt.Sprintf(
+								"policies[%d] requires a type", i))
+						default:
+							errors = append(errors, fmt.Sprintf(
+								"policies[%d] has an unsupported type '%s' (supported: %s)",
+								i, policy.Type, PolicyTypeRai))
+						}
+					}
+				} else {
+					errors = append(errors, fmt.Sprintf("failed to unmarshal to PromptAgent: %v", err))
 				}
 			case AgentKindPromptVoice, AgentKindVoice:
 				var agent VoiceAgent
@@ -512,18 +557,31 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 									"move target-owned policies to the hosted target")
 						}
 					}
-					if agent.ModelType == VoiceModelTypeHostedAgent {
-						if agent.TargetAgent == nil ||
-							strings.TrimSpace(agent.TargetAgent.Service) == "" {
+					if isHostedVoiceWrapper(agent) {
+						if agent.ModelType == VoiceModelTypeHostedAgent || agent.TargetAgent != nil {
 							errors = append(errors,
-								"template.target_agent.service is required when model_type is 'hosted_agent'")
+								"template.model_type hosted_agent and target_agent are not supported; "+
+									"use conversation_engine")
 						}
-						if agent.TargetAgent != nil && agent.TargetAgent.Version != "" &&
-							agent.TargetAgent.Version != "deployed" {
-							errors = append(errors, "template.target_agent.version must be 'deployed' when specified")
+						if agent.ConversationEngine != nil && agent.ModelType != "" &&
+							agent.ModelType != VoiceModelTypeHostedAgent {
+							errors = append(errors,
+								"template.conversation_engine cannot be combined with model_type")
+						}
+						if agent.ConversationEngine != nil &&
+							strings.EqualFold(strings.TrimSpace(agent.ConversationEngine.Type), "hosted_agent") &&
+							strings.TrimSpace(agent.ConversationEngine.Name) == "" {
+							errors = append(errors,
+								"template.conversation_engine.name is required when "+
+									"conversation_engine.type is 'hosted_agent'")
+						}
+						if agent.ConversationEngine != nil && agent.ConversationEngine.Version != "" &&
+							agent.ConversationEngine.Version != "deployed" {
+							errors = append(errors,
+								"template.conversation_engine.version must be 'deployed' when specified")
 						}
 						if agent.Model != nil {
-							errors = append(errors, "template.model is not allowed when model_type is 'hosted_agent'")
+							errors = append(errors, "template.model is not allowed for hosted voice wrappers")
 						}
 						if agent.InputSchema != nil || agent.OutputSchema != nil || agent.Instructions != nil ||
 							len(agent.StructuredInputs) > 0 || len(agent.Tools) > 0 ||
@@ -540,14 +598,20 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 							errors = append(errors, "template.model.id is required for a prompt-voice agent")
 						}
 						if agent.TargetAgent != nil {
-							errors = append(errors, "template.target_agent is only valid when model_type is 'hosted_agent'")
+							errors = append(errors,
+								"template.target_agent is not supported; use conversation_engine")
+						}
+						if agent.ConversationEngine != nil {
+							errors = append(errors,
+								"template.conversation_engine is only valid for hosted voice wrappers")
 						}
 					}
 					if agent.ModelType != "" && agent.ModelType != VoiceModelTypeManaged &&
 						agent.ModelType != VoiceModelTypeSelfDeployed && agent.ModelType != VoiceModelTypeHostedAgent {
 						errors = append(errors, fmt.Sprintf(
-							"template.model_type '%s' is not supported; use '%s', '%s', or '%s'",
-							agent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed, VoiceModelTypeHostedAgent))
+							"template.model_type '%s' is not supported; use '%s' or '%s'. "+
+								"For hosted voice, use conversation_engine.",
+							agent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed))
 					}
 					errors = append(errors, validateVoiceAgentAdvancedConfig(agent)...)
 				} else {
@@ -567,6 +631,12 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 	}
 
 	return nil
+}
+
+func isHostedVoiceWrapper(agent VoiceAgent) bool {
+	return agent.ModelType == VoiceModelTypeHostedAgent ||
+		(agent.ConversationEngine != nil &&
+			strings.EqualFold(strings.TrimSpace(agent.ConversationEngine.Type), "hosted_agent"))
 }
 
 func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {

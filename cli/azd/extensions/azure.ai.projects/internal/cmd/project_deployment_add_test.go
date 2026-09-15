@@ -830,9 +830,7 @@ func TestResolveDeploymentCandidatesPreservesFiltersAcrossLocations(t *testing.T
 
 func TestFindEjectedFoundryProjectInfrastructure(t *testing.T) {
 	params := map[string]any{
-		"deployments":           []synthesis.Deployment{},
-		"connections":           []synthesis.Connection{},
-		"connectionCredentials": map[string]map[string]any{},
+		"deployments": []synthesis.Deployment{},
 	}
 	tests := []struct {
 		name          string

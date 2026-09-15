@@ -124,13 +124,43 @@ resources on the existing project. If managed deployments are already
 declared, endpoint-only setup stops before clearing the project ID.
 Use the full project resource ID before adding managed deployments.
 
-To reconcile deployments, connections, or a pending container registry on an existing project, set the project's full ARM resource ID in the active azd environment:
+To reconcile deployments or a pending container registry on an existing project, set the project's full ARM resource ID in the active azd environment:
 
 ```sh
 azd env set AZURE_AI_PROJECT_ID "/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account>/projects/<project>"
 ```
 
 `azd ai agent init` sets this value when initialized against an existing project. An endpoint-only service with no resources to reconcile does not require it.
+
+Split `host: azure.ai.connection` services are reconciled during deploy by the
+`azure.ai.connections` extension, never by Project provisioning. This applies
+to embedded templates and newly ejected Bicep/Terraform alike. Project synthesis
+does not read Connection or Toolbox payloads, environments, or credentials.
+The system ACR connection used by the Project's registry remains Project-owned.
+
+### Breaking migration
+
+Upgrade the related Foundry extensions together. On-disk Bicep whose compiled
+template declares generic Foundry Connection resources (including inline nested
+deployments) is rejected with migration guidance. Remove those resources, their
+associated parameters and aggregate readiness outputs, or regenerate the IaC
+after saving custom changes. Unrelated user-owned parameters named `connections`
+or `connectionCredentials` are allowed and retain normal parameter substitution;
+parameter names alone do not identify the removed Foundry contract. Linked
+templates are not fetched or inspected by this validation.
+
+Only the generated system ACR connection's name, target, project identity and
+registry resource ID wiring are exempt. Other `ContainerRegistry` connections,
+including those using `ManagedIdentity`, belong in `azure.ai.connection` services.
+Preserve that generated wiring when customizing ejected Bicep, or regenerate it.
+
+Update previously ejected Terraform manually as well, including any
+required state handoff to avoid destroying resources when removing declarations.
+Extension upgrades do not automatically rewrite user-owned IaC.
+
+Declare Connections and Toolboxes as independent services, keep Agent `uses`
+dependencies, and run `azd deploy --all` after provisioning the Project. See the
+[Connections migration guide](../azure.ai.connections/README.md#breaking-migration).
 
 ## Eject existing-project infrastructure
 
@@ -144,7 +174,7 @@ azd ai project add --project-id "<project-resource-id>" --infra=terraform
 
 The default format is Bicep. The generated infrastructure references the
 existing account and project without taking ownership of them. It manages only
-declared model deployments, project connections, and any required container
+declared model deployments, the system ACR connection, and any required container
 registry resources. Endpoint-only setup cannot eject infrastructure; rerun
 `project add` with the full project resource ID.
 
@@ -156,12 +186,9 @@ without managing it. Terraform registry output is always named
 Before writing generated files, existing registry endpoints are normalized to
 remove URL credentials, query parameters, and fragments.
 
-Ejection never writes concrete connection credentials to generated files.
-Declare credential values as `${VAR}` environment references or supported
-Foundry server-side references such as
-`${{connections.<name>.credentials.<key>}}`; inline values, including values
-loaded from a local `$ref`, are rejected before any generated infrastructure
-is installed.
+Project ejection does not read or emit split Connection payloads or credentials,
+including values loaded from a local `$ref`. Keep those on `azure.ai.connection`
+services, reconciled by the Connections extension during deployment.
 
 Terraform ejection does not support private networking and cannot adopt a
 registry already created by the `microsoft.foundry` provider. After ejection,
@@ -176,4 +203,4 @@ When provisioning reports insufficient Cognitive Services quota, check usage for
 existing Foundry project should be reused instead, configure its endpoint and set `AZURE_AI_PROJECT_ID` to the
 full project resource ID before retrying.
 
-The `azd ai project set`, `show`, and `unset` commands manage the default Foundry project endpoint context. They do not currently author the project service in `azure.yaml`.
+The `azd ai project set`, `show`, and `unset` commands manage the default Foundry project endpoint context. Use `azd ai project add` to author the project service in `azure.yaml`.

@@ -323,8 +323,8 @@ func runInitManaged(
 	); err != nil {
 		return err
 	}
-	if err := authorFoundryProject(
-		ctx, azdClient, foundryProject, projectConfig.GetPath(),
+	if err := authorSelectedFoundryProject(
+		ctx, azdClient, env.Name, foundryProject, projectConfig.GetPath(),
 		foundryProject == nil && credential != nil,
 	); err != nil {
 		return err

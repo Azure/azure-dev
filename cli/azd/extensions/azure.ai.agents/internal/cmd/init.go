@@ -3736,12 +3736,13 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	); err != nil {
 		return err
 	}
-	if err := authorFoundryProject(
+	if err := authorSelectedFoundryProject(
 		ctx,
 		a.azdClient,
+		a.environment.Name,
 		a.selectedFoundryProject,
 		a.projectConfig.GetPath(),
-		a.selectedFoundryProject == nil,
+		a.selectedFoundryProject == nil && a.credential != nil,
 	); err != nil {
 		return err
 	}
@@ -3844,12 +3845,13 @@ func (a *InitAction) addVoiceAgentToProject(
 	); err != nil {
 		return err
 	}
-	if err := authorFoundryProject(
+	if err := authorSelectedFoundryProject(
 		ctx,
 		a.azdClient,
+		a.environment.Name,
 		a.selectedFoundryProject,
 		a.projectConfig.GetPath(),
-		a.selectedFoundryProject == nil,
+		a.selectedFoundryProject == nil && a.credential != nil,
 	); err != nil {
 		return err
 	}

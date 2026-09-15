@@ -40,6 +40,7 @@ type InitFromCodeAction struct {
 	// addToProject can disable remote build for VNET-injected accounts
 	// without issuing a second account read.
 	selectedFoundryProject *FoundryProjectInfo
+	newProjectSelected     bool
 }
 
 func (a *InitFromCodeAction) Run(ctx context.Context) error {
@@ -402,6 +403,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			return nil, err
 		}
 		a.credential = newCred
+		a.newProjectSelected = true
 	} else {
 		projectChoices := []*azdext.SelectChoice{
 			{Label: "Use an existing Foundry project", Value: "existing"},
@@ -464,6 +466,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 				if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
 					return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 				}
+				a.newProjectSelected = true
 			} else {
 				selectedProject = proj
 				if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "true"); err != nil {
@@ -491,6 +494,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			if err := setEnvValue(ctx, a.azdClient, a.environment.Name, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
 				return nil, fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
 			}
+			a.newProjectSelected = true
 		}
 	}
 
@@ -944,12 +948,13 @@ func (a *InitFromCodeAction) addToProject(
 	); err != nil {
 		return err
 	}
-	if err := authorFoundryProject(
+	if err := authorSelectedFoundryProject(
 		ctx,
 		a.azdClient,
+		a.environment.Name,
 		a.selectedFoundryProject,
 		a.projectConfig.GetPath(),
-		a.selectedFoundryProject == nil,
+		a.newProjectSelected,
 	); err != nil {
 		return err
 	}

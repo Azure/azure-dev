@@ -573,9 +573,10 @@ func runInitFromAzureYaml(
 		); err != nil {
 			return err
 		}
-		if err := authorFoundryProject(
+		if err := authorSelectedFoundryProject(
 			ctx,
 			azdClient,
+			env.Name,
 			result.FoundryProject,
 			projectRoot,
 			false,

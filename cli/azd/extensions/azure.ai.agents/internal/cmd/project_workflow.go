@@ -59,6 +59,20 @@ func authorFoundryProject(
 	)
 }
 
+func authorSelectedFoundryProject(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	target *FoundryProjectInfo,
+	projectRoot string,
+	newProject bool,
+) error {
+	if newProject {
+		return authorNewFoundryProject(ctx, azdClient, envName, projectRoot)
+	}
+	return authorFoundryProject(ctx, azdClient, target, projectRoot, false)
+}
+
 var newProjectEnvironmentKeys = []string{
 	"AZURE_AI_PROJECT_NAME",
 	"AZURE_RESOURCE_GROUP",

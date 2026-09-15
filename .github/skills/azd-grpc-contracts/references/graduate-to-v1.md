@@ -30,7 +30,9 @@ Graduation is an additive change to the existing stable major. Do not create
 5. If an entire service graduates:
    - Register the stable implementation.
    - Let the generated adapter serve the existing beta route.
-   - Add stable SDK facade aliases and documentation.
+   - Regenerate the checked-in artifacts so generation creates the stable SDK
+     facade aliases; never edit generated aliases directly.
+   - Update the SDK documentation.
    - Preserve or deliberately migrate any existing beta client accessor.
 6. Regenerate all checked-in artifacts with `go tool mage generateProtos`.
 7. Update contract lifecycle docs, SDK references, examples, and minimum host

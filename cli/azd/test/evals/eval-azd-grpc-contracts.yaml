@@ -48,6 +48,8 @@ stimuli:
         config:
           substring: "make proto-version-compatibility"
           case_sensitive: true
+      - type: diff-empty
+        name: "inspection did not modify the repository"
       - type: prompt
         name: "judge: accurate current-state diagnosis"
         config:
@@ -76,7 +78,9 @@ stimuli:
       - type: output-matches
         name: "keeps stable contract unchanged"
         config:
-          pattern: '(?is)(keep|leave|do not).*v1.*(unchanged|out|modify)'
+          pattern: '(?is)(?:(?:keep|leave).*?(?:v1.*?(?:unchanged|unmodified)|(?:preview )?field.*?out of.*?v1)|do not modify.*?v1)'
+      - type: diff-empty
+        name: "planning did not modify the repository"
       - type: prompt
         name: "judge: safe beta addition plan"
         config:
@@ -106,6 +110,8 @@ stimuli:
         name: "flags accessor compatibility"
         config:
           pattern: '(?is)(accessor|return type).*(source.break|breaking)'
+      - type: diff-empty
+        name: "graduation plan did not modify the repository"
       - type: prompt
         name: "judge: safe graduation plan"
         config:

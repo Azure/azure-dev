@@ -7,8 +7,8 @@ Run commands from `cli/azd`.
 1. Inspect both source trees:
 
    ```bash
-   find grpc/proto/azd/extensions/v1 -maxdepth 1 -name '*.proto' -printf '%f\n' | sort
-   find grpc/proto/azd/extensions/v1beta -maxdepth 1 -name '*.proto' -printf '%f\n' | sort
+   for file in grpc/proto/azd/extensions/v1/*.proto; do basename "$file"; done | sort
+   for file in grpc/proto/azd/extensions/v1beta/*.proto; do basename "$file"; done | sort
    ```
 
 2. Identify beta-only files and services. Today, `ComposeService`,

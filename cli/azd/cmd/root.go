@@ -538,19 +538,22 @@ func registerGlobalMiddleware(root *actions.ActionDescriptor) {
 		UseMiddlewareWhen("error", middleware.NewErrorMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTroubleshooting
 		}).
-		UseMiddlewareWhen("loginGuard", middleware.NewLoginGuardMiddleware, func(descriptor *actions.ActionDescriptor) bool {
-			// Check if the command or any of its parents require login
-			current := descriptor
-			for current != nil {
-				if current.Options != nil && current.Options.RequireLogin {
-					return true
-				}
+		UseMiddlewareWhen("loginGuard", middleware.NewLoginGuardMiddleware, commandRequiresLogin)
+}
 
-				current = current.Parent()
-			}
+func commandRequiresLogin(descriptor *actions.ActionDescriptor) bool {
+	if descriptor.Options != nil && isDeploymentPreview(descriptor.Options.Command) {
+		return false
+	}
 
-			return false
-		})
+	// Check if the command or any of its parents require login.
+	for current := descriptor; current != nil; current = current.Parent() {
+		if current.Options != nil && current.Options.RequireLogin {
+			return true
+		}
+	}
+
+	return false
 }
 
 func getCmdRootHelpFooter(cmd *cobra.Command) string {

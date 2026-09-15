@@ -154,6 +154,24 @@ func (fs *LocalFileDataStore) Get(ctx context.Context, name string) (*Environmen
 	return env, nil
 }
 
+// GetReadOnly returns a detached environment snapshot without creating lock files or persisting normalization changes.
+// Environment saves use atomic replacement, so reading the files directly cannot observe a partially written .env.
+func (fs *LocalFileDataStore) GetReadOnly(ctx context.Context, name string) (*Environment, error) {
+	root := fs.azdContext.EnvironmentRoot(name)
+	_, err := os.Stat(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("'%s': %w", name, ErrNotFound)
+	} else if err != nil {
+		return nil, fmt.Errorf("listing env root: %w", err)
+	}
+
+	env := New(name)
+	if err := fs.load(ctx, env); err != nil {
+		return nil, err
+	}
+	return env, nil
+}
+
 // Reload reloads the environment from the persistent data store
 func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) error {
 	// Serialize against concurrent cross-process Save (e.g. parallel
@@ -171,6 +189,10 @@ func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) erro
 // reloadLocked performs the actual reload work. Caller MUST hold the env
 // file lock.
 func (fs *LocalFileDataStore) reloadLocked(ctx context.Context, env *Environment) error {
+	return fs.load(ctx, env)
+}
+
+func (fs *LocalFileDataStore) load(_ context.Context, env *Environment) error {
 	// Reload env values
 	var newDotenv map[string]string
 	if envMap, err := godotenv.Read(fs.EnvPath(env)); errors.Is(err, os.ErrNotExist) {

@@ -4,6 +4,7 @@
 package project
 
 import (
+	"maps"
 	"net/http"
 	"testing"
 
@@ -59,13 +60,19 @@ func TestPlanPreviewImage(t *testing.T) {
 		{name: "legacy prebuilt marker", definition: agent_yaml.ContainerAgent{Image: "registry.example.com/agent:v1"},
 			environment: map[string]string{"AZD_AGENT_SKIP_ACR": "true"}, mode: "prebuilt", known: true,
 			image: "registry.example.com/agent:v1"},
+		{name: "legacy marker preserves explicit passthrough", docker: &azdext.DockerProjectOptions{
+			ImagePassthrough: true, Image: "registry.example.com/agent:v1",
+		}, environment: map[string]string{"AZD_AGENT_SKIP_ACR": "true"}, mode: "prebuilt", known: true,
+			image: "registry.example.com/agent:v1"},
 		{name: "conflicting passthrough build", definition: agent_yaml.ContainerAgent{Image: "registry.example.com/agent:v1"},
 			docker: &azdext.DockerProjectOptions{ImagePassthrough: true, RemoteBuild: true}, wantError: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			service := &azdext.ServiceConfig{Name: "agent", Docker: tt.docker}
-			plan, err := planPreviewImage(tt.definition, service, "project", tt.environment)
+			environment := map[string]string{"AZD_AGENT_SKIP_ACR": ""}
+			maps.Copy(environment, tt.environment)
+			plan, err := planPreviewImage(tt.definition, service, "project", environment)
 			if tt.wantError {
 				require.Error(t, err)
 				return

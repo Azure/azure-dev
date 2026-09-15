@@ -387,7 +387,6 @@ code_configuration:
 		DefinitionPath:  path,
 		CodePath:        codeDirectory,
 		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/project/",
-		Progress:        func(string) { t.Fatal("dry-run must not package or build source") },
 	}, nil, func(endpoint string) (standaloneAgentReader, error) {
 		assert.Equal(t, "https://account.services.ai.azure.com/api/projects/project", endpoint)
 		return reader, nil

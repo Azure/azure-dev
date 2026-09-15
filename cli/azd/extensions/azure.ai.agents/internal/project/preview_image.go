@@ -5,7 +5,6 @@ package project
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -55,8 +54,8 @@ func planPreviewImage(
 		return &DeployPreviewImage{Mode: "code", Known: true}, nil
 	}
 	prebuilt := service == nil || service.GetDocker().GetImagePassthrough() || definition.RegistryConnectionID != ""
-	if marker, err := strconv.ParseBool(environment["AZD_AGENT_SKIP_ACR"]); err == nil && marker {
-		prebuilt = definition.Image != ""
+	if definition.Image != "" && legacySkipACREnabled(deploymentEnvironmentValue(environment, "AZD_AGENT_SKIP_ACR")) {
+		prebuilt = true
 	}
 	if prebuilt {
 		if service.GetDocker().GetRemoteBuild() {

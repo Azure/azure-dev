@@ -15,7 +15,6 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/containerref"
-	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/pkg/projectconfig"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -1016,41 +1015,12 @@ func agentDefinitionFromDisk(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (agent_yaml.ContainerAgent, bool, AgentDefinitionSource, error) {
-	for _, name := range []string{"agent.yaml", "agent.yml", "agent.manifest.yaml", "agent.manifest.yml"} {
-		defPath, err := paths.JoinAllowRoot(projectRoot, svc.GetRelativePath(), name)
-		if err != nil {
-			return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceDisk, exterrors.Validation(
-				exterrors.CodeInvalidServiceConfig,
-				fmt.Sprintf("invalid service path for %s: %s", svc.GetName(), err),
-				"update azure.yaml so the agent service path stays within the project directory",
-			)
-		}
-		data, err := os.ReadFile(defPath) //nolint:gosec // The path is scoped to the configured service directory.
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil {
-			return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceDisk,
-				fmt.Errorf("inspect agent definition %q: %w", defPath, err)
-		}
-		var header agent_yaml.AgentDefinition
-		if err := yaml.Unmarshal(data, &header); err == nil &&
-			header.Kind != "" && header.Kind != agent_yaml.AgentKindHosted {
-			definition, hosted, err := parseContainerAgentYAML(data)
-			return definition, hosted, AgentDefinitionSourceDisk, err
-		}
-		loaded, err := LoadAgentPreviewDefinition(defPath, nil)
-		if err != nil {
-			return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceDisk, err
-		}
-		return loaded.Definition, true, AgentDefinitionSourceDisk, nil
+	path, err := findAgentDefinitionFile(svc, projectRoot)
+	if err != nil {
+		return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceDisk, err
 	}
-
-	return agent_yaml.ContainerAgent{}, false, AgentDefinitionSourceDisk, exterrors.Dependency(
-		exterrors.CodeAgentDefinitionNotFound,
-		fmt.Sprintf("agent definition not found for service %q", svc.GetName()),
-		"re-run `azd ai agent init` to write the agent definition into azure.yaml",
-	)
+	definition, hosted, err := loadAgentDefinitionFile(path, true)
+	return definition, hosted, AgentDefinitionSourceDisk, err
 }
 
 // parseContainerAgentYAML validates and parses agent.yaml bytes into a

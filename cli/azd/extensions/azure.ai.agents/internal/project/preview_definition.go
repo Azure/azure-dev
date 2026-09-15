@@ -60,29 +60,24 @@ func companionPreviewSources(
 ) ([]previewDefinitionSource, error) {
 	var sources []previewDefinitionSource
 	// Materialized definitions override template defaults; the selected input
-	// overrides both. Overlapping differences are retained for the preview.
-	for _, names := range [][]string{
-		{"agent.manifest.yaml", "agent.manifest.yml"},
-		{"agent.yaml", "agent.yml"},
-	} {
-		for _, name := range names {
-			path := filepath.Join(directory, name)
-			if samePreviewPath(path, selected) {
-				continue
-			}
-			_, err := os.Stat(path)
-			if os.IsNotExist(err) {
-				continue
-			}
-			if err != nil {
-				return nil, fmt.Errorf("inspect agent preview source %q: %w", path, err)
-			}
-			source, err := readPreviewDefinitionSource(path, environment)
-			if err != nil {
-				return nil, err
-			}
-			sources = append(sources, source)
+	// overrides both. Reverse discovery order so the preferred .yaml wins over .yml.
+	for _, name := range slices.Backward(agentDefinitionFileNames) {
+		path := filepath.Join(directory, name)
+		if samePreviewPath(path, selected) {
+			continue
 		}
+		_, err := os.Stat(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("inspect agent preview source %q: %w", path, err)
+		}
+		source, err := readPreviewDefinitionSource(path, environment)
+		if err != nil {
+			return nil, err
+		}
+		sources = append(sources, source)
 	}
 	return sources, nil
 }

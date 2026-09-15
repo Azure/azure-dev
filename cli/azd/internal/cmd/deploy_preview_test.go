@@ -106,12 +106,12 @@ func newDeployPreviewAction(t *testing.T, args ...string) (*DeployAction, *deplo
 			"AZURE_SUBSCRIPTION_ID":     "",
 			"API_ENABLED":               "true",
 		}),
-		envManager:     envManager,
-		serviceManager: manager,
-		importManager:  project.NewImportManager(nil),
-		console:        mockinput.NewMockConsole(),
-		formatter:      &output.NoneFormatter{},
-		writer:         writer,
+		envManager:              envManager,
+		serviceTargetResolver:   manager,
+		declaredServiceResolver: project.NewImportManager(nil),
+		console:                 mockinput.NewMockConsole(),
+		formatter:               &output.NoneFormatter{},
+		writer:                  writer,
 	}
 	initialValues := action.env.Dotenv()
 	initialConfig, err := json.Marshal(action.env.Config.Raw())

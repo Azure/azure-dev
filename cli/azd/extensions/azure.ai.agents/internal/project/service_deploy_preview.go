@@ -47,6 +47,10 @@ func previewAgentService(
 	if options.Service == nil {
 		return nil, fmt.Errorf("agent service is required for deployment preview")
 	}
+	overridePath, err := agentDefinitionOverridePath()
+	if err != nil {
+		return nil, err
+	}
 	service := proto.CloneOf(options.Service)
 	if err := ResolveServiceConfigInPlace(service, options.ProjectRoot); err != nil {
 		return nil, exterrors.Validation(
@@ -62,7 +66,7 @@ func previewAgentService(
 			fmt.Sprintf("invalid source path for service %q: %s", service.Name, err),
 			"keep the service project path within the azure.yaml project directory")
 	}
-	loaded, err := loadProjectPreviewDefinition(service, options.ProjectRoot, serviceDir, options.Environment)
+	loaded, err := loadProjectPreviewDefinition(service, options.ProjectRoot, serviceDir, options.Environment, overridePath)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +80,7 @@ func previewAgentService(
 			"--code cannot be used with a prebuilt-image preview", "omit --code to preview the configured image")
 	}
 	if codePath == "" {
-		codePath = serviceDir
+		codePath = agentSourceDirectory(serviceDir, overridePath, overridePath != "")
 	}
 	if plan.Mode != "prebuilt" {
 		codePath, err = resolveAgentCodePath(codePath)
@@ -129,8 +133,19 @@ func previewAgentService(
 }
 
 func loadProjectPreviewDefinition(
-	service *azdext.ServiceConfig, projectRoot, serviceDir string, environment map[string]string,
+	service *azdext.ServiceConfig, projectRoot, serviceDir string, environment map[string]string, overridePath string,
 ) (*AgentPreviewDefinition, error) {
+	if overridePath != "" {
+		definition, hosted, err := loadAgentDefinitionFile(overridePath, false)
+		if err != nil {
+			return nil, err
+		}
+		if !hosted {
+			return nil, exterrors.Validation(exterrors.CodeUnsupportedAgentKind,
+				"deployment preview supports hosted agents only", "select a hosted agent definition")
+		}
+		return &AgentPreviewDefinition{Definition: definition, Sources: []string{overridePath}}, nil
+	}
 	sources, err := companionPreviewSources(serviceDir, "", environment)
 	if err != nil {
 		return nil, err

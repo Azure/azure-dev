@@ -178,12 +178,13 @@ var _ azdext.ServiceTargetProvider = &AgentServiceTargetProvider{}
 
 // AgentServiceTargetProvider is a minimal implementation of ServiceTargetProvider for demonstration
 type AgentServiceTargetProvider struct {
-	azdClient           *azdext.AzdClient
-	serviceConfig       *azdext.ServiceConfig
-	agentDefinitionPath string
-	agentDefinitionRef  string
-	projectPath         string
-	servicePath         string
+	azdClient               *azdext.AzdClient
+	serviceConfig           *azdext.ServiceConfig
+	agentDefinitionPath     string
+	agentDefinitionRef      string
+	agentDefinitionOverride bool
+	projectPath             string
+	servicePath             string
 	// deployContextReady is set by every successful ensureDeployContext path;
 	// agentDefinitionPath is only set for the file-based and env-override paths
 	// (not the inline unified shape), so both are checked as the idempotency guard.
@@ -407,7 +408,7 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	// their entire deploy target in the service config, so skip the
 	// subscription/tenant/credential resolution the hosted path needs.
 	if ServiceIsPromptAgent(p.serviceConfig) {
-		return p.resolveAgentDefinitionPath(proj.Project.Path, servicePath, fullPath, declaredRef)
+		return p.resolveAgentDefinitionPath(proj.Project.Path, declaredRef)
 	}
 
 	// Get subscription ID from environment
@@ -457,41 +458,23 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	}
 	p.credential = cred
 
-	return p.resolveAgentDefinitionPath(proj.Project.Path, servicePath, fullPath, declaredRef)
+	return p.resolveAgentDefinitionPath(proj.Project.Path, declaredRef)
 }
 
-// resolveAgentDefinitionPath locates the agent definition (agent.yaml/agent.yml
-// or the AGENT_DEFINITION_PATH override) for the service and stores it on the
+// resolveAgentDefinitionPath locates the agent definition, companion manifest,
+// or AGENT_DEFINITION_PATH override for the service and stores it on the
 // provider. It is shared by the hosted and prompt-agent Initialize paths.
 //
 // declaredRef is the root `$ref` the service entry carried in azure.yaml before
 // the include machinery expanded it, or "" when the service declares none.
-func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
-	projectPath, servicePath, fullPath string,
-	declaredRef string,
-) error {
-	// Check if user has specified agent definition path via environment variable
-	if envPath := os.Getenv("AGENT_DEFINITION_PATH"); envPath != "" {
-		// Verify the file exists and has correct extension
-		//nolint:gosec // env path is an explicit user override; existence check is intentional
-		if _, err := os.Stat(envPath); os.IsNotExist(err) {
-			return exterrors.Validation(
-				exterrors.CodeAgentDefinitionNotFound,
-				fmt.Sprintf("agent definition file specified in AGENT_DEFINITION_PATH does not exist: %s", envPath),
-				"verify the path set in AGENT_DEFINITION_PATH points to a valid agent.yaml file",
-			)
-		}
-
-		ext := strings.ToLower(filepath.Ext(envPath))
-		if ext != ".yaml" && ext != ".yml" {
-			return exterrors.Validation(
-				exterrors.CodeAgentDefinitionNotFound,
-				fmt.Sprintf("agent definition file must be a YAML file (.yaml or .yml), got: %s", envPath),
-				"provide a file with .yaml or .yml extension",
-			)
-		}
-
+func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(projectPath, declaredRef string) error {
+	envPath, err := agentDefinitionOverridePath()
+	if err != nil {
+		return err
+	}
+	if envPath != "" {
 		p.agentDefinitionPath = envPath
+		p.agentDefinitionOverride = true
 		fmt.Printf("Using agent definition from environment variable: %s\n", color.New(color.FgHiGreen).Sprint(envPath))
 		p.deployContextReady = true
 		return nil
@@ -550,44 +533,14 @@ func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
 		return nil
 	}
 
-	// Legacy shape: look for agent.yaml or agent.yml in the service directory root
-	agentYamlPath, err := paths.JoinAllowRoot(projectPath, servicePath, "agent.yaml")
+	definitionPath, err := findAgentDefinitionFile(p.serviceConfig, projectPath)
 	if err != nil {
-		return exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("invalid agent definition path for %s: %s", p.serviceConfig.Name, err),
-			"update azure.yaml so the agent definition stays within the project directory",
-		)
+		return err
 	}
-	agentYmlPath, err := paths.JoinAllowRoot(projectPath, servicePath, "agent.yml")
-	if err != nil {
-		return exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("invalid agent definition path for %s: %s", p.serviceConfig.Name, err),
-			"update azure.yaml so the agent definition stays within the project directory",
-		)
-	}
-
-	if _, err := os.Stat(agentYamlPath); err == nil {
-		p.agentDefinitionPath = agentYamlPath
-		fmt.Printf("Using agent definition: %s\n", color.New(color.FgHiGreen).Sprint(agentYamlPath))
-		p.deployContextReady = true
-		return nil
-	}
-
-	if _, err := os.Stat(agentYmlPath); err == nil {
-		p.agentDefinitionPath = agentYmlPath
-		fmt.Printf("Using agent definition: %s\n", color.New(color.FgHiGreen).Sprint(agentYmlPath))
-		p.deployContextReady = true
-		return nil
-	}
-
-	return exterrors.Dependency(
-		exterrors.CodeAgentDefinitionNotFound,
-		fmt.Sprintf("agent definition file not found: no agent.yaml or agent.yml found in %s", fullPath),
-		"add an agent.yaml/agent.yml file to the service directory, "+
-			"declare $ref: <file> on the service in azure.yaml, or set AGENT_DEFINITION_PATH",
-	)
+	p.agentDefinitionPath = definitionPath
+	fmt.Printf("Using agent definition: %s\n", color.New(color.FgHiGreen).Sprint(definitionPath))
+	p.deployContextReady = true
+	return nil
 }
 
 // AgentDefinitionRefKey is the azure.yaml service key that points at the file
@@ -1459,20 +1412,11 @@ func hasContainerArtifact(artifacts []*azdext.Artifact) bool {
 }
 
 func (p *AgentServiceTargetProvider) loadContainerAgentDefinition() (agent_yaml.ContainerAgent, bool, error) {
-	// An explicit AGENT_DEFINITION_PATH override is represented by
-	// agentDefinitionPath and must win over the service entry.
+	// Resolved files take precedence over the service entry. Convention-based
+	// definitions inherit companions; an explicit override is a single file.
 	if p.agentDefinitionPath != "" {
-		data, err := os.ReadFile(p.agentDefinitionPath)
-		if err != nil {
-			return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("failed to read agent manifest file: %s", err),
-				"verify the agent.yaml file exists and is readable",
-			)
-		}
-
 		WarnLegacyAgentShape(AgentDefinitionSourceDisk)
-		return parseContainerAgentYAML(data)
+		return loadAgentDefinitionFile(p.agentDefinitionPath, !p.agentDefinitionOverride)
 	}
 
 	// Prefer the agent definition carried inline on the service entry (the
@@ -1675,20 +1619,9 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 	// Get environment variables from azd
 	progress("Loading deployment environment")
-	resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
-		Name: p.env.Name,
-	})
+	azdEnv, err := p.loadDeploymentEnvironment(ctx, serviceConfig)
 	if err != nil {
-		return nil, exterrors.Dependency(
-			exterrors.CodeEnvironmentValuesFailed,
-			fmt.Sprintf("failed to get environment values: %s", err),
-			"run 'azd env get-values' to verify environment state",
-		)
-	}
-
-	azdEnv := make(map[string]string, len(resp.KeyValues))
-	for _, kval := range resp.KeyValues {
-		azdEnv[kval.Key] = kval.Value
+		return nil, err
 	}
 	p.dependencyEnv = azdEnv
 
@@ -2255,7 +2188,7 @@ func (p *AgentServiceTargetProvider) shouldSkipACRForEnvironment(ctx context.Con
 		return false
 	}
 
-	return strings.EqualFold(strings.TrimSpace(resp.Value), "true")
+	return legacySkipACREnabled(resp.Value)
 }
 
 // deployPrepResult holds the common outputs from prepareDeploy, used by both
@@ -3132,12 +3065,7 @@ func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serv
 	// overrides the definition, its file may live outside the service path, so
 	// zip the override's directory to capture the right source tree. Fall back to
 	// the definition directory when the service path was not resolved.
-	srcDir := p.servicePath
-	if os.Getenv("AGENT_DEFINITION_PATH") != "" && p.agentDefinitionPath != "" {
-		srcDir = filepath.Dir(p.agentDefinitionPath)
-	} else if srcDir == "" {
-		srcDir = filepath.Dir(p.agentDefinitionPath)
-	}
+	srcDir := agentSourceDirectory(p.servicePath, p.agentDefinitionPath, p.agentDefinitionOverride)
 
 	// Check runtime and dependency resolution for dotnet bundled mode
 	if agentDef, isHosted, err := p.loadContainerAgentDefinition(); err == nil && isHosted &&

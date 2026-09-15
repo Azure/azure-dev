@@ -192,6 +192,15 @@ each get their own copy and writes would diverge. `saveMu` serializes the
 read-modify-write cycle on the .env file so two concurrent `Save` calls
 cannot interleave and clobber each other's writes.
 
+`GetReadOnly` is the deliberate exception to the shared-instance contract. It
+returns a detached snapshot without consulting or updating `cache`, hydrating
+remote state into local storage, normalizing persisted values, or creating a
+local lock file. Read-only command paths may use that snapshot, but must not
+pass it to `Save` or `Reload`.
+Deployment preview opts into snapshot resolution before loading command or
+extension dependencies. Its environment RPCs reuse the selected snapshot and
+reject writes; normal commands retain live environment loading and refresh behavior.
+
 **Why it matters**: A future `Manager` method that loads or persists
 environment state must take the appropriate lock or it will either return
 inconsistent instances (cache miss → divergent writes) or corrupt the .env

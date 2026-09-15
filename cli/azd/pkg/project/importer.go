@@ -21,6 +21,11 @@ type ImportManager struct {
 	dotNetImporter *DotNetImporter
 }
 
+// DeclaredServiceResolver resolves only services declared directly in the project configuration.
+type DeclaredServiceResolver interface {
+	ServiceStableDeclared(projectConfig *ProjectConfig) ([]*ServiceConfig, error)
+}
+
 func NewImportManager(dotNetImporter *DotNetImporter) *ImportManager {
 	return &ImportManager{
 		dotNetImporter: dotNetImporter,

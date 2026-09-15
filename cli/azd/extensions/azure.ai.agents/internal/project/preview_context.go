@@ -15,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 func loadServicePreviewOptions(
@@ -36,7 +35,7 @@ func loadServicePreviewOptions(
 	if err != nil {
 		return AgentServicePreviewOptions{}, err
 	}
-	endpoint, err := resolvePreviewProjectEndpoint(service, response.Project, environment)
+	endpoint, err := resolveAgentProjectEndpoint(service, response.Project, environment)
 	if err != nil {
 		return AgentServicePreviewOptions{}, err
 	}
@@ -76,62 +75,6 @@ func loadPreviewEnvironment(ctx context.Context, client *azdext.AzdClient) (map[
 		environment["AZURE_ENV_NAME"] = current.Environment.Name
 	}
 	return environment, nil
-}
-
-func resolvePreviewProjectEndpoint(
-	service *azdext.ServiceConfig, config *azdext.ProjectConfig, environment map[string]string,
-) (string, error) {
-	var projectService *azdext.ServiceConfig
-	for _, name := range service.GetUses() {
-		dependency := config.Services[name]
-		if dependency == nil {
-			return "", exterrors.Validation(exterrors.CodeInvalidServiceConfig,
-				fmt.Sprintf("agent service %q uses unknown service %q", service.Name, name),
-				"fix the agent service uses list in azure.yaml")
-		}
-		if dependency.Host != "azure.ai.project" {
-			continue
-		}
-		if projectService != nil {
-			return "", exterrors.Validation(exterrors.CodeInvalidServiceConfig,
-				fmt.Sprintf("agent service %q uses multiple Foundry projects", service.Name),
-				"select one azure.ai.project dependency in azure.yaml")
-		}
-		projectService = proto.CloneOf(dependency)
-	}
-	if projectService != nil {
-		if err := ResolveServiceConfigInPlace(projectService, config.Path); err != nil {
-			return "", err
-		}
-		projectConfig, err := LoadServiceTargetAgentConfig(projectService)
-		if err != nil {
-			return "", err
-		}
-		if projectConfig != nil && projectConfig.Endpoint != "" {
-			endpoint, err := ExpandEnv(projectConfig.Endpoint, func(name string) string {
-				if value, found := environment[name]; found {
-					return value
-				}
-				return os.Getenv(name)
-			})
-			if err != nil {
-				return "", fmt.Errorf("resolve the Foundry project endpoint: %w", err)
-			}
-			normalized, _, err := ValidateProjectEndpoint(endpoint)
-			return normalized, err
-		}
-	}
-	endpoint := environment["FOUNDRY_PROJECT_ENDPOINT"]
-	if endpoint == "" {
-		endpoint = os.Getenv("FOUNDRY_PROJECT_ENDPOINT")
-	}
-	if endpoint == "" {
-		return "", exterrors.Dependency(exterrors.CodeMissingAiProjectEndpoint,
-			"a Foundry project endpoint is required to compare the deployed agent",
-			"run 'azd provision', or configure an existing azure.ai.project endpoint in azure.yaml")
-	}
-	normalized, _, err := ValidateProjectEndpoint(endpoint)
-	return normalized, err
 }
 
 func pendingProjectEnvironment(

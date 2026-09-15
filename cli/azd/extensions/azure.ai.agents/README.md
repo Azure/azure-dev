@@ -88,11 +88,16 @@ Preview supports both layouts without migrating or editing user files:
   in the definition directory. Manifest-level metadata and its `template` settings
   participate in the preview, including tags that exist only in the manifest.
 - **Manifest-only service:** discovers a manifest in the service directory when
-  no materialized agent definition is present.
+  no materialized agent definition is present. Deployment uses the same discovery.
 - **Project configuration:** reads the selected agent service in `azure.yaml`,
   including legacy definitions/manifests in that service's source directory.
+- **Explicit definition override:** `AGENT_DEFINITION_PATH` selects the same single
+  YAML definition for preview and deployment. It takes precedence over inline and
+  convention-based definitions; companion files are not merged into an override.
+  Missing, invalid, or non-file overrides fail rather than falling back to another agent.
 
-The `.yml` spellings are also accepted. Like normal `azd deploy`, preview requires
+The `.yml` spellings are also accepted; `.yaml` takes precedence when both exist.
+Like normal `azd deploy`, preview requires
 an `azure.yaml` project; a bare sample directory must first be part of a configured
 azd project. No previous agent deployment is required.
 
@@ -106,6 +111,11 @@ under `skippedServices` in JSON (service name to host name); they are not report
 as unchanged. Errors from supported preview targets still fail the command.
 If no selected service supports preview, the command returns an error.
 `--from-package` cannot be combined with preview; `--timeout` bounds each preview.
+Preview never creates an azd environment or changes the project's default
+environment. `--environment` uses only the named existing environment; a missing
+explicit name is an error. Without a selected/default environment, preview can
+use project or process configuration in memory. Authenticate separately if needed;
+preview does not start interactive login.
 
 Materialized `agent.yaml` settings
 override companion manifest defaults field by field. An inline project service
@@ -125,12 +135,16 @@ configuration are reported as removals from the remote agent. Duplicate names
 within one list are rejected. Tag lists use replacement, not union, so tags
 omitted from the selected tag list disappear from the next version.
 
-The source directory is the service's configured `project` path.
+The source directory is the service's configured `project` path, or the directory
+containing the explicit `AGENT_DEFINITION_PATH` override when one is set.
 
-Project previews use the selected agent's `azure.ai.project` dependency endpoint
+Preview and deployment use the selected agent's `azure.ai.project` dependency endpoint
 when configured, then the active azd environment's `FOUNDRY_PROJECT_ENDPOINT`
-or its process-environment fallback. Configure the target in the project rather
-instead of passing a `--project-endpoint` flag to `azd deploy`. Authentication and
+or its process-environment fallback when the key is absent from the azd environment.
+A persisted empty value takes precedence over a shell value and is reported as
+missing configuration. Resolved shell/dependency endpoints are not persisted.
+Configure the target in the project instead of passing a `--project-endpoint` flag
+to `azd deploy`. Authentication and
 permission to read the agent are required. Missing configuration or denied access
 is an error, not evidence that a new agent would be created.
 
@@ -191,6 +205,10 @@ reference is pending; unchanged code-mode and prebuilt-image plans are omitted.
 For a project with a configured image but no explicit passthrough/registry
 connection, preview follows the non-interactive default of building an image
 and notes that interactive deployment can choose the prebuilt alternative.
+Legacy projects with `AZD_AGENT_SKIP_ACR=true` use the configured prebuilt image.
+Preview and deployment both read the azd environment first (including empty values),
+then the process environment if the key is absent. The marker accepts the complete
+word `true`, ignoring case and surrounding whitespace; `1` and `t` do not enable it.
 Source contents and mutable image digests are not compared.
 
 Preview covers hosted code and container agents, not infrastructure or dependency

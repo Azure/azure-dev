@@ -165,12 +165,12 @@ func TestResolvePreviewProjectEndpointValidation(t *testing.T) {
 	t.Parallel()
 	service := &azdext.ServiceConfig{Name: "agent"}
 	config := &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{}}
-	endpoint, err := resolvePreviewProjectEndpoint(service, config, map[string]string{
+	endpoint, err := resolveAgentProjectEndpoint(service, config, map[string]string{
 		"FOUNDRY_PROJECT_ENDPOINT": "https://account.services.ai.azure.com/api/projects/project",
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "https://account.services.ai.azure.com/api/projects/project", endpoint)
 	service.Uses = []string{"missing"}
-	_, err = resolvePreviewProjectEndpoint(service, config, nil)
+	_, err = resolveAgentProjectEndpoint(service, config, nil)
 	require.ErrorContains(t, err, "unknown service")
 }

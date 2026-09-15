@@ -26,6 +26,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -141,28 +143,132 @@ func NewDeployCmd() *cobra.Command {
 }
 
 type DeployAction struct {
-	flags               *DeployFlags
-	args                []string
-	projectConfig       *project.ProjectConfig
-	azdCtx              *azdcontext.AzdContext
-	env                 *environment.Environment
-	envManager          environment.Manager
-	projectManager      project.ProjectManager
-	serviceManager      project.ServiceManager
-	resourceManager     project.ResourceManager
-	accountManager      account.Manager
-	azCli               *azapi.AzureClient
-	portalUrlBase       string
-	formatter           output.Formatter
-	writer              io.Writer
-	console             input.Console
-	commandRunner       exec.CommandRunner
-	alphaFeatureManager *alpha.FeatureManager
-	importManager       *project.ImportManager
-	progressTracker     *deployProgressTracker // set at runtime when using parallel deployment graph
+	flags                   *DeployFlags
+	args                    []string
+	projectConfig           *project.ProjectConfig
+	azdCtx                  *azdcontext.AzdContext
+	env                     *environment.Environment
+	envManager              environment.Manager
+	projectManager          project.ProjectManager
+	serviceManager          project.ServiceManager
+	serviceTargetResolver   project.ServiceTargetResolver
+	declaredServiceResolver project.DeclaredServiceResolver
+	resourceManager         project.ResourceManager
+	accountManager          account.Manager
+	azCli                   *azapi.AzureClient
+	portalUrlBase           string
+	formatter               output.Formatter
+	writer                  io.Writer
+	console                 input.Console
+	commandRunner           exec.CommandRunner
+	alphaFeatureManager     *alpha.FeatureManager
+	importManager           *project.ImportManager
+	progressTracker         *deployProgressTracker // set at runtime when using parallel deployment graph
 }
 
 func NewDeployAction(
+	flags *DeployFlags,
+	args []string,
+	serviceLocator ioc.ServiceLocator,
+	lazyEnv *lazy.Lazy[*environment.Environment],
+) (actions.Action, error) {
+	if flags.Preview {
+		env, err := lazyEnv.GetValue()
+		if errors.Is(err, environment.ErrNameNotSpecified) ||
+			errors.Is(err, environment.ErrDefaultEnvironmentNotFound) {
+			// Providers may preview from process-level configuration without an azd environment.
+			// Use an in-memory environment so variable expansion still falls back to os.Getenv.
+			env = environment.New("")
+			lazyEnv.SetValue(env)
+		} else if err != nil {
+			return nil, fmt.Errorf("loading environment for deployment preview: %w", err)
+		}
+
+		commandContainer, ok := serviceLocator.(*ioc.NestedContainer)
+		if !ok {
+			return nil, errors.New("deployment preview requires a command-scoped service container")
+		}
+
+		// Preview must use the existing environment selected by the read-only lazy resolver.
+		// Register it in the command scope before resolving any target provider dependencies.
+		ioc.RegisterInstance(commandContainer, env)
+
+		var action actions.Action
+		err = serviceLocator.Invoke(func(
+			projectConfig *project.ProjectConfig,
+			azdCtx *azdcontext.AzdContext,
+			formatter output.Formatter,
+			writer io.Writer,
+			serviceTargetResolver project.ServiceTargetResolver,
+			declaredServiceResolver project.DeclaredServiceResolver,
+		) {
+			action = &DeployAction{
+				flags:                   flags,
+				args:                    args,
+				projectConfig:           projectConfig,
+				azdCtx:                  azdCtx,
+				env:                     env,
+				serviceTargetResolver:   serviceTargetResolver,
+				declaredServiceResolver: declaredServiceResolver,
+				formatter:               formatter,
+				writer:                  writer,
+			}
+		})
+		if err != nil {
+			return nil, fmt.Errorf("resolving deployment preview dependencies: %w", err)
+		}
+
+		return action, nil
+	}
+
+	var action actions.Action
+	err := serviceLocator.Invoke(func(
+		projectConfig *project.ProjectConfig,
+		projectManager project.ProjectManager,
+		serviceManager project.ServiceManager,
+		resourceManager project.ResourceManager,
+		azdCtx *azdcontext.AzdContext,
+		env *environment.Environment,
+		envManager environment.Manager,
+		accountManager account.Manager,
+		cloud *cloud.Cloud,
+		azCli *azapi.AzureClient,
+		commandRunner exec.CommandRunner,
+		console input.Console,
+		formatter output.Formatter,
+		writer io.Writer,
+		alphaFeatureManager *alpha.FeatureManager,
+		importManager *project.ImportManager,
+	) {
+		action = newDeployAction(
+			flags,
+			args,
+			projectConfig,
+			projectManager,
+			serviceManager,
+			resourceManager,
+			azdCtx,
+			env,
+			envManager,
+			accountManager,
+			cloud,
+			azCli,
+			commandRunner,
+			console,
+			formatter,
+			writer,
+			alphaFeatureManager,
+			importManager,
+		)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return action, nil
+}
+
+func newDeployAction(
 	flags *DeployFlags,
 	args []string,
 	projectConfig *project.ProjectConfig,
@@ -170,7 +276,7 @@ func NewDeployAction(
 	serviceManager project.ServiceManager,
 	resourceManager project.ResourceManager,
 	azdCtx *azdcontext.AzdContext,
-	environment *environment.Environment,
+	env *environment.Environment,
 	envManager environment.Manager,
 	accountManager account.Manager,
 	cloud *cloud.Cloud,
@@ -183,24 +289,26 @@ func NewDeployAction(
 	importManager *project.ImportManager,
 ) actions.Action {
 	return &DeployAction{
-		flags:               flags,
-		args:                args,
-		projectConfig:       projectConfig,
-		azdCtx:              azdCtx,
-		env:                 environment,
-		envManager:          envManager,
-		projectManager:      projectManager,
-		serviceManager:      serviceManager,
-		resourceManager:     resourceManager,
-		accountManager:      accountManager,
-		portalUrlBase:       cloud.PortalUrlBase,
-		azCli:               azCli,
-		formatter:           formatter,
-		writer:              writer,
-		console:             console,
-		commandRunner:       commandRunner,
-		alphaFeatureManager: alphaFeatureManager,
-		importManager:       importManager,
+		flags:                   flags,
+		args:                    args,
+		projectConfig:           projectConfig,
+		azdCtx:                  azdCtx,
+		env:                     env,
+		envManager:              envManager,
+		projectManager:          projectManager,
+		serviceManager:          serviceManager,
+		serviceTargetResolver:   serviceManager,
+		declaredServiceResolver: importManager,
+		resourceManager:         resourceManager,
+		accountManager:          accountManager,
+		portalUrlBase:           cloud.PortalUrlBase,
+		azCli:                   azCli,
+		formatter:               formatter,
+		writer:                  writer,
+		console:                 console,
+		commandRunner:           commandRunner,
+		alphaFeatureManager:     alphaFeatureManager,
+		importManager:           importManager,
 	}
 }
 

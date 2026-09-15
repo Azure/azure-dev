@@ -48,6 +48,19 @@ func (s *resolveEnvStubEnvServer) GetValue(
 	return &azdext.KeyValueResponse{Value: s.get[req.Key]}, nil
 }
 
+func (s *resolveEnvStubEnvServer) GetValues(
+	_ context.Context, _ *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	if err := s.getErr[envKeyPrincipalID]; err != nil {
+		return nil, err
+	}
+	values := make([]*azdext.KeyValue, 0, len(s.get))
+	for key, value := range s.get {
+		values = append(values, &azdext.KeyValue{Key: key, Value: value})
+	}
+	return &azdext.KeyValueListResponse{KeyValues: values}, nil
+}
+
 func (s *resolveEnvStubEnvServer) SetValue(
 	_ context.Context, req *azdext.SetEnvRequest,
 ) (*azdext.EmptyResponse, error) {
@@ -355,6 +368,7 @@ func TestResolveEnv_OptionalValueReadErrorsSurface(t *testing.T) {
 				},
 				getErr: map[string]error{key: status.Error(codes.Internal, "env read failed")},
 			}
+
 			client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
 			p := &FoundryProvisioningProvider{azdClient: client, isLayer: true}
 
@@ -363,6 +377,39 @@ func TestResolveEnv_OptionalValueReadErrorsSurface(t *testing.T) {
 			var local *azdext.LocalError
 			require.ErrorAs(t, err, &local)
 			assert.Equal(t, exterrors.CodeEnvironmentValuesFailed, local.Code)
+		})
+	}
+}
+
+func TestResolveEnvTracksExplicitPrincipalID(t *testing.T) {
+	tests := []struct {
+		name       string
+		principal  *string
+		configured bool
+	}{
+		{name: "absent"},
+		{name: "explicitly empty", principal: new(""), configured: true},
+		{name: "configured", principal: new("object-id"), configured: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values := map[string]string{
+				envKeySubscriptionID: "00000000-0000-0000-0000-000000000001",
+				envKeyLocation:       "westus2",
+			}
+			if test.principal != nil {
+				values[envKeyPrincipalID] = *test.principal
+			}
+			env := &resolveEnvStubEnvServer{envName: "foundry-bugbash", get: values}
+			client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+			provider := &FoundryProvisioningProvider{azdClient: client}
+
+			require.NoError(t, provider.resolveEnv(t.Context()))
+			assert.Equal(t, test.configured, provider.principalIDConfigured)
+			if test.principal != nil {
+				assert.Equal(t, *test.principal, provider.principalID)
+			}
 		})
 	}
 }

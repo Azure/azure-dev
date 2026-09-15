@@ -131,6 +131,8 @@ func TestPersistPromptAgentCandidateConfigFunctionTools(t *testing.T) {
 				var err error
 				server.rawSections[svc.Name][path], err = structpb.NewStruct(before)
 				require.NoError(t, err)
+				root := t.TempDir()
+				writePromptCandidateTestProject(t, root, svc.Name, path, before)
 				expected := server.rawSections[svc.Name][path].AsMap()
 				var expectedTools []any
 				require.NoError(t, json.Unmarshal([]byte(tt.expected), &expectedTools))
@@ -141,10 +143,11 @@ func TestPersistPromptAgentCandidateConfigFunctionTools(t *testing.T) {
 				candidate := json.RawMessage(`{"model":"gpt-5","instructions":"Optimized instructions.","tools":` +
 					tt.candidate + `}`)
 
-				require.NoError(t, persistPromptAgentCandidateConfig(t.Context(), client, svc, t.TempDir(), candidate))
+				require.NoError(t, persistPromptAgentCandidateConfig(t.Context(), client, svc, root, candidate))
 
 				server.mu.Lock()
 				defer server.mu.Unlock()
+				require.Empty(t, server.configSectionReads)
 				require.Len(t, server.configSections, 1)
 				require.Equal(t, path, server.configSections[0].Path)
 				require.Equal(t, expected, server.configSections[0].Section.AsMap())
@@ -176,16 +179,19 @@ func TestPersistPromptAgentCandidateConfigPreservesAbsentTools(t *testing.T) {
 				var err error
 				server.rawSections[svc.Name][path], err = structpb.NewStruct(expected)
 				require.NoError(t, err)
+				root := t.TempDir()
+				writePromptCandidateTestProject(t, root, svc.Name, path, expected)
 				client := newProjectRecorderClient(t, server)
 				candidate := json.RawMessage(`{"model":"gpt-5","instructions":"Optimized instructions.",
 					"tools":[{"type":"function","name":"lookup_travel_policy","description":"Do not add."}]}`)
 
-				require.NoError(t, persistPromptAgentCandidateConfig(t.Context(), client, svc, t.TempDir(), candidate))
+				require.NoError(t, persistPromptAgentCandidateConfig(t.Context(), client, svc, root, candidate))
 
 				expected["model"] = "gpt-5"
 				expected["instructions"] = "Optimized instructions."
 				server.mu.Lock()
 				defer server.mu.Unlock()
+				require.Empty(t, server.configSectionReads)
 				require.Len(t, server.configSections, 1)
 				require.Equal(t, expected, server.configSections[0].Section.AsMap())
 			})
@@ -249,15 +255,18 @@ func TestPersistPromptAgentCandidateConfigRejectsNonArrayExistingTools(t *testin
 	var err error
 	server.rawSections[svc.Name][path], err = structpb.NewStruct(before)
 	require.NoError(t, err)
+	root := t.TempDir()
+	writePromptCandidateTestProject(t, root, svc.Name, path, before)
 	client := newProjectRecorderClient(t, server)
 	candidate := json.RawMessage(`{"model":"gpt-5","instructions":"Optimized instructions.",
 		"tools":[{"type":"function","name":"lookup_travel_policy","description":"Updated."}]}`)
 
-	err = persistPromptAgentCandidateConfig(t.Context(), client, svc, t.TempDir(), candidate)
+	err = persistPromptAgentCandidateConfig(t.Context(), client, svc, root, candidate)
 
 	require.ErrorContains(t, err, "existing tools must be an array")
 	server.mu.Lock()
 	defer server.mu.Unlock()
+	require.Empty(t, server.configSectionReads)
 	require.Empty(t, server.configSections)
 	require.Equal(t, before, server.rawSections[svc.Name][path].AsMap())
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -326,11 +327,13 @@ func TestPersistPromptAgentCandidateConfig(t *testing.T) {
 				svc := newPromptCandidateTestService(t, legacy)
 				server, path := newPromptCandidateTestServer(t, svc, legacy)
 				expected := server.rawSections[svc.Name][path].AsMap()
+				root := t.TempDir()
+				writePromptCandidateTestProject(t, root, svc.Name, path, expected)
 				client := newProjectRecorderClient(t, server)
 				tools := []any{map[string]any{"type": "code_interpreter"}}
 
 				require.NoError(t, persistPromptAgentCandidateConfig(
-					t.Context(), client, svc, t.TempDir(), mustMarshal(t, map[string]any{
+					t.Context(), client, svc, root, mustMarshal(t, map[string]any{
 						"model":        "gpt-5",
 						instructionKey: "Optimized instructions.",
 						"tools":        tools,
@@ -342,9 +345,7 @@ func TestPersistPromptAgentCandidateConfig(t *testing.T) {
 				expected["instructions"] = "Optimized instructions."
 				server.mu.Lock()
 				defer server.mu.Unlock()
-				require.Len(t, server.configSectionReads, 1)
-				require.Equal(t, svc.Name, server.configSectionReads[0].ServiceName)
-				require.Equal(t, path, server.configSectionReads[0].Path)
+				require.Empty(t, server.configSectionReads)
 				require.Len(t, server.configSections, 1)
 				require.Equal(t, svc.Name, server.configSections[0].ServiceName)
 				require.Equal(t, path, server.configSections[0].Path)
@@ -366,6 +367,8 @@ func TestPersistPromptAgentCandidateConfigOptionalTools(t *testing.T) {
 				svc := newPromptCandidateTestService(t, legacy)
 				server, path := newPromptCandidateTestServer(t, svc, legacy)
 				expected := server.rawSections[svc.Name][path].AsMap()
+				root := t.TempDir()
+				writePromptCandidateTestProject(t, root, svc.Name, path, expected)
 				client := newProjectRecorderClient(t, server)
 				config := map[string]any{"model": "gpt-5", "instructions": "Baseline instructions."}
 				switch toolsCase {
@@ -376,13 +379,14 @@ func TestPersistPromptAgentCandidateConfigOptionalTools(t *testing.T) {
 				}
 
 				require.NoError(t, persistPromptAgentCandidateConfig(
-					t.Context(), client, svc, t.TempDir(), mustMarshal(t, config),
+					t.Context(), client, svc, root, mustMarshal(t, config),
 				))
 
 				expected["model"] = "gpt-5"
 				expected["instructions"] = "Baseline instructions."
 				server.mu.Lock()
 				defer server.mu.Unlock()
+				require.Empty(t, server.configSectionReads)
 				require.Len(t, server.configSections, 1)
 				require.Equal(t, svc.Name, server.configSections[0].ServiceName)
 				require.Equal(t, path, server.configSections[0].Path)
@@ -500,8 +504,29 @@ func newPromptCandidateTestServer(
 	section, err := structpb.NewStruct(values)
 	require.NoError(t, err)
 	return &recordingProjectServer{
-		rawSections: map[string]map[string]*structpb.Struct{svc.Name: {path: section}},
+		rawSections:         map[string]map[string]*structpb.Struct{svc.Name: {path: section}},
+		getConfigSectionErr: fmt.Errorf("prompt apply must not use interpolating section reads"),
 	}, path
+}
+
+func writePromptCandidateTestProject(
+	t *testing.T, root, serviceName, sectionPath string, section map[string]any,
+) string {
+	t.Helper()
+	var service any = section
+	if section == nil {
+		service = nil
+	}
+	if sectionPath == "config" {
+		service = map[string]any{"host": AiAgentHost, "project": ".", "config": service}
+	}
+	data, err := yaml.Marshal(map[string]any{
+		"name": "test-project", "services": map[string]any{serviceName: service},
+	})
+	require.NoError(t, err)
+	projectFile := filepath.Join(root, "azure.yaml")
+	require.NoError(t, os.WriteFile(projectFile, data, 0600))
+	return projectFile
 }
 
 func TestPersistPromptAgentCandidateConfigSkipsVoiceAgent(t *testing.T) {
@@ -587,6 +612,9 @@ func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 			projectServer, path := newPromptCandidateTestServer(t, svc, tt.legacy)
 			projectServer.rawEnv = map[string]map[string]any{svc.Name: {"CUSTOM_SETTING": "${CUSTOM_SETTING}"}}
 			expected := projectServer.rawSections[svc.Name][path].AsMap()
+			if tt.kind == "prompt" {
+				writePromptCandidateTestProject(t, root, svc.Name, path, expected)
+			}
 			envServer := &testEnvironmentServiceServer{
 				environments: map[string]*azdext.Environment{"dev": {Name: "dev"}},
 				values: map[string]map[string]string{
@@ -650,6 +678,7 @@ func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 			defer projectServer.mu.Unlock()
 			require.Empty(t, projectServer.configValues)
 			if tt.kind == "prompt" {
+				require.Empty(t, projectServer.configSectionReads)
 				expected["model"] = "gpt-5"
 				expected["instructions"] = "Optimized instructions."
 				tools, ok := expected["tools"].([]any)
@@ -744,27 +773,42 @@ func TestOptimizeApply_InvalidPromptCandidateDoesNotWrite(t *testing.T) {
 
 func TestOptimizeApply_PromptPersistenceFailureDoesNotTrack(t *testing.T) {
 	for _, legacy := range []bool{false, true} {
-		for _, failure := range []string{"read", "missing section", "nil section", "write"} {
+		for _, failure := range []string{"read", "missing file", "invalid YAML", "missing section", "nil section", "write"} {
 			t.Run(fmt.Sprintf("legacy=%t/%s", legacy, failure), func(t *testing.T) {
 				t.Setenv("AGENT_DEFINITION_PATH", "")
 				svc := newPromptCandidateTestService(t, legacy)
 				server, path := newPromptCandidateTestServer(t, svc, legacy)
+				before := server.rawSections[svc.Name][path].AsMap()
+				root := t.TempDir()
+				projectFile := writePromptCandidateTestProject(t, root, svc.Name, path, before)
 				expectedWrites := 0
-				wantErr := "not found in azure.yaml"
+				wantErr := "is missing or not a mapping"
 				switch failure {
 				case "read":
-					server.getConfigSectionErr = fmt.Errorf("raw read failed")
-					wantErr = "raw read failed"
+					require.NoError(t, os.Remove(projectFile))
+					require.NoError(t, os.Mkdir(projectFile, 0700))
+					wantErr = "reading project file"
+				case "missing file":
+					require.NoError(t, os.Remove(projectFile))
+					wantErr = "azure.yaml or azure.yml not found"
+				case "invalid YAML":
+					require.NoError(t, os.WriteFile(projectFile, []byte("services: ["), 0600))
+					wantErr = "parsing project file"
 				case "missing section":
-					delete(server.rawSections[svc.Name], path)
+					writePromptCandidateTestProject(t, root, "other-service", path, before)
 				case "nil section":
-					server.rawSections[svc.Name][path] = nil
+					writePromptCandidateTestProject(t, root, svc.Name, path, nil)
 				case "write":
 					server.setConfigSectionErr = fmt.Errorf("section save failed")
 					wantErr = "section save failed"
 					expectedWrites = 1
 				}
-				before := server.rawSections[svc.Name][path].AsMap()
+				var originalFile []byte
+				if failure != "read" && failure != "missing file" {
+					var err error
+					originalFile, err = os.ReadFile(projectFile)
+					require.NoError(t, err)
+				}
 				candidateKey := fmt.Sprintf("AGENT_%s_OPTIMIZATION_CANDIDATE_ID", toServiceKey(svc.Name))
 				envServer := &testEnvironmentServiceServer{
 					environments: map[string]*azdext.Environment{"dev": {Name: "dev"}},
@@ -791,7 +835,6 @@ func TestOptimizeApply_PromptPersistenceFailureDoesNotTrack(t *testing.T) {
 					}
 				}))
 				t.Cleanup(api.Close)
-				root := t.TempDir()
 				action := &OptimizeApplyAction{
 					flags: &optimizeApplyFlags{
 						candidate: "candidate-1", optimizeConnectionFlags: optimizeConnectionFlags{projectEndpoint: api.URL},
@@ -806,9 +849,14 @@ func TestOptimizeApply_PromptPersistenceFailureDoesNotTrack(t *testing.T) {
 				require.Empty(t, envServer.setKeys)
 				require.Equal(t, "previous", envServer.values["dev"][candidateKey])
 				require.NotContains(t, out.String(), "applied to")
+				if originalFile != nil {
+					currentFile, err := os.ReadFile(projectFile)
+					require.NoError(t, err)
+					require.Equal(t, originalFile, currentFile)
+				}
 				server.mu.Lock()
 				defer server.mu.Unlock()
-				require.Len(t, server.configSectionReads, 1)
+				require.Empty(t, server.configSectionReads)
 				require.Len(t, server.configSections, expectedWrites)
 				require.Equal(t, before, server.rawSections[svc.Name][path].AsMap())
 				require.Empty(t, server.configValues)

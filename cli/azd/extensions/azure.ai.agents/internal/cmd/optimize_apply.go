@@ -334,19 +334,31 @@ func persistPromptAgentCandidateConfig(
 		path = "config"
 	}
 
-	// Preserve authored templates and unrelated fields, not the resolved service values.
-	response, err := azdClient.Project().GetServiceConfigSection(ctx, &azdext.GetServiceConfigSectionRequest{
-		ServiceName: svc.Name,
-		Path:        path,
-	})
+	// Read the file directly: GetServiceConfigSection interpolates local vault references.
+	data, projectFile, err := projectconfig.ReadProjectFile(projectPath)
 	if err != nil {
-		return fmt.Errorf("reading raw prompt agent %q from azure.yaml: %w", svc.Name, err)
+		return fmt.Errorf("reading project file for prompt agent %q: %w", svc.Name, err)
 	}
-	if !response.GetFound() || response.GetSection() == nil {
-		return fmt.Errorf("raw prompt agent section %q for service %q not found in azure.yaml", path, svc.Name)
+	if projectFile == "" {
+		return fmt.Errorf("azure.yaml or azure.yml not found in project directory %q", projectPath)
+	}
+	var document struct {
+		Services map[string]map[string]any `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		return fmt.Errorf("parsing project file %q: %w", projectFile, err)
+	}
+	var rawSection any = document.Services[svc.Name]
+	if path != "" {
+		rawSection = document.Services[svc.Name][path]
+	}
+	merged, ok := rawSection.(map[string]any)
+	if !ok || merged == nil {
+		return fmt.Errorf(
+			"raw prompt agent section %q for service %q is missing or not a mapping in %q", path, svc.Name, projectFile,
+		)
 	}
 
-	merged := response.Section.AsMap()
 	merged["model"] = updates.model
 	merged["instructions"] = updates.instructions
 	if err := mergePromptAgentTools(merged, updates.functionTools); err != nil {

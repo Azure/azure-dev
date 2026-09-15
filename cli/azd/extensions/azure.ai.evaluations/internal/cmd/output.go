@@ -140,6 +140,56 @@ func emitJSON(w io.Writer, v any) error {
 	return enc.Encode(v)
 }
 
+// jsonError is what a failing command answers with under `-o json`.
+//
+// A failure used to write nothing at all to stdout, so `... -o json | jq` read
+// an empty stream and reported a parse error of its own -- the reason the
+// command failed was on stderr, and the only thing the pipeline saw was its own
+// syntax complaint. The human line stays on stderr, where it does not reach a
+// reader parsing stdout.
+type jsonError struct {
+	Error jsonErrorBody `json:"error"`
+}
+
+type jsonErrorBody struct {
+	Message    string `json:"message"`
+	Suggestion string `json:"suggestion,omitempty"`
+}
+
+// failAs renders err in the format the caller asked for, and returns it
+// unchanged: azd decides the exit code and prints its own line, and both should
+// stay as they are.
+func failAs(cmd *cobra.Command, err error) error {
+	if err == nil || !isJSON(cmd) {
+		return err
+	}
+	_ = emitJSON(cmd.OutOrStdout(), jsonError{Error: jsonErrorBody{
+		Message:    err.Error(),
+		Suggestion: azdext.ErrorSuggestion(err),
+	}})
+	return err
+}
+
+// reportFailuresAsJSON makes every command answer a failure in the format the
+// caller asked for, not just a success.
+//
+// Wrapped after the tree is assembled rather than at each RunE, so a command
+// added later cannot forget.
+func reportFailuresAsJSON(root *cobra.Command) {
+	var wrap func(*cobra.Command)
+	wrap = func(c *cobra.Command) {
+		if run := c.RunE; run != nil {
+			c.RunE = func(cmd *cobra.Command, args []string) error {
+				return failAs(cmd, run(cmd, args))
+			}
+		}
+		for _, sub := range c.Commands() {
+			wrap(sub)
+		}
+	}
+	wrap(root)
+}
+
 // jsonListPage is the envelope every machine listing answers with.
 //
 // A bare array cannot say that it is one page of several, so `--limit` either

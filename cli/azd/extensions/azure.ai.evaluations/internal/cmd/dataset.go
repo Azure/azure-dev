@@ -130,8 +130,14 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 
 	cmd.Flags().StringVar(&flags.fromFile, "from-file", "",
 		"Path to a .jsonl file, or a directory containing one.")
-	cmd.Flags().StringVar(&flags.version, "version", "",
-		"Version to publish. Omit to publish the next version after the latest registered.")
+	// Said per verb: create refuses a name that already exists, so "the latest
+	// registered" describes a state it cannot be in, and the shared wording left
+	// it claiming to count from a version that is not there.
+	versionUsage := "Version to publish. Omit to publish the next version after the latest registered."
+	if verb == "create" {
+		versionUsage = "Version to publish as the dataset's first. Omit for 1.0."
+	}
+	cmd.Flags().StringVar(&flags.version, "version", "", versionUsage)
 	cmd.Flags().StringVar(&flags.endpointFlg, "project-endpoint", "", "Foundry project endpoint.")
 	return cmd
 }
@@ -467,18 +473,32 @@ func (a *datasetShowAction) Run() error {
 	if isJSON(a.cmd) {
 		return emitJSON(a.cmd.OutOrStdout(), ds)
 	}
-	if err := emitDetail(a.cmd.OutOrStdout(), []field{
-		{"Name", ds.Name},
-		{"Version", ds.Version},
-		{"Type", ds.Type},
-		{"URI", ds.ResolvedBlobURI()},
-	}); err != nil {
+	if err := emitDetail(a.cmd.OutOrStdout(), datasetShowFields(ds)); err != nil {
 		return err
 	}
 	if prefix := ec.portalPrefix(ctx); prefix != nil {
 		writePortalLink(a.cmd.OutOrStdout(), prefix.DatasetURL(ds.Name, ds.Version))
 	}
 	return nil
+}
+
+// datasetShowFields is what `dataset show` prints, in order.
+//
+// Tags appear only when the version carries them, the same rule the TAGS column
+// follows. Standalone `azd ai dataset show` prints them, and a reader moving
+// between the two surfaces should not have to learn which one hides what the
+// other shows -- tags are how a generated dataset says which job produced it.
+func datasetShowFields(ds *dataset_api.Dataset) []field {
+	fields := []field{
+		{"Name", ds.Name},
+		{"Version", ds.Version},
+		{"Type", ds.Type},
+		{"URI", ds.ResolvedBlobURI()},
+	}
+	if tags := tagSummary(ds.Tags); tags != "-" {
+		fields = append(fields, field{"Tags", tags})
+	}
+	return fields
 }
 
 // datasetDeleteAction removes one dataset version.

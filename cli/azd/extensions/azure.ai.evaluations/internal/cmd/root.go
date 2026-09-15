@@ -40,7 +40,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		if sdkPreRun != nil {
 			if err := sdkPreRun(cmd, args); err != nil {
-				return err
+				return failAs(cmd, err)
 			}
 		}
 		// -e/--environment is parsed by the SDK into extCtx and then has to be
@@ -51,8 +51,10 @@ func NewRootCommand() *cobra.Command {
 		// reader, so there is one answer to which environment this invocation
 		// is about.
 		cmd.SetContext(projectctx.WithSelectedEnvironment(cmd.Context(), extCtx.Environment))
+		// failAs here too: a hook that fails runs instead of RunE, not before
+		// it, so the wrapper around RunE never sees this one.
 		if err := projectctx.VerifySelectedEnvironment(cmd.Context()); err != nil {
-			return err
+			return failAs(cmd, err)
 		}
 		// Once, here, so the helpers that warn reach this invocation's writer
 		// rather than process-global stderr.
@@ -86,6 +88,9 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(azdext.NewMetadataCommand("1.0", "azure.ai.evaluations", func() *cobra.Command {
 		return rootCmd
 	}))
+
+	// Last, so it covers every command above it including the SDK's own.
+	reportFailuresAsJSON(rootCmd)
 
 	return rootCmd
 }

@@ -98,8 +98,10 @@ func authorSelectedFoundryProject(
 	projectRoot string,
 	mode projectAuthoringMode,
 ) error {
-	if mode == projectAuthoringNew {
-		return authorNewFoundryProject(ctx, azdClient, envName, projectRoot)
+	if mode == projectAuthoringNew || mode == projectAuthoringCurrent {
+		return authorFoundryProjectPreservingEnvironment(
+			ctx, azdClient, envName, projectRoot, mode,
+		)
 	}
 	return authorFoundryProject(ctx, azdClient, target, projectRoot, mode)
 }
@@ -117,6 +119,18 @@ func authorNewFoundryProject(
 	azdClient *azdext.AzdClient,
 	envName string,
 	projectRoot string,
+) error {
+	return authorFoundryProjectPreservingEnvironment(
+		ctx, azdClient, envName, projectRoot, projectAuthoringNew,
+	)
+}
+
+func authorFoundryProjectPreservingEnvironment(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	projectRoot string,
+	mode projectAuthoringMode,
 ) error {
 	response, err := azdClient.Environment().GetValues(
 		ctx,
@@ -137,7 +151,7 @@ func authorNewFoundryProject(
 	}
 
 	authorErr := authorFoundryProject(
-		ctx, azdClient, nil, projectRoot, projectAuthoringNew,
+		ctx, azdClient, nil, projectRoot, mode,
 	)
 	rollbackCtx, cancel := context.WithTimeout(
 		context.WithoutCancel(ctx),

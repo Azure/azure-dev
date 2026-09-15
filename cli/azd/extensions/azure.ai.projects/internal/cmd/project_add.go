@@ -302,6 +302,11 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if err != nil {
 		return rollbackProjectAdd(err, restoreService, restoreProvider)
 	}
+	if err := reconcileAdoptedDeployments(
+		ctx, client, projectRoot, envName, target, serviceName,
+	); err != nil {
+		return rollbackProjectAdd(err, restoreEnvironment, restoreService, restoreProvider)
+	}
 	restoreDeploymentDefault := func() error { return nil }
 	if reconciledService, _, discoverErr := reconciler.discoverProjectService(ctx); discoverErr != nil {
 		return rollbackProjectAdd(

@@ -285,6 +285,7 @@ func TestAuthorNewFoundryProjectRestoresValuesAfterCancellation(t *testing.T) {
 			},
 		},
 	}
+
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	workflowServer := &recordingProjectWorkflowServer{
@@ -529,4 +530,43 @@ func TestProjectWorkflowPreservesCancellation(t *testing.T) {
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "authoring the Foundry project was cancelled")
+}
+
+func TestAuthorCurrentFoundryProjectPreservesDeferredValues(t *testing.T) {
+	t.Parallel()
+
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{
+			"test": {
+				"AZURE_AI_PROJECT_NAME":         "deferred-project",
+				"AZURE_RESOURCE_GROUP":          "deferred-rg",
+				"AZURE_AI_ACCOUNT_NAME":         "deferred-account",
+				"AZURE_LOCATION":                "eastus",
+				"AZURE_AI_DEPLOYMENTS_LOCATION": "westus",
+			},
+		},
+	}
+	workflowServer := &recordingProjectWorkflowServer{
+		runHook: func(_ int) error {
+			for _, key := range newProjectEnvironmentKeys {
+				delete(envServer.values["test"], key)
+			}
+			return nil
+		},
+	}
+	client := newTestAzdClient(t, envServer, workflowServer)
+
+	require.NoError(t, authorSelectedFoundryProject(
+		t.Context(), client, "test", nil, t.TempDir(), projectAuthoringCurrent,
+	))
+
+	assert.Equal(t, "deferred-project",
+		envServer.values["test"]["AZURE_AI_PROJECT_NAME"])
+	assert.Equal(t, "deferred-rg",
+		envServer.values["test"]["AZURE_RESOURCE_GROUP"])
+	assert.Equal(t, "deferred-account",
+		envServer.values["test"]["AZURE_AI_ACCOUNT_NAME"])
+	assert.Equal(t, "eastus", envServer.values["test"]["AZURE_LOCATION"])
+	assert.Equal(t, "westus",
+		envServer.values["test"]["AZURE_AI_DEPLOYMENTS_LOCATION"])
 }

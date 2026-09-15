@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"azureaieval/internal/messages"
+	"azureaieval/internal/urlsafe"
 )
 
 // foundryHostSuffixes is the authoritative list of accepted Foundry host suffixes.
@@ -75,7 +76,18 @@ func Validate(raw string) (normalized string, pathWarning bool, err error) {
 
 	u, parseErr := url.Parse(raw)
 	if parseErr != nil {
-		return "", false, messages.EndpointUnparseable(parseErr)
+		// url.Parse returns a *url.Error carrying the URL it could not read, so
+		// reporting it whole would print whatever the caller pasted -- including
+		// the query of a SAS URL.
+		return "", false, messages.EndpointUnparseable(urlsafe.Error(parseErr))
+	}
+
+	// A project endpoint carries no credential. Refused rather than normalized
+	// away: a SAS or a user:password pasted here would otherwise be accepted in
+	// silence, and the value the caller believes is in use would not be the one
+	// that is.
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return "", false, messages.EndpointCarriesCredentials()
 	}
 
 	if !strings.EqualFold(u.Scheme, "https") {

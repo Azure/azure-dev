@@ -3586,6 +3586,20 @@ func EndpointUnparseable(err error) error {
 	)
 }
 
+// EndpointCarriesCredentials refuses a project endpoint with a credential in it.
+//
+// A Foundry project endpoint is scheme, host and path. Userinfo or a query is
+// how a SAS URL or a copied signed link looks, and normalizing it away would
+// accept the paste in silence and then use a different endpoint than the one
+// the caller believes they gave.
+func EndpointCarriesCredentials() error {
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		"the project endpoint carries a credential or query string",
+		"provide only the https:// host and /api/projects/<project> path",
+	)
+}
+
 // EndpointNotHTTPS reports a project endpoint on the wrong scheme.
 func EndpointNotHTTPS() error {
 	return exterrors.Validation(

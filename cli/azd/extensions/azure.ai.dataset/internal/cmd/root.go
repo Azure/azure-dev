@@ -83,5 +83,8 @@ func NewRootCommand() *cobra.Command {
 		return rootCmd
 	}))
 
+	// Last, so it covers every command above it including the SDK's own.
+	reportFailuresAsJSON(rootCmd)
+
 	return rootCmd
 }

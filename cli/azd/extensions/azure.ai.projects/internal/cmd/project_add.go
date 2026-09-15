@@ -1395,8 +1395,10 @@ func validateExistingEndpointMode(
 	if service == nil {
 		return nil
 	}
-	if hasManagedDeployments(service.Resolved) ||
-		hasManagedDeployments(service.Raw) {
+	sameEndpoint := equalProjectEndpoint(serviceEndpoint(service.Resolved), endpoint)
+	if !sameEndpoint &&
+		(hasManagedDeployments(service.Resolved) ||
+			hasManagedDeployments(service.Raw)) {
 		return exterrors.Dependency(
 			"project_reconciliation_requires_project_id",
 			"endpoint-only setup cannot retain managed model deployments",
@@ -1404,7 +1406,7 @@ func validateExistingEndpointMode(
 				"before managing deployments",
 		)
 	}
-	if !equalProjectEndpoint(serviceEndpoint(service.Resolved), endpoint) &&
+	if !sameEndpoint &&
 		hasManagedProjectFields(service.Raw) {
 		return exterrors.Dependency(
 			"project_reconciliation_requires_project_id",

@@ -1387,6 +1387,7 @@ func configureDeferredInitAzureContext(
 	envName string,
 	azureContext *azdext.AzureContext,
 	hasModelResources bool,
+	preserveProjectState bool,
 ) error {
 	missing := missingInitAzureContextValues(azureContext)
 	fmt.Printf("%s", output.WithWarningFormat(
@@ -1424,11 +1425,22 @@ func configureDeferredInitAzureContext(
 		fmt.Println(output.WithGrayFormat("        capacity: 1"))
 	}
 
-	if err := setEnvValue(ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
-		return fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
-	}
-	if err := updatePendingProjectSignal(ctx, azdClient, envName, false); err != nil {
-		log.Printf("warning: failed to update project provision signal: %v", err)
+	if preserveProjectState {
+		if err := setEnvValue(
+			ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "true",
+		); err != nil {
+			return fmt.Errorf("failed to preserve existing project state: %w", err)
+		}
+		if err := updatePendingProjectSignal(ctx, azdClient, envName, true); err != nil {
+			log.Printf("warning: failed to clear project provision signal: %v", err)
+		}
+	} else {
+		if err := setEnvValue(ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
+			return fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+		}
+		if err := updatePendingProjectSignal(ctx, azdClient, envName, false); err != nil {
+			log.Printf("warning: failed to update project provision signal: %v", err)
+		}
 	}
 
 	return nil

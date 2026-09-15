@@ -534,12 +534,17 @@ func runInitFromAzureYaml(
 	// Hosted-region filtering is independent from ACR setup. Prompt agents are
 	// managed by Foundry and must not inherit hosted-agent region constraints.
 	filterHostedRegions := true
+	preserveDeferredProjectState, err := projectServiceHasEndpoint(ctx, azdClient)
+	if err != nil {
+		return err
+	}
 
 	result, err := configureFoundryProject(
 		ctx, azdClient, azureContext, env.Name,
 		flags.projectResourceId, flags.acrConnection, flags.noPrompt,
 		skipACR,
 		filterHostedRegions && !promptOnly,
+		preserveDeferredProjectState,
 	)
 	if err != nil {
 		if exterrors.IsCancellation(err) {
@@ -622,11 +627,13 @@ func runInitFromAzureYaml(
 		}
 	}
 	if result.FoundryProject == nil {
-		if err := authorNewFoundryProject(
+		if err := authorSelectedFoundryProject(
 			ctx,
 			azdClient,
 			env.Name,
+			nil,
 			projectRoot,
+			result.AuthoringMode,
 		); err != nil {
 			return err
 		}

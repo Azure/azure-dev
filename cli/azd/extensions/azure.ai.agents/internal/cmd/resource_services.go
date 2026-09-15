@@ -313,16 +313,30 @@ func resolveProjectServiceKey(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 ) (string, error) {
-	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	key, found, err := findProjectServiceKey(ctx, azdClient)
 	if err != nil {
-		return "", fmt.Errorf("reading project services: %w", err)
+		return "", err
 	}
-	if resp.GetProject() == nil {
+	if !found {
 		return "", exterrors.Dependency(
 			exterrors.CodeProjectServiceNotFound,
-			"project service is unavailable after projects authoring",
+			"projects authoring completed without an azure.ai.project service",
 			"run `azd ai project add` and retry agent initialization",
 		)
+	}
+	return key, nil
+}
+
+func findProjectServiceKey(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+) (string, bool, error) {
+	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return "", false, fmt.Errorf("reading project services: %w", err)
+	}
+	if resp.GetProject() == nil {
+		return "", false, nil
 	}
 	var keys []string
 	for name, svc := range resp.GetProject().GetServices() {
@@ -331,14 +345,37 @@ func resolveProjectServiceKey(
 		}
 	}
 	if len(keys) == 0 {
-		return "", exterrors.Dependency(
-			exterrors.CodeProjectServiceNotFound,
-			"projects authoring completed without an azure.ai.project service",
-			"run `azd ai project add` and retry agent initialization",
-		)
+		return "", false, nil
 	}
 	slices.Sort(keys)
-	return keys[0], nil
+	return keys[0], true, nil
+}
+
+func projectServiceHasEndpoint(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+) (bool, error) {
+	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return false, fmt.Errorf("reading project services: %w", err)
+	}
+	if resp.GetProject() == nil {
+		return false, nil
+	}
+	for _, svc := range resp.GetProject().GetServices() {
+		if svc.GetHost() != AiProjectHost {
+			continue
+		}
+		for _, props := range []*structpb.Struct{
+			svc.GetConfig(),
+			svc.GetAdditionalProperties(),
+		} {
+			if props != nil && props.GetFields()["endpoint"].GetStringValue() != "" {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 // recordFoundryProjectEnv stores the concrete Foundry project coordinates that

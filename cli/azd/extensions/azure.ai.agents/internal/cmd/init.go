@@ -2877,7 +2877,8 @@ func (a *InitAction) configureModelChoice(
 		// In headless init, missing Azure values should not block local scaffold generation.
 		// Defer project/model setup and print the values required before provisioning.
 		if err := configureDeferredInitAzureContext(
-			ctx, a.azdClient, a.environment.Name, a.azureContext, hasModelResources,
+			ctx, a.azdClient, a.environment.Name, a.azureContext,
+			hasModelResources, false,
 		); err != nil {
 			return nil, err
 		}
@@ -2896,6 +2897,7 @@ func (a *InitAction) configureModelChoice(
 			ctx, a.azdClient, a.azureContext, a.environment.Name,
 			a.flags.projectResourceId, a.flags.acrConnection, a.flags.noPrompt, a.skipACR(),
 			a.isHostedAgent(), // filterHostedRegions: voice/managed agents are not region-restricted
+			false,
 		)
 		if err != nil {
 			return nil, err

@@ -969,7 +969,7 @@ func TestProjectEnvironmentClearsOnlyNonEmptyValues(t *testing.T) {
 	assert.NotContains(t, plan.Unsets, "AZURE_RESOURCE_GROUP")
 }
 
-func TestExistingEndpointModeRejectsManagedDeployments(t *testing.T) {
+func TestExistingEndpointModeAllowsUnchangedManagedDeployments(t *testing.T) {
 	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
 	service := &projectServiceInfo{
 		Raw: map[string]any{
@@ -982,7 +982,28 @@ func TestExistingEndpointModeRejectsManagedDeployments(t *testing.T) {
 		},
 	}
 
-	err := validateExistingEndpointMode(service, endpoint, "", nil)
+	require.NoError(t, validateExistingEndpointMode(service, endpoint, "", nil))
+}
+
+func TestExistingEndpointModeRejectsManagedDeploymentsWhenEndpointChanges(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
+	service := &projectServiceInfo{
+		Raw: map[string]any{
+			"endpoint":    endpoint,
+			"deployments": []any{map[string]any{"name": "chat"}},
+		},
+		Resolved: map[string]any{
+			"endpoint":    endpoint,
+			"deployments": []any{map[string]any{"name": "chat"}},
+		},
+	}
+
+	err := validateExistingEndpointMode(
+		service,
+		"https://other.services.ai.azure.com/api/projects/p",
+		"",
+		nil,
+	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot retain managed model deployments")
 }

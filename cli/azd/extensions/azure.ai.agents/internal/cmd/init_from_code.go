@@ -389,7 +389,8 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		// In headless init, missing Azure values should not block local scaffold generation.
 		// Defer project/model setup and print the values required before provisioning.
 		if err := configureDeferredInitAzureContext(
-			ctx, a.azdClient, a.environment.Name, a.azureContext, false,
+			ctx, a.azdClient, a.environment.Name, a.azureContext,
+			false, false,
 		); err != nil {
 			return nil, err
 		}

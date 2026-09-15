@@ -987,7 +987,7 @@ func TestConfigureDeferredInitAzureContext_PersistsProjectSignalOnly(t *testing.
 
 	output, err := captureStdout(t, func() error {
 		return configureDeferredInitAzureContext(
-			t.Context(), azdClient, envName, azureContext, true,
+			t.Context(), azdClient, envName, azureContext, true, false,
 		)
 	})
 

@@ -11,6 +11,7 @@ import (
 )
 
 const (
+	AccountService_GetCurrentPrincipal_FullMethodName                      = v1.AccountService_GetCurrentPrincipal_FullMethodName
 	AccountService_ListSubscriptions_FullMethodName                        = v1.AccountService_ListSubscriptions_FullMethodName
 	AccountService_LookupTenant_FullMethodName                             = v1.AccountService_LookupTenant_FullMethodName
 	AiModelService_ListLocationsWithQuota_FullMethodName                   = v1.AiModelService_ListLocationsWithQuota_FullMethodName
@@ -54,6 +55,9 @@ const (
 	LocationKind_LOCATION_KIND_LOCAL                                       = v1.LocationKind_LOCATION_KIND_LOCAL
 	LocationKind_LOCATION_KIND_REMOTE                                      = v1.LocationKind_LOCATION_KIND_REMOTE
 	LocationKind_LOCATION_KIND_UNSPECIFIED                                 = v1.LocationKind_LOCATION_KIND_UNSPECIFIED
+	PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL                         = v1.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL
+	PrincipalType_PRINCIPAL_TYPE_UNSPECIFIED                               = v1.PrincipalType_PRINCIPAL_TYPE_UNSPECIFIED
+	PrincipalType_PRINCIPAL_TYPE_USER                                      = v1.PrincipalType_PRINCIPAL_TYPE_USER
 	ProjectService_AddService_FullMethodName                               = v1.ProjectService_AddService_FullMethodName
 	ProjectService_GetConfigSection_FullMethodName                         = v1.ProjectService_GetConfigSection_FullMethodName
 	ProjectService_GetConfigValue_FullMethodName                           = v1.ProjectService_GetConfigValue_FullMethodName
@@ -199,6 +203,8 @@ type (
 	GetConfigSectionResponse                                 = v1.GetConfigSectionResponse
 	GetConfigStringRequest                                   = v1.GetConfigStringRequest
 	GetConfigStringResponse                                  = v1.GetConfigStringResponse
+	GetCurrentPrincipalRequest                               = v1.GetCurrentPrincipalRequest
+	GetCurrentPrincipalResponse                              = v1.GetCurrentPrincipalResponse
 	GetDeploymentContextResponse                             = v1.GetDeploymentContextResponse
 	GetDeploymentResponse                                    = v1.GetDeploymentResponse
 	GetEnvRequest                                            = v1.GetEnvRequest
@@ -253,6 +259,7 @@ type (
 	ParseGitHubUrlResponse                                   = v1.ParseGitHubUrlResponse
 	PrepareValidationContextChunk                            = v1.PrepareValidationContextChunk
 	PrepareValidationContextResponse                         = v1.PrepareValidationContextResponse
+	PrincipalType                                            = v1.PrincipalType
 	ProjectConfig                                            = v1.ProjectConfig
 	ProjectHandlerStatus                                     = v1.ProjectHandlerStatus
 	ProjectMetadata                                          = v1.ProjectMetadata
@@ -515,6 +522,8 @@ var (
 	FrameworkService_ServiceDesc     = v1.FrameworkService_ServiceDesc
 	LocationKind_name                = v1.LocationKind_name
 	LocationKind_value               = v1.LocationKind_value
+	PrincipalType_name               = v1.PrincipalType_name
+	PrincipalType_value              = v1.PrincipalType_value
 	ProjectService_ServiceDesc       = v1.ProjectService_ServiceDesc
 	PromptService_ServiceDesc        = v1.PromptService_ServiceDesc
 	ProvisioningService_ServiceDesc  = v1.ProvisioningService_ServiceDesc

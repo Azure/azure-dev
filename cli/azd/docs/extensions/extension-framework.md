@@ -3060,6 +3060,40 @@ func getSubscriptionDetails(ctx context.Context, azdClient *azdext.AzdClient, su
 - Validate subscription access before performing operations
 - Set up proper authentication context for Azure SDK calls
 
+#### GetCurrentPrincipal
+
+Resolves the current identity for role assignments in a specified subscription. The host returns the object ID in the subscription's resource tenant, which can differ from a guest user's home-tenant object ID. Unlike `LookupTenant`, this method uses the resource tenant rather than the user access tenant.
+
+| Field | Description |
+|---|---|
+| Request `subscription_id` | Required subscription ID. No active environment or default subscription is used. |
+| Response `object_id` | Object ID of the signed-in identity in the resource tenant, not an application client ID. |
+| Response `principal_type` | `PRINCIPAL_TYPE_USER` or `PRINCIPAL_TYPE_SERVICE_PRINCIPAL`, determined from azd's login details. |
+
+The host reuses its principal lookup, including the ARM token `oid` claim and Graph fallback. Service-principal logins and both system-assigned and user-assigned managed identities return `PRINCIPAL_TYPE_SERVICE_PRINCIPAL`. Access tokens are neither accepted nor returned by this RPC. An empty subscription ID returns `InvalidArgument`; authentication, subscription, and principal lookup failures return errors rather than an empty identity.
+
+```go
+principal, err := azdClient.Account().GetCurrentPrincipal(ctx, &azdext.GetCurrentPrincipalRequest{
+    SubscriptionId: subscriptionId,
+})
+if err != nil {
+    return fmt.Errorf("resolving current principal: %w", err)
+}
+
+var principalType string
+switch principal.PrincipalType {
+case azdext.PrincipalType_PRINCIPAL_TYPE_USER:
+    principalType = "User"
+case azdext.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL:
+    principalType = "ServicePrincipal"
+default:
+    return fmt.Errorf("unsupported principal type: %v", principal.PrincipalType)
+}
+// Pass principal.ObjectId and principalType to the role assignment.
+```
+
+This method is available in both `v1` and `v1beta`. Older azd hosts return `Unimplemented`. Extensions must consume an SDK release containing the method and require a host release that supports it before removing their existing principal lookup.
+
 ---
 
 ### Copilot Service

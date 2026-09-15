@@ -530,6 +530,12 @@ Always call `defer client.Close()` after creation.
 request, response, and enum types. They are intentionally excluded from the
 stable `azdext` contract facade until those services graduate to `v1`.
 
+#### AccountService
+
+`Account().GetCurrentPrincipal(ctx, &azdext.GetCurrentPrincipalRequest{SubscriptionId: subscriptionID})` returns the current identity's `ObjectId` in the subscription's resource tenant and its `PrincipalType` enum. Use both values for role assignments instead of decoding access tokens in the extension. The subscription ID is required, and no active environment is needed.
+
+See [GetCurrentPrincipal](extension-framework.md#getcurrentprincipal) for the enum mapping, guest-user behavior, and host compatibility requirements.
+
 #### TelemetryService
 
 `Telemetry().ReportUsage(ctx, &v1beta.ReportUsageRequest{EventName, Attributes})`

@@ -157,20 +157,37 @@ type jsonErrorBody struct {
 	Suggestion string `json:"suggestion,omitempty"`
 }
 
-// failAs renders err in the format the caller asked for, and returns it
-// unchanged: azd decides the exit code and prints its own line, and both should
-// stay as they are.
+// exitProcess ends the process. Replaced in tests, which cannot survive a real
+// os.Exit.
+var exitProcess = os.Exit
+
+// failAs answers err in the format the caller asked for.
+//
+// Under `-o json` it writes the document and ends the process rather than
+// returning: azd writes the error it is handed to stdout, not stderr, so
+// returning this one would append prose after the document and leave the stream
+// unparseable by the caller that asked for it. The bare binary puts that line on
+// stderr, which is why this only shows up when run through azd.
+//
+// Ending here costs the structured report azd would have made, and the exit code
+// is the 1 azd collapses an extension's failure to anyway.
+// wantsJSON reports whether the caller asked for a machine-readable answer.
+//
+// The parsed flag is preferred; the raw arguments are the fallback for when
+// parsing stopped before reaching it.
+func wantsJSON(cmd *cobra.Command) bool {
+	return isJSON(cmd) || outputFromRawArgs(os.Args[1:]) == outputJSON
+}
+
 func failAs(cmd *cobra.Command, err error) error {
-	if err == nil {
-		return err
-	}
-	if !isJSON(cmd) && outputFromRawArgs(os.Args[1:]) != outputJSON {
+	if err == nil || !wantsJSON(cmd) {
 		return err
 	}
 	_ = emitJSON(cmd.OutOrStdout(), jsonError{Error: jsonErrorBody{
 		Message:    err.Error(),
 		Suggestion: azdext.ErrorSuggestion(err),
 	}})
+	exitProcess(1)
 	return err
 }
 
@@ -249,7 +266,17 @@ func reportFailuresAsJSON(root *cobra.Command) {
 				defer cmd.SetOut(answered.w)
 
 				err := run(cmd, args)
-				if err == nil || answered.answered {
+				if err == nil {
+					return err
+				}
+				if answered.answered && wantsJSON(cmd) {
+					// The document is already on its way, so the reason cannot
+					// join it on stdout without breaking it -- and stdout is
+					// where azd would put it. `run --gate-on-status` reaches
+					// here: the run it reported is the answer, and why that run
+					// is a failure belongs beside it rather than inside it.
+					fmt.Fprintln(cmd.ErrOrStderr(), "Error: "+err.Error())
+					exitProcess(1)
 					return err
 				}
 				return failAs(cmd, err)

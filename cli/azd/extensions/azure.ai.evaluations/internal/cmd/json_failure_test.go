@@ -178,6 +178,45 @@ func TestTheRequestedFormatIsFoundWhereverItSitsOnTheLine(t *testing.T) {
 	}
 }
 
+// A command that answered and then failed keeps its document, and the reason
+// goes to stderr.
+//
+// `run --gate-on-status` reaches this: it emits the run and only then decides
+// that the status it carries is a failure. Neither a second document nor the
+// prose azd would otherwise put on stdout can join the first one without
+// leaving the stream unparseable, so the reason goes beside it instead.
+func TestAReasonAfterTheDocumentGoesBesideItNotIntoIt(t *testing.T) {
+	t.Parallel()
+
+	root := &cobra.Command{Use: "eval"}
+	root.PersistentFlags().StringP("output", "o", "", "")
+	root.SilenceErrors = true
+	root.SilenceUsage = true
+	root.AddCommand(&cobra.Command{
+		Use: "gated",
+		RunE: func(c *cobra.Command, _ []string) error {
+			if err := emitJSON(c.OutOrStdout(), map[string]string{"id": "run_1", "status": "failed"}); err != nil {
+				return err
+			}
+			return errors.New("the run did not complete")
+		},
+	})
+	reportFailuresAsJSON(root)
+
+	var out, errOut bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&errOut)
+	root.SetArgs([]string{"gated", "-o", "json"})
+	require.Error(t, root.Execute())
+
+	var doc map[string]string
+	require.NoError(t, json.Unmarshal(out.Bytes(), &doc),
+		"stdout has to stay one parseable document: %q", out.String())
+	assert.Equal(t, "run_1", doc["id"], "the document the command wrote is the one that survives")
+	assert.Contains(t, errOut.String(), "the run did not complete",
+		"the reason still has to reach the caller, just not on stdout")
+}
+
 // Tags are what a generated dataset says which job produced it with, and the
 // standalone `azd ai dataset show` prints them. A reader moving between the two
 // surfaces should not have to learn which one hides what the other shows.

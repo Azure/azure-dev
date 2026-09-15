@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"testing"
 
 	"azureaieval/internal/pkg/dataset_api"
@@ -111,6 +112,44 @@ func TestTheShippedTreeAnswersAFailureAsJSON(t *testing.T) {
 	require.NoError(t, json.Unmarshal(out.Bytes(), &doc),
 		"stdout under -o json has to parse as JSON: %q", out.String())
 	assert.NotEmpty(t, doc.Error.Message, "the document has to carry the reason")
+}
+
+// `run` writes the run and only then decides whether the status it carries is a
+// failure. Appending an error document there leaves two values on stdout, which
+// jq tolerates and json.loads and JSON.parse do not -- so the caller keeps the
+// document they were given, and the reason stays on stderr.
+func TestAFailureAfterTheDocumentDoesNotAppendASecond(t *testing.T) {
+	t.Parallel()
+
+	root := &cobra.Command{Use: "eval"}
+	root.PersistentFlags().StringP("output", "o", "", "")
+	root.SilenceErrors = true
+	root.SilenceUsage = true
+	root.AddCommand(&cobra.Command{
+		Use: "run",
+		RunE: func(c *cobra.Command, _ []string) error {
+			if err := emitJSON(c.OutOrStdout(), map[string]string{"id": "run-1", "status": "failed"}); err != nil {
+				return err
+			}
+			return errors.New("run did not complete")
+		},
+	})
+	reportFailuresAsJSON(root)
+
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"run", "-o", "json"})
+	require.Error(t, root.Execute())
+
+	dec := json.NewDecoder(bytes.NewReader(out.Bytes()))
+	var first map[string]any
+	require.NoError(t, dec.Decode(&first), "the run document has to survive")
+	assert.Equal(t, "run-1", first["id"])
+
+	var second map[string]any
+	assert.ErrorIs(t, dec.Decode(&second), io.EOF,
+		"stdout carried a second document: %q", out.String())
 }
 
 // Tags are what a generated dataset says which job produced it with, and the

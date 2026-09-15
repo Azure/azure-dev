@@ -170,17 +170,49 @@ func failAs(cmd *cobra.Command, err error) error {
 	return err
 }
 
+// answeredWriter remembers whether anything reached the caller.
+//
+// Under `-o json` everything written to stdout is a document -- prose is
+// dropped rather than printed -- so having written at all means the caller is
+// already receiving one.
+type answeredWriter struct {
+	w        io.Writer
+	answered bool
+}
+
+func (a *answeredWriter) Write(p []byte) (int, error) {
+	if len(p) > 0 {
+		a.answered = true
+	}
+	return a.w.Write(p)
+}
+
 // reportFailuresAsJSON makes every command answer a failure in the format the
 // caller asked for, not just a success.
 //
 // Wrapped after the tree is assembled rather than at each RunE, so a command
 // added later cannot forget.
+//
+// A command that already wrote its document keeps it and gains nothing: `run`
+// emits the run and only then decides whether the status it carries is a
+// failure, and appending a second document there would leave the stream parsing
+// only under readers that accept concatenated values. The reason still reaches
+// the caller on stderr, and the document they were given is the more useful of
+// the two.
 func reportFailuresAsJSON(root *cobra.Command) {
 	var wrap func(*cobra.Command)
 	wrap = func(c *cobra.Command) {
 		if run := c.RunE; run != nil {
 			c.RunE = func(cmd *cobra.Command, args []string) error {
-				return failAs(cmd, run(cmd, args))
+				answered := &answeredWriter{w: cmd.OutOrStdout()}
+				cmd.SetOut(answered)
+				defer cmd.SetOut(answered.w)
+
+				err := run(cmd, args)
+				if err == nil || answered.answered {
+					return err
+				}
+				return failAs(cmd, err)
 			}
 		}
 		for _, sub := range c.Commands() {

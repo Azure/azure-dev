@@ -814,14 +814,31 @@ func (c *AgentClient) GetAgentVersion(
 	apiVersion string,
 	includeDigitalWorkerType bool,
 ) (*AgentVersionObject, error) {
+	feature := ""
+	if includeDigitalWorkerType {
+		feature = DigitalWorkerPreviewFeature
+	}
+	return c.getAgentVersion(ctx, agentName, agentVersion, apiVersion, feature)
+}
+
+// GetVoiceAgentVersion retrieves a voice version with the Voice Agents API contract.
+func (c *AgentClient) GetVoiceAgentVersion(
+	ctx context.Context, agentName, agentVersion, apiVersion string,
+) (*AgentVersionObject, error) {
+	return c.getAgentVersion(ctx, agentName, agentVersion, apiVersion, voiceAgentsPreviewFeature)
+}
+
+func (c *AgentClient) getAgentVersion(
+	ctx context.Context, agentName, agentVersion, apiVersion, feature string,
+) (*AgentVersionObject, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions/%s?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	if includeDigitalWorkerType {
-		setDigitalWorkerPreviewFeature(req)
+	if feature != "" {
+		req.Raw().Header.Set("Foundry-Features", feature)
 	}
 
 	resp, err := c.pipeline.Do(req)

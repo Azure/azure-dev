@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
@@ -20,17 +21,57 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 )
 
-type ExternalServiceTarget struct {
-	extension  *extensions.Extension
-	targetName string
-	targetKind ServiceTargetKind
-	console    input.Console
-	prompters  prompt.Prompter
-	lazyEnv    *lazy.Lazy[*environment.Environment]
+type serviceTargetBroker interface {
+	SendAndWait(context.Context, *azdext.ServiceTargetMessage) (*azdext.ServiceTargetMessage, error)
+	SendAndWaitWithProgress(
+		context.Context,
+		*azdext.ServiceTargetMessage,
+		func(string),
+	) (*azdext.ServiceTargetMessage, error)
+}
 
-	broker *grpcbroker.MessageBroker[azdext.ServiceTargetMessage]
+type serviceTargetPreviewBroker interface {
+	Preview(context.Context, *azdext.ServiceConfig) (*ServiceDeployPreviewResult, error)
+}
+
+type ExternalServiceTarget struct {
+	extension        *extensions.Extension
+	targetName       string
+	targetKind       ServiceTargetKind
+	console          input.Console
+	prompters        prompt.Prompter
+	lazyEnv          *lazy.Lazy[*environment.Environment]
+	previewSupported bool
+
+	broker        serviceTargetBroker
+	previewBroker serviceTargetPreviewBroker
+}
+
+// NewBetaExternalServiceTarget creates an external service target backed by the beta contract.
+func NewBetaExternalServiceTarget(
+	name string,
+	kind ServiceTargetKind,
+	extension *extensions.Extension,
+	broker *grpcbroker.MessageBroker[v1beta.ServiceTargetMessage],
+	console input.Console,
+	prompters prompt.Prompter,
+	lazyEnv *lazy.Lazy[*environment.Environment],
+) ServiceTarget {
+	betaBroker := &betaServiceTargetBroker{broker: broker}
+	return &ExternalServiceTarget{
+		extension:        extension,
+		targetName:       name,
+		targetKind:       kind,
+		console:          console,
+		prompters:        prompters,
+		lazyEnv:          lazyEnv,
+		previewSupported: true,
+		broker:           betaBroker,
+		previewBroker:    betaBroker,
+	}
 }
 
 type TargetResourceResolver interface {
@@ -42,7 +83,8 @@ type TargetResourceResolver interface {
 	) (*environment.TargetResource, error)
 }
 
-// NewExternalServiceTarget creates a new external service target
+// NewExternalServiceTarget creates a new external service target.
+// Preview is disabled unless the optional previewSupported argument is true.
 func NewExternalServiceTarget(
 	name string,
 	kind ServiceTargetKind,
@@ -51,15 +93,17 @@ func NewExternalServiceTarget(
 	console input.Console,
 	prompters prompt.Prompter,
 	lazyEnv *lazy.Lazy[*environment.Environment],
+	previewSupported ...bool,
 ) ServiceTarget {
 	target := &ExternalServiceTarget{
-		extension:  extension,
-		targetName: name,
-		targetKind: kind,
-		console:    console,
-		prompters:  prompters,
-		lazyEnv:    lazyEnv,
-		broker:     broker,
+		extension:        extension,
+		targetName:       name,
+		targetKind:       kind,
+		console:          console,
+		prompters:        prompters,
+		lazyEnv:          lazyEnv,
+		previewSupported: len(previewSupported) > 0 && previewSupported[0],
+		broker:           broker,
 	}
 
 	return target
@@ -69,6 +113,109 @@ func NewExternalServiceTarget(
 // expandable values against the environment for the current session.
 func (est *ExternalServiceTarget) toProtoServiceConfig(serviceConfig *ServiceConfig) (*azdext.ServiceConfig, error) {
 	return serviceConfigToProto(est.lazyEnv, serviceConfig)
+}
+
+// SupportsPreview reports the capability advertised during extension registration.
+func (est *ExternalServiceTarget) SupportsPreview() bool {
+	return est.previewSupported
+}
+
+// Preview requests a read-only deployment preview only when the provider advertised support.
+func (est *ExternalServiceTarget) Preview(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) (*ServiceDeployPreviewResult, error) {
+	if !est.previewSupported {
+		return nil, fmt.Errorf("service host '%s' does not support deployment preview", est.targetKind)
+	}
+	if serviceConfig == nil {
+		return nil, errors.New("service configuration is required")
+	}
+
+	protoServiceConfig, err := est.toProtoServiceConfig(serviceConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	return est.previewBroker.Preview(ctx, protoServiceConfig)
+}
+
+type betaServiceTargetBroker struct {
+	broker *grpcbroker.MessageBroker[v1beta.ServiceTargetMessage]
+}
+
+func transcodeServiceTargetMessage(source, destination proto.Message) error {
+	wire, err := proto.Marshal(source)
+	if err != nil {
+		return err
+	}
+	return proto.Unmarshal(wire, destination)
+}
+
+func (b *betaServiceTargetBroker) SendAndWait(
+	ctx context.Context,
+	request *azdext.ServiceTargetMessage,
+) (*azdext.ServiceTargetMessage, error) {
+	betaRequest := new(v1beta.ServiceTargetMessage)
+	if err := transcodeServiceTargetMessage(request, betaRequest); err != nil {
+		return nil, err
+	}
+	response, err := b.broker.SendAndWait(ctx, betaRequest)
+	if err != nil {
+		return nil, err
+	}
+	stableResponse := new(azdext.ServiceTargetMessage)
+	if err := transcodeServiceTargetMessage(response, stableResponse); err != nil {
+		return nil, err
+	}
+	return stableResponse, nil
+}
+
+func (b *betaServiceTargetBroker) SendAndWaitWithProgress(
+	ctx context.Context,
+	request *azdext.ServiceTargetMessage,
+	onProgress func(string),
+) (*azdext.ServiceTargetMessage, error) {
+	betaRequest := new(v1beta.ServiceTargetMessage)
+	if err := transcodeServiceTargetMessage(request, betaRequest); err != nil {
+		return nil, err
+	}
+	response, err := b.broker.SendAndWaitWithProgress(ctx, betaRequest, onProgress)
+	if err != nil {
+		return nil, err
+	}
+	stableResponse := new(azdext.ServiceTargetMessage)
+	if err := transcodeServiceTargetMessage(response, stableResponse); err != nil {
+		return nil, err
+	}
+	return stableResponse, nil
+}
+
+func (b *betaServiceTargetBroker) Preview(
+	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
+) (*ServiceDeployPreviewResult, error) {
+	betaConfig := new(v1beta.ServiceConfig)
+	if err := transcodeServiceTargetMessage(serviceConfig, betaConfig); err != nil {
+		return nil, err
+	}
+	response, err := b.broker.SendAndWait(ctx, &v1beta.ServiceTargetMessage{
+		RequestId: uuid.NewString(),
+		MessageType: &v1beta.ServiceTargetMessage_PreviewRequest{
+			PreviewRequest: &v1beta.ServiceTargetPreviewRequest{ServiceConfig: betaConfig},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	previewResponse := response.GetPreviewResponse()
+	if previewResponse == nil || previewResponse.Result == nil {
+		return nil, errors.New("invalid preview response: missing preview result")
+	}
+	return &ServiceDeployPreviewResult{
+		Message: previewResponse.Result.Message,
+		Data:    previewResponse.Result.Data.AsMap(),
+	}, nil
 }
 
 // Publish implements ServiceTarget.

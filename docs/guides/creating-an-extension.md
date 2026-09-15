@@ -88,6 +88,14 @@ For extensions that are still in development or preview, consider publishing to 
 - **Integrate with help** — Make your extension discoverable through `azd help`
 - **Error handling** — Use `ServiceError` for Azure API errors and `LocalError` for client-side errors
 - **Telemetry** — Follow pattern-based classification (e.g., `ext.service.<errorCode>`)
+- **Read-only previews** — Keep validation and request mapping separate from
+  build/package/deploy operations. A dry-run must not deploy dependencies or
+  persist deployment state; report values that require deployment as pending.
+  The agents extension's
+  [agent deployment preview](../../cli/azd/extensions/azure.ai.agents/README.md#previewing-an-agent-deployment)
+  demonstrates the optional `ServiceTargetPreviewProvider` contract. Register it
+  with `WithServiceTargetPreview` to expose `azd deploy --preview`; its `Preview`
+  method must be self-contained because deployment `Initialize` is not called.
 
 ## Detailed Reference
 

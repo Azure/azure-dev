@@ -151,7 +151,12 @@ func (m *ServiceTargetManager) ensureStream(ctx context.Context) error {
 
 // Register registers the provider with the server, waits for the response,
 // then starts background handling of provisioning requests.
-func (m *ServiceTargetManager) Register(ctx context.Context, factory ServiceTargetFactory, hostType string) error {
+func (m *ServiceTargetManager) Register(
+	ctx context.Context,
+	factory ServiceTargetFactory,
+	hostType string,
+	_ ...bool,
+) error {
 	if err := m.ensureStream(ctx); err != nil {
 		return err
 	}

@@ -10,7 +10,9 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	azdcmd "github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,6 +29,62 @@ func TestRegisterGlobalMiddleware(t *testing.T) {
 	require.Equal(t, []string{"debug", "ux", "telemetry", "error", "loginGuard"}, names)
 	require.NotContains(t, names, "toolFirstRun")
 	require.NotContains(t, names, "toolUpdateCheck")
+}
+
+func TestCommandRequiresLogin(t *testing.T) {
+	tests := []struct {
+		name     string
+		command  *cobra.Command
+		required bool
+	}{
+		{
+			name:     "deploy",
+			command:  azdcmd.NewDeployCmd(),
+			required: true,
+		},
+		{
+			name: "deploy preview",
+			command: func() *cobra.Command {
+				command := azdcmd.NewDeployCmd()
+				azdcmd.NewDeployFlags(command, &internal.GlobalCommandOptions{})
+				require.NoError(t, command.Flags().Set("preview", "true"))
+				return command
+			}(),
+			required: true,
+		},
+		{
+			name: "other preview command",
+			command: func() *cobra.Command {
+				command := &cobra.Command{Use: "provision"}
+				command.Flags().Bool("preview", true, "")
+				return command
+			}(),
+			required: true,
+		},
+		{
+			name: "nested deploy command",
+			command: func() *cobra.Command {
+				root := &cobra.Command{Use: "azd"}
+				group := &cobra.Command{Use: "custom"}
+				command := &cobra.Command{Use: "deploy"}
+				command.Flags().Bool("preview", true, "")
+				root.AddCommand(group)
+				group.AddCommand(command)
+				return command
+			}(),
+			required: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			descriptor := actions.NewActionDescriptor(tt.command.Name(), &actions.ActionDescriptorOptions{
+				Command:      tt.command,
+				RequireLogin: true,
+			})
+			require.Equal(t, tt.required, commandRequiresLogin(descriptor))
+		})
+	}
 }
 
 func TestRootCmd_CwdRelativePathResolvedToAbsolute(t *testing.T) {

@@ -847,6 +847,36 @@ func TestDocSchemaValidatesConstraints(t *testing.T) {
 	}
 }
 
+func TestDocSchemaMetadataTags(t *testing.T) {
+	t.Parallel()
+	schema := loadDocSchema(t, extensionRoot(t))
+	for _, test := range []struct {
+		name    string
+		tags    any
+		wantErr bool
+	}{
+		{name: "list", tags: []any{"Streaming", "Test"}},
+		{name: "empty list", tags: []any{}},
+		{name: "scalar", tags: "Streaming,Test"},
+		{name: "numeric entry", tags: []any{42}, wantErr: true},
+		{name: "blank entry", tags: []any{" "}, wantErr: true},
+		{name: "empty entry", tags: []any{""}, wantErr: true},
+		{name: "object", tags: map[string]any{"name": "Test"}, wantErr: true},
+		{name: "null", tags: nil, wantErr: true},
+		{name: "too long", tags: strings.Repeat("a", 513), wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			err := schema.validate(map[string]any{"metadata": map[string]any{"tags": test.tags}})
+			if test.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestDocSchemaRegistryConnectionID(t *testing.T) {
 	t.Parallel()
 

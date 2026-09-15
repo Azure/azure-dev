@@ -88,6 +88,26 @@ Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC 
 
 First-party extensions live in `cli/azd/extensions/` and are registered in `cli/azd/extensions/registry.json`.
 
+Service targets can opt into the read-only `azd deploy --preview` path with
+`WithServiceTargetPreview` and the optional `ServiceTargetPreviewProvider`
+interface. This high-level SDK path uses the `azd.extensions.v1beta`
+`ServiceTargetService` contract; stable `v1` registrations remain unchanged.
+Preview uses a dedicated request, negotiated at provider registration;
+an older or unsupported extension cannot accidentally execute `Deploy`.
+Core checks that capability before dispatch and skips unsupported targets, without
+requiring those extensions to add no-op preview handlers. JSON records skipped
+services separately; supported-provider errors and selections with no supported
+target still fail.
+For supported targets, the SDK creates a preview instance without invoking its deployment initialization.
+Core skips framework/tool setup, lifecycle hooks, package/publish/deploy steps and
+deployment-state updates.
+
+The [agents implementation](../../cli/azd/extensions/azure.ai.agents/README.md#previewing-an-agent-deployment)
+compares inline configuration, legacy definitions and companion manifests with
+the latest Foundry agent version and plans image build/push work without executing it.
+A missing remote agent produces a creation preview. Providers return a human-readable
+summary and structured data; core owns terminal/JSON output and service selection.
+
 ## Detailed Reference
 
 - [Extension Framework Guide](../../cli/azd/docs/extensions/extension-framework.md) — Getting started

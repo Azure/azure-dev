@@ -759,6 +759,7 @@ func promptForAgentService(
 	azdClient *azdext.AzdClient,
 	services []*azdext.ServiceConfig,
 	noPrompt bool,
+	serviceNameFlag ...string,
 ) (*azdext.ServiceConfig, error) {
 	slices.SortFunc(services, func(a, b *azdext.ServiceConfig) int {
 		return cmp.Compare(a.Name, b.Name)
@@ -769,11 +770,12 @@ func promptForAgentService(
 		for i, s := range services {
 			names[i] = s.Name
 		}
-		return nil, fmt.Errorf(
-			"multiple azure.ai.agent services found in azure.yaml: %s\n\n"+
-				"Provide the service name as a positional argument to specify which one to use",
-			strings.Join(names, ", "),
-		)
+		hint := "Provide the service name as a positional argument to specify which one to use"
+		if len(serviceNameFlag) > 0 {
+			hint = fmt.Sprintf("Use %s <name> to specify the agent service to preview", serviceNameFlag[0])
+		}
+		return nil, fmt.Errorf("multiple azure.ai.agent services found in azure.yaml: %s\n\n%s",
+			strings.Join(names, ", "), hint)
 	}
 
 	choices := make([]*azdext.SelectChoice, len(services))
@@ -812,6 +814,7 @@ func resolveAgentService(
 	azdClient *azdext.AzdClient,
 	name string,
 	noPrompt bool,
+	serviceNameFlag ...string,
 ) (*azdext.ServiceConfig, *azdext.ProjectConfig, error) {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
@@ -849,7 +852,7 @@ func resolveAgentService(
 		case 1:
 			svc = agentServices[0]
 		default:
-			selected, err := promptForAgentService(ctx, azdClient, agentServices, noPrompt)
+			selected, err := promptForAgentService(ctx, azdClient, agentServices, noPrompt, serviceNameFlag...)
 			if err != nil {
 				return nil, nil, err
 			}

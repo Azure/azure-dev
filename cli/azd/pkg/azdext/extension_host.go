@@ -24,7 +24,7 @@ type serviceReceiver interface {
 
 type serviceTargetRegistrar interface {
 	serviceReceiver
-	Register(ctx context.Context, factory ServiceTargetFactory, hostType string) error
+	Register(ctx context.Context, factory ServiceTargetFactory, hostType string, preview ...bool) error
 	Close() error
 }
 
@@ -54,6 +54,8 @@ type provisioningRegistrar interface {
 type ServiceTargetRegistration struct {
 	Host    string
 	Factory func() ServiceTargetProvider
+	// SupportsPreview explicitly opts in to read-only deployment preview.
+	SupportsPreview bool
 }
 
 // FrameworkServiceRegistration describes a framework service provider to register with azd core.
@@ -101,11 +103,12 @@ type ExtensionHost struct {
 	provisioningProviders []ProvisioningProviderRegistration
 	validationChecks      []ValidationCheckRegistration
 
-	serviceTargetManager    serviceTargetRegistrar
-	frameworkServiceManager frameworkServiceRegistrar
-	eventManager            extensionEventManager
-	provisioningManager     provisioningRegistrar
-	validationManager       *ValidationManager
+	serviceTargetManager     serviceTargetRegistrar
+	betaServiceTargetManager serviceTargetRegistrar
+	frameworkServiceManager  frameworkServiceRegistrar
+	eventManager             extensionEventManager
+	provisioningManager      provisioningRegistrar
+	validationManager        *ValidationManager
 }
 
 // NewExtensionHost creates a new ExtensionHost for the supplied azd client.
@@ -144,6 +147,9 @@ func (er *ExtensionHost) initManagers(extensionId string, brokerLogger *log.Logg
 	if er.serviceTargetManager == nil {
 		er.serviceTargetManager = NewServiceTargetManager(extensionId, er.client, brokerLogger)
 	}
+	if er.betaServiceTargetManager == nil {
+		er.betaServiceTargetManager = NewBetaServiceTargetManager(extensionId, er.client, brokerLogger)
+	}
 	if er.frameworkServiceManager == nil {
 		er.frameworkServiceManager = NewFrameworkServiceManager(extensionId, er.client, brokerLogger)
 	}
@@ -161,6 +167,19 @@ func (er *ExtensionHost) initManagers(extensionId string, brokerLogger *log.Logg
 // WithServiceTarget registers a service target provider to be wired when Run is invoked.
 func (er *ExtensionHost) WithServiceTarget(host string, factory ServiceTargetFactory) *ExtensionHost {
 	er.serviceTargets = append(er.serviceTargets, ServiceTargetRegistration{Host: host, Factory: factory})
+	return er
+}
+
+// WithServiceTargetPreview registers a service target provider with read-only deployment preview support.
+// The factory must create fresh providers implementing ServiceTargetPreviewProvider, whose Preview
+// method must work without Initialize or any deployment preparation. The factory is not invoked
+// during registration to detect this capability.
+func (er *ExtensionHost) WithServiceTargetPreview(host string, factory ServiceTargetFactory) *ExtensionHost {
+	er.serviceTargets = append(er.serviceTargets, ServiceTargetRegistration{
+		Host:            host,
+		Factory:         factory,
+		SupportsPreview: true,
+	})
 	return er
 }
 
@@ -237,7 +256,12 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	er.initManagers(extensionId, brokerLogger)
 
 	// Determine which managers will be active
-	hasServiceTargets := len(er.serviceTargets) > 0
+	hasStableServiceTargets := slices.ContainsFunc(er.serviceTargets, func(reg ServiceTargetRegistration) bool {
+		return !reg.SupportsPreview
+	})
+	hasBetaServiceTargets := slices.ContainsFunc(er.serviceTargets, func(reg ServiceTargetRegistration) bool {
+		return reg.SupportsPreview
+	})
 	hasFrameworkServices := len(er.frameworkServices) > 0
 	hasEventHandlers := len(er.projectHandlers) > 0 || len(er.serviceHandlers) > 0
 	hasProvisioningProviders := len(er.provisioningProviders) > 0
@@ -245,8 +269,11 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 
 	// Set up defer for cleanup
 	defer func() {
-		if hasServiceTargets {
+		if hasStableServiceTargets {
 			_ = er.serviceTargetManager.Close()
+		}
+		if hasBetaServiceTargets {
+			_ = er.betaServiceTargetManager.Close()
 		}
 		if hasFrameworkServices {
 			_ = er.frameworkServiceManager.Close()
@@ -265,8 +292,11 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	// Collect active receivers and start them BEFORE registration
 	// This ensures broker.Run() is active to receive registration responses
 	receivers := []serviceReceiver{}
-	if hasServiceTargets {
+	if hasStableServiceTargets {
 		receivers = append(receivers, er.serviceTargetManager)
+	}
+	if hasBetaServiceTargets {
+		receivers = append(receivers, er.betaServiceTargetManager)
 	}
 	if hasFrameworkServices {
 		receivers = append(receivers, er.frameworkServiceManager)
@@ -326,7 +356,11 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 
 		r := reg
 		registrationsWaitGroup.Go(func() {
-			if err := er.serviceTargetManager.Register(ctx, r.Factory, r.Host); err != nil {
+			manager := er.serviceTargetManager
+			if r.SupportsPreview {
+				manager = er.betaServiceTargetManager
+			}
+			if err := manager.Register(ctx, r.Factory, r.Host, r.SupportsPreview); err != nil {
 				registrationErrChan <- fmt.Errorf("failed to register service target '%s': %w", r.Host, err)
 			}
 		})

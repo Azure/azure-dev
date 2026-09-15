@@ -69,6 +69,211 @@ An existing `AZURE_AI_PROJECT_NAME` value is offered as the default during
 interactive new-project setup. `--no-prompt` remains non-interactive and keeps
 its existing automatic environment-name fallback.
 
+## Previewing an Agent Deployment
+
+Use `azd deploy --preview` from an azd project to compare each selected hosted
+agent's local definition with its latest deployed version:
+
+```bash
+azd deploy --preview
+azd deploy my-agent --preview
+azd deploy --all --preview --output json
+```
+
+Text output shows the standard azd spinner while preparing the preview and
+comparing each supported service. Progress stops before the configuration diff
+is printed, and also stops on errors or cancellation.
+Redirected output uses non-animated progress messages; `--output json` omits
+progress and command headings.
+
+For a project created by `azd ai agent init`, the agent definition is normally
+inline in `azure.yaml`; deployment does not generate a separate `agent.yaml`.
+Preview supports both layouts without migrating or editing user files:
+
+- **Legacy split files:** reads `agent.yaml` and its companion `agent.manifest.yaml`
+  in the definition directory. Manifest-level metadata and its `template` settings
+  participate in the preview, including tags that exist only in the manifest.
+- **Manifest-only service:** discovers a manifest in the service directory when
+  no materialized agent definition is present. Deployment uses the same discovery.
+- **Project configuration:** reads the selected agent service in `azure.yaml`,
+  including legacy definitions/manifests in that service's source directory.
+- **Explicit definition override:** `AGENT_DEFINITION_PATH` selects the same single
+  YAML definition for preview and deployment. It takes precedence over inline and
+  convention-based definitions; companion files are not merged into an override.
+  Missing, invalid, or non-file overrides fail rather than falling back to another agent.
+
+The `.yml` spellings are also accepted; `.yaml` takes precedence when both exist.
+Like normal `azd deploy`, preview requires
+an `azure.yaml` project; a bare sample directory must first be part of a configured
+azd project. No previous agent deployment is required.
+
+Use the service name as a positional argument to select one service. From the
+project root, omitting it previews enabled services; `--all` explicitly selects
+all enabled services. Preview never invokes deployment hooks, framework
+initialization, builds, packages, publishing, deployment, or environment-cache
+updates. Core skips targets that do not advertise preview support before sending
+any preview request. Skipped services are silent in terminal output and listed
+under `skippedServices` in JSON (service name to host name); they are not reported
+as unchanged. Errors from supported preview targets still fail the command.
+If no selected service supports preview, the command returns an error.
+`--from-package` cannot be combined with preview; `--timeout` bounds each preview.
+Preview never creates an azd environment or changes the project's default
+environment. `--environment` uses only the named existing environment; a missing
+explicit name is an error. Without a selected/default environment, preview can
+use project or process configuration in memory. `azd deploy --preview` uses the
+normal deployment login check and offers interactive login when needed. In CI or
+with `--no-prompt`, authenticate before running preview.
+
+Materialized `agent.yaml` settings
+override companion manifest defaults field by field. An inline project service
+is authoritative when selected. The preview lists its sources in precedence
+order using normalized paths. The main diff compares the remote agent with the
+effective configuration once: `+` adds a value, `~` replaces it, and `-` removes it.
+Lower-priority overrides are summarized rather than printed as additional remote
+changes. JSON `sourceConflicts` retains those local differences for diagnostics;
+they do not set `hasChanges` when the effective configuration matches the remote.
+
+Legacy `environment_variables` entries merge by name. The selected definition
+overrides the value of a same-named manifest entry; unique entries are retained.
+An explicit empty list (`environment_variables: []`) or `null` clears the
+inherited list. To remove an inherited variable individually, remove it from
+all participating legacy definitions. Variables absent from the resulting
+configuration are reported as removals from the remote agent. Duplicate names
+within one list are rejected. Tag lists use replacement, not union, so tags
+omitted from the selected tag list disappear from the next version.
+
+The source directory is the service's configured `project` path, or the directory
+containing the explicit `AGENT_DEFINITION_PATH` override when one is set.
+
+Preview and deployment use the selected agent's `azure.ai.project` dependency endpoint
+when configured, then the active azd environment's `FOUNDRY_PROJECT_ENDPOINT`
+or its process-environment fallback when the key is absent from the azd environment.
+A persisted empty value takes precedence over a shell value and is reported as
+missing configuration. Resolved shell/dependency endpoints are not persisted.
+Configure the target in the project instead of passing a `--project-endpoint` flag
+to `azd deploy`. Authentication and
+permission to read the agent are required. Missing configuration or denied access
+is an error, not evidence that a new agent would be created.
+
+The preview groups changes by metadata (name, description, and tags), protocols, CPU/memory, environment
+variables, model deployment reference (`AZURE_AI_MODEL_DEPLOYMENT_NAME`), and code
+configuration. It also includes authored container-image settings on the existing
+version, session/content-safety settings, and explicitly configured endpoint or
+agent-card fields. Environment-variable values are redacted in both text and
+JSON output, except for the separately reported model deployment name. Changes
+are detected before redaction. Credentials, query strings, and fragments in
+displayed URLs are removed. The preview's API client disables response-body
+logging so `--debug` does not log the deployed environment's secrets.
+
+- **New agent:** a not-found response reports that the agent would be created.
+  The preview lists its intended configuration without creating the agent.
+- **Existing agent:** the preview compares configuration with its latest version,
+  ignoring generated IDs, timestamps, protocol ordering, and equivalent defaults.
+- **No configuration changes:** prints `No changes to agent configuration.` and
+  exits successfully. Changes also exit successfully; only errors fail the command.
+- **JSON:** core returns a timestamp and a `services` map. Each service's `data`
+  includes `name`, `service`, `currentVersion` (when deployed), `operation`
+  (`create` or `create_version`), `hasChanges`, grouped `changes`, `sourcePath`,
+  `sources`, `image`, `sourceConflicts`, and `notes`. Each changed field has a `kind` (`add`, `remove`, `modify`, or
+  `pending`) and known `before`/`after` values. `hasChanges` describes the
+  effective configuration comparison, not whether a normal deploy would create a
+  version or whether ignored local values differ.
+- **Project environment:** values already resolved by azd are preserved.
+  Unavailable environment-variable inputs are marked `pending`, including a
+  model deployment reference that has not been resolved yet. Unrelated azd
+  environment values are not injected into the agent.
+- **Manifest parameters:** declared defaults and available environment values
+  resolve template placeholders without prompting. Unresolved comparison values
+  remain `pending`; an unresolved agent name is an error because it cannot
+  identify the remote agent.
+- **Dependencies:** preview does not deploy toolboxes, connections, projects or
+  model deployments. Unresolved generated environment values are reported as pending.
+
+Preview does not build, package, or upload source, deploy toolboxes, create agent
+versions, patch endpoints, or change local deployment state. Source contents and
+build outputs are **not compared**. A normal source-code deployment still packages and
+uploads source and creates a new version, even when the configuration matches.
+
+### Container image planning
+
+The `image` result reports `mode`, `build`, `push`, and whether the final image
+reference is `known`. JSON retains this planning data. Terminal output shows the
+image plan only when an image changes, a build/push is needed, or the image
+reference is pending; unchanged code-mode and prebuilt-image plans are omitted.
+
+- **Code deployment:** Foundry manages the artifact; no local container image
+  would be built or pushed.
+- **Prebuilt image:** compares the configured reference, with no build or push.
+- **Container build:** reports that an image would be built and pushed. Explicit
+  image/tag/registry settings are resolved using azd's image naming rules.
+  Default tags use `azd-deploy-<timestamp>`, so a future tag or a registry that
+  has not been provisioned is reported as pending, not as a made-up image reference.
+
+For a project with a configured image but no explicit passthrough/registry
+connection, preview follows the non-interactive default of building an image
+and notes that interactive deployment can choose the prebuilt alternative.
+Legacy projects with `AZD_AGENT_SKIP_ACR=true` use the configured prebuilt image.
+Preview and deployment both read the azd environment first (including empty values),
+then the process environment if the key is absent. The marker accepts the complete
+word `true`, ignoring case and surrounding whitespace; `1` and `t` do not enable it.
+Source contents and mutable image digests are not compared.
+
+Preview covers hosted code and container agents, not infrastructure or dependency
+creation. The unmodified Foundry projects extension does not advertise deployment
+preview, so core skips its services. Use `azd provision --preview` to inspect
+infrastructure changes. The standalone `azd ai agent deploy` command has been
+removed. Use `azd deploy` for deployment and `azd deploy --preview` to inspect
+the planned agent changes.
+
+### Metadata tags
+
+Tags are read from `metadata.tags` in a legacy manifest or standalone definition,
+or `services.<agent>.metadata.tags` in `azure.yaml`. No manual copying is required:
+
+```yaml
+metadata:
+  tags:
+    - Streaming
+    - Test
+```
+
+Deploy and preview use the same metadata mapping. Tag lists are preserved in
+the Foundry request as a JSON-encoded string because the service metadata API
+accepts only string values. The preview displays them as lists under Metadata.
+Adding or removing a tag produces a change; reordering or repeating tags does
+not. Tags are case-sensitive, and an empty list removes previously deployed
+tags. Existing scalar-string tags remain supported without interpreting commas
+as tag separators. Invalid list entries or encoded values longer than the
+service's 512-character limit produce a validation error.
+
+Legacy project deployment and preview loaders share the companion metadata
+resolution so the preview does not report manifest-only tags that deployment
+would drop. Neither preview nor deployment rewrites those definitions.
+
+### Building the preview integration from this checkout
+
+Deployment preview adds an azd core/SDK contract. Rebuilding only the agents
+extension against an older published SDK is not sufficient. For local development,
+create a Go workspace at the repository root that includes core and the agents
+extension (add these modules to an existing workspace rather than replacing it):
+
+```powershell
+go work init .\cli\azd .\cli\azd\extensions\azure.ai.agents
+New-Item -ItemType Directory -Force .\bin | Out-Null
+cmd /d /c "set GOWORK=off&& go -C .\cli\azd build -o ..\..\bin\azd.exe ."
+```
+
+Use that rebuilt core binary while building/installing the agents extension with the
+developer extension, and while running `deploy --preview`. Keep the local workspace
+out of release commits. For release, land/publish the core SDK contract first, then
+update the agents extension to that SDK version; do not commit a local
+`replace` directive.
+
+No changes or rebuild are required for the published `azure.ai.projects` extension.
+If a local projects binary from the earlier preview prototype is installed, restore
+the published binary or rebuild its restored source once; an already installed
+binary can still advertise the capability until it is replaced.
+
 ## Composing Agent Dependencies
 
 Use the Agent command surface to attach existing Toolbox or Connection services

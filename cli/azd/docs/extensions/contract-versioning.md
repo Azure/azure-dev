@@ -78,6 +78,12 @@ should implement only the focused method interfaces they need. Do not embed the 
 registration rejects whole generated beta servers, unknown service keys, and
 values that do not implement a focused interface.
 
+`ServiceTargetService.Stream` uses this focused override model for deployment
+preview. Preview-capable extensions use the high-level beta service-target
+manager, advertise `supports_preview`, and exchange preview request, response,
+and result envelopes on `v1beta`. Extensions using the stable high-level
+manager continue to exchange only the frozen `v1` messages.
+
 An additive beta enum value on an existing shared request field is different
 from an additive field: proto3 preserves its numeric value in the stable
 message even when stable does not define that value. Such a preview value also

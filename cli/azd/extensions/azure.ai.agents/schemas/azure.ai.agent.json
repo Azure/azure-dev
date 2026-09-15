@@ -245,6 +245,15 @@
     "metadata": {
       "type": "object",
       "description": "Optional metadata key-value pairs for the agent.",
+      "properties": {
+        "tags": {
+          "description": "Agent tags. Lists are stored as a JSON-encoded string in Foundry metadata; the encoded value must not exceed 512 characters.",
+          "oneOf": [
+            { "type": "string", "maxLength": 512 },
+            { "type": "array", "items": { "type": "string", "minLength": 1, "pattern": "\\S" } }
+          ]
+        }
+      },
       "additionalProperties": true
     },
     "protocols": {

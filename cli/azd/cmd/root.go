@@ -366,7 +366,14 @@ func newRootCmd(
 			},
 			RequireLogin: true,
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddlewareWhen(
+			"deployPreviewProgress",
+			middleware.NewDeployPreviewProgressMiddleware,
+			func(descriptor *actions.ActionDescriptor) bool {
+				return isDeploymentPreview(descriptor.Options.Command)
+			},
+		).
+		UseMiddlewareWhen("hooks", middleware.NewHooksMiddleware, deploymentHooksEnabled).
 		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.
@@ -538,19 +545,18 @@ func registerGlobalMiddleware(root *actions.ActionDescriptor) {
 		UseMiddlewareWhen("error", middleware.NewErrorMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTroubleshooting
 		}).
-		UseMiddlewareWhen("loginGuard", middleware.NewLoginGuardMiddleware, func(descriptor *actions.ActionDescriptor) bool {
-			// Check if the command or any of its parents require login
-			current := descriptor
-			for current != nil {
-				if current.Options != nil && current.Options.RequireLogin {
-					return true
-				}
+		UseMiddlewareWhen("loginGuard", middleware.NewLoginGuardMiddleware, commandRequiresLogin)
+}
 
-				current = current.Parent()
-			}
+func commandRequiresLogin(descriptor *actions.ActionDescriptor) bool {
+	// Check if the command or any of its parents require login.
+	for current := descriptor; current != nil; current = current.Parent() {
+		if current.Options != nil && current.Options.RequireLogin {
+			return true
+		}
+	}
 
-			return false
-		})
+	return false
 }
 
 func getCmdRootHelpFooter(cmd *cobra.Command) string {

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -62,25 +63,36 @@ func (o *SessionRequestOptions) ApplyHeaders(headers http.Header) {
 
 // NewAgentClient creates a new AgentClient
 func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
-	clientOptions := &policy.ClientOptions{
+	return NewAgentClientWithOptions(endpoint, cred, &policy.ClientOptions{
 		Logging: policy.LogOptions{
 			AllowedHeaders: []string{"X-Ms-Correlation-Request-Id", "X-Request-Id"},
 			// Agent bodies contain customer-authored instructions, tool inputs, and
 			// model output. Keep them out of debug logs.
 			IncludeBody: false,
 		},
-		PerCallPolicies: []policy.Policy{
-			runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
-			azsdk.NewMsCorrelationPolicy(),
-			azsdk.NewUserAgentPolicy(useragent.Default()),
-		},
+	})
+}
+
+// NewAgentClientWithOptions creates an AgentClient with caller-supplied pipeline options.
+func NewAgentClientWithOptions(
+	endpoint string, cred azcore.TokenCredential, options *policy.ClientOptions,
+) *AgentClient {
+	var clientOptions policy.ClientOptions
+	if options != nil {
+		clientOptions = *options
 	}
+	clientOptions.Logging.AllowedHeaders = append(slices.Clone(clientOptions.Logging.AllowedHeaders),
+		"X-Ms-Correlation-Request-Id", "X-Request-Id")
+	clientOptions.PerCallPolicies = append(slices.Clone(clientOptions.PerCallPolicies),
+		runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
+		azsdk.NewMsCorrelationPolicy(),
+		azsdk.NewUserAgentPolicy(useragent.Default()))
 
 	pipeline := runtime.NewPipeline(
 		"azure-ai-agents",
 		"v1.0.0",
 		runtime.PipelineOptions{},
-		clientOptions,
+		&clientOptions,
 	)
 
 	return &AgentClient{

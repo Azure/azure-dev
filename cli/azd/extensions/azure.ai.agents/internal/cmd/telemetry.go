@@ -15,6 +15,7 @@ import (
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 )
 
 const (
@@ -61,7 +62,7 @@ func (r *agentContextReporter) reportProject(ctx context.Context, operation stri
 
 func (r *agentContextReporter) reportProjectConfig(
 	ctx context.Context,
-	telemetry azdext.TelemetryServiceClient,
+	telemetry v1beta.TelemetryServiceClient,
 	project *azdext.ProjectConfig,
 	operation string,
 ) {
@@ -82,7 +83,7 @@ func (r *agentContextReporter) reportProjectConfig(
 
 func (r *agentContextReporter) reportService(
 	ctx context.Context,
-	telemetry azdext.TelemetryServiceClient,
+	telemetry v1beta.TelemetryServiceClient,
 	project *azdext.ProjectConfig,
 	service *azdext.ServiceConfig,
 	operation string,
@@ -98,7 +99,7 @@ func (r *agentContextReporter) reportService(
 
 func (r *agentContextReporter) report(
 	ctx context.Context,
-	telemetry azdext.TelemetryServiceClient,
+	telemetry v1beta.TelemetryServiceClient,
 	agentCtx agentTelemetryContext,
 ) {
 	if telemetry == nil {
@@ -110,7 +111,7 @@ func (r *agentContextReporter) report(
 		agentHarnessAttribute:   agentCtx.harness,
 		agentOperationAttribute: agentCtx.operation,
 	}
-	if _, err := telemetry.ReportUsage(ctx, &azdext.ReportUsageRequest{
+	if _, err := telemetry.ReportUsage(ctx, &v1beta.ReportUsageRequest{
 		EventName:  agentContextResolvedEvent,
 		Attributes: attributes,
 	}); err != nil {

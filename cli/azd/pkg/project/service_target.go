@@ -122,6 +122,19 @@ type ServiceTarget interface {
 	) ([]string, error)
 }
 
+// ServiceTargetPreviewer optionally previews a deployment without initializing the service target,
+// preparing artifacts, running lifecycle hooks, or changing deployment or environment state.
+type ServiceTargetPreviewer interface {
+	Preview(ctx context.Context, serviceConfig *ServiceConfig) (*ServiceDeployPreviewResult, error)
+}
+
+// ServiceTargetPreviewCapability reports negotiated preview support without
+// invoking a provider. Targets with a Preview method need not implement it
+// unless support can vary, as it does for external extension targets.
+type ServiceTargetPreviewCapability interface {
+	SupportsPreview() bool
+}
+
 func resourceTypeMismatchError(
 	resourceName string,
 	resourceType string,

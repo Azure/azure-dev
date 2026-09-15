@@ -375,6 +375,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			lazyEnvManager *lazy.Lazy[environment.Manager],
 			lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
 			envFlags internal.EnvFlag,
+			command *cobra.Command,
 		) *lazy.Lazy[*environment.Environment] {
 			return lazy.NewLazy(func() (*environment.Environment, error) {
 				azdCtx, err := lazyAzdContext.GetValue()
@@ -395,6 +396,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 					return nil, err
 				}
 
+				if isDeploymentPreview(command) {
+					return envManager.GetReadOnly(ctx, environmentName)
+				}
 				env, err := envManager.Get(ctx, environmentName)
 				if err != nil {
 					return nil, err
@@ -577,6 +581,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Currently caches manifest across command executions
 	container.MustRegisterSingleton(project.NewDotNetImporter)
 	container.MustRegisterScoped(project.NewImportManager)
+	container.MustRegisterScoped(func(importManager *project.ImportManager) project.DeclaredServiceResolver {
+		return importManager
+	})
+	container.MustRegisterScoped(project.NewServiceTargetResolver)
 	container.MustRegisterScoped(project.NewServiceManager)
 
 	// Unified up action: the exegraph-backed `azd up` entry point that
@@ -996,7 +1004,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// gRPC Server
 	container.MustRegisterScoped(grpcserver.NewServer)
 	container.MustRegisterScoped(grpcserver.NewProjectService)
-	container.MustRegisterScoped(grpcserver.NewEnvironmentService)
+	container.MustRegisterScoped(newCommandEnvironmentService)
 	container.MustRegisterScoped(grpcserver.NewPromptService)
 	container.MustRegisterScoped(grpcserver.NewDeploymentService)
 	container.MustRegisterScoped(grpcserver.NewEventService)

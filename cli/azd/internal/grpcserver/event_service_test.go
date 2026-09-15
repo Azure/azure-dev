@@ -115,6 +115,13 @@ func (m *noOpEnvironmentManager) Get(ctx context.Context, name string) (*environ
 	return nil, nil
 }
 
+func (m *noOpEnvironmentManager) GetReadOnly(
+	ctx context.Context,
+	name string,
+) (*environment.Environment, error) {
+	return nil, nil
+}
+
 func (m *noOpEnvironmentManager) Save(ctx context.Context, env *environment.Environment) error {
 	return nil
 }

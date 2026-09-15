@@ -131,7 +131,7 @@ func GateOutlivedTheWait(runID string, budget time.Duration) error {
 	return fmt.Errorf(
 		"run %s outlived the %s wait, so --fail-on never got a result to judge. "+
 			"The run is still going: reattach with `azd ai eval run show %s "+
-			"--wait --fail-on <gate>`", runID, budget, runID)
+			"--wait --fail-on <gate>`", runID, budget, shellArg(runID))
 }
 
 // DatasetHasUnregisteredEdits reports local rows no deployed version holds.
@@ -190,7 +190,7 @@ func WaitInterrupted(runID string, err error) error {
 	return fmt.Errorf(
 		"stopped waiting on run %s, which is still running: %w. "+
 			"Pick it back up with `azd ai eval run show %s`",
-		runID, err, runID)
+		runID, err, shellArg(runID))
 }
 
 // WaitingForRun says a run has started and this command is now watching it.
@@ -268,7 +268,7 @@ func EvaluatorResultsHeading() string {
 func ViewItemDetails(eval, runID, itemID string) string {
 	return fmt.Sprintf(
 		"\nView details:\n  azd ai eval run output show %s --eval %s --run %s\n",
-		itemID, eval, runID)
+		shellArg(itemID), shellArg(eval), shellArg(runID))
 }
 
 // ExportCompleteResults names the command that writes the whole run to disk.
@@ -280,7 +280,7 @@ func ExportCompleteResults(eval, runID string) string {
 	return fmt.Sprintf(
 		"\nExport complete results:\n"+
 			"  azd ai eval run output export --eval %s --run %s --output-file ./%s.json\n",
-		eval, runID, runID)
+		shellArg(eval), shellArg(runID), shellArg(runID))
 }
 
 // ViewFailingSamples points at the command that lists the rows that failed.
@@ -352,7 +352,7 @@ func RunMustBeNamed(evalID string) error {
 		"name the run to act on: this environment has no run recorded for eval %s, "+
 			"and a command that changes a run will not pick one for you. "+
 			"`azd ai eval run list --eval %s` shows the runs there are",
-		evalID, evalID)
+		evalID, shellArg(evalID))
 }
 
 // ReadingRun reports a failure to read the run the caller named.
@@ -895,7 +895,7 @@ func EvaluatorNotDeclared(name string) error {
 		"evaluator %q is not declared in this configuration; generate it first with "+
 			"`azd ai eval generate --evaluator --evaluator-name %s`, or choose a "+
 			"builtin.* evaluator",
-		name, name)
+		name, shellArg(name))
 }
 
 // ServiceNameNotAFileName reports a name the service returned that cannot be
@@ -1476,7 +1476,7 @@ func ArtifactAppearedDuringGeneration(path, jobID string) error {
 		"%s was created while the job was running, so it was left alone; "+
 			"the generated output is ready — collect it with "+
 			"`azd ai eval job show %s --force`, or to a different place with --output-dir",
-		path, jobID)
+		path, shellArg(jobID))
 }
 
 // ItemPagingDidNotAdvance reports a listing whose cursor stopped moving.
@@ -2287,7 +2287,7 @@ func EvaluatorDrifted(evaluator, remote, recorded string) error {
 			"behind, so read it with `azd ai eval evaluator show %s --version %s "+
 			"--output-file <path>` and bring it into the declared source before "+
 			"deploying again, or delete that version if it was a mistake",
-		evaluator, remote, recorded, evaluator, remote)
+		evaluator, remote, recorded, shellArg(evaluator), shellArg(remote))
 }
 
 // EvaluatorVersionNotAdvancing reports a publish the service kept answering with

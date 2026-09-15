@@ -173,6 +173,38 @@ func TestRunningTwiceDoesNotStackWriters(t *testing.T) {
 	}
 }
 
+// An unquoted shell variable holding a name with spaces arrives as several
+// arguments. That fails argument validation, which runs instead of RunE rather
+// than before it, so it reached a script as an empty stream and no reason.
+func TestTooManyArgumentsStillAnswersTheJSONCaller(t *testing.T) {
+	t.Parallel()
+
+	root := NewRootCommand()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"dataset", "create", "not", "a", "valid", "name", "-o", "json"})
+	require.Error(t, root.Execute())
+
+	var doc jsonError
+	require.NoError(t, json.Unmarshal(out.Bytes(), &doc),
+		"stdout under -o json has to parse as JSON: %q", out.String())
+	assert.NotEmpty(t, doc.Error.Message, "the document has to say what was wrong")
+}
+
+// The same mistake without -o json is unchanged: azd prints the line.
+func TestTooManyArgumentsWritesNothingToStdoutForAHuman(t *testing.T) {
+	t.Parallel()
+
+	root := NewRootCommand()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"dataset", "create", "not", "a", "valid", "name"})
+	require.Error(t, root.Execute())
+	assert.Empty(t, out.String())
+}
+
 // A `--path` that is already where every command looks needs no flag, whichever
 // way the caller spelled it.
 func TestTheDefaultDirectoryIsRecognisedHoweverItIsSpelled(t *testing.T) {

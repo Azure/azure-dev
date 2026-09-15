@@ -202,6 +202,16 @@ func (a *answeredWriter) Write(p []byte) (int, error) {
 func reportFailuresAsJSON(root *cobra.Command) {
 	var wrap func(*cobra.Command)
 	wrap = func(c *cobra.Command) {
+		// Argument validation runs instead of RunE, not before it, so a wrapper
+		// around RunE alone never sees it. An unquoted shell variable holding a
+		// name with spaces arrives as several arguments and fails here -- a
+		// scripting mistake, reported to a script, which is the case that most
+		// needs an answer it can read.
+		if validate := c.Args; validate != nil {
+			c.Args = func(cmd *cobra.Command, args []string) error {
+				return failAs(cmd, validate(cmd, args))
+			}
+		}
 		if run := c.RunE; run != nil {
 			c.RunE = func(cmd *cobra.Command, args []string) error {
 				answered := &answeredWriter{w: cmd.OutOrStdout()}

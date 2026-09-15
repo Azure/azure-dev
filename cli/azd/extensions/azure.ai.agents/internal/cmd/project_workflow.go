@@ -139,13 +139,18 @@ func authorNewFoundryProject(
 	authorErr := authorFoundryProject(
 		ctx, azdClient, nil, projectRoot, projectAuthoringNew,
 	)
+	rollbackCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx),
+		projectWorkflowRollbackTimeout,
+	)
+	defer cancel()
 	var restoreErrs []error
 	for _, key := range newProjectEnvironmentKeys {
 		value := strings.TrimSpace(values[key])
 		if value == "" {
 			continue
 		}
-		if err := setEnvValue(ctx, azdClient, envName, key, value); err != nil {
+		if err := setEnvValue(rollbackCtx, azdClient, envName, key, value); err != nil {
 			restoreErrs = append(restoreErrs, err)
 		}
 	}

@@ -275,6 +275,38 @@ func TestAuthorNewFoundryProjectRestoresValuesAfterProjectsMutation(t *testing.T
 	)
 }
 
+func TestAuthorNewFoundryProjectRestoresValuesAfterCancellation(t *testing.T) {
+	t.Parallel()
+
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{
+			"test": {
+				"AZURE_AI_PROJECT_NAME": "new-project",
+			},
+		},
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	workflowServer := &recordingProjectWorkflowServer{
+		runHook: func(_ int) error {
+			delete(envServer.values["test"], "AZURE_AI_PROJECT_NAME")
+			cancel()
+			return status.Error(codes.Canceled, "cancelled")
+		},
+	}
+	client := newTestAzdClient(t, envServer, workflowServer)
+
+	err := authorNewFoundryProject(ctx, client, "test", t.TempDir())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "was cancelled")
+	assert.Equal(
+		t,
+		"new-project",
+		envServer.values["test"]["AZURE_AI_PROJECT_NAME"],
+	)
+}
+
 func TestAuthorFoundryDeploymentsUsesPublicCommand(t *testing.T) {
 	t.Parallel()
 

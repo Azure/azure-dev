@@ -508,7 +508,12 @@ type recordingProjectServer struct {
 	uses  map[string][]string
 	env   map[string]map[string]any
 	// configValues records non-"uses" SetServiceConfigValue calls keyed by path.
-	configValues map[string]configValueRecord
+	configValues        map[string]configValueRecord
+	rawSections         map[string]map[string]*structpb.Struct
+	configSectionReads  []*azdext.GetServiceConfigSectionRequest
+	configSections      []*azdext.SetServiceConfigSectionRequest
+	getConfigSectionErr error
+	setConfigSectionErr error
 	// existing is returned by Get to simulate services already present in the
 	// project (e.g. a prior init's azure.ai.project service).
 	existing map[string]*azdext.ServiceConfig
@@ -528,7 +533,7 @@ type recordingProjectServer struct {
 // configValueRecord captures a single SetServiceConfigValue call.
 type configValueRecord struct {
 	serviceName string
-	value       string
+	value       any
 }
 
 func (s *recordingProjectServer) Get(
@@ -617,11 +622,9 @@ func (s *recordingProjectServer) SetServiceConfigValue(
 			}
 		}
 	} else if req.Value != nil {
-		if str, ok := req.Value.AsInterface().(string); ok {
-			s.configValues[req.Path] = configValueRecord{
-				serviceName: req.ServiceName,
-				value:       str,
-			}
+		s.configValues[req.Path] = configValueRecord{
+			serviceName: req.ServiceName,
+			value:       req.Value.AsInterface(),
 		}
 	}
 	return &azdext.EmptyResponse{}, nil
@@ -633,6 +636,20 @@ func (s *recordingProjectServer) SetServiceConfigSection(
 ) (*azdext.EmptyResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if req.Path != "env" {
+		s.configSections = append(s.configSections, req)
+		if s.setConfigSectionErr != nil {
+			return nil, s.setConfigSectionErr
+		}
+		if s.rawSections == nil {
+			s.rawSections = map[string]map[string]*structpb.Struct{}
+		}
+		if s.rawSections[req.ServiceName] == nil {
+			s.rawSections[req.ServiceName] = map[string]*structpb.Struct{}
+		}
+		s.rawSections[req.ServiceName][req.Path] = req.Section
+		return &azdext.EmptyResponse{}, nil
+	}
 	if s.setEnvironmentErr != nil {
 		return nil, s.setEnvironmentErr
 	}
@@ -643,6 +660,20 @@ func (s *recordingProjectServer) SetServiceConfigSection(
 		s.env[req.ServiceName] = req.Section.AsMap()
 	}
 	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *recordingProjectServer) GetServiceConfigSection(
+	_ context.Context,
+	req *azdext.GetServiceConfigSectionRequest,
+) (*azdext.GetServiceConfigSectionResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.configSectionReads = append(s.configSectionReads, req)
+	if s.getConfigSectionErr != nil {
+		return nil, s.getConfigSectionErr
+	}
+	section, found := s.rawSections[req.ServiceName][req.Path]
+	return &azdext.GetServiceConfigSectionResponse{Found: found, Section: section}, nil
 }
 
 func (s *recordingProjectServer) UnsetServiceConfig(
@@ -666,8 +697,26 @@ func newProjectRecorderClient(
 ) *azdext.AzdClient {
 	t.Helper()
 
+	address := newProjectRecorderServer(t, server)
+	client, err := azdext.NewAzdClient(azdext.WithAddress(address))
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+
+	return client
+}
+
+func newProjectRecorderServer(
+	t *testing.T,
+	server azdext.ProjectServiceServer,
+	environmentServers ...azdext.EnvironmentServiceServer,
+) string {
+	t.Helper()
+
 	grpcServer := grpc.NewServer()
 	azdext.RegisterProjectServiceServer(grpcServer, server)
+	if len(environmentServers) > 0 {
+		azdext.RegisterEnvironmentServiceServer(grpcServer, environmentServers[0])
+	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -689,11 +738,7 @@ func newProjectRecorderClient(
 		}
 	})
 
-	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
-	require.NoError(t, err)
-	t.Cleanup(func() { client.Close() })
-
-	return client
+	return listener.Addr().String()
 }
 
 // TestEmitResourceServices_AlwaysEmitsProjectService verifies the ai-project

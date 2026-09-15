@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package messages
 
 import (
@@ -171,7 +174,7 @@ func commandMask(format string) []bool {
 	}
 
 	at := 0
-	for _, line := range strings.Split(format, "\n") {
+	for line := range strings.SplitSeq(format, "\n") {
 		if trimmed := strings.TrimLeft(line, " \t"); strings.HasPrefix(trimmed, "azd ") {
 			for k := at + len(line) - len(trimmed); k < at+len(line); k++ {
 				mask[k] = true

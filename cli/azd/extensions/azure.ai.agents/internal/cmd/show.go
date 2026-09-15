@@ -41,6 +41,7 @@ type ShowAction struct {
 	// serviceKey is the uppercase/underscored form of the service name,
 	// used to look up per-service env vars (e.g. AGENT_{KEY}_RESPONSES_ENDPOINT).
 	serviceKey string
+	isVoice    bool
 }
 
 func newShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -49,8 +50,8 @@ func newShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "show [name]",
-		Short: "Show the status of an agent.",
-		Long: `Show the status of an agent.
+		Short: "Show the status of a prompt, hosted, or voice agent.",
+		Long: `Show the status of a prompt, hosted, or voice agent.
 
 The agent name and version are resolved automatically from the azure.yaml service
 configuration and the current azd environment. Optionally specify the service name
@@ -90,7 +91,7 @@ configuration and the current azd environment. Optionally specify the service na
 				return runPromptShow(ctx, flags, pctx)
 			}
 
-			info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.name, extCtx.NoPrompt)
+			info, err := resolveAgentServiceFromProject(ctx, azdClient, flags.name, extCtx.NoPrompt, withVoiceKind())
 			if err != nil {
 				return err
 			}
@@ -128,6 +129,7 @@ configuration and the current azd environment. Optionally specify the service na
 				envName:      envName,
 				serviceName:  info.ServiceName,
 				serviceKey:   toServiceKey(info.ServiceName),
+				isVoice:      info.IsVoice,
 			}
 
 			return action.Run(ctx)
@@ -185,9 +187,7 @@ func (a *ShowAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	version, err := agentClient.GetAgentVersion(
-		ctx, a.Name, a.Version, DefaultAgentAPIVersion, false,
-	)
+	version, err := a.getVersion(ctx, agentClient)
 	if err != nil {
 		return fmt.Errorf("failed to get agent version: %w", err)
 	}
@@ -209,6 +209,18 @@ func (a *ShowAction) Run(ctx context.Context) error {
 	}
 
 	return printShowResult(result, a.flags.output, suggestions)
+}
+
+type showVersionReader interface {
+	GetAgentVersion(context.Context, string, string, string, bool) (*agent_api.AgentVersionObject, error)
+	GetVoiceAgentVersion(context.Context, string, string, string) (*agent_api.AgentVersionObject, error)
+}
+
+func (a *ShowAction) getVersion(ctx context.Context, client showVersionReader) (*agent_api.AgentVersionObject, error) {
+	if a.isVoice {
+		return client.GetVoiceAgentVersion(ctx, a.Name, a.Version, DefaultAgentAPIVersion)
+	}
+	return client.GetAgentVersion(ctx, a.Name, a.Version, DefaultAgentAPIVersion, false)
 }
 
 // runPromptShow handles `azd ai agent show` for a prompt (kind=prompt) agent.

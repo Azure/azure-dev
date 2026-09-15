@@ -23,6 +23,7 @@ import (
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
 	projectpkg "azureaiagent/internal/project"
@@ -33,6 +34,8 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/term"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -620,6 +623,7 @@ func fileExists(path string) bool {
 
 // AgentServiceInfo holds the resolved deployment information for an agent service.
 type AgentServiceInfo struct {
+	IsVoice                     bool                               // populated only when voice classification is requested
 	ServiceName                 string                             // azure.yaml service key
 	AgentName                   string                             // deployed name; may use brownfield fallback
 	Version                     string                             // deployed agent version from env
@@ -645,6 +649,15 @@ func withDeployedProtocolEndpoints() agentServiceResolutionOption {
 func withDeployedAgentNameLookup() agentServiceResolutionOption {
 	return func(options *agentServiceResolutionOptions) {
 		options.matchDeployedAgentName = true
+	}
+}
+
+// Explicit protocols can invoke a direct name without local deployment state.
+// Keep the lookup when state exists, but do not require a default environment.
+func withOptionalDeployedAgentNameLookup() agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.matchDeployedAgentName = true
+		options.allowMissingDefaultEnvironment = true
 	}
 }
 
@@ -883,6 +896,7 @@ func resolveAgentServiceByDeployedName(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	deployedName string,
+	allowMissingDefaultEnvironment bool,
 ) (*azdext.ServiceConfig, *azdext.ProjectConfig, map[string]string, error) {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
@@ -896,6 +910,9 @@ func resolveAgentServiceByDeployedName(
 		ctx, &azdext.EmptyRequest{},
 	)
 	if err != nil {
+		if allowMissingDefaultEnvironment && isDefaultEnvironmentMissing(err) {
+			return nil, nil, nil, &deployedAgentServiceNotFoundError{deployedName: deployedName}
+		}
 		return nil, nil, nil, fmt.Errorf("failed to get current environment: %w", err)
 	}
 	if envResponse == nil || envResponse.Environment == nil ||
@@ -937,6 +954,14 @@ func resolveAgentServiceByDeployedName(
 	}
 
 	return matched, projectResponse.Project, envValues, nil
+}
+
+func isDefaultEnvironmentMissing(err error) bool {
+	// The host returns a plain sentinel error, serialized by gRPC as Unknown.
+	// Do not treat other Unknown/NotFound errors (corrupt state, missing files,
+	// transport failures, etc.) as absence of a selected default environment.
+	st, ok := status.FromError(err)
+	return ok && st.Code() == codes.Unknown && st.Message() == "default environment not found"
 }
 
 type brownfieldAgentReference struct {
@@ -1075,13 +1100,49 @@ func expandBrownfieldServiceValues(
 type brownfieldAgentExistenceResolver func(context.Context, string, string) (bool, error)
 
 type agentServiceResolutionOptions struct {
-	allowBrownfieldInlineName bool
-	brownfieldAgentExists     brownfieldAgentExistenceResolver
-	includeProtocolEndpoints  bool
-	matchDeployedAgentName    bool
+	allowBrownfieldInlineName      bool
+	brownfieldAgentExists          brownfieldAgentExistenceResolver
+	includeProtocolEndpoints       bool
+	matchDeployedAgentName         bool
+	rejectVoiceInvocation          bool
+	allowMissingDefaultEnvironment bool
+	includeVoiceKind               bool
 }
 
 type agentServiceResolutionOption func(*agentServiceResolutionOptions)
+
+func withVoiceKind() agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.includeVoiceKind = true
+	}
+}
+
+// errVoiceInvocationUnsupported is shared by automatic and explicit-protocol
+// invocation so direct-name fallback cannot swallow the voice guidance.
+var errVoiceInvocationUnsupported = exterrors.Validation(
+	exterrors.CodeUnsupportedAgentKind,
+	"voice agents cannot be invoked with this command",
+	"open your voice agent in the Microsoft Foundry portal at https://ai.azure.com to try it",
+)
+
+func voiceInvocationError(svc *azdext.ServiceConfig, projectRoot string) error {
+	// An unreadable definition is not evidence of a non-voice agent. Preserve the
+	// detection error so invocation cannot fall back to stale deployment metadata.
+	isVoice, err := agentkind.IsPromptVoice(svc, projectRoot, os.Getenv("AGENT_DEFINITION_PATH"))
+	if err != nil {
+		return fmt.Errorf("determining agent kind for invocation: %w", err)
+	}
+	if isVoice {
+		return errVoiceInvocationUnsupported
+	}
+	return nil
+}
+
+func withVoiceInvocationGuidance() agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.rejectVoiceInvocation = true
+	}
+}
 
 func resolveBrownfieldAgentExists(
 	ctx context.Context,
@@ -1140,14 +1201,27 @@ func resolveAgentServiceFromProject(
 			return nil, err
 		}
 		svc, projectConfig, envValues, err = resolveAgentServiceByDeployedName(
-			ctx, azdClient, name,
+			ctx, azdClient, name, resolutionOptions.allowMissingDefaultEnvironment,
 		)
 		if err != nil {
 			return nil, err
 		}
 	}
 
+	if resolutionOptions.rejectVoiceInvocation {
+		if err := voiceInvocationError(svc, projectConfig.Path); err != nil {
+			return nil, err
+		}
+	}
+
 	info := &AgentServiceInfo{ServiceName: svc.Name}
+	if resolutionOptions.includeVoiceKind {
+		isVoice, err := agentkind.IsPromptVoice(svc, projectConfig.Path, os.Getenv("AGENT_DEFINITION_PATH"))
+		if err != nil {
+			return nil, fmt.Errorf("determining agent kind: %w", err)
+		}
+		info.IsVoice = isVoice
+	}
 
 	if envValues == nil {
 		// Resolve deployed metadata from azd environment.
@@ -1458,6 +1532,9 @@ func resolveAgentProtocol(
 		)
 	}
 
+	if err := voiceInvocationError(svc, proj.Path); err != nil {
+		return "", "", err
+	}
 	hosted, isHosted, source, err := projectpkg.LoadAgentDefinition(svc, proj.Path)
 	if err != nil {
 		return "", "", exterrors.Validation(

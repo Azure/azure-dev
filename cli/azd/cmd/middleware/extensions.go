@@ -341,6 +341,10 @@ func startAndWaitExtension(
 		return err
 	}
 
+	stdin := ext.StdIn()
+	stdout := ext.StdOut()
+	stderr := ext.StdErr()
+
 	// Start the extension process in a separate goroutine
 	go func() {
 		allEnv := []string{
@@ -365,9 +369,9 @@ func startAndWaitExtension(
 		invokeOptions := &extensions.InvokeOptions{
 			Args:        args,
 			Env:         allEnv,
-			StdIn:       ext.StdIn(),
-			StdOut:      ext.StdOut(),
-			StdErr:      ext.StdErr(),
+			StdIn:       stdin,
+			StdOut:      stdout,
+			StdErr:      stderr,
 			Debug:       opts.debug,
 			NoPrompt:    opts.noPrompt,
 			Cwd:         opts.cwd,

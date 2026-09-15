@@ -268,7 +268,7 @@ func createBrokerForEventHandler(
 	}
 
 	brokerCtx, cancel := context.WithCancel(streamCtx)
-	broker := grpcbroker.NewMessageBroker(stream, azdext.NewEventMessageEnvelope(), extensionID, nil)
+	broker := grpcbroker.NewMessageBroker(stream, newBetaBridgeEventEnvelope(), extensionID, nil)
 
 	go func() {
 		_ = broker.Run(brokerCtx)
@@ -630,8 +630,9 @@ func TestEventService_createProjectEventHandler_PersistsCorrelatedOutput(t *test
 				return nil
 			}
 
-			requestID := azdext.NewEventMessageEnvelope().GetRequestId(streamCtx, msg)
-			return azdext.NewEventMessageEnvelope().CreateProgressMessage(
+			envelope := newBetaBridgeEventEnvelope()
+			requestID := envelope.GetRequestId(streamCtx, msg)
+			return envelope.CreateProgressMessage(
 				requestID,
 				"RBAC warning\n",
 			)

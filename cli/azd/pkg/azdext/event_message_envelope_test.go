@@ -6,6 +6,7 @@ package azdext
 import (
 	"testing"
 
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
@@ -30,17 +31,34 @@ func TestEventMessageEnvelope_NoOps(t *testing.T) {
 	// Empty messages have no progress text.
 	require.Empty(t, env.GetProgressMessage(msg))
 
-	require.NotNil(t, env.CreateProgressMessage("id", "msg"))
+	require.Nil(t, env.CreateProgressMessage("id", "msg"))
 }
 
-func TestEventMessageEnvelope_HandlerOutputProgress(t *testing.T) {
-	env := NewEventMessageEnvelope()
+func TestBetaEventMessageEnvelope_HandlerOutputProgress(t *testing.T) {
+	env := newBetaEventMessageEnvelope("configured-ext")
 	msg := env.CreateProgressMessage("request-id", "handler output")
 
 	require.Equal(t, "request-id", env.GetRequestId(t.Context(), msg))
 	require.Equal(t, "handler output", env.GetProgressMessage(msg))
 	require.True(t, env.IsProgressMessage(msg))
 	require.Equal(t, "handler output", msg.GetHandlerOutput().GetOutput())
+}
+
+func TestBetaEventMessageEnvelope_GetRequestId_PrefersClaims(t *testing.T) {
+	env := newBetaEventMessageEnvelope("configured-ext")
+	ctx := extensions.WithClaimsContext(t.Context(), &extensions.ExtensionClaims{
+		RegisteredClaims: jwt.RegisteredClaims{Subject: "claimed-ext"},
+	})
+
+	msg := &v1beta.EventMessage{
+		MessageType: &v1beta.EventMessage_InvokeProjectHandler{
+			InvokeProjectHandler: &v1beta.InvokeProjectHandler{
+				EventName: "predeploy",
+			},
+		},
+	}
+
+	require.Equal(t, "claimed-ext.predeploy", env.GetRequestId(ctx, msg))
 }
 
 func TestEventMessageEnvelope_GetRequestId_UsesConfiguredExtensionId(t *testing.T) {

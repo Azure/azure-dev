@@ -30,7 +30,7 @@ type AzdClient struct {
 	userConfigClient    UserConfigServiceClient
 	promptClient        PromptServiceClient
 	deploymentClient    DeploymentServiceClient
-	eventsClient        EventServiceClient
+	eventsClient        v1beta.EventServiceClient
 	composeClient       v1beta.ComposeServiceClient
 	workflowClient      WorkflowServiceClient
 	extensionClient     ExtensionServiceClient
@@ -204,10 +204,10 @@ func (c *AzdClient) Deployment() DeploymentServiceClient {
 	return c.deploymentClient
 }
 
-// Events returns the event service client.
-func (c *AzdClient) Events() EventServiceClient {
+// Events returns the preview event service client.
+func (c *AzdClient) Events() v1beta.EventServiceClient {
 	if c.eventsClient == nil {
-		c.eventsClient = NewEventServiceClient(c.connection)
+		c.eventsClient = v1beta.NewEventServiceClient(c.connection)
 	}
 
 	return c.eventsClient

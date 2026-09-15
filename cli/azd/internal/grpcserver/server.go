@@ -72,7 +72,7 @@ func NewServer(
 	validationService azdext.ValidationServiceServer,
 	telemetryService v1beta.TelemetryServiceServer,
 ) *Server {
-	return &Server{
+	server := &Server{
 		projectService:       projectService,
 		environmentService:   environmentService,
 		promptService:        promptService,
@@ -93,6 +93,10 @@ func NewServer(
 		telemetryService:     telemetryService,
 		betaServiceOverrides: map[BetaService]any{},
 	}
+	if provider, ok := eventService.(interface{ betaEventServiceOverride() any }); ok {
+		server.WithOptions(WithBetaServiceOverride(BetaEventService, provider.betaEventServiceOverride()))
+	}
+	return server
 }
 
 // WithOptions applies optional beta service configuration before the server starts.

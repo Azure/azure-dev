@@ -46,7 +46,7 @@ def validate_messages(subset, canonical):
     for name, subset_message in sorted(subset.items()):
         canonical_message = canonical.get(name)
         if canonical_message is None:
-            raise ValueError(f"scaffold message {name} is missing from canonical v1")
+            raise ValueError(f"scaffold message {name} is missing from canonical v1beta")
         if subset_message.options.map_entry != canonical_message.options.map_entry:
             raise ValueError(f"{name} map-entry shape differs from canonical v1")
 
@@ -56,12 +56,12 @@ def validate_messages(subset, canonical):
             field_name = f"{name}.{subset_field.name}"
             if canonical_field is None:
                 raise ValueError(
-                    f"{field_name} field number {subset_field.number} is missing from canonical v1"
+                    f"{field_name} field number {subset_field.number} is missing from canonical v1beta"
                 )
             if subset_field.name != canonical_field.name:
                 raise ValueError(
                     f"{field_name} field number {subset_field.number} is named "
-                    f"{canonical_field.name} in canonical v1"
+                    f"{canonical_field.name} in canonical v1beta"
                 )
             if subset_field.type != canonical_field.type:
                 raise ValueError(f"{field_name} type differs from canonical v1")
@@ -81,7 +81,7 @@ def validate_enums(subset, canonical):
     for name, subset_enum in sorted(subset.items()):
         canonical_enum = canonical.get(name)
         if canonical_enum is None:
-            raise ValueError(f"scaffold enum {name} is missing from canonical v1")
+            raise ValueError(f"scaffold enum {name} is missing from canonical v1beta")
 
         canonical_values = {value.name: value.number for value in canonical_enum.value}
         for subset_value in subset_enum.value:
@@ -95,7 +95,7 @@ def validate_services(subset, canonical):
     for name, subset_service in sorted(subset.items()):
         canonical_service = canonical.get(name)
         if canonical_service is None:
-            raise ValueError(f"scaffold service {name} is missing from canonical v1")
+            raise ValueError(f"scaffold service {name} is missing from canonical v1beta")
 
         canonical_methods = {
             method.name: method for method in canonical_service.method
@@ -104,7 +104,7 @@ def validate_services(subset, canonical):
             canonical_method = canonical_methods.get(subset_method.name)
             method_name = f"{name}.{subset_method.name}"
             if canonical_method is None:
-                raise ValueError(f"scaffold method {method_name} is missing from canonical v1")
+                raise ValueError(f"scaffold method {method_name} is missing from canonical v1beta")
             if (
                 subset_method.input_type != canonical_method.input_type
                 or subset_method.output_type != canonical_method.output_type
@@ -134,7 +134,7 @@ def main():
     validate_messages(scaffold_symbols[0], canonical_symbols[0])
     validate_enums(scaffold_symbols[1], canonical_symbols[1])
     validate_services(scaffold_symbols[2], canonical_symbols[2])
-    print("Stable scaffold protobuf contracts are compatible with canonical v1.")
+    print("Preview scaffold protobuf contracts are compatible with canonical v1beta.")
     return 0
 
 

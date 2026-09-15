@@ -16,46 +16,40 @@ import (
 // This envelope uses the extension ID from gRPC context or its
 // configured client ID for correlation.
 type EventMessageEnvelope struct {
-	extensionId string
+	extensionID string
 }
 
-// NewEventMessageEnvelope creates an EventMessageEnvelope.
+// NewEventMessageEnvelope creates a new EventMessageEnvelope instance.
 func NewEventMessageEnvelope() *EventMessageEnvelope {
 	return newEventMessageEnvelope("")
 }
 
-func newEventMessageEnvelope(extensionId string) *EventMessageEnvelope {
-	return &EventMessageEnvelope{extensionId: extensionId}
+func newEventMessageEnvelope(extensionID string) *EventMessageEnvelope {
+	return &EventMessageEnvelope{extensionID: extensionID}
 }
 
 // Verify interface implementation at compile time
 var _ grpcbroker.MessageEnvelope[EventMessage] = (*EventMessageEnvelope)(nil)
 
-// getExtensionIdFromContext returns the validated extension ID when
-// available, or the configured client ID for extension messages.
+// getExtensionIdFromContext returns the extension ID from context or the configured client ID.
 func (ops *EventMessageEnvelope) getExtensionIdFromContext(ctx context.Context) string {
 	claims, err := extensions.GetClaimsFromContext(ctx)
 	if err == nil && claims.Subject != "" {
 		return claims.Subject
 	}
-
-	return ops.extensionId
+	return ops.extensionID
 }
 
-// GetRequestId generates a correlation key from the message content
-// and extension identity.
+// GetRequestId generates a correlation key from the message content and context.
+// For EventMessage, the correlation key is generated from extension.Id (from context) + eventName + serviceName.
 func (ops *EventMessageEnvelope) GetRequestId(ctx context.Context, msg *EventMessage) string {
-	innerMsg := ops.GetInnerMessage(msg)
-	if output, ok := innerMsg.(*HandlerOutput); ok {
-		return output.RequestId
-	}
-
 	extensionId := ops.getExtensionIdFromContext(ctx)
 	if extensionId == "" {
 		return ""
 	}
 
 	// Generate correlation key based on message type
+	innerMsg := ops.GetInnerMessage(msg)
 	if innerMsg == nil {
 		return ""
 	}
@@ -72,7 +66,7 @@ func (ops *EventMessageEnvelope) GetRequestId(ctx context.Context, msg *EventMes
 		// Project events: extension.id + event name
 		return fmt.Sprintf("%s.%s", extensionId, v.EventName)
 	case *InvokeProjectHandler:
-		// Server-sent invokes use the status response correlation.
+		// Server-sent invoke messages use same correlation as status responses
 		return fmt.Sprintf("%s.%s", extensionId, v.EventName)
 	case *SubscribeServiceEvent:
 		// Service event subscriptions: extension.id + first event name
@@ -85,33 +79,33 @@ func (ops *EventMessageEnvelope) GetRequestId(ctx context.Context, msg *EventMes
 		// Service events: extension.id + service name + event name
 		return fmt.Sprintf("%s.%s.%s", extensionId, v.ServiceName, v.EventName)
 	case *InvokeServiceHandler:
-		// Server-sent invokes use the status response correlation.
+		// Server-sent invoke messages use same correlation as status responses
 		return fmt.Sprintf("%s.%s.%s", extensionId, v.Service.Name, v.EventName)
 	}
 
 	return ""
 }
 
-// SetRequestId is a no-op for messages with derived correlation.
-// Handler output already carries its request ID.
+// SetRequestId is a no-op for EventMessage as it doesn't have a RequestId field.
+// Correlation is managed through message content (event names).
 func (ops *EventMessageEnvelope) SetRequestId(ctx context.Context, msg *EventMessage, id string) {
 	// No-op: EventMessage doesn't have a RequestId field
 }
 
 // GetError returns nil as EventMessage doesn't have an Error field.
-// Errors are reported through status strings in handler messages.
+// Error handling is done through status strings in handler status messages.
 func (ops *EventMessageEnvelope) GetError(msg *EventMessage) error {
 	return nil
 }
 
-// SetError is a no-op because EventMessage has no Error field.
+// SetError is a no-op for EventMessage as it doesn't have an Error field.
 func (ops *EventMessageEnvelope) SetError(msg *EventMessage, err error) {
 	// No-op: EventMessage uses status strings, not Error field
 }
 
 // GetInnerMessage returns the inner message from the oneof field
 func (ops *EventMessageEnvelope) GetInnerMessage(msg *EventMessage) any {
-	// MessageType is a oneof wrapper around the inner message.
+	// The MessageType field is a oneof wrapper. We need to extract the actual inner message.
 	switch m := msg.MessageType.(type) {
 	case *EventMessage_SubscribeProjectEvent:
 		return m.SubscribeProjectEvent
@@ -125,36 +119,23 @@ func (ops *EventMessageEnvelope) GetInnerMessage(msg *EventMessage) any {
 		return m.InvokeServiceHandler
 	case *EventMessage_ServiceHandlerStatus:
 		return m.ServiceHandlerStatus
-	case *EventMessage_HandlerOutput:
-		return m.HandlerOutput
 	default:
 		// Return nil for unhandled message types
 		return nil
 	}
 }
 
-// IsProgressMessage reports whether the message contains handler
-// output.
+// IsProgressMessage returns false as EventMessage doesn't support progress messages
 func (ops *EventMessageEnvelope) IsProgressMessage(msg *EventMessage) bool {
-	return msg.GetHandlerOutput() != nil
+	return false
 }
 
-// GetProgressMessage extracts handler output text.
+// GetProgressMessage returns empty string as EventMessage doesn't support progress messages
 func (ops *EventMessageEnvelope) GetProgressMessage(msg *EventMessage) string {
-	if output := msg.GetHandlerOutput(); output != nil {
-		return output.Output
-	}
 	return ""
 }
 
-// CreateProgressMessage creates a handler output message.
+// CreateProgressMessage returns nil as EventMessage doesn't support progress messages
 func (ops *EventMessageEnvelope) CreateProgressMessage(requestId string, message string) *EventMessage {
-	return &EventMessage{
-		MessageType: &EventMessage_HandlerOutput{
-			HandlerOutput: &HandlerOutput{
-				RequestId: requestId,
-				Output:    message,
-			},
-		},
-	}
+	return nil
 }

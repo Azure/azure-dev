@@ -108,7 +108,8 @@ func postdeploy(ctx context.Context, args *azdext.ProjectEventArgs) error {
 ```
 
 When the handler is invoked by `azd`, the writer sends output to the host with
-the current invocation's request ID and also writes it to standard output.
+the current invocation's request ID over the preview `v1beta` event stream and
+also writes it to standard output.
 This lets the host retain deploy lifecycle output without mixing it with
 output from another concurrent handler or service target. Outside a lifecycle
 invocation, the writer falls back to `os.Stdout`.
@@ -543,7 +544,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `UserConfig()` | `UserConfigServiceClient` |
 | `Prompt()` | `PromptServiceClient` |
 | `Deployment()` | `DeploymentServiceClient` |
-| `Events()` | `EventServiceClient` |
+| `Events()` | `v1beta.EventServiceClient` (preview) |
 | `Compose()` | `v1beta.ComposeServiceClient` (preview) |
 | `Workflow()` | `WorkflowServiceClient` |
 | `ServiceTarget()` | `ServiceTargetServiceClient` |

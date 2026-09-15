@@ -103,7 +103,6 @@ func TestFinishDeployProgressRendersBeforeResumingPreviewer(t *testing.T) {
 	)
 	require.Equal(t, []string{"stop", "render", "resume"}, events)
 }
-}
 
 func TestUpGraphRunOptionsConcurrency(t *testing.T) {
 	tests := []struct {

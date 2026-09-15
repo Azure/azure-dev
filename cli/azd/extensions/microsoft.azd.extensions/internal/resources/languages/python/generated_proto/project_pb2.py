@@ -25,18 +25,18 @@ _sym_db = _symbol_database.Default()
 import models_pb2 as models__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rproject.proto\x12\x11\x61zd.extensions.v1\x1a\x0cmodels.proto\"G\n\x12GetProjectResponse\x12\x31\n\x07project\x18\x01 \x01(\x0b\x32 .azd.extensions.v1.ProjectConfig\"F\n\x11\x41\x64\x64ServiceRequest\x12\x31\n\x07service\x18\x01 \x01(\x0b\x32 .azd.extensions.v1.ServiceConfig2\xb5\x01\n\x0eProjectService\x12M\n\x03Get\x12\x1f.azd.extensions.v1.EmptyRequest\x1a%.azd.extensions.v1.GetProjectResponse\x12T\n\nAddService\x12$.azd.extensions.v1.AddServiceRequest\x1a .azd.extensions.v1.EmptyResponseBOZ=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1\xaa\x02\rMicrosoft.Azdb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rproject.proto\x12\x15\x61zd.extensions.v1beta\x1a\x0cmodels.proto\"K\n\x12GetProjectResponse\x12\x35\n\x07project\x18\x01 \x01(\x0b\x32$.azd.extensions.v1beta.ProjectConfig\"J\n\x11\x41\x64\x64ServiceRequest\x12\x35\n\x07service\x18\x01 \x01(\x0b\x32$.azd.extensions.v1beta.ServiceConfig2\xc5\x01\n\x0eProjectService\x12U\n\x03Get\x12#.azd.extensions.v1beta.EmptyRequest\x1a).azd.extensions.v1beta.GetProjectResponse\x12\\\n\nAddService\x12(.azd.extensions.v1beta.AddServiceRequest\x1a$.azd.extensions.v1beta.EmptyResponseBWZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1beta\xaa\x02\rMicrosoft.Azdb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'project_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'Z=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1\252\002\rMicrosoft.Azd'
-  _globals['_GETPROJECTRESPONSE']._serialized_start=50
-  _globals['_GETPROJECTRESPONSE']._serialized_end=121
-  _globals['_ADDSERVICEREQUEST']._serialized_start=123
-  _globals['_ADDSERVICEREQUEST']._serialized_end=193
-  _globals['_PROJECTSERVICE']._serialized_start=196
-  _globals['_PROJECTSERVICE']._serialized_end=377
+  _globals['DESCRIPTOR']._serialized_options = b'ZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1beta\252\002\rMicrosoft.Azd'
+  _globals['_GETPROJECTRESPONSE']._serialized_start=54
+  _globals['_GETPROJECTRESPONSE']._serialized_end=129
+  _globals['_ADDSERVICEREQUEST']._serialized_start=131
+  _globals['_ADDSERVICEREQUEST']._serialized_end=205
+  _globals['_PROJECTSERVICE']._serialized_start=208
+  _globals['_PROJECTSERVICE']._serialized_end=405
 # @@protoc_insertion_point(module_scope)

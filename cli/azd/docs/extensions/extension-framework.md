@@ -2428,7 +2428,8 @@ Clients can subscribe to events and receive notifications via a bidirectional st
   - `status`: Status such as "running", "completed", or "failed".
   - `message`: Optional additional details.
 - **HandlerOutput**
-  Carries output emitted by a lifecycle handler while it is running.
+  Carries output emitted by a lifecycle handler while it is running. This
+  message is available only in the `azd.extensions.v1beta` event contract.
 
   Contains:
   - `request_id`: The request ID of the handler invocation. The host uses this
@@ -2437,7 +2438,8 @@ Clients can subscribe to events and receive notifications via a bidirectional st
 
 Go lifecycle handlers should write user-facing output through
 `azdext.EventOutput(ctx)` rather than a process-wide output writer. The SDK
-forwards that output to the host with the invocation request ID and also keeps
+uses the beta event stream to forward that output to the host with the
+invocation request ID and also keeps
 the normal live terminal output. The host retains bounded output from deploy
 lifecycle events so it remains visible after progress rendering completes.
 The SDK splits large writes into smaller progress messages before forwarding

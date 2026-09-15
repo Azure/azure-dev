@@ -30,12 +30,12 @@ protoc \
     -I "$azd_dir/grpc/proto" \
     -I "$azd_dir/grpc/include" \
     --include_imports \
-    --descriptor_set_out=/tmp/canonical-v1-protos.pb \
-    "$azd_dir/grpc/proto/azd/extensions/v1"/*.proto
+    --descriptor_set_out=/tmp/canonical-v1beta-protos.pb \
+    "$azd_dir/grpc/proto/azd/extensions/v1beta"/*.proto
 
 validate-scaffold-compatibility.py \
     /tmp/scaffold-protos.pb \
-    /tmp/canonical-v1-protos.pb
+    /tmp/canonical-v1beta-protos.pb
 
 mkdir -p "$python_out" "$javascript_out"
 find "$python_out" -maxdepth 1 -type f \( -name '*_pb2.py' -o -name '*_pb2_grpc.py' \) -delete

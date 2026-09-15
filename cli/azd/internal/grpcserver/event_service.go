@@ -112,6 +112,13 @@ func NewEventService(
 
 // EventStream handles bidirectional streaming.
 func (s *eventService) EventStream(stream grpc.BidiStreamingServer[azdext.EventMessage, azdext.EventMessage]) error {
+	return s.eventStream(stream, azdext.NewEventMessageEnvelope())
+}
+
+func (s *eventService) eventStream(
+	stream grpc.BidiStreamingServer[azdext.EventMessage, azdext.EventMessage],
+	envelope grpcbroker.MessageEnvelope[azdext.EventMessage],
+) error {
 	ctx := stream.Context()
 	extensionClaims, err := extensions.GetClaimsFromContext(ctx)
 	if err != nil {
@@ -131,8 +138,6 @@ func (s *eventService) EventStream(stream grpc.BidiStreamingServer[azdext.EventM
 		return status.Errorf(codes.PermissionDenied, "extension does not support lifecycle events")
 	}
 
-	// Create message broker with EventMessageEnvelope
-	envelope := azdext.NewEventMessageEnvelope()
 	broker := grpcbroker.NewMessageBroker(stream, envelope, extension.Id, log.Default())
 
 	// Register handlers for incoming subscription requests (no response needed)

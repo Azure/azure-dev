@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -21,12 +22,12 @@ import (
 
 type eventRoundTrip struct {
 	progress []string
-	response *EventMessage
+	response *v1beta.EventMessage
 	err      error
 }
 
 type eventIntegrationServer struct {
-	UnimplementedEventServiceServer
+	v1beta.UnimplementedEventServiceServer
 
 	extensionID    string
 	projectTrigger chan struct{}
@@ -36,29 +37,29 @@ type eventIntegrationServer struct {
 }
 
 func (s *eventIntegrationServer) EventStream(
-	stream grpc.BidiStreamingServer[EventMessage, EventMessage],
+	stream grpc.BidiStreamingServer[v1beta.EventMessage, v1beta.EventMessage],
 ) error {
 	broker := grpcbroker.NewMessageBroker(
 		stream,
-		newEventMessageEnvelope(s.extensionID),
+		newBetaEventMessageEnvelope(s.extensionID),
 		"test-host",
 		nil,
 	)
 
 	if err := broker.On(func(
 		ctx context.Context,
-		msg *SubscribeProjectEvent,
-	) (*EventMessage, error) {
+		msg *v1beta.SubscribeProjectEvent,
+	) (*v1beta.EventMessage, error) {
 		<-s.projectTrigger
 
 		progress := []string{}
 		response, err := broker.SendAndWaitWithProgress(
 			ctx,
-			&EventMessage{
-				MessageType: &EventMessage_InvokeProjectHandler{
-					InvokeProjectHandler: &InvokeProjectHandler{
+			&v1beta.EventMessage{
+				MessageType: &v1beta.EventMessage_InvokeProjectHandler{
+					InvokeProjectHandler: &v1beta.InvokeProjectHandler{
 						EventName: "predeploy",
-						Project:   &ProjectConfig{Name: "test-project"},
+						Project:   &v1beta.ProjectConfig{Name: "test-project"},
 					},
 				},
 			},
@@ -78,21 +79,21 @@ func (s *eventIntegrationServer) EventStream(
 
 	if err := broker.On(func(
 		ctx context.Context,
-		msg *SubscribeServiceEvent,
-	) (*EventMessage, error) {
+		msg *v1beta.SubscribeServiceEvent,
+	) (*v1beta.EventMessage, error) {
 		<-s.serviceTrigger
 
 		progress := []string{}
 		response, err := broker.SendAndWaitWithProgress(
 			ctx,
-			&EventMessage{
-				MessageType: &EventMessage_InvokeServiceHandler{
-					InvokeServiceHandler: &InvokeServiceHandler{
+			&v1beta.EventMessage{
+				MessageType: &v1beta.EventMessage_InvokeServiceHandler{
+					InvokeServiceHandler: &v1beta.InvokeServiceHandler{
 						EventName: "predeploy",
-						Project:   &ProjectConfig{Name: "test-project"},
-						Service:   &ServiceConfig{Name: "api"},
-						ServiceContext: &ServiceContext{
-							Package: []*Artifact{},
+						Project:   &v1beta.ProjectConfig{Name: "test-project"},
+						Service:   &v1beta.ServiceConfig{Name: "api"},
+						ServiceContext: &v1beta.ServiceContext{
+							Package: []*v1beta.Artifact{},
 						},
 					},
 				},
@@ -129,7 +130,7 @@ func startEventIntegrationServer(
 		serviceResults: make(chan eventRoundTrip, 1),
 	}
 	grpcServer := grpc.NewServer()
-	RegisterEventServiceServer(grpcServer, server)
+	v1beta.RegisterEventServiceServer(grpcServer, server)
 
 	go func() {
 		_ = grpcServer.Serve(listener)

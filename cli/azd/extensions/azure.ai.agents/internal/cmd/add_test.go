@@ -297,14 +297,31 @@ func TestAddAgentServiceDependencyValidatesServices(t *testing.T) {
 	}
 }
 
-func TestAgentAddContainsTypedDependencies(t *testing.T) {
+func TestAgentDependencyCommandsContainAdd(t *testing.T) {
 	t.Parallel()
 
-	command := newAgentAddCommand(&azdext.ExtensionContext{})
-	toolbox, _, err := command.Find([]string{"toolbox"})
-	require.NoError(t, err)
-	assert.Equal(t, "toolbox", toolbox.Name())
-	connection, _, err := command.Find([]string{"connection"})
-	require.NoError(t, err)
-	assert.Equal(t, "connection", connection.Name())
+	for _, test := range []struct{ kind, host string }{
+		{kind: "toolbox", host: AiToolboxHost},
+		{kind: "connection", host: AiConnectionHost},
+	} {
+		t.Run(test.kind, func(t *testing.T) {
+			t.Parallel()
+			command := newAgentDependencyCommand(&azdext.ExtensionContext{}, test.kind, test.host)
+			assert.Equal(t, test.kind, command.Name())
+			add, remaining, err := command.Find([]string{"add"})
+			require.NoError(t, err)
+			require.Empty(t, remaining)
+			assert.Equal(t, "add", add.Name())
+			assert.Equal(t, "add <service>", add.Use)
+			assert.Equal(t, command, add.Parent())
+			require.NotNil(t, add.Flags().Lookup("agent"))
+			require.NoError(t, add.ParseFlags([]string{"--agent", "research-agent"}))
+			agentName, err := add.Flags().GetString("agent")
+			require.NoError(t, err)
+			assert.Equal(t, "research-agent", agentName)
+			require.NoError(t, add.Args(add, []string{"dependency"}))
+			require.Error(t, add.Args(add, nil))
+			require.Error(t, add.Args(add, []string{"first", "second"}))
+		})
+	}
 }

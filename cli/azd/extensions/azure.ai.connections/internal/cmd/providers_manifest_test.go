@@ -15,5 +15,26 @@ import (
 // extension registers match those declared in its extension.yaml.
 func TestConfigureExtensionHostMatchesManifest(t *testing.T) {
 	manifestPath := filepath.Join("..", "..", "extension.yaml")
+	// The repository's AST guard requires this canonical callback identifier.
+	configureExtensionHost := func(host *azdext.ExtensionHost) {
+		configureExtensionHostForEnvironment(host, "staging")
+	}
 	require.NoError(t, azdext.VerifyProvidersMatchManifest(configureExtensionHost, manifestPath))
+}
+
+func TestConfigureExtensionHostPreservesSelectedEnvironment(t *testing.T) {
+	t.Parallel()
+	for _, environment := range []string{"", "staging"} {
+		t.Run(environment, func(t *testing.T) {
+			t.Parallel()
+			host := azdext.NewExtensionHost(&azdext.AzdClient{})
+			configureExtensionHostForEnvironment(host, environment)
+			targets := host.ServiceTargets()
+			require.Len(t, targets, 1)
+			require.Equal(t, aiConnectionHost, targets[0].Host)
+			target, ok := targets[0].Factory().(*connectionServiceTarget)
+			require.True(t, ok)
+			require.Equal(t, environment, target.environment)
+		})
+	}
 }

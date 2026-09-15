@@ -14,7 +14,7 @@ var (
 	detectOnce  sync.Once
 )
 
-// GetCallingAgent detects if azd was invoked by a known AI coding agent.
+// GetCallingAgent detects a known AI coding agent in the process environment.
 // The result is cached after the first call.
 func GetCallingAgent() AgentInfo {
 	detectOnce.Do(func() {
@@ -30,7 +30,7 @@ func GetCallingAgent() AgentInfo {
 	return cachedAgent
 }
 
-// IsRunningInAgent returns true if azd was invoked by a known AI coding agent.
+// IsRunningInAgent returns true if a known AI coding agent was detected in the process environment.
 func IsRunningInAgent() bool {
 	return GetCallingAgent().Detected
 }

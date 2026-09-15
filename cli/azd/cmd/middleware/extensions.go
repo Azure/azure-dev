@@ -127,7 +127,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 		debug:       debugEnabled,
 		cwd:         cwd,
 		environment: envName,
-		// Use globalOptions.NoPrompt which includes agent detection, not just the --no-prompt CLI flag
+		// Use globalOptions.NoPrompt, which includes CI and non-interactive agent detection.
 		noPrompt:   m.globalOptions.NoPrompt,
 		forceColor: forceColor,
 	}
@@ -341,6 +341,10 @@ func startAndWaitExtension(
 		return err
 	}
 
+	stdin := ext.StdIn()
+	stdout := ext.StdOut()
+	stderr := ext.StdErr()
+
 	// Start the extension process in a separate goroutine
 	go func() {
 		allEnv := []string{
@@ -365,9 +369,9 @@ func startAndWaitExtension(
 		invokeOptions := &extensions.InvokeOptions{
 			Args:        args,
 			Env:         allEnv,
-			StdIn:       ext.StdIn(),
-			StdOut:      ext.StdOut(),
-			StdErr:      ext.StdErr(),
+			StdIn:       stdin,
+			StdOut:      stdout,
+			StdErr:      stderr,
 			Debug:       opts.debug,
 			NoPrompt:    opts.noPrompt,
 			Cwd:         opts.cwd,

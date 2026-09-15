@@ -2,13 +2,13 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.connections/schemas/azure.ai.connection.json",
   "title": "Azure AI Foundry connection service",
-  "description": "Service-level configuration for a host: azure.ai.connection entry. The service key is the connection name. azd updates or creates the connection on the project the entry depends on.",
+  "description": "Service-level configuration for a host: azure.ai.connection entry. An explicit payload name takes precedence after trimming whitespace; when absent or blank after trimming, the azure.yaml service key is the connection name. The service key remains the identifier for uses references and readiness markers. azd updates or creates the connection on the project the entry depends on.",
   "type": "object",
   "additionalProperties": true,
   "properties": {
     "name": {
       "type": "string",
-      "description": "Connection name. Required in a standalone connection definition; the azure.yaml service key supplies it when composed."
+      "description": "Connection resource name. Required in a standalone connection definition. When composed, an explicit payload name takes precedence after trimming whitespace; if absent or blank after trimming, it defaults to the azure.yaml service key. The service key, not this resource name, identifies uses references and readiness markers."
     },
     "category": {
       "type": "string",

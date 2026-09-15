@@ -34,24 +34,24 @@ type rawConnectionProperties struct {
 	Credentials      *rawCredentials   `json:"credentials,omitempty"`
 }
 
-// rawCredentials represents OAuth2 credentials in the raw REST body.
-type rawCredentials struct {
-	ClientID     string `json:"clientId,omitempty"`
-	ClientSecret string `json:"clientSecret,omitempty"`
-}
+// rawCredentials preserves arbitrary credential payloads for every supported
+// Connection authentication type.
+type rawCredentials map[string]any
 
 func (c *rawCredentials) clientIDOrEmpty() string {
 	if c == nil {
 		return ""
 	}
-	return c.ClientID
+	value, _ := (*c)["clientId"].(string)
+	return value
 }
 
 func (c *rawCredentials) clientSecretOrEmpty() string {
 	if c == nil {
 		return ""
 	}
-	return c.ClientSecret
+	value, _ := (*c)["clientSecret"].(string)
+	return value
 }
 
 // buildOAuth2Credentials returns the credentials object to embed in a connection
@@ -71,10 +71,14 @@ func buildOAuth2Credentials(authType, clientID, clientSecret string) *rawCredent
 	if authType != "oauth2" && clientID == "" && clientSecret == "" {
 		return nil
 	}
-	return &rawCredentials{
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
+	credentials := rawCredentials{}
+	if clientID != "" {
+		credentials["clientId"] = clientID
 	}
+	if clientSecret != "" {
+		credentials["clientSecret"] = clientSecret
+	}
+	return &credentials
 }
 
 type rawConnectionBody struct {

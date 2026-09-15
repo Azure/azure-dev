@@ -9,13 +9,11 @@ parameters:
 stages:
   - stage: PublishExtensionForPR
     dependsOn: BuildAndTest
-    # Fork builds cannot access the service connections required to publish bundles or comment on PRs.
     condition: >-
       and(
         succeeded(),
         ne(variables['Skip.Release'], 'true'),
-        eq(variables['Build.Reason'], 'PullRequest'),
-        ne(variables['System.PullRequest.IsFork'], 'True')
+        eq(variables['Build.Reason'], 'PullRequest')
       )
 
     variables:

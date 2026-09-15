@@ -99,6 +99,14 @@ extends:
                   artifact: tier2-live-logs-$(Build.BuildId)-$(System.JobAttempt)
                   condition: always()
                   displayName: Publish test logs
+                - output: pipelineArtifact
+                  path: $(Pipeline.Workspace)/azure-ai-agents-template-cache
+                  artifact: azure-ai-agents-template-cache-$(System.JobAttempt)
+                  condition: and(
+                    always(),
+                    eq(variables['PublishTemplateCache'], 'true')
+                    )
+                  displayName: Publish last-known-good sample cache
             steps:
               - checkout: self
 
@@ -193,6 +201,78 @@ extends:
                     }' > "$HOME/.azd/config.json"
                 displayName: Install azure.ai.agents and azure.ai.projects extensions
 
+              - bash: mkdir -p "$(Pipeline.Workspace)/azure-ai-agents-template-cache"
+                displayName: Prepare sample cache directory
+
+              - bash: |
+                  set -euo pipefail
+                  api="$(System.CollectionUri)$(System.TeamProjectId)/_apis/build"
+                  continuation_token=""
+                  headers=$(mktemp)
+                  trap 'rm -f "$headers"' EXIT
+                  while true; do
+                    url="$api/builds?definitions=$(System.DefinitionId)&statusFilter=completed&queryOrder=finishTimeDescending&%24top=100&api-version=7.1"
+                    if [ -n "$continuation_token" ]; then
+                      url="$url&continuationToken=$continuation_token"
+                    fi
+                    if ! builds=$(curl -fsS -D "$headers" \
+                        -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" "$url"); then
+                      echo "##vso[task.logissue type=warning]Unable to query previous sample cache builds; continuing uncached."
+                      exit 0
+                    fi
+                    for build_id in $(echo "$builds" | jq -r '.value[].id'); do
+                      if ! artifacts=$(curl -fsS \
+                          -H "Authorization: Bearer $SYSTEM_ACCESSTOKEN" \
+                          "$api/builds/$build_id/artifacts?api-version=7.1"); then
+                        echo "##vso[task.logissue type=warning]Unable to inspect sample cache artifacts for build $build_id; trying an older build."
+                        continue
+                      fi
+                      artifact_name=$(echo "$artifacts" | jq -r '
+                        [.value[].name |
+                          select(. == "azure-ai-agents-template-cache" or
+                            startswith("azure-ai-agents-template-cache-"))][0] // empty')
+                      if [ -n "$artifact_name" ]; then
+                        echo "##vso[task.setvariable variable=SampleCacheBuildId]$build_id"
+                        echo "##vso[task.setvariable variable=SampleCacheArtifactName]$artifact_name"
+                        echo "Using sample cache from build $build_id."
+                        exit 0
+                      fi
+                    done
+                    continuation_token=$(awk 'tolower($1) == "x-ms-continuationtoken:" {gsub("\r", "", $2); print $2}' "$headers")
+                    if [ -z "$continuation_token" ]; then
+                      break
+                    fi
+                  done
+                  echo "No previous sample cache artifact was found."
+                env:
+                  SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+                displayName: Find latest sample cache artifact
+
+              # Every PR, scheduled, and manual run reads the same last-known-good
+              # sample artifact produced by this pipeline, regardless of branch.
+              - task: DownloadPipelineArtifact@2
+                displayName: Restore last-known-good sample cache
+                condition: ne(variables['SampleCacheBuildId'], '')
+                continueOnError: true
+                inputs:
+                  buildType: specific
+                  project: $(System.TeamProjectId)
+                  definition: $(System.DefinitionId)
+                  buildVersionToDownload: specific
+                  pipelineId: $(SampleCacheBuildId)
+                  artifactName: $(SampleCacheArtifactName)
+                  targetPath: $(Pipeline.Workspace)/azure-ai-agents-template-cache
+
+              - bash: |
+                  set -e
+                  rm -f "$(Pipeline.Workspace)/azure-ai-agents-template-cache/.refreshed"
+                  if ! (umask 077; : > "$CACHE_WARNINGS_FILE"); then
+                    echo "##vso[task.logissue type=warning]Unable to initialize sample cache warning file."
+                  fi
+                env:
+                  CACHE_WARNINGS_FILE: $(Agent.TempDirectory)/azure-ai-agents-cache-warnings-$(System.JobAttempt).log
+                displayName: Reset sample cache state
+
               # Run the live golden path INSIDE the AzureCLI@2 task so the az CLI
               # session (consumed by azd via auth.useAzCliAuth) stays valid for the
               # whole run. keepAzSessionActive is REQUIRED: the service connection
@@ -242,9 +322,36 @@ extends:
                   E2E_CREATE_PROJECT: "true"
                   E2E_LOCATION: eastus2
                   E2E_USE_AZ_CLI_AUTH: "true"
+                  AZURE_AI_AGENTS_E2E_TEMPLATE_CACHE_DIR: $(Pipeline.Workspace)/azure-ai-agents-template-cache
+                  AZURE_AI_AGENTS_E2E_TEMPLATE_CACHE_WARNINGS_FILE: $(Agent.TempDirectory)/azure-ai-agents-cache-warnings-$(System.JobAttempt).log
                   # azure-sdk org PAT (ambient in the ADO project) used only to
                   # avoid anonymous GitHub rate limits when cloning the template.
                   GH_TOKEN: $(azuresdk-github-pat)
+
+              # Cache publication is independent of provision/deploy success.
+              # The extension writes only a complete downloaded sample here.
+              - bash: |
+                  cache_dir="$(Pipeline.Workspace)/azure-ai-agents-template-cache"
+                  if [ -f "$cache_dir/.refreshed" ]; then
+                    echo "##vso[task.setvariable variable=PublishTemplateCache]true"
+                    rm -f "$cache_dir/.refreshed"
+                    echo "Refreshed sample cache will be published from this run."
+                  else
+                    echo "No sample cache was refreshed by this run."
+                  fi
+                  # Interactive init output stays inside the PTY; replay only successful cache fallback warnings.
+                  if [ -f "$CACHE_WARNINGS_FILE" ]; then
+                    if ! cat "$CACHE_WARNINGS_FILE"; then
+                      echo "##vso[task.logissue type=warning]Unable to read sample cache warning file."
+                    fi
+                    if ! rm -f "$CACHE_WARNINGS_FILE"; then
+                      echo "##vso[task.logissue type=warning]Unable to remove sample cache warning file."
+                    fi
+                  fi
+                env:
+                  CACHE_WARNINGS_FILE: $(Agent.TempDirectory)/azure-ai-agents-cache-warnings-$(System.JobAttempt).log
+                condition: always()
+                displayName: Report and mark sample cache state
 
               # Safety net for hard crashes / step timeout: the in-test teardown
               # runs `azd down` already, but if the run died mid-way, force-purge

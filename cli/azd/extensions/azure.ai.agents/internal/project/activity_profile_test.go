@@ -428,4 +428,20 @@ func TestComposeActivityAgentEndpoint(t *testing.T) {
 		require.Equal(t, "EntraId", ep.AuthorizationSchemes[0].Type)
 		require.Equal(t, "BotServiceRbac", ep.AuthorizationSchemes[1].Type)
 	})
+
+	t.Run("explicit scheme without rbac is preserved", func(t *testing.T) {
+		existing := &agent_yaml.AgentEndpoint{
+			AuthorizationSchemes: []agent_yaml.AuthorizationScheme{
+				{Type: "BotServiceTenant"},
+			},
+		}
+
+		ep := ComposeActivityAgentEndpoint(existing, []agent_yaml.ProtocolVersionRecord{
+			{Protocol: "activity", Version: "2.0.0"},
+		})
+
+		require.Equal(t, []agent_yaml.AuthorizationScheme{
+			{Type: "BotServiceTenant"},
+		}, ep.AuthorizationSchemes)
+	})
 }

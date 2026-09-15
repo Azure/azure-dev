@@ -19,23 +19,46 @@
     },
     "toolConnections": {
       "type": "array",
-      "description": "List of tool connections to external services (MCP tools, A2A, custom APIs) created during provisioning.",
+      "description": "Agent-owned runtime tool connection configuration for external services (MCP tools, A2A, custom APIs). Declare Connection resources as separate azure.ai.connection services reconciled during deployment.",
       "items": { "$ref": "#/definitions/ToolConnection" }
     },
     "toolboxes": {
       "type": "array",
-      "description": "List of toolboxes (Foundry Toolsets) to deploy.",
-      "items": { "$ref": "#/definitions/Toolbox" }
+      "description": "References to azure.ai.toolbox services declared in the agent uses list. Define tools or an existing endpoint on the toolbox service, then run azd deploy --all.",
+      "items": {
+        "oneOf": [
+          { "type": "string", "minLength": 1, "pattern": "\\S" },
+          {
+            "type": "object",
+            "properties": { "name": { "type": "string", "minLength": 1, "pattern": "\\S" } },
+            "required": ["name"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "description": "Local YAML or JSON file containing a name-only toolbox reference. An optional name overrides the loaded name; full toolbox definitions belong on azure.ai.toolbox services.",
+            "properties": {
+              "$ref": { "type": "string", "minLength": 1, "pattern": "\\S" },
+              "name": { "type": "string", "minLength": 1, "pattern": "\\S" }
+            },
+            "required": ["$ref"],
+            "additionalProperties": false
+          }
+        ]
+      }
     },
     "connections": {
       "type": "array",
-      "description": "List of project connections to create via Bicep provisioning.",
-      "items": { "$ref": "#/definitions/Connection" }
+      "description": "Prompt-only references to sibling azure.ai.connection service names. Add these services to the agent uses list and deploy them with azd deploy --all. Connection resource definitions are not supported on agents.",
+      "items": { "type": "string", "minLength": 1, "pattern": "\\S" }
     },
     "memoryStores": {
       "type": "array",
       "description": "List of Foundry memory stores to provision (create-if-not-exists) during deployment. Memory stores let agents retain context across sessions via the memory_search tool.",
       "items": { "$ref": "#/definitions/MemoryStore" }
+    },
+    "memory": {
+      "$ref": "#/definitions/PromptMemory"
     },
     "startupCommand": {
       "type": "string",
@@ -46,8 +69,25 @@
     },
     "kind": {
       "type": "string",
-      "description": "The agent kind. 'hosted' for a containerized/code agent; 'prompt-voice' for a declarative (managed) speech-to-speech voice agent.",
-      "enum": ["hosted", "prompt-voice"]
+      "description": "The agent kind. 'hosted' for a containerized/code agent; 'prompt' for a declarative prompt agent; 'voice' for a managed speech-to-speech voice agent. 'prompt-voice' remains accepted for compatibility.",
+      "enum": ["hosted", "prompt", "prompt-voice", "voice"]
+    },
+    "harness": {
+      "type": "object",
+      "description": "Managed runtime used to execute a prompt agent. Harness capabilities are configured through top-level skills and tools.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["github_copilot_preview"]
+        }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "skills": {
+      "type": "array",
+      "description": "Foundry skill names available to the prompt agent.",
+      "items": { "type": "string", "minLength": 1, "pattern": "\\S" }
     },
     "language": {
       "type": "string",
@@ -59,28 +99,39 @@
       "description": "Named Foundry toolbox consumed by the agent.",
       "properties": {
         "name": { "type": "string", "minLength": 1 },
-        "version": { "type": "string", "minLength": 1 }
+        "version": { "type": "string", "minLength": 1 },
+        "projectConnectionId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional Foundry project connection name or ID passed as the toolbox MCP tool's project_connection_id. Omit for toolbox endpoints that do not require project-connection authentication."
+        }
       },
       "required": ["name"],
       "additionalProperties": false
     },
     "modelType": {
       "type": "string",
-      "description": "Voice agent (kind: prompt-voice) model-inference mode. 'managed' uses a Voice Live-hosted model; 'self_deployed' (BYOM) references an existing Foundry model deployment.",
+      "description": "Voice agent model-inference mode. 'managed' uses a Voice Live-hosted model; 'self_deployed' references a Foundry model deployment. For Hosted Voice wrappers, use conversationEngine instead.",
       "enum": ["managed", "self_deployed"]
     },
+    "targetAgent": {
+      "$ref": "#/definitions/VoiceTargetAgent",
+      "deprecated": true,
+      "description": "Unsupported legacy Hosted Voice authoring field. Use conversationEngine instead."
+    },
+    "conversationEngine": {
+      "$ref": "#/definitions/VoiceConversationEngine"
+    },
     "model": {
-      "type": "object",
-      "description": "Voice agent (kind: prompt-voice) speech-to-speech model (e.g. id: gpt-realtime).",
-      "properties": {
-        "id": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "Model name for managed mode (e.g. 'gpt-realtime') or existing Foundry deployment name for self_deployed mode." }
-      },
-      "required": ["id"],
-      "additionalProperties": true
+      "description": "Model deployment name for prompt agents, or speech-to-speech model configuration for prompt-voice agents.",
+      "oneOf": [
+        { "type": "string", "minLength": 1, "pattern": "\\S" },
+        { "$ref": "#/definitions/VoiceModel" }
+      ]
     },
     "instructions": {
       "type": "string",
-      "description": "Voice agent (kind: prompt-voice) system prompt for the assistant."
+      "description": "System prompt for prompt and prompt-voice agents."
     },
     "voice": {
       "type": "string",
@@ -92,8 +143,26 @@
     },
     "structuredInputs": {
       "type": "object",
-      "description": "Voice agent (kind: prompt-voice) structured prompt inputs. Use description, defaultValue, schema, and required; azd maps defaultValue to the service wire field default_value.",
+      "description": "Structured prompt inputs for prompt and prompt-voice agents.",
       "additionalProperties": true
+    },
+    "temperature": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 2,
+      "description": "Sampling temperature for a prompt agent. Prefer setting either temperature or topP, not both."
+    },
+    "topP": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Nucleus-sampling cutoff for a prompt agent."
+    },
+    "text": {
+      "description": "Prompt-agent text response configuration, including structured output formats."
+    },
+    "reasoning": {
+      "description": "Prompt-agent reasoning configuration, such as reasoning effort."
     },
     "audio": {
       "$ref": "#/definitions/VoiceAudio"
@@ -106,8 +175,23 @@
     },
     "tools": {
       "type": "array",
-      "description": "Voice agent (kind: prompt-voice) tools. Direct tool types include function, mcp, system, and toolbox.",
-      "items": { "type": "object", "additionalProperties": true }
+      "description": "Tools available to prompt and prompt-voice agents. Unknown tool types are passed through for forward compatibility.",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/GitHubCopilotToolsetPreview" },
+          {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "not": { "const": "github_copilot_toolset_preview" }
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
+      }
     },
     "avatar": {
       "type": "object",
@@ -125,7 +209,7 @@
       "additionalProperties": true
     },
     "toolChoice": {
-      "description": "Voice agent (kind: prompt-voice) tool choice behavior, such as none, auto, required, or a tool choice object."
+      "description": "Tool choice behavior for prompt and prompt-voice agents, such as none, auto, required, or a tool choice object."
     },
     "parallelToolCalls": {
       "type": "boolean",
@@ -142,6 +226,9 @@
       "type": "array",
       "description": "Voice agent (kind: prompt-voice) extra service response fields to include.",
       "items": { "type": "string" }
+    },
+    "telephony": {
+      "$ref": "#/definitions/VoiceTelephony"
     },
     "name": {
       "type": "string",
@@ -206,17 +293,98 @@
   "additionalProperties": true,
   "allOf": [
     {
-      "$comment": "A prompt-voice agent must declare a speech-to-speech model and cannot use the hosted-agent toolbox reference, which the voice deployment path does not support.",
+      "$comment": "The modelType hosted_agent authoring shape is not supported.",
+      "if": {
+        "properties": { "modelType": { "const": "hosted_agent" } },
+        "required": ["modelType"]
+      },
+      "then": { "not": {} }
+    },
+    {
+      "$comment": "The targetAgent authoring shape is not supported.",
+      "if": { "required": ["targetAgent"] },
+      "then": { "not": {} }
+    },
+    {
+      "$comment": "A conversationEngine hosted_agent voice wrapper references a deployed hosted service.",
       "if": {
         "properties": {
-          "kind": { "const": "prompt-voice" }
+          "conversationEngine": {
+            "properties": { "type": { "const": "hosted_agent" } },
+            "required": ["type"]
+          }
+        },
+        "required": ["conversationEngine"]
+      },
+      "then": {
+        "properties": {
+          "kind": { "enum": ["prompt-voice", "voice"] }
+        },
+        "required": ["kind"],
+        "not": {
+          "anyOf": [
+            { "required": ["model"] },
+            { "required": ["modelType"] },
+            { "required": ["targetAgent"] },
+            { "required": ["inputSchema"] },
+            { "required": ["outputSchema"] },
+            { "required": ["codeConfiguration"] },
+            { "required": ["sessionConfiguration"] },
+            { "required": ["environmentVariables"] },
+            { "required": ["policies"] },
+            { "required": ["protocols"] },
+            { "required": ["instructions"] },
+            { "required": ["structuredInputs"] },
+            { "required": ["tools"] },
+            { "required": ["toolChoice"] },
+            { "required": ["parallelToolCalls"] },
+            { "required": ["maxOutputTokens"] },
+            { "required": ["include"] },
+            { "required": ["handoff"] },
+            { "required": ["toolbox"] }
+          ]
+        }
+      }
+    },
+    {
+      "$comment": "A prompt agent requires a model deployment name and instructions.",
+      "if": {
+        "properties": {
+          "kind": { "const": "prompt" }
         },
         "required": ["kind"]
       },
       "then": {
+        "required": ["model", "instructions"],
+        "properties": {
+          "model": { "type": "string", "minLength": 1, "pattern": "\\S" },
+          "instructions": { "type": "string", "minLength": 1, "pattern": "\\S" }
+        }
+      },
+      "else": {
+        "$comment": "Only prompt agents accept connection name references. Other agents declare dependencies through uses; Connection resources belong to azure.ai.connection services.",
+        "not": { "required": ["connections"] }
+      }
+    },
+    {
+      "$comment": "Managed and self-deployed voice modes declare a model. Hosted Voice wrappers use conversationEngine instead.",
+      "if": {
+        "properties": { "kind": { "enum": ["prompt-voice", "voice"] } },
+        "required": ["kind"],
+        "not": { "required": ["conversationEngine"] }
+      },
+      "then": {
         "required": ["model"],
         "not": {
-          "required": ["toolbox"]
+          "anyOf": [
+            { "required": ["targetAgent"] },
+            { "required": ["toolbox"] },
+            { "required": ["policies"] },
+            { "required": ["protocols"] },
+            { "required": ["environmentVariables"] },
+            { "required": ["codeConfiguration"] },
+            { "required": ["sessionConfiguration"] }
+          ]
         }
       }
     },
@@ -290,9 +458,104 @@
           "required": ["codeConfiguration"]
         }
       }
+    },
+    {
+      "$comment": "Telephony bindings are only supported for prompt voice agents.",
+      "if": {
+        "required": ["telephony"]
+      },
+      "then": {
+        "properties": {
+          "kind": { "enum": ["voice", "prompt-voice"] }
+        },
+        "required": ["kind"]
+      }
     }
   ],
   "definitions": {
+    "VoiceConversationEngine": {
+      "type": "object",
+      "description": "Conversation engine used by a managed Voice wrapper.",
+      "properties": {
+        "type": { "type": "string", "enum": ["hosted_agent"], "description": "Conversation engine type." },
+        "name": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "azure.yaml service name of the hosted target agent." },
+        "version": { "type": "string", "enum": ["deployed"], "default": "deployed", "description": "Pin the wrapper to the target version deployed by this azd environment." }
+      },
+      "required": ["type", "name"],
+      "additionalProperties": false
+    },
+    "PromptMemory": {
+      "type": "object",
+      "description": "Memory store used by a prompt agent for recall.",
+      "properties": {
+        "store": { "type": "string", "minLength": 1, "pattern": "\\S" },
+        "description": { "type": "string" },
+        "chat_model": { "type": "string", "minLength": 1 },
+        "embedding_model": { "type": "string", "minLength": 1 },
+        "scope": { "type": "string", "minLength": 1 },
+        "update_delay": { "type": "integer", "minimum": 0 },
+        "max_memories": { "type": "integer", "minimum": 1 },
+        "options": { "$ref": "#/definitions/PromptMemoryOptions" }
+      },
+      "required": ["store"],
+      "additionalProperties": false
+    },
+    "PromptMemoryOptions": {
+      "type": "object",
+      "properties": {
+        "chat_summary_enabled": { "type": "boolean" },
+        "user_profile_enabled": { "type": "boolean" },
+        "procedural_memory_enabled": { "type": "boolean" },
+        "default_ttl_seconds": { "type": "integer", "minimum": 0 },
+        "user_profile_details": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "GitHubCopilotToolsetPreview": {
+      "type": "object",
+      "description": "Enablement configuration for GitHub Copilot built-in tools.",
+      "properties": {
+        "type": { "const": "github_copilot_toolset_preview" },
+        "default_config": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          },
+          "additionalProperties": false
+        },
+        "configs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": ["filesystem_read", "filesystem_write", "shell", "web", "subagents"]
+              },
+              "enabled": { "type": "boolean" }
+            },
+            "required": ["name"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "VoiceModel": {
+      "type": "object",
+      "description": "Prompt-voice speech-to-speech model.",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "pattern": "\\S" }
+      },
+      "required": ["id"],
+      "additionalProperties": true
+    },
+    "VoiceTargetAgent": {
+      "description": "Removed authoring field. targetAgent is not supported; use conversationEngine with type: hosted_agent and name set to the hosted target service.",
+      "deprecated": true,
+      "not": {}
+    },
     "ActivitySettings": {
       "type": "object",
       "description": "Activity-protocol Teams configuration. Omit digitalWorkerType for simple mode; m365 applies Digital Worker constraints via allOf.",
@@ -373,6 +636,41 @@
         "dependencyResolution": { "type": "string", "description": "Dependency resolution mode (e.g., 'bundled', 'remote_build')." }
       },
       "required": ["runtime", "entryPoint"],
+      "additionalProperties": false
+    },
+    "VoiceTelephony": {
+      "type": "object",
+      "description": "Prompt voice telephony configuration. Only valid for kind: prompt-voice.",
+      "properties": {
+        "bindings": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/VoiceTelephonyBinding" }
+        }
+      },
+      "required": ["bindings"],
+      "additionalProperties": false
+    },
+    "VoiceTelephonyBinding": {
+      "type": "object",
+      "description": "Foundry-side binding from a phone provider identifier to this prompt voice agent.",
+      "properties": {
+        "provider": { "type": "string", "enum": ["acs", "twilio"] },
+        "identifier": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "ACS/TPE raw ID (28:orgid:<guid>), ACS purchased number (4:+<E.164>), or Twilio E.164 number (+<E.164>)." },
+        "connection": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "Foundry project connection name used by the telephony runtime." },
+        "transferTargets": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+      },
+      "required": ["provider", "identifier", "connection"],
+      "allOf": [
+        {
+          "if": { "properties": { "provider": { "const": "twilio" } }, "required": ["provider"] },
+          "then": { "properties": { "identifier": { "pattern": "^\\+[1-9][0-9]{6,14}$" } } }
+        },
+        {
+          "if": { "properties": { "provider": { "const": "acs" } }, "required": ["provider"] },
+          "then": { "properties": { "identifier": { "pattern": "^(28:orgid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|4:\\+[1-9][0-9]{6,14})$" } } }
+        }
+      ],
       "additionalProperties": false
     },
     "VoiceAudio": {
@@ -468,8 +766,8 @@
       "properties": {
         "idleTimeoutSeconds": {
           "type": "integer",
-          "description": "Idle duration in seconds before a session's sandbox is suspended. Range 300–3600 (inclusive). Defaults to 900 when omitted.",
-          "minimum": 300,
+          "description": "Idle duration in seconds before a session's sandbox is suspended. Range 120–3600 (inclusive). Defaults to 900 when omitted.",
+          "minimum": 120,
           "maximum": 3600
         }
       },
@@ -646,7 +944,7 @@
     },
     "ToolConnection": {
       "type": "object",
-      "description": "A connection to an external service (MCP tool, A2A, custom API) created via Bicep during provisioning.",
+      "description": "Agent-owned runtime configuration for an external service (MCP tool, A2A, custom API).",
       "properties": {
         "name": { "type": "string", "description": "Connection name used as project_connection_id in toolbox tools." },
         "category": { "type": "string", "description": "Connection category (e.g., 'RemoteTool')." },
@@ -658,74 +956,13 @@
         },
         "credentials": {
           "type": "object",
-          "description": "Credentials for the connection. Values may contain ${ENV_VAR} references resolved at provision time."
+          "description": "Credentials for the tool connection. Values may contain agent environment references."
         },
         "metadata": {
           "type": "object",
           "description": "Additional metadata for the connection.",
           "additionalProperties": { "type": "string" }
         }
-      },
-      "required": ["name", "category", "target", "authType"],
-      "additionalProperties": false
-    },
-    "Toolbox": {
-      "type": "object",
-      "description": "A reusable collection of tools deployed as a Foundry Toolset.",
-      "properties": {
-        "name": { "type": "string", "description": "Name of the toolbox." },
-        "description": { "type": "string", "description": "Description of the toolbox." },
-        "tools": {
-          "type": "array",
-          "description": "List of tools in the toolbox. Each tool is an object with properties passed to the Foundry Toolsets API.",
-          "items": { "type": "object" }
-        }
-      },
-      "required": ["name", "tools"],
-      "additionalProperties": false
-    },
-    "Connection": {
-      "type": "object",
-      "description": "A project connection matching the Bicep ConnectionPropertiesV2 spec.",
-      "properties": {
-        "name": { "type": "string", "description": "Connection name.", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{2,32}$" },
-        "category": { "type": "string", "description": "Connection category (e.g., 'CustomKeys', 'AzureOpenAI', 'CognitiveSearch', 'RemoteTool')." },
-        "target": { "type": "string", "description": "Target endpoint URL for the connection." },
-        "authType": {
-          "type": "string",
-          "description": "Authentication type.",
-          "enum": ["AAD", "AccessKey", "AccountKey", "AgenticIdentity", "AgenticIdentityToken", "ApiKey", "CustomKeys", "ManagedIdentity", "None", "OAuth2", "PAT", "SAS", "ServicePrincipal", "UsernamePassword", "UserEntraToken", "ProjectManagedIdentity"]
-        },
-        "credentials": {
-          "type": "object",
-          "description": "Authentication credentials. Structure depends on authType."
-        },
-        "metadata": {
-          "type": "object",
-          "description": "Additional metadata as key-value pairs.",
-          "additionalProperties": { "type": "string" }
-        },
-        "authorizationUrl": { "type": "string", "description": "OAuth2 authorization endpoint URL (required for OAuth2 authType)." },
-        "tokenUrl": { "type": "string", "description": "OAuth2 token endpoint URL (required for OAuth2 authType)." },
-        "refreshUrl": { "type": "string", "description": "OAuth2 token refresh URL (optional for OAuth2 authType)." },
-        "scopes": {
-          "type": "array",
-          "description": "OAuth2 scopes to request (optional for OAuth2 authType).",
-          "items": { "type": "string" }
-        },
-        "audience": { "type": "string", "description": "Token audience for AAD/ProjectManagedIdentity/AgenticIdentity/AgenticIdentityToken/UserEntraToken auth types." },
-        "connectorName": { "type": "string", "description": "Connector name for Oauth2 auth type." },
-        "expiryTime": { "type": "string", "description": "Connection expiry time." },
-        "isSharedToAll": { "type": "boolean", "description": "Whether the connection is shared to all users." },
-        "sharedUserList": {
-          "type": "array",
-          "description": "List of users the connection is shared with.",
-          "items": { "type": "string" }
-        },
-        "peRequirement": { "type": "string", "description": "Private endpoint requirement." },
-        "peStatus": { "type": "string", "description": "Private endpoint status." },
-        "useWorkspaceManagedIdentity": { "type": "boolean", "description": "Whether to use workspace managed identity." },
-        "error": { "type": "string", "description": "Error information." }
       },
       "required": ["name", "category", "target", "authType"],
       "additionalProperties": false

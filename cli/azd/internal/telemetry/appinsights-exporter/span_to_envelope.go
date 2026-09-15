@@ -71,7 +71,7 @@ func spanToRequestData(span trace.ReadOnlySpan) (*contracts.RequestData, map[str
 
 	for _, resourceAttrib := range span.Resource().Attributes() {
 		if isResourceContextTagField(string(resourceAttrib.Key)) {
-			contextTags[string(resourceAttrib.Key)] = resourceAttrib.Value.Emit()
+			contextTags[string(resourceAttrib.Key)] = resourceAttrib.Value.String()
 		} else {
 			SetAttributeAsPropertyOrMeasurement(resourceAttrib, requestData.Properties, requestData.Measurements)
 		}
@@ -79,7 +79,7 @@ func spanToRequestData(span trace.ReadOnlySpan) (*contracts.RequestData, map[str
 
 	for _, attrib := range span.Attributes() {
 		if isAttributeContextTagField(string(attrib.Key)) {
-			contextTags[string(attrib.Key)] = attrib.Value.Emit()
+			contextTags[string(attrib.Key)] = attrib.Value.String()
 		} else {
 			SetAttributeAsPropertyOrMeasurement(attrib, requestData.Properties, requestData.Measurements)
 		}
@@ -117,7 +117,7 @@ func SetAttributeAsPropertyOrMeasurement(
 
 	switch kv.Value.Type() {
 	case attribute.BOOL, attribute.STRING:
-		properties[string(kv.Key)] = kv.Value.Emit()
+		properties[string(kv.Key)] = kv.Value.String()
 	case attribute.INT64:
 		measurements[string(kv.Key)] = float64(kv.Value.AsInt64())
 	case attribute.FLOAT64:

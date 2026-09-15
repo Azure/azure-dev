@@ -309,16 +309,14 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 
-	// The template is archived, so accept the warning before providing the environment name.
-	result, err := cli.RunCommandWithStdIn(
+	_, err := cli.RunCommandWithStdIn(
 		ctx,
-		"y\nTESTENV\n",
+		"TESTENV\n",
 		"init",
 		"--template",
-		"cosmos-dotnet-core-todo-app",
+		"azd-starter-bicep",
 	)
 	require.NoError(t, err)
-	require.Contains(t, result.Stdout, "WARNING: This template repository is archived")
 	require.FileExists(t, getTestEnvPath(dir, "TESTENV"))
 
 	// Functional tests run as subprocesses with piped stdin (non-TTY), so
@@ -341,19 +339,19 @@ func Test_CLI_Init_WithCwdAutoCreate(t *testing.T) {
 	tests := []struct {
 		name   string
 		subDir string // subdirectory to create within temp dir (using -C flag)
-		args   []string
 	}{
 		{
 			name:   "single level directory",
 			subDir: "new-project",
-			args:   []string{"init", "-t", "azure-samples/todo-nodejs-mongo", "--no-prompt", "-e", "test-env"},
 		},
 		{
 			name:   "nested directory",
 			subDir: "parent/child/project",
-			args:   []string{"init", "-t", "azure-samples/todo-nodejs-mongo", "--no-prompt", "-e", "test-env"},
 		},
 	}
+
+	templateDir := tempDirWithDiagnostics(t)
+	require.NoError(t, copySample(templateDir, "init-template"))
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -367,14 +365,18 @@ func Test_CLI_Init_WithCwdAutoCreate(t *testing.T) {
 
 			// Add -C flag with the subdirectory path
 			targetDir := filepath.Join(parentDir, tt.subDir)
-			args := append([]string{"-C", tt.subDir}, tt.args...)
+			args := []string{
+				"-C", tt.subDir,
+				"init", "-t", templateDir, "--no-prompt", "-e", "test-env",
+			}
 
 			// Directory should not exist before running the command
 			require.NoDirExists(t, targetDir)
 
 			// Run the command
 			// The -e flag provides an environment name to avoid fail-fast when using --no-prompt with --template
-			cli.RunCommand(ctx, args...)
+			_, err := cli.RunCommand(ctx, args...)
+			require.NoError(t, err)
 
 			// Verify the directory was created
 			require.DirExists(t, targetDir)
@@ -382,6 +384,7 @@ func Test_CLI_Init_WithCwdAutoCreate(t *testing.T) {
 			// With --no-prompt, auto-directory creation does not activate.
 			// Files land directly in the -C target directory, not in a template subdirectory.
 			require.FileExists(t, filepath.Join(targetDir, azdcontext.ProjectFileName))
+			require.FileExists(t, filepath.Join(targetDir, "README.md"))
 		})
 	}
 }

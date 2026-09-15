@@ -57,6 +57,29 @@ func TestInitCommand_ForceFlag(t *testing.T) {
 	}
 }
 
+func TestInitCommand_AcrConnectionFlag(t *testing.T) {
+	cmd := newInitCommand(nil)
+
+	flag := cmd.Flags().Lookup("acr-connection")
+	require.NotNil(t, flag)
+	require.Empty(t, flag.Shorthand)
+	require.Empty(t, flag.DefValue)
+}
+
+func TestInitCommand_VoiceFlagsArePublic(t *testing.T) {
+	cmd := newInitCommand(nil)
+
+	kindFlag := cmd.Flags().Lookup("kind")
+	require.NotNil(t, kindFlag)
+	require.False(t, kindFlag.Hidden)
+	require.Contains(t, kindFlag.Usage, "prompt-voice")
+
+	voiceFlag := cmd.Flags().Lookup("voice")
+	require.NotNil(t, voiceFlag)
+	require.False(t, voiceFlag.Hidden)
+	require.Contains(t, voiceFlag.Usage, "prompt-voice")
+}
+
 // TestHasFoundryProviderDeclared covers the predicate ensureProject
 // uses to suppress the "missing infra/" warning.
 func TestHasFoundryProviderDeclared(t *testing.T) {
@@ -2498,6 +2521,45 @@ func TestConfigureModelChoice_NoPromptMissingAzureContextDefersModelResources(t 
 	}
 }
 
+func TestConfigureModelChoiceRejectsAcrConnectionForInteractiveNewProject(t *testing.T) {
+	const envName = "test-env"
+
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{envName: {}},
+	}
+	promptServer := &helpersPromptServer{selectIndex: 1}
+	azdClient := newHelpersTestAzdClient(t, &helpersProjectServer{}, promptServer, envServer)
+	manifest := &agent_yaml.AgentManifest{
+		Name: "test-hosted",
+		Template: agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Name: "test-hosted",
+				Kind: agent_yaml.AgentKindHosted,
+			},
+		},
+		Resources: []any{
+			agent_yaml.ModelResource{
+				Resource: agent_yaml.Resource{
+					Name: "my-model",
+					Kind: agent_yaml.ResourceKindModel,
+				},
+				Id: "gpt-4o",
+			},
+		},
+	}
+	action := &InitAction{
+		azdClient:    azdClient,
+		environment:  &azdext.Environment{Name: envName},
+		azureContext: &azdext.AzureContext{Scope: &azdext.AzureScope{}},
+		flags:        &initFlags{acrConnection: "registry-connection"},
+	}
+
+	_, err := action.configureModelChoice(t.Context(), manifest)
+
+	require.ErrorContains(t, err, "requires an existing Foundry project")
+	require.Equal(t, int32(1), promptServer.selectCalls.Load())
+}
+
 func TestResolvePositionalArg(t *testing.T) {
 	t.Parallel()
 
@@ -3312,6 +3374,18 @@ func TestCodeDeployFlagValidation(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "code deploy with ACR connection fails",
+			flags: initFlags{
+				noPrompt:      true,
+				deployMode:    "code",
+				runtime:       "python_3_13",
+				entryPoint:    "app.py",
+				acrConnection: "registry-connection",
+			},
+			wantErr:        true,
+			wantErrContain: "--acr-connection cannot be used",
+		},
+		{
 			name:           "code deploy without runtime fails",
 			flags:          initFlags{noPrompt: true, deployMode: "code", entryPoint: "app.py"},
 			wantErr:        true,
@@ -3347,6 +3421,13 @@ func TestCodeDeployFlagValidation(t *testing.T) {
 		{
 			name:    "code deploy without noPrompt skips validation",
 			flags:   initFlags{noPrompt: false, deployMode: "code"},
+			wantErr: false,
+		},
+		{
+			name: "no-prompt manifest can provide code configuration",
+			flags: initFlags{
+				noPrompt: true, deployMode: "code", manifestPointer: "agent.manifest.yaml",
+			},
 			wantErr: false,
 		},
 		{
@@ -3888,7 +3969,7 @@ func TestAbsolutizeRelativeManifestPaths_RelativeLocalManifest(t *testing.T) {
 	}
 	// Regression guard: --src is an output target (where the agent
 	// definition is downloaded to, relative to the project root).
-	// Absolutizing it before ensureProject chdirs into the new project
+	// Resolve it to an absolute path before ensureProject changes into the new project
 	// folder would cause InitAction.Run's filepath.Rel rewrite to produce
 	// "..\src", writing the agent definition outside the new project.
 	if flags.src != "src" {
@@ -4226,6 +4307,7 @@ func TestSynthesizeVoiceManifestFile(t *testing.T) {
 		defer cleanup()
 
 		va := parse(t, path)
+		require.Equal(t, agent_yaml.AgentKindPromptVoice, va.Kind)
 		require.Equal(t, agent_yaml.VoiceModelTypeManaged, va.ModelType)
 		require.NotNil(t, va.Model)
 		require.Equal(t, "gpt-realtime-preview", va.Model.Id)

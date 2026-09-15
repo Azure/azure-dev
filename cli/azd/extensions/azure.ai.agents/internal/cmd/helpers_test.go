@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	projectpkg "azureaiagent/internal/project"
 
@@ -501,18 +502,36 @@ type helpersPromptServer struct {
 	azdext.UnimplementedPromptServiceServer
 	selectIndex int32
 	selectCalls atomic.Int32
+	promptCalls atomic.Int32
 	lastSelect  *azdext.SelectRequest
 }
 
 type helpersFailingEnvironmentServer struct {
 	testEnvironmentServiceServer
-	getValueErr error
+	getValueErr  error
+	getValuesErr error
+	failKeys     map[string]error
 }
 
 func (s *helpersFailingEnvironmentServer) GetValue(
-	context.Context, *azdext.GetEnvRequest,
+	ctx context.Context, req *azdext.GetEnvRequest,
 ) (*azdext.KeyValueResponse, error) {
-	return nil, s.getValueErr
+	if s.getValueErr != nil {
+		return nil, s.getValueErr
+	}
+	if err := s.failKeys[req.Key]; err != nil {
+		return nil, err
+	}
+	return s.testEnvironmentServiceServer.GetValue(ctx, req)
+}
+
+func (s *helpersFailingEnvironmentServer) GetValues(
+	ctx context.Context, req *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	if s.getValuesErr != nil {
+		return nil, s.getValuesErr
+	}
+	return s.testEnvironmentServiceServer.GetValues(ctx, req)
 }
 
 func (s *helpersPromptServer) Select(
@@ -522,6 +541,13 @@ func (s *helpersPromptServer) Select(
 	s.lastSelect = req
 	idx := s.selectIndex
 	return &azdext.SelectResponse{Value: &idx}, nil
+}
+
+func (s *helpersPromptServer) Prompt(
+	context.Context, *azdext.PromptRequest,
+) (*azdext.PromptResponse, error) {
+	s.promptCalls.Add(1)
+	return nil, status.Error(codes.Internal, "unexpected text prompt")
 }
 
 // newHelpersTestAzdClient spins up a gRPC server with the supplied Project,
@@ -601,7 +627,11 @@ func TestResolveAgentServiceFromProject_UsesVerifiedInlineNameForBrownfieldProje
 	}}
 	envServer := &testEnvironmentServiceServer{
 		current: &azdext.Environment{Name: "test"},
-		values:  map[string]map[string]string{"test": {}},
+		values: map[string]map[string]string{"test": {
+			"AGENT_SERVICE_KEY_RESPONSES_ENDPOINT":         projectEndpoint + "/responses",
+			"AGENT_SERVICE_KEY_INVOCATIONS_ENDPOINT":       projectEndpoint + "/invocations",
+			"AGENT_SERVICE_KEY_PROTOCOL_ENDPOINTS_VERSION": "1",
+		}},
 	}
 	azdClient := newHelpersTestAzdClient(
 		t, projectServer, &helpersPromptServer{}, envServer,
@@ -626,6 +656,7 @@ func TestResolveAgentServiceFromProject_UsesVerifiedInlineNameForBrownfieldProje
 			require.Equal(t, "inline-agent", agentName)
 			return true, nil
 		}),
+		withDeployedProtocolEndpoints(),
 	)
 	require.NoError(t, err)
 	require.Equal(t, "service-key", info.ServiceName)
@@ -633,6 +664,10 @@ func TestResolveAgentServiceFromProject_UsesVerifiedInlineNameForBrownfieldProje
 		"inline agent name should resolve for an explicitly adopted existing project")
 	require.Equal(t, projectEndpoint, info.ProjectEndpoint,
 		"verified inline name must remain bound to its adopted project")
+	require.Equal(t, map[agent_api.AgentProtocol]string{
+		agent_api.AgentProtocolResponses:   projectEndpoint + "/responses",
+		agent_api.AgentProtocolInvocations: projectEndpoint + "/invocations",
+	}, info.ProtocolEndpoints)
 
 	missingInfo, err := resolveAgentServiceFromProject(
 		t.Context(),
@@ -733,6 +768,8 @@ func TestResolveAgentServiceFromProject_GreenfieldRequiresDeploy(t *testing.T) {
 func TestResolveAgentServiceFromProject_EnvironmentNameWins(t *testing.T) {
 	t.Parallel()
 
+	const projectEndpoint = "https://account.services.ai.azure.com/api/projects/existing"
+
 	agentProps, err := projectpkg.AgentDefinitionToServiceProperties(agent_yaml.ContainerAgent{
 		AgentDefinition: agent_yaml.AgentDefinition{
 			Kind: agent_yaml.AgentKindHosted,
@@ -741,7 +778,7 @@ func TestResolveAgentServiceFromProject_EnvironmentNameWins(t *testing.T) {
 	}, nil)
 	require.NoError(t, err)
 	projectProps, err := projectpkg.MarshalStruct(&projectpkg.ServiceTargetAgentConfig{
-		Endpoint: "https://account.services.ai.azure.com/api/projects/existing",
+		Endpoint: projectEndpoint,
 	})
 	require.NoError(t, err)
 
@@ -761,11 +798,19 @@ func TestResolveAgentServiceFromProject_EnvironmentNameWins(t *testing.T) {
 			},
 		},
 	}}
-	envServer := &testEnvironmentServiceServer{
-		current: &azdext.Environment{Name: "test"},
-		values: map[string]map[string]string{"test": {
-			"AGENT_SERVICE_KEY_NAME": "deployed-agent",
-		}},
+	envServer := &helpersFailingEnvironmentServer{
+		testEnvironmentServiceServer: testEnvironmentServiceServer{
+			current: &azdext.Environment{Name: "test"},
+			values: map[string]map[string]string{"test": {
+				"AGENT_SERVICE_KEY_NAME":                       "deployed-agent",
+				"AGENT_SERVICE_KEY_VERSION":                    "2.0.0",
+				"AGENT_SERVICE_KEY_ENDPOINT":                   "https://example.test/agents/deployed-agent/versions/2.0.0",
+				"AGENT_SERVICE_KEY_PROJECT_ENDPOINT":           projectEndpoint,
+				"AGENT_SERVICE_KEY_PROTOCOL_ENDPOINTS_VERSION": "1",
+				"AGENT_SERVICE_KEY_RESPONSES_ENDPOINT":         "https://example.test/responses",
+			}},
+		},
+		getValueErr: errors.New("per-key environment lookup must not be used"),
 	}
 	azdClient := newHelpersTestAzdClient(
 		t, projectServer, &helpersPromptServer{}, envServer,
@@ -784,10 +829,21 @@ func TestResolveAgentServiceFromProject_EnvironmentNameWins(t *testing.T) {
 			t.Fatal("deployed environment name must bypass the inline agent check")
 			return false, nil
 		}),
+		withDeployedProtocolEndpoints(),
 	)
 	require.NoError(t, err)
 	require.Equal(t, "deployed-agent", info.AgentName,
 		"deployed environment output should override the inline definition")
+	require.Equal(t, "2.0.0", info.Version)
+	require.Equal(
+		t,
+		"https://example.test/agents/deployed-agent/versions/2.0.0",
+		info.AgentEndpoint,
+	)
+	require.Equal(t, projectEndpoint, info.ProjectEndpoint)
+	require.Equal(t, map[agent_api.AgentProtocol]string{
+		agent_api.AgentProtocolResponses: "https://example.test/responses",
+	}, info.ProtocolEndpoints)
 }
 
 // TestResolveAgentServiceFromProject_EnvLookupFailureDoesNotFallback verifies a
@@ -844,7 +900,7 @@ func TestResolveAgentServiceFromProject_EnvLookupFailureIsReturned(t *testing.T)
 				testEnvironmentServiceServer: testEnvironmentServiceServer{
 					current: &azdext.Environment{Name: "test"},
 				},
-				getValueErr: tt.err,
+				getValuesErr: tt.err,
 			}
 			azdClient := newHelpersTestAzdClient(
 				t, projectServer, &helpersPromptServer{}, envServer,
@@ -855,7 +911,7 @@ func TestResolveAgentServiceFromProject_EnvLookupFailureIsReturned(t *testing.T)
 			)
 			require.Error(t, err)
 			require.Empty(t, info.AgentName)
-			require.ErrorContains(t, err, "reading AGENT_SERVICE_KEY_NAME")
+			require.ErrorContains(t, err, "reading environment")
 		})
 	}
 }

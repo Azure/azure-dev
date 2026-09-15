@@ -2224,7 +2224,8 @@ proto.azdext.GetConfigRequest.prototype.toObject = function(opt_includeInstance)
  */
 proto.azdext.GetConfigRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-path: jspb.Message.getFieldWithDefault(msg, 1, "")
+path: jspb.Message.getFieldWithDefault(msg, 1, ""),
+envName: jspb.Message.getFieldWithDefault(msg, 2, "")
   };
 
   if (includeInstance) {
@@ -2265,6 +2266,10 @@ proto.azdext.GetConfigRequest.deserializeBinaryFromReader = function(msg, reader
       var value = /** @type {string} */ (reader.readString());
       msg.setPath(value);
       break;
+    case 2:
+      var value = /** @type {string} */ (reader.readString());
+      msg.setEnvName(value);
+      break;
     default:
       reader.skipField();
       break;
@@ -2301,6 +2306,13 @@ proto.azdext.GetConfigRequest.serializeBinaryToWriter = function(message, writer
       f
     );
   }
+  f = message.getEnvName();
+  if (f.length > 0) {
+    writer.writeString(
+      2,
+      f
+    );
+  }
 };
 
 
@@ -2319,6 +2331,24 @@ proto.azdext.GetConfigRequest.prototype.getPath = function() {
  */
 proto.azdext.GetConfigRequest.prototype.setPath = function(value) {
   return jspb.Message.setProto3StringField(this, 1, value);
+};
+
+
+/**
+ * optional string env_name = 2;
+ * @return {string}
+ */
+proto.azdext.GetConfigRequest.prototype.getEnvName = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, ""));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.azdext.GetConfigRequest} returns this
+ */
+proto.azdext.GetConfigRequest.prototype.setEnvName = function(value) {
+  return jspb.Message.setProto3StringField(this, 2, value);
 };
 
 
@@ -2538,7 +2568,8 @@ proto.azdext.GetConfigStringRequest.prototype.toObject = function(opt_includeIns
  */
 proto.azdext.GetConfigStringRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-path: jspb.Message.getFieldWithDefault(msg, 1, "")
+path: jspb.Message.getFieldWithDefault(msg, 1, ""),
+envName: jspb.Message.getFieldWithDefault(msg, 2, "")
   };
 
   if (includeInstance) {
@@ -2579,6 +2610,10 @@ proto.azdext.GetConfigStringRequest.deserializeBinaryFromReader = function(msg, 
       var value = /** @type {string} */ (reader.readString());
       msg.setPath(value);
       break;
+    case 2:
+      var value = /** @type {string} */ (reader.readString());
+      msg.setEnvName(value);
+      break;
     default:
       reader.skipField();
       break;
@@ -2615,6 +2650,13 @@ proto.azdext.GetConfigStringRequest.serializeBinaryToWriter = function(message, 
       f
     );
   }
+  f = message.getEnvName();
+  if (f.length > 0) {
+    writer.writeString(
+      2,
+      f
+    );
+  }
 };
 
 
@@ -2633,6 +2675,24 @@ proto.azdext.GetConfigStringRequest.prototype.getPath = function() {
  */
 proto.azdext.GetConfigStringRequest.prototype.setPath = function(value) {
   return jspb.Message.setProto3StringField(this, 1, value);
+};
+
+
+/**
+ * optional string env_name = 2;
+ * @return {string}
+ */
+proto.azdext.GetConfigStringRequest.prototype.getEnvName = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, ""));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.azdext.GetConfigStringRequest} returns this
+ */
+proto.azdext.GetConfigStringRequest.prototype.setEnvName = function(value) {
+  return jspb.Message.setProto3StringField(this, 2, value);
 };
 
 
@@ -2828,7 +2888,8 @@ proto.azdext.GetConfigSectionRequest.prototype.toObject = function(opt_includeIn
  */
 proto.azdext.GetConfigSectionRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-path: jspb.Message.getFieldWithDefault(msg, 1, "")
+path: jspb.Message.getFieldWithDefault(msg, 1, ""),
+envName: jspb.Message.getFieldWithDefault(msg, 2, "")
   };
 
   if (includeInstance) {
@@ -2869,6 +2930,10 @@ proto.azdext.GetConfigSectionRequest.deserializeBinaryFromReader = function(msg,
       var value = /** @type {string} */ (reader.readString());
       msg.setPath(value);
       break;
+    case 2:
+      var value = /** @type {string} */ (reader.readString());
+      msg.setEnvName(value);
+      break;
     default:
       reader.skipField();
       break;
@@ -2905,6 +2970,13 @@ proto.azdext.GetConfigSectionRequest.serializeBinaryToWriter = function(message,
       f
     );
   }
+  f = message.getEnvName();
+  if (f.length > 0) {
+    writer.writeString(
+      2,
+      f
+    );
+  }
 };
 
 
@@ -2923,6 +2995,24 @@ proto.azdext.GetConfigSectionRequest.prototype.getPath = function() {
  */
 proto.azdext.GetConfigSectionRequest.prototype.setPath = function(value) {
   return jspb.Message.setProto3StringField(this, 1, value);
+};
+
+
+/**
+ * optional string env_name = 2;
+ * @return {string}
+ */
+proto.azdext.GetConfigSectionRequest.prototype.getEnvName = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, ""));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.azdext.GetConfigSectionRequest} returns this
+ */
+proto.azdext.GetConfigSectionRequest.prototype.setEnvName = function(value) {
+  return jspb.Message.setProto3StringField(this, 2, value);
 };
 
 
@@ -3143,7 +3233,8 @@ proto.azdext.SetConfigRequest.prototype.toObject = function(opt_includeInstance)
 proto.azdext.SetConfigRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
 path: jspb.Message.getFieldWithDefault(msg, 1, ""),
-value: msg.getValue_asB64()
+value: msg.getValue_asB64(),
+envName: jspb.Message.getFieldWithDefault(msg, 3, "")
   };
 
   if (includeInstance) {
@@ -3188,6 +3279,10 @@ proto.azdext.SetConfigRequest.deserializeBinaryFromReader = function(msg, reader
       var value = /** @type {!Uint8Array} */ (reader.readBytes());
       msg.setValue(value);
       break;
+    case 3:
+      var value = /** @type {string} */ (reader.readString());
+      msg.setEnvName(value);
+      break;
     default:
       reader.skipField();
       break;
@@ -3228,6 +3323,13 @@ proto.azdext.SetConfigRequest.serializeBinaryToWriter = function(message, writer
   if (f.length > 0) {
     writer.writeBytes(
       2,
+      f
+    );
+  }
+  f = message.getEnvName();
+  if (f.length > 0) {
+    writer.writeString(
+      3,
       f
     );
   }
@@ -3294,6 +3396,24 @@ proto.azdext.SetConfigRequest.prototype.setValue = function(value) {
 };
 
 
+/**
+ * optional string env_name = 3;
+ * @return {string}
+ */
+proto.azdext.SetConfigRequest.prototype.getEnvName = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 3, ""));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.azdext.SetConfigRequest} returns this
+ */
+proto.azdext.SetConfigRequest.prototype.setEnvName = function(value) {
+  return jspb.Message.setProto3StringField(this, 3, value);
+};
+
+
 
 
 
@@ -3326,7 +3446,8 @@ proto.azdext.UnsetConfigRequest.prototype.toObject = function(opt_includeInstanc
  */
 proto.azdext.UnsetConfigRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
-path: jspb.Message.getFieldWithDefault(msg, 1, "")
+path: jspb.Message.getFieldWithDefault(msg, 1, ""),
+envName: jspb.Message.getFieldWithDefault(msg, 2, "")
   };
 
   if (includeInstance) {
@@ -3367,6 +3488,10 @@ proto.azdext.UnsetConfigRequest.deserializeBinaryFromReader = function(msg, read
       var value = /** @type {string} */ (reader.readString());
       msg.setPath(value);
       break;
+    case 2:
+      var value = /** @type {string} */ (reader.readString());
+      msg.setEnvName(value);
+      break;
     default:
       reader.skipField();
       break;
@@ -3403,6 +3528,13 @@ proto.azdext.UnsetConfigRequest.serializeBinaryToWriter = function(message, writ
       f
     );
   }
+  f = message.getEnvName();
+  if (f.length > 0) {
+    writer.writeString(
+      2,
+      f
+    );
+  }
 };
 
 
@@ -3421,6 +3553,24 @@ proto.azdext.UnsetConfigRequest.prototype.getPath = function() {
  */
 proto.azdext.UnsetConfigRequest.prototype.setPath = function(value) {
   return jspb.Message.setProto3StringField(this, 1, value);
+};
+
+
+/**
+ * optional string env_name = 2;
+ * @return {string}
+ */
+proto.azdext.UnsetConfigRequest.prototype.getEnvName = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, ""));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.azdext.UnsetConfigRequest} returns this
+ */
+proto.azdext.UnsetConfigRequest.prototype.setEnvName = function(value) {
+  return jspb.Message.setProto3StringField(this, 2, value);
 };
 
 

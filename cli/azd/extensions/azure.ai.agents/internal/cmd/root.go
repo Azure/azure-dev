@@ -13,13 +13,17 @@ import (
 
 func NewRootCommand() *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
-		Name:  "agent",
-		Use:   "agent <command> [options]",
-		Short: fmt.Sprintf("Ship agents with Microsoft Foundry from your terminal. %s", color.YellowString("(Preview)")),
+		Name: "agent",
+		Use:  "agent <command> [options]",
+		Short: fmt.Sprintf(
+			"Ship prompt, hosted, and voice agents with Microsoft Foundry from your terminal. %s",
+			color.YellowString("(Preview)"),
+		),
 	})
 	rootCmd.SilenceUsage = true
 	rootCmd.SilenceErrors = true
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
+	telemetryReporter := newAgentContextReporter()
 
 	// Configure debug logging once on the root command so every subcommand
 	// inherits it (cobra.EnableTraverseRunHooks, set by the SDK, ensures this
@@ -33,7 +37,20 @@ func NewRootCommand() *cobra.Command {
 			}
 		}
 		setupDebugLogging(cmd.Flags())
+		operation := telemetryOperation(cmd.CommandPath())
+		switch operation {
+		case "deploy", "init", "listen", "metadata", "version":
+		default:
+			telemetryReporter.reportProject(cmd.Context(), operation)
+		}
 		return nil
+	}
+	rootCmd.PersistentPostRun = func(cmd *cobra.Command, _ []string) {
+		// Init may create the project that supplies the resolved agent context.
+		operation := telemetryOperation(cmd.CommandPath())
+		if operation == "init" {
+			telemetryReporter.reportProject(cmd.Context(), operation)
+		}
 	}
 
 	// Show the ASCII art banner above the default help text for the root command
@@ -47,11 +64,13 @@ func NewRootCommand() *cobra.Command {
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 
-	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
+	rootCmd.AddCommand(azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
+		configureExtensionHostWithTelemetry(host, telemetryReporter)
+	}))
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newInitCommand(extCtx))
-	rootCmd.AddCommand(newAgentAddCommand(extCtx))
-	rootCmd.AddCommand(newAgentDeployCommand(extCtx))
+	rootCmd.AddCommand(newAgentDependencyCommand(extCtx, "toolbox", AiToolboxHost))
+	rootCmd.AddCommand(newAgentDependencyCommand(extCtx, "connection", AiConnectionHost))
 	rootCmd.AddCommand(newRunCommand(extCtx))
 	rootCmd.AddCommand(newInvokeCommand(extCtx))
 	rootCmd.AddCommand(newMcpCommand())
@@ -66,6 +85,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newMonitorCommand(extCtx))
 	rootCmd.AddCommand(newFilesCommand(extCtx))
 	rootCmd.AddCommand(newSessionCommand(extCtx))
+	rootCmd.AddCommand(newInvocationsCommand(extCtx))
 	rootCmd.AddCommand(newSampleCommand(extCtx))
 	rootCmd.AddCommand(newDoctorCommand())
 

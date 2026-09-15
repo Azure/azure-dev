@@ -57,6 +57,38 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		}
 	})
 
+	t.Run("ErrorAttributionFields", func(t *testing.T) {
+		t.Parallel()
+		tests := []struct {
+			key             fields.AttributeKey
+			expectedName    string
+			expectedClass   fields.Classification
+			expectedPurpose fields.Purpose
+		}{
+			{
+				fields.ErrChainTypes, "error.chain.types",
+				fields.SystemMetadata, fields.PerformanceAndHealth,
+			},
+			{
+				fields.ErrExtensionCauseTypes, "error.extension.cause_types",
+				fields.EndUserPseudonymizedInformation, fields.PerformanceAndHealth,
+			},
+			{
+				fields.MapperSourceType, "mapper.source.type",
+				fields.SystemMetadata, fields.PerformanceAndHealth,
+			},
+			{
+				fields.MapperDestinationType, "mapper.destination.type",
+				fields.SystemMetadata, fields.PerformanceAndHealth,
+			},
+		}
+		for _, tt := range tests {
+			require.Equal(t, tt.expectedName, string(tt.key.Key))
+			require.Equal(t, tt.expectedClass, tt.key.Classification)
+			require.Equal(t, tt.expectedPurpose, tt.key.Purpose)
+		}
+	})
+
 	// Auth command telemetry fields
 	t.Run("AuthFields", func(t *testing.T) {
 		t.Parallel()
@@ -100,7 +132,10 @@ func TestTelemetryFieldConstants(t *testing.T) {
 
 		measurementFields := []fields.AttributeKey{
 			fields.AgentFixAttempts,
+			fields.ExeGraphDeployConcurrencyKey,
 			fields.ExeGraphMaxConcurrencyKey,
+			fields.ExeGraphPackageConcurrencyKey,
+			fields.ExeGraphProvisionConcurrencyKey,
 			fields.ToolExitCode,
 		}
 		for _, field := range measurementFields {
@@ -108,6 +143,25 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		}
 
 		require.False(t, fields.ServiceErrorCode.IsMeasurement)
+	})
+
+	t.Run("ExecutionGraphConcurrencyFields", func(t *testing.T) {
+		t.Parallel()
+
+		concurrencyFields := []struct {
+			field fields.AttributeKey
+			key   string
+		}{
+			{fields.ExeGraphPackageConcurrencyKey, "exegraph.package_concurrency"},
+			{fields.ExeGraphProvisionConcurrencyKey, "exegraph.provision_concurrency"},
+			{fields.ExeGraphDeployConcurrencyKey, "exegraph.deploy_concurrency"},
+		}
+		for _, tt := range concurrencyFields {
+			require.Equal(t, tt.key, string(tt.field.Key))
+			require.Equal(t, fields.SystemMetadata, tt.field.Classification)
+			require.Equal(t, fields.PerformanceAndHealth, tt.field.Purpose)
+			require.True(t, tt.field.IsMeasurement)
+		}
 	})
 
 	// Hooks command telemetry fields

@@ -226,13 +226,6 @@ Metadata requests are unauthenticated when no matching token is set.
 | `ENABLE_CONTAINER_AGENTS` | If set, indicates that container agents are enabled for the current azd environment. |
 | `AGENT_DEFINITION_PATH` | Path to an agent definition file for AI agent workflows. |
 
-### azure.ai.dataset
-
-| Variable | Description |
-| --- | --- |
-| `FOUNDRY_PROJECT_ENDPOINT` | The Microsoft Foundry project endpoint used by the `azure.ai.dataset` extension. Read from the active azd environment first; if the endpoint is still unresolved after the azd environment and global config are consulted, it is read from the host shell environment. |
-| `AZURE_AI_PROJECT_ENDPOINT` | Fallback for the project endpoint, consulted only when `FOUNDRY_PROJECT_ENDPOINT` is unset. Read in both places the primary key is read: the active azd environment first, then the host shell environment. A value set in the azd environment therefore takes precedence over global config and over the shell. |
-
 ### azure.ai.routines
 
 | Variable | Description |

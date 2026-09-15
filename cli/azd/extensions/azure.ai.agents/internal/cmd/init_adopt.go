@@ -648,6 +648,9 @@ func runInitFromAzureYaml(
 			return err
 		}
 	}
+	if err := wireAdoptedProjectDependency(ctx, azdClient); err != nil {
+		return err
+	}
 
 	// The projects extension owns project deployments. When the user
 	// names a model, delegate its authoring. Existing deployment lookup
@@ -693,6 +696,35 @@ func runInitFromAzureYaml(
 	)
 
 	printAdoptionNextSteps(ctx, azdClient, folderDisplay, promptOnly)
+	return nil
+}
+
+func wireAdoptedProjectDependency(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+) error {
+	projectServiceName, err := resolveProjectServiceKey(ctx, azdClient)
+	if err != nil {
+		return err
+	}
+	response, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("reading adopted agent services: %w", err)
+	}
+	if response.GetProject() == nil {
+		return missingServiceDependencyError(projectServiceName, AiProjectHost)
+	}
+	services := response.GetProject().GetServices()
+	for _, name := range slices.Sorted(maps.Keys(services)) {
+		if services[name].GetHost() != AiAgentHost {
+			continue
+		}
+		if _, err := addAgentServiceDependency(
+			ctx, azdClient, name, projectServiceName, "project", AiProjectHost,
+		); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

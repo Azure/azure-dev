@@ -1240,3 +1240,138 @@ func TestResolveProjectServiceKeyRequiresProjectsAuthoring(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "azure.ai.project")
 }
+
+func TestWireAdoptedProjectDependency(t *testing.T) {
+	t.Parallel()
+
+	for _, referenced := range []bool{false, true} {
+		name := "inline"
+		if referenced {
+			name = "referenced"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			projectProps, err := structpb.NewStruct(map[string]any{
+				"endpoint": "https://example.test",
+				"deployments": []any{
+					map[string]any{"name": "chat"},
+				},
+			})
+			require.NoError(t, err)
+			server := &recordingProjectServer{
+				existing: map[string]*azdext.ServiceConfig{
+					"custom-project": {
+						Host:                 AiProjectHost,
+						AdditionalProperties: projectProps,
+					},
+					"agent": {
+						Host: AiAgentHost,
+						Uses: []string{"connection", "toolbox", "skill"},
+					},
+					"legacy-agent": {
+						Host:   AiAgentHost,
+						Config: &structpb.Struct{},
+					},
+					"already-wired": {
+						Host: AiAgentHost,
+						Uses: []string{"skill", "custom-project", "toolbox"},
+					},
+					"connection": {Host: AiConnectionHost},
+					"toolbox":    {Host: AiToolboxHost},
+					"skill":      {Host: AiSkillHost},
+					"web":        {Host: "containerapp"},
+				},
+			}
+			var projectServer azdext.ProjectServiceServer = server
+			if referenced {
+				projectServer = &referencedAdoptProjectServer{server}
+			}
+			client := newProjectRecorderClient(t, projectServer)
+
+			require.NoError(t, wireAdoptedProjectDependency(t.Context(), client))
+			require.Equal(t,
+				[]string{"connection", "toolbox", "skill", "custom-project"},
+				server.uses["agent"],
+			)
+			require.Equal(t, []string{"custom-project"}, server.uses["legacy-agent"])
+			require.NotContains(t, server.uses, "already-wired")
+			require.Len(t, server.uses, 2)
+			require.Empty(t, server.added)
+			require.Empty(t, server.configValues)
+			require.Empty(t, server.configSections)
+			require.Equal(t, projectProps, server.existing["custom-project"].AdditionalProperties)
+
+			clear(server.uses)
+			require.NoError(t, wireAdoptedProjectDependency(t.Context(), client))
+			require.Empty(t, server.uses, "repeated wiring must not write again")
+		})
+	}
+}
+
+// Referenced uses are visible in Project.Get, not the raw service.
+type referencedAdoptProjectServer struct {
+	*recordingProjectServer
+}
+
+func (s *referencedAdoptProjectServer) GetServiceConfigValue(
+	context.Context,
+	*azdext.GetServiceConfigValueRequest,
+) (*azdext.GetServiceConfigValueResponse, error) {
+	return &azdext.GetServiceConfigValueResponse{}, nil
+}
+
+func TestWireAdoptedProjectDependencyPropagatesFailures(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		server *recordingProjectServer
+		want   string
+	}{
+		{
+			name: "missing project service",
+			server: &recordingProjectServer{
+				existing: map[string]*azdext.ServiceConfig{
+					"agent": {Host: AiAgentHost},
+				},
+			},
+			want: "without an azure.ai.project service",
+		},
+		{
+			name:   "project read failure",
+			server: &recordingProjectServer{getProjectErr: errors.New("read failed")},
+			want:   "read failed",
+		},
+		{
+			name: "dependency write failure",
+			server: &recordingProjectServer{
+				existing: map[string]*azdext.ServiceConfig{
+					"agent":   {Host: AiAgentHost},
+					"project": {Host: AiProjectHost},
+				},
+				setServiceConfigErr: errors.New("write failed"),
+			},
+			want: "write failed",
+		},
+		{
+			name: "dependency cycle",
+			server: &recordingProjectServer{
+				existing: map[string]*azdext.ServiceConfig{
+					"agent":   {Host: AiAgentHost},
+					"project": {Host: AiProjectHost, Uses: []string{"agent"}},
+				},
+			},
+			want: "dependency cycle",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			client := newProjectRecorderClient(t, tt.server)
+			require.ErrorContains(t, wireAdoptedProjectDependency(t.Context(), client), tt.want)
+			require.Empty(t, tt.server.uses)
+			require.Empty(t, tt.server.added)
+		})
+	}
+}

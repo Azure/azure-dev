@@ -199,7 +199,7 @@ Metadata requests are unauthenticated when no matching token is set.
 | Variable | Description |
 | --- | --- |
 | `AZD_EXT_TIMEOUT` | Timeout for extension operations, parsed as an integer number of seconds (for example, `10`). Defaults to `5` seconds; this is not a duration string, so values like `10m` are not valid. |
-| `AZD_EXT_DEBUG` | If true, enables debug output for extensions. |
+| `AZD_EXT_DEBUG` | If true, enables debug output for extensions: azd drops the extension startup timeout so a paused process is not cancelled, and the extension host logs gRPC broker traffic to stderr, falling back to `AZD_DEBUG` when this is unset. Extensions served by `azdext.ExtensionHost`, or that call `azdext.WaitForDebugger` themselves, additionally prompt to attach a debugger before running. |
 | `AZD_EXTENSION_CACHE_TTL` | Time-to-live for extension cache entries, parsed with Go's `time.ParseDuration` format (for example, `30m`, `4h`). Defaults to `4h`. |
 
 ## Extension-Specific Variables

@@ -177,7 +177,7 @@ func NewDeployAction(
 		if errors.Is(err, environment.ErrNameNotSpecified) ||
 			errors.Is(err, environment.ErrDefaultEnvironmentNotFound) {
 			// Providers may preview from process-level configuration without an azd environment.
-			// Use an in-memory environment so variable expansion still falls back to os.Getenv.
+			// Use an in-memory environment, so variable expansion still falls back to os.Getenv.
 			env = environment.New("")
 			lazyEnv.SetValue(env)
 		} else if err != nil {

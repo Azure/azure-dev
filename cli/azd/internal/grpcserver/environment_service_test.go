@@ -24,7 +24,7 @@ import (
 // Test_EnvironmentService_NoEnvironment verifies that when no environments are set,
 // the GetCurrent method returns an error and List returns an empty list.
 func Test_EnvironmentService_NoEnvironment(t *testing.T) {
-	// Setup a mock context and temporary project directory.
+	// Set up a mock context and temporary project directory.
 	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 
@@ -38,7 +38,7 @@ func Test_EnvironmentService_NoEnvironment(t *testing.T) {
 	err := project.Save(*mockContext.Context, &projectConfig, azdContext.ProjectPath())
 	require.NoError(t, err)
 
-	// Setup environment data store and manager.
+	// Set up environment data store and manager.
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
 	envManager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, localDataStore, nil)
@@ -116,10 +116,10 @@ func TestEnvironmentServicePreviewRejectsEnvironmentMutations(t *testing.T) {
 	require.NotContains(t, env.Dotenv(), "KEY")
 }
 
-// Test_EnvironmentService_Flow validates the complete flow including:
+// Test_EnvironmentService_Flow validates the complete flow including
 // environment creation, setting a default and verifying get, list, value retrieval, and selection.
 func Test_EnvironmentService_Flow(t *testing.T) {
-	// Setup a mock context and temporary project directory.
+	// Set up a mock context and temporary project directory.
 	mockContext := mocks.NewMockContext(t.Context())
 	temp := t.TempDir()
 

@@ -138,25 +138,16 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnv
 
 // Get returns the environment instance for the specified environment name
 func (fs *LocalFileDataStore) Get(ctx context.Context, name string) (*Environment, error) {
-	root := fs.azdContext.EnvironmentRoot(name)
-	_, err := os.Stat(root)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("'%s': %w", name, ErrNotFound)
-	} else if err != nil {
-		return nil, fmt.Errorf("listing env root: %w", err)
-	}
-
-	env := New(name)
-	if err := fs.Reload(ctx, env); err != nil {
-		return nil, err
-	}
-
-	return env, nil
+	return fs.get(ctx, name, false)
 }
 
 // GetReadOnly returns a detached environment snapshot without creating lock files or persisting normalization changes.
 // Environment saves use atomic replacement, so reading the files directly cannot observe a partially written .env.
 func (fs *LocalFileDataStore) GetReadOnly(ctx context.Context, name string) (*Environment, error) {
+	return fs.get(ctx, name, true)
+}
+
+func (fs *LocalFileDataStore) get(ctx context.Context, name string, readOnly bool) (*Environment, error) {
 	root := fs.azdContext.EnvironmentRoot(name)
 	_, err := os.Stat(root)
 	if errors.Is(err, os.ErrNotExist) {
@@ -166,7 +157,11 @@ func (fs *LocalFileDataStore) GetReadOnly(ctx context.Context, name string) (*En
 	}
 
 	env := New(name)
-	if err := fs.load(ctx, env); err != nil {
+	load := fs.Reload
+	if readOnly {
+		load = fs.load
+	}
+	if err := load(ctx, env); err != nil {
 		return nil, err
 	}
 	return env, nil

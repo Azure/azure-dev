@@ -33,12 +33,6 @@ type AgentServicePreviewOptions struct {
 	PendingEnvironment []string
 }
 
-// PreviewAgentService previews a project's hosted source-code agent without
-// requiring a previous deployment or a standalone agent.yaml file.
-func PreviewAgentService(ctx context.Context, options AgentServicePreviewOptions) (*DirectDeployPreviewResult, error) {
-	return previewAgentService(ctx, options, newDeploymentPreviewClient)
-}
-
 func previewAgentService(
 	ctx context.Context,
 	options AgentServicePreviewOptions,
@@ -168,7 +162,7 @@ func loadProjectPreviewDefinition(
 			return nil, err
 		}
 		// An inline service is authoritative. Retained legacy files are still
-		// compared separately, but must not resurrect settings removed here.
+		// compared separately but must not resurrect settings removed here.
 		for _, key := range []string{
 			"description", "metadata", "resources", "environment_variables", "code_configuration",
 			"registryConnectionId", "agent_endpoint", "agent_card", "policies", "session_configuration",
@@ -203,7 +197,7 @@ func loadProjectPreviewDefinition(
 	if rawEnv != nil && len(rawEnv) == 0 {
 		properties["environment_variables"] = []any{}
 	} else if len(service.Environment) > 0 {
-		variables := []any{}
+		var variables []any
 		for name, value := range service.Environment {
 			variables = append(variables, map[string]any{"name": name, "value": value})
 		}

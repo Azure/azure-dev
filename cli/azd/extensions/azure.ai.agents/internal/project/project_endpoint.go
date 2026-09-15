@@ -14,13 +14,13 @@ import (
 const foundryHostSuffix = ".services.ai.azure.com"
 const projectEndpointPathPrefix = "/api/projects/"
 
-// IsFoundryHost reports whether hostname belongs to the supported Foundry service.
+// IsFoundryHost reports whether the hostname belongs to the supported Foundry service.
 func IsFoundryHost(hostname string) bool {
 	return strings.HasSuffix(strings.ToLower(hostname), foundryHostSuffix)
 }
 
 // ValidateProjectEndpoint validates and normalizes a Foundry project endpoint,
-// dropping URL credentials, queries and fragments. The second result indicates
+// dropping URL credentials, queries, and fragments. The second result indicates
 // a path that does not have the usual /api/projects/<project> shape.
 func ValidateProjectEndpoint(raw string) (string, bool, error) {
 	raw = strings.TrimSpace(raw)

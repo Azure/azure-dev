@@ -43,7 +43,7 @@ func TestDeployPreviewSkipsUnsupportedTargetsBeforeDispatch(t *testing.T) {
 		{
 			name: "older-extension",
 			target: project.NewExternalServiceTarget(
-				"azure.ai.project", project.ServiceTargetKind("azure.ai.project"), nil, nil, nil, nil, nil,
+				"azure.ai.project", "azure.ai.project", nil, nil, nil, nil, nil,
 			),
 		},
 	} {
@@ -58,7 +58,7 @@ func TestDeployPreviewSkipsUnsupportedTargetsBeforeDispatch(t *testing.T) {
 				action, manager, writer := newDeployPreviewAction(t, "--all")
 				action.formatter = format.formatter
 				service := action.projectConfig.Services["api"]
-				service.Host = project.ServiceTargetKind("azure.ai.project")
+				service.Host = "azure.ai.project"
 				manager.On("GetServiceTarget", mock.Anything, service).Return(tt.target, nil).Once()
 				expectDeployPreview(t, action, manager, "web", &project.ServiceDeployPreviewResult{
 					Message: "Agent configuration changes",

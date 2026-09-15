@@ -151,7 +151,9 @@ func TestPreviewMatchesProviderDefinitionOverride(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, os.Remove(archivePath)) })
 	archive, err := zip.OpenReader(archivePath)
 	require.NoError(t, err)
-	defer archive.Close()
+	defer func(archive *zip.ReadCloser) {
+		_ = archive.Close()
+	}(archive)
 	var names []string
 	for _, file := range archive.File {
 		names = append(names, file.Name)

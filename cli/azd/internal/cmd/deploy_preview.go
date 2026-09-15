@@ -102,7 +102,7 @@ func (da *DeployAction) preview(ctx context.Context, targetServiceName string) (
 
 func (da *DeployAction) previewServices(targetServiceName string) ([]*project.ServiceConfig, error) {
 	// The regular service selector imports Aspire services and may build an AppHost.
-	// Preview resolves only declared services, without importing or initializing them.
+	// Preview resolves only declared services without importing or initializing them.
 	services, err := da.declaredServiceResolver.ServiceStableDeclared(da.projectConfig)
 	if err != nil {
 		return nil, err

@@ -288,7 +288,7 @@ func (s *environmentService) resolveEnvironmentReadOnly(
 	if err == nil && (envName == "" || env.Name() == envName) {
 		return env, nil
 	}
-	if envName == "" && err != nil {
+	if envName == "" {
 		return nil, err
 	}
 

@@ -46,7 +46,7 @@ jobs:
       - name: Install required azd extensions
         run: |
 {{- range $extension := .RequiredExtensions }}
-          azd extension install {{ $extension.Id }}{{ if $extension.Version }} --version {{ $extension.Version }}{{ end }} --no-prompt
+          azd extension install {{ $extension.Id }}{{ if $extension.Version }} --version {{ $extension.Version }} --force{{ end }} --no-prompt
 {{- end }}
 {{ end }}
 {{- if .IsTerraform}}

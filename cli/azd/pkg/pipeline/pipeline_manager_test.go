@@ -600,12 +600,12 @@ func Test_promptForCiFiles(t *testing.T) {
 		generated := string(content)
 		assert.Contains(t, generated, "Install required azd extensions")
 		assert.Contains(t, generated,
-			"azd extension install azure.ai.agents --version 1.0.0-beta.9 --no-prompt")
+			"azd extension install azure.ai.agents --version 1.0.0-beta.9 --force --no-prompt")
 		assert.Contains(t, generated,
-			"azd extension install azure.ai.projects --version 1.0.0-beta.10 --no-prompt")
+			"azd extension install azure.ai.projects --version 1.0.0-beta.10 --force --no-prompt")
 		assert.Less(t, strings.Index(generated, "uses: Azure/setup-azd@v2"), strings.Index(
 			generated,
-			"azd extension install azure.ai.projects --version 1.0.0-beta.10 --no-prompt",
+			"azd extension install azure.ai.projects --version 1.0.0-beta.10 --force --no-prompt",
 		))
 	})
 
@@ -633,12 +633,12 @@ func Test_promptForCiFiles(t *testing.T) {
 		generated := string(content)
 		assert.Contains(t, generated, "Install required azd extensions")
 		assert.Contains(t, generated,
-			"azd extension install azure.ai.agents --version 1.0.0-beta.9 --no-prompt")
+			"azd extension install azure.ai.agents --version 1.0.0-beta.9 --force --no-prompt")
 		assert.Contains(t, generated,
-			"azd extension install azure.ai.projects --version 1.0.0-beta.10 --no-prompt")
+			"azd extension install azure.ai.projects --version 1.0.0-beta.10 --force --no-prompt")
 		assert.Less(t, strings.Index(generated, "task: setup-azd@1"), strings.Index(
 			generated,
-			"azd extension install azure.ai.projects --version 1.0.0-beta.10 --no-prompt",
+			"azd extension install azure.ai.projects --version 1.0.0-beta.10 --force --no-prompt",
 		))
 	})
 

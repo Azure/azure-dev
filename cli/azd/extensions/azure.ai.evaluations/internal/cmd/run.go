@@ -921,11 +921,21 @@ func (ec *evalContext) pollRun(
 ) (*eval_api.OpenAIEvalRun, error) {
 	const interval = 5 * time.Second
 	lastStatus := ""
-	deadline := time.Now().Add(waitBudget)
+
+	// The budget has to bound the requests as well as the gaps between them. It
+	// was checked only between polls, and the data-plane client carries no
+	// deadline of its own, so a single stalled response held `--wait` open with
+	// nothing left to stop it -- which is the one thing a bounded wait promises
+	// not to do.
+	waitCtx, cancel := context.WithTimeout(ctx, waitBudget)
+	defer cancel()
 
 	for {
-		run, err := ec.evalClient.GetOpenAIEvalRun(ctx, evalID, runID)
+		run, err := ec.evalClient.GetOpenAIEvalRun(waitCtx, evalID, runID)
 		if err != nil {
+			if stopped := waitStopped(ctx, waitCtx, runID); stopped != nil {
+				return nil, stopped
+			}
 			return nil, messages.PollingRun(runID, err)
 		}
 		if run.Status != lastStatus {
@@ -934,20 +944,36 @@ func (ec *evalContext) pollRun(
 				fmt.Fprint(out, messages.RunStatusLine(run.Status))
 			}
 		}
+		// Before the budget, so a run that reached its end as the budget ran out
+		// is reported as finished rather than as abandoned.
 		if terminalRunStates[strings.ToLower(run.Status)] {
 			return run, nil
 		}
-		if time.Now().After(deadline) {
-			return nil, errWaitBudgetSpent
-		}
 		select {
-		case <-ctx.Done():
-			// Name what is still running, or the run is lost to whoever
-			// interrupted the wait.
-			return nil, messages.WaitInterrupted(runID, ctx.Err())
+		case <-waitCtx.Done():
+			if stopped := waitStopped(ctx, waitCtx, runID); stopped != nil {
+				return nil, stopped
+			}
+			return nil, messages.WaitInterrupted(runID, waitCtx.Err())
 		case <-time.After(interval):
 		}
 	}
+}
+
+// waitStopped tells the budget running out from the caller giving up, or
+// reports that neither happened.
+//
+// The caller is asked first: cancelling during the last seconds of the budget
+// is an interruption, and calling it a spent budget would hand back a reattach
+// line for a wait the reader had already abandoned.
+func waitStopped(caller, wait context.Context, runID string) error {
+	if caller.Err() != nil {
+		return messages.WaitInterrupted(runID, caller.Err())
+	}
+	if errors.Is(wait.Err(), context.DeadlineExceeded) {
+		return errWaitBudgetSpent
+	}
+	return nil
 }
 
 // startedRunHandoff is what `run start --no-wait -o json` returns.

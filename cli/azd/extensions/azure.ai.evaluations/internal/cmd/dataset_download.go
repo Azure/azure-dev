@@ -205,6 +205,11 @@ func (a *datasetDownloadAction) write(
 	return len(content.Files), dest, nil
 }
 
+// renameFunc is os.Rename. Replaced in tests: the double failure below cannot
+// be provoked through the filesystem, because whatever stops the install is
+// gone by the time the restore runs.
+var renameFunc = os.Rename
+
 // replaceDir moves staging onto dest, which may already exist.
 //
 // Renaming onto an existing directory fails whatever --force said, so the old
@@ -226,14 +231,21 @@ func replaceDir(staging, dest string) error {
 		if err := os.Remove(held); err != nil {
 			return messages.WritingDownload(dest, err)
 		}
-		if err := os.Rename(dest, held); err != nil {
+		if err := renameFunc(dest, held); err != nil {
 			return messages.WritingDownload(dest, err)
 		}
 		replaced = held
 	}
-	if err := os.Rename(staging, dest); err != nil {
+	if err := renameFunc(staging, dest); err != nil {
 		if replaced != "" {
-			_ = os.Rename(replaced, dest)
+			// Both moves failed, so the original is sitting under a name chosen
+			// to be unguessable. Reporting only the install failure left the
+			// reader looking at a missing dataset with nothing saying where it
+			// went; the holding path is the only way back to it.
+			if restoreErr := renameFunc(replaced, dest); restoreErr != nil {
+				return messages.DownloadLeftOriginalAside(
+					dest, filepath.ToSlash(replaced), err, restoreErr)
+			}
 		}
 		return messages.WritingDownload(dest, err)
 	}

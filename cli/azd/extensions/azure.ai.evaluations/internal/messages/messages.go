@@ -1840,6 +1840,18 @@ func WritingDownload(path string, err error) error {
 	return fmt.Errorf("writing %s: %w", filepath.ToSlash(path), err)
 }
 
+// DownloadLeftOriginalAside reports a replace that failed twice: the new
+// directory could not be installed, and the original could not be put back.
+//
+// The holding name is deliberately unguessable, so it has to be said here or
+// the original is lost to the reader even though it is still on disk.
+func DownloadLeftOriginalAside(dest, held string, installErr, restoreErr error) error {
+	return fmt.Errorf(
+		"writing %s: %w; the original could not be put back either (%v) "+
+			"and is being held at %s — move it back by hand",
+		filepath.ToSlash(dest), installErr, restoreErr, held)
+}
+
 // CreatingDirectory reports a directory a download needed and could not make.
 func CreatingDirectory(path string, err error) error {
 	return fmt.Errorf("creating %s: %w", filepath.ToSlash(path), err)

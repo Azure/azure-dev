@@ -5,6 +5,7 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -36,6 +37,23 @@ type Cli struct {
 	engineOnce      sync.Once // Publishes an immutable selection; readiness checks run separately.
 	containerEngine tools.ContainerEngine
 	engineErr       error
+}
+
+// ContainerEngineUnavailableError indicates that the installed engine failed its readiness check.
+// The cause may be a stopped runtime, connection failure, or insufficient permissions.
+type ContainerEngineUnavailableError struct {
+	Engine tools.ContainerEngine
+	Err    error
+}
+
+// Error returns the container engine readiness failure.
+func (e *ContainerEngineUnavailableError) Error() string {
+	return fmt.Sprintf("%s is unavailable: %v", containerEngineDisplayName(e.Engine), e.Err)
+}
+
+// Unwrap returns the underlying readiness check error.
+func (e *ContainerEngineUnavailableError) Unwrap() error {
+	return e.Err
 }
 
 // ContainerEngine returns the container engine name ("docker" or "podman"), selected once
@@ -391,7 +409,17 @@ func (d *Cli) validateContainerEngine(ctx context.Context, engineName tools.Cont
 
 	// Check if daemon/service is running
 	if _, err := tools.ExecuteCommand(ctx, d.commandRunner, string(engineName), "ps"); err != nil {
-		return fmt.Errorf("the %s service is not running, please start it: %w", engineName, err)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		// The command runner may report a process exit without wrapping cancellation.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return errors.Join(err, ctxErr)
+		}
+		return &ContainerEngineUnavailableError{
+			Engine: engineName,
+			Err:    err,
+		}
 	}
 
 	return nil

@@ -78,6 +78,8 @@ If ACR refuses scheduling with `TasksOperationsNotAllowed`, azd warns and falls 
 
 Other errors, including build failures, cancellation, and failures reading remote logs or status, do not trigger fallback. If fallback also fails, azd preserves both errors. Set `docker.remoteBuild: false` to build locally.
 
+If the local runtime is unavailable, the error explains both the ACR refusal and the failed fallback. Check that Docker or Podman is running and accessible before retrying; the underlying error includes connection or permission details.
+
 `docker.imagePassthrough` declares that azd does not own the container image lifecycle. It requires the service-level
 `image` property to contain a fully qualified remote image and cannot be combined with `docker.remoteBuild`. During package, publish, and deploy operations, azd
 uses the configured image as the existing remote image without building, pulling, tagging, copying, or publishing it:

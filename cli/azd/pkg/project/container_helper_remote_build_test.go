@@ -39,16 +39,19 @@ import (
 
 func TestContainerHelperRemoteBuildFallback(t *testing.T) {
 	tests := []struct {
-		name          string
-		runtime       string
-		packageImage  string
-		metadataImage bool
-		emptyPackage  bool
-		imageOverride string
-		failure       string
-		cancelAt      string
-		wantError     string
-		wantOps       []string
+		name           string
+		runtime        string
+		packageImage   string
+		metadataImage  bool
+		emptyPackage   bool
+		imageOverride  string
+		failure        string
+		localError     error
+		cancelAt       string
+		wantError      string
+		wantMessage    string
+		wantSuggestion string
+		wantOps        []string
 	}{
 		{
 			name:    "BuildFromSource",
@@ -80,7 +83,36 @@ func TestContainerHelperRemoteBuildFallback(t *testing.T) {
 			wantOps: []string{"schedule", "--version"},
 		},
 		{
-			name: "DaemonUnavailable", failure: "ps", wantError: "local container runtime unavailable",
+			name: "DaemonUnavailable", failure: "ps", wantError: "Docker is unavailable",
+			wantMessage: "Azure Container Registry refused the remote build, and local fallback could not start " +
+				"because Docker is unavailable.",
+			wantSuggestion: "Check that Docker is running and accessible, then run the command again.",
+			wantOps:        []string{"schedule", "--version", "ps"},
+		},
+		{
+			name: "PodmanDaemonUnavailable", runtime: "podman", failure: "ps", wantError: "Podman is unavailable",
+			wantMessage: "Azure Container Registry refused the remote build, and local fallback could not start " +
+				"because Podman is unavailable.",
+			wantSuggestion: "Check that Podman is running and accessible, then run the command again.",
+			wantOps:        []string{"schedule", "--version", "ps"},
+		},
+		{
+			name: "RuntimePermissionDenied", failure: "ps", localError: os.ErrPermission, wantError: "permission denied",
+			wantMessage: "Azure Container Registry refused the remote build, and local fallback could not start " +
+				"because Docker is unavailable.",
+			wantSuggestion: "Check that Docker is running and accessible, then run the command again.",
+			wantOps:        []string{"schedule", "--version", "ps"},
+		},
+		{
+			name: "RuntimeProbeCanceled", failure: "ps", localError: context.Canceled, wantError: "context canceled",
+			wantOps: []string{"schedule", "--version", "ps"},
+		},
+		{
+			name: "RuntimeProbeDeadline", failure: "ps", localError: context.DeadlineExceeded,
+			wantError: "context deadline exceeded", wantOps: []string{"schedule", "--version", "ps"},
+		},
+		{
+			name: "RuntimeProbeKilled", failure: "ps", cancelAt: "ps", wantError: "context canceled",
 			wantOps: []string{"schedule", "--version", "ps"},
 		},
 		{
@@ -131,6 +163,9 @@ func TestContainerHelperRemoteBuildFallback(t *testing.T) {
 			f := newRemoteBuildFixture(t)
 			f.scheduleCode = "TasksOperationsNotAllowed"
 			f.failure = tt.failure
+			if tt.localError != nil {
+				f.localError = tt.localError
+			}
 			if tt.failure == "login" {
 				f.loginCall.Return(f.localError)
 			}
@@ -208,6 +243,27 @@ func TestContainerHelperRemoteBuildFallback(t *testing.T) {
 					require.Contains(t, rendered, "TasksOperationsNotAllowed")
 					require.Contains(t, rendered, f.localError.Error())
 					require.Contains(t, rendered, "docker login")
+				}
+				if tt.wantMessage != "" {
+					suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+					require.True(t, ok)
+					require.Equal(t, tt.wantMessage, suggestion.Message)
+					require.Equal(t, tt.wantSuggestion, suggestion.Suggestion)
+					display := &ux.ErrorWithSuggestion{
+						Err: suggestion.Err, Message: suggestion.Message,
+						Suggestion: suggestion.Suggestion, Links: suggestion.Links,
+					}
+					rendered := display.ToString("")
+					require.Contains(t, rendered, "ERROR: "+tt.wantMessage)
+					require.Contains(t, rendered, "Suggestion: "+tt.wantSuggestion)
+					require.Contains(t, rendered, "TasksOperationsNotAllowed")
+					require.Contains(t, rendered, f.localError.Error())
+				}
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					_, hasSuggestion := errors.AsType[*internal.ErrorWithSuggestion](err)
+					require.False(t, hasSuggestion, "cancellation must not recommend starting the runtime")
+					_, isUnavailable := errors.AsType[*docker.ContainerEngineUnavailableError](err)
+					require.False(t, isUnavailable)
 				}
 				if tt.cancelAt != "" {
 					require.ErrorIs(t, err, context.Canceled)

@@ -889,6 +889,19 @@ func (ch *ContainerHelper) publishLocalFallback(
 		return "", err
 	}
 	if err := ch.docker.CheckInstalled(ctx); err != nil {
+		if _, ok := errors.AsType[*docker.ContainerEngineUnavailableError](err); ok {
+			engineName := ch.docker.Name()
+			return "", &internal.ErrorWithSuggestion{
+				Err: err,
+				Message: fmt.Sprintf(
+					"Azure Container Registry refused the remote build, and local fallback could not start "+
+						"because %s is unavailable.",
+					engineName,
+				),
+				Suggestion: fmt.Sprintf(
+					"Check that %s is running and accessible, then run the command again.", engineName),
+			}
+		}
 		return "", fmt.Errorf("local container runtime unavailable: %w", err)
 	}
 	// Do not announce or prepare a fallback if cancellation arrived during the readiness check.

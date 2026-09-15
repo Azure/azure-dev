@@ -102,11 +102,12 @@ func (r *engineLookupRunner) ToolInPath(name string) error {
 
 func TestCheckInstalledConcurrentReadiness(t *testing.T) {
 	tests := []struct {
-		name           string
-		blockedCommand string
-		firstVersion   string
-		firstErr       error
-		wantError      string
+		name            string
+		blockedCommand  string
+		firstVersion    string
+		firstErr        error
+		wantError       string
+		wantUnavailable bool
 	}{
 		{
 			name: "ready", blockedCommand: "--version", firstVersion: "podman version 4.3.1",
@@ -125,7 +126,7 @@ func TestCheckInstalledConcurrentReadiness(t *testing.T) {
 		},
 		{
 			name: "daemon failure", blockedCommand: "ps", firstErr: errors.New("daemon unavailable"),
-			wantError: "the podman service is not running, please start it: daemon unavailable",
+			wantError: "Podman is unavailable: daemon unavailable", wantUnavailable: true,
 		},
 	}
 
@@ -203,11 +204,63 @@ func TestCheckInstalledConcurrentReadiness(t *testing.T) {
 			if tt.firstErr != nil {
 				require.ErrorIs(t, err, tt.firstErr)
 			}
+			unavailableErr, isUnavailable := errors.AsType[*ContainerEngineUnavailableError](err)
+			require.Equal(t, tt.wantUnavailable, isUnavailable)
+			if isUnavailable {
+				require.Equal(t, tools.ContainerEnginePodman, unavailableErr.Engine)
+			}
 			require.Equal(t, tools.ContainerEnginePodman, cli.ContainerEngine())
 
 			require.NoError(t, cli.CheckInstalled(ctx))
 			require.Equal(t, int32(3), calls.Load(), "readiness checks must run again after success or failure")
 			require.Equal(t, tools.ContainerEnginePodman, cli.ContainerEngine())
+		})
+	}
+}
+
+func TestCheckInstalledReadinessErrors(t *testing.T) {
+	tests := []struct {
+		name            string
+		err             error
+		cancel          bool
+		wantUnavailable bool
+	}{
+		{name: "canceled probe", err: context.Canceled},
+		{name: "expired probe", err: context.DeadlineExceeded},
+		{name: "canceled process exit", err: errors.New("process killed"), cancel: true},
+		{name: "socket permission", err: errors.New("permission denied"), wantUnavailable: true},
+		{name: "connection failure", err: errors.New("connection refused"), wantUnavailable: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_CONTAINER_RUNTIME", "docker")
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			runner := mockexec.NewMockCommandRunner()
+			runner.When(func(args exec.RunArgs, command string) bool {
+				return command == "docker --version"
+			}).Respond(exec.RunResult{Stdout: "Docker version 20.10.17, build 100c701"})
+			runner.When(func(args exec.RunArgs, command string) bool {
+				return command == "docker ps"
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				if tt.cancel {
+					cancel()
+				}
+				return exec.RunResult{}, tt.err
+			})
+
+			err := NewCli(runner).CheckInstalled(ctx)
+			require.ErrorIs(t, err, tt.err)
+			unavailableErr, isUnavailable := errors.AsType[*ContainerEngineUnavailableError](err)
+			require.Equal(t, tt.wantUnavailable, isUnavailable)
+			if isUnavailable {
+				require.Equal(t, tools.ContainerEngineDocker, unavailableErr.Engine)
+				require.ErrorContains(t, err, "Docker is unavailable")
+				require.NotContains(t, err.Error(), "is not running")
+			}
+			if tt.cancel {
+				require.ErrorIs(t, err, context.Canceled)
+			}
 		})
 	}
 }

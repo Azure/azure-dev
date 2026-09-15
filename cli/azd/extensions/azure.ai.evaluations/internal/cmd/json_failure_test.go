@@ -152,6 +152,32 @@ func TestAFailureAfterTheDocumentDoesNotAppendASecond(t *testing.T) {
 		"stdout carried a second document: %q", out.String())
 }
 
+// A misspelled flag stops pflag where it stands, so a `-o json` written after
+// it was never parsed and the caller who asked for a document got prose. The
+// answer must not depend on where on the line the caller put the flag.
+func TestTheRequestedFormatIsFoundWhereverItSitsOnTheLine(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"before an unknown flag", []string{"-o", "json", "--typo"}, "json"},
+		{"after an unknown flag", []string{"--typo", "-o", "json"}, "json"},
+		{"after a bad value for a real flag", []string{"--limit", "nope", "-o", "json"}, "json"},
+		{"long spelling, attached", []string{"--typo", "--output=json"}, "json"},
+		{"among positional arguments", []string{"create", "name", "-o", "json"}, "json"},
+		{"not asked for at all", []string{"--typo", "create"}, ""},
+		{"asked for something else", []string{"-o", "table", "--typo"}, "table"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, outputFromRawArgs(tc.args))
+		})
+	}
+}
+
 // Tags are what a generated dataset says which job produced it with, and the
 // standalone `azd ai dataset show` prints them. A reader moving between the two
 // surfaces should not have to learn which one hides what the other shows.

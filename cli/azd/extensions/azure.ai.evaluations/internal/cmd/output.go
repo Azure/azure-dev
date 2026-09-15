@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 const outputJSON = "json"
@@ -160,7 +161,10 @@ type jsonErrorBody struct {
 // unchanged: azd decides the exit code and prints its own line, and both should
 // stay as they are.
 func failAs(cmd *cobra.Command, err error) error {
-	if err == nil || !isJSON(cmd) {
+	if err == nil {
+		return err
+	}
+	if !isJSON(cmd) && outputFromRawArgs(os.Args[1:]) != outputJSON {
 		return err
 	}
 	_ = emitJSON(cmd.OutOrStdout(), jsonError{Error: jsonErrorBody{
@@ -168,6 +172,24 @@ func failAs(cmd *cobra.Command, err error) error {
 		Suggestion: azdext.ErrorSuggestion(err),
 	}})
 	return err
+}
+
+// outputFromRawArgs re-reads -o/--output straight from the arguments.
+//
+// pflag stops at the first thing it cannot parse, so `--typo -o json` never
+// recorded the format the caller asked for -- and a malformed invocation is
+// exactly when a script needs to be answered in the format it can read. Without
+// this the answer depended on whether -o came before or after the mistake.
+//
+// Unknown flags are skipped rather than rejected: this is looking for one flag,
+// not judging the line.
+func outputFromRawArgs(args []string) string {
+	fs := pflag.NewFlagSet("output-probe", pflag.ContinueOnError)
+	fs.ParseErrorsWhitelist = pflag.ParseErrorsWhitelist{UnknownFlags: true}
+	fs.SetOutput(io.Discard)
+	out := fs.StringP("output", "o", "", "")
+	_ = fs.Parse(args)
+	return *out
 }
 
 // answeredWriter remembers whether anything reached the caller.
@@ -200,6 +222,14 @@ func (a *answeredWriter) Write(p []byte) (int, error) {
 // the caller on stderr, and the document they were given is the more useful of
 // the two.
 func reportFailuresAsJSON(root *cobra.Command) {
+	// A misspelled flag is rejected during parsing, before any hook a command
+	// owns. Cobra looks this up through the parent chain, so setting it on the
+	// root covers the tree. An unknown *command* is the one mistake left with no
+	// answer: cobra resolves the command before it has one to ask.
+	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		return failAs(cmd, err)
+	})
+
 	var wrap func(*cobra.Command)
 	wrap = func(c *cobra.Command) {
 		// Argument validation runs instead of RunE, not before it, so a wrapper

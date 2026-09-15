@@ -193,6 +193,9 @@ func (a *datasetDownloadAction) write(
 		if err := os.MkdirAll(filepath.Dir(local), 0o750); err != nil {
 			return 0, "", messages.CreatingDirectory(filepath.Dir(local), err)
 		}
+		if err := claimStagedPath(local, file); err != nil {
+			return 0, "", err
+		}
 		body, err := ec.datasetClient.Open(ctx, content, file)
 		if err != nil {
 			return 0, "", messages.DownloadingDataset(a.name, version, err)
@@ -210,6 +213,20 @@ func (a *datasetDownloadAction) write(
 		return 0, "", err
 	}
 	return len(content.Files), dest, nil
+}
+
+// claimStagedPath refuses a second entry that lands where the first one did.
+//
+// Staging is created empty, so anything already at this path is another entry
+// of the same download. Blob names are case sensitive and Windows and macOS are
+// not, so `A.jsonl` and `a.jsonl` are one file here -- and writing on would
+// leave one where the listing said two while the count still reported both.
+// Checked before the transfer rather than after it.
+func claimStagedPath(local, entry string) error {
+	if _, err := os.Lstat(local); err == nil {
+		return messages.DownloadEntriesCollideLocally(entry, filepath.Base(local))
+	}
+	return nil
 }
 
 // replaceDir moves staging onto dest, which may already exist.

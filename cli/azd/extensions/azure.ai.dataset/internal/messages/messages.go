@@ -758,6 +758,20 @@ func DownloadDestinationExists(path string) error {
 		"%s already exists; pass --force to overwrite it", filepath.ToSlash(path))
 }
 
+// DownloadEntriesCollideLocally refuses a version whose entries cannot all
+// exist side by side here.
+//
+// Blob names are case sensitive; Windows and macOS filesystems are not. Writing
+// the second entry on would leave one file where the listing said two, while
+// the reported count still said both arrived.
+func DownloadEntriesCollideLocally(entry, local string) error {
+	return fmt.Errorf(
+		"this dataset holds more than one entry that maps to %q on this filesystem, "+
+			"which cannot tell them apart (%q is the second); "+
+			"download it somewhere case sensitive, or fetch the entries individually",
+		local, entry)
+}
+
 // DownloadNameNotAPathComponent refuses a name or version that would move the
 // destination somewhere the caller did not point it.
 func DownloadNameNotAPathComponent(value string) error {

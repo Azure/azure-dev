@@ -404,7 +404,9 @@ func (c *DatasetClient) DownloadDatasetContent(
 
 	// A URI whose last path segment carries a file extension is the blob
 	// itself; anything else is the container holding it.
+	probedAsBlob := false
 	if looksLikeBlobURI(sasURI) {
+		probedAsBlob = true
 		data, err := c.DownloadDataset(ctx, sasURI)
 		if err == nil {
 			return data, nil
@@ -414,6 +416,13 @@ func (c *DatasetClient) DownloadDatasetContent(
 
 	names, err := c.ListContainerBlobs(ctx, sasURI)
 	if err != nil {
+		// A blob name does not have to carry an extension, so the guess above
+		// can send a single blob here. The listing failing is what says so.
+		if !probedAsBlob {
+			if data, probeErr := c.DownloadDataset(ctx, sasURI); probeErr == nil {
+				return data, nil
+			}
+		}
 		return nil, messages.ListingDatasetContent(name, err)
 	}
 	blobName := pickDatasetBlob(names)

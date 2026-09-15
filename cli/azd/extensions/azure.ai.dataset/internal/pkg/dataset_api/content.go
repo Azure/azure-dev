@@ -55,7 +55,9 @@ func (c *DatasetClient) ListDatasetContent(
 
 	// An uploaded dataset's URI names the blob itself, and listing one answers
 	// 409 -- so `dataset download` failed for every dataset this CLI published.
+	probedAsBlob := false
 	if looksLikeBlobURI(sasURI) {
+		probedAsBlob = true
 		if body, err := openBlobURL(ctx, sasURI, name); err == nil {
 			_ = body.Close()
 			// Its own name, not an empty one: the entry is what Extension reads,
@@ -73,6 +75,21 @@ func (c *DatasetClient) ListDatasetContent(
 
 	names, err := c.ListContainerBlobs(ctx, sasURI)
 	if err != nil {
+		// A blob name does not have to carry an extension, so the guess above can
+		// send a single blob down the container path. The listing failing is what
+		// says so -- ask storage before reporting a dataset that reads fine as
+		// one that cannot be listed.
+		if !probedAsBlob {
+			if body, probeErr := openBlobURL(ctx, sasURI, name); probeErr == nil {
+				_ = body.Close()
+				return &DatasetContent{
+					Container:  sasURI,
+					Files:      []string{blobNameFromURI(sasURI)},
+					SingleFile: true,
+					blobURI:    true,
+				}, nil
+			}
+		}
 		return nil, messages.ListingDatasetContent(name, err)
 	}
 

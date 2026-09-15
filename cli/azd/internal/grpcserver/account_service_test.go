@@ -229,7 +229,6 @@ func TestAccountService_GetCurrentPrincipal_GraphFallback(t *testing.T) {
 		wantError  string
 	}{
 		{name: "success", graphID: "graph-object-id", statusCode: http.StatusOK},
-		{name: "empty object id", statusCode: http.StatusOK, wantError: "current principal object id is empty"},
 		{name: "lookup failure", statusCode: http.StatusForbidden, wantError: "fetching current principal information"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

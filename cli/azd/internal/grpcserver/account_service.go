@@ -75,9 +75,6 @@ func (s *accountService) GetCurrentPrincipal(
 	if err != nil {
 		return nil, fmt.Errorf("fetching current principal information: %w", err)
 	}
-	if objectID == "" {
-		return nil, status.Error(codes.Internal, "current principal object id is empty")
-	}
 
 	return &azdext.GetCurrentPrincipalResponse{
 		ObjectId:      objectID,

@@ -5,8 +5,10 @@ package provisioning
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,6 +18,8 @@ import (
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -23,6 +27,27 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type stubTokenCredential struct {
+	token   azcore.AccessToken
+	err     error
+	options []policy.TokenRequestOptions
+}
+
+func (c *stubTokenCredential) GetToken(
+	_ context.Context,
+	options policy.TokenRequestOptions,
+) (azcore.AccessToken, error) {
+	c.options = append(c.options, options)
+	return c.token, c.err
+}
+
+func accessTokenWithClaims(oid, idType, scopes string) string {
+	claims := base64.RawURLEncoding.EncodeToString(
+		fmt.Appendf(nil, `{"oid":%q,"idtyp":%q,"scp":%q}`, oid, idType, scopes),
+	)
+	return "header." + claims + ".signature"
+}
 
 func TestFindFoundryProjectService(t *testing.T) {
 	tests := []struct {
@@ -205,6 +230,132 @@ func TestFoundryProvider_ImplementsContract(t *testing.T) {
 	// guards against future signature drift in azdext.
 	p := NewFoundryProvisioningProvider(nil)
 	assert.NotNil(t, p)
+}
+
+func TestParametersResolvePrincipalFromTenantScopedCredential(t *testing.T) {
+	t.Parallel()
+
+	credential := &stubTokenCredential{
+		token: azcore.AccessToken{
+			Token: accessTokenWithClaims("guest-object-id", "user", "user_impersonation"),
+		},
+	}
+	provider := &FoundryProvisioningProvider{
+		credential:  credential,
+		location:    "eastus",
+		foundryName: "project",
+	}
+
+	parameters, err := provider.Parameters(t.Context())
+
+	require.NoError(t, err)
+	assert.Equal(t, "guest-object-id", provider.principalID)
+	assert.Equal(t, "User", provider.principalType)
+	require.Len(t, credential.options, 1)
+	assert.Equal(
+		t,
+		[]string{"https://management.azure.com/.default"},
+		credential.options[0].Scopes,
+	)
+	require.Len(t, parameters, 4)
+	assert.Equal(t, "principalId", parameters[2].Name)
+	assert.Equal(t, "guest-object-id", parameters[2].Value)
+	assert.Equal(t, "principalType", parameters[3].Name)
+	assert.Equal(t, "User", parameters[3].Value)
+}
+
+func TestParametersResolveServicePrincipalType(t *testing.T) {
+	t.Parallel()
+
+	credential := &stubTokenCredential{
+		token: azcore.AccessToken{
+			Token: accessTokenWithClaims("service-principal-object-id", "app", ""),
+		},
+	}
+	provider := &FoundryProvisioningProvider{credential: credential}
+
+	parameters, err := provider.Parameters(t.Context())
+
+	require.NoError(t, err)
+	assert.Equal(t, "service-principal-object-id", provider.principalID)
+	assert.Equal(t, "ServicePrincipal", provider.principalType)
+	require.Len(t, parameters, 4)
+	assert.Equal(t, "ServicePrincipal", parameters[3].Value)
+}
+
+func TestEnsurePrincipalIDPreservesEnvironmentValue(t *testing.T) {
+	t.Parallel()
+
+	credential := &stubTokenCredential{
+		token: azcore.AccessToken{
+			Token: accessTokenWithClaims("different-object-id", "user", "user_impersonation"),
+		},
+	}
+	provider := &FoundryProvisioningProvider{
+		principalID:           "configured-object-id",
+		principalIDConfigured: true,
+		credential:            credential,
+	}
+
+	require.NoError(t, provider.ensurePrincipalID(t.Context()))
+	assert.Equal(t, "configured-object-id", provider.principalID)
+	assert.Empty(t, credential.options)
+}
+
+func TestEnsurePrincipalIDPreservesExplicitEmptyValue(t *testing.T) {
+	t.Parallel()
+
+	credential := &stubTokenCredential{
+		token: azcore.AccessToken{
+			Token: accessTokenWithClaims("different-object-id", "user", "user_impersonation"),
+		},
+	}
+	provider := &FoundryProvisioningProvider{
+		principalIDConfigured: true,
+		credential:            credential,
+	}
+
+	require.NoError(t, provider.ensurePrincipalID(t.Context()))
+	assert.Empty(t, provider.principalID)
+	assert.Empty(t, provider.principalType)
+	assert.Empty(t, credential.options)
+}
+
+func TestEnsurePrincipalIDReportsCredentialFailures(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		credential azcore.TokenCredential
+	}{
+		{
+			name: "token acquisition",
+			credential: &stubTokenCredential{
+				err: errors.New("token unavailable"),
+			},
+		},
+		{
+			name: "missing oid claim",
+			credential: &stubTokenCredential{
+				token: azcore.AccessToken{
+					Token: accessTokenWithClaims("", "user", "user_impersonation"),
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			provider := &FoundryProvisioningProvider{credential: test.credential}
+
+			err := provider.ensurePrincipalID(t.Context())
+
+			require.Error(t, err)
+			local, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, exterrors.CodePrincipalLookupFailed, local.Code)
+		})
+	}
 }
 
 func TestArmOutputsToProto(t *testing.T) {

@@ -51,9 +51,11 @@ type toolboxServiceConfig struct {
 // name is the service key. Package and Publish are no-ops because a toolbox has no build
 // artifact.
 type toolboxServiceTarget struct {
-	azdClient     *azdext.AzdClient
-	projectClient serviceConfigReader
-	resolver      connectionResolver
+	environmentClient environmentReader
+	accountClient     accountTenantLookup
+	projectClient     serviceConfigReader
+	resolver          connectionResolver
+	newClient         func(endpoint, tenantID string) (toolboxClient, error)
 }
 
 // newToolboxServiceTarget creates the azure.ai.toolbox service-target provider.
@@ -61,9 +63,13 @@ func newToolboxServiceTarget(
 	azdClient *azdext.AzdClient,
 ) azdext.ServiceTargetProvider {
 	return &toolboxServiceTarget{
-		azdClient:     azdClient,
-		projectClient: azdClient.Project(),
-		resolver:      defaultConnectionResolver{},
+		environmentClient: azdClient.Environment(),
+		accountClient:     azdClient.Account(),
+		projectClient:     azdClient.Project(),
+		resolver:          defaultConnectionResolver{},
+		newClient: func(endpoint, tenantID string) (toolboxClient, error) {
+			return newToolboxClientForTenant(endpoint, tenantID)
+		},
 	}
 }
 
@@ -187,9 +193,17 @@ func (p *toolboxServiceTarget) Deploy(
 		progress(fmt.Sprintf("Upserting toolbox %q", name))
 	}
 
-	client, err := newToolboxClient(endpoint)
+	tenantID, err := p.credentialTenantID(ctx)
 	if err != nil {
 		return nil, err
+	}
+	client, err := p.newClient(endpoint, tenantID)
+	if err != nil {
+		return nil, exterrors.Auth(
+			exterrors.CodeCredentialCreationFailed,
+			fmt.Sprintf("failed to create Azure credential: %s", err),
+			"run 'azd auth login' to authenticate",
+		)
 	}
 
 	created, err := client.CreateToolboxVersion(ctx, name, request)
@@ -364,6 +378,87 @@ type serviceConfigReader interface {
 	) (*azdext.GetServiceConfigValueResponse, error)
 }
 
+type environmentReader interface {
+	GetCurrent(
+		ctx context.Context,
+		in *azdext.EmptyRequest,
+		opts ...grpc.CallOption,
+	) (*azdext.EnvironmentResponse, error)
+	GetValues(
+		ctx context.Context,
+		in *azdext.GetEnvironmentRequest,
+		opts ...grpc.CallOption,
+	) (*azdext.KeyValueListResponse, error)
+	GetValue(
+		ctx context.Context,
+		in *azdext.GetEnvRequest,
+		opts ...grpc.CallOption,
+	) (*azdext.KeyValueResponse, error)
+}
+
+type accountTenantLookup interface {
+	LookupTenant(
+		ctx context.Context,
+		in *azdext.LookupTenantRequest,
+		opts ...grpc.CallOption,
+	) (*azdext.LookupTenantResponse, error)
+}
+
+func (p *toolboxServiceTarget) credentialTenantID(ctx context.Context) (string, error) {
+	current, err := p.environmentClient.GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return "", exterrors.Internal(
+			exterrors.CodeAzdClientFailed,
+			fmt.Sprintf("failed to resolve the active azd environment: %s", err),
+		)
+	}
+	envName := strings.TrimSpace(current.GetEnvironment().GetName())
+	if envName == "" {
+		return "", exterrors.Dependency(
+			exterrors.CodeMissingAzureSubscription,
+			"an active azd environment is required to deploy a toolbox",
+			"select an azd environment and retry",
+		)
+	}
+	subscriptionResponse, err := p.environmentClient.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     "AZURE_SUBSCRIPTION_ID",
+	})
+	if err != nil {
+		return "", exterrors.Internal(
+			exterrors.CodeAzdClientFailed,
+			fmt.Sprintf("failed to read AZURE_SUBSCRIPTION_ID from azd environment %q: %s", envName, err),
+		)
+	}
+	subscriptionID := strings.TrimSpace(subscriptionResponse.GetValue())
+	if subscriptionID == "" {
+		return "", exterrors.Dependency(
+			exterrors.CodeMissingAzureSubscription,
+			fmt.Sprintf("AZURE_SUBSCRIPTION_ID is not set in azd environment %q", envName),
+			"set AZURE_SUBSCRIPTION_ID in the active azd environment and retry",
+		)
+	}
+	tenantResponse, err := p.accountClient.LookupTenant(ctx, &azdext.LookupTenantRequest{
+		SubscriptionId: subscriptionID,
+	})
+	if err != nil {
+		return "", exterrors.Auth(
+			exterrors.CodeTenantLookupFailed,
+			fmt.Sprintf("failed to get tenant ID for subscription %s: %s", subscriptionID, err),
+			"verify your Azure login with 'azd auth login' and that you have access to this subscription",
+		)
+	}
+	tenantID := strings.TrimSpace(tenantResponse.GetTenantId())
+	if tenantID == "" {
+		return "", exterrors.Auth(
+			exterrors.CodeTenantLookupFailed,
+			fmt.Sprintf("azd returned an empty tenant ID for subscription %s", subscriptionID),
+			"verify your Azure login with 'azd auth login' and that you have access to this subscription",
+		)
+	}
+	return tenantID, nil
+}
+
 func serviceEnvDeclared(
 	ctx context.Context,
 	projectClient serviceConfigReader,
@@ -399,14 +494,14 @@ func (p *toolboxServiceTarget) environmentValues(
 		return environment, nil
 	}
 
-	current, err := p.azdClient.Environment().GetCurrent(
+	current, err := p.environmentClient.GetCurrent(
 		ctx,
 		&azdext.EmptyRequest{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("resolving current azd environment: %w", err)
 	}
-	resp, err := p.azdClient.Environment().GetValues(
+	resp, err := p.environmentClient.GetValues(
 		ctx,
 		&azdext.GetEnvironmentRequest{
 			Name: current.GetEnvironment().GetName(),

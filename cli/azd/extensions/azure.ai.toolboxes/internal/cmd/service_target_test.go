@@ -7,6 +7,8 @@ import (
 	"context"
 	"testing"
 
+	"azure.ai.toolboxes/internal/foundry/projectctx"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,6 +21,57 @@ import (
 type stubToolboxConnResolver struct {
 	id     string
 	target string
+}
+
+type stubAccountTenantLookup struct {
+	request  *azdext.LookupTenantRequest
+	tenantID string
+	err      error
+}
+
+type stubEnvironmentReader struct {
+	name            string
+	subscriptionID  string
+	getValueRequest *azdext.GetEnvRequest
+}
+
+func (s *stubEnvironmentReader) GetCurrent(
+	context.Context,
+	*azdext.EmptyRequest,
+	...grpc.CallOption,
+) (*azdext.EnvironmentResponse, error) {
+	return &azdext.EnvironmentResponse{
+		Environment: &azdext.Environment{Name: s.name},
+	}, nil
+}
+
+func (s *stubEnvironmentReader) GetValues(
+	context.Context,
+	*azdext.GetEnvironmentRequest,
+	...grpc.CallOption,
+) (*azdext.KeyValueListResponse, error) {
+	return &azdext.KeyValueListResponse{}, nil
+}
+
+func (s *stubEnvironmentReader) GetValue(
+	_ context.Context,
+	request *azdext.GetEnvRequest,
+	_ ...grpc.CallOption,
+) (*azdext.KeyValueResponse, error) {
+	s.getValueRequest = request
+	return &azdext.KeyValueResponse{Value: s.subscriptionID}, nil
+}
+
+func (s *stubAccountTenantLookup) LookupTenant(
+	_ context.Context,
+	request *azdext.LookupTenantRequest,
+	_ ...grpc.CallOption,
+) (*azdext.LookupTenantResponse, error) {
+	s.request = request
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &azdext.LookupTenantResponse{TenantId: s.tenantID}, nil
 }
 
 func (s stubToolboxConnResolver) resolveConnection(
@@ -192,6 +245,65 @@ func TestDeployReuseUsesServiceEnvironment(t *testing.T) {
 	require.NotNil(t, result)
 	require.Len(t, *calls, 1)
 	assert.Equal(t, wantURL, (*calls)[0].value)
+}
+
+func TestDeployUsesSubscriptionUserTenantForCredential(t *testing.T) {
+	// No t.Parallel: projectctx.ReadAzdHostedSourcesFunc and setToolboxEndpointEnvFunc are package-level seams.
+	const (
+		endpoint       = "https://project.services.ai.azure.com/api/projects/test"
+		subscriptionID = "subscription-id"
+		userTenantID   = "user-tenant-id"
+	)
+
+	previousReadSources := projectctx.ReadAzdHostedSourcesFunc
+	projectctx.ReadAzdHostedSourcesFunc = func(context.Context) (projectctx.AzdHostedSources, error) {
+		return projectctx.AzdHostedSources{EnvValue: endpoint, EnvName: "test"}, nil
+	}
+	t.Cleanup(func() { projectctx.ReadAzdHostedSourcesFunc = previousReadSources })
+	stubToolboxEndpointEnv(t)
+
+	account := &stubAccountTenantLookup{tenantID: userTenantID}
+	environment := &stubEnvironmentReader{name: "test", subscriptionID: subscriptionID}
+	client := newMockToolboxClient(endpoint)
+	var credentialTenantID string
+	target := &toolboxServiceTarget{
+		environmentClient: environment,
+		accountClient:     account,
+		resolver:          newStubConnectionResolver(),
+		newClient: func(gotEndpoint, tenantID string) (toolboxClient, error) {
+			assert.Equal(t, endpoint, gotEndpoint)
+			credentialTenantID = tenantID
+			return client, nil
+		},
+	}
+	properties, err := structpb.NewStruct(map[string]any{
+		"tools": []any{map[string]any{"type": "web_search"}},
+	})
+	require.NoError(t, err)
+
+	result, err := target.Deploy(
+		t.Context(),
+		&azdext.ServiceConfig{
+			Name:                 "research",
+			AdditionalProperties: properties,
+			Environment: map[string]string{
+				"TOOLBOX_SETTING": "value",
+			},
+		},
+		nil,
+		nil,
+		nil,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, environment.getValueRequest)
+	assert.Equal(t, "test", environment.getValueRequest.GetEnvName())
+	assert.Equal(t, "AZURE_SUBSCRIPTION_ID", environment.getValueRequest.GetKey())
+	require.NotNil(t, account.request)
+	assert.Equal(t, subscriptionID, account.request.GetSubscriptionId())
+	assert.Equal(t, userTenantID, credentialTenantID)
+	require.Len(t, client.createVersionCalls, 1)
 }
 
 func TestBuildToolEntries_ResolvesConnectionRef(t *testing.T) {

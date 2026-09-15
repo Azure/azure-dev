@@ -1306,24 +1306,31 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		IsTerraform:            props.UsesTerraform || props.InfraProvider == infraProviderTerraform,
 	}
 
+	appendUnique := func(values []string, value string) []string {
+		if slices.Contains(values, value) {
+			return values
+		}
+		return append(values, value)
+	}
+
 	// Apply provider parameters
 	for _, param := range props.providerParameters {
 		for _, envVarName := range param.EnvVarMapping {
 			if param.Secret {
-				tmplContext.Secrets = append(tmplContext.Secrets, envVarName)
+				tmplContext.Secrets = appendUnique(tmplContext.Secrets, envVarName)
 			} else {
-				tmplContext.Variables = append(tmplContext.Variables, envVarName)
+				tmplContext.Variables = appendUnique(tmplContext.Variables, envVarName)
 			}
 		}
 	}
 
 	if tmplContext.IsTerraform {
 		// terraform provider does not resolve this variables automatically, AZD needs to define them
-		tmplContext.Variables = append(tmplContext.Variables, "AZURE_LOCATION")
-		tmplContext.Variables = append(tmplContext.Variables, "AZURE_ENV_NAME")
+		tmplContext.Variables = appendUnique(tmplContext.Variables, "AZURE_LOCATION")
+		tmplContext.Variables = appendUnique(tmplContext.Variables, "AZURE_ENV_NAME")
 
 		if props.AuthType == AuthTypeClientCredentials {
-			tmplContext.Secrets = append(tmplContext.Secrets, "AZURE_CLIENT_SECRET")
+			tmplContext.Secrets = appendUnique(tmplContext.Secrets, "AZURE_CLIENT_SECRET")
 		}
 	}
 

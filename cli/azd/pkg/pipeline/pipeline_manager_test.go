@@ -622,12 +622,16 @@ func Test_promptForCiFiles(t *testing.T) {
 			RepoRoot:      tempDir,
 			BranchName:    "main",
 			AuthType:      AuthTypeFederated,
+			providerParameters: []provisioning.Parameter{
+				{EnvVarMapping: []string{"AZURE_LOCATION"}},
+			},
 		})
 
 		require.NoError(t, err)
 		content, err := os.ReadFile(expectedPath)
 		require.NoError(t, err)
 		assert.Contains(t, string(content), "uses: hashicorp/setup-terraform@v3")
+		assert.Equal(t, 1, strings.Count(string(content), "AZURE_LOCATION:"))
 	})
 
 	t.Run("required extensions are installed for azdo", func(t *testing.T) {
@@ -661,12 +665,16 @@ func Test_promptForCiFiles(t *testing.T) {
 				RepoRoot:      tempDir,
 				BranchName:    "main",
 				AuthType:      AuthTypeFederated,
+				providerParameters: []provisioning.Parameter{
+					{EnvVarMapping: []string{"AZURE_LOCATION"}},
+				},
 			})
 
 			require.NoError(t, err)
 			content, err := os.ReadFile(expectedPath)
 			require.NoError(t, err)
 			assert.Contains(t, string(content), "task: TerraformInstaller@1")
+			assert.Equal(t, 2, strings.Count(string(content), "AZURE_LOCATION:"))
 		})
 
 		require.NoError(t, err)

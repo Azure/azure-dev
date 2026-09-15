@@ -6,7 +6,7 @@
 //
 // It writes the candidate's instruction, skills, and tool definitions
 // into .agent_configs/<candidate-id>/. Managed prompt agents deploy from the
-// candidate's model, instructions, and tools written into azure.yaml.
+// candidate's model, instructions, and matching function-tool updates in azure.yaml.
 // Other agent kinds select the local candidate through environment variables
 // in their definition (inline in azure.yaml, or legacy agent.yaml on disk).
 
@@ -55,10 +55,16 @@ func newOptimizeApplyCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Download the optimized configuration and skill files from an optimization
 candidate and write them into your local azd project under .agent_configs/.
 
-For managed prompt agents, this also updates the model, instructions, and tools
+For managed prompt agents, this also updates the model and instructions
 in the azure.yaml service definition, including the deprecated config section.
-Candidates must contain a non-empty model and instructions. Missing or null
-tools remove the existing tools. Optimized prompt-agent skills are not supported.
+Candidates must contain a non-empty model and instructions. Function tools are
+updated only when their names match existing function tools. Omitted fields,
+including nested parameter fields, are preserved. Supplied arrays and explicit
+null optional fields replace previous values.
+Functions are saved in flat format. Other tools and tool order are preserved;
+new tools are not added. Missing, null, or empty candidate tools leave tools
+unchanged. Malformed candidate tools are rejected before writing configuration.
+Optimized prompt-agent skills are not supported.
 Referenced definitions ($ref) must be inlined or updated manually.
 Prompt apply also requires AGENT_DEFINITION_PATH to be unset or empty and a
 service name without dots.
@@ -227,7 +233,7 @@ func (a *OptimizeApplyAction) apply(
 	}
 	fmt.Fprintf(out, "  → %s\n", filepath.Join(candidateDir, opt_eval.MetadataFile))
 
-	// Step 3: Persist the candidate's configuration: model, instructions, and tools for prompt agents;
+	// Step 3: Persist model, instructions, and matching function-tool updates for prompt agents;
 	// for hosted, persist OPTIMIZATION_LOCAL_DIR and OPTIMIZATION_CANDIDATE_ID on the definition.
 	if isPromptAgent {
 		fmt.Fprintf(out, "  Updating agent definition in azure.yaml...\n")
@@ -341,9 +347,10 @@ func persistPromptAgentCandidateConfig(
 	}
 
 	merged := response.Section.AsMap()
-	maps.Copy(merged, updates)
-	if _, hasTools := updates["tools"]; !hasTools {
-		delete(merged, "tools")
+	merged["model"] = updates.model
+	merged["instructions"] = updates.instructions
+	if err := mergePromptAgentTools(merged, updates.functionTools); err != nil {
+		return fmt.Errorf("updating prompt agent %q tools: %w", svc.Name, err)
 	}
 	section, err := structpb.NewStruct(merged)
 	if err != nil {
@@ -360,7 +367,13 @@ func persistPromptAgentCandidateConfig(
 	return nil
 }
 
-func promptAgentCandidateValues(candidateConfig json.RawMessage) (map[string]any, error) {
+type promptCandidateValues struct {
+	model         string
+	instructions  string
+	functionTools map[string]map[string]any
+}
+
+func promptAgentCandidateValues(candidateConfig json.RawMessage) (*promptCandidateValues, error) {
 	var config map[string]any
 	if err := json.Unmarshal(candidateConfig, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse candidate config: %w", err)
@@ -370,25 +383,120 @@ func promptAgentCandidateValues(candidateConfig json.RawMessage) (map[string]any
 	if !found || model == nil {
 		return nil, fmt.Errorf("candidate config does not contain a model")
 	}
-	if modelName, ok := model.(string); !ok || strings.TrimSpace(modelName) == "" {
+	modelName, ok := model.(string)
+	if !ok || strings.TrimSpace(modelName) == "" {
 		return nil, fmt.Errorf("candidate config contains an invalid model")
 	}
 	instructions, _ := candidateConfigValue(config, "system_prompt", "systemPrompt", "instructions")
-	if text, ok := instructions.(string); !ok || strings.TrimSpace(text) == "" {
+	text, ok := instructions.(string)
+	if !ok || strings.TrimSpace(text) == "" {
 		return nil, fmt.Errorf("candidate config does not contain non-empty instructions")
 	}
 
 	// Skills are intentionally excluded because skill optimization is not yet
 	// supported for managed prompt agents. Prompt deploy resolves azure.ai.skill
 	// services from the project instead of candidate files under .agent_configs.
-	updates := map[string]any{"model": model, "instructions": instructions}
-	if tools := config["tools"]; tools != nil {
-		if _, ok := tools.([]any); !ok {
-			return nil, fmt.Errorf("candidate config tools must be an array")
-		}
-		updates["tools"] = tools
+	tools, err := promptCandidateFunctionTools(config["tools"])
+	if err != nil {
+		return nil, err
 	}
-	return updates, nil
+	return &promptCandidateValues{model: modelName, instructions: text, functionTools: tools}, nil
+}
+
+func promptCandidateFunctionTools(raw any) (map[string]map[string]any, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	tools, ok := raw.([]any)
+	if !ok {
+		return nil, fmt.Errorf("candidate config tools must be an array")
+	}
+	functions := map[string]map[string]any{}
+	for i, rawTool := range tools {
+		tool, ok := rawTool.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("candidate config tools[%d] must be an object", i)
+		}
+		toolType, ok := tool["type"].(string)
+		if !ok || strings.TrimSpace(toolType) == "" {
+			return nil, fmt.Errorf("candidate config tools[%d].type must be a non-empty string", i)
+		}
+		if toolType != "function" {
+			continue
+		}
+		if nested, found := tool["function"]; found {
+			for _, key := range []string{"name", "description", "parameters", "strict"} {
+				if _, found := tool[key]; found {
+					return nil, fmt.Errorf("candidate config tools[%d] mixes flat and nested function fields", i)
+				}
+			}
+			tool, ok = nested.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("candidate config tools[%d].function must be an object", i)
+			}
+		}
+		name, ok := tool["name"].(string)
+		if !ok || strings.TrimSpace(name) == "" {
+			return nil, fmt.Errorf("candidate config tools[%d] function name must be a non-empty string", i)
+		}
+		if value := tool["description"]; value != nil {
+			if _, ok := value.(string); !ok {
+				return nil, fmt.Errorf("candidate config tools[%d] function description must be a string or null", i)
+			}
+		}
+		if value := tool["parameters"]; value != nil {
+			if _, ok := value.(map[string]any); !ok {
+				return nil, fmt.Errorf("candidate config tools[%d] function parameters must be an object or null", i)
+			}
+		}
+		if value := tool["strict"]; value != nil {
+			if _, ok := value.(bool); !ok {
+				return nil, fmt.Errorf("candidate config tools[%d] function strict must be a boolean or null", i)
+			}
+		}
+		if _, duplicate := functions[name]; duplicate {
+			return nil, fmt.Errorf("candidate config tools contains duplicate function name %q", name)
+		}
+		flat := maps.Clone(tool)
+		flat["type"] = "function"
+		functions[name] = flat
+	}
+	return functions, nil
+}
+
+func mergePromptAgentTools(section map[string]any, functions map[string]map[string]any) error {
+	if len(functions) == 0 || section["tools"] == nil {
+		return nil
+	}
+	tools, ok := section["tools"].([]any)
+	if !ok {
+		return fmt.Errorf("existing tools must be an array")
+	}
+	for _, raw := range tools {
+		tool, ok := raw.(map[string]any)
+		if !ok || tool["type"] != "function" {
+			continue
+		}
+		name, _ := tool["name"].(string)
+		if update, found := functions[name]; found {
+			mergePromptFunctionFields(tool, update)
+		}
+	}
+	return nil
+}
+
+// mergePromptFunctionFields preserves omitted fields, including within parameter schemas.
+// Explicit scalar and array values replace their existing values.
+func mergePromptFunctionFields(target, updates map[string]any) {
+	for key, value := range updates {
+		existing, existingIsMap := target[key].(map[string]any)
+		update, updateIsMap := value.(map[string]any)
+		if existingIsMap && updateIsMap {
+			mergePromptFunctionFields(existing, update)
+		} else {
+			target[key] = value
+		}
+	}
 }
 
 func candidateConfigValue(config map[string]any, keys ...string) (any, bool) {

@@ -340,7 +340,6 @@ func TestPersistPromptAgentCandidateConfig(t *testing.T) {
 
 				expected["model"] = "gpt-5"
 				expected["instructions"] = "Optimized instructions."
-				expected["tools"] = tools
 				server.mu.Lock()
 				defer server.mu.Unlock()
 				require.Len(t, server.configSectionReads, 1)
@@ -382,11 +381,6 @@ func TestPersistPromptAgentCandidateConfigOptionalTools(t *testing.T) {
 
 				expected["model"] = "gpt-5"
 				expected["instructions"] = "Baseline instructions."
-				if toolsCase == "empty" {
-					expected["tools"] = []any{}
-				} else {
-					delete(expected, "tools")
-				}
 				server.mu.Lock()
 				defer server.mu.Unlock()
 				require.Len(t, server.configSections, 1)
@@ -479,9 +473,18 @@ func newPromptCandidateTestServer(
 		"kind":         "prompt",
 		"model":        "${MODEL_DEPLOYMENT}",
 		"instructions": "${AGENT_INSTRUCTIONS}",
-		"tools":        []any{map[string]any{"type": "code_interpreter"}},
-		"description":  "${AGENT_DESCRIPTION}",
-		"skills":       []any{map[string]any{"name": "existing-skill"}},
+		"tools": []any{
+			map[string]any{"type": "web_search"},
+			map[string]any{
+				"type": "function", "name": "lookup_travel_policy",
+				"description": "${TOOL_DESCRIPTION}", "strict": true,
+				"parameters": map[string]any{
+					"type": "object", "properties": map[string]any{}, "required": []any{}, "additionalProperties": false,
+				},
+			},
+		},
+		"description": "${AGENT_DESCRIPTION}",
+		"skills":      []any{map[string]any{"name": "existing-skill"}},
 	}
 	path := ""
 	if legacy {
@@ -490,6 +493,7 @@ func newPromptCandidateTestServer(
 		values["host"] = AiAgentHost
 		values["project"] = "."
 		values["uses"] = []any{"foundry", "existing-skill"}
+		values["harness"] = map[string]any{"type": "github_copilot_preview"}
 		values["env"] = map[string]any{"CUSTOM_SETTING": "${CUSTOM_SETTING}"}
 		values["hooks"] = map[string]any{"predeploy": map[string]any{"shell": "sh", "run": "echo ready"}}
 	}
@@ -596,12 +600,21 @@ func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 			t.Cleanup(func() { client.Close() })
 
 			requests := make(chan string, 4)
+			candidate := mustMarshal(t, map[string]any{
+				"model": "gpt-5", "system_prompt": "Optimized instructions.",
+				"tools": []any{map[string]any{
+					"type": "function",
+					"function": map[string]any{
+						"name": "lookup_travel_policy", "description": "Optimized tool description.",
+					},
+				}},
+			})
 			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				requests <- r.URL.Path
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
 				case "/agent_optimization_jobs/opt-1/candidates/candidate-1/config":
-					_, err := w.Write([]byte(`{"model":"gpt-5","system_prompt":"Optimized instructions.","tools":[]}`))
+					_, err := w.Write(candidate)
 					assert.NoError(t, err)
 				case "/agent_optimization_jobs/opt-1/candidates/candidate-1":
 					_, err := w.Write([]byte(`{"files":[]}`))
@@ -639,7 +652,12 @@ func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 			if tt.kind == "prompt" {
 				expected["model"] = "gpt-5"
 				expected["instructions"] = "Optimized instructions."
-				expected["tools"] = []any{}
+				tools, ok := expected["tools"].([]any)
+				require.True(t, ok)
+				require.Len(t, tools, 2)
+				function, ok := tools[1].(map[string]any)
+				require.True(t, ok)
+				function["description"] = "Optimized tool description."
 				require.Len(t, projectServer.configSections, 1)
 				require.Equal(t, svc.Name, projectServer.configSections[0].ServiceName)
 				require.Equal(t, path, projectServer.configSections[0].Path)
@@ -665,51 +683,63 @@ func TestOptimizeApply_PersistsCandidateByAgentKind(t *testing.T) {
 }
 
 func TestOptimizeApply_InvalidPromptCandidateDoesNotWrite(t *testing.T) {
-	t.Setenv("AGENT_DEFINITION_PATH", "")
-	svc := newPromptCandidateTestService(t, false)
-	root := t.TempDir()
-	server := &recordingProjectServer{}
-	envServer := &testEnvironmentServiceServer{
-		environments: map[string]*azdext.Environment{"dev": {Name: "dev"}},
-		values: map[string]map[string]string{
-			"dev": {
-				optimizeJobIDKeyForAgent(svc.Name):             "opt-1",
-				"AGENT_PROMPT_AGENT_OPTIMIZATION_CANDIDATE_ID": "previous",
-			},
-		},
+	for _, tt := range []struct {
+		name   string
+		config string
+		err    string
+	}{
+		{"missing instructions", `{"model":"gpt-5"}`, "does not contain non-empty instructions"},
+		{"invalid function", `{"model":"gpt-5","instructions":"Valid.","tools":[{"type":"function"}]}`,
+			"function name must be a non-empty string"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AGENT_DEFINITION_PATH", "")
+			svc := newPromptCandidateTestService(t, false)
+			root := t.TempDir()
+			server := &recordingProjectServer{}
+			envServer := &testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{"dev": {Name: "dev"}},
+				values: map[string]map[string]string{
+					"dev": {
+						optimizeJobIDKeyForAgent(svc.Name):             "opt-1",
+						"AGENT_PROMPT_AGENT_OPTIMIZATION_CANDIDATE_ID": "previous",
+					},
+				},
+			}
+			t.Setenv("AZD_SERVER", newProjectRecorderServer(t, server, envServer))
+			client, err := azdext.NewAzdClient()
+			require.NoError(t, err)
+			t.Cleanup(func() { client.Close() })
+			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "/agent_optimization_jobs/opt-1/candidates/candidate-1/config", r.URL.Path)
+				w.Header().Set("Content-Type", "application/json")
+				_, err := w.Write([]byte(tt.config))
+				assert.NoError(t, err)
+			}))
+			t.Cleanup(api.Close)
+			action := &OptimizeApplyAction{
+				flags: &optimizeApplyFlags{
+					candidate: "candidate-1", optimizeConnectionFlags: optimizeConnectionFlags{projectEndpoint: api.URL},
+				},
+				envName: "dev",
+				client:  newTestOptimizeClient(api.URL),
+			}
+			var out bytes.Buffer
+			err = action.apply(t.Context(), client, svc, &azdext.ProjectConfig{Path: root}, &out, color.New(color.Bold))
+			require.ErrorContains(t, err, tt.err)
+			require.NoDirExists(t, filepath.Join(root, agentConfigsDir))
+			require.Empty(t, envServer.setKeys)
+			require.Equal(t, "previous", envServer.values["dev"]["AGENT_PROMPT_AGENT_OPTIMIZATION_CANDIDATE_ID"])
+			require.NotContains(t, out.String(), "applied to")
+			server.mu.Lock()
+			defer server.mu.Unlock()
+			require.Empty(t, server.configValues)
+			require.Empty(t, server.configSectionReads)
+			require.Empty(t, server.configSections)
+			require.Empty(t, server.unsetPaths)
+			require.Empty(t, server.env)
+		})
 	}
-	t.Setenv("AZD_SERVER", newProjectRecorderServer(t, server, envServer))
-	client, err := azdext.NewAzdClient()
-	require.NoError(t, err)
-	t.Cleanup(func() { client.Close() })
-	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/agent_optimization_jobs/opt-1/candidates/candidate-1/config", r.URL.Path)
-		w.Header().Set("Content-Type", "application/json")
-		_, err := w.Write([]byte(`{"model":"gpt-5"}`))
-		assert.NoError(t, err)
-	}))
-	t.Cleanup(api.Close)
-	action := &OptimizeApplyAction{
-		flags: &optimizeApplyFlags{
-			candidate: "candidate-1", optimizeConnectionFlags: optimizeConnectionFlags{projectEndpoint: api.URL},
-		},
-		envName: "dev",
-		client:  newTestOptimizeClient(api.URL),
-	}
-	var out bytes.Buffer
-	err = action.apply(t.Context(), client, svc, &azdext.ProjectConfig{Path: root}, &out, color.New(color.Bold))
-	require.ErrorContains(t, err, "does not contain non-empty instructions")
-	require.NoDirExists(t, filepath.Join(root, agentConfigsDir))
-	require.Empty(t, envServer.setKeys)
-	require.Equal(t, "previous", envServer.values["dev"]["AGENT_PROMPT_AGENT_OPTIMIZATION_CANDIDATE_ID"])
-	require.NotContains(t, out.String(), "applied to")
-	server.mu.Lock()
-	defer server.mu.Unlock()
-	require.Empty(t, server.configValues)
-	require.Empty(t, server.configSectionReads)
-	require.Empty(t, server.configSections)
-	require.Empty(t, server.unsetPaths)
-	require.Empty(t, server.env)
 }
 
 func TestOptimizeApply_PromptPersistenceFailureDoesNotTrack(t *testing.T) {

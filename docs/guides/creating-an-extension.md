@@ -49,6 +49,8 @@ capabilities:
 
 Implement the required interfaces for your declared capabilities. See the extension framework services documentation for interface details.
 
+If your extension creates role assignments, use [`Account.GetCurrentPrincipal`](../../cli/azd/docs/extensions/extension-framework.md#getcurrentprincipal) with the target subscription ID. The host resolves the resource-tenant object ID and principal type without returning an access token. Consume an SDK and host release containing this method before replacing an existing lookup.
+
 ### 4. Build
 
 ```bash

@@ -65,6 +65,11 @@ type BetaAccountServiceLookupTenantOverride interface {
 	LookupTenant(context.Context, *v1beta.LookupTenantRequest) (*v1beta.LookupTenantResponse, error)
 }
 
+// BetaAccountServiceGetCurrentPrincipalOverride overrides the beta AccountService.GetCurrentPrincipal method before stable adaptation.
+type BetaAccountServiceGetCurrentPrincipalOverride interface {
+	GetCurrentPrincipal(context.Context, *v1beta.GetCurrentPrincipalRequest) (*v1beta.GetCurrentPrincipalResponse, error)
+}
+
 func validateBetaAccountServiceOverride(override any) error {
 	return validateBetaServiceOverride(
 		"AccountService",
@@ -72,6 +77,7 @@ func validateBetaAccountServiceOverride(override any) error {
 		reflect.TypeFor[v1beta.AccountServiceServer](),
 		reflect.TypeFor[BetaAccountServiceListSubscriptionsOverride](),
 		reflect.TypeFor[BetaAccountServiceLookupTenantOverride](),
+		reflect.TypeFor[BetaAccountServiceGetCurrentPrincipalOverride](),
 	)
 }
 
@@ -844,6 +850,23 @@ func (a *betaAccountServiceAdapter) LookupTenant(
 		a.stable.LookupTenant,
 		new(v1beta.LookupTenantResponse),
 		"AccountService.LookupTenant",
+	)
+}
+
+func (a *betaAccountServiceAdapter) GetCurrentPrincipal(
+	ctx context.Context,
+	req *v1beta.GetCurrentPrincipalRequest,
+) (*v1beta.GetCurrentPrincipalResponse, error) {
+	if override, ok := a.override.(BetaAccountServiceGetCurrentPrincipalOverride); ok {
+		return override.GetCurrentPrincipal(ctx, req)
+	}
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.GetCurrentPrincipalRequest),
+		a.stable.GetCurrentPrincipal,
+		new(v1beta.GetCurrentPrincipalResponse),
+		"AccountService.GetCurrentPrincipal",
 	)
 }
 

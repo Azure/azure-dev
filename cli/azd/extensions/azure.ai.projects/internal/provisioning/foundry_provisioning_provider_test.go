@@ -729,20 +729,12 @@ func TestParameters_NilSynthResult_ReturnsHostDerivedOnly(t *testing.T) {
 	require.NoError(t, err, "Parameters must succeed on the on-disk path")
 
 	names := make([]string, 0, len(got))
-	var location *azdext.ProvisioningParameter
 	for _, p := range got {
 		names = append(names, p.Name)
-		if p.Name == "location" {
-			location = p
-		}
 	}
 	assert.Contains(t, names, "location")
 	assert.Contains(t, names, "foundryProjectName")
 	assert.Contains(t, names, "principalId")
-	require.NotNil(t, location)
-	assert.Equal(t, []string{envKeyLocation}, location.EnvVarMapping)
-	assert.True(t, location.UsingEnvVarMapping,
-		"pipeline config must persist AZURE_LOCATION because deploy requires it after provision")
 	assert.NotContains(t, names, "includeAcr",
 		"includeAcr is a synthesizer-derived value; on-disk path must skip it")
 }

@@ -667,12 +667,9 @@ func (pm *PipelineManager) Configure(
 	}
 
 	defaultAzdSecrets := map[string]string{}
-	defaultAzdVariables := map[string]string{}
+	defaultAzdVariables := defaultPipelineVariables(pm.env)
 	// If the user has set the resource group name as an environment variable, we need to pass it to the pipeline
 	// as this likely means rg-deployment
-	if rgGroup, exists := pm.env.LookupEnv(environment.ResourceGroupEnvVarName); exists {
-		defaultAzdVariables[environment.ResourceGroupEnvVarName] = rgGroup
-	}
 
 	// Merge azd default variables and secrets with the ones defined on azure.yaml
 	pm.configOptions.variables, pm.configOptions.secrets, err = mergeProjectVariablesAndSecrets(
@@ -1464,6 +1461,19 @@ func (pm *PipelineManager) SetRequiredExtensions(extensions []RequiredExtension)
 	pm.configOptions.requiredExtensions = slices.CompactFunc(normalized, func(a, b RequiredExtension) bool {
 		return a.Id == b.Id
 	})
+}
+
+func defaultPipelineVariables(env *environment.Environment) map[string]string {
+	variables := map[string]string{}
+	for _, name := range []string{
+		environment.LocationEnvVarName,
+		environment.ResourceGroupEnvVarName,
+	} {
+		if value, exists := env.LookupEnv(name); exists {
+			variables[name] = value
+		}
+	}
+	return variables
 }
 
 func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {

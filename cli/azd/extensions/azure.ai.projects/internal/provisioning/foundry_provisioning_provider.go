@@ -1993,10 +1993,9 @@ func (p *FoundryProvisioningProvider) Parameters(
 	}
 	out := []*azdext.ProvisioningParameter{
 		{
-			Name:               "location",
-			Value:              p.location,
-			EnvVarMapping:      []string{envKeyLocation},
-			UsingEnvVarMapping: true,
+			Name:          "location",
+			Value:         p.location,
+			EnvVarMapping: []string{envKeyLocation},
 		},
 		{Name: "foundryProjectName", Value: p.foundryName, EnvVarMapping: []string{envKeyProjectName}},
 		{Name: "principalId", Value: p.principalID, EnvVarMapping: []string{envKeyPrincipalID}},

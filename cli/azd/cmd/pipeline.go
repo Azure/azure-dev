@@ -144,7 +144,7 @@ type pipelineProvisioningProviderActivator interface {
 		provisioningProviderNames []string,
 		serviceTargetProviderNames []string,
 		requiredExtensionIds []string,
-	) ([]string, error)
+	) ([]middleware.ProjectExtension, error)
 }
 
 func newPipelineConfigAction(
@@ -229,7 +229,14 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 	if err != nil {
 		return nil, fmt.Errorf("resolving project extensions: %w", err)
 	}
-	p.manager.SetRequiredExtensions(requiredExtensions)
+	pipelineExtensions := make([]pipeline.RequiredExtension, len(requiredExtensions))
+	for i, extension := range requiredExtensions {
+		pipelineExtensions[i] = pipeline.RequiredExtension{
+			Id:      extension.Id,
+			Version: extension.Version,
+		}
+	}
+	p.manager.SetRequiredExtensions(pipelineExtensions)
 
 	allParameters := []provisioning.Parameter{}
 

@@ -4,6 +4,7 @@
 package pipeline
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -1291,7 +1292,7 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		InstallDotNetForAspire bool
 		Variables              []string
 		Secrets                []string
-		RequiredExtensions     []string
+		RequiredExtensions     []RequiredExtension
 		AlphaFeatures          []string
 		IsTerraform            bool
 	}{
@@ -1445,19 +1446,24 @@ func (pm *PipelineManager) SetParameters(parameters []provisioning.Parameter) {
 }
 
 // SetRequiredExtensions configures the azd extensions that generated pipelines must install.
-func (pm *PipelineManager) SetRequiredExtensions(extensionIds []string) {
+func (pm *PipelineManager) SetRequiredExtensions(extensions []RequiredExtension) {
 	if pm.configOptions == nil {
 		pm.configOptions = &configurePipelineOptions{}
 	}
 
-	normalized := make([]string, 0, len(extensionIds))
-	for _, extensionId := range extensionIds {
-		if extensionId = strings.TrimSpace(extensionId); extensionId != "" {
-			normalized = append(normalized, extensionId)
+	normalized := make([]RequiredExtension, 0, len(extensions))
+	for _, extension := range extensions {
+		if extension.Id = strings.TrimSpace(extension.Id); extension.Id != "" {
+			extension.Version = strings.TrimSpace(extension.Version)
+			normalized = append(normalized, extension)
 		}
 	}
-	slices.Sort(normalized)
-	pm.configOptions.requiredExtensions = slices.Compact(normalized)
+	slices.SortFunc(normalized, func(a, b RequiredExtension) int {
+		return cmp.Compare(a.Id, b.Id)
+	})
+	pm.configOptions.requiredExtensions = slices.CompactFunc(normalized, func(a, b RequiredExtension) bool {
+		return a.Id == b.Id
+	})
 }
 
 func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {

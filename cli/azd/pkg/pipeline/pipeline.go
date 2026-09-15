@@ -111,7 +111,13 @@ type configurePipelineOptions struct {
 	// in the azure.yaml file. The provider can provide the parameters and values required in CI.
 	providerParameters []provisioning.Parameter
 	// requiredExtensions are installed in CI before any azd project commands run.
-	requiredExtensions []string
+	requiredExtensions []RequiredExtension
+}
+
+// RequiredExtension identifies an azd extension version that generated pipelines must install.
+type RequiredExtension struct {
+	Id      string
+	Version string
 }
 
 // CiProvider defines the base behavior for a continuous integration provider.
@@ -370,7 +376,7 @@ type projectProperties struct {
 	AuthType              PipelineAuthType
 	Variables             []string
 	Secrets               []string
-	RequiredExtensions    []string
+	RequiredExtensions    []RequiredExtension
 	RequiredAlphaFeatures []string
 	providerParameters    []provisioning.Parameter
 }

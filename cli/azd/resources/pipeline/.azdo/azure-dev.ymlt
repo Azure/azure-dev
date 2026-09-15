@@ -20,7 +20,7 @@ steps:
       targetType: 'inline'
       script: |
 {{- range $extension := .RequiredExtensions }}
-        azd extension install {{ $extension }} --no-prompt
+        azd extension install {{ $extension.Id }}{{ if $extension.Version }} --version {{ $extension.Version }}{{ end }} --no-prompt
 {{- end }}
 {{ end }}
 

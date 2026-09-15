@@ -990,10 +990,18 @@ func Test_PipelineManager_SetParameters(t *testing.T) {
 func Test_PipelineManager_SetRequiredExtensions(t *testing.T) {
 	pm := &PipelineManager{}
 
-	pm.SetRequiredExtensions([]string{"z.extension", "", " a.extension ", "z.extension"})
+	pm.SetRequiredExtensions([]RequiredExtension{
+		{Id: "z.extension", Version: "2.0.0"},
+		{},
+		{Id: " a.extension ", Version: " 1.0.0 "},
+		{Id: "z.extension", Version: "2.0.0"},
+	})
 
 	require.NotNil(t, pm.configOptions)
-	require.Equal(t, []string{"a.extension", "z.extension"}, pm.configOptions.requiredExtensions)
+	require.Equal(t, []RequiredExtension{
+		{Id: "a.extension", Version: "1.0.0"},
+		{Id: "z.extension", Version: "2.0.0"},
+	}, pm.configOptions.requiredExtensions)
 }
 
 // ------------------------------------------------------------------

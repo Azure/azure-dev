@@ -583,12 +583,15 @@ func Test_promptForCiFiles(t *testing.T) {
 		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
 
 		err := generatePipelineDefinition(expectedPath, projectProperties{
-			CiProvider:         ciProviderGitHubActions,
-			InfraProvider:      infraProviderCustom,
-			RepoRoot:           tempDir,
-			BranchName:         "main",
-			AuthType:           AuthTypeFederated,
-			RequiredExtensions: []string{"azure.ai.agents", "azure.ai.projects"},
+			CiProvider:    ciProviderGitHubActions,
+			InfraProvider: infraProviderCustom,
+			RepoRoot:      tempDir,
+			BranchName:    "main",
+			AuthType:      AuthTypeFederated,
+			RequiredExtensions: []RequiredExtension{
+				{Id: "azure.ai.agents", Version: "1.0.0-beta.9"},
+				{Id: "azure.ai.projects", Version: "1.0.0-beta.10"},
+			},
 		})
 
 		require.NoError(t, err)
@@ -596,11 +599,13 @@ func Test_promptForCiFiles(t *testing.T) {
 		require.NoError(t, err)
 		generated := string(content)
 		assert.Contains(t, generated, "Install required azd extensions")
-		assert.Contains(t, generated, "azd extension install azure.ai.agents --no-prompt")
-		assert.Contains(t, generated, "azd extension install azure.ai.projects --no-prompt")
+		assert.Contains(t, generated,
+			"azd extension install azure.ai.agents --version 1.0.0-beta.9 --no-prompt")
+		assert.Contains(t, generated,
+			"azd extension install azure.ai.projects --version 1.0.0-beta.10 --no-prompt")
 		assert.Less(t, strings.Index(generated, "uses: Azure/setup-azd@v2"), strings.Index(
 			generated,
-			"azd extension install azure.ai.projects --no-prompt",
+			"azd extension install azure.ai.projects --version 1.0.0-beta.10 --no-prompt",
 		))
 	})
 
@@ -611,12 +616,15 @@ func Test_promptForCiFiles(t *testing.T) {
 		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].Files[0])
 
 		err := generatePipelineDefinition(expectedPath, projectProperties{
-			CiProvider:         ciProviderAzureDevOps,
-			InfraProvider:      infraProviderCustom,
-			RepoRoot:           tempDir,
-			BranchName:         "main",
-			AuthType:           AuthTypeFederated,
-			RequiredExtensions: []string{"azure.ai.agents", "azure.ai.projects"},
+			CiProvider:    ciProviderAzureDevOps,
+			InfraProvider: infraProviderCustom,
+			RepoRoot:      tempDir,
+			BranchName:    "main",
+			AuthType:      AuthTypeFederated,
+			RequiredExtensions: []RequiredExtension{
+				{Id: "azure.ai.agents", Version: "1.0.0-beta.9"},
+				{Id: "azure.ai.projects", Version: "1.0.0-beta.10"},
+			},
 		})
 
 		require.NoError(t, err)
@@ -624,11 +632,13 @@ func Test_promptForCiFiles(t *testing.T) {
 		require.NoError(t, err)
 		generated := string(content)
 		assert.Contains(t, generated, "Install required azd extensions")
-		assert.Contains(t, generated, "azd extension install azure.ai.agents --no-prompt")
-		assert.Contains(t, generated, "azd extension install azure.ai.projects --no-prompt")
+		assert.Contains(t, generated,
+			"azd extension install azure.ai.agents --version 1.0.0-beta.9 --no-prompt")
+		assert.Contains(t, generated,
+			"azd extension install azure.ai.projects --version 1.0.0-beta.10 --no-prompt")
 		assert.Less(t, strings.Index(generated, "task: setup-azd@1"), strings.Index(
 			generated,
-			"azd extension install azure.ai.projects --no-prompt",
+			"azd extension install azure.ai.projects --version 1.0.0-beta.10 --no-prompt",
 		))
 	})
 

@@ -4,6 +4,7 @@
 package middleware
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -32,6 +33,12 @@ type ExtensionActivator struct {
 	extensionManager *extensions.Manager
 	extensionRunner  *extensions.Runner
 	globalOptions    *internal.GlobalCommandOptions
+}
+
+// ProjectExtension identifies an extension version required to run a project.
+type ProjectExtension struct {
+	Id      string
+	Version string
 }
 
 // NewExtensionActivator creates a new ExtensionActivator.
@@ -77,7 +84,8 @@ func (a *ExtensionActivator) EnsureProvisioningProviders(
 	// Drop extensions whose requested providers are all already resolvable (host already running).
 	toStart = slices.DeleteFunc(toStart, func(ext *extensions.Extension) bool {
 		return !slices.ContainsFunc(names, func(name string) bool {
-			return providerFromExtension(ext, name) && !a.providerResolvable(name)
+			return providerFromExtension(ext, name, extensions.ProvisioningProviderCapability) &&
+				!a.providerResolvable(name)
 		})
 	})
 
@@ -180,30 +188,43 @@ func (a *ExtensionActivator) ExtensionsForProject(
 	provisioningProviderNames []string,
 	serviceTargetProviderNames []string,
 	requiredExtensionIds []string,
-) ([]string, error) {
+) ([]ProjectExtension, error) {
 	installed, err := a.extensionManager.ListInstalled()
 	if err != nil {
 		return nil, err
 	}
 
-	byId := make(map[string]string, len(requiredExtensionIds))
+	byId := make(map[string]ProjectExtension, len(requiredExtensionIds))
 	for _, extensionId := range requiredExtensionIds {
 		if extensionId = strings.TrimSpace(extensionId); extensionId != "" {
-			byId[strings.ToLower(extensionId)] = extensionId
+			required := ProjectExtension{Id: extensionId}
+			for installedId, extension := range installed {
+				if strings.EqualFold(installedId, extensionId) {
+					required.Id = extension.Id
+					required.Version = extension.Version
+					break
+				}
+			}
+			byId[strings.ToLower(extensionId)] = required
 		}
 	}
 
 	addMatches := func(providerNames []string, capability extensions.CapabilityType) {
 		for _, extension := range extensionsForCapabilityProviders(installed, providerNames, capability) {
-			byId[strings.ToLower(extension.Id)] = extension.Id
+			byId[strings.ToLower(extension.Id)] = ProjectExtension{
+				Id:      extension.Id,
+				Version: extension.Version,
+			}
 		}
 	}
 	addMatches(provisioningProviderNames, extensions.ProvisioningProviderCapability)
 	addMatches(serviceTargetProviderNames, extensions.ServiceTargetProviderCapability)
 
-	extensionIds := slices.Collect(maps.Values(byId))
-	slices.Sort(extensionIds)
-	return extensionIds, nil
+	result := slices.Collect(maps.Values(byId))
+	slices.SortFunc(result, func(a, b ProjectExtension) int {
+		return cmp.Compare(a.Id, b.Id)
+	})
+	return result, nil
 }
 
 // SuggestExtensionForProvider finds an installable extension for a missing provisioning provider.
@@ -290,10 +311,7 @@ func extensionsForCapabilityProviders(
 	for _, name := range providerNames {
 		for _, id := range installedIds {
 			ext := installed[id]
-			if !ext.HasCapability(capability) {
-				continue
-			}
-			if providerFromExtension(ext, name) {
+			if providerFromExtension(ext, name, capability) {
 				byId[ext.Id] = ext
 				break
 			}
@@ -312,7 +330,7 @@ func extensionsForCapabilityProviders(
 func declaredProviders(ext *extensions.Extension, providerNames []string) []string {
 	declared := make([]string, 0, len(providerNames))
 	for _, name := range providerNames {
-		if providerFromExtension(ext, name) {
+		if providerFromExtension(ext, name, extensions.ProvisioningProviderCapability) {
 			declared = append(declared, name)
 		}
 	}
@@ -323,8 +341,18 @@ func declaredProviders(ext *extensions.Extension, providerNames []string) []stri
 // providerFromExtension reports whether the extension declares a provider with the given name.
 // Extension discovery is case-insensitive, but IoC provider resolution remains case-sensitive;
 // azure.yaml must still use the provider spelling registered by the extension.
-func providerFromExtension(ext *extensions.Extension, providerName string) bool {
+func providerFromExtension(
+	ext *extensions.Extension,
+	providerName string,
+	capability extensions.CapabilityType,
+) bool {
+	if !ext.HasCapability(capability) {
+		return false
+	}
+
+	expectedType, requireType := extensions.ProviderTypeForCapability(capability)
 	return slices.ContainsFunc(ext.Providers, func(p extensions.Provider) bool {
-		return strings.EqualFold(p.Name, providerName)
+		return strings.EqualFold(p.Name, providerName) &&
+			(!requireType || p.Type == expectedType)
 	})
 }

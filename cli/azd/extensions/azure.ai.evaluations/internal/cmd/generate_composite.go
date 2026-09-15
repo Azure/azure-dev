@@ -367,13 +367,14 @@ func buildGeneratePlans(req generateRequest) ([]generationPlan, error) {
 		if plan.SampleSize == 0 {
 			plan.SampleSize = project.DefaultSampleSize
 		}
-		name, err = resolveArtifactCollision(req.cmd, "Dataset", name,
+		name, replaceApproved, err := resolveArtifactCollision(req.cmd, "Dataset", name,
 			project.ArtifactPath(plan.BaseDir, plan.OutputDir, name, ".jsonl"),
 			req.flags.force)
 		if err != nil {
 			return nil, err
 		}
 		plan.Name = name
+		plan.ReplaceApproved = replaceApproved
 		if err := refuseUneditableCatalogEntry(plan.BaseDir, "dataset", name); err != nil {
 			return nil, err
 		}
@@ -391,13 +392,14 @@ func buildGeneratePlans(req generateRequest) ([]generationPlan, error) {
 		}
 		plan.Kind = generateKindEvaluator
 		plan.TraceDays = req.traceDays
-		name, err = resolveArtifactCollision(req.cmd, "Evaluator", name,
+		name, replaceApproved, err := resolveArtifactCollision(req.cmd, "Evaluator", name,
 			project.ArtifactPath(plan.BaseDir, plan.OutputDir, name, ".json"),
 			req.flags.force)
 		if err != nil {
 			return nil, err
 		}
 		plan.Name = name
+		plan.ReplaceApproved = replaceApproved
 		if err := refuseUneditableCatalogEntry(plan.BaseDir, "evaluator", name); err != nil {
 			return nil, err
 		}

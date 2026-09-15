@@ -27,11 +27,12 @@ func noPromptCommand(t *testing.T) *cobra.Command {
 func TestAFreeNameNeedsNoAsking(t *testing.T) {
 	dir := t.TempDir()
 
-	got, err := resolveArtifactCollision(
+	got, replace, err := resolveArtifactCollision(
 		nil, "Evaluator", "quality", filepath.Join(dir, "quality.json"), false)
 
 	require.NoError(t, err)
 	assert.Equal(t, "quality", got)
+	assert.False(t, replace, "nothing was there, so nothing was approved for replacing")
 }
 
 // --force is the caller having already answered. It keeps the name, which is
@@ -41,10 +42,11 @@ func TestForceKeepsTheNameWithoutAsking(t *testing.T) {
 	path := filepath.Join(dir, "quality.json")
 	require.NoError(t, os.WriteFile(path, []byte("{}"), 0o600))
 
-	got, err := resolveArtifactCollision(nil, "Evaluator", "quality", path, true)
+	got, replace, err := resolveArtifactCollision(nil, "Evaluator", "quality", path, true)
 
 	require.NoError(t, err)
 	assert.Equal(t, "quality", got)
+	assert.True(t, replace, "--force is the approval to write over it")
 }
 
 // Under --no-prompt there is nobody to ask, so the refusal stands and names the
@@ -55,7 +57,7 @@ func TestNoPromptStillRefusesATakenName(t *testing.T) {
 	path := filepath.Join(dir, "quality.json")
 	require.NoError(t, os.WriteFile(path, []byte("{}"), 0o600))
 
-	_, err := resolveArtifactCollision(
+	_, _, err := resolveArtifactCollision(
 		noPromptCommand(t), "Evaluator", "quality", path, false)
 
 	require.Error(t, err)
@@ -70,7 +72,7 @@ func TestACommandlessCallRefusesRatherThanPanics(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("{}"), 0o600))
 
 	assert.NotPanics(t, func() {
-		_, err := resolveArtifactCollision(nil, "Evaluator", "quality", path, false)
+		_, _, err := resolveArtifactCollision(nil, "Evaluator", "quality", path, false)
 		assert.Error(t, err)
 	})
 }

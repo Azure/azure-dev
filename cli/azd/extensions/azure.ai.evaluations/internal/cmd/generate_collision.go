@@ -48,41 +48,41 @@ func resolveArtifactCollision(
 	cmd *cobra.Command,
 	kind, name, path string,
 	force bool,
-) (string, error) {
+) (string, bool, error) {
 	if force {
-		return name, nil
+		return name, true, nil
 	}
 	switch _, err := os.Stat(path); {
 	case err == nil:
 	case os.IsNotExist(err):
-		return name, nil
+		return name, false, nil
 	default:
 		// A permission or I/O error read as "nothing there", so a billed job ran
 		// and the write it was for failed afterwards.
-		return "", messages.CheckingArtifactPath(filepath.ToSlash(path), err)
+		return "", false, messages.CheckingArtifactPath(filepath.ToSlash(path), err)
 	}
 
 	// Nobody to ask, so the refusal stands and names the flag that answers it.
 	// A nil command is the same case: there is no prompt to reach.
 	if cmd == nil || noPrompt(cmd) {
-		return "", messages.ArtifactExists(filepath.ToSlash(path))
+		return "", false, messages.ArtifactExists(filepath.ToSlash(path))
 	}
 
 	proposed := nextFreeArtifactName(name, path)
 	choice, err := promptArtifactCollision(cmd, kind, name, path, proposed)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	switch choice {
 	case collisionRegenerate:
-		return name, nil
+		return name, true, nil
 	case collisionRename:
 		if proposed == "" {
-			return "", messages.NoFreeArtifactName(name)
+			return "", false, messages.NoFreeArtifactName(name)
 		}
-		return proposed, nil
+		return proposed, false, nil
 	default:
-		return "", errGenerationCancelled
+		return "", false, errGenerationCancelled
 	}
 }
 

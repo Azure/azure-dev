@@ -51,6 +51,9 @@ type generationPlan struct {
 	OutputDir string
 	// SampleSize applies to dataset generation only.
 	SampleSize int
+	// ReplaceApproved records that the reader agreed to write over the
+	// destination -- --force, or choosing to regenerate over what was there.
+	ReplaceApproved bool
 	// From is what --from named: which of the service's sources to send. Empty
 	// sends whatever the plan has to offer.
 	From []string
@@ -268,9 +271,30 @@ func (ec *evalContext) generateRubric(
 	}
 	report.warn(completed)
 
-	// generate settled this up front with resolveArtifactCollision, so by here it
-	// either found nothing or the caller passed --force.
+	if err := refuseArtifactThatAppeared(plan, ".json", job.ID); err != nil {
+		return nil, err
+	}
 	return ec.collectRubric(completed, plan.Name, plan.BaseDir, plan.OutputDir, out, true)
+}
+
+// refuseArtifactThatAppeared stops a job's output replacing a file that was not
+// there when the job was submitted.
+//
+// The destination is checked before submission, and the poll between then and
+// here can run for an hour. Anything that turned up in that window -- the reader
+// editing the rubric they are waiting for, or a second generation of the same
+// name -- was never covered by the approval this collection is relying on. The
+// job id goes in the message because the work is finished and paid for, and
+// `job show` can still collect it somewhere else.
+func refuseArtifactThatAppeared(plan generationPlan, ext, jobID string) error {
+	if plan.ReplaceApproved {
+		return nil
+	}
+	path := project.ArtifactPath(plan.BaseDir, plan.OutputDir, plan.Name, ext)
+	if !artifactAlreadyCollected(path) {
+		return nil
+	}
+	return messages.ArtifactAppearedDuringGeneration(filepath.ToSlash(path), jobID)
 }
 
 // record remembers the job the caller can reattach to.
@@ -496,7 +520,9 @@ func (ec *evalContext) generateDataset(
 	}
 	report.warn(completed)
 
-	// As above: the destination was checked before the job was submitted.
+	if err := refuseArtifactThatAppeared(plan, ".jsonl", report.jobID); err != nil {
+		return nil, err
+	}
 	ref, err := ec.collectDataset(ctx, completed, plan.Name, plan.BaseDir, plan.OutputDir, out, true)
 	if err != nil || ref == nil {
 		return ref, err

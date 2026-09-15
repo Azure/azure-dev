@@ -1460,6 +1460,25 @@ func ArtifactExists(path string) error {
 		path)
 }
 
+// ArtifactAppearedDuringGeneration reports a destination that was free when the
+// job was submitted and is not free now.
+//
+// The job finished and was paid for, so the id is named: `job show` collects it
+// without generating it again.
+func ArtifactAppearedDuringGeneration(path, jobID string) error {
+	if jobID == "" {
+		return fmt.Errorf(
+			"%s was created while the job was running; "+
+				"pass --force to overwrite it, or --output-dir to write elsewhere",
+			path)
+	}
+	return fmt.Errorf(
+		"%s was created while the job was running, so it was left alone; "+
+			"the generated output is ready — collect it with "+
+			"`azd ai eval job show %s --force`, or to a different place with --output-dir",
+		path, jobID)
+}
+
 // ItemPagingDidNotAdvance reports a listing whose cursor stopped moving.
 //
 // The walk exists because the endpoint has no status parameter, so a filter can

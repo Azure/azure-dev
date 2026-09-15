@@ -1579,7 +1579,6 @@ func TestDeployArtifacts_HostedAgent_ProtocolEndpoints(t *testing.T) {
 		ep,
 		ActivityProfile{},
 		protocols,
-		false,
 	)
 
 	// Should have 2 endpoint artifacts (one per displayable protocol)
@@ -1616,7 +1615,6 @@ func TestDeployArtifacts_ResponsesProtocol(t *testing.T) {
 		ep,
 		ActivityProfile{},
 		protocols,
-		false,
 	)
 
 	require.Len(t, artifacts, 1)
@@ -1638,7 +1636,6 @@ func TestDeployArtifacts_EmptyProtocols_NoEndpoints(t *testing.T) {
 		"", "https://ep.azure.com",
 		ActivityProfile{},
 		nil,
-		false,
 	)
 	require.Empty(t, artifacts)
 }
@@ -1659,7 +1656,6 @@ func TestDeployArtifacts_ActivityAgent_SkipsPlaygroundPortalLink(t *testing.T) {
 		ep,
 		ActivityProfile{IsActivity: true, UseCase: ActivityUseCaseSimple},
 		protocols,
-		false,
 	)
 
 	require.Len(t, artifacts, 1)

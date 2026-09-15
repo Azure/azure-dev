@@ -18,7 +18,7 @@ func Test_NewPipelineConfigAction_Constructor(t *testing.T) {
 	t.Parallel()
 	flags := &pipelineConfigFlags{}
 	console := mockinput.NewMockConsole()
-	a := newPipelineConfigAction(nil, console, flags, nil, nil, nil, nil, nil, nil)
+	a := newPipelineConfigAction(nil, console, flags, nil, nil, nil, nil, nil, nil, nil)
 	pa := a.(*pipelineConfigAction)
 	require.Same(t, flags, pa.flags)
 }

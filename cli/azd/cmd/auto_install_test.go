@@ -1064,18 +1064,23 @@ func TestProjectCommandSupportsExtensionAutoInstall(t *testing.T) {
 	extension := &cobra.Command{Use: "agent", Annotations: map[string]string{"extension.id": "azure.ai.agents"}}
 	env := &cobra.Command{Use: "env"}
 	refresh := &cobra.Command{Use: "refresh"}
+	pipeline := &cobra.Command{Use: "pipeline"}
+	pipelineConfig := &cobra.Command{Use: "config"}
 	infra := &cobra.Command{Use: "infra"}
 	generate := &cobra.Command{Use: "generate", Aliases: []string{"gen", "synth"}}
 	env.AddCommand(refresh)
+	pipeline.AddCommand(pipelineConfig)
 	infra.AddCommand(generate)
-	root.AddCommand(up, show, extension, env, infra)
+	root.AddCommand(up, show, extension, env, pipeline, infra)
 
 	assert.True(t, projectCommandSupportsExtensionAutoInstall(up))
 	assert.True(t, projectCommandSupportsExtensionAutoInstall(refresh))
+	assert.True(t, projectCommandSupportsExtensionAutoInstall(pipelineConfig))
 	assert.False(t, projectCommandSupportsExtensionAutoInstall(show))
 	assert.False(t, projectCommandSupportsExtensionAutoInstall(generate))
 	assert.False(t, projectCommandSupportsExtensionAutoInstall(extension))
 	assert.False(t, projectCommandSupportsExtensionAutoInstall(env))
+	assert.False(t, projectCommandSupportsExtensionAutoInstall(pipeline))
 }
 
 func TestFindFirstNonFlagArg(t *testing.T) {

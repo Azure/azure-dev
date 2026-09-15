@@ -4,6 +4,7 @@
 package pipeline
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -1291,6 +1292,7 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		InstallDotNetForAspire bool
 		Variables              []string
 		Secrets                []string
+		RequiredExtensions     []RequiredExtension
 		AlphaFeatures          []string
 		IsTerraform            bool
 	}{
@@ -1299,28 +1301,36 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		InstallDotNetForAspire: props.HasAppHost,
 		Variables:              props.Variables,
 		Secrets:                props.Secrets,
+		RequiredExtensions:     props.RequiredExtensions,
 		AlphaFeatures:          props.RequiredAlphaFeatures,
-		IsTerraform:            props.InfraProvider == infraProviderTerraform,
+		IsTerraform:            props.UsesTerraform || props.InfraProvider == infraProviderTerraform,
+	}
+
+	appendUnique := func(values []string, value string) []string {
+		if slices.Contains(values, value) {
+			return values
+		}
+		return append(values, value)
 	}
 
 	// Apply provider parameters
 	for _, param := range props.providerParameters {
 		for _, envVarName := range param.EnvVarMapping {
 			if param.Secret {
-				tmplContext.Secrets = append(tmplContext.Secrets, envVarName)
+				tmplContext.Secrets = appendUnique(tmplContext.Secrets, envVarName)
 			} else {
-				tmplContext.Variables = append(tmplContext.Variables, envVarName)
+				tmplContext.Variables = appendUnique(tmplContext.Variables, envVarName)
 			}
 		}
 	}
 
-	if props.InfraProvider == infraProviderTerraform {
+	if tmplContext.IsTerraform {
 		// terraform provider does not resolve this variables automatically, AZD needs to define them
-		tmplContext.Variables = append(tmplContext.Variables, "AZURE_LOCATION")
-		tmplContext.Variables = append(tmplContext.Variables, "AZURE_ENV_NAME")
+		tmplContext.Variables = appendUnique(tmplContext.Variables, "AZURE_LOCATION")
+		tmplContext.Variables = appendUnique(tmplContext.Variables, "AZURE_ENV_NAME")
 
 		if props.AuthType == AuthTypeClientCredentials {
-			tmplContext.Secrets = append(tmplContext.Secrets, "AZURE_CLIENT_SECRET")
+			tmplContext.Secrets = appendUnique(tmplContext.Secrets, "AZURE_CLIENT_SECRET")
 		}
 	}
 
@@ -1442,6 +1452,27 @@ func (pm *PipelineManager) SetParameters(parameters []provisioning.Parameter) {
 	pm.configOptions.providerParameters = parameters
 }
 
+// SetRequiredExtensions configures the azd extensions that generated pipelines must install.
+func (pm *PipelineManager) SetRequiredExtensions(extensions []RequiredExtension) {
+	if pm.configOptions == nil {
+		pm.configOptions = &configurePipelineOptions{}
+	}
+
+	normalized := make([]RequiredExtension, 0, len(extensions))
+	for _, extension := range extensions {
+		if extension.Id = strings.TrimSpace(extension.Id); extension.Id != "" {
+			extension.Version = strings.TrimSpace(extension.Version)
+			normalized = append(normalized, extension)
+		}
+	}
+	slices.SortFunc(normalized, func(a, b RequiredExtension) int {
+		return cmp.Compare(a.Id, b.Id)
+	})
+	pm.configOptions.requiredExtensions = slices.CompactFunc(normalized, func(a, b RequiredExtension) bool {
+		return a.Id == b.Id
+	})
+}
+
 func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 	// pipeline definition files
 	hasAppHost := pm.importManager.HasAppHost(ctx, pm.prjConfig)
@@ -1480,11 +1511,13 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 			CiProvider:            pm.ciProviderType,
 			RepoRoot:              repoRoot,
 			InfraProvider:         infraProvider,
+			UsesTerraform:         usesTerraform(pm.infra.Options),
 			HasAppHost:            hasAppHost,
 			BranchName:            branchName,
 			AuthType:              authType,
 			Variables:             pm.prjConfig.Pipeline.Variables,
 			Secrets:               pm.prjConfig.Pipeline.Secrets,
+			RequiredExtensions:    pm.configOptions.requiredExtensions,
 			RequiredAlphaFeatures: requiredAlphaFeatures,
 			providerParameters:    pm.configOptions.providerParameters,
 		})

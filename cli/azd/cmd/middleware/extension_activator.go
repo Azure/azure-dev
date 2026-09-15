@@ -4,6 +4,7 @@
 package middleware
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -32,6 +33,12 @@ type ExtensionActivator struct {
 	extensionManager *extensions.Manager
 	extensionRunner  *extensions.Runner
 	globalOptions    *internal.GlobalCommandOptions
+}
+
+// ProjectExtension identifies an extension version required to run a project.
+type ProjectExtension struct {
+	Id      string
+	Version string
 }
 
 // NewExtensionActivator creates a new ExtensionActivator.
@@ -77,7 +84,8 @@ func (a *ExtensionActivator) EnsureProvisioningProviders(
 	// Drop extensions whose requested providers are all already resolvable (host already running).
 	toStart = slices.DeleteFunc(toStart, func(ext *extensions.Extension) bool {
 		return !slices.ContainsFunc(names, func(name string) bool {
-			return providerFromExtension(ext, name) && !a.providerResolvable(name)
+			return providerFromExtension(ext, name, extensions.ProvisioningProviderCapability) &&
+				!a.providerResolvable(name)
 		})
 	})
 
@@ -143,6 +151,115 @@ func (a *ExtensionActivator) EnsureProvisioningProviders(
 	}
 
 	return cleanup, nil
+}
+
+// ExtensionsForProvisioningProviders returns the installed extension IDs that declare any of the
+// requested provisioning providers. The result is de-duplicated and sorted by extension ID.
+func (a *ExtensionActivator) ExtensionsForProvisioningProviders(
+	providerNames []string,
+) ([]string, error) {
+	names := distinctProviderNames(providerNames)
+	if len(names) == 0 {
+		return nil, nil
+	}
+
+	installed, err := a.extensionManager.ListInstalled()
+	if err != nil {
+		return nil, err
+	}
+
+	matches := extensionsForCapabilityProviders(
+		installed,
+		names,
+		extensions.ProvisioningProviderCapability,
+	)
+	extensionIds := make([]string, len(matches))
+	for i, extension := range matches {
+		extensionIds[i] = extension.Id
+	}
+
+	return extensionIds, nil
+}
+
+// ExtensionsForProject returns the extension IDs that a project needs in another environment,
+// including explicit requiredVersions entries and installed extensions that own its provisioning
+// providers or service target hosts.
+func (a *ExtensionActivator) ExtensionsForProject(
+	provisioningProviderNames []string,
+	serviceTargetProviderNames []string,
+	requiredExtensionIds []string,
+) ([]ProjectExtension, error) {
+	installed, err := a.extensionManager.ListInstalled()
+	if err != nil {
+		return nil, err
+	}
+
+	byId := make(map[string]ProjectExtension, len(requiredExtensionIds))
+	for _, extensionId := range requiredExtensionIds {
+		if extensionId = strings.TrimSpace(extensionId); extensionId != "" {
+			var installedExtension *extensions.Extension
+			for installedId, extension := range installed {
+				if strings.EqualFold(installedId, extensionId) {
+					installedExtension = extension
+					break
+				}
+			}
+			if installedExtension == nil {
+				return nil, fmt.Errorf(
+					"required extension %q is not installed; install it before configuring the pipeline",
+					extensionId,
+				)
+			}
+
+			required, err := reproducibleProjectExtension(installedExtension)
+			if err != nil {
+				return nil, err
+			}
+			byId[strings.ToLower(extensionId)] = required
+		}
+	}
+
+	addMatches := func(providerNames []string, capability extensions.CapabilityType) error {
+		for _, extension := range extensionsForCapabilityProviders(installed, providerNames, capability) {
+			required, err := reproducibleProjectExtension(extension)
+			if err != nil {
+				return err
+			}
+			byId[strings.ToLower(extension.Id)] = required
+		}
+		return nil
+	}
+	if err := addMatches(provisioningProviderNames, extensions.ProvisioningProviderCapability); err != nil {
+		return nil, err
+	}
+	if err := addMatches(serviceTargetProviderNames, extensions.ServiceTargetProviderCapability); err != nil {
+		return nil, err
+	}
+
+	result := slices.Collect(maps.Values(byId))
+	slices.SortFunc(result, func(a, b ProjectExtension) int {
+		return cmp.Compare(a.Id, b.Id)
+	})
+	return result, nil
+}
+
+func reproducibleProjectExtension(extension *extensions.Extension) (ProjectExtension, error) {
+	source := strings.TrimSpace(extension.Source)
+	if source != "" &&
+		!strings.EqualFold(source, extensions.MainRegistryName) &&
+		extension.SourceCategoryOrUnknown() != extensions.SourceCategoryAzd {
+		return ProjectExtension{}, fmt.Errorf(
+			"extension %q version %q is installed from non-official source %q; "+
+				"generated pipelines can only reproduce extensions from the official %q registry. "+
+				"Reinstall the extension from that registry or configure its source and installation manually in CI",
+			extension.Id,
+			extension.Version,
+			source,
+			extensions.MainRegistryName,
+		)
+	}
+
+	return ProjectExtension{Id: extension.Id, Version: extension.Version}, nil
 }
 
 // SuggestExtensionForProvider finds an installable extension for a missing provisioning provider.
@@ -211,16 +328,25 @@ func extensionsForProviders(
 	installed map[string]*extensions.Extension,
 	providerNames []string,
 ) []*extensions.Extension {
+	return extensionsForCapabilityProviders(
+		installed,
+		providerNames,
+		extensions.ProvisioningProviderCapability,
+	)
+}
+
+func extensionsForCapabilityProviders(
+	installed map[string]*extensions.Extension,
+	providerNames []string,
+	capability extensions.CapabilityType,
+) []*extensions.Extension {
 	installedIds := slices.Sorted(maps.Keys(installed))
 
 	byId := map[string]*extensions.Extension{}
 	for _, name := range providerNames {
 		for _, id := range installedIds {
 			ext := installed[id]
-			if !ext.HasCapability(extensions.ProvisioningProviderCapability) {
-				continue
-			}
-			if providerFromExtension(ext, name) {
+			if providerFromExtension(ext, name, capability) {
 				byId[ext.Id] = ext
 				break
 			}
@@ -239,7 +365,7 @@ func extensionsForProviders(
 func declaredProviders(ext *extensions.Extension, providerNames []string) []string {
 	declared := make([]string, 0, len(providerNames))
 	for _, name := range providerNames {
-		if providerFromExtension(ext, name) {
+		if providerFromExtension(ext, name, extensions.ProvisioningProviderCapability) {
 			declared = append(declared, name)
 		}
 	}
@@ -250,8 +376,18 @@ func declaredProviders(ext *extensions.Extension, providerNames []string) []stri
 // providerFromExtension reports whether the extension declares a provider with the given name.
 // Extension discovery is case-insensitive, but IoC provider resolution remains case-sensitive;
 // azure.yaml must still use the provider spelling registered by the extension.
-func providerFromExtension(ext *extensions.Extension, providerName string) bool {
+func providerFromExtension(
+	ext *extensions.Extension,
+	providerName string,
+	capability extensions.CapabilityType,
+) bool {
+	if !ext.HasCapability(capability) {
+		return false
+	}
+
+	expectedType, requireType := extensions.ProviderTypeForCapability(capability)
 	return slices.ContainsFunc(ext.Providers, func(p extensions.Provider) bool {
-		return strings.EqualFold(p.Name, providerName)
+		return strings.EqualFold(p.Name, providerName) &&
+			(!requireType || p.Type == expectedType)
 	})
 }

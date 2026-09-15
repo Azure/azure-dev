@@ -1279,13 +1279,15 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	resolutionOptions := []agentServiceResolutionOption{
 		withBrownfieldInlineAgentName(),
 		withVoiceInvocationGuidance(),
-		withDeployedAgentNameLookup(),
 	}
 	if a.flags.protocol == "" {
 		resolutionOptions = append(
 			resolutionOptions,
 			withDeployedProtocolEndpoints(),
+			withDeployedAgentNameLookup(),
 		)
+	} else {
+		resolutionOptions = append(resolutionOptions, withOptionalDeployedAgentNameLookup())
 	}
 	info, serviceErr := resolveAgentServiceFromProject(
 		ctx,

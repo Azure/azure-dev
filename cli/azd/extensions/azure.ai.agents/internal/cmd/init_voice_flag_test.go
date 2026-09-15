@@ -84,7 +84,7 @@ func TestInitVoiceFlagInteractiveSelection(t *testing.T) {
 					}
 					prompts := &helpersPromptServer{selectIndex: index}
 					client := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
-					mode, err := promptInitModeForVoice(t.Context(), client, false, specified)
+					mode, err := promptInitModeForVoice(t.Context(), client, false, specified, nil)
 					if specified && index != count-1 {
 						require.ErrorContains(t, err, "--voice is only supported")
 					} else {
@@ -98,4 +98,92 @@ func TestInitVoiceFlagInteractiveSelection(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestNewVoiceRejectsExplicitCodeInputsBeforeHostAccess(t *testing.T) {
+	t.Setenv("AZD_SERVER", "")
+	for _, input := range [][]string{
+		{"--src", "./agent"}, {"--src="}, {"--protocol", "responses"}, {"--protocol="},
+		{"--deploy-mode", "code"}, {"--deploy-mode", "container"},
+		{"--runtime", "python_3_13"}, {"--entry-point", "app.py"}, {"--dep-resolution", "remote_build"},
+		{"--model-deployment", "my-deployment"}, {"--description", "description"},
+		{"--rai-policy", "none"}, {"--acr-connection", "registry"}, {"--registry-connection", "registry"},
+		{"--harness", "github_copilot_preview"}, {"--instructions", "Be helpful"},
+	} {
+		for _, selector := range [][]string{
+			{"--kind", "prompt-voice", "--agent-name", "voice-test"},
+			{"--voice", "Ava"},
+			{"--voice="},
+		} {
+			t.Run(fmt.Sprint(input, selector), func(t *testing.T) {
+				t.Chdir(t.TempDir())
+				command := newInitCommand(nil)
+				var output bytes.Buffer
+				command.SetOut(&output)
+				command.SetErr(&output)
+				command.SetArgs(append(append([]string{}, selector...), input...))
+				require.ErrorContains(t, command.Execute(), "new prompt voice agents cannot use these init inputs")
+				entries, err := os.ReadDir(".")
+				require.NoError(t, err)
+				require.Empty(t, entries)
+			})
+		}
+	}
+	for _, selector := range [][]string{{"--voice", "Ava"}, {"--kind", "prompt-voice", "--agent-name", "voice-test"}} {
+		t.Run("positional/"+fmt.Sprint(selector), func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			require.NoError(t, os.Mkdir("agent", 0700))
+			require.NoError(t, os.WriteFile(filepath.Join("agent", "app.py"), []byte("# unchanged"), 0600))
+			command := newInitCommand(nil)
+			var output bytes.Buffer
+			command.SetOut(&output)
+			command.SetErr(&output)
+			command.SetArgs(append(append([]string{}, selector...), "./agent"))
+			require.ErrorContains(t, command.Execute(), "positional source directory")
+			content, err := os.ReadFile(filepath.Join("agent", "app.py"))
+			require.NoError(t, err)
+			require.Equal(t, "# unchanged", string(content))
+			entries, err := os.ReadDir(".")
+			require.NoError(t, err)
+			require.Len(t, entries, 1)
+		})
+	}
+}
+
+func TestInteractiveVoiceRejectsCodeInputsOnlyOnVoiceSelection(t *testing.T) {
+	t.Chdir(t.TempDir())
+	require.NoError(t, os.WriteFile("app.py", []byte("# existing code"), 0600))
+	command := newInitCommand(nil)
+	require.NoError(t, command.ParseFlags([]string{"--runtime", "python_3_13", "--protocol", "responses"}))
+	inputErr := validateVoiceInitOptions(command, false)
+	require.Error(t, inputErr)
+	for _, choice := range []struct {
+		index int32
+		want  string
+	}{
+		{0, initModeFromCode}, {1, initModeTemplate}, {2, initModeVoice},
+	} {
+		prompts := &helpersPromptServer{selectIndex: choice.index}
+		client := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
+		mode, err := promptInitModeForVoice(t.Context(), client, false, false, inputErr)
+		if choice.want == initModeVoice {
+			require.ErrorIs(t, err, inputErr)
+		} else {
+			require.NoError(t, err)
+			require.Equal(t, choice.want, mode)
+		}
+		require.EqualValues(t, 1, prompts.selectCalls.Load())
+	}
+}
+
+func TestNewVoiceAllowsEffectiveOptions(t *testing.T) {
+	t.Parallel()
+	command := newInitCommand(nil)
+	require.NoError(t, command.ParseFlags([]string{
+		"--kind", "prompt-voice", "--agent-name", "voice-test", "--voice", "Ava", "--model", "gpt-realtime",
+		"--project-id", "project", "--infra=bicep", "--force",
+	}))
+	require.NoError(t, validateVoiceInitOptions(command, false))
+	// Defaults alone must never trigger the new check.
+	require.NoError(t, validateVoiceInitOptions(newInitCommand(nil), false))
 }

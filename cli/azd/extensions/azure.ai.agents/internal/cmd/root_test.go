@@ -76,6 +76,7 @@ func TestVoicePublicPreviewHelp(t *testing.T) {
 				"--model-deployment takes precedence. For new managed prompt voice agents",
 				"service-hosted model (default: gpt-realtime); no model deployment is created",
 				"--kind prompt", "--instructions", "Rejected for other init flows",
+				"New prompt voice initialization does not use source directories or code/container settings",
 			},
 			absent: []string{
 				"New voice services use kind: voice", "adopted manifest", "remains supported for compatibility",

@@ -1266,6 +1266,12 @@ The managed model defaults to gpt-realtime and does not require a model deployme
 --kind prompt-voice or the interactive voice option.
 Edit azure.yaml to customize existing voice settings.
 
+New prompt voice initialization does not use source directories or code/container
+settings. Explicit --src (including a positional directory), --protocol,
+--deploy-mode, --runtime, --entry-point, and --dep-resolution are rejected on
+the voice path. Use --model for the managed voice model; --model-deployment and
+prompt-only or registry options are not supported by this voice initialization.
+
 Prompt voice services support modelType: managed or self_deployed (bring your own model
 deployment), audio input/output, structured inputs, tools, greeting, avatar,
 handoff, and telephony bindings (acs or twilio). Hosted voice wrappers use
@@ -1345,6 +1351,14 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			voiceSpecified := cmd.Flags().Changed("voice")
 			if err := validateInitVoiceInput(flags, voiceSpecified); err != nil {
 				return err
+			}
+			// Capture explicit inputs before discovery/scaffolding fills internal defaults.
+			voiceInputErr := validateVoiceInitOptions(cmd, len(args) > 0 && flags.src != "")
+			if voiceSpecified || (flags.manifestPointer == "" &&
+				strings.EqualFold(strings.TrimSpace(flags.kind), kindFlagPromptVoice)) {
+				if voiceInputErr != nil {
+					return voiceInputErr
+				}
 			}
 
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -1843,7 +1857,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 			} else {
 				// No manifest provided - prompt user for init mode
-				initMode, err := promptInitModeForVoice(ctx, azdClient, flags.noPrompt, voiceSpecified)
+				initMode, err := promptInitModeForVoice(ctx, azdClient, flags.noPrompt, voiceSpecified, voiceInputErr)
 				if err != nil {
 					if exterrors.IsCancellation(err) {
 						return exterrors.Cancelled("initialization was cancelled")
@@ -2162,6 +2176,7 @@ func validateInitVoiceInput(flags *initFlags, specified bool) error {
 
 func promptInitModeForVoice(
 	ctx context.Context, client *azdext.AzdClient, noPrompt, voiceSpecified bool,
+	voiceInputErr error,
 ) (string, error) {
 	mode, err := promptInitMode(ctx, client, noPrompt)
 	if err != nil {
@@ -2170,7 +2185,38 @@ func promptInitModeForVoice(
 	if voiceSpecified && mode != initModeVoice {
 		return "", unusedInitVoiceError()
 	}
+	if mode == initModeVoice && voiceInputErr != nil {
+		return "", voiceInputErr
+	}
 	return mode, nil
+}
+
+// validateVoiceInitOptions checks only explicitly supplied options that cannot
+// affect a synthesized voice agent. It does not constrain other init flows or
+// infer user intent from defaults populated later during scaffolding.
+func validateVoiceInitOptions(cmd *cobra.Command, positionalSource bool) error {
+	var conflicts []string
+	if positionalSource {
+		conflicts = append(conflicts, "positional source directory")
+	}
+	for _, name := range []string{
+		"src", "protocol", "deploy-mode", "runtime", "entry-point", "dep-resolution",
+		"image", "acr-connection", "registry-connection", "harness", "instructions",
+		"description", "rai-policy", "model-deployment",
+	} {
+		if cmd.Flags().Changed(name) {
+			conflicts = append(conflicts, "--"+name)
+		}
+	}
+	if len(conflicts) == 0 {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeConflictingArguments,
+		"new prompt voice agents cannot use these init inputs: "+strings.Join(conflicts, ", "),
+		"remove these inputs to create a prompt voice agent; use the hosted init flow for source/code settings "+
+			"or the prompt init flow for prompt-only settings",
+	)
 }
 
 func warnManifestOverridesKind(writer io.Writer, flags *initFlags) {

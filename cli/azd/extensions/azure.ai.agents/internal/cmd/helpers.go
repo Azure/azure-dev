@@ -33,6 +33,8 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/term"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -648,6 +650,15 @@ func withDeployedAgentNameLookup() agentServiceResolutionOption {
 	}
 }
 
+// Explicit protocols can invoke a direct name without local deployment state.
+// Keep the lookup when state exists, but do not require a default environment.
+func withOptionalDeployedAgentNameLookup() agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.matchDeployedAgentName = true
+		options.allowMissingDefaultEnvironment = true
+	}
+}
+
 type agentProtocolEndpointsError struct {
 	err error
 }
@@ -883,6 +894,7 @@ func resolveAgentServiceByDeployedName(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	deployedName string,
+	allowMissingDefaultEnvironment bool,
 ) (*azdext.ServiceConfig, *azdext.ProjectConfig, map[string]string, error) {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
@@ -896,6 +908,9 @@ func resolveAgentServiceByDeployedName(
 		ctx, &azdext.EmptyRequest{},
 	)
 	if err != nil {
+		if allowMissingDefaultEnvironment && isDefaultEnvironmentMissing(err) {
+			return nil, nil, nil, &deployedAgentServiceNotFoundError{deployedName: deployedName}
+		}
 		return nil, nil, nil, fmt.Errorf("failed to get current environment: %w", err)
 	}
 	if envResponse == nil || envResponse.Environment == nil ||
@@ -937,6 +952,14 @@ func resolveAgentServiceByDeployedName(
 	}
 
 	return matched, projectResponse.Project, envValues, nil
+}
+
+func isDefaultEnvironmentMissing(err error) bool {
+	// The host returns a plain sentinel error, serialized by gRPC as Unknown.
+	// Do not treat other Unknown/NotFound errors (corrupt state, missing files,
+	// transport failures, etc.) as absence of a selected default environment.
+	st, ok := status.FromError(err)
+	return ok && st.Code() == codes.Unknown && st.Message() == "default environment not found"
 }
 
 type brownfieldAgentReference struct {
@@ -1001,11 +1024,12 @@ func brownfieldInlineAgentReference(
 type brownfieldAgentExistenceResolver func(context.Context, string, string) (bool, error)
 
 type agentServiceResolutionOptions struct {
-	allowBrownfieldInlineName bool
-	brownfieldAgentExists     brownfieldAgentExistenceResolver
-	includeProtocolEndpoints  bool
-	matchDeployedAgentName    bool
-	rejectVoiceInvocation     bool
+	allowBrownfieldInlineName      bool
+	brownfieldAgentExists          brownfieldAgentExistenceResolver
+	includeProtocolEndpoints       bool
+	matchDeployedAgentName         bool
+	rejectVoiceInvocation          bool
+	allowMissingDefaultEnvironment bool
 }
 
 type agentServiceResolutionOption func(*agentServiceResolutionOptions)
@@ -1094,7 +1118,7 @@ func resolveAgentServiceFromProject(
 			return nil, err
 		}
 		svc, projectConfig, envValues, err = resolveAgentServiceByDeployedName(
-			ctx, azdClient, name,
+			ctx, azdClient, name, resolutionOptions.allowMissingDefaultEnvironment,
 		)
 		if err != nil {
 			return nil, err

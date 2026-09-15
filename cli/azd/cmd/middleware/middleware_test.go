@@ -285,6 +285,20 @@ func createExtensionsManager(
 	mockCtx *mocks.MockContext,
 	installed map[string]*extensions.Extension,
 ) *extensions.Manager {
+	return createExtensionsManagerWithOptions(
+		t,
+		mockCtx,
+		installed,
+		extensions.ManagerOptions{},
+	)
+}
+
+func createExtensionsManagerWithOptions(
+	t *testing.T,
+	mockCtx *mocks.MockContext,
+	installed map[string]*extensions.Extension,
+	managerOptions extensions.ManagerOptions,
+) *extensions.Manager {
 	t.Helper()
 
 	userConfigManager := config.NewUserConfigManager(mockCtx.ConfigManager)
@@ -293,7 +307,13 @@ func createExtensionsManager(
 		return extensions.NewRunner(exec.NewCommandRunner(nil)), nil
 	})
 
-	manager, err := extensions.NewManager(userConfigManager, sourceManager, lazyRunner, mockCtx.HttpClient)
+	manager, err := extensions.NewManagerWithOptions(
+		userConfigManager,
+		sourceManager,
+		lazyRunner,
+		mockCtx.HttpClient,
+		managerOptions,
+	)
 	require.NoError(t, err)
 
 	if installed != nil {

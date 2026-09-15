@@ -30,6 +30,40 @@ import (
 	"github.com/sethvargo/go-retry"
 )
 
+const logCursorValidationBytes = 64 * 1024
+
+type logCursorFingerprint struct {
+	head []byte
+	data []byte
+}
+
+func (w *logCursorFingerprint) Write(p []byte) (int, error) {
+	if remaining := logCursorValidationBytes - len(w.head); remaining > 0 {
+		if remaining > len(p) {
+			remaining = len(p)
+		}
+		w.head = append(w.head, p[:remaining]...)
+	}
+
+	if len(p) >= logCursorValidationBytes {
+		w.data = append(w.data[:0], p[len(p)-logCursorValidationBytes:]...)
+		return len(p), nil
+	}
+
+	overflow := len(w.data) + len(p) - logCursorValidationBytes
+	if overflow > 0 {
+		copy(w.data, w.data[overflow:])
+		w.data = w.data[:len(w.data)-overflow]
+	}
+	w.data = append(w.data, p...)
+	return len(p), nil
+}
+
+func (w *logCursorFingerprint) Reset() {
+	w.head = w.head[:0]
+	w.data = w.data[:0]
+}
+
 // uniqueCorrelationPolicy is an azcore PerCall policy that overrides the x-ms-correlation-request-id header with a
 // freshly generated UUID on every outgoing HTTP request.
 //
@@ -126,6 +160,41 @@ func (r *RemoteBuildManager) UploadBuildSource(
 	return sourceUploadRes.SourceUploadDefinition, nil
 }
 
+// RemoteBuildRunError represents a terminal failure reported by an Azure Container Registry remote build.
+type RemoteBuildRunError struct {
+	Status   armcontainerregistry.RunStatus
+	buildLog string
+}
+
+// Error returns the remote build failure and its existing user-facing build log.
+func (e *RemoteBuildRunError) Error() string {
+	if e == nil {
+		return "remote build failed"
+	}
+
+	return fmt.Sprintf("remote build failed: %s", e.buildLog)
+}
+
+// DiagnosticCode returns a stable suffix for the terminal ACR run status, or an empty string for an unknown status.
+func (e *RemoteBuildRunError) DiagnosticCode() string {
+	if e == nil {
+		return ""
+	}
+
+	switch e.Status {
+	case armcontainerregistry.RunStatusFailed:
+		return "acr_run_failed"
+	case armcontainerregistry.RunStatusError:
+		return "acr_run_error"
+	case armcontainerregistry.RunStatusTimeout:
+		return "acr_run_timeout"
+	case armcontainerregistry.RunStatusCanceled:
+		return "acr_run_canceled"
+	default:
+		return ""
+	}
+}
+
 // terminalContainerRegistryRunStates is the list of states we consider terminal when waiting for a container registry run
 // to complete. Unfortunately, in the current version of the armcontainerregistry package, the poller returned by
 // BeginScheduleRun treats all states as terminal and so calling `PollUntilDone` will return even if if the run is still
@@ -191,7 +260,6 @@ func (r *RemoteBuildManager) RunDockerBuildRequestWithLogs(
 	}
 
 	var buildLog bytes.Buffer
-
 	err = streamLogs(ctx, logBlobClient, io.MultiWriter(&buildLog, writer))
 	if err != nil {
 		return err
@@ -208,13 +276,19 @@ func (r *RemoteBuildManager) RunDockerBuildRequestWithLogs(
 			if err != nil {
 				return err
 			}
+			if runRes.Properties == nil || runRes.Properties.Status == nil {
+				return retry.RetryableError(errors.New("remote build status is missing"))
+			}
 
 			if !slices.Contains(terminalContainerRegistryRunStates, *runRes.Properties.Status) {
 				return retry.RetryableError(errors.New("remote build still in progress"))
 			}
 
 			if *runRes.Properties.Status != armcontainerregistry.RunStatusSucceeded {
-				return fmt.Errorf("remote build failed: %v", buildLog.String())
+				return &RemoteBuildRunError{
+					Status:   *runRes.Properties.Status,
+					buildLog: buildLog.String(),
+				}
 			}
 
 			return nil
@@ -227,6 +301,13 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 	const maxPollIterations = 1200 // ~20 minutes at 1s intervals
 
 	var written int64 = 0
+	writtenFingerprint := &logCursorFingerprint{}
+	var writtenETag *azcore.ETag
+	resetCursor := func() {
+		written = 0
+		writtenFingerprint.Reset()
+		writtenETag = nil
+	}
 	return retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
 		err := func() error {
 			for iteration := 0; ; iteration++ {
@@ -243,6 +324,79 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 				}
 
 				length := *props.ContentLength
+				if length < written {
+					// A restarted ACR build can replace its log with a shorter blob.
+					resetCursor()
+				}
+				if written > 0 && props.ETag != nil &&
+					(writtenETag == nil || *props.ETag != *writtenETag) {
+					ranges := []struct {
+						offset   int64
+						expected []byte
+					}{
+						{expected: writtenFingerprint.head},
+					}
+					tailOffset := written - int64(len(writtenFingerprint.data))
+					if tailOffset > 0 {
+						ranges = append(ranges, struct {
+							offset   int64
+							expected []byte
+						}{offset: tailOffset, expected: writtenFingerprint.data})
+					}
+
+					cursorValid := true
+					retryPoll := false
+					for _, validationRange := range ranges {
+						res, err := blobClient.DownloadStream(ctx, &blob.DownloadStreamOptions{
+							Range: azblob.HTTPRange{
+								Offset: validationRange.offset,
+								Count:  int64(len(validationRange.expected)),
+							},
+							AccessConditions: &blob.AccessConditions{
+								ModifiedAccessConditions: &blob.ModifiedAccessConditions{
+									IfMatch: props.ETag,
+								},
+							},
+						})
+						if err != nil {
+							if responseErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+								(responseErr.StatusCode == http.StatusRequestedRangeNotSatisfiable ||
+									responseErr.StatusCode == http.StatusPreconditionFailed) {
+								select {
+								case <-ctx.Done():
+									return ctx.Err()
+								case <-time.After(1 * time.Second):
+								}
+								retryPoll = true
+								break
+							}
+							return err
+						}
+
+						actual, err := io.ReadAll(res.Body)
+						closeErr := res.Body.Close()
+						if err != nil {
+							return err
+						}
+						if closeErr != nil {
+							return closeErr
+						}
+						if !bytes.Equal(actual, validationRange.expected) {
+							cursorValid = false
+							break
+						}
+					}
+					if retryPoll {
+						continue
+					}
+
+					if !cursorValid {
+						resetCursor()
+					} else {
+						etag := *props.ETag
+						writtenETag = &etag
+					}
+				}
 				if (length - written) == 0 {
 					if props.Metadata != nil {
 						if _, has := props.Metadata["Complete"]; has {
@@ -258,22 +412,47 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 					continue
 				}
 
-				err = func() error {
-					res, err := blobClient.DownloadStream(ctx, &blob.DownloadStreamOptions{
-						Range: azblob.HTTPRange{
-							Offset: written,
-							Count:  length - written,
+				res, err := blobClient.DownloadStream(ctx, &blob.DownloadStreamOptions{
+					Range: azblob.HTTPRange{
+						Offset: written,
+						Count:  length - written,
+					},
+					AccessConditions: &blob.AccessConditions{
+						ModifiedAccessConditions: &blob.ModifiedAccessConditions{
+							IfMatch: props.ETag,
 						},
-					})
-					if err != nil {
-						return err
+					},
+				})
+				if err != nil {
+					if responseErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+						(responseErr.StatusCode == http.StatusRequestedRangeNotSatisfiable ||
+							responseErr.StatusCode == http.StatusPreconditionFailed) {
+						// The blob changed after HEAD. A rejected range proves the cursor
+						// is no longer valid, even if the replacement grows before our next poll.
+						if responseErr.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+							resetCursor()
+						}
+						select {
+						case <-ctx.Done():
+							return ctx.Err()
+						case <-time.After(1 * time.Second):
+						}
+						continue
 					}
+					return err
+				}
+
+				err = func() error {
 					defer res.Body.Close()
-					copied, err := io.Copy(writer, res.Body)
+					copied, err := io.Copy(io.MultiWriter(writer, writtenFingerprint), res.Body)
 					if err != nil {
 						return err
 					}
 					written += copied
+					if props.ETag != nil {
+						etag := *props.ETag
+						writtenETag = &etag
+					}
 					return nil
 				}()
 				if err != nil {
@@ -283,6 +462,7 @@ func streamLogs(ctx context.Context, blobClient *blockblob.Client, writer io.Wri
 		}()
 		if azErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 			if azErr.StatusCode == http.StatusNotFound {
+				resetCursor()
 				// Mark log not found as a retryable error, we assume that the blob client was formed around a result from
 				// the queue job request and the fact that the log is not found means that the log is not yet available, not
 				// that it will never be available.

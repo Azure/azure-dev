@@ -159,7 +159,7 @@ to create role assignments (Microsoft.Authorization/roleAssignments/write)
 on subscription sub-456. The deployment includes role assignments and
 will fail without this permission.
 
-? Proceed with provisioning despite the warnings above? (Y/n)
+? Proceed with provisioning despite the warnings above? [Y/n] Yes
 ```
 
 If the user confirms (or accepts the default), deployment proceeds normally. If the user declines, the operation is canceled with a zero exit code (an intentional cancel, not a failure).

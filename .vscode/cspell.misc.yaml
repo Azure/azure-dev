@@ -22,6 +22,9 @@ overrides:
           - msrc
     - filename: ./docs/specs/metrics-audit/**
       words:
+          - apphost
+          - appdetect
+          - azdext
           - vsrpc
           - Buildpacks
           - devdeviceid
@@ -86,6 +89,12 @@ overrides:
           - azureai
           - entra
           - flexconsumption
+    - filename: .github/instructions/**/*.md
+      words:
+          - azdext
+          - Chdir
+          - exterrors
+          - userinfo
     - filename: docs/architecture/**/*.md
       words:
           - azapi
@@ -96,6 +105,9 @@ overrides:
           - Thhmmss
           - unhashed
           - vsrpc
+    - filename: docs/reference/telemetry-data.md
+      words:
+          - azdext
     - filename: docs/guides/**/*.md
       words:
           - azdext
@@ -117,6 +129,7 @@ overrides:
           - vsrpc
     - filename: docs/reference/**/*.md
       words:
+          - apphost
           - appinit
           - appservice
           - buildpack
@@ -153,3 +166,7 @@ overrides:
           - usgovcloudapi
           - vsrpc
           - whatif
+    - filename: ./agency.toml
+      words:
+          - mcps
+          - toolsets

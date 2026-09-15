@@ -38,12 +38,33 @@ type Server struct {
 	rootContainer *ioc.NestedContainer
 	// cancelTelemetryUpload is a function that cancels the background telemetry upload goroutine.
 	cancelTelemetryUpload func()
+	// getTelemetrySystem resolves the optional process telemetry system when the server starts.
+	// (this is in here for testing)
+	getTelemetrySystem func() telemetrySystem
+}
+
+// telemetrySystem is an interface so we can mock the results of [telemetry.GetTelemetrySystem].
+type telemetrySystem interface {
+	RunBackgroundUpload(ctx context.Context, enableDebugLogging bool) error
+	Shutdown(ctx context.Context) error
+}
+
+func getTelemetrySystem() telemetrySystem {
+	// don't be tempted to avoid this explicit nil check/conversion :)
+	// https://go.dev/doc/faq#nil_error
+	ts := telemetry.GetTelemetrySystem()
+	if ts == nil {
+		return nil
+	}
+
+	return ts
 }
 
 func NewServer(rootContainer *ioc.NestedContainer) *Server {
 	return &Server{
-		sessions:      make(map[string]*serverSession),
-		rootContainer: rootContainer,
+		sessions:           make(map[string]*serverSession),
+		rootContainer:      rootContainer,
+		getTelemetrySystem: getTelemetrySystem,
 	}
 }
 
@@ -77,9 +98,10 @@ func checkLocalhostOrigin(r *http.Request) bool {
 // Serve calls http.Serve with the given listener and a handler that serves the VS RPC protocol.
 func (s *Server) Serve(l net.Listener) error {
 	mux := http.NewServeMux()
+	ts := s.getTelemetrySystem()
 
 	mux.Handle("/AspireService/v1.0", newAspireService(s))
-	mux.Handle("/ServerService/v1.0", newServerService(s))
+	mux.Handle("/ServerService/v1.0", newServerService(s, ts))
 	mux.Handle("/EnvironmentService/v1.0", newEnvironmentService(s))
 
 	// Expose a few special test endpoints that can be used to debug our special RPC behavior around cancellation and
@@ -92,7 +114,6 @@ func (s *Server) Serve(l net.Listener) error {
 	// Run upload periodically in the background while the server is running.
 	//nolint:gosec // G118: cancel is stored on the server and invoked later by StopAsync.
 	ctx, cancel := context.WithCancel(context.Background())
-	ts := telemetry.GetTelemetrySystem()
 	backgroundTelemetry := func() {
 		ticker := time.NewTicker(5 * time.Second)
 		for {

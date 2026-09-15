@@ -19,7 +19,8 @@ package models
 // PendingUploadRequest is the request body for POST .../startPendingUpload.
 // We always use "BlobReference" — it tells the API to give us a blob storage location.
 type PendingUploadRequest struct {
-	PendingUploadType string `json:"pendingUploadType"` // Always "BlobReference"
+	PendingUploadType string `json:"pendingUploadType"`        // Always "BlobReference"
+	ConnectionName    string `json:"connectionName,omitempty"` // Optional Foundry storage connection
 }
 
 // PendingUploadResponse is what the API returns from startPendingUpload.

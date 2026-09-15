@@ -22,6 +22,9 @@ const (
 
 	// MetadataKeyNote adds a note line below the artifact output.
 	MetadataKeyNote = "note"
+
+	// MetadataKeyImagePassthrough identifies a remote container image that azd reused without publishing.
+	MetadataKeyImagePassthrough = "imagePassthrough"
 )
 
 // ArtifactKind represents well-known artifact types in the Azure Developer CLI

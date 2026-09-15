@@ -26,6 +26,28 @@ type AzCliAppServiceProperties struct {
 	HostNames []string
 }
 
+// AppServiceZipDeployResult describes the outcome of an App Service zip deployment.
+type AppServiceZipDeployResult struct {
+	Status               string
+	RuntimeStatusWarning string
+}
+
+func appServiceStatusTimeoutResult(err error) (*AppServiceZipDeployResult, bool) {
+	timeoutErr, ok := errors.AsType[*azsdk.DeploymentStatusTimeoutError](err)
+	if !ok {
+		return nil, false
+	}
+
+	return &AppServiceZipDeployResult{
+		Status: "OK",
+		RuntimeStatusWarning: fmt.Sprintf(
+			"Deployment completed, but azd observed no App Service deployment status change for %s. "+
+				"Check the app's runtime status and startup logs in the Azure Portal.",
+			timeoutErr.Timeout,
+		),
+	}, true
+}
+
 func (cli *AzureClient) GetAppServiceProperties(
 	ctx context.Context,
 	subscriptionId string,
@@ -169,7 +191,7 @@ func (cli *AzureClient) DeployAppServiceZip(
 	deployZipFile io.ReadSeeker,
 	progressLog func(string),
 	skipStatusCheck bool,
-) (_ *string, err error) {
+) (_ *AppServiceZipDeployResult, err error) {
 	ctx, span := tracing.Start(ctx, events.DeployAppServiceZipEvent)
 	defer func() { span.EndWithStatus(err) }()
 
@@ -189,7 +211,7 @@ func (cli *AzureClient) DeployAppServiceZip(
 	}
 
 	isLinux := isLinuxWebApp(app)
-	span.SetAttributes(fields.DeployLinuxKey.Key.Bool(isLinux))
+	span.SetAttributes(fields.DeployLinuxKey.Bool(isLinux))
 
 	// Deployment Status API only support linux web app for now
 	if isLinux && !skipStatusCheck && !isAppStopped(app) {
@@ -200,7 +222,7 @@ func (cli *AzureClient) DeployAppServiceZip(
 		// entire zip deploy when the build fails, giving the SCM time to stabilize.
 		const maxBuildRetries = 2
 		for attempt := range maxBuildRetries + 1 {
-			span.SetAttributes(fields.DeployAttemptKey.Key.Int(attempt + 1))
+			span.SetAttributes(fields.DeployAttemptKey.Int(attempt + 1))
 
 			if attempt > 0 {
 				// Exponential backoff: 5s, 10s between retries to avoid hammering
@@ -234,6 +256,9 @@ func (cli *AzureClient) DeployAppServiceZip(
 			err = client.DeployTrackStatus(
 				ctx, deployZipFile, subscriptionId, resourceGroup, appName, progressLog)
 			if err != nil {
+				if timeoutResult, ok := appServiceStatusTimeoutResult(err); ok {
+					return timeoutResult, nil
+				}
 				if isBuildFailure(err) && attempt < maxBuildRetries {
 					progressLog("Build process failed — will retry after SCM stabilizes")
 					continue
@@ -243,7 +268,7 @@ func (cli *AzureClient) DeployAppServiceZip(
 				}
 			} else {
 				// Deployment is successful
-				return new("OK"), nil
+				return &AppServiceZipDeployResult{Status: "OK"}, nil
 			}
 			break
 		}
@@ -263,7 +288,7 @@ func (cli *AzureClient) DeployAppServiceZip(
 		return nil, err
 	}
 
-	return &response.StatusText, nil
+	return &AppServiceZipDeployResult{Status: response.StatusText}, nil
 }
 
 // isBuildFailure returns true when the deployment error indicates a transient
@@ -477,6 +502,34 @@ func (cli *AzureClient) UpdateAppServiceSlotContainerImage(
 	return nil
 }
 
+// AppServiceContainerConfiguration describes whether an App Service site can host a container image.
+type AppServiceContainerConfiguration struct {
+	IsLinux     bool
+	IsContainer bool
+}
+
+// appServiceContainerConfiguration derives the container-related configuration of a site from its
+// `kind` and `linuxFxVersion`. Both signals are optional on the ARM response, so a missing value is
+// reported as "not linux" / "not a container" rather than an error.
+func appServiceContainerConfiguration(
+	response *armappservice.WebAppsClientGetResponse,
+) AppServiceContainerConfiguration {
+	configuration := AppServiceContainerConfiguration{}
+	if response.Kind != nil {
+		configuration.IsLinux = strings.Contains(strings.ToLower(*response.Kind), "linux")
+	}
+	if response.Properties != nil &&
+		response.Properties.SiteConfig != nil &&
+		response.Properties.SiteConfig.LinuxFxVersion != nil {
+		configuration.IsContainer = strings.HasPrefix(
+			strings.ToUpper(*response.Properties.SiteConfig.LinuxFxVersion),
+			"DOCKER|",
+		)
+	}
+
+	return configuration
+}
+
 // ValidateAppServiceForContainerDeploy checks that the App Service is configured for container
 // deployment (Linux kind with an existing DOCKER| linuxFxVersion). Returns an error with
 // actionable suggestions if the site is not ready for container deployment.
@@ -491,7 +544,9 @@ func (cli *AzureClient) ValidateAppServiceForContainerDeploy(
 		return err
 	}
 
-	if response.Kind == nil || !strings.Contains(*response.Kind, "linux") {
+	configuration := appServiceContainerConfiguration(response)
+
+	if !configuration.IsLinux {
 		return fmt.Errorf(
 			"app service '%s' is not configured as a Linux app. "+
 				"Container deployment requires a Linux App Service Plan. "+
@@ -499,9 +554,7 @@ func (cli *AzureClient) ValidateAppServiceForContainerDeploy(
 			appName)
 	}
 
-	if response.Properties == nil || response.Properties.SiteConfig == nil ||
-		response.Properties.SiteConfig.LinuxFxVersion == nil ||
-		!strings.HasPrefix(strings.ToUpper(*response.Properties.SiteConfig.LinuxFxVersion), "DOCKER|") {
+	if !configuration.IsContainer {
 		return fmt.Errorf(
 			"app service '%s' is not configured for container deployment. "+
 				"Ensure your infrastructure sets linuxFxVersion to a DOCKER| image "+

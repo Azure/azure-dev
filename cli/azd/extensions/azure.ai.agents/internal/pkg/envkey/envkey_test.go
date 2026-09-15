@@ -3,7 +3,11 @@
 
 package envkey
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestToolboxMCPEndpoint(t *testing.T) {
 	t.Parallel()
@@ -42,5 +46,35 @@ func TestToolboxMCPEndpoint(t *testing.T) {
 				t.Errorf("ToolboxMCPEndpoint(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestSkillVersion(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "SKILL_SUMMARIZE_TOOLS_VERSION", SkillVersion("summarize-tools"))
+	require.Equal(t, "SKILL_MY__SKILL_VERSION", SkillVersion("my--skill"))
+	require.Equal(t, "SKILL_SUMMARIZE_TOOLS_PROJECT_ENDPOINT", SkillProjectEndpoint("summarize-tools"))
+}
+
+func TestReadinessScopeKeys(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "TOOLBOX_MY_TOOL_PROJECT_ENDPOINT", ToolboxProjectEndpoint("my-tool"))
+	require.Equal(t, "AGENT_MY_AGENT_PROJECT_ENDPOINT", AgentProjectEndpoint("my-agent"))
+	require.Equal(t, "AGENT_MY_AGENT_BLUEPRINT_CLIENT_ID", AgentBlueprintClientID("my-agent"))
+}
+
+func TestConnectionServiceProjectEndpoint(t *testing.T) {
+	t.Parallel()
+
+	// Keep these wire-format vectors in sync with the Connections producer tests.
+	tests := map[string]string{
+		"search":         "CONNECTION_V2_736561726368_PROJECT_ENDPOINT",
+		"my connection":  "CONNECTION_V2_6D7920636F6E6E656374696F6E_PROJECT_ENDPOINT",
+		"my--connection": "CONNECTION_V2_6D792D2D636F6E6E656374696F6E_PROJECT_ENDPOINT",
+		"A":              "CONNECTION_V2_41_PROJECT_ENDPOINT",
+		"a":              "CONNECTION_V2_61_PROJECT_ENDPOINT",
+	}
+	for name, expected := range tests {
+		require.Equal(t, expected, ConnectionServiceProjectEndpoint(name))
 	}
 }

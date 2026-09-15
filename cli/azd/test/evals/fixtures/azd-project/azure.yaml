@@ -1,0 +1,8 @@
+name: sample-app
+metadata:
+  template: sample-app@0.0.1
+services:
+  web:
+    project: ./src/web
+    host: appservice
+    language: js

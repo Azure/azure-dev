@@ -153,18 +153,16 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	if err := ba.projectManager.Initialize(ctx, ba.projectConfig); err != nil {
-		return nil, err
-	}
-
-	if err := ba.projectManager.EnsureFrameworkTools(ctx, ba.projectConfig, func(svc *project.ServiceConfig) bool {
-		return targetServiceName == "" || svc.Name == targetServiceName
-	}); err != nil {
-		return nil, err
-	}
-
 	stableServices, err := ba.importManager.ServiceStableFiltered(ctx, ba.projectConfig, targetServiceName, os.Getenv)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := ba.projectManager.InitializeServices(ctx, stableServices); err != nil {
+		return nil, err
+	}
+
+	if err := ba.projectManager.EnsureFrameworkTools(ctx, stableServices); err != nil {
 		return nil, err
 	}
 

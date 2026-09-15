@@ -23,6 +23,7 @@ import (
 func newJobSubmitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 	var filePath string
+	var storageConnectionName string
 
 	cmd := &cobra.Command{
 		Use:   "submit",
@@ -107,7 +108,11 @@ func newJobSubmitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 				return fmt.Errorf("failed to initialize azcopy: %w", err)
 			}
 
-			uploadSvc := service.NewUploadService(apiClient, azRunner)
+			effectiveStorageConnectionName := resolveStorageConnectionName(
+				storageConnectionName,
+				jobDef.StorageConnectionName,
+			)
+			uploadSvc := service.NewUploadService(apiClient, azRunner, effectiveStorageConnectionName)
 
 			// Resolve references (compute name → ARM ID, local paths → datastore URIs)
 			resolver := service.NewJobResolver(
@@ -140,6 +145,12 @@ func newJobSubmitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&filePath, "file", "f", "", "Path to YAML job definition file (required)")
+	cmd.Flags().StringVar(
+		&storageConnectionName,
+		"storage-connection-name",
+		"",
+		"Foundry storage connection used to upload local code and input folders",
+	)
 
 	// Configure the SDK-managed --output flag: default to "json" for this
 	// subcommand and constrain to the formats we support.
@@ -150,6 +161,13 @@ func newJobSubmitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	})
 
 	return cmd
+}
+
+func resolveStorageConnectionName(flagValue, yamlValue string) string {
+	if value := strings.TrimSpace(flagValue); value != "" {
+		return value
+	}
+	return strings.TrimSpace(yamlValue)
 }
 
 // buildJobResource converts a parsed YAML JobDefinition into the REST API payload.
@@ -163,6 +181,7 @@ func buildJobResource(def *utils.JobDefinition) *models.JobResource {
 		EnvironmentImageReference: def.Environment,
 		ComputeID:                 def.Compute,
 		GPUCount:                  def.GPUCount,
+		Priority:                  def.Priority,
 		UserAssignedIdentityID:    def.Identity,
 		CodeID:                    def.Code,
 		EnvironmentVariables:      def.EnvironmentVariables,
@@ -198,6 +217,8 @@ func buildJobResource(def *utils.JobDefinition) *models.JobResource {
 				JobOutputType: output.Type,
 				Mode:          mapOutputMode(output.Mode),
 				URI:           output.Path,
+				AssetName:     output.AssetName,
+				AssetVersion:  output.AssetVersion,
 			}
 		}
 	}
@@ -209,14 +230,14 @@ func buildJobResource(def *utils.JobDefinition) *models.JobResource {
 		job.Distribution = buildDistribution(def.Distribution)
 	}
 
-	// Resources — prefer structured resources block, fall back to flat instance_count
-	if def.Resources != nil {
+	// Resources — only instance_count survives on the wire. instance_type, slaTier and the
+	// AISuperComputer sub-block are now inferred by the service from the compute cluster;
+	// priority is a top-level CommandJob field; partial GPU allocation is expressed via the
+	// top-level gpu_count field. Accept instance_count from either the structured resources
+	// block or the flat top-level field.
+	if def.Resources != nil && def.Resources.InstanceCount > 0 {
 		job.Resources = &models.ResourceConfig{
 			InstanceCount: def.Resources.InstanceCount,
-			InstanceType:  def.Resources.InstanceType,
-			ShmSize:       def.Resources.ShmSize,
-			DockerArgs:    def.Resources.DockerArgs,
-			Properties:    def.Resources.Properties,
 		}
 	} else if def.InstanceCount > 0 {
 		job.Resources = &models.ResourceConfig{

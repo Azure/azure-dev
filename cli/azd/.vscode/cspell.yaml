@@ -38,6 +38,7 @@ words:
   - Canonicalize
   - Chans
   - chinacloudapi
+  - CLAUDECODE
   - ojson
   - otable
   - cmds
@@ -49,6 +50,7 @@ words:
   - devcontainers
   - errchain
   - errgroup
+  - errorchain
   - errorhandler
   - extendee
   - eiannone
@@ -77,6 +79,7 @@ words:
   - ppid
   - PPID
   - proto
+  - Protos
   - protobuf
   - protoc
   - protoimpl
@@ -84,6 +87,7 @@ words:
   - protoreflect
   - SNAPPROCESS
   - structpb
+  - statuspb
   - subtest
   - subtests
   - syncmap
@@ -173,6 +177,13 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: internal/appdetect/aspire_polyglot.go
+    words:
+      - pylock
+  - filename: internal/appdetect/dotnet_apphost.go
+    words:
+      - buildpack
+      - upvote
   - filename: cmd/mcp.go
     words:
       - internalcmd
@@ -181,6 +192,9 @@ overrides:
       - compatResult
       - compatCopy
       - Incompat
+  - filename: pkg/tools/dotnet/dotnet.go
+    words:
+      - MSBUILDDISABLENODEREUSE
   - filename: pkg/output/pretty_table.go
     words:
       - runewidth
@@ -308,6 +322,8 @@ overrides:
       - println
       - myext
       - Fatalf
+      - CODEOWNERS
+      - codeowners
   - filename: extensions/microsoft.azd.ai.builder/internal/cmd/start.go
     words:
       - dall
@@ -441,28 +457,8 @@ overrides:
       - covcounters
       - covmeta
       - AMRD
-  - filename: test/eval/README.md
-    words:
-      - Waza
-      - waza
-      - urlopen
-  - filename: "test/eval/graders/*.py"
-    words:
-      - Waza
-      - waza
-      - hdrs
-      - mysite
-      - mydb
-  - filename: "test/eval/tasks/**/*.yaml"
-    words:
-      - authenticat
-      - idempoten
-  - filename: "test/eval/tests/human/*.test.ts"
-    words:
-      - compdef
-      - badcfg
-      - provison
-      - notacommand
+      - coreutils
+      - wslc
   - filename: pkg/infra/provisioning/bicep/bicep_provider.go
     words:
       - BIZSPARK
@@ -507,6 +503,38 @@ overrides:
     words:
       - forbidigo
       - Logf
+  - filename: internal/cmd/up_graph.go
+    words:
+      - finalizer
+  - filename: cmd/auth_transport_peer_linux.go
+    words:
+      - Getsockopt
+      - PEERCRED
+      - Ucred
+  - filename: cmd/auth_transport_peer_darwin.go
+    words:
+      - Getsockopt
+      - PEERCRED
+      - Xucred
+  - filename: grpc/generateadapters/main.go
+    words:
+      - generateadapters
+  - filename: grpc/generatefacade/main.go
+    words:
+      - generatefacade
+  - filename: internal/grpcserver/versioned_services.go
+    words:
+      - anypb
+      - protoregistry
+  - filename: internal/grpcserver/versioned_services_generated.go
+    words:
+      - generateadapters
+  - filename: "{internal/grpcserver/legacy_services.go,internal/grpcserver/legacybridge/bridge.go,internal/grpcserver/server.go}"
+    words:
+      - legacybridge
+  - filename: pkg/azdext/contracts_v1_aliases.go
+    words:
+      - generatefacade
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

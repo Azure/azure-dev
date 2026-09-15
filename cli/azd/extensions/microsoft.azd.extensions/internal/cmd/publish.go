@@ -474,6 +474,10 @@ func addOrUpdateExtension(
 				Dependencies:       extensionMetadata.Dependencies,
 				Providers:          extensionMetadata.Providers,
 				Artifacts:          artifacts,
+				// MCP config is authored directly in the registry and
+				// reviewed there, so carry it forward instead of
+				// dropping it on republish.
+				McpConfig: v.McpConfig,
 			}
 
 			return

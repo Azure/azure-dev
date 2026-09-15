@@ -1,0 +1,47 @@
+# Tier 1b (deploy verify) — provision + deploy the scaffold from tier1/1.01.
+#
+# ⚠️ Incurs Azure cost. Requires tier1/1.01-init-template-python to have run
+# first — it leaves a complete scaffold on disk that this scenario deploys.
+#
+# This scenario does NOT re-run init. It reuses the Tier 1 scaffold directly,
+# provisions infrastructure, deploys the agent, and verifies it's accessible.
+# An always-run post hook cleans up with `azd down`. Each Tier 1 scaffold has its own independent azd
+# environment (own Foundry project, own resource group), so `azd down` here
+# only destroys THIS scenario's infra and cannot affect other parallel runs.
+name: "verify-template-python"
+command: "azd provision"
+cwd: "{prerequisite_scaffold_dir}"
+tags: ["tier:1b", "cmd:provision", "cmd:deploy", "verify-deploy", "parallel-safe"]
+requires: "tier1/1.01-init-template-python.yaml"
+
+pre:
+  - run: |
+      SCAFFOLD="{prerequisite_scaffold_dir}"
+      if [ ! -f "$SCAFFOLD/azure.yaml" ]; then
+        echo "ERROR: Scaffold not found. Run tier1/1.01-init-template-python first."
+        exit 1
+      fi
+      if ! grep -q "azure.ai.agent" "$SCAFFOLD/azure.yaml"; then
+        echo "ERROR: Scaffold incomplete — azure.yaml missing agent service. Tier 1 likely failed."
+        exit 1
+      fi
+      if [ ! -d "$SCAFFOLD/.azure" ]; then
+        echo "ERROR: No .azure/ environment. Tier 1 init did not save Azure selections."
+        exit 1
+      fi
+    cwd: "~/working"
+    name: "assert tier 1 scaffold is complete"
+
+post:
+  - run: "azd down --force --purge"
+    cwd: "{prerequisite_scaffold_dir}"
+    name: "tear down scenario Azure resources"
+    timeout: 900
+
+goals:
+  - "Wait for 'azd provision' to complete. This creates the Azure infrastructure (Foundry project, model deployment, resource group) defined by the Tier 1 scaffold."
+  - "After provision succeeds, run 'azd deploy' and wait for it to complete. This deploys the agent to the provisioned Foundry project."
+  - "Run 'azd ai agent show' and verify the agent is accessible — confirm it reports an agent name and endpoint URL."
+  - "Run `azd ai agent invoke \"Hello, are you there?\"` and confirm the agent responds with a non-empty reply containing no authentication or endpoint errors. This validates the agent is functional, not just deployed."
+  - "Take a screenshot of the successful provision, deploy, show, and invoke output."
+  - "Report a finding if provision, deploy, show, or invoke fails. A failure here means the Tier 1 init scaffold passed validation but cannot actually deploy or run — this is a real regression. Azure cleanup runs separately as an always-run post hook."

@@ -276,7 +276,7 @@ func (a *mcpStartAction) getExtensionServerConfig(
 	}
 
 	// Get all environment variables (custom + AZD)
-	env, err := a.getExtensionEnvironment(ext, serverInfo)
+	env, err := a.getExtensionEnvironment(ctx, ext, serverInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extension environment variables: %w", err)
 	}
@@ -294,6 +294,7 @@ func (a *mcpStartAction) getExtensionServerConfig(
 // This includes both custom environment variables from extension configuration
 // and azd environment variables needed for the extension framework.
 func (a *mcpStartAction) getExtensionEnvironment(
+	ctx context.Context,
 	ext *extensions.Extension,
 	serverInfo *grpcserver.ServerInfo,
 ) ([]string, error) {
@@ -314,7 +315,7 @@ func (a *mcpStartAction) getExtensionEnvironment(
 	}
 
 	// Generate azd extension framework environment variables
-	jwtToken, err := grpcserver.GenerateExtensionToken(ext, serverInfo)
+	jwtToken, err := grpcserver.GenerateExtensionTokenWithContext(ctx, ext, serverInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate extension token: %w", err)
 	}

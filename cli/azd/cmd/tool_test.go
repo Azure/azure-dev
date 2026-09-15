@@ -750,9 +750,9 @@ func TestToolInstallAction_Failure_ReturnsErrorNotSuccess(t *testing.T) {
 
 // TestToolUpgradeAction_SuccessEmitsFromAndToVersion exercises the upgrade
 // path end-to-end and verifies:
-//   - tool.upgrade.from_version is emitted from DetectTool (H2: no UX change,
+//   - tool.update.from_version is emitted from DetectTool (H2: no UX change,
 //     reuses the existing detector)
-//   - tool.upgrade.to_version is emitted only on Success and reflects the
+//   - tool.update.to_version is emitted only on Success and reflects the
 //     installer's InstalledVersion (H3)
 //   - tool.id is emitted (single-tool, not tool.ids)
 func TestToolUpgradeAction_SuccessEmitsFromAndToVersion(t *testing.T) {
@@ -795,17 +795,17 @@ func TestToolUpgradeAction_SuccessEmitsFromAndToVersion(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "az-cli", gotID)
 
-	gotFrom, ok := lookupToolStrUsage(string(fields.ToolUpgradeFromVersionKey.Key))
-	require.True(t, ok, "tool.upgrade.from_version must be emitted from detector output")
+	gotFrom, ok := lookupToolStrUsage(string(fields.ToolUpdateFromVersionKey.Key))
+	require.True(t, ok, "tool.update.from_version must be emitted from detector output")
 	assert.Equal(t, "1.0.0", gotFrom)
 
-	gotTo, ok := lookupToolStrUsage(string(fields.ToolUpgradeToVersionKey.Key))
-	require.True(t, ok, "tool.upgrade.to_version must be emitted on success")
+	gotTo, ok := lookupToolStrUsage(string(fields.ToolUpdateToVersionKey.Key))
+	require.True(t, ok, "tool.update.to_version must be emitted on success")
 	assert.Equal(t, "2.0.0", gotTo)
 }
 
 // TestToolUpgradeAction_FailureDoesNotEmitToVersion verifies the H3 contract:
-// when the upgrade fails, tool.upgrade.to_version is NOT emitted (since there
+// when the update fails, tool.update.to_version is NOT emitted (since there
 // is no successfully-installed version to report).
 func TestToolUpgradeAction_FailureDoesNotEmitToVersion(t *testing.T) {
 	tracing.ResetUsageAttributesForTest()
@@ -842,13 +842,13 @@ func TestToolUpgradeAction_FailureDoesNotEmitToVersion(t *testing.T) {
 	_, _ = action.Run(t.Context())
 
 	// from_version still emits (detected before the failed upgrade).
-	gotFrom, ok := lookupToolStrUsage(string(fields.ToolUpgradeFromVersionKey.Key))
+	gotFrom, ok := lookupToolStrUsage(string(fields.ToolUpdateFromVersionKey.Key))
 	require.True(t, ok)
 	assert.Equal(t, "1.0.0", gotFrom)
 
 	// to_version must be absent — there is no installed version to report.
-	_, ok = lookupToolStrUsage(string(fields.ToolUpgradeToVersionKey.Key))
-	assert.False(t, ok, "tool.upgrade.to_version must not be emitted on upgrade failure")
+	_, ok = lookupToolStrUsage(string(fields.ToolUpdateToVersionKey.Key))
+	assert.False(t, ok, "tool.update.to_version must not be emitted on update failure")
 }
 
 // ---------------------------------------------------------------------------
@@ -1351,7 +1351,7 @@ func TestToolUninstallAction_DryRun_DoesNotDelegate(t *testing.T) {
 }
 
 // TestToolUpgradeAction_All_UpgradesInstalledTools verifies that
-// `azd tool upgrade --all` upgrades every installed tool (and only those),
+// `azd tool update --all` updates every installed tool (and only those),
 // without an interactive selection prompt.
 func TestToolUpgradeAction_All_UpgradesInstalledTools(t *testing.T) {
 	tracing.ResetUsageAttributesForTest()
@@ -1403,7 +1403,7 @@ func TestToolUpgradeAction_All_UpgradesInstalledTools(t *testing.T) {
 }
 
 // TestToolUpgradeAction_All_JsonFormat_EmitsCleanJson exercises the reviewer's
-// exact trigger — `azd tool upgrade --all --output json` — and verifies the
+// exact trigger — `azd tool update --all --output json` — and verifies the
 // writer receives valid JSON. In JSON mode the detection spinner is
 // bypassed (detectAllTools) so no control bytes can corrupt the stream.
 func TestToolUpgradeAction_All_JsonFormat_EmitsCleanJson(t *testing.T) {
@@ -1440,12 +1440,45 @@ func TestToolUpgradeAction_All_JsonFormat_EmitsCleanJson(t *testing.T) {
 
 	var items []toolInstallResultItem
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &items),
-		"upgrade --all --output json must emit valid JSON")
+		"update --all --output json must emit valid JSON")
 	require.NotEmpty(t, items, "at least one installed tool must be reported")
+	require.Equal(t, "update", items[0].Action)
+}
+
+func TestToolUpgradeAction_DryRun_JsonUsesUpdateAction(t *testing.T) {
+	detector := &cmdMockDetector{
+		detectTool: func(_ context.Context, td *tool.ToolDefinition) (*tool.ToolStatus, error) {
+			return &tool.ToolStatus{
+				Tool:             td,
+				Installed:        td.Id == "az-cli",
+				InstalledVersion: "1.0.0",
+			}, nil
+		},
+	}
+	manager := tool.NewManager(detector, &cmdMockInstaller{}, nil)
+
+	var buf bytes.Buffer
+	action := newToolUpgradeAction(
+		[]string{"az-cli", "github-copilot-cli"},
+		&toolUpgradeFlags{dryRun: true},
+		manager,
+		mockinput.NewMockConsole(),
+		&output.JsonFormatter{},
+		&buf,
+	)
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+
+	var items []toolDryRunItem
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &items))
+	require.Len(t, items, 2)
+	assert.Equal(t, "update", items[0].Action)
+	assert.Equal(t, "skip (not installed)", items[1].Action)
 }
 
 // TestToolUpgradeAction_All_JsonFormat_EmptyEmitsArray verifies that when there
-// is nothing to upgrade, `azd tool upgrade --all --output json` still emits an
+// is nothing to update, `azd tool update --all --output json` still emits an
 // empty result array ([]) rather than a consoleMessage object, so automation
 // sees one stable shape.
 func TestToolUpgradeAction_All_JsonFormat_EmptyEmitsArray(t *testing.T) {
@@ -1484,7 +1517,7 @@ func TestToolUpgradeAction_All_JsonFormat_EmptyEmitsArray(t *testing.T) {
 	assert.Empty(t, items)
 }
 
-// TestToolUpgradeAction_IDsWithAll_Errors verifies that `azd tool upgrade foo
+// TestToolUpgradeAction_IDsWithAll_Errors verifies that `azd tool update foo
 // --all` is rejected rather than silently ignoring foo and upgrading everything.
 func TestToolUpgradeAction_IDsWithAll_Errors(t *testing.T) {
 	tracing.ResetUsageAttributesForTest()
@@ -1514,7 +1547,7 @@ func TestToolUpgradeAction_IDsWithAll_Errors(t *testing.T) {
 }
 
 // TestToolUpgradeAction_NoPrompt_WithoutTarget_Errors verifies that
-// `azd tool upgrade` with --no-prompt (or a non-interactive terminal) and no
+// `azd tool update` with --no-prompt (or a non-interactive terminal) and no
 // tool IDs and no --all fails with guidance instead of implicitly upgrading
 // every installed tool — consistent with install/uninstall and azd's
 // --no-prompt contract.
@@ -1555,7 +1588,7 @@ func TestToolUpgradeAction_NoPrompt_WithoutTarget_Errors(t *testing.T) {
 }
 
 // TestToolUpgradeAction_JsonOnTTY_WithoutTarget_Errors verifies that
-// `azd tool upgrade --output json` on an interactive terminal (no --no-prompt)
+// `azd tool update --output json` on an interactive terminal (no --no-prompt)
 // requires an explicit target rather than opening the no-argument picker, whose
 // output would corrupt the JSON result written to the same stdout.
 func TestToolUpgradeAction_JsonOnTTY_WithoutTarget_Errors(t *testing.T) {
@@ -1705,7 +1738,7 @@ func TestToolUpgradeAction_ChangedVersion_ReportsUpgraded(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.Message)
-	assert.Equal(t, "Tool is upgraded to v2.0.0.", result.Message.Header)
+	assert.Equal(t, "Tool is updated to v2.0.0.", result.Message.Header)
 }
 
 // TestSkillAgentDisplayName verifies an installed agent's command identity is
@@ -2004,7 +2037,7 @@ func TestToolUpgradeAction_MultiAgentSkill_UpgradedNotUpToDate(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.Message)
-	assert.Equal(t, "Tool is upgraded to v1.1.87.", result.Message.Header,
+	assert.Equal(t, "Tool is updated to v1.1.87.", result.Message.Header,
 		"a multi-agent skill with an upgraded agent must not read as already up to date")
 }
 

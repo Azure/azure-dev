@@ -42,10 +42,15 @@ stages:
                   inputs:
                     versionSpec: 20.x
 
+                - template: /eng/common/pipelines/templates/steps/create-authenticated-npmrc.yml
+
                 - task: TfxInstaller@5
                   displayName: Install tfx-cli for release
                   inputs:
                     version: 0.23.x
+                  env:
+                    # As exported by create-authenticated-npmrc.yml
+                    NPM_CONFIG_USERCONFIG: $(resolvedNpmrcPath)
 
                 - pwsh: |
                     $files = Get-ChildItem -Path "$(Build.SourcesDirectory)/signed/*.vsix"

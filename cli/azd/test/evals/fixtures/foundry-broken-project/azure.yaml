@@ -1,0 +1,5 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+# Deliberately incomplete: no services at all, so there is no `host: azure.ai.agent`
+# entry for the Foundry tooling to find. Used to exercise `azd ai agent doctor`.
+name: half-configured-agent

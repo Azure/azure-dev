@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,6 +35,40 @@ func Test_Not_Json_Error(t *testing.T) {
 	errorString := deploymentError.Error()
 
 	require.Equal(t, "\n\nTitle:\n"+nonJsonError, errorString)
+}
+
+// A payload can parse cleanly yet render nothing: nodes carrying only a code,
+// codes that are deliberately blanked, or a null body. Falling back to the raw
+// payload keeps some cause visible instead of emitting a bare heading.
+func Test_Parsed_But_Unrenderable_Error_Falls_Back_To_Json(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+	}{
+		{
+			name: "code with no message",
+			json: `{"error":{"code":"ResourceGroupNotFound"}}`,
+		},
+		{
+			name: "blanked code with no details",
+			json: `{"error":{"code":"DeploymentFailed","message":"At least one operation failed."}}`,
+		},
+		{
+			name: "additionalInfo only",
+			json: `{"error":{"code":"BadRequest","additionalInfo":[{"type":"QuotaExceeded"}]}}`,
+		},
+		{
+			name: "null body",
+			json: `null`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			deploymentError := NewAzureDeploymentError("Title", tt.json, DeploymentOperationPreview)
+			require.Equal(t, "\n\nTitle:\n"+tt.json, deploymentError.Error())
+		})
+	}
 }
 
 func assertOutputsMatch(t *testing.T, jsonPath string, expectedOutputPath string) {
@@ -124,4 +159,17 @@ func Test_AzureDeploymentError_ErrorsAs_DeploymentErrorLine(t *testing.T) {
 	var line *DeploymentErrorLine
 	require.True(t, errors.As(deployErr, &line),
 		"errors.As should find DeploymentErrorLine in tree")
+}
+
+func Test_DeploymentErrorLine_Target(t *testing.T) {
+	jsonErr := `{"error":{"code":"DeploymentFailed","details":[` +
+		`{"code":"InsufficientQuota","target":"ai-account",` +
+		`"message":"Cannot create/update/move resource 'ai-account'."}]}}`
+	deployErr := NewAzureDeploymentError(
+		"test", jsonErr, DeploymentOperationValidate)
+
+	require.NotNil(t, deployErr.Details)
+	require.Len(t, deployErr.Details.Inner, 1)
+	require.Len(t, deployErr.Details.Inner[0].Inner, 1)
+	assert.Equal(t, "ai-account", deployErr.Details.Inner[0].Inner[0].Target)
 }

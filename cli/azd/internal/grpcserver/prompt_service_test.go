@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -611,7 +612,7 @@ func setupTestServer(t *testing.T, promptSvc azdext.PromptServiceServer) (
 		azdext.UnimplementedUserConfigServiceServer{},
 		azdext.UnimplementedDeploymentServiceServer{},
 		azdext.UnimplementedEventServiceServer{},
-		azdext.UnimplementedComposeServiceServer{},
+		v1beta.UnimplementedComposeServiceServer{},
 		azdext.UnimplementedWorkflowServiceServer{},
 		azdext.UnimplementedExtensionServiceServer{},
 		azdext.UnimplementedServiceTargetServiceServer{},
@@ -619,9 +620,10 @@ func setupTestServer(t *testing.T, promptSvc azdext.PromptServiceServer) (
 		azdext.UnimplementedContainerServiceServer{},
 		azdext.UnimplementedAccountServiceServer{},
 		azdext.UnimplementedAiModelServiceServer{},
-		azdext.UnimplementedCopilotServiceServer{},
+		v1beta.UnimplementedCopilotServiceServer{},
 		azdext.UnimplementedProvisioningServiceServer{},
 		azdext.UnimplementedValidationServiceServer{},
+		v1beta.UnimplementedTelemetryServiceServer{},
 	)
 
 	serverInfo, err := server.Start()
@@ -1419,25 +1421,25 @@ func TestBuildAgentOptions_Partial(t *testing.T) {
 
 func TestConvertFileChangeType_Created(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, azdext.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_CREATED,
+	assert.Equal(t, v1beta.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_CREATED,
 		convertFileChangeType(watch.FileCreated))
 }
 
 func TestConvertFileChangeType_Modified(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, azdext.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_MODIFIED,
+	assert.Equal(t, v1beta.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_MODIFIED,
 		convertFileChangeType(watch.FileModified))
 }
 
 func TestConvertFileChangeType_Deleted(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, azdext.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_DELETED,
+	assert.Equal(t, v1beta.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_DELETED,
 		convertFileChangeType(watch.FileDeleted))
 }
 
 func TestConvertFileChangeType_Unknown(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, azdext.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_UNSPECIFIED,
+	assert.Equal(t, v1beta.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_UNSPECIFIED,
 		convertFileChangeType(watch.FileChangeType(999)))
 }
 
@@ -1460,8 +1462,8 @@ func TestConvertFileChanges_WithChanges(t *testing.T) {
 	}
 	result := convertFileChanges(changes)
 	require.Len(t, result, 2)
-	assert.Equal(t, azdext.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_CREATED, result[0].ChangeType)
-	assert.Equal(t, azdext.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_MODIFIED, result[1].ChangeType)
+	assert.Equal(t, v1beta.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_CREATED, result[0].ChangeType)
+	assert.Equal(t, v1beta.CopilotFileChangeType_COPILOT_FILE_CHANGE_TYPE_MODIFIED, result[1].ChangeType)
 }
 
 // --- convertUsageMetrics tests ---
@@ -1492,7 +1494,6 @@ func TestConvertSessionEvent_BasicFields(t *testing.T) {
 	t.Parallel()
 	ts := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
 	event := agent.SessionEvent{
-		Type:      copilot.SessionEventTypeAssistantMessage,
 		Timestamp: ts,
 		Data:      &copilot.AssistantMessageData{Content: "hello"},
 	}
@@ -1504,7 +1505,6 @@ func TestConvertSessionEvent_BasicFields(t *testing.T) {
 func TestConvertSessionEvent_WithToolStart(t *testing.T) {
 	t.Parallel()
 	event := agent.SessionEvent{
-		Type:      copilot.SessionEventTypeToolExecutionStart,
 		Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Data: &copilot.ToolExecutionStartData{
 			ToolName:   "read_file",
@@ -1519,9 +1519,8 @@ func TestConvertSessionEvent_WithToolStart(t *testing.T) {
 
 func TestConvertSessionEvent_WithUsageData(t *testing.T) {
 	t.Parallel()
-	inputTokens := float64(500)
+	inputTokens := int64(500)
 	event := agent.SessionEvent{
-		Type:      copilot.SessionEventTypeAssistantUsage,
 		Timestamp: time.Date(2024, 6, 15, 12, 0, 0, 0, time.UTC),
 		Data: &copilot.AssistantUsageData{
 			Model:       "gpt-4o",
@@ -2112,6 +2111,32 @@ func TestPromptService_MultiSelect_NilOptions(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestNewMultiSelectOptions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                string
+		allowEmptySelection *bool
+	}{
+		{name: "default"},
+		{name: "allowed", allowEmptySelection: new(true)},
+		{name: "not allowed", allowEmptySelection: new(false)},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			options := newMultiSelectOptions(&azdext.MultiSelectOptions{
+				Choices: []*azdext.MultiSelectChoice{
+					{Value: "a", Label: "A"},
+				},
+				AllowEmptySelection: test.allowEmptySelection,
+			})
+
+			require.Equal(t, test.allowEmptySelection, options.AllowEmptySelection)
+		})
+	}
+}
+
 func TestPromptService_MultiSelect_NoPrompt_ReturnsSelected(t *testing.T) {
 	t.Parallel()
 	svc := newTestPromptService(&mockPromptService{}, true)
@@ -2131,19 +2156,41 @@ func TestPromptService_MultiSelect_NoPrompt_ReturnsSelected(t *testing.T) {
 	require.Equal(t, "c", resp.Values[1].Value)
 }
 
-func TestPromptService_MultiSelect_NoPrompt_NoneSelected(t *testing.T) {
+func TestPromptService_MultiSelect_NoPrompt_EmptySelection(t *testing.T) {
 	t.Parallel()
-	svc := newTestPromptService(&mockPromptService{}, true)
-	resp, err := svc.MultiSelect(t.Context(), &azdext.MultiSelectRequest{
-		Options: &azdext.MultiSelectOptions{
-			Message: "pick:",
-			Choices: []*azdext.MultiSelectChoice{
-				{Value: "a", Label: "A", Selected: false},
-			},
-		},
-	})
-	require.NoError(t, err)
-	require.Empty(t, resp.Values)
+
+	tests := []struct {
+		name                string
+		allowEmptySelection *bool
+		expectError         bool
+	}{
+		{name: "default requires selection", expectError: true},
+		{name: "explicitly requires selection", allowEmptySelection: new(false), expectError: true},
+		{name: "allows empty selection", allowEmptySelection: new(true)},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			svc := newTestPromptService(&mockPromptService{}, true)
+			resp, err := svc.MultiSelect(t.Context(), &azdext.MultiSelectRequest{
+				Options: &azdext.MultiSelectOptions{
+					Message: "pick:",
+					Choices: []*azdext.MultiSelectChoice{
+						{Value: "a", Label: "A", Selected: false},
+					},
+					AllowEmptySelection: test.allowEmptySelection,
+				},
+			})
+			if test.expectError {
+				require.Error(t, err)
+				requirePromptRequiredError(t, err, "pick:")
+				return
+			}
+
+			require.NoError(t, err)
+			require.Empty(t, resp.Values)
+		})
+	}
 }
 
 func TestPromptService_Prompt_NoPrompt_WithDefault(t *testing.T) {

@@ -351,7 +351,8 @@ func Test_functionAppTarget_Package(t *testing.T) {
 			}
 		}()
 
-		result, err := target.Package(t.Context(), nil, svcCtx, progress)
+		result, err := target.Package(
+			t.Context(), &ServiceConfig{Language: ServiceLanguageTypeScript}, svcCtx, progress)
 		progress.Done()
 		require.NoError(t, err)
 		require.NotNil(t, result)
@@ -368,7 +369,8 @@ func Test_functionAppTarget_Package(t *testing.T) {
 			}
 		}()
 
-		_, err := target.Package(t.Context(), nil, svcCtx, progress)
+		_, err := target.Package(
+			t.Context(), &ServiceConfig{Language: ServiceLanguageTypeScript}, svcCtx, progress)
 		progress.Done()
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "no build result")

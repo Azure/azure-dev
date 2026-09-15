@@ -5,7 +5,11 @@ package provisioning
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"os"
+	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
@@ -139,6 +143,59 @@ func TestResolveEnv_PromptsAndPersistsSubscriptionAndLocation(t *testing.T) {
 		"subscription should be persisted to the azd environment")
 	assert.Equal(t, "westus2", env.set[envKeyLocation],
 		"location should be persisted to the azd environment")
+}
+
+func TestResolveEnv_UsesVirtualEnvFromPreviousLayer(t *testing.T) {
+	env := &resolveEnvStubEnvServer{envName: "foundry-layer", get: map[string]string{}}
+	prompt := &resolveEnvStubPromptServer{}
+	client := newResolveEnvTestClient(t, env, prompt)
+
+	p := &FoundryProvisioningProvider{
+		azdClient: client,
+		isLayer:   true,
+		virtualEnv: map[string]string{
+			envKeySubscriptionID: "00000000-0000-0000-0000-000000000001",
+			envKeyLocation:       "westus2",
+			envKeyFoundryRG:      "rg-platform-foundry",
+		},
+	}
+	require.NoError(t, p.resolveEnv(t.Context()))
+
+	assert.Equal(t, "00000000-0000-0000-0000-000000000001", p.subID)
+	assert.Equal(t, "westus2", p.location)
+	assert.Equal(t, "rg-platform-foundry", p.rgName)
+	assert.Zero(t, prompt.subscriptionN)
+	assert.Zero(t, prompt.locationN)
+}
+
+func TestResolveEnv_LoadsLayerResourceGroupOwnership(t *testing.T) {
+	const ownerID = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-platform-foundry"
+	env := &resolveEnvStubEnvServer{envName: "foundry-layer", get: map[string]string{
+		envKeySubscriptionID: "00000000-0000-0000-0000-000000000001",
+		envKeyLocation:       "westus2",
+		envKeyFoundryRG:      "rg-platform-foundry",
+		envKeyFoundryRGOwner: ownerID,
+	}}
+	client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+	p := &FoundryProvisioningProvider{azdClient: client, isLayer: true}
+
+	require.NoError(t, p.resolveEnv(t.Context()))
+	assert.Equal(t, ownerID, p.foundryRGOwnerID)
+}
+
+func TestResolveEnv_LayerDefaultResourceGroupIsNotPersistedOrOwned(t *testing.T) {
+	env := &resolveEnvStubEnvServer{envName: "foundry-layer", get: map[string]string{
+		envKeySubscriptionID: "00000000-0000-0000-0000-000000000001",
+		envKeyLocation:       "westus2",
+	}}
+	client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+
+	p := &FoundryProvisioningProvider{azdClient: client, isLayer: true}
+	require.NoError(t, p.resolveEnv(t.Context()))
+
+	assert.Equal(t, "rg-foundry-layer-foundry", p.rgName)
+	assert.False(t, p.rgExplicit)
+	assert.NotContains(t, env.set, envKeyFoundryRG)
 }
 
 func TestResolveEnv_NoPromptSubscriptionReturnsActionableError(t *testing.T) {
@@ -287,6 +344,29 @@ func TestResolveEnv_LocationReadErrorSurfaces(t *testing.T) {
 	assert.Equal(t, exterrors.CodeEnvironmentValuesFailed, local.Code)
 }
 
+func TestResolveEnv_OptionalValueReadErrorsSurface(t *testing.T) {
+	for _, key := range []string{envKeyFoundryRG, envKeyFoundryRGOwner, envKeyProjectName, envKeyPrincipalID} {
+		t.Run(key, func(t *testing.T) {
+			env := &resolveEnvStubEnvServer{
+				envName: "foundry-layer",
+				get: map[string]string{
+					envKeySubscriptionID: "00000000-0000-0000-0000-000000000001",
+					envKeyLocation:       "westus2",
+				},
+				getErr: map[string]error{key: status.Error(codes.Internal, "env read failed")},
+			}
+			client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+			p := &FoundryProvisioningProvider{azdClient: client, isLayer: true}
+
+			err := p.resolveEnv(t.Context())
+			require.Error(t, err)
+			var local *azdext.LocalError
+			require.ErrorAs(t, err, &local)
+			assert.Equal(t, exterrors.CodeEnvironmentValuesFailed, local.Code)
+		})
+	}
+}
+
 func TestResolveEnv_EmptyLocationResponseReturnsError(t *testing.T) {
 	// Defensive: a location response with a blank name must not be persisted;
 	// fail with an actionable error instead of writing an empty value.
@@ -305,4 +385,214 @@ func TestResolveEnv_EmptyLocationResponseReturnsError(t *testing.T) {
 	require.ErrorAs(t, err, &local)
 	assert.Equal(t, exterrors.CodeMissingAzureLocation, local.Code)
 	assert.Empty(t, env.set, "an empty location name must not be persisted")
+}
+
+// forbiddenProjectServer proves Initialize never asks core to expand service env.
+type forbiddenProjectServer struct {
+	azdext.UnimplementedProjectServiceServer
+	calls atomic.Int32
+}
+
+func (s *forbiddenProjectServer) Get(
+	context.Context, *azdext.EmptyRequest,
+) (*azdext.GetProjectResponse, error) {
+	s.calls.Add(1)
+	return nil, status.Error(codes.Internal, "Projects must not request expanded service environments")
+}
+
+// newPromptOrderTestClient serves the project, environment and prompt
+// stubs needed to exercise Initialize end to end.
+func newPromptOrderTestClient(
+	t *testing.T,
+	projSrv azdext.ProjectServiceServer,
+	envSrv azdext.EnvironmentServiceServer,
+	promptSrv azdext.PromptServiceServer,
+) *azdext.AzdClient {
+	t.Helper()
+
+	srv := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(srv, projSrv)
+	azdext.RegisterEnvironmentServiceServer(srv, envSrv)
+	azdext.RegisterPromptServiceServer(srv, promptSrv)
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(func() {
+		srv.Stop()
+		_ = lis.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(lis.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+
+	return client
+}
+
+func TestInitializeLeavesSplitConnectionEnvironmentToOwningExtension(t *testing.T) {
+	for _, mode := range []string{"greenfield", "brownfield-reuse", "brownfield-models"} {
+		for _, onDisk := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/ondisk=%t", mode, onDisk), func(t *testing.T) {
+				projectPath := t.TempDir()
+				projectConfig := ""
+				const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+				if mode != "greenfield" {
+					projectConfig = "    endpoint: " + endpoint + "\n"
+				}
+				if mode == "brownfield-models" {
+					projectConfig += "    deployments:\n" +
+						"      - name: model\n" +
+						"        model: {name: gpt-4.1-mini, format: OpenAI, version: '2025-04-14'}\n" +
+						"        sku: {name: GlobalStandard, capacity: 1}\n"
+				}
+				// Missing file refs, an invalid payload and unresolvable env are
+				// intentionally owned by Connections, never by Projects.
+				raw := "services:\n  project:\n    host: azure.ai.project\n" + projectConfig + `
+  connection:
+    host: azure.ai.connection
+    uses: [project]
+    $ref: ./missing-connection.yaml
+    env:
+      $ref: ./missing-connection-env.yaml
+    target: ${UNRESOLVED_CONNECTION_ENDPOINT}
+    credentials: ${UNRESOLVED_CONNECTION_CREDENTIALS}
+    category: {invalid: payload}
+  isolated:
+    host: azure.ai.connection
+    env: {}
+    target: ${UNRESOLVED_CONNECTION_ENDPOINT}
+`
+				require.NoError(t, os.WriteFile(filepath.Join(projectPath, "azure.yaml"), []byte(raw), 0o600))
+				if onDisk {
+					infraDir := filepath.Join(projectPath, onDiskInfraDir)
+					require.NoError(t, os.MkdirAll(infraDir, 0o750))
+					require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepFile), []byte("// project"), 0o600))
+				}
+				env := &resolveEnvStubEnvServer{envName: "test", get: map[string]string{
+					"AZURE_AI_PROJECT_ID": "/subscriptions/00000000-0000-0000-0000-000000000001/" +
+						"resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/projects/project",
+					"FOUNDRY_PROJECT_ENDPOINT": endpoint,
+				}}
+				prompt := &resolveEnvStubPromptServer{
+					subscriptionID: "00000000-0000-0000-0000-000000000001",
+					location:       "westus2",
+				}
+				project := &forbiddenProjectServer{}
+				client := newPromptOrderTestClient(t, project, env, prompt)
+				provider := &FoundryProvisioningProvider{azdClient: client}
+
+				require.NoError(t, provider.Initialize(t.Context(), projectPath,
+					&azdext.ProvisioningOptions{Provider: FoundryProviderName}))
+				assert.Zero(t, project.calls.Load())
+				reuseOnly := mode == "brownfield-reuse" && !onDisk
+				assert.Equal(t, reuseOnly, provider.existingProjectReuseOnly)
+				wantPrompts := 1
+				if reuseOnly {
+					wantPrompts = 0
+				}
+				assert.Equal(t, wantPrompts, prompt.subscriptionN)
+				assert.Equal(t, wantPrompts, prompt.locationN)
+				require.NotNil(t, provider.synthResult)
+				assert.NotContains(t, provider.synthResult.Parameters, "connections")
+				assert.NotContains(t, provider.synthResult.Parameters, "connectionCredentials")
+			})
+		}
+	}
+}
+
+func TestInitializeValidatesConfigBeforePrompting(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  string
+		wantErr string
+	}{
+		{
+			name:    "invalid deployments",
+			config:  "    deployments: invalid\n",
+			wantErr: "decode service",
+		},
+		{
+			name: "invalid network",
+			config: "    network:\n" +
+				"      peSubnet: {vnet: not-an-arm-id, name: pe}\n",
+			wantErr: "not a well-formed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projectPath := t.TempDir()
+			require.NoError(t, os.WriteFile(
+				filepath.Join(projectPath, "azure.yaml"),
+				[]byte("services:\n"+
+					"  project:\n"+
+					"    host: azure.ai.project\n"+
+					tt.config),
+				0o600,
+			))
+
+			env := &resolveEnvStubEnvServer{
+				envName: "test",
+				get:     map[string]string{},
+			}
+			prompt := &resolveEnvStubPromptServer{
+				subscriptionID: "sub-id",
+				location:       "westus2",
+			}
+			client := newResolveEnvTestClient(t, env, prompt)
+			provider := &FoundryProvisioningProvider{
+				azdClient: client,
+			}
+
+			err := provider.Initialize(
+				t.Context(),
+				projectPath,
+				&azdext.ProvisioningOptions{
+					Provider: FoundryProviderName,
+				},
+			)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+			assert.Zero(t, prompt.subscriptionN)
+			assert.Zero(t, prompt.locationN)
+		})
+	}
+}
+
+func TestInitializeProjectRefErrorUsesGenericMessage(t *testing.T) {
+	projectPath := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectPath, "azure.yaml"),
+		[]byte(`services:
+  project:
+    host: azure.ai.project
+    $ref: missing.yaml
+`),
+		0o600,
+	))
+
+	env := &resolveEnvStubEnvServer{
+		envName: "test",
+		get:     map[string]string{},
+	}
+	prompt := &resolveEnvStubPromptServer{}
+	client := newResolveEnvTestClient(t, env, prompt)
+	provider := &FoundryProvisioningProvider{azdClient: client}
+
+	err := provider.Initialize(
+		t.Context(),
+		projectPath,
+		&azdext.ProvisioningOptions{Provider: FoundryProviderName},
+	)
+	require.Error(t, err)
+	assert.Contains(
+		t,
+		err.Error(),
+		"read Foundry project service configuration",
+	)
+	assert.NotContains(t, err.Error(), "existing Foundry project endpoint")
+	assert.Zero(t, prompt.subscriptionN)
+	assert.Zero(t, prompt.locationN)
 }

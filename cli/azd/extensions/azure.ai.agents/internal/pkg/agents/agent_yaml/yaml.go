@@ -4,7 +4,10 @@
 package agent_yaml
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"slices"
 
 	"go.yaml.in/yaml/v3"
@@ -16,7 +19,47 @@ type AgentKind string
 const (
 	AgentKindHosted   AgentKind = "hosted"
 	AgentKindWorkflow AgentKind = "workflow"
+	// AgentKindPrompt is the Foundry "prompt" agent kind backed by the
+	// Prompt Execution Service (PES) Brain+Hand sandbox architecture.
+	// Lifecycle and response APIs live behind the same data-plane routes
+	// as the other Foundry kinds, with a "kind": "prompt" discriminator.
+	AgentKindPrompt AgentKind = "prompt"
+	// AgentKindPromptVoice is the authoring (agent.yaml) kind for a declarative
+	// voice (speech-to-speech) agent. It is intentionally distinct from the
+	// data-plane service kind "voice": the map layer translates prompt-voice ->
+	// voice when building the create request. Reserving "prompt-voice" keeps a
+	// clean boundary against a future hosted (code) voice agent.
+	AgentKindPromptVoice AgentKind = "prompt-voice"
+	// AgentKindVoice is the preferred authoring kind for managed Voice agents.
+	// AgentKindPromptVoice remains accepted for backwards compatibility.
+	AgentKindVoice AgentKind = "voice"
 )
+
+// VoiceModelType selects the model-inference mode for a voice agent.
+type VoiceModelType string
+
+const (
+	VoiceModelTypeManaged      VoiceModelType = "managed"
+	VoiceModelTypeSelfDeployed VoiceModelType = "self_deployed"
+	VoiceModelTypeHostedAgent  VoiceModelType = "hosted_agent"
+)
+
+// VoiceTargetAgent identifies the hosted agent service that supplies the
+// conversation logic for a hosted voice wrapper. Service is an azure.yaml
+// service name; azd resolves it to the deployed Foundry agent name and version.
+type VoiceTargetAgent struct {
+	Service string `json:"service" yaml:"service"`
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
+}
+
+// VoiceConversationEngine identifies the conversation engine for a managed Voice
+// agent. hosted_agent uses a local azure.yaml hosted-agent service name; azd
+// resolves it to the deployed target name/version at deploy time.
+type VoiceConversationEngine struct {
+	Type    string `json:"type" yaml:"type"`
+	Name    string `json:"name" yaml:"name"`
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
+}
 
 // IsValidAgentKind checks if the provided AgentKind is valid
 func IsValidAgentKind(kind AgentKind) bool {
@@ -28,7 +71,15 @@ func ValidAgentKinds() []AgentKind {
 	return []AgentKind{
 		AgentKindHosted,
 		AgentKindWorkflow,
+		AgentKindPrompt,
+		AgentKindPromptVoice,
+		AgentKindVoice,
 	}
+}
+
+// IsVoiceAgentKind reports whether kind is a managed Voice agent authoring kind.
+func IsVoiceAgentKind(kind AgentKind) bool {
+	return kind == AgentKindPromptVoice || kind == AgentKindVoice
 }
 
 type ResourceKind string
@@ -97,13 +148,25 @@ const (
 	AuthTypeSAS                  AuthType = "SAS"
 )
 
+// AuthTypeEntra is the name authors reach for when they mean "no secret, use
+// the caller's Entra identity", and is what azd's own documentation and
+// scaffolding have used. The service has never accepted it: its discriminator
+// for that mode is AAD. Sent verbatim it fails provisioning with a bad-request
+// listing twenty-one auth types, none of which explains that Entra and AAD are
+// the same thing. It is normalized rather than rejected because it names the
+// right concept.
+const AuthTypeEntra AuthType = "Entra"
+
 // NormalizeConnectionAuthType maps auth types accepted in agent.yaml to
 // the management-plane value required for project connection provisioning.
 // Legacy AgenticIdentity values are normalized to AgenticIdentityToken
-// for API compatibility.
+// for API compatibility, and Entra to AAD.
 func NormalizeConnectionAuthType(authType AuthType) AuthType {
-	if authType == AuthTypeAgenticIdentity {
+	switch authType {
+	case AuthTypeAgenticIdentity:
 		return AuthTypeAgenticIdentityToken
+	case AuthTypeEntra:
+		return AuthTypeAAD
 	}
 
 	return authType
@@ -176,6 +239,141 @@ type Workflow struct {
 	Trigger         *map[string]any `json:"trigger,omitempty" yaml:"trigger,omitempty"`
 }
 
+// VoiceAgent is a declarative (managed) voice speech-to-speech agent authored in
+// agent.yaml with kind "prompt-voice". Unlike a ContainerAgent it has no image,
+// Dockerfile, or code — Foundry's Voice Live service hosts the model and audio
+// pipeline. The map layer translates this into a data-plane VoiceAgentDefinition
+// whose service kind is "voice".
+//
+// Simple authoring can rely on defaults for omitted audio/runtime settings.
+// Advanced projects can override the audio pipeline, structured inputs, tools,
+// greeting, avatar, handoff, and response options supported by the service.
+// ModelType defaults to "managed" when omitted; BYOM uses "self_deployed".
+type VoiceAgent struct {
+	AgentDefinition `json:",inline" yaml:",inline"`
+	// ModelType selects managed vs self_deployed (BYOM). Optional; defaults to managed.
+	ModelType VoiceModelType `json:"modelType,omitempty" yaml:"model_type,omitempty"`
+	// Model names the speech-to-speech model (e.g. "gpt-realtime"). Reuses the
+	// shared Model struct; only Id is required for voice.
+	Model *Model `json:"model,omitempty" yaml:"model,omitempty"`
+	// TargetAgent references the hosted agent service used when model_type is hosted_agent.
+	TargetAgent *VoiceTargetAgent `json:"targetAgent,omitempty" yaml:"target_agent,omitempty"`
+	// ConversationEngine references the hosted agent service used by Hosted Voice wrappers.
+	ConversationEngine *VoiceConversationEngine `json:"conversationEngine,omitempty" yaml:"conversation_engine,omitempty"`
+	// Instructions is the system prompt for the voice assistant.
+	Instructions *string `json:"instructions,omitempty" yaml:"instructions,omitempty"`
+	// Voice is the output voice name (e.g. "en-US-Ava:DragonHDLatestNeural" for
+	// an Azure Neural voice, or "alloy" for an OpenAI realtime voice).
+	Voice *string `json:"voice,omitempty" yaml:"voice,omitempty"`
+	// StructuredInputs declares template inputs used by voice instructions and greeting.
+	StructuredInputs map[string]any `json:"structuredInputs,omitempty" yaml:"structured_inputs,omitempty"`
+	// Audio customizes the input and output voice pipeline. Missing fields keep azd defaults.
+	Audio *VoiceAudio `json:"audio,omitempty" yaml:"audio,omitempty"`
+	// OutputModalities declares response modalities such as audio, text, animation, or avatar.
+	OutputModalities []string `json:"outputModalities,omitempty" yaml:"output_modalities,omitempty"`
+	// Store toggles server-side logging (transcript + per-turn audio). Optional;
+	// the service defaults to false when omitted.
+	Store *bool `json:"store,omitempty" yaml:"store,omitempty"`
+	// Tools are passed through to the prompt voice service. Supported direct tool
+	// types include function, mcp, system, and toolbox.
+	Tools []map[string]any `json:"tools,omitempty" yaml:"tools,omitempty"`
+	// Avatar customizes voice avatar output for services that support it.
+	Avatar map[string]any `json:"avatar,omitempty" yaml:"avatar,omitempty"`
+	// Greeting configures initial greeting behavior for services that support it.
+	Greeting map[string]any `json:"greeting,omitempty" yaml:"greeting,omitempty"`
+	// Handoff configures voice handoff behavior for services that support it.
+	Handoff map[string]any `json:"handoff,omitempty" yaml:"handoff,omitempty"`
+	// ToolChoice configures service tool choice behavior, such as auto/none/required.
+	ToolChoice any `json:"toolChoice,omitempty" yaml:"tool_choice,omitempty"`
+	// ParallelToolCalls toggles parallel tool calls.
+	ParallelToolCalls *bool `json:"parallelToolCalls,omitempty" yaml:"parallel_tool_calls,omitempty"`
+	// MaxOutputTokens limits response output tokens. Use an integer or service-supported string such as "inf".
+	MaxOutputTokens any `json:"maxOutputTokens,omitempty" yaml:"max_output_tokens,omitempty"`
+	// Include requests additional service response fields.
+	Include []string `json:"include,omitempty" yaml:"include,omitempty"`
+	// Telephony configures phone-number bindings for prompt voice agents.
+	Telephony *VoiceTelephony `json:"telephony,omitempty" yaml:"telephony,omitempty"`
+}
+
+// VoiceTelephony declares telephony bindings for a prompt voice agent.
+type VoiceTelephony struct {
+	Bindings []VoiceTelephonyBinding `json:"bindings,omitempty" yaml:"bindings,omitempty"`
+}
+
+// VoiceTelephonyBinding maps a provider-side phone identifier to the voice agent.
+type VoiceTelephonyBinding struct {
+	Provider        string           `json:"provider" yaml:"provider"`
+	Identifier      string           `json:"identifier" yaml:"identifier"`
+	Connection      string           `json:"connection" yaml:"connection"`
+	TransferTargets []map[string]any `json:"transferTargets,omitempty" yaml:"transfer_targets,omitempty"`
+}
+
+// VoiceAudio bundles optional prompt voice input/output audio overrides.
+type VoiceAudio struct {
+	Input  *VoiceAudioInput  `json:"input,omitempty" yaml:"input,omitempty"`
+	Output *VoiceAudioOutput `json:"output,omitempty" yaml:"output,omitempty"`
+}
+
+// VoiceAudioInput customizes caller-to-agent audio.
+type VoiceAudioInput struct {
+	Format           *VoiceAudioFormat    `json:"format,omitempty" yaml:"format,omitempty"`
+	NoiseReduction   *VoiceNoiseReduction `json:"noiseReduction,omitempty" yaml:"noise_reduction,omitempty"`
+	EchoCancellation map[string]any       `json:"echoCancellation,omitempty" yaml:"echo_cancellation,omitempty"`
+	TurnDetection    *VoiceTurnDetection  `json:"turnDetection,omitempty" yaml:"turn_detection,omitempty"`
+	Transcription    *VoiceTranscription  `json:"transcription,omitempty" yaml:"transcription,omitempty"`
+}
+
+// VoiceAudioOutput customizes agent-to-caller audio.
+type VoiceAudioOutput struct {
+	Format *VoiceAudioFormat `json:"format,omitempty" yaml:"format,omitempty"`
+	Voice  *VoiceConfig      `json:"voice,omitempty" yaml:"voice,omitempty"`
+	Speed  *float64          `json:"speed,omitempty" yaml:"speed,omitempty"`
+}
+
+// VoiceAudioFormat describes an audio stream format.
+type VoiceAudioFormat struct {
+	Type string `json:"type" yaml:"type"`
+	Rate *int   `json:"rate,omitempty" yaml:"rate,omitempty"`
+}
+
+// VoiceNoiseReduction configures input audio noise reduction.
+type VoiceNoiseReduction struct {
+	Type string `json:"type" yaml:"type"`
+}
+
+// VoiceTurnDetection configures server-side turn detection.
+type VoiceTurnDetection struct {
+	Type              string   `json:"type" yaml:"type"`
+	Threshold         *float64 `json:"threshold,omitempty" yaml:"threshold,omitempty"`
+	PrefixPaddingMs   *int     `json:"prefixPaddingMs,omitempty" yaml:"prefix_padding_ms,omitempty"`
+	SilenceDurationMs *int     `json:"silenceDurationMs,omitempty" yaml:"silence_duration_ms,omitempty"`
+	CreateResponse    *bool    `json:"createResponse,omitempty" yaml:"create_response,omitempty"`
+	Eagerness         *string  `json:"eagerness,omitempty" yaml:"eagerness,omitempty"`
+	SpeechDurationMs  *int     `json:"speechDurationMs,omitempty" yaml:"speech_duration_ms,omitempty"`
+	RemoveFillerWords *bool    `json:"removeFillerWords,omitempty" yaml:"remove_filler_words,omitempty"`
+	InterruptResponse *bool    `json:"interruptResponse,omitempty" yaml:"interrupt_response,omitempty"`
+	Languages         []string `json:"languages,omitempty" yaml:"languages,omitempty"`
+	AutoTruncate      *bool    `json:"autoTruncate,omitempty" yaml:"auto_truncate,omitempty"`
+}
+
+// VoiceTranscription configures input transcription.
+type VoiceTranscription struct {
+	Model    string  `json:"model,omitempty" yaml:"model,omitempty"`
+	Language *string `json:"language,omitempty" yaml:"language,omitempty"`
+	Prompt   *string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
+}
+
+// VoiceConfig selects the output voice.
+type VoiceConfig struct {
+	Type   string  `json:"type" yaml:"type"`
+	Name   string  `json:"name" yaml:"name"`
+	Style  *string `json:"style,omitempty" yaml:"style,omitempty"`
+	Pitch  *string `json:"pitch,omitempty" yaml:"pitch,omitempty"`
+	Rate   *string `json:"rate,omitempty" yaml:"rate,omitempty"`
+	Locale *string `json:"locale,omitempty" yaml:"locale,omitempty"`
+	Volume *string `json:"volume,omitempty" yaml:"volume,omitempty"`
+}
+
 // ContainerResources represents the resource allocation for a containerized agent.
 type ContainerResources struct {
 	Cpu    string `json:"cpu" yaml:"cpu"`
@@ -197,6 +395,25 @@ type CodeConfiguration struct {
 // default as `azd ai agent init --dep-resolution`).
 const DefaultDependencyResolution = "remote_build"
 
+// Session idle-timeout bounds (in seconds) for a hosted agent, matching the
+// upstream HostedAgentDefinition.session_configuration.idle_timeout_seconds
+// contract. When omitted, the service applies its own default.
+const (
+	// MinSessionIdleTimeoutSeconds is the smallest accepted idle timeout.
+	MinSessionIdleTimeoutSeconds = 120
+	// MaxSessionIdleTimeoutSeconds is the largest accepted idle timeout.
+	MaxSessionIdleTimeoutSeconds = 3600
+)
+
+// SessionConfiguration configures the runtime session behavior of a hosted agent.
+type SessionConfiguration struct {
+	// IdleTimeoutSeconds is the idle duration, in seconds, before a session's
+	// sandbox is suspended. Valid range is 120–3600 (inclusive). When nil,
+	// session_configuration is omitted from the request and the service default
+	// (900 seconds) applies.
+	IdleTimeoutSeconds *int `json:"idleTimeoutSeconds,omitempty" yaml:"idle_timeout_seconds,omitempty"`
+}
+
 // PolicyType identifies the kind of governance policy attached to a hosted agent.
 type PolicyType string
 
@@ -205,14 +422,73 @@ const (
 	PolicyTypeRai PolicyType = "rai_policy"
 )
 
+// Invocation content types describe how a request or response body is encoded, which
+// determines how the content-safety proxy extracts the text it moderates. Both default to
+// InvocationContentTypeJSON when omitted.
+//
+// Keys in these structures follow the extension's dual-casing convention: camelCase in
+// azure.yaml, snake_case in the deprecated on-disk agent.yaml. The values below are wire
+// values and stay snake_case in both.
+const (
+	InvocationContentTypeJSON = "json"
+	InvocationContentTypeText = "text"
+)
+
+// Invocation response modes declare which response shapes the agent container can produce.
+const (
+	InvocationResponseModeNonStreaming = "non_streaming"
+	InvocationResponseModeStreaming    = "streaming"
+	InvocationResponseModeBoth         = "both"
+)
+
+// InvocationsProtocol is the protocol name an agent must expose for invocations moderation
+// to have any effect. The WebSocket variant ("invocations_ws") does not go through the
+// content-safety HTTP proxy and is therefore not covered.
+const InvocationsProtocol = "invocations"
+
+// SseTextSelector locates the text to moderate inside a single server-sent event frame.
+type SseTextSelector struct {
+	// EventType is the SSE event name this selector applies to. Required.
+	EventType string `json:"eventType" yaml:"event_type"`
+	// TextField is the JSONPath expression, relative to the frame payload, holding the text.
+	TextField string `json:"textField,omitempty" yaml:"text_field,omitempty"`
+}
+
+// InvocationsModeration configures how the content-safety proxy extracts the text it submits
+// to the RAI policy for agents that expose the invocations protocol. A RAI policy without it
+// has nothing to moderate on the invocations path.
+//
+// ResponseMode declares the response shapes the container can produce; it is not an
+// "input and output" switch. At runtime the proxy picks exactly one output gate from the
+// actual response Content-Type.
+type InvocationsModeration struct {
+	// InputContentType is "json" or "text". Defaults to "json" when omitted.
+	InputContentType string `json:"inputContentType,omitempty" yaml:"input_content_type,omitempty"`
+	// OutputContentType is "json" or "text". Defaults to "json" when omitted.
+	OutputContentType string `json:"outputContentType,omitempty" yaml:"output_content_type,omitempty"`
+	// ResponseMode is "non_streaming", "streaming" or "both". Required.
+	ResponseMode string `json:"responseMode,omitempty" yaml:"response_mode,omitempty"`
+	// InputPaths are JSONPath expressions selecting request text. Required when the input
+	// content type resolves to "json".
+	InputPaths []string `json:"inputPaths,omitempty" yaml:"input_paths,omitempty"`
+	// OutputPaths are JSONPath expressions selecting buffered response text. Required when
+	// ResponseMode includes non-streaming and the output content type resolves to "json".
+	OutputPaths []string `json:"outputPaths,omitempty" yaml:"output_paths,omitempty"`
+	// StreamSelectors locate text within SSE frames. Required when ResponseMode includes
+	// streaming and the output content type resolves to "json".
+	StreamSelectors []SseTextSelector `json:"streamSelectors,omitempty" yaml:"stream_selectors,omitempty"`
+}
+
 // Policy represents a single safety or governance policy attached to a hosted agent.
 // Type discriminates the policy kind; the remaining fields are interpreted based on Type.
 //
 // For Type "rai_policy", RaiPolicyName is the full ARM resource ID of the RAI policy, for example
 // "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.CognitiveServices/accounts/<account>/raiPolicies/<policyName>".
+// InvocationsModeration is optional and only valid for agents exposing the invocations protocol.
 type Policy struct {
-	Type          PolicyType `json:"type" yaml:"type"`
-	RaiPolicyName string     `json:"raiPolicyName,omitempty" yaml:"rai_policy_name,omitempty"`
+	Type                  PolicyType             `json:"type" yaml:"type"`
+	RaiPolicyName         string                 `json:"raiPolicyName,omitempty" yaml:"rai_policy_name,omitempty"`
+	InvocationsModeration *InvocationsModeration `json:"invocationsModeration,omitempty" yaml:"invocations_moderation,omitempty"`
 }
 
 // ContainerAgent This represents a container based agent hosted by the provider/publisher.
@@ -227,7 +503,10 @@ type Policy struct {
 //     Dockerfile) is used automatically.
 type ContainerAgent struct {
 	AgentDefinition      `json:",inline" yaml:",inline"`
+	Language             string                  `json:"language,omitempty" yaml:"language,omitempty"`
+	Toolbox              *ToolboxReference       `json:"toolbox,omitempty" yaml:"toolbox,omitempty"`
 	Image                string                  `json:"image,omitempty" yaml:"image,omitempty"`
+	RegistryConnectionID string                  `json:"registryConnectionId,omitempty" yaml:"registryConnectionId,omitempty"`
 	Protocols            []ProtocolVersionRecord `json:"protocols" yaml:"protocols"`
 	Resources            *ContainerResources     `json:"resources,omitempty" yaml:"resources,omitempty"`
 	EnvironmentVariables *[]EnvironmentVariable  `json:"environmentVariables,omitempty" yaml:"environment_variables,omitempty"`
@@ -235,6 +514,293 @@ type ContainerAgent struct {
 	AgentCard            *AgentCard              `json:"agentCard,omitempty" yaml:"agent_card,omitempty"`
 	CodeConfiguration    *CodeConfiguration      `json:"codeConfiguration,omitempty" yaml:"code_configuration,omitempty"`
 	Policies             []Policy                `json:"policies,omitempty" yaml:"policies,omitempty"`
+	SessionConfiguration *SessionConfiguration   `json:"sessionConfiguration,omitempty" yaml:"session_configuration,omitempty"`
+}
+
+// HarnessSkillRef is a skill pinned onto a harnessed agent by name and,
+// optionally, version.
+//
+// The deploy graph fills the version in from the publish it just performed,
+// because the service rejects a reference that omits it. An author writing the
+// reference by hand may leave it out and take the skill's current default.
+type HarnessSkillRef struct {
+	Name    string `json:"name" yaml:"name"`
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
+}
+
+// PromptHarness selects the managed runtime for a prompt agent. Harness
+// capabilities are configured through top-level skills and tools.
+type PromptHarness struct {
+	// Type is the harness discriminator, e.g.
+	// agent_api.ManagedAgentHarnessGitHubCopilot ("github_copilot_preview").
+	// It is passed through verbatim: azd keeps no allowlist of harness names, so
+	// a harness the service gains later needs no change here.
+	Type string `json:"type" yaml:"type"`
+}
+
+// UnmarshalYAML decodes the `harness:` block.
+//
+// Two things happen here that a plain struct decode would not do:
+//
+//   - A scalar is rejected with a clear shape error.
+//   - Unknown keys are rejected so obsolete or misspelled harness configuration
+//     does not silently deploy. Tools stay `[]any` and are unaffected, so a tool
+//     type newer than this build still passes through.
+func (h *PromptHarness) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		return fmt.Errorf("harness must be a block with a `type:` key, got string")
+	}
+
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("harness must be a block with a `type:` key, got %s", nodeKindName(value.Kind))
+	}
+
+	// A distinct type so this method is not inherited, which would recurse.
+	type harnessFields PromptHarness
+	var decoded harnessFields
+	if err := decodeStrict(value, &decoded); err != nil {
+		return fmt.Errorf("harness: %w", err)
+	}
+
+	*h = PromptHarness(decoded)
+	return nil
+}
+
+// decodeStrict decodes node into out, rejecting keys that bind to no field.
+//
+// yaml.Node.Decode has no strict mode, so the node is re-serialized and run
+// through a Decoder that does. Nested blocks are covered by the same pass;
+// fields typed `any` are not, which is what keeps pass-through fields such as
+// PromptAgent.Tools forward-compatible.
+func decodeStrict(node *yaml.Node, out any) error {
+	raw, err := yaml.Marshal(node)
+	if err != nil {
+		return fmt.Errorf("failed to re-encode: %w", err)
+	}
+
+	decoder := yaml.NewDecoder(bytes.NewReader(raw))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(out); err != nil {
+		if errors.Is(err, io.EOF) {
+			// An empty block leaves the zero value in place.
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// nodeKindName renders a yaml.Node kind for an error message, so a reader sees
+// "a list" rather than the bit value go-yaml uses internally.
+func nodeKindName(kind yaml.Kind) string {
+	switch kind {
+	case yaml.SequenceNode:
+		return "a list"
+	case yaml.ScalarNode:
+		return "a value"
+	case yaml.AliasNode:
+		return "an alias"
+	case yaml.DocumentNode:
+		return "a document"
+	default:
+		return "an unsupported node"
+	}
+}
+
+// PromptAgent represents a Foundry "prompt" agent — a PES (Prompt Execution
+// Service) backed agent. The customer declares the model and instructions; the
+// platform manages the runtime, lifecycle, and orchestration.
+//
+// Unlike ContainerAgent, the customer does not provide a container image or
+// code; the only required fields are ModelDeploymentName and Instructions.
+//
+// The optional Harness field selects between the two prompt-agent flavors:
+//   - Harness nil — a plain prompt agent. Foundry runs model + instructions +
+//     tools directly; there is no sandbox to provision.
+//   - Harness set — a managed agent whose Brain+Hand sandbox is provisioned by
+//     the platform on demand and driven by the named harness.
+type PromptAgent struct {
+	AgentDefinition `json:",inline" yaml:",inline"`
+
+	// Model is the name of the model deployment the agent runs on (e.g.
+	// "gpt-4.1-mini") — not a model id. It must match a deployment declared
+	// under the sibling azure.ai.project service in azure.yaml, which
+	// `azd provision` creates.
+	//
+	// The key is `model` in both YAML and JSON, matching the field name the
+	// Foundry prompt-agent API expects on the wire.
+	Model string `json:"model" yaml:"model"`
+
+	// Harness selects and configures the execution harness the platform runs
+	// the agent on. Leave it nil for a plain prompt agent with no harness; the
+	// field is then omitted from the create request entirely.
+	Harness *PromptHarness `json:"harness,omitempty" yaml:"harness,omitempty"`
+
+	// Instructions is the system/developer message inserted into the model's
+	// context. It is declared inline, matching the prompt-agent API schema.
+	Instructions string `json:"instructions,omitempty" yaml:"instructions,omitempty"`
+
+	// Skills is an optional list of Foundry skill names attached to the agent.
+	Skills []string `json:"skills,omitempty" yaml:"skills,omitempty"`
+
+	// ResolvedSkills contains versioned references resolved by the deploy graph.
+	// It is internal deployment state and is never authored directly.
+	ResolvedSkills []HarnessSkillRef `json:"-" yaml:"-"`
+
+	// Tools is an optional list of tool definitions attached to the agent.
+	// Entries are passed through verbatim to the Foundry prompt-agent API, so
+	// author them using the API's snake_case tool schema. Supported types
+	// include (but are not limited to): function, code_interpreter, file_search,
+	// web_search, image_generation, mcp, azure_ai_search, azure_function,
+	// openapi, bing_grounding, bing_custom_search_preview,
+	// sharepoint_grounding_preview, memory_search_preview, fabric_iq_preview,
+	// fabric_dataagent_preview, work_iq_preview, a2a_preview,
+	// computer_use_preview, browser_automation_preview, toolbox_search_preview.
+	Tools []any `json:"tools,omitempty" yaml:"tools,omitempty"`
+
+	// ToolChoice controls how/whether the model calls tools (e.g. "auto",
+	// "required", "none", or a specific tool object). Passed through verbatim.
+	ToolChoice any `json:"toolChoice,omitempty" yaml:"toolChoice,omitempty"`
+
+	// Temperature is the sampling temperature. Pointer so an explicit 0 (fully
+	// deterministic) is distinguishable from "not set", which would otherwise
+	// silently become the service default.
+	Temperature *float64 `json:"temperature,omitempty" yaml:"temperature,omitempty"`
+
+	// TopP is the nucleus-sampling cutoff. Pointer for the same reason as
+	// Temperature. The API accepts both; setting both is usually a mistake.
+	TopP *float64 `json:"topP,omitempty" yaml:"topP,omitempty"`
+
+	// Text configures the model's text response, most commonly the structured
+	// output format (e.g. text.format.type: json_schema). Passed through
+	// verbatim rather than modeled, since the shape is the API's to define.
+	Text any `json:"text,omitempty" yaml:"text,omitempty"`
+
+	// Reasoning configures reasoning-model behavior (e.g. reasoning.effort).
+	// Only meaningful on models that support it; passed through verbatim.
+	Reasoning any `json:"reasoning,omitempty" yaml:"reasoning,omitempty"`
+
+	// StructuredInputs declares typed inputs the agent accepts per invocation.
+	// Passed through verbatim to the API.
+	StructuredInputs map[string]any `json:"structuredInputs,omitempty" yaml:"structuredInputs,omitempty"`
+
+	// Policies is an optional list of governance policies (e.g. RAI). This is
+	// how the "guardrails" capability is expressed: a rai_policy entry becomes
+	// the definition's rai_config, which is the only guardrail carrier the
+	// prompt-agent API has.
+	Policies []Policy `json:"policies,omitempty" yaml:"policies,omitempty"`
+
+	// Memory declares a Foundry memory store the agent recalls from. Unlike
+	// Tools this is NOT passed through: the prompt-agent API has no `memory`
+	// field. azd provisions the named store during deploy and then injects a
+	// memory_search_preview entry into Tools, which is the actual wire carrier.
+	//
+	// It is json:"-" for exactly that reason — emitting it would send a field
+	// the API does not define.
+	Memory *PromptMemory `json:"-" yaml:"memory,omitempty"`
+
+	// Connections names sibling azure.ai.connection services that must be ready
+	// before this agent is deployed. Tools reference the same Foundry connection
+	// names in their service-defined configuration.
+	Connections []string `json:"connections,omitempty" yaml:"connections,omitempty"`
+
+	// Toolbox optionally references an existing Foundry toolbox by name and
+	// version. When set, the deploy engine attaches that toolbox's MCP endpoint
+	// as an mcp tool instead of registering skills from the skills/ folder.
+	Toolbox *ToolboxReference `json:"toolbox,omitempty" yaml:"toolbox,omitempty"`
+}
+
+// PromptMemory declares the Foundry memory store a prompt agent recalls from.
+//
+// Memory is a two-part feature: a memory store is a project-level resource that
+// must exist before the agent references it, and the agent reaches it through a
+// memory_search_preview tool. Authors declare it once here and azd does both —
+// it ensures the store exists at deploy time and injects the tool entry.
+type PromptMemory struct {
+	// Store is the memory store name. Required. azd creates the store if it
+	// does not already exist and reuses it if it does.
+	Store string `json:"store" yaml:"store"`
+
+	// Description is an optional human-readable description recorded on the
+	// store when azd creates it.
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+
+	// ChatModel and EmbeddingModel are the model deployment names the store
+	// uses to summarize conversations and to embed memories. Both are required
+	// to create a store; they are ignored when the store already exists.
+	ChatModel      string `json:"chat_model,omitempty" yaml:"chat_model,omitempty"`
+	EmbeddingModel string `json:"embedding_model,omitempty" yaml:"embedding_model,omitempty"`
+
+	// Scope namespaces memories so they are isolated per user (or per tenant,
+	// session, etc.). Defaults to DefaultMemoryScope, which resolves the caller's
+	// object ID from the request auth header at runtime.
+	Scope string `json:"scope,omitempty" yaml:"scope,omitempty"`
+
+	// UpdateDelay is how many seconds of conversation inactivity to wait before
+	// extracting memories. Nil leaves the service default (300s) in place. Set
+	// it low only for demos — a short delay extracts on nearly every turn.
+	UpdateDelay *int `json:"update_delay,omitempty" yaml:"update_delay,omitempty"`
+
+	// MaxMemories caps how many memories a single search returns. Nil leaves
+	// the service default in place.
+	MaxMemories *int `json:"max_memories,omitempty" yaml:"max_memories,omitempty"`
+
+	// Options toggles which memory kinds the store extracts.
+	Options *PromptMemoryOptions `json:"options,omitempty" yaml:"options,omitempty"`
+}
+
+// UnmarshalYAML decodes the `memory:` block, rejecting keys that bind to no
+// field.
+//
+// Memory is the one block azd acts on rather than forwards — it provisions the
+// store and synthesizes the memory_search_preview tool — so a key that silently
+// binds nothing produces an agent whose recall behavior differs from what the
+// manifest says, with nothing in the deploy output to indicate it.
+func (m *PromptMemory) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("memory must be a block with a `store:` key, got %s", nodeKindName(value.Kind))
+	}
+
+	// A distinct type so this method is not inherited, which would recurse.
+	type memoryFields PromptMemory
+	var decoded memoryFields
+	if err := decodeStrict(value, &decoded); err != nil {
+		return fmt.Errorf("memory: %w", err)
+	}
+
+	*m = PromptMemory(decoded)
+	return nil
+}
+
+// PromptMemoryOptions toggles the extraction behaviors of a memory store. All
+// fields are pointers so an unset toggle leaves the service default rather than
+// forcing false.
+type PromptMemoryOptions struct {
+	ChatSummaryEnabled      *bool  `json:"chat_summary_enabled,omitempty" yaml:"chat_summary_enabled,omitempty"`
+	UserProfileEnabled      *bool  `json:"user_profile_enabled,omitempty" yaml:"user_profile_enabled,omitempty"`
+	ProceduralMemoryEnabled *bool  `json:"procedural_memory_enabled,omitempty" yaml:"procedural_memory_enabled,omitempty"`
+	DefaultTTLSeconds       *int   `json:"default_ttl_seconds,omitempty" yaml:"default_ttl_seconds,omitempty"`
+	UserProfileDetails      string `json:"user_profile_details,omitempty" yaml:"user_profile_details,omitempty"`
+}
+
+// DefaultMemoryScope isolates memories per calling user. Foundry substitutes
+// the object ID from the request's auth header, so a shared agent does not leak
+// one user's memories to another. Authors can override it with a fixed string
+// when they want a shared or per-tenant namespace instead.
+const DefaultMemoryScope = "{{$userId}}"
+
+// ToolboxReference identifies the Foundry toolbox consumed by an agent.
+type ToolboxReference struct {
+	// Name is the toolbox name.
+	Name string `json:"name" yaml:"name"`
+
+	// Version is the toolbox version. When empty the toolbox's default version
+	// is used.
+	Version string `json:"version,omitempty" yaml:"version,omitempty"`
+
+	// ProjectConnectionID is the optional Foundry project connection name or ID
+	// passed as the toolbox MCP tool's project_connection_id.
+	ProjectConnectionID string `json:"projectConnectionId,omitempty" yaml:"projectConnectionId,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.

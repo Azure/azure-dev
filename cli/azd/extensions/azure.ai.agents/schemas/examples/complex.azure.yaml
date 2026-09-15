@@ -46,6 +46,8 @@ services:
     host: azure.ai.connection
     uses:
       - ai-project
+    env:
+      SEARCH_API_KEY: ${SEARCH_API_KEY}
     category: CognitiveSearch
     target: https://my-search.search.windows.net
     authType: ApiKey
@@ -108,7 +110,8 @@ services:
       - research-tools
     env:
       LOG_LEVEL: info
-      MODEL_ENDPOINT: ${{project.endpoint}}
+      # The extra $ preserves this Foundry expression through azd.
+      MODEL_ENDPOINT: $${{project.endpoint}}
     protocols:
       - protocol: a2a
         version: "0.2"
@@ -143,6 +146,8 @@ services:
     host: azure.ai.routine
     uses:
       - researcher
+    env:
+      DIGEST_TOPIC: ${DIGEST_TOPIC}
     description: Summarize the day's documents every night.
     triggers:
       default:

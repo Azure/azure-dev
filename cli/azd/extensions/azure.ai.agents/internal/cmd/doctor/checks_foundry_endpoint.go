@@ -15,6 +15,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+
+	"azureaiagent/internal/pkg/useragent"
 )
 
 // foundryProbeTimeout caps the per-probe HTTP round trip. The design
@@ -316,7 +318,7 @@ func makeRealProbeFoundryEndpoint(apiVersion string) func(context.Context, strin
 		}
 		req.Header.Set("Authorization", "Bearer "+tok.Token)
 		req.Header.Set("Accept", "application/json")
-		req.Header.Set("User-Agent", "azd-ai-agent-doctor")
+		req.Header.Set("User-Agent", useragent.Doctor())
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {

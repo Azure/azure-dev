@@ -41,7 +41,7 @@ func NewHeadlessCollector() *HeadlessCollector {
 // HandleEvent processes a Copilot session event silently, collecting
 // usage metrics and tracking completion state.
 func (h *HeadlessCollector) HandleEvent(event copilot.SessionEvent) {
-	switch event.Type {
+	switch event.Type() {
 	case copilot.SessionEventTypeAssistantTurnStart:
 		h.mu.Lock()
 		h.messageReceived = false
@@ -63,16 +63,16 @@ func (h *HeadlessCollector) HandleEvent(event copilot.SessionEvent) {
 		if data, ok := event.Data.(*copilot.AssistantUsageData); ok {
 			h.mu.Lock()
 			if data.InputTokens != nil {
-				h.totalInputTokens += *data.InputTokens
+				h.totalInputTokens += float64(*data.InputTokens)
 			}
 			if data.OutputTokens != nil {
-				h.totalOutputTokens += *data.OutputTokens
+				h.totalOutputTokens += float64(*data.OutputTokens)
 			}
 			if data.Cost != nil {
 				h.billingRate = *data.Cost
 			}
 			if data.Duration != nil {
-				h.totalDurationMS += *data.Duration
+				h.totalDurationMS += float64(*data.Duration)
 			}
 			if data.Model != "" {
 				h.lastModel = data.Model
@@ -83,7 +83,9 @@ func (h *HeadlessCollector) HandleEvent(event copilot.SessionEvent) {
 	case copilot.SessionEventTypeSessionShutdown:
 		if data, ok := event.Data.(*copilot.SessionShutdownData); ok {
 			h.mu.Lock()
-			h.premiumRequests = data.TotalPremiumRequests
+			if data.TotalPremiumRequests != nil {
+				h.premiumRequests = *data.TotalPremiumRequests
+			}
 			h.mu.Unlock()
 		}
 
@@ -102,7 +104,7 @@ func (h *HeadlessCollector) HandleEvent(event copilot.SessionEvent) {
 		}
 
 	case copilot.SessionEventTypeSessionTaskComplete:
-		log.Printf("[copilot-headless] %s received, signaling completion", event.Type)
+		log.Printf("[copilot-headless] %s received, signaling completion", event.Type())
 		h.signalIdle()
 	}
 }

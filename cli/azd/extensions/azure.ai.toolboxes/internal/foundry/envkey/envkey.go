@@ -23,3 +23,9 @@ func ToolboxMCPEndpoint(toolboxName string) string {
 	sanitized := nonAlphanumRe.ReplaceAllString(strings.ToUpper(toolboxName), "_")
 	return fmt.Sprintf("TOOLBOX_%s_MCP_ENDPOINT", sanitized)
 }
+
+// ToolboxProjectEndpoint returns the project-scope key for a toolbox marker.
+func ToolboxProjectEndpoint(toolboxName string) string {
+	sanitized := nonAlphanumRe.ReplaceAllString(strings.ToUpper(toolboxName), "_")
+	return fmt.Sprintf("TOOLBOX_%s_PROJECT_ENDPOINT", sanitized)
+}

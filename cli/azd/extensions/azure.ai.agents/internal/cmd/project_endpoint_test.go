@@ -105,4 +105,20 @@ func TestNoProjectEndpointError(t *testing.T) {
 	require.ErrorAs(t, err, &localErr)
 	assert.Equal(t, exterrors.CodeMissingProjectEndpoint, localErr.Code)
 	assert.Equal(t, azdext.LocalErrorCategoryDependency, localErr.Category)
+
+	// The suggestion must name the command that actually exists. `azd ai agent
+	// project set` was removed and now lives in azure.ai.projects as
+	// `azd ai project set`, which writes the same config key this extension
+	// reads (projectsExtensionContextPath). See issue #9331.
+	assert.Contains(t, localErr.Suggestion, "azd ai project set")
+	assert.NotContains(t, localErr.Suggestion, "azd ai agent project set")
+}
+
+func TestValidateProjectEndpointRejectsNonFoundryEndpoints(t *testing.T) {
+	t.Parallel()
+	_, _, err := validateProjectEndpoint("http://localhost:5000")
+	require.Error(t, err)
+
+	_, _, err = validateProjectEndpoint("https://example.com/api/projects/p")
+	require.Error(t, err)
 }

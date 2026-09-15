@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -16,20 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"gopkg.in/yaml.v3"
-)
-
-// azureYamlEnvRefPattern matches bare ${VAR} references and references with a
-// fallback. Group 2 is non-empty for ${VAR:-default}, which does not require an
-// environment value because the runtime expander supplies the fallback.
-var azureYamlEnvRefPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(:-[^}]*)?\}`)
-
-// Escape handling must match the expander that owns each field.
-// foundry.ExpandEnv treats an odd leading '$' as an escape, while the project
-// synthesizers' resolveVars helper expands every ${VAR} match regardless of
-// a preceding '$'.
-const (
-	honorAzureYamlEnvironmentEscaping  = true
-	ignoreAzureYamlEnvironmentEscaping = false
 )
 
 // These types mirror only the fields each Foundry provider expands from the
@@ -281,8 +266,8 @@ func foundryAzureYamlServiceHost(service *yaml.Node) (string, bool) {
 		return "", false
 	}
 
-	_, knownHost := foundryServiceHosts[host.Value]
-	if !knownHost && !strings.HasPrefix(host.Value, "azure.ai.") {
+	if host.Value != "microsoft.foundry" &&
+		!strings.HasPrefix(host.Value, "azure.ai.") {
 		return "", false
 	}
 	return host.Value, true
@@ -363,7 +348,6 @@ func collectAzureYamlServiceEnvironmentReferences(
 			collectAzureYamlEnvironmentReferences(
 				variable.Value,
 				false,
-				honorAzureYamlEnvironmentEscaping,
 				references,
 				indexByName,
 			)
@@ -376,7 +360,6 @@ func collectAzureYamlServiceEnvironmentReferences(
 		collectAzureYamlEnvironmentReferences(
 			config.Target,
 			false,
-			honorAzureYamlEnvironmentEscaping,
 			references,
 			indexByName,
 		)
@@ -406,7 +389,6 @@ func collectAzureYamlServiceEnvironmentReferences(
 				collectAzureYamlEnvironmentReferences(
 					config.Network.AgentSubnet.VNet,
 					false,
-					ignoreAzureYamlEnvironmentEscaping,
 					references,
 					indexByName,
 				)
@@ -415,7 +397,6 @@ func collectAzureYamlServiceEnvironmentReferences(
 				collectAzureYamlEnvironmentReferences(
 					config.Network.PESubnet.VNet,
 					false,
-					ignoreAzureYamlEnvironmentEscaping,
 					references,
 					indexByName,
 				)
@@ -424,7 +405,6 @@ func collectAzureYamlServiceEnvironmentReferences(
 				collectAzureYamlEnvironmentReferences(
 					config.Network.DNS.Subscription,
 					false,
-					ignoreAzureYamlEnvironmentEscaping,
 					references,
 					indexByName,
 				)
@@ -453,7 +433,6 @@ func collectAzureYamlServiceEnvironmentReferences(
 		collectAzureYamlEnvironmentReferences(
 			config.Endpoint,
 			false,
-			honorAzureYamlEnvironmentEscaping,
 			references,
 			indexByName,
 		)
@@ -516,7 +495,6 @@ func collectAzureYamlEnvironmentReferencesFromNode(
 		collectAzureYamlEnvironmentReferences(
 			node.Value,
 			secret,
-			honorAzureYamlEnvironmentEscaping,
 			references,
 			indexByName,
 		)
@@ -526,88 +504,29 @@ func collectAzureYamlEnvironmentReferencesFromNode(
 func collectAzureYamlEnvironmentReferences(
 	value string,
 	secret bool,
-	honorEscaping bool,
 	references *[]azureYamlEnvironmentReference,
 	indexByName map[string]int,
 ) {
-	matches := azureYamlEnvRefPattern.FindAllStringSubmatchIndex(value, -1)
-	protected := protectedAzureYamlEnvironmentReferenceOccurrences(value, matches, honorEscaping)
-	for i, match := range matches {
-		if honorEscaping && isEscapedAzureYamlEnvironmentReference(value, match[0]) {
-			continue
-		}
-		if protected[i] {
-			continue
-		}
-		if match[4] != -1 {
+	for _, reference := range findEnvironmentReferences(value) {
+		// A ${VAR:-default} needs no environment value because the
+		// runtime expander supplies the fallback.
+		if reference.HasDefault {
 			continue
 		}
 
-		name := value[match[2]:match[3]]
-		if index, ok := indexByName[name]; ok {
+		if index, ok := indexByName[reference.Name]; ok {
 			if secret {
 				(*references)[index].Secret = true
 			}
 			continue
 		}
 
-		indexByName[name] = len(*references)
+		indexByName[reference.Name] = len(*references)
 		*references = append(*references, azureYamlEnvironmentReference{
-			Name:   name,
+			Name:   reference.Name,
 			Secret: secret,
 		})
 	}
-}
-
-// protectedAzureYamlEnvironmentReferenceOccurrences reports which candidate
-// references are inside server-side ${{...}} spans. Each candidate is replaced
-// with a unique probe before running [foundry.ExpandEnv]; probes left verbatim
-// are protected by the shared expander. This keeps discovery linked to the
-// owning implementation without ambiguous name-based occurrence counting.
-func protectedAzureYamlEnvironmentReferenceOccurrences(
-	value string,
-	matches [][]int,
-	honorEscaping bool,
-) []bool {
-	protected := make([]bool, len(matches))
-	if !honorEscaping || len(matches) == 0 {
-		return protected
-	}
-
-	probePrefix := "AZD_ENV_REFERENCE_PROBE_"
-	for strings.Contains(value, probePrefix) {
-		probePrefix += "_"
-	}
-
-	probeRefs := make([]string, len(matches))
-	var probed strings.Builder
-	last := 0
-	for i, match := range matches {
-		probed.WriteString(value[last:match[0]])
-		probeRefs[i] = fmt.Sprintf("${%s%d}", probePrefix, i)
-		probed.WriteString(probeRefs[i])
-		last = match[1]
-	}
-	probed.WriteString(value[last:])
-
-	expanded, err := foundry.ExpandEnv(probed.String(), func(name string) string {
-		return "expanded_" + name
-	})
-	if err != nil {
-		return protected
-	}
-	for i, probeRef := range probeRefs {
-		protected[i] = strings.Contains(expanded, probeRef)
-	}
-	return protected
-}
-
-func isEscapedAzureYamlEnvironmentReference(value string, start int) bool {
-	precedingDollars := 0
-	for i := start - 1; i >= 0 && value[i] == '$'; i-- {
-		precedingDollars++
-	}
-	return precedingDollars%2 == 1
 }
 
 func isSecretAzureYamlEnvironmentKey(key string) bool {

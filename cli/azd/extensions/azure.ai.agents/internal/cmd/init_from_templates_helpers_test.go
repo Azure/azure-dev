@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,8 +12,84 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
+
 	"github.com/stretchr/testify/require"
 )
+
+func TestResolveInitHarness(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		harnessFlag    string
+		impliedHarness string
+		expected       string
+		expectErr      bool
+	}{
+		{
+			name:     "no flag and no implied harness scaffolds a plain prompt agent",
+			expected: "",
+		},
+		{
+			// A manifest's `harness:` block arrives here as an implied value.
+			name:           "implied harness is honored",
+			impliedHarness: agent_api.ManagedAgentHarnessGitHubCopilot,
+			expected:       agent_api.ManagedAgentHarnessGitHubCopilot,
+		},
+		{
+			name:        "explicit harness is accepted case-insensitively",
+			harnessFlag: "GitHub_Copilot_Preview",
+			expected:    agent_api.ManagedAgentHarnessGitHubCopilot,
+		},
+		{
+			name:           "none opts out of an implied harness",
+			harnessFlag:    " none ",
+			impliedHarness: agent_api.ManagedAgentHarnessGitHubCopilot,
+			expected:       "",
+		},
+		{
+			name:           "explicit harness overrides a harness-less context",
+			harnessFlag:    agent_api.ManagedAgentHarnessGitHubCopilot,
+			impliedHarness: "",
+			expected:       agent_api.ManagedAgentHarnessGitHubCopilot,
+		},
+		{
+			name:        "unknown harness is rejected",
+			harnessFlag: "bogus",
+			expectErr:   true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			harness, err := resolveInitHarness(tc.harnessFlag, tc.impliedHarness)
+			if tc.expectErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, harness)
+		})
+	}
+}
+
+// TestWarnPromptAgentPreview verifies the preview callout renders its
+// emphasized segment intact. It is unconditional: every prompt-agent init
+// funnels through the one call site, so the notice reaches --kind prompt and
+// manifest adoption.
+func TestWarnPromptAgentPreview(t *testing.T) {
+	t.Parallel()
+
+	buf := &bytes.Buffer{}
+	warnPromptAgentPreview(buf)
+
+	// The emphasized phrase is a separately colored segment, so assert
+	// it survives concatenation intact rather than being split.
+	require.Contains(t, buf.String(), "preview feature of the azd CLI experience")
+}
 
 func TestEffectiveType(t *testing.T) {
 	t.Parallel()
@@ -248,6 +325,69 @@ func TestPromptInitMode_NoPromptEmptyDirUsesTemplate(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, initModeTemplate, mode)
+}
+
+func TestPromptInitMode_ShowsVoiceChoiceByDefault(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	prompts := &helpersPromptServer{selectIndex: 0}
+	azdClient := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
+
+	mode, err := promptInitMode(t.Context(), azdClient, false)
+
+	require.NoError(t, err)
+	require.Equal(t, initModeTemplate, mode)
+	require.NotNil(t, prompts.lastSelect)
+	require.Len(t, prompts.lastSelect.Options.Choices, 2)
+	require.Equal(t, "Create a prompt voice agent", prompts.lastSelect.Options.Choices[1].Label)
+}
+
+func TestPromptInitMode_SelectsVoiceChoice(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	prompts := &helpersPromptServer{selectIndex: 1}
+	azdClient := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
+
+	mode, err := promptInitMode(t.Context(), azdClient, false)
+
+	require.NoError(t, err)
+	require.Equal(t, initModeVoice, mode)
+	require.NotNil(t, prompts.lastSelect)
+	require.Len(t, prompts.lastSelect.Options.Choices, 2)
+	require.Equal(t, "Create a prompt voice agent", prompts.lastSelect.Options.Choices[1].Label)
+}
+
+func TestPromptInitMode_NonEmptyDirectoryChoices(t *testing.T) {
+	for _, tt := range []struct {
+		mode  string
+		index int32
+	}{
+		{initModeFromCode, 0},
+		{initModeTemplate, 1},
+		{initModeVoice, 2},
+	} {
+		t.Run(tt.mode, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Chdir(dir)
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "main.py"), []byte("print('hello')\n"), 0600))
+			prompts := &helpersPromptServer{selectIndex: tt.index}
+			client := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
+
+			mode, err := promptInitMode(t.Context(), client, false)
+			require.NoError(t, err)
+			require.Equal(t, tt.mode, mode)
+			require.NotNil(t, prompts.lastSelect)
+			options := prompts.lastSelect.Options
+			require.Len(t, options.Choices, 3)
+			require.Equal(t, "Use the code in the current directory", options.Choices[0].Label)
+			require.Equal(t, "Start new from a template", options.Choices[1].Label)
+			require.Equal(t, "Create a prompt voice agent", options.Choices[2].Label)
+			require.NotNil(t, options.SelectedIndex)
+			require.Zero(t, *options.SelectedIndex)
+		})
+	}
 }
 
 func TestFindRecommendedIndex(t *testing.T) {

@@ -1,7 +1,7 @@
 # Fix Strategies
 
 Detailed fix procedures for each preflight check failure. Process checks in
-their original order (1-8) because earlier fixes can resolve later failures.
+their original order (1-9) because earlier fixes can resolve later failures.
 
 ## Formatting (`gofmt`) — Auto-fix
 
@@ -45,9 +45,9 @@ For each finding:
 
 If a lint finding is ambiguous or the fix would change behavior, ask the user via `ask_user`.
 
-## Spell Check (`cspell`) — Analyze and Fix
+## Go Spell Check (`cspell`) — Analyze and Fix
 
-Re-run cspell to get the specific unknown words:
+Re-run the Go source spell check to get the specific unknown words:
 
 ```bash
 cd cli/azd && cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml --no-progress 2>&1
@@ -58,6 +58,45 @@ For each unknown word:
 2. **If it's a legitimate technical term**: Add it to `cli/azd/.vscode/cspell.yaml` using a
    file-scoped `overrides` entry. Use the pattern from existing entries in that file.
 3. **If uncertain**: Ask the user via `ask_user` whether to fix the spelling or add to the dictionary.
+
+## Misc/Docs Spell Check (`cspell-misc`) — Analyze and Fix
+
+Re-run the repository-wide spell check from the repository root:
+
+```bash
+cspell lint "**/*" --relative --config ./.vscode/cspell.misc.yaml --no-progress 2>&1
+```
+
+For each unknown word:
+1. **If it's a typo**: Fix the spelling in the source file.
+2. **If it's a legitimate file-specific term**: Add it to a file-scoped `overrides` entry in
+   `.vscode/cspell.misc.yaml`. Use `.vscode/cspell.global.yaml` only for terms used broadly across
+   the repository.
+3. **If uncertain**: Ask the user via `ask_user` whether to fix the spelling or update a dictionary.
+
+## Changed CHANGELOG Spell Check — Analyze and Fix
+
+The normal misc/docs check excludes directories with their own cspell configuration, including
+`cli/`. For each changed changelog, walk from its directory toward the repository root and select
+the nearest `cspell.yaml` or `.vscode/cspell.yaml`. Fall back to
+`cli/azd/.vscode/cspell.yaml` when no nearer config exists. Run the targeted check from the
+repository root:
+
+```bash
+cspell lint "<changelog-path>" --relative --config "<cspell-config>" --no-progress 2>&1
+```
+
+For each unknown word:
+1. **If it's a typo or ordinary prose**: Fix the changelog entry.
+2. **If it is a GitHub username in a contributor attribution**:
+   - Verify the exact alias is the author of the changelog entry's linked PR. If the PR author is
+    unavailable, verify the account resolves with `gh api "users/<alias>" --silent`.
+   - Add the exact alias to `.vscode/cspell-github-user-aliases.txt`, preserving the file's
+    case-insensitive alphabetical order and avoiding duplicates.
+   - Do not add ordinary names, misspellings, or unverified handles to the alias dictionary.
+3. **If it's another legitimate changelog-specific term**: Add it to a `CHANGELOG.md`
+   file-scoped `overrides` entry in the resolved owning cspell config.
+4. **If uncertain**: Ask the user via `ask_user` whether to fix the spelling or update a dictionary.
 
 ## Build (`go build`) — Analyze and Fix
 

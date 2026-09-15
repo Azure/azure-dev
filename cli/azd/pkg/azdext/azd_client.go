@@ -9,11 +9,15 @@ import (
 	"os"
 	"strings"
 
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	_ "google.golang.org/grpc/encoding/gzip" // registers gzip compressor for gRPC streams
 	"google.golang.org/grpc/metadata"
+
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 )
 
 type AzdClientOption func(*AzdClient) error
@@ -27,14 +31,14 @@ type AzdClient struct {
 	promptClient        PromptServiceClient
 	deploymentClient    DeploymentServiceClient
 	eventsClient        EventServiceClient
-	composeClient       ComposeServiceClient
+	composeClient       v1beta.ComposeServiceClient
 	workflowClient      WorkflowServiceClient
 	extensionClient     ExtensionServiceClient
 	serviceTargetClient ServiceTargetServiceClient
 	containerClient     ContainerServiceClient
 	accountClient       AccountServiceClient
 	aiClient            AiModelServiceClient
-	copilotClient       CopilotServiceClient
+	copilotClient       v1beta.CopilotServiceClient
 	provisioningClient  ProvisioningServiceClient
 	validationClient    ValidationServiceClient
 }
@@ -82,15 +86,55 @@ func isLocalhostAddress(address string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// WithAccessToken sets the access token for the `azd` client into a new Go context.
+// WithAccessToken sets the access token for the `azd` client into a new Go
+// context. It also forwards the W3C trace context so telemetry the host
+// records while serving the call joins the azd command's trace instead of
+// starting an unrelated one.
 func WithAccessToken(ctx context.Context, params ...string) context.Context {
 	tokenValue := strings.Join(params, "")
 	if tokenValue == "" {
 		tokenValue = os.Getenv("AZD_ACCESS_TOKEN")
 	}
 
-	md := metadata.Pairs("authorization", tokenValue)
-	return metadata.NewOutgoingContext(ctx, md)
+	pairs := append([]string{"authorization", tokenValue}, traceContextPairs(ctx)...)
+
+	return metadata.NewOutgoingContext(ctx, metadata.Pairs(pairs...))
+}
+
+// traceContextPairs returns W3C trace context metadata pairs. A span
+// already on ctx wins; otherwise the TRACEPARENT/TRACESTATE variables
+// azd sets on the extension process are used, which is the common
+// case because extensions build their context from scratch. Values
+// always round-trip through the propagator, so only well-formed trace
+// context reaches gRPC metadata.
+func traceContextPairs(ctx context.Context) []string {
+	propagator := propagation.TraceContext{}
+
+	// Extract rather than forward the environment values directly. A
+	// malformed one is dropped here instead of reaching gRPC, which
+	// rejects headers holding non-printable characters and would fail
+	// every call on this client, not just telemetry.
+	if !trace.SpanContextFromContext(ctx).IsValid() {
+		ctx = propagator.Extract(ctx, propagation.MapCarrier{
+			TraceparentKey: os.Getenv(TraceparentEnv),
+			TracestateKey:  os.Getenv(TracestateEnv),
+		})
+	}
+
+	carrier := propagation.MapCarrier{}
+	propagator.Inject(ctx, carrier)
+
+	parent := carrier.Get(TraceparentKey)
+	if parent == "" {
+		return nil
+	}
+
+	pairs := []string{TraceparentKey, parent}
+	if state := carrier.Get(TracestateKey); state != "" {
+		pairs = append(pairs, TracestateKey, state)
+	}
+
+	return pairs
 }
 
 // NewAzdClient creates a new `azd` client.
@@ -169,10 +213,10 @@ func (c *AzdClient) Events() EventServiceClient {
 	return c.eventsClient
 }
 
-// Compose returns the compose service client.
-func (c *AzdClient) Compose() ComposeServiceClient {
+// Compose returns the preview compose service client.
+func (c *AzdClient) Compose() v1beta.ComposeServiceClient {
 	if c.composeClient == nil {
-		c.composeClient = NewComposeServiceClient(c.connection)
+		c.composeClient = v1beta.NewComposeServiceClient(c.connection)
 	}
 
 	return c.composeClient
@@ -236,10 +280,10 @@ func (c *AzdClient) Ai() AiModelServiceClient {
 	return c.aiClient
 }
 
-// Copilot returns the Copilot agent service client.
-func (c *AzdClient) Copilot() CopilotServiceClient {
+// Copilot returns the preview Copilot agent service client.
+func (c *AzdClient) Copilot() v1beta.CopilotServiceClient {
 	if c.copilotClient == nil {
-		c.copilotClient = NewCopilotServiceClient(c.connection)
+		c.copilotClient = v1beta.NewCopilotServiceClient(c.connection)
 	}
 
 	return c.copilotClient
@@ -261,4 +305,16 @@ func (c *AzdClient) Validation() ValidationServiceClient {
 	}
 
 	return c.validationClient
+}
+
+// Telemetry returns the telemetry service client used to report extension
+// usage events. See extensions/microsoft.azd.demo/internal/cmd/telemetry.go
+// for a worked example.
+//
+// A fresh client is returned on each call rather than caching it on the
+// AzdClient struct. Service target providers can deploy services concurrently,
+// so an unsynchronized lazily-written cache field could race on first use. The
+// generated client wrapper is cheap and shares the existing connection.
+func (c *AzdClient) Telemetry() v1beta.TelemetryServiceClient {
+	return v1beta.NewTelemetryServiceClient(c.connection)
 }

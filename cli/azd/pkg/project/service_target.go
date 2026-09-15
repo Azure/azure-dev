@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -168,4 +169,33 @@ func checkResourceType(resource *environment.TargetResource, expectedResourceTyp
 	}
 
 	return nil
+}
+
+// newDeployArtifacts builds the artifact collection reported by a successful deployment: one
+// remote endpoint artifact per endpoint, followed by the target resource itself. A target resource
+// that cannot be mapped to an artifact is omitted rather than failing the deployment.
+func newDeployArtifacts(
+	endpoints []string,
+	targetResource *environment.TargetResource,
+) (ArtifactCollection, error) {
+	artifacts := ArtifactCollection{}
+
+	for _, endpoint := range endpoints {
+		if err := artifacts.Add(&Artifact{
+			Kind:         ArtifactKindEndpoint,
+			Location:     endpoint,
+			LocationKind: LocationKindRemote,
+		}); err != nil {
+			return nil, fmt.Errorf("failed to add endpoint artifact: %w", err)
+		}
+	}
+
+	var resourceArtifact *Artifact
+	if err := mapper.Convert(targetResource, &resourceArtifact); err == nil {
+		if err := artifacts.Add(resourceArtifact); err != nil {
+			return nil, fmt.Errorf("failed to add resource artifact: %w", err)
+		}
+	}
+
+	return artifacts, nil
 }

@@ -339,6 +339,83 @@ func Test_AzureClient_ValidateAppServiceForContainerDeploy(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not configured for container deployment")
 	})
+
+	t.Run("GetError_ReturnsError", func(t *testing.T) {
+		mockCtx := mocks.NewMockContext(t.Context())
+		client := newAzureClientFromMockContext(mockCtx)
+
+		mockCtx.HttpClient.When(func(req *http.Request) bool {
+			return req.Method == http.MethodGet &&
+				strings.Contains(req.URL.Path, "/Microsoft.Web/sites/my-app")
+		}).RespondFn(func(req *http.Request) (*http.Response, error) {
+			return mocks.CreateEmptyHttpResponse(req, http.StatusNotFound)
+		})
+
+		err := client.ValidateAppServiceForContainerDeploy(*mockCtx.Context, "SUB", "RG", "my-app")
+		require.Error(t, err)
+	})
+}
+
+func Test_appServiceContainerConfiguration(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		kind            *string
+		siteConfig      *armappservice.SiteConfig
+		expectLinux     bool
+		expectContainer bool
+	}{
+		{
+			name:            "LinuxContainer",
+			kind:            new("functionapp,linux,container"),
+			siteConfig:      &armappservice.SiteConfig{LinuxFxVersion: new("DOCKER|registry/image:tag")},
+			expectLinux:     true,
+			expectContainer: true,
+		},
+		{
+			name:            "CaseInsensitive",
+			kind:            new("FUNCTIONAPP,LINUX,CONTAINER"),
+			siteConfig:      &armappservice.SiteConfig{LinuxFxVersion: new("docker|registry/image:tag")},
+			expectLinux:     true,
+			expectContainer: true,
+		},
+		{
+			name:        "LinuxCode",
+			kind:        new("functionapp,linux"),
+			siteConfig:  &armappservice.SiteConfig{LinuxFxVersion: new("NODE|20-lts")},
+			expectLinux: true,
+		},
+		{
+			name:       "Windows",
+			kind:       new("functionapp"),
+			siteConfig: &armappservice.SiteConfig{},
+		},
+		{
+			name: "MissingProperties",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var properties *armappservice.SiteProperties
+			if tt.siteConfig != nil {
+				properties = &armappservice.SiteProperties{SiteConfig: tt.siteConfig}
+			}
+
+			configuration := appServiceContainerConfiguration(&armappservice.WebAppsClientGetResponse{
+				Site: armappservice.Site{
+					Kind:       tt.kind,
+					Properties: properties,
+				},
+			})
+
+			assert.Equal(t, tt.expectLinux, configuration.IsLinux)
+			assert.Equal(t, tt.expectContainer, configuration.IsContainer)
+		})
+	}
 }
 
 func Test_AzureClient_UpdateAppServiceAppSettings(t *testing.T) {

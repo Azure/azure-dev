@@ -6,7 +6,7 @@ Usage
 
 Flags
     -l, --location string 	: The location of the extension source
-    -n, --name string     	: The name of the extension source
+    -n, --name string     	: The source name: 1-64 lowercase letters, digits, hyphens, or underscores.
     -t, --type string     	: The type of the extension source. Supported types are 'file' and 'url'
 
 Global Flags

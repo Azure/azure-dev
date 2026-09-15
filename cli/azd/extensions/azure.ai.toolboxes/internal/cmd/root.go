@@ -43,6 +43,7 @@ to promote a version.`,
 	registerToolboxOutputFlag(rootCmd)
 
 	rootCmd.AddCommand(newToolboxCreateCommand(extCtx))
+	rootCmd.AddCommand(newToolboxAddCommand(extCtx))
 	rootCmd.AddCommand(newToolboxPublishCommand(extCtx))
 	rootCmd.AddCommand(newToolboxDeleteCommand(extCtx))
 	rootCmd.AddCommand(newToolboxShowCommand(extCtx))

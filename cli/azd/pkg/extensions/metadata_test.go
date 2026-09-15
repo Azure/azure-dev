@@ -41,12 +41,13 @@ func TestExtensionCommandMetadata_Marshaling(t *testing.T) {
 				},
 				Flags: []Flag{
 					{
-						Name:        "format",
-						Shorthand:   "f",
-						Description: "Output format",
-						Type:        "string",
-						Default:     "text",
-						ValidValues: []string{"text", "json"},
+						Name:          "format",
+						Shorthand:     "f",
+						Description:   "Output format",
+						Type:          "string",
+						Default:       "text",
+						ValueOptional: true,
+						ValidValues:   []string{"text", "json"},
 					},
 					{
 						Name:        "verbose",
@@ -65,6 +66,7 @@ func TestExtensionCommandMetadata_Marshaling(t *testing.T) {
 	assert.Contains(t, string(data), `"schemaVersion":"1.0"`)
 	assert.Contains(t, string(data), `"id":"microsoft.azd.demo"`)
 	assert.Contains(t, string(data), `"name":["demo","greet"]`)
+	assert.Contains(t, string(data), `"valueOptional":true`)
 }
 
 func TestExtensionMetadata_UnmarshalJSON(t *testing.T) {
@@ -98,6 +100,7 @@ func TestExtensionMetadata_UnmarshalJSON(t *testing.T) {
 						"description": "Output format",
 						"type": "string",
 						"default": "text",
+						"valueOptional": true,
 						"validValues": ["text", "json"]
 					}
 				]
@@ -128,6 +131,7 @@ func TestExtensionMetadata_UnmarshalJSON(t *testing.T) {
 	assert.Equal(t, "f", cmd.Flags[0].Shorthand)
 	assert.Equal(t, "string", cmd.Flags[0].Type)
 	assert.Equal(t, "text", cmd.Flags[0].Default)
+	assert.True(t, cmd.Flags[0].ValueOptional)
 	assert.Equal(t, []string{"text", "json"}, cmd.Flags[0].ValidValues)
 }
 

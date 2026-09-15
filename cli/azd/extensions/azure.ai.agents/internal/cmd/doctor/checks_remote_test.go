@@ -58,7 +58,7 @@ func TestNewRemoteChecks_HasAuthFoundryEndpointRBACAgentStatusConnections(t *tes
 	require.True(t, got[3].Remote, "remote.agent-status must declare Remote=true")
 	require.NotNil(t, got[3].Fn, "remote.agent-status must have a non-nil Fn")
 	require.Equal(t, "remote.connections", got[4].ID)
-	require.Equal(t, "Manifest connections exist on Foundry project", got[4].Name)
+	require.Equal(t, "Configured connections exist on Foundry project", got[4].Name)
 	require.True(t, got[4].Remote, "remote.connections must declare Remote=true")
 	require.NotNil(t, got[4].Fn, "remote.connections must have a non-nil Fn")
 }

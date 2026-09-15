@@ -6,6 +6,7 @@ package synthesis
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -25,9 +26,6 @@ func TestSynthesize(t *testing.T) {
 		wantIncludeAcr bool
 		// wantDeployName0, if non-empty, asserts the name of the first deployment.
 		wantDeployName0 string
-		// wantConnectionNames, if non-nil, asserts the exact names (sorted) of
-		// the synthesized connections.
-		wantConnectionNames []string
 	}{
 		{
 			name: "greenfield hosted agent with docker",
@@ -335,7 +333,7 @@ services:
 			wantIncludeAcr: false,
 		},
 		{
-			name: "ignores inline connections/toolboxes/skills on the project (deploy-time concerns)",
+			name: "ignores inline skills and routines",
 			yaml: `
 services:
   my-project:
@@ -344,14 +342,6 @@ services:
       - name: gpt-4.1-mini
         model: {format: OpenAI, name: gpt-4.1-mini, version: "2025-04-14"}
         sku: {capacity: 10, name: GlobalStandard}
-    connections:
-      - name: github-mcp-conn
-        category: CustomKeys
-        target: https://api.githubcopilot.com/mcp
-        authType: CustomKeys
-    toolboxes:
-      - name: t1
-        tools: [{type: web_search}]
     skills:
       - name: s1
         instructions: hi
@@ -364,13 +354,12 @@ services:
         kind: prompt
         instructions: hi
 `,
-			serviceName:         "my-project",
-			wantDeployLen:       1,
-			wantIncludeAcr:      false,
-			wantConnectionNames: []string{},
+			serviceName:    "my-project",
+			wantDeployLen:  1,
+			wantIncludeAcr: false,
 		},
 		{
-			name: "collects sibling azure.ai.connection services (sorted by name)",
+			name: "ignores sibling azure.ai.connection services",
 			yaml: `
 services:
   my-project:
@@ -390,13 +379,12 @@ services:
     target: https://api.bing.microsoft.com
     authType: ApiKey
 `,
-			serviceName:         "my-project",
-			wantDeployLen:       0,
-			wantIncludeAcr:      false,
-			wantConnectionNames: []string{"bing-conn", "search-conn"},
+			serviceName:    "my-project",
+			wantDeployLen:  0,
+			wantIncludeAcr: false,
 		},
 		{
-			name: "no connections yields empty slice",
+			name: "model-only project",
 			yaml: `
 services:
   my-project:
@@ -406,9 +394,8 @@ services:
         model: {format: OpenAI, name: gpt-4.1-mini, version: "2025-04-14"}
         sku: {capacity: 10, name: GlobalStandard}
 `,
-			serviceName:         "my-project",
-			wantDeployLen:       1,
-			wantConnectionNames: []string{},
+			serviceName:   "my-project",
+			wantDeployLen: 1,
 		},
 		{
 			name: "brownfield: endpoint set => ErrEndpointBrownfield",
@@ -500,193 +487,10 @@ services:
 			require.True(t, ok, "includeAcr param should be bool")
 			assert.Equal(t, tt.wantIncludeAcr, includeAcr)
 
-			connections := resultConnections(t, res)
-			if tt.wantConnectionNames != nil {
-				gotNames := make([]string, len(connections))
-				for i, c := range connections {
-					gotNames[i] = c.Name
-				}
-				assert.Equal(t, tt.wantConnectionNames, gotNames)
-			}
+			assert.NotContains(t, res.Parameters, "connections")
+			assert.NotContains(t, res.Parameters, "connectionCredentials")
 		})
 	}
-}
-
-// TestSynthesize_Connections covers the ${VAR} resolve-vs-preserve behavior for
-// connection target and credential values, mirroring the network path.
-func TestSynthesize_Connections(t *testing.T) {
-	const yaml = `
-services:
-  my-project:
-    host: azure.ai.project
-  mcp-conn:
-    host: azure.ai.connection
-    uses: [my-project]
-    category: RemoteTool
-    target: ${MCP_URL}
-    authType: CustomKeys
-    credentials:
-      keys:
-        x-api-key: ${MCP_KEY}
-    metadata:
-      owner: ${MCP_OWNER}
-`
-	env := map[string]string{
-		"MCP_URL":   "https://mcp.example.com/mcp",
-		"MCP_KEY":   "secret-value",
-		"MCP_OWNER": "team-ai",
-	}
-
-	getConn := func(t *testing.T, res *Result) Connection {
-		t.Helper()
-		conns := resultConnections(t, res)
-		require.Len(t, conns, 1)
-		return conns[0]
-	}
-
-	t.Run("provision path resolves ${VAR}", func(t *testing.T) {
-		res, err := Synthesize(Input{
-			RawAzureYAML:  []byte(yaml),
-			ServiceName:   "my-project",
-			AcceptedHosts: []string{"azure.ai.project"},
-			Env:           env,
-		})
-		require.NoError(t, err)
-
-		c := getConn(t, res)
-		assert.Equal(t, "https://mcp.example.com/mcp", c.Target)
-		keys, ok := c.Credentials["keys"].(map[string]any)
-		require.True(t, ok, "keys should be a nested map, got %T", c.Credentials["keys"])
-		assert.Equal(t, "secret-value", keys["x-api-key"])
-		assert.Equal(t, "team-ai", c.Metadata["owner"])
-
-		publicConnections := res.Parameters["connections"].([]Connection)
-		assert.Nil(t, publicConnections[0].Credentials)
-		secureCredentials := res.Parameters["connectionCredentials"].(map[string]map[string]any)
-		assert.Equal(t, "secret-value", secureCredentials["mcp-conn"]["keys"].(map[string]any)["x-api-key"])
-	})
-
-	t.Run("eject path preserves ${VAR} verbatim", func(t *testing.T) {
-		res, err := Synthesize(Input{
-			RawAzureYAML:    []byte(yaml),
-			ServiceName:     "my-project",
-			AcceptedHosts:   []string{"azure.ai.project"},
-			Env:             env,
-			PreserveVarRefs: true,
-		})
-		require.NoError(t, err)
-
-		c := getConn(t, res)
-		assert.Equal(t, "${MCP_URL}", c.Target)
-		keys, ok := c.Credentials["keys"].(map[string]any)
-		require.True(t, ok)
-		assert.Equal(t, "${MCP_KEY}", keys["x-api-key"])
-		assert.Equal(t, "${MCP_OWNER}", c.Metadata["owner"])
-	})
-
-	t.Run("Foundry ${{...}} expressions survive provision-path expansion", func(t *testing.T) {
-		const serverSideYAML = `
-services:
-  my-project:
-    host: azure.ai.project
-  mcp-conn:
-    host: azure.ai.connection
-    uses: [my-project]
-    category: RemoteTool
-    target: https://mcp.example.com/mcp
-    authType: CustomKeys
-    credentials:
-      keys:
-        x-api-key: ${{connections.other.credentials.key}}
-`
-		res, err := Synthesize(Input{
-			RawAzureYAML:  []byte(serverSideYAML),
-			ServiceName:   "my-project",
-			AcceptedHosts: []string{"azure.ai.project"},
-			Env:           env,
-		})
-		require.NoError(t, err)
-
-		c := getConn(t, res)
-		keys := c.Credentials["keys"].(map[string]any)
-		assert.Equal(t, "${{connections.other.credentials.key}}", keys["x-api-key"])
-	})
-
-	t.Run("missing ${VAR} on provision path resolves to empty (matches deploy-time ExpandEnv)", func(t *testing.T) {
-		// foundry.ExpandEnv (drone/envsubst) treats an unset variable as empty
-		// rather than an error, matching the deploy-time azure.ai.connection
-		// service target's resolveConnectionEnv. A missing secret therefore
-		// yields an empty value, not a synthesis failure.
-		res, err := Synthesize(Input{
-			RawAzureYAML:  []byte(yaml),
-			ServiceName:   "my-project",
-			AcceptedHosts: []string{"azure.ai.project"},
-			Env:           map[string]string{}, // nothing set
-		})
-		require.NoError(t, err)
-
-		c := getConn(t, res)
-		assert.Equal(t, "", c.Target)
-		keys := c.Credentials["keys"].(map[string]any)
-		assert.Equal(t, "", keys["x-api-key"])
-	})
-}
-
-// TestBrownfieldConnections verifies connection services are collected for a
-// brownfield (endpoint:) project, with ${VAR} resolved (brownfield provisions
-// so references must be concrete) and Foundry ${{...}} preserved.
-func TestBrownfieldConnections(t *testing.T) {
-	const yaml = `
-services:
-  my-project:
-    host: azure.ai.project
-    endpoint: https://existing.services.ai.azure.com/api/projects/p1
-  search-conn:
-    host: azure.ai.connection
-    uses: [my-project]
-    category: CognitiveSearch
-    target: https://my-search.search.windows.net
-    authType: ApiKey
-    credentials:
-      key: ${SEARCH_API_KEY}
-  bing-conn:
-    host: azure.ai.connection
-    uses: [my-project]
-    category: ApiKey
-    target: https://api.bing.microsoft.com
-    authType: ApiKey
-`
-
-	t.Run("collects and resolves connections (sorted)", func(t *testing.T) {
-		conns, err := BrownfieldConnections(
-			[]byte(yaml),
-			map[string]string{"SEARCH_API_KEY": "secret"},
-			"",
-		)
-		require.NoError(t, err)
-		require.Len(t, conns, 2)
-		assert.Equal(t, "bing-conn", conns[0].Name)
-		assert.Equal(t, "search-conn", conns[1].Name)
-		assert.Equal(t, "CognitiveSearch", conns[1].Category)
-		assert.Equal(t, "secret", conns[1].Credentials["key"])
-	})
-
-	t.Run("no connection services yields empty slice", func(t *testing.T) {
-		const noConns = `
-services:
-  my-project:
-    host: azure.ai.project
-    endpoint: https://existing.services.ai.azure.com/api/projects/p1
-`
-		conns, err := BrownfieldConnections([]byte(noConns), nil, "")
-		require.NoError(t, err)
-		assert.Empty(t, conns)
-	})
-
-	t.Run("empty raw errors", func(t *testing.T) {
-		_, err := BrownfieldConnections(nil, nil, "")
-		require.Error(t, err)
-	})
 }
 
 func TestBrownfieldDeployments(t *testing.T) {
@@ -879,55 +683,28 @@ services:
 
 func TestSynthesize_ResolvesSiblingServiceRefs(t *testing.T) {
 	root := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(root, "connection.yaml"),
-		[]byte("category: CognitiveSearch\ntarget: https://search.example\n"+
-			"authType: ApiKey\ncredentials:\n  key: ${SEARCH_KEY}\n"),
-		0600,
-	))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(root, "agent.yaml"),
-		[]byte("kind: hosted\nname: referenced-agent\n"),
-		0600,
-	))
-
+	require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"),
+		[]byte("kind: hosted\nname: referenced-agent\n"), 0600))
 	yaml := `
 services:
   project:
     host: azure.ai.project
   connection:
     host: azure.ai.connection
-    $ref: ./connection.yaml
+    $ref: ./missing-connection.yaml
   agent:
     host: azure.ai.agent
     image: example.azurecr.io/agent:latest
     $ref: ./agent.yaml
 `
 	res, err := Synthesize(Input{
-		RawAzureYAML:  []byte(yaml),
-		ServiceName:   "project",
-		AcceptedHosts: []string{"azure.ai.project"},
-		Env:           map[string]string{"SEARCH_KEY": "secret"},
-		ProjectRoot:   root,
+		RawAzureYAML: []byte(yaml), ServiceName: "project",
+		AcceptedHosts: []string{"azure.ai.project"}, ProjectRoot: root,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, false, res.Parameters["includeAcr"])
-
-	connections := resultConnections(t, res)
-	require.Len(t, connections, 1)
-	assert.Equal(t, "CognitiveSearch", connections[0].Category)
-	assert.Equal(t, "https://search.example", connections[0].Target)
-	assert.Equal(t, "secret", connections[0].Credentials["key"])
-}
-
-func resultConnections(t *testing.T, result *Result) []Connection {
-	t.Helper()
-
-	connections, ok := result.Parameters["connections"].([]Connection)
-	require.True(t, ok, "connections param should be []Connection")
-	credentials, ok := result.Parameters["connectionCredentials"].(map[string]map[string]any)
-	require.True(t, ok, "connectionCredentials param should be a credential map")
-	return JoinConnectionCredentials(connections, credentials)
+	assert.NotContains(t, res.Parameters, "connections")
+	assert.NotContains(t, res.Parameters, "connectionCredentials")
 }
 
 func TestBrownfieldServiceResolversResolveRefs(t *testing.T) {
@@ -944,11 +721,6 @@ func TestBrownfieldServiceResolversResolveRefs(t *testing.T) {
 			"sku: {name: Standard, capacity: 10}\n"),
 		0600,
 	))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(root, "connection.yaml"),
-		[]byte("category: CognitiveSearch\ntarget: https://search.example\nauthType: None\n"),
-		0600,
-	))
 
 	yaml := `
 services:
@@ -959,7 +731,7 @@ services:
     host: azure.ai.connection
     $ref: ./connection.yaml
 `
-	endpoint, err := ProjectEndpoint([]byte(yaml), "project", root)
+	endpoint, err := ProjectEndpoint([]byte(yaml), "project", root, nil)
 	require.NoError(t, err)
 	assert.Equal(
 		t,
@@ -972,10 +744,6 @@ services:
 	require.Len(t, deployments, 1)
 	assert.Equal(t, "gpt-4o", deployments[0].Name)
 
-	connections, err := BrownfieldConnections([]byte(yaml), nil, root)
-	require.NoError(t, err)
-	require.Len(t, connections, 1)
-	assert.Equal(t, "CognitiveSearch", connections[0].Category)
 }
 
 func TestSynthesize_InputValidation(t *testing.T) {
@@ -1021,7 +789,6 @@ func TestTemplatesFS_Embedded(t *testing.T) {
 		"templates/abbreviations.json",
 		"templates/modules/acr.bicep",
 		"templates/modules/acr-pull-role-assignment.bicep",
-		"templates/modules/connections.bicep",
 		"templates/modules/network.bicep",
 		"templates/modules/subnet.bicep",
 		"templates/modules/private-endpoint-dns.bicep",
@@ -1042,8 +809,7 @@ func TestTerraformTemplatesFS_Embedded(t *testing.T) {
 		"templates/terraform/provider.tf",
 		"templates/terraform/variables.tf",
 		"templates/terraform/main.tf",
-		"templates/terraform/acr.tf",
-		"templates/terraform/connections.tf",
+		"templates/terraform/container-registry.tf",
 		"templates/terraform/outputs.tf.tmpl",
 	}
 	for _, p := range wantFiles {
@@ -1053,7 +819,6 @@ func TestTerraformTemplatesFS_Embedded(t *testing.T) {
 			assert.NotEmpty(t, data, "%s should not be empty", p)
 		})
 	}
-
 	// outputs.tf is rendered from outputs.tf.tmpl at eject time, and
 	// main.tfvars.json is generated -- neither is embedded as a final file
 	// (otherwise they would go stale).
@@ -1066,12 +831,6 @@ func TestTerraformTemplatesFS_Embedded(t *testing.T) {
 	}
 }
 
-// TestTerraformModule_DerivesNamesWhenEmpty guards the regression where unset
-// AZURE_AI_PROJECT_NAME / AZURE_RESOURCE_GROUP substituted to "" in
-// main.tfvars.json and failed at plan time (foundry_project_name validation /
-// "name cannot be blank" on the resource group). The fix: main.tf derives both
-// names from environment_name when the corresponding var is empty. This asserts
-// the embedded templates still carry those fallbacks so they cannot regress.
 func TestTerraformModule_DerivesNamesWhenEmpty(t *testing.T) {
 	fs := TerraformTemplatesFS()
 
@@ -1125,15 +884,8 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	require.True(t, ok, "parameters must be an object")
 	assert.Contains(t, params, "resourceGroupName")
 
-	// connections must remain an array so ejected templates preserve the
-	// connection object shape.
-	assert.Contains(t, params, "connections", "connections param must be declared in the ARM template")
-	connections, ok := params["connections"].(map[string]any)
-	require.True(t, ok, "connections param must be an object")
-	assert.Equal(t, "#/definitions/connectionsType", connections["$ref"])
-	credentials, ok := params["connectionCredentials"].(map[string]any)
-	require.True(t, ok, "connectionCredentials param must be an object")
-	assert.Equal(t, "secureObject", credentials["type"])
+	assert.NotContains(t, params, "connections")
+	assert.NotContains(t, params, "connectionCredentials")
 
 	// Network isolation parameters must exist so the synthesizer's network
 	// param set is accepted by ARM (extra params would fail the deployment).
@@ -1182,25 +934,6 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	assert.Contains(t, text,
 		`"value": "[reference('network').outputs.vnetLocation.value]"`,
 		"private endpoint location must come from the customer VNet")
-}
-
-func TestBrownfieldARMTemplate_SecuresConnectionCredentials(t *testing.T) {
-	data, err := BrownfieldARMTemplate()
-	require.NoError(t, err)
-
-	var arm map[string]any
-	require.NoError(t, json.Unmarshal(data, &arm))
-	params, ok := arm["parameters"].(map[string]any)
-	require.True(t, ok, "parameters must be an object")
-	connections, ok := params["connections"].(map[string]any)
-	require.True(t, ok, "connections param must be an object")
-	assert.Equal(t, "#/definitions/connectionsType", connections["$ref"])
-	credentials, ok := params["connectionCredentials"].(map[string]any)
-	require.True(t, ok, "connectionCredentials param must be an object")
-	assert.Equal(t, "secureObject", credentials["type"])
-	assert.Contains(t, string(data),
-		"parameters('principalId'), parameters('roleDefinitionId')",
-		"ACR role assignment name must include the assigned principal")
 }
 
 func TestSynthesize_Network(t *testing.T) {
@@ -1543,4 +1276,336 @@ services:
 			assert.Contains(t, err.Error(), "services.my-project.network")
 		})
 	}
+}
+
+// TestResolveVars_MatchesFoundryExpandEnv locks in that the three project
+// network fields resolved through resolveVars use the same expander semantics
+// as every other Foundry field: ${VAR:-default} falls back, $${VAR} stays
+// literal, and a reference with neither a value nor a default is still a
+// load-bearing error naming the variable.
+func TestResolveVars_MatchesFoundryExpandEnv(t *testing.T) {
+	env := map[string]string{
+		"SET_VAR":   "set-value",
+		"EMPTY_VAR": "",
+	}
+
+	tests := []struct {
+		name    string
+		in      string
+		want    string
+		wantErr string
+	}{
+		{name: "plain reference", in: "${SET_VAR}", want: "set-value"},
+		{name: "default is unused when set", in: "${SET_VAR:-fallback}", want: "set-value"},
+		{name: "default fills in when unset", in: "${MISSING_VAR_XYZ:-fallback}", want: "fallback"},
+		{name: "empty default is allowed", in: "${MISSING_VAR_XYZ:-}", want: ""},
+		{name: "empty env value takes the default", in: "${EMPTY_VAR:-fallback}", want: "fallback"},
+		{name: "escaped reference stays literal", in: "$${MISSING_VAR_XYZ}", want: "${MISSING_VAR_XYZ}"},
+		{
+			// required is derived from the same scanner the expander drives, so
+			// an occurrence the expander never resolves cannot make a live,
+			// defaulted occurrence of the same name look unresolvable.
+			name: "escaped reference does not make a defaulted one required",
+			in:   "$${MISSING_VAR_XYZ} ${MISSING_VAR_XYZ:-fallback}",
+			want: "${MISSING_VAR_XYZ} fallback",
+		},
+		{
+			name: "a name in a Foundry span does not make a defaulted one required",
+			in:   "${{connections.${MISSING_VAR_XYZ}.key}} ${MISSING_VAR_XYZ:-fallback}",
+			want: "${{connections.${MISSING_VAR_XYZ}.key}} fallback",
+		},
+		{name: "no references", in: "/subscriptions/abc", want: "/subscriptions/abc"},
+		{
+			name: "default inside a resource id",
+			in:   "${MISSING_VAR_XYZ:-/subscriptions/s/resourceGroups/rg}",
+			want: "/subscriptions/s/resourceGroups/rg",
+		},
+		{
+			name:    "unresolved reference errors",
+			in:      "${MISSING_VAR_XYZ}",
+			wantErr: "unresolved environment variable ${MISSING_VAR_XYZ}",
+		},
+		{
+			name:    "first unresolved reference is named",
+			in:      "${MISSING_A_XYZ}/${MISSING_B_XYZ}",
+			wantErr: "unresolved environment variable ${MISSING_A_XYZ}",
+		},
+		{
+			name:    "a default elsewhere does not excuse a bare reference",
+			in:      "${MISSING_VAR_XYZ:-ok}/${MISSING_VAR_XYZ}",
+			wantErr: "unresolved environment variable ${MISSING_VAR_XYZ}",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveVars(tt.in, env)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestContainsVarRef_RecognizesDefaults guards the eject path: a reference with
+// a default must be recognized as still-unresolved so the value is kept
+// verbatim and the ARM-shape checks are deferred to provision time, instead of
+// being rejected as a malformed resource id.
+//
+// The converse matters too. An escaped reference and a name reserved by a
+// Foundry ${{...}} span are never expanded, so the value is already as concrete
+// as it will ever be and the shape checks have to run on it now rather than
+// being deferred to a provision that can only fail.
+func TestContainsVarRef_RecognizesDefaults(t *testing.T) {
+	tests := []struct {
+		in   string
+		want bool
+	}{
+		{in: "${VNET}", want: true},
+		{in: "${VNET:-/subscriptions/s}", want: true},
+		{in: "/subscriptions/s/resourceGroups/rg", want: false},
+		{in: "$${VNET}", want: false},
+		{in: "${{connections.store.key}}", want: false},
+		{in: "$${VNET} ${OTHER}", want: true},
+		{in: "", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			assert.Equal(t, tt.want, containsVarRef(tt.in))
+		})
+	}
+}
+
+// TestValidateEnvReferences_RejectsUnsupportedForms pins the guard on
+// drone/envsubst's wider grammar. Every rejected form below is one envsubst
+// expands and the scanner does not report, so without this check it slips past
+// the unresolved-variable guard: ${MISSING:=x} silently resolves, ${MISSING#x}
+// silently becomes "", and the caller then validates the rewritten value as if
+// the user had typed it. Typing ':=' for ':-' is a one character slip.
+func TestValidateEnvReferences_RejectsUnsupportedForms(t *testing.T) {
+	t.Parallel()
+
+	supported := []string{
+		"${VAR}",
+		"${VAR:-default}",
+		"${VAR:-}",
+		"$${VAR}",
+		"${{connections.store.credentials.key}}",
+		"${{ tools.${INNER} }}",
+		"${MISSING:-${{event.body}}}",
+		// An escaped Foundry span: ExpandEnv masks the span starting at the
+		// second '$', so nothing inside it reaches envsubst and the '$' pair is
+		// never an escape.
+		"$${{ tools.${INNER} }}",
+		"/subscriptions/s/resourceGroups/rg",
+		// Bare '$' forms survive expansion untouched: envsubst only expands the
+		// braced shape, so these need no rejection.
+		"$VAR",
+		"costs $5 today",
+		"a$b",
+		"",
+	}
+	for _, value := range supported {
+		t.Run("ok/"+value, func(t *testing.T) {
+			t.Parallel()
+			assert.NoError(t, ValidateEnvReferences(value))
+		})
+	}
+
+	unsupported := []string{
+		"${MISSING:=default}",
+		"${MISSING:+alt}",
+		"${MISSING:?boom}",
+		"${MISSING#prefix}",
+		"${MISSING%suffix}",
+		"${MISSING:0:3}",
+		"${MISSING-nodefault}",
+		"${1BAD}",
+		"prefix ${MISSING:=x} suffix",
+		"${OUTER:-${INNER:=x}}",
+		"${A:-${9BAD}}",
+	}
+	for _, value := range unsupported {
+		t.Run("rejected/"+value, func(t *testing.T) {
+			t.Parallel()
+			err := ValidateEnvReferences(value)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "is not a supported environment variable reference")
+			assert.Contains(t, err.Error(), "${VAR:-default}",
+				"the message has to name the shape the user probably meant")
+		})
+	}
+
+	// A nested reference is expanded but never discovered. Refusing it withdraws
+	// a shape that works today when the nested name is set, because `required`
+	// is static: reporting the nested name would fail whenever the outer one
+	// resolves, and not reporting it lets ${A:-${B}} with neither set expand to
+	// empty, so the field's own shape check blames the empty value.
+	nested := map[string]string{
+		"${OUTER:-${NESTED}}":                "${NESTED}",
+		"${OUTER:-prefix-${NESTED}-suffix}":  "${NESTED}",
+		"${OUTER:-${NESTED:-inner}}":         "${NESTED:-inner}",
+		"${OUTER:-$${NESTED}}":               "${NESTED}",
+		"${OUTER:-prefix-$${NESTED}-suffix}": "${NESTED}",
+		// The quoted fragment has to be the nested reference's real span; a
+		// truncate-at-the-first-'}' fragment would come out unbalanced here.
+		"${A:-${B:-${C}}}": "${B:-${C}}",
+	}
+	for value, fragment := range nested {
+		t.Run("nested/"+value, func(t *testing.T) {
+			t.Parallel()
+			err := ValidateEnvReferences(value)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "nests an environment variable reference inside a :- default")
+			assert.Contains(t, err.Error(), fmt.Sprintf("%q", fragment),
+				"the message has to quote the nested reference's real span")
+		})
+	}
+
+	t.Run("rejected/unterminated foundry span", func(t *testing.T) {
+		t.Parallel()
+		err := ValidateEnvReferences("${{connections.store.key}")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "missing the closing }}")
+	})
+}
+
+// TestSynthesize_NetworkRejectsUnsupportedVarSyntax covers the guard end to end
+// on both paths. envsubst would expand these, so on the provision path the
+// value is silently rewritten before the ARM id / subscription checks see it,
+// and on the eject path it is written into the template verbatim and rewritten
+// at provision. Either way the user never learns their ':=' did not mean ':-'.
+func TestSynthesize_NetworkRejectsUnsupportedVarSyntax(t *testing.T) {
+	tests := []struct {
+		name  string
+		yaml  string
+		field string
+	}{
+		{
+			name:  "subnet vnet",
+			field: "peSubnet.vnet",
+			yaml: "services:\n  my-project:\n    host: azure.ai.project\n    network:\n" +
+				"      peSubnet: {vnet: \"${MISSING_VNET_XYZ:=/subscriptions/s}\", name: pe-subnet}\n",
+		},
+		{
+			name:  "dns subscription",
+			field: "dns.subscription",
+			yaml: `
+services:
+  my-project:
+    host: azure.ai.project
+    network:
+      peSubnet:
+        vnet: /subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/v
+        name: pe-subnet
+      dns:
+        subscription: "${MISSING_SUB_XYZ#prefix}"
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		for _, preserve := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/preserveVarRefs=%v", tt.name, preserve), func(t *testing.T) {
+				_, err := Synthesize(Input{
+					RawAzureYAML:    []byte(tt.yaml),
+					ServiceName:     "my-project",
+					AcceptedHosts:   []string{"azure.ai.project"},
+					PreserveVarRefs: preserve,
+				})
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "is not a supported environment variable reference")
+				assert.Contains(t, err.Error(), tt.field,
+					"the error has to name the offending field")
+			})
+		}
+	}
+}
+
+// TestSynthesize_NetworkEscapedRefIsValidatedOnBothPaths pins that an escaped
+// reference is final on both paths. $${VNET} resolves to the literal ${VNET},
+// which is not a vnet id and never becomes one, so deferring the shape check to
+// provision only moves the failure somewhere less useful — and made eject and
+// provision disagree about the same azure.yaml.
+func TestSynthesize_NetworkEscapedRefIsValidatedOnBothPaths(t *testing.T) {
+	const yaml = `
+services:
+  my-project:
+    host: azure.ai.project
+    network:
+      peSubnet: {vnet: "$${VNET_XYZ}", name: pe-subnet}
+`
+	for _, preserve := range []bool{false, true} {
+		t.Run(fmt.Sprintf("preserveVarRefs=%v", preserve), func(t *testing.T) {
+			_, err := Synthesize(Input{
+				RawAzureYAML:    []byte(yaml),
+				ServiceName:     "my-project",
+				AcceptedHosts:   []string{"azure.ai.project"},
+				PreserveVarRefs: preserve,
+			})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "is not a well-formed Microsoft.Network/virtualNetworks id")
+		})
+	}
+}
+
+// TestSynthesize_NetworkVarRefDefaults covers the reported bug end to end:
+// ${VAR:-default} on the three network fields previously fell through
+// resolveVars unchanged and was then rejected by the ARM id / subscription
+// shape checks, blaming the resource id instead of the unsupported syntax.
+func TestSynthesize_NetworkVarRefDefaults(t *testing.T) {
+	const (
+		fallbackVNet = "/subscriptions/00000000-0000-0000-0000-000000000000" +
+			"/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/default"
+		fallbackSub = "11111111-1111-1111-1111-111111111111"
+	)
+
+	yaml := `
+services:
+  my-project:
+    host: azure.ai.project
+    network:
+      peSubnet: {vnet: "${MISSING_VNET_XYZ:-` + fallbackVNet + `}", name: pe-subnet}
+      dns:
+        subscription: "${MISSING_SUB_XYZ:-` + fallbackSub + `}"
+`
+	res, err := Synthesize(Input{
+		RawAzureYAML:  []byte(yaml),
+		ServiceName:   "my-project",
+		AcceptedHosts: []string{"azure.ai.project"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	assert.Equal(t, fallbackVNet, res.Parameters["vnetId"])
+	assert.Equal(t, fallbackSub, res.Parameters["dnsZonesSubscription"])
+}
+
+// TestSynthesize_NetworkPreserveVarRefsWithDefault is the eject-path half of the
+// same bug: a defaulted reference must survive verbatim rather than being
+// rejected as a malformed VNet id.
+func TestSynthesize_NetworkPreserveVarRefsWithDefault(t *testing.T) {
+	const ref = "${AZURE_VNET_ID:-/subscriptions/s/resourceGroups/rg" +
+		"/providers/Microsoft.Network/virtualNetworks/default}"
+
+	yaml := `
+services:
+  my-project:
+    host: azure.ai.project
+    network:
+      peSubnet: {vnet: "` + ref + `", name: pe-subnet}
+`
+	res, err := Synthesize(Input{
+		RawAzureYAML:    []byte(yaml),
+		ServiceName:     "my-project",
+		AcceptedHosts:   []string{"azure.ai.project"},
+		PreserveVarRefs: true,
+	})
+	require.NoError(t, err, "a defaulted ${VAR} must not fail on the eject path")
+	require.NotNil(t, res)
+	assert.Equal(t, ref, res.Parameters["vnetId"])
 }

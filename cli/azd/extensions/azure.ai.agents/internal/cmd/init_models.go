@@ -30,6 +30,10 @@ var defaultSkuPriority = []string{"GlobalStandard", "DataZoneStandard", "Standar
 // defaultAgentModel is preselected in interactive catalog prompts.
 const defaultAgentModel = "gpt-5.4-mini"
 
+// defaultVoiceModel is the managed speech-to-speech model used for a
+// prompt-voice agent when --model is not supplied.
+const defaultVoiceModel = "gpt-realtime"
+
 // defaultDeploymentCapacity is the preferred deployment capacity for agent model deployments.
 // This overrides the lower SKU default (typically 10) which is insufficient for agents.
 const defaultDeploymentCapacity int32 = 50
@@ -326,7 +330,7 @@ func (a *InitAction) getModelDeploymentDetails(
 			}
 		} else {
 			color.Yellow(
-				"No existing deployment for model '%s' specified in the selected agent manifest was found in your Foundry project.\n",
+				"No existing deployment for model '%s' was found in your Foundry project.\n",
 				model.Id,
 			)
 
@@ -482,7 +486,7 @@ func (a *modelSelector) getModelDetails(
 		// or (when allowed) skip the model entirely. This is the standard
 		// selector for both interactively-detected manifests and the -m flow.
 		choices := []*azdext.SelectChoice{
-			{Label: fmt.Sprintf("Use '%s' (from manifest)", model.Name), Value: "keep"},
+			{Label: fmt.Sprintf("Use '%s'", model.Name), Value: "keep"},
 			{Label: "Choose a different model to deploy", Value: "change"},
 		}
 		if len(a.allDeployments) > 0 {
@@ -501,7 +505,7 @@ func (a *modelSelector) getModelDetails(
 		defaultIdx := int32(0)
 		resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
-				Message:       fmt.Sprintf("Model '%s' is specified in the agent manifest.", model.Name),
+				Message:       fmt.Sprintf("Model '%s' is selected.", model.Name),
 				Choices:       choices,
 				SelectedIndex: &defaultIdx,
 			},

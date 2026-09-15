@@ -1,0 +1,63 @@
+# Evals for the Foundry/AI extensions, using vally. Kept separate from vally-ci.yml so
+# the core azd eval gate stays independent of Foundry setup.
+name: "Evals: vally (Foundry)"
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "cli/azd/test/evals/**"
+      - ".github/actions/vally-eval/**"
+      - ".github/workflows/vally-foundry-ci.yml"
+
+permissions:
+  contents: read
+  copilot-requests: write
+
+concurrency:
+  group: vally-foundry-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Non-blocking while thresholds settle: failures surface in the job summary without
+  # gating the PR. Drop continue-on-error once pass rates are stable.
+  foundry:
+    name: Run vally evals (foundry:${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Grades routing and reported commands, so it needs no azd on PATH.
+          - name: skill
+            eval-file: eval-foundry-skill.yaml
+            fetch-skills: "true"
+            azd-extensions: ""
+          # Skill-free control arm for the experiment.
+          - name: authoring
+            eval-file: eval-foundry-authoring.yaml
+            fetch-skills: "false"
+            azd-extensions: ""
+          # Shells out to the Foundry CLI, so it needs the extension bundle.
+          - name: cli
+            eval-file: eval-foundry-cli.yaml
+            fetch-skills: "false"
+            azd-extensions: "microsoft.foundry"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run vally eval
+        id: vally
+        uses: ./.github/actions/vally-eval
+        with:
+          working-directory: cli/azd/test/evals
+          eval-file: ${{ matrix.eval-file }}
+          artifact-name: ${{ github.job }}-${{ matrix.name }}-vally-results
+          github-token: ${{ github.token }}
+          fetch-skills: ${{ matrix.fetch-skills }}
+          azd-extensions: ${{ matrix.azd-extensions }}

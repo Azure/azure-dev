@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -21,8 +22,10 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 )
 
 // fakeTokenCredential satisfies azcore.TokenCredential for tests.
@@ -60,6 +63,127 @@ func TestNewEvalCommand_UseString(t *testing.T) {
 	t.Parallel()
 	cmd := newEvalCommand(&azdext.ExtensionContext{})
 	assert.Equal(t, "eval <command>", cmd.Use)
+}
+
+func TestEvalCommandsExposeContextFlags(t *testing.T) {
+	t.Parallel()
+
+	commands := map[string]*cobra.Command{
+		"generate": newEvalGenerateCommand(&azdext.ExtensionContext{}),
+		"run":      newEvalRunCommand(&azdext.ExtensionContext{}),
+		"update":   newEvalUpdateCommand(&azdext.ExtensionContext{}),
+	}
+
+	for name, cmd := range commands {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.NotNil(t, cmd.Flags().Lookup("agent"))
+			endpointFlag := cmd.Flags().Lookup("project-endpoint")
+			require.NotNil(t, endpointFlag)
+			assert.Equal(t, "p", endpointFlag.Shorthand)
+		})
+	}
+
+	projectCommands := map[string]*cobra.Command{
+		"list": newEvalListCommand(&azdext.ExtensionContext{}),
+		"show": newEvalShowCommand(&azdext.ExtensionContext{}),
+	}
+	for name, cmd := range projectCommands {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.Nil(t, cmd.Flags().Lookup("agent"))
+			endpointFlag := cmd.Flags().Lookup("project-endpoint")
+			require.NotNil(t, endpointFlag)
+			assert.Equal(t, "p", endpointFlag.Shorthand)
+		})
+	}
+}
+
+func TestEvalContextFlagsOptions(t *testing.T) {
+	t.Parallel()
+
+	flags := evalContextFlags{
+		agent:           "service-a",
+		projectEndpoint: "https://example.services.ai.azure.com/api/projects/test",
+	}
+	options := flags.options("dev", true, false)
+
+	assert.Equal(t, "dev", options.envName)
+	assert.Equal(t, "service-a", options.agent)
+	assert.Equal(t, flags.projectEndpoint, options.projectEndpoint)
+	assert.True(t, options.noPrompt)
+	assert.False(t, options.requireAgent)
+}
+
+func TestEvalCommandsPropagateNoPromptContext(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	promptServer := &helpersPromptServer{}
+	grpcServer := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(grpcServer, &helpersProjectServer{})
+	azdext.RegisterPromptServiceServer(grpcServer, promptServer)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = grpcServer.Serve(listener) }()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+	t.Setenv("NO_COLOR", "1")
+
+	commands := map[string]struct {
+		newCommand func(*azdext.ExtensionContext) *cobra.Command
+		usesAgent  bool
+	}{
+		"run":    {newCommand: newEvalRunCommand, usesAgent: true},
+		"update": {newCommand: newEvalUpdateCommand, usesAgent: true},
+		"list":   {newCommand: newEvalListCommand},
+		"show":   {newCommand: newEvalShowCommand},
+	}
+
+	for name, test := range commands {
+		t.Run(name, func(t *testing.T) {
+			cmd := test.newCommand(&azdext.ExtensionContext{NoPrompt: true})
+			err := cmd.ExecuteContext(t.Context())
+			require.ErrorContains(t, err, "--project-endpoint is required")
+
+			cmd = test.newCommand(&azdext.ExtensionContext{NoPrompt: true})
+			args := []string{
+				"--project-endpoint", "://explicit-endpoint",
+			}
+			if test.usesAgent {
+				args = append(args, "--agent", "explicit-agent")
+			}
+			cmd.SetArgs(args)
+			err = cmd.ExecuteContext(t.Context())
+			require.Error(t, err)
+			require.NotContains(t, err.Error(), "--project-endpoint is required")
+			require.NotContains(t, err.Error(), "agent context could not be resolved")
+		})
+	}
+
+	require.Zero(t, promptServer.promptCalls.Load())
+}
+
+func TestResolveEvalAgentService_RejectsUnknownExplicitService(t *testing.T) {
+	t.Parallel()
+
+	projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
+		Path: t.TempDir(),
+		Services: map[string]*azdext.ServiceConfig{
+			"known": {Name: "known", Host: AiAgentHost, RelativePath: "."},
+		},
+	}}
+	azdClient := newHelpersTestAzdClient(t, projectServer, &helpersPromptServer{})
+
+	_, err := resolveEvalAgentService(t.Context(), azdClient, evalContextOptions{
+		agent:    "typo",
+		noPrompt: true,
+	})
+
+	require.ErrorContains(t, err, "no azure.ai.agent service named 'typo' found in azure.yaml")
 }
 
 // ---------------------------------------------------------------------------

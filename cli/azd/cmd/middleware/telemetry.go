@@ -177,11 +177,19 @@ func (m *TelemetryMiddleware) setInstalledExtensionsAttributes(span tracing.Span
 	}
 
 	entries := make([]string, 0, len(installed))
+	sourceCategoryEntries := make([]string, 0, len(installed))
 	for _, id := range slices.Sorted(maps.Keys(installed)) {
 		if ext := installed[id]; ext != nil {
 			entries = append(entries, id+"@"+ext.Version)
+			sourceCategoryEntries = append(
+				sourceCategoryEntries,
+				id+"@"+string(ext.SourceCategoryOrUnknown()),
+			)
 		}
 	}
 
-	span.SetAttributes(fields.ExtensionsInstalled.StringSlice(entries))
+	span.SetAttributes(
+		fields.ExtensionsInstalled.StringSlice(entries),
+		fields.ExtensionsInstalledSourceCategories.StringSlice(sourceCategoryEntries),
+	)
 }

@@ -36,7 +36,7 @@ var (
 	ErrCacheExpired = errors.New("cache expired")
 	// ErrCacheNotFound indicates no cache file exists
 	ErrCacheNotFound = errors.New("cache not found")
-	// sourceNameSanitizer replaces unsafe filename characters
+	// sourceNameSanitizer defensively handles legacy source names that predate validation.
 	sourceNameSanitizer = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
 )
 
@@ -90,7 +90,8 @@ func getCacheTTL() time.Duration {
 	return defaultCacheTTL
 }
 
-// sanitizeSourceName converts a source name to a safe filename
+// sanitizeSourceName converts a source name to a safe filename.
+// Canonical configured source names pass through unchanged.
 func sanitizeSourceName(sourceName string) string {
 	// Replace unsafe characters with underscores
 	safe := sourceNameSanitizer.ReplaceAllString(sourceName, "_")

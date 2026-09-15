@@ -56,7 +56,53 @@ services:
 | `apiVersion` | string | API version for the hosting target |
 | `env` | map | Environment variables passed to the service |
 | `uses` | list | Service dependencies |
-| `remoteBuild` | boolean | Enable remote build (e.g., for Azure Functions) |
+| `remoteBuild` | boolean | Enable remote build for code-based Azure Functions |
+
+### Docker Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `path` | string | Path to the Dockerfile |
+| `context` | string | Docker build context path |
+| `platform` | string | Container platform target |
+| `target` | string | Dockerfile build target |
+| `registry` | string | Destination container registry |
+| `image` | string | Name applied to a built container image |
+| `tag` | string | Tag applied to a built container image |
+| `buildArgs` | list | Arguments passed to the container build |
+| `network` | string | Networking mode for Dockerfile `RUN` instructions |
+| `remoteBuild` | boolean | Build and push with Azure Container Registry remote build instead of building locally |
+| `imagePassthrough` | boolean | Reuse an existing remote service `image` without building or publishing it; `azd deploy --from-package` can override the image for one deployment |
+
+`docker.imagePassthrough` declares that azd does not own the container image lifecycle. It requires the service-level
+`image` property to contain a fully qualified remote image and cannot be combined with `docker.remoteBuild`. During package, publish, and deploy operations, azd
+uses the configured image as the existing remote image without building, pulling, tagging, copying, or publishing it:
+
+```yaml
+services:
+  api:
+    host: containerapp
+    image: registry.example.com/apps/api:1.0
+    docker:
+      imagePassthrough: true
+```
+
+The service `image` is the default. A fully qualified remote image supplied to `azd deploy --from-package` overrides it
+for that deployment and is also passed through unchanged:
+
+```bash
+azd deploy api --from-package other-registry.example.com/apps/api:2.0
+```
+
+Passthrough overrides do not support local image names, archives, or directories. The `--from-package` override above
+applies only to `azd deploy`; `azd publish --from-package` and `azd publish --to` are not supported for passthrough
+services. Running `azd publish` without either flag reuses the configured remote image and does not publish it.
+
+azd does not sign in to the source registry or verify access to it in this mode. The destination platform must already
+have permission to pull the image through its managed identity or registry credentials.
+
+When `imagePassthrough` is omitted or `false`, an external service image can still be pulled and copied into the
+configured destination registry.
 
 ## Hooks
 
@@ -102,6 +148,29 @@ services:
     project: ./src/web
     language: docker
     host: appservice
+    docker:
+      path: ./Dockerfile
+```
+
+### Function App (`host: function`)
+
+Function Apps support code and container deployment:
+
+- **Zip deploy** (default): When no container configuration is present, azd builds the Function project, creates a zip archive, and deploys it through the Function App deployment API. The top-level `remoteBuild` property applies only to this mode.
+- **Container deploy**: Configure `language: docker`, set `docker.path` for a non-Docker language, or provide a pre-built `image`. azd builds or resolves the image, publishes it to ACR when needed, and updates the Function App's `linuxFxVersion`.
+
+Container-based Function infrastructure must configure a Linux Function App, an initial `DOCKER|` image reference, and registry pull access before deployment. These settings remain the responsibility of Bicep or Terraform. If the provisioned Function App and the service disagree about the deployment mode, azd fails before attempting an incompatible upload and identifies the configuration mismatch.
+
+Unlike App Service, Function Apps always deploy to the main site. Deployment slots are not part of the Function App workflow, so `AZD_DEPLOY_{SERVICE}_SLOT_NAME` has no effect and azd never prompts for a slot.
+
+Example TypeScript container deployment:
+
+```yaml
+services:
+  function:
+    project: ./src/function
+    language: ts
+    host: function
     docker:
       path: ./Dockerfile
 ```

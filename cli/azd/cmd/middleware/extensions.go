@@ -127,7 +127,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 		debug:       debugEnabled,
 		cwd:         cwd,
 		environment: envName,
-		// Use globalOptions.NoPrompt which includes agent detection, not just the --no-prompt CLI flag
+		// Use globalOptions.NoPrompt, which includes CI and non-interactive agent detection.
 		noPrompt:   m.globalOptions.NoPrompt,
 		forceColor: forceColor,
 	}
@@ -216,7 +216,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 				info.ext.Id, info.result.InstalledVersion, info.result.LatestVersion,
 			))
 			m.console.Message(ctx, fmt.Sprintf(
-				"To upgrade extension, run %s", output.WithHighLightFormat("azd extension upgrade %s", info.ext.Id),
+				"To update the extension, run %s", output.WithHighLightFormat("azd extension update %s", info.ext.Id),
 			))
 			m.console.Message(ctx, "")
 		} else if len(needsUpdate) > 1 {
@@ -230,9 +230,9 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 				))
 			}
 			m.console.Message(ctx, fmt.Sprintf(
-				"Run %s to upgrade a specific extension, or %s to upgrade all extensions.",
-				output.WithHighLightFormat("azd extension upgrade <extension-id>"),
-				output.WithHighLightFormat("azd extension upgrade --all"),
+				"Run %s to update a specific extension, or %s to update all extensions.",
+				output.WithHighLightFormat("azd extension update <extension-id>"),
+				output.WithHighLightFormat("azd extension update --all"),
 			))
 			m.console.Message(ctx, "")
 		}
@@ -334,12 +334,16 @@ func startAndWaitExtension(
 	serverInfo *grpcserver.ServerInfo,
 	opts extensionStartOptions,
 ) error {
-	jwtToken, err := grpcserver.GenerateExtensionToken(ext, serverInfo)
+	jwtToken, err := grpcserver.GenerateExtensionTokenWithContext(ctx, ext, serverInfo)
 	if err != nil {
 		err = fmt.Errorf("generating extension token for '%s': %w", ext.Id, err)
 		ext.Fail(err)
 		return err
 	}
+
+	stdin := ext.StdIn()
+	stdout := ext.StdOut()
+	stderr := ext.StdErr()
 
 	// Start the extension process in a separate goroutine
 	go func() {
@@ -365,9 +369,9 @@ func startAndWaitExtension(
 		invokeOptions := &extensions.InvokeOptions{
 			Args:        args,
 			Env:         allEnv,
-			StdIn:       ext.StdIn(),
-			StdOut:      ext.StdOut(),
-			StdErr:      ext.StdErr(),
+			StdIn:       stdin,
+			StdOut:      stdout,
+			StdErr:      stderr,
 			Debug:       opts.debug,
 			NoPrompt:    opts.noPrompt,
 			Cwd:         opts.cwd,

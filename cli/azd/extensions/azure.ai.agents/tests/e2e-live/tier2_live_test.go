@@ -126,9 +126,16 @@ func newRunner(t *testing.T, mode string) *runner {
 
 	configDir := filepath.Join(os.TempDir(), "e2e-azd-config-"+mode)
 	setupConfigDir(t, configDir)
+	ghConfigDir := filepath.Join(os.TempDir(), "e2e-gh-config-"+mode)
+	setupGitHubConfigDir(t, ghConfigDir)
 
 	env := withoutGitHubTokenEnv(os.Environ())
-	env = append(env, "AZD_CONFIG_DIR="+configDir)
+	env = append(env,
+		"AZD_CONFIG_DIR="+configDir,
+		"GH_CONFIG_DIR="+ghConfigDir,
+		"GH_PROMPT_DISABLED=1",
+		"AZD_NON_INTERACTIVE=false",
+	)
 	if tenant := os.Getenv("E2E_TENANT"); tenant != "" {
 		env = append(env, "AZURE_TENANT_ID="+tenant)
 	}
@@ -149,6 +156,7 @@ func newRunner(t *testing.T, mode string) *runner {
 	// removed.
 	if !envTrue("E2E_KEEP_ARTIFACTS") {
 		t.Cleanup(func() { _ = os.RemoveAll(configDir) })
+		t.Cleanup(func() { _ = os.RemoveAll(ghConfigDir) })
 	}
 	t.Cleanup(r.teardown)
 
@@ -184,6 +192,20 @@ func setupConfigDir(t *testing.T, configDir string) {
 	}
 	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatalf("create azd config dir: %v", err)
+	}
+}
+
+func setupGitHubConfigDir(t *testing.T, configDir string) {
+	t.Helper()
+
+	if err := os.RemoveAll(configDir); err != nil {
+		t.Fatalf("clean gh config dir: %v", err)
+	}
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatalf("create gh config dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config.yml"), []byte("git_protocol: https\n"), 0o600); err != nil {
+		t.Fatalf("write gh config: %v", err)
 	}
 }
 

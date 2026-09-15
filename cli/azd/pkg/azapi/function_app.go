@@ -18,6 +18,8 @@ type AzCliFunctionAppProperties struct {
 	HostNames         []string
 	ServerFarmID      string
 	HostNameSslStates []*armappservice.HostNameSSLState
+	// ContainerConfiguration reports whether the site is provisioned to host a container image.
+	ContainerConfiguration AppServiceContainerConfiguration
 }
 
 // GetFunctionAppProperties retrieves properties for a function app.
@@ -32,11 +34,24 @@ func (cli *AzureClient) GetFunctionAppProperties(
 		return nil, err
 	}
 
-	return &AzCliFunctionAppProperties{
-		HostNames:         []string{*webApp.Properties.DefaultHostName},
-		ServerFarmID:      *webApp.Properties.ServerFarmID,
-		HostNameSslStates: webApp.Properties.HostNameSSLStates,
-	}, nil
+	if webApp.Properties == nil {
+		return nil, fmt.Errorf("function app '%s' returned no properties", appName)
+	}
+
+	// Both fields are optional on the ARM model. ServerFarmID is only required by the zip deploy
+	// path, so an empty value is surfaced there rather than failing the container path here.
+	properties := &AzCliFunctionAppProperties{
+		HostNameSslStates:      webApp.Properties.HostNameSSLStates,
+		ContainerConfiguration: appServiceContainerConfiguration(webApp),
+	}
+	if webApp.Properties.DefaultHostName != nil {
+		properties.HostNames = []string{*webApp.Properties.DefaultHostName}
+	}
+	if webApp.Properties.ServerFarmID != nil {
+		properties.ServerFarmID = *webApp.Properties.ServerFarmID
+	}
+
+	return properties, nil
 }
 
 // GetFunctionAppPlan retrieves the app service plan for a function app using pre-fetched properties.

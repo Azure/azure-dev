@@ -90,15 +90,20 @@ func (r *Runner) Invoke(ctx context.Context, extension *Extension, options *Invo
 
 	runResult, err := r.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return &runResult, &ExtensionRunError{Err: err, ExtensionId: extension.Id}
+		return &runResult, &ExtensionRunError{
+			Err:              err,
+			ExtensionId:      extension.Id,
+			ExtensionVersion: extension.Version,
+		}
 	}
 	return &runResult, nil
 }
 
 // ExtensionRunError represents an error that occurred while running an extension.
 type ExtensionRunError struct {
-	ExtensionId string
-	Err         error
+	ExtensionId      string
+	ExtensionVersion string
+	Err              error
 }
 
 func (e *ExtensionRunError) Error() string {
@@ -107,4 +112,24 @@ func (e *ExtensionRunError) Error() string {
 
 func (e *ExtensionRunError) Unwrap() error {
 	return e.Err
+}
+
+func (e *ExtensionRunError) InvocationExtensionId() string {
+	if e == nil {
+		return ""
+	}
+
+	return e.ExtensionId
+}
+
+func (e *ExtensionRunError) InvocationExtensionVersion() string {
+	if e == nil {
+		return ""
+	}
+
+	return e.ExtensionVersion
+}
+
+func (e *ExtensionRunError) InvocationEvent() string {
+	return ""
 }

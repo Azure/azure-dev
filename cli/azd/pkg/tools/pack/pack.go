@@ -167,12 +167,12 @@ func (cli *Cli) ensureInstalled(ctx context.Context) error {
 	if ver.LT(Version) {
 		log.Printf("installed pack version %s is older than %s; updating.", ver.String(), Version.String())
 
-		msg := "Upgrading pack"
+		msg := "Updating pack"
 		cli.console.ShowSpinner(ctx, msg, input.Step)
 		err := downloadPack(ctx, cli.transporter, Version, cli.extract, cliPath)
 		cli.console.StopSpinner(ctx, "", input.Step)
 		if err != nil {
-			return fmt.Errorf("upgrading pack: %w", err)
+			return fmt.Errorf("updating pack: %w", err)
 		}
 	}
 

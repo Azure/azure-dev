@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	projectpkg "azureaiagent/internal/project"
 
@@ -476,12 +477,23 @@ func TestIsTerminal_NonTTY(t *testing.T) {
 type helpersProjectServer struct {
 	azdext.UnimplementedProjectServiceServer
 	project *azdext.ProjectConfig
+	err     error
 }
 
 func (s *helpersProjectServer) Get(
 	_ context.Context, _ *azdext.EmptyRequest,
 ) (*azdext.GetProjectResponse, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
 	return &azdext.GetProjectResponse{Project: s.project}, nil
+}
+
+func (s *helpersProjectServer) GetServiceConfigValue(
+	_ context.Context,
+	_ *azdext.GetServiceConfigValueRequest,
+) (*azdext.GetServiceConfigValueResponse, error) {
+	return &azdext.GetServiceConfigValueResponse{}, nil
 }
 
 // helpersPromptServer is a fake PromptServiceServer that records Select calls
@@ -490,25 +502,52 @@ type helpersPromptServer struct {
 	azdext.UnimplementedPromptServiceServer
 	selectIndex int32
 	selectCalls atomic.Int32
+	promptCalls atomic.Int32
+	lastSelect  *azdext.SelectRequest
 }
 
 type helpersFailingEnvironmentServer struct {
 	testEnvironmentServiceServer
-	getValueErr error
+	getValueErr  error
+	getValuesErr error
+	failKeys     map[string]error
 }
 
 func (s *helpersFailingEnvironmentServer) GetValue(
-	context.Context, *azdext.GetEnvRequest,
+	ctx context.Context, req *azdext.GetEnvRequest,
 ) (*azdext.KeyValueResponse, error) {
-	return nil, s.getValueErr
+	if s.getValueErr != nil {
+		return nil, s.getValueErr
+	}
+	if err := s.failKeys[req.Key]; err != nil {
+		return nil, err
+	}
+	return s.testEnvironmentServiceServer.GetValue(ctx, req)
+}
+
+func (s *helpersFailingEnvironmentServer) GetValues(
+	ctx context.Context, req *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	if s.getValuesErr != nil {
+		return nil, s.getValuesErr
+	}
+	return s.testEnvironmentServiceServer.GetValues(ctx, req)
 }
 
 func (s *helpersPromptServer) Select(
 	_ context.Context, req *azdext.SelectRequest,
 ) (*azdext.SelectResponse, error) {
 	s.selectCalls.Add(1)
+	s.lastSelect = req
 	idx := s.selectIndex
 	return &azdext.SelectResponse{Value: &idx}, nil
+}
+
+func (s *helpersPromptServer) Prompt(
+	context.Context, *azdext.PromptRequest,
+) (*azdext.PromptResponse, error) {
+	s.promptCalls.Add(1)
+	return nil, status.Error(codes.Internal, "unexpected text prompt")
 }
 
 // newHelpersTestAzdClient spins up a gRPC server with the supplied Project,
@@ -588,7 +627,11 @@ func TestResolveAgentServiceFromProject_UsesVerifiedInlineNameForBrownfieldProje
 	}}
 	envServer := &testEnvironmentServiceServer{
 		current: &azdext.Environment{Name: "test"},
-		values:  map[string]map[string]string{"test": {}},
+		values: map[string]map[string]string{"test": {
+			"AGENT_SERVICE_KEY_RESPONSES_ENDPOINT":         projectEndpoint + "/responses",
+			"AGENT_SERVICE_KEY_INVOCATIONS_ENDPOINT":       projectEndpoint + "/invocations",
+			"AGENT_SERVICE_KEY_PROTOCOL_ENDPOINTS_VERSION": "1",
+		}},
 	}
 	azdClient := newHelpersTestAzdClient(
 		t, projectServer, &helpersPromptServer{}, envServer,
@@ -613,6 +656,7 @@ func TestResolveAgentServiceFromProject_UsesVerifiedInlineNameForBrownfieldProje
 			require.Equal(t, "inline-agent", agentName)
 			return true, nil
 		}),
+		withDeployedProtocolEndpoints(),
 	)
 	require.NoError(t, err)
 	require.Equal(t, "service-key", info.ServiceName)
@@ -620,6 +664,10 @@ func TestResolveAgentServiceFromProject_UsesVerifiedInlineNameForBrownfieldProje
 		"inline agent name should resolve for an explicitly adopted existing project")
 	require.Equal(t, projectEndpoint, info.ProjectEndpoint,
 		"verified inline name must remain bound to its adopted project")
+	require.Equal(t, map[agent_api.AgentProtocol]string{
+		agent_api.AgentProtocolResponses:   projectEndpoint + "/responses",
+		agent_api.AgentProtocolInvocations: projectEndpoint + "/invocations",
+	}, info.ProtocolEndpoints)
 
 	missingInfo, err := resolveAgentServiceFromProject(
 		t.Context(),
@@ -720,6 +768,8 @@ func TestResolveAgentServiceFromProject_GreenfieldRequiresDeploy(t *testing.T) {
 func TestResolveAgentServiceFromProject_EnvironmentNameWins(t *testing.T) {
 	t.Parallel()
 
+	const projectEndpoint = "https://account.services.ai.azure.com/api/projects/existing"
+
 	agentProps, err := projectpkg.AgentDefinitionToServiceProperties(agent_yaml.ContainerAgent{
 		AgentDefinition: agent_yaml.AgentDefinition{
 			Kind: agent_yaml.AgentKindHosted,
@@ -728,7 +778,7 @@ func TestResolveAgentServiceFromProject_EnvironmentNameWins(t *testing.T) {
 	}, nil)
 	require.NoError(t, err)
 	projectProps, err := projectpkg.MarshalStruct(&projectpkg.ServiceTargetAgentConfig{
-		Endpoint: "https://account.services.ai.azure.com/api/projects/existing",
+		Endpoint: projectEndpoint,
 	})
 	require.NoError(t, err)
 
@@ -748,11 +798,19 @@ func TestResolveAgentServiceFromProject_EnvironmentNameWins(t *testing.T) {
 			},
 		},
 	}}
-	envServer := &testEnvironmentServiceServer{
-		current: &azdext.Environment{Name: "test"},
-		values: map[string]map[string]string{"test": {
-			"AGENT_SERVICE_KEY_NAME": "deployed-agent",
-		}},
+	envServer := &helpersFailingEnvironmentServer{
+		testEnvironmentServiceServer: testEnvironmentServiceServer{
+			current: &azdext.Environment{Name: "test"},
+			values: map[string]map[string]string{"test": {
+				"AGENT_SERVICE_KEY_NAME":                       "deployed-agent",
+				"AGENT_SERVICE_KEY_VERSION":                    "2.0.0",
+				"AGENT_SERVICE_KEY_ENDPOINT":                   "https://example.test/agents/deployed-agent/versions/2.0.0",
+				"AGENT_SERVICE_KEY_PROJECT_ENDPOINT":           projectEndpoint,
+				"AGENT_SERVICE_KEY_PROTOCOL_ENDPOINTS_VERSION": "1",
+				"AGENT_SERVICE_KEY_RESPONSES_ENDPOINT":         "https://example.test/responses",
+			}},
+		},
+		getValueErr: errors.New("per-key environment lookup must not be used"),
 	}
 	azdClient := newHelpersTestAzdClient(
 		t, projectServer, &helpersPromptServer{}, envServer,
@@ -771,10 +829,21 @@ func TestResolveAgentServiceFromProject_EnvironmentNameWins(t *testing.T) {
 			t.Fatal("deployed environment name must bypass the inline agent check")
 			return false, nil
 		}),
+		withDeployedProtocolEndpoints(),
 	)
 	require.NoError(t, err)
 	require.Equal(t, "deployed-agent", info.AgentName,
 		"deployed environment output should override the inline definition")
+	require.Equal(t, "2.0.0", info.Version)
+	require.Equal(
+		t,
+		"https://example.test/agents/deployed-agent/versions/2.0.0",
+		info.AgentEndpoint,
+	)
+	require.Equal(t, projectEndpoint, info.ProjectEndpoint)
+	require.Equal(t, map[agent_api.AgentProtocol]string{
+		agent_api.AgentProtocolResponses: "https://example.test/responses",
+	}, info.ProtocolEndpoints)
 }
 
 // TestResolveAgentServiceFromProject_EnvLookupFailureDoesNotFallback verifies a
@@ -831,7 +900,7 @@ func TestResolveAgentServiceFromProject_EnvLookupFailureIsReturned(t *testing.T)
 				testEnvironmentServiceServer: testEnvironmentServiceServer{
 					current: &azdext.Environment{Name: "test"},
 				},
-				getValueErr: tt.err,
+				getValuesErr: tt.err,
 			}
 			azdClient := newHelpersTestAzdClient(
 				t, projectServer, &helpersPromptServer{}, envServer,
@@ -842,7 +911,7 @@ func TestResolveAgentServiceFromProject_EnvLookupFailureIsReturned(t *testing.T)
 			)
 			require.Error(t, err)
 			require.Empty(t, info.AgentName)
-			require.ErrorContains(t, err, "reading AGENT_SERVICE_KEY_NAME")
+			require.ErrorContains(t, err, "reading environment")
 		})
 	}
 }
@@ -957,40 +1026,69 @@ func TestResolveAgentProtocol_MultipleServicesPromptsOnce(t *testing.T) {
 		"resolveAgentProtocol should trigger exactly one prompt")
 }
 
-func TestLoadServiceRunEnvironmentUsesRawValues(t *testing.T) {
+// fakeServiceConfigReader stands in for the project client so the
+// declared-env read can be exercised without a live RPC.
+type fakeServiceConfigReader struct {
+	found bool
+	err   error
+}
+
+func (f fakeServiceConfigReader) GetServiceConfigValue(
+	_ context.Context,
+	_ *azdext.GetServiceConfigValueRequest,
+	_ ...grpc.CallOption,
+) (*azdext.GetServiceConfigValueResponse, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &azdext.GetServiceConfigValueResponse{Found: f.found}, nil
+}
+
+// TestServiceEnvDeclaredFailsClosed pins that a read failure is
+// surfaced instead of being reported as "no env: declared". The
+// false return is what mergeAgentRunEnvironment reads as legacy,
+// so swallowing the error would inject the whole azd environment
+// into the agent process, which is the leak this scope closes.
+func TestServiceEnvDeclaredFailsClosed(t *testing.T) {
 	t.Parallel()
 
-	root := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(root, "azure.yaml"),
-		[]byte(`services:
-  agent:
-    host: azure.ai.agent
-    env:
-      PROJECT: ${{project.endpoint}}
-      ENABLED: true
-      SHARED: direct
-`),
-		0o600,
-	))
-	svc := &azdext.ServiceConfig{
-		Name: "agent",
-		Environment: map[string]string{
-			"PROJECT": "",
-			"ENABLED": "",
-			"SHARED":  "expanded",
+	declared, err := serviceEnvDeclared(
+		t.Context(),
+		fakeServiceConfigReader{
+			err: status.Error(codes.Unavailable, "project service unavailable"),
 		},
+		"my-agent",
+	)
+	require.Error(t, err)
+	require.False(t, declared)
+	require.ErrorContains(t, err, `reading env for service "my-agent"`)
+}
+
+// TestServiceEnvDeclaredReportsFound pins that a missing env: is
+// still a successful read, so a legacy service keeps its full
+// azd environment fallback.
+func TestServiceEnvDeclaredReportsFound(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		found bool
+	}{
+		{name: "env declared", found: true},
+		{name: "env omitted", found: false},
 	}
 
-	env, err := loadServiceRunEnvironment(
-		root,
-		svc,
-		map[string]string{"CONFIG_ONLY": "config", "SHARED": "config"},
-	)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	require.NoError(t, err)
-	require.Equal(t, "${{project.endpoint}}", env["PROJECT"])
-	require.Equal(t, "true", env["ENABLED"])
-	require.Equal(t, "direct", env["SHARED"])
-	require.Equal(t, "config", env["CONFIG_ONLY"])
+			declared, err := serviceEnvDeclared(
+				t.Context(),
+				fakeServiceConfigReader{found: tt.found},
+				"my-agent",
+			)
+			require.NoError(t, err)
+			require.Equal(t, tt.found, declared)
+		})
+	}
 }

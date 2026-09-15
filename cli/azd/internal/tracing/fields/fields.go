@@ -38,21 +38,42 @@ const (
 	PerformanceAndHealth Purpose = "PerformanceAndHealth"
 )
 
+// ExtensionAttributePrefix namespaces every extension-supplied telemetry
+// attribute so it can never overwrite a host-owned field on the span.
+const ExtensionAttributePrefix = "ext."
+
+// ExtensionUsageAttribute namespaces an extension-supplied usage attribute
+// key. Callers must bound the key and value before use; the extension owns
+// what the value means, so it is never customer content by contract.
+func ExtensionUsageAttribute(key string) AttributeKey {
+	return AttributeKey{
+		Key:            attribute.Key(ExtensionAttributePrefix + key),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+}
+
 // Application-level fields. Guaranteed to be set and available for all events.
 var (
-	// Application name. Value is always "azd".
+	// Service name. The application resource uses "azd"; MapError prefixes error details as error.service.name.
 	ServiceNameKey = AttributeKey{
-		Key: semconv.ServiceNameKey, // service.name
+		Key:            semconv.ServiceNameKey, // service.name
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
 	}
 
 	// Application version.
 	ServiceVersionKey = AttributeKey{
-		Key: semconv.ServiceVersionKey, // service.version
+		Key:            semconv.ServiceVersionKey, // service.version
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
 	}
 
 	// The operating system type.
 	OSTypeKey = AttributeKey{
-		Key: semconv.OSTypeKey, // os.type
+		Key:            semconv.OSTypeKey, // os.type
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
 	}
 
 	// The operating system version.
@@ -295,11 +316,20 @@ const (
 	EnvCloudShell         = "Azure CloudShell"
 
 	// AI Coding Agent environments
-	EnvClaudeCode       = "Claude Code"
-	EnvGitHubCopilotCLI = "GitHub Copilot CLI"
-	EnvGitHubCopilotApp = "GitHub Copilot App"
-	EnvGemini           = "Gemini"
-	EnvOpenCode         = "OpenCode"
+	EnvAntigravity             = "Antigravity"
+	EnvClaudeCode              = "Claude Code"
+	EnvClaudeCodeDesktop       = "Claude Code Desktop"
+	EnvClaudeCodeVSCode        = "Claude Code VSCode"
+	EnvCodex                   = "Codex"
+	EnvCodexDesktop            = "Codex Desktop"
+	EnvCursor                  = "Cursor"
+	EnvGitHubCopilotCLI        = "GitHub Copilot CLI"
+	EnvGitHubCopilotApp        = "GitHub Copilot App"
+	EnvGitHubCopilotVSCode     = "GitHub Copilot VSCode"
+	EnvGitHubCopilotCloudAgent = "GitHub Copilot Cloud Agent"
+	EnvGemini                  = "Gemini"
+	EnvOpenCode                = "OpenCode"
+	EnvPi                      = "Pi"
 
 	// Continuous Integration environments
 
@@ -343,6 +373,17 @@ var (
 		Key:            attribute.Key("auth.method"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
+	}
+
+	// AuthCacheClearFailedKey records which cache failed to clear during the
+	// re-login cleanup that runs before a fresh login. It is a fixed enum
+	// (not user-derived), so it is emitted raw (not hashed). Emitted on the
+	// `auth login` usage event.
+	// Values: "auth" (credential cache), "subscriptions" (subscription cache).
+	AuthCacheClearFailedKey = AttributeKey{
+		Key:            attribute.Key("auth.cache_clear_failed"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
 	}
 )
 
@@ -525,7 +566,7 @@ var (
 	}
 
 	// ToolDryRunKey records whether `--dry-run` was specified for an
-	// `azd tool install` or `azd tool upgrade` invocation.
+	// `azd tool install` or `azd tool update` invocation.
 	ToolDryRunKey = AttributeKey{
 		Key:            attribute.Key("tool.dry_run"),
 		Classification: SystemMetadata,
@@ -590,7 +631,7 @@ var (
 
 	// ToolFirstRunInstallSuccessCountKey mirrors ToolInstallSuccessCountKey
 	// but is emitted only from the first-run middleware, so the user's
-	// subsequent `azd tool install` / `azd tool upgrade` command (which
+	// subsequent `azd tool install` / `azd tool update` command (which
 	// emits its own `tool.install.success_count`) does not overwrite the
 	// first-run signal on the same span.
 	ToolFirstRunInstallSuccessCountKey = AttributeKey{
@@ -626,19 +667,19 @@ var (
 		IsMeasurement:  true,
 	}
 
-	// ToolUpgradeFromVersionKey records the previous version of a tool
-	// being upgraded (single-target upgrades only).
-	ToolUpgradeFromVersionKey = AttributeKey{
-		Key:            attribute.Key("tool.upgrade.from_version"),
+	// ToolUpdateFromVersionKey records the previous version of a tool
+	// being updated (single-target updates only).
+	ToolUpdateFromVersionKey = AttributeKey{
+		Key:            attribute.Key("tool.update.from_version"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
 
-	// ToolUpgradeToVersionKey records the new version after upgrade
-	// (single-target upgrades only). Emitted only when the upgrade
+	// ToolUpdateToVersionKey records the new version after update
+	// (single-target updates only). Emitted only when the update
 	// succeeds.
-	ToolUpgradeToVersionKey = AttributeKey{
-		Key:            attribute.Key("tool.upgrade.to_version"),
+	ToolUpdateToVersionKey = AttributeKey{
+		Key:            attribute.Key("tool.update.to_version"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
@@ -766,6 +807,31 @@ var (
 		Key:            attribute.Key("exegraph.max_concurrency"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// ExeGraphPackageConcurrencyKey records the resolved package phase concurrency limit.
+	ExeGraphPackageConcurrencyKey = AttributeKey{
+		Key:            attribute.Key("exegraph.package_concurrency"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// ExeGraphProvisionConcurrencyKey records the resolved provision phase concurrency limit.
+	ExeGraphProvisionConcurrencyKey = AttributeKey{
+		Key:            attribute.Key("exegraph.provision_concurrency"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
+
+	// ExeGraphDeployConcurrencyKey records the resolved deploy phase concurrency limit.
+	ExeGraphDeployConcurrencyKey = AttributeKey{
+		Key:            attribute.Key("exegraph.deploy_concurrency"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
 	}
 
 	// ExeGraphErrorPolicyKey records the error policy (fail_fast or continue_on_error).
@@ -892,11 +958,34 @@ var (
 		Purpose:        PerformanceAndHealth,
 	}
 
-	// ErrChainTypes records the wrapped-error type chain (outermost
-	// first). Type names are code-defined and PII-free, so they're
-	// emitted as system metadata for triaging the catch-all bucket.
+	// ErrChainTypes records the host-observed wrapped-error type chain
+	// (outermost first). These reflected type names are system metadata.
 	ErrChainTypes = AttributeKey{
 		Key:            attribute.Key("error.chain.types"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// ErrExtensionCauseTypes records normalized extension-provided cause
+	// types as hashes because the extension controls their contents.
+	ErrExtensionCauseTypes = AttributeKey{
+		Key:            attribute.Key("error.extension.cause_types"),
+		Classification: EndUserPseudonymizedInformation,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// MapperSourceType records the sanitized Go type used as the source of a
+	// mapper conversion failure.
+	MapperSourceType = AttributeKey{
+		Key:            attribute.Key("mapper.source.type"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
+
+	// MapperDestinationType records the sanitized Go type expected by a mapper
+	// conversion failure.
+	MapperDestinationType = AttributeKey{
+		Key:            attribute.Key("mapper.destination.type"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 	}
@@ -912,15 +1001,8 @@ var (
 		Purpose:        PerformanceAndHealth,
 	}
 
-	// Name of the service.
-	ServiceName = AttributeKey{
-		Key:            attribute.Key("service.name"),
-		Classification: SystemMetadata,
-		Purpose:        PerformanceAndHealth,
-	}
-
-	// Status code of a response returned by the service.
-	// For HTTP, this corresponds to the HTTP status code.
+	// Status code of a response returned by the service. Numeric HTTP/service
+	// statuses are measurements; AAD authentication errors use string OAuth statuses.
 	ServiceStatusCode = AttributeKey{
 		Key:            attribute.Key("service.statusCode"),
 		Classification: SystemMetadata,
@@ -942,7 +1024,6 @@ var (
 		Key:            attribute.Key("service.errorCode"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
-		IsMeasurement:  true,
 	}
 
 	// Correlation ID for a request to the service.
@@ -967,6 +1048,7 @@ var (
 		Key:            attribute.Key("tool.exitCode"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
 	}
 )
 
@@ -1020,6 +1102,31 @@ var (
 	// The tag of the builder image used. Hashed when a user-defined image is used.
 	PackBuilderTag = AttributeKey{
 		Key:            attribute.Key("pack.builder.tag"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// Aspire related fields
+var (
+	// AspireAppHostLanguageKey is the language of a detected Aspire polyglot (non-C#) AppHost
+	// (e.g. "typescript", "python", "go", "java", "rust"). This is a fixed enum of Aspire-supported
+	// AppHost languages, so it is emitted raw (not hashed).
+	AspireAppHostLanguageKey = AttributeKey{
+		Key:            attribute.Key("aspire.apphost.language"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+)
+
+// AKS service target related fields
+var (
+	// AksSkipReasonKey records why AKS postprovision Kubernetes context setup
+	// was skipped, as a bounded, low-cardinality code (never raw error text).
+	// Emitted on the `aks.postprovision.skip` event.
+	// Values: "cluster_not_provisioned".
+	AksSkipReasonKey = AttributeKey{
+		Key:            attribute.Key("skip.reason"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
@@ -1101,6 +1208,16 @@ var (
 		Purpose:        FeatureInsight,
 		IsMeasurement:  true,
 	}
+
+	// ContainerRemoteBuildKey records the user-configured remote-build
+	// preference (serviceConfig.Docker.RemoteBuild) requested for a container
+	// publish — true when a remote (ACR) build was requested, false for a local
+	// build. It is a boolean (fixed cardinality), so it is emitted raw (not hashed).
+	ContainerRemoteBuildKey = AttributeKey{
+		Key:            attribute.Key("container.remotebuild"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // JSON-RPC related fields
@@ -1137,6 +1254,7 @@ var (
 		Key:            attribute.Key("agent.fix.attempts"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
 	}
 )
 
@@ -1154,27 +1272,54 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
+	// ExtensionLegacyGrpcCallCount counts calls made through the temporary pre-versioning gRPC bridge.
+	ExtensionLegacyGrpcCallCount = AttributeKey{
+		Key:            attribute.Key("extension.grpc.legacy_call_count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+	// ExtensionEvent identifies a usage report or failed invocation event.
+	// Extensions own this value, which lets queries filter their events.
+	ExtensionEvent = AttributeKey{
+		Key:            attribute.Key("extension.event"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 	// The list of installed extensions, each formatted as "id@version".
 	ExtensionsInstalled = AttributeKey{
 		Key:            attribute.Key("extension.installed"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionVersionFrom is the installed version before an upgrade.
+	// ExtensionsInstalledSourceCategories records installed extensions as "id@category".
+	ExtensionsInstalledSourceCategories = AttributeKey{
+		Key:            attribute.Key("extension.installed.source.category"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// ExtensionVersionFrom is the installed version before an update.
 	ExtensionVersionFrom = AttributeKey{
 		Key:            attribute.Key("extension.version.from"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionVersionTo is the target version after an upgrade.
+	// ExtensionVersionTo is the target version after an update.
 	ExtensionVersionTo = AttributeKey{
 		Key:            attribute.Key("extension.version.to"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionSource is the registry source used for the upgrade.
+	// ExtensionSource is the registry source used by extension updates
+	// and ext.usage reports.
 	ExtensionSource = AttributeKey{
 		Key:            attribute.Key("extension.source"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// ExtensionSourceCategory is the fixed category of the source used for an operation.
+	ExtensionSourceCategory = AttributeKey{
+		Key:            attribute.Key("extension.source.category"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
@@ -1184,40 +1329,40 @@ var (
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionSourceFrom is the registry source before a promotion.
-	ExtensionSourceFrom = AttributeKey{
-		Key:            attribute.Key("extension.source.from"),
+	// ExtensionSourceCategoryFrom is the source category before a promotion.
+	ExtensionSourceCategoryFrom = AttributeKey{
+		Key:            attribute.Key("extension.source.category.from"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionSourceTo is the registry source after a promotion.
-	ExtensionSourceTo = AttributeKey{
-		Key:            attribute.Key("extension.source.to"),
+	// ExtensionSourceCategoryTo is the source category after a promotion.
+	ExtensionSourceCategoryTo = AttributeKey{
+		Key:            attribute.Key("extension.source.category.to"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionUpgradeDurationMs is the time in milliseconds for one upgrade.
-	ExtensionUpgradeDurationMs = AttributeKey{
-		Key:            attribute.Key("extension.upgrade.duration_ms"),
+	// ExtensionUpdateDurationMs is the time in milliseconds for one update.
+	ExtensionUpdateDurationMs = AttributeKey{
+		Key:            attribute.Key("extension.update.duration_ms"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 		IsMeasurement:  true,
 	}
-	// ExtensionUpgradeOutcome is the upgrade result status.
-	ExtensionUpgradeOutcome = AttributeKey{
-		Key:            attribute.Key("extension.upgrade.outcome"),
+	// ExtensionUpdateOutcome is the update result status.
+	ExtensionUpdateOutcome = AttributeKey{
+		Key:            attribute.Key("extension.update.outcome"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionDependencyOf is the parent extension for a dependency upgrade.
+	// ExtensionDependencyOf is the parent extension for a dependency update.
 	ExtensionDependencyOf = AttributeKey{
 		Key:            attribute.Key("extension.dependency_of"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 	}
-	// ExtensionDependencyUpgradeCount is the recursive dependency upgrade count.
-	ExtensionDependencyUpgradeCount = AttributeKey{
-		Key:            attribute.Key("extension.dependency_upgrade_count"),
+	// ExtensionDependencyUpdateCount is the recursive dependency update count.
+	ExtensionDependencyUpdateCount = AttributeKey{
+		Key:            attribute.Key("extension.dependency_update_count"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
 		IsMeasurement:  true,

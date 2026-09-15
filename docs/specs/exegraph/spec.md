@@ -42,12 +42,12 @@ pkg/exegraph/                     ← Pure engine (zero azd deps except OTel tra
 
 internal/cmd/
   provision_graph.go   (942)      ← Provision DAG: unified path; single-layer = one-node graph, multi-layer = N-node graph with per-layer env clones
-  deploy.go            (548)      ← Deploy graph: unified path; package→publish→deploy per service (including N=1)
+  deploy.go            (548)      ← Deploy graph and standard .NET package/publish gate policy
   deploy_progress.go   (258)      ← Progress table (interactive rewrite / CI line mode)
-  service_graph.go     (279)      ← Shared service-step builder used by deploy + up (ecosystem-agnostic; gate policy injected via serviceGraphOptions.buildGateKey)
+  service_graph.go     (279)      ← Shared service-step builder used by deploy + up (ecosystem-agnostic; gate policies are injected)
   up_graph.go          (469)      ← Unified DAG: cmdhook-preprovision → provision → cmdhook-postprovision → cmdhook-predeploy → event-predeploy → publish/deploy → event-postdeploy → cmdhook-postdeploy, with a parallel cmdhook-prepackage → event-prepackage → package-<svc> → event-postpackage → cmdhook-postpackage chain that gates event-predeploy
   project_hooks.go      (65)      ← runProjectCommandHook helper for cmdhook-* DAG nodes
-  aspire_gate.go        (30)      ← Aspire build-gate policy (aspireBuildGateKey); the only Aspire-specific file in the exegraph call-graph — isolated so it can move with Aspire when Aspire becomes an extension
+  aspire_gate.go        (30)      ← Aspire deploy build-gate policy (aspireBuildGateKey)
 
 pkg/infra/provisioning/bicep/
   layer_deps.go        (262)      ← Static Bicep dependency analysis
@@ -70,8 +70,9 @@ follow-up edits. Directory layout and file responsibilities are stable.
 Defines the unit of work:
 
 - **StepFunc** — `func(ctx context.Context) error`
-- **Step** — `Name string`, `DependsOn []string`, `Tags []string`, `Action StepFunc`
-  (per-step timeout is expressed via `RunOptions.StepTimeout`, not a `Step` field)
+- **Step** — `Name string`, `DependsOn []string`, `Tags []string`,
+  `ConcurrencyGroup string`, `Action StepFunc` (per-step timeout is expressed via
+  `RunOptions.StepTimeout`, not a `Step` field)
 - **StepStatus** — `Pending → Running → Done | Failed | Skipped`
 - **StepSkippedError** — returned by a step to mark itself skipped; downstream steps skip too
 - **RunResult** — per-step timing (`StepTiming`), status, error, plus aggregate duration
@@ -84,14 +85,19 @@ Insertion-order-deterministic DAG:
 - **Validate** — DFS cycle detection + missing-dependency check
 - **Priority** — transitive-dependent count heuristic (steps with more downstream work run first)
 - **Steps** — returns steps in insertion order (deterministic scheduling)
+- **ConcurrencyGroup** — optional step group used by the scheduler for per-group admission limits
 
 ### Scheduler (`scheduler.go`)
 
 Event-driven bounded worker pool:
 
 - **Concurrency** — `MaxConcurrency=0` (default) caps workers at `min(stepCount, GOMAXPROCS×2)`.
-  Explicit positive values override this (values larger than `min(stepCount, GOMAXPROCS×2)`
-  have no effect; the worker count never exceeds the natural cap).
+  An explicit positive value changes the cap to `min(stepCount, MaxConcurrency)`,
+  so it can either raise or lower the default worker count.
+- **Concurrency groups** — `GroupConcurrency` limits active steps in each named
+  `Step.ConcurrencyGroup` beneath the global `MaxConcurrency` ceiling. The coordinator
+  admits ready groups in work-conserving round-robin order. Group limits do not reserve
+  capacity, and workers never wait for group capacity.
 - **Error policies** — `FailFast` cancels all on first error; `ContinueOnError` runs remaining independent steps
 - **Per-step timeout** — uniform `RunOptions.StepTimeout` wraps every step's context with
   `context.WithTimeout`. Zero (the default) means no deadline. A step that exceeds the
@@ -159,7 +165,8 @@ In-memory `sync.Map` cache keyed by SHA-256 of the full Bicep file tree:
    validation-cancel / JSON state dump / OpenAI-access / Responsible-AI wrappers are
    applied exactly once
 6. `FailFast` error policy
-7. Concurrency limit configurable via `AZD_PROVISION_CONCURRENCY` env var
+7. Hard concurrency limit configurable via `AZD_CONCURRENCY_MAX`, falling back to
+   `AZD_PROVISION_CONCURRENCY`; provision steps use the `provision` group
 8. Wraps console output in `syncConsole` (mutex-wrapped message/spinner methods)
 
 ### Graph-Driven Deploy (`deploy.go`)
@@ -170,20 +177,42 @@ Activates unconditionally. Per service, creates three steps:
 2. **`publish-<svc>`** — depends on `package-<svc>`; runs `serviceManager.Publish` with
    `deployTimeout` context deadline (resolves target resource via Azure API calls that can
    block due to eventual consistency after provisioning)
-3. **`deploy-<svc>`** — depends on `publish-<svc>`; runs `serviceManager.Deploy` with
-   `deployTimeout` context deadline
+3. **`deploy-<svc>`** — depends on `publish-<svc>` and declared service-level
+   `uses:` edges; when the graph has no such edge and no deploy build-gate
+   policy applies, deploy nodes also chain in the service order supplied to the
+   graph as a backward-compatible sequential fallback. Runs
+   `serviceManager.Deploy` with a `deployTimeout` context deadline
 
-**Build gate (soft serialization)**: `serviceGraphOptions.buildGateKey` is an
-optional callback that returns an opaque string grouping for each service.
-Services sharing a non-empty key serialize on a "first wins, rest wait" basis
-— the first service in the group runs free, every later service in the same
-group depends on that first deploy step. Services returning `""` (or when the
-callback is nil) run in full parallelism. The graph builder is agnostic to
-the policy; today both `azd deploy` and `azd up` supply the
-`aspireBuildGateKey` callback (returns `"aspire"` for services with
-`DotNetContainerApp != nil`) to serialize the shared .NET AppHost build.
-Independent groups can coexist — keys are only compared within the set, never
-across.
+Package steps use the `package` concurrency group. Publish and deploy steps share the
+`deploy` group so their combined active count cannot exceed `AZD_DEPLOY_CONCURRENCY`.
+`AZD_CONCURRENCY_MAX` is the hard limit for all active graph steps, falling back to
+`AZD_DEPLOY_CONCURRENCY` when unset.
+
+**Build isolation coordination**:
+`serviceGraphOptions.packagePublishBuildGateKey` is an optional callback for
+standard .NET package and publish operations. Before execution, the graph
+creates one mutex per opaque key and injects the same pointer into matching
+package and publish contexts. This runtime coordination does not add graph
+edges.
+
+The standard policy returns `"dotnet"` for every non-Aspire service whose
+configured language is .NET. Its isolation helper is consumed by standard
+.NET package operations, including Functions and App Service, and by .NET
+container publishing when no Dockerfile is present. Generic restore/build and
+explicit Dockerfile paths are unchanged. When the gate is present and the SDK
+is 8.0.100 or later, each local `dotnet publish` receives a unique temporary
+`--artifacts-path`. SDK 6/7, failed capability probes, and temporary-directory
+failures acquire the standard .NET mutex around `dotnet publish` instead. The
+gate activates only when at least two services receive the key and scheduler
+concurrency is not `1`. It is disabled for `azd deploy --from-package` and
+does not alter deploy ordering.
+
+The existing `serviceGraphOptions.buildGateKey` deploy policy remains
+independent. Aspire services continue to use their existing `"aspire"` gate
+and target-specific image-preparation behavior. The importer currently rejects
+an Aspire AppHost alongside another explicitly configured service, and all
+services imported from its manifest are Aspire-managed; therefore, these gate
+populations do not coexist in a normal project graph.
 
 Progress displayed via `deployProgressTracker` — interactive mode rewrites lines with ANSI;
 non-interactive mode prints one line per event. `RenderFinal` is a no-op in non-interactive
@@ -216,12 +245,19 @@ Deploy chain:
   `postpackage`-before-`predeploy` ordering is preserved)
 - `publish-<svc>` depends on `package-<svc>` + `event-predeploy` (and therefore
   transitively on all provisioning via the cmdhook-predeploy gate)
-- `deploy-<svc>` depends on `publish-<svc>` (plus any edge added by
-  `serviceGraphOptions.buildGateKey` — today that's the Aspire build-gate for
-  `DotNetContainerApp` services)
+- `deploy-<svc>` depends on `publish-<svc>` and any declared service `uses:`
+  edges. When no service declares a service-level `uses:` edge and no deploy
+  build-gate policy applies, deploy nodes also chain in the service order
+  supplied to the graph as a backward-compatible sequential fallback. Build
+  isolation is carried in the step context and adds no graph edge.
 - `event-postdeploy` — fires `project.EventDeploy` After listeners (depends on
   all `deploy-<svc>` nodes)
 - `cmdhook-postdeploy` (depends on event-postdeploy)
+
+Provision, package, and combined publish/deploy steps use the `provision`, `package`,
+and `deploy` concurrency groups. The groups can overlap and share idle global capacity.
+`AZD_CONCURRENCY_MAX` is the hard limit across the unified graph, falling back to
+`AZD_UP_CONCURRENCY` and then to `AZD_DEPLOY_CONCURRENCY` when unset.
 
 Deploy timeout honors `--timeout` / `AZD_DEPLOY_TIMEOUT` via the shared
 `resolveDeployTimeout` helper.
@@ -254,6 +290,9 @@ OTel events and attributes added:
 | `exegraph.step` | Child span per step |
 | `exegraph.step.count` | Number of steps in graph |
 | `exegraph.max_concurrency` | Effective worker count |
+| `exegraph.package_concurrency` | Resolved package phase concurrency limit |
+| `exegraph.provision_concurrency` | Resolved provision phase concurrency limit |
+| `exegraph.deploy_concurrency` | Resolved deploy phase concurrency limit |
 | `exegraph.error_policy` | `FailFast` or `ContinueOnError` |
 | `exegraph.step.name` | Step name |
 | `exegraph.step.deps` | Step dependency list |
@@ -265,7 +304,8 @@ OTel events and attributes added:
 | Test file | Tests | Coverage |
 |-----------|-------|----------|
 | `pkg/exegraph/graph_test.go` | 15 | Mutation rules, ordering, cycles, priority, tags |
-| `pkg/exegraph/scheduler_test.go` | 33 | Execution semantics, cancellation, skip propagation, concurrency bounds, panic recovery, goroutine cleanup, timing, per-step timeout |
+| `pkg/exegraph/scheduler_test.go` | 50 | Execution semantics, cancellation, skip propagation, global and group concurrency bounds, group fairness, deterministic ordering, panic recovery, goroutine cleanup, timing, per-step timeout |
+| `internal/cmd/concurrency_test.go` | 4 | Environment parsing, phase fallback precedence, global ceiling precedence |
 | `pkg/infra/provisioning/bicep/layer_deps_test.go` | 12 | Temp file fixtures, cycles, env-skip, missing refs |
 | `internal/cmd/provision_graph_test.go` | 7 | Graph build, execution ordering, `dependsOn` edge ordering, env merge (preserves subprocess writes + concurrent merges converge), reload (refreshes `deps.env` from disk for downstream-layer clones) |
 | `internal/cmd/provision_security_test.go` | 2 | Env serialization, clone isolation |
@@ -273,21 +313,24 @@ OTel events and attributes added:
 | `internal/cmd/deploy_progress_test.go` | 13 | Interactive/non-interactive rendering, truncation, final render |
 | `pkg/tools/bicep/bicep_cache_test.go` | 6 | Cache hit/miss, hash stability, module resolution |
 
-**48 exegraph engine tests** (15 graph + 33 scheduler). Additional integration tests across
+**65 exegraph engine tests** (15 graph + 50 scheduler). Additional integration tests across
 provisioning, deployment, and thread-safety modules (see individual package `*_test.go` files).
 
 ## Environment Variables
 
 | Variable | Scope | Default | Effect |
 |----------|-------|---------|--------|
-| `AZD_PROVISION_CONCURRENCY` | `azd provision` (multi-layer) | `0` (unlimited, capped at `min(layerCount, GOMAXPROCS×2)`) | Overrides the scheduler's worker count for layer provisioning. Values `> 64` are clamped to `64`. Non-positive or non-integer values fall back to default. |
-| `AZD_DEPLOY_CONCURRENCY` | `azd deploy` | `0` (unlimited, capped at `min(stepCount, GOMAXPROCS×2)`) | Overrides the scheduler's worker count for package/publish/deploy steps. Values `> 64` are clamped to `64`. Non-positive or non-integer values fall back to default. |
-| `AZD_UP_CONCURRENCY` | `azd up` (unified DAG) | `0` (unlimited, capped at `min(stepCount, GOMAXPROCS×2)`) | Overrides the scheduler's worker count for the unified up DAG. Values `> 64` are clamped to `64`. Non-positive or non-integer values fall back to default. |
+| `AZD_CONCURRENCY_MAX` | `azd up`, `azd deploy`, `azd provision` | Command-specific limit, then scheduler default | Hard maximum across all active graph steps. |
+| `AZD_PACKAGE_CONCURRENCY` | Package group in `azd up` and `azd deploy` | `AZD_UP_CONCURRENCY` or `AZD_DEPLOY_CONCURRENCY` | Limits active package steps. Standalone `azd package` remains sequential. |
+| `AZD_PROVISION_CONCURRENCY` | Provision group in `azd up` and `azd provision` | `AZD_UP_CONCURRENCY` during `azd up`; unlimited group during `azd provision` | Limits active infrastructure layer steps. It is also the `azd provision` hard-limit fallback. |
+| `AZD_DEPLOY_CONCURRENCY` | Shared publish/deploy group in `azd up` and `azd deploy` | `AZD_UP_CONCURRENCY` during `azd up`; unlimited group during `azd deploy` | Limits the combined active publish and deploy steps. It is also the package and hard-limit fallback during `azd deploy`, and the last hard-limit fallback during `azd up`. |
+| `AZD_UP_CONCURRENCY` | `azd up` | Scheduler default | Per-group fallback and hard-limit fallback for the unified graph. |
 | `AZD_DEPLOY_TIMEOUT` | `azd deploy` / `azd up` | `1200` (20 minutes) | Per-service deploy timeout in whole seconds. Precedence: `--timeout` CLI flag first, then `AZD_DEPLOY_TIMEOUT`, then the default. Invalid or non-positive values cause an immediate error. |
 
-No new environment variables are introduced at the graph engine layer — `pkg/exegraph` is
-configuration-neutral. All three concurrency knobs live in the command layer and map to
-the scheduler's `RunOptions.MaxConcurrency` field.
+Concurrency values are positive integers clamped to `64`. An explicitly set invalid or
+non-positive value disables that limit and blocks fallback; only an unset variable falls
+back. The graph engine remains configuration-neutral. Command-layer values map to
+`RunOptions.MaxConcurrency` and `RunOptions.GroupConcurrency`.
 
 ## Known Limitations
 
@@ -303,6 +346,12 @@ the scheduler's `RunOptions.MaxConcurrency` field.
    and the synthetic `cmdhook-*` node integration. Projects using only project
    command hooks (no custom workflow) take the unified DAG path with `cmdhook-*`
    nodes.
+
+3. **Custom .NET output paths** — Projects that explicitly override the
+   MSBuild `BaseOutputPath` or `BaseIntermediateOutputPath` properties may
+   bypass the SDK's `--artifacts-path` isolation. Use
+   `AZD_DEPLOY_CONCURRENCY=1` for `azd deploy` or `AZD_UP_CONCURRENCY=1` for
+   `azd up` when such projects share build outputs.
 
 ## Semantic Differences from the Legacy Sequential Path
 
@@ -409,17 +458,13 @@ Things a reader of the code should know before editing:
    override. The merge / reload helpers are extracted as
    `mergeLayerOutputsLocked` / `reloadSharedEnvLocked` and tested directly.
 
-9. **Build gate is policy-driven, not Aspire-specific.** The DAG builder
-   (`service_graph.go`) is ecosystem-agnostic: it consumes an opaque-string
-   `buildGateKey` callback on `serviceGraphOptions`. Services returning the
-   same non-empty key serialize on the first one — "first wins, rest wait" —
-   and services returning `""` run in full parallelism. Today the only gate
-   in use is `aspireBuildGateKey` (in `cli/azd/internal/cmd/aspire_gate.go`),
-   which returns `"aspire"` for services whose `DotNetContainerApp` options
-   are populated by the Aspire importer. That gate exists because the .NET
-   AppHost build is shared state, not because deploy itself can't
-   parallelize. When Aspire moves into an extension, only that helper — not
-   the DAG builder — has to move with it.
+9. **Build isolation is policy-driven.** The DAG builder (`service_graph.go`)
+   is ecosystem-agnostic. Standard .NET package/publish operations use
+   `packagePublishBuildGateKey` and an independent mutex map. SDK 8.0.100 or
+   later uses a unique `--artifacts-path`; older SDKs or setup failures lock
+   around `dotnet publish`. This policy never changes deploy topology. The
+   existing `buildGateKey` deploy policy remains separate and continues to
+   carry Aspire-specific behavior through `aspireBuildGateKey`.
 
 10. **`deploy_progress.go` renders differently in interactive vs CI.**
     Interactive mode rewrites terminal lines with ANSI escapes;

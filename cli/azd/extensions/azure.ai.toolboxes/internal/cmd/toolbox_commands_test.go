@@ -64,6 +64,7 @@ func TestRunToolboxDeleteWith_Branches(t *testing.T) {
 	})
 
 	t.Run("version_is_only_remaining_with_force_proceeds", func(t *testing.T) {
+		calls := stubToolboxEndpointEnv(t)
 		client := newMockToolboxClient("https://e/")
 		client.getResults["tb"] = toolboxGetResult{obj: &azure.ToolboxObject{
 			Name: "tb", DefaultVersion: "1",
@@ -79,6 +80,7 @@ func TestRunToolboxDeleteWith_Branches(t *testing.T) {
 		require.Len(t, client.deleteVersionCalls, 1)
 		assert.Equal(t, "tb", client.deleteVersionCalls[0].name)
 		assert.Equal(t, "1", client.deleteVersionCalls[0].version)
+		require.Equal(t, []toolboxEnvCall{{name: "tb", value: "", projectScope: "https://e/"}}, *calls)
 	})
 
 	t.Run("non_default_version_with_force_proceeds", func(t *testing.T) {
@@ -431,6 +433,8 @@ func TestRunToolboxCreateWith_FromFileCreatesInitialVersion(t *testing.T) {
 	inputPath := t.TempDir() + "/create.yaml"
 	err := os.WriteFile(inputPath, []byte(`
 description: toolbox from file
+metadata:
+  owner: support
 connections:
   - name: mcp
 `), 0o600)
@@ -443,6 +447,7 @@ connections:
 	require.NoError(t, err)
 	require.Len(t, client.createVersionCalls, 1)
 	assert.Equal(t, "toolbox from file", client.createVersionCalls[0].req.Description)
+	assert.Equal(t, map[string]string{"owner": "support"}, client.createVersionCalls[0].req.Metadata)
 	assert.Len(t, client.createVersionCalls[0].req.Tools, 1)
 
 	// The versioned MCP endpoint is written to the active azd environment.

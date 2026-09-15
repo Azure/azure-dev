@@ -18,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
@@ -707,17 +706,6 @@ func (p *AzdoCiProvider) preConfigureCheck(
 	infraOptions provisioning.Options,
 	projectPath string,
 ) (bool, error) {
-	authType := PipelineAuthType(pipelineManagerArgs.PipelineAuthTypeName)
-
-	if authType == AuthTypeFederated {
-		return false, fmt.Errorf(
-			//nolint:lll
-			"Azure DevOps does not support federated authentication. To explicitly use client credentials set the %s flag. %w",
-			output.WithBackticks("--auth-type client-credentials"),
-			ErrAuthNotSupported,
-		)
-	}
-
 	_, updatedPat, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
 	if err != nil {
 		return updatedPat, err

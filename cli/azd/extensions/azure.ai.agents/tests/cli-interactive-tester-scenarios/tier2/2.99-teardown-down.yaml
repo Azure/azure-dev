@@ -1,0 +1,17 @@
+# Tier 2 (cloud E2E) — TEARDOWN: destroy all resources created by the setup scenario.
+#
+# ⚠️ Run this LAST, after all targeted 2.01-2.18 scenarios are done. Cleans up the
+# shared agent and its Azure resources to stop incurring cost.
+name: "teardown-down"
+command: "azd down --force --purge"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:down", "serial-only"]
+
+goals:
+  - "Run 'azd down --force --purge' in the shared project directory."
+  - "A 'Select a tenant' prompt may not appear when the signed-in user has access to only one tenant. If it appears, select the tenant provided with this scenario run. If no tenant was provided, report a failure and do not answer the prompt."
+  - "Wait for the full teardown to complete — all resources (Foundry account/project, model deployment, container resources) should be deleted and purged."
+  - "Confirm the command reports success and no resources are left behind."
+  - "Take a screenshot of the completed teardown."
+  - "Only after teardown succeeds, run `cd ~/working/azd-agents-shared && rm -rf -- \"{shared_agent_name}\" && test ! -e \"{shared_agent_name}\"` to remove and verify removal of this run's local project directory. Do not remove the directory if teardown fails; its state is required for recovery. Other run directories must remain intact."
+  - "Report a finding if teardown fails, leaves orphaned resources, hangs, or if the successful teardown's local directory cleanup fails."

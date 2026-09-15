@@ -9,14 +9,15 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	copilot "github.com/github/copilot-sdk/go"
+	"github.com/github/copilot-sdk/go/rpc"
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
@@ -37,6 +38,7 @@ import (
 type CopilotAgent struct {
 	// Dependencies
 	clientManager        *agentcopilot.CopilotClientManager
+	listModels           func(context.Context) ([]copilot.ModelInfo, error)
 	sessionConfigBuilder *agentcopilot.SessionConfigBuilder
 	cli                  *agentcopilot.CopilotCLI
 	consentManager       consent.ConsentManager
@@ -74,6 +76,11 @@ type cleanupTask struct {
 	fn   func() error
 }
 
+const (
+	selectAIModelMessage              = "Select AI model"
+	selectReasoningEffortLevelMessage = "Select reasoning effort level"
+)
+
 // Initialize handles first-run configuration (model/reasoning prompts), plugin install,
 // and Copilot client startup. If config already exists, returns current values without
 // prompting. Use WithForcePrompt() to always show prompts.
@@ -107,120 +114,7 @@ func (a *CopilotAgent) Initialize(ctx context.Context, opts ...InitOption) (resu
 		return nil, err
 	}
 
-	// Load current config
-	azdConfig, err := a.configManager.Load()
-	if err != nil {
-		return nil, err
-	}
-
-	existingModel, hasModel := azdConfig.GetString(agentcopilot.ConfigKeyModel)
-	existingEffort, hasEffort := azdConfig.GetString(agentcopilot.ConfigKeyReasoningEffort)
-
-	// Apply overrides
-	if a.modelOverride != "" {
-		existingModel = a.modelOverride
-		hasModel = true
-	}
-	if a.reasoningEffortOverride != "" {
-		existingEffort = a.reasoningEffortOverride
-		hasEffort = true
-	}
-
-	// If already configured and not forcing, return current config
-	if (hasModel || hasEffort) && !options.forcePrompt {
-		return &InitResult{
-			Model:           existingModel,
-			ReasoningEffort: existingEffort,
-			IsFirstRun:      false,
-		}, nil
-	}
-
-	// Prompt for reasoning effort
-	effortChoices := []*uxlib.SelectChoice{
-		{Value: "low", Label: "Low — fastest, lowest cost"},
-		{Value: "medium", Label: "Medium — balanced (recommended)"},
-		{Value: "high", Label: "High — more thorough, higher cost and premium requests"},
-	}
-
-	effortSelector := uxlib.NewSelect(&uxlib.SelectOptions{
-		Message:         "Select reasoning effort level",
-		HelpMessage:     "Higher reasoning uses more premium requests and may cost more. You can change this later.",
-		Choices:         effortChoices,
-		SelectedIndex:   new(1),
-		DisplayNumbers:  new(true),
-		EnableFiltering: new(false),
-		DisplayCount:    3,
-	})
-
-	effortIdx, err := effortSelector.Ask(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if effortIdx == nil {
-		return nil, fmt.Errorf("reasoning effort selection cancelled")
-	}
-	selectedEffort := effortChoices[*effortIdx].Value
-
-	// Prompt for model selection — fetch available models dynamically
-	modelChoices := []*uxlib.SelectChoice{
-		{Value: "", Label: "Default model (recommended)"},
-	}
-
-	// Client already started — list models
-	models, modelsErr := a.clientManager.ListModels(ctx)
-	if modelsErr == nil {
-		for _, m := range models {
-			label := m.Name
-			if m.DefaultReasoningEffort != "" {
-				label += fmt.Sprintf(" (%s)", m.DefaultReasoningEffort)
-			}
-			if m.Billing != nil {
-				label += fmt.Sprintf(" (%.0fx)", m.Billing.Multiplier)
-			}
-			modelChoices = append(modelChoices, &uxlib.SelectChoice{
-				Value: m.ID,
-				Label: label,
-			})
-		}
-	}
-
-	modelSelector := uxlib.NewSelect(&uxlib.SelectOptions{
-		Message:         "Select AI model",
-		HelpMessage:     "Premium models may use more requests. You can change this later.",
-		Choices:         modelChoices,
-		SelectedIndex:   new(0),
-		DisplayNumbers:  new(true),
-		EnableFiltering: new(true),
-		DisplayCount:    min(len(modelChoices), 10),
-	})
-
-	modelIdx, err := modelSelector.Ask(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if modelIdx == nil {
-		return nil, fmt.Errorf("model selection cancelled")
-	}
-	selectedModel := modelChoices[*modelIdx].Value
-
-	// Save to config
-	if err := azdConfig.Set(agentcopilot.ConfigKeyReasoningEffort, selectedEffort); err != nil {
-		return nil, fmt.Errorf("failed to save reasoning effort: %w", err)
-	}
-	if selectedModel != "" {
-		if err := azdConfig.Set(agentcopilot.ConfigKeyModel, selectedModel); err != nil {
-			return nil, fmt.Errorf("failed to save model: %w", err)
-		}
-	}
-	if err := a.configManager.Save(azdConfig); err != nil {
-		return nil, fmt.Errorf("failed to save config: %w", err)
-	}
-
-	return &InitResult{
-		Model:           selectedModel,
-		ReasoningEffort: selectedEffort,
-		IsFirstRun:      true,
-	}, nil
+	return a.promptModelAndReasoning(ctx, options)
 }
 
 // SelectSession shows a UX picker with previous sessions for the current directory.
@@ -239,7 +133,7 @@ func (a *CopilotAgent) SelectSession(ctx context.Context) (*SessionMetadata, err
 	})
 
 	for _, s := range sessions {
-		timeStr := FormatSessionTime(s.ModifiedTime)
+		timeStr := FormatSessionTime(s.ModifiedTime.Format(time.RFC3339))
 		summary := ""
 		if s.Summary != nil && *s.Summary != "" {
 			summary = strings.Join(strings.Fields(*s.Summary), " ")
@@ -288,7 +182,7 @@ func (a *CopilotAgent) ListSessions(ctx context.Context, cwd string) ([]SessionM
 	}
 
 	return a.clientManager.Client().ListSessions(ctx, &copilot.SessionListFilter{
-		Cwd: cwd,
+		WorkingDirectory: cwd,
 	})
 }
 
@@ -468,7 +362,7 @@ func (a *CopilotAgent) GetMessages(ctx context.Context) ([]SessionEvent, error) 
 		return nil, fmt.Errorf("no active session")
 	}
 
-	return a.session.GetMessages(ctx)
+	return a.session.GetEvents(ctx)
 }
 
 // collectFileChanges stops the watcher, collects its changes, and appends them
@@ -712,19 +606,19 @@ func (a *CopilotAgent) ensureSession(ctx context.Context, resumeSessionID string
 // through the consent manager for unified access control.
 func (a *CopilotAgent) createPermissionHandler() copilot.PermissionHandlerFunc {
 	return func(req copilot.PermissionRequest, inv copilot.PermissionInvocation) (
-		copilot.PermissionRequestResult, error,
+		rpc.PermissionDecision, error,
 	) {
 		// In headless mode, auto-approve all permission requests
 		if a.headless {
-			log.Printf("[copilot] PermissionRequest (headless auto-approve): kind=%s", req.Kind)
+			log.Printf("[copilot] PermissionRequest (headless auto-approve): kind=%s", req.Kind())
 			a.consentApprovedCount++
-			return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindApproved}, nil
+			return &rpc.PermissionDecisionApproveOnce{}, nil
 		}
 
 		server, tool, readOnly := permissionToConsentTarget(req)
 		toolID := fmt.Sprintf("%s/%s", server, tool)
 
-		log.Printf("[copilot] PermissionRequest: kind=%s target=%s", req.Kind, toolID)
+		log.Printf("[copilot] PermissionRequest: kind=%s target=%s", req.Kind(), toolID)
 
 		consentReq := consent.ConsentRequest{
 			ToolID:     toolID,
@@ -739,12 +633,12 @@ func (a *CopilotAgent) createPermissionHandler() copilot.PermissionHandlerFunc {
 		if err != nil {
 			log.Printf("[copilot] Consent check error for %s: %v, denying", toolID, err)
 			a.consentDeniedCount++
-			return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindUserNotAvailable}, nil
+			return &rpc.PermissionDecisionUserNotAvailable{}, nil
 		}
 
 		if decision.Allowed {
 			a.consentApprovedCount++
-			return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindApproved}, nil
+			return &rpc.PermissionDecisionApproveOnce{}, nil
 		}
 
 		if decision.RequiresPrompt {
@@ -767,40 +661,51 @@ func (a *CopilotAgent) createPermissionHandler() copilot.PermissionHandlerFunc {
 				if errors.Is(promptErr, consent.ErrToolExecutionSkipped) {
 					// Skip — deny this tool but let the agent continue
 					a.consentDeniedCount++
-					return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindRejected}, nil
+					return &rpc.PermissionDecisionReject{}, nil
 				}
 				if errors.Is(promptErr, consent.ErrToolExecutionDenied) {
 					// Deny — block and exit the interaction
 					a.consentDeniedCount++
-					return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindRejected}, nil
+					return &rpc.PermissionDecisionReject{}, nil
 				}
 				log.Printf("[copilot] Consent grant error for %s: %v", toolID, promptErr)
 				a.consentDeniedCount++
-				return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindUserNotAvailable}, nil
+				return &rpc.PermissionDecisionUserNotAvailable{}, nil
 			}
 			a.consentApprovedCount++
-			return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindApproved}, nil
+			return &rpc.PermissionDecisionApproveOnce{ApprovedInteractively: new(true)}, nil
 		}
 
 		a.consentDeniedCount++
-		return copilot.PermissionRequestResult{Kind: copilot.PermissionRequestResultKindRejected}, nil
+		return &rpc.PermissionDecisionReject{}, nil
 	}
 }
 
 // permissionToConsentTarget maps a PermissionRequest to consent server/tool/readOnly.
 func permissionToConsentTarget(req copilot.PermissionRequest) (server, tool string, readOnly bool) {
-	switch req.Kind {
-	case copilot.PermissionRequestKindMcp:
+	switch request := req.(type) {
+	case *copilot.PermissionRequestMCP:
 		server = "copilot"
-		if req.ServerName != nil {
-			server = *req.ServerName
+		if request.ServerName != "" {
+			server = request.ServerName
 		}
 		tool = "unknown"
-		if req.ToolName != nil {
-			tool = *req.ToolName
+		if request.ToolName != "" {
+			tool = request.ToolName
 		}
-		readOnly = req.ReadOnly != nil && *req.ReadOnly
+		readOnly = request.ReadOnly
+		return server, tool, readOnly
 
+	case *copilot.PermissionRequestCustomTool:
+		server = "copilot"
+		tool = request.ToolName
+		if tool == "" {
+			tool = "custom-tool"
+		}
+		return server, tool, false
+	}
+
+	switch req.Kind() {
 	case copilot.PermissionRequestKindShell:
 		server = "copilot"
 		tool = "shell"
@@ -826,17 +731,9 @@ func permissionToConsentTarget(req copilot.PermissionRequest) (server, tool stri
 		tool = "memory"
 		readOnly = false
 
-	case copilot.PermissionRequestKindCustomTool:
-		server = "copilot"
-		tool = "custom-tool"
-		if req.ToolName != nil {
-			tool = *req.ToolName
-		}
-		readOnly = false
-
 	default:
 		server = "copilot"
-		tool = string(req.Kind)
+		tool = string(req.Kind())
 		readOnly = false
 	}
 
@@ -848,45 +745,50 @@ func permissionToConsentTarget(req copilot.PermissionRequest) (server, tool stri
 func buildPermissionDescription(req copilot.PermissionRequest) string {
 	var parts []string
 
-	// Tool title/description
-	if req.ToolTitle != nil && *req.ToolTitle != "" {
-		parts = append(parts, *req.ToolTitle)
-	} else if req.ToolDescription != nil && *req.ToolDescription != "" {
-		parts = append(parts, *req.ToolDescription)
-	}
-
-	// Intention — what the agent wants to do
-	if req.Intention != nil && *req.Intention != "" {
-		parts = append(parts, fmt.Sprintf("Intent: %s", *req.Intention))
-	}
-
-	// Context-specific details
-	switch req.Kind {
-	case copilot.PermissionRequestKindShell:
-		if req.FullCommandText != nil && *req.FullCommandText != "" {
-			parts = append(parts, fmt.Sprintf("Command: %s", *req.FullCommandText))
+	switch request := req.(type) {
+	case *copilot.PermissionRequestMCP:
+		if request.ToolTitle != "" {
+			parts = append(parts, request.ToolTitle)
 		}
-	case copilot.PermissionRequestKindWrite:
-		if req.FileName != nil && *req.FileName != "" {
-			parts = append(parts, fmt.Sprintf("File: %s", *req.FileName))
+	case *copilot.PermissionRequestCustomTool:
+		if request.ToolDescription != "" {
+			parts = append(parts, request.ToolDescription)
 		}
-	case copilot.PermissionRequestKindRead:
-		if req.Path != nil && *req.Path != "" {
-			parts = append(parts, fmt.Sprintf("Path: %s", *req.Path))
+	case *copilot.PermissionRequestShell:
+		if request.Intention != "" {
+			parts = append(parts, fmt.Sprintf("Intent: %s", request.Intention))
 		}
-	case copilot.PermissionRequestKindURL:
-		if req.URL != nil && *req.URL != "" {
-			parts = append(parts, fmt.Sprintf("URL: %s", *req.URL))
+		if request.FullCommandText != "" {
+			parts = append(parts, fmt.Sprintf("Command: %s", request.FullCommandText))
 		}
-	case copilot.PermissionRequestKindMemory:
-		if req.Subject != nil && *req.Subject != "" {
-			parts = append(parts, fmt.Sprintf("Subject: %s", *req.Subject))
+		if request.Warning != nil && *request.Warning != "" {
+			parts = append(parts, fmt.Sprintf("⚠ %s", *request.Warning))
 		}
-	}
-
-	// Warning from the SDK
-	if req.Warning != nil && *req.Warning != "" {
-		parts = append(parts, fmt.Sprintf("⚠ %s", *req.Warning))
+	case *copilot.PermissionRequestWrite:
+		if request.Intention != "" {
+			parts = append(parts, fmt.Sprintf("Intent: %s", request.Intention))
+		}
+		if request.FileName != "" {
+			parts = append(parts, fmt.Sprintf("File: %s", request.FileName))
+		}
+	case *copilot.PermissionRequestRead:
+		if request.Intention != "" {
+			parts = append(parts, fmt.Sprintf("Intent: %s", request.Intention))
+		}
+		if request.Path != "" {
+			parts = append(parts, fmt.Sprintf("Path: %s", request.Path))
+		}
+	case *copilot.PermissionRequestURL:
+		if request.Intention != "" {
+			parts = append(parts, fmt.Sprintf("Intent: %s", request.Intention))
+		}
+		if request.URL != "" {
+			parts = append(parts, fmt.Sprintf("URL: %s", request.URL))
+		}
+	case *copilot.PermissionRequestMemory:
+		if request.Subject != nil && *request.Subject != "" {
+			parts = append(parts, fmt.Sprintf("Subject: %s", *request.Subject))
+		}
 	}
 
 	if len(parts) == 0 {
@@ -898,43 +800,42 @@ func buildPermissionDescription(req copilot.PermissionRequest) string {
 
 // permissionDisplayName returns a user-friendly display name for the consent prompt.
 func permissionDisplayName(req copilot.PermissionRequest) string {
-	switch req.Kind {
-	case copilot.PermissionRequestKindShell:
-		if req.FullCommandText != nil && *req.FullCommandText != "" {
-			cmd := *req.FullCommandText
+	switch request := req.(type) {
+	case *copilot.PermissionRequestShell:
+		if request.FullCommandText != "" {
+			cmd := request.FullCommandText
 			if len(cmd) > 80 {
 				cmd = cmd[:77] + "..."
 			}
 			return fmt.Sprintf("shell command: %s", cmd)
 		}
 		return "shell command"
-	case copilot.PermissionRequestKindWrite:
-		if req.FileName != nil && *req.FileName != "" {
-			return fmt.Sprintf("write to %s", relativePath(*req.FileName))
+	case *copilot.PermissionRequestWrite:
+		if request.FileName != "" {
+			return fmt.Sprintf("write to %s", relativePath(request.FileName))
 		}
 		return "file write"
-	case copilot.PermissionRequestKindRead:
-		if req.Path != nil && *req.Path != "" {
-			return fmt.Sprintf("read %s", relativePath(*req.Path))
+	case *copilot.PermissionRequestRead:
+		if request.Path != "" {
+			return fmt.Sprintf("read %s", relativePath(request.Path))
 		}
 		return "file read"
-	case copilot.PermissionRequestKindURL:
-		if req.URL != nil && *req.URL != "" {
-			u := *req.URL
+	case *copilot.PermissionRequestURL:
+		if request.URL != "" {
+			u := request.URL
 			if len(u) > 60 {
 				u = u[:57] + "..."
 			}
 			return fmt.Sprintf("fetch %s", u)
 		}
 		return "URL access"
-	case copilot.PermissionRequestKindMcp:
-		name := "tool"
-		if req.ToolName != nil {
-			name = *req.ToolName
+	case *copilot.PermissionRequestMCP:
+		if request.ToolName != "" {
+			return request.ToolName
 		}
-		return name
+		return "tool"
 	default:
-		return string(req.Kind)
+		return string(req.Kind())
 	}
 }
 
@@ -1133,15 +1034,6 @@ func (a *CopilotAgent) ensurePlugins(ctx context.Context) {
 		return
 	}
 
-	// Plugin management requires "copilot" CLI in PATH (the npm-installed version).
-	if _, err := exec.LookPath("copilot"); err != nil {
-		log.Printf("[copilot] 'copilot' CLI not found in PATH — skipping plugin management")
-		a.console.Message(ctx, output.WithWarningFormat(
-			"The GitHub Copilot CLI is not installed. Some features may be limited.\n"+
-				"Install it with: npm install -g @github/copilot"))
-		return
-	}
-
 	installed, err := a.cli.ListPlugins(ctx)
 	if err != nil {
 		log.Printf("[copilot] Failed to list plugins: %v", err)
@@ -1200,6 +1092,172 @@ func (a *CopilotAgent) promptPluginInstall(ctx context.Context, plugin pluginSpe
 	}
 
 	return *result, nil
+}
+
+func (a *CopilotAgent) promptModelAndReasoning(ctx context.Context, options *initOptions) (*InitResult, error) {
+	azdConfig, err := a.configManager.Load()
+	if err != nil {
+		return nil, err
+	}
+
+	existingModel, hasModel := azdConfig.GetString(agentcopilot.ConfigKeyModel)
+	existingEffort, hasEffort := azdConfig.GetString(agentcopilot.ConfigKeyReasoningEffort)
+
+	// Apply overrides
+	if a.modelOverride != "" {
+		existingModel = a.modelOverride
+		hasModel = true
+	}
+
+	if a.reasoningEffortOverride != "" {
+		existingEffort = a.reasoningEffortOverride
+		hasEffort = true
+	}
+
+	// If already configured and not forcing, return current config
+	if (hasModel || hasEffort) && !options.forcePrompt {
+		return &InitResult{
+			Model:           existingModel,
+			ReasoningEffort: existingEffort,
+			IsFirstRun:      false,
+		}, nil
+	}
+
+	selectedModel, err := a.promptModel(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to select a model: %w", err)
+	}
+
+	modelID := ""
+	reasoningEffort := ""
+
+	if selectedModel != nil {
+		modelID = selectedModel.ID
+	} else {
+		// the user choosing "use default" (which is why selectedModel == nil) _is_ a choice, and
+		// we should reflect that by storing the empty model so we'll pass an empty model when creating
+		// the copilot session.
+		modelID = ""
+	}
+
+	if err := azdConfig.Set(agentcopilot.ConfigKeyModel, modelID); err != nil {
+		return nil, fmt.Errorf("failed to save model: %w", err)
+	}
+
+	if selectedModel != nil {
+		reasoningEffort, err = a.promptReasoningEffort(ctx, *selectedModel)
+		if err != nil {
+			return nil, fmt.Errorf("failed to select a reasoning effort: %w", err)
+		}
+
+	} else {
+		// ie, use the SDK/model default
+		reasoningEffort = ""
+	}
+
+	if err := azdConfig.Set(agentcopilot.ConfigKeyReasoningEffort, reasoningEffort); err != nil {
+		return nil, fmt.Errorf("failed to save reasoning effort: %w", err)
+	}
+
+	if err := a.configManager.Save(azdConfig); err != nil {
+		return nil, fmt.Errorf("failed to save config: %w", err)
+	}
+
+	return &InitResult{
+		Model:           modelID,
+		ReasoningEffort: reasoningEffort,
+		IsFirstRun:      true,
+	}, nil
+}
+
+// promptModel prompts the user to select a coding model, also allowing the user to choose a
+// default. If the default is chosen, the return is (nil, nil), and the caller should let the
+// copilot SDK just determine the model on its own.
+//
+// NOTE: if the user does not choose a model this implies that they also are not choosing a
+// reasoning level - we have no way of knowing what the valid choices would be.
+func (a *CopilotAgent) promptModel(ctx context.Context) (*copilot.ModelInfo, error) {
+	modelChoices := []string{"Default model (recommended)"}
+
+	// Client already started — list models
+	models, modelsErr := a.listModels(ctx)
+
+	slices.SortFunc(models, func(a, b copilot.ModelInfo) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+
+	if modelsErr == nil {
+		for _, m := range models {
+			label := m.Name
+
+			if m.Billing != nil && m.Billing.Multiplier != nil {
+				label += fmt.Sprintf(" (%.0fx)", *m.Billing.Multiplier)
+			}
+
+			modelChoices = append(modelChoices, label)
+		}
+	}
+
+	modelIdx, err := a.console.Select(ctx, input.ConsoleOptions{
+		Message:      selectAIModelMessage,
+		Help:         "Premium models may use more requests. You can change this later.",
+		Options:      modelChoices,
+		DefaultValue: modelChoices[0],
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if modelIdx == 0 {
+		// user chose the "default" model - we don't know anything about the model they've chosen
+		// (at the moment)
+		return nil, nil
+	}
+
+	return &models[modelIdx-1], nil
+}
+
+// promptReasoningEffort prompts the user to pick their model's reasoning effort. These are
+// direct from Copilot, which (sometimes) also includes a recommended reasoning effort, which we show
+// with a (recommended) suffix in the picker.
+//
+// NOTE: in some cases models do not support configuring the reasoning - we return ("", nil), and the caller
+// must handle that.
+func (a *CopilotAgent) promptReasoningEffort(ctx context.Context, selectedModel copilot.ModelInfo) (string, error) {
+	if len(selectedModel.SupportedReasoningEfforts) == 0 {
+		// some models, like mai-code-flash, do not support configuring reasoning
+		return "", nil
+	}
+
+	var effortChoices []string
+
+	// we'll default to whatever middle of the road reasoning effort there is
+	// if there isn't a specifically recommended default.
+	defaultIdx := len(selectedModel.SupportedReasoningEfforts) / 2
+
+	for i, m := range selectedModel.SupportedReasoningEfforts {
+		label := m
+
+		if selectedModel.DefaultReasoningEffort == m {
+			// this is the default
+			defaultIdx = i
+
+			label += " (recommended)"
+		}
+
+		effortChoices = append(effortChoices, label)
+	}
+
+	effortIdx, err := a.console.Select(ctx, input.ConsoleOptions{
+		Message:      selectReasoningEffortLevelMessage,
+		Help:         "Higher reasoning may cost more. You can change this later.",
+		Options:      effortChoices,
+		DefaultValue: effortChoices[defaultIdx],
+	})
+	if err != nil {
+		return "", err
+	}
+	return selectedModel.SupportedReasoningEfforts[effortIdx], nil
 }
 
 // FormatSessionTime formats a timestamp string into a human-friendly relative time display.

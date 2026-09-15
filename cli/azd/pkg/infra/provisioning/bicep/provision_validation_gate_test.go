@@ -112,7 +112,7 @@ func TestValidateProvisionArmPreflightGate(t *testing.T) {
 			target := &recordingDeployment{}
 			p := &BicepProvider{}
 
-			canceled, err := p.validateProvision(
+			_, canceled, err := p.validateProvision(
 				t.Context(),
 				target,
 				"",

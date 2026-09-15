@@ -32,7 +32,7 @@ extends:
           enabled: true
     settings:
       skipBuildTagsForGitHubPullRequests: true
-      networkIsolationPolicy: Permissive
+      networkIsolationPolicy: Permissive, CFSClean
     sdl:
       # Turn off the build warnings caused by disabling some sdl checks
       createAdoIssuesForJustificationsForDisablement: false

@@ -23,7 +23,8 @@ func TestSessionConfigBuilder_Build(t *testing.T) {
 		cfg, err := builder.Build(t.Context(), nil)
 		require.NoError(t, err)
 		require.NotNil(t, cfg)
-		require.True(t, cfg.Streaming)
+		require.NotNil(t, cfg.Streaming)
+		require.True(t, *cfg.Streaming)
 		require.Empty(t, cfg.Model)
 	})
 

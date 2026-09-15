@@ -34,15 +34,23 @@ func TestRegisterStreamAfterCleanupCancelsWithoutPanic(t *testing.T) {
 }
 
 func TestHandleMessageSafelyRecoversPanic(t *testing.T) {
+	uiReadyReported := false
 	sess := &rpcSession{
 		cfg:        Config{AgentPort: 8088},
 		logger:     log.New(io.Discard, "", 0),
 		streams:    make(map[string]context.CancelFunc),
 		rootCtx:    t.Context(),
 		rootCancel: func() {},
+		reportUIReady: func() {
+			uiReadyReported = true
+		},
 	}
 
 	// setViewReady writes to the websocket. A nil conn would panic without the
 	// recover wrapper around per-message goroutines.
 	sess.handleMessageSafely(rpcMessage{Method: "setViewReady"})
+
+	if !uiReadyReported {
+		t.Fatal("setViewReady should report the UI-ready funnel stage")
+	}
 }

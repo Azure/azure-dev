@@ -55,6 +55,25 @@ func Test_StandardDeployments_GenerateDeploymentName(t *testing.T) {
 	}
 }
 
+func TestVoidDeploymentTags(t *testing.T) {
+	deployment := &ResourceDeployment{
+		Tags: map[string]*string{
+			azure.TagKeyAzdEnvName:     new("dev"),
+			azure.TagKeyAzdLayerName:   new("main"),
+			azure.TagKeyAzdProjectName: new("project-a"),
+			"unrelated":                new("value"),
+		},
+	}
+
+	tags := voidDeploymentTags(deployment)
+
+	require.Equal(t, "dev", *tags[azure.TagKeyAzdEnvName])
+	require.Equal(t, "main", *tags[azure.TagKeyAzdLayerName])
+	require.Equal(t, "project-a", *tags[azure.TagKeyAzdProjectName])
+	require.Equal(t, "down", *tags["azd-deploy-reason"])
+	require.NotContains(t, tags, "unrelated")
+}
+
 func TestCreatedResourceGroupsFromDeployment(t *testing.T) {
 	t.Parallel()
 

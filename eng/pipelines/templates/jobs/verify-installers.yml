@@ -34,6 +34,8 @@ jobs:
     steps:
       - checkout: self
 
+      - template: /eng/common/pipelines/templates/steps/create-authenticated-npmrc.yml
+
       - task: DownloadPipelineArtifact@2
         inputs:
           artifact: test-hosting

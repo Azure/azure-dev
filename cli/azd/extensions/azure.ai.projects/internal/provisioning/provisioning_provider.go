@@ -5,14 +5,14 @@ package provisioning
 
 import "slices"
 
-// FoundryProviderName is the value written to `infra.provider` in
-// azure.yaml by `azd ai agent init` and looked up by azd's provider
-// resolver to dispatch provisioning to this extension.
+// FoundryProviderName is the value written to an infra provider field in
+// azure.yaml and looked up by the azd provider resolver to dispatch provisioning
+// to this extension.
 const FoundryProviderName = "microsoft.foundry"
 
 // BicepProviderName and TerraformProviderName are azd-core's built-in
-// provisioning providers. `azd ai agent init --infra=terraform` stamps
-// TerraformProviderName onto azure.yaml so azd-core's Terraform provider
+// provisioning providers. `azd ai agent init --infra=terraform` uses
+// TerraformProviderName for the Foundry layer so azd-core's Terraform provider
 // (not this extension's microsoft.foundry provider) handles provisioning.
 const (
 	BicepProviderName     = "bicep"
@@ -30,7 +30,7 @@ var FoundryProjectServiceHosts = []string{FoundryProjectHost}
 
 // FoundryLegacyProvisioningHosts lists pre-split service hosts that can still drive
 // provisioning when no azure.ai.project service exists. network: remains unsupported
-// on these hosts; this compatibility path is only for existing non-network projects.
+// on these hosts when they are the provisioning fallback.
 var FoundryLegacyProvisioningHosts = []string{"azure.ai.agent", "microsoft.foundry"}
 
 // FoundryProvisioningServiceHosts lists every service host accepted by the synthesizer.

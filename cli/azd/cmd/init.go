@@ -21,7 +21,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
-	"github.com/azure/azure-dev/cli/azd/internal/runcontext/agentdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -156,9 +155,6 @@ type initAction struct {
 	agentFactory      agent.AgentFactory
 	consentManager    consent.ConsentManager
 	configManager     config.UserConfigManager
-	// isRunningInAgent reports whether azd was invoked by an AI agent.
-	// Defaults to agentdetect.IsRunningInAgent; overridable in tests.
-	isRunningInAgent func() bool
 }
 
 func newInitAction(
@@ -194,7 +190,6 @@ func newInitAction(
 		agentFactory:      agentFactory,
 		consentManager:    consentManager,
 		configManager:     configManager,
-		isRunningInAgent:  agentdetect.IsRunningInAgent,
 	}
 }
 
@@ -257,6 +252,7 @@ func (i *initAction) Run(ctx context.Context) (_ *actions.ActionResult, retErr e
 	// or pass "." to use the current directory (preserving existing behavior).
 	createdProjectDir := ""
 	originalWd := wd
+	cleanupProjectDir := false
 
 	if isTemplateInit {
 		targetDir, err := i.resolveTargetDirectory(wd)
@@ -308,7 +304,7 @@ func (i *initAction) Run(ctx context.Context) (_ *actions.ActionResult, retErr e
 			// Only remove the directory if we created it — don't delete
 			// pre-existing directories the user pointed at.
 			defer func() {
-				if retErr != nil {
+				if retErr != nil || cleanupProjectDir {
 					_ = os.Chdir(originalWd)
 					if !dirExistedBefore {
 						_ = os.RemoveAll(createdProjectDir)
@@ -424,6 +420,11 @@ func (i *initAction) Run(ctx context.Context) (_ *actions.ActionResult, retErr e
 		tracing.SetUsageAttributes(fields.InitMethod.String("template"))
 		template, err := i.initializeTemplate(ctx, azdCtx)
 		if err != nil {
+			if errors.Is(err, repository.ErrArchivedTemplateDeclined) {
+				cleanupProjectDir = true
+				i.console.Message(ctx, output.WithWarningFormat("CANCELLED: Initialization stopped."))
+				return nil, nil
+			}
 			return nil, err
 		}
 
@@ -1130,7 +1131,7 @@ func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontex
 	i.console.Message(ctx, "\nInstalling required extensions...")
 
 	for extensionId, versionConstraint := range projectConfig.RequiredVersions.Extensions {
-		stepMessage := fmt.Sprintf("Installing %s extension", output.WithHighLightFormat(extensionId))
+		stepMessage := extensionTaskMessage("Installing", extensionId)
 		i.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		installed, isInstalled := installedExtensions[extensionId]
@@ -1138,52 +1139,59 @@ func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontex
 			stepMessage += output.WithGrayFormat(" (version %s already installed)", installed.Version)
 			i.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 			continue
-		} else {
-			installConstraint := "latest"
-			if versionConstraint != nil {
-				installConstraint = *versionConstraint
-			}
-
-			// Find the extension first
-			filterOptions := &extensions.FilterOptions{
-				Id: extensionId,
-			}
-
-			extensionMatches, err := i.extensionsManager.FindExtensions(ctx, filterOptions)
-			if err != nil {
-				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return fmt.Errorf("finding extension %s: %w", extensionId, err)
-			}
-
-			if len(extensionMatches) == 0 {
-				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return fmt.Errorf("extension %s not found", extensionId)
-			}
-
-			extensionMetadata, err := selectDistinctExtension(
-				ctx,
-				i.console,
-				extensionId,
-				extensionMatches,
-				i.flags.global,
-			)
-			if err != nil {
-				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return err
-			}
-			if len(extensionMatches) > 1 {
-				i.console.ShowSpinner(ctx, stepMessage, input.Step)
-			}
-
-			extensionVersion, err := i.extensionsManager.Install(ctx, extensionMetadata, installConstraint)
-			if err != nil {
-				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return fmt.Errorf("installing extension %s: %w", extensionId, err)
-			}
-
-			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
-			i.console.StopSpinner(ctx, stepMessage, input.StepDone)
 		}
+
+		installConstraint := "latest"
+		if versionConstraint != nil {
+			installConstraint = *versionConstraint
+		}
+
+		extensionMatches, err := i.extensionsManager.FindInstallableExtensions(
+			ctx,
+			&extensions.InstallResolutionOptions{FilterOptions: extensions.FilterOptions{
+				Id:      extensionId,
+				Version: installConstraint,
+			}},
+		)
+		if err != nil {
+			i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return fmt.Errorf("finding extension %s: %w", extensionId, err)
+		}
+
+		if len(extensionMatches) == 0 {
+			i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return fmt.Errorf("extension %s not found", extensionId)
+		}
+
+		extensionMetadata, err := selectDistinctExtension(
+			ctx,
+			i.console,
+			extensionId,
+			extensionMatches,
+			i.flags.global,
+		)
+		if err != nil {
+			i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return err
+		}
+		if len(extensionMatches) > 1 {
+			i.console.ShowSpinner(ctx, stepMessage, input.Step)
+		}
+
+		extensionVersion, err := i.extensionsManager.InstallWithOptions(
+			ctx,
+			extensionMetadata,
+			extensions.InstallOptions{
+				VersionPreference: installConstraint,
+			},
+		)
+		if err != nil {
+			i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return fmt.Errorf("installing extension %s: %w", extensionId, err)
+		}
+
+		stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
+		i.console.StopSpinner(ctx, stepMessage, input.StepDone)
 	}
 
 	return nil
@@ -1344,12 +1352,12 @@ func (i *initAction) resolveTargetDirectory(wd string) (string, error) {
 		return resolved, nil
 	}
 
-	// In non-interactive mode, non-TTY environments (CI, piped stdin), or when called by
-	// an AI agent, default to CWD to preserve backward compatibility. Existing scripts,
-	// CI pipelines, and LLM agents expect `azd init -t <template>` to place files in CWD.
+	// In non-interactive mode or when no interactive terminal is available, default to CWD
+	// to preserve backward compatibility. Existing scripts, CI pipelines, and non-interactive
+	// LLM agents expect `azd init -t <template>` to place files in CWD.
 	// The auto-create-directory behavior only activates for interactive terminal users.
 	// Users can still pass an explicit positional arg to opt into the new behavior anywhere.
-	if i.console.IsNoPromptMode() || !i.console.IsSpinnerInteractive() || i.isRunningInAgent() {
+	if i.console.IsNoPromptMode() || !i.console.IsSpinnerInteractive() {
 		return wd, nil
 	}
 

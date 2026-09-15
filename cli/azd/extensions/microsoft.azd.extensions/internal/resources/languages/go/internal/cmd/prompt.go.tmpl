@@ -9,7 +9,6 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -58,7 +57,7 @@ func newPromptCommand() *cobra.Command {
 				},
 			})
 			if err != nil {
-				return nil
+				return err
 			}
 
 			confirmResponse, err := azdClient.
@@ -66,7 +65,7 @@ func newPromptCommand() *cobra.Command {
 				Confirm(ctx, &azdext.ConfirmRequest{
 					Options: &azdext.ConfirmOptions{
 						Message:      "Do you want to search for Azure resources?",
-						DefaultValue: to.Ptr(true),
+						DefaultValue: new(true),
 					},
 				})
 			if err != nil {
@@ -89,14 +88,17 @@ func newPromptCommand() *cobra.Command {
 			}
 
 			azureContext.Scope.SubscriptionId = selectedSubscription.Subscription.Id
-			azureContext.Scope.TenantId = selectedSubscription.Subscription.TenantId
+			// Use the user access tenant rather than the resource tenant (Subscription.TenantId).
+			// The two differ for multi-tenant/guest users and only the user access tenant
+			// works when creating credentials.
+			azureContext.Scope.TenantId = selectedSubscription.Subscription.UserTenantId
 
 			filterByResourceTypeResponse, err := azdClient.
 				Prompt().
 				Confirm(ctx, &azdext.ConfirmRequest{
 					Options: &azdext.ConfirmOptions{
 						Message:      "Do you want to filter by resource type?",
-						DefaultValue: to.Ptr(false),
+						DefaultValue: new(false),
 					},
 				})
 			if err != nil {
@@ -127,7 +129,7 @@ func newPromptCommand() *cobra.Command {
 						return err
 					}
 
-					for _, provider := range page.ProviderListResult.Value {
+					for _, provider := range page.Value {
 						if *provider.RegistrationState == "Registered" {
 							providerList = append(providerList, provider)
 						}
@@ -199,7 +201,7 @@ func newPromptCommand() *cobra.Command {
 				Confirm(ctx, &azdext.ConfirmRequest{
 					Options: &azdext.ConfirmOptions{
 						Message:      "Do you want to filter by resource group?",
-						DefaultValue: to.Ptr(false),
+						DefaultValue: new(false),
 					},
 				})
 			if err != nil {
@@ -228,7 +230,7 @@ func newPromptCommand() *cobra.Command {
 						Options: &azdext.PromptResourceOptions{
 							ResourceType: fullResourceType,
 							SelectOptions: &azdext.PromptResourceSelectOptions{
-								AllowNewResource: to.Ptr(false),
+								AllowNewResource: new(false),
 							},
 						},
 					})
@@ -245,7 +247,7 @@ func newPromptCommand() *cobra.Command {
 						Options: &azdext.PromptResourceOptions{
 							ResourceType: fullResourceType,
 							SelectOptions: &azdext.PromptResourceSelectOptions{
-								AllowNewResource: to.Ptr(false),
+								AllowNewResource: new(false),
 							},
 						},
 					})
@@ -263,21 +265,26 @@ func newPromptCommand() *cobra.Command {
 
 			fmt.Println()
 			color.Cyan("Selected resource:")
-			values := map[string]string{
-				"Subscription ID": parsedResource.SubscriptionID,
-				"Resource Group":  parsedResource.ResourceGroupName,
-				"Name":            parsedResource.Name,
-				"Type":            selectedResource.Type,
-				"Location":        parsedResource.Location,
-				"Kind":            selectedResource.Kind,
+			// A slice keeps the output order stable; ranging over a map would shuffle it.
+			values := []struct {
+				key   string
+				value string
+			}{
+				{"Subscription ID", parsedResource.SubscriptionID},
+				{"Resource Group", parsedResource.ResourceGroupName},
+				{"Name", parsedResource.Name},
+				{"Type", selectedResource.Type},
+				{"Location", parsedResource.Location},
+				{"Kind", selectedResource.Kind},
 			}
 
-			for key, value := range values {
+			for _, item := range values {
+				value := item.value
 				if value == "" {
 					value = "N/A"
 				}
 
-				fmt.Printf("%s: %s\n", color.HiWhiteString(key), color.HiBlackString(value))
+				fmt.Printf("%s: %s\n", color.HiWhiteString(item.key), color.HiBlackString(value))
 			}
 
 			return nil

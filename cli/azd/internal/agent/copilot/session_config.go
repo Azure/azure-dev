@@ -38,7 +38,7 @@ func (b *SessionConfigBuilder) Build(
 	builtInServers map[string]*mcp.ServerConfig,
 ) (*copilot.SessionConfig, error) {
 	cfg := &copilot.SessionConfig{
-		Streaming: true,
+		Streaming: new(true),
 	}
 
 	// Set working directory to cwd for tool operations

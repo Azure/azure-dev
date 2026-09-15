@@ -19,15 +19,14 @@ import (
 	"github.com/drone/envsubst"
 )
 
-// Hard-coded relative locations for the on-disk Bicep tree the user owns
-// after running `azd ai agent init --infra`. azure.yaml's infra.path /
-// infra.module overrides are deliberately not honored; the eject writer
-// hard-codes these same paths.
+// Default locations for the on-disk Bicep tree. A provisioning layer can
+// override both through its path and module options.
 const (
 	onDiskInfraDir       = "infra"
-	onDiskBicepFile      = "main.bicep"
-	onDiskBicepParamFile = "main.bicepparam"
-	onDiskParamsFile     = "main.parameters.json"
+	onDiskModule         = "main"
+	onDiskBicepFile      = onDiskModule + ".bicep"
+	onDiskBicepParamFile = onDiskModule + ".bicepparam"
+	onDiskParamsFile     = onDiskModule + ".parameters.json"
 )
 
 // templateMode records which on-disk source was used, for telemetry /
@@ -86,16 +85,47 @@ func loadOnDiskTemplate(
 	compiler bicepCompiler,
 	envValues map[string]string,
 ) (*templateSource, error) {
-	infraDir := filepath.Join(projectPath, onDiskInfraDir)
-	bicepparamPath := filepath.Join(infraDir, onDiskBicepParamFile)
-	bicepPath := filepath.Join(infraDir, onDiskBicepFile)
+	return loadOnDiskTemplateAt(
+		ctx,
+		filepath.Join(projectPath, onDiskInfraDir),
+		onDiskModule,
+		compiler,
+		envValues,
+	)
+}
+
+// loadOnDiskTemplateAt loads a Bicep module from an explicit provisioning
+// layer path and module name.
+func loadOnDiskTemplateAt(
+	ctx context.Context,
+	infraDir string,
+	module string,
+	compiler bicepCompiler,
+	envValues map[string]string,
+) (*templateSource, error) {
+	if module == "" {
+		module = onDiskModule
+	}
+	bicepparamPath := filepath.Join(infraDir, module+".bicepparam")
+	bicepPath := filepath.Join(infraDir, module+".bicep")
 
 	switch {
 	case fileExistsAt(bicepparamPath):
-		return loadFromBicepParam(ctx, bicepparamPath, compiler, envValues)
+		return loadFromBicepParam(
+			ctx,
+			bicepparamPath,
+			compiler,
+			envValues,
+		)
 	case fileExistsAt(bicepPath):
-		paramsPath := filepath.Join(infraDir, onDiskParamsFile)
-		return loadFromBicep(ctx, bicepPath, paramsPath, compiler, envValues)
+		paramsPath := filepath.Join(infraDir, module+".parameters.json")
+		return loadFromBicep(
+			ctx,
+			bicepPath,
+			paramsPath,
+			compiler,
+			envValues,
+		)
 	default:
 		return nil, nil
 	}
@@ -124,7 +154,10 @@ func loadFromBicep(
 		return nil, err
 	}
 
-	params, err := loadParametersFile(paramsPath, envValues)
+	params, err := loadParametersFile(
+		paramsPath,
+		envValues,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +253,12 @@ func loadParametersFile(paramFilePath string, envValues map[string]string) (map[
 
 	out := make(map[string]any, len(pre))
 	for name, raw := range pre {
-		kept, err := substituteParamValue(raw, paramFilePath, name, envValues)
+		kept, err := substituteParamValue(
+			raw,
+			paramFilePath,
+			name,
+			envValues,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -240,9 +278,36 @@ func substituteParamValue(
 	sourcePath, name string,
 	envValues map[string]string,
 ) (any, error) {
+	resolved, hasUnsetEnvVar, err := substituteJSONValue(
+		rawEntry,
+		sourcePath,
+		name,
+		envValues,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Drop strings that unresolved variables reduce to empty.
+	// Non-string values are always kept.
+	if entry, ok := resolved.(map[string]any); ok {
+		if val, ok := entry["value"]; ok {
+			if str, ok := val.(string); ok && str == "" && hasUnsetEnvVar {
+				return nil, nil
+			}
+		}
+	}
+	return resolved, nil
+}
+
+func substituteJSONValue(
+	rawEntry any,
+	sourcePath, name string,
+	envValues map[string]string,
+) (any, bool, error) {
 	enc, err := json.Marshal(rawEntry)
 	if err != nil {
-		return nil, exterrors.Internal(
+		return nil, false, exterrors.Internal(
 			exterrors.CodeOnDiskParametersInvalid,
 			fmt.Sprintf("re-encode parameter %q in %s: %s", name, sourcePath, err),
 		)
@@ -266,7 +331,7 @@ func substituteParamValue(
 		return string(escaped[1 : len(escaped)-1])
 	})
 	if err != nil {
-		return nil, exterrors.Validation(
+		return nil, false, exterrors.Validation(
 			exterrors.CodeOnDiskParametersInvalid,
 			fmt.Sprintf("substitute env vars in parameter %q of %s: %s", name, sourcePath, err),
 			"check for malformed ${VAR} references in the parameters file",
@@ -275,23 +340,13 @@ func substituteParamValue(
 
 	var resolved any
 	if err := json.Unmarshal([]byte(substituted), &resolved); err != nil {
-		return nil, exterrors.Validation(
+		return nil, false, exterrors.Validation(
 			exterrors.CodeOnDiskParametersInvalid,
 			fmt.Sprintf("parse parameter %q in %s after substitution: %s", name, sourcePath, err),
 			"ensure the substituted value is valid JSON",
 		)
 	}
-
-	// Drop string-valued parameters whose substituted value collapsed to ""
-	// because of an unresolved ${VAR}. Non-string values are always kept.
-	if entry, ok := resolved.(map[string]any); ok {
-		if val, ok := entry["value"]; ok {
-			if str, ok := val.(string); ok && str == "" && hasUnsetEnvVar {
-				return nil, nil
-			}
-		}
-	}
-	return resolved, nil
+	return resolved, hasUnsetEnvVar, nil
 }
 
 // extractParametersFromARMFile pulls the inner "parameters" map out of
@@ -327,6 +382,20 @@ func mergeParameters(userParams, hostParams map[string]any) map[string]any {
 	return out
 }
 
+// parametersDeclaredByTemplate keeps host-derived values only when the
+// compiled on-disk template declares the matching parameter. User-authored
+// parameters are deliberately not filtered so ARM still reports misspellings.
+func parametersDeclaredByTemplate(hostParams, armTemplate map[string]any) map[string]any {
+	declared, _ := armTemplate["parameters"].(map[string]any)
+	out := make(map[string]any, min(len(hostParams), len(declared)))
+	for name, value := range hostParams {
+		if _, ok := declared[name]; ok {
+			out[name] = value
+		}
+	}
+	return out
+}
+
 // unmarshalARMTemplate parses an ARM template JSON string into the untyped
 // map shape armresources.DeploymentProperties.Template expects.
 func unmarshalARMTemplate(raw, sourcePath string) (map[string]any, error) {
@@ -342,6 +411,9 @@ func unmarshalARMTemplate(raw, sourcePath string) (map[string]any, error) {
 			exterrors.CodeOnDiskBicepParseFailed,
 			fmt.Sprintf("parse compiled ARM JSON from %s: %s", sourcePath, err),
 		)
+	}
+	if err := validateProjectTemplate(tmpl, sourcePath); err != nil {
+		return nil, err
 	}
 	return tmpl, nil
 }

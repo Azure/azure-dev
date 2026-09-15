@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -93,6 +94,7 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				Message:    "invalid config",
 				Code:       "invalid_config",
 				Category:   LocalErrorCategoryValidation,
+				CauseTypes: []string{"*agents.TransportError", "*agents.ConfigError"},
 				Suggestion: "Add the missing required field",
 				Links: []errorhandler.ErrorLink{{
 					URL:   "https://aka.ms/azd-errors#invalid-config",
@@ -114,6 +116,7 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 				require.ErrorAs(t, goErr, &localErr)
 				assert.Equal(t, "invalid_config", localErr.Code)
 				assert.Equal(t, LocalErrorCategoryValidation, localErr.Category)
+				assert.Nil(t, localErr.CauseTypes)
 				assert.Equal(t, "Add the missing required field", localErr.Suggestion)
 				require.Len(t, localErr.Links, 1)
 				assert.Equal(t, "Invalid config reference", localErr.Links[0].Title)
@@ -312,6 +315,167 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestExtensionError_ToolErrorRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	exitCode := 23
+	source := &ToolError{
+		Message:    "docker build failed",
+		ToolName:   "docker",
+		Kind:       ToolErrorKindFailed,
+		ExitCode:   &exitCode,
+		Suggestion: "Check the Docker build output",
+	}
+
+	protoErr := WrapError(fmt.Errorf("container build: %w", source))
+	require.NotNil(t, protoErr)
+	assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_TOOL, protoErr.GetOrigin())
+	assert.Equal(t, "docker build failed", protoErr.GetMessage())
+
+	unwrapped := UnwrapError(protoErr)
+	var toolErr *ToolError
+	require.ErrorAs(t, unwrapped, &toolErr)
+	assert.Equal(t, "docker build failed", toolErr.Message)
+	assert.Equal(t, ToolErrorKindFailed, toolErr.Kind)
+	assert.Equal(t, "Check the Docker build output", toolErr.Suggestion)
+}
+
+func TestErrorDetailsFromStatus(t *testing.T) {
+	t.Parallel()
+
+	extensionErr := WrapError(&ToolError{
+		Message:  "docker build failed",
+		ToolName: "docker",
+		Kind:     ToolErrorKindFailed,
+	})
+	st, err := status.New(codes.Unknown, "container build failed").WithDetails(extensionErr)
+	require.NoError(t, err)
+
+	assert.Equal(t, extensionErr.GetMessage(), ExtensionErrorFromStatus(st).GetMessage())
+	assert.Nil(t, ServiceErrorDetailFromStatus(st))
+
+	serviceDetail := &ServiceErrorDetail{
+		ErrorCode:   "InternalServerError",
+		StatusCode:  500,
+		ServiceName: "management.azure.com",
+	}
+	st, err = status.New(codes.Unknown, "service failed").WithDetails(serviceDetail)
+	require.NoError(t, err)
+
+	assert.Equal(t, serviceDetail.GetErrorCode(), ServiceErrorDetailFromStatus(st).GetErrorCode())
+	assert.Nil(t, ExtensionErrorFromStatus(st))
+	assert.Nil(t, ExtensionErrorFromStatus(nil))
+	assert.Nil(t, ServiceErrorDetailFromStatus(nil))
+
+	betaExtensionErr := &v1beta.ExtensionError{
+		Message:    "beta extension failed",
+		Origin:     v1beta.ErrorOrigin_ERROR_ORIGIN_LOCAL,
+		Suggestion: "fix the beta input",
+		Source: &v1beta.ExtensionError_LocalError{
+			LocalError: &v1beta.LocalErrorDetail{
+				Code:       "invalid_beta_input",
+				Category:   "validation",
+				CauseTypes: []string{"*errors.errorString"},
+			},
+		},
+	}
+	st, err = status.New(codes.Unknown, "beta extension failed").WithDetails(betaExtensionErr)
+	require.NoError(t, err)
+
+	relayed := ExtensionErrorFromStatus(st)
+	require.NotNil(t, relayed)
+	assert.Equal(t, betaExtensionErr.GetMessage(), relayed.GetMessage())
+	assert.Equal(t, betaExtensionErr.GetSuggestion(), relayed.GetSuggestion())
+	assert.Equal(t, betaExtensionErr.GetLocalError().GetCode(), relayed.GetLocalError().GetCode())
+
+	betaServiceDetail := &v1beta.ServiceErrorDetail{
+		ErrorCode:   "BetaServiceFailure",
+		StatusCode:  503,
+		ServiceName: "preview.example.com",
+	}
+	st, err = status.New(codes.Unavailable, "beta service failed").WithDetails(betaServiceDetail)
+	require.NoError(t, err)
+
+	serviceDetail = ServiceErrorDetailFromStatus(st)
+	require.NotNil(t, serviceDetail)
+	assert.Equal(t, betaServiceDetail.GetErrorCode(), serviceDetail.GetErrorCode())
+	assert.Equal(t, betaServiceDetail.GetStatusCode(), serviceDetail.GetStatusCode())
+	assert.Equal(t, betaServiceDetail.GetServiceName(), serviceDetail.GetServiceName())
+}
+
+func TestWrapError_RelaysStructuredStatusDetails(t *testing.T) {
+	t.Parallel()
+
+	serviceErr := &ServiceError{
+		Message:     "service request failed",
+		ErrorCode:   "AuthorizationFailed",
+		StatusCode:  403,
+		ServiceName: "management.azure.com",
+		Suggestion:  "request the required role",
+		Links: []errorhandler.ErrorLink{{
+			URL:   "https://aka.ms/azd-errors#authorization",
+			Title: "Authorization help",
+		}},
+	}
+	serviceDetail := WrapError(serviceErr)
+	serviceStatus := mustStatusErrorWithDetails(
+		codes.Unknown,
+		"host service request failed",
+		serviceDetail,
+	)
+
+	serviceWrapped := WrapError(serviceStatus)
+	require.Equal(t, "host service request failed", serviceWrapped.GetMessage())
+	require.Equal(t, ErrorOrigin_ERROR_ORIGIN_SERVICE, serviceWrapped.GetOrigin())
+	require.Equal(t, serviceErr.Suggestion, serviceWrapped.GetSuggestion())
+	require.Len(t, serviceWrapped.GetLinks(), 1)
+	require.Equal(t, serviceDetail.GetLinks()[0].GetUrl(),
+		serviceWrapped.GetLinks()[0].GetUrl())
+	require.Equal(t, serviceDetail.GetLinks()[0].GetTitle(),
+		serviceWrapped.GetLinks()[0].GetTitle())
+	require.Equal(t, serviceErr.ErrorCode, serviceWrapped.GetServiceError().GetErrorCode())
+	require.Equal(t, serviceDetail.GetServiceError().GetStatusCode(),
+		serviceWrapped.GetServiceError().GetStatusCode())
+
+	toolDetail := WrapError(&ToolError{
+		Message:  "docker build failed",
+		ToolName: "docker",
+		Kind:     ToolErrorKindFailed,
+	})
+	toolStatus := mustStatusErrorWithDetails(
+		codes.Unknown,
+		"host docker build failed",
+		toolDetail,
+	)
+
+	toolWrapped := WrapError(toolStatus)
+	require.Equal(t, "host docker build failed", toolWrapped.GetMessage())
+	require.Equal(t, ErrorOrigin_ERROR_ORIGIN_TOOL, toolWrapped.GetOrigin())
+}
+
+func TestWrapError_ConvertsServiceDetailFromStatus(t *testing.T) {
+	t.Parallel()
+
+	serviceDetail := &ServiceErrorDetail{
+		ErrorCode:   "TooManyRequests",
+		StatusCode:  429,
+		ServiceName: "management.azure.com",
+	}
+	err := mustStatusErrorWithDetails(
+		codes.Unknown,
+		"host service request failed",
+		serviceDetail,
+	)
+
+	wrapped := WrapError(err)
+	require.Equal(t, "host service request failed", wrapped.GetMessage())
+	require.Equal(t, ErrorOrigin_ERROR_ORIGIN_SERVICE, wrapped.GetOrigin())
+	require.Equal(t, serviceDetail.GetErrorCode(), wrapped.GetServiceError().GetErrorCode())
+	require.Equal(t, serviceDetail.GetStatusCode(), wrapped.GetServiceError().GetStatusCode())
+	require.Equal(t, serviceDetail.GetServiceName(),
+		wrapped.GetServiceError().GetServiceName())
+}
+
 func TestUnwrapError_EmptyMessagePreservesStructuredError(t *testing.T) {
 	protoErr := &ExtensionError{
 		Origin: ErrorOrigin_ERROR_ORIGIN_LOCAL,
@@ -336,6 +500,7 @@ func TestUnwrapError_EmptyMessagePreservesStructuredError(t *testing.T) {
 	assert.Empty(t, localErr.Message)
 	assert.Equal(t, "empty_message", localErr.Code)
 	assert.Equal(t, LocalErrorCategoryValidation, localErr.Category)
+	assert.Nil(t, localErr.CauseTypes)
 	assert.Equal(t, "Fill in the required setting", localErr.Suggestion)
 	require.Len(t, localErr.Links, 1)
 	assert.Equal(t, "Validation troubleshooting", localErr.Links[0].Title)
@@ -411,6 +576,22 @@ func TestActionableErrorDetailFromStatus(t *testing.T) {
 		actionable := ActionableErrorDetailFromStatus(st)
 		require.NotNil(t, actionable)
 		assert.Equal(t, "try harder", actionable.GetSuggestion())
+	})
+
+	t.Run("status with beta ActionableErrorDetail returns stable facade detail", func(t *testing.T) {
+		err := mustStatusErrorWithDetails(codes.Unknown, "boom", &v1beta.ActionableErrorDetail{
+			Suggestion: "use the preview recovery path",
+			Links: []*v1beta.ErrorLink{{
+				Url:   "https://aka.ms/azd-preview-errors",
+				Title: "Preview error help",
+			}},
+		})
+		st, _ := status.FromError(err)
+		actionable := ActionableErrorDetailFromStatus(st)
+		require.NotNil(t, actionable)
+		assert.Equal(t, "use the preview recovery path", actionable.GetSuggestion())
+		require.Len(t, actionable.GetLinks(), 1)
+		assert.Equal(t, "https://aka.ms/azd-preview-errors", actionable.GetLinks()[0].GetUrl())
 	})
 }
 

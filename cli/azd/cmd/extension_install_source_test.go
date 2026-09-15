@@ -5,9 +5,11 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -15,7 +17,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
@@ -96,7 +97,7 @@ func TestResolveSourceLocation_ExistingSourceUnchanged(t *testing.T) {
 	require.Equal(t, "my-source", action.flags.source)
 }
 
-func TestResolveSourceLocation_NormalizedExistingSourceUsed(t *testing.T) {
+func TestResolveSourceLocation_InvalidAliasRejected(t *testing.T) {
 	t.Parallel()
 
 	action, _ := newBundleInstallTestAction(t)
@@ -107,8 +108,8 @@ func TestResolveSourceLocation_NormalizedExistingSourceUsed(t *testing.T) {
 	}))
 
 	action.flags.source = "my source"
-	require.NoError(t, action.resolveSourceLocation(t.Context()))
-	require.Equal(t, "my-source", action.flags.source)
+	err := action.resolveSourceLocation(t.Context())
+	require.ErrorIs(t, err, extensions.ErrSourceNameInvalid)
 }
 
 func TestResolveSourceLocation_PlainNameUnchanged(t *testing.T) {
@@ -200,7 +201,7 @@ func TestResolveSourceLocation_InvalidSourceNamePromptsAgain(t *testing.T) {
 	require.NoError(t, action.resolveSourceLocation(t.Context()))
 	require.Equal(t, "local-dev", action.flags.source)
 	require.Equal(t, 2, promptCount)
-	require.Contains(t, console.Output(), output.WithErrorFormat("Extension source name cannot contain '.'"))
+	require.Contains(t, strings.Join(console.Output(), "\n"), "invalid extension source name")
 }
 
 func TestResolveSourceLocation_ExistingSourceNamePromptsAgain(t *testing.T) {
@@ -395,6 +396,37 @@ func TestResolveSourceLocation_NoPromptFileDirectsToSourceAdd(t *testing.T) {
 	for _, src := range sources {
 		require.NotEqual(t, registryPath, src.Location, "the file source must not be registered")
 	}
+}
+
+func TestExtensionInstall_MissingVersionReportsLatestCompatible(t *testing.T) {
+	t.Parallel()
+
+	action, _ := newBundleInstallTestAction(t)
+	registryPath := writeRegistryFile(t)
+	require.NoError(t, action.sourceManager.Add(t.Context(), "local-dev", &extensions.SourceConfig{
+		Name:     "local-dev",
+		Type:     extensions.SourceKindFile,
+		Location: registryPath,
+	}))
+	action.args = []string{"test.ext"}
+	action.flags.source = "local-dev"
+	action.flags.version = "0.1.0"
+
+	_, err := action.Run(t.Context())
+	require.Error(t, err)
+	require.ErrorContains(
+		t,
+		err,
+		`extension "test.ext" version "0.1.0" was not found; latest compatible version is "1.0.0"`,
+	)
+
+	versionErr, ok := errors.AsType[*extensions.ExtensionVersionNotFoundError](err)
+	require.True(t, ok)
+	require.Contains(
+		t,
+		versionErr.Suggestion(),
+		"azd extension install test.ext --version 1.0.0 --source local-dev",
+	)
 }
 
 func newInstallSourceTestAction(t *testing.T) (*extensionInstallAction, *mocks.MockContext) {

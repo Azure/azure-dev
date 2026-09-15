@@ -12,9 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-const (
-	foundryProjectEndpointEnvVar = "FOUNDRY_PROJECT_ENDPOINT"
-)
+const foundryProjectEndpointEnvVar = "FOUNDRY_PROJECT_ENDPOINT"
 
 func resolveFoundryProjectEndpoint() (string, error) {
 	if endpoint := strings.TrimSpace(os.Getenv(foundryProjectEndpointEnvVar)); endpoint != "" {

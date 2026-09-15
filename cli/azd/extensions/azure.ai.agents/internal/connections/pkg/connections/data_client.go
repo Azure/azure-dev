@@ -16,6 +16,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+
+	"azureaiagent/internal/pkg/useragent"
 )
 
 const dataPlaneAPIVersion = "v1"
@@ -37,7 +39,7 @@ func NewDataClient(endpoint string, cred azcore.TokenCredential) *DataClient {
 				nil,
 			),
 			azsdk.NewMsCorrelationPolicy(),
-			azsdk.NewUserAgentPolicy("azd-ext-azure-ai-connection/0.1.0"),
+			azsdk.NewUserAgentPolicy(useragent.Connection()),
 		},
 	}
 

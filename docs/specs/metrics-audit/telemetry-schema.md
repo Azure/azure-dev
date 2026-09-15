@@ -17,8 +17,9 @@ OpenTelemetry span name or event name.
 | `AgentTroubleshootEvent` | `agent.troubleshoot` | Agent troubleshooting event |
 | `ExtensionRunEvent` | `ext.run` | Extension execution event |
 | `ExtensionInstallEvent` | `ext.install` | Extension install/upgrade event |
-| `ExtensionUpgradeEvent` | `ext.upgrade` | Single extension upgrade attempt |
+| `ExtensionUpdateEvent` | `ext.update` | Single extension update attempt |
 | `ExtensionPromoteEvent` | `ext.promote` | Extension registry promotion (e.g., dev → main) |
+| `ExtensionUsageEvent` | `ext.usage` | One usage event reported by an extension through the telemetry service |
 | `CopilotInitializeEvent` | `copilot.initialize` | Copilot initialization event |
 | `CopilotSessionEvent` | `copilot.session` | Copilot session lifecycle event |
 | `ProvisionValidationEvent` | `validation.provision` | Local provision validation outcome |
@@ -38,6 +39,7 @@ OpenTelemetry span name or event name.
 | `ContainerRemoteBuildEvent` | `container.remotebuild` | Azure-side remote container build |
 | `ExeGraphRunEvent` | `exegraph.run` | Root span for executing an entire graph |
 | `ExeGraphStepEvent` | `exegraph.step` | Single step execution within the graph |
+| `AspireUnsupportedAppHostEvent` | `aspire.apphost.unsupported` | Detected an unsupported Aspire polyglot (non-C#) AppHost during app detection |
 
 ## Fields
 
@@ -47,19 +49,47 @@ and purpose that governs how it may be stored, queried, and retained.
 ### Application-Level (Resource Attributes)
 
 These are set once at process startup via `resource.New()` and attached to every span.
+At export time, azd replaces the provider resource with this canonical resource. This is required because the
+OpenTelemetry Go SDK reads `OTEL_RESOURCE_ATTRIBUTES` and `OTEL_SERVICE_NAME` while configuring the provider.
+Environment-provided resource fields, including `service.instance.id`, are not included in resources exported to the
+Application Insights queue, `--trace-log-file`, or `--trace-log-url`. Span attributes are unchanged by this policy.
 
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
-| Service name | `service.name` | — | — | Always `"azd"` |
-| Service version | `service.version` | — | — | Build version string |
-| OS type | `os.type` | — | — | e.g. `linux`, `windows`, `darwin` |
+| Service name | `service.name` | SystemMetadata | PerformanceAndHealth | Always `"azd"` |
+| Service version | `service.version` | SystemMetadata | FeatureInsight | Build version string |
+| OS type | `os.type` | SystemMetadata | FeatureInsight | e.g. `linux`, `windows`, `darwin` |
 | OS version | `os.version` | SystemMetadata | PerformanceAndHealth | Kernel / build version |
 | Host architecture | `host.arch` | SystemMetadata | PerformanceAndHealth | e.g. `amd64`, `arm64` |
 | Runtime version | `process.runtime.version` | SystemMetadata | PerformanceAndHealth | Go version |
 | Machine ID | `machine.id` | EndUserPseudonymizedInformation | BusinessInsight | MAC address hash |
 | Dev Device ID | `machine.devdeviceid` | EndUserPseudonymizedInformation | BusinessInsight | SQM User ID |
-| Execution environment | `execution.environment` | SystemMetadata | BusinessInsight | CI system detection |
+| Execution environment | `execution.environment` | SystemMetadata | BusinessInsight | Bounded execution-context value; see allowed values below |
 | Installer | `service.installer` | SystemMetadata | FeatureInsight | How azd was installed |
+
+The canonical resource also includes the OpenTelemetry SDK's standard metadata. These keys are SDK-managed rather
+than azd `fields.AttributeKey` declarations. Their classification and purpose below reflect the existing completed
+GDPR data-catalog entries rather than metadata declared in source:
+
+| Field | OTel Key | Catalog Classification | Catalog Purpose | Notes |
+|-------|----------|------------------------|-----------------|-------|
+| SDK name | `telemetry.sdk.name` | SystemMetadata | PerformanceAndHealth | Always `opentelemetry` |
+| SDK language | `telemetry.sdk.language` | SystemMetadata | PerformanceAndHealth | Always `go` |
+| SDK version | `telemetry.sdk.version` | SystemMetadata | PerformanceAndHealth | OpenTelemetry Go SDK version |
+
+#### Execution environment allowed values
+
+`execution.environment` contains one base environment and may include semicolon-separated modifiers:
+
+- Local and hosted environments: `Desktop`, `Visual Studio`, `Visual Studio Code`,
+  `VS Code Azure GitHub Copilot`, `Azure CloudShell`, `GitHub Codespaces`.
+- AI coding agents: `Antigravity`, `Claude Code`, `Claude Code Desktop`, `Claude Code VSCode`, `Codex`,
+  `Codex Desktop`, `Cursor`, `GitHub Copilot CLI`, `GitHub Copilot App`, `GitHub Copilot VSCode`,
+  `GitHub Copilot Cloud Agent`, `Gemini`, `OpenCode`, `Pi`.
+- CI environments: `UnknownCI`, `Azure Pipelines`, `GitHub Actions`, `AppVeyor`, `Bamboo`,
+  `BitBucket Pipelines`, `Travis CI`, `Circle CI`, `GitLab CI`, `Jenkins`, `AWS CodeBuild`,
+  `TeamCity`, `JetBrains Space`.
+- Optional modifiers: `Azure App Spaces Portal`, `Microsoft Foundry Skill`.
 
 ### Experimentation
 
@@ -111,7 +141,10 @@ These are set once at process startup via `resource.New()` and attached to every
 | Error category | `error.category` | SystemMetadata | PerformanceAndHealth | |
 | Error code | `error.code` | SystemMetadata | PerformanceAndHealth | |
 | Error type | `error.type` | SystemMetadata | PerformanceAndHealth | ResultCode or Go type for the classified error |
-| Error chain types | `error.chain.types` | SystemMetadata | PerformanceAndHealth | Wrapped Go error type chain, outermost first |
+| Error chain types | `error.chain.types` | SystemMetadata | PerformanceAndHealth | At most 16 host-reflected Go error type names, outermost first |
+| Extension cause types | `error.extension.cause_types` | EndUserPseudonymizedInformation | PerformanceAndHealth | Case-insensitive hashes of at most 16 normalized extension-provided cause labels received through `v1beta`; never used as `error.type` |
+| Mapper source type | `error.mapper.source.type` | SystemMetadata | PerformanceAndHealth | Sanitized Go source type on a mapper conversion failure |
+| Mapper destination type | `error.mapper.destination.type` | SystemMetadata | PerformanceAndHealth | Sanitized Go destination type on a mapper conversion failure |
 
 Error classification is handled by `MapError` in `internal/cmd/errors.go`, which categorizes
 errors into: update errors, auth errors, service (Azure) errors, deployment errors, extension
@@ -120,8 +153,11 @@ errors, tool errors, sentinel errors, and network errors. Each receives an `erro
 
 Generic-only error chains now use the catch-all ResultCode `internal.unclassified` instead of
 the previous `internal.errors_errorString`. Use `error.chain.types` to inspect the concrete
-wrapper types behind that bucket. The removed `error.inner` and `error.frame` attributes were
-not emitted by azd spans.
+wrapper types behind that bucket. Host-originated gRPC statuses use
+`internal.grpc.<status>` when no more specific mapping applies, and mapper conversion failures
+use `internal.mapper_conversion` with the mapper type fields above. Structured extension
+tool failures use `tool.<name>.missing` or `tool.<name>.failed`. The removed `error.inner` and
+`error.frame` attributes were not emitted by azd spans.
 
 ### Service Attributes
 
@@ -129,17 +165,17 @@ not emitted by azd spans.
 |-------|----------|----------------|---------|-------|
 | Service host | `service.host` | SystemMetadata | PerformanceAndHealth | |
 | Service name | `service.name` | SystemMetadata | PerformanceAndHealth | |
-| Status code | `service.statusCode` | SystemMetadata | PerformanceAndHealth | **Measurement** |
+| Status code | `service.statusCode` | SystemMetadata | PerformanceAndHealth | **Measurement or string** — numeric HTTP/service status codes are measurements; AAD authentication errors emit string OAuth statuses such as `invalid_grant` |
 | Method | `service.method` | SystemMetadata | PerformanceAndHealth | |
-| Error code | `service.errorCode` | SystemMetadata | PerformanceAndHealth | **Measurement**; ARM deployment errors encode JSON objects with `error.code` and `error.arm.frame_index` |
+| Error code | `service.errorCode` | SystemMetadata | PerformanceAndHealth | String; ARM deployment errors encode JSON objects with `error.code` and `error.arm.frame_index` |
 | Correlation ID | `service.correlationId` | SystemMetadata | PerformanceAndHealth | |
 
 ### Tool Attributes
 
-| Field | OTel Key | Classification | Purpose |
-|-------|----------|----------------|---------|
-| Tool name | `tool.name` | SystemMetadata | FeatureInsight |
-| Tool exit code | `tool.exitCode` | SystemMetadata | PerformanceAndHealth |
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| Tool name | `tool.name` | SystemMetadata | PerformanceAndHealth | Stable identifier; core missing-tool display names use a fixed mapping and unknown names become `other`; extension-provided names are limited to 1-64 ASCII characters from `[a-z0-9_-]`; multiple missing tools remain comma-separated |
+| Tool exit code | `tool.exitCode` | SystemMetadata | PerformanceAndHealth | **Measurement** |
 
 ### Performance
 
@@ -156,6 +192,12 @@ not emitted by azd spans.
 |-------|----------|----------------|---------|
 | Builder image | `pack.builder.image` | SystemMetadata | FeatureInsight |
 | Builder tag | `pack.builder.tag` | SystemMetadata | FeatureInsight |
+
+### Aspire
+
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| AppHost language | `aspire.apphost.language` | SystemMetadata | FeatureInsight | Fixed enum (`typescript`/`python`/`go`/`java`/`rust`); not hashed; not a measurement. Emitted on `aspire.apphost.unsupported`. |
 
 ### MCP
 
@@ -182,6 +224,13 @@ not emitted by azd spans.
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
 | Remote build count | `container.remoteBuild.count` | SystemMetadata | FeatureInsight | **Measurement** |
+| Publish remote build | `container.remotebuild` | SystemMetadata | FeatureInsight | Bool — whether a remote (ACR) build was requested (the configured `Docker.RemoteBuild` preference) rather than a local build. Not hashed; not a measurement. |
+
+### AKS
+
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| Skip reason | `skip.reason` | SystemMetadata | FeatureInsight | Bounded enum (`cluster_not_provisioned`); never raw error text. Emitted on `aks.postprovision.skip`. Not hashed; not a measurement. |
 
 ### JSON-RPC
 
@@ -193,9 +242,9 @@ not emitted by azd spans.
 
 ### Agent
 
-| Field | OTel Key | Classification | Purpose |
-|-------|----------|----------------|---------|
-| Fix attempts | `agent.fix.attempts` | SystemMetadata | PerformanceAndHealth |
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
+| Fix attempts | `agent.fix.attempts` | SystemMetadata | FeatureInsight | **Measurement** |
 
 ### Extensions
 
@@ -203,17 +252,72 @@ not emitted by azd spans.
 |-------|----------|----------------|---------|-------|
 | Extension ID | `extension.id` | SystemMetadata | FeatureInsight | |
 | Extension version | `extension.version` | SystemMetadata | FeatureInsight | |
+| Extension event | `extension.event` | SystemMetadata | FeatureInsight | Extension-defined usage event or failed-invocation event |
+| Legacy gRPC call count | `extension.grpc.legacy_call_count` | SystemMetadata | FeatureInsight | **Measurement** — number of unary calls or streams opened through the temporary `/azdext.*` compatibility bridge during one command |
 | Extension installed | `extension.installed` | SystemMetadata | FeatureInsight | List of installed extensions, each formatted `id@version` |
-| Extension version from | `extension.version.from` | SystemMetadata | FeatureInsight | Installed version before an upgrade |
-| Extension version to | `extension.version.to` | SystemMetadata | FeatureInsight | Target version after an upgrade |
-| Extension source | `extension.source` | SystemMetadata | FeatureInsight | Registry source used for the upgrade |
+| Installed extension source category | `extension.installed.source.category` | SystemMetadata | FeatureInsight | List formatted `id@category`; categories: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
+| Extension version from | `extension.version.from` | SystemMetadata | FeatureInsight | Installed version before an update |
+| Extension version to | `extension.version.to` | SystemMetadata | FeatureInsight | Target version after an update |
+| Extension source category | `extension.source.category` | SystemMetadata | FeatureInsight | Allowed values: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
 | Extension source kind | `extension.source.kind` | SystemMetadata | FeatureInsight | Allowed values: `none`, `registered`, `location` |
-| Extension source from | `extension.source.from` | SystemMetadata | FeatureInsight | Registry source before a promotion |
-| Extension source to | `extension.source.to` | SystemMetadata | FeatureInsight | Registry source after a promotion |
-| Upgrade duration | `extension.upgrade.duration_ms` | SystemMetadata | PerformanceAndHealth | **Measurement** — time in ms for one upgrade |
-| Upgrade outcome | `extension.upgrade.outcome` | SystemMetadata | FeatureInsight | Upgrade result status |
-| Dependency of | `extension.dependency_of` | SystemMetadata | FeatureInsight | Parent extension for a dependency upgrade |
-| Dependency upgrade count | `extension.dependency_upgrade_count` | SystemMetadata | FeatureInsight | Recursive dependency upgrade count |
+| Extension source category from | `extension.source.category.from` | SystemMetadata | FeatureInsight | Category before a promotion; allowed values: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
+| Extension source category to | `extension.source.category.to` | SystemMetadata | FeatureInsight | Category after a promotion; allowed values: `azd`, `dev`, `nightly`, `local`, `bundle`, `other`, `unknown` |
+| Update duration | `extension.update.duration_ms` | SystemMetadata | PerformanceAndHealth | **Measurement** — time in ms for one update |
+| Update outcome | `extension.update.outcome` | SystemMetadata | FeatureInsight | Update result status |
+| Dependency of | `extension.dependency_of` | SystemMetadata | FeatureInsight | Parent extension for a dependency update |
+| Dependency update count | `extension.dependency_update_count` | SystemMetadata | FeatureInsight | Recursive dependency update count |
+
+#### Extension-contributed usage attributes
+
+Extensions do not have individual fields listed in this document. An extension
+reports a named event with an arbitrary attribute map, and `azd` records it on
+an `ext.usage` span alongside `extension.id`, `extension.version`,
+`extension.source`, and `extension.event`. Failed extension commands use
+`extension.id` and `extension.version` on the failed `ext.run` span, but do
+not set `extension.event` or create an `ext.usage` span. Failed lifecycle
+hooks use the enclosing `cmd.*` span and include the extension ID, version,
+and lifecycle event.
+
+`azd` core carries no product-specific telemetry semantics for these fields.
+The following rules are enforced by the host and are what this schema
+guarantees about the whole class:
+
+| Rule | Enforcement |
+|------|-------------|
+| Eligibility | Only extensions whose configured `azd` source matches the verified official registry name, type, and normalized URL produce `ext.usage` spans. A call from any other source succeeds but is dropped without recording |
+| Key namespace | Every caller-supplied key is prefixed with `ext.` by the host, so it can never overwrite a host-owned attribute |
+| Size | At most 32 attributes per event; event name and keys at most 128 UTF-8 bytes; values at most 512 UTF-8 bytes |
+| Volume | At most 100 `ext.usage` spans per `azd` invocation across all extensions; calls beyond that are dropped without recording |
+| Values | Not enumerated or pattern-checked. The extension author owns what a value means and is responsible for keeping it low cardinality and free of customer content |
+| Classification | Always `SystemMetadata` |
+| Purpose | Always `FeatureInsight` |
+| Trust | `extension.id` and `extension.version` are derived from host-signed claims; `extension.source` and eligibility are checked against the installed record and verified source config, never from the request |
+| Review | Extension telemetry is reviewed when the extension is admitted to the official registry, under the same documentation, classification, and privacy rules as core fields. The eligibility rule above is what ties recording to that review |
+
+Reviewed first-party event contracts:
+
+| Extension | `extension.event` | Trigger | Extension attributes |
+|-----------|-------------------|---------|----------------------|
+| `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service; one event per distinct kind/harness classification in the invocation | `ext.agent.kind`: fixed enum `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown`; `ext.agent.harness`: fixed enum `none`, `github_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; values contain no agent names or customer content |
+| `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; this precedes client availability, agent startup, and client launch | `ext.route`: fixed enum `inspector`, `playground`, or `suppressed`; suppression takes precedence |
+| `azure.ai.inspector` | `inspector.funnel.stage` | The Inspector SPA sends `setViewReady` after mounting | `ext.stage`: fixed enum `ui_ready`; `ext.outcome`: fixed enum `succeeded`; this does not indicate agent connection |
+
+Because `ext.usage` spans share the command's trace, they join the originating
+command in Kusto on `operation_Id`. See
+[ADR-001](../../architecture/adr-001-extension-telemetry-events.md) for
+the design rationale and
+[Extension Telemetry](../../../cli/azd/docs/extensions/extension-telemetry.md)
+for the author-facing rules.
+
+#### What this class does and does not guarantee
+
+The installed extension identity and source information originate from local
+`azd` configuration. Eligibility is determined from the verified install
+source and is not a cryptographic provenance guarantee.
+
+When governing this data, treat `(extension.id, extension.version, key)` as
+the authoritative filter rather than assuming the client enforced the reviewed
+set on its own.
 
 ### Update
 
@@ -268,6 +372,7 @@ The following fields are defined in `fields.go`.
 | Field | OTel Key | Classification | Purpose | Values |
 |-------|----------|----------------|---------|--------|
 | Auth method | `auth.method` | SystemMetadata | FeatureInsight | `browser`, `device-code`, `service-principal-secret`, `service-principal-certificate`, `federated-github`, `federated-azure-pipelines`, `federated-oidc`, `managed-identity`, `external`, `oneauth`, `check-status` |
+| Auth cache-clear failed | `auth.cache_clear_failed` | SystemMetadata | PerformanceAndHealth | Fixed enum (`auth`, `subscriptions`) identifying which cache failed to clear during the pre-login cleanup. Emitted on the `auth login` usage event. Not hashed; not a measurement. |
 | Env count | `env.count` | SystemMetadata | FeatureInsight | **Measurement** — number of environments |
 | Hooks name | `hooks.name` | SystemMetadata | FeatureInsight | Built-in hook name (raw) or SHA-256 hash for extension/custom hooks. Known values: `prebuild`, `postbuild`, `predeploy`, `postdeploy`, `predown`, `postdown`, `prepackage`, `postpackage`, `preprovision`, `postprovision`, `prepublish`, `postpublish`, `prerestore`, `postrestore`, `preup`, `postup` |
 | Hooks type | `hooks.type` | SystemMetadata | FeatureInsight | `project`, `service`, `layer` |
@@ -322,8 +427,8 @@ remain defined to support a possible future redesign without changing the teleme
 | Install failure count | `tool.install.failure_count` | SystemMetadata | FeatureInsight | **Measurement** — number of tools that failed in a batch |
 | Install failed IDs | `tool.install.failed_ids` | SystemMetadata | FeatureInsight | Comma-separated built-in tool IDs whose install/upgrade failed. Per-tool error messages are intentionally not captured |
 | Install duration | `tool.install.duration_ms` | SystemMetadata | FeatureInsight | **Measurement** — total install/upgrade duration in ms |
-| Upgrade from version | `tool.upgrade.from_version` | SystemMetadata | FeatureInsight | Prior version (single-target upgrades) |
-| Upgrade to version | `tool.upgrade.to_version` | SystemMetadata | FeatureInsight | New version after a successful upgrade |
+| Update from version | `tool.update.from_version` | SystemMetadata | FeatureInsight | Prior version (single-target updates) |
+| Update to version | `tool.update.to_version` | SystemMetadata | FeatureInsight | New version after a successful update |
 | Updates available | `tool.check.updates_available` | SystemMetadata | FeatureInsight | **Measurement** — number of installed tools with an available upgrade |
 
 ### Provision Validation
@@ -351,7 +456,10 @@ The execution graph powers the parallel `up` / `provision` / `deploy` engine.
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
 | Step count | `exegraph.step.count` | SystemMetadata | PerformanceAndHealth | **Measurement** — total number of steps in the graph |
-| Max concurrency | `exegraph.max_concurrency` | SystemMetadata | PerformanceAndHealth | Effective concurrency limit used for the run |
+| Max concurrency | `exegraph.max_concurrency` | SystemMetadata | PerformanceAndHealth | **Measurement** — effective concurrency limit used for the run |
+| Package concurrency | `exegraph.package_concurrency` | SystemMetadata | PerformanceAndHealth | **Measurement** — resolved package phase concurrency limit; `0` means no dedicated phase limit |
+| Provision concurrency | `exegraph.provision_concurrency` | SystemMetadata | PerformanceAndHealth | **Measurement** — resolved provision phase concurrency limit; `0` means no dedicated phase limit |
+| Deploy concurrency | `exegraph.deploy_concurrency` | SystemMetadata | PerformanceAndHealth | **Measurement** — resolved deploy phase concurrency limit; `0` means no dedicated phase limit |
 | Error policy | `exegraph.error_policy` | SystemMetadata | PerformanceAndHealth | `fail_fast` or `continue_on_error` |
 | Step name | `exegraph.step.name` | SystemMetadata | PerformanceAndHealth | **Hashed** via `fields.StringHashed` — step names embed user-chosen service / layer names from `azure.yaml` (e.g., `deploy-<svc.Name>`, `<layer.Name>`) |
 | Step deps | `exegraph.step.deps` | SystemMetadata | PerformanceAndHealth | **Hashed slice** via `fields.StringSliceHashed` — each entry is another step name that embeds user-chosen identifiers |
@@ -371,7 +479,7 @@ Telemetry for the `infra.layers[]` parallel provisioning feature, emitted from `
 
 ## Data Classifications
 
-Classifications are defined in `internal/telemetry/fields/fields.go` and control how data
+Classifications are defined in `cli/azd/internal/tracing/fields/fields.go` and control how data
 is stored, retained, and who may access it.
 
 | Classification | Description |
@@ -430,7 +538,49 @@ Fields that are hashed:
 ```
 
 1. **Instrumentation**: Commands create OTel spans with attributes via `tracing.Start` and `SetUsageAttributes`.
-2. **Export**: A custom Application Insights exporter converts spans to App Insights envelopes.
-3. **Queue**: Envelopes are written to disk under `~/.azd/telemetry/`.
-4. **Upload**: The `azd telemetry upload` command (run as a background process) reads the queue and sends data to Azure Monitor.
-5. **Analysis**: Data flows into Kusto tables for dashboarding and analysis via LENS jobs and cooked tables.
+2. **Resource policy**: A shared exporter wrapper replaces the provider resource with the canonical azd resource.
+3. **Export**: A custom Application Insights exporter converts spans to App Insights envelopes.
+4. **Queue**: Envelopes are written to disk under `~/.azd/telemetry/`.
+5. **Upload**: The `azd telemetry upload` command (run as a background process) reads the queue and sends data to Azure Monitor.
+6. **Analysis**: Data flows into Kusto tables for dashboards and analysis via LENS jobs and cooked tables.
+
+## GDPR Data-Catalog Classification
+
+Runtime emission (above) is separate from **classification**. The GDPR data catalog is kept in
+sync by an external metadata tool that **statically scans the telemetry source** — it does not read this document or observe live telemetry, so it can only classify a property that is declared where the scan looks: an exported `fields.AttributeKey`. A raw `attribute.String("my.key", v)` at a call site is invisible to the scan, so its catalog row stays **Unclassified / `Complete=false`**. This is enforced in-repo by `TestNoRawTelemetryAttributes` (`cli/azd/cmd/telemetry_test.go`).
+
+### Field (attribute) discovery contract
+
+For a field to be discovered and classified it must be:
+
+- an **exported**, **package-level** `var` (not a `const`, not function-local, not unexported), and
+- typed exactly **`AttributeKey`** (the struct declared in `fields.go`).
+
+The scanner reads these `AttributeKey` members:
+
+| `AttributeKey` member | What the classifier reads |
+|-----------------------|---------------------------|
+| `Key` | The dotted OTel key (a string literal, `attribute.Key("…")`, or a string const). |
+| `Classification` | One of the six [Data Classifications](#data-classifications). |
+| `Purpose` | One or more [Purposes](#purposes). |
+| `Endpoint` | Optional identifier-type tag; set only when the value is a known endpoint identifier. |
+| `IsMeasurement` | `true` for numeric values (routed to the Measurements column); `false` (default) for Properties. |
+
+`Classification` and `Purpose` must be written as **bare identifiers from the `fields` package**
+(e.g. `Classification: SystemMetadata`) — the scanner reads the identifier name, so a qualified
+`fields.SystemMetadata` reference from another package would not be recognized. Keep all
+`AttributeKey` definitions inside the `fields` package. Fields are registered as **common
+properties** that apply across events (the scan does not tie an attribute to a specific event).
+
+### Event discovery contract
+
+For an event to be discovered its constant must be:
+
+- an **exported** `const` with a **string** value in the `events` package, and
+- named with a Go identifier that **contains the substring `Event`** (e.g. `PackBuildEvent`). A
+  constant whose identifier omits `Event` is silently skipped even if it is emitted at runtime.
+
+An identifier that **ends with `Prefix`** (e.g. `CommandEventPrefix`) registers a **prefix group**:
+any emitted event name starting with that prefix is classified under it. Every other event constant
+registers an exact event name. (Note: this `Event`/`Prefix` rule is about the Go **identifier**; the
+string **value** still follows the `prefix.noun.verb` naming convention.)

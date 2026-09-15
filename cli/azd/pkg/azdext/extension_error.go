@@ -7,9 +7,12 @@ import (
 	"errors"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorchain"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 // ServiceError represents an HTTP/gRPC service error from an extension.
@@ -38,6 +41,38 @@ type LocalError struct {
 	Code string
 	// Category classifies the local error (for example: user, validation, dependency)
 	Category LocalErrorCategory
+	// CauseTypes contains extension-provided diagnostic labels from an
+	// unexpected fallback chain. The host normalizes and hashes them for
+	// telemetry; they do not change classification.
+	CauseTypes []string
+	// Suggestion contains optional user-facing remediation guidance.
+	Suggestion string
+	// Links contains optional reference links rendered alongside the suggestion.
+	Links []errorhandler.ErrorLink
+}
+
+// ToolErrorKind identifies how a local external tool operation failed.
+type ToolErrorKind string
+
+const (
+	// ToolErrorKindMissing indicates that the required tool was not found.
+	ToolErrorKindMissing ToolErrorKind = "missing"
+	// ToolErrorKindFailed indicates that the tool was found but the operation failed.
+	ToolErrorKindFailed ToolErrorKind = "failed"
+)
+
+// ToolError represents a local external tool failure with safe structured metadata.
+type ToolError struct {
+	// Message is the human-readable error message.
+	Message string
+	// Err is the original local error when this value wraps one.
+	Err error
+	// ToolName is the normalized tool name (for example, "docker").
+	ToolName string
+	// Kind identifies whether the tool was missing or failed after starting.
+	Kind ToolErrorKind
+	// ExitCode is the process exit code when the tool ran and failed.
+	ExitCode *int
 	// Suggestion contains optional user-facing remediation guidance.
 	Suggestion string
 	// Links contains optional reference links rendered alongside the suggestion.
@@ -54,12 +89,26 @@ func (e *ServiceError) Error() string {
 	return e.Message
 }
 
+// Error implements the error interface.
+func (e *ToolError) Error() string {
+	return e.Message
+}
+
+// Unwrap returns the original local error when one is available.
+func (e *ToolError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+
+	return e.Err
+}
+
 // WrapError converts a Go error into an ExtensionError proto for transmission to the azd host.
 // It is called from extension processes (via [ReportError] and envelope SetError methods)
 // to serialize errors before sending them over gRPC.
 //
 // The function applies detection in priority order:
-//  1. [ServiceError] / [LocalError] — already structured by extension code (highest specificity)
+//  1. [ServiceError] / [LocalError] / [ToolError] — already structured by extension code (highest specificity)
 //  2. [azcore.ResponseError] — Azure SDK HTTP errors
 //  3. gRPC status — host-originated errors carrying ActionableErrorDetail and/or auth ErrorInfo
 //  4. Fallback — unclassified error with original message
@@ -108,6 +157,14 @@ func WrapError(err error) *ExtensionError {
 		return extErr
 	}
 
+	if extToolErr, ok := errors.AsType[*ToolError](err); ok {
+		extErr.Message = extToolErr.Message
+		extErr.Suggestion = extToolErr.Suggestion
+		extErr.Links = WrapErrorLinks(extToolErr.Links)
+		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_TOOL
+		return extErr
+	}
+
 	// Try to detect Azure SDK errors
 	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_SERVICE
@@ -138,7 +195,41 @@ func WrapError(err error) *ExtensionError {
 // the string-equality fallbacks that earlier versions used.
 func populateExtensionErrorFromStatus(extErr *ExtensionError, st *status.Status) {
 	actionable := ActionableErrorDetailFromStatus(st)
+	relayed := ExtensionErrorFromStatus(st)
+	serviceDetail := ServiceErrorDetailFromStatus(st)
 	isAuth := st.Code() == codes.Unauthenticated
+
+	if relayed != nil {
+		relayedCopy := proto.Clone(relayed).(*ExtensionError)
+		relayedCopy.Message = st.Message()
+		if actionable != nil {
+			if relayedCopy.GetSuggestion() == "" {
+				relayedCopy.Suggestion = actionable.GetSuggestion()
+			}
+			if len(relayedCopy.GetLinks()) == 0 {
+				relayedCopy.Links = actionable.GetLinks()
+			}
+		}
+		extErr.Message = relayedCopy.Message
+		extErr.Suggestion = relayedCopy.Suggestion
+		extErr.Links = relayedCopy.Links
+		extErr.Origin = relayedCopy.Origin
+		extErr.Source = relayedCopy.Source
+		return
+	}
+
+	if serviceDetail != nil {
+		extErr.Message = st.Message()
+		if actionable != nil {
+			extErr.Suggestion = actionable.GetSuggestion()
+			extErr.Links = actionable.GetLinks()
+		}
+		extErr.Origin = ErrorOrigin_ERROR_ORIGIN_SERVICE
+		extErr.Source = &ExtensionError_ServiceError{
+			ServiceError: proto.Clone(serviceDetail).(*ServiceErrorDetail),
+		}
+		return
+	}
 
 	if actionable == nil && !isAuth {
 		// Plain gRPC error with no host metadata; leave extErr as-is so the caller
@@ -190,6 +281,48 @@ func GRPCStatusFromError(err error) (*status.Status, bool) {
 	return st, st != nil
 }
 
+// ExtensionErrorFromStatus extracts a relayed extension error detail from a gRPC status.
+func ExtensionErrorFromStatus(st *status.Status) *ExtensionError {
+	if st == nil {
+		return nil
+	}
+
+	for _, detail := range st.Details() {
+		switch typed := detail.(type) {
+		case *ExtensionError:
+			return typed
+		case *v1beta.ExtensionError:
+			extensionErr := &ExtensionError{}
+			if transcodeStatusDetail(typed, extensionErr) {
+				return extensionErr
+			}
+		}
+	}
+
+	return nil
+}
+
+// ServiceErrorDetailFromStatus extracts a service error detail from a gRPC status.
+func ServiceErrorDetailFromStatus(st *status.Status) *ServiceErrorDetail {
+	if st == nil {
+		return nil
+	}
+
+	for _, detail := range st.Details() {
+		switch typed := detail.(type) {
+		case *ServiceErrorDetail:
+			return typed
+		case *v1beta.ServiceErrorDetail:
+			serviceErr := &ServiceErrorDetail{}
+			if transcodeStatusDetail(typed, serviceErr) {
+				return serviceErr
+			}
+		}
+	}
+
+	return nil
+}
+
 // ActionableErrorDetailFromError extracts host-originated actionable guidance from a gRPC status error.
 func ActionableErrorDetailFromError(err error) *ActionableErrorDetail {
 	st, ok := GRPCStatusFromError(err)
@@ -207,12 +340,26 @@ func ActionableErrorDetailFromStatus(st *status.Status) *ActionableErrorDetail {
 	}
 
 	for _, detail := range st.Details() {
-		if actionable, ok := detail.(*ActionableErrorDetail); ok {
-			return actionable
+		switch typed := detail.(type) {
+		case *ActionableErrorDetail:
+			return typed
+		case *v1beta.ActionableErrorDetail:
+			actionable := &ActionableErrorDetail{}
+			if transcodeStatusDetail(typed, actionable) {
+				return actionable
+			}
 		}
 	}
 
 	return nil
+}
+
+func transcodeStatusDetail(source, destination proto.Message) bool {
+	data, err := proto.Marshal(source)
+	if err != nil {
+		return false
+	}
+	return proto.Unmarshal(data, destination) == nil
 }
 
 func authLocalErrorCode(st *status.Status) string {
@@ -240,6 +387,9 @@ func UnwrapError(msg *ExtensionError) error {
 	}
 
 	links := UnwrapErrorLinks(msg.GetLinks())
+	if previewErr := unwrapPreviewErrorDetails(msg, links); previewErr != nil {
+		return previewErr
+	}
 
 	// Check for service error details
 	if svcErr := msg.GetServiceError(); svcErr != nil {
@@ -281,12 +431,65 @@ func UnwrapError(msg *ExtensionError) error {
 		}
 	}
 
+	if msg.GetOrigin() == ErrorOrigin_ERROR_ORIGIN_TOOL {
+		return &ToolError{
+			Message:    msg.GetMessage(),
+			Kind:       ToolErrorKindFailed,
+			Suggestion: msg.GetSuggestion(),
+			Links:      links,
+		}
+	}
+
 	return &LocalError{
 		Message:    msg.GetMessage(),
 		Category:   LocalErrorCategoryLocal,
 		Suggestion: msg.GetSuggestion(),
 		Links:      links,
 	}
+}
+
+func unwrapPreviewErrorDetails(msg *ExtensionError, links []errorhandler.ErrorLink) error {
+	wire, err := proto.Marshal(msg)
+	if err != nil {
+		return nil
+	}
+
+	preview := new(v1beta.ExtensionError)
+	if err := proto.Unmarshal(wire, preview); err != nil {
+		return nil
+	}
+
+	if localErr := preview.GetLocalError(); localErr != nil && len(localErr.GetCauseTypes()) > 0 {
+		return &LocalError{
+			Message:    preview.GetMessage(),
+			Code:       localErr.GetCode(),
+			Category:   ParseLocalErrorCategory(localErr.GetCategory()),
+			CauseTypes: errorchain.NormalizeCauseTypes(localErr.GetCauseTypes()),
+			Suggestion: preview.GetSuggestion(),
+			Links:      links,
+		}
+	}
+
+	if toolErr := preview.GetToolError(); toolErr != nil {
+		var exitCode *int
+		if toolErr.ExitCode != nil {
+			exitCode = new(int(toolErr.GetExitCode()))
+		}
+		kind := ToolErrorKindFailed
+		if toolErr.GetFailureKind() == string(ToolErrorKindMissing) {
+			kind = ToolErrorKindMissing
+		}
+		return &ToolError{
+			Message:    preview.GetMessage(),
+			ToolName:   toolErr.GetToolName(),
+			Kind:       kind,
+			ExitCode:   exitCode,
+			Suggestion: preview.GetSuggestion(),
+			Links:      links,
+		}
+	}
+
+	return nil
 }
 
 // WrapErrorLinks converts errorhandler.ErrorLink values into proto ErrorLink messages.

@@ -44,6 +44,7 @@ System overviews, design context, and decision records.
 - [Extension Framework](architecture/extension-framework.md) — gRPC-based extension system architecture
 - [Provisioning Pipeline](architecture/provisioning-pipeline.md) — How infrastructure provisioning works
 - [Telemetry Architecture](architecture/telemetry.md) — How azd collects and exports telemetry
+- [ADR-001: Extension Telemetry Events](architecture/adr-001-extension-telemetry-events.md) — Why extensions report named events with dynamic attributes
 - [ADR Template](architecture/adr-template.md) — Template for lightweight architecture decision records
 
 ---

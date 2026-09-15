@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -17,7 +18,90 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
+
+func TestResolveOptimizeAgent_DefinitionOverride(t *testing.T) {
+	tests := []struct {
+		name         string
+		inlineKind   string
+		overrideKind string
+		wantPrompt   bool
+		source       string
+	}{
+		{"prompt with hosted override", "prompt", "hosted", true, "inline"},
+		{"hosted with prompt override", "hosted", "prompt", false, "inline"},
+		{"prompt without override", "prompt", "", true, "inline"},
+		{"hosted without override", "hosted", "", false, "inline"},
+		{"legacy prompt with hosted override", "prompt", "hosted", true, "config"},
+		{"legacy hosted with prompt override", "hosted", "prompt", false, "config"},
+		{"referenced prompt with hosted override", "prompt", "hosted", true, "$ref"},
+		{"referenced hosted with prompt override", "hosted", "prompt", false, "$ref"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			props, err := structpb.NewStruct(map[string]any{"kind": tt.inlineKind})
+			require.NoError(t, err)
+			svc := &azdext.ServiceConfig{Name: "assistant", Host: AiAgentHost, AdditionalProperties: props}
+			switch tt.source {
+			case "config":
+				svc.Config = props
+				svc.AdditionalProperties = nil
+			case "$ref":
+				require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"),
+					[]byte("kind: "+tt.inlineKind+"\n"), 0600))
+				svc.AdditionalProperties, err = structpb.NewStruct(map[string]any{"$ref": "agent.yaml"})
+				require.NoError(t, err)
+			}
+			server := &recordingProjectServer{
+				projectPath: root,
+				existing:    map[string]*azdext.ServiceConfig{"assistant": svc},
+			}
+			envServer := &testEnvironmentServiceServer{
+				environments: map[string]*azdext.Environment{"dev": {Name: "dev"}},
+				values: map[string]map[string]string{
+					"dev": {"AGENT_ASSISTANT_NAME": "deployed-agent", "AGENT_ASSISTANT_VERSION": "2"},
+				},
+			}
+			t.Setenv("AZD_SERVER", newProjectRecorderServer(t, server, envServer))
+			override := ""
+			if tt.overrideKind != "" {
+				override = filepath.Join(root, "override.yaml")
+				require.NoError(t, os.WriteFile(override, []byte("kind: "+tt.overrideKind+"\n"), 0600))
+			}
+			t.Setenv("AGENT_DEFINITION_PATH", override)
+
+			resolved, err := resolveOptimizeAgent(t.Context(), "assistant", "dev", true)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantPrompt, resolved.promptAgent)
+			require.Equal(t, "deployed-agent", resolved.agentName)
+			require.Equal(t, "2", resolved.agentVersion)
+			require.Equal(t, "assistant", resolved.serviceName)
+			cfg := &OptimizeConfig{
+				Config: opt_eval.Config{Agent: opt_eval.AgentRef{Name: resolved.agentName}},
+				Options: &opt_eval.Options{OptimizationConfig: opt_eval.OptimizationConfig{
+					"model":              json.RawMessage(`"gpt-5"`),
+					"system_prompt":      json.RawMessage(`"Be helpful."`),
+					"tools":              json.RawMessage(`[]`),
+					"skills":             json.RawMessage(`[]`),
+					"model_search_space": json.RawMessage(`["gpt-5"]`),
+				}},
+			}
+			request, _, err := optimizeRequestConfig(cfg, resolved.promptAgent).ToRequest()
+			require.NoError(t, err)
+			for _, key := range []string{"model", "system_prompt", "tools", "skills"} {
+				if tt.wantPrompt {
+					require.NotContains(t, request.Options.OptimizationConfig, key)
+				} else {
+					require.Contains(t, request.Options.OptimizationConfig, key)
+				}
+			}
+			require.Contains(t, request.Options.OptimizationConfig, "model_search_space")
+			require.Len(t, cfg.Options.OptimizationConfig, 5)
+		})
+	}
+}
 
 func TestOptimizeCommand_HasExpectedSubCommands(t *testing.T) {
 	cmd := newOptimizeCommand(&azdext.ExtensionContext{})
@@ -374,6 +458,88 @@ func TestApplyOverrides_NoPrompt_NoDataset_ReturnsError(t *testing.T) {
 	err := action.applyOverrides(t.Context(), cfg, "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "a dataset is required")
+}
+
+func TestApplyOverrides_PromptAgentUsesServiceSideDefinition(t *testing.T) {
+	t.Parallel()
+
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent: opt_eval.AgentRef{Name: "prompt-agent"},
+			Dataset: &opt_eval.DatasetRef{
+				Name: "optimization-dataset",
+			},
+			Evaluators: opt_eval.EvaluatorList{
+				{Name: "builtin.task_adherence"},
+			},
+		},
+		Options: &opt_eval.Options{
+			EvalModel:         "gpt-4.1-mini",
+			OptimizationModel: "gpt-5",
+		},
+	}
+	action := &OptimizeAction{
+		flags:       &optimizeFlags{},
+		noPrompt:    true,
+		promptAgent: true,
+	}
+
+	require.NoError(t, action.applyOverrides(t.Context(), cfg, t.TempDir()))
+	require.True(t, cfg.Agent.Instruction.IsEmpty())
+	require.Empty(t, cfg.Agent.Model)
+	require.Empty(t, cfg.SkillDir)
+	require.Empty(t, cfg.ToolsFile)
+	require.Nil(t, cfg.Options.OptimizationConfig)
+
+	request, _, err := cfg.ToRequest()
+	require.NoError(t, err)
+	require.Nil(t, request.Options.OptimizationConfig)
+}
+
+func TestOptimizeRequestConfig_PromptAgentOmitsServiceSideDefinition(t *testing.T) {
+	t.Parallel()
+
+	cfg := &OptimizeConfig{
+		Config: opt_eval.Config{
+			Agent: opt_eval.AgentRef{
+				Name:        "prompt-agent",
+				Model:       "gpt-4.1-mini",
+				Instruction: opt_eval.InstructionRef{File: "missing-instructions.md"},
+			},
+		},
+		SkillDir:  "missing-skills",
+		ToolsFile: "missing-tools.json",
+		Options: &opt_eval.Options{
+			OptimizationConfig: opt_eval.OptimizationConfig{
+				"model":              json.RawMessage(`"gpt-4.1-mini"`),
+				"system_prompt":      json.RawMessage(`"Be helpful."`),
+				"skills":             json.RawMessage(`[{"name":"search"}]`),
+				"tools":              json.RawMessage(`[{"type":"code_interpreter"}]`),
+				"model_search_space": json.RawMessage(`["gpt-4.1-mini","gpt-5"]`),
+			},
+		},
+	}
+
+	requestConfig := optimizeRequestConfig(cfg, true)
+	request, _, err := requestConfig.ToRequest()
+	require.NoError(t, err)
+	require.Equal(t, optimize_api.AgentIdentifier{AgentName: "prompt-agent"}, request.Agent)
+	require.Equal(t, map[string]json.RawMessage{
+		"model_search_space": json.RawMessage(`["gpt-4.1-mini","gpt-5"]`),
+	}, request.Options.OptimizationConfig)
+
+	require.Equal(t, "gpt-4.1-mini", cfg.Agent.Model)
+	require.Equal(t, "missing-instructions.md", cfg.Agent.Instruction.File)
+	require.Equal(t, "missing-skills", cfg.SkillDir)
+	require.Equal(t, "missing-tools.json", cfg.ToolsFile)
+	require.Len(t, cfg.Options.OptimizationConfig, 5)
+}
+
+func TestOptimizeRequestConfig_HostedAgentKeepsLocalDefinition(t *testing.T) {
+	t.Parallel()
+
+	cfg := &OptimizeConfig{}
+	require.Same(t, cfg, optimizeRequestConfig(cfg, false))
 }
 
 // ---- printOptimizeResults — table format ----

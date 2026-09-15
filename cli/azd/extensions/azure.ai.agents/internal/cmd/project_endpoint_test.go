@@ -113,3 +113,12 @@ func TestNoProjectEndpointError(t *testing.T) {
 	assert.Contains(t, localErr.Suggestion, "azd ai project set")
 	assert.NotContains(t, localErr.Suggestion, "azd ai agent project set")
 }
+
+func TestValidateProjectEndpointRejectsNonFoundryEndpoints(t *testing.T) {
+	t.Parallel()
+	_, _, err := validateProjectEndpoint("http://localhost:5000")
+	require.Error(t, err)
+
+	_, _, err = validateProjectEndpoint("https://example.com/api/projects/p")
+	require.Error(t, err)
+}

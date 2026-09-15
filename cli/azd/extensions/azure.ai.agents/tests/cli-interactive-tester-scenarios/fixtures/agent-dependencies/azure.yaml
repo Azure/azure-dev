@@ -1,0 +1,38 @@
+# Offline composition fixture only. Never provision, deploy, or fetch these URLs/images.
+name: agent-dependencies-offline
+services:
+  ai-project:
+    host: azure.ai.project
+    endpoint: https://project.example.invalid/api/projects/offline
+
+  research-agent:
+    host: azure.ai.agent
+    project: .
+    language: docker
+    kind: hosted
+    name: research-agent
+    image: registry.example.invalid/research-agent:offline
+    docker:
+      imagePassthrough: true
+    protocols:
+      - protocol: responses
+        version: 1.0.0
+    uses:
+      - ai-project
+    toolboxes: []
+
+  support-tools:
+    host: azure.ai.toolbox
+    uses:
+      - ai-project
+    description: Offline support toolbox definition; preserve unchanged.
+    tools:
+      - type: web_search
+
+  search-connection:
+    host: azure.ai.connection
+    uses:
+      - ai-project
+    category: CognitiveSearch
+    target: https://search.example.invalid
+    authType: None

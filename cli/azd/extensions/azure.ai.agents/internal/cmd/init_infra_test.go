@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"os"
 	"os/exec"
@@ -17,6 +18,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/pflag"
@@ -1097,6 +1099,152 @@ services:
 	}
 }
 
+func TestExistingProjectArtifactsNormalizeAcrEndpoint(t *testing.T) {
+	t.Parallel()
+
+	const (
+		endpoint = "https://acr-user:acr-password@registry.azurecr.io" +
+			"?sig=acr-query#acr-fragment"
+		resourceID = "/subscriptions/sub/resourceGroups/rg/providers/" +
+			"Microsoft.ContainerRegistry/registries/registry"
+	)
+	values := []map[string]string{{
+		"AZURE_CONTAINER_REGISTRY_ENDPOINT":    endpoint,
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceID,
+	}}
+
+	tests := []struct {
+		name string
+		file string
+		run  func(string, map[string]any, []map[string]string) error
+	}{
+		{
+			name: "bicep",
+			file: "main.parameters.json",
+			run: func(dir string, params map[string]any, values []map[string]string) error {
+				_, err := ejectExistingProjectBicep(
+					dir, "infra", "main", params, infraEjectAcrReuseConnect, values)
+				return err
+			},
+		},
+		{
+			name: "terraform",
+			file: "main.tfvars.json",
+			run: func(dir string, params map[string]any, values []map[string]string) error {
+				_, err := ejectExistingProjectTerraform(
+					dir, "infra", "main", params, infraEjectAcrReuseConnect, values)
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			params := map[string]any{
+				"deployments": []synthesis.Deployment{},
+			}
+			require.NoError(t, tt.run(dir, params, values))
+
+			raw, err := os.ReadFile(filepath.Join(dir, tt.file)) //nolint:gosec
+			require.NoError(t, err)
+			output := string(raw)
+			assert.Contains(t, output, "https://registry.azurecr.io")
+			for _, secret := range []string{
+				"acr-user", "acr-password", "acr-query", "acr-fragment",
+			} {
+				assert.NotContains(t, output, secret)
+			}
+		})
+	}
+}
+
+func TestExistingProjectWritersIgnoreUnusedAcrEndpoint(t *testing.T) {
+	t.Parallel()
+
+	params := map[string]any{
+		"deployments": []synthesis.Deployment{},
+	}
+	resourceID := "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.ContainerRegistry/registries/registry"
+	malformedEndpoint := "https://registry.azurecr.io/%zz?sig=" +
+		"unused-secret#fragment"
+	tests := []struct {
+		name      string
+		mode      infraEjectAcrMode
+		wantError bool
+		bicep     bool
+	}{
+		{name: "bicep none", mode: infraEjectAcrNone, bicep: true},
+		{name: "bicep create", mode: infraEjectAcrCreate, bicep: true},
+		{name: "terraform none"},
+		{name: "terraform create", mode: infraEjectAcrCreate},
+		{name: "bicep reuse rejects", mode: infraEjectAcrReuseConnect, wantError: true, bicep: true},
+		{name: "terraform reuse rejects", mode: infraEjectAcrReuseConnect, wantError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			values := []map[string]string{{
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    malformedEndpoint,
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceID,
+			}}
+			var err error
+			var outputPath string
+			if tt.bicep {
+				_, err = ejectExistingProjectBicep(
+					dir,
+					"infra",
+					"main",
+					params,
+					tt.mode,
+					values,
+				)
+				outputPath = filepath.Join(dir, "main.parameters.json")
+			} else {
+				_, err = ejectExistingProjectTerraform(
+					dir,
+					"infra",
+					"main",
+					params,
+					tt.mode,
+					values,
+				)
+				outputPath = filepath.Join(dir, "main.tfvars.json")
+			}
+			if tt.wantError {
+				require.Error(t, err)
+				assert.NotContains(t, err.Error(), "unused-secret")
+				return
+			}
+			require.NoError(t, err)
+
+			output, readErr := os.ReadFile(outputPath) //nolint:gosec
+			require.NoError(t, readErr)
+			assert.NotContains(t, string(output), "unused-secret")
+			if !tt.bicep {
+				var values map[string]any
+				require.NoError(t, json.Unmarshal(output, &values))
+				assert.Equal(t, "", values["existing_acr_endpoint"])
+			}
+		})
+	}
+}
+
+func TestNormalizeContainerRegistryEndpointRejectsMalformedURL(t *testing.T) {
+	_, err := normalizeContainerRegistryEndpoint(
+		"https://registry.azurecr.io/%zz?sig=malformed-secret",
+	)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "malformed-secret")
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
+}
+
 func TestEjectInfra_ExistingProjectBicepModesCompile(t *testing.T) {
 	t.Parallel()
 	bicep := lookupInstalledBicep()
@@ -1231,7 +1379,7 @@ services:
 	require.NoError(t, err)
 
 	for _, name := range []string{
-		"provider.tf", "variables.tf", "main.tf", "model-deployments.tf", "connections.tf",
+		"provider.tf", "variables.tf", "main.tf", "model-deployments.tf",
 		"container-registry.tf", "outputs.tf", "main.tfvars.json",
 	} {
 		assert.FileExists(t, filepath.Join(dir, "infra", name))
@@ -1245,11 +1393,7 @@ services:
 	deployments, err := os.ReadFile(filepath.Join(dir, "infra", "model-deployments.tf")) //nolint:gosec
 	require.NoError(t, err)
 	assert.NotContains(t, string(deployments), `resource "azapi_resource"`)
-	connections, err := os.ReadFile(filepath.Join(dir, "infra", "connections.tf")) //nolint:gosec
-	require.NoError(t, err)
-	assert.Contains(t, string(connections), `resource "azapi_resource_action" "connection"`)
-	assert.Contains(t, string(connections), `method      = "PUT"`)
-	assert.NotContains(t, string(connections), `resource "azapi_resource" "connection"`)
+	assert.NoFileExists(t, filepath.Join(dir, "infra", "connections.tf"))
 
 	tfvars, err := os.ReadFile(filepath.Join(dir, "infra", "main.tfvars.json")) //nolint:gosec
 	require.NoError(t, err)
@@ -1313,6 +1457,62 @@ services:
 	tfvars, err := os.ReadFile(filepath.Join(dir, "infra", "main.tfvars.json")) //nolint:gosec
 	require.NoError(t, err)
 	assert.NotContains(t, string(tfvars), `"acr_mode"`)
+}
+
+func TestEjectInfra_ExistingProjectIgnoresUnusedAcrEndpoint(t *testing.T) {
+	t.Parallel()
+
+	const projectYAML = `name: my-project
+services:
+  ai-project:
+    host: azure.ai.project
+    endpoint: https://acct.services.ai.azure.com/api/projects/p1
+  agent:
+    host: azure.ai.agent
+    uses: [ai-project]
+    project: src/agent
+    docker:
+      path: Dockerfile
+`
+	malformedEndpoint := "https://registry.azurecr.io/%zz?sig=" +
+		"unused-secret#fragment"
+	resourceID := "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.ContainerRegistry/registries/registry"
+
+	for _, provider := range []string{"bicep", "terraform"} {
+		t.Run(provider, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), projectYAML)
+			env := map[string]string{
+				"AZD_FOUNDRY_ACR_MODE":                 "none",
+				"FOUNDRY_PROJECT_ENDPOINT":             "https://acct.services.ai.azure.com/api/projects/p1",
+				"AZURE_AI_PROJECT_ID":                  "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/acct/projects/p1",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    malformedEndpoint,
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceID,
+			}
+
+			require.NoError(t, ejectInfra(dir, provider, env))
+			var output []byte
+			var err error
+			if provider == "bicep" {
+				output, err = os.ReadFile(
+					filepath.Join(dir, "infra", "main.parameters.json"), //nolint:gosec
+				)
+			} else {
+				output, err = os.ReadFile(
+					filepath.Join(dir, "infra", "main.tfvars.json"), //nolint:gosec
+				)
+			}
+			require.NoError(t, err)
+			assert.NotContains(t, string(output), "unused-secret")
+			if provider == "terraform" {
+				var values map[string]any
+				require.NoError(t, json.Unmarshal(output, &values))
+				assert.Equal(t, "", values["existing_acr_endpoint"])
+			}
+		})
+	}
 }
 
 func TestEjectInfra_ExistingProjectTerraformDeploymentsRemainEditable(t *testing.T) {
@@ -1436,7 +1636,6 @@ func TestEjectInfra_HappyPath_WritesExpectedFiles(t *testing.T) {
 		filepath.Join("infra", "main.bicep"),
 		filepath.Join("infra", "abbreviations.json"),
 		filepath.Join("infra", "modules", "acr.bicep"),
-		filepath.Join("infra", "modules", "connections.bicep"),
 		filepath.Join("infra", "modules", "network.bicep"),
 		filepath.Join("infra", "modules", "subnet.bicep"),
 		filepath.Join("infra", "modules", "private-endpoint-dns.bicep"),
@@ -1565,79 +1764,275 @@ services:
 	assert.Equal(t, false, doc.Parameters["includeAcr"].Value)
 }
 
-func TestEjectInfra_EjectsConnectionServices(t *testing.T) {
-	// See TestEjectInfra_HappyPath_WritesExpectedFiles for why this is not parallel.
-	// Connection metadata and credentials are ejected separately.
-	// Bicep keeps credential values in a secure object parameter.
-	dir := t.TempDir()
-	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
-services:
-  my-foundry:
-    host: azure.ai.project
-    deployments: []
-  search-conn:
+func TestEjectInfra_DoesNotOwnDeclaredConnections(t *testing.T) {
+	// Not parallel: eject summaries use the captured process stdout.
+	for _, provider := range []string{"bicep", "terraform"} {
+		for _, existing := range []bool{false, true} {
+			for _, includeAcr := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/existing=%v/acr=%v", provider, existing, includeAcr), func(t *testing.T) {
+					dir := t.TempDir()
+					config := validFoundryAzureYAML
+					if existing {
+						config = strings.Replace(config, "host: azure.ai.project", "host: azure.ai.project\n"+
+							"    endpoint: https://acct.services.ai.azure.com/api/projects/p1", 1)
+					}
+					if !includeAcr {
+						config = strings.Replace(config, "- name: my-agent", "- name: my-agent\n        kind: prompt", 1)
+					}
+					config += `  search-connection:
     host: azure.ai.connection
     uses: [my-foundry]
+    name: '  Private Registry  '
     category: CognitiveSearch
-    target: https://my-search.search.windows.net
+    target: ${UNRESOLVED_SEARCH_ENDPOINT}
     authType: ApiKey
-    credentials:
-      key: ${SEARCH_API_KEY}
-  mcp-conn:
+    credentials: {key: secret-must-not-leak}
+    env: {KEY: '${UNRESOLVED_KEY}'}
+  malformed-connection:
     host: azure.ai.connection
-    uses: [my-foundry]
-    category: RemoteTool
-    target: https://mcp.example.com
-    authType: CustomKeys
-    credentials:
-      keys:
-        x-api-key: ${MCP_KEY}
-`)
-
-	withCapturedStdout(t, func() {
-		require.NoError(t, ejectInfra(dir, "bicep"))
-	})
-
-	// The connections module is part of the ejected tree.
-	_, err := os.Stat(filepath.Join(dir, "infra", "modules", "connections.bicep"))
-	assert.NoError(t, err, "connections.bicep module must be ejected")
-
-	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json")) //nolint:gosec // G304: test file path from t.TempDir()
-	require.NoError(t, err)
-	var doc struct {
-		Parameters map[string]struct {
-			Value any `json:"value"`
-		} `json:"parameters"`
+    condition: {invalid: condition}
+    credentials: [invalid]
+    $ref: ./missing-connection.yaml
+  toolbox:
+    host: azure.ai.toolbox
+    uses: [my-foundry, search-connection]
+    condition: [invalid]
+    config:
+      $ref: ./missing-toolbox.yaml
+`
+					mustWriteFile(t, filepath.Join(dir, "azure.yaml"), config)
+					withCapturedStdout(t, func() {
+						require.NoError(t, ejectInfra(dir, provider))
+					})
+					infraDir := filepath.Join(dir, "infra")
+					paramsName := "main.parameters.json"
+					if provider == "terraform" {
+						paramsName = "main.tfvars.json"
+					}
+					data, err := os.ReadFile(filepath.Join(infraDir, paramsName)) //nolint:gosec // test directory
+					require.NoError(t, err)
+					var params map[string]any
+					require.NoError(t, json.Unmarshal(data, &params))
+					if provider == "bicep" {
+						var ok bool
+						params, ok = params["parameters"].(map[string]any)
+						require.True(t, ok)
+					}
+					assert.Contains(t, params, "deployments")
+					assert.Contains(t, string(data), "gpt-4-1-mini")
+					assert.NotContains(t, params, "connections")
+					assert.NotContains(t, params, "connectionCredentials")
+					err = filepath.WalkDir(infraDir, func(path string, entry fs.DirEntry, err error) error {
+						require.NoError(t, err)
+						if entry.IsDir() {
+							return nil
+						}
+						assert.NotEqual(t, "connections.bicep", entry.Name())
+						assert.NotEqual(t, "connections.tf", entry.Name())
+						content, err := os.ReadFile(path) //nolint:gosec // generated test infrastructure
+						require.NoError(t, err)
+						for _, forbidden := range []string{
+							"connectionCredentials", "param connections ", `variable "connections"`,
+							"var.connections", "projectConnections", "secret-must-not-leak", "UNRESOLVED_SEARCH_ENDPOINT",
+							"AZURE_AI_PROJECT_CONNECTION_NAMES", "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT",
+						} {
+							assert.NotContains(t, string(content), forbidden, path)
+						}
+						return nil
+					})
+					require.NoError(t, err)
+					if provider == "terraform" && includeAcr {
+						acr, err := os.ReadFile(filepath.Join(infraDir, "container-registry.tf")) //nolint:gosec
+						require.NoError(t, err)
+						assert.Contains(t, string(acr), `resource "azapi_resource" "acr_connection"`)
+						assert.Contains(t, string(acr), "ContainerRegistry")
+					}
+				})
+			}
+		}
 	}
-	require.NoError(t, json.Unmarshal(raw, &doc))
+}
 
-	require.Contains(t, doc.Parameters, "connections")
-	conns, ok := doc.Parameters["connections"].Value.([]any)
-	require.True(t, ok, "connections should be an array, got %T", doc.Parameters["connections"].Value)
-	require.Len(t, conns, 2)
+func TestEjectInfra_RejectsBundledDeclarationsBeforeWriting(t *testing.T) {
+	for _, provider := range []string{"bicep", "terraform"} {
+		for _, existing := range []bool{false, true} {
+			for _, field := range []string{"connections", "toolboxes"} {
+				t.Run(fmt.Sprintf("%s/existing=%v/%s", provider, existing, field), func(t *testing.T) {
+					dir := t.TempDir()
+					endpoint := ""
+					if existing {
+						endpoint = "https://acct.services.ai.azure.com/api/projects/p1"
+					}
+					config := fmt.Sprintf(`name: test
+services:
+  project:
+    host: azure.ai.project
+    endpoint: %q
+    %s: [{name: legacy, $ref: ./missing.yaml}]
+`, endpoint, field)
+					mustWriteFile(t, filepath.Join(dir, "azure.yaml"), config)
+					err := ejectInfra(dir, provider)
+					require.ErrorContains(t, err, "bundled declarations are no longer supported")
+					assert.NoDirExists(t, filepath.Join(dir, "infra"))
+					unchanged, err := azureYAMLUnchanged(filepath.Join(dir, "azure.yaml"), []byte(config))
+					require.NoError(t, err)
+					assert.True(t, unchanged)
+				})
+			}
+		}
+	}
+}
 
-	conn, ok := conns[1].(map[string]any)
-	require.True(t, ok, "connection entry should be an object, got %T", conns[0])
-	assert.Equal(t, "search-conn", conn["name"])
-	assert.Equal(t, "CognitiveSearch", conn["category"])
-	assert.Equal(t, "ApiKey", conn["authType"])
+func TestEjectInfra_IgnoresSplitConnectionCredentials(t *testing.T) {
+	// Not parallel: capture the eject summary and assert after stdout is restored.
+	const secretValue = "inline-value-must-not-leak" // #nosec G101 -- synthetic test credential for non-disclosure assertions.
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
 
-	assert.NotContains(t, conn, "credentials")
+	tests := []struct {
+		name            string
+		provider        string
+		existing        bool
+		externalRef     bool
+		connectionValue string
+	}{
+		{
+			name:            "greenfield bicep ignores inline credentials",
+			provider:        "bicep",
+			connectionValue: secretValue,
+		},
+		{
+			name:            "greenfield terraform ignores inline credentials",
+			provider:        "terraform",
+			connectionValue: secretValue,
+		},
+		{
+			name:            "existing bicep ignores external ref credentials",
+			provider:        "bicep",
+			existing:        true,
+			externalRef:     true,
+			connectionValue: secretValue,
+		},
+		{
+			name:            "existing terraform ignores inline credentials",
+			provider:        "terraform",
+			existing:        true,
+			connectionValue: secretValue,
+		},
+		{
+			name:            "greenfield bicep ignores environment reference",
+			provider:        "bicep",
+			connectionValue: "${SEARCH_API_KEY}",
+		},
+		{
+			name:            "existing terraform ignores environment reference",
+			provider:        "terraform",
+			existing:        true,
+			connectionValue: "${SEARCH_API_KEY}",
+		},
+	}
 
-	// Nested CustomKeys credentials must remain an object so Terraform's
-	// optional(any) value can preserve mixed connection credential shapes.
-	mcpConn, ok := conns[0].(map[string]any)
-	require.True(t, ok, "connection entry should be an object, got %T", conns[0])
-	assert.Equal(t, "mcp-conn", mcpConn["name"])
-	assert.NotContains(t, mcpConn, "credentials")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			existing := ""
+			if tt.existing {
+				existing = "    endpoint: " + endpoint + "\n"
+			}
+			connectionConfig := "      key: " + tt.connectionValue + "\n"
+			var connectionYAML string
+			if tt.externalRef {
+				connectionYAML = "host: azure.ai.connection\n" +
+					"uses: [my-foundry]\n" +
+					"category: CognitiveSearch\n" +
+					"target: https://search.example.com\n" +
+					"authType: ApiKey\n" +
+					"credentials:\n" + connectionConfig
+				mustWriteFile(t, filepath.Join(dir, "connection.yaml"), connectionYAML)
+				connectionConfig = "    $ref: ./connection.yaml\n"
+			} else {
+				connectionConfig = "    host: azure.ai.connection\n" +
+					"    uses: [my-foundry]\n" +
+					"    category: CognitiveSearch\n" +
+					"    target: https://search.example.com\n" +
+					"    authType: ApiKey\n" +
+					"    credentials:\n" + connectionConfig
+			}
+			yamlBody := "name: my-project\n" +
+				"infra:\n" +
+				"  provider: microsoft.foundry\n" +
+				"services:\n" +
+				"  my-foundry:\n" +
+				"    host: azure.ai.project\n" +
+				existing +
+				"  search-conn:\n" +
+				connectionConfig
+			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), yamlBody)
 
-	secureCreds, ok := doc.Parameters["connectionCredentials"].Value.(map[string]any)
-	require.True(t, ok, "connectionCredentials should be an object")
-	searchCreds := secureCreds["search-conn"].(map[string]any)
-	assert.Equal(t, "${SEARCH_API_KEY}", searchCreds["key"])
-	mcpCreds := secureCreds["mcp-conn"].(map[string]any)
-	keys := mcpCreds["keys"].(map[string]any)
-	assert.Equal(t, "${MCP_KEY}", keys["x-api-key"])
+			var err error
+			stdout := withCapturedStdout(t, func() {
+				err = ejectInfra(dir, tt.provider)
+			})
+			require.NoError(t, err)
+			assert.NotContains(t, stdout, secretValue)
+			assert.NotContains(t, stdout, "${SEARCH_API_KEY}")
+
+			parameterFile := "main.parameters.json"
+			if tt.provider == "terraform" {
+				parameterFile = "main.tfvars.json"
+			}
+			infraDir := filepath.Join(dir, "infra")
+			raw, readErr := os.ReadFile(filepath.Join(infraDir, parameterFile)) //nolint:gosec // test directory
+			require.NoError(t, readErr)
+			var params map[string]any
+			require.NoError(t, json.Unmarshal(raw, &params))
+			if tt.provider == "bicep" {
+				var ok bool
+				params, ok = params["parameters"].(map[string]any)
+				require.True(t, ok, "expected a Bicep parameters object")
+			}
+			assert.Contains(t, params, "deployments")
+			assert.NotContains(t, params, "connections")
+			assert.NotContains(t, params, "connectionCredentials")
+			require.NoError(t, filepath.WalkDir(infraDir, func(path string, entry fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if entry.IsDir() {
+					return nil
+				}
+				content, err := os.ReadFile(path) //nolint:gosec // generated test infrastructure
+				if err != nil {
+					return err
+				}
+				for _, forbidden := range []string{
+					secretValue, "${SEARCH_API_KEY}", "connectionCredentials",
+					"AZURE_AI_PROJECT_CONNECTION_NAMES", "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT",
+				} {
+					assert.NotContains(t, string(content), forbidden, path)
+				}
+				return nil
+			}))
+
+			// Ignoring split services must not remove credentials from user-owned files.
+			actualYAML, readErr := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // test directory
+			require.NoError(t, readErr)
+			if tt.provider == "bicep" {
+				assert.Equal(t, yamlBody, string(actualYAML))
+			} else {
+				// Terraform changes only the provider; YAML formatting may change too.
+				wantYAML := strings.Replace(yamlBody, "provider: microsoft.foundry", "provider: terraform", 1)
+				var wantDoc, actualDoc map[string]any
+				require.NoError(t, yaml.Unmarshal([]byte(wantYAML), &wantDoc))
+				require.NoError(t, yaml.Unmarshal(actualYAML, &actualDoc))
+				assert.Equal(t, wantDoc, actualDoc)
+			}
+			if tt.externalRef {
+				actualConnection, readErr := os.ReadFile(filepath.Join(dir, "connection.yaml")) //nolint:gosec
+				require.NoError(t, readErr)
+				assert.Equal(t, connectionYAML, string(actualConnection))
+			}
+		})
+	}
 }
 
 func TestEjectInfra_PreservesNetworkVarRefs(t *testing.T) {
@@ -1988,24 +2383,17 @@ services:
 
 func TestEjectInfraAfterInit_UsesActiveEnvironmentForCondition(t *testing.T) {
 	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
-	t.Setenv("ENABLE_CONNECTION", "true")
+	t.Setenv("ENABLE_AGENT", "true")
 	projectRoot := t.TempDir()
-	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"), `name: test
-services:
-  ai-project:
-    host: azure.ai.project
-  active-connection:
-    host: azure.ai.connection
-    condition: ${ENABLE_CONNECTION}
-    category: ApiKey
-    target: https://example.test
-`)
+	mustWriteFile(t, filepath.Join(projectRoot, "azure.yaml"),
+		"name: test\nservices:\n  ai-project:\n    host: azure.ai.project\n"+
+			"  active-agent:\n    host: azure.ai.agent\n    condition: ${ENABLE_AGENT}\n    kind: hosted\n")
 	t.Chdir(projectRoot)
 
 	envServer := &testEnvironmentServiceServer{
 		current: &azdext.Environment{Name: "dev"},
 		values: map[string]map[string]string{
-			"dev": {"ENABLE_CONNECTION": "false"},
+			"dev": {"ENABLE_AGENT": "false"},
 		},
 	}
 	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
@@ -2025,11 +2413,8 @@ services:
 	}
 	require.NoError(t, json.Unmarshal(raw, &doc))
 
-	require.Contains(t, doc.Parameters, "connections")
-	connections, ok := doc.Parameters["connections"].Value.([]any)
-	require.True(t, ok, "connections should be an array, got %T",
-		doc.Parameters["connections"].Value)
-	assert.Empty(t, connections,
+	require.Contains(t, doc.Parameters, "includeAcr")
+	assert.Equal(t, false, doc.Parameters["includeAcr"].Value,
 		"the active azd environment must override the process environment")
 }
 
@@ -2175,6 +2560,61 @@ services:
 			}
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestFindFoundryServiceForEject_ProjectPrecedesLegacyNetwork(t *testing.T) {
+	for _, legacyHost := range []string{"azure.ai.agent", "microsoft.foundry"} {
+		t.Run(legacyHost, func(t *testing.T) {
+			raw := []byte(`name: my-project
+services:
+  project:
+    host: azure.ai.project
+  legacy:
+    host: ` + legacyHost + `
+    image: registry.example/agent:latest
+    network:
+      mode: managed
+`)
+
+			selected, err := findFoundryServiceForEject(raw)
+			require.NoError(t, err)
+			assert.Equal(t, "project", selected)
+
+			dir := t.TempDir()
+			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), string(raw))
+			withCapturedStdout(t, func() {
+				require.NoError(t, ejectInfra(dir, "bicep"))
+			})
+			assert.FileExists(t, filepath.Join(dir, "infra", "main.bicep"))
+		})
+	}
+}
+
+func TestFindFoundryServiceForEject_RejectsLegacyNetworkWithoutProject(t *testing.T) {
+	for _, legacyHost := range []string{"azure.ai.agent", "microsoft.foundry"} {
+		t.Run(legacyHost, func(t *testing.T) {
+			raw := []byte(`name: my-project
+services:
+  legacy:
+    host: ` + legacyHost + `
+    network:
+      mode: managed
+`)
+
+			_, err := findFoundryServiceForEject(raw)
+			require.Error(t, err)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, exterrors.CodeInvalidAzureYaml, localErr.Code)
+			assert.Contains(t, localErr.Message, "network: is only supported")
+
+			dir := t.TempDir()
+			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), string(raw))
+			err = ejectInfra(dir, "bicep")
+			require.Error(t, err)
+			assert.NoDirExists(t, filepath.Join(dir, "infra"))
 		})
 	}
 }
@@ -2876,7 +3316,6 @@ func TestEjectInfra_Terraform_HappyPath_WritesExpectedFiles(t *testing.T) {
 		filepath.Join("infra", "variables.tf"),
 		filepath.Join("infra", "main.tf"),
 		filepath.Join("infra", "container-registry.tf"),
-		filepath.Join("infra", "connections.tf"),
 		filepath.Join("infra", "outputs.tf"),
 		filepath.Join("infra", "main.tfvars.json"),
 		filepath.Join("infra", foundryTerraformMarker),
@@ -2987,71 +3426,8 @@ func TestEjectInfra_Terraform_TfvarsShape(t *testing.T) {
 	require.True(t, ok, "deployments should be an array, got %T", doc["deployments"])
 	require.Len(t, deps, 1)
 
-	// connections is always present too (empty here: the fixture declares
-	// none), so a project with no host: azure.ai.connection services still
-	// gets a well-typed empty list rather than a missing key.
-	conns, ok := doc["connections"].([]any)
-	require.True(t, ok, "connections should be an array, got %T", doc["connections"])
-	assert.Empty(t, conns)
+	assert.NotContains(t, doc, "connections")
 	assert.NotContains(t, doc, "connectionCredentials")
-}
-
-func TestEjectInfra_Terraform_EjectsConnectionServices(t *testing.T) {
-	// Not parallel: captures os.Stdout.
-	// A host: azure.ai.connection service must be synthesized into the
-	// connections tfvars value, connections.tf must be part of the ejected
-	// tree, and any ${VAR} in credentials kept verbatim (environment-portable
-	// -- azd's Terraform provider substitutes ${...} at provision time).
-	dir := t.TempDir()
-	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
-services:
-  my-foundry:
-    host: azure.ai.project
-    deployments: []
-  search-conn:
-    host: azure.ai.connection
-    uses: [my-foundry]
-    category: CognitiveSearch
-    target: https://my-search.search.windows.net
-    authType: ApiKey
-    credentials:
-      key: ${SEARCH_API_KEY}
-`)
-
-	withCapturedStdout(t, func() {
-		require.NoError(t, ejectInfra(dir, "terraform"))
-	})
-
-	// connections.tf is part of the ejected tree.
-	_, err := os.Stat(filepath.Join(dir, "infra", "connections.tf"))
-	assert.NoError(t, err, "connections.tf must be ejected")
-
-	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.tfvars.json")) //nolint:gosec // G304: test file path from t.TempDir()
-	require.NoError(t, err)
-	var doc map[string]any
-	require.NoError(t, json.Unmarshal(raw, &doc))
-
-	conns, ok := doc["connections"].([]any)
-	require.True(t, ok, "connections should be an array, got %T", doc["connections"])
-	require.Len(t, conns, 1)
-
-	conn, ok := conns[0].(map[string]any)
-	require.True(t, ok, "connection entry should be an object, got %T", conns[0])
-	assert.Equal(t, "search-conn", conn["name"])
-	assert.Equal(t, "CognitiveSearch", conn["category"])
-	assert.Equal(t, "ApiKey", conn["authType"])
-
-	// ${VAR} in credentials must be preserved verbatim on the eject path.
-	creds, ok := conn["credentials"].(map[string]any)
-	require.True(t, ok, "credentials should be an object, got %T", conn["credentials"])
-	assert.Equal(t, "${SEARCH_API_KEY}", creds["key"])
-	assert.NotContains(t, doc, "connectionCredentials")
-
-	// outputs.tf always carries the connection-names output, unconditional on
-	// includeAcr (unlike the ACR outputs).
-	outputs, err := os.ReadFile(filepath.Join(dir, "infra", "outputs.tf")) //nolint:gosec // G304: test path from t.TempDir()
-	require.NoError(t, err)
-	assert.Contains(t, string(outputs), "AZURE_AI_PROJECT_CONNECTION_NAMES")
 }
 
 func TestEjectInfra_Terraform_NoDockerOmitsAcr(t *testing.T) {

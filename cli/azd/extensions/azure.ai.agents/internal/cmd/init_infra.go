@@ -515,7 +515,11 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 	if err != nil {
 		return err
 	}
-	endpoint, err := synthesis.ProjectEndpoint(rawYAML, svcName, projectRoot)
+	var ejectEnv map[string]string
+	if len(environments) > 0 {
+		ejectEnv = environments[0]
+	}
+	endpoint, err := synthesis.ProjectEndpoint(rawYAML, svcName, projectRoot, ejectEnv)
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
@@ -706,6 +710,18 @@ func ejectExistingProjectBicep(
 	acrMode infraEjectAcrMode,
 	environments []map[string]string,
 ) ([]ejectArtifact, error) {
+	existingAcrEndpoint := ""
+	if len(environments) > 0 &&
+		(acrMode == infraEjectAcrReuseConnect ||
+			acrMode == infraEjectAcrAlreadyConnected) {
+		var err error
+		existingAcrEndpoint, err = normalizeContainerRegistryEndpoint(
+			environments[0]["AZURE_CONTAINER_REGISTRY_ENDPOINT"],
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
 	acrPullAssigned := len(environments) > 0 && strings.EqualFold(
 		strings.TrimSpace(environments[0]["AZD_FOUNDRY_ACR_PULL_ASSIGNED"]), "true")
 	written, err := writeExistingProjectBicepTemplates(
@@ -723,7 +739,7 @@ func ejectExistingProjectBicep(
 		params["tags"] = map[string]string{"azd-env-name": "${AZURE_ENV_NAME}"}
 	} else if (acrMode == infraEjectAcrReuseConnect || acrMode == infraEjectAcrAlreadyConnected) &&
 		len(environments) > 0 {
-		params["existingAcrEndpoint"] = environments[0]["AZURE_CONTAINER_REGISTRY_ENDPOINT"]
+		params["existingAcrEndpoint"] = existingAcrEndpoint
 		params["existingAcrResourceId"] = environments[0]["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
 		if acrMode == infraEjectAcrAlreadyConnected {
 			params["existingAcrConnectionName"] = environments[0]["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"]
@@ -783,6 +799,18 @@ func ejectExistingProjectTerraform(
 	acrMode infraEjectAcrMode,
 	environments []map[string]string,
 ) ([]ejectArtifact, error) {
+	existingAcrEndpoint := ""
+	if len(environments) > 0 &&
+		(acrMode == infraEjectAcrReuseConnect ||
+			acrMode == infraEjectAcrAlreadyConnected) {
+		var err error
+		existingAcrEndpoint, err = normalizeContainerRegistryEndpoint(
+			environments[0]["AZURE_CONTAINER_REGISTRY_ENDPOINT"],
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
 	acrPullAssigned := len(environments) > 0 && strings.EqualFold(
 		strings.TrimSpace(environments[0]["AZD_FOUNDRY_ACR_PULL_ASSIGNED"]), "true")
 	written, err := writeExistingProjectTerraformTemplates(
@@ -809,7 +837,7 @@ func ejectExistingProjectTerraform(
 	}
 	written = append(written, outputsArtifact)
 	tfvarsArtifact, err := writeExistingProjectTfvarsFile(
-		infraDir, artifactRoot, module, params, environments)
+		infraDir, artifactRoot, module, params, environments, existingAcrEndpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -1634,35 +1662,34 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 	}
 
 	var matches []string
-	var misplacedNetwork []string
 	for name, s := range r.Services {
 		if slices.Contains(project.FoundryProjectServiceHosts, s.Host) {
 			matches = append(matches, name)
-			continue
 		}
-		if project.IsFoundryNetworkHost(s.Host) && !s.Network.IsZero() {
-			misplacedNetwork = append(misplacedNetwork, name)
-		}
-	}
-	if len(misplacedNetwork) > 0 {
-		slices.Sort(misplacedNetwork)
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidAzureYaml,
-			fmt.Sprintf("network: is only supported on services with host: %s (found on %v)",
-				project.FoundryProjectHost, misplacedNetwork),
-			"move the network: block to the azure.ai.project service (for example, services.ai-project)",
-		)
 	}
 
 	switch len(matches) {
 	case 1:
 		return matches[0], nil
 	case 0:
+		var misplacedNetwork []string
 		var legacyMatches []string
 		for name, s := range r.Services {
+			if project.IsFoundryNetworkHost(s.Host) && !s.Network.IsZero() {
+				misplacedNetwork = append(misplacedNetwork, name)
+			}
 			if slices.Contains(project.FoundryLegacyProvisioningHosts, s.Host) {
 				legacyMatches = append(legacyMatches, name)
 			}
+		}
+		if len(misplacedNetwork) > 0 {
+			slices.Sort(misplacedNetwork)
+			return "", exterrors.Validation(
+				exterrors.CodeInvalidAzureYaml,
+				fmt.Sprintf("network: is only supported on services with host: %s (found on %v)",
+					project.FoundryProjectHost, misplacedNetwork),
+				"move the network: block to the azure.ai.project service (for example, services.ai-project)",
+			)
 		}
 		switch len(legacyMatches) {
 		case 1:
@@ -2106,6 +2133,7 @@ func writeExistingProjectTfvarsFile(
 	module string,
 	params map[string]any,
 	environments []map[string]string,
+	existingAcrEndpoint string,
 ) (ejectArtifact, error) {
 	doc := map[string]any{ //nolint:gosec // environment placeholders, not credentials
 		"subscription_id":     "${AZURE_SUBSCRIPTION_ID}",
@@ -2118,28 +2146,13 @@ func writeExistingProjectTfvarsFile(
 		"resource_token_salt": "${AZD_RESOURCE_TOKEN_SALT}",
 	}
 	if len(environments) > 0 {
-		doc["existing_acr_endpoint"] = environments[0]["AZURE_CONTAINER_REGISTRY_ENDPOINT"]
+		doc["existing_acr_endpoint"] = existingAcrEndpoint
 		doc["existing_acr_resource_id"] = environments[0]["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
 		doc["existing_acr_connection_name"] = environments[0]["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"]
 	}
 	if v, ok := params["deployments"]; ok {
 		doc["deployments"] = v
 	}
-	connections, ok := params["connections"].([]synthesis.Connection)
-	if !ok {
-		return ejectArtifact{}, exterrors.Internal(
-			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf("connections parameter has unexpected type %T", params["connections"]),
-		)
-	}
-	credentials, ok := params["connectionCredentials"].(map[string]map[string]any)
-	if !ok {
-		return ejectArtifact{}, exterrors.Internal(
-			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf("connectionCredentials parameter has unexpected type %T", params["connectionCredentials"]),
-		)
-	}
-	doc["connections"] = synthesis.JoinConnectionCredentials(connections, credentials)
 	return writeJSONArtifact(infraDir, artifactRoot, module+".tfvars.json", doc)
 }
 
@@ -2285,8 +2298,8 @@ func resolveInfraEjectAcrMode(params map[string]any, values map[string]string) (
 
 // writeTfvarsFile emits infra/main.tfvars.json. azd-core's Terraform provider
 // reads this file and substitutes the ${...} placeholders from the azd
-// environment at provision time. The synthesizer-known values `deployments`
-// and `connections` are written literally; deploy-time inputs (location,
+// environment at provision time. The synthesized `deployments` are written
+// literally; deploy-time inputs (location,
 // resource_group_name, foundry_project_name, principal_id, subscription_id,
 // environment_name, resource_token_salt) are left as azd environment placeholders.
 //
@@ -2316,34 +2329,12 @@ func writeTfvarsFile(
 		doc["foundry_project_name"] = "${AZURE_AI_PROJECT_NAME=}"
 	}
 
-	// deployments and connections are the only synthesizer-derived values
+	// Model deployments are the only synthesizer-derived values
 	// written to tfvars. The Terraform provider resolves ${VAR} references
 	// across the generated file at provision time.
 	if v, ok := params["deployments"]; ok {
 		doc["deployments"] = v
 	}
-	connections, ok := params["connections"].([]synthesis.Connection)
-	if !ok {
-		return ejectArtifact{}, exterrors.Internal(
-			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf("connections parameter has unexpected type %T", params["connections"]),
-		)
-	}
-	connectionCredentials, ok := params["connectionCredentials"].(map[string]map[string]any)
-	if !ok {
-		return ejectArtifact{}, exterrors.Internal(
-			exterrors.CodeInfraEjectWriteFailed,
-			fmt.Sprintf(
-				"connectionCredentials parameter has unexpected type %T",
-				params["connectionCredentials"],
-			),
-		)
-	}
-	doc["connections"] = synthesis.JoinConnectionCredentials(
-		connections,
-		connectionCredentials,
-	)
-
 	filename := module + ".tfvars.json"
 	return writeJSONArtifact(infraDir, artifactRoot, filename, doc)
 }

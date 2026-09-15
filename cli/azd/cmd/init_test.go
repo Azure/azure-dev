@@ -67,13 +67,12 @@ func setupInitAction(
 		lazyAzdCtx: lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
 			return azdcontext.NewAzdContextWithDirectory(tmpDir), nil
 		}),
-		console:          mockContext.Console,
-		cmdRun:           mockContext.CommandRunner,
-		gitCli:           gitCli,
-		flags:            flags,
-		args:             args,
-		featuresManager:  alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
-		isRunningInAgent: func() bool { return false },
+		console:         mockContext.Console,
+		cmdRun:          mockContext.CommandRunner,
+		gitCli:          gitCli,
+		flags:           flags,
+		args:            args,
+		featuresManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 	}
 }
 
@@ -747,13 +746,12 @@ func TestInitCreatesProjectDirectory(t *testing.T) {
 			lazyAzdCtx: lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
 				return azdcontext.NewAzdContextWithDirectory(tmpDir), nil
 			}),
-			console:          mockContext.Console,
-			cmdRun:           mockContext.CommandRunner,
-			gitCli:           gitCli,
-			flags:            flags,
-			args:             []string{},
-			featuresManager:  alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
-			isRunningInAgent: func() bool { return false },
+			console:         mockContext.Console,
+			cmdRun:          mockContext.CommandRunner,
+			gitCli:          gitCli,
+			flags:           flags,
+			args:            []string{},
+			featuresManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 		}
 
 		// Simulate interactive terminal so auto-directory creation kicks in.
@@ -798,13 +796,12 @@ func TestInitCreatesProjectDirectory(t *testing.T) {
 			lazyAzdCtx: lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
 				return azdcontext.NewAzdContextWithDirectory(tmpDir), nil
 			}),
-			console:          mockContext.Console,
-			cmdRun:           mockContext.CommandRunner,
-			gitCli:           gitCli,
-			flags:            flags,
-			args:             []string{"todo-nodejs-mongo"},
-			featuresManager:  alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
-			isRunningInAgent: func() bool { return false },
+			console:         mockContext.Console,
+			cmdRun:          mockContext.CommandRunner,
+			gitCli:          gitCli,
+			flags:           flags,
+			args:            []string{"todo-nodejs-mongo"},
+			featuresManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 		}
 
 		_, err := action.Run(*mockContext.Context)

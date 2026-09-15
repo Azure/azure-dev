@@ -77,6 +77,9 @@ func relayedExtensionError(err error) *azdext.ExtensionError {
 	if _, ok := errors.AsType[*azdext.LocalError](err); ok {
 		return azdext.WrapError(err)
 	}
+	if _, ok := errors.AsType[*azdext.ToolError](err); ok {
+		return azdext.WrapError(err)
+	}
 	return nil
 }
 
@@ -97,31 +100,11 @@ func hostErrorStatus(
 }
 
 func hasServiceErrorDetail(st *status.Status) bool {
-	if st == nil {
-		return false
-	}
-
-	for _, detail := range st.Details() {
-		if _, ok := detail.(*azdext.ServiceErrorDetail); ok {
-			return true
-		}
-	}
-
-	return false
+	return azdext.ServiceErrorDetailFromStatus(st) != nil
 }
 
 func hasRelayedExtensionErrorDetail(st *status.Status) bool {
-	if st == nil {
-		return false
-	}
-
-	for _, detail := range st.Details() {
-		if _, ok := detail.(*azdext.ExtensionError); ok {
-			return true
-		}
-	}
-
-	return false
+	return azdext.ExtensionErrorFromStatus(st) != nil
 }
 
 func withRelayedExtensionErrorDetail(st *status.Status, relayedErr *azdext.ExtensionError) *status.Status {

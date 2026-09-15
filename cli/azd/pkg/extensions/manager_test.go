@@ -253,8 +253,8 @@ func TestInstallEmitsSourceCategoryTelemetry(t *testing.T) {
 		extensionTelemetryAttribute(t, installAttributes, fields.ExtensionSourceCategory.Key).Value.AsString(),
 	)
 	for _, attr := range installAttributes {
-		require.NotContains(t, attr.Value.Emit(), "private-source")
-		require.NotContains(t, attr.Value.Emit(), extensionRegistryUrl)
+		require.NotContains(t, attr.Value.String(), "private-source")
+		require.NotContains(t, attr.Value.String(), extensionRegistryUrl)
 	}
 }
 

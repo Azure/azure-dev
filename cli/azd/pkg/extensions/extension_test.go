@@ -160,12 +160,21 @@ func TestExtension_StdErr_ReturnsNonNil(t *testing.T) {
 func TestExtension_ReportedError_RoundTrip(t *testing.T) {
 	t.Parallel()
 
-	ext := &Extension{}
+	ext := &Extension{
+		Id:      "test.extension",
+		Version: "1.2.3",
+	}
 	expected := errors.New("something went wrong")
 
 	ext.SetReportedError(expected)
 	got := ext.GetReportedError()
 	require.ErrorIs(t, got, expected)
+
+	metadata, ok := errors.AsType[InvocationMetadataProvider](got)
+	require.True(t, ok)
+	require.Equal(t, "test.extension", metadata.InvocationExtensionId())
+	require.Equal(t, "1.2.3", metadata.InvocationExtensionVersion())
+	require.Empty(t, metadata.InvocationEvent())
 }
 
 func TestExtension_GetReportedError_NilByDefault(t *testing.T) {

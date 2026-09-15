@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"maps"
 	"mime"
@@ -905,6 +906,40 @@ func TestGetAgentVersion_StandardContractOmitsDigitalWorkerPreview(t *testing.T)
 	require.Empty(t, transport.lastReq.Header.Get("Foundry-Features"))
 }
 
+func TestGetVoiceAgentVersionContract(t *testing.T) {
+	t.Parallel()
+	client, transport := newCaptureClient(http.StatusOK, `{"name":"voice","version":"7","status":"active"}`)
+	version, err := client.GetVoiceAgentVersion(t.Context(), "voice", "7", AgentEndpointAPIVersion)
+	require.NoError(t, err)
+	require.Equal(t, "active", version.Status)
+	require.Equal(t, "7", version.Version)
+	require.Len(t, transport.requests, 1)
+	req := transport.requests[0]
+	require.Equal(t, http.MethodGet, req.Method)
+	require.Equal(t, "/api/projects/proj/agents/voice/versions/7", req.URL.Path)
+	require.Equal(t, AgentEndpointAPIVersion, req.URL.Query().Get("api-version"))
+	require.Equal(t, voiceAgentsPreviewFeature, req.Header.Get("Foundry-Features"))
+	// Reusing the client for another type must not retain the voice header.
+	_, err = client.GetAgentVersion(t.Context(), "hosted", "7", AgentEndpointAPIVersion, false)
+	require.NoError(t, err)
+	require.Empty(t, transport.requests[1].Header.Get("Foundry-Features"))
+	_, err = client.GetAgentVersion(t.Context(), "worker", "7", AgentEndpointAPIVersion, true)
+	require.NoError(t, err)
+	require.Equal(t, DigitalWorkerPreviewFeature, transport.requests[2].Header.Get("Foundry-Features"))
+}
+
+func TestGetVoiceAgentVersionErrors(t *testing.T) {
+	t.Parallel()
+	client, _ := newCaptureClient(http.StatusNotFound, `{"error":{"code":"NotFound","message":"missing"}}`)
+	_, err := client.GetVoiceAgentVersion(t.Context(), "voice", "1", AgentEndpointAPIVersion)
+	responseErr, ok := errors.AsType[*azcore.ResponseError](err)
+	require.True(t, ok)
+	require.Equal(t, http.StatusNotFound, responseErr.StatusCode)
+	client, _ = newCaptureClient(http.StatusOK, `{`)
+	_, err = client.GetVoiceAgentVersion(t.Context(), "voice", "1", AgentEndpointAPIVersion)
+	require.ErrorContains(t, err, "failed to parse response")
+}
+
 func TestZipDeployRequest_NoAgentNameHeader_OnUpdate(t *testing.T) {
 	agentResp := `{"name":"test-agent","versions":{"latest":{"version":"2","status":"active"}}}`
 	transport := &capturingTransport{statusCode: http.StatusOK, respBody: agentResp}
@@ -1095,4 +1130,53 @@ func TestUpdateVoiceAgent_PostsToNamedAgentWithPreviewHeader(t *testing.T) {
 	require.Equal(t, AgentEndpointAPIVersion, req.URL.Query().Get("api-version"))
 	require.Equal(t, voiceAgentsPreviewFeature, req.Header.Get("Foundry-Features"))
 	require.Equal(t, "regional.hyena.example.com", req.Header.Get("x-ms-overridden-host"))
+}
+
+func TestGetTelephonyBinding_GetsAgentScopedBinding(t *testing.T) {
+	body := `{"id":"twilio:%2B14255550123","provider":"twilio","identifier":"+14255550123"}`
+	client, transport := newCaptureClient(http.StatusOK, body)
+
+	binding, err := client.GetTelephonyBinding(
+		t.Context(), "my-voice", "twilio:+14255550123", TelephonyBindingAPIVersion, "regional.hyena.example.com",
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "twilio", binding.Provider)
+	require.Len(t, transport.requests, 1)
+	req := transport.requests[0]
+	require.Equal(t, http.MethodGet, req.Method)
+	require.Equal(t, "/api/projects/proj/agents/my-voice/telephony/twilio:%2B14255550123", req.URL.EscapedPath())
+	require.Equal(t, TelephonyBindingAPIVersion, req.URL.Query().Get("api-version"))
+	require.Equal(t, voiceAgentsPreviewFeature, req.Header.Get("Foundry-Features"))
+	require.Equal(t, "regional.hyena.example.com", req.Header.Get("x-ms-overridden-host"))
+}
+
+func TestCreateTelephonyBinding_PostsAgentScopedBinding(t *testing.T) {
+	body := `{"id":"twilio:+14255550123","provider":"twilio","identifier":"+14255550123"}`
+	client, transport := newCaptureClient(http.StatusCreated, body)
+
+	_, err := client.CreateTelephonyBinding(
+		t.Context(),
+		"my-voice",
+		&TelephonyBindingRequest{
+			Provider:       "twilio",
+			Identifier:     "+14255550123",
+			ConnectionName: "telephony-twilio",
+		},
+		TelephonyBindingAPIVersion,
+		"regional.hyena.example.com",
+	)
+
+	require.NoError(t, err)
+	require.Len(t, transport.requests, 1)
+	req := transport.requests[0]
+	require.Equal(t, http.MethodPost, req.Method)
+	require.Equal(t, "/api/projects/proj/agents/my-voice/telephony", req.URL.Path)
+	require.Equal(t, TelephonyBindingAPIVersion, req.URL.Query().Get("api-version"))
+	require.Equal(t, voiceAgentsPreviewFeature, req.Header.Get("Foundry-Features"))
+	require.Equal(t, "regional.hyena.example.com", req.Header.Get("x-ms-overridden-host"))
+	reqBody, err := io.ReadAll(req.Body)
+	require.NoError(t, err)
+	require.Contains(t, string(reqBody), `"connection_name":"telephony-twilio"`)
+	require.NotContains(t, string(reqBody), `"agent_ref"`)
 }

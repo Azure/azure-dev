@@ -27,6 +27,7 @@ const (
 	CodeInvalidAgentRequest       = "invalid_agent_request"
 	CodeInvalidAgentName          = "invalid_agent_name"
 	CodeInvalidAgentVersion       = "invalid_agent_version"
+	CodeTelephonyBindingDrift     = "telephony_binding_drift"
 	CodeInvalidSessionId          = "invalid_session_id"
 	CodeInvalidParameter          = "invalid_parameter"
 	CodeUnsupportedHost           = "unsupported_host"
@@ -41,6 +42,12 @@ const (
 	CodeModelDeploymentNotFound   = "model_deployment_not_found"
 	CodeConflictingArguments      = "conflicting_arguments"
 	CodeInvalidPositionalArg      = "invalid_positional_arg"
+)
+
+// Error codes for malformed locally saved protocol resource state.
+const (
+	CodeInvalidResponseState   = "invalid_response_state"
+	CodeInvalidInvocationState = "invalid_invocation_state"
 )
 
 // CodeInvalidEnvironmentVariableName identifies a hosted-agent
@@ -66,6 +73,7 @@ const (
 	CodeMissingProjectEndpoint    = "missing_project_endpoint"
 	CodeGitHubDownloadFailed      = "github_download_failed"
 	CodePromptFailed              = "prompt_failed"
+	CodeRaiPolicyNotFound         = "rai_policy_not_found"
 )
 
 // Error codes for ACR dependency errors.
@@ -91,7 +99,9 @@ const (
 //
 // These are usually paired with [Compatibility] for version mismatches.
 const (
-	CodeIncompatibleAzdVersion = "incompatible_azd_version"
+	CodeIncompatibleAzdVersion          = "incompatible_azd_version"
+	CodeIncompleteAgentProtocolMetadata = "incomplete_agent_protocol_metadata"
+	CodeLegacyAgentProtocolMetadata     = "legacy_agent_protocol_metadata"
 )
 
 // Error codes for azd host AI service errors.
@@ -114,6 +124,7 @@ const (
 const (
 	CodeAgentNotFound          = "agent_not_found"
 	CodeAgentHasActiveSessions = "agent_has_active_sessions"
+	CodeDeleteRequiresForce    = "delete_requires_force"
 )
 
 // Error codes for file operation errors.
@@ -142,8 +153,7 @@ const (
 
 // Error codes for toolbox operations.
 const (
-	CodeInvalidToolbox             = "invalid_toolbox"
-	CodeCreateToolboxVersionFailed = "create_toolbox_version_failed"
+	CodeInvalidToolbox = "invalid_toolbox"
 )
 
 // Error codes for connection operations.
@@ -189,29 +199,42 @@ const (
 // Operation names for [ServiceFromAzure] errors.
 // These are prefixed to the Azure error code (e.g., "create_agent.NotFound").
 const (
-	OpGetFoundryProject     = "get_foundry_project"
-	OpContainerBuild        = "container_build"
-	OpContainerPackage      = "container_package"
-	OpContainerPublish      = "container_publish"
-	OpCreateAgent           = "create_agent"
-	OpGetAgent              = "get_agent"
-	OpUpdateAgent           = "update_agent"
-	OpGetActivityBot        = "get_activity_bot"
-	OpEnsureActivityBot     = "ensure_activity_bot"
-	OpEnsureTeamsChannel    = "ensure_teams_channel"
-	OpDeleteAgent           = "delete_agent"
-	OpStartContainer        = "start_container"
-	OpGetContainerOperation = "get_container_operation"
-	OpCreateSession         = "create_session"
-	OpGetSession            = "get_session"
-	OpDeleteSession         = "delete_session"
-	OpStopSession           = "stop_session"
-	OpListSessions          = "list_sessions"
-	OpCreateToolboxVersion  = "create_toolbox_version"
-	OpGetToolbox            = "get_toolbox"
-	OpProvisionMemoryStore  = "provision_memory_store"
-	OpPackTeamsApp          = "pack_teams_app"
-	OpPublishTeamsApp       = "publish_teams_app"
+	OpGetFoundryProject      = "get_foundry_project"
+	OpContainerBuild         = "container_build"
+	OpContainerPackage       = "container_package"
+	OpContainerPublish       = "container_publish"
+	OpCreateAgent            = "create_agent"
+	OpCreateTelephonyBinding = "create_telephony_binding"
+	OpGetAgent               = "get_agent"
+	OpGetTelephonyBinding    = "get_telephony_binding"
+	OpUpdateAgent            = "update_agent"
+	OpGetActivityBot         = "get_activity_bot"
+	OpEnsureActivityBot      = "ensure_activity_bot"
+	OpEnsureTeamsChannel     = "ensure_teams_channel"
+	OpDeleteAgent            = "delete_agent"
+	OpStartContainer         = "start_container"
+	OpGetContainerOperation  = "get_container_operation"
+	OpCreateSession          = "create_session"
+	OpGetSession             = "get_session"
+	OpDeleteSession          = "delete_session"
+	OpStopSession            = "stop_session"
+	OpListSessions           = "list_sessions"
+	OpCreateToolboxVersion   = "create_toolbox_version"
+	OpGetToolbox             = "get_toolbox"
+	OpProvisionMemoryStore   = "provision_memory_store"
+	OpPackTeamsApp           = "pack_teams_app"
+	OpPublishTeamsApp        = "publish_teams_app"
+)
+
+// Operation names for Responses and Invocations protocol resources.
+const (
+	OpReadResponseState   = "read_response_state"
+	OpShowResponse        = "show_response"
+	OpFollowResponse      = "follow_response"
+	OpCancelResponse      = "cancel_response"
+	OpReadInvocationState = "read_invocation_state"
+	OpShowInvocation      = "show_invocation"
+	OpCancelInvocation    = "cancel_invocation"
 )
 
 // Error codes for eval and optimize operations.

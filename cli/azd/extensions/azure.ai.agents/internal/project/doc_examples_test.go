@@ -796,7 +796,7 @@ func TestDocSchemaValidatesConstraints(t *testing.T) {
 		{
 			name: "session idle timeout min valid",
 			mutate: func(value *fixture) {
-				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 300}
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 120}
 			},
 		},
 		{
@@ -808,7 +808,7 @@ func TestDocSchemaValidatesConstraints(t *testing.T) {
 		{
 			name: "session idle timeout below min",
 			mutate: func(value *fixture) {
-				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 299}
+				value.value["sessionConfiguration"] = map[string]any{"idleTimeoutSeconds": 119}
 			},
 			wantErr: true,
 		},
@@ -893,6 +893,21 @@ func TestDocSchemaPromptVoiceRejectsToolbox(t *testing.T) {
 		"kind":    "prompt-voice",
 		"model":   map[string]any{"id": "gpt-realtime"},
 		"toolbox": map[string]any{"name": "support-tools"},
+	}))
+	require.Error(t, schema.validate(map[string]any{
+		"kind":              "voice",
+		"model":             map[string]any{"id": "gpt-realtime"},
+		"codeConfiguration": map[string]any{"runtime": "dotnet_10"},
+	}))
+	require.Error(t, schema.validate(map[string]any{
+		"kind":                 "voice",
+		"model":                map[string]any{"id": "gpt-realtime"},
+		"sessionConfiguration": map[string]any{"idleTimeoutMinutes": 10},
+	}))
+	require.Error(t, schema.validate(map[string]any{
+		"kind":      "voice",
+		"model":     map[string]any{"id": "gpt-realtime"},
+		"protocols": []any{map[string]any{"protocol": "invocations_ws", "version": "1.0.0"}},
 	}))
 }
 
@@ -1094,6 +1109,13 @@ func checkVocabulary(t *testing.T, e docExample, name string, svc map[string]any
 		prop, ok := schema.property(key)
 		require.True(t, ok, undeclaredPropertyMessage(e, name, key))
 		schema.checkValue(t, e, name, key, prop, value)
+
+		// `$ref` points at the file carrying the definition; it is not part of
+		// the definition itself, so it neither makes the inline shape active nor
+		// conflicts with a deprecated config block.
+		if key == AgentDefinitionRefKey {
+			continue
+		}
 		inline[key] = value
 	}
 

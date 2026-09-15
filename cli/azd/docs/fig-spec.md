@@ -181,11 +181,11 @@ This generator uses `custom` field instead of `postProcess`, which offers more f
 
 **Combining generators: the `filepaths` helper**
 
-An argument can specify multiple generators as an array, so that completions from each are merged. For example, `azd extension install` accepts either an extension ID or a local `.zip` bundle, so its arg combines `azdGenerators.listExtensions` with VS Code's built-in `filepaths` helper restricted to `.zip` files:
+An argument can specify multiple generators as an array, so that completions from each are merged. For example, `azd extension install` accepts an extension ID, a local `.zip` bundle, or a bundle URL. Its arg combines `azdGenerators.listExtensions` with VS Code's built-in `filepaths` helper restricted to `.zip` files:
 
 ```typescript
 args: {
-  name: 'extension-id|extension-bundle.zip',
+  name: 'extension-id|bundle-path-or-url',
   generators: [azdGenerators.listExtensions, filepaths({ extensions: ['zip'] })],
 },
 ```

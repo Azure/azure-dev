@@ -7,21 +7,14 @@ import (
 	"sync"
 	"testing"
 
+	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/stretchr/testify/require"
 )
 
 func TestUIReadyReporterReportsFunnelStageOnce(t *testing.T) {
-	type usageEvent struct {
-		name       string
-		attributes map[string]string
-	}
-
-	var events []usageEvent
-	reportUIReady := newUIReadyReporter(func(eventName string, attributes map[string]string) {
-		events = append(events, usageEvent{
-			name:       eventName,
-			attributes: attributes,
-		})
+	var events []foundryTelemetry.Event
+	reportUIReady := newUIReadyReporter(func(event foundryTelemetry.Event) {
+		events = append(events, event)
 	})
 
 	var wg sync.WaitGroup
@@ -30,11 +23,11 @@ func TestUIReadyReporterReportsFunnelStageOnce(t *testing.T) {
 	}
 	wg.Wait()
 
-	require.Equal(t, []usageEvent{{
-		name: inspectorFunnelStageEvent,
-		attributes: map[string]string{
-			inspectorFunnelStageAttribute:   inspectorFunnelStageUIReady,
-			inspectorFunnelOutcomeAttribute: inspectorFunnelSucceeded,
+	require.Equal(t, []foundryTelemetry.Event{{
+		Name: "inspector.funnel.stage",
+		Attributes: map[string]string{
+			"stage":   "ui_ready",
+			"outcome": "succeeded",
 		},
 	}}, events)
 }

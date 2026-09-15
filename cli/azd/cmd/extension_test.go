@@ -1410,8 +1410,8 @@ func Test_ExtensionSourceAddAction_EmitsSourceCategory(t *testing.T) {
 		if attr.Key == fields.ExtensionSourceCategory.Key {
 			category = attr.Value.AsString()
 		}
-		require.NotContains(t, attr.Value.Emit(), action.flags.location)
-		require.NotContains(t, attr.Value.Emit(), action.flags.name)
+		require.NotContains(t, attr.Value.String(), action.flags.location)
+		require.NotContains(t, attr.Value.String(), action.flags.name)
 	}
 	require.Equal(t, string(extensions.SourceCategoryLocal), category)
 }

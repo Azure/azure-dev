@@ -49,11 +49,19 @@ func readProjectContext(ctx context.Context, config projectContextConfig) (State
 		return state, true, nil
 	}
 
-	// A failure on the legacy key is absence, not an error: the migration
-	// deletes it, so every current config reaches here having already missed.
+	// The migration deletes this key, so every current config reaches here
+	// having already missed. Not finding it is the ordinary case, not a problem.
 	var legacy State
 	legacyFound, legacyErr := config.GetUserJSON(ctx, legacyProjectContextConfigPath, &legacy)
-	if legacyErr != nil || !legacyFound || legacy.Endpoint == "" {
+	if legacyErr != nil {
+		// A key that is present but unreadable is not absence. Reading a
+		// missing key answers (false, nil), so an error here means the context
+		// is there and could not be understood -- and stepping over it resolves
+		// the endpoint from a lower-priority source, possibly another project.
+		// That is the same fall-through readEnvHostedSource refuses to make.
+		return State{}, false, messages.ProjectContextRead(legacyErr)
+	}
+	if !legacyFound || legacy.Endpoint == "" {
 		return State{}, false, nil
 	}
 	return legacy, true, nil

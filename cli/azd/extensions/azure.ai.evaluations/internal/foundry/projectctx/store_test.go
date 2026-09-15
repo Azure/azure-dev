@@ -68,10 +68,21 @@ func TestReadProjectContext(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("legacy error is best effort", func(t *testing.T) {
-		state, found, err := readProjectContext(t.Context(), fakeProjectContextConfig{errors: map[string]error{
+	// A missing legacy key answers (false, nil), so an error here means the
+	// context is there and could not be read. Stepping over it resolves the
+	// endpoint from a lower-priority source -- possibly another project.
+	t.Run("legacy that cannot be read is reported, not stepped over", func(t *testing.T) {
+		_, found, err := readProjectContext(t.Context(), fakeProjectContextConfig{errors: map[string]error{
 			legacyProjectContextConfigPath: errors.New("invalid legacy context"),
 		}})
+		assert.Error(t, err, "an unreadable context must not look like no context")
+		assert.False(t, found)
+	})
+
+	// The migration deletes the key, so every migrated config misses here. That
+	// is the ordinary path and carries no error.
+	t.Run("legacy simply absent is not an error", func(t *testing.T) {
+		state, found, err := readProjectContext(t.Context(), fakeProjectContextConfig{})
 		assert.NoError(t, err)
 		assert.False(t, found)
 		assert.Empty(t, state)

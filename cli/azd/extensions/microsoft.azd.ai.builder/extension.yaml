@@ -5,6 +5,7 @@ displayName: azd AI Builder
 description: This extension provides custom commands for building AI applications using Azure Developer CLI.
 usage: azd ai builder <command> [options]
 version: 0.2.0
+requiredAzdVersion: ">=1.33.0"
 language: go
 capabilities:
   - custom-commands

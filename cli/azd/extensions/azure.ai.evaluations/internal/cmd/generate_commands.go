@@ -40,9 +40,11 @@ type generateFlags struct {
 }
 
 func addGenerateFlags(cmd *cobra.Command, f *generateFlags) {
+	// No backticks around init: pflag reads the first back-quoted word in a
+	// usage string as the value placeholder, which rendered this "--path init".
 	cmd.Flags().StringVar(&f.path, "path", "",
 		"Directory holding the evaluation configuration. Defaults to the directory "+
-			"`init` scaffolded, otherwise ./evals.")
+			"init scaffolded, otherwise ./evals.")
 	cmd.Flags().StringVar(&f.target, "target", "", "Agent whose context seeds generation.")
 	cmd.Flags().StringVar(&f.instruction, "agent-instruction", "",
 		"What the agent does and what to test.")

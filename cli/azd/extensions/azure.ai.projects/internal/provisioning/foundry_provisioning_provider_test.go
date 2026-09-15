@@ -747,6 +747,34 @@ func TestParameters_NilSynthResult_ReturnsHostDerivedOnly(t *testing.T) {
 		"includeAcr is a synthesizer-derived value; on-disk path must skip it")
 }
 
+func TestParameters_BrownfieldValuesUseEnvMappings(t *testing.T) {
+	p := &FoundryProvisioningProvider{
+		existingProjectID:  "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/a/projects/p",
+		brownfieldEndpoint: "https://account.services.ai.azure.com/api/projects/p",
+		existingAcrMode:    "reuse-connect",
+	}
+
+	got, err := p.Parameters(t.Context())
+	require.NoError(t, err)
+
+	expected := map[string]struct {
+		value  string
+		envVar string
+	}{
+		"projectResourceId": {value: p.existingProjectID, envVar: "AZURE_AI_PROJECT_ID"},
+		"projectEndpoint":   {value: p.brownfieldEndpoint, envVar: "FOUNDRY_PROJECT_ENDPOINT"},
+		"acrMode":           {value: p.existingAcrMode, envVar: "AZD_FOUNDRY_ACR_MODE"},
+	}
+	require.Len(t, got, len(expected))
+	for _, parameter := range got {
+		want, exists := expected[parameter.Name]
+		require.True(t, exists, "unexpected parameter %q", parameter.Name)
+		assert.Equal(t, want.value, parameter.Value)
+		assert.Equal(t, []string{want.envVar}, parameter.EnvVarMapping)
+		assert.True(t, parameter.UsingEnvVarMapping)
+	}
+}
+
 func TestParameters_EmbeddedPath_IncludesSynthResultDerivedValues(t *testing.T) {
 	// On the embedded path, synthResult is set and includeAcr flows
 	// through.

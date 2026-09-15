@@ -191,7 +191,7 @@ func ShowingSomeOf(shown, total int) string {
 // rather than as a report about the project, which holds other datasets.
 func NoDatasetVersions(dataset string) string {
 	return fmt.Sprintf("No versions of dataset %q. Publish one with "+
-		"`azd ai dataset create %s --from-file <path>`.\n", dataset, dataset)
+		"`azd ai dataset create %s --from-file <path>`.\n", dataset, ShellArg(dataset))
 }
 
 // ResolvingLatestDatasetVersion reports a failure to find what "latest" means.
@@ -212,7 +212,7 @@ func DatasetHasNoVersions(dataset string) error {
 func DatasetVersionNotFoundWithHint(dataset, version string) error {
 	return fmt.Errorf(
 		"no dataset %q at version %q in this project; "+
-			"`azd ai dataset versions list %s` shows the ones there are", dataset, version, dataset)
+			"`azd ai dataset versions list %s` shows the ones there are", dataset, version, ShellArg(dataset))
 }
 
 // ReadingDatasetVersion reports one version of a dataset failing to read.

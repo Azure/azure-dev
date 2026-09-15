@@ -29,14 +29,14 @@ go tool mage generateProtos
 ```
 
 The Mage target runs the pinned protobuf toolchain in a container and
-regenerates the stable Python and JavaScript extension scaffold bindings plus
+regenerates the beta Python and JavaScript extension scaffold bindings plus
 the Go contracts under `pkg/azdext/contracts/v1` and
 `pkg/azdext/contracts/v1beta`. The Go generation step also regenerates the
 stable forwarding surface used by the handwritten `pkg/azdext` SDK facade and
 the beta service adapters in
 `internal/grpcserver/versioned_services_generated.go`.
-Before generating bindings, it compiles descriptor sets for the stable
-scaffold protos and canonical `v1` protos and verifies that every scaffold
+Before generating bindings, it compiles descriptor sets for the beta
+scaffold protos and canonical `v1beta` protos and verifies that every scaffold
 message, enum, service, and method remains a wire-compatible subset of the
 canonical contract.
 

@@ -25,18 +25,36 @@ _sym_db = _symbol_database.Default()
 import models_pb2 as models__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rproject.proto\x12\x11\x61zd.extensions.v1\x1a\x0cmodels.proto\"G\n\x12GetProjectResponse\x12\x31\n\x07project\x18\x01 \x01(\x0b\x32 .azd.extensions.v1.ProjectConfig\"F\n\x11\x41\x64\x64ServiceRequest\x12\x31\n\x07service\x18\x01 \x01(\x0b\x32 .azd.extensions.v1.ServiceConfig2\xb5\x01\n\x0eProjectService\x12M\n\x03Get\x12\x1f.azd.extensions.v1.EmptyRequest\x1a%.azd.extensions.v1.GetProjectResponse\x12T\n\nAddService\x12$.azd.extensions.v1.AddServiceRequest\x1a .azd.extensions.v1.EmptyResponseBOZ=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1\xaa\x02\rMicrosoft.Azdb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rproject.proto\x12\x15\x61zd.extensions.v1beta\x1a\x0cmodels.proto\"K\n\x12GetProjectResponse\x12\x35\n\x07project\x18\x01 \x01(\x0b\x32$.azd.extensions.v1beta.ProjectConfig\"J\n\x11\x41\x64\x64ServiceRequest\x12\x35\n\x07service\x18\x01 \x01(\x0b\x32$.azd.extensions.v1beta.ServiceConfig\"\xde\x01\n\x05Layer\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x32\n\x05infra\x18\x02 \x03(\x0b\x32#.azd.extensions.v1beta.InfraOptions\x12<\n\x08services\x18\x03 \x03(\x0b\x32*.azd.extensions.v1beta.Layer.ServicesEntry\x1aU\n\rServicesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\x33\n\x05value\x18\x02 \x01(\x0b\x32$.azd.extensions.v1beta.ServiceConfig:\x02\x38\x01\">\n\x0fSetLayerRequest\x12+\n\x05layer\x18\x01 \x01(\x0b\x32\x1c.azd.extensions.v1beta.Layer\"1\n\x0fGetLayerRequest\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x10\n\x08\x65nvsubst\x18\x02 \x01(\x08\"<\n\rLayerResponse\x12+\n\x05layer\x18\x01 \x01(\x0b\x32\x1c.azd.extensions.v1beta.Layer\"B\n\x12ListLayersResponse\x12,\n\x06layers\x18\x01 \x03(\x0b\x32\x1c.azd.extensions.v1beta.Layer\"\"\n\x12RemoveLayerRequest\x12\x0c\n\x04name\x18\x01 \x01(\t\"/\n\x13RemoveLayerResponse\x12\x18\n\x10removed_services\x18\x01 \x03(\t2\xbd\x04\n\x0eProjectService\x12U\n\x03Get\x12#.azd.extensions.v1beta.EmptyRequest\x1a).azd.extensions.v1beta.GetProjectResponse\x12\\\n\nAddService\x12(.azd.extensions.v1beta.AddServiceRequest\x1a$.azd.extensions.v1beta.EmptyResponse\x12X\n\x08SetLayer\x12&.azd.extensions.v1beta.SetLayerRequest\x1a$.azd.extensions.v1beta.LayerResponse\x12X\n\x08GetLayer\x12&.azd.extensions.v1beta.GetLayerRequest\x1a$.azd.extensions.v1beta.LayerResponse\x12\\\n\nListLayers\x12#.azd.extensions.v1beta.EmptyRequest\x1a).azd.extensions.v1beta.ListLayersResponse\x12\x64\n\x0bRemoveLayer\x12).azd.extensions.v1beta.RemoveLayerRequest\x1a*.azd.extensions.v1beta.RemoveLayerResponseBWZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1beta\xaa\x02\rMicrosoft.Azdb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'project_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'Z=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1\252\002\rMicrosoft.Azd'
-  _globals['_GETPROJECTRESPONSE']._serialized_start=50
-  _globals['_GETPROJECTRESPONSE']._serialized_end=121
-  _globals['_ADDSERVICEREQUEST']._serialized_start=123
-  _globals['_ADDSERVICEREQUEST']._serialized_end=193
-  _globals['_PROJECTSERVICE']._serialized_start=196
-  _globals['_PROJECTSERVICE']._serialized_end=377
+  _globals['DESCRIPTOR']._serialized_options = b'ZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1beta\252\002\rMicrosoft.Azd'
+  _globals['_LAYER_SERVICESENTRY']._loaded_options = None
+  _globals['_LAYER_SERVICESENTRY']._serialized_options = b'8\001'
+  _globals['_GETPROJECTRESPONSE']._serialized_start=54
+  _globals['_GETPROJECTRESPONSE']._serialized_end=129
+  _globals['_ADDSERVICEREQUEST']._serialized_start=131
+  _globals['_ADDSERVICEREQUEST']._serialized_end=205
+  _globals['_LAYER']._serialized_start=208
+  _globals['_LAYER']._serialized_end=430
+  _globals['_LAYER_SERVICESENTRY']._serialized_start=345
+  _globals['_LAYER_SERVICESENTRY']._serialized_end=430
+  _globals['_SETLAYERREQUEST']._serialized_start=432
+  _globals['_SETLAYERREQUEST']._serialized_end=494
+  _globals['_GETLAYERREQUEST']._serialized_start=496
+  _globals['_GETLAYERREQUEST']._serialized_end=545
+  _globals['_LAYERRESPONSE']._serialized_start=547
+  _globals['_LAYERRESPONSE']._serialized_end=607
+  _globals['_LISTLAYERSRESPONSE']._serialized_start=609
+  _globals['_LISTLAYERSRESPONSE']._serialized_end=675
+  _globals['_REMOVELAYERREQUEST']._serialized_start=677
+  _globals['_REMOVELAYERREQUEST']._serialized_end=711
+  _globals['_REMOVELAYERRESPONSE']._serialized_start=713
+  _globals['_REMOVELAYERRESPONSE']._serialized_end=760
+  _globals['_PROJECTSERVICE']._serialized_start=763
+  _globals['_PROJECTSERVICE']._serialized_end=1336
 # @@protoc_insertion_point(module_scope)

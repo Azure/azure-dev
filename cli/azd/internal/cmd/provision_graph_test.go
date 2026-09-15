@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
@@ -34,12 +35,9 @@ func TestNoopSaveEnvManager(t *testing.T) {
 
 	env := environment.NewWithValues("test", nil)
 
-	// Save and SaveWithOptions must be no-ops — the inner mock should
-	// never be called for these methods.
 	require.NoError(t, noop.Save(t.Context(), env))
 	require.NoError(t, noop.SaveWithOptions(t.Context(), env, nil))
 
-	// Non-save methods delegate to the inner manager.
 	inner.On("Reload", mock.Anything, env).Return(nil)
 	require.NoError(t, noop.Reload(t.Context(), env))
 	inner.AssertCalled(t, "Reload", mock.Anything, env)
@@ -83,10 +81,8 @@ func TestSyncConsole_SerializesMessages(t *testing.T) {
 	)
 }
 
-// TestProvisionLayersGraph_BuildsGraph verifies that
-// provisionLayersGraph creates a correct execution graph from layers with known
-// dependency phases. We set up three layers where layer-1 depends on
-// layer-0's output, and layer-2 is independent of both.
+// TestProvisionLayersGraph_BuildsGraph verifies that top-level project layers
+// flow through the existing infrastructure importer and dependency analyzer.
 func TestProvisionLayersGraph_BuildsGraph(t *testing.T) {
 	t.Parallel()
 
@@ -135,16 +131,33 @@ func TestProvisionLayersGraph_BuildsGraph(t *testing.T) {
 		0o600,
 	))
 
-	layers := []provisioning.Options{
-		{Name: "network", Path: "infra/network", Module: "main"},
-		{Name: "compute", Path: "infra/compute", Module: "main"},
-		{
-			Name: "monitoring", Path: "infra/monitoring",
-			Module: "main",
+	projectConfig := &project.ProjectConfig{
+		Path: projectDir,
+		Layers: project.LayerConfigs{
+			{
+				Name: "shared",
+				Infra: []provisioning.Options{
+					{Name: "network", Path: "infra/network", Module: "main", Provider: provisioning.Bicep},
+				},
+			},
+			{
+				Name: "application",
+				Infra: []provisioning.Options{
+					{Name: "compute", Path: "infra/compute", Module: "main", Provider: provisioning.Bicep},
+					{Name: "monitoring", Path: "infra/monitoring", Module: "main", Provider: provisioning.Bicep},
+				},
+			},
 		},
 	}
 
-	// Analyze dependencies.
+	infra, err := project.NewImportManager(nil).ProjectInfrastructure(t.Context(), projectConfig)
+	require.NoError(t, err)
+	layers := infra.Options.GetLayers()
+	require.Len(t, layers, 3)
+	require.Equal(t, "shared", layers[0].Layer)
+	require.Equal(t, "application", layers[1].Layer)
+	require.Equal(t, "application", layers[2].Layer)
+
 	layerDeps, err := bicep.AnalyzeLayerDependencies(
 		t.Context(), layers, projectDir,
 	)

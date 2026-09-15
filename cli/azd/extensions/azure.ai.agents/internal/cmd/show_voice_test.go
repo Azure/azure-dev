@@ -97,7 +97,10 @@ func TestShowVoiceServiceRouting(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.Equal(t, tt.voice, info.IsVoice)
-			action := &ShowAction{AgentContext: &AgentContext{Name: info.AgentName, Version: info.Version}, isVoice: info.IsVoice}
+			action := &ShowAction{
+				AgentContext: &AgentContext{Name: info.AgentName, Version: info.Version},
+				isVoice:      info.IsVoice,
+			}
 			reader := &showRecordingReader{}
 			version, err := action.getVersion(t.Context(), reader)
 			require.NoError(t, err)

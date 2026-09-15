@@ -619,6 +619,23 @@ func runInitFromAzureYaml(
 			return err
 		}
 	}
+	if result.FoundryProject == nil {
+		projectRoot, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf(
+				"resolving the adopted project directory: %w",
+				err,
+			)
+		}
+		if err := authorNewFoundryProject(
+			ctx,
+			azdClient,
+			env.Name,
+			projectRoot,
+		); err != nil {
+			return err
+		}
+	}
 
 	// The projects extension owns project deployments. When the user
 	// names an existing deployment, validate it through the Foundry API

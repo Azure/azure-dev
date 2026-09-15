@@ -55,6 +55,55 @@ func authorFoundryProject(
 	)
 }
 
+var newProjectEnvironmentKeys = []string{
+	"AZURE_AI_PROJECT_NAME",
+	"AZURE_RESOURCE_GROUP",
+	"AZURE_AI_ACCOUNT_NAME",
+	"AZURE_LOCATION",
+	"AZURE_AI_DEPLOYMENTS_LOCATION",
+}
+
+func authorNewFoundryProject(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	projectRoot string,
+) error {
+	response, err := azdClient.Environment().GetValues(
+		ctx,
+		&azdext.GetEnvironmentRequest{Name: envName},
+	)
+	if err != nil {
+		return fmt.Errorf("reading new Foundry project environment: %w", err)
+	}
+
+	values := make(map[string]string, len(newProjectEnvironmentKeys))
+	for _, key := range newProjectEnvironmentKeys {
+		for _, value := range response.GetKeyValues() {
+			if value.GetKey() == key {
+				values[key] = value.GetValue()
+				break
+			}
+		}
+	}
+
+	authorErr := authorFoundryProject(ctx, azdClient, nil, projectRoot)
+	var restoreErrs []error
+	for _, key := range newProjectEnvironmentKeys {
+		value := strings.TrimSpace(values[key])
+		if value == "" {
+			continue
+		}
+		if err := setEnvValue(ctx, azdClient, envName, key, value); err != nil {
+			restoreErrs = append(restoreErrs, err)
+		}
+	}
+	if authorErr != nil {
+		restoreErrs = append([]error{authorErr}, restoreErrs...)
+	}
+	return errors.Join(restoreErrs...)
+}
+
 // authorFoundryDeployments delegates managed deployment authoring to
 // the projects extension. Existing deployments are not passed here.
 func authorFoundryDeployments(

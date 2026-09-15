@@ -163,6 +163,48 @@ func TestAuthorFoundryProjectUsesEndpointFlag(t *testing.T) {
 	assert.Empty(t, projectServer.added)
 }
 
+func TestAuthorNewFoundryProjectPreservesSelection(t *testing.T) {
+	t.Parallel()
+
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{
+			"test": {
+				"AZURE_AI_PROJECT_NAME":         "new-project",
+				"AZURE_RESOURCE_GROUP":          "new-rg",
+				"AZURE_LOCATION":                "eastus",
+				"AZURE_AI_DEPLOYMENTS_LOCATION": "eastus",
+			},
+		},
+	}
+	workflowServer := &recordingProjectWorkflowServer{}
+	client := newTestAzdClient(t, envServer, workflowServer)
+	projectRoot := t.TempDir()
+
+	require.NoError(t, authorNewFoundryProject(
+		t.Context(),
+		client,
+		"test",
+		projectRoot,
+	))
+
+	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
+		"ai",
+		"project",
+		"add",
+		"--no-prompt",
+		"--output",
+		"none",
+	), workflowArgs(t, workflowServer, 0))
+	assert.Equal(t, "new-project", envServer.values["test"]["AZURE_AI_PROJECT_NAME"])
+	assert.Equal(t, "new-rg", envServer.values["test"]["AZURE_RESOURCE_GROUP"])
+	assert.Equal(t, "eastus", envServer.values["test"]["AZURE_LOCATION"])
+	assert.Equal(
+		t,
+		"eastus",
+		envServer.values["test"]["AZURE_AI_DEPLOYMENTS_LOCATION"],
+	)
+}
+
 func TestAuthorFoundryDeploymentsUsesPublicCommand(t *testing.T) {
 	t.Parallel()
 

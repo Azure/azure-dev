@@ -29,7 +29,11 @@ func TestStableContractIsSubsetOfBeta(t *testing.T) {
 
 	require.Len(t, stable, 17)
 	require.GreaterOrEqual(t, len(beta), len(stable))
-	require.NoError(t, validateStableSubset(stable, beta))
+	require.NoError(
+		t,
+		validateStableSubset(stable, beta),
+		"v1beta must preserve every v1 symbol and wire shape; add preview APIs without changing the inherited v1 contract",
+	)
 }
 
 func TestPreviewOnlyServicesAreExcludedFromStable(t *testing.T) {

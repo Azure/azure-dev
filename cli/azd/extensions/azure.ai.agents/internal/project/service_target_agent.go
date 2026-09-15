@@ -3659,9 +3659,12 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 		// Attach the informational note to the last endpoint only, to avoid repetition.
 		if len(endpoints) > 0 {
 			last := artifacts[len(artifacts)-1]
+			// `azd ai agent eval generate` is deprecated; the evaluations extension
+			// owns this surface now.
 			last.Metadata["note"] = "For information on invoking the agent, see " + output.WithLinkFormat(
 				"https://aka.ms/azd-agents-invoke") +
-				"\n\nSet up an evaluation suite to measure quality and impact in one step with " + output.WithHighLightFormat("azd ai agent eval generate")
+				"\n\nSet up an evaluation suite to measure quality and impact in one step with " +
+				output.WithHighLightFormat("azd ai eval init")
 		}
 	}
 

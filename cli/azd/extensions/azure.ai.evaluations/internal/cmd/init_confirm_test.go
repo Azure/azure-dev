@@ -90,13 +90,14 @@ func TestRootEvalServiceAction(t *testing.T) {
 		return &azdext.ProjectConfig{Path: "/proj", Services: services}
 	}
 
-	action, err := rootEvalServiceAction(proj(nil), "a-evals", "/proj/evals/azure.eval.yaml")
+	action, name, err := rootEvalServiceAction(proj(nil), "a-evals", "/proj/evals/azure.eval.yaml")
 	require.NoError(t, err)
 	assert.Equal(t, wiringAdded, action)
+	assert.Equal(t, "a-evals", name, "nothing to reuse, so the derived name stands")
 
 	// AddService assigns by name, so a service this extension does not own
 	// would be replaced rather than added to.
-	_, err = rootEvalServiceAction(
+	_, _, err = rootEvalServiceAction(
 		proj(map[string]*azdext.ServiceConfig{"a-evals": {Host: "containerapp"}}),
 		"a-evals", "/proj/evals/azure.eval.yaml")
 	require.Error(t, err)

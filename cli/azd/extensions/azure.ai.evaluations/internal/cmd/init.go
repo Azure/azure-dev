@@ -101,9 +101,11 @@ func newInitCommand() *cobra.Command {
 			"built-in. Passing this replaces the defaults, so it also opts out of rubric generation.")
 	cmd.Flags().StringVar(&flags.judgeModel, "judge-model", "",
 		"Model deployment the graders judge with. Detected from the project when omitted.")
+	// No backticks around init: pflag reads the first back-quoted word in a
+	// usage string as the value placeholder, which rendered this "--path init".
 	cmd.Flags().StringVar(&flags.path, "path", "",
 		"Directory to write the configuration into. Used verbatim, never re-rooted. "+
-			"Defaults to the directory an earlier `init` scaffolded, otherwise ./evals.")
+			"Defaults to the directory an earlier init scaffolded, otherwise ./evals.")
 	return cmd
 }
 
@@ -195,7 +197,7 @@ func (a *initAction) Run() error {
 		return err
 	}
 	serviceName := answers.target + "-evals"
-	wiring, err := planRootEvalService(a.cmd.Context(), serviceName, configPath)
+	wiring, serviceName, err := planRootEvalService(a.cmd.Context(), serviceName, configPath)
 	if err != nil {
 		return err
 	}
@@ -229,7 +231,7 @@ func (a *initAction) Run() error {
 		// and skipped every refusal planRootEvalService raises for the new name,
 		// which is the check that stops init writing over somebody else's
 		// service entry.
-		if wiring, err = planRootEvalService(a.cmd.Context(), serviceName, configPath); err != nil {
+		if wiring, serviceName, err = planRootEvalService(a.cmd.Context(), serviceName, configPath); err != nil {
 			return err
 		}
 	}
@@ -323,7 +325,7 @@ func (a *initAction) Run() error {
 	// Scaffolding a config azd cannot see is half a step: the eval
 	// service has to be referenced from the root config before any of
 	// `azd up`, `azd deploy` or `azd ai eval run` will act on it.
-	rootWiring, err := ensureRootEvalService(a.cmd.Context(), serviceName, target, configPath)
+	rootWiring, serviceName, err := ensureRootEvalService(a.cmd.Context(), serviceName, target, configPath)
 	if err != nil {
 		return err
 	}
@@ -899,10 +901,43 @@ func (s scaffold) evalName() string {
 // without one. Naming the directory makes the printed step run as printed
 // either way, which is the claim these lines make.
 func (s scaffold) withPath(step string) string {
-	if s.evalDir == "" || s.evalDir == project.DefaultEvalDir {
+	dir := printablePath(s.evalDir)
+	// `evals`, `./evals` and the absolute path to it are one directory, and it is
+	// the one every command already falls back to.
+	if dir == "" || strings.TrimPrefix(dir, "./") == project.DefaultEvalDir {
 		return step
 	}
-	return step + " --path " + quoteForShell(s.evalDir)
+	return step + " --path " + quoteForShell(dir)
+}
+
+// printablePath is how a directory should be spelled in a step the reader is
+// about to run.
+//
+// `--path` is used verbatim, so an absolute one was echoed back absolute while
+// the `$ref` init wrote beside it was relative -- the same directory printed
+// two ways in one screen, and a machine-specific path in the half a reader is
+// most likely to copy into a script.
+//
+// Relative to the working directory rather than to the project root, because
+// that is where the printed step will be run from. A directory the caller
+// cannot reach without climbing out of it is left as it was: `../../..` is
+// worse than the absolute path it came from.
+func printablePath(dir string) string {
+	if dir == "" || !filepath.IsAbs(dir) {
+		return dir
+	}
+	here, err := os.Getwd()
+	if err != nil {
+		return dir
+	}
+	rel, err := filepath.Rel(here, dir)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return dir
+	}
+	if rel == "." {
+		return dir
+	}
+	return "./" + filepath.ToSlash(rel)
 }
 
 // quoteForShell wraps a value a shell would otherwise read as more than one
@@ -1071,53 +1106,97 @@ func detectModelDeployments(proj *azdext.ProjectConfig) []string {
 }
 
 // planRootEvalService reports the azure.yaml edit init would make, without
-// making it.
+// making it, and the name of the service it would touch.
 //
 // The confirmation has to state the change before it happens, and the only way
 // to know whether the service is already there is to look. Every refusal
 // ensureRootEvalService can raise is raised here too, so a scaffold that cannot
 // be wired is refused before the reader is asked to approve it.
-func planRootEvalService(ctx context.Context, serviceName, configPath string) (string, error) {
+func planRootEvalService(ctx context.Context, serviceName, configPath string) (string, string, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
-		return "", messages.ConnectingToAzd(err)
+		return "", "", messages.ConnectingToAzd(err)
 	}
 	defer azdClient.Close()
 
 	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil || resp.GetProject() == nil {
-		return "", messages.NoAzdProject()
+		return "", "", messages.NoAzdProject()
 	}
 	return rootEvalServiceAction(resp.GetProject(), serviceName, configPath)
 }
 
-// rootEvalServiceAction decides what the project file needs, or refuses.
+// rootEvalServiceAction decides what the project file needs, or refuses, and
+// names the service the decision is about.
 //
 // A service already pointing at this configuration is left alone: re-adding it
-// would deploy the same evals twice.
+// would deploy the same evals twice. That is decided by what a service points
+// at rather than by what it is called, because the name is derived from
+// --target: pointing a second agent at a configuration that is already wired
+// looked like a service that did not exist yet, and `init` added a second one
+// beside the first. Both then deployed the same file on every `azd up`.
 //
-// Pointing at a different one is not the same thing. Matching on name and host
-// alone reported the wiring present after `init --path` moved the
+// Pointing at a different configuration is not the same thing. Matching on name
+// and host alone reported the wiring present after `init --path` moved the
 // configuration, and `azd up` went on deploying the file that was left behind
 // -- the scaffold the reader was looking at was never deployed.
 func rootEvalServiceAction(
 	proj *azdext.ProjectConfig,
 	serviceName, configPath string,
-) (string, error) {
+) (string, string, error) {
 	wantRef := refTo(proj.GetPath(), configPath)
+	if name, ok := evalServicePointingAt(proj, wantRef, serviceName); ok {
+		return wiringPresent, name, nil
+	}
 	svc, ok := proj.GetServices()[serviceName]
 	if !ok {
-		return wiringAdded, nil
+		return wiringAdded, serviceName, nil
 	}
 	// AddService assigns into the services map by name, so a service this
 	// extension does not own would be replaced rather than added to.
 	if svc.GetHost() != project.EvalHost {
-		return "", messages.ServiceNameTaken(serviceName, svc.GetHost())
+		return "", "", messages.ServiceNameTaken(serviceName, svc.GetHost())
 	}
 	if have := serviceConfigRef(svc); have != "" && !sameRefTarget(proj.GetPath(), have, wantRef) {
-		return "", messages.ServiceRefPointsElsewhere(serviceName, have, wantRef)
+		return "", "", messages.ServiceRefPointsElsewhere(serviceName, have, wantRef)
 	}
-	return wiringPresent, nil
+	return wiringPresent, serviceName, nil
+}
+
+// evalServicePointingAt names the eval service already referencing this
+// configuration, whatever key it was declared under.
+//
+// preferred is tried first so a service under the name `init` would have picked
+// keeps that name, and the rest are visited in sorted order so a project that
+// somehow declares two of them resolves to the same one on every run.
+func evalServicePointingAt(
+	proj *azdext.ProjectConfig,
+	wantRef, preferred string,
+) (string, bool) {
+	services := proj.GetServices()
+	pointsAtIt := func(name string) bool {
+		svc, ok := services[name]
+		if !ok || svc.GetHost() != project.EvalHost {
+			return false
+		}
+		// An inline service points at no file, so it is never this one.
+		have := serviceConfigRef(svc)
+		return have != "" && sameRefTarget(proj.GetPath(), have, wantRef)
+	}
+	if pointsAtIt(preferred) {
+		return preferred, true
+	}
+	names := make([]string, 0, len(services))
+	for name := range services {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if pointsAtIt(name) {
+			return name, true
+		}
+	}
+	return "", false
 }
 
 // ensureRootEvalService declares the eval service in azd's project file.
@@ -1129,48 +1208,48 @@ func rootEvalServiceAction(
 func ensureRootEvalService(
 	ctx context.Context,
 	serviceName, target, configPath string,
-) (string, error) {
+) (string, string, error) {
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
-		return "", messages.ConnectingToAzd(err)
+		return "", "", messages.ConnectingToAzd(err)
 	}
 	defer azdClient.Close()
 
 	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil || resp.GetProject() == nil {
-		return "", messages.NoAzdProject()
+		return "", "", messages.NoAzdProject()
 	}
 
 	// Decided again rather than carried over from the confirmation: the
 	// project file is a shared file, and the read that the reader approved
 	// was taken before an unbounded human pause.
-	action, err := rootEvalServiceAction(resp.GetProject(), serviceName, configPath)
+	action, name, err := rootEvalServiceAction(resp.GetProject(), serviceName, configPath)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if action == wiringPresent {
-		return wiringPresent, nil
+		return wiringPresent, name, nil
 	}
 
 	props, err := structpb.NewStruct(map[string]any{
 		"$ref": refTo(resp.GetProject().GetPath(), configPath),
 	})
 	if err != nil {
-		return "", messages.BuildingServiceEntry(err)
+		return "", "", messages.BuildingServiceEntry(err)
 	}
 
 	_, err = azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{
 		Service: &azdext.ServiceConfig{
-			Name:                 serviceName,
+			Name:                 name,
 			Host:                 project.EvalHost,
 			Uses:                 evalServiceUses(resp.GetProject(), target),
 			AdditionalProperties: props,
 		},
 	})
 	if err != nil {
-		return "", messages.AddingServiceTo(rootConfigName, err)
+		return "", "", messages.AddingServiceTo(rootConfigName, err)
 	}
-	return wiringAdded, nil
+	return wiringAdded, name, nil
 }
 
 // serviceConfigRef reads the $ref a service entry was authored with, or empty

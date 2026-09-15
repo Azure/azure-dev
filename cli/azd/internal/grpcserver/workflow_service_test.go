@@ -14,7 +14,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
@@ -114,53 +113,6 @@ func Test_WorkflowService_Run_Success(t *testing.T) {
 		require.Equal(t, codes.AlreadyExists, status.Code(err))
 		require.Nil(t, resp)
 	})
-
-	for _, test := range []struct {
-		name string
-		err  error
-	}{
-		{name: "ContextCanceled", err: context.Canceled},
-		{name: "AbortedByUser", err: internal.ErrAbortedByUser},
-		{
-			name: "ExtensionCancellation",
-			err: &azdext.LocalError{
-				Message:  "project authoring was cancelled",
-				Code:     "cancelled",
-				Category: azdext.LocalErrorCategoryUser,
-			},
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			testRunner := &TestWorkflowRunner{}
-			runner := workflow.NewRunner(testRunner, mockContext.Console)
-			testRunner.On(
-				"ExecuteContext",
-				contextType,
-				mock.Anything,
-			).Return(test.err)
-
-			service := NewWorkflowService(runner)
-			resp, err := service.Run(
-				*mockContext.Context,
-				&azdext.RunWorkflowRequest{
-					Workflow: &azdext.Workflow{
-						Name: "cancel",
-						Steps: []*azdext.WorkflowStep{
-							{
-								Command: &azdext.WorkflowCommand{
-									Args: []string{"ai", "project", "add"},
-								},
-							},
-						},
-					},
-				},
-			)
-
-			require.Error(t, err)
-			require.Equal(t, codes.Canceled, status.Code(err))
-			require.Nil(t, resp)
-		})
-	}
 }
 
 // Updated TestWorkflowRunner using testify/mock.

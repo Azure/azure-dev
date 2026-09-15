@@ -246,6 +246,7 @@ func Test_ExtensionsForProject(t *testing.T) {
 		"azure.ai.agents": {
 			Id:           "azure.ai.agents",
 			Version:      "1.0.0-beta.15",
+			Source:       extensions.MainRegistryName,
 			Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
 			Providers: []extensions.Provider{{
 				Name: "azure.ai.agent",
@@ -255,6 +256,7 @@ func Test_ExtensionsForProject(t *testing.T) {
 		"azure.ai.projects": {
 			Id:      "azure.ai.projects",
 			Version: "1.0.0-beta.10",
+			Source:  extensions.MainRegistryName,
 			Capabilities: []extensions.CapabilityType{
 				extensions.ProvisioningProviderCapability,
 				extensions.ServiceTargetProviderCapability,
@@ -270,15 +272,39 @@ func Test_ExtensionsForProject(t *testing.T) {
 	extensionIds, err := activator.ExtensionsForProject(
 		[]string{"microsoft.foundry"},
 		[]string{"azure.ai.project", "azure.ai.agent"},
-		[]string{"azure.ai.agents", "custom.required"},
+		[]string{"azure.ai.agents"},
 	)
 
 	require.NoError(t, err)
 	require.Equal(t, []ProjectExtension{
 		{Id: "azure.ai.agents", Version: "1.0.0-beta.15"},
 		{Id: "azure.ai.projects", Version: "1.0.0-beta.10"},
-		{Id: "custom.required"},
 	}, extensionIds)
+}
+
+func Test_ExtensionsForProjectRejectsNonOfficialSource(t *testing.T) {
+	t.Parallel()
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	installed := map[string]*extensions.Extension{
+		"azure.ai.agents": {
+			Id:             "azure.ai.agents",
+			Version:        "1.0.0-beta.15",
+			Source:         "dev",
+			SourceCategory: extensions.SourceCategoryDev,
+			Capabilities:   []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
+			Providers: []extensions.Provider{{
+				Name: "azure.ai.agent",
+				Type: extensions.ServiceTargetProviderType,
+			}},
+		},
+	}
+	activator := newTestExtensionActivator(t, mockCtx, installed)
+
+	_, err := activator.ExtensionsForProject(nil, []string{"azure.ai.agent"}, nil)
+
+	require.ErrorContains(t, err, `installed from non-official source "dev"`)
+	require.ErrorContains(t, err, "configure its source and installation manually in CI")
 }
 
 func Test_SuggestExtensionForProvider(t *testing.T) {

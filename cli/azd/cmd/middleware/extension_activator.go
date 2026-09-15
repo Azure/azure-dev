@@ -197,34 +197,69 @@ func (a *ExtensionActivator) ExtensionsForProject(
 	byId := make(map[string]ProjectExtension, len(requiredExtensionIds))
 	for _, extensionId := range requiredExtensionIds {
 		if extensionId = strings.TrimSpace(extensionId); extensionId != "" {
-			required := ProjectExtension{Id: extensionId}
+			var installedExtension *extensions.Extension
 			for installedId, extension := range installed {
 				if strings.EqualFold(installedId, extensionId) {
-					required.Id = extension.Id
-					required.Version = extension.Version
+					installedExtension = extension
 					break
 				}
+			}
+			if installedExtension == nil {
+				return nil, fmt.Errorf(
+					"required extension %q is not installed; install it before configuring the pipeline",
+					extensionId,
+				)
+			}
+
+			required, err := reproducibleProjectExtension(installedExtension)
+			if err != nil {
+				return nil, err
 			}
 			byId[strings.ToLower(extensionId)] = required
 		}
 	}
 
-	addMatches := func(providerNames []string, capability extensions.CapabilityType) {
+	addMatches := func(providerNames []string, capability extensions.CapabilityType) error {
 		for _, extension := range extensionsForCapabilityProviders(installed, providerNames, capability) {
-			byId[strings.ToLower(extension.Id)] = ProjectExtension{
-				Id:      extension.Id,
-				Version: extension.Version,
+			required, err := reproducibleProjectExtension(extension)
+			if err != nil {
+				return err
 			}
+			byId[strings.ToLower(extension.Id)] = required
 		}
+		return nil
 	}
-	addMatches(provisioningProviderNames, extensions.ProvisioningProviderCapability)
-	addMatches(serviceTargetProviderNames, extensions.ServiceTargetProviderCapability)
+	if err := addMatches(provisioningProviderNames, extensions.ProvisioningProviderCapability); err != nil {
+		return nil, err
+	}
+	if err := addMatches(serviceTargetProviderNames, extensions.ServiceTargetProviderCapability); err != nil {
+		return nil, err
+	}
 
 	result := slices.Collect(maps.Values(byId))
 	slices.SortFunc(result, func(a, b ProjectExtension) int {
 		return cmp.Compare(a.Id, b.Id)
 	})
 	return result, nil
+}
+
+func reproducibleProjectExtension(extension *extensions.Extension) (ProjectExtension, error) {
+	source := strings.TrimSpace(extension.Source)
+	if source != "" &&
+		!strings.EqualFold(source, extensions.MainRegistryName) &&
+		extension.SourceCategoryOrUnknown() != extensions.SourceCategoryAzd {
+		return ProjectExtension{}, fmt.Errorf(
+			"extension %q version %q is installed from non-official source %q; "+
+				"generated pipelines can only reproduce extensions from the official %q registry. "+
+				"Reinstall the extension from that registry or configure its source and installation manually in CI",
+			extension.Id,
+			extension.Version,
+			source,
+			extensions.MainRegistryName,
+		)
+	}
+
+	return ProjectExtension{Id: extension.Id, Version: extension.Version}, nil
 }
 
 // SuggestExtensionForProvider finds an installable extension for a missing provisioning provider.

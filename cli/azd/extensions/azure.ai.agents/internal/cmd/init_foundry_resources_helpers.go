@@ -1412,7 +1412,8 @@ func configureDeferredInitAzureContext(
 			"Set the missing values, then re-run init to resolve model deployments automatically.",
 		))
 		fmt.Println(output.WithGrayFormat(
-			"To configure deployments manually, add a deployment under the agent service config in azure.yaml, for example:",
+			"To configure deployments manually, add a deployment under the " +
+				"azure.ai.project service in azure.yaml, for example:",
 		))
 		fmt.Println(output.WithGrayFormat("  deployments:"))
 		fmt.Println(output.WithGrayFormat("    - name: <deployment-name>"))

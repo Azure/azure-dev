@@ -7,7 +7,7 @@ terminal.
 ## Commands
 
 ```bash
-azd ai skill add <name> [--description "..." --instructions "..."]
+azd ai skill add <name> --description "..." --instructions "..."
 azd ai skill add <name> --file ./SKILL.md
 azd ai skill add <name> --file ./skill.zip
 azd ai skill add <name> --file ./skill-src/
@@ -38,6 +38,10 @@ version). Names follow the agentskills.io spec
 mutating the remote skill. Run `azd deploy <name>` or `azd up` afterward to
 reconcile it. Existing `uses:`, `project:`, and unowned service fields are
 preserved.
+
+Inline and `SKILL.md` inputs to `add` require both a non-empty description and
+instructions, as for inline `create` and `update`. `--instructions` and the
+`SKILL.md` body are always stored as literal text, even when they look like paths.
 
 `create` accepts inline content (`--description` / `--instructions`), a
 single `SKILL.md` file, a `.zip` package, or a directory whose root contains
@@ -96,8 +100,34 @@ The skill command does not infer which agents consume the skill. Add the skill
 service name to each consuming agent's `uses:` list to declare deployment
 ordering explicitly.
 
-`instructions` can also reference a `.md` or `.txt` file. To preserve a
-complete skill package, use `archive` instead of the inline fields:
+`instructions` accepts inline text or a file reference. Use an explicit object
+when the value could be ambiguous:
+
+```yaml
+services:
+  review-rules:
+    host: azure.ai.skill
+    description: Review guidelines
+    instructions:
+      file: docs/review instructions.md
+  literal-rules:
+    host: azure.ai.skill
+    description: A literal instruction that looks like a filename
+    instructions:
+      inline: README.md
+```
+
+An instruction object must contain exactly one of `file` or `inline`.
+String values remain supported: a single-line `.md` or `.txt` value is read as a
+file when it contains a directory separator or has no spaces or tabs. Thus,
+`docs/review instructions.md` and `./skill files/rules.md` are paths, while
+`Follow README.md` remains inline prose. For a bare filename containing spaces,
+use `file:` or prefix it with `./`. Use `inline:` for any literal text that
+matches the path rule. `add` selects that explicit form automatically when needed.
+Missing or unreadable instruction files fail deployment rather than being sent
+as literal instructions.
+
+To preserve a complete skill package, use `archive` instead of the inline fields:
 
 ```yaml
 services:

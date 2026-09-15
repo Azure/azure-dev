@@ -85,7 +85,7 @@ func TestUpsertSkillService_AddsInlineService(t *testing.T) {
 		Name: "code-review",
 		Config: skillServiceConfig{
 			Description:   "Review code",
-			Instructions:  "Review for correctness.",
+			Instructions:  skillInstructions{Value: "Review for correctness."},
 			License:       "MIT",
 			Compatibility: "gpt-5",
 			Metadata:      map[string]string{"owner": "platform"},
@@ -137,7 +137,7 @@ func TestUpsertSkillService_UpdatesOwnedFieldsAndPreservesOthers(t *testing.T) {
 		Name: "code-review",
 		Config: skillServiceConfig{
 			Description:  "Updated review",
-			Instructions: "Review new code.",
+			Instructions: skillInstructions{Value: "Review new code."},
 		},
 	})
 	require.NoError(t, err)
@@ -312,7 +312,7 @@ func TestUpsertSkillService_RejectsHostConflict(t *testing.T) {
 	}
 	_, err := upsertSkillService(t.Context(), client, skillServiceDeclaration{
 		Name:   "code-review",
-		Config: skillServiceConfig{Instructions: "Review code."},
+		Config: skillServiceConfig{Instructions: skillInstructions{Value: "Review code."}},
 	})
 	require.ErrorContains(t, err, "already uses host")
 	assert.Nil(t, client.addRequest)
@@ -336,7 +336,7 @@ func TestUpsertSkillService_DoesNotReplaceMissingExistingSection(t *testing.T) {
 
 	_, err := upsertSkillService(t.Context(), client, skillServiceDeclaration{
 		Name:   "code-review",
-		Config: skillServiceConfig{Instructions: "Review code."},
+		Config: skillServiceConfig{Instructions: skillInstructions{Value: "Review code."}},
 	})
 	require.ErrorContains(t, err, "disappeared from azure.yaml")
 	assert.Nil(t, client.setRequest)
@@ -365,7 +365,7 @@ func TestUpsertSkillService_RequiresProject(t *testing.T) {
 
 			_, err := upsertSkillService(t.Context(), tt.client, skillServiceDeclaration{
 				Name:   "code-review",
-				Config: skillServiceConfig{Instructions: "Review code."},
+				Config: skillServiceConfig{Instructions: skillInstructions{Value: "Review code."}},
 			})
 			require.ErrorContains(t, err, "cannot add skill")
 		})

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"azureaiskills/internal/exterrors"
 
@@ -78,7 +79,7 @@ func (a *addAction) buildDeclaration() (skillServiceDeclaration, error) {
 	case modeInline:
 		declaration.Config = skillServiceConfig{
 			Description:  a.flags.description,
-			Instructions: a.flags.instructions,
+			Instructions: skillInstructions{Value: a.flags.instructions},
 		}
 	case modeFileMd:
 		parsed, err := loadSkillMd(a.flags.file)
@@ -102,7 +103,7 @@ func (a *addAction) buildDeclaration() (skillServiceDeclaration, error) {
 		}
 		declaration.Config = skillServiceConfig{
 			Description:   parsed.Description,
-			Instructions:  parsed.Instructions,
+			Instructions:  skillInstructions{Value: parsed.Instructions},
 			License:       parsed.License,
 			Compatibility: parsed.Compatibility,
 			Metadata:      parsed.Metadata,
@@ -125,6 +126,13 @@ func (a *addAction) buildDeclaration() (skillServiceDeclaration, error) {
 	}
 
 	if declaration.ArchiveSource == "" {
+		if strings.TrimSpace(declaration.Config.Description) == "" {
+			return skillServiceDeclaration{}, exterrors.Validation(
+				exterrors.CodeMissingRequiredField,
+				"skill add requires a non-empty description",
+				"pass --description and --instructions, or use --file with a SKILL.md that supplies both",
+			)
+		}
 		if err := validateSkillServiceConfig(declaration.Name, &declaration.Config); err != nil {
 			return skillServiceDeclaration{}, err
 		}
@@ -178,9 +186,10 @@ Accepted content shapes:
   3. Package:   --file ./skill.zip
   4. Directory: --file ./skill-src
 
-Inline and SKILL.md inputs are stored as service properties. ZIP and directory
-inputs are stored as portable archive references. Updating an existing skill
-service preserves uses:, project:, and fields owned by other extensions.`,
+Inline and SKILL.md inputs require both a non-empty description and instructions.
+They are stored as service properties, preserving instructions as literal text.
+ZIP and directory inputs are stored as portable archive references. Updating an
+existing skill service preserves uses:, project:, and fields owned by other extensions.`,
 		Example: `  azd ai skill add triage-rules --description "Triage issues" --instructions "Classify each issue."
   azd ai skill add triage-rules --file ./SKILL.md
   azd ai skill add triage-rules --file ./skills/triage-rules
@@ -196,8 +205,10 @@ service preserves uses:, project:, and fields owned by other extensions.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&flags.description, "description", "", "Inline mode: human-readable summary of the skill")
-	cmd.Flags().StringVar(&flags.instructions, "instructions", "", "Inline mode: Markdown body defining skill behavior")
+	cmd.Flags().StringVar(&flags.description, "description", "",
+		"Inline mode: required human-readable summary of the skill")
+	cmd.Flags().StringVar(&flags.instructions, "instructions", "",
+		"Inline mode: required Markdown body defining skill behavior (literal text, not a file path)")
 	cmd.Flags().StringVar(
 		&flags.file,
 		"file",

@@ -12,9 +12,10 @@ The extension wire contracts have two public channels:
 The beta channel is a superset of stable. New additive contract fields,
 methods, and beta-only services can incubate there and graduate additively
 into stable after they have been validated. `ComposeService`,
-`CopilotService`, and `TelemetryService` are currently beta-only. Removing or
-renumbering fields, changing field types, and reusing reserved names or
-numbers remain breaking changes in either channel.
+`CopilotService`, and `TelemetryService` are currently beta-only.
+`EventMessage.HandlerOutput` is also beta-only. Removing or renumbering
+fields, changing field types, and reusing reserved names or numbers remain
+breaking changes in either channel.
 
 The original unversioned `azdext` protobuf package remains available only as a
 temporary frozen runtime bridge for already-built extensions. It is not a
@@ -29,14 +30,14 @@ go tool mage generateProtos
 ```
 
 The Mage target runs the pinned protobuf toolchain in a container and
-regenerates the stable Python and JavaScript extension scaffold bindings plus
+regenerates the preview Python and JavaScript extension scaffold bindings plus
 the Go contracts under `pkg/azdext/contracts/v1` and
 `pkg/azdext/contracts/v1beta`. The Go generation step also regenerates the
 stable forwarding surface used by the handwritten `pkg/azdext` SDK facade and
 the beta service adapters in
 `internal/grpcserver/versioned_services_generated.go`.
-Before generating bindings, it compiles descriptor sets for the stable
-scaffold protos and canonical `v1` protos and verifies that every scaffold
+Before generating bindings, it compiles descriptor sets for the preview
+scaffold protos and canonical `v1beta` protos and verifies that every scaffold
 message, enum, service, and method remains a wire-compatible subset of the
 canonical contract.
 

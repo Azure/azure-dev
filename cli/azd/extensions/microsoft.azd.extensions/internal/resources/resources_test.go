@@ -125,12 +125,12 @@ func TestNonGoScaffoldsUseVersionedGrpcPackages(t *testing.T) {
 					t,
 					strings.ToLower(path),
 					"compose",
-					"Compose is beta-only and not part of stable scaffolds",
+					"Compose is beta-only and not part of these scaffolds",
 				)
 
 				if (strings.HasSuffix(path, "_grpc_pb.js") || strings.HasSuffix(path, "_pb2_grpc.py")) &&
 					!strings.Contains(path, "/models_") {
-					require.Contains(t, text, "/azd.extensions.v1.", path)
+					require.Contains(t, text, "/azd.extensions.v1beta.", path)
 				}
 				return nil
 			})
@@ -139,12 +139,12 @@ func TestNonGoScaffoldsUseVersionedGrpcPackages(t *testing.T) {
 	}
 }
 
-func TestNonGoScaffoldEventMessageMatchesStableContract(t *testing.T) {
+func TestNonGoScaffoldEventMessageMatchesBetaContract(t *testing.T) {
 	scaffold, err := Languages.ReadFile("languages/proto/event.proto")
 	require.NoError(t, err)
 
 	canonical, err := os.ReadFile(filepath.Join(
-		"..", "..", "..", "..", "grpc", "proto", "azd", "extensions", "v1", "event.proto",
+		"..", "..", "..", "..", "grpc", "proto", "azd", "extensions", "v1beta", "event.proto",
 	))
 	require.NoError(t, err)
 

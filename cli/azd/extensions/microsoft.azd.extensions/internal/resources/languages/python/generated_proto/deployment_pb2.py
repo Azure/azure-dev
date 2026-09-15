@@ -25,28 +25,28 @@ _sym_db = _symbol_database.Default()
 import models_pb2 as models__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10\x64\x65ployment.proto\x12\x11\x61zd.extensions.v1\x1a\x0cmodels.proto\"J\n\x15GetDeploymentResponse\x12\x31\n\ndeployment\x18\x01 \x01(\x0b\x32\x1d.azd.extensions.v1.Deployment\"U\n\x1cGetDeploymentContextResponse\x12\x35\n\x0c\x41zureContext\x18\x01 \x01(\x0b\x32\x1f.azd.extensions.v1.AzureContext\"\xc0\x02\n\nDeployment\x12\n\n\x02id\x18\x01 \x01(\t\x12\x10\n\x08location\x18\x02 \x01(\t\x12\x14\n\x0c\x64\x65ploymentId\x18\x03 \x01(\t\x12\x0c\n\x04name\x18\x04 \x01(\t\x12\x0c\n\x04type\x18\x05 \x01(\t\x12\x35\n\x04tags\x18\x06 \x03(\x0b\x32\'.azd.extensions.v1.Deployment.TagsEntry\x12;\n\x07outputs\x18\x07 \x03(\x0b\x32*.azd.extensions.v1.Deployment.OutputsEntry\x12\x11\n\tresources\x18\x08 \x03(\t\x1a+\n\tTagsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x1a.\n\x0cOutputsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x32\xd9\x01\n\x11\x44\x65ploymentService\x12Z\n\rGetDeployment\x12\x1f.azd.extensions.v1.EmptyRequest\x1a(.azd.extensions.v1.GetDeploymentResponse\x12h\n\x14GetDeploymentContext\x12\x1f.azd.extensions.v1.EmptyRequest\x1a/.azd.extensions.v1.GetDeploymentContextResponseBOZ=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1\xaa\x02\rMicrosoft.Azdb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10\x64\x65ployment.proto\x12\x15\x61zd.extensions.v1beta\x1a\x0cmodels.proto\"N\n\x15GetDeploymentResponse\x12\x35\n\ndeployment\x18\x01 \x01(\x0b\x32!.azd.extensions.v1beta.Deployment\"Y\n\x1cGetDeploymentContextResponse\x12\x39\n\x0c\x41zureContext\x18\x01 \x01(\x0b\x32#.azd.extensions.v1beta.AzureContext\"\xc8\x02\n\nDeployment\x12\n\n\x02id\x18\x01 \x01(\t\x12\x10\n\x08location\x18\x02 \x01(\t\x12\x14\n\x0c\x64\x65ploymentId\x18\x03 \x01(\t\x12\x0c\n\x04name\x18\x04 \x01(\t\x12\x0c\n\x04type\x18\x05 \x01(\t\x12\x39\n\x04tags\x18\x06 \x03(\x0b\x32+.azd.extensions.v1beta.Deployment.TagsEntry\x12?\n\x07outputs\x18\x07 \x03(\x0b\x32..azd.extensions.v1beta.Deployment.OutputsEntry\x12\x11\n\tresources\x18\x08 \x03(\t\x1a+\n\tTagsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x1a.\n\x0cOutputsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x32\xe9\x01\n\x11\x44\x65ploymentService\x12\x62\n\rGetDeployment\x12#.azd.extensions.v1beta.EmptyRequest\x1a,.azd.extensions.v1beta.GetDeploymentResponse\x12p\n\x14GetDeploymentContext\x12#.azd.extensions.v1beta.EmptyRequest\x1a\x33.azd.extensions.v1beta.GetDeploymentContextResponseBWZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1beta\xaa\x02\rMicrosoft.Azdb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'deployment_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'Z=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1\252\002\rMicrosoft.Azd'
+  _globals['DESCRIPTOR']._serialized_options = b'ZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1beta\252\002\rMicrosoft.Azd'
   _globals['_DEPLOYMENT_TAGSENTRY']._loaded_options = None
   _globals['_DEPLOYMENT_TAGSENTRY']._serialized_options = b'8\001'
   _globals['_DEPLOYMENT_OUTPUTSENTRY']._loaded_options = None
   _globals['_DEPLOYMENT_OUTPUTSENTRY']._serialized_options = b'8\001'
-  _globals['_GETDEPLOYMENTRESPONSE']._serialized_start=53
-  _globals['_GETDEPLOYMENTRESPONSE']._serialized_end=127
-  _globals['_GETDEPLOYMENTCONTEXTRESPONSE']._serialized_start=129
-  _globals['_GETDEPLOYMENTCONTEXTRESPONSE']._serialized_end=214
-  _globals['_DEPLOYMENT']._serialized_start=217
-  _globals['_DEPLOYMENT']._serialized_end=537
-  _globals['_DEPLOYMENT_TAGSENTRY']._serialized_start=446
-  _globals['_DEPLOYMENT_TAGSENTRY']._serialized_end=489
-  _globals['_DEPLOYMENT_OUTPUTSENTRY']._serialized_start=491
-  _globals['_DEPLOYMENT_OUTPUTSENTRY']._serialized_end=537
-  _globals['_DEPLOYMENTSERVICE']._serialized_start=540
-  _globals['_DEPLOYMENTSERVICE']._serialized_end=757
+  _globals['_GETDEPLOYMENTRESPONSE']._serialized_start=57
+  _globals['_GETDEPLOYMENTRESPONSE']._serialized_end=135
+  _globals['_GETDEPLOYMENTCONTEXTRESPONSE']._serialized_start=137
+  _globals['_GETDEPLOYMENTCONTEXTRESPONSE']._serialized_end=226
+  _globals['_DEPLOYMENT']._serialized_start=229
+  _globals['_DEPLOYMENT']._serialized_end=557
+  _globals['_DEPLOYMENT_TAGSENTRY']._serialized_start=466
+  _globals['_DEPLOYMENT_TAGSENTRY']._serialized_end=509
+  _globals['_DEPLOYMENT_OUTPUTSENTRY']._serialized_start=511
+  _globals['_DEPLOYMENT_OUTPUTSENTRY']._serialized_end=557
+  _globals['_DEPLOYMENTSERVICE']._serialized_start=560
+  _globals['_DEPLOYMENTSERVICE']._serialized_end=793
 # @@protoc_insertion_point(module_scope)

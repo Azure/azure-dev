@@ -36,12 +36,12 @@ class DeploymentServiceStub(object):
             channel: A grpc.Channel.
         """
         self.GetDeployment = channel.unary_unary(
-                '/azd.extensions.v1.DeploymentService/GetDeployment',
+                '/azd.extensions.v1beta.DeploymentService/GetDeployment',
                 request_serializer=models__pb2.EmptyRequest.SerializeToString,
                 response_deserializer=deployment__pb2.GetDeploymentResponse.FromString,
                 _registered_method=True)
         self.GetDeploymentContext = channel.unary_unary(
-                '/azd.extensions.v1.DeploymentService/GetDeploymentContext',
+                '/azd.extensions.v1beta.DeploymentService/GetDeploymentContext',
                 request_serializer=models__pb2.EmptyRequest.SerializeToString,
                 response_deserializer=deployment__pb2.GetDeploymentContextResponse.FromString,
                 _registered_method=True)
@@ -79,9 +79,9 @@ def add_DeploymentServiceServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'azd.extensions.v1.DeploymentService', rpc_method_handlers)
+            'azd.extensions.v1beta.DeploymentService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('azd.extensions.v1.DeploymentService', rpc_method_handlers)
+    server.add_registered_method_handlers('azd.extensions.v1beta.DeploymentService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -102,7 +102,7 @@ class DeploymentService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.DeploymentService/GetDeployment',
+            '/azd.extensions.v1beta.DeploymentService/GetDeployment',
             models__pb2.EmptyRequest.SerializeToString,
             deployment__pb2.GetDeploymentResponse.FromString,
             options,
@@ -129,7 +129,7 @@ class DeploymentService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.DeploymentService/GetDeploymentContext',
+            '/azd.extensions.v1beta.DeploymentService/GetDeploymentContext',
             models__pb2.EmptyRequest.SerializeToString,
             deployment__pb2.GetDeploymentContextResponse.FromString,
             options,

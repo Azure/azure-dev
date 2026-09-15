@@ -45,6 +45,20 @@ func TestPreviewOnlyServicesAreExcludedFromStable(t *testing.T) {
 	}
 }
 
+func TestHandlerOutputIsBetaOnly(t *testing.T) {
+	t.Parallel()
+
+	stableEvent := v1.File_azd_extensions_v1_event_proto
+	betaEvent := v1beta.File_azd_extensions_v1beta_event_proto
+
+	stableMessage := stableEvent.Messages().ByName("EventMessage")
+	betaMessage := betaEvent.Messages().ByName("EventMessage")
+	require.Nil(t, stableMessage.Fields().ByNumber(8))
+	require.Nil(t, stableEvent.Messages().ByName("HandlerOutput"))
+	require.Equal(t, protoreflect.Name("handler_output"), betaMessage.Fields().ByNumber(8).Name())
+	require.NotNil(t, betaEvent.Messages().ByName("HandlerOutput"))
+}
+
 func TestStableSubsetAllowsAdditiveBetaFieldsAndMethods(t *testing.T) {
 	t.Parallel()
 

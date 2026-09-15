@@ -24,48 +24,48 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0cmodels.proto\x12\x11\x61zd.extensions.v1\"\x0e\n\x0c\x45mptyRequest\"\x0f\n\rEmptyResponse\"g\n\x0cSubscription\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x11\n\ttenant_id\x18\x03 \x01(\t\x12\x16\n\x0euser_tenant_id\x18\x04 \x01(\t\x12\x12\n\nis_default\x18\x05 \x01(\x08\";\n\rResourceGroup\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x10\n\x08location\x18\x03 \x01(\t\"M\n\x08Location\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x14\n\x0c\x64isplay_name\x18\x02 \x01(\t\x12\x1d\n\x15regional_display_name\x18\x03 \x01(\t\"b\n\nAzureScope\x12\x11\n\ttenant_id\x18\x01 \x01(\t\x12\x17\n\x0fsubscription_id\x18\x02 \x01(\t\x12\x10\n\x08location\x18\x03 \x01(\t\x12\x16\n\x0eresource_group\x18\x04 \x01(\t\"O\n\x0c\x41zureContext\x12,\n\x05scope\x18\x01 \x01(\x0b\x32\x1d.azd.extensions.v1.AzureScope\x12\x11\n\tresources\x18\x02 \x03(\t\"D\n\x08Resource\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x0c\n\x04type\x18\x03 \x01(\t\x12\x10\n\x08location\x18\x04 \x01(\t\"Z\n\x10ResourceExtended\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x0c\n\x04type\x18\x03 \x01(\t\x12\x10\n\x08location\x18\x04 \x01(\t\x12\x0c\n\x04kind\x18\x05 \x01(\t\"\xc3\x02\n\rProjectConfig\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x1b\n\x13resource_group_name\x18\x02 \x01(\t\x12\x0c\n\x04path\x18\x03 \x01(\t\x12\x34\n\x08metadata\x18\x04 \x01(\x0b\x32\".azd.extensions.v1.ProjectMetadata\x12@\n\x08services\x18\x05 \x03(\x0b\x32..azd.extensions.v1.ProjectConfig.ServicesEntry\x12.\n\x05infra\x18\x06 \x01(\x0b\x32\x1f.azd.extensions.v1.InfraOptions\x1aQ\n\rServicesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12/\n\x05value\x18\x02 \x01(\x0b\x32 .azd.extensions.v1.ServiceConfig:\x02\x38\x01\"\x1f\n\x10RequiredVersions\x12\x0b\n\x03\x61zd\x18\x01 \x01(\t\"#\n\x0fProjectMetadata\x12\x10\n\x08template\x18\x01 \x01(\t\"\xcb\x02\n\rServiceConfig\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x1b\n\x13resource_group_name\x18\x02 \x01(\t\x12\x15\n\rresource_name\x18\x03 \x01(\t\x12\x13\n\x0b\x61pi_version\x18\x04 \x01(\t\x12\x15\n\rrelative_path\x18\x05 \x01(\t\x12\x0c\n\x04host\x18\x06 \x01(\t\x12\x10\n\x08language\x18\x07 \x01(\t\x12\x13\n\x0boutput_path\x18\x08 \x01(\t\x12\r\n\x05image\x18\t \x01(\t\x12\x0c\n\x04uses\x18\r \x03(\t\x12\x46\n\x0b\x65nvironment\x18\x0e \x03(\x0b\x32\x31.azd.extensions.v1.ServiceConfig.EnvironmentEntry\x1a\x32\n\x10\x45nvironmentEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\">\n\x0cInfraOptions\x12\x10\n\x08provider\x18\x01 \x01(\t\x12\x0c\n\x04path\x18\x02 \x01(\t\x12\x0e\n\x06module\x18\x03 \x01(\tBOZ=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1\xaa\x02\rMicrosoft.Azdb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0cmodels.proto\x12\x15\x61zd.extensions.v1beta\"\x0e\n\x0c\x45mptyRequest\"\x0f\n\rEmptyResponse\"g\n\x0cSubscription\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x11\n\ttenant_id\x18\x03 \x01(\t\x12\x16\n\x0euser_tenant_id\x18\x04 \x01(\t\x12\x12\n\nis_default\x18\x05 \x01(\x08\";\n\rResourceGroup\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x10\n\x08location\x18\x03 \x01(\t\"M\n\x08Location\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x14\n\x0c\x64isplay_name\x18\x02 \x01(\t\x12\x1d\n\x15regional_display_name\x18\x03 \x01(\t\"b\n\nAzureScope\x12\x11\n\ttenant_id\x18\x01 \x01(\t\x12\x17\n\x0fsubscription_id\x18\x02 \x01(\t\x12\x10\n\x08location\x18\x03 \x01(\t\x12\x16\n\x0eresource_group\x18\x04 \x01(\t\"S\n\x0c\x41zureContext\x12\x30\n\x05scope\x18\x01 \x01(\x0b\x32!.azd.extensions.v1beta.AzureScope\x12\x11\n\tresources\x18\x02 \x03(\t\"D\n\x08Resource\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x0c\n\x04type\x18\x03 \x01(\t\x12\x10\n\x08location\x18\x04 \x01(\t\"Z\n\x10ResourceExtended\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x0c\n\x04type\x18\x03 \x01(\t\x12\x10\n\x08location\x18\x04 \x01(\t\x12\x0c\n\x04kind\x18\x05 \x01(\t\"\xd3\x02\n\rProjectConfig\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x1b\n\x13resource_group_name\x18\x02 \x01(\t\x12\x0c\n\x04path\x18\x03 \x01(\t\x12\x38\n\x08metadata\x18\x04 \x01(\x0b\x32&.azd.extensions.v1beta.ProjectMetadata\x12\x44\n\x08services\x18\x05 \x03(\x0b\x32\x32.azd.extensions.v1beta.ProjectConfig.ServicesEntry\x12\x32\n\x05infra\x18\x06 \x01(\x0b\x32#.azd.extensions.v1beta.InfraOptions\x1aU\n\rServicesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\x33\n\x05value\x18\x02 \x01(\x0b\x32$.azd.extensions.v1beta.ServiceConfig:\x02\x38\x01\"\x1f\n\x10RequiredVersions\x12\x0b\n\x03\x61zd\x18\x01 \x01(\t\"#\n\x0fProjectMetadata\x12\x10\n\x08template\x18\x01 \x01(\t\"\xcf\x02\n\rServiceConfig\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x1b\n\x13resource_group_name\x18\x02 \x01(\t\x12\x15\n\rresource_name\x18\x03 \x01(\t\x12\x13\n\x0b\x61pi_version\x18\x04 \x01(\t\x12\x15\n\rrelative_path\x18\x05 \x01(\t\x12\x0c\n\x04host\x18\x06 \x01(\t\x12\x10\n\x08language\x18\x07 \x01(\t\x12\x13\n\x0boutput_path\x18\x08 \x01(\t\x12\r\n\x05image\x18\t \x01(\t\x12\x0c\n\x04uses\x18\r \x03(\t\x12J\n\x0b\x65nvironment\x18\x0e \x03(\x0b\x32\x35.azd.extensions.v1beta.ServiceConfig.EnvironmentEntry\x1a\x32\n\x10\x45nvironmentEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\">\n\x0cInfraOptions\x12\x10\n\x08provider\x18\x01 \x01(\t\x12\x0c\n\x04path\x18\x02 \x01(\t\x12\x0e\n\x06module\x18\x03 \x01(\tBWZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1beta\xaa\x02\rMicrosoft.Azdb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'models_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'Z=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1\252\002\rMicrosoft.Azd'
+  _globals['DESCRIPTOR']._serialized_options = b'ZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1beta\252\002\rMicrosoft.Azd'
   _globals['_PROJECTCONFIG_SERVICESENTRY']._loaded_options = None
   _globals['_PROJECTCONFIG_SERVICESENTRY']._serialized_options = b'8\001'
   _globals['_SERVICECONFIG_ENVIRONMENTENTRY']._loaded_options = None
   _globals['_SERVICECONFIG_ENVIRONMENTENTRY']._serialized_options = b'8\001'
-  _globals['_EMPTYREQUEST']._serialized_start=35
-  _globals['_EMPTYREQUEST']._serialized_end=49
-  _globals['_EMPTYRESPONSE']._serialized_start=51
-  _globals['_EMPTYRESPONSE']._serialized_end=66
-  _globals['_SUBSCRIPTION']._serialized_start=68
-  _globals['_SUBSCRIPTION']._serialized_end=171
-  _globals['_RESOURCEGROUP']._serialized_start=173
-  _globals['_RESOURCEGROUP']._serialized_end=232
-  _globals['_LOCATION']._serialized_start=234
-  _globals['_LOCATION']._serialized_end=311
-  _globals['_AZURESCOPE']._serialized_start=313
-  _globals['_AZURESCOPE']._serialized_end=411
-  _globals['_AZURECONTEXT']._serialized_start=413
-  _globals['_AZURECONTEXT']._serialized_end=492
-  _globals['_RESOURCE']._serialized_start=494
-  _globals['_RESOURCE']._serialized_end=562
-  _globals['_RESOURCEEXTENDED']._serialized_start=564
-  _globals['_RESOURCEEXTENDED']._serialized_end=654
-  _globals['_PROJECTCONFIG']._serialized_start=657
-  _globals['_PROJECTCONFIG']._serialized_end=980
-  _globals['_PROJECTCONFIG_SERVICESENTRY']._serialized_start=899
-  _globals['_PROJECTCONFIG_SERVICESENTRY']._serialized_end=980
-  _globals['_REQUIREDVERSIONS']._serialized_start=982
-  _globals['_REQUIREDVERSIONS']._serialized_end=1013
-  _globals['_PROJECTMETADATA']._serialized_start=1015
-  _globals['_PROJECTMETADATA']._serialized_end=1050
-  _globals['_SERVICECONFIG']._serialized_start=1053
-  _globals['_SERVICECONFIG']._serialized_end=1384
-  _globals['_SERVICECONFIG_ENVIRONMENTENTRY']._serialized_start=1334
-  _globals['_SERVICECONFIG_ENVIRONMENTENTRY']._serialized_end=1384
-  _globals['_INFRAOPTIONS']._serialized_start=1386
-  _globals['_INFRAOPTIONS']._serialized_end=1448
+  _globals['_EMPTYREQUEST']._serialized_start=39
+  _globals['_EMPTYREQUEST']._serialized_end=53
+  _globals['_EMPTYRESPONSE']._serialized_start=55
+  _globals['_EMPTYRESPONSE']._serialized_end=70
+  _globals['_SUBSCRIPTION']._serialized_start=72
+  _globals['_SUBSCRIPTION']._serialized_end=175
+  _globals['_RESOURCEGROUP']._serialized_start=177
+  _globals['_RESOURCEGROUP']._serialized_end=236
+  _globals['_LOCATION']._serialized_start=238
+  _globals['_LOCATION']._serialized_end=315
+  _globals['_AZURESCOPE']._serialized_start=317
+  _globals['_AZURESCOPE']._serialized_end=415
+  _globals['_AZURECONTEXT']._serialized_start=417
+  _globals['_AZURECONTEXT']._serialized_end=500
+  _globals['_RESOURCE']._serialized_start=502
+  _globals['_RESOURCE']._serialized_end=570
+  _globals['_RESOURCEEXTENDED']._serialized_start=572
+  _globals['_RESOURCEEXTENDED']._serialized_end=662
+  _globals['_PROJECTCONFIG']._serialized_start=665
+  _globals['_PROJECTCONFIG']._serialized_end=1004
+  _globals['_PROJECTCONFIG_SERVICESENTRY']._serialized_start=919
+  _globals['_PROJECTCONFIG_SERVICESENTRY']._serialized_end=1004
+  _globals['_REQUIREDVERSIONS']._serialized_start=1006
+  _globals['_REQUIREDVERSIONS']._serialized_end=1037
+  _globals['_PROJECTMETADATA']._serialized_start=1039
+  _globals['_PROJECTMETADATA']._serialized_end=1074
+  _globals['_SERVICECONFIG']._serialized_start=1077
+  _globals['_SERVICECONFIG']._serialized_end=1412
+  _globals['_SERVICECONFIG_ENVIRONMENTENTRY']._serialized_start=1362
+  _globals['_SERVICECONFIG_ENVIRONMENTENTRY']._serialized_end=1412
+  _globals['_INFRAOPTIONS']._serialized_start=1414
+  _globals['_INFRAOPTIONS']._serialized_end=1476
 # @@protoc_insertion_point(module_scope)

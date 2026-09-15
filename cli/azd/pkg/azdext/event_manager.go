@@ -6,20 +6,25 @@ package azdext
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"sync"
 
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
+	"google.golang.org/protobuf/proto"
 )
 
 type EventManager struct {
 	extensionId   string
 	client        *AzdClient
-	broker        *grpcbroker.MessageBroker[EventMessage]
+	broker        *grpcbroker.MessageBroker[v1beta.EventMessage]
 	projectEvents map[string]ProjectEventHandler
 	serviceEvents map[string]ServiceEventHandler
 	eventsMutex   sync.RWMutex // Protects both projectEvents and serviceEvents maps
 	brokerLogger  *log.Logger
+
+	outputWriter io.Writer
 
 	// Synchronization for concurrent access
 	mu sync.RWMutex
@@ -46,6 +51,7 @@ func NewEventManager(extensionId string, azdClient *AzdClient, brokerLogger *log
 		projectEvents: make(map[string]ProjectEventHandler),
 		serviceEvents: make(map[string]ServiceEventHandler),
 		brokerLogger:  brokerLogger,
+		outputWriter:  eventOutputFallback,
 	}
 }
 
@@ -86,15 +92,15 @@ func (em *EventManager) ensureStream(ctx context.Context) error {
 	}
 
 	// Create broker with client stream
-	envelope := &EventMessageEnvelope{}
+	envelope := newBetaEventMessageEnvelope(em.extensionId)
 	// Use client as name since we're on the client side (extension process)
 	em.broker = grpcbroker.NewMessageBroker(stream, envelope, em.extensionId, em.brokerLogger)
 
 	// Register handlers for incoming requests
-	if err := em.broker.On(em.onInvokeProjectHandler); err != nil {
+	if err := em.broker.On(em.onInvokeProjectHandlerBeta); err != nil {
 		return fmt.Errorf("failed to register invoke project handler: %w", err)
 	}
-	if err := em.broker.On(em.onInvokeServiceHandler); err != nil {
+	if err := em.broker.On(em.onInvokeServiceHandlerBeta); err != nil {
 		return fmt.Errorf("failed to register invoke service handler: %w", err)
 	}
 
@@ -134,9 +140,9 @@ func (em *EventManager) AddProjectEventHandler(ctx context.Context, eventName st
 		return err
 	}
 
-	msg := &EventMessage{
-		MessageType: &EventMessage_SubscribeProjectEvent{
-			SubscribeProjectEvent: &SubscribeProjectEvent{
+	msg := &v1beta.EventMessage{
+		MessageType: &v1beta.EventMessage_SubscribeProjectEvent{
+			SubscribeProjectEvent: &v1beta.SubscribeProjectEvent{
 				EventNames: []string{eventName},
 			},
 		},
@@ -173,9 +179,9 @@ func (em *EventManager) AddServiceEventHandler(
 		options = &ServiceEventOptions{}
 	}
 
-	msg := &EventMessage{
-		MessageType: &EventMessage_SubscribeServiceEvent{
-			SubscribeServiceEvent: &SubscribeServiceEvent{
+	msg := &v1beta.EventMessage{
+		MessageType: &v1beta.EventMessage_SubscribeServiceEvent{
+			SubscribeServiceEvent: &v1beta.SubscribeServiceEvent{
 				EventNames: []string{eventName},
 				Host:       options.Host,
 				Language:   options.Language,
@@ -214,6 +220,44 @@ func (em *EventManager) onInvokeProjectHandler(
 	ctx context.Context,
 	req *InvokeProjectHandler,
 ) (*EventMessage, error) {
+	return em.invokeProjectHandler(ctx, req, nil)
+}
+
+func (em *EventManager) onInvokeProjectHandlerWithProgress(
+	ctx context.Context,
+	req *InvokeProjectHandler,
+	progress grpcbroker.ProgressFunc,
+) (*EventMessage, error) {
+	return em.invokeProjectHandler(ctx, req, progress)
+}
+
+func (em *EventManager) onInvokeProjectHandlerBeta(
+	ctx context.Context,
+	req *v1beta.InvokeProjectHandler,
+	progress grpcbroker.ProgressFunc,
+) (*v1beta.EventMessage, error) {
+	stableReq := new(InvokeProjectHandler)
+	if err := transcodeEventContract(req, stableReq); err != nil {
+		return nil, fmt.Errorf("converting beta project event request: %w", err)
+	}
+
+	response, err := em.invokeProjectHandler(ctx, stableReq, progress)
+	if err != nil {
+		return nil, err
+	}
+
+	betaResponse := new(v1beta.EventMessage)
+	if err := transcodeEventContract(response, betaResponse); err != nil {
+		return nil, fmt.Errorf("converting beta project event response: %w", err)
+	}
+	return betaResponse, nil
+}
+
+func (em *EventManager) invokeProjectHandler(
+	ctx context.Context,
+	req *InvokeProjectHandler,
+	progress grpcbroker.ProgressFunc,
+) (*EventMessage, error) {
 	em.eventsMutex.RLock()
 	defer em.eventsMutex.RUnlock()
 	handler, exists := em.projectEvents[req.EventName]
@@ -232,7 +276,7 @@ func (em *EventManager) onInvokeProjectHandler(
 	var handlerError *ExtensionError
 
 	// Call the project event handler
-	err := handler(ctx, args)
+	err := handler(withEventOutput(ctx, em.outputWriter, progress), args)
 	if err != nil {
 		handlerStatus = "failed"
 		handlerMessage = err.Error()
@@ -257,6 +301,36 @@ func (em *EventManager) onInvokeProjectHandler(
 func (em *EventManager) onInvokeServiceHandler(
 	ctx context.Context,
 	req *InvokeServiceHandler,
+) (*EventMessage, error) {
+	return em.invokeServiceHandler(ctx, req, nil)
+}
+
+func (em *EventManager) onInvokeServiceHandlerBeta(
+	ctx context.Context,
+	req *v1beta.InvokeServiceHandler,
+	progress grpcbroker.ProgressFunc,
+) (*v1beta.EventMessage, error) {
+	stableReq := new(InvokeServiceHandler)
+	if err := transcodeEventContract(req, stableReq); err != nil {
+		return nil, fmt.Errorf("converting beta service event request: %w", err)
+	}
+
+	response, err := em.invokeServiceHandler(ctx, stableReq, progress)
+	if err != nil {
+		return nil, err
+	}
+
+	betaResponse := new(v1beta.EventMessage)
+	if err := transcodeEventContract(response, betaResponse); err != nil {
+		return nil, fmt.Errorf("converting beta service event response: %w", err)
+	}
+	return betaResponse, nil
+}
+
+func (em *EventManager) invokeServiceHandler(
+	ctx context.Context,
+	req *InvokeServiceHandler,
+	progress grpcbroker.ProgressFunc,
 ) (*EventMessage, error) {
 	em.eventsMutex.RLock()
 	defer em.eventsMutex.RUnlock()
@@ -284,7 +358,7 @@ func (em *EventManager) onInvokeServiceHandler(
 	var handlerError *ExtensionError
 
 	// Call the service event handler
-	err := handler(ctx, args)
+	err := handler(withEventOutput(ctx, em.outputWriter, progress), args)
 	if err != nil {
 		handlerStatus = "failed"
 		handlerMessage = err.Error()
@@ -304,4 +378,12 @@ func (em *EventManager) onInvokeServiceHandler(
 			},
 		},
 	}, nil
+}
+
+func transcodeEventContract(source, destination proto.Message) error {
+	wire, err := proto.Marshal(source)
+	if err != nil {
+		return err
+	}
+	return proto.Unmarshal(wire, destination)
 }

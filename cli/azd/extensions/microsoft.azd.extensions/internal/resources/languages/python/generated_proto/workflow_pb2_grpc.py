@@ -36,7 +36,7 @@ class WorkflowServiceStub(object):
             channel: A grpc.Channel.
         """
         self.Run = channel.unary_unary(
-                '/azd.extensions.v1.WorkflowService/Run',
+                '/azd.extensions.v1beta.WorkflowService/Run',
                 request_serializer=workflow__pb2.RunWorkflowRequest.SerializeToString,
                 response_deserializer=models__pb2.EmptyResponse.FromString,
                 _registered_method=True)
@@ -62,9 +62,9 @@ def add_WorkflowServiceServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'azd.extensions.v1.WorkflowService', rpc_method_handlers)
+            'azd.extensions.v1beta.WorkflowService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('azd.extensions.v1.WorkflowService', rpc_method_handlers)
+    server.add_registered_method_handlers('azd.extensions.v1beta.WorkflowService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -85,7 +85,7 @@ class WorkflowService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.WorkflowService/Run',
+            '/azd.extensions.v1beta.WorkflowService/Run',
             workflow__pb2.RunWorkflowRequest.SerializeToString,
             models__pb2.EmptyResponse.FromString,
             options,

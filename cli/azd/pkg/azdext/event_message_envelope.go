@@ -13,24 +13,31 @@ import (
 
 // EventMessageEnvelope provides message operations for EventMessage
 // It implements the grpcbroker.MessageEnvelope interface
-// This envelope extracts extension ID from gRPC context for correlation.
-type EventMessageEnvelope struct{}
+// This envelope uses the extension ID from gRPC context or its
+// configured client ID for correlation.
+type EventMessageEnvelope struct {
+	extensionID string
+}
 
 // NewEventMessageEnvelope creates a new EventMessageEnvelope instance.
 func NewEventMessageEnvelope() *EventMessageEnvelope {
-	return &EventMessageEnvelope{}
+	return newEventMessageEnvelope("")
+}
+
+func newEventMessageEnvelope(extensionID string) *EventMessageEnvelope {
+	return &EventMessageEnvelope{extensionID: extensionID}
 }
 
 // Verify interface implementation at compile time
 var _ grpcbroker.MessageEnvelope[EventMessage] = (*EventMessageEnvelope)(nil)
 
-// getExtensionIdFromContext extracts the extension ID from the gRPC metadata context.
+// getExtensionIdFromContext returns the extension ID from context or the configured client ID.
 func (ops *EventMessageEnvelope) getExtensionIdFromContext(ctx context.Context) string {
 	claims, err := extensions.GetClaimsFromContext(ctx)
-	if err != nil {
-		return ""
+	if err == nil && claims.Subject != "" {
+		return claims.Subject
 	}
-	return claims.Subject
+	return ops.extensionID
 }
 
 // GetRequestId generates a correlation key from the message content and context.

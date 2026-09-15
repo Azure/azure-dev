@@ -11,6 +11,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
 - [Entry Point & Lifecycle](#entry-point--lifecycle)
   - [Run](#run)
   - [RunOption / WithPreExecute](#runoption--withpreexecute)
+  - [Lifecycle Handler Output](#lifecycle-handler-output)
 - [Command Scaffolding](#command-scaffolding)
   - [NewExtensionRootCommand](#newextensionrootcommand)
   - [ExtensionCommandOptions](#extensioncommandoptions)
@@ -87,6 +88,38 @@ func main() {
     azdext.Run(rootCmd)
 }
 ```
+
+### Lifecycle Handler Output
+
+```go
+func EventOutput(ctx context.Context) io.Writer
+```
+
+Use `EventOutput(ctx)` for output produced by project and service lifecycle
+handlers:
+
+<!-- cspell:ignore Fprintln -->
+
+```go
+func postdeploy(ctx context.Context, args *azdext.ProjectEventArgs) error {
+    _, err := fmt.Fprintln(azdext.EventOutput(ctx), "The next step is ...")
+    return err
+}
+```
+
+When the handler is invoked by `azd`, the writer sends output to the host with
+the current invocation's request ID over the preview `v1beta` event stream and
+also writes it to standard output.
+This lets the host retain deploy lifecycle output without mixing it with
+output from another concurrent handler or service target. Outside a lifecycle
+invocation, the writer falls back to `os.Stdout`.
+Large writes are split into smaller progress messages before they are sent to
+the host. Invalid UTF-8 bytes are replaced with the Unicode replacement
+character for the host progress messages; the original bytes are still written
+to the local output writer.
+
+Use the writer supplied by the context for lifecycle output. Direct writes to
+process-wide output writers cannot be correlated with a specific invocation.
 
 ### RunOption / WithPreExecute
 
@@ -511,7 +544,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `UserConfig()` | `UserConfigServiceClient` |
 | `Prompt()` | `PromptServiceClient` |
 | `Deployment()` | `DeploymentServiceClient` |
-| `Events()` | `EventServiceClient` |
+| `Events()` | `v1beta.EventServiceClient` (preview) |
 | `Compose()` | `v1beta.ComposeServiceClient` (preview) |
 | `Workflow()` | `WorkflowServiceClient` |
 | `ServiceTarget()` | `ServiceTargetServiceClient` |

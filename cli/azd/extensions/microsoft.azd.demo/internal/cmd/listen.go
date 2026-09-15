@@ -82,7 +82,11 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			for i := 1; i <= 20; i++ {
-				fmt.Printf("%d. Doing important work in extension...\n", i)
+				fmt.Fprintf(
+					azdext.EventOutput(ctx),
+					"%d. Doing important work in extension...\n",
+					i,
+				)
 				time.Sleep(250 * time.Millisecond)
 			}
 
@@ -90,7 +94,11 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		}).
 		WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			for i := 1; i <= 20; i++ {
-				fmt.Printf("%d. Doing important predeploy project work in extension...\n", i)
+				fmt.Fprintf(
+					azdext.EventOutput(ctx),
+					"%d. Doing important predeploy project work in extension...\n",
+					i,
+				)
 				time.Sleep(250 * time.Millisecond)
 			}
 
@@ -98,7 +106,11 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		}).
 		WithProjectEventHandler("postdeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			for i := 1; i <= 20; i++ {
-				fmt.Printf("%d. Doing important postdeploy project work in extension...\n", i)
+				fmt.Fprintf(
+					azdext.EventOutput(ctx),
+					"%d. Doing important postdeploy project work in extension...\n",
+					i,
+				)
 				time.Sleep(250 * time.Millisecond)
 			}
 
@@ -106,7 +118,12 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		}).
 		WithServiceEventHandler("prepackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			for i := 1; i <= 20; i++ {
-				fmt.Printf("Service: %s, Artifacts: %d\n", args.Service.Name, len(args.ServiceContext.Package))
+				fmt.Fprintf(
+					azdext.EventOutput(ctx),
+					"Service: %s, Artifacts: %d\n",
+					args.Service.Name,
+					len(args.ServiceContext.Package),
+				)
 				time.Sleep(250 * time.Millisecond)
 			}
 
@@ -114,7 +131,12 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		}, nil).
 		WithServiceEventHandler("postpackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			for i := 1; i <= 20; i++ {
-				fmt.Printf("Service: %s, Artifacts: %d\n", args.Service.Name, len(args.ServiceContext.Package))
+				fmt.Fprintf(
+					azdext.EventOutput(ctx),
+					"Service: %s, Artifacts: %d\n",
+					args.Service.Name,
+					len(args.ServiceContext.Package),
+				)
 				time.Sleep(250 * time.Millisecond)
 			}
 

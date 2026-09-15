@@ -208,6 +208,72 @@ func TestCollectLegacyProjectDeploymentsIgnoresSplitProject(
 	assert.Empty(t, deployments)
 }
 
+func TestProjectServiceHasEndpointResolvesRefsAndEnvironment(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "project.yaml"),
+		[]byte("endpoint: ${FOUNDRY_PROJECT_ENDPOINT}\n"),
+		0o600,
+	))
+	props, err := structpb.NewStruct(map[string]any{
+		"$ref": "./project.yaml",
+	})
+	require.NoError(t, err)
+
+	server := &recordingProjectServer{
+		projectPath: root,
+		existing: map[string]*azdext.ServiceConfig{
+			"ai-project": {
+				Name:                 "ai-project",
+				Host:                 AiProjectHost,
+				AdditionalProperties: props,
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	hasEndpoint, err := projectServiceHasEndpoint(
+		t.Context(),
+		client,
+		root,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://example.test",
+		},
+	)
+	require.NoError(t, err)
+	assert.True(t, hasEndpoint)
+}
+
+func TestProjectServiceHasEndpointRejectsUnresolvedTemplate(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"endpoint": "${FOUNDRY_PROJECT_ENDPOINT}",
+	})
+	require.NoError(t, err)
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"ai-project": {
+				Name:                 "ai-project",
+				Host:                 AiProjectHost,
+				AdditionalProperties: props,
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	hasEndpoint, err := projectServiceHasEndpoint(
+		t.Context(),
+		client,
+		"",
+		map[string]string{},
+	)
+	require.NoError(t, err)
+	assert.False(t, hasEndpoint)
+}
+
 // TestCollectConnections verifies connections are sourced from
 // azure.ai.connection services in deterministic (sorted) order.
 func TestCollectConnections(t *testing.T) {

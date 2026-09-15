@@ -354,6 +354,8 @@ func findProjectServiceKey(
 func projectServiceHasEndpoint(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
+	projectRoot string,
+	environmentValues map[string]string,
 ) (bool, error) {
 	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
@@ -366,13 +368,36 @@ func projectServiceHasEndpoint(
 		if svc.GetHost() != AiProjectHost {
 			continue
 		}
-		for _, props := range []*structpb.Struct{
-			svc.GetConfig(),
-			svc.GetAdditionalProperties(),
-		} {
-			if props != nil && props.GetFields()["endpoint"].GetStringValue() != "" {
-				return true, nil
-			}
+		props, err := project.ResolveServiceConfigProps(svc, projectRoot)
+		if err != nil {
+			return false, fmt.Errorf(
+				"resolving project service %q: %w",
+				svc.GetName(),
+				err,
+			)
+		}
+		if props == nil {
+			continue
+		}
+		expanded, err := expandBrownfieldServiceValues(
+			props.AsMap(),
+			environmentValues,
+		)
+		if err != nil {
+			return false, fmt.Errorf(
+				"expanding project service %q: %w",
+				svc.GetName(),
+				err,
+			)
+		}
+		values, ok := expanded.(map[string]any)
+		if !ok {
+			continue
+		}
+		endpoint, ok := values["endpoint"].(string)
+		if ok && strings.TrimSpace(endpoint) != "" &&
+			!strings.Contains(endpoint, "${") {
+			return true, nil
 		}
 	}
 	return false, nil

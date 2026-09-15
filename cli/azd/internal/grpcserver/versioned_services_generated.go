@@ -302,6 +302,26 @@ type BetaProjectServiceAddServiceOverride interface {
 	AddService(context.Context, *v1beta.AddServiceRequest) (*v1beta.EmptyResponse, error)
 }
 
+// BetaProjectServiceSetLayerOverride overrides the beta ProjectService.SetLayer method before stable adaptation.
+type BetaProjectServiceSetLayerOverride interface {
+	SetLayer(context.Context, *v1beta.SetLayerRequest) (*v1beta.LayerResponse, error)
+}
+
+// BetaProjectServiceGetLayerOverride overrides the beta ProjectService.GetLayer method before stable adaptation.
+type BetaProjectServiceGetLayerOverride interface {
+	GetLayer(context.Context, *v1beta.GetLayerRequest) (*v1beta.LayerResponse, error)
+}
+
+// BetaProjectServiceListLayersOverride overrides the beta ProjectService.ListLayers method before stable adaptation.
+type BetaProjectServiceListLayersOverride interface {
+	ListLayers(context.Context, *v1beta.EmptyRequest) (*v1beta.ListLayersResponse, error)
+}
+
+// BetaProjectServiceRemoveLayerOverride overrides the beta ProjectService.RemoveLayer method before stable adaptation.
+type BetaProjectServiceRemoveLayerOverride interface {
+	RemoveLayer(context.Context, *v1beta.RemoveLayerRequest) (*v1beta.RemoveLayerResponse, error)
+}
+
 // BetaProjectServiceGetResolvedServicesOverride overrides the beta ProjectService.GetResolvedServices method before stable adaptation.
 type BetaProjectServiceGetResolvedServicesOverride interface {
 	GetResolvedServices(context.Context, *v1beta.EmptyRequest) (*v1beta.GetResolvedServicesResponse, error)
@@ -370,6 +390,10 @@ func validateBetaProjectServiceOverride(override any) error {
 		reflect.TypeFor[BetaProjectServiceGetOverride](),
 		reflect.TypeFor[BetaProjectServiceGetServiceTargetResourceOverride](),
 		reflect.TypeFor[BetaProjectServiceAddServiceOverride](),
+		reflect.TypeFor[BetaProjectServiceSetLayerOverride](),
+		reflect.TypeFor[BetaProjectServiceGetLayerOverride](),
+		reflect.TypeFor[BetaProjectServiceListLayersOverride](),
+		reflect.TypeFor[BetaProjectServiceRemoveLayerOverride](),
 		reflect.TypeFor[BetaProjectServiceGetResolvedServicesOverride](),
 		reflect.TypeFor[BetaProjectServiceParseGitHubUrlOverride](),
 		reflect.TypeFor[BetaProjectServiceGetConfigSectionOverride](),
@@ -1432,6 +1456,46 @@ func (a *betaProjectServiceAdapter) AddService(
 		new(v1beta.EmptyResponse),
 		"ProjectService.AddService",
 	)
+}
+
+func (a *betaProjectServiceAdapter) SetLayer(
+	ctx context.Context,
+	req *v1beta.SetLayerRequest,
+) (*v1beta.LayerResponse, error) {
+	if override, ok := a.override.(BetaProjectServiceSetLayerOverride); ok {
+		return override.SetLayer(ctx, req)
+	}
+	return a.UnimplementedProjectServiceServer.SetLayer(ctx, req)
+}
+
+func (a *betaProjectServiceAdapter) GetLayer(
+	ctx context.Context,
+	req *v1beta.GetLayerRequest,
+) (*v1beta.LayerResponse, error) {
+	if override, ok := a.override.(BetaProjectServiceGetLayerOverride); ok {
+		return override.GetLayer(ctx, req)
+	}
+	return a.UnimplementedProjectServiceServer.GetLayer(ctx, req)
+}
+
+func (a *betaProjectServiceAdapter) ListLayers(
+	ctx context.Context,
+	req *v1beta.EmptyRequest,
+) (*v1beta.ListLayersResponse, error) {
+	if override, ok := a.override.(BetaProjectServiceListLayersOverride); ok {
+		return override.ListLayers(ctx, req)
+	}
+	return a.UnimplementedProjectServiceServer.ListLayers(ctx, req)
+}
+
+func (a *betaProjectServiceAdapter) RemoveLayer(
+	ctx context.Context,
+	req *v1beta.RemoveLayerRequest,
+) (*v1beta.RemoveLayerResponse, error) {
+	if override, ok := a.override.(BetaProjectServiceRemoveLayerOverride); ok {
+		return override.RemoveLayer(ctx, req)
+	}
+	return a.UnimplementedProjectServiceServer.RemoveLayer(ctx, req)
 }
 
 func (a *betaProjectServiceAdapter) GetResolvedServices(

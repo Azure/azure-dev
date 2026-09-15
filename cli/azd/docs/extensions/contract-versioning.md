@@ -14,6 +14,10 @@ stable v1 channel. It forwards its generated contract types, clients, and
 server interfaces from `pkg/azdext/contracts/v1`; protobuf-generated files do
 not share the facade package with handwritten SDK functionality. Go clients
 that intentionally target beta import `pkg/azdext/contracts/v1beta` directly.
+The high-level `AzdClient.Project()` facade remains on stable v1.
+`AzdClient.BetaProject()` returns the generated beta project client for the
+preview layer methods and for shared methods such as `Get`, `AddService`, or
+`GetResolvedServices` when beta-only model fields must survive.
 `ComposeService`, `CopilotService`, and `TelemetryService` are beta-only and
 therefore do not have stable `v1` generated types or facade aliases. The
 corresponding `AzdClient` convenience accessors return generated `v1beta`
@@ -53,6 +57,11 @@ A service that exists only in beta is implemented directly with the generated
 model. Focused beta overrides apply only to beta additions on services that
 also exist in stable; registration rejects an override for a beta-only service
 because its native implementation already owns the full beta contract.
+
+`ProjectService` uses focused overrides for the preview layer methods and for
+the shared `Get`, `AddService`, and `GetResolvedServices` methods. Those shared
+overrides preserve beta-only `ProjectConfig`, `ServiceConfig`, and
+`InfraOptions` fields instead of discarding them during stable adaptation.
 
 For a method shared by both channels, the beta server:
 

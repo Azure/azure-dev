@@ -122,7 +122,7 @@ func TestGoScaffoldPinsReleasedAzdModule(t *testing.T) {
 	)
 }
 
-func TestNonGoScaffoldsUseVersionedGrpcPackages(t *testing.T) {
+func TestNonGoScaffoldsUseBetaGrpcPackages(t *testing.T) {
 	roots := []string{
 		"languages/proto",
 		"languages/javascript/generated/proto",
@@ -152,7 +152,7 @@ func TestNonGoScaffoldsUseVersionedGrpcPackages(t *testing.T) {
 
 				if (strings.HasSuffix(path, "_grpc_pb.js") || strings.HasSuffix(path, "_pb2_grpc.py")) &&
 					!strings.Contains(path, "/models_") {
-					require.Contains(t, text, "/azd.extensions.v1.", path)
+					require.Contains(t, text, "/azd.extensions.v1beta.", path)
 				}
 				return nil
 			})

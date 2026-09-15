@@ -533,7 +533,7 @@ func TestInfraOptionsReverseMapping(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		protoOptions := &azdext.InfraOptions{
+		protoOptions := &v1beta.InfraOptions{
 			Provider:  "bicep",
 			Path:      "infra/application",
 			Module:    "main.bicep",
@@ -561,7 +561,7 @@ func TestInfraOptionsReverseMapping(t *testing.T) {
 
 	t.Run("maps nil options", func(t *testing.T) {
 		var actual provisioning.Options
-		err := mapper.Convert((*azdext.InfraOptions)(nil), &actual)
+		err := mapper.Convert((*v1beta.InfraOptions)(nil), &actual)
 		require.NoError(t, err)
 		require.Equal(t, provisioning.Options{}, actual)
 	})

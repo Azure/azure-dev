@@ -37,32 +37,32 @@ class ProjectServiceStub(object):
             channel: A grpc.Channel.
         """
         self.Get = channel.unary_unary(
-                '/azd.extensions.v1.ProjectService/Get',
+                '/azd.extensions.v1beta.ProjectService/Get',
                 request_serializer=models__pb2.EmptyRequest.SerializeToString,
                 response_deserializer=project__pb2.GetProjectResponse.FromString,
                 _registered_method=True)
         self.AddService = channel.unary_unary(
-                '/azd.extensions.v1.ProjectService/AddService',
+                '/azd.extensions.v1beta.ProjectService/AddService',
                 request_serializer=project__pb2.AddServiceRequest.SerializeToString,
                 response_deserializer=models__pb2.EmptyResponse.FromString,
                 _registered_method=True)
         self.SetLayer = channel.unary_unary(
-                '/azdext.ProjectService/SetLayer',
+                '/azd.extensions.v1beta.ProjectService/SetLayer',
                 request_serializer=project__pb2.SetLayerRequest.SerializeToString,
                 response_deserializer=project__pb2.LayerResponse.FromString,
                 _registered_method=True)
         self.GetLayer = channel.unary_unary(
-                '/azdext.ProjectService/GetLayer',
+                '/azd.extensions.v1beta.ProjectService/GetLayer',
                 request_serializer=project__pb2.GetLayerRequest.SerializeToString,
                 response_deserializer=project__pb2.LayerResponse.FromString,
                 _registered_method=True)
         self.ListLayers = channel.unary_unary(
-                '/azdext.ProjectService/ListLayers',
+                '/azd.extensions.v1beta.ProjectService/ListLayers',
                 request_serializer=models__pb2.EmptyRequest.SerializeToString,
                 response_deserializer=project__pb2.ListLayersResponse.FromString,
                 _registered_method=True)
         self.RemoveLayer = channel.unary_unary(
-                '/azdext.ProjectService/RemoveLayer',
+                '/azd.extensions.v1beta.ProjectService/RemoveLayer',
                 request_serializer=project__pb2.RemoveLayerRequest.SerializeToString,
                 response_deserializer=project__pb2.RemoveLayerResponse.FromString,
                 _registered_method=True)
@@ -150,9 +150,9 @@ def add_ProjectServiceServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'azd.extensions.v1.ProjectService', rpc_method_handlers)
+            'azd.extensions.v1beta.ProjectService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('azd.extensions.v1.ProjectService', rpc_method_handlers)
+    server.add_registered_method_handlers('azd.extensions.v1beta.ProjectService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -174,7 +174,7 @@ class ProjectService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.ProjectService/Get',
+            '/azd.extensions.v1beta.ProjectService/Get',
             models__pb2.EmptyRequest.SerializeToString,
             project__pb2.GetProjectResponse.FromString,
             options,
@@ -201,7 +201,7 @@ class ProjectService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.ProjectService/AddService',
+            '/azd.extensions.v1beta.ProjectService/AddService',
             project__pb2.AddServiceRequest.SerializeToString,
             models__pb2.EmptyResponse.FromString,
             options,
@@ -228,7 +228,7 @@ class ProjectService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azdext.ProjectService/SetLayer',
+            '/azd.extensions.v1beta.ProjectService/SetLayer',
             project__pb2.SetLayerRequest.SerializeToString,
             project__pb2.LayerResponse.FromString,
             options,
@@ -255,7 +255,7 @@ class ProjectService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azdext.ProjectService/GetLayer',
+            '/azd.extensions.v1beta.ProjectService/GetLayer',
             project__pb2.GetLayerRequest.SerializeToString,
             project__pb2.LayerResponse.FromString,
             options,
@@ -282,7 +282,7 @@ class ProjectService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azdext.ProjectService/ListLayers',
+            '/azd.extensions.v1beta.ProjectService/ListLayers',
             models__pb2.EmptyRequest.SerializeToString,
             project__pb2.ListLayersResponse.FromString,
             options,
@@ -309,7 +309,7 @@ class ProjectService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azdext.ProjectService/RemoveLayer',
+            '/azd.extensions.v1beta.ProjectService/RemoveLayer',
             project__pb2.RemoveLayerRequest.SerializeToString,
             project__pb2.RemoveLayerResponse.FromString,
             options,

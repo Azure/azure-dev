@@ -1604,6 +1604,9 @@ values. `SetLayer` treats incoming values as templates, and responses from `SetL
 by default; set `GetLayerRequest.envsubst` to `true` to expand them against the current session
 environment. This includes resource names, images, Docker registry and tag values, build arguments,
 and service environment variables. `${VAR}` authors a template reference; escape each literal `$` as `$$`.
+These APIs are preview-only in `azd.extensions.v1beta`. Go extensions call them through
+`AzdClient.BetaProject()` with request and response types from `pkg/azdext/contracts/v1beta`.
+The stable `AzdClient.Project()` facade remains unchanged.
 
 Because `ServiceConfig.environment` carries expanded values, `AddService` cannot author `${VAR}`
 references: a new service or a new env key is always persisted as a literal. To create or edit
@@ -1638,7 +1641,7 @@ the expanded results in place of the original `${VAR}` references.
 
 This service manages project configuration retrieval and related operations, including project and service-level configuration management.
 
-> See [project.proto](../../grpc/proto/azd/extensions/v1/project.proto) for more details.
+> See [project.proto](../../grpc/proto/azd/extensions/v1beta/project.proto) for the preview layer API.
 
 #### Get
 

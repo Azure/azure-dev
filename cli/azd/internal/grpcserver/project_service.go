@@ -172,10 +172,10 @@ func (s *projectService) serviceConfig(cfg config.Config, serviceName string) (c
 	return nil, fmt.Errorf("service '%s' not found", serviceName)
 }
 
-// Get retrieves the legacy project configuration including all services and metadata.
+// Get retrieves the complete project configuration including all services and metadata.
 // This method resolves environment variables in configuration values using the environment
 // for the current session and converts the internal project configuration to the protobuf
-// format for gRPC communication. Top-level layers projects must use ListLayers or GetLayer.
+// format for gRPC communication.
 //
 // The returned project includes:
 //   - Basic project metadata (name, resource group, path)
@@ -189,10 +189,6 @@ func (s *projectService) Get(ctx context.Context, req *azdext.EmptyRequest) (*az
 	projectConfig, err := s.lazyProjectConfig.GetValue()
 	if err != nil {
 		return nil, err
-	}
-	if projectConfig.Format() == project.ProjectFormatLayersV2 {
-		return nil, status.Error(codes.FailedPrecondition,
-			"Get is not supported for top-level layers projects; use ListLayers or GetLayer instead")
 	}
 
 	var project *azdext.ProjectConfig
@@ -256,8 +252,7 @@ func (s *projectService) AddService(ctx context.Context, req *azdext.AddServiceR
 		return nil, err
 	}
 	if projectConfig.Format() == project.ProjectFormatLayersV2 {
-		return nil, status.Error(codes.FailedPrecondition,
-			"AddService cannot modify a top-level layers project; use SetLayer instead")
+		return nil, status.Error(codes.Unimplemented, "adding services to layered projects is not supported")
 	}
 
 	serviceConfig := &project.ServiceConfig{}

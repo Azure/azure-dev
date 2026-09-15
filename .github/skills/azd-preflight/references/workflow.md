@@ -42,7 +42,7 @@ Run this targeted check from the repository root:
 cspell lint "<changelog-path>" --relative --config "<cspell-config>" --no-progress
 ```
 
-Capture these results separately from the nine `mage preflight` checks. This conditional check is
+Capture these results separately from the ten `mage preflight` checks. This conditional check is
 required because the repository-wide misc config excludes directories that have their own cspell
 configuration, including `cli/`.
 
@@ -70,10 +70,10 @@ Also parse the targeted changelog spell-check results when changed changelogs we
 ### Step 4 — Fix Failures (Iterative)
 
 For each failing check, apply the fix strategy from the references. Process checks in
-their original order (1-9) because earlier fixes can resolve later failures (e.g., `gofmt`
+their original order (1-10) because earlier fixes can resolve later failures (e.g., `gofmt`
 fixes may resolve `lint` issues, `build` fixes resolve `test` failures).
 
-After the nine standard checks, fix any targeted changelog spelling failures.
+After the ten standard checks, fix any targeted changelog spelling failures.
 
 {{ references/fix-strategies.md }}
 
@@ -91,7 +91,7 @@ Re-run the targeted spell check for every changed changelog.
 
 **If failures remain**: Return to Step 4 for the remaining failures. This is an iterative
 loop — continue until either:
-- All 9 checks and every changed changelog pass, OR
+- All 10 checks and every changed changelog pass, OR
 - 3 full cycles have been attempted without progress on a specific check
 
 ### Step 6 — Escalate if Stuck

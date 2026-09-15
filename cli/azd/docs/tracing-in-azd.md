@@ -72,6 +72,28 @@ tracing.SetUsageAttributes(fields.EnvName.StringHashed(envName))
 
 This example sets a usage attribute to be included in the root command event.
 
+### 4. Update the telemetry documentation
+
+Add every new event and attribute key to both the
+[public telemetry reference](../../../docs/reference/telemetry-data.md) and
+the [metrics audit schema](../../../docs/specs/metrics-audit/telemetry-schema.md).
+For extension usage events, document the event and each fixed attribute in
+the extension's README or another Markdown file in the extension directory.
+
+Run the completeness checker from `cli/azd`:
+
+```bash
+go run ./tools/telemetrylint
+```
+
+The checker reads the event and field declarations, scans direct string
+literals in `tracing.Start` and `attribute.*` calls, and checks recognized
+`ReportUsageRequest` and `telemetry.Event` values in extensions. It resolves
+package-local string constants and statically defined attribute maps. It
+understands documented `cmd.`, `mcp.`, and `vsrpc.` event families, but
+dynamic extension keys and values that cannot be resolved statically remain
+the extension author's responsibility.
+
 Resource attributes are not an azd telemetry extensibility point. Although the embedded OpenTelemetry SDK reads
 `OTEL_RESOURCE_ATTRIBUTES` and `OTEL_SERVICE_NAME`, azd wraps each trace exporter so it receives the canonical
 resource. Values from these environment variables are therefore not included in the telemetry queue,

@@ -253,8 +253,8 @@ Valid values for `project.service.languages` and `project.service.language`:
 | `error.type` | string | Same as `ResultCode` — the classified error type |
 | `error.chain.types` | string[] | At most 16 host-reflected Go error type names, outermost first |
 | `error.extension.cause_types` | string[] | Case-insensitive hashes of at most 16 normalized extension-provided cause labels |
-| `error.mapper.source.type` | string | Sanitized source Go type for a mapper conversion failure |
-| `error.mapper.destination.type` | string | Sanitized destination Go type for a mapper conversion failure |
+| `error.mapper.source.type` | string | Sanitized source Go type for a mapper conversion failure; source field `mapper.source.type` |
+| `error.mapper.destination.type` | string | Sanitized destination Go type for a mapper conversion failure; source field `mapper.destination.type` |
 
 #### Error Classification (ResultCode Taxonomy)
 
@@ -290,12 +290,12 @@ These attributes are emitted as classified error details. `MapError` prefixes th
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `error.service.host` | string | Azure service host |
+| `error.service.host` | string | Azure service host; source field `service.host` |
 | `error.service.name` | string | Azure service name associated with the failure |
-| `error.service.statusCode` | measurement or string | Numeric HTTP/service status code; AAD authentication errors use a string OAuth status such as `invalid_grant` |
-| `error.service.method` | string | HTTP method |
-| `error.service.errorCode` | string | Service-specific error code; some ARM deployment errors encode structured JSON |
-| `error.service.correlationId` | string | Azure correlation ID |
+| `error.service.statusCode` | measurement or string | Numeric HTTP/service status code; AAD authentication errors use a string OAuth status such as `invalid_grant`; source field `service.statusCode` |
+| `error.service.method` | string | HTTP method; source field `service.method` |
+| `error.service.errorCode` | string | Service-specific error code; some ARM deployment errors encode structured JSON; source field `service.errorCode` |
+| `error.service.correlationId` | string | Azure correlation ID; source field `service.correlationId` |
 
 ### Tool Invocation Attributes (External CLI Tools)
 
@@ -303,8 +303,8 @@ Set **only when an external command-line tool invocation fails**, during error c
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `error.tool.name` | string | Stable identifier for the failed external tool; core missing-tool display names use a fixed mapping, unknown names become `other`, and extension-provided `ToolError` names are limited to 1-64 ASCII characters from `[a-z0-9_-]`. Multiple missing tools remain comma-separated |
-| `error.tool.exitCode` | measurement | Exit code returned by the failed tool |
+| `error.tool.name` | string | Stable identifier for the failed external tool; source field `tool.name`. Core missing-tool display names use a fixed mapping, unknown names become `other`, and extension-provided `ToolError` names are limited to 1-64 ASCII characters from `[a-z0-9_-]`. Multiple missing tools remain comma-separated |
+| `error.tool.exitCode` | measurement | Exit code returned by the failed tool; source field `tool.exitCode` |
 
 ### Performance Fields
 
@@ -408,6 +408,14 @@ Set **only when an external command-line tool invocation fails**, during error c
 | Field Key | Type | Description |
 |-----------|------|-------------|
 | `provision.cancellation` | string | `none`, `leave_running`, `canceled`, `cancel_timed_out`, `cancel_timed_out_nested`, `cancel_raced_succeeded`, `cancel_raced_failed`, `cancel_raced_deleted`, `cancel_too_late`, `cancel_failed` |
+</details>
+
+<details>
+<summary><strong>AKS Postprovision</strong></summary>
+
+| Field Key | Type | Description |
+|-----------|------|-------------|
+| `skip.reason` | string | Bounded code explaining why AKS postprovision skipped Kubernetes context setup; currently `cluster_not_provisioned` |
 </details>
 
 <details>

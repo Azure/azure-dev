@@ -380,6 +380,16 @@ overrides:
       - Logf
       - Getenv
       - httptest
+  - filename: magefile.go
+    words:
+      - telemetrylint
+  - filename: docs/tracing-in-azd.md
+    words:
+      - telemetrylint
+  - filename: tools/telemetrylint/**
+    words:
+      - Elts
+      - telemetrylint
   - filename: docs/extensions/extension-framework.md
     words:
       - invopop

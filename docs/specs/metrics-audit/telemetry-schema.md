@@ -3,6 +3,25 @@
 This document is the authoritative reference for all telemetry events, fields, classifications,
 and data pipeline details in the Azure Developer CLI (`azd`).
 
+## Documentation completeness check
+
+Run the repository-local checker from `cli/azd` before submitting telemetry changes:
+
+```bash
+go run ./tools/telemetrylint
+```
+
+The checker parses event constants in `internal/tracing/events/events.go`, field
+keys in `internal/tracing/fields/fields.go`, and direct string literals in
+production Go telemetry calls. It also checks recognized extension
+`ReportUsageRequest` and `telemetry.Event` values, resolving package-local
+string constants and statically defined attribute maps, against Markdown files
+in the extension directory. Every recognized core item must appear in both
+this schema and the [public telemetry reference](../../reference/telemetry-data.md).
+Dynamic `cmd.`, `mcp.`, and `vsrpc.` event names are covered by their
+documented event family; extension keys and values that cannot be resolved
+statically remain the responsibility of the extension author.
+
 ## Events
 
 Events are defined in `cli/azd/internal/tracing/events/events.go`. Each event is emitted as an
@@ -143,8 +162,8 @@ GDPR data-catalog entries rather than metadata declared in source:
 | Error type | `error.type` | SystemMetadata | PerformanceAndHealth | ResultCode or Go type for the classified error |
 | Error chain types | `error.chain.types` | SystemMetadata | PerformanceAndHealth | At most 16 host-reflected Go error type names, outermost first |
 | Extension cause types | `error.extension.cause_types` | EndUserPseudonymizedInformation | PerformanceAndHealth | Case-insensitive hashes of at most 16 normalized extension-provided cause labels; never used as `error.type` |
-| Mapper source type | `error.mapper.source.type` | SystemMetadata | PerformanceAndHealth | Sanitized Go source type on a mapper conversion failure |
-| Mapper destination type | `error.mapper.destination.type` | SystemMetadata | PerformanceAndHealth | Sanitized Go destination type on a mapper conversion failure |
+| Mapper source type | `error.mapper.source.type` | SystemMetadata | PerformanceAndHealth | Sanitized Go source type on a mapper conversion failure; source field `mapper.source.type` |
+| Mapper destination type | `error.mapper.destination.type` | SystemMetadata | PerformanceAndHealth | Sanitized Go destination type on a mapper conversion failure; source field `mapper.destination.type` |
 
 Error classification is handled by `MapError` in `internal/cmd/errors.go`, which categorizes
 errors into: update errors, auth errors, service (Azure) errors, deployment errors, extension
@@ -366,7 +385,8 @@ set on its own.
 
 ## Command-Specific Fields
 
-The following fields are defined in `fields.go`.
+The following fields are defined in `fields.go` or emitted as
+operation-specific attributes at their instrumentation site.
 
 | Field | OTel Key | Classification | Purpose | Values |
 |-------|----------|----------------|---------|--------|
@@ -379,6 +399,13 @@ The following fields are defined in `fields.go`.
 | Pipeline provider | `pipeline.provider` | SystemMetadata | FeatureInsight | Resolved provider display name after auto-detection: `GitHub`, `Azure DevOps` |
 | Pipeline auth | `pipeline.auth` | SystemMetadata | FeatureInsight | Emitted only when `--auth-type` is set on `pipeline config`: `federated`, `client-credentials` |
 | Infra provider | `infra.provider` | SystemMetadata | FeatureInsight | provision/up/down: sorted, de-duplicated string slice of resolved providers — `bicep`/`terraform`/`arm`/`pulumi` verbatim, `custom` for any other (extension) provider (raw name not emitted); multi-layer projects that combine providers record each distinct value (e.g. `["bicep","terraform"]`). `infra generate`/`synth`: the value read from azure.yaml's `infra.provider` directly as a single string (`bicep`/`terraform`/`arm`/`pulumi`, `auto` when unset, or `custom` for any other (extension) provider — raw name not emitted) |
+
+### Provider-specific fields
+
+| Field | OTel Key | Classification | Purpose | Values |
+|-------|----------|----------------|---------|--------|
+| Foundry network mode | `provision.network_mode` | SystemMetadata | FeatureInsight | `none`, `byo`, or `managed` |
+| AKS skip reason | `skip.reason` | SystemMetadata | FeatureInsight | `cluster_not_provisioned` |
 
 ### App Service Deploy
 

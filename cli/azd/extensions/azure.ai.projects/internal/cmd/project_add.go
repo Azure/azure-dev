@@ -302,15 +302,20 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if err != nil {
 		return rollbackProjectAdd(err, restoreService, restoreProvider)
 	}
-	if err := reconcileAdoptedDeployments(
-		ctx, client, projectRoot, envName, target, serviceName,
-	); err != nil {
+	reconciledDefault, restoreReconciled, err := reconcileAdoptedDeployments(
+		ctx, client, projectRoot, envName, target, serviceName, a.flags.noPrompt,
+	)
+	if err != nil {
 		return rollbackProjectAdd(err, restoreEnvironment, restoreService, restoreProvider)
+	}
+	if reconciledDefault != "" {
+		effectiveValues["AZURE_AI_MODEL_DEPLOYMENT_NAME"] = reconciledDefault
 	}
 	restoreDeploymentDefault := func() error { return nil }
 	if reconciledService, _, discoverErr := reconciler.discoverProjectService(ctx); discoverErr != nil {
 		return rollbackProjectAdd(
 			discoverErr,
+			restoreReconciled,
 			restoreEnvironment,
 			restoreService,
 			restoreProvider,
@@ -329,6 +334,7 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 					"set default project deployment: %w",
 					err,
 				),
+				restoreReconciled,
 				restoreEnvironment,
 				restoreService,
 				restoreProvider,
@@ -362,6 +368,7 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			return rollbackProjectAdd(
 				err,
 				restoreDeploymentDefault,
+				restoreReconciled,
 				restoreEnvironment,
 				restoreService,
 				restoreInfra,

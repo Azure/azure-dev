@@ -38,6 +38,7 @@ func authorFoundryProject(
 	target *FoundryProjectInfo,
 	projectRoot string,
 	mode projectAuthoringMode,
+	noPrompt bool,
 ) error {
 	if mode != projectAuthoringCurrent &&
 		mode != projectAuthoringExisting &&
@@ -66,10 +67,11 @@ func authorFoundryProject(
 		"ai",
 		"project",
 		"add",
-		"--no-prompt",
-		"--output",
-		"none",
 	}
+	if noPrompt {
+		args = append(args, "--no-prompt")
+	}
+	args = append(args, "--output", "none")
 	if mode == projectAuthoringNew {
 		args = append(args, "--new-project")
 	}
@@ -97,13 +99,14 @@ func authorSelectedFoundryProject(
 	target *FoundryProjectInfo,
 	projectRoot string,
 	mode projectAuthoringMode,
+	noPrompt bool,
 ) error {
 	if mode == projectAuthoringNew || mode == projectAuthoringCurrent {
 		return authorFoundryProjectPreservingEnvironment(
-			ctx, azdClient, envName, projectRoot, mode,
+			ctx, azdClient, envName, projectRoot, mode, noPrompt,
 		)
 	}
-	return authorFoundryProject(ctx, azdClient, target, projectRoot, mode)
+	return authorFoundryProject(ctx, azdClient, target, projectRoot, mode, noPrompt)
 }
 
 var newProjectEnvironmentKeys = []string{
@@ -121,7 +124,7 @@ func authorNewFoundryProject(
 	projectRoot string,
 ) error {
 	return authorFoundryProjectPreservingEnvironment(
-		ctx, azdClient, envName, projectRoot, projectAuthoringNew,
+		ctx, azdClient, envName, projectRoot, projectAuthoringNew, true,
 	)
 }
 
@@ -131,6 +134,7 @@ func authorFoundryProjectPreservingEnvironment(
 	envName string,
 	projectRoot string,
 	mode projectAuthoringMode,
+	noPrompt bool,
 ) error {
 	response, err := azdClient.Environment().GetValues(
 		ctx,
@@ -151,7 +155,7 @@ func authorFoundryProjectPreservingEnvironment(
 	}
 
 	authorErr := authorFoundryProject(
-		ctx, azdClient, nil, projectRoot, mode,
+		ctx, azdClient, nil, projectRoot, mode, noPrompt,
 	)
 	rollbackCtx, cancel := context.WithTimeout(
 		context.WithoutCancel(ctx),

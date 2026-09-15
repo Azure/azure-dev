@@ -116,7 +116,7 @@ func TestAuthorFoundryProjectUsesPublicCommand(t *testing.T) {
 	}
 	projectRoot := t.TempDir()
 	require.NoError(t, authorFoundryProject(
-		t.Context(), client, target, projectRoot, projectAuthoringExisting,
+		t.Context(), client, target, projectRoot, projectAuthoringExisting, true,
 	))
 
 	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
@@ -148,7 +148,7 @@ func TestAuthorFoundryProjectUsesEndpointFlag(t *testing.T) {
 
 	projectRoot := t.TempDir()
 	require.NoError(t, authorFoundryProject(
-		t.Context(), client, target, projectRoot, projectAuthoringExisting,
+		t.Context(), client, target, projectRoot, projectAuthoringExisting, true,
 	))
 
 	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
@@ -165,6 +165,28 @@ func TestAuthorFoundryProjectUsesEndpointFlag(t *testing.T) {
 	assert.Empty(t, projectServer.added)
 }
 
+func TestAuthorFoundryProjectPreservesPromptMode(t *testing.T) {
+	t.Parallel()
+
+	workflowServer := &recordingProjectWorkflowServer{}
+	client := newProjectWorkflowClient(
+		t,
+		&recordingProjectServer{existing: map[string]*azdext.ServiceConfig{}},
+		workflowServer,
+	)
+	target := &FoundryProjectInfo{AccountName: "account", ProjectName: "project"}
+	projectRoot := t.TempDir()
+
+	require.NoError(t, authorFoundryProject(
+		t.Context(), client, target, projectRoot, projectAuthoringExisting, false,
+	))
+
+	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
+		"ai", "project", "add", "--output", "none",
+		"--project-endpoint", target.Endpoint(), "--force",
+	), workflowArgs(t, workflowServer, 0))
+}
+
 func TestAuthorFoundryProjectUsesNewProjectFlag(t *testing.T) {
 	t.Parallel()
 
@@ -179,7 +201,7 @@ func TestAuthorFoundryProjectUsesNewProjectFlag(t *testing.T) {
 	projectRoot := t.TempDir()
 
 	require.NoError(t, authorFoundryProject(
-		t.Context(), client, nil, projectRoot, projectAuthoringNew,
+		t.Context(), client, nil, projectRoot, projectAuthoringNew, true,
 	))
 
 	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
@@ -506,7 +528,7 @@ func TestProjectWorkflowPropagatesFailures(t *testing.T) {
 	)
 
 	err := authorFoundryProject(
-		t.Context(), client, nil, t.TempDir(), projectAuthoringCurrent,
+		t.Context(), client, nil, t.TempDir(), projectAuthoringCurrent, true,
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "authoring the Foundry project failed")
@@ -526,7 +548,7 @@ func TestProjectWorkflowPreservesCancellation(t *testing.T) {
 	)
 
 	err := authorFoundryProject(
-		t.Context(), client, nil, t.TempDir(), projectAuthoringCurrent,
+		t.Context(), client, nil, t.TempDir(), projectAuthoringCurrent, true,
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "authoring the Foundry project was cancelled")
@@ -557,7 +579,7 @@ func TestAuthorCurrentFoundryProjectPreservesDeferredValues(t *testing.T) {
 	client := newTestAzdClient(t, envServer, workflowServer)
 
 	require.NoError(t, authorSelectedFoundryProject(
-		t.Context(), client, "test", nil, t.TempDir(), projectAuthoringCurrent,
+		t.Context(), client, "test", nil, t.TempDir(), projectAuthoringCurrent, true,
 	))
 
 	assert.Equal(t, "deferred-project",

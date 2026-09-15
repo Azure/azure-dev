@@ -3860,6 +3860,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 			}
 			return projectAuthoringCurrent
 		}(),
+		a.flags.noPrompt,
 	); err != nil {
 		return err
 	}
@@ -3977,6 +3978,7 @@ func (a *InitAction) addVoiceAgentToProject(
 			}
 			return projectAuthoringCurrent
 		}(),
+		a.flags.noPrompt,
 	); err != nil {
 		return err
 	}

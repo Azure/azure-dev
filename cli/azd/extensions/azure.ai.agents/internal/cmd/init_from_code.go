@@ -964,6 +964,7 @@ func (a *InitFromCodeAction) addToProject(
 			}
 			return projectAuthoringCurrent
 		}(),
+		a.flags.noPrompt,
 	); err != nil {
 		return err
 	}

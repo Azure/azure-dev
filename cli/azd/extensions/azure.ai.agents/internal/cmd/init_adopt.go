@@ -595,6 +595,7 @@ func runInitFromAzureYaml(
 			result.FoundryProject,
 			projectRoot,
 			projectAuthoringExisting,
+			flags.noPrompt,
 		); err != nil {
 			return err
 		}
@@ -644,6 +645,7 @@ func runInitFromAzureYaml(
 			nil,
 			projectRoot,
 			result.AuthoringMode,
+			flags.noPrompt,
 		); err != nil {
 			return err
 		}

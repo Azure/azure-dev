@@ -161,6 +161,14 @@ type jsonErrorBody struct {
 // os.Exit.
 var exitProcess = os.Exit
 
+// wantsJSON reports whether the caller asked for a machine-readable answer.
+//
+// The parsed flag is preferred; the raw arguments are the fallback for when
+// parsing stopped before reaching it.
+func wantsJSON(cmd *cobra.Command) bool {
+	return isJSON(cmd) || outputFromRawArgs(os.Args[1:]) == outputJSON
+}
+
 // failAs answers err in the format the caller asked for.
 //
 // Under `-o json` it writes the document and ends the process rather than
@@ -171,14 +179,6 @@ var exitProcess = os.Exit
 //
 // Ending here costs the structured report azd would have made, and the exit code
 // is the 1 azd collapses an extension's failure to anyway.
-// wantsJSON reports whether the caller asked for a machine-readable answer.
-//
-// The parsed flag is preferred; the raw arguments are the fallback for when
-// parsing stopped before reaching it.
-func wantsJSON(cmd *cobra.Command) bool {
-	return isJSON(cmd) || outputFromRawArgs(os.Args[1:]) == outputJSON
-}
-
 func failAs(cmd *cobra.Command, err error) error {
 	if err == nil || !wantsJSON(cmd) {
 		return err

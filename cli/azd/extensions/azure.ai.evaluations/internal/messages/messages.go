@@ -445,6 +445,12 @@ func MoreRunsToList(token string) string {
 		"\nMore runs to come. Next page: --after %s\n", token)
 }
 
+// MoreJobsToList reports a page of generation jobs with more behind it.
+func MoreJobsToList(token string) string {
+	return fmt.Sprintf(
+		"\nMore jobs to come. Next page: --after %s\n", token)
+}
+
 // MoreItemsToList reports a page of evaluated rows with more behind it.
 func MoreItemsToList(token string) string {
 	return fmt.Sprintf(

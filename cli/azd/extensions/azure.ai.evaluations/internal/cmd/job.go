@@ -28,11 +28,13 @@ const (
 // jobKind binds a group to one generation resource, so every command under it
 // calls one endpoint rather than trying both and reporting whichever answered.
 type jobKind struct {
-	name   string
-	list   func(context.Context, *evalContext) ([]eval_api.GenerationJob, error)
-	get    func(context.Context, *evalContext, string) (*eval_api.GenerationJob, error)
-	cancel func(context.Context, *evalContext, string) (*eval_api.GenerationJob, error)
-	remove func(context.Context, *evalContext, string) error
+	name string
+	list func(context.Context, *evalContext) ([]eval_api.GenerationJob, error)
+	// listPage reads one page and reports the cursor the service handed back.
+	listPage func(context.Context, *evalContext, int, string) (*eval_api.GenerationJobList, error)
+	get      func(context.Context, *evalContext, string) (*eval_api.GenerationJob, error)
+	cancel   func(context.Context, *evalContext, string) (*eval_api.GenerationJob, error)
+	remove   func(context.Context, *evalContext, string) error
 	// collect finishes a succeeded job: it writes the artifact and hands back
 	// the catalog entry for it. This is the half `generate --no-wait` cannot do,
 	// because it returns before the job has produced anything.
@@ -59,6 +61,11 @@ var datasetJobs = jobKind{
 			return nil, err
 		}
 		return out.Data, nil
+	},
+	listPage: func(
+		ctx context.Context, ec *evalContext, limit int, after string,
+	) (*eval_api.GenerationJobList, error) {
+		return ec.evalClient.ListDataGenerationJobsPage(ctx, limit, after, DataGenerationAPIVersion)
 	},
 	get: func(ctx context.Context, ec *evalContext, id string) (*eval_api.GenerationJob, error) {
 		return ec.evalClient.GetDataGenerationJob(ctx, id, DataGenerationAPIVersion)
@@ -89,6 +96,11 @@ var evaluatorJobs = jobKind{
 			return nil, err
 		}
 		return out.Data, nil
+	},
+	listPage: func(
+		ctx context.Context, ec *evalContext, limit int, after string,
+	) (*eval_api.GenerationJobList, error) {
+		return ec.evalClient.ListEvaluatorGenerationJobsPage(ctx, limit, after, ProjectEndpointAPIVersion)
 	},
 	get: func(ctx context.Context, ec *evalContext, id string) (*eval_api.GenerationJob, error) {
 		return ec.evalClient.GetEvaluatorGenerationJob(ctx, id, ProjectEndpointAPIVersion)
@@ -194,6 +206,7 @@ type jobListFlags struct {
 	jobFlags
 	displayLimit int
 	showAll      bool
+	pageToken    string
 }
 
 // jobListAction lists the project's generation jobs.
@@ -215,7 +228,7 @@ func newJobListCommand() *cobra.Command {
 	}
 
 	flags.bind(cmd)
-	addDisplayPagingFlags(cmd, &flags.displayLimit, &flags.showAll, defaultPageSize)
+	addPagingFlags(cmd, &flags.displayLimit, &flags.pageToken, &flags.showAll, defaultPageSize)
 	return cmd
 }
 
@@ -231,33 +244,52 @@ func (a *jobListAction) Run() error {
 	}
 	defer ec.Close()
 
-	jobs, err := kind.list(ctx, ec)
-	if err != nil {
-		return messages.ListingJobs(kind.name, err)
+	// These listings answer with has_more and last_id, so a page can say where
+	// the next one starts. --all walks instead, because a cursor handed back
+	// after a full walk would point past rows the caller already has.
+	var jobs []eval_api.GenerationJob
+	cursor := ""
+	total := 0
+	if a.flags.showAll {
+		jobs, err = kind.list(ctx, ec)
+		if err != nil {
+			return messages.ListingJobs(kind.name, err)
+		}
+		total = len(jobs)
+	} else {
+		page, pageErr := kind.listPage(
+			ctx, ec, pageSizeOr(a.flags.displayLimit, false, defaultPageSize), a.flags.pageToken)
+		if pageErr != nil {
+			return messages.ListingJobs(kind.name, pageErr)
+		}
+		jobs = page.Data
+		total = len(jobs)
+		if page.HasMore {
+			cursor = page.LastID
+		}
 	}
 
-	shown, total, trimmed := trimForDisplay(a.cmd, jobs)
 	if isJSON(a.cmd) {
-		return emitJSONPage(a.cmd.OutOrStdout(), shown, &total, "")
+		return emitJSONPage(a.cmd.OutOrStdout(), jobs, &total, cursor)
 	}
 	if len(jobs) == 0 {
 		fmt.Fprint(a.cmd.OutOrStdout(), messages.NoJobs(kind.name))
 		return nil
 	}
-	table := make([][]string, 0, len(shown))
-	for _, j := range shown {
+	table := make([][]string, 0, len(jobs))
+	for _, j := range jobs {
 		table = append(table, []string{j.ID, j.Status})
 	}
 	if err := emitTable(a.cmd.OutOrStdout(), []string{"JOB ID", "STATUS"}, table); err != nil {
 		return err
 	}
-	if trimmed {
-		fmt.Fprint(a.cmd.OutOrStdout(), messages.ShowingSomeOf(len(table), total))
+	if cursor != "" {
+		fmt.Fprint(a.cmd.OutOrStdout(), messages.MoreJobsToList(cursor))
 	}
 	// The selector goes with it: the two job groups share an id shape, so a
 	// hint without it names a command that reads the wrong group.
 	fmt.Fprint(a.cmd.OutOrStdout(), messages.ViewDetailsHint(fmt.Sprintf(
-		"azd ai eval job show %s --%s", shown[0].ID, kind.name)))
+		"azd ai eval job show %s --%s", jobs[0].ID, kind.name)))
 	return nil
 }
 

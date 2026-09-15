@@ -147,6 +147,45 @@ func (c *EvalClient) ListEvaluatorGenerationJobs(
 	return c.listGenerationJobs(ctx, pathEvaluatorGenerationJobs, apiVersion)
 }
 
+// ListDataGenerationJobsPage returns one page, and the cursor to resume from.
+func (c *EvalClient) ListDataGenerationJobsPage(
+	ctx context.Context,
+	limit int,
+	after string,
+	apiVersion string,
+) (*GenerationJobList, error) {
+	return c.listGenerationJobsPage(ctx, pathDataGenerationJobs, limit, after, apiVersion)
+}
+
+// ListEvaluatorGenerationJobsPage returns one page, and the cursor to resume from.
+func (c *EvalClient) ListEvaluatorGenerationJobsPage(
+	ctx context.Context,
+	limit int,
+	after string,
+	apiVersion string,
+) (*GenerationJobList, error) {
+	return c.listGenerationJobsPage(ctx, pathEvaluatorGenerationJobs, limit, after, apiVersion)
+}
+
+// listGenerationJobsPage reads a single page, leaving has_more and last_id as
+// the service reported them so the caller can hand the cursor back.
+func (c *EvalClient) listGenerationJobsPage(
+	ctx context.Context,
+	path string,
+	limit int,
+	after string,
+	apiVersion string,
+) (*GenerationJobList, error) {
+	query := map[string]string{}
+	if limit > 0 {
+		query["limit"] = strconv.Itoa(limit)
+	}
+	if after != "" {
+		query["after"] = after
+	}
+	return doRequestTyped[GenerationJobList](c, ctx, http.MethodGet, path, query, nil, apiVersion)
+}
+
 // listGenerationJobs is the walk both job listings share.
 func (c *EvalClient) listGenerationJobs(
 	ctx context.Context,

@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -755,7 +756,7 @@ func TestResourceConfigMapping(t *testing.T) {
 		ResourceId: "test-resource-id",
 	}
 
-	var protoResource *azdext.ComposedResource
+	var protoResource *v1beta.ComposedResource
 	err := mapper.Convert(resourceConfig, &protoResource)
 	require.NoError(t, err)
 	require.NotNil(t, protoResource)
@@ -773,7 +774,7 @@ func TestResourceConfigMapping(t *testing.T) {
 }
 
 func TestResourceTypeMapping(t *testing.T) {
-	var protoResourceType *azdext.ComposedResourceType
+	var protoResourceType *v1beta.ComposedResourceType
 	err := mapper.Convert(ResourceTypeDbCosmos, &protoResourceType)
 	require.NoError(t, err)
 	require.NotNil(t, protoResourceType)
@@ -888,7 +889,7 @@ func TestFromProtoResourceConfigMapping(t *testing.T) {
 	configBytes, err := json.Marshal(configData)
 	require.NoError(t, err)
 
-	protoResource := &azdext.ComposedResource{
+	protoResource := &v1beta.ComposedResource{
 		Name:       "test-storage",
 		Type:       "storage",
 		Config:     configBytes,
@@ -911,7 +912,7 @@ func TestFromProtoResourceConfigMapping(t *testing.T) {
 	require.Equal(t, []string{"images", "documents"}, storageProps.Containers)
 
 	// Test with empty config
-	protoResourceEmpty := &azdext.ComposedResource{
+	protoResourceEmpty := &v1beta.ComposedResource{
 		Name:   "test-storage-empty",
 		Type:   "storage",
 		Config: nil,

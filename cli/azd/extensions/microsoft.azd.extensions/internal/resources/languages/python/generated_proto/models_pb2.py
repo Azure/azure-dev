@@ -25,50 +25,50 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import struct_pb2 as google_dot_protobuf_dot_struct__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0cmodels.proto\x12\x06\x61zdext\x1a\x1cgoogle/protobuf/struct.proto\"\x0e\n\x0c\x45mptyRequest\"\x0f\n\rEmptyResponse\"g\n\x0cSubscription\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x11\n\ttenant_id\x18\x03 \x01(\t\x12\x16\n\x0euser_tenant_id\x18\x04 \x01(\t\x12\x12\n\nis_default\x18\x05 \x01(\x08\";\n\rResourceGroup\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x10\n\x08location\x18\x03 \x01(\t\"M\n\x08Location\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x14\n\x0c\x64isplay_name\x18\x02 \x01(\t\x12\x1d\n\x15regional_display_name\x18\x03 \x01(\t\"b\n\nAzureScope\x12\x11\n\ttenant_id\x18\x01 \x01(\t\x12\x17\n\x0fsubscription_id\x18\x02 \x01(\t\x12\x10\n\x08location\x18\x03 \x01(\t\x12\x16\n\x0eresource_group\x18\x04 \x01(\t\"D\n\x0c\x41zureContext\x12!\n\x05scope\x18\x01 \x01(\x0b\x32\x12.azdext.AzureScope\x12\x11\n\tresources\x18\x02 \x03(\t\"D\n\x08Resource\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x0c\n\x04type\x18\x03 \x01(\t\x12\x10\n\x08location\x18\x04 \x01(\t\"Z\n\x10ResourceExtended\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x0c\n\x04type\x18\x03 \x01(\t\x12\x10\n\x08location\x18\x04 \x01(\t\x12\x0c\n\x04kind\x18\x05 \x01(\t\"\xcf\x02\n\rProjectConfig\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x1b\n\x13resource_group_name\x18\x02 \x01(\t\x12\x0c\n\x04path\x18\x03 \x01(\t\x12)\n\x08metadata\x18\x04 \x01(\x0b\x32\x17.azdext.ProjectMetadata\x12\x35\n\x08services\x18\x05 \x03(\x0b\x32#.azdext.ProjectConfig.ServicesEntry\x12#\n\x05infra\x18\x06 \x01(\x0b\x32\x14.azdext.InfraOptions\x12\x36\n\x15\x61\x64\x64itional_properties\x18\x07 \x01(\x0b\x32\x17.google.protobuf.Struct\x1a\x46\n\rServicesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12$\n\x05value\x18\x02 \x01(\x0b\x32\x15.azdext.ServiceConfig:\x02\x38\x01\"\x1f\n\x10RequiredVersions\x12\x0b\n\x03\x61zd\x18\x01 \x01(\t\"#\n\x0fProjectMetadata\x12\x10\n\x08template\x18\x01 \x01(\t\"\x91\x05\n\rServiceConfig\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x1b\n\x13resource_group_name\x18\x02 \x01(\t\x12\x15\n\rresource_name\x18\x03 \x01(\t\x12\x13\n\x0b\x61pi_version\x18\x04 \x01(\t\x12\x15\n\rrelative_path\x18\x05 \x01(\t\x12\x0c\n\x04host\x18\x06 \x01(\t\x12\x10\n\x08language\x18\x07 \x01(\t\x12\x13\n\x0boutput_path\x18\x08 \x01(\t\x12\r\n\x05image\x18\t \x01(\t\x12,\n\x06\x64ocker\x18\n \x01(\x0b\x32\x1c.azdext.DockerProjectOptions\x12\'\n\x06\x63onfig\x18\x0b \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x36\n\x15\x61\x64\x64itional_properties\x18\x0c \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x0c\n\x04uses\x18\r \x03(\t\x12;\n\x0b\x65nvironment\x18\x0e \x03(\x0b\x32&.azdext.ServiceConfig.EnvironmentEntry\x12$\n\x03k8s\x18\x0f \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x0e\n\x06module\x18\x10 \x01(\t\x12#\n\x05infra\x18\x11 \x01(\x0b\x32\x14.azdext.InfraOptions\x12&\n\x05hooks\x18\x12 \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x11\n\tcondition\x18\x13 \x01(\t\x12\x19\n\x0cremote_build\x18\x14 \x01(\x08H\x00\x88\x01\x01\x1a\x32\n\x10\x45nvironmentEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x42\x0f\n\r_remote_build\"\x82\x02\n\x0cInfraOptions\x12\x10\n\x08provider\x18\x01 \x01(\t\x12\x0c\n\x04path\x18\x02 \x01(\t\x12\x0e\n\x06module\x18\x03 \x01(\t\x12\'\n\x06\x63onfig\x18\x04 \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x0c\n\x04name\x18\x05 \x01(\t\x12\x12\n\ndepends_on\x18\x06 \x03(\t\x12&\n\x05hooks\x18\t \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x32\n\x11\x64\x65ployment_stacks\x18\n \x01(\x0b\x32\x17.google.protobuf.StructJ\x04\x08\x07\x10\x08J\x04\x08\x08\x10\tR\x06inputsR\x07outputs\"\xdb\x01\n\x14\x44ockerProjectOptions\x12\x0c\n\x04path\x18\x01 \x01(\t\x12\x0f\n\x07\x63ontext\x18\x02 \x01(\t\x12\x10\n\x08platform\x18\x03 \x01(\t\x12\x0e\n\x06target\x18\x04 \x01(\t\x12\x10\n\x08registry\x18\x05 \x01(\t\x12\r\n\x05image\x18\x06 \x01(\t\x12\x0b\n\x03tag\x18\x07 \x01(\t\x12\x14\n\x0cremote_build\x18\x08 \x01(\x08\x12\x12\n\nbuild_args\x18\t \x03(\t\x12\x0f\n\x07network\x18\n \x01(\t\x12\x19\n\x11image_passthrough\x18\x0b \x01(\x08\x42\x46Z4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext\xaa\x02\rMicrosoft.Azdb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0cmodels.proto\x12\x15\x61zd.extensions.v1beta\x1a\x1cgoogle/protobuf/struct.proto\"\x0e\n\x0c\x45mptyRequest\"\x0f\n\rEmptyResponse\"g\n\x0cSubscription\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x11\n\ttenant_id\x18\x03 \x01(\t\x12\x16\n\x0euser_tenant_id\x18\x04 \x01(\t\x12\x12\n\nis_default\x18\x05 \x01(\x08\";\n\rResourceGroup\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x10\n\x08location\x18\x03 \x01(\t\"M\n\x08Location\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x14\n\x0c\x64isplay_name\x18\x02 \x01(\t\x12\x1d\n\x15regional_display_name\x18\x03 \x01(\t\"b\n\nAzureScope\x12\x11\n\ttenant_id\x18\x01 \x01(\t\x12\x17\n\x0fsubscription_id\x18\x02 \x01(\t\x12\x10\n\x08location\x18\x03 \x01(\t\x12\x16\n\x0eresource_group\x18\x04 \x01(\t\"S\n\x0c\x41zureContext\x12\x30\n\x05scope\x18\x01 \x01(\x0b\x32!.azd.extensions.v1beta.AzureScope\x12\x11\n\tresources\x18\x02 \x03(\t\"D\n\x08Resource\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x0c\n\x04type\x18\x03 \x01(\t\x12\x10\n\x08location\x18\x04 \x01(\t\"Z\n\x10ResourceExtended\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x0c\n\x04type\x18\x03 \x01(\t\x12\x10\n\x08location\x18\x04 \x01(\t\x12\x0c\n\x04kind\x18\x05 \x01(\t\"\x8b\x03\n\rProjectConfig\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x1b\n\x13resource_group_name\x18\x02 \x01(\t\x12\x0c\n\x04path\x18\x03 \x01(\t\x12\x38\n\x08metadata\x18\x04 \x01(\x0b\x32&.azd.extensions.v1beta.ProjectMetadata\x12\x44\n\x08services\x18\x05 \x03(\x0b\x32\x32.azd.extensions.v1beta.ProjectConfig.ServicesEntry\x12\x32\n\x05infra\x18\x06 \x01(\x0b\x32#.azd.extensions.v1beta.InfraOptions\x12\x36\n\x15\x61\x64\x64itional_properties\x18\x07 \x01(\x0b\x32\x17.google.protobuf.Struct\x1aU\n\rServicesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\x33\n\x05value\x18\x02 \x01(\x0b\x32$.azd.extensions.v1beta.ServiceConfig:\x02\x38\x01\"\x1f\n\x10RequiredVersions\x12\x0b\n\x03\x61zd\x18\x01 \x01(\t\"#\n\x0fProjectMetadata\x12\x10\n\x08template\x18\x01 \x01(\t\"\xbe\x05\n\rServiceConfig\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x1b\n\x13resource_group_name\x18\x02 \x01(\t\x12\x15\n\rresource_name\x18\x03 \x01(\t\x12\x13\n\x0b\x61pi_version\x18\x04 \x01(\t\x12\x15\n\rrelative_path\x18\x05 \x01(\t\x12\x0c\n\x04host\x18\x06 \x01(\t\x12\x10\n\x08language\x18\x07 \x01(\t\x12\x13\n\x0boutput_path\x18\x08 \x01(\t\x12\r\n\x05image\x18\t \x01(\t\x12;\n\x06\x64ocker\x18\n \x01(\x0b\x32+.azd.extensions.v1beta.DockerProjectOptions\x12\'\n\x06\x63onfig\x18\x0b \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x36\n\x15\x61\x64\x64itional_properties\x18\x0c \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x0c\n\x04uses\x18\r \x03(\t\x12J\n\x0b\x65nvironment\x18\x0e \x03(\x0b\x32\x35.azd.extensions.v1beta.ServiceConfig.EnvironmentEntry\x12$\n\x03k8s\x18\x0f \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x0e\n\x06module\x18\x10 \x01(\t\x12\x32\n\x05infra\x18\x11 \x01(\x0b\x32#.azd.extensions.v1beta.InfraOptions\x12&\n\x05hooks\x18\x12 \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x11\n\tcondition\x18\x13 \x01(\t\x12\x19\n\x0cremote_build\x18\x14 \x01(\x08H\x00\x88\x01\x01\x1a\x32\n\x10\x45nvironmentEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x42\x0f\n\r_remote_build\"\x82\x02\n\x0cInfraOptions\x12\x10\n\x08provider\x18\x01 \x01(\t\x12\x0c\n\x04path\x18\x02 \x01(\t\x12\x0e\n\x06module\x18\x03 \x01(\t\x12\'\n\x06\x63onfig\x18\x04 \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x0c\n\x04name\x18\x05 \x01(\t\x12\x12\n\ndepends_on\x18\x06 \x03(\t\x12&\n\x05hooks\x18\t \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x32\n\x11\x64\x65ployment_stacks\x18\n \x01(\x0b\x32\x17.google.protobuf.StructJ\x04\x08\x07\x10\x08J\x04\x08\x08\x10\tR\x06inputsR\x07outputs\"\xdb\x01\n\x14\x44ockerProjectOptions\x12\x0c\n\x04path\x18\x01 \x01(\t\x12\x0f\n\x07\x63ontext\x18\x02 \x01(\t\x12\x10\n\x08platform\x18\x03 \x01(\t\x12\x0e\n\x06target\x18\x04 \x01(\t\x12\x10\n\x08registry\x18\x05 \x01(\t\x12\r\n\x05image\x18\x06 \x01(\t\x12\x0b\n\x03tag\x18\x07 \x01(\t\x12\x14\n\x0cremote_build\x18\x08 \x01(\x08\x12\x12\n\nbuild_args\x18\t \x03(\t\x12\x0f\n\x07network\x18\n \x01(\t\x12\x19\n\x11image_passthrough\x18\x0b \x01(\x08\x42WZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1beta\xaa\x02\rMicrosoft.Azdb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'models_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'Z4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext\252\002\rMicrosoft.Azd'
+  _globals['DESCRIPTOR']._serialized_options = b'ZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1beta\252\002\rMicrosoft.Azd'
   _globals['_PROJECTCONFIG_SERVICESENTRY']._loaded_options = None
   _globals['_PROJECTCONFIG_SERVICESENTRY']._serialized_options = b'8\001'
   _globals['_SERVICECONFIG_ENVIRONMENTENTRY']._loaded_options = None
   _globals['_SERVICECONFIG_ENVIRONMENTENTRY']._serialized_options = b'8\001'
-  _globals['_EMPTYREQUEST']._serialized_start=54
-  _globals['_EMPTYREQUEST']._serialized_end=68
-  _globals['_EMPTYRESPONSE']._serialized_start=70
-  _globals['_EMPTYRESPONSE']._serialized_end=85
-  _globals['_SUBSCRIPTION']._serialized_start=87
-  _globals['_SUBSCRIPTION']._serialized_end=190
-  _globals['_RESOURCEGROUP']._serialized_start=192
-  _globals['_RESOURCEGROUP']._serialized_end=251
-  _globals['_LOCATION']._serialized_start=253
-  _globals['_LOCATION']._serialized_end=330
-  _globals['_AZURESCOPE']._serialized_start=332
-  _globals['_AZURESCOPE']._serialized_end=430
-  _globals['_AZURECONTEXT']._serialized_start=432
-  _globals['_AZURECONTEXT']._serialized_end=500
-  _globals['_RESOURCE']._serialized_start=502
-  _globals['_RESOURCE']._serialized_end=570
-  _globals['_RESOURCEEXTENDED']._serialized_start=572
-  _globals['_RESOURCEEXTENDED']._serialized_end=662
-  _globals['_PROJECTCONFIG']._serialized_start=665
-  _globals['_PROJECTCONFIG']._serialized_end=1000
-  _globals['_PROJECTCONFIG_SERVICESENTRY']._serialized_start=930
-  _globals['_PROJECTCONFIG_SERVICESENTRY']._serialized_end=1000
-  _globals['_REQUIREDVERSIONS']._serialized_start=1002
-  _globals['_REQUIREDVERSIONS']._serialized_end=1033
-  _globals['_PROJECTMETADATA']._serialized_start=1035
-  _globals['_PROJECTMETADATA']._serialized_end=1070
-  _globals['_SERVICECONFIG']._serialized_start=1073
-  _globals['_SERVICECONFIG']._serialized_end=1730
-  _globals['_SERVICECONFIG_ENVIRONMENTENTRY']._serialized_start=1663
-  _globals['_SERVICECONFIG_ENVIRONMENTENTRY']._serialized_end=1713
-  _globals['_INFRAOPTIONS']._serialized_start=1733
-  _globals['_INFRAOPTIONS']._serialized_end=1991
-  _globals['_DOCKERPROJECTOPTIONS']._serialized_start=1994
-  _globals['_DOCKERPROJECTOPTIONS']._serialized_end=2213
+  _globals['_EMPTYREQUEST']._serialized_start=69
+  _globals['_EMPTYREQUEST']._serialized_end=83
+  _globals['_EMPTYRESPONSE']._serialized_start=85
+  _globals['_EMPTYRESPONSE']._serialized_end=100
+  _globals['_SUBSCRIPTION']._serialized_start=102
+  _globals['_SUBSCRIPTION']._serialized_end=205
+  _globals['_RESOURCEGROUP']._serialized_start=207
+  _globals['_RESOURCEGROUP']._serialized_end=266
+  _globals['_LOCATION']._serialized_start=268
+  _globals['_LOCATION']._serialized_end=345
+  _globals['_AZURESCOPE']._serialized_start=347
+  _globals['_AZURESCOPE']._serialized_end=445
+  _globals['_AZURECONTEXT']._serialized_start=447
+  _globals['_AZURECONTEXT']._serialized_end=530
+  _globals['_RESOURCE']._serialized_start=532
+  _globals['_RESOURCE']._serialized_end=600
+  _globals['_RESOURCEEXTENDED']._serialized_start=602
+  _globals['_RESOURCEEXTENDED']._serialized_end=692
+  _globals['_PROJECTCONFIG']._serialized_start=695
+  _globals['_PROJECTCONFIG']._serialized_end=1090
+  _globals['_PROJECTCONFIG_SERVICESENTRY']._serialized_start=1005
+  _globals['_PROJECTCONFIG_SERVICESENTRY']._serialized_end=1090
+  _globals['_REQUIREDVERSIONS']._serialized_start=1092
+  _globals['_REQUIREDVERSIONS']._serialized_end=1123
+  _globals['_PROJECTMETADATA']._serialized_start=1125
+  _globals['_PROJECTMETADATA']._serialized_end=1160
+  _globals['_SERVICECONFIG']._serialized_start=1163
+  _globals['_SERVICECONFIG']._serialized_end=1865
+  _globals['_SERVICECONFIG_ENVIRONMENTENTRY']._serialized_start=1798
+  _globals['_SERVICECONFIG_ENVIRONMENTENTRY']._serialized_end=1848
+  _globals['_INFRAOPTIONS']._serialized_start=1868
+  _globals['_INFRAOPTIONS']._serialized_end=2126
+  _globals['_DOCKERPROJECTOPTIONS']._serialized_start=2129
+  _globals['_DOCKERPROJECTOPTIONS']._serialized_end=2348
 # @@protoc_insertion_point(module_scope)

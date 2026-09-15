@@ -2,3 +2,5 @@
 # generated extension projects, so keep them LF regardless of checkout platform.
 *.tmpl text eol=lf
 internal/resources/languages/go/go.sum text eol=lf
+internal/resources/languages/python/generated_proto/* linguist-generated=true
+internal/resources/languages/javascript/generated/proto/* linguist-generated=true

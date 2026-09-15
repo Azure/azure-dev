@@ -236,47 +236,60 @@ func TestTaskList_Run_warningContinues(t *testing.T) {
 }
 
 func TestTaskList_RenderWhileTaskUpdates(t *testing.T) {
-	started := make(chan struct{})
-	stop := make(chan struct{})
-	done := make(chan error, 1)
+	tests := []struct {
+		name  string
+		async bool
+	}{
+		{name: "sync", async: false},
+		{name: "async", async: true},
+	}
 
-	tl := NewTaskList(&TaskListOptions{Writer: io.Discard})
-	tl.AddTask(TaskOptions{
-		Title: "Running task",
-		Action: func(setProgress SetProgressFunc) (TaskState, error) {
-			close(started)
-			for {
-				select {
-				case <-stop:
-					return Success, nil
-				default:
-					setProgress("working")
-				}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			started := make(chan struct{})
+			stop := make(chan struct{})
+			done := make(chan error, 1)
+
+			tl := NewTaskList(&TaskListOptions{Writer: io.Discard})
+			tl.AddTask(TaskOptions{
+				Title: "Running task",
+				Async: test.async,
+				Action: func(setProgress SetProgressFunc) (TaskState, error) {
+					close(started)
+					for {
+						select {
+						case <-stop:
+							return Success, nil
+						default:
+							setProgress("working")
+						}
+					}
+				},
+			})
+
+			go func() {
+				done <- tl.Run()
+			}()
+
+			select {
+			case <-started:
+			case <-time.After(5 * time.Second):
+				t.Fatal("task did not start")
 			}
-		},
-	})
 
-	go func() {
-		done <- tl.Run()
-	}()
+			printer := NewPrinter(io.Discard)
+			for range 100 {
+				require.NoError(t, tl.Render(printer))
+			}
 
-	select {
-	case <-started:
-	case <-time.After(5 * time.Second):
-		t.Fatal("task did not start")
-	}
-
-	printer := NewPrinter(io.Discard)
-	for range 100 {
-		require.NoError(t, tl.Render(printer))
-	}
-
-	close(stop)
-	select {
-	case err := <-done:
-		require.NoError(t, err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("task list did not finish")
+			close(stop)
+			select {
+			case err := <-done:
+				require.NoError(t, err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("task list did not finish")
+			}
+		})
 	}
 }
 

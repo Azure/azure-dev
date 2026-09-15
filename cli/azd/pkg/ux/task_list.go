@@ -375,6 +375,9 @@ func (t *TaskList) runSyncTasks() {
 // addAsyncTask adds an asynchronous task and starts its execution in a goroutine.
 func (t *TaskList) addAsyncTask(task *Task) {
 	t.waitGroup.Go(func() {
+		// NOTE: we're calling t.renderSnapshotMu.Lock() each time we do anything that might
+		// affect task state, or the overall list of tasks, which means we do a lot of small
+		// write locks here.
 
 		// Acquire a slot in the semaphore
 		t.asyncSemaphore <- struct{}{}

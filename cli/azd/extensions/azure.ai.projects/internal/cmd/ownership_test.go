@@ -46,7 +46,7 @@ func TestProvisioningOwnershipMetadata(t *testing.T) {
 
 	assert.NotContains(t, agents.Capabilities, "provisioning-provider")
 	assert.NotContains(t, agents.Capabilities, "validation-provider")
-	assert.Equal(t, ">=1.32.0", agents.RequiredAzdVersion)
+	assert.Equal(t, ">=1.35.0-beta.1", agents.RequiredAzdVersion)
 	assert.False(t, manifestHasProvider(
 		agents,
 		"microsoft.foundry",
@@ -55,7 +55,7 @@ func TestProvisioningOwnershipMetadata(t *testing.T) {
 	assert.True(t, manifestHasDependency(
 		agents,
 		"azure.ai.projects",
-		"~1.0.0-beta.9",
+		"~1.0.0-beta.10",
 	))
 }
 

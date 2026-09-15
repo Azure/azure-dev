@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
@@ -44,10 +45,25 @@ func (s *workflowService) Run(ctx context.Context, request *azdext.RunWorkflowRe
 		if errors.Is(err, environment.ErrExists) {
 			return nil, status.Errorf(codes.AlreadyExists, "failed to run workflow: %v", err)
 		}
+		if isWorkflowCancellation(err) {
+			return nil, status.Errorf(codes.Canceled, "failed to run workflow: %v", err)
+		}
 		return nil, status.Errorf(codes.Internal, "failed to run workflow: %v", err)
 	}
 
 	return &azdext.EmptyResponse{}, nil
+}
+
+func isWorkflowCancellation(err error) bool {
+	if errors.Is(err, context.Canceled) ||
+		errors.Is(err, internal.ErrAbortedByUser) {
+		return true
+	}
+	if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
+		return localErr.Category == azdext.LocalErrorCategoryUser &&
+			localErr.Code == "cancelled"
+	}
+	return false
 }
 
 // convertWorkflow converts an azdext.Workflow to a workflow.Workflow.

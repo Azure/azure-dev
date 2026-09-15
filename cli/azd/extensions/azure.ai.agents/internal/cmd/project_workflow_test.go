@@ -256,6 +256,66 @@ func TestAuthorFoundryDeploymentsUsesPublicCommand(t *testing.T) {
 	assert.Empty(t, projectServer.added)
 }
 
+func TestConfigureAdoptedModelUsesPublicCommand(t *testing.T) {
+	t.Parallel()
+
+	workflowServer := &recordingProjectWorkflowServer{}
+	client := newProjectWorkflowClient(
+		t,
+		&recordingProjectServer{
+			existing: map[string]*azdext.ServiceConfig{},
+		},
+		workflowServer,
+	)
+	projectRoot := t.TempDir()
+
+	require.NoError(t, configureAdoptedModel(
+		t.Context(),
+		client,
+		projectRoot,
+		&initFlags{model: "gpt-4.1"},
+	))
+
+	assert.Equal(t, expectedProjectWorkflowArgs(
+		t,
+		projectRoot,
+		"ai",
+		"project",
+		"deployment",
+		"add",
+		"--no-prompt",
+		"--output",
+		"none",
+		"--model",
+		"gpt-4.1",
+	), workflowArgs(t, workflowServer, 0))
+}
+
+func TestConfigureAdoptedModelDeploymentTakesPrecedence(t *testing.T) {
+	t.Parallel()
+
+	workflowServer := &recordingProjectWorkflowServer{}
+	client := newProjectWorkflowClient(
+		t,
+		&recordingProjectServer{
+			existing: map[string]*azdext.ServiceConfig{},
+		},
+		workflowServer,
+	)
+
+	require.NoError(t, configureAdoptedModel(
+		t.Context(),
+		client,
+		t.TempDir(),
+		&initFlags{
+			model:           "gpt-4.1",
+			modelDeployment: "existing",
+		},
+	))
+
+	assert.Empty(t, workflowServer.requests)
+}
+
 func TestAuthorFoundryDeploymentsPreservesDefault(t *testing.T) {
 	t.Parallel()
 

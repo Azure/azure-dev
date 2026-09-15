@@ -553,18 +553,18 @@ func runInitFromAzureYaml(
 	); err != nil {
 		return err
 	}
+	projectRoot, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf(
+			"resolving the adopted project directory: %w",
+			err,
+		)
+	}
 
 	// When an existing project was selected, record its endpoint in the azd
 	// environment, then let the projects extension reconcile the project
 	// service. Agents preserve that service but do not author its shape.
 	if result.FoundryProject != nil {
-		projectRoot, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf(
-				"resolving the adopted project directory: %w",
-				err,
-			)
-		}
 		if err := recordFoundryProjectEnv(
 			ctx,
 			azdClient,
@@ -620,13 +620,6 @@ func runInitFromAzureYaml(
 		}
 	}
 	if result.FoundryProject == nil {
-		projectRoot, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf(
-				"resolving the adopted project directory: %w",
-				err,
-			)
-		}
 		if err := authorNewFoundryProject(
 			ctx,
 			azdClient,
@@ -638,11 +631,18 @@ func runInitFromAzureYaml(
 	}
 
 	// The projects extension owns project deployments. When the user
-	// names an existing deployment, validate it through the Foundry API
-	// and persist only the agent's environment reference.
-	if result != nil && result.FoundryProject != nil &&
-		result.Credential != nil {
-		if err := configureAdoptedModelDeployment(
+	// names a model, delegate its authoring. Existing deployment lookup
+	// remains limited to --model-deployment.
+	if err := configureAdoptedModel(
+		ctx,
+		azdClient,
+		projectRoot,
+		flags,
+	); err != nil {
+		return err
+	}
+	if result.FoundryProject != nil && result.Credential != nil {
+		if err := configureAdoptedExistingDeployment(
 			ctx,
 			azdClient,
 			env.Name,
@@ -692,7 +692,30 @@ func validateAdoptedModelDeploymentTarget(
 	)
 }
 
-func configureAdoptedModelDeployment(
+func configureAdoptedModel(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	projectRoot string,
+	flags *initFlags,
+) error {
+	if strings.TrimSpace(flags.modelDeployment) != "" {
+		return nil
+	}
+	model := strings.TrimSpace(flags.model)
+	if model == "" {
+		return nil
+	}
+	return authorFoundryDeployments(
+		ctx,
+		azdClient,
+		projectRoot,
+		[]project.Deployment{
+			{Model: project.DeploymentModel{Name: model}},
+		},
+	)
+}
+
+func configureAdoptedExistingDeployment(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	envName string,
@@ -701,8 +724,7 @@ func configureAdoptedModelDeployment(
 	flags *initFlags,
 ) error {
 	requested := strings.TrimSpace(flags.modelDeployment)
-	model := strings.TrimSpace(flags.model)
-	if requested == "" && model == "" {
+	if requested == "" {
 		return nil
 	}
 
@@ -725,16 +747,8 @@ func configureAdoptedModelDeployment(
 			selected = deployment
 			break
 		}
-		if requested == "" &&
-			strings.EqualFold(deployment.ModelName, model) &&
-			selected == nil {
-			selected = deployment
-		}
 	}
 	if selected == nil {
-		if requested == "" {
-			return nil
-		}
 		return exterrors.Validation(
 			exterrors.CodeModelDeploymentNotFound,
 			fmt.Sprintf(

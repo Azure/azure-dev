@@ -949,6 +949,7 @@ func (a *InitFromCodeAction) addToProject(
 		a.azdClient,
 		a.selectedFoundryProject,
 		a.projectConfig.GetPath(),
+		a.selectedFoundryProject == nil,
 	); err != nil {
 		return err
 	}

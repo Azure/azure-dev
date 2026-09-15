@@ -578,6 +578,7 @@ func runInitFromAzureYaml(
 			azdClient,
 			result.FoundryProject,
 			projectRoot,
+			false,
 		); err != nil {
 			return err
 		}

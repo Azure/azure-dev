@@ -29,15 +29,6 @@ func authorFoundryProject(
 	azdClient *azdext.AzdClient,
 	target *FoundryProjectInfo,
 	projectRoot string,
-) error {
-	return authorFoundryProjectMode(ctx, azdClient, target, projectRoot, false)
-}
-
-func authorFoundryProjectMode(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	target *FoundryProjectInfo,
-	projectRoot string,
 	newProject bool,
 ) error {
 	args := []string{
@@ -100,7 +91,7 @@ func authorNewFoundryProject(
 		}
 	}
 
-	authorErr := authorFoundryProjectMode(
+	authorErr := authorFoundryProject(
 		ctx, azdClient, nil, projectRoot, true,
 	)
 	var restoreErrs []error

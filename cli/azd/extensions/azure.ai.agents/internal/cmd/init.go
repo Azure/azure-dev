@@ -3741,6 +3741,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		a.azdClient,
 		a.selectedFoundryProject,
 		a.projectConfig.GetPath(),
+		a.selectedFoundryProject == nil,
 	); err != nil {
 		return err
 	}
@@ -3848,6 +3849,7 @@ func (a *InitAction) addVoiceAgentToProject(
 		a.azdClient,
 		a.selectedFoundryProject,
 		a.projectConfig.GetPath(),
+		a.selectedFoundryProject == nil,
 	); err != nil {
 		return err
 	}

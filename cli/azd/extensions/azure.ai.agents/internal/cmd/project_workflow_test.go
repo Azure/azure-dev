@@ -116,7 +116,7 @@ func TestAuthorFoundryProjectUsesPublicCommand(t *testing.T) {
 	}
 	projectRoot := t.TempDir()
 	require.NoError(t, authorFoundryProject(
-		t.Context(), client, target, projectRoot,
+		t.Context(), client, target, projectRoot, false,
 	))
 
 	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
@@ -148,7 +148,7 @@ func TestAuthorFoundryProjectUsesEndpointFlag(t *testing.T) {
 
 	projectRoot := t.TempDir()
 	require.NoError(t, authorFoundryProject(
-		t.Context(), client, target, projectRoot,
+		t.Context(), client, target, projectRoot, false,
 	))
 
 	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
@@ -163,6 +163,34 @@ func TestAuthorFoundryProjectUsesEndpointFlag(t *testing.T) {
 		"--force",
 	), workflowArgs(t, workflowServer, 0))
 	assert.Empty(t, projectServer.added)
+}
+
+func TestAuthorFoundryProjectUsesNewProjectFlag(t *testing.T) {
+	t.Parallel()
+
+	workflowServer := &recordingProjectWorkflowServer{}
+	client := newProjectWorkflowClient(
+		t,
+		&recordingProjectServer{
+			existing: map[string]*azdext.ServiceConfig{},
+		},
+		workflowServer,
+	)
+	projectRoot := t.TempDir()
+
+	require.NoError(t, authorFoundryProject(
+		t.Context(), client, nil, projectRoot, true,
+	))
+
+	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
+		"ai",
+		"project",
+		"add",
+		"--no-prompt",
+		"--output",
+		"none",
+		"--new-project",
+	), workflowArgs(t, workflowServer, 0))
 }
 
 func TestAuthorNewFoundryProjectPreservesSelection(t *testing.T) {
@@ -406,7 +434,7 @@ func TestProjectWorkflowPropagatesFailures(t *testing.T) {
 	)
 
 	err := authorFoundryProject(
-		t.Context(), client, nil, t.TempDir(),
+		t.Context(), client, nil, t.TempDir(), false,
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "authoring the Foundry project failed")
@@ -426,7 +454,7 @@ func TestProjectWorkflowPreservesCancellation(t *testing.T) {
 	)
 
 	err := authorFoundryProject(
-		t.Context(), client, nil, t.TempDir(),
+		t.Context(), client, nil, t.TempDir(), false,
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "authoring the Foundry project was cancelled")

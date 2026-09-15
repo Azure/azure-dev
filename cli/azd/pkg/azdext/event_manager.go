@@ -305,14 +305,6 @@ func (em *EventManager) onInvokeServiceHandler(
 	return em.invokeServiceHandler(ctx, req, nil)
 }
 
-func (em *EventManager) onInvokeServiceHandlerWithProgress(
-	ctx context.Context,
-	req *InvokeServiceHandler,
-	progress grpcbroker.ProgressFunc,
-) (*EventMessage, error) {
-	return em.invokeServiceHandler(ctx, req, progress)
-}
-
 func (em *EventManager) onInvokeServiceHandlerBeta(
 	ctx context.Context,
 	req *v1beta.InvokeServiceHandler,

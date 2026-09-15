@@ -80,6 +80,12 @@ azd deploy my-agent --preview
 azd deploy --all --preview --output json
 ```
 
+Text output shows the standard azd spinner while preparing the preview and
+comparing each supported service. Progress stops before the configuration diff
+is printed, and also stops on errors or cancellation.
+Redirected output uses non-animated progress messages; `--output json` omits
+progress and command headings.
+
 For a project created by `azd ai agent init`, the agent definition is normally
 inline in `azure.yaml`; deployment does not generate a separate `agent.yaml`.
 Preview supports both layouts without migrating or editing user files:
@@ -114,8 +120,9 @@ If no selected service supports preview, the command returns an error.
 Preview never creates an azd environment or changes the project's default
 environment. `--environment` uses only the named existing environment; a missing
 explicit name is an error. Without a selected/default environment, preview can
-use project or process configuration in memory. Authenticate separately if needed;
-preview does not start interactive login.
+use project or process configuration in memory. `azd deploy --preview` uses the
+normal deployment login check and offers interactive login when needed. In CI or
+with `--no-prompt`, authenticate before running preview.
 
 Materialized `agent.yaml` settings
 override companion manifest defaults field by field. An inline project service

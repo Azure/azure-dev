@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
@@ -173,6 +174,12 @@ func (da *DeployAction) previewService(
 	capability, hasCapability := target.(project.ServiceTargetPreviewCapability)
 	if !ok || (hasCapability && !capability.SupportsPreview()) {
 		return nil, &unsupportedDeploymentPreviewError{service: service.Name, host: service.Host}
+	}
+
+	if da.formatter.Kind() != output.JsonFormat {
+		message := fmt.Sprintf("Comparing configuration for service: %s", sanitizeServiceName(service.Name))
+		da.console.ShowSpinner(ctx, message, input.Step)
+		defer da.console.StopSpinner(ctx, "", input.Step)
 	}
 
 	result, err := previewer.Preview(ctx, service)

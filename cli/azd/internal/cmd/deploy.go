@@ -197,6 +197,7 @@ func NewDeployAction(
 		err = serviceLocator.Invoke(func(
 			projectConfig *project.ProjectConfig,
 			azdCtx *azdcontext.AzdContext,
+			console input.Console,
 			formatter output.Formatter,
 			writer io.Writer,
 			serviceTargetResolver project.ServiceTargetResolver,
@@ -208,6 +209,7 @@ func NewDeployAction(
 				projectConfig:           projectConfig,
 				azdCtx:                  azdCtx,
 				env:                     env,
+				console:                 console,
 				serviceTargetResolver:   serviceTargetResolver,
 				declaredServiceResolver: declaredServiceResolver,
 				formatter:               formatter,

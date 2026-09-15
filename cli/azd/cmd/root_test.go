@@ -50,7 +50,7 @@ func TestCommandRequiresLogin(t *testing.T) {
 				require.NoError(t, command.Flags().Set("preview", "true"))
 				return command
 			}(),
-			required: false,
+			required: true,
 		},
 		{
 			name: "other preview command",

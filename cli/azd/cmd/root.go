@@ -366,6 +366,13 @@ func newRootCmd(
 			},
 			RequireLogin: true,
 		}).
+		UseMiddlewareWhen(
+			"deployPreviewProgress",
+			middleware.NewDeployPreviewProgressMiddleware,
+			func(descriptor *actions.ActionDescriptor) bool {
+				return isDeploymentPreview(descriptor.Options.Command)
+			},
+		).
 		UseMiddlewareWhen("hooks", middleware.NewHooksMiddleware, deploymentHooksEnabled).
 		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
@@ -542,10 +549,6 @@ func registerGlobalMiddleware(root *actions.ActionDescriptor) {
 }
 
 func commandRequiresLogin(descriptor *actions.ActionDescriptor) bool {
-	if descriptor.Options != nil && isDeploymentPreview(descriptor.Options.Command) {
-		return false
-	}
-
 	// Check if the command or any of its parents require login.
 	for current := descriptor; current != nil; current = current.Parent() {
 		if current.Options != nil && current.Options.RequireLogin {

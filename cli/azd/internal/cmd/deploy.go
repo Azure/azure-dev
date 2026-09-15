@@ -558,7 +558,8 @@ func GetCmdDeployHelpDescription(*cobra.Command) string {
 		formatHelpNote("After the deployment is complete, the endpoint is printed. To start the service, select" +
 			" the endpoint or paste it in a browser."),
 		formatHelpNote("Use --preview to preview deployment without running hooks, building, publishing, or deploying." +
-			" Preview requires a service host that supports it and does not import generated services." +
+			" Unsupported service hosts are skipped; JSON output lists skippedServices." +
+			" Preview fails if no selected service supports it and does not import generated services." +
 			" The --timeout option also limits each service preview."),
 	})
 }

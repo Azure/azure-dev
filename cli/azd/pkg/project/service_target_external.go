@@ -75,6 +75,11 @@ func (est *ExternalServiceTarget) toProtoServiceConfig(serviceConfig *ServiceCon
 	return serviceConfigToProto(est.lazyEnv, serviceConfig)
 }
 
+// SupportsPreview reports the capability advertised during extension registration.
+func (est *ExternalServiceTarget) SupportsPreview() bool {
+	return est.previewSupported
+}
+
 // Preview requests a read-only deployment preview only when the provider advertised support.
 func (est *ExternalServiceTarget) Preview(
 	ctx context.Context,

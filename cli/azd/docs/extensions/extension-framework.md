@@ -1585,8 +1585,11 @@ must resolve its required context using read-only APIs. Return errors explicitly
 do not turn unsupported or failed previews into successful empty results.
 
 Preview support is negotiated during provider registration. Older extensions default
-to unsupported, and core never sends a deploy request as a fallback. Infrastructure-only
-targets can explicitly implement a no-op preview when they have no deployment work.
+to unsupported, and core skips them before dispatch rather than sending a preview
+or deploy request. `skippedServices` in JSON identifies those uninspected services;
+terminal output contains only supported targets' results. Unsupported selections
+with no previewable service still fail, as do real errors from supported providers.
+Extensions without deployment-preview work do not need a no-op implementation.
 
 The `azd` CLI and its extensions communicate over gRPC. The client and server code is generated from protobuf files.
 

@@ -100,7 +100,11 @@ Use the service name as a positional argument to select one service. From the
 project root, omitting it previews enabled services; `--all` explicitly selects
 all enabled services. Preview never invokes deployment hooks, framework
 initialization, builds, packages, publishing, deployment, or environment-cache
-updates. Targets without preview support report an error rather than deploying.
+updates. Core skips targets that do not advertise preview support before sending
+any preview request. Skipped services are silent in terminal output and listed
+under `skippedServices` in JSON (service name to host name); they are not reported
+as unchanged. Errors from supported preview targets still fail the command.
+If no selected service supports preview, the command returns an error.
 `--from-package` cannot be combined with preview; `--timeout` bounds each preview.
 
 Materialized `agent.yaml` settings
@@ -190,10 +194,11 @@ and notes that interactive deployment can choose the prebuilt alternative.
 Source contents and mutable image digests are not compared.
 
 Preview covers hosted code and container agents, not infrastructure or dependency
-creation. Foundry project services have no application-deployment work and direct
-infrastructure previews to `azd provision --preview`. The pre-existing
-standalone `azd ai agent deploy` command has been removed. Use `azd deploy` for
-deployment and `azd deploy --preview` to inspect the planned agent changes.
+creation. The unmodified Foundry projects extension does not advertise deployment
+preview, so core skips its services. Use `azd provision --preview` to inspect
+infrastructure changes. The standalone `azd ai agent deploy` command has been
+removed. Use `azd deploy` for deployment and `azd deploy --preview` to inspect
+the planned agent changes.
 
 ### Metadata tags
 
@@ -224,20 +229,25 @@ would drop. Neither preview nor deployment rewrites those definitions.
 
 Deployment preview adds an azd core/SDK contract. Rebuilding only the agents
 extension against an older published SDK is not sufficient. For local development,
-create a Go workspace at the repository root that includes core and both affected
-extensions (add these modules to an existing workspace rather than replacing it):
+create a Go workspace at the repository root that includes core and the agents
+extension (add these modules to an existing workspace rather than replacing it):
 
 ```powershell
-go work init .\cli\azd .\cli\azd\extensions\azure.ai.agents .\cli\azd\extensions\azure.ai.projects
+go work init .\cli\azd .\cli\azd\extensions\azure.ai.agents
 New-Item -ItemType Directory -Force .\bin | Out-Null
 cmd /d /c "set GOWORK=off&& go -C .\cli\azd build -o ..\..\bin\azd.exe ."
 ```
 
-Use that rebuilt core binary while building/installing both extensions with the
+Use that rebuilt core binary while building/installing the agents extension with the
 developer extension, and while running `deploy --preview`. Keep the local workspace
 out of release commits. For release, land/publish the core SDK contract first, then
-update the agents and projects extensions to that SDK version; do not commit a local
+update the agents extension to that SDK version; do not commit a local
 `replace` directive.
+
+No changes or rebuild are required for the published `azure.ai.projects` extension.
+If a local projects binary from the earlier preview prototype is installed, restore
+the published binary or rebuild its restored source once; an already installed
+binary can still advertise the capability until it is replaced.
 
 ## Composing Agent Dependencies
 

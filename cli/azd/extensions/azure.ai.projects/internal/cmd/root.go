@@ -44,7 +44,7 @@ func NewRootCommand() *cobra.Command {
 func configureExtensionHost(host *azdext.ExtensionHost) {
 	azdClient := host.Client()
 	host.
-		WithServiceTargetPreview(
+		WithServiceTarget(
 			aiProjectHost,
 			func() azdext.ServiceTargetProvider {
 				return newProjectServiceTarget(azdClient)

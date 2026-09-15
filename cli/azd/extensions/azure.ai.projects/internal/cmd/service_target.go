@@ -7,7 +7,6 @@ import (
 	"context"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // aiProjectHost is the azure.yaml host owned by this extension.
@@ -27,21 +26,6 @@ var _ azdext.ServiceTargetProvider = (*projectServiceTarget)(nil)
 type projectServiceTarget struct {
 	azdClient     *azdext.AzdClient
 	serviceConfig *azdext.ServiceConfig
-}
-
-// Preview reports that this target has no application deployment work.
-// Foundry project and model changes belong to provision preview.
-func (p *projectServiceTarget) Preview(
-	ctx context.Context, serviceConfig *azdext.ServiceConfig,
-) (*azdext.ServiceDeployPreviewResult, error) {
-	data, err := structpb.NewStruct(map[string]any{"operation": "none", "hasChanges": false})
-	if err != nil {
-		return nil, err
-	}
-	return &azdext.ServiceDeployPreviewResult{
-		Message: "Foundry project: no application deployment changes. Use 'azd provision --preview' for infrastructure changes.",
-		Data:    data,
-	}, nil
 }
 
 // newProjectServiceTarget creates the project service target.

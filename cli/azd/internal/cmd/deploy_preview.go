@@ -18,8 +18,18 @@ import (
 
 // DeploymentPreviewResult contains read-only deployment previews for the selected services.
 type DeploymentPreviewResult struct {
-	Timestamp time.Time                                      `json:"timestamp"`
-	Services  map[string]*project.ServiceDeployPreviewResult `json:"services"`
+	Timestamp       time.Time                                      `json:"timestamp"`
+	Services        map[string]*project.ServiceDeployPreviewResult `json:"services"`
+	SkippedServices map[string]string                              `json:"skippedServices,omitempty"`
+}
+
+type unsupportedDeploymentPreviewError struct {
+	service string
+	host    project.ServiceTargetKind
+}
+
+func (e *unsupportedDeploymentPreviewError) Error() string {
+	return fmt.Sprintf("service host '%s' for service '%s' does not support deployment preview", e.host, e.service)
 }
 
 func (da *DeployAction) preview(ctx context.Context, targetServiceName string) (*actions.ActionResult, error) {
@@ -43,12 +53,24 @@ func (da *DeployAction) preview(ctx context.Context, targetServiceName string) (
 	result := DeploymentPreviewResult{
 		Services: make(map[string]*project.ServiceDeployPreviewResult, len(services)),
 	}
+	var unsupported *unsupportedDeploymentPreviewError
 	for _, svc := range services {
 		preview, err := da.previewService(ctx, svc, timeout)
 		if err != nil {
+			if skipped, ok := errors.AsType[*unsupportedDeploymentPreviewError](err); ok {
+				unsupported = skipped
+				if result.SkippedServices == nil {
+					result.SkippedServices = map[string]string{}
+				}
+				result.SkippedServices[svc.Name] = string(svc.Host)
+				continue
+			}
 			return nil, err
 		}
 		result.Services[svc.Name] = preview
+	}
+	if len(result.Services) == 0 && unsupported != nil {
+		return nil, fmt.Errorf("no selected service could be previewed: %w", unsupported)
 	}
 	result.Timestamp = time.Now()
 
@@ -58,7 +80,11 @@ func (da *DeployAction) preview(ctx context.Context, targetServiceName string) (
 		}
 	} else {
 		for _, svc := range services {
-			message := result.Services[svc.Name].Message
+			preview, exists := result.Services[svc.Name]
+			if !exists {
+				continue
+			}
+			message := preview.Message
 			if message != "" {
 				if !strings.HasSuffix(message, "\n") {
 					message += "\n"
@@ -144,10 +170,9 @@ func (da *DeployAction) previewService(
 		return nil, fmt.Errorf("resolving service host for preview of '%s': %w", service.Name, err)
 	}
 	previewer, ok := target.(project.ServiceTargetPreviewer)
-	if !ok {
-		return nil, fmt.Errorf(
-			"service host '%s' for service '%s' does not support deployment preview", service.Host, service.Name,
-		)
+	capability, hasCapability := target.(project.ServiceTargetPreviewCapability)
+	if !ok || (hasCapability && !capability.SupportsPreview()) {
+		return nil, &unsupportedDeploymentPreviewError{service: service.Name, host: service.Host}
 	}
 
 	result, err := previewer.Preview(ctx, service)

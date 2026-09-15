@@ -108,6 +108,9 @@ func TestExternalServiceTargetPreviewFailsClosed(t *testing.T) {
 			)
 			previewer, ok := target.(ServiceTargetPreviewer)
 			require.True(t, ok)
+			capability, ok := target.(ServiceTargetPreviewCapability)
+			require.True(t, ok)
+			require.False(t, capability.SupportsPreview())
 			result, err := previewer.Preview(t.Context(), &ServiceConfig{Name: "api"})
 			require.ErrorContains(t, err, "does not support deployment preview")
 			require.Nil(t, result)
@@ -138,6 +141,7 @@ func TestExternalServiceTargetPreviewUsesOnlyPreviewRequest(t *testing.T) {
 	result, err := target.Preview(t.Context(), service)
 	require.NoError(t, err)
 	require.Equal(t, "Read-only plan", result.Message)
+	require.True(t, target.SupportsPreview())
 	require.Equal(t, data.AsMap(), result.Data)
 	require.Len(t, stream.requests, 1, "preview must not send Initialize, Package, Publish, or Deploy requests")
 	request := <-stream.requests

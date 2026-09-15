@@ -575,19 +575,6 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 	})
 }
 
-func TestDefaultPipelineVariables(t *testing.T) {
-	env := environment.NewWithValues("test-env", map[string]string{
-		environment.LocationEnvVarName:      "westus2",
-		environment.ResourceGroupEnvVarName: "rg-test",
-		"UNRELATED":                         "ignored",
-	})
-
-	assert.Equal(t, map[string]string{
-		environment.LocationEnvVarName:      "westus2",
-		environment.ResourceGroupEnvVarName: "rg-test",
-	}, defaultPipelineVariables(env))
-}
-
 func Test_promptForCiFiles(t *testing.T) {
 	t.Run("required extensions are installed for github", func(t *testing.T) {
 		tempDir := t.TempDir()

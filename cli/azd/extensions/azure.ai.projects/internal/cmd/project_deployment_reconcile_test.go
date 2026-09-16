@@ -8,6 +8,7 @@ import (
 
 	"azure.ai.projects/internal/synthesis"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,4 +41,42 @@ func TestExpandDeployment(t *testing.T) {
 		},
 		Sku: synthesis.DeploymentSku{Name: "GlobalStandard"},
 	}, got)
+}
+
+func TestProjectAddMutationIncludesDeploymentReconciliation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		mutation          string
+		reconciledChanged bool
+		want              string
+	}{
+		{
+			name:              "deployment update changes unchanged project",
+			mutation:          "unchanged",
+			reconciledChanged: true,
+			want:              "updated",
+		},
+		{
+			name:              "unchanged deployment preserves unchanged project",
+			mutation:          "unchanged",
+			reconciledChanged: false,
+			want:              "unchanged",
+		},
+		{
+			name:              "created project remains created",
+			mutation:          "created",
+			reconciledChanged: true,
+			want:              "created",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, projectAddMutation(
+				tt.mutation, tt.reconciledChanged,
+			))
+		})
+	}
 }

@@ -385,9 +385,7 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		Endpoint:        target.Endpoint,
 		ResourceID:      target.ResourceId,
 	}
-	if mutation == "unchanged" && reconciledChanged {
-		result.Mutation = "updated"
-	}
+	result.Mutation = projectAddMutation(mutation, reconciledChanged)
 	writeProjectEndpointWarning(
 		os.Stderr,
 		target.EndpointPathWarning,
@@ -411,6 +409,13 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		)
 	}
 	return nil
+}
+
+func projectAddMutation(mutation string, reconciledChanged bool) string {
+	if mutation == "unchanged" && reconciledChanged {
+		return "updated"
+	}
+	return mutation
 }
 
 func rollbackProjectAdd(

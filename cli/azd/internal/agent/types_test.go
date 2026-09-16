@@ -37,16 +37,18 @@ func TestUsageMetrics_Format(t *testing.T) {
 		require.Contains(t, result, "claude-sonnet-4.5")
 	})
 
-	t.Run("WithCostAndPremium", func(t *testing.T) {
+	t.Run("LegacyBillingFieldsAreHidden", func(t *testing.T) {
 		u := UsageMetrics{
 			InputTokens:     50000,
 			OutputTokens:    20000,
+			AICredits:       0.25,
 			BillingRate:     2.0,
 			PremiumRequests: 15,
 		}
 		result := u.String()
-		require.Contains(t, result, "2x per request")
-		require.Contains(t, result, "15")
+		require.Contains(t, result, "AI credits:       0.250 AIC")
+		require.NotContains(t, result, "Premium requests")
+		require.NotContains(t, result, "2x per request")
 	})
 
 	t.Run("DurationSeconds", func(t *testing.T) {

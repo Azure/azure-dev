@@ -26,10 +26,18 @@ type AgentResult struct {
 
 // UsageMetrics tracks resource consumption for an agent session.
 type UsageMetrics struct {
-	Model           string
-	InputTokens     float64
-	OutputTokens    float64
-	BillingRate     float64 // per-request cost multiplier (e.g., 1.0x, 2.0x)
+	Model        string
+	InputTokens  float64
+	OutputTokens float64
+
+	// AICredits is the de-billionized AI-credit value derived from the SDK's raw
+	// nano-AIU totals. It should match what you see as "AIC" in other Copilots.
+	AICredits float64
+
+	// BillingRate is deprecated legacy metadata. Copilot AIC billing is token-based,
+	// so this value is not shown to users and should be treated as compatibility-only.
+	BillingRate float64
+	// PremiumRequests is deprecated legacy metadata. Prefer token totals instead.
 	PremiumRequests float64
 	DurationMS      float64
 }
@@ -39,9 +47,26 @@ func (u UsageMetrics) TotalTokens() float64 {
 	return u.InputTokens + u.OutputTokens
 }
 
+func nanoAiuToCredits(nanoAiu float64) float64 {
+	return nanoAiu / 1_000_000_000
+}
+
+func formatAICredits(credits float64) string {
+	if credits >= 1000 {
+		return fmt.Sprintf("%.1fK", credits/1000)
+	}
+	if credits >= 1 {
+		return fmt.Sprintf("%.2f", credits)
+	}
+	if credits >= 0.01 {
+		return fmt.Sprintf("%.3f", credits)
+	}
+	return fmt.Sprintf("%.4f", credits)
+}
+
 // String returns a multi-line formatted string for display.
 func (u UsageMetrics) String() string {
-	if u.InputTokens == 0 && u.OutputTokens == 0 {
+	if u.InputTokens == 0 && u.OutputTokens == 0 && u.AICredits == 0 {
 		return ""
 	}
 
@@ -55,11 +80,10 @@ func (u UsageMetrics) String() string {
 	lines = append(lines, output.WithGrayFormat("  • Input tokens:     %s", formatTokenCount(u.InputTokens)))
 	lines = append(lines, output.WithGrayFormat("  • Output tokens:    %s", formatTokenCount(u.OutputTokens)))
 	lines = append(lines, output.WithGrayFormat("  • Total tokens:     %s", formatTokenCount(u.TotalTokens())))
-
-	if u.BillingRate > 0 {
-		lines = append(lines, output.WithGrayFormat("  • Billing rate:     %.0fx per request", u.BillingRate))
+	if u.AICredits > 0 {
+		lines = append(lines, output.WithGrayFormat("  • AI credits:       %s AIC", formatAICredits(u.AICredits)))
 	}
-	lines = append(lines, output.WithGrayFormat("  • Premium requests: %.0f", u.PremiumRequests))
+
 	if u.DurationMS > 0 {
 		seconds := u.DurationMS / 1000
 		if seconds >= 60 {

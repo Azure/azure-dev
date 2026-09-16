@@ -40,8 +40,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
 	"github.com/benbjohnson/clock"
+	"github.com/distribution/reference"
 	"github.com/sethvargo/go-retry"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -85,7 +85,7 @@ func NewContainerHelper(
 }
 
 // ContainerEngine returns the detected container engine name ("docker" or "podman").
-func (ch *ContainerHelper) ContainerEngine() string {
+func (ch *ContainerHelper) ContainerEngine() tools.ContainerEngine {
 	return ch.docker.ContainerEngine()
 }
 
@@ -255,8 +255,48 @@ func (ch *ContainerHelper) LocalImageTag(
 	return configuredImage.Local(), nil
 }
 
-func (ch *ContainerHelper) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
+func resolveImagePassthrough(
+	serviceConfig *ServiceConfig,
+	env *environment.Environment,
+) (string, error) {
+	if !serviceConfig.Docker.ImagePassthrough {
+		return "", nil
+	}
 	if serviceConfig.Docker.RemoteBuild {
+		return "", fmt.Errorf("docker.imagePassthrough cannot be combined with docker.remoteBuild")
+	}
+
+	image, err := serviceConfig.Image.Envsubst(env.Getenv)
+	if err != nil {
+		return "", fmt.Errorf("substituting environment variables in passthrough image: %w", err)
+	}
+	if strings.TrimSpace(image) == "" {
+		return "", fmt.Errorf("docker.imagePassthrough requires the service image property")
+	}
+
+	if err := validateFullyQualifiedRemoteContainerImage(image); err != nil {
+		return "", fmt.Errorf("passthrough image must be a fully qualified remote container image: %w", err)
+	}
+
+	// Passthrough preserves the expanded reference exactly, including tag and digest combinations.
+	return image, nil
+}
+
+func imagePassthroughArtifact(image string) *Artifact {
+	return &Artifact{
+		Kind:         ArtifactKindContainer,
+		Location:     image,
+		LocationKind: LocationKindRemote,
+		Metadata: map[string]string{
+			MetadataKeyImagePassthrough: "true",
+			"remoteImage":               image,
+			"sourceImage":               image,
+		},
+	}
+}
+
+func (ch *ContainerHelper) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
+	if serviceConfig.Docker.ImagePassthrough || serviceConfig.Docker.RemoteBuild {
 		return []tools.ExternalTool{}
 	}
 
@@ -354,10 +394,25 @@ func (ch *ContainerHelper) Build(
 	env *environment.Environment,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
+	if serviceConfig.Docker.ImagePassthrough {
+		if _, err := resolveImagePassthrough(serviceConfig, env); err != nil {
+			return nil, err
+		}
+		return &ServiceBuildResult{}, nil
+	}
 	if serviceConfig.Docker.RemoteBuild || useDotnetPublishForDockerBuild(serviceConfig) {
 		return &ServiceBuildResult{}, nil
 	}
 
+	return ch.buildLocalImage(ctx, serviceConfig, env, progress)
+}
+
+func (ch *ContainerHelper) buildLocalImage(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	env *environment.Environment,
+	progress *async.Progress[ServiceProgress],
+) (*ServiceBuildResult, error) {
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 	resolveDockerPaths(serviceConfig, &dockerOptions)
 
@@ -542,10 +597,29 @@ func (ch *ContainerHelper) Package(
 	env *environment.Environment,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
+	if serviceConfig.Docker.ImagePassthrough {
+		image, err := resolveImagePassthrough(serviceConfig, env)
+		if err != nil {
+			return nil, err
+		}
+		return &ServicePackageResult{
+			Artifacts: ArtifactCollection{imagePassthroughArtifact(image)},
+		}, nil
+	}
 	if serviceConfig.Docker.RemoteBuild || useDotnetPublishForDockerBuild(serviceConfig) {
 		return &ServicePackageResult{}, nil
 	}
 
+	return ch.packageLocalImage(ctx, serviceConfig, serviceContext, env, progress)
+}
+
+func (ch *ContainerHelper) packageLocalImage(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+	env *environment.Environment,
+	progress *async.Progress[ServiceProgress],
+) (*ServicePackageResult, error) {
 	var imageId string
 	var sourceImage string
 	var imageHash string
@@ -612,6 +686,100 @@ func (ch *ContainerHelper) Package(
 	}, nil
 }
 
+func validatePublishOptions(serviceConfig *ServiceConfig, options *PublishOptions) error {
+	if serviceConfig.Docker.ImagePassthrough && options != nil && options.Image != "" {
+		return fmt.Errorf("docker.imagePassthrough cannot be combined with a publish image override")
+	}
+
+	return nil
+}
+
+func validateFullyQualifiedRemoteContainerImage(image string) error {
+	parsed, err := reference.Parse(image)
+	if err != nil {
+		return err
+	}
+
+	named, ok := parsed.(reference.Named)
+	if !ok {
+		return fmt.Errorf("image reference does not include a repository name")
+	}
+
+	registry := reference.Domain(named)
+	if registry == "" ||
+		(!strings.Contains(registry, ".") && !strings.Contains(registry, ":") && registry != "localhost") {
+		return fmt.Errorf("image reference does not include an explicit registry")
+	}
+
+	return nil
+}
+
+func imagePassthroughPackageOverride(
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+) (string, bool, error) {
+	if !serviceConfig.Docker.ImagePassthrough || serviceContext == nil || len(serviceContext.Package) == 0 {
+		return "", false, nil
+	}
+
+	var packageImage string
+	containerArtifacts := []*Artifact{}
+	for _, artifact := range serviceContext.Package {
+		if artifact == nil {
+			return "", false, fmt.Errorf("docker.imagePassthrough does not support a nil package artifact")
+		}
+
+		switch artifact.Kind {
+		case ArtifactKindContainer:
+			if err := validateFullyQualifiedRemoteContainerImage(artifact.Location); err != nil {
+				return "", false, fmt.Errorf(
+					"docker.imagePassthrough requires package container artifacts to use "+
+						"a fully qualified remote container image: %w",
+					err,
+				)
+			}
+			if packageImage != "" && artifact.Location != packageImage {
+				return "", false, fmt.Errorf(
+					"docker.imagePassthrough package contains multiple distinct remote container images",
+				)
+			}
+			packageImage = artifact.Location
+			containerArtifacts = append(containerArtifacts, artifact)
+		case ArtifactKindConfig:
+			// Targets may add supplementary configuration alongside the container image.
+		case ArtifactKindArchive, ArtifactKindDirectory:
+			return "", false, fmt.Errorf(
+				"docker.imagePassthrough does not support %s package artifacts; "+
+					"use a fully qualified remote container image",
+				artifact.Kind,
+			)
+		default:
+			return "", false, fmt.Errorf(
+				"docker.imagePassthrough does not support %s package artifacts",
+				artifact.Kind,
+			)
+		}
+	}
+
+	if packageImage == "" {
+		return "", false, fmt.Errorf("docker.imagePassthrough package does not contain a container image")
+	}
+
+	for _, artifact := range containerArtifacts {
+		artifact.LocationKind = LocationKindRemote
+		if artifact.Metadata == nil {
+			artifact.Metadata = map[string]string{}
+		}
+		artifact.Metadata[MetadataKeyImagePassthrough] = "true"
+		artifact.Metadata["remoteImage"] = packageImage
+		artifact.Metadata["sourceImage"] = packageImage
+	}
+
+	// The package artifact is the per-run input selected by --from-package. Its location wins over
+	// the service image while imagePassthrough continues to control how the selected image is handled.
+	return packageImage, true, nil
+}
+
 // Publish pushes an image to a remote server and returns the fully qualified remote image name.
 func (ch *ContainerHelper) Publish(
 	ctx context.Context,
@@ -624,11 +792,28 @@ func (ch *ContainerHelper) Publish(
 ) (_ *ServicePublishResult, err error) {
 	ctx, span := tracing.Start(ctx, events.ContainerPublishEvent)
 	defer func() { span.EndWithStatus(err) }()
+	// Record the user-configured remote-build preference (serviceConfig.Docker.RemoteBuild),
+	// which already carries the requested true/false value.
 	span.SetAttributes(
-		attribute.Bool("container.remotebuild", serviceConfig.Docker.RemoteBuild),
+		fields.ContainerRemoteBuildKey.Bool(serviceConfig.Docker.RemoteBuild),
 	)
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	var remoteImage string
+
+	if err := validatePublishOptions(serviceConfig, options); err != nil {
+		return nil, err
+	}
+	passthroughOverride, hasPassthroughOverride, err := imagePassthroughPackageOverride(
+		serviceConfig,
+		serviceContext,
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	// Parse PublishOptions into ImageOverride
 	imageOverride, err := parseImageOverride(options)
@@ -636,23 +821,32 @@ func (ch *ContainerHelper) Publish(
 		return nil, err
 	}
 
-	if serviceConfig.Docker.RemoteBuild {
+	if serviceConfig.Docker.ImagePassthrough {
+		if hasPassthroughOverride {
+			remoteImage = passthroughOverride
+		} else {
+			remoteImage, err = resolveImagePassthrough(serviceConfig, env)
+		}
+	} else if serviceConfig.Docker.RemoteBuild {
 		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, env, progress, imageOverride)
 		if err != nil {
-			// Check if a local container runtime (Docker/Podman) is available before falling back
-			if dockerErr := ch.docker.CheckInstalled(ctx); dockerErr != nil {
-				return nil, fmt.Errorf(
-					"remote build failed: %w\n\nLocal fallback unavailable: %w",
-					err, dockerErr)
+			remoteErr := err
+			if _, ok := errors.AsType[*containerregistry.RemoteBuildUnavailableError](remoteErr); !ok {
+				return nil, remoteErr
 			}
 
-			ch.console.MessageUxItem(ctx, &ux.WarningMessage{
-				Description: fmt.Sprintf(
-					"Remote build failed: %s\nFalling back to local Docker build.", err),
-				HidePrefix: false,
-			})
-			remoteImage, err = ch.publishLocalImage(
+			remoteImage, err = ch.publishLocalFallback(
 				ctx, serviceConfig, serviceContext, env, progress, imageOverride)
+			if err != nil {
+				fallbackErr := fmt.Errorf("remote build failed: %w\n\nLocal fallback failed: %w", remoteErr, err)
+				if suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](fallbackErr); ok {
+					// Rich CLI output renders suggestion.Err rather than its outer wrappers.
+					combined := *suggestion
+					combined.Err = fallbackErr
+					return nil, &combined
+				}
+				return nil, fallbackErr
+			}
 		}
 	} else if useDotnetPublishForDockerBuild(serviceConfig) {
 		remoteImage, err = ch.runDotnetPublish(ctx, serviceConfig, targetResource, env, progress)
@@ -664,13 +858,15 @@ func (ch *ContainerHelper) Publish(
 	}
 
 	// Create publish artifact with remote image reference
+	metadata := map[string]string{"remoteImage": remoteImage}
+	if serviceConfig.Docker.ImagePassthrough {
+		metadata[MetadataKeyImagePassthrough] = "true"
+	}
 	publishArtifact := &Artifact{
 		Kind:         ArtifactKindContainer,
 		Location:     remoteImage,
 		LocationKind: LocationKindRemote, // Remote after publish
-		Metadata: map[string]string{
-			"remoteImage": remoteImage,
-		},
+		Metadata:     metadata,
 	}
 
 	return &ServicePublishResult{
@@ -678,7 +874,87 @@ func (ch *ContainerHelper) Publish(
 	}, nil
 }
 
-// publishLocalImage builds the image locally and pushes it to the remote registry, it returns the full remote image name.
+// publishLocalFallback builds and packages locally if no container package was supplied,
+// then publishes the image after ACR has refused to schedule a remote build.
+func (ch *ContainerHelper) publishLocalFallback(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+	env *environment.Environment,
+	progress *async.Progress[ServiceProgress],
+	imageOverride *imageOverride,
+) (string, error) {
+	// Shell commands may start despite cancellation; keep these stage guards until Azure/azure-dev#10035 is fixed.
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if err := ch.docker.CheckInstalled(ctx); err != nil {
+		if _, ok := errors.AsType[*docker.ContainerEngineUnavailableError](err); ok {
+			engineName := ch.docker.Name()
+			return "", &internal.ErrorWithSuggestion{
+				Err: err,
+				Message: fmt.Sprintf(
+					"Azure Container Registry refused the remote build, and local fallback could not start "+
+						"because %s is unavailable.",
+					engineName,
+				),
+				Suggestion: fmt.Sprintf(
+					"Check that %s is running and accessible, then run the command again.", engineName),
+			}
+		}
+		return "", fmt.Errorf("local container runtime unavailable: %w", err)
+	}
+	// Do not announce or prepare a fallback if cancellation arrived during the readiness check.
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
+	var hasPackage bool
+	if serviceContext != nil {
+		artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer))
+		hasPackage = found
+		if found && artifact.LocationKind == LocationKindRemote {
+			return "", errors.New("local fallback requires a local container package")
+		}
+	}
+
+	action := fmt.Sprintf("Building locally with %s.", ch.docker.Name())
+	if hasPackage {
+		action = fmt.Sprintf("Publishing the existing local image with %s.", ch.docker.Name())
+	}
+	ch.console.MessageUxItem(ctx, &ux.WarningMessage{
+		Description: fmt.Sprintf("ACR refused the build request with TasksOperationsNotAllowed. %s", action),
+	})
+
+	if !hasPackage {
+		// Remote mode skips local build/package. Keep fallback artifacts separate from completed lifecycle state.
+		serviceContext = NewServiceContext()
+		buildResult, err := ch.buildLocalImage(ctx, serviceConfig, env, progress)
+		if err != nil {
+			return "", fmt.Errorf("building local image: %w", err)
+		}
+		if err := serviceContext.Build.Add(buildResult.Artifacts...); err != nil {
+			return "", fmt.Errorf("adding local build artifacts: %w", err)
+		}
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		packageResult, err := ch.packageLocalImage(ctx, serviceConfig, serviceContext, env, progress)
+		if err != nil {
+			return "", fmt.Errorf("packaging local image: %w", err)
+		}
+		if err := serviceContext.Package.Add(packageResult.Artifacts...); err != nil {
+			return "", fmt.Errorf("adding local package artifacts: %w", err)
+		}
+	}
+
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return ch.publishLocalImage(ctx, serviceConfig, serviceContext, env, progress, imageOverride)
+}
+
+// publishLocalImage publishes a prepared container package and returns the full remote image name.
 func (ch *ContainerHelper) publishLocalImage(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -1015,15 +1291,18 @@ func (ch *ContainerHelper) runDotnetPublish(
 		defaultImageName,
 		ch.DefaultImageTag())
 
-	_, err = ch.dotNetCli.PublishContainer(
-		ctx,
-		serviceConfig.Path(),
-		"Release",
-		imageName,
-		dockerCreds.LoginServer,
-		dockerCreds.Username,
-		dockerCreds.Password,
-		ch.ContainerEngine())
+	err = runIsolatedDotNetBuild(ctx, serviceConfig.Name, ch.dotNetCli, func(buildCtx context.Context) error {
+		_, err := ch.dotNetCli.PublishContainer(
+			buildCtx,
+			serviceConfig.Path(),
+			"Release",
+			imageName,
+			dockerCreds.LoginServer,
+			dockerCreds.Username,
+			dockerCreds.Password,
+			ch.ContainerEngine())
+		return err
+	})
 	if err != nil {
 		return "", fmt.Errorf("publishing container: %w", err)
 	}

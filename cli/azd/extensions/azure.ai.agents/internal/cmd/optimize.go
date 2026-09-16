@@ -3,7 +3,7 @@
 
 // optimize.go implements the top-level "optimize" command, which submits
 // agent optimization jobs. It resolves the agent, loads or builds a config,
-// prompts for instruction/skills/model, and polls for results.
+// resolves any required local inputs, and polls for results.
 //
 // Subcommands (status, list, cancel, apply, deploy) are registered here
 // and implemented in their own files.
@@ -14,10 +14,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"time"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
@@ -34,6 +37,7 @@ type optimizeAgentContext struct {
 	agentVersion string // deployed agent version (empty = latest)
 	agentProject string // agent project directory (empty if not in an azd project)
 	serviceName  string // azd service name (env key prefix source); empty for standalone --agent
+	promptAgent  bool   // prompt agents use their deployed service-side definition
 }
 
 // resolveOptimizeAgent resolves the agent name and project directory.
@@ -54,6 +58,11 @@ func resolveOptimizeAgent(ctx context.Context, flagValue, envName string, noProm
 		if svcErr == nil && svc != nil && project != nil {
 			agentProject := filepath.Join(project.Path, svc.RelativePath)
 			serviceKey := toServiceKey(svc.Name)
+			kind, kindErr := agentkind.Kind(svc, project.Path, "")
+			if kindErr != nil {
+				return nil, fmt.Errorf("failed to resolve agent kind: %w", kindErr)
+			}
+			promptAgent := kind == string(agent_yaml.AgentKindPrompt)
 
 			// Read agent name and version from azd environment.
 			if env := getExistingEnvironment(ctx, envName, azdClient); env != nil {
@@ -75,6 +84,7 @@ func resolveOptimizeAgent(ctx context.Context, flagValue, envName string, noProm
 						agentVersion: version,
 						agentProject: agentProject,
 						serviceName:  svc.Name,
+						promptAgent:  promptAgent,
 					}, nil
 				}
 			}
@@ -185,6 +195,7 @@ type OptimizeAction struct {
 	envName     string
 	noPrompt    bool
 	serviceName string // azd service name for per-agent env key derivation
+	promptAgent bool   // deployed prompt agents use the service-side definition
 }
 
 // Run executes the optimize command: resolves the agent, loads/builds the config, applies overrides, submits the job, and optionally polls for results.
@@ -250,6 +261,7 @@ func (a *OptimizeAction) resolveConfig(
 		if resolveErr == nil {
 			agentProject = resolved.agentProject
 			a.serviceName = resolved.serviceName
+			a.promptAgent = resolved.promptAgent
 			reconcileConfigAgent(os.Stderr, &cfg.Agent, resolved.agentName, resolved.agentVersion, a.flags.configFile)
 		}
 
@@ -262,6 +274,7 @@ func (a *OptimizeAction) resolveConfig(
 	}
 	agentProject = resolved.agentProject
 	a.serviceName = resolved.serviceName
+	a.promptAgent = resolved.promptAgent
 
 	// Check if eval.yaml exists in the agent project and offer to use it.
 	// In --no-prompt mode, use it automatically.
@@ -347,7 +360,7 @@ func (a *OptimizeAction) applyOverrides(
 	}
 
 	// Resolve agent config: try existing config pointer, then default baseline.
-	if hasProject {
+	if hasProject && !a.promptAgent {
 		mergeAgentBaseline(cfg, agentProject)
 	}
 
@@ -359,14 +372,14 @@ func (a *OptimizeAction) applyOverrides(
 	}
 
 	// If the model is still unknown, try the azd environment (set during deploy).
-	if cfg.Agent.Model == "" && azdClient != nil {
+	if !a.promptAgent && cfg.Agent.Model == "" && azdClient != nil {
 		if m := getDeployedModelFromEnv(ctx, azdClient, a.envName); m != "" {
 			cfg.Agent.Model = m
 		}
 	}
 
 	// When baseline config is detected, show resolved values and let the user confirm.
-	if cfg.Agent.ConfigFile != "" && hasProject && !a.noPrompt {
+	if !a.promptAgent && cfg.Agent.ConfigFile != "" && hasProject && !a.noPrompt {
 		if err := promptOptimizeConfigConfirmation(ctx, azdClient, cfg, agentProject); err != nil {
 			return err
 		}
@@ -386,12 +399,14 @@ func (a *OptimizeAction) applyOverrides(
 	//  1. Config dir pointer (agent.config in eval.yaml) — resolves from metadata.yaml
 	//  2. Config file (eval.yaml / --config) — instruction in the agent section (inline or file reference)
 	//  3. Interactive prompt — ask the user to provide inline text or a file path
-	if err := resolveOptimizeSystemPrompt(ctx, azdClient, cfg, agentProject, hasProject, a.noPrompt); err != nil {
-		return err
+	if !a.promptAgent {
+		if err := resolveOptimizeSystemPrompt(ctx, azdClient, cfg, agentProject, hasProject, a.noPrompt); err != nil {
+			return err
+		}
 	}
 
 	// Resolve skill_dir: auto-detect, check baseline, or prompt user.
-	if cfg.SkillDir == "" && hasProject {
+	if !a.promptAgent && cfg.SkillDir == "" && hasProject {
 		if err := resolveOptimizeSkillDir(ctx, azdClient, cfg, agentProject, a.noPrompt); err != nil {
 			return err
 		}
@@ -412,7 +427,7 @@ func (a *OptimizeAction) applyOverrides(
 	}
 
 	// Resolve optimization_config.model: prompt user if not set.
-	if !hasModelConfig(cfg.Options.OptimizationConfig) && !a.noPrompt {
+	if !a.promptAgent && !hasModelConfig(cfg.Options.OptimizationConfig) && !a.noPrompt {
 		if err := resolveOptimizeTargetModels(ctx, azdClient, cfg, a.envName); err != nil {
 			return err
 		}
@@ -493,7 +508,8 @@ func (a *OptimizeAction) submitJob(
 		}
 	}
 
-	optimizeReq, warnings, err := cfg.ToRequest()
+	requestConfig := optimizeRequestConfig(cfg, a.promptAgent)
+	optimizeReq, warnings, err := requestConfig.ToRequest()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to build optimization request: %w", err)
 	}
@@ -504,7 +520,7 @@ func (a *OptimizeAction) submitJob(
 
 	// Save baseline config before starting optimization.
 	hasProject := agentProject != ""
-	if hasProject {
+	if hasProject && !a.promptAgent {
 		if err := writeBaselineConfig(agentProject, baselineParams{
 			Model:       cfg.Agent.Model,
 			Instruction: cfg.Agent.ResolvedSystemPrompt(),
@@ -536,6 +552,33 @@ func (a *OptimizeAction) submitJob(
 	saveLastOptimizeJobID(ctx, optimizeEnvKeyName(a.serviceName, cfg.Agent.Name), resp.OperationID, a.envName)
 
 	return resp, client, nil
+}
+
+func optimizeRequestConfig(cfg *OptimizeConfig, promptAgent bool) *OptimizeConfig {
+	if !promptAgent {
+		return cfg
+	}
+
+	requestConfig := *cfg
+	requestConfig.Agent = cfg.Agent
+	requestConfig.Agent.Model = ""
+	requestConfig.Agent.Instruction = opt_eval.InstructionRef{}
+	requestConfig.SkillDir = ""
+	requestConfig.ToolsFile = ""
+
+	if cfg.Options != nil {
+		options := *cfg.Options
+		options.OptimizationConfig = maps.Clone(cfg.Options.OptimizationConfig)
+		for _, key := range []string{"model", "system_prompt", "skills", "tools"} {
+			delete(options.OptimizationConfig, key)
+		}
+		if len(options.OptimizationConfig) == 0 {
+			options.OptimizationConfig = nil
+		}
+		requestConfig.Options = &options
+	}
+
+	return &requestConfig
 }
 
 // pollOptimizeJob polls the optimization job until it reaches a terminal state.

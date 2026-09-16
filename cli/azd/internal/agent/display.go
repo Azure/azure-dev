@@ -237,7 +237,7 @@ func (d *AgentDisplay) Start(ctx context.Context) (func(), error) {
 // HandleEvent processes a Copilot SDK SessionEvent and updates the UX.
 // This is called synchronously by the SDK for each event.
 func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
-	switch event.Type {
+	switch event.Type() {
 	case copilot.SessionEventTypeAssistantTurnStart:
 		d.mu.Lock()
 		intent := d.lastIntent
@@ -327,16 +327,16 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		if data, ok := event.Data.(*copilot.AssistantUsageData); ok {
 			d.mu.Lock()
 			if data.InputTokens != nil {
-				d.totalInputTokens += *data.InputTokens
+				d.totalInputTokens += float64(*data.InputTokens)
 			}
 			if data.OutputTokens != nil {
-				d.totalOutputTokens += *data.OutputTokens
+				d.totalOutputTokens += float64(*data.OutputTokens)
 			}
 			if data.Cost != nil {
 				d.billingRate = *data.Cost // per-request multiplier, not cumulative
 			}
 			if data.Duration != nil {
-				d.totalDurationMS += *data.Duration
+				d.totalDurationMS += float64(*data.Duration)
 			}
 			if data.Model != "" {
 				d.lastModel = data.Model
@@ -350,7 +350,9 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 	case copilot.SessionEventTypeSessionShutdown:
 		if data, ok := event.Data.(*copilot.SessionShutdownData); ok {
 			d.mu.Lock()
-			d.premiumRequests = data.TotalPremiumRequests
+			if data.TotalPremiumRequests != nil {
+				d.premiumRequests = *data.TotalPremiumRequests
+			}
 			d.mu.Unlock()
 		}
 
@@ -361,8 +363,8 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 		}
 		toolName := data.ToolName
 		if toolName == "" {
-			if data.McpToolName != nil {
-				toolName = *data.McpToolName
+			if data.MCPToolName != nil {
+				toolName = *data.MCPToolName
 			}
 		}
 		if toolName == "" {
@@ -610,7 +612,7 @@ func (d *AgentDisplay) HandleEvent(event copilot.SessionEvent) {
 
 	case copilot.SessionEventTypeSessionTaskComplete:
 		// Also signal completion on task_complete
-		log.Printf("[copilot-display] %s received, signaling completion", event.Type)
+		log.Printf("[copilot-display] %s received, signaling completion", event.Type())
 		select {
 		case d.idleCh <- struct{}{}:
 		default:

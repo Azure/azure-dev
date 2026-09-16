@@ -90,6 +90,9 @@ func runEndpointUpdate(
 	if err != nil {
 		return err
 	}
+	if err := project.ResolveServiceConfigInPlace(svc, proj.Path); err != nil {
+		return fmt.Errorf("failed to resolve service config: %w", err)
+	}
 
 	// Resolve the agent definition (inline on the service entry, or a legacy
 	// agent.yaml on disk).
@@ -116,6 +119,15 @@ func runEndpointUpdate(
 		return fmt.Errorf("failed to map endpoint/card fields: %w", err)
 	}
 
+	serviceConfig, err := project.LoadServiceTargetAgentConfig(svc)
+	if err != nil {
+		return fmt.Errorf("failed to parse service activity settings: %w", err)
+	}
+	activityProfile, err := project.ResolveActivityProfileWithSettings(agentDef, serviceConfig.Activity)
+	if err != nil {
+		return fmt.Errorf("failed to resolve activity profile: %w", err)
+	}
+
 	// Resolve endpoint and create client.
 	agentContext, err := newAgentContext(ctx, "", "", agentDef.Name, "")
 	if err != nil {
@@ -124,6 +136,17 @@ func runEndpointUpdate(
 
 	agentClient, err := agentContext.NewClient()
 	if err != nil {
+		return err
+	}
+
+	if err := normalizeEndpointAuthSchemesForDeployedProfile(
+		ctx,
+		agentClient,
+		agentDef.Name,
+		activityProfile,
+		apiEndpoint,
+		DefaultAgentAPIVersion,
+	); err != nil {
 		return err
 	}
 
@@ -159,11 +182,11 @@ func warnIfAuthChange(
 	noPrompt bool,
 ) error {
 	// Fetch current agent to compare auth config.
-	current, err := client.GetAgent(ctx, agentName, DefaultAgentAPIVersion)
+	current, err := client.GetAgent(ctx, agentName, DefaultAgentAPIVersion, false)
 	if err != nil {
 		// Only ignore 404 (agent doesn't exist yet). Other errors should propagate.
-		var respErr *azcore.ResponseError
-		if errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound {
+		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+			respErr.StatusCode == http.StatusNotFound {
 			return nil
 		}
 		return fmt.Errorf("failed to check current agent state: %w", err)
@@ -229,4 +252,37 @@ func getIsolationKindFromSchemes(schemes []agent_api.AgentEndpointAuthorizationS
 		}
 	}
 	return ""
+}
+
+func normalizeEndpointAuthSchemesForDeployedProfile(
+	ctx context.Context,
+	client *agent_api.AgentClient,
+	agentName string,
+	localProfile project.ActivityProfile,
+	endpoint *agent_api.AgentEndpoint,
+	apiVersion string,
+) error {
+	if endpoint == nil {
+		return nil
+	}
+
+	deployedAgent, err := client.GetAgent(ctx, agentName, apiVersion, true)
+	if err != nil {
+		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+			respErr.StatusCode == http.StatusNotFound {
+			return nil
+		}
+		return fmt.Errorf("failed to read deployed agent profile: %w", err)
+	}
+
+	resolvedProfile, err := project.ResolveDeployedActivityProfile(localProfile, deployedAgent.DigitalWorkerType)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to reconcile activity.digitalWorkerType with deployed digital_worker_type: %w",
+			err,
+		)
+	}
+
+	project.EnsureActivityEndpointAuthSchemeForProfile(endpoint, resolvedProfile)
+	return nil
 }

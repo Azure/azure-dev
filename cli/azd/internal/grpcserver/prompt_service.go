@@ -152,6 +152,13 @@ func (s *promptService) MultiSelect(
 			}
 		}
 
+		allowEmptySelection := req.Options.AllowEmptySelection != nil && *req.Options.AllowEmptySelection
+		if len(selectedChoices) == 0 && !allowEmptySelection {
+			return nil, &input.PromptRequiredError{
+				PromptMessage: req.Options.Message,
+			}
+		}
+
 		return &azdext.MultiSelectResponse{
 			Values: selectedChoices,
 		}, nil
@@ -163,25 +170,7 @@ func (s *promptService) MultiSelect(
 	}
 	defer release()
 
-	choices := make([]*ux.MultiSelectChoice, len(req.Options.Choices))
-	for i, choice := range req.Options.Choices {
-		choices[i] = &ux.MultiSelectChoice{
-			Value:    choice.Value,
-			Label:    choice.Label,
-			Selected: choice.Selected,
-		}
-	}
-
-	options := &ux.MultiSelectOptions{
-		Message:         req.Options.Message,
-		Choices:         choices,
-		HelpMessage:     req.Options.HelpMessage,
-		DisplayCount:    int(req.Options.DisplayCount),
-		DisplayNumbers:  req.Options.DisplayNumbers,
-		EnableFiltering: req.Options.EnableFiltering,
-	}
-
-	selectPrompt := ux.NewMultiSelect(options)
+	selectPrompt := ux.NewMultiSelect(newMultiSelectOptions(req.Options))
 	values, err := selectPrompt.Ask(ctx)
 
 	resultValues := make([]*azdext.MultiSelectChoice, len(values))
@@ -196,6 +185,27 @@ func (s *promptService) MultiSelect(
 	return &azdext.MultiSelectResponse{
 		Values: resultValues,
 	}, err
+}
+
+func newMultiSelectOptions(options *azdext.MultiSelectOptions) *ux.MultiSelectOptions {
+	choices := make([]*ux.MultiSelectChoice, len(options.Choices))
+	for i, choice := range options.Choices {
+		choices[i] = &ux.MultiSelectChoice{
+			Value:    choice.Value,
+			Label:    choice.Label,
+			Selected: choice.Selected,
+		}
+	}
+
+	return &ux.MultiSelectOptions{
+		Message:             options.Message,
+		Choices:             choices,
+		HelpMessage:         options.HelpMessage,
+		DisplayCount:        int(options.DisplayCount),
+		DisplayNumbers:      options.DisplayNumbers,
+		EnableFiltering:     options.EnableFiltering,
+		AllowEmptySelection: options.AllowEmptySelection,
+	}
 }
 
 func (s *promptService) Prompt(ctx context.Context, req *azdext.PromptRequest) (*azdext.PromptResponse, error) {

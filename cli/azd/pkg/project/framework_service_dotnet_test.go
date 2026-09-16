@@ -4,11 +4,13 @@
 package project
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -292,6 +294,54 @@ func Test_DotNetProject_Package(t *testing.T) {
 		},
 		runArgs.Args,
 	)
+}
+
+func Test_DotNetProject_Package_UsesIsolatedArtifacts(t *testing.T) {
+	t.Chdir(t.TempDir())
+	require.NoError(t, os.MkdirAll("./src/api", osutil.PermissionDirectory))
+	file, err := os.Create("./src/api/test.csproj")
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
+
+	var publishArgs exec.RunArgs
+	mockContext := mocks.NewMockContext(t.Context())
+	mockContext.CommandRunner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "dotnet" && len(args.Args) == 1 && args.Args[0] == "--version"
+	}).Respond(exec.NewRunResult(0, "8.0.100", ""))
+	mockContext.CommandRunner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "dotnet" && len(args.Args) > 0 && args.Args[0] == "publish"
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		publishArgs = args
+		packageDest := args.Args[5]
+		require.NoError(t, os.WriteFile(filepath.Join(packageDest, "test.txt"), nil, osutil.PermissionFile))
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	serviceConfig := createTestServiceConfig("./src/api/test.csproj", AppServiceTarget, ServiceLanguageCsharp)
+	dotNetProject := NewDotNetProject(
+		dotnet.NewCli(mockContext.CommandRunner),
+		environment.New("test"),
+	)
+	ctx := ContextWithBuildGate(*mockContext.Context, &sync.Mutex{})
+
+	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+		return dotNetProject.Package(ctx, serviceConfig, NewServiceContext(), progress)
+	})
+
+	require.NoError(t, err)
+	require.Len(t, result.Artifacts, 1)
+	packageDest := publishArgs.Args[5]
+	t.Cleanup(func() {
+		require.NoError(t, osutil.RemoveAll(context.WithoutCancel(t.Context()), packageDest))
+	})
+	require.Equal(t, packageDest, result.Artifacts[0].Location)
+	require.FileExists(t, filepath.Join(packageDest, "test.txt"))
+
+	artifactsPath := dotnetArtifactsPathArg(publishArgs.Args)
+	require.NotEmpty(t, artifactsPath)
+	require.NotEqual(t, packageDest, artifactsPath)
+	_, statErr := os.Stat(artifactsPath)
+	require.ErrorIs(t, statErr, os.ErrNotExist)
 }
 
 func Test_dotnetProject_Requirements(t *testing.T) {

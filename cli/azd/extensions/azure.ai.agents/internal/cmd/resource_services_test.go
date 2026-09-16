@@ -7,10 +7,14 @@ import (
 	"context"
 	"net"
 	"os"
+	"path"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/servicekey"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -43,14 +47,6 @@ func connectionService(t *testing.T, name string, conn project.Connection) *azde
 	return svc
 }
 
-func toolboxService(t *testing.T, name string, toolbox project.Toolbox) *azdext.ServiceConfig {
-	t.Helper()
-	svc := mustMarshalConfig(t, &toolbox)
-	svc.Name = name
-	svc.Host = AiToolboxHost
-	return svc
-}
-
 func agentService(t *testing.T, name string, toolConnections ...project.ToolConnection) *azdext.ServiceConfig {
 	t.Helper()
 	svc := mustMarshalConfig(t, &project.ServiceTargetAgentConfig{ToolConnections: toolConnections})
@@ -64,9 +60,9 @@ func agentService(t *testing.T, name string, toolConnections ...project.ToolConn
 func TestSanitizeServiceName(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "MyAgent", sanitizeServiceName("  My Agent  "))
-	assert.Equal(t, "gpt4o", sanitizeServiceName("gpt 4 o"))
-	assert.Equal(t, "", sanitizeServiceName("   "))
+	assert.Equal(t, "MyAgent", servicekey.SanitizeServiceName("  My Agent  "))
+	assert.Equal(t, "gpt4o", servicekey.SanitizeServiceName("gpt 4 o"))
+	assert.Equal(t, "", servicekey.SanitizeServiceName("   "))
 }
 
 // TestReserveServiceName verifies distinct service keys are accepted and that
@@ -230,21 +226,93 @@ func TestCollectConnections(t *testing.T) {
 	assert.Equal(t, "zeta", connections[1].Name)
 }
 
-// TestCollectToolboxes verifies toolboxes are sourced from azure.ai.toolbox
-// services only.
-func TestCollectToolboxes(t *testing.T) {
+func TestCollectConnections_IgnoresBundledAgentConfig(t *testing.T) {
 	t.Parallel()
 
+	inline, err := structpb.NewStruct(map[string]any{
+		"connections": []any{
+			map[string]any{
+				"name":     "inline-connection",
+				"category": "ApiKey",
+				"target":   "https://inline.example",
+			},
+		},
+	})
+	require.NoError(t, err)
+	legacy, err := structpb.NewStruct(map[string]any{
+		"kind": "hostedAgent",
+		"connections": []any{
+			map[string]any{
+				"name":     "legacy-connection",
+				"category": "ApiKey",
+				"target":   "https://legacy.example",
+			},
+		},
+	})
+	require.NoError(t, err)
+
 	services := map[string]*azdext.ServiceConfig{
-		"tb":    toolboxService(t, "tb", project.Toolbox{Name: "tb", Tools: []map[string]any{{"type": "mcp"}}}),
-		"agent": agentService(t, "agent"),
+		"agent": {
+			Name:                 "agent",
+			Host:                 AiAgentHost,
+			AdditionalProperties: inline,
+			Config:               legacy,
+		},
 	}
 
-	toolboxes, err := collectToolboxes(services, "")
+	connections, err := collectConnections(services, "")
 	require.NoError(t, err)
-	require.Len(t, toolboxes, 1)
-	assert.Equal(t, "tb", toolboxes[0].Name)
-	require.Len(t, toolboxes[0].Tools, 1)
+	require.Empty(t, connections)
+	_, err = project.LoadServiceTargetAgentConfig(services["agent"])
+	require.ErrorContains(t, err, "bundled connections")
+}
+
+func TestCollectConnections_IgnoresBundledAgentFileRef(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "agent.yaml"),
+		[]byte(
+			"kind: hostedAgent\n"+
+				"connections:\n"+
+				"  - name: inline-connection\n"+
+				"    category: ApiKey\n"+
+				"    target: https://inline.example\n",
+		),
+		0o600,
+	))
+	inline, err := structpb.NewStruct(map[string]any{
+		"$ref": "./agent.yaml",
+	})
+	require.NoError(t, err)
+	legacy, err := structpb.NewStruct(map[string]any{
+		"kind": "hostedAgent",
+		"connections": []any{
+			map[string]any{
+				"name":     "legacy-connection",
+				"category": "ApiKey",
+				"target":   "https://legacy.example",
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	services := map[string]*azdext.ServiceConfig{
+		"agent": {
+			Name:                 "agent",
+			Host:                 AiAgentHost,
+			AdditionalProperties: inline,
+			Config:               legacy,
+		},
+	}
+
+	connections, err := collectConnections(services, root)
+	require.NoError(t, err)
+	require.Empty(t, connections)
+	require.NoError(t, project.ResolveServiceConfigInPlace(services["agent"], root))
+	_, err = project.LoadServiceTargetAgentConfig(services["agent"])
+	require.ErrorContains(t, err, "bundled connections")
 }
 
 func TestCollectResourceServices_ResolvesFileRefs(t *testing.T) {
@@ -344,23 +412,15 @@ func TestCollectHelpers_EmptyAndNilConfigs(t *testing.T) {
 	connections, err := collectConnections(services, "")
 	require.NoError(t, err)
 	assert.Empty(t, connections)
-
-	toolboxes, err := collectToolboxes(services, "")
-	require.NoError(t, err)
-	assert.Empty(t, toolboxes)
 }
 
-// TestCollect_FallbackToBundledAgentConfig verifies that a pre-split azure.yaml
-// -- deployments, connections, and toolboxes bundled on the agent service with
-// no sibling azure.ai.<kind> services -- still yields those resources, so
-// existing projects provision without re-running init.
-func TestCollect_FallbackToBundledAgentConfig(t *testing.T) {
+// Legacy project deployments remain supported independently of the breaking
+// Connection and Toolbox ownership migration.
+func TestCollect_FallbackToLegacyProjectDeployments(t *testing.T) {
 	t.Parallel()
 
 	bundled := &project.ServiceTargetAgentConfig{
 		Deployments: []project.Deployment{{Name: "gpt-4o", Model: project.DeploymentModel{Name: "gpt-4o"}}},
-		Connections: []project.Connection{{Name: "conn", Category: "ApiKey"}},
-		Toolboxes:   []project.Toolbox{{Name: "tb", Tools: []map[string]any{{"type": "mcp"}}}},
 	}
 	svc := mustMarshalConfig(t, bundled)
 	svc.Name = "my-agent"
@@ -374,13 +434,7 @@ func TestCollect_FallbackToBundledAgentConfig(t *testing.T) {
 
 	connections, err := collectConnections(services, "")
 	require.NoError(t, err)
-	require.Len(t, connections, 1)
-	assert.Equal(t, "conn", connections[0].Name)
-
-	toolboxes, err := collectToolboxes(services, "")
-	require.NoError(t, err)
-	require.Len(t, toolboxes, 1)
-	assert.Equal(t, "tb", toolboxes[0].Name)
+	require.Empty(t, connections)
 }
 
 func TestCollectLegacyProjectDeploymentsSplitDisablesFallback(
@@ -418,7 +472,12 @@ type recordingProjectServer struct {
 	uses  map[string][]string
 	env   map[string]map[string]any
 	// configValues records non-"uses" SetServiceConfigValue calls keyed by path.
-	configValues map[string]configValueRecord
+	configValues        map[string]configValueRecord
+	rawSections         map[string]map[string]*structpb.Struct
+	configSectionReads  []*azdext.GetServiceConfigSectionRequest
+	configSections      []*azdext.SetServiceConfigSectionRequest
+	getConfigSectionErr error
+	setConfigSectionErr error
 	// existing is returned by Get to simulate services already present in the
 	// project (e.g. a prior init's azure.ai.project service).
 	existing map[string]*azdext.ServiceConfig
@@ -426,6 +485,10 @@ type recordingProjectServer struct {
 	// simulate a service that already carries an env section (raw,
 	// on-disk templates).
 	rawEnv                map[string]map[string]any
+	projectPath           string
+	nilProject            bool
+	getProjectErr         error
+	setServiceConfigErr   error
 	unsetPaths            []string
 	setEnvironmentErr     error
 	unsetServiceConfigErr error
@@ -434,7 +497,7 @@ type recordingProjectServer struct {
 // configValueRecord captures a single SetServiceConfigValue call.
 type configValueRecord struct {
 	serviceName string
-	value       string
+	value       any
 }
 
 func (s *recordingProjectServer) Get(
@@ -442,8 +505,14 @@ func (s *recordingProjectServer) Get(
 ) (*azdext.GetProjectResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.getProjectErr != nil {
+		return nil, s.getProjectErr
+	}
+	if s.nilProject {
+		return &azdext.GetProjectResponse{}, nil
+	}
 	return &azdext.GetProjectResponse{
-		Project: &azdext.ProjectConfig{Services: s.existing},
+		Project: &azdext.ProjectConfig{Path: s.projectPath, Services: s.existing},
 	}, nil
 }
 
@@ -473,6 +542,19 @@ func (s *recordingProjectServer) GetServiceConfigValue(
 			}, nil
 		}
 	}
+	if req.Path == "uses" {
+		if service := s.existing[req.ServiceName]; service != nil && len(service.GetUses()) > 0 {
+			items := make([]any, len(service.GetUses()))
+			for i, use := range service.GetUses() {
+				items[i] = use
+			}
+			value, err := structpb.NewValue(items)
+			if err != nil {
+				return nil, err
+			}
+			return &azdext.GetServiceConfigValueResponse{Found: true, Value: value}, nil
+		}
+	}
 	return &azdext.GetServiceConfigValueResponse{}, nil
 }
 
@@ -481,6 +563,9 @@ func (s *recordingProjectServer) SetServiceConfigValue(
 ) (*azdext.EmptyResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.setServiceConfigErr != nil {
+		return nil, s.setServiceConfigErr
+	}
 	if s.uses == nil {
 		s.uses = map[string][]string{}
 	}
@@ -496,13 +581,14 @@ func (s *recordingProjectServer) SetServiceConfigValue(
 				}
 			}
 			s.uses[req.ServiceName] = vals
+			if service := s.existing[req.ServiceName]; service != nil {
+				service.Uses = slices.Clone(vals)
+			}
 		}
 	} else if req.Value != nil {
-		if str, ok := req.Value.AsInterface().(string); ok {
-			s.configValues[req.Path] = configValueRecord{
-				serviceName: req.ServiceName,
-				value:       str,
-			}
+		s.configValues[req.Path] = configValueRecord{
+			serviceName: req.ServiceName,
+			value:       req.Value.AsInterface(),
 		}
 	}
 	return &azdext.EmptyResponse{}, nil
@@ -514,6 +600,20 @@ func (s *recordingProjectServer) SetServiceConfigSection(
 ) (*azdext.EmptyResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if req.Path != "env" {
+		s.configSections = append(s.configSections, req)
+		if s.setConfigSectionErr != nil {
+			return nil, s.setConfigSectionErr
+		}
+		if s.rawSections == nil {
+			s.rawSections = map[string]map[string]*structpb.Struct{}
+		}
+		if s.rawSections[req.ServiceName] == nil {
+			s.rawSections[req.ServiceName] = map[string]*structpb.Struct{}
+		}
+		s.rawSections[req.ServiceName][req.Path] = req.Section
+		return &azdext.EmptyResponse{}, nil
+	}
 	if s.setEnvironmentErr != nil {
 		return nil, s.setEnvironmentErr
 	}
@@ -524,6 +624,20 @@ func (s *recordingProjectServer) SetServiceConfigSection(
 		s.env[req.ServiceName] = req.Section.AsMap()
 	}
 	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *recordingProjectServer) GetServiceConfigSection(
+	_ context.Context,
+	req *azdext.GetServiceConfigSectionRequest,
+) (*azdext.GetServiceConfigSectionResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.configSectionReads = append(s.configSectionReads, req)
+	if s.getConfigSectionErr != nil {
+		return nil, s.getConfigSectionErr
+	}
+	section, found := s.rawSections[req.ServiceName][req.Path]
+	return &azdext.GetServiceConfigSectionResponse{Found: found, Section: section}, nil
 }
 
 func (s *recordingProjectServer) UnsetServiceConfig(
@@ -547,8 +661,26 @@ func newProjectRecorderClient(
 ) *azdext.AzdClient {
 	t.Helper()
 
+	address := newProjectRecorderServer(t, server)
+	client, err := azdext.NewAzdClient(azdext.WithAddress(address))
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+
+	return client
+}
+
+func newProjectRecorderServer(
+	t *testing.T,
+	server azdext.ProjectServiceServer,
+	environmentServers ...azdext.EnvironmentServiceServer,
+) string {
+	t.Helper()
+
 	grpcServer := grpc.NewServer()
 	azdext.RegisterProjectServiceServer(grpcServer, server)
+	if len(environmentServers) > 0 {
+		azdext.RegisterEnvironmentServiceServer(grpcServer, environmentServers[0])
+	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -570,11 +702,7 @@ func newProjectRecorderClient(
 		}
 	})
 
-	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
-	require.NoError(t, err)
-	t.Cleanup(func() { client.Close() })
-
-	return client
+	return listener.Addr().String()
 }
 
 // TestEmitResourceServices_AlwaysEmitsProjectService verifies the ai-project
@@ -588,7 +716,7 @@ func TestEmitResourceServices_AlwaysEmitsProjectService(t *testing.T) {
 	server := &recordingProjectServer{}
 	client := newProjectRecorderClient(t, server)
 
-	err := emitResourceServices(t.Context(), client, "myagent", "", "", nil, nil, nil)
+	_, err := emitResourceServices(t.Context(), client, "myagent", "", foundryResources{})
 	require.NoError(t, err)
 
 	server.mu.Lock()
@@ -598,6 +726,159 @@ func TestEmitResourceServices_AlwaysEmitsProjectService(t *testing.T) {
 	assert.Equal(t, aiProjectServiceName, server.added[0].Name)
 	assert.Equal(t, AiProjectHost, server.added[0].Host)
 	assert.Equal(t, []string{aiProjectServiceName}, server.uses["myagent"])
+}
+
+// TestPromptResourceServices covers the translation from a prompt agent's own
+// definition and folder layout into the sibling services init writes, which is
+// what gives prompt agents the same host coverage hosted agents already have.
+func TestPromptResourceServices(t *testing.T) {
+	t.Parallel()
+
+	t.Run("connections and skill bundles become siblings", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		bundle := filepath.Join(dir, "skills", "code-review")
+		require.NoError(t, os.MkdirAll(bundle, 0o750))
+		require.NoError(t, os.WriteFile(filepath.Join(bundle, "SKILL.md"), []byte(
+			"---\nname: code-review\ndescription: reviews code\n---\n\nDo the review.\n",
+		), 0o600))
+
+		client := newProjectRecorderClient(t, &recordingProjectServer{})
+		agent := &agent_yaml.PromptAgent{
+			Connections: []string{"search"},
+		}
+
+		got, err := promptResourceServices(t.Context(), client, agent, dir, dir)
+		require.NoError(t, err)
+
+		require.Empty(t, got.Connections)
+
+		// archive: points at the bundle folder so the whole bundle -- scripts and
+		// references included -- travels with the instructions.
+		require.Len(t, got.Skills, 1)
+		skill, ok := got.Skills["code-review"]
+		require.True(t, ok, "the skill is keyed by the name SKILL.md declares")
+		assert.Equal(t, "reviews code", skill.Description)
+		assert.Equal(t, "./"+path.Join(filepath.ToSlash(dir), "skills/code-review"), skill.Archive)
+	})
+
+	t.Run("toolbox reference is only wired when the service exists", func(t *testing.T) {
+		t.Parallel()
+
+		agent := &agent_yaml.PromptAgent{Toolbox: &agent_yaml.ToolboxReference{Name: "my-toolbox"}}
+
+		// A dangling uses: entry would fail the project load, so a toolbox with
+		// no service in azure.yaml contributes no edge at all.
+		client := newProjectRecorderClient(t, &recordingProjectServer{})
+		dir := t.TempDir()
+		got, err := promptResourceServices(t.Context(), client, agent, dir, dir)
+		require.NoError(t, err)
+		assert.Empty(t, got.ExtraUses)
+
+		withToolbox := newProjectRecorderClient(t, &recordingProjectServer{
+			existing: map[string]*azdext.ServiceConfig{
+				"my-toolbox": {Name: "my-toolbox", Host: AiToolboxHost},
+			},
+		})
+		got, err = promptResourceServices(t.Context(), withToolbox, agent, dir, dir)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"my-toolbox"}, got.ExtraUses)
+
+		// projectConnectionId is an API value, not an azure.yaml service key.
+		agent.Toolbox.ProjectConnectionID = "toolbox-auth"
+		withConnection := newProjectRecorderClient(t, &recordingProjectServer{
+			existing: map[string]*azdext.ServiceConfig{
+				"my-toolbox":   {Name: "my-toolbox", Host: AiToolboxHost},
+				"toolbox-auth": {Name: "toolbox-auth", Host: AiConnectionHost},
+			},
+		})
+		got, err = promptResourceServices(t.Context(), withConnection, agent, dir, dir)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"my-toolbox"}, got.ExtraUses)
+	})
+}
+
+// TestEmitResourceServices_EmitsSkillServices verifies each skill bundle is
+// written as its own azure.ai.skill service pointing at the bundle folder, and
+// that the agent uses: it. Creating and versioning the skill belongs to the
+// azure.ai.skills extension; the agents extension only attaches the version it
+// publishes, so without this service nothing ever creates the skill.
+func TestEmitResourceServices_EmitsSkillServices(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+
+	_, err := emitResourceServices(t.Context(), client, "myagent", "", foundryResources{
+		Skills: map[string]project.SkillService{
+			"code-review": {Description: "reviews code", Archive: "./skills/code-review"},
+		},
+	})
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+
+	var skillSvc *azdext.ServiceConfig
+	for _, svc := range server.added {
+		if svc.Host == AiSkillHost {
+			skillSvc = svc
+		}
+	}
+	require.NotNil(t, skillSvc, "a skill bundle must produce an azure.ai.skill service")
+	// The service key is the skill name; the skills extension has no name field.
+	assert.Equal(t, "code-review", skillSvc.Name)
+	require.NotNil(t, skillSvc.AdditionalProperties)
+	assert.Equal(t,
+		"./skills/code-review",
+		skillSvc.AdditionalProperties.Fields["archive"].GetStringValue(),
+	)
+	// The skill must deploy before the agent that pins its version.
+	assert.Contains(t, server.uses["myagent"], "code-review")
+	assert.Equal(t, []string{aiProjectServiceName}, server.uses["code-review"])
+}
+
+func TestEmitResourceServicesSanitizesSkillServiceName(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+	_, err := emitResourceServices(t.Context(), client, "myagent", "", foundryResources{
+		Skills: map[string]project.SkillService{
+			"code review": {Description: "reviews code", Archive: "./skills/code-review"},
+		},
+	})
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	assert.Contains(t, server.uses["myagent"], "codereview")
+	assert.Equal(t, []string{aiProjectServiceName}, server.uses["codereview"])
+}
+
+// TestEmitResourceServices_ExtraUsesAreWired verifies a name passed as ExtraUses
+// joins the agent's uses: without a service being emitted for it. A prompt
+// agent's toolbox: references a toolbox someone else defines, so there is
+// nothing to write, but the ordering edge is still required.
+func TestEmitResourceServices_ExtraUsesAreWired(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+
+	_, err := emitResourceServices(t.Context(), client, "myagent", "", foundryResources{
+		ExtraUses: []string{"my-toolbox"},
+	})
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+
+	assert.Equal(t, []string{aiProjectServiceName, "my-toolbox"}, server.uses["myagent"])
+	for _, svc := range server.added {
+		assert.NotEqual(t, "my-toolbox", svc.Name, "ExtraUses must not emit a service")
+	}
 }
 
 // TestEmitResourceServices_WiresSiblingsToProject verifies a connection service
@@ -610,7 +891,7 @@ func TestEmitResourceServices_WiresSiblingsToProject(t *testing.T) {
 	client := newProjectRecorderClient(t, server)
 
 	conns := []project.Connection{{Name: "myconn", Category: "ApiKey"}}
-	err := emitResourceServices(t.Context(), client, "myagent", "", "", nil, conns, nil)
+	_, err := emitResourceServices(t.Context(), client, "myagent", "", foundryResources{Connections: conns})
 	require.NoError(t, err)
 
 	server.mu.Lock()
@@ -624,6 +905,95 @@ func TestEmitResourceServices_WiresSiblingsToProject(t *testing.T) {
 
 	assert.Equal(t, []string{aiProjectServiceName}, server.uses["myconn"])
 	assert.Equal(t, []string{aiProjectServiceName, "myconn"}, server.uses["myagent"])
+}
+
+func TestEmitResourceServices_WiresToolboxToReferencedConnections(t *testing.T) {
+	t.Parallel()
+
+	server := &recordingProjectServer{}
+	client := newProjectRecorderClient(t, server)
+	connections := []project.Connection{
+		{Name: "search", Category: "CognitiveSearch"},
+		{Name: "unused", Category: "ApiKey"},
+	}
+	toolboxes := []project.Toolbox{{
+		Name: "support-tools",
+		Tools: []map[string]any{
+			{
+				"type": "azure_ai_search",
+				"azure_ai_search": map[string]any{
+					"indexes": []any{
+						map[string]any{"project_connection_id": "search", "index_name": "tickets"},
+					},
+				},
+			},
+		},
+	}}
+
+	_, err := emitResourceServices(
+		t.Context(), client, "support-agent", "", foundryResources{
+			Connections: connections,
+			Toolboxes:   toolboxes,
+		})
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	assert.Equal(t, []string{aiProjectServiceName, "search"}, server.uses["support-tools"])
+	assert.Equal(
+		t,
+		[]string{aiProjectServiceName, "search", "unused", "support-tools"},
+		server.uses["support-agent"],
+	)
+}
+
+func TestToolboxConnectionReferences(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, []string{"a2a", "mcp", "search"}, toolboxConnectionReferences([]map[string]any{
+		{"type": "mcp", "connection": "mcp"},
+		{"type": "a2a_preview", "project_connection_id": "a2a"},
+		{
+			"type": "azure_ai_search",
+			"azure_ai_search": map[string]any{
+				"indexes": []any{
+					map[string]any{"project_connection_id": "search"},
+				},
+			},
+		},
+	}))
+}
+
+func TestEmitResourceServices_CountsEmittedConnections(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid connection returns 1", func(t *testing.T) {
+		server := &recordingProjectServer{}
+		client := newProjectRecorderClient(t, server)
+		conns := []project.Connection{{Name: "myconn", Category: "ApiKey"}}
+
+		got, err := emitResourceServices(
+			t.Context(), client, "myagent", "", foundryResources{Connections: conns})
+		require.NoError(t, err)
+		assert.Equal(t, 1, got)
+	})
+
+	t.Run("blank name returns 0", func(t *testing.T) {
+		server := &recordingProjectServer{}
+		client := newProjectRecorderClient(t, server)
+		conns := []project.Connection{{Name: "   ", Category: "ApiKey"}}
+
+		got, err := emitResourceServices(
+			t.Context(), client, "myagent", "", foundryResources{Connections: conns})
+		require.NoError(t, err)
+		assert.Equal(t, 0, got)
+
+		server.mu.Lock()
+		defer server.mu.Unlock()
+		for _, svc := range server.added {
+			assert.NotEqual(t, AiConnectionHost, svc.Host)
+		}
+	})
 }
 
 // TestEmitResourceServices_WritesServiceLevelProps verifies resource services are
@@ -643,7 +1013,9 @@ func TestEmitResourceServices_WritesServiceLevelProps(t *testing.T) {
 		Sku:   project.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
 	}}
 	conns := []project.Connection{{Name: "myconn", Category: "ApiKey", Target: "https://example", AuthType: "ApiKey"}}
-	require.NoError(t, emitResourceServices(t.Context(), client, "myagent", "", "", deployments, conns, nil))
+	_, err := emitResourceServices(
+		t.Context(), client, "myagent", "", foundryResources{Deployments: deployments, Connections: conns})
+	require.NoError(t, err)
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
@@ -658,7 +1030,7 @@ func TestEmitResourceServices_WritesServiceLevelProps(t *testing.T) {
 
 	// Init must write a project shape the owning extension can parse.
 	var projectCfg project.ServiceTargetAgentConfig
-	err := project.UnmarshalStruct(
+	err = project.UnmarshalStruct(
 		project.ServiceConfigProps(services["ai-project"]),
 		&projectCfg,
 	)
@@ -676,17 +1048,18 @@ func TestEmitResourceServices_WritesServiceLevelProps(t *testing.T) {
 // TestEmitResourceServices_WritesEndpointForExistingProject verifies that a
 // non-empty projectEndpoint is written as endpoint: on the ai-project service
 // (the brownfield signal provision reads to reuse the project) and that an
-// empty endpoint (new project) leaves the field unset.
+// empty endpoint (new project) leaves the field unset. Callers pass the
+// portable ${FOUNDRY_PROJECT_ENDPOINT} reference, never a literal URL.
 func TestEmitResourceServices_WritesEndpointForExistingProject(t *testing.T) {
 	t.Parallel()
-
-	const endpoint = "https://acct.services.ai.azure.com/api/projects/proj"
 
 	t.Run("existing project writes endpoint", func(t *testing.T) {
 		server := &recordingProjectServer{}
 		client := newProjectRecorderClient(t, server)
 
-		require.NoError(t, emitResourceServices(t.Context(), client, "myagent", "", endpoint, nil, nil, nil))
+		_, err := emitResourceServices(
+			t.Context(), client, "myagent", projectEndpointRef, foundryResources{})
+		require.NoError(t, err)
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
@@ -695,14 +1068,20 @@ func TestEmitResourceServices_WritesEndpointForExistingProject(t *testing.T) {
 		projSvc := server.added[0]
 		require.Equal(t, aiProjectServiceName, projSvc.Name)
 		require.NotNil(t, projSvc.AdditionalProperties)
-		assert.Equal(t, endpoint, projSvc.AdditionalProperties.Fields["endpoint"].GetStringValue())
+		assert.Equal(t,
+			"${FOUNDRY_PROJECT_ENDPOINT}",
+			projSvc.AdditionalProperties.Fields["endpoint"].GetStringValue(),
+		)
+		require.NotContains(t, server.env, aiProjectServiceName,
+			"the project endpoint must resolve from the azd environment, not a self-referential service env")
 	})
 
 	t.Run("new project omits endpoint", func(t *testing.T) {
 		server := &recordingProjectServer{}
 		client := newProjectRecorderClient(t, server)
 
-		require.NoError(t, emitResourceServices(t.Context(), client, "myagent", "", "", nil, nil, nil))
+		_, err := emitResourceServices(t.Context(), client, "myagent", "", foundryResources{})
+		require.NoError(t, err)
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
@@ -717,23 +1096,24 @@ func TestEmitResourceServices_WritesEndpointForExistingProject(t *testing.T) {
 }
 
 // TestEmitResourceServices_ProjectServiceKey verifies how the azure.ai.project
-// service key is resolved: reuse an existing key, else derive from the project
-// name, else fall back to "ai-project".
+// service key is resolved: reuse an existing key, else the generic "ai-project".
+// The key is never derived from the Foundry project name -- azure.yaml must not
+// carry tenant-specific identifiers.
 func TestEmitResourceServices_ProjectServiceKey(t *testing.T) {
 	t.Parallel()
 
-	t.Run("derives key from project name", func(t *testing.T) {
+	t.Run("uses the generic key for a new project", func(t *testing.T) {
 		server := &recordingProjectServer{}
 		client := newProjectRecorderClient(t, server)
 
-		require.NoError(t, emitResourceServices(
-			t.Context(), client, "myagent", "my-foundry-proj", "", nil, nil, nil))
+		_, err := emitResourceServices(t.Context(), client, "myagent", "", foundryResources{})
+		require.NoError(t, err)
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
 		require.Len(t, server.added, 1)
-		assert.Equal(t, "my-foundry-proj", server.added[0].Name)
-		assert.Equal(t, []string{"my-foundry-proj"}, server.uses["myagent"])
+		assert.Equal(t, aiProjectServiceName, server.added[0].Name)
+		assert.Equal(t, []string{aiProjectServiceName}, server.uses["myagent"])
 	})
 
 	t.Run("reuses existing project service key", func(t *testing.T) {
@@ -744,75 +1124,14 @@ func TestEmitResourceServices_ProjectServiceKey(t *testing.T) {
 		}
 		client := newProjectRecorderClient(t, server)
 
-		// A different project name is supplied, but the existing key wins so a
-		// repeated init does not create a second project service.
-		require.NoError(t, emitResourceServices(
-			t.Context(), client, "myagent", "a-new-name", "", nil, nil, nil))
+		// The existing key wins so a repeated init does not create a second
+		// project service.
+		_, err := emitResourceServices(t.Context(), client, "myagent", "", foundryResources{})
+		require.NoError(t, err)
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
 		require.Len(t, server.added, 1)
 		assert.Equal(t, "old-project-key", server.added[0].Name)
-	})
-
-	t.Run("falls back when project name collides with agent", func(t *testing.T) {
-		server := &recordingProjectServer{}
-		client := newProjectRecorderClient(t, server)
-
-		require.NoError(t, emitResourceServices(
-			t.Context(), client, "myagent", "my agent", "", nil, nil, nil))
-
-		server.mu.Lock()
-		defer server.mu.Unlock()
-		require.Len(t, server.added, 1)
-		// "my agent" sanitizes to "myagent" == agent key, so it falls back.
-		assert.Equal(t, aiProjectServiceName, server.added[0].Name)
-	})
-
-	t.Run("falls back when project name unknown", func(t *testing.T) {
-		server := &recordingProjectServer{}
-		client := newProjectRecorderClient(t, server)
-
-		require.NoError(t, emitResourceServices(
-			t.Context(), client, "myagent", "", "", nil, nil, nil))
-
-		server.mu.Lock()
-		defer server.mu.Unlock()
-		require.Len(t, server.added, 1)
-		assert.Equal(t, aiProjectServiceName, server.added[0].Name)
-	})
-}
-
-// TestProjectNameHint verifies the project-name hint resolution: a selected
-// existing project's name wins, else AZURE_AI_PROJECT_NAME when concretely set,
-// else "" (unknown).
-func TestProjectNameHint(t *testing.T) {
-	t.Parallel()
-	const envName = "dev"
-
-	newClient := func(t *testing.T, vals map[string]string) *azdext.AzdClient {
-		env := &testEnvironmentServiceServer{values: map[string]map[string]string{envName: vals}}
-		return newTestAzdClient(t, env, &testWorkflowServiceServer{})
-	}
-
-	t.Run("selected project name wins", func(t *testing.T) {
-		client := newClient(t, map[string]string{"AZURE_AI_PROJECT_NAME": "from-env"})
-		got := projectNameHint(t.Context(), client, envName, &FoundryProjectInfo{ProjectName: "from-selected"})
-		assert.Equal(t, "from-selected", got)
-	})
-
-	t.Run("falls back to env when no selection", func(t *testing.T) {
-		client := newClient(t, map[string]string{"AZURE_AI_PROJECT_NAME": "from-env"})
-		assert.Equal(t, "from-env", projectNameHint(t.Context(), client, envName, nil))
-	})
-
-	t.Run("placeholder env value yields empty", func(t *testing.T) {
-		client := newClient(t, map[string]string{"AZURE_AI_PROJECT_NAME": "${AZURE_AI_PROJECT_NAME}"})
-		assert.Equal(t, "", projectNameHint(t.Context(), client, envName, nil))
-	})
-
-	t.Run("missing env value yields empty", func(t *testing.T) {
-		client := newClient(t, map[string]string{})
-		assert.Equal(t, "", projectNameHint(t.Context(), client, envName, nil))
 	})
 }

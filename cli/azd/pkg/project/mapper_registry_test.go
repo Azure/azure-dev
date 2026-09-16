@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
@@ -108,6 +109,36 @@ func TestServiceConfigMappingWithResolver(t *testing.T) {
 		"API_ENDPOINT": "https://api.contoso.test",
 		"STATIC_ENV":   "static-value",
 	}, protoConfig.Environment)
+}
+
+func TestServiceConfigMappingWithoutEnvSubst(t *testing.T) {
+	serviceConfig := &ServiceConfig{
+		ResourceGroupName: osutil.NewExpandableString("rg-${ENV}"),
+		ResourceName:      osutil.NewExpandableString("app-${ENV}"),
+		Image:             osutil.NewExpandableString("${REGISTRY}/app:${TAG}"),
+		Environment: osutil.ExpandableMap{
+			"ENDPOINT": osutil.NewExpandableString("${API_ENDPOINT}"),
+		},
+		Docker: DockerProjectOptions{
+			Registry:  osutil.NewExpandableString("${REGISTRY}"),
+			Image:     osutil.NewExpandableString("app-${ENV}"),
+			Tag:       osutil.NewExpandableString("${TAG}"),
+			BuildArgs: []osutil.ExpandableString{osutil.NewExpandableString("ENV=${ENV}")},
+		},
+	}
+
+	var protoConfig *azdext.ServiceConfig
+	err := mapper.WithContext(t.Context()).WithEnvSubst(false).Convert(serviceConfig, &protoConfig)
+	require.NoError(t, err)
+
+	require.Equal(t, "rg-${ENV}", protoConfig.ResourceGroupName)
+	require.Equal(t, "app-${ENV}", protoConfig.ResourceName)
+	require.Equal(t, "${REGISTRY}/app:${TAG}", protoConfig.Image)
+	require.Equal(t, map[string]string{"ENDPOINT": "${API_ENDPOINT}"}, protoConfig.Environment)
+	require.Equal(t, "${REGISTRY}", protoConfig.Docker.Registry)
+	require.Equal(t, "app-${ENV}", protoConfig.Docker.Image)
+	require.Equal(t, "${TAG}", protoConfig.Docker.Tag)
+	require.Equal(t, []string{"ENV=${ENV}"}, protoConfig.Docker.BuildArgs)
 }
 
 func TestServiceConfigMappingWithConfig(t *testing.T) {
@@ -353,6 +384,56 @@ func TestServiceConfigReverseMapping(t *testing.T) {
 	}
 }
 
+func TestServiceConfigReverseMappingWithEnvironmentTemplates(t *testing.T) {
+	protoConfig := &azdext.ServiceConfig{
+		ResourceGroupName: "rg-${ENV}",
+		ResourceName:      "app-${ENV}",
+		Image:             "${REGISTRY}/app:${TAG}",
+		Environment: map[string]string{
+			"FROM_ENV":       "${ENV_VALUE}",
+			"LITERAL_DOLLAR": "cost: $$5",
+		},
+		Docker: &azdext.DockerProjectOptions{
+			Registry:  "${REGISTRY}",
+			Image:     "app-${ENV}",
+			Tag:       "${TAG}",
+			BuildArgs: []string{"ENV=${ENV}"},
+		},
+	}
+
+	var serviceConfig *ServiceConfig
+	err := mapper.WithContext(t.Context()).WithEnvSubst(false).Convert(protoConfig, &serviceConfig)
+	require.NoError(t, err)
+
+	resolver := func(key string) string {
+		switch key {
+		case "ENV":
+			return "dev"
+		case "REGISTRY":
+			return "registry.example"
+		case "TAG":
+			return "latest"
+		case "ENV_VALUE":
+			return "resolved"
+		}
+		return ""
+	}
+	require.Equal(t, "rg-dev", serviceConfig.ResourceGroupName.MustEnvsubst(resolver))
+	require.Equal(t, "app-dev", serviceConfig.ResourceName.MustEnvsubst(resolver))
+	require.Equal(t, "registry.example/app:latest", serviceConfig.Image.MustEnvsubst(resolver))
+	require.Equal(t, "registry.example", serviceConfig.Docker.Registry.MustEnvsubst(resolver))
+	require.Equal(t, "app-dev", serviceConfig.Docker.Image.MustEnvsubst(resolver))
+	require.Equal(t, "latest", serviceConfig.Docker.Tag.MustEnvsubst(resolver))
+	require.Equal(t, "ENV=dev", serviceConfig.Docker.BuildArgs[0].MustEnvsubst(resolver))
+
+	expanded, err := serviceConfig.Environment.Expand(resolver)
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		"FROM_ENV":       "resolved",
+		"LITERAL_DOLLAR": "cost: $5",
+	}, expanded)
+}
+
 func TestServiceConfigRoundTripMapping(t *testing.T) {
 	// Test that ServiceConfig -> proto -> ServiceConfig preserves Config data
 	originalConfig := map[string]any{
@@ -445,12 +526,12 @@ func TestServiceConfigRoundTripMapping(t *testing.T) {
 
 func TestDockerProjectOptionsMapping(t *testing.T) {
 	dockerOptions := DockerProjectOptions{
-		Path:        "./Dockerfile",
-		Context:     ".",
-		Platform:    "linux/amd64",
-		Target:      "production",
-		Network:     "host",
-		RemoteBuild: true,
+		Path:             "./Dockerfile",
+		Context:          ".",
+		Platform:         "linux/amd64",
+		Target:           "production",
+		Network:          "host",
+		ImagePassthrough: true,
 	}
 
 	var protoOptions *azdext.DockerProjectOptions
@@ -462,7 +543,8 @@ func TestDockerProjectOptionsMapping(t *testing.T) {
 	require.Equal(t, "linux/amd64", protoOptions.Platform)
 	require.Equal(t, "production", protoOptions.Target)
 	require.Equal(t, "host", protoOptions.Network)
-	require.True(t, protoOptions.RemoteBuild)
+	require.False(t, protoOptions.RemoteBuild)
+	require.True(t, protoOptions.ImagePassthrough)
 }
 
 func TestServiceBuildResultMapping(t *testing.T) {
@@ -631,7 +713,7 @@ func TestResourceConfigMapping(t *testing.T) {
 		ResourceId: "test-resource-id",
 	}
 
-	var protoResource *azdext.ComposedResource
+	var protoResource *v1beta.ComposedResource
 	err := mapper.Convert(resourceConfig, &protoResource)
 	require.NoError(t, err)
 	require.NotNil(t, protoResource)
@@ -649,7 +731,7 @@ func TestResourceConfigMapping(t *testing.T) {
 }
 
 func TestResourceTypeMapping(t *testing.T) {
-	var protoResourceType *azdext.ComposedResourceType
+	var protoResourceType *v1beta.ComposedResourceType
 	err := mapper.Convert(ResourceTypeDbCosmos, &protoResourceType)
 	require.NoError(t, err)
 	require.NotNil(t, protoResourceType)
@@ -725,16 +807,17 @@ func TestFromProtoServiceConfigMapping(t *testing.T) {
 func TestFromProtoDockerProjectOptionsMapping(t *testing.T) {
 	// Create test proto docker options
 	protoOptions := &azdext.DockerProjectOptions{
-		Path:        "./Dockerfile.test",
-		Context:     "..",
-		Platform:    "linux/arm64",
-		Target:      "test",
-		Network:     "host",
-		Registry:    "testregistry.azurecr.io",
-		Image:       "testimage",
-		Tag:         "v2.0.0",
-		RemoteBuild: false,
-		BuildArgs:   []string{"TEST_ARG=test_value"},
+		Path:             "./Dockerfile.test",
+		Context:          "..",
+		Platform:         "linux/arm64",
+		Target:           "test",
+		Network:          "host",
+		Registry:         "testregistry.azurecr.io",
+		Image:            "testimage",
+		Tag:              "v2.0.0",
+		RemoteBuild:      false,
+		ImagePassthrough: true,
+		BuildArgs:        []string{"TEST_ARG=test_value"},
 	}
 
 	var dockerOptions *DockerProjectOptions
@@ -750,6 +833,7 @@ func TestFromProtoDockerProjectOptionsMapping(t *testing.T) {
 	require.Equal(t, "testimage", dockerOptions.Image.MustEnvsubst(func(string) string { return "" }))
 	require.Equal(t, "v2.0.0", dockerOptions.Tag.MustEnvsubst(func(string) string { return "" }))
 	require.False(t, dockerOptions.RemoteBuild)
+	require.True(t, dockerOptions.ImagePassthrough)
 	require.Len(t, dockerOptions.BuildArgs, 1)
 	require.Equal(t, "TEST_ARG=test_value", dockerOptions.BuildArgs[0].MustEnvsubst(func(string) string { return "" }))
 }
@@ -762,7 +846,7 @@ func TestFromProtoResourceConfigMapping(t *testing.T) {
 	configBytes, err := json.Marshal(configData)
 	require.NoError(t, err)
 
-	protoResource := &azdext.ComposedResource{
+	protoResource := &v1beta.ComposedResource{
 		Name:       "test-storage",
 		Type:       "storage",
 		Config:     configBytes,
@@ -785,7 +869,7 @@ func TestFromProtoResourceConfigMapping(t *testing.T) {
 	require.Equal(t, []string{"images", "documents"}, storageProps.Containers)
 
 	// Test with empty config
-	protoResourceEmpty := &azdext.ComposedResource{
+	protoResourceEmpty := &v1beta.ComposedResource{
 		Name:   "test-storage-empty",
 		Type:   "storage",
 		Config: nil,
@@ -1084,6 +1168,50 @@ func TestProjectConfigMapping(t *testing.T) {
 			"ENV_NAME": "dev",
 			"STATIC":   "static-value",
 		}, protoConfig.Services["web"].Environment)
+	})
+
+	t.Run("project layers services", func(t *testing.T) {
+		projectConfig := &ProjectConfig{
+			Layers: LayerConfigs{
+				{
+					Name: "application",
+					Services: map[string]*ServiceConfig{
+						"api": {
+							Name:     "api",
+							Host:     ContainerAppTarget,
+							Language: ServiceLanguagePython,
+						},
+					},
+				},
+			},
+		}
+
+		var protoConfig *azdext.ProjectConfig
+		err := mapper.WithContext(t.Context()).Convert(projectConfig, &protoConfig)
+		require.NoError(t, err)
+		require.Contains(t, protoConfig.Services, "api")
+	})
+
+	t.Run("without envsubst", func(t *testing.T) {
+		projectConfig := &ProjectConfig{
+			ResourceGroupName: osutil.NewExpandableString("rg-${ENV}"),
+			Services: map[string]*ServiceConfig{
+				"api": {
+					Image: osutil.NewExpandableString("${REGISTRY}/api"),
+				},
+			},
+		}
+
+		var protoConfig *azdext.ProjectConfig
+		err := mapper.WithContext(t.Context()).WithEnvSubst(false).Convert(projectConfig, &protoConfig)
+		require.NoError(t, err)
+		require.Equal(t, "rg-${ENV}", protoConfig.ResourceGroupName)
+		require.Equal(t, "${REGISTRY}/api", protoConfig.Services["api"].Image)
+
+		var roundTrip *ProjectConfig
+		err = mapper.WithContext(t.Context()).WithEnvSubst(false).Convert(protoConfig, &roundTrip)
+		require.NoError(t, err)
+		require.Equal(t, "rg-dev", roundTrip.ResourceGroupName.MustEnvsubst(func(string) string { return "dev" }))
 	})
 
 	t.Run("proto ProjectConfig -> ProjectConfig", func(t *testing.T) {

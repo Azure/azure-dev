@@ -6,10 +6,15 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
+	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/servicekey"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -29,38 +34,143 @@ const (
 	AiConnectionHost = "azure.ai.connection"
 	// AiToolboxHost owns a single Foundry toolbox (toolset).
 	AiToolboxHost = "azure.ai.toolbox"
+	// AiSkillHost owns a single Foundry skill and its versions. azd never
+	// uploads a skill bundle itself; it emits one service per skills/<name>/
+	// folder and attaches the version that extension publishes.
+	AiSkillHost = "azure.ai.skill"
 
 	// aiProjectServiceName is the stable azure.yaml service key used for the
 	// single azure.ai.project service. A stable name keeps repeated inits
 	// idempotent (AddService overwrites by name) so there is one project
-	// service per project, matching the unified Foundry config design.
+	// service per project, matching the unified Foundry config design. It is
+	// deliberately generic rather than derived from the Foundry project name so
+	// azure.yaml carries no tenant-specific identifiers and can be copied
+	// between projects unchanged.
 	aiProjectServiceName = "ai-project"
+
+	// projectEndpointEnvVar carries the concrete Foundry project endpoint in the
+	// azd environment. azure.yaml references it instead of embedding the URL so
+	// the project stays portable: set it to reuse an existing project, leave it
+	// unset to have `azd provision` create a new one.
+	projectEndpointEnvVar = "FOUNDRY_PROJECT_ENDPOINT"
+
+	// projectEndpointRef is the portable reference written as endpoint: on the
+	// azure.ai.project service. Synthesize expands it before deciding
+	// brownfield vs greenfield, so an unset variable resolves to "" (greenfield).
+	projectEndpointRef = "${" + projectEndpointEnvVar + "}"
 )
+
+// promptResourceServices derives the sibling Foundry services a prompt or
+// managed agent needs from its scaffolded definition and folder layout, so a
+// prompt agent's azure.yaml carries the same hosts as a hosted agent's.
+//
+//   - Each connection name adds a uses: edge when that azure.ai.connection
+//     service already exists; name references do not define new resources.
+//   - Each skills/<dir>/ folder becomes an azure.ai.skill service keyed by the
+//     name its SKILL.md declares. The agents extension never uploads a bundle
+//     itself; at deploy time it attaches the version the skill service
+//     published.
+//   - toolbox: names an existing toolbox rather than defining one, so there is
+//     nothing to write as a service. Its name is added to the agent's uses: when
+//     a toolbox service of that name is already in azure.yaml, which is what
+//     orders the toolbox ahead of the agent; a uses: entry naming a service that
+//     does not exist would fail the project load instead.
+//
+// Deployments are left to the caller, which owns the model selection flow.
+func promptResourceServices(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	promptAgent *agent_yaml.PromptAgent,
+	serviceSourceDir string,
+	serviceRelPath string,
+) (foundryResources, error) {
+	resources := foundryResources{}
+
+	for _, connection := range promptAgent.Connections {
+		name := servicekey.SanitizeServiceName(connection)
+		if name != "" && serviceHasHost(ctx, azdClient, name, AiConnectionHost) {
+			resources.ExtraUses = append(resources.ExtraUses, name)
+		}
+	}
+
+	bundles, err := project.ScanSkillBundles(serviceSourceDir)
+	if err != nil {
+		return foundryResources{}, err
+	}
+	for _, bundle := range bundles {
+		if resources.Skills == nil {
+			resources.Skills = map[string]project.SkillService{}
+		}
+		resources.Skills[bundle.Name] = project.SkillService{
+			Description: bundle.Description,
+			// Relative to azure.yaml, which lives in the directory init runs in.
+			Archive: "./" + path.Join(filepath.ToSlash(serviceRelPath), bundle.RelPath),
+		}
+	}
+
+	if promptAgent.Toolbox != nil {
+		name := servicekey.SanitizeServiceName(promptAgent.Toolbox.Name)
+		if name != "" && serviceHasHost(ctx, azdClient, name, AiToolboxHost) {
+			resources.ExtraUses = append(resources.ExtraUses, name)
+		}
+	}
+	return resources, nil
+}
+
+// serviceHasHost reports whether azure.yaml already defines a service named
+// name with the given host. Errors are treated as "no", because the callers use
+// it to decide whether adding a uses: edge is safe and the conservative answer
+// is to leave the edge out.
+func serviceHasHost(ctx context.Context, azdClient *azdext.AzdClient, name, host string) bool {
+	resp, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil || resp.GetProject() == nil {
+		return false
+	}
+	svc, ok := resp.GetProject().GetServices()[name]
+	return ok && svc.GetHost() == host
+}
+
+// foundryResources are the Foundry resources an agent depends on, each written
+// to azure.yaml as its own sibling service entry keyed by the resource name.
+// Grouping them keeps emitResourceServices readable as the set of hosts grows;
+// a zero value emits only the always-present azure.ai.project service.
+type foundryResources struct {
+	// Deployments are the model deployments carried by the project service.
+	Deployments []project.Deployment
+	// Connections become one azure.ai.connection service each.
+	Connections []project.Connection
+	// Toolboxes become one azure.ai.toolbox service each.
+	Toolboxes []project.Toolbox
+	// Skills become one azure.ai.skill service each, keyed by skill name.
+	Skills map[string]project.SkillService
+	// ExtraUses are service keys added to the agent's uses: list without
+	// emitting a service for them. A prompt agent's `toolbox:` names an
+	// *existing* toolbox, so there is no definition to write, but the edge is
+	// still needed for ordering and for the deploy-time dependency check.
+	ExtraUses []string
+}
 
 // emitResourceServices writes the Foundry resource sibling services that the
 // agent depends on (one azure.ai.project carrying the model deployments, one
-// azure.ai.connection per connection, one azure.ai.toolbox per toolbox) and
-// wires the agent service's uses: list to them for ordering. Each resource is
-// its own azure.yaml service entry so a different extension can own each host.
+// azure.ai.connection per connection, one azure.ai.toolbox per toolbox, one
+// azure.ai.skill per skill bundle) and wires the agent service's uses: list to
+// them for ordering. Each resource is its own azure.yaml service entry so a
+// different extension can own each host.
 //
 // projectEndpoint, when non-empty, is written as endpoint: on the project
 // service to mark an existing (brownfield) Foundry project so provision
 // connects to it instead of creating a new one. It is empty for new projects.
-//
-// projectName, when known, is the Foundry project name used to derive the
-// project service key (so azure.yaml reads like the real project). It falls back
-// to aiProjectServiceName when unknown or colliding. See resolveProjectServiceKey.
+// Callers pass projectEndpointRef (not a literal URL) so azure.yaml stays
+// portable; see recordFoundryProjectEnv.
 func emitResourceServices(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	agentServiceName string,
-	projectName string,
 	projectEndpoint string,
-	deployments []project.Deployment,
-	connections []project.Connection,
-	toolboxes []project.Toolbox,
-) error {
+	resources foundryResources,
+) (int, error) {
 	var agentUses []string
+	emittedConnections := 0
 
 	// Track every azure.yaml service key we emit so two resource names that
 	// sanitize to the same key (e.g. "my conn" and "myconn") fail fast instead
@@ -90,27 +200,28 @@ func emitResourceServices(
 	// provisioning order. A non-empty endpoint marks an existing project.
 	projectCfg, err := project.MarshalStruct(&project.ServiceTargetAgentConfig{
 		Endpoint:    projectEndpoint,
-		Deployments: deployments,
+		Deployments: resources.Deployments,
 	})
 	if err != nil {
-		return fmt.Errorf("marshaling project service config: %w", err)
+		return 0, fmt.Errorf("marshaling project service config: %w", err)
 	}
-	projectServiceName := resolveProjectServiceKey(ctx, azdClient, projectName, agentServiceName)
+	projectServiceName := resolveProjectServiceKey(ctx, azdClient)
 	if err := reserveServiceName(usedNames, projectServiceName, "project service"); err != nil {
-		return err
+		return 0, err
 	}
 	if err := addResourceService(ctx, azdClient, projectServiceName, AiProjectHost, projectCfg, nil); err != nil {
-		return err
+		return 0, err
 	}
 	agentUses = append(agentUses, projectServiceName)
 
-	// Connection and toolbox services depend on the project service so the
-	// project is provisioned first.
+	// Connection, toolbox and skill services depend on the project service so
+	// the project is provisioned first.
 	siblingUses := []string{projectServiceName}
+	connectionServiceNames := map[string]string{}
 
-	for i := range connections {
-		conn := connections[i]
-		connName := sanitizeServiceName(conn.Name)
+	for i := range resources.Connections {
+		conn := resources.Connections[i]
+		connName := servicekey.SanitizeServiceName(conn.Name)
 		if connName == "" {
 			fmt.Fprintf(os.Stderr,
 				"warning: connection %q has no characters usable as an azure.yaml service key; "+
@@ -119,21 +230,23 @@ func emitResourceServices(
 			continue
 		}
 		if err := reserveServiceName(usedNames, connName, fmt.Sprintf("connection %q", conn.Name)); err != nil {
-			return err
+			return 0, err
 		}
 		connCfg, err := project.MarshalStruct(&conn)
 		if err != nil {
-			return fmt.Errorf("marshaling connection service %q config: %w", connName, err)
+			return 0, fmt.Errorf("marshaling connection service %q config: %w", connName, err)
 		}
 		if err := addResourceService(ctx, azdClient, connName, AiConnectionHost, connCfg, siblingUses); err != nil {
-			return err
+			return 0, err
 		}
+		connectionServiceNames[conn.Name] = connName
 		agentUses = append(agentUses, connName)
+		emittedConnections++
 	}
 
-	for i := range toolboxes {
-		toolbox := toolboxes[i]
-		toolboxName := sanitizeServiceName(toolbox.Name)
+	for i := range resources.Toolboxes {
+		toolbox := resources.Toolboxes[i]
+		toolboxName := servicekey.SanitizeServiceName(toolbox.Name)
 		if toolboxName == "" {
 			fmt.Fprintf(os.Stderr,
 				"warning: toolbox %q has no characters usable as an azure.yaml service key; "+
@@ -142,26 +255,91 @@ func emitResourceServices(
 			continue
 		}
 		if err := reserveServiceName(usedNames, toolboxName, fmt.Sprintf("toolbox %q", toolbox.Name)); err != nil {
-			return err
+			return 0, err
 		}
 		toolboxCfg, err := project.MarshalStruct(&toolbox)
 		if err != nil {
-			return fmt.Errorf("marshaling toolbox service %q config: %w", toolboxName, err)
+			return 0, fmt.Errorf("marshaling toolbox service %q config: %w", toolboxName, err)
 		}
-		if err := addResourceService(ctx, azdClient, toolboxName, AiToolboxHost, toolboxCfg, siblingUses); err != nil {
-			return err
+		toolboxUses := slices.Clone(siblingUses)
+		for _, connectionName := range toolboxConnectionReferences(toolbox.Tools) {
+			if connectionServiceName, ok := connectionServiceNames[connectionName]; ok &&
+				!slices.Contains(toolboxUses, connectionServiceName) {
+				toolboxUses = append(toolboxUses, connectionServiceName)
+			}
+		}
+		if err := addResourceService(ctx, azdClient, toolboxName, AiToolboxHost, toolboxCfg, toolboxUses); err != nil {
+			return 0, err
 		}
 		agentUses = append(agentUses, toolboxName)
+	}
+
+	// The service key is the skill name the azure.ai.skills extension creates,
+	// and the name the agent's SKILL.md declares, so iterate in sorted order to
+	// keep repeated inits byte-identical.
+	for _, skill := range slices.Sorted(maps.Keys(resources.Skills)) {
+		skillName := servicekey.SanitizeServiceName(skill)
+		if skillName == "" {
+			fmt.Fprintf(os.Stderr,
+				"warning: skill %q has no characters usable as an azure.yaml service key; "+
+					"skipping it. Rename the skill so it is written to azure.yaml.\n",
+				skill)
+			continue
+		}
+		if err := reserveServiceName(usedNames, skillName, fmt.Sprintf("skill %q", skill)); err != nil {
+			return 0, err
+		}
+		definition := resources.Skills[skill]
+		skillCfg, err := project.MarshalStruct(&definition)
+		if err != nil {
+			return 0, fmt.Errorf("marshaling skill service %q config: %w", skillName, err)
+		}
+		if err := addResourceService(ctx, azdClient, skillName, AiSkillHost, skillCfg, siblingUses); err != nil {
+			return 0, err
+		}
+		agentUses = append(agentUses, skillName)
+	}
+
+	for _, name := range resources.ExtraUses {
+		if name != "" && !slices.Contains(agentUses, name) {
+			agentUses = append(agentUses, name)
+		}
 	}
 
 	// Wire the agent service to its resource siblings so azd walks them first.
 	if len(agentUses) > 0 && agentServiceName != "" {
 		if err := setServiceUses(ctx, azdClient, agentServiceName, agentUses); err != nil {
-			return err
+			return 0, err
 		}
 	}
 
-	return nil
+	return emittedConnections, nil
+}
+
+func toolboxConnectionReferences(tools []map[string]any) []string {
+	references := map[string]struct{}{}
+	for _, tool := range tools {
+		collectToolboxConnectionReference(tool, references)
+	}
+	return slices.Sorted(maps.Keys(references))
+}
+
+func collectToolboxConnectionReference(value any, references map[string]struct{}) {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			if (key == "connection" || key == "project_connection_id") && child != nil {
+				if name, ok := child.(string); ok && strings.TrimSpace(name) != "" {
+					references[strings.TrimSpace(name)] = struct{}{}
+				}
+			}
+			collectToolboxConnectionReference(child, references)
+		}
+	case []any:
+		for _, child := range typed {
+			collectToolboxConnectionReference(child, references)
+		}
+	}
 }
 
 // resolveProjectServiceKey picks the azure.yaml service key for the single
@@ -171,25 +349,19 @@ func emitResourceServices(
 //     project. This keeps repeated inits idempotent (azd's extension API has no
 //     remove-service call, so a changed key would leave a second project service
 //     behind, which the provisioning provider rejects).
-//  2. Otherwise derive the key from the Foundry project name when it is known and
-//     does not collide with the agent service name, so azure.yaml reads like the
-//     real project.
-//  3. Otherwise fall back to the stable "ai-project" default.
+//  2. Otherwise use the generic "ai-project" key.
 //
-// The key is not load-bearing: the provider and collectors find the project
-// service by host (azure.ai.project), and the generated uses: edges reference
-// whatever key this returns.
+// The key is deliberately not derived from the Foundry project name: a
+// tenant-specific key makes azure.yaml non-portable, and the key is not
+// load-bearing anyway -- the provider and collectors find the project service by
+// host (azure.ai.project), and the generated uses: edges reference whatever key
+// this returns.
 func resolveProjectServiceKey(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
-	projectName string,
-	agentServiceName string,
 ) string {
 	if existing := existingProjectServiceKey(ctx, azdClient); existing != "" {
 		return existing
-	}
-	if key := sanitizeServiceName(projectName); key != "" && key != agentServiceName {
-		return key
 	}
 	return aiProjectServiceName
 }
@@ -216,41 +388,44 @@ func existingProjectServiceKey(ctx context.Context, azdClient *azdext.AzdClient)
 	return keys[0]
 }
 
-// projectNameHint returns the Foundry project name to derive the project service
-// key from: the selected existing project's name, else the AZURE_AI_PROJECT_NAME
-// azd environment value when concretely set (not a ${...} placeholder), else "".
-func projectNameHint(
+// recordFoundryProjectEnv stores the concrete Foundry project coordinates that
+// azure.yaml only references by name -- the data-plane endpoint -- in the azd
+// environment, and returns the portable ${VAR}
+// reference to write as endpoint: on the project service.
+//
+// A nil or incomplete project (the "create a new project" path) writes nothing
+// and returns "", leaving the project service greenfield.
+func recordFoundryProjectEnv(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	envName string,
-	selected *FoundryProjectInfo,
-) string {
-	if selected != nil && selected.ProjectName != "" {
-		return selected.ProjectName
+	foundryProject *FoundryProjectInfo,
+) (string, error) {
+	endpoint := strings.TrimSpace(foundryProject.Endpoint())
+	if endpoint == "" {
+		return "", nil
 	}
-	v, err := getEnvValue(ctx, azdClient, envName, "AZURE_AI_PROJECT_NAME")
-	if err != nil || strings.HasPrefix(strings.TrimSpace(v), "${") {
-		return ""
+	if err := setEnvValue(ctx, azdClient, envName, projectEndpointEnvVar, endpoint); err != nil {
+		return "", fmt.Errorf("recording %s: %w", projectEndpointEnvVar, err)
 	}
-	return v
+	return projectEndpointRef, nil
 }
 
-// stampProjectEndpoint writes the selected project's endpoint onto the existing
-// azure.ai.project service in azure.yaml. This is a no-op when the project is
-// nil, has no endpoint, or when no ai-project service exists yet.
-func stampProjectEndpoint(ctx context.Context, azdClient *azdext.AzdClient, selectedProject *FoundryProjectInfo) error {
-	if selectedProject == nil {
-		return nil
-	}
-	endpoint := selectedProject.Endpoint()
-	if endpoint == "" {
+// stampProjectEndpoint writes endpointRef as endpoint: on the existing
+// azure.ai.project service in azure.yaml. Callers pass the portable
+// ${FOUNDRY_PROJECT_ENDPOINT} reference returned by recordFoundryProjectEnv, not
+// a literal URL. This is a no-op when endpointRef is empty (a new project) or
+// when no azure.ai.project service exists yet.
+func stampProjectEndpoint(ctx context.Context, azdClient *azdext.AzdClient, endpointRef string) error {
+	endpointRef = strings.TrimSpace(endpointRef)
+	if endpointRef == "" {
 		return nil
 	}
 	projectSvcKey := existingProjectServiceKey(ctx, azdClient)
 	if projectSvcKey == "" {
 		return nil
 	}
-	endpointVal, err := structpb.NewValue(endpoint)
+	endpointVal, err := structpb.NewValue(endpointRef)
 	if err != nil {
 		return fmt.Errorf("encoding project endpoint: %w", err)
 	}
@@ -277,7 +452,10 @@ func addResourceService(
 	cfg *structpb.Struct,
 	uses []string,
 ) error {
-	environment := serviceEnvironmentTemplates(cfg)
+	var environment map[string]string
+	if host != AiProjectHost {
+		environment = serviceEnvironmentTemplates(cfg)
+	}
 	svc := &azdext.ServiceConfig{
 		Name:                 name,
 		Host:                 host,
@@ -447,16 +625,6 @@ func setServiceUses(ctx context.Context, azdClient *azdext.AzdClient, serviceNam
 	return nil
 }
 
-// sanitizeServiceName converts a resource name into an azure.yaml service key by
-// trimming surrounding whitespace and removing interior spaces, matching how the
-// agent service name is derived from the agent name. Only spaces are stripped, so
-// the name is expected to otherwise consist of characters valid in a YAML map key
-// (letters, digits, '-', '_', '.'); Foundry resource names already meet this. A
-// name that reduces to an empty string is skipped by the caller with a warning.
-func sanitizeServiceName(name string) string {
-	return strings.ReplaceAll(strings.TrimSpace(name), " ", "")
-}
-
 // reserveServiceName records an azure.yaml service key derived from a Foundry
 // resource name, returning an error when two resources sanitize to the same
 // key. AddService overwrites by name, so without this a collision would
@@ -502,9 +670,7 @@ func collectLegacyProjectDeployments(
 }
 
 // collectConnections gathers the connections declared across all
-// azure.ai.connection services. Falls back to the connections bundled on the
-// agent service when no connection service carries any, so a pre-split
-// azure.yaml still provisions without re-running init.
+// azure.ai.connection services without projecting them into provisioning state.
 func collectConnections(
 	services map[string]*azdext.ServiceConfig,
 	projectRoot string,
@@ -535,69 +701,6 @@ func collectConnections(
 			out = append(out, *conn)
 		}
 	}
-	if len(out) > 0 {
-		return out, nil
-	}
-	legacy, err := collectLegacyAgentConfigs(
-		services,
-		projectRoot,
-	)
-	if err != nil {
-		return nil, err
-	}
-	for _, cfg := range legacy {
-		out = append(out, cfg.Connections...)
-	}
-	return out, nil
-}
-
-// collectToolboxes gathers the toolboxes declared across all azure.ai.toolbox
-// services. Falls back to the toolboxes bundled on the agent service when no
-// toolbox service carries any, so a pre-split azure.yaml still provisions
-// without re-running init.
-func collectToolboxes(
-	services map[string]*azdext.ServiceConfig,
-	projectRoot string,
-) ([]project.Toolbox, error) {
-	var out []project.Toolbox
-	for _, svc := range sortedServices(services) {
-		if svc.Host != AiToolboxHost {
-			continue
-		}
-		props, err := resolvedResourceServiceProps(
-			svc,
-			projectRoot,
-		)
-		if err != nil {
-			return nil, err
-		}
-		if props == nil {
-			continue
-		}
-		var toolbox *project.Toolbox
-		if err := project.UnmarshalStruct(props, &toolbox); err != nil {
-			return nil, fmt.Errorf("parsing toolbox service %q config: %w", svc.Name, err)
-		}
-		if toolbox != nil {
-			if toolbox.Name == "" {
-				toolbox.Name = svc.Name
-			}
-			out = append(out, *toolbox)
-		}
-	}
-	if len(out) > 0 {
-		return out, nil
-	}
-	legacy, err := collectLegacyAgentConfigs(
-		services,
-		projectRoot,
-	)
-	if err != nil {
-		return nil, err
-	}
-	for _, cfg := range legacy {
-		out = append(out, cfg.Toolboxes...)
-	}
 	return out, nil
 }
 
@@ -620,11 +723,10 @@ func collectAgentToolConnections(
 	return out, nil
 }
 
-// collectLegacyAgentConfigs parses the bundled ServiceTargetAgentConfig from
-// every agent service, in sorted name order. Tool connections always live here;
-// projects created before the per-resource split also carry their deployments,
-// connections, and toolboxes here rather than in sibling azure.ai.<kind>
-// services, so the collectors fall back to these when no sibling service exists.
+// collectLegacyAgentConfigs parses ServiceTargetAgentConfig from every agent
+// service in sorted name order, including legacy project deployment settings.
+// Runtime tool connections remain agent-owned; bundled Connection and Toolbox
+// definitions are rejected by LoadServiceTargetAgentConfig.
 func collectLegacyAgentConfigs(
 	services map[string]*azdext.ServiceConfig,
 	projectRoot string,

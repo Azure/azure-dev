@@ -20,6 +20,7 @@ stages:
       and(
         succeeded(),
         ne(variables['Skip.Release'], 'true'),
+        eq(variables['Build.SourceBranch'], 'refs/heads/main'),
         or(
           eq('Manual', variables['BuildReasonOverride']),
           and(

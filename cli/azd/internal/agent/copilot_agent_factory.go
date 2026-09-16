@@ -63,6 +63,7 @@ func NewCopilotAgentFactory(
 func (f *CopilotAgentFactory) Create(ctx context.Context, opts ...AgentOption) (Agent, error) {
 	agent := &CopilotAgent{
 		clientManager:        f.clientManager,
+		listModels:           f.clientManager.ListModels,
 		sessionConfigBuilder: f.sessionConfigBuilder,
 		cli:                  f.cli,
 		consentManager:       f.consentManager,

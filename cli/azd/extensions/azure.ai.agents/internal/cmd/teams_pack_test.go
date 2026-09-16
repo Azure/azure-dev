@@ -8,8 +8,11 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/require"
 )
 
 func TestResolveTeamsPackScope(t *testing.T) {
@@ -55,9 +58,9 @@ func TestBuildTeamsAppPackageRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	req := buildTeamsAppPackageRequest("/subscriptions/s/bot", teamsAppRequestOptions{
-		scope:       scope,
-		displayName: "Contoso Helper",
-		appVersion:  "",
+		scope:      scope,
+		agentName:  "Contoso Helper",
+		appVersion: "",
 	})
 	if req.BotServiceArmID != "/subscriptions/s/bot" {
 		t.Errorf("BotServiceArmID = %q", req.BotServiceArmID)
@@ -71,8 +74,84 @@ func TestBuildTeamsAppPackageRequest(t *testing.T) {
 	if req.AppVersion != "1.0.0" {
 		t.Errorf("AppVersion = %q, want default 1.0.0", req.AppVersion)
 	}
-	if !req.CanRespondWithoutMention {
-		t.Error("CanRespondWithoutMention = false, want true")
+	if req.CanRespondWithoutMention != nil {
+		t.Error("CanRespondWithoutMention must be omitted when not configured")
+	}
+}
+
+func TestBuildTeamsAppPackageRequest_DigitalWorkerUsesPublishMetadata(t *testing.T) {
+	scope, err := resolveTeamsPackScope("shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	canRespond := true
+	boundaries := []string{"read.1on1.developers", "write.group.developers"}
+	permissions := []agent_api.Microsoft365PermissionScopes{
+		{ResourceAppID: "resource-app", Scopes: []string{"McpServers.Mail.All"}},
+	}
+	publish := &project.ActivityPublishConfig{
+		PublishScope:             "tenant",
+		CanRespondWithoutMention: &canRespond,
+		AppVersion:               "2.3.4",
+		AgentDisplayName:         "DW Helper",
+		ShortDescription:         "A digital worker",
+		FullDescription:          "A digital worker for Teams",
+		DeveloperName:            "Contoso",
+		DeveloperWebsiteURL:      "https://contoso.example",
+		PrivacyURL:               "https://contoso.example/privacy",
+		TermsOfUseURL:            "https://contoso.example/terms",
+	}
+	req := buildTeamsAppPackageRequest("/subscriptions/s/bot", teamsAppRequestOptions{
+		scope:                    scope,
+		displayName:              "CLI Overridden",
+		useCase:                  project.ActivityUseCaseDigitalWorker,
+		appVersion:               "",
+		publish:                  publish,
+		optionalPermissionScopes: permissions,
+		accessBoundaries:         &boundaries,
+	})
+	if !req.PublishAsAutopilot {
+		t.Fatal("PublishAsAutopilot = false, want true")
+	}
+	require.NotNil(t, req.CanRespondWithoutMention)
+	require.True(t, *req.CanRespondWithoutMention)
+	require.Equal(t, permissions, req.OptionalPermissionScopes)
+	require.Equal(t, boundaries, *req.AccessBoundaries)
+	if req.PublishScope != "Shared" {
+		t.Errorf("PublishScope = %q, want Shared", req.PublishScope)
+	}
+
+	if req.AgentDisplayName != "CLI Overridden" {
+		t.Errorf("AgentDisplayName = %q, want CLI Overridden", req.AgentDisplayName)
+	}
+	if req.AppVersion != "2.3.4" {
+		t.Errorf("AppVersion = %q, want 2.3.4", req.AppVersion)
+	}
+	if req.ShortDescription != "A digital worker" {
+		t.Errorf("ShortDescription = %q, want A digital worker", req.ShortDescription)
+	}
+}
+
+func TestMicrosoft365APIVersion(t *testing.T) {
+	simple := &teamsPackContext{
+		activityProfile: project.ActivityProfile{IsActivity: true, UseCase: project.ActivityUseCaseSimple},
+	}
+	if got := microsoft365APIVersion(simple); got != agent_api.Microsoft365APIVersion {
+		t.Errorf("simple API version = %q, want %q", got, agent_api.Microsoft365APIVersion)
+	}
+
+	digitalWorker := &teamsPackContext{
+		activityProfile: project.ActivityProfile{
+			IsActivity: true,
+			UseCase:    project.ActivityUseCaseDigitalWorker,
+		},
+	}
+	if got := microsoft365APIVersion(digitalWorker); got != agent_api.Microsoft365DigitalWorkerAPIVersion {
+		t.Errorf(
+			"digital worker API version = %q, want %q",
+			got,
+			agent_api.Microsoft365DigitalWorkerAPIVersion,
+		)
 	}
 }
 

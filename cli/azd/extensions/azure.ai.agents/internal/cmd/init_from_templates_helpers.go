@@ -18,20 +18,15 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/fatih/color"
 )
 
 const agentTemplatesURL = "https://aka.ms/foundry-agents-samples"
-
-const promptVoicePreviewEnvVar = "AZD_AI_AGENT_ENABLE_PROMPT_VOICE"
-
-func promptVoicePreviewEnabled() bool {
-	value := strings.TrimSpace(os.Getenv(promptVoicePreviewEnvVar))
-	return strings.EqualFold(value, "1") || strings.EqualFold(value, "true") || strings.EqualFold(value, "yes")
-}
 
 // Template type constants
 const (
@@ -109,9 +104,76 @@ const (
 	initModeVoice = "prompt_voice"
 )
 
+// agentKindChoice represents the discriminator the user picks at the very
+// start of `azd ai agent init`. It selects between the supported agent
+// runtimes: hosted (the container/code-deploy flow) and prompt (a Foundry
+// prompt agent).
+type agentKindChoice string
+
+const (
+	// AgentKindChoiceHosted is the existing hosted-agent path — the customer
+	// supplies code or a container image and the platform runs it on Azure
+	// Container Apps.
+	AgentKindChoiceHosted agentKindChoice = "hosted"
+	// AgentKindChoicePrompt is the prompt agent path — the customer declares
+	// model + instructions and Foundry runs the agent. The scaffolded agent.yaml
+	// uses kind: prompt (see agent_yaml.AgentKindPrompt). Whether it also names
+	// a `harness:` is decided separately, by --harness or the kind menu entry.
+	AgentKindChoicePrompt agentKindChoice = "prompt"
+)
+
+// harnessNone is the --harness value that explicitly opts out of a harness,
+// letting `--harness none` degrade a harnessed template to a plain prompt agent.
+const harnessNone = "none"
+
+// resolveInitHarness resolves the harness written to the scaffolded agent.yaml.
+// An explicit --harness value always wins over impliedHarness — the harness the
+// context already suggests, whether that is the menu entry the user picked or
+// the `harness:` block of a supplied manifest. Both are validated the same way,
+// so a harness that is no longer accepted is reported wherever it came from.
+func resolveInitHarness(harnessFlag, impliedHarness string) (string, error) {
+	requested := harnessFlag
+	if strings.TrimSpace(requested) == "" {
+		requested = impliedHarness
+	}
+
+	harness := strings.ToLower(strings.TrimSpace(requested))
+	switch harness {
+	case "", harnessNone:
+		return "", nil
+	case agent_api.ManagedAgentHarnessGitHubCopilot:
+		return agent_api.ManagedAgentHarnessGitHubCopilot, nil
+	}
+
+	return "", exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		fmt.Sprintf("unknown --harness value %q", requested),
+		fmt.Sprintf("supported values are: %s, %s", agent_api.ManagedAgentHarnessGitHubCopilot, harnessNone),
+	)
+}
+
+// warnPromptAgentPreview tells the user that prompt-agent support in azd is
+// still in preview. It is called from the single place every prompt-agent init
+// funnels through, so the notice reaches both flag-driven runs (--kind prompt)
+// and manifest-driven ones.
+//
+// This warns rather than blocks: preview is a stability signal, not a gate.
+func warnPromptAgentPreview(writer io.Writer) {
+	// Each segment is colored independently. Nesting output.WithBold inside
+	// output.WithWarningFormat would emit a reset mid-string, dropping the
+	// surrounding yellow and switching the foreground to white from there on.
+	emphasis := color.New(color.FgYellow, color.Bold)
+
+	fmt.Fprintf(writer, "%s%s%s",
+		output.WithWarningFormat("\n(!) Prompt agents are a "),
+		emphasis.Sprint("preview feature of the azd CLI experience"),
+		output.WithWarningFormat(
+			". The authoring layout and commands may change in a future release.\n\n",
+		),
+	)
+}
+
 // voiceInitChoice is the interactive menu entry for creating a prompt voice agent.
-// It is appended to the init-mode choices only when prompt voice private preview
-// is explicitly enabled.
 var voiceInitChoice = &azdext.SelectChoice{
 	Label: "Create a prompt voice agent",
 	Value: initModeVoice,
@@ -120,8 +182,7 @@ var voiceInitChoice = &azdext.SelectChoice{
 // promptInitMode asks the user whether to use existing code, start from a
 // template, or create a prompt voice agent.
 // If the current directory is empty, the "use existing code" option is omitted
-// (there is no code to use). The voice option is private preview and only shown
-// when promptVoicePreviewEnabled returns true.
+// (there is no code to use).
 // In no-prompt mode the directory contents decide: empty -> template, otherwise
 // use the current directory. Voice is only selectable interactively (or via
 // --kind prompt-voice in no-prompt mode).
@@ -138,11 +199,6 @@ func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt b
 		}
 		return initModeFromCode, nil
 	}
-	voicePreviewEnabled := promptVoicePreviewEnabled()
-	if empty && !voicePreviewEnabled {
-		return initModeTemplate, nil
-	}
-
 	var choices []*azdext.SelectChoice
 	if empty {
 		// No local code to adopt; offer template + voice.
@@ -155,9 +211,7 @@ func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt b
 			{Label: "Start new from a template", Value: initModeTemplate},
 		}
 	}
-	if voicePreviewEnabled {
-		choices = append(choices, voiceInitChoice)
-	}
+	choices = append(choices, voiceInitChoice)
 
 	defaultIndex := int32(0)
 

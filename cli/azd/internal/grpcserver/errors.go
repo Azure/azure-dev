@@ -40,8 +40,9 @@ func mapHostError(err error) error {
 	suggestionErr, hasSuggestion := errors.AsType[*internal.ErrorWithSuggestion](err)
 	isAuthErr := isAuthError(err)
 	responseErr, hasResponseError := errors.AsType[*azcore.ResponseError](err)
+	relayedErr := relayedExtensionError(err)
 	existingStatus, hasExistingStatus := azdext.GRPCStatusFromError(err)
-	if !hasSuggestion && !isAuthErr && !hasResponseError {
+	if !hasSuggestion && !isAuthErr && !hasResponseError && relayedErr == nil {
 		return err
 	}
 
@@ -60,11 +61,26 @@ func mapHostError(err error) error {
 	if hasSuggestion {
 		st = withActionableErrorDetail(st, suggestionErr)
 	}
-	if hasResponseError && !hasServiceErrorDetail(st) {
+	if relayedErr != nil {
+		st = withRelayedExtensionErrorDetail(st, relayedErr)
+	} else if hasResponseError && !hasServiceErrorDetail(st) {
 		st = withServiceErrorDetail(st, responseErr)
 	}
 
 	return st.Err()
+}
+
+func relayedExtensionError(err error) *azdext.ExtensionError {
+	if _, ok := errors.AsType[*azdext.ServiceError](err); ok {
+		return azdext.WrapError(err)
+	}
+	if _, ok := errors.AsType[*azdext.LocalError](err); ok {
+		return azdext.WrapError(err)
+	}
+	if _, ok := errors.AsType[*azdext.ToolError](err); ok {
+		return azdext.WrapError(err)
+	}
+	return nil
 }
 
 func hostErrorStatus(
@@ -84,17 +100,25 @@ func hostErrorStatus(
 }
 
 func hasServiceErrorDetail(st *status.Status) bool {
-	if st == nil {
-		return false
+	return azdext.ServiceErrorDetailFromStatus(st) != nil
+}
+
+func hasRelayedExtensionErrorDetail(st *status.Status) bool {
+	return azdext.ExtensionErrorFromStatus(st) != nil
+}
+
+func withRelayedExtensionErrorDetail(st *status.Status, relayedErr *azdext.ExtensionError) *status.Status {
+	if st == nil || relayedErr == nil || hasRelayedExtensionErrorDetail(st) {
+		return st
 	}
 
-	for _, detail := range st.Details() {
-		if _, ok := detail.(*azdext.ServiceErrorDetail); ok {
-			return true
-		}
+	withDetails, detailErr := st.WithDetails(relayedErr)
+	if detailErr != nil {
+		log.Printf("failed to attach relayed extension error detail to gRPC status: %v", detailErr)
+		return st
 	}
 
-	return false
+	return withDetails
 }
 
 func withServiceErrorDetail(st *status.Status, responseErr *azcore.ResponseError) *status.Status {

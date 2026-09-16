@@ -33,7 +33,10 @@ func TestDeleteMarkerCleanup(t *testing.T) {
 			"AGENT_MY_AGENT_NAME",
 			"AGENT_MY_AGENT_VERSION",
 			"AGENT_MY_AGENT_ENDPOINT",
+			"AGENT_MY_AGENT_VOICE_TARGET_NAME",
+			"AGENT_MY_AGENT_VOICE_TARGET_VERSION",
 			"AGENT_MY_AGENT_PROJECT_ENDPOINT",
+			"AGENT_MY_AGENT_PROTOCOL_ENDPOINTS_VERSION",
 			"AGENT_MY_AGENT_RESPONSES_ENDPOINT",
 			"AGENT_MY_AGENT_INVOCATIONS_ENDPOINT",
 			"AGENT_MY_AGENT_INVOCATIONS_WS_ENDPOINT",
@@ -42,6 +45,14 @@ func TestDeleteMarkerCleanup(t *testing.T) {
 			require.True(t, ok, "%s was not cleared", key)
 			require.Equal(t, "", got, key)
 		}
+		// Clear protocol snapshot marker first.
+		require.NotEmpty(t, envServer.setKeys)
+		require.Equal(
+			t,
+			"AGENT_MY_AGENT_PROTOCOL_ENDPOINTS_VERSION",
+			envServer.setKeys[0],
+			"protocol endpoints version marker must be cleared first",
+		)
 	})
 
 	t.Run("whole agent markers are preserved for another project", func(t *testing.T) {
@@ -82,6 +93,9 @@ func TestDeleteMarkerCleanup(t *testing.T) {
 		for _, key := range []string{
 			"AGENT_MY_AGENT_VERSION",
 			"AGENT_MY_AGENT_ENDPOINT",
+			"AGENT_MY_AGENT_PROTOCOL_ENDPOINTS_VERSION",
+			"AGENT_MY_AGENT_VOICE_TARGET_NAME",
+			"AGENT_MY_AGENT_VOICE_TARGET_VERSION",
 			"AGENT_MY_AGENT_RESPONSES_ENDPOINT",
 			"AGENT_MY_AGENT_INVOCATIONS_ENDPOINT",
 			"AGENT_MY_AGENT_INVOCATIONS_WS_ENDPOINT",
@@ -90,6 +104,14 @@ func TestDeleteMarkerCleanup(t *testing.T) {
 			require.True(t, ok, "%s was not cleared", key)
 			require.Equal(t, "", got, key)
 		}
+		// Clear protocol snapshot marker first.
+		require.NotEmpty(t, envServer.setKeys)
+		require.Equal(
+			t,
+			"AGENT_MY_AGENT_PROTOCOL_ENDPOINTS_VERSION",
+			envServer.setKeys[0],
+			"protocol endpoints version marker must be cleared first",
+		)
 	})
 
 	t.Run("version marker uses legacy agent endpoint scope", func(t *testing.T) {
@@ -158,6 +180,7 @@ func TestDeleteCommand_ForceFlag(t *testing.T) {
 	if flag.DefValue != "false" {
 		t.Fatalf("expected --force default false, got %q", flag.DefValue)
 	}
+	assert.Contains(t, flag.Usage, "no-prompt")
 }
 
 func TestDeleteCommand_OutputFlagAnnotation(t *testing.T) {
@@ -175,6 +198,23 @@ func TestDeleteCommand_VersionFlag(t *testing.T) {
 	if flag.DefValue != "" {
 		t.Fatalf("expected --version default empty, got %q", flag.DefValue)
 	}
+}
+
+func TestDeleteConfirmation_NoPromptRequiresForce(t *testing.T) {
+	action := &DeleteAction{flags: &deleteFlags{noPrompt: true}}
+
+	err := action.confirmDelete(t.Context(), nil, "my-agent")
+
+	require.Error(t, err)
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Equal(t, exterrors.CodeDeleteRequiresForce, localErr.Code)
+	assert.Contains(t, localErr.Suggestion, "--force")
+}
+
+func TestDeleteConfirmation_NoPromptForcePreConsents(t *testing.T) {
+	action := &DeleteAction{flags: &deleteFlags{noPrompt: true, force: true}}
+	require.NoError(t, action.confirmDelete(t.Context(), nil, "my-agent"))
 }
 
 // ---------------------------------------------------------------------------

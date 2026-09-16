@@ -197,6 +197,9 @@ type ConsoleOptions struct {
 	DefaultValue  any
 	// EnableFiltering controls whether select prompts allow filtering. Nil uses the component default.
 	EnableFiltering *bool
+	// AllowEmptySelection controls whether multi-select prompts can be submitted without a selection.
+	// Nil preserves the historical behavior of allowing empty selections.
+	AllowEmptySelection *bool
 
 	// Prompt-only options
 	IsPassword bool
@@ -861,6 +864,10 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 			return nil, fmt.Errorf("unmarshalling response: %w", err)
 		}
 
+		if err := validateMultiSelectResponse(response, options.AllowEmptySelection); err != nil {
+			return nil, err
+		}
+
 		return response, nil
 	}
 
@@ -903,7 +910,19 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 		return nil, err
 	}
 
+	if err := validateMultiSelectResponse(response, options.AllowEmptySelection); err != nil {
+		return nil, err
+	}
+
 	return response, nil
+}
+
+func validateMultiSelectResponse(response []string, allowEmptySelection *bool) error {
+	if allowEmptySelection != nil && !*allowEmptySelection && len(response) == 0 {
+		return errors.New("at least one option must be selected")
+	}
+
+	return nil
 }
 
 // Prompts the user to confirm an operation

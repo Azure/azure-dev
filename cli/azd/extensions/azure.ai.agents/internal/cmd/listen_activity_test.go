@@ -5,13 +5,17 @@ package cmd
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/project"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestActivityBotTeardownTarget(t *testing.T) {
@@ -60,6 +64,144 @@ func TestActivityBotTeardownTarget(t *testing.T) {
 			require.Equal(t, test.wantTracked, tracked)
 		})
 	}
+}
+
+func TestResolveServiceActivityProfileUsesConfiguredDigitalWorkerType(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		activity map[string]any
+		want     project.ActivityUseCase
+	}{
+		{
+			name: "simple is the default",
+			want: project.ActivityUseCaseSimple,
+		},
+		{
+			name: "digital worker skips simple flow",
+			activity: map[string]any{
+				"digitalWorkerType": "m365",
+				"publish": map[string]any{
+					"publishScope": "tenant",
+				},
+			},
+			want: project.ActivityUseCaseDigitalWorker,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			values := map[string]any{
+				"kind": "hosted",
+				"name": "activity-agent",
+				"protocols": []any{
+					map[string]any{"protocol": "activity", "version": "2.0.0"},
+				},
+			}
+			if test.activity != nil {
+				values["activity"] = test.activity
+			}
+			props, err := structpb.NewStruct(values)
+			require.NoError(t, err)
+
+			profile, err := resolveServiceActivityProfile(&azdext.ServiceConfig{
+				Name:                 "activity-agent",
+				Host:                 AiAgentHost,
+				AdditionalProperties: props,
+			}, t.TempDir())
+			require.NoError(t, err)
+			require.True(t, profile.IsActivity)
+			require.Equal(t, test.want, profile.UseCase)
+		})
+	}
+}
+
+func TestResolveServiceActivityProfileUsesConfiguredDigitalWorkerTypeFromFileRef(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	definitionPath := filepath.Join(dir, "agent.yaml")
+	referenced := strings.Join([]string{
+		"kind: hosted",
+		"name: activity-agent",
+		"protocols:",
+		"  - protocol: activity",
+		"    version: 2.0.0",
+		"activity:",
+		"  digitalWorkerType: m365",
+		"  publish:",
+		"    publishScope: tenant",
+	}, "\n")
+	require.NoError(t, os.WriteFile(definitionPath, []byte(referenced), 0600))
+
+	props, err := structpb.NewStruct(map[string]any{"$ref": "./agent.yaml"})
+	require.NoError(t, err)
+
+	profile, err := resolveServiceActivityProfile(&azdext.ServiceConfig{
+		Name:                 "activity-agent",
+		Host:                 AiAgentHost,
+		AdditionalProperties: props,
+	}, dir)
+	require.NoError(t, err)
+	require.True(t, profile.IsActivity)
+	require.Equal(t, project.ActivityUseCaseDigitalWorker, profile.UseCase)
+}
+
+func TestShouldProvisionActivityBotUsesCanonicalUseCaseResolution(t *testing.T) {
+	t.Parallel()
+
+	t.Run("simple activity is provisioned", func(t *testing.T) {
+		t.Parallel()
+
+		shouldProvision, err := shouldProvisionActivityBot(&azdext.ServiceConfig{
+			Name: "activity-agent",
+			Host: AiAgentHost,
+			AdditionalProperties: mustStruct(t, map[string]any{
+				"kind":      "hosted",
+				"name":      "activity-agent",
+				"protocols": []any{map[string]any{"protocol": "activity", "version": "2.0.0"}},
+			}),
+		}, t.TempDir())
+		require.NoError(t, err)
+		require.True(t, shouldProvision)
+	})
+
+	t.Run("digital worker skips the legacy bot provisioning path", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		definitionPath := filepath.Join(dir, "agent.yaml")
+		definition := strings.Join([]string{
+			"kind: hosted",
+			"name: activity-agent",
+			"protocols:",
+			"  - protocol: activity",
+			"    version: 2.0.0",
+			"activity:",
+			"  digitalWorkerType: m365",
+			"  publish:",
+			"    publishScope: tenant",
+		}, "\n")
+		require.NoError(t, os.WriteFile(definitionPath, []byte(definition), 0600))
+
+		shouldProvision, err := shouldProvisionActivityBot(&azdext.ServiceConfig{
+			Name:                 "activity-agent",
+			Host:                 AiAgentHost,
+			AdditionalProperties: mustStruct(t, map[string]any{"$ref": "./agent.yaml"}),
+		}, dir)
+		require.NoError(t, err)
+		require.False(t, shouldProvision)
+	})
+}
+
+func mustStruct(t *testing.T, value map[string]any) *structpb.Struct {
+	t.Helper()
+	st, err := structpb.NewStruct(value)
+	require.NoError(t, err)
+	return st
 }
 
 func TestTeamsSetupGuideContent(t *testing.T) {
@@ -112,7 +254,7 @@ func TestTeamsSetupGuideContent(t *testing.T) {
 	}
 }
 
-func TestWriteTeamsSetupGuide(t *testing.T) {
+func TestNoTeamsSetupGuideCreated(t *testing.T) {
 	root := t.TempDir()
 	proj := &azdext.ProjectConfig{Path: root}
 	svc := &azdext.ServiceConfig{Name: "echo-agent", RelativePath: "src"}
@@ -125,12 +267,13 @@ func TestWriteTeamsSetupGuide(t *testing.T) {
 	if path != want {
 		t.Fatalf("guide path = %q, want %q", path, want)
 	}
-	data, err := os.ReadFile(path)
+
+	contents, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("guide not written: %v", err)
+		t.Fatalf("read setup guide %q: %v", path, err)
 	}
-	if !strings.Contains(string(data), "app-id") {
-		t.Errorf("written guide missing bot id")
+	if !strings.Contains(string(contents), "echo-agent-bot-uai") {
+		t.Fatalf("setup guide must contain the bot name; got:\n%s", contents)
 	}
 }
 
@@ -180,6 +323,36 @@ func TestWriteTeamsAppPackage_SkipsSharedAgentSourceDirectory(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "src", teamsAppPackageFile)); !os.IsNotExist(err) {
 		t.Errorf("Teams app package must not be written for a shared source directory")
 	}
+}
+
+func TestWarnLegacySimpleTeamsArtifactsForDigitalWorker(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	svc := &azdext.ServiceConfig{Name: "agent-a", Host: AiAgentHost, RelativePath: "src"}
+	proj := &azdext.ProjectConfig{Path: root, Services: map[string]*azdext.ServiceConfig{"agent-a": svc}}
+
+	for _, name := range []string{teamsAppPackageFile, teamsAppPackageMarkerFile, teamsSetupGuideFile} {
+		require.NoError(t, os.WriteFile(filepath.Join(root, "src", name), []byte("legacy"), 0o600))
+	}
+
+	oldStderr := os.Stderr
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stderr = w
+	defer func() { os.Stderr = oldStderr }()
+
+	warnLegacySimpleTeamsArtifacts(proj, svc)
+	_ = w.Close()
+	out, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	text := string(out)
+	require.Contains(t, text, "digital worker")
+	require.Contains(t, text, teamsAppPackageFile)
+	require.Contains(t, text, teamsSetupGuideFile)
+	require.Contains(t, text, "review and remove them manually")
 }
 
 func TestHasSharedTeamsArtifactDestination(t *testing.T) {

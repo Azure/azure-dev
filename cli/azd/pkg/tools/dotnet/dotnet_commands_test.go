@@ -4,6 +4,7 @@
 package dotnet
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,10 +12,14 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/stretchr/testify/require"
@@ -105,6 +110,37 @@ func Test_Cli_CheckInstalled(t *testing.T) {
 		err := cli.CheckInstalled(t.Context())
 		require.Error(t, err)
 	})
+
+	t.Run("shares successful SDK probe", func(t *testing.T) {
+		t.Parallel()
+		cli, runner := newCliWithMock(t)
+		runner.MockToolInPath("dotnet", nil)
+		var callCount atomic.Int32
+		runner.When(matchDotnetArg0("--version")).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				callCount.Add(1)
+				return exec.NewRunResult(0, "8.0.100", ""), nil
+			})
+
+		supported, err := cli.SupportsArtifactsPath(t.Context())
+		require.NoError(t, err)
+		require.True(t, supported)
+		require.NoError(t, cli.CheckInstalled(t.Context()))
+		require.Equal(t, int32(1), callCount.Load())
+	})
+
+	t.Run("checks path when SDK probe is cached", func(t *testing.T) {
+		t.Parallel()
+		cli, runner := newCliWithMock(t)
+		runner.When(matchDotnetArg0("--version")).Respond(exec.NewRunResult(0, "8.0.100", ""))
+
+		_, err := cli.SdkVersion(t.Context())
+		require.NoError(t, err)
+
+		wantErr := errors.New("dotnet no longer in path")
+		runner.MockToolInPath("dotnet", wantErr)
+		require.ErrorIs(t, cli.CheckInstalled(t.Context()), wantErr)
+	})
 }
 
 func Test_Cli_SdkVersion(t *testing.T) {
@@ -113,13 +149,23 @@ func Test_Cli_SdkVersion(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		t.Parallel()
 		cli, runner := newCliWithMock(t)
-		runner.When(matchDotnetArg0("--version")).Respond(exec.NewRunResult(0, "8.0.203", ""))
+		var callCount atomic.Int32
+		runner.When(matchDotnetArg0("--version")).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				callCount.Add(1)
+				return exec.NewRunResult(0, "8.0.203", ""), nil
+			})
 
 		ver, err := cli.SdkVersion(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, uint64(8), ver.Major)
 		require.Equal(t, uint64(0), ver.Minor)
 		require.Equal(t, uint64(203), ver.Patch)
+
+		cached, err := cli.SdkVersion(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, ver, cached)
+		require.Equal(t, int32(1), callCount.Load())
 	})
 
 	t.Run("run error", func(t *testing.T) {
@@ -142,6 +188,84 @@ func Test_Cli_SdkVersion(t *testing.T) {
 		_, err := cli.SdkVersion(t.Context())
 		require.Error(t, err)
 	})
+
+	t.Run("failed probe retries", func(t *testing.T) {
+		t.Parallel()
+		cli, runner := newCliWithMock(t)
+		var callCount atomic.Int32
+		runner.When(matchDotnetArg0("--version")).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				if callCount.Add(1) == 1 {
+					return exec.RunResult{}, context.Canceled
+				}
+				return exec.NewRunResult(0, "8.0.100", ""), nil
+			})
+
+		_, err := cli.SdkVersion(t.Context())
+		require.ErrorIs(t, err, context.Canceled)
+
+		version, err := cli.SdkVersion(t.Context())
+		require.NoError(t, err)
+		require.Equal(t, "8.0.100", version.String())
+		require.Equal(t, int32(2), callCount.Load())
+	})
+
+	t.Run("concurrent callers share successful probe", func(t *testing.T) {
+		t.Parallel()
+		cli, runner := newCliWithMock(t)
+		var callCount atomic.Int32
+		runner.When(matchDotnetArg0("--version")).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				callCount.Add(1)
+				time.Sleep(10 * time.Millisecond)
+				return exec.NewRunResult(0, "8.0.100", ""), nil
+			})
+
+		const callerCount = 20
+		results := make(chan error, callerCount)
+		ctx := t.Context()
+		var wg sync.WaitGroup
+		for range callerCount {
+			wg.Go(func() {
+				_, err := cli.SdkVersion(ctx)
+				results <- err
+			})
+		}
+		wg.Wait()
+		close(results)
+
+		for err := range results {
+			require.NoError(t, err)
+		}
+		require.Equal(t, int32(1), callCount.Load())
+	})
+}
+
+func Test_Cli_SupportsArtifactsPath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		version string
+		want    bool
+	}{
+		{version: "6.0.428", want: false},
+		{version: "7.0.410", want: false},
+		{version: "8.0.99", want: false},
+		{version: "8.0.100", want: true},
+		{version: "9.0.100", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.version, func(t *testing.T) {
+			t.Parallel()
+			cli, runner := newCliWithMock(t)
+			runner.When(matchDotnetArg0("--version")).Respond(exec.NewRunResult(0, tt.version, ""))
+
+			got, err := cli.SupportsArtifactsPath(t.Context())
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
 }
 
 func Test_Cli_Restore(t *testing.T) {
@@ -540,6 +664,27 @@ func Test_Cli_PublishContainer(t *testing.T) {
 func Test_Cli_ArtifactsPathContext(t *testing.T) {
 	t.Parallel()
 
+	t.Run("Publish appends --artifacts-path from context", func(t *testing.T) {
+		t.Parallel()
+		cli, runner := newCliWithMock(t)
+		var captured exec.RunArgs
+		runner.When(matchDotnetArg0("publish")).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				captured = args
+				return exec.NewRunResult(0, "", ""), nil
+			})
+
+		ctx := ContextWithArtifactsPath(t.Context(), "/tmp/artifacts-package")
+		err := cli.Publish(ctx, "p.csproj", "Release", "/tmp/package", nil)
+		require.NoError(t, err)
+		require.Equal(t, []string{
+			"publish", "p.csproj",
+			"-c", "Release",
+			"--output", "/tmp/package",
+			"--artifacts-path", "/tmp/artifacts-package",
+		}, captured.Args)
+	})
+
 	t.Run("PublishContainer appends --artifacts-path from context", func(t *testing.T) {
 		t.Parallel()
 		cli, runner := newCliWithMock(t)
@@ -596,77 +741,44 @@ func Test_Cli_ArtifactsPathContext(t *testing.T) {
 func Test_Cli_ContainerEngine(t *testing.T) {
 	t.Parallel()
 
-	t.Run("podman engine appends ContainerEngine property", func(t *testing.T) {
-		t.Parallel()
-		cli, runner := newCliWithMock(t)
-		var captured exec.RunArgs
-		runner.When(matchDotnetArg0("publish")).
-			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				captured = args
-				return exec.NewRunResult(0, successContainerOutput, ""), nil
-			})
+	tests := []struct {
+		name    string
+		engine  tools.ContainerEngine
+		publish bool
+		wantArg string
+	}{
+		{name: "local podman", engine: tools.ContainerEnginePodman, wantArg: "-p:ContainerEngine=podman"},
+		{name: "local docker", engine: tools.ContainerEngineDocker},
+		{name: "local default"},
+		{name: "publish podman", engine: tools.ContainerEnginePodman, publish: true, wantArg: "-p:ContainerEngine=podman"},
+		{name: "publish docker", engine: tools.ContainerEngineDocker, publish: true},
+		{name: "publish default", publish: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cli, runner := newCliWithMock(t)
+			var captured exec.RunArgs
+			runner.When(matchDotnetArg0("publish")).
+				RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+					captured = args
+					return exec.NewRunResult(0, successContainerOutput, ""), nil
+				})
 
-		_, _, err := cli.BuildContainerLocal(
-			t.Context(), "p.csproj", "Release", "img", "podman",
-		)
-		require.NoError(t, err)
-		joined := strings.Join(captured.Args, " ")
-		require.Contains(t, joined, "-p:ContainerEngine=podman")
-	})
-
-	t.Run("docker engine does not append ContainerEngine property", func(t *testing.T) {
-		t.Parallel()
-		cli, runner := newCliWithMock(t)
-		var captured exec.RunArgs
-		runner.When(matchDotnetArg0("publish")).
-			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				captured = args
-				return exec.NewRunResult(0, successContainerOutput, ""), nil
-			})
-
-		_, _, err := cli.BuildContainerLocal(
-			t.Context(), "p.csproj", "Release", "img", "docker",
-		)
-		require.NoError(t, err)
-		joined := strings.Join(captured.Args, " ")
-		require.NotContains(t, joined, "-p:ContainerEngine=")
-	})
-
-	t.Run("empty engine does not append ContainerEngine property", func(t *testing.T) {
-		t.Parallel()
-		cli, runner := newCliWithMock(t)
-		var captured exec.RunArgs
-		runner.When(matchDotnetArg0("publish")).
-			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				captured = args
-				return exec.NewRunResult(0, successContainerOutput, ""), nil
-			})
-
-		_, _, err := cli.BuildContainerLocal(
-			t.Context(), "p.csproj", "Release", "img", "",
-		)
-		require.NoError(t, err)
-		joined := strings.Join(captured.Args, " ")
-		require.NotContains(t, joined, "-p:ContainerEngine=")
-	})
-
-	t.Run("podman engine on PublishContainer", func(t *testing.T) {
-		t.Parallel()
-		cli, runner := newCliWithMock(t)
-		var captured exec.RunArgs
-		runner.When(matchDotnetArg0("publish")).
-			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				captured = args
-				return exec.NewRunResult(0, successContainerOutput, ""), nil
-			})
-
-		_, err := cli.PublishContainer(
-			t.Context(), "p.csproj", "Release", "img", "r", "u", "p", "podman",
-		)
-		require.NoError(t, err)
-		joined := strings.Join(captured.Args, " ")
-		require.Contains(t, joined, "-p:ContainerEngine=podman")
-	})
+			if tt.publish {
+				_, err := cli.PublishContainer(t.Context(), "p.csproj", "Release", "img", "r", "u", "p", tt.engine)
+				require.NoError(t, err)
+			} else {
+				_, _, err := cli.BuildContainerLocal(t.Context(), "p.csproj", "Release", "img", tt.engine)
+				require.NoError(t, err)
+			}
+			if tt.wantArg != "" {
+				require.Contains(t, captured.Args, tt.wantArg)
+			} else {
+				require.NotContains(t, strings.Join(captured.Args, " "), "-p:ContainerEngine=")
+			}
+		})
+	}
 }
 
 func Test_Cli_getTargetPort_Branches(t *testing.T) {

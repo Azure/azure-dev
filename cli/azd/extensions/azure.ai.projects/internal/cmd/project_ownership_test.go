@@ -1,0 +1,2148 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"maps"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/synthesis"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
+)
+
+func TestEjectProjectInfraIgnoresSplitConnectionSecrets(t *testing.T) {
+	const (
+		endpoint   = "https://account.services.ai.azure.com/api/projects/project"
+		resourceID = "/subscriptions/sub/resourceGroups/rg/providers/" +
+			"Microsoft.CognitiveServices/accounts/account/projects/project"
+		connectionFile = "category: CognitiveSearch\nauthType: ApiKey\n" +
+			"target: https://search.example.com\ncredentials:\n  key: split-reference-secret\n"
+	)
+	t.Setenv("SPLIT_CONNECTION_SECRET", "split-process-secret")
+	for _, target := range []struct {
+		name     string
+		provider string
+		existing bool
+	}{
+		{name: "greenfield Bicep", provider: "bicep"},
+		{name: "greenfield Terraform", provider: "terraform"},
+		{name: "existing Bicep", provider: "bicep", existing: true},
+		{name: "existing Terraform", provider: "terraform", existing: true},
+	} {
+		t.Run(target.name, func(t *testing.T) {
+			for _, connection := range []struct {
+				name string
+				body string
+			}{
+				{
+					name: "concrete credential",
+					body: "    credentials:\n      key: split-inline-secret\n",
+				},
+				{
+					name: "environment credential",
+					body: "    credentials:\n      key: ${SPLIT_CONNECTION_SECRET}\n",
+				},
+				{
+					name: "referenced credential",
+					body: "    $ref: ./connection.yaml\n",
+				},
+				{
+					name: "condition and reference owned by Connections",
+					body: "    condition: {value: split-condition-secret}\n" +
+						"    $ref: ./missing-connection.yaml\n",
+				},
+			} {
+				t.Run(connection.name, func(t *testing.T) {
+					root := t.TempDir()
+					endpointLine, selectedEndpoint, selectedID := "", "", ""
+					if target.existing {
+						endpointLine = "    endpoint: " + endpoint + "\n"
+						selectedEndpoint, selectedID = endpoint, resourceID
+					}
+					azureYAML := []byte("name: test\nservices:\n  project:\n    host: azure.ai.project\n" + endpointLine +
+						"    deployments:\n      - name: chat\n" +
+						"        model: {format: OpenAI, name: gpt-4.1, version: \"2025-04-14\"}\n" +
+						"        sku: {name: GlobalStandard, capacity: 10}\n" +
+						"  split-search:\n    host: azure.ai.connection\n    category: CognitiveSearch\n" +
+						"    target: https://search.example.com\n    authType: ApiKey\n" + connection.body)
+					require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), azureYAML, 0600))
+					refPath := filepath.Join(root, "connection.yaml")
+					require.NoError(t, os.WriteFile(refPath, []byte(connectionFile), 0600))
+					projectServer := &transactionProjectServer{
+						project: &azdext.ProjectConfig{
+							Name:  "test",
+							Path:  root,
+							Infra: &azdext.InfraOptions{Provider: provisioningFoundryProvider},
+						},
+					}
+					client := newTransactionProjectClient(t, projectServer)
+					require.NoError(t, ejectProjectInfraWithTarget(
+						t.Context(), client, root, "project", target.provider,
+						selectedEndpoint, selectedID,
+						// #nosec G101 -- synthetic secret used only to assert it is never emitted.
+						map[string]string{"SPLIT_CONNECTION_SECRET": "split-environment-secret"},
+					))
+
+					infraDir := filepath.Join(root, "infra")
+					assertProjectEjectionOmitsConnections(t, infraDir,
+						"split-search", "split-inline-secret", "SPLIT_CONNECTION_SECRET",
+						"split-process-secret", "split-environment-secret", "split-reference-secret",
+						"split-condition-secret", "connection.yaml",
+					)
+					parameterFile := "main.tfvars.json"
+					markerVersion := foundryTerraformMarkerVersion
+					if target.provider == "bicep" {
+						parameterFile = "main.parameters.json"
+						markerVersion = foundryBicepMarkerVersion
+					}
+					// #nosec G304 -- paths are inside the test project directory.
+					raw, err := os.ReadFile(filepath.Join(infraDir, parameterFile))
+					require.NoError(t, err)
+					var document struct {
+						Deployments []synthesis.Deployment `json:"deployments"`
+						Parameters  struct {
+							Deployments struct {
+								Value []synthesis.Deployment `json:"value"`
+							} `json:"deployments"`
+						} `json:"parameters"`
+					}
+					require.NoError(t, json.Unmarshal(raw, &document))
+					deployments := document.Deployments
+					if target.provider == "bicep" {
+						deployments = document.Parameters.Deployments.Value
+					}
+					assert.Equal(t, []synthesis.Deployment{synthesisDeploymentForTest()}, deployments)
+					// #nosec G304 -- path is inside the test project directory.
+					marker, err := os.ReadFile(filepath.Join(infraDir, foundryEjectionMarker))
+					require.NoError(t, err)
+					assert.Equal(t, markerVersion, string(marker))
+					assert.Equal(t, azureYAML, mustReadProjectFile(t, root))
+					// #nosec G304 -- path is inside the test project directory.
+					reference, err := os.ReadFile(refPath)
+					require.NoError(t, err)
+					assert.Equal(t, connectionFile, string(reference))
+					staged, err := filepath.Glob(filepath.Join(root, ".azd-foundry-eject-*"))
+					require.NoError(t, err)
+					assert.Empty(t, staged)
+				})
+			}
+		})
+	}
+}
+
+// assertProjectEjectionOmitsConnections checks every emitted artifact, including
+// copied modules, while allowing the project-owned system ACR connection.
+func assertProjectEjectionOmitsConnections(t *testing.T, infraDir string, secrets ...string) {
+	t.Helper()
+	forbidden := append([]string{
+		`"connections"`, "connectionCredentials", "param connections ",
+		"connections:", "var.connections", "local.connections", "resource connections ",
+	}, secrets...)
+	root, err := os.OpenRoot(infraDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, root.Close()) })
+	files := 0
+	require.NoError(t, fs.WalkDir(root.FS(), ".", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		raw, err := root.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		files++
+		for _, value := range forbidden {
+			assert.NotContains(t, string(raw), value, "unexpected generic connection data in %s", path)
+		}
+		return nil
+	}))
+	require.Positive(t, files, "ejection must produce files to check")
+}
+
+func TestProjectCommandsRegistered(t *testing.T) {
+	root := NewRootCommand()
+	addCommand, _, err := root.Find([]string{"add"})
+	require.NoError(t, err)
+	assert.Equal(t, "add", addCommand.Name())
+	deploymentCommand, _, err := root.Find([]string{"deployment", "add"})
+	require.NoError(t, err)
+	assert.Equal(t, "add", deploymentCommand.Name())
+	assert.Nil(t, addCommand.Flags().Lookup("request-file"))
+	assert.Nil(t, deploymentCommand.Flags().Lookup("request-file"))
+	assertOutputFlagOptions(t, addCommand, "default", []string{"default", "json", "none"})
+
+	assert.Equal(t, "bicep", addCommand.Flags().Lookup("infra").NoOptDefVal)
+	_, _, err = root.Find([]string{"init"})
+	require.Error(t, err)
+}
+
+func TestProjectFileExists(t *testing.T) {
+	root := t.TempDir()
+
+	exists, err := projectFileExists(root)
+	require.NoError(t, err)
+	assert.False(t, exists)
+
+	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yml"), []byte("name: test\n"), 0600))
+	exists, err = projectFileExists(root)
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	require.NoError(t, os.Remove(filepath.Join(root, "azure.yml")))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte("name: test\n"), 0600))
+	exists, err = projectFileExists(root)
+	require.NoError(t, err)
+	assert.True(t, exists)
+}
+
+func TestResolvedProjectFromEndpoint(t *testing.T) {
+	project, err := resolvedProjectFromEndpoint(
+		"https://account.services.ai.azure.com/api/projects/foundry-project/",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, projectModeExistingEndpoint, project.Mode)
+	assert.Equal(t, "account", project.AccountName)
+	assert.Equal(t, "foundry-project", project.ProjectName)
+	assert.Equal(
+		t,
+		"https://account.services.ai.azure.com/api/projects/foundry-project",
+		project.Endpoint,
+	)
+}
+
+func TestProjectAddRejectsExplicitForceWithoutTarget(t *testing.T) {
+	action := &ProjectAddAction{
+		flags: &projectAddFlags{
+			force:    true,
+			forceSet: true,
+		},
+	}
+
+	err := action.Run(t.Context())
+	require.Error(t, err)
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+}
+
+func TestConfirmExplicitProjectReplacementUsesEnvironmentEndpoint(t *testing.T) {
+	const (
+		oldEndpoint = "https://old.services.ai.azure.com/api/projects/old"
+		newEndpoint = "https://new.services.ai.azure.com/api/projects/new"
+	)
+	target, err := resolvedProjectFromEndpoint(newEndpoint)
+	require.NoError(t, err)
+	values := map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT": oldEndpoint,
+	}
+
+	err = confirmExplicitProjectReplacement(
+		t.Context(),
+		nil,
+		target,
+		nil,
+		values,
+		&projectAddFlags{
+			projectEndpoint: newEndpoint,
+			noPrompt:        true,
+		},
+	)
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, "project_replacement_requires_force", localErr.Code)
+
+	require.NoError(t, confirmExplicitProjectReplacement(
+		t.Context(),
+		nil,
+		target,
+		nil,
+		values,
+		&projectAddFlags{
+			projectEndpoint: newEndpoint,
+			force:           true,
+			noPrompt:        true,
+		},
+	))
+}
+
+func TestWriteTerraformEjectedInfra(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		includeAcr bool
+	}{
+		{name: "without ACR", includeAcr: false},
+		{name: "with ACR", includeAcr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			infraDir := filepath.Join(t.TempDir(), "infra")
+			require.NoError(t, os.MkdirAll(infraDir, 0750))
+			parameters := map[string]any{
+				"includeAcr": test.includeAcr,
+				"deployments": []synthesis.Deployment{{
+					Name: "chat",
+					Model: synthesis.DeploymentModel{
+						Format:  "OpenAI",
+						Name:    "gpt-4.1",
+						Version: "2025-04-14",
+					},
+					Sku: synthesis.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
+				}},
+			}
+
+			require.NoError(t, writeTerraformEjectedInfra(infraDir, parameters))
+
+			// #nosec G304
+			outputs, err := os.ReadFile(filepath.Join(infraDir, "outputs.tf"))
+			require.NoError(t, err)
+			assert.Contains(t, string(outputs), "AZURE_AI_PROJECT_ID")
+			if test.includeAcr {
+				assert.Contains(t, string(outputs), "AZURE_CONTAINER_REGISTRY_ENDPOINT")
+				_, err := os.Stat(filepath.Join(infraDir, "container-registry.tf"))
+				assert.NoError(t, err)
+			} else {
+				assert.NotContains(t, string(outputs), "AZURE_CONTAINER_REGISTRY_ENDPOINT")
+				_, err := os.Stat(filepath.Join(infraDir, "container-registry.tf"))
+				assert.ErrorIs(t, err, os.ErrNotExist)
+			}
+
+			// #nosec G304
+			rawTfvars, err := os.ReadFile(filepath.Join(infraDir, "main.tfvars.json"))
+			require.NoError(t, err)
+			tfvars := map[string]any{}
+			require.NoError(t, json.Unmarshal(rawTfvars, &tfvars))
+			assert.Equal(t, "${AZURE_SUBSCRIPTION_ID}", tfvars["subscription_id"])
+			assert.Equal(t, "${AZURE_LOCATION}", tfvars["location"])
+			assert.Equal(t, "${AZURE_RESOURCE_GROUP}", tfvars["resource_group_name"])
+			assert.Equal(t, "${AZURE_ENV_NAME}", tfvars["environment_name"])
+			assert.Equal(t, "${AZURE_AI_PROJECT_NAME}", tfvars["foundry_project_name"])
+			assert.Equal(t, "${AZURE_PRINCIPAL_ID}", tfvars["principal_id"])
+			assert.Equal(t, "${AZD_RESOURCE_TOKEN_SALT}", tfvars["resource_token_salt"])
+			assert.NotContains(t, tfvars, "connections")
+			assert.NotContains(t, tfvars, "connectionCredentials")
+			assert.NotContains(t, tfvars, "includeAcr")
+
+			deployments, ok := tfvars["deployments"].([]any)
+			require.True(t, ok)
+			require.Len(t, deployments, 1)
+			deployment, ok := deployments[0].(map[string]any)
+			require.True(t, ok)
+			assert.Equal(t, "chat", deployment["name"])
+			model, ok := deployment["model"].(map[string]any)
+			require.True(t, ok)
+			assert.Equal(t, "gpt-4.1", model["name"])
+			assertProjectEjectionOmitsConnections(t, infraDir)
+		})
+	}
+}
+
+func TestProjectServiceNameDeterministic(t *testing.T) {
+	services := map[string]*azdext.ServiceConfig{
+		"chat-app":     {Host: "azure.ai.agent"},
+		"ai-project":   {Host: "custom"},
+		"ai-project-2": {Host: "custom"},
+	}
+	assert.Equal(t, "new-project", projectServiceName("New Project", services))
+	assert.Equal(t, "ai-project-3", projectServiceName("", services))
+}
+
+func TestLegacyProjectServiceBodyPreservesConfiguration(t *testing.T) {
+	body, err := legacyProjectServiceBody(map[string]any{
+		"host":        "azure.ai.agents",
+		"endpoint":    "https://old.services.ai.azure.com/api/projects/old",
+		"deployments": []any{map[string]any{"name": "chat"}},
+		"hooks":       map[string]any{"predeploy": "echo ok"},
+		"uses":        []any{"connection"},
+		"customField": "preserve-me",
+	}, "https://new.services.ai.azure.com/api/projects/new")
+	require.NoError(t, err)
+
+	assert.NotContains(t, body, "host")
+	assert.Equal(t, "https://new.services.ai.azure.com/api/projects/new", body["endpoint"])
+	assert.Contains(t, body, "deployments")
+	assert.Contains(t, body, "hooks")
+	assert.Contains(t, body, "uses")
+	assert.Equal(t, "preserve-me", body["customField"])
+}
+
+func TestLegacyProjectServiceBodyRemovesEndpointForNewProject(t *testing.T) {
+	body, err := legacyProjectServiceBody(map[string]any{
+		"host":     "azure.ai.agents",
+		"endpoint": "https://old.services.ai.azure.com/api/projects/old",
+		"hooks":    map[string]any{"predeploy": "echo ok"},
+	}, "")
+	require.NoError(t, err)
+
+	assert.NotContains(t, body, "host")
+	assert.NotContains(t, body, "endpoint")
+	assert.Contains(t, body, "hooks")
+}
+
+func TestDeploymentLocationsExplicitSelectionWins(t *testing.T) {
+	locations, err := deploymentLocations(
+		"eastus",
+		"westus",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"westus"}, locations)
+}
+
+func TestDeploymentLocationsUsesProjectLocationByDefault(t *testing.T) {
+	locations, err := deploymentLocations(
+		"westus",
+		"",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"westus"}, locations)
+}
+
+func TestDeploymentLocationsRequiresLocation(t *testing.T) {
+	_, err := deploymentLocations("", "")
+	require.Error(t, err)
+
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Equal(t, exterrors.CodeMissingAzureLocation, localErr.Code)
+}
+
+func TestRequiresExistingProjectID(t *testing.T) {
+	existingEndpointService := &projectServiceInfo{
+		Resolved: map[string]any{
+			"endpoint": "https://account.services.ai.azure.com/api/projects/p",
+		},
+	}
+	tests := []struct {
+		name    string
+		values  map[string]string
+		service *projectServiceInfo
+		want    bool
+	}{
+		{
+			name:   "greenfield",
+			values: map[string]string{"USE_EXISTING_AI_PROJECT": "false"},
+		},
+		{
+			name:   "existing endpoint marker",
+			values: map[string]string{"USE_EXISTING_AI_PROJECT": "true"},
+			want:   true,
+		},
+		{
+			name:    "existing endpoint service",
+			service: existingEndpointService,
+			want:    true,
+		},
+		{
+			name:   "existing project ID",
+			values: map[string]string{"AZURE_AI_PROJECT_ID": "project-id"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(
+				t,
+				test.want,
+				requiresExistingProjectID(test.values, test.service),
+			)
+		})
+	}
+}
+
+func TestValidateConfiguredProjectIdentity(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+	const projectID = "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.CognitiveServices/accounts/account/projects/project"
+	service := &projectServiceInfo{
+		Resolved: map[string]any{"endpoint": endpoint},
+	}
+
+	require.NoError(t, validateConfiguredProjectIdentity(
+		map[string]string{"AZURE_AI_PROJECT_ID": projectID},
+		service,
+	))
+
+	err := validateConfiguredProjectIdentity(
+		map[string]string{
+			"AZURE_AI_PROJECT_ID": strings.Replace(
+				projectID, "/projects/project", "/projects/other", 1,
+			),
+		},
+		service,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "identify different projects")
+
+	err = validateConfiguredProjectIdentity(
+		map[string]string{"AZURE_AI_PROJECT_ID": "project-id"},
+		service,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be a Microsoft.CognitiveServices project")
+}
+
+func TestValidateDeploymentSelectionRejectsNegativeCapacity(t *testing.T) {
+	require.NoError(t, validateDeploymentSelection(
+		deploymentSelectionOptions{Capacity: 0},
+	))
+	require.NoError(t, validateDeploymentSelection(
+		deploymentSelectionOptions{Capacity: 10},
+	))
+
+	err := validateDeploymentSelection(
+		deploymentSelectionOptions{Capacity: -1},
+	)
+	require.Error(t, err)
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Equal(t, "invalid_parameter", localErr.Code)
+}
+
+func TestFillEmptyAzureScope(t *testing.T) {
+	t.Run("preserves deployment location", func(t *testing.T) {
+		target := &azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				Location: "deployment-location",
+			},
+		}
+		fallback := &azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				Location: "fallback-location",
+			},
+		}
+
+		fillEmptyAzureScope(target, fallback)
+
+		assert.Empty(t, target.Scope.SubscriptionId)
+		assert.Equal(t, "deployment-location", target.Scope.Location)
+	})
+	t.Run("fills missing values", func(t *testing.T) {
+		target := &azdext.AzureContext{Scope: &azdext.AzureScope{}}
+		fallback := &azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				TenantId:       "tenant",
+				SubscriptionId: "subscription",
+				Location:       "location",
+				ResourceGroup:  "resource-group",
+			},
+		}
+
+		fillEmptyAzureScope(target, fallback)
+
+		assert.Equal(t, "tenant", target.Scope.TenantId)
+		assert.Equal(t, "subscription", target.Scope.SubscriptionId)
+		assert.Equal(t, "location", target.Scope.Location)
+		assert.Equal(t, "resource-group", target.Scope.ResourceGroup)
+	})
+	t.Run("handles missing fallback scope", func(t *testing.T) {
+		target := &azdext.AzureContext{Scope: &azdext.AzureScope{}}
+
+		fillEmptyAzureScope(target, &azdext.AzureContext{})
+
+		assert.Empty(t, target.Scope.TenantId)
+		assert.Empty(t, target.Scope.SubscriptionId)
+		assert.Empty(t, target.Scope.Location)
+	})
+}
+
+func TestResolveDeploymentAzureContextRequiresSubscription(t *testing.T) {
+	_, err := resolveDeploymentAzureContext(
+		t.Context(),
+		nil,
+		map[string]string{"AZURE_AI_DEPLOYMENTS_LOCATION": "eastus"},
+		"",
+		true,
+	)
+	require.Error(t, err)
+
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Equal(t, exterrors.CodeMissingAzureSubscription, localErr.Code)
+}
+
+func TestResolveDeploymentAzureContextRequiresLocation(t *testing.T) {
+	_, err := resolveDeploymentAzureContext(
+		t.Context(),
+		nil,
+		map[string]string{"AZURE_SUBSCRIPTION_ID": "subscription"},
+		"",
+		true,
+	)
+	require.Error(t, err)
+
+	var localErr *azdext.LocalError
+	require.ErrorAs(t, err, &localErr)
+	assert.Equal(t, exterrors.CodeMissingAzureLocation, localErr.Code)
+}
+
+func TestResolveDeploymentAzureContextLocationPrecedence(t *testing.T) {
+	tests := []struct {
+		name             string
+		explicitLocation string
+		deploymentEnv    string
+		azureEnv         string
+		want             string
+	}{
+		{
+			name:             "explicit location",
+			explicitLocation: "westus",
+			deploymentEnv:    "centralus",
+			azureEnv:         "eastus",
+			want:             "westus",
+		},
+		{
+			name:          "deployment location environment",
+			deploymentEnv: "centralus",
+			azureEnv:      "eastus",
+			want:          "centralus",
+		},
+		{
+			name:     "Azure location environment",
+			azureEnv: "eastus",
+			want:     "eastus",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			azureContext, err := resolveDeploymentAzureContext(
+				t.Context(),
+				nil,
+				map[string]string{
+					"AZURE_SUBSCRIPTION_ID":         "subscription",
+					"AZURE_AI_DEPLOYMENTS_LOCATION": test.deploymentEnv,
+					"AZURE_LOCATION":                test.azureEnv,
+				},
+				test.explicitLocation,
+				true,
+			)
+			require.NoError(t, err)
+			assert.Equal(t, test.want, azureContext.Scope.Location)
+		})
+	}
+}
+
+func TestResolveDeploymentAzureContextPromptsForLocation(t *testing.T) {
+	promptServer := &azureContextPromptServer{
+		location: &azdext.Location{Name: "centralus"},
+	}
+	accountServer := &azureContextAccountServer{tenantID: "user-tenant"}
+	client := newAzureContextClient(t, promptServer, accountServer)
+
+	azureContext, err := resolveDeploymentAzureContext(
+		t.Context(),
+		client,
+		map[string]string{
+			"AZURE_SUBSCRIPTION_ID": "subscription",
+		},
+		"",
+		false,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "centralus", azureContext.Scope.Location)
+	require.NotNil(t, promptServer.locationRequest)
+	assert.Equal(
+		t,
+		"subscription",
+		promptServer.locationRequest.AzureContext.Scope.SubscriptionId,
+	)
+	assert.Equal(
+		t,
+		"user-tenant",
+		promptServer.locationRequest.AzureContext.Scope.TenantId,
+	)
+	assert.Equal(t, 1, accountServer.calls)
+	assert.Equal(t, 1, promptServer.locationCalls)
+}
+
+func TestDeploymentNoMatchErrorsAreRecoverable(t *testing.T) {
+	detail := &errdetails.ErrorInfo{
+		Domain: azdext.AiErrorDomain,
+		Reason: azdext.AiErrorReasonNoDeploymentMatch,
+	}
+	st, detailErr := status.New(
+		codes.FailedPrecondition,
+		"no match",
+	).WithDetails(detail)
+	require.NoError(t, detailErr)
+	err := st.Err()
+	assert.True(t, isDeploymentNoMatchError(err))
+	assert.True(t, isDeploymentNoMatchError(
+		fmt.Errorf("resolve: %w", err),
+	))
+	assert.False(t, isDeploymentNoMatchError(status.Error(
+		codes.PermissionDenied,
+		"permission denied",
+	)))
+}
+
+func TestProjectServiceReferenceMutationPreflight(t *testing.T) {
+	service := &projectServiceInfo{
+		Name: "foundry",
+		Raw: map[string]any{
+			"endpoint": "https://account.services.ai.azure.com/api/projects/old",
+		},
+		Resolved: map[string]any{
+			"endpoint": "https://account.services.ai.azure.com/api/projects/old",
+		},
+		ServiceRef: "./services/foundry.yaml",
+	}
+
+	require.NoError(t, validateProjectServiceMutation(
+		service,
+		"https://account.services.ai.azure.com/api/projects/old",
+		"",
+	))
+	require.Error(t, validateProjectServiceMutation(
+		service,
+		"https://account.services.ai.azure.com/api/projects/new",
+		"",
+	))
+	require.Error(t, validateProjectServiceMutation(
+		service,
+		"https://account.services.ai.azure.com/api/projects/old",
+		"bicep",
+	))
+
+	service.Legacy = true
+	require.Error(t, validateProjectServiceMutation(
+		service,
+		"https://account.services.ai.azure.com/api/projects/old",
+		"",
+	))
+}
+
+func TestProjectServiceReferencePreflightRejectsSensitiveEndpoint(t *testing.T) {
+	const canonicalEndpoint = "https://account.services.ai.azure.com/api/projects/old"
+	tests := []struct {
+		name      string
+		endpoint  string
+		sensitive []string
+	}{
+		{
+			name: "userinfo",
+			endpoint: "https://" + "endpoint-user" + ":endpoint-password" +
+				"@account.services.ai.azure.com/api/projects/old",
+			sensitive: []string{"endpoint-user", "endpoint-password"},
+		},
+		{
+			name:      "query",
+			endpoint:  "https://account.services.ai.azure.com/api/projects/old?sig=endpoint-token",
+			sensitive: []string{"endpoint-token"},
+		},
+		{
+			name:      "fragment",
+			endpoint:  "https://account.services.ai.azure.com/api/projects/old#endpoint-fragment",
+			sensitive: []string{"endpoint-fragment"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			service := &projectServiceInfo{
+				Name: "foundry",
+				Raw: map[string]any{
+					"$ref": "./services/foundry.yaml",
+				},
+				Unexpanded: map[string]any{
+					"endpoint": test.endpoint,
+				},
+				Resolved: map[string]any{
+					"endpoint": canonicalEndpoint,
+				},
+				ServiceRef: "./services/foundry.yaml",
+			}
+
+			err := validateProjectServiceMutation(
+				service,
+				canonicalEndpoint,
+				"",
+			)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "./services/foundry.yaml")
+			for _, sensitive := range test.sensitive {
+				assert.NotContains(t, err.Error(), sensitive)
+			}
+		})
+	}
+}
+
+func TestProjectEnvironmentTransitions(t *testing.T) {
+	const (
+		oldEndpoint = "https://old-account.services.ai.azure.com/api/projects/old-project"
+		newEndpoint = "https://new-account.services.ai.azure.com/api/projects/new-project"
+		oldID       = "/subscriptions/sub/resourceGroups/old-rg/providers/" +
+			"Microsoft.CognitiveServices/accounts/old-account/projects/old-project"
+		newID = "/subscriptions/sub/resourceGroups/new-rg/providers/" +
+			"Microsoft.CognitiveServices/accounts/new-account/projects/new-project"
+	)
+	old := map[string]string{
+		"AZURE_AI_PROJECT_ID":               oldID,
+		"AZURE_AI_ACCOUNT_NAME":             "old-account",
+		"AZURE_AI_PROJECT_NAME":             "old-project",
+		"FOUNDRY_PROJECT_ENDPOINT":          oldEndpoint,
+		"AZURE_OPENAI_ENDPOINT":             "https://old.openai.azure.com/",
+		"AZURE_RESOURCE_GROUP":              "old-rg",
+		"AZURE_AI_DEPLOYMENTS_LOCATION":     "eastus",
+		"AZURE_AI_MODEL_DEPLOYMENT_NAME":    "chat",
+		"AZURE_CONTAINER_REGISTRY_ENDPOINT": "https://old.azurecr.io",
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "/subscriptions/sub/resourceGroups/acr-rg/providers/" +
+			"Microsoft.ContainerRegistry/registries/old",
+		"AZURE_AI_PROJECT_ACR_CONNECTION_NAME":          "old-connection",
+		"AZD_FOUNDRY_ACR_MODE":                          "reuse-connect",
+		"AZD_FOUNDRY_ACR_PULL_ASSIGNED":                 "true",
+		"AZURE_AI_PROJECT_CONNECTION_NAMES":             "search",
+		"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT": oldEndpoint,
+		"AZURE_FOUNDRY_RESOURCE_GROUP":                  "old-foundry-rg",
+		"AZD_FOUNDRY_RESOURCE_GROUP_ID":                 "/subscriptions/sub/resourceGroups/old-foundry-rg",
+	}
+	resetKeys := projectReplacementEnvironmentKeys
+	tests := []struct {
+		name            string
+		serviceEndpoint string
+		values          func(map[string]string)
+		target          *resolvedProject
+		wantReplacement bool
+	}{
+		{
+			name:            "genuine replacement",
+			serviceEndpoint: oldEndpoint,
+			target: &resolvedProject{
+				Mode:              projectModeExistingID,
+				ResourceId:        newID,
+				ResourceGroupName: "new-rg",
+				AccountName:       "new-account",
+				ProjectName:       "new-project",
+				Endpoint:          newEndpoint,
+			},
+			wantReplacement: true,
+		},
+		{
+			name:            "same project preserves state",
+			serviceEndpoint: oldEndpoint,
+			target: &resolvedProject{
+				Mode:              projectModeExistingID,
+				ResourceId:        oldID,
+				ResourceGroupName: "old-rg",
+				AccountName:       "old-account",
+				ProjectName:       "old-project",
+				Endpoint:          oldEndpoint,
+			},
+		},
+		{
+			name:            "fills missing project ID",
+			serviceEndpoint: oldEndpoint,
+			values: func(values map[string]string) {
+				delete(values, "AZURE_AI_PROJECT_ID")
+			},
+			target: &resolvedProject{
+				Mode:              projectModeExistingID,
+				ResourceId:        oldID,
+				ResourceGroupName: "old-rg",
+				AccountName:       "old-account",
+				ProjectName:       "old-project",
+				Endpoint:          oldEndpoint,
+			},
+		},
+		{
+			name:            "fills missing endpoint",
+			serviceEndpoint: "",
+			values: func(values map[string]string) {
+				delete(values, "FOUNDRY_PROJECT_ENDPOINT")
+			},
+			target: &resolvedProject{
+				Mode:              projectModeExistingID,
+				ResourceId:        oldID,
+				ResourceGroupName: "old-rg",
+				AccountName:       "old-account",
+				ProjectName:       "old-project",
+				Endpoint:          oldEndpoint,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values := map[string]string{}
+			maps.Copy(values, old)
+			if test.values != nil {
+				test.values(values)
+			}
+
+			replaced := projectIdentityChanged(
+				values,
+				test.serviceEndpoint,
+				test.target,
+			)
+			assert.Equal(t, test.wantReplacement, replaced)
+
+			plan := planProjectEnvironment(
+				values,
+				test.target.Mode,
+				test.target,
+				replaced,
+			)
+			assert.Equal(t, "true", plan.Sets["USE_EXISTING_AI_PROJECT"])
+			effective := applyProjectEnvironmentPlan(values, plan)
+			for _, key := range resetKeys {
+				if test.wantReplacement {
+					assert.NotContains(t, effective, key)
+					assert.Contains(t, plan.Unsets, key)
+				} else {
+					assert.Equal(t, old[key], effective[key])
+					assert.NotContains(t, plan.Unsets, key)
+				}
+			}
+		})
+	}
+}
+
+func TestProjectEnvironmentClearsOnlyNonEmptyValues(t *testing.T) {
+	old := map[string]string{
+		"AZURE_AI_PROJECT_ID":   "old-id",
+		"AZURE_RESOURCE_GROUP":  "",
+		"AZURE_OPENAI_ENDPOINT": "https://old.openai.azure.com/",
+	}
+	plan := planProjectEnvironment(old, projectModeExistingEndpoint, &resolvedProject{
+		Endpoint: "https://new.services.ai.azure.com/api/projects/new",
+	}, false)
+
+	assert.Contains(t, plan.Unsets, "AZURE_AI_PROJECT_ID")
+	assert.Contains(t, plan.Unsets, "AZURE_OPENAI_ENDPOINT")
+	assert.NotContains(t, plan.Unsets, "AZURE_RESOURCE_GROUP")
+}
+
+func TestExistingEndpointModeRejectsManagedDeployments(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
+	service := &projectServiceInfo{
+		Raw: map[string]any{
+			"endpoint":    endpoint,
+			"deployments": []any{map[string]any{"name": "chat"}},
+		},
+		Resolved: map[string]any{
+			"endpoint":    endpoint,
+			"deployments": []any{map[string]any{"name": "chat"}},
+		},
+	}
+
+	err := validateExistingEndpointMode(service, endpoint, "", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot retain managed model deployments")
+}
+
+func TestExistingEndpointModeRejectsInfrastructureWithoutProjectID(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
+
+	err := validateExistingEndpointMode(nil, endpoint, "bicep", nil)
+	require.Error(t, err)
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(
+		t,
+		exterrors.CodeInfraEjectRequiresProjectID,
+		localErr.Code,
+	)
+	assert.Contains(t, localErr.Suggestion, "--project-id <resource-id> --infra`")
+}
+
+func TestExistingEndpointModeAllowsNetworkOnlyService(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
+	service := &projectServiceInfo{
+		Raw: map[string]any{
+			"endpoint": endpoint,
+			"network":  map[string]any{"mode": "managed"},
+		},
+		Resolved: map[string]any{
+			"endpoint": endpoint,
+			"network":  map[string]any{"mode": "managed"},
+		},
+	}
+
+	require.NoError(t, validateExistingEndpointMode(service, endpoint, "", nil))
+}
+
+func TestProjectEjectIdentityRejectsEndpointMismatch(t *testing.T) {
+	resourceID := "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.CognitiveServices/accounts/account/projects/project"
+	err := func() error {
+		_, err := projectEjectIdentity(
+			"https://other.services.ai.azure.com/api/projects/project",
+			resourceID,
+			nil,
+		)
+		return err
+	}()
+	require.Error(t, err)
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
+}
+
+func TestProjectAddEndpointOnlyIgnoresSplitConnections(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
+	root := t.TempDir()
+	t.Chdir(root)
+	azureYAML := []byte(`name: test
+services:
+  project:
+    host: azure.ai.project
+    endpoint: ` + endpoint + `
+  search:
+    host: azure.ai.connection
+    category: CognitiveSearch
+    target: https://search.example.com
+    authType: ApiKey
+    credentials:
+      key: split-connection-secret
+`)
+	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), azureYAML, 0600))
+	section, err := structpb.NewStruct(map[string]any{
+		"project": map[string]any{"host": aiProjectHost, "endpoint": endpoint},
+		"search": map[string]any{
+			"host":        "azure.ai.connection",
+			"category":    "CognitiveSearch",
+			"target":      "https://search.example.com",
+			"authType":    "ApiKey",
+			"credentials": map[string]any{"key": "split-connection-secret"},
+		},
+	})
+	require.NoError(t, err)
+	projectServer := &transactionProjectServer{
+		project: &azdext.ProjectConfig{
+			Name: "test",
+			Path: root,
+			Services: map[string]*azdext.ServiceConfig{
+				"project": {Name: "project", Host: aiProjectHost},
+				"search":  {Name: "search", Host: "azure.ai.connection"},
+			},
+		},
+		section: section,
+	}
+	envServer := &projectAddEnvironmentServer{
+		values: map[string]string{
+			"AZURE_AI_PROJECT_NAME":    "p",
+			"FOUNDRY_PROJECT_ENDPOINT": endpoint,
+			"USE_EXISTING_AI_PROJECT":  "true",
+		},
+	}
+	server := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	azdext.RegisterEnvironmentServiceServer(server, envServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	action := &ProjectAddAction{
+		client: client,
+		flags:  &projectAddFlags{noPrompt: true, output: "none"},
+		extCtx: &azdext.ExtensionContext{Environment: "test"},
+	}
+	require.NoError(t, action.Run(t.Context()))
+	assert.Empty(t, projectServer.setConfig)
+	assert.Empty(t, projectServer.addServices)
+	assert.Nil(t, projectServer.serviceValue)
+	assert.Nil(t, projectServer.serviceSection)
+	assert.Empty(t, projectServer.unsetPaths)
+	assert.Equal(t, azureYAML, mustReadProjectFile(t, root))
+	assert.NoDirExists(t, filepath.Join(root, "infra"))
+}
+
+func TestExistingEndpointModeRejectsPendingAcr(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
+	values := map[string]string{
+		"AI_AGENT_PENDING_PROVISION": "model_deployment,acr",
+	}
+
+	err := validateExistingEndpointMode(nil, endpoint, "", values)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "pending container registry")
+	require.NoError(t, validateExistingEndpointMode(
+		nil,
+		endpoint,
+		"",
+		map[string]string{
+			"AI_AGENT_PENDING_PROVISION":        "acr",
+			"AZURE_CONTAINER_REGISTRY_ENDPOINT": "registry.azurecr.io",
+		},
+	))
+}
+
+func TestProjectAddEndpointOnlyPreflightsHostedAgents(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+	tests := []struct {
+		name    string
+		agents  string
+		sibling string
+		reject  bool
+	}{
+		{
+			name:   "inline hosted agent",
+			agents: "    agents:\n      - name: hosted\n        kind: hosted\n",
+			reject: true,
+		},
+		{
+			name:    "sibling hosted agent",
+			sibling: "  agent:\n    host: azure.ai.agent\n",
+			reject:  true,
+		},
+		{
+			name:   "inline image agent",
+			agents: "    agents:\n      - name: image\n        kind: hosted\n        image: registry.example.com/agent:latest\n",
+		},
+		{
+			name:   "inline code agent",
+			agents: "    agents:\n      - name: code\n        kind: hosted\n        codeConfiguration:\n          runtime: python\n          entryPoint: main.py\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			azureYAML := fmt.Sprintf(`name: test
+services:
+  project:
+    host: azure.ai.project
+    endpoint: %s
+%s%s`, endpoint, tt.agents, tt.sibling)
+			require.NoError(t, os.WriteFile(
+				filepath.Join(root, "azure.yaml"),
+				[]byte(azureYAML),
+				0600,
+			))
+
+			section, err := structpb.NewStruct(map[string]any{
+				"project": map[string]any{
+					"host":     aiProjectHost,
+					"endpoint": endpoint,
+				},
+			})
+			require.NoError(t, err)
+			projectServer := &recordingProjectConfigServer{
+				project: &azdext.ProjectConfig{
+					Name: "test",
+					Path: root,
+					Services: map[string]*azdext.ServiceConfig{
+						"project": {Name: "project", Host: aiProjectHost},
+					},
+				},
+				section: section,
+			}
+			envServer := &projectAddEnvironmentServer{
+				values: map[string]string{
+					"AZURE_AI_PROJECT_NAME":                         "project",
+					"FOUNDRY_PROJECT_ENDPOINT":                      endpoint,
+					"AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT": endpoint,
+					"USE_EXISTING_AI_PROJECT":                       "true",
+				},
+			}
+			server := grpc.NewServer()
+			azdext.RegisterProjectServiceServer(server, projectServer)
+			azdext.RegisterEnvironmentServiceServer(server, envServer)
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			go func() {
+				_ = server.Serve(listener)
+			}()
+			t.Cleanup(func() {
+				server.Stop()
+				_ = listener.Close()
+			})
+
+			client, err := azdext.NewAzdClient(
+				azdext.WithAddress(listener.Addr().String()),
+			)
+			require.NoError(t, err)
+			t.Cleanup(client.Close)
+
+			action := &ProjectAddAction{
+				client: client,
+				flags: &projectAddFlags{
+					noPrompt: true,
+					output:   "none",
+				},
+				extCtx: &azdext.ExtensionContext{Environment: "test"},
+			}
+			err = action.Run(t.Context())
+			if tt.reject {
+				require.Error(t, err)
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				assert.Equal(
+					t,
+					"project_reconciliation_requires_project_id",
+					localErr.Code,
+				)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Nil(t, projectServer.setRequest)
+			assert.Empty(t, projectServer.unsetPaths)
+			if tt.reject {
+				assert.Zero(t, envServer.setCalls)
+			}
+		})
+	}
+}
+
+func TestValidateFoundryProviderRejectsRootProviderWithLayers(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte(`infra:
+  provider: microsoft.foundry
+  layers:
+    - name: app
+      provider: bicep
+`),
+		0600,
+	))
+
+	err := validateFoundryProvider(&azdext.ProjectConfig{
+		Path:  root,
+		Infra: &azdext.InfraOptions{Provider: "microsoft.foundry"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot be combined with named layers")
+}
+
+func TestValidateFoundryProviderAllowsSingleFoundryLayer(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte(`infra:
+  layers:
+    - name: foundry
+      provider: microsoft.foundry
+`),
+		0600,
+	))
+
+	require.NoError(t, validateFoundryProvider(&azdext.ProjectConfig{
+		Path:  root,
+		Infra: &azdext.InfraOptions{},
+	}))
+}
+
+func TestValidateFoundryProviderAllowsDefaultInfraPaths(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+	}{
+		{name: "dot slash", path: filepath.FromSlash("./infra")},
+		{name: "plain", path: filepath.FromSlash("infra")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(
+				filepath.Join(root, "azure.yaml"),
+				[]byte("name: test\n"),
+				0600,
+			))
+			require.NoError(t, validateFoundryProvider(&azdext.ProjectConfig{
+				Path:  root,
+				Infra: &azdext.InfraOptions{Path: tt.path},
+			}))
+		})
+	}
+}
+
+func TestValidateFoundryProviderAllowsEjectedTerraformLayer(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte(`infra:
+  layers:
+    - name: app
+      path: infra/app
+      provider: bicep
+    - name: foundry
+      path: infra/foundry
+      provider: terraform
+`),
+		0600,
+	))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "infra", "foundry"), 0750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "infra", "foundry", foundryEjectionMarker),
+		[]byte(foundryTerraformMarkerVersion),
+		0600,
+	))
+
+	require.NoError(t, validateFoundryProvider(&azdext.ProjectConfig{
+		Path:  root,
+		Infra: &azdext.InfraOptions{},
+	}))
+}
+
+func TestProjectAddRejectsCustomRootInfraPathBeforeMutation(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+	azureYAML := []byte(`name: test
+services:
+  project:
+    host: azure.ai.project
+    deployments:
+      - name: chat
+        model: {format: OpenAI, name: gpt-4.1, version: "2025-04-14"}
+        sku: {name: GlobalStandard, capacity: 10}
+`)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		azureYAML,
+		0600,
+	))
+	customInfra := filepath.Join(root, "custom-infra")
+	require.NoError(t, os.MkdirAll(customInfra, 0750))
+	customFile := filepath.Join(customInfra, "existing.bicep")
+	require.NoError(t, os.WriteFile(customFile, []byte("existing"), 0600))
+
+	projectServer := &recordingProjectConfigServer{
+		project: &azdext.ProjectConfig{
+			Name: "test",
+			Path: root,
+			Services: map[string]*azdext.ServiceConfig{
+				"project": {Name: "project", Host: aiProjectHost},
+			},
+			Infra: &azdext.InfraOptions{
+				Provider: "microsoft.foundry",
+				Path:     "custom-infra",
+			},
+		},
+	}
+	envServer := &projectAddEnvironmentServer{}
+	server := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	azdext.RegisterEnvironmentServiceServer(server, envServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	action := &ProjectAddAction{
+		client: client,
+		flags: &projectAddFlags{
+			infra:    "bicep",
+			noPrompt: true,
+			output:   "none",
+		},
+		extCtx: &azdext.ExtensionContext{Environment: "test"},
+	}
+	err = action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "custom infrastructure path")
+	assert.Empty(t, projectServer.setRequest)
+	assert.Empty(t, projectServer.unsetPaths)
+	assert.Zero(t, envServer.setCalls)
+	assert.NoDirExists(t, filepath.Join(root, "infra"))
+	assert.FileExists(t, customFile)
+	// #nosec G304 -- path is inside the test project directory.
+	after, readErr := os.ReadFile(filepath.Join(root, "azure.yaml"))
+	require.NoError(t, readErr)
+	assert.Equal(t, azureYAML, after)
+	assert.Equal(t, "custom-infra", projectServer.project.Infra.Path)
+}
+
+func TestEjectBicepUsesFoundryLayerPathAndModule(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte(`name: test
+infra:
+  layers:
+    - name: app
+      path: infra/app
+      provider: bicep
+    - name: foundry
+      path: infra/foundry
+      module: project
+      provider: microsoft.foundry
+services:
+  project:
+    host: azure.ai.project
+    deployments:
+      - name: chat
+        model: {format: OpenAI, name: gpt-4.1, version: "2025-04-14"}
+        sku: {name: GlobalStandard, capacity: 10}
+`),
+		0600,
+	))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "infra", "app"), 0750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "infra", "app", "main.bicep"),
+		[]byte("targetScope = 'subscription'\n"),
+		0600,
+	))
+
+	projectServer := &recordingProjectConfigServer{
+		project: &azdext.ProjectConfig{
+			Path:  root,
+			Infra: &azdext.InfraOptions{Provider: "bicep"},
+		},
+	}
+	server := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	require.NoError(t, ejectProjectInfra(
+		t.Context(), client, root, "project", "bicep",
+	))
+	_, err = os.Stat(filepath.Join(root, "infra", "foundry", "project.bicep"))
+	require.NoError(t, err)
+	_, err = os.Stat(filepath.Join(root, "infra", "foundry", "project.parameters.json"))
+	require.NoError(t, err)
+	// #nosec G304
+	marker, err := os.ReadFile(
+		filepath.Join(root, "infra", "foundry", foundryEjectionMarker),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, foundryBicepMarkerVersion, string(marker))
+	_, err = os.Stat(filepath.Join(root, "infra", "main.bicep"))
+	assert.ErrorIs(t, err, os.ErrNotExist)
+	assert.NotContains(t, projectServer.unsetPaths, "infra.path")
+}
+
+func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
+	t.Setenv("ENABLE_AGENT", "false")
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte("name: test\nservices:\n  project:\n    host: azure.ai.project\n"+
+			"  active-agent:\n    host: azure.ai.agent\n    condition: ${ENABLE_AGENT}\n"),
+		0600,
+	))
+
+	projectServer := &recordingProjectConfigServer{
+		project: &azdext.ProjectConfig{
+			Path:  root,
+			Infra: &azdext.InfraOptions{Provider: provisioningFoundryProvider},
+		},
+	}
+	server := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(
+		azdext.WithAddress(listener.Addr().String()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	require.NoError(t, ejectProjectInfraWithTarget(
+		t.Context(),
+		client,
+		root,
+		"project",
+		"bicep",
+		"",
+		"",
+		map[string]string{"ENABLE_AGENT": "true"},
+	))
+
+	// #nosec G304 -- path is inside the test project directory.
+	raw, err := os.ReadFile(filepath.Join(root, "infra", "main.parameters.json"))
+	require.NoError(t, err)
+	var parameters struct {
+		Parameters map[string]struct {
+			Value any `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &parameters))
+	assert.Equal(t, true, parameters.Parameters["includeAcr"].Value)
+	assertProjectEjectionOmitsConnections(t, filepath.Join(root, "infra"))
+}
+
+func TestEjectTerraformUsesFoundryLayerPathAndProvider(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte(`name: test
+infra:
+  layers:
+    - name: app
+      path: infra/app
+      provider: bicep
+    - name: foundry
+      path: infra/foundry
+      provider: microsoft.foundry
+services:
+  project:
+    host: azure.ai.project
+    deployments:
+      - name: chat
+        model: {format: OpenAI, name: gpt-4.1, version: "2025-04-14"}
+        sku: {name: GlobalStandard, capacity: 10}
+`),
+		0600,
+	))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "infra", "app"), 0750))
+
+	projectServer := &recordingProjectConfigServer{
+		project: &azdext.ProjectConfig{
+			Path:  root,
+			Infra: &azdext.InfraOptions{Provider: "bicep"},
+		},
+	}
+	server := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	require.NoError(t, ejectProjectInfra(
+		t.Context(), client, root, "project", "terraform",
+	))
+	_, err = os.Stat(filepath.Join(root, "infra", "foundry", "main.tf"))
+	require.NoError(t, err)
+	_, err = os.Stat(filepath.Join(root, "infra", "foundry", "main.tfvars.json"))
+	require.NoError(t, err)
+	_, err = os.Stat(filepath.Join(root, "infra", "main.tf"))
+	assert.ErrorIs(t, err, os.ErrNotExist)
+	// #nosec G304 -- path is inside the test project directory.
+	rawTfvars, err := os.ReadFile(
+		filepath.Join(root, "infra", "foundry", "main.tfvars.json"),
+	)
+	require.NoError(t, err)
+	tfvars := map[string]any{}
+	require.NoError(t, json.Unmarshal(rawTfvars, &tfvars))
+	assert.Equal(
+		t,
+		"${AZURE_FOUNDRY_RESOURCE_GROUP=rg-${AZURE_ENV_NAME}-foundry}",
+		tfvars["resource_group_name"],
+	)
+	require.NotNil(t, projectServer.setRequest)
+	assert.Equal(t, "infra.layers", projectServer.setRequest.Path)
+	layers, ok := projectServer.setRequest.Value.AsInterface().([]any)
+	require.True(t, ok)
+	require.Len(t, layers, 2)
+	foundry, ok := layers[1].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "terraform", foundry["provider"])
+}
+
+func TestExpandProjectServiceValuesUsesEnvironment(t *testing.T) {
+	raw := map[string]any{
+		"endpoint": "${FOUNDRY_PROJECT_ENDPOINT}",
+		"nested":   []any{map[string]any{"value": "${PROJECT_VALUE}"}},
+	}
+	expandedValue, err := expandProjectServiceValues(
+		raw,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://account.services.ai.azure.com/api/projects/p",
+			"PROJECT_VALUE":            "expanded",
+		},
+	)
+	require.NoError(t, err)
+	expanded, ok := expandedValue.(map[string]any)
+	require.True(t, ok)
+	assert.Equal(
+		t,
+		"https://account.services.ai.azure.com/api/projects/p",
+		expanded["endpoint"],
+	)
+	assert.Equal(t, "${FOUNDRY_PROJECT_ENDPOINT}", raw["endpoint"])
+}
+
+func TestDiscoverProjectServiceExpandsEndpointFromRef(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "services"), 0750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "services", "project.yaml"),
+		[]byte("endpoint: ${FOUNDRY_PROJECT_ENDPOINT}\n"),
+		0600,
+	))
+	section, err := structpb.NewStruct(map[string]any{
+		"project": map[string]any{"$ref": "./services/project.yaml"},
+	})
+	require.NoError(t, err)
+
+	projectServer := &recordingProjectConfigServer{
+		project: &azdext.ProjectConfig{
+			Path: root,
+			Services: map[string]*azdext.ServiceConfig{
+				"project": {Host: aiProjectHost},
+			},
+		},
+		section: section,
+	}
+	server := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	reconciler := &projectServiceReconciler{
+		client:      client,
+		projectRoot: root,
+		environmentValues: map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://account.services.ai.azure.com/api/projects/p",
+		},
+	}
+	service, _, err := reconciler.discoverProjectService(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, service)
+	assert.Equal(
+		t,
+		"https://account.services.ai.azure.com/api/projects/p",
+		service.Resolved["endpoint"],
+	)
+	assert.Equal(t, "./services/project.yaml", service.ServiceRef)
+	assert.NotContains(t, service.Raw, "endpoint")
+}
+
+func TestChooseDeploymentNameTrimsExplicitName(t *testing.T) {
+	assert.Equal(t, "chat", chooseDeploymentName("  chat  ", "gpt-4.1"))
+}
+
+func TestProjectServiceEndpointUsesExactKeyTombstone(t *testing.T) {
+	server := grpc.NewServer()
+	projectServer := &recordingProjectServiceServer{}
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(
+		azdext.WithAddress(listener.Addr().String()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		client.Close()
+	})
+
+	require.NoError(t, setProjectServiceEndpoint(
+		t.Context(), client, "project", "",
+	))
+	require.NotNil(t, projectServer.request)
+	assert.Equal(t, "project", projectServer.request.ServiceName)
+	assert.Equal(t, "endpoint", projectServer.request.Path)
+	assert.Equal(t, "", projectServer.request.Value.GetStringValue())
+}
+
+func TestAddServicePersistsCompleteBodyThroughConfigSection(t *testing.T) {
+	server := grpc.NewServer()
+	projectServer := &recordingProjectServiceServer{}
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(
+		azdext.WithAddress(listener.Addr().String()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		client.Close()
+	})
+
+	reconciler := &projectServiceReconciler{client: client}
+	require.NoError(t, reconciler.addService(
+		t.Context(),
+		"foundry",
+		map[string]any{
+			"endpoint":    "https://account.services.ai.azure.com/api/projects/p",
+			"deployments": []any{map[string]any{"name": "chat"}},
+			"hooks": map[string]any{
+				"predeploy": map[string]any{"kind": "sh", "run": "echo ok"},
+			},
+			"uses":        []any{"connection"},
+			"env":         map[string]any{"PROJECT_MODE": "managed"},
+			"customField": "preserve-me",
+		},
+	))
+
+	require.NotNil(t, projectServer.addRequest)
+	assert.Nil(t, projectServer.addRequest.Service.AdditionalProperties)
+	require.NotNil(t, projectServer.sectionRequest)
+	assert.Equal(t, "foundry", projectServer.sectionRequest.ServiceName)
+	assert.Empty(t, projectServer.sectionRequest.Path)
+	section := projectServer.sectionRequest.Section.AsMap()
+	assert.Equal(t, "azure.ai.project", section["host"])
+	assert.Contains(t, section, "deployments")
+	assert.Contains(t, section, "hooks")
+	assert.Contains(t, section, "uses")
+	assert.Contains(t, section, "env")
+	assert.Equal(t, "preserve-me", section["customField"])
+}
+
+func TestAddServiceRollsBackHostOnlyService(t *testing.T) {
+	server := grpc.NewServer()
+	projectServer := &recordingProjectServiceServer{
+		sectionErr: errors.New("configuration write failed"),
+	}
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(
+		azdext.WithAddress(listener.Addr().String()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	reconciler := &projectServiceReconciler{client: client}
+	require.Error(t, reconciler.addService(
+		t.Context(),
+		"foundry",
+		map[string]any{
+			"endpoint": "https://account.services.ai.azure.com/api/projects/p",
+		},
+	))
+
+	assert.Equal(t, []string{"services.foundry"}, projectServer.unsetPaths)
+}
+
+type recordingProjectServiceServer struct {
+	azdext.UnimplementedProjectServiceServer
+	request        *azdext.SetServiceConfigValueRequest
+	addRequest     *azdext.AddServiceRequest
+	sectionRequest *azdext.SetServiceConfigSectionRequest
+	sectionErr     error
+	unsetErr       error
+	unsetPaths     []string
+}
+
+type recordingProjectConfigServer struct {
+	azdext.UnimplementedProjectServiceServer
+	project    *azdext.ProjectConfig
+	section    *structpb.Struct
+	unsetPaths []string
+	setRequest *azdext.SetProjectConfigValueRequest
+}
+
+type projectAddEnvironmentServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+	setCalls int
+	setErr   error
+	values   map[string]string
+}
+
+func (s *projectAddEnvironmentServer) Select(
+	context.Context,
+	*azdext.SelectEnvironmentRequest,
+) (*azdext.EmptyResponse, error) {
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *projectAddEnvironmentServer) GetValues(
+	context.Context,
+	*azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	response := &azdext.KeyValueListResponse{}
+	for key, value := range s.values {
+		response.KeyValues = append(response.KeyValues, &azdext.KeyValue{
+			Key:   key,
+			Value: value,
+		})
+	}
+	return response, nil
+}
+
+func (s *projectAddEnvironmentServer) SetValue(
+	context.Context,
+	*azdext.SetEnvRequest,
+) (*azdext.EmptyResponse, error) {
+	s.setCalls++
+	if s.setErr != nil {
+		return nil, s.setErr
+	}
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *recordingProjectConfigServer) Get(
+	context.Context,
+	*azdext.EmptyRequest,
+) (*azdext.GetProjectResponse, error) {
+	return &azdext.GetProjectResponse{Project: s.project}, nil
+}
+
+func (s *recordingProjectConfigServer) GetConfigSection(
+	_ context.Context,
+	_ *azdext.GetProjectConfigSectionRequest,
+) (*azdext.GetProjectConfigSectionResponse, error) {
+	return &azdext.GetProjectConfigSectionResponse{
+		Section: s.section,
+		Found:   s.section != nil,
+	}, nil
+}
+
+func (s *recordingProjectConfigServer) UnsetConfig(
+	_ context.Context,
+	request *azdext.UnsetProjectConfigRequest,
+) (*azdext.EmptyResponse, error) {
+	s.unsetPaths = append(s.unsetPaths, request.Path)
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *recordingProjectConfigServer) SetConfigValue(
+	_ context.Context,
+	request *azdext.SetProjectConfigValueRequest,
+) (*azdext.EmptyResponse, error) {
+	s.setRequest = request
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *recordingProjectServiceServer) AddService(
+	_ context.Context,
+	request *azdext.AddServiceRequest,
+) (*azdext.EmptyResponse, error) {
+	s.addRequest = request
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *recordingProjectServiceServer) SetServiceConfigSection(
+	_ context.Context,
+	request *azdext.SetServiceConfigSectionRequest,
+) (*azdext.EmptyResponse, error) {
+	s.sectionRequest = request
+	if s.sectionErr != nil {
+		return nil, s.sectionErr
+	}
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *recordingProjectServiceServer) UnsetConfig(
+	_ context.Context,
+	request *azdext.UnsetProjectConfigRequest,
+) (*azdext.EmptyResponse, error) {
+	s.unsetPaths = append(s.unsetPaths, request.Path)
+	if s.unsetErr != nil {
+		return nil, s.unsetErr
+	}
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *recordingProjectServiceServer) SetServiceConfigValue(
+	_ context.Context,
+	request *azdext.SetServiceConfigValueRequest,
+) (*azdext.EmptyResponse, error) {
+	s.request = request
+	return &azdext.EmptyResponse{}, nil
+}
+
+func TestProjectAddPersistsProjectBeforeEnvironment(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte("name: test\n"),
+		0600,
+	))
+
+	projectServer := &recordingProjectConfigServer{
+		project: &azdext.ProjectConfig{
+			Name:     "test",
+			Path:     root,
+			Services: map[string]*azdext.ServiceConfig{},
+		},
+	}
+	envServer := &projectAddEnvironmentServer{}
+	server := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	azdext.RegisterEnvironmentServiceServer(server, envServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(
+		azdext.WithAddress(listener.Addr().String()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	action := &ProjectAddAction{
+		client: client,
+		flags: &projectAddFlags{
+			projectEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+			noPrompt:        true,
+			output:          "none",
+		},
+		extCtx: &azdext.ExtensionContext{Environment: "test"},
+	}
+	err = action.Run(t.Context())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "add project service")
+	assert.Zero(t, envServer.setCalls)
+}
+
+func TestProjectAddWritesEnvironmentBeforeInfrastructureEjection(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "azure.yaml"),
+		[]byte(`name: test
+services:
+  foundry:
+    host: azure.ai.project
+`),
+		0600,
+	))
+	section, err := structpb.NewStruct(map[string]any{
+		"foundry": map[string]any{"host": aiProjectHost},
+	})
+	require.NoError(t, err)
+
+	projectServer := &recordingProjectConfigServer{
+		project: &azdext.ProjectConfig{
+			Name: "test",
+			Path: root,
+			Services: map[string]*azdext.ServiceConfig{
+				"foundry": {Name: "foundry", Host: aiProjectHost},
+			},
+			Infra: &azdext.InfraOptions{Provider: "microsoft.foundry"},
+		},
+		section: section,
+	}
+	envServer := &projectAddEnvironmentServer{
+		setErr: errors.New("environment write failed"),
+		values: map[string]string{
+			"AZURE_SUBSCRIPTION_ID": "subscription",
+			"AZURE_LOCATION":        "eastus",
+		},
+	}
+	server := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(server, projectServer)
+	azdext.RegisterEnvironmentServiceServer(server, envServer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	client, err := azdext.NewAzdClient(
+		azdext.WithAddress(listener.Addr().String()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	action := &ProjectAddAction{
+		client: client,
+		flags: &projectAddFlags{
+			infra:    "terraform",
+			noPrompt: true,
+			output:   "none",
+		},
+		extCtx: &azdext.ExtensionContext{Environment: "test"},
+	}
+	require.Error(t, action.Run(t.Context()))
+	assert.Equal(t, 2, envServer.setCalls)
+	assert.Nil(t, projectServer.setRequest)
+	_, err = os.Stat(filepath.Join(root, "infra"))
+	assert.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestProjectEnvironmentPreservesLocationWhenProjectLocationIsUnknown(t *testing.T) {
+	old := map[string]string{
+		"AZURE_LOCATION":                "westus2",
+		"AZURE_AI_DEPLOYMENTS_LOCATION": "eastus",
+		"AZURE_AI_PROJECT_ID":           "old-id",
+		"FOUNDRY_PROJECT_ENDPOINT":      "https://old.services.ai.azure.com/api/projects/old",
+	}
+	plan := planProjectEnvironment(old, projectModeExistingID, &resolvedProject{
+		ResourceId: "/subscriptions/sub/resourceGroups/rg/providers/" +
+			"Microsoft.CognitiveServices/accounts/account/projects/new",
+		Endpoint: "https://account.services.ai.azure.com/api/projects/new",
+	}, true)
+
+	assert.NotContains(t, plan.Sets, "AZURE_LOCATION")
+	assert.NotContains(t, plan.Unsets, "AZURE_LOCATION")
+}
+
+func TestProjectEnvironmentPreservesExistingLocation(t *testing.T) {
+	plan := planProjectEnvironment(
+		map[string]string{"AZURE_LOCATION": "westus2"},
+		projectModeExistingID,
+		&resolvedProject{Location: "eastus"},
+		false,
+	)
+
+	assert.NotContains(t, plan.Sets, "AZURE_LOCATION")
+	assert.NotContains(t, plan.Unsets, "AZURE_LOCATION")
+}
+
+func TestDeploymentSemanticEqualityIgnoresNameCase(t *testing.T) {
+	value := map[string]any{
+		"name": "Chat",
+		"model": map[string]any{
+			"format": "OpenAI", "name": "gpt-4.1", "version": "2025-04-14",
+		},
+		"sku": map[string]any{"name": "GlobalStandard", "capacity": float64(10)},
+	}
+	assert.True(t, deploymentSemanticallyEqual(value, synthesisDeploymentForTest()))
+}
+
+func TestDeploymentItemsUsesExpandedValues(t *testing.T) {
+	raw := map[string]any{
+		"name": "${DEPLOYMENT_NAME}",
+		"model": map[string]any{
+			"format": "OpenAI",
+			"name":   "${MODEL_NAME}",
+		},
+		"sku": map[string]any{"name": "GlobalStandard", "capacity": 10},
+	}
+	expanded := map[string]any{
+		"name": "chat",
+		"model": map[string]any{
+			"format":  "OpenAI",
+			"name":    "gpt-4.1",
+			"version": "2025-04-14",
+		},
+		"sku": map[string]any{"name": "GlobalStandard", "capacity": 10},
+	}
+
+	rawItems, resolvedItems, err := deploymentItems(
+		&projectServiceInfo{
+			Raw:      map[string]any{"deployments": []any{raw}},
+			Resolved: map[string]any{"deployments": []any{expanded}},
+		},
+		"",
+	)
+	require.NoError(t, err)
+	require.Len(t, rawItems, 1)
+	require.Len(t, resolvedItems, 1)
+	assert.Equal(t, "${MODEL_NAME}", rawItems[0]["model"].(map[string]any)["name"])
+	assert.Equal(t, "gpt-4.1", resolvedItems[0]["model"].(map[string]any)["name"])
+	assert.True(t, deploymentSemanticallyEqual(
+		resolvedItems[0],
+		synthesisDeploymentForTest(),
+	))
+}
+
+func TestDeploymentItemsRejectsSectionReference(t *testing.T) {
+	_, _, err := deploymentItems(
+		&projectServiceInfo{
+			Raw: map[string]any{
+				"deployments": map[string]any{
+					"$ref": "./deployments.yaml",
+				},
+			},
+			Resolved: map[string]any{},
+		},
+		"",
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "deployments value must be an array")
+}
+
+func synthesisDeploymentForTest() synthesis.Deployment {
+	return synthesis.Deployment{
+		Name: "chat",
+		Model: synthesis.DeploymentModel{
+			Format: "OpenAI", Name: "gpt-4.1", Version: "2025-04-14",
+		},
+		Sku: synthesis.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
+	}
+}

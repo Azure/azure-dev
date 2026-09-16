@@ -14,6 +14,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/agentkind"
+	"azureaiagent/internal/pkg/containerref"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/pkg/projectconfig"
 
@@ -127,46 +128,92 @@ func orphanedConfigEnvNames(svc *azdext.ServiceConfig) []string {
 // the schema fields to the top level.
 type AgentDefinitionInline struct {
 	agent_yaml.AgentDefinition `json:",inline"`
+	Language                   string                             `json:"language,omitempty"`
+	Toolbox                    *agent_yaml.ToolboxReference       `json:"toolbox,omitempty"`
 	Protocols                  []agent_yaml.ProtocolVersionRecord `json:"protocols,omitempty"`
+	RegistryConnectionID       string                             `json:"registryConnectionId,omitempty"`
 	// EnvironmentVariables reads the deprecated inline shape.
 	EnvironmentVariables *[]agent_yaml.EnvironmentVariable `json:"environmentVariables,omitempty"`
 	AgentEndpoint        *agent_yaml.AgentEndpoint         `json:"agentEndpoint,omitempty"`
 	AgentCard            *agent_yaml.AgentCard             `json:"agentCard,omitempty"`
 	CodeConfiguration    *agent_yaml.CodeConfiguration     `json:"codeConfiguration,omitempty"`
+	Container            *ContainerSettings                `json:"container,omitempty"`
 	Policies             []agent_yaml.Policy               `json:"policies,omitempty"`
 	SessionConfiguration *agent_yaml.SessionConfiguration  `json:"sessionConfiguration,omitempty"`
 
 	// Voice-agent fields (kind: prompt-voice). All omitempty so container/
 	// workflow entries are byte-for-byte unchanged.
-	ModelType    agent_yaml.VoiceModelType `json:"modelType,omitempty"`
-	Model        *agent_yaml.Model         `json:"model,omitempty"`
-	Instructions *string                   `json:"instructions,omitempty"`
-	Voice        *string                   `json:"voice,omitempty"`
-	Store        *bool                     `json:"store,omitempty"`
+	ModelType          agent_yaml.VoiceModelType           `json:"modelType,omitempty"`
+	Model              *agent_yaml.Model                   `json:"model,omitempty"`
+	TargetAgent        *agent_yaml.VoiceTargetAgent        `json:"targetAgent,omitempty"`
+	ConversationEngine *agent_yaml.VoiceConversationEngine `json:"conversationEngine,omitempty"`
+	Instructions       *string                             `json:"instructions,omitempty"`
+	Voice              *string                             `json:"voice,omitempty"`
+	StructuredInputs   map[string]any                      `json:"structuredInputs,omitempty"`
+	Audio              *agent_yaml.VoiceAudio              `json:"audio,omitempty"`
+	OutputModalities   []string                            `json:"outputModalities,omitempty"`
+	Store              *bool                               `json:"store,omitempty"`
+	Tools              []map[string]any                    `json:"tools,omitempty"`
+	Avatar             map[string]any                      `json:"avatar,omitempty"`
+	Greeting           map[string]any                      `json:"greeting,omitempty"`
+	Handoff            map[string]any                      `json:"handoff,omitempty"`
+	ToolChoice         any                                 `json:"toolChoice,omitempty"`
+	ParallelToolCalls  *bool                               `json:"parallelToolCalls,omitempty"`
+	MaxOutputTokens    any                                 `json:"maxOutputTokens,omitempty"`
+	Include            []string                            `json:"include,omitempty"`
+	Telephony          *agent_yaml.VoiceTelephony          `json:"telephony,omitempty"`
 }
 
 // voiceAgentDefinitionToInline projects a VoiceAgent into the inline definition
 // written to azure.yaml. Voice agents carry no container/image/code config.
 func voiceAgentDefinitionToInline(va agent_yaml.VoiceAgent) AgentDefinitionInline {
 	return AgentDefinitionInline{
-		AgentDefinition: va.AgentDefinition,
-		ModelType:       va.ModelType,
-		Model:           va.Model,
-		Instructions:    va.Instructions,
-		Voice:           va.Voice,
-		Store:           va.Store,
+		AgentDefinition:    va.AgentDefinition,
+		ModelType:          va.ModelType,
+		Model:              va.Model,
+		TargetAgent:        va.TargetAgent,
+		ConversationEngine: va.ConversationEngine,
+		Instructions:       va.Instructions,
+		Voice:              va.Voice,
+		StructuredInputs:   va.StructuredInputs,
+		Audio:              va.Audio,
+		OutputModalities:   va.OutputModalities,
+		Store:              va.Store,
+		Tools:              va.Tools,
+		Avatar:             va.Avatar,
+		Greeting:           va.Greeting,
+		Handoff:            va.Handoff,
+		ToolChoice:         va.ToolChoice,
+		ParallelToolCalls:  va.ParallelToolCalls,
+		MaxOutputTokens:    va.MaxOutputTokens,
+		Include:            va.Include,
+		Telephony:          va.Telephony,
 	}
 }
 
 // toVoiceAgent rebuilds an agent_yaml.VoiceAgent from the inline definition.
 func (d AgentDefinitionInline) toVoiceAgent() agent_yaml.VoiceAgent {
 	return agent_yaml.VoiceAgent{
-		AgentDefinition: d.AgentDefinition,
-		ModelType:       d.ModelType,
-		Model:           d.Model,
-		Instructions:    d.Instructions,
-		Voice:           d.Voice,
-		Store:           d.Store,
+		AgentDefinition:    d.AgentDefinition,
+		ModelType:          d.ModelType,
+		Model:              d.Model,
+		TargetAgent:        d.TargetAgent,
+		ConversationEngine: d.ConversationEngine,
+		Instructions:       d.Instructions,
+		Voice:              d.Voice,
+		StructuredInputs:   d.StructuredInputs,
+		Audio:              d.Audio,
+		OutputModalities:   d.OutputModalities,
+		Store:              d.Store,
+		Tools:              d.Tools,
+		Avatar:             d.Avatar,
+		Greeting:           d.Greeting,
+		Handoff:            d.Handoff,
+		ToolChoice:         d.ToolChoice,
+		ParallelToolCalls:  d.ParallelToolCalls,
+		MaxOutputTokens:    d.MaxOutputTokens,
+		Include:            d.Include,
+		Telephony:          d.Telephony,
 	}
 }
 
@@ -177,11 +224,14 @@ func (d AgentDefinitionInline) toVoiceAgent() agent_yaml.VoiceAgent {
 func agentDefinitionToInline(ca agent_yaml.ContainerAgent) (AgentDefinitionInline, *ContainerSettings, string) {
 	inline := AgentDefinitionInline{
 		AgentDefinition:      ca.AgentDefinition,
+		Language:             ca.Language,
+		Toolbox:              ca.Toolbox,
 		Protocols:            ca.Protocols,
 		AgentEndpoint:        ca.AgentEndpoint,
 		AgentCard:            ca.AgentCard,
 		CodeConfiguration:    ca.CodeConfiguration,
 		Policies:             ca.Policies,
+		RegistryConnectionID: ca.RegistryConnectionID,
 		SessionConfiguration: ca.SessionConfiguration,
 	}
 
@@ -217,7 +267,10 @@ func (d AgentDefinitionInline) toContainerAgent(
 
 	ca := agent_yaml.ContainerAgent{
 		AgentDefinition:      d.AgentDefinition,
+		Language:             d.Language,
+		Toolbox:              d.Toolbox,
 		Image:                image,
+		RegistryConnectionID: d.RegistryConnectionID,
 		Protocols:            d.Protocols,
 		EnvironmentVariables: environmentVariables,
 		AgentEndpoint:        d.AgentEndpoint,
@@ -310,14 +363,22 @@ func environmentVariablesFromMap(
 // the marker that an agent definition is present in a service entry's inline or
 // config properties.
 func structHasKind(s *structpb.Struct) bool {
+	return structKind(s) != ""
+}
+
+// structKind returns the string `kind` a service entry's properties carry, or
+// "" when the field is absent or is not a string. Callers use it to pick the
+// right definition shape before decoding, because the kinds share the entry's
+// key space but not its types.
+func structKind(s *structpb.Struct) string {
 	if s == nil {
-		return false
+		return ""
 	}
 	v, ok := s.Fields["kind"]
 	if !ok {
-		return false
+		return ""
 	}
-	return v.GetStringValue() != ""
+	return v.GetStringValue()
 }
 
 // LoadAgentDefinition resolves the hosted-agent definition for an azure.ai.agent
@@ -463,13 +524,63 @@ func AgentDefinitionFromService(
 
 // LoadServiceTargetAgentConfig reads the agent service's deploy/provision config
 // (container settings, tool resources, tool connections, startup command, and —
-// for pre-split projects — bundled deployments/connections/toolboxes) from the
+// for pre-split projects — bundled deployments) from the
 // service-level properties, falling back to the deprecated config-nested shape.
+// Callers resolve file references before loading the effective configuration.
+// Connections and toolbox definitions belong to standalone services, not agents.
+// Prompt connection names stay on the definition for its own validation graph;
+// they are not decoded as generic Connection resources here.
 func LoadServiceTargetAgentConfig(svc *azdext.ServiceConfig) (*ServiceTargetAgentConfig, error) {
 	s := ServiceConfigProps(svc)
 	cfg := &ServiceTargetAgentConfig{}
 	if s == nil {
 		return cfg, nil
+	}
+	if connections := s.GetFields()["connections"]; connections != nil {
+		if structKind(s) != string(agent_yaml.AgentKindPrompt) {
+			return nil, fmt.Errorf(
+				"bundled connections on agent service %q are not supported; move them to azure.ai.connection services, "+
+					"add them to the agent uses list, and run 'azd deploy --all'", svc.GetName(),
+			)
+		}
+		if connections.GetListValue() == nil {
+			return nil, fmt.Errorf(
+				"connections on prompt agent service %q must be an array of azure.ai.connection service names",
+				svc.GetName(),
+			)
+		}
+		for i, connection := range connections.GetListValue().GetValues() {
+			if strings.TrimSpace(connection.GetStringValue()) == "" {
+				return nil, fmt.Errorf(
+					"connections[%d] on prompt agent service %q must be a non-empty azure.ai.connection service name; "+
+						"Connection objects are not supported", i, svc.GetName(),
+				)
+			}
+		}
+		// Do not mutate the original properties: the prompt loader still needs
+		// these references when it builds the prompt-specific dependency graph.
+		s = &structpb.Struct{Fields: maps.Clone(s.GetFields())}
+		delete(s.Fields, "connections")
+	}
+	for _, toolbox := range s.GetFields()["toolboxes"].GetListValue().GetValues() {
+		if name, ok := toolbox.Kind.(*structpb.Value_StringValue); ok && strings.TrimSpace(name.StringValue) != "" {
+			continue
+		}
+		fields := toolbox.GetStructValue().GetFields()
+		if len(fields) == 1 && strings.TrimSpace(fields["name"].GetStringValue()) != "" {
+			continue
+		}
+		return nil, fmt.Errorf(
+			"bundled toolbox definitions on agent service %q are not supported; move them to azure.ai.toolbox services, "+
+				"keep only strings or name-only objects in agent toolboxes, add them to uses, and run 'azd deploy --all'; "+
+				"set endpoint on the toolbox service to reuse an existing toolbox", svc.GetName(),
+		)
+	}
+	if activity := s.GetFields()["activity"].GetStructValue(); activity.GetFields()["useCase"] != nil {
+		return nil, fmt.Errorf(
+			"activity.useCase is not supported; use activity.digitalWorkerType: m365 for a Digital Worker " +
+				"or omit digitalWorkerType for simple mode",
+		)
 	}
 	if err := UnmarshalStruct(s, &cfg); err != nil {
 		return nil, err
@@ -689,7 +800,12 @@ func InlineAgentEnvironmentVariables(
 	if props == nil || len(props.GetFields()) == 0 {
 		return nil, nil
 	}
-	var inline AgentDefinitionInline
+	// Decode only the one deprecated field. The full inline shape is the hosted
+	// agent's, and a prompt or voice entry would fail to decode against it over
+	// fields this function never reads.
+	var inline struct {
+		EnvironmentVariables *[]agent_yaml.EnvironmentVariable `json:"environmentVariables,omitempty"`
+	}
 	if err := UnmarshalStruct(props, &inline); err != nil {
 		return nil, err
 	}
@@ -739,6 +855,15 @@ func agentDefinitionFromStruct(
 	coreImage string,
 	environment map[string]string,
 ) (agent_yaml.ContainerAgent, bool, error) {
+	// The kind gate has to come before the decode, not after it. Every agent
+	// kind lands in the same property bag but they do not agree on types: a
+	// prompt agent's `model` is a deployment name, while the hosted and voice
+	// shapes model it as an object. Decoding first would reject a perfectly
+	// valid prompt agent with a type error naming a field it does not have.
+	if structKind(s) == string(agent_yaml.AgentKindPrompt) {
+		return agent_yaml.ContainerAgent{}, false, nil
+	}
+
 	var inline AgentDefinitionInline
 	if err := UnmarshalStruct(s, &inline); err != nil {
 		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
@@ -749,10 +874,33 @@ func agentDefinitionFromStruct(
 	}
 
 	if inline.Kind != agent_yaml.AgentKindHosted {
-		if err := validateAgentServiceDefinition(s.AsMap()); err != nil {
+		definition := any(s.AsMap())
+		if agent_yaml.IsVoiceAgentKind(inline.Kind) {
+			if err := validateVoiceInlineAgent(inline); err != nil {
+				return agent_yaml.ContainerAgent{}, false, err
+			}
+			definition = inline.toVoiceAgent()
+		}
+		if err := validateAgentServiceDefinition(definition); err != nil {
 			return agent_yaml.ContainerAgent{}, false, err
 		}
 		return agent_yaml.ContainerAgent{}, false, nil
+	}
+
+	if inline.ModelType == agent_yaml.VoiceModelTypeHostedAgent || inline.TargetAgent != nil ||
+		inline.ConversationEngine != nil {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"hosted voice wrapper fields are not supported on hosted agents",
+			"move modelType, conversationEngine, or targetAgent to a voice wrapper service",
+		)
+	}
+	if inline.Telephony != nil {
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"telephony bindings are only supported on voice agents",
+			"move telephony to a service with kind: voice or kind: prompt-voice",
+		)
 	}
 
 	var cfg ServiceTargetAgentConfig
@@ -770,7 +918,7 @@ func agentDefinitionFromStruct(
 		return agent_yaml.ContainerAgent{}, false, err
 	}
 
-	if ca.Image != "" && !containerImageRefRe.MatchString(ca.Image) {
+	if ca.Image != "" && !containerref.IsValid(ca.Image) {
 		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			fmt.Sprintf("invalid container image reference in agent service config: %q", ca.Image),
@@ -779,6 +927,65 @@ func agentDefinitionFromStruct(
 	}
 
 	return ca, true, nil
+}
+
+func validateVoiceInlineAgent(inline AgentDefinitionInline) error {
+	if inline.CodeConfiguration != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"codeConfiguration is not supported on voice agents",
+			"configure code settings on the hosted target",
+		)
+	}
+	if inline.SessionConfiguration != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"sessionConfiguration is not supported on voice agents",
+			"configure session settings on the hosted target",
+		)
+	}
+	if inline.EnvironmentVariables != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"environmentVariables is not supported on voice agents",
+			"configure environment variables on the hosted target",
+		)
+	}
+	if len(inline.Protocols) > 0 {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"protocols are not supported on voice agents",
+			"configure protocols on the hosted target",
+		)
+	}
+	if inline.Toolbox != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"toolbox is not supported on voice agents",
+			"remove toolbox from the voice agent definition",
+		)
+	}
+	if len(inline.Policies) > 0 {
+		for _, policy := range inline.Policies {
+			if policy.InvocationsModeration != nil {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					"invocationsModeration is only supported for 'hosted' agents",
+					"remove invocationsModeration from the voice agent or move it to a hosted target",
+				)
+			}
+		}
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"policies are not supported on voice agents",
+			"configure content policy fields supported by the Voice API, or move target-owned policy "+
+				"configuration to the hosted target",
+		)
+	}
+	if err := validateAgentServiceDefinition(inline.toVoiceAgent()); err != nil {
+		return err
+	}
+	return nil
 }
 
 func validateAgentServiceDefinition(definition any) error {
@@ -876,7 +1083,7 @@ func parseContainerAgentYAML(data []byte) (agent_yaml.ContainerAgent, bool, erro
 		)
 	}
 
-	if agentDef.Image != "" && !containerImageRefRe.MatchString(agentDef.Image) {
+	if agentDef.Image != "" && !containerref.IsValid(agentDef.Image) {
 		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			fmt.Sprintf("invalid container image reference in agent.yaml: %q", agentDef.Image),
@@ -913,7 +1120,8 @@ func voiceAgentFromDefinitionFile(path string) (agent_yaml.VoiceAgent, bool, err
 		)
 	}
 
-	if kind, _ := genericTemplate["kind"].(string); kind != string(agent_yaml.AgentKindPromptVoice) {
+	if kind, _ := genericTemplate["kind"].(string); kind != string(agent_yaml.AgentKindPromptVoice) &&
+		kind != string(agent_yaml.AgentKindVoice) {
 		// Not a voice definition; let the container path handle the override.
 		return agent_yaml.VoiceAgent{}, false, nil
 	}
@@ -1055,8 +1263,8 @@ func VoiceAgentFromResolvedService(
 		if !structHasKind(resolved) {
 			continue
 		}
-		if resolved.GetFields()["kind"].GetStringValue() !=
-			string(agent_yaml.AgentKindPromptVoice) {
+		kind := agent_yaml.AgentKind(resolved.GetFields()["kind"].GetStringValue())
+		if !agent_yaml.IsVoiceAgentKind(kind) {
 			// A definition is present but it is not a voice agent.
 			return agent_yaml.VoiceAgent{}, false, nil
 		}
@@ -1068,6 +1276,9 @@ func VoiceAgentFromResolvedService(
 				fmt.Sprintf("voice agent service config is not valid: %s", err),
 				"re-run `azd ai agent init` to regenerate the agent service entry",
 			)
+		}
+		if err := validateVoiceInlineAgent(inline); err != nil {
+			return agent_yaml.VoiceAgent{}, false, err
 		}
 		return inline.toVoiceAgent(), true, nil
 	}

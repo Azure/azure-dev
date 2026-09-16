@@ -23,6 +23,7 @@ envsubst
 fatih
 fiscaletti
 gofrs
+gimenete
 haoozhang
 hemarina
 huimiu
@@ -70,4 +71,5 @@ v1212
 vivazqu
 weilim
 Yionse
+YoYoJa
 Zyysurely

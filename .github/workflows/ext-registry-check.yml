@@ -37,7 +37,7 @@ jobs:
     steps:
       - name: Check if an extension registry changed
         id: changed
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         with:
           script: |
             const files = await github.paginate(github.rest.pulls.listFiles, {
@@ -61,13 +61,13 @@ jobs:
 
       - name: Checkout
         if: steps.changed.outputs.registry_changed == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event.pull_request.base.sha }}
 
       - name: Check extension registry update
         if: steps.changed.outputs.registry_changed == 'true'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         with:
           script: |
             const script = require('./.github/scripts/src/ext-registry-check.js');

@@ -1,5 +1,144 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Extension telemetry API
+
+Extension code reports best-effort usage events through the shared
+`pkg/foundry/telemetry` reporter. Extension-owned event builders remain in
+`internal/telemetry`:
+
+```go
+reporter := foundryTelemetry.NewReporter(azdClient.Telemetry(), nil)
+reporter.Report(ctx, extensionTelemetry.LocalClientRouteSelected(route))
+```
+
+`Report` has no return value and never changes the command result. It applies a
+one-second timeout, never retries, and writes only the event name and gRPC status
+code to the debug log when reporting fails. Attribute values and transport error
+details are not logged.
+
+Define event names, attribute keys, and bounded values in
+`internal/telemetry/events.go`. Do not call `ReportUsage` directly from command
+or provider code. Events must contain low-cardinality product metadata only;
+never include prompts, responses, resource or service names, IDs, paths, URLs,
+connection values, or other customer content. The azd host records events only
+for extensions installed from the official registry.
+
+The events currently emitted by this extension are documented under
+[Agent context telemetry](#agent-context-telemetry) and
+[Local client route telemetry](#local-client-route-telemetry).
+
+### Agent context telemetry
+
+When azd telemetry is enabled, the extension reports `agent.context.resolved`
+for each distinct agent classification involved in an invocation. The event
+contains only bounded classifications:
+
+| Attribute | Values | Description |
+|---|---|---|
+| `ext.agent.kind` | `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, `unknown` | Resolved agent kind. |
+| `ext.agent.harness` | `none`, `github_copilot_preview`, `other` | Resolved prompt-agent harness classification. |
+| `ext.agent.operation` | Extension command path | Operation sharing the event's trace. |
+
+The event is correlated with other telemetry from the same azd invocation by
+the OpenTelemetry operation ID. A project with multiple agent classifications
+reports one row for each classification. The event never includes agent names,
+service keys, paths, URLs, prompts, or other customer content.
+
+## Non-interactive automation
+
+See the shared [AI extension non-interactive input reference](../ai-non-interactive.md)
+for every prompt's flag, environment/configuration input, or deterministic
+no-prompt behavior.
+
+## Choosing a Foundry project name
+
+During interactive `azd ai agent init`, azd prompts for the name of a new
+Microsoft Foundry project. If the current azd environment name is valid for
+the generated infrastructure, it is offered as the default. The name must be
+3-32 characters, start with a letter or number, and contain only letters,
+numbers, or hyphens.
+
+To configure the name, set it in the active azd environment before running
+init:
+
+```bash
+azd env set AZURE_AI_PROJECT_NAME my-foundry-project
+```
+
+An existing `AZURE_AI_PROJECT_NAME` value is offered as the default during
+interactive new-project setup. `--no-prompt` remains non-interactive and keeps
+its existing automatic environment-name fallback.
+
+## Composing Agent Dependencies
+
+Use the Agent command surface to attach existing Toolbox or Connection services
+to an Agent service in `azure.yaml`:
+
+```bash
+azd ai agent toolbox add support-tools --agent research-agent
+azd ai agent connection add search-connection --agent research-agent
+```
+
+These commands add the dependency service key to `services.<agent>.uses`. They
+do not create or deploy the dependency. Toolbox and Connection configuration and
+lifecycle behavior remain owned by the `azure.ai.toolboxes` and
+`azure.ai.connections` extensions.
+
+**Breaking change:** the dependency type now precedes the verb:
+`azd ai agent <toolbox|connection> add <service> --agent <agent>`.
+The previous `azd ai agent add <type> ...` command order is no longer supported;
+only the command hierarchy changes, not the dependency mutation or JSON output.
+
+If a toolbox is declared inline on an agent, move its definition to an
+independent `azure.ai.toolbox` service before deployment. If the new service key
+differs from the original toolbox name (for example, `My Tools` becomes
+`MyTools`), replace the inline entry in the agent's `toolboxes` list with the
+new service key. Then attach that service with the command above and run `azd deploy`.
+The add command only updates the agent's `uses` list; it does not rewrite
+`toolboxes`, create the service, or deploy it.
+
+Bundled `connections` and full `toolboxes` definitions on `azure.ai.agent` are
+not supported, including definitions loaded through `$ref`. Move connections
+to `azure.ai.connection` services and attach them through `uses`. Agent
+`toolboxes` accepts strings or name-only objects referencing local
+`azure.ai.toolbox` services, including name-only objects loaded through local
+`$ref` files (with an optional `name` override). Referenced full definitions
+remain unsupported. To reuse an external toolbox, set `endpoint` on
+its split toolbox service instead of setting a legacy MCP environment marker.
+Run `azd deploy --all` to reconcile these dependencies before their agents;
+`azd provision` does not create Connections or Toolboxes. Agent manifest
+Connection and Toolbox resources remain supported as inputs to `azd ai agent init`,
+which generates split services. Agent runtime `toolConnections` and environment
+references remain agent-owned.
+
+Prompt agents (`kind: prompt`) may also declare `connections` as a list of
+sibling `azure.ai.connection` service names. These are references, not resource
+definitions: the siblings must be in `uses` and deployed to the same project
+before the prompt agent. Connection objects remain unsupported on any agent.
+
+## Deploying Agents
+
+Deploy Agents through the normal azd project lifecycle:
+
+- `azd deploy <service>` deploys the selected `azure.ai.agent` service.
+- `azd deploy --all` deploys all services, with ordering defined by `uses`.
+- `azd up` provisions and deploys the project.
+
+**Breaking change:** `azd ai agent deploy [path]` has been removed. The extension
+still implements Agent deployment as a service target invoked by core azd;
+there is no separate definition-file deployment or sibling-Toolbox orchestration
+path in the Agent command tree.
+
+For an existing standalone agent, use `azd ai agent init` to create/adopt an azd
+project, or declare an `azure.ai.agent` service in `azure.yaml` with its source
+directory and deployment settings. The definition can be inline or referenced
+using `$ref`, following the service schema; declare core-owned fields such as
+`host`, `project`, `language`, and `uses` in `azure.yaml`. Deploy by **service name**,
+not by a definition-file path. A sibling `toolbox.yaml` is not automatically
+deployed: declare a Toolbox service and add it to `uses`. Deploy dependencies
+first or use `azd deploy --all`; a targeted Agent deployment does not deploy its
+dependencies automatically.
+
 ## Running Local Agents
 
 `azd ai agent run` starts the selected agent locally and, by default, opens the
@@ -12,6 +151,68 @@ Use `--no-inspector` to run only the local agent process:
 ```bash
 azd ai agent run --no-inspector
 ```
+
+## Publishing a Digital Worker
+
+An Activity-protocol hosted agent can be published as a Microsoft 365 Digital
+Worker. Declare the Digital Worker settings on the `azure.ai.agent` service in
+`azure.yaml`, deploy the agent, and then publish it:
+
+```yaml
+services:
+  my-digital-worker:
+    host: azure.ai.agent
+    project: src/my-digital-worker
+    language: python
+    kind: hosted
+    name: my-digital-worker
+    protocols:
+      - protocol: activity
+        version: 2.0.0
+    activity:
+      digitalWorkerType: m365
+      publish:
+        publishScope: tenant
+        agentDisplayName: My Digital Worker
+        optionalPermissionScopes:
+          - resourceAppId: ea9ffc3e-8a23-4a7d-836d-234d7c7565c1
+            scopes:
+              - McpServers.Mail.All
+              - McpServers.Calendar.All
+        accessBoundaries:
+          - read.1on1.developers
+          - write.1on1.developers
+```
+
+The `activity.publish` block is shared Microsoft 365 app publish metadata for
+Activity agents. When `digitalWorkerType` is `m365`, azd enforces tenant scope
+and sends `digital_worker_type: m365` when creating the agent. Omit
+`digitalWorkerType` for simple mode.
+After deployment, the service-returned Digital Worker type controls pack and
+publish behavior. The publish request sets `publishAsAutopilot` automatically;
+the publish block itself is optional.
+
+`optionalPermissionScopes` selects additional Microsoft 365 permissions such as
+WorkIQ MCP scopes. `accessBoundaries` accepts the supported
+`read.1on1.developers`, `write.1on1.developers`,
+`read.group.developers`, and `write.group.developers` values. Omitting
+`accessBoundaries` preserves the current service configuration; an explicit
+empty array clears it.
+
+```bash
+azd deploy
+azd ai agent publish
+```
+
+For simple Activity agents, `publishScope` accepts `shared` or `tenant`. For an
+`m365` Digital Worker, `publishScope` is always `tenant`.
+An explicit `azd ai agent publish --scope <scope>` overrides the configured
+value where allowed by the use case. Use `--display-name` and `--app-version`
+to override the corresponding configured publish metadata for one command
+invocation. Repeat `--optional-permission-scope <resource-app-id>=<scope>` or
+`--access-boundary <boundary>` to replace the configured values for one
+publication. Use `--clear-access-boundaries` to send an explicit empty array and
+clear existing boundaries.
 
 The Agent Inspector UI binds port `8087` by default. Use `--inspector-port` to
 move it, which is what you need when running two agents side by side or when a
@@ -32,6 +233,20 @@ azd also warns, without failing the run, when `--inspector-port` cannot take
 effect: activity-protocol agents open the Microsoft 365 Agents Playground rather
 than the Agent Inspector, and `--port 8087` on its own collides with the
 inspector's own default UI port.
+
+### Local client route telemetry
+
+When installed from the official registry, the extension reports the
+`local_client.route.selected` usage event after `azd ai agent run` resolves the
+service and protocol profile. Its `ext.route` attribute is exactly one of:
+
+- `inspector` for a non-activity agent;
+- `playground` for an activity-protocol agent; or
+- `suppressed` when `--no-client` or the deprecated `--no-inspector` is set.
+
+The event is emitted before checking client availability, starting the local
+agent, or launching a client. It records route selection, not successful client
+launch.
 
 ## Migrating Legacy Agent Configuration
 
@@ -96,9 +311,60 @@ underscore and contain only letters, digits, or underscores. For example,
 `API_KEY` is valid, while `api-key` is not. `azd deploy` validates these names
 before contacting Foundry Agent Service.
 
+## GitHub Copilot harness built-in tools
+
+The harness block selects the managed runtime and contains only its type.
+Configure built-in tools through the prompt agent's top-level `tools` list:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    kind: prompt
+    name: my-agent
+    model: gpt-5-mini
+    instructions: Use web research when requested.
+    harness:
+      type: github_copilot_preview
+    tools:
+      - type: github_copilot_toolset_preview
+        default_config:
+          enabled: false
+        configs:
+          - name: web
+            enabled: true
+```
+
+Built-in tool names are `filesystem_read`, `filesystem_write`, `shell`, `web`,
+and `subagents`. `default_config.enabled` applies to every built-in; entries in
+`configs` override individual tools. Skills are declared in the top-level
+`skills` list. Harness compute and idle settings are service-managed.
+
+Prompt-agent controls use camelCase in `azure.yaml` and are translated to the
+Foundry API's snake_case fields during deployment:
+
+```yaml
+toolChoice: auto
+temperature: 0
+topP: 0.9
+text:
+  format:
+    type: json_object
+reasoning:
+  effort: low
+structuredInputs:
+  user_context:
+    description: Additional invocation context
+    required: false
+```
+
+Nested tool definitions remain API-owned and use the field names documented by
+the corresponding Foundry tool contract.
+
 ## Content safety policies
 
-A hosted agent can be bound to an Azure AI Content Safety (RAI) policy so every
+A hosted or prompt agent can be bound to an Azure AI Content Safety (RAI) policy so every
 request and response it handles is screened by that policy. Declare it with a
 `policies` list on the `azure.ai.agent` service entry in `azure.yaml`:
 
@@ -114,9 +380,22 @@ services:
         raiPolicyName: /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account-name>/raiPolicies/<policy-name>
 ```
 
-`policies` applies to both deploy modes — container images and code deploys
-(`codeConfiguration`) alike. It is optional; agents without it deploy exactly as
-before.
+For prompt agents, use the same `policies` entry with `kind: prompt`:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    kind: prompt
+    model: gpt-4.1-mini
+    instructions: You are a helpful assistant.
+    policies:
+      - type: rai_policy
+        raiPolicyName: /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account-name>/raiPolicies/<policy-name>
+```
+
+`policies` is optional. For hosted agents, it applies to both deploy modes —
+container images and code deploys (`codeConfiguration`) alike.
 
 Details:
 
@@ -126,12 +405,302 @@ Details:
   `Microsoft.DefaultV2` still need the full ID, with the account that hosts them
   in the path.
 - Create or list policies on the Foundry account first — azd does not create the
-  policy, it only associates the agent with an existing one.
+  policy, it only associates the agent with an existing one. For prompt and
+  managed agents, `azd ai agent init` lists the policies on the selected account
+  and can bind one for you; see `--rai-policy`.
 
 > **Note:** In the deprecated on-disk `agent.yaml` shape the key is snake_case
 > (`rai_policy_name`). In `azure.yaml` it is camelCase (`raiPolicyName`), like
 > the other inline agent properties such as `codeConfiguration` and
 > `environmentVariables`.
+
+## Voice agents (public preview)
+
+Voice initialization is available without a private-preview environment switch.
+Use the existing commands to discover options and create a managed prompt voice
+agent:
+
+```bash
+azd ai agent --help
+azd ai agent init --help
+azd ai agent init --kind prompt-voice --agent-name support-voice --model gpt-realtime
+```
+
+Run the deployment commands from the generated project directory containing
+`azure.yaml`:
+
+```bash
+azd provision
+azd deploy
+```
+
+### Managed prompt voice
+
+The following `azure.yaml` example uses a service-hosted model; no separate model
+deployment is required. `kind: voice` and the compatibility alias
+`kind: prompt-voice` are both accepted. Initialization retains its existing
+`prompt-voice` output; changing the kind is not required to use public preview.
+
+```yaml
+name: support-voice
+services:
+  ai-project:
+    host: azure.ai.project
+  support-voice:
+    host: azure.ai.agent
+    kind: voice
+    name: support-voice
+    uses:
+      - ai-project
+    modelType: managed
+    model:
+      id: gpt-realtime
+    instructions: You are a concise customer support assistant.
+    voice: en-US-AvaNeural
+infra:
+  provider: microsoft.foundry
+```
+
+### Bring your own model deployment (BYOM)
+
+For an existing compatible deployment in your Foundry resource, use
+`modelType: self_deployed` and set `model.id` to its **deployment name**, not
+necessarily its model name. Replace the endpoint and deployment name below with
+your own values. The referenced deployment must exist before agent deployment;
+setting these fields does not create a model deployment.
+
+```yaml
+name: support-voice-byom
+services:
+  ai-project:
+    host: azure.ai.project
+    endpoint: https://example.services.ai.azure.com/api/projects/example-project
+  support-voice-byom:
+    host: azure.ai.agent
+    kind: voice
+    name: support-voice-byom
+    uses:
+      - ai-project
+    modelType: self_deployed
+    model:
+      id: my-realtime-deployment
+    instructions: You are a concise customer support assistant.
+    voice: en-US-AvaNeural
+infra:
+  provider: microsoft.foundry
+```
+
+Edit existing voice settings in `azure.yaml`; `--voice` applies when initializing
+a new prompt voice agent and is rejected when the chosen init flow cannot use it.
+Advanced settings such as `audio`, `structuredInputs`,
+`tools`, `greeting`, `avatar`, and `handoff` are described by the
+[agent service schema](schemas/azure.ai.agent.json).
+See [hosted voice wrappers](#hosted-voice-wrapper-preview) for `conversationEngine`
+and [telephony bindings](#prompt-voice-telephony-bindings) for phone-provider setup.
+
+To try a prompt voice agent or hosted voice wrapper, open your project in the
+[Microsoft Foundry portal](https://ai.azure.com). `azd ai agent invoke` does not
+implement voice conversations; recognized voice services receive portal guidance.
+Programmatic clients use the voice WebSocket endpoint with a Voice Live client.
+Use the project-level `azd deploy` workflow above for voice services.
+
+## Prompt voice telephony bindings
+
+Prompt voice agents can declare Foundry-side telephony bindings in `azure.yaml`.
+This lets `azd deploy` bind an existing phone-provider route to the deployed
+agent. Telephony is only supported for voice services. Use `kind: voice` for new
+managed voice agents; `kind: prompt-voice` remains a compatibility alias.
+
+```yaml
+services:
+  support-voice:
+    host: azure.ai.agent
+    kind: voice
+    name: support-voice
+    model:
+      id: gpt-realtime
+    telephony:
+      bindings:
+        - provider: twilio
+          identifier: "+14255550123"
+          connection: telephony-twilio
+        - provider: acs
+          identifier: "28:orgid:00000000-0000-0000-0000-000000000001"
+          connection: telephony-acs
+```
+
+Prerequisites:
+
+- The phone provider account/resource and phone number already exist.
+- The Foundry project connection named by `connection` already exists.
+- Provider-side callbacks, such as Twilio webhooks or ACS Event Subscriptions,
+  are configured by the user/admin.
+
+Supported providers and identifiers:
+
+- `twilio`: use a Twilio phone number in E.164 format, such as `+14255550123`.
+- `acs`: use `28:orgid:<guid>` for Teams Phone Extensibility Resource Accounts
+  or `4:+<E.164>` for ACS-purchased numbers. azd maps `acs` to the service
+  provider value `azure-communication-service`.
+
+Bindings are create-only in this preview. If a remote binding exists and matches
+the YAML, deploy continues. If the remote binding has different configuration,
+azd fails with a remediation message instead of silently keeping stale routing.
+
+Cleanup: delete telephony bindings before deleting test agents. The service may
+leave bindings behind when an agent is deleted, so do not rely on agent deletion
+as binding cleanup.
+
+Delete a binding with the agent-scoped telephony API before deleting the agent:
+
+```bash
+curl -X DELETE \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Foundry-Features: VoiceAgents=V1Preview" \
+  "$PROJECT_ENDPOINT/agents/$AGENT_NAME/telephony/$BINDING_ID?api-version=2025-11-15-preview"
+```
+
+The binding ID is the service provider plus identifier, for example
+`twilio:%2B14255550123` for `+14255550123`, or
+`azure-communication-service:28:orgid:<guid>` for ACS/TPE.
+
+### Moderating invocations-protocol traffic
+
+For hosted agents that expose the `invocations` protocol, the RAI policy alone is not
+enough: the content-safety proxy needs to be told **where the text lives** in the
+request and response bodies. Without that it has nothing to submit to the policy,
+so no content is actually screened. Supply an `invocationsModeration` block on the
+`rai_policy` entry:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    kind: hosted
+    name: my-agent
+    protocols:
+      - protocol: invocations
+        version: "1.0.0"
+    policies:
+      - type: rai_policy
+        raiPolicyName: /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account-name>/raiPolicies/<policy-name>
+        invocationsModeration:
+          responseMode: both
+          inputContentType: json
+          outputContentType: json
+          inputPaths:
+            - $.input
+          outputPaths:
+            - $.output
+          streamSelectors:
+            - eventType: response.output_text.delta
+              textField: $.delta
+```
+
+Fields:
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `responseMode` | yes | `non_streaming`, `streaming`, or `both`. |
+| `inputContentType` | no | `json` (default) or `text`. |
+| `outputContentType` | no | `json` (default) or `text`. |
+| `inputPaths` | when `inputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the request text. |
+| `outputPaths` | when `responseMode` includes non-streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | JSONPath expressions selecting the buffered response text. |
+| `streamSelectors` | when `responseMode` includes streaming and `outputContentType` is `json` or omitted (it defaults to `json`) | `eventType` (required) and `textField` per server-sent event frame. |
+
+`invocationsModeration` is only valid on a `hosted` agent whose `protocols` list
+includes `invocations`. Declaring it elsewhere — on another agent kind, or on an
+`invocations_ws`-only agent, which does not go through the content-safety HTTP
+proxy — fails validation rather than silently deploying a policy that never runs.
+
+> **Understanding `responseMode`:** it declares which response *shapes* the
+> container can produce, **not** "input and output". Input is always moderated.
+> For the output side the proxy inspects the actual response `Content-Type` and
+> runs exactly one gate: the SSE gate for `text/event-stream`, the buffered gate
+> otherwise. Use `both` only for containers that genuinely answer both ways —
+> if a response arrives in a shape `responseMode` did not declare, the request
+> fails closed rather than skipping moderation.
+
+Set `inputContentType`/`outputContentType` to `text` when the body is plain text;
+the whole body is then moderated and no paths are needed for that direction.
+
+As with `raiPolicyName`, the deprecated on-disk `agent.yaml` shape uses snake_case
+keys throughout this block (`invocations_moderation`, `response_mode`,
+`input_paths`, `stream_selectors`, `event_type`, and so on). The **values**
+(`non_streaming`, `streaming`, `both`, `json`, `text`) are the same in both.
+
+### Hosted voice wrapper (preview)
+
+A hosted voice wrapper keeps Voice Live responsible for VAD, speech-to-text,
+and text-to-speech while routing conversation logic to a hosted agent in the
+same Foundry project. Hosted Voice samples use the same sample `azure.yaml`
+flow as other current Hosted Agent and `invocations_ws` samples:
+
+```powershell
+azd ai agent init -m .\path\to\azure.yaml
+```
+
+The local path can be replaced with its public GitHub URL after the sample is
+published.
+
+When the sample project is already present with its `azure.yaml`, run
+`azd ai agent init` from the project directory to reuse the existing azd
+configuration before provisioning and deployment.
+
+The sample `azure.yaml` contains both services and references the target by its
+service name:
+
+```yaml
+services:
+  ai-project:
+    host: azure.ai.project
+
+  voice-target:
+    host: azure.ai.agent
+    project: ./src/voice-target
+    language: csharp
+    kind: hosted
+    name: voice-target
+    uses:
+      - ai-project
+    protocols:
+      - protocol: invocations_ws
+        version: 1.0.0
+    metadata:
+      voiceLiveCompatible: "true"
+      bridgeProtocolVersion: "1.0"
+    container:
+      resources:
+        cpu: "1"
+        memory: 2Gi
+    codeConfiguration:
+      runtime: dotnet_10
+      entryPoint: VoiceHostedAgent.dll
+      dependencyResolution: bundled
+
+  voice-target-voice:
+    host: azure.ai.agent
+    kind: voice
+    name: voice-target-voice
+    uses:
+      - ai-project
+      - voice-target
+    conversationEngine:
+      type: hosted_agent
+      name: voice-target
+      version: deployed
+    store: false
+```
+
+The `uses` edge deploys the target before the wrapper. `conversationEngine`
+points at the hosted target service, and `version: deployed` pins the wrapper
+to the target version produced by the current azd environment.
+
+The target must be active, declare `invocations_ws/1.0.0`, and include
+`voiceLiveCompatible=true` and `bridgeProtocolVersion=1.0` metadata. Model,
+instructions, tools, and other conversation controls belong to the target;
+the wrapper owns audio, voice, store, avatar, and greeting configuration.
 
 ## Session idle timeout
 
@@ -158,7 +727,7 @@ seconds).
 
 Details:
 
-- `idleTimeoutSeconds` must be between **300 and 3600** seconds (inclusive).
+- `idleTimeoutSeconds` must be between **120 and 3600** seconds (inclusive).
   Values outside that range are rejected at deploy time and by schema
   validation.
 - In the deprecated on-disk `agent.yaml` shape the keys are snake_case
@@ -198,6 +767,103 @@ Details:
 ## Customize infrastructure
 
 Use `azd ai agent init --infra` to generate editable Foundry Bicep or Terraform. Existing project infrastructure is preserved as a separate layer. See [Customize Foundry infrastructure with `--infra`](docs/infrastructure-eject.md) for migration behavior, file-conflict rules, resource-group ownership, layer dependencies, and limitations.
+
+## Private container registry connections
+
+A hosted agent can reference a pre-built image in a private registry through a
+Foundry project connection. The image must be fully qualified, and
+`docker.imagePassthrough: true` is required so azd preserves the remote image
+reference instead of pulling, building, or publishing it.
+
+The Foundry connection must use metadata understood by the hosted-agent service
+and credentials that let the Foundry project identity authenticate to the
+registry. For OAuth token exchange, configure the registry's identity provider,
+audience, token endpoint, and project-identity binding before deploying.
+
+### External connection
+
+For a connection that already exists in the Foundry project, set
+`registryConnectionId` to its Foundry name or resource ID. An external connection
+does not belong in `uses`:
+
+```yaml
+services:
+  existing-project:
+    host: azure.ai.project
+    endpoint: https://example.services.ai.azure.com/api/projects/example-project
+
+  private-image-agent:
+    host: azure.ai.agent
+    uses:
+      - existing-project
+    kind: hosted
+    name: private-image-agent
+    image: registry.example.com/team/agent:v1
+    docker:
+      imagePassthrough: true
+    registryConnectionId: production-registry
+    protocols:
+      - protocol: invocations
+        version: 1.0.0
+```
+
+You can create the external connection before deployment with
+`azd ai connection create`, or create it through the Foundry portal or API. The
+connection must exist on the selected project before `azd deploy` runs.
+
+### Declarative sibling connection
+
+To let the Connections extension reconcile the connection during `azd deploy`,
+declare an `azure.ai.connection` sibling and add its service key to the agent's
+`uses` list. Set `registryConnectionId` to the actual Foundry connection name.
+In this example, the sibling omits `name`, so its service key is also its Foundry
+connection name. If the sibling declares a different `name`, use that name in
+`registryConnectionId` while keeping the service key in `uses`:
+
+```yaml
+services:
+  existing-project:
+    host: azure.ai.project
+    endpoint: https://example.services.ai.azure.com/api/projects/example-project
+
+  private-registry:
+    host: azure.ai.connection
+    uses:
+      - existing-project
+    category: CustomKeys
+    target: https://registry.example.com
+    authType: CustomKeys
+    credentials:
+      keys:
+        audience: ${REGISTRY_AUDIENCE}
+        tokenEndpoint: /oauth/token
+        body.provider_name: ${REGISTRY_PROVIDER}
+    metadata:
+      type: registry_connection
+      mode: oauth_token_exchange
+
+  private-image-agent:
+    host: azure.ai.agent
+    uses:
+      - existing-project
+      - private-registry
+    kind: hosted
+    name: private-image-agent
+    image: registry.example.com/team/agent:v1
+    docker:
+      imagePassthrough: true
+    registryConnectionId: private-registry
+    protocols:
+      - protocol: invocations
+        version: 1.0.0
+```
+
+Set the referenced credential environment values, run `azd provision` for the
+Project, then run `azd deploy --all` to deploy the connection before the agent.
+Provisioning alone does not create the connection. Omitting the sibling from
+`uses`, disabling it with a deployment
+condition, or omitting image passthrough causes validation to fail before agent
+deployment.
 
 ## Private networking for `host: azure.ai.project`
 

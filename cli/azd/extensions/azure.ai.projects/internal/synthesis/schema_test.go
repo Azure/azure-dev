@@ -122,23 +122,23 @@ func TestARMTemplate_MatchesBicepBuild(t *testing.T) {
 			"--outfile main.arm.json` from the templates directory")
 }
 
-// TestBrownfieldARMTemplate_MatchesBicepBuild is the brownfield.bicep counterpart
+// TestExistingProjectARMTemplate_MatchesBicepBuild is the existing-project.bicep counterpart
 // of TestARMTemplate_MatchesBicepBuild: it catches a forgotten `bicep build` after
-// editing the brownfield model-deployment template. Skipped when bicep is absent.
-func TestBrownfieldARMTemplate_MatchesBicepBuild(t *testing.T) {
+// editing the existing-project template. Skipped when bicep is absent.
+func TestExistingProjectARMTemplate_MatchesBicepBuild(t *testing.T) {
 	bicep := lookupBicep()
 	if bicep == "" {
 		t.Skip("bicep CLI not found on PATH; skipping ARM drift check")
 	}
 
 	templatesDir := "templates"
-	committed, err := os.ReadFile(filepath.Join(templatesDir, "brownfield.arm.json"))
+	committed, err := os.ReadFile(filepath.Join(templatesDir, "existing-project.arm.json"))
 	require.NoError(t, err)
 
-	out := filepath.Join(t.TempDir(), "brownfield.arm.json")
+	out := filepath.Join(t.TempDir(), "existing-project.arm.json")
 	//nolint:gosec // bicep comes from PATH or the Azure CLI
 	cmd := exec.CommandContext(t.Context(), bicep, "build",
-		filepath.Join(templatesDir, "brownfield.bicep"), "--outfile", out)
+		filepath.Join(templatesDir, "existing-project.bicep"), "--outfile", out)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	require.NoErrorf(t, cmd.Run(), "bicep build failed: %s", stderr.String())
@@ -151,8 +151,8 @@ func TestBrownfieldARMTemplate_MatchesBicepBuild(t *testing.T) {
 	rebuiltNormalized := normalizeArmTemplate(t, rebuilt)
 
 	assert.True(t, bytes.Equal(committedNormalized, rebuiltNormalized),
-		"templates/brownfield.arm.json is stale; regenerate with `bicep build "+
-			"brownfield.bicep --outfile brownfield.arm.json` from the templates directory")
+		"templates/existing-project.arm.json is stale; regenerate with `bicep build "+
+			"existing-project.bicep --outfile existing-project.arm.json` from the templates directory")
 }
 
 // normalizeArmTemplate returns a stable JSON representation of an ARM template

@@ -192,6 +192,9 @@ func FromHost(err error, operation, contextMessage string) error {
 	}
 
 	actionable := azdext.ActionableErrorDetailFromError(err)
+	if relayedErr := relayedExtensionErrorFromStatus(st); relayedErr != nil {
+		return applyActionableErrorDetail(azdext.UnwrapError(relayedErr), actionable)
+	}
 	if serviceDetail := serviceErrorDetailFromStatus(st); serviceDetail != nil {
 		code := serviceDetail.GetErrorCode()
 		if code == "" && serviceDetail.GetStatusCode() > 0 {
@@ -309,6 +312,45 @@ func serviceErrorDetailFromStatus(st *status.Status) *azdext.ServiceErrorDetail 
 		}
 	}
 	return nil
+}
+
+func relayedExtensionErrorFromStatus(st *status.Status) *azdext.ExtensionError {
+	if st == nil {
+		return nil
+	}
+	for _, detail := range st.Details() {
+		if relayedErr, ok := detail.(*azdext.ExtensionError); ok {
+			return relayedErr
+		}
+	}
+	return nil
+}
+
+func applyActionableErrorDetail(err error, actionable *azdext.ActionableErrorDetail) error {
+	if actionable == nil {
+		return err
+	}
+
+	if serviceErr, ok := errors.AsType[*azdext.ServiceError](err); ok {
+		if actionable.GetSuggestion() != "" {
+			serviceErr.Suggestion = actionable.GetSuggestion()
+		}
+		if len(actionable.GetLinks()) > 0 {
+			serviceErr.Links = azdext.UnwrapErrorLinks(actionable.GetLinks())
+		}
+		return serviceErr
+	}
+	if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
+		if actionable.GetSuggestion() != "" {
+			localErr.Suggestion = actionable.GetSuggestion()
+		}
+		if len(actionable.GetLinks()) > 0 {
+			localErr.Links = azdext.UnwrapErrorLinks(actionable.GetLinks())
+		}
+		return localErr
+	}
+
+	return err
 }
 
 // IsCancellation checks if an error represents user cancellation

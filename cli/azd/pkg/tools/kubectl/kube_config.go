@@ -50,14 +50,12 @@ func (kcm *KubeConfigManager) SaveKubeConfig(ctx context.Context, configName str
 		return "", fmt.Errorf("failed marshalling KubeConfig to yaml: %w", err)
 	}
 
-	// Create .kube config folder if it doesn't already exist
-	if err := os.MkdirAll(kcm.configPath, osutil.PermissionDirectory); err != nil {
+	if err := ensureKubeConfigDirectory(kcm.configPath); err != nil {
 		return "", fmt.Errorf("failed creating .kube config directory, %w", err)
 	}
 
 	outFilePath := filepath.Join(kcm.configPath, configName)
-	err = os.WriteFile(outFilePath, kubeConfigRaw, osutil.PermissionFile)
-	if err != nil {
+	if err := writeKubeConfig(outFilePath, kubeConfigRaw); err != nil {
 		return "", fmt.Errorf("failed writing kube config file: %w", err)
 	}
 
@@ -93,9 +91,12 @@ func (kcm *KubeConfigManager) MergeConfigs(ctx context.Context, newConfigName st
 	}
 
 	kubeConfigRaw := []byte(res.Stdout)
+	if err := ensureKubeConfigDirectory(kcm.configPath); err != nil {
+		return "", fmt.Errorf("failed securing .kube config directory, %w", err)
+	}
+
 	outFilePath := filepath.Join(kcm.configPath, newConfigName)
-	err = os.WriteFile(outFilePath, kubeConfigRaw, osutil.PermissionFile)
-	if err != nil {
+	if err := writeKubeConfig(outFilePath, kubeConfigRaw); err != nil {
 		return "", fmt.Errorf("failed writing new kube config: %w", err)
 	}
 
@@ -122,4 +123,34 @@ func getKubeConfigDir() (string, error) {
 		return "", fmt.Errorf("cannot get user home directory: %w", err)
 	}
 	return filepath.Join(userHomeDir, ".kube"), nil
+}
+
+func ensureKubeConfigDirectory(path string) error {
+	if err := os.MkdirAll(path, osutil.PermissionDirectoryOwnerOnly); err != nil {
+		return err
+	}
+
+	return os.Chmod(path, osutil.PermissionDirectoryOwnerOnly)
+}
+
+func writeKubeConfig(path string, contents []byte) error {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, osutil.PermissionFileOwnerOnly)
+	if err != nil {
+		return err
+	}
+
+	if err := file.Chmod(osutil.PermissionFileOwnerOnly); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Truncate(0); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if _, err := file.Write(contents); err != nil {
+		_ = file.Close()
+		return err
+	}
+
+	return file.Close()
 }

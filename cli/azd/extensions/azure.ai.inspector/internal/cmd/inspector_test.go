@@ -4,13 +4,45 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"testing"
 	"time"
+
+	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 )
+
+func TestUsageReporterForwardsEventWithCommandContext(t *testing.T) {
+	ctx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs(
+		"authorization", "token",
+		"traceparent", "00-11111111111111111111111111111111-2222222222222222-01",
+	))
+	reporter := &recordingUsageReporter{}
+
+	usageReporter(ctx, reporter)(foundryTelemetry.Event{Name: "inspector.funnel.stage", Attributes: map[string]string{
+		"stage":   "ui_ready",
+		"outcome": "succeeded",
+	}})
+
+	require.Equal(t, foundryTelemetry.Event{
+		Name: "inspector.funnel.stage",
+		Attributes: map[string]string{
+			"stage":   "ui_ready",
+			"outcome": "succeeded",
+		},
+	}, reporter.event)
+	md, ok := metadata.FromOutgoingContext(reporter.ctx)
+	require.True(t, ok)
+	require.Equal(t, []string{"token"}, md.Get("authorization"))
+	require.Equal(t, []string{
+		"00-11111111111111111111111111111111-2222222222222222-01",
+	}, md.Get("traceparent"))
+}
 
 func TestInjectSSEEventsSynthesizesEventLines(t *testing.T) {
 	input := "data: {\"type\":\"response.output_text.delta\"}\n\n"
@@ -91,4 +123,14 @@ type errorReader struct {
 
 func (r errorReader) Read([]byte) (int, error) {
 	return 0, r.err
+}
+
+type recordingUsageReporter struct {
+	ctx   context.Context
+	event foundryTelemetry.Event
+}
+
+func (r *recordingUsageReporter) Report(ctx context.Context, event foundryTelemetry.Event) {
+	r.ctx = ctx
+	r.event = event
 }

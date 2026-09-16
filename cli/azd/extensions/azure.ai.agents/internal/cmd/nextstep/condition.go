@@ -7,10 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -32,66 +29,50 @@ func isServiceEnabled(
 		return true, nil
 	}
 
-	condition, err := conditionValueString(value)
-	if err != nil {
-		return false, err
-	}
-	if strings.TrimSpace(condition) == "" {
-		return true, nil
-	}
-
-	expanded, err := expandServiceCondition(
-		ctx,
-		src,
-		envName,
-		condition,
+	var lookupErr error
+	enabled, err := evaluateCondition(
+		conditionRawValue(value),
+		serviceConditionLookup(ctx, src, envName, &lookupErr),
 	)
 	if err != nil {
 		return false, err
 	}
-	return isTruthyCondition(expanded), nil
+	if lookupErr != nil {
+		return false, lookupErr
+	}
+	return enabled, nil
 }
 
-func conditionValueString(value *structpb.Value) (string, error) {
+func conditionRawValue(value *structpb.Value) any {
 	if value == nil {
-		return "", nil
+		return nil
 	}
-
-	switch kind := value.Kind.(type) {
-	case *structpb.Value_StringValue:
-		return kind.StringValue, nil
-	case *structpb.Value_BoolValue:
-		return strconv.FormatBool(kind.BoolValue), nil
-	case *structpb.Value_NumberValue:
-		return strconv.FormatFloat(kind.NumberValue, 'g', -1, 64), nil
+	switch value.Kind.(type) {
 	case *structpb.Value_NullValue:
-		return "", nil
+		return nil
 	default:
-		return "", fmt.Errorf(
-			"condition must be a string, boolean, or number",
-		)
+		return value.AsInterface()
 	}
 }
 
-func expandServiceCondition(
+func serviceConditionLookup(
 	ctx context.Context,
 	src Source,
 	envName string,
-	condition string,
-) (string, error) {
+	lookupErr *error,
+) func(string) string {
 	if envName == "" {
-		return foundry.ExpandEnv(condition, os.Getenv)
+		return os.Getenv
 	}
 
 	values := map[string]string{}
-	var lookupErr error
-	expanded, err := foundry.ExpandEnv(condition, func(name string) string {
+	return func(name string) string {
 		if value, ok := values[name]; ok {
 			return value
 		}
 		value, err := src.EnvValue(ctx, envName, name)
 		if err != nil {
-			lookupErr = fmt.Errorf(
+			*lookupErr = fmt.Errorf(
 				"read condition environment variable %q: %w",
 				name,
 				err,
@@ -100,21 +81,5 @@ func expandServiceCondition(
 		}
 		values[name] = value
 		return value
-	})
-	if err != nil {
-		return "", err
-	}
-	if lookupErr != nil {
-		return "", lookupErr
-	}
-	return expanded, nil
-}
-
-func isTruthyCondition(value string) bool {
-	switch value {
-	case "1", "true", "TRUE", "True", "yes", "YES", "Yes":
-		return true
-	default:
-		return false
 	}
 }

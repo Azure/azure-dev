@@ -18,6 +18,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Masterminds/semver/v3"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -32,6 +33,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -1242,6 +1244,7 @@ func Test_NewEnvRefreshAction(t *testing.T) {
 // stubProviderActivator is a no-op provisioningProviderActivator for tests.
 type stubProviderActivator struct {
 	suggestion string
+	err        error
 }
 
 func (s *stubProviderActivator) EnsureProvisioningProviders(
@@ -1250,8 +1253,8 @@ func (s *stubProviderActivator) EnsureProvisioningProviders(
 	return func() {}, nil
 }
 
-func (s *stubProviderActivator) SuggestExtensionForProvider(_ context.Context, _ string) string {
-	return s.suggestion
+func (s *stubProviderActivator) SuggestExtensionForProvider(_ context.Context, _ string) (string, error) {
+	return s.suggestion, s.err
 }
 
 // The install suggestion must fire only for provider-resolution failures; any other provisioning
@@ -1262,11 +1265,76 @@ func Test_suggestionForUnresolvedProvider(t *testing.T) {
 
 	resolveErr := fmt.Errorf("initializing provisioning manager: %w",
 		fmt.Errorf("failed resolving IaC provider 'microsoft.foundry': %w", ioc.ErrResolveInstance))
-	require.Equal(t, "azure.ai.agents",
-		suggestionForUnresolvedProvider(t.Context(), resolveErr, activator, "microsoft.foundry"))
+	id, err := suggestionForUnresolvedProvider(t.Context(), resolveErr, activator, "microsoft.foundry")
+	require.NoError(t, err)
+	require.Equal(t, "azure.ai.agents", id)
 
-	require.Empty(t,
-		suggestionForUnresolvedProvider(t.Context(), errors.New("deployment failed"), activator, "microsoft.foundry"))
+	id, err = suggestionForUnresolvedProvider(
+		t.Context(), errors.New("deployment failed"), activator, "microsoft.foundry")
+	require.NoError(t, err)
+	require.Empty(t, id)
+}
+
+func Test_suggestionForUnresolvedProvider_AzdIncompatibility(t *testing.T) {
+	t.Parallel()
+
+	lookupErr := &extensions.ExtensionAzdVersionIncompatibleError{
+		Provider: "microsoft.foundry",
+	}
+	activator := &stubProviderActivator{err: lookupErr}
+
+	resolveErr := fmt.Errorf("initializing provisioning manager: %w", ioc.ErrResolveInstance)
+	id, err := suggestionForUnresolvedProvider(t.Context(), resolveErr, activator, "microsoft.foundry")
+	require.Empty(t, id)
+	require.Equal(t, lookupErr, err)
+
+	id, err = suggestionForUnresolvedProvider(
+		t.Context(), errors.New("deployment failed"), activator, "microsoft.foundry")
+	require.NoError(t, err)
+	require.Empty(t, id)
+}
+
+func Test_errorForUnresolvedProvider(t *testing.T) {
+	t.Parallel()
+
+	initErr := fmt.Errorf("initializing provisioning manager: %w", ioc.ErrResolveInstance)
+
+	t.Run("install suggestion", func(t *testing.T) {
+		err := errorForUnresolvedProvider(initErr, "microsoft.foundry", "azure.ai.agents", nil)
+		suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+		require.True(t, ok)
+		require.Contains(t, suggestionErr.Suggestion, "azure.ai.agents")
+		require.ErrorIs(t, err, ioc.ErrResolveInstance)
+	})
+
+	t.Run("azd incompatibility", func(t *testing.T) {
+		lookupErr := &extensions.ExtensionAzdVersionIncompatibleError{
+			AzdVersion: semver.MustParse("1.0.0"),
+			Capability: extensions.ProvisioningProviderCapability,
+			Provider:   "microsoft.foundry",
+			Matches: []*extensions.ExtensionMetadata{{
+				Versions: []extensions.ExtensionVersion{{
+					Version:            "2.0.0",
+					RequiredAzdVersion: ">=2.0.0",
+				}},
+			}},
+		}
+		err := errorForUnresolvedProvider(initErr, "microsoft.foundry", "", lookupErr)
+		suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+		require.True(t, ok)
+		require.Contains(t, suggestionErr.Suggestion, `satisfies ">=2.0.0"`)
+		require.NotContains(t, suggestionErr.Suggestion, "Update azd")
+		require.Contains(t, err.Error(), "initializing provisioning manager")
+		require.Contains(t, err.Error(), "microsoft.foundry")
+		require.ErrorIs(t, err, ioc.ErrResolveInstance)
+		_, ok = errors.AsType[*extensions.ExtensionAzdVersionIncompatibleError](err)
+		require.True(t, ok)
+	})
+
+	t.Run("no suggestion", func(t *testing.T) {
+		err := errorForUnresolvedProvider(initErr, "bicep", "", nil)
+		require.Equal(t, initErr, err)
+	})
 }
 
 // mockRefreshProvider is a provisioning.Provider whose State behavior is configurable.

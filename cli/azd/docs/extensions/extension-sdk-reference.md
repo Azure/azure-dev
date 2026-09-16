@@ -54,6 +54,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
 - [Error Handling](#error-handling)
   - [LocalError](#localerror)
   - [ServiceError](#serviceerror)
+  - [ToolError](#toolerror)
   - [LocalErrorCategory](#localerrorcategory)
 
 ---
@@ -511,7 +512,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Prompt()` | `PromptServiceClient` |
 | `Deployment()` | `DeploymentServiceClient` |
 | `Events()` | `EventServiceClient` |
-| `Compose()` | `ComposeServiceClient` |
+| `Compose()` | `v1beta.ComposeServiceClient` (preview) |
 | `Workflow()` | `WorkflowServiceClient` |
 | `ServiceTarget()` | `ServiceTargetServiceClient` |
 | `FrameworkService()` | `FrameworkServiceClient` |
@@ -519,13 +520,19 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Extension()` | `ExtensionServiceClient` |
 | `Account()` | `AccountServiceClient` |
 | `Ai()` | `AiModelServiceClient` |
-| `Telemetry()` | `TelemetryServiceClient` |
+| `Copilot()` | `v1beta.CopilotServiceClient` (preview) |
+| `Telemetry()` | `v1beta.TelemetryServiceClient` (preview) |
 
 Always call `defer client.Close()` after creation.
 
+`Compose()`, `Copilot()`, and `Telemetry()` are preview accessors. Import
+`github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for their
+request, response, and enum types. They are intentionally excluded from the
+stable `azdext` contract facade until those services graduate to `v1`.
+
 #### TelemetryService
 
-`Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{EventName, Attributes})`
+`Telemetry().ReportUsage(ctx, &v1beta.ReportUsageRequest{EventName, Attributes})`
 lets an authenticated extension report a named usage event with an arbitrary
 `map[string]string` of attributes. Telemetry is a service `azd` offers to
 extensions whose configured source matches the verified official registry
@@ -547,7 +554,7 @@ so the same code path runs during local development and in production. Run
 `azd --debug` to see which applied.
 
 ```go
-resp, err := client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
+resp, err := client.Telemetry().ReportUsage(ctx, &v1beta.ReportUsageRequest{
     EventName:  "deploy.completed",
     Attributes: map[string]string{"deploy.mode": "container"},
 })
@@ -571,7 +578,7 @@ This is the normal compatibility mechanism used when resolving installs and
 updates:
 
 ```yaml
-requiredAzdVersion: ">=1.31.0"
+requiredAzdVersion: ">=1.33.0"
 ```
 
 The call remains best-effort for already-installed extensions and extensions
@@ -580,6 +587,34 @@ from non-registry sources, which may still run on an older host and receive
 behavior. Report an event immediately after the fact it represents is known,
 rather than waiting until the command completes, so a later unrelated failure
 does not lose the signal.
+
+#### Foundry telemetry reporter
+
+Microsoft Foundry extensions should use the shared reporter from
+`pkg/foundry/telemetry` instead of repeating generated-client error handling in
+each independently released extension:
+
+```go
+import "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
+
+reporter := telemetry.NewReporter(client.Telemetry(), nil)
+reporter.Report(ctx, telemetry.Event{
+    Name: "deploy.completed",
+    Attributes: map[string]string{
+        "deploy.mode": "container",
+    },
+})
+```
+
+The reporter applies a one-second timeout, never retries, and never returns an
+error to product code. Rejected reports, unavailable hosts, and transport
+failures cannot change command behavior. Debug diagnostics contain only the
+event name and gRPC status code, never attribute values or raw transport error
+details.
+
+The shared reporter owns transport behavior only. Event names, attribute keys,
+and bounded values remain owned and reviewed by each Foundry extension. Use
+`telemetry.Options` to provide a shorter timeout or an `azdext.Logger` in tests.
 
 ### ConfigHelper
 
@@ -689,7 +724,7 @@ These helpers are intended to remove common extension boilerplate for shell exec
 | API | Description |
 |-----|-------------|
 | `DetectInteractive()` | Detects TTY mode (`full` / `limited` / `none`), `AZD_NO_PROMPT`, CI, and known agent environments. |
-| `InteractiveInfo.CanPrompt()` | Safe prompt gate (`stdin/stdout tty`, not no-prompt, not CI, not agent). |
+| `InteractiveInfo.CanPrompt()` | Safe prompt gate (`stdin/stdout tty`, not no-prompt, not CI). Agent detection is informational and does not disable prompts in an interactive terminal. |
 | `InteractiveInfo.CanColorize()` | Color output gate honoring `FORCE_COLOR` and `NO_COLOR`. |
 
 #### Atomic File Helpers
@@ -712,12 +747,25 @@ type LocalError struct {
     Message    string
     Code       string
     Category   LocalErrorCategory
+    CauseTypes []string
     Suggestion string
 }
 ```
 
 Represents an error originating within the extension. The `Suggestion` field
-provides actionable guidance displayed to the user.
+provides actionable guidance displayed to the user. `CauseTypes` contains
+bounded diagnostic labels for unexpected fallback errors; it is extension-
+provided input and does not determine the error classification. The host
+normalizes these values at both gRPC boundaries by removing generic wrappers,
+duplicates, unsafe names, and values beyond the 16-item limit. For telemetry,
+the host records these labels only as case-insensitive hashes in
+`error.extension.cause_types`; they are never added to the reflected
+`error.chain.types` or used as `error.type`.
+
+`CauseTypes` transport is available only in the
+`azd.extensions.v1beta.ExtensionError` contract. The stable
+`azdext.WrapError` helper uses the frozen `v1` contract and does not serialize
+this preview field.
 
 ### ServiceError
 
@@ -732,6 +780,35 @@ type ServiceError struct {
 ```
 
 Represents an error from an Azure service call.
+
+### ToolError
+
+```go
+type ToolError struct {
+    Message    string
+    Err        error
+    ToolName   string
+    Kind       ToolErrorKind
+    ExitCode   *int
+    Suggestion string
+    Links      []errorhandler.ErrorLink
+}
+```
+
+Represents a failure from an external tool or subprocess. `Kind` is either
+`ToolErrorKindMissing` when the tool was not found or `ToolErrorKindFailed`
+when the tool ran and returned an error. `ExitCode` is populated only for a
+failed invocation that returned a process exit code. For telemetry, the host
+normalizes `ToolName` by taking the basename from either POSIX or Windows
+paths, removing the executable extension, and lowercasing it. Only 1-64 ASCII
+characters matching `[a-z0-9_-]` are accepted; invalid or oversized values
+are recorded as `other`. This normalization does not change the displayed
+error.
+
+Structured tool metadata transport is available only through
+`azd.extensions.v1beta.ExtensionError`. The frozen `v1` contract preserves
+the tool origin, message, suggestion, and links, but not the preview tool
+detail.
 
 ### LocalErrorCategory
 
@@ -750,8 +827,12 @@ const (
 ```
 
 Error categories enable structured telemetry classification and targeted error
-guidance. Use `WrapError(err)` to convert a `LocalError` or `ServiceError` to
-the gRPC `ExtensionError` proto for reporting.
+guidance. Use `WrapError(err)` to convert a `LocalError`, `ServiceError`, or
+`ToolError` to the gRPC `ExtensionError` proto for reporting.
+
+`WrapError` produces the stable `v1` message. Extensions using the preview
+`cause_types` or `tool_error` fields must construct and send the generated
+`v1beta.ExtensionError` through the `v1beta.ExtensionService` client.
 
 ---
 

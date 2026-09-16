@@ -57,6 +57,8 @@ When investigating a pipeline:
 
 Commands assume you are in `cli/azd`.
 
+Mage is included in `go.mod`. Use `go tool mage <target>` instead of installing or invoking it separately.
+
 ### Build
 
 ```bash
@@ -95,9 +97,10 @@ When writing tests, prefer table-driven tests. Use testify/mock for mocking.
 
 Additional mage targets:
 
-- `mage record` — re-record functional test cassettes against a live Azure subscription. Accepts an optional `-filter=TestName` flag to re-record specific tests. Typically only core maintainers need to run this; external contributors can rely on playback mode (the default) which requires no Azure access. Requires `azd auth login` and a configured test subscription (see `docs/recording-functional-tests-guide.md`).
-- `mage coverage:pr` — preview the CI PR coverage gate locally before pushing. Resolves PR-touched `.go` files via `git merge-base origin/main HEAD` for the per-package summary, runs the diff against the latest `main` baseline, and fails (exit 2) on **either** breach type: any PR-touched package drops more than 0.5 pp, or overall coverage falls below 69% (defaults match CI; override via `COVERAGE_MAX_PACKAGE_DECREASE`, `COVERAGE_MIN_OVERALL`). See `docs/code-coverage-guide.md` for details.
-- `mage updateGoVersion <version>` — bump the pinned Go toolchain version everywhere it is referenced (every `cli/azd` `go.mod`, the ADO `setup-go` template, Dockerfiles, and the devcontainer Go feature). `cli/azd/go.mod` is the source of truth enforced by the `validate-go-version` workflow. This is the single source of truth for the sync logic. Example: `mage updateGoVersion 1.26.4`.
+- `go tool mage record` — re-record functional test cassettes against a live Azure subscription. Accepts an optional `-filter=TestName` flag to re-record specific tests. Typically only core maintainers need to run this; external contributors can rely on playback mode (the default) which requires no Azure access. Requires `azd auth login` and a configured test subscription (see `docs/recording-functional-tests-guide.md`).
+- `go tool mage generateProtos` — regenerate the checked-in Go, Python, and JavaScript protobuf bindings using the pinned containerized toolchain.
+- `go tool mage coverage:pr` — preview the CI PR coverage gate locally before pushing. Resolves PR-touched `.go` files via `git merge-base origin/main HEAD` for the per-package summary, runs the diff against the latest `main` baseline, and fails (exit 2) on **either** breach type: any PR-touched package drops more than 0.5 pp, or overall coverage falls below 69% (defaults match CI; override via `COVERAGE_MAX_PACKAGE_DECREASE`, `COVERAGE_MIN_OVERALL`). See `docs/code-coverage-guide.md` for details.
+- `go tool mage updateGoVersion <version>` — bump the pinned Go toolchain version everywhere it is referenced (every `cli/azd` `go.mod`, the ADO `setup-go` template, Dockerfiles, and the devcontainer Go feature). `cli/azd/go.mod` is the source of truth enforced by the `validate-go-version` workflow. This is the single source of truth for the sync logic. Example: `go tool mage updateGoVersion 1.26.4`.
 
 ```bash
 gofmt -s -w .
@@ -279,20 +282,31 @@ public reference, and downstream Kusto/LENS consumers drift out of sync. Verify 
 
 **1. Code**
 
-- **Field** — define an `AttributeKey` in `cli/azd/internal/tracing/fields/fields.go` (this file
-  holds the field/key definitions; within the same package `features.go` holds feature-name
-  attribute values and `domains.go` the Azure host-domain table). Every field MUST set a
-  `Classification` (e.g. `SystemMetadata`, `OrganizationalIdentifiableInformation`,
-  `EndUserPseudonymizedInformation`; never emit `CustomerContent`) and a `Purpose`
-  (`FeatureInsight` / `BusinessInsight` / `PerformanceAndHealth`).
+- **Field** — define an **exported, package-level** `AttributeKey` var in
+  `cli/azd/internal/tracing/fields/fields.go` (this file holds the field/key definitions; within the
+  same package `features.go` holds feature-name attribute values and `domains.go` the Azure
+  host-domain table). Every field MUST set a `Classification` (e.g. `SystemMetadata`,
+  `OrganizationalIdentifiableInformation`, `EndUserPseudonymizedInformation`; never emit
+  `CustomerContent`) and a `Purpose` (`FeatureInsight` / `BusinessInsight` /
+  `PerformanceAndHealth`); the classifier also reads the optional `Endpoint` and `IsMeasurement`
+  members.
 - **Event** — define a constant in `cli/azd/internal/tracing/events/events.go` following the
-  `prefix.noun.verb` naming convention.
+  `prefix.noun.verb` value convention. It must be an exported string `const` whose Go identifier
+  contains `Event` (end it with `Prefix` for a prefix-match group) so the classifier
+  discovers it.
 - **Emit** at the call site via `tracing.Start` (spans/events) plus `tracing.SetUsageAttributes`
-  or `span.SetAttributes` (attributes).
+  or `span.SetAttributes` (attributes). Always pass a `fields.AttributeKey` method
+  (e.g. `fields.MyKey.String(v)` / `.Bool(v)` / `.Int(v)`) — never a raw
+  `attribute.String("my.key", v)`. The GDPR classifier discovers fields by statically scanning
+  the `fields` package for exported `AttributeKey` vars; a raw literal key is invisible to it, so the
+  property reaches App Insights but its data-catalog row stays Unclassified / `Complete=false`. Enforced by
+  `TestNoRawTelemetryAttributes` (`cli/azd/cmd/telemetry_test.go`); dynamic
+  `ext.*` keys are the only sanctioned exception.
 - **Hash user-derived values** with `fields.StringHashed` / `fields.StringSliceHashed`
   (`cli/azd/internal/tracing/fields/key.go`). Hash anything that embeds a user-chosen name, path,
   repo URL, or project / env / service / layer identifier (e.g. `exegraph.step.name`, `hooks.name`).
-  Emit raw only for fixed enums or compile-time literals.
+  Emit raw only for fixed enums or compile-time literals (the key itself must
+  still be a `fields.AttributeKey`, per **Emit** above).
 
 **2. Documentation — keep all of these in sync**
 
@@ -421,7 +435,7 @@ When cutting a release, `eng/scripts/Update-CliVersion.ps1` automatically update
 ### Go Dependency Version Synchronization
 
 `cli/azd/go.mod` is the source of truth for dependencies directly shared by core and first-party Go extensions.
-Run `mage checkDependencyVersions` to validate alignment or `mage syncDependencyVersions` to update unapproved
+Run `go tool mage checkDependencyVersions` to validate alignment or `go tool mage syncDependencyVersions` to update unapproved
 mismatches. Temporary exceptions must be exact, issue-linked entries in `dependency-versions.json`. See
 `docs/dependency-version-sync.md` for the policy and workflow.
 

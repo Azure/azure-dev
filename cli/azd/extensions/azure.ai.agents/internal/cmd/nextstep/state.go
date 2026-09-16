@@ -31,14 +31,18 @@ const (
 	// wire cmd → nextstep, so the reverse import would close a cycle.
 	agentHost = "azure.ai.agent"
 
+	// connectionHost matches azure.yaml for an azure.ai.connection
+	// service. Duplicated here so nextstep stays free of cmd imports.
+	connectionHost = "azure.ai.connection"
+
 	// agentVersionVarFormat is the env-var name that signals a deployed
 	// agent service. Filled with the upper-cased service key.
 	agentVersionVarFormat = "AGENT_%s_VERSION"
 
 	// agentEndpointVarFormat is the base endpoint env-var written for every
-	// deployed agent. Voice agents (kind: prompt-voice) are created
-	// synchronously with no agent-version object, so this base endpoint is the
-	// only deployment marker they set — isDeployed falls back to it.
+	// deployed agent. Voice agents (kind: prompt-voice) use it as the deploy
+	// completion marker. Prompt voice deploys also set VERSION, while legacy
+	// voice environments may have only this endpoint marker.
 	agentEndpointVarFormat = "AGENT_%s_ENDPOINT"
 
 	// projectEndpointVar is the env-var that carries the Foundry project
@@ -331,7 +335,15 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 		if len(state.Services) > 0 {
 			populateManifestResources(project.Path, state)
 		}
-		splitToolboxState = populateSplitToolboxes(
+		splitToolboxState = populateToolboxes(
+			ctx,
+			src,
+			envName,
+			project,
+			state,
+			&errs,
+		)
+		populateConnections(
 			ctx,
 			src,
 			envName,
@@ -342,6 +354,17 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 	}
 
 	if project != nil && envName != "" {
+		collectAgentConditionsForMissingVars(
+			ctx,
+			src,
+			envName,
+			project,
+			state.Services,
+			splitToolboxState.excludedAgents,
+			splitToolboxState.checkedAgents,
+			&errs,
+			state,
+		)
 		state.MissingInfraVars, state.MissingManualVars, state.UnresolvedPlaceholders =
 			detectMissingVars(
 				ctx,
@@ -357,13 +380,100 @@ func assembleState(ctx context.Context, src Source, opts ...Option) (*State, []e
 		populateOpenAPIPayload(ctx, cfg, project.Path, envName, state)
 	}
 
-	if envName != "" && len(state.Toolboxes) > 0 {
+	if envName != "" && len(state.Toolboxes) > 0 &&
+		len(state.ToolboxLoadErrors) == 0 {
 		state.MissingToolboxEndpoints = probeToolboxEndpoints(
 			ctx, src, envName, state.Toolboxes, &state.ToolboxEndpointErrors, &errs)
 		state.ToolboxEndpointsChecked = true
 	}
 
 	return state, errs
+}
+
+func collectAgentConditionsForMissingVars(
+	ctx context.Context,
+	src Source,
+	envName string,
+	projectCfg *azdext.ProjectConfig,
+	services []ServiceState,
+	excludedAgents map[string]struct{},
+	checkedAgents map[string]struct{},
+	errs *[]error,
+	state *State,
+) {
+	if projectCfg == nil {
+		return
+	}
+	if excludedAgents == nil {
+		excludedAgents = make(map[string]struct{})
+	}
+	if checkedAgents == nil {
+		checkedAgents = make(map[string]struct{})
+	}
+
+	serviceStates := make(map[string]ServiceState, len(services))
+	for _, service := range services {
+		serviceStates[service.Name] = service
+	}
+
+	for _, serviceName := range sortedServiceKeys(projectCfg) {
+		svc := projectCfg.Services[serviceName]
+		if svc == nil || svc.GetHost() != agentHost {
+			continue
+		}
+		if _, excluded := excludedAgents[serviceName]; excluded {
+			continue
+		}
+
+		serviceState, found := serviceStates[serviceName]
+		if !found {
+			serviceState, found = serviceStates[svc.GetName()]
+		}
+		if !found {
+			continue
+		}
+		refs, placeholders := extractEnvironmentRefs(serviceState.EnvironmentValues)
+		if len(refs) == 0 && len(placeholders) == 0 {
+			continue
+		}
+
+		agentName := serviceName
+		if strings.TrimSpace(svc.GetName()) != "" {
+			agentName = svc.GetName()
+		}
+		enabled, err := ensureAgentServiceEnabled(
+			ctx,
+			src,
+			envName,
+			serviceName,
+			checkedAgents,
+		)
+		if err != nil {
+			issue := fmt.Sprintf(
+				"agent service %q deployment condition: %v",
+				agentName,
+				err,
+			)
+			state.EnvironmentLoadErrors = append(
+				state.EnvironmentLoadErrors,
+				issue,
+			)
+			*errs = append(
+				*errs,
+				fmt.Errorf(
+					"agent service %q deployment condition: %w",
+					agentName,
+					err,
+				),
+			)
+			addExcludedAgent(excludedAgents, serviceName)
+			continue
+		}
+		if !enabled {
+			addExcludedAgent(excludedAgents, serviceName)
+		}
+	}
+	slices.Sort(state.EnvironmentLoadErrors)
 }
 
 func detectMissingAzureContextVars(ctx context.Context, src Source, envName string, errs *[]error) []string {
@@ -384,8 +494,8 @@ func detectMissingAzureContextVars(ctx context.Context, src Source, envName stri
 }
 
 // probeToolboxEndpoints reads each canonical toolbox endpoint once.
-// azd produces these values, so the probe does not depend on agent
-// environment references.
+// Missing results keep every owning agent so attach guidance is
+// complete; only the env-var read is deduplicated.
 func probeToolboxEndpoints(
 	ctx context.Context,
 	src Source,
@@ -395,21 +505,24 @@ func probeToolboxEndpoints(
 	errs *[]error,
 ) []ResourceRef {
 	seen := make(map[string]struct{}, len(toolboxes))
+	missingKeys := make(map[string]struct{}, len(toolboxes))
 	var missing []ResourceRef
 	for _, toolbox := range toolboxes {
 		key := envkey.ToolboxMCPEndpoint(toolbox.Name)
-		if _, ok := seen[key]; ok {
-			continue
+		if _, ok := seen[key]; !ok {
+			seen[key] = struct{}{}
+			value, err := src.EnvValue(ctx, envName, key)
+			if err != nil {
+				probeErr := fmt.Errorf("read toolbox endpoint %s: %w", key, err)
+				*endpointErrors = append(*endpointErrors, probeErr.Error())
+				*errs = append(*errs, probeErr)
+				continue
+			}
+			if strings.TrimSpace(value) == "" {
+				missingKeys[key] = struct{}{}
+			}
 		}
-		seen[key] = struct{}{}
-		value, err := src.EnvValue(ctx, envName, key)
-		if err != nil {
-			probeErr := fmt.Errorf("read toolbox endpoint %s: %w", key, err)
-			*endpointErrors = append(*endpointErrors, probeErr.Error())
-			*errs = append(*errs, probeErr)
-			continue
-		}
-		if strings.TrimSpace(value) == "" {
+		if _, ok := missingKeys[key]; ok {
 			missing = append(missing, toolbox)
 		}
 	}
@@ -822,23 +935,22 @@ func isDeployed(
 		*errs = append(*errs, fmt.Errorf("read %s: %w", key, err))
 		return false
 	}
-	if value != "" {
-		return true
+	if !isVoice {
+		return value != ""
 	}
 
-	// Voice agents (kind: prompt-voice) deploy without an agent-version object,
-	// so they never set AGENT_<KEY>_VERSION. Fall back to the base endpoint
-	// marker, which every voice deploy writes, so a successfully created voice
-	// agent is not reported as undeployed. Gate this on the service's actual
-	// declared kind: a hosted agent whose deploy partially failed can also
-	// present an empty VERSION with a lingering ENDPOINT, and must stay reported
-	// as not-deployed. This mirrors the kind gate in
+	// Voice deploys use the base ENDPOINT env var as the completion marker.
+	// Prompt voice deploys write VERSION before ENDPOINT to keep ENDPOINT as the
+	// final marker.
+	// Require ENDPOINT for voice even when VERSION is present, otherwise a partial
+	// env write could be reported as deployed before the callable endpoint was
+	// persisted. Gate this on the service's actual declared kind: a hosted agent
+	// whose deploy partially failed can also present an empty VERSION with a
+	// lingering ENDPOINT, and must stay reported as not-deployed. This mirrors the
+	// kind gate in
 	// AgentServiceTargetProvider.Endpoints (project package); the two live in
 	// separate packages because project imports nextstep, so a literally shared
 	// helper would create an import cycle.
-	if !isVoice {
-		return false
-	}
 	endpointKey := fmt.Sprintf(agentEndpointVarFormat, serviceKey(serviceName))
 	endpointValue, err := src.EnvValue(ctx, envName, endpointKey)
 	if err != nil {

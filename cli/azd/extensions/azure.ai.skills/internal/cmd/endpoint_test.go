@@ -31,6 +31,8 @@ func stubAzdProjectSources(t *testing.T, sources azdProjectSources, err error) {
 func isolateFromAzdDaemon(t *testing.T) {
 	t.Helper()
 	t.Setenv("AZD_SERVER", "")
+	t.Setenv(foundryEnvKey, "")
+	t.Setenv(legacyAzdEnvKey, "")
 	stubAzdProjectSources(t, azdProjectSources{}, nil)
 }
 
@@ -62,6 +64,33 @@ func TestResolveProjectEndpoint_AzdEnvBeatsGlobalConfig(t *testing.T) {
 	ep, src, err := resolveProjectEndpoint(t.Context(), "")
 	require.NoError(t, err)
 	assert.Equal(t, "https://envaccount.example.com", ep)
+	assert.Equal(t, sourceAzdEnv, src)
+}
+
+func TestResolveProjectEndpoint_AzdEnvCanonicalBeatsLegacy(t *testing.T) {
+	isolateFromAzdDaemon(t)
+	stubAzdProjectSources(t, azdProjectSources{
+		EnvValue:       "https://canonical.example.com",
+		LegacyEnvValue: "https://legacy.example.com",
+	}, nil)
+
+	ep, src, err := resolveProjectEndpoint(t.Context(), "")
+	require.NoError(t, err)
+	assert.Equal(t, "https://canonical.example.com", ep)
+	assert.Equal(t, sourceAzdEnv, src)
+}
+
+func TestResolveProjectEndpoint_AzdEnvFallsBackToLegacy(t *testing.T) {
+	isolateFromAzdDaemon(t)
+	stubAzdProjectSources(t, azdProjectSources{
+		LegacyEnvValue: "https://legacy.example.com",
+		CfgEndpoint:    "https://config.example.com",
+		CfgFound:       true,
+	}, nil)
+
+	ep, src, err := resolveProjectEndpoint(t.Context(), "")
+	require.NoError(t, err)
+	assert.Equal(t, "https://legacy.example.com", ep)
 	assert.Equal(t, sourceAzdEnv, src)
 }
 
@@ -122,6 +151,28 @@ func TestResolveProjectEndpoint_HostEnvVar(t *testing.T) {
 	assert.Equal(t, sourceFoundryEnv, src)
 }
 
+func TestResolveProjectEndpoint_HostEnvCanonicalBeatsLegacy(t *testing.T) {
+	isolateFromAzdDaemon(t)
+	t.Setenv(foundryEnvKey, "https://canonical.example.com")
+	t.Setenv(legacyAzdEnvKey, "https://legacy.example.com")
+
+	ep, src, err := resolveProjectEndpoint(t.Context(), "")
+	require.NoError(t, err)
+	assert.Equal(t, "https://canonical.example.com", ep)
+	assert.Equal(t, sourceFoundryEnv, src)
+}
+
+func TestResolveProjectEndpoint_HostEnvFallsBackToLegacy(t *testing.T) {
+	isolateFromAzdDaemon(t)
+	t.Setenv(foundryEnvKey, "")
+	t.Setenv(legacyAzdEnvKey, "https://legacy.example.com")
+
+	ep, src, err := resolveProjectEndpoint(t.Context(), "")
+	require.NoError(t, err)
+	assert.Equal(t, "https://legacy.example.com", ep)
+	assert.Equal(t, sourceFoundryEnv, src)
+}
+
 func TestResolveProjectEndpoint_InvalidScheme(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -144,7 +195,8 @@ func TestResolveProjectEndpoint_InvalidScheme(t *testing.T) {
 
 func TestResolveProjectEndpoint_MissingAll(t *testing.T) {
 	isolateFromAzdDaemon(t)
-	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
+	t.Setenv(foundryEnvKey, "")
+	t.Setenv(legacyAzdEnvKey, "")
 
 	_, _, err := resolveProjectEndpoint(t.Context(), "")
 	require.Error(t, err)

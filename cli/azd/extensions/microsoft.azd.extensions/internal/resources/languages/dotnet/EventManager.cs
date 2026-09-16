@@ -57,7 +57,6 @@ namespace Microsoft.Azd
         public async Task ReceiveAsync(CancellationToken cancellationToken)
         {
             await EnsureInitializedAsync(cancellationToken);
-            await SendReadyEventAsync();
 
             try
             {
@@ -130,14 +129,6 @@ namespace Microsoft.Azd
 
         public void RemoveProjectEventHandler(string eventName) => _projectHandlers.Remove(eventName);
         public void RemoveServiceEventHandler(string eventName) => _serviceHandlers.Remove(eventName);
-
-        private async Task SendReadyEventAsync()
-        {
-            await _stream!.RequestStream.WriteAsync(new EventMessage
-            {
-                ExtensionReadyEvent = new ExtensionReadyEvent { Status = "ready" }
-            });
-        }
 
         private async Task SendProjectHandlerStatusAsync(string eventName, string status, string message)
         {

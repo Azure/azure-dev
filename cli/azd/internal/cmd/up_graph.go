@@ -9,9 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -276,6 +274,7 @@ func (u *UpGraphAction) Run(
 	if err != nil {
 		return nil, err
 	}
+	opts := u.runOptions()
 
 	// 3. Resolve deploy timeout (honors --timeout flag and AZD_DEPLOY_TIMEOUT
 	// env var for parity with stand-alone `azd deploy`).
@@ -421,9 +420,12 @@ func (u *UpGraphAction) Run(
 	}
 
 	handles, err := addServiceStepsToGraph(g, serviceGraphOptions{
-		services:       stableServices,
-		serviceManager: u.serviceManager,
-		deployTimeout:  deployTimeout,
+		services:                   stableServices,
+		serviceManager:             u.serviceManager,
+		deployTimeout:              deployTimeout,
+		maxConcurrency:             opts.MaxConcurrency,
+		packagePublishBuildGateKey: dotNetPackagePublishBuildGateKey,
+		buildGateKey:               aspireBuildGateKey,
 		// `azd up` never takes a --from-package flag; leave empty.
 		fromPackage:      "",
 		packageExtraDeps: []string{prePackageEventStep},
@@ -432,7 +434,6 @@ func (u *UpGraphAction) Run(
 		onDeployTimeout: func(cbCtx context.Context, svc *project.ServiceConfig) {
 			safeCon.MessageUxItem(cbCtx, deployTimeoutWarning(svc.Name, deployTimeout))
 		},
-		buildGateKey: aspireBuildGateKey,
 		onPhaseProgress: func(svcName string, phase deployPhase, detail string) {
 			updateDeployProgress(svcName, phase, detail)
 		},
@@ -582,7 +583,6 @@ func (u *UpGraphAction) Run(
 		}
 	}
 
-	opts := u.runOptions()
 	baseOnStepStart := opts.OnStepStart
 	baseOnStepDone := opts.OnStepDone
 
@@ -808,12 +808,12 @@ func (u *UpGraphAction) initializeServices(ctx context.Context) ([]*project.Serv
 		return nil, fmt.Errorf("enumerating services: %w", err)
 	}
 
-	if err := u.projectManager.Initialize(ctx, u.projectConfig); err != nil {
+	if err := u.projectManager.InitializeServices(ctx, stableServices); err != nil {
 		return nil, fmt.Errorf("initializing project: %w", err)
 	}
 
 	if err := u.projectManager.EnsureServiceTargetTools(
-		ctx, u.projectConfig, func(_ *project.ServiceConfig) bool { return true },
+		ctx, stableServices,
 	); err != nil {
 		return nil, fmt.Errorf("ensuring service tools: %w", err)
 	}
@@ -893,9 +893,10 @@ func (u *UpGraphAction) addProvisionSteps(
 
 		layerIdx := i
 		if err := g.AddStep(&exegraph.Step{
-			Name:      stepNames[i],
-			DependsOn: deps,
-			Tags:      []string{"provision"},
+			Name:             stepNames[i],
+			DependsOn:        deps,
+			Tags:             []string{"provision"},
+			ConcurrencyGroup: provisionConcurrencyGroup,
 			Action: func(ctx context.Context) error {
 				return provisionSingleLayer(
 					ctx, provDeps, layers[layerIdx],
@@ -932,31 +933,9 @@ func (u *UpGraphAction) runOptions() exegraph.RunOptions {
 		ErrorPolicy: exegraph.FailFast,
 	}
 
-	// Optional concurrency limit from environment. AZD_UP_CONCURRENCY is the
-	// canonical name for `azd up`; AZD_DEPLOY_CONCURRENCY is honored as a
-	// fallback so that users who already tuned `azd deploy` parallelism don't
-	// get unlimited concurrency when they switch to `azd up`.
-	if v, ok := os.LookupEnv("AZD_UP_CONCURRENCY"); ok {
-		if n, parseErr := strconv.Atoi(v); parseErr != nil {
-			log.Printf("warning: ignoring invalid AZD_UP_CONCURRENCY=%q: %v", v, parseErr)
-		} else if n > 0 {
-			clamped := min(n, 64)
-			if clamped < n {
-				log.Printf("clamping up concurrency from %d to %d", n, clamped)
-			}
-			opts.MaxConcurrency = clamped
-		}
-	} else if v, ok := os.LookupEnv("AZD_DEPLOY_CONCURRENCY"); ok {
-		if n, parseErr := strconv.Atoi(v); parseErr != nil {
-			log.Printf("warning: ignoring invalid AZD_DEPLOY_CONCURRENCY=%q: %v", v, parseErr)
-		} else if n > 0 {
-			clamped := min(n, 64)
-			if clamped < n {
-				log.Printf("clamping deploy concurrency from %d to %d", n, clamped)
-			}
-			opts.MaxConcurrency = clamped
-		}
-	}
+	concurrency := resolveUpGraphConcurrency(u.env.LookupEnv)
+	opts.MaxConcurrency = concurrency.max
+	opts.GroupConcurrency = concurrency.groups
 
 	opts.OnStepStart = func(stepName string) {
 		log.Printf("up-graph: starting %s", stepName)

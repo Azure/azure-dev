@@ -30,10 +30,9 @@ const DataGenerationAPIVersion = "v1"
 // evalGenerateFlags holds CLI flags and interactive prompt state for eval generate.
 type evalGenerateFlags struct {
 	// CLI flags.
+	evalContextFlags
 	envName         string   // explicit environment name (from -e flag)
 	name            string   // eval suite name
-	agent           string   // target agent name
-	projectEndpoint string   // Foundry project endpoint
 	instruction     string   // inline agent instruction
 	instructionFile string   // path to agent instruction file
 	configFile      string   // agent config metadata path
@@ -81,8 +80,7 @@ the agent project root. Use --no-wait to write pending operation IDs and return.
 
 	cmd.Flags().StringVar(&flags.name, "name", "", "Name for the eval suite")
 	cmd.Flags().BoolVar(&flags.noWait, "no-wait", false, "Submit generation jobs and return immediately")
-	cmd.Flags().StringVar(&flags.agent, "agent", "", "Agent service name from azure.yaml, or Foundry agent name outside a project")
-	cmd.Flags().StringVarP(&flags.projectEndpoint, "project-endpoint", "p", "", "Microsoft Foundry project endpoint URL")
+	addEvalContextFlags(cmd, &flags.evalContextFlags)
 	cmd.Flags().StringVarP(&flags.instruction, "gen-instruction", "g", "", "Agent instruction used for dataset and evaluator generation")
 	cmd.Flags().StringVarP(&flags.instructionFile, "gen-instruction-file", "", "", "Path to a file containing the agent instruction")
 	cmd.Flags().StringVar(&flags.evalModel, "eval-model", "", "Model used for evaluation and generation")
@@ -111,13 +109,7 @@ func runEvalGenerate(ctx context.Context, flags *evalGenerateFlags, noPrompt boo
 		}
 	}
 
-	resolved, err := resolveEvalContext(ctx, evalContextOptions{
-		envName:         flags.envName,
-		agent:           flags.agent,
-		projectEndpoint: flags.projectEndpoint,
-		requireAgent:    true,
-		noPrompt:        noPrompt,
-	})
+	resolved, err := resolveEvalContext(ctx, flags.evalContextFlags.options(flags.envName, noPrompt, true))
 	if err != nil {
 		return err
 	}

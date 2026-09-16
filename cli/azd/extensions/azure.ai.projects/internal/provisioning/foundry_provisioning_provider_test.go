@@ -4,6 +4,7 @@
 package provisioning
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -15,10 +16,10 @@ import (
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/synthesis"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -116,20 +117,29 @@ services:
 			wantErr: true,
 		},
 		{
-			name: "network on agent service rejected",
+			name: "network on agent service rejected without project service",
 			yaml: `
 services:
   agent:
     host: azure.ai.agent
     network:
       peSubnet: {vnet: /subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/v, name: pe}
-  ai-project:
-    host: azure.ai.project
 `,
 			wantErr: true,
 		},
 		{
-			name: "network on legacy foundry service rejected",
+			name: "network on legacy foundry service rejected without project service",
+			yaml: `
+services:
+  legacy:
+    host: microsoft.foundry
+    network:
+      peSubnet: {vnet: /subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/v, name: pe}
+`,
+			wantErr: true,
+		},
+		{
+			name: "project service wins over legacy network",
 			yaml: `
 services:
   legacy:
@@ -139,7 +149,20 @@ services:
   ai-project:
     host: azure.ai.project
 `,
-			wantErr: true,
+			want: "ai-project",
+		},
+		{
+			name: "project service wins over agent network",
+			yaml: `
+services:
+  agent:
+    host: azure.ai.agent
+    network:
+      peSubnet: {vnet: /subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/v, name: pe}
+  ai-project:
+    host: azure.ai.project
+`,
+			want: "ai-project",
 		},
 	}
 
@@ -182,196 +205,6 @@ func TestFoundryProvider_ImplementsContract(t *testing.T) {
 	// guards against future signature drift in azdext.
 	p := NewFoundryProvisioningProvider(nil)
 	assert.NotNil(t, p)
-}
-
-func TestProjectServiceEnvironments(t *testing.T) {
-	t.Parallel()
-
-	projectServer := &validateStubProjectServer{
-		project: &azdext.ProjectConfig{
-			Services: map[string]*azdext.ServiceConfig{
-				"connection": {
-					Environment: map[string]string{
-						"ENDPOINT": "https://service.example",
-					},
-				},
-				"legacy": {},
-			},
-		},
-	}
-	client := newValidateTestClient(
-		t,
-		projectServer,
-		&validateStubEnvServer{},
-	)
-	provider := &FoundryProvisioningProvider{azdClient: client}
-
-	environments, err := provider.projectServiceEnvironments(t.Context())
-	require.NoError(t, err)
-	require.Equal(
-		t,
-		map[string]map[string]string{
-			"connection": {
-				"ENDPOINT": "https://service.example",
-			},
-		},
-		environments,
-	)
-}
-
-func TestInitializeUsesConnectionServiceEnvironment(t *testing.T) {
-	t.Parallel()
-
-	projectPath := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectPath, "azure.yaml"),
-		[]byte(`
-services:
-  project:
-    host: azure.ai.project
-  connection:
-    host: azure.ai.connection
-    uses: [project]
-    env:
-      ENDPOINT: ${SEARCH_ENDPOINT}
-    category: CognitiveSearch
-    target: ${ENDPOINT}
-    authType: None
-`),
-		0o600,
-	))
-
-	projectServer := &validateStubProjectServer{
-		project: &azdext.ProjectConfig{
-			Path: projectPath,
-			Services: map[string]*azdext.ServiceConfig{
-				"connection": {
-					Environment: map[string]string{
-						"ENDPOINT": "https://service.example",
-					},
-				},
-			},
-		},
-	}
-	client := newValidateTestClient(
-		t,
-		projectServer,
-		&validateStubEnvServer{
-			envName: "test",
-			get: map[string]string{
-				envKeySubscriptionID: "00000000-0000-0000-0000-000000000000",
-				envKeyLocation:       "eastus",
-			},
-		},
-	)
-	provider := &FoundryProvisioningProvider{azdClient: client}
-
-	err := provider.Initialize(
-		t.Context(),
-		projectPath,
-		&azdext.ProvisioningOptions{Provider: FoundryProviderName},
-	)
-	require.NoError(t, err)
-	require.NotNil(t, provider.synthResult)
-	connections, ok := provider.synthResult.Parameters["connections"].([]synthesis.Connection)
-	require.True(t, ok)
-	require.Len(t, connections, 1)
-	require.Equal(t, "https://service.example", connections[0].Target)
-}
-
-func TestResolveTemplateUsesOnDiskConnectionServiceEnvironment(
-	t *testing.T,
-) {
-	t.Parallel()
-
-	projectPath := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectPath, "azure.yaml"),
-		[]byte(`
-services:
-  project:
-    host: azure.ai.project
-  connection:
-    host: azure.ai.connection
-    env:
-      ENDPOINT: ${SEARCH_ENDPOINT}
-`),
-		0o600,
-	))
-	infraDir := filepath.Join(projectPath, onDiskInfraDir)
-	require.NoError(t, os.MkdirAll(infraDir, 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(infraDir, onDiskBicepFile),
-		[]byte("// bicep\n"),
-		0o600,
-	))
-	params := minimalARMParametersFile(t, map[string]any{
-		"connections": []map[string]any{
-			{"name": "connection", "target": "${ENDPOINT}"},
-		},
-	})
-	require.NoError(t, os.WriteFile(
-		filepath.Join(infraDir, onDiskParamsFile),
-		[]byte(params),
-		0o600,
-	))
-
-	projectServer := &validateStubProjectServer{
-		project: &azdext.ProjectConfig{
-			Path: projectPath,
-			Services: map[string]*azdext.ServiceConfig{
-				"connection": {
-					Environment: map[string]string{
-						"ENDPOINT": "https://service.example",
-					},
-				},
-			},
-		},
-	}
-	client := newValidateTestClient(
-		t,
-		projectServer,
-		&validateStubEnvServer{
-			envName: "test",
-			get: map[string]string{
-				envKeySubscriptionID: "sub-id",
-				envKeyLocation:       "eastus",
-			},
-		},
-	)
-	provider := &FoundryProvisioningProvider{
-		azdClient: client,
-		bicepCliInstance: &stubCompiler{
-			buildResult: bicep.BuildResult{
-				Compiled: minimalARMTemplate(),
-			},
-		},
-	}
-
-	require.NoError(t, provider.Initialize(
-		t.Context(),
-		projectPath,
-		&azdext.ProvisioningOptions{Provider: FoundryProviderName},
-	))
-	source, err := provider.resolveTemplate(
-		t.Context(),
-		func(string) {},
-	)
-	require.NoError(t, err)
-
-	connectionEntry, ok :=
-		source.parameters["connections"].(map[string]any)
-	require.True(t, ok)
-	connections, ok := connectionEntry["value"].([]any)
-	require.True(t, ok)
-	require.Len(t, connections, 1)
-	connection, ok := connections[0].(map[string]any)
-	require.True(t, ok)
-	assert.Equal(
-		t,
-		"https://service.example",
-		connection["target"],
-	)
 }
 
 func TestArmOutputsToProto(t *testing.T) {
@@ -436,10 +269,10 @@ func TestArmOutputsToProto(t *testing.T) {
 // The fix is in armOutputsToProto: case-insensitive lookup against
 // canonicalOutputNames, then emit the canonical name. Unknown keys
 // pass through verbatim so we never silently lose an output.
-func TestInvalidatedEnvKeysClearsConnectionReadinessRecord(t *testing.T) {
+func TestInvalidatedEnvKeysLeavesConnectionReadinessToOwningExtension(t *testing.T) {
 	result := invalidatedEnvKeysResult()
-	assert.Contains(t, result.InvalidatedEnvKeys, "AZURE_AI_PROJECT_CONNECTION_NAMES")
-	assert.Contains(t, result.InvalidatedEnvKeys, "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT")
+	assert.NotContains(t, result.InvalidatedEnvKeys, "AZURE_AI_PROJECT_CONNECTION_NAMES")
+	assert.NotContains(t, result.InvalidatedEnvKeys, "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT")
 }
 
 func TestArmOutputsToProto_RepairsMangledKeyCase(t *testing.T) {
@@ -469,9 +302,9 @@ func TestArmOutputsToProto_RepairsMangledKeyCase(t *testing.T) {
 			wantKey: "AZURE_FOUNDRY_MANAGED_ISOLATION_MODE",
 		},
 		{
-			name:    "ARM-mangled AZURE_AI_PROJECT_CONNECTION_NAMES -> canonical",
+			name:    "legacy Connection output is no longer canonicalized",
 			inKey:   "azurE_AI_PROJECT_CONNECTION_NAMES",
-			wantKey: "AZURE_AI_PROJECT_CONNECTION_NAMES",
+			wantKey: "azurE_AI_PROJECT_CONNECTION_NAMES",
 		},
 		{
 			name:    "already-canonical key passes through unchanged",
@@ -728,6 +561,29 @@ func TestResolveLayerResourceGroupOwnership(t *testing.T) {
 		"changing to an absent group may establish ownership after creation")
 }
 
+func TestPersistCreatedResourceGroupOwnership(t *testing.T) {
+	t.Parallel()
+	env := &resolveEnvStubEnvServer{envName: "dev", get: map[string]string{}}
+	client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+	p := &FoundryProvisioningProvider{
+		azdClient:  client,
+		credential: &azidentity.AzureDeveloperCLICredential{},
+		envName:    "dev",
+		subID:      "sub",
+		rgName:     "rg-foundry",
+		resourceGroupState: func(context.Context) (map[string]*string, bool, error) {
+			return map[string]*string{"azd-env-name": new("dev")}, true, nil
+		},
+	}
+
+	require.NoError(t, p.persistCreatedResourceGroupOwnership(t.Context()))
+	want := "/subscriptions/sub/resourceGroups/rg-foundry"
+	assert.True(t, p.rgExplicit)
+	assert.Equal(t, "rg-foundry", env.set[envKeyFoundryRG])
+	assert.Equal(t, want, p.foundryRGOwnerID)
+	assert.Equal(t, want, env.set[envKeyFoundryRGOwner])
+}
+
 func TestValidateFoundryProviderLayers(t *testing.T) {
 	require.NoError(t, validateFoundryProviderLayers([]byte(`infra:
   provider: bicep
@@ -933,11 +789,11 @@ func TestArmParameters_NilSafeOnMissingSynthResult(t *testing.T) {
 		"synthesizer-derived parameters should be absent when synthResult is nil")
 }
 
-func TestArmParameters_UseValueEnvelopeForSecureConnections(t *testing.T) {
+func TestArmParameters_UseValueEnvelopeForDeployments(t *testing.T) {
 	p := &FoundryProvisioningProvider{
 		synthResult: &synthesis.Result{
 			Parameters: map[string]any{
-				"connections": `[{"name":"search-conn"}]`,
+				"deployments": []synthesis.Deployment{{Name: "model"}},
 			},
 		},
 	}
@@ -946,8 +802,8 @@ func TestArmParameters_UseValueEnvelopeForSecureConnections(t *testing.T) {
 
 	assert.Equal(
 		t,
-		map[string]any{"value": `[{"name":"search-conn"}]`},
-		out["connections"],
+		map[string]any{"value": []synthesis.Deployment{{Name: "model"}}},
+		out["deployments"],
 	)
 }
 
@@ -1109,7 +965,13 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 	// (resolveTemplate skips the loadOnDiskTemplate call when
 	// onDiskSource is already set; this lets the test exercise the
 	// merge logic in isolation.)
-	armFromDisk := map[string]any{"$schema": "ondisk", "contentVersion": "1.0.0.0"}
+	armFromDisk := map[string]any{
+		"$schema": "ondisk", "contentVersion": "1.0.0.0",
+		"parameters": map[string]any{
+			"location":           map[string]any{"type": "string"},
+			"foundryProjectName": map[string]any{"type": "string"},
+		},
+	}
 	p := &FoundryProvisioningProvider{
 		projectPath: dir,
 		envName:     "dev",
@@ -1146,7 +1008,7 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 		"user-supplied parameter wins over host-derived")
 	// User-only key is present.
 	require.Contains(t, got.parameters, "userOnly")
-	// Host-derived key (not in user params) still flows through.
+	// Host-derived key (declared by the template, not in user params) still flows through.
 	require.Contains(t, got.parameters, "foundryProjectName",
 		"host-derived parameter fills gap when user file doesn't declare it")
 	// Synthesizer-derived key is ABSENT: per the design decision,
@@ -1290,6 +1152,59 @@ func TestFoundryServiceEndpointAtRoot_ResolvesFileRef(
 	)
 }
 
+func TestResolvedFoundryServiceEndpointAtRoot_ResolvesEnvRef(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte(`services:
+  foundry:
+    host: azure.ai.project
+    endpoint: ${FOUNDRY_PROJECT_ENDPOINT}
+`)
+	want := "https://acct.services.ai.azure.com/api/projects/existing"
+
+	endpoint, err := resolvedFoundryServiceEndpointAtRoot(
+		raw,
+		"",
+		"foundry",
+		map[string]string{"FOUNDRY_PROJECT_ENDPOINT": want},
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, want, endpoint)
+}
+
+func TestResolvedFoundryServiceEndpointAtRoot_UnsetEnvRefIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte(`services:
+  foundry:
+    host: azure.ai.project
+    endpoint: ${MISSING_PROJECT_ENDPOINT}
+`)
+
+	endpoint, err := resolvedFoundryServiceEndpointAtRoot(raw, "", "foundry", nil)
+
+	require.NoError(t, err)
+	assert.Empty(t, endpoint)
+}
+
+func TestResolvedFoundryServiceEndpointAtRoot_UnsetPortableEndpointSelectsGreenfield(t *testing.T) {
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
+	raw := []byte(`services:
+  foundry:
+    host: azure.ai.project
+    endpoint: ${FOUNDRY_PROJECT_ENDPOINT}
+`)
+
+	configured, err := foundryServiceEndpointAtRoot(raw, "", "foundry")
+	require.NoError(t, err)
+	require.NotEmpty(t, configured)
+
+	resolved, err := resolvedFoundryServiceEndpointAtRoot(raw, "", "foundry", nil)
+	require.NoError(t, err)
+	assert.Empty(t, resolved)
+}
+
 func TestProjectNameFromEndpoint(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, "my-project", projectNameFromEndpoint(
@@ -1298,15 +1213,147 @@ func TestProjectNameFromEndpoint(t *testing.T) {
 	assert.Equal(t, "", projectNameFromEndpoint(""))
 }
 
-func TestBrownfieldOutputs(t *testing.T) {
+func TestExistingProjectEndpointIdentity(t *testing.T) {
 	t.Parallel()
-	outputs := brownfieldOutputs("https://acct.services.ai.azure.com/api/projects/my-project")
-	require.Contains(t, outputs, "FOUNDRY_PROJECT_ENDPOINT")
-	assert.Equal(t,
-		"https://acct.services.ai.azure.com/api/projects/my-project",
-		outputs["FOUNDRY_PROJECT_ENDPOINT"].Value)
-	require.Contains(t, outputs, "AZURE_AI_PROJECT_NAME")
-	assert.Equal(t, "my-project", outputs["AZURE_AI_PROJECT_NAME"].Value)
+	account, project := existingProjectEndpointIdentity(
+		"https://Account.services.ai.azure.com/api/projects/MyProject/",
+	)
+	assert.Equal(t, "account", account)
+	assert.Equal(t, "MyProject", project)
+}
+
+func TestSameExistingProjectEndpoint(t *testing.T) {
+	t.Parallel()
+	endpoint := "https://Account.services.ai.azure.com/api/projects/MyProject/"
+	assert.True(t, sameExistingProjectEndpoint(
+		endpoint,
+		"https://account.services.ai.azure.com/projects/myproject",
+	))
+	assert.False(t, sameExistingProjectEndpoint(
+		endpoint,
+		"https://account.services.ai.azure.com/api/projects/other",
+	))
+}
+
+func TestPlannedOutputsMatchSelectedTemplate(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name      string
+		provider  FoundryProvisioningProvider
+		want      string
+		doNotWant string
+	}{
+		{
+			name:      "greenfield",
+			want:      "AZURE_FOUNDRY_NETWORK_MODE",
+			doNotWant: "AZD_FOUNDRY_ACR_MODE",
+		},
+		{
+			name: "existing project",
+			provider: FoundryProvisioningProvider{
+				brownfieldEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+			},
+			want:      "AZD_FOUNDRY_ACR_MODE",
+			doNotWant: "AZURE_FOUNDRY_NETWORK_MODE",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			outputs, err := tt.provider.PlannedOutputs(t.Context())
+			require.NoError(t, err)
+			names := make([]string, 0, len(outputs))
+			for _, output := range outputs {
+				names = append(names, output.Name)
+			}
+			assert.Contains(t, names, tt.want)
+			assert.NotContains(t, names, tt.doNotWant)
+			assert.NotContains(t, names, "AZURE_AI_PROJECT_CONNECTION_NAMES")
+			assert.NotContains(t, names, "AZURE_AI_PROJECT_CONNECTIONS_PROJECT_ENDPOINT")
+		})
+	}
+}
+
+func TestDestroyPreservesExistingProjectBindings(t *testing.T) {
+	t.Parallel()
+	p := &FoundryProvisioningProvider{
+		brownfieldEndpoint:       "https://account.services.ai.azure.com/api/projects/project",
+		existingProjectReuseOnly: true,
+	}
+	result, err := p.Destroy(
+		t.Context(),
+		&azdext.ProvisioningDestroyOptions{Force: true},
+		func(string) {},
+	)
+	require.NoError(t, err)
+	assert.Empty(t, result.InvalidatedEnvKeys)
+}
+
+func TestDestroyPreservesNonOwningExistingProjectModes(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"none", "already-connected"} {
+		t.Run(mode, func(t *testing.T) {
+			p := &FoundryProvisioningProvider{
+				brownfieldEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+				existingAcrMode:    mode,
+			}
+			var messages []string
+
+			result, err := p.Destroy(
+				t.Context(),
+				&azdext.ProvisioningDestroyOptions{Force: true},
+				func(message string) { messages = append(messages, message) },
+			)
+
+			require.NoError(t, err)
+			assert.Empty(t, result.InvalidatedEnvKeys)
+			assert.Contains(t, messages,
+				"Existing Foundry project resources are not owned by azd; leaving them in place")
+		})
+	}
+}
+
+func TestDestroyRefusesExistingProjectReuseConnect(t *testing.T) {
+	t.Parallel()
+	p := &FoundryProvisioningProvider{
+		brownfieldEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+		existingAcrMode:    "reuse-connect",
+	}
+
+	_, err := p.Destroy(
+		t.Context(),
+		&azdext.ProvisioningDestroyOptions{Force: true},
+		func(string) {},
+	)
+
+	require.Error(t, err)
+	local, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInvalidServiceConfig, local.Code)
+}
+
+func TestPreviewPreservesReuseOnlyExistingProject(t *testing.T) {
+	t.Parallel()
+	p := &FoundryProvisioningProvider{existingProjectReuseOnly: true}
+	var messages []string
+
+	result, err := p.Preview(t.Context(), func(message string) {
+		messages = append(messages, message)
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result.Preview)
+	assert.Empty(t, result.Preview.Changes)
+	assert.Contains(t, messages, "Using existing Foundry project; nothing to provision")
+}
+
+func TestDestroyResultForExistingProjectOnlyClearsAdjunctState(t *testing.T) {
+	t.Parallel()
+	p := &FoundryProvisioningProvider{
+		brownfieldEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+	}
+	result := p.destroyResult()
+	assert.NotContains(t, result.InvalidatedEnvKeys, "AZURE_AI_PROJECT_ID")
+	assert.NotContains(t, result.InvalidatedEnvKeys, "FOUNDRY_PROJECT_ENDPOINT")
+	assert.Contains(t, result.InvalidatedEnvKeys, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
 }
 
 func TestDefaultResourceGroupName(t *testing.T) {
@@ -1350,6 +1397,22 @@ func TestWithTenantOutput(t *testing.T) {
 	})
 }
 
+func TestReuseOnlyOutputsPreserveExistingTenant(t *testing.T) {
+	t.Parallel()
+	env := &resolveEnvStubEnvServer{envName: "dev", get: map[string]string{envKeyTenantID: "tenant-123"}}
+	client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+	p := &FoundryProvisioningProvider{
+		azdClient:          client,
+		envName:            "dev",
+		foundryName:        "project",
+		brownfieldEndpoint: "https://account.services.ai.azure.com/api/projects/project",
+	}
+
+	require.NoError(t, p.resolveReuseOnlyTenant(t.Context()))
+	outputs := p.existingProjectReuseOutputs()
+	assert.Equal(t, "tenant-123", outputs[envKeyTenantID].Value)
+}
+
 func TestNormalizeOutputs_LayerOmitsRootResourceGroup(t *testing.T) {
 	t.Parallel()
 	p := &FoundryProvisioningProvider{
@@ -1371,6 +1434,21 @@ func TestNormalizeOutputs_LayerClearsStaleResourceGroupOwnership(t *testing.T) {
 	got := p.normalizeOutputs(nil)
 	require.Contains(t, got, envKeyFoundryRGOwner)
 	assert.Equal(t, "", got[envKeyFoundryRGOwner].Value)
+}
+
+func TestNormalizeOutputs_ExistingProjectCreateTracksSupportingResourceGroup(t *testing.T) {
+	t.Parallel()
+	p := &FoundryProvisioningProvider{
+		brownfieldEndpoint: "https://acct.services.ai.azure.com/api/projects/project",
+		existingAcrMode:    "create",
+		foundryRGOwnerID:   "/subscriptions/sub/resourceGroups/rg-foundry",
+	}
+	got := p.normalizeOutputs(map[string]*azdext.ProvisioningOutputParameter{
+		envKeyResourceGroup: {Type: "string", Value: "root-rg"},
+		envKeyFoundryRG:     {Type: "string", Value: "rg-foundry"},
+	})
+	assert.Contains(t, got, envKeyResourceGroup)
+	assert.Equal(t, p.foundryRGOwnerID, got[envKeyFoundryRGOwner].Value)
 }
 
 func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {

@@ -40,7 +40,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		if sdkPreRun != nil {
 			if err := sdkPreRun(cmd, args); err != nil {
-				return failAs(cmd, err)
+				return err
 			}
 		}
 		// -e/--environment is parsed by the SDK into extCtx and then has to be
@@ -51,10 +51,10 @@ func NewRootCommand() *cobra.Command {
 		// reader, so there is one answer to which environment this invocation
 		// is about.
 		cmd.SetContext(projectctx.WithSelectedEnvironment(cmd.Context(), extCtx.Environment))
-		// failAs here too: a hook that fails runs instead of RunE, not before
-		// it, so the wrapper around RunE never sees this one.
+		// Returned plainly: reportFailuresAsJSON wraps this hook, so answering
+		// here as well put the same document on stdout twice.
 		if err := projectctx.VerifySelectedEnvironment(cmd.Context()); err != nil {
-			return failAs(cmd, err)
+			return err
 		}
 		// Once, here, so the helpers that warn reach this invocation's writer
 		// rather than process-global stderr.

@@ -368,6 +368,8 @@ func TestResolveProvisioningTemplatePrincipalParameters(t *testing.T) {
 		tokenScopes       string
 		disableAssignment bool
 		literalOverride   bool
+		omitType          bool
+		templateDefault   bool
 		wantPrincipal     string
 		wantType          string
 	}{
@@ -390,6 +392,20 @@ func TestResolveProvisioningTemplatePrincipalParameters(t *testing.T) {
 		{
 			name: "explicit empty environment", disableAssignment: true,
 		},
+		{
+			name: "ID-only user override by service principal", tokenType: "app",
+			literalOverride: true, omitType: true, templateDefault: true,
+			wantPrincipal: "configured-user-id", wantType: "User",
+		},
+		{
+			name: "ID-only override matching deployer", tokenType: "app",
+			literalOverride: true, omitType: true,
+			wantPrincipal: "guest-object-id", wantType: "ServicePrincipal",
+		},
+		{
+			name: "environment ID without type", tokenType: "app", omitType: true,
+			wantPrincipal: "guest-object-id", wantType: "ServicePrincipal",
+		},
 	}
 	for _, mode := range []templateMode{templateModeBicep, templateModeBicepParam} {
 		for _, tt := range tests {
@@ -399,7 +415,7 @@ func TestResolveProvisioningTemplatePrincipalParameters(t *testing.T) {
 				require.NoError(t, os.MkdirAll(infraDir, 0o750))
 				const template = `{"parameters":{
 					"principalId":{"type":"string"},
-					"principalType":{"type":"string"},
+					"principalType":{"type":"string","defaultValue":"User"},
 					"identityLabel":{"type":"object"}
 				},"resources":[]}`
 				inputParameters := map[string]any{
@@ -410,6 +426,9 @@ func TestResolveProvisioningTemplatePrincipalParameters(t *testing.T) {
 				if tt.literalOverride {
 					inputParameters["principalId"] = tt.wantPrincipal
 					inputParameters["principalType"] = tt.wantType
+				}
+				if tt.omitType {
+					delete(inputParameters, "principalType")
 				}
 				require.NoError(t, os.WriteFile(
 					filepath.Join(infraDir, "project.bicep"), []byte("// compiled by stub"), 0o600,
@@ -445,6 +464,9 @@ func TestResolveProvisioningTemplatePrincipalParameters(t *testing.T) {
 							params["principalId"] = tt.wantPrincipal
 							params["principalType"] = tt.wantType
 						}
+						if tt.omitType {
+							delete(params, "principalType")
+						}
 						envelope, err := json.Marshal(map[string]string{
 							"templateJson": template, "parametersJson": minimalARMParametersFile(t, params),
 						})
@@ -463,7 +485,16 @@ func TestResolveProvisioningTemplatePrincipalParameters(t *testing.T) {
 				source, err := provider.resolveProvisioningTemplate(t.Context(), func(string) {})
 				require.NoError(t, err)
 				assert.Equal(t, map[string]any{"value": tt.wantPrincipal}, source.parameters["principalId"])
-				assert.Equal(t, map[string]any{"value": tt.wantType}, source.parameters["principalType"])
+				if tt.templateDefault {
+					assert.NotContains(t, source.parameters, "principalType")
+					definitions, ok := source.armTemplate["parameters"].(map[string]any)
+					require.True(t, ok)
+					typeDefinition, ok := definitions["principalType"].(map[string]any)
+					require.True(t, ok)
+					assert.Equal(t, tt.wantType, typeDefinition["defaultValue"])
+				} else {
+					assert.Equal(t, map[string]any{"value": tt.wantType}, source.parameters["principalType"])
+				}
 				assert.Equal(t, map[string]any{"value": map[string]any{
 					"value": provider.principalID + "/" + provider.principalType,
 				}}, source.parameters["identityLabel"])

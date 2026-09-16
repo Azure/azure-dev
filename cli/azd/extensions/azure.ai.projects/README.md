@@ -69,6 +69,8 @@ To disable the developer role assignment, persist an empty value with `azd env s
 
 When principal resolution changes the identity, cached on-disk parameters are reloaded with the resolved `AZURE_PRINCIPAL_ID` and `AZURE_PRINCIPAL_TYPE`. Literal values in JSON and Bicep parameter files still override provider defaults.
 
+If an on-disk parameter file supplies a different `principalId` without `principalType`, the template's type default applies instead of the deploying identity's type. Supply both parameters when the target identity differs from that default.
+
 ### Infrastructure layers
 
 For projects that use `infra.layers`, declare exactly one layer with

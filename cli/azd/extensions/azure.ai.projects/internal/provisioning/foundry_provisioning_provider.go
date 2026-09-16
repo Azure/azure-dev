@@ -1431,6 +1431,13 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 	if p.onDiskSource != nil {
 		log.Printf("[debug] foundry provider: using on-disk template at %s", p.onDiskSource.sourcePath)
 		hostParameters := parametersDeclaredByTemplate(p.armParameters(), p.onDiskSource.armTemplate)
+		if principal, ok := p.onDiskSource.parameters["principalId"].(map[string]any); ok {
+			if id, ok := principal["value"].(string); ok && !strings.EqualFold(id, p.principalID) {
+				// The resolved type belongs to the provider's identity, not the override.
+				// Let the user's type parameter or the template default apply instead.
+				delete(hostParameters, "principalType")
+			}
+		}
 		merged := mergeParameters(p.onDiskSource.parameters, hostParameters)
 		return &templateSource{
 			mode:        p.onDiskSource.mode,

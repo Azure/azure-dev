@@ -59,7 +59,7 @@ func NewRootCommand() *cobra.Command {
 		// Once, here, so the helpers that warn reach this invocation's writer
 		// rather than process-global stderr.
 		cmd.SetContext(withWarnWriter(cmd.Context(), cmd.ErrOrStderr()))
-		setupDebugLogging(cmd.Flags())
+		setupDebugLogging(cmd.Flags(), cmd.ErrOrStderr())
 		return nil
 	}
 

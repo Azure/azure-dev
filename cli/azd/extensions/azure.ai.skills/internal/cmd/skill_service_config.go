@@ -271,7 +271,7 @@ func portableSkillArchiveReference(serviceRoot, source string) (string, error) {
 			"move the skill archive or directory inside the skill service directory and retry",
 		)
 	}
-	if relative == "." || relative == "" {
+if relative == "." || relative == "" || resolvedRelative == "." || resolvedRelative == "" {
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidSkillFile,
 			fmt.Sprintf("cannot use the skill service directory %q itself as the archive source", serviceRoot),

@@ -14,10 +14,30 @@ import (
 	"github.com/stretchr/testify/require"
 
 	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
+
+func TestCopilotAgentStopRecordsAICredits(t *testing.T) {
+	tracing.ResetUsageAttributesForTest()
+	t.Cleanup(tracing.ResetUsageAttributesForTest)
+
+	agent := &CopilotAgent{
+		cumulativeUsage: UsageMetrics{AICredits: 1.25},
+	}
+	require.NoError(t, agent.Stop())
+
+	for _, attr := range tracing.GetUsageAttributes() {
+		if attr.Key == fields.CopilotMessageAICredits.Key {
+			require.Equal(t, 1.25, attr.Value.AsFloat64())
+			return
+		}
+	}
+	require.Fail(t, "copilot AI-credit usage attribute was not recorded")
+}
 
 func TestCopilotAgentPromptModelAndReasoning(t *testing.T) {
 	t.Run("ModelConfigurationAlreadyInConfig", func(t *testing.T) {

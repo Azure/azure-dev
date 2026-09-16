@@ -41,6 +41,7 @@ func TestTelemetryFieldConstants(t *testing.T) {
 	t.Parallel()
 	t.Run("ResourceFields", func(t *testing.T) {
 		t.Parallel()
+		require.Equal(t, "agency", fields.EnvModifierAgency)
 		tests := []struct {
 			key             fields.AttributeKey
 			expectedName    string
@@ -49,6 +50,7 @@ func TestTelemetryFieldConstants(t *testing.T) {
 			{fields.ServiceNameKey, "service.name", fields.PerformanceAndHealth},
 			{fields.ServiceVersionKey, "service.version", fields.FeatureInsight},
 			{fields.OSTypeKey, "os.type", fields.FeatureInsight},
+			{fields.ExecutionEnvironmentKey, "execution.environment", fields.BusinessInsight},
 		}
 		for _, tt := range tests {
 			require.Equal(t, tt.expectedName, string(tt.key.Key))

@@ -46,7 +46,7 @@ func TestUsageMetrics_Format(t *testing.T) {
 			PremiumRequests: 15,
 		}
 		result := u.String()
-		require.Contains(t, result, "AI credits:       0.250 AIC")
+		require.Contains(t, result, "AI credits:       0.25 AIC")
 		require.NotContains(t, result, "Premium requests")
 		require.NotContains(t, result, "2x per request")
 	})

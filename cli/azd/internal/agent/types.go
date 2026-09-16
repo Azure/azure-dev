@@ -51,19 +51,6 @@ func nanoAiuToCredits(nanoAiu float64) float64 {
 	return nanoAiu / 1_000_000_000
 }
 
-func formatAICredits(credits float64) string {
-	if credits >= 1000 {
-		return fmt.Sprintf("%.1fK", credits/1000)
-	}
-	if credits >= 1 {
-		return fmt.Sprintf("%.2f", credits)
-	}
-	if credits >= 0.01 {
-		return fmt.Sprintf("%.3f", credits)
-	}
-	return fmt.Sprintf("%.4f", credits)
-}
-
 // String returns a multi-line formatted string for display.
 func (u UsageMetrics) String() string {
 	if u.InputTokens == 0 && u.OutputTokens == 0 && u.AICredits == 0 {
@@ -81,7 +68,7 @@ func (u UsageMetrics) String() string {
 	lines = append(lines, output.WithGrayFormat("  • Output tokens:    %s", formatTokenCount(u.OutputTokens)))
 	lines = append(lines, output.WithGrayFormat("  • Total tokens:     %s", formatTokenCount(u.TotalTokens())))
 	if u.AICredits > 0 {
-		lines = append(lines, output.WithGrayFormat("  • AI credits:       %s AIC", formatAICredits(u.AICredits)))
+		lines = append(lines, output.WithGrayFormat("  • AI credits:       %.2f AIC", u.AICredits))
 	}
 
 	if u.DurationMS > 0 {

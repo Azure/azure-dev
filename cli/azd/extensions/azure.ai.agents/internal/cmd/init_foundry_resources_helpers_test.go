@@ -525,6 +525,9 @@ func newTestAzdServer(
 
 	grpcServer := grpc.NewServer()
 	azdext.RegisterEnvironmentServiceServer(grpcServer, envServer)
+	if workflowServer == nil {
+		workflowServer = &testWorkflowServiceServer{}
+	}
 	azdext.RegisterWorkflowServiceServer(grpcServer, workflowServer)
 	if len(promptServers) > 0 {
 		azdext.RegisterPromptServiceServer(grpcServer, promptServers[0])
@@ -984,7 +987,7 @@ func TestConfigureDeferredInitAzureContext_PersistsProjectSignalOnly(t *testing.
 
 	output, err := captureStdout(t, func() error {
 		return configureDeferredInitAzureContext(
-			t.Context(), azdClient, envName, azureContext, true,
+			t.Context(), azdClient, envName, azureContext, true, false,
 		)
 	})
 
@@ -995,6 +998,7 @@ func TestConfigureDeferredInitAzureContext_PersistsProjectSignalOnly(t *testing.
 	require.Contains(t, output, "azd env set AZURE_LOCATION <region>")
 	require.NotContains(t, output, "azd env set AZURE_SUBSCRIPTION_ID")
 	require.Contains(t, output, "Model resource configuration was deferred")
+	require.Contains(t, output, "azure.ai.project service in azure.yaml")
 	require.Contains(t, output, "deployments:")
 	require.Contains(t, output, "format: OpenAI")
 }

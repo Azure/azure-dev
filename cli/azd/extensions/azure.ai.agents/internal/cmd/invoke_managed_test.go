@@ -33,6 +33,26 @@ func TestManagedResponsesRequestAgentReference(t *testing.T) {
 	}
 }
 
+func TestManagedResponsesRequestOmitsPreviousResponseForNewSession(t *testing.T) {
+	userConfig := newInvokeUserConfigServer()
+	azdClient := newInvokeTestAzdClient(t, userConfig)
+	agentKey := "managed-agent-key"
+	userConfig.setJSON(t, configPath("conversations"), map[string]string{agentKey: "resp_previous"})
+	action := &InvokeAction{flags: &invokeFlags{newSession: true}}
+
+	payload, err := json.Marshal(managedResponsesRequest{
+		Model:              "model",
+		Input:              "hello",
+		PreviousResponseID: action.managedPreviousResponseID(t.Context(), azdClient, agentKey),
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	if strings.Contains(string(payload), `"previous_response_id"`) {
+		t.Errorf("new session request must omit previous_response_id: %s", payload)
+	}
+}
+
 // TestStreamManagedSSE_TextDeltas asserts only output_text.delta events are
 // rendered, in order, with a trailing newline, and that lifecycle events are
 // consumed silently.

@@ -40,6 +40,21 @@ type managedResponsesRequest struct {
 	PreviousResponseID string `json:"previous_response_id,omitempty"`
 }
 
+func (a *InvokeAction) managedPreviousResponseID(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentKey string,
+) string {
+	if azdClient == nil || a.flags.forceNewConversation() {
+		return ""
+	}
+	value, err := getContextValueWithFallback(ctx, azdClient, "conversations", agentKey, nil)
+	if err != nil {
+		return ""
+	}
+	return value
+}
+
 // runPromptInvoke sends a message to a prompt (kind=managed) agent via the
 // harness Responses API and streams the assistant's reply to stdout.
 //
@@ -76,12 +91,7 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 		defer azdClient.Close()
 	}
 
-	var previousResponseID string
-	if azdClient != nil && !a.flags.newConversation {
-		if val, getErr := getContextValueWithFallback(ctx, azdClient, "conversations", agentKey, nil); getErr == nil {
-			previousResponseID = val
-		}
-	}
+	previousResponseID := a.managedPreviousResponseID(ctx, azdClient, agentKey)
 
 	request := managedResponsesRequest{
 		Model:              pctx.Agent.Model,

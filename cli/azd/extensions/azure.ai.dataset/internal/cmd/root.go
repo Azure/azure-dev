@@ -55,7 +55,7 @@ func NewRootCommand() *cobra.Command {
 		// embedding this can capture them. Set once, here, because the helpers
 		// that warn are reached through a context and not through a writer.
 		cmd.SetContext(withWarnWriter(cmd.Context(), cmd.ErrOrStderr()))
-		setupDebugLogging(cmd.Flags())
+		setupDebugLogging(cmd.Flags(), cmd.ErrOrStderr())
 		return nil
 	}
 

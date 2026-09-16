@@ -110,9 +110,13 @@ func Validate(raw string) (normalized string, pathWarning bool, err error) {
 	path := strings.TrimRight(u.EscapedPath(), "/")
 	normalized = fmt.Sprintf("https://%s%s", strings.ToLower(host), path)
 
-	// Warn when the path does not look like /api/projects/<proj>.
+	// Warn when the path does not look like /api/projects/<proj>. A further
+	// segment counts: requests append their own path, so `/api/projects/p/extra`
+	// asks the service for `/api/projects/p/extra/datasets` and comes back as a
+	// service failure rather than as the endpoint being wrong.
+	project := strings.TrimPrefix(path, projectEndpointPathPrefix)
 	if !strings.HasPrefix(path, projectEndpointPathPrefix) ||
-		strings.TrimPrefix(path, projectEndpointPathPrefix) == "" {
+		project == "" || strings.Contains(project, "/") {
 		pathWarning = true
 	}
 

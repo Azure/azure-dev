@@ -25,7 +25,11 @@ import (
 // The returned function puts the logger back and closes the file. Callers run
 // for the length of the process and let the OS close it, so it is returned for
 // tests and for any caller that wants to stop logging early.
-func setupDebugLogging(flags *pflag.FlagSet) func() {
+//
+// errOut is the command's error writer, not process stderr: two commands in one
+// process interleave on the latter, and a caller embedding this cannot capture
+// it.
+func setupDebugLogging(flags *pflag.FlagSet, errOut io.Writer) func() {
 	if !isDebug(flags) {
 		log.SetOutput(io.Discard)
 		azcorelog.SetListener(nil)
@@ -49,14 +53,14 @@ func setupDebugLogging(flags *pflag.FlagSet) func() {
 	var w io.Writer
 	var closeFile func()
 	if err != nil {
-		w = os.Stderr
+		w = errOut
 		closeFile = func() {}
 	} else {
 		w = logFile
 		closeFile = func() { _ = logFile.Close() }
 		// A log nobody can find is not a log. Debugging was asked for
 		// explicitly, so naming the file costs nothing.
-		fmt.Fprintf(os.Stderr, "Debug log: %s\n", filepath.ToSlash(logFile.Name()))
+		fmt.Fprintf(errOut, "Debug log: %s\n", filepath.ToSlash(logFile.Name()))
 	}
 
 	log.SetOutput(w)

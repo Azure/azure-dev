@@ -959,6 +959,18 @@ func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 			}
 		}
 	}
+	if !p.principalIDConfigured {
+		// GetValues reports persisted keys only. GetValue also includes the
+		// host process environment, without overriding a persisted empty value.
+		if p.principalID, err = get(envKeyPrincipalID); err != nil {
+			return exterrors.Dependency(
+				exterrors.CodeEnvironmentValuesFailed,
+				fmt.Sprintf("read %s from azd environment %q: %s", envKeyPrincipalID, p.envName, err),
+				"verify the azd environment is accessible, then retry",
+			)
+		}
+		p.principalIDConfigured = p.principalID != ""
+	}
 	if p.principalIDConfigured && p.principalID != "" {
 		if p.principalType, err = get(envKeyPrincipalType); err != nil {
 			return exterrors.Dependency(
@@ -1453,15 +1465,21 @@ func (p *FoundryProvisioningProvider) resolveProvisioningTemplate(
 ) (*templateSource, error) {
 	// Compile and validate the template before acquiring credentials. Invalid
 	// local configuration should fail without making an Azure request.
-	if _, err := p.resolveTemplate(ctx, progress); err != nil {
+	source, err := p.resolveTemplate(ctx, progress)
+	if err != nil {
 		return nil, err
 	}
+	principalID, principalType := p.principalID, p.principalType
 	if err := p.ensurePrincipalID(ctx); err != nil {
 		return nil, err
 	}
+	if p.principalID == principalID && p.principalType == principalType {
+		return source, nil
+	}
 
-	// Rebuild the parameter map with the resolved principal. On-disk parameter
-	// values still take precedence through resolveTemplate's normal merge.
+	// Cached on-disk parameters were evaluated with the previous identity.
+	// Reload through the normal loader to preserve user parameter precedence.
+	p.onDiskSource = nil
 	return p.resolveTemplate(ctx, progress)
 }
 

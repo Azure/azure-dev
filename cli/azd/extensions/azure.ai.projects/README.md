@@ -61,6 +61,16 @@ services:
 
 When `endpoint` is omitted, `azd provision` creates a Foundry account and project. When it is set, provisioning reuses that project and reconciles the declarations that can be applied to an existing account.
 
+### Provisioning identity
+
+For a new Foundry project, the provider resolves the current principal's object ID and type for the developer role assignment when `AZURE_PRINCIPAL_ID` is absent. Explicit principal IDs are read from layer inputs first, then the active azd environment, then the host process environment. `AZURE_PRINCIPAL_TYPE` defaults to `User` for an explicit ID; set it to `ServicePrincipal` when supplying a service principal's object ID.
+
+To disable the developer role assignment, persist an empty value with `azd env set AZURE_PRINCIPAL_ID ""`. This takes precedence over a process-level value.
+
+When principal resolution changes the identity, cached on-disk parameters are reloaded with the resolved `AZURE_PRINCIPAL_ID` and `AZURE_PRINCIPAL_TYPE`. Literal values in JSON and Bicep parameter files still override provider defaults.
+
+### Infrastructure layers
+
 For projects that use `infra.layers`, declare exactly one layer with
 `provider: microsoft.foundry` and leave the root provider available for the
 other layers:

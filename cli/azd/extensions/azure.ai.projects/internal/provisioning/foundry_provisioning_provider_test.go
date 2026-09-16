@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -355,6 +356,134 @@ func TestEnsurePrincipalIDReportsCredentialFailures(t *testing.T) {
 			require.True(t, ok)
 			assert.Equal(t, exterrors.CodePrincipalLookupFailed, local.Code)
 		})
+	}
+}
+
+func TestResolveProvisioningTemplatePrincipalParameters(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		tokenType         string
+		tokenScopes       string
+		disableAssignment bool
+		literalOverride   bool
+		wantPrincipal     string
+		wantType          string
+	}{
+		{
+			name: "guest user", tokenType: "user", tokenScopes: "user_impersonation",
+			wantPrincipal: "guest-object-id", wantType: "User",
+		},
+		{
+			name: "service principal", tokenType: "app",
+			wantPrincipal: "guest-object-id", wantType: "ServicePrincipal",
+		},
+		{
+			name: "literal override", tokenType: "user", tokenScopes: "user_impersonation", literalOverride: true,
+			wantPrincipal: "configured-object-id", wantType: "ServicePrincipal",
+		},
+		{
+			name: "literal empty principal", tokenType: "user", tokenScopes: "user_impersonation", literalOverride: true,
+			wantType: "User",
+		},
+		{
+			name: "explicit empty environment", disableAssignment: true,
+		},
+	}
+	for _, mode := range []templateMode{templateModeBicep, templateModeBicepParam} {
+		for _, tt := range tests {
+			t.Run(mode.String()+"/"+tt.name, func(t *testing.T) {
+				root := t.TempDir()
+				infraDir := filepath.Join(root, "infra", "foundry")
+				require.NoError(t, os.MkdirAll(infraDir, 0o750))
+				const template = `{"parameters":{
+					"principalId":{"type":"string"},
+					"principalType":{"type":"string"},
+					"identityLabel":{"type":"object"}
+				},"resources":[]}`
+				inputParameters := map[string]any{
+					"principalId":   "${AZURE_PRINCIPAL_ID}",
+					"principalType": "${AZURE_PRINCIPAL_TYPE}",
+					"identityLabel": map[string]any{"value": "${AZURE_PRINCIPAL_ID}/${AZURE_PRINCIPAL_TYPE}"},
+				}
+				if tt.literalOverride {
+					inputParameters["principalId"] = tt.wantPrincipal
+					inputParameters["principalType"] = tt.wantType
+				}
+				require.NoError(t, os.WriteFile(
+					filepath.Join(infraDir, "project.bicep"), []byte("// compiled by stub"), 0o600,
+				))
+				compiler := &stubCompiler{buildResult: bicep.BuildResult{Compiled: template}}
+				if mode == templateModeBicep {
+					require.NoError(t, os.WriteFile(
+						filepath.Join(infraDir, "project.parameters.json"),
+						[]byte(minimalARMParametersFile(t, inputParameters)), 0o600,
+					))
+				} else {
+					require.NoError(t, os.WriteFile(
+						filepath.Join(infraDir, "project.bicepparam"),
+						[]byte("using './project.bicep'\n"+
+							"param principalId = readEnvironmentVariable('AZURE_PRINCIPAL_ID')\n"+
+							"param principalType = readEnvironmentVariable('AZURE_PRINCIPAL_TYPE')\n"), 0o600,
+					))
+					compiler.buildParam = func(_ context.Context, _ string, env []string) (bicep.BuildResult, error) {
+						values := map[string]string{}
+						for _, entry := range env {
+							key, value, found := strings.Cut(entry, "=")
+							require.True(t, found)
+							values[key] = value
+						}
+						params := map[string]any{
+							"principalId":   values[envKeyPrincipalID],
+							"principalType": values[envKeyPrincipalType],
+							"identityLabel": map[string]any{
+								"value": values[envKeyPrincipalID] + "/" + values[envKeyPrincipalType],
+							},
+						}
+						if tt.literalOverride {
+							params["principalId"] = tt.wantPrincipal
+							params["principalType"] = tt.wantType
+						}
+						envelope, err := json.Marshal(map[string]string{
+							"templateJson": template, "parametersJson": minimalARMParametersFile(t, params),
+						})
+						require.NoError(t, err)
+						return bicep.BuildResult{Compiled: string(envelope)}, nil
+					}
+				}
+				credential := &stubTokenCredential{token: azcore.AccessToken{
+					Token: accessTokenWithClaims("guest-object-id", tt.tokenType, tt.tokenScopes),
+				}}
+				provider := &FoundryProvisioningProvider{
+					projectPath: root, infraPath: infraDir, infraModule: "project", isLayer: true,
+					credential: credential, bicepCliInstance: compiler, principalIDConfigured: tt.disableAssignment,
+				}
+
+				source, err := provider.resolveProvisioningTemplate(t.Context(), func(string) {})
+				require.NoError(t, err)
+				assert.Equal(t, map[string]any{"value": tt.wantPrincipal}, source.parameters["principalId"])
+				assert.Equal(t, map[string]any{"value": tt.wantType}, source.parameters["principalType"])
+				assert.Equal(t, map[string]any{"value": map[string]any{
+					"value": provider.principalID + "/" + provider.principalType,
+				}}, source.parameters["identityLabel"])
+				assert.Equal(t, mode, source.mode)
+
+				repeated, err := provider.resolveProvisioningTemplate(t.Context(), func(string) {})
+				require.NoError(t, err)
+				assert.Equal(t, source.parameters, repeated.parameters)
+				if tt.disableAssignment {
+					assert.Empty(t, credential.options)
+				} else {
+					assert.Len(t, credential.options, 1)
+				}
+				wantLoads := 2
+				if tt.disableAssignment {
+					wantLoads = 1
+				}
+				assert.Equal(t, wantLoads, len(compiler.buildCalls)+len(compiler.buildParamCalls))
+			})
+		}
 	}
 }
 

@@ -211,55 +211,29 @@ func (a *ExtensionActivator) ExtensionsForProject(
 				)
 			}
 
-			required, err := reproducibleProjectExtension(installedExtension)
-			if err != nil {
-				return nil, err
+			byId[strings.ToLower(extensionId)] = ProjectExtension{
+				Id:      installedExtension.Id,
+				Version: installedExtension.Version,
 			}
-			byId[strings.ToLower(extensionId)] = required
 		}
 	}
 
-	addMatches := func(providerNames []string, capability extensions.CapabilityType) error {
+	addMatches := func(providerNames []string, capability extensions.CapabilityType) {
 		for _, extension := range extensionsForCapabilityProviders(installed, providerNames, capability) {
-			required, err := reproducibleProjectExtension(extension)
-			if err != nil {
-				return err
+			byId[strings.ToLower(extension.Id)] = ProjectExtension{
+				Id:      extension.Id,
+				Version: extension.Version,
 			}
-			byId[strings.ToLower(extension.Id)] = required
 		}
-		return nil
 	}
-	if err := addMatches(provisioningProviderNames, extensions.ProvisioningProviderCapability); err != nil {
-		return nil, err
-	}
-	if err := addMatches(serviceTargetProviderNames, extensions.ServiceTargetProviderCapability); err != nil {
-		return nil, err
-	}
+	addMatches(provisioningProviderNames, extensions.ProvisioningProviderCapability)
+	addMatches(serviceTargetProviderNames, extensions.ServiceTargetProviderCapability)
 
 	result := slices.Collect(maps.Values(byId))
 	slices.SortFunc(result, func(a, b ProjectExtension) int {
 		return cmp.Compare(a.Id, b.Id)
 	})
 	return result, nil
-}
-
-func reproducibleProjectExtension(extension *extensions.Extension) (ProjectExtension, error) {
-	source := strings.TrimSpace(extension.Source)
-	if source != "" &&
-		!strings.EqualFold(source, extensions.MainRegistryName) &&
-		extension.SourceCategoryOrUnknown() != extensions.SourceCategoryAzd {
-		return ProjectExtension{}, fmt.Errorf(
-			"extension %q version %q is installed from non-official source %q; "+
-				"generated pipelines can only reproduce extensions from the official %q registry. "+
-				"Reinstall the extension from that registry or configure its source and installation manually in CI",
-			extension.Id,
-			extension.Version,
-			source,
-			extensions.MainRegistryName,
-		)
-	}
-
-	return ProjectExtension{Id: extension.Id, Version: extension.Version}, nil
 }
 
 // SuggestExtensionForProvider finds an installable extension for a missing provisioning provider.

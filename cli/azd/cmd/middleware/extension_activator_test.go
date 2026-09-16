@@ -282,7 +282,7 @@ func Test_ExtensionsForProject(t *testing.T) {
 	}, extensionIds)
 }
 
-func Test_ExtensionsForProjectRejectsNonOfficialSource(t *testing.T) {
+func Test_ExtensionsForProjectAllowsAnyInstalledSource(t *testing.T) {
 	t.Parallel()
 
 	mockCtx := mocks.NewMockContext(t.Context())
@@ -301,10 +301,12 @@ func Test_ExtensionsForProjectRejectsNonOfficialSource(t *testing.T) {
 	}
 	activator := newTestExtensionActivator(t, mockCtx, installed)
 
-	_, err := activator.ExtensionsForProject(nil, []string{"azure.ai.agent"}, nil)
+	got, err := activator.ExtensionsForProject(nil, []string{"azure.ai.agent"}, nil)
 
-	require.ErrorContains(t, err, `installed from non-official source "dev"`)
-	require.ErrorContains(t, err, "configure its source and installation manually in CI")
+	require.NoError(t, err)
+	require.Equal(t, []ProjectExtension{
+		{Id: "azure.ai.agents", Version: "1.0.0-beta.15"},
+	}, got)
 }
 
 func Test_SuggestExtensionForProvider(t *testing.T) {

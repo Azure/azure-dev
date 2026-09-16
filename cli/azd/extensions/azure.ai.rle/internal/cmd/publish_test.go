@@ -39,7 +39,6 @@ func TestBuildEnvironmentCreateRequestMapsManifestConfiguration(t *testing.T) {
 				},
 			},
 		},
-		Metadata: map[string]string{"owner": "rle"},
 	}
 
 	request := buildEnvironmentCreateRequest(config, "example.azurecr.io/support_rle:1.0.1")
@@ -52,7 +51,6 @@ func TestBuildEnvironmentCreateRequestMapsManifestConfiguration(t *testing.T) {
 		request.SchemaVersion == nil || *request.SchemaVersion != project.CurrentRleManifestSchemaVersion ||
 		request.Defaults == nil || request.Defaults.Model == nil ||
 		request.Defaults.Model.Name == nil || *request.Defaults.Model.Name != modelName ||
-		request.Metadata["owner"] != "rle" ||
 		request.BaseURL != nil {
 		t.Fatalf("expected manifest data to map to create request, got %#v", request)
 	}
@@ -83,6 +81,9 @@ func TestBuildEnvironmentCreateRequestMapsManifestConfiguration(t *testing.T) {
 	}
 	if _, exists := payload["versionBump"]; exists {
 		t.Fatalf("expected explicit version request to omit versionBump, got %s", data)
+	}
+	if _, exists := payload["metadata"]; exists {
+		t.Fatalf("expected request to omit metadata, got %s", data)
 	}
 	defaults, ok := payload["defaults"].(map[string]any)
 	if !ok {
@@ -172,8 +173,10 @@ func TestVerifyPublishedEnvironmentRequiresManifestIdentity(t *testing.T) {
 	}
 }
 
-func TestVerifyPublishedEnvironmentRequiresManifestMetadata(t *testing.T) {
+func TestVerifyPublishedEnvironmentRequiresManifestDefaults(t *testing.T) {
 	schemaVersion := project.CurrentRleManifestSchemaVersion
+	modelName := "Qwen/Qwen3-32B"
+	differentModelName := "Qwen/Qwen3-14B"
 	config := project.RleConfig{
 		SchemaVersion: &schemaVersion,
 		Rle: project.RleManifest{
@@ -182,7 +185,9 @@ func TestVerifyPublishedEnvironmentRequiresManifestMetadata(t *testing.T) {
 			Type:    project.RleTypeGym,
 			Subtype: project.RleSubtypeOpenEnv,
 		},
-		Metadata: map[string]string{"owner": "rle"},
+		Defaults: &project.RleEnvironmentDefaults{
+			Model: &project.RleModelDefaults{Name: &modelName},
+		},
 	}
 	err := verifyPublishedEnvironment(config, &environmentResource{
 		Name:          "code_rl",
@@ -190,11 +195,13 @@ func TestVerifyPublishedEnvironmentRequiresManifestMetadata(t *testing.T) {
 		Type:          "Gym",
 		Subtype:       "OpenEnv",
 		SchemaVersion: &schemaVersion,
-		Metadata:      map[string]string{"owner": "different"},
+		Defaults: &project.RleEnvironmentDefaults{
+			Model: &project.RleModelDefaults{Name: &differentModelName},
+		},
 	})
 	var localErr *azdext.LocalError
 	if !errors.As(err, &localErr) || localErr.Code != "rle_published_environment_mismatch" {
-		t.Fatalf("expected published metadata mismatch, got %v", err)
+		t.Fatalf("expected published defaults mismatch, got %v", err)
 	}
 }
 

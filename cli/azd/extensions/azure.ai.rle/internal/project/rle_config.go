@@ -25,13 +25,8 @@ const (
 	maxAgentNameLength              = 256
 	maxAgentVersionLen              = 128
 	maxHarnessBaseURLLen            = 2048
-	maxRleMetadataEntries           = 64
-	maxRleMetadataKeyLength         = 128
-	maxRleMetadataValueLength       = 1024
 	maxRleModelNameLength           = 256
 	maxRleRendererNameLength        = 256
-	maxRleCheckpointIDLength        = 512
-	maxRleSamplerLength             = 128
 )
 
 type RleType string
@@ -54,7 +49,6 @@ type RleConfig struct {
 	SchemaVersion *string                 `toml:"schema_version,omitempty"`
 	Rle           RleManifest             `toml:"rle"`
 	Defaults      *RleEnvironmentDefaults `toml:"defaults,omitempty"`
-	Metadata      map[string]string       `toml:"metadata,omitempty"`
 }
 
 // RleManifest uses the control-plane field names so the [rle] table maps directly to an RLE release.
@@ -71,10 +65,8 @@ type RleManifest struct {
 // RleEnvironmentDefaults contains reusable version-scoped training defaults.
 type RleEnvironmentDefaults struct {
 	Model         *RleModelDefaults         `toml:"model,omitempty" json:"model,omitempty"`
-	Seed          *int                      `toml:"seed,omitempty" json:"seed,omitempty"`
 	Reinforcement *RleReinforcementDefaults `toml:"reinforcement,omitempty" json:"reinforcement,omitempty"`
 	Grpo          *RleGrpoDefaults          `toml:"grpo,omitempty" json:"grpo,omitempty"`
-	Loom          *RleLoomDefaults          `toml:"loom,omitempty" json:"loom,omitempty"`
 }
 
 // RleModelDefaults contains the optional model and renderer selection.
@@ -105,13 +97,6 @@ type RleGrpoDefaults struct {
 	GroupSize      *int `toml:"group_size,omitempty" json:"group_size,omitempty"`
 	GroupsPerBatch *int `toml:"groups_per_batch,omitempty" json:"groups_per_batch,omitempty"`
 	MaxSteps       *int `toml:"max_steps,omitempty" json:"max_steps,omitempty"`
-}
-
-// RleLoomDefaults contains version-scoped Loom settings.
-type RleLoomDefaults struct {
-	CheckpointID *string `toml:"checkpoint_id,omitempty" json:"checkpoint_id,omitempty"`
-	LoraRank     *int    `toml:"lora_rank,omitempty" json:"lora_rank,omitempty"`
-	Sampler      *string `toml:"sampler,omitempty" json:"sampler,omitempty"`
 }
 
 var semanticVersionPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
@@ -267,10 +252,9 @@ func NormalizeRleConfig(config RleConfig) (RleConfig, error) {
 		)
 	}
 
-	schemaVersion, defaults, metadata, err := normalizeRleManifestMetadata(
+	schemaVersion, defaults, err := normalizeRleManifestDefaults(
 		config.SchemaVersion,
 		config.Defaults,
-		config.Metadata,
 	)
 	if err != nil {
 		return RleConfig{}, err
@@ -278,7 +262,6 @@ func NormalizeRleConfig(config RleConfig) (RleConfig, error) {
 	config.SchemaVersion = schemaVersion
 	config.Rle = manifest
 	config.Defaults = defaults
-	config.Metadata = metadata
 	return config, nil
 }
 
@@ -311,35 +294,30 @@ func ValidateInitialRleVersion(value string) error {
 	return nil
 }
 
-func normalizeRleManifestMetadata(
+func normalizeRleManifestDefaults(
 	schemaVersion *string,
 	defaults *RleEnvironmentDefaults,
-	metadata map[string]string,
-) (*string, *RleEnvironmentDefaults, map[string]string, error) {
+) (*string, *RleEnvironmentDefaults, error) {
 	normalizedSchemaVersion, err := normalizeRleSchemaVersion(
 		schemaVersion,
-		defaults != nil || metadata != nil,
+		defaults != nil,
 	)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	normalizedDefaults, err := normalizeRleDefaults(defaults)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
-	normalizedMetadata, err := normalizeRleMetadata(metadata)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	return normalizedSchemaVersion, normalizedDefaults, normalizedMetadata, nil
+	return normalizedSchemaVersion, normalizedDefaults, nil
 }
 
 func normalizeRleSchemaVersion(value *string, required bool) (*string, error) {
 	if value == nil {
 		if required {
 			return nil, localError(
-				"schema_version is required when defaults or metadata is supplied.",
+				"schema_version is required when defaults are supplied.",
 				"rle_manifest_schema_version_required",
 				fmt.Sprintf("Set root-level schema_version to %q.", CurrentRleManifestSchemaVersion),
 			)
@@ -382,16 +360,10 @@ func normalizeRleDefaults(value *RleEnvironmentDefaults) (*RleEnvironmentDefault
 	if err != nil {
 		return nil, err
 	}
-	loom, err := normalizeRleLoomDefaults(value.Loom)
-	if err != nil {
-		return nil, err
-	}
 	return &RleEnvironmentDefaults{
 		Model:         model,
-		Seed:          cloneInt(value.Seed),
 		Reinforcement: reinforcement,
 		Grpo:          grpo,
-		Loom:          loom,
 	}, nil
 }
 
@@ -501,83 +473,6 @@ func normalizeRleGrpoDefaults(value *RleGrpoDefaults) (*RleGrpoDefaults, error) 
 		GroupsPerBatch: cloneInt(value.GroupsPerBatch),
 		MaxSteps:       cloneInt(value.MaxSteps),
 	}, nil
-}
-
-func normalizeRleLoomDefaults(value *RleLoomDefaults) (*RleLoomDefaults, error) {
-	if value == nil {
-		return nil, nil
-	}
-
-	if err := validatePositiveInt(value.LoraRank, "defaults.loom.lora_rank"); err != nil {
-		return nil, err
-	}
-	checkpointID, err := normalizeOptionalRleString(value.CheckpointID, "defaults.loom.checkpoint_id", maxRleCheckpointIDLength)
-	if err != nil {
-		return nil, err
-	}
-	sampler, err := normalizeOptionalRleString(value.Sampler, "defaults.loom.sampler", maxRleSamplerLength)
-	if err != nil {
-		return nil, err
-	}
-	return &RleLoomDefaults{
-		CheckpointID: checkpointID,
-		LoraRank:     cloneInt(value.LoraRank),
-		Sampler:      sampler,
-	}, nil
-}
-
-func normalizeRleMetadata(value map[string]string) (map[string]string, error) {
-	if value == nil {
-		return nil, nil
-	}
-	if len(value) > maxRleMetadataEntries {
-		return nil, localError(
-			fmt.Sprintf("metadata can contain at most %d entries.", maxRleMetadataEntries),
-			"rle_manifest_metadata_invalid",
-			"Remove metadata entries before publishing.",
-		)
-	}
-
-	normalized := make(map[string]string, len(value))
-	for key, metadataValue := range value {
-		normalizedKey := strings.TrimSpace(key)
-		normalizedValue := strings.TrimSpace(metadataValue)
-		if normalizedKey == "" {
-			return nil, localError(
-				"metadata keys must be non-empty.",
-				"rle_manifest_metadata_invalid",
-				"Use a non-empty metadata key.",
-			)
-		}
-		if normalizedValue == "" {
-			return nil, localError(
-				"metadata values must be non-empty.",
-				"rle_manifest_metadata_invalid",
-				"Use a non-empty metadata value.",
-			)
-		}
-		if utf16Length(normalizedKey) > maxRleMetadataKeyLength ||
-			utf16Length(normalizedValue) > maxRleMetadataValueLength {
-			return nil, localError(
-				fmt.Sprintf(
-					"metadata keys must be at most %d characters and values at most %d characters.",
-					maxRleMetadataKeyLength,
-					maxRleMetadataValueLength,
-				),
-				"rle_manifest_metadata_invalid",
-				"Shorten the metadata key or value.",
-			)
-		}
-		if _, exists := normalized[normalizedKey]; exists {
-			return nil, localError(
-				fmt.Sprintf("metadata contains duplicate key %q after normalization.", normalizedKey),
-				"rle_manifest_metadata_invalid",
-				"Use unique metadata keys after trimming whitespace.",
-			)
-		}
-		normalized[normalizedKey] = normalizedValue
-	}
-	return normalized, nil
 }
 
 func normalizeReasoningEffort(value *string) (*string, error) {

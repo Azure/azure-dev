@@ -70,14 +70,12 @@ func TestWriteAndLoadRleConfigCanonicalizesHostedAgentManifest(t *testing.T) {
 	}
 }
 
-func TestWriteAndLoadRleConfigCanonicalizesVersionScopedDefaultsAndMetadata(t *testing.T) {
+func TestWriteAndLoadRleConfigCanonicalizesVersionScopedDefaults(t *testing.T) {
 	dir := t.TempDir()
 	schemaVersion := " 1.0.0 "
 	modelName := " Qwen/Qwen3-32B "
 	rendererName := " qwen3_disable_thinking "
 	reasoningEffort := " HIGH "
-	checkpointID := " "
-	sampler := " default "
 	config := RleConfig{
 		SchemaVersion: &schemaVersion,
 		Rle: RleManifest{
@@ -91,7 +89,6 @@ func TestWriteAndLoadRleConfigCanonicalizesVersionScopedDefaultsAndMetadata(t *t
 				Name:         &modelName,
 				RendererName: &rendererName,
 			},
-			Seed: intPointer(-17),
 			Reinforcement: &RleReinforcementDefaults{
 				MaxEpisodeSteps: intPointer(5),
 				Hyperparameters: &RleReinforcementHyperparameters{
@@ -109,14 +106,6 @@ func TestWriteAndLoadRleConfigCanonicalizesVersionScopedDefaultsAndMetadata(t *t
 				GroupsPerBatch: intPointer(16),
 				MaxSteps:       intPointer(100),
 			},
-			Loom: &RleLoomDefaults{
-				CheckpointID: &checkpointID,
-				LoraRank:     intPointer(32),
-				Sampler:      &sampler,
-			},
-		},
-		Metadata: map[string]string{
-			" owner ": " rle-platform ",
 		},
 	}
 
@@ -133,15 +122,15 @@ func TestWriteAndLoadRleConfigCanonicalizesVersionScopedDefaultsAndMetadata(t *t
 		`n_epochs = 3`,
 		`reasoning_effort = 'high'`,
 		`groups_per_batch = 16`,
-		`lora_rank = 32`,
-		`owner = 'rle-platform'`,
 	} {
 		if !strings.Contains(string(data), expected) {
 			t.Fatalf("expected config to contain %q, got:\n%s", expected, data)
 		}
 	}
-	if strings.Contains(string(data), "checkpoint_id") {
-		t.Fatalf("expected whitespace-only optional checkpoint ID to be omitted, got:\n%s", data)
+	for _, unexpected := range []string{"seed", "loom", "metadata"} {
+		if strings.Contains(string(data), unexpected) {
+			t.Fatalf("expected config to omit removed field %q, got:\n%s", unexpected, data)
+		}
 	}
 
 	loaded, err := LoadRleConfig(dir)
@@ -157,15 +146,12 @@ func TestWriteAndLoadRleConfigCanonicalizesVersionScopedDefaultsAndMetadata(t *t
 		loaded.Defaults.Reinforcement == nil ||
 		loaded.Defaults.Reinforcement.Hyperparameters == nil ||
 		loaded.Defaults.Reinforcement.Hyperparameters.ReasoningEffort == nil ||
-		*loaded.Defaults.Reinforcement.Hyperparameters.ReasoningEffort != "high" ||
-		loaded.Defaults.Loom == nil ||
-		loaded.Defaults.Loom.CheckpointID != nil ||
-		loaded.Metadata["owner"] != "rle-platform" {
-		t.Fatalf("expected normalized defaults and metadata, got %#v", loaded)
+		*loaded.Defaults.Reinforcement.Hyperparameters.ReasoningEffort != "high" {
+		t.Fatalf("expected normalized defaults, got %#v", loaded)
 	}
 }
 
-func TestNormalizeRleConfigValidatesVersionScopedMetadata(t *testing.T) {
+func TestNormalizeRleConfigValidatesVersionScopedDefaults(t *testing.T) {
 	schemaVersion := CurrentRleManifestSchemaVersion
 	base := RleManifest{
 		Name:    "code_rl",
@@ -235,24 +221,6 @@ func TestNormalizeRleConfigValidatesVersionScopedMetadata(t *testing.T) {
 			},
 			wantCode: "rle_manifest_default_invalid",
 		},
-		{
-			name: "empty metadata value",
-			config: RleConfig{
-				SchemaVersion: &schemaVersion,
-				Rle:           base,
-				Metadata:      map[string]string{"owner": " "},
-			},
-			wantCode: "rle_manifest_metadata_invalid",
-		},
-		{
-			name: "duplicate normalized metadata key",
-			config: RleConfig{
-				SchemaVersion: &schemaVersion,
-				Rle:           base,
-				Metadata:      map[string]string{"owner": "one", " owner ": "two"},
-			},
-			wantCode: "rle_manifest_metadata_invalid",
-		},
 	}
 
 	for _, test := range tests {
@@ -266,7 +234,7 @@ func TestNormalizeRleConfigValidatesVersionScopedMetadata(t *testing.T) {
 	}
 }
 
-func TestNormalizeRleConfigAllowsLegacyManifestWithoutVersionScopedMetadata(t *testing.T) {
+func TestNormalizeRleConfigAllowsLegacyManifestWithoutVersionScopedDefaults(t *testing.T) {
 	config, err := NormalizeRleConfig(RleConfig{
 		Rle: RleManifest{
 			Name:    "code_rl",
@@ -278,8 +246,51 @@ func TestNormalizeRleConfigAllowsLegacyManifestWithoutVersionScopedMetadata(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.SchemaVersion != nil || config.Defaults != nil || config.Metadata != nil {
-		t.Fatalf("expected legacy manifest metadata to remain omitted, got %#v", config)
+	if config.SchemaVersion != nil || config.Defaults != nil {
+		t.Fatalf("expected legacy manifest defaults to remain omitted, got %#v", config)
+	}
+}
+
+func TestLoadRleConfigRejectsRemovedDefaultsAndMetadata(t *testing.T) {
+	base := `schema_version = "1.0.0"
+
+[rle]
+name = "code_rl"
+version = "1.0.0"
+type = "Gym"
+subtype = "OpenEnv"
+`
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{
+			name:    "seed",
+			content: base + "\n[defaults]\nseed = 17\n",
+		},
+		{
+			name:    "loom",
+			content: base + "\n[defaults.loom]\nlora_rank = 32\n",
+		},
+		{
+			name:    "metadata",
+			content: base + "\n[metadata]\nowner = \"rle-platform\"\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, RleConfigFile), []byte(test.content), 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err := LoadRleConfig(dir)
+			var localErr *azdext.LocalError
+			if !errors.As(err, &localErr) || localErr.Code != "rle_manifest_invalid" {
+				t.Fatalf("expected an invalid-manifest error for removed field, got %v", err)
+			}
+		})
 	}
 }
 

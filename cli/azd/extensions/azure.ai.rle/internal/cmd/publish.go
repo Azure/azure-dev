@@ -122,7 +122,6 @@ func (a *publishAction) Run() error {
 		BaseURL:                environment.BaseURL,
 		SchemaVersion:          environment.SchemaVersion,
 		Defaults:               environment.Defaults,
-		Metadata:               environment.Metadata,
 		CreatedAt:              environment.CreatedAt,
 		UpdatedAt:              environment.UpdatedAt,
 	}, "", "  ")
@@ -194,7 +193,6 @@ func buildEnvironmentCreateRequest(
 		BaseURL:       config.Rle.BaseURL,
 		SchemaVersion: config.SchemaVersion,
 		Defaults:      config.Defaults,
-		Metadata:      config.Metadata,
 	}
 }
 
@@ -250,19 +248,13 @@ func verifyPublishedEnvironment(config project.RleConfig, environment *environme
 	}
 	if !reflect.DeepEqual(config.SchemaVersion, environment.SchemaVersion) {
 		return publishedEnvironmentMismatchError(
-			"RLE service returned a different metadata schema version than rle.toml.",
+			"RLE service returned a different defaults schema version than rle.toml.",
 			"Check the RLE service response and retry.",
 		)
 	}
 	if !reflect.DeepEqual(config.Defaults, environment.Defaults) {
 		return publishedEnvironmentMismatchError(
 			"RLE service returned different reusable defaults than rle.toml.",
-			"Check the RLE service response and retry.",
-		)
-	}
-	if !reflect.DeepEqual(config.Metadata, environment.Metadata) {
-		return publishedEnvironmentMismatchError(
-			"RLE service returned different metadata than rle.toml.",
 			"Check the RLE service response and retry.",
 		)
 	}
@@ -314,7 +306,6 @@ type environmentOutput struct {
 	BaseURL                string                          `json:"baseUrl,omitempty"`
 	SchemaVersion          *string                         `json:"schemaVersion,omitempty"`
 	Defaults               *project.RleEnvironmentDefaults `json:"defaults,omitempty"`
-	Metadata               map[string]string               `json:"metadata,omitempty"`
 	CreatedAt              string                          `json:"createdAt"`
 	UpdatedAt              string                          `json:"updatedAt"`
 }

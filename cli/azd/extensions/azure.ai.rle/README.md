@@ -104,13 +104,12 @@ baseUrl = "https://harness.example.com/rle/"
 `draft-<positive-unix-timestamp>`. BYOH harness URLs must be absolute HTTPS URLs
 without credentials, a query string, or a fragment.
 
-### Version-scoped defaults and metadata
+### Version-scoped defaults
 
 `schema_version` is a root-level manifest field, separate from the immutable
-`rle.version`. It is required when reusable `defaults` or `metadata` is
-present. The current schema is `1.0.0`; `init` writes it into newly generated
-manifests. Identity-only legacy manifests without defaults or metadata remain
-valid.
+`rle.version`. It is required when reusable `defaults` is present. The current
+schema is `1.0.0`; `init` writes it into newly generated manifests.
+Identity-only legacy manifests without defaults remain valid.
 
 ```toml
 schema_version = "1.0.0"
@@ -124,9 +123,6 @@ subtype = "OpenEnv"
 [defaults.model]
 name = "Qwen/Qwen3-32B"
 renderer_name = "qwen3_disable_thinking"
-
-[defaults]
-seed = 17
 
 [defaults.reinforcement]
 max_episode_steps = 5
@@ -145,27 +141,17 @@ group_size = 8
 groups_per_batch = 128
 max_steps = 150
 
-[defaults.loom]
-checkpoint_id = ""
-lora_rank = 32
-sampler = "default"
-
-[metadata]
-owner = "rle-platform"
 ```
 
 All defaults are optional. The CLI normalizes surrounding whitespace, requires
 positive finite numeric defaults, and limits `reasoning_effort` to `low`,
-`medium`, or `high`. `seed` may be any integer. Metadata is limited to 64
-trimmed, non-empty string pairs; keys are at most 128 characters and values
-are at most 1,024 characters. Do not put credentials, tokens, connection
-strings, or secret endpoints in metadata.
+`medium`, or `high`.
 
 The CLI sends the manifest as the RLE create payload's `version`,
-`schemaVersion`, `defaults`, and `metadata` fields. The RLE version owns
-reusable defaults; training and evaluation jobs own datasets, job identity,
-result locations, credentials, graders, response format, tools, and explicit
-per-job overrides. Precedence is:
+`schemaVersion`, and `defaults` fields. The RLE version owns reusable defaults;
+training and evaluation jobs own datasets, job identity, result locations,
+credentials, graders, response format, tools, and explicit per-job overrides.
+Precedence is:
 
 ```text
 explicit job override > pinned RLE default > Training Jobs/model default
@@ -298,15 +284,14 @@ field and never translates it into legacy `versionBump`. The control plane
 validates the first release and every later direct successor against its
 allocation high-water mark, which remains authoritative if historical versions
 were deleted. The CLI verifies that the service returns the manifest's exact
-identity, defaults, and metadata. The pushed ACR image is version-tagged as:
+identity and defaults. The pushed ACR image is version-tagged as:
 
 ```text
 <registry>.azurecr.io/<project>-<environment>:<rle.version>
 ```
 
 The published request includes `type`, `subtype`, the applicable HostedAgent
-or BYOH configuration, schema version, defaults, and metadata from the
-manifest.
+or BYOH configuration, schema version, and defaults from the manifest.
 
 ## Inspect and invoke releases
 

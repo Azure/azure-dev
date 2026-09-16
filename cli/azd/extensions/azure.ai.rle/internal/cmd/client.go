@@ -48,7 +48,6 @@ type v1EnvironmentRequest struct {
 	BaseURL       *string                         `json:"baseUrl,omitempty"`
 	SchemaVersion *string                         `json:"schemaVersion,omitempty"`
 	Defaults      *project.RleEnvironmentDefaults `json:"defaults,omitempty"`
-	Metadata      map[string]string               `json:"metadata,omitempty"`
 }
 
 type environmentResource struct {
@@ -64,7 +63,6 @@ type environmentResource struct {
 	BaseURL                   string                          `json:"baseUrl,omitempty"`
 	SchemaVersion             *string                         `json:"schemaVersion,omitempty"`
 	Defaults                  *project.RleEnvironmentDefaults `json:"defaults,omitempty"`
-	Metadata                  map[string]string               `json:"metadata,omitempty"`
 	CreatedAt                 string                          `json:"createdAtUtc,omitempty"`
 	UpdatedAt                 string                          `json:"updatedAtUtc,omitempty"`
 	VersionLabel              string                          `json:"versionLabel,omitempty"`

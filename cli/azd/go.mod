@@ -99,6 +99,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
+tool github.com/magefile/mage
+
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.11.2 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.2.0 // indirect

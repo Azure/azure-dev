@@ -5,9 +5,13 @@ package cmd
 
 import "azureaidataset/internal/messages"
 
-// envKeyDatasetVersion records the version resolved at the last publish. The
-// eval extension writes the same key; nothing reads it yet, so it exists for
-// the user's own scripts and for `azd env get-values`.
+// envKeyDatasetVersion records the version resolved at the last publish, for
+// the author's own scripts and for `azd env get-values`. Nothing reads it here.
+//
+// One key for every dataset, so publishing a second one replaces the first
+// one's value and the key does not say which dataset it belongs to. That is
+// only useful to a project publishing a single dataset, which is why it is a
+// convenience rather than something to count on.
 const envKeyDatasetVersion = "EVAL_DATASET_VERSION"
 
 // checkAssetExistence enforces the one difference between create and update.

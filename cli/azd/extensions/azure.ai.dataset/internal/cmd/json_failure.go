@@ -112,6 +112,16 @@ func reportFailuresAsJSON(root *cobra.Command) {
 
 	var wrap func(*cobra.Command)
 	wrap = func(c *cobra.Command) {
+		// The hook runs before Args and RunE, so a failure there is a failure of
+		// the command the caller typed and owes them the same answer. `--cwd`
+		// naming a directory that is not there was reported as prose to a caller
+		// who had asked for json, because this ran before anything below could
+		// wrap it.
+		if preRun := c.PersistentPreRunE; preRun != nil {
+			c.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+				return failAs(cmd, preRun(cmd, args))
+			}
+		}
 		// Argument validation runs instead of RunE, not before it, so a wrapper
 		// around RunE alone never sees it. An unquoted shell variable holding a
 		// name with spaces arrives as several arguments and fails here -- a

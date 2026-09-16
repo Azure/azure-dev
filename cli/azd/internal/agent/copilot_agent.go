@@ -333,6 +333,7 @@ func (a *CopilotAgent) sendMessageHeadless(
 func (a *CopilotAgent) accumulateUsage(turn UsageMetrics) {
 	a.cumulativeUsage.InputTokens += turn.InputTokens
 	a.cumulativeUsage.OutputTokens += turn.OutputTokens
+	a.cumulativeUsage.AICredits += turn.AICredits
 	a.cumulativeUsage.DurationMS += turn.DurationMS
 	a.cumulativeUsage.PremiumRequests += turn.PremiumRequests
 	// These are per-request values, not cumulative — use latest
@@ -405,8 +406,7 @@ func (a *CopilotAgent) Stop() error {
 		fields.CopilotMessageModel.String(a.cumulativeUsage.Model),
 		fields.CopilotMessageInputTokens.Float64(a.cumulativeUsage.InputTokens),
 		fields.CopilotMessageOutputTokens.Float64(a.cumulativeUsage.OutputTokens),
-		fields.CopilotMessageBillingRate.Float64(a.cumulativeUsage.BillingRate),
-		fields.CopilotMessagePremiumRequests.Float64(a.cumulativeUsage.PremiumRequests),
+		fields.CopilotMessageAICredits.Float64(a.cumulativeUsage.AICredits),
 		fields.CopilotMessageDurationMs.Float64(a.cumulativeUsage.DurationMS),
 		fields.CopilotConsentApprovedCount.Int(a.consentApprovedCount),
 		fields.CopilotConsentDeniedCount.Int(a.consentDeniedCount),

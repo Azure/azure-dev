@@ -100,7 +100,10 @@ func TestGetTelemetrySystem(t *testing.T) {
 }
 
 func TestTelemetrySystem_RunBackgroundUpload(t *testing.T) {
-	t.Parallel()
+	resetTelemetryForTest()
+	t.Cleanup(resetTelemetryForTest)
+	t.Setenv(collectTelemetryEnvVar, "yes") // explicitly set this. Some of us might have disabled this on their systems...
+
 	type args struct {
 		ctx                context.Context
 		enableDebugLogging bool

@@ -1482,16 +1482,9 @@ var (
 		Purpose:        PerformanceAndHealth,
 		IsMeasurement:  true,
 	}
-	// CopilotMessageBillingRate is the billing rate multiplier per message.
-	CopilotMessageBillingRate = AttributeKey{
-		Key:            attribute.Key("copilot.message.billingRate"),
-		Classification: SystemMetadata,
-		Purpose:        BusinessInsight,
-		IsMeasurement:  true,
-	}
-	// CopilotMessagePremiumRequests is the number of premium requests used per message.
-	CopilotMessagePremiumRequests = AttributeKey{
-		Key:            attribute.Key("copilot.message.premiumRequests"),
+	// CopilotMessageAICredits is the number of AI credits consumed per session.
+	CopilotMessageAICredits = AttributeKey{
+		Key:            attribute.Key("copilot.message.aiCredits"),
 		Classification: SystemMetadata,
 		Purpose:        BusinessInsight,
 		IsMeasurement:  true,

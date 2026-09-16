@@ -1,0 +1,31 @@
+Check the status of an optimization job by its operation ID.
+
+If no operation ID is provided, uses the last optimization job from this project.
+Use --watch to poll until the job completes.
+
+Usage
+  azd ai agent optimize status [operation-id] [flags]
+
+Flags
+      --endpoint string         : Optimization service endpoint (for local dev)
+      --poll-interval int       : Polling interval in seconds (default 10)
+  -p, --project-endpoint string : Foundry project endpoint URL
+      --watch                   : Poll until job completes
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for status
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: json, table) (default "table")
+
+Examples
+  Check last job status (auto-resolved)
+    azd ai agent optimize status
+
+  Check specific job status
+    azd ai agent optimize status opt_abc123
+
+  Watch until complete
+    azd ai agent optimize status opt_abc123 --watch

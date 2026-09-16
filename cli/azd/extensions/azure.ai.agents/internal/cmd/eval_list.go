@@ -32,7 +32,9 @@ func newEvalListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List evaluations for the current project.",
-		Args:  cobra.NoArgs,
+		Example: `  # List the five most recent evaluations
+  azd ai agent eval list --limit 5`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			logCleanup := setupDebugLogging(cmd.Flags())

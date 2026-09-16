@@ -1,0 +1,57 @@
+Monitor logs from a hosted agent.
+
+Streams console output (stdout/stderr) or system events from an agent session.
+A session ID is required — it is auto-resolved from the last invocation, or you can
+specify one explicitly with --session-id.
+Use --follow to stream logs in real-time, or omit it to fetch recent logs and exit.
+This is useful for troubleshooting agent issues or monitoring agent behavior.
+
+When run from an azd project, the agent name and version are resolved from the
+azure.yaml service configuration and current azd environment. Optionally specify
+the service name as a positional argument when multiple agent services exist.
+
+Outside an azd project, the positional value is treated as the hosted agent name.
+The Foundry project endpoint is resolved from the global project context configured
+by azd ai project set, or from FOUNDRY_PROJECT_ENDPOINT.
+
+For agents configured with header-based isolation, pass --user-identity
+when streaming session logs.
+
+Usage
+  azd ai agent monitor [name] [flags]
+
+Flags
+  -f, --follow               : Stream logs in real-time
+      --raw                  : Print the raw SSE stream without formatting
+  -s, --session-id string    : Session ID to stream logs for
+  -l, --tail int             : Number of trailing log lines to fetch (1-300) (default 50)
+  -t, --type string          : Type of logs: 'console' (stdout/stderr) or 'system' (container events) (default "console")
+      --user-identity string : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
+      --utc                  : Display timestamps in UTC instead of local time
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for monitor
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Monitor session logs (auto-resolves session from last invocation)
+    azd ai agent monitor
+
+  Monitor logs for a specific agent service
+    azd ai agent monitor my-agent
+
+  Monitor a hosted agent outside an azd project
+    azd ai agent monitor my-agent --session-id <session-id>
+
+  Stream logs for a specific session
+    azd ai agent monitor --session-id <session-id>
+
+  Stream session logs in real-time
+    azd ai agent monitor --session-id <session-id> --follow
+
+  Fetch system event logs
+    azd ai agent monitor --type system

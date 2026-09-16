@@ -1,0 +1,43 @@
+Delete a prompt, hosted, or voice agent and all of its versions.
+
+For hosted agents, --version deletes only that version. Prompt agents do not
+support version deletion and are always deleted as a whole.
+
+If the agent has active sessions, deletion will fail unless --force is passed.
+Use --force to terminate active sessions and delete the agent. In no-prompt
+mode, --force is also required as explicit consent for deletion.
+
+The agent name is resolved from the azd environment when omitted.
+
+For voice agents with telephony bindings, delete the bindings through the
+agent-scoped telephony API before deleting the agent. Agent deletion does not
+guarantee binding cleanup. Deleting a hosted voice wrapper does not delete its
+hosted target.
+
+Usage
+  azd ai agent delete [name] [flags]
+
+Flags
+      --force          : Force deletion even if the agent has active sessions; required as consent in no-prompt mode
+      --version string : Delete a specific version only (the agent itself remains)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for delete
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: json, none) (default "none")
+
+Examples
+  Delete agent (auto-resolves name from azure.yaml)
+    azd ai agent delete
+
+  Delete a specific agent by name
+    azd ai agent delete my-agent
+
+  Delete a specific hosted-agent version only
+    azd ai agent delete my-agent --version 2
+
+  Force-delete even if active sessions exist
+    azd ai agent delete my-agent --force

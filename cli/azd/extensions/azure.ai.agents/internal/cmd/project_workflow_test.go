@@ -470,8 +470,9 @@ func TestShouldDeferAdoptedModelAuthoring(t *testing.T) {
 		{
 			name: "explicit project id",
 			flags: &initFlags{
-				noPrompt:          true,
-				projectResourceId: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/projects/project",
+				noPrompt: true,
+				projectResourceId: "/subscriptions/sub/resourceGroups/rg/providers/" +
+					"Microsoft.CognitiveServices/accounts/account/projects/project",
 			},
 			azureContext: &azdext.AzureContext{
 				Scope: &azdext.AzureScope{},

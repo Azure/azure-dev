@@ -70,6 +70,38 @@ func TestMatchingLiveDeploymentsExpandsDeploymentValues(t *testing.T) {
 	require.Equal(t, "chat", matches[0].Name)
 }
 
+func TestSelectReconciledDefaultPreservesLiveDefault(t *testing.T) {
+	t.Parallel()
+
+	got := selectReconciledDefault(
+		"chat",
+		[]liveProjectDeployment{
+			{Name: "chat"},
+		},
+		[]synthesis.Deployment{
+			{Name: "embedding"},
+		},
+	)
+
+	assert.Equal(t, "chat", got)
+}
+
+func TestSelectReconciledDefaultFallsBackToReferencedDeployment(t *testing.T) {
+	t.Parallel()
+
+	got := selectReconciledDefault(
+		"removed",
+		[]liveProjectDeployment{
+			{Name: "chat"},
+		},
+		[]synthesis.Deployment{
+			{Name: "embedding"},
+		},
+	)
+
+	assert.Equal(t, "embedding", got)
+}
+
 func TestProjectAddMutationIncludesDeploymentReconciliation(t *testing.T) {
 	t.Parallel()
 

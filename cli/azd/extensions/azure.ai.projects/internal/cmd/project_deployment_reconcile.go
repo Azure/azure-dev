@@ -254,7 +254,11 @@ func reconcileAdoptedDeployments(
 			)
 		}, nil
 	}
-	defaultName := referenced[0].Name
+	defaultName := selectReconciledDefault(
+		originalDefault,
+		live,
+		referenced,
+	)
 	if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: envName,
 		Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
@@ -288,6 +292,20 @@ func reconcileAdoptedDeployments(
 		)
 	}
 	return defaultName, changed, restore, nil
+}
+
+func selectReconciledDefault(
+	originalDefault string,
+	live []liveProjectDeployment,
+	referenced []synthesis.Deployment,
+) string {
+	originalDefault = strings.TrimSpace(originalDefault)
+	for _, deployment := range live {
+		if strings.EqualFold(deployment.Name, originalDefault) {
+			return deployment.Name
+		}
+	}
+	return referenced[0].Name
 }
 
 func matchingLiveDeployments(

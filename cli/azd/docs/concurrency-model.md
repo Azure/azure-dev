@@ -216,6 +216,23 @@ race on `env` (one writing `KUBECONFIG=…`, the other reading it for an
 
 ---
 
+## `pkg/tools/docker.Cli`
+
+| Synchronization | Protects | Used by |
+|-----------------|----------|---------|
+| `engineOnce sync.Once` | Initialization of `containerEngine` and `engineErr` | `selectContainerEngine` |
+
+**Contract**: Runtime selection happens once per `Cli`, on the first call that needs an engine name. `selectContainerEngine` reads `AZD_CONTAINER_RUNTIME` and PATH inside `engineOnce.Do`, then publishes an immutable engine name and selection error. Every reader goes through `selectContainerEngine`; no other code may write these fields. Changing the environment or PATH requires a new `Cli`.
+
+The selected value uses the shared `tools.ContainerEngine` type and its Docker/Podman constants through `ContainerHelper` and the .NET container methods. String conversion happens when constructing external commands. The .NET methods also accept the zero value to use the SDK's default runtime.
+
+`ContainerEngine`, `Name`, `InstallUrl`, and container operations use that same selection. Lightweight name lookup defaults to Docker if selection fails; `CheckInstalled` reports the cached selection error. Each `CheckInstalled` call repeats version and daemon checks outside `sync.Once`, so readiness failures and cancellations are not cached. Builds and other container subprocesses also run outside `sync.Once`.
+
+**Why it matters**: Parallel services and remote-build fallbacks share the
+singleton `docker.Cli`.
+
+---
+
 ## `pkg/project.containerAppTarget` and `pkg/project.aksTarget`
 
 These targets no longer carry package-level `envMu` / `aksEnvMu` mutexes

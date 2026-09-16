@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"maps"
 	"mime"
@@ -903,6 +904,40 @@ func TestGetAgentVersion_StandardContractOmitsDigitalWorkerPreview(t *testing.T)
 	_, err := client.GetAgentVersion(t.Context(), "simple-agent", "1", "v1", false)
 	require.NoError(t, err)
 	require.Empty(t, transport.lastReq.Header.Get("Foundry-Features"))
+}
+
+func TestGetVoiceAgentVersionContract(t *testing.T) {
+	t.Parallel()
+	client, transport := newCaptureClient(http.StatusOK, `{"name":"voice","version":"7","status":"active"}`)
+	version, err := client.GetVoiceAgentVersion(t.Context(), "voice", "7", AgentEndpointAPIVersion)
+	require.NoError(t, err)
+	require.Equal(t, "active", version.Status)
+	require.Equal(t, "7", version.Version)
+	require.Len(t, transport.requests, 1)
+	req := transport.requests[0]
+	require.Equal(t, http.MethodGet, req.Method)
+	require.Equal(t, "/api/projects/proj/agents/voice/versions/7", req.URL.Path)
+	require.Equal(t, AgentEndpointAPIVersion, req.URL.Query().Get("api-version"))
+	require.Equal(t, voiceAgentsPreviewFeature, req.Header.Get("Foundry-Features"))
+	// Reusing the client for another type must not retain the voice header.
+	_, err = client.GetAgentVersion(t.Context(), "hosted", "7", AgentEndpointAPIVersion, false)
+	require.NoError(t, err)
+	require.Empty(t, transport.requests[1].Header.Get("Foundry-Features"))
+	_, err = client.GetAgentVersion(t.Context(), "worker", "7", AgentEndpointAPIVersion, true)
+	require.NoError(t, err)
+	require.Equal(t, DigitalWorkerPreviewFeature, transport.requests[2].Header.Get("Foundry-Features"))
+}
+
+func TestGetVoiceAgentVersionErrors(t *testing.T) {
+	t.Parallel()
+	client, _ := newCaptureClient(http.StatusNotFound, `{"error":{"code":"NotFound","message":"missing"}}`)
+	_, err := client.GetVoiceAgentVersion(t.Context(), "voice", "1", AgentEndpointAPIVersion)
+	responseErr, ok := errors.AsType[*azcore.ResponseError](err)
+	require.True(t, ok)
+	require.Equal(t, http.StatusNotFound, responseErr.StatusCode)
+	client, _ = newCaptureClient(http.StatusOK, `{`)
+	_, err = client.GetVoiceAgentVersion(t.Context(), "voice", "1", AgentEndpointAPIVersion)
+	require.ErrorContains(t, err, "failed to parse response")
 }
 
 func TestZipDeployRequest_NoAgentNameHeader_OnUpdate(t *testing.T) {

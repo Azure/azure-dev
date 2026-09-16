@@ -44,8 +44,8 @@ After resolving file references and environment variables, deployment validates
 the category, target, and authentication configuration before any ARM write.
 API key and custom-key authentication require credentials; OAuth2 requires either
 a managed connector or complete BYO OAuth2 fields, not both. Invalid definitions
-do not publish readiness markers. This validation is shared with standalone
-create/deploy commands and preserves nested service credential payloads.
+do not publish readiness markers. This validation is shared with the standalone
+`create` command and preserves nested service credential payloads.
 
 Standalone commands reject explicitly supplied authentication flags that cannot
 apply to the selected auth type, including explicitly empty values. Metadata
@@ -79,6 +79,39 @@ the migration.
 Run `azd provision` for the Project, then `azd deploy --all` for Connections,
 Toolboxes, and Agents (or use `azd up`). A targeted Agent deployment does not
 automatically deploy all of its dependencies.
+
+### Migrate standalone Connection deployment
+
+`azd ai connection deploy [path]` has been removed. The extension still owns
+Connection deployment, but core `azd deploy <service>` or `azd up` invokes it
+through the `azure.ai.connection` service target instead of a separate command.
+
+To keep a local Connection definition, reference it from a service:
+
+```yaml
+services:
+  search:
+    host: azure.ai.connection
+    $ref: ./connection.yaml
+    uses:
+      - my-project
+    env:
+      SEARCH_ENDPOINT: ${SEARCH_ENDPOINT}
+      SEARCH_KEY: ${SEARCH_KEY}
+```
+
+Here `my-project` is an existing `azure.ai.project` service in the same project.
+Keep only Connection definition fields in the referenced file, and declare its
+environment-variable inputs in the service's `env` block. After provisioning the
+project, use `azd deploy search` to create or update this Connection, or
+`azd deploy --all` to deploy it together with its dependents. The argument is the
+service key, not the definition file path or an overridden Connection `name`.
+Configure the selected azd environment as described below; the old standalone
+endpoint fallback does not apply to lifecycle deployment.
+
+Direct resource operations remain available through `azd ai connection create`,
+`update`, `delete`, `list`, and `show`. `create` accepts flags, not a definition
+file; it is not a drop-in replacement for the removed file-based command.
 
 ### Deployment environment isolation
 

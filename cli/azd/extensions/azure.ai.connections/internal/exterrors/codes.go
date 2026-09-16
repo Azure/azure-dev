@@ -9,7 +9,6 @@ const (
 	CodeMissingConnectionField  = "missing_connection_field"
 	CodeInvalidConnectionKind   = "invalid_connection_kind"
 	CodeInvalidAuthType         = "invalid_auth_type"
-	CodeInvalidFromFile         = "invalid_from_file"
 	CodeMissingForceFlag        = "missing_force_flag"
 	CodeConnectionAlreadyExists = "connection_already_exists"
 )

@@ -88,8 +88,8 @@ func newInvokeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "invoke [name] [message]",
-		Short: "Send a message to your agent.",
-		Long: `Send a message to your agent.
+		Short: "Send a message to your prompt or hosted agent.",
+		Long: `Send a message to your prompt or hosted agent.
 
 By default the agent is invoked remotely on Foundry. When a single
 argument is provided it is treated as the message and the agent name
@@ -101,6 +101,12 @@ available. Endpoint data created by an older extension must be refreshed by
 redeploying or bypassed with --protocol. Otherwise the agent definition is
 used. If neither identifies exactly one invocable protocol, pass --protocol
 explicitly.
+
+For prompt voice agents and hosted voice wrappers, open your agent in the
+Microsoft Foundry portal at https://ai.azure.com to try it.
+For programmatic voice access, use the voice WebSocket endpoint shown by 'azd show' or
+'azd ai agent show' with a Voice Live client. Text invoke is for HTTP-based
+hosted agent protocols such as responses, invocations, and a2a.
 
 Use --input-file/-f to send the contents of a file as the request body
 instead of a positional message argument. This is useful for structured
@@ -509,8 +515,13 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 			return fmt.Errorf("failed to create azd client: %w", err)
 		}
 		defer azdClient.Close()
-		pctx, isPrompt, pErr := resolvePromptAgentService(ctx, azdClient, a.flags.name, a.noPrompt)
+		pctx, isPrompt, pErr := resolvePromptAgentService(
+			ctx, azdClient, a.flags.name, a.noPrompt, withVoiceInvocationGuidance(),
+		)
 		if pErr != nil {
+			if errors.Is(pErr, errVoiceInvocationUnsupported) {
+				return pErr
+			}
 			if _, ok := errors.AsType[agentServiceLookupNotFoundError](pErr); !ok || a.flags.name == "" {
 				return fmt.Errorf("failed to resolve prompt agent service: %w", pErr)
 			}
@@ -1200,6 +1211,9 @@ func remoteAgentNameFromService(
 // remoteAgentServiceResolutionError preserves direct-name fallback only when
 // the deployed name is known not to map to a project service.
 func remoteAgentServiceResolutionError(resolveErr error, directNameProvided bool) error {
+	if errors.Is(resolveErr, errVoiceInvocationUnsupported) {
+		return resolveErr
+	}
 	if resolveErr == nil {
 		return nil
 	}
@@ -1264,6 +1278,7 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	// name in the divergent case.
 	resolutionOptions := []agentServiceResolutionOption{
 		withBrownfieldInlineAgentName(),
+		withVoiceInvocationGuidance(),
 	}
 	if a.flags.protocol == "" {
 		resolutionOptions = append(
@@ -1271,6 +1286,8 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 			withDeployedProtocolEndpoints(),
 			withDeployedAgentNameLookup(),
 		)
+	} else {
+		resolutionOptions = append(resolutionOptions, withOptionalDeployedAgentNameLookup())
 	}
 	info, serviceErr := resolveAgentServiceFromProject(
 		ctx,
@@ -1865,15 +1882,21 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	ttfb := time.Since(invokeStart)
 	defer resp.Body.Close()
 
-	// Print the invocation ID if the agent returned one. We do not persist it
-	// to the per-user config: the config store only supports the "sessions"
-	// and "conversations" maps (see validateStoreField), and invocation IDs
-	// are not used to drive any subsequent invoke -- they are emitted purely
-	// for trace correlation.
-	if !raw {
-		if invID := resp.Header.Get("x-agent-invocation-id"); invID != "" {
-			fmt.Printf("Invocation:   %s\n", invID)
+	invocationID, err := invocationIDFromResponse(resp)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < http.StatusBadRequest && invocationID != "" && rc.azdClient != nil && agentKey != "" {
+		if err := newInvocationStateStore(rc.azdClient).Save(
+			ctx,
+			agentKey,
+			savedInvocation{InvocationID: invocationID},
+		); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: Invocation %s was accepted, but its ID was not saved: %v\n", invocationID, err)
 		}
+	}
+	if !raw && invocationID != "" {
+		fmt.Printf("Invocation:   %s\n", invocationID)
 	}
 
 	// Always capture session state from response headers (needed even in raw mode

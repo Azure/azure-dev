@@ -203,21 +203,29 @@ func TestResolveInvocationCommandSelection(t *testing.T) {
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	t.Setenv("AZD_SERVER", listener.Addr().String())
-	const endpoint = "https://example.services.ai.azure.com/api/projects/project/agents/agent/" +
-		"endpoint/protocols/openai/responses?api-version=v1"
+	const endpoint = "https://example.services.ai.azure.com/api/projects/project/agents/agent/endpoint/protocols/"
 	key := buildAgentKey("https://example.services.ai.azure.com/api/projects/project", "agent", "", false)
 	config.setJSON(t, responsesConfigPath, map[string]savedResponse{key: {ResponseID: "resp_current"}})
-	for _, tt := range []struct{ name, explicitID, want string }{
-		{name: "implicit", want: "resp_current"},
-		{name: "explicit", explicitID: "resp_explicit", want: "resp_explicit"},
+	config.setJSON(t, invocationsConfigPath, map[string]savedInvocation{key: {InvocationID: "inv_current"}})
+	for _, tt := range []struct{ name, path, protocol, explicitID, want string }{
+		{name: "Responses implicit", path: "openai/responses", protocol: "responses", want: "resp_current"},
+		{name: "Responses explicit", path: "openai/responses", protocol: "responses",
+			explicitID: "resp_explicit", want: "resp_explicit"},
+		{name: "Invocations implicit", path: "invocations", protocol: "invocations", want: "inv_current"},
+		{name: "Invocations explicit", path: "invocations", protocol: "invocations",
+			explicitID: "inv_explicit", want: "inv_explicit"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, rc, id, err := resolveInvocationCommand(t.Context(), &invocationCommandFlags{
-				agentEndpoint: endpoint, id: tt.explicitID,
+			action, rc, id, err := resolveInvocationCommand(t.Context(), &invocationCommandFlags{
+				agentEndpoint: endpoint + tt.path + "?api-version=v1", id: tt.explicitID,
 			}, invocationShow)
 			require.NoError(t, err)
 			defer rc.azdClient.Close()
 			assert.Equal(t, tt.want, id)
+			assert.Equal(t, tt.protocol, action.flags.protocol)
+			var invocations map[string]savedInvocation
+			config.getJSON(t, invocationsConfigPath, &invocations)
+			assert.Equal(t, "inv_current", invocations[key].InvocationID)
 			var saved map[string]savedResponse
 			config.getJSON(t, responsesConfigPath, &saved)
 			assert.Equal(t, "resp_current", saved[key].ResponseID)
@@ -231,8 +239,9 @@ func TestInvocationOperationSupport(t *testing.T) {
 		"activity", "invocations_ws", "voice",
 	} {
 		for _, operation := range []invocationOperation{invocationShow, invocationFollow, invocationCancel} {
-			assert.Equal(t, protocol == agent_api.AgentProtocolResponses,
-				supportsInvocationOperation(protocol, operation), "%s %s", protocol, operation)
+			want := protocol == agent_api.AgentProtocolResponses ||
+				(protocol == agent_api.AgentProtocolInvocations && operation != invocationFollow)
+			assert.Equal(t, want, supportsInvocationOperation(protocol, operation), "%s %s", protocol, operation)
 		}
 	}
 }

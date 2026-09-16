@@ -63,8 +63,7 @@ Equivalent YAML:
     owner: research-team
 
 Fields:
-  name            Optional for 'create', which takes the name positionally;
-                  required when using 'azd ai toolbox deploy'.
+  name            Optional for 'create'; when supplied, it must match the positional name.
   description     Optional. Stored on the initial toolbox version.
   connections     List of existing project connections to attach. Each entry
                   needs 'name' (the project connection short name).

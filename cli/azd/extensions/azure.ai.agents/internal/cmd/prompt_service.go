@@ -63,6 +63,7 @@ func resolvePromptAgentService(
 	azdClient *azdext.AzdClient,
 	name string,
 	noPrompt bool,
+	options ...agentServiceResolutionOption,
 ) (*promptServiceContext, bool, error) {
 	svc, proj, err := resolveAgentService(ctx, azdClient, name, noPrompt)
 	if err != nil {
@@ -75,6 +76,16 @@ func resolvePromptAgentService(
 		projectPath = proj.Path
 		if dir, joinErr := paths.JoinAllowRoot(proj.Path, svc.RelativePath); joinErr == nil {
 			serviceDir = dir
+		}
+	}
+
+	resolutionOptions := agentServiceResolutionOptions{}
+	for _, option := range options {
+		option(&resolutionOptions)
+	}
+	if resolutionOptions.rejectVoiceInvocation {
+		if err := voiceInvocationError(svc, projectPath); err != nil {
+			return nil, false, err
 		}
 	}
 

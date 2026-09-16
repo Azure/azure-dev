@@ -54,6 +54,10 @@ type invokeFlags struct {
 	noWait          bool
 }
 
+func (f *invokeFlags) forceNewConversation() bool {
+	return f.newConversation || f.newSession
+}
+
 // outputRaw is the sentinel value of the inherited --output flag that selects
 // raw mode. In raw mode the full HTTP response (status line, headers, and body)
 // is dumped to stdout without any parsing or formatting, mirroring `curl -i`.
@@ -1045,7 +1049,7 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 			log.Printf("invoke local: failed to resolve session ID: %v", err)
 		}
 		convID, err = resolveStoredID(
-			ctx, azdClient, agentKey, a.flags.conversation, a.flags.newConversation, "conversations", true,
+			ctx, azdClient, agentKey, a.flags.conversation, a.flags.forceNewConversation(), "conversations", true,
 		)
 		if err != nil {
 			log.Printf("invoke local: failed to resolve conversation ID: %v", err)
@@ -1530,7 +1534,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 			rc.azdClient,
 			agentKey,
 			a.flags.conversation,
-			a.flags.newConversation,
+			a.flags.forceNewConversation(),
 			rc.projectEndpoint,
 			rc.bearerToken,
 			rc.name,

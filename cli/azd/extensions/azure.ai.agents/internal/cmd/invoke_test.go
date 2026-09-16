@@ -387,6 +387,36 @@ func TestInvokeCommandVersionFlagRegistered(t *testing.T) {
 	}
 }
 
+func TestInvokeFlagsForceNewConversation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		newSession      bool
+		newConversation bool
+		want            bool
+	}{
+		{name: "neither flag", want: false},
+		{name: "new conversation", newConversation: true, want: true},
+		{name: "new session", newSession: true, want: true},
+		{name: "both flags", newSession: true, newConversation: true, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			flags := &invokeFlags{
+				newSession:      tt.newSession,
+				newConversation: tt.newConversation,
+			}
+			if got := flags.forceNewConversation(); got != tt.want {
+				t.Errorf("forceNewConversation() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestInvokeVersionFlagValidation(t *testing.T) {
 	t.Parallel()
 

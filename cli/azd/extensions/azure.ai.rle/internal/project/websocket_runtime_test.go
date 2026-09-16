@@ -191,13 +191,30 @@ func TestWebSocketHandshakeRetriesTransientFailures(t *testing.T) {
 	defer server.Close()
 
 	session := NewWebSocketRuntimeSession(server.URL, 30, nil)
-	session.handshakeRetryDelays = []time.Duration{time.Millisecond, time.Millisecond}
+	session.handshakeRetryDelay = func(int) (time.Duration, error) { return time.Millisecond, nil }
 	defer session.Close()
 	if _, err := session.Call(t.Context(), "state", ""); err != nil {
 		t.Fatal(err)
 	}
 	if attempts.Load() != 3 {
 		t.Fatalf("expected three handshake attempts, got %d", attempts.Load())
+	}
+}
+
+func TestWebSocketHandshakeUsesConfiguredRetryPolicy(t *testing.T) {
+	session := NewWebSocketRuntimeSession("https://example.test", 60, nil)
+
+	if session.connectionTimeout != 90*time.Second {
+		t.Fatalf("expected 90-second connection budget, got %s", session.connectionTimeout)
+	}
+	if session.handshakeTimeout != 25*time.Second {
+		t.Fatalf("expected 25-second handshake timeout, got %s", session.handshakeTimeout)
+	}
+	if session.handshakeMaxAttempts != 5 {
+		t.Fatalf("expected five handshake attempts, got %d", session.handshakeMaxAttempts)
+	}
+	if session.minimumAttemptTime != 10*time.Second {
+		t.Fatalf("expected ten-second minimum attempt time, got %s", session.minimumAttemptTime)
 	}
 }
 
@@ -210,7 +227,7 @@ func TestWebSocketHandshakeDoesNotRetryPermanentFailure(t *testing.T) {
 	defer server.Close()
 
 	session := NewWebSocketRuntimeSession(server.URL, 30, nil)
-	session.handshakeRetryDelays = []time.Duration{time.Millisecond, time.Millisecond}
+	session.handshakeRetryDelay = func(int) (time.Duration, error) { return time.Millisecond, nil }
 	defer session.Close()
 	if _, err := session.Call(t.Context(), "state", ""); err == nil {
 		t.Fatal("expected WebSocket handshake to fail")
@@ -229,13 +246,31 @@ func TestWebSocketHandshakeStopsAfterRetryLimit(t *testing.T) {
 	defer server.Close()
 
 	session := NewWebSocketRuntimeSession(server.URL, 30, nil)
-	session.handshakeRetryDelays = []time.Duration{time.Millisecond, time.Millisecond}
+	session.handshakeRetryDelay = func(int) (time.Duration, error) { return 0, nil }
 	defer session.Close()
 	if _, err := session.Call(t.Context(), "state", ""); err == nil {
 		t.Fatal("expected WebSocket handshake to fail")
 	}
-	if attempts.Load() != 3 {
-		t.Fatalf("expected three handshake attempts, got %d", attempts.Load())
+	if attempts.Load() != webSocketHandshakeMaxAttempts {
+		t.Fatalf("expected %d handshake attempts, got %d", webSocketHandshakeMaxAttempts, attempts.Load())
+	}
+}
+
+func TestWebSocketHandshakeSurfacesJitterFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	session := NewWebSocketRuntimeSession(server.URL, 30, nil)
+	session.handshakeRetryDelay = func(int) (time.Duration, error) {
+		return 0, errors.New("entropy unavailable")
+	}
+	defer session.Close()
+
+	_, err := session.Call(t.Context(), "state", "")
+	if err == nil || !strings.Contains(err.Error(), "calculate WebSocket handshake retry delay") {
+		t.Fatalf("expected jitter failure, got %v", err)
 	}
 }
 
@@ -252,7 +287,8 @@ func TestWebSocketHandshakeCancellationStopsBackoff(t *testing.T) {
 	defer server.Close()
 
 	session := NewWebSocketRuntimeSession(server.URL, 30, nil)
-	session.handshakeRetryDelays = []time.Duration{time.Hour, time.Hour}
+	session.connectionTimeout = 2 * time.Hour
+	session.handshakeRetryDelay = func(int) (time.Duration, error) { return time.Hour, nil }
 	defer session.Close()
 	ctx, cancel := context.WithCancel(t.Context())
 	callDone := make(chan error, 1)
@@ -272,7 +308,42 @@ func TestWebSocketHandshakeCancellationStopsBackoff(t *testing.T) {
 	}
 }
 
-func TestWebSocketHandshakeRetriesShareOperationTimeout(t *testing.T) {
+func TestWebSocketHandshakePreservesCallerDeadline(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	session := NewWebSocketRuntimeSession(server.URL, 30, nil)
+	session.handshakeTimeout = time.Second
+	defer session.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
+	defer cancel()
+
+	if _, err := session.Call(ctx, "state", ""); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected caller deadline, got %v", err)
+	}
+}
+
+func TestWebSocketConnectionBudgetIncludesAuthorization(t *testing.T) {
+	authorizationProvider := func(ctx context.Context) (string, error) {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+	session := NewWebSocketRuntimeSession("https://example.test", 30, authorizationProvider)
+	session.connectionTimeout = 30 * time.Millisecond
+	defer session.Close()
+
+	started := time.Now()
+	if _, err := session.Call(t.Context(), "state", ""); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected connection deadline, got %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > 250*time.Millisecond {
+		t.Fatalf("expected authorization to share the connection budget, took %s", elapsed)
+	}
+}
+
+func TestWebSocketOperationTimeoutStartsAfterHandshake(t *testing.T) {
 	var attempts atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if attempts.Add(1) == 1 {
@@ -295,14 +366,89 @@ func TestWebSocketHandshakeRetriesShareOperationTimeout(t *testing.T) {
 	defer server.Close()
 
 	session := NewWebSocketRuntimeSession(server.URL, 1, nil)
-	session.handshakeRetryDelays = []time.Duration{time.Millisecond, time.Millisecond}
+	session.connectionTimeout = 2 * time.Second
+	session.minimumAttemptTime = time.Millisecond
+	session.handshakeRetryDelay = func(int) (time.Duration, error) { return time.Millisecond, nil }
 	defer session.Close()
 	started := time.Now()
-	if _, err := session.Call(t.Context(), "state", ""); err == nil {
-		t.Fatal("expected shared operation timeout to expire")
+	if _, err := session.Call(t.Context(), "state", ""); err != nil {
+		t.Fatalf("expected operation timeout to start after connection: %v", err)
 	}
-	if elapsed := time.Since(started); elapsed > 1500*time.Millisecond {
-		t.Fatalf("expected handshake retries to share the operation timeout, took %s", elapsed)
+	if elapsed := time.Since(started); elapsed < time.Second {
+		t.Fatalf("expected test to include handshake and operation time, took %s", elapsed)
+	}
+}
+
+func TestWebSocketHandshakeUsesOverallConnectionBudget(t *testing.T) {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	session := NewWebSocketRuntimeSession(server.URL, 30, nil)
+	session.connectionTimeout = 50 * time.Millisecond
+	session.handshakeTimeout = time.Second
+	session.minimumAttemptTime = time.Millisecond
+	session.handshakeRetryDelay = func(int) (time.Duration, error) { return 0, nil }
+	defer session.Close()
+
+	started := time.Now()
+	if _, err := session.Call(t.Context(), "state", ""); err == nil {
+		t.Fatal("expected connection budget to expire")
+	}
+	if elapsed := time.Since(started); elapsed > 250*time.Millisecond {
+		t.Fatalf("expected overall connection budget to stop handshakes, took %s", elapsed)
+	}
+	if attempts.Load() != 1 {
+		t.Fatalf("expected one budget-consuming attempt, got %d", attempts.Load())
+	}
+}
+
+func TestWebSocketHandshakeUsesPerAttemptTimeout(t *testing.T) {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	session := NewWebSocketRuntimeSession(server.URL, 30, nil)
+	session.connectionTimeout = time.Second
+	session.handshakeTimeout = 40 * time.Millisecond
+	session.handshakeMaxAttempts = 2
+	session.minimumAttemptTime = time.Millisecond
+	session.handshakeRetryDelay = func(int) (time.Duration, error) { return 0, nil }
+	defer session.Close()
+
+	started := time.Now()
+	if _, err := session.Call(t.Context(), "state", ""); err == nil {
+		t.Fatal("expected handshake attempts to time out")
+	}
+	if elapsed := time.Since(started); elapsed > 250*time.Millisecond {
+		t.Fatalf("expected per-attempt timeouts to bound retries, took %s", elapsed)
+	}
+	if attempts.Load() != 2 {
+		t.Fatalf("expected two handshake attempts, got %d", attempts.Load())
+	}
+}
+
+func TestWebSocketHandshakeRetryBackoffCeilings(t *testing.T) {
+	expected := []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 8 * time.Second}
+	for retry, expectedCeiling := range expected {
+		if ceiling := webSocketHandshakeRetryCeiling(retry); ceiling != expectedCeiling {
+			t.Errorf("retry %d: expected ceiling %s, got %s", retry, expectedCeiling, ceiling)
+		}
+		for range 100 {
+			delay, err := webSocketHandshakeRetryDelay(retry)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if delay < 0 || delay > expectedCeiling {
+				t.Fatalf("retry %d: full-jitter delay %s exceeds [0, %s]", retry, delay, expectedCeiling)
+			}
+		}
 	}
 }
 

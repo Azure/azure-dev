@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 class ProjectEventArgs:
     def __init__(self, project):
         self.project = project
+        self.follow_up: Optional[str] = None
 
 class ServiceEventArgs:
     def __init__(self, project, service):
@@ -199,17 +200,27 @@ class EventManager:
         logger.info(f"[EventManager] Removing service handler: {event_name}")
         self._service_handlers.pop(event_name, None)
 
-    async def send_project_handler_status(self, event_name: str, status: str, message: str):
+    async def send_project_handler_status(
+        self,
+        event_name: str,
+        status: str,
+        message: str,
+        follow_up: Optional[str] = None
+    ):
         """Send status of project event handling."""
         logger.info(f"[EventManager] Sending ProjectHandlerStatus: {event_name} => {status}")
 
         # Create status message like Go
+        status_fields = {
+            "event_name": event_name,
+            "status": status,
+            "message": message
+        }
+        if follow_up is not None:
+            status_fields["follow_up"] = follow_up
+
         status_message = event_pb2.EventMessage(
-            project_handler_status=event_pb2.ProjectHandlerStatus(
-                event_name=event_name,
-                status=status,
-                message=message
-            )
+            project_handler_status=event_pb2.ProjectHandlerStatus(**status_fields)
         )
 
         # Send it to the stream
@@ -238,15 +249,20 @@ class EventManager:
         logger.info(f"[EventManager] Handling project event: {event_name}")
         handler = self._project_handlers.get(event_name)
         status, message = "completed", ""
+        follow_up = None
 
         if handler:
+            event_args = ProjectEventArgs(invoke_msg.project)
             try:
-                await handler(ProjectEventArgs(invoke_msg.project))
+                await handler(event_args)
+                follow_up = event_args.follow_up
             except Exception as ex:
                 status = "failed"
                 message = str(ex)
                 logger.exception(f"[ProjectHandler] Error: {ex}")
-            await self.send_project_handler_status(event_name, status, message)
+            await self.send_project_handler_status(
+                event_name, status, message, follow_up
+            )
         else:
             logger.warning(f"[EventManager] No project handler registered for event: {event_name}")
 

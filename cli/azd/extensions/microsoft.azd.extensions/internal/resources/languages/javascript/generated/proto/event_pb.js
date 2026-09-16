@@ -1658,25 +1658,25 @@ proto.azd.extensions.v1.ProjectHandlerStatus.prototype.hasError = function() {
  * optional string follow_up = 5;
  * @return {string}
  */
-proto.azdext.ProjectHandlerStatus.prototype.getFollowUp = function() {
+proto.azd.extensions.v1.ProjectHandlerStatus.prototype.getFollowUp = function() {
   return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 5, ""));
 };
 
 
 /**
  * @param {string} value
- * @return {!proto.azdext.ProjectHandlerStatus} returns this
+ * @return {!proto.azd.extensions.v1.ProjectHandlerStatus} returns this
  */
-proto.azdext.ProjectHandlerStatus.prototype.setFollowUp = function(value) {
+proto.azd.extensions.v1.ProjectHandlerStatus.prototype.setFollowUp = function(value) {
   return jspb.Message.setField(this, 5, value);
 };
 
 
 /**
  * Clears the field making it undefined.
- * @return {!proto.azdext.ProjectHandlerStatus} returns this
+ * @return {!proto.azd.extensions.v1.ProjectHandlerStatus} returns this
  */
-proto.azdext.ProjectHandlerStatus.prototype.clearFollowUp = function() {
+proto.azd.extensions.v1.ProjectHandlerStatus.prototype.clearFollowUp = function() {
   return jspb.Message.setField(this, 5, undefined);
 };
 
@@ -1685,7 +1685,7 @@ proto.azdext.ProjectHandlerStatus.prototype.clearFollowUp = function() {
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.azdext.ProjectHandlerStatus.prototype.hasFollowUp = function() {
+proto.azd.extensions.v1.ProjectHandlerStatus.prototype.hasFollowUp = function() {
   return jspb.Message.getField(this, 5) != null;
 };
 

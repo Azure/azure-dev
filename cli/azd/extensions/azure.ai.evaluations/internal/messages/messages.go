@@ -1901,6 +1901,16 @@ func DownloadedDataset(name, version string, singleFile bool, files int, path st
 	return b.String()
 }
 
+// DownloadedEvaluator reports what landed on disk.
+//
+// The version is named even when the caller did not ask for one, because
+// "latest" is resolved here and the file is the only record of which it was.
+func DownloadedEvaluator(name, version, path string) string {
+	return fmt.Sprintf(
+		"\n(%s) Downloaded evaluator '%s' version %s\n    Path: %s\n",
+		"\u2713", name, version, filepath.ToSlash(path))
+}
+
 // TagFilterRepeatsKey reports one key asked for two values.
 //
 // Repeats narrow, so the same key twice asks for a dataset whose tag is two

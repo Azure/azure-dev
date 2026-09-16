@@ -62,6 +62,7 @@ func TestCommandTreeMatchesTheSpec(t *testing.T) {
 		"evaluator",
 		"evaluator create",
 		"evaluator delete",
+		"evaluator download",
 		"evaluator list",
 		"evaluator show",
 		"evaluator update",

@@ -6,8 +6,6 @@
 package internal
 
 import (
-	"os"
-
 	"golang.org/x/sys/windows"
 )
 
@@ -27,7 +25,7 @@ const enableVirtualTerminalInput uint32 = 0x0200
 //
 // This function is called after SetTermMode() and its effect is
 // reversed when RestoreTermMode() restores the original console mode.
-func disableVirtualTerminalInput(f *os.File) error {
+func disableVirtualTerminalInput(f FileReader) error {
 	h := windows.Handle(f.Fd())
 
 	var mode uint32

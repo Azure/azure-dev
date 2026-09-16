@@ -5,10 +5,12 @@ package project
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/url"
@@ -21,13 +23,16 @@ import (
 )
 
 const (
-	maxWebSocketMessageBytes   = 8 * 1024 * 1024
-	webSocketHandshakeTimeout  = 30 * time.Second
-	webSocketKeepAliveInterval = 10 * time.Second
-	webSocketDrainTimeout      = 60 * time.Second
+	maxWebSocketMessageBytes             = 8 * 1024 * 1024
+	webSocketConnectionTimeout           = 90 * time.Second
+	webSocketHandshakeTimeout            = 25 * time.Second
+	webSocketHandshakeMaxAttempts        = 5
+	webSocketMinimumHandshakeAttemptTime = 10 * time.Second
+	webSocketRetryBaseDelay              = time.Second
+	webSocketRetryMaxDelay               = 8 * time.Second
+	webSocketKeepAliveInterval           = 10 * time.Second
+	webSocketDrainTimeout                = 60 * time.Second
 )
-
-var defaultWebSocketHandshakeRetryDelays = []time.Duration{time.Second, 2 * time.Second}
 
 type WebSocketRuntimeSession struct {
 	baseURL               string
@@ -38,7 +43,11 @@ type WebSocketRuntimeSession struct {
 	connection            *websocket.Conn
 	connectionDone        chan struct{}
 	keepAliveInterval     time.Duration
-	handshakeRetryDelays  []time.Duration
+	connectionTimeout     time.Duration
+	handshakeTimeout      time.Duration
+	handshakeMaxAttempts  int
+	handshakeRetryDelay   func(int) (time.Duration, error)
+	minimumAttemptTime    time.Duration
 	drainTimeout          time.Duration
 	terminalError         error
 	closed                bool
@@ -54,7 +63,11 @@ func NewWebSocketRuntimeSession(
 		timeout:               timeout,
 		authorizationProvider: authorizationProvider,
 		keepAliveInterval:     webSocketKeepAliveInterval,
-		handshakeRetryDelays:  defaultWebSocketHandshakeRetryDelays,
+		connectionTimeout:     webSocketConnectionTimeout,
+		handshakeTimeout:      webSocketHandshakeTimeout,
+		handshakeMaxAttempts:  webSocketHandshakeMaxAttempts,
+		handshakeRetryDelay:   webSocketHandshakeRetryDelay,
+		minimumAttemptTime:    webSocketMinimumHandshakeAttemptTime,
 		drainTimeout:          webSocketDrainTimeout,
 	}
 }
@@ -177,19 +190,13 @@ func (c *WebSocketRuntimeSession) exchange(
 ) (string, error) {
 	c.exchangeMu.Lock()
 	defer c.exchangeMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if err := c.connect(ctx); err != nil {
+		return "", err
+	}
 	deadline, hasDeadline := operationDeadline(ctx, c.timeout)
-	operationCtx := ctx
-	cancel := func() {}
-	if hasDeadline {
-		operationCtx, cancel = context.WithDeadline(ctx, deadline)
-	}
-	defer cancel()
-	if err := operationCtx.Err(); err != nil {
-		return "", err
-	}
-	if err := c.connect(operationCtx); err != nil {
-		return "", err
-	}
 	c.mu.Lock()
 	connection := c.connection
 	terminalError := c.terminalError
@@ -295,12 +302,9 @@ func (c *WebSocketRuntimeSession) connect(ctx context.Context) error {
 		return nil
 	}
 
-	connectCtx := ctx
-	cancel := func() {}
-	if deadline, hasDeadline := operationDeadline(ctx, c.timeout); hasDeadline {
-		connectCtx, cancel = context.WithDeadline(ctx, deadline)
-	}
+	connectCtx, cancel := context.WithTimeout(ctx, c.connectionTimeout)
 	defer cancel()
+	connectionDeadline, _ := connectCtx.Deadline()
 
 	endpoint, err := RuntimeWebSocketURL(c.baseURL)
 	if err != nil {
@@ -308,8 +312,11 @@ func (c *WebSocketRuntimeSession) connect(ctx context.Context) error {
 	}
 	headers := http.Header{}
 	if c.authorizationProvider != nil {
-		authorization, err := c.authorizationProvider(ctx)
+		authorization, err := c.authorizationProvider(connectCtx)
 		if err != nil {
+			if connectCtx.Err() != nil {
+				return connectCtx.Err()
+			}
 			return fmt.Errorf("authenticate to environment runtime: %w", err)
 		}
 		if authorization != "" {
@@ -318,14 +325,18 @@ func (c *WebSocketRuntimeSession) connect(ctx context.Context) error {
 	}
 
 	dialer := *websocket.DefaultDialer
-	dialer.HandshakeTimeout = webSocketHandshakeTimeout
-	if c.timeout > 0 && time.Duration(c.timeout)*time.Second < dialer.HandshakeTimeout {
-		dialer.HandshakeTimeout = time.Duration(c.timeout) * time.Second
-	}
+	dialer.HandshakeTimeout = c.handshakeTimeout
 
-	for attempt := 0; ; attempt++ {
-		connection, response, err := dialer.DialContext(connectCtx, endpoint, headers)
+	var connectionError error
+	for attempt := 0; attempt < c.handshakeMaxAttempts; attempt++ {
+		if attempt > 0 && time.Until(connectionDeadline) < c.minimumAttemptTime {
+			return connectionError
+		}
+		attemptTimeout := min(c.handshakeTimeout, time.Until(connectionDeadline))
+		attemptCtx, cancelAttempt := context.WithTimeout(connectCtx, attemptTimeout)
+		connection, response, err := dialer.DialContext(attemptCtx, endpoint, headers)
 		if err == nil {
+			cancelAttempt()
 			connection.SetReadLimit(maxWebSocketMessageBytes)
 			c.connection = connection
 			c.connectionDone = make(chan struct{})
@@ -339,7 +350,11 @@ func (c *WebSocketRuntimeSession) connect(ctx context.Context) error {
 			detail = readHealthErrorDetail(response.Body)
 			_ = response.Body.Close()
 		}
-		connectionError := &azdext.LocalError{
+		cancelAttempt()
+		if connectCtx.Err() != nil {
+			return connectCtx.Err()
+		}
+		connectionError = &azdext.LocalError{
 			Message: fmt.Sprintf(
 				"Environment runtime WebSocket connection failed%s: %v",
 				detail,
@@ -349,19 +364,43 @@ func (c *WebSocketRuntimeSession) connect(ctx context.Context) error {
 			Category:   azdext.LocalErrorCategoryUser,
 			Suggestion: "Check the remote RLE instance status and retry invoke.",
 		}
-		if !retryable || attempt >= len(c.handshakeRetryDelays) {
+		if !retryable || attempt == c.handshakeMaxAttempts-1 {
 			return connectionError
 		}
-		timer := time.NewTimer(c.handshakeRetryDelays[attempt])
+		delay, err := c.handshakeRetryDelay(attempt)
+		if err != nil {
+			return fmt.Errorf("calculate WebSocket handshake retry delay: %w", err)
+		}
+		if time.Until(connectionDeadline)-delay < c.minimumAttemptTime {
+			return connectionError
+		}
+		timer := time.NewTimer(delay)
 		select {
 		case <-timer.C:
 		case <-connectCtx.Done():
 			if !timer.Stop() {
-				<-timer.C
+				select {
+				case <-timer.C:
+				default:
+				}
 			}
 			return connectCtx.Err()
 		}
 	}
+	return connectionError
+}
+
+func webSocketHandshakeRetryDelay(retry int) (time.Duration, error) {
+	ceiling := webSocketHandshakeRetryCeiling(retry)
+	delay, err := rand.Int(rand.Reader, big.NewInt(int64(ceiling)+1))
+	if err != nil {
+		return 0, err
+	}
+	return time.Duration(delay.Int64()), nil
+}
+
+func webSocketHandshakeRetryCeiling(retry int) time.Duration {
+	return min(webSocketRetryBaseDelay<<retry, webSocketRetryMaxDelay)
 }
 
 func isRetryableWebSocketHandshakeError(err error) bool {

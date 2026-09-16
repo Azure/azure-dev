@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 
 	"azure.ai.rle/internal/project"
@@ -43,7 +44,7 @@ func newPublishCommand() *cobra.Command {
 }
 
 func (a *publishAction) Run() error {
-	config, projectEndpoint, client, versionBump, creating, err := resolvePublishTarget(a.cmd.Context())
+	config, projectEndpoint, client, creating, err := resolvePublishTarget(a.cmd.Context())
 	if err != nil {
 		return err
 	}
@@ -75,7 +76,7 @@ func (a *publishAction) Run() error {
 	if err := project.PushImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image); err != nil {
 		return err
 	}
-	request := buildEnvironmentCreateRequest(config, image, versionBump)
+	request := buildEnvironmentCreateRequest(config, image)
 
 	action := "Publishing"
 	if creating {
@@ -95,7 +96,7 @@ func (a *publishAction) Run() error {
 	if err != nil {
 		return serviceError(err)
 	}
-	if err := verifyPublishedEnvironment(config.Rle, environment); err != nil {
+	if err := verifyPublishedEnvironment(config, environment); err != nil {
 		return err
 	}
 
@@ -119,6 +120,9 @@ func (a *publishAction) Run() error {
 		AgentName:              environment.AgentName,
 		AgentVersion:           environment.AgentVersion,
 		BaseURL:                environment.BaseURL,
+		SchemaVersion:          environment.SchemaVersion,
+		Defaults:               environment.Defaults,
+		Metadata:               environment.Metadata,
 		CreatedAt:              environment.CreatedAt,
 		UpdatedAt:              environment.UpdatedAt,
 	}, "", "  ")
@@ -133,18 +137,18 @@ func (a *publishAction) Run() error {
 
 func resolvePublishTarget(
 	ctx context.Context,
-) (project.RleConfig, string, *rleClient, string, bool, error) {
+) (project.RleConfig, string, *rleClient, bool, error) {
 	config, err := project.LoadRleConfig(".")
 	if err != nil {
-		return project.RleConfig{}, "", nil, "", false, err
+		return project.RleConfig{}, "", nil, false, err
 	}
 
 	projectEndpoint, err := resolveFoundryProjectEndpoint()
 	if err != nil {
-		return project.RleConfig{}, "", nil, "", false, err
+		return project.RleConfig{}, "", nil, false, err
 	}
 	if projectEndpoint == "" {
-		return project.RleConfig{}, "", nil, "", false, &azdext.LocalError{
+		return project.RleConfig{}, "", nil, false, &azdext.LocalError{
 			Message:  "Foundry project endpoint is required for publish.",
 			Code:     "rle_project_required",
 			Category: azdext.LocalErrorCategoryUser,
@@ -157,48 +161,45 @@ func resolvePublishTarget(
 
 	client, err := createRleClient(projectEndpoint)
 	if err != nil {
-		return project.RleConfig{}, "", nil, "", false, err
+		return project.RleConfig{}, "", nil, false, err
 	}
-	current, err := client.getEnvironmentByName(ctx, config.Rle.Name)
+	_, err = client.getEnvironmentByName(ctx, config.Rle.Name)
 	creating := false
 	switch {
 	case err == nil:
 	case isRleNotFound(err):
 		creating = true
-		current = nil
+		if err := project.ValidateInitialRleVersion(config.Rle.Version); err != nil {
+			return project.RleConfig{}, "", nil, false, err
+		}
 	default:
-		return project.RleConfig{}, "", nil, "", false, serviceError(err)
+		return project.RleConfig{}, "", nil, false, serviceError(err)
 	}
 
-	currentVersion := ""
-	if current != nil {
-		currentVersion = current.Version
-	}
-	versionBump, err := project.VersionBumpForManifestVersion(currentVersion, config.Rle.Version)
-	if err != nil {
-		return project.RleConfig{}, "", nil, "", false, err
-	}
-	return config, projectEndpoint, client, versionBump, creating, nil
+	return config, projectEndpoint, client, creating, nil
 }
 
 func buildEnvironmentCreateRequest(
 	config project.RleConfig,
 	image string,
-	versionBump string,
 ) v1EnvironmentRequest {
 	return v1EnvironmentRequest{
-		Name:         config.Rle.Name,
-		AcrImagePath: image,
-		VersionBump:  versionBump,
-		Type:         string(config.Rle.Type),
-		Subtype:      string(config.Rle.Subtype),
-		AgentName:    config.Rle.AgentName,
-		AgentVersion: config.Rle.AgentVersion,
-		BaseURL:      config.Rle.BaseURL,
+		Name:          config.Rle.Name,
+		AcrImagePath:  image,
+		Version:       config.Rle.Version,
+		Type:          string(config.Rle.Type),
+		Subtype:       string(config.Rle.Subtype),
+		AgentName:     config.Rle.AgentName,
+		AgentVersion:  config.Rle.AgentVersion,
+		BaseURL:       config.Rle.BaseURL,
+		SchemaVersion: config.Rle.SchemaVersion,
+		Defaults:      config.Defaults,
+		Metadata:      config.Metadata,
 	}
 }
 
-func verifyPublishedEnvironment(manifest project.RleManifest, environment *environmentResource) error {
+func verifyPublishedEnvironment(config project.RleConfig, environment *environmentResource) error {
+	manifest := config.Rle
 	if environment == nil {
 		return publishedEnvironmentMismatchError(
 			"RLE service did not return the published environment.",
@@ -247,6 +248,24 @@ func verifyPublishedEnvironment(manifest project.RleManifest, environment *envir
 			"Check the RLE service response and retry.",
 		)
 	}
+	if !reflect.DeepEqual(manifest.SchemaVersion, environment.SchemaVersion) {
+		return publishedEnvironmentMismatchError(
+			"RLE service returned a different metadata schema version than rle.toml.",
+			"Check the RLE service response and retry.",
+		)
+	}
+	if !reflect.DeepEqual(config.Defaults, environment.Defaults) {
+		return publishedEnvironmentMismatchError(
+			"RLE service returned different reusable defaults than rle.toml.",
+			"Check the RLE service response and retry.",
+		)
+	}
+	if !reflect.DeepEqual(config.Metadata, environment.Metadata) {
+		return publishedEnvironmentMismatchError(
+			"RLE service returned different metadata than rle.toml.",
+			"Check the RLE service response and retry.",
+		)
+	}
 	return nil
 }
 
@@ -283,16 +302,19 @@ func resolvePublishImage(environmentName string, version string, projectEndpoint
 }
 
 type environmentOutput struct {
-	EnvironmentId          string `json:"environmentId"`
-	EnvironmentVersion     string `json:"environmentVersion"`
-	EnvironmentName        string `json:"environmentName"`
-	FoundryProjectEndpoint string `json:"foundryProjectEndpoint"`
-	AcrImage               string `json:"acrImage"`
-	Type                   string `json:"type"`
-	Subtype                string `json:"subtype"`
-	AgentName              string `json:"agentName,omitempty"`
-	AgentVersion           string `json:"agentVersion,omitempty"`
-	BaseURL                string `json:"baseUrl,omitempty"`
-	CreatedAt              string `json:"createdAt"`
-	UpdatedAt              string `json:"updatedAt"`
+	EnvironmentId          string                          `json:"environmentId"`
+	EnvironmentVersion     string                          `json:"environmentVersion"`
+	EnvironmentName        string                          `json:"environmentName"`
+	FoundryProjectEndpoint string                          `json:"foundryProjectEndpoint"`
+	AcrImage               string                          `json:"acrImage"`
+	Type                   string                          `json:"type"`
+	Subtype                string                          `json:"subtype"`
+	AgentName              string                          `json:"agentName,omitempty"`
+	AgentVersion           string                          `json:"agentVersion,omitempty"`
+	BaseURL                string                          `json:"baseUrl,omitempty"`
+	SchemaVersion          *string                         `json:"schemaVersion,omitempty"`
+	Defaults               *project.RleEnvironmentDefaults `json:"defaults,omitempty"`
+	Metadata               map[string]string               `json:"metadata,omitempty"`
+	CreatedAt              string                          `json:"createdAt"`
+	UpdatedAt              string                          `json:"updatedAt"`
 }

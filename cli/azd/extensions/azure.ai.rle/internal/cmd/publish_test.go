@@ -18,24 +18,41 @@ import (
 func TestBuildEnvironmentCreateRequestMapsManifestConfiguration(t *testing.T) {
 	agentName := "support-agent"
 	agentVersion := "12"
+	schemaVersion := project.CurrentRleManifestSchemaVersion
+	modelName := "Qwen/Qwen3-32B"
+	numberOfEpochs := 3
 	config := project.RleConfig{
 		Rle: project.RleManifest{
-			Name:         "support_rle",
-			Version:      "1.0.1",
-			Type:         project.RleTypeHarness,
-			Subtype:      project.RleSubtypeHostedAgent,
-			AgentName:    &agentName,
-			AgentVersion: &agentVersion,
+			SchemaVersion: &schemaVersion,
+			Name:          "support_rle",
+			Version:       "1.0.1",
+			Type:          project.RleTypeHarness,
+			Subtype:       project.RleSubtypeHostedAgent,
+			AgentName:     &agentName,
+			AgentVersion:  &agentVersion,
 		},
+		Defaults: &project.RleEnvironmentDefaults{
+			Model: &project.RleModelDefaults{Name: &modelName},
+			Reinforcement: &project.RleReinforcementDefaults{
+				Hyperparameters: &project.RleReinforcementHyperparameters{
+					NumberOfEpochs: &numberOfEpochs,
+				},
+			},
+		},
+		Metadata: map[string]string{"owner": "rle"},
 	}
 
-	request := buildEnvironmentCreateRequest(config, "example.azurecr.io/support_rle:1.0.1", "Patch")
+	request := buildEnvironmentCreateRequest(config, "example.azurecr.io/support_rle:1.0.1")
 	if request.Name != "support_rle" ||
-		request.VersionBump != "Patch" ||
+		request.Version != "1.0.1" ||
 		request.Type != "Harness" ||
 		request.Subtype != "HostedAgent" ||
 		request.AgentName == nil || *request.AgentName != agentName ||
 		request.AgentVersion == nil || *request.AgentVersion != agentVersion ||
+		request.SchemaVersion == nil || *request.SchemaVersion != project.CurrentRleManifestSchemaVersion ||
+		request.Defaults == nil || request.Defaults.Model == nil ||
+		request.Defaults.Model.Name == nil || *request.Defaults.Model.Name != modelName ||
+		request.Metadata["owner"] != "rle" ||
 		request.BaseURL != nil {
 		t.Fatalf("expected manifest data to map to create request, got %#v", request)
 	}
@@ -49,12 +66,13 @@ func TestBuildEnvironmentCreateRequestMapsManifestConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	for key, expected := range map[string]string{
-		"name":         "support_rle",
-		"versionBump":  "Patch",
-		"type":         "Harness",
-		"subtype":      "HostedAgent",
-		"agentName":    agentName,
-		"agentVersion": agentVersion,
+		"name":          "support_rle",
+		"version":       "1.0.1",
+		"schemaVersion": project.CurrentRleManifestSchemaVersion,
+		"type":          "Harness",
+		"subtype":       "HostedAgent",
+		"agentName":     agentName,
+		"agentVersion":  agentVersion,
 	} {
 		if payload[key] != expected {
 			t.Fatalf("expected %s=%q, got %#v", key, expected, payload[key])
@@ -62,6 +80,25 @@ func TestBuildEnvironmentCreateRequestMapsManifestConfiguration(t *testing.T) {
 	}
 	if _, exists := payload["baseUrl"]; exists {
 		t.Fatalf("expected HostedAgent request to omit baseUrl, got %s", data)
+	}
+	if _, exists := payload["versionBump"]; exists {
+		t.Fatalf("expected explicit version request to omit versionBump, got %s", data)
+	}
+	defaults, ok := payload["defaults"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected defaults payload, got %#v", payload["defaults"])
+	}
+	model, ok := defaults["model"].(map[string]any)
+	if !ok || model["name"] != modelName {
+		t.Fatalf("expected model default, got %#v", defaults["model"])
+	}
+	reinforcement, ok := defaults["reinforcement"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected reinforcement defaults, got %#v", defaults["reinforcement"])
+	}
+	hyperparameters, ok := reinforcement["hyperparameters"].(map[string]any)
+	if !ok || hyperparameters["n_epochs"] != float64(numberOfEpochs) {
+		t.Fatalf("expected snake_case hyperparameter payload, got %#v", reinforcement["hyperparameters"])
 	}
 }
 
@@ -77,7 +114,7 @@ func TestBuildEnvironmentCreateRequestMapsByohHarnessConfiguration(t *testing.T)
 		},
 	}
 
-	request := buildEnvironmentCreateRequest(config, "example.azurecr.io/customer_harness:1.0.1", "Patch")
+	request := buildEnvironmentCreateRequest(config, "example.azurecr.io/customer_harness:1.0.1")
 	if request.Type != "Harness" ||
 		request.Subtype != "BYOH" ||
 		request.BaseURL == nil || *request.BaseURL != baseURL ||
@@ -117,13 +154,13 @@ func TestResolvePublishImageRequiresAcrRegistryForManifest(t *testing.T) {
 }
 
 func TestVerifyPublishedEnvironmentRequiresManifestIdentity(t *testing.T) {
-	manifest := project.RleManifest{
+	config := project.RleConfig{Rle: project.RleManifest{
 		Name:    "code_rl",
 		Version: "1.0.0",
 		Type:    project.RleTypeGym,
 		Subtype: project.RleSubtypeOpenEnv,
-	}
-	err := verifyPublishedEnvironment(manifest, &environmentResource{
+	}}
+	err := verifyPublishedEnvironment(config, &environmentResource{
 		Name:    "code_rl",
 		Version: "1.0.1",
 		Type:    "Gym",
@@ -132,6 +169,32 @@ func TestVerifyPublishedEnvironmentRequiresManifestIdentity(t *testing.T) {
 	var localErr *azdext.LocalError
 	if !errors.As(err, &localErr) || localErr.Code != "rle_published_environment_mismatch" {
 		t.Fatalf("expected published identity mismatch, got %v", err)
+	}
+}
+
+func TestVerifyPublishedEnvironmentRequiresManifestMetadata(t *testing.T) {
+	schemaVersion := project.CurrentRleManifestSchemaVersion
+	config := project.RleConfig{
+		Rle: project.RleManifest{
+			SchemaVersion: &schemaVersion,
+			Name:          "code_rl",
+			Version:       "1.0.0",
+			Type:          project.RleTypeGym,
+			Subtype:       project.RleSubtypeOpenEnv,
+		},
+		Metadata: map[string]string{"owner": "rle"},
+	}
+	err := verifyPublishedEnvironment(config, &environmentResource{
+		Name:          "code_rl",
+		Version:       "1.0.0",
+		Type:          "Gym",
+		Subtype:       "OpenEnv",
+		SchemaVersion: &schemaVersion,
+		Metadata:      map[string]string{"owner": "different"},
+	})
+	var localErr *azdext.LocalError
+	if !errors.As(err, &localErr) || localErr.Code != "rle_published_environment_mismatch" {
+		t.Fatalf("expected published metadata mismatch, got %v", err)
 	}
 }
 
@@ -197,7 +260,7 @@ func TestResolvePublishTargetRequiresInitialManifestVersion(t *testing.T) {
 	defer controlPlane.Close()
 	stubRleClientEndpoint(t, controlPlane.URL)
 
-	_, _, _, _, _, err := resolvePublishTarget(t.Context())
+	_, _, _, _, err := resolvePublishTarget(t.Context())
 	var localErr *azdext.LocalError
 	if !errors.As(err, &localErr) || localErr.Code != "rle_manifest_initial_version_invalid" {
 		t.Fatalf("expected invalid initial version error, got %v", err)

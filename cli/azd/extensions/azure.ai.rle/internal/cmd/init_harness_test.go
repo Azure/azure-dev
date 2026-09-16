@@ -94,6 +94,7 @@ func TestInitInteractiveHostedAgentScaffoldsUsingPromptedValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
+		`schema_version = '1.0.0'`,
 		`name = 'support_agent'`,
 		`version = '1.0.0'`,
 		`type = 'Harness'`,

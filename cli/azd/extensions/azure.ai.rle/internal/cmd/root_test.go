@@ -282,6 +282,9 @@ func TestInitSelectsSampleAndCopiesItToNamedFolder(t *testing.T) {
 	if config.Rle.Name != "training_env" {
 		t.Fatalf("expected training_env environment name, got %q", config.Rle.Name)
 	}
+	if config.Rle.SchemaVersion == nil || *config.Rle.SchemaVersion != project.CurrentRleManifestSchemaVersion {
+		t.Fatalf("expected generated manifest schema version, got %#v", config.Rle.SchemaVersion)
+	}
 	if _, err := os.Stat(filepath.Join(sessionDir, "server", "Dockerfile")); err != nil {
 		t.Fatalf("expected copied RLE sample server Dockerfile: %v", err)
 	}

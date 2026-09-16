@@ -19,11 +19,19 @@ import (
 )
 
 const (
-	RleConfigFile        = "rle.toml"
-	DefaultRleVersion    = "1.0.0"
-	maxAgentNameLength   = 256
-	maxAgentVersionLen   = 128
-	maxHarnessBaseURLLen = 2048
+	RleConfigFile                   = "rle.toml"
+	DefaultRleVersion               = "1.0.0"
+	CurrentRleManifestSchemaVersion = "1.0.0"
+	maxAgentNameLength              = 256
+	maxAgentVersionLen              = 128
+	maxHarnessBaseURLLen            = 2048
+	maxRleMetadataEntries           = 64
+	maxRleMetadataKeyLength         = 128
+	maxRleMetadataValueLength       = 1024
+	maxRleModelNameLength           = 256
+	maxRleRendererNameLength        = 256
+	maxRleCheckpointIDLength        = 512
+	maxRleSamplerLength             = 128
 )
 
 type RleType string
@@ -43,18 +51,67 @@ const (
 
 // RleConfig is the host-agnostic source configuration for one immutable RLE release.
 type RleConfig struct {
-	Rle RleManifest `toml:"rle"`
+	Rle      RleManifest             `toml:"rle"`
+	Defaults *RleEnvironmentDefaults `toml:"defaults,omitempty"`
+	Metadata map[string]string       `toml:"metadata,omitempty"`
 }
 
 // RleManifest uses the control-plane field names so the manifest maps directly to an RLE release.
 type RleManifest struct {
-	Name         string     `toml:"name"`
-	Version      string     `toml:"version"`
-	Type         RleType    `toml:"type"`
-	Subtype      RleSubtype `toml:"subtype"`
-	AgentName    *string    `toml:"agentName,omitempty"`
-	AgentVersion *string    `toml:"agentVersion,omitempty"`
-	BaseURL      *string    `toml:"baseUrl,omitempty"`
+	SchemaVersion *string    `toml:"schema_version,omitempty"`
+	Name          string     `toml:"name"`
+	Version       string     `toml:"version"`
+	Type          RleType    `toml:"type"`
+	Subtype       RleSubtype `toml:"subtype"`
+	AgentName     *string    `toml:"agentName,omitempty"`
+	AgentVersion  *string    `toml:"agentVersion,omitempty"`
+	BaseURL       *string    `toml:"baseUrl,omitempty"`
+}
+
+// RleEnvironmentDefaults contains reusable version-scoped training defaults.
+type RleEnvironmentDefaults struct {
+	Model         *RleModelDefaults         `toml:"model,omitempty" json:"model,omitempty"`
+	Seed          *int                      `toml:"seed,omitempty" json:"seed,omitempty"`
+	Reinforcement *RleReinforcementDefaults `toml:"reinforcement,omitempty" json:"reinforcement,omitempty"`
+	Grpo          *RleGrpoDefaults          `toml:"grpo,omitempty" json:"grpo,omitempty"`
+	Loom          *RleLoomDefaults          `toml:"loom,omitempty" json:"loom,omitempty"`
+}
+
+// RleModelDefaults contains the optional model and renderer selection.
+type RleModelDefaults struct {
+	Name         *string `toml:"name,omitempty" json:"name,omitempty"`
+	RendererName *string `toml:"renderer_name,omitempty" json:"renderer_name,omitempty"`
+}
+
+// RleReinforcementDefaults contains the environment-owned Training Jobs settings.
+type RleReinforcementDefaults struct {
+	Hyperparameters *RleReinforcementHyperparameters `toml:"hyperparameters,omitempty" json:"hyperparameters,omitempty"`
+	MaxEpisodeSteps *int                             `toml:"max_episode_steps,omitempty" json:"max_episode_steps,omitempty"`
+}
+
+// RleReinforcementHyperparameters mirrors the Training Jobs reinforcement wire fields.
+type RleReinforcementHyperparameters struct {
+	NumberOfEpochs         *int     `toml:"n_epochs,omitempty" json:"n_epochs,omitempty"`
+	BatchSize              *int     `toml:"batch_size,omitempty" json:"batch_size,omitempty"`
+	LearningRateMultiplier *float64 `toml:"learning_rate_multiplier,omitempty" json:"learning_rate_multiplier,omitempty"`
+	EvalInterval           *int     `toml:"eval_interval,omitempty" json:"eval_interval,omitempty"`
+	EvalSamples            *int     `toml:"eval_samples,omitempty" json:"eval_samples,omitempty"`
+	ComputeMultiplier      *float64 `toml:"compute_multiplier,omitempty" json:"compute_multiplier,omitempty"`
+	ReasoningEffort        *string  `toml:"reasoning_effort,omitempty" json:"reasoning_effort,omitempty"`
+}
+
+// RleGrpoDefaults retains recipe-level GRPO settings without aliasing Training Jobs batch size.
+type RleGrpoDefaults struct {
+	GroupSize      *int `toml:"group_size,omitempty" json:"group_size,omitempty"`
+	GroupsPerBatch *int `toml:"groups_per_batch,omitempty" json:"groups_per_batch,omitempty"`
+	MaxSteps       *int `toml:"max_steps,omitempty" json:"max_steps,omitempty"`
+}
+
+// RleLoomDefaults contains version-scoped Loom settings.
+type RleLoomDefaults struct {
+	CheckpointID *string `toml:"checkpoint_id,omitempty" json:"checkpoint_id,omitempty"`
+	LoraRank     *int    `toml:"lora_rank,omitempty" json:"lora_rank,omitempty"`
+	Sampler      *string `toml:"sampler,omitempty" json:"sampler,omitempty"`
 }
 
 var semanticVersionPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
@@ -210,7 +267,18 @@ func NormalizeRleConfig(config RleConfig) (RleConfig, error) {
 		)
 	}
 
+	schemaVersion, defaults, metadata, err := normalizeRleManifestMetadata(
+		manifest.SchemaVersion,
+		config.Defaults,
+		config.Metadata,
+	)
+	if err != nil {
+		return RleConfig{}, err
+	}
+	manifest.SchemaVersion = schemaVersion
 	config.Rle = manifest
+	config.Defaults = defaults
+	config.Metadata = metadata
 	return config, nil
 }
 
@@ -227,52 +295,367 @@ func NormalizeRleVersion(value string) (string, error) {
 	return version.String(), nil
 }
 
-// VersionBumpForManifestVersion returns the service version bump needed to create desired after current.
-// An empty current version means the manifest must declare the service's initial version, 1.0.0.
-func VersionBumpForManifestVersion(current string, desired string) (string, error) {
-	desiredVersion, err := parseSemanticVersion(desired)
+// ValidateInitialRleVersion verifies the only explicit version valid when no environment exists.
+func ValidateInitialRleVersion(value string) error {
+	version, err := NormalizeRleVersion(value)
 	if err != nil {
-		return "", fmt.Errorf("parse desired RLE version: %w", err)
+		return err
 	}
-	if strings.TrimSpace(current) == "" {
-		if desiredVersion.String() != DefaultRleVersion {
-			return "", localError(
-				fmt.Sprintf("A new RLE environment must start at version %s, but rle.toml declares %s.", DefaultRleVersion, desiredVersion),
-				"rle_manifest_initial_version_invalid",
-				fmt.Sprintf("Set rle.version to %s for a new environment.", DefaultRleVersion),
-			)
-		}
-		return "Major", nil
+	if version != DefaultRleVersion {
+		return localError(
+			fmt.Sprintf("A new RLE environment must start at version %s, but rle.toml declares %s.", DefaultRleVersion, version),
+			"rle_manifest_initial_version_invalid",
+			fmt.Sprintf("Set rle.version to %s for a new environment.", DefaultRleVersion),
+		)
+	}
+	return nil
+}
+
+func normalizeRleManifestMetadata(
+	schemaVersion *string,
+	defaults *RleEnvironmentDefaults,
+	metadata map[string]string,
+) (*string, *RleEnvironmentDefaults, map[string]string, error) {
+	normalizedSchemaVersion, err := normalizeRleSchemaVersion(
+		schemaVersion,
+		defaults != nil || metadata != nil,
+	)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 
-	currentVersion, err := parseSemanticVersion(current)
+	normalizedDefaults, err := normalizeRleDefaults(defaults)
 	if err != nil {
-		return "", fmt.Errorf("parse current RLE version %q: %w", current, err)
+		return nil, nil, nil, err
 	}
-	if desiredVersion.major == currentVersion.major+1 &&
-		desiredVersion.minor == 0 &&
-		desiredVersion.patch == 0 {
-		return "Major", nil
+	normalizedMetadata, err := normalizeRleMetadata(metadata)
+	if err != nil {
+		return nil, nil, nil, err
 	}
-	if desiredVersion.major == currentVersion.major &&
-		desiredVersion.minor == currentVersion.minor+1 &&
-		desiredVersion.patch == 0 {
-		return "Minor", nil
+	return normalizedSchemaVersion, normalizedDefaults, normalizedMetadata, nil
+}
+
+func normalizeRleSchemaVersion(value *string, required bool) (*string, error) {
+	if value == nil {
+		if required {
+			return nil, localError(
+				"rle.schema_version is required when defaults or metadata is supplied.",
+				"rle_manifest_schema_version_required",
+				fmt.Sprintf("Set rle.schema_version to %q.", CurrentRleManifestSchemaVersion),
+			)
+		}
+		return nil, nil
 	}
-	if desiredVersion.major == currentVersion.major &&
-		desiredVersion.minor == currentVersion.minor &&
-		desiredVersion.patch == currentVersion.patch+1 {
-		return "Patch", nil
+
+	normalized := strings.TrimSpace(*value)
+	if normalized == "" {
+		return nil, localError(
+			"rle.schema_version must be a non-empty value.",
+			"rle_manifest_schema_version_invalid",
+			fmt.Sprintf("Set rle.schema_version to %q.", CurrentRleManifestSchemaVersion),
+		)
 	}
-	return "", localError(
-		fmt.Sprintf(
-			"rle.version %s is not the next major, minor, or patch version after the deployed version %s.",
-			desiredVersion,
-			currentVersion,
-		),
-		"rle_manifest_version_not_next",
-		"Update rle.version to the next major, minor, or patch release before publishing.",
+	if normalized != CurrentRleManifestSchemaVersion {
+		return nil, localError(
+			fmt.Sprintf("rle.schema_version must be %q.", CurrentRleManifestSchemaVersion),
+			"rle_manifest_schema_version_invalid",
+			fmt.Sprintf("Set rle.schema_version to %q.", CurrentRleManifestSchemaVersion),
+		)
+	}
+	return &normalized, nil
+}
+
+func normalizeRleDefaults(value *RleEnvironmentDefaults) (*RleEnvironmentDefaults, error) {
+	if value == nil {
+		return nil, nil
+	}
+
+	model, err := normalizeRleModelDefaults(value.Model)
+	if err != nil {
+		return nil, err
+	}
+	reinforcement, err := normalizeRleReinforcementDefaults(value.Reinforcement)
+	if err != nil {
+		return nil, err
+	}
+	grpo, err := normalizeRleGrpoDefaults(value.Grpo)
+	if err != nil {
+		return nil, err
+	}
+	loom, err := normalizeRleLoomDefaults(value.Loom)
+	if err != nil {
+		return nil, err
+	}
+	return &RleEnvironmentDefaults{
+		Model:         model,
+		Seed:          cloneInt(value.Seed),
+		Reinforcement: reinforcement,
+		Grpo:          grpo,
+		Loom:          loom,
+	}, nil
+}
+
+func normalizeRleModelDefaults(value *RleModelDefaults) (*RleModelDefaults, error) {
+	if value == nil {
+		return nil, nil
+	}
+
+	name, err := normalizeOptionalRleString(value.Name, "defaults.model.name", maxRleModelNameLength)
+	if err != nil {
+		return nil, err
+	}
+	rendererName, err := normalizeOptionalRleString(
+		value.RendererName,
+		"defaults.model.renderer_name",
+		maxRleRendererNameLength,
 	)
+	if err != nil {
+		return nil, err
+	}
+	return &RleModelDefaults{Name: name, RendererName: rendererName}, nil
+}
+
+func normalizeRleReinforcementDefaults(value *RleReinforcementDefaults) (*RleReinforcementDefaults, error) {
+	if value == nil {
+		return nil, nil
+	}
+
+	if err := validatePositiveInt(value.MaxEpisodeSteps, "defaults.reinforcement.max_episode_steps"); err != nil {
+		return nil, err
+	}
+	hyperparameters, err := normalizeRleReinforcementHyperparameters(value.Hyperparameters)
+	if err != nil {
+		return nil, err
+	}
+	return &RleReinforcementDefaults{
+		Hyperparameters: hyperparameters,
+		MaxEpisodeSteps: cloneInt(value.MaxEpisodeSteps),
+	}, nil
+}
+
+func normalizeRleReinforcementHyperparameters(
+	value *RleReinforcementHyperparameters,
+) (*RleReinforcementHyperparameters, error) {
+	if value == nil {
+		return nil, nil
+	}
+
+	for _, parameter := range []struct {
+		value *int
+		name  string
+	}{
+		{value.NumberOfEpochs, "defaults.reinforcement.hyperparameters.n_epochs"},
+		{value.BatchSize, "defaults.reinforcement.hyperparameters.batch_size"},
+		{value.EvalInterval, "defaults.reinforcement.hyperparameters.eval_interval"},
+		{value.EvalSamples, "defaults.reinforcement.hyperparameters.eval_samples"},
+	} {
+		if err := validatePositiveInt(parameter.value, parameter.name); err != nil {
+			return nil, err
+		}
+	}
+	for _, parameter := range []struct {
+		value *float64
+		name  string
+	}{
+		{value.LearningRateMultiplier, "defaults.reinforcement.hyperparameters.learning_rate_multiplier"},
+		{value.ComputeMultiplier, "defaults.reinforcement.hyperparameters.compute_multiplier"},
+	} {
+		if err := validateFinitePositiveFloat(parameter.value, parameter.name); err != nil {
+			return nil, err
+		}
+	}
+	reasoningEffort, err := normalizeReasoningEffort(value.ReasoningEffort)
+	if err != nil {
+		return nil, err
+	}
+	return &RleReinforcementHyperparameters{
+		NumberOfEpochs:         cloneInt(value.NumberOfEpochs),
+		BatchSize:              cloneInt(value.BatchSize),
+		LearningRateMultiplier: cloneFloat64(value.LearningRateMultiplier),
+		EvalInterval:           cloneInt(value.EvalInterval),
+		EvalSamples:            cloneInt(value.EvalSamples),
+		ComputeMultiplier:      cloneFloat64(value.ComputeMultiplier),
+		ReasoningEffort:        reasoningEffort,
+	}, nil
+}
+
+func normalizeRleGrpoDefaults(value *RleGrpoDefaults) (*RleGrpoDefaults, error) {
+	if value == nil {
+		return nil, nil
+	}
+
+	for _, parameter := range []struct {
+		value *int
+		name  string
+	}{
+		{value.GroupSize, "defaults.grpo.group_size"},
+		{value.GroupsPerBatch, "defaults.grpo.groups_per_batch"},
+		{value.MaxSteps, "defaults.grpo.max_steps"},
+	} {
+		if err := validatePositiveInt(parameter.value, parameter.name); err != nil {
+			return nil, err
+		}
+	}
+	return &RleGrpoDefaults{
+		GroupSize:      cloneInt(value.GroupSize),
+		GroupsPerBatch: cloneInt(value.GroupsPerBatch),
+		MaxSteps:       cloneInt(value.MaxSteps),
+	}, nil
+}
+
+func normalizeRleLoomDefaults(value *RleLoomDefaults) (*RleLoomDefaults, error) {
+	if value == nil {
+		return nil, nil
+	}
+
+	if err := validatePositiveInt(value.LoraRank, "defaults.loom.lora_rank"); err != nil {
+		return nil, err
+	}
+	checkpointID, err := normalizeOptionalRleString(value.CheckpointID, "defaults.loom.checkpoint_id", maxRleCheckpointIDLength)
+	if err != nil {
+		return nil, err
+	}
+	sampler, err := normalizeOptionalRleString(value.Sampler, "defaults.loom.sampler", maxRleSamplerLength)
+	if err != nil {
+		return nil, err
+	}
+	return &RleLoomDefaults{
+		CheckpointID: checkpointID,
+		LoraRank:     cloneInt(value.LoraRank),
+		Sampler:      sampler,
+	}, nil
+}
+
+func normalizeRleMetadata(value map[string]string) (map[string]string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	if len(value) > maxRleMetadataEntries {
+		return nil, localError(
+			fmt.Sprintf("metadata can contain at most %d entries.", maxRleMetadataEntries),
+			"rle_manifest_metadata_invalid",
+			"Remove metadata entries before publishing.",
+		)
+	}
+
+	normalized := make(map[string]string, len(value))
+	for key, metadataValue := range value {
+		normalizedKey := strings.TrimSpace(key)
+		normalizedValue := strings.TrimSpace(metadataValue)
+		if normalizedKey == "" {
+			return nil, localError(
+				"metadata keys must be non-empty.",
+				"rle_manifest_metadata_invalid",
+				"Use a non-empty metadata key.",
+			)
+		}
+		if normalizedValue == "" {
+			return nil, localError(
+				"metadata values must be non-empty.",
+				"rle_manifest_metadata_invalid",
+				"Use a non-empty metadata value.",
+			)
+		}
+		if utf16Length(normalizedKey) > maxRleMetadataKeyLength ||
+			utf16Length(normalizedValue) > maxRleMetadataValueLength {
+			return nil, localError(
+				fmt.Sprintf(
+					"metadata keys must be at most %d characters and values at most %d characters.",
+					maxRleMetadataKeyLength,
+					maxRleMetadataValueLength,
+				),
+				"rle_manifest_metadata_invalid",
+				"Shorten the metadata key or value.",
+			)
+		}
+		if _, exists := normalized[normalizedKey]; exists {
+			return nil, localError(
+				fmt.Sprintf("metadata contains duplicate key %q after normalization.", normalizedKey),
+				"rle_manifest_metadata_invalid",
+				"Use unique metadata keys after trimming whitespace.",
+			)
+		}
+		normalized[normalizedKey] = normalizedValue
+	}
+	return normalized, nil
+}
+
+func normalizeReasoningEffort(value *string) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+
+	normalized := strings.ToLower(strings.TrimSpace(*value))
+	if normalized == "" {
+		return nil, nil
+	}
+	switch normalized {
+	case "low", "medium", "high":
+		return &normalized, nil
+	default:
+		return nil, localError(
+			"defaults.reinforcement.hyperparameters.reasoning_effort must be low, medium, or high.",
+			"rle_manifest_default_invalid",
+			"Set reasoning_effort to low, medium, or high.",
+		)
+	}
+}
+
+func normalizeOptionalRleString(value *string, fieldName string, maximumLength int) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+
+	normalized := strings.TrimSpace(*value)
+	if normalized == "" {
+		return nil, nil
+	}
+	if utf16Length(normalized) > maximumLength {
+		return nil, localError(
+			fmt.Sprintf("%s must be at most %d characters.", fieldName, maximumLength),
+			"rle_manifest_default_invalid",
+			fmt.Sprintf("Shorten %s in rle.toml.", fieldName),
+		)
+	}
+	return &normalized, nil
+}
+
+func validatePositiveInt(value *int, fieldName string) error {
+	if value == nil || *value > 0 {
+		return nil
+	}
+	return localError(
+		fmt.Sprintf("%s must be greater than zero.", fieldName),
+		"rle_manifest_default_invalid",
+		fmt.Sprintf("Set %s to a positive value.", fieldName),
+	)
+}
+
+func validateFinitePositiveFloat(value *float64, fieldName string) error {
+	if value == nil || (!math.IsNaN(*value) && !math.IsInf(*value, 0) && *value > 0) {
+		return nil
+	}
+	return localError(
+		fmt.Sprintf("%s must be a finite value greater than zero.", fieldName),
+		"rle_manifest_default_invalid",
+		fmt.Sprintf("Set %s to a finite positive value.", fieldName),
+	)
+}
+
+func cloneInt(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	result := *value
+	return &result
+}
+
+func cloneFloat64(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	result := *value
+	return &result
 }
 
 func missingRleConfigError() error {

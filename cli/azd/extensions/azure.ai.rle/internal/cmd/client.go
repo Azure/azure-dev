@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"azure.ai.rle/internal/project"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -36,32 +38,38 @@ type rleClient struct {
 var createRleClient = newRleClient
 
 type v1EnvironmentRequest struct {
-	Name         string  `json:"name,omitempty"`
-	AcrImagePath string  `json:"acrImagePath"`
-	VersionBump  string  `json:"versionBump,omitempty"`
-	Type         string  `json:"type"`
-	Subtype      string  `json:"subtype"`
-	AgentName    *string `json:"agentName,omitempty"`
-	AgentVersion *string `json:"agentVersion,omitempty"`
-	BaseURL      *string `json:"baseUrl,omitempty"`
+	Name          string                          `json:"name,omitempty"`
+	AcrImagePath  string                          `json:"acrImagePath"`
+	Version       string                          `json:"version"`
+	Type          string                          `json:"type"`
+	Subtype       string                          `json:"subtype"`
+	AgentName     *string                         `json:"agentName,omitempty"`
+	AgentVersion  *string                         `json:"agentVersion,omitempty"`
+	BaseURL       *string                         `json:"baseUrl,omitempty"`
+	SchemaVersion *string                         `json:"schemaVersion,omitempty"`
+	Defaults      *project.RleEnvironmentDefaults `json:"defaults,omitempty"`
+	Metadata      map[string]string               `json:"metadata,omitempty"`
 }
 
 type environmentResource struct {
-	Id                        string `json:"id"`
-	ProjectId                 string `json:"projectId,omitempty"`
-	Name                      string `json:"name,omitempty"`
-	AcrImagePath              string `json:"acrImagePath,omitempty"`
-	Version                   string `json:"version,omitempty"`
-	Type                      string `json:"type,omitempty"`
-	Subtype                   string `json:"subtype,omitempty"`
-	AgentName                 string `json:"agentName,omitempty"`
-	AgentVersion              string `json:"agentVersion,omitempty"`
-	BaseURL                   string `json:"baseUrl,omitempty"`
-	CreatedAt                 string `json:"createdAtUtc,omitempty"`
-	UpdatedAt                 string `json:"updatedAtUtc,omitempty"`
-	VersionLabel              string `json:"versionLabel,omitempty"`
-	DiskImageConversionStatus string `json:"diskImageConversionStatus,omitempty"`
-	DiskImageConversionError  string `json:"diskImageConversionError,omitempty"`
+	Id                        string                          `json:"id"`
+	ProjectId                 string                          `json:"projectId,omitempty"`
+	Name                      string                          `json:"name,omitempty"`
+	AcrImagePath              string                          `json:"acrImagePath,omitempty"`
+	Version                   string                          `json:"version,omitempty"`
+	Type                      string                          `json:"type,omitempty"`
+	Subtype                   string                          `json:"subtype,omitempty"`
+	AgentName                 string                          `json:"agentName,omitempty"`
+	AgentVersion              string                          `json:"agentVersion,omitempty"`
+	BaseURL                   string                          `json:"baseUrl,omitempty"`
+	SchemaVersion             *string                         `json:"schemaVersion,omitempty"`
+	Defaults                  *project.RleEnvironmentDefaults `json:"defaults,omitempty"`
+	Metadata                  map[string]string               `json:"metadata,omitempty"`
+	CreatedAt                 string                          `json:"createdAtUtc,omitempty"`
+	UpdatedAt                 string                          `json:"updatedAtUtc,omitempty"`
+	VersionLabel              string                          `json:"versionLabel,omitempty"`
+	DiskImageConversionStatus string                          `json:"diskImageConversionStatus,omitempty"`
+	DiskImageConversionError  string                          `json:"diskImageConversionError,omitempty"`
 }
 
 type pagedEnvironmentResponse struct {

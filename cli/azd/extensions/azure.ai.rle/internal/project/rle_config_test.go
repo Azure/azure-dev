@@ -5,6 +5,7 @@ package project
 
 import (
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,14 +18,16 @@ func TestWriteAndLoadRleConfigCanonicalizesHostedAgentManifest(t *testing.T) {
 	dir := t.TempDir()
 	agentName := " support-agent "
 	agentVersion := "12"
+	schemaVersion := CurrentRleManifestSchemaVersion
 	config := RleConfig{
 		Rle: RleManifest{
-			Name:         "support_agent",
-			Version:      "1.0.0",
-			Type:         RleTypeHarness,
-			Subtype:      RleSubtypeHostedAgent,
-			AgentName:    &agentName,
-			AgentVersion: &agentVersion,
+			SchemaVersion: &schemaVersion,
+			Name:          "support_agent",
+			Version:       "1.0.0",
+			Type:          RleTypeHarness,
+			Subtype:       RleSubtypeHostedAgent,
+			AgentName:     &agentName,
+			AgentVersion:  &agentVersion,
 		},
 	}
 
@@ -36,6 +39,7 @@ func TestWriteAndLoadRleConfigCanonicalizesHostedAgentManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
+		`schema_version = '1.0.0'`,
 		`name = 'support_agent'`,
 		`version = '1.0.0'`,
 		`type = 'Harness'`,
@@ -60,6 +64,249 @@ func TestWriteAndLoadRleConfigCanonicalizesHostedAgentManifest(t *testing.T) {
 	}
 	if loaded.Rle.AgentVersion == nil || *loaded.Rle.AgentVersion != "12" {
 		t.Fatalf("expected HostedAgent version, got %#v", loaded.Rle.AgentVersion)
+	}
+}
+
+func TestWriteAndLoadRleConfigCanonicalizesVersionScopedDefaultsAndMetadata(t *testing.T) {
+	dir := t.TempDir()
+	schemaVersion := " 1.0.0 "
+	modelName := " Qwen/Qwen3-32B "
+	rendererName := " qwen3_disable_thinking "
+	reasoningEffort := " HIGH "
+	checkpointID := " "
+	sampler := " default "
+	config := RleConfig{
+		Rle: RleManifest{
+			SchemaVersion: &schemaVersion,
+			Name:          "code_rl",
+			Version:       "1.0.0",
+			Type:          RleTypeGym,
+			Subtype:       RleSubtypeOpenEnv,
+		},
+		Defaults: &RleEnvironmentDefaults{
+			Model: &RleModelDefaults{
+				Name:         &modelName,
+				RendererName: &rendererName,
+			},
+			Seed: intPointer(-17),
+			Reinforcement: &RleReinforcementDefaults{
+				MaxEpisodeSteps: intPointer(5),
+				Hyperparameters: &RleReinforcementHyperparameters{
+					NumberOfEpochs:         intPointer(3),
+					BatchSize:              intPointer(8),
+					LearningRateMultiplier: float64Pointer(0.25),
+					EvalInterval:           intPointer(10),
+					EvalSamples:            intPointer(20),
+					ComputeMultiplier:      float64Pointer(1.5),
+					ReasoningEffort:        &reasoningEffort,
+				},
+			},
+			Grpo: &RleGrpoDefaults{
+				GroupSize:      intPointer(8),
+				GroupsPerBatch: intPointer(16),
+				MaxSteps:       intPointer(100),
+			},
+			Loom: &RleLoomDefaults{
+				CheckpointID: &checkpointID,
+				LoraRank:     intPointer(32),
+				Sampler:      &sampler,
+			},
+		},
+		Metadata: map[string]string{
+			" owner ": " rle-platform ",
+		},
+	}
+
+	if err := WriteRleConfig(dir, config); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, RleConfigFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		`schema_version = '1.0.0'`,
+		`renderer_name = 'qwen3_disable_thinking'`,
+		`n_epochs = 3`,
+		`reasoning_effort = 'high'`,
+		`groups_per_batch = 16`,
+		`lora_rank = 32`,
+		`owner = 'rle-platform'`,
+	} {
+		if !strings.Contains(string(data), expected) {
+			t.Fatalf("expected config to contain %q, got:\n%s", expected, data)
+		}
+	}
+	if strings.Contains(string(data), "checkpoint_id") {
+		t.Fatalf("expected whitespace-only optional checkpoint ID to be omitted, got:\n%s", data)
+	}
+
+	loaded, err := LoadRleConfig(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Rle.SchemaVersion == nil || *loaded.Rle.SchemaVersion != CurrentRleManifestSchemaVersion {
+		t.Fatalf("expected normalized schema version, got %#v", loaded.Rle.SchemaVersion)
+	}
+	if loaded.Defaults == nil ||
+		loaded.Defaults.Model == nil ||
+		loaded.Defaults.Model.Name == nil || *loaded.Defaults.Model.Name != "Qwen/Qwen3-32B" ||
+		loaded.Defaults.Reinforcement == nil ||
+		loaded.Defaults.Reinforcement.Hyperparameters == nil ||
+		loaded.Defaults.Reinforcement.Hyperparameters.ReasoningEffort == nil ||
+		*loaded.Defaults.Reinforcement.Hyperparameters.ReasoningEffort != "high" ||
+		loaded.Defaults.Loom == nil ||
+		loaded.Defaults.Loom.CheckpointID != nil ||
+		loaded.Metadata["owner"] != "rle-platform" {
+		t.Fatalf("expected normalized defaults and metadata, got %#v", loaded)
+	}
+}
+
+func TestNormalizeRleConfigValidatesVersionScopedMetadata(t *testing.T) {
+	schemaVersion := CurrentRleManifestSchemaVersion
+	base := RleManifest{
+		Name:    "code_rl",
+		Version: "1.0.0",
+		Type:    RleTypeGym,
+		Subtype: RleSubtypeOpenEnv,
+	}
+	tests := []struct {
+		name     string
+		config   RleConfig
+		wantCode string
+	}{
+		{
+			name: "schema version is required for defaults",
+			config: RleConfig{
+				Rle:      base,
+				Defaults: &RleEnvironmentDefaults{},
+			},
+			wantCode: "rle_manifest_schema_version_required",
+		},
+		{
+			name: "unsupported schema version",
+			config: RleConfig{
+				Rle: RleManifest{
+					SchemaVersion: stringPointer("2.0.0"),
+					Name:          base.Name,
+					Version:       base.Version,
+					Type:          base.Type,
+					Subtype:       base.Subtype,
+				},
+			},
+			wantCode: "rle_manifest_schema_version_invalid",
+		},
+		{
+			name: "nonpositive default",
+			config: RleConfig{
+				Rle: RleManifest{
+					SchemaVersion: &schemaVersion,
+					Name:          base.Name,
+					Version:       base.Version,
+					Type:          base.Type,
+					Subtype:       base.Subtype,
+				},
+				Defaults: &RleEnvironmentDefaults{
+					Grpo: &RleGrpoDefaults{GroupSize: intPointer(0)},
+				},
+			},
+			wantCode: "rle_manifest_default_invalid",
+		},
+		{
+			name: "nonfinite default",
+			config: RleConfig{
+				Rle: RleManifest{
+					SchemaVersion: &schemaVersion,
+					Name:          base.Name,
+					Version:       base.Version,
+					Type:          base.Type,
+					Subtype:       base.Subtype,
+				},
+				Defaults: &RleEnvironmentDefaults{
+					Reinforcement: &RleReinforcementDefaults{
+						Hyperparameters: &RleReinforcementHyperparameters{
+							LearningRateMultiplier: float64Pointer(math.Inf(1)),
+						},
+					},
+				},
+			},
+			wantCode: "rle_manifest_default_invalid",
+		},
+		{
+			name: "unsupported reasoning effort",
+			config: RleConfig{
+				Rle: RleManifest{
+					SchemaVersion: &schemaVersion,
+					Name:          base.Name,
+					Version:       base.Version,
+					Type:          base.Type,
+					Subtype:       base.Subtype,
+				},
+				Defaults: &RleEnvironmentDefaults{
+					Reinforcement: &RleReinforcementDefaults{
+						Hyperparameters: &RleReinforcementHyperparameters{
+							ReasoningEffort: stringPointer("maximum"),
+						},
+					},
+				},
+			},
+			wantCode: "rle_manifest_default_invalid",
+		},
+		{
+			name: "empty metadata value",
+			config: RleConfig{
+				Rle: RleManifest{
+					SchemaVersion: &schemaVersion,
+					Name:          base.Name,
+					Version:       base.Version,
+					Type:          base.Type,
+					Subtype:       base.Subtype,
+				},
+				Metadata: map[string]string{"owner": " "},
+			},
+			wantCode: "rle_manifest_metadata_invalid",
+		},
+		{
+			name: "duplicate normalized metadata key",
+			config: RleConfig{
+				Rle: RleManifest{
+					SchemaVersion: &schemaVersion,
+					Name:          base.Name,
+					Version:       base.Version,
+					Type:          base.Type,
+					Subtype:       base.Subtype,
+				},
+				Metadata: map[string]string{"owner": "one", " owner ": "two"},
+			},
+			wantCode: "rle_manifest_metadata_invalid",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := NormalizeRleConfig(test.config)
+			var localErr *azdext.LocalError
+			if !errors.As(err, &localErr) || localErr.Code != test.wantCode {
+				t.Fatalf("expected LocalError code %q, got %v", test.wantCode, err)
+			}
+		})
+	}
+}
+
+func TestNormalizeRleConfigAllowsLegacyManifestWithoutVersionScopedMetadata(t *testing.T) {
+	config, err := NormalizeRleConfig(RleConfig{
+		Rle: RleManifest{
+			Name:    "code_rl",
+			Version: "1.0.0",
+			Type:    RleTypeGym,
+			Subtype: RleSubtypeOpenEnv,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Rle.SchemaVersion != nil || config.Defaults != nil || config.Metadata != nil {
+		t.Fatalf("expected legacy manifest metadata to remain omitted, got %#v", config)
 	}
 }
 
@@ -303,30 +550,22 @@ kind = "hosted_agent"
 	}
 }
 
-func TestVersionBumpForManifestVersion(t *testing.T) {
+func TestValidateInitialRleVersion(t *testing.T) {
 	tests := []struct {
 		name    string
-		current string
-		desired string
-		want    string
+		version string
 		wantErr string
 	}{
-		{name: "initial", desired: "1.0.0", want: "Major"},
-		{name: "major", current: "1.0.0", desired: "2.0.0", want: "Major"},
-		{name: "minor", current: "1.0.0", desired: "1.1.0", want: "Minor"},
-		{name: "patch", current: "1.0.0", desired: "1.0.1", want: "Patch"},
-		{name: "invalid initial", desired: "0.1.0", wantErr: "rle_manifest_initial_version_invalid"},
-		{name: "skipped patch", current: "1.0.0", desired: "1.0.2", wantErr: "rle_manifest_version_not_next"},
+		{name: "initial", version: "1.0.0"},
+		{name: "wrong initial", version: "0.1.0", wantErr: "rle_manifest_initial_version_invalid"},
+		{name: "later version", version: "1.0.1", wantErr: "rle_manifest_initial_version_invalid"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := VersionBumpForManifestVersion(test.current, test.desired)
+			err := ValidateInitialRleVersion(test.version)
 			if test.wantErr == "" {
 				if err != nil {
 					t.Fatal(err)
-				}
-				if got != test.want {
-					t.Fatalf("expected %q, got %q", test.want, got)
 				}
 				return
 			}
@@ -339,5 +578,13 @@ func TestVersionBumpForManifestVersion(t *testing.T) {
 }
 
 func stringPointer(value string) *string {
+	return &value
+}
+
+func intPointer(value int) *int {
+	return &value
+}
+
+func float64Pointer(value float64) *float64 {
 	return &value
 }

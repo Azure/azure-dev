@@ -60,11 +60,13 @@ func normalizeHarnessScaffoldOptions(options HarnessScaffoldOptions) (RleConfig,
 	if strings.TrimSpace(options.RleVersion) == "" {
 		options.RleVersion = DefaultRleVersion
 	}
+	schemaVersion := CurrentRleManifestSchemaVersion
 	manifest := RleManifest{
-		Name:    options.EnvironmentName,
-		Version: options.RleVersion,
-		Type:    options.Type,
-		Subtype: options.Subtype,
+		Name:          options.EnvironmentName,
+		Version:       options.RleVersion,
+		Type:          options.Type,
+		Subtype:       options.Subtype,
+		SchemaVersion: &schemaVersion,
 	}
 	if strings.TrimSpace(options.AgentName) != "" {
 		agentName := options.AgentName

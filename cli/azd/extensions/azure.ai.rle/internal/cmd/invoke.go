@@ -13,6 +13,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"os/signal"
@@ -154,7 +155,7 @@ func (a *remoteInvokeAction) Run() error {
 		client.authorizationHeader,
 	)
 	defer runtimeSession.Close()
-	playgroundUrl, stopPlayground, err := remotePlaygroundUrlWithAuthorizationProvider(
+	playgroundUrl, stopPlayground, err := playgroundURLWithAuthorizationProvider(
 		ctx,
 		instanceUrl,
 		client.authorizationHeader,
@@ -502,12 +503,16 @@ func writeCleanupResult(writer io.Writer, err error) {
 	_, _ = fmt.Fprintln(writer, "Remote runtime resources cleaned up successfully.")
 }
 
-func remotePlaygroundUrlWithAuthorizationProvider(
+func playgroundURLWithAuthorizationProvider(
 	ctx context.Context,
 	sandboxUrl string,
 	authorizationProvider project.AuthorizationProvider,
 	runtimeSessions ...*project.WebSocketRuntimeSession,
 ) (string, func(), error) {
+	hasSandboxWeb, err := sandboxHasWebInterface(ctx, sandboxUrl, authorizationProvider)
+	if err != nil {
+		return "", func() {}, err
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", func() {}, err
@@ -524,6 +529,7 @@ func remotePlaygroundUrlWithAuthorizationProvider(
 			authorizationProvider,
 			listener.Addr().String(),
 			sessionToken,
+			hasSandboxWeb,
 			runtimeSessions...,
 		),
 		ReadHeaderTimeout: 5 * time.Second,
@@ -552,6 +558,7 @@ func remotePlaygroundHandler(
 	authorizationProvider project.AuthorizationProvider,
 	expectedHost string,
 	sessionToken string,
+	hasSandboxWeb bool,
 	runtimeSessions ...*project.WebSocketRuntimeSession,
 ) http.Handler {
 	mux := http.NewServeMux()
@@ -562,14 +569,91 @@ func remotePlaygroundHandler(
 		if !authorizeLoopbackPlaygroundRequest(w, r, sessionToken) {
 			return
 		}
-		if r.URL.Path == "/" || r.URL.Path == "/web" {
+		if !hasSandboxWeb && (r.URL.Path == "/" || r.URL.Path == "/web") {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			_, _ = io.WriteString(w, ui.RemotePlaygroundHTML)
+			return
+		}
+		if hasSandboxWeb {
+			proxySandboxWeb(w, r, sandboxUrl, authorizationProvider)
 			return
 		}
 		proxyOpenEnvToSandbox(w, r, sandboxUrl, authorizationProvider, runtimeSessions...)
 	})
 	return mux
+}
+
+func sandboxHasWebInterface(
+	ctx context.Context,
+	sandboxUrl string,
+	authorizationProvider project.AuthorizationProvider,
+) (bool, error) {
+	webUrl, err := project.RuntimeOperationURL(sandboxUrl, "web")
+	if err != nil {
+		return false, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, webUrl, nil)
+	if err != nil {
+		return false, err
+	}
+	if authorizationProvider != nil {
+		authorization, err := authorizationProvider(ctx)
+		if err != nil {
+			return false, fmt.Errorf("authenticate to environment web interface: %w", err)
+		}
+		request.Header.Set("Authorization", authorization)
+	}
+	response, err := project.HTTPClient(10).Do(request) //nolint:gosec // The active sandbox URL is validated by the caller.
+	if err != nil {
+		return false, fmt.Errorf("probe environment web interface: %w", err)
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+	if response.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return false, fmt.Errorf("probe environment web interface: HTTP %d", response.StatusCode)
+	}
+	return true, nil
+}
+
+func proxySandboxWeb(
+	w http.ResponseWriter,
+	r *http.Request,
+	sandboxUrl string,
+	authorizationProvider project.AuthorizationProvider,
+) {
+	target, err := url.Parse(sandboxUrl)
+	if err != nil {
+		http.Error(w, "invalid environment web interface URL", http.StatusBadGateway)
+		return
+	}
+	if authorizationProvider != nil {
+		authorization, err := authorizationProvider(r.Context())
+		if err != nil {
+			http.Error(w, "failed to authenticate to environment web interface", http.StatusBadGateway)
+			return
+		}
+		r.Header.Set("Authorization", authorization)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	director := proxy.Director
+	proxy.Director = func(request *http.Request) {
+		director(request)
+		request.Host = target.Host
+		cookies := request.Cookies()
+		request.Header.Del("Cookie")
+		for _, cookie := range cookies {
+			if cookie.Name != playgroundSessionCookie {
+				request.AddCookie(cookie)
+			}
+		}
+	}
+	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
+		http.Error(w, fmt.Sprintf("environment web interface proxy failed: %v", err), http.StatusBadGateway)
+	}
+	proxy.ServeHTTP(w, r)
 }
 
 func validateLoopbackPlaygroundRequest(w http.ResponseWriter, r *http.Request, expectedHost string) bool {

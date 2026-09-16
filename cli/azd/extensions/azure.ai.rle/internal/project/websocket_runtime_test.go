@@ -122,6 +122,52 @@ func TestRunWebSocketShellUsesPersistentSocketForStatefulOperations(t *testing.T
 	}
 }
 
+func TestWebSocketRuntimeSessionRestartUsesReplacementRuntime(t *testing.T) {
+	newServer := func(t *testing.T) *httptest.Server {
+		t.Helper()
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			connection, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+			if err != nil {
+				t.Errorf("upgrade WebSocket: %v", err)
+				return
+			}
+			defer connection.Close()
+			var request map[string]any
+			if err := connection.ReadJSON(&request); err != nil {
+				return
+			}
+			_ = connection.WriteJSON(map[string]any{
+				"type": request["type"],
+				"data": map[string]any{"runtime": r.Host},
+			})
+		}))
+	}
+
+	first := newServer(t)
+	defer first.Close()
+	second := newServer(t)
+	defer second.Close()
+
+	session := NewWebSocketRuntimeSession(first.URL, 30, nil)
+	defer session.Close()
+	firstResponse, err := session.Call(t.Context(), "state", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(firstResponse, first.URL[strings.Index(first.URL, "://")+3:]) {
+		t.Fatalf("expected first runtime response, got %s", firstResponse)
+	}
+
+	session.Restart(second.URL)
+	secondResponse, err := session.Call(t.Context(), "state", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(secondResponse, second.URL[strings.Index(second.URL, "://")+3:]) {
+		t.Fatalf("expected replacement runtime response, got %s", secondResponse)
+	}
+}
+
 func TestWebSocketHandshakeRetriesTransientFailures(t *testing.T) {
 	var attempts atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -311,8 +357,9 @@ func TestRuntimeWebSocketURL(t *testing.T) {
 	}
 }
 
-func TestWebSocketSessionSendsKeepalivePings(t *testing.T) {
-	pingReceived := make(chan struct{}, 1)
+func TestWebSocketSessionKeepaliveExchangesStateAndProcessesServerPing(t *testing.T) {
+	keepAliveReceived := make(chan struct{}, 1)
+	pongReceived := make(chan struct{}, 1)
 	serverDone := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer close(serverDone)
@@ -322,21 +369,34 @@ func TestWebSocketSessionSendsKeepalivePings(t *testing.T) {
 			return
 		}
 		defer connection.Close()
-		connection.SetPingHandler(func(data string) error {
+		connection.SetPongHandler(func(string) error {
 			select {
-			case pingReceived <- struct{}{}:
+			case pongReceived <- struct{}{}:
 			default:
 			}
-			return connection.WriteControl(
-				websocket.PongMessage,
-				[]byte(data),
-				time.Now().Add(time.Second),
-			)
+			return nil
 		})
+		requestCount := 0
 		for {
 			var request map[string]any
 			if err := connection.ReadJSON(&request); err != nil {
 				return
+			}
+			requestCount++
+			if requestCount == 1 {
+				if err := connection.WriteControl(
+					websocket.PingMessage,
+					nil,
+					time.Now().Add(time.Second),
+				); err != nil {
+					t.Errorf("write WebSocket ping: %v", err)
+					return
+				}
+			} else {
+				select {
+				case keepAliveReceived <- struct{}{}:
+				default:
+				}
 			}
 			if err := connection.WriteJSON(map[string]any{
 				"type": "state",
@@ -355,9 +415,14 @@ func TestWebSocketSessionSendsKeepalivePings(t *testing.T) {
 		t.Fatal(err)
 	}
 	select {
-	case <-pingReceived:
+	case <-keepAliveReceived:
 	case <-time.After(time.Second):
-		t.Fatal("expected WebSocket keepalive ping")
+		t.Fatal("expected WebSocket state keepalive")
+	}
+	select {
+	case <-pongReceived:
+	case <-time.After(time.Second):
+		t.Fatal("expected client to process and answer the server ping")
 	}
 	session.Close()
 	<-serverDone

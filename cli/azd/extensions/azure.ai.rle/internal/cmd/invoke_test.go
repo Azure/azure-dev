@@ -978,7 +978,7 @@ func TestRemotePlaygroundProxyForwardsToSandbox(t *testing.T) {
 	runtimeSession := project.NewWebSocketRuntimeSession(envServer.URL, 30, nil)
 	defer runtimeSession.Close()
 
-	playgroundUrl, stop, err := remotePlaygroundUrlWithAuthorizationProvider(
+	playgroundUrl, stop, err := playgroundURLWithAuthorizationProvider(
 		t.Context(),
 		envServer.URL,
 		nil,
@@ -1032,8 +1032,31 @@ func TestRemotePlaygroundProxyForwardsToSandbox(t *testing.T) {
 	if err := json.Unmarshal(body, &state); err != nil || state["step_count"] != float64(3) {
 		t.Fatalf("expected proxied state body, got %s (err: %v)", body, err)
 	}
-	if requestCount != 1 {
-		t.Fatalf("expected one authorized backend request, got %d", requestCount)
+	if requestCount != 2 {
+		t.Fatalf("expected a web capability probe and one authorized backend request, got %d", requestCount)
+	}
+}
+
+func TestProxySandboxWebStripsLoopbackSessionCookie(t *testing.T) {
+	var receivedCookies string
+	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedCookies = r.Header.Get("Cookie")
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer envServer.Close()
+
+	request := httptest.NewRequest(http.MethodGet, "/web", nil)
+	request.AddCookie(&http.Cookie{Name: playgroundSessionCookie, Value: "loopback-secret"})
+	request.AddCookie(&http.Cookie{Name: "container-cookie", Value: "keep-me"})
+	recorder := httptest.NewRecorder()
+
+	proxySandboxWeb(recorder, request, envServer.URL, nil)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected proxied request to succeed, got %d", recorder.Code)
+	}
+	if receivedCookies != "container-cookie=keep-me" {
+		t.Fatalf("expected only container cookies to be forwarded, got %q", receivedCookies)
 	}
 }
 
@@ -1104,6 +1127,10 @@ func TestRemotePlaygroundProxyRefreshesAuthorizationForEachRequest(t *testing.T)
 	var authorizations []string
 	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authorizations = append(authorizations, r.Header.Get("Authorization"))
+		if r.URL.Path == "/web" {
+			http.NotFound(w, r)
+			return
+		}
 		_, _ = w.Write([]byte(`{"step_count":3}`))
 	}))
 	defer envServer.Close()
@@ -1111,9 +1138,9 @@ func TestRemotePlaygroundProxyRefreshesAuthorizationForEachRequest(t *testing.T)
 	tokenNumber := 0
 	authorizationProvider := func(context.Context) (string, error) {
 		tokenNumber++
-		return fmt.Sprintf("Bearer token-%d", tokenNumber), nil
+		return fmt.Sprintf("Bearer test-token-%d", tokenNumber), nil
 	}
-	playgroundUrl, stop, err := remotePlaygroundUrlWithAuthorizationProvider(
+	playgroundUrl, stop, err := playgroundURLWithAuthorizationProvider(
 		t.Context(),
 		envServer.URL,
 		authorizationProvider,
@@ -1137,21 +1164,157 @@ func TestRemotePlaygroundProxyRefreshesAuthorizationForEachRequest(t *testing.T)
 		_ = resp.Body.Close()
 	}
 
-	expected := []string{"Bearer token-1", "Bearer token-2"}
-	if !slices.Equal(authorizations, expected) {
-		t.Fatalf("expected refreshed authorization headers %v, got %v", expected, authorizations)
+	if len(authorizations) != 3 {
+		t.Fatalf("expected authorization for the capability probe and two proxy requests, got %v", authorizations)
 	}
+	if authorizations[0] == authorizations[1] ||
+		authorizations[0] == authorizations[2] ||
+		authorizations[1] == authorizations[2] {
+		t.Fatalf("expected a refreshed authorization header for every backend request, got %v", authorizations)
+	}
+}
+
+func TestRemotePlaygroundProxiesSandboxWebInterface(t *testing.T) {
+	type backendRequest struct {
+		path          string
+		query         url.Values
+		host          string
+		authorization string
+	}
+	var backendRequests []backendRequest
+	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		backendRequests = append(backendRequests, backendRequest{
+			path:          r.URL.Path,
+			query:         r.URL.Query(),
+			host:          r.Host,
+			authorization: r.Header.Get("Authorization"),
+		})
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<title>Container playground</title>`))
+	}))
+	defer envServer.Close()
+
+	tokenNumber := 0
+	authorizationProvider := func(context.Context) (string, error) {
+		tokenNumber++
+		return fmt.Sprintf("Bearer web-token-%d", tokenNumber), nil
+	}
+	playgroundUrl, stop, err := playgroundURLWithAuthorizationProvider(
+		t.Context(),
+		envServer.URL+"/sandbox?api-version=2025-01-01",
+		authorizationProvider,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Jar: jar}
+	baseUrl := playgroundBaseURL(t, playgroundUrl)
+	origin := baseUrl
+	resp, err := client.Get(playgroundUrl) //nolint:gosec // Test-only local proxy URL.
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "Container playground") {
+		t.Fatalf("expected container-provided playground HTML, got %s", body)
+	}
+
+	request, err := http.NewRequest(http.MethodGet, baseUrl+"/assets/app.js?theme=dark", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Origin", origin)
+	resp, err = client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+
+	if len(backendRequests) != 3 {
+		t.Fatalf("expected capability probe, web page, and asset requests, got %#v", backendRequests)
+	}
+	for index, backendRequest := range backendRequests {
+		if backendRequest.path != []string{"/sandbox/web", "/sandbox/web", "/sandbox/assets/app.js"}[index] {
+			t.Fatalf("unexpected backend path at request %d: %q", index, backendRequest.path)
+		}
+		if backendRequest.query.Get("api-version") != "2025-01-01" {
+			t.Fatalf("expected api-version on request %d, got %q", index, backendRequest.query.Encode())
+		}
+		if backendRequest.query.Get("token") != "" {
+			t.Fatalf("expected loopback bootstrap token to remain local, got %q", backendRequest.query.Encode())
+		}
+		if backendRequest.host != strings.TrimPrefix(envServer.URL, "http://") {
+			t.Fatalf("expected sandbox host on request %d, got %q", index, backendRequest.host)
+		}
+		if backendRequest.authorization == "" {
+			t.Fatalf("expected authorization on request %d", index)
+		}
+	}
+	if backendRequests[2].query.Get("theme") != "dark" {
+		t.Fatalf("expected asset query to be preserved, got %q", backendRequests[2].query.Encode())
+	}
+	if backendRequests[0].authorization == backendRequests[1].authorization ||
+		backendRequests[0].authorization == backendRequests[2].authorization ||
+		backendRequests[1].authorization == backendRequests[2].authorization {
+		t.Fatalf("expected refreshed authorization for each backend request, got %#v", backendRequests)
+	}
+}
+
+func TestPlaygroundWebInterfaceProbeErrorsAreSurfaced(t *testing.T) {
+	t.Run("authentication failure", func(t *testing.T) {
+		envServer := httptest.NewServer(http.NotFoundHandler())
+		defer envServer.Close()
+
+		_, stop, err := playgroundURLWithAuthorizationProvider(
+			t.Context(),
+			envServer.URL,
+			func(context.Context) (string, error) {
+				return "", errors.New("token unavailable")
+			},
+		)
+		defer stop()
+		if err == nil || !strings.Contains(err.Error(), "authenticate to environment web interface") {
+			t.Fatalf("expected web interface authentication error, got %v", err)
+		}
+	})
+
+	t.Run("unexpected response", func(t *testing.T) {
+		envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		}))
+		defer envServer.Close()
+
+		_, stop, err := playgroundURLWithAuthorizationProvider(t.Context(), envServer.URL, nil)
+		defer stop()
+		if err == nil || !strings.Contains(err.Error(), "HTTP 503") {
+			t.Fatalf("expected web interface probe status error, got %v", err)
+		}
+	})
 }
 
 func TestRemotePlaygroundProxyRejectsUnauthorizedRequests(t *testing.T) {
 	backendRequests := 0
 	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		backendRequests++
+		if r.URL.Path == "/web" {
+			http.NotFound(w, r)
+			return
+		}
 		_, _ = w.Write([]byte(`{"step_count":3}`))
 	}))
 	defer envServer.Close()
 
-	playgroundUrl, stop, err := remotePlaygroundUrlWithAuthorizationProvider(
+	playgroundUrl, stop, err := playgroundURLWithAuthorizationProvider(
 		t.Context(),
 		envServer.URL,
 		nil,
@@ -1170,8 +1333,8 @@ func TestRemotePlaygroundProxyRejectsUnauthorizedRequests(t *testing.T) {
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected unauthorized status, got %d", resp.StatusCode)
 	}
-	if backendRequests != 0 {
-		t.Fatalf("expected no backend requests, got %d", backendRequests)
+	if backendRequests != 1 {
+		t.Fatalf("expected only the web capability probe to reach the backend, got %d requests", backendRequests)
 	}
 }
 
@@ -1179,11 +1342,15 @@ func TestRemotePlaygroundProxyRejectsInvalidHostAndOrigin(t *testing.T) {
 	backendRequests := 0
 	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		backendRequests++
+		if r.URL.Path == "/web" {
+			http.NotFound(w, r)
+			return
+		}
 		_, _ = w.Write([]byte(`{"step_count":3}`))
 	}))
 	defer envServer.Close()
 
-	playgroundUrl, stop, err := remotePlaygroundUrlWithAuthorizationProvider(
+	playgroundUrl, stop, err := playgroundURLWithAuthorizationProvider(
 		t.Context(),
 		envServer.URL,
 		nil,
@@ -1224,8 +1391,8 @@ func TestRemotePlaygroundProxyRejectsInvalidHostAndOrigin(t *testing.T) {
 			}
 		})
 	}
-	if backendRequests != 0 {
-		t.Fatalf("expected no backend requests, got %d", backendRequests)
+	if backendRequests != 1 {
+		t.Fatalf("expected only the web capability probe to reach the backend, got %d requests", backendRequests)
 	}
 }
 

@@ -548,6 +548,9 @@ func runInitFromAzureYaml(
 	if err != nil {
 		return err
 	}
+	deferredAzureContext := shouldDeferAdoptedModelAuthoring(
+		flags, azureContext,
+	)
 
 	result, err := configureFoundryProject(
 		ctx, azdClient, azureContext, env.Name,
@@ -561,6 +564,14 @@ func runInitFromAzureYaml(
 			return exterrors.Cancelled("initialization was cancelled")
 		}
 		return err
+	}
+	if deferredAzureContext && strings.TrimSpace(flags.model) != "" {
+		fmt.Printf("%s", output.WithWarningFormat(
+			"Model configuration was deferred because Azure environment values are missing.\n",
+		))
+		fmt.Println(output.WithGrayFormat(
+			"Set the missing values, then re-run init to author the model deployment.",
+		))
 	}
 	if err := validateAdoptedModelDeploymentTarget(
 		flags,
@@ -657,13 +668,15 @@ func runInitFromAzureYaml(
 	// The projects extension owns project deployments. When the user
 	// names a model, delegate its authoring. Existing deployment lookup
 	// remains limited to --model-deployment.
-	if err := configureAdoptedModel(
-		ctx,
-		azdClient,
-		projectRoot,
-		flags,
-	); err != nil {
-		return err
+	if !deferredAzureContext {
+		if err := configureAdoptedModel(
+			ctx,
+			azdClient,
+			projectRoot,
+			flags,
+		); err != nil {
+			return err
+		}
 	}
 	if result.FoundryProject != nil && result.Credential != nil {
 		if err := configureAdoptedExistingDeployment(
@@ -766,6 +779,14 @@ func configureAdoptedModel(
 			{Model: project.DeploymentModel{Name: model}},
 		},
 	)
+}
+
+func shouldDeferAdoptedModelAuthoring(
+	flags *initFlags,
+	azureContext *azdext.AzureContext,
+) bool {
+	return flags.projectResourceId == "" &&
+		shouldDeferInitAzureContext(flags.noPrompt, azureContext)
 }
 
 func configureAdoptedExistingDeployment(

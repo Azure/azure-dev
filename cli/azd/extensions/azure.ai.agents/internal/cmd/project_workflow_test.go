@@ -442,6 +442,54 @@ func TestConfigureAdoptedModelDeploymentTakesPrecedence(t *testing.T) {
 	assert.Empty(t, workflowServer.requests)
 }
 
+func TestShouldDeferAdoptedModelAuthoring(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		flags        *initFlags
+		azureContext *azdext.AzureContext
+		wantDefer    bool
+	}{
+		{
+			name:  "missing context in no-prompt mode",
+			flags: &initFlags{noPrompt: true},
+			azureContext: &azdext.AzureContext{
+				Scope: &azdext.AzureScope{},
+			},
+			wantDefer: true,
+		},
+		{
+			name:  "complete context",
+			flags: &initFlags{noPrompt: true},
+			azureContext: &azdext.AzureContext{Scope: &azdext.AzureScope{
+				SubscriptionId: "subscription-id",
+				Location:       "eastus2",
+			}},
+		},
+		{
+			name: "explicit project id",
+			flags: &initFlags{
+				noPrompt:          true,
+				projectResourceId: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/projects/project",
+			},
+			azureContext: &azdext.AzureContext{
+				Scope: &azdext.AzureScope{},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(
+				t,
+				tt.wantDefer,
+				shouldDeferAdoptedModelAuthoring(tt.flags, tt.azureContext),
+			)
+		})
+	}
+}
+
 func TestAuthorFoundryDeploymentsPreservesDefault(t *testing.T) {
 	t.Parallel()
 

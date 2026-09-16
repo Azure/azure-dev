@@ -145,17 +145,13 @@ func reconcileAdoptedDeployments(
 	referenced := make([]synthesis.Deployment, 0, len(declared))
 	changed := false
 	for _, item := range declared {
-		expandedItem, err := expandDeployment(item, environmentValues)
+		expandedItem, matches, err := matchingLiveDeployments(
+			item, live, environmentValues,
+		)
 		if err != nil {
 			return "", false, nil, fmt.Errorf(
 				"expand adopted deployment %q: %w", item.Name, err,
 			)
-		}
-		matches := make([]liveProjectDeployment, 0)
-		for _, candidate := range live {
-			if strings.EqualFold(candidate.Model.Name, expandedItem.Model.Name) {
-				matches = append(matches, candidate)
-			}
 		}
 		if len(matches) == 0 {
 			remaining = append(remaining, item)
@@ -292,6 +288,25 @@ func reconcileAdoptedDeployments(
 		)
 	}
 	return defaultName, changed, restore, nil
+}
+
+func matchingLiveDeployments(
+	deployment synthesis.Deployment,
+	live []liveProjectDeployment,
+	environment map[string]string,
+) (synthesis.Deployment, []liveProjectDeployment, error) {
+	expanded, err := expandDeployment(deployment, environment)
+	if err != nil {
+		return synthesis.Deployment{}, nil, err
+	}
+
+	matches := make([]liveProjectDeployment, 0)
+	for _, candidate := range live {
+		if strings.EqualFold(candidate.Model.Name, expanded.Model.Name) {
+			matches = append(matches, candidate)
+		}
+	}
+	return expanded, matches, nil
 }
 
 func expandDeployment(

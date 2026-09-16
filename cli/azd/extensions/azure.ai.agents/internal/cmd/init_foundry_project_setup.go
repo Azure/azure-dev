@@ -143,6 +143,9 @@ func configureFoundryProject(
 			return nil, err
 		}
 		result.AuthoringMode = projectAuthoringCurrent
+	} else if preserveDeferredProjectState {
+		// Preserve an adopted endpoint with complete Azure context.
+		result.AuthoringMode = projectAuthoringCurrent
 	} else if noPrompt {
 		newCred, err := configureNewProjectForNoPrompt(
 			ctx, azdClient, envName, azureContext,

@@ -191,3 +191,41 @@ func TestConfigureFoundryProjectPreservesExistingServiceWhenDeferred(t *testing.
 		envServer.values["test-env"]["USE_EXISTING_AI_PROJECT"],
 	)
 }
+
+func TestConfigureFoundryProjectPreservesExistingServiceWithAzureContext(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{
+			"test-env": {},
+		},
+	}
+	azdClient := newHelpersTestAzdClient(
+		t,
+		&helpersProjectServer{},
+		&helpersPromptServer{},
+		envServer,
+	)
+
+	result, err := configureFoundryProject(
+		t.Context(),
+		azdClient,
+		&azdext.AzureContext{Scope: &azdext.AzureScope{
+			SubscriptionId: "subscription-id",
+			Location:       "eastus2",
+		}},
+		"test-env",
+		"",
+		"",
+		true,
+		false,
+		false,
+		true,
+	)
+
+	require.NoError(t, err)
+	require.Nil(t, result.FoundryProject)
+	require.Equal(t, projectAuthoringCurrent, result.AuthoringMode)
+}

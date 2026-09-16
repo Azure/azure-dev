@@ -43,6 +43,33 @@ func TestExpandDeployment(t *testing.T) {
 	}, got)
 }
 
+func TestMatchingLiveDeploymentsExpandsDeploymentValues(t *testing.T) {
+	t.Parallel()
+
+	expanded, matches, err := matchingLiveDeployments(
+		synthesis.Deployment{
+			Name:  "${DEPLOYMENT_NAME}",
+			Model: synthesis.DeploymentModel{Name: "${MODEL_NAME}"},
+		},
+		[]liveProjectDeployment{
+			{
+				Name:  "chat",
+				Model: synthesis.DeploymentModel{Name: "gpt-4.1"},
+			},
+		},
+		map[string]string{
+			"DEPLOYMENT_NAME": "chat",
+			"MODEL_NAME":      "gpt-4.1",
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, "chat", expanded.Name)
+	require.Equal(t, "gpt-4.1", expanded.Model.Name)
+	require.Len(t, matches, 1)
+	require.Equal(t, "chat", matches[0].Name)
+}
+
 func TestProjectAddMutationIncludesDeploymentReconciliation(t *testing.T) {
 	t.Parallel()
 

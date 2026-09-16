@@ -51,21 +51,21 @@ const (
 
 // RleConfig is the host-agnostic source configuration for one immutable RLE release.
 type RleConfig struct {
-	Rle      RleManifest             `toml:"rle"`
-	Defaults *RleEnvironmentDefaults `toml:"defaults,omitempty"`
-	Metadata map[string]string       `toml:"metadata,omitempty"`
+	SchemaVersion *string                 `toml:"schema_version,omitempty"`
+	Rle           RleManifest             `toml:"rle"`
+	Defaults      *RleEnvironmentDefaults `toml:"defaults,omitempty"`
+	Metadata      map[string]string       `toml:"metadata,omitempty"`
 }
 
-// RleManifest uses the control-plane field names so the manifest maps directly to an RLE release.
+// RleManifest uses the control-plane field names so the [rle] table maps directly to an RLE release.
 type RleManifest struct {
-	SchemaVersion *string    `toml:"schema_version,omitempty"`
-	Name          string     `toml:"name"`
-	Version       string     `toml:"version"`
-	Type          RleType    `toml:"type"`
-	Subtype       RleSubtype `toml:"subtype"`
-	AgentName     *string    `toml:"agentName,omitempty"`
-	AgentVersion  *string    `toml:"agentVersion,omitempty"`
-	BaseURL       *string    `toml:"baseUrl,omitempty"`
+	Name         string     `toml:"name"`
+	Version      string     `toml:"version"`
+	Type         RleType    `toml:"type"`
+	Subtype      RleSubtype `toml:"subtype"`
+	AgentName    *string    `toml:"agentName,omitempty"`
+	AgentVersion *string    `toml:"agentVersion,omitempty"`
+	BaseURL      *string    `toml:"baseUrl,omitempty"`
 }
 
 // RleEnvironmentDefaults contains reusable version-scoped training defaults.
@@ -268,14 +268,14 @@ func NormalizeRleConfig(config RleConfig) (RleConfig, error) {
 	}
 
 	schemaVersion, defaults, metadata, err := normalizeRleManifestMetadata(
-		manifest.SchemaVersion,
+		config.SchemaVersion,
 		config.Defaults,
 		config.Metadata,
 	)
 	if err != nil {
 		return RleConfig{}, err
 	}
-	manifest.SchemaVersion = schemaVersion
+	config.SchemaVersion = schemaVersion
 	config.Rle = manifest
 	config.Defaults = defaults
 	config.Metadata = metadata
@@ -339,9 +339,9 @@ func normalizeRleSchemaVersion(value *string, required bool) (*string, error) {
 	if value == nil {
 		if required {
 			return nil, localError(
-				"rle.schema_version is required when defaults or metadata is supplied.",
+				"schema_version is required when defaults or metadata is supplied.",
 				"rle_manifest_schema_version_required",
-				fmt.Sprintf("Set rle.schema_version to %q.", CurrentRleManifestSchemaVersion),
+				fmt.Sprintf("Set root-level schema_version to %q.", CurrentRleManifestSchemaVersion),
 			)
 		}
 		return nil, nil
@@ -350,16 +350,16 @@ func normalizeRleSchemaVersion(value *string, required bool) (*string, error) {
 	normalized := strings.TrimSpace(*value)
 	if normalized == "" {
 		return nil, localError(
-			"rle.schema_version must be a non-empty value.",
+			"schema_version must be a non-empty value.",
 			"rle_manifest_schema_version_invalid",
-			fmt.Sprintf("Set rle.schema_version to %q.", CurrentRleManifestSchemaVersion),
+			fmt.Sprintf("Set root-level schema_version to %q.", CurrentRleManifestSchemaVersion),
 		)
 	}
 	if normalized != CurrentRleManifestSchemaVersion {
 		return nil, localError(
-			fmt.Sprintf("rle.schema_version must be %q.", CurrentRleManifestSchemaVersion),
+			fmt.Sprintf("schema_version must be %q.", CurrentRleManifestSchemaVersion),
 			"rle_manifest_schema_version_invalid",
-			fmt.Sprintf("Set rle.schema_version to %q.", CurrentRleManifestSchemaVersion),
+			fmt.Sprintf("Set root-level schema_version to %q.", CurrentRleManifestSchemaVersion),
 		)
 	}
 	return &normalized, nil

@@ -22,14 +22,14 @@ func TestBuildEnvironmentCreateRequestMapsManifestConfiguration(t *testing.T) {
 	modelName := "Qwen/Qwen3-32B"
 	numberOfEpochs := 3
 	config := project.RleConfig{
+		SchemaVersion: &schemaVersion,
 		Rle: project.RleManifest{
-			SchemaVersion: &schemaVersion,
-			Name:          "support_rle",
-			Version:       "1.0.1",
-			Type:          project.RleTypeHarness,
-			Subtype:       project.RleSubtypeHostedAgent,
-			AgentName:     &agentName,
-			AgentVersion:  &agentVersion,
+			Name:         "support_rle",
+			Version:      "1.0.1",
+			Type:         project.RleTypeHarness,
+			Subtype:      project.RleSubtypeHostedAgent,
+			AgentName:    &agentName,
+			AgentVersion: &agentVersion,
 		},
 		Defaults: &project.RleEnvironmentDefaults{
 			Model: &project.RleModelDefaults{Name: &modelName},
@@ -175,12 +175,12 @@ func TestVerifyPublishedEnvironmentRequiresManifestIdentity(t *testing.T) {
 func TestVerifyPublishedEnvironmentRequiresManifestMetadata(t *testing.T) {
 	schemaVersion := project.CurrentRleManifestSchemaVersion
 	config := project.RleConfig{
+		SchemaVersion: &schemaVersion,
 		Rle: project.RleManifest{
-			SchemaVersion: &schemaVersion,
-			Name:          "code_rl",
-			Version:       "1.0.0",
-			Type:          project.RleTypeGym,
-			Subtype:       project.RleSubtypeOpenEnv,
+			Name:    "code_rl",
+			Version: "1.0.0",
+			Type:    project.RleTypeGym,
+			Subtype: project.RleSubtypeOpenEnv,
 		},
 		Metadata: map[string]string{"owner": "rle"},
 	}

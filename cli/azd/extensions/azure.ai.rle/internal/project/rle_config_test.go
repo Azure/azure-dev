@@ -20,14 +20,14 @@ func TestWriteAndLoadRleConfigCanonicalizesHostedAgentManifest(t *testing.T) {
 	agentVersion := "12"
 	schemaVersion := CurrentRleManifestSchemaVersion
 	config := RleConfig{
+		SchemaVersion: &schemaVersion,
 		Rle: RleManifest{
-			SchemaVersion: &schemaVersion,
-			Name:          "support_agent",
-			Version:       "1.0.0",
-			Type:          RleTypeHarness,
-			Subtype:       RleSubtypeHostedAgent,
-			AgentName:     &agentName,
-			AgentVersion:  &agentVersion,
+			Name:         "support_agent",
+			Version:      "1.0.0",
+			Type:         RleTypeHarness,
+			Subtype:      RleSubtypeHostedAgent,
+			AgentName:    &agentName,
+			AgentVersion: &agentVersion,
 		},
 	}
 
@@ -54,6 +54,9 @@ func TestWriteAndLoadRleConfigCanonicalizesHostedAgentManifest(t *testing.T) {
 	if strings.Contains(string(data), "kind") {
 		t.Fatalf("expected canonical type/subtype fields, got:\n%s", data)
 	}
+	if schemaIndex, rleIndex := strings.Index(string(data), "schema_version"), strings.Index(string(data), "[rle]"); schemaIndex < 0 || rleIndex < 0 || schemaIndex > rleIndex {
+		t.Fatalf("expected schema_version to precede the [rle] table, got:\n%s", data)
+	}
 
 	loaded, err := LoadRleConfig(dir)
 	if err != nil {
@@ -76,12 +79,12 @@ func TestWriteAndLoadRleConfigCanonicalizesVersionScopedDefaultsAndMetadata(t *t
 	checkpointID := " "
 	sampler := " default "
 	config := RleConfig{
+		SchemaVersion: &schemaVersion,
 		Rle: RleManifest{
-			SchemaVersion: &schemaVersion,
-			Name:          "code_rl",
-			Version:       "1.0.0",
-			Type:          RleTypeGym,
-			Subtype:       RleSubtypeOpenEnv,
+			Name:    "code_rl",
+			Version: "1.0.0",
+			Type:    RleTypeGym,
+			Subtype: RleSubtypeOpenEnv,
 		},
 		Defaults: &RleEnvironmentDefaults{
 			Model: &RleModelDefaults{
@@ -145,8 +148,8 @@ func TestWriteAndLoadRleConfigCanonicalizesVersionScopedDefaultsAndMetadata(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Rle.SchemaVersion == nil || *loaded.Rle.SchemaVersion != CurrentRleManifestSchemaVersion {
-		t.Fatalf("expected normalized schema version, got %#v", loaded.Rle.SchemaVersion)
+	if loaded.SchemaVersion == nil || *loaded.SchemaVersion != CurrentRleManifestSchemaVersion {
+		t.Fatalf("expected normalized schema version, got %#v", loaded.SchemaVersion)
 	}
 	if loaded.Defaults == nil ||
 		loaded.Defaults.Model == nil ||
@@ -186,26 +189,16 @@ func TestNormalizeRleConfigValidatesVersionScopedMetadata(t *testing.T) {
 		{
 			name: "unsupported schema version",
 			config: RleConfig{
-				Rle: RleManifest{
-					SchemaVersion: stringPointer("2.0.0"),
-					Name:          base.Name,
-					Version:       base.Version,
-					Type:          base.Type,
-					Subtype:       base.Subtype,
-				},
+				SchemaVersion: stringPointer("2.0.0"),
+				Rle:           base,
 			},
 			wantCode: "rle_manifest_schema_version_invalid",
 		},
 		{
 			name: "nonpositive default",
 			config: RleConfig{
-				Rle: RleManifest{
-					SchemaVersion: &schemaVersion,
-					Name:          base.Name,
-					Version:       base.Version,
-					Type:          base.Type,
-					Subtype:       base.Subtype,
-				},
+				SchemaVersion: &schemaVersion,
+				Rle:           base,
 				Defaults: &RleEnvironmentDefaults{
 					Grpo: &RleGrpoDefaults{GroupSize: intPointer(0)},
 				},
@@ -215,13 +208,8 @@ func TestNormalizeRleConfigValidatesVersionScopedMetadata(t *testing.T) {
 		{
 			name: "nonfinite default",
 			config: RleConfig{
-				Rle: RleManifest{
-					SchemaVersion: &schemaVersion,
-					Name:          base.Name,
-					Version:       base.Version,
-					Type:          base.Type,
-					Subtype:       base.Subtype,
-				},
+				SchemaVersion: &schemaVersion,
+				Rle:           base,
 				Defaults: &RleEnvironmentDefaults{
 					Reinforcement: &RleReinforcementDefaults{
 						Hyperparameters: &RleReinforcementHyperparameters{
@@ -235,13 +223,8 @@ func TestNormalizeRleConfigValidatesVersionScopedMetadata(t *testing.T) {
 		{
 			name: "unsupported reasoning effort",
 			config: RleConfig{
-				Rle: RleManifest{
-					SchemaVersion: &schemaVersion,
-					Name:          base.Name,
-					Version:       base.Version,
-					Type:          base.Type,
-					Subtype:       base.Subtype,
-				},
+				SchemaVersion: &schemaVersion,
+				Rle:           base,
 				Defaults: &RleEnvironmentDefaults{
 					Reinforcement: &RleReinforcementDefaults{
 						Hyperparameters: &RleReinforcementHyperparameters{
@@ -255,28 +238,18 @@ func TestNormalizeRleConfigValidatesVersionScopedMetadata(t *testing.T) {
 		{
 			name: "empty metadata value",
 			config: RleConfig{
-				Rle: RleManifest{
-					SchemaVersion: &schemaVersion,
-					Name:          base.Name,
-					Version:       base.Version,
-					Type:          base.Type,
-					Subtype:       base.Subtype,
-				},
-				Metadata: map[string]string{"owner": " "},
+				SchemaVersion: &schemaVersion,
+				Rle:           base,
+				Metadata:      map[string]string{"owner": " "},
 			},
 			wantCode: "rle_manifest_metadata_invalid",
 		},
 		{
 			name: "duplicate normalized metadata key",
 			config: RleConfig{
-				Rle: RleManifest{
-					SchemaVersion: &schemaVersion,
-					Name:          base.Name,
-					Version:       base.Version,
-					Type:          base.Type,
-					Subtype:       base.Subtype,
-				},
-				Metadata: map[string]string{"owner": "one", " owner ": "two"},
+				SchemaVersion: &schemaVersion,
+				Rle:           base,
+				Metadata:      map[string]string{"owner": "one", " owner ": "two"},
 			},
 			wantCode: "rle_manifest_metadata_invalid",
 		},
@@ -305,8 +278,28 @@ func TestNormalizeRleConfigAllowsLegacyManifestWithoutVersionScopedMetadata(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.Rle.SchemaVersion != nil || config.Defaults != nil || config.Metadata != nil {
+	if config.SchemaVersion != nil || config.Defaults != nil || config.Metadata != nil {
 		t.Fatalf("expected legacy manifest metadata to remain omitted, got %#v", config)
+	}
+}
+
+func TestLoadRleConfigRejectsSchemaVersionInsideRleTable(t *testing.T) {
+	dir := t.TempDir()
+	content := `[rle]
+schema_version = "1.0.0"
+name = "code_rl"
+version = "1.0.0"
+type = "Gym"
+subtype = "OpenEnv"
+`
+	if err := os.WriteFile(filepath.Join(dir, RleConfigFile), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadRleConfig(dir)
+	var localErr *azdext.LocalError
+	if !errors.As(err, &localErr) || localErr.Code != "rle_manifest_invalid" {
+		t.Fatalf("expected an invalid-manifest error for schema_version inside [rle], got %v", err)
 	}
 }
 

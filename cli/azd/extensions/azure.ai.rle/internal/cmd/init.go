@@ -231,7 +231,7 @@ func (a *initAction) initializeGymOpenEnv(target rleInitTarget) error {
 	config.Rle.Type = target.rleType
 	config.Rle.Subtype = target.rleSubtype
 	schemaVersion := project.CurrentRleManifestSchemaVersion
-	config.Rle.SchemaVersion = &schemaVersion
+	config.SchemaVersion = &schemaVersion
 	if strings.TrimSpace(a.flags.rleVersion) != "" {
 		config.Rle.Version, err = normalizeInitRleVersion(a.flags.rleVersion)
 		if err != nil {

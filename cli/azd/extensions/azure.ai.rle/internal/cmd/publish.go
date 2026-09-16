@@ -192,7 +192,7 @@ func buildEnvironmentCreateRequest(
 		AgentName:     config.Rle.AgentName,
 		AgentVersion:  config.Rle.AgentVersion,
 		BaseURL:       config.Rle.BaseURL,
-		SchemaVersion: config.Rle.SchemaVersion,
+		SchemaVersion: config.SchemaVersion,
 		Defaults:      config.Defaults,
 		Metadata:      config.Metadata,
 	}
@@ -248,7 +248,7 @@ func verifyPublishedEnvironment(config project.RleConfig, environment *environme
 			"Check the RLE service response and retry.",
 		)
 	}
-	if !reflect.DeepEqual(manifest.SchemaVersion, environment.SchemaVersion) {
+	if !reflect.DeepEqual(config.SchemaVersion, environment.SchemaVersion) {
 		return publishedEnvironmentMismatchError(
 			"RLE service returned a different metadata schema version than rle.toml.",
 			"Check the RLE service response and retry.",

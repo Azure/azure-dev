@@ -62,8 +62,9 @@ does not embed a platform name so the manifest remains host-agnostic.
 A Gym: OpenEnv environment:
 
 ```toml
-[rle]
 schema_version = "1.0.0"
+
+[rle]
 name = "code_rl"
 version = "1.0.0"
 type = "Gym"
@@ -73,6 +74,8 @@ subtype = "OpenEnv"
 A Foundry Hosted Agent-backed harness:
 
 ```toml
+schema_version = "1.0.0"
+
 [rle]
 name = "support_rle"
 version = "1.0.0"
@@ -85,6 +88,8 @@ agentVersion = "12"
 A bring-your-own harness (BYOH):
 
 ```toml
+schema_version = "1.0.0"
+
 [rle]
 name = "customer_rle"
 version = "1.0.0"
@@ -101,14 +106,16 @@ without credentials, a query string, or a fragment.
 
 ### Version-scoped defaults and metadata
 
-`rle.schema_version` is required when reusable `defaults` or `metadata` is
+`schema_version` is a root-level manifest field, separate from the immutable
+`rle.version`. It is required when reusable `defaults` or `metadata` is
 present. The current schema is `1.0.0`; `init` writes it into newly generated
 manifests. Identity-only legacy manifests without defaults or metadata remain
 valid.
 
 ```toml
-[rle]
 schema_version = "1.0.0"
+
+[rle]
 name = "mycoderle"
 version = "1.0.0"
 type = "Gym"

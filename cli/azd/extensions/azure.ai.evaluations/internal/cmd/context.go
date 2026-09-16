@@ -472,6 +472,62 @@ func (ec *evalContext) setPrivate(ctx context.Context, key, value string) error 
 	return nil
 }
 
+// setPrivateScoped records a scoped value and, when nothing owns the
+// unqualified key yet, the scope that now does -- choosing the key from the same
+// read the write is based on.
+//
+// setPrivate locks around the write, which is enough when the key is already
+// known. Here it is not: the key depends on whether anything owns the
+// unqualified one, so deciding outside the lock let two first-time deploys both
+// read "unowned", both choose the unqualified key, and the second overwrite the
+// first's id while the ownership marker still named the first. One service then
+// had no mapping, and its next deploy made a second eval.
+func (ec *evalContext) setPrivateScoped(ctx context.Context, base, scope, value string) error {
+	if ec.azdClient == nil {
+		return messages.NoAzdEnvironmentToWrite(base)
+	}
+	ec.loadPrivateState(ctx)
+	if ec.stateErr != nil {
+		return messages.PrivateStateUnreadable(base, ec.stateErr)
+	}
+
+	unlock, err := ec.lockPrivateState(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	merged, err := ec.readPrivateState(ctx)
+	if err != nil {
+		return messages.PrivateStateUnreadable(base, err)
+	}
+
+	owner := base + project.EvalScopeSuffix
+	key := base
+	if scope != "" && merged[owner] != "" && merged[owner] != scope {
+		key = base + "_" + project.EvalScopeTag(scope)
+	}
+
+	changed := false
+	if merged[key] != value {
+		merged[key] = value
+		changed = true
+	}
+	if scope != "" && key == base && merged[owner] == "" {
+		merged[owner] = scope
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+
+	if err := ec.setEnvConfig(ctx, privateStatePath, merged); err != nil {
+		return messages.WritingEnvValue(key, err)
+	}
+	ec.state = merged
+	return nil
+}
+
 // lockPrivateState takes the cross-process lock on the reconciliation section.
 //
 // Outside an azd project there is nothing to share the section with and no

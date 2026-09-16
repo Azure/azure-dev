@@ -5,7 +5,11 @@ package cmd
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"log"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
 )
 
@@ -38,10 +42,15 @@ func (ec *evalContext) scopedValue(ctx context.Context, base, scope string) stri
 
 // rememberScoped records a value under this configuration's key and, the first
 // time, which configuration the unqualified key belongs to.
+//
+// Both go in under one lock, from one read: which key to write depends on who
+// owns the unqualified one, so choosing it here and writing it there let two
+// concurrent deploys both choose the unqualified key.
 func (ec *evalContext) rememberScoped(ctx context.Context, base, scope, value string) {
-	key := ec.scopedKey(ctx, base, scope)
-	ec.remember(ctx, key, value)
-	if scope != "" && key == base && ec.privateValue(ctx, base+project.EvalScopeSuffix) == "" {
-		ec.remember(ctx, base+project.EvalScopeSuffix, scope)
+	err := ec.setPrivateScoped(ctx, base, scope, value)
+	if err == nil || errors.Is(err, errNoAzdEnvironment) {
+		return
 	}
+	fmt.Fprint(warnWriter(ctx), messages.Warning(err))
+	log.Printf("[env] could not record %s: %v", base, err)
 }

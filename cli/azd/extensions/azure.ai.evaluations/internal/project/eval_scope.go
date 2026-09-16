@@ -68,13 +68,34 @@ func EvalScopeTag(scope string) string {
 //
 // Derived from the `$ref` rather than from the service name, because that is
 // what the lookup side has: `run` is given a directory, not a service.
+//
+// The `$ref` is used as written, not reduced to its directory. A `$ref` names a
+// file by name, so `./config/nightly.yaml` reduced to `./config` came back as
+// `./config/azure.eval.yaml` -- a scope naming a file that is not the one being
+// deployed, and not the one the lookup side computes from the same project. Ids
+// recorded under it were never found again, and the next deploy made a second
+// eval.
 func EvalScopeOfService(svc *azdext.ServiceConfig, projectRoot string) string {
 	if svc == nil {
 		return ""
 	}
-	dir := serviceRelativeDir(svc)
-	if dir == "" || dir == "." {
+	location := serviceRelativeConfig(svc)
+	if location == "" || location == "." {
 		return ""
 	}
-	return EvalScope(projectRoot, resolvedConfigPath(filepath.Join(projectRoot, dir)))
+	return EvalScope(projectRoot, resolvedConfigPath(filepath.Join(projectRoot, location)))
+}
+
+// serviceRelativeConfig is the configuration a service points at, as written.
+//
+// serviceRelativeDir answers the neighboring question -- which directory the
+// service's relative paths resolve against -- and throws the filename away to
+// do it.
+func serviceRelativeConfig(svc *azdext.ServiceConfig) string {
+	if props := serviceProps(svc); props != nil {
+		if ref, ok := props.AsMap()["$ref"].(string); ok && ref != "" {
+			return filepath.FromSlash(ref)
+		}
+	}
+	return serviceRelativeDir(svc)
 }

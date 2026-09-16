@@ -60,6 +60,14 @@ type ServiceTargetProvider interface {
 	) (*ServiceDeployResult, error)
 }
 
+// ServiceTargetPreviewProvider is an optional capability for read-only deployment previews.
+// Preview must be self-contained: it runs on a fresh provider without Initialize, build,
+// package, publish, deploy, or target resource resolution. It must not mutate deployment state.
+// Register this capability explicitly with ExtensionHost.WithServiceTargetPreview.
+type ServiceTargetPreviewProvider interface {
+	Preview(ctx context.Context, serviceConfig *ServiceConfig) (*ServiceDeployPreviewResult, error)
+}
+
 // ServiceTargetManager handles registration and provisioning request forwarding for a provider.
 type ServiceTargetManager struct {
 	extensionId      string
@@ -142,6 +150,9 @@ func (m *ServiceTargetManager) ensureStream(ctx context.Context) error {
 	if err := m.broker.On(m.onDeploy); err != nil {
 		return fmt.Errorf("failed to register deploy handler: %w", err)
 	}
+	if err := m.broker.On(m.onPreview); err != nil {
+		return fmt.Errorf("failed to register preview handler: %w", err)
+	}
 	if err := m.broker.On(m.onEndpoints); err != nil {
 		return fmt.Errorf("failed to register endpoints handler: %w", err)
 	}
@@ -151,7 +162,13 @@ func (m *ServiceTargetManager) ensureStream(ctx context.Context) error {
 
 // Register registers the provider with the server, waits for the response,
 // then starts background handling of provisioning requests.
-func (m *ServiceTargetManager) Register(ctx context.Context, factory ServiceTargetFactory, hostType string) error {
+// Preview support defaults to false and is advertised only when explicitly enabled.
+func (m *ServiceTargetManager) Register(
+	ctx context.Context,
+	factory ServiceTargetFactory,
+	hostType string,
+	supportsPreview ...bool,
+) error {
 	if err := m.ensureStream(ctx); err != nil {
 		return err
 	}
@@ -162,7 +179,8 @@ func (m *ServiceTargetManager) Register(ctx context.Context, factory ServiceTarg
 		RequestId: uuid.NewString(),
 		MessageType: &ServiceTargetMessage_RegisterServiceTargetRequest{
 			RegisterServiceTargetRequest: &RegisterServiceTargetRequest{
-				Host: hostType,
+				Host:            hostType,
+				SupportsPreview: len(supportsPreview) > 0 && supportsPreview[0],
 			},
 		},
 	}
@@ -355,6 +373,41 @@ func (m *ServiceTargetManager) onDeploy(
 			DeployResponse: &ServiceTargetDeployResponse{Result: result},
 		},
 	}, err
+}
+
+// onPreview handles read-only preview requests without using initialized deployment instances.
+func (m *ServiceTargetManager) onPreview(
+	ctx context.Context,
+	req *ServiceTargetPreviewRequest,
+) (*ServiceTargetMessage, error) {
+	serviceConfig := req.GetServiceConfig()
+	if serviceConfig == nil {
+		return nil, errors.New("service config is required for preview request")
+	}
+
+	provider, err := m.componentManager.CreateInstance(serviceConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	previewProvider, ok := provider.(ServiceTargetPreviewProvider)
+	if !ok {
+		return nil, fmt.Errorf("service target '%s' does not support deployment preview", serviceConfig.Host)
+	}
+
+	result, err := previewProvider.Preview(ctx, serviceConfig)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, fmt.Errorf("service target '%s' returned a nil deployment preview result", serviceConfig.Host)
+	}
+
+	return &ServiceTargetMessage{
+		MessageType: &ServiceTargetMessage_PreviewResponse{
+			PreviewResponse: &ServiceTargetPreviewResponse{Result: result},
+		},
+	}, nil
 }
 
 // onEndpoints handles endpoints requests

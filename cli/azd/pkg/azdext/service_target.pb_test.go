@@ -7,6 +7,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestServiceTargetEnvelope_GetSetError(t *testing.T) {
@@ -149,4 +152,69 @@ func TestServiceTargetEnvelope_ProgressMessage(t *testing.T) {
 		require.True(t, env.IsProgressMessage(msg))
 		require.Equal(t, "packaging...", env.GetProgressMessage(msg))
 	})
+}
+
+func TestServiceTargetEnvelope_PreviewRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	data, err := structpb.NewStruct(map[string]any{
+		"image":    "registry.example.com/app:latest",
+		"replicas": 2,
+		"build":    false,
+		"settings": map[string]any{"mode": "preview"},
+		"changes":  []any{"create", "configure"},
+	})
+	require.NoError(t, err)
+	request := &ServiceTargetPreviewRequest{
+		ServiceConfig: &ServiceConfig{Name: "web-service", Host: "custom"},
+	}
+	response := &ServiceTargetPreviewResponse{
+		Result: &ServiceDeployPreviewResult{Message: "Deployment preview", Data: data},
+	}
+	tests := []struct {
+		name        string
+		message     *ServiceTargetMessage
+		inner       proto.Message
+		fieldName   protoreflect.Name
+		fieldNumber protoreflect.FieldNumber
+	}{
+		{
+			name:        "Request",
+			message:     &ServiceTargetMessage{MessageType: &ServiceTargetMessage_PreviewRequest{PreviewRequest: request}},
+			inner:       request,
+			fieldName:   "preview_request",
+			fieldNumber: 21,
+		},
+		{
+			name: "Response",
+			message: &ServiceTargetMessage{
+				MessageType: &ServiceTargetMessage_PreviewResponse{PreviewResponse: response},
+			},
+			inner:       response,
+			fieldName:   "preview_response",
+			fieldNumber: 22,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			env := NewServiceTargetEnvelope()
+			env.SetRequestId(t.Context(), tt.message, "preview-1")
+			require.Equal(t, tt.fieldNumber, tt.message.ProtoReflect().Descriptor().Fields().ByName(tt.fieldName).Number())
+			wire, err := proto.Marshal(tt.message)
+			require.NoError(t, err)
+			var decoded ServiceTargetMessage
+			require.NoError(t, proto.Unmarshal(wire, &decoded))
+			require.True(t, proto.Equal(tt.message, &decoded))
+			inner, ok := env.GetInnerMessage(&decoded).(proto.Message)
+			require.True(t, ok, "the envelope must expose the preview request or response to the broker")
+			require.True(t, proto.Equal(tt.inner, inner))
+			require.Equal(t, "preview-1", env.GetRequestId(t.Context(), &decoded))
+			require.False(t, env.IsProgressMessage(&decoded))
+			require.Empty(t, env.GetProgressMessage(&decoded))
+			require.NoError(t, env.GetError(&decoded))
+		})
+	}
 }

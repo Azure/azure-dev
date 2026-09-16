@@ -24,7 +24,7 @@ type serviceReceiver interface {
 
 type serviceTargetRegistrar interface {
 	serviceReceiver
-	Register(ctx context.Context, factory ServiceTargetFactory, hostType string) error
+	Register(ctx context.Context, factory ServiceTargetFactory, hostType string, supportsPreview ...bool) error
 	Close() error
 }
 
@@ -54,6 +54,8 @@ type provisioningRegistrar interface {
 type ServiceTargetRegistration struct {
 	Host    string
 	Factory func() ServiceTargetProvider
+	// SupportsPreview explicitly opts in to read-only deployment preview.
+	SupportsPreview bool
 }
 
 // FrameworkServiceRegistration describes a framework service provider to register with azd core.
@@ -161,6 +163,19 @@ func (er *ExtensionHost) initManagers(extensionId string, brokerLogger *log.Logg
 // WithServiceTarget registers a service target provider to be wired when Run is invoked.
 func (er *ExtensionHost) WithServiceTarget(host string, factory ServiceTargetFactory) *ExtensionHost {
 	er.serviceTargets = append(er.serviceTargets, ServiceTargetRegistration{Host: host, Factory: factory})
+	return er
+}
+
+// WithServiceTargetPreview registers a service target provider with read-only deployment preview support.
+// The factory must create fresh providers implementing ServiceTargetPreviewProvider, whose Preview
+// method must work without Initialize or any deployment preparation. The factory is not invoked
+// during registration to detect this capability.
+func (er *ExtensionHost) WithServiceTargetPreview(host string, factory ServiceTargetFactory) *ExtensionHost {
+	er.serviceTargets = append(er.serviceTargets, ServiceTargetRegistration{
+		Host:            host,
+		Factory:         factory,
+		SupportsPreview: true,
+	})
 	return er
 }
 
@@ -326,7 +341,7 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 
 		r := reg
 		registrationsWaitGroup.Go(func() {
-			if err := er.serviceTargetManager.Register(ctx, r.Factory, r.Host); err != nil {
+			if err := er.serviceTargetManager.Register(ctx, r.Factory, r.Host, r.SupportsPreview); err != nil {
 				registrationErrChan <- fmt.Errorf("failed to register service target '%s': %w", r.Host, err)
 			}
 		})

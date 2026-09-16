@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // MockServiceTargetProvider implements ServiceTargetProvider using testify/mock
@@ -73,6 +74,19 @@ func (m *MockServiceTargetProvider) Deploy(
 ) (*ServiceDeployResult, error) {
 	args := m.Called(ctx, serviceConfig, serviceContext, targetResource, progress)
 	return args.Get(0).(*ServiceDeployResult), args.Error(1)
+}
+
+type mockServiceTargetPreviewProvider struct {
+	MockServiceTargetProvider
+}
+
+func (m *mockServiceTargetPreviewProvider) Preview(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) (*ServiceDeployPreviewResult, error) {
+	args := m.Called(ctx, serviceConfig)
+	result, _ := args.Get(0).(*ServiceDeployPreviewResult)
+	return result, args.Error(1)
 }
 
 // Test helper functions
@@ -509,4 +523,162 @@ func TestServiceTargetManager_MultipleRequestTypes_SameProvider(t *testing.T) {
 
 	// Verify all mock expectations
 	mockProvider.AssertExpectations(t)
+}
+
+func TestServiceTargetManager_PreviewRequest(t *testing.T) {
+	t.Parallel()
+
+	data, err := structpb.NewStruct(map[string]any{
+		"image": "registry.example.com/app:latest",
+		"configuration": map[string]any{
+			"replicas": 2,
+			"enabled":  true,
+		},
+	})
+	require.NoError(t, err)
+	result := &ServiceDeployPreviewResult{Message: "Deployment preview", Data: data}
+	providerError := errors.New("preview failed")
+	tests := []struct {
+		name          string
+		result        *ServiceDeployPreviewResult
+		providerError error
+		wantError     string
+	}{
+		{name: "ResponseData", result: result},
+		{name: "EmptyResult", result: &ServiceDeployPreviewResult{}},
+		{name: "NilResult", wantError: "service target 'custom' returned a nil deployment preview result"},
+		{name: "ProviderError", providerError: providerError},
+		{name: "ResultWithProviderError", result: result, providerError: providerError},
+		{name: "Canceled", providerError: context.Canceled},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			manager := createTestServiceTargetManager()
+			serviceConfig := createTestServiceConfigForServiceTarget("web-service", "custom")
+			provider := &mockServiceTargetPreviewProvider{}
+			provider.On("Preview", t.Context(), serviceConfig).Return(tt.result, tt.providerError).Once()
+			factoryCalls := 0
+			manager.componentManager.RegisterFactory("custom", func() ServiceTargetProvider {
+				factoryCalls++
+				return provider
+			})
+
+			response, err := manager.onPreview(t.Context(), &ServiceTargetPreviewRequest{ServiceConfig: serviceConfig})
+
+			switch {
+			case tt.providerError != nil:
+				require.ErrorIs(t, err, tt.providerError)
+				assert.Nil(t, response)
+			case tt.wantError != "":
+				require.EqualError(t, err, tt.wantError)
+				assert.Nil(t, response)
+			default:
+				require.NoError(t, err)
+				require.NotNil(t, response.GetPreviewResponse())
+				assert.Same(t, tt.result, response.GetPreviewResponse().Result)
+				assert.Nil(t, response.GetDeployResponse())
+			}
+			assert.Equal(t, 1, factoryCalls)
+			assert.Empty(t, manager.componentManager.instances)
+			for _, method := range []string{"Initialize", "GetTargetResource", "Endpoints", "Package", "Publish", "Deploy"} {
+				provider.AssertNumberOfCalls(t, method, 0)
+			}
+			provider.AssertExpectations(t)
+		})
+	}
+}
+
+func TestServiceTargetManager_PreviewRequest_Validation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		request   *ServiceTargetPreviewRequest
+		wantError string
+	}{
+		{name: "NilRequest", wantError: "service config is required for preview request"},
+		{
+			name:      "NilServiceConfig",
+			request:   &ServiceTargetPreviewRequest{},
+			wantError: "service config is required for preview request",
+		},
+		{
+			name: "NoFactory",
+			request: &ServiceTargetPreviewRequest{
+				ServiceConfig: createTestServiceConfigForServiceTarget("web-service", "missing"),
+			},
+			wantError: "no factory registered for service target: missing",
+		},
+		{
+			name: "Unsupported",
+			request: &ServiceTargetPreviewRequest{
+				ServiceConfig: createTestServiceConfigForServiceTarget("web-service", "legacy"),
+			},
+			wantError: "service target 'legacy' does not support deployment preview",
+		},
+		{
+			name: "NilProvider",
+			request: &ServiceTargetPreviewRequest{
+				ServiceConfig: createTestServiceConfigForServiceTarget("web-service", "nil-provider"),
+			},
+			wantError: "service target 'nil-provider' does not support deployment preview",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			manager := createTestServiceTargetManager()
+			legacyProvider := &MockServiceTargetProvider{}
+			manager.componentManager.RegisterFactory("legacy", func() ServiceTargetProvider { return legacyProvider })
+			manager.componentManager.RegisterFactory("nil-provider", func() ServiceTargetProvider { return nil })
+
+			response, err := manager.onPreview(t.Context(), tt.request)
+			require.EqualError(t, err, tt.wantError)
+			assert.Nil(t, response)
+			assert.Empty(t, legacyProvider.Calls)
+			assert.Empty(t, manager.componentManager.instances)
+		})
+	}
+}
+
+func TestServiceTargetManager_PreviewRequest_DoesNotReuseDeploymentInstance(t *testing.T) {
+	t.Parallel()
+
+	manager := createTestServiceTargetManager()
+	serviceConfig := createTestServiceConfigForServiceTarget("web-service", "custom")
+	deploymentProvider := &MockServiceTargetProvider{}
+	deploymentProvider.On("Initialize", t.Context(), serviceConfig).Return(nil).Once()
+	manager.componentManager.RegisterFactory("custom", func() ServiceTargetProvider { return deploymentProvider })
+	_, err := manager.onInitialize(t.Context(), &ServiceTargetInitializeRequest{ServiceConfig: serviceConfig})
+	require.NoError(t, err)
+
+	var previewProviders []*mockServiceTargetPreviewProvider
+	manager.componentManager.RegisterFactory("custom", func() ServiceTargetProvider {
+		provider := &mockServiceTargetPreviewProvider{}
+		provider.On("Preview", t.Context(), serviceConfig).Return(&ServiceDeployPreviewResult{}, nil).Once()
+		previewProviders = append(previewProviders, provider)
+		return provider
+	})
+	for range 2 {
+		response, err := manager.onPreview(t.Context(), &ServiceTargetPreviewRequest{ServiceConfig: serviceConfig})
+		require.NoError(t, err)
+		require.NotNil(t, response.GetPreviewResponse())
+	}
+
+	require.Len(t, previewProviders, 2)
+	assert.NotSame(t, previewProviders[0], previewProviders[1])
+	for _, provider := range previewProviders {
+		require.Len(t, provider.Calls, 1, "preview must be the only lifecycle method called on the fresh instance")
+		provider.AssertExpectations(t)
+	}
+	cached, err := manager.componentManager.GetInstance(serviceConfig.Name)
+	require.NoError(t, err)
+	assert.Same(t, deploymentProvider, cached)
+	require.Len(t, deploymentProvider.Calls, 1, "preview must not invoke the cached deployment provider")
+	deploymentProvider.AssertExpectations(t)
 }

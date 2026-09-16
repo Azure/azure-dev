@@ -84,6 +84,22 @@ Extensions use two structured error types:
 
 Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC auth → fallback
 
+## Deployment Preview SDK Contract
+
+The SDK defines optional preview support through `WithServiceTargetPreview` and
+`ServiceTargetPreviewProvider`. Registration advertises the capability without
+constructing providers. Existing registrations default to no preview support.
+
+Dedicated protocol messages carry a service configuration and return a
+human-readable message plus structured data. The SDK handles each preview on a
+fresh provider without invoking deployment initialization or using its instance
+cache; preview is not dispatched as a deployment.
+
+This is the SDK prerequisite only. CLI command integration, host-side capability
+checks, and first-party preview implementations are separate work.
+See the [SDK contract](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview-sdk-contract)
+for registration and provider requirements.
+
 ## First-Party Extensions
 
 First-party extensions live in `cli/azd/extensions/` and are registered in `cli/azd/extensions/registry.json`.

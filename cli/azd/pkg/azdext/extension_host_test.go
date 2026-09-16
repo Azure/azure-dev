@@ -48,8 +48,13 @@ type MockServiceTargetRegistrar struct {
 	mock.Mock
 }
 
-func (m *MockServiceTargetRegistrar) Register(ctx context.Context, factory ServiceTargetFactory, hostType string) error {
-	args := m.Called(ctx, factory, hostType)
+func (m *MockServiceTargetRegistrar) Register(
+	ctx context.Context,
+	factory ServiceTargetFactory,
+	hostType string,
+	supportsPreview ...bool,
+) error {
+	args := m.Called(ctx, factory, hostType, supportsPreview)
 	return args.Error(0)
 }
 
@@ -149,6 +154,70 @@ func TestExtensionHost_Client(t *testing.T) {
 	assert.Same(t, client, host2.Client())
 }
 
+func TestExtensionHost_WithServiceTargetPreview(t *testing.T) {
+	t.Parallel()
+
+	host := NewExtensionHost(nil)
+	factoryCalls := 0
+	factory := func() ServiceTargetProvider {
+		factoryCalls++
+		return &mockServiceTargetPreviewProvider{}
+	}
+	require.Same(t, host, host.WithServiceTarget("legacy", factory))
+	require.Same(t, host, host.WithServiceTargetPreview("preview", factory))
+
+	registrations := host.ServiceTargets()
+	require.Len(t, registrations, 2)
+	assert.Equal(t, "legacy", registrations[0].Host)
+	assert.False(t, registrations[0].SupportsPreview, "implementing Preview alone must not advertise the capability")
+	assert.NotNil(t, registrations[0].Factory)
+	assert.Equal(t, "preview", registrations[1].Host)
+	assert.True(t, registrations[1].SupportsPreview)
+	assert.NotNil(t, registrations[1].Factory)
+	assert.Zero(t, factoryCalls, "the builders and introspection must not instantiate providers")
+
+	registrations[1].SupportsPreview = false
+	assert.True(t, host.ServiceTargets()[1].SupportsPreview, "introspection must return a copy")
+}
+
+func TestExtensionHost_ServiceTargetPreviewRegistration(t *testing.T) {
+	t.Parallel()
+
+	for _, supportsPreview := range []bool{false, true} {
+		t.Run(strconv.FormatBool(supportsPreview), func(t *testing.T) {
+			t.Parallel()
+
+			manager := &MockServiceTargetRegistrar{}
+			manager.On("Register", mock.Anything, mock.Anything, "custom", []bool{supportsPreview}).Return(nil).Once()
+			receiveStarted := make(chan struct{})
+			manager.On("Receive", mock.Anything).Run(func(mock.Arguments) {
+				close(receiveStarted)
+			}).Return(nil).Once()
+			manager.On("Ready", mock.Anything).Run(func(mock.Arguments) {
+				<-receiveStarted
+			}).Return(nil).Once()
+			manager.On("Close").Return(nil).Once()
+
+			host := NewExtensionHost(newTestAzdClient())
+			host.serviceTargetManager = manager
+			factoryCalls := 0
+			factory := func() ServiceTargetProvider {
+				factoryCalls++
+				return &mockServiceTargetPreviewProvider{}
+			}
+			if supportsPreview {
+				host.WithServiceTargetPreview("custom", factory)
+			} else {
+				host.WithServiceTarget("custom", factory)
+			}
+
+			require.NoError(t, host.Run(t.Context()))
+			assert.Zero(t, factoryCalls, "registration must not instantiate providers to discover capabilities")
+			manager.AssertExpectations(t)
+		})
+	}
+}
+
 func TestCallReady(t *testing.T) {
 	t.Parallel()
 
@@ -231,7 +300,7 @@ func TestExtensionHost_ServiceTargetOnly(t *testing.T) {
 	// Setup mocks
 	mockServiceTargetManager := &MockServiceTargetRegistrar{}
 	registrationComplete := make(chan struct{})
-	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, mock.AnythingOfType("string")).
+	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, mock.AnythingOfType("string"), []bool{false}).
 		Run(func(args mock.Arguments) {
 			close(registrationComplete)
 		}).
@@ -359,7 +428,7 @@ func TestExtensionHost_ServiceTargetsAndEvents(t *testing.T) {
 		wg.Wait()
 		close(registrationComplete)
 	}()
-	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, mock.AnythingOfType("string")).
+	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, mock.AnythingOfType("string"), []bool{false}).
 		Run(func(args mock.Arguments) {
 			wg.Done()
 		}).
@@ -450,7 +519,7 @@ func TestExtensionHost_ServiceTargetRegistrationError(t *testing.T) {
 	}).Return(nil)
 
 	mockServiceTargetManager.
-		On("Register", mock.Anything, mock.Anything, mock.AnythingOfType("string")).
+		On("Register", mock.Anything, mock.Anything, mock.AnythingOfType("string"), []bool{false}).
 		Run(func(args mock.Arguments) {
 			// Wait for Receive to start before Register proceeds
 			<-receiveStarted
@@ -547,7 +616,7 @@ func TestExtensionHost_MultipleServiceTypes(t *testing.T) {
 	}()
 
 	mockServiceTargetManager := &MockServiceTargetRegistrar{}
-	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, mock.AnythingOfType("string")).
+	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, mock.AnythingOfType("string"), []bool{false}).
 		Run(func(args mock.Arguments) {
 			wg.Done()
 		}).Return(nil)
@@ -660,7 +729,8 @@ func TestExtensionHost_MultipleRegistrationErrors(t *testing.T) {
 		<-ctx.Done()
 	}).Return(nil)
 	mockServiceTargetManager.On("Ready", mock.Anything).Return(nil)
-	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, mock.AnythingOfType("string")).Return(error1)
+	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, mock.AnythingOfType("string"), []bool{false}).
+		Return(error1)
 	mockServiceTargetManager.On("Close").Return(nil)
 
 	mockFrameworkServiceManager := &MockFrameworkServiceRegistrar{}

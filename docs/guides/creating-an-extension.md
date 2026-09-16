@@ -90,6 +90,12 @@ For extensions that are still in development or preview, consider publishing to 
 - **Integrate with help** — Make your extension discoverable through `azd help`
 - **Error handling** — Use `ServiceError` for Azure API errors and `LocalError` for client-side errors
 - **Telemetry** — Follow pattern-based classification (e.g., `ext.service.<errorCode>`)
+- **Read-only preview providers** — The optional
+  [deployment preview SDK contract](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview-sdk-contract)
+  uses `WithServiceTargetPreview` and `ServiceTargetPreviewProvider`. A preview
+  must work on a fresh provider without `Initialize` and must not build, deploy,
+  or persist deployment state. These SDK APIs are prerequisites; registering them
+  alone does not enable a CLI preview command.
 
 ## Detailed Reference
 

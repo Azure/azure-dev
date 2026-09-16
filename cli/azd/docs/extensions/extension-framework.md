@@ -3224,7 +3224,8 @@ metricsResp, err := copilot.GetUsageMetrics(ctx, &v1beta.GetCopilotUsageMetricsR
 if err != nil {
     return fmt.Errorf("failed to get metrics: %w", err)
 }
-fmt.Printf("Total tokens: %.0f\n", metricsResp.Usage.TotalTokens)
+fmt.Printf("Total tokens: %.0f, AI credits: %.2f AIC\n",
+  metricsResp.Usage.TotalTokens, metricsResp.Usage.AiCredits)
 
 // Retrieve file changes
 changesResp, err := copilot.GetFileChanges(ctx, &v1beta.GetCopilotFileChangesRequest{

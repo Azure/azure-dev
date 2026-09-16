@@ -34,10 +34,9 @@ type UsageMetrics struct {
 	// nano-AIU totals. It should match what you see as "AIC" in other Copilots.
 	AICredits float64
 
-	// BillingRate is deprecated legacy metadata. Copilot AIC billing is token-based,
-	// so this value is not shown to users and should be treated as compatibility-only.
+	// BillingRate is deprecated legacy metadata. Prefer AICredits for billing.
 	BillingRate float64
-	// PremiumRequests is deprecated legacy metadata. Prefer token totals instead.
+	// PremiumRequests is deprecated legacy metadata. Prefer AICredits for billing.
 	PremiumRequests float64
 	DurationMS      float64
 }

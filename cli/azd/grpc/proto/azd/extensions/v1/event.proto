@@ -73,6 +73,11 @@ message ProjectHandlerStatus {
   string message = 3;
   // Optional structured error details (set when status is "failed").
   ExtensionError error = 4;
+  // Optional follow-up text for the parent command completion
+  // message. Presence distinguishes no contribution from an
+  // explicit empty retraction. Hosts collect this only from
+  // successful project post* handlers.
+  optional string follow_up = 5;
 }
 
 // Client sends status updates for service events

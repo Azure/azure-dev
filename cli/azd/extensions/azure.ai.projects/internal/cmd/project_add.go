@@ -302,7 +302,7 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if err != nil {
 		return rollbackProjectAdd(err, restoreService, restoreProvider)
 	}
-	reconciledDefault, restoreReconciled, err := reconcileAdoptedDeployments(
+	reconciledDefault, reconciledChanged, restoreReconciled, err := reconcileAdoptedDeployments(
 		ctx, client, projectRoot, envName, target, serviceName, a.flags.noPrompt,
 	)
 	if err != nil {
@@ -385,6 +385,9 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		Endpoint:        target.Endpoint,
 		ResourceID:      target.ResourceId,
 	}
+	if mutation == "unchanged" && reconciledChanged {
+		result.Mutation = "updated"
+	}
 	writeProjectEndpointWarning(
 		os.Stderr,
 		target.EndpointPathWarning,
@@ -398,10 +401,14 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if a.flags.output == "json" {
 		return json.NewEncoder(os.Stdout).Encode(result)
 	}
-	if mutation == "unchanged" {
+	if result.Mutation == "unchanged" {
 		fmt.Printf("Foundry project configuration unchanged (%s).\n", serviceName)
 	} else {
-		fmt.Printf("Foundry project configuration %s in services.%s.\n", mutation, serviceName)
+		fmt.Printf(
+			"Foundry project configuration %s in services.%s.\n",
+			result.Mutation,
+			serviceName,
+		)
 	}
 	return nil
 }

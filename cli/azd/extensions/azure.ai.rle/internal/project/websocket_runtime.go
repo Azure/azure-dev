@@ -21,11 +21,10 @@ import (
 )
 
 const (
-	maxWebSocketMessageBytes  = 8 * 1024 * 1024
-	webSocketHandshakeTimeout = 30 * time.Second
-	webSocketPingInterval     = 20 * time.Second
-	webSocketPingTimeout      = 20 * time.Second
-	webSocketDrainTimeout     = 60 * time.Second
+	maxWebSocketMessageBytes   = 8 * 1024 * 1024
+	webSocketHandshakeTimeout  = 30 * time.Second
+	webSocketKeepAliveInterval = 10 * time.Second
+	webSocketDrainTimeout      = 60 * time.Second
 )
 
 var defaultWebSocketHandshakeRetryDelays = []time.Duration{time.Second, 2 * time.Second}
@@ -54,9 +53,29 @@ func NewWebSocketRuntimeSession(
 		baseURL:               baseURL,
 		timeout:               timeout,
 		authorizationProvider: authorizationProvider,
-		keepAliveInterval:     webSocketPingInterval,
+		keepAliveInterval:     webSocketKeepAliveInterval,
 		handshakeRetryDelays:  defaultWebSocketHandshakeRetryDelays,
 		drainTimeout:          webSocketDrainTimeout,
+	}
+}
+
+// Restart discards the current connection and makes the session usable against
+// a replacement local runtime, such as one created by --watch.
+func (c *WebSocketRuntimeSession) Restart(baseURL string) {
+	c.exchangeMu.Lock()
+	defer c.exchangeMu.Unlock()
+
+	c.mu.Lock()
+	connection := c.connection
+	c.connection = nil
+	c.stopKeepAliveLocked()
+	c.baseURL = baseURL
+	c.terminalError = nil
+	c.closed = false
+	c.mu.Unlock()
+
+	if connection != nil {
+		_ = connection.Close()
 	}
 }
 
@@ -372,9 +391,8 @@ func (c *WebSocketRuntimeSession) keepAlive(connection *websocket.Conn, done <-c
 		case <-done:
 			return
 		case <-ticker.C:
-			deadline := time.Now().Add(webSocketPingTimeout)
-			if err := connection.WriteControl(websocket.PingMessage, nil, deadline); err != nil {
-				_ = c.failConnection(connection, fmt.Errorf("send OpenEnv WebSocket keepalive: %w", err))
+			if _, err := c.Call(context.Background(), "state", ""); err != nil {
+				_ = c.failConnection(connection, fmt.Errorf("exchange OpenEnv WebSocket keepalive: %w", err))
 				return
 			}
 		}
@@ -383,10 +401,13 @@ func (c *WebSocketRuntimeSession) keepAlive(connection *websocket.Conn, done <-c
 
 func (c *WebSocketRuntimeSession) failConnection(connection *websocket.Conn, err error) error {
 	c.mu.Lock()
-	if c.connection == connection {
-		c.connection = nil
-		c.stopKeepAliveLocked()
+	if c.connection != connection {
+		c.mu.Unlock()
+		_ = connection.Close()
+		return err
 	}
+	c.connection = nil
+	c.stopKeepAliveLocked()
 	if c.terminalError == nil {
 		c.terminalError = &azdext.LocalError{
 			Message:    fmt.Sprintf("The OpenEnv WebSocket session is no longer usable: %v", err),

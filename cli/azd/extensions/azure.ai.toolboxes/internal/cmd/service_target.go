@@ -201,7 +201,7 @@ func (p *toolboxServiceTarget) Deploy(
 	if err != nil {
 		return nil, exterrors.Auth(
 			exterrors.CodeCredentialCreationFailed,
-			fmt.Sprintf("failed to create Azure credential: %s", err),
+			err.Error(),
 			"run 'azd auth login' to authenticate",
 		)
 	}

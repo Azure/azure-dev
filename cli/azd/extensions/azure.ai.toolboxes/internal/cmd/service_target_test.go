@@ -270,50 +270,77 @@ func TestDeployUsesSubscriptionUserTenantForCredential(t *testing.T) {
 		return projectctx.AzdHostedSources{EnvValue: endpoint, EnvName: "test"}, nil
 	}
 	t.Cleanup(func() { projectctx.ReadAzdHostedSourcesFunc = previousReadSources })
-	stubToolboxEndpointEnv(t)
 
-	account := &stubAccountTenantLookup{tenantID: userTenantID}
-	environment := &stubEnvironmentReader{name: "test", subscriptionID: subscriptionID}
-	client := newMockToolboxClient(endpoint)
-	var credentialTenantID string
-	target := &toolboxServiceTarget{
-		environmentClient: environment,
-		accountClient:     account,
-		resolver:          newStubConnectionResolver(),
-		newClient: func(gotEndpoint, tenantID string) (toolboxClient, error) {
-			assert.Equal(t, endpoint, gotEndpoint)
-			credentialTenantID = tenantID
-			return client, nil
-		},
+	const credentialErrorMessage = "failed to create Azure credential: invalid tenant ID"
+	for _, tt := range []struct {
+		name      string
+		clientErr error
+	}{
+		{name: "success"},
+		{name: "credential creation fails", clientErr: errors.New(credentialErrorMessage)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			endpointWrites := stubToolboxEndpointEnv(t)
+			account := &stubAccountTenantLookup{tenantID: userTenantID}
+			environment := &stubEnvironmentReader{name: "test", subscriptionID: subscriptionID}
+			client := newMockToolboxClient(endpoint)
+			var credentialTenantID string
+			target := &toolboxServiceTarget{
+				environmentClient: environment,
+				accountClient:     account,
+				resolver:          newStubConnectionResolver(),
+				newClient: func(gotEndpoint, tenantID string) (toolboxClient, error) {
+					assert.Equal(t, endpoint, gotEndpoint)
+					credentialTenantID = tenantID
+					if tt.clientErr != nil {
+						return nil, tt.clientErr
+					}
+					return client, nil
+				},
+			}
+			properties, err := structpb.NewStruct(map[string]any{
+				"tools": []any{map[string]any{"type": "web_search"}},
+			})
+			require.NoError(t, err)
+
+			result, err := target.Deploy(
+				t.Context(),
+				&azdext.ServiceConfig{
+					Name:                 "research",
+					AdditionalProperties: properties,
+					Environment: map[string]string{
+						"TOOLBOX_SETTING": "value",
+					},
+				},
+				nil,
+				nil,
+				nil,
+			)
+
+			require.NotNil(t, environment.getValueRequest)
+			assert.Equal(t, "test", environment.getValueRequest.GetEnvName())
+			assert.Equal(t, "AZURE_SUBSCRIPTION_ID", environment.getValueRequest.GetKey())
+			require.NotNil(t, account.request)
+			assert.Equal(t, subscriptionID, account.request.GetSubscriptionId())
+			assert.Equal(t, userTenantID, credentialTenantID)
+			if tt.clientErr != nil {
+				require.Error(t, err)
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				assert.Equal(t, exterrors.CodeCredentialCreationFailed, localErr.Code)
+				assert.Equal(t, azdext.LocalErrorCategoryAuth, localErr.Category)
+				assert.Equal(t, credentialErrorMessage, localErr.Message)
+				assert.Equal(t, "run 'azd auth login' to authenticate", localErr.Suggestion)
+				assert.Nil(t, result)
+				assert.Empty(t, client.createVersionCalls)
+				assert.Empty(t, *endpointWrites)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Len(t, client.createVersionCalls, 1)
+		})
 	}
-	properties, err := structpb.NewStruct(map[string]any{
-		"tools": []any{map[string]any{"type": "web_search"}},
-	})
-	require.NoError(t, err)
-
-	result, err := target.Deploy(
-		t.Context(),
-		&azdext.ServiceConfig{
-			Name:                 "research",
-			AdditionalProperties: properties,
-			Environment: map[string]string{
-				"TOOLBOX_SETTING": "value",
-			},
-		},
-		nil,
-		nil,
-		nil,
-	)
-
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.NotNil(t, environment.getValueRequest)
-	assert.Equal(t, "test", environment.getValueRequest.GetEnvName())
-	assert.Equal(t, "AZURE_SUBSCRIPTION_ID", environment.getValueRequest.GetKey())
-	require.NotNil(t, account.request)
-	assert.Equal(t, subscriptionID, account.request.GetSubscriptionId())
-	assert.Equal(t, userTenantID, credentialTenantID)
-	require.Len(t, client.createVersionCalls, 1)
 }
 
 func TestCredentialTenantIDErrors(t *testing.T) {

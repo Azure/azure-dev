@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.7 (2026-09-17)
+
+### Breaking Changes
+
+- [[#10024]](https://github.com/Azure/azure-dev/pull/10024) Remove the standalone `azd ai toolbox deploy` command in favor of `azd deploy <service>`. Thanks @JerryYangKai for the contribution!
+
 ## 1.0.0-beta.6 (2026-09-04)
 
 ### Features Added

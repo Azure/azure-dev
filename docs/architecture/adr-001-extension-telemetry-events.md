@@ -44,7 +44,7 @@ records events from extensions admitted to the official registry.**
   the attributes. The protobuf does not carry classification metadata.
 - Every concrete field used by an in-repository first-party extension is
   declared in `cli/azd/extensions/telemetry/fields.go` with its final `ext.*`
-  name, classification, purpose, and endpoint type.
+  name, owning extension, classification, purpose, and endpoint type.
 - `cli/azd/extensions/telemetry/fields_test.go` statically scans telemetry
   payload construction in production Go source, including
   `ReportUsageRequest` and the shared Foundry telemetry `Event`. Attribute maps

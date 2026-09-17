@@ -76,3 +76,24 @@ var (
 		Endpoint:       "N/A",
 	}
 )
+
+// fieldsByExtension associates each declaration with the first-party extension
+// whose reviewed telemetry contract owns it.
+//
+//nolint:unused // The source validator reads this inventory directly from fields.go.
+var fieldsByExtension = map[string][]fields.AttributeKey{
+	"microsoft.azd.demo": {
+		DemoMode,
+		DemoOutcome,
+	},
+	"azure.ai.agents": {
+		AgentKind,
+		AgentHarness,
+		AgentOperation,
+		LocalClientRoute,
+	},
+	"azure.ai.inspector": {
+		InspectorFunnelStage,
+		InspectorFunnelOutcome,
+	},
+}

@@ -292,9 +292,11 @@ public reference, and downstream Kusto/LENS consumers drift out of sync. Verify 
   members.
 - **First-party extension field** — keep the runtime `ReportUsage` map key as a string literal or
   same-package compile-time constant and declare its final `ext.*` name as an exported
-  `AttributeKey` in `cli/azd/extensions/telemetry/fields.go`. Run
+  `AttributeKey` in `cli/azd/extensions/telemetry/fields.go`, then add it under the owning extension
+  in that file's `fieldsByExtension` inventory. Run
   `go test ./extensions/telemetry`; the source validator rejects undeclared or dynamically keyed
-  fields, missing classification/purpose/endpoint metadata, measurements, and Customer Content.
+  fields, fields owned by a different extension, missing classification/purpose/endpoint metadata,
+  measurements, and Customer Content.
 - **Event** — define a constant in `cli/azd/internal/tracing/events/events.go` following the
   `prefix.noun.verb` value convention. It must be an exported string `const` whose Go identifier
   contains `Event` (end it with `Prefix` for a prefix-match group) so the classifier

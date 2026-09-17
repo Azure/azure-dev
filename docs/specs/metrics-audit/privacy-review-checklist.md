@@ -221,9 +221,10 @@ When adding a new telemetry field:
 
 1. **Define the field** in `internal/tracing/fields/fields.go`. For a
    first-party extension `ReportUsage` attribute, define the final `ext.*` key
-   in `extensions/telemetry/fields.go`. The source validator requires every
-   production Go usage to have one declaration, while the runtime continues to
-   accept the existing bounded attribute map.
+   in `extensions/telemetry/fields.go` and assign it to its owning extension in
+   `fieldsByExtension`. The source validator requires every production Go usage
+   to have a declaration owned by that extension, while the runtime continues
+   to accept the existing bounded attribute map.
 2. **Assign classification** — use the decision tree above to determine the correct classification.
 3. **Assign purpose** — select one or more from: `FeatureInsight`, `BusinessInsight`, `PerformanceAndHealth`.
 4. **Determine hashing** — apply hashing rules above.

@@ -18,10 +18,14 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 )
 
-const maxExtensionAttributeKeySize = 128
+const (
+	maxExtensionAttributeKeySize = 128
+	fieldOwnershipVariableName   = "fieldsByExtension"
+)
 
 type fieldDeclaration struct {
 	name           string
+	extension      string
 	key            string
 	classification fields.Classification
 	purpose        fields.Purpose
@@ -109,13 +113,13 @@ var TestField = fields.AttributeKey{
 		},
 		{
 			name: "duplicate final key is rejected",
-			declaration: `var FirstField = fields.AttributeKey{
+			declaration: `var TestField = fields.AttributeKey{
 	Key: attribute.Key("ext.test"),
 	Classification: fields.SystemMetadata,
 	Purpose: fields.FeatureInsight,
 	Endpoint: "N/A",
 }
-var SecondField = fields.AttributeKey{
+var DuplicateField = fields.AttributeKey{
 	Key: attribute.Key("ext.test"),
 	Classification: fields.SystemMetadata,
 	Purpose: fields.FeatureInsight,
@@ -162,12 +166,94 @@ var TestField = fields.AttributeKey{
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
+			ownership := `var fieldsByExtension = map[string][]fields.AttributeKey{
+	"contoso.extension": {TestField},
+}`
 			source := `package telemetry
 import (
 	"go.opentelemetry.io/otel/attribute"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 )
-` + test.declaration
+` + test.declaration + "\n" + ownership
+			path := filepath.Join(t.TempDir(), "fields.go")
+			require.NoError(t, os.WriteFile(path, []byte(source), 0o600))
+
+			_, diagnostics := loadFieldDeclarations(path)
+			if test.expectedMessage == "" {
+				require.Empty(t, diagnostics)
+			} else {
+				require.NotEmpty(t, diagnostics)
+				require.Contains(t, strings.Join(diagnostics, "\n"), test.expectedMessage)
+			}
+		})
+	}
+}
+
+func TestExtensionTelemetryFieldOwnershipRules(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		ownership       string
+		expectedMessage string
+	}{
+		{
+			name: "valid ownership",
+			ownership: `var fieldsByExtension = map[string][]fields.AttributeKey{
+	"contoso.extension": {TestField},
+}`,
+		},
+		{
+			name:            "ownership inventory is required",
+			ownership:       "",
+			expectedMessage: "fieldsByExtension must assign every extension telemetry field",
+		},
+		{
+			name:            "field ownership is required",
+			ownership:       `var fieldsByExtension = map[string][]fields.AttributeKey{}`,
+			expectedMessage: "must be assigned to exactly one extension",
+		},
+		{
+			name: "field cannot have multiple owners",
+			ownership: `var fieldsByExtension = map[string][]fields.AttributeKey{
+	"contoso.first": {TestField},
+	"contoso.second": {TestField},
+}`,
+			expectedMessage: "is assigned to multiple extensions",
+		},
+		{
+			name: "ownership references a declared field",
+			ownership: `var fieldsByExtension = map[string][]fields.AttributeKey{
+	"contoso.extension": {UnknownField},
+}`,
+			expectedMessage: "references unknown extension telemetry field",
+		},
+		{
+			name: "extension owner is required",
+			ownership: `var fieldsByExtension = map[string][]fields.AttributeKey{
+	"": {TestField},
+}`,
+			expectedMessage: "extension names must be compile-time non-empty strings",
+		},
+	}
+
+	const declaration = `var TestField = fields.AttributeKey{
+	Key: attribute.Key("ext.test"),
+	Classification: fields.SystemMetadata,
+	Purpose: fields.FeatureInsight,
+	Endpoint: "N/A",
+}`
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			source := `package telemetry
+import (
+	"go.opentelemetry.io/otel/attribute"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+)
+` + declaration + "\n" + test.ownership
 			path := filepath.Join(t.TempDir(), "fields.go")
 			require.NoError(t, os.WriteFile(path, []byte(source), 0o600))
 
@@ -212,7 +298,9 @@ func loadFieldDeclarations(path string) (map[string]fieldDeclaration, []string) 
 	}
 	pkg := &sourcePackage{files: []*sourceFile{source}}
 	collectConstants(pkg)
-	declarations := map[string]fieldDeclaration{}
+	declarationsByName := map[string]fieldDeclaration{}
+	declarationNamesByKey := map[string]string{}
+	var declarationOrder []string
 	var diagnostics []string
 
 	for _, declaration := range file.Decls {
@@ -242,7 +330,8 @@ func loadFieldDeclarations(path string) (map[string]fieldDeclaration, []string) 
 				if field.key == "" {
 					continue
 				}
-				if previous, exists := declarations[field.key]; exists {
+				if previousName, exists := declarationNamesByKey[field.key]; exists {
+					previous := declarationsByName[previousName]
 					diagnostics = append(diagnostics, fmt.Sprintf(
 						"%s:%d: %s duplicates extension telemetry key %q already declared by %s at line %d",
 						filepath.ToSlash(path),
@@ -254,12 +343,148 @@ func loadFieldDeclarations(path string) (map[string]fieldDeclaration, []string) 
 					))
 					continue
 				}
-				declarations[field.key] = field
+				declarationsByName[field.name] = field
+				declarationNamesByKey[field.key] = field.name
+				declarationOrder = append(declarationOrder, field.name)
 			}
 		}
 	}
 
+	diagnostics = append(
+		diagnostics,
+		assignFieldOwners(fset, source, pkg, file, declarationsByName, declarationOrder)...,
+	)
+
+	declarations := map[string]fieldDeclaration{}
+	for _, name := range declarationOrder {
+		field := declarationsByName[name]
+		declarations[field.key] = field
+	}
 	return declarations, diagnostics
+}
+
+func assignFieldOwners(
+	fset *token.FileSet,
+	source *sourceFile,
+	pkg *sourcePackage,
+	file *ast.File,
+	declarations map[string]fieldDeclaration,
+	declarationOrder []string,
+) []string {
+	var ownershipLiteral *ast.CompositeLit
+
+	for _, declaration := range file.Decls {
+		gen, ok := declaration.(*ast.GenDecl)
+		if !ok || gen.Tok != token.VAR {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			valueSpec, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for i, name := range valueSpec.Names {
+				if name.Name != fieldOwnershipVariableName || i >= len(valueSpec.Values) {
+					continue
+				}
+				ownershipLiteral, _ = unwrapParentheses(valueSpec.Values[i]).(*ast.CompositeLit)
+			}
+		}
+	}
+
+	if ownershipLiteral == nil {
+		return []string{fmt.Sprintf(
+			"%s: %s must assign every extension telemetry field to its owning extension",
+			filepath.ToSlash(source.path),
+			fieldOwnershipVariableName,
+		)}
+	}
+
+	var diagnostics []string
+	for _, element := range ownershipLiteral.Elts {
+		entry, ok := element.(*ast.KeyValueExpr)
+		if !ok {
+			diagnostics = append(diagnostics, fmt.Sprintf(
+				"%s:%d: %s entries must use an extension name and a field list",
+				filepath.ToSlash(source.path),
+				fset.Position(element.Pos()).Line,
+				fieldOwnershipVariableName,
+			))
+			continue
+		}
+
+		extension, ok := resolveStringConstant(entry.Key, source, pkg, nil)
+		if !ok || strings.TrimSpace(extension) == "" {
+			diagnostics = append(diagnostics, fmt.Sprintf(
+				"%s:%d: %s extension names must be compile-time non-empty strings",
+				filepath.ToSlash(source.path),
+				fset.Position(entry.Key.Pos()).Line,
+				fieldOwnershipVariableName,
+			))
+			continue
+		}
+
+		fieldList, ok := unwrapParentheses(entry.Value).(*ast.CompositeLit)
+		if !ok {
+			diagnostics = append(diagnostics, fmt.Sprintf(
+				"%s:%d: %s values must be inline field lists",
+				filepath.ToSlash(source.path),
+				fset.Position(entry.Value.Pos()).Line,
+				fieldOwnershipVariableName,
+			))
+			continue
+		}
+		for _, fieldExpression := range fieldList.Elts {
+			fieldName, ok := unwrapParentheses(fieldExpression).(*ast.Ident)
+			if !ok {
+				diagnostics = append(diagnostics, fmt.Sprintf(
+					"%s:%d: %s must reference exported extension telemetry fields directly",
+					filepath.ToSlash(source.path),
+					fset.Position(fieldExpression.Pos()).Line,
+					fieldOwnershipVariableName,
+				))
+				continue
+			}
+
+			field, exists := declarations[fieldName.Name]
+			if !exists {
+				diagnostics = append(diagnostics, fmt.Sprintf(
+					"%s:%d: %s references unknown extension telemetry field %s",
+					filepath.ToSlash(source.path),
+					fset.Position(fieldExpression.Pos()).Line,
+					fieldOwnershipVariableName,
+					fieldName.Name,
+				))
+				continue
+			}
+			if field.extension != "" {
+				diagnostics = append(diagnostics, declarationDiagnostic(
+					field,
+					fmt.Sprintf(
+						"is assigned to multiple extensions in %s: %q and %q",
+						fieldOwnershipVariableName,
+						field.extension,
+						extension,
+					),
+				))
+				continue
+			}
+			field.extension = extension
+			declarations[fieldName.Name] = field
+		}
+	}
+
+	for _, name := range declarationOrder {
+		field := declarations[name]
+		if field.extension == "" {
+			diagnostics = append(diagnostics, declarationDiagnostic(
+				field,
+				fmt.Sprintf("must be assigned to exactly one extension in %s", fieldOwnershipVariableName),
+			))
+		}
+	}
+
+	return diagnostics
 }
 
 func parseFieldDeclaration(

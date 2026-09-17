@@ -19,7 +19,7 @@ import (
 // The contract is:
 //  1. fields.go contains valid field declarations.
 //  2. production extension source uses statically discoverable attribute keys.
-//  3. every discovered key has exactly one declaration.
+//  3. every discovered extension/key pair has exactly one declaration.
 func TestExtensionTelemetryDeclarationsAreValid(t *testing.T) {
 	t.Parallel()
 
@@ -38,10 +38,65 @@ func TestEveryExtensionTelemetryUsageIsDeclared(t *testing.T) {
 	declarations, diagnostics := loadFieldDeclarations(filepath.Join(telemetryDir, "fields.go"))
 	usages, scanDiagnostics := scanExtensionTelemetry(extensionRoot)
 	diagnostics = append(diagnostics, scanDiagnostics...)
+	diagnostics = append(diagnostics, validateExtensionTelemetryUsages(usages, declarations)...)
 
+	sort.Strings(diagnostics)
+	if len(diagnostics) > 0 {
+		t.Fatalf(
+			"extension telemetry validation failed:\n\n%s\n\n"+
+				"Declare every final ext.* key with its owning extension, classification, purpose, and endpoint in "+
+				"cli/azd/extensions/telemetry/fields.go. Define Attributes inline in a keyed "+
+				"payload literal, with string-literal or same-package compile-time constant keys.",
+			strings.Join(diagnostics, "\n"),
+		)
+	}
+}
+
+func TestExtensionTelemetryUsageMustMatchDeclarationOwner(t *testing.T) {
+	t.Parallel()
+
+	diagnostics := validateExtensionTelemetryUsages(
+		[]telemetryUsage{{
+			extension: "microsoft.azd.demo",
+			key:       "route",
+			path:      "microsoft.azd.demo/internal/cmd/telemetry.go",
+			line:      42,
+		}},
+		map[string]fieldDeclaration{
+			"ext.route": {
+				extension: "azure.ai.agents",
+				key:       "ext.route",
+			},
+		},
+	)
+
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], `"ext.route" is declared for "azure.ai.agents"`)
+}
+
+func validateExtensionTelemetryUsages(
+	usages []telemetryUsage,
+	declarations map[string]fieldDeclaration,
+) []string {
+	var diagnostics []string
 	for _, usage := range usages {
 		finalKey := fields.ExtensionAttributePrefix + usage.key
-		if _, ok := declarations[finalKey]; ok {
+		declaration, ok := declarations[finalKey]
+		if ok && declaration.extension == usage.extension {
+			continue
+		}
+
+		if ok {
+			diagnostics = append(diagnostics, fmt.Sprintf(
+				"%s:%d: %s uses extension telemetry attribute %q, but %q is declared for %q in "+
+					"cli/azd/extensions/telemetry/fields.go",
+				usage.path,
+				usage.line,
+				usage.extension,
+				usage.key,
+				finalKey,
+				declaration.extension,
+			))
 			continue
 		}
 
@@ -55,17 +110,7 @@ func TestEveryExtensionTelemetryUsageIsDeclared(t *testing.T) {
 			finalKey,
 		))
 	}
-
-	sort.Strings(diagnostics)
-	if len(diagnostics) > 0 {
-		t.Fatalf(
-			"extension telemetry validation failed:\n\n%s\n\n"+
-				"Declare every final ext.* key with its classification, purpose, and endpoint in "+
-				"cli/azd/extensions/telemetry/fields.go. Define Attributes inline in a keyed "+
-				"payload literal, with string-literal or same-package compile-time constant keys.",
-			strings.Join(diagnostics, "\n"),
-		)
-	}
+	return diagnostics
 }
 
 func telemetryPackageDir(t *testing.T) string {

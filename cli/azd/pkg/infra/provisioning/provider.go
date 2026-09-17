@@ -54,21 +54,27 @@ type Options struct {
 	Provider ProviderKind `yaml:"provider,omitempty"`
 	Path     string       `yaml:"path,omitempty"`
 	Module   string       `yaml:"module,omitempty"`
-	Name     string       `yaml:"name,omitempty"`
-	// Layer is assigned from the containing project layer.
-	Layer            string                  `yaml:"-" json:"layer,omitempty"`
+
+	// Name identifies the layer under `infra.layers[]` or the infrastructure entry under `layers[].infra[]`.
+	Name string `yaml:"name,omitempty"`
+
 	Hooks            HooksConfig             `yaml:"hooks,omitempty"`
 	DeploymentStacks *DeploymentStacksConfig `yaml:"deploymentStacks,omitempty"`
 	// Config holds provider-specific configuration options
 	Config map[string]any `yaml:"config,omitempty"`
-	// DependsOn lists the names of other infrastructure entries this entry must wait for
+
+	// DependsOn lists the names of other infrastructure layers this layer must wait for
 	// before being provisioned. Use this to declare hook-mediated edges
-	// (for example, when a postprovision hook in another entry writes an
-	// env var that this entry's bicepparam reads at provision time)
+	// (for example, when a postprovision hook in another layer writes an
+	// env var that this layer's bicepparam reads at provision time)
 	// that the static analyzer cannot infer from .bicep / .bicepparam /
-	// .parameters.json contents alone. Valid under both `infra.layers[]`
-	// and `layers[].infra[]`.
+	// .parameters.json contents alone. Valid under `infra.layers[]`.
+	//
+	// NOTE: Infrastructure entries under top-level project layers (ie, layers v2) cannot
+	// use this field - their dependencies are declared at the layer level, in
+	// project.LayerConfig.DependsOn.
 	DependsOn []string `yaml:"dependsOn,omitempty" json:"dependsOn,omitempty"`
+
 	// Provisioning options for each individually defined layer.
 	Layers []Options `yaml:"layers,omitempty"`
 

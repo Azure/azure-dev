@@ -885,6 +885,14 @@ var (
 // multi-layer?", "how parallel is the typical project?", and "how often
 // does the safe-by-default fallback engage on real templates?".
 var (
+	// ProvisionLayerIsV2Key records whether the project uses the top-level
+	// `layers:` format rather than the legacy `infra.layers:` format.
+	ProvisionLayerIsV2Key = AttributeKey{
+		Key:            attribute.Key("provision.layer.is_v2"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
 	// ProvisionLayerCountKey records the total number of `infra.layers[]`
 	// declared in `azure.yaml` for the current `azd provision`/`azd up` run.
 	// 0 or 1 means single-layer (the legacy path).

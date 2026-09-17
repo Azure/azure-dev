@@ -413,14 +413,16 @@ Set **only when an external command-line tool invocation fails**, during error c
 <details>
 <summary><strong>Multi-Layer Provision</strong></summary>
 
-Emitted on `azd provision` / `azd up` to measure adoption and safety of `infra.layers[]` parallel provisioning.
+Emitted on `azd provision` / `azd up` to measure adoption and safety of parallel provisioning for
+`infra.layers[]` and top-level `layers[].infra[]`.
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
+| `provision.layer.is_v2` | bool | Whether the project uses the top-level `layers:` format |
 | `provision.layer.count` | measurement | Number of `infra.layers[]` declared (0 or 1 = single-layer legacy path) |
 | `provision.layer.max_parallel` | measurement | Largest number of layers scheduled in one dependency level (max achievable parallelism) |
 | `provision.layer.safe_fallback_count` | measurement | Layers forced to depend on all earlier layers by the safe-by-default detector |
-| `provision.layer.explicit_dependson_count` | measurement | Layers using the explicit `infra.layers[].dependsOn` override |
+| `provision.layer.explicit_dependson_count` | measurement | Layers using explicit `dependsOn` dependencies |
 </details>
 
 <details>

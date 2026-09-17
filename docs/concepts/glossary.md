@@ -20,6 +20,14 @@ A named collection of configuration values and secrets stored locally (and optio
 
 A deployable unit defined in `azure.yaml`. Each service has a source path, a language/framework, and a host target. Services are built, packaged, and deployed independently during `azd deploy`.
 
+### Project Composition
+
+An alpha project layout that builds an azd project from self-contained project layers declared in the top-level `layers` section of `azure.yaml`.
+
+### Project Layer
+
+A unit of project composition that groups infrastructure and services into a mini azd configuration. Project layers are declared under the top-level `layers` section of `azure.yaml`.
+
 ### Service Target (Host)
 
 The Azure resource that hosts a deployed service. Supported targets include Azure App Service, Azure Container Apps, Azure Functions, Azure Static Web Apps, Azure Kubernetes Service (AKS), and Azure AI.

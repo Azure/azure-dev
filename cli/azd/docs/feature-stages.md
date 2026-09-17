@@ -38,6 +38,7 @@ As of `1.21.1`, each Azure Developer CLI feature has been evaluated and assigned
 | IaC          | Resource Group-Scope Deployments | Beta      |
 | IaC          | Deployment Stacks        | Alpha     |
 | IaC          | Layered Provisioning     | Beta      |
+| IaC          | Project Composition      | Alpha     |
 | Host         | Azure App Service        | Stable    |
 | Host         | Azure Static Web Apps    | Stable    |
 | Host         | Azure Container Apps     | Stable    |

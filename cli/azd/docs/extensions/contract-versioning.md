@@ -14,6 +14,9 @@ stable v1 channel. It forwards its generated contract types, clients, and
 server interfaces from `pkg/azdext/contracts/v1`; protobuf-generated files do
 not share the facade package with handwritten SDK functionality. Go clients
 that intentionally target beta import `pkg/azdext/contracts/v1beta` directly.
+The high-level `AzdClient.Project()` facade remains on stable v1.
+`AzdClient.BetaProject()` returns the generated beta project client for the
+preview layer methods and beta representations of shared project methods.
 `ComposeService`, `CopilotService`, and `TelemetryService` are beta-only and
 therefore do not have stable `v1` generated types or facade aliases. The
 corresponding `AzdClient` convenience accessors return generated `v1beta`

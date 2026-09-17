@@ -75,6 +75,7 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 |---|---|
 | Resource Group Deployments | Beta |
 | Layered Provisioning | Beta |
+| Project Composition | Alpha |
 | Deployment Stacks | Alpha |
 | Extensions | Alpha |
 

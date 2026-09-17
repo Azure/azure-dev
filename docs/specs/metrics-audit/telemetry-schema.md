@@ -468,14 +468,16 @@ The execution graph powers the parallel `up` / `provision` / `deploy` engine.
 
 ### Multi-Layer Provision
 
-Telemetry for the `infra.layers[]` parallel provisioning feature, emitted from `internal/cmd/provision_graph.go`.
+Telemetry for `infra.layers[]` and top-level `layers[].infra[]` parallel provisioning, emitted from
+`internal/cmd/provision_graph.go`.
 
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
+| Layers v2 format | `provision.layer.is_v2` | SystemMetadata | FeatureInsight | Boolean indicating whether the project uses the top-level `layers:` format rather than the legacy `infra.layers:` format |
 | Layer count | `provision.layer.count` | SystemMetadata | PerformanceAndHealth | **Measurement** — total number of `infra.layers[]` declared in `azure.yaml` for the current run; 0 or 1 means single-layer (the legacy path) |
 | Max parallel | `provision.layer.max_parallel` | SystemMetadata | PerformanceAndHealth | **Measurement** — largest number of layers scheduled in a single dependency level after static analysis (maximum *achievable* parallelism, distinct from the configured `exegraph.max_concurrency` cap) |
 | Safe-fallback count | `provision.layer.safe_fallback_count` | SystemMetadata | PerformanceAndHealth | **Measurement** — layers that triggered the safe-by-default detector fallback (forced to depend on all earlier layers) |
-| Explicit dependsOn count | `provision.layer.explicit_dependson_count` | SystemMetadata | PerformanceAndHealth | **Measurement** — layers that used the explicit `infra.layers[].dependsOn` schema |
+| Explicit dependsOn count | `provision.layer.explicit_dependson_count` | SystemMetadata | PerformanceAndHealth | **Measurement** — distinct owning layers that used explicit `dependsOn` dependencies |
 
 ## Data Classifications
 

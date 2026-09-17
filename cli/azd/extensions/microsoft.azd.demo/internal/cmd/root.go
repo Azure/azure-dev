@@ -34,6 +34,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newMcpCommand())
 	rootCmd.AddCommand(newConfigCommand())
+	rootCmd.AddCommand(newLayersCommand())
 	rootCmd.AddCommand(newGhUrlParseCommand())
 	rootCmd.AddCommand(newMetadataCommand())
 	rootCmd.AddCommand(newAiCommand())

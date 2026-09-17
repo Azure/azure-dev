@@ -35,47 +35,47 @@ class PromptServiceStub(object):
             channel: A grpc.Channel.
         """
         self.PromptSubscription = channel.unary_unary(
-                '/azd.extensions.v1.PromptService/PromptSubscription',
+                '/azd.extensions.v1beta.PromptService/PromptSubscription',
                 request_serializer=prompt__pb2.PromptSubscriptionRequest.SerializeToString,
                 response_deserializer=prompt__pb2.PromptSubscriptionResponse.FromString,
                 _registered_method=True)
         self.PromptLocation = channel.unary_unary(
-                '/azd.extensions.v1.PromptService/PromptLocation',
+                '/azd.extensions.v1beta.PromptService/PromptLocation',
                 request_serializer=prompt__pb2.PromptLocationRequest.SerializeToString,
                 response_deserializer=prompt__pb2.PromptLocationResponse.FromString,
                 _registered_method=True)
         self.PromptResourceGroup = channel.unary_unary(
-                '/azd.extensions.v1.PromptService/PromptResourceGroup',
+                '/azd.extensions.v1beta.PromptService/PromptResourceGroup',
                 request_serializer=prompt__pb2.PromptResourceGroupRequest.SerializeToString,
                 response_deserializer=prompt__pb2.PromptResourceGroupResponse.FromString,
                 _registered_method=True)
         self.Confirm = channel.unary_unary(
-                '/azd.extensions.v1.PromptService/Confirm',
+                '/azd.extensions.v1beta.PromptService/Confirm',
                 request_serializer=prompt__pb2.ConfirmRequest.SerializeToString,
                 response_deserializer=prompt__pb2.ConfirmResponse.FromString,
                 _registered_method=True)
         self.Prompt = channel.unary_unary(
-                '/azd.extensions.v1.PromptService/Prompt',
+                '/azd.extensions.v1beta.PromptService/Prompt',
                 request_serializer=prompt__pb2.PromptRequest.SerializeToString,
                 response_deserializer=prompt__pb2.PromptResponse.FromString,
                 _registered_method=True)
         self.Select = channel.unary_unary(
-                '/azd.extensions.v1.PromptService/Select',
+                '/azd.extensions.v1beta.PromptService/Select',
                 request_serializer=prompt__pb2.SelectRequest.SerializeToString,
                 response_deserializer=prompt__pb2.SelectResponse.FromString,
                 _registered_method=True)
         self.MultiSelect = channel.unary_unary(
-                '/azd.extensions.v1.PromptService/MultiSelect',
+                '/azd.extensions.v1beta.PromptService/MultiSelect',
                 request_serializer=prompt__pb2.MultiSelectRequest.SerializeToString,
                 response_deserializer=prompt__pb2.MultiSelectResponse.FromString,
                 _registered_method=True)
         self.PromptSubscriptionResource = channel.unary_unary(
-                '/azd.extensions.v1.PromptService/PromptSubscriptionResource',
+                '/azd.extensions.v1beta.PromptService/PromptSubscriptionResource',
                 request_serializer=prompt__pb2.PromptSubscriptionResourceRequest.SerializeToString,
                 response_deserializer=prompt__pb2.PromptSubscriptionResourceResponse.FromString,
                 _registered_method=True)
         self.PromptResourceGroupResource = channel.unary_unary(
-                '/azd.extensions.v1.PromptService/PromptResourceGroupResource',
+                '/azd.extensions.v1beta.PromptService/PromptResourceGroupResource',
                 request_serializer=prompt__pb2.PromptResourceGroupResourceRequest.SerializeToString,
                 response_deserializer=prompt__pb2.PromptResourceGroupResourceResponse.FromString,
                 _registered_method=True)
@@ -197,9 +197,9 @@ def add_PromptServiceServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'azd.extensions.v1.PromptService', rpc_method_handlers)
+            'azd.extensions.v1beta.PromptService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('azd.extensions.v1.PromptService', rpc_method_handlers)
+    server.add_registered_method_handlers('azd.extensions.v1beta.PromptService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -220,7 +220,7 @@ class PromptService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.PromptService/PromptSubscription',
+            '/azd.extensions.v1beta.PromptService/PromptSubscription',
             prompt__pb2.PromptSubscriptionRequest.SerializeToString,
             prompt__pb2.PromptSubscriptionResponse.FromString,
             options,
@@ -247,7 +247,7 @@ class PromptService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.PromptService/PromptLocation',
+            '/azd.extensions.v1beta.PromptService/PromptLocation',
             prompt__pb2.PromptLocationRequest.SerializeToString,
             prompt__pb2.PromptLocationResponse.FromString,
             options,
@@ -274,7 +274,7 @@ class PromptService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.PromptService/PromptResourceGroup',
+            '/azd.extensions.v1beta.PromptService/PromptResourceGroup',
             prompt__pb2.PromptResourceGroupRequest.SerializeToString,
             prompt__pb2.PromptResourceGroupResponse.FromString,
             options,
@@ -301,7 +301,7 @@ class PromptService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.PromptService/Confirm',
+            '/azd.extensions.v1beta.PromptService/Confirm',
             prompt__pb2.ConfirmRequest.SerializeToString,
             prompt__pb2.ConfirmResponse.FromString,
             options,
@@ -328,7 +328,7 @@ class PromptService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.PromptService/Prompt',
+            '/azd.extensions.v1beta.PromptService/Prompt',
             prompt__pb2.PromptRequest.SerializeToString,
             prompt__pb2.PromptResponse.FromString,
             options,
@@ -355,7 +355,7 @@ class PromptService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.PromptService/Select',
+            '/azd.extensions.v1beta.PromptService/Select',
             prompt__pb2.SelectRequest.SerializeToString,
             prompt__pb2.SelectResponse.FromString,
             options,
@@ -382,7 +382,7 @@ class PromptService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.PromptService/MultiSelect',
+            '/azd.extensions.v1beta.PromptService/MultiSelect',
             prompt__pb2.MultiSelectRequest.SerializeToString,
             prompt__pb2.MultiSelectResponse.FromString,
             options,
@@ -409,7 +409,7 @@ class PromptService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.PromptService/PromptSubscriptionResource',
+            '/azd.extensions.v1beta.PromptService/PromptSubscriptionResource',
             prompt__pb2.PromptSubscriptionResourceRequest.SerializeToString,
             prompt__pb2.PromptSubscriptionResourceResponse.FromString,
             options,
@@ -436,7 +436,7 @@ class PromptService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.PromptService/PromptResourceGroupResource',
+            '/azd.extensions.v1beta.PromptService/PromptResourceGroupResource',
             prompt__pb2.PromptResourceGroupResourceRequest.SerializeToString,
             prompt__pb2.PromptResourceGroupResourceResponse.FromString,
             options,

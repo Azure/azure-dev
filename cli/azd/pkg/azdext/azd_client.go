@@ -26,6 +26,7 @@ type AzdClientOption func(*AzdClient) error
 type AzdClient struct {
 	connection          *grpc.ClientConn
 	projectClient       ProjectServiceClient
+	betaProjectClient   v1beta.ProjectServiceClient
 	environmentClient   EnvironmentServiceClient
 	userConfigClient    UserConfigServiceClient
 	promptClient        PromptServiceClient
@@ -159,13 +160,22 @@ func (c *AzdClient) Close() {
 	c.connection.Close()
 }
 
-// Project returns the project service client.
+// Project returns the stable project service client.
 func (c *AzdClient) Project() ProjectServiceClient {
 	if c.projectClient == nil {
 		c.projectClient = NewProjectServiceClient(c.connection)
 	}
 
 	return c.projectClient
+}
+
+// BetaProject returns the native beta project client for preview fields on shared methods.
+func (c *AzdClient) BetaProject() v1beta.ProjectServiceClient {
+	if c.betaProjectClient == nil {
+		c.betaProjectClient = v1beta.NewProjectServiceClient(c.connection)
+	}
+
+	return c.betaProjectClient
 }
 
 // Environment returns the environment service client.

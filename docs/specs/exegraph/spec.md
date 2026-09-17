@@ -485,18 +485,19 @@ Things a reader of the code should know before editing:
     centralized.
 
 13. **Multi-layer provision adoption telemetry.** Each `azd provision` /
-    `azd up` run that takes the multi-layer path emits four `provision.layer.*`
+   `azd up` run that takes the multi-layer path emits five `provision.layer.*`
     attributes on the ambient command span (defined alongside the
     `exegraph.*` keys in `internal/tracing/fields/fields.go`):
 
     | Attribute | What it measures |
     |---|---|
+   | `provision.layer.is_v2` | Whether the project uses the top-level `layers:` format |
     | `provision.layer.count` | Total `infra.layers[]` declared |
     | `provision.layer.max_parallel` | Largest dependency level after analysis (max achievable parallelism) |
     | `provision.layer.safe_fallback_count` | Layers that triggered the safe-by-default detector fallback |
     | `provision.layer.explicit_dependson_count` | Layers using `infra.layers[].dependsOn` |
 
-    These are SystemMetadata only — counts, no template content — and let
+   These are SystemMetadata only — a format flag and counts, no template content — and let
     the azd team answer "what fraction of projects use multi-layer?",
     "how parallel is the typical project?", and "how often does the
     safe-by-default fallback engage on real templates?" without inspecting

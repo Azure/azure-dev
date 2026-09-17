@@ -239,7 +239,7 @@ func (p *ProvisionAction) provisionLayersGraph(
 		// is the typical project?", and "how often does the safe-by-default
 		// fallback engage on real templates?". These attributes are scoped
 		// to SystemMetadata + PerformanceAndHealth — no user content.
-		emitMultiLayerProvisionTelemetry(ctx, layers, layerDeps)
+		emitMultiLayerProvisionTelemetry(ctx, p.projectConfig, layers, layerDeps)
 
 		// Pre-compute step names so edges can reference layers regardless
 		// of iteration order. Unnamed layers get an indexed fallback so
@@ -538,16 +538,18 @@ func provisionLayerStepName(layer provisioning.Options) string {
 //
 // Emits:
 //
+//   - provision.layer.is_v2                        — top-level layers format
 //   - provision.layer.count                        — total declared layers
 //   - provision.layer.max_parallel                 — largest dependency level
 //   - provision.layer.safe_fallback_count          — layers with hasUnknown
 //   - provision.layer.explicit_dependson_count     — layers using dependsOn
 //
-// All attributes are SystemMetadata (counts only, no template content), so
-// they're collected without any user-facing opt-in beyond the existing
-// telemetry consent.
+// All attributes are SystemMetadata (a format flag and counts only, no
+// template content), so they're collected without any user-facing opt-in
+// beyond the existing telemetry consent.
 func emitMultiLayerProvisionTelemetry(
 	ctx context.Context,
+	projectConfig *project.ProjectConfig,
 	layers []provisioning.Options,
 	deps *bicep.LayerDependencies,
 ) {
@@ -565,19 +567,28 @@ func emitMultiLayerProvisionTelemetry(
 		safeFallback = len(deps.SafeFallbackLayers)
 	}
 
-	explicitDependsOn := 0
-	for _, layer := range layers {
-		if len(layer.DependsOn) > 0 {
-			explicitDependsOn++
+	explicitDependsOnLayers := 0
+	if projectConfig.Format() == project.ProjectFormatLayersV2 {
+		for _, layer := range projectConfig.Layers {
+			if len(layer.DependsOn) > 0 {
+				explicitDependsOnLayers++
+			}
+		}
+	} else {
+		for _, layer := range projectConfig.Infra.Layers {
+			if len(layer.DependsOn) > 0 {
+				explicitDependsOnLayers++
+			}
 		}
 	}
 
 	tracing.SetAttributesInContext(
 		ctx,
+		fields.ProvisionLayerIsV2Key.Bool(projectConfig.Format() == project.ProjectFormatLayersV2),
 		fields.ProvisionLayerCountKey.Int(len(layers)),
 		fields.ProvisionLayerMaxParallelKey.Int(maxParallel),
 		fields.ProvisionLayerSafeFallbackCountKey.Int(safeFallback),
-		fields.ProvisionLayerExplicitDependsOnCountKey.Int(explicitDependsOn),
+		fields.ProvisionLayerExplicitDependsOnCountKey.Int(explicitDependsOnLayers),
 	)
 }
 

@@ -76,7 +76,10 @@ func validateParsedConfig(config *ProjectConfig) error {
 		}
 
 		for _, infra := range layer.Infra {
-			if owner, has := infraNames[infra.Name]; has {
+			if infra.Name == "" {
+				problems = append(problems,
+					fmt.Sprintf("layer '%s' infrastructure entry name cannot be empty", layer.Name))
+			} else if owner, has := infraNames[infra.Name]; has {
 				if owner == layer.Name {
 					problems = append(problems,
 						fmt.Sprintf("duplicate infrastructure entry '%s' in layer '%s'", infra.Name, layer.Name))
@@ -96,7 +99,10 @@ func validateParsedConfig(config *ProjectConfig) error {
 					fmt.Sprintf("layer '%s' service '%s' has an empty definition", layer.Name, name))
 				continue
 			}
-			if owner, has := serviceNames[name]; has {
+			if name == "" {
+				problems = append(problems,
+					fmt.Sprintf("layer '%s' service name cannot be empty", layer.Name))
+			} else if owner, has := serviceNames[name]; has {
 				problems = append(problems, fmt.Sprintf(
 					"service '%s' is defined in both layers '%s' and '%s'", name, owner, layer.Name))
 			} else {
@@ -147,6 +153,14 @@ func (config *ProjectConfig) Validate() error {
 					entry.Name,
 				)
 			}
+			if len(entry.DependsOn) > 0 {
+				return fmt.Errorf(
+					"layer %q infrastructure entry %q cannot declare dependsOn; "+
+						"declare dependencies on the project layer instead",
+					layer.Name,
+					entry.Name,
+				)
+			}
 			// NOTE: this is a new constraint - the previous layer provider assumed bicep.
 			if entry.Provider == provisioning.NotSpecified {
 				return fmt.Errorf(
@@ -162,8 +176,72 @@ func (config *ProjectConfig) Validate() error {
 		}
 	}
 	if config.Format() == ProjectFormatLayersV2 {
-		if err := ValidateLayerGraph(config); err != nil {
-			return fmt.Errorf("validating layer graph: %w", err)
+		if err := validateLayerDependencies(config.Layers); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateLayerDependencies(layers LayerConfigs) error {
+	layerNames := make(map[string]struct{}, len(layers))
+	for _, layer := range layers {
+		layerNames[layer.Name] = struct{}{}
+	}
+
+	for _, layer := range layers {
+		seen := make(map[string]struct{}, len(layer.DependsOn))
+		for _, dependency := range layer.DependsOn {
+			if dependency == layer.Name {
+				return fmt.Errorf("layer %q cannot depend on itself", layer.Name)
+			}
+			if _, found := layerNames[dependency]; !found {
+				return fmt.Errorf("layer %q depends on unknown layer %q", layer.Name, dependency)
+			}
+			if _, found := seen[dependency]; found {
+				return fmt.Errorf("layer %q depends on layer %q more than once", layer.Name, dependency)
+			}
+			seen[dependency] = struct{}{}
+		}
+	}
+	return validateLayerDependencyCycles(layers)
+}
+
+func validateLayerDependencyCycles(layers LayerConfigs) error {
+	dependencies := make(map[string][]string, len(layers))
+	for _, layer := range layers {
+		dependencies[layer.Name] = layer.DependsOn
+	}
+
+	const (
+		unvisited = iota
+		visiting
+		visited
+	)
+	states := make(map[string]int, len(layers))
+
+	var visit func(string) error
+	visit = func(layerName string) error {
+		switch states[layerName] {
+		case visiting:
+			return fmt.Errorf("circular dependency detected at layer %q", layerName)
+		case visited:
+			return nil
+		}
+
+		states[layerName] = visiting
+		for _, dependency := range dependencies[layerName] {
+			if err := visit(dependency); err != nil {
+				return err
+			}
+		}
+		states[layerName] = visited
+		return nil
+	}
+
+	for _, layer := range layers {
+		if err := visit(layer.Name); err != nil {
+			return err
 		}
 	}
 	return nil

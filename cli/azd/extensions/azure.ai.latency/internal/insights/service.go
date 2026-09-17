@@ -226,6 +226,8 @@ func buildEvidencePackage(
 		"cache_hit_ratio":                  profile.CacheHitRatio,
 		"average_requests_per_minute":      profile.RequestRate.AverageRPM,
 		"peak_requests_per_minute":         profile.RequestRate.PeakRPM,
+		"deployment_rpm_limit":             profile.RequestRate.LimitRPM,
+		"peak_rpm_limit_ratio":             profile.RequestRate.PeakLimitRatio,
 		"average_tokens_per_minute":        profile.TokenRate.AverageTPM,
 		"peak_tokens_per_minute":           profile.TokenRate.PeakTPM,
 		"average_input_tokens_per_minute":  profile.TokenRate.InputAverageTPM,

@@ -164,4 +164,25 @@ func TestAssessmentJSONDoesNotExposeProhibitedFields(t *testing.T) {
 	if result.DataNotice != model.DataNoticeDemo {
 		t.Fatalf("data notice = %q, want %q", result.DataNotice, model.DataNoticeDemo)
 	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(content, &payload); err != nil {
+		t.Fatal(err)
+	}
+	trafficProfile, ok := payload["traffic_profile"].(map[string]any)
+	if !ok {
+		t.Fatal("serialized result is missing traffic_profile")
+	}
+	requestRate, ok := trafficProfile["request_rate"].(map[string]any)
+	if !ok {
+		t.Fatal("serialized result is missing request_rate")
+	}
+	for _, field := range []string{"average_rpm", "peak_rpm", "limit_rpm", "peak_limit_ratio"} {
+		if _, ok := requestRate[field]; !ok {
+			t.Fatalf("serialized request_rate is missing %q", field)
+		}
+	}
+	if _, ok := requestRate["burst_factor"]; ok {
+		t.Fatal("serialized request_rate includes derived burst_factor")
+	}
 }

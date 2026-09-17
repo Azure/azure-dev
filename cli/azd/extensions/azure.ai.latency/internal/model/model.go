@@ -96,11 +96,20 @@ type LatencyDistribution struct {
 	P95MS     *float64 `json:"p95_ms"`
 }
 
-// RequestRate describes average and peak requests per minute.
+// RequestRate describes observed RPM and the assigned deployment limit.
 type RequestRate struct {
-	AverageRPM  *float64 `json:"average_rpm"`
-	PeakRPM     *float64 `json:"peak_rpm"`
-	BurstFactor *float64 `json:"burst_factor"`
+	AverageRPM     *float64 `json:"average_rpm"`
+	PeakRPM        *float64 `json:"peak_rpm"`
+	LimitRPM       *float64 `json:"limit_rpm"`
+	PeakLimitRatio *float64 `json:"peak_limit_ratio"`
+}
+
+// BurstFactor returns peak RPM divided by average RPM when both are available.
+func (r RequestRate) BurstFactor() *float64 {
+	if r.AverageRPM == nil || *r.AverageRPM == 0 || r.PeakRPM == nil {
+		return nil
+	}
+	return new(*r.PeakRPM / *r.AverageRPM)
 }
 
 // TokenRate describes observed token throughput.

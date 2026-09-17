@@ -68,8 +68,12 @@ func writeTerminalTraffic(output *strings.Builder, result *model.AssessmentResul
 	}
 	fmt.Fprintf(
 		output,
-		"  Requests: %s\n",
-		formatRate(profile.RequestRate.AverageRPM, profile.RequestRate.PeakRPM, "requests/min"),
+		"   Request rate avg %s /min | peak %s /min | deployment limit %s RPM | peak/limit %s | requests %s\n",
+		htmlNumber(profile.RequestRate.AverageRPM),
+		htmlNumber(profile.RequestRate.PeakRPM),
+		htmlNumber(profile.RequestRate.LimitRPM),
+		htmlPercent(profile.RequestRate.PeakLimitRatio),
+		htmlInteger(profile.RequestCount),
 	)
 	fmt.Fprintf(output, "  Request count: %s\n", formatCount(profile.RequestCount))
 	fmt.Fprintf(output, "  Input tokens: %s\n", formatDistribution(profile.InputTokens))

@@ -127,14 +127,11 @@ func metricValue(profile model.TrafficProfile, metric string) (float64, bool) {
 	case "cache_hit_ratio":
 		return pointerValue(profile.CacheHitRatio)
 	case "request_burst_factor":
-		if profile.RequestRate.BurstFactor != nil {
-			return *profile.RequestRate.BurstFactor, true
-		}
-		if profile.RequestRate.AverageRPM == nil || profile.RequestRate.PeakRPM == nil ||
-			*profile.RequestRate.AverageRPM <= 0 {
+		burstFactor := profile.RequestRate.BurstFactor()
+		if burstFactor == nil {
 			return 0, false
 		}
-		return *profile.RequestRate.PeakRPM / *profile.RequestRate.AverageRPM, true
+		return *burstFactor, true
 	case "streaming_ratio":
 		return pointerValue(profile.StreamingRatio)
 	default:

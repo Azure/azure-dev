@@ -301,34 +301,39 @@ func htmlTokenCard(
 
 func htmlRateCard(result *model.AssessmentResult) string {
 	rate := result.TrafficProfile.RequestRate
-	chart := `<div class="trend-unavailable">Trend unavailable</div>`
-	if rate.AverageRPM != nil && rate.PeakRPM != nil {
-		maximum := max(*rate.PeakRPM, *rate.AverageRPM, 1)
-		averageWidth := 100 * *rate.AverageRPM / maximum
-		peakWidth := 100 * *rate.PeakRPM / maximum
+	utilization := "Limit comparison unavailable"
+	chart := `<div class="trend-unavailable">Deployment limit unavailable</div>`
+	if rate.PeakLimitRatio != nil {
+		utilization = "Peak " + htmlPercent(rate.PeakLimitRatio) + " of deployment limit"
+		width := min(*rate.PeakLimitRatio*100, 100)
 		chart = fmt.Sprintf(`
-<div class="rate-chart" role="img" aria-label="Average %s and peak %s requests per minute">
-  <span>Avg</span><i><b style="width:%.1f%%"></b></i>
+<div class="rate-chart" role="img" aria-label="%s">
   <span>Peak</span><i><b style="width:%.1f%%"></b></i>
-</div>`, htmlNumber(rate.AverageRPM), htmlNumber(rate.PeakRPM), averageWidth, peakWidth)
+</div>`, htmlEscape(utilization), width)
 	}
+	burst := htmlBurstLabel(htmlBurstFactor(rate))
 
 	var output strings.Builder
 	output.WriteString(`
 <article class="profile-card">
-  <div class="profile-label">Request rate</div>
+  <div class="metric-head"><span class="profile-label">Request rate</span>
+    <button class="info" type="button" aria-label="RPM definition" data-help="Observed requests in one-minute Azure Monitor bins compared with the RPM assigned to this deployment in ARM. The subscription quota can be larger, and enforcement can use shorter windows.">i</button></div>
   <div class="profile-main">`)
 	output.WriteString(htmlNumber(rate.PeakRPM))
-	output.WriteString(` <small>peak/min</small></div>
+	output.WriteString(` <small>peak RPM</small></div>
   <div class="profile-meta"><span>Average `)
 	output.WriteString(htmlNumber(rate.AverageRPM))
-	output.WriteString(`/min</span><span>`)
-	output.WriteString(htmlBurstLabel(htmlBurstFactor(rate)))
-	output.WriteString(`</span></div>
+	output.WriteString(` RPM</span><span>Deployment limit `)
+	output.WriteString(htmlNumber(rate.LimitRPM))
+	output.WriteString(` RPM</span></div>
   `)
 	output.WriteString(chart)
 	output.WriteString(`
-  <p class="card-note">A time-series trend is not inferred when only aggregate average and peak values are available.</p>
+  <p class="card-note">`)
+	output.WriteString(htmlEscape(utilization))
+	output.WriteString(`. `)
+	output.WriteString(htmlEscape(burst))
+	output.WriteString(`; short-window enforcement may differ.</p>
 </article>`)
 	return output.String()
 }
@@ -373,7 +378,7 @@ func htmlTPMCard(result *model.AssessmentResult) string {
 	output.WriteString(`
 <article class="profile-card">
   <div class="metric-head"><span class="profile-label">Token rate</span>
-    <button class="info" type="button" aria-label="TPM definition" data-help="Observed input plus output tokens in one-minute Azure Monitor bins. The service rate-limit counter uses an estimated token count and can differ.">i</button></div>
+    <button class="info" type="button" aria-label="TPM definition" data-help="Observed input plus output tokens in one-minute Azure Monitor bins compared with the TPM assigned to this deployment in ARM. The subscription quota can be larger, and the service rate-limit estimate can differ.">i</button></div>
   <div class="profile-main">`)
 	output.WriteString(htmlNumber(rate.PeakTPM))
 	output.WriteString(` <small>peak total TPM</small></div>
@@ -387,7 +392,7 @@ func htmlTPMCard(result *model.AssessmentResult) string {
   </div>
   <div class="profile-meta"><span>Total average `)
 	output.WriteString(htmlNumber(rate.AverageTPM))
-	output.WriteString(` TPM</span><span>Limit `)
+	output.WriteString(` TPM</span><span>Deployment limit `)
 	output.WriteString(htmlNumber(rate.LimitTPM))
 	output.WriteString(` TPM</span></div>
   `)

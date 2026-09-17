@@ -48,7 +48,9 @@
     "cache_hit_ratio": null,
     "request_rate": {
       "average_rpm": 540,
-      "peak_rpm": 1080
+      "peak_rpm": 1080,
+      "limit_rpm": 1350.0,
+      "peak_limit_ratio": 0.8
     },
     "token_rate": {
       "input_average_tpm": 4968000,

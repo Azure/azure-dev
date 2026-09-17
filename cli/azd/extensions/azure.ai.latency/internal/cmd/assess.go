@@ -255,7 +255,7 @@ func normalizeExplorerOpenError(ctx context.Context, err error) error {
 		return ctx.Err()
 	}
 	// Explorer commonly exits with status 1 after successfully handing a
-	// document URL to the existing shell. Python's os.startfile likewise
+	// document URL to the existing shell. Python's shell opener likewise
 	// treats a successful shell dispatch as success.
 	if _, ok := errors.AsType[*exec.ExitError](err); ok {
 		return nil

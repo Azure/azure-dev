@@ -27,6 +27,8 @@ var htmlEvidenceTrafficOrder = []string{
 	"cache_hit_ratio",
 	"average_requests_per_minute",
 	"peak_requests_per_minute",
+	"deployment_rpm_limit",
+	"peak_rpm_limit_ratio",
 	"average_tokens_per_minute",
 	"peak_tokens_per_minute",
 	"average_input_tokens_per_minute",
@@ -410,7 +412,7 @@ func (traffic htmlOrderedEvidenceTraffic) MarshalJSON() ([]byte, error) {
 }
 
 func htmlMarshalEvidenceTrafficValue(key string, value any) ([]byte, error) {
-	if key == "deployment_tpm_limit" {
+	if key == "deployment_rpm_limit" || key == "deployment_tpm_limit" {
 		if number, ok := htmlNumericValue(value); ok {
 			return htmlDecimalFloat(number).MarshalJSON()
 		}

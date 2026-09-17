@@ -41,9 +41,8 @@ func TestEnrichOfferOptionsUsesReferenceAvailabilityLabel(t *testing.T) {
 	}
 	profile := model.TrafficProfile{
 		RequestRate: model.RequestRate{
-			AverageRPM:  model.Float64(6),
-			PeakRPM:     model.Float64(20),
-			BurstFactor: model.Float64(3.5),
+			AverageRPM: model.Float64(6),
+			PeakRPM:    model.Float64(20),
 		},
 	}
 	options := []model.OfferOption{

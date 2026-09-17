@@ -107,6 +107,7 @@ The public JSON result uses `schema_version: "1.0"` and contains:
 
 - the resolved UTC time range and deployment profile;
 - token, request-rate, and latency distributions;
+- observed average and peak RPM with the deployment RPM limit and peak utilization;
 - the current-offer target assessment;
 - an exact-bucket LLM-Runner benchmark comparison when required;
 - evidence-backed workload recommendations;

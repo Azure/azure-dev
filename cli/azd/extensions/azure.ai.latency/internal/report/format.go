@@ -160,19 +160,6 @@ func formatCount(value *int64) string {
 	return strconv.FormatInt(*value, 10)
 }
 
-func formatRate(average, peak *float64, unit string) string {
-	switch {
-	case average != nil && peak != nil:
-		return fmt.Sprintf("%s average · %s peak %s", formatNumber(*average), formatNumber(*peak), unit)
-	case average != nil:
-		return fmt.Sprintf("%s average %s", formatNumber(*average), unit)
-	case peak != nil:
-		return fmt.Sprintf("%s peak %s", formatNumber(*peak), unit)
-	default:
-		return unavailable
-	}
-}
-
 func formatDistribution(distribution model.Distribution) string {
 	p50 := formatNumberPointer(distribution.P50)
 	p95 := formatNumberPointer(distribution.P95)

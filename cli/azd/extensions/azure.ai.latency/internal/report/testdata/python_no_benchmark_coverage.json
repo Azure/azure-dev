@@ -48,7 +48,9 @@
     "cache_hit_ratio": 0.52,
     "request_rate": {
       "average_rpm": 780,
-      "peak_rpm": 1320
+      "peak_rpm": 1320,
+      "limit_rpm": 1650.0,
+      "peak_limit_ratio": 0.8
     },
     "token_rate": {
       "input_average_tpm": 14430000,
@@ -269,6 +271,8 @@
       "cache_hit_ratio": 0.52,
       "average_requests_per_minute": 780,
       "peak_requests_per_minute": 1320,
+      "deployment_rpm_limit": 1650.0,
+      "peak_rpm_limit_ratio": 0.8,
       "average_tokens_per_minute": 14578200,
       "peak_tokens_per_minute": 23733600,
       "average_input_tokens_per_minute": 14430000,

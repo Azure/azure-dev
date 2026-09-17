@@ -551,9 +551,10 @@ func buildProfile(
 	requestRate := model.RequestRate{
 		AverageRPM: values.number(valueAverageRPM),
 		PeakRPM:    values.number(valuePeakRPM),
+		LimitRPM:   deployment.RPMRateLimit,
 	}
-	if requestRate.AverageRPM != nil && requestRate.PeakRPM != nil && *requestRate.AverageRPM > 0 {
-		requestRate.BurstFactor = model.Float64(*requestRate.PeakRPM / *requestRate.AverageRPM)
+	if requestRate.PeakRPM != nil && requestRate.LimitRPM != nil && *requestRate.LimitRPM > 0 {
+		requestRate.PeakLimitRatio = model.Float64(*requestRate.PeakRPM / *requestRate.LimitRPM)
 	}
 	peakTPM := values.number(valuePeakTPM)
 	tokenRate := model.TokenRate{

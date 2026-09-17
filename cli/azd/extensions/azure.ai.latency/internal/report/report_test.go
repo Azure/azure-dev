@@ -94,6 +94,12 @@ func TestIllustrativeDataIsDisclosedInTerminalAndJSON(t *testing.T) {
 			t.Errorf("token rate does not contain %q", key)
 		}
 	}
+	requestRate := profile["request_rate"].(map[string]any)
+	for _, key := range []string{"limit_rpm", "peak_limit_ratio"} {
+		if _, ok := requestRate[key]; !ok {
+			t.Errorf("request rate does not contain %q", key)
+		}
+	}
 	deployment := profile["deployment"].(map[string]any)
 	for _, key := range []string{"offer", "billing_model", "service_tier", "deployment_type", "sku_name"} {
 		if _, ok := deployment[key]; !ok {
@@ -123,6 +129,11 @@ func TestTBTP90IsRenderedWhenRequestLogsProvideIt(t *testing.T) {
 	if !strings.Contains(terminal.String(), "P90 35ms") {
 		t.Fatalf("terminal TBT P90 was not rounded like the reference:\n%s", terminal.String())
 	}
+	const requestRate = "Request rate avg 504 /min | peak 888 /min | deployment limit " +
+		"1,110 RPM | peak/limit 80.0% | requests 100,000"
+	if !strings.Contains(terminal.String(), requestRate) {
+		t.Fatalf("terminal request rate does not match the reference:\n%s", terminal.String())
+	}
 
 	report := renderHTMLText(t, result)
 	for _, phrase := range []string{
@@ -130,6 +141,10 @@ func TestTBTP90IsRenderedWhenRequestLogsProvideIt(t *testing.T) {
 		`class="metric-hero">39ms <small>P95</small>`,
 		"Token rate",
 		"peak total TPM",
+		"peak RPM",
+		"Deployment limit 1,110 RPM",
+		"Peak 80.0% of deployment limit",
+		"Peak 1.8× average",
 	} {
 		if !strings.Contains(report, phrase) {
 			t.Errorf("HTML report does not contain %q", phrase)
@@ -199,12 +214,12 @@ func TestWithinTargetReportSuppressesBenchmarkAndSwitcher(t *testing.T) {
 		t,
 		report,
 		`<span class="profile-label">Token rate</span>`,
-		`<div class="profile-label">Request rate</div>`,
+		`<span class="profile-label">Request rate</span>`,
 	)
 	assertBefore(
 		t,
 		report,
-		`<div class="profile-label">Request rate</div>`,
+		`<span class="profile-label">Request rate</span>`,
 		`<span class="profile-label">Behavior and reliability</span>`,
 	)
 }
@@ -353,6 +368,8 @@ func TestUnexplainedReportContainsCustomerSafeEvidence(t *testing.T) {
 		"Representative request IDs",
 		"Tests already tried",
 		"The export excludes prompts, secrets, and internal platform data.",
+		"<tr><th>deployment rpm limit</th><td>862.5</td></tr>",
+		"<tr><th>peak rpm limit ratio</th><td>80.0%</td></tr>",
 	} {
 		if !strings.Contains(report, phrase) {
 			t.Errorf("HTML report does not contain %q", phrase)
@@ -363,6 +380,18 @@ func TestUnexplainedReportContainsCustomerSafeEvidence(t *testing.T) {
 			t.Errorf("HTML report unexpectedly contains %q", phrase)
 		}
 	}
+	assertBefore(
+		t,
+		report,
+		"<tr><th>peak requests per minute</th>",
+		"<tr><th>deployment rpm limit</th>",
+	)
+	assertBefore(
+		t,
+		report,
+		"<tr><th>peak rpm limit ratio</th>",
+		"<tr><th>average tokens per minute</th>",
+	)
 }
 
 func TestEmptySupportContextIsOmitted(t *testing.T) {

@@ -240,10 +240,7 @@ func htmlDisplayTokenBucket(value string) string {
 }
 
 func htmlBurstFactor(rate model.RequestRate) *float64 {
-	if rate.AverageRPM == nil || *rate.AverageRPM == 0 || rate.PeakRPM == nil {
-		return nil
-	}
-	return new(*rate.PeakRPM / *rate.AverageRPM)
+	return rate.BurstFactor()
 }
 
 func htmlBurstLabel(value *float64) string {

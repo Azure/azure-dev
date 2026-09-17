@@ -347,13 +347,13 @@ footer{padding:20px;color:var(--muted);text-align:center;font-size:12px}
     
 <article class="profile-card">
   <div class="metric-head"><span class="profile-label">Token rate</span>
-    <button class="info" type="button" aria-label="TPM definition" data-help="Observed input plus output tokens in one-minute Azure Monitor bins. The service rate-limit counter uses an estimated token count and can differ.">i</button></div>
+    <button class="info" type="button" aria-label="TPM definition" data-help="Observed input plus output tokens in one-minute Azure Monitor bins compared with the TPM assigned to this deployment in ARM. The subscription quota can be larger, and the service rate-limit estimate can differ.">i</button></div>
   <div class="profile-main">7,476,960 <small>peak total TPM</small></div>
   <div class="tpm-breakdown">
     <span><small>Input TPM</small><strong>3,981,600 avg · 7,281,600 peak</strong></span>
     <span><small>Output TPM</small><strong>120,960 avg · 195,360 peak</strong></span>
   </div>
-  <div class="profile-meta"><span>Total average 4,102,560 TPM</span><span>Limit 9,346,200 TPM</span></div>
+  <div class="profile-meta"><span>Total average 4,102,560 TPM</span><span>Deployment limit 9,346,200 TPM</span></div>
   
 <div class="rate-chart" role="img" aria-label="Peak 80.0% of deployment limit">
   <span>Peak</span><i><b style="width:80.0%"></b></i>
@@ -362,15 +362,15 @@ footer{padding:20px;color:var(--muted);text-align:center;font-size:12px}
 </article>
     
 <article class="profile-card">
-  <div class="profile-label">Request rate</div>
-  <div class="profile-main">888 <small>peak/min</small></div>
-  <div class="profile-meta"><span>Average 504/min</span><span>Peak 1.8× average</span></div>
+  <div class="metric-head"><span class="profile-label">Request rate</span>
+    <button class="info" type="button" aria-label="RPM definition" data-help="Observed requests in one-minute Azure Monitor bins compared with the RPM assigned to this deployment in ARM. The subscription quota can be larger, and enforcement can use shorter windows.">i</button></div>
+  <div class="profile-main">888 <small>peak RPM</small></div>
+  <div class="profile-meta"><span>Average 504 RPM</span><span>Deployment limit 1,110 RPM</span></div>
   
-<div class="rate-chart" role="img" aria-label="Average 504 and peak 888 requests per minute">
-  <span>Avg</span><i><b style="width:56.8%"></b></i>
-  <span>Peak</span><i><b style="width:100.0%"></b></i>
+<div class="rate-chart" role="img" aria-label="Peak 80.0% of deployment limit">
+  <span>Peak</span><i><b style="width:80.0%"></b></i>
 </div>
-  <p class="card-note">A time-series trend is not inferred when only aggregate average and peak values are available.</p>
+  <p class="card-note">Peak 80.0% of deployment limit. Peak 1.8× average; short-window enforcement may differ.</p>
 </article>
     
 <article class="profile-card">

@@ -271,8 +271,11 @@ func demoProfile(input profileInput) model.TrafficProfile {
 		AverageRPM: input.RequestRate[0],
 		PeakRPM:    input.RequestRate[1],
 	}
-	if input.RequestRate[0] != nil && input.RequestRate[1] != nil && *input.RequestRate[0] > 0 {
-		requestRate.BurstFactor = f(*input.RequestRate[1] / *input.RequestRate[0])
+	if input.RequestRate[1] != nil {
+		requestRate.LimitRPM = f(*input.RequestRate[1] * 1.25)
+		if *requestRate.LimitRPM > 0 {
+			requestRate.PeakLimitRatio = f(*input.RequestRate[1] / *requestRate.LimitRPM)
+		}
 	}
 
 	var requestCount, ttftSamples, tbtSamples *int64

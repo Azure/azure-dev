@@ -580,3 +580,46 @@ var _ = []image.Point{{1, 2}}
 	require.Empty(t, usages)
 	require.Empty(t, diagnostics)
 }
+
+func TestExtensionTelemetrySourceScannerDoesNotEnableUnrelatedPackages(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	telemetryDir := filepath.Join(root, "contoso.extension", "internal", "telemetry")
+	modelDir := filepath.Join(root, "contoso.extension", "internal", "model")
+	require.NoError(t, os.MkdirAll(telemetryDir, 0o755))
+	require.NoError(t, os.MkdirAll(modelDir, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(telemetryDir, "event.go"),
+		[]byte(`package telemetry
+import foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
+var _ = foundryTelemetry.Event{Attributes: nil}
+`),
+		0o600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(modelDir, "model.go"),
+		[]byte(`package model
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+type envelope[T any] struct {
+	Attributes map[string]string
+	Value T
+}
+func (e envelope[T]) GetAttributes() map[string]string {
+	return e.Attributes
+}
+var value = envelope[string]{
+	Attributes: map[string]string{"unrelated": "value"},
+	Value: "value",
+}
+var _ = value.Attributes
+var _ = value.GetAttributes()
+var _ = azdext.EmptyRequest{}
+`),
+		0o600,
+	))
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+	require.Empty(t, usages)
+	require.Empty(t, diagnostics)
+}

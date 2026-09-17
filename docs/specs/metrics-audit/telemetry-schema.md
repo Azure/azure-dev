@@ -280,16 +280,16 @@ event.
 First-party fields are declared as exported `AttributeKey` variables in
 `cli/azd/extensions/telemetry/fields.go`. The current declarations are:
 
-| Extension | OTel Key | Classification | Purpose | Endpoint | Allowed values / event |
-|-----------|----------|----------------|---------|----------|------------------------|
-| `microsoft.azd.demo` | `ext.demo.mode` | SystemMetadata | FeatureInsight | `N/A` | `sample` on `demo.telemetry.reported` |
-| `microsoft.azd.demo` | `ext.demo.outcome` | SystemMetadata | FeatureInsight | `N/A` | `completed` on `demo.telemetry.reported` |
-| `azure.ai.agents` | `ext.agent.kind` | SystemMetadata | FeatureInsight | `N/A` | `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown` on `agent.context.resolved` |
-| `azure.ai.agents` | `ext.agent.harness` | SystemMetadata | FeatureInsight | `N/A` | `none`, `github_copilot_preview`, or `other` on `agent.context.resolved` |
-| `azure.ai.agents` | `ext.agent.operation` | SystemMetadata | FeatureInsight | `N/A` | Fixed extension command path on `agent.context.resolved` |
-| `azure.ai.agents` | `ext.route` | SystemMetadata | FeatureInsight | `N/A` | `inspector`, `playground`, or `suppressed` on `local_client.route.selected` |
-| `azure.ai.inspector` | `ext.stage` | SystemMetadata | FeatureInsight | `N/A` | `ui_ready` on `inspector.funnel.stage` |
-| `azure.ai.inspector` | `ext.outcome` | SystemMetadata | FeatureInsight | `N/A` | `succeeded` on `inspector.funnel.stage` |
+| Extension | OTel Key | Classification | Purpose | Endpoint | Hashed | Measurement | Allowed values / event |
+|-----------|----------|----------------|---------|----------|--------|-------------|------------------------|
+| `microsoft.azd.demo` | `ext.demo.mode` | SystemMetadata | FeatureInsight | `N/A` | No | No | `sample` on `demo.telemetry.reported` |
+| `microsoft.azd.demo` | `ext.demo.outcome` | SystemMetadata | FeatureInsight | `N/A` | No | No | `completed` on `demo.telemetry.reported` |
+| `azure.ai.agents` | `ext.agent.kind` | SystemMetadata | FeatureInsight | `N/A` | No | No | `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown` on `agent.context.resolved` |
+| `azure.ai.agents` | `ext.agent.harness` | SystemMetadata | FeatureInsight | `N/A` | No | No | `none`, `github_copilot_preview`, or `other` on `agent.context.resolved` |
+| `azure.ai.agents` | `ext.agent.operation` | SystemMetadata | FeatureInsight | `N/A` | No | No | Fixed extension command path on `agent.context.resolved` |
+| `azure.ai.agents` | `ext.route` | SystemMetadata | FeatureInsight | `N/A` | No | No | `inspector`, `playground`, or `suppressed` on `local_client.route.selected` |
+| `azure.ai.inspector` | `ext.stage` | SystemMetadata | FeatureInsight | `N/A` | No | No | `ui_ready` on `inspector.funnel.stage` |
+| `azure.ai.inspector` | `ext.outcome` | SystemMetadata | FeatureInsight | `N/A` | No | No | `succeeded` on `inspector.funnel.stage` |
 
 These fields share a classification because their reviewed values are bounded
 product enums. `SystemMetadata` and `FeatureInsight` are not defaults for an

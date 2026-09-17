@@ -9,6 +9,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -52,6 +53,8 @@ type typeDefinition struct {
 type parserObject = ast.Object //nolint:staticcheck // go/types would require loading extension dependencies.
 
 type sourcePackage struct {
+	directory             string
+	importPath            string
 	files                 []*sourceFile
 	constants             map[string][]constDefinition
 	objectConstants       map[*parserObject]constDefinition
@@ -107,7 +110,7 @@ func scanExtensionTelemetry(extensionRoot string) ([]telemetryUsage, []string) {
 		key := filepath.Dir(path) + "\x00" + file.Name.Name
 		pkg := packages[key]
 		if pkg == nil {
-			pkg = &sourcePackage{}
+			pkg = &sourcePackage{directory: filepath.Dir(path)}
 			packages[key] = pkg
 		}
 		pkg.files = append(pkg.files, source)
@@ -122,15 +125,11 @@ func scanExtensionTelemetry(extensionRoot string) ([]telemetryUsage, []string) {
 	}
 
 	var usages []telemetryUsage
-	telemetryExtensions := map[string]bool{}
-	for _, pkg := range packages {
-		if packageReferencesTelemetryPayload(pkg) {
-			telemetryExtensions[extensionName(extensionRoot, pkg.files[0].path)] = true
-		}
-	}
+	assignPackageImportPaths(extensionRoot, packages)
+	telemetryPackages := findTelemetryPackages(extensionRoot, packages)
 
 	for _, pkg := range packages {
-		usesTelemetryPayload := telemetryExtensions[extensionName(extensionRoot, pkg.files[0].path)]
+		usesTelemetryPayload := telemetryPackages[pkg]
 		pkg.telemetryEnabled = usesTelemetryPayload
 		collectPackageDeclarations(pkg)
 		collectConstants(pkg)
@@ -258,6 +257,129 @@ func deduplicateStrings(values []string) []string {
 func extensionName(root, path string) string {
 	relative := displayPath(root, path)
 	return strings.Split(relative, "/")[0]
+}
+
+func assignPackageImportPaths(extensionRoot string, packages map[string]*sourcePackage) {
+	modulePaths := map[string]string{}
+	for _, pkg := range packages {
+		extension := extensionName(extensionRoot, pkg.files[0].path)
+		modulePath, exists := modulePaths[extension]
+		if !exists {
+			modulePath = readModulePath(filepath.Join(extensionRoot, extension))
+			modulePaths[extension] = modulePath
+		}
+		if modulePath == "" {
+			continue
+		}
+
+		relative, err := filepath.Rel(filepath.Join(extensionRoot, extension), pkg.directory)
+		if err != nil {
+			continue
+		}
+		pkg.importPath = modulePath
+		if relative != "." {
+			pkg.importPath += "/" + filepath.ToSlash(relative)
+		}
+	}
+}
+
+func readModulePath(directory string) string {
+	content, err := os.ReadFile(filepath.Join(directory, "go.mod"))
+	if err != nil {
+		return ""
+	}
+	for line := range strings.Lines(string(content)) {
+		parts := strings.Fields(line)
+		if len(parts) == 2 && parts[0] == "module" {
+			return parts[1]
+		}
+	}
+	return ""
+}
+
+func findTelemetryPackages(
+	extensionRoot string,
+	packages map[string]*sourcePackage,
+) map[*sourcePackage]bool {
+	result := map[*sourcePackage]bool{}
+	for _, pkg := range packages {
+		result[pkg] = packageReferencesTelemetryPayload(pkg)
+	}
+
+	for changed := true; changed; {
+		changed = false
+		for _, pkg := range packages {
+			if result[pkg] || !packageImportsTelemetryPackage(extensionRoot, pkg, packages, result) {
+				continue
+			}
+			result[pkg] = true
+			changed = true
+		}
+	}
+	return result
+}
+
+func packageImportsTelemetryPackage(
+	extensionRoot string,
+	pkg *sourcePackage,
+	packages map[string]*sourcePackage,
+	telemetryPackages map[*sourcePackage]bool,
+) bool {
+	for _, source := range pkg.files {
+		for _, importPath := range source.imports {
+			imported := localPackageForImport(extensionRoot, pkg, importPath, packages)
+			if imported != nil && telemetryPackages[imported] {
+				return true
+			}
+		}
+		for importPath := range source.dotImports {
+			imported := localPackageForImport(extensionRoot, pkg, importPath, packages)
+			if imported != nil && telemetryPackages[imported] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func localPackageForImport(
+	extensionRoot string,
+	importer *sourcePackage,
+	importPath string,
+	packages map[string]*sourcePackage,
+) *sourcePackage {
+	extension := extensionName(extensionRoot, importer.files[0].path)
+	extensionDir := filepath.Join(extensionRoot, extension)
+	var result *sourcePackage
+
+	for _, candidate := range packages {
+		if candidate == importer ||
+			extensionName(extensionRoot, candidate.files[0].path) != extension {
+			continue
+		}
+
+		matches := candidate.importPath != "" && candidate.importPath == importPath
+		if candidate.importPath == "" {
+			relative, err := filepath.Rel(extensionDir, candidate.directory)
+			if err != nil {
+				continue
+			}
+			relativeImport := filepath.ToSlash(relative)
+			if relativeImport == "." {
+				matches = importPath == extension || strings.HasSuffix(importPath, "/"+extension)
+			} else {
+				matches = importPath == relativeImport || strings.HasSuffix(importPath, "/"+relativeImport)
+			}
+		}
+		if !matches {
+			continue
+		}
+		if result != nil {
+			return nil
+		}
+		result = candidate
+	}
+	return result
 }
 
 func packageReferencesTelemetryPayload(pkg *sourcePackage) bool {

@@ -514,7 +514,7 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `extension.dependency_update_count` | measurement | Number of dependency extensions updated recursively (`ext.update`) |
 
 Each `ext.usage` span contains `extension.id`, `extension.version`,
-`extension.source`, `extension.event`, and any number of dynamic `ext.*`
+`extension.source`, `extension.event`, and up to 32 dynamic `ext.*`
 fields. The host writes the identity fields and applies the `ext.` prefix; the
 extension chooses the event name, the key suffixes, and the values. Failed
 extension commands instead carry `extension.id` and `extension.version` on
@@ -526,17 +526,14 @@ Each concrete first-party field has its own classification, purpose, and
 endpoint declaration. The currently declared fields are bounded enums
 classified as `SystemMetadata` for `FeatureInsight` with endpoint `N/A`; that
 is a decision about those fields, not a default for the whole `ext.*` class.
-The repository source validator blocks undeclared or dynamically keyed
+Repository validation blocks undeclared or dynamically keyed
 attributes before release. Extension authors remain responsible for keeping
 values low cardinality and free of customer content, and for having them
 privacy reviewed with their extension.
 
-Only extensions whose configured `azd` source matches the verified official
-registry name, type, and normalized URL produce these spans, which is what ties
-the recorded values to that privacy review. A report from any other install
-source succeeds but records nothing, as does any report past the limit of 100
-spans per `azd` invocation. This is a configuration-based admission check, not
-a cryptographic provenance guarantee.
+Only eligible official-registry installations produce these spans. Other
+installations receive a normal response without recording an event, as does
+any report past the limit of 100 spans per `azd` invocation.
 
 Reviewed first-party extension usage events currently include:
 

@@ -68,11 +68,11 @@ Application Insights queue, `--trace-log-file`, or `--trace-log-url`. Span attri
 | Installer | `service.installer` | SystemMetadata | FeatureInsight | How azd was installed |
 
 The canonical resource also includes the OpenTelemetry SDK's standard metadata. These keys are SDK-managed rather
-than azd `fields.AttributeKey` declarations. Their classification and purpose below reflect the existing completed
-GDPR data-catalog entries rather than metadata declared in source:
+than azd `fields.AttributeKey` declarations. Their classification and purpose below reflect reviewed telemetry
+metadata rather than declarations in the azd source:
 
-| Field | OTel Key | Catalog Classification | Catalog Purpose | Notes |
-|-------|----------|------------------------|-----------------|-------|
+| Field | OTel Key | Classification | Purpose | Notes |
+|-------|----------|----------------|---------|-------|
 | SDK name | `telemetry.sdk.name` | SystemMetadata | PerformanceAndHealth | Always `opentelemetry` |
 | SDK language | `telemetry.sdk.language` | SystemMetadata | PerformanceAndHealth | Always `go` |
 | SDK version | `telemetry.sdk.version` | SystemMetadata | PerformanceAndHealth | OpenTelemetry Go SDK version |
@@ -303,15 +303,15 @@ The following rules define the runtime and source-governance boundaries:
 
 | Rule | Enforcement |
 |------|-------------|
-| Eligibility | Only extensions whose configured `azd` source matches the verified official registry name, type, and normalized URL produce `ext.usage` spans. A call from any other source succeeds but is dropped without recording |
+| Eligibility | Only eligible official-registry installations produce `ext.usage` spans; other installations receive a normal response without recording an event |
 | Key namespace | Every caller-supplied key is prefixed with `ext.` by the host, so it can never overwrite a host-owned attribute |
 | Size | At most 32 attributes per event; event name and keys at most 128 UTF-8 bytes; values at most 512 UTF-8 bytes |
 | Volume | At most 100 `ext.usage` spans per `azd` invocation across all extensions; calls beyond that are dropped without recording |
 | Values | Not enumerated or pattern-checked. The extension author owns what a value means and is responsible for keeping it low cardinality and free of customer content |
 | Classification | Each first-party field has an explicit source declaration based on its actual semantics; the runtime does not assign one classification to the whole `ext.*` class |
 | Purpose | Each first-party field declares its actual collection purpose; `FeatureInsight` is not applied automatically |
-| Trust | `extension.id` and `extension.version` are derived from host-signed claims; `extension.source` and eligibility are checked against the installed record and verified source config, never from the request |
-| Source validation | `go test ./extensions/telemetry` scans production Go source and rejects undeclared fields, dynamic keys, invalid metadata, and unsupported classifications using repository-local validation |
+| Identity | The host supplies extension identity and source context; the request cannot override those fields |
+| Repository validation | `go test ./extensions/telemetry` rejects undeclared fields, dynamic keys, invalid metadata, and unsupported classifications before release |
 | Review | Extension telemetry follows the same documented classification and content rules as core fields. Official-registry admission remains the runtime boundary |
 
 Reviewed first-party event contracts:
@@ -331,10 +331,6 @@ the design rationale and
 for the author-facing rules.
 
 #### What this class does and does not guarantee
-
-The installed extension identity and source information originate from local
-`azd` configuration. Eligibility is determined from the verified install
-source and is not a cryptographic provenance guarantee.
 
 The source inventory is not a runtime allowlist. When governing this data,
 treat `(extension.id, extension.version, key)` as the authoritative filter
@@ -565,41 +561,44 @@ Fields that are hashed:
 5. **Upload**: The `azd telemetry upload` command (run as a background process) reads the queue and sends data to Azure Monitor.
 6. **Analysis**: Data flows into Kusto tables for dashboards and analysis via LENS jobs and cooked tables.
 
-## GDPR Data-Catalog Classification
+## Telemetry Metadata Declarations
 
-Runtime emission (above) is separate from **classification**. The GDPR data catalog is kept in
-sync by an external metadata tool that **statically scans the telemetry source** — it does not read this document or observe live telemetry, so it can only classify a property that is declared where the scan looks: an exported `fields.AttributeKey`. A raw `attribute.String("my.key", v)` at a call site is invisible to the scan, so its catalog row stays **Unclassified / `Complete=false`**. This is enforced in-repo by `TestNoRawTelemetryAttributes` (`cli/azd/cmd/telemetry_test.go`).
+Runtime emission is separate from telemetry metadata. Repository tooling reads
+explicit field and event declarations rather than inferring metadata from
+arbitrary instrumentation calls. Raw attribute keys bypass that declaration
+contract and are rejected by `TestNoRawTelemetryAttributes`
+(`cli/azd/cmd/telemetry_test.go`).
 
-### Field (attribute) discovery contract
+### Field declaration contract
 
-For a field to be discovered and classified it must be:
+For a field to participate in telemetry metadata it must be:
 
 - an **exported**, **package-level** `var` (not a `const`, not function-local, not unexported), and
 - typed exactly **`AttributeKey`** (the struct declared in `fields.go`).
 
-The scanner reads these `AttributeKey` members:
+Repository tooling uses these `AttributeKey` members:
 
-| `AttributeKey` member | What the classifier reads |
-|-----------------------|---------------------------|
+| `AttributeKey` member | Metadata |
+|-----------------------|----------|
 | `Key` | The dotted OTel key (a string literal, `attribute.Key("…")`, or a string const). |
 | `Classification` | One of the six [Data Classifications](#data-classifications). |
 | `Purpose` | One or more [Purposes](#purposes). |
-| `Endpoint` | Optional identifier-type tag; set only when the value is a known endpoint identifier. |
+| `Endpoint` | Identifier-handling metadata required by the selected classification. |
 | `IsMeasurement` | `true` for numeric values (routed to the Measurements column); `false` (default) for Properties. |
 
-`Classification` and `Purpose` must be written as **bare identifiers from the `fields` package**
-(e.g. `Classification: SystemMetadata`) — the scanner reads the identifier name, so a qualified
-`fields.SystemMetadata` reference from another package would not be recognized. Keep all
-`AttributeKey` definitions inside the `fields` package. Fields are registered as **common
-properties** that apply across events (the scan does not tie an attribute to a specific event).
+Core field declarations live in `internal/tracing/fields`. First-party
+extension declarations live in `extensions/telemetry/fields.go` and use the
+same `AttributeKey` metadata model. Follow the declaration style in the owning
+package; repository tests enforce the supported source forms. Field
+declarations apply across events and are not tied to a single event.
 
-### Event discovery contract
+### Event declaration contract
 
-For an event to be discovered its constant must be:
+For an event to participate in telemetry metadata its constant must be:
 
 - an **exported** `const` with a **string** value in the `events` package, and
 - named with a Go identifier that **contains the substring `Event`** (e.g. `PackBuildEvent`). A
-  constant whose identifier omits `Event` is silently skipped even if it is emitted at runtime.
+  constant whose identifier omits `Event` is not included in repository metadata.
 
 An identifier that **ends with `Prefix`** (e.g. `CommandEventPrefix`) registers a **prefix group**:
 any emitted event name starting with that prefix is classified under it. Every other event constant

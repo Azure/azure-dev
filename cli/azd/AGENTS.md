@@ -288,27 +288,26 @@ public reference, and downstream Kusto/LENS consumers drift out of sync. Verify 
   host-domain table). Every field MUST set a `Classification` (e.g. `SystemMetadata`,
   `OrganizationalIdentifiableInformation`, `EndUserPseudonymizedInformation`; never emit
   `CustomerContent`) and a `Purpose` (`FeatureInsight` / `BusinessInsight` /
-  `PerformanceAndHealth`); the classifier also reads the optional `Endpoint` and `IsMeasurement`
-  members.
+  `PerformanceAndHealth`); telemetry metadata also includes the optional `Endpoint` and
+  `IsMeasurement` members.
 - **First-party extension field** — keep the runtime `ReportUsage` map key as a string literal or
   same-package compile-time constant and declare its final `ext.*` name as an exported
   `AttributeKey` in `cli/azd/extensions/telemetry/fields.go`. Declarations are shared by final key
   across first-party extensions; reuse an existing key only when its meaning, allowed values,
   classification, and purpose are identical. Run
-  `go test ./extensions/telemetry`; the source validator rejects undeclared or dynamically keyed
+  `go test ./extensions/telemetry`; repository validation rejects undeclared or dynamically keyed
   fields, missing classification/purpose/endpoint metadata, measurements, and Customer Content.
 - **Event** — define a constant in `cli/azd/internal/tracing/events/events.go` following the
   `prefix.noun.verb` value convention. It must be an exported string `const` whose Go identifier
-  contains `Event` (end it with `Prefix` for a prefix-match group) so the classifier
+  contains `Event` (end it with `Prefix` for a prefix-match group) so repository metadata tooling
   discovers it.
 - **Emit** at the call site via `tracing.Start` (spans/events) plus `tracing.SetUsageAttributes`
   or `span.SetAttributes` (attributes). Always pass a `fields.AttributeKey` method
   (e.g. `fields.MyKey.String(v)` / `.Bool(v)` / `.Int(v)`) — never a raw
-  `attribute.String("my.key", v)`. The GDPR classifier discovers fields by statically scanning
-  the `fields` package for exported `AttributeKey` vars; a raw literal key is invisible to it, so the
-  property reaches App Insights but its data-catalog row stays Unclassified / `Complete=false`. Enforced by
-  `TestNoRawTelemetryAttributes` (`cli/azd/cmd/telemetry_test.go`); dynamic
-  `ext.*` keys are the only sanctioned exception.
+  `attribute.String("my.key", v)`. Telemetry metadata is derived from exported
+  `AttributeKey` declarations; raw literal keys bypass that contract and are rejected by
+  `TestNoRawTelemetryAttributes` (`cli/azd/cmd/telemetry_test.go`). Dynamic `ext.*` keys are the
+  only sanctioned exception.
 - **Hash user-derived values** with `fields.StringHashed` / `fields.StringSliceHashed`
   (`cli/azd/internal/tracing/fields/key.go`). Hash anything that embeds a user-chosen name, path,
   repo URL, or project / env / service / layer identifier (e.g. `exegraph.step.name`, `hooks.name`).

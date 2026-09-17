@@ -50,6 +50,34 @@ func TestExtensionTelemetryDeclarationRules(t *testing.T) {
 }`,
 		},
 		{
+			name: "public personal data classification is supported",
+			declaration: `var TestField = fields.AttributeKey{
+	Key: attribute.Key("ext.test"),
+	Classification: fields.PublicPersonalData,
+	Purpose: fields.FeatureInsight,
+	Endpoint: "ReviewedEndpoint",
+}`,
+		},
+		{
+			name: "public personal data requires endpoint metadata",
+			declaration: `var TestField = fields.AttributeKey{
+	Key: attribute.Key("ext.test"),
+	Classification: fields.PublicPersonalData,
+	Purpose: fields.FeatureInsight,
+	Endpoint: "N/A",
+}`,
+			expectedMessage: "non-SystemMetadata classifications must use an endpoint other than N/A",
+		},
+		{
+			name: "callstack or exception classification is supported",
+			declaration: `var TestField = fields.AttributeKey{
+	Key: attribute.Key("ext.test"),
+	Classification: fields.CallstackOrException,
+	Purpose: fields.PerformanceAndHealth,
+	Endpoint: "ReviewedEndpoint",
+}`,
+		},
+		{
 			name: "customer content is rejected",
 			declaration: `var TestField = fields.AttributeKey{
 	Key: attribute.Key("ext.test"),
@@ -293,8 +321,12 @@ func parseFieldDeclaration(
 		nil,
 	)
 	switch classificationName {
+	case "PublicPersonalData":
+		field.classification = fields.PublicPersonalData
 	case "SystemMetadata":
 		field.classification = fields.SystemMetadata
+	case "CallstackOrException":
+		field.classification = fields.CallstackOrException
 	case "EndUserPseudonymizedInformation":
 		field.classification = fields.EndUserPseudonymizedInformation
 	case "OrganizationalIdentifiableInformation":

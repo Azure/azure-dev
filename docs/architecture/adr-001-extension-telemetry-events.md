@@ -47,19 +47,15 @@ records events from extensions admitted to the official registry.**
   name, classification, purpose, and endpoint type. A declaration is shared
   across first-party extensions when the field semantics and allowed values
   are identical.
-- `cli/azd/extensions/telemetry/fields_test.go` statically scans telemetry
-  payload construction in production Go source, including
-  `ReportUsageRequest` and the shared Foundry telemetry `Event`. Attribute maps
-  must be inline, and keys must be string literals or same-package compile-time
-  constants. An undeclared or invalid field fails the repository test with its
-  extension, file, and line.
+- Repository validation checks production Go source. Attribute keys must be
+  statically discoverable, and an undeclared or invalid field fails CI with its
+  source location.
 - The source inventory is not consulted by the running CLI. A classification
   mistake stops development and CI, while released extension telemetry remains
   best effort and cannot fail the user's command.
-- The host writes `extension.id`, `extension.version`, and `extension.source`
-  from the signed claims and the installed record, and `extension.event` from
-  the caller's event name. Because none of the identity fields are on the wire,
-  an extension cannot assert which extension it is.
+- The host adds `extension.id`, `extension.version`, and `extension.source`
+  from the current extension context, and `extension.event` from the caller's
+  event name. The request cannot override host-owned identity fields.
 - Every caller-supplied key is prefixed with `ext.` before it reaches the span.
   OpenTelemetry attributes overwrite on a duplicate key, so without the prefix
   an extension sending `extension.id` would overwrite the host's own value.
@@ -74,28 +70,23 @@ records events from extensions admitted to the official registry.**
 - Telemetry is not a capability. Capabilities describe customer-facing features
   the host calls into; telemetry is a service the host offers, like every other
   service on the extension gRPC API.
-- Only extensions whose installed `azd` source has the reserved name, URL, and
-  URL source type of the official registry are recorded. Attribute values are
-  authored by the extension and are never reviewed at runtime, so registry
-  admission is the thing that keeps unchecked third-party content out of a
-  pipeline covered by `azd`'s privacy statement. This is a configuration-based
-  source check, not a cryptographic provenance guarantee. A blank or polluted
-  source is not treated as official, even though the upgrade resolver defaults
-  a missing source to the main registry.
+- Only eligible official-registry installations are recorded. Attribute values
+  are authored by the extension and are not inspected at runtime, so admission
+  and privacy review remain separate requirements.
 - A dropped event is not an error. An extension outside the official registry,
   and one past the event budget, get `Accepted: false` and no span. Reporting is
   best effort, so an author runs the same code path during local development as
   in production instead of having to swallow an error that only appears in one
   of them. The reason is written to the `azd` log, visible with `--debug`.
-- `extension.source` is still recorded on the span. Once the verified source
-  gate has passed it is a useful dimension rather than a filter.
+- `extension.source` is still recorded on the span. Once the eligibility check
+  has passed it is a useful dimension rather than a filter.
 - Accepted events are recorded on an `ext.usage` span rather than being appended
   to the command span.
 
 Removing the runtime allowlist does not remove content responsibility.
 Extension telemetry is subject to the same rules as core telemetry: fields are
 source-declared, documented, correctly classified, never carry customer
-content, and go through privacy review. The source validator provides the
+content, and go through privacy review. Repository validation provides the
 developer hard stop; official-registry admission remains the runtime gate.
 
 ## Consequences
@@ -103,8 +94,8 @@ developer hard stop; official-registry admission remains the runtime gate.
 **Easier**
 
 - Adding a signal requires the extension change plus one shared Go declaration,
-  but no `azd` binary release. The catalog publisher reads declarations from
-  `azure-dev` main independently of the runtime.
+  but no `azd` binary release. Repository metadata tooling can consume the
+  declaration independently of the runtime.
 - Classification metadata uses the same `AttributeKey` model as core telemetry,
   so there is no extension-specific manifest or schema format.
 - An undeclared field fails before release using repository-local validation.
@@ -138,17 +129,15 @@ developer hard stop; official-registry admission remains the runtime gate.
 - Trace context has to cross the gRPC boundary for that join to work, so the
   extension SDK forwards the W3C trace context headers and the server extracts
   them.
-- Identity is derived from the installed record, which lives in user-writable
-  config. An extension cannot assert its identity on the request, but this is
-  not proof of provenance — it is the same trust level every existing capability
-  gate already depends on.
+- Extension identity is host-owned and derived from the current extension
+  context. The request cannot override it.
 
 ## Alternatives Considered
 
 **Keep a runtime allowlist in core.** Rejected because it would put product
 vocabulary into the released CLI and force users to upgrade `azd` before a new
-extension field could be recorded. The adopted source inventory is read by
-development tooling and the catalog publisher, not by the runtime.
+extension field could be recorded. The adopted source inventory is used by
+development and metadata tooling, not by the runtime.
 
 **Declare fields and allowed values in the registry entry.** The design this
 ADR replaces. It removed the core release dependency but kept per-field
@@ -157,22 +146,10 @@ install: telemetry ingestion is not authenticated per client, so a reviewed set
 cannot be enforced from the client anyway. Governing content authoritatively
 belongs downstream or in review, not in a runtime check.
 
-**Gate reporting on the verified official registry source.** Adopted, after
-review pushed back on shipping unchecked third-party strings into a pipeline
-covered by `azd`'s privacy statement. The earlier position — that gating
-`ext.usage` was inconsistent with `ext.run`, `ext.install`, and
-`extension.installed` firing for any source — does not hold: every attribute on
-those spans is authored by the host, so they observe an unofficial extension
-without carrying its text. `ext.usage` is the first path where the extension
-supplies the strings.
-
-The caveat is that install source is a proxy for first party, not the same
-thing. It answers "does the configured source match the official registry",
-which only equals first party for as long as that registry stays first-party.
-Future reviewed third-party extensions may therefore report. It is also a
-client-side check against a record in user-writable config; that is acceptable
-because editing it already implies local write access, which is a strictly
-larger problem than telemetry.
+**Gate reporting on official-registry eligibility.** Adopted because
+`ext.usage` carries extension-authored values, unlike lifecycle and failure
+signals whose attributes are supplied by the host. Eligibility is an admission
+boundary; it does not replace content review or runtime value limits.
 
 **Rejecting an unofficial extension with an error.** Rejected in favour of
 `Accepted: false`. An error forces every author to swallow a failure that

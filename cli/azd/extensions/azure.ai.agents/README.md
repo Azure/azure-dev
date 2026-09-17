@@ -139,6 +139,47 @@ deployed: declare a Toolbox service and add it to `uses`. Deploy dependencies
 first or use `azd deploy --all`; a targeted Agent deployment does not deploy its
 dependencies automatically.
 
+## Invoke a version override
+
+Use `azd ai agent invoke --version-override` to check deployed agent code without
+changing the endpoint's traffic split. After deploying with `azd deploy`, run
+`azd ai agent show` to obtain the actual deployed version. Replace `3` below with
+that version:
+
+```bash
+azd ai agent invoke --protocol responses --version-override 3 "Reply with a short health confirmation."
+```
+
+- Only remote hosted agents using `responses` or `invocations` support overrides;
+  local, prompt-agent, and A2A routes do not. No override header is sent unless
+  the flag is supplied.
+- Each override starts a new session and, for Responses, a new conversation.
+  It neither reuses nor saves ordinary cached session, conversation, Response,
+  or Invocation IDs. It does not create a `version_ref` session. Existing
+  `--version` behavior (create or reuse a version-backed session) is unchanged.
+- The flag conflicts with `--version`, `--session-id`, `--conversation-id`,
+  explicit `--new-session=false`, and explicit `--new-conversation=false`.
+- Prefer an exact version for repeatable code-release checks. `latest` is a
+  floating selection and must resolve to a concrete version, not `latest`.
+
+The initial invocation POST sends `x-agent-version-override`. Its successful
+response must contain one valid, concrete `x-agent-version-resolved` value,
+matching an exact requested version. Missing, invalid, or mismatched resolution
+evidence, or `x-agent-version-fallback: true`, makes the command fail. An absent
+fallback header is normal; `false` is also accepted. Friendly output reports
+the requested and resolved versions, plus optional `x-agent-version-resolution`
+when supplied. `--output raw` preserves the HTTP response and still returns an
+error if verification fails.
+
+Lifecycle GETs neither send the override nor require these verification headers.
+For background Responses, follow the returned ID explicitly with
+`azd ai agent invocations follow --protocol responses --id <id>`; the override
+does not select a new current ID. [Latency diagnostics](#invoke-latency-diagnostics)
+are unchanged.
+
+Use read-only test prompts. A strict verification failure does **not** undo work
+the agent has already executed; do not automatically retry side-effecting tests.
+
 ## Invoke latency diagnostics
 
 Remote Hosted Agent `azd ai agent invoke` calls using Responses or Invocations

@@ -95,6 +95,9 @@ const (
 	CodeAuthFailed               = "auth_failed"
 )
 
+// CodeAgentVersionVerificationFailed identifies an unverified hosted invocation override.
+const CodeAgentVersionVerificationFailed = "agent_version_verification_failed"
+
 // Error codes for compatibility errors.
 //
 // These are usually paired with [Compatibility] for version mismatches.

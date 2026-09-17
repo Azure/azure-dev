@@ -47,6 +47,7 @@ type invokeFlags struct {
 	protocol        string
 	agentEndpoint   string
 	version         string
+	versionOverride string
 	outputFmt       string
 	callID          string
 	clientHeaders   []string
@@ -125,6 +126,16 @@ session automatically. Pass --new-session to force a reset.
 Use --version to invoke a specific deployed agent version. When provided,
 azd creates or reuses a hosted agent session backed by that version.
 
+Use --version-override to test a hosted agent version through the endpoint's
+version override header, without changing its traffic split. Each call uses a
+fresh session and conversation, and does not save session/conversation or operation
+IDs as the current selection. It cannot be combined with --version, --session-id,
+or --conversation-id. Only remote responses and invocations are supported.
+The command fails if the service falls back to another version or cannot confirm
+the requested version. A failed check does not undo work already executed by the
+agent. Use a concrete version for release checks; latest is a floating selection
+whose actual resolved version is reported. No override is sent unless requested.
+
 For agents configured with header-based isolation, pass --user-identity
 on each invoke. Locally it is sent as the x-agent-user-id header; for
 remote invokes it is sent as the x-ms-user-identity header.
@@ -196,6 +207,9 @@ This option does not provide crash recovery or automatic reconnection.`,
 
   # Invoke a specific deployed agent version
   azd ai agent invoke --version 3 "Hello!"
+
+	# Test a candidate version without changing the endpoint traffic split
+	azd ai agent invoke --version-override 4 "Reply with a short health confirmation."
 
   # Dump the raw server response (status line, headers, body) for debugging
   azd ai agent invoke --output raw "Hello!"
@@ -272,6 +286,9 @@ This option does not provide crash recovery or automatic reconnection.`,
 			}
 
 			if err := validateInvokeVersionFlags(cmd, flags); err != nil {
+				return err
+			}
+			if err := validateInvokeVersionOverrideFlags(cmd, flags); err != nil {
 				return err
 			}
 
@@ -395,6 +412,12 @@ This option does not provide crash recovery or automatic reconnection.`,
 		"",
 		"Agent version to invoke (creates or reuses a session backed by that version)",
 	)
+	cmd.Flags().StringVar(
+		&flags.versionOverride,
+		"version-override",
+		"",
+		"Test a hosted version (or latest) with a fresh session; fail on fallback or unverified version resolution",
+	)
 	cmd.Flags().BoolVar(
 		&flags.longRunning,
 		"long-running",
@@ -517,6 +540,9 @@ func validateAgentEndpointFlags(cmd *cobra.Command, flags *invokeFlags) error {
 }
 
 func (a *InvokeAction) Run(ctx context.Context) error {
+	if err := a.validateVersionOverrideRoute(agent_api.AgentProtocol(a.flags.protocol), false); err != nil {
+		return err
+	}
 	if a.flags.inputFile != "" {
 		if _, _, err := a.resolveBody(); err != nil {
 			return err
@@ -529,7 +555,8 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	// explicitly targeted a local server (--local) or a full deployed agent
 	// endpoint (--agent-endpoint), in which case we honor that intent.
 	if a.endpoint == nil && !a.flags.local &&
-		(a.flags.protocol == "" || agent_api.AgentProtocol(a.flags.protocol) == agent_api.AgentProtocolResponses) {
+		(a.flags.protocol == "" || agent_api.AgentProtocol(a.flags.protocol) == agent_api.AgentProtocolResponses ||
+			a.flags.versionOverride != "") {
 		azdClient, err := azdext.NewAzdClient()
 		if err != nil {
 			return fmt.Errorf("failed to create azd client: %w", err)
@@ -547,6 +574,9 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 			}
 		}
 		if isPrompt {
+			if err := a.validateVersionOverrideRoute(agent_api.AgentProtocolResponses, true); err != nil {
+				return err
+			}
 			if err := a.validateDebugLatencyRoute(agent_api.AgentProtocolResponses, true); err != nil {
 				return err
 			}
@@ -556,6 +586,10 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 
 	protocol, err := a.resolveProtocol(ctx)
 	if err != nil {
+		return err
+	}
+	if err := a.validateVersionOverrideRoute(protocol, false); err != nil {
+		a.closeResolvedRemoteContextClient()
 		return err
 	}
 
@@ -897,10 +931,22 @@ func remoteProtocolSelectionError(
 func (a *InvokeAction) resolveRemoteContextForInvoke(
 	ctx context.Context,
 ) (*remoteContext, error) {
-	if a.resolvedRemoteContext != nil {
-		return a.resolvedRemoteContext, nil
+	rc := a.resolvedRemoteContext
+	if rc == nil {
+		var err error
+		rc, err = a.resolveRemoteContext(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return a.resolveRemoteContext(ctx)
+	if a.flags.versionOverride != "" {
+		// Keep test sessions, conversations and operation IDs out of the ordinary
+		// per-agent store. Copy the context so protocol discovery retains its input.
+		isolated := *rc
+		isolated.agentKey = ""
+		return &isolated, nil
+	}
+	return rc, nil
 }
 
 func (a *InvokeAction) serviceNameSelector() string {
@@ -1375,6 +1421,11 @@ func (rc *remoteContext) legacyKeys() []string {
 }
 
 func (a *InvokeAction) resolveRemoteSessionID(ctx context.Context, rc *remoteContext) (string, error) {
+	if a.flags.versionOverride != "" {
+		// Let the endpoint create a session using the override, not a version_ref
+		// session or a stored session bound to an earlier version.
+		return "", nil
+	}
 	if rc.version == "" {
 		if rc.agentKey != "" && rc.azdClient != nil {
 			return resolveStoredID(
@@ -1516,7 +1567,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 
 	agentKey := rc.agentKey
-	if agentKey == "" && rc.azdClient != nil {
+	if agentKey == "" && rc.azdClient != nil && a.flags.versionOverride == "" {
 		log.Printf("warning: agent endpoint not available, session state will not be persisted")
 	}
 
@@ -1601,6 +1652,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	applyCustomHeaders(req, a.clientHeaders)
+	a.applyVersionOverride(req)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
@@ -1622,6 +1674,10 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return fmt.Errorf("POST %s failed: %w", respURL, err)
 	}
 	defer resp.Body.Close()
+
+	if err := a.verifyVersionOverrideResponse(resp, os.Stdout); err != nil {
+		return err
+	}
 
 	// Always capture session state from response headers (needed even in raw mode
 	// so subsequent invokes can reuse the session). Headers are read, not consumed.
@@ -1840,7 +1896,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 
 	agentKey := rc.agentKey
-	if agentKey == "" && rc.azdClient != nil {
+	if agentKey == "" && rc.azdClient != nil && a.flags.versionOverride == "" {
 		log.Printf("warning: agent endpoint not available, session state will not be persisted")
 	}
 
@@ -1880,7 +1936,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	// Fetch and cache the agent's OpenAPI spec only in project mode. In ephemeral
 	// mode (--agent-endpoint) we deliberately avoid the on-disk side effect since
 	// the user is one-off targeting a remote endpoint.
-	if rc.azdClient != nil && a.endpoint == nil {
+	if rc.azdClient != nil && a.endpoint == nil && a.flags.versionOverride == "" {
 		fetchOpenAPISpec(ctx, rc.azdClient, remoteBaseURL, rc.name, "remote", rc.bearerToken, rc.apiVersion, false)
 	}
 
@@ -1891,6 +1947,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	applyCustomHeaders(req, a.clientHeaders)
+	a.applyVersionOverride(req)
 	req.Header.Set("Content-Type", contentTypeForBody(body))
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
@@ -1909,6 +1966,10 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		return fmt.Errorf("POST %s failed: %w", invURL, err)
 	}
 	defer resp.Body.Close()
+
+	if err := a.verifyVersionOverrideResponse(resp, os.Stdout); err != nil {
+		return err
+	}
 
 	invocationID, err := invocationIDFromResponse(resp)
 	if err != nil {

@@ -54,7 +54,12 @@ type TaskList struct {
 	allTasks  []*Task
 	syncTasks []*Task // Queue for synchronous tasks
 
-	completed      int32
+	completed int32
+
+	// renderSnapshotMu ensures we can get a consistent snapshot of our state for [TaskList.Render].
+	// Individual [Task] updates, and [TaskList.allTasks] are synchronized using this mutex.
+	renderSnapshotMu sync.RWMutex
+
 	syncMutex      sync.Mutex // Mutex to handle sync task queue safely
 	errorMutex     sync.Mutex // Mutex to handle errors slice safely
 	asyncSemaphore chan struct{}
@@ -118,15 +123,16 @@ func NewTaskList(options *TaskListOptions) *TaskList {
 	}
 
 	return &TaskList{
-		options:        &mergedOptions,
-		waitGroup:      sync.WaitGroup{},
-		allTasks:       []*Task{},
-		syncTasks:      []*Task{},
-		syncMutex:      sync.Mutex{},
-		errorMutex:     sync.Mutex{},
-		completed:      0,
-		asyncSemaphore: make(chan struct{}, mergedOptions.MaxConcurrentAsync),
-		errors:         []error{},
+		options:          &mergedOptions,
+		waitGroup:        sync.WaitGroup{},
+		allTasks:         []*Task{},
+		syncTasks:        []*Task{},
+		renderSnapshotMu: sync.RWMutex{},
+		syncMutex:        sync.Mutex{},
+		errorMutex:       sync.Mutex{},
+		completed:        0,
+		asyncSemaphore:   make(chan struct{}, mergedOptions.MaxConcurrentAsync),
+		errors:           []error{},
 	}
 }
 
@@ -185,6 +191,10 @@ func (t *TaskList) AddTask(options TaskOptions) *TaskList {
 		State:  Pending,
 	}
 
+	t.renderSnapshotMu.Lock()
+	t.allTasks = append(t.allTasks, task)
+	t.renderSnapshotMu.Unlock()
+
 	// Differentiate between async and sync tasks
 	if options.Async {
 		t.addAsyncTask(task)
@@ -192,13 +202,14 @@ func (t *TaskList) AddTask(options TaskOptions) *TaskList {
 		t.addSyncTask(task)
 	}
 
-	t.allTasks = append(t.allTasks, task)
-
 	return t
 }
 
 // Render renders the task list.
 func (t *TaskList) Render(printer Printer) error {
+	t.renderSnapshotMu.RLock()
+	defer t.renderSnapshotMu.RUnlock()
+
 	otherTasks := []*Task{}
 	runningTasks := []*Task{}
 	pendingTasks := []*Task{}
@@ -308,7 +319,11 @@ func (t *TaskList) Render(printer Printer) error {
 
 // isCompleted checks if all async tasks are complete.
 func (t *TaskList) isCompleted() bool {
-	return int(atomic.LoadInt32(&t.completed)) == len(t.allTasks)
+	t.renderSnapshotMu.RLock()
+	allTasksLen := len(t.allTasks)
+	t.renderSnapshotMu.RUnlock()
+
+	return int(atomic.LoadInt32(&t.completed)) == allTasksLen
 }
 
 // runSyncTasks executes all synchronous tasks in order after async tasks are completed.
@@ -316,18 +331,28 @@ func (t *TaskList) runSyncTasks() {
 	t.syncMutex.Lock()
 	defer t.syncMutex.Unlock()
 
+	// NOTE: we're calling t.renderSnapshotMu.Lock() each time we do anything that might
+	// affect task state, or the overall list of tasks, which means we do a lot of small
+	// write locks here.
+
 	for _, task := range t.syncTasks {
 		if len(t.errors) > 0 && !t.options.ContinueOnError {
+			t.renderSnapshotMu.Lock()
 			task.State = Skipped
+			t.renderSnapshotMu.Unlock()
 			atomic.AddInt32(&t.completed, 1)
 			continue
 		}
 
+		t.renderSnapshotMu.Lock()
 		task.startTime = new(time.Now())
 		task.State = Running
+		t.renderSnapshotMu.Unlock()
 
 		setProgress := func(progress string) {
+			t.renderSnapshotMu.Lock()
 			task.progress = progress
+			t.renderSnapshotMu.Unlock()
 		}
 
 		state, err := task.Action(setProgress)
@@ -337,9 +362,11 @@ func (t *TaskList) runSyncTasks() {
 			t.errorMutex.Unlock()
 		}
 
+		t.renderSnapshotMu.Lock()
 		task.endTime = new(time.Now())
 		task.Error = err
 		task.State = state
+		t.renderSnapshotMu.Unlock()
 
 		atomic.AddInt32(&t.completed, 1)
 	}
@@ -348,16 +375,23 @@ func (t *TaskList) runSyncTasks() {
 // addAsyncTask adds an asynchronous task and starts its execution in a goroutine.
 func (t *TaskList) addAsyncTask(task *Task) {
 	t.waitGroup.Go(func() {
+		// NOTE: we're calling t.renderSnapshotMu.Lock() each time we do anything that might
+		// affect task state, or the overall list of tasks, which means we do a lot of small
+		// write locks here.
 
 		// Acquire a slot in the semaphore
 		t.asyncSemaphore <- struct{}{}
 		defer func() { <-t.asyncSemaphore }()
 
+		t.renderSnapshotMu.Lock()
 		task.startTime = new(time.Now())
 		task.State = Running
+		t.renderSnapshotMu.Unlock()
 
 		setProgress := func(progress string) {
+			t.renderSnapshotMu.Lock()
 			task.progress = progress
+			t.renderSnapshotMu.Unlock()
 		}
 
 		state, err := task.Action(setProgress)
@@ -367,9 +401,11 @@ func (t *TaskList) addAsyncTask(task *Task) {
 			t.errorMutex.Unlock()
 		}
 
+		t.renderSnapshotMu.Lock()
 		task.endTime = new(time.Now())
 		task.Error = err
 		task.State = state
+		t.renderSnapshotMu.Unlock()
 
 		atomic.AddInt32(&t.completed, 1)
 	})

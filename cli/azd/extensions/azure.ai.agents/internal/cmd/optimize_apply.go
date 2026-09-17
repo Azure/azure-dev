@@ -5,10 +5,10 @@
 // an optimization candidate and applies it locally to the azd project.
 //
 // It writes the candidate's instruction, skills, and tool definitions
-// into .agent_configs/<candidate-id>/, updates the agent definition's
-// environment variables (inline in azure.yaml, or legacy agent.yaml on
-// disk), and shows a diff summary (prompt and skills) against the
-// baseline.
+// into .agent_configs/<candidate-id>/. Managed prompt agents deploy from the
+// candidate's model, instructions, and matching function-tool updates in azure.yaml.
+// Other agent kinds select the local candidate through environment variables
+// in their definition (inline in azure.yaml, or legacy agent.yaml on disk).
 
 package cmd
 
@@ -32,6 +32,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // agentConfigsDir aliases the shared constant for local use.
@@ -53,6 +54,20 @@ func newOptimizeApplyCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Apply optimized candidate configuration locally to your azd project.",
 		Long: `Download the optimized configuration and skill files from an optimization
 candidate and write them into your local azd project under .agent_configs/.
+
+For managed prompt agents, this also updates the model and instructions
+in the azure.yaml service definition, including the deprecated config section.
+Candidates must contain a non-empty model and instructions. Function tools are
+updated only when their names match existing function tools. Omitted fields,
+including nested parameter fields, are preserved. Supplied arrays and explicit
+null optional fields replace previous values.
+Functions are saved in flat format. Other tools and tool order are preserved;
+new tools are not added. Missing, null, or empty candidate tools leave tools
+unchanged. Malformed candidate tools are rejected before writing configuration.
+Optimized prompt-agent skills are not supported.
+Referenced definitions ($ref) must be inlined or updated manually.
+Prompt apply also requires AGENT_DEFINITION_PATH to be unset or empty and a
+service name without dots.
 
 After applying, run 'azd deploy' to deploy the optimized agent version.`,
 		Example: `  # Apply candidate config locally, then deploy
@@ -85,6 +100,7 @@ type OptimizeApplyAction struct {
 	flags    *optimizeApplyFlags
 	envName  string
 	noPrompt bool
+	client   *optimize_api.OptimizeClient
 }
 
 func (a *OptimizeApplyAction) Run(ctx context.Context, cmd *cobra.Command) error {
@@ -107,7 +123,7 @@ func (a *OptimizeApplyAction) Run(ctx context.Context, cmd *cobra.Command) error
 	return a.apply(ctx, azdClient, svc, project, out, bold)
 }
 
-// apply downloads and writes the candidate config, updates agent.yaml,
+// apply downloads and writes the candidate config, updates the agent definition,
 // stores state, and prints a diff summary.
 func (a *OptimizeApplyAction) apply(
 	ctx context.Context,
@@ -129,13 +145,37 @@ func (a *OptimizeApplyAction) apply(
 	if err != nil {
 		return fmt.Errorf("failed to resolve agent definition: %w", err)
 	}
+	_, isPromptAgent, err := projectpkg.PromptAgentFromResolvedService(svc, project.Path)
+	if err != nil {
+		return fmt.Errorf("failed to read prompt agent definition: %w", err)
+	}
 	if usesFileRef {
+		guidance := "Add OPTIMIZATION_LOCAL_DIR and OPTIMIZATION_CANDIDATE_ID to the referenced agent " +
+			"file, or inline the definition in azure.yaml"
+		if isPromptAgent {
+			guidance = "Inline the definition in azure.yaml and rerun 'optimize apply', " +
+				"or manually update model, instructions, and tools in the referenced file"
+		}
 		return fmt.Errorf(
 			"agent service %q defines its agent via $ref; "+
-				"'optimize apply' cannot update a referenced file. "+
-				"Add OPTIMIZATION_LOCAL_DIR and "+
-				"OPTIMIZATION_CANDIDATE_ID to the referenced agent "+
-				"file, or inline the definition in azure.yaml",
+				"'optimize apply' cannot update a referenced file. %s",
+			svc.Name, guidance,
+		)
+	}
+	if isPromptAgent && os.Getenv("AGENT_DEFINITION_PATH") != "" {
+		return fmt.Errorf(
+			"prompt agent service %q uses AGENT_DEFINITION_PATH; "+
+				"'optimize apply' cannot update the selected external file. "+
+				"Inline the definition in azure.yaml and unset AGENT_DEFINITION_PATH, "+
+				"or manually update model, instructions, and tools in the selected file",
+			svc.Name,
+		)
+	}
+	if isPromptAgent && strings.Contains(svc.Name, ".") {
+		return fmt.Errorf(
+			"cannot apply prompt configuration to service %q: "+
+				"azd section updates interpret dots in service names as nested paths. "+
+				"Use a service name without dots or manually update model, instructions, and tools",
 			svc.Name,
 		)
 	}
@@ -148,11 +188,14 @@ func (a *OptimizeApplyAction) apply(
 
 	_, _ = bold.Fprintf(out, "Applying optimization candidate %s...\n\n", a.flags.candidate)
 
-	credential, err := newAgentCredential()
-	if err != nil {
-		return err
+	optClient := a.client
+	if optClient == nil {
+		credential, err := newAgentCredential()
+		if err != nil {
+			return err
+		}
+		optClient = optimize_api.NewOptimizeClient(projectEndpoint, credential)
 	}
-	optClient := optimize_api.NewOptimizeClient(projectEndpoint, credential)
 
 	// Resolve the optimization job ID — candidate endpoints are nested under it.
 	jobID := loadOptimizeJobIDForAgent(ctx, svc.Name, a.envName)
@@ -167,7 +210,11 @@ func (a *OptimizeApplyAction) apply(
 	if err != nil {
 		return fmt.Errorf("failed to fetch candidate config: %w", err)
 	}
-
+	if isPromptAgent {
+		if _, err := promptAgentCandidateValues(candidateConfig); err != nil {
+			return err
+		}
+	}
 	if err := os.MkdirAll(candidateDir, 0750); err != nil {
 		return fmt.Errorf("failed to create optimization directory: %w", err)
 	}
@@ -186,34 +233,41 @@ func (a *OptimizeApplyAction) apply(
 	}
 	fmt.Fprintf(out, "  → %s\n", filepath.Join(candidateDir, opt_eval.MetadataFile))
 
-	// Step 3: Persist OPTIMIZATION_LOCAL_DIR and OPTIMIZATION_CANDIDATE_ID onto the
-	// agent definition so the deploy pipeline knows which local optimization
-	// config to use. New projects carry the definition inline in azure.yaml;
-	// older projects still keep it in an on-disk agent.yaml.
-	envUpdates := map[string]string{
-		"OPTIMIZATION_LOCAL_DIR":    agentConfigsDir,
-		"OPTIMIZATION_CANDIDATE_ID": a.flags.candidate,
-	}
-	if _, _, found, _, err := projectpkg.AgentDefinitionFromService(svc); err != nil {
-		return fmt.Errorf("failed to read agent definition: %w", err)
-	} else if found {
+	// Step 3: Persist model, instructions, and matching function-tool updates for prompt agents;
+	// for hosted, persist OPTIMIZATION_LOCAL_DIR and OPTIMIZATION_CANDIDATE_ID on the definition.
+	if isPromptAgent {
 		fmt.Fprintf(out, "  Updating agent definition in azure.yaml...\n")
-		if err := persistInlineAgentEnvironment(
+		if err := persistPromptAgentCandidateConfig(
 			ctx,
 			azdClient,
 			svc,
-			envUpdates,
+			project.Path,
+			candidateConfig,
 		); err != nil {
 			return err
 		}
 	} else {
-		agentYamlPath := filepath.Join(serviceDir, "agent.yaml")
-		fmt.Fprintf(out, "  Updating %s...\n", agentYamlPath)
-		if err := upsertAgentYamlEnvVar(agentYamlPath, "OPTIMIZATION_LOCAL_DIR", agentConfigsDir); err != nil {
-			return fmt.Errorf("failed to update agent.yaml: %w", err)
+		// Other agent kinds select the local candidate through their runtime environment.
+		envUpdates := map[string]string{
+			"OPTIMIZATION_LOCAL_DIR":    agentConfigsDir,
+			"OPTIMIZATION_CANDIDATE_ID": a.flags.candidate,
 		}
-		if err := upsertAgentYamlEnvVar(agentYamlPath, "OPTIMIZATION_CANDIDATE_ID", a.flags.candidate); err != nil {
-			return fmt.Errorf("failed to update agent.yaml: %w", err)
+		if _, _, found, _, err := projectpkg.AgentDefinitionFromService(svc); err != nil {
+			return fmt.Errorf("failed to read agent definition: %w", err)
+		} else if found {
+			fmt.Fprintf(out, "  Updating agent definition in azure.yaml...\n")
+			if err := persistInlineAgentEnvironment(ctx, azdClient, svc, envUpdates); err != nil {
+				return err
+			}
+		} else {
+			agentYamlPath := filepath.Join(serviceDir, "agent.yaml")
+			fmt.Fprintf(out, "  Updating %s...\n", agentYamlPath)
+			if err := upsertAgentYamlEnvVar(agentYamlPath, "OPTIMIZATION_LOCAL_DIR", agentConfigsDir); err != nil {
+				return fmt.Errorf("failed to update agent.yaml: %w", err)
+			}
+			if err := upsertAgentYamlEnvVar(agentYamlPath, "OPTIMIZATION_CANDIDATE_ID", a.flags.candidate); err != nil {
+				return fmt.Errorf("failed to update agent.yaml: %w", err)
+			}
 		}
 	}
 
@@ -252,6 +306,218 @@ func (a *OptimizeApplyAction) apply(
 	fmt.Fprintf(out, "    Optimized: %s\n", color.CyanString(candidatePath))
 
 	return nil
+}
+
+func persistPromptAgentCandidateConfig(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	svc *azdext.ServiceConfig,
+	projectPath string,
+	candidateConfig json.RawMessage,
+) error {
+	if _, found, err := projectpkg.PromptAgentFromResolvedService(svc, projectPath); err != nil {
+		return fmt.Errorf("failed to read prompt agent definition: %w", err)
+	} else if !found {
+		return nil
+	}
+
+	updates, err := promptAgentCandidateValues(candidateConfig)
+	if err != nil {
+		return err
+	}
+	_, _, _, source, err := projectpkg.AgentDefinitionFromService(svc)
+	if err != nil {
+		return fmt.Errorf("failed to read agent definition: %w", err)
+	}
+	path := ""
+	if source == projectpkg.AgentDefinitionSourceLegacyConfig {
+		path = "config"
+	}
+
+	// Read the file directly: GetServiceConfigSection interpolates local vault references.
+	data, projectFile, err := projectconfig.ReadProjectFile(projectPath)
+	if err != nil {
+		return fmt.Errorf("reading project file for prompt agent %q: %w", svc.Name, err)
+	}
+	if projectFile == "" {
+		return fmt.Errorf("azure.yaml or azure.yml not found in project directory %q", projectPath)
+	}
+	var document struct {
+		Services map[string]map[string]any `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		return fmt.Errorf("parsing project file %q: %w", projectFile, err)
+	}
+	var rawSection any = document.Services[svc.Name]
+	if path != "" {
+		rawSection = document.Services[svc.Name][path]
+	}
+	merged, ok := rawSection.(map[string]any)
+	if !ok || merged == nil {
+		return fmt.Errorf(
+			"raw prompt agent section %q for service %q is missing or not a mapping in %q", path, svc.Name, projectFile,
+		)
+	}
+
+	merged["model"] = updates.model
+	merged["instructions"] = updates.instructions
+	if err := mergePromptAgentTools(merged, updates.functionTools); err != nil {
+		return fmt.Errorf("updating prompt agent %q tools: %w", svc.Name, err)
+	}
+	section, err := structpb.NewStruct(merged)
+	if err != nil {
+		return fmt.Errorf("encoding prompt agent %q: %w", svc.Name, err)
+	}
+	if _, err := azdClient.Project().SetServiceConfigSection(ctx, &azdext.SetServiceConfigSectionRequest{
+		ServiceName: svc.Name,
+		Path:        path,
+		Section:     section,
+	}); err != nil {
+		return fmt.Errorf("updating prompt agent %q in azure.yaml: %w", svc.Name, err)
+	}
+
+	return nil
+}
+
+type promptCandidateValues struct {
+	model         string
+	instructions  string
+	functionTools map[string]map[string]any
+}
+
+func promptAgentCandidateValues(candidateConfig json.RawMessage) (*promptCandidateValues, error) {
+	var config map[string]any
+	if err := json.Unmarshal(candidateConfig, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse candidate config: %w", err)
+	}
+
+	model, found := candidateConfigValue(config, "model")
+	if !found || model == nil {
+		return nil, fmt.Errorf("candidate config does not contain a model")
+	}
+	modelName, ok := model.(string)
+	if !ok || strings.TrimSpace(modelName) == "" {
+		return nil, fmt.Errorf("candidate config contains an invalid model")
+	}
+	instructions, _ := candidateConfigValue(config, "system_prompt", "systemPrompt", "instructions")
+	text, ok := instructions.(string)
+	if !ok || strings.TrimSpace(text) == "" {
+		return nil, fmt.Errorf("candidate config does not contain non-empty instructions")
+	}
+
+	// Skills are intentionally excluded because skill optimization is not yet
+	// supported for managed prompt agents. Prompt deploy resolves azure.ai.skill
+	// services from the project instead of candidate files under .agent_configs.
+	tools, err := promptCandidateFunctionTools(config["tools"])
+	if err != nil {
+		return nil, err
+	}
+	return &promptCandidateValues{model: modelName, instructions: text, functionTools: tools}, nil
+}
+
+func promptCandidateFunctionTools(raw any) (map[string]map[string]any, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	tools, ok := raw.([]any)
+	if !ok {
+		return nil, fmt.Errorf("candidate config tools must be an array")
+	}
+	functions := map[string]map[string]any{}
+	for i, rawTool := range tools {
+		tool, ok := rawTool.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("candidate config tools[%d] must be an object", i)
+		}
+		toolType, ok := tool["type"].(string)
+		if !ok || strings.TrimSpace(toolType) == "" {
+			return nil, fmt.Errorf("candidate config tools[%d].type must be a non-empty string", i)
+		}
+		if toolType != "function" {
+			continue
+		}
+		if nested, found := tool["function"]; found {
+			for _, key := range []string{"name", "description", "parameters", "strict"} {
+				if _, found := tool[key]; found {
+					return nil, fmt.Errorf("candidate config tools[%d] mixes flat and nested function fields", i)
+				}
+			}
+			tool, ok = nested.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("candidate config tools[%d].function must be an object", i)
+			}
+		}
+		name, ok := tool["name"].(string)
+		if !ok || strings.TrimSpace(name) == "" {
+			return nil, fmt.Errorf("candidate config tools[%d] function name must be a non-empty string", i)
+		}
+		if value := tool["description"]; value != nil {
+			if _, ok := value.(string); !ok {
+				return nil, fmt.Errorf("candidate config tools[%d] function description must be a string or null", i)
+			}
+		}
+		if value := tool["parameters"]; value != nil {
+			if _, ok := value.(map[string]any); !ok {
+				return nil, fmt.Errorf("candidate config tools[%d] function parameters must be an object or null", i)
+			}
+		}
+		if value := tool["strict"]; value != nil {
+			if _, ok := value.(bool); !ok {
+				return nil, fmt.Errorf("candidate config tools[%d] function strict must be a boolean or null", i)
+			}
+		}
+		if _, duplicate := functions[name]; duplicate {
+			return nil, fmt.Errorf("candidate config tools contains duplicate function name %q", name)
+		}
+		flat := maps.Clone(tool)
+		flat["type"] = "function"
+		functions[name] = flat
+	}
+	return functions, nil
+}
+
+func mergePromptAgentTools(section map[string]any, functions map[string]map[string]any) error {
+	if len(functions) == 0 || section["tools"] == nil {
+		return nil
+	}
+	tools, ok := section["tools"].([]any)
+	if !ok {
+		return fmt.Errorf("existing tools must be an array")
+	}
+	for _, raw := range tools {
+		tool, ok := raw.(map[string]any)
+		if !ok || tool["type"] != "function" {
+			continue
+		}
+		name, _ := tool["name"].(string)
+		if update, found := functions[name]; found {
+			mergePromptFunctionFields(tool, update)
+		}
+	}
+	return nil
+}
+
+// mergePromptFunctionFields preserves omitted fields, including within parameter schemas.
+// Explicit scalar and array values replace their existing values.
+func mergePromptFunctionFields(target, updates map[string]any) {
+	for key, value := range updates {
+		existing, existingIsMap := target[key].(map[string]any)
+		update, updateIsMap := value.(map[string]any)
+		if existingIsMap && updateIsMap {
+			mergePromptFunctionFields(existing, update)
+		} else {
+			target[key] = value
+		}
+	}
+}
+
+func candidateConfigValue(config map[string]any, keys ...string) (any, bool) {
+	for _, key := range keys {
+		if value, found := config[key]; found {
+			return value, true
+		}
+	}
+	return nil, false
 }
 
 func persistInlineAgentEnvironment(

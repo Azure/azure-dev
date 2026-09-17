@@ -10,6 +10,26 @@
 
 ### Other Changes
 
+## 1.34.1 (2026-09-16)
+
+### Features Added
+
+- [[#9752]](https://github.com/Azure/azure-dev/pull/9752) Add per-phase concurrency limits for package, provision, publish, and deploy operations.
+- [[#9913]](https://github.com/Azure/azure-dev/pull/9913) Add support for top-level infrastructure and service layers in `azure.yaml`.
+- [[#9747]](https://github.com/Azure/azure-dev/pull/9747) Add stable and preview versioned extension gRPC contracts while preserving compatibility with existing extensions.
+
+### Bugs Fixed
+
+- [[#10010]](https://github.com/Azure/azure-dev/pull/10010) Fix a shutdown panic when telemetry is disabled.
+- [[#9957]](https://github.com/Azure/azure-dev/pull/9957) Fix Azure Container Registry log streaming failures when a remote build replaces or truncates its log.
+- [[#9987]](https://github.com/Azure/azure-dev/pull/9987) Fix intermittent extension startup timeouts caused by concurrent initialization.
+- [[#9939]](https://github.com/Azure/azure-dev/pull/9939) Fix local fallback for remote container builds when Azure Container Registry rejects task scheduling.
+- [[#10038]](https://github.com/Azure/azure-dev/pull/10038) Fix a panic when `azure.yaml` contains invalid YAML. Thanks @Siglud for the contribution!
+
+### Other Changes
+
+- [[#9909]](https://github.com/Azure/azure-dev/pull/9909) Update the bundled Bicep CLI to v0.47.16.
+
 ## 1.34.0 (2026-09-09)
 
 ### Features Added

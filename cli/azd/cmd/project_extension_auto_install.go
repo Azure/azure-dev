@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -663,16 +664,17 @@ func missingProjectExtensions(
 		return nil
 	}
 
-	for _, serviceName := range slices.Sorted(maps.Keys(projectConfig.Services)) {
+	services := projectConfig.ServiceConfigs()
+	for _, serviceName := range slices.Sorted(maps.Keys(services)) {
 		if err := addProvider(
 			extensions.ServiceTargetProviderCapability,
-			string(projectConfig.Services[serviceName].Host),
+			string(services[serviceName].Host),
 		); err != nil {
 			return nil, err
 		}
 	}
 
-	for _, infra := range projectConfig.Infra.GetLayers() {
+	for _, infra := range projectConfig.InfrastructureConfigs() {
 		if err := addProvider(extensions.ProvisioningProviderCapability, string(infra.Provider)); err != nil {
 			return nil, err
 		}
@@ -724,8 +726,16 @@ func tryAutoInstallProjectExtensions(
 		return projectExtensionResult{}, nil
 	}
 
-	var projectConfig *project.ProjectConfig
-	if err := rootContainer.Resolve(&projectConfig); err != nil {
+	// Resolve the lazy value directly so a parse failure does not cache a nil concrete singleton
+	// before normal command error handling runs.
+	var lazyProjectConfig *lazy.Lazy[*project.ProjectConfig]
+	if err := rootContainer.Resolve(&lazyProjectConfig); err != nil {
+		log.Printf("skipping project extension auto-install: %v", err)
+		return projectExtensionResult{}, nil
+	}
+
+	projectConfig, err := lazyProjectConfig.GetValue()
+	if err != nil {
 		log.Printf("skipping project extension auto-install: %v", err)
 		return projectExtensionResult{}, nil
 	}

@@ -55,7 +55,7 @@ func TestProvisioningOwnershipMetadata(t *testing.T) {
 	assert.True(t, manifestHasDependency(
 		agents,
 		"azure.ai.projects",
-		"~1.0.0-beta.9",
+		"~1.0.0-beta.11",
 	))
 }
 

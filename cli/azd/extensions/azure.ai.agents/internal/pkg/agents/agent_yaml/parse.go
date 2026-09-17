@@ -557,8 +557,9 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 									"move target-owned policies to the hosted target")
 						}
 					}
-					if isHostedVoiceWrapper(agent) {
-						if agent.ModelType == VoiceModelTypeHostedAgent || agent.TargetAgent != nil {
+					_, hasLegacyTarget := fields["target_agent"]
+					if isHostedVoiceWrapper(agent) || hasLegacyTarget {
+						if agent.ModelType == VoiceModelTypeHostedAgent || hasLegacyTarget {
 							errors = append(errors,
 								"template.model_type hosted_agent and target_agent are not supported; "+
 									"use conversation_engine")
@@ -597,10 +598,6 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 						if agent.Model == nil || strings.TrimSpace(agent.Model.Id) == "" {
 							errors = append(errors, "template.model.id is required for a prompt-voice agent")
 						}
-						if agent.TargetAgent != nil {
-							errors = append(errors,
-								"template.target_agent is not supported; use conversation_engine")
-						}
 						if agent.ConversationEngine != nil {
 							errors = append(errors,
 								"template.conversation_engine is only valid for hosted voice wrappers")
@@ -634,7 +631,7 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 }
 
 func isHostedVoiceWrapper(agent VoiceAgent) bool {
-	return agent.ModelType == VoiceModelTypeHostedAgent ||
+	return agent.ModelType == VoiceModelTypeHostedAgent || agent.TargetAgent != nil ||
 		(agent.ConversationEngine != nil &&
 			strings.EqualFold(strings.TrimSpace(agent.ConversationEngine.Type), "hosted_agent"))
 }

@@ -37,8 +37,8 @@ func newDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "delete [name]",
-		Short: "Delete an agent.",
-		Long: `Delete an agent and all of its versions.
+		Short: "Delete a prompt, hosted, or voice agent.",
+		Long: `Delete a prompt, hosted, or voice agent and all of its versions.
 
 For hosted agents, --version deletes only that version. Prompt agents do not
 support version deletion and are always deleted as a whole.
@@ -47,7 +47,12 @@ If the agent has active sessions, deletion will fail unless --force is passed.
 Use --force to terminate active sessions and delete the agent. In no-prompt
 mode, --force is also required as explicit consent for deletion.
 
-The agent name is resolved from the azd environment when omitted.`,
+The agent name is resolved from the azd environment when omitted.
+
+For voice agents with telephony bindings, delete the bindings through the
+agent-scoped telephony API before deleting the agent. Agent deletion does not
+guarantee binding cleanup. Deleting a hosted voice wrapper does not delete its
+hosted target.`,
 		Example: `  # Delete agent (auto-resolves name from azure.yaml)
   azd ai agent delete
 

@@ -52,6 +52,7 @@ type invokeFlags struct {
 	clientHeaders   []string
 	longRunning     bool
 	noWait          bool
+	debugLatency    bool
 }
 
 // outputRaw is the sentinel value of the inherited --output flag that selects
@@ -72,6 +73,7 @@ var createInvokeVersionSession = createInvokeVersionSessionImpl
 type InvokeAction struct {
 	flags                 *invokeFlags
 	noPrompt              bool
+	debugLatencyExplicit  bool
 	endpoint              *parsedAgentEndpoint
 	clientHeaders         http.Header
 	protocolServiceName   string
@@ -88,8 +90,8 @@ func newInvokeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "invoke [name] [message]",
-		Short: "Send a message to your agent.",
-		Long: `Send a message to your agent.
+		Short: "Send a message to your prompt or hosted agent.",
+		Long: `Send a message to your prompt or hosted agent.
 
 By default the agent is invoked remotely on Foundry. When a single
 argument is provided it is treated as the message and the agent name
@@ -101,6 +103,12 @@ available. Endpoint data created by an older extension must be refreshed by
 redeploying or bypassed with --protocol. Otherwise the agent definition is
 used. If neither identifies exactly one invocable protocol, pass --protocol
 explicitly.
+
+For prompt voice agents and hosted voice wrappers, open your agent in the
+Microsoft Foundry portal at https://ai.azure.com to try it.
+For programmatic voice access, use the voice WebSocket endpoint shown by 'azd show' or
+'azd ai agent show' with a Voice Live client. Text invoke is for HTTP-based
+hosted agent protocols such as responses, invocations, and a2a.
 
 Use --input-file/-f to send the contents of a file as the request body
 instead of a positional message argument. This is useful for structured
@@ -136,6 +144,15 @@ line, headers, and body verbatim) to stdout. Useful for debugging server
 behavior and inspecting response headers (for example, the agent version
 header). Friendly summary lines like "Session:" and "Invocation:" are
 suppressed in raw mode.
+
+Remote Hosted Agent Responses and Invocations requests include platform latency diagnostics
+by default. A compact summary is shown after a successful invocation when the
+service returns timing headers. Use --debug-latency=false to disable collection
+and the summary. This is independent of the global --debug logging flag.
+Local, prompt-agent, and a2a invokes do not collect platform latency.
+Explicit --debug-latency=true is rejected for these routes; omit the flag
+or use --debug-latency=false.
+Raw output includes the returned headers without a formatted latency summary.
 
 Use --long-running with the Responses protocol to start work that continues running in
 the service if this command disconnects. The command remains attached until the work
@@ -183,6 +200,9 @@ This option does not provide crash recovery or automatic reconnection.`,
   # Dump the raw server response (status line, headers, body) for debugging
   azd ai agent invoke --output raw "Hello!"
 
+  # Disable platform latency diagnostics
+  azd ai agent invoke --debug-latency=false "Hello!"
+
   # Send custom x-client-* headers (repeatable)
   azd ai agent invoke --client-header "x-client-request-id: abc123" --client-header "x-client-tenant: contoso" "Hello!"
 
@@ -215,7 +235,11 @@ This option does not provide crash recovery or automatic reconnection.`,
 				// Only valid when -f is provided
 			}
 
-			action := &InvokeAction{flags: flags, noPrompt: extCtx.NoPrompt}
+			action := &InvokeAction{
+				flags:                flags,
+				noPrompt:             extCtx.NoPrompt,
+				debugLatencyExplicit: cmd.Flags().Changed("debug-latency"),
+			}
 
 			// Agent-endpoint structural conflicts are surfaced first so the user sees
 			// the precise reason their invocation cannot proceed.
@@ -323,6 +347,8 @@ This option does not provide crash recovery or automatic reconnection.`,
 	}
 
 	cmd.Flags().BoolVarP(&flags.local, "local", "l", false, "Invoke on localhost instead of Foundry")
+	cmd.Flags().BoolVar(&flags.debugLatency, "debug-latency", true,
+		"Collect and show platform latency for remote responses/invocations; use --debug-latency=false to disable")
 	cmd.Flags().StringVarP(&flags.inputFile, "input-file", "f", "", "Path to a file whose contents are sent as the request body")
 	cmd.Flags().StringVarP(&flags.protocol, "protocol", "p", "",
 		"Protocol to use: responses, invocations, or a2a. "+
@@ -509,13 +535,21 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 			return fmt.Errorf("failed to create azd client: %w", err)
 		}
 		defer azdClient.Close()
-		pctx, isPrompt, pErr := resolvePromptAgentService(ctx, azdClient, a.flags.name, a.noPrompt)
+		pctx, isPrompt, pErr := resolvePromptAgentService(
+			ctx, azdClient, a.flags.name, a.noPrompt, withVoiceInvocationGuidance(),
+		)
 		if pErr != nil {
+			if errors.Is(pErr, errVoiceInvocationUnsupported) {
+				return pErr
+			}
 			if _, ok := errors.AsType[agentServiceLookupNotFoundError](pErr); !ok || a.flags.name == "" {
 				return fmt.Errorf("failed to resolve prompt agent service: %w", pErr)
 			}
 		}
 		if isPrompt {
+			if err := a.validateDebugLatencyRoute(agent_api.AgentProtocolResponses, true); err != nil {
+				return err
+			}
 			return a.runPromptInvoke(ctx, pctx)
 		}
 	}
@@ -548,6 +582,11 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 			"the a2a protocol does not forward x-client-* headers to the agent; "+
 				"use --protocol responses or invocations to send client headers",
 		)
+	}
+
+	if err := a.validateDebugLatencyRoute(protocol, false); err != nil {
+		a.closeResolvedRemoteContextClient()
+		return err
 	}
 
 	if a.flags.local {
@@ -912,16 +951,9 @@ func contentTypeForBody(data []byte) string {
 	return "text/plain"
 }
 
-// printInvokeTiming prints a green timing line to stdout showing the total
-// response time and time-to-first-byte (TTFB). Only call on success paths;
-// failures should not display timing to avoid confusion.
-//
-// Output format:
-//
-//	Server responded in 6.667s (first byte: 1.111s)
-func printInvokeTiming(w io.Writer, total, ttfb time.Duration) {
-	_, _ = color.New(color.FgGreen).Fprintf(w, "\nServer responded in %s (first byte: %s)\n",
-		formatDuration(total), formatDuration(ttfb))
+// printInvokeTiming prints the client-observed duration after a successful invocation.
+func printInvokeTiming(w io.Writer, total time.Duration) {
+	_, _ = color.New(color.FgGreen).Fprintf(w, "\nClient elapsed: %s\n", formatDuration(total))
 }
 
 // formatDuration formats a duration for display in timing output.
@@ -1091,7 +1123,6 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 			port,
 		)
 	}
-	ttfb := time.Since(invokeStart)
 	defer resp.Body.Close()
 
 	if raw {
@@ -1129,7 +1160,7 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		// Not JSON -- just print raw response
 		fmt.Println(string(respBody))
-		printInvokeTiming(os.Stdout, totalDuration, ttfb)
+		printInvokeTiming(os.Stdout, totalDuration)
 		a.emitInvokeSuccessNextStep(nextstep.InvokeLocal, "")
 		return nil
 	}
@@ -1137,7 +1168,7 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 	if err := printAgentResponse(result, "local"); err != nil {
 		return err
 	}
-	printInvokeTiming(os.Stdout, totalDuration, ttfb)
+	printInvokeTiming(os.Stdout, totalDuration)
 	a.emitInvokeSuccessNextStep(nextstep.InvokeLocal, "")
 	return nil
 }
@@ -1200,6 +1231,9 @@ func remoteAgentNameFromService(
 // remoteAgentServiceResolutionError preserves direct-name fallback only when
 // the deployed name is known not to map to a project service.
 func remoteAgentServiceResolutionError(resolveErr error, directNameProvided bool) error {
+	if errors.Is(resolveErr, errVoiceInvocationUnsupported) {
+		return resolveErr
+	}
 	if resolveErr == nil {
 		return nil
 	}
@@ -1264,6 +1298,7 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	// name in the divergent case.
 	resolutionOptions := []agentServiceResolutionOption{
 		withBrownfieldInlineAgentName(),
+		withVoiceInvocationGuidance(),
 	}
 	if a.flags.protocol == "" {
 		resolutionOptions = append(
@@ -1271,6 +1306,8 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 			withDeployedProtocolEndpoints(),
 			withDeployedAgentNameLookup(),
 		)
+	} else {
+		resolutionOptions = append(resolutionOptions, withOptionalDeployedAgentNameLookup())
 	}
 	info, serviceErr := resolveAgentServiceFromProject(
 		ctx,
@@ -1567,6 +1604,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
+	latency := newInvokeLatency(req, a.flags.debugLatency, a.flags.longRunning)
 	if raw {
 		// Disable Go's transparent gzip handling so the dumped headers and
 		// body match what the server actually sent on the wire.
@@ -1583,11 +1621,11 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("POST %s failed: %w", respURL, err)
 	}
-	ttfb := time.Since(invokeStart)
 	defer resp.Body.Close()
 
 	// Always capture session state from response headers (needed even in raw mode
 	// so subsequent invokes can reuse the session). Headers are read, not consumed.
+	latency.captureResponse(resp)
 	sessionLabel := "Session:      "
 	if raw {
 		sessionLabel = ""
@@ -1648,6 +1686,11 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		if errors.Is(streamErr, errBackgroundNoWait) {
 			streamErr = nil
 		}
+		if streamErr == nil {
+			if err := latency.writeTo(os.Stdout); err != nil {
+				return err
+			}
+		}
 		_, guidanceErr := fmt.Fprintf(os.Stdout, "\nNext:\n  %s\n", followCommand)
 		return errors.Join(streamErr, guidanceErr)
 	}
@@ -1659,7 +1702,10 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 		return streamErr
 	}
 	totalDuration := time.Since(invokeStart)
-	printInvokeTiming(os.Stdout, totalDuration, ttfb)
+	printInvokeTiming(os.Stdout, totalDuration)
+	if err := latency.writeTo(os.Stdout); err != nil {
+		return err
+	}
 	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
 	return nil
 }
@@ -1753,7 +1799,6 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 			port,
 		)
 	}
-	ttfb := time.Since(invokeStart)
 	defer resp.Body.Close()
 
 	// Print the invocation ID if the agent returned one.
@@ -1763,7 +1808,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		}
 	}
 
-	if err := handleInvocationResponse(ctx, resp, "", "", agentName, a.httpTimeout(), "", nil, raw); err != nil {
+	if err := handleInvocationResponse(ctx, resp, "", "", agentName, a.httpTimeout(), "", nil, raw, nil); err != nil {
 		// See invocationsRemote for the status-code rationale.
 		if !raw && resp.StatusCode >= 400 {
 			a.emitInvokeFailureNextStep(nextstep.InvokeLocal, agentName, "")
@@ -1772,7 +1817,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 	}
 	totalDuration := time.Since(invokeStart)
 	if !raw {
-		printInvokeTiming(os.Stdout, totalDuration, ttfb)
+		printInvokeTiming(os.Stdout, totalDuration)
 		a.emitInvokeSuccessNextStep(nextstep.InvokeLocal, agentName)
 	}
 	return nil
@@ -1849,6 +1894,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	req.Header.Set("Content-Type", contentTypeForBody(body))
 	req.Header.Set("Authorization", "Bearer "+rc.bearerToken)
 	applyRemoteUserIdentityHeader(req, &a.flags.userIdentityFlags)
+	latency := newInvokeLatency(req, a.flags.debugLatency, false)
 	if raw {
 		// Disable Go's transparent gzip handling so the dumped headers and
 		// body match what the server actually sent on the wire.
@@ -1862,7 +1908,6 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("POST %s failed: %w", invURL, err)
 	}
-	ttfb := time.Since(invokeStart)
 	defer resp.Body.Close()
 
 	invocationID, err := invocationIDFromResponse(resp)
@@ -1884,6 +1929,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 
 	// Always capture session state from response headers (needed even in raw mode
 	// so subsequent invokes can reuse the session). Reads headers, not the body.
+	latency.captureResponse(resp)
 	sessionLabel := "Session:  "
 	if raw {
 		sessionLabel = ""
@@ -1901,6 +1947,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		rc.apiVersion,
 		a.flags.sessionRequestOptions(),
 		raw,
+		latency,
 	); err != nil {
 		// Only emit failure Next: for platform HTTP failures.
 		// 200 OK with an agent-error envelope (handleInvocationSync /
@@ -1916,7 +1963,10 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 	totalDuration := time.Since(invokeStart)
 	if !raw {
-		printInvokeTiming(os.Stdout, totalDuration, ttfb)
+		printInvokeTiming(os.Stdout, totalDuration)
+		if err := latency.writeTo(os.Stdout); err != nil {
+			return err
+		}
 		a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
 	}
 	return nil
@@ -1945,10 +1995,11 @@ func handleInvocationResponse(
 	apiVersion string,
 	options *agent_api.SessionRequestOptions,
 	raw bool,
+	latency *invokeLatency,
 ) error {
 	if raw {
 		if resp.StatusCode == http.StatusAccepted {
-			return handleInvocationLRO(ctx, resp, endpoint, bearerToken, agentName, timeout, apiVersion, options, raw)
+			return handleInvocationLRO(ctx, resp, endpoint, bearerToken, agentName, timeout, apiVersion, options, raw, latency)
 		}
 		if err := writeRawResponse(os.Stdout, resp); err != nil {
 			return err
@@ -1983,7 +2034,7 @@ func handleInvocationResponse(
 	}
 
 	if resp.StatusCode == http.StatusAccepted {
-		return handleInvocationLRO(ctx, resp, endpoint, bearerToken, agentName, timeout, apiVersion, options, raw)
+		return handleInvocationLRO(ctx, resp, endpoint, bearerToken, agentName, timeout, apiVersion, options, raw, latency)
 	}
 
 	contentType := resp.Header.Get("Content-Type")
@@ -2105,7 +2156,9 @@ func handleInvocationLRO(
 	apiVersion string,
 	options *agent_api.SessionRequestOptions,
 	raw bool,
+	latency *invokeLatency,
 ) error {
+	latency.captureResponse(resp)
 	// Read the 202 body once -- used for both invocation ID extraction and status display.
 	body202, readErr := io.ReadAll(resp.Body)
 	if raw && readErr != nil {
@@ -2214,6 +2267,7 @@ func handleInvocationLRO(
 		if err != nil {
 			return fmt.Errorf("GET %s failed: %w", pollURL, err)
 		}
+		latency.captureResponse(pollResp)
 
 		pollBody, readErr := io.ReadAll(pollResp.Body)
 		_ = pollResp.Body.Close()

@@ -41,18 +41,18 @@ type Category struct {
 }
 
 type Entry struct {
-	PRNumber    int    // 0 if missing
+	PRNumber   int    // 0 if missing
 	IsIssueRef bool   // true if link points to /issues/ not /pull/
-	RawText     string // full bullet text
-	HasLink     bool   // has [[#N]] reference
-	LineNumber  int
+	RawText    string // full bullet text
+	HasLink    bool   // has [[#N]] reference
+	LineNumber int
 }
 
 type Commit struct {
 	SHA       string
 	Subject   string
-	PRNumbers []int  // all PR numbers found in subject
-	Canonical int    // last PR number (per new dual-PR rule)
+	PRNumbers []int // all PR numbers found in subject
+	Canonical int   // last PR number (per new dual-PR rule)
 	IsRevert  bool
 	RevertsPR int // PR number being reverted
 }
@@ -714,7 +714,7 @@ func correctRelease(a *ReleaseAudit) (corrected []string, annotations map[int]st
 	// Line numbers in findings are absolute; convert to relative (0-based index into RawLines)
 	baseLineNum := a.Release.HeaderLine // line 1 of RawLines = this absolute line number
 
-	removedLines := map[int]bool{}   // relative line indices to remove
+	removedLines := map[int]bool{}    // relative line indices to remove
 	replacedLines := map[int]string{} // relative line index → replacement text
 
 	for _, f := range a.Findings {
@@ -795,7 +795,6 @@ func correctRelease(a *ReleaseAudit) (corrected []string, annotations map[int]st
 
 	return corrected, annotations
 }
-
 
 // --- Report generation ---
 
@@ -973,12 +972,11 @@ func sortedKeys(m map[string][]Finding) []string {
 	return keys
 }
 
-
 // --- JSON output for machine consumption ---
 
 type AuditJSON struct {
-	Generated string            `json:"generated"`
-	SHA       string            `json:"sha"`
+	Generated string             `json:"generated"`
+	SHA       string             `json:"sha"`
 	Releases  []ReleaseAuditJSON `json:"releases"`
 }
 

@@ -119,7 +119,8 @@ func TestServer_AllBetaAdaptersDispatchToStable(t *testing.T) {
 
 				require.NoError(t, stream.CloseSend())
 
-				require.Equal(t, codes.Unimplemented, status.Code(stream.RecvMsg(response))) // RecvMsg observes the remote endpoint's authoritative terminal RPC status.
+				// RecvMsg observes the remote endpoint's authoritative terminal RPC status.
+				require.Equal(t, codes.Unimplemented, status.Code(stream.RecvMsg(response)))
 			})
 		}
 	}

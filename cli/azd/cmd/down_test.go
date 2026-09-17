@@ -5,6 +5,8 @@ package cmd
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -146,8 +148,18 @@ func Test_DownAction_RecordsInfraProvider(t *testing.T) {
 // mockRefreshProvider for the remaining interface methods.
 type mockDownProvider struct {
 	*mockRefreshProvider
-	destroyResult *provisioning.DestroyResult
-	destroyErr    error
+	initializedOptions []provisioning.Options
+	destroyResult      *provisioning.DestroyResult
+	destroyErr         error
+}
+
+func (p *mockDownProvider) Initialize(
+	_ context.Context,
+	_ string,
+	options provisioning.Options,
+) error {
+	p.initializedOptions = append(p.initializedOptions, options)
+	return nil
 }
 
 func (p *mockDownProvider) Destroy(
@@ -248,4 +260,53 @@ func Test_DownAction_Run_Deleted(t *testing.T) {
 	require.NotNil(t, result)
 	require.NotNil(t, result.Message)
 	require.Contains(t, result.Message.Header, "Your application was removed")
+}
+
+func Test_DownAction_TopLevelLayersFromAzureYaml(t *testing.T) {
+	projectDir := t.TempDir()
+	projectPath := filepath.Join(projectDir, "azure.yaml")
+	require.NoError(t, os.WriteFile(projectPath, []byte(`name: layered-test
+layers:
+  - name: foundation
+    infra:
+      - name: network
+        provider: test
+        path: infra/network
+  - name: application
+    infra:
+      - name: compute
+        provider: test
+        path: infra/compute
+  - name: operations
+    dependsOn:
+      - foundation
+    infra:
+      - name: monitoring
+        provider: test
+        path: infra/monitoring
+`), 0o600))
+
+	projectConfig, err := project.Load(t.Context(), projectPath)
+	require.NoError(t, err)
+	require.Equal(t, project.ProjectFormatLayersV2, projectConfig.Format())
+
+	provider := &mockDownProvider{
+		mockRefreshProvider: &mockRefreshProvider{},
+		destroyResult:       &provisioning.DestroyResult{},
+	}
+	action, _, _ := newTestDownAction(t, provider)
+	action.projectConfig = projectConfig
+
+	result, err := action.Run(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	require.Len(t, provider.initializedOptions, 3)
+	assert.Equal(t, "monitoring", provider.initializedOptions[0].Name)
+	assert.Equal(t, []string{"network"}, provider.initializedOptions[0].DependsOn)
+	assert.Equal(t, "compute", provider.initializedOptions[1].Name)
+	assert.Equal(t, "network", provider.initializedOptions[2].Name)
+	for _, options := range provider.initializedOptions {
+		assert.Equal(t, provisioning.ModeDestroy, options.Mode)
+	}
 }

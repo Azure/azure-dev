@@ -80,6 +80,8 @@ func TestInvokeVersionOverrideRegistration(t *testing.T) {
 	assert.Contains(t, cmd.Long, "fresh, isolated session")
 	assert.Contains(t, cmd.Long, "for Responses, a new conversation")
 	assert.Contains(t, cmd.Long, "IDs are not saved as the current selection")
+	assert.Contains(t, cmd.Long, "explicit recovery commands")
+	assert.Contains(t, cmd.Long, "the original verification error is still returned")
 	assert.Contains(t, cmd.Example, "Test and verify a candidate version using an isolated invocation")
 	assert.NotContains(t, cmd.Long, "without changing its traffic split")
 	assert.NotContains(t, cmd.Example, "without changing the endpoint traffic split")
@@ -182,7 +184,7 @@ func TestInvokeVersionOverrideHeaderAndResponseIsolation(t *testing.T) {
 			resp := &http.Response{StatusCode: tt.status, Header: make(http.Header), Body: body}
 			action := &InvokeAction{flags: &invokeFlags{versionOverride: tt.version}}
 			var output bytes.Buffer
-			require.NoError(t, action.verifyVersionOverrideResponse(resp, &output))
+			require.NoError(t, action.verifyVersionOverrideResponse(t.Context(), resp, nil, "", &output))
 			assert.Empty(t, output.String())
 			assert.False(t, body.closed)
 			remaining, err := io.ReadAll(body)
@@ -215,7 +217,7 @@ func TestInvokeVersionOverrideRejectsNonSuccessStatus(t *testing.T) {
 					resp := &http.Response{StatusCode: code, Header: headers, Body: body}
 					action := &InvokeAction{flags: &invokeFlags{versionOverride: "4", outputFmt: format}}
 					var output bytes.Buffer
-					err := action.verifyVersionOverrideResponse(resp, &output)
+					err := action.verifyVersionOverrideResponse(t.Context(), resp, nil, "", &output)
 					requireVersionOverrideVerificationFailure(t, err, fmt.Sprintf("unexpected HTTP status %d", code))
 					assert.NotContains(t, output.String(), "Version override:")
 					if format == outputRaw {

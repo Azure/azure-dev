@@ -136,6 +136,10 @@ The command fails if the service falls back to another version or cannot confirm
 the requested version. A failed check does not undo work already executed by the
 agent. Use a concrete version for release checks; latest is a floating selection
 whose actual resolved version is reported. No override is sent unless requested.
+If an accepted background request fails verification, error details include its
+service-assigned ID and explicit recovery commands when the ID can be recovered.
+Recovery does not change the current selection, follow the work, or cancel it.
+Reading the ID is bounded; the original verification error is still returned.
 
 For agents configured with header-based isolation, pass --user-identity
 on each invoke. Locally it is sent as the x-agent-user-id header; for
@@ -1689,7 +1693,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
-	if err := a.verifyVersionOverrideResponse(resp, os.Stdout); err != nil {
+	if err := a.verifyVersionOverrideResponse(ctx, resp, rc, agent_api.AgentProtocolResponses, os.Stdout); err != nil {
 		return err
 	}
 
@@ -1981,7 +1985,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
-	if err := a.verifyVersionOverrideResponse(resp, os.Stdout); err != nil {
+	if err := a.verifyVersionOverrideResponse(ctx, resp, rc, agent_api.AgentProtocolInvocations, os.Stdout); err != nil {
 		return err
 	}
 

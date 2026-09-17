@@ -182,6 +182,17 @@ are unchanged.
 
 Use read-only test prompts. A strict verification failure does **not** undo work
 the agent has already executed; do not automatically retry side-effecting tests.
+If a background Responses request or a `202 Accepted` Invocation fails version
+verification, azd attempts to recover its service-assigned ID and includes
+explicit-ID recovery commands in the error details. Responses support follow
+and cancel; Invocations support show and cancel. No recovery command runs
+automatically, and the saved current selection remains unchanged.
+
+ID recovery reads at most 1 MiB for up to five seconds (or until the request is
+canceled), stopping when a Response ID is found. If no valid ID can be recovered,
+the error says so rather than inventing one. Raw diagnostics retain the captured
+response bytes; incomplete capture is reported. The original version verification
+error is still returned even when recovery succeeds.
 
 ## Invoke latency diagnostics
 

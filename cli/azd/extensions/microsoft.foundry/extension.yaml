@@ -15,10 +15,10 @@ dependencies:
   - id: azure.ai.inspector
     version: "~1.0.0-beta.7"
   - id: azure.ai.projects
-    version: "~1.0.0-beta.11"
+    version: "~1.0.0-beta.10"
   - id: azure.ai.routines
     version: "~1.0.0-beta.6"
   - id: azure.ai.skills
-    version: "~1.0.0-beta.5"
+    version: "~1.0.0-beta.6"
   - id: azure.ai.toolboxes
     version: "~1.0.0-beta.7"

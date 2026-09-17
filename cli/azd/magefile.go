@@ -32,7 +32,7 @@ type Schema mg.Namespace
 
 // Format formats every JSON file below the repository's schemas directory.
 //
-// Usage: mage schema:format
+// Usage: go tool mage schema:format
 func (Schema) Format() error {
 	repoRoot, err := findRepoRoot()
 	if err != nil {
@@ -45,7 +45,7 @@ func (Schema) Format() error {
 // Check verifies that every JSON file below the repository's schemas directory
 // has the canonical formatting.
 //
-// Usage: mage schema:check
+// Usage: go tool mage schema:check
 func (Schema) Check() error {
 	repoRoot, err := findRepoRoot()
 	if err != nil {

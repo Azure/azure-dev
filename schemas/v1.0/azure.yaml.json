@@ -569,12 +569,16 @@
                         "comment": "Azure AI Foundry evaluation host - code-less resource service; the service key is the evaluation configuration name and it uses: the project and whatever it grades",
                         "if": {
                             "properties": {
-                                "host": { "const": "azure.ai.eval" }
+                                "host": {
+                                    "const": "azure.ai.eval"
+                                }
                             }
                         },
                         "then": {
                             "allOf": [
-                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.evaluations/schemas/azure.ai.eval.json" }
+                                {
+                                    "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.evaluations/schemas/azure.ai.eval.json"
+                                }
                             ],
                             "properties": {
                                 "project": false,

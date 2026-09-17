@@ -23,15 +23,14 @@ import (
 )
 
 const (
-	maxWebSocketMessageBytes             = 8 * 1024 * 1024
-	webSocketConnectionTimeout           = 90 * time.Second
-	webSocketHandshakeTimeout            = 25 * time.Second
-	webSocketHandshakeMaxAttempts        = 5
-	webSocketMinimumHandshakeAttemptTime = 10 * time.Second
-	webSocketRetryBaseDelay              = time.Second
-	webSocketRetryMaxDelay               = 8 * time.Second
-	webSocketKeepAliveInterval           = 10 * time.Second
-	webSocketDrainTimeout                = 60 * time.Second
+	maxWebSocketMessageBytes      = 8 * 1024 * 1024
+	webSocketConnectionTimeout    = 90 * time.Second
+	webSocketHandshakeTimeout     = 25 * time.Second
+	webSocketHandshakeMaxAttempts = 3
+	webSocketRetryBaseDelay       = 2 * time.Second
+	webSocketRetryMaxDelay        = 4 * time.Second
+	webSocketKeepAliveInterval    = 10 * time.Second
+	webSocketDrainTimeout         = 60 * time.Second
 )
 
 type WebSocketRuntimeSession struct {
@@ -47,7 +46,6 @@ type WebSocketRuntimeSession struct {
 	handshakeTimeout      time.Duration
 	handshakeMaxAttempts  int
 	handshakeRetryDelay   func(int) (time.Duration, error)
-	minimumAttemptTime    time.Duration
 	drainTimeout          time.Duration
 	terminalError         error
 	closed                bool
@@ -67,7 +65,6 @@ func NewWebSocketRuntimeSession(
 		handshakeTimeout:      webSocketHandshakeTimeout,
 		handshakeMaxAttempts:  webSocketHandshakeMaxAttempts,
 		handshakeRetryDelay:   webSocketHandshakeRetryDelay,
-		minimumAttemptTime:    webSocketMinimumHandshakeAttemptTime,
 		drainTimeout:          webSocketDrainTimeout,
 	}
 }
@@ -304,7 +301,6 @@ func (c *WebSocketRuntimeSession) connect(ctx context.Context) error {
 
 	connectCtx, cancel := context.WithTimeout(ctx, c.connectionTimeout)
 	defer cancel()
-	connectionDeadline, _ := connectCtx.Deadline()
 
 	endpoint, err := RuntimeWebSocketURL(c.baseURL)
 	if err != nil {
@@ -329,11 +325,10 @@ func (c *WebSocketRuntimeSession) connect(ctx context.Context) error {
 
 	var connectionError error
 	for attempt := 0; attempt < c.handshakeMaxAttempts; attempt++ {
-		if attempt > 0 && time.Until(connectionDeadline) < c.minimumAttemptTime {
-			return connectionError
+		if err := connectCtx.Err(); err != nil {
+			return err
 		}
-		attemptTimeout := min(c.handshakeTimeout, time.Until(connectionDeadline))
-		attemptCtx, cancelAttempt := context.WithTimeout(connectCtx, attemptTimeout)
+		attemptCtx, cancelAttempt := context.WithTimeout(connectCtx, c.handshakeTimeout)
 		connection, response, err := dialer.DialContext(attemptCtx, endpoint, headers)
 		if err == nil {
 			cancelAttempt()
@@ -370,9 +365,6 @@ func (c *WebSocketRuntimeSession) connect(ctx context.Context) error {
 		delay, err := c.handshakeRetryDelay(attempt)
 		if err != nil {
 			return fmt.Errorf("calculate WebSocket handshake retry delay: %w", err)
-		}
-		if time.Until(connectionDeadline)-delay < c.minimumAttemptTime {
-			return connectionError
 		}
 		timer := time.NewTimer(delay)
 		select {

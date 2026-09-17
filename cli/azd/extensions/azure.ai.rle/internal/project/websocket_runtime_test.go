@@ -210,11 +210,8 @@ func TestWebSocketHandshakeUsesConfiguredRetryPolicy(t *testing.T) {
 	if session.handshakeTimeout != 25*time.Second {
 		t.Fatalf("expected 25-second handshake timeout, got %s", session.handshakeTimeout)
 	}
-	if session.handshakeMaxAttempts != 5 {
-		t.Fatalf("expected five handshake attempts, got %d", session.handshakeMaxAttempts)
-	}
-	if session.minimumAttemptTime != 10*time.Second {
-		t.Fatalf("expected ten-second minimum attempt time, got %s", session.minimumAttemptTime)
+	if session.handshakeMaxAttempts != 3 {
+		t.Fatalf("expected three handshake attempts, got %d", session.handshakeMaxAttempts)
 	}
 }
 
@@ -367,7 +364,6 @@ func TestWebSocketOperationTimeoutStartsAfterHandshake(t *testing.T) {
 
 	session := NewWebSocketRuntimeSession(server.URL, 1, nil)
 	session.connectionTimeout = 2 * time.Second
-	session.minimumAttemptTime = time.Millisecond
 	session.handshakeRetryDelay = func(int) (time.Duration, error) { return time.Millisecond, nil }
 	defer session.Close()
 	started := time.Now()
@@ -390,7 +386,6 @@ func TestWebSocketHandshakeUsesOverallConnectionBudget(t *testing.T) {
 	session := NewWebSocketRuntimeSession(server.URL, 30, nil)
 	session.connectionTimeout = 50 * time.Millisecond
 	session.handshakeTimeout = time.Second
-	session.minimumAttemptTime = time.Millisecond
 	session.handshakeRetryDelay = func(int) (time.Duration, error) { return 0, nil }
 	defer session.Close()
 
@@ -418,7 +413,6 @@ func TestWebSocketHandshakeUsesPerAttemptTimeout(t *testing.T) {
 	session.connectionTimeout = time.Second
 	session.handshakeTimeout = 40 * time.Millisecond
 	session.handshakeMaxAttempts = 2
-	session.minimumAttemptTime = time.Millisecond
 	session.handshakeRetryDelay = func(int) (time.Duration, error) { return 0, nil }
 	defer session.Close()
 
@@ -435,7 +429,7 @@ func TestWebSocketHandshakeUsesPerAttemptTimeout(t *testing.T) {
 }
 
 func TestWebSocketHandshakeRetryBackoffCeilings(t *testing.T) {
-	expected := []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 8 * time.Second}
+	expected := []time.Duration{2 * time.Second, 4 * time.Second, 4 * time.Second}
 	for retry, expectedCeiling := range expected {
 		if ceiling := webSocketHandshakeRetryCeiling(retry); ceiling != expectedCeiling {
 			t.Errorf("retry %d: expected ceiling %s, got %s", retry, expectedCeiling, ceiling)

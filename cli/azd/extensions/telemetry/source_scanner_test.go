@@ -48,17 +48,20 @@ type typeDefinition struct {
 	source     *sourceFile
 }
 
+// parserObject preserves parser-local lexical identity without loading every nested extension module.
+type parserObject = ast.Object //nolint:staticcheck // go/types would require loading extension dependencies.
+
 type sourcePackage struct {
 	files                 []*sourceFile
 	constants             map[string][]constDefinition
-	objectConstants       map[*ast.Object]constDefinition
+	objectConstants       map[*parserObject]constDefinition
 	types                 map[string][]typeDefinition
-	objectTypes           map[*ast.Object]typeDefinition
+	objectTypes           map[*parserObject]typeDefinition
 	functionResults       map[string][][]bool
-	objectFunctionResults map[*ast.Object][]bool
-	payloadObjects        map[*ast.Object]bool
+	objectFunctionResults map[*parserObject][]bool
+	payloadObjects        map[*parserObject]bool
 	payloadNames          map[string]bool
-	attributeMapObjects   map[*ast.Object]bool
+	attributeMapObjects   map[*parserObject]bool
 	attributeMapNames     map[string]bool
 	packageDeclarations   map[string]bool
 	telemetryEnabled      bool
@@ -874,7 +877,7 @@ func collectPackageDeclarations(pkg *sourcePackage) {
 
 func collectConstants(pkg *sourcePackage) {
 	pkg.constants = map[string][]constDefinition{}
-	pkg.objectConstants = map[*ast.Object]constDefinition{}
+	pkg.objectConstants = map[*parserObject]constDefinition{}
 
 	for _, source := range pkg.files {
 		for _, declaration := range source.file.Decls {
@@ -929,7 +932,7 @@ func collectConstantDeclaration(
 }
 
 type constantResolution struct {
-	objects map[*ast.Object]bool
+	objects map[*parserObject]bool
 	names   map[string]bool
 }
 
@@ -1089,14 +1092,14 @@ func ensureConstantResolution(resolving *constantResolution) *constantResolution
 		return resolving
 	}
 	return &constantResolution{
-		objects: map[*ast.Object]bool{},
+		objects: map[*parserObject]bool{},
 		names:   map[string]bool{},
 	}
 }
 
 func collectTypeDefinitions(pkg *sourcePackage) {
 	pkg.types = map[string][]typeDefinition{}
-	pkg.objectTypes = map[*ast.Object]typeDefinition{}
+	pkg.objectTypes = map[*parserObject]typeDefinition{}
 
 	for _, source := range pkg.files {
 		for _, declaration := range source.file.Decls {
@@ -1142,7 +1145,7 @@ func collectTypeDeclaration(
 
 func collectPayloadFunctionResults(pkg *sourcePackage) {
 	pkg.functionResults = map[string][][]bool{}
-	pkg.objectFunctionResults = map[*ast.Object][]bool{}
+	pkg.objectFunctionResults = map[*parserObject][]bool{}
 
 	for _, source := range pkg.files {
 		for _, declaration := range source.file.Decls {
@@ -1319,7 +1322,7 @@ func telemetryFunctionTypeResults(
 }
 
 func collectPayloadObjects(pkg *sourcePackage) {
-	pkg.payloadObjects = map[*ast.Object]bool{}
+	pkg.payloadObjects = map[*parserObject]bool{}
 	pkg.payloadNames = map[string]bool{}
 	for changed := true; changed; {
 		changed = false
@@ -1519,7 +1522,7 @@ func containsBoolSlice(values [][]bool, candidate []bool) bool {
 }
 
 func collectAttributeMapObjects(pkg *sourcePackage) {
-	pkg.attributeMapObjects = map[*ast.Object]bool{}
+	pkg.attributeMapObjects = map[*parserObject]bool{}
 	pkg.attributeMapNames = map[string]bool{}
 	for changed := true; changed; {
 		changed = false
@@ -1675,7 +1678,7 @@ func isTelemetryPayloadType(
 }
 
 type typeResolution struct {
-	objects map[*ast.Object]bool
+	objects map[*parserObject]bool
 	names   map[string]bool
 }
 
@@ -1841,7 +1844,7 @@ func ensureTypeResolution(resolving *typeResolution) *typeResolution {
 		return resolving
 	}
 	return &typeResolution{
-		objects: map[*ast.Object]bool{},
+		objects: map[*parserObject]bool{},
 		names:   map[string]bool{},
 	}
 }

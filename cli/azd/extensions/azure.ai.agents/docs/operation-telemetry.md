@@ -1,5 +1,7 @@
 # Agent operation statistics
 
+<!-- cspell:ignore tostring leftouter isnull strcat tobool countif todouble -->
+
 Reuse existing command completion records for totals, successes and failures.
 The only additional data is bounded text in the existing `extension.event` field
 of `ext.usage`: `agent.operation.v1.<operation>.<category>.<telephony>`.

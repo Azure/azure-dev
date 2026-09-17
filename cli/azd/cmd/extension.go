@@ -1230,7 +1230,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			return nil, fmt.Errorf("failed to list installed extensions: %w", err)
 		}
 
-		installedExtension, alreadyInstalled := allInstalled[extensionId]
+		installedExtension, alreadyInstalled := installedExtensionById(allInstalled, extensionId)
 		// Snapshot installed ids before Install mutates the manager cache.
 		preInstalledIds := make(map[string]struct{}, len(allInstalled))
 		for id := range allInstalled {

@@ -1206,6 +1206,46 @@ func TestUpgradeAction_AllWithSourceSkipsExtensionsOutsideSource(t *testing.T) {
 	require.Equal(t, "extension not available in source 'test'", report.Extensions[0].SkipReason)
 }
 
+func TestExtensionInstallAction_PromotesExistingDependency(t *testing.T) {
+	for _, id := range []string{"test.child", "Test.Child"} {
+		t.Run(id, func(t *testing.T) {
+			t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+			t.Setenv("NO_COLOR", "1")
+			mockCtx := mocks.NewMockContext(t.Context())
+			manager, sourceManager := createUpgradeTestManager(
+				t, mockCtx,
+				map[string]*extensions.Extension{
+					"test.child": {
+						Id: "test.child", Version: "1.0.0", Source: "test", InstalledAsDependency: true,
+					},
+				},
+				"https://test.example.com/registry.json",
+				testRegistry(testExtMeta("test.child", "1.0.0", "test")),
+			)
+			action := &extensionInstallAction{
+				args: []string{id},
+				flags: &extensionInstallFlags{
+					global: &internal.GlobalCommandOptions{NoPrompt: true},
+				},
+				console: mockinput.NewMockConsole(), sourceManager: sourceManager, extensionManager: manager,
+			}
+
+			_, err := action.Run(t.Context())
+			require.NoError(t, err)
+
+			require.NoError(t, manager.ReloadUserConfig())
+			installed, err := manager.ListInstalled()
+			require.NoError(t, err)
+			require.Len(t, installed, 1)
+			require.Contains(t, installed, "test.child")
+			record := installed["test.child"]
+			require.Equal(t, "test.child", record.Id)
+			require.Equal(t, "1.0.0", record.Version)
+			require.False(t, record.InstalledAsDependency)
+		})
+	}
+}
+
 func TestExtensionCommands_ReportDependencyFailuresAfterParentUpdate(t *testing.T) {
 	for _, command := range []string{"install", "update", "update-json"} {
 		t.Run(command, func(t *testing.T) {

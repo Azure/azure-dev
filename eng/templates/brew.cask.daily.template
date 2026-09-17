@@ -30,9 +30,9 @@ cask "azd@daily" do
 
   conflicts_with cask: "azd"
 
-  postflight do
+  postflight_steps do
     # Set .installed-by.txt to "brew" to configure azd behavior for homebrew-managed installs
-    File.write("#{staged_path}/.installed-by.txt", "brew")
+    write_file ".installed-by.txt", "brew"
   end
 
   caveats <<~EOS

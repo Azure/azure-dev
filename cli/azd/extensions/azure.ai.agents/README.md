@@ -44,6 +44,15 @@ the OpenTelemetry operation ID. A project with multiple agent classifications
 reports one row for each classification. The event never includes agent names,
 service keys, paths, URLs, prompts, or other customer content.
 
+### Operation classification markers
+
+Init, provision and deploy also emit bounded
+`agent.operation.v1.<operation>.<category>.<telephony>` values in the existing
+`extension.event` field of `ext.usage`, with no additional attributes. Existing
+`agent.context.resolved` and command results are unchanged. See
+[operation statistics](docs/operation-telemetry.md) for the vocabulary, query and
+coverage limits. Marker success must not be used as command success.
+
 ## Non-interactive automation
 
 See the shared [AI extension non-interactive input reference](../ai-non-interactive.md)

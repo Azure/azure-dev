@@ -25,6 +25,16 @@ attribution, tool-name normalization, and extension identity attribution.
 
 ## When to Trigger a Privacy Review
 
+Agent operation marker proposal: `azure.ai.agents` adds bounded
+`agent.operation.v1.<operation>.<category>.<telephony>` values to existing
+`extension.event` on `ext.usage`. No new attributes, output payloads, model names,
+paths, identifiers, credentials or hashing changes. Values are classified only
+from already-held input/configuration; exact vocabulary is in the
+[extension reference](../../../cli/azd/extensions/azure.ai.agents/docs/operation-telemetry.md).
+The existing official-source gate and event budget remain enforced. Normal
+extension privacy review and destination/query validation are required before
+rollout; this note records the review scope, not completed approval.
+
 A privacy review **must** be triggered when any of the following conditions are met:
 
 1. **New telemetry field** — Any new attribute key added to

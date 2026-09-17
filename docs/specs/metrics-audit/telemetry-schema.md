@@ -479,6 +479,13 @@ Telemetry for the `infra.layers[]` parallel provisioning feature, emitted from `
 
 ## Data Classifications
 
+Agent operation markers add only fixed values to the existing `extension.event`
+SystemMetadata / FeatureInsight field on `ext.usage`, not new fields or span names.
+Format: `agent.operation.v1.<operation>.<category>.<telephony>`; the allowlisted
+vocabulary and coverage are defined in the [extension operation reference](../../../cli/azd/extensions/azure.ai.agents/docs/operation-telemetry.md).
+No customer strings, dynamic attributes or hashing changes are introduced; existing
+agent-context and completion-result semantics remain unchanged.
+
 Classifications are defined in `cli/azd/internal/tracing/fields/fields.go` and control how data
 is stored, retained, and who may access it.
 

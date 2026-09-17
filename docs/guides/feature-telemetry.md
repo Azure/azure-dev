@@ -44,20 +44,20 @@ const (
 > non-command operations (sub-spans, background work, etc.).
 
 > [!IMPORTANT]
-> The GDPR classifier discovers events by statically scanning the `events` package for **exported
-> string constants whose Go identifier contains `Event`** (e.g. `MyFeatureEvent`). A constant that
-> omits `Event` from its identifier is silently skipped and never classified, even if it is emitted.
+> Repository metadata tooling discovers events from **exported string constants whose Go identifier
+> contains `Event`** (e.g. `MyFeatureEvent`). A constant that omits `Event` from its identifier is
+> not included in telemetry metadata, even if it is emitted.
 > End the identifier with `Prefix` (e.g. `MyFeatureEventPrefix`) to register a prefix group that
 > classifies every event name starting with that prefix. See
-> [Telemetry Schema → Event discovery contract](../specs/metrics-audit/telemetry-schema.md#event-discovery-contract).
+> [Telemetry Schema → Event declaration contract](../specs/metrics-audit/telemetry-schema.md#event-declaration-contract).
 
 ## Step 2: Define Your Fields
 
 **File:** `cli/azd/internal/tracing/fields/fields.go`
 
-Add **exported, package-level** `AttributeKey` variables for any new properties your feature emits
-(the GDPR classifier only discovers exported `AttributeKey` vars declared in the `fields` package —
-see [Field discovery contract](../specs/metrics-audit/telemetry-schema.md#field-attribute-discovery-contract)).
+Add **exported, package-level** `AttributeKey` variables for any new properties your feature emits.
+Repository metadata tooling uses these declarations; see the
+[Field declaration contract](../specs/metrics-audit/telemetry-schema.md#field-declaration-contract).
 Every field must have:
 
 1. **A key name** — descriptive, dot-separated, lowercase

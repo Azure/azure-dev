@@ -1,11 +1,5 @@
 # Release History
 
-## 1.0.0-beta.6 (2026-09-17)
-
-### Other Changes
-
-- [[#10071]](https://github.com/Azure/azure-dev/pull/10071) Update the extension version for the coordinated Microsoft Foundry release.
-
 ## 1.0.0-beta.5 (2026-09-04)
 
 ### Breaking Changes

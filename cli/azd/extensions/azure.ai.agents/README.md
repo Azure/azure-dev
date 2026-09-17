@@ -139,6 +139,45 @@ deployed: declare a Toolbox service and add it to `uses`. Deploy dependencies
 first or use `azd deploy --all`; a targeted Agent deployment does not deploy its
 dependencies automatically.
 
+## Invoke latency diagnostics
+
+Remote Hosted Agent `azd ai agent invoke` calls using Responses or Invocations
+request platform latency diagnostics by default. Successful calls show a compact
+summary after the client timing line, for example:
+
+```text
+Client elapsed: 9.172s
+Platform latency (cold): response headers 8859 ms
+  preprocess 178 ms | infra 1439 ms | readiness 4493 ms | container 2749 ms
+```
+
+Use `azd ai agent invoke --debug-latency=false "Hello"` to disable collection and
+the summary. The setting is independent of the global `--debug` logging flag.
+`--output raw` includes the returned HTTP headers without adding a formatted
+summary. Local, prompt-agent, and A2A invokes do not request platform diagnostics.
+Explicitly enabling diagnostics with `--debug-latency` or `--debug-latency=true`
+on these routes is rejected after route resolution. Omit the flag or use
+`--debug-latency=false` to invoke them without platform diagnostics.
+
+`Client elapsed` measures the client-observed invocation duration, including
+response reading. It replaces the previous `Server responded in ... (first byte: ...)`
+line and remains available when platform diagnostics are disabled or unavailable.
+Neither timing includes CLI startup, token acquisition, or separate
+conversation/session creation. The platform values describe the original
+invocation up to response headers. Response headers are not
+the first response body byte or the first model token. Container response time
+also includes request forwarding, connections, retries, and policy buffering; it
+is not a model-only inference measurement.
+
+Warm requests omit infrastructure setup and container readiness instead of
+reporting zero. Missing fields are not synthesized. Background Responses
+(`--long-running`, including `--no-wait`) and `202` Invocations show platform
+overhead only. With `--no-wait`, the summary describes request setup, not completion
+of background work. Existing invocation polling can pick up the original POST's
+persisted metrics, without an additional request. Unavailable or invalid diagnostics
+do not turn a successful agent call into an error. This summary does not wait for
+trailers or change SSE termination.
+
 ## Running Local Agents
 
 `azd ai agent run` starts the selected agent locally and, by default, opens the

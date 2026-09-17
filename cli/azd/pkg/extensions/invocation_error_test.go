@@ -38,3 +38,14 @@ func TestWrapInvocationError_PreservesExistingMetadataWhenUnset(t *testing.T) {
 	require.Equal(t, "1.2.3", metadata.InvocationExtensionVersion())
 	require.Equal(t, "prepackage", metadata.InvocationEvent())
 }
+
+func TestInvocationError_NilReceiver(t *testing.T) {
+	t.Parallel()
+
+	var invocationErr *InvocationError
+	require.Empty(t, invocationErr.Error())
+	require.NoError(t, invocationErr.Unwrap())
+	require.Empty(t, invocationErr.InvocationExtensionId())
+	require.Empty(t, invocationErr.InvocationExtensionVersion())
+	require.Empty(t, invocationErr.InvocationEvent())
+}

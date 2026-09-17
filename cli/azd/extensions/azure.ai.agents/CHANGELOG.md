@@ -1,6 +1,23 @@
 # Release History
 
-<!-- cspell:ignore Deeksharma JerryYangKai -->
+<!-- cspell:ignore Deeksharma JerryYangKai Yimin -->
+
+## 1.0.0-beta.16 (2026-09-17)
+
+### Breaking Changes
+
+- [[#9997]](https://github.com/Azure/azure-dev/pull/9997) Rename the Agent toolbox and connection composition commands to `azd ai agent toolbox add` and `azd ai agent connection add`, and replace standalone Agent deployment with `azd deploy <service>`. Thanks @JerryYangKai for the contribution!
+- [[#9948]](https://github.com/Azure/azure-dev/pull/9948) Replace the hosted Voice `modelType` and `targetAgent` configuration with `conversationEngine` to match the service contract.
+
+### Features Added
+
+- [[#9890]](https://github.com/Azure/azure-dev/pull/9890) Make voice agent initialization, configuration, help, and discovery available as a public preview without an environment-variable gate.
+- [[#9901]](https://github.com/Azure/azure-dev/pull/9901) Add Invocations protocol support to the shared `invocations show` and `invocations cancel` lifecycle commands.
+- [[#10028]](https://github.com/Azure/azure-dev/pull/10028) Add platform latency diagnostics to supported remote agent invocations, enabled by default with a `--debug-latency=false` opt-out. Thanks @Yimin-Jin for the contribution!
+
+### Bugs Fixed
+
+- [[#10002]](https://github.com/Azure/azure-dev/pull/10002) Fix prompt-agent optimization to use the deployed agent as its baseline and apply candidate model, instructions, and matching function tools to `azure.yaml`. Thanks @YoYoJa for the contribution!
 
 ## 1.0.0-beta.15 (2026-09-10)
 

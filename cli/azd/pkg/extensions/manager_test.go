@@ -532,6 +532,20 @@ func TestResolveExtensionVersionNil(t *testing.T) {
 	require.EqualError(t, err, "extension metadata cannot be nil")
 }
 
+func TestManager_ResolveVersion(t *testing.T) {
+	t.Parallel()
+
+	manager := &Manager{azdVersion: semver.MustParse("1.0.0")}
+	extension := &ExtensionMetadata{
+		Versions: []ExtensionVersion{{Version: "1.0.0"}},
+	}
+
+	version, err := manager.ResolveVersion(extension, "latest")
+
+	require.NoError(t, err)
+	require.Equal(t, "1.0.0", version.Version)
+}
+
 func TestResolveExtensionVersion_TypedErrors(t *testing.T) {
 	t.Parallel()
 
@@ -3389,7 +3403,12 @@ func TestDependencyAzdVersionIncompatibleError_UpperBoundSuggestion(t *testing.T
 		`Use an azd version that satisfies "<2.0.0", then retry.`,
 		err.Suggestion(),
 	)
+	require.Contains(t, err.Error(), "test.child")
+	require.Contains(t, err.Error(), "test.pack")
 	require.NotContains(t, err.Suggestion(), "Upgrade")
+
+	err.RequiredAzdVersion = ""
+	require.Equal(t, "Use an azd version compatible with the dependency, then retry.", err.Suggestion())
 }
 
 func Test_Upgrade_DependencyUpgrade_KeepsNewerInstalledWhenInRange(t *testing.T) {
@@ -4181,6 +4200,7 @@ func Test_DependencyNotFoundError(t *testing.T) {
 	err := &DependencyNotFoundError{DependencyId: "azure.ai.inspector", ParentId: "azure.ai.agents"}
 	require.Contains(t, err.Error(), "azure.ai.inspector")
 	require.Contains(t, err.Error(), "azure.ai.agents")
+	require.Contains(t, err.Suggestion(), "azd extension install azure.ai.inspector")
 
 	// Unwraps correctly through fmt.Errorf chains.
 	wrapped := fmt.Errorf("install failed: %w", err)

@@ -104,7 +104,6 @@ var _ = batch[foundryTelemetry.Event]{{
 	Attributes: map[string]string{"route": "inspector"},
 }}
 `,
-			expectedKeys:    []string{"route"},
 			expectedMessage: "generic composite literals are not supported",
 		},
 		{
@@ -347,7 +346,7 @@ var _ = extensionTelemetry.Event{
 	require.Contains(
 		t,
 		strings.Join(diagnostics, "\n"),
-		"unresolved unkeyed composite literals are not supported",
+		"payload literals must use keyed fields",
 	)
 }
 
@@ -467,9 +466,9 @@ var _ = Event(localEvent{
 	usages, diagnostics := scanExtensionTelemetry(root)
 	require.Empty(t, usages)
 	require.Len(t, diagnostics, 2)
-	for _, diagnostic := range diagnostics {
-		require.Contains(t, diagnostic, "unresolved unkeyed composite literals are not supported")
-	}
+	joinedDiagnostics := strings.Join(diagnostics, "\n")
+	require.Contains(t, joinedDiagnostics, "unresolved unkeyed composite literals are not supported")
+	require.Contains(t, joinedDiagnostics, "payload literals must use keyed fields")
 }
 
 func TestExtensionTelemetrySourceScannerRejectsCrossFilePredeclaredShadows(t *testing.T) {
@@ -621,5 +620,45 @@ var _ = azdext.EmptyRequest{}
 
 	usages, diagnostics := scanExtensionTelemetry(root)
 	require.Empty(t, usages)
+	require.Empty(t, diagnostics)
+}
+
+func TestExtensionTelemetrySourceScannerIgnoresUnrelatedAttributesInTelemetryPackage(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	extensionDir := filepath.Join(root, "contoso.extension", "internal", "cmd")
+	require.NoError(t, os.MkdirAll(extensionDir, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(extensionDir, "usage.go"),
+		[]byte(`package cmd
+import foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
+type envelope struct {
+	Name string
+	Attributes map[string]string
+}
+func (e envelope) GetAttributes() map[string]string {
+	return e.Attributes
+}
+var value = envelope{
+	Name: "unrelated",
+	Attributes: map[string]string{"unrelated": "value"},
+}
+var _ = foundryTelemetry.Event{
+	Attributes: map[string]string{"route": "inspector"},
+}
+var _ = value.Attributes
+var _ = value.GetAttributes()
+`),
+		0o600,
+	))
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+	require.Equal(t, []telemetryUsage{{
+		extension: "contoso.extension",
+		key:       "route",
+		path:      "contoso.extension/internal/cmd/usage.go",
+		line:      15,
+	}}, usages)
 	require.Empty(t, diagnostics)
 }

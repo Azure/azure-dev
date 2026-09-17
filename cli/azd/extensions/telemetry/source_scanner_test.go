@@ -33,10 +33,13 @@ type telemetryUsage struct {
 }
 
 type sourceFile struct {
-	path       string
-	file       *ast.File
-	imports    map[string]string
-	dotImports map[string]bool
+	path            string
+	file            *ast.File
+	imports         map[string]string
+	dotImports      map[string]bool
+	localImports    map[string]*sourcePackage
+	localDotImports []*sourcePackage
+	parents         map[ast.Node]ast.Node
 }
 
 type constDefinition struct {
@@ -67,6 +70,7 @@ type sourcePackage struct {
 	attributeMapObjects   map[*parserObject]bool
 	attributeMapNames     map[string]bool
 	packageDeclarations   map[string]bool
+	payloadTypeNames      map[string]bool
 	telemetryEnabled      bool
 }
 
@@ -106,6 +110,7 @@ func scanExtensionTelemetry(extensionRoot string) ([]telemetryUsage, []string) {
 			file:       file,
 			imports:    importAliases(file),
 			dotImports: dotImports(file),
+			parents:    parentNodes(file),
 		}
 		key := filepath.Dir(path) + "\x00" + file.Name.Name
 		pkg := packages[key]
@@ -127,13 +132,18 @@ func scanExtensionTelemetry(extensionRoot string) ([]telemetryUsage, []string) {
 	var usages []telemetryUsage
 	assignPackageImportPaths(extensionRoot, packages)
 	telemetryPackages := findTelemetryPackages(extensionRoot, packages)
+	linkLocalPackageImports(extensionRoot, packages)
 
 	for _, pkg := range packages {
-		usesTelemetryPayload := telemetryPackages[pkg]
-		pkg.telemetryEnabled = usesTelemetryPayload
+		pkg.telemetryEnabled = telemetryPackages[pkg]
 		collectPackageDeclarations(pkg)
 		collectConstants(pkg)
 		collectTypeDefinitions(pkg)
+	}
+	collectPayloadTypeNames(packages)
+
+	for _, pkg := range packages {
+		usesTelemetryPayload := pkg.telemetryEnabled
 		collectPayloadFunctionResults(pkg)
 		collectPayloadObjects(pkg)
 		collectAttributeMapObjects(pkg)
@@ -142,12 +152,8 @@ func scanExtensionTelemetry(extensionRoot string) ([]telemetryUsage, []string) {
 			ast.Inspect(source.file, func(node ast.Node) bool {
 				switch value := node.(type) {
 				case *ast.CompositeLit:
-					isPayloadLiteral := isTelemetryPayloadType(value.Type, source, pkg)
-					if !isPayloadLiteral &&
-						usesTelemetryPayload &&
-						compositeLiteralHasField(value, "Attributes") {
-						isPayloadLiteral = true
-					}
+					isPayloadLiteral := isTelemetryPayloadType(value.Type, source, pkg) ||
+						isTelemetryPayloadConversionLiteral(value, source, pkg)
 					if isPayloadLiteral {
 						payloadUsages, payloadDiagnostics := scanTelemetryPayload(
 							fset,
@@ -199,7 +205,7 @@ func scanExtensionTelemetry(extensionRoot string) ([]telemetryUsage, []string) {
 					usages = append(usages, assignmentUsages...)
 					diagnostics = append(diagnostics, assignmentDiagnostics...)
 				case *ast.SelectorExpr:
-					if usesTelemetryPayload {
+					if isTelemetryPayloadSelector(value, source, pkg) {
 						position := fset.Position(value.Pos())
 						switch value.Sel.Name {
 						case "Attributes":
@@ -382,6 +388,75 @@ func localPackageForImport(
 	return result
 }
 
+func linkLocalPackageImports(
+	extensionRoot string,
+	packages map[string]*sourcePackage,
+) {
+	for _, pkg := range packages {
+		for _, source := range pkg.files {
+			source.localImports = map[string]*sourcePackage{}
+			for alias, importPath := range source.imports {
+				imported := localPackageForImport(extensionRoot, pkg, importPath, packages)
+				if imported != nil {
+					source.localImports[alias] = imported
+				}
+			}
+			for importPath := range source.dotImports {
+				imported := localPackageForImport(extensionRoot, pkg, importPath, packages)
+				if imported != nil {
+					source.localDotImports = append(source.localDotImports, imported)
+				}
+			}
+		}
+	}
+}
+
+func collectPayloadTypeNames(packages map[string]*sourcePackage) {
+	for _, pkg := range packages {
+		pkg.payloadTypeNames = map[string]bool{}
+	}
+
+	for changed := true; changed; {
+		changed = false
+		for _, pkg := range packages {
+			for name, definitions := range pkg.types {
+				if pkg.payloadTypeNames[name] {
+					continue
+				}
+				isPayloadType := len(definitions) > 0
+				for _, definition := range definitions {
+					if !isTelemetryPayloadType(definition.expression, definition.source, pkg) {
+						isPayloadType = false
+						break
+					}
+				}
+				if !isPayloadType {
+					continue
+				}
+				pkg.payloadTypeNames[name] = true
+				changed = true
+			}
+		}
+	}
+}
+
+func parentNodes(file *ast.File) map[ast.Node]ast.Node {
+	parents := map[ast.Node]ast.Node{}
+	var stack []ast.Node
+	ast.Inspect(file, func(node ast.Node) bool {
+		if node == nil {
+			stack = stack[:len(stack)-1]
+			return false
+		}
+		if len(stack) > 0 {
+			parents[node] = stack[len(stack)-1]
+		}
+		stack = append(stack, node)
+		return true
+	})
+	return parents
+}
+
 func packageReferencesTelemetryPayload(pkg *sourcePackage) bool {
 	for _, source := range pkg.files {
 		referencesPayload := false
@@ -395,20 +470,6 @@ func packageReferencesTelemetryPayload(pkg *sourcePackage) bool {
 			return !referencesPayload
 		})
 		if referencesPayload {
-			return true
-		}
-	}
-	return false
-}
-
-func compositeLiteralHasField(literal *ast.CompositeLit, fieldName string) bool {
-	for _, element := range literal.Elts {
-		keyValue, ok := element.(*ast.KeyValueExpr)
-		if !ok {
-			continue
-		}
-		name, ok := keyValue.Key.(*ast.Ident)
-		if ok && name.Name == fieldName {
 			return true
 		}
 	}
@@ -1812,7 +1873,15 @@ func isTelemetryPayloadTypeResolving(
 ) bool {
 	switch value := expression.(type) {
 	case *ast.SelectorExpr:
-		return isImportedTelemetryPayloadSelector(value, source)
+		if isImportedTelemetryPayloadSelector(value, source) {
+			return true
+		}
+		alias, ok := value.X.(*ast.Ident)
+		if !ok || alias.Obj != nil && alias.Obj.Kind != ast.Pkg {
+			return false
+		}
+		imported := source.localImports[alias.Name]
+		return imported != nil && imported.payloadTypeNames[value.Sel.Name]
 	case *ast.Ident:
 		if value.Obj != nil {
 			if value.Obj.Kind != ast.Typ {
@@ -1837,6 +1906,11 @@ func isTelemetryPayloadTypeResolving(
 		}
 		if isDotImportedTelemetryPayloadIdentifier(value, source) {
 			return true
+		}
+		for _, imported := range source.localDotImports {
+			if imported.payloadTypeNames[value.Name] {
+				return true
+			}
 		}
 		definitions := pkg.types[value.Name]
 		if len(definitions) == 0 {
@@ -1867,25 +1941,34 @@ func isTelemetryPayloadTypeResolving(
 		return isTelemetryPayloadTypeResolving(value.X, source, pkg, resolving)
 	case *ast.IndexListExpr:
 		return isTelemetryPayloadTypeResolving(value.X, source, pkg, resolving)
-	case *ast.StructType:
-		return pkg.telemetryEnabled &&
-			isFoundryEventCompatibleStruct(value)
 	default:
 		return false
 	}
 }
 
-func isFoundryEventCompatibleStruct(structType *ast.StructType) bool {
-	if structType.Fields == nil || len(structType.Fields.List) != 2 {
-		return false
+func isTelemetryPayloadConversionLiteral(
+	literal *ast.CompositeLit,
+	source *sourceFile,
+	pkg *sourcePackage,
+) bool {
+	var expression ast.Node = literal
+	for {
+		switch parent := source.parents[expression].(type) {
+		case *ast.ParenExpr:
+			expression = parent
+		case *ast.UnaryExpr:
+			if parent.Op != token.AND || parent.X != expression {
+				return false
+			}
+			expression = parent
+		case *ast.CallExpr:
+			return len(parent.Args) == 1 &&
+				parent.Args[0] == expression &&
+				isTelemetryPayloadType(parent.Fun, source, pkg)
+		default:
+			return false
+		}
 	}
-
-	nameField := structType.Fields.List[0]
-	attributesField := structType.Fields.List[1]
-	return len(nameField.Names) == 1 &&
-		nameField.Names[0].Name == "Name" &&
-		len(attributesField.Names) == 1 &&
-		attributesField.Names[0].Name == "Attributes"
 }
 
 func resolveTelemetryContainerTypes(
@@ -1976,28 +2059,21 @@ func isTelemetryAttributesSelector(
 	source *sourceFile,
 	pkg *sourcePackage,
 ) bool {
-	if selector.Sel.Name != "Attributes" {
-		return false
-	}
-	receiver := expressionIdentifier(selector.X)
-	if receiver == nil {
-		return sourceImportsTelemetryPayload(source)
-	}
-	if receiver.Obj != nil {
-		return pkg.payloadObjects[receiver.Obj] || sourceImportsTelemetryPayload(source)
-	}
-	return pkg.payloadNames[receiver.Name] || sourceImportsTelemetryPayload(source)
+	return selector.Sel.Name == "Attributes" &&
+		isTelemetryPayloadExpression(selector.X, source, pkg)
 }
 
-func sourceImportsTelemetryPayload(source *sourceFile) bool {
-	for _, importPath := range source.imports {
-		if isTelemetryPayloadPackagePath(importPath) {
-			return true
-		}
+func isTelemetryPayloadSelector(
+	selector *ast.SelectorExpr,
+	source *sourceFile,
+	pkg *sourcePackage,
+) bool {
+	switch selector.Sel.Name {
+	case "Attributes", "GetAttributes":
+		return isTelemetryPayloadExpression(selector.X, source, pkg)
+	default:
+		return false
 	}
-	return source.dotImports[azdextPackagePath] ||
-		source.dotImports[azdextV1BetaPackagePath] ||
-		source.dotImports[foundryTelemetryPackagePath]
 }
 
 func isReportUsagePackagePath(path string) bool {
@@ -2025,19 +2101,6 @@ func isDotImportedTelemetryPayloadIdentifier(identifier *ast.Ident, source *sour
 	return identifier.Name == "ReportUsageRequest" &&
 		(source.dotImports[azdextPackagePath] || source.dotImports[azdextV1BetaPackagePath]) ||
 		identifier.Name == "Event" && source.dotImports[foundryTelemetryPackagePath]
-}
-
-func expressionIdentifier(expression ast.Expr) *ast.Ident {
-	switch value := expression.(type) {
-	case *ast.Ident:
-		return value
-	case *ast.ParenExpr:
-		return expressionIdentifier(value.X)
-	case *ast.StarExpr:
-		return expressionIdentifier(value.X)
-	default:
-		return nil
-	}
 }
 
 func isStringMapType(expression ast.Expr) bool {

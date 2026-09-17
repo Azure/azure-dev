@@ -5545,31 +5545,6 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
-							name: ['deploy'],
-							description: 'Deploy a local toolbox definition.',
-							options: [
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-											suggestions: ['table', 'json'],
-										},
-									],
-								},
-								{
-									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
-									args: [
-										{
-											name: 'project-endpoint',
-										},
-									],
-								},
-							],
-						},
-						{
 							name: ['list'],
 							description: 'List toolboxes on the project.',
 							options: [

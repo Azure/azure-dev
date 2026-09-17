@@ -55,6 +55,17 @@ func TestAgentResponseRegion(t *testing.T) {
 			true,
 		},
 		{
+			"answer scoped before client elapsed",
+			"[agent] The answer is 4.\nClient elapsed: 2.000s\n",
+			true,
+		},
+		{
+			"latency measurements are not part of the answer",
+			"[agent] I am not sure.\nClient elapsed: 1.000s\n" +
+				"Platform latency (warm): response headers 4 ms\n  preprocess 0 ms | container 4 ms\n",
+			false,
+		},
+		{
 			"stray digits outside region rejected",
 			"gpt-4o-mini deployed (404 cached)\n[agent] I am not sure.\nServer responded in 4.0s\n",
 			false,

@@ -12,28 +12,6 @@ import (
 
 func TestIsBuiltInCommand(t *testing.T) {
 	t.Parallel()
-	// Create a mock root command with some subcommands
-	rootCmd := &cobra.Command{
-		Use: "azd",
-	}
-
-	// Add some built-in commands
-	upCmd := &cobra.Command{
-		Use: "up",
-	}
-	rootCmd.AddCommand(upCmd)
-
-	initCmd := &cobra.Command{
-		Use:     "init",
-		Aliases: []string{"initialize"},
-	}
-	rootCmd.AddCommand(initCmd)
-
-	downCmd := &cobra.Command{
-		Use: "down",
-	}
-	rootCmd.AddCommand(downCmd)
-
 	tests := []struct {
 		name        string
 		commandName string
@@ -79,6 +57,7 @@ func TestIsBuiltInCommand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			rootCmd := newBuiltInCommandTree()
 			result := isBuiltInCommand(rootCmd, tt.commandName)
 			if result != tt.expected {
 				t.Errorf("isBuiltInCommand(%q) = %v, expected %v", tt.commandName, result, tt.expected)
@@ -87,20 +66,21 @@ func TestIsBuiltInCommand(t *testing.T) {
 	}
 }
 
+func newBuiltInCommandTree() *cobra.Command {
+	rootCmd := &cobra.Command{Use: "azd"}
+	rootCmd.AddCommand(
+		&cobra.Command{Use: "up"},
+		&cobra.Command{
+			Use:     "init",
+			Aliases: []string{"initialize"},
+		},
+		&cobra.Command{Use: "down"},
+	)
+	return rootCmd
+}
+
 func TestHasSubcommand(t *testing.T) {
 	t.Parallel()
-	// Create a command with subcommands
-	parentCmd := &cobra.Command{Use: "parent"}
-
-	childCmd := &cobra.Command{
-		Use:     "child",
-		Aliases: []string{"c", "kid"},
-	}
-	parentCmd.AddCommand(childCmd)
-
-	otherCmd := &cobra.Command{Use: "other"}
-	parentCmd.AddCommand(otherCmd)
-
 	tests := []struct {
 		name     string
 		cmdName  string
@@ -141,10 +121,23 @@ func TestHasSubcommand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			parentCmd := newParentCommandTree()
 			result := hasSubcommand(parentCmd, tt.cmdName)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func newParentCommandTree() *cobra.Command {
+	parentCmd := &cobra.Command{Use: "parent"}
+	parentCmd.AddCommand(
+		&cobra.Command{
+			Use:     "child",
+			Aliases: []string{"c", "kid"},
+		},
+		&cobra.Command{Use: "other"},
+	)
+	return parentCmd
 }
 
 func TestGetCommandPath(t *testing.T) {
@@ -247,34 +240,6 @@ func TestPartialNamespaceDetection(t *testing.T) {
 	// This test verifies the logic for detecting when auto-install should trigger
 	// for partial namespace matches vs when an extension command should handle args.
 
-	// Scenario: ai.finetuning and ai.agent extensions both installed
-	// Command tree: azd -> ai -> finetuning (extension leaf)
-	//                        -> agent (extension leaf)
-	rootCmd := &cobra.Command{Use: "azd"}
-	aiCmd := &cobra.Command{Use: "ai", Short: "Commands for the ai extension namespace."}
-	rootCmd.AddCommand(aiCmd)
-
-	// Extension leaf commands have annotations
-	finetuningCmd := &cobra.Command{
-		Use:   "finetuning",
-		Short: "Finetuning extension",
-		Annotations: map[string]string{
-			"extension.id":        "azure.ai.finetune",
-			"extension.namespace": "ai.finetuning",
-		},
-	}
-	aiCmd.AddCommand(finetuningCmd)
-
-	agentCmd := &cobra.Command{
-		Use:   "agent",
-		Short: "Agent extension",
-		Annotations: map[string]string{
-			"extension.id":        "azure.ai.agents",
-			"extension.namespace": "ai.agent",
-		},
-	}
-	aiCmd.AddCommand(agentCmd)
-
 	tests := []struct {
 		name                   string
 		args                   []string
@@ -310,6 +275,7 @@ func TestPartialNamespaceDetection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			rootCmd := newPartialNamespaceCommandTree()
 			foundCmd, remaining, err := rootCmd.Find(tt.args)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectRemainingArgs, remaining)
@@ -320,4 +286,35 @@ func TestPartialNamespaceDetection(t *testing.T) {
 				tt.expectExtensionCommand, foundCmd.Name(), foundCmd.Annotations)
 		})
 	}
+}
+
+func newPartialNamespaceCommandTree() *cobra.Command {
+	// Scenario: ai.finetuning and ai.agent extensions both installed
+	// Command tree: azd -> ai -> finetuning (extension leaf)
+	//                        -> agent (extension leaf)
+	rootCmd := &cobra.Command{Use: "azd"}
+	aiCmd := &cobra.Command{Use: "ai", Short: "Commands for the ai extension namespace."}
+	rootCmd.AddCommand(aiCmd)
+
+	// Extension leaf commands have annotations
+	aiCmd.AddCommand(
+		&cobra.Command{
+			Use:   "finetuning",
+			Short: "Finetuning extension",
+			Annotations: map[string]string{
+				"extension.id":        "azure.ai.finetune",
+				"extension.namespace": "ai.finetuning",
+			},
+		},
+		&cobra.Command{
+			Use:   "agent",
+			Short: "Agent extension",
+			Annotations: map[string]string{
+				"extension.id":        "azure.ai.agents",
+				"extension.namespace": "ai.agent",
+			},
+		},
+	)
+
+	return rootCmd
 }

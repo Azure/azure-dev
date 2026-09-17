@@ -512,7 +512,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Prompt()` | `PromptServiceClient` |
 | `Deployment()` | `DeploymentServiceClient` |
 | `Events()` | `EventServiceClient` |
-| `Compose()` | `ComposeServiceClient` |
+| `Compose()` | `v1beta.ComposeServiceClient` (preview) |
 | `Workflow()` | `WorkflowServiceClient` |
 | `ServiceTarget()` | `ServiceTargetServiceClient` |
 | `FrameworkService()` | `FrameworkServiceClient` |
@@ -520,13 +520,19 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Extension()` | `ExtensionServiceClient` |
 | `Account()` | `AccountServiceClient` |
 | `Ai()` | `AiModelServiceClient` |
-| `Telemetry()` | `TelemetryServiceClient` |
+| `Copilot()` | `v1beta.CopilotServiceClient` (preview) |
+| `Telemetry()` | `v1beta.TelemetryServiceClient` (preview) |
 
 Always call `defer client.Close()` after creation.
 
+`Compose()`, `Copilot()`, and `Telemetry()` are preview accessors. Import
+`github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for their
+request, response, and enum types. They are intentionally excluded from the
+stable `azdext` contract facade until those services graduate to `v1`.
+
 #### TelemetryService
 
-`Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{EventName, Attributes})`
+`Telemetry().ReportUsage(ctx, &v1beta.ReportUsageRequest{EventName, Attributes})`
 lets an authenticated extension report a named usage event with an arbitrary
 `map[string]string` of attributes. Telemetry is a service `azd` offers to
 extensions whose configured source matches the verified official registry
@@ -548,7 +554,7 @@ so the same code path runs during local development and in production. Run
 `azd --debug` to see which applied.
 
 ```go
-resp, err := client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
+resp, err := client.Telemetry().ReportUsage(ctx, &v1beta.ReportUsageRequest{
     EventName:  "deploy.completed",
     Attributes: map[string]string{"deploy.mode": "container"},
 })
@@ -572,7 +578,7 @@ This is the normal compatibility mechanism used when resolving installs and
 updates:
 
 ```yaml
-requiredAzdVersion: ">=1.31.0"
+requiredAzdVersion: ">=1.33.0"
 ```
 
 The call remains best-effort for already-installed extensions and extensions
@@ -756,6 +762,11 @@ the host records these labels only as case-insensitive hashes in
 `error.extension.cause_types`; they are never added to the reflected
 `error.chain.types` or used as `error.type`.
 
+`CauseTypes` transport is available only in the
+`azd.extensions.v1beta.ExtensionError` contract. The stable
+`azdext.WrapError` helper uses the frozen `v1` contract and does not serialize
+this preview field.
+
 ### ServiceError
 
 ```go
@@ -794,6 +805,11 @@ characters matching `[a-z0-9_-]` are accepted; invalid or oversized values
 are recorded as `other`. This normalization does not change the displayed
 error.
 
+Structured tool metadata transport is available only through
+`azd.extensions.v1beta.ExtensionError`. The frozen `v1` contract preserves
+the tool origin, message, suggestion, and links, but not the preview tool
+detail.
+
 ### LocalErrorCategory
 
 ```go
@@ -813,6 +829,10 @@ const (
 Error categories enable structured telemetry classification and targeted error
 guidance. Use `WrapError(err)` to convert a `LocalError`, `ServiceError`, or
 `ToolError` to the gRPC `ExtensionError` proto for reporting.
+
+`WrapError` produces the stable `v1` message. Extensions using the preview
+`cause_types` or `tool_error` fields must construct and send the generated
+`v1beta.ExtensionError` through the `v1beta.ExtensionService` client.
 
 ---
 

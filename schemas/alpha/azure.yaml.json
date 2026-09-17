@@ -263,7 +263,8 @@
                             "azure.ai.connection",
                             "azure.ai.toolbox",
                             "azure.ai.skill",
-                            "azure.ai.routine"
+                            "azure.ai.routine",
+                            "azure.ai.eval"
                         ]
                     },
                     "language": {
@@ -604,6 +605,26 @@
                                 {
                                     "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.routines/schemas/azure.ai.routine.json"
                                 }
+                            ],
+                            "properties": {
+                                "project": false,
+                                "runtime": false,
+                                "docker": false,
+                                "image": false,
+                                "config": false
+                            }
+                        }
+                    },
+                    {
+                        "comment": "Azure AI Foundry evaluation host - code-less resource service; the service key is the evaluation configuration name and it uses: the project and whatever it grades",
+                        "if": {
+                            "properties": {
+                                "host": { "const": "azure.ai.eval" }
+                            }
+                        },
+                        "then": {
+                            "allOf": [
+                                { "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.evaluations/schemas/azure.ai.eval.json" }
                             ],
                             "properties": {
                                 "project": false,
@@ -1760,7 +1781,7 @@
                 "remoteBuild": {
                     "type": "boolean",
                     "title": "Optional. Whether to build the image remotely",
-                    "description": "If set to true, the image will be built remotely using the Azure Container Registry remote build feature. If set to false, the image will be built locally using Docker."
+                    "description": "If set to true, azd builds the image remotely using Azure Container Registry. Automatic local fallback uses Docker or Podman only when scheduling returns TasksOperationsNotAllowed. If set to false, azd builds locally."
                 },
                 "imagePassthrough": {
                     "type": "boolean",

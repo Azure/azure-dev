@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
@@ -344,13 +345,12 @@ func Test_progressLogConcurrentWriteProtection(t *testing.T) {
 	pg.Start()
 
 	// This should not panic even if called concurrently or after Stop/Start cycles
-	done := make(chan bool)
-	go func() {
+	var wg sync.WaitGroup
+	wg.Go(func() {
 		defer func() {
 			if r := recover(); r != nil {
 				t.Errorf("Panic occurred in concurrent write: %v", r)
 			}
-			done <- true
 		}()
 
 		for range 100 {
@@ -360,17 +360,17 @@ func Test_progressLogConcurrentWriteProtection(t *testing.T) {
 				return
 			}
 		}
-	}()
+	})
 
 	// Try to cause race conditions by stopping/starting
-	go func() {
+	wg.Go(func() {
 		for range 10 {
 			pg.Stop(false)
 			pg.Start()
 		}
-	}()
+	})
 
-	<-done
+	wg.Wait()
 	pg.Stop(false)
 }
 

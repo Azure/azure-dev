@@ -261,6 +261,14 @@ This option does not provide crash recovery or automatic reconnection.`,
 				return err
 			}
 
+			if flags.newSession && flags.conversation != "" {
+				return exterrors.Validation(
+					exterrors.CodeConflictingArguments,
+					"cannot use --new-session with --conversation-id; a new session requires a new conversation",
+					"remove --conversation-id to start a new session, or remove --new-session to reuse the conversation",
+				)
+			}
+
 			if flags.protocol != "" {
 				p := agent_api.AgentProtocol(flags.protocol)
 				if !p.IsInvocable() {

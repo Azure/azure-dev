@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"slices"
@@ -108,8 +109,17 @@ func TestServer_AllBetaAdaptersDispatchToStable(t *testing.T) {
 					ServerStreams: true,
 				}, fullMethod)
 				require.NoError(t, err)
-				require.NoError(t, stream.SendMsg(request))
+
+				if err := stream.SendMsg(request); err != nil {
+					// this can happen if the 'receiver' of this request doesn't read
+					// from the 'request' stream and just returns immediately. It's not an issue for us
+					// since that's not what we're testing.
+					require.ErrorIs(t, err, io.EOF)
+				}
+
 				require.NoError(t, stream.CloseSend())
+
+				// RecvMsg observes the remote endpoint's authoritative terminal RPC status.
 				require.Equal(t, codes.Unimplemented, status.Code(stream.RecvMsg(response)))
 			})
 		}

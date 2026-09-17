@@ -533,10 +533,18 @@ stable `azdext` contract facade until those services graduate to `v1`.
 #### TelemetryService
 
 `Telemetry().ReportUsage(ctx, &v1beta.ReportUsageRequest{EventName, Attributes})`
-lets an authenticated extension report a named usage event with an arbitrary
-`map[string]string` of attributes. Telemetry is a service `azd` offers to
-extensions whose configured source matches the verified official registry
-name, type, and normalized URL.
+lets an authenticated extension report a named usage event. The runtime request
+contains a bounded `map[string]string` of attributes and does not carry
+classification, purpose, or endpoint metadata. Telemetry is available to
+eligible official-registry installations.
+
+For first-party extensions in this repository, that runtime wire shape does not
+permit ad hoc attribute keys. Every attribute must be statically discoverable,
+and its final `ext.*` name must have a reviewed `fields.AttributeKey`
+declaration in `cli/azd/extensions/telemetry/fields.go`. The declaration supplies
+the classification, purpose, and endpoint metadata enforced during repository
+validation. See
+[Declare and validate attributes](./extension-telemetry.md#declare-and-validate-attributes).
 
 The host writes `extension.id`, `extension.version`, and `extension.source`
 from the signed claims and the installed record, and `extension.event` from the
@@ -544,8 +552,9 @@ caller's event name, so an extension cannot assert which extension it is. Every
 caller-supplied key is prefixed with `ext.` and can never overwrite a host
 field. Accepted events are recorded on a dedicated `ext.usage` span that shares
 the command's trace, so downstream queries join it to the originating command
-on `operation_Id`. Extensions cannot choose the span, classification, purpose,
-hashing, or aggregation.
+on `operation_Id`. The runtime request cannot choose the span, classification,
+purpose, hashing, or aggregation; first-party classification and purpose come
+from the reviewed source declaration instead.
 
 Two outcomes are not errors: a report from an extension installed from any
 other source, and a report past the limit of 100 recorded events per `azd`

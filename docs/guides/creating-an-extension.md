@@ -87,7 +87,9 @@ For extensions that are still in development or preview, consider publishing to 
 - **Reuse parameter patterns** — Use established flags like `--subscription`, `--name`, `--type`
 - **Integrate with help** — Make your extension discoverable through `azd help`
 - **Error handling** — Use `ServiceError` for Azure API errors and `LocalError` for client-side errors
-- **Telemetry** — Follow pattern-based classification (e.g., `ext.service.<errorCode>`)
+- **Telemetry** — Follow the [extension telemetry guide](../../cli/azd/docs/extensions/extension-telemetry.md);
+  first-party `ReportUsage` attributes must be declared and classified in
+  `cli/azd/extensions/telemetry/fields.go`
 
 ## Detailed Reference
 

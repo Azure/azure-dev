@@ -269,18 +269,33 @@ tool failures use `tool.<name>.missing` or `tool.<name>.failed`. The removed `er
 
 #### Extension-contributed usage attributes
 
-Extensions do not have individual fields listed in this document. An extension
-reports a named event with an arbitrary attribute map, and `azd` records it on
-an `ext.usage` span alongside `extension.id`, `extension.version`,
+An extension reports a named event with an attribute map, and `azd` records it
+on an `ext.usage` span alongside `extension.id`, `extension.version`,
 `extension.source`, and `extension.event`. Failed extension commands use
-`extension.id` and `extension.version` on the failed `ext.run` span, but do
-not set `extension.event` or create an `ext.usage` span. Failed lifecycle
-hooks use the enclosing `cmd.*` span and include the extension ID, version,
-and lifecycle event.
+`extension.id` and `extension.version` on the failed `ext.run` span, but do not
+set `extension.event` or create an `ext.usage` span. Failed lifecycle hooks use
+the enclosing `cmd.*` span and include the extension ID, version, and lifecycle
+event.
 
-`azd` core carries no product-specific telemetry semantics for these fields.
-The following rules are enforced by the host and are what this schema
-guarantees about the whole class:
+First-party fields are declared as exported `AttributeKey` variables in
+`cli/azd/extensions/telemetry/fields.go`. The current declarations are:
+
+| Extension | OTel Key | Classification | Purpose | Endpoint | Allowed values / event |
+|-----------|----------|----------------|---------|----------|------------------------|
+| `microsoft.azd.demo` | `ext.demo.mode` | SystemMetadata | FeatureInsight | `N/A` | `sample` on `demo.telemetry.reported` |
+| `microsoft.azd.demo` | `ext.demo.outcome` | SystemMetadata | FeatureInsight | `N/A` | `completed` on `demo.telemetry.reported` |
+| `azure.ai.agents` | `ext.agent.kind` | SystemMetadata | FeatureInsight | `N/A` | `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown` on `agent.context.resolved` |
+| `azure.ai.agents` | `ext.agent.harness` | SystemMetadata | FeatureInsight | `N/A` | `none`, `github_copilot_preview`, or `other` on `agent.context.resolved` |
+| `azure.ai.agents` | `ext.agent.operation` | SystemMetadata | FeatureInsight | `N/A` | Fixed extension command path on `agent.context.resolved` |
+| `azure.ai.agents` | `ext.route` | SystemMetadata | FeatureInsight | `N/A` | `inspector`, `playground`, or `suppressed` on `local_client.route.selected` |
+| `azure.ai.inspector` | `ext.stage` | SystemMetadata | FeatureInsight | `N/A` | `ui_ready` on `inspector.funnel.stage` |
+| `azure.ai.inspector` | `ext.outcome` | SystemMetadata | FeatureInsight | `N/A` | `succeeded` on `inspector.funnel.stage` |
+
+These fields share a classification because their reviewed values are bounded
+product enums. `SystemMetadata` and `FeatureInsight` are not defaults for an
+unknown or future `ext.*` field.
+
+The following rules define the runtime and source-governance boundaries:
 
 | Rule | Enforcement |
 |------|-------------|
@@ -289,16 +304,18 @@ guarantees about the whole class:
 | Size | At most 32 attributes per event; event name and keys at most 128 UTF-8 bytes; values at most 512 UTF-8 bytes |
 | Volume | At most 100 `ext.usage` spans per `azd` invocation across all extensions; calls beyond that are dropped without recording |
 | Values | Not enumerated or pattern-checked. The extension author owns what a value means and is responsible for keeping it low cardinality and free of customer content |
-| Classification | Always `SystemMetadata` |
-| Purpose | Always `FeatureInsight` |
+| Classification | Each first-party field has an explicit source declaration based on its actual semantics; the runtime does not assign one classification to the whole `ext.*` class |
+| Purpose | Each first-party field declares its actual collection purpose; `FeatureInsight` is not applied automatically |
 | Trust | `extension.id` and `extension.version` are derived from host-signed claims; `extension.source` and eligibility are checked against the installed record and verified source config, never from the request |
-| Review | Extension telemetry is reviewed when the extension is admitted to the official registry, under the same documentation, classification, and privacy rules as core fields. The eligibility rule above is what ties recording to that review |
+| Source validation | `go test ./extensions/telemetry` scans production Go source and rejects undeclared fields, dynamic keys, invalid metadata, and unsupported classifications using repository-local validation |
+| Review | Extension telemetry follows the same documented classification and content rules as core fields. Official-registry admission remains the runtime boundary |
 
 Reviewed first-party event contracts:
 
 | Extension | `extension.event` | Trigger | Extension attributes |
 |-----------|-------------------|---------|----------------------|
 | `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service; one event per distinct kind/harness classification in the invocation | `ext.agent.kind`: fixed enum `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown`; `ext.agent.harness`: fixed enum `none`, `github_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; values contain no agent names or customer content |
+| `microsoft.azd.demo` | `demo.telemetry.reported` | The user runs `azd demo telemetry` | `ext.demo.mode`: fixed enum `sample`; `ext.demo.outcome`: fixed enum `completed` |
 | `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; this precedes client availability, agent startup, and client launch | `ext.route`: fixed enum `inspector`, `playground`, or `suppressed`; suppression takes precedence |
 | `azure.ai.inspector` | `inspector.funnel.stage` | The Inspector SPA sends `setViewReady` after mounting | `ext.stage`: fixed enum `ui_ready`; `ext.outcome`: fixed enum `succeeded`; this does not indicate agent connection |
 
@@ -315,9 +332,9 @@ The installed extension identity and source information originate from local
 `azd` configuration. Eligibility is determined from the verified install
 source and is not a cryptographic provenance guarantee.
 
-When governing this data, treat `(extension.id, extension.version, key)` as
-the authoritative filter rather than assuming the client enforced the reviewed
-set on its own.
+The source inventory is not a runtime allowlist. When governing this data,
+treat `(extension.id, extension.version, key)` as the authoritative filter
+rather than assuming the client enforced the reviewed set on its own.
 
 ### Update
 

@@ -217,9 +217,12 @@ flowchart LR
   event becomes an `ext.usage` span sharing the command's trace, carrying
   the extension's identity plus the caller's event name and attributes. Core
   namespaces every caller attribute under `ext.` and bounds its size, but does
-  not enumerate the values. Only extensions whose configured source matches the
-  verified official `azd` registry name, type, and normalized URL are recorded
-  — see
+  not enumerate the values at runtime. First-party extension fields are
+  declared with classification metadata in
+  `cli/azd/extensions/telemetry/fields.go`; a source-only repository test blocks
+  undeclared or dynamically keyed attributes before release. Only extensions
+  whose configured source matches the verified official `azd` registry name,
+  type, and normalized URL are recorded — see
   [ADR-001](./adr-001-extension-telemetry-events.md).
 
 ## Consent & Privacy

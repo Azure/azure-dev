@@ -1,4 +1,4 @@
-# ADR-001: Extensions report named usage events, not declared fields
+# ADR-001: Extensions report named usage events with source-declared fields
 
 **Status:** Proposed
 
@@ -22,9 +22,10 @@ were tried and rejected.
    its own fields and intends to solve it with linting rather than a runtime
    allowlist, so extensions should not carry a second, heavier mechanism.
 
-The constraint is therefore: extensions report freely within a bounded shape,
-core owns identity and the attribute namespace, and content is governed the way
-core governs its own fields.
+The constraint is therefore: extensions report through a bounded runtime
+shape, core owns identity and the attribute namespace, and first-party content
+is declared and validated from source without turning the declaration into a
+runtime allowlist.
 
 That last part only works if there is a review to govern content. `ext.usage` is
 the first path where an extension supplies the strings rather than the host
@@ -40,7 +41,19 @@ records events from extensions admitted to the official registry.**
 
 - `ReportUsage(event_name, map<string, string> attributes)` replaces
   `ReportUsageAttribute(key, value)`. The extension names the event and supplies
-  the attributes; nothing is declared in advance.
+  the attributes. The protobuf does not carry classification metadata.
+- Every concrete field used by an in-repository first-party extension is
+  declared in `cli/azd/extensions/telemetry/fields.go` with its final `ext.*`
+  name, classification, purpose, and endpoint type.
+- `cli/azd/extensions/telemetry/fields_test.go` statically scans telemetry
+  payload construction in production Go source, including
+  `ReportUsageRequest` and the shared Foundry telemetry `Event`. Attribute maps
+  must be inline, and keys must be string literals or same-package compile-time
+  constants. An undeclared or invalid field fails the repository test with its
+  extension, file, and line.
+- The source inventory is not consulted by the running CLI. A classification
+  mistake stops development and CI, while released extension telemetry remains
+  best effort and cannot fail the user's command.
 - The host writes `extension.id`, `extension.version`, and `extension.source`
   from the signed claims and the installed record, and `extension.event` from
   the caller's event name. Because none of the identity fields are on the wire,
@@ -79,18 +92,20 @@ records events from extensions admitted to the official registry.**
 
 Removing the runtime allowlist does not remove content responsibility.
 Extension telemetry is subject to the same rules as core telemetry: fields are
-documented, classified, never carry customer content, and go through privacy
-review. That review happens when the extension is admitted to the official
-registry, not on every call — which is exactly why admission is also the gate.
+source-declared, documented, correctly classified, never carry customer
+content, and go through privacy review. The source validator provides the
+developer hard stop; official-registry admission remains the runtime gate.
 
 ## Consequences
 
 **Easier**
 
-- Adding a signal is an extension change. Neither `azd` core nor the registry
-  has to ship.
-- `azd` core contains zero product semantics for extension telemetry, and no
-  declaration validation code to maintain.
+- Adding a signal requires the extension change plus one shared Go declaration,
+  but no `azd` binary release. The catalog publisher reads declarations from
+  `azure-dev` main independently of the runtime.
+- Classification metadata uses the same `AttributeKey` model as core telemetry,
+  so there is no extension-specific manifest or schema format.
+- An undeclared field fails before release using repository-local validation.
 - A named event with individual attributes is directly queryable: filter on
   `extension.event`, then read `ext.*` from `customDimensions`. The previous
   one-key-per-call shape required stitching several spans together to
@@ -102,10 +117,12 @@ registry, not on every call — which is exactly why admission is also the gate.
 **More difficult**
 
 - An admitted extension can still put high-cardinality or sensitive data in a
-  value. The registry gate raises the floor but does not inspect content, so
-  that remains a review and documentation problem rather than a runtime one,
-  which matches how core fields are handled and is the direction core linting
-  is heading.
+  declared field's value. The source guard proves key coverage and metadata,
+  not the value at runtime, so bounded value types, review, and documentation
+  remain necessary.
+- Attribute construction is intentionally static: first-party Go extensions
+  cannot assemble attribute maps or keys dynamically because doing so would
+  make complete source discovery impossible.
 - Extension authors cannot see their events land while developing against a
   locally installed build, because a `dev` or file-based source does not pass
   the gate. They can still verify the call path: `ReportUsage` succeeds and
@@ -126,9 +143,10 @@ registry, not on every call — which is exactly why admission is also the gate.
 
 ## Alternatives Considered
 
-**Keep the allowlist in core.** Simplest to review, and it keeps every value in
-one Go file. Rejected because it puts one product's vocabulary in the CLI that
-hosts all products, and because it forces a core release for each new field.
+**Keep a runtime allowlist in core.** Rejected because it would put product
+vocabulary into the released CLI and force users to upgrade `azd` before a new
+extension field could be recorded. The adopted source inventory is read by
+development tooling and the catalog publisher, not by the runtime.
 
 **Declare fields and allowed values in the registry entry.** The design this
 ADR replaces. It removed the core release dependency but kept per-field

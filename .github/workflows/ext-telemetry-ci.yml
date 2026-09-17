@@ -1,0 +1,30 @@
+name: ext-telemetry-ci
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  telemetry-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli/azd
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: cli/azd/go.mod
+          cache-dependency-path: cli/azd/go.sum
+
+      - name: Validate extension telemetry declarations
+        run: go test ./extensions/telemetry

@@ -490,7 +490,9 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `extension.version` | string | Extension version |
 | `extension.grpc.legacy_call_count` | measurement | Number of RPCs made through the temporary legacy `/azdext.*` compatibility bridge during the command |
 | `extension.event` | string | Extension-chosen usage event on `ext.usage`, or the host-defined lifecycle event on a failed lifecycle-hook `cmd.*` span |
-| `ext.<key>` | string | One extension-supplied attribute on an `ext.usage` span. The key after the `ext.` prefix and the value are chosen by the extension |
+| `ext.<key>` | string | One extension-supplied attribute on an `ext.usage` span. First-party concrete keys are declared in `cli/azd/extensions/telemetry/fields.go` |
+| `ext.demo.mode` | string | Demo telemetry mode: currently `sample` (`demo.telemetry.reported`) |
+| `ext.demo.outcome` | string | Demo telemetry outcome: currently `completed` (`demo.telemetry.reported`) |
 | `ext.route` | string | Local-client route selected by `azure.ai.agents`: `inspector`, `playground`, or `suppressed` (`local_client.route.selected`) |
 | `ext.agent.kind` | string | Agent kind resolved by `azure.ai.agents`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown` (`agent.context.resolved`) |
 | `ext.agent.harness` | string | Prompt-agent harness classification: `none`, `github_copilot_preview`, or `other` (`agent.context.resolved`) |
@@ -518,10 +520,16 @@ extension chooses the event name, the key suffixes, and the values. Failed
 extension commands instead carry `extension.id` and `extension.version` on
 the failed `ext.run` span and do not set `extension.event`. Failed lifecycle
 hooks carry `extension.id`, `extension.version`, and the lifecycle event on the
-enclosing `cmd.*` span. The whole class is classified as `SystemMetadata` for
-`FeatureInsight`. Extension authors are responsible
-for keeping usage values low cardinality and free of customer content, and for
-having them privacy reviewed with their extension.
+enclosing `cmd.*` span.
+
+Each concrete first-party field has its own classification, purpose, and
+endpoint declaration. The currently declared fields are bounded enums
+classified as `SystemMetadata` for `FeatureInsight` with endpoint `N/A`; that
+is a decision about those fields, not a default for the whole `ext.*` class.
+The repository source validator blocks undeclared or dynamically keyed
+attributes before release. Extension authors remain responsible for keeping
+values low cardinality and free of customer content, and for having them
+privacy reviewed with their extension.
 
 Only extensions whose configured `azd` source matches the verified official
 registry name, type, and normalized URL produce these spans, which is what ties
@@ -535,6 +543,7 @@ Reviewed first-party extension usage events currently include:
 | Extension | `extension.event` | Trigger | Dynamic attributes |
 |-----------|-------------------|---------|--------------------|
 | `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service | `ext.agent.kind`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown`; `ext.agent.harness`: `none`, `github_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; no agent names or customer content |
+| `microsoft.azd.demo` | `demo.telemetry.reported` | The user runs `azd demo telemetry` | `ext.demo.mode=sample`; `ext.demo.outcome=completed` |
 | `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; emitted before client availability, agent startup, and client launch | `ext.route`: `inspector`, `playground`, or `suppressed`; suppression takes precedence |
 | `azure.ai.inspector` | `inspector.funnel.stage` | The Inspector SPA sends `setViewReady` after mounting | `ext.stage=ui_ready`; `ext.outcome=succeeded`; this does not indicate agent connection |
 

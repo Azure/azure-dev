@@ -66,7 +66,7 @@ The set of features an extension provides. Valid capabilities are: `custom-comma
 
 ### Extension Usage Event
 
-A named event an extension reports through `TelemetryService.ReportUsage`, carrying an event name and an arbitrary `map<string, string>` of attributes. `azd` core stamps the extension's identity, prefixes every caller-supplied key with `ext.`, and bounds size and volume only; the extension author owns what the values mean. Because those values are never reviewed at runtime, only extensions whose configured source matches the verified official `azd` registry name, type, and normalized URL are recorded — others get a successful response with `accepted` set to `false`. See [ADR-001](../architecture/adr-001-extension-telemetry-events.md).
+A named event an extension reports through `TelemetryService.ReportUsage`, carrying an event name and a `map<string, string>` of attributes. `azd` core stamps the extension's identity, prefixes every caller-supplied key with `ext.`, and bounds size and volume only. First-party extensions declare each concrete field and its classification metadata in `cli/azd/extensions/telemetry/fields.go`; a source-only test blocks undeclared or dynamically keyed attributes before release. Runtime recording remains limited to extensions whose configured source matches the verified official `azd` registry name, type, and normalized URL — others get a successful response with `accepted` set to `false`. See [ADR-001](../architecture/adr-001-extension-telemetry-events.md).
 
 ### Provisioning Provider
 

@@ -29,11 +29,12 @@ A privacy review **must** be triggered when any of the following conditions are 
 
 1. **New telemetry field** — Any new attribute key added to
    `cli/azd/internal/tracing/fields/fields.go` or emitted through tracing APIs.
-   Extension-supplied `ext.*` attributes are reviewed with the extension that
-   reports them rather than here, but the same rules apply to their content.
-   Only extensions whose configured source matches the verified official `azd`
-   registry name, type, and normalized URL can record these attributes, so
-   that admission is where the review has to happen.
+   First-party extension attributes are declared in
+   `cli/azd/extensions/telemetry/fields.go` and reviewed with the extension that
+   reports them. The same classification rules apply to their content. Only
+   extensions whose configured source matches the verified official `azd`
+   registry name, type, and normalized URL can record these attributes at
+   runtime.
 
 2. **New event** — Any new event constant added to `cli/azd/internal/tracing/events/events.go` or new span name
    introduced via `tracing.Start`.
@@ -218,13 +219,11 @@ governed by the extension privacy review described below, not by OpenTelemetry r
 
 When adding a new telemetry field:
 
-1. **Define the field** in `internal/tracing/fields/fields.go`. Extension
-   telemetry is different: an extension supplies its own keys and values at
-   runtime, and the host classifies the whole `ext.*` class through
-   `ExtensionUsageAttribute`. The extension author owns each value's content
-   and must apply this checklist to it during their own review, which the host
-   enforces by recording `ext.usage` only when the configured source matches
-   the verified official `azd` registry name, type, and normalized URL.
+1. **Define the field** in `internal/tracing/fields/fields.go`. For a
+   first-party extension `ReportUsage` attribute, define the final `ext.*` key
+   in `extensions/telemetry/fields.go`. The source validator requires every
+   production Go usage to have one declaration, while the runtime continues to
+   accept the existing bounded attribute map.
 2. **Assign classification** — use the decision tree above to determine the correct classification.
 3. **Assign purpose** — select one or more from: `FeatureInsight`, `BusinessInsight`, `PerformanceAndHealth`.
 4. **Determine hashing** — apply hashing rules above.
@@ -247,13 +246,14 @@ Copy this checklist into your PR description when making telemetry changes.
 ## Telemetry Change Checklist
 
 ### New Fields
-- [ ] Core field defined in `fields/fields.go`; extension-supplied `ext.*` values are covered by the extension's own review instead
+- [ ] Core field defined in `fields/fields.go`, or first-party extension field defined in `extensions/telemetry/fields.go`
 - [ ] Field has the correct classification and purpose
 - [ ] Field documented in `docs/specs/metrics-audit/telemetry-schema.md`
 - [ ] Hashing applied where required (user-provided values, names, paths)
 - [ ] Measurement fields use correct OTel type (Int64, Float64)
 - [ ] Enum values documented with allowed value set
 - [ ] Extension enum values contain no user-derived or customer content
+- [ ] `go test ./extensions/telemetry` passes for extension `ReportUsage` changes
 
 ### New Events
 - [ ] Event constant defined in `events/events.go`

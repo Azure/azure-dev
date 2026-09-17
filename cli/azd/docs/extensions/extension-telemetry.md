@@ -19,6 +19,14 @@ and response types. Call `ReportUsage` with an event name and the attributes
 you care about. `azd` core owns the identity fields, namespaces your attributes,
 and bounds their size and number. It does not inspect what they mean.
 
+First-party extensions in this repository must declare every concrete
+`ext.*` field in
+[`extensions/telemetry/fields.go`](../../extensions/telemetry/fields.go).
+A PR check scans telemetry payload construction in production Go source and
+checks every attribute against that inventory before the extension is
+released. This keeps classification failures in development and out of the
+user's command path.
+
 The reserved `azd` source is eligible only when its name, source type, and
 normalized URL match the official registry. This is a configuration-based
 admission check, not a cryptographic provenance guarantee.
@@ -53,11 +61,12 @@ may still run on an older host and receive `Unimplemented`.
 | `extension.version` | Version of the current extension, added automatically |
 | `extension.source` | Source of the current extension, added automatically |
 | `extension.event` | Event name chosen by the extension |
-| `ext.*` | Unstructured collection of extension-chosen keys and values |
+| `ext.*` | Extension-chosen keys and values; first-party fields are declared and classified in `extensions/telemetry/fields.go` |
 
 The extension chooses the event name and every `ext.*` key and value. `azd`
 enforces the `ext.` prefix, the bounds below, and the official-registry
-requirement.
+requirement at runtime. The repository source test separately enforces the
+first-party field inventory during development.
 
 `azd` cannot write your attribute keys unprefixed, and you cannot overwrite the
 identity fields — a key of `extension.id` is recorded as `ext.extension.id`.
@@ -85,7 +94,8 @@ timeout, does not retry, treats `Accepted: false` as a normal result, and writes
 only the event name and gRPC status code to the debug log when reporting fails.
 It never logs attribute values or raw transport error details. Each Foundry
 extension should keep its approved event builders and bounded value types in
-the extension that owns those product semantics.
+the extension that owns those product semantics, and declare each attribute in
+the shared field inventory.
 
 Other extension families can call the generated client directly until they
 have an appropriate shared package:
@@ -118,6 +128,64 @@ There is a complete working example in the demo extension:
 [`extensions/microsoft.azd.demo/internal/cmd/telemetry.go`](../../extensions/microsoft.azd.demo/internal/cmd/telemetry.go),
 runnable with `azd demo telemetry`.
 
+## Declare and validate attributes
+
+Every first-party attribute must have one exported, package-level
+`fields.AttributeKey` declaration in
+[`extensions/telemetry/fields.go`](../../extensions/telemetry/fields.go). The
+declaration uses the final property name recorded by the host:
+
+```go
+var DeployMode = fields.AttributeKey{
+	Key:            attribute.Key("ext.deploy.mode"),
+	Classification: fields.SystemMetadata,
+	Purpose:        fields.FeatureInsight,
+	Endpoint:       "N/A",
+}
+```
+
+The extension still sends the suffix:
+
+```go
+Attributes: map[string]string{
+	"deploy.mode": "container",
+}
+```
+
+Choose classification, purpose, and endpoint from what the property actually
+contains and why it is collected. Do not copy `SystemMetadata` or
+`FeatureInsight` merely because another extension field uses them. Customer
+content is rejected and must not be sent through telemetry. Use classification,
+purpose, and endpoint values already established by core `azd` fields.
+`SystemMetadata` must use `N/A`; every other classification must use a
+non-`N/A` endpoint.
+
+Set `Attributes` only in the telemetry payload literal, using `nil` or an
+inline `map[string]string` literal. Post-construction access through
+`Attributes` or `GetAttributes` is rejected because aliases and helper
+mutations can hide fields from static validation. Payload literals must use
+keyed fields. Attribute keys must be string literals or same-package
+compile-time string constants so the source validator can resolve them.
+Generic container literals, re-exported positional payload types, and
+type-elided payloads inside named wrapper containers are not supported in
+packages that define extension telemetry. Use a concrete keyed telemetry
+payload literal instead. Run the validation from `cli/azd`:
+
+```bash
+go test ./extensions/telemetry
+```
+
+The test scans production Go source under `extensions/`, verifies every final
+`ext.*` key has one valid declaration, and fails with the extension, file, and
+line for an undeclared key. It analyzes repository source only and does not run
+extensions or call external services. The extension CI workflow runs the same
+test.
+
+The inventory is not a runtime allowlist. Once a declaration merges to
+`azure-dev` main, `azd-queries` can publish it without waiting for a core `azd`
+release, while released extensions continue to use the existing best-effort
+`ReportUsage` behavior.
+
 ## Bounds
 
 | Rule | Limit |
@@ -147,6 +215,8 @@ extension author:
   unusable for aggregation.
 - **Document your events** the way `azd` core documents its own fields: what
   each event and attribute means and why you need it.
+- **Declare every attribute** in `extensions/telemetry/fields.go` with the
+  classification, purpose, and endpoint that match its actual semantics.
 - **Get a privacy review** as part of reviewing your extension, following the
   [telemetry privacy review checklist](../../../../docs/specs/metrics-audit/privacy-review-checklist.md).
 

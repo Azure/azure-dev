@@ -290,6 +290,11 @@ public reference, and downstream Kusto/LENS consumers drift out of sync. Verify 
   `CustomerContent`) and a `Purpose` (`FeatureInsight` / `BusinessInsight` /
   `PerformanceAndHealth`); the classifier also reads the optional `Endpoint` and `IsMeasurement`
   members.
+- **First-party extension field** — keep the runtime `ReportUsage` map key as a string literal or
+  same-package compile-time constant and declare its final `ext.*` name as an exported
+  `AttributeKey` in `cli/azd/extensions/telemetry/fields.go`. Run
+  `go test ./extensions/telemetry`; the source validator rejects undeclared or dynamically keyed
+  fields, missing classification/purpose/endpoint metadata, measurements, and Customer Content.
 - **Event** — define a constant in `cli/azd/internal/tracing/events/events.go` following the
   `prefix.noun.verb` value convention. It must be an exported string `const` whose Go identifier
   contains `Event` (end it with `Prefix` for a prefix-match group) so the classifier

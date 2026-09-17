@@ -44,8 +44,8 @@ type FoundryProjectInfo struct {
 
 // Endpoint returns the Foundry project data-plane endpoint derived from the
 // account and project names, or "" when the project is nil or either name is
-// missing. The endpoint is the brownfield signal written onto the
-// azure.ai.project service so provision connects to the existing project.
+// missing. The projects extension uses this endpoint to select an
+// existing project during authoring.
 func (p *FoundryProjectInfo) Endpoint() string {
 	if p == nil || p.AccountName == "" || p.ProjectName == "" {
 		return ""
@@ -1387,6 +1387,7 @@ func configureDeferredInitAzureContext(
 	envName string,
 	azureContext *azdext.AzureContext,
 	hasModelResources bool,
+	preserveProjectState bool,
 ) error {
 	missing := missingInitAzureContextValues(azureContext)
 	fmt.Printf("%s", output.WithWarningFormat(
@@ -1411,7 +1412,8 @@ func configureDeferredInitAzureContext(
 			"Set the missing values, then re-run init to resolve model deployments automatically.",
 		))
 		fmt.Println(output.WithGrayFormat(
-			"To configure deployments manually, add a deployment under the agent service config in azure.yaml, for example:",
+			"To configure deployments manually, add a deployment under the " +
+				"azure.ai.project service in azure.yaml, for example:",
 		))
 		fmt.Println(output.WithGrayFormat("  deployments:"))
 		fmt.Println(output.WithGrayFormat("    - name: <deployment-name>"))
@@ -1424,11 +1426,22 @@ func configureDeferredInitAzureContext(
 		fmt.Println(output.WithGrayFormat("        capacity: 1"))
 	}
 
-	if err := setEnvValue(ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
-		return fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
-	}
-	if err := updatePendingProjectSignal(ctx, azdClient, envName, false); err != nil {
-		log.Printf("warning: failed to update project provision signal: %v", err)
+	if preserveProjectState {
+		if err := setEnvValue(
+			ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "true",
+		); err != nil {
+			return fmt.Errorf("failed to preserve existing project state: %w", err)
+		}
+		if err := updatePendingProjectSignal(ctx, azdClient, envName, true); err != nil {
+			log.Printf("warning: failed to clear project provision signal: %v", err)
+		}
+	} else {
+		if err := setEnvValue(ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
+			return fmt.Errorf("failed to set USE_EXISTING_AI_PROJECT: %w", err)
+		}
+		if err := updatePendingProjectSignal(ctx, azdClient, envName, false); err != nil {
+			log.Printf("warning: failed to update project provision signal: %v", err)
+		}
 	}
 
 	return nil

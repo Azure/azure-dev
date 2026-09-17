@@ -163,6 +163,10 @@ func addAgentServiceDependency(
 	if err != nil {
 		return false, err
 	}
+	if currentUses == nil {
+		// A service-level $ref may supply the effective uses list.
+		currentUses = slices.Clone(agentService.GetUses())
+	}
 	if slices.Contains(currentUses, dependencyServiceName) {
 		return false, nil
 	}

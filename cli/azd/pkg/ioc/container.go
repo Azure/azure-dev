@@ -37,9 +37,11 @@ func NewNestedContainer(parent *NestedContainer) *NestedContainer {
 	current := container.New()
 
 	if parent != nil {
-		// Copy the bindings to the new container
-		// The bindings hold the concrete instance of singleton registrations
-		maps.Copy(current, parent.inner)
+		for registeredType, bindings := range parent.inner {
+			// clone bindings as well, otherwise changes in child scopes will
+			// actually modify the map for the parent!
+			current[registeredType] = maps.Clone(bindings)
+		}
 	}
 
 	instance := &NestedContainer{

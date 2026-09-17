@@ -24,6 +24,7 @@ func TestProtoContainerRuntime(t *testing.T) {
 	}{
 		{name: "prefers docker", available: map[string]bool{"docker": true, "wslc.exe": true}, want: "docker"},
 		{name: "falls back to wslc", available: map[string]bool{"wslc.exe": true}, want: "wslc.exe"},
+		{name: "neither available", available: map[string]bool{}, wantErr: true},
 	}
 
 	for _, test := range tests {

@@ -510,7 +510,7 @@ func TestGetExecutionEnvironment_Agency(t *testing.T) {
 					require.Equal(t, tt.want, attr.Value.AsString())
 				}
 				if tt.sessionID != nil && *tt.sessionID != "" {
-					require.NotContains(t, attr.Value.Emit(), *tt.sessionID)
+					require.NotContains(t, attr.Value.String(), *tt.sessionID)
 				}
 			}
 		})
@@ -540,7 +540,7 @@ func TestNewReturnsCanonicalResource(t *testing.T) {
 	attributes := map[attribute.Key]attribute.Value{}
 	for _, kv := range r.Attributes() {
 		attributes[kv.Key] = kv.Value
-		require.NotContains(t, kv.Value.Emit(), "synthetic-agency-canonical-resource-session")
+		require.NotContains(t, kv.Value.String(), "synthetic-agency-canonical-resource-session")
 	}
 
 	expectedKeys := []attribute.Key{

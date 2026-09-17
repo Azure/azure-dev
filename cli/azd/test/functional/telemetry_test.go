@@ -110,6 +110,7 @@ func Test_CLI_Telemetry_AgencyAttribution(t *testing.T) {
 			defer cancel()
 
 			// Run directly because the CLI helper unconditionally disables agent detection.
+			/* #nosec G204 - Executes the harness-selected test binary with fixed arguments and a temporary trace path. */
 			cmd := exec.CommandContext(ctx, cli.AzdPath, "config", "list", "--trace-log-file", tracePath)
 			cmd.Dir = dir
 			cmd.Env = append(os.Environ(), cli.Env...)

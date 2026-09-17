@@ -69,8 +69,8 @@ No shared ingestion function needs modification. Validate this query against the
 authorized destination and adapt table/column aliases for cooked Kusto/LENS data.
 It has not been run against production customer data in this change.
 The [synthetic fixture](operation-telemetry-fixture.kql) can be run without customer
-tables: it expects four completions, two successes, two failures and one unclassified
-failure, even though one mixed deploy has duplicate/multiple marker rows. This is
+tables: it expects four completions, two successes, two failures, one cancellation
+and one unclassified failure, even though one mixed deploy has duplicate/multiple marker rows. This is
 a query-engine acceptance fixture, not a claim of local Kusto execution.
 
 ```kusto
@@ -112,7 +112,7 @@ Completed
 | summarize total=count(), successes=countif(succeeded == true),
             failures=countif(succeeded == false), missingResult=countif(isnull(succeeded)),
             cancellations=countif(code startswith "user.canceled"
-              or code in ("internal.operation_cancelled", "internal.operation_aborted"))
+              or code in ("ext.user.cancelled", "internal.operation_cancelled", "internal.operation_aborted"))
     by scope, operation, attribution, agentTypes, phoneConfiguration
 | extend successRate = iff(successes + failures > 0, todouble(successes)/(successes+failures), real(null)),
          failureRate = iff(successes + failures > 0, todouble(failures)/(successes+failures), real(null))

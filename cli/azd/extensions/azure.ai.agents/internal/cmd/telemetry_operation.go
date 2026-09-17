@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"azureaiagent/internal/project"
 	agentTelemetry "azureaiagent/internal/telemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -146,10 +147,7 @@ func operationServiceClass(svc *azdext.ServiceConfig) agentTelemetry.OperationCl
 	if svc == nil || strings.TrimSpace(os.Getenv("AGENT_DEFINITION_PATH")) != "" {
 		return unknown // do not read external definitions just to collect telemetry
 	}
-	properties := svc.GetAdditionalProperties()
-	if len(properties.GetFields()) == 0 {
-		properties = svc.GetConfig()
-	}
+	properties := project.ServiceConfigProps(svc)
 	return agentTelemetry.ClassifyOperation(properties.AsMap())
 }
 

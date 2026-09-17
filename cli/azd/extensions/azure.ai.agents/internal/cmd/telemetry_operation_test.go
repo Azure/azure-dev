@@ -146,6 +146,38 @@ func TestOperationMarkerDoesNotChangeOriginalContextContract(t *testing.T) {
 	require.Equal(t, before, after)
 }
 
+func TestOperationServiceClassPropertyPrecedence(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+	for _, tt := range []struct {
+		name           string
+		inline, legacy map[string]any
+		want           string
+	}{
+		{"legacy-with-unrelated-inline", map[string]any{"custom": "private-value"},
+			map[string]any{"kind": "voice", "modelType": "self_deployed"}, "voice_byom"},
+		{"inline-kind-wins", map[string]any{"kind": "hosted"},
+			map[string]any{"kind": "voice"}, "hosted"},
+		{"legacy-only", nil, map[string]any{"kind": "prompt"}, "prompt"},
+		{"no-kind", map[string]any{"custom": "private-value"}, nil, "unknown"},
+		{"unresolved-ref", map[string]any{"kind": "voice", "$ref": "private-path"},
+			map[string]any{"kind": "prompt"}, "unknown"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			inline, err := structpb.NewStruct(tt.inline)
+			require.NoError(t, err)
+			legacy, err := structpb.NewStruct(tt.legacy)
+			require.NoError(t, err)
+			svc := &azdext.ServiceConfig{Host: AiAgentHost, AdditionalProperties: inline, Config: legacy}
+			before, err := json.Marshal(svc)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, operationServiceClass(svc).Category)
+			after, err := json.Marshal(svc)
+			require.NoError(t, err)
+			require.Equal(t, before, after)
+		})
+	}
+}
+
 type operationTelemetryServer struct {
 	azdext.UnimplementedTelemetryServiceServer
 	mu     sync.Mutex

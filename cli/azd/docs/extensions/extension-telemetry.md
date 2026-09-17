@@ -133,8 +133,7 @@ runnable with `azd demo telemetry`.
 Every first-party attribute must have one exported, package-level
 `fields.AttributeKey` declaration in
 [`extensions/telemetry/fields.go`](../../extensions/telemetry/fields.go). The
-declaration uses the final property name recorded by the host and must appear
-under its owning extension in `fieldsByExtension`:
+declaration uses the final property name recorded by the host:
 
 ```go
 var DeployMode = fields.AttributeKey{
@@ -143,11 +142,12 @@ var DeployMode = fields.AttributeKey{
 	Purpose:        fields.FeatureInsight,
 	Endpoint:       "N/A",
 }
-
-var fieldsByExtension = map[string][]fields.AttributeKey{
-	"contoso.deploy": {DeployMode},
-}
 ```
+
+Declarations form a shared first-party field schema and are not exclusive to
+the extension that introduced them. Another first-party extension may reuse an
+existing key when its meaning, allowed values, classification, and purpose are
+identical. If any of those differ, declare a distinct key.
 
 The extension still sends the suffix:
 
@@ -180,11 +180,11 @@ payload literal instead. Run the validation from `cli/azd`:
 go test ./extensions/telemetry
 ```
 
-The test scans production Go source under `extensions/`, verifies every
-extension and final `ext.*` key pair has one valid declaration, and fails with
-the extension, file, and line for an undeclared key or a key owned by another
-extension. It analyzes repository source only and does not run extensions or
-call external services. The extension CI workflow runs the same test.
+The test scans production Go source under `extensions/`, verifies every final
+`ext.*` key has one valid declaration, and fails with the extension, file, and
+line for an undeclared key. It analyzes repository source only and does not run
+extensions or call external services. The extension CI workflow runs the same
+test.
 
 The inventory is not a runtime allowlist. Once a declaration merges to
 `azure-dev` main, `azd-queries` can publish it without waiting for a core `azd`

@@ -19,7 +19,7 @@ import (
 // The contract is:
 //  1. fields.go contains valid field declarations.
 //  2. production extension source uses statically discoverable attribute keys.
-//  3. every discovered extension/key pair has exactly one declaration.
+//  3. every discovered key has exactly one declaration.
 func TestExtensionTelemetryDeclarationsAreValid(t *testing.T) {
 	t.Parallel()
 
@@ -44,7 +44,7 @@ func TestEveryExtensionTelemetryUsageIsDeclared(t *testing.T) {
 	if len(diagnostics) > 0 {
 		t.Fatalf(
 			"extension telemetry validation failed:\n\n%s\n\n"+
-				"Declare every final ext.* key with its owning extension, classification, purpose, and endpoint in "+
+				"Declare every final ext.* key with its classification, purpose, and endpoint in "+
 				"cli/azd/extensions/telemetry/fields.go. Define Attributes inline in a keyed "+
 				"payload literal, with string-literal or same-package compile-time constant keys.",
 			strings.Join(diagnostics, "\n"),
@@ -52,26 +52,39 @@ func TestEveryExtensionTelemetryUsageIsDeclared(t *testing.T) {
 	}
 }
 
-func TestExtensionTelemetryUsageMustMatchDeclarationOwner(t *testing.T) {
+func TestValidateExtensionTelemetryUsages(t *testing.T) {
 	t.Parallel()
 
-	diagnostics := validateExtensionTelemetryUsages(
-		[]telemetryUsage{{
-			extension: "microsoft.azd.demo",
-			key:       "route",
-			path:      "microsoft.azd.demo/internal/cmd/telemetry.go",
-			line:      42,
-		}},
-		map[string]fieldDeclaration{
-			"ext.route": {
-				extension: "azure.ai.agents",
-				key:       "ext.route",
-			},
-		},
-	)
+	declarations := map[string]fieldDeclaration{
+		"ext.shared.mode": {key: "ext.shared.mode"},
+	}
 
-	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], `"ext.route" is declared for "azure.ai.agents"`)
+	t.Run("declared field can be shared", func(t *testing.T) {
+		diagnostics := validateExtensionTelemetryUsages(
+			[]telemetryUsage{
+				{extension: "contoso.first", key: "shared.mode"},
+				{extension: "contoso.second", key: "shared.mode"},
+			},
+			declarations,
+		)
+
+		require.Empty(t, diagnostics)
+	})
+
+	t.Run("undeclared field is rejected", func(t *testing.T) {
+		diagnostics := validateExtensionTelemetryUsages(
+			[]telemetryUsage{{
+				extension: "contoso.first",
+				key:       "undeclared.mode",
+				path:      "contoso.first/telemetry.go",
+				line:      42,
+			}},
+			declarations,
+		)
+
+		require.Len(t, diagnostics, 1)
+		require.Contains(t, diagnostics[0], `"ext.undeclared.mode" is not declared`)
+	})
 }
 
 func validateExtensionTelemetryUsages(
@@ -81,22 +94,7 @@ func validateExtensionTelemetryUsages(
 	var diagnostics []string
 	for _, usage := range usages {
 		finalKey := fields.ExtensionAttributePrefix + usage.key
-		declaration, ok := declarations[finalKey]
-		if ok && declaration.extension == usage.extension {
-			continue
-		}
-
-		if ok {
-			diagnostics = append(diagnostics, fmt.Sprintf(
-				"%s:%d: %s uses extension telemetry attribute %q, but %q is declared for %q in "+
-					"cli/azd/extensions/telemetry/fields.go",
-				usage.path,
-				usage.line,
-				usage.extension,
-				usage.key,
-				finalKey,
-				declaration.extension,
-			))
+		if _, ok := declarations[finalKey]; ok {
 			continue
 		}
 

@@ -278,9 +278,13 @@ the enclosing `cmd.*` span and include the extension ID, version, and lifecycle
 event.
 
 First-party fields are declared as exported `AttributeKey` variables in
-`cli/azd/extensions/telemetry/fields.go`. The current declarations are:
+`cli/azd/extensions/telemetry/fields.go`. Declarations are keyed by final OTel
+field name and may be reused by multiple first-party extensions when the
+meaning, allowed values, classification, and purpose are identical. The
+extension column lists the current emitter, not an exclusive owner. The current
+declarations are:
 
-| Extension | OTel Key | Classification | Purpose | Endpoint | Hashed | Measurement | Allowed values / event |
+| Current extension | OTel Key | Classification | Purpose | Endpoint | Hashed | Measurement | Allowed values / event |
 |-----------|----------|----------------|---------|----------|--------|-------------|------------------------|
 | `microsoft.azd.demo` | `ext.demo.mode` | SystemMetadata | FeatureInsight | `N/A` | No | No | `sample` on `demo.telemetry.reported` |
 | `microsoft.azd.demo` | `ext.demo.outcome` | SystemMetadata | FeatureInsight | `N/A` | No | No | `completed` on `demo.telemetry.reported` |

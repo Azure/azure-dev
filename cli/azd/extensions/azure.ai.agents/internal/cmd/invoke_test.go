@@ -969,6 +969,7 @@ func newInvokeRemoteContextTestAzdServer(
 	t *testing.T,
 	projectServer *helpersProjectServer,
 	environmentServer azdext.EnvironmentServiceServer,
+	accountServers ...azdext.AccountServiceServer,
 ) string {
 	t.Helper()
 
@@ -976,6 +977,9 @@ func newInvokeRemoteContextTestAzdServer(
 	azdext.RegisterProjectServiceServer(grpcServer, projectServer)
 	azdext.RegisterEnvironmentServiceServer(grpcServer, environmentServer)
 	azdext.RegisterUserConfigServiceServer(grpcServer, newInvokeUserConfigServer())
+	if len(accountServers) > 0 {
+		azdext.RegisterAccountServiceServer(grpcServer, accountServers[0])
+	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

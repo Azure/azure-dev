@@ -10,6 +10,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 )
 
 const invokeLatencyHeaderPrefix = "x-ms-debug-latency-"
@@ -31,6 +34,21 @@ var invokeLatencyFields = [...]struct {
 type invokeLatency struct {
 	headers      http.Header
 	platformOnly bool
+}
+
+func (a *InvokeAction) validateDebugLatencyRoute(protocol agent_api.AgentProtocol, isPrompt bool) error {
+	if !a.debugLatencyExplicit || !a.flags.debugLatency {
+		return nil
+	}
+	if !a.flags.local && !isPrompt &&
+		(protocol == agent_api.AgentProtocolResponses || protocol == agent_api.AgentProtocolInvocations) {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeConflictingArguments,
+		"--debug-latency=true requires a remote Hosted Agent using responses or invocations",
+		"omit --debug-latency or use --debug-latency=false for local, A2A, or prompt agents",
+	)
 }
 
 func newInvokeLatency(req *http.Request, enabled, platformOnly bool) *invokeLatency {

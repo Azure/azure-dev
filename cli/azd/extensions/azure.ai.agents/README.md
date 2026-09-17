@@ -155,6 +155,9 @@ Use `azd ai agent invoke --debug-latency=false "Hello"` to disable collection an
 the summary. The setting is independent of the global `--debug` logging flag.
 `--output raw` includes the returned HTTP headers without adding a formatted
 summary. Local, prompt-agent, and A2A invokes do not request platform diagnostics.
+Explicitly enabling diagnostics with `--debug-latency` or `--debug-latency=true`
+on these routes is rejected after route resolution. Omit the flag or use
+`--debug-latency=false` to invoke them without platform diagnostics.
 
 `Client elapsed` measures the client-observed invocation duration, including
 response reading. It replaces the previous `Server responded in ... (first byte: ...)`

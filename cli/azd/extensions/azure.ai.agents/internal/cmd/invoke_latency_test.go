@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -385,13 +387,18 @@ func TestResponsesRemoteLatency(t *testing.T) {
 					message: "hello", protocol: "responses", outputFmt: format, debugLatency: tt.enabled,
 					longRunning: tt.longRunning, noWait: tt.noWait, session: "sess_test", conversation: "conv_test",
 				},
-				credential: responseTestCredential{},
+				credential:           responseTestCredential{},
+				debugLatencyExplicit: true,
+				endpoint: &parsedAgentEndpoint{
+					ProjectEndpoint: server.URL, AgentName: "agent", APIVersion: "v1",
+					Protocol: agent_api.AgentProtocolResponses,
+				},
 				resolvedRemoteContext: &remoteContext{
 					projectEndpoint: server.URL, name: "agent", serviceName: "agent", apiVersion: "v1",
 				},
 			}
 			var invokeErr error
-			output := withCapturedStdout(t, func() { invokeErr = action.responsesRemote(t.Context()) })
+			output := withCapturedStdout(t, func() { invokeErr = action.Run(t.Context()) })
 			require.EqualValues(t, 1, calls.Load(), "latency must not add a diagnostic request")
 			if tt.httpError {
 				require.ErrorContains(t, invokeErr, "HTTP 500")
@@ -456,13 +463,18 @@ func TestInvocationsRemoteLatency(t *testing.T) {
 						flags: &invokeFlags{
 							message: "hello", protocol: "invocations", outputFmt: format, debugLatency: enabled,
 						},
-						credential: responseTestCredential{},
+						credential:           responseTestCredential{},
+						debugLatencyExplicit: true,
+						endpoint: &parsedAgentEndpoint{
+							ProjectEndpoint: server.URL, AgentName: "agent", APIVersion: "v1",
+							Protocol: agent_api.AgentProtocolInvocations,
+						},
 						resolvedRemoteContext: &remoteContext{
 							projectEndpoint: server.URL, name: "agent", apiVersion: "v1",
 						},
 					}
 					var invokeErr error
-					output := withCapturedStdout(t, func() { invokeErr = action.invocationsRemote(t.Context()) })
+					output := withCapturedStdout(t, func() { invokeErr = action.Run(t.Context()) })
 					require.NoError(t, invokeErr)
 					require.EqualValues(t, 1, calls.Load(), "latency must not add a diagnostic request")
 					assert.Contains(t, output, "agent-result")

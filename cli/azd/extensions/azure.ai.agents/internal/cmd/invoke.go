@@ -73,6 +73,7 @@ var createInvokeVersionSession = createInvokeVersionSessionImpl
 type InvokeAction struct {
 	flags                 *invokeFlags
 	noPrompt              bool
+	debugLatencyExplicit  bool
 	endpoint              *parsedAgentEndpoint
 	clientHeaders         http.Header
 	protocolServiceName   string
@@ -143,6 +144,8 @@ by default. A compact summary is shown after a successful invocation when the
 service returns timing headers. Use --debug-latency=false to disable collection
 and the summary. This is independent of the global --debug logging flag.
 Local, prompt-agent, and a2a invokes do not collect platform latency.
+Explicit --debug-latency=true is rejected for these routes; omit the flag
+or use --debug-latency=false.
 Raw output includes the returned headers without a formatted latency summary.
 
 Use --long-running with the Responses protocol to start work that continues running in
@@ -226,7 +229,11 @@ This option does not provide crash recovery or automatic reconnection.`,
 				// Only valid when -f is provided
 			}
 
-			action := &InvokeAction{flags: flags, noPrompt: extCtx.NoPrompt}
+			action := &InvokeAction{
+				flags:                flags,
+				noPrompt:             extCtx.NoPrompt,
+				debugLatencyExplicit: cmd.Flags().Changed("debug-latency"),
+			}
 
 			// Agent-endpoint structural conflicts are surfaced first so the user sees
 			// the precise reason their invocation cannot proceed.
@@ -529,6 +536,9 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 			}
 		}
 		if isPrompt {
+			if err := a.validateDebugLatencyRoute(agent_api.AgentProtocolResponses, true); err != nil {
+				return err
+			}
 			return a.runPromptInvoke(ctx, pctx)
 		}
 	}
@@ -561,6 +571,11 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 			"the a2a protocol does not forward x-client-* headers to the agent; "+
 				"use --protocol responses or invocations to send client headers",
 		)
+	}
+
+	if err := a.validateDebugLatencyRoute(protocol, false); err != nil {
+		a.closeResolvedRemoteContextClient()
+		return err
 	}
 
 	if a.flags.local {

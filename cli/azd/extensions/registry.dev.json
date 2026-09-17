@@ -418,6 +418,90 @@
         "ai",
         "rle"
       ]
+    },
+    {
+      "id": "azure.ai.dataset",
+      "namespace": "ai.dataset",
+      "displayName": "Foundry datasets (Beta)",
+      "description": "Register and version Foundry datasets from your terminal. (Beta)",
+      "versions": [
+        {
+          "version": "1.0.0-beta.1",
+          "requiredAzdVersion": ">=1.27.1",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "azd ai dataset <command> [options]",
+          "examples": [
+            {
+              "name": "create",
+              "description": "Register a dataset from a local file.",
+              "usage": "azd ai dataset create support-regression --from-file ./data/golden.jsonl"
+            },
+            {
+              "name": "versions list",
+              "description": "List the versions of a dataset.",
+              "usage": "azd ai dataset versions list support-regression"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "1d424fc7d5ff1916211821ec71a8c1e9eb3bb38531577f6c2bc25846893c682a"
+              },
+              "entryPoint": "azure-ai-dataset-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-dataset_1.0.0-beta.1/azure-ai-dataset-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "7cd1be6c26fe846ff9322dfa232b7a98846dd5e47643b7856d66deb9d8603c3e"
+              },
+              "entryPoint": "azure-ai-dataset-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-dataset_1.0.0-beta.1/azure-ai-dataset-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "30099ea82c74b9379e3bb37ab1621a37e4ea212795b906b05d586f1097b61f15"
+              },
+              "entryPoint": "azure-ai-dataset-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-dataset_1.0.0-beta.1/azure-ai-dataset-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "9dd8ebbb98babab395b8b57b9f1e331f71a7860c264fb2e0ec899dff3e0ca958"
+              },
+              "entryPoint": "azure-ai-dataset-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-dataset_1.0.0-beta.1/azure-ai-dataset-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "f4f1259e77009c400b6a8ebcf2cdc7de1092b2995026dc3b01f55df63cd18230"
+              },
+              "entryPoint": "azure-ai-dataset-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-dataset_1.0.0-beta.1/azure-ai-dataset-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "feff307d55f41b0a2c97f755a98bd48b311fd8878eb4a27c51683d5368e227ad"
+              },
+              "entryPoint": "azure-ai-dataset-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-dataset_1.0.0-beta.1/azure-ai-dataset-windows-arm64.zip"
+            }
+          }
+        }
+      ],
+      "tags": [
+        "ai",
+        "foundry",
+        "dataset"
+      ]
     }
   ]
 }

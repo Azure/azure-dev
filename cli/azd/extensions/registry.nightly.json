@@ -135,7 +135,7 @@
       "description": "Ship prompt, hosted, and voice agents with Microsoft Foundry from your terminal. (Beta)",
       "versions": [
         {
-          "version": "1.0.0-beta.15.nightly.6842616",
+          "version": "1.0.0-beta.16.nightly.6848129",
           "requiredAzdVersion": ">=1.32.0",
           "capabilities": [
             "custom-commands",
@@ -168,7 +168,7 @@
             "darwin/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "bf0bfb90e0d05dd4663bf15a9a2c13cfef396b51c3adb13092ca09260e0b7244"
+                "value": "ea3e332ca22d2db80e5e37ea9dd7156765bb3ca0c281d8e703020e8de3bb1196"
               },
               "entryPoint": "azure-ai-agents-darwin-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-agents/nightly/azure-ai-agents-darwin-amd64.zip"
@@ -176,7 +176,7 @@
             "darwin/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "3aff6ce8fa8b7321f26a0b6baad9ba42259def03b803f0bd9039c98202b60100"
+                "value": "319e8b814a55fe287995f625d7e8ddcd6e65281ae2fb84e437ef785bda69ed1e"
               },
               "entryPoint": "azure-ai-agents-darwin-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-agents/nightly/azure-ai-agents-darwin-arm64.zip"
@@ -184,7 +184,7 @@
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "4ecac9aee4a27e48abc8c6d33b28da9bd8c9a9d9be29b30c6af6a06371894a03"
+                "value": "25ef7b05a8d5edce05a59d63989b0182acdb3941795786b804a81138e288f591"
               },
               "entryPoint": "azure-ai-agents-linux-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-agents/nightly/azure-ai-agents-linux-amd64.tar.gz"
@@ -192,7 +192,7 @@
             "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "70538d774e69e9d3e5c7db56cb73d2a1906c20cfd1a6dca7f57ae99df08ac46e"
+                "value": "41702cb1f343607f503e400065cdcadf4e924fa03822c291c8f7b6b6f0549656"
               },
               "entryPoint": "azure-ai-agents-linux-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-agents/nightly/azure-ai-agents-linux-arm64.tar.gz"
@@ -200,7 +200,7 @@
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "96f2f4ae3d0d212ec8696bb5c9506ccc3c71ede1b6afae0636a86fc55cb45ddd"
+                "value": "f3c5bf5de9c57c032d015c0260c31ffcbef7b0ce13be0fbde3c6ff916143fa46"
               },
               "entryPoint": "azure-ai-agents-windows-amd64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-agents/nightly/azure-ai-agents-windows-amd64.zip"
@@ -208,7 +208,7 @@
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "61a90db2ba2757491b35028f15a1bfcfb948018df60bf50a101f1ae784a7f5eb"
+                "value": "03deeb19f21850cf2fcbe2a571269cec04bccb912ee368058a4955f1f89d1448"
               },
               "entryPoint": "azure-ai-agents-windows-arm64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-agents/nightly/azure-ai-agents-windows-arm64.zip"
@@ -221,11 +221,11 @@
             },
             {
               "id": "azure.ai.projects",
-              "version": "~1.0.0-beta.9"
+              "version": "~1.0.0-beta.11"
             },
             {
               "id": "azure.ai.connections",
-              "version": "~1.0.0-beta.6"
+              "version": "~1.0.0-beta.7"
             },
             {
               "id": "azure.ai.toolboxes",

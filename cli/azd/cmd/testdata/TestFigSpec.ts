@@ -2368,7 +2368,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--metadata'],
-									description: 'Metadata key=value (repeatable)',
+									description: 'Metadata key=value (repeatable; non-blank key required, empty value allowed)',
 									isRepeatable: true,
 									args: [
 										{
@@ -2442,31 +2442,6 @@ const completionSpec: Fig.Spec = {
 									name: ['--force'],
 									description: 'Skip confirmation prompt',
 									isDangerous: true,
-								},
-								{
-									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
-									args: [
-										{
-											name: 'project-endpoint',
-										},
-									],
-								},
-							],
-						},
-						{
-							name: ['deploy'],
-							description: 'Deploy a local connection definition.',
-							options: [
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-											suggestions: ['json', 'table'],
-										},
-									],
 								},
 								{
 									name: ['--project-endpoint', '-p'],
@@ -2567,7 +2542,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--metadata'],
-									description: 'Set metadata key=value (repeatable, merged with existing metadata)',
+									description: 'Set metadata key=value (repeatable, merged with existing metadata; non-blank key required, empty value allowed)',
 									isRepeatable: true,
 									args: [
 										{
@@ -5539,31 +5514,6 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'version',
-										},
-									],
-								},
-							],
-						},
-						{
-							name: ['deploy'],
-							description: 'Deploy a local toolbox definition.',
-							options: [
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-											suggestions: ['table', 'json'],
-										},
-									],
-								},
-								{
-									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
-									args: [
-										{
-											name: 'project-endpoint',
 										},
 									],
 								},

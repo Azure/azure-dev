@@ -78,6 +78,19 @@ func TestExtensionRunError_NilInner(t *testing.T) {
 	require.Nil(t, e.Unwrap())
 }
 
+func TestExtensionRunError_InvocationMetadata(t *testing.T) {
+	t.Parallel()
+
+	e := &ExtensionRunError{ExtensionId: "test-ext", ExtensionVersion: "1.2.3"}
+	require.Equal(t, "test-ext", e.InvocationExtensionId())
+	require.Equal(t, "1.2.3", e.InvocationExtensionVersion())
+	require.Empty(t, e.InvocationEvent())
+
+	var nilError *ExtensionRunError
+	require.Empty(t, nilError.InvocationExtensionId())
+	require.Empty(t, nilError.InvocationExtensionVersion())
+}
+
 // ---------------------------------------------------------------------------
 // NewRunner
 // ---------------------------------------------------------------------------
@@ -423,7 +436,10 @@ func TestRunner_Invoke_EnsureInit_Called(t *testing.T) {
 	runner := NewRunner(cmdRunner)
 
 	// Extension starts uninitialized
-	require.False(t, ext.initialized)
+	require.Nil(t, ext.stdin)
+	require.Nil(t, ext.stdout)
+	require.Nil(t, ext.stderr)
+	require.Nil(t, ext.readySignal)
 
 	cmdRunner.When(func(args exec.RunArgs, command string) bool {
 		return true
@@ -435,5 +451,8 @@ func TestRunner_Invoke_EnsureInit_Called(t *testing.T) {
 	require.NoError(t, err)
 
 	// After Invoke, extension should be initialized
-	require.True(t, ext.initialized)
+	require.NotNil(t, ext.stdin)
+	require.NotNil(t, ext.stdout)
+	require.NotNil(t, ext.stderr)
+	require.NotNil(t, ext.readySignal)
 }

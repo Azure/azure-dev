@@ -49,7 +49,7 @@ integration.
 | `AZD_IN_CLOUDSHELL` | If true, `azd` runs with Azure Cloud Shell specific behavior. |
 | `AZD_SKIP_UPDATE_CHECK` | If true, skips the out-of-date update check output that is typically printed at the end of the command. |
 | `AZD_SKIP_FIRST_RUN` | Reserved for the dormant first-run tool setup and background update experience. This variable has no effect while those middleware components are not registered. |
-| `AZD_CONTAINER_RUNTIME` | The container runtime to use (e.g., `docker`, `podman`). |
+| `AZD_CONTAINER_RUNTIME` | Selects `docker` or `podman`. If unset or empty, azd prefers Docker on PATH, then Podman. Selection is cached on first use for each container CLI instance; version and daemon readiness checks are repeated when needed. Other values fail the runtime installation check. |
 | `AZD_ALLOW_NON_EMPTY_FOLDER` | If set, allows `azd init` to run in a non-empty directory without prompting. |
 | `AZD_BUILDER_IMAGE` | The builder docker image used to perform Dockerfile-less builds. |
 | `AZD_CONCURRENCY_MAX` | Hard maximum number of graph steps that can run at once during `azd up`, `azd deploy`, or `azd provision`. Values saved in the active azd environment take precedence over process environment values. When unset, the command-specific concurrency variable is the hard maximum: `AZD_UP_CONCURRENCY` (then `AZD_DEPLOY_CONCURRENCY`) for `azd up`, `AZD_DEPLOY_CONCURRENCY` for `azd deploy`, or `AZD_PROVISION_CONCURRENCY` for `azd provision`. When all are unset, the scheduler uses `min(stepCount, GOMAXPROCS*2)`. Set to `1` to serialize all graph steps, including package and publish operations for .NET projects that share custom build-output paths. |

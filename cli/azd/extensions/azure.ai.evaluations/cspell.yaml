@@ -1,0 +1,44 @@
+import: ../../.vscode/cspell.yaml
+words:
+  # Go module and package names
+  - azureaieval
+  - evalcore
+  - exterrors
+  - httptest
+  - projectctx
+  - urlsafe
+  - creack
+  # Service identifiers and API fields
+  - evalrun
+  - lookback
+  - AOAI
+  - ARMID
+  # Built-in evaluator names
+  - ifeval
+  - groundedness
+  # Repository names
+  - foundrysdk
+  # Version-control systems a read-only checkout can come from
+  - TFVC
+  # GitHub metadata files named in the README checklist
+  - CODEOWNERS
+  # Possessive of an acronym cspell does not inflect on its own
+  - CLI's
+  # Deliberate misspellings: the fixtures the unknown-key tests are about
+  - evaulators
+  - verison
+  # Terms
+  - inlines
+  - negotiables
+  - parseable
+  - preselection
+  - retargeted
+  - subsetting
+  - undeployed
+  - undoable
+  - unbuildable
+  - unorderable
+  - unpassed
+  - unjudged
+  - unscored
+  - Unparseable

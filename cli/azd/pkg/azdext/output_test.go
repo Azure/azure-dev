@@ -362,7 +362,7 @@ func TestOutput_Table_JSONFormat_ShortRow(t *testing.T) {
 }
 
 // TestProtoMessages_ExerciseGenerated iterates over every proto message registered
-// in the azdext package and exercises its generated methods (Reset, String,
+// in the stable contract package and exercises its generated methods (Reset, String,
 // ProtoReflect, Descriptor, GetXxx getters) plus Marshal/Unmarshal round-trips.
 // This is a broad, generic smoke test aimed at raising statement coverage of the
 // generated *.pb.go files which otherwise contain hundreds of never-called
@@ -373,10 +373,10 @@ func TestProtoMessages_ExerciseGenerated(t *testing.T) {
 	var exercised int
 	protoregistry.GlobalTypes.RangeMessages(func(mt protoreflect.MessageType) bool {
 		name := string(mt.Descriptor().FullName())
-		// Only exercise messages defined by this package (proto package = "azdext")
-		// Map entry synthetic messages are registered as e.g. "azdext.Foo.BarEntry"
+		// Only exercise messages defined by the stable wire package.
+		// Map entry synthetic messages are registered under the same prefix
 		// and are also fine to exercise since they live in the generated files.
-		if !strings.HasPrefix(name, "azdext.") {
+		if !strings.HasPrefix(name, "azd.extensions.v1.") {
 			return true
 		}
 		exerciseMessage(t, mt.New().Interface())
@@ -384,11 +384,11 @@ func TestProtoMessages_ExerciseGenerated(t *testing.T) {
 		return true
 	})
 
-	// Sanity check: at least one azdext proto message should be registered.
+	// Sanity check: at least one stable proto message should be registered.
 	// Log the observed count so unexpected drops remain visible without relying
 	// on a brittle hard-coded threshold.
-	t.Logf("exercised %d azdext proto messages", exercised)
-	require.Greater(t, exercised, 0, "expected azdext proto messages to be registered")
+	t.Logf("exercised %d stable extension proto messages", exercised)
+	require.Greater(t, exercised, 0, "expected stable extension proto messages to be registered")
 }
 
 // exerciseMessage invokes the generated methods on a proto message so that they

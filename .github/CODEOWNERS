@@ -20,6 +20,7 @@
 /cli/azd/test/functional/ai_agents/         @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
 /cli/azd/extensions/azure.ai.connections/   @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
 /cli/azd/extensions/azure.ai.dataset/       @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
+/cli/azd/extensions/azure.ai.evaluations/   @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
 /cli/azd/extensions/azure.ai.finetune/      @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
 /cli/azd/extensions/azure.ai.inspector/     @JeffreyCA @glharper @trangevi @therealjohn @anchenyi @XiaofuHuang
 /cli/azd/extensions/azure.ai.models/        @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
@@ -46,6 +47,11 @@
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 /schemas/                                   @vhvb1989 @tg-msft @RickWinter
+
+# ── Stable extension protobuf contract ────────────────────────────────────────
+/cli/azd/grpc/proto/azd/extensions/v1/      @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft
+/cli/azd/pkg/azdext/contracts/v1/           @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft
+/cli/azd/pkg/azdext/contracts_v1_aliases.go @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft
 
 # ── This file (most specific -- must be last for /.github/) ───────────────────
 /.github/CODEOWNERS                         @tg-msft @RickWinter @richardpark-msft @Azure/azure-sdk-eng

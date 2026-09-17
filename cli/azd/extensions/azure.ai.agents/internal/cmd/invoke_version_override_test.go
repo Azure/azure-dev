@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -74,7 +75,14 @@ func TestInvokeVersionOverrideRegistration(t *testing.T) {
 	assert.Empty(t, flag.DefValue)
 	assert.Empty(t, flag.Shorthand)
 	assert.Contains(t, flag.Usage, "fail on fallback")
-	assert.Contains(t, cmd.Long, "without changing its traffic split")
+	assert.Contains(t, cmd.Long, "through the x-agent-version-override")
+	assert.Contains(t, cmd.Long, "resolved the requested version without fallback")
+	assert.Contains(t, cmd.Long, "fresh, isolated session")
+	assert.Contains(t, cmd.Long, "for Responses, a new conversation")
+	assert.Contains(t, cmd.Long, "IDs are not saved as the current selection")
+	assert.Contains(t, cmd.Example, "Test and verify a candidate version using an isolated invocation")
+	assert.NotContains(t, cmd.Long, "without changing its traffic split")
+	assert.NotContains(t, cmd.Example, "without changing the endpoint traffic split")
 	assert.Contains(t, cmd.Long, "does not undo work already executed")
 	assert.Contains(t, cmd.Flags().Lookup("version").Usage, "session backed by that version")
 }
@@ -192,4 +200,35 @@ func TestInvokeVersionOverrideNoVersionSession(t *testing.T) {
 	assert.Empty(t, session, "never call CreateSession(version_ref) or reuse the previous session")
 	assert.NoError(t, action.validateVersionOverrideRoute(agent_api.AgentProtocolResponses, false))
 	assert.NoError(t, action.validateVersionOverrideRoute(agent_api.AgentProtocolInvocations, false))
+}
+
+func TestInvokeVersionOverrideRejectsNonSuccessStatus(t *testing.T) {
+	for _, code := range []int{100, 101, 103, 199, 300, 301, 302, 303, 304, 307, 308, 399} {
+		for _, format := range []string{outputDefault, outputRaw} {
+			for _, resolved := range []string{"", "4"} {
+				t.Run(fmt.Sprintf("%d/%s/resolved=%s", code, format, resolved), func(t *testing.T) {
+					headers := make(http.Header)
+					if resolved != "" {
+						headers.Set(agentVersionResolvedHeader, resolved)
+					}
+					body := &trackingReadCloser{Reader: strings.NewReader("original response")}
+					resp := &http.Response{StatusCode: code, Header: headers, Body: body}
+					action := &InvokeAction{flags: &invokeFlags{versionOverride: "4", outputFmt: format}}
+					var output bytes.Buffer
+					err := action.verifyVersionOverrideResponse(resp, &output)
+					requireVersionOverrideVerificationFailure(t, err, fmt.Sprintf("unexpected HTTP status %d", code))
+					assert.NotContains(t, output.String(), "Version override:")
+					if format == outputRaw {
+						assert.Contains(t, output.String(), fmt.Sprintf("HTTP/1.1 %d", code))
+						assert.True(t, strings.HasSuffix(output.String(), "\r\n\r\noriginal response"))
+					} else {
+						assert.Empty(t, output.String())
+						remaining, readErr := io.ReadAll(body)
+						require.NoError(t, readErr)
+						assert.Equal(t, "original response", string(remaining))
+					}
+				})
+			}
+		}
+	}
 }

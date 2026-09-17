@@ -126,11 +126,12 @@ session automatically. Pass --new-session to force a reset.
 Use --version to invoke a specific deployed agent version. When provided,
 azd creates or reuses a hosted agent session backed by that version.
 
-Use --version-override to test a hosted agent version through the endpoint's
-version override header, without changing its traffic split. Each call uses a
-fresh session and conversation, and does not save session/conversation or operation
-IDs as the current selection. It cannot be combined with --version, --session-id,
-or --conversation-id. Only remote responses and invocations are supported.
+Use --version-override to route a test request through the x-agent-version-override
+header and verify the service resolved the requested version without fallback.
+Each call uses a fresh, isolated session and, for Responses, a new conversation.
+Session/conversation and operation IDs are not saved as the current selection.
+It cannot be combined with --version, --session-id, or --conversation-id.
+Only remote hosted responses and invocations are supported.
 The command fails if the service falls back to another version or cannot confirm
 the requested version. A failed check does not undo work already executed by the
 agent. Use a concrete version for release checks; latest is a floating selection
@@ -208,8 +209,8 @@ This option does not provide crash recovery or automatic reconnection.`,
   # Invoke a specific deployed agent version
   azd ai agent invoke --version 3 "Hello!"
 
-	# Test a candidate version without changing the endpoint traffic split
-	azd ai agent invoke --version-override 4 "Reply with a short health confirmation."
+  # Test and verify a candidate version using an isolated invocation
+  azd ai agent invoke --version-override 4 "Reply with a short health confirmation."
 
   # Dump the raw server response (status line, headers, body) for debugging
   azd ai agent invoke --output raw "Hello!"
@@ -562,9 +563,22 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 			return fmt.Errorf("failed to create azd client: %w", err)
 		}
 		defer azdClient.Close()
-		pctx, isPrompt, pErr := resolvePromptAgentService(
-			ctx, azdClient, a.flags.name, a.noPrompt, withVoiceInvocationGuidance(),
+		svc, proj, pErr := resolveAgentService(
+			ctx, azdClient, a.serviceNameSelector(), a.noPrompt,
 		)
+		var pctx *promptServiceContext
+		var isPrompt bool
+		if pErr == nil {
+			// Preserve the service checked here when hosted resolution follows.
+			// Keep it separate from an explicit Foundry agent name so a service
+			// with missing deployment metadata cannot become a direct-name target.
+			if a.flags.name == "" {
+				a.protocolServiceName = svc.Name
+			}
+			pctx, isPrompt, pErr = promptAgentContextForService(
+				ctx, azdClient, svc, proj, withVoiceInvocationGuidance(),
+			)
+		}
 		if pErr != nil {
 			if errors.Is(pErr, errVoiceInvocationUnsupported) {
 				return pErr

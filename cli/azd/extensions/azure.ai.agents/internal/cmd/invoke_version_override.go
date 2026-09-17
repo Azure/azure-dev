@@ -85,16 +85,23 @@ func (a *InvokeAction) applyVersionOverride(req *http.Request) {
 	}
 }
 
-// verifyVersionOverrideResponse checks the initial successful POST before saving
+// verifyVersionOverrideResponse checks the initial POST response before saving
 // identities, consuming SSE, or polling a 202. Lifecycle GETs are not new version
-// selections and need not repeat these headers. HTTP errors retain their existing
-// handling. A verification failure cannot undo an already accepted invocation.
+// selections and need not repeat these headers. Final 1xx/3xx responses fail;
+// 4xx/5xx retain their existing HTTP error handling. A verification failure
+// cannot undo an already accepted invocation.
 func (a *InvokeAction) verifyVersionOverrideResponse(resp *http.Response, writer io.Writer) error {
 	requested := a.flags.versionOverride
-	if requested == "" || resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+	if requested == "" || resp.StatusCode >= http.StatusBadRequest {
 		return nil
 	}
-	resolved, resolution, err := verifyAgentVersionHeaders(requested, resp.Header)
+	var resolved, resolution string
+	var err error
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		err = fmt.Errorf("unexpected HTTP status %d; expected a successful 2xx response", resp.StatusCode)
+	} else {
+		resolved, resolution, err = verifyAgentVersionHeaders(requested, resp.Header)
+	}
 	if err != nil {
 		verificationErr := exterrors.Compatibility(
 			exterrors.CodeAgentVersionVerificationFailed,

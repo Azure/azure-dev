@@ -73,6 +73,22 @@ func TestInvokeVersionOverrideRemoteIntegration(t *testing.T) {
 					name: "fallback", requested: "4", resolved: "4", fallback: "true", status: http.StatusOK,
 					wantErr: "the service reported a version fallback",
 				},
+				{
+					name: "multiple choices without evidence", requested: "4", status: http.StatusMultipleChoices,
+					wantErr: "unexpected HTTP status 300",
+				},
+				{
+					name: "final redirect without evidence", requested: "4", status: http.StatusFound,
+					wantErr: "unexpected HTTP status 302",
+				},
+				{
+					name: "final redirect with matching version", requested: "4", resolved: "4",
+					status: http.StatusTemporaryRedirect, wantErr: "unexpected HTTP status 307",
+				},
+				{
+					name: "permanent redirect with matching version", requested: "4", resolved: "4",
+					status: http.StatusPermanentRedirect, wantErr: "unexpected HTTP status 308",
+				},
 				{name: "bad request", requested: "4", status: http.StatusBadRequest},
 				{
 					name: "conflict", requested: "4", resolved: "3", fallback: "true", status: http.StatusConflict,
@@ -474,6 +490,154 @@ func TestInvokeVersionOverrideExplicitEndpointIntegration(t *testing.T) {
 			fixture.assertIsolated(t, 0)
 		})
 	}
+}
+
+// Regression for #10079: prompt detection and hosted invocation must share one
+// service selection, without replacing a positional name with a service key.
+func TestInvokeVersionOverrideServiceSelectionIntegration(t *testing.T) {
+	const promptProjectEndpoint = "https://acct.services.ai.azure.com/api/projects/project"
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+	for _, protocol := range []string{"invocations", "responses"} {
+		for _, automatic := range []bool{false, true} {
+			for _, tt := range []struct {
+				name         string
+				agentName    string
+				noPrompt     bool
+				selectPrompt bool
+				wantPickers  int32
+			}{
+				{name: "selected hosted", wantPickers: 1},
+				{name: "ambiguous no-prompt", noPrompt: true},
+				{name: "explicit service", agentName: "z-hosted"},
+				{name: "deployed name", agentName: "agent"},
+				{name: "selected prompt", selectPrompt: true, wantPickers: 1},
+			} {
+				t.Run(fmt.Sprintf("%s/automatic=%t/%s", protocol, automatic, tt.name), func(t *testing.T) {
+					fixtureFlags := &invokeFlags{
+						message: versionOverrideSource, protocol: protocol, versionOverride: "4", outputFmt: outputDefault,
+					}
+					body := `{"result":"override-result"}`
+					if protocol == "responses" {
+						body = versionOverrideStream
+					}
+					fixture := newVersionOverrideHTTPFixture(t, fixtureFlags, versionOverrideHTTPReply{
+						status: http.StatusOK, resolved: "4", body: body,
+					}, nil)
+					projectEndpoint := fixture.action.resolvedRemoteContext.projectEndpoint
+					endpoint := projectEndpoint + fixture.postPath + "?api-version=v1"
+					otherProject := projectEndpoint + "/other-project"
+					otherEndpoint := otherProject + strings.Replace(fixture.postPath, "/agents/agent/", "/agents/other/", 1)
+					project := &helpersProjectServer{project: &azdext.ProjectConfig{
+						Path: t.TempDir(),
+						Services: map[string]*azdext.ServiceConfig{
+							"a-other": {
+								Name: "a-other", Host: AiAgentHost,
+								AdditionalProperties: mustStruct(t, map[string]any{
+									"kind": "prompt", "name": "other", "model": "test-model", "instructions": "Be helpful.",
+								}),
+							},
+							"z-hosted": {
+								Name: "z-hosted", Host: AiAgentHost,
+								AdditionalProperties: mustStruct(t, map[string]any{"kind": "hosted", "name": "agent"}),
+							},
+						},
+					}}
+					values := map[string]string{
+						"AZURE_SUBSCRIPTION_ID":                     "subscription",
+						"AZURE_RESOURCE_GROUP":                      "resource-group",
+						"FOUNDRY_PROJECT_ENDPOINT":                  promptProjectEndpoint,
+						"AGENT_Z_HOSTED_NAME":                       "agent",
+						"AGENT_Z_HOSTED_VERSION":                    "3",
+						"AGENT_Z_HOSTED_PROJECT_ENDPOINT":           projectEndpoint,
+						"AGENT_Z_HOSTED_ENDPOINT":                   endpoint,
+						"AGENT_Z_HOSTED_PROTOCOL_ENDPOINTS_VERSION": "1",
+						"AGENT_A_OTHER_NAME":                        "other",
+						"AGENT_A_OTHER_VERSION":                     "3",
+						"AGENT_A_OTHER_PROJECT_ENDPOINT":            otherProject,
+						"AGENT_A_OTHER_ENDPOINT":                    otherEndpoint + "?api-version=v1",
+						"AGENT_A_OTHER_PROTOCOL_ENDPOINTS_VERSION":  "1",
+					}
+					values["AGENT_Z_HOSTED_"+strings.ToUpper(protocol)+"_ENDPOINT"] = values["AGENT_Z_HOSTED_ENDPOINT"]
+					values["AGENT_A_OTHER_"+strings.ToUpper(protocol)+"_ENDPOINT"] = values["AGENT_A_OTHER_ENDPOINT"]
+					// Even an erroneous project-endpoint fallback must stay offline. Prompt
+					// validation uses the valid Foundry URL in the mocked environment above.
+					t.Setenv("FOUNDRY_PROJECT_ENDPOINT", projectEndpoint+"/unexpected-project")
+					picker := &versionOverrideRotatingPromptServer{firstIndex: 1}
+					if tt.selectPrompt {
+						picker.firstIndex = 0
+					}
+					account := &latencyPromptAccountServer{}
+					server := grpc.NewServer()
+					azdext.RegisterProjectServiceServer(server, project)
+					azdext.RegisterEnvironmentServiceServer(server, &promptEnvironmentServer{values: values})
+					azdext.RegisterPromptServiceServer(server, picker)
+					azdext.RegisterUserConfigServiceServer(server, fixture.config)
+					azdext.RegisterAccountServiceServer(server, account)
+					listener, err := net.Listen("tcp", "127.0.0.1:0")
+					require.NoError(t, err)
+					go func() { _ = server.Serve(listener) }()
+					t.Cleanup(func() {
+						server.Stop()
+						_ = listener.Close()
+					})
+					t.Setenv("AZD_SERVER", listener.Addr().String())
+					flags := *fixtureFlags
+					flags.name = tt.agentName
+					if automatic {
+						flags.protocol = ""
+					}
+					// Reuse only the fixture's server/config, never its cached remoteContext.
+					action := &InvokeAction{flags: &flags, credential: responseTestCredential{}, noPrompt: tt.noPrompt}
+					output, err := captureStdout(t, func() error { return action.Run(t.Context()) })
+
+					// Assertions run only after stdout is restored, including on regressions.
+					assert.Equal(t, tt.wantPickers, picker.calls.Load(), "do not repeat the service picker")
+					assert.Equal(t, tt.agentName, flags.name, "preserve positional-name semantics")
+					assert.Zero(t, account.calls.Load(), "never authenticate a rejected prompt agent")
+					assert.Zero(t, fixture.config.writes.Load())
+					assert.Equal(t, fixture.before, versionOverrideConfigSnapshot(fixture.config))
+					if tt.noPrompt || tt.selectPrompt {
+						assert.Empty(t, fixture.recordedRequests(), "reject before any HTTP request")
+						assert.Empty(t, output)
+						if tt.selectPrompt {
+							requireVersionOverrideRouteConflict(t, err)
+						} else {
+							require.ErrorContains(t, err,
+								"multiple azure.ai.agent services found in azure.yaml: a-other, z-hosted")
+							assert.Contains(t, err.Error(), "Provide the service name as a positional argument")
+						}
+						return
+					}
+					// Exact fixture requests prove the selected project, deployed name and
+					// protocol, override header, fresh state, and absence of OpenAPI/cache writes.
+					fixture.assertIsolated(t, 0)
+					require.NoError(t, err)
+					assert.Contains(t, output, "override-result")
+					assert.Contains(t, output, "Version override: 4; resolved: 4")
+					if tt.wantPickers == 1 {
+						assert.Equal(t, "z-hosted", action.protocolServiceName, "cache the service key, not deployed name")
+					}
+				})
+			}
+		}
+	}
+}
+
+type versionOverrideRotatingPromptServer struct {
+	azdext.UnimplementedPromptServiceServer
+	firstIndex int32
+	calls      atomic.Int32
+}
+
+func (s *versionOverrideRotatingPromptServer) Select(
+	context.Context, *azdext.SelectRequest,
+) (*azdext.SelectResponse, error) {
+	index := int32(0) // A second picker switches to the first sorted service, a-other.
+	if s.calls.Add(1) == 1 {
+		index = s.firstIndex
+	}
+	return &azdext.SelectResponse{Value: new(index)}, nil
 }
 
 type versionOverrideUserConfigServer struct {

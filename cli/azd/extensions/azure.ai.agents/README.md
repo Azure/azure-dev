@@ -141,10 +141,13 @@ dependencies automatically.
 
 ## Invoke a version override
 
-Use `azd ai agent invoke --version-override` to check deployed agent code without
-changing the endpoint's traffic split. After deploying with `azd deploy`, run
-`azd ai agent show` to obtain the actual deployed version. Replace `3` below with
-that version:
+Use `azd ai agent invoke --version-override` to route a test request through the
+`x-agent-version-override` header with isolated session and conversation state.
+The command verifies that the service resolved the requested version without
+fallback, rather than creating or reusing a version-backed session as `--version` does.
+
+After deploying with `azd deploy`, run `azd ai agent show` to obtain the actual
+deployed version. Replace `3` below with that version:
 
 ```bash
 azd ai agent invoke --protocol responses --version-override 3 "Reply with a short health confirmation."

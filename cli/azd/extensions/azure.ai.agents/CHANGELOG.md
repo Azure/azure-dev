@@ -4,6 +4,11 @@
 
 ## 1.0.0-beta.16 (2026-09-17)
 
+### Breaking Changes
+
+- [[#9997]](https://github.com/Azure/azure-dev/pull/9997) Rename the Agent toolbox and connection composition commands to `azd ai agent toolbox add` and `azd ai agent connection add`, and replace standalone Agent deployment with `azd deploy <service>`. Thanks @JerryYangKai for the contribution!
+- [[#9948]](https://github.com/Azure/azure-dev/pull/9948) Replace the hosted Voice `modelType` and `targetAgent` configuration with `conversationEngine` to match the service contract.
+
 ### Features Added
 
 - [[#9890]](https://github.com/Azure/azure-dev/pull/9890) Make voice agent initialization, configuration, help, and discovery available as a public preview without an environment-variable gate.

@@ -1,5 +1,7 @@
 # Extension Framework
 
+<!-- cspell:ignore azdext -->
+
 Architecture of the gRPC-based extension system in azd.
 
 ## Overview

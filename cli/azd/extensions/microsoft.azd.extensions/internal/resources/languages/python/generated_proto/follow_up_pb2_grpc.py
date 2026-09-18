@@ -11,8 +11,7 @@ _version_not_supported = False
 
 try:
     from grpc._utilities import first_version_is_lower
-    _version_not_supported = first_version_is_lower(
-        GRPC_VERSION, GRPC_GENERATED_VERSION)
+    _version_not_supported = first_version_is_lower(GRPC_VERSION, GRPC_GENERATED_VERSION)
 except ImportError:
     _version_not_supported = True
 
@@ -27,7 +26,8 @@ if _version_not_supported:
 
 
 class FollowUpServiceStub(object):
-    """FollowUpService accepts command follow-up contributions from extensions."""
+    """FollowUpService accepts command follow-up contributions from extensions.
+    """
 
     def __init__(self, channel):
         """Constructor.
@@ -36,17 +36,19 @@ class FollowUpServiceStub(object):
             channel: A grpc.Channel.
         """
         self.SetFollowUp = channel.unary_unary(
-            '/azd.extensions.v1.FollowUpService/SetFollowUp',
-            request_serializer=follow__up__pb2.SetFollowUpRequest.SerializeToString,
-            response_deserializer=follow__up__pb2.SetFollowUpResponse.FromString,
-            _registered_method=True)
+                '/azd.extensions.v1.FollowUpService/SetFollowUp',
+                request_serializer=follow__up__pb2.SetFollowUpRequest.SerializeToString,
+                response_deserializer=follow__up__pb2.SetFollowUpResponse.FromString,
+                _registered_method=True)
 
 
 class FollowUpServiceServicer(object):
-    """FollowUpService accepts command follow-up contributions from extensions."""
+    """FollowUpService accepts command follow-up contributions from extensions.
+    """
 
     def SetFollowUp(self, request, context):
-        """Sets or clears the contribution for a project handler invocation."""
+        """Sets or clears the contribution for a project handler invocation.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -54,35 +56,34 @@ class FollowUpServiceServicer(object):
 
 def add_FollowUpServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-        'SetFollowUp': grpc.unary_unary_rpc_method_handler(
-            servicer.SetFollowUp,
-            request_deserializer=follow__up__pb2.SetFollowUpRequest.FromString,
-            response_serializer=follow__up__pb2.SetFollowUpResponse.SerializeToString,
-        ),
+            'SetFollowUp': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetFollowUp,
+                    request_deserializer=follow__up__pb2.SetFollowUpRequest.FromString,
+                    response_serializer=follow__up__pb2.SetFollowUpResponse.SerializeToString,
+            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-        'azd.extensions.v1.FollowUpService', rpc_method_handlers)
+            'azd.extensions.v1.FollowUpService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers(
-        'azd.extensions.v1.FollowUpService', rpc_method_handlers)
+    server.add_registered_method_handlers('azd.extensions.v1.FollowUpService', rpc_method_handlers)
 
 
-# This class is part of an EXPERIMENTAL API.
+ # This class is part of an EXPERIMENTAL API.
 class FollowUpService(object):
-    """FollowUpService accepts command follow-up contributions from extensions."""
+    """FollowUpService accepts command follow-up contributions from extensions.
+    """
 
     @staticmethod
-    def SetFollowUp(
-        request,
-        target,
-        options=(),
-        channel_credentials=None,
-        call_credentials=None,
-        insecure=False,
-        compression=None,
-        wait_for_ready=None,
-        timeout=None,
-        metadata=None):
+    def SetFollowUp(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
         return grpc.experimental.unary_unary(
             request,
             target,

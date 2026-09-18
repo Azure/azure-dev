@@ -90,6 +90,46 @@ func Test_WorkflowService_Run_Success(t *testing.T) {
 		testRunner.AssertCalled(t, "ExecuteContext", contextType, []string{"provision"})
 	})
 
+	t.Run("StructuredFailure", func(t *testing.T) {
+		expectedErr := &azdext.LocalError{
+			Message:    "invalid project configuration",
+			Code:       "invalid_project",
+			Category:   azdext.LocalErrorCategoryValidation,
+			Suggestion: "Fix the project configuration and retry.",
+		}
+		testRunner := &TestWorkflowRunner{}
+		runner := workflow.NewRunner(testRunner, mockContext.Console)
+		testRunner.On("ExecuteContext", contextType, mock.Anything).Return(expectedErr)
+
+		service := NewWorkflowService(runner)
+		req := &azdext.RunWorkflowRequest{
+			Workflow: &azdext.Workflow{
+				Name: "testWorkflow",
+				Steps: []*azdext.WorkflowStep{
+					{
+						Command: &azdext.WorkflowCommand{
+							Args: []string{"provision"},
+						},
+					},
+				},
+			},
+		}
+
+		resp, err := service.Run(*mockContext.Context, req)
+
+		require.Error(t, err)
+		require.Equal(t, codes.Internal, status.Code(err))
+		require.Nil(t, resp)
+
+		extensionErr := azdext.ExtensionErrorFromStatus(status.Convert(err))
+		require.NotNil(t, extensionErr)
+		relayedErr := azdext.UnwrapError(extensionErr)
+		var localErr *azdext.LocalError
+		require.ErrorAs(t, relayedErr, &localErr)
+		require.Equal(t, expectedErr.Code, localErr.Code)
+		require.Equal(t, expectedErr.Suggestion, localErr.Suggestion)
+	})
+
 	t.Run("EnvironmentAlreadyExists", func(t *testing.T) {
 		envExistsErr := fmt.Errorf("creating environment 'myenv': %w", environment.ErrExists)
 		testRunner := &TestWorkflowRunner{}

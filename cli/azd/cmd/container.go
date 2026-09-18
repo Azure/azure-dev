@@ -1057,12 +1057,94 @@ func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) 
 	rootCmd := w.newCommand()
 	// Always set args explicitly to prevent Cobra from falling back to os.Args[1:].
 	// Cobra uses os.Args when cmd.args is nil (but not when it's an empty slice).
-	mergedArgs := append(slices.Clone(args), w.globalArgs...)
+	mergedArgs := mergeWorkflowArgs(args, w.globalArgs)
 	if mergedArgs == nil {
 		mergedArgs = []string{}
 	}
 	rootCmd.SetArgs(mergedArgs)
 	return rootCmd.ExecuteContext(childCtx)
+}
+
+func mergeWorkflowArgs(stepArgs, globalArgs []string) []string {
+	if len(globalArgs) == 0 {
+		return slices.Clone(stepArgs)
+	}
+
+	aliases := workflowFlagAliases()
+	stepFlags := make(map[string]struct{})
+	for _, arg := range stepArgs {
+		if arg == "--" {
+			break
+		}
+
+		if name := workflowFlagName(arg, aliases); name != "" {
+			stepFlags[name] = struct{}{}
+		}
+	}
+
+	mergedArgs := slices.Clone(stepArgs)
+	for _, arg := range globalArgs {
+		name := workflowFlagName(arg, aliases)
+		if _, ok := stepFlags[name]; ok {
+			continue
+		}
+		mergedArgs = append(mergedArgs, arg)
+	}
+
+	return mergedArgs
+}
+
+func workflowFlagAliases() map[string]string {
+	aliases := map[string]string{
+		"output":          "output",
+		"o":               "output",
+		"no-prompt":       "no-prompt",
+		"non-interactive": "no-prompt",
+	}
+
+	globalFlags := CreateGlobalFlagSet()
+	globalFlags.VisitAll(func(flag *pflag.Flag) {
+		name := flag.Name
+		if name == internal.EnvironmentNameFlagName {
+			return
+		}
+
+		canonicalName := name
+		if name == "non-interactive" {
+			canonicalName = "no-prompt"
+		}
+		aliases[name] = canonicalName
+		if flag.Shorthand != "" {
+			aliases[flag.Shorthand] = canonicalName
+		}
+	})
+
+	return aliases
+}
+
+func workflowFlagName(arg string, aliases map[string]string) string {
+	if !strings.HasPrefix(arg, "-") || arg == "-" {
+		return ""
+	}
+
+	name := strings.TrimLeft(arg, "-")
+	if name == "" {
+		return ""
+	}
+
+	if index := strings.IndexByte(name, '='); index >= 0 {
+		name = name[:index]
+	}
+
+	if !strings.HasPrefix(arg, "--") && len(name) > 1 {
+		name = name[:1]
+	}
+
+	if canonical, ok := aliases[name]; ok {
+		return canonical
+	}
+
+	return name
 }
 
 // extractGlobalArgs extracts global flag arguments from the process command line.

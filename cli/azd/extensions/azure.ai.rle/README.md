@@ -332,22 +332,28 @@ azd ai rle show code_rl
 azd ai rle show
 ```
 
-Invoke the manifest's exact `(name, version)` identity:
+Execute one Loom-backed rollout of the manifest's exact `(name, version)`
+identity:
 
 ```powershell
-azd ai rle invoke --timeout 60
+azd ai rle invoke --model Qwen/Qwen3-32B --task '{"...": "..."}'
 ```
 
 To invoke source-free from another folder, provide both parts of the identity:
 
 ```powershell
-azd ai rle invoke code_rl --version 1.0.0
+azd ai rle invoke code_rl --version 1.0.0 --model Qwen/Qwen3-32B --task-file task.json
 ```
 
-Remote invocation creates a temporary instance group and instance through the
-RLE public routes, waits for the runtime to become healthy, opens a local
-authenticated playground, and removes the temporary resources when the shell
-exits.
+`invoke` provisions everything a rollout needs and tears it down again: it
+creates a real Loom training session for `--model`, saves a sampler
+checkpoint, calls RLE's Execute Rollout API with your `--task` (and, for
+Harness targets, `--agent-input`), prints the resulting reward and trajectory
+summary, then closes the Loom session — you never handle Loom session or
+checkpoint identifiers directly. `--model` is required. Use `--task`/
+`--task-file` for the sandbox reset payload (Gym/OpenEnv), `--agent-input`/
+`--agent-input-file` for Harness targets, and `--rollout-id`/`--sequence-id`/
+`--timeout` to control correlation and Loom provisioning timeout.
 
 ## Submit an RLE-backed fine-tuning job (experimental)
 

@@ -16,6 +16,7 @@
 - Initialize a required local folder by interactively selecting and sparsely downloading an environment from the RLE samples repository, including its manifest.
 - Filter Gym/OpenEnv samples by the samples repository's visibility catalog, and gate harness init targets, hidden samples, and other internal-only surfaces behind a single `AZD_AI_RLE_ENABLE_ALL` flag.
 - Add `azd ai rle train` (experimental, gated behind `AZD_AI_RLE_ENABLE_ALL`) to submit an RLE-backed reinforcement fine-tuning job via finetunesapi's `rl_environment` method, using a published RLE environment as the reward source instead of a grader.
+- Repurpose `azd ai rle invoke` from an interactive OpenEnv playground shell into a rollout executor: it now provisions a real Loom training session and sampler checkpoint, calls RLE's Execute Rollout API with a `--model` (required), `--task`/`--task-file`, and (for Harness targets) `--agent-input`/`--agent-input-file`, prints the reward/success/episode summary, and tears down the Loom session — so callers never handle Loom session or checkpoint identifiers directly.
 
 ## 0.3.0-preview
 

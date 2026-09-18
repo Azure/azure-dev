@@ -126,6 +126,11 @@ func (e *rleHTTPError) message() string {
 	return strings.TrimSpace(e.body)
 }
 
+func isRleNotFound(err error) bool {
+	httpErr, ok := errors.AsType[*rleHTTPError](err)
+	return ok && httpErr.statusCode == http.StatusNotFound
+}
+
 func newRleHTTPError(statusCode int, body []byte) *rleHTTPError {
 	result := &rleHTTPError{
 		statusCode: statusCode,
@@ -367,6 +372,17 @@ func instanceGroupCollectionSuffix(environmentName string, environmentVersion st
 }
 
 func (c *rleClient) do(ctx context.Context, method string, path string, body any, target any) error {
+	return c.doWithHeaders(ctx, method, path, nil, body, target)
+}
+
+func (c *rleClient) doWithHeaders(
+	ctx context.Context,
+	method string,
+	path string,
+	headers map[string]string,
+	body any,
+	target any,
+) error {
 	var reader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -397,6 +413,9 @@ func (c *rleClient) do(ctx context.Context, method string, path string, body any
 	}
 	req.Header.Set("Authorization", authorization)
 	req.Header.Set("Accept", "application/json")
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

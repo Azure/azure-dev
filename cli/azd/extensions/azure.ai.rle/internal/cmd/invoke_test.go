@@ -5,1796 +5,193 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"net"
 	"net/http"
-	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
-	"strconv"
 	"strings"
-	"sync/atomic"
 	"testing"
-	"time"
-
-	"azure.ai.rle/internal/project"
-	"azure.ai.rle/internal/ui"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/gorilla/websocket"
 )
 
-const testFoundryProjectPath = "/api/projects/project-1"
-
-func TestInvokeRemoteCreatesInstanceAndRunsShell(t *testing.T) {
-	captureBrowserOpen(t)
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	writeRleTestConfig(t, "code_rl", "1.0.0")
-
-	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Query().Get("api-version"); got != foundryAPIVersion {
-			t.Errorf("expected OpenEnv API version %q, got %q", foundryAPIVersion, got)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/health":
-			_, _ = w.Write([]byte(`{"status":"healthy"}`))
-		case "/ws":
-			connection, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
-			if err != nil {
-				t.Errorf("upgrade WebSocket: %v", err)
-				return
-			}
-			defer connection.Close()
-			var request map[string]any
-			if err := connection.ReadJSON(&request); err != nil {
-				t.Errorf("read WebSocket request: %v", err)
-				return
-			}
-			if request["type"] != "state" {
-				t.Errorf("expected state request, got %#v", request)
-			}
-			if err := connection.WriteJSON(map[string]any{
-				"type": "state",
-				"data": map[string]any{"state": "ready"},
-			}); err != nil {
-				t.Errorf("write WebSocket response: %v", err)
-			}
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer envServer.Close()
-
-	instanceDeleted := false
-	groupDeleted := false
-	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups":
-			_, _ = w.Write([]byte(
-				`{"id":"group-1","environmentName":"code_rl",` +
-					`"environmentVersion":"1.0.0","maxActiveInstances":1}`,
-			))
-		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances":
-			_, _ = w.Write([]byte(
-				`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` +
-					strconv.Quote(envServer.URL) + `}`,
-			))
-		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+
-				"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances/instance-1":
-			instanceDeleted = true
-			w.WriteHeader(http.StatusNoContent)
-		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1":
-			groupDeleted = true
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			t.Fatalf("unexpected instance request: %s %s", r.Method, r.URL.Path)
-		}
-	}))
-	defer controlPlane.Close()
-	useTestProjectEndpoint(t, controlPlane.URL)
-
-	command := newInvokeCommand()
-	command.SetIn(strings.NewReader("state\nexit\n"))
-	var output bytes.Buffer
-	command.SetOut(&output)
-	command.SetErr(&output)
-	if err := command.Execute(); err != nil {
+func TestReadJSONFlagOrFileReturnsNilWhenUnset(t *testing.T) {
+	raw, err := readJSONFlagOrFile("--task", "", "--task-file", "")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), "Environment code_rl version 1.0.0 ready") {
-		t.Fatalf("expected environment ready output, got %s", output.String())
-	}
-	if strings.Contains(output.String(), envServer.URL) {
-		t.Fatalf("expected instance data-plane URL to remain hidden, got %s", output.String())
-	}
-	if !strings.Contains(output.String(), `"state": "ready"`) {
-		t.Fatalf("expected remote shell state output, got %s", output.String())
-	}
-	if !instanceDeleted || !groupDeleted {
-		t.Fatal("expected remote invoke to delete the instance and group")
+	if raw != nil {
+		t.Fatalf("expected nil payload, got %s", raw)
 	}
 }
 
-func TestValidateRemoteSandboxURLRequiresTrustedOrigin(t *testing.T) {
-	tests := []struct {
-		name            string
-		projectEndpoint string
-		sandboxUrl      string
-		wantError       bool
-	}{
-		{
-			name:            "accepts RLE data proxy on project origin",
-			projectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
-			sandboxUrl:      "https://account.services.ai.azure.com/rle/v1.0/subscriptions/sub/sandboxes/sandbox-1/openenv",
-		},
-		{
-			name:            "rejects Hyena runtime host",
-			projectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
-			sandboxUrl:      "https://rle.westus2.hyena.infra.ai.azure.com/subscriptions/sub/sandboxes/sandbox-1/openenv",
-			wantError:       true,
-		},
-		{
-			name:            "rejects loopback host",
-			projectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
-			sandboxUrl:      "http://127.0.0.1:8080/openenv",
-			wantError:       true,
-		},
-		{
-			name:            "rejects matching custom port on project origin",
-			projectEndpoint: "https://account.services.ai.azure.com:8443/api/projects/project-1",
-			sandboxUrl:      "https://account.services.ai.azure.com:8443/openenv",
-			wantError:       true,
-		},
-		{
-			name:            "rejects embedded credentials",
-			projectEndpoint: "https://account.services.ai.azure.com/api/projects/project-1",
-			sandboxUrl:      "https://user@account.services.ai.azure.com/openenv",
-			wantError:       true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateRemoteSandboxURL(tt.sandboxUrl, tt.projectEndpoint)
-			if tt.wantError && err == nil {
-				t.Fatalf("expected %q to be rejected", tt.sandboxUrl)
-			}
-			if !tt.wantError && err != nil {
-				t.Fatalf("expected %q to be accepted: %v", tt.sandboxUrl, err)
-			}
-		})
-	}
-
-	secret := "secret-value"
-	err := validateRemoteSandboxURL(
-		"https://user:"+secret+"@account.services.ai.azure.com/openenv",
-		"https://account.services.ai.azure.com/api/projects/project-1",
-	)
-	if err == nil || strings.Contains(err.Error(), secret) {
-		t.Fatalf("expected embedded credentials to be rejected without disclosure, got %v", err)
-	}
-}
-
-func TestCleanupRemoteRuntimeDeletesInstanceThenGroup(t *testing.T) {
-	tests := []struct {
-		name           string
-		instanceStatus int
-		groupStatus    int
-		wantError      bool
-	}{
-		{
-			name:           "success",
-			instanceStatus: http.StatusNoContent,
-			groupStatus:    http.StatusNoContent,
-		},
-		{
-			name:           "not found is already cleaned",
-			instanceStatus: http.StatusNotFound,
-			groupStatus:    http.StatusNotFound,
-		},
-		{
-			name:           "instance failure still deletes group",
-			instanceStatus: http.StatusInternalServerError,
-			groupStatus:    http.StatusNoContent,
-			wantError:      true,
-		},
-		{
-			name:           "group failure is reported",
-			instanceStatus: http.StatusNoContent,
-			groupStatus:    http.StatusInternalServerError,
-			wantError:      true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var requests []string
-			client := newRleClientWithCredential(
-				"https://account.services.ai.azure.com/api/projects/project-1",
-				&testTokenCredential{},
-			)
-			client.httpClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
-				if request.Context().Err() != nil {
-					t.Fatalf("expected independent cleanup context, got %v", request.Context().Err())
-				}
-				requests = append(requests, request.Method+" "+request.URL.Path)
-				status := tt.instanceStatus
-				if strings.HasSuffix(request.URL.Path, "/group-1") {
-					status = tt.groupStatus
-				}
-				return &http.Response{
-					StatusCode: status,
-					Body:       io.NopCloser(strings.NewReader("{}")),
-					Header:     make(http.Header),
-				}, nil
-			})
-
-			err := cleanupRemoteRuntime(client, "code_rl", &remoteRuntime{
-				group: &instanceGroupResource{
-					Id:                 "group-1",
-					EnvironmentVersion: "1.0.0",
-				},
-				instance: &instanceResource{InstanceId: "instance-1"},
-			})
-			if (err != nil) != tt.wantError {
-				t.Fatalf("expected error=%t, got %v", tt.wantError, err)
-			}
-			expected := []string{
-				"DELETE /api/projects/project-1/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/" +
-					"instances/instance-1",
-				"DELETE /api/projects/project-1/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1",
-			}
-			if !slices.Equal(requests, expected) {
-				t.Fatalf("expected cleanup requests %v, got %v", expected, requests)
-			}
-		})
-	}
-}
-
-func TestWriteCleanupResultDoesNotExposeResourceDetails(t *testing.T) {
-	var output bytes.Buffer
-	writeCleanupResult(&output, nil)
-	if output.String() != "Remote runtime resources cleaned up successfully.\n" {
-		t.Fatalf("unexpected successful cleanup output: %q", output.String())
-	}
-
-	output.Reset()
-	writeCleanupResult(&output, errors.New("instance instance-1 in group group-1 failed"))
-	if output.String() != "Warning: remote runtime cleanup could not be completed; resources may remain.\n" {
-		t.Fatalf("unexpected failed cleanup output: %q", output.String())
-	}
-}
-
-func TestInvokeRemoteFromManifestDoesNotFallBackInstanceGroupsToLegacyPrefix(t *testing.T) {
-	t.Chdir(t.TempDir())
-	writeRleTestConfig(t, "code_rl", "1.0.0")
-
-	requestCount := 0
-	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount++
-		if r.Method != http.MethodPost ||
-			r.URL.Path != testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-		http.NotFound(w, r)
-	}))
-	defer controlPlane.Close()
-	useTestProjectEndpoint(t, controlPlane.URL)
-
-	command := newInvokeCommand()
-	command.SetOut(io.Discard)
-	command.SetErr(io.Discard)
-	err := command.Execute()
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("expected LocalError, got %T: %v", err, err)
-	}
-	if localErr.Code != "rle_environment_version_not_found" {
-		t.Fatalf("expected version-not-found code, got %q", localErr.Code)
-	}
-	if requestCount != 1 {
-		t.Fatalf("expected one primary instance-group request, got %d", requestCount)
-	}
-}
-
-func TestInvokeRemoteByNameUsesExplicitVersionWithoutLocalManifest(t *testing.T) {
-	captureBrowserOpen(t)
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	t.Setenv(
-		foundryProjectEndpointEnvVar,
-		"https://account.services.ai.azure.com/api/projects/project-1",
-	)
-
-	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/health":
-			_, _ = w.Write([]byte(`{"status":"healthy"}`))
-		case "/web":
-			_, _ = w.Write([]byte("<html>environment</html>"))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer envServer.Close()
-
-	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups":
-			_, _ = w.Write([]byte(
-				`{"id":"group-1","environmentName":"code_rl",` +
-					`"environmentVersion":"2.0.0","maxActiveInstances":1}`,
-			))
-		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances":
-			_, _ = w.Write([]byte(
-				`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` +
-					strconv.Quote(envServer.URL) + `}`,
-			))
-		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+
-				"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances/instance-1":
-			w.WriteHeader(http.StatusNoContent)
-		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1":
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-	}))
-	defer controlPlane.Close()
-	stubRleClientEndpoint(t, controlPlane.URL)
-
-	command := newInvokeCommand()
-	command.SetArgs([]string{"code_rl", "--version", "2.0.0"})
-	command.SetIn(strings.NewReader("exit\n"))
-	var output bytes.Buffer
-	command.SetOut(&output)
-	command.SetErr(&output)
-	if err := command.Execute(); err != nil {
+func TestReadJSONFlagOrFileReadsInlineValue(t *testing.T) {
+	raw, err := readJSONFlagOrFile("--task", `{"a":1}`, "--task-file", "")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), "Creating runtime for environment code_rl version 2.0.0") {
-		t.Fatalf("expected version-pinned runtime output, got %s", output.String())
-	}
-	if _, err := os.Stat(filepath.Join(tempDir, ".azd-rle.json")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("expected cloud-only invoke not to create legacy state, got %v", err)
+	if string(raw) != `{"a":1}` {
+		t.Fatalf("expected inline payload preserved, got %s", raw)
 	}
 }
 
-func TestInvokeRemoteByNameTimesOutWhileWaitingForEnvironmentReadiness(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	t.Setenv(
-		foundryProjectEndpointEnvVar,
-		"https://account.services.ai.azure.com/api/projects/project-1",
-	)
-
-	oldRetryInterval := remoteReadinessRetryInterval
-	remoteReadinessRetryInterval = time.Millisecond
-	defer func() { remoteReadinessRetryInterval = oldRetryInterval }()
-
-	groupCreateCount := 0
-	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if r.Method != http.MethodPost ||
-			r.URL.Path != testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-		groupCreateCount++
-		http.Error(
-			w,
-			`{"code":"EnvironmentNotReady","message":"The environment disk image is not ready."}`,
-			http.StatusBadRequest,
-		)
-	}))
-	defer controlPlane.Close()
-	stubRleClientEndpoint(t, controlPlane.URL)
-
-	command := newInvokeCommand()
-	command.SetArgs([]string{"code_rl", "--version", "2.0.0"})
-	command.SetIn(strings.NewReader("exit\n"))
-	var output bytes.Buffer
-	command.SetOut(&output)
-	command.SetErr(&output)
-	err := command.Execute()
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("expected LocalError, got %T: %v", err, err)
-	}
-	if localErr.Code != "rle_environment_readiness_timeout" {
-		t.Fatalf("expected readiness timeout code, got %q", localErr.Code)
-	}
-	if groupCreateCount != remoteReadinessRetryCount+1 {
-		t.Fatalf("expected %d readiness attempts, got %d", remoteReadinessRetryCount+1, groupCreateCount)
-	}
-	if !strings.Contains(
-		output.String(),
-		"The requested environment's disk image is not ready yet. Waiting 0 seconds before retrying (10/10) ...",
-	) {
-		t.Fatalf("expected readiness progress output, got %s", output.String())
-	}
-}
-
-func TestInvokeRemoteByNameRetriesEnvironmentReadinessUntilSuccess(t *testing.T) {
-	captureBrowserOpen(t)
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	t.Setenv(
-		foundryProjectEndpointEnvVar,
-		"https://account.services.ai.azure.com/api/projects/project-1",
-	)
-
-	oldRetryInterval := remoteReadinessRetryInterval
-	remoteReadinessRetryInterval = time.Millisecond
-	defer func() { remoteReadinessRetryInterval = oldRetryInterval }()
-
-	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/health":
-			_, _ = w.Write([]byte(`{"status":"healthy"}`))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer envServer.Close()
-
-	groupCreateCount := 0
-	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups":
-			groupCreateCount++
-			if groupCreateCount < 3 {
-				http.Error(
-					w,
-					`{"code":"EnvironmentNotReady","message":"The environment disk image is not ready."}`,
-					http.StatusBadRequest,
-				)
-				return
-			}
-			_, _ = w.Write([]byte(
-				`{"id":"group-1","environmentName":"code_rl",` +
-					`"environmentVersion":"2.0.0","maxActiveInstances":1}`,
-			))
-		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances":
-			_, _ = w.Write([]byte(
-				`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` +
-					strconv.Quote(envServer.URL) + `}`,
-			))
-		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+
-				"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances/instance-1":
-			w.WriteHeader(http.StatusNoContent)
-		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1":
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-	}))
-	defer controlPlane.Close()
-	stubRleClientEndpoint(t, controlPlane.URL)
-
-	command := newInvokeCommand()
-	command.SetArgs([]string{"code_rl", "--version", "2.0.0"})
-	command.SetIn(strings.NewReader("exit\n"))
-	var output bytes.Buffer
-	command.SetOut(&output)
-	command.SetErr(&output)
-	if err := command.Execute(); err != nil {
+func TestReadJSONFlagOrFileReadsFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "task.json")
+	if err := os.WriteFile(path, []byte(`{"b":2}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if groupCreateCount != 3 {
-		t.Fatalf("expected three group-creation attempts, got %d", groupCreateCount)
+	raw, err := readJSONFlagOrFile("--task", "", "--task-file", path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(
-		output.String(),
-		"The requested environment's disk image is not ready yet. Waiting 0 seconds before retrying (2/10) ...",
-	) {
-		t.Fatalf("expected readiness retry output, got %s", output.String())
-	}
-	if !strings.Contains(output.String(), "Environment code_rl version 2.0.0 ready") {
-		t.Fatalf("expected eventual success output, got %s", output.String())
+	if string(raw) != `{"b":2}` {
+		t.Fatalf("expected file payload preserved, got %s", raw)
 	}
 }
 
-func TestInvokeRemoteDoesNotReportReadyBeforeRuntimeHealthSucceeds(t *testing.T) {
-	captureBrowserOpen(t)
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	t.Setenv(
-		foundryProjectEndpointEnvVar,
-		"https://account.services.ai.azure.com/api/projects/project-1",
-	)
-
-	oldHealthTimeout := remoteRuntimeHealthTimeout
-	remoteRuntimeHealthTimeout = 10 * time.Millisecond
-	defer func() { remoteRuntimeHealthTimeout = oldHealthTimeout }()
-
-	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, `{"error":{"code":"RuntimeStarting","message":"Runtime is starting."}}`, http.StatusServiceUnavailable)
-	}))
-	defer envServer.Close()
-
-	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups":
-			_, _ = w.Write([]byte(
-				`{"id":"group-1","environmentName":"code_rl",` +
-					`"environmentVersion":"2.0.0","maxActiveInstances":1}`,
-			))
-		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances":
-			_, _ = w.Write([]byte(
-				`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` +
-					strconv.Quote(envServer.URL) + `}`,
-			))
-		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+
-				"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances/instance-1":
-			w.WriteHeader(http.StatusNoContent)
-		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1":
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-	}))
-	defer controlPlane.Close()
-	stubRleClientEndpoint(t, controlPlane.URL)
-
-	command := newInvokeCommand()
-	command.SetArgs([]string{"code_rl", "--version", "2.0.0"})
-	command.SetIn(strings.NewReader("exit\n"))
-	var output bytes.Buffer
-	command.SetOut(&output)
-	command.SetErr(&output)
-	err := command.Execute()
+func TestReadJSONFlagOrFileRejectsBothSet(t *testing.T) {
+	_, err := readJSONFlagOrFile("--task", `{}`, "--task-file", "somefile.json")
 	if err == nil {
-		t.Fatal("expected runtime health failure")
-	}
-	if !strings.Contains(output.String(), "Environment instance is running; waiting for OpenEnv runtime ...") {
-		t.Fatalf("expected runtime health wait output, got %s", output.String())
-	}
-	if strings.Contains(output.String(), "Environment code_rl version 2.0.0 ready") {
-		t.Fatalf("did not expect ready output before runtime health succeeded, got %s", output.String())
-	}
-	if !strings.Contains(err.Error(), "Runtime is starting.") {
-		t.Fatalf("expected runtime health response detail, got %v", err)
+		t.Fatal("expected error when both inline and file flags are set")
 	}
 }
 
-func TestInvokeRemoteByNameUsesExplicitVersionInstanceRoutes(t *testing.T) {
-	captureBrowserOpen(t)
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	t.Setenv(
-		foundryProjectEndpointEnvVar,
-		"https://account.services.ai.azure.com/api/projects/project-1",
-	)
+func TestReadJSONFlagOrFileRejectsInvalidJSON(t *testing.T) {
+	_, err := readJSONFlagOrFile("--task", `not json`, "--task-file", "")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON payload")
+	}
+}
 
-	oldRetryInterval := remoteReadinessRetryInterval
-	remoteReadinessRetryInterval = time.Millisecond
-	defer func() { remoteReadinessRetryInterval = oldRetryInterval }()
+func TestNewRolloutIDReturnsUniqueHexValues(t *testing.T) {
+	first, err := newRolloutID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := newRolloutID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) != 32 {
+		t.Fatalf("expected a 32-char hex rollout id, got %q", first)
+	}
+	if first == second {
+		t.Fatal("expected distinct rollout ids across calls")
+	}
+}
 
-	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/health":
-			_, _ = w.Write([]byte(`{"status":"healthy"}`))
-		case "/web":
-			_, _ = w.Write([]byte("<html>environment</html>"))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer envServer.Close()
-
-	groupCreateCount := 0
-	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups":
-			groupCreateCount++
-			if groupCreateCount == 1 {
-				http.Error(
-					w,
-					`{"code":"EnvironmentNotReady","message":"The environment disk image is not ready."}`,
-					http.StatusBadRequest,
-				)
-				return
-			}
-			_, _ = w.Write([]byte(
-				`{"id":"group-1","environmentName":"code_rl",` +
-					`"environmentVersion":"1.0.0","maxActiveInstances":1}`,
-			))
-		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances":
-			_, _ = w.Write([]byte(
-				`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` +
-					strconv.Quote(envServer.URL) + `}`,
-			))
-		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+
-				"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances/instance-1":
-			w.WriteHeader(http.StatusNoContent)
-		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1":
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-	}))
-	defer controlPlane.Close()
-	stubRleClientEndpoint(t, controlPlane.URL)
+func TestInvokeRequiresModel(t *testing.T) {
+	stubRleClientEndpoint(t, "https://rle.test")
 
 	command := newInvokeCommand()
 	command.SetArgs([]string{"code_rl", "--version", "1.0.0"})
-	command.SetIn(strings.NewReader("exit\n"))
 	var output bytes.Buffer
 	command.SetOut(&output)
 	command.SetErr(&output)
-	if err := command.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(output.String(), "Creating runtime for environment code_rl version 1.0.0") {
-		t.Fatalf("expected explicit version in runtime output, got %s", output.String())
-	}
-	if !strings.Contains(output.String(), "Environment code_rl version 1.0.0 ready") {
-		t.Fatalf("expected explicit version in ready output, got %s", output.String())
-	}
-	if groupCreateCount != 2 {
-		t.Fatalf("expected explicit version to retry instance-group creation, got %d attempts", groupCreateCount)
+
+	if err := command.Execute(); err == nil {
+		t.Fatal("expected an error when --model is not provided")
 	}
 }
 
-func TestInvokeRemoteByNameDoesNotRetryOtherBadRequests(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	t.Setenv(
-		foundryProjectEndpointEnvVar,
-		"https://account.services.ai.azure.com/api/projects/project-1",
-	)
-
-	groupCreateCount := 0
-	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestInvokeRunExecutesRolloutAndClosesLoomSession(t *testing.T) {
+	rleServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost ||
-			r.URL.Path != testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+			r.URL.Path != testFoundryProjectPath+environmentCollectionPath+"/code_rl/versions/1.0.0:executeRollout" {
+			t.Fatalf("unexpected RLE request: %s %s", r.Method, r.URL.Path)
 		}
-		groupCreateCount++
-		http.Error(w, `{"code":"InvalidRequest","message":"the request is invalid"}`, http.StatusBadRequest)
-	}))
-	defer controlPlane.Close()
-	stubRleClientEndpoint(t, controlPlane.URL)
-
-	command := newInvokeCommand()
-	command.SetArgs([]string{"code_rl", "--version", "1.0.0"})
-	command.SetOut(io.Discard)
-	command.SetErr(io.Discard)
-	err := command.Execute()
-	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
-	if !ok {
-		t.Fatalf("expected ServiceError, got %T: %v", err, err)
-	}
-	if groupCreateCount != 1 {
-		t.Fatalf("expected one bad-request attempt, got %d", groupCreateCount)
-	}
-	if !strings.Contains(serviceErr.Message, "the request is invalid") {
-		t.Fatalf("expected original bad-request message, got %q", serviceErr.Message)
-	}
-}
-
-func TestInvokeRemoteByNameClassifiesVersionRuntimeFailuresAsServiceErrors(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	t.Setenv(
-		foundryProjectEndpointEnvVar,
-		"https://account.services.ai.azure.com/api/projects/project-1",
-	)
-
-	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost ||
-			r.URL.Path != testFoundryProjectPath+
-				environmentCollectionPath+"/code_rl/versions/1.0.0/instance_groups" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		if got := r.Header.Get("aml-user-token"); got == "" {
+			t.Fatal("expected aml-user-token header to be forwarded")
 		}
-		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
-	}))
-	defer controlPlane.Close()
-	stubRleClientEndpoint(t, controlPlane.URL)
-
-	command := newInvokeCommand()
-	command.SetArgs([]string{"code_rl", "--version", "1.0.0"})
-	command.SetOut(io.Discard)
-	command.SetErr(io.Discard)
-	err := command.Execute()
-	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
-	if !ok {
-		t.Fatalf("expected ServiceError, got %T: %v", err, err)
-	}
-	if serviceErr.ServiceName != "rle-service" {
-		t.Fatalf("expected rle-service, got %q", serviceErr.ServiceName)
-	}
-}
-
-func TestInvokeRemoteByNameReportsMissingEnvironmentVersion(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	t.Setenv(
-		foundryProjectEndpointEnvVar,
-		"https://account.services.ai.azure.com/api/projects/project-1",
-	)
-
-	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost ||
-			r.URL.Path != testFoundryProjectPath+
-				environmentCollectionPath+"/code_rl/versions/9.9.9/instance_groups" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-		http.NotFound(w, r)
-	}))
-	defer controlPlane.Close()
-	stubRleClientEndpoint(t, controlPlane.URL)
-
-	command := newInvokeCommand()
-	command.SetArgs([]string{"code_rl", "--version", "9.9.9"})
-	command.SetOut(io.Discard)
-	command.SetErr(io.Discard)
-	err := command.Execute()
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("expected LocalError, got %T: %v", err, err)
-	}
-	if localErr.Code != "rle_environment_version_not_found" {
-		t.Fatalf("expected version-not-found code, got %q", localErr.Code)
-	}
-	if !strings.Contains(localErr.Suggestion, "azd ai rle show code_rl") {
-		t.Fatalf("unexpected version-not-found suggestion: %q", localErr.Suggestion)
-	}
-}
-
-func TestInvokeRemoteByNameReportsMissingVersion(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	t.Setenv(
-		foundryProjectEndpointEnvVar,
-		"https://account.services.ai.azure.com/api/projects/project-1",
-	)
-
-	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost ||
-			r.URL.Path != testFoundryProjectPath+environmentCollectionPath+"/missing_env/versions/1.0.0/instance_groups" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-		http.NotFound(w, r)
-	}))
-	defer controlPlane.Close()
-	stubRleClientEndpoint(t, controlPlane.URL)
-
-	command := newInvokeCommand()
-	command.SetArgs([]string{"missing_env", "--version", "1.0.0"})
-	command.SetOut(io.Discard)
-	command.SetErr(io.Discard)
-	err := command.Execute()
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("expected LocalError, got %T: %v", err, err)
-	}
-	if localErr.Code != "rle_environment_version_not_found" {
-		t.Fatalf("expected environment-version-not-found code, got %q", localErr.Code)
-	}
-	if !strings.Contains(localErr.Suggestion, "azd ai rle show missing_env") {
-		t.Fatalf("unexpected environment-version-not-found suggestion: %q", localErr.Suggestion)
-	}
-}
-
-func TestInvokeRemoteUsesManifestEnvironmentNameWithVersion(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	writeRleTestConfig(t, "code_rl", "1.0.0")
-	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost ||
-			r.URL.Path != testFoundryProjectPath+
-				environmentCollectionPath+"/code_rl/versions/1.0.0/instance_groups" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-		http.NotFound(w, r)
-	}))
-	defer controlPlane.Close()
-	stubRleClientEndpoint(t, controlPlane.URL)
-
-	command := newInvokeCommand()
-	command.SetArgs([]string{"--version", "1.0.0"})
-	command.SetOut(io.Discard)
-	command.SetErr(io.Discard)
-
-	err := command.Execute()
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("expected local error, got %v", err)
-	}
-	if localErr.Code != "rle_environment_version_not_found" {
-		t.Fatalf("expected environment-version-not-found error, got %q", localErr.Code)
-	}
-	if localErr.Message != `RLE environment "code_rl" with version "1.0.0" was not found in this Foundry project.` {
-		t.Fatalf("unexpected environment-version-not-found message: %q", localErr.Message)
-	}
-}
-
-func TestInvokeRemoteUsesAuthenticatedPlaygroundProxy(t *testing.T) {
-	openedUrl := captureBrowserOpen(t)
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	writeRleTestConfig(t, "code_rl", "1.0.0")
-
-	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer test-token" {
-			t.Errorf("expected runtime request to include the bearer token")
-		}
-		switch r.URL.Path {
-		case "/health":
-			_, _ = w.Write([]byte(`{"status":"healthy"}`))
-		case "/web":
-			_, _ = w.Write([]byte(`<html>sandbox ui</html>`))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer envServer.Close()
-
-	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(
-				`{"id":"group-1","environmentName":"code_rl",` +
-					`"environmentVersion":"1.0.0","maxActiveInstances":1}`,
-			))
-		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(
-				`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` +
-					strconv.Quote(envServer.URL) + `}`,
-			))
-		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+
-				"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances/instance-1":
-			w.WriteHeader(http.StatusNoContent)
-		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1":
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			t.Fatalf("unexpected instance request: %s %s", r.Method, r.URL.Path)
-		}
-	}))
-	defer controlPlane.Close()
-	useTestProjectEndpoint(t, controlPlane.URL)
-
-	command := newInvokeCommand()
-	command.SetIn(strings.NewReader("exit\n"))
-	var output bytes.Buffer
-	command.SetOut(&output)
-	command.SetErr(&output)
-	if err := command.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(output.String(), "Playground UI:") {
-		t.Fatalf("expected playground URL to remain hidden, got %s", output.String())
-	}
-	if strings.Contains(output.String(), envServer.URL+"/web") {
-		t.Fatalf("expected playground proxy URL to remain hidden, got %s", output.String())
-	}
-	opened, err := url.Parse(*openedUrl)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if opened.Hostname() != "127.0.0.1" || opened.Path != "/web" {
-		t.Fatalf("expected browser to open the authenticated loopback proxy, got %q", *openedUrl)
-	}
-	if strings.TrimSpace(opened.Query().Get("token")) == "" {
-		t.Fatalf("expected browser bootstrap URL to include an authorization token, got %q", *openedUrl)
-	}
-}
-
-func TestRemotePlaygroundProxyForwardsToSandbox(t *testing.T) {
-	requestCount := 0
-	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount++
-		if r.URL.Path != "/ws" {
-			http.NotFound(w, r)
-			return
-		}
-		connection, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
-		if err != nil {
-			t.Errorf("upgrade WebSocket: %v", err)
-			return
-		}
-		defer connection.Close()
-		var request map[string]any
-		if err := connection.ReadJSON(&request); err != nil {
-			t.Errorf("read WebSocket request: %v", err)
-			return
-		}
-		if request["type"] != "state" {
-			t.Errorf("expected state request, got %#v", request)
-		}
-		if err := connection.WriteJSON(map[string]any{
-			"type": "state",
-			"data": map[string]any{"step_count": 3},
-		}); err != nil {
-			t.Errorf("write WebSocket response: %v", err)
-		}
-	}))
-	defer envServer.Close()
-	runtimeSession := project.NewWebSocketRuntimeSession(envServer.URL, 30, nil)
-	defer runtimeSession.Close()
-
-	playgroundUrl, stop, err := playgroundURLWithAuthorizationProvider(
-		t.Context(),
-		envServer.URL,
-		nil,
-		runtimeSession,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer stop()
-	if !strings.Contains(playgroundUrl, "127.0.0.1") || !strings.Contains(playgroundUrl, "/web?token=") {
-		t.Fatalf("expected local playground URL, got %q", playgroundUrl)
-	}
-
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	client := &http.Client{Jar: jar}
-	resp, err := client.Get(playgroundUrl) //nolint:gosec // Test-only local proxy URL.
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(body), "RLE Remote Console") {
-		t.Fatalf("expected playground HTML after token bootstrap, got %s", body)
-	}
-	if resp.Request.URL.RawQuery != "" {
-		t.Fatalf("expected bootstrap redirect to clear the token query, got %q", resp.Request.URL.String())
-	}
-
-	baseUrl := playgroundBaseURL(t, playgroundUrl)
-	request, err := http.NewRequest(http.MethodGet, baseUrl+"/state", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request.Header.Set("Origin", baseUrl)
-	resp, err = client.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	body, err = io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var state map[string]any
-	if err := json.Unmarshal(body, &state); err != nil || state["step_count"] != float64(3) {
-		t.Fatalf("expected proxied state body, got %s (err: %v)", body, err)
-	}
-	if requestCount != 2 {
-		t.Fatalf("expected a web capability probe and one authorized backend request, got %d", requestCount)
-	}
-}
-
-func TestProxySandboxWebStripsLoopbackSessionCookie(t *testing.T) {
-	var receivedCookies string
-	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedCookies = r.Header.Get("Cookie")
-		_, _ = w.Write([]byte("ok"))
-	}))
-	defer envServer.Close()
-
-	request := httptest.NewRequest(http.MethodGet, "/web", nil)
-	request.AddCookie(&http.Cookie{Name: playgroundSessionCookie, Value: "loopback-secret"})
-	request.AddCookie(&http.Cookie{Name: "container-cookie", Value: "keep-me"})
-	recorder := httptest.NewRecorder()
-
-	proxySandboxWeb(recorder, request, envServer.URL, nil)
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("expected proxied request to succeed, got %d", recorder.Code)
-	}
-	if receivedCookies != "container-cookie=keep-me" {
-		t.Fatalf("expected only container cookies to be forwarded, got %q", receivedCookies)
-	}
-}
-
-func TestRemotePlaygroundCancellationDoesNotFailSharedSession(t *testing.T) {
-	firstRequestReceived := make(chan struct{})
-	releaseFirstResponse := make(chan struct{})
-	var requestCount atomic.Int32
-	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		connection, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
-		if err != nil {
-			t.Errorf("upgrade WebSocket: %v", err)
-			return
-		}
-		defer connection.Close()
-		for {
-			var request map[string]any
-			if err := connection.ReadJSON(&request); err != nil {
-				if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
-					return
-				}
-				t.Errorf("read WebSocket request: %v", err)
-				return
-			}
-			currentRequest := requestCount.Add(1)
-			if currentRequest == 1 {
-				close(firstRequestReceived)
-				<-releaseFirstResponse
-			}
-			if err := connection.WriteJSON(map[string]any{
-				"type": "state",
-				"data": map[string]any{"request": currentRequest},
-			}); err != nil {
-				t.Errorf("write WebSocket response: %v", err)
-				return
-			}
-		}
-	}))
-	defer envServer.Close()
-
-	runtimeSession := project.NewWebSocketRuntimeSession(envServer.URL, 30, nil)
-	defer runtimeSession.Close()
-	requestContext, cancelRequest := context.WithCancel(t.Context())
-	request := httptest.NewRequest(http.MethodGet, "/state", nil).WithContext(requestContext)
-	recorder := httptest.NewRecorder()
-	proxyDone := make(chan struct{})
-	go func() {
-		proxyStatefulOpenEnvOperation(recorder, request, "state", runtimeSession)
-		close(proxyDone)
-	}()
-
-	<-firstRequestReceived
-	cancelRequest()
-	close(releaseFirstResponse)
-	<-proxyDone
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("expected canceled browser request to drain successfully, got %d", recorder.Code)
-	}
-	if _, err := runtimeSession.Call(t.Context(), "state", ""); err != nil {
-		t.Fatalf("expected shared session to remain usable: %v", err)
-	}
-	if requestCount.Load() != 2 {
-		t.Fatalf("expected two state requests on the shared session, got %d", requestCount.Load())
-	}
-}
-
-func TestRemotePlaygroundProxyRefreshesAuthorizationForEachRequest(t *testing.T) {
-	var authorizations []string
-	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authorizations = append(authorizations, r.Header.Get("Authorization"))
-		if r.URL.Path == "/web" {
-			http.NotFound(w, r)
-			return
-		}
-		_, _ = w.Write([]byte(`{"step_count":3}`))
-	}))
-	defer envServer.Close()
-
-	tokenNumber := 0
-	authorizationProvider := func(context.Context) (string, error) {
-		tokenNumber++
-		return fmt.Sprintf("Bearer test-token-%d", tokenNumber), nil
-	}
-	playgroundUrl, stop, err := playgroundURLWithAuthorizationProvider(
-		t.Context(),
-		envServer.URL,
-		authorizationProvider,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer stop()
-
-	client, baseUrl, origin := newAuthorizedPlaygroundClient(t, playgroundUrl)
-	for range 2 {
-		request, err := http.NewRequest(http.MethodGet, baseUrl+"/state", nil)
-		if err != nil {
+		var request executeRolloutRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Fatal(err)
 		}
-		request.Header.Set("Origin", origin)
-		resp, err := client.Do(request)
-		if err != nil {
-			t.Fatal(err)
+		if request.Model == nil || request.Model.ModelName != "Qwen/Qwen3-32B" {
+			t.Fatalf("expected model name to be forwarded, got %#v", request.Model)
 		}
-		_ = resp.Body.Close()
-	}
-
-	if len(authorizations) != 3 {
-		t.Fatalf("expected authorization for the capability probe and two proxy requests, got %v", authorizations)
-	}
-	if authorizations[0] == authorizations[1] ||
-		authorizations[0] == authorizations[2] ||
-		authorizations[1] == authorizations[2] {
-		t.Fatalf("expected a refreshed authorization header for every backend request, got %v", authorizations)
-	}
-}
-
-func TestRemotePlaygroundProxiesSandboxWebInterface(t *testing.T) {
-	type backendRequest struct {
-		path          string
-		query         url.Values
-		host          string
-		authorization string
-	}
-	var backendRequests []backendRequest
-	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		backendRequests = append(backendRequests, backendRequest{
-			path:          r.URL.Path,
-			query:         r.URL.Query(),
-			host:          r.Host,
-			authorization: r.Header.Get("Authorization"),
-		})
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = w.Write([]byte(`<title>Container playground</title>`))
-	}))
-	defer envServer.Close()
-
-	tokenNumber := 0
-	authorizationProvider := func(context.Context) (string, error) {
-		tokenNumber++
-		return fmt.Sprintf("Bearer web-token-%d", tokenNumber), nil
-	}
-	playgroundUrl, stop, err := playgroundURLWithAuthorizationProvider(
-		t.Context(),
-		envServer.URL+"/sandbox?api-version=2025-01-01",
-		authorizationProvider,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer stop()
-
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	client := &http.Client{Jar: jar}
-	baseUrl := playgroundBaseURL(t, playgroundUrl)
-	origin := baseUrl
-	resp, err := client.Get(playgroundUrl) //nolint:gosec // Test-only local proxy URL.
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, err := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(body), "Container playground") {
-		t.Fatalf("expected container-provided playground HTML, got %s", body)
-	}
-
-	request, err := http.NewRequest(http.MethodGet, baseUrl+"/assets/app.js?theme=dark", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request.Header.Set("Origin", origin)
-	resp, err = client.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = resp.Body.Close()
-
-	if len(backendRequests) != 3 {
-		t.Fatalf("expected capability probe, web page, and asset requests, got %#v", backendRequests)
-	}
-	for index, backendRequest := range backendRequests {
-		if backendRequest.path != []string{"/sandbox/web", "/sandbox/web", "/sandbox/assets/app.js"}[index] {
-			t.Fatalf("unexpected backend path at request %d: %q", index, backendRequest.path)
+		if request.Model.LoomSessionID != "session_abc" {
+			t.Fatalf("expected canonical loom session id, got %q", request.Model.LoomSessionID)
 		}
-		if backendRequest.query.Get("api-version") != "2025-01-01" {
-			t.Fatalf("expected api-version on request %d, got %q", index, backendRequest.query.Encode())
+		if request.Model.CheckpointID == "" {
+			t.Fatal("expected a checkpoint id to be forwarded")
 		}
-		if backendRequest.query.Get("token") != "" {
-			t.Fatalf("expected loopback bootstrap token to remain local, got %q", backendRequest.query.Encode())
-		}
-		if backendRequest.host != strings.TrimPrefix(envServer.URL, "http://") {
-			t.Fatalf("expected sandbox host on request %d, got %q", index, backendRequest.host)
-		}
-		if backendRequest.authorization == "" {
-			t.Fatalf("expected authorization on request %d", index)
-		}
-	}
-	if backendRequests[2].query.Get("theme") != "dark" {
-		t.Fatalf("expected asset query to be preserved, got %q", backendRequests[2].query.Encode())
-	}
-	if backendRequests[0].authorization == backendRequests[1].authorization ||
-		backendRequests[0].authorization == backendRequests[2].authorization ||
-		backendRequests[1].authorization == backendRequests[2].authorization {
-		t.Fatalf("expected refreshed authorization for each backend request, got %#v", backendRequests)
-	}
-}
-
-func TestPlaygroundWebInterfaceProbeErrorsAreSurfaced(t *testing.T) {
-	t.Run("authentication failure", func(t *testing.T) {
-		envServer := httptest.NewServer(http.NotFoundHandler())
-		defer envServer.Close()
-
-		_, stop, err := playgroundURLWithAuthorizationProvider(
-			t.Context(),
-			envServer.URL,
-			func(context.Context) (string, error) {
-				return "", errors.New("token unavailable")
-			},
-		)
-		defer stop()
-		if err == nil || !strings.Contains(err.Error(), "authenticate to environment web interface") {
-			t.Fatalf("expected web interface authentication error, got %v", err)
-		}
-	})
-
-	t.Run("unexpected response", func(t *testing.T) {
-		envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			http.Error(w, "unavailable", http.StatusServiceUnavailable)
-		}))
-		defer envServer.Close()
-
-		_, stop, err := playgroundURLWithAuthorizationProvider(t.Context(), envServer.URL, nil)
-		defer stop()
-		if err == nil || !strings.Contains(err.Error(), "HTTP 503") {
-			t.Fatalf("expected web interface probe status error, got %v", err)
-		}
-	})
-}
-
-func TestRemotePlaygroundProxyRejectsUnauthorizedRequests(t *testing.T) {
-	backendRequests := 0
-	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		backendRequests++
-		if r.URL.Path == "/web" {
-			http.NotFound(w, r)
-			return
-		}
-		_, _ = w.Write([]byte(`{"step_count":3}`))
-	}))
-	defer envServer.Close()
-
-	playgroundUrl, stop, err := playgroundURLWithAuthorizationProvider(
-		t.Context(),
-		envServer.URL,
-		nil,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer stop()
-
-	baseUrl := playgroundBaseURL(t, playgroundUrl)
-	resp, err := http.Get(baseUrl + "/state") //nolint:gosec // Test-only local proxy URL.
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("expected unauthorized status, got %d", resp.StatusCode)
-	}
-	if backendRequests != 1 {
-		t.Fatalf("expected only the web capability probe to reach the backend, got %d requests", backendRequests)
-	}
-}
-
-func TestRemotePlaygroundProxyRejectsInvalidHostAndOrigin(t *testing.T) {
-	backendRequests := 0
-	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		backendRequests++
-		if r.URL.Path == "/web" {
-			http.NotFound(w, r)
-			return
-		}
-		_, _ = w.Write([]byte(`{"step_count":3}`))
-	}))
-	defer envServer.Close()
-
-	playgroundUrl, stop, err := playgroundURLWithAuthorizationProvider(
-		t.Context(),
-		envServer.URL,
-		nil,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer stop()
-
-	client, baseUrl, _ := newAuthorizedPlaygroundClient(t, playgroundUrl)
-	for _, test := range []struct {
-		name         string
-		overrideHost string
-		origin       string
-	}{
-		{name: "bad host", overrideHost: "attacker.example"},
-		{name: "bad origin", origin: "http://attacker.example"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			request, err := http.NewRequest(http.MethodGet, baseUrl+"/state", nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if test.overrideHost != "" {
-				request.Host = test.overrideHost
-			}
-			if test.origin != "" {
-				request.Header.Set("Origin", test.origin)
-			}
-			resp, err := client.Do(request)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode != http.StatusForbidden {
-				t.Fatalf("expected status %d, got %d", http.StatusForbidden, resp.StatusCode)
-			}
-		})
-	}
-	if backendRequests != 1 {
-		t.Fatalf("expected only the web capability probe to reach the backend, got %d requests", backendRequests)
-	}
-}
-
-func TestInvokeRemotePollsStoppedInstanceUntilRunning(t *testing.T) {
-	captureBrowserOpen(t)
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	writeRleTestConfig(t, "code_rl", "1.0.0")
-
-	oldPollInterval := remoteInstancePollInterval
-	remoteInstancePollInterval = time.Millisecond
-	defer func() { remoteInstancePollInterval = oldPollInterval }()
-
-	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Path == "/health" {
-			_, _ = w.Write([]byte(`{"status":"healthy"}`))
-			return
-		}
-		http.NotFound(w, r)
+		_, _ = w.Write([]byte(`{
+			"rollout_id": "` + request.RolloutID + `",
+			"reward": 1,
+			"success": true,
+			"episode": {"kind": "gym", "termination_reason": "done", "steps": []}
+		}`))
 	}))
-	defer envServer.Close()
+	defer rleServer.Close()
 
-	getCount := 0
-	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	loomRequests := map[string]int{}
+	loomServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		loomRequests[r.Method+" "+r.URL.Path]++
+		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(
-				`{"id":"group-1","environmentName":"code_rl",` +
-					`"environmentVersion":"1.0.0","maxActiveInstances":1}`,
-			))
-		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Stopped"}`))
-		case r.Method == http.MethodGet &&
-			r.URL.Path == testFoundryProjectPath+
-				"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances/instance-1":
-			getCount++
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(
-				`{"instanceId":"instance-1","instanceGroupId":"group-1","status":"Running","baseUrl":` +
-					strconv.Quote(envServer.URL) + `}`,
-			))
-		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+
-				"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances/instance-1":
-			w.WriteHeader(http.StatusNoContent)
-		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1":
-			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPost && r.URL.Path == loomSessionsPath:
+			_, _ = w.Write([]byte(`{"session_id":"model_abc","request_id":"req-create"}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/checkpoint_sample"):
+			_, _ = w.Write([]byte(`{"session_id":"model_abc","request_id":"req-checkpoint"}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/complete"):
+			_, _ = w.Write([]byte(`{}`))
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/request/"):
+			_, _ = w.Write([]byte(`{"status":"completed"}`))
 		default:
-			t.Fatalf("unexpected instance request: %s %s", r.Method, r.URL.Path)
+			t.Fatalf("unexpected Loom request: %s %s", r.Method, r.URL.Path)
 		}
 	}))
-	defer controlPlane.Close()
-	useTestProjectEndpoint(t, controlPlane.URL)
+	defer loomServer.Close()
 
-	command := newInvokeCommand()
-	command.SetIn(strings.NewReader("exit\n"))
-	var output bytes.Buffer
-	command.SetOut(&output)
-	command.SetErr(&output)
-	if err := command.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	if getCount != 1 {
-		t.Fatalf("expected one instance poll, got %d", getCount)
-	}
-	if !strings.Contains(output.String(), "Environment code_rl version 1.0.0 ready") {
-		t.Fatalf("expected environment ready output, got %s", output.String())
-	}
-	if strings.Contains(output.String(), envServer.URL) {
-		t.Fatalf("expected instance data-plane URL to remain hidden, got %s", output.String())
-	}
-}
+	stubRleClientEndpoint(t, rleServer.URL)
 
-func TestWaitForRemoteInstanceRejectsDeletedInstance(t *testing.T) {
-	_, err := waitForRemoteInstance(
-		t.Context(),
-		nil,
-		"code_rl",
-		nil,
-		&instanceResource{Status: instanceStatusDeleted},
-	)
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("expected LocalError, got %T: %v", err, err)
-	}
-	if localErr.Code != "rle_instance_start_deleted" {
-		t.Fatalf("expected deleted-instance code, got %q", localErr.Code)
-	}
-}
-
-func TestInvokeRemoteFailsWhenInstanceFails(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	writeRleTestConfig(t, "code_rl", "1.0.0")
-
-	instanceDeleted := false
-	groupDeleted := false
-	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(
-				`{"id":"group-1","environmentName":"code_rl",` +
-					`"environmentVersion":"1.0.0","maxActiveInstances":1}`,
-			))
-		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(
-				`{"instanceId":"instance-1","instanceGroupId":"group-1",` +
-					`"status":"Failed","error":"image pull failed"}`,
-			))
-		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+
-				"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1/instances/instance-1":
-			instanceDeleted = true
-			w.WriteHeader(http.StatusNoContent)
-		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1":
-			groupDeleted = true
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			t.Fatalf("unexpected instance request: %s %s", r.Method, r.URL.Path)
-		}
-	}))
-	defer controlPlane.Close()
-	useTestProjectEndpoint(t, controlPlane.URL)
-
-	command := newInvokeCommand()
-	var output bytes.Buffer
-	command.SetOut(&output)
-	command.SetErr(&output)
-	err := command.Execute()
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("expected LocalError, got %T: %v", err, err)
-	}
-	if localErr.Code != "rle_instance_start_failed" {
-		t.Fatalf("expected instance failed code, got %q", localErr.Code)
-	}
-	if !instanceDeleted || !groupDeleted {
-		t.Fatal("expected failed instance and its group to be deleted")
-	}
-}
-
-func TestInvokeRemoteByNameRequiresVersion(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	t.Setenv(
-		foundryProjectEndpointEnvVar,
-		"https://account.services.ai.azure.com/api/projects/project-1",
-	)
-
-	command := newInvokeCommand()
-	command.SetArgs([]string{"code_rl"})
-	err := command.Execute()
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("expected LocalError, got %T", err)
-	}
-	if localErr.Code != "rle_environment_version_required" {
-		t.Fatalf("expected version-required code, got %q", localErr.Code)
-	}
-}
-
-func TestLocalContainerNamesUseEnvironmentName(t *testing.T) {
-	if name := localContainerName("code_rl"); name != "azd-rle-code-rl" {
-		t.Fatalf("expected local container name, got %q", name)
-	}
-}
-
-func TestEnsurePortAvailableRejectsBoundPort(t *testing.T) {
-	// This test intentionally binds an ephemeral port on all interfaces to verify conflict detection.
-	listener, err := net.Listen("tcp", ":0") //nolint:gosec
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-
-	port := listener.Addr().(*net.TCPAddr).Port
-	if err := ensurePortAvailable(port); err == nil {
-		t.Fatal("expected bound port to fail")
-	} else {
-		localErr, ok := errors.AsType[*azdext.LocalError](err)
-		if !ok {
-			t.Fatalf("expected LocalError, got %T", err)
-		}
-		for _, expected := range []string{
-			"docker ps --filter \"publish=",
-			"docker rm -f <container>",
-			"azd ai rle run --port",
-			"netstat -ano | findstr",
-		} {
-			if !strings.Contains(localErr.Suggestion, expected) {
-				t.Fatalf("expected suggestion to contain %q, got %q", expected, localErr.Suggestion)
-			}
-		}
-	}
-}
-
-func TestResolvePortDefaultsTo8000(t *testing.T) {
-	if port := resolvePort(&localRunFlags{}); port != defaultPort {
-		t.Fatalf("expected default port %d, got %d", defaultPort, port)
-	}
-	if port := resolvePort(&localRunFlags{port: 9000}); port != 9000 {
-		t.Fatalf("expected explicit port 9000, got %d", port)
-	}
-}
-
-func TestLoadLocalRunConfigUsesManifest(t *testing.T) {
-	tempDir := filepath.Join(t.TempDir(), "My Env")
-	if err := os.MkdirAll(tempDir, 0750); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(tempDir)
-	writeRleTestConfig(t, "my_env", "1.0.0")
-
-	config, err := loadLocalRunConfig(&localRunFlags{source: "."})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if config.Rle.Name != "my_env" {
-		t.Fatalf("expected manifest environment name, got %q", config.Rle.Name)
-	}
-	image := localRuntimeImageForRun(config.Rle.Name)
-	if image != "my-env:local" {
-		t.Fatalf("expected manifest-derived local image, got %q", image)
-	}
-}
-
-func TestInvokeRemoteRejectsMismatchedPinnedGroupVersionAndCleansUpRequestedRoute(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	writeRleTestConfig(t, "code_rl", "1.0.0")
-
-	instanceCreateCount := 0
-	groupDeleteCount := 0
-	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(
-				`{"id":"group-1","environmentName":"code_rl",` +
-					`"environmentVersion":"2.0.0","maxActiveInstances":1}`,
-			))
-		case r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/2.0.0/instance_groups/group-1/instances":
-			instanceCreateCount++
-			t.Fatalf("unexpected instance creation against mismatched version route")
-		case r.Method == http.MethodDelete &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups/group-1":
-			groupDeleteCount++
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-	}))
-	defer controlPlane.Close()
-	useTestProjectEndpoint(t, controlPlane.URL)
-
-	command := newInvokeCommand()
-	var output bytes.Buffer
-	command.SetOut(&output)
-	command.SetErr(&output)
-	err := command.Execute()
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("expected LocalError, got %T: %v", err, err)
-	}
-	if localErr.Code != "rle_instance_group_version_mismatch" {
-		t.Fatalf("expected version-mismatch code, got %q", localErr.Code)
-	}
-	if instanceCreateCount != 0 {
-		t.Fatalf("expected no instance creation, got %d", instanceCreateCount)
-	}
-	if groupDeleteCount != 1 {
-		t.Fatalf("expected cleanup to delete the group via the requested route, got %d", groupDeleteCount)
-	}
-}
-
-func TestValidateInstanceGroupIdentityRejectsMismatchedEnvironment(t *testing.T) {
-	err := validateInstanceGroupIdentity(
-		remoteInvokeTarget{environmentName: "code_rl", version: "1.0.0"},
-		&instanceGroupResource{
-			Id:                 "group-1",
-			EnvironmentName:    "other_environment",
-			EnvironmentVersion: "1.0.0",
-		},
-	)
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("expected LocalError, got %T: %v", err, err)
-	}
-	if localErr.Code != "rle_instance_group_environment_mismatch" {
-		t.Fatalf("expected environment-mismatch code, got %q", localErr.Code)
-	}
-}
-
-func TestRemoteInvokeDoesNotRetryInstanceGroupConflicts(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	writeRleTestConfig(t, "code_rl", "1.0.0")
-
-	createCount := 0
-	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost &&
-			r.URL.Path == testFoundryProjectPath+"/rl_environments/code_rl/versions/1.0.0/instance_groups" {
-			createCount++
-			http.Error(w, `{"error":"quota unavailable"}`, http.StatusConflict)
-			return
-		}
-		t.Fatalf("unexpected instance-group request: %s %s", r.Method, r.URL.Path)
-	}))
-	defer controlPlane.Close()
-	useTestProjectEndpoint(t, controlPlane.URL)
-
-	command := newInvokeCommand()
-	command.SetIn(strings.NewReader("exit\n"))
-	var output bytes.Buffer
-	command.SetOut(&output)
-	command.SetErr(&output)
-	err := command.Execute()
-	if err == nil {
-		t.Fatal("expected instance-group conflict")
-	}
-	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
-	if !ok {
-		t.Fatalf("expected ServiceError, got %T", err)
-	}
-	if createCount != 1 {
-		t.Fatalf("expected one instance-group creation attempt, got %d", createCount)
-	}
-	if !strings.Contains(serviceErr.Message, "quota unavailable") {
-		t.Fatalf("expected lease conflict details, got %q", serviceErr.Message)
-	}
-}
-
-func captureBrowserOpen(t *testing.T) *string {
-	t.Helper()
-	old := ui.OpenBrowser
-	openedUrl := ""
-	ui.OpenBrowser = func(url string) error {
-		openedUrl = url
-		return nil
+	oldCreateLoomSessionClient := createLoomSessionClient
+	createLoomSessionClient = func(endpoint string) (*loomSessionClient, error) {
+		return testLoomSessionClientForServer(t, loomServer.URL), nil
 	}
 	t.Cleanup(func() {
-		ui.OpenBrowser = old
+		createLoomSessionClient = oldCreateLoomSessionClient
 	})
-	return &openedUrl
+
+	command := newInvokeCommand()
+	command.SetArgs([]string{
+		"code_rl", "--version", "1.0.0",
+		"--model", "Qwen/Qwen3-32B",
+		"--task", `{"prompt":"hello"}`,
+	})
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+
+	if err := command.Execute(); err != nil {
+		t.Fatalf("expected invoke to succeed, got %v", err)
+	}
+	if !strings.Contains(output.String(), "success: true") {
+		t.Fatalf("expected rollout result to be printed, got %s", output.String())
+	}
+	if loomRequests["POST "+loomSessionsPath] != 1 {
+		t.Fatalf("expected exactly one Loom session creation request, got %d", loomRequests["POST "+loomSessionsPath])
+	}
+	if loomRequests["POST /fine_tuning/sessions/session_abc/complete"] != 1 {
+		t.Fatal("expected the Loom session to be closed on completion")
+	}
 }
 
-func newAuthorizedPlaygroundClient(t *testing.T, playgroundUrl string) (*http.Client, string, string) {
-	t.Helper()
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	client := &http.Client{Jar: jar}
-	resp, err := client.Get(playgroundUrl) //nolint:gosec // Test-only local proxy URL.
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = resp.Body.Close()
-	baseUrl := playgroundBaseURL(t, playgroundUrl)
-	return client, baseUrl, baseUrl
-}
-
-func playgroundBaseURL(t *testing.T, playgroundUrl string) string {
-	t.Helper()
-	parsed, err := url.Parse(playgroundUrl)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return parsed.Scheme + "://" + parsed.Host
-}
-
-func useTestProjectEndpoint(t *testing.T, endpoint string) {
+func testLoomSessionClientForServer(t *testing.T, endpoint string) *loomSessionClient {
 	t.Helper()
 	target, err := url.Parse(endpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldCreateRleClient := createRleClient
-	oldValidateSandboxURL := validateSandboxURL
-	validateSandboxURL = func(string, string) error {
-		return nil
-	}
-	createRleClient = func(string) (*rleClient, error) {
-		client := newRleClientWithCredential(
-			"https://rle.test"+testFoundryProjectPath,
-			&testTokenCredential{},
-		)
-		client.httpClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
-			request = request.Clone(request.Context())
-			request.URL.Scheme = target.Scheme
-			request.URL.Host = target.Host
-			return http.DefaultTransport.RoundTrip(request)
-		})
-		return client, nil
-	}
-	t.Cleanup(func() {
-		createRleClient = oldCreateRleClient
-		validateSandboxURL = oldValidateSandboxURL
+	client := newLoomSessionClientWithCredential("https://loom.test", &testTokenCredential{})
+	client.httpClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		request = request.Clone(request.Context())
+		request.URL.Scheme = target.Scheme
+		request.URL.Host = target.Host
+		return http.DefaultTransport.RoundTrip(request)
 	})
-	t.Setenv(
-		foundryProjectEndpointEnvVar,
-		"https://account.services.ai.azure.com/api/projects/project-1",
-	)
-}
-
-func writeRleTestConfig(t *testing.T, name string, version string) {
-	t.Helper()
-	if err := project.WriteRleConfig(".", project.RleConfig{
-		Rle: project.RleManifest{
-			Name:    name,
-			Version: version,
-			Type:    project.RleTypeGym,
-			Subtype: project.RleSubtypeOpenEnv,
-		},
-	}); err != nil {
-		t.Fatal(err)
-	}
+	return client
 }

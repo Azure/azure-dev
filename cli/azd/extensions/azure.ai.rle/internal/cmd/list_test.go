@@ -759,16 +759,11 @@ func stubRleClientEndpoint(t *testing.T, endpoint string) {
 		"https://account.services.ai.azure.com/api/projects/project-1",
 	)
 	oldCreateRleClient := createRleClient
-	oldValidateSandboxURL := validateSandboxURL
-	validateSandboxURL = func(string, string) error {
-		return nil
-	}
 	createRleClient = func(string) (*rleClient, error) {
 		return testRleClientForServer(t, endpoint), nil
 	}
 	t.Cleanup(func() {
 		createRleClient = oldCreateRleClient
-		validateSandboxURL = oldValidateSandboxURL
 	})
 }
 

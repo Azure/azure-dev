@@ -8,64 +8,74 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"net"
-	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"time"
 
 	"azure.ai.rle/internal/project"
-	"azure.ai.rle/internal/ui"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
-type remoteInvokeFlags struct {
-	timeout int
-	version string
+// invokeFlags holds the CLI-facing configuration for one rollout.
+type invokeFlags struct {
+	version        string
+	model          string
+	loraRank       int
+	task           string
+	taskFile       string
+	agentInput     string
+	agentInputFile string
+	rolloutID      string
+	sequenceID     int
+	timeout        int
 }
 
-type remoteInvokeAction struct {
+type invokeAction struct {
 	cmd             *cobra.Command
-	flags           *remoteInvokeFlags
+	flags           *invokeFlags
 	environmentName string
 }
 
-type remoteInvokeTarget struct {
+// invokeTarget identifies the exact published environment version to run, and the
+// Foundry project that owns it.
+type invokeTarget struct {
 	environmentName string
 	projectEndpoint string
 	version         string
 }
 
-var validateSandboxURL = validateRemoteSandboxURL
-
 func newInvokeCommand() *cobra.Command {
-	flags := &remoteInvokeFlags{
-		timeout: 60,
+	flags := &invokeFlags{
+		loraRank: 16,
+		timeout:  600,
 	}
 
 	cmd := &cobra.Command{
 		Use:   "invoke [environment-name]",
-		Short: "Open a remote OpenEnv runtime shell",
-		Long: `Open a remote OpenEnv runtime shell.
+		Short: "Execute one rollout of a published RLE environment",
+		Long: `Execute one rollout of a published RLE environment.
 
-With no environment name, invoke uses rle.name and rle.version from the current
-folder's rle.toml. To invoke an environment without local source, provide both
-its name and --version, then set FOUNDRY_PROJECT_ENDPOINT.`,
+invoke provisions everything a Loom-backed rollout needs and tears it down again: it
+creates a real Loom training session for --model, saves a sampler checkpoint, calls RLE's
+Execute Rollout API with your task (and, for Harness targets, agent input), prints the
+resulting reward and trajectory summary, then closes the Loom session. You never handle
+Loom session or checkpoint identifiers directly.
+
+With no environment name, invoke uses rle.name and rle.version from the current folder's
+rle.toml. To invoke an environment without local source, provide both its name and
+--version, then set FOUNDRY_PROJECT_ENDPOINT.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			environmentName := ""
 			if len(args) == 1 {
 				environmentName = args[0]
 			}
-			return (&remoteInvokeAction{
+			return (&invokeAction{
 				cmd:             cmd,
 				flags:           flags,
 				environmentName: environmentName,
@@ -73,112 +83,150 @@ its name and --version, then set FOUNDRY_PROJECT_ENDPOINT.`,
 		},
 	}
 
-	cmd.Flags().IntVar(
-		&flags.timeout,
-		"timeout",
-		flags.timeout,
-		"Per-command OpenEnv request timeout in seconds (0 for no timeout).",
+	cmd.Flags().StringVar(&flags.version, "version", "", "Published environment version to invoke.")
+	cmd.Flags().StringVar(
+		&flags.model,
+		"model",
+		"",
+		"Loom base model name to bind for this rollout (required), e.g. Qwen/Qwen3-32B.",
+	)
+	cmd.Flags().IntVar(&flags.loraRank, "lora-rank", flags.loraRank, "LoRA adapter rank for the Loom session.")
+	cmd.Flags().StringVar(&flags.task, "task", "", "Inline JSON task payload for the sandbox reset operation.")
+	cmd.Flags().StringVar(&flags.taskFile, "task-file", "", "Path to a JSON file with the task payload.")
+	cmd.Flags().StringVar(
+		&flags.agentInput,
+		"agent-input",
+		"",
+		"Inline JSON agent input (Harness targets only).",
 	)
 	cmd.Flags().StringVar(
-		&flags.version,
-		"version",
+		&flags.agentInputFile,
+		"agent-input-file",
 		"",
-		"Published environment version to invoke.",
+		"Path to a JSON file with the agent input (Harness targets only).",
 	)
+	cmd.Flags().StringVar(
+		&flags.rolloutID,
+		"rollout-id",
+		"",
+		"Caller-generated rollout correlation id. Defaults to a generated GUID.",
+	)
+	cmd.Flags().IntVar(&flags.sequenceID, "sequence-id", 0, "Loom training-step sequence id for this rollout.")
+	cmd.Flags().IntVar(&flags.timeout, "timeout", flags.timeout, "Loom session provisioning timeout in seconds.")
 	return cmd
 }
 
-func (a *remoteInvokeAction) Run() error {
-	target, client, err := a.resolveTarget()
+func (a *invokeAction) Run() error {
+	target, rle, err := a.resolveTarget()
 	if err != nil {
 		return err
+	}
+
+	model := strings.TrimSpace(a.flags.model)
+	if model == "" {
+		return &azdext.LocalError{
+			Message:    "--model is required to bind a rollout to a Loom training session.",
+			Code:       "rle_rollout_model_required",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Pass --model with a Loom base model name, for example --model Qwen/Qwen3-32B.",
+		}
+	}
+
+	task, err := readJSONFlagOrFile("--task", a.flags.task, "--task-file", a.flags.taskFile)
+	if err != nil {
+		return err
+	}
+	agentInput, err := readJSONFlagOrFile("--agent-input", a.flags.agentInput, "--agent-input-file", a.flags.agentInputFile)
+	if err != nil {
+		return err
+	}
+
+	rolloutID := strings.TrimSpace(a.flags.rolloutID)
+	if rolloutID == "" {
+		rolloutID, err = newRolloutID()
+		if err != nil {
+			return err
+		}
 	}
 
 	ctx, stopSignals := signal.NotifyContext(a.cmd.Context(), os.Interrupt)
 	defer stopSignals()
 
-	runtimeTarget := fmt.Sprintf("environment %s version %s", target.environmentName, target.version)
-	if _, err := fmt.Fprintf(a.cmd.OutOrStdout(), "Creating runtime for %s ...\n", runtimeTarget); err != nil {
+	loom, err := createLoomSessionClient(target.projectEndpoint)
+	if err != nil {
 		return err
 	}
+	timeout := time.Duration(a.flags.timeout) * time.Second
 
-	runtime, err := createRemoteRuntime(ctx, client, target, a.cmd.OutOrStdout())
-	if runtime != nil {
-		defer func() {
-			writeCleanupResult(a.cmd.ErrOrStderr(), cleanupRemoteRuntime(client, target.environmentName, runtime))
-		}()
+	out := a.cmd.OutOrStdout()
+	errOut := a.cmd.ErrOrStderr()
+
+	if _, err := fmt.Fprintf(out, "Creating Loom training session for model %s ...\n", model); err != nil {
+		return err
 	}
+	sessionID, err := loom.createSession(ctx, model, a.flags.loraRank, timeout)
 	if err != nil {
-		if _, ok := errors.AsType[*azdext.LocalError](err); ok {
-			return err
+		return loomServiceErrorFor("create Loom training session", err)
+	}
+	defer func() {
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		if cerr := loom.closeSession(cctx, sessionID); cerr != nil {
+			_, _ = fmt.Fprintln(errOut, "Warning: failed to close Loom session; it may remain allocated.")
+			return
 		}
+		_, _ = fmt.Fprintln(errOut, "Loom session closed.")
+	}()
+
+	checkpointName := fmt.Sprintf("azd-rollout-%s", rolloutID[:8])
+	if _, err := fmt.Fprintln(out, "Saving Loom sampler checkpoint ..."); err != nil {
+		return err
+	}
+	checkpointID, err := loom.saveWeightsForSampler(ctx, sessionID, a.flags.sequenceID, checkpointName, timeout)
+	if err != nil {
+		return loomServiceErrorFor("save Loom sampler checkpoint", err)
+	}
+
+	loomToken, err := loom.bearerToken(ctx)
+	if err != nil {
+		return fmt.Errorf("authenticate to Loom for Execute Rollout: %w", err)
+	}
+
+	sequenceID := int64(a.flags.sequenceID)
+	if _, err := fmt.Fprintf(
+		out,
+		"Executing rollout %s for environment %s version %s ...\n",
+		rolloutID,
+		target.environmentName,
+		target.version,
+	); err != nil {
+		return err
+	}
+	response, err := rle.executeRollout(ctx, target.environmentName, target.version, loomToken, executeRolloutRequest{
+		RolloutID:  rolloutID,
+		Task:       task,
+		AgentInput: agentInput,
+		Model: &rolloutModelSelection{
+			ModelName:     model,
+			LoomSessionID: sessionID,
+			CheckpointID:  checkpointID,
+			SequenceID:    &sequenceID,
+		},
+	})
+	if err != nil {
 		if isRleNotFound(err) {
 			return environmentVersionNotFoundError(target.environmentName, target.version)
 		}
 		return serviceError(err)
 	}
 
-	instanceUrl := strings.TrimRight(runtime.instance.BaseUrl, "/")
-	if err := validateSandboxURL(instanceUrl, target.projectEndpoint); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintln(
-		a.cmd.OutOrStdout(),
-		"Environment instance is running; waiting for OpenEnv runtime ...",
-	); err != nil {
-		return err
-	}
-	instanceUrl, err = withFoundryAPIVersion(instanceUrl)
-	if err != nil {
-		return err
-	}
-	if err := project.WaitForHealthWithAuthorizationProvider(
-		ctx,
-		instanceUrl,
-		remoteRuntimeHealthTimeout,
-		client.authorizationHeader,
-	); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(
-		a.cmd.OutOrStdout(),
-		"Environment %s version %s ready\n",
-		target.environmentName,
-		runtime.group.EnvironmentVersion,
-	); err != nil {
-		return err
-	}
-	runtimeSession := project.NewWebSocketRuntimeSession(
-		instanceUrl,
-		a.flags.timeout,
-		client.authorizationHeader,
-	)
-	defer runtimeSession.Close()
-	playgroundUrl, stopPlayground, err := playgroundURLWithAuthorizationProvider(
-		ctx,
-		instanceUrl,
-		client.authorizationHeader,
-		runtimeSession,
-	)
-	if err != nil {
-		return err
-	}
-	defer stopPlayground()
-	if err := ui.OpenBrowser(playgroundUrl); err != nil {
-		_, _ = fmt.Fprintf(a.cmd.ErrOrStderr(), "Warning: failed to open playground UI: %v\n", err)
-	}
-	return project.RunWebSocketShellWithSession(
-		ctx,
-		a.cmd.InOrStdin(),
-		a.cmd.OutOrStdout(),
-		runtimeSession,
-	)
+	return printRolloutResult(out, response)
 }
 
-func (a *remoteInvokeAction) resolveTarget() (remoteInvokeTarget, *rleClient, error) {
+func (a *invokeAction) resolveTarget() (invokeTarget, *rleClient, error) {
 	requestedVersion := strings.TrimSpace(a.flags.version)
 	if a.cmd.Flags().Changed("version") && requestedVersion == "" {
-		return remoteInvokeTarget{}, nil, &azdext.LocalError{
+		return invokeTarget{}, nil, &azdext.LocalError{
 			Message:    "--version requires a non-empty environment version.",
 			Code:       "rle_environment_version_required",
 			Category:   azdext.LocalErrorCategoryUser,
@@ -189,14 +237,14 @@ func (a *remoteInvokeAction) resolveTarget() (remoteInvokeTarget, *rleClient, er
 	if environmentName == "" {
 		config, err := project.LoadRleConfig(".")
 		if err != nil {
-			return remoteInvokeTarget{}, nil, err
+			return invokeTarget{}, nil, err
 		}
 		environmentName = config.Rle.Name
 		if requestedVersion == "" {
 			requestedVersion = config.Rle.Version
 		}
 	} else if requestedVersion == "" {
-		return remoteInvokeTarget{}, nil, &azdext.LocalError{
+		return invokeTarget{}, nil, &azdext.LocalError{
 			Message:    "A published RLE version is required when invoking by environment name.",
 			Code:       "rle_environment_version_required",
 			Category:   azdext.LocalErrorCategoryUser,
@@ -205,643 +253,95 @@ func (a *remoteInvokeAction) resolveTarget() (remoteInvokeTarget, *rleClient, er
 	}
 	version, err := project.NormalizeRleVersion(requestedVersion)
 	if err != nil {
-		return remoteInvokeTarget{}, nil, err
+		return invokeTarget{}, nil, err
 	}
 	projectEndpoint, err := resolveEnvironmentListProjectEndpoint()
 	if err != nil {
-		return remoteInvokeTarget{}, nil, err
+		return invokeTarget{}, nil, err
 	}
 	client, err := createRleClient(projectEndpoint)
 	if err != nil {
-		return remoteInvokeTarget{}, nil, err
+		return invokeTarget{}, nil, err
 	}
-	return remoteInvokeTarget{
+	return invokeTarget{
 		environmentName: environmentName,
 		projectEndpoint: projectEndpoint,
 		version:         version,
 	}, client, nil
 }
 
-const (
-	instanceStatusRunning     = "Running"
-	instanceStatusFailed      = "Failed"
-	instanceStatusDeleted     = "Deleted"
-	remoteReadinessRetryCount = 10
-	playgroundSessionCookie   = "azd-rle-playground-session"
-)
-
-var (
-	remoteInstanceCreateTimeout  = 300 * time.Second
-	remoteInstancePollInterval   = 2 * time.Second
-	remoteReadinessRetryInterval = 10 * time.Second
-	remoteRuntimeHealthTimeout   = 60 * time.Second
-)
-
-type remoteRuntime struct {
-	group        *instanceGroupResource
-	instance     *instanceResource
-	routeVersion string
-}
-
-func createRemoteRuntime(
-	ctx context.Context,
-	client *rleClient,
-	target remoteInvokeTarget,
-	output io.Writer,
-) (*remoteRuntime, error) {
-	group, err := createRemoteInstanceGroup(ctx, client, target, output)
-	if err != nil {
-		return nil, err
-	}
-	runtime := &remoteRuntime{
-		group:        group,
-		routeVersion: target.version,
-	}
-	if err := validateInstanceGroupIdentity(target, group); err != nil {
-		return runtime, err
-	}
-
-	instance, err := client.createInstance(ctx, target.environmentName, group.EnvironmentVersion, group.Id)
-	if err != nil {
-		return runtime, err
-	}
-	runtime.instance = instance
-	if strings.TrimSpace(instance.InstanceId) == "" {
-		return runtime, &azdext.LocalError{
-			Message:    "RLE service did not return an instance id.",
-			Code:       "rle_instance_id_missing",
-			Category:   azdext.LocalErrorCategoryInternal,
-			Suggestion: "Check the RLE service instance response, then retry.",
+// readJSONFlagOrFile reads a JSON payload from an inline flag or a file flag (at most one
+// may be set) and validates it parses as JSON. Returns nil if neither is set.
+func readJSONFlagOrFile(inlineName, inline, fileName, file string) (json.RawMessage, error) {
+	inline = strings.TrimSpace(inline)
+	file = strings.TrimSpace(file)
+	if inline != "" && file != "" {
+		return nil, &azdext.LocalError{
+			Message:  fmt.Sprintf("%s and %s are mutually exclusive.", inlineName, fileName),
+			Code:     "rle_rollout_conflicting_payload_flags",
+			Category: azdext.LocalErrorCategoryUser,
 		}
 	}
-	readyInstance, err := waitForRemoteInstance(ctx, client, target.environmentName, group, instance)
-	if readyInstance != nil {
-		runtime.instance = readyInstance
-	}
-	return runtime, err
-}
 
-func validateInstanceGroupIdentity(target remoteInvokeTarget, group *instanceGroupResource) error {
-	if strings.TrimSpace(group.Id) == "" {
-		return &azdext.LocalError{
-			Message:    "RLE service did not return an instance group id.",
-			Code:       "rle_instance_group_id_missing",
-			Category:   azdext.LocalErrorCategoryInternal,
-			Suggestion: "Check the RLE service instance group response, then retry.",
-		}
-	}
-	if responseName := strings.TrimSpace(group.EnvironmentName); responseName != "" &&
-		responseName != target.environmentName {
-		return &azdext.LocalError{
-			Message: fmt.Sprintf(
-				"RLE service returned environment %q for requested environment %q.",
-				responseName,
-				target.environmentName,
-			),
-			Code:       "rle_instance_group_environment_mismatch",
-			Category:   azdext.LocalErrorCategoryInternal,
-			Suggestion: "Check the RLE service instance group response, then retry.",
-		}
-	}
-	if strings.TrimSpace(group.EnvironmentVersion) == "" {
-		return &azdext.LocalError{
-			Message:    "RLE service did not return the resolved environment version.",
-			Code:       "rle_instance_group_version_missing",
-			Category:   azdext.LocalErrorCategoryInternal,
-			Suggestion: "Check the RLE service instance group response, then retry.",
-		}
-	}
-	if group.EnvironmentVersion != target.version {
-		return &azdext.LocalError{
-			Message: fmt.Sprintf(
-				"RLE service returned environment version %q for requested version %q.",
-				group.EnvironmentVersion,
-				target.version,
-			),
-			Code:       "rle_instance_group_version_mismatch",
-			Category:   azdext.LocalErrorCategoryInternal,
-			Suggestion: "Check the RLE service instance group response, then retry.",
-		}
-	}
-	return nil
-}
-
-func createRemoteInstanceGroup(
-	ctx context.Context,
-	client *rleClient,
-	target remoteInvokeTarget,
-	output io.Writer,
-) (*instanceGroupResource, error) {
-	for attempt := 0; ; attempt++ {
-		group, err := client.createInstanceGroup(ctx, target.environmentName, target.version)
-		if !isEnvironmentNotReadyError(err) {
-			return group, err
-		}
-		if attempt >= remoteReadinessRetryCount {
-			return nil, &azdext.LocalError{
-				Message: fmt.Sprintf(
-					"Environment %q was not ready after %d retries while creating the runtime.",
-					target.environmentName,
-					remoteReadinessRetryCount,
-				),
-				Code:     "rle_environment_readiness_timeout",
-				Category: azdext.LocalErrorCategoryUser,
-				Suggestion: fmt.Sprintf(
-					"Run azd ai rle show %s to inspect the disk image status, then retry.",
-					target.environmentName,
-				),
-			}
-		}
-		if output != nil {
-			_, _ = fmt.Fprintf(
-				output,
-				"The requested environment's disk image is not ready yet. "+
-					"Waiting %.0f seconds before retrying (%d/%d) ...\n",
-				remoteReadinessRetryInterval.Seconds(),
-				attempt+1,
-				remoteReadinessRetryCount,
-			)
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(remoteReadinessRetryInterval):
-		}
-	}
-}
-
-func isEnvironmentNotReadyError(err error) bool {
-	httpErr, ok := errors.AsType[*rleHTTPError](err)
-	return ok && httpErr.statusCode == http.StatusBadRequest && httpErr.code() == "EnvironmentNotReady"
-}
-
-func isRleNotFound(err error) bool {
-	httpErr, ok := errors.AsType[*rleHTTPError](err)
-	return ok && httpErr.statusCode == http.StatusNotFound
-}
-
-func waitForRemoteInstance(
-	ctx context.Context,
-	client *rleClient,
-	environmentName string,
-	group *instanceGroupResource,
-	instance *instanceResource,
-) (*instanceResource, error) {
-	deadline := time.Now().Add(remoteInstanceCreateTimeout)
-	for {
-		if instance.Status == instanceStatusFailed {
-			return nil, &azdext.LocalError{
-				Message: fmt.Sprintf(
-					"Environment instance failed to start: %s",
-					firstNonEmpty(instance.Error, "unknown error"),
-				),
-				Code:     "rle_instance_start_failed",
-				Category: azdext.LocalErrorCategoryUser,
-			}
-		}
-		if instance.Status == instanceStatusDeleted {
-			return nil, &azdext.LocalError{
-				Message:  "Environment instance was deleted before it became ready.",
-				Code:     "rle_instance_start_deleted",
-				Category: azdext.LocalErrorCategoryUser,
-			}
-		}
-		if instance.Status == instanceStatusRunning {
-			if strings.TrimSpace(instance.BaseUrl) == "" {
-				return nil, &azdext.LocalError{
-					Message:    "Environment instance is Running but did not report a data-plane URL.",
-					Code:       "rle_instance_url_missing",
-					Category:   azdext.LocalErrorCategoryInternal,
-					Suggestion: "Check the RLE service instance response, then retry.",
-				}
-			}
-			return instance, nil
-		}
-		if time.Now().After(deadline) {
-			return nil, &azdext.LocalError{
-				Message: fmt.Sprintf(
-					"Environment instance was not ready after %.0f seconds (last status: %s).",
-					remoteInstanceCreateTimeout.Seconds(),
-					firstNonEmpty(instance.Status, "unknown"),
-				),
-				Code:       "rle_instance_start_timeout",
-				Category:   azdext.LocalErrorCategoryUser,
-				Suggestion: "Check the RLE service instance status, then retry.",
-			}
-		}
-
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(remoteInstancePollInterval):
-		}
-
-		updated, err := client.getInstance(
-			ctx,
-			environmentName,
-			group.EnvironmentVersion,
-			group.Id,
-			instance.InstanceId,
-		)
+	var raw []byte
+	switch {
+	case inline != "":
+		raw = []byte(inline)
+	case file != "":
+		data, err := os.ReadFile(file)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("read %s: %w", fileName, err)
 		}
-		instance = updated
-	}
-}
-
-func cleanupRemoteRuntime(client *rleClient, environmentName string, runtime *remoteRuntime) error {
-	if runtime == nil || runtime.group == nil || strings.TrimSpace(runtime.group.Id) == "" {
-		return errors.New("cleanup requires an instance group id")
-	}
-	environmentVersion := firstNonEmpty(runtime.routeVersion, runtime.group.EnvironmentVersion)
-
-	var instanceErr error
-	if runtime.instance != nil && strings.TrimSpace(runtime.instance.InstanceId) != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		instanceErr = client.deleteInstance(
-			ctx,
-			environmentName,
-			environmentVersion,
-			runtime.group.Id,
-			runtime.instance.InstanceId,
-		)
-		cancel()
-		if isRleNotFound(instanceErr) {
-			instanceErr = nil
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	groupErr := client.deleteInstanceGroup(
-		ctx,
-		environmentName,
-		environmentVersion,
-		runtime.group.Id,
-	)
-	if isRleNotFound(groupErr) {
-		groupErr = nil
-	}
-	return errors.Join(instanceErr, groupErr)
-}
-
-func writeCleanupResult(writer io.Writer, err error) {
-	if err != nil {
-		_, _ = fmt.Fprintln(writer, "Warning: remote runtime cleanup could not be completed; resources may remain.")
-		return
-	}
-	_, _ = fmt.Fprintln(writer, "Remote runtime resources cleaned up successfully.")
-}
-
-func playgroundURLWithAuthorizationProvider(
-	ctx context.Context,
-	sandboxUrl string,
-	authorizationProvider project.AuthorizationProvider,
-	runtimeSessions ...*project.WebSocketRuntimeSession,
-) (string, func(), error) {
-	hasSandboxWeb, err := sandboxHasWebInterface(ctx, sandboxUrl, authorizationProvider)
-	if err != nil {
-		return "", func() {}, err
-	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return "", func() {}, err
-	}
-	sessionToken, err := newPlaygroundSessionToken()
-	if err != nil {
-		_ = listener.Close()
-		return "", func() {}, err
-	}
-
-	server := &http.Server{
-		Handler: remotePlaygroundHandler(
-			strings.TrimRight(sandboxUrl, "/"),
-			authorizationProvider,
-			listener.Addr().String(),
-			sessionToken,
-			hasSandboxWeb,
-			runtimeSessions...,
-		),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		defer cancel()
-		_ = server.Shutdown(shutdownCtx)
-	}()
-	go func() {
-		// The shell remains usable if the optional local UI proxy exits.
-		_ = server.Serve(listener)
-	}()
-
-	stop := func() {
-		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		defer cancel()
-		_ = server.Shutdown(shutdownCtx)
-	}
-	return "http://" + listener.Addr().String() + "/web?token=" + url.QueryEscape(sessionToken), stop, nil
-}
-
-func remotePlaygroundHandler(
-	sandboxUrl string,
-	authorizationProvider project.AuthorizationProvider,
-	expectedHost string,
-	sessionToken string,
-	hasSandboxWeb bool,
-	runtimeSessions ...*project.WebSocketRuntimeSession,
-) http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if !validateLoopbackPlaygroundRequest(w, r, expectedHost) {
-			return
-		}
-		if !authorizeLoopbackPlaygroundRequest(w, r, sessionToken) {
-			return
-		}
-		if !hasSandboxWeb && (r.URL.Path == "/" || r.URL.Path == "/web") {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_, _ = io.WriteString(w, ui.RemotePlaygroundHTML)
-			return
-		}
-		if hasSandboxWeb {
-			proxySandboxWeb(w, r, sandboxUrl, authorizationProvider)
-			return
-		}
-		proxyOpenEnvToSandbox(w, r, sandboxUrl, authorizationProvider, runtimeSessions...)
-	})
-	return mux
-}
-
-func sandboxHasWebInterface(
-	ctx context.Context,
-	sandboxUrl string,
-	authorizationProvider project.AuthorizationProvider,
-) (bool, error) {
-	webUrl, err := project.RuntimeOperationURL(sandboxUrl, "web")
-	if err != nil {
-		return false, err
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, webUrl, nil)
-	if err != nil {
-		return false, err
-	}
-	if authorizationProvider != nil {
-		authorization, err := authorizationProvider(ctx)
-		if err != nil {
-			return false, fmt.Errorf("authenticate to environment web interface: %w", err)
-		}
-		request.Header.Set("Authorization", authorization)
-	}
-	response, err := project.HTTPClient(10).Do(request) //nolint:gosec // The active sandbox URL is validated by the caller.
-	if err != nil {
-		return false, fmt.Errorf("probe environment web interface: %w", err)
-	}
-	defer response.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
-	if response.StatusCode == http.StatusNotFound {
-		return false, nil
-	}
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return false, fmt.Errorf("probe environment web interface: HTTP %d", response.StatusCode)
-	}
-	return true, nil
-}
-
-func proxySandboxWeb(
-	w http.ResponseWriter,
-	r *http.Request,
-	sandboxUrl string,
-	authorizationProvider project.AuthorizationProvider,
-) {
-	target, err := url.Parse(sandboxUrl)
-	if err != nil {
-		http.Error(w, "invalid environment web interface URL", http.StatusBadGateway)
-		return
-	}
-	if authorizationProvider != nil {
-		authorization, err := authorizationProvider(r.Context())
-		if err != nil {
-			http.Error(w, "failed to authenticate to environment web interface", http.StatusBadGateway)
-			return
-		}
-		r.Header.Set("Authorization", authorization)
-	}
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	director := proxy.Director
-	proxy.Director = func(request *http.Request) {
-		director(request)
-		request.Host = target.Host
-		cookies := request.Cookies()
-		request.Header.Del("Cookie")
-		for _, cookie := range cookies {
-			if cookie.Name != playgroundSessionCookie {
-				request.AddCookie(cookie)
-			}
-		}
-	}
-	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
-		http.Error(w, fmt.Sprintf("environment web interface proxy failed: %v", err), http.StatusBadGateway)
-	}
-	proxy.ServeHTTP(w, r)
-}
-
-func validateLoopbackPlaygroundRequest(w http.ResponseWriter, r *http.Request, expectedHost string) bool {
-	if !strings.EqualFold(r.Host, expectedHost) {
-		http.Error(w, "invalid host", http.StatusForbidden)
-		return false
-	}
-	origin := strings.TrimSpace(r.Header.Get("Origin"))
-	if origin == "" {
-		return true
-	}
-	originUrl, err := url.Parse(origin)
-	if err != nil || !strings.EqualFold(originUrl.Scheme, "http") || !strings.EqualFold(originUrl.Host, expectedHost) {
-		http.Error(w, "invalid origin", http.StatusForbidden)
-		return false
-	}
-	return true
-}
-
-func authorizeLoopbackPlaygroundRequest(w http.ResponseWriter, r *http.Request, sessionToken string) bool {
-	if r.Method == http.MethodGet && (r.URL.Path == "/" || r.URL.Path == "/web") {
-		if token := strings.TrimSpace(r.URL.Query().Get("token")); token != "" {
-			if token != sessionToken {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return false
-			}
-			http.SetCookie(w, &http.Cookie{ //nolint:gosec // Loopback HTTP cannot use Secure; other safeguards are set.
-				Name:     playgroundSessionCookie,
-				Value:    sessionToken,
-				Path:     "/",
-				HttpOnly: true,
-				SameSite: http.SameSiteStrictMode,
-			})
-			target := *r.URL
-			values := target.Query()
-			values.Del("token")
-			target.RawQuery = values.Encode()
-			if target.Path == "" {
-				target.Path = "/web"
-			}
-			http.Redirect( //nolint:gosec // target is derived only from this loopback request with its token removed.
-				w,
-				r,
-				target.String(),
-				http.StatusSeeOther,
-			)
-			return false
-		}
-	}
-	cookie, err := r.Cookie(playgroundSessionCookie)
-	if err != nil || cookie.Value != sessionToken {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return false
-	}
-	return true
-}
-
-func newPlaygroundSessionToken() (string, error) {
-	token := make([]byte, 32)
-	if _, err := rand.Read(token); err != nil {
-		return "", fmt.Errorf("create playground session token: %w", err)
-	}
-	return hex.EncodeToString(token), nil
-}
-
-func proxyOpenEnvToSandbox(
-	w http.ResponseWriter,
-	r *http.Request,
-	sandboxUrl string,
-	authorizationProvider project.AuthorizationProvider,
-	runtimeSessions ...*project.WebSocketRuntimeSession,
-) {
-	operation := strings.Trim(r.URL.Path, "/")
-	switch operation {
-	case "health", "state", "metadata", "schema":
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-	case "reset", "step":
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
+		raw = data
 	default:
-		http.NotFound(w, r)
-		return
-	}
-	if len(runtimeSessions) > 0 && runtimeSessions[0] != nil &&
-		(operation == "reset" || operation == "step" || operation == "state") {
-		proxyStatefulOpenEnvOperation(w, r, operation, runtimeSessions[0])
-		return
+		return nil, nil
 	}
 
-	targetUrl, err := project.RuntimeOperationURL(sandboxUrl, operation)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	// sandboxUrl is the active RLE sandbox URL; operation is restricted above.
-	target, err := http.NewRequestWithContext(r.Context(), r.Method, targetUrl, r.Body) //nolint:gosec
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	target.Header.Set("Accept", "application/json")
-	if authorizationProvider != nil {
-		authorization, err := authorizationProvider(r.Context())
-		if err != nil {
-			http.Error(w, "failed to authenticate to environment runtime", http.StatusBadGateway)
-			return
+	var probe any
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return nil, &azdext.LocalError{
+			Message:  fmt.Sprintf("%s must contain valid JSON: %v", firstNonEmpty(fileName, inlineName), err),
+			Code:     "rle_rollout_invalid_json_payload",
+			Category: azdext.LocalErrorCategoryUser,
 		}
-		target.Header.Set("Authorization", authorization)
 	}
-	if contentType := r.Header.Get("Content-Type"); contentType != "" {
-		target.Header.Set("Content-Type", contentType)
-	}
-	// The local UI proxy forwards only fixed OpenEnv operations to the active sandbox.
-	resp, err := project.HTTPClient(60).Do(target) //nolint:gosec
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	defer resp.Body.Close()
-
-	if contentType := resp.Header.Get("Content-Type"); contentType != "" {
-		w.Header().Set("Content-Type", contentType)
-	}
-	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
+	return json.RawMessage(raw), nil
 }
 
-func proxyStatefulOpenEnvOperation(
-	w http.ResponseWriter,
-	r *http.Request,
-	operation string,
-	runtimeSession *project.WebSocketRuntimeSession,
-) {
-	payload := ""
-	if operation == "reset" || operation == "step" {
-		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 100*1024*1024))
-		if err != nil {
-			http.Error(w, "invalid request body", http.StatusBadRequest)
-			return
-		}
-		payload = string(body)
+func newRolloutID() (string, error) {
+	value := make([]byte, 16)
+	if _, err := rand.Read(value); err != nil {
+		return "", fmt.Errorf("generate rollout id: %w", err)
 	}
-	if operation == "step" {
-		var request struct {
-			Action json.RawMessage `json:"action"`
-		}
-		if err := json.Unmarshal([]byte(payload), &request); err != nil || len(request.Action) == 0 {
-			http.Error(w, "step requires an action", http.StatusBadRequest)
-			return
-		}
-		payload = string(request.Action)
-	}
-	response, err := runtimeSession.CallAndDrain(r.Context(), operation, payload)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = io.WriteString(w, response) //nolint:gosec // The response is served as JSON, not executable HTML.
+	return hex.EncodeToString(value), nil
 }
 
-func withFoundryAPIVersion(runtimeUrl string) (string, error) {
-	parsedUrl, err := url.Parse(runtimeUrl)
-	if err != nil {
-		return "", fmt.Errorf("parse environment runtime URL: %w", err)
+func printRolloutResult(out interface{ Write([]byte) (int, error) }, response *executeRolloutResponse) error {
+	if _, err := fmt.Fprintf(out, "Rollout %s complete.\n", response.RolloutID); err != nil {
+		return err
 	}
-	query := parsedUrl.Query()
-	query.Set("api-version", foundryAPIVersion)
-	parsedUrl.RawQuery = query.Encode()
-	return parsedUrl.String(), nil
-}
-
-func validateRemoteSandboxURL(sandboxUrl string, projectEndpoint string) error {
-	sandbox, err := url.Parse(sandboxUrl)
-	if err != nil {
-		return fmt.Errorf("parse sandbox URL: %w", err)
+	if _, err := fmt.Fprintf(
+		out,
+		"  reward:  %s\n  success: %t\n",
+		strconv.FormatFloat(response.Reward, 'g', -1, 64),
+		response.Success,
+	); err != nil {
+		return err
 	}
-	projectUrl, err := url.Parse(projectEndpoint)
-	if err != nil {
-		return fmt.Errorf("parse Foundry project endpoint: %w", err)
+	if response.Episode != nil {
+		if _, err := fmt.Fprintf(
+			out,
+			"  episode: %s (%s), %d step(s)\n",
+			response.Episode.Kind,
+			response.Episode.TerminationReason,
+			len(response.Episode.Steps),
+		); err != nil {
+			return err
+		}
 	}
-
-	isTrustedProjectOrigin := strings.EqualFold(sandbox.Scheme, "https") &&
-		sandbox.Port() == "" &&
-		strings.EqualFold(sandbox.Scheme, projectUrl.Scheme) &&
-		strings.EqualFold(sandbox.Host, projectUrl.Host)
-	if sandbox.User != nil || !isTrustedProjectOrigin {
-		return &azdext.LocalError{
-			Message:    "RLE returned an untrusted sandbox URL.",
-			Code:       "rle_sandbox_url_untrusted",
-			Category:   azdext.LocalErrorCategoryInternal,
-			Suggestion: "Check the RLE service runtime response, then retry.",
+	if len(response.Result) > 0 {
+		if _, err := fmt.Fprintf(out, "  result:  %s\n", string(response.Result)); err != nil {
+			return err
 		}
 	}
 	return nil

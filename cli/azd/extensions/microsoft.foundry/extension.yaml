@@ -5,13 +5,17 @@ id: microsoft.foundry
 tags:
     - ai
     - foundry
-version: 1.0.0-beta.3
+version: 1.0.0-beta.4
 requiredAzdVersion: ">=1.32.0"
 dependencies:
   - id: azure.ai.agents
     version: "~1.0.0-beta.16"
   - id: azure.ai.connections
     version: "~1.0.0-beta.7"
+  - id: azure.ai.dataset
+    version: "~1.0.0-beta.1"
+  - id: azure.ai.evaluations
+    version: "~1.0.0-beta.1"
   - id: azure.ai.inspector
     version: "~1.0.0-beta.7"
   - id: azure.ai.projects

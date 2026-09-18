@@ -288,6 +288,59 @@ func report() {
 	require.Contains(t, joinedDiagnostics, "post-construction access is not supported")
 }
 
+func TestExtensionTelemetrySourceScannerTracksSelectorFunctionReturns(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	extensionDir := filepath.Join(root, "contoso.extension")
+	helperDir := filepath.Join(extensionDir, "internal", "helper")
+	commandDir := filepath.Join(extensionDir, "internal", "cmd")
+	require.NoError(t, os.MkdirAll(helperDir, 0o755))
+	require.NoError(t, os.MkdirAll(commandDir, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(helperDir, "event.go"),
+		[]byte(`package helper
+import foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
+func NewEvent() foundryTelemetry.Event {
+	return foundryTelemetry.Event{}
+}
+`),
+		0o600,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(commandDir, "usage.go"),
+		[]byte(`package cmd
+import (
+	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
+	"example.com/contoso.extension/internal/helper"
+)
+type eventFactory struct{}
+func (eventFactory) NewEvent() foundryTelemetry.Event {
+	return foundryTelemetry.Event{}
+}
+var packageKey = "package"
+var methodKey = "method"
+func report() {
+	packageEvent := helper.NewEvent()
+	packageEvent.Attributes[packageKey] = "value"
+	factory := eventFactory{}
+	methodEvent := factory.NewEvent()
+	methodEvent.Attributes[methodKey] = "value"
+}
+`),
+		0o600,
+	))
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+	require.Empty(t, usages)
+	joinedDiagnostics := strings.Join(diagnostics, "\n")
+	require.Equal(t, 2, strings.Count(
+		joinedDiagnostics,
+		"must be a string literal or same-package compile-time string constant",
+	))
+	require.Equal(t, 2, strings.Count(joinedDiagnostics, "post-construction access is not supported"))
+}
+
 func TestExtensionTelemetrySourceScannerCrossPackageAliases(t *testing.T) {
 	t.Parallel()
 

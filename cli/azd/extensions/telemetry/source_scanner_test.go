@@ -1465,24 +1465,189 @@ func telemetryFunctionExpressionResults(
 		return telemetryFunctionTypeResults(value.Type, source, pkg)
 	case *ast.ParenExpr:
 		return telemetryFunctionExpressionResults(value.X, source, pkg)
+	case *ast.SelectorExpr:
+		return telemetrySelectorFunctionResults(value, source, pkg)
 	case *ast.Ident:
 		if value.Obj != nil {
 			return pkg.objectFunctionResults[value.Obj]
 		}
-		definitions := pkg.functionResults[value.Name]
-		if len(definitions) == 0 {
-			return nil
-		}
-		results := definitions[0]
-		for _, current := range definitions[1:] {
-			if !boolSlicesEqual(results, current) {
-				return nil
-			}
-		}
-		return results
+		return consistentPayloadFunctionResults(pkg.functionResults[value.Name])
 	default:
 		return nil
 	}
+}
+
+func telemetrySelectorFunctionResults(
+	selector *ast.SelectorExpr,
+	source *sourceFile,
+	pkg *sourcePackage,
+) []bool {
+	if alias, ok := selector.X.(*ast.Ident); ok &&
+		(alias.Obj == nil || alias.Obj.Kind == ast.Pkg) {
+		if imported := source.localImports[alias.Name]; imported != nil {
+			return declaredPayloadFunctionResults(imported, selector.Sel.Name)
+		}
+	}
+
+	receiverType := localExpressionTypeName(selector.X, pkg, nil)
+	if receiverType == "" {
+		return nil
+	}
+	return declaredPayloadMethodResults(pkg, receiverType, selector.Sel.Name)
+}
+
+func declaredPayloadFunctionResults(pkg *sourcePackage, functionName string) []bool {
+	var definitions [][]bool
+	for _, source := range pkg.files {
+		for _, declaration := range source.file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Recv != nil || function.Name.Name != functionName {
+				continue
+			}
+			definitions = append(
+				definitions,
+				telemetryFunctionTypeResults(function.Type, source, pkg),
+			)
+		}
+	}
+	return consistentPayloadFunctionResults(definitions)
+}
+
+func declaredPayloadMethodResults(
+	pkg *sourcePackage,
+	receiverType string,
+	methodName string,
+) []bool {
+	var definitions [][]bool
+	for _, source := range pkg.files {
+		for _, declaration := range source.file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Recv == nil || function.Name.Name != methodName ||
+				len(function.Recv.List) != 1 ||
+				localNamedTypeName(function.Recv.List[0].Type) != receiverType {
+				continue
+			}
+			definitions = append(
+				definitions,
+				telemetryFunctionTypeResults(function.Type, source, pkg),
+			)
+		}
+	}
+	return consistentPayloadFunctionResults(definitions)
+}
+
+func consistentPayloadFunctionResults(definitions [][]bool) []bool {
+	if len(definitions) == 0 {
+		return nil
+	}
+	results := definitions[0]
+	for _, current := range definitions[1:] {
+		if !boolSlicesEqual(results, current) {
+			return nil
+		}
+	}
+	return results
+}
+
+func localExpressionTypeName(
+	expression ast.Expr,
+	pkg *sourcePackage,
+	resolving map[*parserObject]bool,
+) string {
+	switch value := expression.(type) {
+	case *ast.CompositeLit:
+		return localNamedTypeName(value.Type)
+	case *ast.ParenExpr:
+		return localExpressionTypeName(value.X, pkg, resolving)
+	case *ast.UnaryExpr:
+		if value.Op == token.AND || value.Op == token.MUL {
+			return localExpressionTypeName(value.X, pkg, resolving)
+		}
+		return ""
+	case *ast.CallExpr:
+		if name, ok := unwrapParentheses(value.Fun).(*ast.Ident); ok &&
+			name.Name == "new" &&
+			name.Obj == nil &&
+			len(value.Args) == 1 {
+			return localExpressionTypeName(value.Args[0], pkg, resolving)
+		}
+		typeName := localNamedTypeName(value.Fun)
+		if len(pkg.types[typeName]) > 0 {
+			return typeName
+		}
+		return ""
+	case *ast.Ident:
+		if value.Obj == nil {
+			return ""
+		}
+		if value.Obj.Kind == ast.Typ {
+			return value.Name
+		}
+		resolving = ensureObjectResolution(resolving)
+		if resolving[value.Obj] {
+			return ""
+		}
+		resolving[value.Obj] = true
+		defer delete(resolving, value.Obj)
+		return declaredIdentifierTypeName(value, pkg, resolving)
+	default:
+		return ""
+	}
+}
+
+func declaredIdentifierTypeName(
+	identifier *ast.Ident,
+	pkg *sourcePackage,
+	resolving map[*parserObject]bool,
+) string {
+	switch declaration := identifier.Obj.Decl.(type) {
+	case *ast.Field:
+		return localNamedTypeName(declaration.Type)
+	case *ast.ValueSpec:
+		if declaration.Type != nil {
+			return localNamedTypeName(declaration.Type)
+		}
+		for i, name := range declaration.Names {
+			if name.Obj == identifier.Obj && i < len(declaration.Values) {
+				return localExpressionTypeName(declaration.Values[i], pkg, resolving)
+			}
+		}
+	case *ast.AssignStmt:
+		if len(declaration.Lhs) != len(declaration.Rhs) {
+			return ""
+		}
+		for i, left := range declaration.Lhs {
+			name, ok := left.(*ast.Ident)
+			if ok && name.Obj == identifier.Obj {
+				return localExpressionTypeName(declaration.Rhs[i], pkg, resolving)
+			}
+		}
+	}
+	return ""
+}
+
+func localNamedTypeName(expression ast.Expr) string {
+	switch value := expression.(type) {
+	case *ast.Ident:
+		return value.Name
+	case *ast.ParenExpr:
+		return localNamedTypeName(value.X)
+	case *ast.StarExpr:
+		return localNamedTypeName(value.X)
+	case *ast.IndexExpr:
+		return localNamedTypeName(value.X)
+	case *ast.IndexListExpr:
+		return localNamedTypeName(value.X)
+	default:
+		return ""
+	}
+}
+
+func ensureObjectResolution(resolving map[*parserObject]bool) map[*parserObject]bool {
+	if resolving != nil {
+		return resolving
+	}
+	return map[*parserObject]bool{}
 }
 
 func telemetryFunctionTypeResults(

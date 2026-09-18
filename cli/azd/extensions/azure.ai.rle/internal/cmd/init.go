@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -18,13 +19,14 @@ import (
 )
 
 type rleInitFlags struct {
-	force        bool
-	rleType      string
-	rleSubtype   string
-	rleVersion   string
-	agentName    string
-	agentVersion string
-	baseURL      string
+	force         bool
+	rleType       string
+	rleSubtype    string
+	rleVersion    string
+	agentName     string
+	agentVersion  string
+	baseURL       string
+	harnessSource string
 }
 
 type initAction struct {
@@ -44,6 +46,15 @@ var gymOpenEnvInitTarget = rleInitTarget{
 	rleSubtype: project.RleSubtypeOpenEnv,
 }
 
+// Harness scaffold sources: whether azd ai rle init should generate a
+// generic, TODO-laden placeholder to wire up to a harness the caller has
+// already built and deployed, or copy a fully-working sample (agent + rle)
+// that runs end to end out of the box.
+const (
+	harnessSourceExisting = "existing"
+	harnessSourceSample   = "sample"
+)
+
 type rleInitTargetOption struct {
 	target rleInitTarget
 	label  string
@@ -61,9 +72,22 @@ var loadRleSampleCatalogFunc = func() (rleSampleCatalog, error) {
 	})
 }
 
+// rleHarnessSample is satisfied by *project.RleHarnessSample; declared as an
+// interface so tests can substitute a fake without touching the network.
+type rleHarnessSample interface {
+	Copy(folderName string, dest string, force bool) (string, error)
+	Close() error
+}
+
+var loadRleHarnessSampleFunc = func(subtype project.RleSubtype) (rleHarnessSample, error) {
+	return project.LoadRleHarnessSample(subtype)
+}
+
 var selectRleSampleFunc = selectRleSample
 
 var selectRleInitTargetFunc = selectRleInitTarget
+
+var selectHarnessSourceFunc = selectHarnessSource
 
 var promptRleValueFunc = promptRleValue
 
@@ -100,6 +124,8 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 		help.WriteString("      --agent-version string   HostedAgent version\n")
 		help.WriteString("      --base-url string        BYOH harness base URL\n")
 		help.WriteString("      --force                  Overwrite generated files in an existing non-empty session directory\n")
+		help.WriteString("      --harness-source string  Harness scaffold source: existing (placeholder to wire up to a harness " +
+			"you already deployed) or sample (copy a full working agent+rle sample)\n")
 		help.WriteString("      --rle-version string     RLE semantic version (defaults to 1.0.0 for a harness scaffold)\n")
 		help.WriteString("      --subtype string         RLE control-plane subtype: OpenEnv, HostedAgent, or BYOH\n")
 		help.WriteString("      --type string            RLE control-plane type: Gym or Harness\n")
@@ -117,6 +143,13 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 	cmd.Flags().StringVar(&flags.agentName, "agent-name", "", "HostedAgent name")
 	cmd.Flags().StringVar(&flags.agentVersion, "agent-version", "", "HostedAgent version")
 	cmd.Flags().StringVar(&flags.baseURL, "base-url", "", "BYOH harness base URL")
+	cmd.Flags().StringVar(
+		&flags.harnessSource,
+		"harness-source",
+		"",
+		"Harness scaffold source: existing (placeholder to wire up to a harness you already deployed) "+
+			"or sample (copy a full working agent+rle sample)",
+	)
 	return cmd
 }
 
@@ -253,6 +286,22 @@ func (a *initAction) initializeGymOpenEnv(target rleInitTarget) error {
 }
 
 func (a *initAction) initializeHostedAgent(target rleInitTarget) error {
+	harnessSource, err := a.resolveHarnessSource()
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(a.flags.baseURL) != "" {
+		return &azdext.LocalError{
+			Message:    "--base-url can only be used with --type Harness --subtype BYOH.",
+			Code:       "rle_harness_base_url_not_supported",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Remove --base-url or select --type Harness --subtype BYOH.",
+		}
+	}
+	if harnessSource == harnessSourceSample {
+		return a.createHarnessSampleScaffold(target)
+	}
+
 	agentName, err := a.resolveRequiredInput(
 		a.flags.agentName,
 		"Enter HostedAgent name",
@@ -272,14 +321,6 @@ func (a *initAction) initializeHostedAgent(target rleInitTarget) error {
 	)
 	if err != nil {
 		return err
-	}
-	if strings.TrimSpace(a.flags.baseURL) != "" {
-		return &azdext.LocalError{
-			Message:    "--base-url can only be used with --type Harness --subtype BYOH.",
-			Code:       "rle_harness_base_url_not_supported",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Remove --base-url or select --type Harness --subtype BYOH.",
-		}
 	}
 
 	folderName := a.folderName
@@ -304,6 +345,13 @@ func (a *initAction) initializeBYOH(target rleInitTarget) error {
 			Category:   azdext.LocalErrorCategoryUser,
 			Suggestion: "Remove the HostedAgent flags or select --type Harness --subtype HostedAgent.",
 		}
+	}
+	harnessSource, err := a.resolveHarnessSource()
+	if err != nil {
+		return err
+	}
+	if harnessSource == harnessSourceSample {
+		return a.createHarnessSampleScaffold(target)
 	}
 
 	folderName := a.folderName
@@ -358,6 +406,156 @@ func (a *initAction) createHarnessScaffold(target rleInitTarget, options project
 	}
 	_, err = fmt.Fprint(a.cmd.OutOrStdout(), initNextSteps(displayDir, runtime.GOOS, os.Getenv("SHELL")))
 	return err
+}
+
+// createHarnessSampleScaffold copies the fully-working harness sample (agent
+// + rle) for target.rleSubtype, instead of the generic placeholder
+// createHarnessScaffold writes. --agent-name/--agent-version/--base-url are
+// optional overrides here (the sample already ships working defaults for
+// whichever of them apply to its subtype), unlike the existing-harness path,
+// which requires them.
+func (a *initAction) createHarnessSampleScaffold(target rleInitTarget) error {
+	if strings.TrimSpace(a.flags.rleVersion) != "" {
+		if _, err := normalizeInitRleVersion(a.flags.rleVersion); err != nil {
+			return err
+		}
+	}
+
+	folderName := a.folderName
+	if folderName == "" {
+		folderName = defaultRleHarnessSampleFolderName(target.rleSubtype)
+	}
+	folderName, err := validateRleFolderName(folderName)
+	if err != nil {
+		return err
+	}
+
+	sample, err := loadRleHarnessSampleFunc(target.rleSubtype)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = sample.Close()
+	}()
+	sessionDir, err := sample.Copy(folderName, ".", a.flags.force)
+	if err != nil {
+		return err
+	}
+
+	rleDir := filepath.Join(sessionDir, "rle")
+	config, err := project.LoadRleConfig(rleDir)
+	if err != nil {
+		return err
+	}
+	config.Rle.Name = folderName
+	config.Rle.Type = target.rleType
+	config.Rle.Subtype = target.rleSubtype
+	schemaVersion := project.CurrentRleManifestSchemaVersion
+	config.SchemaVersion = &schemaVersion
+	if strings.TrimSpace(a.flags.rleVersion) != "" {
+		config.Rle.Version, err = normalizeInitRleVersion(a.flags.rleVersion)
+		if err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(a.flags.agentName) != "" {
+		agentName := a.flags.agentName
+		config.Rle.AgentName = &agentName
+	}
+	if strings.TrimSpace(a.flags.agentVersion) != "" {
+		agentVersion := a.flags.agentVersion
+		config.Rle.AgentVersion = &agentVersion
+	}
+	if strings.TrimSpace(a.flags.baseURL) != "" {
+		baseURL := a.flags.baseURL
+		config.Rle.BaseURL = &baseURL
+	}
+	if err := project.WriteRleConfig(rleDir, config); err != nil {
+		return err
+	}
+
+	displayDir := "." + string(os.PathSeparator) + sessionDir
+	if _, err := fmt.Fprintf(
+		a.cmd.OutOrStdout(),
+		"Copied a working %s sample (agent + rle) to %s.\n",
+		rleInitTargetLabel(target),
+		displayDir,
+	); err != nil {
+		return err
+	}
+	_, err = fmt.Fprint(
+		a.cmd.OutOrStdout(),
+		initHarnessSampleNextSteps(displayDir, runtime.GOOS, os.Getenv("SHELL")),
+	)
+	return err
+}
+
+// resolveHarnessSource decides whether a Harness init should scaffold a
+// placeholder for an existing/already-deployed harness, or copy a fully
+// working sample. --no-prompt without an explicit --harness-source keeps the
+// prior (placeholder) behavior so existing scripted callers are unaffected.
+func (a *initAction) resolveHarnessSource() (string, error) {
+	value := strings.TrimSpace(a.flags.harnessSource)
+	if value != "" {
+		switch value {
+		case harnessSourceExisting, harnessSourceSample:
+			return value, nil
+		default:
+			return "", &azdext.LocalError{
+				Message:  fmt.Sprintf("Unsupported --harness-source %q.", value),
+				Code:     "rle_harness_source_invalid",
+				Category: azdext.LocalErrorCategoryUser,
+				Suggestion: fmt.Sprintf(
+					"Use --harness-source %s or --harness-source %s.",
+					harnessSourceExisting,
+					harnessSourceSample,
+				),
+			}
+		}
+	}
+	if a.noPrompt {
+		return harnessSourceExisting, nil
+	}
+	return selectHarnessSourceFunc(a.cmd.Context())
+}
+
+func defaultRleHarnessSampleFolderName(subtype project.RleSubtype) string {
+	switch subtype {
+	case project.RleSubtypeHostedAgent:
+		return "hosted_agent_sample"
+	case project.RleSubtypeBYOH:
+		return "byoh_sample"
+	default:
+		return "harness_sample"
+	}
+}
+
+func selectHarnessSource(ctx context.Context) (string, error) {
+	choices := []*azdext.SelectChoice{
+		{Label: "Point at an existing, already-deployed harness (placeholder scaffold)", Value: harnessSourceExisting},
+		{Label: "Start from a full working sample (agent + rle)", Value: harnessSourceSample},
+	}
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return "", fmt.Errorf("create azd client for harness source selection: %w", err)
+	}
+	defer azdClient.Close()
+	response, err := azdClient.Prompt().Select(azdext.WithAccessToken(ctx), &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:         "Select a harness starting point",
+			Choices:         choices,
+			DisplayNumbers:  new(true),
+			EnableFiltering: new(true),
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("select harness source: %w", err)
+	}
+	selectedIndex := int(response.GetValue())
+	if selectedIndex < 0 || selectedIndex >= len(choices) {
+		return "", fmt.Errorf("invalid harness source selection index: %d", selectedIndex)
+	}
+	return choices[selectedIndex].Value, nil
 }
 
 func (a *initAction) resolveRleVersion() string {
@@ -640,6 +838,53 @@ func selectRleSample(ctx context.Context, sampleNames []string) (string, error) 
 }
 
 func initNextSteps(displayDir string, goos string, shell string) string {
+	setEnvironment := rleEnvironmentSetupSnippet(goos, shell)
+	return fmt.Sprintf(
+		"Created RLE environment at: %s\n"+
+			"\nRun locally:\n"+
+			"  cd \"%s\"\n"+
+			"  azd ai rle run\n"+
+			"\nPublish to RLE when ready:\n"+
+			"%s"+
+			"  azd ai rle publish\n",
+		displayDir,
+		displayDir,
+		setEnvironment,
+	)
+}
+
+// initHarnessSampleNextSteps is initNextSteps' counterpart for
+// createHarnessSampleScaffold: the copied sample's RLE side lives in a rle/
+// subfolder (what azd ai rle run/publish need to be run from), and its agent
+// side lives in a sibling agent/ folder that must be built and deployed
+// separately -- there's no rle.toml for run/publish to act on there.
+func initHarnessSampleNextSteps(displayDir string, goos string, shell string) string {
+	rleDir := filepath.Join(displayDir, "rle")
+	agentDir := filepath.Join(displayDir, "agent")
+	setEnvironment := rleEnvironmentSetupSnippet(goos, shell)
+	return fmt.Sprintf(
+		"Copied a working sample to: %s\n"+
+			"  %s  (the harness/agent implementation -- build and deploy this yourself)\n"+
+			"  %s  (the RLE wrapper -- this is what azd ai rle acts on)\n"+
+			"\nRun the RLE side locally:\n"+
+			"  cd \"%s\"\n"+
+			"  azd ai rle run\n"+
+			"\nPublish to RLE when ready:\n"+
+			"%s"+
+			"  azd ai rle publish\n"+
+			"\nBefore publishing, update %s/rle.toml's baseUrl/agentName/agentVersion "+
+			"to point at your own deployment of %s, once it is live.\n",
+		displayDir,
+		agentDir,
+		rleDir,
+		rleDir,
+		setEnvironment,
+		rleDir,
+		agentDir,
+	)
+}
+
+func rleEnvironmentSetupSnippet(goos string, shell string) string {
 	projectEndpoint := `https://<account>.services.ai.azure.com/api/projects/<project>`
 	registryEndpoint := `<registry>.azurecr.io`
 	setEnvironment := fmt.Sprintf(
@@ -660,19 +905,7 @@ func initNextSteps(displayDir string, goos string, shell string) string {
 			registryEndpoint,
 		)
 	}
-
-	return fmt.Sprintf(
-		"Created RLE environment at: %s\n"+
-			"\nRun locally:\n"+
-			"  cd \"%s\"\n"+
-			"  azd ai rle run\n"+
-			"\nPublish to RLE when ready:\n"+
-			"%s"+
-			"  azd ai rle publish\n",
-		displayDir,
-		displayDir,
-		setEnvironment,
-	)
+	return setEnvironment
 }
 
 func isPowerShellExecutable(shell string) bool {

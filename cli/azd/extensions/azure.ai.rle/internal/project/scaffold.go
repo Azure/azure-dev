@@ -26,7 +26,20 @@ const (
 	// rleGymSamplesPath, that controls which Gym/OpenEnv samples are visible
 	// from the CLI. Samples with no entry in the catalog default to visible.
 	rleGymSampleCatalogFile = "catalog.toml"
+
+	// rleHarnessSamplesPath is the rle-samples repo path holding self-contained,
+	// fully-working harness samples (each with its own agent/ and rle/
+	// subdirectories), one per harness subtype.
+	rleHarnessSamplesPath = "examples/harness"
 )
+
+// rleHarnessSampleDirs maps each harness subtype to its fully-working sample
+// directory (agent/ + rle/) in the RLE samples repo. Subtypes without an
+// entry have no working sample available yet.
+var rleHarnessSampleDirs = map[RleSubtype]string{
+	RleSubtypeBYOH:        "byoh",
+	RleSubtypeHostedAgent: "hosted-agent",
+}
 
 // RleSampleCatalogOptions controls how the Gym/OpenEnv sample catalog is loaded.
 type RleSampleCatalogOptions struct {
@@ -150,6 +163,83 @@ func (c *RleSampleCatalog) Copy(sampleName string, folderName string, dest strin
 
 func (c *RleSampleCatalog) Close() error {
 	return os.RemoveAll(c.repoDir)
+}
+
+// RleHarnessSample is a checked-out, fully-working harness sample (both the
+// agent/ implementation and the rle/ wrapper) from the RLE samples repo. It
+// is a working alternative to CreateRleHarnessScaffold's generic,
+// TODO-laden placeholder for callers that want something that runs
+// end to end out of the box rather than a starting point for their own,
+// already-deployed harness.
+type RleHarnessSample struct {
+	repoDir   string
+	sourceDir string
+}
+
+// LoadRleHarnessSample fetches the fully-working harness sample (agent + rle)
+// for the given subtype.
+func LoadRleHarnessSample(subtype RleSubtype) (*RleHarnessSample, error) {
+	return loadRleHarnessSample(rleSamplesRepoURL, rleSamplesRepoRef, subtype)
+}
+
+func loadRleHarnessSample(repoURL string, repoRef string, subtype RleSubtype) (*RleHarnessSample, error) {
+	sampleDirName, ok := rleHarnessSampleDirs[subtype]
+	if !ok {
+		return nil, &azdext.LocalError{
+			Message:    fmt.Sprintf("No working RLE harness sample is available for subtype %q.", subtype),
+			Code:       "rle_harness_sample_not_found",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Choose HostedAgent or BYOH, or scaffold from an existing harness instead.",
+		}
+	}
+	tempDir, err := os.MkdirTemp("", "azd-rle-harness-sample-*")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := runGitCommand(
+		"clone",
+		"--depth", "1",
+		"--filter=blob:none",
+		"--sparse",
+		"--branch", repoRef,
+		"--single-branch",
+		repoURL,
+		tempDir,
+	); err != nil {
+		_ = os.RemoveAll(tempDir)
+		return nil, err
+	}
+	sourcePath := filepath.ToSlash(filepath.Join(rleHarnessSamplesPath, sampleDirName))
+	if _, err := runGitCommand("-C", tempDir, "sparse-checkout", "set", sourcePath); err != nil {
+		_ = os.RemoveAll(tempDir)
+		return nil, err
+	}
+	sourceDir := filepath.Join(tempDir, filepath.FromSlash(sourcePath))
+	if info, statErr := os.Stat(sourceDir); statErr != nil || !info.IsDir() {
+		_ = os.RemoveAll(tempDir)
+		return nil, &azdext.LocalError{
+			Message:    fmt.Sprintf("RLE harness sample source %q was not found.", sourcePath),
+			Code:       "rle_harness_sample_source_not_found",
+			Category:   azdext.LocalErrorCategoryInternal,
+			Suggestion: "Run azd ai rle init again to refresh the sample.",
+		}
+	}
+	return &RleHarnessSample{repoDir: tempDir, sourceDir: sourceDir}, nil
+}
+
+// Copy copies the harness sample's agent/ and rle/ subdirectories into
+// dest/folderName. Uses the same non-empty-directory/--force semantics as
+// RleSampleCatalog.Copy.
+func (s *RleHarnessSample) Copy(folderName string, dest string, force bool) (string, error) {
+	folderName, err := ValidateEnvironmentName(folderName)
+	if err != nil {
+		return "", err
+	}
+	return copyRleSample(s.sourceDir, folderName, dest, force)
+}
+
+func (s *RleHarnessSample) Close() error {
+	return os.RemoveAll(s.repoDir)
 }
 
 // loadRleSampleCatalogVisibility reads the samples repo's catalog.toml, if present, and

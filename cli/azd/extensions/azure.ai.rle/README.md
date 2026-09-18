@@ -48,14 +48,26 @@ $env:AZD_AI_RLE_ENABLE_ALL = "true"
 ```
 
 
-`azd ai rle init --type Harness` scaffolds only the RLE-side container; the
-harness/agent side is always specific to your own agent. For a complete,
-runnable pattern of both halves wired together (including a Dockerfile,
-mock tools, a grader, and the deploy → wire → register → publish flow), see
+`azd ai rle init --type Harness` supports two starting points, selected
+interactively or via `--harness-source`:
+
+- `--harness-source existing` (the default for `--no-prompt`) scaffolds only
+  a generic, TODO-laden RLE-side container to wire up to a harness/agent you
+  already built and deployed yourself.
+- `--harness-source sample` copies a complete, runnable pattern of both
+  halves wired together (agent implementation, Dockerfile, mock tools, a
+  grader, and the RLE wrapper) into `<folder-name>/agent` and
+  `<folder-name>/rle`, so you have something that runs end to end out of the
+  box instead of starting from scratch. Run/publish from
+  `<folder-name>/rle`; build and deploy `<folder-name>/agent` yourself, then
+  update `rle.toml`'s `baseUrl`/`agentName`/`agentVersion` to match.
+
+See
 [`examples/harness/hosted-agent`](https://github.com/sujit-kamireddy/rle-samples/tree/main/examples/harness/hosted-agent)
 and
 [`examples/harness/byoh`](https://github.com/sujit-kamireddy/rle-samples/tree/main/examples/harness/byoh)
-in the [`rle-samples`](https://github.com/sujit-kamireddy/rle-samples) repository.
+in the [`rle-samples`](https://github.com/sujit-kamireddy/rle-samples) repository
+for the sample source `--harness-source sample` copies.
 
 ## Manifest contract
 
@@ -228,7 +240,9 @@ azd ai rle init code_rl --no-prompt
 
 With `AZD_AI_RLE_ENABLE_ALL=true`, `init` also offers
 `Harness: HostedAgent` and `Harness: BYOH`. Supply control-plane type/subtype
-values explicitly when scripting:
+values explicitly when scripting. `--no-prompt` defaults to
+`--harness-source existing` (the placeholder scaffold below) unless you pass
+`--harness-source sample`:
 
 ```powershell
 azd ai rle init support_rle `
@@ -244,7 +258,7 @@ azd ai rle init customer_rle `
   --no-prompt
 ```
 
-Harness scaffolds contain:
+`--harness-source existing` scaffolds contain:
 
 ```text
 <environment-name>/
@@ -259,6 +273,28 @@ Harness scaffolds contain:
 `/schema`, `/metadata`, `/ws`, `/web`, `/reset`, `/step`, `/grade`, and a
 starter mock-tool route. Update its task setup, mocks, and grader before
 publishing.
+
+`--harness-source sample` instead copies a fully working sample:
+
+```powershell
+azd ai rle init customer_rle `
+  --type Harness --subtype BYOH `
+  --harness-source sample `
+  --no-prompt
+```
+
+```text
+<environment-name>/
+|-- agent/     # the harness/agent implementation -- build and deploy this yourself
+`-- rle/       # the RLE wrapper -- run/publish from here
+    |-- rle.toml
+    |-- Dockerfile
+    `-- server/
+```
+
+Run/publish from `<environment-name>/rle`; once you deploy your own copy of
+`<environment-name>/agent`, update `rle.toml`'s
+`baseUrl`/`agentName`/`agentVersion` to match.
 
 ## Run locally
 

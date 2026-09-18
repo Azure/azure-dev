@@ -129,6 +129,85 @@ func TestRleSampleCatalogUsesSparseCheckout(t *testing.T) {
 	}
 }
 
+func TestLoadRleHarnessSampleCopiesAgentAndRleFolders(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	sourceRepo := t.TempDir()
+	runTestGit(t, sourceRepo, "init", "--initial-branch=main")
+	byohDir := filepath.Join(sourceRepo, filepath.FromSlash(rleHarnessSamplesPath), "byoh")
+	if err := os.MkdirAll(filepath.Join(byohDir, "agent"), 0750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(byohDir, "agent", "app.py"), []byte("# agent"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(byohDir, "rle"), 0750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(byohDir, "rle", "rle.toml"), []byte("[rle]\nname = \"byoh\"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	hostedAgentDir := filepath.Join(sourceRepo, filepath.FromSlash(rleHarnessSamplesPath), "hosted-agent")
+	if err := os.MkdirAll(hostedAgentDir, 0750); err != nil {
+		t.Fatal(err)
+	}
+	runTestGit(t, sourceRepo, "add", ".")
+	runTestGit(
+		t,
+		sourceRepo,
+		"-c", "user.name=RLE Tests",
+		"-c", "user.email=rle-tests@example.com",
+		"commit", "-m", "Add harness samples",
+	)
+
+	sample, err := loadRleHarnessSample(sourceRepo, "main", RleSubtypeBYOH)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := sample.Close(); err != nil {
+			t.Errorf("close harness sample: %v", err)
+		}
+	})
+
+	sessionDir, err := sample.Copy("my_byoh", t.TempDir(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(sessionDir, "agent", "app.py")); err != nil {
+		t.Fatalf("expected agent/ to be copied: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(sessionDir, "rle", "rle.toml")); err != nil {
+		t.Fatalf("expected rle/ to be copied: %v", err)
+	}
+}
+
+func TestLoadRleHarnessSampleRejectsUnsupportedSubtype(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	sourceRepo := t.TempDir()
+	runTestGit(t, sourceRepo, "init", "--initial-branch=main")
+	if err := os.WriteFile(filepath.Join(sourceRepo, "README.md"), []byte("samples"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runTestGit(t, sourceRepo, "add", ".")
+	runTestGit(
+		t,
+		sourceRepo,
+		"-c", "user.name=RLE Tests",
+		"-c", "user.email=rle-tests@example.com",
+		"commit", "-m", "Init",
+	)
+
+	if _, err := loadRleHarnessSample(sourceRepo, "main", RleSubtypeOpenEnv); err == nil {
+		t.Fatal("expected an error for a subtype with no working harness sample")
+	}
+}
+
 func TestRleSampleCatalogFiltersHiddenSamples(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not available")

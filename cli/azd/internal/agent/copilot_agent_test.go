@@ -21,6 +21,24 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
 
+type fakeCopilotSession struct {
+	handler copilot.SessionEventHandler
+	send    func(context.Context, copilot.MessageOptions) (string, error)
+}
+
+func (s *fakeCopilotSession) On(handler copilot.SessionEventHandler) func() {
+	s.handler = handler
+	return func() { s.handler = nil }
+}
+
+func (s *fakeCopilotSession) Send(ctx context.Context, options copilot.MessageOptions) (string, error) {
+	return s.send(ctx, options)
+}
+
+func (s *fakeCopilotSession) GetEvents(context.Context) ([]copilot.SessionEvent, error) {
+	return nil, nil
+}
+
 func TestCopilotAgentStopRecordsAICredits(t *testing.T) {
 	tracing.ResetUsageAttributesForTest()
 	t.Cleanup(tracing.ResetUsageAttributesForTest)
@@ -37,6 +55,69 @@ func TestCopilotAgentStopRecordsAICredits(t *testing.T) {
 		}
 	}
 	require.Fail(t, "copilot AI-credit usage attribute was not recorded")
+}
+
+func TestCopilotAgentAccumulateUsage(t *testing.T) {
+	agent := &CopilotAgent{}
+
+	agent.accumulateUsage(UsageMetrics{
+		Model:           "gpt-4o",
+		InputTokens:     100,
+		OutputTokens:    50,
+		AICredits:       0.25,
+		BillingRate:     1.5,
+		PremiumRequests: 2,
+		DurationMS:      500,
+	})
+	agent.accumulateUsage(UsageMetrics{
+		Model:           "gpt-4.1",
+		InputTokens:     200,
+		OutputTokens:    75,
+		AICredits:       0.5,
+		BillingRate:     2,
+		PremiumRequests: 3,
+		DurationMS:      1000,
+	})
+
+	usage := agent.GetMetrics().Usage
+	require.Equal(t, UsageMetrics{
+		Model:           "gpt-4.1",
+		InputTokens:     300,
+		OutputTokens:    125,
+		AICredits:       0.75,
+		BillingRate:     2,
+		PremiumRequests: 5,
+		DurationMS:      1500,
+	}, usage)
+}
+
+func TestCopilotAgentSendMessageHeadlessRecordsUsageOnCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	session := &fakeCopilotSession{}
+	session.send = func(context.Context, copilot.MessageOptions) (string, error) {
+		session.handler(copilot.SessionEvent{
+			Data: &copilot.AssistantUsageData{
+				InputTokens:  new(int64(100)),
+				OutputTokens: new(int64(50)),
+				CopilotUsage: &copilot.AssistantUsageCopilotUsage{TotalNanoAiu: 250_000_000},
+				Duration:     new(int64(1000)),
+			},
+		})
+		cancel()
+		return "", nil
+	}
+
+	agent := &CopilotAgent{session: session, sessionID: "test-session"}
+	result, err := agent.sendMessageHeadless(ctx, "test", AgentModeAutopilot)
+
+	require.ErrorIs(t, err, context.Canceled)
+	require.Nil(t, result)
+	require.Equal(t, UsageMetrics{
+		InputTokens:  100,
+		OutputTokens: 50,
+		AICredits:    0.25,
+		DurationMS:   1000,
+	}, agent.GetMetrics().Usage)
 }
 
 func TestCopilotAgentPromptModelAndReasoning(t *testing.T) {

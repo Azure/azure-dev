@@ -12021,6 +12021,93 @@
         "ai",
         "toolbox"
       ]
+    },
+    {
+      "id": "azure.ai.evaluations",
+      "namespace": "ai.eval",
+      "displayName": "Foundry evaluations (Beta)",
+      "description": "Define and run Foundry evaluations from your terminal. (Beta)",
+      "versions": [
+        {
+          "version": "1.0.0-beta.1",
+          "requiredAzdVersion": ">=1.27.1",
+          "capabilities": [
+            "custom-commands",
+            "service-target-provider",
+            "metadata"
+          ],
+          "providers": [
+            {
+              "name": "azure.ai.eval",
+              "type": "service-target",
+              "description": "Deploys evaluation datasets, evaluators, and eval groups to Foundry"
+            }
+          ],
+          "usage": "azd ai eval <command> [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Scaffold evaluation config for an agent.",
+              "usage": "azd ai eval init"
+            },
+            {
+              "name": "run",
+              "description": "Start, list, and read the results of evaluation runs.",
+              "usage": "azd ai eval run <command>"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "68311adf0f398fb4e27959d72ced4a8fd57165e12c6a1cec525d6bd7b3ea7ae3"
+              },
+              "entryPoint": "azure-ai-evaluations-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-evaluations_1.0.0-beta.1/azure-ai-evaluations-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "58f01653f831cb7cb4a3afff304397c63a64984c021b7dd82476fba26f17ccdb"
+              },
+              "entryPoint": "azure-ai-evaluations-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-evaluations_1.0.0-beta.1/azure-ai-evaluations-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "7b81c4b7c597878704bf694d59cc055c636ff4be4753c1b63eafb2b82a9fabef"
+              },
+              "entryPoint": "azure-ai-evaluations-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-evaluations_1.0.0-beta.1/azure-ai-evaluations-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "59e4ea6638bd70849e5f3c975ccec41399dc7b6c18a15d9c951647bb97a14439"
+              },
+              "entryPoint": "azure-ai-evaluations-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-evaluations_1.0.0-beta.1/azure-ai-evaluations-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "1691bf1e97772fdda8afc96fa89ccd3af2e80992e44cb6bfe1cabbdc3078a44e"
+              },
+              "entryPoint": "azure-ai-evaluations-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-evaluations_1.0.0-beta.1/azure-ai-evaluations-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "f4765537d2d4ebae2c2aa469c39261117cdbac1eb8b32f4f9c2c142a1ef1fb70"
+              },
+              "entryPoint": "azure-ai-evaluations-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-evaluations_1.0.0-beta.1/azure-ai-evaluations-windows-arm64.zip"
+            }
+          }
+        }
+      ]
     }
   ]
 }

@@ -7,6 +7,7 @@ Usage
 Available Commands
   agent     	: Ship prompt, hosted, and voice agents with Microsoft Foundry from your terminal. (Beta)
   connection	: Manage Microsoft Foundry Connections from your terminal. (Beta)
+  eval      	: Define and run Foundry evaluations from your terminal. (Beta)
   finetuning	: Extension for Foundry Fine Tuning. (Preview)
   inspector 	: Browser-based inspector UI for locally running Foundry agents. (Beta)
   models    	: Extension for managing custom models in Azure AI Foundry. (Preview)

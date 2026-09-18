@@ -15,7 +15,7 @@ import (
 	"testing"
 )
 
-func TestProtoContainerRuntime(t *testing.T) {
+func TestFindContainerRuntime(t *testing.T) {
 	tests := []struct {
 		name      string
 		available map[string]bool
@@ -29,7 +29,7 @@ func TestProtoContainerRuntime(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := protoContainerRuntime(func(name string) (string, error) {
+			got, err := findContainerRuntime(func(name string) (string, error) {
 				if test.available[name] {
 					return name, nil
 				}

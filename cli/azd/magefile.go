@@ -27,6 +27,9 @@ import (
 // Dev contains developer tooling commands for building and installing azd from source.
 type Dev mg.Namespace
 
+// Homebrew contains commands for validating azd's Homebrew distribution.
+type Homebrew mg.Namespace
+
 // Schema contains Mage targets for formatting and checking repository JSON schemas.
 type Schema mg.Namespace
 
@@ -549,7 +552,7 @@ func GenerateProtos() error {
 	if err != nil {
 		return err
 	}
-	containerRuntime, err := protoContainerRuntime(exec.LookPath)
+	containerRuntime, err := findContainerRuntime(exec.LookPath)
 	if err != nil {
 		return err
 	}
@@ -590,13 +593,46 @@ func GenerateProtos() error {
 	return nil
 }
 
-func protoContainerRuntime(lookPath func(string) (string, error)) (string, error) {
+// Test installs the generated stable and daily casks in a Homebrew container.
+//
+// Usage: mage homebrew:test
+func (Homebrew) Test() error {
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		return err
+	}
+	containerRuntime, err := findContainerRuntime(exec.LookPath)
+	if err != nil {
+		return err
+	}
+
+	const image = "ghcr.io/homebrew/brew:latest"
+	fmt.Println("Testing Homebrew cask templates...")
+	output, err := runCaptureAll(
+		repoRoot,
+		nil,
+		containerRuntime,
+		"run", "--rm",
+		"-v", repoRoot+":/workspace:ro",
+		image,
+		"bash", "/workspace/eng/scripts/test-homebrew-casks.sh",
+	)
+	if err != nil {
+		fmt.Fprint(os.Stderr, output)
+		return fmt.Errorf("testing Homebrew cask templates: %w", err)
+	}
+
+	fmt.Println("Homebrew cask templates passed (azd, azd@daily).")
+	return nil
+}
+
+func findContainerRuntime(lookPath func(string) (string, error)) (string, error) {
 	for _, name := range []string{"docker", "wslc.exe"} {
 		if _, err := lookPath(name); err == nil {
 			return name, nil
 		}
 	}
-	return "", errors.New("protobuf generation requires docker or wslc.exe on PATH")
+	return "", errors.New("docker or wslc.exe is required on PATH")
 }
 
 // UpdateGoVersion updates the pinned Go toolchain version across the repository

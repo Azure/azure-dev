@@ -323,9 +323,45 @@ var methodKey = "method"
 func report() {
 	packageEvent := helper.NewEvent()
 	packageEvent.Attributes[packageKey] = "value"
-	factory := eventFactory{}
-	methodEvent := factory.NewEvent()
+	factory := &eventFactory{}
+	methodEvent := (*factory).NewEvent()
 	methodEvent.Attributes[methodKey] = "value"
+}
+`),
+		0o600,
+	))
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+	require.Empty(t, usages)
+	joinedDiagnostics := strings.Join(diagnostics, "\n")
+	require.Equal(t, 2, strings.Count(
+		joinedDiagnostics,
+		"must be a string literal or same-package compile-time string constant",
+	))
+	require.Equal(t, 2, strings.Count(joinedDiagnostics, "post-construction access is not supported"))
+}
+
+func TestExtensionTelemetrySourceScannerTracksConversionsAndDereferences(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	extensionDir := filepath.Join(root, "contoso.extension")
+	require.NoError(t, os.MkdirAll(extensionDir, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(extensionDir, "usage.go"),
+		[]byte(`package telemetry
+import (
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
+)
+type localEvent foundryTelemetry.Event
+var conversionKey = "conversion"
+var dereferenceKey = "dereference"
+func report() {
+	event := foundryTelemetry.Event(localEvent{})
+	event.Attributes[conversionKey] = "value"
+	request := &azdext.ReportUsageRequest{}
+	(*request).Attributes[dereferenceKey] = "value"
 }
 `),
 		0o600,

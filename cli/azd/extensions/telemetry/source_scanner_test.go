@@ -1559,8 +1559,10 @@ func localExpressionTypeName(
 		return localNamedTypeName(value.Type)
 	case *ast.ParenExpr:
 		return localExpressionTypeName(value.X, pkg, resolving)
+	case *ast.StarExpr:
+		return localExpressionTypeName(value.X, pkg, resolving)
 	case *ast.UnaryExpr:
-		if value.Op == token.AND || value.Op == token.MUL {
+		if value.Op == token.AND {
 			return localExpressionTypeName(value.X, pkg, resolving)
 		}
 		return ""
@@ -1810,6 +1812,8 @@ func isTelemetryPayloadExpression(
 		return isTelemetryPayloadType(value.Type, source, pkg)
 	case *ast.ParenExpr:
 		return isTelemetryPayloadExpression(value.X, source, pkg)
+	case *ast.StarExpr:
+		return isTelemetryPayloadExpression(value.X, source, pkg)
 	case *ast.UnaryExpr:
 		return value.Op == token.AND && isTelemetryPayloadExpression(value.X, source, pkg)
 	case *ast.CallExpr:
@@ -1838,6 +1842,9 @@ func telemetryPayloadCallResults(
 			isTelemetryPayloadType(call.Args[0], source, pkg) ||
 				isTelemetryPayloadExpression(call.Args[0], source, pkg),
 		}
+	}
+	if len(call.Args) == 1 && isTelemetryPayloadType(call.Fun, source, pkg) {
+		return []bool{true}
 	}
 	return telemetryFunctionExpressionResults(call.Fun, source, pkg)
 }

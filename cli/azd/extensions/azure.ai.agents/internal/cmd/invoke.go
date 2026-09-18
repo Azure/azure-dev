@@ -93,6 +93,7 @@ func newInvokeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Send a message to your prompt or hosted agent.",
 		Long: `Send a message to your prompt or hosted agent.
 
+Invocation Target:
 By default the agent is invoked remotely on Foundry. When a single
 argument is provided it is treated as the message and the agent name
 is auto-detected from azure.yaml. With two arguments the first is the
@@ -104,21 +105,25 @@ redeploying or bypassed with --protocol. Otherwise the agent definition is
 used. If neither identifies exactly one invocable protocol, pass --protocol
 explicitly.
 
+Voice Agents:
 For prompt voice agents and hosted voice wrappers, open your agent in the
 Microsoft Foundry portal at https://ai.azure.com to try it.
 For programmatic voice access, use the voice WebSocket endpoint shown by 'azd show' or
 'azd ai agent show' with a Voice Live client. Text invoke is for HTTP-based
 hosted agent protocols such as responses, invocations, and a2a.
 
+Request Body:
 Use --input-file/-f to send the contents of a file as the request body
 instead of a positional message argument. This is useful for structured
 or large payloads with the invocations protocol, or for sending a complete
 JSON-RPC request with the a2a protocol.
 
+Local Development:
 Use --local to target a locally running agent (started via 'azd ai agent run')
 instead of Foundry. The a2a protocol is remote-only and cannot be used with
 --local.
 
+Sessions & Identity:
 Sessions are persisted per-agent — consecutive invokes reuse the same
 session automatically. Pass --new-session to force a reset.
 
@@ -139,12 +144,14 @@ x-client-* header family to the agent; other header names are rejected, and
 the flag is not supported with the a2a protocol (which does not propagate
 x-client-* headers). For identity headers use --user-identity or --call-id.
 
+Response Output:
 Use --output raw (or -o raw) to dump the unmodified server response (status
 line, headers, and body verbatim) to stdout. Useful for debugging server
 behavior and inspecting response headers (for example, the agent version
 header). Friendly summary lines like "Session:" and "Invocation:" are
 suppressed in raw mode.
 
+Platform Latency:
 Remote Hosted Agent Responses and Invocations requests include platform latency diagnostics
 by default. A compact summary is shown after a successful invocation when the
 service returns timing headers. Use --debug-latency=false to disable collection
@@ -154,6 +161,7 @@ Explicit --debug-latency=true is rejected for these routes; omit the flag
 or use --debug-latency=false.
 Raw output includes the returned headers without a formatted latency summary.
 
+Long-running Invocations:
 Use --long-running with the Responses protocol to start work that continues running in
 the service if this command disconnects. The command remains attached until the work
 finishes. Add --no-wait to return after azd receives the Response ID.
@@ -208,8 +216,8 @@ This option does not provide crash recovery or automatic reconnection.`,
 
   # Invoke a deployed agent from any directory using the endpoint URL shown by 'azd ai agent show'
   azd ai agent invoke \
-	  --agent-endpoint https://<acct>.services.ai.azure.com/api/projects/<proj>/agents/<name>/endpoint/protocols/openai/responses?api-version=v1 \
-       "Hello!"`,
+    --agent-endpoint https://<acct>.services.ai.azure.com/api/projects/<proj>/agents/<name>/endpoint/protocols/openai/responses?api-version=v1 \
+    "Hello!"`,
 		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())

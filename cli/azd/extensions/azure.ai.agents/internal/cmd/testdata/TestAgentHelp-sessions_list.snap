@@ -1,0 +1,30 @@
+List sessions for a hosted agent endpoint.
+
+Returns a paged list of sessions with their status, version, and timestamps.
+
+Usage
+  azd ai agent sessions list [flags]
+
+Flags
+  -n, --agent-name string       : Agent name (matches azure.yaml service name; auto-detected when only one exists)
+      --limit int32             : Maximum number of sessions to return
+      --pagination-token string : Continuation token from a previous list response
+      --user-identity string    : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for list
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: json, table) (default "json")
+
+Examples
+  List all sessions
+    azd ai agent sessions list
+
+  List with a page size limit
+    azd ai agent sessions list --limit 10
+
+  List in table format
+    azd ai agent sessions list --output table

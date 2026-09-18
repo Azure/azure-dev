@@ -1,0 +1,37 @@
+Generate a local eval suite for a deployed agent.
+
+By default, this command submits dataset and evaluator generation jobs, waits for
+completion, downloads review artifacts, and writes eval.yaml at
+the agent project root. Use --no-wait to write pending operation IDs and return.
+
+Usage
+  azd ai agent eval generate [flags]
+
+Flags
+      --agent string                : Agent service name from azure.yaml, or Foundry agent name outside a project
+      --dataset string              : Existing local file or registered dataset name to use for evaluation (instead of generating a new dataset)
+      --eval-model string           : Model used for evaluation and generation
+      --evaluator stringArray       : Built-in or custom evaluator name
+  -g, --gen-instruction string      : Agent instruction used for dataset and evaluator generation
+      --gen-instruction-file string : Path to a file containing the agent instruction
+      --max-samples int             : Number of samples to generate (15-1000) (default 15)
+      --name string                 : Name for the eval suite
+      --no-wait                     : Submit generation jobs and return immediately
+      --out-file string             : Eval config path (default "eval.yaml")
+  -p, --project-endpoint string     : Microsoft Foundry project endpoint URL
+      --reset-defaults              : Overwrite an existing eval config
+      --trace-days int              : Include agent traces from the last N days for evaluator generation (0 = no traces)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for generate
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+    azd ai agent eval generate
+    azd ai agent eval generate --gen-instruction "This agent handles restaurant reservations." --eval-model gpt-4o --max-samples 50
+    azd ai agent eval generate --gen-instruction-file ./instructions.md --eval-model gpt-4o
+    azd ai agent eval generate --dataset ./tests/golden.jsonl --evaluator builtin.intent_resolution

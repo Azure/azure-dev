@@ -35,7 +35,6 @@ words:
   - azcontainerregistry
   - CGNAT
   - backoff
-  - billionized
   - Canonicalize
   - Chans
   - chinacloudapi
@@ -178,6 +177,9 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: "**/internal/agent/types.go"
+    words:
+      - billionized
   - filename: internal/appdetect/aspire_polyglot.go
     words:
       - pylock

@@ -537,55 +537,10 @@ func (m *MyMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 
 ### Help Text
 
-Use `azd --help` as the visual baseline and `azd init --help` / `azd env --help`
-as examples of contextual guidance. The core renderer is
-[`cmd/cmd_help.go`](../../cmd/cmd_help.go); root grouping and onboarding guidance
-are in [`cmd/root.go`](../../cmd/root.go).
-
-| Element | Convention |
-| --- | --- |
-| Description | Start with a concise, action-oriented summary. Follow with short paragraphs or notes explaining prerequisites, defaults, and important limitations. |
-| Section order | Description, Usage, Available Commands (or grouped Commands), Flags, Global Flags, then examples and contextual guidance. Omit empty sections. |
-| Headings | Use sentence or title case consistently within a help page, bold and underlined with `output.WithBold` and `output.WithUnderline`. Core headings have no trailing colon. |
-| Commands and flags | Align names and descriptions in `name : description` rows. Separate command-specific flags from global flags, including `--help`. Keep supported values and defaults accurate. |
-| Color | Use `WithHighLightFormat` for command examples and flags, `WithWarningFormat` for argument placeholders, and `WithLinkFormat` for URLs. Use the shared helpers, not raw ANSI escapes, and keep the no-color output readable. |
-| Examples | Include at least one per public command. Put a short caption above an indented, copyable command. Preserve quoting, whitespace within values, command order, and multiline continuations. |
-| Discovery | Command groups should point to `<command> [command] --help`. Use the footer for onboarding, related commands, environment concepts, and documentation links rather than repeating the command list. |
-
-Keep `Short`, `Long`, examples, custom help descriptions, and snapshots consistent.
-Do not change command behavior or expose hidden commands just to change help.
-Generate command and flag lists from Cobra's live metadata rather than maintaining
-duplicate lists in prose.
-
-#### Agent extension help
-
-`azd ai agent` and its descendants use the extension-local
-[`internal/helpformat`](../../extensions/azure.ai.agents/internal/helpformat/helpformat.go)
-renderer. This applies the conventions above without changing other `azd ai`
-extensions or core help. The root keeps its banner and adds an
-**Environments & Environment Variables** section explaining named azd environments,
-persisted deployment values, and the separate service-level runtime `env` mapping.
-
-Author command descriptions in plain `Short` / `Long` fields and examples in
-Cobra's `Example` field. Use standalone title-case headings ending in `:` in
-`Long`; the renderer styles them and removes the colon. Quote inline command
-references with single quotes or backticks. Example captions use `# ` followed by
-one or more command lines. The renderer preserves the original metadata and
-formats it only when help is requested.
-
-Install templates on the root so nested and subsequently added commands inherit
-them. Keep help rendering routed through `.UsageString`: the extension SDK's
-`UsageFunc` wrapper applies per-command output formats and defaults. Apply colors
-at render time, write to Cobra's injected writer, and never require Azure
-authentication or read user configuration merely to display help.
-
-From `cli/azd/extensions/azure.ai.agents`, regenerate and review the snapshots for
-every visible command after changing help:
-
-```bash
-UPDATE_SNAPSHOTS=true go test ./internal/cmd -run '^TestAgentHelp$'
-go test ./internal/helpformat ./internal/cmd -run 'Test.*Help|TestExamples|TestSections'
-```
+- **Consistency**: Match terminology across all commands
+- **Examples**: Include at least one example per command
+- **Flags**: Document all flags with clear descriptions
+- **See also**: Cross-reference related commands
 
 ### Markdown Documentation
 

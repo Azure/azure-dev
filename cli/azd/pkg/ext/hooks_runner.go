@@ -6,6 +6,7 @@ package ext
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -336,7 +337,7 @@ func (h *HooksRunner) configureExecContext(
 			},
 		)
 		execCtx.StdOut = previewer
-		return true
+		return previewer != io.Discard
 	}
 
 	return false

@@ -6,6 +6,7 @@ package azdext
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"sync"
 
@@ -20,6 +21,8 @@ type EventManager struct {
 	serviceEvents map[string]ServiceEventHandler
 	eventsMutex   sync.RWMutex // Protects both projectEvents and serviceEvents maps
 	brokerLogger  *log.Logger
+
+	outputWriter io.Writer
 
 	// Synchronization for concurrent access
 	mu sync.RWMutex
@@ -46,6 +49,7 @@ func NewEventManager(extensionId string, azdClient *AzdClient, brokerLogger *log
 		projectEvents: make(map[string]ProjectEventHandler),
 		serviceEvents: make(map[string]ServiceEventHandler),
 		brokerLogger:  brokerLogger,
+		outputWriter:  eventOutputFallback,
 	}
 }
 
@@ -86,15 +90,15 @@ func (em *EventManager) ensureStream(ctx context.Context) error {
 	}
 
 	// Create broker with client stream
-	envelope := &EventMessageEnvelope{}
+	envelope := newEventMessageEnvelope(em.extensionId)
 	// Use client as name since we're on the client side (extension process)
 	em.broker = grpcbroker.NewMessageBroker(stream, envelope, em.extensionId, em.brokerLogger)
 
 	// Register handlers for incoming requests
-	if err := em.broker.On(em.onInvokeProjectHandler); err != nil {
+	if err := em.broker.On(em.onInvokeProjectHandlerWithProgress); err != nil {
 		return fmt.Errorf("failed to register invoke project handler: %w", err)
 	}
-	if err := em.broker.On(em.onInvokeServiceHandler); err != nil {
+	if err := em.broker.On(em.onInvokeServiceHandlerWithProgress); err != nil {
 		return fmt.Errorf("failed to register invoke service handler: %w", err)
 	}
 
@@ -214,6 +218,22 @@ func (em *EventManager) onInvokeProjectHandler(
 	ctx context.Context,
 	req *InvokeProjectHandler,
 ) (*EventMessage, error) {
+	return em.invokeProjectHandler(ctx, req, nil)
+}
+
+func (em *EventManager) onInvokeProjectHandlerWithProgress(
+	ctx context.Context,
+	req *InvokeProjectHandler,
+	progress grpcbroker.ProgressFunc,
+) (*EventMessage, error) {
+	return em.invokeProjectHandler(ctx, req, progress)
+}
+
+func (em *EventManager) invokeProjectHandler(
+	ctx context.Context,
+	req *InvokeProjectHandler,
+	progress grpcbroker.ProgressFunc,
+) (*EventMessage, error) {
 	em.eventsMutex.RLock()
 	defer em.eventsMutex.RUnlock()
 	handler, exists := em.projectEvents[req.EventName]
@@ -232,7 +252,7 @@ func (em *EventManager) onInvokeProjectHandler(
 	var handlerError *ExtensionError
 
 	// Call the project event handler
-	err := handler(ctx, args)
+	err := handler(withEventOutput(ctx, em.outputWriter, progress), args)
 	if err != nil {
 		handlerStatus = "failed"
 		handlerMessage = err.Error()
@@ -257,6 +277,22 @@ func (em *EventManager) onInvokeProjectHandler(
 func (em *EventManager) onInvokeServiceHandler(
 	ctx context.Context,
 	req *InvokeServiceHandler,
+) (*EventMessage, error) {
+	return em.invokeServiceHandler(ctx, req, nil)
+}
+
+func (em *EventManager) onInvokeServiceHandlerWithProgress(
+	ctx context.Context,
+	req *InvokeServiceHandler,
+	progress grpcbroker.ProgressFunc,
+) (*EventMessage, error) {
+	return em.invokeServiceHandler(ctx, req, progress)
+}
+
+func (em *EventManager) invokeServiceHandler(
+	ctx context.Context,
+	req *InvokeServiceHandler,
+	progress grpcbroker.ProgressFunc,
 ) (*EventMessage, error) {
 	em.eventsMutex.RLock()
 	defer em.eventsMutex.RUnlock()
@@ -284,7 +320,7 @@ func (em *EventManager) onInvokeServiceHandler(
 	var handlerError *ExtensionError
 
 	// Call the service event handler
-	err := handler(ctx, args)
+	err := handler(withEventOutput(ctx, em.outputWriter, progress), args)
 	if err != nil {
 		handlerStatus = "failed"
 		handlerMessage = err.Error()

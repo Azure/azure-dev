@@ -2427,6 +2427,25 @@ Clients can subscribe to events and receive notifications via a bidirectional st
   - `service_name`: The name of the service.
   - `status`: Status such as "running", "completed", or "failed".
   - `message`: Optional additional details.
+- **HandlerOutput**
+  Carries output emitted by a lifecycle handler while it is running.
+
+  Contains:
+  - `request_id`: The request ID of the handler invocation. The host uses this
+    value to associate output with the correct concurrent lifecycle invocation.
+  - `output`: The text written by the handler.
+
+Go lifecycle handlers should write user-facing output through
+`azdext.EventOutput(ctx)` rather than a process-wide output writer. The SDK
+forwards that output to the host with the invocation request ID and also keeps
+the normal live terminal output. The host retains bounded output from deploy
+lifecycle events so it remains visible after progress rendering completes.
+The SDK splits large writes into smaller progress messages before forwarding
+them to the host. Invalid UTF-8 bytes are replaced with the Unicode replacement
+character for host progress messages.
+Output written directly to a process-wide writer or by older extensions remains
+live output, but cannot be correlated safely when lifecycle events run
+concurrently.
 
 #### ServiceContext and Service Event Arguments
 

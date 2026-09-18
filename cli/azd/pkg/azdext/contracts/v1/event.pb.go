@@ -35,6 +35,7 @@ type EventMessage struct {
 	//	*EventMessage_SubscribeServiceEvent
 	//	*EventMessage_InvokeServiceHandler
 	//	*EventMessage_ServiceHandlerStatus
+	//	*EventMessage_HandlerOutput
 	MessageType   isEventMessage_MessageType `protobuf_oneof:"message_type"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -131,6 +132,15 @@ func (x *EventMessage) GetServiceHandlerStatus() *ServiceHandlerStatus {
 	return nil
 }
 
+func (x *EventMessage) GetHandlerOutput() *HandlerOutput {
+	if x != nil {
+		if x, ok := x.MessageType.(*EventMessage_HandlerOutput); ok {
+			return x.HandlerOutput
+		}
+	}
+	return nil
+}
+
 type isEventMessage_MessageType interface {
 	isEventMessage_MessageType()
 }
@@ -159,6 +169,10 @@ type EventMessage_ServiceHandlerStatus struct {
 	ServiceHandlerStatus *ServiceHandlerStatus `protobuf:"bytes,6,opt,name=service_handler_status,json=serviceHandlerStatus,proto3,oneof"`
 }
 
+type EventMessage_HandlerOutput struct {
+	HandlerOutput *HandlerOutput `protobuf:"bytes,8,opt,name=handler_output,json=handlerOutput,proto3,oneof"`
+}
+
 func (*EventMessage_SubscribeProjectEvent) isEventMessage_MessageType() {}
 
 func (*EventMessage_InvokeProjectHandler) isEventMessage_MessageType() {}
@@ -171,6 +185,63 @@ func (*EventMessage_InvokeServiceHandler) isEventMessage_MessageType() {}
 
 func (*EventMessage_ServiceHandlerStatus) isEventMessage_MessageType() {}
 
+func (*EventMessage_HandlerOutput) isEventMessage_MessageType() {}
+
+// Output emitted by a lifecycle handler.
+type HandlerOutput struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Request ID of the handler invocation that produced the output.
+	RequestId string `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	// Output text emitted by the handler.
+	Output        string `protobuf:"bytes,2,opt,name=output,proto3" json:"output,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HandlerOutput) Reset() {
+	*x = HandlerOutput{}
+	mi := &file_azd_extensions_v1_event_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HandlerOutput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HandlerOutput) ProtoMessage() {}
+
+func (x *HandlerOutput) ProtoReflect() protoreflect.Message {
+	mi := &file_azd_extensions_v1_event_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HandlerOutput.ProtoReflect.Descriptor instead.
+func (*HandlerOutput) Descriptor() ([]byte, []int) {
+	return file_azd_extensions_v1_event_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *HandlerOutput) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *HandlerOutput) GetOutput() string {
+	if x != nil {
+		return x.Output
+	}
+	return ""
+}
+
 // Client subscribes to project-related events
 type SubscribeProjectEvent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -182,7 +253,7 @@ type SubscribeProjectEvent struct {
 
 func (x *SubscribeProjectEvent) Reset() {
 	*x = SubscribeProjectEvent{}
-	mi := &file_azd_extensions_v1_event_proto_msgTypes[1]
+	mi := &file_azd_extensions_v1_event_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -194,7 +265,7 @@ func (x *SubscribeProjectEvent) String() string {
 func (*SubscribeProjectEvent) ProtoMessage() {}
 
 func (x *SubscribeProjectEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1_event_proto_msgTypes[1]
+	mi := &file_azd_extensions_v1_event_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -207,7 +278,7 @@ func (x *SubscribeProjectEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscribeProjectEvent.ProtoReflect.Descriptor instead.
 func (*SubscribeProjectEvent) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1_event_proto_rawDescGZIP(), []int{1}
+	return file_azd_extensions_v1_event_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *SubscribeProjectEvent) GetEventNames() []string {
@@ -230,7 +301,7 @@ type SubscribeServiceEvent struct {
 
 func (x *SubscribeServiceEvent) Reset() {
 	*x = SubscribeServiceEvent{}
-	mi := &file_azd_extensions_v1_event_proto_msgTypes[2]
+	mi := &file_azd_extensions_v1_event_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -242,7 +313,7 @@ func (x *SubscribeServiceEvent) String() string {
 func (*SubscribeServiceEvent) ProtoMessage() {}
 
 func (x *SubscribeServiceEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1_event_proto_msgTypes[2]
+	mi := &file_azd_extensions_v1_event_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -255,7 +326,7 @@ func (x *SubscribeServiceEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscribeServiceEvent.ProtoReflect.Descriptor instead.
 func (*SubscribeServiceEvent) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1_event_proto_rawDescGZIP(), []int{2}
+	return file_azd_extensions_v1_event_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *SubscribeServiceEvent) GetEventNames() []string {
@@ -292,7 +363,7 @@ type InvokeProjectHandler struct {
 
 func (x *InvokeProjectHandler) Reset() {
 	*x = InvokeProjectHandler{}
-	mi := &file_azd_extensions_v1_event_proto_msgTypes[3]
+	mi := &file_azd_extensions_v1_event_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -304,7 +375,7 @@ func (x *InvokeProjectHandler) String() string {
 func (*InvokeProjectHandler) ProtoMessage() {}
 
 func (x *InvokeProjectHandler) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1_event_proto_msgTypes[3]
+	mi := &file_azd_extensions_v1_event_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -317,7 +388,7 @@ func (x *InvokeProjectHandler) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InvokeProjectHandler.ProtoReflect.Descriptor instead.
 func (*InvokeProjectHandler) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1_event_proto_rawDescGZIP(), []int{3}
+	return file_azd_extensions_v1_event_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *InvokeProjectHandler) GetEventName() string {
@@ -351,7 +422,7 @@ type InvokeServiceHandler struct {
 
 func (x *InvokeServiceHandler) Reset() {
 	*x = InvokeServiceHandler{}
-	mi := &file_azd_extensions_v1_event_proto_msgTypes[4]
+	mi := &file_azd_extensions_v1_event_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -363,7 +434,7 @@ func (x *InvokeServiceHandler) String() string {
 func (*InvokeServiceHandler) ProtoMessage() {}
 
 func (x *InvokeServiceHandler) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1_event_proto_msgTypes[4]
+	mi := &file_azd_extensions_v1_event_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -376,7 +447,7 @@ func (x *InvokeServiceHandler) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InvokeServiceHandler.ProtoReflect.Descriptor instead.
 func (*InvokeServiceHandler) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1_event_proto_rawDescGZIP(), []int{4}
+	return file_azd_extensions_v1_event_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *InvokeServiceHandler) GetEventName() string {
@@ -425,7 +496,7 @@ type ProjectHandlerStatus struct {
 
 func (x *ProjectHandlerStatus) Reset() {
 	*x = ProjectHandlerStatus{}
-	mi := &file_azd_extensions_v1_event_proto_msgTypes[5]
+	mi := &file_azd_extensions_v1_event_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -437,7 +508,7 @@ func (x *ProjectHandlerStatus) String() string {
 func (*ProjectHandlerStatus) ProtoMessage() {}
 
 func (x *ProjectHandlerStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1_event_proto_msgTypes[5]
+	mi := &file_azd_extensions_v1_event_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -450,7 +521,7 @@ func (x *ProjectHandlerStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectHandlerStatus.ProtoReflect.Descriptor instead.
 func (*ProjectHandlerStatus) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1_event_proto_rawDescGZIP(), []int{5}
+	return file_azd_extensions_v1_event_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ProjectHandlerStatus) GetEventName() string {
@@ -501,7 +572,7 @@ type ServiceHandlerStatus struct {
 
 func (x *ServiceHandlerStatus) Reset() {
 	*x = ServiceHandlerStatus{}
-	mi := &file_azd_extensions_v1_event_proto_msgTypes[6]
+	mi := &file_azd_extensions_v1_event_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -513,7 +584,7 @@ func (x *ServiceHandlerStatus) String() string {
 func (*ServiceHandlerStatus) ProtoMessage() {}
 
 func (x *ServiceHandlerStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1_event_proto_msgTypes[6]
+	mi := &file_azd_extensions_v1_event_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -526,7 +597,7 @@ func (x *ServiceHandlerStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceHandlerStatus.ProtoReflect.Descriptor instead.
 func (*ServiceHandlerStatus) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1_event_proto_rawDescGZIP(), []int{6}
+	return file_azd_extensions_v1_event_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ServiceHandlerStatus) GetEventName() string {
@@ -568,15 +639,20 @@ var File_azd_extensions_v1_event_proto protoreflect.FileDescriptor
 
 const file_azd_extensions_v1_event_proto_rawDesc = "" +
 	"\n" +
-	"\x1dazd/extensions/v1/event.proto\x12\x11azd.extensions.v1\x1a\x1eazd/extensions/v1/models.proto\x1a\x1eazd/extensions/v1/errors.proto\"\xea\x04\n" +
+	"\x1dazd/extensions/v1/event.proto\x12\x11azd.extensions.v1\x1a\x1eazd/extensions/v1/models.proto\x1a\x1eazd/extensions/v1/errors.proto\"\xb5\x05\n" +
 	"\fEventMessage\x12b\n" +
 	"\x17subscribe_project_event\x18\x01 \x01(\v2(.azd.extensions.v1.SubscribeProjectEventH\x00R\x15subscribeProjectEvent\x12_\n" +
 	"\x16invoke_project_handler\x18\x02 \x01(\v2'.azd.extensions.v1.InvokeProjectHandlerH\x00R\x14invokeProjectHandler\x12_\n" +
 	"\x16project_handler_status\x18\x03 \x01(\v2'.azd.extensions.v1.ProjectHandlerStatusH\x00R\x14projectHandlerStatus\x12b\n" +
 	"\x17subscribe_service_event\x18\x04 \x01(\v2(.azd.extensions.v1.SubscribeServiceEventH\x00R\x15subscribeServiceEvent\x12_\n" +
 	"\x16invoke_service_handler\x18\x05 \x01(\v2'.azd.extensions.v1.InvokeServiceHandlerH\x00R\x14invokeServiceHandler\x12_\n" +
-	"\x16service_handler_status\x18\x06 \x01(\v2'.azd.extensions.v1.ServiceHandlerStatusH\x00R\x14serviceHandlerStatusB\x0e\n" +
-	"\fmessage_type\"8\n" +
+	"\x16service_handler_status\x18\x06 \x01(\v2'.azd.extensions.v1.ServiceHandlerStatusH\x00R\x14serviceHandlerStatus\x12I\n" +
+	"\x0ehandler_output\x18\b \x01(\v2 .azd.extensions.v1.HandlerOutputH\x00R\rhandlerOutputB\x0e\n" +
+	"\fmessage_type\"F\n" +
+	"\rHandlerOutput\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x16\n" +
+	"\x06output\x18\x02 \x01(\tR\x06output\"8\n" +
 	"\x15SubscribeProjectEvent\x12\x1f\n" +
 	"\vevent_names\x18\x01 \x03(\tR\n" +
 	"eventNames\"h\n" +
@@ -623,40 +699,42 @@ func file_azd_extensions_v1_event_proto_rawDescGZIP() []byte {
 	return file_azd_extensions_v1_event_proto_rawDescData
 }
 
-var file_azd_extensions_v1_event_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_azd_extensions_v1_event_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_azd_extensions_v1_event_proto_goTypes = []any{
 	(*EventMessage)(nil),          // 0: azd.extensions.v1.EventMessage
-	(*SubscribeProjectEvent)(nil), // 1: azd.extensions.v1.SubscribeProjectEvent
-	(*SubscribeServiceEvent)(nil), // 2: azd.extensions.v1.SubscribeServiceEvent
-	(*InvokeProjectHandler)(nil),  // 3: azd.extensions.v1.InvokeProjectHandler
-	(*InvokeServiceHandler)(nil),  // 4: azd.extensions.v1.InvokeServiceHandler
-	(*ProjectHandlerStatus)(nil),  // 5: azd.extensions.v1.ProjectHandlerStatus
-	(*ServiceHandlerStatus)(nil),  // 6: azd.extensions.v1.ServiceHandlerStatus
-	(*ProjectConfig)(nil),         // 7: azd.extensions.v1.ProjectConfig
-	(*ServiceConfig)(nil),         // 8: azd.extensions.v1.ServiceConfig
-	(*ServiceContext)(nil),        // 9: azd.extensions.v1.ServiceContext
-	(*ExtensionError)(nil),        // 10: azd.extensions.v1.ExtensionError
+	(*HandlerOutput)(nil),         // 1: azd.extensions.v1.HandlerOutput
+	(*SubscribeProjectEvent)(nil), // 2: azd.extensions.v1.SubscribeProjectEvent
+	(*SubscribeServiceEvent)(nil), // 3: azd.extensions.v1.SubscribeServiceEvent
+	(*InvokeProjectHandler)(nil),  // 4: azd.extensions.v1.InvokeProjectHandler
+	(*InvokeServiceHandler)(nil),  // 5: azd.extensions.v1.InvokeServiceHandler
+	(*ProjectHandlerStatus)(nil),  // 6: azd.extensions.v1.ProjectHandlerStatus
+	(*ServiceHandlerStatus)(nil),  // 7: azd.extensions.v1.ServiceHandlerStatus
+	(*ProjectConfig)(nil),         // 8: azd.extensions.v1.ProjectConfig
+	(*ServiceConfig)(nil),         // 9: azd.extensions.v1.ServiceConfig
+	(*ServiceContext)(nil),        // 10: azd.extensions.v1.ServiceContext
+	(*ExtensionError)(nil),        // 11: azd.extensions.v1.ExtensionError
 }
 var file_azd_extensions_v1_event_proto_depIdxs = []int32{
-	1,  // 0: azd.extensions.v1.EventMessage.subscribe_project_event:type_name -> azd.extensions.v1.SubscribeProjectEvent
-	3,  // 1: azd.extensions.v1.EventMessage.invoke_project_handler:type_name -> azd.extensions.v1.InvokeProjectHandler
-	5,  // 2: azd.extensions.v1.EventMessage.project_handler_status:type_name -> azd.extensions.v1.ProjectHandlerStatus
-	2,  // 3: azd.extensions.v1.EventMessage.subscribe_service_event:type_name -> azd.extensions.v1.SubscribeServiceEvent
-	4,  // 4: azd.extensions.v1.EventMessage.invoke_service_handler:type_name -> azd.extensions.v1.InvokeServiceHandler
-	6,  // 5: azd.extensions.v1.EventMessage.service_handler_status:type_name -> azd.extensions.v1.ServiceHandlerStatus
-	7,  // 6: azd.extensions.v1.InvokeProjectHandler.project:type_name -> azd.extensions.v1.ProjectConfig
-	7,  // 7: azd.extensions.v1.InvokeServiceHandler.project:type_name -> azd.extensions.v1.ProjectConfig
-	8,  // 8: azd.extensions.v1.InvokeServiceHandler.service:type_name -> azd.extensions.v1.ServiceConfig
-	9,  // 9: azd.extensions.v1.InvokeServiceHandler.service_context:type_name -> azd.extensions.v1.ServiceContext
-	10, // 10: azd.extensions.v1.ProjectHandlerStatus.error:type_name -> azd.extensions.v1.ExtensionError
-	10, // 11: azd.extensions.v1.ServiceHandlerStatus.error:type_name -> azd.extensions.v1.ExtensionError
-	0,  // 12: azd.extensions.v1.EventService.EventStream:input_type -> azd.extensions.v1.EventMessage
-	0,  // 13: azd.extensions.v1.EventService.EventStream:output_type -> azd.extensions.v1.EventMessage
-	13, // [13:14] is the sub-list for method output_type
-	12, // [12:13] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	2,  // 0: azd.extensions.v1.EventMessage.subscribe_project_event:type_name -> azd.extensions.v1.SubscribeProjectEvent
+	4,  // 1: azd.extensions.v1.EventMessage.invoke_project_handler:type_name -> azd.extensions.v1.InvokeProjectHandler
+	6,  // 2: azd.extensions.v1.EventMessage.project_handler_status:type_name -> azd.extensions.v1.ProjectHandlerStatus
+	3,  // 3: azd.extensions.v1.EventMessage.subscribe_service_event:type_name -> azd.extensions.v1.SubscribeServiceEvent
+	5,  // 4: azd.extensions.v1.EventMessage.invoke_service_handler:type_name -> azd.extensions.v1.InvokeServiceHandler
+	7,  // 5: azd.extensions.v1.EventMessage.service_handler_status:type_name -> azd.extensions.v1.ServiceHandlerStatus
+	1,  // 6: azd.extensions.v1.EventMessage.handler_output:type_name -> azd.extensions.v1.HandlerOutput
+	8,  // 7: azd.extensions.v1.InvokeProjectHandler.project:type_name -> azd.extensions.v1.ProjectConfig
+	8,  // 8: azd.extensions.v1.InvokeServiceHandler.project:type_name -> azd.extensions.v1.ProjectConfig
+	9,  // 9: azd.extensions.v1.InvokeServiceHandler.service:type_name -> azd.extensions.v1.ServiceConfig
+	10, // 10: azd.extensions.v1.InvokeServiceHandler.service_context:type_name -> azd.extensions.v1.ServiceContext
+	11, // 11: azd.extensions.v1.ProjectHandlerStatus.error:type_name -> azd.extensions.v1.ExtensionError
+	11, // 12: azd.extensions.v1.ServiceHandlerStatus.error:type_name -> azd.extensions.v1.ExtensionError
+	0,  // 13: azd.extensions.v1.EventService.EventStream:input_type -> azd.extensions.v1.EventMessage
+	0,  // 14: azd.extensions.v1.EventService.EventStream:output_type -> azd.extensions.v1.EventMessage
+	14, // [14:15] is the sub-list for method output_type
+	13, // [13:14] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_azd_extensions_v1_event_proto_init() }
@@ -673,6 +751,7 @@ func file_azd_extensions_v1_event_proto_init() {
 		(*EventMessage_SubscribeServiceEvent)(nil),
 		(*EventMessage_InvokeServiceHandler)(nil),
 		(*EventMessage_ServiceHandlerStatus)(nil),
+		(*EventMessage_HandlerOutput)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -680,7 +759,7 @@ func file_azd_extensions_v1_event_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_azd_extensions_v1_event_proto_rawDesc), len(file_azd_extensions_v1_event_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

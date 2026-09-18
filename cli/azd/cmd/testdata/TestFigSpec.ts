@@ -2583,6 +2583,340 @@ const completionSpec: Fig.Spec = {
 					],
 				},
 				{
+					name: ['dataset'],
+					description: 'Register and version Foundry datasets from your terminal. (Beta)',
+					subcommands: [
+						{
+							name: ['create'],
+							description: 'Register a dataset, publishing its first version.',
+							options: [
+								{
+									name: ['--from-file'],
+									description: 'Path to a .jsonl file, or a directory containing one.',
+									args: [
+										{
+											name: 'from-file',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--version'],
+									description: 'Version to publish. Omit to publish the next version after the latest registered.',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['delete'],
+							description: 'Delete a dataset version.',
+							options: [
+								{
+									name: ['--force'],
+									description: 'Delete without asking for confirmation.',
+									isDangerous: true,
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--version'],
+									description: 'Version to delete.',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['download'],
+							description: 'Download a registered dataset version\'s content.',
+							options: [
+								{
+									name: ['--force'],
+									description: 'Overwrite files that already exist.',
+									isDangerous: true,
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--output-dir'],
+									description: 'Directory to write into. Defaults to the current directory.',
+									args: [
+										{
+											name: 'output-dir',
+										},
+									],
+								},
+								{
+									name: ['--output-file'],
+									description: 'Exact path to write. Only valid for a single-file dataset.',
+									args: [
+										{
+											name: 'output-file',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--version'],
+									description: 'Version to download. Omit for the latest, which is reported.',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['help'],
+							description: 'Help about any command',
+						},
+						{
+							name: ['list'],
+							description: 'List the project\'s datasets.',
+							options: [
+								{
+									name: ['--all'],
+									description: 'Show every row.',
+								},
+								{
+									name: ['--limit'],
+									description: 'Rows to show. Defaults to 20.',
+									args: [
+										{
+											name: 'limit',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--tag'],
+									description: 'Keep only datasets carrying this key=value tag. Repeatable, and repeats narrow rather than widen.',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'tag',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['show'],
+							description: 'Show a dataset version.',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--version'],
+									description: 'Version to show. Omit for the latest.',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['update'],
+							description: 'Publish a new version of a dataset.',
+							options: [
+								{
+									name: ['--from-file'],
+									description: 'Path to a .jsonl file, or a directory containing one.',
+									args: [
+										{
+											name: 'from-file',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint'],
+									description: 'Foundry project endpoint.',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+								{
+									name: ['--version'],
+									description: 'Version to publish. Omit to publish the next version after the latest registered.',
+									args: [
+										{
+											name: 'version',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['version'],
+							description: 'Display the extension version',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json'],
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['versions'],
+							description: 'Inspect the versions of one dataset.',
+							subcommands: [
+								{
+									name: ['list'],
+									description: 'List the versions of a dataset.',
+									options: [
+										{
+											name: ['--all'],
+											description: 'Show every row.',
+										},
+										{
+											name: ['--limit'],
+											description: 'Rows to show. Defaults to 20.',
+											args: [
+												{
+													name: 'limit',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+										{
+											name: ['--project-endpoint'],
+											description: 'Foundry project endpoint.',
+											args: [
+												{
+													name: 'project-endpoint',
+												},
+											],
+										},
+									],
+								},
+							],
+						},
+					],
+				},
+				{
 					name: ['eval'],
 					description: 'Define and run Foundry evaluations from your terminal. (Beta)',
 					subcommands: [

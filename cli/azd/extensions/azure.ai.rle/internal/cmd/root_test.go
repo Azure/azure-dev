@@ -74,6 +74,39 @@ func TestRleUserCommandsHiddenUnlessEnabled(t *testing.T) {
 	}
 }
 
+func TestTrainCommandHiddenUnlessEnableAll(t *testing.T) {
+	t.Setenv(rleEnableEnvVar, "true")
+	t.Setenv(rleEnableAllEnvVar, "")
+	rootCmd := NewRootCommand()
+	command, _, err := rootCmd.Find([]string{"train"})
+	if err != nil {
+		t.Fatalf("expected train command to be registered: %v", err)
+	}
+	if !command.Hidden {
+		t.Fatalf("expected train to be hidden unless %s=true", rleEnableAllEnvVar)
+	}
+
+	t.Setenv(rleEnableAllEnvVar, "true")
+	rootCmd = NewRootCommand()
+	command, _, err = rootCmd.Find([]string{"train"})
+	if err != nil {
+		t.Fatalf("expected train command to be registered: %v", err)
+	}
+	if command.Hidden {
+		t.Fatal("expected train to be visible when both preview flags are enabled")
+	}
+
+	t.Setenv(rleEnableEnvVar, "")
+	rootCmd = NewRootCommand()
+	command, _, err = rootCmd.Find([]string{"train"})
+	if err != nil {
+		t.Fatalf("expected train command to be registered: %v", err)
+	}
+	if !command.Hidden {
+		t.Fatal("expected train to remain hidden when the top-level preview flag is disabled")
+	}
+}
+
 func TestRleHarnessInitRequiresHarnessPreviewFlag(t *testing.T) {
 	t.Setenv("AZD_AI_RLE_AGENT_INIT_ENABLE", "true")
 	t.Setenv(rleEnableAllEnvVar, "")

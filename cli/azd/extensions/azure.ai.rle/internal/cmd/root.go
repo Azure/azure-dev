@@ -50,6 +50,17 @@ func NewRootCommand() *cobra.Command {
 		command.Hidden = !rleCommandsEnabled()
 		rootCmd.AddCommand(command)
 	}
+
+	// internalCommands are staged for a future release and are only shown to the RLE
+	// team's own iteration, in addition to the top-level preview gate above.
+	internalCommands := []*cobra.Command{
+		newTrainCommand(),
+	}
+	for _, command := range internalCommands {
+		command.Hidden = !rleCommandsEnabled() || !rleEnableAllEnabled()
+		rootCmd.AddCommand(command)
+	}
+
 	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
 

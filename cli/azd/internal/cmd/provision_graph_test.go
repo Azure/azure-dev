@@ -30,23 +30,41 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
-func TestEmitMultiLayerProvisionTelemetry_Formats(t *testing.T) {
+func TestProvisionLayerTelemetry_Formats(t *testing.T) {
 	tests := []struct {
-		name                      string
-		projectConfig             *project.ProjectConfig
-		expectedV2                bool
-		expectedExplicitDependsOn int64
+		name          string
+		projectConfig *project.ProjectConfig
+		layers        []provisioning.Options
+		dependencies  *bicep.LayerDependencies
+		expected      map[string]any
 	}{
 		{
-			name: "infra layers v1",
-			projectConfig: &project.ProjectConfig{Infra: provisioning.Options{Layers: []provisioning.Options{
-				{Name: "foundation"},
-				{Name: "application", DependsOn: []string{"foundation"}},
-			}}},
-			expectedExplicitDependsOn: 1,
+			name:          "zero layers have trivial topology",
+			projectConfig: &project.ProjectConfig{Layers: project.LayerConfigs{}},
+			expected: map[string]any{
+				string(fields.ProvisionLayerIsV2Key.Key):                   true,
+				string(fields.ProvisionLayerCountKey.Key):                  int64(0),
+				string(fields.ProvisionLayerExplicitDependsOnCountKey.Key): int64(0),
+				string(fields.ProvisionLayerMaxParallelKey.Key):            int64(0),
+				string(fields.ProvisionLayerSafeFallbackCountKey.Key):      int64(0),
+			},
 		},
 		{
-			name: "project layers v2",
+			name: "single layer has trivial topology",
+			projectConfig: &project.ProjectConfig{Infra: provisioning.Options{Layers: []provisioning.Options{
+				{Name: "foundation"},
+			}}},
+			layers: []provisioning.Options{{Name: "foundation"}},
+			expected: map[string]any{
+				string(fields.ProvisionLayerIsV2Key.Key):                   false,
+				string(fields.ProvisionLayerCountKey.Key):                  int64(1),
+				string(fields.ProvisionLayerExplicitDependsOnCountKey.Key): int64(0),
+				string(fields.ProvisionLayerMaxParallelKey.Key):            int64(1),
+				string(fields.ProvisionLayerSafeFallbackCountKey.Key):      int64(0),
+			},
+		},
+		{
+			name: "multi layer without analysis omits topology",
 			projectConfig: &project.ProjectConfig{Layers: project.LayerConfigs{
 				{Name: "foundation", Infra: []provisioning.Options{{Name: "network"}}},
 				{
@@ -55,8 +73,35 @@ func TestEmitMultiLayerProvisionTelemetry_Formats(t *testing.T) {
 					Infra:     []provisioning.Options{{Name: "api"}, {Name: "database"}},
 				},
 			}},
-			expectedV2:                true,
-			expectedExplicitDependsOn: 1,
+			layers: []provisioning.Options{{Name: "network"}, {Name: "api"}, {Name: "database"}},
+			expected: map[string]any{
+				string(fields.ProvisionLayerIsV2Key.Key):                   true,
+				string(fields.ProvisionLayerCountKey.Key):                  int64(3),
+				string(fields.ProvisionLayerExplicitDependsOnCountKey.Key): int64(1),
+			},
+		},
+		{
+			name: "multi layer with analysis includes topology",
+			projectConfig: &project.ProjectConfig{Layers: project.LayerConfigs{
+				{Name: "foundation", Infra: []provisioning.Options{{Name: "network"}}},
+				{
+					Name:      "application",
+					DependsOn: []string{"foundation"},
+					Infra:     []provisioning.Options{{Name: "api"}, {Name: "database"}},
+				},
+			}},
+			layers: []provisioning.Options{{Name: "network"}, {Name: "api"}, {Name: "database"}},
+			dependencies: &bicep.LayerDependencies{
+				Levels:             [][]int{{0}, {1, 2}},
+				SafeFallbackLayers: []int{2},
+			},
+			expected: map[string]any{
+				string(fields.ProvisionLayerIsV2Key.Key):                   true,
+				string(fields.ProvisionLayerCountKey.Key):                  int64(3),
+				string(fields.ProvisionLayerExplicitDependsOnCountKey.Key): int64(1),
+				string(fields.ProvisionLayerMaxParallelKey.Key):            int64(2),
+				string(fields.ProvisionLayerSafeFallbackCountKey.Key):      int64(1),
+			},
 		},
 	}
 
@@ -66,29 +111,32 @@ func TestEmitMultiLayerProvisionTelemetry_Formats(t *testing.T) {
 			provider := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(recorder))
 			ctx, span := provider.Tracer("test").Start(t.Context(), "provision")
 
-			emitMultiLayerProvisionTelemetry(
-				ctx, tt.projectConfig, tt.projectConfig.InfrastructureConfigs(), nil,
-			)
+			telemetry := newProvisionLayerTelemetry(tt.projectConfig, tt.layers)
+			telemetry.setDependencies(tt.dependencies)
+			telemetry.emit(ctx)
 			span.End()
 
 			require.Len(t, recorder.Ended(), 1)
-			attributes := map[string]any{}
-			for _, attr := range recorder.Ended()[0].Attributes() {
-				switch attr.Key {
-				case fields.ProvisionLayerIsV2Key.Key:
-					attributes[string(attr.Key)] = attr.Value.AsBool()
-				case fields.ProvisionLayerCountKey.Key,
-					fields.ProvisionLayerExplicitDependsOnCountKey.Key:
-					attributes[string(attr.Key)] = attr.Value.AsInt64()
-				}
-			}
-			require.Equal(t, tt.expectedV2, attributes[string(fields.ProvisionLayerIsV2Key.Key)])
-			require.Equal(t, int64(len(tt.projectConfig.InfrastructureConfigs())),
-				attributes[string(fields.ProvisionLayerCountKey.Key)])
-			require.Equal(t, tt.expectedExplicitDependsOn,
-				attributes[string(fields.ProvisionLayerExplicitDependsOnCountKey.Key)])
+			attributes := provisionLayerAttributes(recorder.Ended()[0])
+			require.Equal(t, tt.expected, attributes)
 		})
 	}
+}
+
+func provisionLayerAttributes(span tracesdk.ReadOnlySpan) map[string]any {
+	attributes := map[string]any{}
+	for _, attr := range span.Attributes() {
+		switch attr.Key {
+		case fields.ProvisionLayerIsV2Key.Key:
+			attributes[string(attr.Key)] = attr.Value.AsBool()
+		case fields.ProvisionLayerCountKey.Key,
+			fields.ProvisionLayerExplicitDependsOnCountKey.Key,
+			fields.ProvisionLayerMaxParallelKey.Key,
+			fields.ProvisionLayerSafeFallbackCountKey.Key:
+			attributes[string(attr.Key)] = attr.Value.AsInt64()
+		}
+	}
+	return attributes
 }
 
 func TestNoopSaveEnvManager(t *testing.T) {

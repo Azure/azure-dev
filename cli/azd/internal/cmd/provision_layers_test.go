@@ -7,13 +7,16 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -26,6 +29,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 type layeredProvisionRecord struct {
@@ -49,6 +54,13 @@ func (r *layeredProvisionRecorder) record(options provisioning.Options) string {
 		observedVnetID: observedVnetID,
 	}
 	return observedVnetID
+}
+
+func (r *layeredProvisionRecorder) snapshot() map[string]layeredProvisionRecord {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return maps.Clone(r.records)
 }
 
 type layeredProvisionProvider struct {
@@ -127,21 +139,23 @@ func (*offlineResourceManager) GetResourceGroupName(
 	return "rg-layered-test", nil
 }
 
-func TestProvisionAction_TopLevelLayersFromAzureYaml(t *testing.T) {
+type layeredProvisionTest struct {
+	action         *ProvisionAction
+	env            *environment.Environment
+	envManager     environment.Manager
+	providerCalls  *layeredProvisionRecorder
+	serviceManager *recordingServiceManager
+}
+
+func newLayeredProvisionTest(t *testing.T, projectConfig *project.ProjectConfig) *layeredProvisionTest {
+	t.Helper()
 	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
 	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
 	t.Setenv("NO_COLOR", "1")
 	t.Setenv("AZD_FORCE_TTY", "false")
 
-	projectDir := t.TempDir()
-	writeLayeredProvisionProject(t, projectDir)
-
-	projectConfig, err := project.Load(t.Context(), filepath.Join(projectDir, "azure.yaml"))
-	require.NoError(t, err)
-	require.Equal(t, project.ProjectFormatLayersV2, projectConfig.Format())
-
 	mockContext := mocks.NewMockContext(t.Context())
-	azdContext := azdcontext.NewAzdContextWithDirectory(projectDir)
+	azdContext := azdcontext.NewAzdContextWithDirectory(projectConfig.Path)
 	localDataStore := environment.NewLocalFileDataStore(
 		azdContext,
 		config.NewFileConfigManager(config.NewManager()),
@@ -160,7 +174,7 @@ func TestProvisionAction_TopLevelLayersFromAzureYaml(t *testing.T) {
 	env.SetLocation("eastus2")
 	require.NoError(t, envManager.Save(t.Context(), env))
 
-	recorder := &layeredProvisionRecorder{
+	providerCalls := &layeredProvisionRecorder{
 		env:     env,
 		records: map[string]layeredProvisionRecord{},
 	}
@@ -169,7 +183,7 @@ func TestProvisionAction_TopLevelLayersFromAzureYaml(t *testing.T) {
 	mockContext.Container.MustRegisterNamedTransient(
 		string(provisioning.Bicep),
 		func() provisioning.Provider {
-			return &layeredProvisionProvider{recorder: recorder}
+			return &layeredProvisionProvider{recorder: providerCalls}
 		},
 	)
 
@@ -191,46 +205,109 @@ func TestProvisionAction_TopLevelLayersFromAzureYaml(t *testing.T) {
 	serviceManager := &recordingServiceManager{}
 	importManager := project.NewImportManager(nil)
 	projectManager := project.NewProjectManager(azdContext, serviceManager, importManager)
-	action := &ProvisionAction{
-		flags: &ProvisionFlags{
-			global:  &internal.GlobalCommandOptions{},
-			EnvFlag: &internal.EnvFlag{},
-		},
-		provisionManager:    provisionManager,
-		projectManager:      projectManager,
-		resourceManager:     &offlineResourceManager{},
-		env:                 env,
-		envManager:          envManager,
-		formatter:           &output.NoneFormatter{},
-		projectConfig:       projectConfig,
-		writer:              io.Discard,
-		console:             mockContext.Console,
-		commandRunner:       mockContext.CommandRunner,
-		serviceLocator:      mockContext.Container,
-		importManager:       importManager,
-		alphaFeatureManager: features,
-		portalUrlBase:       testCloud.PortalUrlBase,
-		defaultProvider:     defaultProvider,
-		cloud:               testCloud,
-	}
 
-	result, err := action.Run(t.Context())
+	return &layeredProvisionTest{
+		action: &ProvisionAction{
+			flags: &ProvisionFlags{
+				global:  &internal.GlobalCommandOptions{},
+				EnvFlag: &internal.EnvFlag{},
+			},
+			provisionManager:    provisionManager,
+			projectManager:      projectManager,
+			resourceManager:     &offlineResourceManager{},
+			env:                 env,
+			envManager:          envManager,
+			formatter:           &output.NoneFormatter{},
+			projectConfig:       projectConfig,
+			writer:              io.Discard,
+			console:             mockContext.Console,
+			commandRunner:       mockContext.CommandRunner,
+			serviceLocator:      mockContext.Container,
+			importManager:       importManager,
+			alphaFeatureManager: features,
+			portalUrlBase:       testCloud.PortalUrlBase,
+			defaultProvider:     defaultProvider,
+			cloud:               testCloud,
+		},
+		env:            env,
+		envManager:     envManager,
+		providerCalls:  providerCalls,
+		serviceManager: serviceManager,
+	}
+}
+
+func TestProvisionAction_TopLevelLayersFromAzureYaml(t *testing.T) {
+	projectDir := t.TempDir()
+	writeLayeredProvisionProject(t, projectDir)
+
+	projectConfig, err := project.Load(t.Context(), filepath.Join(projectDir, "azure.yaml"))
+	require.NoError(t, err)
+	require.Equal(t, project.ProjectFormatLayersV2, projectConfig.Format())
+	fixture := newLayeredProvisionTest(t, projectConfig)
+
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(spanRecorder))
+	ctx, span := tracerProvider.Tracer("test").Start(t.Context(), "provision")
+	result, err := fixture.action.Run(ctx)
+	span.End()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Contains(t, result.Message.Header, "Your application was provisioned")
-	require.Empty(t, serviceManager.initializedServices)
+	require.Empty(t, fixture.serviceManager.initializedServices)
 
-	recorder.mu.Lock()
-	records := recorder.records
-	recorder.mu.Unlock()
+	records := fixture.providerCalls.snapshot()
 	require.Len(t, records, 3)
 	assert.Contains(t, records, "network")
 	assert.Equal(t, "vnet-123", records["compute"].observedVnetID)
 	assert.Equal(t, "vnet-123", records["monitoring"].observedVnetID)
 	assert.Equal(t, []string{"network"}, records["monitoring"].dependsOn)
 
-	require.NoError(t, envManager.Reload(t.Context(), env))
-	assert.Equal(t, "vnet-123", env.Getenv("VNET_ID"))
+	require.NoError(t, fixture.envManager.Reload(t.Context(), fixture.env))
+	assert.Equal(t, "vnet-123", fixture.env.Getenv("VNET_ID"))
+
+	require.Len(t, spanRecorder.Ended(), 1)
+	assert.Equal(t, map[string]any{
+		string(fields.ProvisionLayerIsV2Key.Key):                   true,
+		string(fields.ProvisionLayerCountKey.Key):                  int64(3),
+		string(fields.ProvisionLayerExplicitDependsOnCountKey.Key): int64(1),
+		string(fields.ProvisionLayerMaxParallelKey.Key):            int64(2),
+		string(fields.ProvisionLayerSafeFallbackCountKey.Key):      int64(0),
+	}, provisionLayerAttributes(spanRecorder.Ended()[0]))
+}
+
+func TestProvisionLayersGraph_AnalysisFailureOmitsTopologyTelemetry(t *testing.T) {
+	projectDir := t.TempDir()
+	projectConfig := &project.ProjectConfig{
+		Path: projectDir,
+		Layers: project.LayerConfigs{
+			{
+				Name:  "foundation",
+				Infra: []provisioning.Options{{Name: "network", Provider: provisioning.Bicep, Path: "missing/network"}},
+			},
+			{
+				Name:      "application",
+				DependsOn: []string{"foundation"},
+				Infra:     []provisioning.Options{{Name: "api", Provider: provisioning.Bicep, Path: "missing/api"}},
+			},
+		},
+	}
+	layers := projectConfig.InfrastructureConfigs()
+	fixture := newLayeredProvisionTest(t, projectConfig)
+
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(spanRecorder))
+	ctx, span := tracerProvider.Tracer("test").Start(t.Context(), "provision")
+	result, err := fixture.action.provisionLayersGraph(ctx, layers, time.Now(), false)
+	span.End()
+
+	require.ErrorContains(t, err, "analyzing layer dependencies")
+	require.Nil(t, result)
+	require.Len(t, spanRecorder.Ended(), 1)
+	assert.Equal(t, map[string]any{
+		string(fields.ProvisionLayerIsV2Key.Key):                   true,
+		string(fields.ProvisionLayerCountKey.Key):                  int64(2),
+		string(fields.ProvisionLayerExplicitDependsOnCountKey.Key): int64(1),
+	}, provisionLayerAttributes(spanRecorder.Ended()[0]))
 }
 
 func writeLayeredProvisionProject(t *testing.T, projectDir string) {

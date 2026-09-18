@@ -148,6 +148,10 @@ func TestTelemetryFieldConstants(t *testing.T) {
 			fields.ExeGraphPackageConcurrencyKey,
 			fields.ExeGraphProvisionConcurrencyKey,
 			fields.ExtensionLegacyGrpcCallCount,
+			fields.ProvisionLayerCountKey,
+			fields.ProvisionLayerExplicitDependsOnCountKey,
+			fields.ProvisionLayerMaxParallelKey,
+			fields.ProvisionLayerSafeFallbackCountKey,
 			fields.ToolExitCode,
 		}
 		for _, field := range measurementFields {

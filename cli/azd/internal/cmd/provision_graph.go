@@ -18,8 +18,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
@@ -66,6 +64,11 @@ func (p *ProvisionAction) provisionLayersGraph(
 	startTime time.Time,
 	previewMode bool,
 ) (*actions.ActionResult, error) {
+	layerTelemetry := newProvisionLayerTelemetry(p.projectConfig, layers)
+	defer func() {
+		layerTelemetry.emit(ctx)
+	}()
+
 	// ── no-op: zero layers ───────────────────────────────────────────────
 	// Guards both preview and deploy paths from index-out-of-range panics
 	// when a project defines no provisioning layers (rare but valid).
@@ -233,13 +236,7 @@ func (p *ProvisionAction) provisionLayersGraph(
 		if err != nil {
 			return nil, fmt.Errorf("analyzing layer dependencies: %w", err)
 		}
-
-		// Emit telemetry on the ambient command span so the azd team can
-		// answer "what fraction of projects use multi-layer?", "how parallel
-		// is the typical project?", and "how often does the safe-by-default
-		// fallback engage on real templates?". These attributes are scoped
-		// to SystemMetadata + PerformanceAndHealth — no user content.
-		emitMultiLayerProvisionTelemetry(ctx, p.projectConfig, layers, layerDeps)
+		layerTelemetry.setDependencies(layerDeps)
 
 		// Pre-compute step names so edges can reference layers regardless
 		// of iteration order. Unnamed layers get an indexed fallback so
@@ -530,66 +527,6 @@ func provisionLayerStepName(layer provisioning.Options) string {
 		return layer.Name
 	}
 	return "default"
-}
-
-// emitMultiLayerProvisionTelemetry attaches multi-layer adoption + safety
-// metrics to the ambient command span. Called once per multi-layer
-// provision run, immediately after [bicep.AnalyzeLayerDependencies] returns.
-//
-// Emits:
-//
-//   - provision.layer.is_v2                        — top-level layers format
-//   - provision.layer.count                        — total declared layers
-//   - provision.layer.max_parallel                 — largest dependency level
-//   - provision.layer.safe_fallback_count          — layers with hasUnknown
-//   - provision.layer.explicit_dependson_count     — layers using dependsOn
-//
-// All attributes are SystemMetadata (a format flag and counts only, no
-// template content), so they're collected without any user-facing opt-in
-// beyond the existing telemetry consent.
-func emitMultiLayerProvisionTelemetry(
-	ctx context.Context,
-	projectConfig *project.ProjectConfig,
-	layers []provisioning.Options,
-	deps *bicep.LayerDependencies,
-) {
-	maxParallel := 0
-	if deps != nil {
-		for _, level := range deps.Levels {
-			if len(level) > maxParallel {
-				maxParallel = len(level)
-			}
-		}
-	}
-
-	safeFallback := 0
-	if deps != nil {
-		safeFallback = len(deps.SafeFallbackLayers)
-	}
-
-	explicitDependsOnLayers := 0
-	if projectConfig.Format() == project.ProjectFormatLayersV2 {
-		for _, layer := range projectConfig.Layers {
-			if len(layer.DependsOn) > 0 {
-				explicitDependsOnLayers++
-			}
-		}
-	} else {
-		for _, layer := range projectConfig.Infra.Layers {
-			if len(layer.DependsOn) > 0 {
-				explicitDependsOnLayers++
-			}
-		}
-	}
-
-	tracing.SetAttributesInContext(
-		ctx,
-		fields.ProvisionLayerIsV2Key.Bool(projectConfig.Format() == project.ProjectFormatLayersV2),
-		fields.ProvisionLayerCountKey.Int(len(layers)),
-		fields.ProvisionLayerMaxParallelKey.Int(maxParallel),
-		fields.ProvisionLayerSafeFallbackCountKey.Int(safeFallback),
-		fields.ProvisionLayerExplicitDependsOnCountKey.Int(explicitDependsOnLayers),
-	)
 }
 
 // provisionOutcome captures the resulting disposition of a single-layer

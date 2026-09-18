@@ -120,7 +120,8 @@ type Layer struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Name identifies the layer. It cannot be empty.
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// Infra lists the provisioning entries owned by the layer.
+	// Infra lists the provisioning entries owned by the layer. The shared
+	// InfraOptions.depends_on field is not supported for top-level project layers.
 	Infra []*InfraOptions `protobuf:"bytes,2,rep,name=infra,proto3" json:"infra,omitempty"`
 	// Services lists the service definitions owned by the layer, keyed by service name.
 	Services map[string]*ServiceConfig `protobuf:"bytes,3,rep,name=services,proto3" json:"services,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`

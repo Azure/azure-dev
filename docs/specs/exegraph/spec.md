@@ -484,20 +484,23 @@ Things a reader of the code should know before editing:
     there (not inline in `scheduler.go`) so the telemetry schema stays
     centralized.
 
-13. **Multi-layer provision adoption telemetry.** Each `azd provision` /
-   `azd up` run that takes the multi-layer path emits five `provision.layer.*`
-    attributes on the ambient command span (defined alongside the
-    `exegraph.*` keys in `internal/tracing/fields/fields.go`):
+13. **Provision layer adoption telemetry.** `azd provision` and `azd up`
+   record the project format, the number of infrastructure entries, and how
+   many layers declare explicit dependencies. After azd analyzes a multi-layer
+   project, it also records the graph's available parallelism and any layers
+   that had to fall back to serial execution. Those two fields are omitted if
+   analysis fails, since reporting zero would look like a real result. The
+   fields are defined in `internal/tracing/fields/fields.go`:
 
     | Attribute | What it measures |
     |---|---|
-   | `provision.layer.is_v2` | Whether the project uses the top-level `layers:` format |
-    | `provision.layer.count` | Total `infra.layers[]` declared |
+      | `provision.layer.is_v2` | Whether the project uses the top-level `layers:` format |
+      | `provision.layer.count` | Provisioning infrastructure entries in `infra.layers[]` or across all top-level project layers |
     | `provision.layer.max_parallel` | Largest dependency level after analysis (max achievable parallelism) |
     | `provision.layer.safe_fallback_count` | Layers that triggered the safe-by-default detector fallback |
-    | `provision.layer.explicit_dependson_count` | Layers using `infra.layers[].dependsOn` |
+      | `provision.layer.explicit_dependson_count` | Owning layers using explicit `dependsOn` dependencies |
 
-   These are SystemMetadata only — a format flag and counts, no template content — and let
+      These are SystemMetadata only — a format flag and counts, no template content — and let
     the azd team answer "what fraction of projects use multi-layer?",
     "how parallel is the typical project?", and "how often does the
     safe-by-default fallback engage on real templates?" without inspecting

@@ -91,7 +91,8 @@ message AddServiceRequest {
 message Layer {
   // Name identifies the layer. It cannot be empty.
   string name = 1;
-  // Infra lists the provisioning entries owned by the layer.
+  // Infra lists the provisioning entries owned by the layer. The shared
+  // InfraOptions.depends_on field is not supported for top-level project layers.
   repeated InfraOptions infra = 2;
   // Services lists the service definitions owned by the layer, keyed by service name.
   map<string, ServiceConfig> services = 3;

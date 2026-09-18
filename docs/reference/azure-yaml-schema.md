@@ -43,7 +43,8 @@ services:
 Project composition builds an azd project from project layers. Each project layer groups infrastructure and services
 as a self-contained configuration unit. Infrastructure entries and service names must be unique across
 the project. Independent infrastructure entries may provision concurrently, including entries in different project
-layers. Dependencies order individual infrastructure entries, not entire project layers.
+layers. A project-layer dependency creates a complete barrier: every infrastructure entry in the dependent layer
+waits for every infrastructure entry in the named layer. Entries in unrelated layers can still run concurrently.
 Every infrastructure entry under a project layer must declare `provider` explicitly. Provider inheritance remains
 available only in the legacy `infra.layers[]` format, where an entry may inherit `infra.provider`.
 

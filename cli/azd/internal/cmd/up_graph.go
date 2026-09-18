@@ -231,6 +231,12 @@ func (u *UpGraphAction) Run(
 		// rate) faithful rather than inflating it with a no-op Success span.
 		emitDeploySpan(ctx, graphResult, parentChangedFlags, usageAttrs)
 	}()
+	layerTelemetry := newProvisionLayerTelemetry(u.projectConfig, layers)
+	// Registered after the span finalizer so LIFO defer ordering emits these
+	// attributes before provisionSpan.End().
+	defer func() {
+		layerTelemetry.emit(provisionSpanCtx)
+	}()
 
 	// 1. Analyze provision layer dependencies. Empty layers → empty graph.
 	var layerDeps *bicep.LayerDependencies
@@ -242,6 +248,7 @@ func (u *UpGraphAction) Run(
 			return nil, fmt.Errorf("analyzing layer dependencies: %w", err)
 		}
 	}
+	layerTelemetry.setDependencies(layerDeps)
 
 	// 1a. Provider-agnostic provision validation (once per `azd up`). Dispatch
 	// extension-registered "provision" checks a single time, before the unified

@@ -570,9 +570,9 @@ func TestInfraOptionsReverseMapping(t *testing.T) {
 func TestLayerDependsOnMapping(t *testing.T) {
 	t.Parallel()
 
-	// convet from our internal modesl to protobuf
+	// Convert from our internal model to protobuf.
 	projectLayer := &LayerConfig{Name: "application", DependsOn: []string{"foundation"}}
-	var protoBufModel *azdext.Layer
+	var protoBufModel *v1beta.Layer
 	require.NoError(t, mapper.Convert(projectLayer, &protoBufModel))
 	require.Equal(t, []string{"foundation"}, protoBufModel.DependsOn)
 

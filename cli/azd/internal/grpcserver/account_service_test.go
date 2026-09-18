@@ -80,13 +80,13 @@ func TestAccountService_GetCurrentPrincipal(t *testing.T) {
 		name          string
 		accessTenant  string
 		principalType auth.PrincipalType
-		protoType     azdext.PrincipalType
+		protoType     v1beta.PrincipalType
 	}{
-		{"user", "resource-tenant", auth.UserPrincipalType, azdext.PrincipalType_PRINCIPAL_TYPE_USER},
-		{"guest", "home-tenant", auth.UserPrincipalType, azdext.PrincipalType_PRINCIPAL_TYPE_USER},
+		{"user", "resource-tenant", auth.UserPrincipalType, v1beta.PrincipalType_PRINCIPAL_TYPE_USER},
+		{"guest", "home-tenant", auth.UserPrincipalType, v1beta.PrincipalType_PRINCIPAL_TYPE_USER},
 		{
 			"service principal", "resource-tenant", auth.ServicePrincipalType,
-			azdext.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL,
+			v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -96,9 +96,9 @@ func TestAccountService_GetCurrentPrincipal(t *testing.T) {
 			subscriptions := &mockAccountSubscriptions{}
 			subscriptions.On("GetSubscription", mock.Anything, "sub-123").Return(&account.Subscription{
 				Id: "sub-123", TenantId: "resource-tenant", UserAccessTenantId: tt.accessTenant,
-			}, nil).Twice()
+			}, nil).Once()
 			principalTypes := &mockAccountPrincipalType{}
-			principalTypes.On("CurrentPrincipalType", mock.Anything).Return(tt.principalType, nil).Twice()
+			principalTypes.On("CurrentPrincipalType", mock.Anything).Return(tt.principalType, nil).Once()
 
 			mockContext := mocks.NewMockContext(ctx)
 			azureCloud := cloud.AzurePublic()
@@ -133,8 +133,26 @@ func TestAccountService_GetCurrentPrincipal(t *testing.T) {
 				subscriptionsManager: subscriptions, userProfileService: userProfile, principalTypeProvider: principalTypes,
 			}
 
-			server := newServerWithContainerService(azdext.UnimplementedContainerServiceServer{})
-			server.accountService = svc
+			server := NewServer(
+				azdext.UnimplementedProjectServiceServer{},
+				azdext.UnimplementedEnvironmentServiceServer{},
+				azdext.UnimplementedPromptServiceServer{},
+				azdext.UnimplementedUserConfigServiceServer{},
+				azdext.UnimplementedDeploymentServiceServer{},
+				azdext.UnimplementedEventServiceServer{},
+				v1beta.UnimplementedComposeServiceServer{},
+				azdext.UnimplementedWorkflowServiceServer{},
+				azdext.UnimplementedExtensionServiceServer{},
+				azdext.UnimplementedServiceTargetServiceServer{},
+				azdext.UnimplementedFrameworkServiceServer{},
+				azdext.UnimplementedContainerServiceServer{},
+				svc,
+				azdext.UnimplementedAiModelServiceServer{},
+				v1beta.UnimplementedCopilotServiceServer{},
+				azdext.UnimplementedProvisioningServiceServer{},
+				azdext.UnimplementedValidationServiceServer{},
+				v1beta.UnimplementedTelemetryServiceServer{},
+			)
 			info, err := server.Start()
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, server.Stop()) })
@@ -145,7 +163,7 @@ func TestAccountService_GetCurrentPrincipal(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(client.Close)
 
-			response, err := client.Account().GetCurrentPrincipal(ctx, &azdext.GetCurrentPrincipalRequest{
+			response, err := client.AccountBeta().GetCurrentPrincipal(ctx, &v1beta.GetCurrentPrincipalRequest{
 				SubscriptionId: "sub-123",
 			})
 			require.NoError(t, err)
@@ -155,13 +173,15 @@ func TestAccountService_GetCurrentPrincipal(t *testing.T) {
 			connection, err := grpc.NewClient(info.Address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, connection.Close()) })
-			betaResponse, err := v1beta.NewAccountServiceClient(connection).GetCurrentPrincipal(
-				ctx, &v1beta.GetCurrentPrincipalRequest{SubscriptionId: "sub-123"},
-			)
-			require.NoError(t, err)
-			require.Equal(t, response.ObjectId, betaResponse.ObjectId)
-			require.Equal(t, int32(response.PrincipalType), int32(betaResponse.PrincipalType))
-			require.EqualValues(t, 2, tokenCalls.Load())
+			for _, service := range []string{"azd.extensions.v1.AccountService", "azdext.AccountService"} {
+				err := connection.Invoke(
+					ctx, "/"+service+"/GetCurrentPrincipal",
+					&v1beta.GetCurrentPrincipalRequest{SubscriptionId: "sub-123"},
+					&v1beta.GetCurrentPrincipalResponse{},
+				)
+				require.Equal(t, codes.Unimplemented, status.Code(err))
+			}
+			require.EqualValues(t, 1, tokenCalls.Load())
 			subscriptions.AssertExpectations(t)
 			principalTypes.AssertExpectations(t)
 		})
@@ -170,11 +190,11 @@ func TestAccountService_GetCurrentPrincipal(t *testing.T) {
 
 func TestAccountService_GetCurrentPrincipal_InvalidRequest(t *testing.T) {
 	t.Parallel()
-	for _, request := range []*azdext.GetCurrentPrincipalRequest{
+	for _, request := range []*v1beta.GetCurrentPrincipalRequest{
 		nil, {}, {SubscriptionId: " \t"},
 	} {
 		// No dependencies: validation must run before authentication or subscription lookup.
-		response, err := NewAccountService(nil, nil, nil).GetCurrentPrincipal(t.Context(), request)
+		response, err := (&accountService{}).GetCurrentPrincipal(t.Context(), request)
 		require.Nil(t, response)
 		require.Equal(t, codes.InvalidArgument, status.Code(err))
 	}
@@ -205,7 +225,7 @@ func TestAccountService_GetCurrentPrincipal_LookupErrors(t *testing.T) {
 			principalTypes := &mockAccountPrincipalType{}
 			principalTypes.On("CurrentPrincipalType", t.Context()).Return(tt.principalType, tt.loginErr).Once()
 			svc := &accountService{principalTypeProvider: principalTypes, subscriptionsManager: subscriptions}
-			response, err := svc.GetCurrentPrincipal(t.Context(), &azdext.GetCurrentPrincipalRequest{
+			response, err := svc.GetCurrentPrincipal(t.Context(), &v1beta.GetCurrentPrincipalRequest{
 				SubscriptionId: "sub-123",
 			})
 			require.Nil(t, response)
@@ -261,7 +281,7 @@ func TestAccountService_GetCurrentPrincipal_GraphFallback(t *testing.T) {
 			svc := &accountService{
 				subscriptionsManager: subscriptions, principalTypeProvider: principalTypes, userProfileService: userProfile,
 			}
-			response, err := svc.GetCurrentPrincipal(t.Context(), &azdext.GetCurrentPrincipalRequest{
+			response, err := svc.GetCurrentPrincipal(t.Context(), &v1beta.GetCurrentPrincipalRequest{
 				SubscriptionId: "sub-123",
 			})
 			if tt.wantError != "" {
@@ -270,7 +290,7 @@ func TestAccountService_GetCurrentPrincipal_GraphFallback(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, tt.graphID, response.ObjectId)
-				require.Equal(t, azdext.PrincipalType_PRINCIPAL_TYPE_USER, response.PrincipalType)
+				require.Equal(t, v1beta.PrincipalType_PRINCIPAL_TYPE_USER, response.PrincipalType)
 			}
 			subscriptions.AssertExpectations(t)
 			principalTypes.AssertExpectations(t)

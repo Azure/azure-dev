@@ -22,9 +22,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AccountService_ListSubscriptions_FullMethodName   = "/azd.extensions.v1.AccountService/ListSubscriptions"
-	AccountService_LookupTenant_FullMethodName        = "/azd.extensions.v1.AccountService/LookupTenant"
-	AccountService_GetCurrentPrincipal_FullMethodName = "/azd.extensions.v1.AccountService/GetCurrentPrincipal"
+	AccountService_ListSubscriptions_FullMethodName = "/azd.extensions.v1.AccountService/ListSubscriptions"
+	AccountService_LookupTenant_FullMethodName      = "/azd.extensions.v1.AccountService/LookupTenant"
 )
 
 // AccountServiceClient is the client API for AccountService service.
@@ -35,8 +34,6 @@ type AccountServiceClient interface {
 	ListSubscriptions(ctx context.Context, in *ListSubscriptionsRequest, opts ...grpc.CallOption) (*ListSubscriptionsResponse, error)
 	// LookupTenant resolves the tenant ID required to access a specific subscription.
 	LookupTenant(ctx context.Context, in *LookupTenantRequest, opts ...grpc.CallOption) (*LookupTenantResponse, error)
-	// GetCurrentPrincipal resolves the signed-in identity in the subscription's resource tenant.
-	GetCurrentPrincipal(ctx context.Context, in *GetCurrentPrincipalRequest, opts ...grpc.CallOption) (*GetCurrentPrincipalResponse, error)
 }
 
 type accountServiceClient struct {
@@ -67,16 +64,6 @@ func (c *accountServiceClient) LookupTenant(ctx context.Context, in *LookupTenan
 	return out, nil
 }
 
-func (c *accountServiceClient) GetCurrentPrincipal(ctx context.Context, in *GetCurrentPrincipalRequest, opts ...grpc.CallOption) (*GetCurrentPrincipalResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetCurrentPrincipalResponse)
-	err := c.cc.Invoke(ctx, AccountService_GetCurrentPrincipal_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // AccountServiceServer is the server API for AccountService service.
 // All implementations must embed UnimplementedAccountServiceServer
 // for forward compatibility.
@@ -85,8 +72,6 @@ type AccountServiceServer interface {
 	ListSubscriptions(context.Context, *ListSubscriptionsRequest) (*ListSubscriptionsResponse, error)
 	// LookupTenant resolves the tenant ID required to access a specific subscription.
 	LookupTenant(context.Context, *LookupTenantRequest) (*LookupTenantResponse, error)
-	// GetCurrentPrincipal resolves the signed-in identity in the subscription's resource tenant.
-	GetCurrentPrincipal(context.Context, *GetCurrentPrincipalRequest) (*GetCurrentPrincipalResponse, error)
 	mustEmbedUnimplementedAccountServiceServer()
 }
 
@@ -102,9 +87,6 @@ func (UnimplementedAccountServiceServer) ListSubscriptions(context.Context, *Lis
 }
 func (UnimplementedAccountServiceServer) LookupTenant(context.Context, *LookupTenantRequest) (*LookupTenantResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LookupTenant not implemented")
-}
-func (UnimplementedAccountServiceServer) GetCurrentPrincipal(context.Context, *GetCurrentPrincipalRequest) (*GetCurrentPrincipalResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetCurrentPrincipal not implemented")
 }
 func (UnimplementedAccountServiceServer) mustEmbedUnimplementedAccountServiceServer() {}
 func (UnimplementedAccountServiceServer) testEmbeddedByValue()                        {}
@@ -163,24 +145,6 @@ func _AccountService_LookupTenant_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
-func _AccountService_GetCurrentPrincipal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetCurrentPrincipalRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AccountServiceServer).GetCurrentPrincipal(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: AccountService_GetCurrentPrincipal_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AccountServiceServer).GetCurrentPrincipal(ctx, req.(*GetCurrentPrincipalRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // AccountService_ServiceDesc is the grpc.ServiceDesc for AccountService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -195,10 +159,6 @@ var AccountService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "LookupTenant",
 			Handler:    _AccountService_LookupTenant_Handler,
-		},
-		{
-			MethodName: "GetCurrentPrincipal",
-			Handler:    _AccountService_GetCurrentPrincipal_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

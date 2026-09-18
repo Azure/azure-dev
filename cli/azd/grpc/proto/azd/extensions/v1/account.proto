@@ -14,9 +14,6 @@ service AccountService {
 
   // LookupTenant resolves the tenant ID required to access a specific subscription.
   rpc LookupTenant (LookupTenantRequest) returns (LookupTenantResponse);
-
-  // GetCurrentPrincipal resolves the signed-in identity in the subscription's resource tenant.
-  rpc GetCurrentPrincipal (GetCurrentPrincipalRequest) returns (GetCurrentPrincipalResponse);
 }
 
 message ListSubscriptionsRequest {
@@ -36,22 +33,4 @@ message LookupTenantRequest {
 message LookupTenantResponse {
   // The tenant ID required to access the subscription.
   string tenant_id = 1;
-}
-
-message GetCurrentPrincipalRequest {
-  // Required subscription ID. The active environment is not used as a default.
-  string subscription_id = 1;
-}
-
-message GetCurrentPrincipalResponse {
-  // Object ID in the subscription's resource tenant, not the user's home tenant or an application client ID.
-  string object_id = 1;
-  // Principal type determined from the host's login details.
-  PrincipalType principal_type = 2;
-}
-
-enum PrincipalType {
-  PRINCIPAL_TYPE_UNSPECIFIED = 0;
-  PRINCIPAL_TYPE_USER = 1;
-  PRINCIPAL_TYPE_SERVICE_PRINCIPAL = 2;
 }

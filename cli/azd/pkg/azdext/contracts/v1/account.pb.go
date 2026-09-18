@@ -24,55 +24,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type PrincipalType int32
-
-const (
-	PrincipalType_PRINCIPAL_TYPE_UNSPECIFIED       PrincipalType = 0
-	PrincipalType_PRINCIPAL_TYPE_USER              PrincipalType = 1
-	PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL PrincipalType = 2
-)
-
-// Enum value maps for PrincipalType.
-var (
-	PrincipalType_name = map[int32]string{
-		0: "PRINCIPAL_TYPE_UNSPECIFIED",
-		1: "PRINCIPAL_TYPE_USER",
-		2: "PRINCIPAL_TYPE_SERVICE_PRINCIPAL",
-	}
-	PrincipalType_value = map[string]int32{
-		"PRINCIPAL_TYPE_UNSPECIFIED":       0,
-		"PRINCIPAL_TYPE_USER":              1,
-		"PRINCIPAL_TYPE_SERVICE_PRINCIPAL": 2,
-	}
-)
-
-func (x PrincipalType) Enum() *PrincipalType {
-	p := new(PrincipalType)
-	*p = x
-	return p
-}
-
-func (x PrincipalType) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (PrincipalType) Descriptor() protoreflect.EnumDescriptor {
-	return file_azd_extensions_v1_account_proto_enumTypes[0].Descriptor()
-}
-
-func (PrincipalType) Type() protoreflect.EnumType {
-	return &file_azd_extensions_v1_account_proto_enumTypes[0]
-}
-
-func (x PrincipalType) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use PrincipalType.Descriptor instead.
-func (PrincipalType) EnumDescriptor() ([]byte, []int) {
-	return file_azd_extensions_v1_account_proto_rawDescGZIP(), []int{0}
-}
-
 type ListSubscriptionsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Optional: filter subscriptions by tenant ID.
@@ -252,105 +203,6 @@ func (x *LookupTenantResponse) GetTenantId() string {
 	return ""
 }
 
-type GetCurrentPrincipalRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Required subscription ID. The active environment is not used as a default.
-	SubscriptionId string `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId,proto3" json:"subscription_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *GetCurrentPrincipalRequest) Reset() {
-	*x = GetCurrentPrincipalRequest{}
-	mi := &file_azd_extensions_v1_account_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetCurrentPrincipalRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetCurrentPrincipalRequest) ProtoMessage() {}
-
-func (x *GetCurrentPrincipalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1_account_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetCurrentPrincipalRequest.ProtoReflect.Descriptor instead.
-func (*GetCurrentPrincipalRequest) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1_account_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *GetCurrentPrincipalRequest) GetSubscriptionId() string {
-	if x != nil {
-		return x.SubscriptionId
-	}
-	return ""
-}
-
-type GetCurrentPrincipalResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Object ID in the subscription's resource tenant, not the user's home tenant or an application client ID.
-	ObjectId string `protobuf:"bytes,1,opt,name=object_id,json=objectId,proto3" json:"object_id,omitempty"`
-	// Principal type determined from the host's login details.
-	PrincipalType PrincipalType `protobuf:"varint,2,opt,name=principal_type,json=principalType,proto3,enum=azd.extensions.v1.PrincipalType" json:"principal_type,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *GetCurrentPrincipalResponse) Reset() {
-	*x = GetCurrentPrincipalResponse{}
-	mi := &file_azd_extensions_v1_account_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetCurrentPrincipalResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetCurrentPrincipalResponse) ProtoMessage() {}
-
-func (x *GetCurrentPrincipalResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_azd_extensions_v1_account_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetCurrentPrincipalResponse.ProtoReflect.Descriptor instead.
-func (*GetCurrentPrincipalResponse) Descriptor() ([]byte, []int) {
-	return file_azd_extensions_v1_account_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *GetCurrentPrincipalResponse) GetObjectId() string {
-	if x != nil {
-		return x.ObjectId
-	}
-	return ""
-}
-
-func (x *GetCurrentPrincipalResponse) GetPrincipalType() PrincipalType {
-	if x != nil {
-		return x.PrincipalType
-	}
-	return PrincipalType_PRINCIPAL_TYPE_UNSPECIFIED
-}
-
 var File_azd_extensions_v1_account_proto protoreflect.FileDescriptor
 
 const file_azd_extensions_v1_account_proto_rawDesc = "" +
@@ -365,20 +217,10 @@ const file_azd_extensions_v1_account_proto_rawDesc = "" +
 	"\x13LookupTenantRequest\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\"3\n" +
 	"\x14LookupTenantResponse\x12\x1b\n" +
-	"\ttenant_id\x18\x01 \x01(\tR\btenantId\"E\n" +
-	"\x1aGetCurrentPrincipalRequest\x12'\n" +
-	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\"\x83\x01\n" +
-	"\x1bGetCurrentPrincipalResponse\x12\x1b\n" +
-	"\tobject_id\x18\x01 \x01(\tR\bobjectId\x12G\n" +
-	"\x0eprincipal_type\x18\x02 \x01(\x0e2 .azd.extensions.v1.PrincipalTypeR\rprincipalType*n\n" +
-	"\rPrincipalType\x12\x1e\n" +
-	"\x1aPRINCIPAL_TYPE_UNSPECIFIED\x10\x00\x12\x17\n" +
-	"\x13PRINCIPAL_TYPE_USER\x10\x01\x12$\n" +
-	" PRINCIPAL_TYPE_SERVICE_PRINCIPAL\x10\x022\xd7\x02\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId2\xe1\x01\n" +
 	"\x0eAccountService\x12n\n" +
 	"\x11ListSubscriptions\x12+.azd.extensions.v1.ListSubscriptionsRequest\x1a,.azd.extensions.v1.ListSubscriptionsResponse\x12_\n" +
-	"\fLookupTenant\x12&.azd.extensions.v1.LookupTenantRequest\x1a'.azd.extensions.v1.LookupTenantResponse\x12t\n" +
-	"\x13GetCurrentPrincipal\x12-.azd.extensions.v1.GetCurrentPrincipalRequest\x1a..azd.extensions.v1.GetCurrentPrincipalResponseB?Z=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1b\x06proto3"
+	"\fLookupTenant\x12&.azd.extensions.v1.LookupTenantRequest\x1a'.azd.extensions.v1.LookupTenantResponseB?Z=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1b\x06proto3"
 
 var (
 	file_azd_extensions_v1_account_proto_rawDescOnce sync.Once
@@ -392,32 +234,25 @@ func file_azd_extensions_v1_account_proto_rawDescGZIP() []byte {
 	return file_azd_extensions_v1_account_proto_rawDescData
 }
 
-var file_azd_extensions_v1_account_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_azd_extensions_v1_account_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_azd_extensions_v1_account_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_azd_extensions_v1_account_proto_goTypes = []any{
-	(PrincipalType)(0),                  // 0: azd.extensions.v1.PrincipalType
-	(*ListSubscriptionsRequest)(nil),    // 1: azd.extensions.v1.ListSubscriptionsRequest
-	(*ListSubscriptionsResponse)(nil),   // 2: azd.extensions.v1.ListSubscriptionsResponse
-	(*LookupTenantRequest)(nil),         // 3: azd.extensions.v1.LookupTenantRequest
-	(*LookupTenantResponse)(nil),        // 4: azd.extensions.v1.LookupTenantResponse
-	(*GetCurrentPrincipalRequest)(nil),  // 5: azd.extensions.v1.GetCurrentPrincipalRequest
-	(*GetCurrentPrincipalResponse)(nil), // 6: azd.extensions.v1.GetCurrentPrincipalResponse
-	(*Subscription)(nil),                // 7: azd.extensions.v1.Subscription
+	(*ListSubscriptionsRequest)(nil),  // 0: azd.extensions.v1.ListSubscriptionsRequest
+	(*ListSubscriptionsResponse)(nil), // 1: azd.extensions.v1.ListSubscriptionsResponse
+	(*LookupTenantRequest)(nil),       // 2: azd.extensions.v1.LookupTenantRequest
+	(*LookupTenantResponse)(nil),      // 3: azd.extensions.v1.LookupTenantResponse
+	(*Subscription)(nil),              // 4: azd.extensions.v1.Subscription
 }
 var file_azd_extensions_v1_account_proto_depIdxs = []int32{
-	7, // 0: azd.extensions.v1.ListSubscriptionsResponse.subscriptions:type_name -> azd.extensions.v1.Subscription
-	0, // 1: azd.extensions.v1.GetCurrentPrincipalResponse.principal_type:type_name -> azd.extensions.v1.PrincipalType
-	1, // 2: azd.extensions.v1.AccountService.ListSubscriptions:input_type -> azd.extensions.v1.ListSubscriptionsRequest
-	3, // 3: azd.extensions.v1.AccountService.LookupTenant:input_type -> azd.extensions.v1.LookupTenantRequest
-	5, // 4: azd.extensions.v1.AccountService.GetCurrentPrincipal:input_type -> azd.extensions.v1.GetCurrentPrincipalRequest
-	2, // 5: azd.extensions.v1.AccountService.ListSubscriptions:output_type -> azd.extensions.v1.ListSubscriptionsResponse
-	4, // 6: azd.extensions.v1.AccountService.LookupTenant:output_type -> azd.extensions.v1.LookupTenantResponse
-	6, // 7: azd.extensions.v1.AccountService.GetCurrentPrincipal:output_type -> azd.extensions.v1.GetCurrentPrincipalResponse
-	5, // [5:8] is the sub-list for method output_type
-	2, // [2:5] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	4, // 0: azd.extensions.v1.ListSubscriptionsResponse.subscriptions:type_name -> azd.extensions.v1.Subscription
+	0, // 1: azd.extensions.v1.AccountService.ListSubscriptions:input_type -> azd.extensions.v1.ListSubscriptionsRequest
+	2, // 2: azd.extensions.v1.AccountService.LookupTenant:input_type -> azd.extensions.v1.LookupTenantRequest
+	1, // 3: azd.extensions.v1.AccountService.ListSubscriptions:output_type -> azd.extensions.v1.ListSubscriptionsResponse
+	3, // 4: azd.extensions.v1.AccountService.LookupTenant:output_type -> azd.extensions.v1.LookupTenantResponse
+	3, // [3:5] is the sub-list for method output_type
+	1, // [1:3] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_azd_extensions_v1_account_proto_init() }
@@ -432,14 +267,13 @@ func file_azd_extensions_v1_account_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_azd_extensions_v1_account_proto_rawDesc), len(file_azd_extensions_v1_account_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   6,
+			NumEnums:      0,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_azd_extensions_v1_account_proto_goTypes,
 		DependencyIndexes: file_azd_extensions_v1_account_proto_depIdxs,
-		EnumInfos:         file_azd_extensions_v1_account_proto_enumTypes,
 		MessageInfos:      file_azd_extensions_v1_account_proto_msgTypes,
 	}.Build()
 	File_azd_extensions_v1_account_proto = out.File

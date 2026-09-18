@@ -860,14 +860,7 @@ func (a *betaAccountServiceAdapter) GetCurrentPrincipal(
 	if override, ok := a.override.(BetaAccountServiceGetCurrentPrincipalOverride); ok {
 		return override.GetCurrentPrincipal(ctx, req)
 	}
-	return adaptBetaUnary(
-		ctx,
-		req,
-		new(v1.GetCurrentPrincipalRequest),
-		a.stable.GetCurrentPrincipal,
-		new(v1beta.GetCurrentPrincipalResponse),
-		"AccountService.GetCurrentPrincipal",
-	)
+	return a.UnimplementedAccountServiceServer.GetCurrentPrincipal(ctx, req)
 }
 
 type betaAiModelServiceAdapter struct {

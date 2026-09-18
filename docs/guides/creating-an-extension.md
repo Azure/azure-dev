@@ -49,7 +49,7 @@ capabilities:
 
 Implement the required interfaces for your declared capabilities. See the extension framework services documentation for interface details.
 
-If your extension creates role assignments, use [`Account.GetCurrentPrincipal`](../../cli/azd/docs/extensions/extension-framework.md#getcurrentprincipal) with the target subscription ID. The host resolves the resource-tenant object ID and principal type without returning an access token. Consume an SDK and host release containing this method before replacing an existing lookup.
+If your extension creates role assignments, use the preview [`AccountBeta().GetCurrentPrincipal`](../../cli/azd/docs/extensions/extension-framework.md#getcurrentprincipal) method with the target subscription ID and request types from `contracts/v1beta`. The host resolves the resource-tenant object ID and principal type without returning an access token. Consume an SDK and host release containing this method before replacing an existing lookup.
 
 ### 4. Build
 

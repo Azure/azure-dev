@@ -519,6 +519,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Container()` | `ContainerServiceClient` |
 | `Extension()` | `ExtensionServiceClient` |
 | `Account()` | `AccountServiceClient` |
+| `AccountBeta()` | `v1beta.AccountServiceClient` (preview) |
 | `Ai()` | `AiModelServiceClient` |
 | `Copilot()` | `v1beta.CopilotServiceClient` (preview) |
 | `Telemetry()` | `v1beta.TelemetryServiceClient` (preview) |
@@ -532,7 +533,7 @@ stable `azdext` contract facade until those services graduate to `v1`.
 
 #### AccountService
 
-`Account().GetCurrentPrincipal(ctx, &azdext.GetCurrentPrincipalRequest{SubscriptionId: subscriptionID})` returns the current identity's `ObjectId` in the subscription's resource tenant and its `PrincipalType` enum. Use both values for role assignments instead of decoding access tokens in the extension. The subscription ID is required, and no active environment is needed.
+`AccountBeta().GetCurrentPrincipal(ctx, &v1beta.GetCurrentPrincipalRequest{SubscriptionId: subscriptionID})` returns the current identity's `ObjectId` in the subscription's resource tenant and its `PrincipalType` enum. Import `github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for these preview types. Use both values for role assignments instead of decoding access tokens in the extension. The subscription ID is required, and no active environment is needed. The stable `Account()` client remains unchanged and does not expose this method.
 
 See [GetCurrentPrincipal](extension-framework.md#getcurrentprincipal) for the enum mapping, guest-user behavior, and host compatibility requirements.
 

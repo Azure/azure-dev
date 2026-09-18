@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -42,10 +43,12 @@ func NewAccountService(
 	}
 }
 
+var _ BetaAccountServiceGetCurrentPrincipalOverride = (*accountService)(nil)
+
 func (s *accountService) GetCurrentPrincipal(
 	ctx context.Context,
-	req *azdext.GetCurrentPrincipalRequest,
-) (*azdext.GetCurrentPrincipalResponse, error) {
+	req *v1beta.GetCurrentPrincipalRequest,
+) (*v1beta.GetCurrentPrincipalResponse, error) {
 	if strings.TrimSpace(req.GetSubscriptionId()) == "" {
 		return nil, status.Error(codes.InvalidArgument, "subscription id is required")
 	}
@@ -55,12 +58,12 @@ func (s *accountService) GetCurrentPrincipal(
 		return nil, err
 	}
 
-	var protoType azdext.PrincipalType
+	var protoType v1beta.PrincipalType
 	switch principalType {
 	case auth.UserPrincipalType:
-		protoType = azdext.PrincipalType_PRINCIPAL_TYPE_USER
+		protoType = v1beta.PrincipalType_PRINCIPAL_TYPE_USER
 	case auth.ServicePrincipalType:
-		protoType = azdext.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL
+		protoType = v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL
 	default:
 		return nil, status.Error(codes.Internal, "unsupported current principal type")
 	}
@@ -76,7 +79,7 @@ func (s *accountService) GetCurrentPrincipal(
 		return nil, fmt.Errorf("fetching current principal information: %w", err)
 	}
 
-	return &azdext.GetCurrentPrincipalResponse{
+	return &v1beta.GetCurrentPrincipalResponse{
 		ObjectId:      objectID,
 		PrincipalType: protoType,
 	}, nil

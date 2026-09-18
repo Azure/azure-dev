@@ -119,6 +119,13 @@ go fix -diff ./...
 If `go fix -diff` reports any changes, apply them with `go fix ./...` and commit the result.
 CI enforces this check — PRs with pending `go fix` suggestions will fail the lint workflow.
 
+Format and validate repository JSON schemas with Mage:
+
+```bash
+go tool mage schema:format
+go tool mage schema:check
+```
+
 ### Code Coverage
 
 azd collects coverage from both unit tests and integration/functional tests. Several modes are available depending on your needs.

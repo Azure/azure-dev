@@ -48,6 +48,8 @@ multiple azure.ai.agent services.
 
 For agents configured with header-based isolation, pass --user-identity
 on each session operation.`,
+		Example: `  # List sessions for the deployed hosted agent
+  azd ai agent sessions list`,
 	}
 
 	cmd.AddCommand(newSessionCreateCommand(extCtx))

@@ -39,7 +39,12 @@ func newEvalRunCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Execute an evaluation run from eval.yaml.",
-		Args:  cobra.NoArgs,
+		Example: `  # Run the evaluation configured in eval.yaml
+  azd ai agent eval run
+
+  # Start a run without waiting for results
+  azd ai agent eval run --no-wait`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			logCleanup := setupDebugLogging(cmd.Flags())

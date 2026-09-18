@@ -1,0 +1,40 @@
+Download the optimized configuration and skill files from an optimization
+candidate and write them into your local azd project under .agent_configs/.
+
+For managed prompt agents, this also updates the model and instructions
+in the azure.yaml service definition, including the deprecated config section.
+Candidates must contain a non-empty model and instructions. Function tools are
+updated only when their names match existing function tools. Omitted fields,
+including nested parameter fields, are preserved. Supplied arrays and explicit
+null optional fields replace previous values.
+Functions are saved in flat format. Other tools and tool order are preserved;
+new tools are not added. Missing, null, or empty candidate tools leave tools
+unchanged. Malformed candidate tools are rejected before writing configuration.
+Optimized prompt-agent skills are not supported.
+Referenced definitions ($ref) must be inlined or updated manually.
+Prompt apply also requires AGENT_DEFINITION_PATH to be unset or empty and a
+service name without dots.
+
+After applying, run 'azd deploy' to deploy the optimized agent version.
+
+Usage
+  azd ai agent optimize apply [flags]
+
+Flags
+      --agent string            : Agent service name from azure.yaml (auto-detected if only one exists)
+      --candidate string        : Candidate ID from optimization results (required)
+      --endpoint string         : Optimization service endpoint (for local dev)
+  -p, --project-endpoint string : Foundry project endpoint URL
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for apply
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Apply candidate config locally, then deploy
+    azd ai agent optimize apply --candidate candidate_abc123
+    azd deploy

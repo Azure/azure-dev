@@ -37,7 +37,7 @@ reporting on each one and (when all checks pass) suggesting the next
 command to run. Use this when you have lost terminal context or hit a
 confusing error and want a complete picture of the project's state.
 
-Exit codes:
+Exit Codes:
   0 — at least one check passed and no checks failed
   1 — any check failed
   2 — all checks were skipped (e.g. preconditions unmet)`,

@@ -134,6 +134,7 @@ func TestTelemetryFieldConstants(t *testing.T) {
 
 		measurementFields := []fields.AttributeKey{
 			fields.AgentFixAttempts,
+			fields.CopilotMessageAICredits,
 			fields.ExeGraphDeployConcurrencyKey,
 			fields.ExeGraphMaxConcurrencyKey,
 			fields.ExeGraphPackageConcurrencyKey,

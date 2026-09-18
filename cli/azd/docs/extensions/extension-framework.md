@@ -1568,6 +1568,38 @@ if err := host.Run(ctx); err != nil {
 
 ```
 
+## Deployment Preview SDK Contract
+
+The SDK provides an optional service-target preview contract. These APIs are
+prerequisites for deployment preview; CLI command integration and first-party
+provider implementations are separate work. Registering this capability alone
+does not enable `azd deploy --preview`.
+
+Register with `ExtensionHost.WithServiceTargetPreview` and implement
+`ServiceTargetPreviewProvider` alongside `ServiceTargetProvider`:
+
+```go
+Preview(ctx context.Context, serviceConfig *azdext.ServiceConfig) (*azdext.ServiceDeployPreviewResult, error)
+```
+
+`ServiceDeployPreviewResult` carries a human-readable `Message` and a `Data`
+protobuf struct for structured results. The protocol has dedicated preview
+request and response messages; a preview request is never routed to `Deploy`.
+
+The SDK advertises `supports_preview` during service-target registration.
+Existing `WithServiceTarget` registrations and calls to `ServiceTargetManager.Register`
+without the optional capability argument continue to advertise no preview support.
+Registration does not invoke the provider factory to detect the capability.
+Host-side capability checks and command output formatting belong to the later
+CLI integration.
+
+For each preview request, the SDK invokes the factory to create a fresh provider
+without reading or updating cached deployment instances or calling `Initialize`.
+The factory must return a fresh instance, and `Preview` must be self-contained:
+do not build, package, publish, deploy dependencies, or persist deployment state.
+Provider failures, missing preview implementations, and nil results return errors
+rather than successful empty previews.
+
 ## Developer Artifacts
 
 `azd` uses versioned gRPC contracts for communication between core and

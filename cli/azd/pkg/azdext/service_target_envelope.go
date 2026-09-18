@@ -63,6 +63,10 @@ func (ops *ServiceTargetEnvelope) GetInnerMessage(msg *ServiceTargetMessage) any
 		return m.DeployRequest
 	case *ServiceTargetMessage_DeployResponse:
 		return m.DeployResponse
+	case *ServiceTargetMessage_PreviewRequest:
+		return m.PreviewRequest
+	case *ServiceTargetMessage_PreviewResponse:
+		return m.PreviewResponse
 	case *ServiceTargetMessage_ProgressMessage:
 		return m.ProgressMessage
 	case *ServiceTargetMessage_PackageRequest:

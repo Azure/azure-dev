@@ -978,6 +978,7 @@ func runInitFromAzureYaml(
 	content []byte,
 ) error {
 	projectName := foundryProjectName(content)
+	recordInitProjectContent(ctx, content)
 	agentNameOverride, err := adoptedAgentNameOverride(flags)
 	if err != nil {
 		return err
@@ -1022,6 +1023,7 @@ func runInitFromAzureYaml(
 		return err
 	}
 	promptOnly := stagedInfo.promptOnly()
+	recordInitProjectContent(ctx, stagedContent)
 	if agentNameOverride != "" {
 		// Validate against the fully staged template so services whose host lives
 		// inside a local $ref are counted the same way azd-core will load them.

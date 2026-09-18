@@ -294,12 +294,15 @@ guarantees about the whole class:
 | Trust | `extension.id` and `extension.version` are derived from host-signed claims; `extension.source` and eligibility are checked against the installed record and verified source config, never from the request |
 | Review | Extension telemetry is reviewed when the extension is admitted to the official registry, under the same documentation, classification, and privacy rules as core fields. The eligibility rule above is what ties recording to that review |
 
+<!-- cspell:ignore byom -->
+
 Reviewed first-party event contracts:
 
 | Extension | `extension.event` | Trigger | Extension attributes |
 |-----------|-------------------|---------|----------------------|
 | `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service; one event per distinct kind/harness classification in the invocation | `ext.agent.kind`: fixed enum `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown`; `ext.agent.harness`: fixed enum `none`, `github_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; values contain no agent names or customer content |
 | `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; this precedes client availability, agent startup, and client launch | `ext.route`: fixed enum `inspector`, `playground`, or `suppressed`; suppression takes precedence |
+| `azure.ai.agents` | `agent.operation.v1.<operation>.<category>.<telephony>` | Extension init RunE returns or an agent preprovision/predeploy hook is reached; deduplicated by the complete operation/classification tuple | **No extension attributes.** Existing `extension.event` encodes operation (`init`, `provision`, `deploy`), category (`hosted`, `hosted_invocations_ws`, `prompt`, `workflow`, `voice_managed`, `voice_byom`, `voice_hosted_wrapper`, `unknown`) and telephony (`none`, `enabled`, `unknown`). All values are allowlisted. Join existing command results; marker success is not business success. |
 | `azure.ai.inspector` | `inspector.funnel.stage` | The Inspector SPA sends `setViewReady` after mounting | `ext.stage`: fixed enum `ui_ready`; `ext.outcome`: fixed enum `succeeded`; this does not indicate agent connection |
 
 Because `ext.usage` spans share the command's trace, they join the originating
@@ -478,6 +481,13 @@ Telemetry for the `infra.layers[]` parallel provisioning feature, emitted from `
 | Explicit dependsOn count | `provision.layer.explicit_dependson_count` | SystemMetadata | PerformanceAndHealth | **Measurement** — layers that used the explicit `infra.layers[].dependsOn` schema |
 
 ## Data Classifications
+
+Agent operation markers add only fixed values to the existing `extension.event`
+SystemMetadata / FeatureInsight field on `ext.usage`, not new fields or span names.
+Format: `agent.operation.v1.<operation>.<category>.<telephony>`; the allowlisted
+vocabulary and coverage are defined in the [extension operation reference](../../../cli/azd/extensions/azure.ai.agents/docs/operation-telemetry.md).
+No customer strings, dynamic attributes or hashing changes are introduced; existing
+agent-context and completion-result semantics remain unchanged.
 
 Classifications are defined in `cli/azd/internal/tracing/fields/fields.go` and control how data
 is stored, retained, and who may access it.

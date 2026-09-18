@@ -35,6 +35,7 @@ var noEnvResolver = func(name string) string {
 type eventService struct {
 	azdext.UnimplementedEventServiceServer
 	extensionManager *extensions.Manager
+	followUps        *followUpManager
 	console          input.Console
 
 	lazyEnvManager *lazy.Lazy[environment.Manager]
@@ -47,10 +48,12 @@ func NewEventService(
 	lazyEnvManager *lazy.Lazy[environment.Manager],
 	lazyProject *lazy.Lazy[*project.ProjectConfig],
 	lazyEnv *lazy.Lazy[*environment.Environment],
+	followUps *followUpManager,
 	console input.Console,
 ) azdext.EventServiceServer {
 	return &eventService{
 		extensionManager: extensionManager,
+		followUps:        followUps,
 		lazyEnvManager:   lazyEnvManager,
 		lazyProject:      lazyProject,
 		lazyEnv:          lazyEnv,
@@ -143,8 +146,9 @@ func (s *eventService) createProjectEventHandler(
 	broker *grpcbroker.MessageBroker[azdext.EventMessage],
 ) ext.EventHandlerFn[project.ProjectLifecycleEventArgs] {
 	return func(ctx context.Context, args project.ProjectLifecycleEventArgs) error {
-		var handlerFollowUp *string
 		var handlerCompleted bool
+		invocationID := s.followUps.Begin(extension.Id, eventName)
+		defer s.followUps.Discard(invocationID)
 		err := func() error {
 			previewTitle := fmt.Sprintf("%s (%s)", extension.DisplayName, eventName)
 			defer s.syncExtensionOutput(ctx, extension, previewTitle)()
@@ -164,8 +168,9 @@ func (s *eventService) createProjectEventHandler(
 			invokeMsg := &azdext.EventMessage{
 				MessageType: &azdext.EventMessage_InvokeProjectHandler{
 					InvokeProjectHandler: &azdext.InvokeProjectHandler{
-						EventName: eventName,
-						Project:   protoProjectConfig,
+						EventName:    eventName,
+						Project:      protoProjectConfig,
+						InvocationId: invocationID,
 					},
 				},
 			}
@@ -203,23 +208,23 @@ func (s *eventService) createProjectEventHandler(
 
 				if statusMsg.ProjectHandlerStatus.Status == "completed" {
 					handlerCompleted = true
-					handlerFollowUp = statusMsg.ProjectHandlerStatus.FollowUp
 				}
 
 				return nil
 			})
 		}()
-		if err == nil && handlerCompleted &&
-			strings.HasPrefix(eventName, "post") &&
-			handlerFollowUp != nil {
-			if collector := commandresult.FollowUpCollectorFromContext(ctx); collector != nil {
-				collector.Add(commandresult.FollowUp{
-					ExtensionID:  extension.Id,
-					CommandOrder: commandresult.FollowUpCommandOrderFromContext(ctx),
-					EventName:    eventName,
-					Layer:        followUpLayer(args),
-					Text:         *handlerFollowUp,
-				})
+		if err == nil && handlerCompleted {
+			handlerFollowUp, hasFollowUp := s.followUps.Commit(invocationID)
+			if strings.HasPrefix(eventName, "post") && hasFollowUp {
+				if collector := commandresult.FollowUpCollectorFromContext(ctx); collector != nil {
+					collector.Add(commandresult.FollowUp{
+						ExtensionID:  extension.Id,
+						CommandOrder: commandresult.FollowUpCommandOrderFromContext(ctx),
+						EventName:    eventName,
+						Layer:        followUpLayer(args),
+						Text:         handlerFollowUp,
+					})
+				}
 			}
 		}
 

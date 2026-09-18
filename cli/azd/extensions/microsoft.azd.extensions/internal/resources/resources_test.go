@@ -43,7 +43,14 @@ func TestNonGoScaffoldIncludesEventProtocol(t *testing.T) {
 	require.Contains(t, eventContents, `import "errors.proto";`)
 	require.Contains(t, eventContents, "ExtensionError error = 4;")
 	require.Contains(t, eventContents, "ExtensionError error = 5;")
-	require.Contains(t, eventContents, "optional string follow_up = 5;")
+	require.Contains(t, eventContents, "string invocation_id = 3;")
+	require.NotContains(t, eventContents, "follow_up")
+
+	followUpProto, err := Languages.ReadFile("languages/proto/follow_up.proto")
+	require.NoError(t, err)
+	require.Contains(t, string(followUpProto), "service FollowUpService")
+	require.Contains(t, string(followUpProto), "rpc SetFollowUp")
+	require.Contains(t, string(followUpProto), "string invocation_id = 1;")
 
 	for _, test := range []struct {
 		language string
@@ -53,17 +60,32 @@ func TestNonGoScaffoldIncludesEventProtocol(t *testing.T) {
 		{
 			language: "javascript",
 			file:     "languages/javascript/eventManager.js",
-			contains: "statusMsg.setFollowUp(followUp);",
+			contains: "new FollowUpContribution(",
 		},
 		{
 			language: "python",
 			file:     "languages/python/event_manager.py",
-			contains: `status_fields["follow_up"] = follow_up`,
+			contains: "FollowUpContribution(",
 		},
 		{
 			language: "dotnet",
 			file:     "languages/dotnet/EventManager.cs",
-			contains: "statusMessage.FollowUp = followUp;",
+			contains: "SetFollowUpAsync",
+		},
+		{
+			language: "javascript",
+			file:     "languages/javascript/azdClient.js",
+			contains: "FollowUpServiceClient",
+		},
+		{
+			language: "python",
+			file:     "languages/python/azd_client.py",
+			contains: "FollowUpServiceStub",
+		},
+		{
+			language: "dotnet",
+			file:     "languages/dotnet/AzdClient.cs",
+			contains: "FollowUpService.FollowUpServiceClient",
 		},
 	} {
 		t.Run(test.language, func(t *testing.T) {
@@ -76,6 +98,10 @@ func TestNonGoScaffoldIncludesEventProtocol(t *testing.T) {
 	for _, file := range []string{
 		"languages/javascript/generated/proto/errors_pb.js",
 		"languages/python/generated_proto/errors_pb2.py",
+		"languages/javascript/generated/proto/follow_up_pb.js",
+		"languages/javascript/generated/proto/follow_up_grpc_pb.js",
+		"languages/python/generated_proto/follow_up_pb2.py",
+		"languages/python/generated_proto/follow_up_pb2_grpc.py",
 	} {
 		_, err := Languages.ReadFile(file)
 		require.NoError(t, err)

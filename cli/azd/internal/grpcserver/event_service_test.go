@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
@@ -203,7 +204,14 @@ func createTestEventService() (*eventService, *MockEventStreamingServer) {
 
 	console := mockinput.NewMockConsole()
 
-	service := NewEventService(extensionManager, lazyEnvManager, lazyProject, lazyEnv, console)
+	service := NewEventService(
+		extensionManager,
+		lazyEnvManager,
+		lazyProject,
+		lazyEnv,
+		NewFollowUpManager(),
+		console,
+	)
 	return service.(*eventService), mockStream
 }
 
@@ -519,6 +527,14 @@ func TestEventService_createProjectEventHandler_CollectsFollowUp(t *testing.T) {
 				func(msg *azdext.EventMessage) *azdext.EventMessage {
 					invoke := msg.GetInvokeProjectHandler()
 					require.NotNil(t, invoke)
+					if tt.followUp != nil &&
+						strings.HasPrefix(tt.eventName, "post") {
+						require.NoError(t, service.followUps.Set(
+							invoke.InvocationId,
+							extension.Id,
+							*tt.followUp,
+						))
+					}
 
 					return &azdext.EventMessage{
 						MessageType: &azdext.EventMessage_ProjectHandlerStatus{
@@ -526,7 +542,6 @@ func TestEventService_createProjectEventHandler_CollectsFollowUp(t *testing.T) {
 								EventName: tt.eventName,
 								Status:    tt.status,
 								Message:   tt.message,
-								FollowUp:  tt.followUp,
 							},
 						},
 					}
@@ -571,13 +586,17 @@ func TestEventService_createProjectEventHandler_CollectsLayerFollowUp(t *testing
 		func(msg *azdext.EventMessage) *azdext.EventMessage {
 			invoke := msg.GetInvokeProjectHandler()
 			require.NotNil(t, invoke)
+			require.NoError(t, service.followUps.Set(
+				invoke.InvocationId,
+				extension.Id,
+				"from-app",
+			))
 
 			return &azdext.EventMessage{
 				MessageType: &azdext.EventMessage_ProjectHandlerStatus{
 					ProjectHandlerStatus: &azdext.ProjectHandlerStatus{
 						EventName: invoke.EventName,
 						Status:    "completed",
-						FollowUp:  new("from-app"),
 					},
 				},
 			}
@@ -622,13 +641,17 @@ func TestEventService_createProjectEventHandler_UsesCommandOrder(t *testing.T) {
 		func(msg *azdext.EventMessage) *azdext.EventMessage {
 			invoke := msg.GetInvokeProjectHandler()
 			require.NotNil(t, invoke)
+			require.NoError(t, service.followUps.Set(
+				invoke.InvocationId,
+				extension.Id,
+				"new",
+			))
 
 			return &azdext.EventMessage{
 				MessageType: &azdext.EventMessage_ProjectHandlerStatus{
 					ProjectHandlerStatus: &azdext.ProjectHandlerStatus{
 						EventName: invoke.EventName,
 						Status:    "completed",
-						FollowUp:  new("new"),
 					},
 				},
 			}
@@ -907,7 +930,14 @@ func TestEventService_New(t *testing.T) {
 
 	console := mockinput.NewMockConsole()
 
-	service := NewEventService(extensionManager, lazyEnvManager, lazyProject, lazyEnv, console)
+	service := NewEventService(
+		extensionManager,
+		lazyEnvManager,
+		lazyProject,
+		lazyEnv,
+		NewFollowUpManager(),
+		console,
+	)
 
 	assert.NotNil(t, service)
 

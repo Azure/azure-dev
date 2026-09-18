@@ -83,28 +83,32 @@ For extensions that are still in development or preview, consider publishing to 
 
 ## Command-level lifecycle follow-up
 
-Project lifecycle handlers can provide command-level guidance by setting
-`ProjectEventArgs.FollowUp` during a successful `post*` event:
+Project lifecycle handlers can provide command-level guidance through the
+handler-scoped `FollowUp` contribution during a successful `post*` event:
 
 ```go
 host.WithProjectEventHandler("postdeploy",
     func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-        args.FollowUp = new("Next:\n  azd ai agent show my-agent")
-        return nil
+        return args.FollowUp.Set("Next:\n  azd ai agent show my-agent")
     })
 ```
 
-The host appends this text to the parent command's human-readable completion
-message. It treats the text as opaque, collects only successful project
-`post*` events that set `FollowUp`, and leaves JSON output unchanged. Nil
-means no contribution. Within one command, a later lifecycle event replaces
-the earlier result from that extension; an empty value retracts it. In a custom
-workflow, a later command step replaces an earlier result. Lifecycle events
-within one command use the stable order restore, build, package, provision,
-publish, deploy. Concurrent layers of the same event resolve by stable layer
-identity, not completion time. Other extensions and existing core follow-up
-text are preserved. Do not use it for service-level events or for error
-messages.
+The contribution uses the independent `FollowUpService` and the invocation ID
+provided by azd. The host stages the latest text and commits it only after the
+handler completes successfully. Contributions from failed, cancelled,
+disconnected, or incomplete handlers are discarded. Use `args.FollowUp.Clear()`
+or `args.FollowUp.Set("")` to retract the current contribution. The RPC
+returns an error if the invocation is no longer active or is not a project
+`post*` handler.
+
+The host appends committed text to the parent command's human-readable
+completion message and leaves JSON output unchanged. Within one command, a
+later lifecycle event replaces the earlier result from that extension; a later
+custom workflow command step also wins. Lifecycle events use the stable order
+restore, build, package, provision, publish, deploy. Concurrent layers of the
+same event resolve by stable layer identity, not completion time. Other
+extensions and existing core follow-up text are preserved. Service-level
+events cannot contribute follow-up text.
 
 ## Extension Design Guidelines
 

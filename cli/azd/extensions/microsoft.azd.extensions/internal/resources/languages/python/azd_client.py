@@ -4,6 +4,7 @@ import grpc
 from generated_proto.deployment_pb2_grpc import DeploymentServiceStub
 from generated_proto.environment_pb2_grpc import EnvironmentServiceStub
 from generated_proto.event_pb2_grpc import EventServiceStub
+from generated_proto.follow_up_pb2_grpc import FollowUpServiceStub
 from generated_proto.project_pb2_grpc import ProjectServiceStub
 from generated_proto.prompt_pb2_grpc import PromptServiceStub
 from generated_proto.user_config_pb2_grpc import UserConfigServiceStub
@@ -26,6 +27,7 @@ class AzdClient:
         self.deployment = DeploymentServiceStub(self.channel)
         self.environment = EnvironmentServiceStub(self.channel)
         self.events = EventServiceStub(self.channel)
+        self.follow_up = FollowUpServiceStub(self.channel)
         self.project = ProjectServiceStub(self.channel)
         self.prompt = PromptServiceStub(self.channel)
         self.user_config = UserConfigServiceStub(self.channel)

@@ -204,27 +204,30 @@ if err := host.Run(ctx); err != nil {
 
 ##### Command-level follow-up text
 
-Successful project `post*` handlers may set `ProjectEventArgs.FollowUp` to
-provide command-level guidance:
+Successful project `post*` handlers may use the handler-scoped `FollowUp`
+contribution to provide command-level guidance:
 
 ```go
 host.WithProjectEventHandler("postprovision",
   func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-    args.FollowUp = new("Next:\n  azd deploy")
-    return nil
+    return args.FollowUp.Set("Next:\n  azd deploy")
   })
 ```
 
-azd appends the opaque text to the parent command's human-readable completion
-message. It combines contributions from multiple extensions, ignores
-`pre*` and failed handlers, and does not include the text in JSON output.
-Nil means no contribution. In a custom workflow, a later command step replaces
-an earlier result from that extension. Within one command, lifecycle events use
-the stable order restore, build, package, provision, publish, deploy. An empty
-`FollowUp` retracts that extension's earlier contribution without affecting
-other extensions. Concurrent layers of the same event resolve by stable layer
-identity, not completion time. Older hosts ignore this optional field. Service
-handlers do not contribute to this field.
+The contribution uses the independent `FollowUpService` and the invocation ID
+provided by azd. azd stages the latest text and commits it only after the
+handler completes successfully; failed, cancelled, disconnected, or
+incomplete handlers are discarded. Use `args.FollowUp.Clear()` or
+`args.FollowUp.Set("")` to retract the current contribution. Calls outside a
+project `post*` handler return an error.
+
+azd appends committed text to the parent command's human-readable completion
+message. It combines contributions from multiple extensions and does not
+include the text in JSON output. In a custom workflow, a later command step
+replaces an earlier result from that extension. Within one command, lifecycle
+events use the stable order restore, build, package, provision, publish,
+deploy. Concurrent layers of the same event resolve by stable layer identity,
+not completion time. Service handlers do not contribute to this field.
 
 #### Service Target Providers
 

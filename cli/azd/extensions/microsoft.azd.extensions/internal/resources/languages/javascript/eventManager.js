@@ -7,6 +7,42 @@ const {
   ProjectHandlerStatus,
   ServiceHandlerStatus,
 } = require("./generated/proto/event_pb");
+const { SetFollowUpRequest } = require("./generated/proto/follow_up_pb");
+
+class FollowUpContribution {
+  constructor(client, invocationId) {
+    this._client = client;
+    this._invocationId = invocationId;
+  }
+
+  set(text) {
+    if (!this._invocationId) {
+      return Promise.reject(new Error("follow-up invocation is unavailable"));
+    }
+
+    const request = new SetFollowUpRequest();
+    request.setInvocationId(this._invocationId);
+    request.setText(text);
+
+    return new Promise((resolve, reject) => {
+      this._client.FollowUp.setFollowUp(
+        request,
+        this._client._metadata,
+        (err, response) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(response);
+          }
+        }
+      );
+    });
+  }
+
+  clear() {
+    return this.set("");
+  }
+}
 
 class EventManager {
   constructor(client) {
@@ -95,15 +131,19 @@ class EventManager {
       return;
     }
 
-    const args = { project: invokeMsg.getProject()?.toObject() };
+    const args = {
+      project: invokeMsg.getProject()?.toObject(),
+      followUp: new FollowUpContribution(
+        this._client,
+        invokeMsg.getInvocationId()
+      ),
+    };
 
     let status = "completed";
     let message = "";
-    let followUp;
 
     try {
       await handler(args);
-      followUp = args.followUp;
     } catch (err) {
       status = "failed";
       message = err.message;
@@ -116,8 +156,7 @@ class EventManager {
     return this._sendProjectHandlerStatus(
       eventName,
       status,
-      message,
-      followUp
+      message
     );
   }
 
@@ -159,17 +198,13 @@ class EventManager {
     );
   }
 
-  _sendProjectHandlerStatus(eventName, status, message, followUp) {
+  _sendProjectHandlerStatus(eventName, status, message) {
     const event = new EventMessage();
     const statusMsg = new ProjectHandlerStatus();
 
     statusMsg.setEventName(eventName);
     statusMsg.setStatus(status);
     statusMsg.setMessage(message);
-    if (followUp !== undefined) {
-      statusMsg.setFollowUp(followUp);
-    }
-
     event.setProjectHandlerStatus(statusMsg);
     this._logEvent("SEND", event.toObject());
 

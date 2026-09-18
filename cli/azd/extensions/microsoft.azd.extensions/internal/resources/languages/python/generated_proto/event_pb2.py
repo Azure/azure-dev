@@ -26,7 +26,7 @@ import models_pb2 as models__pb2
 import errors_pb2 as errors__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0b\x65vent.proto\x12\x11\x61zd.extensions.v1\x1a\x0cmodels.proto\x1a\x0c\x65rrors.proto\"\xe4\x03\n\x0c\x45ventMessage\x12K\n\x17subscribe_project_event\x18\x01 \x01(\x0b\x32(.azd.extensions.v1.SubscribeProjectEventH\x00\x12I\n\x16invoke_project_handler\x18\x02 \x01(\x0b\x32\'.azd.extensions.v1.InvokeProjectHandlerH\x00\x12I\n\x16project_handler_status\x18\x03 \x01(\x0b\x32\'.azd.extensions.v1.ProjectHandlerStatusH\x00\x12K\n\x17subscribe_service_event\x18\x04 \x01(\x0b\x32(.azd.extensions.v1.SubscribeServiceEventH\x00\x12I\n\x16invoke_service_handler\x18\x05 \x01(\x0b\x32\'.azd.extensions.v1.InvokeServiceHandlerH\x00\x12I\n\x16service_handler_status\x18\x06 \x01(\x0b\x32\'.azd.extensions.v1.ServiceHandlerStatusH\x00\x42\x0e\n\x0cmessage_type\",\n\x15SubscribeProjectEvent\x12\x13\n\x0b\x65vent_names\x18\x01 \x03(\t\"L\n\x15SubscribeServiceEvent\x12\x13\n\x0b\x65vent_names\x18\x01 \x03(\t\x12\x10\n\x08language\x18\x02 \x01(\t\x12\x0c\n\x04host\x18\x03 \x01(\t\"]\n\x14InvokeProjectHandler\x12\x12\n\nevent_name\x18\x01 \x01(\t\x12\x31\n\x07project\x18\x02 \x01(\x0b\x32 .azd.extensions.v1.ProjectConfig\"\x90\x01\n\x14InvokeServiceHandler\x12\x12\n\nevent_name\x18\x01 \x01(\t\x12\x31\n\x07project\x18\x02 \x01(\x0b\x32 .azd.extensions.v1.ProjectConfig\x12\x31\n\x07service\x18\x03 \x01(\x0b\x32 .azd.extensions.v1.ServiceConfig\"\xa3\x01\n\x14ProjectHandlerStatus\x12\x12\n\nevent_name\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\x12\x0f\n\x07message\x18\x03 \x01(\t\x12\x30\n\x05\x65rror\x18\x04 \x01(\x0b\x32!.azd.extensions.v1.ExtensionError\x12\x16\n\tfollow_up\x18\x05 \x01(\tH\x00\x88\x01\x01\x42\x0c\n\n_follow_up\"\x93\x01\n\x14ServiceHandlerStatus\x12\x12\n\nevent_name\x18\x01 \x01(\t\x12\x14\n\x0cservice_name\x18\x02 \x01(\t\x12\x0e\n\x06status\x18\x03 \x01(\t\x12\x0f\n\x07message\x18\x04 \x01(\t\x12\x30\n\x05\x65rror\x18\x05 \x01(\x0b\x32!.azd.extensions.v1.ExtensionError2c\n\x0c\x45ventService\x12S\n\x0b\x45ventStream\x12\x1f.azd.extensions.v1.EventMessage\x1a\x1f.azd.extensions.v1.EventMessage(\x01\x30\x01\x42OZ=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1\xaa\x02\rMicrosoft.Azdb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0b\x65vent.proto\x12\x11\x61zd.extensions.v1\x1a\x0cmodels.proto\x1a\x0c\x65rrors.proto\"\xe4\x03\n\x0c\x45ventMessage\x12K\n\x17subscribe_project_event\x18\x01 \x01(\x0b\x32(.azd.extensions.v1.SubscribeProjectEventH\x00\x12I\n\x16invoke_project_handler\x18\x02 \x01(\x0b\x32\'.azd.extensions.v1.InvokeProjectHandlerH\x00\x12I\n\x16project_handler_status\x18\x03 \x01(\x0b\x32\'.azd.extensions.v1.ProjectHandlerStatusH\x00\x12K\n\x17subscribe_service_event\x18\x04 \x01(\x0b\x32(.azd.extensions.v1.SubscribeServiceEventH\x00\x12I\n\x16invoke_service_handler\x18\x05 \x01(\x0b\x32\'.azd.extensions.v1.InvokeServiceHandlerH\x00\x12I\n\x16service_handler_status\x18\x06 \x01(\x0b\x32\'.azd.extensions.v1.ServiceHandlerStatusH\x00\x42\x0e\n\x0cmessage_type\",\n\x15SubscribeProjectEvent\x12\x13\n\x0b\x65vent_names\x18\x01 \x03(\t\"L\n\x15SubscribeServiceEvent\x12\x13\n\x0b\x65vent_names\x18\x01 \x03(\t\x12\x10\n\x08language\x18\x02 \x01(\t\x12\x0c\n\x04host\x18\x03 \x01(\t\"t\n\x14InvokeProjectHandler\x12\x12\n\nevent_name\x18\x01 \x01(\t\x12\x31\n\x07project\x18\x02 \x01(\x0b\x32 .azd.extensions.v1.ProjectConfig\x12\x15\n\rinvocation_id\x18\x03 \x01(\t\"\x90\x01\n\x14InvokeServiceHandler\x12\x12\n\nevent_name\x18\x01 \x01(\t\x12\x31\n\x07project\x18\x02 \x01(\x0b\x32 .azd.extensions.v1.ProjectConfig\x12\x31\n\x07service\x18\x03 \x01(\x0b\x32 .azd.extensions.v1.ServiceConfig\"}\n\x14ProjectHandlerStatus\x12\x12\n\nevent_name\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\x12\x0f\n\x07message\x18\x03 \x01(\t\x12\x30\n\x05\x65rror\x18\x04 \x01(\x0b\x32!.azd.extensions.v1.ExtensionError\"\x93\x01\n\x14ServiceHandlerStatus\x12\x12\n\nevent_name\x18\x01 \x01(\t\x12\x14\n\x0cservice_name\x18\x02 \x01(\t\x12\x0e\n\x06status\x18\x03 \x01(\t\x12\x0f\n\x07message\x18\x04 \x01(\t\x12\x30\n\x05\x65rror\x18\x05 \x01(\x0b\x32!.azd.extensions.v1.ExtensionError2c\n\x0c\x45ventService\x12S\n\x0b\x45ventStream\x12\x1f.azd.extensions.v1.EventMessage\x1a\x1f.azd.extensions.v1.EventMessage(\x01\x30\x01\x42OZ=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1\xaa\x02\rMicrosoft.Azdb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -41,13 +41,13 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_SUBSCRIBESERVICEEVENT']._serialized_start=595
   _globals['_SUBSCRIBESERVICEEVENT']._serialized_end=671
   _globals['_INVOKEPROJECTHANDLER']._serialized_start=673
-  _globals['_INVOKEPROJECTHANDLER']._serialized_end=766
-  _globals['_INVOKESERVICEHANDLER']._serialized_start=769
-  _globals['_INVOKESERVICEHANDLER']._serialized_end=913
-  _globals['_PROJECTHANDLERSTATUS']._serialized_start=916
-  _globals['_PROJECTHANDLERSTATUS']._serialized_end=1079
-  _globals['_SERVICEHANDLERSTATUS']._serialized_start=1082
-  _globals['_SERVICEHANDLERSTATUS']._serialized_end=1229
-  _globals['_EVENTSERVICE']._serialized_start=1231
-  _globals['_EVENTSERVICE']._serialized_end=1330
+  _globals['_INVOKEPROJECTHANDLER']._serialized_end=789
+  _globals['_INVOKESERVICEHANDLER']._serialized_start=792
+  _globals['_INVOKESERVICEHANDLER']._serialized_end=936
+  _globals['_PROJECTHANDLERSTATUS']._serialized_start=938
+  _globals['_PROJECTHANDLERSTATUS']._serialized_end=1063
+  _globals['_SERVICEHANDLERSTATUS']._serialized_start=1066
+  _globals['_SERVICEHANDLERSTATUS']._serialized_end=1213
+  _globals['_EVENTSERVICE']._serialized_start=1215
+  _globals['_EVENTSERVICE']._serialized_end=1314
 # @@protoc_insertion_point(module_scope)

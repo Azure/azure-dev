@@ -285,7 +285,9 @@ type InvokeProjectHandler struct {
 	// Name of the event being invoked.
 	EventName string `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
 	// Current project configuration.
-	Project       *ProjectConfig `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
+	Project *ProjectConfig `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
+	// Opaque identifier for the current project handler invocation.
+	InvocationId  string `protobuf:"bytes,3,opt,name=invocation_id,json=invocationId,proto3" json:"invocation_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -332,6 +334,13 @@ func (x *InvokeProjectHandler) GetProject() *ProjectConfig {
 		return x.Project
 	}
 	return nil
+}
+
+func (x *InvokeProjectHandler) GetInvocationId() string {
+	if x != nil {
+		return x.InvocationId
+	}
+	return ""
 }
 
 // Server invokes the service event handler
@@ -418,12 +427,7 @@ type ProjectHandlerStatus struct {
 	// For backward compatibility with older hosts, populate this even when error is set.
 	Message string `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
 	// Optional structured error details (set when status is "failed").
-	Error *ExtensionError `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
-	// Optional follow-up text for the parent command completion
-	// message. Presence distinguishes no contribution from an
-	// explicit empty retraction. Hosts collect this only from
-	// successful project post* handlers.
-	FollowUp      *string `protobuf:"bytes,5,opt,name=follow_up,json=followUp,proto3,oneof" json:"follow_up,omitempty"`
+	Error         *ExtensionError `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -484,13 +488,6 @@ func (x *ProjectHandlerStatus) GetError() *ExtensionError {
 		return x.Error
 	}
 	return nil
-}
-
-func (x *ProjectHandlerStatus) GetFollowUp() string {
-	if x != nil && x.FollowUp != nil {
-		return *x.FollowUp
-	}
-	return ""
 }
 
 // Client sends status updates for service events
@@ -596,26 +593,24 @@ const file_azd_extensions_v1_event_proto_rawDesc = "" +
 	"\vevent_names\x18\x01 \x03(\tR\n" +
 	"eventNames\x12\x1a\n" +
 	"\blanguage\x18\x02 \x01(\tR\blanguage\x12\x12\n" +
-	"\x04host\x18\x03 \x01(\tR\x04host\"q\n" +
+	"\x04host\x18\x03 \x01(\tR\x04host\"\x96\x01\n" +
 	"\x14InvokeProjectHandler\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12:\n" +
-	"\aproject\x18\x02 \x01(\v2 .azd.extensions.v1.ProjectConfigR\aproject\"\xf9\x01\n" +
+	"\aproject\x18\x02 \x01(\v2 .azd.extensions.v1.ProjectConfigR\aproject\x12#\n" +
+	"\rinvocation_id\x18\x03 \x01(\tR\finvocationId\"\xf9\x01\n" +
 	"\x14InvokeServiceHandler\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12:\n" +
 	"\aproject\x18\x02 \x01(\v2 .azd.extensions.v1.ProjectConfigR\aproject\x12:\n" +
 	"\aservice\x18\x03 \x01(\v2 .azd.extensions.v1.ServiceConfigR\aservice\x12J\n" +
-	"\x0fservice_context\x18\x04 \x01(\v2!.azd.extensions.v1.ServiceContextR\x0eserviceContext\"\xd0\x01\n" +
+	"\x0fservice_context\x18\x04 \x01(\v2!.azd.extensions.v1.ServiceContextR\x0eserviceContext\"\xa0\x01\n" +
 	"\x14ProjectHandlerStatus\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x127\n" +
-	"\x05error\x18\x04 \x01(\v2!.azd.extensions.v1.ExtensionErrorR\x05error\x12 \n" +
-	"\tfollow_up\x18\x05 \x01(\tH\x00R\bfollowUp\x88\x01\x01B\f\n" +
-	"\n" +
-	"_follow_up\"\xc3\x01\n" +
+	"\x05error\x18\x04 \x01(\v2!.azd.extensions.v1.ExtensionErrorR\x05error\"\xc3\x01\n" +
 	"\x14ServiceHandlerStatus\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12!\n" +
@@ -689,7 +684,6 @@ func file_azd_extensions_v1_event_proto_init() {
 		(*EventMessage_InvokeServiceHandler)(nil),
 		(*EventMessage_ServiceHandlerStatus)(nil),
 	}
-	file_azd_extensions_v1_event_proto_msgTypes[5].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

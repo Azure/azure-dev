@@ -10,7 +10,53 @@ namespace Microsoft.Azd
     public class ProjectEventArgs
     {
         public ProjectConfig Project { get; set; } = default!;
-        public string? FollowUp { get; set; }
+        public FollowUpContribution FollowUp { get; }
+
+        public ProjectEventArgs(
+            ProjectConfig project,
+            FollowUpContribution followUp)
+        {
+            Project = project;
+            FollowUp = followUp;
+        }
+    }
+
+    public sealed class FollowUpContribution
+    {
+        private readonly FollowUpService.FollowUpServiceClient _client;
+        private readonly string _invocationId;
+
+        public FollowUpContribution(
+            FollowUpService.FollowUpServiceClient client,
+            string invocationId)
+        {
+            _client = client;
+            _invocationId = invocationId;
+        }
+
+        public async Task SetAsync(
+            string text,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrEmpty(_invocationId))
+            {
+                throw new InvalidOperationException(
+                    "Follow-up invocation is unavailable.");
+            }
+
+            await _client.SetFollowUpAsync(
+                new SetFollowUpRequest
+                {
+                    InvocationId = _invocationId,
+                    Text = text
+                },
+                cancellationToken: cancellationToken);
+        }
+
+        public Task ClearAsync(CancellationToken cancellationToken = default)
+        {
+            return SetAsync("", cancellationToken);
+        }
     }
 
     public class ServiceEventArgs
@@ -134,8 +180,7 @@ namespace Microsoft.Azd
         private async Task SendProjectHandlerStatusAsync(
             string eventName,
             string status,
-            string message,
-            string? followUp = null)
+            string message)
         {
             var statusMessage = new ProjectHandlerStatus
             {
@@ -143,11 +188,6 @@ namespace Microsoft.Azd
                 Status = status,
                 Message = message
             };
-            if (followUp is not null)
-            {
-                statusMessage.FollowUp = followUp;
-            }
-
             await _stream!.RequestStream.WriteAsync(new EventMessage
             {
                 ProjectHandlerStatus = statusMessage
@@ -174,16 +214,15 @@ namespace Microsoft.Azd
             {
                 var status = "completed";
                 var message = "";
-                string? followUp = null;
-                var eventArgs = new ProjectEventArgs
-                {
-                    Project = invokeMsg.Project
-                };
+                var eventArgs = new ProjectEventArgs(
+                    invokeMsg.Project,
+                    new FollowUpContribution(
+                        _azdClient.FollowUp,
+                        invokeMsg.InvocationId));
 
                 try
                 {
                     await handler(eventArgs);
-                    followUp = eventArgs.FollowUp;
                 }
                 catch (Exception ex)
                 {
@@ -195,8 +234,7 @@ namespace Microsoft.Azd
                 await SendProjectHandlerStatusAsync(
                     invokeMsg.EventName,
                     status,
-                    message,
-                    followUp);
+                    message);
             }
         }
 

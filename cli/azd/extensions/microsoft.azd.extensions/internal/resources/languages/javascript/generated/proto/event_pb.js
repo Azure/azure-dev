@@ -1021,7 +1021,8 @@ proto.azd.extensions.v1.InvokeProjectHandler.prototype.toObject = function(opt_i
 proto.azd.extensions.v1.InvokeProjectHandler.toObject = function(includeInstance, msg) {
   var f, obj = {
 eventName: jspb.Message.getFieldWithDefault(msg, 1, ""),
-project: (f = msg.getProject()) && models_pb.ProjectConfig.toObject(includeInstance, f)
+project: (f = msg.getProject()) && models_pb.ProjectConfig.toObject(includeInstance, f),
+invocationId: jspb.Message.getFieldWithDefault(msg, 3, "")
   };
 
   if (includeInstance) {
@@ -1067,6 +1068,10 @@ proto.azd.extensions.v1.InvokeProjectHandler.deserializeBinaryFromReader = funct
       reader.readMessage(value,models_pb.ProjectConfig.deserializeBinaryFromReader);
       msg.setProject(value);
       break;
+    case 3:
+      var value = /** @type {string} */ (reader.readString());
+      msg.setInvocationId(value);
+      break;
     default:
       reader.skipField();
       break;
@@ -1109,6 +1114,13 @@ proto.azd.extensions.v1.InvokeProjectHandler.serializeBinaryToWriter = function(
       2,
       f,
       models_pb.ProjectConfig.serializeBinaryToWriter
+    );
+  }
+  f = message.getInvocationId();
+  if (f.length > 0) {
+    writer.writeString(
+      3,
+      f
     );
   }
 };
@@ -1166,6 +1178,24 @@ proto.azd.extensions.v1.InvokeProjectHandler.prototype.clearProject = function()
  */
 proto.azd.extensions.v1.InvokeProjectHandler.prototype.hasProject = function() {
   return jspb.Message.getField(this, 2) != null;
+};
+
+
+/**
+ * optional string invocation_id = 3;
+ * @return {string}
+ */
+proto.azd.extensions.v1.InvokeProjectHandler.prototype.getInvocationId = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 3, ""));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.azd.extensions.v1.InvokeProjectHandler} returns this
+ */
+proto.azd.extensions.v1.InvokeProjectHandler.prototype.setInvocationId = function(value) {
+  return jspb.Message.setProto3StringField(this, 3, value);
 };
 
 
@@ -1436,8 +1466,7 @@ proto.azd.extensions.v1.ProjectHandlerStatus.toObject = function(includeInstance
 eventName: jspb.Message.getFieldWithDefault(msg, 1, ""),
 status: jspb.Message.getFieldWithDefault(msg, 2, ""),
 message: jspb.Message.getFieldWithDefault(msg, 3, ""),
-error: (f = msg.getError()) && errors_pb.ExtensionError.toObject(includeInstance, f),
-followUp: (f = jspb.Message.getField(msg, 5)) == null ? undefined : f
+error: (f = msg.getError()) && errors_pb.ExtensionError.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -1490,10 +1519,6 @@ proto.azd.extensions.v1.ProjectHandlerStatus.deserializeBinaryFromReader = funct
       var value = new errors_pb.ExtensionError;
       reader.readMessage(value,errors_pb.ExtensionError.deserializeBinaryFromReader);
       msg.setError(value);
-      break;
-    case 5:
-      var value = /** @type {string} */ (reader.readString());
-      msg.setFollowUp(value);
       break;
     default:
       reader.skipField();
@@ -1551,13 +1576,6 @@ proto.azd.extensions.v1.ProjectHandlerStatus.serializeBinaryToWriter = function(
       4,
       f,
       errors_pb.ExtensionError.serializeBinaryToWriter
-    );
-  }
-  f = /** @type {string} */ (jspb.Message.getField(message, 5));
-  if (f != null) {
-    writer.writeString(
-      5,
-      f
     );
   }
 };
@@ -1651,42 +1669,6 @@ proto.azd.extensions.v1.ProjectHandlerStatus.prototype.clearError = function() {
  */
 proto.azd.extensions.v1.ProjectHandlerStatus.prototype.hasError = function() {
   return jspb.Message.getField(this, 4) != null;
-};
-
-
-/**
- * optional string follow_up = 5;
- * @return {string}
- */
-proto.azd.extensions.v1.ProjectHandlerStatus.prototype.getFollowUp = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 5, ""));
-};
-
-
-/**
- * @param {string} value
- * @return {!proto.azd.extensions.v1.ProjectHandlerStatus} returns this
- */
-proto.azd.extensions.v1.ProjectHandlerStatus.prototype.setFollowUp = function(value) {
-  return jspb.Message.setField(this, 5, value);
-};
-
-
-/**
- * Clears the field making it undefined.
- * @return {!proto.azd.extensions.v1.ProjectHandlerStatus} returns this
- */
-proto.azd.extensions.v1.ProjectHandlerStatus.prototype.clearFollowUp = function() {
-  return jspb.Message.setField(this, 5, undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.azd.extensions.v1.ProjectHandlerStatus.prototype.hasFollowUp = function() {
-  return jspb.Message.getField(this, 5) != null;
 };
 
 

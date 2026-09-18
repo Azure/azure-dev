@@ -212,31 +212,40 @@ rootCmd.AddCommand(azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
 ```go
 type ProjectEventArgs struct {
     Project  *ProjectConfig
-    FollowUp *string
+    FollowUp *FollowUpContribution
+}
+
+type FollowUpContribution struct {
+    // Set replaces the text for this handler invocation.
+    Set(text string) error
+    // Clear removes the text for this handler invocation.
+    Clear() error
 }
 ```
 
-Set `FollowUp` from a successful project `post*` handler when the parent azd
-command needs a text-only next step:
+Use `FollowUp.Set` from a successful project `post*` handler when the parent
+azd command needs a text-only next step:
 
 ```go
 host.WithProjectEventHandler("postdeploy",
     func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-        args.FollowUp = new("Next:\n  azd ai agent show my-agent")
-        return nil
+        return args.FollowUp.Set("Next:\n  azd ai agent show my-agent")
     })
 ```
 
-The host appends the text to the parent command's human-readable completion
-message and combines contributions from multiple extensions in a deterministic
-order. It ignores `pre*` and failed handler messages. The text is opaque to the
-host and is not included in JSON output. Nil means no contribution. Within a
-custom workflow, a later command step replaces an earlier result from that
-extension. Within one command, lifecycle events use the stable order
-restore, build, package, provision, publish, deploy. An empty `FollowUp`
-retracts that extension's earlier contribution without affecting other
-extensions. Concurrent layers of the same event resolve by stable layer
-identity, not completion time. Older hosts ignore this optional field.
+The contribution uses the independent `FollowUpService` and the invocation ID
+provided by azd. The host stages text and commits it only after the handler
+completes successfully; failed, cancelled, disconnected, or incomplete
+handlers are discarded. `Clear` and `Set("")` retract the current
+contribution. Calls outside a project `post*` handler return an error.
+
+The host appends committed text to the parent command's human-readable
+completion message and combines contributions from multiple extensions in a
+deterministic order. The text is not included in JSON output. Within a custom
+workflow, a later command step replaces an earlier result from that extension.
+Within one command, lifecycle events use the stable order restore, build,
+package, provision, publish, deploy. Concurrent layers of the same event
+resolve by stable layer identity, not completion time.
 
 ### NewMetadataCommand
 

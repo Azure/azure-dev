@@ -45,24 +45,32 @@ The gRPC broker (`pkg/grpcbroker`) manages bidirectional communication. Extensio
 - **Receive calls** from azd (e.g., "build this service")
 - **Make calls** back to azd (e.g., "prompt the user", "read environment config")
 
-### Lifecycle follow-up messages
+### Lifecycle follow-up contributions
 
-A project lifecycle handler can set `ProjectEventArgs.FollowUp` after a
-successful `post*` event. Nil means no contribution. The host carries this
-opaque text through a dedicated `follow_up` status field and appends it to
-the parent command's human-readable completion message. The host combines
-contributions from multiple extensions deterministically and does not collect
-`pre*` or failed handler messages.
+Project lifecycle handlers can use the handler-scoped `FollowUp` contribution
+on `ProjectEventArgs` to provide command-level guidance:
 
-Within one top-level command, a later lifecycle event from an extension
-replaces its earlier result. Concurrent layers of the same event resolve by
-stable layer identity, not completion time. Setting `FollowUp` to an empty
-string removes that extension's earlier contribution without affecting other
-extensions or the core command's follow-up text.
+```go
+host.WithProjectEventHandler("postdeploy",
+    func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+        return args.FollowUp.Set("Next:\n  azd ai agent show my-agent")
+    })
+```
 
-Follow-up text is not included in `--output json` results. Extensions should
-leave the field unset when they have no command-level guidance to add. Older
-hosts ignore this optional field, so handlers remain backward compatible.
+The contribution is sent through the independent `FollowUpService` using the
+invocation ID supplied by azd. Only project `post*` handlers may contribute.
+The host stages the latest text and commits it only after the handler
+completes successfully; failed, cancelled, disconnected, or otherwise
+incomplete invocations are discarded. Calling `Clear` or `Set("")` retracts
+the current contribution.
+
+The host appends committed text to the parent command's human-readable
+completion message. It combines contributions from multiple extensions
+deterministically, preserves existing core follow-up text, and leaves JSON
+output unchanged. Within one top-level command, a later lifecycle event from
+an extension replaces its earlier result. Concurrent layers of the same event
+resolve by stable layer identity, not completion time. Service handlers cannot
+contribute follow-up text.
 
 ## Capabilities
 

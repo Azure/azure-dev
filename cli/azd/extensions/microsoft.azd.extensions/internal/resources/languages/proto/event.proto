@@ -47,6 +47,8 @@ message InvokeProjectHandler {
   string event_name = 1;
   // Current project configuration.
   ProjectConfig project = 2;
+  // Opaque identifier for the current project handler invocation.
+  string invocation_id = 3;
 }
 
 // Server invokes the service event handler
@@ -69,8 +71,6 @@ message ProjectHandlerStatus {
   string message = 3;
   // Optional structured error details (set when status is "failed").
   ExtensionError error = 4;
-  // Optional follow-up guidance from a successful project handler.
-  optional string follow_up = 5;
 }
 
 // Client sends status updates for service events

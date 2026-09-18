@@ -5,13 +5,17 @@ package azdext
 
 import (
 	"context"
+	"net"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/test/bufconn"
 )
 
 // MockBidiStreamingClient mocks the gRPC bidirectional streaming client using generics
@@ -171,71 +175,82 @@ func TestEventManager_onInvokeProjectHandler_Success(t *testing.T) {
 	assert.Equal(t, "", status.Message)
 }
 
-func TestEventManager_onInvokeProjectHandler_FollowUp(t *testing.T) {
+func TestEventManager_onInvokeProjectHandler_ProvidesFollowUp(t *testing.T) {
 	ctx := t.Context()
 	eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
 	eventManager.projectEvents["postprovision"] = func(
 		ctx context.Context,
 		args *ProjectEventArgs,
 	) error {
-		args.FollowUp = new("Run azd deploy")
+		require.NotNil(t, args.FollowUp)
+		require.Equal(t, "invocation-id", args.FollowUp.invocationID)
 		return nil
 	}
 
 	resp, err := eventManager.onInvokeProjectHandler(ctx, &InvokeProjectHandler{
-		EventName: "postprovision",
-		Project:   createTestProjectConfigForEvents(),
+		EventName:    "postprovision",
+		Project:      createTestProjectConfigForEvents(),
+		InvocationId: "invocation-id",
 	})
 
 	require.NoError(t, err)
 	status := resp.GetProjectHandlerStatus()
-	require.Equal(t, "Run azd deploy", status.GetFollowUp())
-	require.NotNil(t, status.FollowUp)
 	require.Empty(t, status.Message)
 }
 
-func TestEventManager_onInvokeProjectHandler_UnsetFollowUp(t *testing.T) {
-	ctx := t.Context()
-	eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
-	eventManager.projectEvents["postprovision"] = func(
-		ctx context.Context,
-		args *ProjectEventArgs,
-	) error {
-		return nil
-	}
-
-	resp, err := eventManager.onInvokeProjectHandler(ctx, &InvokeProjectHandler{
-		EventName: "postprovision",
-		Project:   createTestProjectConfigForEvents(),
-	})
-
-	require.NoError(t, err)
-	status := resp.GetProjectHandlerStatus()
-	require.Nil(t, status.FollowUp)
-	require.Empty(t, status.Message)
+type followUpRecorder struct {
+	UnimplementedFollowUpServiceServer
+	invocationID string
+	text         string
 }
 
-func TestEventManager_onInvokeProjectHandler_EmptyFollowUp(t *testing.T) {
-	ctx := t.Context()
-	eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
-	eventManager.projectEvents["postprovision"] = func(
-		ctx context.Context,
-		args *ProjectEventArgs,
-	) error {
-		args.FollowUp = new("")
-		return nil
-	}
+func (r *followUpRecorder) SetFollowUp(
+	ctx context.Context,
+	req *SetFollowUpRequest,
+) (*SetFollowUpResponse, error) {
+	r.invocationID = req.InvocationId
+	r.text = req.Text
+	return &SetFollowUpResponse{}, nil
+}
 
-	resp, err := eventManager.onInvokeProjectHandler(ctx, &InvokeProjectHandler{
-		EventName: "postprovision",
-		Project:   createTestProjectConfigForEvents(),
+func TestFollowUpContributionSetAndClear(t *testing.T) {
+	listener := bufconn.Listen(1024 * 1024)
+	server := grpc.NewServer()
+	recorder := &followUpRecorder{}
+	RegisterFollowUpServiceServer(server, recorder)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
 	})
 
+	connection, err := grpc.NewClient(
+		"passthrough:///bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return listener.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
 	require.NoError(t, err)
-	status := resp.GetProjectHandlerStatus()
-	require.NotNil(t, status.FollowUp)
-	require.Empty(t, status.GetFollowUp())
-	require.Empty(t, status.Message)
+	t.Cleanup(func() {
+		_ = connection.Close()
+	})
+
+	t.Setenv("AZD_ACCESS_TOKEN", "test-token")
+	contribution := &FollowUpContribution{
+		client:       &AzdClient{connection: connection},
+		ctx:          t.Context(),
+		invocationID: "invocation-id",
+	}
+
+	require.NoError(t, contribution.Set("next"))
+	require.Equal(t, "invocation-id", recorder.invocationID)
+	require.Equal(t, "next", recorder.text)
+
+	require.NoError(t, contribution.Clear())
+	require.Equal(t, "", recorder.text)
 }
 
 // Test onInvokeProjectHandler with handler error

@@ -1,142 +1,200 @@
 # Azure AI RLE extension for azd
 
-Quickstart for the `azd ai rle` preview extension. The extension manages an OpenEnv-style RLE environment lifecycle: init, build and run the environment container, test it through a playground UI or shell, and publish the environment image to the RLE service through your Foundry project endpoint.
+The `azd ai rle` preview extension manages a versioned RLE lifecycle: initialize
+an environment or harness scaffold, run it locally, and publish the declared
+release to an RLE-enabled Foundry project.
+
+Every source folder is defined by a host-agnostic `rle.toml` manifest. The
+manifest owns the immutable RLE identity: `rle.name` plus `rle.version`.
+Foundry project endpoints, registry locations, service IDs, credentials, and
+mutable deployment state are intentionally not stored in the manifest.
 
 ## Prerequisites
 
 Install:
 
-- Azure Developer CLI (`azd`): https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd
-- Azure CLI (`az`): https://learn.microsoft.com/cli/azure/install-azure-cli
-- Docker Desktop: https://www.docker.com/products/docker-desktop/
-- Go, if building from source: https://go.dev/doc/install
-- Git, required by `azd ai rle init` to download samples: https://git-scm.com/downloads
+- [Azure Developer CLI (`azd`)](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd)
+- [Azure CLI (`az`)](https://learn.microsoft.com/cli/azure/install-azure-cli)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- [Git](https://git-scm.com/downloads), used by `init` to download samples
 
-Verify:
-
-```powershell
-azd version
-docker version
-az version
-```
-
-Sign in with Azure CLI before calling the Foundry project APIs:
+Sign in before calling Foundry project APIs:
 
 ```powershell
 az login
 ```
 
-The extension also supports credentials from `azd auth login` and the other development credentials in Azure's default credential chain.
+The extension also supports `azd auth login` and other development credentials
+from Azure's default credential chain.
 
-## Install the extension from the nightly registry
+Install from the nightly registry:
 
 ```powershell
 azd ext install azure.ai.rle -s https://aka.ms/azd/extensions/registry/nightly
 ```
 
-Verify:
-
-```powershell
-azd ai rle --help
-azd ai rle version
-```
-
-`version` is always available. The lifecycle commands are preview-gated; if commands such as `init`, `run`, `publish`, `list`, `show`, or `invoke` are hidden, enable the preview flag in your terminal:
+The lifecycle commands are preview-gated:
 
 ```powershell
 $env:AZD_AI_RLE_ENABLE = "true"
 ```
 
-Remote invocation accepts HTTPS OpenEnv URLs only on the configured Foundry project origin. Other origins, embedded credentials, insecure HTTP URLs, and custom ports are rejected.
+Harness scaffolds are separately preview-gated:
 
-## Configure the Foundry project endpoint
+```powershell
+$env:AZD_AI_RLE_HARNESS_INIT_ENABLE = "true"
+```
 
-RLE service APIs are called relative to the Foundry project endpoint. APIM maps each project request to the workspace-scoped service internally, so the extension does not require a separate RLE endpoint.
+## Manifest contract
 
-Set the Foundry project endpoint once in the terminal where you run `publish`:
+`rle.toml` uses the RLE control-plane type and subtype values exactly:
+
+| `rle.type` | `rle.subtype` | Required fields |
+| --- | --- | --- |
+| `Gym` | `OpenEnv` | None |
+| `Harness` | `HostedAgent` | `agentName`, `agentVersion` |
+| `Harness` | `BYOH` | `baseUrl` |
+
+`BYOH` is the concise wire abbreviation for Bring Your Own Harness.
+`HostedAgent` denotes the Foundry Hosted Agent backing a harness; the subtype
+does not embed a platform name so the manifest remains host-agnostic.
+
+A Gym: OpenEnv environment:
+
+```toml
+[rle]
+name = "code_rl"
+version = "1.0.0"
+type = "Gym"
+subtype = "OpenEnv"
+```
+
+A Foundry Hosted Agent-backed harness:
+
+```toml
+[rle]
+name = "support_rle"
+version = "1.0.0"
+type = "Harness"
+subtype = "HostedAgent"
+agentName = "support-agent"
+agentVersion = "12"
+```
+
+A bring-your-own harness (BYOH):
+
+```toml
+[rle]
+name = "customer_rle"
+version = "1.0.0"
+type = "Harness"
+subtype = "BYOH"
+baseUrl = "https://harness.example.com/rle/"
+```
+
+`rle.version` is the RLE release version and is distinct from
+`agentVersion`, which identifies the Hosted Agent backing a harness. RLE versions must be
+`major.minor.patch`. Hosted Agent versions must be a positive integer or
+`draft-<positive-unix-timestamp>`. BYOH harness URLs must be absolute HTTPS URLs
+without credentials, a query string, or a fragment.
+
+## Configure runtime deployment context
+
+The CLI resolves the Foundry project endpoint from the terminal environment:
 
 ```powershell
 $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
 ```
 
-For example, RLE environment registration is sent to:
-
-```text
-<FOUNDRY_PROJECT_ENDPOINT>/rl_environments?api-version=2025-11-15-preview
-```
-
-Publish also needs an ACR registry endpoint:
+Publishing also needs the ACR registry endpoint:
 
 ```powershell
 $env:AZURE_CONTAINER_REGISTRY_ENDPOINT = "<registry>.azurecr.io"
-```
-
-Authenticate Docker to ACR before deploying:
-
-```powershell
 az acr login --name <registry>
 ```
 
-## Quickstart
+The endpoint and registry are deployment context, not source configuration,
+and therefore never appear in `rle.toml`.
 
-### 1. Initialize an environment session
+## Initialize an RLE
 
-Select a sample and use its name for the local folder and RLE environment:
+Run `init` and select `Gym: OpenEnv`, then select a sample:
 
 ```powershell
 azd ai rle init
 ```
 
-`init` reads the available environments from
-[rle-samples](https://github.com/sujit-kamireddy/rle-samples) and prompts you to select one.
-Only the selected sample is downloaded. For example, selecting `code_rl` copies it into `.\code_rl`
-and stores `code_rl` as the RLE environment name in `.azd-rle.json`.
-
-To use a different local folder and RLE environment name, provide it before selecting a sample:
+The Gym: OpenEnv path reads the available environments from
+[rle-samples](https://github.com/sujit-kamireddy/rle-samples). It downloads
+only the selected sample, including its manifest. When a target folder is
+specified, `init` updates `rle.name` to match that folder:
 
 ```powershell
 azd ai rle init my_environment
 ```
 
-When prompts are disabled, the required positional name selects the sample and is also used for the folder:
+For noninteractive sample initialization, the positional name selects the
+sample and target folder:
 
 ```powershell
 azd ai rle init code_rl --no-prompt
 ```
 
-The copied session does not keep `.git` metadata from the sample repository.
+With `AZD_AI_RLE_HARNESS_INIT_ENABLE=true`, `init` also offers
+`Harness: HostedAgent` and `Harness: BYOH`. Supply control-plane type/subtype
+values explicitly when scripting:
 
-For an existing source folder, skip `init` and run commands directly from that folder.
+```powershell
+azd ai rle init support_rle `
+  --type Harness --subtype HostedAgent `
+  --rle-version 1.0.0 `
+  --agent-name support-agent --agent-version 12 `
+  --no-prompt
 
-### 2. Run locally
+azd ai rle init customer_rle `
+  --type Harness --subtype BYOH `
+  --rle-version 1.0.0 `
+  --base-url https://harness.example.com/rle/ `
+  --no-prompt
+```
+
+Harness scaffolds contain:
+
+```text
+<environment-name>/
+|-- rle.toml
+|-- Dockerfile
+`-- server/
+    |-- __init__.py
+    `-- env.py
+```
+
+`server/env.py` uses OpenEnv's supported app factory and exposes `/health`,
+`/schema`, `/metadata`, `/ws`, `/web`, `/reset`, `/step`, `/grade`, and a
+starter mock-tool route. Update its task setup, mocks, and grader before
+publishing.
+
+## Run locally
+
+Run from the folder that contains `rle.toml`:
 
 ```powershell
 azd ai rle run
 ```
 
-`run` builds a local Docker image from the current source folder, removes any stale local container for the same environment name, starts a fresh container, waits for `/health`, opens the playground UI at `/web`, and keeps an OpenEnv shell attached. When the shell exits or Ctrl+C is received, `run` removes the local container.
+`run` derives its local image and container identity from `rle.name`, builds
+the Dockerfile, waits for `/health`, opens the `/web` playground, and keeps an
+OpenEnv shell attached. It removes the local container when the shell exits.
 
-If `.azd-rle.json` does not exist, `run` creates it with only the inferred local environment name.
-
-Use a custom host port:
+Use a custom port or Dockerfile path when needed:
 
 ```powershell
 azd ai rle run --port 9000
-```
-
-`run` looks for `Dockerfile` at the source root, then `server\Dockerfile`. If the Dockerfile is elsewhere, pass it explicitly:
-
-```powershell
 azd ai rle run --dockerfile server\Dockerfile
-```
-
-Rebuild automatically while editing local source:
-
-```powershell
 azd ai rle run --watch
 ```
 
-The shell supports the standard OpenEnv commands:
+The shell supports standard OpenEnv commands:
 
 ```text
 rle> health
@@ -146,112 +204,70 @@ rle> state
 rle> exit
 ```
 
-Supported shell commands:
+## Publish a declared release
 
-| Command | Calls |
-|---|---|
-| `health` | `GET /health` |
-| `reset [json]` | `POST /reset` |
-| `step <json-action>` | `POST /step` with `{ "action": <json-action> }` |
-| `state` | `GET /state` |
-| `metadata` | `GET /metadata` |
-| `schema` | `GET /schema` |
-| `exit` / `quit` | Exit shell |
-
-### 3. Publish/register
+Run publish from the folder containing the manifest:
 
 ```powershell
-$env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
-$env:AZURE_CONTAINER_REGISTRY_ENDPOINT = "<registry>.azurecr.io"
-azd ai rle publish --version-bump major
+azd ai rle publish
 ```
 
-Publish reads the Foundry project endpoint from `FOUNDRY_PROJECT_ENDPOINT` and the ACR registry from `AZURE_CONTAINER_REGISTRY_ENDPOINT`. It derives the project route segment from `/api/projects/<project>`, builds the Docker image as `<registry>.azurecr.io/<project>-<environment>:latest`, pushes it to ACR, registers that image by calling `<FOUNDRY_PROJECT_ENDPOINT>/rl_environments`, and saves the project/environment details in `.azd-rle.json`.
+For a new RLE name, `rle.version` must be `1.0.0`. For an existing release,
+change it to the direct next major, minor, or patch version before publishing.
+For example, after `1.2.0`, use `2.0.0`, `1.3.0`, or `1.2.1`.
 
-Use `--version-bump major` (default), `--version-bump minor`, or `--version-bump patch` to control the environment version that RLE creates.
+The current RLE service accepts a version bump rather than an arbitrary
+version. The CLI preflights the deployed release, derives the explicit
+control-plane bump from `rle.version`, and verifies that the service returns
+the manifest's exact `(name, version)` identity. The pushed ACR image is
+version-tagged as:
 
-The publish command prints a CLI-friendly summary using `environmentId`, `foundryProjectEndpoint`, `acrImage`, `environmentVersion`, `createdAt`, and `updatedAt`.
-
-If needed, override the Dockerfile path the same way as local run:
-
-```powershell
-azd ai rle publish --dockerfile server\Dockerfile
+```text
+<registry>.azurecr.io/<project>-<environment>:<rle.version>
 ```
 
-### 4. List deployed environments
+The published request includes `type`, `subtype`, and the applicable
+HostedAgent or BYOH configuration from the manifest.
 
-List all RLE environments in the configured Foundry project:
+## Inspect and invoke releases
+
+List RLEs in the selected Foundry project:
 
 ```powershell
 azd ai rle list
 ```
 
-The command uses `FOUNDRY_PROJECT_ENDPOINT` when it is set. Otherwise, it uses the project endpoint saved in the current folder's `.azd-rle.json`. Use JSON output for scripting:
-
-```powershell
-azd ai rle list --output json
-```
-
-### 5. Show environment details
-
-Show the full details for a specific environment, including version history:
+Show version history for a named RLE, or omit the name to use `rle.name` from
+the current manifest:
 
 ```powershell
 azd ai rle show code_rl
-```
-
-When run from a published environment folder, the environment name and Foundry
-project endpoint can come from `.azd-rle.json`. Environment details and version
-history are still retrieved from the Foundry APIs:
-
-```powershell
 azd ai rle show
 ```
 
-### 6. Invoke remotely
-
-Remote invoke creates a temporary instance group and one instance through the public RLE routes:
-
-- Named invoke without `--version`: create the group at `/rl_environments/<environmentName>/instance_groups`; RLE resolves the latest version.
-- Saved state or explicit `--version`: create the group at `/rl_environments/<environmentName>/versions/<version>/instance_groups`.
-- Create and poll the instance under the resolved version at `/instance_groups/<groupId>/instances`.
-
-After the instance is running, invoke waits for the authenticated OpenEnv `/health` endpoint before reporting the environment as ready. It includes the Foundry API version on every OpenEnv gateway request, opens a generic local playground that proxies those requests to the environment, and keeps the shell attached. When invoke exits, it deletes the temporary instance and then its group using cleanup contexts that are independent from Ctrl+C:
+Invoke the manifest's exact `(name, version)` identity:
 
 ```powershell
 azd ai rle invoke --timeout 60
 ```
 
-To invoke an existing environment without its source code or `.azd-rle.json`, set the Foundry project endpoint and provide the environment name:
+To invoke source-free from another folder, provide both parts of the identity:
 
 ```powershell
-$env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
-azd ai rle invoke code_rl
+azd ai rle invoke code_rl --version 1.0.0
 ```
 
-The unversioned instance-group response supplies the resolved latest version used for all subsequent instance requests. Pin a specific published version when needed:
-
-```powershell
-azd ai rle invoke code_rl --version 2.1.0
-```
-
-Cloud-only invocation does not create or modify `.azd-rle.json`. If the selected disk image is still being prepared, invoke retries group creation before returning a readiness timeout.
+Remote invocation creates a temporary instance group and instance through the
+RLE public routes, waits for the runtime to become healthy, opens a local
+authenticated playground, and removes the temporary resources when the shell
+exits.
 
 ## Build and install from source
 
-Use this path only when you are developing the extension itself. From `cli\azd\extensions\azure.ai.rle`:
+From `cli\azd\extensions\azure.ai.rle`:
 
 ```powershell
 azd extension install microsoft.azd.extensions
-azd x build
-azd x pack
-azd x publish
-azd extension install azure.ai.rle --source local --force
-```
-
-After code changes, rerun:
-
-```powershell
 azd x build
 azd x pack
 azd x publish

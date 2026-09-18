@@ -13,7 +13,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const rleEnableEnvVar = "AZD_AI_RLE_ENABLE"
+const (
+	rleEnableEnvVar            = "AZD_AI_RLE_ENABLE"
+	rleHarnessInitEnableEnvVar = "AZD_AI_RLE_HARNESS_INIT_ENABLE"
+)
 
 func NewRootCommand() *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
@@ -55,5 +58,10 @@ func NewRootCommand() *cobra.Command {
 
 func rleCommandsEnabled() bool {
 	enabled, err := strconv.ParseBool(os.Getenv(rleEnableEnvVar))
+	return err == nil && enabled
+}
+
+func rleHarnessInitEnabled() bool {
+	enabled, err := strconv.ParseBool(os.Getenv(rleHarnessInitEnableEnvVar))
 	return err == nil && enabled
 }

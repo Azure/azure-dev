@@ -4,8 +4,8 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -17,8 +17,7 @@ import (
 )
 
 type rlePublishFlags struct {
-	dockerfile  string
-	versionBump string
+	dockerfile string
 }
 
 type publishAction struct {
@@ -28,11 +27,10 @@ type publishAction struct {
 
 func newPublishCommand() *cobra.Command {
 	flags := &rlePublishFlags{}
-	flags.versionBump = "major"
 
 	cmd := &cobra.Command{
 		Use:   "publish",
-		Short: "Build, push, and create or update the RLE environment",
+		Short: "Build, push, and publish the RLE release declared in rle.toml",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&publishAction{cmd: cmd, flags: flags}).Run()
@@ -41,45 +39,16 @@ func newPublishCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&flags.dockerfile, "dockerfile", "",
 		"Dockerfile path relative to the current folder. Defaults to Dockerfile at the source root or server/Dockerfile.")
-	cmd.Flags().StringVar(
-		&flags.versionBump,
-		"version-bump",
-		flags.versionBump,
-		"Version bump to apply when creating or updating the environment: major, minor, or patch.",
-	)
 	return cmd
 }
 
 func (a *publishAction) Run() error {
-	versionBump, err := normalizeVersionBumpFlag(a.flags.versionBump)
+	config, projectEndpoint, client, versionBump, creating, err := resolvePublishTarget(a.cmd.Context())
 	if err != nil {
 		return err
 	}
 
-	state, initialized, err := resolvePublishState()
-	if err != nil {
-		return err
-	}
-	if !initialized {
-		if _, err := fmt.Fprintf(a.cmd.OutOrStdout(), "No %s found; using current folder as the RLE source.\n",
-			rleStateFile); err != nil {
-			return err
-		}
-	}
-
-	if state.ProjectEndpoint == "" {
-		return &azdext.LocalError{
-			Message:  "Foundry project endpoint is required for publish.",
-			Code:     "rle_project_required",
-			Category: azdext.LocalErrorCategoryUser,
-			Suggestion: fmt.Sprintf(
-				"Set %s=https://<account>.services.ai.azure.com/api/projects/<project>.",
-				foundryProjectEndpointEnvVar,
-			),
-		}
-	}
-
-	image, err := resolvePublishImage(state)
+	image, err := resolvePublishImage(config.Rle.Name, config.Rle.Version, projectEndpoint)
 	if err != nil {
 		return err
 	}
@@ -106,58 +75,50 @@ func (a *publishAction) Run() error {
 	if err := project.PushImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image); err != nil {
 		return err
 	}
-	client, err := createRleClient(state.ProjectEndpoint)
-	if err != nil {
-		return err
-	}
-	request := buildEnvironmentCreateRequest(state.EnvironmentName, image, versionBump)
+	request := buildEnvironmentCreateRequest(config, image, versionBump)
 
-	var environment *environmentResource
-	created := state.EnvironmentId == ""
-	action := "Creating"
-	if !created {
-		action = "Updating"
+	action := "Publishing"
+	if creating {
+		action = "Creating"
 	}
-
 	if _, err := fmt.Fprintf(
 		a.cmd.OutOrStdout(),
-		"%s environment '%s' (image=%s) ...\n",
+		"%s environment '%s' version %s (image=%s) ...\n",
 		action,
-		state.EnvironmentName,
+		config.Rle.Name,
+		config.Rle.Version,
 		image,
 	); err != nil {
 		return err
 	}
-	environment, err = client.createV1Environment(a.cmd.Context(), request)
+	environment, err := client.createV1Environment(a.cmd.Context(), request)
 	if err != nil {
 		return serviceError(err)
 	}
-	state.EnvironmentName = environment.Name
-	state.EnvironmentId = environment.Id
-	state.EnvironmentVersion = environment.Version
-	if err := saveRleState(state); err != nil {
+	if err := verifyPublishedEnvironment(config.Rle, environment); err != nil {
 		return err
 	}
 
-	label := "Created"
-	if !created {
-		label = "Updated"
-	}
 	if _, err := fmt.Fprintf(
 		a.cmd.OutOrStdout(),
-		"\n%s environment '%s' (%s).\n",
-		label,
-		state.EnvironmentName,
-		state.EnvironmentId,
+		"\nPublished environment '%s' version %s (%s).\n",
+		environment.Name,
+		environment.Version,
+		environment.Id,
 	); err != nil {
 		return err
 	}
 	body, err := json.MarshalIndent(environmentOutput{
 		EnvironmentId:          environment.Id,
-		EnvironmentVersion:     state.EnvironmentVersion,
+		EnvironmentVersion:     environment.Version,
 		EnvironmentName:        environment.Name,
-		FoundryProjectEndpoint: state.ProjectEndpoint,
+		FoundryProjectEndpoint: projectEndpoint,
 		AcrImage:               environment.AcrImagePath,
+		Type:                   environment.Type,
+		Subtype:                environment.Subtype,
+		AgentName:              environment.AgentName,
+		AgentVersion:           environment.AgentVersion,
+		BaseURL:                environment.BaseURL,
 		CreatedAt:              environment.CreatedAt,
 		UpdatedAt:              environment.UpdatedAt,
 	}, "", "  ")
@@ -170,57 +131,135 @@ func (a *publishAction) Run() error {
 	return nil
 }
 
-func normalizeVersionBumpFlag(value string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "major":
-		return "Major", nil
-	case "minor":
-		return "Minor", nil
-	case "patch":
-		return "Patch", nil
-	default:
-		return "", &azdext.LocalError{
-			Message:    fmt.Sprintf("Invalid version bump %q.", value),
-			Code:       "rle_invalid_version_bump",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Use --version-bump major, --version-bump minor, or --version-bump patch.",
-		}
-	}
-}
-
-func buildEnvironmentCreateRequest(name string, image string, versionBump string) v1EnvironmentRequest {
-	return v1EnvironmentRequest{
-		Name:         name,
-		AcrImagePath: image,
-		VersionBump:  versionBump,
-	}
-}
-
-func resolvePublishState() (rleState, bool, error) {
-	state, err := loadRleState()
-	initialized := err == nil
+func resolvePublishTarget(
+	ctx context.Context,
+) (project.RleConfig, string, *rleClient, string, bool, error) {
+	config, err := project.LoadRleConfig(".")
 	if err != nil {
-		if localErr, ok := errors.AsType[*azdext.LocalError](err); !ok ||
-			localErr.Code != "rle_project_not_initialized" {
-			return rleState{}, false, err
-		}
-		state = defaultRleState(defaultSourceName("."))
+		return project.RleConfig{}, "", nil, "", false, err
 	}
-
-	state.EnvironmentName = firstNonEmpty(state.EnvironmentName, defaultSourceName("."))
 
 	projectEndpoint, err := resolveFoundryProjectEndpoint()
 	if err != nil {
-		return rleState{}, false, err
+		return project.RleConfig{}, "", nil, "", false, err
 	}
-	if projectEndpoint != "" {
-		state.ProjectEndpoint = projectEndpoint
+	if projectEndpoint == "" {
+		return project.RleConfig{}, "", nil, "", false, &azdext.LocalError{
+			Message:  "Foundry project endpoint is required for publish.",
+			Code:     "rle_project_required",
+			Category: azdext.LocalErrorCategoryUser,
+			Suggestion: fmt.Sprintf(
+				"Set %s=https://<account>.services.ai.azure.com/api/projects/<project>.",
+				foundryProjectEndpointEnvVar,
+			),
+		}
 	}
 
-	return state, initialized, nil
+	client, err := createRleClient(projectEndpoint)
+	if err != nil {
+		return project.RleConfig{}, "", nil, "", false, err
+	}
+	current, err := client.getEnvironmentByName(ctx, config.Rle.Name)
+	creating := false
+	switch {
+	case err == nil:
+	case isRleNotFound(err):
+		creating = true
+		current = nil
+	default:
+		return project.RleConfig{}, "", nil, "", false, serviceError(err)
+	}
+
+	currentVersion := ""
+	if current != nil {
+		currentVersion = current.Version
+	}
+	versionBump, err := project.VersionBumpForManifestVersion(currentVersion, config.Rle.Version)
+	if err != nil {
+		return project.RleConfig{}, "", nil, "", false, err
+	}
+	return config, projectEndpoint, client, versionBump, creating, nil
 }
 
-func resolvePublishImage(state rleState) (string, error) {
+func buildEnvironmentCreateRequest(
+	config project.RleConfig,
+	image string,
+	versionBump string,
+) v1EnvironmentRequest {
+	return v1EnvironmentRequest{
+		Name:         config.Rle.Name,
+		AcrImagePath: image,
+		VersionBump:  versionBump,
+		Type:         string(config.Rle.Type),
+		Subtype:      string(config.Rle.Subtype),
+		AgentName:    config.Rle.AgentName,
+		AgentVersion: config.Rle.AgentVersion,
+		BaseURL:      config.Rle.BaseURL,
+	}
+}
+
+func verifyPublishedEnvironment(manifest project.RleManifest, environment *environmentResource) error {
+	if environment == nil {
+		return publishedEnvironmentMismatchError(
+			"RLE service did not return the published environment.",
+			"Check the RLE service response, then retry.",
+		)
+	}
+	if environment.Name != manifest.Name || environment.Version != manifest.Version {
+		return publishedEnvironmentMismatchError(
+			fmt.Sprintf(
+				"RLE service returned %s/%s, but rle.toml declares %s/%s.",
+				environment.Name,
+				environment.Version,
+				manifest.Name,
+				manifest.Version,
+			),
+			"Resolve the concurrent or deleted-version conflict, then publish the version declared in rle.toml.",
+		)
+	}
+	if environment.Type != string(manifest.Type) || environment.Subtype != string(manifest.Subtype) {
+		return publishedEnvironmentMismatchError(
+			fmt.Sprintf(
+				"RLE service returned type %s/%s, but rle.toml declares %s/%s.",
+				environment.Type,
+				environment.Subtype,
+				manifest.Type,
+				manifest.Subtype,
+			),
+			"Check the RLE service response and retry.",
+		)
+	}
+	if manifest.AgentName != nil && environment.AgentName != *manifest.AgentName {
+		return publishedEnvironmentMismatchError(
+			"RLE service returned a different HostedAgent name than rle.toml.",
+			"Check the RLE service response and retry.",
+		)
+	}
+	if manifest.AgentVersion != nil && environment.AgentVersion != *manifest.AgentVersion {
+		return publishedEnvironmentMismatchError(
+			"RLE service returned a different HostedAgent version than rle.toml.",
+			"Check the RLE service response and retry.",
+		)
+	}
+	if manifest.BaseURL != nil && environment.BaseURL != *manifest.BaseURL {
+		return publishedEnvironmentMismatchError(
+			"RLE service returned a different BYOH baseUrl than rle.toml.",
+			"Check the RLE service response and retry.",
+		)
+	}
+	return nil
+}
+
+func publishedEnvironmentMismatchError(message string, suggestion string) error {
+	return &azdext.LocalError{
+		Message:    message,
+		Code:       "rle_published_environment_mismatch",
+		Category:   azdext.LocalErrorCategoryInternal,
+		Suggestion: suggestion,
+	}
+}
+
+func resolvePublishImage(environmentName string, version string, projectEndpoint string) (string, error) {
 	registry := strings.Trim(strings.TrimSpace(os.Getenv("AZURE_CONTAINER_REGISTRY_ENDPOINT")), "/")
 	if registry == "" {
 		return "", &azdext.LocalError{
@@ -230,15 +269,16 @@ func resolvePublishImage(state rleState) (string, error) {
 			Suggestion: "Set AZURE_CONTAINER_REGISTRY_ENDPOINT=<registry>.azurecr.io, then run publish again.",
 		}
 	}
-	projectName, err := projectRouteSegment(state)
+	projectName, err := projectRouteSegment(projectEndpoint)
 	if err != nil {
 		return "", err
 	}
 	return fmt.Sprintf(
-		"%s/%s-%s:latest",
+		"%s/%s-%s:%s",
 		registry,
 		project.Slug(projectName),
-		project.Slug(state.EnvironmentName),
+		project.Slug(environmentName),
+		version,
 	), nil
 }
 
@@ -248,6 +288,11 @@ type environmentOutput struct {
 	EnvironmentName        string `json:"environmentName"`
 	FoundryProjectEndpoint string `json:"foundryProjectEndpoint"`
 	AcrImage               string `json:"acrImage"`
+	Type                   string `json:"type"`
+	Subtype                string `json:"subtype"`
+	AgentName              string `json:"agentName,omitempty"`
+	AgentVersion           string `json:"agentVersion,omitempty"`
+	BaseURL                string `json:"baseUrl,omitempty"`
 	CreatedAt              string `json:"createdAt"`
 	UpdatedAt              string `json:"updatedAt"`
 }

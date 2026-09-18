@@ -36,9 +36,14 @@ type rleClient struct {
 var createRleClient = newRleClient
 
 type v1EnvironmentRequest struct {
-	Name         string `json:"name,omitempty"`
-	AcrImagePath string `json:"acrImagePath"`
-	VersionBump  string `json:"versionBump,omitempty"`
+	Name         string  `json:"name,omitempty"`
+	AcrImagePath string  `json:"acrImagePath"`
+	VersionBump  string  `json:"versionBump,omitempty"`
+	Type         string  `json:"type"`
+	Subtype      string  `json:"subtype"`
+	AgentName    *string `json:"agentName,omitempty"`
+	AgentVersion *string `json:"agentVersion,omitempty"`
+	BaseURL      *string `json:"baseUrl,omitempty"`
 }
 
 type environmentResource struct {
@@ -47,6 +52,11 @@ type environmentResource struct {
 	Name                      string `json:"name,omitempty"`
 	AcrImagePath              string `json:"acrImagePath,omitempty"`
 	Version                   string `json:"version,omitempty"`
+	Type                      string `json:"type,omitempty"`
+	Subtype                   string `json:"subtype,omitempty"`
+	AgentName                 string `json:"agentName,omitempty"`
+	AgentVersion              string `json:"agentVersion,omitempty"`
+	BaseURL                   string `json:"baseUrl,omitempty"`
 	CreatedAt                 string `json:"createdAtUtc,omitempty"`
 	UpdatedAt                 string `json:"updatedAtUtc,omitempty"`
 	VersionLabel              string `json:"versionLabel,omitempty"`
@@ -192,6 +202,23 @@ func (c *rleClient) createV1Environment(
 		return nil, err
 	}
 
+	return &result, nil
+}
+
+func (c *rleClient) getEnvironmentByName(
+	ctx context.Context,
+	name string,
+) (*environmentResource, error) {
+	var result environmentResource
+	if err := c.do(
+		ctx,
+		http.MethodGet,
+		environmentCollectionPath+"/"+url.PathEscape(name),
+		nil,
+		&result,
+	); err != nil {
+		return nil, err
+	}
 	return &result, nil
 }
 

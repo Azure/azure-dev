@@ -411,16 +411,22 @@ Set **only when an external command-line tool invocation fails**, during error c
 </details>
 
 <details>
-<summary><strong>Multi-Layer Provision</strong></summary>
+<summary><strong>Provision Layers</strong></summary>
 
-Emitted on `azd provision` / `azd up` to measure adoption and safety of `infra.layers[]` parallel provisioning.
+Emitted on `azd provision` / `azd up` to measure adoption and safety of parallel provisioning for
+`infra.layers[]` and top-level `layers[].infra[]`.
+
+Format, layer count, and explicit dependency count are available from project configuration and are emitted even
+when dependency analysis fails. Topology fields are emitted only when dependency analysis succeeds, or when zero
+or one infrastructure entry makes the topology trivial.
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `provision.layer.count` | measurement | Number of `infra.layers[]` declared (0 or 1 = single-layer legacy path) |
+| `provision.layer.is_v2` | bool | Whether the project uses the top-level `layers:` format |
+| `provision.layer.count` | measurement | Number of provisioning infrastructure entries in `infra.layers[]` or across all top-level project layers |
 | `provision.layer.max_parallel` | measurement | Largest number of layers scheduled in one dependency level (max achievable parallelism) |
 | `provision.layer.safe_fallback_count` | measurement | Layers forced to depend on all earlier layers by the safe-by-default detector |
-| `provision.layer.explicit_dependson_count` | measurement | Layers using the explicit `infra.layers[].dependsOn` override |
+| `provision.layer.explicit_dependson_count` | measurement | Layers using explicit `dependsOn` dependencies |
 </details>
 
 <details>

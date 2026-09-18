@@ -45,6 +45,28 @@ func TestNonGoScaffoldIncludesStructuredErrorProtocol(t *testing.T) {
 	require.Contains(t, eventContents, "ExtensionError error = 5;")
 }
 
+func TestNonGoScaffoldIncludesProjectLayerRoundTripFields(t *testing.T) {
+	modelsProto, err := Languages.ReadFile("languages/proto/models.proto")
+	require.NoError(t, err)
+	modelsContents := string(modelsProto)
+	for _, field := range []string{
+		"DockerProjectOptions docker = 10;",
+		"google.protobuf.Struct k8s = 15;",
+		"InfraOptions infra = 17;",
+		"google.protobuf.Struct hooks = 18;",
+		"optional bool remote_build = 20;",
+		"google.protobuf.Struct deployment_stacks = 10;",
+	} {
+		require.Contains(t, modelsContents, field)
+	}
+
+	projectProto, err := Languages.ReadFile("languages/proto/project.proto")
+	require.NoError(t, err)
+	projectContents := string(projectProto)
+	require.Contains(t, projectContents, "Layer layer = 1;")
+	require.NotContains(t, projectContents, "LayerDefinition")
+}
+
 // TestGoGitignoreExcludesBin ensures the generated Go extension ignores the build
 // output directory so binaries are not accidentally committed.
 func TestGoGitignoreExcludesBin(t *testing.T) {
@@ -100,7 +122,7 @@ func TestGoScaffoldPinsReleasedAzdModule(t *testing.T) {
 	)
 }
 
-func TestNonGoScaffoldsUseVersionedGrpcPackages(t *testing.T) {
+func TestNonGoScaffoldsUseBetaGrpcPackages(t *testing.T) {
 	roots := []string{
 		"languages/proto",
 		"languages/javascript/generated/proto",
@@ -130,7 +152,7 @@ func TestNonGoScaffoldsUseVersionedGrpcPackages(t *testing.T) {
 
 				if (strings.HasSuffix(path, "_grpc_pb.js") || strings.HasSuffix(path, "_pb2_grpc.py")) &&
 					!strings.Contains(path, "/models_") {
-					require.Contains(t, text, "/azd.extensions.v1.", path)
+					require.Contains(t, text, "/azd.extensions.v1beta.", path)
 				}
 				return nil
 			})

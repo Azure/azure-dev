@@ -2,9 +2,9 @@
 // Licensed under the MIT License.
 syntax = "proto3";
 
-package azd.extensions.v1;
+package azd.extensions.v1beta;
 
-option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1";
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1beta";
 option csharp_namespace = "Microsoft.Azd";
 
 // ErrorOrigin indicates where an error originated from.

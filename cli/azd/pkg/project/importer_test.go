@@ -262,21 +262,25 @@ func TestImportManagerProjectInfrastructureProjectLayers(t *testing.T) {
 
 	manager := NewImportManager(nil)
 	result, err := manager.ProjectInfrastructure(t.Context(), &ProjectConfig{Layers: []*LayerConfig{
-		{Name: "shared", Infra: []provisioning.Options{{Name: "network", Provider: provisioning.Bicep}}},
-		{Name: "application", Infra: []provisioning.Options{
+		{Name: "shared", Infra: []provisioning.Options{
+			{Name: "network", Provider: provisioning.Bicep},
+			{Name: "identity", Provider: provisioning.Bicep},
+		}},
+		{Name: "application", DependsOn: []string{"shared"}, Infra: []provisioning.Options{
 			{Name: "database", Provider: provisioning.Terraform},
 			{Name: "api", Provider: provisioning.Bicep},
 		}},
 	}})
 
 	require.NoError(t, err)
-	require.Len(t, result.Options.Layers, 3)
+	require.Len(t, result.Options.Layers, 4)
 	require.Equal(t, "network", result.Options.Layers[0].Name)
-	require.Equal(t, "shared", result.Options.Layers[0].Layer)
-	require.Equal(t, "database", result.Options.Layers[1].Name)
-	require.Equal(t, "application", result.Options.Layers[1].Layer)
-	require.Equal(t, "api", result.Options.Layers[2].Name)
-	require.Equal(t, "application", result.Options.Layers[2].Layer)
+	require.Empty(t, result.Options.Layers[0].DependsOn)
+	require.Equal(t, "identity", result.Options.Layers[1].Name)
+	require.Equal(t, "database", result.Options.Layers[2].Name)
+	require.Equal(t, []string{"network", "identity"}, result.Options.Layers[2].DependsOn)
+	require.Equal(t, "api", result.Options.Layers[3].Name)
+	require.Equal(t, []string{"network", "identity"}, result.Options.Layers[3].DependsOn)
 
 	selected, err := result.Options.GetLayer("api")
 	require.NoError(t, err)

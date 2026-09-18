@@ -1598,6 +1598,15 @@ back through `ProjectService.AddService`, entries whose values are unchanged kee
 `${VAR}` references in `azure.yaml`, while new or changed values are persisted as literals (any
 `$` or `\` in a stored literal is escaped in `azure.yaml` so the value round-trips unchanged).
 
+Layer read and write RPCs preserve raw envsubst syntax in fields that support expansion. `SetLayer`
+treats incoming values as templates, and responses from `SetLayer` and `ListLayers` return those
+templates without expanding them. `GetLayer` also returns raw templates by default; set
+`GetLayerRequest.envsubst` to `true` to expand them against the current session environment.
+`${VAR}` authors a template reference; escape each literal `$` as `$$`.
+These APIs are preview-only in `azd.extensions.v1beta`. Go extensions call them through
+`AzdClient.BetaProject()` with request and response types from `pkg/azdext/contracts/v1beta`.
+The stable `AzdClient.Project()` facade remains unchanged.
+
 Because `ServiceConfig.environment` carries expanded values, `AddService` cannot author `${VAR}`
 references: a new service or a new env key is always persisted as a literal. To create or edit
 raw `${VAR}` templates in `azure.yaml`, use the service config RPCs instead —
@@ -1631,11 +1640,15 @@ the expanded results in place of the original `${VAR}` references.
 
 This service manages project configuration retrieval and related operations, including project and service-level configuration management.
 
-> See [project.proto](../../grpc/proto/azd/extensions/v1/project.proto) for more details.
+The stable and beta channels expose different Project Service contracts. Go extensions use
+`AzdClient.Project()` for the [stable contract](../../grpc/proto/azd/extensions/v1/project.proto) and
+`AzdClient.BetaProject()` for the [beta contract](../../grpc/proto/azd/extensions/v1beta/project.proto),
+which includes the preview layer methods.
 
 #### Get
 
-Gets the current project configuration.
+Gets the current project configuration. On the beta client, top-level `layers` projects return
+`FailedPrecondition`; use `ListLayers` or `GetLayer` instead.
 
 - **Request:** _EmptyRequest_ (no fields)
 - **Response:** _GetProjectResponse_
@@ -1649,12 +1662,52 @@ Gets the current project configuration.
 
 #### AddService
 
-Adds a new service to the project.
+Adds or replaces a service in project formats that keep services at the top level: flat projects and
+`infra.layers[]` projects. Top-level `layers[]` projects use `SetLayer` instead.
 
 - **Request:** _AddServiceRequest_
   - Contains:
     - `service`: _ServiceConfig_
 - **Response:** _EmptyResponse_
+
+The following methods are available only on the beta Project Service.
+
+#### SetLayer
+
+Creates or fully replaces one top-level project layer, including its infrastructure and services. The project must
+already use the top-level `layers` format. `depends_on` contains project layer names. During provisioning, every
+infrastructure entry in the dependent layer waits for every infrastructure entry in each named layer. Service
+ordering remains controlled by each service's `uses` field.
+
+- **Request:** _SetLayerRequest_
+  - `layer`: _Layer_ containing the complete `name`, `depends_on`, `infra`, and `services` configuration
+- **Response:** _LayerResponse_
+
+#### GetLayer
+
+Gets one persisted project layer by name. The project must use the top-level `layers` format; flat and
+`infra.layers` projects return `FailedPrecondition`.
+
+- **Request:** _GetLayerRequest_
+  - `name` (string): non-empty layer name
+  - `envsubst` (bool): expands environment references when `true`; defaults to `false`
+- **Response:** _LayerResponse_
+
+#### ListLayers
+
+Lists the persisted top-level project layers in declaration order. Flat and `infra.layers` projects return
+`FailedPrecondition`.
+
+- **Request:** _EmptyRequest_
+- **Response:** _ListLayersResponse_
+
+#### RemoveLayer
+
+Removes a top-level project layer and all infrastructure and service definitions it contains.
+Removal returns `FailedPrecondition` when another project layer names the target in `depends_on`.
+
+- **Request:** _RemoveLayerRequest_ containing `name`
+- **Response:** _RemoveLayerResponse_ containing the removed service names
 
 #### GetConfigSection
 

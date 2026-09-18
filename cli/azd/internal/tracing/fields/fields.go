@@ -879,15 +879,20 @@ var (
 	}
 )
 
-// Multi-layer provision related fields. These power telemetry that lets the
-// azd team measure adoption and safety of `infra.layers[]` parallel
-// provisioning — answering questions like "what fraction of projects use
-// multi-layer?", "how parallel is the typical project?", and "how often
-// does the safe-by-default fallback engage on real templates?".
+// Provision layer related fields. These power telemetry that lets the azd
+// team measure adoption and safety of `infra.layers[]` and top-level
+// `layers[].infra[]` provisioning.
 var (
-	// ProvisionLayerCountKey records the total number of `infra.layers[]`
-	// declared in `azure.yaml` for the current `azd provision`/`azd up` run.
-	// 0 or 1 means single-layer (the legacy path).
+	// ProvisionLayerIsV2Key records whether the project uses the top-level
+	// `layers:` format rather than the legacy `infra.layers:` format.
+	ProvisionLayerIsV2Key = AttributeKey{
+		Key:            attribute.Key("provision.layer.is_v2"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+
+	// ProvisionLayerCountKey records the number of provisioning infrastructure
+	// entries in `infra.layers[]` or across all top-level project layers.
 	ProvisionLayerCountKey = AttributeKey{
 		Key:            attribute.Key("provision.layer.count"),
 		Classification: SystemMetadata,
@@ -898,7 +903,8 @@ var (
 	// ProvisionLayerMaxParallelKey records the largest number of layers
 	// scheduled in a single dependency level after static analysis. This
 	// is the maximum *achievable* parallelism for the run — different from
-	// `exegraph.max_concurrency`, which is the configured cap.
+	// `exegraph.max_concurrency`, which is the configured cap. It is omitted
+	// when multi-layer dependency analysis does not complete.
 	ProvisionLayerMaxParallelKey = AttributeKey{
 		Key:            attribute.Key("provision.layer.max_parallel"),
 		Classification: SystemMetadata,
@@ -911,7 +917,8 @@ var (
 	// earlier layers because the static analyzer encountered a syntax
 	// pattern it could not resolve to a literal env-var name). A non-zero
 	// value here means that layer's parallelism opportunity was sacrificed
-	// for correctness — useful for sizing future detector improvements.
+	// for correctness — useful for sizing future detector improvements. It
+	// is omitted when multi-layer dependency analysis does not complete.
 	ProvisionLayerSafeFallbackCountKey = AttributeKey{
 		Key:            attribute.Key("provision.layer.safe_fallback_count"),
 		Classification: SystemMetadata,

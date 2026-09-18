@@ -27,6 +27,9 @@ examples:
   - name: context
     description: Displays the current `azd` project & environment context.
     usage: azd demo context
+  - name: layers
+    description: Lists project layers or displays one layer through the preview ProjectService API.
+    usage: azd demo layers [name] [--expand-env]
   - name: prompt
     description: Display prompt capabilities.
     usage: azd demo prompt

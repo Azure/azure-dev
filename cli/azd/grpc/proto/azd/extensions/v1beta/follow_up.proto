@@ -5,8 +5,6 @@ syntax = "proto3";
 package azd.extensions.v1beta;
 
 option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1beta";
-option csharp_namespace = "Microsoft.Azd";
-
 // FollowUpService accepts command follow-up contributions from extensions.
 service FollowUpService {
   // Sets or clears the contribution for a project handler invocation.

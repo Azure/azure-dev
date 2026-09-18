@@ -124,7 +124,7 @@ const file_azd_extensions_v1_follow_up_proto_rawDesc = "" +
 	"\x04text\x18\x02 \x01(\tR\x04text\"\x15\n" +
 	"\x13SetFollowUpResponse2o\n" +
 	"\x0fFollowUpService\x12\\\n" +
-	"\vSetFollowUp\x12%.azd.extensions.v1.SetFollowUpRequest\x1a&.azd.extensions.v1.SetFollowUpResponseBOZ=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1\xaa\x02\rMicrosoft.Azdb\x06proto3"
+	"\vSetFollowUp\x12%.azd.extensions.v1.SetFollowUpRequest\x1a&.azd.extensions.v1.SetFollowUpResponseB?Z=github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1;v1b\x06proto3"
 
 var (
 	file_azd_extensions_v1_follow_up_proto_rawDescOnce sync.Once

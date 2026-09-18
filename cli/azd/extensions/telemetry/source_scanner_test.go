@@ -1669,7 +1669,10 @@ func telemetryPayloadCallResults(
 		name.Name == "new" &&
 		name.Obj == nil &&
 		len(call.Args) == 1 {
-		return []bool{isTelemetryPayloadType(call.Args[0], source, pkg)}
+		return []bool{
+			isTelemetryPayloadType(call.Args[0], source, pkg) ||
+				isTelemetryPayloadExpression(call.Args[0], source, pkg),
+		}
 	}
 	return telemetryFunctionExpressionResults(call.Fun, source, pkg)
 }

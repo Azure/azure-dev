@@ -262,6 +262,32 @@ func report() {
 	require.Contains(t, joinedDiagnostics, "post-construction access is not supported")
 }
 
+func TestExtensionTelemetrySourceScannerTracksNewValuePayload(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	extensionDir := filepath.Join(root, "contoso.extension")
+	require.NoError(t, os.MkdirAll(extensionDir, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(extensionDir, "usage.go"),
+		[]byte(`package telemetry
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+var dynamicKey = "route"
+func report() {
+	request := new(azdext.ReportUsageRequest{})
+	request.Attributes[dynamicKey] = "inspector"
+}
+`),
+		0o600,
+	))
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+	require.Empty(t, usages)
+	joinedDiagnostics := strings.Join(diagnostics, "\n")
+	require.Contains(t, joinedDiagnostics, "must be a string literal or same-package compile-time string constant")
+	require.Contains(t, joinedDiagnostics, "post-construction access is not supported")
+}
+
 func TestExtensionTelemetrySourceScannerCrossPackageAliases(t *testing.T) {
 	t.Parallel()
 

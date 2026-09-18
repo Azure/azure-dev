@@ -58,10 +58,14 @@ Run the remaining contract checks:
 make proto-lint
 make proto-version-compatibility
 git fetch origin main
+git branch --force buf-contract-baseline origin/main
 make proto-breaking \
-  BUF_BREAKING_AGAINST='../../.git#branch=origin/main,subdir=cli/azd/grpc'
+  BUF_BREAKING_AGAINST='../../.git#branch=buf-contract-baseline,subdir=cli/azd/grpc'
 go test ./internal/grpcserver/... ./pkg/azdext/...
 ```
+
+`buf-contract-baseline` is a disposable local branch used only to expose the
+fetched baseline to Buf's Git clone.
 
 The checks answer different questions:
 

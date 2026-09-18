@@ -63,7 +63,9 @@ Never edit generated protobuf, facade, or adapter files directly.
 - A `v1beta` addition must not accidentally alter or remove an existing stable
   field, enum value, oneof, message, service, method, or streaming shape.
 - Beta-only behavior on a shared service needs a focused generated override.
-  Stable transcoding silently discards beta request fields unknown to `v1`.
+  Unary adaptation discards beta request fields unknown to `v1`. Bidirectional
+  stream adaptation preserves unknown wire fields for compatibility, but does
+  not expose them as typed stable fields.
 - A beta-only service uses its native `v1beta` implementation rather than a
   stable adapter.
 - Graduation adds a compatible shape to `v1`; it does not remove the beta route.

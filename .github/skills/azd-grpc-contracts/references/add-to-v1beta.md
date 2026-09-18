@@ -35,7 +35,8 @@ Do not modify `v1` merely to make a preview feature easier to implement.
    - The beta route is registered.
    - The new behavior receives the real beta request.
    - The stable route remains unchanged.
-   - Calls without a required override fail with `codes.Unimplemented`.
+   - Beta-only methods without an override fail with `codes.Unimplemented`.
+   - Shared methods without an override continue to delegate to stable behavior.
 7. Update SDK examples and the extension's `requiredAzdVersion` when the new
    API requires a newer host.
 

@@ -62,7 +62,7 @@ stimuli:
       validation plan. Do not edit files yet.
     rubric:
       - "Keeps the preview field out of v1"
-      - "Explains that stable transcoding discards unknown beta request fields"
+      - "Explains that unary stable adaptation discards unknown beta request fields, while streaming preserves unknown wire fields without exposing typed beta fields"
       - "Requires a focused beta method override and tests both stable and beta routes"
       - "Includes generation, cross-channel, historical compatibility, and runtime tests"
     graders:

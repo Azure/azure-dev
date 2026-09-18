@@ -11,7 +11,7 @@ tags:
   - ai
   - rle
 usage: azd ai rle <command> [options]
-version: 0.4.1-preview
+version: 0.8.3-preview
 examples:
   - name: init
     description: "Select a Gym: OpenEnv sample or, with the harness preview flag, scaffold a Harness: HostedAgent or Harness: BYOH RLE."

@@ -1,6 +1,6 @@
 # Release History
 
-## 0.4.1-preview (Unreleased)
+## 0.8.3-preview
 
 - Align environment discovery and remote invocation with the refreshed RLE service routes and cursor-based response contracts.
 - Use `/rl_environments` consistently for environment and instance lifecycle APIs.

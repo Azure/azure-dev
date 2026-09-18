@@ -16,6 +16,7 @@ import (
 const (
 	rleEnableEnvVar            = "AZD_AI_RLE_ENABLE"
 	rleHarnessInitEnableEnvVar = "AZD_AI_RLE_HARNESS_INIT_ENABLE"
+	rleShowHiddenSamplesEnvVar = "AZD_AI_RLE_SHOW_HIDDEN_SAMPLES"
 )
 
 func NewRootCommand() *cobra.Command {
@@ -63,5 +64,10 @@ func rleCommandsEnabled() bool {
 
 func rleHarnessInitEnabled() bool {
 	enabled, err := strconv.ParseBool(os.Getenv(rleHarnessInitEnableEnvVar))
+	return err == nil && enabled
+}
+
+func rleShowHiddenSamplesEnabled() bool {
+	enabled, err := strconv.ParseBool(os.Getenv(rleShowHiddenSamplesEnvVar))
 	return err == nil && enabled
 }

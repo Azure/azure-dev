@@ -56,7 +56,9 @@ type rleSampleCatalog interface {
 }
 
 var loadRleSampleCatalogFunc = func() (rleSampleCatalog, error) {
-	return project.LoadRleSampleCatalog()
+	return project.LoadRleSampleCatalog(project.RleSampleCatalogOptions{
+		ShowHiddenSamples: rleShowHiddenSamplesEnabled(),
+	})
 }
 
 var selectRleSampleFunc = selectRleSample

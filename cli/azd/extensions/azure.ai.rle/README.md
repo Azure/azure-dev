@@ -205,6 +205,17 @@ specified, `init` updates `rle.name` to match that folder:
 azd ai rle init my_environment
 ```
 
+The samples repository's `examples/gym/openenv/catalog.toml` controls which
+samples are offered; entries with `visible = false` are hidden from both the
+interactive picker and `--sample <name>`. Samples with no catalog entry
+default to visible. Set `AZD_AI_RLE_SHOW_HIDDEN_SAMPLES=true` to bypass the
+catalog filter and reveal every sample directory, e.g. to try out a sample
+before it is marked visible:
+
+```powershell
+$env:AZD_AI_RLE_SHOW_HIDDEN_SAMPLES = "true"
+```
+
 For noninteractive sample initialization, the positional name selects the
 sample and target folder:
 

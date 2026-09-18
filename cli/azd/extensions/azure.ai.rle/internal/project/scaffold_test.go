@@ -101,7 +101,7 @@ func TestRleSampleCatalogUsesSparseCheckout(t *testing.T) {
 		"commit", "-m", "Add samples",
 	)
 
-	catalog, err := loadRleSampleCatalog(sourceRepo, "main")
+	catalog, err := loadRleSampleCatalog(sourceRepo, "main", RleSampleCatalogOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,6 +126,63 @@ func TestRleSampleCatalogUsesSparseCheckout(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(catalog.repoDir, filepath.FromSlash(rleGymSamplesPath), "code_rl")); !os.IsNotExist(err) {
 		t.Fatalf("expected unselected sample not to be checked out, got err=%v", err)
+	}
+}
+
+func TestRleSampleCatalogFiltersHiddenSamples(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	sourceRepo := t.TempDir()
+	runTestGit(t, sourceRepo, "init", "--initial-branch=main")
+	for _, sampleName := range []string{"code_rl", "math_rl", "hidden_sample"} {
+		sampleDir := filepath.Join(sourceRepo, filepath.FromSlash(rleGymSamplesPath), sampleName)
+		if err := os.MkdirAll(sampleDir, 0750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(sampleDir, "sample.txt"), []byte(sampleName), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	catalogPath := filepath.Join(sourceRepo, filepath.FromSlash(rleGymSamplesPath), rleGymSampleCatalogFile)
+	catalogContents := "[[sample]]\nname = \"hidden_sample\"\nvisible = false\n"
+	if err := os.WriteFile(catalogPath, []byte(catalogContents), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runTestGit(t, sourceRepo, "add", ".")
+	runTestGit(
+		t,
+		sourceRepo,
+		"-c", "user.name=RLE Tests",
+		"-c", "user.email=rle-tests@example.com",
+		"commit", "-m", "Add samples with catalog",
+	)
+
+	catalog, err := loadRleSampleCatalog(sourceRepo, "main", RleSampleCatalogOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := catalog.Close(); err != nil {
+			t.Errorf("close sample catalog: %v", err)
+		}
+	})
+	if !slices.Equal(catalog.SampleNames(), []string{"code_rl", "math_rl"}) {
+		t.Fatalf("expected hidden sample to be filtered out, got %v", catalog.SampleNames())
+	}
+
+	catalogWithHidden, err := loadRleSampleCatalog(sourceRepo, "main", RleSampleCatalogOptions{ShowHiddenSamples: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := catalogWithHidden.Close(); err != nil {
+			t.Errorf("close sample catalog: %v", err)
+		}
+	})
+	if !slices.Equal(catalogWithHidden.SampleNames(), []string{"code_rl", "hidden_sample", "math_rl"}) {
+		t.Fatalf("expected ShowHiddenSamples to reveal every sample, got %v", catalogWithHidden.SampleNames())
 	}
 }
 

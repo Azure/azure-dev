@@ -2877,6 +2877,45 @@ func Test_setPipelineVariables_cov3(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	t.Run("terraform layer variables", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(t.Context())
+		var commands []string
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "variable") && strings.Contains(command, "set")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			commands = append(commands, args.Args...)
+			return exec.NewRunResult(0, "", ""), nil
+		})
+
+		env := environment.NewWithValues("test-env", map[string]string{
+			environment.EnvNameEnvVarName:        "prod",
+			environment.LocationEnvVarName:       "centralus",
+			environment.SubscriptionIdEnvVarName: "sub-789",
+			"RS_RESOURCE_GROUP":                  "tf-state-rg",
+			"RS_STORAGE_ACCOUNT":                 "tfstateacct",
+			"RS_CONTAINER_NAME":                  "tfstate",
+		})
+
+		provider := &GitHubCiProvider{
+			env:     env,
+			ghCli:   github.NewGitHubCli(mockContext.Console, mockContext.CommandRunner),
+			console: mockContext.Console,
+		}
+
+		err := provider.setPipelineVariables(
+			*mockContext.Context, "owner/repo",
+			provisioning.Options{Layers: []provisioning.Options{
+				{Provider: provisioning.ProviderKind("microsoft.foundry")},
+				{Provider: provisioning.Terraform},
+			}},
+			"tenant-id", "client-id",
+		)
+		require.NoError(t, err)
+		assert.Contains(t, commands, "RS_RESOURCE_GROUP")
+		assert.Contains(t, commands, "RS_STORAGE_ACCOUNT")
+		assert.Contains(t, commands, "RS_CONTAINER_NAME")
+	})
+
 	t.Run("terraform missing RS variable", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(t.Context())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -4433,8 +4472,9 @@ func Test_toInfraProviderType_values_cov3(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, infraProviderTerraform, tfProvider)
 
-	_, err = toInfraProviderType("other")
-	require.Error(t, err)
+	customProvider, err := toInfraProviderType("other")
+	require.NoError(t, err)
+	assert.Equal(t, infraProviderCustom, customProvider)
 }
 
 // =====================================================================
@@ -6236,9 +6276,9 @@ func Test_toInfraProviderType_additionalCases(t *testing.T) {
 		{"bicep", infraProviderBicep, false},
 		{"terraform", infraProviderTerraform, false},
 		{"", infraProviderUndefined, false},
-		{"Bicep", "", true},
-		{"TERRAFORM", "", true},
-		{"pulumi", "", true},
+		{"Bicep", infraProviderCustom, false},
+		{"TERRAFORM", infraProviderCustom, false},
+		{"pulumi", infraProviderCustom, false},
 	}
 
 	for _, tt := range tests {

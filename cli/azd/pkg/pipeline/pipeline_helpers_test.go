@@ -107,10 +107,9 @@ func Test_toInfraProviderType(t *testing.T) {
 			want:  infraProviderUndefined,
 		},
 		{
-			name:     "invalid provider",
-			input:    "pulumi",
-			wantErr:  true,
-			errMatch: "invalid infra provider type pulumi",
+			name:  "custom provider",
+			input: "pulumi",
+			want:  infraProviderCustom,
 		},
 	}
 	for _, tt := range tests {
@@ -125,6 +124,21 @@ func Test_toInfraProviderType(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUsesTerraform(t *testing.T) {
+	assert.True(t, usesTerraform(provisioning.Options{
+		Layers: []provisioning.Options{
+			{Provider: provisioning.ProviderKind("microsoft.foundry")},
+			{Provider: provisioning.Terraform},
+		},
+	}))
+	assert.False(t, usesTerraform(provisioning.Options{
+		Layers: []provisioning.Options{
+			{Provider: provisioning.ProviderKind("microsoft.foundry")},
+			{Provider: provisioning.Bicep},
+		},
+	}))
 }
 
 // ------------------------------------------------------------------
@@ -986,6 +1000,23 @@ func Test_PipelineManager_SetParameters(t *testing.T) {
 		pm.SetParameters(nil)
 		assert.Nil(t, pm.configOptions.providerParameters)
 	})
+}
+
+func Test_PipelineManager_SetRequiredExtensions(t *testing.T) {
+	pm := &PipelineManager{}
+
+	pm.SetRequiredExtensions([]RequiredExtension{
+		{Id: "z.extension", Version: "2.0.0"},
+		{},
+		{Id: " a.extension ", Version: " 1.0.0 "},
+		{Id: "z.extension", Version: "2.0.0"},
+	})
+
+	require.NotNil(t, pm.configOptions)
+	require.Equal(t, []RequiredExtension{
+		{Id: "a.extension", Version: "1.0.0"},
+		{Id: "z.extension", Version: "2.0.0"},
+	}, pm.configOptions.requiredExtensions)
 }
 
 // ------------------------------------------------------------------

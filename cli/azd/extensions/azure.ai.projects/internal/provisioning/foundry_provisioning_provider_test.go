@@ -1040,14 +1040,50 @@ func TestParameters_NilSynthResult_ReturnsHostDerivedOnly(t *testing.T) {
 	require.NoError(t, err, "Parameters must succeed on the on-disk path")
 
 	names := make([]string, 0, len(got))
+	var location *azdext.ProvisioningParameter
 	for _, p := range got {
 		names = append(names, p.Name)
+		if p.Name == "location" {
+			location = p
+		}
 	}
 	assert.Contains(t, names, "location")
 	assert.Contains(t, names, "foundryProjectName")
 	assert.Contains(t, names, "principalId")
+	require.NotNil(t, location)
+	assert.Equal(t, []string{envKeyLocation}, location.EnvVarMapping)
+	assert.True(t, location.UsingEnvVarMapping,
+		"pipeline config must persist AZURE_LOCATION because deploy requires it after provision")
 	assert.NotContains(t, names, "includeAcr",
 		"includeAcr is a synthesizer-derived value; on-disk path must skip it")
+}
+
+func TestParameters_BrownfieldValuesUseEnvMappings(t *testing.T) {
+	p := &FoundryProvisioningProvider{
+		existingProjectID:  "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/a/projects/p",
+		brownfieldEndpoint: "https://account.services.ai.azure.com/api/projects/p",
+		existingAcrMode:    "reuse-connect",
+	}
+
+	got, err := p.Parameters(t.Context())
+	require.NoError(t, err)
+
+	expected := map[string]struct {
+		value  string
+		envVar string
+	}{
+		"projectResourceId": {value: p.existingProjectID, envVar: "AZURE_AI_PROJECT_ID"},
+		"projectEndpoint":   {value: p.brownfieldEndpoint, envVar: "FOUNDRY_PROJECT_ENDPOINT"},
+		"acrMode":           {value: p.existingAcrMode, envVar: "AZD_FOUNDRY_ACR_MODE"},
+	}
+	require.Len(t, got, len(expected))
+	for _, parameter := range got {
+		want, exists := expected[parameter.Name]
+		require.True(t, exists, "unexpected parameter %q", parameter.Name)
+		assert.Equal(t, want.value, parameter.Value)
+		assert.Equal(t, []string{want.envVar}, parameter.EnvVarMapping)
+		assert.True(t, parameter.UsingEnvVarMapping)
+	}
 }
 
 func TestParameters_EmbeddedPath_IncludesSynthResultDerivedValues(t *testing.T) {

@@ -2129,16 +2129,36 @@ func (p *FoundryProvisioningProvider) Parameters(
 ) ([]*azdext.ProvisioningParameter, error) {
 	if p.brownfieldEndpoint != "" {
 		return []*azdext.ProvisioningParameter{
-			{Name: "projectResourceId", Value: p.existingProjectID, EnvVarMapping: []string{"AZURE_AI_PROJECT_ID"}},
-			{Name: "projectEndpoint", Value: p.brownfieldEndpoint, EnvVarMapping: []string{"FOUNDRY_PROJECT_ENDPOINT"}},
-			{Name: "acrMode", Value: p.existingAcrMode, EnvVarMapping: []string{"AZD_FOUNDRY_ACR_MODE"}},
+			{
+				Name:               "projectResourceId",
+				Value:              p.existingProjectID,
+				EnvVarMapping:      []string{"AZURE_AI_PROJECT_ID"},
+				UsingEnvVarMapping: true,
+			},
+			{
+				Name:               "projectEndpoint",
+				Value:              p.brownfieldEndpoint,
+				EnvVarMapping:      []string{"FOUNDRY_PROJECT_ENDPOINT"},
+				UsingEnvVarMapping: true,
+			},
+			{
+				Name:               "acrMode",
+				Value:              p.existingAcrMode,
+				EnvVarMapping:      []string{"AZD_FOUNDRY_ACR_MODE"},
+				UsingEnvVarMapping: true,
+			},
 		}, nil
 	}
 	if err := p.ensurePrincipalID(ctx); err != nil {
 		return nil, err
 	}
 	out := []*azdext.ProvisioningParameter{
-		{Name: "location", Value: p.location, EnvVarMapping: []string{envKeyLocation}},
+		{
+			Name:               "location",
+			Value:              p.location,
+			EnvVarMapping:      []string{envKeyLocation},
+			UsingEnvVarMapping: true,
+		},
 		{Name: "foundryProjectName", Value: p.foundryName, EnvVarMapping: []string{envKeyProjectName}},
 		{Name: "principalId", Value: p.principalID, EnvVarMapping: []string{envKeyPrincipalID}},
 		{Name: "principalType", Value: p.principalType, EnvVarMapping: []string{envKeyPrincipalType}},

@@ -11,7 +11,7 @@ tags:
   - ai
   - rle
 usage: azd ai rle <command> [options]
-version: 0.8.3-preview
+version: 0.8.4-preview
 examples:
   - name: init
     description: "Select a Gym: OpenEnv sample or, with the harness preview flag, scaffold a Harness: HostedAgent or Harness: BYOH RLE."
@@ -23,8 +23,8 @@ examples:
     description: Build and run the local RLE environment container.
     usage: azd ai rle run
   - name: invoke
-    description: Execute one Loom-backed rollout of a published RLE environment (provisions and tears down the Loom session for you).
-    usage: azd ai rle invoke [environment-name] [--version <major.minor.patch>] --model <loom-base-model>
+    description: Execute one Loom-backed rollout of a published RLE environment (provisions and tears down the Loom session for you; --model falls back to rle.toml's defaults.model.name).
+    usage: azd ai rle invoke [environment-name] [--version <major.minor.patch>] [--model <loom-base-model>] --task <json>
   - name: list
     description: List RLE environments in a Foundry project.
     usage: azd ai rle list

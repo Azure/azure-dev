@@ -333,27 +333,32 @@ azd ai rle show
 ```
 
 Execute one Loom-backed rollout of the manifest's exact `(name, version)`
-identity:
+identity, using the model declared in `[defaults.model]`:
 
 ```powershell
-azd ai rle invoke --model Qwen/Qwen3-32B --task '{"...": "..."}'
+azd ai rle invoke --task '{"...": "..."}'
 ```
 
-To invoke source-free from another folder, provide both parts of the identity:
+`--model` is only required when rle.toml has no `defaults.model.name` set, or
+when invoking source-free from another folder:
 
 ```powershell
 azd ai rle invoke code_rl --version 1.0.0 --model Qwen/Qwen3-32B --task-file task.json
 ```
 
 `invoke` provisions everything a rollout needs and tears it down again: it
-creates a real Loom training session for `--model`, saves a sampler
-checkpoint, calls RLE's Execute Rollout API with your `--task` (and, for
-Harness targets, `--agent-input`), prints the resulting reward and trajectory
-summary, then closes the Loom session — you never handle Loom session or
-checkpoint identifiers directly. `--model` is required. Use `--task`/
-`--task-file` for the sandbox reset payload (Gym/OpenEnv), `--agent-input`/
-`--agent-input-file` for Harness targets, and `--rollout-id`/`--sequence-id`/
-`--timeout` to control correlation and Loom provisioning timeout.
+creates a real Loom training session for the model (from `--model`, falling
+back to rle.toml's `defaults.model.name`), saves a sampler checkpoint, calls
+RLE's Execute Rollout API with your `--task` (and, for Harness targets,
+`--agent-input`), prints the resulting reward and trajectory summary, then
+closes the Loom session — you never handle Loom session or checkpoint
+identifiers directly. Use `--task`/`--task-file` for the sandbox reset payload
+(Gym/OpenEnv), `--agent-input`/`--agent-input-file` for Harness targets.
+`--lora-rank` (default `16`), `--rollout-id` (default: a generated GUID),
+`--sequence-id` (default `0`, only meaningful when correlating a rollout to a
+specific training step in a real training loop), and `--timeout` (default
+`600` seconds) all have sensible defaults and rarely need to be set for ad hoc
+testing.
 
 ## Submit an RLE-backed fine-tuning job (experimental)
 

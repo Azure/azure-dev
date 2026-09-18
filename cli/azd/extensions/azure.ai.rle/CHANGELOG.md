@@ -1,5 +1,9 @@
 # Release History
 
+## 0.8.4-preview
+
+- `azd ai rle invoke`'s `--model` now falls back to rle.toml's `defaults.model.name` when omitted, so ad hoc rollouts against a source folder that already declares a model default only need `--task` (and, for Harness targets, `--agent-input`).
+
 ## 0.8.3-preview
 
 - Align environment discovery and remote invocation with the refreshed RLE service routes and cursor-based response contracts.

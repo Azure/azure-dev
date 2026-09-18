@@ -88,7 +88,8 @@ rle.toml. To invoke an environment without local source, provide both its name a
 		&flags.model,
 		"model",
 		"",
-		"Loom base model name to bind for this rollout (required), e.g. Qwen/Qwen3-32B.",
+		"Loom base model name to bind for this rollout, e.g. Qwen/Qwen3-32B. "+
+			"Required unless rle.toml sets defaults.model.name.",
 	)
 	cmd.Flags().IntVar(&flags.loraRank, "lora-rank", flags.loraRank, "LoRA adapter rank for the Loom session.")
 	cmd.Flags().StringVar(&flags.task, "task", "", "Inline JSON task payload for the sandbox reset operation.")
@@ -124,11 +125,15 @@ func (a *invokeAction) Run() error {
 
 	model := strings.TrimSpace(a.flags.model)
 	if model == "" {
+		model = defaultModelFromRleConfig()
+	}
+	if model == "" {
 		return &azdext.LocalError{
-			Message:    "--model is required to bind a rollout to a Loom training session.",
-			Code:       "rle_rollout_model_required",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Pass --model with a Loom base model name, for example --model Qwen/Qwen3-32B.",
+			Message:  "--model is required to bind a rollout to a Loom training session.",
+			Code:     "rle_rollout_model_required",
+			Category: azdext.LocalErrorCategoryUser,
+			Suggestion: "Pass --model with a Loom base model name (for example --model Qwen/Qwen3-32B), " +
+				"or set defaults.model.name in rle.toml.",
 		}
 	}
 
@@ -268,6 +273,18 @@ func (a *invokeAction) resolveTarget() (invokeTarget, *rleClient, error) {
 		projectEndpoint: projectEndpoint,
 		version:         version,
 	}, client, nil
+}
+
+// defaultModelFromRleConfig best-effort loads rle.toml from the current folder and returns
+// defaults.model.name, so --model can be omitted when the manifest already declares one.
+// Any load error (including no rle.toml present) is treated as "no default available"
+// rather than a hard failure, since --model is only required when no default exists.
+func defaultModelFromRleConfig() string {
+	config, err := project.LoadRleConfig(".")
+	if err != nil || config.Defaults == nil || config.Defaults.Model == nil || config.Defaults.Model.Name == nil {
+		return ""
+	}
+	return strings.TrimSpace(*config.Defaults.Model.Name)
 }
 
 // readJSONFlagOrFile reads a JSON payload from an inline flag or a file flag (at most one

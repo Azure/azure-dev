@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"azure.ai.rle/internal/project"
 )
 
 func TestReadJSONFlagOrFileReturnsNilWhenUnset(t *testing.T) {
@@ -83,6 +85,7 @@ func TestNewRolloutIDReturnsUniqueHexValues(t *testing.T) {
 
 func TestInvokeRequiresModel(t *testing.T) {
 	stubRleClientEndpoint(t, "https://rle.test")
+	t.Chdir(t.TempDir())
 
 	command := newInvokeCommand()
 	command.SetArgs([]string{"code_rl", "--version", "1.0.0"})
@@ -91,7 +94,80 @@ func TestInvokeRequiresModel(t *testing.T) {
 	command.SetErr(&output)
 
 	if err := command.Execute(); err == nil {
-		t.Fatal("expected an error when --model is not provided")
+		t.Fatal("expected an error when --model is not provided and rle.toml has no default")
+	}
+}
+
+func TestInvokeFallsBackToRleConfigModelDefault(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	modelName := "Qwen/Qwen3-32B"
+	schemaVersion := project.CurrentRleManifestSchemaVersion
+	if err := project.WriteRleConfig(dir, project.RleConfig{
+		SchemaVersion: &schemaVersion,
+		Rle: project.RleManifest{
+			Name:    "code_rl",
+			Version: "1.0.0",
+			Type:    project.RleTypeGym,
+			Subtype: project.RleSubtypeOpenEnv,
+		},
+		Defaults: &project.RleEnvironmentDefaults{
+			Model: &project.RleModelDefaults{Name: &modelName},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rleServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request executeRolloutRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request.Model == nil || request.Model.ModelName != modelName {
+			t.Fatalf("expected model default from rle.toml to be forwarded, got %#v", request.Model)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"rollout_id": "` + request.RolloutID + `", "reward": 1, "success": true}`))
+	}))
+	defer rleServer.Close()
+
+	loomServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == loomSessionsPath:
+			_, _ = w.Write([]byte(`{"session_id":"model_abc","request_id":"req-create"}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/checkpoint_sample"):
+			_, _ = w.Write([]byte(`{"session_id":"model_abc","request_id":"req-checkpoint"}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/complete"):
+			_, _ = w.Write([]byte(`{}`))
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/request/"):
+			_, _ = w.Write([]byte(`{"status":"completed"}`))
+		default:
+			t.Fatalf("unexpected Loom request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer loomServer.Close()
+
+	stubRleClientEndpoint(t, rleServer.URL)
+	oldCreateLoomSessionClient := createLoomSessionClient
+	createLoomSessionClient = func(endpoint string) (*loomSessionClient, error) {
+		return testLoomSessionClientForServer(t, loomServer.URL), nil
+	}
+	t.Cleanup(func() {
+		createLoomSessionClient = oldCreateLoomSessionClient
+	})
+
+	command := newInvokeCommand()
+	command.SetArgs([]string{"--task", `{"prompt":"hello"}`})
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+
+	if err := command.Execute(); err != nil {
+		t.Fatalf("expected invoke to succeed using rle.toml model default, got %v", err)
+	}
+	if !strings.Contains(output.String(), "success: true") {
+		t.Fatalf("expected rollout result to be printed, got %s", output.String())
 	}
 }
 

@@ -1251,6 +1251,7 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: fmt.Sprintf("Initialize a new prompt, hosted, or voice agent project. %s", color.YellowString("(Preview)")),
 		Long: `Initialize a new prompt, hosted, or voice agent project.
 
+Manifests:
 When -m points at a sample's unified azure.yaml (a project manifest that
 declares services with host: azure.ai.project / azure.ai.agent / ...), that
 azure.yaml is adopted as the project manifest and its referenced files are
@@ -1259,6 +1260,7 @@ project's azure.yaml is generated from it. An agent manifest that declares
 kind: prompt scaffolds a prompt agent (or a managed agent when it also declares
 a harness), carrying over its model, instructions, skills, and tools.
 
+Voice Agents:
 Use --kind prompt-voice to initialize a managed prompt voice agent without
 source code or container scaffolding.
 The managed model defaults to gpt-realtime and does not require a model deployment.
@@ -1283,6 +1285,7 @@ Configure advanced settings in azure.yaml.
 Run 'azd provision' and 'azd deploy' to deploy voice services, then connect to
 the voice WebSocket endpoint with a Voice Live client.
 
+Agent Names:
 The agent name written to agent.yaml is the Foundry agent identity. Foundry
 agents are unique by name within a project, so deploying with an existing name
 creates a new version of that existing agent instead of a separate agent.
@@ -1290,6 +1293,7 @@ creates a new version of that existing agent instead of a separate agent.
 Use --agent-name to choose a unique Foundry agent name when initializing from
 a reusable sample or manifest.
 
+File Exclusions:
 A default .agentignore file is generated to control which files are excluded
 from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		Example: `  # Adopt a sample's unified azure.yaml as the project manifest

@@ -1,0 +1,43 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - gosec
+    - lll
+    - unused
+    - errorlint
+  settings:
+    lll:
+      line-length: 125
+      tab-width: 4
+  exclusions:
+    rules:
+      # G304 cannot apply to a path a test computed from its own t.TempDir().
+      # Production reads stay covered; the few there carry their own #nosec.
+      - path: _test\.go$
+        text: G304
+        linters:
+          - gosec
+      # G204 cannot apply to the live harness building and running the
+      # extension binary at a path it computed itself. No production code
+      # launches a subprocess, so nothing real is silenced here.
+      - path: _test\.go$
+        text: G204
+        linters:
+          - gosec
+      # G703 reads AZD_CONFIG_DIR as taint, but that is how azd itself names
+      # the directory the hero suite installs into, and the path is only read.
+      - path: _test\.go$
+        text: G703
+        linters:
+          - gosec
+      # The hero suite compares console transcripts verbatim. A wrapped line
+      # would not be the message the extension prints.
+      - path: tests/hero/
+        linters:
+          - lll
+
+formatters:
+  enable:
+    - gofmt

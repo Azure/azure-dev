@@ -34,8 +34,8 @@ type Extension struct {
 	stderr *output.DynamicMultiWriter
 
 	readySignal chan error // consolidated channel, buffered with capacity 1
+	initOnce    sync.Once  // ensures buffers and signals are initialized only once
 	readyOnce   sync.Once  // ensures signal is sent only once
-	initialized bool
 
 	reportedError error      // structured error reported by the extension via gRPC
 	errorMu       sync.Mutex // guards reportedError
@@ -49,18 +49,14 @@ func (e *Extension) SourceCategoryOrUnknown() SourceCategory {
 	return normalizeSourceCategory(e.SourceCategory)
 }
 
-// init initializes the extension's buffers and signals.
+// ensureInit initializes the extension's buffers and signals once.
 func (e *Extension) ensureInit() {
-	if e.initialized {
-		return
-	}
-
-	e.stdin = &bytes.Buffer{}
-	e.stdout = output.NewDynamicMultiWriter()
-	e.stderr = output.NewDynamicMultiWriter()
-	e.readySignal = make(chan error, 1)
-
-	e.initialized = true
+	e.initOnce.Do(func() {
+		e.stdin = &bytes.Buffer{}
+		e.stdout = output.NewDynamicMultiWriter()
+		e.stderr = output.NewDynamicMultiWriter()
+		e.readySignal = make(chan error, 1)
+	})
 }
 
 // Initialize signals that the extension is ready.

@@ -1,0 +1,30 @@
+Inspect and manage work created by 'azd ai agent invoke'.
+
+The protocol is inferred from the selected agent or --agent-endpoint.
+Use --protocol when the agent supports multiple protocols. Available operations
+and service results depend on the protocol; unsupported operations are rejected.
+
+When --id is omitted, use the latest ID saved for the selected agent and
+protocol. Explicit IDs do not change the saved selection.
+
+Usage
+  azd ai agent invocations [command]
+
+Available Commands
+  cancel : Request cancellation of an invocation.
+  follow : Replay and follow invocation output.
+  show   : Show the service result for an invocation.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for invocations
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Show the current invocation result
+    azd ai agent invocations show
+
+Use azd ai agent invocations [command] --help to view examples and more information about a specific command.

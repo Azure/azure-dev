@@ -222,64 +222,8 @@ const completionSpec: Fig.Spec = {
 			subcommands: [
 				{
 					name: ['agent'],
-					description: 'Ship agents with Microsoft Foundry from your terminal. (Beta)',
+					description: 'Ship prompt, hosted, and voice agents with Microsoft Foundry from your terminal. (Beta)',
 					subcommands: [
-						{
-							name: ['add'],
-							description: 'Add a typed service dependency to an agent.',
-							subcommands: [
-								{
-									name: ['connection'],
-									description: 'Add a connection service dependency to an agent service.',
-									options: [
-										{
-											name: ['--agent'],
-											description: 'Agent service name in azure.yaml.',
-											args: [
-												{
-													name: 'agent',
-												},
-											],
-										},
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
-													suggestions: ['json', 'table'],
-												},
-											],
-										},
-									],
-								},
-								{
-									name: ['toolbox'],
-									description: 'Add a toolbox service dependency to an agent service.',
-									options: [
-										{
-											name: ['--agent'],
-											description: 'Agent service name in azure.yaml.',
-											args: [
-												{
-													name: 'agent',
-												},
-											],
-										},
-										{
-											name: ['--output', '-o'],
-											description: 'The output format',
-											args: [
-												{
-													name: 'output',
-													suggestions: ['json', 'table'],
-												},
-											],
-										},
-									],
-								},
-							],
-						},
 						{
 							name: ['code'],
 							description: 'Manage agent source code. (Preview)',
@@ -315,8 +259,39 @@ const completionSpec: Fig.Spec = {
 							],
 						},
 						{
+							name: ['connection'],
+							description: 'Manage connection service dependencies for an agent.',
+							subcommands: [
+								{
+									name: ['add'],
+									description: 'Add a connection service dependency to an agent service.',
+									options: [
+										{
+											name: ['--agent'],
+											description: 'Agent service name in azure.yaml.',
+											args: [
+												{
+													name: 'agent',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['delete'],
-							description: 'Delete an agent.',
+							description: 'Delete a prompt, hosted, or voice agent.',
 							options: [
 								{
 									name: ['--force'],
@@ -339,40 +314,6 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'version',
-										},
-									],
-								},
-							],
-						},
-						{
-							name: ['deploy'],
-							description: 'Deploy an agent directly from agent.yaml.',
-							options: [
-								{
-									name: ['--code'],
-									description: 'Path to the hosted-agent source directory.',
-									args: [
-										{
-											name: 'code',
-										},
-									],
-								},
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-											suggestions: ['json', 'table'],
-										},
-									],
-								},
-								{
-									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env and project config).',
-									args: [
-										{
-											name: 'project-endpoint',
 										},
 									],
 								},
@@ -982,7 +923,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['init'],
-							description: 'Initialize a new AI agent project. (Preview)',
+							description: 'Initialize a new prompt, hosted, or voice agent project. (Preview)',
 							options: [
 								{
 									name: ['--acr-connection'],
@@ -1091,7 +1032,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--model'],
-									description: 'Name of the AI model to deploy. Defaults to \'gpt-5.4-mini\' during interactive model selection; required to deploy a new model with --no-prompt. If --model-deployment is also provided, --model-deployment takes precedence.',
+									description: 'For hosted and prompt agents, name of the AI model to deploy. Defaults to \'gpt-5.4-mini\' during interactive model selection; required to deploy a new model with --no-prompt. If --model-deployment is also provided, --model-deployment takes precedence. For new managed prompt voice agents, selects the service-hosted model (default: gpt-realtime); no model deployment is created.',
 									args: [
 										{
 											name: 'model',
@@ -1159,6 +1100,15 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'src',
+										},
+									],
+								},
+								{
+									name: ['--voice'],
+									description: 'Output voice for new prompt voice agents (--kind prompt-voice or the interactive voice option). Rejected for other init flows. For existing voice services, edit azure.yaml. Example: en-US-Ava:DragonHDLatestNeural.',
+									args: [
+										{
+											name: 'voice',
 										},
 									],
 								},
@@ -1355,7 +1305,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['invoke'],
-							description: 'Send a message to your agent.',
+							description: 'Send a message to your prompt or hosted agent.',
 							options: [
 								{
 									name: ['--agent-endpoint'],
@@ -1393,6 +1343,10 @@ const completionSpec: Fig.Spec = {
 											name: 'conversation-id',
 										},
 									],
+								},
+								{
+									name: ['--debug-latency'],
+									description: 'Collect and show platform latency for remote responses/invocations; use --debug-latency=false to disable',
 								},
 								{
 									name: ['--input-file', '-f'],
@@ -2236,7 +2190,7 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['show'],
-							description: 'Show the status of an agent.',
+							description: 'Show the status of a prompt, hosted, or voice agent.',
 							options: [
 								{
 									name: ['--output', '-o'],
@@ -2245,6 +2199,37 @@ const completionSpec: Fig.Spec = {
 										{
 											name: 'output',
 											suggestions: ['json', 'table'],
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['toolbox'],
+							description: 'Manage toolbox service dependencies for an agent.',
+							subcommands: [
+								{
+									name: ['add'],
+									description: 'Add a toolbox service dependency to an agent service.',
+									options: [
+										{
+											name: ['--agent'],
+											description: 'Agent service name in azure.yaml.',
+											args: [
+												{
+													name: 'agent',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
 										},
 									],
 								},
@@ -2368,7 +2353,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--metadata'],
-									description: 'Metadata key=value (repeatable)',
+									description: 'Metadata key=value (repeatable; non-blank key required, empty value allowed)',
 									isRepeatable: true,
 									args: [
 										{
@@ -2442,31 +2427,6 @@ const completionSpec: Fig.Spec = {
 									name: ['--force'],
 									description: 'Skip confirmation prompt',
 									isDangerous: true,
-								},
-								{
-									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL (overrides env var and config)',
-									args: [
-										{
-											name: 'project-endpoint',
-										},
-									],
-								},
-							],
-						},
-						{
-							name: ['deploy'],
-							description: 'Deploy a local connection definition.',
-							options: [
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-											suggestions: ['json', 'table'],
-										},
-									],
 								},
 								{
 									name: ['--project-endpoint', '-p'],
@@ -2567,7 +2527,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--metadata'],
-									description: 'Set metadata key=value (repeatable, merged with existing metadata)',
+									description: 'Set metadata key=value (repeatable, merged with existing metadata; non-blank key required, empty value allowed)',
 									isRepeatable: true,
 									args: [
 										{
@@ -5539,31 +5499,6 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'version',
-										},
-									],
-								},
-							],
-						},
-						{
-							name: ['deploy'],
-							description: 'Deploy a local toolbox definition.',
-							options: [
-								{
-									name: ['--output', '-o'],
-									description: 'The output format',
-									args: [
-										{
-											name: 'output',
-											suggestions: ['table', 'json'],
-										},
-									],
-								},
-								{
-									name: ['--project-endpoint'],
-									description: 'Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.',
-									args: [
-										{
-											name: 'project-endpoint',
 										},
 									],
 								},

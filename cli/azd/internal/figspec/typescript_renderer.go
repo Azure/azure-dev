@@ -224,6 +224,10 @@ func renderArgs(args []Arg, indentLevel int) string {
 			lines = append(lines, fmt.Sprintf("%s\tisOptional: true,", indent))
 		}
 
+		if arg.IsVariadic {
+			lines = append(lines, fmt.Sprintf("%s\tisVariadic: true,", indent))
+		}
+
 		if len(arg.Suggestions) > 0 {
 			suggestions := make([]string, len(arg.Suggestions))
 			for i, s := range arg.Suggestions {

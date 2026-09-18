@@ -44,7 +44,7 @@ func TestRleInitTargetOptionsGateHarnessChoices(t *testing.T) {
 func TestInitInteractiveHostedAgentScaffoldsUsingPromptedValues(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	t.Setenv(rleHarnessInitEnableEnvVar, "true")
+	t.Setenv(rleEnableAllEnvVar, "true")
 
 	oldSelectTarget := selectRleInitTargetFunc
 	oldPrompt := promptRleValueFunc
@@ -117,7 +117,7 @@ func TestInitInteractiveHostedAgentScaffoldsUsingPromptedValues(t *testing.T) {
 func TestInitInteractiveBYOHScaffoldsUsingPromptedValues(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	t.Setenv(rleHarnessInitEnableEnvVar, "true")
+	t.Setenv(rleEnableAllEnvVar, "true")
 
 	oldSelectTarget := selectRleInitTargetFunc
 	oldPrompt := promptRleValueFunc
@@ -159,7 +159,7 @@ func TestInitInteractiveBYOHScaffoldsUsingPromptedValues(t *testing.T) {
 func TestInitNoPromptHostedAgentUsesControlPlaneFlags(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	t.Setenv(rleHarnessInitEnableEnvVar, "true")
+	t.Setenv(rleEnableAllEnvVar, "true")
 
 	noPrompt := true
 	command := newInitCommand(&noPrompt)
@@ -180,7 +180,7 @@ func TestInitNoPromptHostedAgentUsesControlPlaneFlags(t *testing.T) {
 }
 
 func TestInitNoPromptBYOHRequiresFolderName(t *testing.T) {
-	t.Setenv(rleHarnessInitEnableEnvVar, "true")
+	t.Setenv(rleEnableAllEnvVar, "true")
 
 	noPrompt := true
 	command := newInitCommand(&noPrompt)
@@ -197,7 +197,7 @@ func TestInitNoPromptBYOHRequiresFolderName(t *testing.T) {
 }
 
 func TestInitHarnessTargetRequiresPreviewFlag(t *testing.T) {
-	t.Setenv(rleHarnessInitEnableEnvVar, "")
+	t.Setenv(rleEnableAllEnvVar, "")
 
 	noPrompt := true
 	command := newInitCommand(&noPrompt)
@@ -216,7 +216,7 @@ func TestInitHarnessTargetRequiresPreviewFlag(t *testing.T) {
 }
 
 func TestInitSelectedHarnessTargetRequiresPreviewFlag(t *testing.T) {
-	t.Setenv(rleHarnessInitEnableEnvVar, "")
+	t.Setenv(rleEnableAllEnvVar, "")
 
 	oldSelectTarget := selectRleInitTargetFunc
 	selectRleInitTargetFunc = func(_ context.Context, includeHarnessTypes bool) (rleInitTarget, error) {

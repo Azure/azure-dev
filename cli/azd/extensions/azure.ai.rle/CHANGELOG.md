@@ -14,6 +14,7 @@
 - Delete the temporary instance and group on exit with Ctrl+C-independent cleanup and concise terminal status.
 - Authenticate and API-version OpenEnv gateway requests on the configured Foundry project origin, wait for runtime health before reporting readiness, and route the browser playground through an authenticated local proxy.
 - Initialize a required local folder by interactively selecting and sparsely downloading an environment from the RLE samples repository, including its manifest.
+- Filter Gym/OpenEnv samples by the samples repository's visibility catalog, and gate harness init targets, hidden samples, and other internal-only surfaces behind a single `AZD_AI_RLE_ENABLE_ALL` flag.
 
 ## 0.3.0-preview
 

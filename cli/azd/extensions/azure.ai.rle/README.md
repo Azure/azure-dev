@@ -39,11 +39,14 @@ The lifecycle commands are preview-gated:
 $env:AZD_AI_RLE_ENABLE = "true"
 ```
 
-Harness scaffolds are separately preview-gated:
+Harness scaffolds, samples hidden from the default catalog, and other
+internal-only surfaces are gated by a single flag for the RLE team's own
+iteration:
 
 ```powershell
-$env:AZD_AI_RLE_HARNESS_INIT_ENABLE = "true"
+$env:AZD_AI_RLE_ENABLE_ALL = "true"
 ```
+
 
 `azd ai rle init --type Harness` scaffolds only the RLE-side container; the
 harness/agent side is always specific to your own agent. For a complete,
@@ -205,6 +208,17 @@ specified, `init` updates `rle.name` to match that folder:
 azd ai rle init my_environment
 ```
 
+The samples repository's `examples/gym/openenv/catalog.toml` controls which
+samples are offered; entries with `visible = false` are hidden from both the
+interactive picker and `--sample <name>`. Samples with no catalog entry
+default to visible. Set `AZD_AI_RLE_ENABLE_ALL=true` to bypass the catalog
+filter and reveal every sample directory, e.g. to try out a sample before it
+is marked visible:
+
+```powershell
+$env:AZD_AI_RLE_ENABLE_ALL = "true"
+```
+
 For noninteractive sample initialization, the positional name selects the
 sample and target folder:
 
@@ -212,7 +226,7 @@ sample and target folder:
 azd ai rle init code_rl --no-prompt
 ```
 
-With `AZD_AI_RLE_HARNESS_INIT_ENABLE=true`, `init` also offers
+With `AZD_AI_RLE_ENABLE_ALL=true`, `init` also offers
 `Harness: HostedAgent` and `Harness: BYOH`. Supply control-plane type/subtype
 values explicitly when scripting:
 

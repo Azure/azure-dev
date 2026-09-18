@@ -27,8 +27,9 @@ var firstDatasetVersions = []string{dataset_api.NextVersion(""), "1"}
 
 func newDatasetCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "dataset",
-		Short: "Manage evaluation datasets.",
+		Use:     "dataset",
+		Short:   "Manage evaluation datasets.",
+		Example: "# List datasets in the selected project\n  azd ai eval dataset list",
 	}
 	cmd.AddCommand(
 		newDatasetCreateCommand(),
@@ -120,7 +121,9 @@ func newDatasetWriteCommand(verb, short string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   verb + " <name>",
 		Short: short,
-		Args:  requiredArgs(1),
+		Example: "# Publish dataset content from a local JSONL file\n" +
+			"  azd ai eval dataset " + verb + " my-tests --from-file tests.jsonl",
+		Args: requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&datasetWriteAction{
 				cmd: cmd, flags: flags, verb: verb, name: args[0],
@@ -258,9 +261,10 @@ func newDatasetListCommand() *cobra.Command {
 	var tags []string
 
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List the project's datasets.",
-		Args:  cobra.NoArgs,
+		Use:     "list",
+		Short:   "List the project's datasets.",
+		Example: "# List datasets in the selected project\n  azd ai eval dataset list",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&datasetListAction{cmd: cmd, endpoint: endpointFlg, tags: tags}).Run()
 		},
@@ -298,8 +302,9 @@ func (a *datasetListAction) Run() error {
 // the assets rather than the history of one of them.
 func newDatasetVersionsCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "versions",
-		Short: "Inspect the versions of one dataset.",
+		Use:     "versions",
+		Short:   "Inspect the versions of one dataset.",
+		Example: "# List registered dataset versions\n  azd ai eval dataset versions list my-tests",
 	}
 	cmd.AddCommand(newDatasetVersionsListCommand())
 	return cmd
@@ -318,9 +323,10 @@ func newDatasetVersionsListCommand() *cobra.Command {
 	var showAll bool
 
 	cmd := &cobra.Command{
-		Use:   "list <name>",
-		Short: "List the versions of a dataset.",
-		Args:  requiredArgs(1),
+		Use:     "list <name>",
+		Short:   "List the versions of a dataset.",
+		Example: "# List registered dataset versions\n  azd ai eval dataset versions list my-tests",
+		Args:    requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&datasetVersionsListAction{
 				cmd: cmd, endpoint: endpointFlg, name: args[0],
@@ -420,9 +426,10 @@ func newDatasetShowCommand() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "show <name>",
-		Short: "Show a dataset version.",
-		Args:  requiredArgs(1),
+		Use:     "show <name>",
+		Short:   "Show a dataset version.",
+		Example: "# Inspect a specific dataset version\n  azd ai eval dataset show my-tests --version 1.0",
+		Args:    requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&datasetShowAction{
 				cmd: cmd, endpoint: endpointFlg, version: version, name: args[0],
@@ -520,6 +527,8 @@ func newDatasetDeleteCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete <name>",
 		Short: "Delete a dataset version.",
+		Example: "# Delete one dataset version after confirmation\n" +
+			"  azd ai eval dataset delete my-tests --version 1.0",
 		Long: "Delete a dataset version.\n\n" +
 			"Asks before removing it. With --no-prompt, or with JSON output, " +
 			"--force is required.",

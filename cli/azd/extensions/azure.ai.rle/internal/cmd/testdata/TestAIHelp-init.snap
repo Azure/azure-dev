@@ -1,0 +1,22 @@
+Initialize a local RLE environment
+
+Usage
+  azd ai rle init [environment-name] [flags]
+
+Flags
+      --force : Overwrite generated files in an existing non-empty session directory
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for init
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Copy the OpenEnv echo sample into a local environment
+    azd ai rle init
+
+  Choose a name for the local environment directory
+    azd ai rle init code_rl

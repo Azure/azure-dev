@@ -1,0 +1,22 @@
+Register an evaluator, publishing its first version.
+
+An evaluator is a rubric: a JSON file of weighted scoring dimensions.
+
+Usage
+  azd ai eval evaluator create <name> [flags]
+
+Flags
+      --from-file string        : Path to the evaluator JSON file.
+      --project-endpoint string : Foundry project endpoint.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for create
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Publish a rubric from a local JSON file
+    azd ai eval evaluator create my-rubric --from-file rubric.json

@@ -25,8 +25,9 @@ import (
 // failed, and why.
 func newRunOutputCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "output",
-		Short: "Inspect the per-sample results of a run.",
+		Use:     "output",
+		Short:   "Inspect the per-sample results of a run.",
+		Example: "# List per-sample results of the latest run\n  azd ai eval run output list --eval quality",
 	}
 	cmd.AddCommand(
 		newRunOutputListCommand(),
@@ -62,7 +63,9 @@ func newRunOutputListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list [run]",
 		Short: "List the per-sample results of a run.",
-		Args:  cobra.MaximumNArgs(1),
+		Example: "# Inspect failed samples from the latest run\n" +
+			"  azd ai eval run output list --eval quality --failed-only",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// The positional wins over the flag; both name the same run, and
 			// the one typed at the end of the line is the more deliberate.
@@ -208,7 +211,9 @@ func newRunOutputShowCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "show <output-item>",
-		Short: "Show a single evaluated row. The id is the ITEM column of `run output list`.",
+		Short: "Show a single evaluated row. The id is the ITEM column of `azd ai eval run output list`.",
+		Example: "# Inspect an item returned by run output list\n" +
+			"  azd ai eval run output show item_123 --eval quality",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return messages.OutputItemRequired(flags.groupName)
@@ -310,16 +315,18 @@ func newRunOutputExportCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "export [run]",
 		Short: "Export the complete run results as JSON.",
+		Example: "# Export the latest run and all its evaluated rows\n" +
+			"  azd ai eval run output export --eval quality --output-file results.json\n\n" +
+			"# Convert the exported items to JSONL with jq\n" +
+			"  jq -c '.items[]' results.json > results.jsonl",
 		Long: `Export the complete results of a run as one JSON document.
 
 The document holds the run exactly as the service described it, and every
 evaluated row beneath it: the item that was evaluated, what the target
 answered, and each evaluator's score, verdict and reason.
 
-This is the machine-readable path. ` + "`run output list`" + ` is the readable one.
-Derive any other shape from this file, for example:
-
-  jq -c '.items[]' results.json > results.jsonl`,
+This is the machine-readable path. ` + "`azd ai eval run output list`" + ` is the readable one.
+Derive any other shape from this file.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// The positional wins over the flag; both name the same run, and

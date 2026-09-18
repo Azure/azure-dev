@@ -106,6 +106,9 @@ func bindExtension(
 				Use:   part,
 				Short: description,
 			}
+			if namespaceParts[0] == "ai" {
+				cmd.Annotations = map[string]string{aiNamespaceHelpAnnotation: "true"}
+			}
 
 			current = current.Add(part, &actions.ActionDescriptorOptions{
 				Command: cmd,

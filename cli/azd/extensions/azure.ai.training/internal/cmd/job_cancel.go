@@ -21,7 +21,9 @@ func newJobCancelCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cancel",
 		Short: "Cancel a running training job",
-		Args:  cobra.NoArgs,
+		Example: `  # Cancel a running job
+  azd ai training job cancel --name my-job`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 

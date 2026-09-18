@@ -1,0 +1,24 @@
+Deploy a fine-tuned model to Azure Cognitive Services
+
+Usage
+  azd ai finetuning jobs deploy [flags]
+
+Flags
+  -c, --capacity int32         : Capacity units (default 1)
+  -d, --deployment-name string : Deployment name (required)
+  -i, --job-id string          : Fine-tuning job ID (required)
+  -m, --model-format string    : Model format (default "OpenAI")
+      --no-wait                : Do not wait for deployment to complete
+  -k, --sku string             : SKU for deployment (default "GlobalStandard")
+  -v, --version string         : Model version (default "1")
+
+Global Flags
+      --debug                   : Enable debug mode
+  -h, --help                    : help for deploy
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+      --project-endpoint string : Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)
+  -s, --subscription string     : Azure subscription ID (enables implicit init if environment not configured)
+
+Examples
+  Deploy the model produced by a fine-tuning job
+    azd ai finetuning jobs deploy --job-id <job-id> --deployment-name my-model

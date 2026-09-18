@@ -1,0 +1,26 @@
+Start and inspect evaluation runs.
+
+Usage
+  azd ai eval run [command]
+
+Available Commands
+  cancel : Cancel an in-flight run.
+  delete : Delete a run.
+  list   : List runs for an eval.
+  output : Inspect the per-sample results of a run.
+  show   : Show a single run.
+  start  : Start a run of an eval that has been deployed.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for run
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Start a run of a deployed evaluation
+    azd ai eval run start --eval quality
+
+Use azd ai eval run [command] --help to view examples and more information about a specific command.

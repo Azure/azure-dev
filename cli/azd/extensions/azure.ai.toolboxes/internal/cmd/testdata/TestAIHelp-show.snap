@@ -1,0 +1,29 @@
+Show a toolbox.
+
+By default shows the default version. Use --version to inspect a specific
+version. The output includes the toolbox's runtime MCP endpoint, which agents
+consume via the TOOLBOX_<NORMALIZED_NAME>_MCP_ENDPOINT environment variable
+convention, where <NORMALIZED_NAME> is the toolbox name uppercased with
+non-alphanumeric character runs replaced by underscores.
+
+Usage
+  azd ai toolbox show <name> [flags]
+
+Flags
+      --version string : Specific version to show. Defaults to the server's default version.
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for show
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: table, json) (default "table")
+      --project-endpoint string : Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.
+
+Examples
+  Inspect the default version and its runtime endpoint
+    azd ai toolbox show research
+
+  Inspect a specific immutable version
+    azd ai toolbox show research --version 2

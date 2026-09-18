@@ -47,6 +47,8 @@ func newRoutineUpdateCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 Only the named flags change; all other fields are preserved verbatim.
 To change the trigger or action type, delete and recreate the routine.`,
+		Example: `  # Change the description while preserving other fields
+  azd ai routine update nightly-summary --description "Summarize the day's activity"`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]

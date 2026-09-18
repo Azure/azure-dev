@@ -1,0 +1,22 @@
+Show a single evaluated row. The id is the ITEM column of `azd ai eval run output list`.
+
+Usage
+  azd ai eval run output show <output-item> [flags]
+
+Flags
+      --eval string             : Name of the eval declared in the configuration, or its id.
+      --path string             : Directory holding azure.eval.yaml. Defaults to the path init used, then ./evals.
+      --project-endpoint string : Foundry project endpoint.
+      --run string              : Run to act on. Defaults to the last run recorded for --eval.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for show
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Inspect an item returned by run output list
+    azd ai eval run output show item_123 --eval quality

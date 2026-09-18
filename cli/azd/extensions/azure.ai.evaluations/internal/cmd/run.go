@@ -79,8 +79,9 @@ func runIsTerminal(run *eval_api.OpenAIEvalRun) bool {
 // `run` would make `azd ai eval run list` read as "run the thing called list".
 func newRunCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "run",
-		Short: "Start and inspect evaluation runs.",
+		Use:     "run",
+		Short:   "Start and inspect evaluation runs.",
+		Example: "# Start a run of a deployed evaluation\n  azd ai eval run start --eval quality",
 	}
 	addRunSubcommands(cmd)
 	cmd.AddCommand(buildRunCommand(
@@ -115,8 +116,9 @@ func buildRunCommand(use, short string) *cobra.Command {
 	flags := &runStartFlags{}
 
 	cmd := &cobra.Command{
-		Use:   use,
-		Short: short,
+		Use:     use,
+		Short:   short,
+		Example: "# Start an evaluation and wait for results\n  azd ai eval run start --eval quality",
 		// The eval is named by --eval. Without this, `run start other-eval`
 		// is accepted, ignored, and bills a run against the default eval.
 		Args: cobra.NoArgs,

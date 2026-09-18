@@ -1,0 +1,26 @@
+Initialize a new AI models project by setting up an azd environment
+and configuring the Azure AI Foundry project connection.
+
+The init command will:
+  1. Ensure an azd project is initialized
+  2. Create or select an azd environment
+  3. Configure Azure subscription, resource group, and Foundry project
+  4. Store all settings as environment variables for use by other commands
+
+Usage
+  azd ai models init [flags]
+
+Flags
+  -n, --environment string         : The name of the azd environment to use
+      --project-endpoint string    : Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)
+  -p, --project-resource-id string : ARM resource ID of the Foundry project
+  -s, --subscription string        : Azure subscription ID
+
+Global Flags
+      --debug     : Enable debug mode
+  -h, --help      : help for init
+      --no-prompt : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+
+Examples
+  Configure the Foundry project used by model commands
+    azd ai models init

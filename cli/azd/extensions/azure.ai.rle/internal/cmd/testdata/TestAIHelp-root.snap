@@ -1,0 +1,56 @@
+
+███████╗ ██████╗ ██╗   ██╗███╗   ██╗██████╗ ██████╗ ██╗   ██╗
+██╔════╝██╔═══██╗██║   ██║████╗  ██║██╔══██╗██╔══██╗╚██╗ ██╔╝
+█████╗  ██║   ██║██║   ██║██╔██╗ ██║██║  ██║██████╔╝ ╚████╔╝
+██╔══╝  ██║   ██║██║   ██║██║╚██╗██║██║  ██║██╔══██╗  ╚██╔╝
+██║     ╚██████╔╝╚██████╔╝██║ ╚████║██████╔╝██║  ██║   ██║
+╚═╝      ╚═════╝  ╚═════╝ ╚═╝  ╚═══╝╚═════╝ ╚═╝  ╚═╝   ╚═╝
+vdev
+
+Manage RLE resources from your terminal. (Preview)
+
+Usage
+  azd ai rle [command]
+
+Available Commands
+  init    : Initialize a local RLE environment
+  invoke  : Open a remote OpenEnv runtime shell
+  list    : List RLE environments in the Foundry project
+  publish : Build, push, and create or update the RLE environment
+  run     : Build and run the local RLE environment container
+  show    : Show RLE environment details
+  version : Display the extension version
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for rle
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Initialize and run a local RLE environment (enable commands first)
+    azd ai rle init
+    azd ai rle run
+
+Use azd ai rle [command] --help to view examples and more information about a specific command.
+
+Environment & Project Context
+  Set AZD_AI_RLE_ENABLE=true in your shell to show the preview RLE commands.
+  This switch accepts boolean values; commands are hidden by default.
+
+  Set FOUNDRY_PROJECT_ENDPOINT in your shell to the Foundry project endpoint:
+  https://<account>.services.ai.azure.com/api/projects/<project>
+  Set AZURE_CONTAINER_REGISTRY_ENDPOINT to <registry>.azurecr.io for publish.
+  These settings are read from the process environment, not directly from
+  the named azd environment's .env file.
+
+  An RLE environment is a runtime resource, not an azd deployment environment.
+  Local RLE state is saved in .azd-rle.json. Show and invoke can use the saved
+  environment name, or accept an existing environment name explicitly.
+  Invoke accepts --version to choose a published version.
+
+Learn More
+  Publish an environment: 'azd ai rle publish --help'
+  Open a remote runtime shell: 'azd ai rle invoke --help'

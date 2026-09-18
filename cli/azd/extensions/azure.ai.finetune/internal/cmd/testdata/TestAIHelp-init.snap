@@ -1,0 +1,22 @@
+Initialize a new AI Fine-tuning project. (Preview)
+
+Usage
+  azd ai finetuning init [-t <fine tuning job template>] [-p <foundry project arm id>] [flags]
+
+Flags
+  -n, --environment string         : The name of the azd environment to use.
+  -j, --from-job string            : Clone configuration from an existing job ID
+      --project-endpoint string    : Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)
+  -p, --project-resource-id string : ARM resource ID of the Microsoft Foundry Project (e.g., /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.CognitiveServices/accounts/{account}/projects/{project})
+  -s, --subscription string        : Azure subscription ID
+  -t, --template string            : URL or path to a fine-tune job template
+  -w, --working-directory string   : Local path for project output
+
+Global Flags
+      --debug     : Enable debug mode
+  -h, --help      : help for init
+      --no-prompt : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+
+Examples
+  Configure a Foundry project for fine-tuning
+    azd ai finetuning init

@@ -45,9 +45,9 @@ func newJobConnectSSHCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			"        ssh-ed25519 AAAA... user@host\n\n" +
 			"The SSH service must reach 'Running' status before this command can connect; " +
 			"that typically takes 30s\u2013120s after the job enters Running. " +
-			"If --private-key-file-path is omitted, the OpenSSH client falls back to the default identities under ~/.ssh/.\n\n" +
-			"Example:\n" +
-			"  azd ai training job connect-ssh --name my-job --node-index 0 --private-key-file-path ~/.ssh/id_ed25519",
+			"If --private-key-file-path is omitted, the OpenSSH client falls back to the default identities under ~/.ssh/.",
+		Example: `  # Connect to the first node with a specific SSH key
+  azd ai training job connect-ssh --name my-job --node-index 0 --private-key-file-path ~/.ssh/id_ed25519`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())

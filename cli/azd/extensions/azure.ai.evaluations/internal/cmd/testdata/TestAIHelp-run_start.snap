@@ -1,0 +1,27 @@
+Start a run of an eval that has been deployed.
+
+Usage
+  azd ai eval run start [flags]
+
+Flags
+      --dataset string          : Catalog dataset to read instead of the one the eval declares. Must satisfy the eval's column schema.
+      --eval string             : Name of the eval to run, or its id. Defaults to the only one declared.
+      --fail-on string          : Fail when the run misses this threshold: any-failure, or pass-rate=<0..1>. pass-rate is measured over the rows that were scored, so rows nothing could grade are outside it; any-failure counts them against the run. Exits 1.
+      --max-samples int         : Cap the rows sent from the dataset.
+      --name string             : Name for this run. Defaults to the eval name plus a timestamp.
+      --no-wait                 : Submit the run and return immediately.
+      --path string             : Directory holding azure.eval.yaml. Defaults to the path init used, then ./evals.
+      --project-endpoint string : Foundry project endpoint.
+      --wait                    : Block until the run reaches a terminal state. (default true)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for start
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Start an evaluation and wait for results
+    azd ai eval run start --eval quality

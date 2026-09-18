@@ -1,0 +1,23 @@
+Inspect the per-sample results of a run.
+
+Usage
+  azd ai eval run output [command]
+
+Available Commands
+  export : Export the complete run results as JSON.
+  list   : List the per-sample results of a run.
+  show   : Show a single evaluated row. The id is the ITEM column of `azd ai eval run output list`.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for output
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  List per-sample results of the latest run
+    azd ai eval run output list --eval quality
+
+Use azd ai eval run output [command] --help to view examples and more information about a specific command.

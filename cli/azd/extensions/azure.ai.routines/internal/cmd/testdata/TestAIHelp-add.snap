@@ -1,0 +1,25 @@
+Add or update a host: azure.ai.routine service in the current project's azure.yaml.
+
+This command only updates azure.yaml. Run azd deploy <name> or azd up to
+create or update the routine in Microsoft Foundry.
+
+Usage
+  azd ai routine add <name> [flags]
+
+Flags
+      --file string : Path to a YAML or JSON routine manifest file
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for add
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: json, table) (default "table")
+  -p, --project-endpoint string : Foundry project endpoint URL (overrides env var and config)
+      --timeout string          : HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.
+
+Examples
+  Add a local service declaration, then deploy it
+    azd ai routine add nightly-summary --file ./routines/nightly-summary.yaml
+    azd deploy nightly-summary

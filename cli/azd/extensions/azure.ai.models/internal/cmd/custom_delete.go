@@ -33,6 +33,8 @@ func newCustomDeleteCommand(parentFlags *customFlags) *cobra.Command {
 		Use:   "delete",
 		Short: "Delete a custom model",
 		Long:  "Delete a custom model version from the Azure AI Foundry custom model registry.",
+		Example: `  # Delete a custom model
+  azd ai models delete --name my-model`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			return runCustomDelete(ctx, parentFlags, flags)

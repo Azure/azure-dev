@@ -24,6 +24,9 @@ func newJobCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			return validateOrInitEnvironment(cmd.Context(), flags.subscriptionId, flags.projectEndpoint)
 		},
 		Short: "Manage training jobs",
+		Example: `  # Validate a job definition before submitting it
+  azd ai training job validate --file job.yaml
+  azd ai training job submit --file job.yaml`,
 	}
 
 	cmd.PersistentFlags().StringVarP(&flags.subscriptionId, "subscription", "s", "",

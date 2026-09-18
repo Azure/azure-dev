@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"azureaiinspector/internal/helpformat"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -60,6 +62,13 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
+
+	rootCmd.Example = `  # Start an agent in one terminal
+  azd ai agent run
+
+  # Open the inspector in another terminal
+  azd ai inspector launch`
+	helpformat.Install(rootCmd, "azd ai", inspectorHelpFooter)
 
 	return rootCmd
 }

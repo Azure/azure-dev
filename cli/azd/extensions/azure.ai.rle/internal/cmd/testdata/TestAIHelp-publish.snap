@@ -1,0 +1,20 @@
+Build, push, and create or update the RLE environment
+
+Usage
+  azd ai rle publish [flags]
+
+Flags
+      --dockerfile string   : Dockerfile path relative to the current folder. Defaults to Dockerfile at the source root or server/Dockerfile.
+      --version-bump string : Version bump to apply when creating or updating the environment: major, minor, or patch. (default "major")
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for publish
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Build and publish a new major version
+    azd ai rle publish --version-bump major

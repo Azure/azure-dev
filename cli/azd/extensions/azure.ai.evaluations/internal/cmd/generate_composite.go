@@ -61,6 +61,8 @@ func newGenerateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "generate",
 		Short: "Generate a dataset and a rubric evaluator, and download them.",
+		Example: "# Generate test data and a rubric from an agent\n" +
+			"  azd ai eval generate --target my-agent --from agent",
 		Long: "Generate a dataset and a rubric evaluator, and download them.\n\n" +
 			"Both are produced unless --dataset or --evaluator narrows it to one. " +
 			"Neither is an input to the other, so the jobs run together and each " +

@@ -1,0 +1,25 @@
+Create one eval declared in the configuration.
+
+`azd up` reconciles every eval in the file. This creates a single one, for a project that is not deployed as a whole — or, with --from-file, for no project at all.
+
+The name is optional while the configuration declares exactly one eval.
+
+Usage
+  azd ai eval create [name] [flags]
+
+Flags
+      --from-file string        : Read the configuration from this path instead of the eval directory.
+      --path string             : Directory holding the evaluation configuration. Defaults to the directory init scaffolded, otherwise ./evals.
+      --project-endpoint string : Foundry project endpoint.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for create
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Create a declared evaluation from a configuration file
+    azd ai eval create quality --from-file ./evals/azure.eval.yaml

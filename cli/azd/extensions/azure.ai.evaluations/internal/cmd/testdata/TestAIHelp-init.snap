@@ -1,0 +1,28 @@
+Scaffold evaluation config for an agent. Makes no service calls.
+
+Usage
+  azd ai eval init [flags]
+
+Flags
+      --dataset string          : Path to a local .jsonl, or the name of a registered dataset.
+      --evaluation-level string : What one evaluated sample is: turn for a single request and response, conversation for the whole multi-turn interaction. Defaults to turn.
+      --evaluator strings       : Evaluator reference, repeatable and comma-separated. Use builtin.<name> for a built-in. Passing this replaces the defaults, so it also opts out of rubric generation.
+      --judge-model string      : Model deployment the graders judge with. Detected from the project when omitted.
+      --max-traces int          : Cap on traces read by a --source traces eval. Delete max_traces from the file to take the service default instead. (default 20)
+      --name string             : Name of the eval. Defaults to <target>-dataset-eval, or <target>-trace-eval under --source traces, numbered when that name is taken.
+      --path string             : Directory to write the configuration into. Used verbatim, never re-rooted. Defaults to the directory an earlier init scaffolded, otherwise ./evals.
+      --source string           : Where rows come from: dataset or traces. Defaults to traces when the azd environment records an Application Insights connection, otherwise dataset.
+      --target string           : Name of the agent to evaluate. Detected when the project has one agent; prompts when it has several.
+      --trace-days int          : How far back a --source traces eval reads: 1, 7, or 30 days. Set lookback_hours in the file for any other window. (default 7)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for init
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Scaffold an evaluation using a local dataset
+    azd ai eval init --target my-agent --source dataset --dataset tests.jsonl

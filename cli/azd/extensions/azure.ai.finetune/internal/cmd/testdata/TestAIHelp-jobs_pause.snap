@@ -1,0 +1,18 @@
+Pauses a running fine-tuning job.
+
+Usage
+  azd ai finetuning jobs pause [flags]
+
+Flags
+  -i, --id string : Job ID (required)
+
+Global Flags
+      --debug                   : Enable debug mode
+  -h, --help                    : help for pause
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+      --project-endpoint string : Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)
+  -s, --subscription string     : Azure subscription ID (enables implicit init if environment not configured)
+
+Examples
+  Pause a running job
+    azd ai finetuning jobs pause --id <job-id>

@@ -27,6 +27,11 @@ func newJobListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all training jobs",
+		Example: `  # List active training jobs
+  azd ai training job list
+
+  # Include archived jobs
+  azd ai training job list --include-archived`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 

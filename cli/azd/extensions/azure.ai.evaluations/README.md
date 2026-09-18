@@ -100,6 +100,10 @@ Eval groups are immutable, so a change to a group's evaluators, target or
   shows only what you put there.
 ## Commands
 
+Run `azd ai eval --help` for project-context and environment guidance, or append
+`--help` to any command for its current flags and examples. Help is available
+offline without authentication or reading project configuration.
+
 | Group | Commands |
 |---|---|
 | `azd ai eval` | `init` · `generate` · `create [name]` · `list` · `show <eval>` · `delete <eval>` |

@@ -23,7 +23,9 @@ func newJobDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete",
 		Short: "Delete a training job",
-		Args:  cobra.NoArgs,
+		Example: `  # Delete a training job
+  azd ai training job delete --name my-job`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 

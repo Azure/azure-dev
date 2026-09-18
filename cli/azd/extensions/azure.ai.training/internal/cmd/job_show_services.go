@@ -19,9 +19,9 @@ func newJobShowServicesCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show-services",
 		Short: "Show services of a training job per node (e.g. SSH, JupyterLab, TensorBoard)",
-		Long: "Show the services running on a specific node of a training job. Output is JSON.\n\n" +
-			"Example:\n" +
-			"  azd ai training job show-services --name my-job --node-index 0",
+		Long:  "Show the services running on a specific node of a training job. Output is JSON.",
+		Example: `  # Inspect services on the first node
+  azd ai training job show-services --name my-job --node-index 0`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())

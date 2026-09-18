@@ -1,0 +1,36 @@
+Update the description or tags of a custom model version.
+
+Uses JSON Merge Patch (RFC 7396) semantics:
+  - Tags are merged per-key: --set-tag adds or updates, --remove-tag deletes
+  - Absent keys are left unchanged
+
+Usage
+  azd ai models update [flags]
+
+Flags
+      --description string      : New model description
+  -n, --name string             : Model name (required)
+  -o, --output string           : Output format (table, json) (default "table")
+      --project-endpoint string : Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)
+      --remove-tag stringArray  : Remove a tag by key; can be specified multiple times
+      --set-tag stringArray     : Set a tag (key=value); can be specified multiple times
+  -s, --subscription string     : Azure subscription ID
+      --version string          : Model version (default "1")
+
+Global Flags
+      --debug     : Enable debug mode
+  -h, --help      : help for update
+      --no-prompt : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+
+Examples
+  Update description
+    azd ai models update --name my-model --version 1 --description "Updated description"
+
+  Add/update tags
+    azd ai models update --name my-model --set-tag team=medical-ai --set-tag env=prod
+
+  Remove a tag
+    azd ai models update --name my-model --remove-tag old-tag
+
+  Combine description and tag changes
+    azd ai models update --name my-model --description "New desc" --set-tag v=2 --remove-tag draft

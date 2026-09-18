@@ -55,6 +55,11 @@ This command performs three steps:
 The --source flag accepts a local file/directory path or a remote blob URL with SAS token.
 For remote URLs containing special characters (& in SAS tokens), use --source-file to
 provide a file containing the URL instead.`,
+		Example: `  # Upload and register local model weights
+  azd ai models create --source ./model.safetensors --name my-model --base-model FW-DeepSeek-V3.1
+
+  # Read a remote source URL from a file to preserve SAS token characters
+  azd ai models create --source-file source-url.txt --name my-model --base-model FW-DeepSeek-V3.1`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 

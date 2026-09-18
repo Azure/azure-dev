@@ -1,0 +1,23 @@
+Manage routine run history.
+
+Usage
+  azd ai routine run [command]
+
+Available Commands
+  list : List runs for a routine.
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for run
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (default "default")
+  -p, --project-endpoint string : Foundry project endpoint URL (overrides env var and config)
+      --timeout string          : HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.
+
+Examples
+  Inspect recent execution history
+    azd ai routine run list nightly-summary --top 10
+
+Use azd ai routine run [command] --help to view examples and more information about a specific command.

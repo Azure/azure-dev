@@ -1,0 +1,35 @@
+Update a connection's target URL, credential values, or metadata.
+
+Only the specified flags are changed; all other fields are preserved.
+Does not accept --auth-type (delete and recreate to change auth type).
+
+Usage
+  azd ai connection update <name> [flags]
+
+Flags
+      --custom-key stringArray : Update custom key=value (repeatable, for custom-keys auth)
+      --key string             : New API key value (for api-key auth)
+      --metadata stringArray   : Set metadata key=value (repeatable, merged with existing metadata; non-blank key required, empty value allowed)
+      --target string          : New target URL or ARM resource ID
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for update
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (default "default")
+  -p, --project-endpoint string : Foundry project endpoint URL (overrides env var and config)
+
+Examples
+  Rotate an API key (shell variable syntax)
+    azd ai connection update prod-search --key "$NEW_SEARCH_KEY"
+
+  Change the target without replacing other fields
+    azd ai connection update my-conn --target https://new-endpoint.com
+
+  Update a custom credential
+    azd ai connection update my-mcp --custom-key "x-api-key=new-key"
+
+  Update connection metadata
+    azd ai connection update my-box --metadata "type=gateway_connector"

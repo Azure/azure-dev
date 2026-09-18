@@ -51,6 +51,8 @@ The init command will:
   2. Create or select an azd environment
   3. Configure Azure subscription, resource group, and Foundry project
   4. Store all settings as environment variables for use by other commands`,
+		Example: `  # Configure the Foundry project used by model commands
+  azd ai models init`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())

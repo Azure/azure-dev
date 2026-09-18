@@ -67,6 +67,7 @@ func TestHelpTemplatesReadLiveState(t *testing.T) {
 		Use: "optimize [name]", Aliases: []string{"opt"}, Run: func(*cobra.Command, []string) {},
 		Long: "Optimize an agent.\n\nReads the config and uploads new versions for:\n  - Datasets",
 	}
+
 	child.AddCommand(&cobra.Command{Use: "status", Short: "Show status", Run: func(*cobra.Command, []string) {}})
 	root.AddCommand(child, &cobra.Command{Use: "hidden", Hidden: true, Run: func(*cobra.Command, []string) {}})
 	root.PersistentFlags().StringP("environment", "e", "", "The environment")
@@ -85,6 +86,53 @@ func TestHelpTemplatesReadLiveState(t *testing.T) {
 	require.Contains(t, childHelp, "Reads the config and uploads new versions for:")
 	require.NotContains(t, childHelp, "More Information")
 	require.NotContains(t, childHelp, "\nFlags\n")
+}
+
+func TestHelpOnHostSubtree(t *testing.T) {
+	setColor(t, false)
+	root := &cobra.Command{Use: "azd"}
+	ai := &cobra.Command{Use: "ai", Short: "AI commands"}
+	root.AddCommand(ai)
+	child := &cobra.Command{Use: "models", Run: func(*cobra.Command, []string) {}}
+	ai.AddCommand(child)
+	Install(ai, "", "Context:\nUse the selected azd environment.")
+	require.Contains(t, renderHelp(t, ai), "Usage\n  azd ai [command]")
+	require.Contains(t, renderHelp(t, child), "Usage\n  azd ai models [flags]")
+	require.NotContains(t, renderHelp(t, child), "Context")
+	require.NotContains(t, renderHelp(t, root), "Context")
+}
+
+func TestHelpPreservesMetadataAndAliasDispatch(t *testing.T) {
+	setColor(t, false)
+	root := &cobra.Command{Use: "agent"}
+	child := &cobra.Command{
+		Use:     "show <name>",
+		Short:   "Show an agent",
+		Long:    "Show an agent.\n\nSee https://example.com for details.",
+		Example: "  # Show\n  azd ai agent show \"two  spaces\"",
+		Aliases: []string{"get"},
+		RunE: func(*cobra.Command, []string) error {
+			t.Fatal("help must not execute the command")
+			return nil
+		},
+	}
+	root.AddCommand(child)
+	originalUse, originalShort, originalLong, originalExample := child.Use, child.Short, child.Long, child.Example
+	Install(root, "azd ai", "")
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetArgs([]string{"get", "--help"})
+	require.NoError(t, root.Execute())
+	require.Contains(t, buf.String(), "azd ai agent show <name> [flags]")
+	require.Contains(t, buf.String(), "Aliases\n  show, get")
+	require.Contains(t, buf.String(), `"two  spaces"`)
+	require.Equal(t, originalUse, child.Use)
+	require.Equal(t, originalShort, child.Short)
+	require.Equal(t, originalLong, child.Long)
+	require.Equal(t, originalExample, child.Example)
+	require.Equal(t, []string{"get"}, child.Aliases)
+	require.False(t, child.Hidden)
 }
 
 func TestHelpColorAtRenderTime(t *testing.T) {

@@ -41,6 +41,8 @@ func newProjectDeploymentCommand(extCtx *azdext.ExtensionContext) *cobra.Command
 	cmd := &cobra.Command{
 		Use:   "deployment",
 		Short: "Manage managed model deployments for a Foundry project.",
+		Example: `  # Add an inline model deployment before ejecting infrastructure
+  azd ai project deployment add --model OpenAI/gpt-4.1 --name chat`,
 	}
 	cmd.AddCommand(newProjectDeploymentAddCommand(extCtx))
 	return cmd
@@ -52,7 +54,12 @@ func newProjectDeploymentAddCommand(extCtx *azdext.ExtensionContext) *cobra.Comm
 	cmd := &cobra.Command{
 		Use:   "add",
 		Short: "Add an azd-managed model deployment before ejection.",
-		Args:  cobra.NoArgs,
+		Example: `  # Declare a managed model deployment
+  azd ai project deployment add --model OpenAI/gpt-4.1 --name chat
+
+  # Apply the project's managed infrastructure
+  azd provision`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			flags.output = extCtx.OutputFormat
 			action := &ProjectDeploymentAddAction{flags: flags, extCtx: extCtx}

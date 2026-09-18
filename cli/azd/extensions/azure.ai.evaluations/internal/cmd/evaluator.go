@@ -21,8 +21,9 @@ import (
 
 func newEvaluatorCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "evaluator",
-		Short: "Manage custom evaluators.",
+		Use:     "evaluator",
+		Short:   "Manage custom evaluators.",
+		Example: "# Discover built-in evaluators\n  azd ai eval evaluator list --builtin",
 	}
 	cmd.AddCommand(
 		newEvaluatorCreateCommand(),
@@ -73,6 +74,8 @@ func newEvaluatorWriteCommand(verb, short string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   verb + " <name>",
 		Short: short,
+		Example: "# Publish a rubric from a local JSON file\n" +
+			"  azd ai eval evaluator " + verb + " my-rubric --from-file rubric.json",
 		Long: short + "\n\n" +
 			"An evaluator is a rubric: a JSON file of weighted scoring dimensions.",
 		Args: requiredArgs(1),
@@ -311,7 +314,9 @@ func newEvaluatorListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List the project's evaluators, or the built-in ones.",
-		Args:  cobra.NoArgs,
+		Example: "# List custom evaluators in the selected project\n  azd ai eval evaluator list\n\n" +
+			"# List built-in evaluators\n  azd ai eval evaluator list --builtin",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&evaluatorListAction{
 				cmd: cmd, endpoint: endpointFlg, builtin: builtin,
@@ -352,8 +357,9 @@ func (a *evaluatorListAction) Run() error {
 // history.
 func newEvaluatorVersionsCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "versions",
-		Short: "Inspect the versions of one evaluator.",
+		Use:     "versions",
+		Short:   "Inspect the versions of one evaluator.",
+		Example: "# List registered rubric versions\n  azd ai eval evaluator versions list my-rubric",
 	}
 	cmd.AddCommand(newEvaluatorVersionsListCommand())
 	return cmd
@@ -372,9 +378,10 @@ func newEvaluatorVersionsListCommand() *cobra.Command {
 	var showAll bool
 
 	cmd := &cobra.Command{
-		Use:   "list <name>",
-		Short: "List the versions of an evaluator.",
-		Args:  requiredArgs(1),
+		Use:     "list <name>",
+		Short:   "List the versions of an evaluator.",
+		Example: "# List registered rubric versions\n  azd ai eval evaluator versions list my-rubric",
+		Args:    requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&evaluatorVersionsListAction{
 				cmd: cmd, endpoint: endpointFlg, name: args[0],
@@ -497,9 +504,10 @@ func newEvaluatorShowCommand() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "show <name>",
-		Short: "Show an evaluator definition.",
-		Args:  requiredArgs(1),
+		Use:     "show <name>",
+		Short:   "Show an evaluator definition.",
+		Example: "# Inspect the latest evaluator definition\n  azd ai eval evaluator show my-rubric",
+		Args:    requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&evaluatorShowAction{
 				cmd: cmd, endpoint: endpointFlg, version: version, outFile: outFile, name: args[0],
@@ -628,6 +636,8 @@ func newEvaluatorDeleteCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete <name>",
 		Short: "Delete an evaluator version.",
+		Example: "# Delete one evaluator version after confirmation\n" +
+			"  azd ai eval evaluator delete my-rubric --version 1",
 		Long: "Delete an evaluator version.\n\n" +
 			"Asks before removing it. With --no-prompt, or with JSON output, " +
 			"--force is required.",

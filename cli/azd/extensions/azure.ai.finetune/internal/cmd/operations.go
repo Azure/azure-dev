@@ -37,6 +37,9 @@ func newOperationCommand() *cobra.Command {
 			return validateOrInitEnvironment(cmd.Context(), flags.subscriptionId, flags.projectEndpoint)
 		},
 		Short: "Manage fine-tuning jobs",
+		Example: `  # Submit a job and list recent jobs
+  azd ai finetuning jobs submit --file fine-tuning.yaml
+  azd ai finetuning jobs list`,
 	}
 
 	cmd.PersistentFlags().StringVarP(&flags.subscriptionId, "subscription", "s", "",
@@ -65,6 +68,8 @@ func newOperationSubmitCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "submit",
 		Short: "Submit fine-tuning job.",
+		Example: `  # Submit a fine-tuning job from configuration
+  azd ai finetuning jobs submit --file fine-tuning.yaml`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			return validateSubmitFlags(filename, model, trainingFile)
 		},
@@ -180,6 +185,8 @@ func newOperationShowCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show",
 		Short: "Shows detailed information about a specific job.",
+		Example: `  # Show job details and recent training logs
+  azd ai finetuning jobs show --id <job-id> --logs`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			return validateRequiredFlags(map[string]string{"id": jobID})
 		},
@@ -289,6 +296,8 @@ func newOperationListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List fine-tuning jobs.",
+		Example: `  # List the ten most recent jobs
+  azd ai finetuning jobs list --top 10`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			azdClient, err := azdext.NewAzdClient()
@@ -354,6 +363,8 @@ func newOperationPauseCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pause",
 		Short: "Pauses a running fine-tuning job.",
+		Example: `  # Pause a running job
+  azd ai finetuning jobs pause --id <job-id>`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			return validateRequiredFlags(map[string]string{"id": jobID})
 		},
@@ -413,6 +424,8 @@ func newOperationResumeCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "resume",
 		Short: "Resumes a paused fine-tuning job.",
+		Example: `  # Resume a paused job
+  azd ai finetuning jobs resume --id <job-id>`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			return validateRequiredFlags(map[string]string{"id": jobID})
 		},
@@ -473,6 +486,8 @@ func newOperationCancelCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cancel",
 		Short: "Cancels a running or queued fine-tuning job.",
+		Example: `  # Cancel a running or queued job
+  azd ai finetuning jobs cancel --id <job-id>`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			return validateRequiredFlags(map[string]string{"id": jobID})
 		},
@@ -549,6 +564,8 @@ func newOperationDeployModelCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "deploy",
 		Short: "Deploy a fine-tuned model to Azure Cognitive Services",
+		Example: `  # Deploy the model produced by a fine-tuning job
+  azd ai finetuning jobs deploy --job-id <job-id> --deployment-name my-model`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			return validateRequiredFlags(map[string]string{
 				"job-id":          jobID,

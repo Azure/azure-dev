@@ -1,0 +1,22 @@
+Cancel a running training job
+
+Usage
+  azd ai training job cancel [flags]
+
+Flags
+      --name string : Job name/ID to cancel (required)
+      --no-wait     : Do not wait for the cancel to complete; return immediately after the server accepts the request
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for cancel
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (default "default")
+      --project-endpoint string : Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)
+  -s, --subscription string     : Azure subscription ID (enables implicit init if environment not configured)
+
+Examples
+  Cancel a running job
+    azd ai training job cancel --name my-job

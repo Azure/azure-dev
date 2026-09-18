@@ -48,8 +48,9 @@ func newRunListCommand() *cobra.Command {
 	flags := &runListFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List runs for an eval.",
+		Use:     "list",
+		Short:   "List runs for an eval.",
+		Example: "# List runs of an evaluation\n  azd ai eval run list --eval quality",
 		Long: "List runs for an eval.\n\n" +
 			"The table carries one pass rate per run. A per-evaluator breakdown " +
 			"cannot fit a column each and stay readable when runs score different " +
@@ -159,9 +160,10 @@ func newRunShowCommand() *cobra.Command {
 	flags := &runShowFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "show [run]",
-		Short: "Show a single run.",
-		Args:  cobra.MaximumNArgs(1),
+		Use:     "show [run]",
+		Short:   "Show a single run.",
+		Example: "# Show the latest run of an evaluation\n  azd ai eval run show --eval quality",
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// The positional wins over the flag; both name the same run, and
 			// the one typed at the end of the line is the more deliberate.
@@ -329,9 +331,10 @@ func newRunCancelCommand() *cobra.Command {
 	flags := &runCancelFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "cancel [run]",
-		Short: "Cancel an in-flight run.",
-		Args:  cobra.MaximumNArgs(1),
+		Use:     "cancel [run]",
+		Short:   "Cancel an in-flight run.",
+		Example: "# Cancel a specific evaluation run\n  azd ai eval run cancel run_123 --eval quality",
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// The positional wins over the flag; both name the same run, and
 			// the one typed at the end of the line is the more deliberate.
@@ -416,8 +419,9 @@ func newRunDeleteCommand() *cobra.Command {
 	flags := &runDeleteFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "delete <run>",
-		Short: "Delete a run.",
+		Use:     "delete <run>",
+		Short:   "Delete a run.",
+		Example: "# Delete a run after confirmation\n  azd ai eval run delete run_123 --eval quality",
 		Long: "Delete a run.\n\n" +
 			"The run's results go with it. Asks before removing it; with " +
 			"--no-prompt, or with JSON output, --force is required.",

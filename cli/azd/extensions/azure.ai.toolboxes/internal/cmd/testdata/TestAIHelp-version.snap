@@ -1,0 +1,17 @@
+Display the extension version
+
+Usage
+  azd ai toolbox version [flags]
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for version
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: json) (default "default")
+      --project-endpoint string : Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.
+
+Examples
+  Display the installed toolbox extension version
+    azd ai toolbox version

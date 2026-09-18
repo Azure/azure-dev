@@ -42,6 +42,8 @@ func newEvalCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create [name]",
 		Short: "Create one eval declared in the configuration.",
+		Example: "# Create a declared evaluation from a configuration file\n" +
+			"  azd ai eval create quality --from-file ./evals/azure.eval.yaml",
 		Long: "Create one eval declared in the configuration.\n\n" +
 			"`azd up` reconciles every eval in the file. This creates a single one, " +
 			"for a project that is not deployed as a whole — or, with --from-file, " +
@@ -199,9 +201,10 @@ func newEvalListCommand() *cobra.Command {
 	flags := &evalListFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List the project's evals, a page at a time.",
-		Args:  cobra.NoArgs,
+		Use:     "list",
+		Short:   "List the project's evals, a page at a time.",
+		Example: "# List evaluations in the selected project\n  azd ai eval list",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&evalListAction{cmd: cmd, flags: flags}).Run()
 		},
@@ -313,9 +316,10 @@ func newEvalShowCommand() *cobra.Command {
 	var endpointFlg string
 
 	cmd := &cobra.Command{
-		Use:   "show <eval>",
-		Short: "Show an eval definition.",
-		Args:  requiredArgs(1),
+		Use:     "show <eval>",
+		Short:   "Show an eval definition.",
+		Example: "# Inspect an evaluation by name or ID\n  azd ai eval show quality",
+		Args:    requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&evalShowAction{cmd: cmd, endpoint: endpointFlg, evalID: args[0]}).Run()
 		},
@@ -413,8 +417,9 @@ func newEvalDeleteCommand() *cobra.Command {
 	flags := &evalDeleteFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "delete <eval>",
-		Short: "Delete an eval and everything under it.",
+		Use:     "delete <eval>",
+		Short:   "Delete an eval and everything under it.",
+		Example: "# Delete an evaluation and its runs after confirmation\n  azd ai eval delete quality",
 		Long: "Delete an eval and everything under it.\n\n" +
 			"An eval owns its runs, so deleting one discards their results too.\n\n" +
 			"Asks before removing it. With --no-prompt, or with JSON output, " +

@@ -70,6 +70,8 @@ func newInitCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Scaffold evaluation config for an agent. Makes no service calls.",
+		Example: "# Scaffold an evaluation using a local dataset\n" +
+			"  azd ai eval init --target my-agent --source dataset --dataset tests.jsonl",
 		// Everything init takes is a flag; a positional would be ignored.
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

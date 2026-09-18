@@ -1,0 +1,22 @@
+List the project's datasets.
+
+Usage
+  azd ai eval dataset list [flags]
+
+Flags
+      --all                     : Show every row.
+      --limit int               : Rows to show. Defaults to 20.
+      --project-endpoint string : Foundry project endpoint.
+      --tag stringArray         : Keep only datasets carrying this key=value tag. Repeatable, and repeats narrow rather than widen.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for list
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  List datasets in the selected project
+    azd ai eval dataset list

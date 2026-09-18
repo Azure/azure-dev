@@ -1,0 +1,21 @@
+Inspect the versions of one dataset.
+
+Usage
+  azd ai eval dataset versions [command]
+
+Available Commands
+  list : List the versions of a dataset.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for versions
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  List registered dataset versions
+    azd ai eval dataset versions list my-tests
+
+Use azd ai eval dataset versions [command] --help to view examples and more information about a specific command.

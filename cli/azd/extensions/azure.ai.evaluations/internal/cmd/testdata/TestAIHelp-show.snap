@@ -1,0 +1,19 @@
+Show an eval definition.
+
+Usage
+  azd ai eval show <eval> [flags]
+
+Flags
+      --project-endpoint string : Foundry project endpoint.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for show
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Inspect an evaluation by name or ID
+    azd ai eval show quality

@@ -1,0 +1,20 @@
+Shows detailed information about a specific job.
+
+Usage
+  azd ai finetuning jobs show [flags]
+
+Flags
+  -i, --id string     : Job ID (required)
+      --logs          : Include recent training logs
+  -o, --output string : Output format: table, json, yaml (default "table")
+
+Global Flags
+      --debug                   : Enable debug mode
+  -h, --help                    : help for show
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+      --project-endpoint string : Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)
+  -s, --subscription string     : Azure subscription ID (enables implicit init if environment not configured)
+
+Examples
+  Show job details and recent training logs
+    azd ai finetuning jobs show --id <job-id> --logs

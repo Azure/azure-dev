@@ -1,0 +1,23 @@
+Show RLE environment details.
+
+The command resolves the environment from the Foundry project and includes its
+full version history. With no environment name, it uses the name saved in
+.azd-rle.json.
+
+Usage
+  azd ai rle show [environment-name] [flags]
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for show
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: default, json) (default "default")
+
+Examples
+  Show the locally saved environment and its version history
+    azd ai rle show
+
+  Inspect an existing environment by name
+    azd ai rle show my-environment

@@ -1,0 +1,31 @@
+Delete a toolbox or one of its versions.
+
+Without --version the whole toolbox is removed (cascades to every version) and
+its TOOLBOX_<NORMALIZED_NAME>_MCP_ENDPOINT value is cleared from the active azd
+environment. With --version the named version is deleted; the CLI refuses to
+delete the default version while others exist (retarget first) or — without
+--force — when it is the only remaining version (which would cascade and remove
+the toolbox).
+
+Usage
+  azd ai toolbox delete <name> [flags]
+
+Flags
+      --force          : Skip confirmation prompts and override safety checks where allowed.
+      --version string : Delete a single version instead of the whole toolbox.
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for delete
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: table, json) (default "table")
+      --project-endpoint string : Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.
+
+Examples
+  Delete a toolbox after confirmation
+    azd ai toolbox delete research
+
+  Delete a non-default toolbox version
+    azd ai toolbox delete research --version 1

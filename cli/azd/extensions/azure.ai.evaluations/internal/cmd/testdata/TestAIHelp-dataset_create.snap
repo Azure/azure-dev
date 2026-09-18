@@ -1,0 +1,21 @@
+Register a dataset, publishing its first version.
+
+Usage
+  azd ai eval dataset create <name> [flags]
+
+Flags
+      --from-file string        : Path to a .jsonl file, or a directory containing one.
+      --project-endpoint string : Foundry project endpoint.
+      --version string          : Version to publish as the dataset's first. Omit for 1.0.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for create
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Publish dataset content from a local JSONL file
+    azd ai eval dataset create my-tests --from-file tests.jsonl

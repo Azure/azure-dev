@@ -159,10 +159,11 @@ func (s *jobSelector) kind() (jobKind, error) {
 
 func newJobCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "job",
-		Short: "Inspect, cancel and delete generation jobs.",
+		Use:     "job",
+		Short:   "Inspect, cancel and delete generation jobs.",
+		Example: "# List dataset generation jobs\n  azd ai eval job list --dataset",
 		Long: "Inspect, cancel and delete generation jobs.\n\n" +
-			"This is the resume path for `generate`: a job started with --no-wait, " +
+			"This is the resume path for `azd ai eval generate`: a job started with --no-wait, " +
 			"or one whose client was interrupted, is reattached to here rather than " +
 			"restarted.\n\n" +
 			"Pass --dataset or --evaluator to say which generation to act on. " +
@@ -219,9 +220,10 @@ func newJobListCommand() *cobra.Command {
 	flags := &jobListFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List the project's generation jobs.",
-		Args:  cobra.NoArgs,
+		Use:     "list",
+		Short:   "List the project's generation jobs.",
+		Example: "# List evaluator generation jobs\n  azd ai eval job list --evaluator",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&jobListAction{cmd: cmd, flags: flags}).Run()
 		},
@@ -306,8 +308,10 @@ func newJobShowCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <job-id>",
 		Short: "Show a generation job, and collect its artifact once it has finished.",
+		Example: "# Inspect a dataset generation job and collect its completed artifact\n" +
+			"  azd ai eval job show job_123 --dataset --output-dir ./datasets",
 		Long: "Show a generation job, and collect its artifact once it has finished.\n\n" +
-			"`generate --no-wait` returns before the job has produced anything, so " +
+			"`azd ai eval generate --no-wait` returns before the job has produced anything, so " +
 			"the download and the catalog entry are left for this command. A job " +
 			"still running is reported and nothing is written; a job that has " +
 			"succeeded is completed here, and running it again is harmless -- an " +
@@ -430,9 +434,10 @@ func newJobCancelCommand() *cobra.Command {
 	flags := &jobFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "cancel <job-id>",
-		Short: "Cancel an in-flight generation job.",
-		Args:  requiredArgs(1),
+		Use:     "cancel <job-id>",
+		Short:   "Cancel an in-flight generation job.",
+		Example: "# Cancel an evaluator generation job\n  azd ai eval job cancel job_123 --evaluator",
+		Args:    requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&jobCancelAction{cmd: cmd, flags: flags, jobID: args[0]}).Run()
 		},
@@ -482,6 +487,8 @@ func newJobDeleteCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete <job-id>",
 		Short: "Delete a generation job record.",
+		Example: "# Delete a dataset generation job record after confirmation\n" +
+			"  azd ai eval job delete job_123 --dataset",
 		Long: "Delete a generation job record.\n\n" +
 			"The artifact the job produced is already registered as its own version " +
 			"and is not affected.",

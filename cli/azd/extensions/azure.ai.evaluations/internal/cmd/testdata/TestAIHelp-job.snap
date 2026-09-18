@@ -1,0 +1,28 @@
+Inspect, cancel and delete generation jobs.
+
+This is the resume path for `azd ai eval generate`: a job started with --no-wait, or one whose client was interrupted, is reattached to here rather than restarted.
+
+Pass --dataset or --evaluator to say which generation to act on. The two are separate service collections, so it is required.
+
+Usage
+  azd ai eval job [command]
+
+Available Commands
+  cancel : Cancel an in-flight generation job.
+  delete : Delete a generation job record.
+  list   : List the project's generation jobs.
+  show   : Show a generation job, and collect its artifact once it has finished.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for job
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  List dataset generation jobs
+    azd ai eval job list --dataset
+
+Use azd ai eval job [command] --help to view examples and more information about a specific command.

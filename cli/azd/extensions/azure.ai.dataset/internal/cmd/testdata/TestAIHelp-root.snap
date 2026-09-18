@@ -1,0 +1,56 @@
+Register and version Foundry datasets from your terminal. (Beta)
+
+Usage
+  azd ai dataset [command]
+
+Available Commands
+  create   : Register a dataset, publishing its first version.
+  delete   : Delete a dataset version.
+  download : Download a registered dataset version's content.
+  list     : List the project's datasets.
+  show     : Show a dataset version.
+  update   : Publish a new version of a dataset.
+  version  : Display the extension version
+  versions : Inspect the versions of one dataset.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for dataset
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Register a local dataset in the selected project
+    azd ai dataset create my-tests --from-file tests.jsonl
+
+  List datasets in a named azd environment
+    azd ai dataset list --environment dev
+
+Use azd ai dataset [command] --help to view examples and more information about a specific command.
+
+Project Context
+  Commands that contact Foundry resolve the project endpoint in this order:
+  --project-endpoint; the selected azd environment; the global configuration
+  key extensions.ai-projects.context.endpoint; then process environment
+  variables. Environment lookups prefer FOUNDRY_PROJECT_ENDPOINT and fall back
+  to AZURE_AI_PROJECT_ENDPOINT.
+  Dataset commands can run without an azd project when an endpoint is supplied.
+
+Environments & Environment Variables
+  An azd environment is a named deployment configuration, such as dev or prod.
+  Use 'azd env new <name>' to create one, 'azd env select <name>' to change the
+  default, or --environment <name> (-e) to select one for a command.
+  Use 'azd env set FOUNDRY_PROJECT_ENDPOINT <endpoint>' to save the endpoint.
+  Values can include secrets; do not share 'azd env get-values' output or
+  commit .azure to source control.
+
+  Create and update record EVAL_DATASET_VERSION in the selected environment
+  after publishing. AZURE_AI_PROJECT_ID supplies the project resource ID for
+  portal links. Dataset generation is provided by the evaluations extension,
+  not by this dataset-management extension.
+
+Learn More
+  Environment commands: 'azd env --help'
+  Dataset generation: see the azure.ai.evaluations extension documentation.

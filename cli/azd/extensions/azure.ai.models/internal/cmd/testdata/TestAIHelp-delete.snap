@@ -1,0 +1,20 @@
+Delete a custom model version from the Azure AI Foundry custom model registry.
+
+Usage
+  azd ai models delete [flags]
+
+Flags
+  -f, --force                   : Skip confirmation prompt
+  -n, --name string             : Model name (required)
+      --project-endpoint string : Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)
+  -s, --subscription string     : Azure subscription ID
+      --version string          : Model version (default "1")
+
+Global Flags
+      --debug     : Enable debug mode
+  -h, --help      : help for delete
+      --no-prompt : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+
+Examples
+  Delete a custom model
+    azd ai models delete --name my-model

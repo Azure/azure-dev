@@ -29,7 +29,9 @@ func newJobShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show",
 		Short: "Show details of a specific training job",
-		Args:  cobra.NoArgs,
+		Example: `  # Inspect a training job
+  azd ai training job show --name my-job`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 

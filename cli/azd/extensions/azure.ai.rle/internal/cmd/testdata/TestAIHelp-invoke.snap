@@ -1,0 +1,28 @@
+Open a remote OpenEnv runtime shell.
+
+With no environment name, invoke uses the environment saved in .azd-rle.json.
+To invoke an existing environment without local source or state, provide its name
+and set FOUNDRY_PROJECT_ENDPOINT. Use --version to select a specific published
+version; otherwise, the latest version returned by the project is used.
+
+Usage
+  azd ai rle invoke [environment-name] [flags]
+
+Flags
+      --timeout int    : Per-command OpenEnv request timeout in seconds (0 for no timeout). (default 30)
+      --version string : Published environment version to invoke.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for invoke
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Open a runtime shell for the locally saved environment
+    azd ai rle invoke
+
+  Open a specific published version in the configured Foundry project
+    azd ai rle invoke my-environment --version 1.0.0

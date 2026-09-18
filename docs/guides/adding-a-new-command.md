@@ -82,6 +82,11 @@ root.Add("mycommand", &actions.ActionDescriptorOptions{
 
 ### 4. Update snapshots
 
+Follow the [help text conventions](../../cli/azd/docs/style-guidelines/azd-style-guide.md#help-text)
+for descriptions, headings, examples, flags, and contextual guidance. That section
+also documents the `azd ai` inherited help renderer, generated extension copies,
+and snapshot commands.
+
 After adding the command, regenerate CLI snapshots:
 
 ```bash

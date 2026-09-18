@@ -174,11 +174,18 @@ type datasetWriteAction struct {
 // whether the name was already in use.
 func newDatasetWriteCommand(verb, short string) *cobra.Command {
 	flags := &datasetWriteFlags{}
+	example := "# Register a dataset from a local JSONL file\n" +
+		"  azd ai dataset create my-tests --from-file tests.jsonl"
+	if verb == "update" {
+		example = "# Publish a new version from a local JSONL file\n" +
+			"  azd ai dataset update my-tests --from-file tests.jsonl"
+	}
 
 	cmd := &cobra.Command{
-		Use:   verb + " <name>",
-		Short: short,
-		Args:  cobra.ExactArgs(1),
+		Use:     verb + " <name>",
+		Short:   short,
+		Example: example,
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&datasetWriteAction{
 				cmd: cmd, flags: flags, verb: verb, name: args[0],
@@ -339,9 +346,10 @@ func newDatasetListCommand() *cobra.Command {
 	var showAll bool
 
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List the project's datasets.",
-		Args:  cobra.NoArgs,
+		Use:     "list",
+		Short:   "List the project's datasets.",
+		Example: "# List datasets in the selected project\n  azd ai dataset list",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&datasetListAction{cmd: cmd, endpoint: endpointFlg, tags: tags}).Run()
 		},
@@ -380,8 +388,9 @@ func (a *datasetListAction) Run() error {
 // the assets rather than the history of one of them.
 func newDatasetVersionsCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "versions",
-		Short: "Inspect the versions of one dataset.",
+		Use:     "versions",
+		Short:   "Inspect the versions of one dataset.",
+		Example: "# List all registered versions of a dataset\n  azd ai dataset versions list my-tests",
 	}
 	cmd.AddCommand(newDatasetVersionsListCommand())
 	return cmd
@@ -423,9 +432,10 @@ func newDatasetVersionsListCommand() *cobra.Command {
 	var showAll bool
 
 	cmd := &cobra.Command{
-		Use:   "list <name>",
-		Short: "List the versions of a dataset.",
-		Args:  cobra.ExactArgs(1),
+		Use:     "list <name>",
+		Short:   "List the versions of a dataset.",
+		Example: "# List registered dataset versions\n  azd ai dataset versions list my-tests",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&datasetVersionsListAction{
 				cmd: cmd, endpoint: endpointFlg, name: args[0],
@@ -553,9 +563,10 @@ func newDatasetShowCommand() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "show <name>",
-		Short: "Show a dataset version.",
-		Args:  cobra.ExactArgs(1),
+		Use:     "show <name>",
+		Short:   "Show a dataset version.",
+		Example: "# Inspect a specific dataset version\n  azd ai dataset show my-tests --version 1.0",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&datasetShowAction{
 				cmd: cmd, endpoint: endpointFlg, version: version, name: args[0],
@@ -637,8 +648,9 @@ func newDatasetDeleteCommand() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "delete <name>",
-		Short: "Delete a dataset version.",
+		Use:     "delete <name>",
+		Short:   "Delete a dataset version.",
+		Example: "# Delete one dataset version after confirmation\n  azd ai dataset delete my-tests --version 1.0",
 		Long: `Delete a dataset version from the resolved Foundry project.
 
 The version is removed immediately and cannot be recovered. The CLI asks for

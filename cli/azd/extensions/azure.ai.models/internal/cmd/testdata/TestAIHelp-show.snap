@@ -1,0 +1,20 @@
+Show detailed information about a specific custom model in the Azure AI Foundry custom model registry.
+
+Usage
+  azd ai models show [flags]
+
+Flags
+  -n, --name string             : Model name (required)
+  -o, --output string           : Output format (table, json) (default "table")
+      --project-endpoint string : Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)
+  -s, --subscription string     : Azure subscription ID
+      --version string          : Model version (defaults to latest)
+
+Global Flags
+      --debug     : Enable debug mode
+  -h, --help      : help for show
+      --no-prompt : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+
+Examples
+  Inspect a custom model
+    azd ai models show --name my-model

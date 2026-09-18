@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"azure.ai.connections/internal/helpformat"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -41,6 +43,13 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newConnectionCreateCommand(extCtx))
 	rootCmd.AddCommand(newConnectionUpdateCommand(extCtx))
 	rootCmd.AddCommand(newConnectionDeleteCommand(extCtx))
+
+	rootCmd.Example = `  # List the connections in the resolved Foundry project
+  azd ai connection list
+
+  # Inspect a connection without displaying its credentials
+  azd ai connection show my-search`
+	helpformat.Install(rootCmd, "azd ai", connectionHelpFooter)
 
 	return rootCmd
 }

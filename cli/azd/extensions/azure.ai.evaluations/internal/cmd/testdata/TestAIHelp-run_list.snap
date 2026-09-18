@@ -1,0 +1,26 @@
+List runs for an eval.
+
+The table carries one pass rate per run. A per-evaluator breakdown cannot fit a column each and stay readable when runs score different evaluators, so `-o json` carries it instead, under `per_testing_criteria_results` on every run.
+
+Usage
+  azd ai eval run list [flags]
+
+Flags
+      --after string            : Resume after this id, which the previous page printed.
+      --all                     : Retrieve every page. Overrides --limit.
+      --eval string             : Name of the eval declared in the configuration, or its id.
+      --limit int               : Rows per page. Defaults to 20.
+      --path string             : Directory holding azure.eval.yaml. Defaults to the path init used, then ./evals.
+      --project-endpoint string : Foundry project endpoint.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for list
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  List runs of an evaluation
+    azd ai eval run list --eval quality

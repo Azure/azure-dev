@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"azure.ai.finetune/internal/helpformat"
+
 	"github.com/spf13/cobra"
 )
 
@@ -17,8 +19,11 @@ var rootFlags rootFlagsDefinition
 
 func NewRootCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:           "finetuning <command> [options]",
-		Short:         "Extension for Foundry Fine Tuning. (Preview)",
+		Use:   "finetuning <command> [options]",
+		Short: "Extension for Foundry Fine Tuning. (Preview)",
+		Example: `  # Initialize a project and submit a fine-tuning job
+  azd ai finetuning init
+  azd ai finetuning jobs submit --file fine-tuning.yaml`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		CompletionOptions: cobra.CompletionOptions{
@@ -49,6 +54,8 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newInitCommand(rootFlags))
 	rootCmd.AddCommand(newOperationCommand())
 	rootCmd.AddCommand(newMetadataCommand())
+
+	helpformat.Install(rootCmd, "azd ai", finetuningHelpFooter)
 
 	return rootCmd
 }

@@ -1,0 +1,21 @@
+Delete a routine.
+
+Usage
+  azd ai routine delete <name> [flags]
+
+Flags
+      --force : Skip confirmation prompt (required in --no-prompt mode)
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for delete
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: json, table) (default "table")
+  -p, --project-endpoint string : Foundry project endpoint URL (overrides env var and config)
+      --timeout string          : HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.
+
+Examples
+  Delete a routine after confirmation
+    azd ai routine delete nightly-summary

@@ -1,0 +1,27 @@
+Manage fine-tuning jobs
+
+Usage
+  azd ai finetuning jobs [command]
+
+Available Commands
+  cancel : Cancels a running or queued fine-tuning job.
+  deploy : Deploy a fine-tuned model to Azure Cognitive Services
+  list   : List fine-tuning jobs.
+  pause  : Pauses a running fine-tuning job.
+  resume : Resumes a paused fine-tuning job.
+  show   : Shows detailed information about a specific job.
+  submit : Submit fine-tuning job.
+
+Global Flags
+      --debug                   : Enable debug mode
+  -h, --help                    : help for jobs
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+      --project-endpoint string : Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)
+  -s, --subscription string     : Azure subscription ID (enables implicit init if environment not configured)
+
+Examples
+  Submit a job and list recent jobs
+    azd ai finetuning jobs submit --file fine-tuning.yaml
+    azd ai finetuning jobs list
+
+Use azd ai finetuning jobs [command] --help to view examples and more information about a specific command.

@@ -30,6 +30,8 @@ func newCustomListCommand(parentFlags *customFlags) *cobra.Command {
 		Use:   "list",
 		Short: "List all custom models",
 		Long:  "List all custom models registered in the Azure AI Foundry custom model registry.",
+		Example: `  # List custom models in the configured project
+  azd ai models list`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			return runCustomList(ctx, parentFlags, flags)

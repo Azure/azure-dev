@@ -1,0 +1,33 @@
+Open an SSH session to the container of a running training job, optionally targeting a specific node by index.
+
+Prerequisite: the job must have been submitted with an SSH service enabled in its YAML, e.g.:
+
+  services:
+    my_ssh:
+      type: ssh
+      ssh_public_keys: |
+        ssh-ed25519 AAAA... user@host
+
+The SSH service must reach 'Running' status before this command can connect; that typically takes 30s–120s after the job enters Running. If --private-key-file-path is omitted, the OpenSSH client falls back to the default identities under ~/.ssh/.
+
+Usage
+  azd ai training job connect-ssh [flags]
+
+Flags
+      --name string                  : Job name (required)
+      --node-index int               : Zero-based index of the node to connect to in a multi-node job (default 0)
+      --private-key-file-path string : Path to the SSH private key file (optional; ssh will use ~/.ssh defaults if omitted)
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for connect-ssh
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (default "default")
+      --project-endpoint string : Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)
+  -s, --subscription string     : Azure subscription ID (enables implicit init if environment not configured)
+
+Examples
+  Connect to the first node with a specific SSH key
+    azd ai training job connect-ssh --name my-job --node-index 0 --private-key-file-path ~/.ssh/id_ed25519

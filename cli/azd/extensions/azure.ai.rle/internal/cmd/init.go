@@ -31,9 +31,14 @@ func newInitCommand() *cobra.Command {
 	flags := &rleInitFlags{}
 
 	cmd := &cobra.Command{
-		Use:   "init",
+		Use:   "init [environment-name]",
 		Short: "Initialize a local RLE environment",
-		Args:  cobra.MaximumNArgs(1),
+		Example: `  # Copy the OpenEnv echo sample into a local environment
+  azd ai rle init
+
+  # Choose a name for the local environment directory
+  azd ai rle init code_rl`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			envNameOverride := ""
 			if len(args) == 1 {
@@ -43,20 +48,6 @@ func newInitCommand() *cobra.Command {
 		},
 	}
 
-	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		var help strings.Builder
-		help.WriteString("Initialize a local RLE environment\n")
-		help.WriteString("Usage:\n")
-		help.WriteString("  rle init [environment-name] [flags]\n")
-		help.WriteString("Flags:\n")
-		help.WriteString("      --force     Overwrite generated files in an existing non-empty session directory\n")
-		help.WriteString("  -h, --help      help for init\n")
-		if cmd.InheritedFlags().HasAvailableFlags() {
-			help.WriteString("Global Flags:\n")
-			help.WriteString(cmd.InheritedFlags().FlagUsages())
-		}
-		_, _ = fmt.Fprint(cmd.OutOrStdout(), help.String())
-	})
 	cmd.Flags().BoolVar(&flags.force, "force", false, "Overwrite generated files in an existing non-empty session directory")
 	return cmd
 }

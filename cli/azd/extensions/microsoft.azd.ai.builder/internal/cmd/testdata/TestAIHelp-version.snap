@@ -1,0 +1,12 @@
+Prints the version of the application
+
+Usage
+  azd ai builder version [flags]
+
+Global Flags
+      --debug : Enable debug mode
+  -h, --help  : help for version
+
+Examples
+  Show the installed builder version
+    azd ai builder version

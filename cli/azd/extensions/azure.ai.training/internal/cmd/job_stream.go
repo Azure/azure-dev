@@ -22,8 +22,11 @@ func newJobStreamCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "stream",
 		Short: "Stream logs from a running training job",
-		Long:  "Stream live log output from a training job. Polls for new log content\nuntil the job reaches a terminal state.\n\nExample:\n  azd ai training job stream --name my-job-123",
-		Args:  cobra.NoArgs,
+		Long: "Stream live log output from a training job. Polls for new log content\n" +
+			"until the job reaches a terminal state.",
+		Example: `  # Follow training logs until the job finishes
+  azd ai training job stream --name my-job-123`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 

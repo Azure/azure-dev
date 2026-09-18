@@ -1,0 +1,36 @@
+Launch the Agent Inspector UI in a browser.
+
+The inspector serves an embedded single-page application and proxies the SPA's
+HTTP/SSE calls to a Foundry agent running on localhost (default port 8088).
+The agent itself is started separately, for example via 'azd ai agent run'.
+
+SSE chunks streamed to the SPA are also mirrored to your terminal so you can
+watch progress without focusing the browser.
+
+Usage
+  azd ai inspector launch [flags]
+
+Flags
+      --conversation-id string : Optional explicit conversation ID for the SPA. If omitted, the SPA mints a fresh UUID.
+      --inspector-port int     : Port the Agent Inspector UI listens on (default: 8087) (default 8087)
+      --port int               : Localhost port of the agent the inspector targets (default: 8088) (default 8088)
+      --session-id string      : Optional explicit session ID for the SPA. If omitted, the SPA mints a fresh UUID.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for launch
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Launch the inspector against a local agent on the default port (8088),
+  serving the UI on the default port (8087).
+    azd ai inspector launch
+
+  Launch with custom ports.
+    azd ai inspector launch --port 9000 --inspector-port 9001
+
+  Seed an explicit session/conversation (otherwise the SPA mints fresh UUIDs).
+    azd ai inspector launch --session-id <uuid> --conversation-id <uuid>

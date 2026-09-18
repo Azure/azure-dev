@@ -1,0 +1,26 @@
+Show a generation job, and collect its artifact once it has finished.
+
+`azd ai eval generate --no-wait` returns before the job has produced anything, so the download and the catalog entry are left for this command. A job still running is reported and nothing is written; a job that has succeeded is completed here, and running it again is harmless -- an artifact already collected is left as it is, edits and all, unless --force says to replace it.
+
+Usage
+  azd ai eval job show <job-id> [flags]
+
+Flags
+      --dataset                 : Required (or --evaluator). Act on dataset generation jobs.
+      --evaluator               : Required (or --dataset). Act on evaluator generation jobs.
+      --force                   : Replace an artifact a previous collection already wrote.
+      --output-dir string       : Directory the collected artifact is written to.
+      --path string             : Directory holding azure.eval.yaml. Defaults to the path init used, then ./evals.
+      --project-endpoint string : Foundry project endpoint.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for show
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Inspect a dataset generation job and collect its completed artifact
+    azd ai eval job show job_123 --dataset --output-dir ./datasets

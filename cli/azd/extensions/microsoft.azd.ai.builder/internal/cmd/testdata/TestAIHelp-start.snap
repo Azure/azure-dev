@@ -1,0 +1,12 @@
+Get the context of the azd project & environment.
+
+Usage
+  azd ai builder start [flags]
+
+Global Flags
+      --debug : Enable debug mode
+  -h, --help  : help for start
+
+Examples
+  Choose an AI scenario and configure its Azure resources
+    azd ai builder start

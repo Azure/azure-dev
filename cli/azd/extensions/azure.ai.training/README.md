@@ -2,6 +2,12 @@
 
 An azd extension for Microsoft Foundry training jobs.
 
+## Command help
+
+Run `azd ai training --help` for project and environment guidance, or append
+`--help` to any command for flags and examples. Help does not require Azure
+authentication. `NO_COLOR=1` disables help colors.
+
 ## Job inputs and outputs
 
 Local code and input folders use the project's default storage unless a Foundry

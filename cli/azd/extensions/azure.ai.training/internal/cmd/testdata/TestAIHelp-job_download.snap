@@ -1,0 +1,31 @@
+Download outputs and artifacts of a training job.
+
+Without flags, downloads the job's default artifacts (logs and run files).
+With --output-name, downloads a single named output.
+With --all, downloads every named output plus the default artifacts.
+
+Usage
+  azd ai training job download [flags]
+
+Flags
+      --all                  : Download all named outputs and default artifacts
+  -p, --download-path string : Path to download files to (used as-is when provided; defaults to ./<job-name>/ in the current directory)
+  -n, --name string          : Job name (required)
+      --output-name string   : Name of the user-defined output to download. If omitted (or set to "default"), the default artifacts are downloaded
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for download
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (default "default")
+      --project-endpoint string : Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)
+  -s, --subscription string     : Azure subscription ID (enables implicit init if environment not configured)
+
+Examples
+  Download logs and run files
+    azd ai training job download --name my-job
+
+  Download all named outputs and artifacts to a directory
+    azd ai training job download --name my-job --all --download-path "./job outputs"

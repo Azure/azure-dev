@@ -1,0 +1,24 @@
+Delete an eval and everything under it.
+
+An eval owns its runs, so deleting one discards their results too.
+
+Asks before removing it. With --no-prompt, or with JSON output, --force is required.
+
+Usage
+  azd ai eval delete <eval> [flags]
+
+Flags
+      --force                   : Delete without asking for confirmation.
+      --project-endpoint string : Foundry project endpoint.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for delete
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Delete an evaluation and its runs after confirmation
+    azd ai eval delete quality

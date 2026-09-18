@@ -16,5 +16,8 @@ var (
 )
 
 func newVersionCommand(outputFormat *string) *cobra.Command {
-	return azdext.NewVersionCommand("azure.ai.routines", Version, outputFormat)
+	cmd := azdext.NewVersionCommand("azure.ai.routines", Version, outputFormat)
+	cmd.Example = `  # Display the installed routine extension version
+  azd ai routine version`
+	return cmd
 }

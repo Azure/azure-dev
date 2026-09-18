@@ -27,7 +27,9 @@ func newListCommand(outputFormat *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List RLE environments in the Foundry project",
-		Args:  cobra.NoArgs,
+		Example: `  # List runtime environments in the configured Foundry project
+  azd ai rle list`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&listAction{cmd: cmd, outputFormat: outputFormat}).Run()
 		},

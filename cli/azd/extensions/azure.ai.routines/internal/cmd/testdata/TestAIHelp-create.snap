@@ -1,0 +1,46 @@
+Create a new Foundry routine.
+
+A routine pairs a trigger (--trigger) with an action (--action).
+Use --file to create from a YAML/JSON manifest file instead of individual flags.
+
+Usage
+  azd ai routine create <name> [flags]
+
+Flags
+      --action string            : Action type: agent-response (default), agent-invoke (default "agent-response")
+      --agent-endpoint-id string : Agent endpoint ID (for agent-response or agent-invoke action)
+      --agent-name string        : Project-scoped agent name (for agent-response or agent-invoke action)
+      --at string                : ISO 8601 datetime for timer trigger (e.g. '2026-04-24T15:00:00Z')
+      --connection-id string     : Workspace connection ID (for github-issue trigger)
+      --conversation-id string   : Existing conversation to continue (for agent-response action, preview)
+      --cron string              : 5-field cron expression for recurring trigger (minimum interval 5 minutes)
+      --description string       : Description for the routine
+      --enabled                  : Whether the routine is enabled on creation (default true)
+      --event-name string        : Provider-specific event name (for custom trigger)
+      --file string              : Path to a YAML or JSON routine manifest file
+      --force                    : Overwrite an existing routine with the same name (upsert)
+      --issue-event string       : GitHub issue event: opened or closed (for github-issue trigger)
+      --owner string             : GitHub owner or organization (for github-issue trigger)
+      --parameters string        : Provider-specific trigger parameters as a JSON object (for custom trigger)
+      --provider string          : External event provider (for custom trigger)
+      --repository string        : GitHub repository name (for github-issue trigger)
+      --session-id string        : Existing session to continue (for agent-invoke action)
+      --time-zone string         : Time zone for the recurring trigger (e.g. 'America/New_York') (default "UTC")
+      --trigger string           : Trigger type: timer, recurring, github-issue, or custom (required unless --file is used)
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for create
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: json, table) (default "table")
+  -p, --project-endpoint string : Foundry project endpoint URL (overrides env var and config)
+      --timeout string          : HTTP request timeout override (for example, 2m or 90s). Defaults to 30s for reads and 2m0s for writes.
+
+Examples
+  Create a routine from a YAML manifest
+    azd ai routine create nightly-summary --file ./routine.yaml
+
+  Schedule an agent response every day at midnight UTC
+    azd ai routine create nightly-summary --trigger recurring --cron "0 0 * * *" --agent-name summarizer

@@ -1,0 +1,40 @@
+Generate a dataset and a rubric evaluator, and download them.
+
+Both are produced unless --dataset or --evaluator narrows it to one. Neither is an input to the other, so the jobs run together and each reports its own outcome; the command fails if either did.
+
+--from selects one or more of the sources the service generates the dataset from, and is repeatable.
+
+Usage
+  azd ai eval generate [flags]
+
+Flags
+      --agent-instruction string      : What the agent does and what to test.
+      --agent-instruction-file string : Read the agent instruction from this file. Mutually exclusive with --agent-instruction.
+      --dataset                       : Generate only the dataset. Omit both flags to generate both.
+      --dataset-name string           : Name for the generated dataset. Defaults to <target>-turn-tests or <target>-conversation-tests, following --evaluation-level.
+      --evaluation-level string       : What one generated row is: turn or conversation. Defaults to turn. Dataset only.
+      --evaluator                     : Generate only the evaluator. Omit both flags to generate both.
+      --evaluator-name string         : Name for the generated evaluator. Defaults to <target>-evaluator.
+      --force                         : Overwrite an artifact file that already exists.
+      --from strings                  : Where the dataset's rows come from: traces, agent, prompt. Repeatable, and the service accepts more than one. Defaults to traces when the project has Application Insights connected, otherwise agent. Dataset only.
+      --generation-model string       : Model deployment that generates the artifact.
+      --max-samples int               : Rows to synthesize (15-1000). Defaults to 15. Dataset only.
+      --no-wait                       : Submit the job and return its id without polling.
+      --output-dir string             : Directory the generated artifact is written to.
+      --path string                   : Directory holding the evaluation configuration. Defaults to the directory init scaffolded, otherwise ./evals.
+      --project-endpoint string       : Foundry project endpoint.
+      --target string                 : Agent whose context seeds generation.
+      --trace-days int                : Days of traces to seed the evaluator's rubric. 0 disables.
+      --wait                          : Block until the job finishes. (default true)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for generate
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Generate test data and a rubric from an agent
+    azd ai eval generate --target my-agent --from agent

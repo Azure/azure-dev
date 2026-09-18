@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"azure.ai.models/internal/helpformat"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -18,8 +20,11 @@ var rootFlags rootFlagsDefinition
 
 func NewRootCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:           "models <command> [options]",
-		Short:         "Extension for managing custom models in Azure AI Foundry. (Preview)",
+		Use:   "models <command> [options]",
+		Short: "Extension for managing custom models in Azure AI Foundry. (Preview)",
+		Example: `  # Configure a Foundry project and list its custom models
+  azd ai models init
+  azd ai models list`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		CompletionOptions: cobra.CompletionOptions{
@@ -52,6 +57,8 @@ func NewRootCommand() *cobra.Command {
 	for _, cmd := range newTopLevelCustomCommands() {
 		rootCmd.AddCommand(cmd)
 	}
+
+	helpformat.Install(rootCmd, "azd ai", modelsHelpFooter)
 
 	return rootCmd
 }

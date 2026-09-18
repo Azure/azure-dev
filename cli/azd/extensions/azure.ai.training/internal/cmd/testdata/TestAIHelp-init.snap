@@ -1,0 +1,22 @@
+Initialize project configuration for training. (Preview)
+
+Usage
+  azd ai training init [flags]
+
+Flags
+      --project-endpoint string  : Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)
+  -s, --subscription string      : Azure subscription ID
+  -t, --template string          : GitHub URL or local directory path to a training job template. If omitted, a minimal job.yaml is scaffolded interactively.
+  -w, --working-directory string : Local directory where the training job template will be written. Defaults to the current directory.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for init
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Configure a Foundry project for training
+    azd ai training init

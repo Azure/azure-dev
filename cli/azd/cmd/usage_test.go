@@ -6,8 +6,6 @@ package cmd
 import (
 	"bytes"
 	"context"
-	"html/template"
-	"strings"
 	"testing"
 	"time"
 
@@ -55,9 +53,11 @@ func TestUsage(t *testing.T) {
 
 func usageSnapshot(t *testing.T, cmd *cobra.Command) {
 	t.Run(cmd.Name(), func(t *testing.T) {
-		result, err := resolveTemplate(cmd.HelpTemplate(), cmd)
-		require.NoError(t, err)
-		snapshot.SnapshotT(t, result)
+		var result bytes.Buffer
+		cmd.SetOut(&result)
+		cmd.SetErr(&result)
+		require.NoError(t, cmd.Help())
+		snapshot.SnapshotT(t, result.String())
 
 		for _, c := range cmd.Commands() {
 			if !c.IsAvailableCommand() || c.IsAdditionalHelpTopicCommand() {
@@ -67,16 +67,4 @@ func usageSnapshot(t *testing.T, cmd *cobra.Command) {
 			usageSnapshot(t, c)
 		}
 	})
-}
-
-func resolveTemplate(text string, data any) (string, error) {
-	finalBuffer := &bytes.Buffer{}
-	t := template.New("resolve template with command")
-	template.Must(t.Parse(text))
-
-	if err := t.Execute(finalBuffer, data); err != nil {
-		return "", err
-	}
-	// update `>` and `<`
-	return strings.ReplaceAll(strings.ReplaceAll(finalBuffer.String(), "&lt;", "<"), "&gt;", ">"), nil
 }

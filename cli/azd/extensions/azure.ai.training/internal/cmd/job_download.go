@@ -47,6 +47,11 @@ func newJobDownloadCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			"Without flags, downloads the job's default artifacts (logs and run files).\n" +
 			"With --output-name, downloads a single named output.\n" +
 			"With --all, downloads every named output plus the default artifacts.",
+		Example: `  # Download logs and run files
+  azd ai training job download --name my-job
+
+  # Download all named outputs and artifacts to a directory
+  azd ai training job download --name my-job --all --download-path "./job outputs"`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())

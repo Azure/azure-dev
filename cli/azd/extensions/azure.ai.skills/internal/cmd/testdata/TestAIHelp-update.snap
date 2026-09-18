@@ -1,0 +1,50 @@
+Skills are versioned and immutable. `update` creates a new version and
+sets it as the skill's new default version. `update` is non-destructive:
+prior versions are preserved and remain reachable.
+
+Accepts the same four input shapes as `create`:
+
+  1. Inline:    --description "..." --instructions "..."
+  2. SKILL.md:  --file ./SKILL.md   (CLI parses YAML front matter + body)
+  3. Package:   --file ./skill.zip  (CLI uploads the archive as multipart/form-data)
+  4. Directory: --file ./skill-src  (CLI packages the directory as a zip and uploads it)
+
+Directory mode requires SKILL.md at the root of the directory — the same
+layout that `azd ai skill download` writes by default.
+
+To repoint default_version at an existing version without uploading new
+content, pass --set-default-version <version>.
+
+Usage
+  azd ai skill update <name> [flags]
+
+Flags
+      --description string         : New human-readable summary for the next version
+      --file string                : Path to a SKILL.md file, a .zip archive, or a directory whose contents become the next version. Archives and directories must contain a SKILL.md at the root.
+      --instructions string        : New Markdown instructions body for the next version
+      --set-default-version string : Set the skill's default_version to an existing version without uploading new content
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for update
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: json, table) (default "json")
+  -p, --project-endpoint string : Foundry project endpoint URL (overrides env vars and global config)
+
+Examples
+  Upload new inline instructions as the default version
+    azd ai skill update my-skill --description "Updated summary" --instructions "Greet the user by name."
+
+  Upload a new version from a Markdown file
+    azd ai skill update my-skill --file ./SKILL.md
+
+  Upload a new version from an archive
+    azd ai skill update my-skill --file ./skill.zip
+
+  Upload a new version from an extracted directory
+    azd ai skill update my-skill --file ./skill-src/
+
+  Restore an existing version as the default
+    azd ai skill update my-skill --set-default-version 1

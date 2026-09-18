@@ -11,7 +11,7 @@ package cmd
 // existing version's description forward).
 func fileShapeBlurb(includeDescription bool) string {
 	if includeDescription {
-		return `File shape (JSON example):
+		return `JSON File Shape:
 
   {
     "name": "research",
@@ -36,7 +36,7 @@ func fileShapeBlurb(includeDescription bool) string {
     "metadata": { "owner": "research-team" }
   }
 
-Equivalent YAML:
+YAML File Shape:
 
   name: research
   description: research toolbox
@@ -95,7 +95,7 @@ does not create them. Run 'azd ai connection list' to see available
 connections.`
 	}
 
-	return `File shape (JSON example):
+	return `JSON File Shape:
 
   {
     "connections": [
@@ -106,7 +106,7 @@ connections.`
     ]
   }
 
-Equivalent YAML:
+YAML File Shape:
 
   connections:
     - name: my-mcp

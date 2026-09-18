@@ -28,8 +28,10 @@ func newJobSubmitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "submit",
 		Short: "Submit a new training job from a YAML definition file",
-		Long:  "Submit a new training job by providing a YAML job definition file.\n\nExample:\n  azd ai training job submit --file job.yaml",
-		Args:  cobra.NoArgs,
+		Long:  "Submit a new training job by providing a YAML job definition file.",
+		Example: `  # Submit a training job definition
+  azd ai training job submit --file job.yaml`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 

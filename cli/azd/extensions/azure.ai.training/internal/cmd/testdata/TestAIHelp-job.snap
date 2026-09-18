@@ -1,0 +1,33 @@
+Manage training jobs
+
+Usage
+  azd ai training job [command]
+
+Available Commands
+  cancel        : Cancel a running training job
+  connect-ssh   : Open an SSH session to a node of a running training job
+  delete        : Delete a training job
+  download      : Download outputs and/or artifacts from a training job
+  list          : List all training jobs
+  show          : Show details of a specific training job
+  show-services : Show services of a training job per node (e.g. SSH, JupyterLab, TensorBoard)
+  stream        : Stream logs from a running training job
+  submit        : Submit a new training job from a YAML definition file
+  validate      : Validate a job YAML definition file offline without submitting
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for job
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (default "default")
+      --project-endpoint string : Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)
+  -s, --subscription string     : Azure subscription ID (enables implicit init if environment not configured)
+
+Examples
+  Validate a job definition before submitting it
+    azd ai training job validate --file job.yaml
+    azd ai training job submit --file job.yaml
+
+Use azd ai training job [command] --help to view examples and more information about a specific command.

@@ -108,6 +108,8 @@ func newStartCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "start",
 		Short: "Get the context of the azd project & environment.",
+		Example: "  # Choose an AI scenario and configure its Azure resources\n" +
+			"  azd ai builder start",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Create a new context that includes the azd access token
 			ctx := azdext.WithAccessToken(cmd.Context())

@@ -33,6 +33,8 @@ func newCustomShowCommand(parentFlags *customFlags) *cobra.Command {
 		Use:   "show",
 		Short: "Show details of a custom model",
 		Long:  "Show detailed information about a specific custom model in the Azure AI Foundry custom model registry.",
+		Example: `  # Inspect a custom model
+  azd ai models show --name my-model`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			return runCustomShow(ctx, parentFlags, flags)

@@ -81,6 +81,14 @@ see [Extension Flag Architecture Spec](../design/extension-flag-architecture.md)
 - Provide contextual guidance within established command flows
 - Maintain documentation consistency across core and extended features
 
+First-party `azd ai` commands follow the
+[AI command help conventions](../style-guidelines/azd-style-guide.md#ai-command-help).
+Keep descriptions and examples in Cobra metadata, retain SDK usage wrappers,
+and render help without authentication or configuration reads. Independently
+released Go modules use generated copies of the internal formatter; update the
+canonical source and regenerate instead of editing a copy or adding an unreleased
+SDK dependency.
+
 ### 4. **Template and Resource Integration**
 
 - Leverage existing template system for new resource types

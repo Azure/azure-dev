@@ -39,7 +39,9 @@ func newEvaluatorDownloadCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "download <name>",
 		Short: "Download a registered evaluator version's definition.",
-		Args:  requiredArgs(1),
+		Example: "# Download the latest rubric to a local file\n" +
+			"  azd ai eval evaluator download my-rubric --output-file rubric.json",
+		Args: requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a.cmd, a.name = cmd, args[0]
 			return a.Run()

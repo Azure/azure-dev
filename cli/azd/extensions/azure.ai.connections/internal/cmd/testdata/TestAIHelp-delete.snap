@@ -1,0 +1,20 @@
+Delete a connection and clear its matching local readiness markers. If the connection is already absent, clear stale markers and succeed without prompting.
+
+Usage
+  azd ai connection delete <name> [flags]
+
+Flags
+      --force : Skip confirmation prompt
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for delete
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (default "default")
+  -p, --project-endpoint string : Foundry project endpoint URL (overrides env var and config)
+
+Examples
+  Delete a connection after confirmation
+    azd ai connection delete my-search

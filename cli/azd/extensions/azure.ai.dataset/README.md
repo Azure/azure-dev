@@ -17,6 +17,10 @@ than inside `azure.ai.evaluations`.
 
 ## Commands
 
+Run `azd ai dataset --help` for project-context and environment guidance, or append
+`--help` to any command for its current flags and examples. Help is available
+offline without authentication or reading project configuration.
+
 | Command | What it does |
 |---|---|
 | `azd ai dataset create <name> --from-file <path>` | Register a dataset, publishing its first version |

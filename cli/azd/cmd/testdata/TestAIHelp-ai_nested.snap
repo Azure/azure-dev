@@ -1,0 +1,17 @@
+Commands for the ai.nested extension namespace.
+
+Usage
+  azd ai nested [command]
+
+Available Commands
+  example : Nested test extension.
+
+Global Flags
+      --docs : Opens the documentation for azd ai nested in your web browser.
+  -h, --help : Gets help for nested.
+
+Examples
+  Explore commands in this namespace
+    azd ai nested --help
+
+Use azd ai nested [command] --help to view examples and more information about a specific command.

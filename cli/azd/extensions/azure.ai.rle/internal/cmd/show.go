@@ -26,6 +26,11 @@ func newShowCommand(outputFormat *string) *cobra.Command {
 The command resolves the environment from the Foundry project and includes its
 full version history. With no environment name, it uses the name saved in
 .azd-rle.json.`,
+		Example: `  # Show the locally saved environment and its version history
+  azd ai rle show
+
+  # Inspect an existing environment by name
+  azd ai rle show my-environment`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			environmentName := ""

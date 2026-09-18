@@ -1,0 +1,43 @@
+Upload model weights to Azure AI Foundry and register the model.
+
+This command performs three steps:
+  1. Requests a writable upload location (SAS URI)
+  2. Uploads model files using AzCopy
+  3. Registers the model in the custom model registry
+
+The --source flag accepts a local file/directory path or a remote blob URL with SAS token.
+For remote URLs containing special characters (& in SAS tokens), use --source-file to
+provide a file containing the URL instead.
+
+Usage
+  azd ai models create [flags]
+
+Flags
+      --azcopy-path string         : Path to azcopy binary (auto-detected if not provided)
+      --base-model string          : Base model identifier (e.g., FW-GPT-OSS-120B or full azureml:// URI). Required unless --weight-type is DraftModel.
+      --description string         : Model description
+      --lora-alpha int             : LoRA scaling factor (alpha) — optional; if omitted, the value from the uploaded adapter_config.json is used
+      --lora-dropout float         : LoRA dropout rate used during training (informational)
+      --lora-rank int              : LoRA rank (r) — optional; if omitted, the value from the uploaded adapter_config.json is used
+      --lora-target-modules string : Comma-separated list of target modules (e.g., "q_proj,v_proj,k_proj,o_proj")
+  -n, --name string                : Model name (required)
+      --no-wait                    : Start async registration and return immediately with the operation URL
+      --project-endpoint string    : Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)
+      --publisher string           : Model publisher ID for catalog info (e.g., Fireworks)
+      --source string              : Local path or remote URL to model files
+      --source-file string         : Path to a file containing the source URL (useful for URLs with special characters)
+  -s, --subscription string        : Azure subscription ID
+      --version string             : Model version (default "1")
+      --weight-type string         : Weight type (e.g., FullWeight, LoRA, DraftModel) (default "FullWeight")
+
+Global Flags
+      --debug     : Enable debug mode
+  -h, --help      : help for create
+      --no-prompt : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+
+Examples
+  Upload and register local model weights
+    azd ai models create --source ./model.safetensors --name my-model --base-model FW-DeepSeek-V3.1
+
+  Read a remote source URL from a file to preserve SAS token characters
+    azd ai models create --source-file source-url.txt --name my-model --base-model FW-DeepSeek-V3.1

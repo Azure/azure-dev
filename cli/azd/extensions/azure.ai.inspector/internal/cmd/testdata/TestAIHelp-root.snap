@@ -1,0 +1,44 @@
+Inspect locally running Foundry agents in a browser. (Preview)
+
+Usage
+  azd ai inspector [command]
+
+Available Commands
+  launch  : Launch the Agent Inspector UI in a browser, pointed at a local agent.
+  version : Display the extension version
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for inspector
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Start an agent in one terminal
+    azd ai agent run
+
+  Open the inspector in another terminal
+    azd ai inspector launch
+
+Use azd ai inspector [command] --help to view examples and more information about a specific command.
+
+Local Agent Context
+  Start a local Foundry agent separately with 'azd ai agent run'.
+  The inspector targets localhost:8088 and serves its browser UI on port 8087.
+  Use --port to change the target agent port and --inspector-port to change
+  the UI port. These are local ports, not a deployed Foundry project endpoint.
+
+  The inspector does not resolve FOUNDRY_PROJECT_ENDPOINT or load agent
+  runtime environment variables. Configure the agent in the terminal or
+  project where it is started; selecting an azd environment here does not
+  start or reconfigure that agent.
+
+  Use --session-id and --conversation-id to seed the browser session.
+  When omitted, the browser UI creates fresh IDs. Press Ctrl+C to stop
+  the inspector.
+
+Learn More
+  Local agent development: 'azd ai agent run --help'
+  Inspector options: 'azd ai inspector launch --help'

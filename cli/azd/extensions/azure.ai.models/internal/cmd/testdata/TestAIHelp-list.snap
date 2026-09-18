@@ -1,0 +1,19 @@
+List all custom models registered in the Azure AI Foundry custom model registry.
+
+Usage
+  azd ai models list [flags]
+
+Flags
+  -o, --output string           : Output format (table, json) (default "table")
+      --project-endpoint string : Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)
+      --source-job-id string    : Filter models by the training job that created them
+  -s, --subscription string     : Azure subscription ID
+
+Global Flags
+      --debug     : Enable debug mode
+  -h, --help      : help for list
+      --no-prompt : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+
+Examples
+  List custom models in the configured project
+    azd ai models list

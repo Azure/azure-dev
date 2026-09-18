@@ -75,7 +75,9 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init [-t <fine tuning job template>] [-p <foundry project arm id>]",
 		Short: fmt.Sprintf("Initialize a new AI Fine-tuning project. %s", color.YellowString("(Preview)")),
-		Args:  cobra.NoArgs,
+		Example: `  # Configure a Foundry project for fine-tuning
+  azd ai finetuning init`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 

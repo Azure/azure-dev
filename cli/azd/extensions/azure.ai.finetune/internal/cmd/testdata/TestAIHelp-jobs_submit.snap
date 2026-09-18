@@ -1,0 +1,23 @@
+Submit fine-tuning job.
+
+Usage
+  azd ai finetuning jobs submit [flags]
+
+Flags
+  -f, --file string            : Path to the config file.
+  -m, --model string           : Base model to fine-tune. Overrides config file. Required if --file is not provided
+  -r, --seed int               : Random seed for reproducibility of the job. If a seed is not specified, one will be generated for you. Overrides config file.
+  -x, --suffix string          : An optional string of up to 64 characters that will be added to your fine-tuned model name. Overrides config file.
+  -t, --training-file string   : Training file ID or local path. Use 'local:' prefix for local paths. Required if --file is not provided
+  -v, --validation-file string : Validation file ID or local path. Use 'local:' prefix for local paths.
+
+Global Flags
+      --debug                   : Enable debug mode
+  -h, --help                    : help for submit
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+      --project-endpoint string : Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)
+  -s, --subscription string     : Azure subscription ID (enables implicit init if environment not configured)
+
+Examples
+  Submit a fine-tuning job from configuration
+    azd ai finetuning jobs submit --file fine-tuning.yaml

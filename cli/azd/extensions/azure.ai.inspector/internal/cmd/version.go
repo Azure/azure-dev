@@ -11,5 +11,8 @@ import (
 )
 
 func newVersionCommand(outputFormat *string) *cobra.Command {
-	return azdext.NewVersionCommand("azure.ai.inspector", version.Version, outputFormat)
+	cmd := azdext.NewVersionCommand("azure.ai.inspector", version.Version, outputFormat)
+	cmd.Example = `  # Display the installed inspector extension version
+  azd ai inspector version`
+	return cmd
 }

@@ -1,0 +1,21 @@
+Cancel an in-flight generation job.
+
+Usage
+  azd ai eval job cancel <job-id> [flags]
+
+Flags
+      --dataset                 : Required (or --evaluator). Act on dataset generation jobs.
+      --evaluator               : Required (or --dataset). Act on evaluator generation jobs.
+      --project-endpoint string : Foundry project endpoint.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for cancel
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Cancel an evaluator generation job
+    azd ai eval job cancel job_123 --evaluator

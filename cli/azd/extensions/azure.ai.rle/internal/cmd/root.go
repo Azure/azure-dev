@@ -8,6 +8,8 @@ import (
 	"os"
 	"strconv"
 
+	"azure.ai.rle/internal/helpformat"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -23,6 +25,9 @@ func NewRootCommand() *cobra.Command {
 	})
 
 	rootCmd.SilenceUsage = true
+	rootCmd.Example = `  # Initialize and run a local RLE environment (enable commands first)
+  azd ai rle init
+  azd ai rle run`
 	rootCmd.SilenceErrors = true
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
@@ -47,8 +52,13 @@ func NewRootCommand() *cobra.Command {
 		command.Hidden = !rleCommandsEnabled()
 		rootCmd.AddCommand(command)
 	}
-	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
+	versionCmd := newVersionCommand(&extCtx.OutputFormat)
+	versionCmd.Example = `  # Display the installed extension version
+  azd ai rle version`
+	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
+
+	helpformat.Install(rootCmd, "azd ai", rleHelpFooter)
 
 	return rootCmd
 }

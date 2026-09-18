@@ -1,0 +1,22 @@
+Cancel an in-flight run.
+
+Usage
+  azd ai eval run cancel [run] [flags]
+
+Flags
+      --eval string             : Name of the eval declared in the configuration, or its id.
+      --path string             : Directory holding azure.eval.yaml. Defaults to the path init used, then ./evals.
+      --project-endpoint string : Foundry project endpoint.
+      --run string              : Run to act on. Defaults to the last run recorded for --eval.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for cancel
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Cancel a specific evaluation run
+    azd ai eval run cancel run_123 --eval quality

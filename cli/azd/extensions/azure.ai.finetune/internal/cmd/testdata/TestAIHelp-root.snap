@@ -1,0 +1,39 @@
+Extension for Foundry Fine Tuning. (Preview)
+
+Usage
+  azd ai finetuning [command]
+
+Available Commands
+  init    : Initialize a new AI Fine-tuning project. (Preview)
+  jobs    : Manage fine-tuning jobs
+  version : Prints the version of the application
+
+Global Flags
+      --debug     : Enable debug mode
+  -h, --help      : help for finetuning
+      --no-prompt : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+
+Examples
+  Initialize a project and submit a fine-tuning job
+    azd ai finetuning init
+    azd ai finetuning jobs submit --file fine-tuning.yaml
+
+Use azd ai finetuning [command] --help to view examples and more information about a specific command.
+
+Environments & Environment Variables
+  An azd environment is a named configuration stored in .azure/<environment>/.env.
+  Use 'azd env new <name>' to create one and 'azd env select <name>' to switch.
+  Use 'azd env set <name> <value>' to save values and 'azd env get-values' to
+  inspect them. Values can contain secrets; do not share the output or commit
+  .azure to source control.
+
+  Init saves AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, AZURE_RESOURCE_GROUP_NAME,
+  AZURE_ACCOUNT_NAME, AZURE_PROJECT_NAME and AZURE_LOCATION for the Foundry
+  project. Job commands use the current azd environment; --project-endpoint
+  and --subscription support initialization when it is not configured.
+  'azd ai finetuning jobs deploy' uses the saved subscription, resource group,
+  account and tenant to deploy a fine-tuned model.
+
+Learn More
+  Environment commands: 'azd env --help'
+  Fine-tuning job commands: 'azd ai finetuning jobs --help'

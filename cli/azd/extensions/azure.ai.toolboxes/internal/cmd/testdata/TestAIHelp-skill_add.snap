@@ -1,0 +1,35 @@
+Attach one or more skill references to a toolbox.
+
+Pass a single skill as the positional, or many via --from-file. Either way
+the invocation creates exactly one new toolbox version. The toolbox's
+default version is unchanged; run
+'azd ai toolbox publish <toolbox> <version>' to promote it.
+
+When the version is omitted, the reference resolves to the skill's default
+version at read time.
+
+Usage
+  azd ai toolbox skill add <toolbox> [skill[@version]] [flags]
+
+Flags
+      --from-file string    : Path to a JSON/YAML file listing skills to attach (skills[] block).
+      --from-version string : Version to branch the new version from (defaults to the latest version).
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for add
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: table, json) (default "table")
+      --project-endpoint string : Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.
+
+Examples
+  Follow a skill's default version
+    azd ai toolbox skill add research my-skill
+
+  Pin an immutable skill version
+    azd ai toolbox skill add research my-skill@2
+
+  Attach several skills in one new toolbox version
+    azd ai toolbox skill add research --from-file ./skills.yaml

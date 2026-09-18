@@ -1,0 +1,27 @@
+Manage custom evaluators.
+
+Usage
+  azd ai eval evaluator [command]
+
+Available Commands
+  create   : Register an evaluator, publishing its first version.
+  delete   : Delete an evaluator version.
+  download : Download a registered evaluator version's definition.
+  list     : List the project's evaluators, or the built-in ones.
+  show     : Show an evaluator definition.
+  update   : Publish a new version of an evaluator.
+  versions : Inspect the versions of one evaluator.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for evaluator
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Discover built-in evaluators
+    azd ai eval evaluator list --builtin
+
+Use azd ai eval evaluator [command] --help to view examples and more information about a specific command.

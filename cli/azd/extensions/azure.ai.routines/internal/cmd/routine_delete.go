@@ -20,7 +20,9 @@ func newRoutineDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete <name>",
 		Short: "Delete a routine.",
-		Args:  cobra.ExactArgs(1),
+		Example: `  # Delete a routine after confirmation
+  azd ai routine delete nightly-summary`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			output = extCtx.OutputFormat
 			ctx := azdext.WithAccessToken(cmd.Context())

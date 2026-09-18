@@ -1,0 +1,13 @@
+Prints the version of the application
+
+Usage
+  azd ai models version [flags]
+
+Global Flags
+      --debug     : Enable debug mode
+  -h, --help      : help for version
+      --no-prompt : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+
+Examples
+  Display the installed extension version
+    azd ai models version

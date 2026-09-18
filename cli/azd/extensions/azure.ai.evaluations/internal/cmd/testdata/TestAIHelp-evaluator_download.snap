@@ -1,0 +1,23 @@
+Download a registered evaluator version's definition.
+
+Usage
+  azd ai eval evaluator download <name> [flags]
+
+Flags
+      --force                   : Overwrite a file that already exists.
+      --output-dir string       : Directory to write into. Defaults to the current directory.
+      --output-file string      : Exact path to write.
+      --project-endpoint string : Foundry project endpoint.
+      --version string          : Version to download. Omit for the latest, which is reported.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for download
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Download the latest rubric to a local file
+    azd ai eval evaluator download my-rubric --output-file rubric.json

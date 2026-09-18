@@ -1,0 +1,67 @@
+Manage Foundry toolboxes.
+
+A toolbox is a versioned, named collection of connection-backed tools that
+agents reference at run time. Each version is immutable: mutations (connection
+add/remove, skill add/remove) create a new version but never change which
+version is the default. Use 'azd ai toolbox publish <toolbox> <version>'
+to promote a version.
+
+Usage
+  azd ai toolbox [command]
+
+Available Commands
+  add        : Add a reference to a local toolbox definition.
+  connection : Manage the connection-backed tools attached to a toolbox.
+  create     : Create a toolbox and its initial version from a file.
+  delete     : Delete a toolbox or a single version.
+  list       : List toolboxes on the project.
+  publish    : Set the default version for a toolbox.
+  show       : Show a toolbox version, including its computed MCP endpoint.
+  skill      : Manage skill references attached to a toolbox.
+  version    : Display the extension version
+  versions   : Inspect toolbox versions.
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for toolbox
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: table, json) (default "table")
+      --project-endpoint string : Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.
+
+Examples
+  Create a toolbox from a local definition
+    azd ai toolbox create research --from-file ./toolbox.yaml
+
+  Inspect its versions before promoting a default
+    azd ai toolbox versions list research
+    azd ai toolbox publish research 2
+
+Use azd ai toolbox [command] --help to view examples and more information about a specific command.
+
+Environments & Environment Variables
+  An azd environment stores deployment values in .azure/<environment>/.env.
+  Use 'azd env select <name>' to select one, or --environment <name> (-e)
+  for a command. Values may contain secrets; do not share the output of
+  'azd env get-values' or commit .azure to source control.
+
+  --project-endpoint overrides endpoint discovery. Otherwise, commands
+  resolve FOUNDRY_PROJECT_ENDPOINT (or legacy AZURE_AI_PROJECT_ENDPOINT)
+  from the active azd environment, then the global default saved by
+  'azd ai project set <endpoint>', then the same shell variables.
+
+  Creating a toolbox records TOOLBOX_<NORMALIZED_NAME>_MCP_ENDPOINT in the
+  active azd environment when one is available, together with a matching
+  TOOLBOX_<NORMALIZED_NAME>_PROJECT_ENDPOINT marker. The normalized name is
+  uppercase with non-alphanumeric character runs replaced by underscores.
+  The MCP endpoint is the runtime address agents use to access the toolbox;
+  the project endpoint identifies the Foundry project that owns it.
+
+  'azd ai toolbox add' only edits a local toolbox definition. To manage a
+  toolbox through deployment, declare its definition inline in an
+  azure.ai.toolbox service in azure.yaml and run 'azd deploy <service>'.
+
+Learn More
+  Project context: 'azd ai project --help'
+  Environment commands: 'azd env --help'

@@ -1,0 +1,24 @@
+Build and run the local RLE environment container
+
+Usage
+  azd ai rle run [flags]
+
+Flags
+      --dockerfile string : Dockerfile path relative to the current folder. Defaults to Dockerfile at the source root or server/Dockerfile.
+      --port int          : Host port mapped to the local Docker container. Defaults to 8000.
+      --watch             : Watch source files and rebuild/restart the local container when they change.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for run
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Build and run the local environment
+    azd ai rle run
+
+  Rebuild when local source files change
+    azd ai rle run --watch

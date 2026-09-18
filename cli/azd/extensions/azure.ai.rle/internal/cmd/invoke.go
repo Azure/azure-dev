@@ -52,6 +52,11 @@ With no environment name, invoke uses the environment saved in .azd-rle.json.
 To invoke an existing environment without local source or state, provide its name
 and set FOUNDRY_PROJECT_ENDPOINT. Use --version to select a specific published
 version; otherwise, the latest version returned by the project is used.`,
+		Example: `  # Open a runtime shell for the locally saved environment
+  azd ai rle invoke
+
+  # Open a specific published version in the configured Foundry project
+  azd ai rle invoke my-environment --version 1.0.0`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			environmentName := ""

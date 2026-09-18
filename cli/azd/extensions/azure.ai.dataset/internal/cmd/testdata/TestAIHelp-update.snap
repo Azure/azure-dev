@@ -1,0 +1,21 @@
+Publish a new version of a dataset.
+
+Usage
+  azd ai dataset update <name> [flags]
+
+Flags
+      --from-file string        : Path to a .jsonl file, or a directory containing one.
+      --project-endpoint string : Foundry project endpoint.
+      --version string          : Version to publish. Omit to publish the next version after the latest registered.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for update
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: json, table) (default "table")
+
+Examples
+  Publish a new version from a local JSONL file
+    azd ai dataset update my-tests --from-file tests.jsonl

@@ -178,6 +178,9 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: "{docs/style-guidelines/azd-style-guide.md,internal/helpformat/**/*.go,cmd/ai_help*.go,extensions/*/internal/helpformat/*.go,extensions/*/internal/cmd/{root,help,help_test}.go}"
+    words:
+      - helpformat
   - filename: internal/appdetect/aspire_polyglot.go
     words:
       - pylock

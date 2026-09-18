@@ -1,0 +1,93 @@
+Attach one or more tools to a toolbox and create a new version.
+
+This command has two modes:
+
+Single-Connection Mode
+
+  azd ai toolbox connection add <toolbox> <connection> [--index <name>] [--instance-name <name>]
+
+Pass the project connection's short name as the positional. --index is
+required when the connection's category is CognitiveSearch (Azure AI Search).
+--instance-name is required when the category is GroundingWithCustomSearch.
+
+File Mode
+
+  azd ai toolbox connection add <toolbox> --from-file <path>
+
+Provide a JSON or YAML file with multiple connections. All inputs from a
+single invocation create exactly one new toolbox version, so adding three
+connections this way produces v(N+1), not v(N+3).
+
+The new version is created but the toolbox's default version is unchanged;
+run 'azd ai toolbox publish <toolbox> <version>' to promote it.
+
+JSON File Shape
+
+  {
+    "connections": [
+      { "name": "my-mcp" },
+      { "name": "my-search", "index": "products" },
+      { "name": "my-bing",   "instance_name": "docs-config" },
+      { "name": "my-a2a" }
+    ]
+  }
+
+YAML File Shape
+
+  connections:
+    - name: my-mcp
+    - name: my-search
+      index: products
+    - name: my-bing
+      instance_name: docs-config
+    - name: my-a2a
+
+Fields
+  connections     Required. List of existing project connections to attach.
+                  Each entry needs 'name' (the project connection short name).
+                  'index' is required only for CognitiveSearch connections.
+                  'instance_name' is required only for
+                  GroundingWithCustomSearch connections.
+                  Supported connection categories: RemoteTool (MCP),
+                  CognitiveSearch (Azure AI Search), RemoteA2A,
+                  GroundingWithCustomSearch.
+
+The toolbox's existing description is carried forward unchanged; the
+description is set at create time and cannot be changed later.
+
+Project connections must already exist on the Foundry project; this command
+does not create them. Run 'azd ai connection list' to see available
+connections.
+
+At least one connection must be provided.
+
+Usage
+  azd ai toolbox connection add <toolbox> [connection] [flags]
+
+Flags
+      --from-file string     : Path to a JSON/YAML file describing the connections to add (see --help for the file shape).
+      --from-version string  : Version to branch the new version from (defaults to the latest version).
+      --index string         : Search index name. Only valid for CognitiveSearch (Azure AI Search) connections; required there.
+      --instance-name string : Bing custom-search configuration name. Only valid for GroundingWithCustomSearch connections; required there.
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for add
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: table, json) (default "table")
+      --project-endpoint string : Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.
+
+Examples
+  Attach a single RemoteTool (MCP) connection
+    azd ai toolbox connection add research my-mcp
+
+  Attach a CognitiveSearch connection with an explicit index
+    azd ai toolbox connection add research my-search --index products
+
+  Attach a GroundingWithCustomSearch connection with a Bing custom-search instance
+    azd ai toolbox connection add research my-bing --instance-name docs-config
+
+  Attach several tools in one new version
+    azd ai toolbox connection add research --from-file ./tools.yaml --output json

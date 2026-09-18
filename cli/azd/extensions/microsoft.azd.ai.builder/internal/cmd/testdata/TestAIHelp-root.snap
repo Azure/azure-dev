@@ -1,0 +1,25 @@
+Runs the Azure AI Builder.
+
+Usage
+  azd ai builder [command]
+
+Available Commands
+  start   : Get the context of the azd project & environment.
+  version : Prints the version of the application
+
+Global Flags
+      --debug : Enable debug mode
+  -h, --help  : help for builder
+
+Examples
+  Start the interactive AI application builder
+    azd ai builder start
+
+Use azd ai builder [command] --help to view examples and more information about a specific command.
+
+Project & Environment
+  The builder uses the current azd project and environment.
+  It can initialize a project and create an environment when they are missing.
+  AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, and AZURE_LOCATION are read from that
+  environment's values; missing subscription and location choices are prompted for
+  and saved to the environment. Use 'azd env select <name>' to switch environments.

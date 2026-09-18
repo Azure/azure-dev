@@ -1,0 +1,20 @@
+List fine-tuning jobs.
+
+Usage
+  azd ai finetuning jobs list [flags]
+
+Flags
+      --after string  : Pagination cursor
+  -o, --output string : Output format: table, json (default "table")
+  -t, --top int       : Number of jobs to return (default 10)
+
+Global Flags
+      --debug                   : Enable debug mode
+  -h, --help                    : help for list
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+      --project-endpoint string : Azure AI Foundry project endpoint URL (e.g., https://account.services.ai.azure.com/api/projects/project-name)
+  -s, --subscription string     : Azure subscription ID (enables implicit init if environment not configured)
+
+Examples
+  List the ten most recent jobs
+    azd ai finetuning jobs list --top 10

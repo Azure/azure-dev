@@ -2,6 +2,13 @@
 
 Quickstart for the `azd ai rle` preview extension. The extension manages an OpenEnv-style RLE environment lifecycle: init, build and run the environment container, test it through a playground UI or shell, and publish the environment image to the RLE service through your Foundry project endpoint.
 
+## Command help
+
+Run `azd ai rle --help` for process-environment and project-context guidance.
+Set `AZD_AI_RLE_ENABLE=true` to show the preview commands, then append `--help`
+to any command for flags and examples. Help does not require Azure
+authentication. `NO_COLOR=1` disables help colors.
+
 ## Prerequisites
 
 Install:

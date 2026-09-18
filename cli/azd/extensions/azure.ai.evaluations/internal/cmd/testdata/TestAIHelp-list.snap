@@ -1,0 +1,23 @@
+List the project's evals, a page at a time.
+
+Usage
+  azd ai eval list [flags]
+
+Flags
+      --after string            : Resume after this id, which the previous page printed.
+      --all                     : Retrieve every page. Overrides --limit.
+      --limit int               : Rows per page. Defaults to 20.
+      --name string             : Only evals whose name contains this, compared without case. Searches every page.
+      --project-endpoint string : Foundry project endpoint.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for list
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  List evaluations in the selected project
+    azd ai eval list

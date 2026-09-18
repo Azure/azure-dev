@@ -1,0 +1,20 @@
+Show a dataset version.
+
+Usage
+  azd ai eval dataset show <name> [flags]
+
+Flags
+      --project-endpoint string : Foundry project endpoint.
+      --version string          : Version to show. Omit for the latest.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for show
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Inspect a specific dataset version
+    azd ai eval dataset show my-tests --version 1.0

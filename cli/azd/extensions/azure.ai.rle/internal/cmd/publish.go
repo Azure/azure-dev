@@ -33,7 +33,9 @@ func newPublishCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "publish",
 		Short: "Build, push, and create or update the RLE environment",
-		Args:  cobra.NoArgs,
+		Example: `  # Build and publish a new major version
+  azd ai rle publish --version-bump major`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&publishAction{cmd: cmd, flags: flags}).Run()
 		},

@@ -36,6 +36,11 @@ environment. With --version the named version is deleted; the CLI refuses to
 delete the default version while others exist (retarget first) or — without
 --force — when it is the only remaining version (which would cascade and remove
 the toolbox).`,
+		Example: `  # Delete a toolbox after confirmation
+  azd ai toolbox delete research
+
+  # Delete a non-default toolbox version
+  azd ai toolbox delete research --version 1`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runToolboxDelete(cmd.Context(), args[0], *flags, readToolboxFlags(cmd, extCtx))

@@ -1,0 +1,41 @@
+Create a new Foundry project connection.
+
+Usage
+  azd ai connection create <name> [flags]
+
+Flags
+      --audience string          : Token audience for user-entra-token/agentic-identity/project-managed-identity auth
+      --auth-type string         : Auth type: api-key, custom-keys, none, oauth2, user-entra-token, project-managed-identity, agentic-identity (default "none")
+      --authorization-url string : OAuth2 authorization endpoint URL
+      --client-id string         : OAuth2 client ID (required for BYO OAuth2)
+      --client-secret string     : OAuth2 client secret (required for BYO OAuth2)
+      --connector-name string    : Managed connector name (for OAuth2 connectors)
+      --custom-key stringArray   : Custom key=value (repeatable, for custom-keys auth)
+      --force                    : Replace existing connection (upsert)
+      --key string               : API key (for api-key auth)
+      --kind string              : Connection kind (e.g., remote-tool, remote-a2a, cognitive-search)
+      --metadata stringArray     : Metadata key=value (repeatable; non-blank key required, empty value allowed)
+      --refresh-url string       : OAuth2 token refresh URL
+      --scopes strings           : OAuth2 scopes (repeatable or comma-separated, e.g. --scopes read:user,user:email)
+      --target string            : Target URL or ARM resource ID
+      --token-url string         : OAuth2 token endpoint URL
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for create
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: json, table) (default "table")
+  -p, --project-endpoint string : Foundry project endpoint URL (overrides env var and config)
+
+Examples
+  Create an Azure AI Search connection using an API key
+    azd ai connection create my-search \
+      --kind cognitive-search --target https://my-search.search.windows.net/ \
+      --auth-type api-key --key "abc123..."
+
+  Create a remote tool connection using a custom credential
+    azd ai connection create my-tavily \
+      --kind remote-tool --target https://mcp.tavily.com/mcp \
+      --auth-type custom-keys --custom-key "x-api-key=tvly-abc123"

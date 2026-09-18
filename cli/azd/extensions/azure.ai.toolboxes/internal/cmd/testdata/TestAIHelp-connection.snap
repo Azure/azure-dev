@@ -1,0 +1,35 @@
+Manage the connection-backed tools attached to a toolbox.
+
+Tools are project connections. Supported categories: RemoteTool (MCP),
+CognitiveSearch (Azure AI Search), RemoteA2A, and GroundingWithCustomSearch.
+Each mutation creates a new immutable version branched from the toolbox's
+latest version, so sequential operations accumulate. Use --from-version to
+branch from a specific version instead. The toolbox's default version is
+unchanged; use 'azd ai toolbox publish <toolbox> <version>' to promote a
+version.
+
+Usage
+  azd ai toolbox connection [command]
+
+Available Commands
+  add    : Attach one or more connections to a toolbox.
+  list   : List the connection-backed tools attached to a toolbox.
+  remove : Detach one or more connections from a toolbox.
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for connection
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (default "default")
+      --project-endpoint string : Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.
+
+Examples
+  Inspect a toolbox's connections
+    azd ai toolbox connection list research
+
+  Attach an existing project connection in a new version
+    azd ai toolbox connection add research my-mcp
+
+Use azd ai toolbox connection [command] --help to view examples and more information about a specific command.

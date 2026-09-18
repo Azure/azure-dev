@@ -45,7 +45,12 @@ func newRunCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Build and run the local RLE environment container",
-		Args:  cobra.NoArgs,
+		Example: `  # Build and run the local environment
+  azd ai rle run
+
+  # Rebuild when local source files change
+  azd ai rle run --watch`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&localRunAction{cmd: cmd, flags: flags}).Run()
 		},

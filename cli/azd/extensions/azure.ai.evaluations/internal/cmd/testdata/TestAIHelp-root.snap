@@ -1,0 +1,62 @@
+Define and run Foundry evaluations from your terminal. (Beta)
+
+Usage
+  azd ai eval [command]
+
+Available Commands
+  create    : Create one eval declared in the configuration.
+  dataset   : Manage evaluation datasets.
+  delete    : Delete an eval and everything under it.
+  evaluator : Manage custom evaluators.
+  generate  : Generate a dataset and a rubric evaluator, and download them.
+  init      : Scaffold evaluation config for an agent. Makes no service calls.
+  job       : Inspect, cancel and delete generation jobs.
+  list      : List the project's evals, a page at a time.
+  run       : Start and inspect evaluation runs.
+  show      : Show an eval definition.
+  version   : Display the extension version
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for eval
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Scaffold evaluation configuration for an agent
+    azd ai eval init --target my-agent --source dataset --dataset tests.jsonl
+
+  List evaluations in the selected project
+    azd ai eval list
+
+Use azd ai eval [command] --help to view examples and more information about a specific command.
+
+Project Context
+  Commands that contact Foundry resolve the project endpoint in this order:
+  --project-endpoint; the selected azd environment; the global configuration
+  key extensions.ai-projects.context.endpoint; then process environment
+  variables. Environment lookups prefer FOUNDRY_PROJECT_ENDPOINT and fall back
+  to AZURE_AI_PROJECT_ENDPOINT.
+
+Environments & Environment Variables
+  An azd environment is a named deployment configuration, such as dev or prod.
+  Use 'azd env new <name>' to create one, 'azd env select <name>' to change the
+  default, or --environment <name> (-e) to select one for a command.
+  Use 'azd env set FOUNDRY_PROJECT_ENDPOINT <endpoint>' to save the endpoint.
+  Values can include secrets; do not share 'azd env get-values' output or
+  commit .azure to source control.
+
+  Evaluation configuration is located using --path, then the project service
+  declaration, then a recorded EVAL_CONFIG_PATH in the selected environment,
+  and finally ./evals. APPLICATIONINSIGHTS_CONNECTION_STRING in that environment
+  lets init and generate default to trace-based data sources.
+  AZURE_AI_PROJECT_ID supplies the project resource ID for portal links.
+  Reconciliation state is private environment configuration under eval.state,
+  not user-set environment variables.
+
+Learn More
+  Environment commands: 'azd env --help'
+  Dataset commands: 'azd ai dataset --help'
+  Run results: 'azd ai eval run output'

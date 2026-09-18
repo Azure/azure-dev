@@ -315,6 +315,9 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 		Flags:       cmdHelpGenerator(descriptor.Options.HelpOptions.Flags),
 		Footer:      cmdHelpGenerator(descriptor.Options.HelpOptions.Footer),
 	}))
+	if cmd.Annotations[aiNamespaceHelpAnnotation] == "true" {
+		installAINamespaceHelp(cmd)
+	}
 
 	return nil
 }

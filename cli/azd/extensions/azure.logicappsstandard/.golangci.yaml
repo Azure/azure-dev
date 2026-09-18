@@ -1,0 +1,17 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - gosec
+    - lll
+    - unused
+    - errorlint
+  settings:
+    lll:
+      line-length: 220
+      tab-width: 4
+
+formatters:
+  enable:
+    - gofmt

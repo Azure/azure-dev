@@ -15,6 +15,8 @@ import (
 )
 
 func TestGetTelemetrySystem(t *testing.T) {
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+
 	devEndpointConfig, err := appinsightsexporter.NewEndpointConfig(devConnectionString)
 	require.NoError(t, err)
 	prodEndpointConfig, err := appinsightsexporter.NewEndpointConfig(prodConnectionString)
@@ -102,7 +104,8 @@ func TestGetTelemetrySystem(t *testing.T) {
 func TestTelemetrySystem_RunBackgroundUpload(t *testing.T) {
 	resetTelemetryForTest()
 	t.Cleanup(resetTelemetryForTest)
-	t.Setenv(collectTelemetryEnvVar, "yes") // explicitly set this. Some of us might have disabled this on their systems...
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	t.Setenv(collectTelemetryEnvVar, "yes")
 
 	type args struct {
 		ctx                context.Context

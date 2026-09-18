@@ -76,14 +76,14 @@ func TestRleUserCommandsHiddenUnlessEnabled(t *testing.T) {
 
 func TestRleHarnessInitRequiresHarnessPreviewFlag(t *testing.T) {
 	t.Setenv("AZD_AI_RLE_AGENT_INIT_ENABLE", "true")
-	t.Setenv(rleHarnessInitEnableEnvVar, "")
-	if rleHarnessInitEnabled() {
+	t.Setenv(rleEnableAllEnvVar, "")
+	if rleEnableAllEnabled() {
 		t.Fatal("expected the removed agent preview flag not to enable harness scaffolds")
 	}
 
-	t.Setenv(rleHarnessInitEnableEnvVar, "true")
-	if !rleHarnessInitEnabled() {
-		t.Fatalf("expected %s=true to enable harness scaffolds", rleHarnessInitEnableEnvVar)
+	t.Setenv(rleEnableAllEnvVar, "true")
+	if !rleEnableAllEnabled() {
+		t.Fatalf("expected %s=true to enable harness scaffolds", rleEnableAllEnvVar)
 	}
 }
 
@@ -489,7 +489,7 @@ func stubRleSampleCatalog(
 	expectedFolderName string,
 ) {
 	t.Helper()
-	t.Setenv(rleHarnessInitEnableEnvVar, "")
+	t.Setenv(rleEnableAllEnvVar, "")
 	oldLoad := loadRleSampleCatalogFunc
 	oldSelect := selectRleSampleFunc
 	oldSelectTarget := selectRleInitTargetFunc

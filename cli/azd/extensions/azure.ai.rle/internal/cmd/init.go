@@ -57,7 +57,7 @@ type rleSampleCatalog interface {
 
 var loadRleSampleCatalogFunc = func() (rleSampleCatalog, error) {
 	return project.LoadRleSampleCatalog(project.RleSampleCatalogOptions{
-		ShowHiddenSamples: rleShowHiddenSamplesEnabled(),
+		ShowHiddenSamples: rleEnableAllEnabled(),
 	})
 }
 
@@ -139,7 +139,7 @@ func (a *initAction) Run() error {
 }
 
 func (a *initAction) resolveInitTarget() (rleInitTarget, error) {
-	harnessInitEnabled := rleHarnessInitEnabled()
+	harnessInitEnabled := rleEnableAllEnabled()
 	typeValue := strings.TrimSpace(a.flags.rleType)
 	subtypeValue := strings.TrimSpace(a.flags.rleSubtype)
 
@@ -161,7 +161,7 @@ func (a *initAction) resolveInitTarget() (rleInitTarget, error) {
 			Message:    fmt.Sprintf("RLE init target %s/%s is currently disabled.", target.rleType, target.rleSubtype),
 			Code:       "rle_harness_init_disabled",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: fmt.Sprintf("Set %s=true to enable harness RLE scaffolds.", rleHarnessInitEnableEnvVar),
+			Suggestion: fmt.Sprintf("Set %s=true to enable harness RLE scaffolds.", rleEnableAllEnvVar),
 		}
 	}
 	return target, nil

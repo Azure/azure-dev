@@ -14,9 +14,8 @@ import (
 )
 
 const (
-	rleEnableEnvVar            = "AZD_AI_RLE_ENABLE"
-	rleHarnessInitEnableEnvVar = "AZD_AI_RLE_HARNESS_INIT_ENABLE"
-	rleShowHiddenSamplesEnvVar = "AZD_AI_RLE_SHOW_HIDDEN_SAMPLES"
+	rleEnableEnvVar    = "AZD_AI_RLE_ENABLE"
+	rleEnableAllEnvVar = "AZD_AI_RLE_ENABLE_ALL"
 )
 
 func NewRootCommand() *cobra.Command {
@@ -62,12 +61,11 @@ func rleCommandsEnabled() bool {
 	return err == nil && enabled
 }
 
-func rleHarnessInitEnabled() bool {
-	enabled, err := strconv.ParseBool(os.Getenv(rleHarnessInitEnableEnvVar))
-	return err == nil && enabled
-}
-
-func rleShowHiddenSamplesEnabled() bool {
-	enabled, err := strconv.ParseBool(os.Getenv(rleShowHiddenSamplesEnvVar))
+// rleEnableAllEnabled reports whether internal-only RLE surfaces should be shown:
+// harness init targets, samples hidden via the samples repo's visibility catalog,
+// and any other surface staged for a future release. Intended for the RLE team's
+// own iteration, not for general use.
+func rleEnableAllEnabled() bool {
+	enabled, err := strconv.ParseBool(os.Getenv(rleEnableAllEnvVar))
 	return err == nil && enabled
 }

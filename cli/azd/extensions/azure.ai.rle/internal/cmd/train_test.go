@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -15,9 +16,10 @@ import (
 
 func TestBuildFinetuneJobRequestUsesRleEnvironmentMethod(t *testing.T) {
 	flags := &rleTrainFlags{
-		rleName:    "code_rl",
-		rleVersion: "1.0.0",
-		model:      "Qwen/Qwen3-32B",
+		rleName:      "code_rl",
+		rleVersion:   "1.0.0",
+		model:        "Qwen/Qwen3-32B",
+		trainingFile: "file-training",
 	}
 
 	request := buildFinetuneJobRequest(flags)
@@ -25,8 +27,11 @@ func TestBuildFinetuneJobRequestUsesRleEnvironmentMethod(t *testing.T) {
 	if request.Model != "Qwen/Qwen3-32B" {
 		t.Fatalf("expected model to map from flags, got %q", request.Model)
 	}
-	if request.TrainingFile != "" {
-		t.Fatalf("expected no training file by default, got %q", request.TrainingFile)
+	if request.TrainingFile != "file-training" {
+		t.Fatalf("expected training_file to be set, got %q", request.TrainingFile)
+	}
+	if request.TrainingType != finetuneTrainingTypeGlobalStandard {
+		t.Fatalf("expected GlobalStandard training type, got %d", request.TrainingType)
 	}
 	if request.Method == nil || request.Method.Type != finetuneMethodTypeRleEnvironment {
 		t.Fatalf("expected rl_environment method, got %#v", request.Method)
@@ -45,8 +50,11 @@ func TestBuildFinetuneJobRequestUsesRleEnvironmentMethod(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(data), "training_file") {
-		t.Fatalf("expected training_file to be omitted from JSON when empty, got %s", data)
+	if !strings.Contains(string(data), `"training_file":"file-training"`) {
+		t.Fatalf("expected training_file in JSON, got %s", data)
+	}
+	if !strings.Contains(string(data), `"trainingType":1`) {
+		t.Fatalf("expected GlobalStandard trainingType in JSON, got %s", data)
 	}
 }
 
@@ -74,6 +82,51 @@ func TestBuildFinetuneJobRequestIncludesOptionalFields(t *testing.T) {
 	}
 	if request.Method.RleEnvironment.MaxEpisodeSteps == nil || *request.Method.RleEnvironment.MaxEpisodeSteps != 32 {
 		t.Fatalf("expected max_episode_steps to be set, got %#v", request.Method.RleEnvironment.MaxEpisodeSteps)
+	}
+}
+
+func TestTrainCommandRequiresTrainingFile(t *testing.T) {
+	cmd := newTrainCommand()
+	cmd.SetArgs([]string{
+		"--rle-name", "code_rl",
+		"--rle-version", "1.0.0",
+		"--model", "Qwen/Qwen3-32B",
+	})
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), `required flag(s) "training-file" not set`) {
+		t.Fatalf("expected missing training-file error, got %v", err)
+	}
+}
+
+func TestResolveTrainingFile(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		want    string
+		wantErr string
+	}{
+		{name: "trims valid file ID", raw: " file-training ", want: "file-training"},
+		{name: "rejects empty value", raw: "  ", wantErr: "non-empty training file ID"},
+		{name: "rejects non file ID", raw: "not-a-file", wantErr: "must be a file-... ID"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := resolveTrainingFile(test.raw)
+			if test.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+					t.Fatalf("expected error containing %q, got %v", test.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("expected %q, got %q", test.want, got)
+			}
+		})
 	}
 }
 
@@ -170,7 +223,7 @@ func TestFinetuneClientSurfacesHTTPErrors(t *testing.T) {
 		t.Fatal("expected an error for HTTP 400")
 	}
 	wrapped := finetuneServiceError(err)
-	serviceErr, ok := wrapped.(*azdext.ServiceError)
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](wrapped)
 	if !ok {
 		t.Fatalf("expected a *azdext.ServiceError, got %T", wrapped)
 	}

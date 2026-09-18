@@ -38,6 +38,11 @@ const finetuneTokenScope = "https://cognitiveservices.azure.com/.default" //noli
 // (FineTuningConfiguration.RLEnvironmentSupportedModels).
 const finetuneMethodTypeRleEnvironment = "rl_environment"
 
+// finetuneTrainingTypeGlobalStandard is the V1 FineTuningJobCreation.TrainingType enum value
+// required for Loom-backed RL-environment jobs. If omitted, the service defaults to Standard
+// and does not auto-select Loom execution.
+const finetuneTrainingTypeGlobalStandard = 1
+
 type finetuneClient struct {
 	baseUrl    string
 	credential azcore.TokenCredential
@@ -57,12 +62,12 @@ type finetuneMethodRequest struct {
 	RleEnvironment finetuneRleEnvironmentConfig `json:"rl_environment"`
 }
 
-// finetuneJobCreationRequest mirrors finetunesapi's FineTuningJobCreation. training_file
-// is intentionally optional: an RL-environment job "carries no training file, grader,
-// tools or response format" because the environment owns reward computation.
+// finetuneJobCreationRequest mirrors finetunesapi's FineTuningJobCreation. An RL-environment
+// job receives its reward from the RLE, but Loom still requires training_file as its job input.
 type finetuneJobCreationRequest struct {
 	Model          string                 `json:"model"`
 	TrainingFile   string                 `json:"training_file,omitempty"`
+	TrainingType   int                    `json:"trainingType"`
 	ValidationFile *string                `json:"validation_file,omitempty"`
 	Suffix         *string                `json:"suffix,omitempty"`
 	Method         *finetuneMethodRequest `json:"method,omitempty"`

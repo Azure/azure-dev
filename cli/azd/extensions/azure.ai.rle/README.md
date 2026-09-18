@@ -364,12 +364,13 @@ testing.
 
 `azd ai rle train` submits a reinforcement fine-tuning job to a fine-tuning
 resource's public `/openai/v1/fine_tuning/jobs` API, using the `rl_environment`
-method: a published RLE environment supplies the reward signal instead of a
-grader, so no training file is required. `rl_environment` is currently hidden
-from finetunesapi's public API surface and only completes for base models
-the service has enabled for Loom-backed RL-environment training; job
-creation fails for other models, or if the named RLE version is not
-published and ready in the Foundry project set by `FOUNDRY_PROJECT_ENDPOINT`.
+method. A published RLE environment supplies the reward signal instead of a
+grader, but the service still requires a training file as the Loom job input.
+`rl_environment` is currently hidden from finetunesapi's public API surface and
+only completes for base models the service has enabled for Loom-backed
+RL-environment training; job creation fails for other models, or if the named RLE
+version is not published and ready in the Foundry project set by
+`FOUNDRY_PROJECT_ENDPOINT`.
 
 This command is gated behind `AZD_AI_RLE_ENABLE_ALL` in addition to
 `AZD_AI_RLE_ENABLE`, since it targets an unreleased method and the CLI shape
@@ -383,14 +384,15 @@ $env:AZD_AI_RLE_TRAIN_ENDPOINT = "https://<resource>.openai.azure.com"
 
 azd ai rle train `
   --rle-name code_rl --rle-version 1.0.0 `
-  --model Qwen/Qwen3-32B
+  --model Qwen/Qwen3-32B `
+  --training-file file-abc123
 ```
 
 `FOUNDRY_PROJECT_ENDPOINT` identifies the project that owns the named RLE.
-`--training-file` and `--validation-file` are optional and only meaningful
-for methods other than `rl_environment`; the RLE itself supplies the reward
-signal. Use `--endpoint` instead of `AZD_AI_RLE_TRAIN_ENDPOINT` to target a
-different fine-tuning resource for a single invocation.
+`--training-file` is required and must be the `file-...` ID of a training file
+uploaded to the same fine-tuning resource. `--validation-file` is optional.
+Use `--endpoint` instead of `AZD_AI_RLE_TRAIN_ENDPOINT` to target a different
+fine-tuning resource for a single invocation.
 
 ## Build and install from source
 

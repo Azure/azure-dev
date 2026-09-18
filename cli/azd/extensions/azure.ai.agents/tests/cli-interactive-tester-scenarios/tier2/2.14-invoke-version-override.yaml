@@ -1,0 +1,83 @@
+# Tier 2 (cloud E2E) — version overrides on the shared code-deployed Responses agent; incurs invoke costs.
+# Run before 2.18-delete. No deployment, endpoint update, lifecycle GET, or Invocations-protocol test here.
+name: "invoke-version-override"
+command: "azd ai agent show --output json"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:show", "cmd:invoke", "negative-path", "serial-only"]
+requires: "tier2/2.00-setup-deploy-shared-agent.yaml"
+
+goals:
+  - >-
+    Use the already deployed Basic Responses agent with read-only prompts only. No product
+    prompts are expected. Do not deploy code, change traffic splits, create a different agent,
+    or retry a failed check. A strict verification error does not undo work already executed.
+    Do not infer successful Invocations or background/lifecycle support from this scenario.
+  - >-
+    Confirm the initial show command exits with code 0 and identifies the shared hosted agent,
+    a Responses endpoint, and a non-empty concrete top-level version. Set the shell variable
+    VERSION to that exact returned version; do not assume a version number. VERSION and later
+    $VERSION references are shell variables, not scenario profile placeholders. Preserve that
+    captured value across command sessions, assigning VERSION in each shell if needed. Stop
+    and report a failure if no concrete deployed version is available.
+  - >-
+    Run azd ai agent invoke --protocol responses "Reply with exactly: override-baseline-ok".
+    Confirm exit code 0 and the requested reply, with no 'Version override:' summary. Record
+    the ordinary Session, Conversation, and Response IDs. Read-only inspect this agent's saved
+    sessions, conversations, responses, and invocations entries under extensions.ai-agents in
+    the effective azd user configuration; record existing values or absence as the baseline.
+    Do not dump unrelated configuration or change the configuration directory.
+  - >-
+    Run azd ai agent invoke --protocol responses --version-override "$VERSION" "Reply with exactly: version-override-ok".
+    Confirm exit code 0, the requested reply, and 'Version override:' reporting both requested
+    and resolved values equal to $VERSION. An optional '; resolution:' detail is allowed but
+    not required. Confirm the initial Session line says '(new -- server will assign)', then
+    record the server-assigned session and the new Conversation and Response IDs. The session
+    and conversation must differ from the ordinary baseline. Verify that all baseline saved
+    entries are unchanged, including previously absent entries, with no new saved override IDs.
+  - >-
+    Run azd ai agent invoke --protocol responses --version-override latest "Reply with exactly: version-override-ok".
+    Confirm exit code 0, the requested reply, and 'Version override: latest; resolved:' followed
+    by a concrete version, never latest. Do not require a floating selection to equal $VERSION.
+    Confirm a server-assigned new session and new conversation, distinct from both previous
+    calls. Recheck that the saved session, conversation, Response, and Invocation selections
+    still match the baseline, with no new saved entries for override IDs.
+  - >-
+    Run azd ai agent invoke --protocol responses --version-override "$VERSION" --debug-latency=false --output raw "Reply with exactly: version-override-ok".
+    Confirm exit code 0 and a raw HTTP response containing a completed SSE reply with
+    version-override-ok. Check header names case-insensitively and trim surrounding value
+    whitespace: exactly one x-agent-version-resolved must equal $VERSION;
+    x-agent-version-fallback may be absent or a single false value (case-insensitive), never true.
+    x-agent-version-resolution is
+    optional; if present it must be a single non-empty value using letters, numbers, dots,
+    underscores, or hyphens, at most 128 characters. Confirm x-agent-session-id identifies a
+    session distinct from the earlier calls. Raw output must not add friendly Version override,
+    Session, Conversation, Response, Client elapsed, or Platform latency summary lines. Recheck
+    that the saved state still matches the baseline.
+  - >-
+    Run azd ai agent invoke --protocol responses --version-override "azd-override-missing-{run_id}" --output raw "Reply with exactly: version-override-negative-ok".
+    This run-unique, undeployed version is valid CLI syntax. Require a non-zero exit: either a
+    backend version rejection with an HTTP error, or a successful HTTP response rejected by
+    strict version verification. In the latter case require an error saying the override
+    'could not be verified', identifying fallback or missing, invalid, or mismatched resolution
+    evidence, while retaining the raw HTTP response. The backend is not required to always
+    fall back. Authentication, project-resolution, or transport failures do not satisfy this
+    negative goal. Never accept a successful exit merely because the agent returned a reply.
+    Recheck that all baseline saved entries, including the current Response ID, are unchanged.
+  - >-
+    For the valid-target goals, missing/invalid resolved-version evidence, a concrete-version
+    mismatch, or fallback is a failure of the scenario even when the CLI correctly exits
+    non-zero. Do not waive verification or replace the target to obtain a pass. Missing
+    x-agent-version-fallback and x-agent-version-resolution alone are normal. Observe unchanged
+    latency behavior: friendly successful calls retain Client elapsed, any available platform
+    diagnostics keep their existing format, and the opt-out raw call has no formatted timing summary.
+  - >-
+    Run azd ai agent invoke --protocol responses "Reply with exactly: override-baseline-ok".
+    Confirm exit code 0, the requested reply, no Version override summary, and reuse of the
+    original ordinary Session and Conversation IDs, not an override's IDs. This ordinary call
+    may save its own new Response ID; perform the override-state comparisons before this call.
+  - "Take best-effort screenshots of exact-version, latest, raw, rejection, and ordinary-state reuse output."
+  - >-
+    Report a finding if a valid target cannot be verified, a nonexistent version succeeds,
+    an override reuses or changes ordinary saved state, fresh identities are missing or reused,
+    raw diagnostics hide a verification failure, timing behavior changes, or a product prompt
+    appears. Screenshot failures are observations and do not block later product goals.

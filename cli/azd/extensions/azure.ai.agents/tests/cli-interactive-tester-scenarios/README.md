@@ -334,6 +334,7 @@ in any order, any time.
 | `tier0/0.19-invocations-validation.yaml` | Unsupported lifecycle protocols, empty selectors, and removed flags |
 | `tier0/0.19-standalone-deploy-migration.yaml` | Removed standalone `agent deploy` and old `agent add <type>` rejection; agent command discovery and core `azd deploy --help` only |
 | `tier0/0.20-invoke-latency-validation.yaml` | `invoke --debug-latency` default/opt-out help and invalid boolean rejection |
+| `tier0/0.21-invoke-version-override-validation.yaml` | `invoke --version-override` help, empty/invalid values, flag conflicts, and local/A2A rejection before auth |
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
 They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP
@@ -422,6 +423,7 @@ as their `cwd`.
 | `tier2/2.11-endpoint-update.yaml` | `endpoint update` |
 | `tier2/2.12-run-local-and-invoke-local.yaml` | `run` + `invoke --local` (two sessions) |
 | `tier2/2.13-invoke-latency.yaml` | Default-on platform latency, `--debug-latency=false`, and raw output against the shared Responses agent |
+| `tier2/2.14-invoke-version-override.yaml` | Exact/latest overrides, fresh state, raw resolution evidence, nonexistent-version rejection, and ordinary-state preservation on the shared code-deployed Responses agent |
 | `tier2/2.15-doctor-provisioned-all-pass.yaml` | `doctor` (all checks pass) |
 | `tier2/2.16-endpoint-show.yaml` | `endpoint show` (agent endpoint details) |
 | `tier2/2.17-code-download.yaml` | `code download` (positive-path: downloads agent source code) |

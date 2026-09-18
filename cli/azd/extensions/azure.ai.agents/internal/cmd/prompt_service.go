@@ -70,6 +70,18 @@ func resolvePromptAgentService(
 		return nil, false, err
 	}
 
+	return promptAgentContextForService(ctx, azdClient, svc, proj, options...)
+}
+
+// promptAgentContextForService classifies an already selected service and
+// resolves its prompt settings without asking the user to select it again.
+func promptAgentContextForService(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	svc *azdext.ServiceConfig,
+	proj *azdext.ProjectConfig,
+	options ...agentServiceResolutionOption,
+) (*promptServiceContext, bool, error) {
 	projectPath := ""
 	serviceDir := ""
 	if proj != nil {

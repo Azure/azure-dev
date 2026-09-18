@@ -81,7 +81,7 @@ func TestRleSampleCatalogUsesSparseCheckout(t *testing.T) {
 	sourceRepo := t.TempDir()
 	runTestGit(t, sourceRepo, "init", "--initial-branch=main")
 	for _, sampleName := range []string{"code_rl", "math_rl"} {
-		sampleDir := filepath.Join(sourceRepo, "envs", sampleName)
+		sampleDir := filepath.Join(sourceRepo, filepath.FromSlash(rleGymSamplesPath), sampleName)
 		if err := os.MkdirAll(sampleDir, 0750); err != nil {
 			t.Fatal(err)
 		}
@@ -113,7 +113,7 @@ func TestRleSampleCatalogUsesSparseCheckout(t *testing.T) {
 	if !slices.Equal(catalog.SampleNames(), []string{"code_rl", "math_rl"}) {
 		t.Fatalf("expected sorted sample names, got %v", catalog.SampleNames())
 	}
-	if _, err := os.Stat(filepath.Join(catalog.repoDir, "envs")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(catalog.repoDir, filepath.FromSlash(rleGymSamplesPath))); !os.IsNotExist(err) {
 		t.Fatalf("expected sample contents not to be checked out before selection, got err=%v", err)
 	}
 
@@ -124,7 +124,7 @@ func TestRleSampleCatalogUsesSparseCheckout(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(sessionDir, "sample.txt")); err != nil {
 		t.Fatalf("expected selected sample to be copied: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(catalog.repoDir, "envs", "code_rl")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(catalog.repoDir, filepath.FromSlash(rleGymSamplesPath), "code_rl")); !os.IsNotExist(err) {
 		t.Fatalf("expected unselected sample not to be checked out, got err=%v", err)
 	}
 }

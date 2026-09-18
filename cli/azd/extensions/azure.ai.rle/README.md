@@ -49,9 +49,9 @@ $env:AZD_AI_RLE_HARNESS_INIT_ENABLE = "true"
 harness/agent side is always specific to your own agent. For a complete,
 runnable pattern of both halves wired together (including a Dockerfile,
 mock tools, a grader, and the deploy → wire → register → publish flow), see
-[`harness-examples/hosted-agent`](https://github.com/sujit-kamireddy/rle-samples/tree/main/harness-examples/hosted-agent)
+[`examples/harness/hosted-agent`](https://github.com/sujit-kamireddy/rle-samples/tree/main/examples/harness/hosted-agent)
 and
-[`harness-examples/byoh`](https://github.com/sujit-kamireddy/rle-samples/tree/main/harness-examples/byoh)
+[`examples/harness/byoh`](https://github.com/sujit-kamireddy/rle-samples/tree/main/examples/harness/byoh)
 in the [`rle-samples`](https://github.com/sujit-kamireddy/rle-samples) repository.
 
 ## Manifest contract

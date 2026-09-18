@@ -16,6 +16,10 @@ import (
 const (
 	rleSamplesRepoURL = "https://github.com/sujit-kamireddy/rle-samples.git"
 	rleSamplesRepoRef = "main"
+
+	// rleGymSamplesPath is the rle-samples repo path holding self-contained
+	// Gym/OpenEnv sample directories, one per sample name.
+	rleGymSamplesPath = "examples/gym/openenv"
 )
 
 type RleSampleCatalog struct {
@@ -101,7 +105,7 @@ func (c *RleSampleCatalog) Copy(sampleName string, folderName string, dest strin
 	if err != nil {
 		return "", err
 	}
-	sourcePath := filepath.ToSlash(filepath.Join("envs", sampleName))
+	sourcePath := filepath.ToSlash(filepath.Join(rleGymSamplesPath, sampleName))
 	if _, err := runGitCommand("-C", c.repoDir, "sparse-checkout", "set", sourcePath); err != nil {
 		return "", err
 	}
@@ -120,7 +124,7 @@ func listRleSamples(repoDir string, repoRef string) ([]string, error) {
 		"ls-tree",
 		"-d",
 		"--name-only",
-		repoRef+":envs",
+		repoRef+":"+rleGymSamplesPath,
 	)
 	if err != nil {
 		return nil, err

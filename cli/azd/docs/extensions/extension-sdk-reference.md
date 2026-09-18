@@ -526,10 +526,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 
 Always call `defer client.Close()` after creation.
 
-`Compose()`, `Copilot()`, and `Telemetry()` are preview accessors. Import
-`github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for their
-request, response, and enum types. They are intentionally excluded from the
-stable `azdext` contract facade until those services graduate to `v1`.
+`AccountBeta()`, `Compose()`, `Copilot()`, and `Telemetry()` are preview accessors. Import `github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for their request, response, and enum types. Beta-only methods and types are not exposed through the stable `azdext` contract facade. `Account()` still provides the existing stable account methods.
 
 #### AccountService
 

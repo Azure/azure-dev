@@ -45,6 +45,15 @@ Harness scaffolds are separately preview-gated:
 $env:AZD_AI_RLE_HARNESS_INIT_ENABLE = "true"
 ```
 
+`azd ai rle init --type Harness` scaffolds only the RLE-side container; the
+harness/agent side is always specific to your own agent. For a complete,
+runnable pattern of both halves wired together (including a Dockerfile,
+mock tools, a grader, and the deploy → wire → register → publish flow), see
+[`examples/harness/hosted-agent`](https://github.com/sujit-kamireddy/rle-samples/tree/main/examples/harness/hosted-agent)
+and
+[`examples/harness/byoh`](https://github.com/sujit-kamireddy/rle-samples/tree/main/examples/harness/byoh)
+in the [`rle-samples`](https://github.com/sujit-kamireddy/rle-samples) repository.
+
 ## Manifest contract
 
 `rle.toml` uses the RLE control-plane type and subtype values exactly:

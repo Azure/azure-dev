@@ -323,6 +323,7 @@ func stableServiceImplementations() map[BetaService]any {
 		BetaEnvironmentService:   v1.UnimplementedEnvironmentServiceServer{},
 		BetaEventService:         v1.UnimplementedEventServiceServer{},
 		BetaExtensionService:     v1.UnimplementedExtensionServiceServer{},
+		BetaFollowUpService:      v1.UnimplementedFollowUpServiceServer{},
 		BetaFrameworkService:     v1.UnimplementedFrameworkServiceServer{},
 		BetaProjectService:       v1.UnimplementedProjectServiceServer{},
 		BetaPromptService:        v1.UnimplementedPromptServiceServer{},

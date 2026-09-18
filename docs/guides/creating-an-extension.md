@@ -81,6 +81,35 @@ For extensions that are still in development or preview, consider publishing to 
 > [!NOTE]
 > Extensions in the dev registry have no stability guarantees, are unsigned, and are not covered by Azure support. This is expected and appropriate for pre-release testing. See the [Dev/Experimental Extension Registry](../../cli/azd/docs/extensions/extension-resolution-and-versioning.md#devexperimental-extension-registry) guide for full details.
 
+## Command-level lifecycle follow-up
+
+Project lifecycle handlers can provide command-level guidance through the
+handler-scoped `FollowUp` contribution during a successful `post*` event:
+
+```go
+host.WithProjectEventHandler("postdeploy",
+    func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+        return args.FollowUp.Set("Next:\n  azd ai agent show my-agent")
+    })
+```
+
+The contribution uses the independent `FollowUpService` and the invocation ID
+provided by azd. The host stages the latest text and commits it only after the
+handler completes successfully. Contributions from failed, cancelled,
+disconnected, or incomplete handlers are discarded. Use `args.FollowUp.Clear()`
+or `args.FollowUp.Set("")` to retract the current contribution. The RPC
+returns an error if the invocation is no longer active or is not a project
+`post*` handler.
+
+The host appends committed text to the parent command's human-readable
+completion message and leaves JSON output unchanged. Within one command, a
+later lifecycle event replaces the earlier result from that extension; a later
+custom workflow command step also wins. Lifecycle events use the stable order
+restore, build, package, provision, publish, deploy. Concurrent layers of the
+same event resolve by stable layer identity, not completion time. Other
+extensions and existing core follow-up text are preserved. Service-level
+events cannot contribute follow-up text.
+
 ## Extension Design Guidelines
 
 - **Extend existing command categories** — Use verb-first structure (e.g., `azd add <resource>`)

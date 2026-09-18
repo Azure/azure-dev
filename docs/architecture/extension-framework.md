@@ -1,5 +1,7 @@
 # Extension Framework
 
+<!-- cspell:ignore azdext -->
+
 Architecture of the gRPC-based extension system in azd.
 
 ## Overview
@@ -44,6 +46,33 @@ The gRPC broker (`pkg/grpcbroker`) manages bidirectional communication. Extensio
 
 - **Receive calls** from azd (e.g., "build this service")
 - **Make calls** back to azd (e.g., "prompt the user", "read environment config")
+
+### Lifecycle follow-up contributions
+
+Project lifecycle handlers can use the handler-scoped `FollowUp` contribution
+on `ProjectEventArgs` to provide command-level guidance:
+
+```go
+host.WithProjectEventHandler("postdeploy",
+    func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+        return args.FollowUp.Set("Next:\n  azd ai agent show my-agent")
+    })
+```
+
+The contribution is sent through the independent `FollowUpService` using the
+invocation ID supplied by azd. Only project `post*` handlers may contribute.
+The host stages the latest text and commits it only after the handler
+completes successfully; failed, cancelled, disconnected, or otherwise
+incomplete invocations are discarded. Calling `Clear` or `Set("")` retracts
+the current contribution.
+
+The host appends committed text to the parent command's human-readable
+completion message. It combines contributions from multiple extensions
+deterministically, preserves existing core follow-up text, and leaves JSON
+output unchanged. Within one top-level command, a later lifecycle event from
+an extension replaces its earlier result. Concurrent layers of the same event
+resolve by stable layer identity, not completion time. Service handlers cannot
+contribute follow-up text.
 
 ## Capabilities
 

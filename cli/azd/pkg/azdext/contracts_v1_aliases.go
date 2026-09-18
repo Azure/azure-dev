@@ -50,6 +50,7 @@ const (
 	EventService_EventStream_FullMethodName                                = v1.EventService_EventStream_FullMethodName
 	ExtensionService_Ready_FullMethodName                                  = v1.ExtensionService_Ready_FullMethodName
 	ExtensionService_ReportError_FullMethodName                            = v1.ExtensionService_ReportError_FullMethodName
+	FollowUpService_SetFollowUp_FullMethodName                             = v1.FollowUpService_SetFollowUp_FullMethodName
 	FrameworkService_Stream_FullMethodName                                 = v1.FrameworkService_Stream_FullMethodName
 	LocationKind_LOCATION_KIND_LOCAL                                       = v1.LocationKind_LOCATION_KIND_LOCAL
 	LocationKind_LOCATION_KIND_REMOTE                                      = v1.LocationKind_LOCATION_KIND_REMOTE
@@ -158,6 +159,8 @@ type (
 	ExtensionServiceClient                                   = v1.ExtensionServiceClient
 	ExtensionServiceServer                                   = v1.ExtensionServiceServer
 	ExternalTool                                             = v1.ExternalTool
+	FollowUpServiceClient                                    = v1.FollowUpServiceClient
+	FollowUpServiceServer                                    = v1.FollowUpServiceServer
 	FrameworkPackageRequirements                             = v1.FrameworkPackageRequirements
 	FrameworkRequirements                                    = v1.FrameworkRequirements
 	FrameworkServiceBuildRequest                             = v1.FrameworkServiceBuildRequest
@@ -415,6 +418,8 @@ type (
 	ServiceTargetService_StreamServer                        = v1.ServiceTargetService_StreamServer
 	SetConfigRequest                                         = v1.SetConfigRequest
 	SetEnvRequest                                            = v1.SetEnvRequest
+	SetFollowUpRequest                                       = v1.SetFollowUpRequest
+	SetFollowUpResponse                                      = v1.SetFollowUpResponse
 	SetProjectConfigSectionRequest                           = v1.SetProjectConfigSectionRequest
 	SetProjectConfigValueRequest                             = v1.SetProjectConfigValueRequest
 	SetServiceConfigSectionRequest                           = v1.SetServiceConfigSectionRequest
@@ -431,6 +436,7 @@ type (
 	UnimplementedEnvironmentServiceServer                    = v1.UnimplementedEnvironmentServiceServer
 	UnimplementedEventServiceServer                          = v1.UnimplementedEventServiceServer
 	UnimplementedExtensionServiceServer                      = v1.UnimplementedExtensionServiceServer
+	UnimplementedFollowUpServiceServer                       = v1.UnimplementedFollowUpServiceServer
 	UnimplementedFrameworkServiceServer                      = v1.UnimplementedFrameworkServiceServer
 	UnimplementedProjectServiceServer                        = v1.UnimplementedProjectServiceServer
 	UnimplementedPromptServiceServer                         = v1.UnimplementedPromptServiceServer
@@ -446,6 +452,7 @@ type (
 	UnsafeEnvironmentServiceServer                           = v1.UnsafeEnvironmentServiceServer
 	UnsafeEventServiceServer                                 = v1.UnsafeEventServiceServer
 	UnsafeExtensionServiceServer                             = v1.UnsafeExtensionServiceServer
+	UnsafeFollowUpServiceServer                              = v1.UnsafeFollowUpServiceServer
 	UnsafeFrameworkServiceServer                             = v1.UnsafeFrameworkServiceServer
 	UnsafeProjectServiceServer                               = v1.UnsafeProjectServiceServer
 	UnsafePromptServiceServer                                = v1.UnsafePromptServiceServer
@@ -503,6 +510,7 @@ var (
 	File_errors_proto                = v1.File_azd_extensions_v1_errors_proto
 	File_event_proto                 = v1.File_azd_extensions_v1_event_proto
 	File_extension_proto             = v1.File_azd_extensions_v1_extension_proto
+	File_follow_up_proto             = v1.File_azd_extensions_v1_follow_up_proto
 	File_framework_service_proto     = v1.File_azd_extensions_v1_framework_service_proto
 	File_models_proto                = v1.File_azd_extensions_v1_models_proto
 	File_project_proto               = v1.File_azd_extensions_v1_project_proto
@@ -512,6 +520,7 @@ var (
 	File_user_config_proto           = v1.File_azd_extensions_v1_user_config_proto
 	File_validation_proto            = v1.File_azd_extensions_v1_validation_proto
 	File_workflow_proto              = v1.File_azd_extensions_v1_workflow_proto
+	FollowUpService_ServiceDesc      = v1.FollowUpService_ServiceDesc
 	FrameworkService_ServiceDesc     = v1.FrameworkService_ServiceDesc
 	LocationKind_name                = v1.LocationKind_name
 	LocationKind_value               = v1.LocationKind_value
@@ -554,6 +563,10 @@ func NewEventServiceClient(cc grpc.ClientConnInterface) EventServiceClient {
 
 func NewExtensionServiceClient(cc grpc.ClientConnInterface) ExtensionServiceClient {
 	return v1.NewExtensionServiceClient(cc)
+}
+
+func NewFollowUpServiceClient(cc grpc.ClientConnInterface) FollowUpServiceClient {
+	return v1.NewFollowUpServiceClient(cc)
 }
 
 func NewFrameworkServiceClient(cc grpc.ClientConnInterface) FrameworkServiceClient {
@@ -614,6 +627,10 @@ func RegisterEventServiceServer(s grpc.ServiceRegistrar, srv EventServiceServer)
 
 func RegisterExtensionServiceServer(s grpc.ServiceRegistrar, srv ExtensionServiceServer) {
 	v1.RegisterExtensionServiceServer(s, srv)
+}
+
+func RegisterFollowUpServiceServer(s grpc.ServiceRegistrar, srv FollowUpServiceServer) {
+	v1.RegisterFollowUpServiceServer(s, srv)
 }
 
 func RegisterFrameworkServiceServer(s grpc.ServiceRegistrar, srv FrameworkServiceServer) {

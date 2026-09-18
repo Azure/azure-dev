@@ -3,6 +3,7 @@ const grpc = require('@grpc/grpc-js');
 const { DeploymentServiceClient } = require('./generated/proto/deployment_grpc_pb');
 const { EnvironmentServiceClient } = require('./generated/proto/environment_grpc_pb');
 const { EventServiceClient } = require('./generated/proto/event_grpc_pb');
+const { FollowUpServiceClient } = require('./generated/proto/follow_up_grpc_pb');
 const { ProjectServiceClient } = require('./generated/proto/project_grpc_pb');
 const { PromptServiceClient } = require('./generated/proto/prompt_grpc_pb');
 const { UserConfigServiceClient } = require('./generated/proto/user_config_grpc_pb');
@@ -27,6 +28,7 @@ class AzdClient {
     this.Deployment = new DeploymentServiceClient(address, credentials);
     this.Environment = new EnvironmentServiceClient(address, credentials);
     this.Events = new EventServiceClient(address, credentials);
+    this.FollowUp = new FollowUpServiceClient(address, credentials);
     this.Project = new ProjectServiceClient(address, credentials);
     this.Prompt = new PromptServiceClient(address, credentials);
     this.UserConfig = new UserConfigServiceClient(address, credentials);

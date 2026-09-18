@@ -10,13 +10,35 @@ import queue
 import grpc
 from azd_client import AzdClient
 import event_pb2
+from generated_proto.follow_up_pb2 import SetFollowUpRequest
 
 # Get logger - the actual configuration is done in main.py
 logger = logging.getLogger(__name__)
 
 class ProjectEventArgs:
-    def __init__(self, project):
+    def __init__(self, project, follow_up):
         self.project = project
+        self.follow_up = follow_up
+
+
+class FollowUpContribution:
+    def __init__(self, azd_client: AzdClient, invocation_id: str):
+        self._azd_client = azd_client
+        self._invocation_id = invocation_id
+
+    async def set(self, text: str):
+        """Set the contribution for the current project handler invocation."""
+        if not self._invocation_id:
+            raise RuntimeError("follow-up invocation is unavailable")
+        request = SetFollowUpRequest(
+            invocation_id=self._invocation_id,
+            text=text,
+        )
+        await asyncio.to_thread(self._azd_client.follow_up.SetFollowUp, request)
+
+    async def clear(self):
+        """Clear the contribution for the current project handler invocation."""
+        await self.set("")
 
 class ServiceEventArgs:
     def __init__(self, project, service):
@@ -199,7 +221,12 @@ class EventManager:
         logger.info(f"[EventManager] Removing service handler: {event_name}")
         self._service_handlers.pop(event_name, None)
 
-    async def send_project_handler_status(self, event_name: str, status: str, message: str):
+    async def send_project_handler_status(
+        self,
+        event_name: str,
+        status: str,
+        message: str
+    ):
         """Send status of project event handling."""
         logger.info(f"[EventManager] Sending ProjectHandlerStatus: {event_name} => {status}")
 
@@ -208,7 +235,7 @@ class EventManager:
             project_handler_status=event_pb2.ProjectHandlerStatus(
                 event_name=event_name,
                 status=status,
-                message=message
+                message=message,
             )
         )
 
@@ -240,13 +267,19 @@ class EventManager:
         status, message = "completed", ""
 
         if handler:
+            event_args = ProjectEventArgs(
+                invoke_msg.project,
+                FollowUpContribution(self._azd_client, invoke_msg.invocation_id),
+            )
             try:
-                await handler(ProjectEventArgs(invoke_msg.project))
+                await handler(event_args)
             except Exception as ex:
                 status = "failed"
                 message = str(ex)
                 logger.exception(f"[ProjectHandler] Error: {ex}")
-            await self.send_project_handler_status(event_name, status, message)
+            await self.send_project_handler_status(
+                event_name, status, message
+            )
         else:
             logger.warning(f"[EventManager] No project handler registered for event: {event_name}")
 

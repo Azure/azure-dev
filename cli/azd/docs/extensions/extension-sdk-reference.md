@@ -16,6 +16,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
   - [ExtensionCommandOptions](#extensioncommandoptions)
   - [ExtensionContext](#extensioncontext)
   - [NewListenCommand](#newlistencommand)
+  - [Project lifecycle follow-up](#project-lifecycle-follow-up)
   - [NewMetadataCommand](#newmetadatacommand)
   - [NewVersionCommand](#newversioncommand)
 - [MCP Server Builder](#mcp-server-builder)
@@ -205,6 +206,46 @@ rootCmd.AddCommand(azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
     host.WithProjectEventHandler("preprovision", myHandler)
 }))
 ```
+
+### Project lifecycle follow-up
+
+```go
+type ProjectEventArgs struct {
+    Project  *ProjectConfig
+    FollowUp *FollowUpContribution
+}
+
+type FollowUpContribution struct {
+    // Set replaces the text for this handler invocation.
+    Set(text string) error
+    // Clear removes the text for this handler invocation.
+    Clear() error
+}
+```
+
+Use `FollowUp.Set` from a successful project `post*` handler when the parent
+azd command needs a text-only next step:
+
+```go
+host.WithProjectEventHandler("postdeploy",
+    func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+        return args.FollowUp.Set("Next:\n  azd ai agent show my-agent")
+    })
+```
+
+The contribution uses the independent `FollowUpService` and the invocation ID
+provided by azd. The host stages text and commits it only after the handler
+completes successfully; failed, cancelled, disconnected, or incomplete
+handlers are discarded. `Clear` and `Set("")` retract the current
+contribution. Calls outside a project `post*` handler return an error.
+
+The host appends committed text to the parent command's human-readable
+completion message and combines contributions from multiple extensions in a
+deterministic order. The text is not included in JSON output. Within a custom
+workflow, a later command step replaces an earlier result from that extension.
+Within one command, lifecycle events use the stable order restore, build,
+package, provision, publish, deploy. Concurrent layers of the same event
+resolve by stable layer identity, not completion time.
 
 ### NewMetadataCommand
 

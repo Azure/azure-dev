@@ -31,6 +31,7 @@ type AzdClient struct {
 	promptClient        PromptServiceClient
 	deploymentClient    DeploymentServiceClient
 	eventsClient        EventServiceClient
+	followUpClient      FollowUpServiceClient
 	composeClient       v1beta.ComposeServiceClient
 	workflowClient      WorkflowServiceClient
 	extensionClient     ExtensionServiceClient
@@ -211,6 +212,15 @@ func (c *AzdClient) Events() EventServiceClient {
 	}
 
 	return c.eventsClient
+}
+
+// FollowUp returns the follow-up contribution service client.
+func (c *AzdClient) FollowUp() FollowUpServiceClient {
+	if c.followUpClient == nil {
+		c.followUpClient = NewFollowUpServiceClient(c.connection)
+	}
+
+	return c.followUpClient
 }
 
 // Compose returns the preview compose service client.

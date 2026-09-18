@@ -79,6 +79,7 @@ func (s *Server) registerServices() error {
 	azdext.RegisterUserConfigServiceServer(s.grpcServer, s.userConfigService)
 	azdext.RegisterDeploymentServiceServer(s.grpcServer, s.deploymentService)
 	azdext.RegisterEventServiceServer(s.grpcServer, s.eventService)
+	azdext.RegisterFollowUpServiceServer(s.grpcServer, s.followUpService)
 	azdext.RegisterWorkflowServiceServer(s.grpcServer, s.workflowService)
 	azdext.RegisterExtensionServiceServer(s.grpcServer, s.extensionService)
 	azdext.RegisterServiceTargetServiceServer(s.grpcServer, s.serviceTargetService)
@@ -114,6 +115,7 @@ func (s *Server) registerServices() error {
 			BetaUserConfigService:    s.userConfigService,
 			BetaDeploymentService:    s.deploymentService,
 			BetaEventService:         s.eventService,
+			BetaFollowUpService:      s.followUpService,
 			BetaComposeService:       s.composeService,
 			BetaWorkflowService:      s.workflowService,
 			BetaExtensionService:     s.extensionService,

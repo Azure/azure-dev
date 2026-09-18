@@ -27,6 +27,41 @@ type EventManager struct {
 
 type ProjectEventArgs struct {
 	Project *ProjectConfig
+
+	// FollowUp contributes command completion text for this
+	// handler invocation.
+	FollowUp *FollowUpContribution
+}
+
+// FollowUpContribution contributes text for one handler invocation.
+type FollowUpContribution struct {
+	client       *AzdClient
+	ctx          context.Context
+	invocationID string
+}
+
+// Set replaces the contribution for the current invocation.
+func (f *FollowUpContribution) Set(text string) error {
+	if f == nil {
+		return fmt.Errorf("follow-up contribution is unavailable")
+	}
+	if f.invocationID == "" {
+		return fmt.Errorf("follow-up invocation is unavailable")
+	}
+
+	_, err := f.client.FollowUp().SetFollowUp(
+		WithAccessToken(f.ctx),
+		&SetFollowUpRequest{
+			InvocationId: f.invocationID,
+			Text:         text,
+		},
+	)
+	return err
+}
+
+// Clear removes the contribution for the current invocation.
+func (f *FollowUpContribution) Clear() error {
+	return f.Set("")
 }
 
 type ServiceEventArgs struct {
@@ -232,6 +267,11 @@ func (em *EventManager) onInvokeProjectHandler(
 	var handlerError *ExtensionError
 
 	// Call the project event handler
+	args.FollowUp = &FollowUpContribution{
+		client:       em.client,
+		ctx:          ctx,
+		invocationID: req.InvocationId,
+	}
 	err := handler(ctx, args)
 	if err != nil {
 		handlerStatus = "failed"

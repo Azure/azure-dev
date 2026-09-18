@@ -1021,7 +1021,8 @@ proto.azd.extensions.v1.InvokeProjectHandler.prototype.toObject = function(opt_i
 proto.azd.extensions.v1.InvokeProjectHandler.toObject = function(includeInstance, msg) {
   var f, obj = {
 eventName: jspb.Message.getFieldWithDefault(msg, 1, ""),
-project: (f = msg.getProject()) && models_pb.ProjectConfig.toObject(includeInstance, f)
+project: (f = msg.getProject()) && models_pb.ProjectConfig.toObject(includeInstance, f),
+invocationId: jspb.Message.getFieldWithDefault(msg, 3, "")
   };
 
   if (includeInstance) {
@@ -1067,6 +1068,10 @@ proto.azd.extensions.v1.InvokeProjectHandler.deserializeBinaryFromReader = funct
       reader.readMessage(value,models_pb.ProjectConfig.deserializeBinaryFromReader);
       msg.setProject(value);
       break;
+    case 3:
+      var value = /** @type {string} */ (reader.readString());
+      msg.setInvocationId(value);
+      break;
     default:
       reader.skipField();
       break;
@@ -1109,6 +1114,13 @@ proto.azd.extensions.v1.InvokeProjectHandler.serializeBinaryToWriter = function(
       2,
       f,
       models_pb.ProjectConfig.serializeBinaryToWriter
+    );
+  }
+  f = message.getInvocationId();
+  if (f.length > 0) {
+    writer.writeString(
+      3,
+      f
     );
   }
 };
@@ -1166,6 +1178,24 @@ proto.azd.extensions.v1.InvokeProjectHandler.prototype.clearProject = function()
  */
 proto.azd.extensions.v1.InvokeProjectHandler.prototype.hasProject = function() {
   return jspb.Message.getField(this, 2) != null;
+};
+
+
+/**
+ * optional string invocation_id = 3;
+ * @return {string}
+ */
+proto.azd.extensions.v1.InvokeProjectHandler.prototype.getInvocationId = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 3, ""));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.azd.extensions.v1.InvokeProjectHandler} returns this
+ */
+proto.azd.extensions.v1.InvokeProjectHandler.prototype.setInvocationId = function(value) {
+  return jspb.Message.setProto3StringField(this, 3, value);
 };
 
 

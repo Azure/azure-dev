@@ -1,0 +1,21 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azd.extensions.v1beta;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1beta";
+// FollowUpService accepts command follow-up contributions from extensions.
+service FollowUpService {
+  // Sets or clears the contribution for a project handler invocation.
+  rpc SetFollowUp(SetFollowUpRequest) returns (SetFollowUpResponse);
+}
+
+message SetFollowUpRequest {
+  // Opaque identifier supplied with the project handler invocation.
+  string invocation_id = 1;
+  // Empty text explicitly clears the contribution.
+  string text = 2;
+}
+
+message SetFollowUpResponse {}

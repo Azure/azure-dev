@@ -10,6 +10,53 @@ namespace Microsoft.Azd
     public class ProjectEventArgs
     {
         public ProjectConfig Project { get; set; } = default!;
+        public FollowUpContribution FollowUp { get; }
+
+        public ProjectEventArgs(
+            ProjectConfig project,
+            FollowUpContribution followUp)
+        {
+            Project = project;
+            FollowUp = followUp;
+        }
+    }
+
+    public sealed class FollowUpContribution
+    {
+        private readonly FollowUpService.FollowUpServiceClient _client;
+        private readonly string _invocationId;
+
+        public FollowUpContribution(
+            FollowUpService.FollowUpServiceClient client,
+            string invocationId)
+        {
+            _client = client;
+            _invocationId = invocationId;
+        }
+
+        public async Task SetAsync(
+            string text,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrEmpty(_invocationId))
+            {
+                throw new InvalidOperationException(
+                    "Follow-up invocation is unavailable.");
+            }
+
+            await _client.SetFollowUpAsync(
+                new SetFollowUpRequest
+                {
+                    InvocationId = _invocationId,
+                    Text = text
+                },
+                cancellationToken: cancellationToken);
+        }
+
+        public Task ClearAsync(CancellationToken cancellationToken = default)
+        {
+            return SetAsync("", cancellationToken);
+        }
     }
 
     public class ServiceEventArgs
@@ -130,16 +177,20 @@ namespace Microsoft.Azd
         public void RemoveProjectEventHandler(string eventName) => _projectHandlers.Remove(eventName);
         public void RemoveServiceEventHandler(string eventName) => _serviceHandlers.Remove(eventName);
 
-        private async Task SendProjectHandlerStatusAsync(string eventName, string status, string message)
+        private async Task SendProjectHandlerStatusAsync(
+            string eventName,
+            string status,
+            string message)
         {
+            var statusMessage = new ProjectHandlerStatus
+            {
+                EventName = eventName,
+                Status = status,
+                Message = message
+            };
             await _stream!.RequestStream.WriteAsync(new EventMessage
             {
-                ProjectHandlerStatus = new ProjectHandlerStatus
-                {
-                    EventName = eventName,
-                    Status = status,
-                    Message = message
-                }
+                ProjectHandlerStatus = statusMessage
             });
         }
 
@@ -163,13 +214,15 @@ namespace Microsoft.Azd
             {
                 var status = "completed";
                 var message = "";
+                var eventArgs = new ProjectEventArgs(
+                    invokeMsg.Project,
+                    new FollowUpContribution(
+                        _azdClient.FollowUp,
+                        invokeMsg.InvocationId));
 
                 try
                 {
-                    await handler(new ProjectEventArgs
-                    {
-                        Project = invokeMsg.Project
-                    });
+                    await handler(eventArgs);
                 }
                 catch (Exception ex)
                 {
@@ -178,7 +231,10 @@ namespace Microsoft.Azd
                     Console.WriteLine($"[ProjectHandler] Error: {ex}");
                 }
 
-                await SendProjectHandlerStatusAsync(invokeMsg.EventName, status, message);
+                await SendProjectHandlerStatusAsync(
+                    invokeMsg.EventName,
+                    status,
+                    message);
             }
         }
 

@@ -35,6 +35,8 @@ const (
 	BetaEventService BetaService = "EventService"
 	// BetaExtensionService identifies the beta ExtensionService registration and its focused overrides.
 	BetaExtensionService BetaService = "ExtensionService"
+	// BetaFollowUpService identifies the beta FollowUpService registration and its focused overrides.
+	BetaFollowUpService BetaService = "FollowUpService"
 	// BetaFrameworkService identifies the beta FrameworkService registration and its focused overrides.
 	BetaFrameworkService BetaService = "FrameworkService"
 	// BetaProjectService identifies the beta ProjectService registration and its focused overrides.
@@ -270,6 +272,20 @@ func validateBetaExtensionServiceOverride(override any) error {
 		reflect.TypeFor[v1beta.ExtensionServiceServer](),
 		reflect.TypeFor[BetaExtensionServiceReadyOverride](),
 		reflect.TypeFor[BetaExtensionServiceReportErrorOverride](),
+	)
+}
+
+// BetaFollowUpServiceSetFollowUpOverride overrides the beta FollowUpService.SetFollowUp method before stable adaptation.
+type BetaFollowUpServiceSetFollowUpOverride interface {
+	SetFollowUp(context.Context, *v1beta.SetFollowUpRequest) (*v1beta.SetFollowUpResponse, error)
+}
+
+func validateBetaFollowUpServiceOverride(override any) error {
+	return validateBetaServiceOverride(
+		"FollowUpService",
+		override,
+		reflect.TypeFor[v1beta.FollowUpServiceServer](),
+		reflect.TypeFor[BetaFollowUpServiceSetFollowUpOverride](),
 	)
 }
 
@@ -581,6 +597,7 @@ func registerBetaServices(
 		case BetaEnvironmentService:
 		case BetaEventService:
 		case BetaExtensionService:
+		case BetaFollowUpService:
 		case BetaFrameworkService:
 		case BetaProjectService:
 		case BetaPromptService:
@@ -696,6 +713,18 @@ func registerBetaServices(
 	v1beta.RegisterExtensionServiceServer(registrar, &betaExtensionServiceAdapter{
 		stable:   stableExtensionService,
 		override: overrideExtensionService,
+	})
+	overrideFollowUpService := overrides[BetaFollowUpService]
+	if err := validateBetaFollowUpServiceOverride(overrideFollowUpService); err != nil {
+		return err
+	}
+	stableFollowUpService, ok := serviceImplementations[BetaFollowUpService].(v1.FollowUpServiceServer)
+	if !ok {
+		return fmt.Errorf("stable implementation for FollowUpService does not satisfy v1.FollowUpServiceServer")
+	}
+	v1beta.RegisterFollowUpServiceServer(registrar, &betaFollowUpServiceAdapter{
+		stable:   stableFollowUpService,
+		override: overrideFollowUpService,
 	})
 	overrideFrameworkService := overrides[BetaFrameworkService]
 	if err := validateBetaFrameworkServiceOverride(overrideFrameworkService); err != nil {
@@ -1332,6 +1361,31 @@ func (a *betaExtensionServiceAdapter) ReportError(
 		a.stable.ReportError,
 		new(v1beta.ReportErrorResponse),
 		"ExtensionService.ReportError",
+	)
+}
+
+type betaFollowUpServiceAdapter struct {
+	v1beta.UnimplementedFollowUpServiceServer
+	stable   v1.FollowUpServiceServer
+	override any
+}
+
+var _ v1beta.FollowUpServiceServer = (*betaFollowUpServiceAdapter)(nil)
+
+func (a *betaFollowUpServiceAdapter) SetFollowUp(
+	ctx context.Context,
+	req *v1beta.SetFollowUpRequest,
+) (*v1beta.SetFollowUpResponse, error) {
+	if override, ok := a.override.(BetaFollowUpServiceSetFollowUpOverride); ok {
+		return override.SetFollowUp(ctx, req)
+	}
+	return adaptBetaUnary(
+		ctx,
+		req,
+		new(v1.SetFollowUpRequest),
+		a.stable.SetFollowUp,
+		new(v1beta.SetFollowUpResponse),
+		"FollowUpService.SetFollowUp",
 	)
 }
 

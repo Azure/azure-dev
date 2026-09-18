@@ -9,7 +9,7 @@ defaults:
   executor: copilot-sdk
   model: gpt-5.6-terra
   # model: mai-code-1-flash-picker
-  judge_model: gpt-5.5
+  judge_model: gpt-5.6-luna
 
 # Allow some grader misses as we tune this more.
 scoring:

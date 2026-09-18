@@ -46,7 +46,7 @@
 /.config/1espt/                             @Azure/azure-sdk-eng
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
-/schemas/                                   @vhvb1989 @tg-msft @RickWinter
+/schemas/                                   @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft
 
 # ── Stable extension protobuf contract ────────────────────────────────────────
 /cli/azd/grpc/proto/azd/extensions/v1/      @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft

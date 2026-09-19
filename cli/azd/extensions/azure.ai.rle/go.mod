@@ -5,6 +5,7 @@ go 1.26.4
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.20.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
+	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/azure/azure-dev/cli/azd v1.25.0
 	github.com/fatih/color v1.18.0
 	github.com/gorilla/websocket v1.5.3
@@ -20,7 +21,6 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.4.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.2.0 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.6.0 // indirect
-	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/adam-lavrik/go-imath v0.0.0-20210910152346-265a42a96f0b // indirect
 	github.com/alecthomas/chroma/v2 v2.20.0 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect

@@ -1,8 +1,16 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// Package telemetry declares classification metadata for telemetry fields emitted by
-// first-party azd extensions.
+// Package telemetry declares the classification metadata for attributes emitted
+// by first-party azd extensions and verifies, at test time, that every attribute
+// an extension reports is declared here.
+//
+// Extensions record usage by constructing a telemetry payload — a foundry
+// telemetry Event or an azdext ReportUsageRequest — with an inline Attributes
+// map. scanExtensionTelemetry parses extension source with go/parser (it never
+// executes extension code), finds those payload literals, and collects their
+// attribute keys; validateExtensionTelemetryUsages then checks each key against
+// the declarations in this file.
 package telemetry
 
 import (

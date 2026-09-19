@@ -536,6 +536,11 @@ overrides:
   - filename: pkg/azdext/contracts_v1_aliases.go
     words:
       - generatefacade
+  - filename: extensions/telemetry/*.go
+    words:
+      - elts
+      - fset
+      - unkeyed
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

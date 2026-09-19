@@ -4,7 +4,6 @@
 package telemetry
 
 import (
-	"fmt"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -12,8 +11,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 )
 
 // The contract is:
@@ -85,30 +82,6 @@ func TestValidateExtensionTelemetryUsages(t *testing.T) {
 		require.Len(t, diagnostics, 1)
 		require.Contains(t, diagnostics[0], `"ext.undeclared.mode" is not declared`)
 	})
-}
-
-func validateExtensionTelemetryUsages(
-	usages []telemetryUsage,
-	declarations map[string]fieldDeclaration,
-) []string {
-	var diagnostics []string
-	for _, usage := range usages {
-		finalKey := fields.ExtensionAttributePrefix + usage.key
-		if _, ok := declarations[finalKey]; ok {
-			continue
-		}
-
-		diagnostics = append(diagnostics, fmt.Sprintf(
-			"%s:%d: %s uses extension telemetry attribute %q, but %q is not declared in "+
-				"cli/azd/extensions/telemetry/fields.go",
-			usage.path,
-			usage.line,
-			usage.extension,
-			usage.key,
-			finalKey,
-		))
-	}
-	return diagnostics
 }
 
 func telemetryPackageDir(t *testing.T) string {

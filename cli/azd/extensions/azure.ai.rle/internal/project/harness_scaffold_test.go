@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -37,6 +38,7 @@ func TestCreateRleHarnessScaffoldWritesHostedAgentFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// #nosec G304 -- sessionDir is created under t.TempDir by the scaffold under test.
 	config, err := os.ReadFile(filepath.Join(sessionDir, "rle.toml"))
 	if err != nil {
 		t.Fatal(err)
@@ -54,6 +56,7 @@ func TestCreateRleHarnessScaffoldWritesHostedAgentFiles(t *testing.T) {
 		}
 	}
 
+	// #nosec G304 -- sessionDir is created under t.TempDir by the scaffold under test.
 	server, err := os.ReadFile(filepath.Join(sessionDir, "server", "env.py"))
 	if err != nil {
 		t.Fatal(err)
@@ -71,6 +74,7 @@ func TestCreateRleHarnessScaffoldWritesHostedAgentFiles(t *testing.T) {
 			t.Fatalf("expected server to contain %q, got:\n%s", expected, server)
 		}
 	}
+	// #nosec G304 -- sessionDir is created under t.TempDir by the scaffold under test.
 	dockerfile, err := os.ReadFile(filepath.Join(sessionDir, "Dockerfile"))
 	if err != nil {
 		t.Fatalf("expected Dockerfile to be created: %v", err)
@@ -103,6 +107,7 @@ func TestCreateRleHarnessScaffoldNormalizesBYOHBaseURL(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// #nosec G304 -- sessionDir is created under t.TempDir by the scaffold under test.
 	config, err := os.ReadFile(filepath.Join(sessionDir, "rle.toml"))
 	if err != nil {
 		t.Fatal(err)
@@ -123,7 +128,7 @@ func TestCreateRleHarnessScaffoldRejectsUnsafeBYOHBaseURL(t *testing.T) {
 		t.TempDir(),
 		false,
 	)
-	localError, ok := err.(*azdext.LocalError)
+	localError, ok := errors.AsType[*azdext.LocalError](err)
 	if !ok || localError.Code != "rle_harness_base_url_invalid" {
 		t.Fatalf("expected invalid base URL error, got %v", err)
 	}
@@ -299,7 +304,7 @@ func waitForDockerTestHealth(ctx context.Context, endpoint string) error {
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("wait for OpenEnv health endpoint: %w (last error: %v)", ctx.Err(), lastErr)
+			return fmt.Errorf("wait for OpenEnv health endpoint: %w (last error: %w)", ctx.Err(), lastErr)
 		case <-time.After(time.Second):
 		}
 	}

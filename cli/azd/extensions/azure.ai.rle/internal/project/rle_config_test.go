@@ -34,6 +34,7 @@ func TestWriteAndLoadRleConfigCanonicalizesHostedAgentManifest(t *testing.T) {
 	if err := WriteRleConfig(dir, config); err != nil {
 		t.Fatal(err)
 	}
+	// #nosec G304 -- dir is created by t.TempDir.
 	data, err := os.ReadFile(filepath.Join(dir, RleConfigFile))
 	if err != nil {
 		t.Fatal(err)
@@ -90,21 +91,21 @@ func TestWriteAndLoadRleConfigCanonicalizesVersionScopedDefaults(t *testing.T) {
 				RendererName: &rendererName,
 			},
 			Reinforcement: &RleReinforcementDefaults{
-				MaxEpisodeSteps: intPointer(5),
+				MaxEpisodeSteps: new(5),
 				Hyperparameters: &RleReinforcementHyperparameters{
-					NumberOfEpochs:         intPointer(3),
-					BatchSize:              intPointer(8),
-					LearningRateMultiplier: float64Pointer(0.25),
-					EvalInterval:           intPointer(10),
-					EvalSamples:            intPointer(20),
-					ComputeMultiplier:      float64Pointer(1.5),
+					NumberOfEpochs:         new(3),
+					BatchSize:              new(8),
+					LearningRateMultiplier: new(0.25),
+					EvalInterval:           new(10),
+					EvalSamples:            new(20),
+					ComputeMultiplier:      new(1.5),
 					ReasoningEffort:        &reasoningEffort,
 				},
 			},
 			Grpo: &RleGrpoDefaults{
-				GroupSize:      intPointer(8),
-				GroupsPerBatch: intPointer(16),
-				MaxSteps:       intPointer(100),
+				GroupSize:      new(8),
+				GroupsPerBatch: new(16),
+				MaxSteps:       new(100),
 			},
 		},
 	}
@@ -112,6 +113,7 @@ func TestWriteAndLoadRleConfigCanonicalizesVersionScopedDefaults(t *testing.T) {
 	if err := WriteRleConfig(dir, config); err != nil {
 		t.Fatal(err)
 	}
+	// #nosec G304 -- dir is created by t.TempDir.
 	data, err := os.ReadFile(filepath.Join(dir, RleConfigFile))
 	if err != nil {
 		t.Fatal(err)
@@ -175,7 +177,7 @@ func TestNormalizeRleConfigValidatesVersionScopedDefaults(t *testing.T) {
 		{
 			name: "unsupported schema version",
 			config: RleConfig{
-				SchemaVersion: stringPointer("2.0.0"),
+				SchemaVersion: new("2.0.0"),
 				Rle:           base,
 			},
 			wantCode: "rle_manifest_schema_version_invalid",
@@ -186,7 +188,7 @@ func TestNormalizeRleConfigValidatesVersionScopedDefaults(t *testing.T) {
 				SchemaVersion: &schemaVersion,
 				Rle:           base,
 				Defaults: &RleEnvironmentDefaults{
-					Grpo: &RleGrpoDefaults{GroupSize: intPointer(0)},
+					Grpo: &RleGrpoDefaults{GroupSize: new(0)},
 				},
 			},
 			wantCode: "rle_manifest_default_invalid",
@@ -199,7 +201,7 @@ func TestNormalizeRleConfigValidatesVersionScopedDefaults(t *testing.T) {
 				Defaults: &RleEnvironmentDefaults{
 					Reinforcement: &RleReinforcementDefaults{
 						Hyperparameters: &RleReinforcementHyperparameters{
-							LearningRateMultiplier: float64Pointer(math.Inf(1)),
+							LearningRateMultiplier: new(math.Inf(1)),
 						},
 					},
 				},
@@ -214,7 +216,7 @@ func TestNormalizeRleConfigValidatesVersionScopedDefaults(t *testing.T) {
 				Defaults: &RleEnvironmentDefaults{
 					Reinforcement: &RleReinforcementDefaults{
 						Hyperparameters: &RleReinforcementHyperparameters{
-							ReasoningEffort: stringPointer("maximum"),
+							ReasoningEffort: new("maximum"),
 						},
 					},
 				},
@@ -281,7 +283,7 @@ subtype = "OpenEnv"
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			dir := t.TempDir()
-			if err := os.WriteFile(filepath.Join(dir, RleConfigFile), []byte(test.content), 0644); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, RleConfigFile), []byte(test.content), 0600); err != nil {
 				t.Fatal(err)
 			}
 
@@ -303,7 +305,7 @@ version = "1.0.0"
 type = "Gym"
 subtype = "OpenEnv"
 `
-	if err := os.WriteFile(filepath.Join(dir, RleConfigFile), []byte(content), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, RleConfigFile), []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -337,8 +339,8 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 				Version:      "1.0.0",
 				Type:         RleTypeHarness,
 				Subtype:      RleSubtypeHostedAgent,
-				AgentName:    stringPointer("support-agent"),
-				AgentVersion: stringPointer("12"),
+				AgentName:    new("support-agent"),
+				AgentVersion: new("12"),
 			},
 		},
 		{
@@ -348,8 +350,8 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 				Version:      "1.0.0",
 				Type:         RleTypeHarness,
 				Subtype:      RleSubtypeHostedAgent,
-				AgentName:    stringPointer("support-agent"),
-				AgentVersion: stringPointer("draft-1767225600"),
+				AgentName:    new("support-agent"),
+				AgentVersion: new("draft-1767225600"),
 			},
 		},
 		{
@@ -359,7 +361,7 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 				Version: "1.0.0",
 				Type:    RleTypeHarness,
 				Subtype: RleSubtypeBYOH,
-				BaseURL: stringPointer("https://Harness.Example.com/rle/"),
+				BaseURL: new("https://Harness.Example.com/rle/"),
 			},
 			wantURL: "https://harness.example.com/rle/",
 		},
@@ -388,7 +390,7 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 				Version:   "1.0.0",
 				Type:      RleTypeGym,
 				Subtype:   RleSubtypeOpenEnv,
-				AgentName: stringPointer("support-agent"),
+				AgentName: new("support-agent"),
 			},
 			wantCode: "rle_manifest_type_configuration_invalid",
 		},
@@ -409,8 +411,8 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 				Version:      "1.0.0",
 				Type:         RleTypeHarness,
 				Subtype:      RleSubtypeHostedAgent,
-				AgentName:    stringPointer("support-agent"),
-				AgentVersion: stringPointer("v12"),
+				AgentName:    new("support-agent"),
+				AgentVersion: new("v12"),
 			},
 			wantCode: "rle_agent_version_invalid",
 		},
@@ -421,9 +423,9 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 				Version:      "1.0.0",
 				Type:         RleTypeHarness,
 				Subtype:      RleSubtypeHostedAgent,
-				AgentName:    stringPointer("support-agent"),
-				AgentVersion: stringPointer("12"),
-				BaseURL:      stringPointer("https://agent.example.com"),
+				AgentName:    new("support-agent"),
+				AgentVersion: new("12"),
+				BaseURL:      new("https://agent.example.com"),
 			},
 			wantCode: "rle_manifest_type_configuration_invalid",
 		},
@@ -434,8 +436,8 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 				Version:   "1.0.0",
 				Type:      RleTypeHarness,
 				Subtype:   RleSubtypeBYOH,
-				AgentName: stringPointer("support-agent"),
-				BaseURL:   stringPointer("https://harness.example.com"),
+				AgentName: new("support-agent"),
+				BaseURL:   new("https://harness.example.com"),
 			},
 			wantCode: "rle_manifest_type_configuration_invalid",
 		},
@@ -446,7 +448,7 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 				Version: "1.0.0",
 				Type:    RleTypeHarness,
 				Subtype: RleSubtypeBYOH,
-				BaseURL: stringPointer("http://harness.example.com"),
+				BaseURL: new("http://harness.example.com"),
 			},
 			wantCode: "rle_harness_base_url_invalid",
 		},
@@ -457,7 +459,7 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 				Version: "1.0.0",
 				Type:    RleTypeHarness,
 				Subtype: RleSubtypeBYOH,
-				BaseURL: stringPointer("https://user@harness.example.com"),
+				BaseURL: new("https://user@harness.example.com"),
 			},
 			wantCode: "rle_harness_base_url_invalid",
 		},
@@ -468,7 +470,7 @@ func TestNormalizeRleConfigEnforcesControlPlaneTypeContract(t *testing.T) {
 				Version: "1.0.0",
 				Type:    RleTypeHarness,
 				Subtype: RleSubtypeBYOH,
-				BaseURL: stringPointer("https://harness.example.com?token=secret"),
+				BaseURL: new("https://harness.example.com?token=secret"),
 			},
 			wantCode: "rle_harness_base_url_invalid",
 		},
@@ -543,7 +545,7 @@ func TestLoadRleConfigRejectsLegacyKindConfiguration(t *testing.T) {
 name = "support_agent"
 version = "1.0.0"
 kind = "hosted_agent"
-`), 0644); err != nil {
+`), 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -579,16 +581,4 @@ func TestValidateInitialRleVersion(t *testing.T) {
 			}
 		})
 	}
-}
-
-func stringPointer(value string) *string {
-	return &value
-}
-
-func intPointer(value int) *int {
-	return &value
-}
-
-func float64Pointer(value float64) *float64 {
-	return &value
 }

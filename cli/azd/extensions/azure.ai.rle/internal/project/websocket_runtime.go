@@ -335,7 +335,7 @@ func (c *WebSocketRuntimeSession) connect(ctx context.Context) error {
 			connection.SetReadLimit(maxWebSocketMessageBytes)
 			c.connection = connection
 			c.connectionDone = make(chan struct{})
-			go c.keepAlive(connection, c.connectionDone)
+			go c.keepAlive(context.WithoutCancel(connectCtx), connection, c.connectionDone)
 			return nil
 		}
 		detail := ""
@@ -414,7 +414,7 @@ func isRetryableWebSocketHandshakeStatus(statusCode int) bool {
 	}
 }
 
-func (c *WebSocketRuntimeSession) keepAlive(connection *websocket.Conn, done <-chan struct{}) {
+func (c *WebSocketRuntimeSession) keepAlive(ctx context.Context, connection *websocket.Conn, done <-chan struct{}) {
 	ticker := time.NewTicker(c.keepAliveInterval)
 	defer ticker.Stop()
 	for {
@@ -422,7 +422,7 @@ func (c *WebSocketRuntimeSession) keepAlive(connection *websocket.Conn, done <-c
 		case <-done:
 			return
 		case <-ticker.C:
-			if _, err := c.Call(context.Background(), "state", ""); err != nil {
+			if _, err := c.Call(ctx, "state", ""); err != nil {
 				_ = c.failConnection(connection, fmt.Errorf("exchange OpenEnv WebSocket keepalive: %w", err))
 				return
 			}

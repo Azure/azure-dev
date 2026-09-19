@@ -94,6 +94,7 @@ func TestInitInteractiveHostedAgentScaffoldsUsingPromptedValues(t *testing.T) {
 	}
 
 	sessionDir := filepath.Join(tempDir, "support_agent")
+	// #nosec G304 -- the path is generated under t.TempDir by the command under test.
 	config, err := os.ReadFile(filepath.Join(sessionDir, project.RleConfigFile))
 	if err != nil {
 		t.Fatal(err)
@@ -157,6 +158,7 @@ func TestInitInteractiveBYOHScaffoldsUsingPromptedValues(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// #nosec G304 -- the path is generated under t.TempDir by the command under test.
 	config, err := os.ReadFile(filepath.Join(tempDir, "customer_rle", project.RleConfigFile))
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +181,7 @@ func (f *fakeRleHarnessSample) Copy(folderName string, dest string, force bool) 
 	if err := os.MkdirAll(filepath.Join(sessionDir, "agent"), 0750); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(filepath.Join(sessionDir, "agent", "app.py"), []byte("# sample agent\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(sessionDir, "agent", "app.py"), []byte("# sample agent\n"), 0600); err != nil {
 		return "", err
 	}
 	if err := os.MkdirAll(filepath.Join(sessionDir, "rle"), 0750); err != nil {
@@ -203,7 +205,7 @@ func (f *fakeRleHarnessSample) Copy(folderName string, dest string, force bool) 
 			"agentName = \"code-repair-agent\"\n" +
 			"agentVersion = \"1\"\n"
 	}
-	if err := os.WriteFile(filepath.Join(sessionDir, "rle", project.RleConfigFile), []byte(rleToml), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(sessionDir, "rle", project.RleConfigFile), []byte(rleToml), 0600); err != nil {
 		return "", err
 	}
 	return sessionDir, nil
@@ -268,6 +270,7 @@ func TestInitHostedAgentSampleSourceCopiesWorkingSample(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(sessionDir, "agent", "app.py")); err != nil {
 		t.Fatalf("expected the sample agent to be copied: %v", err)
 	}
+	// #nosec G304 -- the path is generated under t.TempDir by the command under test.
 	config, err := os.ReadFile(filepath.Join(sessionDir, "rle", project.RleConfigFile))
 	if err != nil {
 		t.Fatal(err)
@@ -326,6 +329,7 @@ func TestInitBYOHSampleSourceAppliesBaseURLOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// #nosec G304 -- the path is generated under t.TempDir by the command under test.
 	config, err := os.ReadFile(filepath.Join(tempDir, "my_byoh", "rle", project.RleConfigFile))
 	if err != nil {
 		t.Fatal(err)

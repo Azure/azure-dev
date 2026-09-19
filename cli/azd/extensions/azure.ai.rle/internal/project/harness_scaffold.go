@@ -46,6 +46,7 @@ func CreateRleHarnessScaffold(options HarnessScaffoldOptions, dest string, force
 		{path: filepath.Join("server", "env.py"), content: renderHarnessServer(config.Rle)},
 	}
 	for _, file := range files {
+		// #nosec G306 -- scaffold source files are intentionally readable by the container runtime.
 		if err := os.WriteFile(filepath.Join(sessionDir, file.path), []byte(file.content), 0644); err != nil {
 			return "", err
 		}

@@ -2,7 +2,11 @@
 
 ## 0.8.6-preview
 
-- Maintenance release.
+- Block RLE lifecycle commands when the development registry marks a newer release
+  as breaking, while leaving metadata and version commands available for updates and
+  diagnostics.
+- Show an update notice after normal command output when a newer non-breaking
+  RLE extension is available.
 
 ## 0.8.5-preview
 

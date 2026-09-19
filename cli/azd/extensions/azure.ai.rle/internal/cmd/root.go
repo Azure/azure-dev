@@ -19,6 +19,10 @@ const (
 )
 
 func NewRootCommand() *cobra.Command {
+	return newRootCommand(newRegistryExtensionUpdateChecker())
+}
+
+func newRootCommand(updateChecker extensionUpdateChecker) *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
 		Name:  "rle",
 		Use:   "rle <command> [options]",
@@ -29,6 +33,53 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.SilenceErrors = true
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
+	var availableUpdate *extensionUpdate
+	sdkPreRun := rootCmd.PersistentPreRunE
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if err := sdkPreRun(cmd, args); err != nil {
+			return err
+		}
+		availableUpdate = nil
+		switch cmd.Name() {
+		case "metadata", "version":
+			return nil
+		}
+
+		update, err := updateChecker.Check(cmd.Context(), Version)
+		if err != nil {
+			fmt.Fprintf(
+				cmd.ErrOrStderr(),
+				"Warning: unable to check for RLE updates: %v\n",
+				err,
+			)
+			return nil
+		}
+		if update == nil {
+			return nil
+		}
+		if update.IsBreaking {
+			return breakingUpdateError(Version, update)
+		}
+
+		availableUpdate = update
+		return nil
+	}
+	sdkPostRun := rootCmd.PersistentPostRunE
+	rootCmd.PersistentPostRunE = func(cmd *cobra.Command, args []string) error {
+		if sdkPostRun != nil {
+			if err := sdkPostRun(cmd, args); err != nil {
+				return err
+			}
+		}
+		if availableUpdate != nil {
+			fmt.Fprintf(
+				cmd.ErrOrStderr(),
+				"RLE extension update available: %s. Update with: azd extension update azure.ai.rle\n",
+				availableUpdate.LatestVersion,
+			)
+		}
+		return nil
+	}
 
 	defaultHelp := rootCmd.HelpFunc()
 	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {

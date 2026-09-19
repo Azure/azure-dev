@@ -100,12 +100,13 @@
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "64ff86b02d44dfb9bf177e7b2e301e3a2dec5b5b3623bc4dc87bc6b7bbe81ad6"
+                "value": "cd0f7ca118554b2c6b20cf77885f7689c9a5d55407c3cbaae531a9aaf1df2c3e"
               },
               "entryPoint": "azure-ai-rle-windows-amd64.exe",
               "url": "https://raw.githubusercontent.com/sujit-kamireddy/azure-dev/main/cli/azd/extensions/azure.ai.rle/artifacts/rle-dev/0.8.6-preview/azure-ai-rle-windows-amd64.zip"
             }
-          }
+          },
+          "breakingChanges": true
         }
       ],
       "tags": [

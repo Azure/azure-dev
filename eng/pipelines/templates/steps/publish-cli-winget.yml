@@ -3,6 +3,10 @@ parameters:
     type: string
     default: $(azuresdk-github-pat)
     displayName: GitHub token
+  - name: ValidationMode
+    type: boolean
+    default: false
+    displayName: Validate GitHub token without submitting
 
 steps:
   - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
@@ -12,15 +16,14 @@ steps:
       Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
 
       $AdditionalArgs = ""
-      if ($$(SubmitWinGetPackage)) {
-          $AdditionalArgs = "--submit"
+      if ('${{ parameters.ValidationMode }}' -eq 'false' -and '$(SubmitWingetPackage)' -eq 'true') {
+        $AdditionalArgs = "--submit"
       }
 
       ./wingetcreate.exe update `
-          Microsoft.Azd `
-          --version '$(MSI_VERSION)' `
-          --urls "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_$(CLI_VERSION)/azd-windows-amd64.msi" `
-          --token ${{ parameters.GitHubToken }} `
-          --out winget `
-          $AdditionalArgs
+        Microsoft.Azd `
+        --version '1.34.200' `
+        --urls "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_1.34.1/azd-windows-amd64.msi" `
+        --token ${{ parameters.GitHubToken }} `
+        --out winget
     displayName: Submit to WinGet

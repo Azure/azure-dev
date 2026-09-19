@@ -160,7 +160,7 @@ func build() foundryTelemetry.Event {
 
 	require.Empty(t, usages)
 	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "assigning them after construction")
+	require.Contains(t, diagnostics[0], "after construction hides keys")
 }
 
 func TestScanRejectsUnkeyedPayload(t *testing.T) {
@@ -275,7 +275,7 @@ func report(req *v1beta.ReportUsageRequest, dynamicKey string) {
 
 	require.Empty(t, usages)
 	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "assigning them after construction")
+	require.Contains(t, diagnostics[0], "after construction hides keys")
 }
 
 // A struct that merely exposes an Attributes map is not a telemetry payload, so
@@ -321,7 +321,77 @@ func decorate(req *azdext.ReportUsageRequest, key string) {
 
 	require.Empty(t, usages)
 	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "assigning them after construction")
+	require.Contains(t, diagnostics[0], "after construction hides keys")
+}
+
+// Reading Attributes into a local aliases the map so later writes escape the
+// inline scan; the aliasing read itself is therefore rejected.
+func TestScanRejectsAttributesMapAliasing(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+func decorate(req *azdext.ReportUsageRequest, dynamicKey string) {
+	attrs := req.Attributes
+	attrs[dynamicKey] = "value"
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "after construction hides keys")
+}
+
+// new(payload) yields a payload pointer, so a later Attributes assignment on it
+// is still rejected.
+func TestScanRejectsAttributesMutationOnNewPayload(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+func build(dynamicKey string) *azdext.ReportUsageRequest {
+	req := new(azdext.ReportUsageRequest)
+	req.Attributes = map[string]string{dynamicKey: "value"}
+	return req
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "after construction hides keys")
+}
+
+// new(payload{}) is the Go 1.26 spelling; provenance still recognizes req as a
+// payload so the Attributes write is rejected.
+func TestScanRejectsAttributesMutationOnNewPayloadLiteral(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+func build(dynamicKey string) {
+	req := new(azdext.ReportUsageRequest{})
+	req.Attributes[dynamicKey] = "value"
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "after construction hides keys")
 }
 
 func writeExtensionSource(t *testing.T, root, relativePath, content string) {

@@ -319,15 +319,17 @@ func collectPayloadAliases(pkg *sourcePackage) {
 	}
 }
 
-// scanAttributeMutations rejects post-construction writes to a telemetry
-// payload's Attributes (req.Attributes[key] = ..., req.Attributes = ..., or
-// req.GetAttributes()[key] = ...). It first resolves which identifiers in the
-// function hold a telemetry payload -- payload-typed parameters, results, and
-// receivers, plus locals assigned from a payload literal -- so unrelated
-// Attributes fields on other types are left alone while a payload handed to a
-// helper is still checked. Payloads whose type cannot be seen syntactically (for
-// example a value returned from a call) are outside this best-effort guard; the
-// primary gate remains the inline payload-literal scan.
+// scanAttributeMutations rejects post-construction access to a telemetry
+// payload's Attributes, whether a write (req.Attributes[key] = ...,
+// req.Attributes = ...), a getter mutation (req.GetAttributes()[key] = ...), or a
+// read that aliases the map (attrs := req.Attributes). It first resolves which
+// identifiers in the function hold a telemetry payload -- payload-typed
+// parameters, results, and receivers, plus locals constructed from a payload
+// literal or new(...) -- so unrelated Attributes fields on other types are left
+// alone while a payload handed to a helper is still checked. Payloads whose type
+// cannot be seen syntactically (for example a value returned from a call) are
+// outside this best-effort guard; the primary gate remains the inline
+// payload-literal scan.
 func scanAttributeMutations(
 	fset *token.FileSet,
 	extensionRoot string,
@@ -363,25 +365,22 @@ func scanAttributeMutations(
 
 	var diagnostics []string
 	ast.Inspect(body, func(node ast.Node) bool {
-		assignment, ok := node.(*ast.AssignStmt)
+		selector, ok := node.(*ast.SelectorExpr)
 		if !ok {
 			return true
 		}
-		for _, target := range assignment.Lhs {
-			selector := attributesSelector(target)
-			if selector == nil {
-				continue
-			}
-			identifier, ok := selector.X.(*ast.Ident)
-			if !ok || !payloadNames[identifier.Name] {
-				continue
-			}
-			diagnostics = append(diagnostics, fmt.Sprintf(
-				"%s:%d: declare telemetry Attributes inline in the payload literal; "+
-					"assigning them after construction hides keys from governance",
-				displayPath(extensionRoot, source.path),
-				fset.Position(selector.Pos()).Line))
+		if selector.Sel.Name != "Attributes" && selector.Sel.Name != "GetAttributes" {
+			return true
 		}
+		identifier, ok := selector.X.(*ast.Ident)
+		if !ok || !payloadNames[identifier.Name] {
+			return true
+		}
+		diagnostics = append(diagnostics, fmt.Sprintf(
+			"%s:%d: set telemetry Attributes only inside the payload literal; "+
+				"reading or assigning them after construction hides keys from governance",
+			displayPath(extensionRoot, source.path),
+			fset.Position(selector.Pos()).Line))
 		return true
 	})
 	return diagnostics
@@ -410,7 +409,7 @@ func addPayloadAssignmentNames(assignment *ast.AssignStmt, source *sourceFile, n
 		if index >= len(assignment.Lhs) {
 			break
 		}
-		if !isPayloadLiteralExpression(value, source) {
+		if !isPayloadExpression(value, source) {
 			continue
 		}
 		if identifier, ok := assignment.Lhs[index].(*ast.Ident); ok {
@@ -432,7 +431,7 @@ func addPayloadValueSpecNames(spec *ast.ValueSpec, source *sourceFile, names map
 		if index >= len(spec.Names) {
 			break
 		}
-		if isPayloadLiteralExpression(value, source) {
+		if isPayloadExpression(value, source) {
 			names[spec.Names[index].Name] = true
 		}
 	}
@@ -447,30 +446,26 @@ func isPayloadTypeExpression(expression ast.Expr, source *sourceFile) bool {
 	return isTelemetryPayloadType(expression, source)
 }
 
-// isPayloadLiteralExpression reports whether an expression is a telemetry payload
-// composite literal, unwrapping a leading address-of (&Event{...}).
-func isPayloadLiteralExpression(expression ast.Expr, source *sourceFile) bool {
-	if unary, ok := expression.(*ast.UnaryExpr); ok && unary.Op == token.AND {
-		expression = unary.X
-	}
-	literal, ok := expression.(*ast.CompositeLit)
-	return ok && isTelemetryPayloadType(literal.Type, source)
-}
-
-func attributesSelector(expression ast.Expr) *ast.SelectorExpr {
+// isPayloadExpression reports whether an expression evaluates to a telemetry
+// payload whose provenance we can follow: a payload composite literal, a leading
+// address-of (&Event{...}), or new(...) applied to a payload type
+// (new(azdext.ReportUsageRequest)) or a payload literal (new(Event{})).
+func isPayloadExpression(expression ast.Expr, source *sourceFile) bool {
 	switch value := expression.(type) {
-	case *ast.IndexExpr:
-		return attributesSelector(value.X)
-	case *ast.CallExpr:
-		if selector, ok := value.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "GetAttributes" {
-			return selector
+	case *ast.UnaryExpr:
+		if value.Op == token.AND {
+			return isPayloadExpression(value.X, source)
 		}
-	case *ast.SelectorExpr:
-		if value.Sel.Name == "Attributes" {
-			return value
+	case *ast.CompositeLit:
+		return isTelemetryPayloadType(value.Type, source)
+	case *ast.CallExpr:
+		identifier, ok := value.Fun.(*ast.Ident)
+		if ok && identifier.Name == "new" && len(value.Args) == 1 {
+			return isPayloadTypeExpression(value.Args[0], source) ||
+				isPayloadExpression(value.Args[0], source)
 		}
 	}
-	return nil
+	return false
 }
 
 func collectPackageDeclarations(pkg *sourcePackage) {

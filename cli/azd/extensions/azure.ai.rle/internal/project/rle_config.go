@@ -114,6 +114,7 @@ func (v semanticVersion) String() string {
 // LoadRleConfig reads and validates rle.toml from dir.
 func LoadRleConfig(dir string) (RleConfig, error) {
 	path := filepath.Join(dir, RleConfigFile)
+	// #nosec G304 -- dir is the selected project directory and the file name is fixed.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -139,6 +140,7 @@ func WriteRleConfig(dir string, config RleConfig) error {
 	if err != nil {
 		return fmt.Errorf("marshal %s: %w", RleConfigFile, err)
 	}
+	// #nosec G306 -- rle.toml is a project manifest intended to be readable by project tooling.
 	return os.WriteFile(filepath.Join(dir, RleConfigFile), append(data, '\n'), 0644)
 }
 
@@ -668,8 +670,8 @@ func normalizeHarnessBaseURL(value *string) (string, error) {
 }
 
 func isValidHostedAgentVersion(value string) bool {
-	if strings.HasPrefix(value, "draft-") {
-		return isPositiveInt64(strings.TrimPrefix(value, "draft-"))
+	if after, ok := strings.CutPrefix(value, "draft-"); ok {
+		return isPositiveInt64(after)
 	}
 	return isPositiveInt64(value)
 }
@@ -686,7 +688,7 @@ func parseSemanticVersion(value string) (semanticVersion, error) {
 		return semanticVersion{}, fmt.Errorf("invalid semantic version %q", value)
 	}
 	parts := make([]int64, 3)
-	for index := 0; index < 3; index++ {
+	for index := range 3 {
 		part, err := strconv.ParseInt(matches[index+1], 10, 64)
 		if err != nil || part < 0 || part > math.MaxInt32 {
 			return semanticVersion{}, fmt.Errorf("invalid semantic version %q", value)

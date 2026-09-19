@@ -305,6 +305,7 @@ func readJSONFlagOrFile(inlineName, inline, fileName, file string) (json.RawMess
 	case inline != "":
 		raw = []byte(inline)
 	case file != "":
+		// #nosec G304 -- reading the user-selected payload file is the purpose of this option.
 		data, err := os.ReadFile(file)
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", fileName, err)

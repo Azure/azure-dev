@@ -86,14 +86,6 @@ type instanceGroupResource struct {
 	MaxActiveInstances int    `json:"maxActiveInstances"`
 }
 
-type instanceResource struct {
-	InstanceId      string `json:"instanceId"`
-	InstanceGroupId string `json:"instanceGroupId"`
-	BaseUrl         string `json:"baseUrl,omitempty"`
-	Status          string `json:"status,omitempty"`
-	Error           string `json:"error,omitempty"`
-}
-
 type rleHTTPError struct {
 	statusCode int
 	body       string
@@ -286,81 +278,6 @@ func (c *rleClient) createInstanceGroup(
 		return nil, err
 	}
 	return &result, nil
-}
-
-func (c *rleClient) deleteInstanceGroup(
-	ctx context.Context,
-	environmentName string,
-	environmentVersion string,
-	instanceGroupId string,
-) error {
-	suffix := instanceGroupSuffix(environmentName, environmentVersion, instanceGroupId)
-	return c.do(ctx, http.MethodDelete, environmentCollectionPath+suffix, nil, nil)
-}
-
-func (c *rleClient) createInstance(
-	ctx context.Context,
-	environmentName string,
-	environmentVersion string,
-	instanceGroupId string,
-) (*instanceResource, error) {
-	suffix := instanceCollectionSuffix(environmentName, environmentVersion, instanceGroupId)
-
-	var result instanceResource
-	if err := c.do(ctx, http.MethodPost, environmentCollectionPath+suffix, nil, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
-func (c *rleClient) getInstance(
-	ctx context.Context,
-	environmentName string,
-	environmentVersion string,
-	instanceGroupId string,
-	instanceId string,
-) (*instanceResource, error) {
-	suffix := instanceSuffix(environmentName, environmentVersion, instanceGroupId, instanceId)
-
-	var result instanceResource
-	if err := c.do(ctx, http.MethodGet, environmentCollectionPath+suffix, nil, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
-func (c *rleClient) deleteInstance(
-	ctx context.Context,
-	environmentName string,
-	environmentVersion string,
-	instanceGroupId string,
-	instanceId string,
-) error {
-	suffix := instanceSuffix(environmentName, environmentVersion, instanceGroupId, instanceId)
-	return c.do(ctx, http.MethodDelete, environmentCollectionPath+suffix, nil, nil)
-}
-
-func instanceSuffix(
-	environmentName string,
-	environmentVersion string,
-	instanceGroupId string,
-	instanceId string,
-) string {
-	return instanceCollectionSuffix(environmentName, environmentVersion, instanceGroupId) +
-		"/" + url.PathEscape(instanceId)
-}
-
-func instanceCollectionSuffix(
-	environmentName string,
-	environmentVersion string,
-	instanceGroupId string,
-) string {
-	return instanceGroupSuffix(environmentName, environmentVersion, instanceGroupId) + "/instances"
-}
-
-func instanceGroupSuffix(environmentName string, environmentVersion string, instanceGroupId string) string {
-	return instanceGroupCollectionSuffix(environmentName, environmentVersion) +
-		"/" + url.PathEscape(instanceGroupId)
 }
 
 func instanceGroupCollectionSuffix(environmentName string, environmentVersion string) string {

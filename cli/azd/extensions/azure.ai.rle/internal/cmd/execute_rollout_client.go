@@ -25,12 +25,20 @@ const executeRolloutHeader = "aml-user-token" //nolint:gosec // header name, not
 // session and sampler checkpoint. loom_session_id/checkpoint_id must never be
 // fabricated; the CLI provisions them by calling Loom itself (see loom_session_client.go)
 // so callers of `azd ai rle rollout` never handle Loom identifiers directly.
+//
+// ProjectEndpoint names the Foundry project this rollout samples through. Vienna PR
+// !2310739 ("Let each rollout name the Foundry project it samples through") moved this
+// off a single deployment-wide `rleCaptureProxyLoomProjectEndpoint` spec parameter and
+// onto RolloutModelSelection, forwarded per rollout exactly like CheckpointID. The Loom
+// Capture Proxy backend now rejects a rollout with HTTP 400
+// ("project_endpoint is required for the Loom Capture Proxy backend.") if this is empty.
 type rolloutModelSelection struct {
-	ModelName     string `json:"model_name,omitempty"`
-	RendererName  string `json:"renderer_name,omitempty"`
-	LoomSessionID string `json:"loom_session_id,omitempty"`
-	CheckpointID  string `json:"checkpoint_id,omitempty"`
-	SequenceID    *int64 `json:"sequence_id,omitempty"`
+	ModelName       string `json:"model_name,omitempty"`
+	RendererName    string `json:"renderer_name,omitempty"`
+	LoomSessionID   string `json:"loom_session_id,omitempty"`
+	CheckpointID    string `json:"checkpoint_id,omitempty"`
+	SequenceID      *int64 `json:"sequence_id,omitempty"`
+	ProjectEndpoint string `json:"project_endpoint,omitempty"`
 }
 
 // executeRolloutRequest mirrors vienna's ExecuteRolloutRequest

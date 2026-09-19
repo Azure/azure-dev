@@ -212,10 +212,11 @@ func (a *rolloutAction) Run() error {
 		Task:       task,
 		AgentInput: agentInput,
 		Model: &rolloutModelSelection{
-			ModelName:     model,
-			LoomSessionID: sessionID,
-			CheckpointID:  checkpointID,
-			SequenceID:    &sequenceID,
+			ModelName:       model,
+			LoomSessionID:   sessionID,
+			CheckpointID:    checkpointID,
+			SequenceID:      &sequenceID,
+			ProjectEndpoint: target.projectEndpoint,
 		},
 	})
 	if err != nil {

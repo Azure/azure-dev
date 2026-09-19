@@ -1,5 +1,13 @@
 # Release History
 
+## 0.8.7-preview
+
+- `azd ai rle rollout` now forwards the resolved Foundry project endpoint on
+  the executeRollout request (`model.project_endpoint`), matching Vienna's
+  per-rollout Loom Capture Proxy routing. No new flag or env var is required:
+  it reuses the same `FOUNDRY_PROJECT_ENDPOINT`/`--project-endpoint` value
+  already resolved to build the RLE client for this call.
+
 ## 0.8.6-preview
 
 - Block RLE lifecycle commands when the development registry marks a newer release

@@ -401,7 +401,7 @@
       "description": "Manage Microsoft Foundry Connections from your terminal. (Beta)",
       "versions": [
         {
-          "version": "1.0.0-beta.7.nightly.6854394",
+          "version": "1.0.0-beta.7.nightly.6858990",
           "requiredAzdVersion": ">=1.27.1",
           "capabilities": [
             "custom-commands",
@@ -421,7 +421,7 @@
             "darwin/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "828fe1dd9637aa9e2874d7d6eb39bf80a1d6c77ab4e3676fdc2bb76aec576d16"
+                "value": "94393b94538642e904ac806e23251c55c9ececbe5e0b0d7348ea604cd57bc8f2"
               },
               "entryPoint": "azure-ai-connections-darwin-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-connections/nightly/azure-ai-connections-darwin-amd64.zip"
@@ -429,7 +429,7 @@
             "darwin/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "15de63a1bed07e10573a8b2e5ed706680a6cb1cfd13ecfe1fc2517fc8fa65ef1"
+                "value": "febb871d3396509f793c1dc3100b2c771797fa1d79dbc716e91c43ca4a6e7294"
               },
               "entryPoint": "azure-ai-connections-darwin-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-connections/nightly/azure-ai-connections-darwin-arm64.zip"
@@ -437,7 +437,7 @@
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "8fc5644f74b929f11ed4e871ed791dca68459304b4199beb717ad88c60ec6d99"
+                "value": "299479d1435fcdaa74d1403015ea57532084b39685e8f03a192fad701eb0dad0"
               },
               "entryPoint": "azure-ai-connections-linux-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-connections/nightly/azure-ai-connections-linux-amd64.tar.gz"
@@ -445,7 +445,7 @@
             "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "917c3522eaf15a1bb34504fa490706d27907ec192310ad8945f5ded4f0c21a18"
+                "value": "d85d8674018369582bb585bb7f883fdec72234615697caa979c7683744ff6989"
               },
               "entryPoint": "azure-ai-connections-linux-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-connections/nightly/azure-ai-connections-linux-arm64.tar.gz"
@@ -453,7 +453,7 @@
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "f39b05a873e27aee803b775541db00eb2da44a5ab17ce6088341e42022142801"
+                "value": "e1d65361e8570f7d4d0627991eba8eb5ef3502a0f17b1bc995d28a0ae84d4ec0"
               },
               "entryPoint": "azure-ai-connections-windows-amd64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-connections/nightly/azure-ai-connections-windows-amd64.zip"
@@ -461,7 +461,7 @@
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "cd93c278e8aa101f9221165644299b62f0bf19b05e46f2a59ebc3c506cf2cd17"
+                "value": "e7e28ac1e186dd0c4bd1410049fc8663d51b75584146d9559bd7a1fa5c7b21e1"
               },
               "entryPoint": "azure-ai-connections-windows-arm64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-connections/nightly/azure-ai-connections-windows-arm64.zip"

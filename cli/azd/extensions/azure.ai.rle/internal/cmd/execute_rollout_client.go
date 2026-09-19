@@ -24,7 +24,7 @@ const executeRolloutHeader = "aml-user-token" //nolint:gosec // header name, not
 // rolloutModelSelection binds one rollout to a real, currently active Loom training
 // session and sampler checkpoint. loom_session_id/checkpoint_id must never be
 // fabricated; the CLI provisions them by calling Loom itself (see loom_session_client.go)
-// so callers of `azd ai rle invoke` never handle Loom identifiers directly.
+// so callers of `azd ai rle rollout` never handle Loom identifiers directly.
 type rolloutModelSelection struct {
 	ModelName     string `json:"model_name,omitempty"`
 	RendererName  string `json:"renderer_name,omitempty"`

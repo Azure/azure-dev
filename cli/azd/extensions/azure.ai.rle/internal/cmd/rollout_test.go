@@ -83,11 +83,11 @@ func TestNewRolloutIDReturnsUniqueHexValues(t *testing.T) {
 	}
 }
 
-func TestInvokeRequiresModel(t *testing.T) {
+func TestRolloutRequiresModel(t *testing.T) {
 	stubRleClientEndpoint(t, "https://rle.test")
 	t.Chdir(t.TempDir())
 
-	command := newInvokeCommand()
+	command := newRolloutCommand()
 	command.SetArgs([]string{"code_rl", "--version", "1.0.0"})
 	var output bytes.Buffer
 	command.SetOut(&output)
@@ -98,7 +98,7 @@ func TestInvokeRequiresModel(t *testing.T) {
 	}
 }
 
-func TestInvokeFallsBackToRleConfigModelDefault(t *testing.T) {
+func TestRolloutFallsBackToRleConfigModelDefault(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	modelName := "Qwen/Qwen3-32B"
@@ -157,21 +157,21 @@ func TestInvokeFallsBackToRleConfigModelDefault(t *testing.T) {
 		createLoomSessionClient = oldCreateLoomSessionClient
 	})
 
-	command := newInvokeCommand()
+	command := newRolloutCommand()
 	command.SetArgs([]string{"--task", `{"prompt":"hello"}`})
 	var output bytes.Buffer
 	command.SetOut(&output)
 	command.SetErr(&output)
 
 	if err := command.Execute(); err != nil {
-		t.Fatalf("expected invoke to succeed using rle.toml model default, got %v", err)
+		t.Fatalf("expected rollout to succeed using rle.toml model default, got %v", err)
 	}
 	if !strings.Contains(output.String(), "success: true") {
 		t.Fatalf("expected rollout result to be printed, got %s", output.String())
 	}
 }
 
-func TestInvokeRunExecutesRolloutAndClosesLoomSession(t *testing.T) {
+func TestRolloutRunExecutesRolloutAndClosesLoomSession(t *testing.T) {
 	rleServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost ||
 			r.URL.Path != testFoundryProjectPath+environmentCollectionPath+"/code_rl/versions/1.0.0:executeRollout" {
@@ -232,7 +232,7 @@ func TestInvokeRunExecutesRolloutAndClosesLoomSession(t *testing.T) {
 		createLoomSessionClient = oldCreateLoomSessionClient
 	})
 
-	command := newInvokeCommand()
+	command := newRolloutCommand()
 	command.SetArgs([]string{
 		"code_rl", "--version", "1.0.0",
 		"--model", "Qwen/Qwen3-32B",
@@ -243,7 +243,7 @@ func TestInvokeRunExecutesRolloutAndClosesLoomSession(t *testing.T) {
 	command.SetErr(&output)
 
 	if err := command.Execute(); err != nil {
-		t.Fatalf("expected invoke to succeed, got %v", err)
+		t.Fatalf("expected rollout to succeed, got %v", err)
 	}
 	if !strings.Contains(output.String(), "success: true") {
 		t.Fatalf("expected rollout result to be printed, got %s", output.String())

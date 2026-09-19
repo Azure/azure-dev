@@ -22,7 +22,7 @@ import (
 )
 
 // playgroundSessionCookie names the loopback session cookie that authorizes requests to
-// the local playground UI proxy started by `invoke` (remote) and `run` (local).
+// the local playground UI proxy started by `rollout` (remote) and `run` (local).
 const playgroundSessionCookie = "azd-rle-playground-session"
 
 func playgroundURLWithAuthorizationProvider(

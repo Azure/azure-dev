@@ -22,9 +22,9 @@ examples:
   - name: run
     description: Build and run the local RLE environment container.
     usage: azd ai rle run
-  - name: invoke
+  - name: rollout
     description: Execute one Loom-backed rollout of a published RLE environment (provisions and tears down the Loom session for you; --model falls back to rle.toml's defaults.model.name).
-    usage: azd ai rle invoke [environment-name] [--version <major.minor.patch>] [--model <loom-base-model>] --task <json>
+    usage: azd ai rle rollout [environment-name] [--version <major.minor.patch>] [--model <loom-base-model>] --task <json>
   - name: list
     description: List RLE environments in a Foundry project.
     usage: azd ai rle list

@@ -7,6 +7,7 @@
   diagnostics.
 - Show an update notice after normal command output when a newer non-breaking
   RLE extension is available.
+- Rename `azd ai rle invoke` to `azd ai rle rollout` (no behavior change).
 
 ## 0.8.5-preview
 

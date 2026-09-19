@@ -93,7 +93,7 @@ func newRootCommand(updateChecker extensionUpdateChecker) *cobra.Command {
 		newListCommand(&extCtx.OutputFormat),
 		newShowCommand(&extCtx.OutputFormat),
 		newInitCommand(&extCtx.NoPrompt),
-		newInvokeCommand(),
+		newRolloutCommand(),
 		newPublishCommand(),
 		newRunCommand(),
 	}

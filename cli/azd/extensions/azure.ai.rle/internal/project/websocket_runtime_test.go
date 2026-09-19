@@ -612,8 +612,8 @@ func TestParseWebSocketResponse(t *testing.T) {
 		)
 		localError, ok := errors.AsType[*azdext.LocalError](err)
 		if err == nil || !terminal || !ok ||
-			!strings.Contains(localError.Suggestion, "run invoke again") {
-			t.Fatalf("expected %s to be terminal with reinvoke guidance: terminal=%t err=%v", code, terminal, err)
+			!strings.Contains(localError.Suggestion, "run rollout again") {
+			t.Fatalf("expected %s to be terminal with rollout-again guidance: terminal=%t err=%v", code, terminal, err)
 		}
 	}
 

@@ -352,7 +352,7 @@ identity and defaults. The pushed ACR image is version-tagged as:
 The published request includes `type`, `subtype`, the applicable HostedAgent
 or BYOH configuration, schema version, and defaults from the manifest.
 
-## Inspect and invoke releases
+## Inspect and run releases
 
 List RLEs in the selected Foundry project:
 
@@ -372,17 +372,17 @@ Execute one Loom-backed rollout of the manifest's exact `(name, version)`
 identity, using the model declared in `[defaults.model]`:
 
 ```powershell
-azd ai rle invoke --task '{"...": "..."}'
+azd ai rle rollout --task '{"...": "..."}'
 ```
 
 `--model` is only required when rle.toml has no `defaults.model.name` set, or
-when invoking source-free from another folder:
+when running source-free from another folder:
 
 ```powershell
-azd ai rle invoke code_rl --version 1.0.0 --model Qwen/Qwen3-32B --task-file task.json
+azd ai rle rollout code_rl --version 1.0.0 --model Qwen/Qwen3-32B --task-file task.json
 ```
 
-`invoke` provisions everything a rollout needs and tears it down again: it
+`rollout` provisions everything a rollout needs and tears it down again: it
 creates a real Loom training session for the model (from `--model`, falling
 back to rle.toml's `defaults.model.name`), saves a sampler checkpoint, calls
 RLE's Execute Rollout API with your `--task` (and, for Harness targets,

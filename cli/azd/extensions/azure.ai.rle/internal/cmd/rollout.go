@@ -21,8 +21,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// invokeFlags holds the CLI-facing configuration for one rollout.
-type invokeFlags struct {
+// rolloutFlags holds the CLI-facing configuration for one rollout.
+type rolloutFlags struct {
 	version        string
 	model          string
 	loraRank       int
@@ -35,39 +35,39 @@ type invokeFlags struct {
 	timeout        int
 }
 
-type invokeAction struct {
+type rolloutAction struct {
 	cmd             *cobra.Command
-	flags           *invokeFlags
+	flags           *rolloutFlags
 	environmentName string
 }
 
-// invokeTarget identifies the exact published environment version to run, and the
+// rolloutTarget identifies the exact published environment version to run, and the
 // Foundry project that owns it.
-type invokeTarget struct {
+type rolloutTarget struct {
 	environmentName string
 	projectEndpoint string
 	version         string
 }
 
-func newInvokeCommand() *cobra.Command {
-	flags := &invokeFlags{
+func newRolloutCommand() *cobra.Command {
+	flags := &rolloutFlags{
 		loraRank: 16,
 		timeout:  600,
 	}
 
 	cmd := &cobra.Command{
-		Use:   "invoke [environment-name]",
+		Use:   "rollout [environment-name]",
 		Short: "Execute one rollout of a published RLE environment",
 		Long: `Execute one rollout of a published RLE environment.
 
-invoke provisions everything a Loom-backed rollout needs and tears it down again: it
+rollout provisions everything a Loom-backed rollout needs and tears it down again: it
 creates a real Loom training session for --model, saves a sampler checkpoint, calls RLE's
 Execute Rollout API with your task (and, for Harness targets, agent input), prints the
 resulting reward and trajectory summary, then closes the Loom session. You never handle
 Loom session or checkpoint identifiers directly.
 
-With no environment name, invoke uses rle.name and rle.version from the current folder's
-rle.toml. To invoke an environment without local source, provide both its name and
+With no environment name, rollout uses rle.name and rle.version from the current folder's
+rle.toml. To run an environment without local source, provide both its name and
 --version, then set FOUNDRY_PROJECT_ENDPOINT.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -75,7 +75,7 @@ rle.toml. To invoke an environment without local source, provide both its name a
 			if len(args) == 1 {
 				environmentName = args[0]
 			}
-			return (&invokeAction{
+			return (&rolloutAction{
 				cmd:             cmd,
 				flags:           flags,
 				environmentName: environmentName,
@@ -83,7 +83,7 @@ rle.toml. To invoke an environment without local source, provide both its name a
 		},
 	}
 
-	cmd.Flags().StringVar(&flags.version, "version", "", "Published environment version to invoke.")
+	cmd.Flags().StringVar(&flags.version, "version", "", "Published environment version to run this rollout against.")
 	cmd.Flags().StringVar(
 		&flags.model,
 		"model",
@@ -117,7 +117,7 @@ rle.toml. To invoke an environment without local source, provide both its name a
 	return cmd
 }
 
-func (a *invokeAction) Run() error {
+func (a *rolloutAction) Run() error {
 	target, rle, err := a.resolveTarget()
 	if err != nil {
 		return err
@@ -228,10 +228,10 @@ func (a *invokeAction) Run() error {
 	return printRolloutResult(out, response)
 }
 
-func (a *invokeAction) resolveTarget() (invokeTarget, *rleClient, error) {
+func (a *rolloutAction) resolveTarget() (rolloutTarget, *rleClient, error) {
 	requestedVersion := strings.TrimSpace(a.flags.version)
 	if a.cmd.Flags().Changed("version") && requestedVersion == "" {
-		return invokeTarget{}, nil, &azdext.LocalError{
+		return rolloutTarget{}, nil, &azdext.LocalError{
 			Message:    "--version requires a non-empty environment version.",
 			Code:       "rle_environment_version_required",
 			Category:   azdext.LocalErrorCategoryUser,
@@ -242,14 +242,14 @@ func (a *invokeAction) resolveTarget() (invokeTarget, *rleClient, error) {
 	if environmentName == "" {
 		config, err := project.LoadRleConfig(".")
 		if err != nil {
-			return invokeTarget{}, nil, err
+			return rolloutTarget{}, nil, err
 		}
 		environmentName = config.Rle.Name
 		if requestedVersion == "" {
 			requestedVersion = config.Rle.Version
 		}
 	} else if requestedVersion == "" {
-		return invokeTarget{}, nil, &azdext.LocalError{
+		return rolloutTarget{}, nil, &azdext.LocalError{
 			Message:    "A published RLE version is required when invoking by environment name.",
 			Code:       "rle_environment_version_required",
 			Category:   azdext.LocalErrorCategoryUser,
@@ -258,17 +258,17 @@ func (a *invokeAction) resolveTarget() (invokeTarget, *rleClient, error) {
 	}
 	version, err := project.NormalizeRleVersion(requestedVersion)
 	if err != nil {
-		return invokeTarget{}, nil, err
+		return rolloutTarget{}, nil, err
 	}
 	projectEndpoint, err := resolveEnvironmentListProjectEndpoint()
 	if err != nil {
-		return invokeTarget{}, nil, err
+		return rolloutTarget{}, nil, err
 	}
 	client, err := createRleClient(projectEndpoint)
 	if err != nil {
-		return invokeTarget{}, nil, err
+		return rolloutTarget{}, nil, err
 	}
-	return invokeTarget{
+	return rolloutTarget{
 		environmentName: environmentName,
 		projectEndpoint: projectEndpoint,
 		version:         version,

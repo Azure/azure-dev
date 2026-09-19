@@ -11,34 +11,19 @@ parameters:
 steps:
   - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
 
-  - ${{ if parameters.ValidationMode }}:
-    - pwsh: |
-        $ErrorActionPreference = 'Stop'
-        $repository = gh api repos/microsoft/winget-pkgs --jq '.full_name'
-        if ($LASTEXITCODE -ne 0) {
-          throw "The GitHub token could not authenticate or cannot read microsoft/winget-pkgs."
-        }
+  - pwsh: |
+      $PSNativeCommandArgumentPassing = 'Legacy'
+      Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
 
-        Write-Host "GitHub token authenticated and read '$repository'."
-      displayName: Validate GitHub token
-      env:
-        GH_TOKEN: ${{ parameters.GitHubToken }}
+      $AdditionalArgs = ""
+      if ('${{ parameters.ValidationMode }}' -eq 'false' -and '$(SubmitWingetPackage)' -eq 'true') {
+        $AdditionalArgs = "--submit"
+      }
 
-#  - ${{ else }}:
-#    - pwsh: |
-#        $PSNativeCommandArgumentPassing = 'Legacy'
-#        Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-#
-#        $AdditionalArgs = ""
-#        if ($$(SubmitWinGetPackage)) {
-#          $AdditionalArgs = "--submit"
-#        }
-#
-#        ./wingetcreate.exe update `
-#          Microsoft.Azd `
-#          --version '$(MSI_VERSION)' `
-#          --urls "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_$(CLI_VERSION)/azd-windows-amd64.msi" `
-#          --token ${{ parameters.GitHubToken }} `
-#          --out winget `
-#          $AdditionalArgs
-#      displayName: Submit to WinGet
+      ./wingetcreate.exe update `
+        Microsoft.Azd `
+        --version '1.34.200' `
+        --urls "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_1.34.1/azd-windows-amd64.msi" `
+        --token ${{ parameters.GitHubToken }} `
+        --out winget
+    displayName: Submit to WinGet

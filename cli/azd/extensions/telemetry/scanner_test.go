@@ -278,6 +278,52 @@ func report(req *v1beta.ReportUsageRequest, dynamicKey string) {
 	require.Contains(t, diagnostics[0], "assigning them after construction")
 }
 
+// A struct that merely exposes an Attributes map is not a telemetry payload, so
+// mutating it is ignored even when the file also builds real telemetry.
+func TestScanIgnoresUnrelatedAttributesMutation(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+type inspectorModel struct{ Attributes map[string]string }
+
+func build(model inspectorModel, key string) {
+	model.Attributes[key] = "value"
+	_ = azdext.ReportUsageRequest{Attributes: map[string]string{"agent.kind": "hosted"}}
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, diagnostics)
+	require.Equal(t, []string{"agent.kind"}, usageKeys(usages))
+}
+
+// Payload provenance follows the value into a helper: a payload-typed parameter
+// mutated after construction is still rejected.
+func TestScanRejectsAttributesMutationOnPayloadParameter(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+func decorate(req *azdext.ReportUsageRequest, key string) {
+	req.Attributes[key] = "value"
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "assigning them after construction")
+}
+
 func writeExtensionSource(t *testing.T, root, relativePath, content string) {
 	t.Helper()
 

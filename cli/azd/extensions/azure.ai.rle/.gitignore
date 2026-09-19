@@ -1,3 +1,5 @@
 bin/
-artifacts/
+artifacts/*
+!artifacts/rle-dev/
+!artifacts/rle-dev/**
 registry-artifacts/

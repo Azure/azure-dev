@@ -238,6 +238,46 @@ var _ = foundryTelemetry.Event{Attributes: map[string]string{"route": "inspector
 	require.Empty(t, diagnostics)
 }
 
+func TestScanRejectsLocalPayloadTypeAlias(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+type Usage = azdext.ReportUsageRequest
+
+var _ = Usage{Attributes: map[string]string{"undeclared": "value"}}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "not a local type alias")
+}
+
+func TestScanRejectsGetAttributesMutation(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+
+func report(req *v1beta.ReportUsageRequest, dynamicKey string) {
+	req.GetAttributes()[dynamicKey] = "value"
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "assigning them after construction")
+}
+
 func writeExtensionSource(t *testing.T, root, relativePath, content string) {
 	t.Helper()
 

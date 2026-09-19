@@ -156,8 +156,10 @@ Attributes: map[string]string{
 
 Choose classification, purpose, and endpoint from what the property actually
 contains and why it is collected. Do not copy `SystemMetadata` or
-`FeatureInsight` merely because another extension field uses them. Customer
-content is rejected and must not be sent through telemetry. Use the
+`FeatureInsight` merely because another extension field uses them. Declaring the
+`CustomerContent` classification is permitted but requires a completed privacy
+review before merge; still avoid raw customer content whenever a
+lower-sensitivity value works. Use the
 classification and purpose constants defined for core `azd` telemetry and
 follow the privacy review checklist when selecting endpoint metadata.
 `SystemMetadata` must use `N/A`; every other classification must use a

@@ -55,6 +55,7 @@ type sourcePackage struct {
 	constants           map[string][]constDefinition
 	objectConstants     map[*parserObject]constDefinition
 	packageDeclarations map[string]bool
+	payloadAliases      map[string]bool
 }
 
 // scanExtensionTelemetry parses first-party extension source and returns every
@@ -111,6 +112,7 @@ func scanExtensionTelemetry(extensionRoot string) ([]telemetryUsage, []string) {
 	for _, pkg := range packages {
 		collectPackageDeclarations(pkg)
 		collectConstants(pkg)
+		collectPayloadAliases(pkg)
 	}
 
 	var usages []telemetryUsage
@@ -130,6 +132,12 @@ func scanExtensionTelemetry(extensionRoot string) ([]telemetryUsage, []string) {
 						diagnostics = append(diagnostics, fmt.Sprintf(
 							"%s:%d: build each telemetry payload as a single keyed literal, "+
 								"not inside a slice, array, or map",
+							displayPath(extensionRoot, source.path),
+							fset.Position(value.Pos()).Line))
+					case isTelemetryPayloadAlias(value.Type, pkg):
+						diagnostics = append(diagnostics, fmt.Sprintf(
+							"%s:%d: construct telemetry payloads with the concrete payload type, "+
+								"not a local type alias, so attribute keys stay discoverable",
 							displayPath(extensionRoot, source.path),
 							fset.Position(value.Pos()).Line))
 					}
@@ -282,6 +290,38 @@ func isTelemetryPayloadContainer(expression ast.Expr, source *sourceFile) bool {
 	return false
 }
 
+// isTelemetryPayloadAlias reports whether a composite literal type is a local
+// type alias (type X = telemetry.Event) that resolves to a telemetry payload.
+// Such aliases would otherwise hide attribute keys from the type-based recognizer.
+func isTelemetryPayloadAlias(expression ast.Expr, pkg *sourcePackage) bool {
+	identifier, ok := expression.(*ast.Ident)
+	return ok && pkg.payloadAliases[identifier.Name]
+}
+
+// collectPayloadAliases records local type aliases whose right-hand side is a
+// telemetry payload type, so payload literals written through the alias name are
+// rejected instead of silently skipped.
+func collectPayloadAliases(pkg *sourcePackage) {
+	pkg.payloadAliases = map[string]bool{}
+	for _, source := range pkg.files {
+		for _, declaration := range source.file.Decls {
+			gen, ok := declaration.(*ast.GenDecl)
+			if !ok || gen.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				typeSpec, ok := spec.(*ast.TypeSpec)
+				if !ok || typeSpec.Assign == token.NoPos {
+					continue
+				}
+				if isTelemetryPayloadType(typeSpec.Type, source) {
+					pkg.payloadAliases[typeSpec.Name.Name] = true
+				}
+			}
+		}
+	}
+}
+
 // scanAttributeMutation rejects post-construction writes to a telemetry payload's
 // Attributes (x.Attributes[key] = ... or x.Attributes = ...). Keys must be
 // declared inline in the payload literal so governance can see them.
@@ -310,6 +350,10 @@ func attributesSelector(expression ast.Expr) *ast.SelectorExpr {
 	switch value := expression.(type) {
 	case *ast.IndexExpr:
 		return attributesSelector(value.X)
+	case *ast.CallExpr:
+		if selector, ok := value.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "GetAttributes" {
+			return selector
+		}
 	case *ast.SelectorExpr:
 		if value.Sel.Name == "Attributes" {
 			return value

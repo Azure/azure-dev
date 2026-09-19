@@ -191,7 +191,13 @@ func newRleClientWithCredential(endpoint string, credential azcore.TokenCredenti
 		baseUrl:    strings.TrimRight(endpoint, "/"),
 		credential: credential,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			// Applies to every rleClient call, including executeRollout. A blind 30s
+			// wall masked RLE's real, sometimes much longer, processing time (a full
+			// Harness/BYOH rollout can run 60-90s+ end to end) as a generic transport
+			// timeout with no server-side detail. 300s gives real rollouts headroom
+			// to return their actual result (success or a specific RLE error) instead
+			// of a client-side "context deadline exceeded" with no diagnostic value.
+			Timeout: 300 * time.Second,
 		},
 	}
 }

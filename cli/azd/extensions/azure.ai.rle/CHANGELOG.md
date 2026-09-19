@@ -1,5 +1,13 @@
 # Release History
 
+## 0.8.8-preview
+
+- `azd ai rle rollout`'s underlying HTTP client timeout is now 300s (was
+  30s). The 30s wall was masking real, longer-running RLE processing (a
+  full Harness/BYOH rollout can take 60-90s+) as a blind
+  "context deadline exceeded" with no server-side detail; 300s gives real
+  rollouts room to return their actual result or a specific RLE error.
+
 ## 0.8.7-preview
 
 - `azd ai rle rollout` now forwards the resolved Foundry project endpoint on

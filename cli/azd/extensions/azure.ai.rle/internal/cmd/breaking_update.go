@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/Masterminds/semver/v3"
@@ -17,8 +16,7 @@ import (
 )
 
 const (
-	rleRegistryURLEnvVar  = "AZD_AI_RLE_REGISTRY_URL"
-	defaultRleRegistryURL = "https://raw.githubusercontent.com/sujit-kamireddy/azure-dev/main/" +
+	rleRegistryURL = "https://raw.githubusercontent.com/sujit-kamireddy/azure-dev/main/" +
 		"cli/azd/extensions/registry.rle-dev.json"
 	maxRegistryResponseBytes = 4 * 1024 * 1024
 )
@@ -48,13 +46,9 @@ type rleRegistry struct {
 }
 
 func newRegistryExtensionUpdateChecker() *registryExtensionUpdateChecker {
-	registryURL := os.Getenv(rleRegistryURLEnvVar)
-	if registryURL == "" {
-		registryURL = defaultRleRegistryURL
-	}
 	return &registryExtensionUpdateChecker{
 		client:      &http.Client{Timeout: 5 * time.Second},
-		registryURL: registryURL,
+		registryURL: rleRegistryURL,
 	}
 }
 
@@ -134,15 +128,11 @@ func (c *registryExtensionUpdateChecker) Check(
 	}, nil
 }
 
-func breakingUpdateError(currentVersion string, update *extensionUpdate) error {
+func breakingUpdateError(update *extensionUpdate) error {
 	return &azdext.LocalError{
-		Message: fmt.Sprintf(
-			"RLE %s cannot run because updating to version %s crosses a breaking release.",
-			currentVersion,
-			update.LatestVersion,
-		),
+		Message:    fmt.Sprintf("Update the RLE extension to %s before continuing.", update.LatestVersion),
 		Code:       "rle_breaking_update_required",
 		Category:   azdext.LocalErrorCategoryUser,
-		Suggestion: "Update the extension before continuing: azd extension update azure.ai.rle",
+		Suggestion: "Run: azd extension update azure.ai.rle",
 	}
 }

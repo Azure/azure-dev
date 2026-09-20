@@ -47,18 +47,16 @@ func newRootCommand(updateChecker extensionUpdateChecker) *cobra.Command {
 
 		update, err := updateChecker.Check(cmd.Context(), Version)
 		if err != nil {
-			fmt.Fprintf(
-				cmd.ErrOrStderr(),
-				"Warning: unable to check for RLE updates: %v\n",
-				err,
-			)
+			if extCtx.Debug {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Debug: unable to check for RLE updates: %v\n", err)
+			}
 			return nil
 		}
 		if update == nil {
 			return nil
 		}
 		if update.IsBreaking {
-			return breakingUpdateError(Version, update)
+			return breakingUpdateError(update)
 		}
 
 		availableUpdate = update
@@ -72,11 +70,14 @@ func newRootCommand(updateChecker extensionUpdateChecker) *cobra.Command {
 			}
 		}
 		if availableUpdate != nil {
-			fmt.Fprintf(
-				cmd.ErrOrStderr(),
-				"RLE extension update available: %s. Update with: azd extension update azure.ai.rle\n",
-				availableUpdate.LatestVersion,
+			fmt.Fprintln(
+				cmd.OutOrStdout(),
+				color.YellowString(
+					"RLE extension update available: %s\nTo update, run `azd extension update azure.ai.rle`",
+					availableUpdate.LatestVersion,
+				),
 			)
+			fmt.Fprintln(cmd.OutOrStdout())
 		}
 		return nil
 	}

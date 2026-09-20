@@ -1,5 +1,13 @@
 # Release History
 
+## 0.8.7-preview
+
+- Preserve update-notice ordering after normal command output and display the
+  update command on a separate line.
+- Render non-breaking update notices in yellow, simplify the required-update
+  error, and report optional registry-check failures only in debug mode.
+- Read update metadata from the committed RLE development registry.
+
 ## 0.8.6-preview
 
 - Block RLE lifecycle commands when the development registry marks a newer release

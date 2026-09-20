@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -24,6 +25,14 @@ func (f extensionUpdateCheckerFunc) Check(
 	currentVersion string,
 ) (*extensionUpdate, error) {
 	return f(ctx, currentVersion)
+}
+
+func TestNewRegistryExtensionUpdateCheckerUsesDefaultRegistry(t *testing.T) {
+	checker := newRegistryExtensionUpdateChecker()
+
+	if checker.registryURL != rleRegistryURL {
+		t.Fatalf("expected default registry %q, got %q", rleRegistryURL, checker.registryURL)
+	}
 }
 
 func TestRegistryBreakingUpdateCheckerRequiresUpdateAcrossBreakingVersion(t *testing.T) {
@@ -123,12 +132,21 @@ func TestRootCommandBlocksNormalCommandForBreakingUpdate(t *testing.T) {
 	if ran {
 		t.Fatal("expected command not to run before the required update")
 	}
-	if !strings.Contains(localError.Suggestion, "azd extension update azure.ai.rle") {
-		t.Fatalf("expected actionable update suggestion, got %q", localError.Suggestion)
+	if localError.Message != "Update the RLE extension to 0.8.6-preview before continuing." {
+		t.Fatalf("unexpected blocking message: %q", localError.Message)
+	}
+	if localError.Suggestion != "Run: azd extension update azure.ai.rle" {
+		t.Fatalf("unexpected update suggestion: %q", localError.Suggestion)
 	}
 }
 
 func TestRootCommandNotifiesAndRunsForNonBreakingUpdate(t *testing.T) {
+	previousNoColor := color.NoColor
+	color.NoColor = false
+	t.Cleanup(func() {
+		color.NoColor = previousNoColor
+	})
+
 	oldVersion := Version
 	Version = "0.8.5-preview"
 	t.Cleanup(func() {
@@ -140,8 +158,9 @@ func TestRootCommandNotifiesAndRunsForNonBreakingUpdate(t *testing.T) {
 	})
 	rootCmd := newRootCommand(checker)
 	var output bytes.Buffer
+	var stderr bytes.Buffer
 	rootCmd.SetOut(&output)
-	rootCmd.SetErr(&output)
+	rootCmd.SetErr(&stderr)
 	ran := false
 	rootCmd.AddCommand(&cobra.Command{
 		Use: "probe",
@@ -158,18 +177,25 @@ func TestRootCommandNotifiesAndRunsForNonBreakingUpdate(t *testing.T) {
 	if !ran {
 		t.Fatal("expected command to run for a non-breaking update")
 	}
-	if !strings.Contains(output.String(), "RLE extension update available: 0.8.6-preview") {
+	expectedNotice := "RLE extension update available: 0.8.6-preview\n" +
+		"To update, run `azd extension update azure.ai.rle`\n\n"
+	plainOutput := strings.ReplaceAll(output.String(), "\x1b[33m", "")
+	plainOutput = strings.ReplaceAll(plainOutput, "\x1b[0m", "")
+	if !strings.Contains(plainOutput, expectedNotice) {
 		t.Fatalf("expected update notice, got %q", output.String())
 	}
-	if !strings.Contains(output.String(), "azd extension update azure.ai.rle") {
-		t.Fatalf("expected actionable update command, got %q", output.String())
+	if !strings.Contains(output.String(), "\x1b[33m") {
+		t.Fatalf("expected yellow update notice, got %q", output.String())
 	}
 	if strings.Index(output.String(), "command output") > strings.Index(output.String(), "RLE extension update available") {
 		t.Fatalf("expected update notice after command output, got %q", output.String())
 	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no warning output for a non-breaking update, got %q", stderr.String())
+	}
 }
 
-func TestRootCommandAllowsCommandWhenRegistryCheckFails(t *testing.T) {
+func TestRootCommandSilentlyAllowsCommandWhenRegistryCheckFails(t *testing.T) {
 	checker := extensionUpdateCheckerFunc(func(context.Context, string) (*extensionUpdate, error) {
 		return nil, errors.New("registry unavailable")
 	})
@@ -191,8 +217,26 @@ func TestRootCommandAllowsCommandWhenRegistryCheckFails(t *testing.T) {
 	if !ran {
 		t.Fatal("expected command to run when the registry check is unavailable")
 	}
-	if !strings.Contains(stderr.String(), "unable to check for RLE updates") {
-		t.Fatalf("expected registry warning, got %q", stderr.String())
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no registry warning during normal use, got %q", stderr.String())
+	}
+}
+
+func TestRootCommandReportsRegistryCheckFailureInDebugMode(t *testing.T) {
+	checker := extensionUpdateCheckerFunc(func(context.Context, string) (*extensionUpdate, error) {
+		return nil, errors.New("registry unavailable")
+	})
+	rootCmd := newRootCommand(checker)
+	var stderr bytes.Buffer
+	rootCmd.SetErr(&stderr)
+	rootCmd.AddCommand(&cobra.Command{Use: "probe", Run: func(cmd *cobra.Command, args []string) {}})
+	rootCmd.SetArgs([]string{"--debug", "probe"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stderr.String(), "Debug: unable to check for RLE updates: registry unavailable") {
+		t.Fatalf("expected registry diagnostic in debug mode, got %q", stderr.String())
 	}
 }
 

@@ -437,9 +437,13 @@ type OpenAIEvalList struct {
 
 // CreateOpenAIEvalRunRequest is the request body for CreateOpenAIEvalRun.
 type CreateOpenAIEvalRunRequest struct {
-	Name       string             `json:"name"`
-	DataSource *EvalRunDataSource `json:"data_source,omitempty"`
-	Metadata   map[string]string  `json:"metadata,omitempty"`
+	Name string `json:"name"`
+	// EvaluationLevel is what the service reads to decide the shape of the rows
+	// it builds. Sent only under Metadata it is opaque, so every run was built
+	// turn-shaped and a conversation evaluator received rows it cannot score.
+	EvaluationLevel string             `json:"evaluation_level,omitempty"`
+	DataSource      *EvalRunDataSource `json:"data_source,omitempty"`
+	Metadata        map[string]string  `json:"metadata,omitempty"`
 }
 
 // EvalRunDataSourceType defines the type for an eval run data source.

@@ -258,9 +258,12 @@ func (a *runStartAction) Run() error {
 	}
 
 	run, err := ec.evalClient.CreateOpenAIEvalRun(ctx, evalID, &eval_api.CreateOpenAIEvalRunRequest{
-		Name:       runName,
-		DataSource: dataSource,
-		Metadata:   metadata,
+		Name: runName,
+		// Also sent under metadata, where it stays readable to anything listing
+		// runs. Only the top-level field is what the service builds rows from.
+		EvaluationLevel: resolveLevel(group),
+		DataSource:      dataSource,
+		Metadata:        metadata,
 	})
 	if err != nil {
 		return messages.StartingRun(err)

@@ -246,8 +246,17 @@ func (ec *evalContext) generateRubric(
 ) (*project.ArtifactRef, error) {
 	fmt.Fprint(out, messages.GeneratingRubric(plan.Name))
 
+	// `init` writes the azure.yaml service key here, which is a local label. The
+	// agent is published under whatever the service declares, so the key has to
+	// be resolved before it is sent, or the rubric is seeded from an agent the
+	// service does not know.
+	agent, err := ec.remoteAgentName(ctx, plan.Agent)
+	if err != nil {
+		return nil, err
+	}
+
 	sources, unbuildable := eval_api.BuildGenerationSources(
-		plan.From, plan.Agent, "", plan.Instruction, plan.traceOptions(),
+		plan.From, agent, "", plan.Instruction, plan.traceOptions(),
 	)
 	if err := refuseUnusableSources(sources, unbuildable); err != nil {
 		return nil, err
@@ -450,8 +459,17 @@ func (ec *evalContext) generateDataset(
 ) (*project.ArtifactRef, error) {
 	fmt.Fprint(out, messages.GeneratingDataset(plan.Name, plan.SampleSize))
 
+	// `init` writes the azure.yaml service key here, which is a local label. The
+	// agent is published under whatever the service declares, so the key has to
+	// be resolved before it is sent, or the generated rows are attributed to an
+	// agent the service does not know. The run path resolves the same way.
+	agent, err := ec.remoteAgentName(ctx, plan.Agent)
+	if err != nil {
+		return nil, err
+	}
+
 	sources, unbuildable := eval_api.BuildGenerationSources(
-		plan.From, plan.Agent, "", plan.Instruction, plan.traceOptions(),
+		plan.From, agent, "", plan.Instruction, plan.traceOptions(),
 	)
 	if err := refuseUnusableSources(sources, unbuildable); err != nil {
 		return nil, err
@@ -465,7 +483,7 @@ func (ec *evalContext) generateDataset(
 	if noWait {
 		if promptOnly := eval_api.WithoutAgentSource(sources); len(promptOnly) != len(sources) &&
 			eval_api.HasPromptSource(promptOnly) {
-			fmt.Fprint(out, messages.WarningAgentSeedSkippedAsync(plan.Agent))
+			fmt.Fprint(out, messages.WarningAgentSeedSkippedAsync(agent))
 			sources = promptOnly
 		}
 	}

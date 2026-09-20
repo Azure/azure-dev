@@ -1,5 +1,13 @@
 # Release History
 
+## 0.8.8-preview
+
+- `azd ai rle rollout`'s underlying HTTP client timeout is now 300s (was
+  30s). The 30s wall was masking real, longer-running RLE processing (a
+  full Harness/BYOH rollout can take 60-90s+) as a blind
+  "context deadline exceeded" with no server-side detail; 300s gives real
+  rollouts room to return their actual result or a specific RLE error.
+
 ## 0.8.7-preview
 
 - Preserve update-notice ordering after normal command output and display the
@@ -7,6 +15,11 @@
 - Render non-breaking update notices in yellow, simplify the required-update
   error, and report optional registry-check failures only in debug mode.
 - Read update metadata from the committed RLE development registry.
+- `azd ai rle rollout` now forwards the resolved Foundry project endpoint on
+  the executeRollout request (`model.project_endpoint`), matching Vienna's
+  per-rollout Loom Capture Proxy routing. No new flag or env var is required:
+  it reuses the same `FOUNDRY_PROJECT_ENDPOINT`/`--project-endpoint` value
+  already resolved to build the RLE client for this call.
 
 ## 0.8.6-preview
 
@@ -15,6 +28,7 @@
   diagnostics.
 - Show an update notice after normal command output when a newer non-breaking
   RLE extension is available.
+- Rename `azd ai rle invoke` to `azd ai rle rollout` (no behavior change).
 
 ## 0.8.5-preview
 

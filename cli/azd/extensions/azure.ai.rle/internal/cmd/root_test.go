@@ -21,7 +21,7 @@ import (
 func TestNewRootCommandIncludesExpectedCommands(t *testing.T) {
 	rootCmd := NewRootCommand()
 
-	for _, commandName := range []string{"list", "show", "init", "invoke", "publish", "run", "version", "metadata"} {
+	for _, commandName := range []string{"list", "show", "init", "rollout", "publish", "run", "version", "metadata"} {
 		if command, _, err := rootCmd.Find([]string{commandName}); err != nil || command.Name() != commandName {
 			t.Fatalf("expected command %q to be registered", commandName)
 		}
@@ -37,7 +37,7 @@ func TestNewRootCommandIncludesExpectedCommands(t *testing.T) {
 func TestRleUserCommandsHiddenUnlessEnabled(t *testing.T) {
 	t.Setenv(rleEnableEnvVar, "")
 	rootCmd := NewRootCommand()
-	for _, commandName := range []string{"list", "show", "init", "invoke", "publish", "run"} {
+	for _, commandName := range []string{"list", "show", "init", "rollout", "publish", "run"} {
 		command, _, err := rootCmd.Find([]string{commandName})
 		if err != nil {
 			t.Fatalf("expected command %q to be registered: %v", commandName, err)
@@ -63,7 +63,7 @@ func TestRleUserCommandsHiddenUnlessEnabled(t *testing.T) {
 
 	t.Setenv(rleEnableEnvVar, "true")
 	rootCmd = NewRootCommand()
-	for _, commandName := range []string{"list", "show", "init", "invoke", "publish", "run", "version"} {
+	for _, commandName := range []string{"list", "show", "init", "rollout", "publish", "run", "version"} {
 		command, _, err := rootCmd.Find([]string{commandName})
 		if err != nil {
 			t.Fatalf("expected command %q to be registered: %v", commandName, err)
@@ -194,36 +194,36 @@ func TestLifecycleFlagsAlignWithHostedAgentConventions(t *testing.T) {
 		t.Fatal("expected run not to expose --name")
 	}
 
-	invokeCommand, _, err := rootCmd.Find([]string{"invoke"})
+	rolloutCommand, _, err := rootCmd.Find([]string{"rollout"})
 	if err != nil {
-		t.Fatalf("expected invoke command to be registered: %v", err)
+		t.Fatalf("expected rollout command to be registered: %v", err)
 	}
-	if flag := invokeCommand.Flags().Lookup("timeout"); flag == nil {
-		t.Fatal("expected invoke to expose --timeout")
+	if flag := rolloutCommand.Flags().Lookup("timeout"); flag == nil {
+		t.Fatal("expected rollout to expose --timeout")
 	}
-	if flag := invokeCommand.Flags().Lookup("version"); flag == nil {
-		t.Fatal("expected invoke to expose --version")
+	if flag := rolloutCommand.Flags().Lookup("version"); flag == nil {
+		t.Fatal("expected rollout to expose --version")
 	}
-	if flag := invokeCommand.Flags().Lookup("local"); flag != nil {
-		t.Fatal("expected invoke not to expose --local")
+	if flag := rolloutCommand.Flags().Lookup("local"); flag != nil {
+		t.Fatal("expected rollout not to expose --local")
 	}
-	if flag := invokeCommand.Flags().Lookup("dockerfile"); flag != nil {
-		t.Fatal("expected invoke not to expose --dockerfile")
+	if flag := rolloutCommand.Flags().Lookup("dockerfile"); flag != nil {
+		t.Fatal("expected rollout not to expose --dockerfile")
 	}
-	if flag := invokeCommand.Flags().Lookup("image"); flag != nil {
-		t.Fatal("expected invoke not to expose --image")
+	if flag := rolloutCommand.Flags().Lookup("image"); flag != nil {
+		t.Fatal("expected rollout not to expose --image")
 	}
-	if flag := invokeCommand.Flags().Lookup("port"); flag != nil {
-		t.Fatal("expected invoke not to expose --port")
+	if flag := rolloutCommand.Flags().Lookup("port"); flag != nil {
+		t.Fatal("expected rollout not to expose --port")
 	}
-	if flag := invokeCommand.Flags().Lookup("source"); flag != nil {
-		t.Fatal("expected invoke not to expose --source")
+	if flag := rolloutCommand.Flags().Lookup("source"); flag != nil {
+		t.Fatal("expected rollout not to expose --source")
 	}
-	if flag := invokeCommand.Flags().Lookup("name"); flag != nil {
-		t.Fatal("expected invoke not to expose --name")
+	if flag := rolloutCommand.Flags().Lookup("name"); flag != nil {
+		t.Fatal("expected rollout not to expose --name")
 	}
-	if flag := invokeCommand.Flags().Lookup("endpoint"); flag != nil {
-		t.Fatal("expected invoke not to expose --endpoint")
+	if flag := rolloutCommand.Flags().Lookup("endpoint"); flag != nil {
+		t.Fatal("expected rollout not to expose --endpoint")
 	}
 }
 
@@ -255,15 +255,15 @@ func TestLifecycleCommandsRejectPositionalArguments(t *testing.T) {
 		}
 	}
 
-	invokeCommand, _, err := rootCmd.Find([]string{"invoke"})
+	rolloutCommand, _, err := rootCmd.Find([]string{"rollout"})
 	if err != nil {
-		t.Fatalf("expected invoke command to be registered: %v", err)
+		t.Fatalf("expected rollout command to be registered: %v", err)
 	}
-	if err := invokeCommand.Args(invokeCommand, []string{"code_rl"}); err != nil {
-		t.Fatalf("expected invoke to accept one environment name: %v", err)
+	if err := rolloutCommand.Args(rolloutCommand, []string{"code_rl"}); err != nil {
+		t.Fatalf("expected rollout to accept one environment name: %v", err)
 	}
-	if err := invokeCommand.Args(invokeCommand, []string{"one", "two"}); err == nil {
-		t.Fatal("expected invoke to reject multiple environment names")
+	if err := rolloutCommand.Args(rolloutCommand, []string{"one", "two"}); err == nil {
+		t.Fatal("expected rollout to reject multiple environment names")
 	}
 
 	showCommand, _, err := rootCmd.Find([]string{"show"})

@@ -357,7 +357,7 @@ func (c *WebSocketRuntimeSession) connect(ctx context.Context) error {
 			),
 			Code:       "rle_open_env_websocket_connection_failed",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Check the remote RLE instance status and retry invoke.",
+			Suggestion: "Check the remote RLE instance status and retry rollout.",
 		}
 		if !retryable || attempt == c.handshakeMaxAttempts-1 {
 			return connectionError
@@ -444,7 +444,7 @@ func (c *WebSocketRuntimeSession) failConnection(connection *websocket.Conn, err
 			Message:    fmt.Sprintf("The OpenEnv WebSocket session is no longer usable: %v", err),
 			Code:       "rle_open_env_websocket_session_failed",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Exit and run invoke again to start a new environment session.",
+			Suggestion: "Exit and run rollout again to start a new environment session.",
 		}
 	}
 	terminalError := c.terminalError
@@ -464,7 +464,7 @@ func (c *WebSocketRuntimeSession) Close() {
 			Message:    "The OpenEnv WebSocket session is closed.",
 			Code:       "rle_open_env_websocket_session_closed",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Run invoke again to start a new environment session.",
+			Suggestion: "Run rollout again to start a new environment session.",
 		}
 	}
 	c.mu.Unlock()
@@ -474,7 +474,7 @@ func (c *WebSocketRuntimeSession) Close() {
 	deadline := time.Now().Add(2 * time.Second)
 	_ = connection.WriteControl(
 		websocket.CloseMessage,
-		websocket.FormatCloseMessage(websocket.CloseNormalClosure, "RLE invoke complete."),
+		websocket.FormatCloseMessage(websocket.CloseNormalClosure, "RLE rollout complete."),
 		deadline,
 	)
 	_ = connection.Close()
@@ -507,7 +507,7 @@ func parseWebSocketResponse(operation string, response []byte) (string, bool, er
 		terminal := isTerminalOpenEnvError(errorData.Code)
 		suggestion := "Check the request payload and retry."
 		if terminal {
-			suggestion = "Exit and run invoke again to start a new environment session."
+			suggestion = "Exit and run rollout again to start a new environment session."
 		}
 		return "", terminal, &azdext.LocalError{
 			Message: fmt.Sprintf(

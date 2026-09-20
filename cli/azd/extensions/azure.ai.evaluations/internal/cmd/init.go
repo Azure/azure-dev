@@ -20,6 +20,7 @@ import (
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
+	"azureaieval/internal/telemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -329,6 +330,11 @@ func (a *initAction) Run() error {
 	if err != nil {
 		return err
 	}
+
+	// Reported here rather than from the prompt sequence, which a confirmation
+	// can send the reader back through: this is the source the scaffold on disk
+	// was actually written for, and it happens once.
+	reportUsage(a.cmd.Context(), telemetry.InitCompleted(telemetry.NewInitSource(source)))
 
 	if isJSON(a.cmd) {
 		return emitJSON(out, map[string]any{

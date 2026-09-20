@@ -15,6 +15,7 @@ import (
 	"azureaidataset/internal/exterrors"
 	"azureaidataset/internal/messages"
 	"azureaidataset/internal/pkg/dataset_api"
+	"azureaidataset/internal/telemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -235,6 +236,8 @@ func (a *datasetWriteAction) Run() error {
 	if err != nil {
 		return messages.RegisteringDataset(a.name, err)
 	}
+
+	reportUsage(ctx, telemetry.DatasetPublished(telemetry.NewOperation(a.verb)))
 
 	if err := ec.setEnvValue(ctx, envKeyDatasetVersion, ds.Version); err != nil {
 		// Persisting is a convenience, so this never fails the command. It goes

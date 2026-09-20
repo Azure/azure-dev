@@ -27,10 +27,44 @@ az login
 The extension also supports `azd auth login` and other development credentials
 from Azure's default credential chain.
 
-Install from the nightly registry:
+Register the RLE development source and install the extension:
 
 ```powershell
-azd ext install azure.ai.rle -s https://aka.ms/azd/extensions/registry/nightly
+azd extension source add `
+  --name rle-dev `
+  --type url `
+  --location https://raw.githubusercontent.com/sujit-kamireddy/azure-dev/main/cli/azd/extensions/registry.rle-dev.json
+
+azd extension install azure.ai.rle --source rle-dev
+azd ai rle version
+```
+
+List registered extension sources at any time with:
+
+```powershell
+azd extension source list
+```
+
+### Extension updates
+
+The extension checks the RLE development registry when an RLE command runs. A
+non-breaking update does not interrupt the command. After the command completes,
+the CLI displays:
+
+```text
+RLE extension update available: <version>
+To update, run `azd extension update azure.ai.rle`
+```
+
+If the update path includes a release marked as breaking, lifecycle commands are
+blocked until the extension is updated. Commands needed to inspect the extension,
+such as `azd ai rle version` and help, remain available.
+
+Update to the latest release from the registered source:
+
+```powershell
+azd extension update azure.ai.rle
+azd ai rle version
 ```
 
 The lifecycle commands are preview-gated:
@@ -441,3 +475,34 @@ azd x pack
 azd x publish
 azd extension install azure.ai.rle --source local --force
 ```
+
+## Prepare a development release
+
+The release script currently builds the Windows AMD64 extension artifact. Run it
+from `cli\azd\extensions\azure.ai.rle`.
+
+For a normal non-breaking release, choose the semantic-version component to
+increment:
+
+```powershell
+.\prepare-dev-release.ps1 -VersionBump patch
+.\prepare-dev-release.ps1 -VersionBump minor
+.\prepare-dev-release.ps1 -VersionBump major
+```
+
+The script preserves the existing prerelease suffix. For example,
+`0.8.8-preview` becomes `0.8.9-preview` with `-VersionBump patch`. It updates
+`version.txt` and `extension.yaml`, builds and packages the extension, writes the
+artifact under `artifacts\rle-dev\<version>`, and updates
+`registry.rle-dev.json` with its checksum and GitHub URL.
+
+Mark a release as breaking only when users must update before continuing:
+
+```powershell
+.\prepare-dev-release.ps1 -VersionBump patch -BreakingChanges
+```
+
+Non-breaking is the default; do not pass `-BreakingChanges` for a normal release.
+Review and commit the two version files, generated artifact, and registry change
+together. The registry URLs target `main`, so the release becomes installable
+after those files are merged.

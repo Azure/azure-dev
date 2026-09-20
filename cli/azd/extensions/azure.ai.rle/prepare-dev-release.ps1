@@ -2,11 +2,20 @@
 .SYNOPSIS
 Builds RLE extension artifacts and updates the dedicated development registry.
 
+.PARAMETER VersionBump
+Increments the current semantic version by major, minor, or patch and preserves
+its prerelease suffix. Updates version.txt and extension.yaml automatically.
+
 .EXAMPLE
-.\prepare-dev-release.ps1 -BreakingChanges
+.\prepare-dev-release.ps1 -VersionBump patch
+
+.EXAMPLE
+.\prepare-dev-release.ps1 -VersionBump minor -BreakingChanges
 #>
 param(
     [string] $Version = (Get-Content "$PSScriptRoot/version.txt").Trim(),
+    [ValidateSet("major", "minor", "patch")]
+    [string] $VersionBump,
     [string] $Repository = "sujit-kamireddy/azure-dev",
     [string] $RepositoryBranch = "main",
     [string] $RegistryPath = (Join-Path $PSScriptRoot "..\registry.rle-dev.json"),
@@ -17,6 +26,63 @@ param(
 $ErrorActionPreference = "Stop"
 $extensionId = "azure.ai.rle"
 $versionPattern = "^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$"
+$versionFilePath = Join-Path $PSScriptRoot "version.txt"
+$manifestPath = Join-Path $PSScriptRoot "extension.yaml"
+$currentVersion = (Get-Content -LiteralPath $versionFilePath -Raw).Trim()
+$manifestVersionMatch = Select-String `
+    -Path $manifestPath `
+    -Pattern "^version:\s*(\S+)\s*$"
+
+if (-not $manifestVersionMatch) {
+    throw "Could not find the version in extension.yaml."
+}
+
+$manifestVersion = $manifestVersionMatch.Matches[0].Groups[1].Value
+
+if ($VersionBump) {
+    if ($PSBoundParameters.ContainsKey("Version")) {
+        throw "Version and VersionBump cannot be specified together."
+    }
+    if ($currentVersion -notmatch $versionPattern) {
+        throw "Version '$currentVersion' in version.txt is not a valid semantic version."
+    }
+    if ($manifestVersion -ne $currentVersion) {
+        throw "Version '$currentVersion' in version.txt must match version '$manifestVersion' in extension.yaml."
+    }
+
+    $versionParts = [regex]::Match(
+        $currentVersion,
+        "^(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)(?<suffix>-[0-9A-Za-z.-]+)?$"
+    )
+    $major = [int64] $versionParts.Groups["major"].Value
+    $minor = [int64] $versionParts.Groups["minor"].Value
+    $patch = [int64] $versionParts.Groups["patch"].Value
+    $suffix = $versionParts.Groups["suffix"].Value
+
+    switch ($VersionBump) {
+        "major" {
+            $major++
+            $minor = 0
+            $patch = 0
+        }
+        "minor" {
+            $minor++
+            $patch = 0
+        }
+        "patch" {
+            $patch++
+        }
+    }
+
+    $Version = "$major.$minor.$patch$suffix"
+    Set-Content -LiteralPath $versionFilePath -Value $Version -Encoding utf8NoBOM
+    (Get-Content -LiteralPath $manifestPath -Raw) `
+        -replace "(?m)^version:\s*\S+\s*$", "version: $Version" |
+        Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
+
+    Write-Host "Version: $currentVersion -> $Version"
+    $manifestVersion = $Version
+}
 
 if ($Version -notmatch $versionPattern) {
     throw "Version '$Version' is not a valid semantic version."
@@ -29,10 +95,7 @@ if (-not [Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
     throw "This development release script currently supports only windows/amd64."
 }
 
-$manifestVersionMatch = Select-String `
-    -Path (Join-Path $PSScriptRoot "extension.yaml") `
-    -Pattern "^version:\s*(\S+)\s*$"
-if (-not $manifestVersionMatch -or $manifestVersionMatch.Matches[0].Groups[1].Value -ne $Version) {
+if ($manifestVersion -ne $Version) {
     throw "Version '$Version' must match the version in extension.yaml."
 }
 

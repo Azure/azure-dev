@@ -449,6 +449,20 @@ func reportSubmitted(out io.Writer, group, jobID string) {
 // rather than a recovery.
 type retryConsent func(agent, jobID string, why error) (bool, error)
 
+// dataGenerationType is the seed-generation type that produces rows the given
+// evaluation level can actually grade.
+//
+// A conversation eval simulates its conversations from scenario seeds, so it
+// needs seeds; asking for simple_qna returns the query/response pairs a turn
+// eval grades, which a conversation evaluator has nothing to do with. Any other
+// level, including an unstated one, keeps the turn-shaped default.
+func dataGenerationType(evaluationLevel string) string {
+	if evaluationLevel == project.EvaluationLevelConversation {
+		return eval_api.DataGenerationTypeConversationSimulation
+	}
+	return eval_api.DataGenerationTypeSimpleQnA
+}
+
 func (ec *evalContext) generateDataset(
 	ctx context.Context,
 	plan generationPlan,
@@ -487,7 +501,8 @@ func (ec *evalContext) generateDataset(
 			sources = promptOnly
 		}
 	}
-	req := eval_api.NewDataGenerationJobRequest(plan.Name, plan.Model, plan.SampleSize, sources)
+	req := eval_api.NewDataGenerationJobRequest(
+		plan.Name, plan.Model, plan.SampleSize, sources, dataGenerationType(plan.EvaluationLevel))
 
 	job, err := ec.evalClient.CreateDataGenerationJob(ctx, req, DataGenerationAPIVersion)
 	if err != nil {
@@ -519,7 +534,7 @@ func (ec *evalContext) generateDataset(
 			fmt.Fprint(out, messages.RetryingWithPromptSource())
 
 			req = eval_api.NewDataGenerationJobRequest(
-				plan.Name, plan.Model, plan.SampleSize, promptOnly)
+				plan.Name, plan.Model, plan.SampleSize, promptOnly, dataGenerationType(plan.EvaluationLevel))
 			job, err = ec.evalClient.CreateDataGenerationJob(ctx, req, DataGenerationAPIVersion)
 			if err != nil {
 				return nil, messages.SubmittingDataJob(err)

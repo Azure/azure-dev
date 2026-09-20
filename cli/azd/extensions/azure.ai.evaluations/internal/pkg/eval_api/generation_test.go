@@ -243,7 +243,8 @@ func TestHasPromptSource(t *testing.T) {
 func TestNewDataGenerationJobRequest(t *testing.T) {
 	sources := []GenerationSource{{Type: "prompt", Prompt: "be helpful"}}
 
-	req := NewDataGenerationJobRequest("support-regression", "gpt-4o", 15, sources)
+	req := NewDataGenerationJobRequest("support-regression", "gpt-4o", 15, sources,
+		DataGenerationTypeSimpleQnA)
 
 	require.NotNil(t, req)
 	assert.Equal(t, "support-regression", req.Inputs.Name)
@@ -252,6 +253,30 @@ func TestNewDataGenerationJobRequest(t *testing.T) {
 	assert.Equal(t, 15, req.Inputs.Options.MaxSamples)
 	assert.Equal(t, "gpt-4o", req.Inputs.Options.ModelOptions.Model)
 	assert.Equal(t, sources, req.Inputs.Sources)
+}
+
+// A conversation eval grades scenario seeds, not query/response pairs. The type
+// is what tells the service which to produce, so it is pinned on the wire.
+func TestNewDataGenerationJobRequest_CarriesTheConversationSeedType(t *testing.T) {
+	sources := []GenerationSource{{Type: "prompt", Prompt: "be helpful"}}
+
+	req := NewDataGenerationJobRequest("retail-multiturn", "gpt-4o", 5, sources,
+		DataGenerationTypeConversationSimulation)
+
+	require.NotNil(t, req)
+	assert.Equal(t, "conversation_simulation", req.Inputs.Options.Type)
+	assert.Equal(t, "evaluation", req.Inputs.Scenario,
+		"the scenario stays evaluation; only the seed type changes")
+}
+
+// Every caller before the type was selectable got simple_qna, and a caller that
+// still expresses no preference has to keep getting it -- an empty type on the
+// wire is not a request the service can answer.
+func TestNewDataGenerationJobRequest_UnstatedTypeStaysSimpleQnA(t *testing.T) {
+	req := NewDataGenerationJobRequest("support-regression", "gpt-4o", 15, nil, "")
+
+	require.NotNil(t, req)
+	assert.Equal(t, "simple_qna", req.Inputs.Options.Type)
 }
 
 // The evaluator request sends the name twice, under two keys the service reads

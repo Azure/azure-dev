@@ -152,19 +152,41 @@ func BuildGenerationSources(
 // Request builders
 // ---------------------------------------------------------------------------
 
+// Seed-generation types the service offers.
+//
+// A turn eval grades query/response pairs, which is what simple_qna produces. A
+// conversation eval that simulates its conversations grades scenario seeds
+// instead -- rows describing a conversation to create, which a simulation run
+// later turns into one. Asking for the wrong one returns rows the eval cannot
+// grade, so the level the caller asked for has to reach the wire.
+//
+// Named here because the GA TypeSpec has not landed. When the discriminator is
+// confirmed this is the one place it changes.
+const (
+	DataGenerationTypeSimpleQnA              = "simple_qna"
+	DataGenerationTypeConversationSimulation = "conversation_simulation"
+)
+
 // NewDataGenerationJobRequest builds a DataGenerationJobRequest from the
-// provided parameters. Currently, it's always "simple_qna" type with multiple sources
+// provided parameters.
+//
+// An empty generationType means the caller expressed no preference and gets
+// simple_qna, which is what every caller got before the type was selectable.
 func NewDataGenerationJobRequest(
 	name, evalModel string,
 	maxSamples int,
 	sources []GenerationSource,
+	generationType string,
 ) *DataGenerationJobRequest {
+	if generationType == "" {
+		generationType = DataGenerationTypeSimpleQnA
+	}
 	return &DataGenerationJobRequest{
 		Inputs: DataGenerationInputs{
 			Name:     name,
 			Scenario: "evaluation",
 			Options: DataGenerationOptions{
-				Type:       "simple_qna",
+				Type:       generationType,
 				MaxSamples: maxSamples,
 				ModelOptions: ModelOptions{
 					Model: evalModel,

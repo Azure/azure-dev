@@ -23,8 +23,9 @@ identifiers, credentials, prompts or configuration payloads are emitted.
 ## Coverage and behavior
 
 - Extension init collects explicit kind intent, refining it at existing selection,
-  definition/adoption and reuse points. RunE return attempts to report the last
-  classification on success **or failure**. Unknown intent is not inferred from
+  definition/adoption and reuse points. Failed RunE returns attempt to report the
+  last classification; successful init reports after the existing post-run context
+  event so the original event has priority in the shared budget. Unknown intent is not inferred from
   later success. Failure before RunE, process termination or unavailable telemetry
   can have no marker. Success/failure remain owned by existing command telemetry.
 - Agent preprovision/predeploy handlers report in-memory service classifications

@@ -1335,11 +1335,16 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
   azd ai agent init --no-prompt --agent-name my-agent --project-id "<resource-id>" \
     --image registry.example.com/agents/my-agent:v1 --registry-connection production-registry`,
 		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 			// Record bounded intent before validation so failures are not a success-only sample.
 			ctx := withInitOperationContext(azdext.WithAccessToken(cmd.Context()), flags.kind,
 				flags.manifestPointer != "" || len(args) > 0)
-			defer reportInitOperation(ctx)
+			cmd.SetContext(ctx)
+			defer func() {
+				if runErr != nil {
+					reportInitOperation(ctx)
+				}
+			}()
 			flags.noPrompt = extCtx.NoPrompt
 			if flags.env == "" {
 				flags.env = extCtx.Environment

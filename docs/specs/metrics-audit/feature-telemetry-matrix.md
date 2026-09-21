@@ -151,7 +151,7 @@ captures the operation type, making the attribute redundant:
 
 Agent operation classification additionally uses the existing `ext.usage` channel
 with fixed `extension.event` values `agent.operation.v1.<operation>.<category>.<telephony>`.
-No attributes are added. Coverage is partial: extension init return and agent
+No attributes are added. Coverage is partial: extension init failure return or successful post-run, and agent
 preprovision/predeploy hooks; core init and early failures may remain unknown.
 This is not per-service outcome telemetry. See the [query and exact vocabulary](../../../cli/azd/extensions/azure.ai.agents/docs/operation-telemetry.md).
 

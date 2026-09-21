@@ -212,11 +212,26 @@ func TestOperationServiceClassPropertyPrecedence(t *testing.T) {
 
 type operationTelemetryServer struct {
 	azdext.UnimplementedTelemetryServiceServer
+	azdext.UnimplementedProjectServiceServer
 	mu          sync.Mutex
 	events      []*azdext.ReportUsageRequest
 	err         error
 	block       bool
 	traceparent string
+}
+
+func (s *operationTelemetryServer) Get(
+	ctx context.Context, req *azdext.EmptyRequest,
+) (*azdext.GetProjectResponse, error) {
+	props, err := structpb.NewStruct(map[string]any{"kind": "hosted"})
+	if err != nil {
+		return nil, err
+	}
+	return &azdext.GetProjectResponse{Project: &azdext.ProjectConfig{
+		Services: map[string]*azdext.ServiceConfig{
+			"agent": {Host: AiAgentHost, AdditionalProperties: props},
+		},
+	}}, nil
 }
 
 func (s *operationTelemetryServer) ReportUsage(
@@ -314,4 +329,27 @@ func TestInitOperationReportsAfterCancellationWithoutChangingResult(t *testing.T
 	require.Equal(t, "agent.operation.v1.init.prompt.none", capture.events[0].EventName)
 	require.Empty(t, capture.events[0].Attributes)
 	require.Equal(t, parent, capture.traceparent)
+}
+
+func TestInitOperationSuccessPreservesOriginalEventPriority(t *testing.T) {
+	server := grpc.NewServer()
+	capture := &operationTelemetryServer{}
+	azdext.RegisterTelemetryServiceServer(server, capture)
+	azdext.RegisterProjectServiceServer(server, capture)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+	root := NewRootCommand()
+	initCmd, _, err := root.Find([]string{"init"})
+	require.NoError(t, err)
+	initCmd.SetContext(withInitOperationContext(t.Context(), "hosted", false))
+	root.PersistentPostRun(initCmd, nil)
+	capture.mu.Lock()
+	defer capture.mu.Unlock()
+	require.Len(t, capture.events, 2)
+	require.Equal(t, agentContextResolvedEvent, capture.events[0].EventName)
+	require.Equal(t, "agent.operation.v1.init.hosted.none", capture.events[1].EventName)
+	require.Empty(t, capture.events[1].Attributes)
 }

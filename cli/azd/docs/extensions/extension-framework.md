@@ -221,6 +221,13 @@ incomplete handlers are discarded. Use `args.FollowUp.Clear()` or
 `args.FollowUp.Set("")` to retract the current contribution. Calls outside a
 project `post*` handler return an error.
 
+Extensions using this API require an azd host that provides
+`FollowUpService` and invocation IDs. Published extensions should set
+`requiredAzdVersion` to the first released azd version containing this service;
+for the current release line, use `>=1.35.0`. This filters versions during
+install and update, but does not prevent already-installed or non-registry
+extensions from running on older hosts, where `Set` returns an error.
+
 azd appends committed text to the parent command's human-readable completion
 message. It combines contributions from multiple extensions and does not
 include the text in JSON output. In a custom workflow, a later command step

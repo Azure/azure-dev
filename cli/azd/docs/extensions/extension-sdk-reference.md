@@ -216,11 +216,14 @@ type ProjectEventArgs struct {
 }
 
 type FollowUpContribution struct {
-    // Set replaces the text for this handler invocation.
-    Set(text string) error
-    // Clear removes the text for this handler invocation.
-    Clear() error
+    // Internal fields are omitted.
 }
+
+// Set replaces the text for this handler invocation.
+func (f *FollowUpContribution) Set(text string) error
+
+// Clear removes the text for this handler invocation.
+func (f *FollowUpContribution) Clear() error
 ```
 
 Use `FollowUp.Set` from a successful project `post*` handler when the parent
@@ -238,6 +241,22 @@ provided by azd. The host stages text and commits it only after the handler
 completes successfully; failed, cancelled, disconnected, or incomplete
 handlers are discarded. `Clear` and `Set("")` retract the current
 contribution. Calls outside a project `post*` handler return an error.
+
+This API requires an azd host that provides `FollowUpService` and invocation
+IDs. For a published extension that uses it, set `requiredAzdVersion` to the
+first released azd version containing `FollowUpService`. For the current
+release line, use:
+
+```yaml
+requiredAzdVersion: ">=1.35.0"
+```
+
+This filters extension versions during install and update. It does not prevent
+already-installed extensions or extensions from non-registry sources from
+running on an older host; those hosts provide no invocation ID, so `Set`
+returns an error rather than silently falling back. See [Extension Resolution
+and Versioning](./extension-resolution-and-versioning.md#azd-version-compatibility)
+for the compatibility behavior.
 
 The host appends committed text to the parent command's human-readable
 completion message and combines contributions from multiple extensions in a

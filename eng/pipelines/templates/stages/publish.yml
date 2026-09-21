@@ -131,12 +131,11 @@ stages:
           image: $(WINDOWSVMIMAGE)
           os: windows
 
-        ${{ if eq(parameters.ReleaseMode, 'Standard') }}:
-          templateContext:
-            outputs:
-              - output: pipelineArtifact
-                artifact: winget-manifest
-                targetPath: winget
+        templateContext:
+          outputs:
+            - output: pipelineArtifact
+              artifact: winget-manifest
+              targetPath: winget
 
         steps:
           - template: /eng/pipelines/templates/steps/publish-cli-winget.yml

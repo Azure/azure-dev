@@ -50,9 +50,7 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: fmt.Sprintf("Initialize project configuration for training. %s", color.YellowString("(Preview)")),
-		Example: `  # Configure a Foundry project for training
-  azd ai training init`,
-		Args: cobra.NoArgs,
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 

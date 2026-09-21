@@ -1,14 +1,12 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// cspell:ignore helpformat
 package cmd
 
 import (
 	"fmt"
 
 	"azureaidataset/internal/foundry/projectctx"
-	"azureaidataset/internal/helpformat"
 	"azureaidataset/internal/version"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -29,11 +27,6 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.SilenceUsage = true
 	rootCmd.SilenceErrors = true
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
-	rootCmd.Example = `# Register a local dataset in the selected project
-  azd ai dataset create my-tests --from-file tests.jsonl
-
-# List datasets in a named azd environment
-  azd ai dataset list --environment dev`
 
 	// The data-plane clients trace requests through the standard logger, which
 	// Go writes to stderr, so it has to be silenced unless debug was asked for.
@@ -80,10 +73,8 @@ func NewRootCommand() *cobra.Command {
 
 	// The shared release stage validates each published artifact by running
 	// `<binary> version`, so an extension without this command fails the bundle.
-	versionCmd := azdext.NewVersionCommand(
-		"azure.ai.dataset", version.Version, &extCtx.OutputFormat)
-	versionCmd.Example = "# Show the dataset extension version\n  azd ai dataset version"
-	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(azdext.NewVersionCommand(
+		"azure.ai.dataset", version.Version, &extCtx.OutputFormat))
 
 	// The manifest declares the `metadata` capability, which azd uses to
 	// discover this extension's command tree. Without the command registered,
@@ -94,7 +85,6 @@ func NewRootCommand() *cobra.Command {
 
 	// Last, so it covers every command above it including the SDK's own.
 	reportFailuresAsJSON(rootCmd)
-	helpformat.Install(rootCmd, "azd ai", datasetHelpFooter)
 
 	return rootCmd
 }

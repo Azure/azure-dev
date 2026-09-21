@@ -1,14 +1,12 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// cspell:ignore helpformat
 package cmd
 
 import (
 	"fmt"
 
 	"azureaieval/internal/foundry/projectctx"
-	"azureaieval/internal/helpformat"
 	"azureaieval/internal/version"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -29,11 +27,6 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.SilenceUsage = true
 	rootCmd.SilenceErrors = true
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
-	rootCmd.Example = `# Scaffold evaluation configuration for an agent
-  azd ai eval init --target my-agent --source dataset --dataset tests.jsonl
-
-# List evaluations in the selected project
-  azd ai eval list`
 
 	// The data-plane clients trace requests through the standard logger, which
 	// Go writes to stderr, so it has to be silenced unless debug was asked for.
@@ -86,10 +79,8 @@ func NewRootCommand() *cobra.Command {
 
 	// The shared release stage validates each published artifact by running
 	// `<binary> version`, so an extension without this command fails the bundle.
-	versionCmd := azdext.NewVersionCommand(
-		"azure.ai.evaluations", version.Version, &extCtx.OutputFormat)
-	versionCmd.Example = "# Show the evaluation extension version\n  azd ai eval version"
-	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(azdext.NewVersionCommand(
+		"azure.ai.evaluations", version.Version, &extCtx.OutputFormat))
 
 	// The manifest declares the `metadata` capability, which azd uses to
 	// discover this extension's command tree. Without the command registered,
@@ -100,7 +91,6 @@ func NewRootCommand() *cobra.Command {
 
 	// Last, so it covers every command above it including the SDK's own.
 	reportFailuresAsJSON(rootCmd)
-	helpformat.Install(rootCmd, "azd ai", evalHelpFooter)
 
 	return rootCmd
 }

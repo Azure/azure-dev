@@ -1,11 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// cspell:ignore helpformat
-// Package helpformat applies core azd help conventions to AI command trees.
+// Package helpformat applies core azd help conventions to the agent command tree.
 package helpformat
-
-//go:generate go run ./internal/generate
 
 import (
 	"fmt"
@@ -19,8 +16,8 @@ import (
 )
 
 const (
-	prefixAnnotation = "ai-help.command-prefix"
-	footerAnnotation = "ai-help.footer"
+	prefixAnnotation = "agent-help.command-prefix"
+	footerAnnotation = "agent-help.footer"
 
 	helpTemplate  = `{{agentHelpDescription .}}{{.UsageString}}`
 	usageTemplate = `{{agentHelpHeading "Usage"}}
@@ -91,12 +88,8 @@ func heading(title string) string {
 }
 
 func commandPath(cmd *cobra.Command) string {
-	for parent := cmd; parent != nil; parent = parent.Parent() {
-		if prefix, ok := parent.Annotations[prefixAnnotation]; ok {
-			return strings.TrimSpace(prefix + " " + cmd.CommandPath())
-		}
-	}
-	return cmd.CommandPath()
+	prefix := cmd.Root().Annotations[prefixAnnotation]
+	return strings.TrimSpace(prefix + " " + cmd.CommandPath())
 }
 
 func description(cmd *cobra.Command) string {

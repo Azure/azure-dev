@@ -1,13 +1,10 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// cspell:ignore helpformat
 package cmd
 
 import (
 	"fmt"
-
-	"azure.ai.training/internal/helpformat"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -21,9 +18,6 @@ func NewRootCommand() *cobra.Command {
 		Short: fmt.Sprintf("Extension for Microsoft Foundry training jobs. %s", color.YellowString("(Preview)")),
 	})
 	rootCmd.SilenceUsage = true
-	rootCmd.Example = `  # Initialize a project and submit a training job
-  azd ai training init
-  azd ai training job submit --file job.yaml`
 	rootCmd.SilenceErrors = true
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
@@ -32,8 +26,6 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newInitCommand(extCtx))
 	rootCmd.AddCommand(newJobCommand(extCtx))
 	rootCmd.AddCommand(newMetadataCommand())
-
-	helpformat.Install(rootCmd, "azd ai", trainingHelpFooter)
 
 	return rootCmd
 }

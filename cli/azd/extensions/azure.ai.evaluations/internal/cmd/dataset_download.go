@@ -36,9 +36,7 @@ func newDatasetDownloadCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "download <name>",
 		Short: "Download a registered dataset version's content.",
-		Example: "# Download a dataset into a local directory\n" +
-			"  azd ai eval dataset download my-tests --version 1.0 --output-dir ./datasets",
-		Args: requiredArgs(1),
+		Args:  requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a.cmd, a.name = cmd, args[0]
 			return a.Run()

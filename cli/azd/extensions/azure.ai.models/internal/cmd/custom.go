@@ -26,10 +26,8 @@ func newCustomCommand() *cobra.Command {
 	flags := &customFlags{}
 
 	customCmd := &cobra.Command{
-		Use:   "custom",
-		Short: "Manage custom models in Azure AI Foundry",
-		Example: `  # List custom models using the preferred top-level command
-  azd ai models list`,
+		Use:        "custom",
+		Short:      "Manage custom models in Azure AI Foundry",
 		Deprecated: "use 'azd ai models <create|list|show|delete>' directly instead",
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())

@@ -5,12 +5,14 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -74,88 +76,217 @@ func TestInvokeVersionOverrideRegistration(t *testing.T) {
 	require.NotNil(t, flag)
 	assert.Empty(t, flag.DefValue)
 	assert.Empty(t, flag.Shorthand)
-	assert.Contains(t, flag.Usage, "fail on fallback")
-	assert.Contains(t, cmd.Long, "through the x-agent-version-override")
-	assert.Contains(t, cmd.Long, "resolved the requested version without fallback")
-	assert.Contains(t, cmd.Long, "fresh, isolated session")
-	assert.Contains(t, cmd.Long, "for Responses, a new conversation")
-	assert.Contains(t, cmd.Long, "IDs are not saved as the current selection")
-	assert.Contains(t, cmd.Long, "explicit recovery commands")
-	assert.Contains(t, cmd.Long, "the original verification error is still returned")
-	assert.Contains(t, cmd.Example, "Test and verify a candidate version using an isolated invocation")
+	assert.Equal(t,
+		"Test a hosted version (or latest) with an isolated invocation; version headers are optional", flag.Usage)
+	help := strings.Join(strings.Fields(cmd.Long), " ")
+	for _, text := range []string{
+		"through the x-agent-version-override header for manual testing of a candidate version",
+		"fresh, isolated session and, for Responses, a new conversation",
+		"Session/conversation and operation IDs are not saved as the current selection",
+		"Version headers are optional: missing or unusable version information produces a warning, not a failure",
+		"Inspect the agent's response to confirm the candidate's behavior before increasing traffic",
+		"An explicit service-reported fallback or a different concrete version still returns an error",
+		"as do HTTP and agent errors",
+		"An error does not undo work already executed",
+		"Known background operation IDs remain available for explicit follow/show/cancel without changing current state",
+		"latest follows the service's floating routing behavior",
+		"No override is sent unless requested. Raw output stays unchanged; warnings go to stderr",
+	} {
+		assert.Contains(t, help, text)
+	}
+	assert.NotContains(t, strings.ToLower(cmd.Flags().FlagUsages()), "strict")
+	assert.NotContains(t, help, "resolved the requested version without fallback")
+	assert.NotContains(t, help, "the original verification error is still returned")
+	assert.Contains(t, cmd.Example, "Test a candidate version using an isolated invocation")
 	assert.NotContains(t, cmd.Long, "without changing its traffic split")
 	assert.NotContains(t, cmd.Example, "without changing the endpoint traffic split")
-	assert.Contains(t, cmd.Long, "does not undo work already executed")
 	assert.Contains(t, cmd.Flags().Lookup("version").Usage, "session backed by that version")
 }
 
-func TestVerifyAgentVersionHeaders(t *testing.T) {
+func TestOptionalAgentVersionHeader(t *testing.T) {
 	for _, tt := range []struct {
-		name       string
-		requested  string
-		resolved   []string
-		fallback   []string
-		resolution []string
-		wantErr    string
+		name   string
+		values []string
+		want   string
 	}{
-		{name: "exact", requested: "3", resolved: []string{"3"}, resolution: []string{"flightoverride"}},
-		{name: "optional headers absent", requested: "3", resolved: []string{"3"}},
-		{name: "false fallback", requested: "3", resolved: []string{"3"}, fallback: []string{"false"}},
-		{name: "trim", requested: "3", resolved: []string{" 3 "}, fallback: []string{" FALSE "}},
-		{name: "latest", requested: "latest", resolved: []string{"9"}},
-		{name: "missing", requested: "3", wantErr: "expected exactly one"},
-		{name: "empty", requested: "3", resolved: []string{""}, wantErr: "invalid"},
-		{name: "invalid", requested: "3", resolved: []string{"3,4"}, wantErr: "invalid"},
-		{name: "duplicate", requested: "3", resolved: []string{"3", "3"}, wantErr: "exactly one"},
-		{name: "mismatch", requested: "3", resolved: []string{"4"}, wantErr: "does not match"},
-		{name: "unresolved latest", requested: "latest", resolved: []string{"latest"}, wantErr: "concrete"},
-		{
-			name: "fallback", requested: "3", resolved: []string{"3"}, fallback: []string{"true"},
-			wantErr: "reported a version fallback",
-		},
-		{
-			name: "latest fallback", requested: "latest", resolved: []string{"3"}, fallback: []string{"TRUE"},
-			wantErr: "reported a version fallback",
-		},
-		{
-			name: "ambiguous fallback", requested: "3", resolved: []string{"3"}, fallback: []string{"false", "true"},
-			wantErr: "multiple",
-		},
-		{
-			name: "invalid fallback", requested: "3", resolved: []string{"3"}, fallback: []string{"0"},
-			wantErr: "invalid",
-		},
-		{
-			name: "ambiguous resolution", requested: "3", resolved: []string{"3"},
-			resolution: []string{"flightoverride", "default"}, wantErr: "exactly one",
-		},
-		{
-			name: "invalid resolution", requested: "3", resolved: []string{"3"},
-			resolution: []string{"bad\x1b[31m"}, wantErr: "invalid",
-		},
+		{name: "absent"},
+		{name: "empty", values: []string{""}},
+		{name: "whitespace", values: []string{" \t"}},
+		{name: "bad characters", values: []string{"3,4"}},
+		{name: "unsafe", values: []string{"bad\x1b[31m\r\nINJECTED"}},
+		{name: "duplicate", values: []string{"3", "3"}},
+		{name: "conflicting", values: []string{"3", "4"}},
+		{name: "latest", values: []string{"latest"}},
+		{name: "latest mixed case", values: []string{" LaTeSt "}},
+		{name: "too long", values: []string{strings.Repeat("a", 129)}},
+		{name: "trim", values: []string{" 3 \t"}, want: "3"},
+		{name: "safe", values: []string{"Release_3.1-beta"}, want: "Release_3.1-beta"},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
-			headers := make(http.Header)
-			for name, values := range map[string][]string{
-				agentVersionResolvedHeader: tt.resolved, agentVersionFallbackHeader: tt.fallback,
-				agentVersionResolutionHeader: tt.resolution,
-			} {
-				for _, value := range values {
+		for _, name := range []string{agentVersionResolvedHeader, agentVersionResolutionHeader} {
+			t.Run(name+"/"+tt.name, func(t *testing.T) {
+				headers := make(http.Header)
+				for _, value := range tt.values {
 					headers.Add(name, value)
 				}
-			}
-			resolved, resolution, err := verifyAgentVersionHeaders(tt.requested, headers)
-			if tt.wantErr != "" {
-				require.ErrorContains(t, err, tt.wantErr)
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, strings.TrimSpace(tt.resolved[0]), resolved)
-			if len(tt.resolution) > 0 {
-				assert.Equal(t, tt.resolution[0], resolution)
-			}
-		})
+				assert.Equal(t, tt.want, optionalAgentVersionHeader(headers, name))
+			})
+		}
 	}
+}
+
+func TestReportVersionOverrideResponse(t *testing.T) {
+	const fallbackReason = "the service reported a version fallback"
+	const unsafe = "bad\x1b[31m\r\nINJECTED"
+	config := newInvokeUserConfigServer()
+	rc := &remoteContext{agentKey: "ordinary", azdClient: newInvokeTestAzdClient(t, config)}
+	for _, tt := range []struct {
+		name           string
+		requested      string
+		resolved       []string
+		fallback       []string
+		resolution     []string
+		wantResolved   string
+		wantResolution string
+		warning        bool
+		reason         string
+	}{
+		{name: "metadata absent", warning: true},
+		{name: "resolved empty", resolved: []string{""}, warning: true},
+		{name: "resolved whitespace", resolved: []string{" \t"}, warning: true},
+		{name: "resolved bad characters", resolved: []string{"4,5"}, warning: true},
+		{name: "resolved unsafe", resolved: []string{unsafe}, warning: true},
+		{name: "resolved duplicate", resolved: []string{"4", "4"}, warning: true},
+		{name: "resolved conflicting", resolved: []string{"4", "5"}, warning: true},
+		{name: "resolved latest", resolved: []string{"latest"}, warning: true},
+		{name: "fallback absent", resolved: []string{"4"}, wantResolved: "4"},
+		{name: "fallback false", resolved: []string{"4"}, fallback: []string{"false"}, wantResolved: "4"},
+		{name: "trim", resolved: []string{" 4 "}, fallback: []string{" FALSE "}, wantResolved: "4"},
+		{name: "latest resolves to 1", requested: "latest", resolved: []string{"1"}, wantResolved: "1"},
+		{
+			name: "fallback empty", resolved: []string{"4"}, fallback: []string{""},
+			wantResolved: "4", warning: true,
+		},
+		{
+			name: "fallback bogus", resolved: []string{"4"}, fallback: []string{"bogus"},
+			wantResolved: "4", warning: true,
+		},
+		{
+			name: "fallback unsafe", resolved: []string{"4"}, fallback: []string{unsafe},
+			wantResolved: "4", warning: true,
+		},
+		{
+			name: "fallback multiple false", resolved: []string{"4"}, fallback: []string{"false", "false"},
+			wantResolved: "4", warning: true,
+		},
+		{
+			name: "resolution reported", resolved: []string{"4"}, resolution: []string{" flightoverride "},
+			wantResolved: "4", wantResolution: "flightoverride",
+		},
+		{name: "resolution empty", resolved: []string{"4"}, resolution: []string{""}, wantResolved: "4"},
+		{name: "resolution unsafe", resolved: []string{"4"}, resolution: []string{unsafe}, wantResolved: "4"},
+		{name: "resolution latest", resolved: []string{"4"}, resolution: []string{"latest"}, wantResolved: "4"},
+		{
+			name: "resolution duplicate", resolved: []string{"4"}, resolution: []string{"override", "default"},
+			wantResolved: "4",
+		},
+		{
+			name: "fallback true", resolved: []string{"4"}, fallback: []string{" true "},
+			wantResolved: "4", reason: fallbackReason,
+		},
+		{name: "fallback without resolved", fallback: []string{"true"}, warning: true, reason: fallbackReason},
+		{
+			name: "fallback false true", resolved: []string{"4"}, fallback: []string{"false", "TRUE"},
+			wantResolved: "4", warning: true, reason: fallbackReason,
+		},
+		{
+			name: "fallback true false", resolved: []string{"4"}, fallback: []string{"true", "false"},
+			wantResolved: "4", warning: true, reason: fallbackReason,
+		},
+		{
+			name: "fallback true true", resolved: []string{"4"}, fallback: []string{"true", "true"},
+			wantResolved: "4", warning: true, reason: fallbackReason,
+		},
+		{
+			name: "latest fallback", requested: "latest", resolved: []string{"1"}, fallback: []string{"true"},
+			wantResolved: "1", reason: fallbackReason,
+		},
+		{
+			name: "mismatch", resolved: []string{"1"}, wantResolved: "1",
+			reason: `resolved version "1" does not match requested version "4"`,
+		},
+		{
+			name: "fallback precedes mismatch", resolved: []string{"1"}, fallback: []string{"true"},
+			wantResolved: "1", reason: fallbackReason,
+		},
+	} {
+		for _, format := range []string{outputDefault, outputRaw} {
+			t.Run(tt.name+"/"+format, func(t *testing.T) {
+				requested := tt.requested
+				if requested == "" {
+					requested = "4"
+				}
+				headers := make(http.Header)
+				for name, values := range map[string][]string{
+					agentVersionResolvedHeader: tt.resolved, agentVersionFallbackHeader: tt.fallback,
+					agentVersionResolutionHeader: tt.resolution,
+				} {
+					for _, value := range values {
+						headers.Add(name, value)
+					}
+				}
+				const payload = `{"id":"operation-not-to-save"}`
+				reader := strings.NewReader(payload)
+				body := &trackingReadCloser{Reader: reader}
+				resp := &http.Response{StatusCode: http.StatusAccepted, Header: headers, Body: body}
+				action := &InvokeAction{
+					flags: &invokeFlags{versionOverride: requested, outputFmt: format}, resolvedRemoteContext: rc,
+				}
+				var stdout, stderr bytes.Buffer
+				err := action.reportVersionOverrideResponse(resp, &stdout, &stderr)
+				if tt.reason == "" {
+					require.NoError(t, err)
+				} else {
+					message := fmt.Sprintf("agent version override %q was not honored: %s", requested, tt.reason)
+					require.EqualError(t, err, message)
+					localErr, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok)
+					assert.Equal(t, exterrors.CodeAgentVersionRoutingFailed, localErr.Code)
+					assert.Equal(t, azdext.LocalErrorCategoryCompatibility, localErr.Category)
+					assert.Equal(t,
+						"confirm the candidate behavior manually; the request may already have executed; "+
+							"no automatic retries",
+						localErr.Suggestion)
+				}
+				wantWarning := ""
+				if tt.warning {
+					wantWarning = "Warning: agent version information is unavailable or incomplete; " +
+						"confirm the candidate behavior manually.\n"
+				}
+				assert.Equal(t, wantWarning, stderr.String())
+				wantSummary := ""
+				if format != outputRaw {
+					resolved := tt.wantResolved
+					if resolved == "" {
+						resolved = "not reported"
+					}
+					wantSummary = fmt.Sprintf("Version override: %s; resolved: %s", requested, resolved)
+					if tt.wantResolution != "" {
+						wantSummary += "; resolution: " + tt.wantResolution
+					}
+					wantSummary += "\n"
+				}
+				assert.Equal(t, wantSummary, stdout.String(), "raw bytes are emitted by the normal protocol path")
+				assert.NotContains(t, stdout.String()+stderr.String(), unsafe)
+				assert.Same(t, body, resp.Body)
+				assert.Equal(t, len(payload), reader.Len(), "reporting must not read the response body")
+				assert.False(t, body.closed)
+			})
+		}
+	}
+	config.mu.Lock()
+	defer config.mu.Unlock()
+	assert.Empty(t, config.values, "reporting must not save session, conversation, or operation IDs")
+	assert.Equal(t, "ordinary", rc.agentKey)
 }
 
 func TestInvokeVersionOverrideHeaderAndResponseIsolation(t *testing.T) {
@@ -183,15 +314,88 @@ func TestInvokeVersionOverrideHeaderAndResponseIsolation(t *testing.T) {
 			body := &trackingReadCloser{Reader: strings.NewReader("original response")}
 			resp := &http.Response{StatusCode: tt.status, Header: make(http.Header), Body: body}
 			action := &InvokeAction{flags: &invokeFlags{versionOverride: tt.version}}
-			var output bytes.Buffer
-			require.NoError(t, action.verifyVersionOverrideResponse(t.Context(), resp, nil, "", &output))
+			var output, warnings bytes.Buffer
+			require.NoError(t, action.reportVersionOverrideResponse(resp, &output, &warnings))
 			assert.Empty(t, output.String())
+			assert.Empty(t, warnings.String())
+			assert.Empty(t, resp.Header)
+			assert.Equal(t, tt.status, resp.StatusCode)
+			assert.Same(t, body, resp.Body)
 			assert.False(t, body.closed)
 			remaining, err := io.ReadAll(body)
 			require.NoError(t, err)
 			assert.Equal(t, "original response", string(remaining))
 		})
 	}
+}
+
+func TestReportVersionOverrideResponseWriterErrors(t *testing.T) {
+	warningErr, summaryErr := errors.New("warning writer failed"), errors.New("summary writer failed")
+	for _, tt := range []struct {
+		name        string
+		warningFail bool
+		summaryFail bool
+		raw         bool
+		fallback    bool
+	}{
+		{name: "warning", warningFail: true},
+		{name: "summary", summaryFail: true},
+		{name: "both", warningFail: true, summaryFail: true},
+		{name: "routing and writers", warningFail: true, summaryFail: true, fallback: true},
+		{name: "raw warning", warningFail: true, raw: true},
+		{name: "raw ignores summary writer", summaryFail: true, raw: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var summary, warnings io.Writer = io.Discard, io.Discard
+			if tt.warningFail {
+				warnings = versionOverrideFailingWriter{warningErr}
+			}
+			if tt.summaryFail {
+				summary = versionOverrideFailingWriter{summaryErr}
+			}
+			headers := make(http.Header)
+			if !tt.warningFail {
+				headers.Set(agentVersionResolvedHeader, "4")
+			}
+			var messages []string
+			if tt.fallback {
+				headers.Set(agentVersionFallbackHeader, "true")
+				messages = append(messages,
+					`agent version override "4" was not honored: the service reported a version fallback`)
+			}
+			format := outputDefault
+			if tt.raw {
+				format = outputRaw
+			}
+			action := &InvokeAction{flags: &invokeFlags{versionOverride: "4", outputFmt: format}}
+			err := action.reportVersionOverrideResponse(
+				&http.Response{StatusCode: http.StatusOK, Header: headers}, summary, warnings)
+			if tt.warningFail {
+				assert.ErrorIs(t, err, warningErr)
+				messages = append(messages, warningErr.Error())
+			}
+			if tt.summaryFail && !tt.raw {
+				assert.ErrorIs(t, err, summaryErr)
+				messages = append(messages, summaryErr.Error())
+			}
+			if len(messages) == 0 {
+				require.NoError(t, err)
+			} else {
+				require.EqualError(t, err, strings.Join(messages, "\n"))
+			}
+			if tt.fallback {
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				assert.Equal(t, exterrors.CodeAgentVersionRoutingFailed, localErr.Code)
+			}
+		})
+	}
+}
+
+type versionOverrideFailingWriter struct{ err error }
+
+func (w versionOverrideFailingWriter) Write(_ []byte) (int, error) {
+	return 0, w.err
 }
 
 func TestInvokeVersionOverrideNoVersionSession(t *testing.T) {
@@ -216,19 +420,17 @@ func TestInvokeVersionOverrideRejectsNonSuccessStatus(t *testing.T) {
 					body := &trackingReadCloser{Reader: strings.NewReader("original response")}
 					resp := &http.Response{StatusCode: code, Header: headers, Body: body}
 					action := &InvokeAction{flags: &invokeFlags{versionOverride: "4", outputFmt: format}}
-					var output bytes.Buffer
-					err := action.verifyVersionOverrideResponse(t.Context(), resp, nil, "", &output)
-					requireVersionOverrideVerificationFailure(t, err, fmt.Sprintf("unexpected HTTP status %d", code))
-					assert.NotContains(t, output.String(), "Version override:")
-					if format == outputRaw {
-						assert.Contains(t, output.String(), fmt.Sprintf("HTTP/1.1 %d", code))
-						assert.True(t, strings.HasSuffix(output.String(), "\r\n\r\noriginal response"))
-					} else {
-						assert.Empty(t, output.String())
-						remaining, readErr := io.ReadAll(body)
-						require.NoError(t, readErr)
-						assert.Equal(t, "original response", string(remaining))
-					}
+					var output, warnings bytes.Buffer
+					err := action.reportVersionOverrideResponse(resp, &output, &warnings)
+					require.EqualError(t, err,
+						fmt.Sprintf("unexpected HTTP status %d; expected a successful 2xx response", code))
+					assert.Empty(t, output.String())
+					assert.Empty(t, warnings.String())
+					assert.Same(t, body, resp.Body)
+					assert.False(t, body.closed)
+					remaining, readErr := io.ReadAll(body)
+					require.NoError(t, readErr)
+					assert.Equal(t, "original response", string(remaining))
 				})
 			}
 		}

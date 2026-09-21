@@ -17,9 +17,15 @@ goals:
   - >-
     Confirm initial help exits with code 0 and lists --version-override. Confirm it describes
     remote hosted responses/invocations only, fresh session/conversation state without saving
-    current IDs, strict fallback/unverified-resolution failure, concrete versions versus floating
-    latest, and that failure does not undo executed work. Confirm --version still describes
-    creating or reusing a version-backed session.
+    current IDs, and manual inspection of candidate behavior before increasing traffic.
+    Missing or unusable version metadata must be described as a warning, not a failure;
+    explicit service-reported fallback, a concrete resolved-version mismatch, and HTTP or agent
+    errors must still fail. Confirm raw output stays unchanged with warnings on stderr,
+    errors do not undo executed work, and known operation IDs remain available for explicit
+    follow/show/cancel without changing current state. Confirm concrete versions are preferred
+    over service-controlled floating latest, without promising the newest unpinned ready version
+    or requiring a strict verification flag. Confirm --version still describes creating or
+    reusing a version-backed session.
   - >-
     Run azd ai agent invoke --version-override "" "hello" and then
     azd ai agent invoke --version-override "   " "hello". Each must exit non-zero with

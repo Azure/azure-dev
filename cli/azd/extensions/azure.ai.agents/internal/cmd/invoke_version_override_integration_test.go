@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -49,56 +48,51 @@ func TestInvokeVersionOverrideRemoteIntegration(t *testing.T) {
 	for _, protocol := range []string{"responses", "invocations"} {
 		for _, format := range []string{outputDefault, outputRaw} {
 			for _, tt := range []struct {
-				name       string
-				requested  string
-				resolved   string
-				fallback   string
-				status     int
-				fromFile   bool
-				legacyOnly bool
-				wantErr    string
+				name         string
+				requested    string
+				resolved     string
+				fallback     string
+				status       int
+				streaming    bool
+				fromFile     bool
+				legacyOnly   bool
+				debugLatency bool
+				wantErr      string
 			}{
-				{name: "matched", requested: "4", resolved: "4", status: http.StatusOK},
-				{name: "file input", requested: "4", resolved: "4", status: http.StatusOK, fromFile: true},
-				{name: "legacy state only", requested: "4", resolved: "4", status: http.StatusOK, legacyOnly: true},
-				{name: "latest", requested: "latest", resolved: "7", status: http.StatusOK},
-				{
-					name: "mismatch", requested: "4", resolved: "3", status: http.StatusOK,
-					wantErr: "does not match requested version",
-				},
-				{
-					name: "missing", requested: "4", status: http.StatusOK,
-					wantErr: "expected exactly one x-agent-version-resolved header",
-				},
-				{
-					name: "fallback", requested: "4", resolved: "4", fallback: "true", status: http.StatusOK,
-					wantErr: "the service reported a version fallback",
-				},
-				{
-					name: "multiple choices without evidence", requested: "4", status: http.StatusMultipleChoices,
-					wantErr: "unexpected HTTP status 300",
-				},
-				{
-					name: "final redirect without evidence", requested: "4", status: http.StatusFound,
-					wantErr: "unexpected HTTP status 302",
-				},
-				{
-					name: "final redirect with matching version", requested: "4", resolved: "4",
-					status: http.StatusTemporaryRedirect, wantErr: "unexpected HTTP status 307",
-				},
-				{
-					name: "permanent redirect with matching version", requested: "4", resolved: "4",
-					status: http.StatusPermanentRedirect, wantErr: "unexpected HTTP status 308",
-				},
-				{name: "bad request", requested: "4", status: http.StatusBadRequest},
-				{
-					name: "conflict", requested: "4", resolved: "3", fallback: "true", status: http.StatusConflict,
-				},
+				{name: "matched", resolved: "4"},
+				{name: "debug latency", resolved: "4", debugLatency: true},
+				{name: "file input", resolved: "4", fromFile: true},
+				{name: "legacy state only", resolved: "4", legacyOnly: true},
+				{name: "latest", requested: "latest", resolved: "7"},
+				{name: "mismatch", resolved: "3", wantErr: "does not match requested version"},
+				{name: "missing"},
+				{name: "missing SSE", streaming: true},
+				{name: "latest missing", requested: "latest"},
+				{name: "malformed", resolved: "4,3"},
+				{name: "unusable", resolved: "latest"},
+				{name: "invalid fallback", resolved: "4", fallback: "unknown"},
+				{name: "fallback", resolved: "4", fallback: "true", wantErr: "the service reported a version fallback"},
+				{name: "multiple choices", status: http.StatusMultipleChoices},
+				{name: "final redirect", status: http.StatusFound},
+				{name: "temporary redirect matched", resolved: "4", status: http.StatusTemporaryRedirect},
+				{name: "permanent redirect matched", resolved: "4", status: http.StatusPermanentRedirect},
+				{name: "bad request", status: http.StatusBadRequest},
+				{name: "conflict", resolved: "3", fallback: "true", status: http.StatusConflict},
 			} {
 				t.Run(protocol+"/"+format+"/"+tt.name, func(t *testing.T) {
+					if tt.status == 0 {
+						tt.status = http.StatusOK
+					}
+					if tt.requested == "" {
+						tt.requested = "4"
+					}
 					body := `{"result":"override-result"}`
+					contentType := "application/json"
 					if protocol == "responses" {
 						body = versionOverrideStream
+					} else if tt.streaming {
+						contentType = "text/event-stream"
+						body = "data: " + body + "\n\ndata: [DONE]\n\n"
 					}
 					if tt.status >= http.StatusBadRequest {
 						body = `{"error":{"code":"original_service_error","message":"candidate unavailable"}}`
@@ -106,6 +100,10 @@ func TestInvokeVersionOverrideRemoteIntegration(t *testing.T) {
 					flags := &invokeFlags{
 						message: versionOverrideSource, protocol: protocol,
 						outputFmt: format, versionOverride: tt.requested,
+						debugLatency: tt.debugLatency, userIdentityFlags: userIdentityFlags{userIdentity: "override-user"},
+						clientHeaders: []string{
+							"x-client-request-id: supplied-id", "x-client-tag: first", "x-client-tag: second",
+						},
 					}
 					if tt.fromFile {
 						flags.message = ""
@@ -113,8 +111,12 @@ func TestInvokeVersionOverrideRemoteIntegration(t *testing.T) {
 						require.NoError(t, os.WriteFile(flags.inputFile, []byte(versionOverrideSource), 0o600))
 					}
 					fixture := newVersionOverrideHTTPFixture(t, flags, versionOverrideHTTPReply{
-						status: tt.status, resolved: tt.resolved, fallback: tt.fallback, body: body,
+						status: tt.status, resolved: tt.resolved, fallback: tt.fallback,
+						body: body, contentType: contentType,
 					}, nil)
+					headers, err := parseCustomHeaders(flags.clientHeaders)
+					require.NoError(t, err)
+					fixture.action.clientHeaders = headers
 					if tt.legacyOnly {
 						for _, field := range []string{"sessions", "conversations"} {
 							fixture.config.setJSON(t, configPath(field), map[string]string{"agent": "legacy-" + field})
@@ -125,6 +127,17 @@ func TestInvokeVersionOverrideRemoteIntegration(t *testing.T) {
 
 					// All assertions, including recorded HTTP requests, run after stdout restoration.
 					fixture.assertIsolated(t, 0)
+					for _, request := range fixture.recordedRequests() {
+						if request.path == fixture.postPath {
+							assert.Equal(t, []string{"supplied-id"}, request.header.Values("x-client-request-id"))
+							assert.Equal(t, []string{"first", "second"}, request.header.Values("x-client-tag"))
+						}
+						if tt.debugLatency && request.path == fixture.postPath {
+							assert.Equal(t, []string{"true"}, request.header.Values("x-ms-debug-latency-enabled"))
+						} else {
+							assert.NotContains(t, request.header, http.CanonicalHeaderKey("x-ms-debug-latency-enabled"))
+						}
+					}
 					if tt.fromFile {
 						source, readErr := os.ReadFile(flags.inputFile)
 						require.NoError(t, readErr)
@@ -135,26 +148,39 @@ func TestInvokeVersionOverrideRemoteIntegration(t *testing.T) {
 						require.ErrorContains(t, err, fmt.Sprintf("HTTP %d: %d %s",
 							tt.status, tt.status, http.StatusText(tt.status)))
 						assert.Contains(t, err.Error(), "POST "+fixture.action.resolvedRemoteContext.projectEndpoint)
-						assert.NotContains(t, err.Error(), "could not be verified")
+						_, structured := errors.AsType[*azdext.LocalError](err)
+						assert.False(t, structured, "preserve the original HTTP error")
 						if format == outputDefault {
 							assert.Contains(t, err.Error(), body)
 						}
+					case tt.status >= http.StatusMultipleChoices:
+						require.ErrorContains(t, err, fmt.Sprintf("unexpected HTTP status %d", tt.status))
+						_, structured := errors.AsType[*azdext.LocalError](err)
+						assert.False(t, structured, "non-2xx is an HTTP failure, not a routing failure")
 					case tt.wantErr != "":
-						requireVersionOverrideVerificationFailure(t, err, tt.wantErr)
-						requireVersionOverrideNoRecovery(t, err)
-						if format == outputDefault {
-							assert.NotContains(t, output, "Invocation:")
-							assert.NotContains(t, output, "sess_override")
-						}
+						requireVersionOverrideRoutingFailure(t, err, tt.wantErr)
 					default:
 						require.NoError(t, err)
-						assert.Contains(t, output, "override-result")
-						if format == outputDefault {
-							assert.Contains(t, output, "Version override: "+tt.requested+"; resolved: "+tt.resolved)
-							assert.Contains(t, output, "Client elapsed:")
-						}
 					}
-					if err != nil {
+					if tt.status == http.StatusOK {
+						assert.Contains(t, output, "override-result", "normal handling continues even on a routing mismatch")
+						if format == outputDefault {
+							if protocol == "responses" {
+								assert.Contains(t, output, "Response:     resp_override")
+							} else {
+								assert.Contains(t, output, "Invocation:   inv_override")
+							}
+							resolved := tt.resolved
+							if resolved == "" || tt.name == "malformed" || tt.name == "unusable" {
+								resolved = "not reported"
+							}
+							assert.Contains(t, output, "Version override: "+tt.requested+"; resolved: "+resolved)
+							assert.Contains(t, output, "Client elapsed:")
+							if err != nil {
+								assert.NotContains(t, output, "Next:")
+							}
+						}
+					} else {
 						assert.NotContains(t, output, "Client elapsed:")
 						assert.NotContains(t, output, "Version override:")
 						if format == outputDefault {
@@ -162,11 +188,15 @@ func TestInvokeVersionOverrideRemoteIntegration(t *testing.T) {
 							assert.NotContains(t, output, "Response:")
 						}
 					}
+					assert.NotContains(t, output, "Warning:", "advisories belong on stderr, not in the reply")
 					if format == outputRaw {
 						assert.Contains(t, output,
 							fmt.Sprintf("HTTP/1.1 %d %s\r\n", tt.status, http.StatusText(tt.status)))
 						if tt.resolved != "" {
 							assert.Contains(t, output, "X-Agent-Version-Resolved: "+tt.resolved+"\r\n")
+						}
+						if protocol == "invocations" {
+							assert.Contains(t, output, "X-Agent-Invocation-Id: inv_override\r\n")
 						}
 						assert.True(t, strings.HasSuffix(output, "\r\n\r\n"+body), "raw body must remain verbatim")
 						assert.NotContains(t, output, "Version override:")
@@ -188,22 +218,29 @@ func TestInvokeVersionOverrideInvocationsPollingIntegration(t *testing.T) {
 
 	for _, format := range []string{outputDefault, outputRaw} {
 		for _, tt := range []struct {
-			name       string
-			resolved   string
-			fallback   string
-			body       string
-			omitHeader bool
-			wantID     string
-			wantErr    string
+			name        string
+			resolved    string
+			fallback    string
+			body        string
+			omitHeader  bool
+			wantID      string
+			wantErr     string
+			wantBodyErr string
 		}{
-			{name: "matched", resolved: "4"},
+			{name: "matched", resolved: "4", wantID: "inv_override"},
+			{name: "missing", wantID: "inv_override"},
+			{name: "malformed metadata", resolved: "4,3", fallback: "unknown", wantID: "inv_override"},
+			{
+				name: "missing metadata body-only identity", omitHeader: true, wantID: "inv_override",
+				body: `{"invocation_id":"inv_override","status":"accepted"}`,
+			},
+			{
+				name: "missing metadata malformed payload", omitHeader: true,
+				body: `{"invocation_id":`, wantBodyErr: "received 202 Accepted but no invocation ID found",
+			},
 			{
 				name: "mismatch", resolved: "3", wantID: "inv_override",
 				wantErr: "does not match requested version",
-			},
-			{
-				name: "missing", wantID: "inv_override",
-				wantErr: "expected exactly one x-agent-version-resolved header",
 			},
 			{
 				name: "fallback", resolved: "4", fallback: "true", wantID: "inv_override",
@@ -246,27 +283,17 @@ func TestInvokeVersionOverrideInvocationsPollingIntegration(t *testing.T) {
 				}, &versionOverrideHTTPReply{status: http.StatusOK, body: completed})
 				output, err := fixture.invoke(t)
 				wantPolls := 0
-				if tt.wantErr != "" {
-					localErr := requireVersionOverrideVerificationFailure(t, err, tt.wantErr)
-					if tt.wantID != "" {
-						requireVersionOverrideRecovery(t, err, "invocations", tt.wantID,
-							fixture.action.resolvedRemoteContext.projectEndpoint+fixture.postPath+"?api-version=v1", "")
-					} else {
-						requireVersionOverrideNoRecovery(t, err)
-						assert.Contains(t, localErr.Suggestion, "Could not recover the service-assigned ID:")
-						assert.NotContains(t, localErr.Suggestion, "do-not-copy-this-payload")
-					}
-					assert.NotContains(t, err.Error(), "inv_conflicting")
+				if tt.wantBodyErr != "" {
+					require.ErrorContains(t, err, tt.wantBodyErr)
+					_, structured := errors.AsType[*azdext.LocalError](err)
+					assert.False(t, structured)
+				} else if tt.wantErr != "" {
+					requireVersionOverrideRoutingFailure(t, err, tt.wantErr)
 					assert.NotContains(t, output, "Polling for result")
 					assert.NotContains(t, output, "override-result")
 					assert.NotContains(t, output, "Client elapsed:")
-					if format == outputDefault {
-						assert.NotContains(t, output, "Invocation:")
-						assert.NotContains(t, output, "inv_override")
-						assert.NotContains(t, output, "inv_body_only")
-						assert.NotContains(t, output, "inv_conflicting")
-					} else {
-						assert.True(t, strings.HasSuffix(output, "\r\n\r\n"+accepted), "restore the accepted body verbatim")
+					if format == outputRaw {
+						assert.True(t, strings.HasSuffix(output, "\r\n\r\n"+accepted), "preserve the accepted body verbatim")
 					}
 				} else {
 					require.NoError(t, err, "poll responses need not repeat version-resolution headers")
@@ -279,12 +306,26 @@ func TestInvokeVersionOverrideInvocationsPollingIntegration(t *testing.T) {
 						assert.Contains(t, output, "Invocation completed.")
 					}
 				}
+				if format == outputDefault {
+					if tt.wantID != "" {
+						assert.Contains(t, output, "Invocation:   "+tt.wantID, "the normal parser reports the ID")
+					} else {
+						assert.NotContains(t, output, "Invocation:")
+					}
+					assert.NotContains(t, output, "inv_conflicting")
+				}
 				fixture.assertIsolated(t, wantPolls)
+				assert.NotContains(t, output, "Warning:")
 				if format == outputRaw {
-					assert.Contains(t, output, "HTTP/1.1 202 Accepted\r\n")
-					assert.Contains(t, output, accepted)
+					if tt.wantBodyErr == "" {
+						assert.Contains(t, output, "HTTP/1.1 202 Accepted\r\n")
+						assert.Contains(t, output, accepted)
+					}
+					if !tt.omitHeader {
+						assert.Contains(t, output, "X-Agent-Invocation-Id: inv_override\r\n")
+					}
 					assert.NotContains(t, output, "Version override:")
-					assert.NotContains(t, output, "Unverified Invocation ID:")
+					assert.NotContains(t, output, "Invocation:")
 					assert.NotContains(t, output, "azd ai agent invocations")
 				}
 			})
@@ -303,14 +344,12 @@ func TestInvokeVersionOverrideBackgroundResponsesIntegration(t *testing.T) {
 			wantErr  string
 		}{
 			{name: "matched", resolved: "4", body: versionOverrideStream},
-			{name: "disconnected", resolved: "4", body: versionOverrideCreated},
+			{name: "missing", body: versionOverrideStream},
+			{name: "malformed", resolved: "4,3", fallback: "unknown", body: versionOverrideStream},
+			{name: "disconnected", body: versionOverrideCreated},
 			{
 				name: "mismatch", resolved: "3", body: versionOverrideStream,
 				wantErr: "does not match requested version",
-			},
-			{
-				name: "missing", body: versionOverrideStream,
-				wantErr: "expected exactly one x-agent-version-resolved header",
 			},
 			{
 				name: "fallback", resolved: "4", fallback: "true", body: versionOverrideStream,
@@ -329,19 +368,16 @@ func TestInvokeVersionOverrideBackgroundResponsesIntegration(t *testing.T) {
 				fixture.assertIsolated(t, 0)
 				const follow = `azd ai agent invocations follow --id "resp_override"` +
 					` --protocol responses --agent-name "agent-service"`
+				assert.Contains(t, output, "Response:     resp_override", "use the normal SSE identity tracker")
+				assert.NotContains(t, output, "Warning:")
 				switch {
 				case tt.wantErr != "":
-					requireVersionOverrideVerificationFailure(t, err, tt.wantErr)
-					requireVersionOverrideRecovery(t, err, "responses", "resp_override",
-						fixture.action.resolvedRemoteContext.projectEndpoint+fixture.postPath+"?api-version=v1", "")
-					assert.NotContains(t, output, "Response:")
-					assert.NotContains(t, output, "resp_override")
+					requireVersionOverrideRoutingFailure(t, err, tt.wantErr)
 					assert.NotContains(t, output, "override-result")
-					assert.NotContains(t, output, "Next:")
+					assert.Contains(t, output, "Next:\n  "+follow)
 					assert.NotContains(t, output, "Client elapsed:")
 				case noWait:
 					require.NoError(t, err)
-					assert.Contains(t, output, "Response:     resp_override")
 					assert.Contains(t, output, "Next:\n  "+follow)
 					assert.NotContains(t, output, "override-result", "stop before consuming output after the ID")
 				case tt.name == "disconnected":
@@ -349,7 +385,6 @@ func TestInvokeVersionOverrideBackgroundResponsesIntegration(t *testing.T) {
 					assert.Contains(t, err.Error(), follow)
 				default:
 					require.NoError(t, err)
-					assert.Contains(t, output, "Response:     resp_override")
 					assert.Contains(t, output, "override-result")
 				}
 				assert.NotContains(t, output, "--current")
@@ -361,210 +396,71 @@ func TestInvokeVersionOverrideBackgroundResponsesIntegration(t *testing.T) {
 	}
 }
 
-func TestInvokeVersionOverrideLiveBackgroundResponsesIntegration(t *testing.T) {
+func TestInvokeVersionOverridePayloadFailuresIntegration(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	for _, tt := range []struct {
-		name   string
-		format string
-		noWait bool
-		noID   bool
+		name        string
+		protocol    string
+		body        string
+		contentType string
+		wantErr     string
+		wantID      string
+		longRunning bool
 	}{
-		{name: "wait/default", format: outputDefault},
-		{name: "no-wait/default", format: outputDefault, noWait: true},
-		{name: "wait/raw", format: outputRaw},
-		{name: "no-wait/raw", format: outputRaw, noWait: true},
-		{name: "deadline/default", format: outputDefault, noID: true},
-		{name: "deadline/raw", format: outputRaw, noID: true},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			body := versionOverrideCreated
-			timeout := 2 * time.Second
-			if tt.noID {
-				body = ": waiting for identity\n\n"
-				timeout = 500 * time.Millisecond
-			}
-			disconnected := make(chan error, 1)
-			fixture := newVersionOverrideHTTPFixture(t, &invokeFlags{
-				message: versionOverrideSource, protocol: "responses", versionOverride: "4", outputFmt: tt.format,
-				longRunning: true, noWait: tt.noWait,
-			}, versionOverrideHTTPReply{
-				status: http.StatusOK, resolved: "3", body: body,
-				afterBody: func(w http.ResponseWriter, r *http.Request) {
-					if err := http.NewResponseController(w).Flush(); err != nil {
-						disconnected <- err
-						return
-					}
-					// Never send output or completion. Only client cancellation releases the handler.
-					<-r.Context().Done()
-					disconnected <- nil
-				},
-			}, nil)
-			ctx, cancel := context.WithTimeout(t.Context(), timeout)
-			defer cancel()
-			output, err := fixture.invokeContext(t, ctx)
-
-			localErr := requireVersionOverrideVerificationFailure(t, err, "does not match requested version")
-			fixture.assertIsolated(t, 0)
-			if tt.noID {
-				requireVersionOverrideNoRecovery(t, err)
-				assert.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
-				assert.Contains(t, localErr.Suggestion, "ID recovery interrupted: context deadline exceeded")
-				assert.NotErrorIs(t, err, context.DeadlineExceeded, "preserve the verification error, not the read error")
-			} else {
-				assert.NoError(t, ctx.Err(), "return on response.created, without waiting for completion or a deadline")
-				requireVersionOverrideRecovery(t, err, "responses", "resp_override",
-					fixture.action.resolvedRemoteContext.projectEndpoint+fixture.postPath+"?api-version=v1", "")
-			}
-			// Do not cancel ctx here: the recovery reader itself must have closed the live response.
-			disconnectTimer := time.NewTimer(time.Second)
-			defer disconnectTimer.Stop()
-			select {
-			case flushErr := <-disconnected:
-				assert.NoError(t, flushErr)
-			case <-disconnectTimer.C:
-				t.Error("the client did not disconnect after recovering or timing out on the ID")
-			}
-			assert.NotContains(t, output, "override-result")
-			assert.NotContains(t, output, "Response:")
-			assert.NotContains(t, output, "Unverified Response ID:")
-			assert.NotContains(t, output, "azd ai agent invocations")
-			assert.NotContains(t, output, "Version override:")
-			assert.NotContains(t, output, "Client elapsed:")
-			if tt.format == outputRaw {
-				assert.True(t, strings.HasPrefix(output, "HTTP/1.1 200 OK\r\n"))
-				assert.True(t, strings.HasSuffix(output, "\r\n\r\n"+body), "raw diagnostics restore only captured bytes")
-			} else {
-				assert.NotContains(t, output, "resp_override")
-				assert.NotContains(t, output, "Next:")
-			}
-		})
-	}
-}
-
-func TestInvokeVersionOverrideRecoveryReadFailuresIntegration(t *testing.T) {
-	t.Setenv("NO_COLOR", "1")
-	const discardedOutput = "event: response.output_text.delta\ndata: " +
-		`{"delta":"do-not-render-unverified-output"}` + "\n\n"
-	for _, tt := range []struct {
-		name       string
-		protocol   string
-		body       string
-		wantID     string
-		wantReason string
-	}{
-		{name: "output before identity", protocol: "responses", body: discardedOutput + versionOverrideCreated,
-			wantID: "resp_override"},
-		{name: "missing identity", protocol: "responses", body: discardedOutput,
-			wantReason: "the response did not contain a service-assigned ID"},
-		{name: "malformed SSE", protocol: "responses",
-			body:       "event: response.created\ndata: do-not-copy-this-payload\n\n",
-			wantReason: "could not read the background response identity"},
-		{name: "Responses byte limit", protocol: "responses",
-			body:       strings.Repeat(": heartbeat\n\n", 100000) + versionOverrideCreated,
-			wantReason: "ID recovery exceeded 1048576 bytes"},
-		{name: "Invocations byte limit", protocol: "invocations",
-			body:       strings.Repeat(" ", 1024*1024+1) + `{"invocation_id":"inv_too_late"}`,
-			wantReason: "ID recovery exceeded 1048576 bytes"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			status := http.StatusOK
-			if tt.protocol == "invocations" {
-				status = http.StatusAccepted
-			}
-			fixture := newVersionOverrideHTTPFixture(t, &invokeFlags{
-				message: versionOverrideSource, protocol: tt.protocol, versionOverride: "4", outputFmt: outputDefault,
-				longRunning: tt.protocol == "responses",
-			}, versionOverrideHTTPReply{
-				status: status, resolved: "3", body: tt.body, omitInvocationIDHeader: true,
-			}, nil)
-			output, err := fixture.invoke(t)
-
-			localErr := requireVersionOverrideVerificationFailure(t, err, "does not match requested version")
-			fixture.assertIsolated(t, 0)
-			if tt.wantID != "" {
-				requireVersionOverrideRecovery(t, err, tt.protocol, tt.wantID,
-					fixture.action.resolvedRemoteContext.projectEndpoint+fixture.postPath+"?api-version=v1", "")
-			} else {
-				requireVersionOverrideNoRecovery(t, err)
-				assert.Contains(t, localErr.Suggestion, "Could not recover the service-assigned ID: "+tt.wantReason)
-			}
-			assert.NotContains(t, localErr.Suggestion, "do-not-copy-this-payload")
-			assert.NotContains(t, output, "do-not-render-unverified-output")
-			assert.NotContains(t, output, "do-not-copy-this-payload")
-			assert.NotContains(t, output, "resp_override")
-			assert.NotContains(t, output, "inv_too_late")
-			assert.NotContains(t, output, "Response:")
-			assert.NotContains(t, output, "Invocation:")
-			assert.NotContains(t, output, "Client elapsed:")
-		})
-	}
-}
-
-func TestInvokeVersionOverrideRawInvocationRecoveryKeepsHeaderOnDeadline(t *testing.T) {
-	const body = `{"status":"accepted"}`
-	fixture := newVersionOverrideHTTPFixture(t, &invokeFlags{
-		message: versionOverrideSource, protocol: "invocations", versionOverride: "4", outputFmt: outputRaw,
-	}, versionOverrideHTTPReply{
-		status: http.StatusAccepted, resolved: "3", body: body,
-		afterBody: func(w http.ResponseWriter, r *http.Request) {
-			_ = http.NewResponseController(w).Flush()
-			<-r.Context().Done()
+		{
+			name: "Responses agent error", protocol: "responses", wantID: "resp_override",
+			body: versionOverrideCreated + "event: error\ndata: " +
+				`{"code":"agent_failure","message":"candidate failed"}` + "\n\n",
+			wantErr: "agent error (agent_failure): candidate failed",
 		},
-	}, nil)
-	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
-	defer cancel()
-	output, err := fixture.invokeContext(t, ctx)
-	localErr := requireVersionOverrideVerificationFailure(t, err, "does not match requested version")
-	requireVersionOverrideRecovery(t, err, "invocations", "inv_override",
-		fixture.action.resolvedRemoteContext.projectEndpoint+fixture.postPath+"?api-version=v1", "")
-	assert.Contains(t, localErr.Suggestion, "Raw response capture is incomplete:")
-	assert.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
-	assert.NotErrorIs(t, err, context.DeadlineExceeded)
-	assert.True(t, strings.HasSuffix(output, "\r\n\r\n"+body))
-	assert.NotContains(t, output, "azd ai agent invocations")
-	fixture.assertIsolated(t, 0)
-}
-
-func TestInvokeVersionOverrideUnsuccessfulStatusDoesNotRecoverIntegration(t *testing.T) {
-	for _, protocol := range []agent_api.AgentProtocol{
-		agent_api.AgentProtocolResponses, agent_api.AgentProtocolInvocations,
+		{
+			name: "Responses malformed event after ID", protocol: "responses", wantID: "resp_override",
+			body:    versionOverrideCreated + "event: response.output_text.delta\ndata: invalid-json\n\n",
+			wantErr: "decode Responses SSE event",
+		},
+		{
+			name: "background malformed event", protocol: "responses", longRunning: true,
+			body: "event: response.created\ndata: invalid-json\n\n", wantErr: "decode Responses SSE event",
+		},
+		{
+			name: "Invocations agent error", protocol: "invocations", wantID: "inv_override",
+			body:    `{"error":{"code":"agent_failure","message":"candidate failed"}}`,
+			wantErr: "agent error (agent_failure): candidate failed",
+		},
+		{
+			name: "Invocations SSE error", protocol: "invocations", wantID: "inv_override", contentType: "text/event-stream",
+			body:    "data: " + `{"error":{"code":"agent_failure","message":"candidate failed"}}` + "\n\n",
+			wantErr: "agent error (agent_failure): candidate failed",
+		},
 	} {
-		for _, status := range []int{http.StatusBadRequest, http.StatusConflict, http.StatusTemporaryRedirect} {
-			for _, format := range []string{outputDefault, outputRaw} {
-				t.Run(fmt.Sprintf("%s/%d/%s", protocol, status, format), func(t *testing.T) {
-					payload := versionOverrideStream
-					if protocol == agent_api.AgentProtocolInvocations {
-						payload = `{"invocation_id":"inv_not_accepted"}`
-					}
-					reader := strings.NewReader(payload)
-					body := &trackingReadCloser{Reader: reader}
-					resp := &http.Response{StatusCode: status, Header: make(http.Header), Body: body}
-					resp.Header.Set("x-agent-invocation-id", "inv_not_accepted")
-					action := &InvokeAction{flags: &invokeFlags{
-						versionOverride: "4", longRunning: true, outputFmt: format,
-					}}
-					var output bytes.Buffer
-					// A real target context and longRunning=true enable recovery if the status guard regresses.
-					err := action.verifyVersionOverrideResponse(t.Context(), resp, &remoteContext{
-						name: "selected-agent", projectEndpoint: "http://127.0.0.1:1/project", apiVersion: "v1",
-					}, protocol, &output)
+		for _, resolved := range []string{"", "3"} {
+			t.Run(tt.name+"/resolved="+resolved, func(t *testing.T) {
+				fixture := newVersionOverrideHTTPFixture(t, &invokeFlags{
+					message: versionOverrideSource, protocol: tt.protocol, versionOverride: "4",
+					outputFmt: outputDefault, longRunning: tt.longRunning,
+				}, versionOverrideHTTPReply{
+					status: http.StatusOK, resolved: resolved, body: tt.body, contentType: tt.contentType,
+				}, nil)
+				output, err := fixture.invoke(t)
 
-					if status >= http.StatusBadRequest {
-						require.NoError(t, err, "leave HTTP failures to the original response handler")
-					} else {
-						requireVersionOverrideVerificationFailure(t, err, "unexpected HTTP status 307")
-						requireVersionOverrideNoRecovery(t, err)
+				require.ErrorContains(t, err, tt.wantErr, "HTTP 200 and missing metadata must not mask protocol failures")
+				if resolved == "" {
+					_, structured := errors.AsType[*azdext.LocalError](err)
+					assert.False(t, structured, "missing metadata adds no routing failure")
+				} else {
+					requireVersionOverrideRoutingFailure(t, err, "does not match requested version")
+				}
+				if tt.wantID != "" {
+					label := "Invocation:   "
+					if tt.protocol == "responses" {
+						label = "Response:     "
 					}
-					assert.Same(t, body, resp.Body, "recovery must not replace the response body")
-					assert.False(t, body.closed, "recovery must not close the response body")
-					if status < http.StatusBadRequest && format == outputRaw {
-						assert.True(t, strings.HasSuffix(output.String(), "\r\n\r\n"+payload))
-					} else {
-						assert.Equal(t, len(payload), reader.Len(), "no recovery reads, even in raw mode for HTTP errors")
-						assert.Empty(t, output.String())
-					}
-				})
-			}
+					assert.Contains(t, output, label+tt.wantID)
+				}
+				assert.NotContains(t, output, "Client elapsed:")
+				assert.NotContains(t, output, "Next:")
+				fixture.assertIsolated(t, 0)
+			})
 		}
 	}
 }
@@ -633,52 +529,6 @@ func TestInvokeVersionOverrideResolvedA2ARouteIntegration(t *testing.T) {
 	assert.Equal(t, fixture.before, versionOverrideConfigSnapshot(fixture.config))
 }
 
-func TestInvokeVersionOverrideHeadersIntegration(t *testing.T) {
-	t.Setenv("NO_COLOR", "1")
-	for _, protocol := range []string{"responses", "invocations"} {
-		for _, enabled := range []bool{false, true} {
-			for _, format := range []string{outputDefault, outputRaw} {
-				t.Run(fmt.Sprintf("%s/%s/debug-latency=%t", protocol, format, enabled), func(t *testing.T) {
-					flags := &invokeFlags{
-						message: versionOverrideSource, protocol: protocol, versionOverride: "4", outputFmt: format,
-						debugLatency: enabled, userIdentityFlags: userIdentityFlags{userIdentity: "override-user"},
-						clientHeaders: []string{
-							"x-client-request-id: supplied-id", "x-client-tag: first", "x-client-tag: second",
-						},
-					}
-					body := `{"result":"override-result"}`
-					if protocol == "responses" {
-						body = versionOverrideStream
-					}
-					fixture := newVersionOverrideHTTPFixture(t, flags, versionOverrideHTTPReply{
-						status: http.StatusOK, resolved: "4", body: body,
-					}, nil)
-					headers, err := parseCustomHeaders(flags.clientHeaders)
-					require.NoError(t, err)
-					fixture.action.clientHeaders = headers
-					output, err := fixture.invoke(t)
-
-					require.NoError(t, err)
-					assert.Contains(t, output, "override-result")
-					fixture.assertIsolated(t, 0)
-					for _, request := range fixture.recordedRequests() {
-						assert.Equal(t, []string{"override-user"}, request.header.Values("x-ms-user-identity"))
-						if request.path == fixture.postPath {
-							assert.Equal(t, []string{"supplied-id"}, request.header.Values("x-client-request-id"))
-							assert.Equal(t, []string{"first", "second"}, request.header.Values("x-client-tag"))
-						}
-						if enabled && request.path == fixture.postPath {
-							assert.Equal(t, []string{"true"}, request.header.Values("x-ms-debug-latency-enabled"))
-						} else {
-							assert.NotContains(t, request.header, http.CanonicalHeaderKey("x-ms-debug-latency-enabled"))
-						}
-					}
-				})
-			}
-		}
-	}
-}
-
 func TestInvokeVersionOverrideConversationFailureIntegration(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	for _, format := range []string{outputDefault, outputRaw} {
@@ -694,7 +544,7 @@ func TestInvokeVersionOverrideConversationFailureIntegration(t *testing.T) {
 
 			require.ErrorContains(t, err, "HTTP 503: 503 Service Unavailable")
 			assert.Contains(t, err.Error(), failure)
-			assert.NotContains(t, err.Error(), "could not be verified")
+			assert.NotContains(t, err.Error(), "was not honored")
 			assert.Empty(t, output)
 			requests := fixture.recordedRequests()
 			require.Len(t, requests, 1, "conversation failure must prevent the invocation POST")
@@ -737,8 +587,7 @@ func TestInvokeVersionOverrideExplicitEndpointIntegration(t *testing.T) {
 					flags.userIdentity = "override-user"
 					apiVersion = "2026-09-17-preview"
 					if protocol == "responses" {
-						flags.longRunning = true
-						reply.body = versionOverrideCreated
+						flags.longRunning = tt.format != outputRaw
 					} else {
 						reply.status = http.StatusAccepted
 						reply.body = `{"invocation_id":"inv_override","status":"accepted"}`
@@ -773,22 +622,28 @@ func TestInvokeVersionOverrideExplicitEndpointIntegration(t *testing.T) {
 				assert.Nil(t, action.resolvedRemoteContext)
 				fixture.assertIsolated(t, 0)
 				if tt.mismatch {
-					requireVersionOverrideVerificationFailure(t, err, "does not match requested version")
-					id := "inv_override"
-					if protocol == "responses" {
-						id = "resp_override"
-					}
-					requireVersionOverrideRecovery(t, err, protocol, id,
-						parsed.ProjectEndpoint+fixture.postPath+"?api-version="+apiVersion, flags.userIdentity)
-					assert.NotContains(t, err.Error(), "wrong-default-project")
-					assert.NotContains(t, output, "Unverified ")
-					assert.NotContains(t, output, "azd ai agent invocations")
+					requireVersionOverrideRoutingFailure(t, err, "does not match requested version")
+					assert.NotContains(t, output, "wrong-default-project")
 					assert.NotContains(t, output, "Client elapsed:")
-					assert.NotContains(t, output, "Version override:")
 					if tt.format == outputRaw {
 						assert.True(t, strings.HasSuffix(output, "\r\n\r\n"+reply.body))
+						if protocol == "invocations" {
+							assert.Contains(t, output, "X-Agent-Invocation-Id: inv_override\r\n")
+						}
+						assert.NotContains(t, output, "Version override:")
+						assert.NotContains(t, output, "azd ai agent invocations")
 					} else {
-						assert.NotContains(t, output, id)
+						if protocol == "responses" {
+							assert.Contains(t, output, "Response:     resp_override")
+							assert.Contains(t, output, "Next:\n  "+fmt.Sprintf(
+								`azd ai agent invocations follow --id "resp_override" --agent-endpoint %q`,
+								parsed.ProjectEndpoint+fixture.postPath+"?api-version="+apiVersion))
+						} else {
+							assert.Contains(t, output, "Invocation:   inv_override")
+							assert.NotContains(t, output, "Next:")
+						}
+						assert.Contains(t, output, "Version override: 4; resolved: 3")
+						assert.NotContains(t, output, "override-result")
 					}
 				} else {
 					require.NoError(t, err)
@@ -934,19 +789,19 @@ func TestInvokeVersionOverrideServiceSelectionIntegration(t *testing.T) {
 					// protocol, override header, fresh state, and absence of OpenAPI/cache writes.
 					fixture.assertIsolated(t, 0)
 					if tt.mismatch {
-						localErr := requireVersionOverrideVerificationFailure(t, err, "does not match requested version")
-						id := "inv_override"
+						requireVersionOverrideRoutingFailure(t, err, "does not match requested version")
 						if protocol == "responses" {
-							id = "resp_override"
+							assert.Contains(t, output, "Response:     resp_override")
+							assert.Contains(t, output, "Next:\n  "+
+								`azd ai agent invocations follow --id "resp_override"`+
+								` --protocol responses --agent-name "z-hosted"`)
+						} else {
+							assert.Contains(t, output, "Invocation:   inv_override")
+							assert.NotContains(t, output, "Next:")
 						}
-						requireVersionOverrideRecovery(t, err, protocol, id, endpoint, flags.userIdentity)
-						assert.NotContains(t, localErr.Suggestion, otherProject)
-						assert.NotContains(t, localErr.Suggestion, "unexpected-project")
-						assert.NotContains(t, localErr.Suggestion, "z-hosted")
-						assert.NotContains(t, output, id)
+						assert.NotContains(t, output, otherProject)
+						assert.NotContains(t, output, "unexpected-project")
 						assert.NotContains(t, output, "override-result")
-						assert.NotContains(t, output, "Response:")
-						assert.NotContains(t, output, "Invocation:")
 					} else {
 						require.NoError(t, err)
 						assert.Contains(t, output, "override-result")
@@ -994,10 +849,10 @@ type versionOverrideHTTPReply struct {
 	resolved               string
 	fallback               string
 	body                   string
+	contentType            string
 	conversationStatus     int
 	conversationBody       string
 	omitInvocationIDHeader bool
-	afterBody              func(http.ResponseWriter, *http.Request)
 }
 
 type versionOverrideHTTPRequest struct {
@@ -1063,6 +918,8 @@ func newVersionOverrideHTTPFixture(
 		w.Header().Set("Content-Type", "application/json")
 		if flags.protocol == "responses" && reply.status < http.StatusBadRequest {
 			w.Header().Set("Content-Type", "text/event-stream")
+		} else if reply.contentType != "" {
+			w.Header().Set("Content-Type", reply.contentType)
 		}
 		if reply.resolved != "" {
 			w.Header().Set("x-agent-version-resolved", reply.resolved)
@@ -1073,9 +930,6 @@ func newVersionOverrideHTTPFixture(
 		}
 		w.WriteHeader(reply.status)
 		_, _ = io.WriteString(w, reply.body)
-		if reply.afterBody != nil {
-			reply.afterBody(w, r)
-		}
 	}))
 	t.Cleanup(server.Close)
 	agentKey := buildAgentKey(server.URL, "agent", "", false)
@@ -1103,16 +957,11 @@ func newVersionOverrideHTTPFixture(
 
 func (f *versionOverrideHTTPFixture) invoke(t *testing.T) (string, error) {
 	t.Helper()
-	return f.invokeContext(t, t.Context())
-}
-
-func (f *versionOverrideHTTPFixture) invokeContext(t *testing.T, ctx context.Context) (string, error) {
-	t.Helper()
 	return captureStdout(t, func() error {
 		if f.action.flags.protocol == "responses" {
-			return f.action.responsesRemote(ctx)
+			return f.action.responsesRemote(t.Context())
 		}
-		return f.action.invocationsRemote(ctx)
+		return f.action.invocationsRemote(t.Context())
 	})
 }
 
@@ -1177,60 +1026,16 @@ func versionOverrideConfigSnapshot(config *versionOverrideUserConfigServer) map[
 	return maps.Clone(config.values)
 }
 
-func requireVersionOverrideVerificationFailure(t *testing.T, err error, reason string) *azdext.LocalError {
+func requireVersionOverrideRoutingFailure(t *testing.T, err error, reason string) {
 	t.Helper()
 	require.ErrorContains(t, err, reason)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok, "the action must return a structured failure, including in raw mode: %v", err)
-	assert.Equal(t, exterrors.CodeAgentVersionVerificationFailed, localErr.Code)
+	assert.Equal(t, exterrors.CodeAgentVersionRoutingFailed, localErr.Code)
 	assert.Equal(t, azdext.LocalErrorCategoryCompatibility, localErr.Category)
-	assert.Contains(t, localErr.Message, "could not be verified:")
+	assert.Contains(t, localErr.Message, "was not honored:")
 	assert.Contains(t, localErr.Message, reason)
 	assert.Contains(t, localErr.Suggestion, "may already have executed")
-	return localErr
-}
-
-func requireVersionOverrideRecovery(t *testing.T, err error, protocol, id, endpoint, userIdentity string) {
-	t.Helper()
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok, "recovery must be part of the original structured error: %v", err)
-	label, operation := "Invocation", "show"
-	if protocol == "responses" {
-		label, operation = "Response", "follow"
-	}
-	assert.Contains(t, localErr.Message, "could not be verified:")
-	assert.Contains(t, localErr.Message, "\nUnverified "+label+" ID: "+id)
-	assert.NotContains(t, localErr.Suggestion, "Could not recover")
-	assert.Contains(t, localErr.Suggestion, "current selection is unchanged")
-	var wantCommands []string
-	for _, op := range []string{operation, "cancel"} {
-		command := fmt.Sprintf("azd ai agent invocations %s --id %q --agent-endpoint %q", op, id, endpoint)
-		if userIdentity != "" {
-			command += fmt.Sprintf(" --user-identity %q", userIdentity)
-		}
-		wantCommands = append(wantCommands, command)
-	}
-	var gotCommands []string
-	for line := range strings.SplitSeq(localErr.Suggestion, "\n") {
-		if command := strings.TrimSpace(line); strings.HasPrefix(command, "azd ai agent invocations ") {
-			gotCommands = append(gotCommands, command)
-		}
-	}
-	assert.Equal(t, wantCommands, gotCommands, "recovery must bind to the exact resolved endpoint and API version")
-	assert.NotContains(t, localErr.Suggestion, "--current")
-	assert.NotContains(t, localErr.Suggestion, "--version-override")
-}
-
-func requireVersionOverrideNoRecovery(t *testing.T, err error) {
-	t.Helper()
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok, "expected the original verification failure: %v", err)
-	assert.NotContains(t, localErr.Message, "Unverified Response ID:")
-	assert.NotContains(t, localErr.Message, "Unverified Invocation ID:")
-	assert.NotContains(t, localErr.Suggestion, "azd ai agent invocations")
-	assert.NotContains(t, localErr.Suggestion, "--id")
-	assert.NotContains(t, localErr.Suggestion, "--current")
-	assert.NotContains(t, localErr.Suggestion, "--version-override")
 }
 
 func requireVersionOverrideRouteConflict(t *testing.T, err error) {

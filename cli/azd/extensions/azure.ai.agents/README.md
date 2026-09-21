@@ -143,8 +143,9 @@ dependencies automatically.
 
 Use `azd ai agent invoke --version-override` to route a test request through the
 `x-agent-version-override` header with isolated session and conversation state.
-The command verifies that the service resolved the requested version without
-fallback, rather than creating or reusing a version-backed session as `--version` does.
+Inspect the agent's actual response and candidate feature behavior before
+increasing traffic. A successful invoke is not proof that the requested version
+ran; version metadata is optional, and there is no strict verification flag or gate.
 
 After deploying with `azd deploy`, run `azd ai agent show` to obtain the actual
 deployed version. Replace `3` below with that version:
@@ -163,36 +164,43 @@ azd ai agent invoke --protocol responses --version-override 3 "Reply with a shor
 - The flag conflicts with `--version`, `--session-id`, `--conversation-id`,
   explicit `--new-session=false`, and explicit `--new-conversation=false`.
 - Prefer an exact version for repeatable code-release checks. `latest` is a
-  floating selection and must resolve to a concrete version, not `latest`.
+  service-controlled floating target, not a promise to select the newest
+  unpinned ready version.
 
 The initial invocation POST sends `x-agent-version-override`. Its successful
-response must contain one valid, concrete `x-agent-version-resolved` value,
-matching an exact requested version. Missing, invalid, or mismatched resolution
-evidence, or `x-agent-version-fallback: true`, makes the command fail. An absent
-fallback header is normal; `false` is also accepted. Friendly output reports
-the requested and resolved versions, plus optional `x-agent-version-resolution`
-when supplied. `--output raw` preserves the HTTP response and still returns an
-error if verification fails.
+response can include `x-agent-version-resolved`, `x-agent-version-fallback`, and
+`x-agent-version-resolution` metadata:
+
+| Service result | CLI behavior |
+| --- | --- |
+| A valid concrete resolved version matches the explicit request (or the request is `latest`), with no explicit fallback. | Report the metadata and continue normal invocation handling. |
+| Version information is missing, invalid, or ambiguous, with no known routing failure. | Warn on stderr and continue; this does not fail an otherwise successful invoke. |
+| The service explicitly reports `x-agent-version-fallback: true`, or a valid concrete resolved version differs from the explicit requested version. | Return an error, even if the agent replies successfully. |
+| HTTP or agent execution fails. | Return the error; metadata warnings do not suppress it. |
+
+An absent fallback or resolution header alone is normal; `fallback: false` is
+also accepted. Friendly output reports the requested version and the usable
+resolved version, or `not reported`, plus a usable optional resolution value.
+`--output raw` leaves the HTTP response on stdout unchanged; metadata warnings
+go to stderr, not into the raw response. A nonexistent version can still execute
+a fallback without service-reported evidence. Neither a successful exit nor
+missing metadata establishes which version actually ran.
 
 Lifecycle GETs neither send the override nor require these verification headers.
-For background Responses, follow the returned ID explicitly with
+Normal protocol handling displays operation IDs without saving them as current
+selections. Missing version headers do not change the normal `--no-wait` or
+polling lifecycle. For background Responses, follow the returned ID explicitly with
 `azd ai agent invocations follow --protocol responses --id <id>`; the override
 does not select a new current ID. [Latency diagnostics](#invoke-latency-diagnostics)
 are unchanged.
 
-Use read-only test prompts. A strict verification failure does **not** undo work
-the agent has already executed; do not automatically retry side-effecting tests.
-If a background Responses request or a `202 Accepted` Invocation fails version
-verification, azd attempts to recover its service-assigned ID and includes
-explicit-ID recovery commands in the error details. Responses support follow
-and cancel; Invocations support show and cancel. No recovery command runs
-automatically, and the saved current selection remains unchanged.
-
-ID recovery reads at most 1 MiB for up to five seconds (or until the request is
-canceled), stopping when a Response ID is found. If no valid ID can be recovered,
-the error says so rather than inventing one. Raw diagnostics retain the captured
-response bytes; incomplete capture is reported. The original version verification
-error is still returned even when recovery succeeds.
+Use read-only test prompts. An error does **not** undo work the agent has already
+executed; do not automatically retry side-effecting tests. On a known routing
+error, the normal tracker displays the Response ID and follow guidance for
+long-running Responses. Accepted `202` Invocations display their Invocation ID,
+or the raw response with `--output raw`, before returning the error. Neither path
+automatically polls on a known routing error. You can follow, show, or cancel
+operations by explicit ID; the override does not change saved selections.
 
 ## Invoke latency diagnostics
 

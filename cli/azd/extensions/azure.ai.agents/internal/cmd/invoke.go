@@ -127,19 +127,19 @@ Use --version to invoke a specific deployed agent version. When provided,
 azd creates or reuses a hosted agent session backed by that version.
 
 Use --version-override to route a test request through the x-agent-version-override
-header and verify the service resolved the requested version without fallback.
+header for manual testing of a candidate version.
 Each call uses a fresh, isolated session and, for Responses, a new conversation.
 Session/conversation and operation IDs are not saved as the current selection.
 It cannot be combined with --version, --session-id, or --conversation-id.
 Only remote hosted responses and invocations are supported.
-The command fails if the service falls back to another version or cannot confirm
-the requested version. A failed check does not undo work already executed by the
-agent. Use a concrete version for release checks; latest is a floating selection
-whose actual resolved version is reported. No override is sent unless requested.
-If an accepted background request fails verification, error details include its
-service-assigned ID and explicit recovery commands when the ID can be recovered.
-Recovery does not change the current selection, follow the work, or cancel it.
-Reading the ID is bounded; the original verification error is still returned.
+Version headers are optional: missing or unusable version information produces
+a warning, not a failure. Inspect the agent's response to confirm the candidate's
+behavior before increasing traffic. An explicit service-reported fallback or a
+different concrete version still returns an error, as do HTTP and agent errors.
+An error does not undo work already executed. Known background operation IDs
+remain available for explicit follow/show/cancel without changing current state.
+Prefer a concrete version; latest follows the service's floating routing behavior.
+No override is sent unless requested. Raw output stays unchanged; warnings go to stderr.
 
 For agents configured with header-based isolation, pass --user-identity
 on each invoke. Locally it is sent as the x-agent-user-id header; for
@@ -213,7 +213,7 @@ This option does not provide crash recovery or automatic reconnection.`,
   # Invoke a specific deployed agent version
   azd ai agent invoke --version 3 "Hello!"
 
-  # Test and verify a candidate version using an isolated invocation
+	# Test a candidate version using an isolated invocation
   azd ai agent invoke --version-override 4 "Reply with a short health confirmation."
 
   # Dump the raw server response (status line, headers, body) for debugging
@@ -421,7 +421,7 @@ This option does not provide crash recovery or automatic reconnection.`,
 		&flags.versionOverride,
 		"version-override",
 		"",
-		"Test a hosted version (or latest) with a fresh session; fail on fallback or unverified version resolution",
+		"Test a hosted version (or latest) with an isolated invocation; version headers are optional",
 	)
 	cmd.Flags().BoolVar(
 		&flags.longRunning,
@@ -1570,7 +1570,7 @@ func ephemeralAuthError(ephemeral bool, err error) error {
 	)
 }
 
-func (a *InvokeAction) responsesRemote(ctx context.Context) error {
+func (a *InvokeAction) responsesRemote(ctx context.Context) (returnErr error) {
 	body, bodyLabel, err := a.resolveBody()
 	if err != nil {
 		return err
@@ -1693,9 +1693,16 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
-	if err := a.verifyVersionOverrideResponse(ctx, resp, rc, agent_api.AgentProtocolResponses, os.Stdout); err != nil {
-		return err
+	routingErr := a.reportVersionOverrideResponse(resp, os.Stdout, os.Stderr)
+	if routingErr != nil && (resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices) {
+		if raw {
+			return errors.Join(routingErr, writeRawResponse(os.Stdout, resp))
+		}
+		return routingErr
 	}
+	defer func() {
+		returnErr = errors.Join(routingErr, returnErr)
+	}()
 
 	// Always capture session state from response headers (needed even in raw mode
 	// so subsequent invokes can reuse the session). Headers are read, not consumed.
@@ -1747,7 +1754,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 				if a.flags.noWait && tracker.saveErr != nil {
 					return tracker.saveErr
 				}
-				if a.flags.noWait {
+				if a.flags.noWait || (routingErr != nil && a.flags.longRunning) {
 					return errBackgroundNoWait
 				}
 				return nil
@@ -1756,11 +1763,11 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	)
 	useCurrent := errors.Is(streamErr, errBackgroundNoWait) && responseStore != nil && tracker.saveErr == nil
 	followCommand := a.responseLifecycleCommand(rc, tracker.responseID, invocationFollow, useCurrent)
-	if a.flags.noWait && tracker.responseID != "" {
+	if (a.flags.noWait || (routingErr != nil && a.flags.longRunning)) && tracker.responseID != "" {
 		if errors.Is(streamErr, errBackgroundNoWait) {
 			streamErr = nil
 		}
-		if streamErr == nil {
+		if streamErr == nil && routingErr == nil {
 			if err := latency.writeTo(os.Stdout); err != nil {
 				return err
 			}
@@ -1780,7 +1787,9 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 	if err := latency.writeTo(os.Stdout); err != nil {
 		return err
 	}
-	a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
+	if routingErr == nil {
+		a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
+	}
 	return nil
 }
 
@@ -1899,7 +1908,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 
 // invocationsRemote sends the user's message to Foundry using
 // the invocations protocol (POST /agents/{name}/endpoint/protocols/invocations).
-func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
+func (a *InvokeAction) invocationsRemote(ctx context.Context) (returnErr error) {
 	body, bodyLabel, err := a.resolveBody()
 	if err != nil {
 		return err
@@ -1985,11 +1994,18 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
-	if err := a.verifyVersionOverrideResponse(ctx, resp, rc, agent_api.AgentProtocolInvocations, os.Stdout); err != nil {
-		return err
+	routingErr := a.reportVersionOverrideResponse(resp, os.Stdout, os.Stderr)
+	if routingErr != nil && (resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices) {
+		if raw {
+			return errors.Join(routingErr, writeRawResponse(os.Stdout, resp))
+		}
+		return routingErr
 	}
 
 	invocationID, err := invocationIDFromResponse(resp)
+	defer func() {
+		returnErr = errors.Join(routingErr, returnErr)
+	}()
 	if err != nil {
 		return err
 	}
@@ -2004,6 +2020,12 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 	}
 	if !raw && invocationID != "" {
 		fmt.Printf("Invocation:   %s\n", invocationID)
+	}
+	if routingErr != nil && resp.StatusCode == http.StatusAccepted {
+		if raw {
+			return writeRawResponse(os.Stdout, resp)
+		}
+		return nil // The ID is already displayed; return the routing failure without starting a poll.
 	}
 
 	// Always capture session state from response headers (needed even in raw mode
@@ -2046,7 +2068,9 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		if err := latency.writeTo(os.Stdout); err != nil {
 			return err
 		}
-		a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
+		if routingErr == nil {
+			a.emitInvokeSuccessNextStep(nextstep.InvokeRemote, rc.nextStepName())
+		}
 	}
 	return nil
 }

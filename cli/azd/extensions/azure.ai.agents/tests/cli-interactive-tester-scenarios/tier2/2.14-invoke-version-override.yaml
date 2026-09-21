@@ -3,14 +3,14 @@
 name: "invoke-version-override"
 command: "azd ai agent show --output json"
 cwd: "~/working/azd-agents-shared/{shared_agent_name}"
-tags: ["tier:2", "cmd:show", "cmd:invoke", "negative-path", "serial-only"]
+tags: ["tier:2", "cmd:show", "cmd:invoke", "serial-only"]
 requires: "tier2/2.00-setup-deploy-shared-agent.yaml"
 
 goals:
   - >-
     Use the already deployed Basic Responses agent with read-only prompts only. No product
     prompts are expected. Do not deploy code, change traffic splits, create a different agent,
-    or retry a failed check. A strict verification error does not undo work already executed.
+    or retry a failed check. An error does not undo work already executed.
     Do not infer successful Invocations or background/lifecycle support from this scenario.
   - >-
     Confirm the initial show command exits with code 0 and identifies the shared hosted agent,
@@ -20,6 +20,24 @@ goals:
     captured value across command sessions, assigning VERSION in each shell if needed. Stop
     and report a failure if no concrete deployed version is available.
   - >-
+    OUTPUT CONTRACT: Capture exit code, stdout, and stderr separately for each override below.
+    Missing, invalid, or ambiguous resolved-version metadata and invalid or ambiguous fallback
+    metadata require a warning on stderr, not failure of an otherwise successful invoke.
+    Missing fallback and resolution headers alone are normal. Treat a resolved version as
+    usable only when it is a single concrete value containing letters, digits, dots, underscores,
+    or hyphens, at most 128 characters, and not latest (case-insensitive); trim surrounding
+    whitespace and check header names case-insensitively. Explicit service-reported
+    fallback: true or a usable concrete resolved version different from an explicit requested
+    version must still produce a non-zero exit, even alongside a metadata warning. HTTP and
+    agent execution errors must also remain errors. No strict verification flag is required.
+  - >-
+    SEMANTIC CHECK: For each successful exact/latest/raw candidate call below, record the actual
+    agent reply and manually compare it with the expected answer 42. This checks observable
+    response behavior, not which code revision ran: the shared sample has no revision-specific
+    feature assertion. Do not infer version identity from a correct answer, body version label,
+    metadata, or exit code alone. Before increasing traffic, the user must separately inspect
+    the candidate's actual feature behavior; this scenario does not certify promotion.
+  - >-
     Run azd ai agent invoke --protocol responses "Reply with exactly: override-baseline-ok".
     Confirm exit code 0 and the requested reply, with no 'Version override:' summary. Record
     the ordinary Session, Conversation, and Response IDs. Read-only inspect this agent's saved
@@ -27,47 +45,56 @@ goals:
     the effective azd user configuration; record existing values or absence as the baseline.
     Do not dump unrelated configuration or change the configuration directory.
   - >-
-    Run azd ai agent invoke --protocol responses --version-override "$VERSION" "Reply with exactly: version-override-ok".
-    Confirm exit code 0, the requested reply, and 'Version override:' reporting both requested
-    and resolved values equal to $VERSION. An optional '; resolution:' detail is allowed but
-    not required. Confirm the initial Session line says '(new -- server will assign)', then
+    Run azd ai agent invoke --protocol responses --version-override "$VERSION" "What is 17 plus 25? Reply with only the number.".
+    Confirm exit code 0 and the answer 42. Confirm 'Version override:' reports the requested
+    $VERSION and either the matching usable resolved version or 'not reported' with a metadata
+    warning on stderr. A usable optional '; resolution:' detail is allowed but not required.
+    Confirm the initial Session line says '(new -- server will assign)', then
     record the server-assigned session and the new Conversation and Response IDs. The session
     and conversation must differ from the ordinary baseline. Verify that all baseline saved
     entries are unchanged, including previously absent entries, with no new saved override IDs.
   - >-
-    Run azd ai agent invoke --protocol responses --version-override latest "Reply with exactly: version-override-ok".
-    Confirm exit code 0, the requested reply, and 'Version override: latest; resolved:' followed
-    by a concrete version, never latest. Do not require a floating selection to equal $VERSION.
+    Run azd ai agent invoke --protocol responses --version-override latest "What is 17 plus 25? Reply with only the number.".
+    Confirm exit code 0 and the answer 42. Confirm 'Version override: latest; resolved:' is
+    followed by a usable concrete version or 'not reported' with a metadata warning on stderr.
+    Do not require latest to equal $VERSION or to select the newest unpinned ready version;
+    the floating target is service-controlled. Explicit service-reported fallback still fails.
     Confirm a server-assigned new session and new conversation, distinct from both previous
     calls. Recheck that the saved session, conversation, Response, and Invocation selections
     still match the baseline, with no new saved entries for override IDs.
   - >-
-    Run azd ai agent invoke --protocol responses --version-override "$VERSION" --debug-latency=false --output raw "Reply with exactly: version-override-ok".
+    Run azd ai agent invoke --protocol responses --version-override "$VERSION" --debug-latency=false --output raw "What is 17 plus 25? Reply with only the number.".
     Confirm exit code 0 and a raw HTTP response containing a completed SSE reply with
-    version-override-ok. Check header names case-insensitively and trim surrounding value
-    whitespace: exactly one x-agent-version-resolved must equal $VERSION;
-    x-agent-version-fallback may be absent or a single false value (case-insensitive), never true.
-    x-agent-version-resolution is
-    optional; if present it must be a single non-empty value using letters, numbers, dots,
-    underscores, or hyphens, at most 128 characters. Confirm x-agent-session-id identifies a
-    session distinct from the earlier calls. Raw output must not add friendly Version override,
+    the answer 42. Record the actual x-agent-version-resolved, x-agent-version-fallback, and
+    x-agent-version-resolution headers or their absence; apply the output contract above.
+    Missing or unusable resolved-version information, or invalid/ambiguous fallback metadata,
+    requires a warning on stderr, never inserted into raw stdout. A usable resolved version
+    must equal $VERSION and explicit fallback: true must fail; absent fallback or resolution
+    headers alone are normal. Confirm x-agent-session-id identifies a session distinct from
+    the earlier calls. Raw output must not add friendly Version override,
     Session, Conversation, Response, Client elapsed, or Platform latency summary lines. Recheck
     that the saved state still matches the baseline.
   - >-
     Run azd ai agent invoke --protocol responses --version-override "azd-override-missing-{run_id}" --output raw "Reply with exactly: version-override-negative-ok".
-    This run-unique, undeployed version is valid CLI syntax. Require a non-zero exit: either a
-    backend version rejection with an HTTP error, or a successful HTTP response rejected by
-    strict version verification. In the latter case require an error saying the override
-    'could not be verified', identifying fallback or missing, invalid, or mismatched resolution
-    evidence, while retaining the raw HTTP response. The backend is not required to always
-    fall back. Authentication, project-resolution, or transport failures do not satisfy this
-    negative goal. Never accept a successful exit merely because the agent returned a reply.
+    This run-unique, undeployed version is valid CLI syntax. Record the actual HTTP response,
+    reply, metadata, stderr, and exit code. A backend version rejection must exit non-zero.
+    A successful HTTP response with explicit service-reported fallback: true or a usable
+    concrete resolved-version mismatch must also exit non-zero with an error identifying
+    that routing failure. For a successful HTTP response with no known routing failure,
+    require a completed reply containing version-override-negative-ok and exit code 0, with a
+    stderr warning when metadata is missing or unusable as described above.
+    The service can run fallback without reporting it;
+    do not claim the undeployed version ran or that fallback was ruled out. Raw stdout must
+    retain the HTTP response without added warnings or friendly summaries in all cases.
+    Authentication, project-resolution, transport, or agent execution failures do not satisfy
+    this probe; do not relabel them as an expected version rejection.
     Recheck that all baseline saved entries, including the current Response ID, are unchanged.
   - >-
-    For the valid-target goals, missing/invalid resolved-version evidence, a concrete-version
-    mismatch, or fallback is a failure of the scenario even when the CLI correctly exits
-    non-zero. Do not waive verification or replace the target to obtain a pass. Missing
-    x-agent-version-fallback and x-agent-version-resolution alone are normal. Observe unchanged
+    For valid-target goals, metadata warnings alone are expected and do not fail the scenario
+    when invocation and semantic checks succeed. A known concrete-version mismatch, explicit
+    service-reported fallback, HTTP or agent error, or incorrect actual reply still fails the
+    scenario, even if the CLI correctly reports an error. Do not waive a known failure, replace
+    the target, or lower the semantic expectation to obtain a pass. Observe unchanged
     latency behavior: friendly successful calls retain Client elapsed, any available platform
     diagnostics keep their existing format, and the opt-out raw call has no formatted timing summary.
   - >-
@@ -75,9 +102,12 @@ goals:
     Confirm exit code 0, the requested reply, no Version override summary, and reuse of the
     original ordinary Session and Conversation IDs, not an override's IDs. This ordinary call
     may save its own new Response ID; perform the override-state comparisons before this call.
-  - "Take best-effort screenshots of exact-version, latest, raw, rejection, and ordinary-state reuse output."
+  - "Take best-effort screenshots of exact-version, latest, raw, nonexistent-version outcome, and ordinary-state reuse output."
   - >-
-    Report a finding if a valid target cannot be verified, a nonexistent version succeeds,
-    an override reuses or changes ordinary saved state, fresh identities are missing or reused,
-    raw diagnostics hide a verification failure, timing behavior changes, or a product prompt
-    appears. Screenshot failures are observations and do not block later product goals.
+    Report a finding if a valid-target invoke or semantic check fails, metadata warnings alone
+    cause failure, a known routing failure returns success, required warnings are absent or
+    contaminate raw stdout, an override reuses or changes ordinary saved state, fresh identities
+    are missing or reused, raw diagnostics hide an HTTP or agent error, timing behavior changes,
+    or a product prompt appears. Record missing metadata and an unconfirmed nonexistent-version
+    reply as observations only when the corresponding goals are met; do not use them to waive
+    other failures. Screenshot failures are observations and do not block later product goals.

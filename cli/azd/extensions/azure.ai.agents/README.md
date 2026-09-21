@@ -182,7 +182,10 @@ An absent fallback or resolution header alone is normal; `fallback: false` is
 also accepted. Friendly output reports the requested version and the usable
 resolved version, or `not reported`, plus a usable optional resolution value.
 `--output raw` leaves the HTTP response on stdout unchanged; metadata warnings
-go to stderr, not into the raw response. A nonexistent version can still execute
+go to stderr, not into the raw response. Protocol-level agent failures in JSON
+or SSE still return an error, even when the HTTP status is successful. If routing
+and agent execution both fail, the error reports both failures.
+A nonexistent version can still execute
 a fallback without service-reported evidence. Neither a successful exit nor
 missing metadata establishes which version actually ran.
 

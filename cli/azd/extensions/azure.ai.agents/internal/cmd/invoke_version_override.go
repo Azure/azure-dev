@@ -13,6 +13,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 
@@ -136,7 +137,7 @@ func (a *InvokeAction) reportVersionOverrideResponse(resp *http.Response, writer
 		outputErr = errors.Join(outputErr, err)
 	}
 	if outputErr != nil {
-		return errors.Join(routingErr, outputErr)
+		return combineInvokeErrors(routingErr, outputErr)
 	}
 	return routingErr
 }
@@ -154,3 +155,41 @@ func optionalAgentVersionHeader(headers http.Header, name string) string {
 	return value
 }
 
+// combineInvokeErrors preserves all failure messages when WrapError selects one
+// structured error for transmission to the azd host. Keep its classification and
+// guidance without mutating errors that other callers may still use.
+func combineInvokeErrors(routingErr, executionErr error) error {
+	if routingErr == nil {
+		return executionErr
+	}
+	if executionErr == nil {
+		return routingErr
+	}
+	combined := errors.Join(routingErr, executionErr)
+	if serviceErr, ok := errors.AsType[*azdext.ServiceError](combined); ok {
+		result := *serviceErr
+		result.Message = combined.Error()
+		return &invokeCombinedError{error: &result, cause: combined}
+	}
+	if localErr, ok := errors.AsType[*azdext.LocalError](combined); ok {
+		result := *localErr
+		result.Message = combined.Error()
+		return &invokeCombinedError{error: &result, cause: combined}
+	}
+	if toolErr, ok := errors.AsType[*azdext.ToolError](combined); ok {
+		result := *toolErr
+		result.Message = combined.Error()
+		return &invokeCombinedError{error: &result, cause: combined}
+	}
+	return combined
+}
+
+type invokeCombinedError struct {
+	error
+	cause error
+}
+
+// Unwrap exposes the complete structured message first, retaining the original causes.
+func (err *invokeCombinedError) Unwrap() []error {
+	return []error{err.error, err.cause}
+}

@@ -58,7 +58,7 @@ type invokeFlags struct {
 
 // outputRaw is the sentinel value of the inherited --output flag that selects
 // raw mode. In raw mode the full HTTP response (status line, headers, and body)
-// is dumped to stdout without any parsing or formatting, mirroring `curl -i`.
+// is dumped to stdout without reformatting the body, mirroring `curl -i`.
 const outputRaw = "raw"
 
 // outputDefault preserves the existing parsed/friendly behavior. It is the
@@ -159,7 +159,8 @@ Use --output raw (or -o raw) to dump the unmodified server response (status
 line, headers, and body verbatim) to stdout. Useful for debugging server
 behavior and inspecting response headers (for example, the agent version
 header). Friendly summary lines like "Session:" and "Invocation:" are
-suppressed in raw mode.
+suppressed in raw mode. Raw output still reports HTTP and protocol-level agent
+failures through a non-zero exit code, without adding formatted text to stdout.
 
 Remote Hosted Agent Responses and Invocations requests include platform latency diagnostics
 by default. A compact summary is shown after a successful invocation when the
@@ -1701,7 +1702,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) (returnErr error) {
 		return routingErr
 	}
 	defer func() {
-		returnErr = errors.Join(routingErr, returnErr)
+		returnErr = combineInvokeErrors(routingErr, returnErr)
 	}()
 
 	// Always capture session state from response headers (needed even in raw mode
@@ -1714,7 +1715,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) (returnErr error) {
 	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, sessionLabel)
 
 	if raw {
-		if dumpErr := writeRawResponse(os.Stdout, resp); dumpErr != nil {
+		if dumpErr := writeRawAgentResponse(ctx, os.Stdout, resp, agent_api.AgentProtocolResponses, rc.name); dumpErr != nil {
 			return dumpErr
 		}
 		if resp.StatusCode >= 400 {
@@ -2004,7 +2005,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) (returnErr error) 
 
 	invocationID, err := invocationIDFromResponse(resp)
 	defer func() {
-		returnErr = errors.Join(routingErr, returnErr)
+		returnErr = combineInvokeErrors(routingErr, returnErr)
 	}()
 	if err != nil {
 		return err
@@ -2079,9 +2080,9 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) (returnErr error) 
 // to the correct handler based on the HTTP status code and content type.
 //
 // When raw is true, the response is dumped verbatim (status line + headers + body)
-// to stdout instead of being parsed:
-//   - 2xx sync/SSE: the response is streamed through writeRawResponse so SSE
-//     events flow through unbuffered.
+// to stdout while also checking for protocol-level failures:
+//   - 2xx sync/SSE: the response is streamed verbatim while the protocol parser
+//     checks for agent failures without writing formatted output.
 //   - 202 LRO: the initial 202 is dumped, then polling continues silently until
 //     terminal state, then the terminal response is dumped after a "---"
 //     separator. Intermediate polls are not surfaced to avoid noise.
@@ -2104,7 +2105,7 @@ func handleInvocationResponse(
 		if resp.StatusCode == http.StatusAccepted {
 			return handleInvocationLRO(ctx, resp, endpoint, bearerToken, agentName, timeout, apiVersion, options, raw, latency)
 		}
-		if err := writeRawResponse(os.Stdout, resp); err != nil {
+		if err := writeRawAgentResponse(ctx, os.Stdout, resp, agent_api.AgentProtocolInvocations, agentName); err != nil {
 			return err
 		}
 		if resp.StatusCode >= 400 {
@@ -2150,6 +2151,10 @@ func handleInvocationResponse(
 
 // handleInvocationSync handles a synchronous (200 OK, immediate result) invocations response.
 func handleInvocationSync(body io.Reader, agentName string) error {
+	return handleInvocationSyncWithWriter(os.Stdout, body, agentName)
+}
+
+func handleInvocationSyncWithWriter(writer io.Writer, body io.Reader, agentName string) error {
 	respBody, err := io.ReadAll(body)
 	if err != nil {
 		return fmt.Errorf("failed to read response: %w", err)
@@ -2177,13 +2182,13 @@ func handleInvocationSync(body io.Reader, agentName string) error {
 	if json.Valid(respBody) {
 		var pretty bytes.Buffer
 		if err := json.Indent(&pretty, respBody, "", "  "); err == nil {
-			fmt.Printf("[%s] %s\n", agentName, pretty.String())
-			return nil
+			_, err := fmt.Fprintf(writer, "[%s] %s\n", agentName, pretty.String())
+			return err
 		}
 	}
 
-	fmt.Printf("[%s] %s\n", agentName, string(respBody))
-	return nil
+	_, err = fmt.Fprintf(writer, "[%s] %s\n", agentName, string(respBody))
+	return err
 }
 
 // handleInvocationSSE handles a streaming (200 OK, text/event-stream) invocations response.
@@ -2193,11 +2198,22 @@ func handleInvocationSSE(w io.Writer, body io.Reader, agentName string) error {
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	var printed bool
+	var eventName string
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		if line == "" {
+			eventName = ""
+		}
+		if event, ok := strings.CutPrefix(line, "event:"); ok {
+			eventName = strings.TrimSpace(event)
+		}
 
-		if data, ok := strings.CutPrefix(line, "data: "); ok {
+		if data, ok := strings.CutPrefix(line, "data:"); ok {
+			data = strings.TrimPrefix(data, " ")
+			if eventName == "error" {
+				return fmt.Errorf("agent stream error: %s", data)
+			}
 			if data == "[DONE]" {
 				break
 			}

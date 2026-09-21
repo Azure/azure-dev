@@ -414,6 +414,13 @@ func TestInvokeVersionOverridePayloadFailuresIntegration(t *testing.T) {
 			wantErr: "agent error (agent_failure): candidate failed",
 		},
 		{
+			name: "Responses failed status", protocol: "responses", wantID: "resp_override",
+			body: versionOverrideCreated + "event: response.failed\ndata: " +
+				`{"response":{"id":"resp_override","status":"failed",` +
+				`"error":{"code":"agent_failure","message":"candidate failed"}}}` + "\n\n",
+			wantErr: "agent failed (agent_failure): candidate failed",
+		},
+		{
 			name: "Responses malformed event after ID", protocol: "responses", wantID: "resp_override",
 			body:    versionOverrideCreated + "event: response.output_text.delta\ndata: invalid-json\n\n",
 			wantErr: "decode Responses SSE event",
@@ -432,25 +439,57 @@ func TestInvokeVersionOverridePayloadFailuresIntegration(t *testing.T) {
 			body:    "data: " + `{"error":{"code":"agent_failure","message":"candidate failed"}}` + "\n\n",
 			wantErr: "agent error (agent_failure): candidate failed",
 		},
+		{
+			name: "Invocations named SSE error", protocol: "invocations", wantID: "inv_override",
+			contentType: "text/event-stream",
+			body:        "event:error\r\ndata:candidate failed\r\n\r\n",
+			wantErr:     "agent stream error: candidate failed",
+		},
 	} {
-		for _, resolved := range []string{"", "3"} {
-			t.Run(tt.name+"/resolved="+resolved, func(t *testing.T) {
+		for _, variant := range []struct {
+			resolved string
+			fallback string
+			format   string
+		}{
+			{format: outputDefault}, {resolved: "3", format: outputDefault},
+			{format: outputRaw}, {resolved: "3", format: outputRaw},
+			{resolved: "4", format: outputDefault}, {resolved: "4", format: outputRaw},
+			{resolved: "4", fallback: "true", format: outputDefault},
+			{resolved: "4", fallback: "true", format: outputRaw},
+		} {
+			if variant.format == outputRaw && tt.longRunning {
+				continue
+			}
+			t.Run(tt.name+"/"+variant.format+"/resolved="+variant.resolved+"/fallback="+variant.fallback, func(t *testing.T) {
 				fixture := newVersionOverrideHTTPFixture(t, &invokeFlags{
 					message: versionOverrideSource, protocol: tt.protocol, versionOverride: "4",
-					outputFmt: outputDefault, longRunning: tt.longRunning,
+					outputFmt: variant.format, longRunning: tt.longRunning,
 				}, versionOverrideHTTPReply{
-					status: http.StatusOK, resolved: resolved, body: tt.body, contentType: tt.contentType,
+					status: http.StatusOK, resolved: variant.resolved, body: tt.body, contentType: tt.contentType,
+					fallback: variant.fallback,
 				}, nil)
 				output, err := fixture.invoke(t)
 
 				require.ErrorContains(t, err, tt.wantErr, "HTTP 200 and missing metadata must not mask protocol failures")
-				if resolved == "" {
+				serialized := azdext.WrapError(err)
+				require.NotNil(t, serialized)
+				assert.Contains(t, serialized.Message, tt.wantErr, "the host must receive the agent failure")
+				if variant.resolved != "3" && variant.fallback == "" {
 					_, structured := errors.AsType[*azdext.LocalError](err)
-					assert.False(t, structured, "missing metadata adds no routing failure")
+					assert.False(t, structured, "missing or matching metadata adds no routing failure")
 				} else {
-					requireVersionOverrideRoutingFailure(t, err, "does not match requested version")
+					reason := "does not match requested version"
+					if variant.fallback != "" {
+						reason = "the service reported a version fallback"
+					}
+					requireVersionOverrideRoutingFailure(t, err, reason)
+					assert.Contains(t, serialized.Message, reason)
 				}
-				if tt.wantID != "" {
+				if variant.format == outputRaw {
+					assert.True(t, strings.HasSuffix(output, "\r\n\r\n"+tt.body))
+					assert.NotContains(t, output, "Response:")
+					assert.NotContains(t, output, "Invocation:")
+				} else if tt.wantID != "" {
 					label := "Invocation:   "
 					if tt.protocol == "responses" {
 						label = "Response:     "

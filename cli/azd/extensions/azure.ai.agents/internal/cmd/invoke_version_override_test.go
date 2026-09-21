@@ -398,6 +398,42 @@ func (w versionOverrideFailingWriter) Write(_ []byte) (int, error) {
 	return 0, w.err
 }
 
+func TestCombineInvokeErrorsPreservesWireMessage(t *testing.T) {
+	routingErr := &azdext.LocalError{
+		Code: exterrors.CodeAgentVersionRoutingFailed, Category: azdext.LocalErrorCategoryCompatibility,
+		Message: "version fallback", Suggestion: "check candidate manually",
+	}
+	for _, executionErr := range []error{
+		errors.New("agent execution failed"),
+		&azdext.LocalError{Message: "local failure", Code: "local_failure"},
+		&azdext.ServiceError{Message: "service failed", StatusCode: 503, ErrorCode: "service_failure"},
+		&azdext.ToolError{Message: "tool failed", ToolName: "test-tool"},
+	} {
+		t.Run(executionErr.Error(), func(t *testing.T) {
+			originalRouting, originalExecution := routingErr.Message, executionErr.Error()
+			err := combineInvokeErrors(routingErr, executionErr)
+			want := originalRouting + "\n" + originalExecution
+			require.EqualError(t, err, want)
+			require.ErrorIs(t, err, routingErr)
+			require.ErrorIs(t, err, executionErr)
+			wire := azdext.WrapError(err)
+			require.NotNil(t, wire)
+			assert.Equal(t, want, wire.Message)
+			if _, service := errors.AsType[*azdext.ServiceError](executionErr); service {
+				assert.Equal(t, "service_failure", wire.GetServiceError().GetErrorCode())
+			} else {
+				assert.Equal(t, routingErr.Code, wire.GetLocalError().GetCode())
+				assert.Equal(t, routingErr.Suggestion, wire.Suggestion)
+			}
+			assert.Equal(t, originalRouting, routingErr.Message)
+			assert.Equal(t, originalExecution, executionErr.Error())
+		})
+	}
+	assert.Same(t, routingErr, combineInvokeErrors(routingErr, nil))
+	assert.Same(t, routingErr, combineInvokeErrors(nil, routingErr))
+	assert.NoError(t, combineInvokeErrors(nil, nil))
+}
+
 func TestInvokeVersionOverrideNoVersionSession(t *testing.T) {
 	action := &InvokeAction{flags: &invokeFlags{versionOverride: "4"}}
 	rc := &remoteContext{version: "3", agentKey: "ordinary"}

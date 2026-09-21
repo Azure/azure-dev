@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -277,6 +278,7 @@ func TestTrainActionUploadsLocalFileBeforeSubmittingJob(t *testing.T) {
 	})
 
 	command := newTrainCommand()
+	command.SetContext(context.Background())
 	var output bytes.Buffer
 	command.SetOut(&output)
 	action := &trainAction{

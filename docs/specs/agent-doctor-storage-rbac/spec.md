@@ -33,17 +33,11 @@ through that identity and the project lacks the required storage permissions.
 The new check helps users identify and address this permission gap before running
 the command.
 
-## Decision to confirm
-
-**Which Storage does the `azd ai agent optimize` command use, and which identity accesses it?**
-
-Confirm the existing command and cloud job behavior so `doctor` checks the correct
-storage and identity for the reported scenario.
-
 ## Proposed behavior
 
-1. Check the project identity's permissions on the storage required by
-   `azd ai agent optimize`, without checking unrelated storage accounts.
+1. Identify the relevant Storage accounts from the current Foundry project's
+   configuration and check the project managed identity's permissions on them,
+   without checking unrelated storage accounts.
 2. Recognize sufficient existing access, including `Storage Blob Data Owner` and
    inherited permissions. Do not ask users to add redundant roles or additional
    permissions beyond the stated requirement.

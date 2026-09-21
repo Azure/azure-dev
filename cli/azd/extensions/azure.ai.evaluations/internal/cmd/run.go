@@ -1224,8 +1224,13 @@ func renderRun(
 
 	renderCriteriaTable(out, run.PerTestingCriteria, means)
 
-	if c := run.ResultCounts; c != nil && c.Failed > 0 {
-		fmt.Fprint(out, messages.ViewFailingSamples())
+	// Offered whenever there is something to read, not only when rows failed:
+	// a run whose rows all errored closed with the word "failed" and a count,
+	// and nothing saying where to look next.
+	if c := run.ResultCounts; c != nil && c.Total > 0 {
+		errored, _ := unscoredSplit(c, c.Passed+c.Failed)
+		fmt.Fprint(out, messages.RunFollowUp(
+			run.Metadata[metaEvalName], run.ID, c.Failed > 0, errored > 0))
 	}
 
 	writePortalLink(out, runLink(run.ReportURL, run.PortalURL))

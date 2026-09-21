@@ -283,11 +283,6 @@ func ExportCompleteResults(eval, runID string) string {
 		shellArg(eval), shellArg(runID), shellArg(runID))
 }
 
-// ViewFailingSamples points at the command that lists the rows that failed.
-func ViewFailingSamples() string {
-	return "\nView failing samples: azd ai eval run output list --failed-only\n"
-}
-
 // EvalNotDeployed reports an eval id the project does not hold.
 func EvalNotDeployed(evalID, deployCmd string) error {
 	return fmt.Errorf(

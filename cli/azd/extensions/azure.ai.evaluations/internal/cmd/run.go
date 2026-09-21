@@ -572,6 +572,13 @@ func (ec *evalContext) buildRunDataSource(
 		}
 	}
 
+	// A simulation creates its conversations instead of invoking a target once
+	// per row, so it is settled before the shapes that bind a question out of
+	// the dataset. A scenario seed has no question on it to bind.
+	if group.Simulation != nil {
+		return ec.simulationDataSource(ctx, group, configPath, maxSamples)
+	}
+
 	var ds *eval_api.EvalRunDataSource
 	switch {
 	case group.Target == nil || group.Target.Name == "":

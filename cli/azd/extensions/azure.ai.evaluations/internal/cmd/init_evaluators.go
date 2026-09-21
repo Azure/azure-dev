@@ -4,9 +4,15 @@
 package cmd
 
 import (
+	"context"
+	"sort"
+	"strings"
+	"time"
+
 	"github.com/spf13/cobra"
 
 	"azureaieval/internal/messages"
+	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
 
@@ -17,14 +23,90 @@ import (
 // evaluation level, so Turn and Conversation share one picker.
 //
 // A hardcoded list drifts from the service's full catalogue, which is why this
-// is deliberately the offered set rather than a copy of it: init makes no
-// service call, and anything outside these four is still reachable with
-// --evaluator.
+// is deliberately the offered set rather than a copy of it: anything outside
+// these four is still reachable with --evaluator, and knownBuiltinEvaluators is
+// what checks such a reference when the project can be reached.
 var builtinEvaluators = []string{
 	evalcore.BuiltinPrefix + "task_completion",
 	evalcore.BuiltinPrefix + "customer_satisfaction",
 	evalcore.BuiltinPrefix + "coherence",
 	evalcore.BuiltinPrefix + "groundedness",
+}
+
+// builtinCatalogueTimeout bounds the one listing init asks for.
+//
+// init is the command run before anything is set up, often on a laptop with no
+// project reachable, so waiting on a transport that is not going to answer
+// costs more than the check is worth.
+const builtinCatalogueTimeout = 5 * time.Second
+
+// knownBuiltinEvaluators asks the project which built-in evaluators it offers.
+//
+// Best effort, and deliberately so. init's value is that it works with nothing
+// configured, so no azd, no endpoint, no network, an unauthorized project or a
+// listing that fails all answer the same way: nothing is known, and every
+// reference is left as written. Only a catalogue that was actually read is
+// allowed to refuse a name.
+func knownBuiltinEvaluators(ctx context.Context) []string {
+	ctx, cancel := context.WithTimeout(ctx, builtinCatalogueTimeout)
+	defer cancel()
+
+	ec, err := newEvalContext(ctx, "")
+	if err != nil {
+		return nil
+	}
+	defer ec.Close()
+
+	list, err := ec.evalClient.ListEvaluators(
+		ctx, eval_api.EvaluatorTypeBuiltin, ProjectEndpointAPIVersion)
+	if err != nil || list == nil {
+		return nil
+	}
+
+	names := make([]string, 0, len(list.Value))
+	for i := range list.Value {
+		if name := strings.TrimSpace(list.Value[i].Name); name != "" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// refuseUnknownBuiltins refuses a builtin.<name> the catalogue does not offer.
+//
+// An empty catalogue is not an empty answer: it means the listing was never
+// read, and refusing on it would turn every offline init into a failure.
+//
+// Names are matched with and without the prefix. The service returns them
+// prefixed today, and a reference that matches either spelling is a reference
+// to something real -- which is the question being asked.
+func refuseUnknownBuiltins(refs []string, known []string) error {
+	if len(known) == 0 {
+		return nil
+	}
+
+	offered := make(map[string]struct{}, len(known)*2)
+	for _, name := range known {
+		offered[name] = struct{}{}
+		offered[evalcore.BuiltinPrefix+strings.TrimPrefix(name, evalcore.BuiltinPrefix)] = struct{}{}
+	}
+
+	for _, ref := range refs {
+		if !strings.HasPrefix(ref, evalcore.BuiltinPrefix) {
+			// A bare name is a rubric this configuration declares or will
+			// generate, and the catalogue says nothing about it.
+			continue
+		}
+		if _, ok := offered[ref]; ok {
+			continue
+		}
+		if _, ok := offered[strings.TrimPrefix(ref, evalcore.BuiltinPrefix)]; ok {
+			continue
+		}
+		return messages.EvaluatorBuiltinUnknown(ref, known)
+	}
+	return nil
 }
 
 // defaultEvaluators is what `init` proposes: one built-in that judges whether
@@ -40,10 +122,11 @@ func defaultEvaluators() []string {
 
 // evaluatorChoices are the references `init` can offer.
 //
-// `init` makes no service calls, so the service's full built-in catalogue is
-// not knowable here; offering a hardcoded copy of it would drift. What is
-// knowable is the pair init proposes and whatever this configuration already
-// declares. Anything else is reachable with --evaluator.
+// The picker is built without a service call, so the service's full built-in
+// catalogue is not listed here; offering a hardcoded copy of it would drift.
+// What is knowable offline is the pair init proposes and whatever this
+// configuration already declares. Anything else is reachable with --evaluator,
+// which is checked against the catalogue when the project can be reached.
 func evaluatorChoices(cfg *project.EvalConfig) []string {
 	seen := map[string]bool{}
 	var out []string

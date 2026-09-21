@@ -2767,6 +2767,20 @@ func EvaluatorRefNotAPath(ref string) error {
 		"configuration instead", ref)
 }
 
+// EvaluatorBuiltinUnknown reports a builtin.<name> the project's catalogue does
+// not offer.
+//
+// Only raised when the catalogue was actually read: a reference this build
+// cannot check is left as written, so the name is reported as absent from the
+// project rather than as one that does not exist.
+func EvaluatorBuiltinUnknown(ref string, known []string) error {
+	if len(known) == 0 {
+		return fmt.Errorf("this project offers no built-in evaluator named %q", ref)
+	}
+	return fmt.Errorf("this project offers no built-in evaluator named %q; it offers %s",
+		ref, strings.Join(known, ", "))
+}
+
 // GateNeedsATerminalRun refuses to gate a run that is still moving.
 //
 // The counts are partial until the run stops, so a threshold read from them

@@ -32,8 +32,9 @@ const (
 	initSourceTraces  = "traces"
 )
 
-// newInitCommand scaffolds the eval configuration. It makes no service calls at
-// all, so it works offline and unauthenticated.
+// newInitCommand scaffolds the eval configuration. It asks the project for one
+// thing -- the built-in evaluators it offers, to check a --evaluator reference
+// -- and works offline and unauthenticated without it.
 //
 // It only ever adds. A name already declared is refused rather than
 // overwritten, because the settings a reader tunes by hand — thresholds, judge
@@ -69,7 +70,7 @@ func newInitCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Scaffold evaluation config for an agent. Makes no service calls.",
+		Short: "Scaffold evaluation config for an agent. Works offline.",
 		// Everything init takes is a flag; a positional would be ignored.
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -133,6 +134,16 @@ func (a *initAction) Run() error {
 	// later. Answering two prompts first to be told a flag was wrong is
 	// the same defect one step removed.
 	if err := validateEvaluatorRefs(a.flags.evaluators); err != nil {
+		return err
+	}
+	// Asked once, and only about what the shape check already accepted. A
+	// builtin. reference names something only the project can confirm, so it
+	// used to scaffold cleanly and fail at create. Unreachable projects answer
+	// nothing and leave the reference as written, so this adds a check offline
+	// rather than a requirement.
+	if err := refuseUnknownBuiltins(
+		a.flags.evaluators, knownBuiltinEvaluators(a.cmd.Context()),
+	); err != nil {
 		return err
 	}
 	// The same cascade every other command reads the configuration

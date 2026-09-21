@@ -405,6 +405,12 @@ func validateRuntimeAgentSources(svc *azdext.ServiceConfig) error {
 	return nil
 }
 
+// ValidateRuntimeAgentSources rejects runtime definition sources that are no
+// longer supported before lifecycle hooks normalize or mutate service config.
+func ValidateRuntimeAgentSources(svc *azdext.ServiceConfig) error {
+	return validateRuntimeAgentSources(svc)
+}
+
 // LoadAgentDefinition resolves the hosted-agent definition for an azure.ai.agent
 // service. The definition must be carried by service-level properties, either
 // directly or through the existing root $ref behavior.

@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
@@ -88,6 +90,48 @@ func TestPrepareContainerSettings_AppliesSettingsInMemory(t *testing.T) {
 				project.ServiceConfigProps(svc).GetFields()["customField"].GetStringValue())
 		})
 	}
+}
+
+func TestPrepareContainerSettings_RejectsNestedAgentConfigBeforeMutation(t *testing.T) {
+	t.Parallel()
+
+	config, err := structpb.NewStruct(map[string]any{
+		"kind": "hosted",
+		"name": "agent",
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:   "agent",
+		Host:   AiAgentHost,
+		Config: config,
+	}
+	before := config.AsMap()
+
+	err = prepareContainerSettings(svc, t.TempDir())
+
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeDeprecatedAgentServiceConfig, localErr.Code)
+	require.Equal(t, before, svc.GetConfig().AsMap())
+	require.Nil(t, svc.GetAdditionalProperties())
+}
+
+func TestValidateRuntimeAgentSources_PreservesNonAgentConfig(t *testing.T) {
+	t.Parallel()
+
+	config, err := structpb.NewStruct(map[string]any{
+		"custom": "value",
+	})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name:   "web",
+		Host:   "containerapp",
+		Config: config,
+	}
+	before := config.AsMap()
+
+	require.NoError(t, project.ValidateRuntimeAgentSources(svc))
+	require.Equal(t, before, svc.GetConfig().AsMap())
 }
 
 // TestPostdeployHandler_NonHostedAgent_NoOp verifies postdeployHandler returns nil

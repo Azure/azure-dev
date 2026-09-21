@@ -8,7 +8,7 @@
 // into .agent_configs/<candidate-id>/. Managed prompt agents deploy from the
 // candidate's model, instructions, and matching function-tool updates in azure.yaml.
 // Other agent kinds select the local candidate through environment variables
-// in their definition (inline in azure.yaml, or legacy agent.yaml on disk).
+// in their service-level definition in azure.yaml.
 
 package cmd
 
@@ -56,7 +56,8 @@ func newOptimizeApplyCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 candidate and write them into your local azd project under .agent_configs/.
 
 For managed prompt agents, this also updates the model and instructions
-in the azure.yaml service definition, including the deprecated config section.
+in the service-level azure.yaml definition. Definitions under config are rejected
+and must be moved to service-level properties before applying a candidate.
 Candidates must contain a non-empty model and instructions. Function tools are
 updated only when their names match existing function tools. Omitted fields,
 including nested parameter fields, are preserved. Supplied arrays and explicit

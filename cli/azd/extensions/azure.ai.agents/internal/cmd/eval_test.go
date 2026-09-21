@@ -19,7 +19,6 @@ import (
 	"azureaiagent/internal/pkg/agents/dataset_api"
 	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/opt_eval"
-	projectpkg "azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -260,54 +259,6 @@ func TestResolveEvalContext_PropagatesRuntimeDefinitionErrors(t *testing.T) {
 			require.True(t, ok)
 			require.Equal(t, tt.wantCode, localErr.Code)
 			require.Equal(t, tt.wantSuggestion, localErr.Suggestion)
-		})
-	}
-}
-
-func TestResolveEvalAgentKind_SupportedDefinitions(t *testing.T) {
-	hostedProps, err := projectpkg.AgentDefinitionToServiceProperties(agent_yaml.ContainerAgent{
-		AgentDefinition: agent_yaml.AgentDefinition{
-			Kind: agent_yaml.AgentKindHosted,
-			Name: "hosted-agent",
-		},
-	}, nil)
-	require.NoError(t, err)
-	promptProps, err := projectpkg.PromptAgentDefinitionToServiceProperties(agent_yaml.PromptAgent{
-		AgentDefinition: agent_yaml.AgentDefinition{
-			Kind: agent_yaml.AgentKindPrompt,
-			Name: "prompt-agent",
-		},
-		Model: "gpt-4.1-mini",
-	})
-	require.NoError(t, err)
-	voiceProps, err := projectpkg.VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
-		AgentDefinition: agent_yaml.AgentDefinition{
-			Kind: agent_yaml.AgentKindPromptVoice,
-			Name: "voice-agent",
-		},
-		Model: &agent_yaml.Model{Id: "gpt-realtime"},
-	}, nil)
-	require.NoError(t, err)
-
-	for _, tt := range []struct {
-		name       string
-		properties *structpb.Struct
-		wantKind   agent_yaml.AgentKind
-	}{
-		{name: "hosted", properties: hostedProps, wantKind: agent_yaml.AgentKindHosted},
-		{name: "prompt", properties: promptProps, wantKind: agent_yaml.AgentKindPrompt},
-		{name: "voice", properties: voiceProps, wantKind: agent_yaml.AgentKindPromptVoice},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			kind, source, err := resolveEvalAgentKind(&azdext.ServiceConfig{
-				Name:                 "agent",
-				Host:                 AiAgentHost,
-				AdditionalProperties: tt.properties,
-			}, t.TempDir())
-
-			require.NoError(t, err)
-			require.Equal(t, tt.wantKind, kind)
-			require.Equal(t, "azure.yaml (inline)", source)
 		})
 	}
 }

@@ -89,6 +89,9 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args 
 		switch svc.Host {
 		case AiAgentHost:
 			agentServiceCount++
+			if err := project.ValidateRuntimeAgentSources(svc); err != nil {
+				return err
+			}
 			if isHostedAgentService(svc, args.Project) {
 				hostedAgentCount++
 			}
@@ -261,6 +264,10 @@ var duplicateAgentNameWarnOnce sync.Once
 
 func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {
 	svc := args.Service
+
+	if err := project.ValidateRuntimeAgentSources(svc); err != nil {
+		return err
+	}
 
 	// Warn (once) when multiple agent services resolve to the same Foundry agent
 	// name. Foundry identifies an agent by its name, so such services overwrite
@@ -918,6 +925,10 @@ func prepareContainerSettings(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) error {
+	if err := project.ValidateRuntimeAgentSources(svc); err != nil {
+		return err
+	}
+
 	// Resolve toolbox reference files before ownership validation so name-only
 	// references stay supported and full definitions cannot hide behind $ref.
 	hasFileRef := false

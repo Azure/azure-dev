@@ -25,6 +25,15 @@ tools:
   bash: [jq, rg]
 safe-outputs:
   group-reports: true
+  report-failed-jobs: false
+  # Keep transient runtime failures and empty agent runs in workflow logs instead of opening issues.
+  report-failure-as-issue:
+    - "!missing_safe_outputs"
+    - "!report_incomplete"
+    - "!inference_access_error"
+    - "!ai_credits_rate_limit_error"
+  report-incomplete:
+    create-issue: false
   add-labels:
     allowed:
       - area/*
@@ -98,4 +107,4 @@ Objective: Reduce maintainer effort spent classifying new issues without mislabe
 
 Do not apply priority, ownership, workflow-state, or contributor labels. In particular, do not add `blocker`, `customer-reported`, `production`, `needs-*`, `good first issue`, `help wanted`, `need-upvotes`, or `keep`.
 
-Use only the configured safe outputs. Include issue number `${{ github.event.issue.number }}` when calling `add_labels`. Call `noop` with a short reason when no label or issue type change is needed. If a required tool or data source is unavailable, use `missing_tool` or `missing_data` instead of guessing.
+Use only the configured safe outputs. Include issue number `${{ github.event.issue.number }}` when calling `add_labels`. Call `noop` with a short reason when no label or issue type change is needed. If a required tool or data source is unavailable, use `missing_tool` or `missing_data` instead of guessing. Do not finish without calling `add_labels`, `set_issue_type`, `noop`, `missing_tool`, or `missing_data`.

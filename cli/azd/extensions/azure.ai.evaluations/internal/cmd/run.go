@@ -600,13 +600,21 @@ func (ec *evalContext) buildRunDataSource(
 	// name is rejected with "invalid data source file ids".
 	localPath := localDatasetPath(configPath, group)
 	if localPath == "" {
-		items, err := ec.readRegisteredDataset(
+		items, version, err := ec.readRegisteredDataset(
 			ctx, group.Dataset, declaredDatasetVersion(configPath, group), maxSamples)
 		if err != nil {
 			return nil, err
 		}
 		if err := refuseUnboundTemplate(group, ds, items); err != nil {
 			return nil, err
+		}
+		// The rows were read to check the binding above, but they are not what
+		// the run is pointed at: a registered dataset is referenced by the id the
+		// service issued for that version, so the run keeps the dataset's
+		// identity, version binding and lineage instead of scoring a copy.
+		if id := ec.datasetResourceID(ctx, group.Dataset, version); id != "" {
+			ds.SetFileID(id)
+			return ds, nil
 		}
 		ds.SetFileContent(items)
 		return ds, nil
@@ -742,7 +750,7 @@ func (ec *evalContext) readRegisteredDataset(
 	name string,
 	pinned string,
 	maxSamples int,
-) ([]map[string]any, error) {
+) ([]map[string]any, string, error) {
 	// The declaration wins: it is the author saying which rows to score, and it
 	// is right whether or not there is an azd environment to have recorded one.
 	version := pinned
@@ -752,20 +760,20 @@ func (ec *evalContext) readRegisteredDataset(
 	if version == "" {
 		versions, err := ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
 		if err != nil {
-			return nil, messages.ReadingDataset(name, err)
+			return nil, "", messages.ReadingDataset(name, err)
 		}
 		if versions != nil {
 			version = dataset_api.LatestVersion(versions.Value)
 		}
 	}
 	if version == "" {
-		return nil, messages.DatasetHasNoVersionsToRead(name)
+		return nil, "", messages.DatasetHasNoVersionsToRead(name)
 	}
 
 	body, err := ec.datasetClient.OpenDatasetContent(
 		ctx, name, version, ProjectEndpointAPIVersion)
 	if err != nil {
-		return nil, messages.ReadingDatasetVersion(name, version, err)
+		return nil, "", messages.ReadingDatasetVersion(name, version, err)
 	}
 	// Closed before the end when a cap is in force, which is what stops the
 	// transfer: reading the blob into memory first made --max-samples bound the
@@ -774,12 +782,29 @@ func (ec *evalContext) readRegisteredDataset(
 
 	items, err := scanJSONL(body, maxSamples)
 	if err != nil {
-		return nil, messages.ReadingDatasetVersion(name, version, err)
+		return nil, "", messages.ReadingDatasetVersion(name, version, err)
 	}
 	if len(items) == 0 {
-		return nil, messages.DatasetVersionEmpty(name, version)
+		return nil, "", messages.DatasetVersionEmpty(name, version)
 	}
-	return items, nil
+	return items, version, nil
+}
+
+// datasetResourceID is the id the service issued for a registered dataset
+// version, or "" when it cannot be read.
+//
+// A version the service will not describe is not a reason to fail a run that
+// would otherwise work, so the caller falls back to sending the rows. That is
+// the old behavior rather than a new failure mode.
+func (ec *evalContext) datasetResourceID(ctx context.Context, name, version string) string {
+	if name == "" || version == "" || ec.datasetClient == nil {
+		return ""
+	}
+	registered, err := ec.datasetClient.GetDataset(ctx, name, version, ProjectEndpointAPIVersion)
+	if err != nil || registered == nil {
+		return ""
+	}
+	return registered.ID
 }
 
 // datasetColumnsFromPath reads one row to learn the dataset's shape. An empty

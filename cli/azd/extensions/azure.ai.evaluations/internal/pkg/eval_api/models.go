@@ -687,6 +687,21 @@ func (ds *EvalRunDataSource) SetFileContent(items []map[string]any) {
 	}
 }
 
+// SetFileID binds the data source to a registered dataset by its service-issued
+// resource id.
+//
+// This is what makes the run reference the dataset rather than a copy of it:
+// inline rows lose the version binding and lineage, and the portal reports
+// "Inline data" for a run the author pointed at a catalog dataset. The id is
+// the one the service returned for that version -- a bare dataset name is not
+// one, which is what "invalid data source file ids" was rejecting.
+func (ds *EvalRunDataSource) SetFileID(id string) {
+	ds.Source = &EvalRunDataContent{
+		Type: EvalRunDataContentTypeFileID,
+		ID:   id,
+	}
+}
+
 // OpenAIEvalRun is the response for an OpenAI eval run.
 type OpenAIEvalRun struct {
 	ID         string             `json:"id"`

@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -83,7 +84,16 @@ func (a *evalCreateAction) Run() error {
 		return err
 	}
 
-	eval, err := cfg.Eval(chooseEval(a.cmd, cfg, a.name))
+	chosen, err := chooseEval(a.cmd, cfg, a.name)
+	if err != nil {
+		// Closing the picker is an answer, not a failure to name something.
+		if errors.Is(err, errEvalSelectionCancelled) {
+			fmt.Fprint(a.cmd.OutOrStdout(), messages.EvalSelectionCancelled())
+			return nil
+		}
+		return err
+	}
+	eval, err := cfg.Eval(chosen)
 	if err != nil {
 		return err
 	}
@@ -177,6 +187,11 @@ func (a *evalCreateAction) Run() error {
 	// scaffold's own next-step block is two commands back by now.
 	fmt.Fprint(out, messages.FirstNextStep(
 		"azd ai eval run start --eval "+messages.ShellArg(eval.Name)))
+	// Shown for unchanged as well as created: the reader wants to look at the
+	// eval either way, and an idempotent create is where they most often are.
+	if prefix := ec.portalPrefix(ctx); prefix != nil {
+		writePortalLink(out, prefix.EvalURL(id))
+	}
 	return nil
 }
 

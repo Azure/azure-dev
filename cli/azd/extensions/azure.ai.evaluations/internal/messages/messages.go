@@ -3050,6 +3050,15 @@ func SeveralEvalsDeclared(count int, names []string) error {
 		count, strings.Join(names, ", "))
 }
 
+// EvalSelectionCancelled confirms a picker the reader closed.
+//
+// Cancelling is an answer, so it is reported as one. It used to fall through to
+// SeveralEvalsDeclared, which told a reader who had just declined to choose
+// that they had failed to name something.
+func EvalSelectionCancelled() string {
+	return "Cancelled. No eval was selected.\n"
+}
+
 // EvalNotDeclared reports a name the configuration does not carry.
 func EvalNotDeclared(eval string, names []string) error {
 	// "this configuration has" with nothing after it is a sentence that stops

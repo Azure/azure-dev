@@ -453,7 +453,14 @@ func resolveEvalID(cmd *cobra.Command, ec *evalContext, groupName string) (strin
 	// The same prompt `run start` gets. Without it a project declaring two
 	// evals could start a run by answering a question, and then not list,
 	// show or cancel it without repeating the answer as a flag.
-	ref, err := ec.resolveEvalRef(cmd.Context(), evalDir, chooseEvalIn(cmd, evalDir, groupName))
+	//
+	// A closed picker is returned as itself so the command can report it as an
+	// answer; resolving an id is not where that gets decided.
+	chosen, err := chooseEvalIn(cmd, evalDir, groupName)
+	if err != nil {
+		return "", err
+	}
+	ref, err := ec.resolveEvalRef(cmd.Context(), evalDir, chosen)
 	if err != nil {
 		return "", err
 	}

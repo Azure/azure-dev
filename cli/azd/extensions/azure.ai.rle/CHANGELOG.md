@@ -1,5 +1,15 @@
 # Release History
 
+## 0.8.9-preview
+
+- `azd ai rle train`'s `--training-file` and `--validation-file` now take a path
+  to a local dataset file instead of a pre-uploaded `file-...` ID. The extension
+  uploads the file to the selected fine-tuning resource with the `fine-tune`
+  purpose and submits the job with the returned file ID.
+- Fixed a build break in `azd ai rle train`: a `LocalError` literal set an `Err`
+  field that `azdext.LocalError` does not declare, so the extension failed to
+  compile.
+
 ## 0.8.8-preview
 
 - `azd ai rle rollout`'s underlying HTTP client timeout is now 300s (was

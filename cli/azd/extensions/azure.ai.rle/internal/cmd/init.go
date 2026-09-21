@@ -27,6 +27,7 @@ type rleInitFlags struct {
 	agentVersion  string
 	baseURL       string
 	harnessSource string
+	sample        string
 }
 
 type initAction struct {
@@ -72,15 +73,19 @@ var loadRleSampleCatalogFunc = func() (rleSampleCatalog, error) {
 	})
 }
 
-// rleHarnessSample is satisfied by *project.RleHarnessSample; declared as an
-// interface so tests can substitute a fake without touching the network.
-type rleHarnessSample interface {
-	Copy(folderName string, dest string, force bool) (string, error)
+// rleHarnessSampleCatalog is satisfied by *project.RleHarnessSampleCatalog;
+// declared as an interface so tests can substitute a fake without touching the
+// network.
+type rleHarnessSampleCatalog interface {
+	SampleNames() []string
+	Copy(sampleName string, folderName string, dest string, force bool) (string, error)
 	Close() error
 }
 
-var loadRleHarnessSampleFunc = func(subtype project.RleSubtype) (rleHarnessSample, error) {
-	return project.LoadRleHarnessSample(subtype)
+var loadRleHarnessSampleCatalogFunc = func(subtype project.RleSubtype) (rleHarnessSampleCatalog, error) {
+	return project.LoadRleHarnessSampleCatalog(subtype, project.RleSampleCatalogOptions{
+		ShowHiddenSamples: rleEnableAllEnabled(),
+	})
 }
 
 var selectRleSampleFunc = selectRleSample
@@ -149,6 +154,12 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 		"",
 		"Harness scaffold source: existing (placeholder to wire up to a harness you already deployed) "+
 			"or sample (copy a full working agent+rle sample)",
+	)
+	cmd.Flags().StringVar(
+		&flags.sample,
+		"sample",
+		"",
+		"Name of the sample to copy. Defaults to prompting, or to the only sample when there is just one.",
 	)
 	return cmd
 }
@@ -239,8 +250,8 @@ func (a *initAction) initializeGymOpenEnv(target rleInitTarget) error {
 	defer func() {
 		_ = catalog.Close()
 	}()
-	requestedSample := ""
-	if a.noPrompt {
+	requestedSample := strings.TrimSpace(a.flags.sample)
+	if requestedSample == "" && a.noPrompt {
 		requestedSample = folderName
 	}
 	sampleName, err := resolveRleSample(a.cmd.Context(), requestedSample, catalog.SampleNames())
@@ -421,23 +432,31 @@ func (a *initAction) createHarnessSampleScaffold(target rleInitTarget) error {
 		}
 	}
 
-	folderName := a.folderName
-	if folderName == "" {
-		folderName = defaultRleHarnessSampleFolderName(target.rleSubtype)
-	}
-	folderName, err := validateRleFolderName(folderName)
-	if err != nil {
-		return err
-	}
-
-	sample, err := loadRleHarnessSampleFunc(target.rleSubtype)
+	catalog, err := loadRleHarnessSampleCatalogFunc(target.rleSubtype)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		_ = sample.Close()
+		_ = catalog.Close()
 	}()
-	sessionDir, err := sample.Copy(folderName, ".", a.flags.force)
+	sampleName, err := a.resolveHarnessSampleName(catalog.SampleNames())
+	if err != nil {
+		return err
+	}
+
+	folderName := a.folderName
+	if folderName == "" {
+		folderName = sampleName
+	}
+	if folderName == "" {
+		folderName = defaultRleHarnessSampleFolderName(target.rleSubtype)
+	}
+	folderName, err = validateRleFolderName(folderName)
+	if err != nil {
+		return err
+	}
+
+	sessionDir, err := catalog.Copy(sampleName, folderName, ".", a.flags.force)
 	if err != nil {
 		return err
 	}
@@ -517,6 +536,27 @@ func (a *initAction) resolveHarnessSource() (string, error) {
 		return harnessSourceExisting, nil
 	}
 	return selectHarnessSourceFunc(a.cmd.Context())
+}
+
+func (a *initAction) resolveHarnessSampleName(sampleNames []string) (string, error) {
+	requested := strings.TrimSpace(a.flags.sample)
+	if len(sampleNames) == 0 {
+		// Pre-catalog samples repo: one unnamed sample per subtype. Pass the
+		// request through so Copy can explain why a name cannot be honored.
+		return requested, nil
+	}
+	if requested == "" && len(sampleNames) == 1 {
+		return sampleNames[0], nil
+	}
+	if requested == "" && a.noPrompt {
+		return "", &azdext.LocalError{
+			Message:    "A sample name is required when several harness samples are available.",
+			Code:       "rle_harness_sample_required",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: fmt.Sprintf("Pass --sample with one of: %s.", strings.Join(sampleNames, ", ")),
+		}
+	}
+	return resolveRleSample(a.cmd.Context(), requested, sampleNames)
 }
 
 func defaultRleHarnessSampleFolderName(subtype project.RleSubtype) string {

@@ -4,6 +4,7 @@
 package project
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -129,7 +130,7 @@ func TestRleSampleCatalogUsesSparseCheckout(t *testing.T) {
 	}
 }
 
-func TestLoadRleHarnessSampleCopiesAgentAndRleFolders(t *testing.T) {
+func TestLoadRleHarnessSampleCatalogCopiesLegacyFlatLayout(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not available")
 	}
@@ -162,17 +163,22 @@ func TestLoadRleHarnessSampleCopiesAgentAndRleFolders(t *testing.T) {
 		"commit", "-m", "Add harness samples",
 	)
 
-	sample, err := loadRleHarnessSample(sourceRepo, "main", RleSubtypeBYOH)
+	catalog, err := loadRleHarnessSampleCatalog(sourceRepo, "main", RleSubtypeBYOH, RleSampleCatalogOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := sample.Close(); err != nil {
-			t.Errorf("close harness sample: %v", err)
+		if err := catalog.Close(); err != nil {
+			t.Errorf("close harness sample catalog: %v", err)
 		}
 	})
+	// A subtype directory holding agent/ and rle/ is the sample itself, so there
+	// is no name to offer and nothing for the caller to prompt about.
+	if names := catalog.SampleNames(); len(names) != 0 {
+		t.Fatalf("expected no named samples for the legacy flat layout, got %v", names)
+	}
 
-	sessionDir, err := sample.Copy("my_byoh", t.TempDir(), false)
+	sessionDir, err := catalog.Copy("", "my_byoh", t.TempDir(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,9 +188,137 @@ func TestLoadRleHarnessSampleCopiesAgentAndRleFolders(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(sessionDir, "rle", "rle.toml")); err != nil {
 		t.Fatalf("expected rle/ to be copied: %v", err)
 	}
+	if _, err := catalog.Copy("code_repair", "named_byoh", t.TempDir(), false); err == nil {
+		t.Fatal("expected a named sample request to fail against the legacy flat layout")
+	}
 }
 
-func TestLoadRleHarnessSampleRejectsUnsupportedSubtype(t *testing.T) {
+func TestLoadRleHarnessSampleCatalogResolvesNamedSamples(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	sourceRepo := t.TempDir()
+	runTestGit(t, sourceRepo, "init", "--initial-branch=main")
+	byohPath := filepath.Join(sourceRepo, filepath.FromSlash(rleHarnessSamplesPath), "byoh")
+	for _, sampleName := range []string{"code_repair", "hidden_sample", "web_nav"} {
+		agentDir := filepath.Join(byohPath, sampleName, "agent")
+		if err := os.MkdirAll(agentDir, 0750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(agentDir, "app.py"), []byte(sampleName), 0600); err != nil {
+			t.Fatal(err)
+		}
+		rleDir := filepath.Join(byohPath, sampleName, "rle")
+		if err := os.MkdirAll(rleDir, 0750); err != nil {
+			t.Fatal(err)
+		}
+		manifest := fmt.Sprintf("[rle]\nname = %q\n", sampleName)
+		if err := os.WriteFile(filepath.Join(rleDir, "rle.toml"), []byte(manifest), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	catalogContents := "[[sample]]\nname = \"hidden_sample\"\nvisible = false\n"
+	if err := os.WriteFile(filepath.Join(byohPath, rleSampleCatalogFile), []byte(catalogContents), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runTestGit(t, sourceRepo, "add", ".")
+	runTestGit(
+		t,
+		sourceRepo,
+		"-c", "user.name=RLE Tests",
+		"-c", "user.email=rle-tests@example.com",
+		"commit", "-m", "Add named harness samples",
+	)
+
+	catalog, err := loadRleHarnessSampleCatalog(sourceRepo, "main", RleSubtypeBYOH, RleSampleCatalogOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := catalog.Close(); err != nil {
+			t.Errorf("close harness sample catalog: %v", err)
+		}
+	})
+	if !slices.Equal(catalog.SampleNames(), []string{"code_repair", "web_nav"}) {
+		t.Fatalf("expected the catalog to hide hidden_sample, got %v", catalog.SampleNames())
+	}
+
+	sessionDir, err := catalog.Copy("web_nav", "my_byoh", t.TempDir(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// #nosec G304 -- sessionDir is created under t.TempDir by the catalog under test.
+	contents, err := os.ReadFile(filepath.Join(sessionDir, "agent", "app.py"))
+	if err != nil {
+		t.Fatalf("expected agent/ to be copied: %v", err)
+	}
+	if string(contents) != "web_nav" {
+		t.Fatalf("expected the selected sample to be copied, got %q", contents)
+	}
+	if _, err := os.Stat(filepath.Join(sessionDir, "rle", "rle.toml")); err != nil {
+		t.Fatalf("expected rle/ to be copied: %v", err)
+	}
+	if _, err := catalog.Copy("", "unnamed_byoh", t.TempDir(), false); err == nil {
+		t.Fatal("expected an unnamed copy to fail when samples are named")
+	}
+	if _, err := catalog.Copy("hidden_sample", "hidden_byoh", t.TempDir(), false); err == nil {
+		t.Fatal("expected a hidden sample to be unavailable")
+	}
+}
+
+func TestLoadRleHarnessSampleCatalogShowsHiddenSamples(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	sourceRepo := t.TempDir()
+	runTestGit(t, sourceRepo, "init", "--initial-branch=main")
+	byohPath := filepath.Join(sourceRepo, filepath.FromSlash(rleHarnessSamplesPath), "byoh")
+	for _, sampleName := range []string{"code_repair", "hidden_sample"} {
+		for _, contentDir := range rleHarnessSampleContentDirs {
+			if err := os.MkdirAll(filepath.Join(byohPath, sampleName, contentDir), 0750); err != nil {
+				t.Fatal(err)
+			}
+			marker := filepath.Join(byohPath, sampleName, contentDir, "marker.txt")
+			if err := os.WriteFile(marker, []byte(sampleName), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	catalogContents := "[[sample]]\nname = \"hidden_sample\"\nvisible = false\n"
+	if err := os.WriteFile(filepath.Join(byohPath, rleSampleCatalogFile), []byte(catalogContents), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runTestGit(t, sourceRepo, "add", ".")
+	runTestGit(
+		t,
+		sourceRepo,
+		"-c", "user.name=RLE Tests",
+		"-c", "user.email=rle-tests@example.com",
+		"commit", "-m", "Add named harness samples",
+	)
+
+	catalog, err := loadRleHarnessSampleCatalog(
+		sourceRepo,
+		"main",
+		RleSubtypeBYOH,
+		RleSampleCatalogOptions{ShowHiddenSamples: true},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := catalog.Close(); err != nil {
+			t.Errorf("close harness sample catalog: %v", err)
+		}
+	})
+	if !slices.Equal(catalog.SampleNames(), []string{"code_repair", "hidden_sample"}) {
+		t.Fatalf("expected hidden samples to be revealed, got %v", catalog.SampleNames())
+	}
+}
+
+func TestLoadRleHarnessSampleCatalogRejectsUnsupportedSubtype(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not available")
 	}
@@ -203,7 +337,12 @@ func TestLoadRleHarnessSampleRejectsUnsupportedSubtype(t *testing.T) {
 		"commit", "-m", "Init",
 	)
 
-	if _, err := loadRleHarnessSample(sourceRepo, "main", RleSubtypeOpenEnv); err == nil {
+	if _, err := loadRleHarnessSampleCatalog(
+		sourceRepo,
+		"main",
+		RleSubtypeOpenEnv,
+		RleSampleCatalogOptions{},
+	); err == nil {
 		t.Fatal("expected an error for a subtype with no working harness sample")
 	}
 }
@@ -224,7 +363,7 @@ func TestRleSampleCatalogFiltersHiddenSamples(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	catalogPath := filepath.Join(sourceRepo, filepath.FromSlash(rleGymSamplesPath), rleGymSampleCatalogFile)
+	catalogPath := filepath.Join(sourceRepo, filepath.FromSlash(rleGymSamplesPath), rleSampleCatalogFile)
 	catalogContents := "[[sample]]\nname = \"hidden_sample\"\nvisible = false\n"
 	if err := os.WriteFile(catalogPath, []byte(catalogContents), 0600); err != nil {
 		t.Fatal(err)

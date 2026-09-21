@@ -7,8 +7,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -168,15 +170,35 @@ func TestInitInteractiveBYOHScaffoldsUsingPromptedValues(t *testing.T) {
 	}
 }
 
-// fakeRleHarnessSample is a test double for project.RleHarnessSample that
-// writes a minimal, working agent/+rle/ pair without touching the network,
-// mirroring the real samples' rle.toml defaults for its subtype.
-type fakeRleHarnessSample struct {
-	subtype project.RleSubtype
-	closed  bool
+// fakeRleHarnessSampleCatalog is a test double for
+// project.RleHarnessSampleCatalog that writes a minimal, working agent/+rle/
+// pair without touching the network, mirroring the real samples' rle.toml
+// defaults for its subtype. A nil sampleNames stands in for a samples repo
+// still using the legacy flat layout.
+type fakeRleHarnessSampleCatalog struct {
+	subtype      project.RleSubtype
+	sampleNames  []string
+	copiedSample string
+	closed       bool
 }
 
-func (f *fakeRleHarnessSample) Copy(folderName string, dest string, force bool) (string, error) {
+func (f *fakeRleHarnessSampleCatalog) SampleNames() []string {
+	return slices.Clone(f.sampleNames)
+}
+
+func (f *fakeRleHarnessSampleCatalog) Copy(
+	sampleName string,
+	folderName string,
+	dest string,
+	force bool,
+) (string, error) {
+	if len(f.sampleNames) == 0 && sampleName != "" {
+		return "", fmt.Errorf("unexpected sample name %q for the legacy flat layout", sampleName)
+	}
+	if len(f.sampleNames) > 0 && !slices.Contains(f.sampleNames, sampleName) {
+		return "", fmt.Errorf("unknown sample name %q", sampleName)
+	}
+	f.copiedSample = sampleName
 	sessionDir := filepath.Join(dest, folderName)
 	if err := os.MkdirAll(filepath.Join(sessionDir, "agent"), 0750); err != nil {
 		return "", err
@@ -211,7 +233,7 @@ func (f *fakeRleHarnessSample) Copy(folderName string, dest string, force bool) 
 	return sessionDir, nil
 }
 
-func (f *fakeRleHarnessSample) Close() error {
+func (f *fakeRleHarnessSampleCatalog) Close() error {
 	f.closed = true
 	return nil
 }
@@ -223,7 +245,7 @@ func TestInitHostedAgentSampleSourceCopiesWorkingSample(t *testing.T) {
 
 	oldSelectTarget := selectRleInitTargetFunc
 	oldSelectHarnessSource := selectHarnessSourceFunc
-	oldLoadHarnessSample := loadRleHarnessSampleFunc
+	oldLoadHarnessSample := loadRleHarnessSampleCatalogFunc
 	oldLoadCatalog := loadRleSampleCatalogFunc
 	selectRleInitTargetFunc = func(_ context.Context, includeHarnessTypes bool) (rleInitTarget, error) {
 		return rleInitTarget{
@@ -233,12 +255,12 @@ func TestInitHostedAgentSampleSourceCopiesWorkingSample(t *testing.T) {
 	selectHarnessSourceFunc = func(_ context.Context) (string, error) {
 		return harnessSourceSample, nil
 	}
-	var closedSample *fakeRleHarnessSample
-	loadRleHarnessSampleFunc = func(subtype project.RleSubtype) (rleHarnessSample, error) {
+	var closedSample *fakeRleHarnessSampleCatalog
+	loadRleHarnessSampleCatalogFunc = func(subtype project.RleSubtype) (rleHarnessSampleCatalog, error) {
 		if subtype != project.RleSubtypeHostedAgent {
 			t.Fatalf("expected HostedAgent subtype, got %s", subtype)
 		}
-		sample := &fakeRleHarnessSample{subtype: subtype}
+		sample := &fakeRleHarnessSampleCatalog{subtype: subtype}
 		closedSample = sample
 		return sample, nil
 	}
@@ -249,7 +271,7 @@ func TestInitHostedAgentSampleSourceCopiesWorkingSample(t *testing.T) {
 	t.Cleanup(func() {
 		selectRleInitTargetFunc = oldSelectTarget
 		selectHarnessSourceFunc = oldSelectHarnessSource
-		loadRleHarnessSampleFunc = oldLoadHarnessSample
+		loadRleHarnessSampleCatalogFunc = oldLoadHarnessSample
 		loadRleSampleCatalogFunc = oldLoadCatalog
 	})
 
@@ -294,6 +316,105 @@ func TestInitHostedAgentSampleSourceCopiesWorkingSample(t *testing.T) {
 	}
 }
 
+func TestInitHarnessSampleSelectsNamedSample(t *testing.T) {
+	for _, testCase := range []struct {
+		name         string
+		sampleNames  []string
+		sampleFlag   string
+		wantSample   string
+		wantFolder   string
+		wantExecFail bool
+	}{
+		{
+			name:        "single named sample is taken without prompting",
+			sampleNames: []string{"code_repair"},
+			wantSample:  "code_repair",
+			wantFolder:  "code_repair",
+		},
+		{
+			name:        "flag selects among several named samples",
+			sampleNames: []string{"code_repair", "web_nav"},
+			sampleFlag:  "web_nav",
+			wantSample:  "web_nav",
+			wantFolder:  "web_nav",
+		},
+		{
+			name:        "legacy flat layout still copies its unnamed sample",
+			sampleNames: nil,
+			wantSample:  "",
+			wantFolder:  "byoh_sample",
+		},
+		{
+			name:         "unknown sample name is rejected",
+			sampleNames:  []string{"code_repair"},
+			sampleFlag:   "nope",
+			wantExecFail: true,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			t.Chdir(tempDir)
+			t.Setenv(rleEnableAllEnvVar, "true")
+
+			oldSelectTarget := selectRleInitTargetFunc
+			oldSelectHarnessSource := selectHarnessSourceFunc
+			oldLoadHarnessCatalog := loadRleHarnessSampleCatalogFunc
+			selectRleInitTargetFunc = func(_ context.Context, includeHarnessTypes bool) (rleInitTarget, error) {
+				return rleInitTarget{
+					rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeBYOH,
+				}, nil
+			}
+			selectHarnessSourceFunc = func(_ context.Context) (string, error) {
+				return harnessSourceSample, nil
+			}
+			var loadedCatalog *fakeRleHarnessSampleCatalog
+			loadRleHarnessSampleCatalogFunc = func(subtype project.RleSubtype) (rleHarnessSampleCatalog, error) {
+				catalog := &fakeRleHarnessSampleCatalog{subtype: subtype, sampleNames: testCase.sampleNames}
+				loadedCatalog = catalog
+				return catalog, nil
+			}
+			t.Cleanup(func() {
+				selectRleInitTargetFunc = oldSelectTarget
+				selectHarnessSourceFunc = oldSelectHarnessSource
+				loadRleHarnessSampleCatalogFunc = oldLoadHarnessCatalog
+			})
+
+			noPrompt := false
+			command := newInitCommand(&noPrompt)
+			var output bytes.Buffer
+			command.SetOut(&output)
+			args := []string{}
+			if testCase.sampleFlag != "" {
+				args = append(args, "--sample", testCase.sampleFlag)
+			}
+			command.SetArgs(args)
+			err := command.Execute()
+			if testCase.wantExecFail {
+				if err == nil {
+					t.Fatal("expected an unknown sample name to fail")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if loadedCatalog == nil || loadedCatalog.copiedSample != testCase.wantSample {
+				t.Fatalf("expected sample %q to be copied, got %+v", testCase.wantSample, loadedCatalog)
+			}
+			if !loadedCatalog.closed {
+				t.Fatal("expected the harness sample catalog to be closed after use")
+			}
+			// The sample name, not the subtype, names the session folder once
+			// samples are named -- otherwise every BYOH sample would scaffold
+			// into the same byoh_sample directory.
+			agentPath := filepath.Join(tempDir, testCase.wantFolder, "agent", "app.py")
+			if _, err := os.Stat(agentPath); err != nil {
+				t.Fatalf("expected the sample agent at %s: %v", agentPath, err)
+			}
+		})
+	}
+}
+
 func TestInitBYOHSampleSourceAppliesBaseURLOverride(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
@@ -301,7 +422,7 @@ func TestInitBYOHSampleSourceAppliesBaseURLOverride(t *testing.T) {
 
 	oldSelectTarget := selectRleInitTargetFunc
 	oldSelectHarnessSource := selectHarnessSourceFunc
-	oldLoadHarnessSample := loadRleHarnessSampleFunc
+	oldLoadHarnessSample := loadRleHarnessSampleCatalogFunc
 	selectRleInitTargetFunc = func(_ context.Context, includeHarnessTypes bool) (rleInitTarget, error) {
 		return rleInitTarget{
 			rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeBYOH,
@@ -310,13 +431,13 @@ func TestInitBYOHSampleSourceAppliesBaseURLOverride(t *testing.T) {
 	selectHarnessSourceFunc = func(_ context.Context) (string, error) {
 		return harnessSourceSample, nil
 	}
-	loadRleHarnessSampleFunc = func(subtype project.RleSubtype) (rleHarnessSample, error) {
-		return &fakeRleHarnessSample{subtype: subtype}, nil
+	loadRleHarnessSampleCatalogFunc = func(subtype project.RleSubtype) (rleHarnessSampleCatalog, error) {
+		return &fakeRleHarnessSampleCatalog{subtype: subtype}, nil
 	}
 	t.Cleanup(func() {
 		selectRleInitTargetFunc = oldSelectTarget
 		selectHarnessSourceFunc = oldSelectHarnessSource
-		loadRleHarnessSampleFunc = oldLoadHarnessSample
+		loadRleHarnessSampleCatalogFunc = oldLoadHarnessSample
 	})
 
 	noPrompt := false
@@ -347,13 +468,13 @@ func TestInitNoPromptHarnessDefaultsToExistingSource(t *testing.T) {
 	t.Chdir(tempDir)
 	t.Setenv(rleEnableAllEnvVar, "true")
 
-	oldLoadHarnessSample := loadRleHarnessSampleFunc
-	loadRleHarnessSampleFunc = func(subtype project.RleSubtype) (rleHarnessSample, error) {
+	oldLoadHarnessSample := loadRleHarnessSampleCatalogFunc
+	loadRleHarnessSampleCatalogFunc = func(subtype project.RleSubtype) (rleHarnessSampleCatalog, error) {
 		t.Fatal("expected --no-prompt without --harness-source to keep the existing-harness placeholder")
 		return nil, nil
 	}
 	t.Cleanup(func() {
-		loadRleHarnessSampleFunc = oldLoadHarnessSample
+		loadRleHarnessSampleCatalogFunc = oldLoadHarnessSample
 	})
 
 	noPrompt := true

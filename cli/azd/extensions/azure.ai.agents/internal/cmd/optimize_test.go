@@ -21,22 +21,17 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-func TestResolveOptimizeAgent_DefinitionOverride(t *testing.T) {
+func TestResolveOptimizeAgent_ServiceDefinition(t *testing.T) {
 	tests := []struct {
-		name         string
-		inlineKind   string
-		overrideKind string
-		wantPrompt   bool
-		source       string
+		name       string
+		inlineKind string
+		wantPrompt bool
+		source     string
 	}{
-		{"prompt with hosted override", "prompt", "hosted", true, "inline"},
-		{"hosted with prompt override", "hosted", "prompt", false, "inline"},
-		{"prompt without override", "prompt", "", true, "inline"},
-		{"hosted without override", "hosted", "", false, "inline"},
-		{"legacy prompt with hosted override", "prompt", "hosted", true, "config"},
-		{"legacy hosted with prompt override", "hosted", "prompt", false, "config"},
-		{"referenced prompt with hosted override", "prompt", "hosted", true, "$ref"},
-		{"referenced hosted with prompt override", "hosted", "prompt", false, "$ref"},
+		{"prompt", "prompt", true, "inline"},
+		{"hosted", "hosted", false, "inline"},
+		{"referenced prompt", "prompt", true, "$ref"},
+		{"referenced hosted", "hosted", false, "$ref"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -45,9 +40,6 @@ func TestResolveOptimizeAgent_DefinitionOverride(t *testing.T) {
 			require.NoError(t, err)
 			svc := &azdext.ServiceConfig{Name: "assistant", Host: AiAgentHost, AdditionalProperties: props}
 			switch tt.source {
-			case "config":
-				svc.Config = props
-				svc.AdditionalProperties = nil
 			case "$ref":
 				require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"),
 					[]byte("kind: "+tt.inlineKind+"\n"), 0600))
@@ -65,12 +57,7 @@ func TestResolveOptimizeAgent_DefinitionOverride(t *testing.T) {
 				},
 			}
 			t.Setenv("AZD_SERVER", newProjectRecorderServer(t, server, envServer))
-			override := ""
-			if tt.overrideKind != "" {
-				override = filepath.Join(root, "override.yaml")
-				require.NoError(t, os.WriteFile(override, []byte("kind: "+tt.overrideKind+"\n"), 0600))
-			}
-			t.Setenv("AGENT_DEFINITION_PATH", override)
+			t.Setenv("AGENT_DEFINITION_PATH", "")
 
 			resolved, err := resolveOptimizeAgent(t.Context(), "assistant", "dev", true)
 			require.NoError(t, err)

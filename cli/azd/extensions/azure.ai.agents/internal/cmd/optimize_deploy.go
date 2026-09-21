@@ -13,19 +13,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"go.yaml.in/yaml/v3"
 )
 
 type optimizeDeployFlags struct {
@@ -294,53 +291,6 @@ func buildPromptDeployDefinition(
 	}
 	return newDef, nil
 }
-
-// upsertAgentYamlEnvVar reads the agent.yaml file, adds or updates the specified
-// environment variable in the environment_variables list, and writes back.
-func upsertAgentYamlEnvVar(agentYamlPath, key, value string) error {
-	data, err := os.ReadFile(agentYamlPath) //nolint:gosec // G304: path from azd project
-	if err != nil {
-		return fmt.Errorf("reading agent.yaml: %w", err)
-	}
-
-	var agent agent_yaml.ContainerAgent
-	if err := yaml.Unmarshal(data, &agent); err != nil {
-		return fmt.Errorf("parsing agent.yaml: %w", err)
-	}
-
-	// Upsert the environment variable.
-	if agent.EnvironmentVariables == nil {
-		agent.EnvironmentVariables = &[]agent_yaml.EnvironmentVariable{}
-	}
-
-	found := false
-	envVars := *agent.EnvironmentVariables
-	for i := range envVars {
-		if envVars[i].Name == key {
-			envVars[i].Value = value
-			found = true
-			break
-		}
-	}
-	if !found {
-		envVars = append(envVars, agent_yaml.EnvironmentVariable{Name: key, Value: value})
-	}
-	agent.EnvironmentVariables = &envVars
-
-	// Marshal back to YAML and write.
-	out, err := yaml.Marshal(&agent)
-	if err != nil {
-		return fmt.Errorf("marshaling agent.yaml: %w", err)
-	}
-
-	//nolint:gosec // G306: agent.yaml should be readable by tooling
-	if err := os.WriteFile(agentYamlPath, out, 0644); err != nil {
-		return fmt.Errorf("writing agent.yaml: %w", err)
-	}
-
-	return nil
-}
-
 // resolveProjectEndpointForDeploy resolves the Foundry project endpoint using
 // the same resolution chain as other agent commands.
 func resolveProjectEndpointForDeploy(ctx context.Context, connFlags *optimizeConnectionFlags, envName string) (string, error) {

@@ -98,8 +98,7 @@ func finetuneServiceError(err error) error {
 		Suggestion: "Verify the fine-tuning API endpoint, that the base model is enabled for RL-environment " +
 			"training, and that the RLE name/version are published in the project set by FOUNDRY_PROJECT_ENDPOINT.",
 	}
-	var httpErr *finetuneHTTPError
-	if errors.As(err, &httpErr) {
+	if httpErr, ok := errors.AsType[*finetuneHTTPError](err); ok {
 		result.StatusCode = httpErr.statusCode
 		switch {
 		case httpErr.statusCode == http.StatusUnauthorized || httpErr.statusCode == http.StatusForbidden:
@@ -108,6 +107,24 @@ func finetuneServiceError(err error) error {
 			result.Suggestion = "The rl_environment method requires a Loom-eligible base model and a ready, " +
 				"published RLE version in the Foundry project set by FOUNDRY_PROJECT_ENDPOINT. Check the error " +
 				"detail above and retry."
+		}
+	}
+	return result
+}
+
+func finetuneUploadServiceError(err error) error {
+	result := &azdext.ServiceError{
+		Message:     err.Error(),
+		ServiceName: "finetunesapi",
+		Suggestion:  "Verify the local file, your Azure sign-in, and access to the fine-tuning resource, then retry.",
+	}
+	if httpErr, ok := errors.AsType[*finetuneHTTPError](err); ok {
+		result.StatusCode = httpErr.statusCode
+		switch {
+		case httpErr.statusCode == http.StatusUnauthorized || httpErr.statusCode == http.StatusForbidden:
+			result.Suggestion = "Verify your Azure sign-in and access to the fine-tuning resource, then retry."
+		case httpErr.statusCode == http.StatusBadRequest:
+			result.Suggestion = "Verify the local file format and retry. Check the error detail above for service requirements."
 		}
 	}
 	return result
@@ -166,20 +183,34 @@ func (c *finetuneClient) do(
 	target any,
 ) error {
 	var reader io.Reader
+	contentType := ""
 	if body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
 			return fmt.Errorf("marshal request body: %w", err)
 		}
 		reader = bytes.NewReader(data)
+		contentType = "application/json"
 	}
 
+	return c.doWithReader(ctx, method, path, headers, reader, contentType, target)
+}
+
+func (c *finetuneClient) doWithReader(
+	ctx context.Context,
+	method string,
+	path string,
+	headers map[string]string,
+	body io.Reader,
+	contentType string,
+	target any,
+) error {
 	requestUrl, err := url.Parse(c.baseUrl + path)
 	if err != nil {
 		return fmt.Errorf("create request URL: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, requestUrl.String(), reader)
+	req, err := http.NewRequestWithContext(ctx, method, requestUrl.String(), body)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
@@ -195,8 +226,8 @@ func (c *finetuneClient) do(
 	for name, value := range headers {
 		req.Header.Set(name, value)
 	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

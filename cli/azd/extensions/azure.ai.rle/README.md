@@ -15,8 +15,36 @@ Install:
 
 - [Azure Developer CLI (`azd`)](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd)
 - [Azure CLI (`az`)](https://learn.microsoft.com/cli/azure/install-azure-cli)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) or
+  [Podman](https://podman.io/)
 - [Git](https://git-scm.com/downloads), used by `init` to download samples
+
+Docker is the default container CLI. To use Podman directly for local builds,
+container operations, and image pushes, check `podman info` and set the following
+in the terminal where you run RLE. On Windows/macOS, initialize a Podman machine
+once with `podman machine init` if needed, and start it with `podman machine start`
+if it is stopped. Native Linux does not require a machine.
+
+```powershell
+$env:AZD_CONTAINER_RUNTIME = "podman"
+$env:DOCKER_COMMAND = "podman"
+az acr login --name "<registry>"
+```
+
+Bash equivalent:
+
+```bash
+export AZD_CONTAINER_RUNTIME=podman
+export DOCKER_COMMAND=podman
+az acr login --name "<registry>"
+```
+
+Sign in with `az login` before registry login. `DOCKER_COMMAND` configures Azure
+CLI registry login; `AZD_CONTAINER_RUNTIME` independently selects the executable
+RLE uses. Native Podman does not need Docker Desktop, `DOCKER_HOST`, or Buildx.
+Use `docker` for both variables to select Docker Desktop instead.
+An unset or empty `AZD_CONTAINER_RUNTIME` defaults to `docker`; an unavailable
+executable produces a command error without falling back to another runtime.
 
 Sign in before calling Foundry project APIs:
 

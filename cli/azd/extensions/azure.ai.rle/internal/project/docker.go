@@ -63,9 +63,7 @@ func PushImage(ctx context.Context, stdout io.Writer, stderr io.Writer, image st
 }
 
 func ContainerStatus(ctx context.Context, container string) (running bool, exists bool) {
-	//nolint:gosec // Fixed docker inspect command; container is a generated local name.
-	process := exec.CommandContext(ctx, "docker", "inspect", "-f", "{{.State.Running}}", container)
-	process.Env = os.Environ()
+	process := containerCommand(ctx, "inspect", "-f", "{{.State.Running}}", container)
 	output, err := process.Output()
 	if err != nil {
 		return false, false
@@ -74,10 +72,19 @@ func ContainerStatus(ctx context.Context, container string) (running bool, exist
 }
 
 func RunDocker(ctx context.Context, stdout io.Writer, stderr io.Writer, args ...string) error {
-	//nolint:gosec // Fixed docker command shapes with selected names/tags.
-	process := exec.CommandContext(ctx, "docker", args...)
+	process := containerCommand(ctx, args...)
 	process.Stdout = stdout
 	process.Stderr = stderr
-	process.Env = os.Environ()
 	return process.Run()
+}
+
+func containerCommand(ctx context.Context, args ...string) *exec.Cmd {
+	runtime := os.Getenv("AZD_CONTAINER_RUNTIME")
+	if runtime == "" {
+		runtime = "docker"
+	}
+	//nolint:gosec // Explicit local runtime override; arguments are passed without a shell.
+	process := exec.CommandContext(ctx, runtime, args...)
+	process.Env = os.Environ()
+	return process
 }

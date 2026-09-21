@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestDetectStartupCommand(t *testing.T) {
@@ -979,10 +980,13 @@ func TestResolveAgentServiceFromProject_EnvLookupFailureIsReturned(t *testing.T)
 func TestResolveAgentProtocol_ReturnsServiceName(t *testing.T) {
 	t.Parallel()
 
-	// Create a temp dir with a hosted agent.yaml declaring the "responses" protocol.
 	svcDir := t.TempDir()
-	agentYaml := "kind: hosted\nname: my-agent\nprotocols:\n  - protocol: responses\n    version: \"1.0\"\n"
-	require.NoError(t, os.WriteFile(filepath.Join(svcDir, "agent.yaml"), []byte(agentYaml), 0600))
+	props, err := structpb.NewStruct(map[string]any{
+		"kind":      "hosted",
+		"name":      "my-agent",
+		"protocols": []any{map[string]any{"protocol": "responses", "version": "1.0"}},
+	})
+	require.NoError(t, err)
 
 	tests := []struct {
 		name        string
@@ -995,7 +999,10 @@ func TestResolveAgentProtocol_ReturnsServiceName(t *testing.T) {
 			name:      "single service auto-resolved",
 			inputName: "",
 			services: map[string]*azdext.ServiceConfig{
-				"my-agent": {Name: "my-agent", Host: AiAgentHost, RelativePath: "."},
+				"my-agent": {
+					Name: "my-agent", Host: AiAgentHost, RelativePath: ".",
+					AdditionalProperties: props,
+				},
 			},
 			wantName: "my-agent",
 		},
@@ -1003,8 +1010,14 @@ func TestResolveAgentProtocol_ReturnsServiceName(t *testing.T) {
 			name:      "explicit name returns that service",
 			inputName: "agent-b",
 			services: map[string]*azdext.ServiceConfig{
-				"agent-a": {Name: "agent-a", Host: AiAgentHost, RelativePath: "."},
-				"agent-b": {Name: "agent-b", Host: AiAgentHost, RelativePath: "."},
+				"agent-a": {
+					Name: "agent-a", Host: AiAgentHost, RelativePath: ".",
+					AdditionalProperties: props,
+				},
+				"agent-b": {
+					Name: "agent-b", Host: AiAgentHost, RelativePath: ".",
+					AdditionalProperties: props,
+				},
 			},
 			wantName: "agent-b",
 		},
@@ -1012,8 +1025,14 @@ func TestResolveAgentProtocol_ReturnsServiceName(t *testing.T) {
 			name:      "multiple services prompt selects first",
 			inputName: "",
 			services: map[string]*azdext.ServiceConfig{
-				"alpha": {Name: "alpha", Host: AiAgentHost, RelativePath: "."},
-				"beta":  {Name: "beta", Host: AiAgentHost, RelativePath: "."},
+				"alpha": {
+					Name: "alpha", Host: AiAgentHost, RelativePath: ".",
+					AdditionalProperties: props,
+				},
+				"beta": {
+					Name: "beta", Host: AiAgentHost, RelativePath: ".",
+					AdditionalProperties: props,
+				},
 			},
 			selectIndex: 0,
 			wantName:    "alpha",
@@ -1022,8 +1041,14 @@ func TestResolveAgentProtocol_ReturnsServiceName(t *testing.T) {
 			name:      "multiple services prompt selects second",
 			inputName: "",
 			services: map[string]*azdext.ServiceConfig{
-				"alpha": {Name: "alpha", Host: AiAgentHost, RelativePath: "."},
-				"beta":  {Name: "beta", Host: AiAgentHost, RelativePath: "."},
+				"alpha": {
+					Name: "alpha", Host: AiAgentHost, RelativePath: ".",
+					AdditionalProperties: props,
+				},
+				"beta": {
+					Name: "beta", Host: AiAgentHost, RelativePath: ".",
+					AdditionalProperties: props,
+				},
 			},
 			selectIndex: 1,
 			wantName:    "beta",
@@ -1061,15 +1086,25 @@ func TestResolveAgentProtocol_MultipleServicesPromptsOnce(t *testing.T) {
 	t.Parallel()
 
 	svcDir := t.TempDir()
-	agentYaml := "kind: hosted\nname: my-agent\nprotocols:\n  - protocol: responses\n    version: \"1.0\"\n"
-	require.NoError(t, os.WriteFile(filepath.Join(svcDir, "agent.yaml"), []byte(agentYaml), 0600))
+	props, err := structpb.NewStruct(map[string]any{
+		"kind":      "hosted",
+		"name":      "my-agent",
+		"protocols": []any{map[string]any{"protocol": "responses", "version": "1.0"}},
+	})
+	require.NoError(t, err)
 
 	projectServer := &helpersProjectServer{
 		project: &azdext.ProjectConfig{
 			Path: svcDir,
 			Services: map[string]*azdext.ServiceConfig{
-				"svc-a": {Name: "svc-a", Host: AiAgentHost, RelativePath: "."},
-				"svc-b": {Name: "svc-b", Host: AiAgentHost, RelativePath: "."},
+				"svc-a": {
+					Name: "svc-a", Host: AiAgentHost, RelativePath: ".",
+					AdditionalProperties: props,
+				},
+				"svc-b": {
+					Name: "svc-b", Host: AiAgentHost, RelativePath: ".",
+					AdditionalProperties: props,
+				},
 			},
 		},
 	}

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/project"
 
@@ -85,7 +86,12 @@ func runEndpointShow(
 	// agent.yaml on disk) to get the agent name.
 	agentDef, _, source, err := project.LoadAgentDefinition(svc, proj.Path)
 	if err != nil {
-		return fmt.Errorf("failed to resolve agent definition: %w", err)
+		return exterrors.ValidationFromError(
+			err,
+			exterrors.CodeInvalidServiceConfig,
+			"failed to resolve agent definition",
+			"fix the agent service configuration in azure.yaml",
+		)
 	}
 	if source.IsLegacy() {
 		project.WarnLegacyAgentShape(source)

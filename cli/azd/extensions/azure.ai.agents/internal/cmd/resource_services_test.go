@@ -54,6 +54,8 @@ func agentService(t *testing.T, name string, toolConnections ...project.ToolConn
 	svc := mustMarshalConfig(t, &project.ServiceTargetAgentConfig{ToolConnections: toolConnections})
 	svc.Name = name
 	svc.Host = AiAgentHost
+	svc.AdditionalProperties = svc.Config
+	svc.Config = nil
 	return svc
 }
 
@@ -335,7 +337,7 @@ func TestCollectConnections_IgnoresBundledAgentConfig(t *testing.T) {
 	require.ErrorContains(t, err, "bundled connections")
 }
 
-func TestCollectConnections_IgnoresBundledAgentFileRef(t *testing.T) {
+func TestCollectConnections_RejectsMixedDirectAndNestedConfig(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -378,9 +380,8 @@ func TestCollectConnections_IgnoresBundledAgentFileRef(t *testing.T) {
 	connections, err := collectConnections(services, root)
 	require.NoError(t, err)
 	require.Empty(t, connections)
-	require.NoError(t, project.ResolveServiceConfigInPlace(services["agent"], root))
-	_, err = project.LoadServiceTargetAgentConfig(services["agent"])
-	require.ErrorContains(t, err, "bundled connections")
+	err = project.ResolveServiceConfigInPlace(services["agent"], root)
+	require.ErrorContains(t, err, "unsupported nested config block")
 }
 
 func TestCollectResourceServices_ResolvesFileRefs(t *testing.T) {
@@ -493,6 +494,8 @@ func TestCollect_FallbackToLegacyProjectDeployments(t *testing.T) {
 	svc := mustMarshalConfig(t, bundled)
 	svc.Name = "my-agent"
 	svc.Host = AiAgentHost
+	svc.AdditionalProperties = svc.Config
+	svc.Config = nil
 	services := map[string]*azdext.ServiceConfig{"my-agent": svc}
 
 	deployments, err := collectLegacyProjectDeployments(services, "")

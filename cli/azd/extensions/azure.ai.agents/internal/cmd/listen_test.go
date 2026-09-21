@@ -41,26 +41,7 @@ func TestPrepareContainerSettings_AppliesSettingsInMemory(t *testing.T) {
 			wantMemory: "0.5Gi",
 		},
 		{
-			name:   "legacy explicit resources",
-			legacy: true,
-			resources: map[string]any{
-				"cpu":    "0.25",
-				"memory": "0.5Gi",
-			},
-			wantCPU:    "0.25",
-			wantMemory: "0.5Gi",
-		},
-		{
 			name: "inline missing memory",
-			resources: map[string]any{
-				"cpu": "1",
-			},
-			wantCPU:    "1",
-			wantMemory: project.DefaultMemory,
-		},
-		{
-			name:   "legacy missing memory",
-			legacy: true,
 			resources: map[string]any{
 				"cpu": "1",
 			},
@@ -453,13 +434,7 @@ func TestKindEnvUpdate_NoAgentYaml_IsNoOp(t *testing.T) {
 			"see test-results-bicepless.md Finding #3 for the bug this guards against")
 }
 
-// TestKindEnvUpdate_PresentInvalidYaml_StillErrors locks in the
-// behavior that a *present* agent.yaml is still validated. The
-// missing-file tolerance from the previous test must not weaken
-// the validator: a malformed on-disk agent.yaml is still a hard
-// error from preprovision because downstream service-target code
-// will choke on it.
-func TestKindEnvUpdate_PresentInvalidYaml_StillErrors(t *testing.T) {
+func TestKindEnvUpdate_UnreferencedInvalidYamlIsIgnored(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
@@ -476,10 +451,7 @@ func TestKindEnvUpdate_PresentInvalidYaml_StillErrors(t *testing.T) {
 	proj := &azdext.ProjectConfig{Path: projectRoot}
 
 	err := kindEnvUpdate(t.Context(), nil, proj, svc, "dev")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "agent.yaml is not valid",
-		"a present-but-invalid agent.yaml is still a hard error -- "+
-			"the missing-file tolerance must not bypass validation")
+	require.NoError(t, err)
 }
 
 func TestParseConnectionIDs(t *testing.T) {
@@ -673,9 +645,9 @@ func TestAgentListenersDoNotProjectSplitConnections(t *testing.T) {
 			}
 			client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
 			agent := agentService(t, "agent", project.ToolConnection{Name: "runtime", Target: "${AGENT_ENDPOINT}"})
-			agent.Config.Fields["kind"] = structpb.NewStringValue("prompt-voice")
-			agent.Config.Fields["name"] = structpb.NewStringValue("agent")
-			agent.Config.Fields["model"], _ = structpb.NewValue(map[string]any{"id": "gpt-realtime"})
+			agent.AdditionalProperties.Fields["kind"] = structpb.NewStringValue("prompt-voice")
+			agent.AdditionalProperties.Fields["name"] = structpb.NewStringValue("agent")
+			agent.AdditionalProperties.Fields["model"], _ = structpb.NewValue(map[string]any{"id": "gpt-realtime"})
 			connection := connectionService(t, "search", project.Connection{
 				Name: "search", Target: "${SEARCH_ENDPOINT}", Credentials: map[string]any{"key": "${SEARCH_KEY}"},
 			})
@@ -709,14 +681,10 @@ func TestAgentListenersDoNotProjectSplitConnections(t *testing.T) {
 func TestIsHostedAgentService_HostedKind(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, "agent.yaml"),
-		[]byte("kind: hosted\nname: my-agent\n"), 0600,
-	))
-
-	svc := &azdext.ServiceConfig{Name: "svc", RelativePath: "."}
-	proj := &azdext.ProjectConfig{Path: dir}
+	props, err := structpb.NewStruct(map[string]any{"kind": "hosted", "name": "my-agent"})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{Name: "svc", AdditionalProperties: props}
+	proj := &azdext.ProjectConfig{Path: t.TempDir()}
 
 	assert.True(t, isHostedAgentService(svc, proj))
 }
@@ -724,14 +692,10 @@ func TestIsHostedAgentService_HostedKind(t *testing.T) {
 func TestIsHostedAgentService_NonHostedKind(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, "agent.yaml"),
-		[]byte("kind: local\nname: my-agent\n"), 0600,
-	))
-
-	svc := &azdext.ServiceConfig{Name: "svc", RelativePath: "."}
-	proj := &azdext.ProjectConfig{Path: dir}
+	props, err := structpb.NewStruct(map[string]any{"kind": "local", "name": "my-agent"})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{Name: "svc", AdditionalProperties: props}
+	proj := &azdext.ProjectConfig{Path: t.TempDir()}
 
 	assert.False(t, isHostedAgentService(svc, proj))
 }
@@ -779,14 +743,11 @@ func TestIsHostedAgentService_SubDirectory(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	subDir := filepath.Join(dir, "agents", "bot")
-	require.NoError(t, os.MkdirAll(subDir, 0700))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(subDir, "agent.yaml"),
-		[]byte("kind: hosted\nname: bot\n"), 0600,
-	))
-
-	svc := &azdext.ServiceConfig{Name: "bot", RelativePath: "agents/bot"}
+	props, err := structpb.NewStruct(map[string]any{"kind": "hosted", "name": "bot"})
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{
+		Name: "bot", RelativePath: "agents/bot", AdditionalProperties: props,
+	}
 	proj := &azdext.ProjectConfig{Path: dir}
 
 	assert.True(t, isHostedAgentService(svc, proj))

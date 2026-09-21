@@ -4,9 +4,12 @@
 package agentkind
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"azureaiagent/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -27,27 +30,24 @@ func TestKind_InlineOnEntry(t *testing.T) {
 		Name:                 "voice",
 		AdditionalProperties: mustStruct(t, map[string]any{"kind": "prompt-voice"}),
 	}
-	isVoice, err := IsPromptVoice(svc, t.TempDir(), "")
+	isVoice, err := IsPromptVoice(svc, t.TempDir())
 	require.NoError(t, err)
 	assert.True(t, isVoice)
 }
 
-func TestKind_LegacyConfigOnEntry(t *testing.T) {
-	t.Parallel()
+func TestKind_RejectsNestedConfig(t *testing.T) {
 	svc := &azdext.ServiceConfig{
 		Name:   "voice",
+		Host:   "azure.ai.agent",
 		Config: mustStruct(t, map[string]any{"kind": "prompt-voice"}),
 	}
-	isVoice, err := IsPromptVoice(svc, t.TempDir(), "")
-	require.NoError(t, err)
-	assert.True(t, isVoice)
+	_, err := IsPromptVoice(svc, t.TempDir())
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeDeprecatedAgentServiceConfig, localErr.Code)
 }
 
-// TestKind_ManifestFallback is the regression for the legacy shape: the service
-// entry carries no kind, so the kind must be read from the on-disk agent.yaml.
-// This is the case where the deploy path (which reads the manifest) and the
-// endpoint/next-step readers previously disagreed.
-func TestKind_ManifestFallback(t *testing.T) {
+func TestKind_DoesNotProbeServiceDirectory(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	svcDir := filepath.Join(root, "svc")
@@ -57,24 +57,39 @@ func TestKind_ManifestFallback(t *testing.T) {
 		[]byte("kind: prompt-voice\nname: concierge\n"), 0o600))
 
 	svc := &azdext.ServiceConfig{Name: "voice", RelativePath: "svc"}
-	isVoice, err := IsPromptVoice(svc, root, "")
+	isVoice, err := IsPromptVoice(svc, root)
 	require.NoError(t, err)
-	assert.True(t, isVoice, "kind must be resolved from the on-disk manifest")
+	assert.False(t, isVoice)
 }
 
-func TestKind_OverridePathWins(t *testing.T) {
-	t.Parallel()
+func TestKind_RejectsAgentDefinitionPath(t *testing.T) {
 	root := t.TempDir()
 	override := filepath.Join(root, "custom-def.yaml")
 	require.NoError(t, os.WriteFile(override, []byte("kind: prompt-voice\n"), 0o600))
+	t.Setenv("AGENT_DEFINITION_PATH", override)
 
-	// Entry declares hosted, but the explicit override file declares voice and
-	// must win, matching the deploy-time AGENT_DEFINITION_PATH precedence.
 	svc := &azdext.ServiceConfig{
 		Name:                 "voice",
+		Host:                 "azure.ai.agent",
 		AdditionalProperties: mustStruct(t, map[string]any{"kind": "hosted"}),
 	}
-	isVoice, err := IsPromptVoice(svc, root, override)
+	_, err := IsPromptVoice(svc, root)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeUnsupportedAgentDefinitionPath, localErr.Code)
+}
+
+func TestKind_ExplicitRootRef(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "agent.yaml"),
+		[]byte("kind: prompt-voice\nname: concierge\n"), 0o600))
+	svc := &azdext.ServiceConfig{
+		Name:                 "voice",
+		AdditionalProperties: mustStruct(t, map[string]any{"$ref": "agent.yaml"}),
+	}
+	isVoice, err := IsPromptVoice(svc, root)
 	require.NoError(t, err)
 	assert.True(t, isVoice)
 }
@@ -93,10 +108,10 @@ func TestKind_HostedIsNotVoice(t *testing.T) {
 		RelativePath:         "svc",
 		AdditionalProperties: mustStruct(t, map[string]any{"kind": "hosted"}),
 	}
-	isVoice, err := IsPromptVoice(svc, root, "")
+	isVoice, err := IsPromptVoice(svc, root)
 	require.NoError(t, err)
 	assert.False(t, isVoice)
-	isHosted, err := IsHosted(svc, root, "")
+	isHosted, err := IsHosted(svc, root)
 	require.NoError(t, err)
 	assert.True(t, isHosted)
 }
@@ -104,7 +119,7 @@ func TestKind_HostedIsNotVoice(t *testing.T) {
 func TestKind_AbsentReturnsEmpty(t *testing.T) {
 	t.Parallel()
 	svc := &azdext.ServiceConfig{Name: "worker", RelativePath: "svc"}
-	kind, err := Kind(svc, t.TempDir(), "")
+	kind, err := Kind(svc, t.TempDir())
 	require.NoError(t, err)
 	assert.Empty(t, kind)
 }

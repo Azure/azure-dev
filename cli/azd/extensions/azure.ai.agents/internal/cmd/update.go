@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
@@ -100,7 +101,12 @@ func runEndpointUpdate(
 	// agent.yaml on disk).
 	agentDef, _, source, err := project.LoadAgentDefinition(svc, proj.Path)
 	if err != nil {
-		return fmt.Errorf("failed to resolve agent definition: %w", err)
+		return exterrors.ValidationFromError(
+			err,
+			exterrors.CodeInvalidServiceConfig,
+			"failed to resolve agent definition",
+			"fix the agent service configuration in azure.yaml",
+		)
 	}
 	if source.IsLegacy() {
 		project.WarnLegacyAgentShape(source)

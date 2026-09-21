@@ -142,10 +142,11 @@ func TestResolveLocalFilePath(t *testing.T) {
 	}
 }
 
-func TestResolveFinetuneEndpointPrefersFlagOverEnvVar(t *testing.T) {
-	t.Setenv(finetuneEndpointEnvVar, "https://from-env.openai.azure.com")
-
-	endpoint, err := resolveFinetuneEndpoint("https://from-flag.openai.azure.com")
+func TestResolveFinetuneEndpointPrefersFlag(t *testing.T) {
+	endpoint, err := resolveFinetuneEndpoint(
+		"https://from-flag.openai.azure.com",
+		"https://account.services.ai.azure.com/api/projects/project",
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,24 +155,24 @@ func TestResolveFinetuneEndpointPrefersFlagOverEnvVar(t *testing.T) {
 	}
 }
 
-func TestResolveFinetuneEndpointFallsBackToEnvVar(t *testing.T) {
-	t.Setenv(finetuneEndpointEnvVar, "https://from-env.openai.azure.com/")
-
-	endpoint, err := resolveFinetuneEndpoint("")
+func TestResolveFinetuneEndpointDerivesAccountFromFoundryProject(t *testing.T) {
+	endpoint, err := resolveFinetuneEndpoint(
+		"",
+		"https://My-Account.services.ai.azure.com/api/projects/project",
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if endpoint != "https://from-env.openai.azure.com" {
-		t.Fatalf("expected normalized env var endpoint, got %q", endpoint)
+	if endpoint != "https://my-account.openai.azure.com" {
+		t.Fatalf("expected endpoint derived from the Foundry account, got %q", endpoint)
 	}
 }
 
-func TestResolveFinetuneEndpointRequiresValue(t *testing.T) {
-	t.Setenv(finetuneEndpointEnvVar, "")
-
-	_, err := resolveFinetuneEndpoint("")
-	if err == nil || !strings.Contains(err.Error(), "A fine-tuning API endpoint is required") {
-		t.Fatalf("expected missing endpoint error, got %v", err)
+func TestResolveFinetuneEndpointRejectsInvalidFoundryHost(t *testing.T) {
+	_, err := resolveFinetuneEndpoint("", "https://example.com/api/projects/project")
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	if !ok || localErr.Code != "rle_invalid_project_endpoint" {
+		t.Fatalf("expected invalid project endpoint error, got %v", err)
 	}
 }
 
@@ -227,7 +228,7 @@ func TestTrainActionUploadsLocalFileBeforeSubmittingJob(t *testing.T) {
 	}
 	t.Setenv(foundryProjectEndpointEnvVar, "https://account.services.ai.azure.com/api/projects/project")
 
-	client := newFinetuneClientWithCredential("https://resource.openai.azure.com", &testTokenCredential{})
+	client := newFinetuneClientWithCredential("https://account.openai.azure.com", &testTokenCredential{})
 	uploadCount := 0
 	client.httpClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		switch request.URL.Path {
@@ -268,8 +269,8 @@ func TestTrainActionUploadsLocalFileBeforeSubmittingJob(t *testing.T) {
 
 	originalCreateClient := createFinetuneClient
 	createFinetuneClient = func(endpoint string) (*finetuneClient, error) {
-		if endpoint != "https://resource.openai.azure.com" {
-			t.Fatalf("expected configured endpoint, got %q", endpoint)
+		if endpoint != "https://account.openai.azure.com" {
+			t.Fatalf("expected endpoint derived from the Foundry account, got %q", endpoint)
 		}
 		return client, nil
 	}
@@ -288,7 +289,6 @@ func TestTrainActionUploadsLocalFileBeforeSubmittingJob(t *testing.T) {
 			rleVersion:   "1.0.0",
 			model:        "Qwen/Qwen3-32B",
 			trainingFile: trainingFilePath,
-			endpoint:     "https://resource.openai.azure.com",
 		},
 	}
 

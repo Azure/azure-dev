@@ -68,7 +68,7 @@ FOUNDRY_PROJECT_ENDPOINT.`,
 	cmd.Flags().IntVar(&flags.maxEpisodeSteps, "max-episode-steps", 0,
 		"Maximum steps the RLE executes per rollout (0 uses the service default).")
 	cmd.Flags().StringVar(&flags.endpoint, "endpoint", "",
-		fmt.Sprintf("Fine-tuning API endpoint. Defaults to %s.", finetuneEndpointEnvVar))
+		fmt.Sprintf("Fine-tuning API endpoint. Defaults to the account in %s.", foundryProjectEndpointEnvVar))
 
 	for _, name := range []string{"rle-name", "rle-version", "model", "training-file"} {
 		_ = cmd.MarkFlagRequired(name)
@@ -87,11 +87,6 @@ func (a *trainAction) Run() error {
 		return err
 	}
 
-	endpoint, err := resolveFinetuneEndpoint(a.flags.endpoint)
-	if err != nil {
-		return err
-	}
-
 	projectEndpoint, err := resolveFoundryProjectEndpoint()
 	if err != nil {
 		return err
@@ -106,6 +101,10 @@ func (a *trainAction) Run() error {
 				foundryProjectEndpointEnvVar,
 			),
 		}
+	}
+	endpoint, err := resolveFinetuneEndpoint(a.flags.endpoint, projectEndpoint)
+	if err != nil {
+		return err
 	}
 	azureAIProject, err := projectRouteSegment(projectEndpoint)
 	if err != nil {

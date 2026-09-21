@@ -450,7 +450,6 @@ is still subject to change:
 $env:AZD_AI_RLE_ENABLE = "true"
 $env:AZD_AI_RLE_ENABLE_ALL = "true"
 $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
-$env:AZD_AI_RLE_TRAIN_ENDPOINT = "https://<resource>.openai.azure.com"
 
 azd ai rle train `
   --rle-name code_rl --rle-version 1.0.0 `
@@ -458,13 +457,15 @@ azd ai rle train `
   --training-file .\training.jsonl
 ```
 
-`FOUNDRY_PROJECT_ENDPOINT` identifies the project that owns the named RLE.
+`FOUNDRY_PROJECT_ENDPOINT` identifies the project that owns the named RLE. The
+fine-tuning endpoint is derived from the same account as
+`https://<account>.openai.azure.com`.
 `--training-file` is required and must point to a regular local training dataset
 file. The extension uploads it to the selected fine-tuning resource with the
 `fine-tune` purpose, then uses the returned file ID when it submits the job.
 `--validation-file` is optional and follows the same local-file upload flow.
-Use `--endpoint` instead of `AZD_AI_RLE_TRAIN_ENDPOINT` to target a different
-fine-tuning resource for a single invocation.
+Use `--endpoint` to target a different fine-tuning resource for a single
+invocation.
 
 ## Build and install from source
 

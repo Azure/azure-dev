@@ -6,34 +6,38 @@ package cmd
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// finetuneEndpointEnvVar points at the Azure OpenAI resource that hosts the fine-tuning
-// API (POST /openai/v1/fine_tuning/jobs), e.g. https://<resource>.openai.azure.com. This
-// is a different resource than the Foundry project targeted by FOUNDRY_PROJECT_ENDPOINT.
-const finetuneEndpointEnvVar = "AZD_AI_RLE_TRAIN_ENDPOINT"
-
-func resolveFinetuneEndpoint(flagValue string) (string, error) {
+func resolveFinetuneEndpoint(flagValue string, projectEndpoint string) (string, error) {
 	raw := strings.TrimSpace(flagValue)
-	if raw == "" {
-		raw = strings.TrimSpace(os.Getenv(finetuneEndpointEnvVar))
+	if raw != "" {
+		return normalizeFinetuneEndpoint(raw)
 	}
-	if raw == "" {
-		return "", &azdext.LocalError{
-			Message:  "A fine-tuning API endpoint is required for train.",
-			Code:     "rle_train_endpoint_required",
-			Category: azdext.LocalErrorCategoryUser,
-			Suggestion: fmt.Sprintf(
-				"Set %s=https://<resource>.openai.azure.com, or pass --endpoint.",
-				finetuneEndpointEnvVar,
-			),
-		}
+	return finetuneEndpointFromFoundryProject(projectEndpoint)
+}
+
+func finetuneEndpointFromFoundryProject(projectEndpoint string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(projectEndpoint))
+	if err != nil {
+		return "", invalidProjectEndpointError(fmt.Sprintf("invalid Foundry project endpoint: %v", err))
 	}
-	return normalizeFinetuneEndpoint(raw)
+
+	const foundryHostSuffix = ".services.ai.azure.com"
+	host := strings.ToLower(u.Hostname())
+	account := strings.TrimSuffix(host, foundryHostSuffix)
+	if account == "" || account == host {
+		return "", invalidProjectEndpointError(
+			"Foundry project endpoint host must end with .services.ai.azure.com",
+		)
+	}
+
+	return (&url.URL{
+		Scheme: "https",
+		Host:   account + ".openai.azure.com",
+	}).String(), nil
 }
 
 func normalizeFinetuneEndpoint(raw string) (string, error) {
@@ -58,12 +62,9 @@ func normalizeFinetuneEndpoint(raw string) (string, error) {
 
 func invalidFinetuneEndpointError(message string) error {
 	return &azdext.LocalError{
-		Message:  message,
-		Code:     "rle_invalid_train_endpoint",
-		Category: azdext.LocalErrorCategoryUser,
-		Suggestion: fmt.Sprintf(
-			"Set %s=https://<resource>.openai.azure.com.",
-			finetuneEndpointEnvVar,
-		),
+		Message:    message,
+		Code:       "rle_invalid_train_endpoint",
+		Category:   azdext.LocalErrorCategoryUser,
+		Suggestion: "Pass --endpoint https://<resource>.openai.azure.com.",
 	}
 }

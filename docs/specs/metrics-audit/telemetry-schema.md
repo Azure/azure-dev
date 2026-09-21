@@ -89,7 +89,9 @@ GDPR data-catalog entries rather than metadata declared in source:
 - CI environments: `UnknownCI`, `Azure Pipelines`, `GitHub Actions`, `AppVeyor`, `Bamboo`,
   `BitBucket Pipelines`, `Travis CI`, `Circle CI`, `GitLab CI`, `Jenkins`, `AWS CodeBuild`,
   `TeamCity`, `JetBrains Space`.
-- Optional modifiers: `Azure App Spaces Portal`, `Microsoft Foundry Skill`.
+- Optional modifiers: `Azure App Spaces Portal`, `Microsoft Foundry Skill`, `agency` (in this order).
+
+`agency` indicates a non-empty `AGENCY_SESSION_ID` environment variable. It is additive to the primary environment, including Copilot attribution, and does not depend on agent detection being enabled. Only the fixed enum value is emitted; the session ID is not emitted or hashed. The existing `SystemMetadata` classification and `BusinessInsight` purpose are unchanged.
 
 ### Experimentation
 

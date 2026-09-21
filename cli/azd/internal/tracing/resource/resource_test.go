@@ -263,6 +263,22 @@ func TestExecEnvForHosts_no_host(t *testing.T) {
 	}
 }
 
+func clearAgentEnvVars(t *testing.T) {
+	t.Helper()
+
+	for _, envVar := range []string{
+		"AGENCY_SESSION_ID", "AI_AGENT",
+		"ANTIGRAVITY_AGENT", "ANTIGRAVITY_CONVERSATION_ID",
+		"CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT",
+		"CODEX_INTERNAL_ORIGINATOR_OVERRIDE", "CODEX_CI", "CODEX_THREAD_ID", "CODEX_SESSION_ID",
+		"CURSOR_AGENT", "CURSOR_CONVERSATION_ID",
+		"COPILOT_CLI", "GEMINI_CLI", "GEMINI_CLI_NO_RELAUNCH", "OPENCODE",
+	} {
+		t.Setenv(envVar, "")
+		require.NoError(t, os.Unsetenv(envVar))
+	}
+}
+
 func TestGetExecutionEnvironment_Agents(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -346,25 +362,7 @@ func TestGetExecutionEnvironment_Agents(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			for _, envVar := range []string{
-				"ANTIGRAVITY_AGENT",
-				"ANTIGRAVITY_CONVERSATION_ID",
-				"CLAUDECODE",
-				"CLAUDE_CODE_ENTRYPOINT",
-				"CODEX_INTERNAL_ORIGINATOR_OVERRIDE",
-				"CODEX_CI",
-				"CODEX_THREAD_ID",
-				"CODEX_SESSION_ID",
-				"CURSOR_AGENT",
-				"CURSOR_CONVERSATION_ID",
-				"COPILOT_CLI",
-				"GEMINI_CLI",
-				"GEMINI_CLI_NO_RELAUNCH",
-				"OPENCODE",
-			} {
-				t.Setenv(envVar, "")
-				os.Unsetenv(envVar)
-			}
+			clearAgentEnvVars(t)
 			t.Setenv("AI_AGENT", tt.aiAgent)
 			t.Setenv(internal.AzdUserAgentEnvVar, tt.userAgent)
 			t.Setenv("CLAUDE_CODE_ENTRYPOINT", tt.entrypoint)
@@ -387,6 +385,7 @@ func TestExecEnvModifiers(t *testing.T) {
 	tests := []struct {
 		name      string
 		userAgent string
+		sessionID *string
 		want      []string
 	}{
 		{
@@ -405,6 +404,27 @@ func TestExecEnvModifiers(t *testing.T) {
 			want:      []string{fields.EnvModifierMicrosoftFoundrySkill},
 		},
 		{
+			name:      "empty Agency session",
+			sessionID: new(""),
+			want:      []string{},
+		},
+		{
+			name:      "Agency session",
+			sessionID: new("synthetic-agency-session"),
+			want:      []string{"agency"},
+		},
+		{
+			name:      "Agency session is not parsed",
+			sessionID: new("false;not-an-environment"),
+			want:      []string{"agency"},
+		},
+		{
+			name:      "Agency with multiple modifiers",
+			userAgent: "azure_app_space_portal microsoft_foundry_skill",
+			sessionID: new("another-synthetic-session"),
+			want:      []string{fields.EnvModifierAzureSpace, fields.EnvModifierMicrosoftFoundrySkill, "agency"},
+		},
+		{
 			name:      "multiple modifiers",
 			userAgent: "azure_app_space_portal microsoft_foundry_skill",
 			want: []string{
@@ -417,9 +437,81 @@ func TestExecEnvModifiers(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("AZURE_DEV_USER_AGENT", tt.userAgent)
+			t.Setenv("AGENCY_SESSION_ID", "")
+			require.NoError(t, os.Unsetenv("AGENCY_SESSION_ID"))
+			if tt.sessionID != nil {
+				t.Setenv("AGENCY_SESSION_ID", *tt.sessionID)
+			}
 
 			if got := execEnvModifiers(); !slices.Equal(got, tt.want) {
 				t.Fatalf("execEnvModifiers() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetExecutionEnvironment_Agency(t *testing.T) {
+	const sessionID = "synthetic-agency-session-do-not-emit"
+	tests := []struct {
+		name      string
+		sessionID *string
+		aiAgent   string
+		userAgent string
+		disabled  bool
+		want      string
+	}{
+		{name: "unset", want: "GitHub Copilot CLI"},
+		{name: "empty", sessionID: new(""), want: "GitHub Copilot CLI"},
+		{name: "Copilot CLI", sessionID: new(sessionID), want: "GitHub Copilot CLI;agency"},
+		{name: "different session", sessionID: new("different-session"), want: "GitHub Copilot CLI;agency"},
+		{
+			name: "Copilot App and CLI", sessionID: new(sessionID),
+			aiAgent: "github_copilot_app_agent", want: "GitHub Copilot App;agency",
+		},
+		{
+			name: "caller precedence", sessionID: new(sessionID),
+			userAgent: internal.VsCodeAgentPrefix, want: "Visual Studio Code;agency",
+		},
+		{
+			name: "agent detection disabled", sessionID: new(sessionID),
+			disabled: true, want: "Desktop;agency",
+		},
+		{
+			name: "all modifiers", sessionID: new(sessionID),
+			userAgent: "azure_app_space_portal microsoft_foundry_skill",
+			want:      "GitHub Copilot CLI;Azure App Spaces Portal;Microsoft Foundry Skill;agency",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearCIEnvVars(t)
+			clearAgentEnvVars(t)
+			for _, key := range []string{"AZD_IN_CLOUDSHELL", "CODESPACES"} {
+				t.Setenv(key, "")
+				require.NoError(t, os.Unsetenv(key))
+			}
+			t.Setenv(internal.AzdUserAgentEnvVar, tt.userAgent)
+			t.Setenv("AI_AGENT", tt.aiAgent)
+			t.Setenv("COPILOT_CLI", "1")
+			t.Setenv(agentdetect.DisableAgentDetectEnvVar, "")
+			if tt.disabled {
+				t.Setenv(agentdetect.DisableAgentDetectEnvVar, "1")
+			}
+			if tt.sessionID != nil {
+				t.Setenv("AGENCY_SESSION_ID", *tt.sessionID)
+			}
+			agentdetect.ResetDetection()
+			t.Cleanup(agentdetect.ResetDetection)
+
+			require.Equal(t, tt.want, getExecutionEnvironment())
+			for _, attr := range New().Attributes() {
+				if attr.Key == fields.ExecutionEnvironmentKey.Key {
+					require.Equal(t, tt.want, attr.Value.AsString())
+				}
+				if tt.sessionID != nil && *tt.sessionID != "" {
+					require.NotContains(t, attr.Value.String(), *tt.sessionID)
+				}
 			}
 		})
 	}
@@ -433,6 +525,7 @@ func TestNewReturnsCanonicalResource(t *testing.T) {
 	os.Unsetenv("CODESPACES")
 	t.Setenv("AZURE_DEV_USER_AGENT", "")
 	os.Unsetenv("AZURE_DEV_USER_AGENT")
+	t.Setenv("AGENCY_SESSION_ID", "synthetic-agency-canonical-resource-session")
 	t.Setenv(
 		"OTEL_RESOURCE_ATTRIBUTES",
 		"user.email=customer@example.com,custom.resource=value,service.instance.id=customer-instance",
@@ -447,6 +540,7 @@ func TestNewReturnsCanonicalResource(t *testing.T) {
 	attributes := map[attribute.Key]attribute.Value{}
 	for _, kv := range r.Attributes() {
 		attributes[kv.Key] = kv.Value
+		require.NotContains(t, kv.Value.String(), "synthetic-agency-canonical-resource-session")
 	}
 
 	expectedKeys := []attribute.Key{

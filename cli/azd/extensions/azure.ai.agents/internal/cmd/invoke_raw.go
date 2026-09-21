@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"mime"
 	"net/http"
 	"slices"
-	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 )
@@ -86,12 +86,13 @@ func writeRawAgentResponse(
 	}
 	body := io.TeeReader(resp.Body, writer)
 	var protocolErr error
-	if protocol == agent_api.AgentProtocolResponses {
-		protocolErr = readResponsesSSE(ctx, body, io.Discard, agentName, responsesSSEOptions{})
-	} else if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
-		protocolErr = handleInvocationSSE(io.Discard, body, agentName)
-	} else {
+	mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if mediaType != "text/event-stream" {
 		protocolErr = handleInvocationSyncWithWriter(io.Discard, body, agentName)
+	} else if protocol == agent_api.AgentProtocolResponses {
+		protocolErr = readResponsesSSE(ctx, body, io.Discard, agentName, responsesSSEOptions{})
+	} else {
+		protocolErr = handleInvocationSSE(io.Discard, body, agentName)
 	}
 	_, drainErr := io.Copy(io.Discard, body)
 	return errors.Join(protocolErr, drainErr)

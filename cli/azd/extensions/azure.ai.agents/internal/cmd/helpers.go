@@ -29,6 +29,7 @@ import (
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/google/uuid"
 	"golang.org/x/term"
@@ -975,6 +976,7 @@ type brownfieldAgentReference struct {
 func brownfieldInlineAgentReference(
 	svc *azdext.ServiceConfig,
 	projectConfig *azdext.ProjectConfig,
+	environmentValues map[string]string,
 ) *brownfieldAgentReference {
 	if svc == nil || projectConfig == nil {
 		return nil
@@ -986,16 +988,49 @@ func brownfieldInlineAgentReference(
 		if projectService == nil || projectService.GetHost() != AiProjectHost {
 			continue
 		}
-		cfg, err := projectpkg.LoadServiceTargetAgentConfig(projectService)
+		props := projectpkg.ServiceConfigProps(projectService)
+		if props == nil {
+			continue
+		}
+		values := props.AsMap()
+		if projectConfig.GetPath() != "" {
+			resolved, err := foundry.ResolveFileRefs(
+				values,
+				projectConfig.GetPath(),
+			)
+			if err != nil {
+				log.Printf(
+					"resolve agent service %q: failed to read project "+
+						"dependency %q: %v",
+					svc.Name,
+					dependency,
+					err,
+				)
+				continue
+			}
+			values = resolved
+		}
+		expanded, err := expandBrownfieldServiceValues(
+			values,
+			environmentValues,
+		)
 		if err != nil {
 			log.Printf(
-				"resolve agent service %q: failed to read project dependency %q: %v",
-				svc.Name, dependency, err,
+				"resolve agent service %q: failed to expand project "+
+					"dependency %q: %v",
+				svc.Name,
+				dependency,
+				err,
 			)
 			continue
 		}
-		if cfg != nil && strings.TrimSpace(cfg.Endpoint) != "" {
-			projectEndpoint = strings.TrimSpace(cfg.Endpoint)
+		values, ok := expanded.(map[string]any)
+		if !ok {
+			continue
+		}
+		if endpoint, ok := values["endpoint"].(string); ok &&
+			strings.TrimSpace(endpoint) != "" {
+			projectEndpoint = strings.TrimSpace(endpoint)
 			break
 		}
 	}
@@ -1019,6 +1054,46 @@ func brownfieldInlineAgentReference(
 	return &brownfieldAgentReference{
 		name:            agentName,
 		projectEndpoint: projectEndpoint,
+	}
+}
+
+func expandBrownfieldServiceValues(
+	value any,
+	environmentValues map[string]string,
+) (any, error) {
+	switch typed := value.(type) {
+	case map[string]any:
+		expanded := make(map[string]any, len(typed))
+		for key, item := range typed {
+			resolved, err := expandBrownfieldServiceValues(
+				item,
+				environmentValues,
+			)
+			if err != nil {
+				return nil, err
+			}
+			expanded[key] = resolved
+		}
+		return expanded, nil
+	case []any:
+		expanded := make([]any, len(typed))
+		for index, item := range typed {
+			resolved, err := expandBrownfieldServiceValues(
+				item,
+				environmentValues,
+			)
+			if err != nil {
+				return nil, err
+			}
+			expanded[index] = resolved
+		}
+		return expanded, nil
+	case string:
+		return foundry.ExpandEnv(typed, func(name string) string {
+			return environmentValues[name]
+		})
+	default:
+		return value, nil
 	}
 }
 
@@ -1217,7 +1292,11 @@ func resolveAgentServiceFromProject(
 	case strings.TrimSpace(envValues[nameKey]) != "":
 		info.AgentName = strings.TrimSpace(envValues[nameKey])
 	case resolutionOptions.allowBrownfieldInlineName:
-		reference := brownfieldInlineAgentReference(svc, projectConfig)
+		reference := brownfieldInlineAgentReference(
+			svc,
+			projectConfig,
+			envValues,
+		)
 		if reference == nil {
 			break
 		}

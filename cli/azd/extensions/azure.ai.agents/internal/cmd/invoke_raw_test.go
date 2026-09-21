@@ -170,6 +170,24 @@ func TestWriteRawAgentResponse(t *testing.T) {
 		wantErr  string
 	}{
 		{
+			name: "Responses JSON failure", protocol: agent_api.AgentProtocolResponses,
+			typeName: "application/json", body: " {\"error\":{\"message\":\"broken\"}}\n", wantErr: "agent error: broken",
+		},
+		{
+			name: "Responses JSON failure with charset", protocol: agent_api.AgentProtocolResponses,
+			typeName: "application/json; charset=utf-8",
+			body:     "{\"error\":{\"code\":\"failed\",\"message\":\"broken\"}}\r\n",
+			wantErr:  "agent error (failed): broken",
+		},
+		{
+			name: "Responses JSON success", protocol: agent_api.AgentProtocolResponses,
+			typeName: "application/json", body: "  {\"output\": [], \"error\": null}\r\n",
+		},
+		{
+			name: "Responses JSON failure without content type", protocol: agent_api.AgentProtocolResponses,
+			body: "{\"error\":{\"message\":\"broken\"}}", wantErr: "agent error: broken",
+		},
+		{
 			name: "Responses error with unread tail", protocol: agent_api.AgentProtocolResponses,
 			typeName: "text/event-stream", wantErr: "agent error (failed): broken",
 			body: "event: error\r\ndata: {\"code\":\"failed\",\"message\":\"broken\"}\r\n\r\n" +

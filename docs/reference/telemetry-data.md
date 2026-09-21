@@ -683,7 +683,9 @@ The `execution.environment` field identifies where azd is running. Format: `<env
 | `GitHub Codespaces` | GitHub Codespaces |
 | Other CI systems | `UnknownCI`, `AppVeyor`, `Bamboo`, `BitBucket Pipelines`, `Travis CI`, `Circle CI`, `GitLab CI`, `Jenkins`, `AWS CodeBuild`, `TeamCity`, `JetBrains Space` |
 
-**Modifiers:** `Azure App Spaces Portal` and `Microsoft Foundry Skill` may be appended as modifiers (`;` separated).
+**Modifiers:** `Azure App Spaces Portal`, `Microsoft Foundry Skill`, and `agency` may be appended as modifiers (`;` separated), in that order.
+
+The `agency` modifier is appended when `AGENCY_SESSION_ID` is non-empty, including when other agent markers are present. For example, Agency with Copilot CLI reports `GitHub Copilot CLI;agency`. Empty or unset values have no effect. Only the fixed modifier is emitted, never the session ID. Agency attribution does not change the primary-environment precedence or prompting behavior and is independent of `AZD_DISABLE_AGENT_DETECT`.
 
 ## Data Nuances & Gotchas
 

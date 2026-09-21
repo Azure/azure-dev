@@ -23,6 +23,8 @@ func newCodeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Use:   "code",
 		Short: "Manage agent source code. (Preview)",
 		Long:  `Commands for managing the source code of code-based hosted agents.`,
+		Example: `  # Download the deployed agent source code
+  azd ai agent code download`,
 	}
 
 	cmd.AddCommand(newCodeDownloadCommand(extCtx))

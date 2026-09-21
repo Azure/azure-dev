@@ -14,10 +14,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/dataset_api"
 	"azureaiagent/internal/pkg/agents/eval_api"
 	"azureaiagent/internal/pkg/agents/opt_eval"
+	projectpkg "azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -26,6 +28,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // fakeTokenCredential satisfies azcore.TokenCredential for tests.
@@ -184,6 +187,129 @@ func TestResolveEvalAgentService_RejectsUnknownExplicitService(t *testing.T) {
 	})
 
 	require.ErrorContains(t, err, "no azure.ai.agent service named 'typo' found in azure.yaml")
+}
+
+func TestResolveEvalContext_PropagatesRuntimeDefinitionErrors(t *testing.T) {
+	for _, tt := range []struct {
+		name           string
+		config         bool
+		definitionPath string
+		legacyFile     string
+		wantCode       string
+		wantSuggestion string
+	}{
+		{
+			name:           "unsupported definition path",
+			definitionPath: " ",
+			wantCode:       exterrors.CodeUnsupportedAgentDefinitionPath,
+			wantSuggestion: "move the agent definition to the azure.ai.agent service in azure.yaml, " +
+				"or add a service-level $ref to a direct agent definition",
+		},
+		{
+			name:     "deprecated nested config",
+			config:   true,
+			wantCode: exterrors.CodeDeprecatedAgentServiceConfig,
+			wantSuggestion: "move the agent definition to service-level properties in azure.yaml, " +
+				"or add a service-level $ref to a direct agent definition",
+		},
+		{
+			name:     "missing definition",
+			wantCode: exterrors.CodeAgentDefinitionNotFound,
+			wantSuggestion: "add the direct agent definition to the azure.ai.agent service in azure.yaml, " +
+				"or add a service-level $ref to a direct agent definition",
+		},
+		{
+			name:       "unreferenced legacy definition",
+			legacyFile: "agent.yaml",
+			wantCode:   exterrors.CodeAgentDefinitionNotFound,
+			wantSuggestion: "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
+				"or add a service-level $ref to this file",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("AGENT_DEFINITION_PATH", tt.definitionPath)
+			if tt.legacyFile != "" {
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, tt.legacyFile),
+					[]byte("this content is intentionally not parsed"),
+					0o600,
+				))
+			}
+			svc := &azdext.ServiceConfig{Name: "agent", Host: AiAgentHost, RelativePath: "."}
+			if tt.config {
+				config, err := structpb.NewStruct(map[string]any{"kind": "hosted", "name": "agent"})
+				require.NoError(t, err)
+				svc.Config = config
+			}
+			projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: root,
+				Services: map[string]*azdext.ServiceConfig{
+					svc.Name: svc,
+				},
+			}}
+			t.Setenv("AZD_SERVER", newProjectRecorderServer(t, projectServer))
+
+			resolved, err := resolveEvalContext(t.Context(), evalContextOptions{
+				noPrompt:        true,
+				projectEndpoint: "https://example.services.ai.azure.com/api/projects/test",
+			})
+
+			require.Nil(t, resolved)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, tt.wantCode, localErr.Code)
+			require.Equal(t, tt.wantSuggestion, localErr.Suggestion)
+		})
+	}
+}
+
+func TestResolveEvalAgentKind_SupportedDefinitions(t *testing.T) {
+	hostedProps, err := projectpkg.AgentDefinitionToServiceProperties(agent_yaml.ContainerAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindHosted,
+			Name: "hosted-agent",
+		},
+	}, nil)
+	require.NoError(t, err)
+	promptProps, err := projectpkg.PromptAgentDefinitionToServiceProperties(agent_yaml.PromptAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindPrompt,
+			Name: "prompt-agent",
+		},
+		Model: "gpt-4.1-mini",
+	})
+	require.NoError(t, err)
+	voiceProps, err := projectpkg.VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind: agent_yaml.AgentKindPromptVoice,
+			Name: "voice-agent",
+		},
+		Model: &agent_yaml.Model{Id: "gpt-realtime"},
+	}, nil)
+	require.NoError(t, err)
+
+	for _, tt := range []struct {
+		name       string
+		properties *structpb.Struct
+		wantKind   agent_yaml.AgentKind
+	}{
+		{name: "hosted", properties: hostedProps, wantKind: agent_yaml.AgentKindHosted},
+		{name: "prompt", properties: promptProps, wantKind: agent_yaml.AgentKindPrompt},
+		{name: "voice", properties: voiceProps, wantKind: agent_yaml.AgentKindPromptVoice},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			kind, source, err := resolveEvalAgentKind(&azdext.ServiceConfig{
+				Name:                 "agent",
+				Host:                 AiAgentHost,
+				AdditionalProperties: tt.properties,
+			}, t.TempDir())
+
+			require.NoError(t, err)
+			require.Equal(t, tt.wantKind, kind)
+			require.Equal(t, "azure.yaml (inline)", source)
+		})
+	}
 }
 
 // ---------------------------------------------------------------------------

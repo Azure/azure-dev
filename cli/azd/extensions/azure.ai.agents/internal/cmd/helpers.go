@@ -1365,8 +1365,8 @@ type ServiceRunContext struct {
 	StartupCommand        string            // startupCommand from AdditionalProperties (may be empty)
 	ServiceEnvironment    map[string]string // values already expanded by azd core
 	HasServiceEnvironment bool              // service declares env: even when empty
-	// Definition is the resolved agent definition (from the inline azure.yaml
-	// entry or a legacy agent.yaml). It is nil when no definition can be resolved.
+	// Definition is the resolved hosted-agent definition from the azure.yaml
+	// service entry or its explicit root $ref. It is nil for supported non-hosted kinds.
 	Definition *agent_yaml.ContainerAgent
 }
 
@@ -1407,11 +1407,20 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 	projectpkg.WarnOrphanedConfigEnv(svc)
 
 	var definition *agent_yaml.ContainerAgent
-	if def, _, source, defErr := projectpkg.LoadAgentDefinition(svc, project.Path); defErr == nil {
+	def, isHosted, source, err := projectpkg.LoadAgentDefinition(svc, project.Path)
+	if err != nil {
+		return nil, exterrors.ValidationFromError(
+			err,
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("failed to load agent definition for service %s", svc.Name),
+			"fix the agent service configuration in azure.yaml",
+		)
+	}
+	if isHosted {
 		definition = &def
-		if source.IsLegacy() {
-			projectpkg.WarnLegacyAgentShape(source)
-		}
+	}
+	if source.IsLegacy() {
+		projectpkg.WarnLegacyAgentShape(source)
 	}
 
 	// A read failure must not be read as "no env: declared":

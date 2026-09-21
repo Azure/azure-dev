@@ -316,9 +316,9 @@ anything, but the file content must be a direct agent definition. An
 
 Older projects could also set environment variables in an `env:` block nested
 under the service's `config:`. That position is no longer read: azd takes the
-service environment only from the service-level `env:`. A service that still
-carries `config: env:` gets a warning naming the affected variables on both
-`azd ai agent run` and `azd deploy`.
+service environment only from the service-level `env:`. Runtime commands fail
+when an agent service still carries a non-empty `config:` block. Move those
+environment values to the service-level `env:` before running the agent.
 
 Move them up one level to fix it:
 

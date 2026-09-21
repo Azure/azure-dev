@@ -2,3 +2,6 @@ import: ../../.vscode/cspell.yaml
 words:
   - RLE
   - azdai
+  # Capture Proxy graph field names, carried verbatim from the Execute Rollout response.
+  - logprob
+  - logprobs

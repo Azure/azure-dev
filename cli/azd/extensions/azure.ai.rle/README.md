@@ -458,6 +458,41 @@ specific training step in a real training loop), and `--timeout` (default
 `600` seconds) all have sensible defaults and rarely need to be set for ad hoc
 testing.
 
+### Rollout artifacts
+
+The Execute Rollout response carries the whole Capture Proxy graph — token ids,
+logprobs, loss masks and per-turn metadata — which is far too large to print
+and is not retrievable afterwards, because the capture session is closed and
+deleted as soon as the rollout returns. So every rollout writes it to
+`.output/<rollout-id>/` and prints what it wrote:
+
+```text
+Artifacts: .output/c4c8a1a410d7968f8c0d8d0aed89a5fb
+  ├── rollout.json    99.2 KB  the full capture graph exactly as the service returned it
+  ├── summary.json     1.2 KB  outcome, capture stats and the sequence index — start here
+  ├── turns.json        276 B  one entry per model call: token counts, finish reason, sampling params
+  └── sequences/               one root-to-leaf path each — the unit a trainer consumes
+      └── 0.json      74.3 KB  agent, 1 turn(s), 2050 tokens (1903 trainable) — input_ids, loss_mask, logprobs
+```
+
+- **`summary.json`** — the outcome (`reward`, `success`, `result`, `episode`)
+  with the graph's own `stats`, `capture_level` and `validation`, plus an index
+  of each sequence's shape and the file holding it. The arrays are deliberately
+  left out so this stays readable.
+- **`sequences/<n>.json`** — one root-to-leaf path: `input_ids`, `loss_mask`
+  and `logprobs`, index-aligned and equal in length, with `turn_lengths` as the
+  join key against a harness trace. This is what a trainer consumes.
+- **`turns.json`** — one entry per model call in arrival order, including calls
+  excluded from training, so an external trace can be reconciled against it.
+- **`rollout.json`** — the response verbatim, for diffing or replay.
+
+On an eval capture the token arrays are empty by construction rather than by
+failure; the tree says so rather than showing an unexplained small file.
+
+Use `--output-dir` to write somewhere other than `.output`. A rollout that
+succeeds but cannot write its artifacts still reports its reward and exits
+successfully, with a warning — the compute is already spent.
+
 ## Submit an RLE-backed fine-tuning job (experimental)
 
 `azd ai rle train` submits a reinforcement fine-tuning job to a fine-tuning

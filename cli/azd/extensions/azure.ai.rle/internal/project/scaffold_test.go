@@ -90,6 +90,27 @@ func TestRleSampleCatalogUsesSparseCheckout(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	skillDir := filepath.Join(sourceRepo, filepath.FromSlash(rleSkillsPath), rleGymSkillDirectory)
+	if err := os.MkdirAll(filepath.Join(skillDir, "references"), 0750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("rle skill"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(skillDir, "references", "workflow.md"),
+		[]byte("workflow"),
+		0600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	otherSkillDir := filepath.Join(sourceRepo, filepath.FromSlash(rleSkillsPath), "rle-testing")
+	if err := os.MkdirAll(otherSkillDir, 0750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(otherSkillDir, "SKILL.md"), []byte("testing skill"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(sourceRepo, "README.md"), []byte("samples"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -124,6 +145,27 @@ func TestRleSampleCatalogUsesSparseCheckout(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(sessionDir, "sample.txt")); err != nil {
 		t.Fatalf("expected selected sample to be copied: %v", err)
+	}
+	if _, err := os.Stat(
+		filepath.Join(sessionDir, filepath.FromSlash(rleSkillsPath), rleGymSkillDirectory, "SKILL.md"),
+	); err != nil {
+		t.Fatalf("expected RLE authoring skill to be copied: %v", err)
+	}
+	if _, err := os.Stat(
+		filepath.Join(
+			sessionDir,
+			filepath.FromSlash(rleSkillsPath),
+			rleGymSkillDirectory,
+			"references",
+			"workflow.md",
+		),
+	); err != nil {
+		t.Fatalf("expected RLE authoring skill references to be copied: %v", err)
+	}
+	if _, err := os.Stat(
+		filepath.Join(sessionDir, filepath.FromSlash(rleSkillsPath), "rle-testing", "SKILL.md"),
+	); err != nil {
+		t.Fatalf("expected additional RLE project skills to be copied: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(catalog.repoDir, filepath.FromSlash(rleGymSamplesPath), "code_rl")); !os.IsNotExist(err) {
 		t.Fatalf("expected unselected sample not to be checked out, got err=%v", err)
@@ -368,6 +410,13 @@ func TestRleSampleCatalogFiltersHiddenSamples(t *testing.T) {
 	if err := os.WriteFile(catalogPath, []byte(catalogContents), 0600); err != nil {
 		t.Fatal(err)
 	}
+	skillDir := filepath.Join(sourceRepo, filepath.FromSlash(rleSkillsPath), rleGymSkillDirectory)
+	if err := os.MkdirAll(skillDir, 0750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("rle skill"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	runTestGit(t, sourceRepo, "add", ".")
 	runTestGit(
 		t,
@@ -448,5 +497,36 @@ func TestCopyRleSampleValidatesSourceBeforeReplacingDestination(t *testing.T) {
 	}
 	if _, statErr := os.Stat(sentinel); statErr != nil {
 		t.Fatalf("expected destination to remain unchanged after sample lookup failure: %v", statErr)
+	}
+}
+
+func TestCopyRleGymSampleValidatesSkillsBeforeReplacingDestination(t *testing.T) {
+	sourceDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(sourceDir, "sample.txt"), []byte("content"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	skillSourceDir := t.TempDir()
+	destDir := t.TempDir()
+	sessionDir := filepath.Join(destDir, "my_environment")
+	if err := os.MkdirAll(sessionDir, 0750); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(sessionDir, "keep.txt")
+	if err := os.WriteFile(sentinel, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := copyRleGymSample(
+		sourceDir,
+		skillSourceDir,
+		"my_environment",
+		destDir,
+		true,
+	)
+	if err == nil {
+		t.Fatal("expected RLE project skills without the Gym/OpenEnv SKILL.md to fail")
+	}
+	if _, statErr := os.Stat(sentinel); statErr != nil {
+		t.Fatalf("expected destination to remain unchanged after skill lookup failure: %v", statErr)
 	}
 }

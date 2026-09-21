@@ -10,7 +10,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
+	"github.com/azure/azure-dev/cli/azd/internal/guidance"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -99,13 +99,13 @@ func TestUxMiddleware_MergesCollectedFollowUp(t *testing.T) {
 	result, err := ux.Run(*mockContext.Context, func(
 		ctx context.Context,
 	) (*actions.ActionResult, error) {
-		collector := commandresult.FollowUpCollectorFromContext(ctx)
-		collector.Add(commandresult.FollowUp{
+		collector := guidance.FollowUpCollectorFromContext(ctx)
+		collector.Add(guidance.FollowUp{
 			ExtensionID: "z.extension",
 			EventName:   "postdeploy",
 			Text:        "z",
 		})
-		collector.Add(commandresult.FollowUp{
+		collector.Add(guidance.FollowUp{
 			ExtensionID: "a.extension",
 			EventName:   "postdeploy",
 			Text:        "a",
@@ -130,13 +130,13 @@ func TestUxMiddleware_AzdUpUsesLatestExtensionFollowUp(t *testing.T) {
 	result, err := ux.Run(*mockContext.Context, func(
 		ctx context.Context,
 	) (*actions.ActionResult, error) {
-		collector := commandresult.FollowUpCollectorFromContext(ctx)
-		collector.Add(commandresult.FollowUp{
+		collector := guidance.FollowUpCollectorFromContext(ctx)
+		collector.Add(guidance.FollowUp{
 			ExtensionID: "azure.ai.agents",
 			EventName:   "postprovision",
 			Text:        "Next:\n  azd deploy",
 		})
-		collector.Add(commandresult.FollowUp{
+		collector.Add(guidance.FollowUp{
 			ExtensionID: "azure.ai.agents",
 			EventName:   "postdeploy",
 			Text:        "Next:\n  azd ai agent show",
@@ -164,18 +164,18 @@ func TestUxMiddleware_AzdUpClearsStaleExtensionFollowUp(t *testing.T) {
 	result, err := ux.Run(*mockContext.Context, func(
 		ctx context.Context,
 	) (*actions.ActionResult, error) {
-		collector := commandresult.FollowUpCollectorFromContext(ctx)
-		collector.Add(commandresult.FollowUp{
+		collector := guidance.FollowUpCollectorFromContext(ctx)
+		collector.Add(guidance.FollowUp{
 			ExtensionID: "azure.ai.agents",
 			EventName:   "postprovision",
 			Text:        "Next:\n  azd deploy",
 		})
-		collector.Add(commandresult.FollowUp{
+		collector.Add(guidance.FollowUp{
 			ExtensionID: "other.extension",
 			EventName:   "postdeploy",
 			Text:        "other guidance",
 		})
-		collector.Add(commandresult.FollowUp{
+		collector.Add(guidance.FollowUp{
 			ExtensionID: "azure.ai.agents",
 			EventName:   "postdeploy",
 			Text:        "",
@@ -200,8 +200,8 @@ func TestUxMiddleware_CreatesResultForCollectedFollowUp(t *testing.T) {
 	result, err := ux.Run(*mockContext.Context, func(
 		ctx context.Context,
 	) (*actions.ActionResult, error) {
-		commandresult.FollowUpCollectorFromContext(ctx).Add(
-			commandresult.FollowUp{
+		guidance.FollowUpCollectorFromContext(ctx).Add(
+			guidance.FollowUp{
 				ExtensionID: "test.extension",
 				EventName:   "postprovision",
 				Text:        "Run azd deploy",
@@ -233,8 +233,8 @@ func TestUxMiddleware_DoesNotMergeFollowUpIntoJSON(t *testing.T) {
 	result, err := ux.Run(*mockContext.Context, func(
 		ctx context.Context,
 	) (*actions.ActionResult, error) {
-		commandresult.FollowUpCollectorFromContext(ctx).Add(
-			commandresult.FollowUp{
+		guidance.FollowUpCollectorFromContext(ctx).Add(
+			guidance.FollowUp{
 				ExtensionID: "test.extension",
 				EventName:   "postprovision",
 				Text:        "Run azd deploy",
@@ -265,8 +265,8 @@ func TestUxMiddleware_DiscardsFollowUpOnError(t *testing.T) {
 	result, err := ux.Run(*mockContext.Context, func(
 		ctx context.Context,
 	) (*actions.ActionResult, error) {
-		commandresult.FollowUpCollectorFromContext(ctx).Add(
-			commandresult.FollowUp{
+		guidance.FollowUpCollectorFromContext(ctx).Add(
+			guidance.FollowUp{
 				ExtensionID: "test.extension",
 				EventName:   "postprovision",
 				Text:        "Run azd deploy",

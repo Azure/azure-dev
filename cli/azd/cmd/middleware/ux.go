@@ -10,7 +10,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
+	"github.com/azure/azure-dev/cli/azd/internal/guidance"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -47,8 +47,8 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 		return next(ctx)
 	}
 
-	collector := commandresult.NewFollowUpCollector()
-	ctx = commandresult.WithFollowUpCollector(ctx, collector)
+	collector := guidance.NewFollowUpCollector()
+	ctx = guidance.WithFollowUpCollector(ctx, collector)
 	actionResult, err := next(ctx)
 
 	// Stop the spinner always to un-hide cursor

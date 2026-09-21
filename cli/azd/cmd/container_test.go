@@ -14,7 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
+	"github.com/azure/azure-dev/cli/azd/internal/guidance"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -471,7 +471,7 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 						executedCommands = append(executedCommands, name)
 						commandOrders = append(
 							commandOrders,
-							commandresult.FollowUpCommandOrderFromContext(ctx),
+							guidance.FollowUpCommandOrderFromContext(ctx),
 						)
 						return nil
 					},
@@ -485,9 +485,9 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 		}
 
 		adapter := &workflowCmdAdapter{newCommand: newCommand}
-		ctx := commandresult.WithFollowUpCollector(
+		ctx := guidance.WithFollowUpCollector(
 			context.WithoutCancel(t.Context()),
-			commandresult.NewFollowUpCollector(),
+			guidance.NewFollowUpCollector(),
 		)
 
 		// Simulate the default "up" workflow steps
@@ -520,7 +520,7 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 					RunE: func(cmd *cobra.Command, args []string) error {
 						commandOrders = append(
 							commandOrders,
-							commandresult.FollowUpCommandOrderFromContext(cmd.Context()),
+							guidance.FollowUpCommandOrderFromContext(cmd.Context()),
 						)
 						return adapter.ExecuteContext(cmd.Context(), []string{"restore"})
 					},
@@ -530,7 +530,7 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 					RunE: func(cmd *cobra.Command, args []string) error {
 						commandOrders = append(
 							commandOrders,
-							commandresult.FollowUpCommandOrderFromContext(cmd.Context()),
+							guidance.FollowUpCommandOrderFromContext(cmd.Context()),
 						)
 						return nil
 					},
@@ -540,9 +540,9 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 		}
 
 		adapter = &workflowCmdAdapter{newCommand: newCommand}
-		ctx := commandresult.WithFollowUpCollector(
+		ctx := guidance.WithFollowUpCollector(
 			context.WithoutCancel(t.Context()),
-			commandresult.NewFollowUpCollector(),
+			guidance.NewFollowUpCollector(),
 		)
 
 		require.NoError(t, adapter.ExecuteContext(ctx, []string{"build"}))

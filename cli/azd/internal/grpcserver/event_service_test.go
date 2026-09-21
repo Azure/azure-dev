@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
+	"github.com/azure/azure-dev/cli/azd/internal/guidance"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -555,13 +555,13 @@ func TestEventService_createProjectEventHandler_CollectsFollowUp(t *testing.T) {
 				tt.eventName,
 				broker,
 			)
-			collector := commandresult.NewFollowUpCollector()
-			collector.Add(commandresult.FollowUp{
+			collector := guidance.NewFollowUpCollector()
+			collector.Add(guidance.FollowUp{
 				ExtensionID: extension.Id,
 				EventName:   "postprovision",
 				Text:        tt.initial,
 			})
-			ctx := commandresult.WithFollowUpCollector(t.Context(), collector)
+			ctx := guidance.WithFollowUpCollector(t.Context(), collector)
 
 			err = handler(ctx, project.ProjectLifecycleEventArgs{Project: projectConfig})
 			if tt.wantError {
@@ -610,14 +610,14 @@ func TestEventService_createProjectEventHandler_CollectsLayerFollowUp(t *testing
 		"postprovision",
 		broker,
 	)
-	collector := commandresult.NewFollowUpCollector()
-	collector.Add(commandresult.FollowUp{
+	collector := guidance.NewFollowUpCollector()
+	collector.Add(guidance.FollowUp{
 		ExtensionID: extension.Id,
 		EventName:   "postprovision",
 		Layer:       "data",
 		Text:        "from-data",
 	})
-	ctx := commandresult.WithFollowUpCollector(t.Context(), collector)
+	ctx := guidance.WithFollowUpCollector(t.Context(), collector)
 
 	err = handler(ctx, project.ProjectLifecycleEventArgs{
 		Project: projectConfig,
@@ -665,15 +665,15 @@ func TestEventService_createProjectEventHandler_UsesCommandOrder(t *testing.T) {
 		"postpackage",
 		broker,
 	)
-	collector := commandresult.NewFollowUpCollector()
-	collector.Add(commandresult.FollowUp{
+	collector := guidance.NewFollowUpCollector()
+	collector.Add(guidance.FollowUp{
 		ExtensionID:  extension.Id,
 		CommandOrder: 1,
 		EventName:    "postprovision",
 		Text:         "old",
 	})
-	ctx := commandresult.WithFollowUpCollector(t.Context(), collector)
-	ctx = commandresult.WithFollowUpCommandOrder(ctx, 2)
+	ctx := guidance.WithFollowUpCollector(t.Context(), collector)
+	ctx = guidance.WithFollowUpCommandOrder(ctx, 2)
 
 	err = handler(ctx, project.ProjectLifecycleEventArgs{Project: projectConfig})
 	require.NoError(t, err)

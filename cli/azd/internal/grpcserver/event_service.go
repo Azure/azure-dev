@@ -10,7 +10,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
+	"github.com/azure/azure-dev/cli/azd/internal/guidance"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -216,10 +216,10 @@ func (s *eventService) createProjectEventHandler(
 		if err == nil && handlerCompleted {
 			handlerFollowUp, hasFollowUp := s.followUps.Commit(invocationID)
 			if strings.HasPrefix(eventName, "post") && hasFollowUp {
-				if collector := commandresult.FollowUpCollectorFromContext(ctx); collector != nil {
-					collector.Add(commandresult.FollowUp{
+				if collector := guidance.FollowUpCollectorFromContext(ctx); collector != nil {
+					collector.Add(guidance.FollowUp{
 						ExtensionID:  extension.Id,
-						CommandOrder: commandresult.FollowUpCommandOrderFromContext(ctx),
+						CommandOrder: guidance.FollowUpCommandOrderFromContext(ctx),
 						EventName:    eventName,
 						Layer:        followUpLayer(args),
 						Text:         handlerFollowUp,

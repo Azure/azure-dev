@@ -25,8 +25,8 @@ import (
 	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
-	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
+	"github.com/azure/azure-dev/cli/azd/internal/guidance"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/terminal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -1054,9 +1054,9 @@ func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) 
 	// Cancel the child context when the step completes so that any event handlers
 	// registered during this step (e.g. by service target Initialize methods) are
 	// marked as expired and cleaned up on the next RaiseEvent call.
-	if collector := commandresult.FollowUpCollectorFromContext(ctx); collector != nil &&
-		commandresult.FollowUpCommandOrderFromContext(ctx) == 0 {
-		ctx = commandresult.WithFollowUpCommandOrder(
+	if collector := guidance.FollowUpCollectorFromContext(ctx); collector != nil &&
+		guidance.FollowUpCommandOrderFromContext(ctx) == 0 {
+		ctx = guidance.WithFollowUpCommandOrder(
 			ctx,
 			collector.NextCommandOrder(),
 		)

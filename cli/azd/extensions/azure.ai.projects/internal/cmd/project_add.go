@@ -36,6 +36,7 @@ import (
 type projectAddFlags struct {
 	projectID       string
 	projectEndpoint string
+	newProject      bool
 	infra           string
 	force           bool
 	forceSet        bool
@@ -94,6 +95,7 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&flags.projectID, "project-id", "", "Existing Foundry project ARM resource ID")
 	cmd.Flags().StringVar(&flags.projectEndpoint, "project-endpoint", "", "Existing Foundry project endpoint")
+	cmd.Flags().BoolVar(&flags.newProject, "new-project", false, "Create a new Foundry project")
 	cmd.Flags().StringVar(
 		&flags.infra, "infra", "", "Eject Bicep or Terraform infrastructure (optional value)",
 	)
@@ -112,6 +114,14 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if a.flags == nil {
 		a.flags = &projectAddFlags{}
+	}
+	if a.flags.newProject &&
+		(a.flags.projectID != "" || a.flags.projectEndpoint != "") {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--new-project cannot be combined with --project-id or --project-endpoint",
+			"specify a new project or an existing project target",
+		)
 	}
 	if a.flags.projectID != "" && a.flags.projectEndpoint != "" {
 		return exterrors.Validation(
@@ -292,6 +302,58 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if err != nil {
 		return rollbackProjectAdd(err, restoreService, restoreProvider)
 	}
+	reconciledDefault, reconciledChanged, restoreReconciled, err := reconcileAdoptedDeployments(
+		ctx, client, projectRoot, envName, target, serviceName, a.flags.noPrompt,
+	)
+	if err != nil {
+		return rollbackProjectAdd(err, restoreEnvironment, restoreService, restoreProvider)
+	}
+	if reconciledDefault != "" {
+		effectiveValues["AZURE_AI_MODEL_DEPLOYMENT_NAME"] = reconciledDefault
+	}
+	restoreDeploymentDefault := func() error { return nil }
+	if reconciledService, _, discoverErr := reconciler.discoverProjectService(ctx); discoverErr != nil {
+		return rollbackProjectAdd(
+			discoverErr,
+			restoreReconciled,
+			restoreEnvironment,
+			restoreService,
+			restoreProvider,
+		)
+	} else if reconciledService != nil &&
+		firstProjectDeploymentName(reconciledService.Resolved) != "" &&
+		strings.TrimSpace(effectiveValues["AZURE_AI_MODEL_DEPLOYMENT_NAME"]) == "" {
+		defaultName := firstProjectDeploymentName(reconciledService.Resolved)
+		if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: envName,
+			Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+			Value:   defaultName,
+		}); err != nil {
+			return rollbackProjectAdd(
+				fmt.Errorf(
+					"set default project deployment: %w",
+					err,
+				),
+				restoreReconciled,
+				restoreEnvironment,
+				restoreService,
+				restoreProvider,
+			)
+		}
+		restoreDeploymentDefault = func() error {
+			return withProjectRollbackContext(ctx, func(rollbackCtx context.Context) error {
+				_, err := client.Environment().SetValue(
+					rollbackCtx,
+					&azdext.SetEnvRequest{
+						EnvName: envName,
+						Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+						Value:   "",
+					},
+				)
+				return err
+			})
+		}
+	}
 	if infra := a.flags.infra; infra != "" {
 		if err := ejectProjectInfraWithTarget(
 			ctx,
@@ -304,7 +366,12 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			effectiveValues,
 		); err != nil {
 			return rollbackProjectAdd(
-				err, restoreEnvironment, restoreService, restoreInfra,
+				err,
+				restoreDeploymentDefault,
+				restoreReconciled,
+				restoreEnvironment,
+				restoreService,
+				restoreInfra,
 			)
 		}
 	}
@@ -318,6 +385,7 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		Endpoint:        target.Endpoint,
 		ResourceID:      target.ResourceId,
 	}
+	result.Mutation = projectAddMutation(mutation, reconciledChanged)
 	writeProjectEndpointWarning(
 		os.Stderr,
 		target.EndpointPathWarning,
@@ -331,12 +399,23 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if a.flags.output == "json" {
 		return json.NewEncoder(os.Stdout).Encode(result)
 	}
-	if mutation == "unchanged" {
+	if result.Mutation == "unchanged" {
 		fmt.Printf("Foundry project configuration unchanged (%s).\n", serviceName)
 	} else {
-		fmt.Printf("Foundry project configuration %s in services.%s.\n", mutation, serviceName)
+		fmt.Printf(
+			"Foundry project configuration %s in services.%s.\n",
+			result.Mutation,
+			serviceName,
+		)
 	}
 	return nil
+}
+
+func projectAddMutation(mutation string, reconciledChanged bool) string {
+	if mutation == "unchanged" && reconciledChanged {
+		return "updated"
+	}
+	return mutation
 }
 
 func rollbackProjectAdd(
@@ -404,6 +483,9 @@ func resolveProjectTarget(
 	flags *projectAddFlags,
 ) (*resolvedProject, error) {
 	projectID, endpoint := flags.projectID, flags.projectEndpoint
+	if flags.newProject {
+		return &resolvedProject{Mode: projectModeNew}, nil
+	}
 	if projectID != "" {
 		return lookupResolvedProject(ctx, client, projectID)
 	}
@@ -1337,16 +1419,20 @@ func validateExistingEndpointMode(
 	if service == nil {
 		return nil
 	}
-	if hasManagedDeployments(service.Resolved) ||
-		hasManagedDeployments(service.Raw) {
+	sameEndpoint := equalProjectEndpoint(serviceEndpoint(service.Resolved), endpoint)
+	hasDeployments := hasManagedDeployments(service.Resolved) ||
+		hasManagedDeployments(service.Raw)
+	if hasDeployments &&
+		(!sameEndpoint || strings.TrimSpace(values["AZURE_AI_PROJECT_ID"]) != "") {
 		return exterrors.Dependency(
 			"project_reconciliation_requires_project_id",
-			"endpoint-only setup cannot retain managed model deployments",
+			"endpoint-only setup cannot retain managed model deployments "+
+				"while clearing project identity",
 			"rerun `azd ai project add --project-id <resource-id>` "+
 				"before managing deployments",
 		)
 	}
-	if !equalProjectEndpoint(serviceEndpoint(service.Resolved), endpoint) &&
+	if !sameEndpoint &&
 		hasManagedProjectFields(service.Raw) {
 		return exterrors.Dependency(
 			"project_reconciliation_requires_project_id",

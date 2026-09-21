@@ -468,16 +468,18 @@ The execution graph powers the parallel `up` / `provision` / `deploy` engine.
 | Step tags | `exegraph.step.tags` | SystemMetadata | PerformanceAndHealth | Fixed internal vocabulary set by azd code (e.g., `provision`, `deploy`, `package`, `cmdhook`, `event`); emitted raw because it does not contain user input |
 | Step timeout | `exegraph.step.timeout_s` | SystemMetadata | PerformanceAndHealth | **Measurement** — per-step timeout in seconds, when set |
 
-### Multi-Layer Provision
+### Provision Layers
 
-Telemetry for the `infra.layers[]` parallel provisioning feature, emitted from `internal/cmd/provision_graph.go`.
+Telemetry for `infra.layers[]` and top-level `layers[].infra[]` parallel provisioning, emitted from
+`internal/cmd/provision_graph.go`.
 
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
-| Layer count | `provision.layer.count` | SystemMetadata | PerformanceAndHealth | **Measurement** — total number of `infra.layers[]` declared in `azure.yaml` for the current run; 0 or 1 means single-layer (the legacy path) |
-| Max parallel | `provision.layer.max_parallel` | SystemMetadata | PerformanceAndHealth | **Measurement** — largest number of layers scheduled in a single dependency level after static analysis (maximum *achievable* parallelism, distinct from the configured `exegraph.max_concurrency` cap) |
-| Safe-fallback count | `provision.layer.safe_fallback_count` | SystemMetadata | PerformanceAndHealth | **Measurement** — layers that triggered the safe-by-default detector fallback (forced to depend on all earlier layers) |
-| Explicit dependsOn count | `provision.layer.explicit_dependson_count` | SystemMetadata | PerformanceAndHealth | **Measurement** — layers that used the explicit `infra.layers[].dependsOn` schema |
+| Layers v2 format | `provision.layer.is_v2` | SystemMetadata | FeatureInsight | Boolean indicating whether the project uses the top-level `layers:` format rather than the legacy `infra.layers:` format |
+| Layer count | `provision.layer.count` | SystemMetadata | PerformanceAndHealth | **Measurement** — provisioning infrastructure entries in `infra.layers[]` or across all top-level project layers for the current run |
+| Max parallel | `provision.layer.max_parallel` | SystemMetadata | PerformanceAndHealth | **Measurement** — largest number of layers scheduled in a single dependency level after static analysis (maximum *achievable* parallelism, distinct from the configured `exegraph.max_concurrency` cap); omitted when multi-layer analysis does not complete |
+| Safe-fallback count | `provision.layer.safe_fallback_count` | SystemMetadata | PerformanceAndHealth | **Measurement** — layers that triggered the safe-by-default detector fallback (forced to depend on all earlier layers); omitted when multi-layer analysis does not complete |
+| Explicit dependsOn count | `provision.layer.explicit_dependson_count` | SystemMetadata | PerformanceAndHealth | **Measurement** — distinct owning layers that used explicit `dependsOn` dependencies |
 
 ## Data Classifications
 

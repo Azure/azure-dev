@@ -37,62 +37,62 @@ class EnvironmentServiceStub(object):
             channel: A grpc.Channel.
         """
         self.GetCurrent = channel.unary_unary(
-                '/azd.extensions.v1.EnvironmentService/GetCurrent',
+                '/azd.extensions.v1beta.EnvironmentService/GetCurrent',
                 request_serializer=models__pb2.EmptyRequest.SerializeToString,
                 response_deserializer=environment__pb2.EnvironmentResponse.FromString,
                 _registered_method=True)
         self.List = channel.unary_unary(
-                '/azd.extensions.v1.EnvironmentService/List',
+                '/azd.extensions.v1beta.EnvironmentService/List',
                 request_serializer=models__pb2.EmptyRequest.SerializeToString,
                 response_deserializer=environment__pb2.EnvironmentListResponse.FromString,
                 _registered_method=True)
         self.Get = channel.unary_unary(
-                '/azd.extensions.v1.EnvironmentService/Get',
+                '/azd.extensions.v1beta.EnvironmentService/Get',
                 request_serializer=environment__pb2.GetEnvironmentRequest.SerializeToString,
                 response_deserializer=environment__pb2.EnvironmentResponse.FromString,
                 _registered_method=True)
         self.Select = channel.unary_unary(
-                '/azd.extensions.v1.EnvironmentService/Select',
+                '/azd.extensions.v1beta.EnvironmentService/Select',
                 request_serializer=environment__pb2.SelectEnvironmentRequest.SerializeToString,
                 response_deserializer=models__pb2.EmptyResponse.FromString,
                 _registered_method=True)
         self.GetValues = channel.unary_unary(
-                '/azd.extensions.v1.EnvironmentService/GetValues',
+                '/azd.extensions.v1beta.EnvironmentService/GetValues',
                 request_serializer=environment__pb2.GetEnvironmentRequest.SerializeToString,
                 response_deserializer=environment__pb2.KeyValueListResponse.FromString,
                 _registered_method=True)
         self.GetValue = channel.unary_unary(
-                '/azd.extensions.v1.EnvironmentService/GetValue',
+                '/azd.extensions.v1beta.EnvironmentService/GetValue',
                 request_serializer=environment__pb2.GetEnvRequest.SerializeToString,
                 response_deserializer=environment__pb2.KeyValueResponse.FromString,
                 _registered_method=True)
         self.SetValue = channel.unary_unary(
-                '/azd.extensions.v1.EnvironmentService/SetValue',
+                '/azd.extensions.v1beta.EnvironmentService/SetValue',
                 request_serializer=environment__pb2.SetEnvRequest.SerializeToString,
                 response_deserializer=models__pb2.EmptyResponse.FromString,
                 _registered_method=True)
         self.GetConfig = channel.unary_unary(
-                '/azd.extensions.v1.EnvironmentService/GetConfig',
+                '/azd.extensions.v1beta.EnvironmentService/GetConfig',
                 request_serializer=environment__pb2.GetConfigRequest.SerializeToString,
                 response_deserializer=environment__pb2.GetConfigResponse.FromString,
                 _registered_method=True)
         self.GetConfigString = channel.unary_unary(
-                '/azd.extensions.v1.EnvironmentService/GetConfigString',
+                '/azd.extensions.v1beta.EnvironmentService/GetConfigString',
                 request_serializer=environment__pb2.GetConfigStringRequest.SerializeToString,
                 response_deserializer=environment__pb2.GetConfigStringResponse.FromString,
                 _registered_method=True)
         self.GetConfigSection = channel.unary_unary(
-                '/azd.extensions.v1.EnvironmentService/GetConfigSection',
+                '/azd.extensions.v1beta.EnvironmentService/GetConfigSection',
                 request_serializer=environment__pb2.GetConfigSectionRequest.SerializeToString,
                 response_deserializer=environment__pb2.GetConfigSectionResponse.FromString,
                 _registered_method=True)
         self.SetConfig = channel.unary_unary(
-                '/azd.extensions.v1.EnvironmentService/SetConfig',
+                '/azd.extensions.v1beta.EnvironmentService/SetConfig',
                 request_serializer=environment__pb2.SetConfigRequest.SerializeToString,
                 response_deserializer=models__pb2.EmptyResponse.FromString,
                 _registered_method=True)
         self.UnsetConfig = channel.unary_unary(
-                '/azd.extensions.v1.EnvironmentService/UnsetConfig',
+                '/azd.extensions.v1beta.EnvironmentService/UnsetConfig',
                 request_serializer=environment__pb2.UnsetConfigRequest.SerializeToString,
                 response_deserializer=models__pb2.EmptyResponse.FromString,
                 _registered_method=True)
@@ -251,9 +251,9 @@ def add_EnvironmentServiceServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'azd.extensions.v1.EnvironmentService', rpc_method_handlers)
+            'azd.extensions.v1beta.EnvironmentService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('azd.extensions.v1.EnvironmentService', rpc_method_handlers)
+    server.add_registered_method_handlers('azd.extensions.v1beta.EnvironmentService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -275,7 +275,7 @@ class EnvironmentService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.EnvironmentService/GetCurrent',
+            '/azd.extensions.v1beta.EnvironmentService/GetCurrent',
             models__pb2.EmptyRequest.SerializeToString,
             environment__pb2.EnvironmentResponse.FromString,
             options,
@@ -302,7 +302,7 @@ class EnvironmentService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.EnvironmentService/List',
+            '/azd.extensions.v1beta.EnvironmentService/List',
             models__pb2.EmptyRequest.SerializeToString,
             environment__pb2.EnvironmentListResponse.FromString,
             options,
@@ -329,7 +329,7 @@ class EnvironmentService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.EnvironmentService/Get',
+            '/azd.extensions.v1beta.EnvironmentService/Get',
             environment__pb2.GetEnvironmentRequest.SerializeToString,
             environment__pb2.EnvironmentResponse.FromString,
             options,
@@ -356,7 +356,7 @@ class EnvironmentService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.EnvironmentService/Select',
+            '/azd.extensions.v1beta.EnvironmentService/Select',
             environment__pb2.SelectEnvironmentRequest.SerializeToString,
             models__pb2.EmptyResponse.FromString,
             options,
@@ -383,7 +383,7 @@ class EnvironmentService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.EnvironmentService/GetValues',
+            '/azd.extensions.v1beta.EnvironmentService/GetValues',
             environment__pb2.GetEnvironmentRequest.SerializeToString,
             environment__pb2.KeyValueListResponse.FromString,
             options,
@@ -410,7 +410,7 @@ class EnvironmentService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.EnvironmentService/GetValue',
+            '/azd.extensions.v1beta.EnvironmentService/GetValue',
             environment__pb2.GetEnvRequest.SerializeToString,
             environment__pb2.KeyValueResponse.FromString,
             options,
@@ -437,7 +437,7 @@ class EnvironmentService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.EnvironmentService/SetValue',
+            '/azd.extensions.v1beta.EnvironmentService/SetValue',
             environment__pb2.SetEnvRequest.SerializeToString,
             models__pb2.EmptyResponse.FromString,
             options,
@@ -464,7 +464,7 @@ class EnvironmentService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.EnvironmentService/GetConfig',
+            '/azd.extensions.v1beta.EnvironmentService/GetConfig',
             environment__pb2.GetConfigRequest.SerializeToString,
             environment__pb2.GetConfigResponse.FromString,
             options,
@@ -491,7 +491,7 @@ class EnvironmentService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.EnvironmentService/GetConfigString',
+            '/azd.extensions.v1beta.EnvironmentService/GetConfigString',
             environment__pb2.GetConfigStringRequest.SerializeToString,
             environment__pb2.GetConfigStringResponse.FromString,
             options,
@@ -518,7 +518,7 @@ class EnvironmentService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.EnvironmentService/GetConfigSection',
+            '/azd.extensions.v1beta.EnvironmentService/GetConfigSection',
             environment__pb2.GetConfigSectionRequest.SerializeToString,
             environment__pb2.GetConfigSectionResponse.FromString,
             options,
@@ -545,7 +545,7 @@ class EnvironmentService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.EnvironmentService/SetConfig',
+            '/azd.extensions.v1beta.EnvironmentService/SetConfig',
             environment__pb2.SetConfigRequest.SerializeToString,
             models__pb2.EmptyResponse.FromString,
             options,
@@ -572,7 +572,7 @@ class EnvironmentService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/azd.extensions.v1.EnvironmentService/UnsetConfig',
+            '/azd.extensions.v1beta.EnvironmentService/UnsetConfig',
             environment__pb2.UnsetConfigRequest.SerializeToString,
             models__pb2.EmptyResponse.FromString,
             options,

@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
@@ -605,6 +607,53 @@ func recordDeploySpans(t *testing.T) func() []tracesdk.ReadOnlySpan {
 	return func() []tracesdk.ReadOnlySpan {
 		return deploySpanRecorder.Ended()[baseline:]
 	}
+}
+
+func TestUpGraphAction_AnalysisFailureEmitsConfigLayerTelemetry(t *testing.T) {
+	// Not parallel: shares one process-wide tracer provider (see recordDeploySpans).
+	newSpans := recordDeploySpans(t)
+	projectConfig := &project.ProjectConfig{
+		Path: t.TempDir(),
+		Layers: project.LayerConfigs{
+			{
+				Name:  "foundation",
+				Infra: []provisioning.Options{{Name: "network", Provider: provisioning.Bicep, Path: "missing/network"}},
+			},
+			{
+				Name:      "application",
+				DependsOn: []string{"foundation"},
+				Infra:     []provisioning.Options{{Name: "api", Provider: provisioning.Bicep, Path: "missing/api"}},
+			},
+		},
+	}
+	provisionManager := provisioning.NewManager(
+		nil,
+		func() (provisioning.ProviderKind, error) { return provisioning.Bicep, nil },
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	action := &UpGraphAction{
+		projectConfig:    projectConfig,
+		provisionManager: provisionManager,
+	}
+
+	result, err := action.Run(
+		t.Context(), projectConfig.InfrastructureConfigs(), nil, nil, time.Now(),
+	)
+
+	require.ErrorContains(t, err, "analyzing layer dependencies")
+	require.Nil(t, result)
+	span := findSpan(newSpans(), "cmd.provision")
+	require.NotNil(t, span)
+	assert.Equal(t, map[string]any{
+		"provision.layer.is_v2":                    true,
+		"provision.layer.count":                    int64(2),
+		"provision.layer.explicit_dependson_count": int64(1),
+	}, provisionLayerAttributes(span))
 }
 
 // TestEmitDeploySpan_ErrorPath is the end-to-end assertion issue #9054 was

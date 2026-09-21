@@ -294,14 +294,7 @@ var (
 // are not explicitly defined, the project importer uses default values to find the infrastructure.
 func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (*Infra, error) {
 	if projectConfig.Format() == ProjectFormatLayersV2 {
-		entries := make([]provisioning.Options, 0)
-		for _, layer := range projectConfig.Layers {
-			for _, infra := range layer.Infra {
-				infra.Layer = layer.Name
-				entries = append(entries, infra)
-			}
-		}
-		return &Infra{Options: provisioning.Options{Layers: entries}}, nil
+		return &Infra{Options: provisioning.Options{Layers: projectConfig.InfrastructureConfigs()}}, nil
 	}
 
 	infraOptions, err := projectConfig.Infra.GetWithDefaults()
@@ -326,11 +319,8 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		}
 	}
 
-	// short-circuit: If layers are defined, we know it's an explicit infrastructure
+	// Configured layers take precedence over infrastructure auto-detection.
 	if len(infraOptions.Layers) > 0 {
-		for i := range infraOptions.Layers {
-			infraOptions.Layers[i].Layer = infraOptions.Layers[i].Name
-		}
 		return &Infra{
 			Options: infraOptions,
 		}, nil

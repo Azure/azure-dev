@@ -24,12 +24,12 @@ func TestProjectConfigCopyRuntimeStateMatchesLayersByName(t *testing.T) {
 
 	dispatcher := ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
 	source := &ProjectConfig{Layers: []*LayerConfig{
-		{Name: "first", Services: map[string]*ServiceConfig{"api": {EventDispatcher: dispatcher}}},
-		{Name: "second", Services: map[string]*ServiceConfig{"worker": {}}},
+		{Name: "first-layer", Services: map[string]*ServiceConfig{"api": {EventDispatcher: dispatcher}}},
+		{Name: "second-layer", Services: map[string]*ServiceConfig{"worker": {}}},
 	}}
 	target := &ProjectConfig{Layers: []*LayerConfig{
-		{Name: "second", Services: map[string]*ServiceConfig{"worker": {}}},
-		{Name: "first", Services: map[string]*ServiceConfig{"api": {}}},
+		{Name: "second-layer", Services: map[string]*ServiceConfig{"worker": {}}},
+		{Name: "first-layer", Services: map[string]*ServiceConfig{"api": {}}},
 	}}
 
 	source.CopyRuntimeStateTo(target)
@@ -40,29 +40,200 @@ func TestProjectConfigCopyRuntimeStateMatchesLayersByName(t *testing.T) {
 func TestParseProjectLayers(t *testing.T) {
 	t.Parallel()
 
-	projectConfig, err := Parse(t.Context(), `name: layered-project
-layers:
-  - name: application
-    infra:
-      - name: app-infra
-        path: ./infra/app
-        provider: bicep
-    services:
-      api:
-        project: ./src/api
-        host: containerapp
-        language: js
-`)
+	projectConfig, err := Parse(t.Context(), "name: layered-project\n"+
+		"layers:\n"+
+		"  - name: application-layer\n"+
+		"    infra:\n"+
+		"      - name: app-infra\n"+
+		"        path: ./infra/app\n"+
+		"        provider: bicep\n"+
+		"    services:\n"+
+		"      api:\n"+
+		"        project: ./src/api\n"+
+		"        host: containerapp\n"+
+		"        language: js\n")
 
 	require.NoError(t, err)
 	require.Len(t, projectConfig.Layers, 1)
-	assert.Equal(t, "application", projectConfig.Layers[0].Name)
+	assert.Equal(t, "application-layer", projectConfig.Layers[0].Name)
 	require.Len(t, projectConfig.Layers[0].Infra, 1)
 	assert.Equal(t, "app-infra", projectConfig.Layers[0].Infra[0].Name)
 	assert.Equal(t, provisioning.Bicep, projectConfig.Layers[0].Infra[0].Provider)
 	require.Contains(t, projectConfig.Layers[0].Services, "api")
 	assert.Equal(t, "api", projectConfig.Layers[0].Services["api"].Name)
-	assert.Equal(t, "application", projectConfig.Layers[0].Infra[0].Layer)
+}
+
+func TestParseProjectLayersRejectsInfraDependsOn(t *testing.T) {
+	t.Parallel()
+
+	_, err := Parse(t.Context(), `name: layered-project
+layers:
+  - name: application
+    infra:
+      - name: api
+        provider: bicep
+        path: infra/api
+        dependsOn: [foundation]
+`)
+
+	require.EqualError(t, err,
+		`layer "application" infrastructure entry "api" cannot declare dependsOn; `+
+			`declare dependencies on the project layer instead`)
+}
+
+func TestParseProjectLayersRejectsEmptyEntryNames(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		yaml    string
+		wantErr string
+	}{
+		{
+			name: "infrastructure",
+			yaml: `name: layered-project
+layers:
+  - name: application
+    infra:
+      - provider: bicep
+        path: infra/api
+`,
+			wantErr: "infrastructure entry name cannot be empty",
+		},
+		{
+			name: "service",
+			yaml: `name: layered-project
+layers:
+  - name: application
+    services:
+      "":
+        host: containerapp
+        image: example/api:latest
+`,
+			wantErr: "service name cannot be empty",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := Parse(t.Context(), test.yaml)
+			require.ErrorContains(t, err, test.wantErr)
+		})
+	}
+}
+
+func TestValidateLayerDependencies(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		layers  LayerConfigs
+		wantErr string
+	}{
+		{
+			name: "deep chain",
+			layers: LayerConfigs{
+				{Name: "foundation-layer"},
+				{Name: "application-layer", DependsOn: []string{"foundation-layer"}},
+				{Name: "frontend-layer", DependsOn: []string{"application-layer"}},
+			},
+		},
+		{
+			name:    "unknown layer",
+			layers:  LayerConfigs{{Name: "application-layer", DependsOn: []string{"missing-layer"}}},
+			wantErr: `layer "application-layer" depends on unknown layer "missing-layer"`,
+		},
+		{
+			name:    "self dependency",
+			layers:  LayerConfigs{{Name: "application-layer", DependsOn: []string{"application-layer"}}},
+			wantErr: `layer "application-layer" cannot depend on itself`,
+		},
+		{
+			name: "duplicate dependency",
+			layers: LayerConfigs{
+				{Name: "foundation-layer"},
+				{Name: "application-layer", DependsOn: []string{"foundation-layer", "foundation-layer"}},
+			},
+			wantErr: `layer "application-layer" depends on layer "foundation-layer" more than once`,
+		},
+		{
+			name: "deep cycle",
+			layers: LayerConfigs{
+				{Name: "foundation-layer", DependsOn: []string{"frontend-layer"}},
+				{Name: "application-layer", DependsOn: []string{"foundation-layer"}},
+				{Name: "frontend-layer", DependsOn: []string{"application-layer"}},
+			},
+			wantErr: `circular dependency detected at layer "foundation-layer"`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateLayerDependencies(test.layers)
+			if test.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.EqualError(t, err, test.wantErr)
+		})
+	}
+}
+
+func TestValidateLayerDependencyCycles(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		layers  LayerConfigs
+		wantErr string
+	}{
+		{
+			name: "no dependencies",
+			layers: LayerConfigs{
+				{Name: "foundation"},
+				{Name: "application"},
+			},
+		},
+		{
+			name: "acyclic graph",
+			layers: LayerConfigs{
+				{Name: "foundation"},
+				{Name: "data", DependsOn: []string{"foundation"}},
+				{Name: "application", DependsOn: []string{"foundation", "data"}},
+			},
+		},
+		{
+			name: "two layer cycle",
+			layers: LayerConfigs{
+				{Name: "foundation", DependsOn: []string{"application"}},
+				{Name: "application", DependsOn: []string{"foundation"}},
+			},
+			wantErr: `circular dependency detected at layer "foundation"`,
+		},
+		{
+			name: "deep cycle",
+			layers: LayerConfigs{
+				{Name: "foundation", DependsOn: []string{"frontend"}},
+				{Name: "application", DependsOn: []string{"foundation"}},
+				{Name: "frontend", DependsOn: []string{"application"}},
+			},
+			wantErr: `circular dependency detected at layer "foundation"`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			//t.Parallel()
+			err := validateLayerDependencyCycles(test.layers)
+			if test.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.EqualError(t, err, test.wantErr)
+		})
+	}
 }
 
 func TestParseProjectLayersRejectsMixedFormats(t *testing.T) {
@@ -81,7 +252,7 @@ func TestParseProjectLayersRejectsMixedFormats(t *testing.T) {
 			t.Parallel()
 			yaml := fmt.Sprintf("name: mixed-project\n%s\n"+
 				"layers:\n"+
-				"  - name: application\n"+
+				"  - name: application-layer\n"+
 				"    services:\n"+
 				"      api:\n"+
 				"        host: containerapp\n"+
@@ -96,17 +267,16 @@ func TestParseProjectLayersRejectsMixedFormats(t *testing.T) {
 func TestParseProjectLayersRejectsResources(t *testing.T) {
 	t.Parallel()
 
-	_, err := Parse(t.Context(), `name: layered-project
-layers:
-  - name: application
-    services:
-      api:
-        host: containerapp
-        image: example/api:latest
-resources:
-  storage:
-    type: storage
-`)
+	_, err := Parse(t.Context(), "name: layered-project\n"+
+		"layers:\n"+
+		"  - name: application-layer\n"+
+		"    services:\n"+
+		"      api:\n"+
+		"        host: containerapp\n"+
+		"        image: example/api:latest\n"+
+		"resources:\n"+
+		"  storage:\n"+
+		"    type: storage\n")
 
 	require.ErrorContains(t, err, "'layers' cannot be combined with top-level 'resources'")
 }
@@ -117,16 +287,15 @@ func TestParseProjectLayersAllowsEmptyTopLevelInfra(t *testing.T) {
 	// This is a really small edge case, but just documenting it here to establish that it was considered
 	// and it's not a big enough deal to worry about at this time - we just ignore it and use the layers they've
 	// configured.
-	_, err := Parse(t.Context(), `name: layered-project
-# OH NO - AN EMPTY LITERAL!
-infra: {}
-layers:
-  - name: application
-    services:
-      api:
-        host: containerapp
-        image: example/api:latest
-`)
+	_, err := Parse(t.Context(), "name: layered-project\n"+
+		"# OH NO - AN EMPTY LITERAL!\n"+
+		"infra: {}\n"+
+		"layers:\n"+
+		"  - name: application-layer\n"+
+		"    services:\n"+
+		"      api:\n"+
+		"        host: containerapp\n"+
+		"        image: example/api:latest\n")
 
 	require.NoError(t, err)
 }
@@ -141,41 +310,39 @@ func TestParseProjectLayersRejectsInvalidContainers(t *testing.T) {
 	}{
 		{
 			name:    "empty layer",
-			yaml:    "name: test-project\nlayers:\n  - name: application\n",
+			yaml:    "name: test-project\nlayers:\n  - name: application-layer\n",
 			wantErr: "must contain infrastructure or services",
 		},
 		{
 			name: "duplicate service",
-			yaml: `name: test-project
-layers:
-  - name: first
-    services:
-      api:
-        host: containerapp
-        image: example/api:latest
-  - name: second
-    services:
-      api:
-        host: containerapp
-        image: example/api:latest
-`,
+			yaml: "name: test-project\n" +
+				"layers:\n" +
+				"  - name: first-layer\n" +
+				"    services:\n" +
+				"      api:\n" +
+				"        host: containerapp\n" +
+				"        image: example/api:latest\n" +
+				"  - name: second-layer\n" +
+				"    services:\n" +
+				"      api:\n" +
+				"        host: containerapp\n" +
+				"        image: example/api:latest\n",
 			wantErr: "service 'api' is defined in both layers",
 		},
 		{
 			name: "duplicate infrastructure entry",
-			yaml: `name: test-project
-layers:
-  - name: first
-    infra:
-      - name: shared
-        provider: terraform
-        path: infra/first
-  - name: second
-    infra:
-      - name: shared
-        provider: terraform
-        path: infra/second
-`,
+			yaml: "name: test-project\n" +
+				"layers:\n" +
+				"  - name: first-layer\n" +
+				"    infra:\n" +
+				"      - name: shared\n" +
+				"        provider: terraform\n" +
+				"        path: infra/first\n" +
+				"  - name: second-layer\n" +
+				"    infra:\n" +
+				"      - name: shared\n" +
+				"        provider: terraform\n" +
+				"        path: infra/second\n",
 			wantErr: "infrastructure entry 'shared' is defined in both layers",
 		},
 	}
@@ -192,19 +359,18 @@ layers:
 func TestSaveProjectLayersPreservesV2Shape(t *testing.T) {
 	t.Parallel()
 
-	projectConfig, err := Parse(t.Context(), `name: layered-project
-layers:
-  - name: application
-    infra:
-      - name: app-infra
-        path: ./infra/app
-        provider: bicep
-    services:
-      api:
-        project: ./src/api
-        host: containerapp
-        language: js
-`)
+	projectConfig, err := Parse(t.Context(), "name: layered-project\n"+
+		"layers:\n"+
+		"  - name: application-layer\n"+
+		"    infra:\n"+
+		"      - name: app-infra\n"+
+		"        path: ./infra/app\n"+
+		"        provider: bicep\n"+
+		"    services:\n"+
+		"      api:\n"+
+		"        project: ./src/api\n"+
+		"        host: containerapp\n"+
+		"        language: js\n")
 	require.NoError(t, err)
 
 	path := filepath.Join(t.TempDir(), "azure.yaml")
@@ -215,12 +381,12 @@ layers:
 	yaml := string(contents)
 	require.Contains(t, yaml, "/schemas/alpha/azure.yaml.json")
 	require.Contains(t, yaml, "layers:")
-	require.Contains(t, yaml, "- name: application")
+	require.Contains(t, yaml, "- name: application-layer")
 	require.Contains(t, yaml, "infra:")
 	require.Contains(t, yaml, "- provider: bicep")
 	require.Contains(t, yaml, "services:")
 	require.Contains(t, yaml, "api:")
-	require.NotContains(t, yaml, "layer: application")
+	require.NotContains(t, yaml, "layer: application-layer")
 	require.Equal(t, 1, strings.Count(yaml, "layers:"))
 }
 
@@ -267,7 +433,7 @@ func TestSaveProjectLayersRejectsMixedFormatsBeforeWrite(t *testing.T) {
 			name: "top-level infra layers",
 			mutate: func(config *ProjectConfig) {
 				config.Infra = provisioning.Options{Layers: []provisioning.Options{
-					{Name: "shared", Provider: provisioning.Bicep, Path: "infra"},
+					{Name: "shared-layer", Provider: provisioning.Bicep, Path: "infra"},
 				}}
 			},
 		},
@@ -327,7 +493,7 @@ func TestProjectLayersAlphaSchema(t *testing.T) {
 	require.NoError(t, err)
 
 	layer := map[string]any{
-		"name": "application",
+		"name": "application-layer",
 		"infra": []any{map[string]any{
 			"name": "app-infra", "provider": "bicep", "path": "./infra/app",
 		}},
@@ -339,13 +505,25 @@ func TestProjectLayersAlphaSchema(t *testing.T) {
 		"name":   "layered-project",
 		"layers": []any{layer},
 	}))
+	require.Error(t, schema.Validate(map[string]any{
+		"name": "layered-project",
+		"layers": []any{map[string]any{
+			"name": "application-layer",
+			"infra": []any{map[string]any{
+				"name":      "app-infra",
+				"provider":  "bicep",
+				"path":      "./infra/app",
+				"dependsOn": []any{"foundation"},
+			}},
+		}},
+	}), "nested infra dependsOn")
 
 	// bicep and terraform require a 'path' attribute
 	for _, provider := range []string{"bicep", "terraform"} {
 		require.Error(t, schema.Validate(map[string]any{
 			"name": "layered-project",
 			"layers": []any{map[string]any{
-				"name": "application",
+				"name": "application-layer",
 				"infra": []any{map[string]any{
 					"name":     "app-infra",
 					"provider": provider,
@@ -358,7 +536,7 @@ func TestProjectLayersAlphaSchema(t *testing.T) {
 	require.NoError(t, schema.Validate(map[string]any{
 		"name": "layered-project",
 		"layers": []any{map[string]any{
-			"name": "application",
+			"name": "application-layer",
 			"infra": []any{map[string]any{
 				"name":     "foundry",
 				"provider": "microsoft.foundry",
@@ -376,7 +554,7 @@ func TestProjectLayersAlphaSchema(t *testing.T) {
 		projectDocument := map[string]any{
 			"name": "layered-project",
 			"layers": []any{map[string]any{
-				"name":        "application",
+				"name":        "application-layer",
 				test.property: test.value,
 			}},
 		}
@@ -454,8 +632,8 @@ func TestProjectConfigAccessorsPreserveNonV2Formats(t *testing.T) {
 		Infra: provisioning.Options{
 			Provider: provisioning.Bicep,
 			Layers: []provisioning.Options{
-				{Name: "network", Provider: provisioning.Terraform},
-				{Name: "application", Provider: provisioning.Bicep},
+				{Name: "network-layer", Provider: provisioning.Terraform},
+				{Name: "application-layer", Provider: provisioning.Bicep},
 			},
 		},
 	}
@@ -468,22 +646,21 @@ func TestProjectConfigAccessorsPreserveNonV2Formats(t *testing.T) {
 func TestSaveProjectInfraV1PreservesFormat(t *testing.T) {
 	t.Parallel()
 
-	const projectYaml = `name: test-project
-infra:
-  provider: bicep
-  layers:
-    - name: network
-      path: infra/network
-      module: network
-    - name: application
-      provider: terraform
-      path: infra/application
-services:
-  api:
-    host: appservice
-    language: python
-    project: src/api
-`
+	const projectYaml = "name: test-project\n" +
+		"infra:\n" +
+		"  provider: bicep\n" +
+		"  layers:\n" +
+		"    - name: network-layer\n" +
+		"      path: infra/network\n" +
+		"      module: network\n" +
+		"    - name: application-layer\n" +
+		"      provider: terraform\n" +
+		"      path: infra/application\n" +
+		"services:\n" +
+		"  api:\n" +
+		"    host: appservice\n" +
+		"    language: python\n" +
+		"    project: src/api\n"
 
 	projectConfig, err := Parse(t.Context(), projectYaml)
 	require.NoError(t, err)
@@ -502,7 +679,7 @@ services:
 	require.Equal(t, ProjectFormatInfraV1, reloaded.Format())
 	require.Equal(t, provisioning.Bicep, reloaded.Infra.Provider)
 	require.Len(t, reloaded.Infra.Layers, 2)
-	require.Equal(t, "network", reloaded.Infra.Layers[0].Name)
+	require.Equal(t, "network-layer", reloaded.Infra.Layers[0].Name)
 	require.Equal(t, provisioning.Terraform, reloaded.Infra.Layers[1].Provider)
 	require.Contains(t, reloaded.Services, "api")
 
@@ -510,90 +687,4 @@ services:
 	require.NoError(t, err)
 	require.Contains(t, string(contents), "schemas/v1.0/azure.yaml.json")
 	require.NotContains(t, string(contents), "\nlayers:")
-}
-
-func TestValidateLayerGraph_AcceptsV2Project(t *testing.T) {
-	t.Parallel()
-
-	projectConfig := &ProjectConfig{Layers: []*LayerConfig{
-		{
-			Name: "foundry",
-			Infra: []provisioning.Options{
-				{Name: "foundry-account", Provider: provisioning.Bicep},
-				{Name: "foundry-project", Provider: "microsoft.foundry", DependsOn: []string{"foundry-account"}},
-			},
-			Services: map[string]*ServiceConfig{"ai-project": {Name: "ai-project"}},
-		},
-		{
-			Name: "agents",
-			Infra: []provisioning.Options{
-				{Name: "agent-resources", Provider: provisioning.Bicep, DependsOn: []string{"foundry-project"}},
-			},
-			Services: map[string]*ServiceConfig{
-				"writer-agent": {Name: "writer-agent", Uses: []string{"ai-project"}},
-			},
-		},
-	}}
-
-	require.NoError(t, ValidateLayerGraph(projectConfig))
-}
-
-func TestValidateLayerGraph_RejectsLayerCycle(t *testing.T) {
-	t.Parallel()
-
-	projectConfig := &ProjectConfig{Layers: []*LayerConfig{
-		{Name: "a", Infra: []provisioning.Options{{Name: "a-infra", DependsOn: []string{"b-infra"}}}},
-		{Name: "b", Infra: []provisioning.Options{{Name: "b-infra", DependsOn: []string{"a-infra"}}}},
-	}}
-
-	err := ValidateLayerGraph(projectConfig)
-
-	require.ErrorContains(t, err, "circular dependency")
-}
-
-func TestValidateLayerGraph_AcceptsAcyclicEntriesAcrossLayers(t *testing.T) {
-	t.Parallel()
-
-	projectConfig := &ProjectConfig{Layers: []*LayerConfig{
-		{Name: "a", Infra: []provisioning.Options{
-			{Name: "a1"},
-			{Name: "a2", DependsOn: []string{"b1"}},
-		}},
-		{Name: "b", Infra: []provisioning.Options{
-			{Name: "b1"},
-			{Name: "b2", DependsOn: []string{"a1"}},
-		}},
-	}}
-
-	require.NoError(t, ValidateLayerGraph(projectConfig))
-}
-
-func TestValidateLayerGraph_RejectsIntraLayerInfrastructureCycle(t *testing.T) {
-	t.Parallel()
-
-	projectConfig := &ProjectConfig{Layers: []*LayerConfig{
-		{
-			Name: "application",
-			Infra: []provisioning.Options{
-				{Name: "api", DependsOn: []string{"worker"}},
-				{Name: "worker", DependsOn: []string{"api"}},
-			},
-		},
-	}}
-
-	err := ValidateLayerGraph(projectConfig)
-
-	require.ErrorContains(t, err, "circular dependency detected at infrastructure layer")
-}
-
-func TestValidateLayerGraph_RejectsUnknownInfraDependency(t *testing.T) {
-	t.Parallel()
-
-	projectConfig := &ProjectConfig{Layers: []*LayerConfig{
-		{Name: "application", Infra: []provisioning.Options{{Name: "application", DependsOn: []string{"missing"}}}},
-	}}
-
-	err := ValidateLayerGraph(projectConfig)
-
-	require.ErrorContains(t, err, "depends on unknown infrastructure layer")
 }

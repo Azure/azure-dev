@@ -15,6 +15,14 @@ The command will show metadata about the current project, selected environment a
 
 #### Usage: `azd demo context`
 
+### `layers`
+
+Run `layers` within an initialized project that uses the top-level `layers` format. With no layer name, the command
+calls the preview `ListLayers` RPC. With a name, it calls `GetLayer`; pass `--expand-env` to resolve environment
+references in expandable service values.
+
+#### Usage: `azd demo layers [name] [--expand-env]`
+
 ### `prompt`
 
 Run the `prompt` command to see an example of using `azd` styled prompts within your application written in any language.

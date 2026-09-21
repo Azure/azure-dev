@@ -6,14 +6,14 @@ var event_pb = require('./event_pb.js');
 var models_pb = require('./models_pb.js');
 var errors_pb = require('./errors_pb.js');
 
-function serialize_azd_extensions_v1_EventMessage(arg) {
+function serialize_azd_extensions_v1beta_EventMessage(arg) {
   if (!(arg instanceof event_pb.EventMessage)) {
-    throw new Error('Expected argument of type azd.extensions.v1.EventMessage');
+    throw new Error('Expected argument of type azd.extensions.v1beta.EventMessage');
   }
   return Buffer.from(arg.serializeBinary());
 }
 
-function deserialize_azd_extensions_v1_EventMessage(buffer_arg) {
+function deserialize_azd_extensions_v1beta_EventMessage(buffer_arg) {
   return event_pb.EventMessage.deserializeBinary(new Uint8Array(buffer_arg));
 }
 
@@ -23,15 +23,15 @@ function deserialize_azd_extensions_v1_EventMessage(buffer_arg) {
 var EventServiceService = exports.EventServiceService = {
   // Bidirectional stream for event subscription, invocation, and status updates.
 eventStream: {
-    path: '/azd.extensions.v1.EventService/EventStream',
+    path: '/azd.extensions.v1beta.EventService/EventStream',
     requestStream: true,
     responseStream: true,
     requestType: event_pb.EventMessage,
     responseType: event_pb.EventMessage,
-    requestSerialize: serialize_azd_extensions_v1_EventMessage,
-    requestDeserialize: deserialize_azd_extensions_v1_EventMessage,
-    responseSerialize: serialize_azd_extensions_v1_EventMessage,
-    responseDeserialize: deserialize_azd_extensions_v1_EventMessage,
+    requestSerialize: serialize_azd_extensions_v1beta_EventMessage,
+    requestDeserialize: deserialize_azd_extensions_v1beta_EventMessage,
+    responseSerialize: serialize_azd_extensions_v1beta_EventMessage,
+    responseDeserialize: deserialize_azd_extensions_v1beta_EventMessage,
   },
 };
 

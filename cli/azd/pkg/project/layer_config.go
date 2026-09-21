@@ -3,9 +3,11 @@
 
 package project
 
-import "maps"
+import (
+	"maps"
 
-import "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+)
 
 // ProjectFormat identifies the persisted project layout.
 type ProjectFormat int
@@ -50,9 +52,10 @@ const (
 
 // LayerConfig is one persisted project layer in azure.yaml.
 type LayerConfig struct {
-	Name     string                    `yaml:"name"`
-	Infra    []provisioning.Options    `yaml:"infra,omitempty"`
-	Services map[string]*ServiceConfig `yaml:"services,omitempty"`
+	Name      string                    `yaml:"name"`
+	DependsOn []string                  `yaml:"dependsOn,omitempty"`
+	Infra     []provisioning.Options    `yaml:"infra,omitempty"`
+	Services  map[string]*ServiceConfig `yaml:"services,omitempty"`
 }
 
 // LayerConfigs preserves an explicitly empty layers collection when marshaled.
@@ -95,10 +98,23 @@ func (pc *ProjectConfig) InfrastructureConfigs() []provisioning.Options {
 		return pc.Infra.GetLayers()
 	}
 
+	// Flatten the layers so we end up with only infra (provisioning.Options) depending
+	// on other infra. Basically, if layer 'a' depends on a layer 'b', then every infra entry
+	// in layer 'a' will .DependsOn all the infra in layer 'b'.
+
+	infraNamesByLayer := make(map[string][]string, len(pc.Layers))
+	for _, layer := range pc.Layers {
+		for _, infra := range layer.Infra {
+			infraNamesByLayer[layer.Name] = append(infraNamesByLayer[layer.Name], infra.Name)
+		}
+	}
+
 	var entries []provisioning.Options
 	for _, layer := range pc.Layers {
 		for _, infra := range layer.Infra {
-			infra.Layer = layer.Name
+			for _, dependency := range layer.DependsOn {
+				infra.DependsOn = append(infra.DependsOn, infraNamesByLayer[dependency]...)
+			}
 			entries = append(entries, infra)
 		}
 	}

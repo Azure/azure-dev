@@ -102,7 +102,6 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 				return nil, fmt.Errorf("parsing layer %q infrastructure %q provider: %w",
 					layer.Name, layer.Infra[i].Name, err)
 			}
-			layer.Infra[i].Layer = layer.Name
 			layer.Infra[i].Path = filepath.FromSlash(strings.ReplaceAll(layer.Infra[i].Path, "\\", "/"))
 		}
 
@@ -314,6 +313,7 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 		copy.Layers = make(LayerConfigs, len(projectConfig.Layers))
 		for i, layer := range projectConfig.Layers {
 			layerCopy := *layer
+			layerCopy.DependsOn = slices.Clone(layer.DependsOn)
 			layerCopy.Infra = slices.Clone(layer.Infra)
 			for j := range layerCopy.Infra {
 				layerCopy.Infra[j].Path = filepath.ToSlash(layerCopy.Infra[j].Path)

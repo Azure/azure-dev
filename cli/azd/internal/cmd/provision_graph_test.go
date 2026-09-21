@@ -12,19 +12,132 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
+
+func TestProvisionLayerTelemetry_Formats(t *testing.T) {
+	tests := []struct {
+		name          string
+		projectConfig *project.ProjectConfig
+		layers        []provisioning.Options
+		dependencies  *bicep.LayerDependencies
+		expected      map[string]any
+	}{
+		{
+			name:          "zero layers have trivial topology",
+			projectConfig: &project.ProjectConfig{Layers: project.LayerConfigs{}},
+			expected: map[string]any{
+				string(fields.ProvisionLayerIsV2Key.Key):                   true,
+				string(fields.ProvisionLayerCountKey.Key):                  int64(0),
+				string(fields.ProvisionLayerExplicitDependsOnCountKey.Key): int64(0),
+				string(fields.ProvisionLayerMaxParallelKey.Key):            int64(0),
+				string(fields.ProvisionLayerSafeFallbackCountKey.Key):      int64(0),
+			},
+		},
+		{
+			name: "single layer has trivial topology",
+			projectConfig: &project.ProjectConfig{Infra: provisioning.Options{Layers: []provisioning.Options{
+				{Name: "foundation"},
+			}}},
+			layers: []provisioning.Options{{Name: "foundation"}},
+			expected: map[string]any{
+				string(fields.ProvisionLayerIsV2Key.Key):                   false,
+				string(fields.ProvisionLayerCountKey.Key):                  int64(1),
+				string(fields.ProvisionLayerExplicitDependsOnCountKey.Key): int64(0),
+				string(fields.ProvisionLayerMaxParallelKey.Key):            int64(1),
+				string(fields.ProvisionLayerSafeFallbackCountKey.Key):      int64(0),
+			},
+		},
+		{
+			name: "multi layer without analysis omits topology",
+			projectConfig: &project.ProjectConfig{Layers: project.LayerConfigs{
+				{Name: "foundation", Infra: []provisioning.Options{{Name: "network"}}},
+				{
+					Name:      "application",
+					DependsOn: []string{"foundation"},
+					Infra:     []provisioning.Options{{Name: "api"}, {Name: "database"}},
+				},
+			}},
+			layers: []provisioning.Options{{Name: "network"}, {Name: "api"}, {Name: "database"}},
+			expected: map[string]any{
+				string(fields.ProvisionLayerIsV2Key.Key):                   true,
+				string(fields.ProvisionLayerCountKey.Key):                  int64(3),
+				string(fields.ProvisionLayerExplicitDependsOnCountKey.Key): int64(1),
+			},
+		},
+		{
+			name: "multi layer with analysis includes topology",
+			projectConfig: &project.ProjectConfig{Layers: project.LayerConfigs{
+				{Name: "foundation", Infra: []provisioning.Options{{Name: "network"}}},
+				{
+					Name:      "application",
+					DependsOn: []string{"foundation"},
+					Infra:     []provisioning.Options{{Name: "api"}, {Name: "database"}},
+				},
+			}},
+			layers: []provisioning.Options{{Name: "network"}, {Name: "api"}, {Name: "database"}},
+			dependencies: &bicep.LayerDependencies{
+				Levels:             [][]int{{0}, {1, 2}},
+				SafeFallbackLayers: []int{2},
+			},
+			expected: map[string]any{
+				string(fields.ProvisionLayerIsV2Key.Key):                   true,
+				string(fields.ProvisionLayerCountKey.Key):                  int64(3),
+				string(fields.ProvisionLayerExplicitDependsOnCountKey.Key): int64(1),
+				string(fields.ProvisionLayerMaxParallelKey.Key):            int64(2),
+				string(fields.ProvisionLayerSafeFallbackCountKey.Key):      int64(1),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := tracetest.NewSpanRecorder()
+			provider := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(recorder))
+			ctx, span := provider.Tracer("test").Start(t.Context(), "provision")
+
+			telemetry := newProvisionLayerTelemetry(tt.projectConfig, tt.layers)
+			telemetry.setDependencies(tt.dependencies)
+			telemetry.emit(ctx)
+			span.End()
+
+			require.Len(t, recorder.Ended(), 1)
+			attributes := provisionLayerAttributes(recorder.Ended()[0])
+			require.Equal(t, tt.expected, attributes)
+		})
+	}
+}
+
+func provisionLayerAttributes(span tracesdk.ReadOnlySpan) map[string]any {
+	attributes := map[string]any{}
+	for _, attr := range span.Attributes() {
+		switch attr.Key {
+		case fields.ProvisionLayerIsV2Key.Key:
+			attributes[string(attr.Key)] = attr.Value.AsBool()
+		case fields.ProvisionLayerCountKey.Key,
+			fields.ProvisionLayerExplicitDependsOnCountKey.Key,
+			fields.ProvisionLayerMaxParallelKey.Key,
+			fields.ProvisionLayerSafeFallbackCountKey.Key:
+			attributes[string(attr.Key)] = attr.Value.AsInt64()
+		}
+	}
+	return attributes
+}
 
 func TestNoopSaveEnvManager(t *testing.T) {
 	t.Parallel()
@@ -34,12 +147,9 @@ func TestNoopSaveEnvManager(t *testing.T) {
 
 	env := environment.NewWithValues("test", nil)
 
-	// Save and SaveWithOptions must be no-ops — the inner mock should
-	// never be called for these methods.
 	require.NoError(t, noop.Save(t.Context(), env))
 	require.NoError(t, noop.SaveWithOptions(t.Context(), env, nil))
 
-	// Non-save methods delegate to the inner manager.
 	inner.On("Reload", mock.Anything, env).Return(nil)
 	require.NoError(t, noop.Reload(t.Context(), env))
 	inner.AssertCalled(t, "Reload", mock.Anything, env)
@@ -83,10 +193,8 @@ func TestSyncConsole_SerializesMessages(t *testing.T) {
 	)
 }
 
-// TestProvisionLayersGraph_BuildsGraph verifies that
-// provisionLayersGraph creates a correct execution graph from layers with known
-// dependency phases. We set up three layers where layer-1 depends on
-// layer-0's output, and layer-2 is independent of both.
+// TestProvisionLayersGraph_BuildsGraph verifies that top-level project layers
+// flow through the existing infrastructure importer and dependency analyzer.
 func TestProvisionLayersGraph_BuildsGraph(t *testing.T) {
 	t.Parallel()
 
@@ -95,7 +203,8 @@ func TestProvisionLayersGraph_BuildsGraph(t *testing.T) {
 	//   layer-1/main.bicep — no outputs
 	//   layer-2/main.bicep — no outputs
 	// layer-1/main.bicepparam references VNET_ID
-	// layer-2 has no parameter references
+	// layer-2 has no parameter references, but its containing project layer
+	// explicitly depends on the shared project layer.
 	projectDir := t.TempDir()
 
 	layer0Dir := filepath.Join(projectDir, "infra", "network")
@@ -135,26 +244,42 @@ func TestProvisionLayersGraph_BuildsGraph(t *testing.T) {
 		0o600,
 	))
 
-	layers := []provisioning.Options{
-		{Name: "network", Path: "infra/network", Module: "main"},
-		{Name: "compute", Path: "infra/compute", Module: "main"},
-		{
-			Name: "monitoring", Path: "infra/monitoring",
-			Module: "main",
+	projectConfig := &project.ProjectConfig{
+		Path: projectDir,
+		Layers: project.LayerConfigs{
+			{
+				Name: "shared",
+				Infra: []provisioning.Options{
+					{Name: "network", Path: "infra/network", Module: "main", Provider: provisioning.Bicep},
+				},
+			},
+			{
+				Name:      "application",
+				DependsOn: []string{"shared"},
+				Infra: []provisioning.Options{
+					{Name: "compute", Path: "infra/compute", Module: "main", Provider: provisioning.Bicep},
+					{Name: "monitoring", Path: "infra/monitoring", Module: "main", Provider: provisioning.Bicep},
+				},
+			},
 		},
 	}
 
-	// Analyze dependencies.
+	infra, err := project.NewImportManager(nil).ProjectInfrastructure(t.Context(), projectConfig)
+	require.NoError(t, err)
+	layers := infra.Options.GetLayers()
+	require.Len(t, layers, 3)
+
 	layerDeps, err := bicep.AnalyzeLayerDependencies(
 		t.Context(), layers, projectDir,
 	)
 	require.NoError(t, err)
 
-	// Level 0: network (0) and monitoring (2)
-	// Level 1: compute (1) — depends on network output
+	// Level 0: network (0)
+	// Level 1: compute (1) and monitoring (2). Compute consumes a network
+	// output; monitoring inherits the application -> shared layer dependency.
 	require.Len(t, layerDeps.Levels, 2)
-	assert.ElementsMatch(t, []int{0, 2}, layerDeps.Levels[0])
-	assert.ElementsMatch(t, []int{1}, layerDeps.Levels[1])
+	assert.ElementsMatch(t, []int{0}, layerDeps.Levels[0])
+	assert.ElementsMatch(t, []int{1, 2}, layerDeps.Levels[1])
 
 	// Build step names.
 	stepNames := make([]string, len(layers))
@@ -201,9 +326,9 @@ func TestProvisionLayersGraph_BuildsGraph(t *testing.T) {
 		steps[1].DependsOn,
 	)
 
-	// monitoring: no dependencies
+	// monitoring: depends on network through its containing project layer
 	assert.Equal(t, "monitoring", steps[2].Name)
-	assert.Empty(t, steps[2].DependsOn)
+	assert.Equal(t, []string{"network"}, steps[2].DependsOn)
 
 	// Run the graph — all noop actions should succeed.
 	err = exegraph.Run(t.Context(), g, exegraph.RunOptions{})

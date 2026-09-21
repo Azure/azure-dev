@@ -129,6 +129,17 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		require.Equal(t, int64(3), kvCount.Value.AsInt64())
 	})
 
+	t.Run("MultiLayerProvisionFields", func(t *testing.T) {
+		t.Parallel()
+
+		kv := fields.ProvisionLayerIsV2Key.Bool(true)
+		require.Equal(t, "provision.layer.is_v2", string(kv.Key))
+		require.True(t, kv.Value.AsBool())
+		require.Equal(t, fields.SystemMetadata, fields.ProvisionLayerIsV2Key.Classification)
+		require.Equal(t, fields.FeatureInsight, fields.ProvisionLayerIsV2Key.Purpose)
+		require.False(t, fields.ProvisionLayerIsV2Key.IsMeasurement)
+	})
+
 	t.Run("GDPRMeasurementMetadata", func(t *testing.T) {
 		t.Parallel()
 
@@ -139,6 +150,10 @@ func TestTelemetryFieldConstants(t *testing.T) {
 			fields.ExeGraphPackageConcurrencyKey,
 			fields.ExeGraphProvisionConcurrencyKey,
 			fields.ExtensionLegacyGrpcCallCount,
+			fields.ProvisionLayerCountKey,
+			fields.ProvisionLayerExplicitDependsOnCountKey,
+			fields.ProvisionLayerMaxParallelKey,
+			fields.ProvisionLayerSafeFallbackCountKey,
 			fields.ToolExitCode,
 		}
 		for _, field := range measurementFields {

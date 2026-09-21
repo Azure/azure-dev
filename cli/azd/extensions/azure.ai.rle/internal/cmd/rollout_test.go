@@ -233,10 +233,12 @@ func TestRolloutRunExecutesRolloutAndClosesLoomSession(t *testing.T) {
 	})
 
 	command := newRolloutCommand()
+	outputDir := t.TempDir()
 	command.SetArgs([]string{
 		"code_rl", "--version", "1.0.0",
 		"--model", "Qwen/Qwen3-32B",
 		"--task", `{"prompt":"hello"}`,
+		"--output-dir", outputDir,
 	})
 	var output bytes.Buffer
 	command.SetOut(&output)
@@ -247,6 +249,19 @@ func TestRolloutRunExecutesRolloutAndClosesLoomSession(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "success: true") {
 		t.Fatalf("expected rollout result to be printed, got %s", output.String())
+	}
+	if !strings.Contains(output.String(), "Artifacts:") {
+		t.Fatalf("expected the artifact tree to be printed, got %s", output.String())
+	}
+	entries, err := os.ReadDir(outputDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || !entries[0].IsDir() {
+		t.Fatalf("expected exactly one rollout directory, got %#v", entries)
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, entries[0].Name(), "summary.json")); err != nil {
+		t.Fatalf("expected summary.json to be written: %v", err)
 	}
 	if loomRequests["POST "+loomSessionsPath] != 1 {
 		t.Fatalf("expected exactly one Loom session creation request, got %d", loomRequests["POST "+loomSessionsPath])

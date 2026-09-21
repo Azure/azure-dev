@@ -2,3 +2,29 @@ import: ../../.vscode/cspell.yaml
 words:
   - RLE
   - azdai
+  # Target kinds and the identifiers that name them.
+  - BYOH
+  - byoh
+  - openenv
+  - hostedagent
+  - mycoderle
+  # Training and fine-tuning vocabulary.
+  - finetuning
+  - finetunesapi
+  - GRPO
+  - grpo
+  - hyperparameters
+  - rollouts
+  # Container tooling.
+  - Buildx
+  # Capture Proxy graph field names, carried verbatim from the Execute Rollout response.
+  - logprob
+  - logprobs
+  # Model families referenced by the samples and defaults.
+  - Qwen
+  # Go and Python identifiers appearing in code and payloads.
+  - cctx
+  - cerr
+  - kwargs
+  - noninteractive
+  - idxprobe

@@ -33,6 +33,7 @@ type rolloutFlags struct {
 	rolloutID      string
 	sequenceID     int
 	timeout        int
+	outputDir      string
 }
 
 type rolloutAction struct {
@@ -51,8 +52,9 @@ type rolloutTarget struct {
 
 func newRolloutCommand() *cobra.Command {
 	flags := &rolloutFlags{
-		loraRank: 16,
-		timeout:  600,
+		loraRank:  16,
+		timeout:   600,
+		outputDir: defaultRolloutOutputDir,
 	}
 
 	cmd := &cobra.Command{
@@ -65,6 +67,10 @@ creates a real Loom training session for --model, saves a sampler checkpoint, ca
 Execute Rollout API with your task (and, for Harness targets, agent input), prints the
 resulting reward and trajectory summary, then closes the Loom session. You never handle
 Loom session or checkpoint identifiers directly.
+
+The response also carries the full capture graph — token ids, logprobs and loss masks —
+which is too large to print and cannot be fetched again once the rollout returns. It is
+written to .output/<rollout-id>/ (see --output-dir) and the files are listed on completion.
 
 With no environment name, rollout uses rle.name and rle.version from the current folder's
 rle.toml. To run an environment without local source, provide both its name and
@@ -114,6 +120,14 @@ rle.toml. To run an environment without local source, provide both its name and
 	)
 	cmd.Flags().IntVar(&flags.sequenceID, "sequence-id", 0, "Loom training-step sequence id for this rollout.")
 	cmd.Flags().IntVar(&flags.timeout, "timeout", flags.timeout, "Loom session provisioning timeout in seconds.")
+	cmd.Flags().StringVar(
+		&flags.outputDir,
+		"output-dir",
+		flags.outputDir,
+		"Directory to write this rollout's artifacts under, as <output-dir>/<rollout-id>/. "+
+			"The Execute Rollout response carries the full capture graph — token ids, logprobs "+
+			"and loss masks — which is too large to print and is not retrievable afterwards.",
+	)
 	return cmd
 }
 
@@ -226,7 +240,19 @@ func (a *rolloutAction) Run() error {
 		return serviceError(err)
 	}
 
-	return printRolloutResult(out, response)
+	if err := printRolloutResult(out, response); err != nil {
+		return err
+	}
+
+	// The rollout itself has already succeeded and its reward is printed. A failure to
+	// persist the artifacts is worth saying out loud, but not worth failing a run whose
+	// compute is already spent and whose outcome the caller now has.
+	artifacts, err := writeRolloutArtifacts(a.flags.outputDir, response)
+	if err != nil {
+		_, _ = fmt.Fprintf(out, "\nWarning: could not write rollout artifacts: %v\n", err)
+		return nil
+	}
+	return printRolloutArtifacts(out, artifacts)
 }
 
 func (a *rolloutAction) resolveTarget() (rolloutTarget, *rleClient, error) {

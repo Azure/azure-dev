@@ -80,7 +80,7 @@ jobs:
           go-version-file: cli/azd/go.mod
       - name: Run mage helper tests
         working-directory: cli/azd
-        run: go test -tags mage -run '^Test(Resolve|DependencyVersion|ProtoContainerRuntime)' -v .
+        run: go test -tags mage -v .
 
   proto-contract-compatibility:
     runs-on: ubuntu-latest

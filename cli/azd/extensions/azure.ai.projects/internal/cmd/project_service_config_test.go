@@ -117,6 +117,25 @@ func TestLoadProjectServiceConfigRejectsDuplicates(t *testing.T) {
 	assert.Contains(t, err.Error(), "alpha, zeta")
 }
 
+func TestFirstProjectDeploymentName(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(
+		t,
+		"first",
+		firstProjectDeploymentName(map[string]any{
+			"deployments": []any{
+				map[string]any{"name": "first"},
+				map[string]any{"name": "second"},
+			},
+		}),
+	)
+	assert.Empty(t, firstProjectDeploymentName(map[string]any{}))
+	assert.Empty(t, firstProjectDeploymentName(map[string]any{
+		"deployments": []any{"invalid"},
+	}))
+}
+
 func TestProjectLifecycleHandlerWritesDeployments(t *testing.T) {
 	t.Parallel()
 

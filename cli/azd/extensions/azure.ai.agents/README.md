@@ -1,5 +1,10 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Help authoring
+
+See the [AI extension help guide](../ai-help.md) for command help conventions,
+the extension-owned formatter, regeneration, and snapshot validation.
+
 ## Extension telemetry API
 
 Extension code reports best-effort usage events through the shared

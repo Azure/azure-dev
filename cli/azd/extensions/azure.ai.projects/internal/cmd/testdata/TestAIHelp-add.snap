@@ -6,6 +6,7 @@ Usage
 Flags
       --force                   : Replace a different configured project
       --infra string[="bicep"]  : Eject Bicep or Terraform infrastructure (optional value)
+      --new-project             : Create a new Foundry project
       --project-endpoint string : Existing Foundry project endpoint
       --project-id string       : Existing Foundry project ARM resource ID
 

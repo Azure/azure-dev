@@ -1,10 +1,11 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore helpformat
 package cmd
 
 import (
-	"github.com/azure/azure-dev/cli/azd/internal/helpformat"
+	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/helpformat"
 	"github.com/spf13/cobra"
 )
 

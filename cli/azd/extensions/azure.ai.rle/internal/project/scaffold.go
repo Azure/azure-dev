@@ -22,6 +22,11 @@ const (
 	// Gym/OpenEnv sample directories, one per sample name.
 	rleGymSamplesPath = "examples/gym/openenv"
 
+	// rleSkillsPath contains the project skills copied into every initialized
+	// Gym/OpenEnv project so compatible agents can assist with authoring.
+	rleSkillsPath        = ".github/skills"
+	rleGymSkillDirectory = "rle-gym-openenv"
+
 	// rleSampleCatalogFile is the name of the catalog file, relative to a
 	// directory holding sample directories, that controls which of them are
 	// visible from the CLI. Samples with no entry in the catalog default to
@@ -162,11 +167,19 @@ func (c *RleSampleCatalog) Copy(sampleName string, folderName string, dest strin
 		return "", err
 	}
 	sourcePath := filepath.ToSlash(filepath.Join(rleGymSamplesPath, sampleName))
-	if _, err := runGitCommand("-C", c.repoDir, "sparse-checkout", "set", sourcePath); err != nil {
+	if _, err := runGitCommand(
+		"-C",
+		c.repoDir,
+		"sparse-checkout",
+		"set",
+		sourcePath,
+		rleSkillsPath,
+	); err != nil {
 		return "", err
 	}
 	sourceDir := filepath.Join(c.repoDir, filepath.FromSlash(sourcePath))
-	return copyRleSample(sourceDir, folderName, dest, force)
+	skillsSourceDir := filepath.Join(c.repoDir, filepath.FromSlash(rleSkillsPath))
+	return copyRleGymSample(sourceDir, skillsSourceDir, folderName, dest, force)
 }
 
 func (c *RleSampleCatalog) Close() error {
@@ -397,18 +410,8 @@ func listRleSampleDirs(repoDir string, repoRef string, samplesPath string) ([]st
 }
 
 func copyRleSample(sourceDir string, folderName string, dest string, force bool) (string, error) {
-	sourceInfo, err := os.Stat(sourceDir)
-	if os.IsNotExist(err) {
-		return "", &azdext.LocalError{
-			Message:    fmt.Sprintf("RLE sample source %q was not found.", sourceDir),
-			Code:       "rle_sample_source_not_found",
-			Category:   azdext.LocalErrorCategoryInternal,
-			Suggestion: "Run azd ai rle init again to refresh the sample list.",
-		}
-	} else if err != nil {
+	if err := validateRleSampleSource(sourceDir); err != nil {
 		return "", err
-	} else if !sourceInfo.IsDir() {
-		return "", fmt.Errorf("RLE sample source %q is not a directory", sourceDir)
 	}
 	sessionDir, err := createRleSessionDir(folderName, dest, force)
 	if err != nil {
@@ -418,6 +421,78 @@ func copyRleSample(sourceDir string, folderName string, dest string, force bool)
 		return "", err
 	}
 	return sessionDir, nil
+}
+
+func copyRleGymSample(
+	sourceDir string,
+	skillsSourceDir string,
+	folderName string,
+	dest string,
+	force bool,
+) (string, error) {
+	if err := validateRleSkillsSource(skillsSourceDir); err != nil {
+		return "", err
+	}
+	sessionDir, err := copyRleSample(sourceDir, folderName, dest, force)
+	if err != nil {
+		return "", err
+	}
+	skillsDestDir := filepath.Join(sessionDir, filepath.FromSlash(rleSkillsPath))
+	if err := os.MkdirAll(skillsDestDir, 0750); err != nil {
+		return "", err
+	}
+	if err := copyDirectory(skillsSourceDir, skillsDestDir); err != nil {
+		return "", err
+	}
+	return sessionDir, nil
+}
+
+func validateRleSampleSource(sourceDir string) error {
+	sourceInfo, err := os.Stat(sourceDir)
+	if os.IsNotExist(err) {
+		return &azdext.LocalError{
+			Message:    fmt.Sprintf("RLE sample source %q was not found.", sourceDir),
+			Code:       "rle_sample_source_not_found",
+			Category:   azdext.LocalErrorCategoryInternal,
+			Suggestion: "Run azd ai rle init again to refresh the sample list.",
+		}
+	} else if err != nil {
+		return err
+	} else if !sourceInfo.IsDir() {
+		return fmt.Errorf("RLE sample source %q is not a directory", sourceDir)
+	}
+	return nil
+}
+
+func validateRleSkillsSource(sourceDir string) error {
+	sourceInfo, err := os.Stat(sourceDir)
+	if os.IsNotExist(err) {
+		return &azdext.LocalError{
+			Message:    fmt.Sprintf("RLE project skills source %q was not found.", sourceDir),
+			Code:       "rle_skills_source_not_found",
+			Category:   azdext.LocalErrorCategoryInternal,
+			Suggestion: "Run azd ai rle init again after the RLE samples repository is repaired.",
+		}
+	} else if err != nil {
+		return err
+	} else if !sourceInfo.IsDir() {
+		return fmt.Errorf("RLE project skills source %q is not a directory", sourceDir)
+	}
+	skillFile := filepath.Join(sourceDir, rleGymSkillDirectory, "SKILL.md")
+	skillFileInfo, err := os.Stat(skillFile)
+	if os.IsNotExist(err) {
+		return &azdext.LocalError{
+			Message:    fmt.Sprintf("RLE Gym/OpenEnv authoring skill file %q was not found.", skillFile),
+			Code:       "rle_gym_skill_file_not_found",
+			Category:   azdext.LocalErrorCategoryInternal,
+			Suggestion: "Run azd ai rle init again after the RLE samples repository is repaired.",
+		}
+	} else if err != nil {
+		return err
+	} else if !skillFileInfo.Mode().IsRegular() {
+		return fmt.Errorf("RLE Gym/OpenEnv authoring skill file %q is not a regular file", skillFile)
+	}
+	return nil
 }
 
 func runGitCommand(args ...string) ([]byte, error) {

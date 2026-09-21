@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+# A support-triage agent with an evaluation suite wired in as a quality gate.
+name: eval-ci-quality-gate
+
+services:
+  ai-project:
+    host: azure.ai.project
+    deployments:
+      - name: gpt-4o-mini
+        model:
+          format: OpenAI
+          name: gpt-4o-mini
+          version: "2024-07-18"
+        sku:
+          name: GlobalStandard
+          capacity: 50
+
+  triage-agent:
+    host: azure.ai.agent
+    project: ./src/triage-agent
+    uses:
+      - ai-project
+    kind: hosted
+    name: triage-agent
+    description: Triages inbound support tickets and routes them to the right queue.
+    runtime:
+      stack: python
+      version: "3.12"
+    startupCommand: python main.py
+
+  # The eval service is ordered after the project it evaluates against and the
+  # agent it evaluates, so `azd up` reconciles them in a usable order.
+  evals:
+    host: azure.ai.eval
+    uses:
+      - ai-project
+      - triage-agent
+    $ref: ./evals/azure.eval.yaml

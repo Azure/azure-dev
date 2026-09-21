@@ -1,0 +1,25 @@
+# Evaluation resources for the triage agent.
+#
+# Built-in evaluators only, on purpose: a gate with fewer moving parts is a gate
+# people leave switched on. A custom rubric is a natural next step -- see the
+# README -- but it adds a second thing that can drift.
+
+datasets:
+  - name: support-golden
+    file: ./datasets/support-golden.jsonl
+
+evals:
+  - name: triage-quality
+    description: Does the agent answer support questions correctly and stay on task?
+    dataset: support-golden
+    evaluation_level: turn
+    evaluators:
+      - evaluator: builtin.task_completion
+        initialization_parameters:
+          model: gpt-4o-mini
+      - evaluator: builtin.customer_satisfaction
+        initialization_parameters:
+          model: gpt-4o-mini
+    target:
+      type: agent
+      name: triage-agent

@@ -1,0 +1,126 @@
+# Evaluation quality gate.
+#
+# Copy this into .github/workflows/ of your own repository. It is a template:
+# nothing in this file runs from the sample's location.
+#
+# The gate answers one question on every pull request: did this change make the
+# agent worse? It deliberately distinguishes that from "the evaluation could not
+# run", because those are different failures with different owners.
+
+name: Evaluation quality gate
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "evals/**"
+      - "azure.yaml"
+  workflow_dispatch:
+    inputs:
+      max_samples:
+        description: "Rows to score. Lower is cheaper; 0 means the whole dataset."
+        required: false
+        default: "20"
+      fail_on:
+        description: "Gate: any-failure, or pass-rate=<0..1>"
+        required: false
+        default: "pass-rate=0.8"
+
+# id-token is what lets azd authenticate with a federated credential. No client
+# secret is involved, and none should ever be added here.
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  evaluate:
+    name: Evaluate agent quality
+    runs-on: ubuntu-latest
+
+    env:
+      # Repository variables, not secrets: none of these three are credentials.
+      # The trust relationship lives in the app registration's federated
+      # credential, which is what makes a stored secret unnecessary.
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+      MAX_SAMPLES: ${{ inputs.max_samples || '20' }}
+      FAIL_ON: ${{ inputs.fail_on || 'pass-rate=0.8' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install azd
+        run: curl -fsSL https://aka.ms/install-azd.sh | bash
+
+      - name: Sign in with a federated credential
+        run: |
+          azd auth login \
+            --client-id "$AZURE_CLIENT_ID" \
+            --tenant-id "$AZURE_TENANT_ID" \
+            --federated-credential-provider github
+
+      # Pinned to exact versions. A quality gate that silently changes the tool
+      # it runs is not a gate: a result you cannot attribute to your own change
+      # is not evidence about your own change.
+      - name: Install the eval extensions
+        run: |
+          azd extension install azure.ai.evaluations --version 1.0.0-beta.1
+          azd extension install azure.ai.dataset --version 1.0.0-beta.1
+          azd extension list --installed
+
+      - name: Select the environment
+        run: azd env select "$AZURE_ENV_NAME"
+
+      # Reconciles datasets, evaluators and the eval group. Idempotent: an
+      # unchanged declaration publishes no new versions.
+      - name: Publish evaluation resources
+        run: azd ai eval create
+
+      # continue-on-error so the outcome can be classified below rather than
+      # ending the job here. The run itself is still what decides the result.
+      - name: Run the evaluation
+        id: evaluate
+        continue-on-error: true
+        run: |
+          azd ai eval run start \
+            --fail-on "$FAIL_ON" \
+            --max-samples "$MAX_SAMPLES"
+
+      # Always exported, including on failure: a failed gate is exactly when
+      # someone needs the per-row detail.
+      - name: Export results
+        id: export
+        continue-on-error: true
+        run: |
+          mkdir -p eval-results
+          azd ai eval run output export --format json > eval-results/run.json
+          echo "bytes=$(wc -c < eval-results/run.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: evaluation-results
+          path: eval-results/
+          if-no-files-found: warn
+
+      # The classification step. azd collapses an extension's exit code, so the
+      # run exits 1 both when quality regressed and when the evaluation could
+      # not run -- the code alone cannot tell them apart. Whether results came
+      # back is what separates them.
+      - name: Classify the outcome
+        if: steps.evaluate.outcome == 'failure'
+        run: |
+          if [ "${{ steps.export.outcome }}" = "success" ] && [ "${{ steps.export.outputs.bytes }}" -gt 2 ]; then
+            echo "::error title=Quality gate breached::The evaluation completed and missed ${FAIL_ON}. Download the evaluation-results artifact for per-row detail."
+          else
+            echo "::error title=Evaluation could not run::The run did not complete, so no quality conclusion can be drawn. This is an infrastructure or configuration failure, not a regression."
+          fi
+          exit 1
+
+      - name: Report success
+        if: steps.evaluate.outcome == 'success'
+        run: echo "::notice title=Quality gate passed::The run met ${FAIL_ON} over ${MAX_SAMPLES} rows."

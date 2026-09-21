@@ -1,0 +1,10 @@
+{"query": "My order #4417 was supposed to arrive Tuesday and it is still not here. Where is it?", "ground_truth": "Route to Order Status. Acknowledge the delay, give the current tracking state, and offer a delivery estimate."}
+{"query": "I was charged twice for the same subscription this month.", "ground_truth": "Route to Billing. Confirm the duplicate charge, explain the refund timeline, and do not promise an immediate reversal."}
+{"query": "The app crashes every time I open the reports tab on Android.", "ground_truth": "Route to Technical Support. Ask for app version and device model before suggesting a fix."}
+{"query": "How do I change the email address on my account?", "ground_truth": "Route to Account Management. Give the self-service steps and note that the change requires email confirmation."}
+{"query": "I want to cancel and get my money back for the annual plan I bought yesterday.", "ground_truth": "Route to Billing. State the refund window, confirm eligibility for a purchase made yesterday, and describe the cancellation steps."}
+{"query": "Do you ship to Norway, and how long does it take?", "ground_truth": "Route to Order Status. Confirm international shipping availability and give a delivery estimate for Norway."}
+{"query": "Someone logged into my account from a country I have never visited.", "ground_truth": "Route to Security. Treat as urgent, advise an immediate password reset, and explain how to review recent sessions."}
+{"query": "Can I add three more seats to my team plan before the trial ends?", "ground_truth": "Route to Account Management. Explain seat changes during a trial and any effect on the trial end date."}
+{"query": "The discount code SPRING25 is not applying at checkout.", "ground_truth": "Route to Billing. Check code validity and expiry, and explain common reasons a code is rejected."}
+{"query": "What is your phone number? I do not want to use chat.", "ground_truth": "Route to General. Provide the support contact options and hours without refusing the request."}

@@ -503,6 +503,12 @@ type EvalRunDataSource struct {
 
 	// Responses only.
 	ItemGenerationParams *ItemGenerationParams `json:"item_generation_params,omitempty"`
+
+	// Conversation simulation only. The model the simulated user speaks with is
+	// separate from any evaluator's judge model, and the bounds are separate
+	// from the parameters that generated the seeds.
+	ModelConfiguration             *ModelConfiguration      `json:"model_configuration,omitempty"`
+	DefaultSimulationConfiguration *SimulationConfiguration `json:"default_simulation_configuration,omitempty"`
 }
 
 // ItemGenerationParams says how the service should turn a source into the items

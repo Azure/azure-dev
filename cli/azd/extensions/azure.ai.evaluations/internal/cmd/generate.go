@@ -560,10 +560,11 @@ func (ec *evalContext) generateDataset(
 	if err != nil || ref == nil {
 		return ref, err
 	}
-	// Carried from the plan rather than read back: the level is what this run
-	// asked for, and it is what the rows are. Reattaching through `job show`
-	// has no plan, so the tag is simply omitted there rather than guessed.
-	ref.EvaluationLevel = plan.EvaluationLevel
+	// The level this run asked for wins; a reattach has no plan and keeps what
+	// the registered version recorded. Tagging the version is what makes that
+	// fallback possible at all.
+	ref.EvaluationLevel = evaluationLevelForRef(plan.EvaluationLevel, ref)
+	ec.applyGeneratedDatasetTags(ctx, ref, ref.EvaluationLevel)
 	return ref, nil
 }
 
@@ -613,9 +614,10 @@ func (ec *evalContext) collectDataset(
 
 	// Confirm the version exists before reading it, so a missing dataset is
 	// reported as such rather than as a download failure.
-	if _, err := ec.datasetClient.GetDataset(
+	registered, err := ec.datasetClient.GetDataset(
 		ctx, name, version, ProjectEndpointAPIVersion,
-	); err != nil {
+	)
+	if err != nil {
 		return nil, messages.ReadingGeneratedDataset(name, err)
 	}
 	content, err := ec.datasetClient.DownloadDatasetContent(ctx, name, version, ProjectEndpointAPIVersion)
@@ -646,6 +648,11 @@ func (ec *evalContext) collectDataset(
 		Name:    localName,
 		Source:  relativeSource(baseDir, path),
 		Version: version,
+		// Read back from the version's own tags, because reattaching through
+		// `job show` has no plan to carry it. A dataset generated as
+		// conversation was otherwise recorded with no level at all, and the
+		// declaration then read as the turn-shaped default.
+		EvaluationLevel: registeredEvaluationLevel(registered),
 	}, nil
 }
 

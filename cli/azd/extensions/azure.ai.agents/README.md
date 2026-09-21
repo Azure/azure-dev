@@ -24,7 +24,8 @@ connection values, or other customer content. The azd host records events only
 for extensions installed from the official registry.
 
 The events currently emitted by this extension are documented under
-[Agent context telemetry](#agent-context-telemetry) and
+[Agent context telemetry](#agent-context-telemetry),
+[Operation classification markers](#operation-classification-markers), and
 [Local client route telemetry](#local-client-route-telemetry).
 
 ### Agent context telemetry

@@ -32,6 +32,8 @@ identifiers, credentials, prompts or configuration payloads are emitted.
   errors) may lack markers. Skipped services that never enter the hook are absent.
 - No additional project/file/Azure queries are made for classification. Unresolved
   root `$ref` or an external definition override is unknown; no speculative reads.
+  Lifecycle classification is also unknown when the kind exists only in an on-disk
+  `agent.yaml`/`agent.yml`, rather than the in-memory service properties.
 - Distinct operation/category/telephony tuples are attempted once per reporter
   process. Provision cannot suppress deploy, and init refinements do not double
   count earlier intent. The original reporter's behavior is unchanged.
@@ -73,12 +75,26 @@ tables: it expects four completions, two successes, two failures, one cancellati
 and one unclassified failure, even though one mixed deploy has duplicate/multiple marker rows. This is
 a query-engine acceptance fixture, not a claim of local Kusto execution.
 
+Set both version parameters below to exact, verified released versions containing
+this instrumentation before running the query. The placeholders deliberately
+match no released cohort. Both sides filter the host's `service.version`; usage
+markers use `extension.version`, extension completions use the executing extension
+identity, and core completions use the JSON `extension.installed` inventory. This
+excludes pre-rollout versions without requiring a marker to retain a failure.
+Rows without the required version metadata are outside this cohort; inventory
+membership still does not prove that a core command operated on an agent.
+
 ```kusto
 let since = ago(7d);
+let hostVersion = "REPLACE_WITH_VERIFIED_HOST_VERSION";
+let agentExtensionVersion = "REPLACE_WITH_VERIFIED_AGENT_EXTENSION_VERSION";
+let installedAgent = strcat("azure.ai.agents@", agentExtensionVersion);
 let Markers = requests
 | where timestamp >= since - 1d
+| where tostring(customDimensions["service.version"]) == hostVersion
 | where name == "ext.usage"
 | where tostring(customDimensions["extension.id"]) == "azure.ai.agents"
+| where tostring(customDimensions["extension.version"]) == agentExtensionVersion
 | extend marker = tostring(customDimensions["extension.event"])
 | parse marker with "agent.operation.v1." operation "." category "." telephony
 | where operation in ("init", "provision", "deploy")
@@ -89,9 +105,15 @@ let Markers = requests
     by operation_Id, operation;
 let Completed = requests
 | where timestamp >= since
+| where tostring(customDimensions["service.version"]) == hostVersion
 | extend command = tostring(customDimensions["cmd.entry"])
 | where (name == "ext.run" and command == "cmd.ai.agent.init")
     or name in ("cmd.init", "cmd.provision", "cmd.deploy")
+| where (name == "ext.run"
+         and tostring(customDimensions["extension.id"]) == "azure.ai.agents"
+         and tostring(customDimensions["extension.version"]) == agentExtensionVersion)
+    or (name != "ext.run"
+        and set_has_element(parse_json(tostring(customDimensions["extension.installed"])), installedAgent))
 | summarize arg_max(timestamp, *) by operation_Id, id
 | extend operation = case(name == "ext.run", "init", name == "cmd.init", "init",
                           name == "cmd.provision", "provision", "deploy")

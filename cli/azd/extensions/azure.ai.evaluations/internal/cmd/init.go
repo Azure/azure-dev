@@ -692,6 +692,13 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 				if _, err := os.Stat(in.dataset); err != nil {
 					return scaffold{}, messages.DatasetFileNotFound(in.dataset, err)
 				}
+				// Deploy already refuses a file whose rows are not JSON objects.
+				// init is holding the file and makes no service call, so accepting
+				// it here only moves the failure to a deploy, after a declaration
+				// nobody can use has been written.
+				if err := validateJSONL(in.dataset); err != nil {
+					return scaffold{}, err
+				}
 				// --dataset is given relative to where the user is standing,
 				// but source: resolves relative to the config, so the path has
 				// to be rebased or the deploy looks for it inside evals/.

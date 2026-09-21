@@ -61,7 +61,7 @@ type rolloutSummary struct {
 	Episode *executeRolloutGymEpisode `json:"episode,omitempty"`
 
 	// Copied off the graph so the outcome and the capture's own verdict on itself can be
-	// read together. `validation` is where a rollout explains why it is untrainable.
+	// read together. `validation` is where a rollout explains why it cannot be trained on.
 	CaptureLevel string          `json:"capture_level,omitempty"`
 	RolloutType  string          `json:"rollout_type,omitempty"`
 	Trainable    *bool           `json:"trainable,omitempty"`

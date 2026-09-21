@@ -202,7 +202,6 @@ func resolveLocalFilePath(raw string, fileType string, required bool) (string, e
 			Code:       "rle_train_file_unavailable",
 			Category:   azdext.LocalErrorCategoryUser,
 			Suggestion: fmt.Sprintf("Verify that --%s-file points to a readable local file.", fileType),
-			Err:        err,
 		}
 	}
 	if !fileInfo.Mode().IsRegular() {

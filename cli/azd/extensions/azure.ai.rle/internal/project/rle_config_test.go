@@ -91,7 +91,8 @@ func TestWriteAndLoadRleConfigCanonicalizesVersionScopedDefaults(t *testing.T) {
 				RendererName: &rendererName,
 			},
 			Reinforcement: &RleReinforcementDefaults{
-				MaxEpisodeSteps: new(5),
+				MaxEpisodeSteps:     new(5),
+				MaxCompletionTokens: new(8192),
 				Hyperparameters: &RleReinforcementHyperparameters{
 					NumberOfEpochs:         new(3),
 					BatchSize:              new(8),
@@ -106,6 +107,9 @@ func TestWriteAndLoadRleConfigCanonicalizesVersionScopedDefaults(t *testing.T) {
 				GroupSize:      new(8),
 				GroupsPerBatch: new(16),
 				MaxSteps:       new(100),
+			},
+			GymOpenEnv: &RleGymOpenEnvDefaults{
+				ModelResponseField: new(" answer_text "),
 			},
 		},
 	}
@@ -124,6 +128,8 @@ func TestWriteAndLoadRleConfigCanonicalizesVersionScopedDefaults(t *testing.T) {
 		`n_epochs = 3`,
 		`reasoning_effort = 'high'`,
 		`groups_per_batch = 16`,
+		`max_completion_tokens = 8192`,
+		`model_response_field = 'answer_text'`,
 	} {
 		if !strings.Contains(string(data), expected) {
 			t.Fatalf("expected config to contain %q, got:\n%s", expected, data)
@@ -150,6 +156,13 @@ func TestWriteAndLoadRleConfigCanonicalizesVersionScopedDefaults(t *testing.T) {
 		loaded.Defaults.Reinforcement.Hyperparameters.ReasoningEffort == nil ||
 		*loaded.Defaults.Reinforcement.Hyperparameters.ReasoningEffort != "high" {
 		t.Fatalf("expected normalized defaults, got %#v", loaded)
+	}
+	if loaded.Defaults.Reinforcement.MaxCompletionTokens == nil ||
+		*loaded.Defaults.Reinforcement.MaxCompletionTokens != 8192 ||
+		loaded.Defaults.GymOpenEnv == nil ||
+		loaded.Defaults.GymOpenEnv.ModelResponseField == nil ||
+		*loaded.Defaults.GymOpenEnv.ModelResponseField != "answer_text" {
+		t.Fatalf("expected normalized Gym/OpenEnv defaults, got %#v", loaded.Defaults)
 	}
 }
 
@@ -218,6 +231,30 @@ func TestNormalizeRleConfigValidatesVersionScopedDefaults(t *testing.T) {
 						Hyperparameters: &RleReinforcementHyperparameters{
 							ReasoningEffort: new("maximum"),
 						},
+					},
+				},
+			},
+			wantCode: "rle_manifest_default_invalid",
+		},
+		{
+			name: "nonpositive max completion tokens",
+			config: RleConfig{
+				SchemaVersion: &schemaVersion,
+				Rle:           base,
+				Defaults: &RleEnvironmentDefaults{
+					Reinforcement: &RleReinforcementDefaults{MaxCompletionTokens: new(0)},
+				},
+			},
+			wantCode: "rle_manifest_default_invalid",
+		},
+		{
+			name: "overlong model response field",
+			config: RleConfig{
+				SchemaVersion: &schemaVersion,
+				Rle:           base,
+				Defaults: &RleEnvironmentDefaults{
+					GymOpenEnv: &RleGymOpenEnvDefaults{
+						ModelResponseField: new(strings.Repeat("a", maxRleModelResponseFieldLength+1)),
 					},
 				},
 			},

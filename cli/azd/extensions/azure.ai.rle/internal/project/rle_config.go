@@ -27,6 +27,7 @@ const (
 	maxHarnessBaseURLLen            = 2048
 	maxRleModelNameLength           = 256
 	maxRleRendererNameLength        = 256
+	maxRleModelResponseFieldLength  = 128
 )
 
 type RleType string
@@ -67,6 +68,7 @@ type RleEnvironmentDefaults struct {
 	Model         *RleModelDefaults         `toml:"model,omitempty" json:"model,omitempty"`
 	Reinforcement *RleReinforcementDefaults `toml:"reinforcement,omitempty" json:"reinforcement,omitempty"`
 	Grpo          *RleGrpoDefaults          `toml:"grpo,omitempty" json:"grpo,omitempty"`
+	GymOpenEnv    *RleGymOpenEnvDefaults    `toml:"gym_openenv,omitempty" json:"gym_openenv,omitempty"`
 }
 
 // RleModelDefaults contains the optional model and renderer selection.
@@ -79,6 +81,19 @@ type RleModelDefaults struct {
 type RleReinforcementDefaults struct {
 	Hyperparameters *RleReinforcementHyperparameters `toml:"hyperparameters,omitempty" json:"hyperparameters,omitempty"`
 	MaxEpisodeSteps *int                             `toml:"max_episode_steps,omitempty" json:"max_episode_steps,omitempty"`
+	// MaxCompletionTokens is the output budget for a single model turn. Left unset, the
+	// request inherits the sampler's default and can hand the environment an action that
+	// was truncated mid-thought.
+	MaxCompletionTokens *int `toml:"max_completion_tokens,omitempty" json:"max_completion_tokens,omitempty"`
+}
+
+// RleGymOpenEnvDefaults is the Gym/OpenEnv contract between an environment and RLE's
+// server-owned policy loop.
+type RleGymOpenEnvDefaults struct {
+	// ModelResponseField names the action property that receives the model completion's
+	// content verbatim. It must be a property the environment already declares in its own
+	// action model, so there is no default.
+	ModelResponseField *string `toml:"model_response_field,omitempty" json:"model_response_field,omitempty"`
 }
 
 // RleReinforcementHyperparameters mirrors the Training Jobs reinforcement wire fields.
@@ -362,10 +377,15 @@ func normalizeRleDefaults(value *RleEnvironmentDefaults) (*RleEnvironmentDefault
 	if err != nil {
 		return nil, err
 	}
+	gymOpenEnv, err := normalizeRleGymOpenEnvDefaults(value.GymOpenEnv)
+	if err != nil {
+		return nil, err
+	}
 	return &RleEnvironmentDefaults{
 		Model:         model,
 		Reinforcement: reinforcement,
 		Grpo:          grpo,
+		GymOpenEnv:    gymOpenEnv,
 	}, nil
 }
 
@@ -397,14 +417,37 @@ func normalizeRleReinforcementDefaults(value *RleReinforcementDefaults) (*RleRei
 	if err := validatePositiveInt(value.MaxEpisodeSteps, "defaults.reinforcement.max_episode_steps"); err != nil {
 		return nil, err
 	}
+	if err := validatePositiveInt(
+		value.MaxCompletionTokens,
+		"defaults.reinforcement.max_completion_tokens",
+	); err != nil {
+		return nil, err
+	}
 	hyperparameters, err := normalizeRleReinforcementHyperparameters(value.Hyperparameters)
 	if err != nil {
 		return nil, err
 	}
 	return &RleReinforcementDefaults{
-		Hyperparameters: hyperparameters,
-		MaxEpisodeSteps: cloneInt(value.MaxEpisodeSteps),
+		Hyperparameters:     hyperparameters,
+		MaxEpisodeSteps:     cloneInt(value.MaxEpisodeSteps),
+		MaxCompletionTokens: cloneInt(value.MaxCompletionTokens),
 	}, nil
+}
+
+func normalizeRleGymOpenEnvDefaults(value *RleGymOpenEnvDefaults) (*RleGymOpenEnvDefaults, error) {
+	if value == nil {
+		return nil, nil
+	}
+
+	modelResponseField, err := normalizeOptionalRleString(
+		value.ModelResponseField,
+		"defaults.gym_openenv.model_response_field",
+		maxRleModelResponseFieldLength,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &RleGymOpenEnvDefaults{ModelResponseField: modelResponseField}, nil
 }
 
 func normalizeRleReinforcementHyperparameters(

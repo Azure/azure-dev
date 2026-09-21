@@ -145,7 +145,7 @@ func writeRolloutArtifacts(
 	if err != nil {
 		return nil, fmt.Errorf("resolve rollout output directory: %w", err)
 	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
+	if err := os.MkdirAll(root, 0o750); err != nil {
 		return nil, fmt.Errorf("create rollout output directory: %w", err)
 	}
 
@@ -275,7 +275,7 @@ func writeRawFile(
 ) error {
 	path := filepath.Join(root, relative)
 	if directory := filepath.Dir(path); directory != root {
-		if err := os.MkdirAll(directory, 0o755); err != nil {
+		if err := os.MkdirAll(directory, 0o750); err != nil {
 			return fmt.Errorf("create %s: %w", filepath.Dir(relative), err)
 		}
 	}

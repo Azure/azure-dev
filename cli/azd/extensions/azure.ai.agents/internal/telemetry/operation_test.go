@@ -33,6 +33,8 @@ func TestOperationClassification(t *testing.T) {
 			OperationClass{"voice_byom", "none"}},
 		{"wrapper", map[string]any{"kind": "voice", "conversationEngine": map[string]any{"type": "hosted_agent"}},
 			OperationClass{"voice_hosted_wrapper", "none"}},
+		{"wrapper-normalized", map[string]any{"kind": "voice",
+			"conversationEngine": map[string]any{"type": " Hosted_Agent "}}, OperationClass{"voice_hosted_wrapper", "none"}},
 		{"wrapper-legacy", map[string]any{"kind": "prompt-voice",
 			"conversation_engine": map[string]any{"type": "hosted_agent"}}, OperationClass{"voice_hosted_wrapper", "none"}},
 		{"unknown-engine", map[string]any{"kind": "voice", "conversationEngine": nil},

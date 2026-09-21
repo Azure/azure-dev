@@ -53,7 +53,8 @@ func ClassifyOperation(properties map[string]any) OperationClass {
 		}
 		if hasEngine {
 			fields, _ := engine.(map[string]any)
-			if fields["type"] == "hosted_agent" {
+			engineType, _ := fields["type"].(string)
+			if strings.EqualFold(strings.TrimSpace(engineType), "hosted_agent") {
 				result.Category = "voice_hosted_wrapper"
 			}
 		} else {

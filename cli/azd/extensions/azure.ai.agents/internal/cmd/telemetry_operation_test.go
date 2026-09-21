@@ -98,6 +98,8 @@ func TestOperationProjectClassDoesNotReadDefinitions(t *testing.T) {
 	svc := &azdext.ServiceConfig{Host: AiAgentHost, AdditionalProperties: props}
 	t.Setenv("AGENT_DEFINITION_PATH", "missing-sensitive-file.yaml")
 	require.Equal(t, "unknown", operationServiceClass(svc).Category)
+	t.Setenv("AGENT_DEFINITION_PATH", " \t ")
+	require.Equal(t, "unknown", operationServiceClass(svc).Category)
 	t.Setenv("AGENT_DEFINITION_PATH", "")
 	require.Equal(t, "voice_managed", operationServiceClass(svc).Category)
 	require.Empty(t, operationProjectClasses(nil))

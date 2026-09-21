@@ -9,7 +9,6 @@ import (
 	"maps"
 	"os"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -156,7 +155,7 @@ func (r *operationReporter) report(
 
 func operationServiceClass(svc *azdext.ServiceConfig) agentTelemetry.OperationClass {
 	unknown := agentTelemetry.OperationClass{Category: "unknown", Telephony: "unknown"}
-	if svc == nil || strings.TrimSpace(os.Getenv("AGENT_DEFINITION_PATH")) != "" {
+	if svc == nil || os.Getenv("AGENT_DEFINITION_PATH") != "" {
 		return unknown // do not read external definitions just to collect telemetry
 	}
 	properties := project.ServiceConfigProps(svc)

@@ -99,7 +99,14 @@ jobs:
         working-directory: cli/azd
         run: go tool mage generateProtos
       - name: Verify generated protobuf artifacts are current
-        run: git diff --exit-code
+        run: |
+          changes=$(git status --porcelain --untracked-files=all)
+          if [[ -n "$changes" ]]; then
+            echo "::error::Protobuf generation produced uncommitted artifacts."
+            echo "$changes"
+            git diff
+            exit 1
+          fi
       - name: Lint protobuf contracts
         working-directory: cli/azd
         run: make proto-lint

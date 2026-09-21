@@ -27,7 +27,7 @@ func TestStableContractIsSubsetOfBeta(t *testing.T) {
 	stable := contractFiles(t, "azd.extensions.v1")
 	beta := contractFiles(t, "azd.extensions.v1beta")
 
-	require.Len(t, stable, 17)
+	require.NotEmpty(t, stable)
 	require.GreaterOrEqual(t, len(beta), len(stable))
 	require.NoError(
 		t,

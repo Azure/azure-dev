@@ -6,6 +6,8 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -43,11 +45,12 @@ func newTrainCommand() *cobra.Command {
 		Long: `Submit an RLE-backed reinforcement fine-tuning job (experimental).
 
 This uses finetunesapi's rl_environment fine-tuning method: the named, published RLE
-environment supplies the reward signal instead of a grader. A training file is still
-required because Loom mounts it as the job input. rl_environment is currently hidden from
-finetunesapi's public API surface and only completes for base models enabled for Loom-backed
-RL-environment training. Job creation fails if the base model is not enabled, or if the RLE
-version is not published and ready in the project set by FOUNDRY_PROJECT_ENDPOINT.`,
+environment supplies the reward signal instead of a grader. The command uploads the local
+training file to the fine-tuning resource before Loom mounts it as the job input. rl_environment
+is currently hidden from finetunesapi's public API surface and only completes for base models
+enabled for Loom-backed RL-environment training. Job creation fails if the base model is not
+enabled, or if the RLE version is not published and ready in the project set by
+FOUNDRY_PROJECT_ENDPOINT.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&trainAction{cmd: cmd, flags: flags}).Run()
@@ -58,9 +61,9 @@ version is not published and ready in the project set by FOUNDRY_PROJECT_ENDPOIN
 	cmd.Flags().StringVar(&flags.rleVersion, "rle-version", "", "Version of the published RLE environment.")
 	cmd.Flags().StringVar(&flags.model, "model", "", "Base model id to fine-tune.")
 	cmd.Flags().StringVar(&flags.trainingFile, "training-file", "",
-		"File id of the uploaded training dataset used as the Loom job input.")
+		"Path to the local training dataset uploaded as the Loom job input.")
 	cmd.Flags().StringVar(&flags.validationFile, "validation-file", "",
-		"File id of an uploaded validation dataset.")
+		"Path to a local validation dataset to upload.")
 	cmd.Flags().StringVar(&flags.suffix, "suffix", "", "Suffix appended to the resulting fine-tuned model name.")
 	cmd.Flags().IntVar(&flags.maxEpisodeSteps, "max-episode-steps", 0,
 		"Maximum steps the RLE executes per rollout (0 uses the service default).")
@@ -75,11 +78,14 @@ version is not published and ready in the project set by FOUNDRY_PROJECT_ENDPOIN
 }
 
 func (a *trainAction) Run() error {
-	trainingFile, err := resolveTrainingFile(a.flags.trainingFile)
+	trainingFilePath, err := resolveLocalFilePath(a.flags.trainingFile, "training", true)
 	if err != nil {
 		return err
 	}
-	a.flags.trainingFile = trainingFile
+	validationFilePath, err := resolveLocalFilePath(a.flags.validationFile, "validation", false)
+	if err != nil {
+		return err
+	}
 
 	endpoint, err := resolveFinetuneEndpoint(a.flags.endpoint)
 	if err != nil {
@@ -111,7 +117,19 @@ func (a *trainAction) Run() error {
 		return err
 	}
 
-	request := buildFinetuneJobRequest(a.flags)
+	trainingFileID, err := a.uploadInputFile(client, trainingFilePath, "training")
+	if err != nil {
+		return err
+	}
+	validationFileID := ""
+	if validationFilePath != "" {
+		validationFileID, err = a.uploadInputFile(client, validationFilePath, "validation")
+		if err != nil {
+			return err
+		}
+	}
+
+	request := buildFinetuneJobRequest(a.flags, trainingFileID, validationFileID)
 
 	if _, err := fmt.Fprintf(
 		a.cmd.OutOrStdout(),
@@ -147,28 +165,62 @@ func (a *trainAction) Run() error {
 	return nil
 }
 
-func resolveTrainingFile(raw string) (string, error) {
-	trainingFile := strings.TrimSpace(raw)
-	if trainingFile == "" {
-		return "", &azdext.LocalError{
-			Message:    "A non-empty training file ID is required for train.",
-			Code:       "rle_train_training_file_required",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Upload a training file to the fine-tuning resource, then pass its file-... ID using --training-file.",
-		}
+func (a *trainAction) uploadInputFile(client *finetuneClient, filePath string, fileType string) (string, error) {
+	if _, err := fmt.Fprintf(a.cmd.OutOrStdout(), "Uploading %s file %q ...\n", fileType, filepath.Base(filePath)); err != nil {
+		return "", err
 	}
-	if !strings.HasPrefix(trainingFile, "file-") {
-		return "", &azdext.LocalError{
-			Message:    "The training file must be a file-... ID.",
-			Code:       "rle_invalid_training_file",
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Use the ID of a training file uploaded to the fine-tuning resource.",
-		}
+
+	uploadedFile, err := client.uploadFile(a.cmd.Context(), filePath)
+	if err != nil {
+		return "", finetuneUploadServiceError(err)
 	}
-	return trainingFile, nil
+
+	if _, err := fmt.Fprintf(a.cmd.OutOrStdout(), "Uploaded %s file as %s.\n", fileType, uploadedFile.Id); err != nil {
+		return "", err
+	}
+	return uploadedFile.Id, nil
 }
 
-func buildFinetuneJobRequest(flags *rleTrainFlags) finetuneJobCreationRequest {
+func resolveLocalFilePath(raw string, fileType string, required bool) (string, error) {
+	filePath := strings.TrimSpace(raw)
+	if filePath == "" {
+		if !required {
+			return "", nil
+		}
+		return "", &azdext.LocalError{
+			Message:    fmt.Sprintf("A local %s file path is required for train.", fileType),
+			Code:       "rle_train_training_file_required",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: fmt.Sprintf("Pass the path to a local %s dataset using --%s-file.", fileType, fileType),
+		}
+	}
+
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return "", &azdext.LocalError{
+			Message:    fmt.Sprintf("Unable to access the %s file.", fileType),
+			Code:       "rle_train_file_unavailable",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: fmt.Sprintf("Verify that --%s-file points to a readable local file.", fileType),
+			Err:        err,
+		}
+	}
+	if !fileInfo.Mode().IsRegular() {
+		return "", &azdext.LocalError{
+			Message:    fmt.Sprintf("The %s file must be a regular file.", fileType),
+			Code:       "rle_train_file_not_regular",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: fmt.Sprintf("Pass the path to a local %s dataset file using --%s-file.", fileType, fileType),
+		}
+	}
+	return filePath, nil
+}
+
+func buildFinetuneJobRequest(
+	flags *rleTrainFlags,
+	trainingFileID string,
+	validationFileID string,
+) finetuneJobCreationRequest {
 	rleEnvironment := finetuneRleEnvironmentConfig{
 		Name:    flags.rleName,
 		Version: flags.rleVersion,
@@ -180,15 +232,15 @@ func buildFinetuneJobRequest(flags *rleTrainFlags) finetuneJobCreationRequest {
 
 	request := finetuneJobCreationRequest{
 		Model:        flags.model,
-		TrainingFile: flags.trainingFile,
+		TrainingFile: trainingFileID,
 		TrainingType: finetuneTrainingTypeGlobalStandard,
 		Method: &finetuneMethodRequest{
 			Type:           finetuneMethodTypeRleEnvironment,
 			RleEnvironment: rleEnvironment,
 		},
 	}
-	if flags.validationFile != "" {
-		request.ValidationFile = &flags.validationFile
+	if validationFileID != "" {
+		request.ValidationFile = &validationFileID
 	}
 	if flags.suffix != "" {
 		request.Suffix = &flags.suffix

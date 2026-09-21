@@ -4,10 +4,13 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -16,13 +19,12 @@ import (
 
 func TestBuildFinetuneJobRequestUsesRleEnvironmentMethod(t *testing.T) {
 	flags := &rleTrainFlags{
-		rleName:      "code_rl",
-		rleVersion:   "1.0.0",
-		model:        "Qwen/Qwen3-32B",
-		trainingFile: "file-training",
+		rleName:    "code_rl",
+		rleVersion: "1.0.0",
+		model:      "Qwen/Qwen3-32B",
 	}
 
-	request := buildFinetuneJobRequest(flags)
+	request := buildFinetuneJobRequest(flags, "file-training", "")
 
 	if request.Model != "Qwen/Qwen3-32B" {
 		t.Fatalf("expected model to map from flags, got %q", request.Model)
@@ -63,13 +65,11 @@ func TestBuildFinetuneJobRequestIncludesOptionalFields(t *testing.T) {
 		rleName:         "code_rl",
 		rleVersion:      "1.0.0",
 		model:           "Qwen/Qwen3-32B",
-		trainingFile:    "file-abc",
-		validationFile:  "file-def",
 		suffix:          "custom-suffix",
 		maxEpisodeSteps: 32,
 	}
 
-	request := buildFinetuneJobRequest(flags)
+	request := buildFinetuneJobRequest(flags, "file-abc", "file-def")
 
 	if request.TrainingFile != "file-abc" {
 		t.Fatalf("expected training_file to be set, got %q", request.TrainingFile)
@@ -99,24 +99,35 @@ func TestTrainCommandRequiresTrainingFile(t *testing.T) {
 	}
 }
 
-func TestResolveTrainingFile(t *testing.T) {
+func TestResolveLocalFilePath(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "training.jsonl")
+	if err := os.WriteFile(filePath, []byte("{\"input\":\"example\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
 	tests := []struct {
-		name    string
-		raw     string
-		want    string
-		wantErr string
+		name     string
+		raw      string
+		required bool
+		want     string
+		wantCode string
 	}{
-		{name: "trims valid file ID", raw: " file-training ", want: "file-training"},
-		{name: "rejects empty value", raw: "  ", wantErr: "non-empty training file ID"},
-		{name: "rejects non file ID", raw: "not-a-file", wantErr: "must be a file-... ID"},
+		{name: "trims valid local path", raw: " " + filePath + " ", required: true, want: filePath},
+		{name: "allows optional empty path", raw: "  ", required: false, want: ""},
+		{name: "rejects missing file", raw: filepath.Join(t.TempDir(), "missing.jsonl"), required: true, wantCode: "rle_train_file_unavailable"},
+		{name: "rejects directory", raw: t.TempDir(), required: true, wantCode: "rle_train_file_not_regular"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := resolveTrainingFile(test.raw)
-			if test.wantErr != "" {
-				if err == nil || !strings.Contains(err.Error(), test.wantErr) {
-					t.Fatalf("expected error containing %q, got %v", test.wantErr, err)
+			got, err := resolveLocalFilePath(test.raw, "training", test.required)
+			if test.wantCode != "" {
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				if !ok {
+					t.Fatalf("expected LocalError, got %T", err)
+				}
+				if localErr.Code != test.wantCode {
+					t.Fatalf("expected error code %q, got %q", test.wantCode, localErr.Code)
 				}
 				return
 			}
@@ -205,6 +216,91 @@ func TestFinetuneClientSendsProjectHeadersAndAuthenticates(t *testing.T) {
 	}
 	if len(credential.scopes) != 1 || credential.scopes[0] != finetuneTokenScope {
 		t.Fatalf("expected fine-tuning token scope %q, got %v", finetuneTokenScope, credential.scopes)
+	}
+}
+
+func TestTrainActionUploadsLocalFileBeforeSubmittingJob(t *testing.T) {
+	trainingFilePath := filepath.Join(t.TempDir(), "training.jsonl")
+	if err := os.WriteFile(trainingFilePath, []byte("{\"input\":\"example\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(foundryProjectEndpointEnvVar, "https://account.services.ai.azure.com/api/projects/project")
+
+	client := newFinetuneClientWithCredential("https://resource.openai.azure.com", &testTokenCredential{})
+	uploadCount := 0
+	client.httpClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		switch request.URL.Path {
+		case finetuneFilesPath:
+			uploadCount++
+			if _, err := io.ReadAll(request.Body); err != nil {
+				t.Fatal(err)
+			}
+			return &http.Response{
+				StatusCode: http.StatusCreated,
+				Body:       io.NopCloser(strings.NewReader(`{"id":"file-training"}`)),
+				Header:     make(http.Header),
+			}, nil
+		case finetuneJobsPath:
+			if uploadCount != 1 {
+				t.Fatalf("expected file upload before job creation, got %d uploads", uploadCount)
+			}
+			var jobRequest finetuneJobCreationRequest
+			if err := json.NewDecoder(request.Body).Decode(&jobRequest); err != nil {
+				t.Fatal(err)
+			}
+			if jobRequest.TrainingFile != "file-training" {
+				t.Fatalf("expected uploaded training file ID, got %q", jobRequest.TrainingFile)
+			}
+			if jobRequest.Method == nil || jobRequest.Method.RleEnvironment.Name != "code_rl" {
+				t.Fatalf("expected RLE request, got %#v", jobRequest.Method)
+			}
+			return &http.Response{
+				StatusCode: http.StatusCreated,
+				Body:       io.NopCloser(strings.NewReader(`{"id":"ftjob-1","status":"queued"}`)),
+				Header:     make(http.Header),
+			}, nil
+		default:
+			t.Fatalf("unexpected request path %q", request.URL.Path)
+			return nil, nil
+		}
+	})
+
+	originalCreateClient := createFinetuneClient
+	createFinetuneClient = func(endpoint string) (*finetuneClient, error) {
+		if endpoint != "https://resource.openai.azure.com" {
+			t.Fatalf("expected configured endpoint, got %q", endpoint)
+		}
+		return client, nil
+	}
+	t.Cleanup(func() {
+		createFinetuneClient = originalCreateClient
+	})
+
+	command := newTrainCommand()
+	var output bytes.Buffer
+	command.SetOut(&output)
+	action := &trainAction{
+		cmd: command,
+		flags: &rleTrainFlags{
+			rleName:      "code_rl",
+			rleVersion:   "1.0.0",
+			model:        "Qwen/Qwen3-32B",
+			trainingFile: trainingFilePath,
+			endpoint:     "https://resource.openai.azure.com",
+		},
+	}
+
+	if err := action.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if uploadCount != 1 {
+		t.Fatalf("expected one uploaded file, got %d", uploadCount)
+	}
+	if !strings.Contains(output.String(), "Uploaded training file as file-training.") {
+		t.Fatalf("expected upload progress output, got %q", output.String())
+	}
+	if !strings.Contains(output.String(), "Submitted fine-tuning job ftjob-1") {
+		t.Fatalf("expected job output, got %q", output.String())
 	}
 }
 

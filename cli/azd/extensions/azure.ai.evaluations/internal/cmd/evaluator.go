@@ -246,6 +246,65 @@ func ensureDefinitionType(definition json.RawMessage) (json.RawMessage, error) {
 	return json.Marshal(doc)
 }
 
+// withCatalogMetadata adds the declaration's catalog fields to a publish body.
+//
+// The rubric file holds what a human edits -- type, dimensions, pass_threshold
+// -- so a version published from it alone arrived with a blank catalog name and
+// whatever compatibility the service inferred from the rubric, which is
+// narrower than the version before it. Losing supported_evaluation_levels is
+// the part that bites: an evaluator valid for conversation evals looks
+// incompatible after an ordinary rubric edit.
+//
+// Only keys the body does not already carry are filled, and only from values
+// the declaration actually has. A document that states its own catalog fields
+// keeps them, and a declaration that records none blanks nothing.
+func withCatalogMetadata(body json.RawMessage, decl project.EvaluatorDecl) (json.RawMessage, error) {
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return nil, messages.NotValidJSON(err)
+	}
+	if doc == nil {
+		return nil, messages.DefinitionIsNull()
+	}
+
+	added := false
+	set := func(key string, value any) error {
+		if _, present := doc[key]; present {
+			return nil
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		doc[key] = encoded
+		added = true
+		return nil
+	}
+
+	if decl.DisplayName != "" {
+		if err := set("display_name", decl.DisplayName); err != nil {
+			return nil, err
+		}
+	}
+	if len(decl.Categories) > 0 {
+		if err := set("categories", decl.Categories); err != nil {
+			return nil, err
+		}
+	}
+	if len(decl.SupportedEvaluationLevels) > 0 {
+		if err := set("supported_evaluation_levels", decl.SupportedEvaluationLevels); err != nil {
+			return nil, err
+		}
+	}
+
+	// Re-marshalling reorders keys, so a body that gained nothing is returned
+	// as it arrived rather than rewritten into an equivalent one.
+	if !added {
+		return body, nil
+	}
+	return json.Marshal(doc)
+}
+
 // normalizeRubricBody accepts either a bare definition ({type, dimensions}) or
 // a full evaluator document ({name, definition}) and returns the request body.
 func normalizeRubricBody(name string, raw []byte) (json.RawMessage, error) {

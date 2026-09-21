@@ -1,0 +1,26 @@
+Execute an evaluation run from eval.yaml.
+
+Usage
+  azd ai agent eval run [flags]
+
+Flags
+      --agent string            : Agent service name from azure.yaml, or Foundry agent name outside a project
+      --config string           : Local eval config YAML (default "eval.yaml")
+      --name string             : Name for the eval run (defaults to eval config name)
+      --no-wait                 : Start the run and return immediately without waiting for results
+  -p, --project-endpoint string : Microsoft Foundry project endpoint URL
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for run
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Run the evaluation configured in eval.yaml
+    azd ai agent eval run
+
+  Start a run without waiting for results
+    azd ai agent eval run --no-wait

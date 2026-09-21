@@ -16,6 +16,10 @@ npm ci
 
 ## Targets
 
+The scenario evals use GPT-5.6 Terra with GPT-5.6 Luna as the judge. Both experiment
+matrices keep Luna as the judge across their Sonnet 5 and Terra variants. The starter
+eval uses Sonnet 5 with Terra as its judge.
+
 NOTE: the evals are a first pass, so you will see them fail - things have yet to be tuned.
 
 Each eval definition targets a different azd scenario. Run them via npm:

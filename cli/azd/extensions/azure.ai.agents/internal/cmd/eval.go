@@ -121,12 +121,11 @@ func newEvalCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: "Create and run quick evals for an agent.",
 		Long: `Create and run quick evals for an agent.
 
-Subcommands:
-  generate  Generate an eval config and dataset from a hosted agent
-  run       Execute an evaluation run from eval.yaml
-  update    Update an existing eval configuration
-  list      List evaluations for the current project
-  show      Show details of an evaluation run`,
+Generate an eval config and dataset, run evaluations, and inspect the results.
+Use 'azd ai agent eval update' to upload changes to local evaluators and datasets.`,
+		Example: `  # Generate an eval suite and run it
+  azd ai agent eval generate
+  azd ai agent eval run`,
 	}
 
 	cmd.AddCommand(newEvalGenerateCommand(extCtx))

@@ -1,0 +1,51 @@
+Publish a deployed Activity (Teams) agent as a Teams app.
+
+The Microsoft 365 service builds the Teams app package server-side (the same package
+'azd ai agent pack' produces) and publishes it to the Microsoft 365 store under the
+requested scope, then returns the published title id and Teams app id.
+
+Scopes
+  shared    shareable-link distribution (no tenant-admin approval required)
+  tenant    organization-wide catalog (requires IT-admin approval)
+
+If --scope is specified, it overrides activity.publish.publishScope in azure.yaml.
+When omitted, azd uses the value from azure.yaml; if no value is configured,
+Digital Workers default to tenant and simple activity agents default to shared.
+Digital Worker publish supports tenant scope only (alias: org).
+
+personal is not supported here: per-user install is a Teams client action, not a
+store publish. For local testing, run azd ai agent pack and sideload with
+atk install --scope personal.
+
+This command requires the agent to have been deployed first ('azd deploy'). Any
+failure (tenant policy, permissions, service outage) is reported as a command
+failure rather than silently skipped.
+
+Usage
+  azd ai agent publish [name] [flags]
+
+Flags
+      --access-boundary stringArray           : Digital Worker access boundary. Repeat to select multiple developer boundaries.
+      --app-version string                    : Version stamped into the Teams app manifest. If specified, it overrides activity.publish.appVersion in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to 1.0.0.
+      --clear-access-boundaries               : Clear all existing Digital Worker access boundaries.
+      --display-name string                   : Display name for the Teams app. If specified, it overrides activity.publish.agentDisplayName in azure.yaml; otherwise azd uses the azure.yaml value, and falls back to the agent name.
+      --optional-permission-scope stringArray : Digital Worker permission in <resource-app-id>=<scope> form. Repeat to select multiple scopes.
+      --scope string                          : Microsoft 365 publish scope (shared: shareable link distribution (no tenant-admin approval required); tenant: organization-wide catalog (requires IT-admin approval; alias: org); Digital Workers require tenant)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for publish
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: json, none) (default "none")
+
+Examples
+  Publish using the configured digital-worker scope (or shared for simple activity)
+    azd ai agent publish
+
+  Explicitly override the configured scope for a specific agent
+    azd ai agent publish my-agent --scope tenant
+
+  Publish organization-wide (requires IT-admin approval)
+    azd ai agent publish --scope tenant

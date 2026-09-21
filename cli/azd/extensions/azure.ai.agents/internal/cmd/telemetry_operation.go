@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"go.yaml.in/yaml/v3"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type initOperationContextKey struct{}
@@ -73,7 +74,18 @@ func recordInitProjectContent(ctx context.Context, content []byte) {
 	var classes []agentTelemetry.OperationClass
 	for _, properties := range doc.Services {
 		if properties["host"] == AiAgentHost {
-			classes = append(classes, agentTelemetry.ClassifyOperation(properties))
+			// Use the same inline/legacy precedence as lifecycle reporting. These
+			// are copies of already-held YAML; never resolve files or mutate it.
+			inline, inlineErr := structpb.NewStruct(properties)
+			legacyProperties, _ := properties["config"].(map[string]any)
+			legacy, legacyErr := structpb.NewStruct(legacyProperties)
+			class := agentTelemetry.OperationClass{Category: "unknown", Telephony: "unknown"}
+			if inlineErr == nil && legacyErr == nil {
+				class = operationServiceClass(&azdext.ServiceConfig{
+					Host: AiAgentHost, AdditionalProperties: inline, Config: legacy,
+				})
+			}
+			classes = append(classes, class)
 		}
 	}
 	if len(classes) > 0 {

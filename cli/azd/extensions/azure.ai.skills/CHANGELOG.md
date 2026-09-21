@@ -1,5 +1,11 @@
 # Release History
 
+## 1.0.0-beta.6 (2026-09-17)
+
+### Other Changes
+
+- [[#9841]](https://github.com/Azure/azure-dev/pull/9841) Add a shared best-effort telemetry reporting foundation without emitting new Skills usage events. Thanks @JerryYangKai for the contribution!
+
 ## 1.0.0-beta.5 (2026-09-04)
 
 ### Breaking Changes

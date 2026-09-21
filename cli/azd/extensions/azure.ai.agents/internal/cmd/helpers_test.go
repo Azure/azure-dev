@@ -702,6 +702,63 @@ func TestResolveAgentServiceFromProject_UsesVerifiedInlineNameForBrownfieldProje
 	require.ErrorContains(t, err, "checking whether agent")
 }
 
+func TestBrownfieldInlineAgentReferenceExpandsReferencedEndpoint(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(projectRoot, "project.yaml"),
+		[]byte("endpoint: ${FOUNDRY_PROJECT_ENDPOINT}\n"),
+		0600,
+	))
+
+	projectValues := map[string]any{
+		"$ref": "./project.yaml",
+	}
+	projectProps, err := projectpkg.MarshalStruct(&projectValues)
+	require.NoError(t, err)
+
+	projectConfig := &azdext.ProjectConfig{
+		Path: projectRoot,
+		Services: map[string]*azdext.ServiceConfig{
+			"project": {
+				Name:                 "project",
+				Host:                 AiProjectHost,
+				AdditionalProperties: projectProps,
+			},
+		},
+	}
+	agentProps, err := projectpkg.AgentDefinitionToServiceProperties(
+		agent_yaml.ContainerAgent{
+			AgentDefinition: agent_yaml.AgentDefinition{
+				Kind: agent_yaml.AgentKindHosted,
+				Name: "inline-agent",
+			},
+		},
+		nil,
+	)
+	require.NoError(t, err)
+	agent := &azdext.ServiceConfig{
+		Name:                 "agent",
+		Uses:                 []string{"project"},
+		AdditionalProperties: agentProps,
+	}
+
+	reference := brownfieldInlineAgentReference(
+		agent,
+		projectConfig,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://example.services.ai.azure.com/api/projects/demo",
+		},
+	)
+	require.NotNil(t, reference)
+	require.Equal(
+		t,
+		"https://example.services.ai.azure.com/api/projects/demo",
+		reference.projectEndpoint,
+	)
+}
+
 // TestResolveAgentServiceFromProject_GreenfieldRequiresDeploy verifies that an
 // undeployed greenfield service does not auto-resolve its inline name. This
 // prevents invoke from silently targeting an older live agent whose name

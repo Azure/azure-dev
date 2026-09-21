@@ -387,6 +387,109 @@ func TestInvokeCommandVersionFlagRegistered(t *testing.T) {
 	}
 }
 
+func TestInvokeFlagsForceNewConversation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		newSession      bool
+		newConversation bool
+		want            bool
+	}{
+		{name: "neither flag", want: false},
+		{name: "new conversation", newConversation: true, want: true},
+		{name: "new session", newSession: true, want: true},
+		{name: "both flags", newSession: true, newConversation: true, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			flags := &invokeFlags{
+				newSession:      tt.newSession,
+				newConversation: tt.newConversation,
+			}
+			if got := flags.forceNewConversation(); got != tt.want {
+				t.Errorf("forceNewConversation() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInvokeNewSessionConversationConflict(t *testing.T) {
+	tests := []struct {
+		name         string
+		args         []string
+		wantConflict bool
+	}{
+		{
+			name:         "remote",
+			args:         []string{"--new-session", "--conversation-id", "conv_existing"},
+			wantConflict: true,
+		},
+		{
+			name:         "local",
+			args:         []string{"--local", "--new-session", "--conversation-id", "conv_existing"},
+			wantConflict: true,
+		},
+		{
+			name: "explicit endpoint",
+			args: []string{
+				"--agent-endpoint",
+				"https://test.services.ai.azure.com/api/projects/test/agents/test/endpoint/protocols/openai/responses",
+				"--new-session", "--conversation-id", "conv_existing",
+			},
+			wantConflict: true,
+		},
+		{
+			name:         "both reset flags with explicit conversation",
+			args:         []string{"--new-session", "--new-conversation", "--conversation-id", "conv_existing"},
+			wantConflict: true,
+		},
+		{name: "new session alone", args: []string{"--new-session"}},
+		{name: "both reset flags", args: []string{"--new-session", "--new-conversation"}},
+		{name: "explicit conversation alone", args: []string{"--conversation-id", "conv_existing"}},
+		{name: "reset disabled", args: []string{"--new-session=false", "--conversation-id", "conv_existing"}},
+		{name: "empty conversation", args: []string{"--new-session", "--conversation-id="}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// A missing input file stops valid combinations before authentication or network requests.
+			inputPath := filepath.Join(t.TempDir(), "missing-input.txt")
+			cmd := newInvokeCommand(nil)
+			cmd.SetArgs(append(tt.args, "--input-file", inputPath))
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+			err := cmd.ExecuteContext(t.Context())
+			if !tt.wantConflict {
+				if !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("expected input file error after flag validation, got %v", err)
+				}
+				return
+			}
+
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			if !ok {
+				t.Fatalf("expected structured validation error, got %v", err)
+			}
+			if localErr.Code != exterrors.CodeConflictingArguments {
+				t.Errorf("code = %q, want %q", localErr.Code, exterrors.CodeConflictingArguments)
+			}
+			if localErr.Category != azdext.LocalErrorCategoryValidation {
+				t.Errorf("category = %q, want validation", localErr.Category)
+			}
+			if !strings.Contains(localErr.Message, "cannot use --new-session with --conversation-id") {
+				t.Errorf("unexpected conflict message: %q", localErr.Message)
+			}
+			if !strings.Contains(localErr.Suggestion, "remove --conversation-id") {
+				t.Errorf("expected guidance to remove --conversation-id, got %q", localErr.Suggestion)
+			}
+		})
+	}
+}
+
 func TestInvokeVersionFlagValidation(t *testing.T) {
 	t.Parallel()
 

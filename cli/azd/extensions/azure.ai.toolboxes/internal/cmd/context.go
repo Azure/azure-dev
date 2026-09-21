@@ -109,7 +109,11 @@ func validateToolName(name string) error {
 
 // newToolboxClient builds a FoundryToolboxClient bound to the resolved endpoint.
 func newToolboxClient(endpoint string) (*azure.FoundryToolboxClient, error) {
-	cred, err := foundry.NewCredential()
+	return newToolboxClientForTenant(endpoint, "")
+}
+
+func newToolboxClientForTenant(endpoint, tenantID string) (*azure.FoundryToolboxClient, error) {
+	cred, err := foundry.NewCredential(tenantID)
 	if err != nil {
 		return nil, err
 	}

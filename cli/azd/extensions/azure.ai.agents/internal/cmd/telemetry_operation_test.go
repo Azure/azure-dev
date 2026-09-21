@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -115,6 +116,35 @@ func TestOperationProjectClassDoesNotReadDefinitions(t *testing.T) {
 	require.Equal(t, []agentTelemetry.OperationClass{{Category: "voice_managed", Telephony: "none"}}, state.classes)
 }
 
+func TestInitOperationProjectContentPropertyPrecedence(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+	for _, tt := range []struct {
+		name, service, want string
+	}{
+		{"legacy", "config: {kind: voice, modelType: self_deployed}", "voice_byom"},
+		{"legacy-with-unrelated-inline", "custom: private-value\n    config: {kind: prompt}", "prompt"},
+		{"inline-wins", "kind: hosted\n    config: {kind: voice}", "hosted"},
+		{"missing-kind", "custom: private-value", "unknown"},
+		{"unresolved-ref", "kind: voice\n    $ref: private-path", "unknown"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := withInitOperationContext(t.Context(), "", true)
+			content := []byte("services:\n  agent:\n    host: azure.ai.agent\n    " + tt.service + "\n")
+			before := bytes.Clone(content)
+			recordInitProjectContent(ctx, content)
+			state := ctx.Value(initOperationContextKey{}).(*initOperationContext)
+			require.Len(t, state.classes, 1)
+			require.Equal(t, tt.want, state.classes[0].Category)
+			require.Equal(t, before, content)
+		})
+	}
+	t.Setenv("AGENT_DEFINITION_PATH", "missing-private-definition.yaml")
+	ctx := withInitOperationContext(t.Context(), "", true)
+	recordInitProjectContent(ctx, []byte("services:\n  agent:\n    host: azure.ai.agent\n    kind: voice\n"))
+	state := ctx.Value(initOperationContextKey{}).(*initOperationContext)
+	require.Equal(t, []agentTelemetry.OperationClass{{Category: "unknown", Telephony: "unknown"}}, state.classes)
+}
+
 func TestOperationMarkerDoesNotChangeOriginalContextContract(t *testing.T) {
 	t.Parallel()
 	props, err := structpb.NewStruct(map[string]any{
@@ -180,10 +210,11 @@ func TestOperationServiceClassPropertyPrecedence(t *testing.T) {
 
 type operationTelemetryServer struct {
 	azdext.UnimplementedTelemetryServiceServer
-	mu     sync.Mutex
-	events []*azdext.ReportUsageRequest
-	err    error
-	block  bool
+	mu          sync.Mutex
+	events      []*azdext.ReportUsageRequest
+	err         error
+	block       bool
+	traceparent string
 }
 
 func (s *operationTelemetryServer) ReportUsage(
@@ -192,6 +223,10 @@ func (s *operationTelemetryServer) ReportUsage(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.events = append(s.events, req)
+	md, _ := metadata.FromIncomingContext(ctx)
+	if values := md.Get("traceparent"); len(values) > 0 {
+		s.traceparent = values[0]
+	}
 	if s.block {
 		<-ctx.Done()
 		return nil, ctx.Err()
@@ -248,4 +283,33 @@ func TestOperationReporterHonorsCancellation(t *testing.T) {
 	start := time.Now()
 	reportInitOperation(ctx) // no state: no connection or wait
 	require.Less(t, time.Since(start), time.Second)
+}
+
+func TestInitOperationReportsAfterCancellationWithoutChangingResult(t *testing.T) {
+	server := grpc.NewServer()
+	capture := &operationTelemetryServer{err: status.Error(codes.Unavailable, "private transport detail")}
+	azdext.RegisterTelemetryServiceServer(server, capture)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+	const parent = "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+	t.Setenv("TRACEPARENT", parent)
+	ctx, cancel := context.WithCancel(azdext.WithAccessToken(t.Context()))
+	ctx = withInitOperationContext(ctx, "prompt", false)
+	cancel()
+	original := errors.New("original business failure")
+	run := func() error {
+		defer reportInitOperation(ctx)
+		return original
+	}
+	require.Same(t, original, run())
+	require.ErrorIs(t, ctx.Err(), context.Canceled)
+	capture.mu.Lock()
+	defer capture.mu.Unlock()
+	require.Len(t, capture.events, 1)
+	require.Equal(t, "agent.operation.v1.init.prompt.none", capture.events[0].EventName)
+	require.Empty(t, capture.events[0].Attributes)
+	require.Equal(t, parent, capture.traceparent)
 }

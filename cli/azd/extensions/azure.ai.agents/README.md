@@ -773,6 +773,16 @@ Details:
   (`session_configuration.idle_timeout_seconds`). In `azure.yaml` they are
   camelCase, like the other inline agent properties.
 
+## State Stores
+
+Use `azd ai agent state-stores` to inspect existing Foundry State Stores and read,
+replace, or delete their JSON object items. Select a store once, or supply `--store`
+for a one-off item operation. Store creation, updates, and deletion are not included.
+
+See [State Store commands and examples](docs/state-stores.md) for selection,
+conditional writes with ETags, and pagination. Editing state does not resume or
+stop agent work.
+
 ## Session carry-over across deploys
 
 When a hosted agent is redeployed, Foundry assigns the agent a **new version** and

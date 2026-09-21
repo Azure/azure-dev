@@ -1,0 +1,24 @@
+List one page of item keys and metadata, without values.
+
+Usage
+  azd ai agent state-stores items list [flags]
+
+Flags
+      --after string          : Return the page after this service cursor
+      --agent-endpoint string : Full protocol endpoint URL of a deployed agent
+  -n, --agent-name string     : Agent service name in azure.yaml
+      --before string         : Return the page before this service cursor
+      --limit int             : Page size (1-100) (default 20)
+      --order string          : Service-defined order: asc or desc (default "desc")
+      --store string          : Store name (defaults to the active store; does not change selection)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for list
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: json, table) (default "json")
+
+Examples
+    azd ai agent state-stores items list --limit 20

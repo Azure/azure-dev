@@ -1,0 +1,19 @@
+Show the named store or the active store.
+
+Usage
+  azd ai agent state-stores show [store-name] [flags]
+
+Flags
+      --agent-endpoint string : Full protocol endpoint URL of a deployed agent
+  -n, --agent-name string     : Agent service name in azure.yaml
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for show
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: json, table) (default "json")
+
+Examples
+    azd ai agent state-stores show

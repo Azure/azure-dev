@@ -1,0 +1,73 @@
+# Inspect and edit agent State Stores
+
+Foundry State Stores hold application JSON data such as checkpoints. Use `azd ai agent state-stores` to inspect **existing stores** and manage their items. Create stores in agent code or other tooling first; see the [AgentServer State Store guide](https://github.com/Azure/azure-sdk-for-python/blob/main/sdk/agentserver/azure-ai-agentserver-core/docs/state-store-guide.md).
+
+Editing state does not stop, resume, or steer agent work. Coordinate changes with the application, especially when modifying active checkpoints.
+
+## Commands
+
+```text
+azd ai agent state-stores list [--limit <count>] [--order asc|desc] [--after <cursor> | --before <cursor>]
+azd ai agent state-stores select [store-name]
+azd ai agent state-stores show [store-name]
+azd ai agent state-stores items list [--store <name>] [--limit <count>] [--order asc|desc] [--after <cursor> | --before <cursor>]
+azd ai agent state-stores items show <key> [--store <name>]
+azd ai agent state-stores items set <key> [--store <name>] (--value <json-object> | --value-file <path|->) [--tag <key=value>]... [--if-match <etag>]
+azd ai agent state-stores items delete <key> [--store <name>] [--if-match <etag>] [--yes]
+```
+
+Every command supports `--agent-name <service-name>` or `--agent-endpoint <full-protocol-endpoint-url>`, but not both. The agent is otherwise resolved from the azd project/environment. `--environment <name>` reads deployment metadata from that environment without changing the project's default environment; missing metadata never falls back to another environment. Explicit endpoint targeting also works outside a project and takes precedence over environment-based resolution. State Stores are independent of invocation protocol and agent version; no protocol or version flag is needed.
+
+Pass logical store names and keys, including embedded `/`, without encoding them. azd handles the API's base64url encoding. Commands use normal azd authentication and the external agent-scoped State Store API; they do not supply delegated identity or hosted-only call headers.
+
+## Select a store and inspect items
+
+```bash
+azd ai agent state-stores list --output table
+azd ai agent state-stores select "checkpoints/run-42"
+azd ai agent state-stores show
+azd ai agent state-stores items list
+azd ai agent state-stores items show "task-123"
+
+# Inspect another store without changing the active selection
+azd ai agent state-stores items show "task-456" --store "checkpoints/run-43"
+```
+
+`select` without a name opens a picker with a next-page choice when needed. Under `--no-prompt`, supply a name. Selection is validated before saving.
+
+Only `select` changes the active store. Its name is saved under `extensions.ai-agents.stateStores` in the azd user configuration (`~/.azd/config.json`, or `$AZD_CONFIG_DIR/config.json`). Keys identify the project endpoint and deployed agent name, not the version or protocol. Two local projects targeting the same remote agent share this selection. Item values, ETags, and credentials are not saved as selection state.
+
+A missing selection or inaccessible store produces an error; azd never automatically creates or switches stores.
+
+## Write and delete items
+
+```bash
+# One PUT: create a missing item or replace an existing one
+azd ai agent state-stores items set "test-checkpoint" \
+  --value '{"step":1,"status":"pending"}' --tag kind=checkpoint
+
+# checkpoint.json contains only the JSON object value, not a request envelope.
+# The example uses jq to extract the ETag, preserving its quotes.
+ETAG=$(azd ai agent state-stores items show "test-checkpoint" | jq -r '.etag')
+azd ai agent state-stores items set "test-checkpoint" \
+  --value-file checkpoint.json --tag kind=checkpoint --if-match "$ETAG"
+
+azd ai agent state-stores items delete "test-checkpoint" --yes
+```
+
+- Supply exactly one value source. `--value-file -` reads stdin. The top-level value must be a JSON **object**; nested arrays, scalars, and null are allowed. JSON numbers retain their precision.
+- `set` replaces the **complete value and tag map**, without an existence probe. **Omitting `--tag` clears existing tags.** Tags are strings, split at the first `=`; empty values are allowed, but empty or duplicate keys are rejected.
+- `--if-match` on set/delete passes the quoted ETag unchanged. A stale ETag fails with HTTP 412. azd never removes the condition or automatically retries writes after a lost response.
+- Deletion confirms the target unless `--yes` is supplied. `--no-prompt` requires `--yes`. An already absent item can return a successful deletion tombstone; a missing store or other service error still fails.
+
+## Sensitive values and diagnostics
+
+Prefer `--value-file <path>` or `--value-file -` for sensitive values, and avoid `--debug` when passing sensitive inline values or tags. Some azd host versions log extension command-line arguments, including `--value` and `--tag`, even though the State Store HTTP client does not log request or response bodies.
+
+## Output and pagination
+
+JSON is the default; use `--output table` for readable output. Item lists return metadata, not values. Item `show` includes the value, tags, and ETag. Write responses contain service metadata and may omit the value; azd does not fetch it again.
+
+List commands return one page. `--limit` defaults to **20**, with the service-supported range **1–100**. `--order` defaults to **desc**, following service ordering rather than alphabetical names. Pass returned `last_id` to `--after` or `first_id` to `--before`, retaining the same order and limit. Cursors are opaque service IDs, not logical names. JSON includes `data`, `first_id`, `last_id`, and `has_more`; table output provides continuation guidance. There is no automatic traversal or `--all`.
+
+Store creation/update/deletion, create-only item writes, bulk operations, and list-time tag filtering are outside this command set. Tag filtering is deferred because the preview service can reject valid tag keys or return incorrect matches.

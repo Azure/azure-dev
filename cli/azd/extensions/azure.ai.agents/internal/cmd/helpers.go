@@ -753,6 +753,16 @@ func resolveAgentProtocolEndpointsFromValues(
 	return endpoints, true, false, false
 }
 
+// ambiguousAgentServicesError lets callers provide command-specific selection guidance.
+type ambiguousAgentServicesError struct {
+	names []string
+}
+
+func (e *ambiguousAgentServicesError) Error() string {
+	return fmt.Sprintf("multiple azure.ai.agent services found in azure.yaml: %s\n\n"+
+		"Provide the service name as a positional argument to specify which one to use", strings.Join(e.names, ", "))
+}
+
 // promptForAgentService prompts the user to select one of multiple azure.ai.agent services.
 // In no-prompt mode it returns an error listing the available services.
 func promptForAgentService(
@@ -770,11 +780,7 @@ func promptForAgentService(
 		for i, s := range services {
 			names[i] = s.Name
 		}
-		return nil, fmt.Errorf(
-			"multiple azure.ai.agent services found in azure.yaml: %s\n\n"+
-				"Provide the service name as a positional argument to specify which one to use",
-			strings.Join(names, ", "),
-		)
+		return nil, &ambiguousAgentServicesError{names: names}
 	}
 
 	choices := make([]*azdext.SelectChoice, len(services))
@@ -1100,6 +1106,7 @@ func expandBrownfieldServiceValues(
 type brownfieldAgentExistenceResolver func(context.Context, string, string) (bool, error)
 
 type agentServiceResolutionOptions struct {
+	environmentName                string
 	allowBrownfieldInlineName      bool
 	brownfieldAgentExists          brownfieldAgentExistenceResolver
 	includeProtocolEndpoints       bool
@@ -1110,6 +1117,14 @@ type agentServiceResolutionOptions struct {
 }
 
 type agentServiceResolutionOption func(*agentServiceResolutionOptions)
+
+// withAgentEnvironment resolves deployment metadata from an explicitly selected environment.
+// Environment.GetCurrent returns the project default, not the SDK's --environment override.
+func withAgentEnvironment(name string) agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.environmentName = name
+	}
+}
 
 func withVoiceKind() agentServiceResolutionOption {
 	return func(options *agentServiceResolutionOptions) {
@@ -1226,9 +1241,19 @@ func resolveAgentServiceFromProject(
 	if envValues == nil {
 		// Resolve deployed metadata from azd environment.
 		// Deployed name reflects the created resource.
-		envResponse, err := azdClient.Environment().GetCurrent(
-			ctx, &azdext.EmptyRequest{},
-		)
+		var envResponse *azdext.EnvironmentResponse
+		var err error
+		if resolutionOptions.environmentName != "" {
+			envResponse, err = azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{
+				Name: resolutionOptions.environmentName,
+			})
+			if err != nil {
+				return info, fmt.Errorf("getting environment %q for agent service %q: %w",
+					resolutionOptions.environmentName, svc.Name, err)
+			}
+		} else {
+			envResponse, err = azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		}
 		if err != nil {
 			if resolutionOptions.allowBrownfieldInlineName {
 				return info, fmt.Errorf(
@@ -1241,7 +1266,7 @@ func resolveAgentServiceFromProject(
 		}
 		if envResponse == nil || envResponse.Environment == nil ||
 			envResponse.Environment.Name == "" {
-			if resolutionOptions.allowBrownfieldInlineName {
+			if resolutionOptions.allowBrownfieldInlineName || resolutionOptions.environmentName != "" {
 				return info, fmt.Errorf(
 					"current environment is not available for agent service %q",
 					svc.Name,
@@ -1265,7 +1290,7 @@ func resolveAgentServiceFromProject(
 					),
 				}
 			}
-			if resolutionOptions.allowBrownfieldInlineName {
+			if resolutionOptions.allowBrownfieldInlineName || resolutionOptions.environmentName != "" {
 				return info, fmt.Errorf(
 					"reading environment %q for agent service %q: %w",
 					envResponse.Environment.Name,

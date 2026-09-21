@@ -15,26 +15,27 @@ Usage
   azd ai agent [command]
 
 Available Commands
-  code        : Manage agent source code. (Preview)
-  connection  : Manage connection service dependencies for an agent.
-  delete      : Delete a prompt, hosted, or voice agent.
-  doctor      : Diagnose problems with an azd ai agent project.
-  endpoint    : Manage agent endpoint and card configuration.
-  eval        : Create and run quick evals for an agent.
-  files       : Manage files in a hosted agent session.
-  init        : Initialize a new prompt, hosted, or voice agent project. (Preview)
-  invocations : Inspect and manage work created by invoking an agent.
-  invoke      : Send a message to your prompt or hosted agent.
-  monitor     : Monitor logs from a hosted agent.
-  optimize    : Evaluate and optimize AI agents.
-  pack        : Build a ready-to-sideload Teams app package for an activity agent.
-  publish     : Publish an activity agent as a Teams app to the Microsoft 365 store.
-  run         : Run your agent locally for development.
-  sample      : Browse the curated catalog of agent samples and azd templates.
-  sessions    : Manage sessions for a hosted agent endpoint.
-  show        : Show the status of a prompt, hosted, or voice agent.
-  toolbox     : Manage toolbox service dependencies for an agent.
-  version     : Prints the version of the application
+  code         : Manage agent source code. (Preview)
+  connection   : Manage connection service dependencies for an agent.
+  delete       : Delete a prompt, hosted, or voice agent.
+  doctor       : Diagnose problems with an azd ai agent project.
+  endpoint     : Manage agent endpoint and card configuration.
+  eval         : Create and run quick evals for an agent.
+  files        : Manage files in a hosted agent session.
+  init         : Initialize a new prompt, hosted, or voice agent project. (Preview)
+  invocations  : Inspect and manage work created by invoking an agent.
+  invoke       : Send a message to your prompt or hosted agent.
+  monitor      : Monitor logs from a hosted agent.
+  optimize     : Evaluate and optimize AI agents.
+  pack         : Build a ready-to-sideload Teams app package for an activity agent.
+  publish      : Publish an activity agent as a Teams app to the Microsoft 365 store.
+  run          : Run your agent locally for development.
+  sample       : Browse the curated catalog of agent samples and azd templates.
+  sessions     : Manage sessions for a hosted agent endpoint.
+  show         : Show the status of a prompt, hosted, or voice agent.
+  state-stores : Inspect existing agent State Stores and manage their items.
+  toolbox      : Manage toolbox service dependencies for an agent.
+  version      : Prints the version of the application
 
 Global Flags
   -C, --cwd string         : Sets the current working directory

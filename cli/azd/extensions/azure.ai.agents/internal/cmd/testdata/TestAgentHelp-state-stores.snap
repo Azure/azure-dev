@@ -1,0 +1,28 @@
+Inspect existing Foundry State Stores and manage JSON object items.
+
+Select a store once, or pass --store on individual item commands. Store selection
+is saved per project endpoint and agent, independently of protocol and version.
+These commands do not create stores or resume, steer, or stop agent work.
+
+Usage
+  azd ai agent state-stores [command]
+
+Available Commands
+  items  : Read, replace, and delete items in an existing State Store.
+  list   : List one page of existing State Stores.
+  select : Validate and save the active store, or choose one interactively.
+  show   : Show the named store or the active store.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for state-stores
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+    azd ai agent state-stores list
+    azd ai agent state-stores select checkpoints/run-42
+
+Use azd ai agent state-stores [command] --help to view examples and more information about a specific command.

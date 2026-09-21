@@ -257,6 +257,56 @@
               "url": "https://raw.githubusercontent.com/sujit-kamireddy/azure-dev/main/cli/azd/extensions/azure.ai.rle/artifacts/rle-dev/0.8.9-preview/azure-ai-rle-windows-amd64.zip"
             }
           }
+        },
+        {
+          "version": "0.8.10-preview",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "azd ai rle <command> [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Select a Gym: OpenEnv sample or, with the harness preview flag, scaffold a Harness: HostedAgent or Harness: BYOH RLE.",
+              "usage": "azd ai rle init [folder-name]"
+            },
+            {
+              "name": "publish",
+              "description": "Build, push, and publish the RLE release declared in rle.toml.",
+              "usage": "azd ai rle publish"
+            },
+            {
+              "name": "run",
+              "description": "Build and run the local RLE environment container.",
+              "usage": "azd ai rle run"
+            },
+            {
+              "name": "rollout",
+              "description": "Execute one Loom-backed rollout of a published RLE environment (provisions and tears down the Loom session for you; --model falls back to rle.toml's defaults.model.name).",
+              "usage": "azd ai rle rollout [environment-name] [--version <major.minor.patch>] [--model <loom-base-model>] --task <json>"
+            },
+            {
+              "name": "list",
+              "description": "List RLE environments in a Foundry project.",
+              "usage": "azd ai rle list"
+            },
+            {
+              "name": "show",
+              "description": "Show the details and version history for an RLE environment.",
+              "usage": "azd ai rle show [environment-name]"
+            }
+          ],
+          "artifacts": {
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "b36555189efbd5b8e9331d030ef862cfe318c72ca938e993acc1ddf299084da8"
+              },
+              "entryPoint": "azure-ai-rle-windows-amd64.exe",
+              "url": "https://raw.githubusercontent.com/sujit-kamireddy/azure-dev/main/cli/azd/extensions/azure.ai.rle/artifacts/rle-dev/0.8.10-preview/azure-ai-rle-windows-amd64.zip"
+            }
+          }
         }
       ],
       "tags": [

@@ -1,5 +1,19 @@
 # Release History
 
+## 0.8.10-preview
+
+- Fixed `azd ai rle init` failing with
+  `Could not parse rle.toml: strict mode: fields in the document are missing in
+  the target struct`. The manifest parser did not declare the
+  `[defaults.gym_openenv]` table or `defaults.reinforcement.max_completion_tokens`,
+  both of which the Gym/OpenEnv samples set, so scaffolding a sample produced a
+  manifest the extension itself could not read back.
+- `azd ai rle` manifests now support `defaults.gym_openenv.model_response_field`,
+  naming the action property that receives the model completion verbatim, and
+  `defaults.reinforcement.max_completion_tokens`, the output budget for a single
+  model turn. Both are forwarded on `azd ai rle publish` and are validated to
+  match the service contract.
+
 ## 0.8.9-preview
 
 - `azd ai rle train`'s `--training-file` and `--validation-file` now take a path

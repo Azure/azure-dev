@@ -13,9 +13,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"azureaieval/internal/exterrors"
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/dataset_api"
 	"azureaieval/internal/pkg/eval_api"
@@ -603,6 +605,9 @@ func (ec *evalContext) buildRunDataSource(
 		if err != nil {
 			return nil, err
 		}
+		if err := refuseUnboundTemplate(group, ds, items); err != nil {
+			return nil, err
+		}
 		ds.SetFileContent(items)
 		return ds, nil
 	}
@@ -614,8 +619,67 @@ func (ec *evalContext) buildRunDataSource(
 	if len(items) == 0 {
 		return nil, messages.DatasetFileEmpty(localPath)
 	}
+	if err := refuseUnboundTemplate(group, ds, items); err != nil {
+		return nil, err
+	}
 	ds.SetFileContent(items)
 	return ds, nil
+}
+
+// refuseUnboundTemplate refuses a run whose target invocation reads a column no
+// row carries.
+//
+// The service does not report this. It invokes the target with an empty value
+// and scores whatever comes back, so a conversation dataset run against an
+// agent target produced confident scores for a question nobody asked -- and
+// the seeded content, not the target's answer, is what got graded.
+func refuseUnboundTemplate(
+	group *project.Eval, ds *eval_api.EvalRunDataSource, items []map[string]any,
+) error {
+	missing := ds.MissingTemplateFields(items)
+	if len(missing) == 0 {
+		return nil
+	}
+
+	// Named inside the structured message rather than wrapped with InEval: azd
+	// serializes a structured error's own message, so an outer %w prefix is not
+	// what the reader is shown.
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		fmt.Sprintf("eval %q: dataset %q carries no %s column, which invoking the target reads from every row",
+			group.Name, group.Dataset, quotedList(missing)),
+		fmt.Sprintf("Rows carry %s. Score these rows as they stand by removing the target from the eval, "+
+			"or point the eval at a dataset whose rows carry %s.",
+			quotedList(datasetColumns(items)), quotedList(missing)),
+	)
+}
+
+// datasetColumns is every key the rows carry, sorted so two runs of the same
+// dataset report it the same way.
+func datasetColumns(items []map[string]any) []string {
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		for key := range item {
+			seen[key] = struct{}{}
+		}
+	}
+	columns := make([]string, 0, len(seen))
+	for key := range seen {
+		columns = append(columns, key)
+	}
+	sort.Strings(columns)
+	return columns
+}
+
+func quotedList(values []string) string {
+	if len(values) == 0 {
+		return "no columns"
+	}
+	quoted := make([]string, 0, len(values))
+	for _, v := range values {
+		quoted = append(quoted, strconv.Quote(v))
+	}
+	return strings.Join(quoted, ", ")
 }
 
 // tracesDataSource evaluates conversations the agent already had.

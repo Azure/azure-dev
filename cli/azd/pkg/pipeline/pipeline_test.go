@@ -660,16 +660,15 @@ func Test_PipelineManager_ProviderNames(t *testing.T) {
 func Test_PipelineManager_SetParameters_cov3(t *testing.T) {
 	t.Parallel()
 
-	t.Run("sets parameters on nil configOptions", func(t *testing.T) {
+	t.Run("sets parameters", func(t *testing.T) {
 		t.Parallel()
 
-		pm := &PipelineManager{}
+		pm := &PipelineManager{configOptions: &configurePipelineOptions{}}
 		params := []provisioning.Parameter{
 			{Name: "param1", Value: "val1"},
 		}
 		pm.SetParameters(params)
 
-		require.NotNil(t, pm.configOptions)
 		assert.Equal(t, params, pm.configOptions.providerParameters)
 	})
 
@@ -6818,17 +6817,12 @@ func Test_PipelineManager_SetParameters_multipleParams(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// PipelineManager.SetParameters — nil configOptions gets initialized
+// PipelineManager configOptions — initialized by constructor
 // ---------------------------------------------------------------------------
 
-func Test_PipelineManager_SetParameters_nilConfigOptions(t *testing.T) {
+func Test_PipelineManager_ConfigOptionsInitialized(t *testing.T) {
 	t.Parallel()
 	manager, _ := helperSetupManager(t, ciProviderGitHubActions)
 
-	// Force nil configOptions (it may be set by the constructor)
-	manager.configOptions = nil
-	manager.SetParameters([]provisioning.Parameter{{Name: "p1", Value: "v1"}})
-
 	require.NotNil(t, manager.configOptions)
-	assert.Len(t, manager.configOptions.providerParameters, 1)
 }

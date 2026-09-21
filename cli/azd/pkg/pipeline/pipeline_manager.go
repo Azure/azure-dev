@@ -142,6 +142,7 @@ func NewPipelineManager(
 		msiService:        msiService,
 		prompter:          prompter,
 		dotnetCli:         dotnetCli,
+		configOptions:     &configurePipelineOptions{},
 	}
 
 	// check that scm and ci providers are set
@@ -1446,24 +1447,19 @@ func resolveSmr(smrArg string, projectConfig config.Config, userConfig config.Co
 // This is useful for provisioning providers to define a list of parameters that are required for the pipeline.
 // If parameters is nil, it means that the pipeline manager should not set up any parameters automatically.
 func (pm *PipelineManager) SetParameters(parameters []provisioning.Parameter) {
-	if pm.configOptions == nil {
-		pm.configOptions = &configurePipelineOptions{}
-	}
 	pm.configOptions.providerParameters = parameters
 }
 
 // SetRequiredExtensions configures the azd extensions that generated pipelines must install.
-func (pm *PipelineManager) SetRequiredExtensions(extensions []RequiredExtension) {
-	if pm.configOptions == nil {
-		pm.configOptions = &configurePipelineOptions{}
-	}
-
+func (pm *PipelineManager) SetRequiredExtensions(extensions []RequiredExtension) error {
 	normalized := make([]RequiredExtension, 0, len(extensions))
 	for _, extension := range extensions {
-		if extension.Id = strings.TrimSpace(extension.Id); extension.Id != "" {
-			extension.Version = strings.TrimSpace(extension.Version)
-			normalized = append(normalized, extension)
+		extension.Id = strings.TrimSpace(extension.Id)
+		if extension.Id == "" {
+			return errors.New("required extension ID cannot be empty")
 		}
+		extension.Version = strings.TrimSpace(extension.Version)
+		normalized = append(normalized, extension)
 	}
 	slices.SortFunc(normalized, func(a, b RequiredExtension) int {
 		return cmp.Compare(a.Id, b.Id)
@@ -1471,6 +1467,7 @@ func (pm *PipelineManager) SetRequiredExtensions(extensions []RequiredExtension)
 	pm.configOptions.requiredExtensions = slices.CompactFunc(normalized, func(a, b RequiredExtension) bool {
 		return a.Id == b.Id
 	})
+	return nil
 }
 
 func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {

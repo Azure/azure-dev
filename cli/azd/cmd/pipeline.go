@@ -128,7 +128,7 @@ func newPipelineConfigCmd() *cobra.Command {
 type pipelineConfigAction struct {
 	flags               *pipelineConfigFlags
 	alphaFeatureManager *alpha.FeatureManager
-	manager             *pipeline.PipelineManager
+	manager             pipelineConfigManager
 	provisioningManager *provisioning.Manager
 	extensionActivator  pipelineProvisioningProviderActivator
 	env                 *environment.Environment
@@ -136,6 +136,17 @@ type pipelineConfigAction struct {
 	prompters           prompt.Prompter
 	projectConfig       *project.ProjectConfig
 	importManager       *project.ImportManager
+}
+
+type pipelineConfigManager interface {
+	CiProviderName() string
+	SetParameters(parameters []provisioning.Parameter)
+	SetRequiredExtensions(extensions []pipeline.RequiredExtension) error
+	Configure(
+		ctx context.Context,
+		projectName string,
+		infra *project.Infra,
+	) (*pipeline.PipelineConfigResult, error)
 }
 
 type pipelineProvisioningProviderActivator interface {
@@ -236,7 +247,9 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 			Version: extension.Version,
 		}
 	}
-	p.manager.SetRequiredExtensions(pipelineExtensions)
+	if err := p.manager.SetRequiredExtensions(pipelineExtensions); err != nil {
+		return nil, fmt.Errorf("configuring required pipeline extensions: %w", err)
+	}
 
 	allParameters := []provisioning.Parameter{}
 

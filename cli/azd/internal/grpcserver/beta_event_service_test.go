@@ -589,7 +589,7 @@ func TestUnwrapBetaErrorPreservesStructuredDetails(t *testing.T) {
 		},
 	})
 
-	localErr, ok := err.(*azdext.LocalError)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
 	require.Equal(t, "preview_failed", localErr.Code)
 	require.Equal(t, azdext.LocalErrorCategoryUser, localErr.Category)

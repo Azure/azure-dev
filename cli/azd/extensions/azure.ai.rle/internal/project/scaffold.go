@@ -218,10 +218,9 @@ func (c *RleSampleCatalog) Close() error {
 
 // RleHarnessSampleCatalog is a checked-out set of fully-working harness samples
 // (each with both an agent/ implementation and an rle/ wrapper) for one harness
-// subtype. These are a working alternative to CreateRleHarnessScaffold's
-// generic, TODO-laden placeholder for callers that want something that runs end
-// to end out of the box rather than a starting point for their own,
-// already-deployed harness.
+// subtype. It is the only source a Harness init scaffolds from, so every
+// Harness environment starts from something that runs end to end out of the
+// box.
 //
 // An empty SampleNames() means the samples repo still uses the pre-catalog
 // layout, where the subtype directory held agent/ and rle/ directly and was
@@ -253,7 +252,7 @@ func loadRleHarnessSampleCatalog(
 			Message:    fmt.Sprintf("No working RLE harness sample is available for subtype %q.", subtype),
 			Code:       "rle_harness_sample_not_found",
 			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: "Choose HostedAgent or BYOH, or scaffold from an existing harness instead.",
+			Suggestion: "Choose --subtype HostedAgent or --subtype BYOH.",
 		}
 	}
 	tempDir, err := os.MkdirTemp("", "azd-rle-harness-sample-*")

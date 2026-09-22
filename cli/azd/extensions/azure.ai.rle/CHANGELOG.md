@@ -1,5 +1,16 @@
 # Release History
 
+## 0.8.13-preview
+
+- `azd ai rle init --type Harness` now always copies the full working sample
+  (agent + rle) for both BYOH and HostedAgent. The placeholder scaffold and the
+  `--harness-source` flag that selected it are removed, along with the
+  interactive "select a harness starting point" prompt, so every Harness init
+  lands on something that runs end to end. `--agent-name`, `--agent-version`,
+  and `--base-url` remain as optional overrides applied to the copied sample's
+  `rle.toml`, and a BYOH init with no folder name now uses the sample's default
+  folder instead of failing.
+
 ## 0.8.12-preview
 
 - `azd ai rle init --type Harness` now defaults to copying a full working

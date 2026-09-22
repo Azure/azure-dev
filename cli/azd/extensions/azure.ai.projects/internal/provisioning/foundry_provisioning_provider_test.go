@@ -1060,7 +1060,8 @@ func TestParameters_NilSynthResult_ReturnsHostDerivedOnly(t *testing.T) {
 
 func TestParameters_BrownfieldValuesUseEnvMappings(t *testing.T) {
 	p := &FoundryProvisioningProvider{
-		existingProjectID:  "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/a/projects/p",
+		existingProjectID: "/subscriptions/sub/resourceGroups/rg/providers/" +
+			"Microsoft.CognitiveServices/accounts/a/projects/p",
 		brownfieldEndpoint: "https://account.services.ai.azure.com/api/projects/p",
 		existingAcrMode:    "reuse-connect",
 	}

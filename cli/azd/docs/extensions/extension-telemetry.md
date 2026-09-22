@@ -171,10 +171,10 @@ inline `map[string]string` literal. Post-construction access through
 mutations can hide fields from static validation. Payload literals must use
 keyed fields. Attribute keys must be string literals or same-package
 compile-time string constants so repository validation can resolve them.
-Generic container literals, re-exported positional payload types, and
-type-elided payloads inside named wrapper containers are not supported in
-packages that define extension telemetry. Use a concrete keyed telemetry
-payload literal instead. Run the validation from `cli/azd`:
+Generic container literals, re-exported payload types (including cross-package
+type aliases), and type-elided payloads inside named wrapper containers are not
+supported in packages that define extension telemetry. Use a concrete keyed
+telemetry payload literal instead. Run the validation from `cli/azd`:
 
 ```bash
 go test ./extensions/telemetry

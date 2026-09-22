@@ -9,6 +9,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -65,6 +66,7 @@ type sourcePackage struct {
 	payloadAliases        map[string]bool
 	namedTypes            map[string]typeDefinition
 	payloadReturningFuncs map[string]bool
+	packagePayloadObjects map[*parserObject]bool
 }
 
 // scanExtensionTelemetry parses first-party extension source and returns every
@@ -123,8 +125,11 @@ func scanExtensionTelemetry(extensionRoot string) ([]telemetryUsage, []string) {
 		collectConstants(pkg)
 		collectNamedTypes(pkg)
 		collectPayloadReturningFuncs(pkg)
+		collectPackagePayloadObjects(pkg)
 		collectPayloadAliases(pkg)
 	}
+
+	packagesByImportPath := indexPackagesByImportPath(packages)
 
 	var usages []telemetryUsage
 	for _, pkg := range packages {
@@ -149,6 +154,13 @@ func scanExtensionTelemetry(extensionRoot string) ([]telemetryUsage, []string) {
 						diagnostics = append(diagnostics, fmt.Sprintf(
 							"%s:%d: construct telemetry payloads with the concrete payload type, "+
 								"not a local type alias, so attribute keys stay discoverable",
+							displayPath(extensionRoot, source.path),
+							fset.Position(value.Pos()).Line))
+					case isCrossPackagePayloadAlias(value.Type, source, packagesByImportPath):
+						diagnostics = append(diagnostics, fmt.Sprintf(
+							"%s:%d: construct telemetry payloads with the concrete payload type, "+
+								"not a re-exported payload alias from another package, so attribute "+
+								"keys stay discoverable",
 							displayPath(extensionRoot, source.path),
 							fset.Position(value.Pos()).Line))
 					}
@@ -335,6 +347,99 @@ func isTelemetryPayloadAlias(expression ast.Expr, pkg *sourcePackage) bool {
 	return ok && pkg.payloadAliases[identifier.Name]
 }
 
+// isCrossPackagePayloadAlias reports whether a composite literal type is a
+// payload alias re-exported by another package in the same module (shared.Usage
+// where package shared declares type Usage = azdext.ReportUsageRequest). The
+// selector's package identifier is resolved to an import path and matched against
+// the parsed packages, so the re-exported alias is rejected like a local one
+// instead of silently hiding attribute keys. Only packages parsed under the
+// scanned root and reachable through a go.mod are resolved; the exact import-path
+// match avoids flagging an unrelated same-named type in another module.
+func isCrossPackagePayloadAlias(
+	expression ast.Expr,
+	source *sourceFile,
+	packagesByImportPath map[string]*sourcePackage,
+) bool {
+	selector, ok := expression.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	packageIdentifier, ok := selector.X.(*ast.Ident)
+	if !ok || (packageIdentifier.Obj != nil && packageIdentifier.Obj.Kind != ast.Pkg) {
+		return false
+	}
+	importPath, ok := source.imports[packageIdentifier.Name]
+	if !ok {
+		return false
+	}
+	declaringPackage, ok := packagesByImportPath[importPath]
+	if !ok {
+		return false
+	}
+	return declaringPackage.payloadAliases[selector.Sel.Name]
+}
+
+// moduleDefinition is a Go module's path and the directory that holds its go.mod.
+type moduleDefinition struct {
+	path      string
+	directory string
+}
+
+// indexPackagesByImportPath maps each parsed package to its Go import path by
+// locating the nearest enclosing go.mod. Packages without a resolvable module are
+// omitted, so cross-package alias resolution simply skips them.
+func indexPackagesByImportPath(packages map[string]*sourcePackage) map[string]*sourcePackage {
+	byImportPath := map[string]*sourcePackage{}
+	moduleCache := map[string]moduleDefinition{}
+	for _, pkg := range packages {
+		module, ok := moduleForDir(pkg.directory, moduleCache)
+		if !ok {
+			continue
+		}
+		importPath := module.path
+		if relative, err := filepath.Rel(module.directory, pkg.directory); err == nil && relative != "." {
+			importPath = module.path + "/" + filepath.ToSlash(relative)
+		}
+		byImportPath[importPath] = pkg
+	}
+	return byImportPath
+}
+
+// moduleForDir finds the nearest go.mod at or above dir and returns its module
+// path. Results are cached per starting directory so repeated lookups stay cheap.
+func moduleForDir(dir string, cache map[string]moduleDefinition) (moduleDefinition, bool) {
+	if cached, ok := cache[dir]; ok {
+		return cached, cached.path != ""
+	}
+	for current := dir; ; {
+		data, err := os.ReadFile(filepath.Join(current, "go.mod"))
+		if err == nil {
+			module := moduleDefinition{path: modulePathFromGoMod(data), directory: current}
+			cache[dir] = module
+			return module, module.path != ""
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			cache[dir] = moduleDefinition{}
+			return moduleDefinition{}, false
+		}
+		current = parent
+	}
+}
+
+// modulePathFromGoMod extracts the module path from go.mod content without a
+// module-file dependency: the first module directive wins and any quoting is
+// trimmed.
+func modulePathFromGoMod(data []byte) string {
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "module" {
+			return strings.Trim(fields[1], "\"")
+		}
+	}
+	return ""
+}
+
 // collectNamedTypes records package-local named type declarations (both defined
 // types and aliases) with the file that declared them, so a payload container
 // hidden behind a named wrapper type can be resolved and rejected.
@@ -386,6 +491,29 @@ func collectPayloadReturningFuncs(pkg *sourcePackage) {
 	}
 }
 
+// collectPackagePayloadObjects records the binding identity of package-scope
+// variables bound to a telemetry payload (var req = &azdext.ReportUsageRequest{}),
+// so a mutation of their Attributes inside any function of the same file is
+// rejected like a local payload instead of slipping past the empty-literal scan.
+// The parser resolves references only within a file, so a payload variable read
+// from another file of the package stays outside this guard.
+func collectPackagePayloadObjects(pkg *sourcePackage) {
+	pkg.packagePayloadObjects = map[*parserObject]bool{}
+	for _, source := range pkg.files {
+		for _, declaration := range source.file.Decls {
+			gen, ok := declaration.(*ast.GenDecl)
+			if !ok || gen.Tok != token.VAR {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				if valueSpec, ok := spec.(*ast.ValueSpec); ok {
+					addPayloadValueSpecObjects(valueSpec, source, pkg, pkg.packagePayloadObjects)
+				}
+			}
+		}
+	}
+}
+
 // collectPayloadAliases records local type aliases whose right-hand side is a
 // telemetry payload type, so payload literals written through the alias name are
 // rejected instead of silently skipped.
@@ -416,15 +544,17 @@ func collectPayloadAliases(pkg *sourcePackage) {
 // read that aliases the map (attrs := req.Attributes), or a copy of the payload
 // itself (alias := req). It first resolves which bindings in the function hold a
 // telemetry payload -- payload-typed parameters, results, and receivers, locals
-// constructed from a payload literal or new(...), copies of those bindings, and
-// results of package-level functions that return a payload (req := newRequest())
-// -- so unrelated Attributes fields on other types are left alone while a payload
-// handed to a helper is still checked. Bindings are tracked by parser object
-// identity, not by name, so a shadowing loop or closure variable that reuses a
-// payload's name is not mistaken for the payload. Payloads whose provenance
-// cannot be seen syntactically (for example a method result, a cross-package
-// call, or an interface value) are outside this best-effort guard; the primary
-// gate remains the inline payload-literal scan.
+// constructed from a payload literal or new(...), copies of those bindings,
+// results of package-level functions that return a payload (req := newRequest()),
+// and package-scope payload variables declared in the same file -- so unrelated
+// Attributes fields on other types are left alone while a payload handed to a
+// helper is still checked. Bindings are tracked by parser object identity, not by
+// name, so a shadowing loop or closure variable that reuses a payload's name is
+// not mistaken for the payload. Payloads whose provenance cannot be seen
+// syntactically (for example a method result, a cross-package call, an interface
+// value, or a package-scope variable referenced from another file) are outside
+// this best-effort guard; the primary gate remains the inline payload-literal
+// scan.
 func scanAttributeMutations(
 	fset *token.FileSet,
 	extensionRoot string,
@@ -439,6 +569,11 @@ func scanAttributeMutations(
 	}
 
 	payloadObjects := map[*parserObject]bool{}
+	if pkg != nil {
+		for object := range pkg.packagePayloadObjects {
+			payloadObjects[object] = true
+		}
+	}
 	addPayloadFieldObjects(receiver, source, payloadObjects)
 	if signature != nil {
 		addPayloadFieldObjects(signature.Params, source, payloadObjects)

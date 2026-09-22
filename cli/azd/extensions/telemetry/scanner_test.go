@@ -585,6 +585,84 @@ func decorate(key string) {
 	require.Empty(t, diagnostics)
 }
 
+func TestScanRejectsAttributesMutationOnPackageScopePayload(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+var sharedRequest = &azdext.ReportUsageRequest{
+	EventName:  "example.reported",
+	Attributes: map[string]string{},
+}
+
+func report(dynamicKey string) {
+	sharedRequest.Attributes[dynamicKey] = "value"
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "after construction hides keys")
+}
+
+func TestScanRejectsCrossPackagePayloadReExport(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/go.mod", "module github.com/contoso/agent\n\ngo 1.24\n")
+	writeExtensionSource(t, root, "contoso.agent/internal/shared/telemetry.go", `package shared
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+type Usage = azdext.ReportUsageRequest
+`)
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/report.go", `package cmd
+
+import "github.com/contoso/agent/internal/shared"
+
+func report(dynamicKey string) {
+	_ = shared.Usage{Attributes: map[string]string{dynamicKey: "value"}}
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "re-exported payload alias from another package")
+}
+
+func TestScanIgnoresCrossPackageNonPayloadType(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/go.mod", "module github.com/contoso/agent\n\ngo 1.24\n")
+	writeExtensionSource(t, root, "contoso.agent/internal/shared/model.go", `package shared
+
+type Usage struct {
+	Attributes map[string]string
+}
+`)
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/report.go", `package cmd
+
+import "github.com/contoso/agent/internal/shared"
+
+func decorate(key string) {
+	_ = shared.Usage{Attributes: map[string]string{key: "value"}}
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Empty(t, diagnostics)
+}
+
 func writeExtensionSource(t *testing.T, root, relativePath, content string) {
 	t.Helper()
 

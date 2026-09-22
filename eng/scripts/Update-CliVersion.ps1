@@ -2,20 +2,20 @@
 .PARAMETER NewVersion
 Version to set for the CLI release. When omitted, advances the current version to the next prerelease version.
 
-.PARAMETER CliVersionPath
+.PARAMETER VersionTxtPath
 Path to the CLI version file. Override this path when testing against temporary release metadata.
 
-.PARAMETER ChangeLogPath
+.PARAMETER ChangelogMdPath
 Path to the CLI changelog updated with the release version and status.
 
-.PARAMETER AzdExtVersionPath
+.PARAMETER AzdExtVersionGoPath
 Path to the Go source file containing the azdext SDK version that must stay in sync with the CLI version.
 #>
 param(
     [string] $NewVersion,
-    [string] $CliVersionPath = "$PSScriptRoot/../../cli/version.txt",
-    [string] $ChangeLogPath = "$PSScriptRoot/../../cli/azd/CHANGELOG.md",
-    [string] $AzdExtVersionPath = "$PSScriptRoot/../../cli/azd/pkg/azdext/version.go"
+    [string] $VersionTxtPath = "$PSScriptRoot/../../cli/version.txt",
+    [string] $ChangelogMdPath = "$PSScriptRoot/../../cli/azd/CHANGELOG.md",
+    [string] $AzdExtVersionGoPath = "$PSScriptRoot/../../cli/azd/pkg/azdext/version.go"
 )
 
 . "$PSScriptRoot/../common/scripts/common.ps1"
@@ -23,7 +23,7 @@ param(
 Set-StrictMode -Version 4
 
 function getVersion {
-    $versionString = Get-Content $CliVersionPath
+    $versionString = Get-Content $VersionTxtPath
     return [AzureEngSemanticVersion]::new($versionString)
 }
 
@@ -54,15 +54,15 @@ if (!$version) {
     $replaceLatestEntryTitle = $false
 }
 
-Set-Content -Path $CliVersionPath -Value $version
+Set-Content -Path $VersionTxtPath -Value $version
 
 # Also update the azdext SDK version to stay in sync with the CLI version
-$azdExtVersionContent = Get-Content -Path $AzdExtVersionPath -Raw
+$azdExtVersionContent = Get-Content -Path $AzdExtVersionGoPath -Raw
 $azdExtVersionContent -replace 'const Version = ".*?"', "const Version = `"$version`"" |
-    Set-Content -Path $AzdExtVersionPath -Encoding utf8 -NoNewline
+    Set-Content -Path $AzdExtVersionGoPath -Encoding utf8 -NoNewline
 
 . "$PSScriptRoot/../common/scripts/Update-ChangeLog.ps1" `
     -Version $version.ToString() `
-    -ChangeLogPath $ChangeLogPath `
+    -ChangeLogPath $ChangelogMdPath `
     -Unreleased $unreleased `
     -ReplaceLatestEntryTitle $replaceLatestEntryTitle

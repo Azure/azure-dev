@@ -5,12 +5,12 @@ Describe 'Test-CliReleaseReadiness' {
         $testDirectory = Join-Path $TestDrive 'release-metadata'
         New-Item -ItemType Directory -Path $testDirectory -Force | Out-Null
 
-        $cliVersionPath = Join-Path $testDirectory 'version.txt'
-        $changeLogPath = Join-Path $testDirectory 'CHANGELOG.md'
-        $azdExtVersionPath = Join-Path $testDirectory 'version.go'
+        $versionTxtPath = Join-Path $testDirectory 'version.txt'
+        $changelogMdPath = Join-Path $testDirectory 'CHANGELOG.md'
+        $azdExtVersionGoPath = Join-Path $testDirectory 'version.go'
 
-        Set-Content -Path $cliVersionPath -Value '1.2.3'
-        Set-Content -Path $changeLogPath -Value @'
+        Set-Content -Path $versionTxtPath -Value '1.2.3'
+        Set-Content -Path $changelogMdPath -Value @'
 # Release History
 
 ## 1.2.3 (2026-09-21)
@@ -19,12 +19,12 @@ Describe 'Test-CliReleaseReadiness' {
 
 - Added release readiness validation.
 '@
-        Set-Content -Path $azdExtVersionPath -Value 'const Version = "1.2.3"'
+        Set-Content -Path $azdExtVersionGoPath -Value 'const Version = "1.2.3"'
 
         $scriptArguments = @{
-            CliVersionPath    = $cliVersionPath
-            ChangeLogPath     = $changeLogPath
-            AzdExtVersionPath = $azdExtVersionPath
+            VersionTxtPath      = $versionTxtPath
+            ChangelogMdPath     = $changelogMdPath
+            AzdExtVersionGoPath = $azdExtVersionGoPath
         }
     }
 
@@ -33,22 +33,22 @@ Describe 'Test-CliReleaseReadiness' {
     }
 
     It 'rejects a changelog version without a release date' {
-        (Get-Content -Path $changeLogPath -Raw).Replace('(2026-09-21)', '(Unreleased)') |
-            Set-Content -Path $changeLogPath
+        (Get-Content -Path $changelogMdPath -Raw).Replace('(2026-09-21)', '(Unreleased)') |
+            Set-Content -Path $changelogMdPath
 
         { & $PSScriptRoot/Test-CliReleaseReadiness.ps1 @scriptArguments } |
             Should -Throw '*is not release-ready*'
     }
 
     It 'rejects a version.txt version that does not match the changelog version' {
-        Set-Content -Path $cliVersionPath -Value '1.2.2'
+        Set-Content -Path $versionTxtPath -Value '1.2.2'
 
         { & $PSScriptRoot/Test-CliReleaseReadiness.ps1 @scriptArguments } |
             Should -Throw "*CLI version '1.2.2' does not match the latest changelog version '1.2.3'*"
     }
 
     It 'rejects a version.go version that does not match the changelog version' {
-        Set-Content -Path $azdExtVersionPath -Value 'const Version = "1.2.2"'
+        Set-Content -Path $azdExtVersionGoPath -Value 'const Version = "1.2.2"'
 
         { & $PSScriptRoot/Test-CliReleaseReadiness.ps1 @scriptArguments } |
             Should -Throw "*does not match azdext SDK version '1.2.2'*"

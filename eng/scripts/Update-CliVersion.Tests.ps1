@@ -1,18 +1,14 @@
 Set-StrictMode -Version 4
 
 BeforeAll {
-    $CliVersionFile = Join-Path $TestDrive 'version.txt'
-    $CliChangelogFile = Join-Path $TestDrive 'CHANGELOG.md'
-    $AzdExtVersionFile = Join-Path $TestDrive 'version.go'
-
     $ScriptArguments = @{
-        CliVersionPath    = $CliVersionFile
-        ChangeLogPath     = $CliChangelogFile
-        AzdExtVersionPath = $AzdExtVersionFile
+        VersionTxtPath      = Join-Path $TestDrive 'version.txt'
+        ChangelogMdPath     = Join-Path $TestDrive 'CHANGELOG.md'
+        AzdExtVersionGoPath = Join-Path $TestDrive 'version.go'
     }
 
     function InitTestFiles {
-        Set-Content -Path $CliChangelogFile -Value @'
+        Set-Content -Path $ScriptArguments.ChangelogMdPath -Value @'
 # Release History
 
 ## 0.0.1 (Unreleased)
@@ -21,7 +17,7 @@ BeforeAll {
 
 - Existing change.
 '@
-        Set-Content -Path $AzdExtVersionFile -Value 'const Version = "0.0.1"'
+        Set-Content -Path $ScriptArguments.AzdExtVersionGoPath -Value 'const Version = "0.0.1"'
     }
 }
 
@@ -32,95 +28,95 @@ BeforeAll {
 Describe 'Update-CliVersion with version 0.1.0-beta.1' {
     BeforeEach {
         InitTestFiles
-        Set-Content -Path $CliVersionFile -Value "0.1.0-beta.1"
+        Set-Content -Path $ScriptArguments.VersionTxtPath -Value "0.1.0-beta.1"
     }
 
     It "Increments prerelease number when no parameters are applied" {
         & $PSScriptRoot/Update-CliVersion.ps1 @ScriptArguments
 
-        $CliVersionFile | Should -FileContentMatchExactly '^0\.1\.0-beta\.2$'
+        $ScriptArguments.VersionTxtPath | Should -FileContentMatchExactly '^0\.1\.0-beta\.2$'
     }
 
     It "Sets version when given -NewVersion" {
         & $PSScriptRoot/Update-CliVersion.ps1 @ScriptArguments -NewVersion 1.2.3
 
-        $CliVersionFile | Should -FileContentMatchExactly '^1\.2\.3$'
+        $ScriptArguments.VersionTxtPath | Should -FileContentMatchExactly '^1\.2\.3$'
     }
 }
 
 Describe 'Update-CliVersion with version 0.1.0' {
     BeforeEach {
         InitTestFiles
-        Set-Content -Path $CliVersionFile -Value "0.1.0"
+        Set-Content -Path $ScriptArguments.VersionTxtPath -Value "0.1.0"
     }
 
     It "Increments minor number and sets beta.1" {
         & $PSScriptRoot/Update-CliVersion.ps1 @ScriptArguments
 
-        $CliVersionFile | Should -FileContentMatchExactly '^0\.2\.0-beta\.1$'
+        $ScriptArguments.VersionTxtPath | Should -FileContentMatchExactly '^0\.2\.0-beta\.1$'
     }
 
 
     It "Sets version when given -NewVersion" {
         & $PSScriptRoot/Update-CliVersion.ps1 @ScriptArguments -NewVersion 1.2.3
 
-        $CliVersionFile | Should -FileContentMatchExactly '^1\.2\.3$'
+        $ScriptArguments.VersionTxtPath | Should -FileContentMatchExactly '^1\.2\.3$'
     }
 }
 
 Describe 'Update-CliVersion with version 1.0.0-beta.1' {
     BeforeEach {
         InitTestFiles
-        Set-Content -Path $CliVersionFile -Value "1.0.0-beta.1"
+        Set-Content -Path $ScriptArguments.VersionTxtPath -Value "1.0.0-beta.1"
     }
 
     It "Increments prerelease number" {
         & $PSScriptRoot/Update-CliVersion.ps1 @ScriptArguments
 
-        $CliVersionFile | Should -FileContentMatchExactly '^1\.0\.0-beta\.2$'
+        $ScriptArguments.VersionTxtPath | Should -FileContentMatchExactly '^1\.0\.0-beta\.2$'
     }
 
     It "Sets version when given -NewVersion" {
         & $PSScriptRoot/Update-CliVersion.ps1 @ScriptArguments -NewVersion 1.2.3
 
-        $CliVersionFile | Should -FileContentMatchExactly '^1\.2\.3$'
+        $ScriptArguments.VersionTxtPath | Should -FileContentMatchExactly '^1\.2\.3$'
     }
 }
 
 Describe 'Update-CliVersion with version 1.0.0' {
     BeforeEach {
         InitTestFiles
-        Set-Content -Path $CliVersionFile -Value "1.0.0"
+        Set-Content -Path $ScriptArguments.VersionTxtPath -Value "1.0.0"
     }
 
     It "Increments minor and prerelease number" {
         & $PSScriptRoot/Update-CliVersion.ps1 @ScriptArguments
 
-        $CliVersionFile | Should -FileContentMatchExactly '^1\.1\.0-beta\.1$'
+        $ScriptArguments.VersionTxtPath | Should -FileContentMatchExactly '^1\.1\.0-beta\.1$'
     }
 
     It "Sets version when given -NewVersion" {
         & $PSScriptRoot/Update-CliVersion.ps1 @ScriptArguments -NewVersion 1.2.3
 
-        $CliVersionFile | Should -FileContentMatchExactly '^1\.2\.3$'
+        $ScriptArguments.VersionTxtPath | Should -FileContentMatchExactly '^1\.2\.3$'
     }
 }
 
 Describe 'Update-CliVersion with version 1.0.0-badPrereleaseLabel.2' {
     BeforeEach {
         InitTestFiles
-        Set-Content -Path $CliVersionFile -Value "1.0.0-badPrereleaseLabel.2"
+        Set-Content -Path $ScriptArguments.VersionTxtPath -Value "1.0.0-badPrereleaseLabel.2"
     }
 
     It "Increments minor and prerelease number" {
         & $PSScriptRoot/Update-CliVersion.ps1 @ScriptArguments
 
-        $CliVersionFile | Should -FileContentMatchExactly '^1\.1\.0-beta\.1$'
+        $ScriptArguments.VersionTxtPath | Should -FileContentMatchExactly '^1\.1\.0-beta\.1$'
     }
 
     It "Sets version when given -NewVersion" {
         & $PSScriptRoot/Update-CliVersion.ps1 @ScriptArguments -NewVersion 1.2.3
 
-        $CliVersionFile | Should -FileContentMatchExactly '^1\.2\.3$'
+        $ScriptArguments.VersionTxtPath | Should -FileContentMatchExactly '^1\.2\.3$'
     }
 }

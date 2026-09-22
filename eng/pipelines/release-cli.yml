@@ -68,7 +68,7 @@ extends:
                 fetchTags: false
 
               - task: PowerShell@2
-                displayName: Validate CLI release readiness
+                displayName: Validate CLI release readiness (changelog, version, etc...)
                 inputs:
                   pwsh: true
                   targetType: filePath

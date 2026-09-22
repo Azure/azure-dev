@@ -165,7 +165,30 @@ func BuildGenerationSources(
 const (
 	DataGenerationTypeSimpleQnA              = "simple_qna"
 	DataGenerationTypeConversationSimulation = "conversation_simulation"
+
+	// DataGenerationTypeSimulationSeedGA is the spelling the published Foundry
+	// contract is reported to use for the simulation-seed request shape.
+	//
+	// Not sent. It is recognized on the way back, because a job submitted by
+	// the portal or by a later CLI would echo it, and a reattach that did not
+	// know the name would tag the version it collected with nothing.
+	//
+	// Which spelling the request must carry is the open question: no
+	// conversation-simulation job has ever been submitted against a project
+	// this CLI can see -- a listing of 100 jobs shows only simple_qna and
+	// traces -- so neither literal has been observed on a real request.
+	DataGenerationTypeSimulationSeedGA = "simulation_seed"
 )
+
+// SimulationSeedGenerationType reports whether a generation type names the
+// simulation-seed shape under any of its known spellings.
+//
+// Read rather than sent, so recognizing both costs nothing and stops a
+// rename landing as silent data loss on the reattach path.
+func SimulationSeedGenerationType(generationType string) bool {
+	return generationType == DataGenerationTypeConversationSimulation ||
+		generationType == DataGenerationTypeSimulationSeedGA
+}
 
 // NewDataGenerationJobRequest builds a DataGenerationJobRequest from the
 // provided parameters.

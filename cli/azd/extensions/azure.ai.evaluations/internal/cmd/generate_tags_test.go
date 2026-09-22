@@ -155,6 +155,37 @@ func TestEvaluationLevelOfGeneration(t *testing.T) {
 	assert.Empty(t, evaluationLevelOfGeneration("something_new"))
 }
 
+// The published contract is reported to name the simulation-seed shape
+// `simulation_seed` rather than `conversation_simulation`. Which one a request
+// must carry is unsettled, but a reattach only ever *reads* the name, so it
+// recognizes both -- a job submitted by the portal or by a later CLI must not
+// come back with no level just because it spelled the shape differently.
+func TestBothSimulationSeedSpellingsAreRecognizedOnTheWayBack(t *testing.T) {
+	t.Parallel()
+
+	for _, spelling := range []string{
+		eval_api.DataGenerationTypeConversationSimulation,
+		eval_api.DataGenerationTypeSimulationSeedGA,
+	} {
+		assert.True(t, eval_api.SimulationSeedGenerationType(spelling), "%q names seeds", spelling)
+		assert.Equal(t, project.EvaluationLevelConversation, evaluationLevelOfGeneration(spelling))
+
+		assert.True(t, conversationSeedDataset(&dataset_api.Dataset{
+			Tags: map[string]string{"data_generation_type": spelling},
+		}), "a version tagged %q holds seeds", spelling)
+
+		// The portal writes the same value under `scenario`, so both keys are
+		// read under both spellings.
+		assert.True(t, conversationSeedDataset(&dataset_api.Dataset{
+			Tags: map[string]string{"scenario": spelling},
+		}))
+	}
+
+	// A turn dataset is still not a seed dataset under either spelling.
+	assert.False(t, eval_api.SimulationSeedGenerationType(eval_api.DataGenerationTypeSimpleQnA))
+	assert.False(t, eval_api.SimulationSeedGenerationType(""))
+}
+
 // GenerationType reads the submitted type without assuming the service echoed
 // it. A job with no inputs is the older response shape, not a turn job.
 func TestGenerationJobGenerationType(t *testing.T) {

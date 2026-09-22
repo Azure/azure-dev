@@ -104,15 +104,18 @@ func (ec *evalContext) generationLevelFor(ctx context.Context, job *eval_api.Gen
 // returns empty rather than defaulting to turn, so a service that stops echoing
 // inputs falls through to the local record instead of overwriting a
 // conversation dataset's tag with the wrong level.
+//
+// Both simulation-seed spellings are accepted: this reads what the service
+// echoed, and a job submitted by the portal or by a later CLI may name the
+// shape differently from the one this CLI sends.
 func evaluationLevelOfGeneration(generationType string) string {
-	switch generationType {
-	case eval_api.DataGenerationTypeConversationSimulation:
+	if eval_api.SimulationSeedGenerationType(generationType) {
 		return project.EvaluationLevelConversation
-	case eval_api.DataGenerationTypeSimpleQnA:
-		return project.EvaluationLevelTurn
-	default:
-		return ""
 	}
+	if generationType == eval_api.DataGenerationTypeSimpleQnA {
+		return project.EvaluationLevelTurn
+	}
+	return ""
 }
 
 // applyGeneratedDatasetTags records on the registered version what was
@@ -182,8 +185,8 @@ func conversationSeedDataset(registered *dataset_api.Dataset) bool {
 	if registered == nil {
 		return false
 	}
-	if registered.Tags[tagDataGenerationType] == eval_api.DataGenerationTypeConversationSimulation {
+	if eval_api.SimulationSeedGenerationType(registered.Tags[tagDataGenerationType]) {
 		return true
 	}
-	return registered.Tags[tagScenario] == eval_api.DataGenerationTypeConversationSimulation
+	return eval_api.SimulationSeedGenerationType(registered.Tags[tagScenario])
 }

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"azure.ai.rle/internal/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
@@ -330,5 +331,102 @@ func TestFinetuneClientSurfacesHTTPErrors(t *testing.T) {
 	}
 	if !strings.Contains(serviceErr.Suggestion, "Loom-eligible") {
 		t.Fatalf("expected Loom-eligibility guidance in suggestion, got %v", serviceErr.Suggestion)
+	}
+}
+
+func writeTrainRleConfig(t *testing.T, dir string, name string, version string) {
+	t.Helper()
+	schemaVersion := project.CurrentRleManifestSchemaVersion
+	if err := project.WriteRleConfig(dir, project.RleConfig{
+		SchemaVersion: &schemaVersion,
+		Rle: project.RleManifest{
+			Name:    name,
+			Version: version,
+			Type:    project.RleTypeGym,
+			Subtype: project.RleSubtypeOpenEnv,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTrainFallsBackToRleConfigNameAndVersion(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeTrainRleConfig(t, dir, "code_rl", "1.2.3")
+
+	action := &trainAction{flags: &rleTrainFlags{}}
+	if err := action.resolveTrainTarget(); err != nil {
+		t.Fatal(err)
+	}
+
+	if action.flags.rleName != "code_rl" {
+		t.Fatalf("expected the name from rle.toml, got %q", action.flags.rleName)
+	}
+	if action.flags.rleVersion != "1.2.3" {
+		t.Fatalf("expected the version from rle.toml, got %q", action.flags.rleVersion)
+	}
+}
+
+func TestTrainFlagsOverrideRleConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeTrainRleConfig(t, dir, "code_rl", "1.2.3")
+
+	action := &trainAction{flags: &rleTrainFlags{rleName: "math_rl", rleVersion: "2.0.0"}}
+	if err := action.resolveTrainTarget(); err != nil {
+		t.Fatal(err)
+	}
+
+	if action.flags.rleName != "math_rl" || action.flags.rleVersion != "2.0.0" {
+		t.Fatalf("expected the flags to win, got %q %q", action.flags.rleName, action.flags.rleVersion)
+	}
+}
+
+func TestTrainFallsBackToRleConfigVersionOnly(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeTrainRleConfig(t, dir, "code_rl", "1.2.3")
+
+	action := &trainAction{flags: &rleTrainFlags{rleName: "math_rl"}}
+	if err := action.resolveTrainTarget(); err != nil {
+		t.Fatal(err)
+	}
+
+	if action.flags.rleName != "math_rl" || action.flags.rleVersion != "1.2.3" {
+		t.Fatalf("expected the version from rle.toml, got %q %q", action.flags.rleName, action.flags.rleVersion)
+	}
+}
+
+func TestTrainWithoutRleConfigOrFlagsFails(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	action := &trainAction{flags: &rleTrainFlags{}}
+	err := action.resolveTrainTarget()
+	if err == nil {
+		t.Fatal("expected an error when neither --rle-name nor rle.toml supplies the environment")
+	}
+
+	var localErr *azdext.LocalError
+	if !errors.As(err, &localErr) || localErr.Code != "rle_manifest_missing" {
+		t.Fatalf("expected a missing rle.toml error, got %v", err)
+	}
+}
+
+func TestTrainCommandNoLongerRequiresRleFlags(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cmd := newTrainCommand()
+	cmd.SetArgs([]string{"--model", "Qwen/Qwen3-32B"})
+	var output bytes.Buffer
+	cmd.SetOut(&output)
+	cmd.SetErr(&output)
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected an error when --training-file is not set")
+	}
+	if strings.Contains(err.Error(), "rle-name") || strings.Contains(err.Error(), "rle-version") {
+		t.Fatalf("expected rle-name and rle-version to be optional, got %v", err)
 	}
 }

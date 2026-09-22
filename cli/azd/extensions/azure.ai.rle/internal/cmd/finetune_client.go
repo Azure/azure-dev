@@ -79,12 +79,12 @@ type finetuneJobMethod struct {
 }
 
 type finetuneJobResource struct {
-	Id             string              `json:"id"`
-	Status         string              `json:"status,omitempty"`
-	Model          string              `json:"model,omitempty"`
-	FineTunedModel string              `json:"fine_tuned_model,omitempty"`
-	TrainingFile   string              `json:"training_file,omitempty"`
-	ValidationFile string              `json:"validation_file,omitempty"`
+	Id             string             `json:"id"`
+	Status         string             `json:"status,omitempty"`
+	Model          string             `json:"model,omitempty"`
+	FineTunedModel string             `json:"fine_tuned_model,omitempty"`
+	TrainingFile   string             `json:"training_file,omitempty"`
+	ValidationFile string             `json:"validation_file,omitempty"`
 	Method         *finetuneJobMethod `json:"method,omitempty"`
 }
 

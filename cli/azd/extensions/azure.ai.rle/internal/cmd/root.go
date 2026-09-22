@@ -14,7 +14,6 @@ import (
 )
 
 const (
-	rleEnableEnvVar    = "AZD_AI_RLE_ENABLE"
 	rleEnableAllEnvVar = "AZD_AI_RLE_ENABLE_ALL"
 )
 
@@ -99,18 +98,17 @@ func newRootCommand(updateChecker extensionUpdateChecker) *cobra.Command {
 		newRunCommand(),
 	}
 	for _, command := range userCommands {
-		command.Hidden = !rleCommandsEnabled()
 		rootCmd.AddCommand(command)
 	}
 
 	// internalCommands are staged for a future release and are only shown to the RLE
-	// team's own iteration, in addition to the top-level preview gate above.
+	// team's own iteration.
 	internalCommands := []*cobra.Command{
 		newJobsCommand(&extCtx.OutputFormat),
 		newTrainCommand(),
 	}
 	for _, command := range internalCommands {
-		command.Hidden = !rleCommandsEnabled() || !rleEnableAllEnabled()
+		command.Hidden = !rleEnableAllEnabled()
 		rootCmd.AddCommand(command)
 	}
 
@@ -118,11 +116,6 @@ func newRootCommand(updateChecker extensionUpdateChecker) *cobra.Command {
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
 
 	return rootCmd
-}
-
-func rleCommandsEnabled() bool {
-	enabled, err := strconv.ParseBool(os.Getenv(rleEnableEnvVar))
-	return err == nil && enabled
 }
 
 // rleEnableAllEnabled reports whether internal-only RLE surfaces should be shown:

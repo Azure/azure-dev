@@ -38,6 +38,9 @@ func TestAssessStorageRoles(t *testing.T) {
 	grant := storageTestAssignment("project", storageTestScope, storageBlobContributorRole)
 	group := storageTestAssignment("group", storageTestScope, storageBlobContributorRole)
 	group.Properties.PrincipalType = new(armauthorization.PrincipalTypeGroup)
+	conditionalGroup := storageTestAssignment("group", storageTestScope, storageBlobContributorRole)
+	conditionalGroup.Properties.PrincipalType = new(armauthorization.PrincipalTypeGroup)
+	conditionalGroup.Properties.Condition = new("restricted")
 	readerGroup := storageTestAssignment("group", storageTestScope, "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1")
 	readerGroup.Properties.PrincipalType = new(armauthorization.PrincipalTypeGroup)
 	cases := []struct {
@@ -74,7 +77,8 @@ func TestAssessStorageRoles(t *testing.T) {
 		{"custom role", []*armauthorization.RoleAssignment{
 			storageTestAssignment("project", storageTestScope, "custom-role")}, storagePermissionUnknown},
 		{"conditional", []*armauthorization.RoleAssignment{conditional}, storagePermissionUnknown},
-		{"group membership unknown", []*armauthorization.RoleAssignment{group}, storagePermissionUnknown},
+		{"group returned by assignedTo", []*armauthorization.RoleAssignment{group}, storagePermissionGranted},
+		{"conditional group grant", []*armauthorization.RoleAssignment{conditionalGroup}, storagePermissionUnknown},
 		{"reader group cannot grant writes", []*armauthorization.RoleAssignment{readerGroup}, storagePermissionMissing},
 		{"group and direct grant", []*armauthorization.RoleAssignment{group, grant}, storagePermissionGranted},
 		{"management group inherited", []*armauthorization.RoleAssignment{
@@ -139,9 +143,19 @@ func TestQueryProjectStorageRBAC(t *testing.T) {
 		empty             bool
 		want              string
 		wantError         bool
+		groupGrant        bool
+		conditionalGrant  bool
+		assignmentScope   string
 	}{
 		{name: "contributor", want: "granted"},
+		{name: "project managed identity auth", auth: "ProjectManagedIdentity", want: "granted"},
 		{name: "owner", role: storageBlobOwnerRole, want: "granted"},
+		{name: "effective group grant", groupGrant: true, want: "granted"},
+		{name: "conditional group grant", groupGrant: true, conditionalGrant: true, want: "unknown"},
+		{name: "direct account grant", assignmentScope: storageTestScope, want: "granted"},
+		{name: "resource group inherited grant", assignmentScope: "/subscriptions/sub/resourceGroups/rg", want: "granted"},
+		{name: "descendant grant excluded", assignmentScope: storageTestScope + "/blobServices/default/containers/data",
+			want: "missing"},
 		{name: "missing grant", role: "none", want: "missing"},
 		{name: "account key", auth: "AccountKey", want: "skip"},
 		{name: "unknown auth", auth: "None", want: "unknown"},
@@ -246,9 +260,20 @@ func TestQueryProjectStorageRBAC(t *testing.T) {
 					}
 				case storageTestScope + "/providers/Microsoft.Authorization/roleAssignments":
 					roleQueries++
-					require.Equal(t, "atScope()", request.URL.Query().Get("$filter"))
+					require.Equal(t, "assignedTo('"+principalID+"')", request.URL.Query().Get("$filter"))
+					assignmentScope := testCase.assignmentScope
+					if assignmentScope == "" {
+						assignmentScope = "/subscriptions/sub"
+					}
 					items := []*armauthorization.RoleAssignment{
-						storageTestAssignment(principalID, "/subscriptions/sub", role),
+						storageTestAssignment(principalID, assignmentScope, role),
+					}
+					if testCase.groupGrant {
+						items[0].Properties.PrincipalID = new("resolved-group")
+						items[0].Properties.PrincipalType = new(armauthorization.PrincipalTypeGroup)
+					}
+					if testCase.conditionalGrant {
+						items[0].Properties.Condition = new("restricted")
 					}
 					if role == "none" {
 						items = nil
@@ -318,6 +343,7 @@ func TestStorageConnectionFinding(t *testing.T) {
 		relevant bool
 	}{
 		{"AAD", "AzureStorageAccount", "AAD", storageTestScope, "", true},
+		{"project identity", "AzureStorageAccount", "ProjectManagedIdentity", storageTestScope, "", true},
 		{"blob", "AzureBlob", "AAD", storageTestScope, "", true},
 		{"not storage", "AzureOpenAI", "AAD", storageTestScope, "", false},
 		{"key", "AzureBlob", "AccountKey", "", "skip", true},
@@ -353,6 +379,8 @@ func TestStorageConnectionIdentitySelection(t *testing.T) {
 		want               string
 	}{
 		{"explicit project identity", armcognitiveservices.ConnectionAuthTypeManagedIdentity, true, ""},
+		{"project identity auth ignores workspace flag", armcognitiveservices.ConnectionAuthType("ProjectManagedIdentity"),
+			false, ""},
 		{"other identity", armcognitiveservices.ConnectionAuthTypeManagedIdentity, false, "unknown"},
 		{"AAD not using project", armcognitiveservices.ConnectionAuthTypeAAD, false, "skip"},
 	} {

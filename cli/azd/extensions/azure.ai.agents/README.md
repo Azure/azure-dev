@@ -57,11 +57,13 @@ project managed identity permissions. The `Project storage permissions` check
 reads project connections and account connections shared with that project,
 using their Storage resource IDs rather than probing arbitrary endpoints.
 It recognizes Storage Blob Data Contributor and Storage Blob Data Owner,
-including applicable inherited assignments.
+including applicable inherited assignments and group grants returned for the
+project identity. Supported project-identity authentication includes AAD and
+ProjectManagedIdentity connections.
 
 Connections using account keys, SAS, or a separate service principal are skipped.
 Missing metadata, unsupported identity selection, unreadable assignments, and
-unresolved custom, conditional, or group permissions produce a warning instead
+unresolved custom or conditional permissions produce a warning instead
 of a missing-permission claim. The check never reads connection secrets, accesses
 blob data, or creates role assignments. A pass does not verify network access.
 

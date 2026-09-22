@@ -215,6 +215,7 @@ func storageConnectionFinding(
 			finding.Status, finding.Message = "skip", "connection does not use the project managed identity"
 			return finding, true
 		}
+	case armcognitiveservices.ConnectionAuthType("ProjectManagedIdentity"):
 	case armcognitiveservices.ConnectionAuthTypeManagedIdentity:
 		if properties.UseWorkspaceManagedIdentity == nil || !*properties.UseWorkspaceManagedIdentity {
 			finding.Status, finding.Message = "unknown", "the connection's managed identity could not be determined"
@@ -267,7 +268,7 @@ func queryStorageRoles(
 		return "unknown", "could not initialize the role assignment query"
 	}
 	pager := roles.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
-		Filter: new("atScope()"),
+		Filter: new(fmt.Sprintf("assignedTo('%s')", principalID)),
 	})
 	var assignments []*armauthorization.RoleAssignment
 	for pager.More() {
@@ -288,6 +289,7 @@ func queryStorageRoles(
 	}
 }
 
+// assessStorageRoles consumes assignedTo-filtered results, including groups resolved for the project principal.
 func assessStorageRoles(
 	assignments []*armauthorization.RoleAssignment, principalID, storageScope string,
 ) storagePermission {
@@ -321,9 +323,11 @@ func assessStorageRoles(
 			"17d1049b-9a84-46fb-8f53-869881c3d3ab", "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1":
 			continue
 		}
-		if !strings.EqualFold(principal, principalID) {
-			if properties.PrincipalType == nil || *properties.PrincipalType == armauthorization.PrincipalTypeGroup ||
-				*properties.PrincipalType == armauthorization.PrincipalTypeForeignGroup {
+		groupAssignment := properties.PrincipalType != nil &&
+			(*properties.PrincipalType == armauthorization.PrincipalTypeGroup ||
+				*properties.PrincipalType == armauthorization.PrincipalTypeForeignGroup)
+		if !strings.EqualFold(principal, principalID) && !groupAssignment {
+			if properties.PrincipalType == nil {
 				result = storagePermissionUnknown
 			}
 			continue

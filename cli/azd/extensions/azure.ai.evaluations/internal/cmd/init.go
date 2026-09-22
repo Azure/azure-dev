@@ -366,8 +366,8 @@ func (a *initAction) Run() error {
 
 	fmt.Fprint(out, messages.DetectedTarget(target))
 	if source == initSourceTraces {
-		// Claiming the connection is only honest when it was found. init
-		// makes no service calls, so it cannot verify one it did not see.
+		// Claiming the connection is only honest when it was found. init never
+		// asks the service about one, so it cannot verify one it did not see.
 		fmt.Fprint(out, messages.UsingTraceSource(tracesWired()))
 	}
 	// Only what was settled without asking: a reader who just picked
@@ -452,8 +452,8 @@ func settleInitSource(cmd *cobra.Command, in initSourceInput) (string, error) {
 // chooseInitSource settles an unstated source, asking where it can.
 func chooseInitSource(cmd *cobra.Command, in initSourceInput) (string, error) {
 	// The same signal `generate --from` defaults on, read from the azd
-	// environment rather than the service, so init still makes no service
-	// calls. Traces are real conversations; a project wired to collect them
+	// environment rather than the service, so choosing a source stays offline.
+	// Traces are real conversations; a project wired to collect them
 	// should not have to ask for them by flag.
 	preferred := ""
 	switch {
@@ -712,9 +712,9 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 					return scaffold{}, messages.DatasetFileNotFound(in.dataset, err)
 				}
 				// Deploy already refuses a file whose rows are not JSON objects.
-				// init is holding the file and makes no service call, so accepting
-				// it here only moves the failure to a deploy, after a declaration
-				// nobody can use has been written.
+				// init is holding the file and needs nothing from the service to
+				// judge it, so accepting it here only moves the failure to a
+				// deploy, after a declaration nobody can use has been written.
 				if err := validateJSONL(in.dataset); err != nil {
 					return scaffold{}, err
 				}
@@ -1090,7 +1090,8 @@ const aiModelHost = "azure.ai.model"
 // detectModelDeployments finds the deployments the graders could judge with,
 // from what the project already declares.
 //
-// `init` makes no service calls, so detection is limited to the project file.
+// `init` asks the service nothing about deployments, so detection is limited
+// to the project file.
 // Coming back empty leaves it to resolveJudgeModel, which reads the Foundry
 // project's deployments: and then asks or names --judge-model.
 //

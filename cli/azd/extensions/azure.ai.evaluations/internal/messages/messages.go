@@ -2927,8 +2927,8 @@ func SelectingJudgeModel(err error) error {
 // UsingTraceSource reports a scaffold that reads production traces.
 //
 // Naming Application Insights is a claim about the project, so it is only made
-// when a connection was actually found. `init` makes no service calls and
-// cannot verify one it did not see.
+// when a connection was actually found. `init` never asks the service about
+// one and cannot verify one it did not see.
 func UsingTraceSource(connected bool) string {
 	if connected {
 		return fmt.Sprintf("%s Using data source: traces (Application Insights)\n", doneMark)

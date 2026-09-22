@@ -110,7 +110,7 @@ func chooseJudgeModel(cmd *cobra.Command, candidates []string) (string, error) {
 // tracesConnected reports whether the azd environment records an Application
 // Insights connection, which is what `generate --from` already defaults on.
 //
-// A local read, so `init` keeps its promise to make no service calls. Absence
+// A local read, so choosing a source stays offline. Absence
 // is ordinary: init runs outside an azd project too.
 func tracesConnected(ctx context.Context) bool {
 	return azdEnvValue(ctx, appInsightsEnvKey) != ""

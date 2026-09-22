@@ -270,18 +270,28 @@ azd ai rle init
 The Gym: OpenEnv path reads the available environments from
 [rle-samples](https://github.com/sujit-kamireddy/rle-samples). It downloads
 only the selected sample, including its manifest, plus all project skills under
-`.github/skills`, including the canonical `rle-gym-openenv` authoring skill.
-Compatible agents such as GitHub Copilot in VS Code and Copilot CLI discover
+`.agents/skills`, including the canonical `rle-gym-openenv` authoring skill.
+Compatible agents such as GitHub Copilot and OpenAI Codex discover
 these project skills automatically and load their guidance when relevant.
 Each initialization copies the skills currently available on the sample
 repository's `main` branch. Existing projects keep that snapshot and are not
-updated automatically.
+updated automatically by `init`.
 When a target folder is specified, `init` updates `rle.name` to match that
 folder:
 
 ```powershell
 azd ai rle init my_environment
 ```
+
+To install the skills into an existing project, or update them to the latest
+versions from `rle-samples/main`, run this command from the project root:
+
+```powershell
+azd ai rle skill install
+```
+
+The command adds or replaces the skills supplied by `rle-samples` under
+`.agents/skills` and preserves unrelated project skills.
 
 The samples repository's `examples/gym/openenv/catalog.toml` controls which
 samples are offered; entries with `visible = false` are hidden from both the

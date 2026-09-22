@@ -25,6 +25,14 @@ attribution, tool-name normalization, and extension identity attribution.
 
 ## When to Trigger a Privacy Review
 
+### Agency usage detection (#10059)
+
+Agency attribution adds the fixed `agency` modifier to the existing `execution.environment` field when `AGENCY_SESSION_ID` is non-empty. It does not add a field or event, change the `SystemMetadata` / `BusinessInsight` classification, or emit or hash the session ID. Regression tests cover coexistence with Copilot markers and non-disclosure in resource attributes, trace files, and command output.
+
+The marker is a new detection source, so this change requires privacy review under the new-data-source trigger below. This describes the proposed data handling, not a completed privacy approval. Downstream consumers should preserve the base environment and treat `agency` as an optional semicolon-delimited modifier.
+
+### Review triggers
+
 A privacy review **must** be triggered when any of the following conditions are met:
 
 1. **New telemetry field** — Any new attribute key added to

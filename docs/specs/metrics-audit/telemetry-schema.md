@@ -18,6 +18,7 @@ OpenTelemetry span name or event name.
 | `ExtensionRunEvent` | `ext.run` | Extension execution event |
 | `ExtensionInstallEvent` | `ext.install` | Extension install/upgrade event |
 | `ExtensionUpdateEvent` | `ext.update` | Single extension update attempt |
+| `ExtensionUninstallEvent` | `ext.uninstall` | Single extension uninstall attempt, by name or as a no-longer-required dependency |
 | `ExtensionPromoteEvent` | `ext.promote` | Extension registry promotion (e.g., dev → main) |
 | `ExtensionUsageEvent` | `ext.usage` | One usage event reported by an extension through the telemetry service |
 | `CopilotInitializeEvent` | `copilot.initialize` | Copilot initialization event |
@@ -89,7 +90,9 @@ metadata rather than declarations in the azd source:
 - CI environments: `UnknownCI`, `Azure Pipelines`, `GitHub Actions`, `AppVeyor`, `Bamboo`,
   `BitBucket Pipelines`, `Travis CI`, `Circle CI`, `GitLab CI`, `Jenkins`, `AWS CodeBuild`,
   `TeamCity`, `JetBrains Space`.
-- Optional modifiers: `Azure App Spaces Portal`, `Microsoft Foundry Skill`.
+- Optional modifiers: `Azure App Spaces Portal`, `Microsoft Foundry Skill`, `agency` (in this order).
+
+`agency` indicates a non-empty `AGENCY_SESSION_ID` environment variable. It is additive to the primary environment, including Copilot attribution, and does not depend on agent detection being enabled. Only the fixed enum value is emitted; the session ID is not emitted or hashed. The existing `SystemMetadata` classification and `BusinessInsight` purpose are unchanged.
 
 ### Experimentation
 

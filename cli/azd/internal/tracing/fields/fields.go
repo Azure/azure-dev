@@ -352,6 +352,7 @@ const (
 
 	EnvModifierAzureSpace            = "Azure App Spaces Portal"
 	EnvModifierMicrosoftFoundrySkill = "Microsoft Foundry Skill"
+	EnvModifierAgency                = "agency"
 )
 
 // All possible enumerations of AccountTypeKey

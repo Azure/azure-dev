@@ -1,0 +1,36 @@
+Manage sessions for a hosted agent endpoint.
+
+Create, show, stop, list, and delete hosted agent sessions.
+Sessions provide persistent compute and filesystem state for
+hosted agent invocations.
+
+Agent details are automatically resolved from the azd environment.
+Use --agent-name to select a specific agent when the project has
+multiple azure.ai.agent services.
+
+For agents configured with header-based isolation, pass --user-identity
+on each session operation.
+
+Usage
+  azd ai agent sessions [command]
+
+Available Commands
+  create : Create a new session for a hosted agent.
+  delete : Delete a session.
+  list   : List sessions for a hosted agent.
+  show   : Show details of a session.
+  stop   : Stop a running session.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for sessions
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  List sessions for the deployed hosted agent
+    azd ai agent sessions list
+
+Use azd ai agent sessions [command] --help to view examples and more information about a specific command.

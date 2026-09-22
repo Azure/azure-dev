@@ -276,7 +276,7 @@ func Test_MavenProject_AppService_Package(t *testing.T) {
 					runArgs = args
 
 					packageSrcPath := filepath.Join(svcDir, tt.args.svc.OutputPath)
-					if strings.Contains(packageSrcPath, ".") { // an archive file path
+					if filepath.Ext(tt.args.svc.OutputPath) != "" { // an archive file path
 						err = os.MkdirAll(filepath.Dir(packageSrcPath), osutil.PermissionDirectory)
 						require.NoError(t, err)
 

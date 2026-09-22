@@ -1,0 +1,43 @@
+List available agent samples from the curated catalog.
+
+Each entry includes the manifest URL or repo URL that can be passed back into
+`azd ai agent init -m <url>` (for agent manifests) or `azd init -t <url>`
+(for full azd template repositories), and a ready-to-execute `initCommand`
+string so coding agents don't have to compose flags.
+
+The catalog is fetched from the same source the interactive template picker uses.
+
+Usage
+  azd ai agent sample list [flags]
+
+Aliases
+  list, ls
+
+Flags
+      --featured-only   : Only include samples tagged 'featured' (the curated starter list).
+      --language string : Filter by language token. Supported values: python, dotnetCsharp.
+      --type string     : Filter by template type. Supported values: agent, azd, azure.yaml.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for list
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: json, text) (default "text")
+
+Examples
+  List all samples in the default text format
+    azd ai agent sample list
+
+  List as JSON for programmatic consumption
+    azd ai agent sample list --output json
+
+  Only Python samples
+    azd ai agent sample list --language python
+
+  Only featured (curated) samples as JSON
+    azd ai agent sample list --featured-only --output json
+
+  Only agent-manifest samples (ready for -m)
+    azd ai agent sample list --type agent

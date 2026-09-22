@@ -24,6 +24,8 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
+const aiProjectServiceName = "ai-project"
+
 func mustMarshalConfig[T any](t *testing.T, in *T) *azdext.ServiceConfig {
 	t.Helper()
 	cfg, err := project.MarshalStruct(in)
@@ -204,6 +206,72 @@ func TestCollectLegacyProjectDeploymentsIgnoresSplitProject(
 	deployments, err := collectLegacyProjectDeployments(services, "")
 	require.NoError(t, err)
 	assert.Empty(t, deployments)
+}
+
+func TestProjectServiceHasEndpointResolvesRefsAndEnvironment(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "project.yaml"),
+		[]byte("endpoint: ${FOUNDRY_PROJECT_ENDPOINT}\n"),
+		0o600,
+	))
+	props, err := structpb.NewStruct(map[string]any{
+		"$ref": "./project.yaml",
+	})
+	require.NoError(t, err)
+
+	server := &recordingProjectServer{
+		projectPath: root,
+		existing: map[string]*azdext.ServiceConfig{
+			"ai-project": {
+				Name:                 "ai-project",
+				Host:                 AiProjectHost,
+				AdditionalProperties: props,
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	hasEndpoint, err := projectServiceHasEndpoint(
+		t.Context(),
+		client,
+		root,
+		map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT": "https://example.test",
+		},
+	)
+	require.NoError(t, err)
+	assert.True(t, hasEndpoint)
+}
+
+func TestProjectServiceHasEndpointRejectsUnresolvedTemplate(t *testing.T) {
+	t.Parallel()
+
+	props, err := structpb.NewStruct(map[string]any{
+		"endpoint": "${FOUNDRY_PROJECT_ENDPOINT}",
+	})
+	require.NoError(t, err)
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"ai-project": {
+				Name:                 "ai-project",
+				Host:                 AiProjectHost,
+				AdditionalProperties: props,
+			},
+		},
+	}
+	client := newProjectRecorderClient(t, server)
+
+	hasEndpoint, err := projectServiceHasEndpoint(
+		t.Context(),
+		client,
+		"",
+		map[string]string{},
+	)
+	require.NoError(t, err)
+	assert.False(t, hasEndpoint)
 }
 
 // TestCollectConnections verifies connections are sourced from
@@ -511,8 +579,17 @@ func (s *recordingProjectServer) Get(
 	if s.nilProject {
 		return &azdext.GetProjectResponse{}, nil
 	}
+	services := s.existing
+	if services == nil {
+		services = map[string]*azdext.ServiceConfig{
+			aiProjectServiceName: {
+				Name: aiProjectServiceName,
+				Host: AiProjectHost,
+			},
+		}
+	}
 	return &azdext.GetProjectResponse{
-		Project: &azdext.ProjectConfig{Path: s.projectPath, Services: s.existing},
+		Project: &azdext.ProjectConfig{Path: s.projectPath, Services: services},
 	}, nil
 }
 
@@ -637,7 +714,10 @@ func (s *recordingProjectServer) GetServiceConfigSection(
 		return nil, s.getConfigSectionErr
 	}
 	section, found := s.rawSections[req.ServiceName][req.Path]
-	return &azdext.GetServiceConfigSectionResponse{Found: found, Section: section}, nil
+	return &azdext.GetServiceConfigSectionResponse{
+		Found:   found,
+		Section: section,
+	}, nil
 }
 
 func (s *recordingProjectServer) UnsetServiceConfig(
@@ -678,8 +758,11 @@ func newProjectRecorderServer(
 
 	grpcServer := grpc.NewServer()
 	azdext.RegisterProjectServiceServer(grpcServer, server)
+	azdext.RegisterWorkflowServiceServer(grpcServer, &testWorkflowServiceServer{})
 	if len(environmentServers) > 0 {
 		azdext.RegisterEnvironmentServiceServer(grpcServer, environmentServers[0])
+	} else {
+		azdext.RegisterEnvironmentServiceServer(grpcServer, &testEnvironmentServiceServer{})
 	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -705,26 +788,22 @@ func newProjectRecorderServer(
 	return listener.Addr().String()
 }
 
-// TestEmitResourceServices_AlwaysEmitsProjectService verifies the ai-project
-// service is written even when the agent has no deployments, connections, or
-// toolboxes, and that the agent's uses: is wired to it. The project service is
-// emitted unconditionally as the stable provisioning-order anchor every agent
-// references rather than being gated on a Foundry resource being present.
-func TestEmitResourceServices_AlwaysEmitsProjectService(t *testing.T) {
+// TestEmitResourceServicesWiresExistingProject verifies agents only
+// reference the project service authored by the projects extension.
+func TestEmitResourceServicesWiresExistingProject(t *testing.T) {
 	t.Parallel()
 
 	server := &recordingProjectServer{}
 	client := newProjectRecorderClient(t, server)
 
-	_, err := emitResourceServices(t.Context(), client, "myagent", "", foundryResources{})
+	_, err := emitResourceServices(t.Context(), client, "myagent", foundryResources{})
 	require.NoError(t, err)
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
 
-	require.Len(t, server.added, 1)
-	assert.Equal(t, aiProjectServiceName, server.added[0].Name)
-	assert.Equal(t, AiProjectHost, server.added[0].Host)
+	assert.Empty(t, server.added)
+	assert.Empty(t, server.configValues)
 	assert.Equal(t, []string{aiProjectServiceName}, server.uses["myagent"])
 }
 
@@ -810,7 +889,7 @@ func TestEmitResourceServices_EmitsSkillServices(t *testing.T) {
 	server := &recordingProjectServer{}
 	client := newProjectRecorderClient(t, server)
 
-	_, err := emitResourceServices(t.Context(), client, "myagent", "", foundryResources{
+	_, err := emitResourceServices(t.Context(), client, "myagent", foundryResources{
 		Skills: map[string]project.SkillService{
 			"code-review": {Description: "reviews code", Archive: "./skills/code-review"},
 		},
@@ -844,7 +923,7 @@ func TestEmitResourceServicesSanitizesSkillServiceName(t *testing.T) {
 
 	server := &recordingProjectServer{}
 	client := newProjectRecorderClient(t, server)
-	_, err := emitResourceServices(t.Context(), client, "myagent", "", foundryResources{
+	_, err := emitResourceServices(t.Context(), client, "myagent", foundryResources{
 		Skills: map[string]project.SkillService{
 			"code review": {Description: "reviews code", Archive: "./skills/code-review"},
 		},
@@ -867,7 +946,7 @@ func TestEmitResourceServices_ExtraUsesAreWired(t *testing.T) {
 	server := &recordingProjectServer{}
 	client := newProjectRecorderClient(t, server)
 
-	_, err := emitResourceServices(t.Context(), client, "myagent", "", foundryResources{
+	_, err := emitResourceServices(t.Context(), client, "myagent", foundryResources{
 		ExtraUses: []string{"my-toolbox"},
 	})
 	require.NoError(t, err)
@@ -881,9 +960,8 @@ func TestEmitResourceServices_ExtraUsesAreWired(t *testing.T) {
 	}
 }
 
-// TestEmitResourceServices_WiresSiblingsToProject verifies a connection service
-// is emitted alongside the project service, depends on it via uses: so the
-// project provisions first, and that the agent is wired to both siblings.
+// TestEmitResourceServices_WiresSiblingsToProject verifies that a
+// connection service depends on the existing project service.
 func TestEmitResourceServices_WiresSiblingsToProject(t *testing.T) {
 	t.Parallel()
 
@@ -891,17 +969,15 @@ func TestEmitResourceServices_WiresSiblingsToProject(t *testing.T) {
 	client := newProjectRecorderClient(t, server)
 
 	conns := []project.Connection{{Name: "myconn", Category: "ApiKey"}}
-	_, err := emitResourceServices(t.Context(), client, "myagent", "", foundryResources{Connections: conns})
+	_, err := emitResourceServices(t.Context(), client, "myagent", foundryResources{Connections: conns})
 	require.NoError(t, err)
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
 
-	require.Len(t, server.added, 2)
-	assert.Equal(t, aiProjectServiceName, server.added[0].Name)
-	assert.Equal(t, AiProjectHost, server.added[0].Host)
-	assert.Equal(t, "myconn", server.added[1].Name)
-	assert.Equal(t, AiConnectionHost, server.added[1].Host)
+	require.Len(t, server.added, 1)
+	assert.Equal(t, "myconn", server.added[0].Name)
+	assert.Equal(t, AiConnectionHost, server.added[0].Host)
 
 	assert.Equal(t, []string{aiProjectServiceName}, server.uses["myconn"])
 	assert.Equal(t, []string{aiProjectServiceName, "myconn"}, server.uses["myagent"])
@@ -931,7 +1007,7 @@ func TestEmitResourceServices_WiresToolboxToReferencedConnections(t *testing.T) 
 	}}
 
 	_, err := emitResourceServices(
-		t.Context(), client, "support-agent", "", foundryResources{
+		t.Context(), client, "support-agent", foundryResources{
 			Connections: connections,
 			Toolboxes:   toolboxes,
 		})
@@ -973,7 +1049,7 @@ func TestEmitResourceServices_CountsEmittedConnections(t *testing.T) {
 		conns := []project.Connection{{Name: "myconn", Category: "ApiKey"}}
 
 		got, err := emitResourceServices(
-			t.Context(), client, "myagent", "", foundryResources{Connections: conns})
+			t.Context(), client, "myagent", foundryResources{Connections: conns})
 		require.NoError(t, err)
 		assert.Equal(t, 1, got)
 	})
@@ -984,7 +1060,7 @@ func TestEmitResourceServices_CountsEmittedConnections(t *testing.T) {
 		conns := []project.Connection{{Name: "   ", Category: "ApiKey"}}
 
 		got, err := emitResourceServices(
-			t.Context(), client, "myagent", "", foundryResources{Connections: conns})
+			t.Context(), client, "myagent", foundryResources{Connections: conns})
 		require.NoError(t, err)
 		assert.Equal(t, 0, got)
 
@@ -996,25 +1072,22 @@ func TestEmitResourceServices_CountsEmittedConnections(t *testing.T) {
 	})
 }
 
-// TestEmitResourceServices_WritesServiceLevelProps verifies resource services are
-// written with their keys composed at the service level (inline via
-// AdditionalProperties, matching the agent service shape and the config:false
-// host schema conditionals) rather than nested under config:, and that the
-// collectors read that service-level shape back.
+// TestEmitResourceServices_WritesServiceLevelProps verifies
+// agent-owned resource services remain inline and project
+// authoring is delegated.
 func TestEmitResourceServices_WritesServiceLevelProps(t *testing.T) {
 	t.Parallel()
 
-	server := &recordingProjectServer{}
+	server := &recordingProjectServer{
+		existing: map[string]*azdext.ServiceConfig{
+			"ai-project": {Name: "ai-project", Host: AiProjectHost},
+		},
+	}
 	client := newProjectRecorderClient(t, server)
 
-	deployments := []project.Deployment{{
-		Name:  "gpt-4.1-mini",
-		Model: project.DeploymentModel{Format: "OpenAI", Name: "gpt-4.1-mini", Version: "2025-04-14"},
-		Sku:   project.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
-	}}
 	conns := []project.Connection{{Name: "myconn", Category: "ApiKey", Target: "https://example", AuthType: "ApiKey"}}
 	_, err := emitResourceServices(
-		t.Context(), client, "myagent", "", foundryResources{Deployments: deployments, Connections: conns})
+		t.Context(), client, "myagent", foundryResources{Connections: conns})
 	require.NoError(t, err)
 
 	server.mu.Lock()
@@ -1028,15 +1101,9 @@ func TestEmitResourceServices_WritesServiceLevelProps(t *testing.T) {
 		services[svc.Name] = svc
 	}
 
-	// Init must write a project shape the owning extension can parse.
-	var projectCfg project.ServiceTargetAgentConfig
-	err = project.UnmarshalStruct(
-		project.ServiceConfigProps(services["ai-project"]),
-		&projectCfg,
-	)
-	require.NoError(t, err)
-	require.Len(t, projectCfg.Deployments, 1)
-	assert.Equal(t, "gpt-4.1-mini", projectCfg.Deployments[0].Name)
+	for _, svc := range services {
+		assert.NotEqual(t, AiProjectHost, svc.Host)
+	}
 
 	gotConns, err := collectConnections(services, "")
 	require.NoError(t, err)
@@ -1045,75 +1112,22 @@ func TestEmitResourceServices_WritesServiceLevelProps(t *testing.T) {
 	assert.Equal(t, "ApiKey", gotConns[0].Category)
 }
 
-// TestEmitResourceServices_WritesEndpointForExistingProject verifies that a
-// non-empty projectEndpoint is written as endpoint: on the ai-project service
-// (the brownfield signal provision reads to reuse the project) and that an
-// empty endpoint (new project) leaves the field unset. Callers pass the
-// portable ${FOUNDRY_PROJECT_ENDPOINT} reference, never a literal URL.
-func TestEmitResourceServices_WritesEndpointForExistingProject(t *testing.T) {
-	t.Parallel()
-
-	t.Run("existing project writes endpoint", func(t *testing.T) {
-		server := &recordingProjectServer{}
-		client := newProjectRecorderClient(t, server)
-
-		_, err := emitResourceServices(
-			t.Context(), client, "myagent", projectEndpointRef, foundryResources{})
-		require.NoError(t, err)
-
-		server.mu.Lock()
-		defer server.mu.Unlock()
-
-		require.Len(t, server.added, 1)
-		projSvc := server.added[0]
-		require.Equal(t, aiProjectServiceName, projSvc.Name)
-		require.NotNil(t, projSvc.AdditionalProperties)
-		assert.Equal(t,
-			"${FOUNDRY_PROJECT_ENDPOINT}",
-			projSvc.AdditionalProperties.Fields["endpoint"].GetStringValue(),
-		)
-		require.NotContains(t, server.env, aiProjectServiceName,
-			"the project endpoint must resolve from the azd environment, not a self-referential service env")
-	})
-
-	t.Run("new project omits endpoint", func(t *testing.T) {
-		server := &recordingProjectServer{}
-		client := newProjectRecorderClient(t, server)
-
-		_, err := emitResourceServices(t.Context(), client, "myagent", "", foundryResources{})
-		require.NoError(t, err)
-
-		server.mu.Lock()
-		defer server.mu.Unlock()
-
-		require.Len(t, server.added, 1)
-		projSvc := server.added[0]
-		if projSvc.AdditionalProperties != nil {
-			_, ok := projSvc.AdditionalProperties.Fields["endpoint"]
-			assert.False(t, ok, "endpoint must be omitted for a new project")
-		}
-	})
-}
-
-// TestEmitResourceServices_ProjectServiceKey verifies how the azure.ai.project
-// service key is resolved: reuse an existing key, else the generic "ai-project".
-// The key is never derived from the Foundry project name -- azure.yaml must not
-// carry tenant-specific identifiers.
+// TestEmitResourceServices_ProjectServiceKey verifies that only
+// existing project service keys are used.
 func TestEmitResourceServices_ProjectServiceKey(t *testing.T) {
 	t.Parallel()
 
-	t.Run("uses the generic key for a new project", func(t *testing.T) {
-		server := &recordingProjectServer{}
+	t.Run("requires projects authoring", func(t *testing.T) {
+		server := &recordingProjectServer{
+			existing: map[string]*azdext.ServiceConfig{
+				"myagent": {Name: "myagent", Host: AiAgentHost},
+			},
+		}
 		client := newProjectRecorderClient(t, server)
 
-		_, err := emitResourceServices(t.Context(), client, "myagent", "", foundryResources{})
-		require.NoError(t, err)
-
-		server.mu.Lock()
-		defer server.mu.Unlock()
-		require.Len(t, server.added, 1)
-		assert.Equal(t, aiProjectServiceName, server.added[0].Name)
-		assert.Equal(t, []string{aiProjectServiceName}, server.uses["myagent"])
+		_, err := emitResourceServices(t.Context(), client, "myagent", foundryResources{})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "azure.ai.project")
 	})
 
 	t.Run("reuses existing project service key", func(t *testing.T) {
@@ -1124,14 +1138,13 @@ func TestEmitResourceServices_ProjectServiceKey(t *testing.T) {
 		}
 		client := newProjectRecorderClient(t, server)
 
-		// The existing key wins so a repeated init does not create a second
-		// project service.
-		_, err := emitResourceServices(t.Context(), client, "myagent", "", foundryResources{})
+		_, err := emitResourceServices(t.Context(), client, "myagent", foundryResources{})
 		require.NoError(t, err)
 
 		server.mu.Lock()
 		defer server.mu.Unlock()
-		require.Len(t, server.added, 1)
-		assert.Equal(t, "old-project-key", server.added[0].Name)
+		assert.Empty(t, server.added)
+		assert.Empty(t, server.configValues)
+		assert.Equal(t, []string{"old-project-key"}, server.uses["myagent"])
 	})
 }

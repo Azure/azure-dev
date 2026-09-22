@@ -24,6 +24,8 @@ func newEndpointCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "endpoint",
 		Short: "Manage agent endpoint and card configuration.",
+		Example: `  # Inspect the deployed endpoint configuration
+  azd ai agent endpoint show`,
 	}
 
 	cmd.AddCommand(newEndpointShowCommand(extCtx))

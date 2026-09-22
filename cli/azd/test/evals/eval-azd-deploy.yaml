@@ -14,7 +14,7 @@ defaults:
   timeout: 5m
   executor: copilot-sdk
   model: gpt-5.6-terra
-  judge_model: gpt-5.5
+  judge_model: gpt-5.6-luna
 
 # lower the bar a bit so we can get an idea of when this gets worse, while still being okay
 # with some degree of failure as these tests need actual azd knowledge and we're still working

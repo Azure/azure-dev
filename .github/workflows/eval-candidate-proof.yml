@@ -42,3 +42,87 @@ jobs:
           path: ${{ runner.temp }}/eval-proof-evidence/
           if-no-files-found: error
           retention-days: 14
+
+  source-race:
+    if: github.repository == 'm7md7sien/azure-dev'
+    name: Race tests / ${{ matrix.extension }}
+    strategy:
+      fail-fast: false
+      matrix:
+        extension: [evaluations, dataset]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      NO_COLOR: "1"
+      AZURE_DEV_COLLECT_TELEMETRY: "no"
+      GOTOOLCHAIN: local
+      CGO_ENABLED: "1"
+    steps:
+      - name: Checkout validation manifest
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Require immutable candidate source
+        id: source
+        shell: python
+        run: |
+          import json
+          import os
+          import re
+          from pathlib import Path
+          pin = json.loads(Path("eng/scripts/eval-candidate-proof/candidate.json").read_text())
+          commit = pin["sourceVerificationCommit"]
+          if not isinstance(commit, str) or not re.fullmatch("[0-9a-f]{40}", commit):
+              raise SystemExit("Race proof requires an explicitly approved immutable source SHA")
+          if pin["sourceCommit"] is not None and pin["sourceCommit"] != commit:
+              raise SystemExit("Source race pin must match the published candidate source")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"commit={commit}\n")
+
+      - name: Checkout exact approved source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: m7md7sien/azure-dev
+          ref: ${{ steps.source.outputs.commit }}
+          path: candidate-source
+          persist-credentials: false
+
+      - name: Set up Go 1.26.4
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.4"
+          cache: false
+
+      - name: Verify checkout and Go version
+        working-directory: candidate-source
+        env:
+          EXPECTED_SOURCE: ${{ steps.source.outputs.commit }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          test "$(go env GOVERSION)" = "go1.26.4"
+          go version
+
+      - name: Run internal race tests without Azure credentials
+        id: race
+        working-directory: candidate-source/cli/azd/extensions/azure.ai.${{ matrix.extension }}
+        run: |
+          unset AZURE_AI_EVAL_E2E_LIVE
+          go test -race -count=1 -timeout 15m ./internal/...
+
+      - name: Record source proof scope and outcome
+        if: always()
+        env:
+          SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
+          EXTENSION: ${{ matrix.extension }}
+          RACE_OUTCOME: ${{ steps.race.outcome }}
+        run: |
+          {
+            echo "## Source race tests: azure.ai.$EXTENSION"
+            echo
+            echo "- Immutable source: \`$SOURCE_COMMIT\`"
+            echo "- Go: \`1.26.4\`"
+            echo "- Command: \`go test -race -count=1 -timeout 15m ./internal/...\`"
+            echo "- Outcome: **$RACE_OUTCOME**"
+            echo "- Live cloud evaluation: **NOT RUN**; no Azure identity or live gate enabled."
+          } >> "$GITHUB_STEP_SUMMARY"

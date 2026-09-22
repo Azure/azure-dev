@@ -455,6 +455,31 @@ class Proof:
             require(before == (config.read_bytes(), (project / "azure.yaml").read_bytes()),
                     f"{name} changed existing authored configuration")
 
+        for field in ("num_conversations", "max_turns"):
+            for style in ("block", "flow"):
+                invalid_config = self.root / f"invalid-{field}-{style}.yaml"
+                if style == "flow":
+                    write_json(invalid_config, {
+                        "evals": [{"name": "ci-invalid", "simulation": {
+                            "model": "ci-simulator", field: 0,
+                        }}],
+                    })
+                else:
+                    invalid_config.write_text(
+                        "evals:\n  - name: ci-invalid\n    simulation:\n"
+                        f"      model: ci-simulator\n      {field}: 0\n", encoding="utf-8",
+                    )
+                self.run(f"production loader rejects zero {field} {style}", [
+                    "ai", "eval", "create", "--from-file", str(invalid_config), "--output", "json",
+                ], failure=rf"simulation\.{field} is 0", json_output=True)
+        invalid_config = self.root / "invalid-simulation-typo.yaml"
+        invalid_config.write_text(
+            "evals:\n  - name: ci-invalid\n    simulation:\n"
+            "      model: ci-simulator\n      max_turn: 2\n", encoding="utf-8")
+        self.run("production loader rejects unknown simulation key", [
+            "ai", "eval", "create", "--from-file", str(invalid_config), "--output", "json",
+        ], failure='unknown key "max_turn"', json_output=True)
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)

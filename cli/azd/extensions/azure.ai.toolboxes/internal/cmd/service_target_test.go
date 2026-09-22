@@ -5,7 +5,11 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"testing"
+
+	"azure.ai.toolboxes/internal/exterrors"
+	"azure.ai.toolboxes/internal/foundry/projectctx"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -19,6 +23,65 @@ import (
 type stubToolboxConnResolver struct {
 	id     string
 	target string
+}
+
+type stubAccountTenantLookup struct {
+	request  *azdext.LookupTenantRequest
+	tenantID string
+	err      error
+}
+
+type stubEnvironmentReader struct {
+	name            string
+	subscriptionID  string
+	getCurrentErr   error
+	getValueErr     error
+	getValueRequest *azdext.GetEnvRequest
+}
+
+func (s *stubEnvironmentReader) GetCurrent(
+	context.Context,
+	*azdext.EmptyRequest,
+	...grpc.CallOption,
+) (*azdext.EnvironmentResponse, error) {
+	if s.getCurrentErr != nil {
+		return nil, s.getCurrentErr
+	}
+	return &azdext.EnvironmentResponse{
+		Environment: &azdext.Environment{Name: s.name},
+	}, nil
+}
+
+func (s *stubEnvironmentReader) GetValues(
+	context.Context,
+	*azdext.GetEnvironmentRequest,
+	...grpc.CallOption,
+) (*azdext.KeyValueListResponse, error) {
+	return &azdext.KeyValueListResponse{}, nil
+}
+
+func (s *stubEnvironmentReader) GetValue(
+	_ context.Context,
+	request *azdext.GetEnvRequest,
+	_ ...grpc.CallOption,
+) (*azdext.KeyValueResponse, error) {
+	s.getValueRequest = request
+	if s.getValueErr != nil {
+		return nil, s.getValueErr
+	}
+	return &azdext.KeyValueResponse{Value: s.subscriptionID}, nil
+}
+
+func (s *stubAccountTenantLookup) LookupTenant(
+	_ context.Context,
+	request *azdext.LookupTenantRequest,
+	_ ...grpc.CallOption,
+) (*azdext.LookupTenantResponse, error) {
+	s.request = request
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &azdext.LookupTenantResponse{TenantId: s.tenantID}, nil
 }
 
 func (s stubToolboxConnResolver) resolveConnection(
@@ -192,6 +255,198 @@ func TestDeployReuseUsesServiceEnvironment(t *testing.T) {
 	require.NotNil(t, result)
 	require.Len(t, *calls, 1)
 	assert.Equal(t, wantURL, (*calls)[0].value)
+}
+
+func TestDeployUsesSubscriptionUserTenantForCredential(t *testing.T) {
+	// No t.Parallel: projectctx.ReadAzdHostedSourcesFunc and setToolboxEndpointEnvFunc are package-level seams.
+	const (
+		endpoint       = "https://project.services.ai.azure.com/api/projects/test"
+		subscriptionID = "subscription-id"
+		userTenantID   = "user-tenant-id"
+	)
+
+	previousReadSources := projectctx.ReadAzdHostedSourcesFunc
+	projectctx.ReadAzdHostedSourcesFunc = func(context.Context) (projectctx.AzdHostedSources, error) {
+		return projectctx.AzdHostedSources{EnvValue: endpoint, EnvName: "test"}, nil
+	}
+	t.Cleanup(func() { projectctx.ReadAzdHostedSourcesFunc = previousReadSources })
+
+	const credentialErrorMessage = "failed to create Azure credential: invalid tenant ID"
+	for _, tt := range []struct {
+		name      string
+		clientErr error
+	}{
+		{name: "success"},
+		{name: "credential creation fails", clientErr: errors.New(credentialErrorMessage)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			endpointWrites := stubToolboxEndpointEnv(t)
+			account := &stubAccountTenantLookup{tenantID: userTenantID}
+			environment := &stubEnvironmentReader{name: "test", subscriptionID: subscriptionID}
+			client := newMockToolboxClient(endpoint)
+			var credentialTenantID string
+			target := &toolboxServiceTarget{
+				environmentClient: environment,
+				accountClient:     account,
+				resolver:          newStubConnectionResolver(),
+				newClient: func(gotEndpoint, tenantID string) (toolboxClient, error) {
+					assert.Equal(t, endpoint, gotEndpoint)
+					credentialTenantID = tenantID
+					if tt.clientErr != nil {
+						return nil, tt.clientErr
+					}
+					return client, nil
+				},
+			}
+			properties, err := structpb.NewStruct(map[string]any{
+				"tools": []any{map[string]any{"type": "web_search"}},
+			})
+			require.NoError(t, err)
+
+			result, err := target.Deploy(
+				t.Context(),
+				&azdext.ServiceConfig{
+					Name:                 "research",
+					AdditionalProperties: properties,
+					Environment: map[string]string{
+						"TOOLBOX_SETTING": "value",
+					},
+				},
+				nil,
+				nil,
+				nil,
+			)
+
+			require.NotNil(t, environment.getValueRequest)
+			assert.Equal(t, "test", environment.getValueRequest.GetEnvName())
+			assert.Equal(t, "AZURE_SUBSCRIPTION_ID", environment.getValueRequest.GetKey())
+			require.NotNil(t, account.request)
+			assert.Equal(t, subscriptionID, account.request.GetSubscriptionId())
+			assert.Equal(t, userTenantID, credentialTenantID)
+			if tt.clientErr != nil {
+				require.Error(t, err)
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				assert.Equal(t, exterrors.CodeCredentialCreationFailed, localErr.Code)
+				assert.Equal(t, azdext.LocalErrorCategoryAuth, localErr.Category)
+				assert.Equal(t, credentialErrorMessage, localErr.Message)
+				assert.Equal(t, "run 'azd auth login' to authenticate", localErr.Suggestion)
+				assert.Nil(t, result)
+				assert.Empty(t, client.createVersionCalls)
+				assert.Empty(t, *endpointWrites)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Len(t, client.createVersionCalls, 1)
+		})
+	}
+}
+
+func TestCredentialTenantIDErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		environment     *stubEnvironmentReader
+		account         *stubAccountTenantLookup
+		wantCode        string
+		wantCategory    azdext.LocalErrorCategory
+		wantLookup      bool
+		wantEnvironment string
+	}{
+		{
+			name: "active environment lookup fails",
+			environment: &stubEnvironmentReader{
+				getCurrentErr: errors.New("environment unavailable"),
+			},
+			account:      &stubAccountTenantLookup{},
+			wantCode:     exterrors.CodeAzdClientFailed,
+			wantCategory: azdext.LocalErrorCategoryInternal,
+		},
+		{
+			name:         "active environment is missing",
+			environment:  &stubEnvironmentReader{},
+			account:      &stubAccountTenantLookup{},
+			wantCode:     exterrors.CodeMissingAzureSubscription,
+			wantCategory: azdext.LocalErrorCategoryDependency,
+		},
+		{
+			name: "subscription lookup fails",
+			environment: &stubEnvironmentReader{
+				name:        "test",
+				getValueErr: errors.New("environment unavailable"),
+			},
+			account:         &stubAccountTenantLookup{},
+			wantCode:        exterrors.CodeAzdClientFailed,
+			wantCategory:    azdext.LocalErrorCategoryInternal,
+			wantEnvironment: "test",
+		},
+		{
+			name: "subscription is missing",
+			environment: &stubEnvironmentReader{
+				name: "test",
+			},
+			account:         &stubAccountTenantLookup{},
+			wantCode:        exterrors.CodeMissingAzureSubscription,
+			wantCategory:    azdext.LocalErrorCategoryDependency,
+			wantEnvironment: "test",
+		},
+		{
+			name: "tenant lookup fails",
+			environment: &stubEnvironmentReader{
+				name:           "test",
+				subscriptionID: "subscription-id",
+			},
+			account: &stubAccountTenantLookup{
+				err: errors.New("tenant unavailable"),
+			},
+			wantCode:        exterrors.CodeTenantLookupFailed,
+			wantCategory:    azdext.LocalErrorCategoryAuth,
+			wantLookup:      true,
+			wantEnvironment: "test",
+		},
+		{
+			name: "tenant is empty",
+			environment: &stubEnvironmentReader{
+				name:           "test",
+				subscriptionID: "subscription-id",
+			},
+			account:         &stubAccountTenantLookup{},
+			wantCode:        exterrors.CodeTenantLookupFailed,
+			wantCategory:    azdext.LocalErrorCategoryAuth,
+			wantLookup:      true,
+			wantEnvironment: "test",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			target := &toolboxServiceTarget{
+				environmentClient: test.environment,
+				accountClient:     test.account,
+			}
+
+			tenantID, err := target.credentialTenantID(t.Context())
+
+			assert.Empty(t, tenantID)
+			require.Error(t, err)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, test.wantCode, localErr.Code)
+			assert.Equal(t, test.wantCategory, localErr.Category)
+			if test.wantEnvironment != "" {
+				require.NotNil(t, test.environment.getValueRequest)
+				assert.Equal(t, test.wantEnvironment, test.environment.getValueRequest.GetEnvName())
+			}
+			if test.wantLookup {
+				require.NotNil(t, test.account.request)
+				assert.Equal(t, "subscription-id", test.account.request.GetSubscriptionId())
+			} else {
+				assert.Nil(t, test.account.request)
+			}
+		})
+	}
 }
 
 func TestBuildToolEntries_ResolvesConnectionRef(t *testing.T) {

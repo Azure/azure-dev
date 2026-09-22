@@ -257,13 +257,11 @@ func (cli *Cli) PublishAppHostManifest(
 	return nil
 }
 
-// PublishContainer runs a `dotnet publish" with `/t:PublishContainer`to build and publish the container.
-// It also gets port number by using `--getProperty:GeneratedContainerConfiguration`.
-// For single-file apps (.cs files), it runs from the file's directory to properly resolve relative references.
 // BuildContainerLocal runs `dotnet publish` with `/t:PublishContainer` to build a container image locally
 // without pushing to a registry. Returns the port number and image name.
+// A zero-value containerEngine uses the .NET SDK's default runtime.
 func (cli *Cli) BuildContainerLocal(
-	ctx context.Context, project, configuration, imageName, containerEngine string,
+	ctx context.Context, project, configuration, imageName string, containerEngine tools.ContainerEngine,
 ) (int, string, error) {
 	if !strings.Contains(imageName, ":") {
 		imageName = fmt.Sprintf("%s:latest", imageName)
@@ -309,8 +307,13 @@ func (cli *Cli) BuildContainerLocal(
 	return port, imageName, nil
 }
 
+// PublishContainer runs `dotnet publish` with `/t:PublishContainer` to build and publish a container image.
+// It returns the port number from `--getProperty:GeneratedContainerConfiguration`.
+// For single-file apps (.cs files), it runs from the file's directory to resolve relative references.
+// A zero-value containerEngine uses the .NET SDK's default runtime.
 func (cli *Cli) PublishContainer(
-	ctx context.Context, project, configuration, imageName, server, username, password, containerEngine string,
+	ctx context.Context, project, configuration, imageName, server, username, password string,
+	containerEngine tools.ContainerEngine,
 ) (int, error) {
 	if !strings.Contains(imageName, ":") {
 		imageName = fmt.Sprintf("%s:latest", imageName)
@@ -367,8 +370,8 @@ func (cli *Cli) PublishContainer(
 // appendContainerEngine appends -p:ContainerEngine=<engine> to the dotnet publish command
 // when the container engine is not "docker" (the .NET SDK default). This ensures the
 // .NET SDK uses the correct container runtime (e.g., Podman) for building and pushing images.
-func appendContainerEngine(runArgs exec.RunArgs, containerEngine string) exec.RunArgs {
-	if containerEngine != "" && containerEngine != "docker" {
+func appendContainerEngine(runArgs exec.RunArgs, containerEngine tools.ContainerEngine) exec.RunArgs {
+	if containerEngine != "" && containerEngine != tools.ContainerEngineDocker {
 		runArgs = runArgs.AppendParams(
 			fmt.Sprintf("-p:ContainerEngine=%s", containerEngine),
 		)

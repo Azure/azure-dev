@@ -4,14 +4,43 @@
 package cmd
 
 import (
+	"bytes"
 	"testing"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/require"
 )
+
+type previewerState struct {
+	paused      bool
+	pauseCount  int
+	resumeCount int
+}
+
+func (p *previewerState) PausePreviewer() {
+	p.paused = true
+	p.pauseCount++
+}
+
+func (p *previewerState) ResumePreviewer() {
+	p.paused = false
+	p.resumeCount++
+}
+
+type previewerStateWriter struct {
+	bytes.Buffer
+	previewer   *previewerState
+	writeStates []bool
+}
+
+func (w *previewerStateWriter) Write(p []byte) (int, error) {
+	w.writeStates = append(w.writeStates, w.previewer.paused)
+	return w.Buffer.Write(p)
+}
 
 func TestPhaseTimingBreakdown(t *testing.T) {
 	t.Parallel()
@@ -85,6 +114,102 @@ func TestPhaseTimingBreakdown(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFinalizeUpDeployProgress_RestoresPreviewerBeforeFinalRender(t *testing.T) {
+	previewer := &previewerState{}
+	writer := &previewerStateWriter{previewer: previewer}
+	tracker := newDeployProgressTracker(writer, true, []string{"web"})
+	tracker.Update("web", phaseDone, "")
+	previewer.PausePreviewer()
+	tracker.Render()
+	finalized := false
+	stopTicker := func() {
+		previewer.ResumePreviewer()
+	}
+
+	finalizeUpDeployProgress(tracker, stopTicker, &finalized)
+
+	require.False(t, previewer.paused)
+	require.Equal(t, 1, previewer.pauseCount)
+	require.Equal(t, 1, previewer.resumeCount)
+	require.NotEmpty(t, writer.writeStates)
+	require.True(t, writer.writeStates[0], "the live progress table must render while previewer output is paused")
+	require.False(t, writer.writeStates[len(writer.writeStates)-1],
+		"the final table must render after previewer output is restored")
+	require.Contains(t, writer.String(), "Status")
+
+	outputAfterFirstFinalize := writer.String()
+	finalizeUpDeployProgress(tracker, stopTicker, &finalized)
+	require.Equal(t, outputAfterFirstFinalize, writer.String())
+	require.Equal(t, 1, previewer.resumeCount)
+}
+
+func TestDeployHookStartMessage(t *testing.T) {
+	hooks := map[string][]*ext.HookConfig{
+		"predeploy": {
+			{Run: "echo first"},
+			{Run: "echo second"},
+		},
+	}
+
+	require.Equal(t, "Running predeploy hooks...", deployHookStartMessage(hooks, preDeployHookStep))
+	require.Empty(t, deployHookStartMessage(hooks, postDeployHookStep))
+	require.Empty(t, deployHookStartMessage(hooks, "deploy-web"))
+
+	hooks["postdeploy"] = []*ext.HookConfig{{Run: "echo postdeploy"}}
+	require.Equal(t, "Running postdeploy hook...", deployHookStartMessage(hooks, postDeployHookStep))
+}
+
+func TestUpDeployStepStartHandler_HookAndProgressOrdering(t *testing.T) {
+	var events []string
+	hooks := map[string][]*ext.HookConfig{
+		"predeploy":  {{Run: "echo predeploy"}},
+		"postdeploy": {{Run: "echo postdeploy"}},
+	}
+	handler := newUpDeployStepStartHandler(
+		func(stepName string) { events = append(events, "base:"+stepName) },
+		func() { events = append(events, "finalize") },
+		func(stepName string) {
+			if message := deployHookStartMessage(hooks, stepName); message != "" {
+				events = append(events, "message:"+message)
+			}
+		},
+		func() { events = append(events, "start-progress") },
+		func(serviceName string, phase deployPhase, _ string) {
+			events = append(events, "update:"+serviceName+":"+string(phase))
+		},
+	)
+
+	handler(preDeployHookStep)
+	require.Equal(t, []string{
+		"base:" + preDeployHookStep,
+		"message:Running predeploy hook...",
+	}, events)
+
+	events = nil
+	handler("publish-web")
+	require.Equal(t, []string{
+		"base:publish-web",
+		"start-progress",
+		"update:web:Publishing",
+	}, events)
+
+	events = nil
+	handler(postDeployHookStep)
+	require.Equal(t, []string{
+		"base:" + postDeployHookStep,
+		"finalize",
+		"message:Running postdeploy hook...",
+	}, events)
+}
+
+func TestFinalizeUpDeployProgress_NoTracker(t *testing.T) {
+	finalized := false
+
+	finalizeUpDeployProgress(nil, nil, &finalized)
+
+	require.True(t, finalized)
 }
 
 func TestUpGraphRunOptionsConcurrency(t *testing.T) {

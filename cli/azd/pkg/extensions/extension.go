@@ -28,14 +28,23 @@ type Extension struct {
 	Providers         []Provider       `json:"providers,omitempty"`
 	McpConfig         *McpConfig       `json:"mcp,omitempty"`
 	LastUpdateWarning string           `json:"lastUpdateWarning,omitempty"`
+	// Dependencies is the dependency list declared by the installed version, recorded at
+	// install time so dependency checks work without registry access (bundles, delisted
+	// extensions). Records written before this field existed have none.
+	Dependencies []ExtensionDependency `json:"dependencies,omitempty"`
+	// InstalledAsDependency is true when the extension was installed only because another
+	// installed extension required it. Explicit installs leave it false, and
+	// Manager.MarkExplicitlyInstalled clears it when the user later asks for the
+	// extension directly.
+	InstalledAsDependency bool `json:"installedAsDependency,omitempty"`
 
 	stdin  *bytes.Buffer
 	stdout *output.DynamicMultiWriter
 	stderr *output.DynamicMultiWriter
 
 	readySignal chan error // consolidated channel, buffered with capacity 1
+	initOnce    sync.Once  // ensures buffers and signals are initialized only once
 	readyOnce   sync.Once  // ensures signal is sent only once
-	initialized bool
 
 	reportedError error      // structured error reported by the extension via gRPC
 	errorMu       sync.Mutex // guards reportedError
@@ -49,18 +58,14 @@ func (e *Extension) SourceCategoryOrUnknown() SourceCategory {
 	return normalizeSourceCategory(e.SourceCategory)
 }
 
-// init initializes the extension's buffers and signals.
+// ensureInit initializes the extension's buffers and signals once.
 func (e *Extension) ensureInit() {
-	if e.initialized {
-		return
-	}
-
-	e.stdin = &bytes.Buffer{}
-	e.stdout = output.NewDynamicMultiWriter()
-	e.stderr = output.NewDynamicMultiWriter()
-	e.readySignal = make(chan error, 1)
-
-	e.initialized = true
+	e.initOnce.Do(func() {
+		e.stdin = &bytes.Buffer{}
+		e.stdout = output.NewDynamicMultiWriter()
+		e.stderr = output.NewDynamicMultiWriter()
+		e.readySignal = make(chan error, 1)
+	})
 }
 
 // Initialize signals that the extension is ready.

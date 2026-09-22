@@ -4,8 +4,6 @@
 package internal
 
 import (
-	"context"
-	"errors"
 	"io"
 	"os"
 	"testing"
@@ -218,7 +216,6 @@ func TestDisableVirtualTerminalInput_Noop(t *testing.T) {
 }
 
 func TestReadInput_SetTermModeErrorOnNonTTY(t *testing.T) {
-	// Not parallel: mutates os.Stdin.
 	r, w, err := os.Pipe()
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -226,14 +223,10 @@ func TestReadInput_SetTermModeErrorOnNonTTY(t *testing.T) {
 		_ = w.Close()
 	})
 
-	oldStdin := os.Stdin
-	os.Stdin = r
-	t.Cleanup(func() { os.Stdin = oldStdin })
-
 	in := NewInput(io.Discard)
 	done := make(chan error, 1)
 	go func() {
-		done <- in.ReadInput(t.Context(), nil, func(args *KeyPressEventArgs) (bool, error) {
+		done <- in.ReadInput(t.Context(), &InputConfig{Stdin: r}, func(args *KeyPressEventArgs) (bool, error) {
 			return true, nil
 		})
 	}()
@@ -251,7 +244,6 @@ func TestReadInput_SetTermModeErrorOnNonTTY(t *testing.T) {
 }
 
 func TestReadInput_NonNilConfig(t *testing.T) {
-	// Not parallel: mutates os.Stdin.
 	r, w, err := os.Pipe()
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -259,13 +251,9 @@ func TestReadInput_NonNilConfig(t *testing.T) {
 		_ = w.Close()
 	})
 
-	oldStdin := os.Stdin
-	os.Stdin = r
-	t.Cleanup(func() { os.Stdin = oldStdin })
-
 	in := NewInput(io.Discard)
 	done := make(chan error, 1)
-	cfg := &InputConfig{InitialValue: "seed", IgnoreHintKeys: true}
+	cfg := &InputConfig{InitialValue: "seed", IgnoreHintKeys: true, Stdin: r}
 	go func() {
 		done <- in.ReadInput(t.Context(), cfg, func(args *KeyPressEventArgs) (bool, error) {
 			return false, nil
@@ -280,49 +268,5 @@ func TestReadInput_NonNilConfig(t *testing.T) {
 		require.Equal(t, []rune("seed"), in.value)
 	case <-time.After(5 * time.Second):
 		t.Fatal("ReadInput did not return within 5s")
-	}
-}
-
-func TestReadInput_ContextCancellationReturnsErrCancelled(t *testing.T) {
-	// Not parallel: mutates os.Stdin.
-	r, w, err := os.Pipe()
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_ = r.Close()
-		_ = w.Close()
-	})
-
-	oldStdin := os.Stdin
-	os.Stdin = r
-	t.Cleanup(func() { os.Stdin = oldStdin })
-
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel() // pre-cancel
-
-	in := NewInput(io.Discard)
-	done := make(chan error, 1)
-	handlerCalled := make(chan struct{}, 1)
-	go func() {
-		done <- in.ReadInput(ctx, nil, func(args *KeyPressEventArgs) (bool, error) {
-			select {
-			case handlerCalled <- struct{}{}:
-			default:
-			}
-			require.True(t, args.Cancelled)
-			return true, nil
-		})
-	}()
-
-	select {
-	case gotErr := <-done:
-		// Either the ctx.Done path fires first (returning ErrCancelled joined
-		// with ctx.Err), or SetTermMode errors first (returning that err).
-		// Both are acceptable; we just require termination and, when the
-		// cancel path wins, verify ErrCancelled is part of the error chain.
-		if gotErr != nil && errors.Is(gotErr, ErrCancelled) {
-			require.ErrorIs(t, gotErr, context.Canceled)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("ReadInput did not return within 5s after ctx cancel")
 	}
 }

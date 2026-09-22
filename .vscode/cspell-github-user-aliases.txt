@@ -59,6 +59,7 @@ scottaddie
 sebastianmattar
 sergi
 sethvargo
+Siglud
 spboyer
 stretchr
 theckman

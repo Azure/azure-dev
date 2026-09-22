@@ -49,7 +49,7 @@ integration.
 | `AZD_IN_CLOUDSHELL` | If true, `azd` runs with Azure Cloud Shell specific behavior. |
 | `AZD_SKIP_UPDATE_CHECK` | If true, skips the out-of-date update check output that is typically printed at the end of the command. |
 | `AZD_SKIP_FIRST_RUN` | Reserved for the dormant first-run tool setup and background update experience. This variable has no effect while those middleware components are not registered. |
-| `AZD_CONTAINER_RUNTIME` | The container runtime to use (e.g., `docker`, `podman`). |
+| `AZD_CONTAINER_RUNTIME` | Selects `docker` or `podman`. If unset or empty, azd prefers Docker on PATH, then Podman. Selection is cached on first use for each container CLI instance; version and daemon readiness checks are repeated when needed. Other values fail the runtime installation check. |
 | `AZD_ALLOW_NON_EMPTY_FOLDER` | If set, allows `azd init` to run in a non-empty directory without prompting. |
 | `AZD_BUILDER_IMAGE` | The builder docker image used to perform Dockerfile-less builds. |
 | `AZD_CONCURRENCY_MAX` | Hard maximum number of graph steps that can run at once during `azd up`, `azd deploy`, or `azd provision`. Values saved in the active azd environment take precedence over process environment values. When unset, the command-specific concurrency variable is the hard maximum: `AZD_UP_CONCURRENCY` (then `AZD_DEPLOY_CONCURRENCY`) for `azd up`, `AZD_DEPLOY_CONCURRENCY` for `azd deploy`, or `AZD_PROVISION_CONCURRENCY` for `azd provision`. When all are unset, the scheduler uses `min(stepCount, GOMAXPROCS*2)`. Set to `1` to serialize all graph steps, including package and publish operations for .NET projects that share custom build-output paths. |
@@ -200,7 +200,7 @@ Metadata requests are unauthenticated when no matching token is set.
 | Variable | Description |
 | --- | --- |
 | `AZD_EXT_TIMEOUT` | Timeout for extension operations, parsed as an integer number of seconds (for example, `10`). Defaults to `5` seconds; this is not a duration string, so values like `10m` are not valid. |
-| `AZD_EXT_DEBUG` | If true, enables debug output for extensions. |
+| `AZD_EXT_DEBUG` | If true, enables debug output for extensions: azd drops the extension startup timeout so a paused process is not cancelled, and the extension host logs gRPC broker traffic to stderr, falling back to `AZD_DEBUG` when this is unset. Extensions served by `azdext.ExtensionHost`, or that call `azdext.WaitForDebugger` themselves, additionally prompt to attach a debugger before running. |
 | `AZD_EXTENSION_CACHE_TTL` | Time-to-live for extension cache entries, parsed with Go's `time.ParseDuration` format (for example, `30m`, `4h`). Defaults to `4h`. |
 
 ## Extension-Specific Variables
@@ -247,6 +247,7 @@ Metadata requests are unauthenticated when no matching token is set.
 | --- | --- |
 | `AZURE_DEV_COLLECT_TELEMETRY` | If false, disables telemetry collection. Telemetry is enabled by default. |
 | `AZURE_DEV_USER_AGENT` | Appends a custom string to the `User-Agent` header sent with Azure requests. It is also inspected for [AI agent detection](#ai-agent-detection) using case-insensitive substring matching. |
+| `AGENCY_SESSION_ID` | Set by Agency when launching subprocesses. Any non-empty value appends the fixed `agency` modifier to telemetry's `execution.environment`, preserving the primary environment (for example, `GitHub Copilot CLI;agency`). Unset or empty values have no effect. The session ID itself is not emitted. This does not affect agent detection or prompting and is independent of `AZD_DISABLE_AGENT_DETECT`. |
 | `OTEL_RESOURCE_ATTRIBUTES` | Read by the embedded OpenTelemetry SDK, but not supported for customizing azd telemetry. Its attributes are not included in resources exported by azd. |
 | `OTEL_SERVICE_NAME` | Read by the embedded OpenTelemetry SDK, but does not override azd's exported `service.name`, which is always `azd`. |
 | `TRACEPARENT` | The W3C Trace Context `traceparent` header for distributed tracing. Automatically set by `azd` on extension processes for trace propagation. Not typically set by users. |

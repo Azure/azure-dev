@@ -230,39 +230,47 @@ func validateStagedAzureYaml(stagingDir, manifestPointer string) error {
 		return fmt.Errorf("parsing staged azure.yaml: %w", err)
 	}
 	for name, service := range document.Services {
-		host, _ := service["host"].(string)
-		if config, hasConfig := service["config"]; hasConfig && config != nil {
+		resolvedService := service
+		if hasAzureYamlFileRef(service) {
+			resolvedService, err = foundry.ResolveFileRefs(service, stagingDir)
+			if err != nil {
+				return fmt.Errorf("resolving $ref includes for service %q: %w", name, err)
+			}
+		}
+
+		host, _ := resolvedService["host"].(string)
+		if strings.TrimSpace(host) != AiAgentHost {
+			continue
+		}
+		if config, hasConfig := resolvedService["config"]; hasConfig && config != nil {
 			return exterrors.Validation(
 				exterrors.CodeInvalidAgentManifest,
 				fmt.Sprintf("agent service %q uses the unsupported nested config block", name),
 				"Move the direct agent definition to the azure.ai.agent service properties.",
 			)
 		}
-		_, hasRef := service["$ref"]
-		if strings.TrimSpace(host) == AiAgentHost || hasRef {
-			// Let the runtime-compatible resolver validate every candidate
-			// service so nested config and implicit disk definitions cannot
-			// pass staging validation.
-			props, err := structpb.NewStruct(service)
-			if err != nil {
-				return fmt.Errorf("encoding agent service %q: %w", name, err)
-			}
-			svc := &azdext.ServiceConfig{
-				Name:                 name,
-				Host:                 host,
-				AdditionalProperties: props,
-			}
-			probe, err := probeAgentDefinitionForInit(svc, stagingDir)
-			if err != nil {
-				return fmt.Errorf("validating agent service %q: %w", name, err)
-			}
-			if strings.TrimSpace(host) == AiAgentHost && !probe.found {
-				return exterrors.Validation(
-					exterrors.CodeInvalidAgentManifest,
-					fmt.Sprintf("agent service %q does not contain a direct or root-$ref definition", name),
-					"Put the agent definition directly on the azure.ai.agent service or use a root $ref.",
-				)
-			}
+
+		// Let the runtime-compatible resolver validate agent services so
+		// implicit disk definitions cannot pass staging validation.
+		props, err := structpb.NewStruct(service)
+		if err != nil {
+			return fmt.Errorf("encoding agent service %q: %w", name, err)
+		}
+		svc := &azdext.ServiceConfig{
+			Name:                 name,
+			Host:                 host,
+			AdditionalProperties: props,
+		}
+		probe, err := probeAgentDefinitionForInit(svc, stagingDir)
+		if err != nil {
+			return fmt.Errorf("validating agent service %q: %w", name, err)
+		}
+		if !probe.found {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("agent service %q does not contain a direct or root-$ref definition", name),
+				"Put the agent definition directly on the azure.ai.agent service or use a root $ref.",
+			)
 		}
 	}
 

@@ -518,7 +518,7 @@
             },
             {
               "name": "run",
-              "description": "Build and run the local RLE environment container.",
+              "description": "Build and run the local RLE environment container (Gym: OpenEnv only).",
               "usage": "azd ai rle run"
             },
             {
@@ -541,7 +541,7 @@
             "darwin/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "82c4524925b0f577e08ac329aafeb48ee8be79e19b95380e66ec3dc6f20de59a"
+                "value": "ad680cf9088b10fd4779000dd94e81bf002720d17cc620acf8252bfeb3e3eacb"
               },
               "entryPoint": "azure-ai-rle-darwin-amd64",
               "url": "https://raw.githubusercontent.com/sujit-kamireddy/azure-dev/main/cli/azd/extensions/azure.ai.rle/artifacts/rle-dev/0.8.13-preview/azure-ai-rle-darwin-amd64.zip"
@@ -549,7 +549,7 @@
             "darwin/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "86ca11a025afaa6800198bbd46f39b39404a28e06e187b8f5d7fcb589e1fc904"
+                "value": "ce70bfe475f4b663cb084952c56d065cae8eab0932c4637414a240f043ed0635"
               },
               "entryPoint": "azure-ai-rle-darwin-arm64",
               "url": "https://raw.githubusercontent.com/sujit-kamireddy/azure-dev/main/cli/azd/extensions/azure.ai.rle/artifacts/rle-dev/0.8.13-preview/azure-ai-rle-darwin-arm64.zip"
@@ -557,7 +557,7 @@
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "e4889aafa5fb95c361128f1675a95dcdaa929089f31a5767dac4c97e8dde321a"
+                "value": "c97b2bdf24b50e0b79a86c54da7ec69d5d1efc89d31639a052e062f0a54776f8"
               },
               "entryPoint": "azure-ai-rle-linux-amd64",
               "url": "https://raw.githubusercontent.com/sujit-kamireddy/azure-dev/main/cli/azd/extensions/azure.ai.rle/artifacts/rle-dev/0.8.13-preview/azure-ai-rle-linux-amd64.tar.gz"
@@ -565,7 +565,7 @@
             "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "32b0449870f0ce6a0eeb06c673848a7147d3bf40d2bc7328d8cc0d752ecf6882"
+                "value": "1657cb0d83fd2d2efd9dc82093f6fc6680f14166b52099f584c13f0d3712acd1"
               },
               "entryPoint": "azure-ai-rle-linux-arm64",
               "url": "https://raw.githubusercontent.com/sujit-kamireddy/azure-dev/main/cli/azd/extensions/azure.ai.rle/artifacts/rle-dev/0.8.13-preview/azure-ai-rle-linux-arm64.tar.gz"
@@ -573,7 +573,7 @@
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "1bef5b625c8806a73921ea4742b10e57f0fa06f6de3f7c1d6a001c86c2dbf5bc"
+                "value": "883d52b9280f9adf30b06930997bb735e45c57d535bfaf06ca34a6f1f550b599"
               },
               "entryPoint": "azure-ai-rle-windows-amd64.exe",
               "url": "https://raw.githubusercontent.com/sujit-kamireddy/azure-dev/main/cli/azd/extensions/azure.ai.rle/artifacts/rle-dev/0.8.13-preview/azure-ai-rle-windows-amd64.zip"
@@ -581,7 +581,7 @@
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "2bf1b42b406271f4e2b4a23d098ae2a5db46dc426ff9688a0e85af62099e86b6"
+                "value": "61ad2410ec3c7136d184e6be681dbc54b203a3ca3d6961806173393feb89db02"
               },
               "entryPoint": "azure-ai-rle-windows-arm64.exe",
               "url": "https://raw.githubusercontent.com/sujit-kamireddy/azure-dev/main/cli/azd/extensions/azure.ai.rle/artifacts/rle-dev/0.8.13-preview/azure-ai-rle-windows-arm64.zip"

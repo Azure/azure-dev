@@ -1,5 +1,18 @@
 # Release History
 
+## 0.8.12-preview
+
+- `azd ai rle init --type Harness` now defaults to copying a full working
+  sample (agent + rle) for both BYOH and HostedAgent. The sample is the first
+  and preselected interactive choice, and it is what `--no-prompt` picks when
+  `--harness-source` is not supplied, so an unqualified init lands on something
+  that runs end to end instead of a TODO-laden placeholder. Pass
+  `--harness-source existing` for the previous placeholder scaffold.
+  `--agent-name`, `--agent-version`, and `--base-url` still apply to the copied
+  sample's `rle.toml`.
+- Added `azd ai rle skill install`, which installs or updates the RLE project
+  skills into the current project.
+
 ## 0.8.11-preview
 
 - `azd ai rle rollout` now saves completed rollout artifacts under

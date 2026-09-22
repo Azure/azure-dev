@@ -129,8 +129,8 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 		help.WriteString("      --agent-version string   HostedAgent version\n")
 		help.WriteString("      --base-url string        BYOH harness base URL\n")
 		help.WriteString("      --force                  Overwrite generated files in an existing non-empty session directory\n")
-		help.WriteString("      --harness-source string  Harness scaffold source: existing (placeholder to wire up to a harness " +
-			"you already deployed) or sample (copy a full working agent+rle sample)\n")
+		help.WriteString("      --harness-source string  Harness scaffold source: sample (copy a full working agent+rle " +
+			"sample, default) or existing (placeholder to wire up to a harness you already deployed)\n")
 		help.WriteString("      --rle-version string     RLE semantic version (defaults to 1.0.0 for a harness scaffold)\n")
 		help.WriteString("      --subtype string         RLE control-plane subtype: OpenEnv, HostedAgent, or BYOH\n")
 		help.WriteString("      --type string            RLE control-plane type: Gym or Harness\n")
@@ -152,8 +152,8 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 		&flags.harnessSource,
 		"harness-source",
 		"",
-		"Harness scaffold source: existing (placeholder to wire up to a harness you already deployed) "+
-			"or sample (copy a full working agent+rle sample)",
+		"Harness scaffold source: sample (copy a full working agent+rle sample, default) "+
+			"or existing (placeholder to wire up to a harness you already deployed)",
 	)
 	cmd.Flags().StringVar(
 		&flags.sample,
@@ -509,10 +509,13 @@ func (a *initAction) createHarnessSampleScaffold(target rleInitTarget) error {
 	return err
 }
 
-// resolveHarnessSource decides whether a Harness init should scaffold a
-// placeholder for an existing/already-deployed harness, or copy a fully
-// working sample. --no-prompt without an explicit --harness-source keeps the
-// prior (placeholder) behavior so existing scripted callers are unaffected.
+// resolveHarnessSource decides whether a Harness init should copy a fully
+// working sample, or scaffold a placeholder for an existing/already-deployed
+// harness. A full working sample is the default for both BYOH and HostedAgent,
+// including under --no-prompt, so an unqualified init lands on something that
+// runs end to end. The sample scaffold still honors --agent-name,
+// --agent-version and --base-url, so those flags are never dropped by the
+// default; pass --harness-source existing for the placeholder scaffold.
 func (a *initAction) resolveHarnessSource() (string, error) {
 	value := strings.TrimSpace(a.flags.harnessSource)
 	if value != "" {
@@ -533,7 +536,7 @@ func (a *initAction) resolveHarnessSource() (string, error) {
 		}
 	}
 	if a.noPrompt {
-		return harnessSourceExisting, nil
+		return harnessSourceSample, nil
 	}
 	return selectHarnessSourceFunc(a.cmd.Context())
 }
@@ -571,9 +574,11 @@ func defaultRleHarnessSampleFolderName(subtype project.RleSubtype) string {
 }
 
 func selectHarnessSource(ctx context.Context) (string, error) {
+	// A full working sample leads so the default lands on something that runs
+	// end to end; SelectedIndex preselects it for a bare Enter.
 	choices := []*azdext.SelectChoice{
-		{Label: "Point at an existing, already-deployed harness (placeholder scaffold)", Value: harnessSourceExisting},
 		{Label: "Start from a full working sample (agent + rle)", Value: harnessSourceSample},
+		{Label: "Point at an existing, already-deployed harness (placeholder scaffold)", Value: harnessSourceExisting},
 	}
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
@@ -584,6 +589,7 @@ func selectHarnessSource(ctx context.Context) (string, error) {
 		Options: &azdext.SelectOptions{
 			Message:         "Select a harness starting point",
 			Choices:         choices,
+			SelectedIndex:   new(int32(0)),
 			DisplayNumbers:  new(true),
 			EnableFiltering: new(true),
 		},

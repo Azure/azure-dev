@@ -463,15 +463,16 @@ func TestInitBYOHSampleSourceAppliesBaseURLOverride(t *testing.T) {
 	}
 }
 
-func TestInitNoPromptHarnessDefaultsToExistingSource(t *testing.T) {
+func TestInitNoPromptHarnessDefaultsToSampleSource(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	t.Setenv(rleEnableAllEnvVar, "true")
 
 	oldLoadHarnessSample := loadRleHarnessSampleCatalogFunc
+	loadedSubtype := project.RleSubtype("")
 	loadRleHarnessSampleCatalogFunc = func(subtype project.RleSubtype) (rleHarnessSampleCatalog, error) {
-		t.Fatal("expected --no-prompt without --harness-source to keep the existing-harness placeholder")
-		return nil, nil
+		loadedSubtype = subtype
+		return &fakeRleHarnessSampleCatalog{subtype: subtype}, nil
 	}
 	t.Cleanup(func() {
 		loadRleHarnessSampleCatalogFunc = oldLoadHarnessSample
@@ -486,11 +487,45 @@ func TestInitNoPromptHarnessDefaultsToExistingSource(t *testing.T) {
 	if err := command.Flags().Set("subtype", "HostedAgent"); err != nil {
 		t.Fatal(err)
 	}
-	if err := command.Flags().Set("agent-name", "Support Agent"); err != nil {
+	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if err := command.Flags().Set("agent-version", "3"); err != nil {
-		t.Fatal(err)
+
+	if loadedSubtype != project.RleSubtypeHostedAgent {
+		t.Fatalf("expected the HostedAgent sample catalog to be loaded, got %q", loadedSubtype)
+	}
+	if _, err := os.Stat(filepath.Join(tempDir, "support_agent", "rle", project.RleConfigFile)); err != nil {
+		t.Fatalf("expected --no-prompt without --harness-source to copy a working sample: %v", err)
+	}
+}
+
+func TestInitNoPromptHarnessSourceExistingKeepsPlaceholder(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv(rleEnableAllEnvVar, "true")
+
+	oldLoadHarnessSample := loadRleHarnessSampleCatalogFunc
+	loadRleHarnessSampleCatalogFunc = func(subtype project.RleSubtype) (rleHarnessSampleCatalog, error) {
+		t.Fatal("expected --harness-source existing to skip the sample catalog")
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		loadRleHarnessSampleCatalogFunc = oldLoadHarnessSample
+	})
+
+	noPrompt := true
+	command := newInitCommand(&noPrompt)
+	command.SetArgs([]string{"support_agent"})
+	for flagName, flagValue := range map[string]string{
+		"type":           "Harness",
+		"subtype":        "HostedAgent",
+		"harness-source": harnessSourceExisting,
+		"agent-name":     "Support Agent",
+		"agent-version":  "3",
+	} {
+		if err := command.Flags().Set(flagName, flagValue); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
@@ -538,6 +573,7 @@ func TestInitNoPromptHostedAgentUsesControlPlaneFlags(t *testing.T) {
 		"support_rle",
 		"--type", "Harness",
 		"--subtype", "HostedAgent",
+		"--harness-source", "existing",
 		"--rle-version", "1.0.0",
 		"--agent-name", "support-agent",
 		"--agent-version", "202609",
@@ -551,6 +587,7 @@ func TestInitNoPromptHostedAgentUsesControlPlaneFlags(t *testing.T) {
 }
 
 func TestInitNoPromptBYOHRequiresFolderName(t *testing.T) {
+	t.Chdir(t.TempDir())
 	t.Setenv(rleEnableAllEnvVar, "true")
 
 	noPrompt := true
@@ -558,6 +595,7 @@ func TestInitNoPromptBYOHRequiresFolderName(t *testing.T) {
 	command.SetArgs([]string{
 		"--type", "Harness",
 		"--subtype", "BYOH",
+		"--harness-source", "existing",
 		"--base-url", "https://harness.example.com",
 	})
 	err := command.Execute()
@@ -568,6 +606,7 @@ func TestInitNoPromptBYOHRequiresFolderName(t *testing.T) {
 }
 
 func TestInitHarnessTargetRequiresPreviewFlag(t *testing.T) {
+	t.Chdir(t.TempDir())
 	t.Setenv(rleEnableAllEnvVar, "")
 
 	noPrompt := true

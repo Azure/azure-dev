@@ -107,16 +107,17 @@ $env:AZD_AI_RLE_ENABLE_ALL = "true"
 `azd ai rle init --type Harness` supports two starting points, selected
 interactively or via `--harness-source`:
 
-- `--harness-source existing` (the default for `--no-prompt`) scaffolds only
-  a generic, TODO-laden RLE-side container to wire up to a harness/agent you
-  already built and deployed yourself.
-- `--harness-source sample` copies a complete, runnable pattern of both
+- `--harness-source sample` (the default, and the first interactive choice)
+  copies a complete, runnable pattern of both
   halves wired together (agent implementation, Dockerfile, mock tools, a
   grader, and the RLE wrapper) into `<folder-name>/agent` and
   `<folder-name>/rle`, so you have something that runs end to end out of the
   box instead of starting from scratch. Run/publish from
   `<folder-name>/rle`; build and deploy `<folder-name>/agent` yourself, then
   update `rle.toml`'s `baseUrl`/`agentName`/`agentVersion` to match.
+- `--harness-source existing` scaffolds only
+  a generic, TODO-laden RLE-side container to wire up to a harness/agent you
+  already built and deployed yourself.
 
 See
 [`examples/harness/hosted-agent`](https://github.com/sujit-kamireddy/rle-samples/tree/main/examples/harness/hosted-agent)
@@ -314,18 +315,20 @@ azd ai rle init code_rl --no-prompt
 With `AZD_AI_RLE_ENABLE_ALL=true`, `init` also offers
 `Harness: HostedAgent` and `Harness: BYOH`. Supply control-plane type/subtype
 values explicitly when scripting. `--no-prompt` defaults to
-`--harness-source existing` (the placeholder scaffold below) unless you pass
-`--harness-source sample`:
+`--harness-source sample` (a full working sample) unless you pass
+`--harness-source existing` (the placeholder scaffold below):
 
 ```powershell
 azd ai rle init support_rle `
   --type Harness --subtype HostedAgent `
+  --harness-source existing `
   --rle-version 1.0.0 `
   --agent-name support-agent --agent-version 12 `
   --no-prompt
 
 azd ai rle init customer_rle `
   --type Harness --subtype BYOH `
+  --harness-source existing `
   --rle-version 1.0.0 `
   --base-url https://harness.example.com/rle/ `
   --no-prompt
@@ -347,12 +350,11 @@ azd ai rle init customer_rle `
 starter mock-tool route. Update its task setup, mocks, and grader before
 publishing.
 
-`--harness-source sample` instead copies a fully working sample:
+`--harness-source sample` (the default) instead copies a fully working sample:
 
 ```powershell
 azd ai rle init customer_rle `
   --type Harness --subtype BYOH `
-  --harness-source sample `
   --no-prompt
 ```
 

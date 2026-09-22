@@ -23,7 +23,8 @@ const (
 	// Gym/OpenEnv sample directories, one per sample name.
 	rleGymSamplesPath = "examples/gym/openenv"
 
-	// RleSkillsPath contains the project skills copied into every initialized
+	// RleSkillsPath is the samples-repository directory holding the project
+	// skills, and the first place they are installed into an initialized
 	// Gym/OpenEnv project so compatible agents can assist with authoring.
 	RleSkillsPath        = ".agents/skills"
 	rleGymSkillDirectory = "rle-gym-openenv"
@@ -54,6 +55,12 @@ var rleHarnessSubtypeDirs = map[RleSubtype]string{
 // only sample. The samples repo ref this CLI clones floats, so it can be
 // either layout at any time and both have to keep working.
 var rleHarnessSampleContentDirs = []string{"agent", "rle"}
+
+// RleSkillsPaths are the project-relative directories the skills are installed
+// into, each holding an identical copy. No single directory reaches every
+// agent: Claude Code discovers project skills only under .claude/skills, Codex
+// only under .agents/skills, and Copilot under either.
+var RleSkillsPaths = []string{RleSkillsPath, ".claude/skills"}
 var renameRleSkillPath = os.Rename
 
 // RleSampleCatalogOptions controls how the Gym/OpenEnv sample catalog is loaded.
@@ -522,6 +529,50 @@ func validateRleSkillsSource(sourceDir string) error {
 }
 
 func installRleSkillsFromDirectory(sourceDir string, dest string) ([]string, error) {
+	skillNames, err := readRleSkillNames(sourceDir)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(dest, 0750); err != nil {
+		return nil, err
+	}
+	// Staged and backed-up copies live under dest so that every rename swapping
+	// a skill into place stays on one filesystem, whichever tree it targets.
+	workDir, err := os.MkdirTemp(dest, ".rle-install-*")
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = os.RemoveAll(workDir)
+	}()
+
+	trees := make([]*rleSkillTree, 0, len(RleSkillsPaths))
+	for index, treePath := range RleSkillsPaths {
+		tree := &rleSkillTree{
+			destDir:   filepath.Join(dest, filepath.FromSlash(treePath)),
+			stageDir:  filepath.Join(workDir, fmt.Sprintf("stage-%d", index)),
+			backupDir: filepath.Join(workDir, fmt.Sprintf("backup-%d", index)),
+			existing:  map[string]bool{},
+		}
+		if err := tree.stage(sourceDir, skillNames); err != nil {
+			return nil, err
+		}
+		trees = append(trees, tree)
+	}
+
+	// Every tree is staged, so the swaps below are the only step that can leave
+	// one of them half-updated, and a failure in any of them unwinds them all.
+	for index, tree := range trees {
+		if err := tree.swap(skillNames); err != nil {
+			return nil, errors.Join(err, rollbackRleSkillTrees(trees[:index+1]))
+		}
+	}
+	return skillNames, nil
+}
+
+// readRleSkillNames returns the sorted skill directory names under sourceDir,
+// rejecting any that does not carry a readable SKILL.md.
+func readRleSkillNames(sourceDir string) ([]string, error) {
 	if err := validateRleSkillsSource(sourceDir); err != nil {
 		return nil, err
 	}
@@ -543,95 +594,90 @@ func installRleSkillsFromDirectory(sourceDir string, dest string) ([]string, err
 		skillNames = append(skillNames, entry.Name())
 	}
 	slices.Sort(skillNames)
-
-	skillsDestDir := filepath.Join(dest, filepath.FromSlash(RleSkillsPath))
-	if err := os.MkdirAll(skillsDestDir, 0750); err != nil {
-		return nil, err
-	}
-	stagingDir, err := os.MkdirTemp(skillsDestDir, ".rle-install-*")
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		_ = os.RemoveAll(stagingDir)
-	}()
-
-	stagedSkillsDir := filepath.Join(stagingDir, "skills")
-	if err := os.MkdirAll(stagedSkillsDir, 0750); err != nil {
-		return nil, err
-	}
-	for _, skillName := range skillNames {
-		stagedSkillDir := filepath.Join(stagedSkillsDir, skillName)
-		if err := os.MkdirAll(stagedSkillDir, 0750); err != nil {
-			return nil, err
-		}
-		if err := copyDirectory(filepath.Join(sourceDir, skillName), stagedSkillDir); err != nil {
-			return nil, err
-		}
-	}
-
-	backupDir := filepath.Join(stagingDir, "backup")
-	existingSkills := make(map[string]bool, len(skillNames))
-	for _, skillName := range skillNames {
-		skillDestDir := filepath.Join(skillsDestDir, skillName)
-		skillBackupDir := filepath.Join(backupDir, skillName)
-		if _, err := os.Stat(skillDestDir); err == nil {
-			if err := os.MkdirAll(backupDir, 0750); err != nil {
-				return nil, err
-			}
-			if err := renameRleSkillPath(skillDestDir, skillBackupDir); err != nil {
-				return nil, errors.Join(err, restoreRleSkillBackups(skillsDestDir, backupDir, existingSkills))
-			}
-			existingSkills[skillName] = true
-		} else if !os.IsNotExist(err) {
-			return nil, errors.Join(err, restoreRleSkillBackups(skillsDestDir, backupDir, existingSkills))
-		}
-	}
-
-	installedSkills := make([]string, 0, len(skillNames))
-	for _, skillName := range skillNames {
-		skillDestDir := filepath.Join(skillsDestDir, skillName)
-		stagedSkillDir := filepath.Join(stagedSkillsDir, skillName)
-		if err := renameRleSkillPath(stagedSkillDir, skillDestDir); err != nil {
-			rollbackErr := rollbackRleSkillInstall(skillsDestDir, backupDir, existingSkills, installedSkills)
-			return nil, errors.Join(err, rollbackErr)
-		}
-		installedSkills = append(installedSkills, skillName)
-	}
 	return skillNames, nil
 }
 
-func rollbackRleSkillInstall(
-	skillsDestDir string,
-	backupDir string,
-	existingSkills map[string]bool,
-	installedSkills []string,
-) error {
+// rleSkillTree installs one copy of the skills into one destination directory,
+// keeping enough state to put that directory back the way it was.
+type rleSkillTree struct {
+	destDir   string
+	stageDir  string
+	backupDir string
+	existing  map[string]bool
+	installed []string
+}
+
+func (t *rleSkillTree) stage(sourceDir string, skillNames []string) error {
+	if err := os.MkdirAll(t.stageDir, 0750); err != nil {
+		return err
+	}
+	for _, skillName := range skillNames {
+		stagedSkillDir := filepath.Join(t.stageDir, skillName)
+		if err := os.MkdirAll(stagedSkillDir, 0750); err != nil {
+			return err
+		}
+		if err := copyDirectory(filepath.Join(sourceDir, skillName), stagedSkillDir); err != nil {
+			return err
+		}
+	}
+	return os.MkdirAll(t.destDir, 0750)
+}
+
+func (t *rleSkillTree) swap(skillNames []string) error {
+	for _, skillName := range skillNames {
+		skillDestDir := filepath.Join(t.destDir, skillName)
+		if _, err := os.Stat(skillDestDir); err == nil {
+			if err := os.MkdirAll(t.backupDir, 0750); err != nil {
+				return err
+			}
+			if err := renameRleSkillPath(skillDestDir, filepath.Join(t.backupDir, skillName)); err != nil {
+				return err
+			}
+			t.existing[skillName] = true
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+	}
+	for _, skillName := range skillNames {
+		if err := renameRleSkillPath(
+			filepath.Join(t.stageDir, skillName),
+			filepath.Join(t.destDir, skillName),
+		); err != nil {
+			return err
+		}
+		t.installed = append(t.installed, skillName)
+	}
+	return nil
+}
+
+func (t *rleSkillTree) rollback() error {
 	var rollbackErrors []error
-	for _, skillName := range installedSkills {
-		if err := os.RemoveAll(filepath.Join(skillsDestDir, skillName)); err != nil {
+	for _, skillName := range t.installed {
+		if err := os.RemoveAll(filepath.Join(t.destDir, skillName)); err != nil {
 			rollbackErrors = append(rollbackErrors, err)
 		}
 	}
-	if err := restoreRleSkillBackups(skillsDestDir, backupDir, existingSkills); err != nil {
-		rollbackErrors = append(rollbackErrors, err)
+	for skillName := range t.existing {
+		skillDestDir := filepath.Join(t.destDir, skillName)
+		if err := os.RemoveAll(skillDestDir); err != nil {
+			rollbackErrors = append(rollbackErrors, err)
+			continue
+		}
+		if err := renameRleSkillPath(filepath.Join(t.backupDir, skillName), skillDestDir); err != nil {
+			rollbackErrors = append(rollbackErrors, err)
+		}
 	}
 	return errors.Join(rollbackErrors...)
 }
 
-func restoreRleSkillBackups(skillsDestDir string, backupDir string, existingSkills map[string]bool) error {
-	var restoreErrors []error
-	for skillName := range existingSkills {
-		skillDestDir := filepath.Join(skillsDestDir, skillName)
-		if err := os.RemoveAll(skillDestDir); err != nil {
-			restoreErrors = append(restoreErrors, err)
-			continue
-		}
-		if err := renameRleSkillPath(filepath.Join(backupDir, skillName), skillDestDir); err != nil {
-			restoreErrors = append(restoreErrors, err)
+func rollbackRleSkillTrees(trees []*rleSkillTree) error {
+	var rollbackErrors []error
+	for _, tree := range trees {
+		if err := tree.rollback(); err != nil {
+			rollbackErrors = append(rollbackErrors, err)
 		}
 	}
-	return errors.Join(restoreErrors...)
+	return errors.Join(rollbackErrors...)
 }
 
 func runGitCommand(args ...string) ([]byte, error) {

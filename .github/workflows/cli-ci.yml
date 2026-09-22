@@ -10,6 +10,7 @@ on:
       - "eng/scripts/Get-CoverageDiff*.ps1"
       - "eng/scripts/Set-ExtensionVersionVariable*.ps1"
       - "eng/scripts/Test-CliReleaseReadiness*.ps1"
+      - "eng/scripts/Update-CliVersion*.ps1"
     branches: [main]
 
 # If two events are triggered within a short time in the same PR, cancel the run of the oldest event
@@ -66,6 +67,7 @@ jobs:
             './eng/scripts/Get-CoverageDiff.Tests.ps1'
             './eng/scripts/Set-ExtensionVersionVariable.Tests.ps1'
             './eng/scripts/Test-CliReleaseReadiness.Tests.ps1'
+            './eng/scripts/Update-CliVersion.Tests.ps1'
           )
           $config.Run.Exit = $true
           $config.Output.Verbosity = 'Detailed'

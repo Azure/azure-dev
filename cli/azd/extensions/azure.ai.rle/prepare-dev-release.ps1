@@ -25,6 +25,17 @@ param(
 
 $ErrorActionPreference = "Stop"
 $extensionId = "azure.ai.rle"
+$artifactPrefix = "azure-ai-rle"
+# The dev channel ships the same platform matrix as build.ps1 and build.sh.
+# azd x pack archives linux artifacts as .tar.gz and every other platform as .zip.
+$expectedPlatforms = [ordered]@{
+    "windows/amd64" = "$artifactPrefix-windows-amd64.zip"
+    "windows/arm64" = "$artifactPrefix-windows-arm64.zip"
+    "darwin/amd64"  = "$artifactPrefix-darwin-amd64.zip"
+    "darwin/arm64"  = "$artifactPrefix-darwin-arm64.zip"
+    "linux/amd64"   = "$artifactPrefix-linux-amd64.tar.gz"
+    "linux/arm64"   = "$artifactPrefix-linux-arm64.tar.gz"
+}
 $versionPattern = "^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$"
 $versionFilePath = Join-Path $PSScriptRoot "version.txt"
 $manifestPath = Join-Path $PSScriptRoot "extension.yaml"
@@ -76,9 +87,11 @@ if ($VersionBump) {
 
     $Version = "$major.$minor.$patch$suffix"
     Set-Content -LiteralPath $versionFilePath -Value $Version -Encoding utf8NoBOM
-    (Get-Content -LiteralPath $manifestPath -Raw) `
-        -replace "(?m)^version:\s*\S+\s*$", "version: $Version" |
-        Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
+    # Get-Content -Raw keeps the file's trailing newline and Set-Content adds one of
+    # its own, so trim before writing to stop blank lines accruing at every bump.
+    $manifestContent = (Get-Content -LiteralPath $manifestPath -Raw) `
+        -replace "(?m)^version:\s*\S+\s*$", "version: $Version"
+    Set-Content -LiteralPath $manifestPath -Value $manifestContent.TrimEnd() -Encoding utf8NoBOM
 
     Write-Host "Version: $currentVersion -> $Version"
     $manifestVersion = $Version
@@ -88,11 +101,8 @@ if ($Version -notmatch $versionPattern) {
     throw "Version '$Version' is not a valid semantic version."
 }
 
-if (-not [Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
-        [Runtime.InteropServices.OSPlatform]::Windows
-    ) -or [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne
-        [Runtime.InteropServices.Architecture]::X64) {
-    throw "This development release script currently supports only windows/amd64."
+if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
+    throw "Go is required to cross-compile the RLE extension for every supported platform."
 }
 
 if ($manifestVersion -ne $Version) {
@@ -113,7 +123,7 @@ New-Item -ItemType Directory -Path $resolvedBuildDirectory | Out-Null
 
 Push-Location $PSScriptRoot
 try {
-    azd x build --skip-install
+    azd x build --all --skip-install
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to build RLE extension artifacts."
     }
@@ -127,8 +137,15 @@ try {
         Get-ChildItem -LiteralPath $resolvedOutputDirectory -File |
             Where-Object { $_.Name -match "\.(zip|tar\.gz)$" }
     )
-    if ($artifacts.Count -ne 1 -or $artifacts[0].Name -ne "azure-ai-rle-windows-amd64.zip") {
-        throw "Expected only azure-ai-rle-windows-amd64.zip."
+    $artifactNames = @($artifacts | ForEach-Object { $_.Name } | Sort-Object)
+    $expectedArtifactNames = @($expectedPlatforms.Values | Sort-Object)
+    $missingArtifacts = @($expectedArtifactNames | Where-Object { $artifactNames -notcontains $_ })
+    if ($missingArtifacts.Count -gt 0) {
+        throw "Missing packaged artifacts: $($missingArtifacts -join ', ')."
+    }
+    $unexpectedArtifacts = @($artifactNames | Where-Object { $expectedArtifactNames -notcontains $_ })
+    if ($unexpectedArtifacts.Count -gt 0) {
+        throw "Unexpected packaged artifacts: $($unexpectedArtifacts -join ', ')."
     }
 
     $resolvedRegistryPath = [IO.Path]::GetFullPath($RegistryPath)
@@ -154,7 +171,10 @@ try {
         }
     }
 
-    $artifactPattern = Join-Path $resolvedOutputDirectory "*.zip"
+    $artifactPattern = @(
+        (Join-Path $resolvedOutputDirectory "*.zip"),
+        (Join-Path $resolvedOutputDirectory "*.tar.gz")
+    ) -join ","
 
     azd x publish `
         --registry $resolvedRegistryPath `
@@ -218,8 +238,15 @@ if ($artifactPath.StartsWith("../")) {
 
 $artifactBaseUrl = "https://raw.githubusercontent.com/$Repository/$RepositoryBranch/$artifactPath"
 $artifactProperties = @($versionEntry[0].artifacts.PSObject.Properties)
-if ($artifactProperties.Count -ne 1 -or $artifactProperties[0].Name -ne "windows/amd64") {
-    throw "Expected only the windows/amd64 platform entry in the registry."
+$publishedPlatforms = @($artifactProperties | ForEach-Object { $_.Name } | Sort-Object)
+$expectedPlatformNames = @($expectedPlatforms.Keys | Sort-Object)
+$missingPlatforms = @($expectedPlatformNames | Where-Object { $publishedPlatforms -notcontains $_ })
+if ($missingPlatforms.Count -gt 0) {
+    throw "Registry is missing platform entries: $($missingPlatforms -join ', ')."
+}
+$unexpectedPlatforms = @($publishedPlatforms | Where-Object { $expectedPlatformNames -notcontains $_ })
+if ($unexpectedPlatforms.Count -gt 0) {
+    throw "Registry has unexpected platform entries: $($unexpectedPlatforms -join ', ')."
 }
 
 foreach ($artifactProperty in $artifactProperties) {

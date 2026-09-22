@@ -557,9 +557,12 @@ increment:
 
 The script preserves the existing prerelease suffix. For example,
 `0.8.8-preview` becomes `0.8.9-preview` with `-VersionBump patch`. It updates
-`version.txt` and `extension.yaml`, builds and packages the extension, writes the
-artifact under `artifacts\rle-dev\<version>`, and updates
-`registry.rle-dev.json` with its checksum and GitHub URL.
+`version.txt` and `extension.yaml`, cross-compiles the extension for every
+supported platform (`windows`, `darwin`, and `linux` on both `amd64` and
+`arm64`), writes those artifacts under `artifacts\rle-dev\<version>`, and
+updates `registry.rle-dev.json` with each artifact's checksum and GitHub URL.
+`azd x pack` archives linux artifacts as `.tar.gz` and every other platform as
+`.zip`. The script runs on any host Go can cross-compile from.
 
 Mark a release as breaking only when users must update before continuing:
 
@@ -568,6 +571,6 @@ Mark a release as breaking only when users must update before continuing:
 ```
 
 Non-breaking is the default; do not pass `-BreakingChanges` for a normal release.
-Review and commit the two version files, generated artifact, and registry change
+Review and commit the two version files, generated artifacts, and registry change
 together. The registry URLs target `main`, so the release becomes installable
 after those files are merged.

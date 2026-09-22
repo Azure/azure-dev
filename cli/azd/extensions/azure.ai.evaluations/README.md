@@ -185,6 +185,30 @@ or replace its configuration. If a generated rubric declares an incompatible
 evaluation level, the handoff warns and uses the built-in default instead; the
 rubric remains in the catalogue.
 
+Simulation run summaries, `run show`, and `run output list` retain the run's
+dataset name and version and distinguish **requested configuration** from
+**observed results**:
+
+- Seed scenarios count the validated dataset rows submitted to the run.
+- Repetitions are the requested conversations per seed, not completed conversations.
+- Maximum turns is a requested ceiling. An omitted ceiling leaves the service
+  default and is not an observed conversation length.
+- Conversation evaluation results use the service's `result_counts`, keeping
+  failed verdicts separate from errored and skipped evaluations.
+
+The CLI has no verified service counters for generated conversations, completed
+conversations, or actual turns. These are shown as **not
+reported**, never calculated by multiplying seeds and repetitions or treating
+evaluation totals as successful generation. Older runs without recorded
+settings also show **not reported** for those settings. Static conversation
+and turn-level runs keep their existing output.
+
+JSON retains the service's run fields, including unrecognized nested fields;
+it does not add estimated conversation or turn counts. Newly submitted
+simulation runs record configuration under `metadata.azd_simulation_*`, with
+`metadata.azd_run_mode` identifying the simulation mode. The JSON handoff from
+`run start --no-wait` is unchanged; read `run show -o json` for the run object.
+
 ### Repeated deploys do not create redundant versions
 
 Before publishing dependencies, `azd ai eval create <name>` validates the selected

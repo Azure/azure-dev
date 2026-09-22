@@ -6,6 +6,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
@@ -269,6 +270,22 @@ func (a *runShowAction) Run() error {
 	}
 
 	out := a.cmd.OutOrStdout()
+	if err := renderRunDetail(out, run); err != nil {
+		return err
+	}
+	if gateOnStatus {
+		if err := runCompleted(run); err != nil {
+			return err
+		}
+	}
+	applyGate(a.cmd, threshold, run)
+	return nil
+}
+
+func renderRunDetail(out io.Writer, run *eval_api.OpenAIEvalRun) error {
+	if isSimulationRun(run) {
+		return renderRun(out, run, nil)
+	}
 	if err := emitDetail(out, []field{
 		{"Run", run.ID},
 		{"Name", run.Name},
@@ -282,12 +299,6 @@ func (a *runShowAction) Run() error {
 		return err
 	}
 	writePortalLink(out, runLink(run.ReportURL, run.PortalURL))
-	if gateOnStatus {
-		if err := runCompleted(run); err != nil {
-			return err
-		}
-	}
-	applyGate(a.cmd, threshold, run)
 	return nil
 }
 

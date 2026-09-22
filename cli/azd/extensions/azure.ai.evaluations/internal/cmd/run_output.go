@@ -832,16 +832,22 @@ func renderResults(
 	failedOnly bool,
 ) error {
 	evalName := runEvalName(run, resolvedEval)
-	fmt.Fprint(w, messages.RunStatusHeading(run.ID, run.Status))
-
-	if c := run.ResultCounts; c != nil {
+	if isSimulationRun(run) {
+		renderRunHeader(w, run)
+		renderSimulationSettings(w, run)
+		renderConversationResults(w, run)
+		fmt.Fprintln(w)
+	} else {
+		fmt.Fprint(w, messages.RunStatusHeading(run.ID, run.Status))
+	}
+	if c := run.ResultCounts; c != nil && !isSimulationRun(run) {
 		fmt.Fprint(w, messages.ItemResultTotals(c.Total, c.Passed, c.Failed, c.Errored, c.Skipped))
 		fmt.Fprint(w, messages.ScoredPassRateLine(c.Passed, c.Passed+c.Failed))
 		fmt.Fprintln(w)
 	}
 
 	if len(run.PerTestingCriteria) > 0 {
-		if c := run.ResultCounts; c != nil && c.Total > 0 {
+		if c := run.ResultCounts; c != nil && c.Total > 0 && !isSimulationRun(run) {
 			fmt.Fprint(w, messages.CriterionResultReconciliation(
 				c.Total, len(run.PerTestingCriteria), c.Total*len(run.PerTestingCriteria)))
 		}

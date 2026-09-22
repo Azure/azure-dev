@@ -211,7 +211,7 @@ flowchart LR
   - Validation: `ext.validation.*`
   - Auth: `ext.auth.*`
   - Dependency: `ext.dependency.*`
-- Extension lifecycle events: `ext.install`, `ext.update`, `ext.promote`
+- Extension lifecycle events: `ext.install`, `ext.update`, `ext.uninstall`, `ext.promote`
 - Extensions published to the official registry can report **usage events** via
   `TelemetryService.ReportUsage` after going through a privacy review. Each
   event becomes an `ext.usage` span sharing the command's trace, carrying

@@ -53,24 +53,21 @@ func TestCatalogueContext_StopsWithItsParent(t *testing.T) {
 // nothing", and init carried on until an unrelated step failed -- so a Ctrl-C
 // was reported as "no azd project".
 func TestInitStopsWhenTheReaderInterruptsDuringTheCatalogueLookup(t *testing.T) {
-	t.Setenv("AZD_SERVER", "")
+	t.Parallel()
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cmd := &cobra.Command{Use: "init"}
 	cmd.SetContext(ctx)
 
-	// The catalogue answers nothing, which is exactly what an interrupted
-	// lookup also does. What separates them is the command's own context.
-	restore := knownBuiltinEvaluators
-	knownBuiltinEvaluators = func(context.Context) []string {
-		cancel()
-		return nil
-	}
-	t.Cleanup(func() { knownBuiltinEvaluators = restore })
-
 	action := &initAction{
 		cmd:   cmd,
 		flags: &initFlags{evaluators: []string{"builtin.coherence"}},
+		// Answers nothing, which is exactly what an interrupted lookup also
+		// does. What separates them is the command's own context.
+		knownBuiltins: func(context.Context) []string {
+			cancel()
+			return nil
+		},
 	}
 
 	err := action.Run()
@@ -106,7 +103,7 @@ func TestInitRunChecksItsContextAfterTheCatalogueLookup(t *testing.T) {
 	ast.Inspect(body, func(n ast.Node) bool {
 		if id, ok := n.(*ast.Ident); ok {
 			switch id.Name {
-			case "knownBuiltinEvaluators":
+			case "builtinCatalogue":
 				asks = true
 			case "Err":
 				checks = true

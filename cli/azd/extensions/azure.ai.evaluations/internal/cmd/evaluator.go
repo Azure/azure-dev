@@ -261,6 +261,11 @@ func ensureDefinitionType(definition json.RawMessage) (json.RawMessage, error) {
 func withCatalogMetadata(body json.RawMessage, decl project.EvaluatorDecl) (json.RawMessage, error) {
 	var doc map[string]json.RawMessage
 	if err := json.Unmarshal(body, &doc); err != nil {
+		// `[]` and `"str"` parse; they are just not objects. Reporting them as
+		// unparseable sends the author looking for a syntax error there isn't.
+		if json.Valid(body) {
+			return nil, messages.DefinitionNotJSONObject(err)
+		}
 		return nil, messages.NotValidJSON(err)
 	}
 	if doc == nil {

@@ -24,7 +24,7 @@ import (
 //
 // A hardcoded list drifts from the service's full catalogue, which is why this
 // is deliberately the offered set rather than a copy of it: anything outside
-// these four is still reachable with --evaluator, and knownBuiltinEvaluators is
+// these four is still reachable with --evaluator, and the catalogue lookup is
 // what checks such a reference when the project can be reached.
 var builtinEvaluators = []string{
 	evalcore.BuiltinPrefix + "task_completion",
@@ -67,14 +67,6 @@ func hasBuiltinRef(refs []string) bool {
 	}
 	return false
 }
-
-// knownBuiltinEvaluators asks the project which built-in evaluators it offers.
-//
-// A var so a test can answer for the project. The lookup builds its own
-// context and client, so there is no seam to inject one through, and the
-// behavior worth pinning is what `init` does with the answer -- not that the
-// listing can be read, which its own tests already cover.
-var knownBuiltinEvaluators = readBuiltinEvaluatorCatalogue
 
 // readBuiltinEvaluatorCatalogue asks the project which built-in evaluators it
 // offers.

@@ -15,35 +15,34 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// answeringCatalogue makes the project answer with these built-ins for the
-// duration of one test, and records whether it was asked at all.
-func answeringCatalogue(t *testing.T, offered ...string) *int {
-	t.Helper()
+// answeringCatalogue makes the project answer with these built-ins, and
+// records whether it was asked at all.
+func answeringCatalogue(offered ...string) (func(context.Context) []string, *int) {
 	asked := 0
-	original := knownBuiltinEvaluators
-	knownBuiltinEvaluators = func(context.Context) []string {
+	return func(context.Context) []string {
 		asked++
 		return offered
-	}
-	t.Cleanup(func() { knownBuiltinEvaluators = original })
-	return &asked
+	}, &asked
 }
 
 // initIn builds the action `azd ai eval init` runs, scaffolding into dir.
-func initIn(t *testing.T, dir string, evaluators ...string) (*initAction, *bytes.Buffer) {
+func initIn(
+	t *testing.T, dir string, catalogue func(context.Context) []string, evaluators ...string,
+) (*initAction, *bytes.Buffer) {
 	t.Helper()
 
 	out := &bytes.Buffer{}
 	cmd := &cobra.Command{Use: "init"}
 	cmd.SetOut(out)
 	cmd.SetErr(out)
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	// The flags Run() reads off the command rather than the struct.
 	cmd.Flags().Int("max-traces", 0, "")
 	cmd.Flags().Bool("no-prompt", true, "")
 
 	return &initAction{
-		cmd: cmd,
+		cmd:           cmd,
+		knownBuiltins: catalogue,
 		flags: &initFlags{
 			evalName:   "quality",
 			target:     "support-agent",
@@ -74,10 +73,12 @@ func scaffoldedAnything(t *testing.T, dir string) bool {
 // green if the block that wires them together is deleted -- which is exactly
 // how the defect would come back.
 func TestInitRefusesAnUnknownBuiltinBeforeWritingAnything(t *testing.T) {
-	asked := answeringCatalogue(t, "builtin.coherence", "builtin.groundedness")
+	t.Parallel()
+
+	catalogue, asked := answeringCatalogue("builtin.coherence", "builtin.groundedness")
 
 	dir := filepath.Join(t.TempDir(), "evals")
-	action, _ := initIn(t, dir, "builtin.does_not_exist")
+	action, _ := initIn(t, dir, catalogue, "builtin.does_not_exist")
 
 	err := action.Run()
 
@@ -95,10 +96,12 @@ func TestInitRefusesAnUnknownBuiltinBeforeWritingAnything(t *testing.T) {
 // reaches the check and still passes it, so the refusal above is a verdict
 // rather than init failing on every builtin.
 func TestInitAcceptsABuiltinTheCatalogueOffers(t *testing.T) {
-	asked := answeringCatalogue(t, "builtin.coherence", "builtin.groundedness")
+	t.Parallel()
+
+	catalogue, asked := answeringCatalogue("builtin.coherence", "builtin.groundedness")
 
 	dir := filepath.Join(t.TempDir(), "evals")
-	action, _ := initIn(t, dir, "builtin.coherence")
+	action, _ := initIn(t, dir, catalogue, "builtin.coherence")
 
 	// The scaffold itself needs an azd project, which this test has no way to
 	// supply, so the assertion is that it got past the catalogue -- the
@@ -116,15 +119,19 @@ func TestInitAcceptsABuiltinTheCatalogueOffers(t *testing.T) {
 // make it when there is nothing for the catalogue to answer about. This is the
 // orchestration half of the gate; hasBuiltinRef's own tests cover the predicate.
 func TestInitDoesNotAskTheCatalogueWithoutABuiltinReference(t *testing.T) {
+	t.Parallel()
+
 	for _, name := range []string{"no --evaluator at all", "only custom references"} {
 		t.Run(name, func(t *testing.T) {
-			asked := answeringCatalogue(t, "builtin.coherence")
+			t.Parallel()
+
+			catalogue, asked := answeringCatalogue("builtin.coherence")
 
 			var refs []string
 			if name == "only custom references" {
 				refs = []string{"support-quality", "tone-check"}
 			}
-			action, _ := initIn(t, filepath.Join(t.TempDir(), "evals"), refs...)
+			action, _ := initIn(t, filepath.Join(t.TempDir(), "evals"), catalogue, refs...)
 			_ = action.Run()
 
 			assert.Zero(t, *asked,

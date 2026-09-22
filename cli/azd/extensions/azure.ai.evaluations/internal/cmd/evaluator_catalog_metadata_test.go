@@ -185,3 +185,32 @@ func TestWithCatalogMetadata_RefusesABodyItCannotRead(t *testing.T) {
 		})
 	}
 }
+
+// `[]` and `"str"` parse; they are just not objects. Reporting them as
+// unparseable sends the author looking for a syntax error that is not there.
+func TestWithCatalogMetadata_SeparatesBadSyntaxFromTheWrongShape(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "an array", raw: `["an","array"]`, want: "not a JSON object"},
+		{name: "a bare string", raw: `"just a string"`, want: "not a JSON object"},
+		{name: "a number", raw: `7`, want: "not a JSON object"},
+		{name: "genuinely unparseable", raw: `{"definition":`, want: "not valid JSON"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := withCatalogMetadata(json.RawMessage(tt.raw),
+				project.EvaluatorDecl{DisplayName: "quality"})
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
+}

@@ -107,11 +107,11 @@ func TestRefuseUnknownBuiltins_ChecksEveryReference(t *testing.T) {
 
 // With no azd server to reach, the listing cannot happen and the caller has to
 // get the offline answer rather than an error or a hang.
-func TestKnownBuiltinEvaluators_UnreachableProjectKnowsNothing(t *testing.T) {
+func TestReadBuiltinEvaluatorCatalogue_UnreachableProjectKnowsNothing(t *testing.T) {
 	t.Setenv("AZD_SERVER", "")
 
 	start := time.Now()
-	known := knownBuiltinEvaluators(t.Context())
+	known := readBuiltinEvaluatorCatalogue(t.Context())
 
 	assert.Empty(t, known, "nothing is known, so nothing can be refused")
 	assert.Less(t, time.Since(start), builtinCatalogueTimeout,
@@ -119,11 +119,11 @@ func TestKnownBuiltinEvaluators_UnreachableProjectKnowsNothing(t *testing.T) {
 }
 
 // A caller whose context is already done must not be left waiting either.
-func TestKnownBuiltinEvaluators_CancelledContextKnowsNothing(t *testing.T) {
+func TestReadBuiltinEvaluatorCatalogue_CancelledContextKnowsNothing(t *testing.T) {
 	t.Setenv("AZD_SERVER", "")
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	assert.Empty(t, knownBuiltinEvaluators(ctx))
+	assert.Empty(t, readBuiltinEvaluatorCatalogue(ctx))
 }

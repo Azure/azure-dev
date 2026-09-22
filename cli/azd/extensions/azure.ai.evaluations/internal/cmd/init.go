@@ -63,6 +63,18 @@ type initFlags struct {
 type initAction struct {
 	cmd   *cobra.Command
 	flags *initFlags
+	// knownBuiltins answers which built-in evaluators the project offers. Held
+	// per action rather than in a package variable so a test that substitutes
+	// it shares nothing with a test running beside it.
+	knownBuiltins func(context.Context) []string
+}
+
+// builtinCatalogue is the lookup a builtin. reference is checked against.
+func (a *initAction) builtinCatalogue() func(context.Context) []string {
+	if a.knownBuiltins != nil {
+		return a.knownBuiltins
+	}
+	return readBuiltinEvaluatorCatalogue
 }
 
 func newInitCommand() *cobra.Command {
@@ -142,7 +154,7 @@ func (a *initAction) Run() error {
 	// projects answer nothing and leave the reference as written, so this adds a
 	// check offline rather than a requirement.
 	if hasBuiltinRef(a.flags.evaluators) {
-		known := knownBuiltinEvaluators(a.cmd.Context())
+		known := a.builtinCatalogue()(a.cmd.Context())
 		// The lookup's own five-second bound is best effort, but the command's
 		// context being done is the reader interrupting, and that is not the
 		// catalogue being quiet. Collapsing the two carried on to fail several

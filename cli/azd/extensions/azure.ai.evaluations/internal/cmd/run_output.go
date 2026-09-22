@@ -467,12 +467,6 @@ func resolveEvalID(cmd *cobra.Command, ec *evalContext, groupName string) (strin
 	return ref.ID, nil
 }
 
-// resolveEvalIDFn is the resolution the wrapper below wraps. A var because
-// reaching a closed picker for real needs a project, a configuration and a
-// terminal, and the behavior worth pinning is what the wrapper does with the
-// answer.
-var resolveEvalIDFn = resolveEvalID
-
 // evalIDForRunCommand resolves the eval a run command acts on and reports a
 // closed picker as the answer it is.
 //
@@ -485,7 +479,17 @@ var resolveEvalIDFn = resolveEvalID
 // The bool reports whether to carry on. A cancelled selection has already been
 // reported to the reader and leaves the command nothing to do.
 func evalIDForRunCommand(cmd *cobra.Command, ec *evalContext, groupName string) (string, bool, error) {
-	evalID, err := resolveEvalIDFn(cmd, ec, groupName)
+	evalID, err := resolveEvalID(cmd, ec, groupName)
+	return answeredEvalID(cmd, evalID, err)
+}
+
+// answeredEvalID turns a resolution into what a run command needs, and is where
+// the closed picker stops being an error.
+//
+// Separate from the resolution because reaching a closed picker for real needs
+// a project, a configuration and a terminal; this half needs none of them, so
+// it is the half a test can drive.
+func answeredEvalID(cmd *cobra.Command, evalID string, err error) (string, bool, error) {
 	if err != nil {
 		if isEvalSelectionCancelled(err) {
 			reportCancelledSelection(cmd)

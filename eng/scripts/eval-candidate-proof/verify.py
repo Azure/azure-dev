@@ -285,11 +285,18 @@ class Proof:
         require(before == (config.read_bytes(), (project / "azure.yaml").read_bytes()),
                 "Duplicate init changed authored configuration")
 
-        self.run("author conversation eval JSON", base + [
+        conversation_base = (
+            ["ai", "eval", "init", "--judge-model", "ci-judge"]
+            if self.pin["conversationModes"] else base
+        )
+        info = self.run("author conversation eval JSON", conversation_base + [
             "--name", "ci-conversation", "--source", "dataset", "--dataset", str(conversation),
             "--evaluation-level", "conversation", "--evaluator", "builtin.task_completion",
             "--output", "json",
         ], project, json_output=True)
+        if self.pin["conversationModes"]:
+            require(info["conversationMode"] == "static" and info["simulation"] is None
+                    and info["target"] == "", "Unattended conversations must default to static")
         self.run("author trace eval JSON", base + [
             "--name", "ci-trace", "--source", "traces", "--trace-days", "7",
             "--max-traces", "2", "--evaluator", "builtin.task_adherence", "--output", "json",
@@ -352,6 +359,101 @@ class Proof:
             sanitize((project / "azure.yaml").read_text(encoding="utf-8"), self.root),
             encoding="utf-8",
         )
+        if self.pin["conversationModes"]:
+            self.exercise_conversation_modes(project_definition)
+
+    def exercise_conversation_modes(self, project_definition):
+        for name, flags, expected in (
+            ("default", [], {"model": "ci-simulator", "num_conversations": 1}),
+            ("minimum", ["--num-conversations", "1", "--max-turns", "1"],
+             {"model": "ci-simulator", "num_conversations": 1, "max_turns": 1}),
+            ("maximum", ["--num-conversations", "5", "--max-turns", "20"],
+             {"model": "ci-simulator", "num_conversations": 5, "max_turns": 20}),
+        ):
+            project = self.root / f"simulation-{name}"
+            project.mkdir()
+            (project / "azure.yaml").write_text(project_definition, encoding="utf-8")
+            seeds = project / "seeds.jsonl"
+            seeds.write_text('{"test_case_description":"Ask for help finding an order."}\n',
+                             encoding="utf-8")
+            info = self.run(f"author simulation {name}", [
+                "ai", "eval", "init", "--name", f"ci-simulation-{name}",
+                "--conversation-mode", "simulation", "--target", "ci-agent",
+                "--dataset", str(seeds), "--simulation-model", "ci-simulator",
+                "--judge-model", "ci-judge", "--evaluator", "builtin.task_completion",
+                *flags, "--output", "json",
+            ], project, json_output=True)
+            require(
+                info["conversationMode"] == "simulation"
+                and info["evaluationLevel"] == "conversation" and info["source"] == "dataset"
+                and info["simulation"] == expected and info["judgeModel"] == "ci-judge"
+                and info["target"] == "ci-agent",
+                f"Simulation {name} did not preserve independent models and numeric bounds",
+            )
+            config = project / "evals" / "azure.eval.yaml"
+            text = config.read_text(encoding="utf-8")
+            for expected_text in ("simulation:", "target:", "name: ci-agent",
+                                  "model: ci-simulator", "model: ci-judge"):
+                require(expected_text in text, f"Simulation config missing {expected_text}")
+            if name == "default":
+                require("max_turns:" not in text, "Omitted max-turns must preserve the service default")
+            else:
+                require(f"max_turns: {expected['max_turns']}" in text, "Wrong authored turn limit")
+            self.output.joinpath(f"authored-simulation-{name}.yaml").write_text(
+                sanitize(text, self.root), encoding="utf-8")
+
+        project = self.root / "static-conversation"
+        project.mkdir()
+        (project / "azure.yaml").write_text(project_definition, encoding="utf-8")
+        transcript = project / "transcript.jsonl"
+        transcript.write_text(
+            '{"messages":[{"role":"user","content":"Hello"},'
+            '{"role":"assistant","content":"Hello!"}]}\n', encoding="utf-8")
+        info = self.run("author explicit static conversation", [
+            "ai", "eval", "init", "--name", "ci-static", "--conversation-mode", "static",
+            "--dataset", str(transcript), "--judge-model", "ci-judge",
+            "--evaluator", "builtin.task_completion", "--output", "json",
+        ], project, json_output=True)
+        require(info["target"] == "" and info["simulation"] is None
+                and info["conversationMode"] == "static"
+                and info["evaluationLevel"] == "conversation", "Static mode selected an agent")
+        config = project / "evals" / "azure.eval.yaml"
+        text = config.read_text(encoding="utf-8")
+        require("target:" not in text and "simulation:" not in text,
+                "Static scoring must write neither target nor simulation")
+        self.output.joinpath("authored-static.yaml").write_text(
+            sanitize(text, self.root), encoding="utf-8")
+        before = (config.read_bytes(), (project / "azure.yaml").read_bytes())
+        invalid = [
+            ("unknown conversation mode", ["--conversation-mode", "invalid"], "static.*simulation"),
+            ("static target", ["--conversation-mode", "static", "--target", "ci-agent"], "target"),
+            ("static simulator", ["--conversation-mode", "static", "--simulation-model", "ci-sim"],
+             "simulation-model"),
+            ("static count", ["--conversation-mode", "static", "--num-conversations", "1"],
+             "num-conversations"),
+            ("static turns", ["--conversation-mode", "static", "--max-turns", "1"], "max-turns"),
+            ("simulation trace source", ["--conversation-mode", "simulation", "--source", "traces"],
+             "conversation-mode"),
+            ("simulation turn level", ["--conversation-mode", "simulation", "--evaluation-level", "turn"],
+             "conversation-mode"),
+            ("simulation count zero", ["--conversation-mode", "simulation", "--num-conversations", "0"],
+             "num-conversations"),
+            ("simulation count over maximum",
+             ["--conversation-mode", "simulation", "--num-conversations", "6"], "num-conversations"),
+            ("simulation turns zero", ["--conversation-mode", "simulation", "--max-turns", "0"],
+             "max-turns"),
+            ("simulation turns over maximum", ["--conversation-mode", "simulation", "--max-turns", "21"],
+             "max-turns"),
+            ("missing independent simulation model", [
+                "--conversation-mode", "simulation", "--target", "ci-agent", "--dataset", "seeds",
+                "--judge-model", "ci-judge",
+            ], "simulation-model"),
+        ]
+        for name, flags, error in invalid:
+            self.run(name, ["ai", "eval", "init", *flags, "--output", "json"], project,
+                     failure=error, json_output=True)
+            require(before == (config.read_bytes(), (project / "azure.yaml").read_bytes()),
+                    f"{name} changed existing authored configuration")
 
 
 def main():

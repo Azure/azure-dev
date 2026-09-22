@@ -56,12 +56,21 @@ func hasBuiltinRef(refs []string) bool {
 
 // knownBuiltinEvaluators asks the project which built-in evaluators it offers.
 //
+// A var so a test can answer for the project. The lookup builds its own
+// context and client, so there is no seam to inject one through, and the
+// behavior worth pinning is what `init` does with the answer -- not that the
+// listing can be read, which its own tests already cover.
+var knownBuiltinEvaluators = readBuiltinEvaluatorCatalogue
+
+// readBuiltinEvaluatorCatalogue asks the project which built-in evaluators it
+// offers.
+//
 // Best effort, and deliberately so. init's value is that it works with nothing
 // configured, so no azd, no endpoint, no network, an unauthorized project or a
 // listing that fails all answer the same way: nothing is known, and every
 // reference is left as written. Only a catalogue that was actually read is
 // allowed to refuse a name.
-func knownBuiltinEvaluators(ctx context.Context) []string {
+func readBuiltinEvaluatorCatalogue(ctx context.Context) []string {
 	ctx, cancel := context.WithTimeout(ctx, builtinCatalogueTimeout)
 	defer cancel()
 

@@ -116,7 +116,7 @@ func TestStateStoreCommandContract(t *testing.T) {
 			require.NotNil(t, child.RunE)
 			assertOutputFlagOptions(t, child, "json", []string{"json", "table"})
 			require.Nil(t, child.Flags().Lookup("output"), "output is SDK-owned")
-			for _, flag := range []string{"protocol", "version", "session-id", "conversation-id", "create-only"} {
+			for _, flag := range []string{"protocol", "version", "session-id", "conversation-id", "create-only", "before"} {
 				require.Nil(t, child.Flags().Lookup(flag))
 			}
 			require.NotEmpty(t, child.Example)
@@ -125,6 +125,21 @@ func TestStateStoreCommandContract(t *testing.T) {
 	for _, path := range []string{"create", "update", "delete", "items create"} {
 		_, remaining, err := cmd.Find(strings.Fields(path))
 		require.True(t, err != nil || len(remaining) > 0, "out-of-scope command must not resolve: %s", path)
+	}
+}
+
+func TestStateStoreForwardPaginationContract(t *testing.T) {
+	for _, operation := range []string{"list", "items list"} {
+		t.Run(operation, func(t *testing.T) {
+			cmd := newStateStoreOperationCommand(&azdext.ExtensionContext{}, operation)
+			require.ErrorContains(t, cmd.ParseFlags([]string{"--before", "cursor"}), "unknown flag: --before")
+			require.Contains(t, cmd.Long, "has_more")
+			require.Contains(t, cmd.Long, "last_id")
+			require.Contains(t, cmd.Flags().Lookup("after").Usage, "last_id")
+			require.Contains(t, cmd.Example, operation+" --limit 2 --order asc")
+			require.Contains(t, cmd.Example, `--after "<last_id>"`)
+			require.NotContains(t, cmd.Long+cmd.Example, "--before")
+		})
 	}
 }
 
@@ -168,7 +183,7 @@ func TestStateStoreCommandValidation(t *testing.T) {
 		{"list", []string{"--limit", "0"}, false, "--limit"},
 		{"list", []string{"--limit", "101"}, false, "--limit"},
 		{"list", []string{"--order", "wrong"}, false, "--order"},
-		{"list", []string{"--after", "a", "--before", "b"}, false, "--after"},
+		{"list", []string{"--after", ""}, false, "non-empty"},
 		{"list", []string{"--agent-name", "x", "--agent-endpoint", "x"}, false, "--agent-name"},
 		{"list", []string{"--agent-endpoint", ""}, false, "non-empty"},
 		{"items show", []string{"key", "--store", ""}, false, "non-empty"},
@@ -217,7 +232,7 @@ func TestStateStoreReadValue(t *testing.T) {
 	}
 	_, err := readStateStoreValue(t.Context(), &stateStoreFlags{valueFile: file + ".missing"}, nil)
 	require.ErrorContains(t, err, "could not read")
-	for _, tags := range [][]string{{"missing"}, {"=value"}, {"key=a", "key=b"}} {
+	for _, tags := range [][]string{{""}, {"missing"}, {"=value"}, {"key=a", "key=b"}} {
 		_, err := readStateStoreValue(t.Context(), &stateStoreFlags{value: "{}", tags: tags}, nil)
 		require.Error(t, err)
 	}
@@ -391,8 +406,9 @@ func TestStateStoreTableOutput(t *testing.T) {
 		require.NoError(t, writeStateStoreTable(&writer, result))
 		require.NotEmpty(t, writer.String())
 		if page, ok := result.(*agent_api.StateStorePage[agent_api.StateStoreItem]); ok && page.HasMore {
-			require.Contains(t, writer.String(), "After cursor: next")
-			require.Contains(t, writer.String(), "Before cursor: first")
+			require.Contains(t, writer.String(), `Next page: pass --after "next"`)
+			require.NotContains(t, writer.String(), "--before")
+			require.NotContains(t, writer.String(), "first")
 		}
 		if item, ok := result.(*agent_api.StateStoreItem); ok {
 			require.Contains(t, writer.String(), "9007199254740993")

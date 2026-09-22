@@ -2,7 +2,6 @@ Inspect existing Foundry State Stores and manage JSON object items.
 
 Select a store once, or pass --store on individual item commands. Store selection
 is saved per project endpoint and agent, independently of protocol and version.
-These commands do not create stores or resume, steer, or stop agent work.
 
 Usage
   azd ai agent state-stores [command]

@@ -76,6 +76,7 @@ func TestStateStoreRequests(t *testing.T) {
 				require.Equal(t, "2", req.URL.Query().Get("limit"))
 				require.Equal(t, "asc", req.URL.Query().Get("order"))
 				require.Equal(t, page.After, req.URL.Query().Get("after"))
+				require.False(t, req.URL.Query().Has("before"))
 			}
 			if tt.method == "PUT" {
 				data, err := io.ReadAll(req.Body)
@@ -140,7 +141,7 @@ func TestStateStoreValidation(t *testing.T) {
 		})
 	}
 	for _, options := range []StateStoreListOptions{
-		{Limit: -1}, {Limit: 101}, {Order: "invalid"}, {After: "a", Before: "b"},
+		{Limit: -1}, {Limit: 101}, {Order: "invalid"},
 	} {
 		client, transport := newCaptureClient(200, `{}`)
 		_, err := client.ListStateStores(t.Context(), "a", options)
@@ -153,13 +154,25 @@ func TestStateStoreValidation(t *testing.T) {
 		require.Error(t, err)
 		require.Empty(t, transport.requests)
 	}
-	t.Run("before is opaque", func(t *testing.T) {
-		client, transport := newCaptureClient(200, `{}`)
-		_, err := client.ListStateStores(t.Context(), "a", StateStoreListOptions{Before: "a+/= b"})
-		require.NoError(t, err)
-		require.Equal(t, "a+/= b", transport.requests[0].URL.Query().Get("before"))
-		require.Empty(t, transport.requests[0].URL.Query().Get("limit"))
-	})
+	for _, order := range []string{"asc", "desc"} {
+		t.Run("after cursor unchanged/"+order, func(t *testing.T) {
+			client, transport := newCaptureClient(200,
+				`{"data":[{"id":"ss-resource-id","name":"store/raw ?%"}],"last_id":"store/raw ?%","has_more":true}`)
+			page, err := client.ListStateStores(t.Context(), "a", StateStoreListOptions{Order: order})
+			require.NoError(t, err)
+			require.NotNil(t, page.LastID)
+			require.NotEqual(t, page.Data[0].ID, *page.LastID)
+			_, err = client.ListStateStores(t.Context(), "a", StateStoreListOptions{Order: order, After: *page.LastID})
+			require.NoError(t, err)
+			require.Len(t, transport.requests, 2)
+			require.Empty(t, transport.requests[0].URL.Query().Get("after"))
+			query := transport.requests[1].URL.Query()
+			require.Equal(t, "store/raw ?%", query.Get("after"))
+			require.Equal(t, order, query.Get("order"))
+			require.Empty(t, query.Get("limit"))
+			require.False(t, query.Has("before"))
+		})
+	}
 }
 
 func TestStateStoreErrorsDoNotExposeBodies(t *testing.T) {

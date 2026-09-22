@@ -123,9 +123,6 @@ func stateStoreListQuery(options StateStoreListOptions) (url.Values, error) {
 	if options.Order != "" && options.Order != "asc" && options.Order != "desc" {
 		return nil, fmt.Errorf("order must be asc or desc")
 	}
-	if options.After != "" && options.Before != "" {
-		return nil, fmt.Errorf("after and before cannot be combined")
-	}
 	query := url.Values{}
 	if options.Limit != 0 {
 		query.Set("limit", strconv.Itoa(options.Limit))
@@ -135,9 +132,6 @@ func stateStoreListQuery(options StateStoreListOptions) (url.Values, error) {
 	}
 	if options.After != "" {
 		query.Set("after", options.After)
-	}
-	if options.Before != "" {
-		query.Set("before", options.Before)
 	}
 	return query, nil
 }

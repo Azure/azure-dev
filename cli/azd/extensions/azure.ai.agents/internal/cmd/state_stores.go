@@ -65,8 +65,7 @@ func newStateStoresCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Long: `Inspect existing Foundry State Stores and manage JSON object items.
 
 Select a store once, or pass --store on individual item commands. Store selection
-is saved per project endpoint and agent, independently of protocol and version.
-These commands do not create stores or resume, steer, or stop agent work.`,
+is saved per project endpoint and agent, independently of protocol and version.`,
 		Example: "  azd ai agent state-stores list\n  azd ai agent state-stores select checkpoints/run-42",
 	}
 	for _, operation := range []string{"list", "select", "show"} {
@@ -153,11 +152,16 @@ func newStateStoreCommandWithFactory(
 			"Store name (defaults to the active store; does not change selection)")
 	}
 	if operation == "list" || operation == "items list" {
-		cmd.Flags().IntVar(&flags.page.Limit, "limit", 20, "Page size (1-100)")
+		cmd.Long += `
+
+Returns at most --limit results in the selected --order. If has_more is true,
+pass last_id from the JSON response to --after for the next page. Keep the same
+--order and --limit. Omit --after to start from the beginning.
+
+Pass the returned cursor unchanged; do not use an entry's id or base64url-encode it.`
+		cmd.Flags().IntVar(&flags.page.Limit, "limit", 20, "Maximum results per page (1-100)")
 		cmd.Flags().StringVar(&flags.page.Order, "order", "desc", "Service-defined order: asc or desc")
-		cmd.Flags().StringVar(&flags.page.After, "after", "", "Return the page after this service cursor")
-		cmd.Flags().StringVar(&flags.page.Before, "before", "", "Return the page before this service cursor")
-		cmd.MarkFlagsMutuallyExclusive("after", "before")
+		cmd.Flags().StringVar(&flags.page.After, "after", "", "Continue after last_id from the previous JSON response")
 	}
 	if operation == "items set" {
 		cmd.Long += "\n\nCreates a missing item or replaces its entire value and tags. Omitting --tag clears existing tags."
@@ -183,15 +187,20 @@ func newStateStoreCommandWithFactory(
 func stateStoreCommandHelp(operation string) (string, string, string) {
 	prefix := "  azd ai agent state-stores "
 	switch operation {
-	case "list":
-		return "list", "List one page of existing State Stores.", prefix + "list --output table"
+	case "list", "items list":
+		short := "List one page of existing State Stores."
+		if operation == "items list" {
+			short = "List one page of item keys and metadata, without values."
+		}
+		example := "  # First page\n" + prefix + operation + " --limit 2 --order asc\n\n" +
+			"  # Next page: copy last_id from the response when has_more is true\n" +
+			prefix + operation + " --limit 2 --order asc --after \"<last_id>\""
+		return "list", short, example
 	case "select":
 		return "select [store-name]", "Validate and save the active store, or choose one interactively.",
 			prefix + "select checkpoints/run-42"
 	case "show":
 		return "show [store-name]", "Show the named store or the active store.", prefix + "show"
-	case "items list":
-		return "list", "List one page of item keys and metadata, without values.", prefix + "items list --limit 20"
 	case "items show":
 		return "show <key>", "Show an item's JSON value, tags, and ETag.", prefix + "items show task-123"
 	case "items set":
@@ -206,7 +215,7 @@ func validateStateStoreFlags(cmd *cobra.Command, flags *stateStoreFlags, operati
 	invalid := func(message string) error {
 		return exterrors.Validation(exterrors.CodeInvalidParameter, message, "see command help for valid arguments")
 	}
-	for _, name := range []string{"agent-name", "agent-endpoint", "store", "value-file", "if-match", "after", "before"} {
+	for _, name := range []string{"agent-name", "agent-endpoint", "store", "value-file", "if-match", "after"} {
 		if cmd.Flags().Changed(name) {
 			value, _ := cmd.Flags().GetString(name)
 			if value == "" {
@@ -225,9 +234,6 @@ func validateStateStoreFlags(cmd *cobra.Command, flags *stateStoreFlags, operati
 	}
 	if flags.page.Order != "asc" && flags.page.Order != "desc" {
 		return invalid("--order must be asc or desc")
-	}
-	if flags.page.After != "" && flags.page.Before != "" {
-		return invalid("--after and --before cannot be combined")
 	}
 	if flags.output != "" && flags.output != "json" && flags.output != "table" {
 		return invalid("--output must be json or table")

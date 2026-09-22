@@ -7,10 +7,10 @@ Editing state does not stop, resume, or steer agent work. Coordinate changes wit
 ## Commands
 
 ```text
-azd ai agent state-stores list [--limit <count>] [--order asc|desc] [--after <cursor> | --before <cursor>]
+azd ai agent state-stores list [--limit <count>] [--order asc|desc] [--after <cursor>]
 azd ai agent state-stores select [store-name]
 azd ai agent state-stores show [store-name]
-azd ai agent state-stores items list [--store <name>] [--limit <count>] [--order asc|desc] [--after <cursor> | --before <cursor>]
+azd ai agent state-stores items list [--store <name>] [--limit <count>] [--order asc|desc] [--after <cursor>]
 azd ai agent state-stores items show <key> [--store <name>]
 azd ai agent state-stores items set <key> [--store <name>] (--value <json-object> | --value-file <path|->) [--tag <key=value>]... [--if-match <etag>]
 azd ai agent state-stores items delete <key> [--store <name>] [--if-match <etag>] [--yes]
@@ -68,6 +68,32 @@ Prefer `--value-file <path>` or `--value-file -` for sensitive values, and avoid
 
 JSON is the default; use `--output table` for readable output. Item lists return metadata, not values. Item `show` includes the value, tags, and ETag. Write responses contain service metadata and may omit the value; azd does not fetch it again.
 
-List commands return one page. `--limit` defaults to **20**, with the service-supported range **1–100**. `--order` defaults to **desc**, following service ordering rather than alphabetical names. Pass returned `last_id` to `--after` or `first_id` to `--before`, retaining the same order and limit. Cursors are opaque service IDs, not logical names. JSON includes `data`, `first_id`, `last_id`, and `has_more`; table output provides continuation guidance. There is no automatic traversal or `--all`.
+List commands return at most `--limit` results per page. The default is **20**, with the service-supported range **1–100**. `--order` defaults to **desc**, following service ordering rather than alphabetical names.
+
+Omit `--after` for the first page. When `has_more` is true, pass the response's `last_id` to `--after` to continue, keeping the same order and limit. The cursor entry itself is excluded. `--after` advances through either ascending or descending order; it is not a numeric offset.
+
+Pass `last_id` unchanged. The service currently returns a store name or item key as the cursor, **not** an entry's `id` (`ss_...` or `it_...`). Do not base64url-encode the cursor. JSON preserves `data`, `first_id`, `last_id`, and `has_more`; table output provides the next cursor. The CLI supports forward pagination only, with no automatic traversal or `--all`.
+
+These Bash examples use `jq` to read the cursor. Fetch the first store page and, if available, the next one:
+
+```bash
+PAGE=$(azd ai agent state-stores list --limit 2 --order asc)
+printf '%s\n' "$PAGE"
+if [ "$(printf '%s' "$PAGE" | jq -r '.has_more')" = "true" ]; then
+  CURSOR=$(printf '%s' "$PAGE" | jq -r '.last_id')
+  azd ai agent state-stores list --limit 2 --order asc --after "$CURSOR"
+fi
+```
+
+The same flow lists items in the selected store:
+
+```bash
+PAGE=$(azd ai agent state-stores items list --limit 2 --order asc)
+printf '%s\n' "$PAGE"
+if [ "$(printf '%s' "$PAGE" | jq -r '.has_more')" = "true" ]; then
+  CURSOR=$(printf '%s' "$PAGE" | jq -r '.last_id')
+  azd ai agent state-stores items list --limit 2 --order asc --after "$CURSOR"
+fi
+```
 
 Store creation/update/deletion, create-only item writes, bulk operations, and list-time tag filtering are outside this command set. Tag filtering is deferred because the preview service can reject valid tag keys or return incorrect matches.

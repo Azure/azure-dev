@@ -32,7 +32,8 @@ type StateStoreItem struct {
 	UpdatedAt int64             `json:"updated_at"`
 }
 
-// StateStorePage is a single service page. Cursors are opaque IDs, not encoded names.
+// StateStorePage is a single service page. Pass LastID unchanged to the next list request;
+// the service's cursor is distinct from the resource IDs in Data.
 type StateStorePage[T any] struct {
 	Object  string  `json:"object,omitempty"`
 	Data    []T     `json:"data"`
@@ -43,10 +44,9 @@ type StateStorePage[T any] struct {
 
 // StateStoreListOptions controls a single list request; zero values use service defaults.
 type StateStoreListOptions struct {
-	Limit  int
-	Order  string
-	After  string
-	Before string
+	Limit int
+	Order string
+	After string
 }
 
 // SetStateStoreItemRequest replaces the complete value and tags of an item.

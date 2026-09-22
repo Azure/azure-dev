@@ -28,7 +28,7 @@ func writeStateStoreTable(writer io.Writer, result any) error {
 	var rows []stateStoreTableRow
 	var columns []output.PrettyColumn
 	var hasMore bool
-	var first, last *string
+	var last *string
 	var itemDetail *agent_api.StateStoreItem
 	storeColumns := []output.PrettyColumn{
 		{Column: output.Column{Heading: "NAME", ValueTemplate: "{{.Name}}"}, CardTitle: true, Wrappable: true},
@@ -47,7 +47,7 @@ func writeStateStoreTable(writer io.Writer, result any) error {
 		for _, store := range v.Data {
 			rows = append(rows, stateStoreRow(store))
 		}
-		hasMore, first, last = v.HasMore, v.FirstID, v.LastID
+		hasMore, last = v.HasMore, v.LastID
 	case *agent_api.StateStore:
 		columns, rows = storeColumns, []stateStoreTableRow{stateStoreRow(*v)}
 	case *agent_api.StateStorePage[agent_api.StateStoreItem]:
@@ -55,7 +55,7 @@ func writeStateStoreTable(writer io.Writer, result any) error {
 		for _, item := range v.Data {
 			rows = append(rows, stateStoreItemRow(item))
 		}
-		hasMore, first, last = v.HasMore, v.FirstID, v.LastID
+		hasMore, last = v.HasMore, v.LastID
 	case *agent_api.StateStoreItem:
 		columns = []output.PrettyColumn{itemColumns[0], itemColumns[2]}
 		rows = []stateStoreTableRow{stateStoreItemRow(*v)}
@@ -106,13 +106,8 @@ func writeStateStoreTable(writer io.Writer, result any) error {
 		if _, err := fmt.Fprintln(writer, message); err != nil {
 			return err
 		}
-		if first != nil {
-			if _, err := fmt.Fprintf(writer, "Before cursor: %s (pass with --before)\n", *first); err != nil {
-				return err
-			}
-		}
 		if last != nil {
-			_, err := fmt.Fprintf(writer, "After cursor: %s (pass with --after)\n", *last)
+			_, err := fmt.Fprintf(writer, "Next page: pass --after %q\n", *last)
 			return err
 		}
 	}

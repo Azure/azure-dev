@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -76,6 +77,101 @@ func (s *scriptedBetaEventStream) Recv() (*v1beta.EventMessage, error) {
 		return nil, io.EOF
 	}
 	return msg, nil
+}
+
+func (s *scriptedBetaEventStream) SetHeader(metadata.MD) error {
+	return nil
+}
+
+func (s *scriptedBetaEventStream) SendHeader(metadata.MD) error {
+	return nil
+}
+
+func (s *scriptedBetaEventStream) SetTrailer(metadata.MD) {}
+
+func (s *scriptedBetaEventStream) Context() context.Context {
+	return s.ctx
+}
+
+func (s *scriptedBetaEventStream) SendMsg(any) error {
+	return nil
+}
+
+func (s *scriptedBetaEventStream) RecvMsg(any) error {
+	return nil
+}
+
+func TestBetaEventServiceSubscriptionAcknowledgement(t *testing.T) {
+	tests := []struct {
+		name         string
+		request      *v1beta.EventMessage
+		wantResponse func(*testing.T, *v1beta.EventMessage)
+	}{
+		{
+			name: "success",
+			request: &v1beta.EventMessage{
+				RequestId: "request-success",
+				MessageType: &v1beta.EventMessage_SubscribeProjectEvent{
+					SubscribeProjectEvent: &v1beta.SubscribeProjectEvent{
+						EventNames: []string{"postdeploy"},
+					},
+				},
+			},
+			wantResponse: func(t *testing.T, response *v1beta.EventMessage) {
+				require.Equal(t, "request-success", response.RequestId)
+				require.NotNil(t, response.GetSubscribeProjectEventResponse())
+				require.Nil(t, response.GetError())
+			},
+		},
+		{
+			name: "registration error",
+			request: &v1beta.EventMessage{
+				RequestId: "request-error",
+				MessageType: &v1beta.EventMessage_SubscribeProjectEvent{
+					SubscribeProjectEvent: &v1beta.SubscribeProjectEvent{
+						EventNames: []string{""},
+					},
+				},
+			},
+			wantResponse: func(t *testing.T, response *v1beta.EventMessage) {
+				require.Equal(t, "request-error", response.RequestId)
+				require.Nil(t, response.GetSubscribeProjectEventResponse())
+				require.Contains(t,
+					response.GetError().GetMessage(),
+					"event name at index 0 cannot be empty")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service, _ := createTestEventService()
+			extension := createTestExtension()
+			extension.Capabilities = []extensions.CapabilityType{
+				extensions.LifecycleEventsCapability,
+			}
+			service.extensionManager = testExtensionLookup{extension: extension}
+			streamCtx := extensionClaimsContext(t.Context(), extension.Id)
+			sent := make(chan *v1beta.EventMessage, 1)
+			stream := &scriptedBetaEventStream{
+				ctx:    streamCtx,
+				recvCh: make(chan *v1beta.EventMessage, 1),
+				sendFn: func(msg *v1beta.EventMessage) error {
+					sent <- msg
+					return nil
+				},
+			}
+			done := make(chan error, 1)
+			go func() {
+				done <- (&betaEventService{service: service}).EventStream(stream)
+			}()
+
+			stream.recvCh <- tt.request
+			tt.wantResponse(t, <-sent)
+			close(stream.recvCh)
+			require.NoError(t, <-done)
+		})
+	}
 }
 
 func TestBetaEventServiceProjectHandlerCommitsFollowUp(t *testing.T) {
@@ -387,16 +483,12 @@ func TestBetaEventServicePreviewSDKFollowUpEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	collector := guidance.NewFollowUpCollector()
 	eventCtx := guidance.WithFollowUpCollector(t.Context(), collector)
-	var eventErr error
-	require.Eventually(t, func() bool {
-		eventErr = projectConfig.RaiseEvent(
-			eventCtx,
-			ext.Event("postdeploy"),
-			project.ProjectLifecycleEventArgs{Project: projectConfig},
-		)
-		return eventErr == nil && collector.Text() == "Run azd show"
-	}, 5*time.Second, 10*time.Millisecond)
-	require.NoError(t, eventErr)
+	require.NoError(t, projectConfig.RaiseEvent(
+		eventCtx,
+		ext.Event("postdeploy"),
+		project.ProjectLifecycleEventArgs{Project: projectConfig},
+	))
+	require.Equal(t, "Run azd show", collector.Text())
 
 	cancel()
 	require.NoError(t, <-hostDone)

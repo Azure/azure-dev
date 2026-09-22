@@ -13,6 +13,7 @@ import (
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorchain"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -30,12 +31,13 @@ type EventManager struct {
 }
 
 type previewEventManager struct {
-	extensionId  string
-	client       *AzdClient
-	broker       *grpcbroker.MessageBroker[v1beta.EventMessage]
-	handlers     map[string]PreviewProjectEventHandler
-	brokerLogger *log.Logger
-	mu           sync.Mutex
+	extensionId    string
+	client         *AzdClient
+	broker         *grpcbroker.MessageBroker[v1beta.EventMessage]
+	handlers       map[string]PreviewProjectEventHandler
+	brokerLogger   *log.Logger
+	mu             sync.Mutex
+	registrationMu sync.Mutex
 }
 
 func newPreviewEventManager(
@@ -117,32 +119,51 @@ func (em *previewEventManager) AddProjectEventHandler(
 	eventName string,
 	handler PreviewProjectEventHandler,
 ) error {
+	em.registrationMu.Lock()
+	defer em.registrationMu.Unlock()
+
 	if err := em.ensureStream(ctx); err != nil {
 		return err
 	}
+
 	em.mu.Lock()
-	defer em.mu.Unlock()
-	if em.broker == nil {
+	broker := em.broker
+	if broker == nil {
+		em.mu.Unlock()
 		return fmt.Errorf("preview event manager is closed")
 	}
 
 	// Register before sending so the broker sees the handler first.
 	previousHandler, hadPreviousHandler := em.handlers[eventName]
 	em.handlers[eventName] = handler
-	if err := em.broker.Send(ctx, &v1beta.EventMessage{
+	em.mu.Unlock()
+
+	msg := &v1beta.EventMessage{
+		RequestId: uuid.NewString(),
 		MessageType: &v1beta.EventMessage_SubscribeProjectEvent{
 			SubscribeProjectEvent: &v1beta.SubscribeProjectEvent{
 				EventNames: []string{eventName},
 			},
 		},
-	}); err != nil {
+	}
+	resp, err := broker.SendAndWait(ctx, msg)
+	if err == nil && resp.GetSubscribeProjectEventResponse() == nil {
+		err = fmt.Errorf(
+			"expected SubscribeProjectEventResponse, got %T",
+			resp.GetMessageType(),
+		)
+	}
+	if err != nil {
+		em.mu.Lock()
 		if hadPreviousHandler {
 			em.handlers[eventName] = previousHandler
 		} else {
 			delete(em.handlers, eventName)
 		}
-		return err
+		em.mu.Unlock()
+		return fmt.Errorf("preview event subscription failed: %w", err)
 	}
+
 	return nil
 }
 
@@ -171,7 +192,7 @@ func (em *previewEventManager) onInvokeProjectHandler(
 	var handlerError *v1beta.ExtensionError
 	if err := handler(ctx, args); err != nil {
 		handlerStatus = "failed"
-		handlerError = wrapPreviewError(err)
+		handlerError = wrapBetaError(err)
 	}
 	return &v1beta.EventMessage{
 		MessageType: &v1beta.EventMessage_ProjectHandlerStatus{
@@ -192,7 +213,7 @@ func eventNameOrEmpty(req *v1beta.InvokeProjectHandler) string {
 	return req.EventName
 }
 
-func wrapPreviewError(err error) *v1beta.ExtensionError {
+func wrapBetaError(err error) *v1beta.ExtensionError {
 	if err == nil {
 		return nil
 	}

@@ -211,6 +211,16 @@ func (r *betaEventStreamRecorder) EventStream(
 			return err
 		}
 		r.subscriptions <- message
+		if message.GetSubscribeProjectEvent() != nil {
+			if err := stream.Send(&v1beta.EventMessage{
+				RequestId: message.RequestId,
+				MessageType: &v1beta.EventMessage_SubscribeProjectEventResponse{
+					SubscribeProjectEventResponse: &v1beta.SubscribeProjectEventResponse{},
+				},
+			}); err != nil {
+				return err
+			}
+		}
 	}
 }
 

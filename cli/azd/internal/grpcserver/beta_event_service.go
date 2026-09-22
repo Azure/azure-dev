@@ -59,7 +59,7 @@ func (s *betaEventService) EventStream(
 		ctx context.Context,
 		msg *v1beta.SubscribeProjectEvent,
 	) (*v1beta.EventMessage, error) {
-		return nil, s.subscribeProject(ctx, extension, msg, broker)
+		return s.subscribeProject(ctx, extension, msg, broker)
 	}); err != nil {
 		return err
 	}
@@ -67,7 +67,7 @@ func (s *betaEventService) EventStream(
 		ctx context.Context,
 		msg *v1beta.SubscribeServiceEvent,
 	) (*v1beta.EventMessage, error) {
-		return nil, s.subscribeService(ctx, extension, msg, broker)
+		return s.subscribeService(ctx, extension, msg, broker)
 	}); err != nil {
 		return err
 	}
@@ -82,24 +82,32 @@ func (s *betaEventService) subscribeProject(
 	extension *extensions.Extension,
 	msg *v1beta.SubscribeProjectEvent,
 	broker *grpcbroker.MessageBroker[v1beta.EventMessage],
-) error {
+) (*v1beta.EventMessage, error) {
 	if msg == nil || len(msg.EventNames) == 0 {
-		return status.Error(codes.InvalidArgument, "event names are required")
+		return nil, status.Error(codes.InvalidArgument, "event names are required")
 	}
 	projectConfig, err := s.service.lazyProject.GetValue()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for i, eventName := range msg.EventNames {
 		if eventName == "" {
-			return status.Errorf(codes.InvalidArgument, "event name at index %d cannot be empty", i)
+			return nil, status.Errorf(
+				codes.InvalidArgument,
+				"event name at index %d cannot be empty",
+				i,
+			)
 		}
 		handler := s.createProjectHandler(ctx, extension, eventName, broker)
 		if err := projectConfig.AddHandler(ctx, ext.Event(eventName), handler); err != nil {
-			return fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
+			return nil, fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
 		}
 	}
-	return nil
+	return &v1beta.EventMessage{
+		MessageType: &v1beta.EventMessage_SubscribeProjectEventResponse{
+			SubscribeProjectEventResponse: &v1beta.SubscribeProjectEventResponse{},
+		},
+	}, nil
 }
 
 func (s *betaEventService) createProjectHandler(
@@ -196,17 +204,21 @@ func (s *betaEventService) subscribeService(
 	extension *extensions.Extension,
 	msg *v1beta.SubscribeServiceEvent,
 	broker *grpcbroker.MessageBroker[v1beta.EventMessage],
-) error {
+) (*v1beta.EventMessage, error) {
 	if msg == nil || len(msg.EventNames) == 0 {
-		return status.Error(codes.InvalidArgument, "event names are required")
+		return nil, status.Error(codes.InvalidArgument, "event names are required")
 	}
 	projectConfig, err := s.service.lazyProject.GetValue()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for i, eventName := range msg.EventNames {
 		if eventName == "" {
-			return status.Errorf(codes.InvalidArgument, "event name at index %d cannot be empty", i)
+			return nil, status.Errorf(
+				codes.InvalidArgument,
+				"event name at index %d cannot be empty",
+				i,
+			)
 		}
 		for _, serviceConfig := range projectConfig.ServiceConfigs() {
 			if msg.Language != "" && string(serviceConfig.Language) != msg.Language {
@@ -217,11 +229,15 @@ func (s *betaEventService) subscribeService(
 			}
 			handler := s.createServiceHandler(ctx, serviceConfig, extension, eventName, broker)
 			if err := serviceConfig.AddHandler(ctx, ext.Event(eventName), handler); err != nil {
-				return fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
+				return nil, fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
 			}
 		}
 	}
-	return nil
+	return &v1beta.EventMessage{
+		MessageType: &v1beta.EventMessage_SubscribeServiceEventResponse{
+			SubscribeServiceEventResponse: &v1beta.SubscribeServiceEventResponse{},
+		},
+	}, nil
 }
 
 func (s *betaEventService) createServiceHandler(

@@ -267,6 +267,12 @@ Within one command, lifecycle events use the stable order restore, build,
 package, provision, publish, deploy. Concurrent layers of the same event
 resolve by stable layer identity, not completion time.
 
+Preview event registrations are acknowledged by the host only after the
+corresponding lifecycle handlers are installed. `ExtensionHost.Run` does not
+call `Ready` until all registrations have been acknowledged; registration
+errors are returned instead of allowing the extension to start partially
+initialized.
+
 ### NewMetadataCommand
 
 ```go

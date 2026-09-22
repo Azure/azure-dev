@@ -25,7 +25,14 @@ message EventMessage {
     SubscribeServiceEvent subscribe_service_event = 4;
     InvokeServiceHandler invoke_service_handler = 5;
     ServiceHandlerStatus service_handler_status = 6;
+    SubscribeProjectEventResponse subscribe_project_event_response = 7;
+    SubscribeServiceEventResponse subscribe_service_event_response = 8;
   }
+
+  // Correlates request and response messages on the event stream.
+  string request_id = 9;
+  // Structured error returned while handling a request.
+  ExtensionError error = 10;
 }
 
 // Client subscribes to project-related events
@@ -34,6 +41,9 @@ message SubscribeProjectEvent {
   repeated string event_names = 1;
 }
 
+// Server confirms that project event handlers were registered.
+message SubscribeProjectEventResponse {}
+
 // Client subscribes to service-related events
 message SubscribeServiceEvent {
   // List of event names to subscribe to.
@@ -41,6 +51,9 @@ message SubscribeServiceEvent {
   string language = 2;
   string host = 3;
 }
+
+// Server confirms that service event handlers were registered.
+message SubscribeServiceEventResponse {}
 
 // Server invokes the project event handler
 message InvokeProjectHandler {

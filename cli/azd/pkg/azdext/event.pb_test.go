@@ -4,6 +4,7 @@
 package azdext
 
 import (
+	"errors"
 	"testing"
 
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
@@ -314,4 +315,20 @@ func TestBetaEventMessageEnvelope_GetRequestId(t *testing.T) {
 			require.Equal(t, tt.want, env.GetRequestId(ctx, tt.msg))
 		})
 	}
+}
+
+func TestBetaEventMessageEnvelope_RequestResponseFields(t *testing.T) {
+	env := NewBetaEventMessageEnvelope()
+	msg := &v1beta.EventMessage{
+		MessageType: &v1beta.EventMessage_SubscribeProjectEventResponse{
+			SubscribeProjectEventResponse: &v1beta.SubscribeProjectEventResponse{},
+		},
+	}
+
+	env.SetRequestId(t.Context(), msg, "request-1")
+	require.Equal(t, "request-1", env.GetRequestId(t.Context(), msg))
+	require.NotNil(t, env.GetInnerMessage(msg))
+
+	env.SetError(msg, errors.New("subscription failed"))
+	require.ErrorContains(t, env.GetError(msg), "subscription failed")
 }

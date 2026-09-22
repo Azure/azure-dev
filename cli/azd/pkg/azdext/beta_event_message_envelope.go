@@ -10,6 +10,7 @@ import (
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
+	"google.golang.org/protobuf/proto"
 )
 
 type betaEventMessageEnvelope struct{}
@@ -28,6 +29,10 @@ func NewBetaEventMessageEnvelope() grpcbroker.MessageEnvelope[v1beta.EventMessag
 func (e *betaEventMessageEnvelope) GetRequestId(
 	ctx context.Context, msg *v1beta.EventMessage,
 ) string {
+	if msg != nil && msg.RequestId != "" {
+		return msg.RequestId
+	}
+
 	claims, err := extensions.GetClaimsFromContext(ctx)
 	if err != nil {
 		return ""
@@ -60,17 +65,30 @@ func (e *betaEventMessageEnvelope) GetRequestId(
 }
 
 func (*betaEventMessageEnvelope) SetRequestId(
-	context.Context, *v1beta.EventMessage, string,
+	_ context.Context, msg *v1beta.EventMessage, id string,
 ) {
+	msg.RequestId = id
 }
 
-func (*betaEventMessageEnvelope) GetError(*v1beta.EventMessage) error {
-	return nil
+func (*betaEventMessageEnvelope) GetError(msg *v1beta.EventMessage) error {
+	if msg == nil || msg.Error == nil {
+		return nil
+	}
+
+	wire, marshalErr := proto.Marshal(msg.Error)
+	if marshalErr == nil {
+		stableError := new(ExtensionError)
+		if unmarshalErr := proto.Unmarshal(wire, stableError); unmarshalErr == nil {
+			return UnwrapError(stableError)
+		}
+	}
+	return fmt.Errorf("%s", msg.Error.GetMessage())
 }
 
 func (*betaEventMessageEnvelope) SetError(
-	*v1beta.EventMessage, error,
+	msg *v1beta.EventMessage, err error,
 ) {
+	msg.Error = wrapBetaError(err)
 }
 
 func (*betaEventMessageEnvelope) IsProgressMessage(*v1beta.EventMessage) bool {
@@ -106,6 +124,10 @@ func (*betaEventMessageEnvelope) GetInnerMessage(
 		return m.InvokeServiceHandler
 	case *v1beta.EventMessage_ServiceHandlerStatus:
 		return m.ServiceHandlerStatus
+	case *v1beta.EventMessage_SubscribeProjectEventResponse:
+		return m.SubscribeProjectEventResponse
+	case *v1beta.EventMessage_SubscribeServiceEventResponse:
+		return m.SubscribeServiceEventResponse
 	default:
 		return nil
 	}

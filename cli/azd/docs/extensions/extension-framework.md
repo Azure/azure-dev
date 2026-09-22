@@ -1580,28 +1580,38 @@ if err := host.Run(ctx); err != nil {
 
 ## Deployment Preview SDK Contract
 
-The SDK provides an optional service-target preview contract. These APIs are
+The SDK provides an experimental, **v1beta-only** service-target preview contract. These APIs are
 prerequisites for deployment preview; CLI command integration and first-party
 provider implementations are separate work. Registering this capability alone
 does not enable `azd deploy --preview`.
 
-Register with `ExtensionHost.WithServiceTargetPreview` and implement
-`ServiceTargetPreviewProvider` alongside `ServiceTargetProvider`:
+Register with `ExtensionHost.WithBetaServiceTargetPreview` and implement
+`preview.ServiceTargetPreviewProvider` alongside `azdext.ServiceTargetProvider`.
+Import the experimental interface from `pkg/azdext/preview` and its messages from
+`pkg/azdext/contracts/v1beta`:
 
 ```go
-Preview(ctx context.Context, serviceConfig *azdext.ServiceConfig) (*azdext.ServiceDeployPreviewResult, error)
+Preview(ctx context.Context, serviceConfig *v1beta.ServiceConfig) (*v1beta.ServiceDeployPreviewResult, error)
 ```
 
-`ServiceDeployPreviewResult` carries a human-readable `Message` and a `Data`
+`v1beta.ServiceDeployPreviewResult` carries a human-readable `Message` and a `Data`
 protobuf struct for structured results. The protocol has dedicated preview
 request and response messages; a preview request is never routed to `Deploy`.
 
-The SDK advertises `supports_preview` during service-target registration.
-Existing `WithServiceTarget` registrations and calls to `ServiceTargetManager.Register`
-without the optional capability argument continue to advertise no preview support.
-Registration does not invoke the provider factory to detect the capability.
-Host-side capability checks and command output formatting belong to the later
-CLI integration.
+The beta registration advertises `supports_preview` without invoking the provider
+factory. `BetaServiceTargetManager` uses `AzdClient.BetaServiceTarget()` and handles
+normal deployment requests on the same beta stream by reusing stable lifecycle
+handlers. Register each host once, using either the stable or beta channel.
+Existing `WithServiceTarget` registrations, the three-argument
+`ServiceTargetManager.Register` method, stable protobuf contracts, and stable
+facade aliases remain unchanged. No preview types are aliased into the stable facade.
+
+These APIs may change during incubation. The CLI follow-up must supply a focused
+`BetaServiceTargetServiceStreamOverride` through `WithBetaServiceOverride` to
+consume typed beta capability and preview messages; adapting them to stable messages
+cannot implement preview. Until that follow-up, the host explicitly rejects beta
+preview registrations with `Unimplemented` rather than silently dropping the capability.
+CLI routing and command output formatting remain separate work.
 
 For each preview request, the SDK invokes the factory to create a fresh provider
 without reading or updating cached deployment instances or calling `Initialize`.

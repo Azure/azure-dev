@@ -4,6 +4,8 @@
 package azdext
 
 import (
+	"errors"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -154,7 +156,30 @@ func TestServiceTargetEnvelope_ProgressMessage(t *testing.T) {
 	})
 }
 
-func TestServiceTargetEnvelope_PreviewRoundTrip(t *testing.T) {
+func TestBetaServiceTargetEnvelope_ErrorsAndProgress(t *testing.T) {
+	t.Parallel()
+	envelope := NewBetaServiceTargetEnvelope()
+	message := &v1beta.ServiceTargetMessage{}
+	require.NoError(t, envelope.GetError(message))
+	envelope.SetError(message, &ServiceError{Message: "preview failed", ErrorCode: "PreviewFailed"})
+	serviceError, ok := errors.AsType[*ServiceError](envelope.GetError(message))
+	require.True(t, ok)
+	require.Equal(t, "PreviewFailed", serviceError.ErrorCode)
+	require.Equal(t, "preview failed", serviceError.Message)
+	envelope.SetError(message, nil)
+	require.Nil(t, message.Error)
+	require.NoError(t, envelope.GetError(message))
+	require.Nil(t, envelope.GetInnerMessage(message))
+
+	progress := envelope.CreateProgressMessage("request", "packaging")
+	require.True(t, envelope.IsProgressMessage(progress))
+	require.Equal(t, "packaging", envelope.GetProgressMessage(progress))
+	require.Equal(t, "request", envelope.GetRequestId(t.Context(), progress))
+	require.Equal(t, "request", progress.GetProgressMessage().RequestId)
+	require.Same(t, progress.GetProgressMessage(), envelope.GetInnerMessage(progress))
+}
+
+func TestBetaServiceTargetEnvelope_PreviewRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	data, err := structpb.NewStruct(map[string]any{
@@ -165,30 +190,33 @@ func TestServiceTargetEnvelope_PreviewRoundTrip(t *testing.T) {
 		"changes":  []any{"create", "configure"},
 	})
 	require.NoError(t, err)
-	request := &ServiceTargetPreviewRequest{
-		ServiceConfig: &ServiceConfig{Name: "web-service", Host: "custom"},
+	request := &v1beta.ServiceTargetPreviewRequest{
+		ServiceConfig: &v1beta.ServiceConfig{Name: "web-service", Host: "custom"},
 	}
-	response := &ServiceTargetPreviewResponse{
-		Result: &ServiceDeployPreviewResult{Message: "Deployment preview", Data: data},
+
+	response := &v1beta.ServiceTargetPreviewResponse{
+		Result: &v1beta.ServiceDeployPreviewResult{Message: "Deployment preview", Data: data},
 	}
 	tests := []struct {
 		name        string
-		message     *ServiceTargetMessage
+		message     *v1beta.ServiceTargetMessage
 		inner       proto.Message
 		fieldName   protoreflect.Name
 		fieldNumber protoreflect.FieldNumber
 	}{
 		{
-			name:        "Request",
-			message:     &ServiceTargetMessage{MessageType: &ServiceTargetMessage_PreviewRequest{PreviewRequest: request}},
+			name: "Request",
+			message: &v1beta.ServiceTargetMessage{
+				MessageType: &v1beta.ServiceTargetMessage_PreviewRequest{PreviewRequest: request},
+			},
 			inner:       request,
 			fieldName:   "preview_request",
 			fieldNumber: 21,
 		},
 		{
 			name: "Response",
-			message: &ServiceTargetMessage{
-				MessageType: &ServiceTargetMessage_PreviewResponse{PreviewResponse: response},
+			message: &v1beta.ServiceTargetMessage{
+				MessageType: &v1beta.ServiceTargetMessage_PreviewResponse{PreviewResponse: response},
 			},
 			inner:       response,
 			fieldName:   "preview_response",
@@ -200,12 +228,12 @@ func TestServiceTargetEnvelope_PreviewRoundTrip(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			env := NewServiceTargetEnvelope()
+			env := NewBetaServiceTargetEnvelope()
 			env.SetRequestId(t.Context(), tt.message, "preview-1")
 			require.Equal(t, tt.fieldNumber, tt.message.ProtoReflect().Descriptor().Fields().ByName(tt.fieldName).Number())
 			wire, err := proto.Marshal(tt.message)
 			require.NoError(t, err)
-			var decoded ServiceTargetMessage
+			var decoded v1beta.ServiceTargetMessage
 			require.NoError(t, proto.Unmarshal(wire, &decoded))
 			require.True(t, proto.Equal(tt.message, &decoded))
 			inner, ok := env.GetInnerMessage(&decoded).(proto.Message)

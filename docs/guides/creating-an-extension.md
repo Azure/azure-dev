@@ -92,10 +92,13 @@ For extensions that are still in development or preview, consider publishing to 
 - **Telemetry** — Follow pattern-based classification (e.g., `ext.service.<errorCode>`)
 - **Read-only preview providers** — The optional
   [deployment preview SDK contract](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview-sdk-contract)
-  uses `WithServiceTargetPreview` and `ServiceTargetPreviewProvider`. A preview
+  uses `WithBetaServiceTargetPreview` and `preview.ServiceTargetPreviewProvider`
+  from `pkg/azdext/preview`, with `contracts/v1beta` messages. These APIs are
+  experimental and are not exposed as stable facade aliases. A preview
   must work on a fresh provider without `Initialize` and must not build, deploy,
   or persist deployment state. These SDK APIs are prerequisites; registering them
-  alone does not enable a CLI preview command.
+  alone does not enable a CLI preview command. Hosts without the follow-up preview
+  implementation reject preview registration explicitly.
 
 ## Detailed Reference
 

@@ -86,17 +86,22 @@ Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC 
 
 ## Deployment Preview SDK Contract
 
-The SDK defines optional preview support through `WithServiceTargetPreview` and
-`ServiceTargetPreviewProvider`. Registration advertises the capability without
-constructing providers. Existing registrations default to no preview support.
+The SDK defines experimental preview support through `WithBetaServiceTargetPreview`
+and `preview.ServiceTargetPreviewProvider` from the experimental SDK package.
+Only `v1beta` contains preview messages and the registration capability.
+Registration advertises the capability without constructing providers. The stable
+`v1` contracts, facade aliases, and registration signatures remain unchanged.
 
 Dedicated protocol messages carry a service configuration and return a
 human-readable message plus structured data. The SDK handles each preview on a
 fresh provider without invoking deployment initialization or using its instance
 cache; preview is not dispatched as a deployment.
 
-This is the SDK prerequisite only. CLI command integration, host-side capability
-checks, and first-party preview implementations are separate work.
+This is the SDK prerequisite only. CLI command integration and first-party preview
+implementations are separate work. The host uses a focused beta stream override to
+reject unsupported preview registration explicitly. The CLI follow-up must replace
+that guard with typed beta dispatch through `WithBetaServiceOverride`; forwarding
+preview messages to stable handlers would lose the capability.
 See the [SDK contract](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview-sdk-contract)
 for registration and provider requirements.
 

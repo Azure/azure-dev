@@ -372,7 +372,6 @@ type (
 	ServiceBuildResult                                       = v1.ServiceBuildResult
 	ServiceConfig                                            = v1.ServiceConfig
 	ServiceContext                                           = v1.ServiceContext
-	ServiceDeployPreviewResult                               = v1.ServiceDeployPreviewResult
 	ServiceDeployResult                                      = v1.ServiceDeployResult
 	ServiceErrorDetail                                       = v1.ServiceErrorDetail
 	ServiceHandlerStatus                                     = v1.ServiceHandlerStatus
@@ -397,8 +396,6 @@ type (
 	ServiceTargetMessage_InitializeResponse                  = v1.ServiceTargetMessage_InitializeResponse
 	ServiceTargetMessage_PackageRequest                      = v1.ServiceTargetMessage_PackageRequest
 	ServiceTargetMessage_PackageResponse                     = v1.ServiceTargetMessage_PackageResponse
-	ServiceTargetMessage_PreviewRequest                      = v1.ServiceTargetMessage_PreviewRequest
-	ServiceTargetMessage_PreviewResponse                     = v1.ServiceTargetMessage_PreviewResponse
 	ServiceTargetMessage_ProgressMessage                     = v1.ServiceTargetMessage_ProgressMessage
 	ServiceTargetMessage_PublishRequest                      = v1.ServiceTargetMessage_PublishRequest
 	ServiceTargetMessage_PublishResponse                     = v1.ServiceTargetMessage_PublishResponse
@@ -408,8 +405,6 @@ type (
 	ServiceTargetOutputParameter                             = v1.ServiceTargetOutputParameter
 	ServiceTargetPackageRequest                              = v1.ServiceTargetPackageRequest
 	ServiceTargetPackageResponse                             = v1.ServiceTargetPackageResponse
-	ServiceTargetPreviewRequest                              = v1.ServiceTargetPreviewRequest
-	ServiceTargetPreviewResponse                             = v1.ServiceTargetPreviewResponse
 	ServiceTargetProgressMessage                             = v1.ServiceTargetProgressMessage
 	ServiceTargetPublishRequest                              = v1.ServiceTargetPublishRequest
 	ServiceTargetPublishResponse                             = v1.ServiceTargetPublishResponse

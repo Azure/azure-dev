@@ -84,8 +84,9 @@ func TestRenderResultsNamesEveryFailedEvaluator(t *testing.T) {
 	assert.NotContains(t, text, "Answered a different question.",
 		"the reason is one evaluator's account of the row, and lives in `output show`")
 	assert.NotContains(t, text, "oi_1", "--failed-only must drop the passing sample")
-	assert.Contains(t, text, "1 of 2 test cases failed",
-		"the status reads as the verb, which is what a reader says out loud")
+	assert.Contains(t, text, "Showing 1 failed test cases on this page.",
+		"the number shown is not the full run's failure count")
+	assert.NotContains(t, text, "Full run:", "no service counts were reported")
 }
 
 // --failed-only means failed.

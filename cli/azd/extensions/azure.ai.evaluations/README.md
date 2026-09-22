@@ -141,6 +141,17 @@ shape and tags the registered dataset so a later run knows what it holds.
 
 ### Repeated deploys do not create redundant versions
 
+Before publishing dependencies, `azd ai eval create <name>` validates the selected
+eval, its local JSONL/rubric files, and its registered dataset/evaluator references,
+including version pins. An unavailable reference lookup is an error, not a reason
+to publish optimistically. Unrelated invalid evals do not block this targeted
+command; `azd up` validates the entire evaluation service before publishing any
+of its dependencies. Validation does not write private reconciliation state.
+
+This is not a transaction across Foundry resources. If a later service operation
+fails, successfully published shared versions are retained, not deleted. Fix the
+reported error and repeat the same command to reuse unchanged artifacts.
+
 Datasets are fingerprinted locally, because the dataset API exposes no content
 hash and comparing against the service would mean downloading the blob on every
 deploy. Evaluator definitions are compared against the service, but only on the

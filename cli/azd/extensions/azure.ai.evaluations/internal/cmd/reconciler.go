@@ -30,6 +30,10 @@ import (
 type evalReconciler struct {
 	ec *evalContext
 
+	// Requests prepared by the side-effect-free validation pass. The published
+	// contract is resolved per reference, including explicit version pins.
+	prepared map[string]preparedEval
+
 	// claimedBy maps each eval this deploy has settled on to the declaration
 	// that settled it, so a second declaration cannot take the same one.
 	// Substance keys are never removed from the environment, so one left behind
@@ -272,30 +276,14 @@ func (r *evalReconciler) EnsureDataset(
 	decl project.DatasetDecl,
 	localPath string,
 ) (string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
 	// No local source means the dataset is already registered; just confirm it.
 	if localPath == "" {
-		version := decl.Version
-		if version == "" {
-			list, err := r.ec.datasetClient.ListDatasetVersions(
-				ctx, decl.Name, ProjectEndpointAPIVersion,
-			)
-			if err != nil {
-				return "", false, messages.DatasetNotLocalNorFound(decl.Name, err)
-			}
-			if len(list.Value) == 0 {
-				return "", false, messages.DatasetNotLocalNorRegistered(decl.Name)
-			}
-			version = dataset_api.LatestVersion(list.Value)
-		} else if _, err := r.ec.datasetClient.GetDataset(
-			ctx, decl.Name, version, ProjectEndpointAPIVersion,
-		); err != nil {
-			// Only a 404 means the version is not there. Every other failure was
-			// reported as "no such version", which sent a reader looking for a
-			// version that exists and that they simply cannot read.
-			if !dataset_api.IsNotFound(err) {
-				return "", false, messages.DatasetNotLocalNorFound(decl.Name, err)
-			}
-			return "", false, messages.DatasetVersionNotFoundWithHint(decl.Name, version)
+		version, err := r.datasetReference(ctx, decl)
+		if err != nil {
+			return "", false, err
 		}
 
 		// Recorded so a run reads the version reconciliation settled on. Without
@@ -315,7 +303,7 @@ func (r *evalReconciler) EnsureDataset(
 	// A malformed row is only noticed once the service tries to evaluate it,
 	// by which point a version has been published and the eval points at
 	// it. Reading the file here costs nothing and names the offending line.
-	if err := validateJSONL(localPath); err != nil {
+	if _, err := inspectJSONL(ctx, localPath); err != nil {
 		return "", false, messages.DatasetProblem(decl.Name, err)
 	}
 
@@ -480,10 +468,16 @@ func tagsAlreadyApplied(have, want map[string]string) bool {
 // registered version, an eval bound to it, and a run that fails on a row
 // nobody has looked at. Blank lines are skipped: they are not rows.
 func validateJSONL(path string) error {
+	_, err := inspectJSONL(context.Background(), path)
+	return err
+}
+
+// inspectJSONL validates every row and returns the columns every row supplies.
+func inspectJSONL(ctx context.Context, path string) (map[string]bool, error) {
 	// #nosec G304 -- path is the dataset file the eval config declares.
 	f, err := os.Open(path)
 	if err != nil {
-		return messages.ReadingPath(path, err)
+		return nil, messages.ReadingPath(path, err)
 	}
 	defer f.Close()
 
@@ -492,7 +486,11 @@ func validateJSONL(path string) error {
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 
 	rows := 0
+	var columns map[string]bool
 	for line := 1; scanner.Scan(); line++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		text := scanner.Text()
 		if line == 1 {
 			// PowerShell's `>` and Set-Content write a byte order mark, so a
@@ -508,20 +506,32 @@ func validateJSONL(path string) error {
 		}
 		var row map[string]any
 		if err := json.Unmarshal([]byte(text), &row); err != nil {
-			return messages.JSONLRowInvalid(path, line, err)
+			return nil, messages.JSONLRowInvalid(path, line, err)
 		}
 		if len(row) == 0 {
-			return messages.JSONLRowEmpty(path, line)
+			return nil, messages.JSONLRowEmpty(path, line)
+		}
+		if columns == nil {
+			columns = make(map[string]bool, len(row))
+			for field := range row {
+				columns[field] = true
+			}
+		} else {
+			for field := range columns {
+				if _, ok := row[field]; !ok {
+					delete(columns, field)
+				}
+			}
 		}
 		rows++
 	}
 	if err := scanner.Err(); err != nil {
-		return messages.ReadingPath(path, err)
+		return nil, messages.ReadingPath(path, err)
 	}
 	if rows == 0 {
-		return messages.JSONLNoRows(path)
+		return nil, messages.JSONLNoRows(path)
 	}
-	return nil
+	return columns, ctx.Err()
 }
 
 func (r *evalReconciler) checkDatasetDrift(
@@ -585,23 +595,10 @@ func (r *evalReconciler) EnsureEvaluator(
 	decl project.EvaluatorDecl,
 	localPath string,
 ) (string, bool, error) {
-	var body json.RawMessage
-	var digest string
-
-	switch {
-	case decl.Definition != nil:
-		// Also how a `$ref` to a rubric file arrives: resolution has already
-		// spliced the file's keys in, so there is nothing left to read.
-		raw, err := json.Marshal(decl.Definition)
-		if err != nil {
-			return "", false, messages.EvaluatorProblem(decl.Name, err)
-		}
-		if body, err = normalizeRubricBody(decl.Name, raw); err != nil {
-			return "", false, messages.EvaluatorProblem(decl.Name, err)
-		}
-		digest = project.FingerprintBytes(body)
-
-	case localPath == "":
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
+	if !decl.CarriesItsRubric() && localPath == "" {
 		raw, err := r.ec.evalClient.GetEvaluatorRaw(
 			ctx, decl.Name, decl.Version, ProjectEndpointAPIVersion,
 		)
@@ -609,27 +606,10 @@ func (r *evalReconciler) EnsureEvaluator(
 			return "", false, messages.EvaluatorNotLocalNorFound(decl.Name, err)
 		}
 		return versionFromRaw(raw, decl.Version), false, nil
-
-	default:
-		if _, err := os.Stat(localPath); err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return "", false, messages.EvaluatorNotGeneratedYet(decl.Name, localPath)
-			}
-			return "", false, messages.EvaluatorSource(localPath, err)
-		}
-
-		raw, err := project.ReadFileNoBOM(localPath)
-		if err != nil {
-			return "", false, messages.EvaluatorSource(localPath, err)
-		}
-
-		if body, err = normalizeRubricBody(decl.Name, raw); err != nil {
-			return "", false, messages.EvaluatorProblem(decl.Name, err)
-		}
-
-		if digest, err = project.Fingerprint(localPath); err != nil {
-			return "", false, messages.EvaluatorSource(localPath, err)
-		}
+	}
+	body, digest, err := localEvaluator(decl, localPath)
+	if err != nil {
+		return "", false, err
 	}
 
 	// The author's own definition decides whether there is anything to publish.
@@ -817,6 +797,9 @@ func (r *evalReconciler) EnsureEval(
 	group project.Eval,
 	datasetPath string,
 ) (string, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
 	if group.ID != "" {
 		// An explicit id skips every read below, so nothing here noticed when it
 		// named an eval that had been deleted or was simply mistyped: the deploy
@@ -847,13 +830,32 @@ func (r *evalReconciler) EnsureEval(
 	// dataset's columns, so it happens before the reuse decision: a dataset can
 	// lose a column an evaluator needs without the eval's own declaration
 	// changing, and reusing the eval would let that reach a run unreported.
-	req, err := buildEvalRequest(
-		&group,
-		r.ec.evaluatorSchemas(ctx),
-		datasetColumnsFromPath(datasetPath),
-	)
-	if err != nil {
-		return "", false, err
+	prepared, validated := r.prepared[group.Name]
+	req := prepared.request
+	if validated && len(prepared.localEvaluators) > 0 {
+		// Publishing a rubric can add a schema that the authored file does not
+		// carry. Refresh only these local, unpinned references; every other
+		// contract, including version pins, stays the one validated earlier.
+		schemas := maps.Clone(prepared.schemas)
+		published := r.ec.evaluatorSchemas(ctx)
+		for _, name := range prepared.localEvaluators {
+			if schema := published[name]; schema != nil {
+				schemas[name] = schema
+			}
+		}
+		req, err = buildEvalRequest(&prepared.group, schemas, prepared.columns)
+		if err != nil {
+			return "", false, err
+		}
+	} else if !validated {
+		req, err = buildEvalRequest(
+			&group,
+			r.ec.evaluatorSchemas(ctx),
+			datasetColumnsFromPath(datasetPath),
+		)
+		if err != nil {
+			return "", false, err
+		}
 	}
 
 	cached := r.ec.scopedValue(ctx, idKey("eval", group.Name), r.scope)

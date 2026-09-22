@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"testing"
 
@@ -26,7 +25,7 @@ func reportingCommand(t *testing.T, jsonOutput bool) (*cobra.Command, *bytes.Buf
 	}
 	buf := &bytes.Buffer{}
 	cmd.SetOut(buf)
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	return cmd, buf
 }
 

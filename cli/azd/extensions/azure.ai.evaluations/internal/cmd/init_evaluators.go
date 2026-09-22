@@ -5,7 +5,7 @@ package cmd
 
 import (
 	"context"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -106,7 +106,7 @@ func readBuiltinEvaluatorCatalogue(ctx context.Context) []string {
 			names = append(names, name)
 		}
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return names
 }
 

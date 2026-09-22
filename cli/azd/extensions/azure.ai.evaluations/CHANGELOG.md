@@ -1,5 +1,23 @@
 # Release History
 
+## 1.0.0-beta.2 (Unreleased)
+
+### Bugs Fixed
+
+- `init` refuses a local JSONL dataset it cannot turn into evaluation rows,
+  instead of writing a declaration whose failure surfaced at deploy.
+- `init` checks a `builtin.<name>` reference against the project's catalogue
+  when the project can be reached, and leaves it as written when it cannot, so
+  a misspelled built-in is reported where it was typed. This is the extension's
+  only lookup during `init`; it is best effort, is asked only when such a
+  reference is given, and `init` otherwise still works offline.
+- Publishing a new version of an evaluator keeps the catalog metadata its
+  declaration carries -- `display_name`, `categories` and
+  `supported_evaluation_levels` -- rather than dropping them.
+- Closing the eval picker is reported as the answer it is at every command that
+  offers it, rather than exiting non-zero at six of them.
+- `eval create` closes with a link to the eval in the Portal.
+
 ## 1.0.0-beta.1 (2026-09-17)
 
 First release of the Foundry evaluations extension.
@@ -8,10 +26,7 @@ First release of the Foundry evaluations extension.
 
 - `azd ai eval` defines and runs Foundry evaluations from the terminal.
 - `init` scaffolds `evals/azure.eval.yaml` next to an agent and adds the service
-  entry that `$ref`s it into `azure.yaml`. It works offline. Its one lookup --
-  checking a `builtin.` reference against the project's catalogue -- is best
-  effort, is asked only when such a reference is given, and leaves the reference
-  as written when the project cannot be reached.
+  entry that `$ref`s it into `azure.yaml`. It makes no service calls.
 - `generate` synthesizes a rubric and a dataset from the agent's context, writes
   them under `evals/`, and merges the references into the deployment spec while
   preserving comments, ordering and the entries beside them.

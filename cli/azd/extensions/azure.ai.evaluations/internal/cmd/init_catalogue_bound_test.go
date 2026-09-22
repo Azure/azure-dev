@@ -22,7 +22,7 @@ func TestCatalogueContext_CarriesTheBound(t *testing.T) {
 	t.Parallel()
 
 	start := time.Now()
-	ctx, cancel := catalogueContext(context.Background())
+	ctx, cancel := catalogueContext(t.Context())
 	defer cancel()
 
 	deadline, ok := ctx.Deadline()
@@ -35,7 +35,7 @@ func TestCatalogueContext_CarriesTheBound(t *testing.T) {
 func TestCatalogueContext_StopsWithItsParent(t *testing.T) {
 	t.Parallel()
 
-	parent, cancelParent := context.WithCancel(context.Background())
+	parent, cancelParent := context.WithCancel(t.Context())
 	ctx, cancel := catalogueContext(parent)
 	defer cancel()
 
@@ -55,7 +55,7 @@ func TestCatalogueContext_StopsWithItsParent(t *testing.T) {
 func TestInitStopsWhenTheReaderInterruptsDuringTheCatalogueLookup(t *testing.T) {
 	t.Setenv("AZD_SERVER", "")
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cmd := &cobra.Command{Use: "init"}
 	cmd.SetContext(ctx)
 

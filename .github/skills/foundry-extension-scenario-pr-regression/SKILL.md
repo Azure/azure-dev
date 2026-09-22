@@ -2,30 +2,27 @@
 name: foundry-extension-scenario-pr-regression
 license: MIT
 metadata:
-  version: "2.0"
+  version: "2.1"
   # Bump major on breaking prompt/trigger changes; bump minor on new references or mapping rules.
   # 2.0: renamed from agent-scenario-tests; execution mechanics moved to the scenarios'
   # driving-mechanics.md; per-scenario driving delegated to the foundry-extension-scenario-worker agent.
+  # 2.1: shorten description to Copilot's 1,024-character limit; the INVOKES
+  # tool list moved to the body below.
 description: >-
-  **WORKFLOW SKILL** — Runs the azure.ai.agents extension's cli-interactive-tester
-  scenarios locally as a **PR-scoped** regression check. Resolves the current branch's PR,
-  maps changed files to impacted scenario tags, drives the matching scenarios through the
-  cli-interactive-tester MCP server (fanning out to foundry-extension-scenario-worker agents), and posts a
-  results comment on the PR. Typically dispatched by the foundry-extension-scenario-orchestrator agent, but
-  can trigger directly.
-
-  INVOKES: git CLI, gh CLI, cli-interactive-tester MCP tools (list_scenarios,
-  load_scenario, run_pre_hooks, start_session, send_action, finish_session,
-  run_post_hooks), the foundry-extension-scenario-worker agent, ask_user.
+  **WORKFLOW SKILL** — Runs the azure.ai.agents extension's cli-interactive-tester scenarios
+  locally as a PR-scoped regression check (incurs Azure cost). Resolves the current branch's
+  PR, maps changed files to impacted scenario tags, drives matching scenarios via
+  foundry-extension-scenario-worker agents, and posts a results comment on the PR. Typically
+  dispatched by foundry-extension-scenario-orchestrator, but can trigger directly.
 
   USE FOR: run agent scenarios for a PR, scenario regression check, test agents extension PR,
-  run impacted scenarios, check agents extension for regressions before merge, validate an
-  azure.ai.agents change / diff.
+  run impacted scenarios, check for regressions before merge, validate an azure.ai.agents diff.
 
-  DO NOT USE FOR: running the whole suite or an arbitrary tag/tier sweep not tied to a diff
-  (use foundry-extension-scenario-suite-run), authoring or editing scenarios (use foundry-extension-scenario-authoring), azd core
-  preflight (use azd-preflight), changelog (use changelog-generation), creating PRs (use
-  pull-request), scenarios for any extension other than azure.ai.agents.
+  DO NOT USE FOR: running the whole suite or a tag/tier sweep not tied to a diff
+  (foundry-extension-scenario-suite-run), authoring/editing scenarios without running them — no
+  Azure cost (foundry-extension-scenario-authoring), azd core preflight (azd-preflight),
+  changelog (changelog-generation), creating PRs (pull-request), scenarios for other
+  extensions.
 ---
 
 # foundry-extension-scenario-pr-regression
@@ -40,6 +37,10 @@ The `azure.ai.agents` extension ships goal-based scenarios for the
 MCP server under `cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/`.
 These scenarios are **never run in CI** — they need the tester MCP server, a populated
 `profile.local.yaml`, manual `az`/`gh` login, and (for Tier 2) real Azure resources.
+
+**Tools invoked**: git CLI, gh CLI, cli-interactive-tester MCP tools (`list_scenarios`,
+`load_scenario`, `run_pre_hooks`, `start_session`, `send_action`, `finish_session`,
+`run_post_hooks`), the `foundry-extension-scenario-worker` agent, and `ask_user`.
 
 This skill is the **opt-in, run-locally** flow a PR submitter uses to check their change
 for regressions. It:

@@ -12,7 +12,9 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -30,9 +32,6 @@ const agentTemplatesURL = "https://aka.ms/foundry-agents-samples"
 
 // Template type constants
 const (
-	// TemplateTypeAgent is a template that points to an agent.yaml manifest file.
-	TemplateTypeAgent = "agent"
-
 	// TemplateTypeAzd is a full azd template repository.
 	TemplateTypeAzd = "azd"
 
@@ -71,28 +70,42 @@ type AgentTemplate struct {
 	TemplateType       string   `json:"templateType"`
 }
 
-// EffectiveType determines the template type by inspecting the source URL
-// and the template's declared templateType.
-// If it ends with agent.yaml or agent.manifest.yaml, it's an agent manifest.
-// If it ends with azure.yaml or azure.yml AND templateType is "extension.ai.agent",
-// it's a unified azure.yaml template.
-// Otherwise, it's treated as a full azd template repo.
+// EffectiveType determines the supported template type from the source and
+// declared templateType. An empty result means the source is unsupported.
+//
+// Unified azure.yaml sources must be explicitly declared as agent templates.
+// Non-file sources remain full azd repositories. YAML files other than a
+// correctly declared azure.yaml are rejected rather than falling through to
+// the repository flow.
 func (t *AgentTemplate) EffectiveType() string {
-	lower := strings.ToLower(t.Source)
-	if strings.HasSuffix(lower, "/agent.yaml") ||
-		strings.HasSuffix(lower, "/agent.manifest.yaml") ||
-		lower == "agent.yaml" ||
-		lower == "agent.manifest.yaml" {
-		return TemplateTypeAgent
+	source := strings.TrimSpace(t.Source)
+	if source == "" {
+		return ""
 	}
-	if t.TemplateType == templateTypeExtensionAIAgent &&
-		(strings.HasSuffix(lower, "/azure.yaml") ||
-			strings.HasSuffix(lower, "/azure.yml") ||
-			lower == "azure.yaml" ||
-			lower == "azure.yml") {
-		return TemplateTypeAzureYaml
+
+	sourcePath := source
+	if parsed, err := url.Parse(source); err == nil && parsed.Path != "" {
+		sourcePath = parsed.Path
+	} else if delimiter := strings.IndexAny(sourcePath, "?#"); delimiter >= 0 {
+		sourcePath = sourcePath[:delimiter]
 	}
-	return TemplateTypeAzd
+
+	sourcePath = strings.TrimSuffix(strings.ReplaceAll(sourcePath, `\`, "/"), "/")
+	filename := strings.ToLower(path.Base(sourcePath))
+	switch filename {
+	case "azure.yaml", "azure.yml":
+		if t.TemplateType == templateTypeExtensionAIAgent {
+			return TemplateTypeAzureYaml
+		}
+		return ""
+	case "agent.yaml", "agent.yml", "agent.manifest.yaml", "agent.manifest.yml":
+		return ""
+	default:
+		if strings.HasSuffix(filename, ".yaml") || strings.HasSuffix(filename, ".yml") {
+			return ""
+		}
+		return TemplateTypeAzd
+	}
 }
 
 const (
@@ -261,6 +274,7 @@ func fetchAgentTemplatesFromURL(
 	httpClient *http.Client,
 	url string,
 ) ([]AgentTemplate, error) {
+	displayURL := catalogURLForDisplay(url)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -286,34 +300,58 @@ func fetchAgentTemplatesFromURL(
 		return nil, fmt.Errorf("failed to parse agent templates: %w", err)
 	}
 
-	// Keep only agent-init entries. The shared templates.json manifest also
-	// carries the awesome-azd gallery; those entries must not surface here.
+	// Keep only supported agent-init entries. The shared templates.json
+	// manifest also carries the awesome-azd gallery, and older catalogs may
+	// still contain legacy agent manifest sources. Neither should surface.
 	filtered := make([]AgentTemplate, 0, len(all))
+	agentEntries := 0
+	unsupportedSources := 0
 	for _, t := range all {
-		if t.TemplateType == templateTypeExtensionAIAgent {
-			filtered = append(filtered, t)
+		if t.TemplateType != templateTypeExtensionAIAgent {
+			continue
 		}
+		agentEntries++
+		if t.EffectiveType() == "" {
+			unsupportedSources++
+			continue
+		}
+		filtered = append(filtered, t)
 	}
 
-	// Always emit the fetched/matched counts to make transition-period and
-	// misconfiguration issues debuggable.
+	// Emit counts without catalog source values, which may contain credentials.
 	log.Printf(
-		"agent templates manifest: fetched %d templateType=%q (source=%s)",
-		len(filtered), templateTypeExtensionAIAgent, url,
+		"agent templates manifest: accepted %d templateType=%q entries; rejected %d unsupported sources",
+		len(filtered), templateTypeExtensionAIAgent, unsupportedSources,
 	)
 
-	// If we received entries but filtered them all out, the manifest is
-	// almost certainly in the legacy format or the discriminator value has
-	// changed. Surface that explicitly instead of returning an empty list,
-	// which the caller cannot distinguish from an intentionally empty manifest.
-	if len(all) > 0 && len(filtered) == 0 {
+	if len(all) > 0 && agentEntries == 0 {
 		return nil, fmt.Errorf(
 			"agent templates manifest at %s contained %d entries but none had templateType=%q",
-			url, len(all), templateTypeExtensionAIAgent,
+			displayURL, len(all), templateTypeExtensionAIAgent,
+		)
+	}
+	if agentEntries > 0 && len(filtered) == 0 {
+		return nil, fmt.Errorf(
+			"agent templates manifest at %s contained %d templateType=%q entries but none used a supported "+
+				"azure.yaml or full repository source",
+			displayURL, agentEntries, templateTypeExtensionAIAgent,
 		)
 	}
 
 	return filtered, nil
+}
+
+func catalogURLForDisplay(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "<catalog URL>"
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.ForceQuery = false
+	parsed.Fragment = ""
+	parsed.RawFragment = ""
+	return parsed.String()
 }
 
 // isFeatured reports whether the template carries the "featured" extensionTag,
@@ -330,7 +368,7 @@ func (t *AgentTemplate) isRecommended() bool {
 
 // promptAgentTemplate guides the user through language selection and template selection.
 // Returns the selected AgentTemplate. The caller should check EffectiveType() to determine
-// whether to use the agent.yaml manifest flow or the full azd template flow.
+// whether to use the unified azure.yaml flow or the full azd template flow.
 //
 // Templates tagged "featured" are shown first in a curated list. The template
 // tagged "recommended" gets a (Recommended) suffix in the label and is

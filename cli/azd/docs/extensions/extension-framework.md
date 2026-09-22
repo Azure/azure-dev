@@ -37,7 +37,7 @@ Table of Contents
 
 ## Getting Started
 
-`azd` extensions are currently a beta feature (Public Preview) within `azd`.
+The `azd` extension framework is generally available. Individual extensions or capabilities might have their own preview status.
 
 - Official extensions must be developed in a fork of the [azure/azure-dev](https://github.com/azure/azure-dev) github repo.
 - Extension binaries are shipped as Github releases to the same repo through our official pipelines.
@@ -123,7 +123,11 @@ Lists matching extensions from one or more extension sources.
 
 #### `azd extension show <extension-id> [flags]`
 
-Shows detailed information for a specific extension, including description, tags, versions, and installation status.
+Shows versions, compatibility, dependencies, and installed dependents. Dependency installs have a separate `Installed as: Dependency` row.
+
+Prefers the installed source when several sources match. If no registry lists the extension, uses installed metadata. Legacy dependency details require matching source and version metadata.
+
+If registry lookup returns an error and no `--source` was specified, installed extensions are shown from local metadata with a warning. Registry-only fields, such as the latest available version, are omitted. Cancellation and explicit source requests do not use this fallback.
 
 - `-s, --source` Uses a registered source name or registry location (URL or file path). Locations are queried read-only and are not registered.
 
@@ -144,20 +148,24 @@ Installs one or more extensions from any configured extension source.
 
 #### `azd extension uninstall <extension-ids> [flags]`
 
-Uninstalls one or more previously installed extensions.
+Removes the requested extensions and, after confirmation, their unused dependency installs. `--no-prompt` accepts dependency removal. Required extensions are blocked unless their dependents are also removed or `--force` is set.
 
 - `--all` Removes all installed extensions when specified.
+- `-f, --force` Bypasses dependency protection with a warning.
+- `--no-dependencies` Keeps dependency installs.
+
+See [uninstall flow and ownership](./extension-resolution-and-versioning.md#uninstall-flow) for the full rules.
 
 #### `azd extension update <extension-ids>`
 
 > Aliased as `azd extension upgrade` for backward compatibility.
 
-Updates one or more extensions to the latest versions.
+Updates extensions and their installed dependencies to compatible versions. Uses each extension's stored source or the main registry, unless `--source` overrides it. See [source promotion](./extension-resolution-and-versioning.md#update-and-devmain-promotion) and [update results](./extension-resolution-and-versioning.md#update-results) for source selection and failure reporting.
 
 - `--all` Updates all previously installed extensions when specified.
 - `-v, --version` Updates a specified extension to an exact version, if provided.
-- `-s, --source` Specifies the source used for the update. In addition to registered source names, this accepts a registry location (URL or file path). `azd` registers the location as a source before resolving the extension, updates the extension's stored source after a successful update, and rejects locations under `--no-prompt`; add the source first with `azd extension source add`.
-- `--no-dependency-updates` Skips updating dependencies declared by extension packs.
+- `-s, --source` Uses a source name or registry URL/file. New locations require interactive registration; existing locations are reused.
+- `--no-dependency-updates` Keeps installed dependency versions.
 
 ## Developing Extensions
 
@@ -648,7 +656,7 @@ Once installed the extension registers a suite of commands under the `x` namespa
 
 Usage: `azd x init`
 
-- Collects information for the extension and scaffolds and extension in a specified language of choice.
+- Collects information for the extension and scaffolds an extension in a specified language of choice.
 - Go is the recommended language and is preselected in the language prompt; it has the most complete and actively maintained template.
 - Creates local extension source if it doesn't already exist
 - Builds initial binaries for extension
@@ -1240,6 +1248,8 @@ dependencies:
 Pack manifests must include at least one dependency. They may omit `capabilities`, `namespace`, `entryPoint`, `usage`, and `examples` when the pack has no commands of its own. Installing a pack installs its dependencies recursively from the same extension source as the pack. Dependency versions in the manifest support semver constraints, but command-line `--version` values for `azd extension install` and `azd extension update` are exact versions.
 
 Updating a pack updates the pack and, by default, reconciles installed dependencies to the highest published versions that satisfy the pack's declared dependency constraints. This dependency reconciliation still runs when the pack itself is already current, because an unchanged pack can point to a dependency range with newer matching versions. Users can disable automatic dependency updates with `azd extension update <pack-id> --no-dependency-updates`.
+
+Uninstalling a pack also removes its unused dependency installs after confirmation. Explicit and shared installations stay. See [uninstall flow](./extension-resolution-and-versioning.md#uninstall-flow) for ownership, confirmation, and protection rules.
 
 #### Provider Registration
 

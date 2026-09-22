@@ -95,12 +95,29 @@ type GenerationJob struct {
 	Status string          `json:"status"`
 	Result json.RawMessage `json:"result,omitempty"`
 	Error  *JobError       `json:"error,omitempty"`
+	// Inputs is the submission echoed back. It is what a reattach has instead
+	// of the plan it never saw: `--no-wait` returns at submission, and the
+	// `job show` that finishes the generation arrives with only a job id.
+	//
+	// Recovering the type from here rather than from local state is what makes
+	// a reattach work with no azd environment to have recorded it in, and it is
+	// authoritative -- it is the request, not a guess from row shape.
+	Inputs *DataGenerationInputs `json:"inputs,omitempty"`
 	// Warnings is what the service said about a job it nonetheless completed --
 	// most often that the input it was given was too thin to generate from. It
 	// was decoded nowhere, so a job that came back qualified was reported as an
 	// unqualified success and the artifact went into a configuration with
 	// nothing saying to look at it first.
 	Warnings []JobWarning `json:"warnings,omitempty"`
+}
+
+// GenerationType is the kind of data a job was submitted to produce, or empty
+// when the service did not echo the submission back.
+func (j *GenerationJob) GenerationType() string {
+	if j == nil || j.Inputs == nil {
+		return ""
+	}
+	return j.Inputs.Options.Type
 }
 
 // JobWarning is one qualification on a completed job.
@@ -710,16 +727,21 @@ func (ds *EvalRunDataSource) SetFileID(id string) {
 
 // OpenAIEvalRun is the response for an OpenAI eval run.
 type OpenAIEvalRun struct {
-	ID         string             `json:"id"`
-	EvalID     string             `json:"eval_id,omitempty"`
-	Name       string             `json:"name,omitempty"`
-	Status     string             `json:"status,omitempty"`
-	CreatedAt  any                `json:"created_at,omitempty"`
-	ModifiedAt any                `json:"modified_at,omitempty"`
-	CreatedBy  string             `json:"created_by,omitempty"`
-	DataSource *EvalRunDataSource `json:"data_source,omitempty"`
-	Metadata   map[string]string  `json:"metadata,omitempty"`
-	ReportURL  string             `json:"report_url,omitempty"`
+	ID     string `json:"id"`
+	EvalID string `json:"eval_id,omitempty"`
+	Name   string `json:"name,omitempty"`
+	Status string `json:"status,omitempty"`
+	// EvaluationLevel is the level the service recorded for the run. A run
+	// created by the portal or an SDK carries it here and carries none of the
+	// metadata this extension writes, so reading it is the only way to rerun
+	// such a run at the level it was made for.
+	EvaluationLevel string             `json:"evaluation_level,omitempty"`
+	CreatedAt       any                `json:"created_at,omitempty"`
+	ModifiedAt      any                `json:"modified_at,omitempty"`
+	CreatedBy       string             `json:"created_by,omitempty"`
+	DataSource      *EvalRunDataSource `json:"data_source,omitempty"`
+	Metadata        map[string]string  `json:"metadata,omitempty"`
+	ReportURL       string             `json:"report_url,omitempty"`
 	// PortalURL is built by the extension, not returned by the service, so that
 	// `-o json` carries the same link the terminal prints.
 	PortalURL string `json:"portal_url,omitempty"`

@@ -181,10 +181,24 @@
           "then": { "properties": { "source": false } }
         },
         {
-          "$comment": "A simulation creates conversations from seeds; a source collects ones that already happened. Declaring both runs one and silently ignores the other.",
+          "$comment": "A simulation creates conversations from seeds; a source collects ones that already happened. Declaring both runs one and silently ignores the other. The level and target type are pinned to the only values a simulation can run with, so the editor refuses what the CLI would refuse.",
           "if": { "required": ["simulation"] },
           "then": {
-            "properties": { "source": false, "max_samples": false },
+            "properties": {
+              "source": false,
+              "max_samples": false,
+              "evaluation_level": { "const": "conversation" },
+              "target": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": { "type": { "const": "agent" } },
+                    "required": ["type"]
+                  },
+                  { "$ref": "#/definitions/FileRef" }
+                ]
+              }
+            },
             "required": ["dataset", "target", "evaluation_level"]
           }
         }

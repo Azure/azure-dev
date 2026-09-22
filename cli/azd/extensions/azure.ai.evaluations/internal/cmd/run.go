@@ -423,7 +423,24 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 	if newest.DataSource == nil {
 		return nil, "", messages.EvalHasNoPreviousRun(evalID)
 	}
-	return pinReusedTraceWindow(newest.DataSource), newest.Metadata[metaEvaluationLevel], nil
+	return pinReusedTraceWindow(newest.DataSource), reusedEvaluationLevel(newest), nil
+}
+
+// reusedEvaluationLevel is the level a rerun repeats.
+//
+// The service's own field wins. A run created by the portal or an SDK carries
+// it and carries none of the metadata this extension writes, so reading only
+// the metadata reran such a run turn-shaped whatever it had been. The metadata
+// remains the fallback, because runs this extension made before the field was
+// read carry the level only there.
+func reusedEvaluationLevel(run *eval_api.OpenAIEvalRun) string {
+	if run == nil {
+		return ""
+	}
+	if run.EvaluationLevel != "" {
+		return run.EvaluationLevel
+	}
+	return run.Metadata[metaEvaluationLevel]
 }
 
 // legacyTraceLookbackHours is the window a legacy source with no lookback ran

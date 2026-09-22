@@ -273,6 +273,79 @@ func TestBuildResolvesConversationTurnExclusivity(t *testing.T) {
 	require.NotContains(t, req.TestingCriteria[0].DataMapping, "messages")
 }
 
+// A simulation is graded on the conversations the run creates, not on the seed
+// rows it creates them from. The eval therefore describes a dataset of
+// conversations even though the registered dataset holds seeds, and the seed
+// columns must not reach the criterion: binding test_case_description is how a
+// simulation eval ended up refused at deploy for a column the graded rows do
+// not have.
+func TestBuildSimulationGradesConversationsNotSeeds(t *testing.T) {
+	schemas := map[string]*eval_api.EvaluatorSummary{
+		"builtin.task_completion": schema("builtin.task_completion",
+			nil, []string{"query", "response", "messages", "tool_definitions"},
+			[]string{"deployment_name"}, []string{"deployment_name", "evaluation_level"},
+			"conversation", "turn"),
+	}
+
+	group := groupWith(withJudge("m", evalcore.EvaluatorRef{Evaluator: "builtin.task_completion"}),
+		"conversation")
+	group.Simulation = &project.Simulation{Model: "gpt-4o", NumConversations: 2, MaxTurns: 4}
+
+	// The seed columns are what the registered dataset actually holds. None of
+	// them may be bound, and none of them may reach the item schema.
+	req, err := buildEvalRequest(group, schemas, map[string]bool{
+		"test_case_description": true,
+		"desired_num_turns":     true,
+	})
+	require.NoError(t, err)
+
+	mapping := req.TestingCriteria[0].DataMapping
+	require.Equal(t, "{{item.messages}}", mapping["messages"],
+		"the graded conversation arrives in item.messages")
+	require.NotContains(t, mapping, "test_case_description")
+	require.NotContains(t, mapping, "desired_num_turns")
+
+	properties, ok := req.DataSourceConfig.ItemSchema["properties"].(map[string]any)
+	require.True(t, ok, "item schema declares properties")
+	require.Contains(t, properties, "messages",
+		"the schema declares the column the conversations arrive in")
+	require.NotContains(t, properties, "test_case_description")
+
+	// The service holds the conversation itself, so there is no per-row target
+	// invocation to produce a `sample` namespace to bind against.
+	require.False(t, req.DataSourceConfig.IncludeSampleSchema)
+	for _, value := range mapping {
+		require.NotContains(t, value, "{{sample.",
+			"a simulation has no sample namespace to bind")
+	}
+}
+
+// Even when no criterion happens to bind it, the rows a simulation grades
+// arrive in `messages`, and a schema that omits that column describes a
+// different dataset than the one the run produces. This is the evaluator that
+// scores a conversation without declaring a column for it.
+func TestBuildSimulationDeclaresMessagesWithoutABinding(t *testing.T) {
+	schemas := map[string]*eval_api.EvaluatorSummary{
+		"builtin.violence": schema("builtin.violence",
+			nil, []string{"query", "response"},
+			nil, nil, "conversation", "turn"),
+	}
+
+	group := groupWith([]evalcore.EvaluatorRef{{Evaluator: "builtin.violence"}}, "conversation")
+	group.Simulation = &project.Simulation{Model: "gpt-4o", NumConversations: 1, MaxTurns: 2}
+
+	req, err := buildEvalRequest(group, schemas, map[string]bool{"test_case_description": true})
+	require.NoError(t, err)
+	require.NotContains(t, req.TestingCriteria[0].DataMapping, "messages",
+		"no criterion bound the conversation column")
+
+	properties, ok := req.DataSourceConfig.ItemSchema["properties"].(map[string]any)
+	require.True(t, ok, "item schema declares properties")
+	require.Contains(t, properties, "messages")
+	require.NotContains(t, properties, "test_case_description")
+	require.False(t, req.DataSourceConfig.IncludeSampleSchema)
+}
+
 // Evaluators disagree on what the judge model is called. Built-ins declare
 // deployment_name; a custom rubric declares model, and rejects the eval with
 // "requires model" if only deployment_name is sent. One declaration binds

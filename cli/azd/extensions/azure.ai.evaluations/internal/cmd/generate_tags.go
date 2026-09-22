@@ -78,11 +78,41 @@ func (ec *evalContext) rememberGenerationLevel(ctx context.Context, jobID, evalu
 }
 
 // generationLevelFor is what a reattach knows about a job it did not wait for.
-func (ec *evalContext) generationLevelFor(ctx context.Context, jobID string) string {
-	if jobID == "" {
+//
+// The job the service holds is asked first. It echoes the submission back, so
+// it states the type authoritatively and -- unlike the local record -- it is
+// there whether or not the generation ran inside an azd environment. A
+// standalone `generate --no-wait` has nowhere to write the local note, and
+// reading only that note is what left the reattached version tagged with
+// nothing and the declaration written at whatever a later reader assumed.
+//
+// Local state remains the fallback, for an older service that does not echo
+// inputs.
+func (ec *evalContext) generationLevelFor(ctx context.Context, job *eval_api.GenerationJob) string {
+	if job == nil || job.ID == "" {
 		return ""
 	}
-	return ec.privateValue(ctx, generationLevelKey(jobID))
+	if level := evaluationLevelOfGeneration(job.GenerationType()); level != "" {
+		return level
+	}
+	return ec.privateValue(ctx, generationLevelKey(job.ID))
+}
+
+// evaluationLevelOfGeneration inverts dataGenerationType.
+//
+// Only the type that has a level maps to one. An unrecognized or absent type
+// returns empty rather than defaulting to turn, so a service that stops echoing
+// inputs falls through to the local record instead of overwriting a
+// conversation dataset's tag with the wrong level.
+func evaluationLevelOfGeneration(generationType string) string {
+	switch generationType {
+	case eval_api.DataGenerationTypeConversationSimulation:
+		return project.EvaluationLevelConversation
+	case eval_api.DataGenerationTypeSimpleQnA:
+		return project.EvaluationLevelTurn
+	default:
+		return ""
+	}
 }
 
 // applyGeneratedDatasetTags records on the registered version what was

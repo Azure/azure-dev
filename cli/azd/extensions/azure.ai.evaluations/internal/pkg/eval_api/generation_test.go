@@ -4,6 +4,7 @@
 package eval_api
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -277,6 +278,60 @@ func TestNewDataGenerationJobRequest_UnstatedTypeStaysSimpleQnA(t *testing.T) {
 
 	require.NotNil(t, req)
 	assert.Equal(t, "simple_qna", req.Inputs.Options.Type)
+}
+
+// The job resource echoes the submission back. That echo is the only thing a
+// standalone `--no-wait` reattach has to learn what was generated, because
+// there is no azd environment for the CLI to have recorded it in.
+//
+// The body below is a real GET /data_generation_jobs response with the prompt
+// text shortened. Decoding it is what pins the field the recovery reads.
+func TestGenerationJobDecodesTheEchoedSubmission(t *testing.T) {
+	const body = `{
+      "status": "succeeded",
+      "inputs": {
+        "name": "support-regression",
+        "scenario": "evaluation",
+        "options": {
+          "type": "simple_qna",
+          "max_samples": 15,
+          "model_options": { "model": "gpt-4.1-nano" }
+        },
+        "sources": [
+          { "type": "prompt", "prompt": "be helpful" },
+          { "type": "agent", "agent_name": "support-agent" }
+        ]
+      },
+      "result": { "generated_samples": 12 },
+      "finished_at": 1789588248,
+      "id": "datagen-f443ba556076416aa6473efbd17ad9af",
+      "created_at": 1789588183
+    }`
+
+	var job GenerationJob
+	require.NoError(t, json.Unmarshal([]byte(body), &job))
+
+	assert.Equal(t, "datagen-f443ba556076416aa6473efbd17ad9af", job.ID)
+	assert.Equal(t, "succeeded", job.Status)
+	require.NotNil(t, job.Inputs, "the submission is echoed back")
+	assert.Equal(t, "simple_qna", job.GenerationType())
+	assert.Equal(t, "support-regression", job.Inputs.Name)
+	assert.Equal(t, "evaluation", job.Inputs.Scenario)
+	assert.Equal(t, 15, job.Inputs.Options.MaxSamples)
+	assert.Equal(t, "gpt-4.1-nano", job.Inputs.Options.ModelOptions.Model)
+	require.Len(t, job.Inputs.Sources, 2)
+	assert.Equal(t, "support-agent", job.Inputs.Sources[1].AgentName)
+}
+
+// A response without the echo is the older shape, and it has to decode to no
+// type rather than to the zero value of a real one. Reading "" as simple_qna
+// would relabel a conversation dataset as a turn dataset.
+func TestGenerationJobWithoutInputsStatesNoType(t *testing.T) {
+	var job GenerationJob
+	require.NoError(t, json.Unmarshal([]byte(`{"id":"datagen-1","status":"running"}`), &job))
+
+	assert.Nil(t, job.Inputs)
+	assert.Empty(t, job.GenerationType())
 }
 
 // The evaluator request sends the name twice, under two keys the service reads

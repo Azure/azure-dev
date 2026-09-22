@@ -4,10 +4,12 @@
 package cmd
 
 import (
+	"context"
 	"maps"
 	"testing"
 
 	"azureaieval/internal/pkg/dataset_api"
+	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
 
 	"github.com/stretchr/testify/assert"
@@ -133,4 +135,80 @@ func TestGeneratedTagsMergeRatherThanReplace(t *testing.T) {
 	assert.Equal(t, "preserved", merged["something_else"])
 	assert.Equal(t, "conversation", merged["evaluation_level"])
 	assert.Len(t, merged, 5)
+}
+
+// The job resource echoes the submission, so the type it was generated with is
+// readable straight off it. This is what a reattach uses instead of the plan it
+// never saw, and it is the inverse of dataGenerationType.
+func TestEvaluationLevelOfGeneration(t *testing.T) {
+	t.Parallel()
+
+	for _, level := range []string{project.EvaluationLevelConversation, project.EvaluationLevelTurn} {
+		assert.Equal(t, level, evaluationLevelOfGeneration(dataGenerationType(level)),
+			"the level survives the round trip through the submitted type")
+	}
+
+	// Anything else has no level to state. Defaulting to turn here would tag a
+	// conversation dataset as a turn dataset the moment the service stopped
+	// echoing inputs, which is worse than saying nothing.
+	assert.Empty(t, evaluationLevelOfGeneration(""))
+	assert.Empty(t, evaluationLevelOfGeneration("something_new"))
+}
+
+// GenerationType reads the submitted type without assuming the service echoed
+// it. A job with no inputs is the older response shape, not a turn job.
+func TestGenerationJobGenerationType(t *testing.T) {
+	t.Parallel()
+
+	withInputs := &eval_api.GenerationJob{
+		ID: "datagen-1",
+		Inputs: &eval_api.DataGenerationInputs{
+			Options: eval_api.DataGenerationOptions{
+				Type: eval_api.DataGenerationTypeConversationSimulation,
+			},
+		},
+	}
+	assert.Equal(t, "conversation_simulation", withInputs.GenerationType())
+
+	assert.Empty(t, (&eval_api.GenerationJob{ID: "datagen-2"}).GenerationType(),
+		"a response that echoed nothing states no type")
+	assert.Empty(t, (*eval_api.GenerationJob)(nil).GenerationType())
+}
+
+// A standalone `generate --no-wait` has no azd environment to record the level
+// in, so the reattach that finishes it has to recover the level from the job
+// itself. Reading only the local note is what left such a version tagged with
+// nothing.
+func TestGenerationLevelForRecoversFromTheJobWithoutLocalState(t *testing.T) {
+	t.Parallel()
+
+	// No azd client at all: the standalone case, where there is nowhere a level
+	// could have been recorded.
+	ec := &evalContext{}
+	ctx := context.Background()
+
+	simulated := &eval_api.GenerationJob{
+		ID: "datagen-1",
+		Inputs: &eval_api.DataGenerationInputs{
+			Options: eval_api.DataGenerationOptions{
+				Type: eval_api.DataGenerationTypeConversationSimulation,
+			},
+		},
+	}
+	assert.Equal(t, project.EvaluationLevelConversation, ec.generationLevelFor(ctx, simulated))
+
+	qna := &eval_api.GenerationJob{
+		ID: "datagen-2",
+		Inputs: &eval_api.DataGenerationInputs{
+			Options: eval_api.DataGenerationOptions{Type: eval_api.DataGenerationTypeSimpleQnA},
+		},
+	}
+	assert.Equal(t, project.EvaluationLevelTurn, ec.generationLevelFor(ctx, qna))
+
+	// A service that echoes nothing falls through to local state, which is
+	// empty here -- not to a default that would mislabel the version.
+	assert.Empty(t, ec.generationLevelFor(ctx, &eval_api.GenerationJob{ID: "datagen-3"}))
+	assert.Empty(t, ec.generationLevelFor(ctx, nil))
+	assert.Empty(t, ec.generationLevelFor(ctx, &eval_api.GenerationJob{}),
+		"a job with no id is nothing to recover against")
 }

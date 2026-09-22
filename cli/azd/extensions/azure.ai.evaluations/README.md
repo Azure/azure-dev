@@ -85,6 +85,60 @@ in the referenced file, so `azd ai eval generate` will not update it in place an
 says so rather than writing a second declaration of the same rubric beside the
 directive. Edit the referenced file, or generate under a different name.
 
+### Simulating multi-turn conversations
+
+The example above grades rows that already hold an exchange. A `simulation:`
+block instead has the service hold the conversation first — a simulator model
+plays the user against your deployed agent — and grades the transcript it
+produces:
+
+```yaml
+evals:
+  - name: retail-conversations
+    dataset: retail-seeds
+    evaluation_level: conversation
+    simulation:
+      model: gpt-4.1-nano       # plays the user, not the agent under test
+      num_conversations: 3      # per seed row, 1–5
+      max_turns: 8              # 1–20; omit to leave it to the service
+    evaluators:
+      - evaluator: builtin.task_completion
+        initialization_parameters:
+          model: gpt-4.1-nano
+    target:
+      type: agent
+      name: support-agent
+```
+
+`simulation:` requires `evaluation_level: conversation` and an agent target:
+there is no turn to score before the conversation exists, and nothing to hold it
+with if the target is a model. It is also exclusive with `source:` and
+`max_samples:` — the run creates its conversations rather than collecting or
+sampling ones that already happened. Every evaluator listed has to support
+conversation level; one that does not is refused at deploy rather than bound to
+a column the graded rows do not have.
+
+The dataset holds **seeds**, not exchanges. One row describes one conversation
+to have:
+
+```jsonl
+{"test_case_description": "A customer asks why a delivered order never arrived.", "desired_num_turns": 4}
+{"test_case_description": "A customer disputes a charge and wants it reversed."}
+```
+
+Only `test_case_description` is required; it is the scenario the simulator opens
+with. `desired_num_turns` is optional and per row. It is a request, not an
+override: asking for more turns than `max_turns` allows is refused before the
+run starts rather than quietly truncated.
+
+Seed rows carry no `query` or `response`, because nobody has asked anything yet.
+That is why the evaluators bind `messages` — the transcript the run produces —
+and why a run over seed rows whose target reads a column the seeds do not have
+is refused instead of scored against the seeded text.
+
+`azd ai eval generate --evaluation-level conversation` writes seeds in this
+shape and tags the registered dataset so a later run knows what it holds.
+
 ### Repeated deploys do not create redundant versions
 
 Datasets are fingerprinted locally, because the dataset API exposes no content

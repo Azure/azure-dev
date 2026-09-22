@@ -87,10 +87,10 @@ var datasetJobs = jobKind{
 			return ref, err
 		}
 		// A generation started with --no-wait ended at submission, so this is
-		// the first chance to tag the version it produced. The level recorded
-		// against the job stands in for the plan there is none of; a version
-		// that was already tagged keeps what it carries.
-		ref.EvaluationLevel = evaluationLevelForRef(ec.generationLevelFor(ctx, job.ID), ref)
+		// the first chance to tag the version it produced. The job states the
+		// type it was submitted with; the level recorded locally stands in when
+		// it does not. A version that was already tagged keeps what it carries.
+		ref.EvaluationLevel = evaluationLevelForRef(ec.generationLevelFor(ctx, job), ref)
 		ec.applyGeneratedDatasetTags(ctx, ref, ref.EvaluationLevel)
 		return ref, nil
 	},

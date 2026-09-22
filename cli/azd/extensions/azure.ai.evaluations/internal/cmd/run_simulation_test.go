@@ -5,6 +5,10 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaieval/internal/project"
@@ -163,6 +167,59 @@ func TestRefuseUnusableSeedRows_PerRowTurnsRespectTheCeiling(t *testing.T) {
 	// measured against a bound this eval never set.
 	group.Simulation.MaxTurns = 0
 	assert.NoError(t, refuseUnusableSeedRows(group, pastBound))
+}
+
+// The README prints seed rows for a reader to copy. Rows that the CLI would
+// then refuse are worse than no example, so the documented shape is checked
+// against the same guard a real run goes through.
+func TestTheREADMESeedRowsAreAcceptedAsSeeds(t *testing.T) {
+	t.Parallel()
+
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	require.NoError(t, err)
+
+	block := fencedBlockAfter(t, string(readme), "### Simulating multi-turn conversations", "jsonl")
+
+	var rows []map[string]any
+	for line := range strings.Lines(block) {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var row map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &row), "documented seed row is not JSON: %s", line)
+		rows = append(rows, row)
+	}
+	require.NotEmpty(t, rows, "the README no longer shows seed rows")
+
+	group := runnableSimulation()
+	group.Simulation.MaxTurns = project.MaxSimulationTurns
+	require.NoError(t, refuseUnusableSeedRows(group, rows),
+		"the README documents seed rows the CLI would refuse")
+}
+
+// fencedBlockAfter returns the first fenced block of the given language that
+// follows a heading.
+func fencedBlockAfter(t *testing.T, readme, heading, language string) string {
+	t.Helper()
+
+	readme = strings.ReplaceAll(readme, "\r\n", "\n")
+
+	at := strings.Index(readme, heading)
+	require.NotEqual(t, -1, at,
+		"the README no longer has the %q section; retarget this test rather than deleting it",
+		heading)
+
+	fence := "```" + language + "\n"
+	rest := readme[at+len(heading):]
+	start := strings.Index(rest, fence)
+	require.NotEqual(t, -1, start, "no %s block follows %q", language, heading)
+
+	rest = rest[start+len(fence):]
+	end := strings.Index(rest, "```")
+	require.NotEqual(t, -1, end, "the block's fence is unterminated")
+
+	return rest[:end]
 }
 
 // An eval with no simulation block must not be sent down this path at all.

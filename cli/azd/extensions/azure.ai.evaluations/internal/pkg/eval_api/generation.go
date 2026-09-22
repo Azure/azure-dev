@@ -160,34 +160,35 @@ func BuildGenerationSources(
 // later turns into one. Asking for the wrong one returns rows the eval cannot
 // grade, so the level the caller asked for has to reach the wire.
 //
-// Named here because the GA TypeSpec has not landed. When the discriminator is
-// confirmed this is the one place it changes.
+// The values are DataGenerationJobType in the published Foundry contract
+// (specification/ai-foundry/data-plane/Foundry/src/data_generation_jobs).
 const (
-	DataGenerationTypeSimpleQnA              = "simple_qna"
-	DataGenerationTypeConversationSimulation = "conversation_simulation"
+	DataGenerationTypeSimpleQnA = "simple_qna"
 
-	// DataGenerationTypeSimulationSeedGA is the spelling the published Foundry
-	// contract is reported to use for the simulation-seed request shape.
+	// DataGenerationTypeSimulationSeed is what a request must carry to get
+	// scenario seeds. It is the discriminator on
+	// SimulationSeedDataGenerationJobOptions; the enum has no other member
+	// that means conversations.
+	DataGenerationTypeSimulationSeed = "simulation_seed"
+
+	// DataGenerationTypeConversationSimulation is the spelling the CLI used
+	// before the contract was published, and the one the portal writes into a
+	// dataset version's tags.
 	//
-	// Not sent. It is recognized on the way back, because a job submitted by
-	// the portal or by a later CLI would echo it, and a reattach that did not
-	// know the name would tag the version it collected with nothing.
-	//
-	// Which spelling the request must carry is the open question: no
-	// conversation-simulation job has ever been submitted against a project
-	// this CLI can see -- a listing of 100 jobs shows only simple_qna and
-	// traces -- so neither literal has been observed on a real request.
-	DataGenerationTypeSimulationSeedGA = "simulation_seed"
+	// Never sent. It is recognized on the way back so a dataset tagged by the
+	// portal, or by a build of this CLI that predates the fix, is still read
+	// as holding seeds.
+	DataGenerationTypeConversationSimulation = "conversation_simulation"
 )
 
 // SimulationSeedGenerationType reports whether a generation type names the
 // simulation-seed shape under any of its known spellings.
 //
-// Read rather than sent, so recognizing both costs nothing and stops a
+// Read rather than sent, so recognizing both costs nothing and stops the
 // rename landing as silent data loss on the reattach path.
 func SimulationSeedGenerationType(generationType string) bool {
-	return generationType == DataGenerationTypeConversationSimulation ||
-		generationType == DataGenerationTypeSimulationSeedGA
+	return generationType == DataGenerationTypeSimulationSeed ||
+		generationType == DataGenerationTypeConversationSimulation
 }
 
 // NewDataGenerationJobRequest builds a DataGenerationJobRequest from the

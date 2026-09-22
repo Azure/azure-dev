@@ -458,7 +458,7 @@ type retryConsent func(agent, jobID string, why error) (bool, error)
 // level, including an unstated one, keeps the turn-shaped default.
 func dataGenerationType(evaluationLevel string) string {
 	if evaluationLevel == project.EvaluationLevelConversation {
-		return eval_api.DataGenerationTypeConversationSimulation
+		return eval_api.DataGenerationTypeSimulationSeed
 	}
 	return eval_api.DataGenerationTypeSimpleQnA
 }

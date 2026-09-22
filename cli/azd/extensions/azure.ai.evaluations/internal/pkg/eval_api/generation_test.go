@@ -258,14 +258,18 @@ func TestNewDataGenerationJobRequest(t *testing.T) {
 
 // A conversation eval grades scenario seeds, not query/response pairs. The type
 // is what tells the service which to produce, so it is pinned on the wire.
+//
+// `simulation_seed` is DataGenerationJobType.simulation_seed in the published
+// Foundry contract. The enum has no member spelled conversation_simulation, so
+// sending that would not select the seed shape at all.
 func TestNewDataGenerationJobRequest_CarriesTheConversationSeedType(t *testing.T) {
 	sources := []GenerationSource{{Type: "prompt", Prompt: "be helpful"}}
 
 	req := NewDataGenerationJobRequest("retail-multiturn", "gpt-4o", 5, sources,
-		DataGenerationTypeConversationSimulation)
+		DataGenerationTypeSimulationSeed)
 
 	require.NotNil(t, req)
-	assert.Equal(t, "conversation_simulation", req.Inputs.Options.Type)
+	assert.Equal(t, "simulation_seed", req.Inputs.Options.Type)
 	assert.Equal(t, "evaluation", req.Inputs.Scenario,
 		"the scenario stays evaluation; only the seed type changes")
 }
@@ -278,6 +282,40 @@ func TestNewDataGenerationJobRequest_UnstatedTypeStaysSimpleQnA(t *testing.T) {
 
 	require.NotNil(t, req)
 	assert.Equal(t, "simple_qna", req.Inputs.Options.Type)
+}
+
+// The literals are DataGenerationJobType in the published Foundry contract
+// (specification/ai-foundry/data-plane/Foundry/src/data_generation_jobs/models.tsp):
+//
+//	union DataGenerationJobType {
+//	  string,
+//	  simple_qna: "simple_qna",
+//	  traces: "traces",
+//	  tool_use: "tool_use",
+//	  simulation_seed: "simulation_seed",
+//	}
+//
+// A discriminator that is not a member of that union selects no options shape,
+// so this is pinned against the spelling rather than against whatever the CLI
+// happened to send.
+func TestTheGenerationTypesAreTheContractsDiscriminators(t *testing.T) {
+	assert.Equal(t, "simple_qna", DataGenerationTypeSimpleQnA)
+	assert.Equal(t, "simulation_seed", DataGenerationTypeSimulationSeed)
+
+	// Recognized on the way back only. The portal writes it into dataset tags
+	// and older builds of this CLI sent it, but it names no member of the
+	// union and must never go out on a request again.
+	assert.Equal(t, "conversation_simulation", DataGenerationTypeConversationSimulation)
+	assert.True(t, SimulationSeedGenerationType(DataGenerationTypeConversationSimulation))
+	assert.True(t, SimulationSeedGenerationType(DataGenerationTypeSimulationSeed))
+	assert.False(t, SimulationSeedGenerationType(DataGenerationTypeSimpleQnA))
+
+	// Whatever a caller asks for, only a contract member reaches the wire.
+	for _, level := range []string{DataGenerationTypeSimpleQnA, DataGenerationTypeSimulationSeed} {
+		req := NewDataGenerationJobRequest("n", "m", 5, nil, level)
+		assert.Contains(t, []string{"simple_qna", "traces", "tool_use", "simulation_seed"},
+			req.Inputs.Options.Type, "%q is not a DataGenerationJobType", req.Inputs.Options.Type)
+	}
 }
 
 // The job resource echoes the submission back. That echo is the only thing a

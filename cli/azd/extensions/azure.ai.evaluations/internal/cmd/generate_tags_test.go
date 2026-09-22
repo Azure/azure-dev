@@ -17,12 +17,16 @@ import (
 
 // Spec §5: a generated seed dataset records what it holds, so a later reattach
 // or run does not have to infer it from row shape.
+//
+// The tag records the type that was requested, so it tracks the discriminator
+// rather than being spelled separately -- the service writes the same value
+// into its own copy of the tag.
 func TestSeedDatasetTags(t *testing.T) {
 	t.Parallel()
 
 	conversation := seedDatasetTags(project.EvaluationLevelConversation)
 	assert.Equal(t, map[string]string{
-		"data_generation_type": "conversation_simulation",
+		"data_generation_type": "simulation_seed",
 		"evaluation_level":     "conversation",
 		"scenario":             "evaluation",
 	}, conversation)
@@ -157,15 +161,18 @@ func TestEvaluationLevelOfGeneration(t *testing.T) {
 
 // The published contract is reported to name the simulation-seed shape
 // `simulation_seed` rather than `conversation_simulation`. Which one a request
-// must carry is unsettled, but a reattach only ever *reads* the name, so it
-// recognizes both -- a job submitted by the portal or by a later CLI must not
-// come back with no level just because it spelled the shape differently.
+// The published contract names the simulation-seed shape `simulation_seed`;
+// `conversation_simulation` is what this CLI sent before that landed, and what
+// the portal writes into a version's tags. A reattach only ever *reads* the
+// name, so it recognizes both -- a dataset tagged by the portal, or by an older
+// build, must not come back with no level just because it spelled it
+// differently.
 func TestBothSimulationSeedSpellingsAreRecognizedOnTheWayBack(t *testing.T) {
 	t.Parallel()
 
 	for _, spelling := range []string{
+		eval_api.DataGenerationTypeSimulationSeed,
 		eval_api.DataGenerationTypeConversationSimulation,
-		eval_api.DataGenerationTypeSimulationSeedGA,
 	} {
 		assert.True(t, eval_api.SimulationSeedGenerationType(spelling), "%q names seeds", spelling)
 		assert.Equal(t, project.EvaluationLevelConversation, evaluationLevelOfGeneration(spelling))

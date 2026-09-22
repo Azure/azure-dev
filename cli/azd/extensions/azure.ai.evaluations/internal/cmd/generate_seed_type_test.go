@@ -28,7 +28,7 @@ func TestDataGenerationType_MapsLevelToSeedType(t *testing.T) {
 		{
 			name:  "conversation asks for seeds",
 			level: project.EvaluationLevelConversation,
-			want:  eval_api.DataGenerationTypeConversationSimulation,
+			want:  eval_api.DataGenerationTypeSimulationSeed,
 		},
 		{
 			name:  "turn keeps query/response pairs",
@@ -75,7 +75,7 @@ func TestGenerateDataset_ConversationLevelAsksForSeedRows(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, submitted, "the job has to reach the service")
 
-	assert.Contains(t, string(submitted), "conversation_simulation",
+	assert.Contains(t, string(submitted), "simulation_seed",
 		"a conversation eval grades scenario seeds")
 	assert.NotContains(t, string(submitted), "simple_qna",
 		"query/response pairs are not what a simulated conversation is built from")
@@ -96,7 +96,7 @@ func TestGenerateDataset_TurnLevelStillAsksForSimpleQnA(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Contains(t, string(submitted), "simple_qna")
-	assert.NotContains(t, string(submitted), "conversation_simulation")
+	assert.NotContains(t, string(submitted), "simulation_seed")
 }
 
 // A plan that never stated a level is the pre-existing shape, and it has to

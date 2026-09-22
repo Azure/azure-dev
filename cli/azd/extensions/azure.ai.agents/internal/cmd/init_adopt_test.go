@@ -4,9 +4,12 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,6 +20,113 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+func TestLoadExplicitAzureYaml(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		content     string
+		wantErr     string
+		wantSuggest string
+	}{
+		{
+			name: "unified project",
+			content: `name: project
+services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: assistant
+`,
+		},
+		{
+			name:        "bare hosted definition",
+			content:     "kind: hosted\nname: assistant\n",
+			wantErr:     "standalone agent definition with kind \"hosted\"",
+			wantSuggest: "azure.ai.agent service",
+		},
+		{
+			name:        "bare voice definition",
+			content:     "kind: prompt-voice\nname: assistant\n",
+			wantErr:     "standalone agent definition with kind \"prompt-voice\"",
+			wantSuggest: "azure.ai.agent service",
+		},
+		{
+			name:        "bare prompt definition",
+			content:     "kind: prompt\nname: assistant\n",
+			wantErr:     "standalone agent definition with kind \"prompt\"",
+			wantSuggest: "azure.ai.agent service",
+		},
+		{
+			name:        "agent manifest wrapper",
+			content:     "template:\n  kind: hosted\n  name: assistant\n",
+			wantErr:     "top-level 'template:'",
+			wantSuggest: "azure.ai.agent service",
+		},
+		{
+			name:    "project without agent service",
+			content: "services:\n  web:\n    host: containerapp\n",
+			wantErr: "does not declare an agent service",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "input.yaml")
+			require.NoError(t, os.WriteFile(path, []byte(tt.content), 0o600))
+
+			content, err := loadExplicitAzureYaml(
+				t.Context(), nil, &initFlags{manifestPointer: path}, http.DefaultClient,
+			)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				require.Equal(t, tt.content, string(content))
+				return
+			}
+			require.ErrorContains(t, err, tt.wantErr)
+			if tt.wantSuggest != "" {
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				require.Contains(t, localErr.Suggestion, tt.wantSuggest)
+			}
+		})
+	}
+}
+
+func TestLoadExplicitAzureYamlRemote(t *testing.T) {
+	t.Parallel()
+
+	content := `services:
+  agent:
+    host: azure.ai.agent
+    kind: prompt
+`
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		require.Equal(t, "https://api.github.com/repos/example/repo/contents/azure.yaml?ref=main", req.URL.String())
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBufferString(content)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+
+	got, err := loadExplicitAzureYaml(
+		t.Context(),
+		nil,
+		&initFlags{manifestPointer: "https://github.com/example/repo/blob/main/azure.yaml"},
+		client,
+	)
+	require.NoError(t, err)
+	require.Equal(t, content, string(got))
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
 
 func TestInspectAzureYaml(t *testing.T) {
 	tests := []struct {
@@ -309,6 +419,59 @@ func TestValidateStagedAzureYamlReturnsRefErrors(t *testing.T) {
 	err := validateStagedAzureYaml(root, filepath.Join(root, "azure.yaml"))
 	require.ErrorContains(t, err, "cannot read")
 	require.ErrorContains(t, err, "missing.yaml")
+}
+
+func TestValidateStagedAzureYamlRejectsLegacyDefinitionShapes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		azureYaml string
+		fileName  string
+		fileBody  string
+		want      string
+	}{
+		{
+			name: "nested config",
+			azureYaml: `services:
+  agent:
+    host: azure.ai.agent
+    config:
+      kind: hosted
+      name: legacy-agent
+`,
+			want: "unsupported nested config block",
+		},
+		{
+			name: "implicit disk definition",
+			azureYaml: `services:
+  agent:
+    host: azure.ai.agent
+    project: .
+`,
+			fileName: "agent.yaml",
+			fileBody: "kind: hosted\nname: legacy-agent\n",
+			want:     "does not contain a direct or root-$ref definition",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(
+				filepath.Join(root, "azure.yaml"), []byte(tt.azureYaml), 0o600,
+			))
+			if tt.fileName != "" {
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, tt.fileName), []byte(tt.fileBody), 0o600,
+				))
+			}
+
+			err := validateStagedAzureYaml(root, filepath.Join(root, "azure.yaml"))
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
 }
 
 func TestFoundryProjectName(t *testing.T) {
@@ -831,8 +994,8 @@ func TestAdoptedExternalRegistryConnections_LegacyDefinitions(t *testing.T) {
 				},
 				"",
 			)
-			require.NoError(t, err)
-			require.Equal(t, []string{"external-registry"}, connections)
+			require.Error(t, err)
+			require.Empty(t, connections)
 		})
 	}
 }

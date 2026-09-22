@@ -51,7 +51,7 @@ func TestProjectAgentServicesFrom(t *testing.T) {
 			services: map[string]*azdext.ServiceConfig{
 				"chat": legacyConfigAgentService("chat", "legacy-agent"),
 			},
-			want: []projectAgentService{{ServiceName: "chat", AgentName: "legacy-agent"}},
+			wantErrCount: 1,
 		},
 		{
 			name: "service without a definition is not reusable",
@@ -122,15 +122,8 @@ func TestProjectAgentServicesFrom_DiskDefinition(t *testing.T) {
 				},
 			}, projectRoot)
 
-			require.Empty(t, errs)
-			assert.Equal(t,
-				[]projectAgentService{{
-					ServiceName:  "chat",
-					AgentName:    "disk-agent",
-					RelativePath: "src/chat",
-				}},
-				services,
-			)
+			require.Len(t, errs, 1)
+			assert.Empty(t, services)
 		})
 	}
 }
@@ -173,9 +166,7 @@ func TestProjectAgentServicesFrom_RejectsUnsafeServicePaths(t *testing.T) {
 	}
 }
 
-// Project detection runs before the bare agent.yaml reuse path. A service that
-// already owns an on-disk definition must therefore be recognized from a
-// service subdirectory instead of being scaffolded as a second service.
+// An implicit on-disk definition is not a reusable unified project service.
 func TestDetectProjectAgentServices_ConfiguredDiskDefinitionFromServiceDir(t *testing.T) {
 	projectRoot := t.TempDir()
 	serviceDir := filepath.Join(projectRoot, "src", "chat")
@@ -204,16 +195,8 @@ func TestDetectProjectAgentServices_ConfiguredDiskDefinitionFromServiceDir(t *te
 
 	detection := detectProjectAgentServices(t.Context(), client)
 	assert.Equal(t, projectRoot, detection.projectRoot)
-	assert.Equal(t,
-		[]projectAgentService{{
-			ServiceName:  "chat",
-			AgentName:    "disk-agent",
-			RelativePath: "src/chat",
-		}},
-		detection.services,
-	)
-	assert.False(t, positionalSourceOptsOutOfReuse(".", projectRoot, detection.services),
-		"a positional dot from the configured service directory must reuse the project service")
+	assert.Empty(t, detection.services)
+	assert.True(t, positionalSourceOptsOutOfReuse(".", projectRoot, detection.services))
 }
 
 // Ordering must not depend on Go's randomized map iteration, so the same input

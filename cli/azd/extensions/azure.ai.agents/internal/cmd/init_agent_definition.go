@@ -4,18 +4,15 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
-	"os"
 	"strings"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/paths"
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
-	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -27,8 +24,8 @@ type initAgentDefinitionProbe struct {
 	found      bool
 }
 
-// probeAgentDefinitionForInit preserves the legacy sources that init must
-// recognize while runtime commands require a unified service definition.
+// probeAgentDefinitionForInit resolves the same unified direct/root-$ref
+// service definitions accepted by runtime commands.
 func probeAgentDefinitionForInit(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
@@ -36,126 +33,44 @@ func probeAgentDefinitionForInit(
 	if svc == nil {
 		return initAgentDefinitionProbe{}, nil
 	}
-
-	for _, props := range []*structpb.Struct{
-		svc.GetAdditionalProperties(),
-		svc.GetConfig(),
-	} {
-		kind, err := initAgentKindFromProperties(props, projectRoot)
-		if err != nil {
-			return initAgentDefinitionProbe{}, err
-		}
-		if kind == "" {
-			continue
-		}
-
-		// Present each candidate as the supported service-level shape. This
-		// keeps parsing, validation, and $ref behavior on the shared loader
-		// without making runtime commands accept config-nested definitions.
-		candidate := proto.Clone(svc).(*azdext.ServiceConfig)
-		candidate.AdditionalProperties = proto.Clone(props).(*structpb.Struct)
-		candidate.Config = nil
-		definition, isHosted, found, _, err := projectpkg.AgentDefinitionFromResolvedServiceForInit(
-			candidate,
-			projectRoot,
+	if svc.GetHost() == AiAgentHost && svc.GetConfig() != nil && len(svc.GetConfig().GetFields()) > 0 {
+		return initAgentDefinitionProbe{}, exterrors.Validation(
+			exterrors.CodeDeprecatedAgentServiceConfig,
+			fmt.Sprintf("service %q uses the unsupported nested config block", svc.GetName()),
+			"move the agent definition to service-level properties in azure.yaml, "+
+				"or add a service-level $ref to a direct agent definition",
 		)
-		return initAgentDefinitionProbe{
-			definition: definition,
-			kind:       agent_yaml.AgentKind(kind),
-			isHosted:   isHosted,
-			found:      found,
-		}, err
 	}
 
-	for _, name := range []string{"agent.yaml", "agent.yml"} {
-		path, err := paths.JoinAllowRoot(projectRoot, svc.GetRelativePath(), name)
-		if err != nil {
-			return initAgentDefinitionProbe{}, fmt.Errorf(
-				"invalid service path for %s: %w",
-				svc.GetName(),
-				err,
-			)
-		}
-		//nolint:gosec // path is constrained to the project root above
-		data, err := os.ReadFile(path)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue
-			}
-			return initAgentDefinitionProbe{}, fmt.Errorf("read %s: %w", path, err)
-		}
-
-		var header struct {
-			Kind agent_yaml.AgentKind `yaml:"kind"`
-		}
-		if err := yaml.Unmarshal(data, &header); err != nil {
-			return initAgentDefinitionProbe{}, fmt.Errorf("parse %s: %w", path, err)
-		}
-		if err := agent_yaml.ValidateAgentDefinition(data); err != nil {
-			return initAgentDefinitionProbe{}, err
-		}
-
-		probe := initAgentDefinitionProbe{
-			kind:     header.Kind,
-			isHosted: header.Kind == agent_yaml.AgentKindHosted,
-			found:    true,
-		}
-		if !probe.isHosted {
-			return probe, nil
-		}
-
-		definition, err := loadAgentDefinitionFile(path)
-		if err != nil {
-			return initAgentDefinitionProbe{}, err
-		}
-		probe.definition = *definition
-		return probe, nil
+	props := svc.GetAdditionalProperties()
+	kind, err := initAgentKindFromProperties(props, projectRoot)
+	if err != nil {
+		return initAgentDefinitionProbe{}, err
 	}
 
-	return initAgentDefinitionProbe{}, nil
+	candidate := proto.Clone(svc).(*azdext.ServiceConfig)
+	if props != nil {
+		candidate.AdditionalProperties = proto.Clone(props).(*structpb.Struct)
+	}
+	candidate.Config = nil
+	definition, isHosted, found, _, err := projectpkg.AgentDefinitionFromResolvedServiceForInit(
+		candidate,
+		projectRoot,
+	)
+	return initAgentDefinitionProbe{
+		definition: definition,
+		kind:       agent_yaml.AgentKind(kind),
+		isHosted:   isHosted,
+		found:      found,
+	}, err
 }
 
 func probeAgentKindForInit(svc *azdext.ServiceConfig, projectRoot string) (agent_yaml.AgentKind, error) {
-	if svc == nil {
-		return "", nil
+	probe, err := probeAgentDefinitionForInit(svc, projectRoot)
+	if err != nil {
+		return "", err
 	}
-
-	for _, props := range []*structpb.Struct{
-		svc.GetAdditionalProperties(),
-		svc.GetConfig(),
-	} {
-		kind, err := initAgentKindFromProperties(props, projectRoot)
-		if err != nil {
-			return "", err
-		}
-		if kind != "" {
-			return agent_yaml.AgentKind(kind), nil
-		}
-	}
-
-	for _, name := range []string{"agent.yaml", "agent.yml"} {
-		path, err := paths.JoinAllowRoot(projectRoot, svc.GetRelativePath(), name)
-		if err != nil {
-			continue
-		}
-		//nolint:gosec // path is constrained to the project root above
-		data, err := os.ReadFile(path)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue
-			}
-			return "", fmt.Errorf("read %s: %w", path, err)
-		}
-		var header struct {
-			Kind agent_yaml.AgentKind `yaml:"kind"`
-		}
-		if err := yaml.Unmarshal(data, &header); err != nil {
-			return "", fmt.Errorf("parse %s: %w", path, err)
-		}
-		return header.Kind, nil
-	}
-
-	return "", nil
+	return probe.kind, nil
 }
 
 func initAgentKindFromProperties(props *structpb.Struct, projectRoot string) (string, error) {

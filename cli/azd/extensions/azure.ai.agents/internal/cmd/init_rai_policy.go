@@ -71,14 +71,9 @@ func resolvePromptRaiPolicy(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	flags *initFlags,
-	manifest *promptAgentManifest,
 	foundryProject *FoundryProjectInfo,
 	credential azcore.TokenCredential,
 ) (raiPolicySelection, error) {
-	if manifest != nil && len(manifest.definition.Policies) > 0 {
-		return raiPolicySelection{}, nil
-	}
-
 	requested := strings.TrimSpace(flags.raiPolicy)
 	switch {
 	case strings.EqualFold(requested, raiPolicyFlagNone):

@@ -343,6 +343,61 @@ func TestApplyDeployModeToAdoptedProject_NoAgentServices(t *testing.T) {
 	assert.False(t, usesContainer)
 }
 
+func TestApplyDeployModeToAdoptedProject_SkipsPromptAgents(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, projectDir string) *azdext.ServiceConfig
+	}{
+		{
+			name: "direct",
+			setup: func(t *testing.T, _ string) *azdext.ServiceConfig {
+				t.Helper()
+				return agentServiceConfig(t, "agent", map[string]any{
+					"kind": "prompt",
+					"name": "prompt-agent",
+				})
+			},
+		},
+		{
+			name: "root ref",
+			setup: func(t *testing.T, projectDir string) *azdext.ServiceConfig {
+				t.Helper()
+				require.NoError(t, os.WriteFile(
+					filepath.Join(projectDir, "prompt.yaml"),
+					[]byte("kind: prompt\nname: prompt-agent\n"),
+					0o600,
+				))
+				return agentServiceConfig(t, "agent", map[string]any{
+					"$ref": "./prompt.yaml",
+				})
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projectDir := t.TempDir()
+			server := &deployModeProjectServer{
+				path: projectDir,
+				services: map[string]*azdext.ServiceConfig{
+					"agent": tt.setup(t, projectDir),
+				},
+			}
+			client := newProjectRecorderClient(t, server)
+
+			usesContainer, err := applyDeployModeToAdoptedProject(
+				t.Context(),
+				&initFlags{deployMode: "container"},
+				client,
+			)
+			require.NoError(t, err)
+			assert.False(t, usesContainer)
+			assert.Empty(t, server.sets["agent"])
+			assert.Empty(t, server.unsets["agent"])
+		})
+	}
+}
+
 func TestApplyDeployModeToAdoptedProject_ResolvesServicePath(t *testing.T) {
 	projectDir := t.TempDir()
 	serviceDir := filepath.Join(projectDir, "src", "agent")
@@ -374,11 +429,14 @@ func TestApplyDeployModeToAdoptedProject_ResolvesServicePath(t *testing.T) {
 
 func TestApplyDeployModeToAdoptedProject_LegacyDefinitions(t *testing.T) {
 	tests := []struct {
-		name  string
-		setup func(t *testing.T, projectDir string) *azdext.ServiceConfig
+		name          string
+		setup         func(t *testing.T, projectDir string) *azdext.ServiceConfig
+		wantErr       bool
+		wantContainer bool
 	}{
 		{
-			name: "config nested",
+			name:    "config nested",
+			wantErr: true,
 			setup: func(t *testing.T, _ string) *azdext.ServiceConfig {
 				t.Helper()
 				config, err := structpb.NewStruct(map[string]any{
@@ -398,7 +456,8 @@ func TestApplyDeployModeToAdoptedProject_LegacyDefinitions(t *testing.T) {
 			},
 		},
 		{
-			name: "implicit disk",
+			name:          "implicit disk",
+			wantContainer: true,
 			setup: func(t *testing.T, projectDir string) *azdext.ServiceConfig {
 				t.Helper()
 				require.NoError(t, os.WriteFile(
@@ -432,10 +491,15 @@ func TestApplyDeployModeToAdoptedProject_LegacyDefinitions(t *testing.T) {
 				&initFlags{},
 				client,
 			)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Empty(t, server.sets["agent"])
+				return
+			}
 			require.NoError(t, err)
-			assert.False(t, usesContainer)
-			assert.Empty(t, server.sets["agent"],
-				"init must preserve the deploy mode from the legacy definition")
+			assert.Equal(t, tt.wantContainer, usesContainer)
+			assert.Equal(t, map[string]any{"remoteBuild": true}, server.sets["agent"]["docker"],
+				"the implicit disk definition must not influence deploy-mode selection")
 		})
 	}
 }

@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"azureaiagent/internal/exterrors"
 	"errors"
 	"os"
 	"path/filepath"
@@ -13,10 +12,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 )
-
-// Helpers backing the issue #7268 reuse path. runReuseDefinition's happy path
-// is covered by manual e2e; only its failure branches are unit-tested here
-// because they short-circuit before any azd gRPC calls.
 
 func TestFindExistingAgentYaml(t *testing.T) {
 	t.Parallel()
@@ -71,123 +66,26 @@ func TestFindExistingAgentYaml(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, got, "shallow scan only; nested agent.yaml must be ignored")
 	})
-}
 
-func TestLoadAgentDefinitionFile(t *testing.T) {
-	t.Parallel()
-
-	t.Run("happy path: bare definition with hosted kind", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		path := writeReuseTestFile(t, dir, "agent.yaml",
-			"kind: hosted\nname: my-agent\nmodel:\n  id: gpt-4o-mini\n")
-
-		def, err := loadAgentDefinitionFile(path)
-		require.NoError(t, err)
-		require.NotNil(t, def)
-		require.Equal(t, "my-agent", def.Name)
-		require.Nil(t, def.CodeConfiguration)
-	})
-
-	t.Run("happy path: code_configuration preserved", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		path := writeReuseTestFile(t, dir, "agent.yaml",
-			"kind: hosted\nname: my-agent\ncode_configuration:\n  runtime: python_3_12\n  entry_point: main.py\n")
-
-		def, err := loadAgentDefinitionFile(path)
-		require.NoError(t, err)
-		require.NotNil(t, def.CodeConfiguration)
-		require.Equal(t, "python_3_12", def.CodeConfiguration.Runtime)
-	})
-
-	t.Run("rejects manifest-shaped file (top-level template key)", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		path := writeReuseTestFile(t, dir, "agent.yaml", "template:\n  kind: hosted\n  name: foo\n")
-
-		_, err := loadAgentDefinitionFile(path)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "template")
-	})
-
-	t.Run("rejects prompt voice definitions", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		path := writeReuseTestFile(t, dir, "agent.yaml",
-			"kind: prompt-voice\nname: voice-agent\nmodel:\n  id: gpt-realtime\n")
-
-		_, err := loadAgentDefinitionFile(path)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "prompt-voice")
-		require.Contains(t, err.Error(), "Create a prompt voice agent")
-	})
-
-	t.Run("rejects missing kind via ValidateAgentDefinition", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		path := writeReuseTestFile(t, dir, "agent.yaml", "name: my-agent\n")
-
-		_, err := loadAgentDefinitionFile(path)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "kind")
-	})
-
-	t.Run("rejects invalid agent name via ValidateAgentDefinition", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		path := writeReuseTestFile(t, dir, "agent.yaml", "kind: hosted\nname: \"!!! invalid\"\n")
-
-		_, err := loadAgentDefinitionFile(path)
-		require.Error(t, err)
-	})
-
-	t.Run("rejects broken yaml", func(t *testing.T) {
+	t.Run("content is not parsed", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		path := writeReuseTestFile(t, dir, "agent.yaml", "name: : :\nmodel: [unterminated\n")
 
-		_, err := loadAgentDefinitionFile(path)
-		require.Error(t, err)
+		got, err := findExistingAgentYaml(dir)
+		require.NoError(t, err)
+		require.Equal(t, path, got)
 	})
 }
 
-// Malformed YAML must surface as CodeInvalidAgentManifest. Runs against the
-// failure path so no gRPC mock is needed.
-func TestRunReuseDefinition_InvalidFileReturnsStructuredError(t *testing.T) {
+func TestLegacyInitSourceError(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	path := writeReuseTestFile(t, dir, "agent.yaml", "name: : :\nmodel: [unterminated\n")
-
-	err := runReuseDefinition(t.Context(), &initFlags{}, nil, nil, dir, path)
-	require.Error(t, err)
-
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
-	require.Equal(t, exterrors.CodeInvalidAgentManifest, localErr.Code)
-	require.NotEmpty(t, localErr.Suggestion)
-	require.Contains(t, localErr.Message, "agent.yaml")
-	require.Contains(t, localErr.Suggestion, "agent.yaml")
-}
-
-// A manifest-shaped file that failed upstream validation must produce a
-// targeted error here, not fall into scaffolding.
-func TestRunReuseDefinition_RejectsManifestShapedFile(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	path := writeReuseTestFile(t, dir, "agent.manifest.yaml",
-		"template:\n  # intentionally incomplete\n")
-
-	err := runReuseDefinition(t.Context(), &initFlags{}, nil, nil, dir, path)
-	require.Error(t, err)
-
+	err := legacyInitSourceError(filepath.Join("project", "agent.manifest.yaml"))
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
-	require.Equal(t, exterrors.CodeInvalidAgentManifest, localErr.Code)
-	require.Contains(t, localErr.Message, "agent.manifest.yaml",
-		"error message must name the actual file, not a hardcoded agent.yaml")
+	require.Contains(t, localErr.Message, "agent.manifest.yaml")
+	require.Contains(t, localErr.Suggestion, "azure.yaml")
 }
 
 func writeReuseTestFile(t *testing.T, dir, name, contents string) string {

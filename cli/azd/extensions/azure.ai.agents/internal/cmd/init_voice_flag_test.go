@@ -56,17 +56,24 @@ func TestInitVoiceInputAllowsOnlySupportedNewVoiceFlows(t *testing.T) {
 	}
 	// No --voice flag means existing inputs are unaffected, even if otherwise invalid.
 	require.NoError(t, validateInitVoiceInput(&initFlags{kind: "hosted", manifestPointer: "azure.yaml"}, false))
-	path, cleanup, err := synthesizeVoiceManifestFile("voice-test", "gpt-realtime", "en-US-AvaNeural")
-	require.NoError(t, err)
-	t.Cleanup(cleanup)
-	content, err := os.ReadFile(path)
-	require.NoError(t, err)
-	definition, err := agent_yaml.ExtractAgentDefinition(content)
-	require.NoError(t, err)
-	voice, ok := definition.(agent_yaml.VoiceAgent)
-	require.True(t, ok)
-	require.NotNil(t, voice.Voice)
-	require.Equal(t, "en-US-AvaNeural", *voice.Voice)
+}
+
+func TestVoiceDefinitionForInit(t *testing.T) {
+	t.Parallel()
+
+	defaulted := voiceDefinitionForInit(&initFlags{}, "voice-agent")
+	require.Equal(t, agent_yaml.AgentKindPromptVoice, defaulted.Kind)
+	require.Equal(t, agent_yaml.VoiceModelTypeManaged, defaulted.ModelType)
+	require.Equal(t, defaultVoiceModel, defaulted.Model.Id)
+	require.Nil(t, defaulted.Voice)
+
+	configured := voiceDefinitionForInit(
+		&initFlags{model: "gpt-realtime-preview", voice: "en-US-AvaNeural"},
+		"configured-voice",
+	)
+	require.Equal(t, "configured-voice", configured.Name)
+	require.Equal(t, "gpt-realtime-preview", configured.Model.Id)
+	require.Equal(t, "en-US-AvaNeural", *configured.Voice)
 }
 
 func TestInitVoiceFlagInteractiveSelection(t *testing.T) {

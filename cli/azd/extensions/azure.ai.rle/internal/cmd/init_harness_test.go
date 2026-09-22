@@ -43,133 +43,6 @@ func TestRleInitTargetOptionsGateHarnessChoices(t *testing.T) {
 	}
 }
 
-func TestInitInteractiveHostedAgentScaffoldsUsingPromptedValues(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	t.Setenv(rleEnableAllEnvVar, "true")
-
-	oldSelectTarget := selectRleInitTargetFunc
-	oldPrompt := promptRleValueFunc
-	oldLoadCatalog := loadRleSampleCatalogFunc
-	oldSelectHarnessSource := selectHarnessSourceFunc
-	selectRleInitTargetFunc = func(_ context.Context, includeHarnessTypes bool) (rleInitTarget, error) {
-		if !includeHarnessTypes {
-			t.Fatal("expected HostedAgent selection to be enabled")
-		}
-		return rleInitTarget{
-			rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeHostedAgent,
-		}, nil
-	}
-	selectHarnessSourceFunc = func(_ context.Context) (string, error) {
-		return harnessSourceExisting, nil
-	}
-	promptValues := []string{"Support Agent", "3"}
-	promptRleValueFunc = func(_ context.Context, _ string) (string, error) {
-		if len(promptValues) == 0 {
-			t.Fatal("unexpected extra input prompt")
-		}
-		value := promptValues[0]
-		promptValues = promptValues[1:]
-		return value, nil
-	}
-	loadRleSampleCatalogFunc = func() (rleSampleCatalog, error) {
-		t.Fatal("harness initialization must not load the sample catalog")
-		return nil, nil
-	}
-	t.Cleanup(func() {
-		selectRleInitTargetFunc = oldSelectTarget
-		promptRleValueFunc = oldPrompt
-		loadRleSampleCatalogFunc = oldLoadCatalog
-		selectHarnessSourceFunc = oldSelectHarnessSource
-	})
-
-	noPrompt := false
-	command := newInitCommand(&noPrompt)
-	var output bytes.Buffer
-	command.SetOut(&output)
-	command.SetArgs(nil)
-	if err := command.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	if len(promptValues) != 0 {
-		t.Fatalf("expected all HostedAgent prompts to be consumed, remaining %v", promptValues)
-	}
-
-	sessionDir := filepath.Join(tempDir, "support_agent")
-	// #nosec G304 -- the path is generated under t.TempDir by the command under test.
-	config, err := os.ReadFile(filepath.Join(sessionDir, project.RleConfigFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, expected := range []string{
-		`schema_version = '1.0.0'`,
-		`name = 'support_agent'`,
-		`version = '1.0.0'`,
-		`type = 'Harness'`,
-		`subtype = 'HostedAgent'`,
-		`agentName = 'Support Agent'`,
-		`agentVersion = '3'`,
-	} {
-		if !strings.Contains(string(config), expected) {
-			t.Fatalf("expected config to contain %q, got:\n%s", expected, config)
-		}
-	}
-	if !strings.Contains(output.String(), "Created HostedAgent RLE scaffold.") {
-		t.Fatalf("expected HostedAgent scaffold confirmation, got %s", output.String())
-	}
-	if _, err := os.Stat(filepath.Join(sessionDir, ".azd-rle.json")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("expected no legacy state file, got %v", err)
-	}
-}
-
-func TestInitInteractiveBYOHScaffoldsUsingPromptedValues(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	t.Setenv(rleEnableAllEnvVar, "true")
-
-	oldSelectTarget := selectRleInitTargetFunc
-	oldPrompt := promptRleValueFunc
-	oldSelectHarnessSource := selectHarnessSourceFunc
-	selectRleInitTargetFunc = func(_ context.Context, includeHarnessTypes bool) (rleInitTarget, error) {
-		if !includeHarnessTypes {
-			t.Fatal("expected BYOH selection to be enabled")
-		}
-		return rleInitTarget{
-			rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeBYOH,
-		}, nil
-	}
-	selectHarnessSourceFunc = func(_ context.Context) (string, error) {
-		return harnessSourceExisting, nil
-	}
-	promptValues := []string{"customer_rle", "https://harness.example.com/v1/"}
-	promptRleValueFunc = func(_ context.Context, _ string) (string, error) {
-		value := promptValues[0]
-		promptValues = promptValues[1:]
-		return value, nil
-	}
-	t.Cleanup(func() {
-		selectRleInitTargetFunc = oldSelectTarget
-		promptRleValueFunc = oldPrompt
-		selectHarnessSourceFunc = oldSelectHarnessSource
-	})
-
-	noPrompt := false
-	command := newInitCommand(&noPrompt)
-	command.SetArgs(nil)
-	if err := command.Execute(); err != nil {
-		t.Fatal(err)
-	}
-
-	// #nosec G304 -- the path is generated under t.TempDir by the command under test.
-	config, err := os.ReadFile(filepath.Join(tempDir, "customer_rle", project.RleConfigFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(config), `baseUrl = 'https://harness.example.com/v1/'`) {
-		t.Fatalf("expected normalized BYOH base URL, got:\n%s", config)
-	}
-}
-
 // fakeRleHarnessSampleCatalog is a test double for
 // project.RleHarnessSampleCatalog that writes a minimal, working agent/+rle/
 // pair without touching the network, mirroring the real samples' rle.toml
@@ -244,16 +117,12 @@ func TestInitHostedAgentSampleSourceCopiesWorkingSample(t *testing.T) {
 	t.Setenv(rleEnableAllEnvVar, "true")
 
 	oldSelectTarget := selectRleInitTargetFunc
-	oldSelectHarnessSource := selectHarnessSourceFunc
 	oldLoadHarnessSample := loadRleHarnessSampleCatalogFunc
 	oldLoadCatalog := loadRleSampleCatalogFunc
 	selectRleInitTargetFunc = func(_ context.Context, includeHarnessTypes bool) (rleInitTarget, error) {
 		return rleInitTarget{
 			rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeHostedAgent,
 		}, nil
-	}
-	selectHarnessSourceFunc = func(_ context.Context) (string, error) {
-		return harnessSourceSample, nil
 	}
 	var closedSample *fakeRleHarnessSampleCatalog
 	loadRleHarnessSampleCatalogFunc = func(subtype project.RleSubtype) (rleHarnessSampleCatalog, error) {
@@ -270,7 +139,6 @@ func TestInitHostedAgentSampleSourceCopiesWorkingSample(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		selectRleInitTargetFunc = oldSelectTarget
-		selectHarnessSourceFunc = oldSelectHarnessSource
 		loadRleHarnessSampleCatalogFunc = oldLoadHarnessSample
 		loadRleSampleCatalogFunc = oldLoadCatalog
 	})
@@ -357,15 +225,11 @@ func TestInitHarnessSampleSelectsNamedSample(t *testing.T) {
 			t.Setenv(rleEnableAllEnvVar, "true")
 
 			oldSelectTarget := selectRleInitTargetFunc
-			oldSelectHarnessSource := selectHarnessSourceFunc
 			oldLoadHarnessCatalog := loadRleHarnessSampleCatalogFunc
 			selectRleInitTargetFunc = func(_ context.Context, includeHarnessTypes bool) (rleInitTarget, error) {
 				return rleInitTarget{
 					rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeBYOH,
 				}, nil
-			}
-			selectHarnessSourceFunc = func(_ context.Context) (string, error) {
-				return harnessSourceSample, nil
 			}
 			var loadedCatalog *fakeRleHarnessSampleCatalog
 			loadRleHarnessSampleCatalogFunc = func(subtype project.RleSubtype) (rleHarnessSampleCatalog, error) {
@@ -375,7 +239,6 @@ func TestInitHarnessSampleSelectsNamedSample(t *testing.T) {
 			}
 			t.Cleanup(func() {
 				selectRleInitTargetFunc = oldSelectTarget
-				selectHarnessSourceFunc = oldSelectHarnessSource
 				loadRleHarnessSampleCatalogFunc = oldLoadHarnessCatalog
 			})
 
@@ -421,22 +284,17 @@ func TestInitBYOHSampleSourceAppliesBaseURLOverride(t *testing.T) {
 	t.Setenv(rleEnableAllEnvVar, "true")
 
 	oldSelectTarget := selectRleInitTargetFunc
-	oldSelectHarnessSource := selectHarnessSourceFunc
 	oldLoadHarnessSample := loadRleHarnessSampleCatalogFunc
 	selectRleInitTargetFunc = func(_ context.Context, includeHarnessTypes bool) (rleInitTarget, error) {
 		return rleInitTarget{
 			rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeBYOH,
 		}, nil
 	}
-	selectHarnessSourceFunc = func(_ context.Context) (string, error) {
-		return harnessSourceSample, nil
-	}
 	loadRleHarnessSampleCatalogFunc = func(subtype project.RleSubtype) (rleHarnessSampleCatalog, error) {
 		return &fakeRleHarnessSampleCatalog{subtype: subtype}, nil
 	}
 	t.Cleanup(func() {
 		selectRleInitTargetFunc = oldSelectTarget
-		selectHarnessSourceFunc = oldSelectHarnessSource
 		loadRleHarnessSampleCatalogFunc = oldLoadHarnessSample
 	})
 
@@ -495,113 +353,7 @@ func TestInitNoPromptHarnessDefaultsToSampleSource(t *testing.T) {
 		t.Fatalf("expected the HostedAgent sample catalog to be loaded, got %q", loadedSubtype)
 	}
 	if _, err := os.Stat(filepath.Join(tempDir, "support_agent", "rle", project.RleConfigFile)); err != nil {
-		t.Fatalf("expected --no-prompt without --harness-source to copy a working sample: %v", err)
-	}
-}
-
-func TestInitNoPromptHarnessSourceExistingKeepsPlaceholder(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	t.Setenv(rleEnableAllEnvVar, "true")
-
-	oldLoadHarnessSample := loadRleHarnessSampleCatalogFunc
-	loadRleHarnessSampleCatalogFunc = func(subtype project.RleSubtype) (rleHarnessSampleCatalog, error) {
-		t.Fatal("expected --harness-source existing to skip the sample catalog")
-		return nil, nil
-	}
-	t.Cleanup(func() {
-		loadRleHarnessSampleCatalogFunc = oldLoadHarnessSample
-	})
-
-	noPrompt := true
-	command := newInitCommand(&noPrompt)
-	command.SetArgs([]string{"support_agent"})
-	for flagName, flagValue := range map[string]string{
-		"type":           "Harness",
-		"subtype":        "HostedAgent",
-		"harness-source": harnessSourceExisting,
-		"agent-name":     "Support Agent",
-		"agent-version":  "3",
-	} {
-		if err := command.Flags().Set(flagName, flagValue); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := command.Execute(); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := os.Stat(filepath.Join(tempDir, "support_agent", project.RleConfigFile)); err != nil {
-		t.Fatalf("expected the placeholder scaffold layout (flat rle.toml), got: %v", err)
-	}
-}
-
-func TestInitHarnessSourceFlagRejectsUnknownValue(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	t.Setenv(rleEnableAllEnvVar, "true")
-
-	noPrompt := true
-	command := newInitCommand(&noPrompt)
-	command.SetArgs([]string{"support_agent"})
-	for flagName, flagValue := range map[string]string{
-		"type":           "Harness",
-		"subtype":        "HostedAgent",
-		"agent-name":     "Support Agent",
-		"agent-version":  "3",
-		"harness-source": "bogus",
-	} {
-		if err := command.Flags().Set(flagName, flagValue); err != nil {
-			t.Fatal(err)
-		}
-	}
-	err := command.Execute()
-	localError, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok || localError.Code != "rle_harness_source_invalid" {
-		t.Fatalf("expected rle_harness_source_invalid error, got %v", err)
-	}
-}
-
-func TestInitNoPromptHostedAgentUsesControlPlaneFlags(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Chdir(tempDir)
-	t.Setenv(rleEnableAllEnvVar, "true")
-
-	noPrompt := true
-	command := newInitCommand(&noPrompt)
-	command.SetArgs([]string{
-		"support_rle",
-		"--type", "Harness",
-		"--subtype", "HostedAgent",
-		"--harness-source", "existing",
-		"--rle-version", "1.0.0",
-		"--agent-name", "support-agent",
-		"--agent-version", "202609",
-	})
-	if err := command.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(tempDir, "support_rle", "server", "env.py")); err != nil {
-		t.Fatalf("expected HostedAgent scaffold to be created: %v", err)
-	}
-}
-
-func TestInitNoPromptBYOHRequiresFolderName(t *testing.T) {
-	t.Chdir(t.TempDir())
-	t.Setenv(rleEnableAllEnvVar, "true")
-
-	noPrompt := true
-	command := newInitCommand(&noPrompt)
-	command.SetArgs([]string{
-		"--type", "Harness",
-		"--subtype", "BYOH",
-		"--harness-source", "existing",
-		"--base-url", "https://harness.example.com",
-	})
-	err := command.Execute()
-	localError, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok || localError.Code != "rle_environment_name_required" {
-		t.Fatalf("expected missing BYOH folder name error, got %v", err)
+		t.Fatalf("expected --no-prompt Harness init to copy a working sample: %v", err)
 	}
 }
 
@@ -715,5 +467,80 @@ func TestParseRleInitTargetUsesControlPlanePairs(t *testing.T) {
 				t.Fatalf("expected %s, got %v", test.errorCode, err)
 			}
 		})
+	}
+}
+
+// TestInitNoPromptBYOHWithoutFolderNameUsesSampleDefault covers the behavior
+// that replaced the removed placeholder scaffold: a BYOH init with no folder
+// name no longer fails, it lands on the sample's own default folder.
+func TestInitNoPromptBYOHWithoutFolderNameUsesSampleDefault(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv(rleEnableAllEnvVar, "true")
+
+	oldLoadHarnessSample := loadRleHarnessSampleCatalogFunc
+	loadRleHarnessSampleCatalogFunc = func(subtype project.RleSubtype) (rleHarnessSampleCatalog, error) {
+		return &fakeRleHarnessSampleCatalog{subtype: subtype}, nil
+	}
+	t.Cleanup(func() {
+		loadRleHarnessSampleCatalogFunc = oldLoadHarnessSample
+	})
+
+	noPrompt := true
+	command := newInitCommand(&noPrompt)
+	command.SetArgs([]string{"--type", "Harness", "--subtype", "BYOH"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	sessionDir := filepath.Join(tempDir, defaultRleHarnessSampleFolderName(project.RleSubtypeBYOH))
+	if _, err := os.Stat(filepath.Join(sessionDir, "rle", project.RleConfigFile)); err != nil {
+		t.Fatalf("expected the BYOH sample to be copied without a folder name: %v", err)
+	}
+}
+
+// TestInitNoPromptHostedAgentFlagsOverrideSampleDefaults keeps the coverage the
+// removed placeholder test had for --agent-name/--agent-version, which are now
+// overrides applied on top of the sample's own manifest.
+func TestInitNoPromptHostedAgentFlagsOverrideSampleDefaults(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv(rleEnableAllEnvVar, "true")
+
+	oldLoadHarnessSample := loadRleHarnessSampleCatalogFunc
+	loadRleHarnessSampleCatalogFunc = func(subtype project.RleSubtype) (rleHarnessSampleCatalog, error) {
+		return &fakeRleHarnessSampleCatalog{subtype: subtype}, nil
+	}
+	t.Cleanup(func() {
+		loadRleHarnessSampleCatalogFunc = oldLoadHarnessSample
+	})
+
+	noPrompt := true
+	command := newInitCommand(&noPrompt)
+	command.SetArgs([]string{
+		"support_rle",
+		"--type", "Harness",
+		"--subtype", "HostedAgent",
+		"--agent-name", "support-agent",
+		"--agent-version", "202609",
+	})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	// #nosec G304 -- the path is generated under t.TempDir by the command under test.
+	config, err := os.ReadFile(filepath.Join(tempDir, "support_rle", "rle", project.RleConfigFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		`name = 'support_rle'`,
+		`subtype = 'HostedAgent'`,
+		`agentName = 'support-agent'`,
+		`agentVersion = '202609'`,
+	} {
+		if !strings.Contains(string(config), expected) {
+			t.Fatalf("expected config to contain %q, got:\n%s", expected, config)
+		}
 	}
 }

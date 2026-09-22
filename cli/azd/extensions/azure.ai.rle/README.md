@@ -104,27 +104,20 @@ $env:AZD_AI_RLE_ENABLE_ALL = "true"
 ```
 
 
-`azd ai rle init --type Harness` supports two starting points, selected
-interactively or via `--harness-source`:
-
-- `--harness-source sample` (the default, and the first interactive choice)
-  copies a complete, runnable pattern of both
-  halves wired together (agent implementation, Dockerfile, mock tools, a
-  grader, and the RLE wrapper) into `<folder-name>/agent` and
-  `<folder-name>/rle`, so you have something that runs end to end out of the
-  box instead of starting from scratch. Run/publish from
-  `<folder-name>/rle`; build and deploy `<folder-name>/agent` yourself, then
-  update `rle.toml`'s `baseUrl`/`agentName`/`agentVersion` to match.
-- `--harness-source existing` scaffolds only
-  a generic, TODO-laden RLE-side container to wire up to a harness/agent you
-  already built and deployed yourself.
+`azd ai rle init --type Harness` always copies a complete, runnable pattern of
+both halves wired together (agent implementation, Dockerfile, mock tools, a
+grader, and the RLE wrapper) into `<folder-name>/agent` and `<folder-name>/rle`,
+so you have something that runs end to end out of the box instead of starting
+from scratch. Run/publish from `<folder-name>/rle`; build and deploy
+`<folder-name>/agent` yourself, then update `rle.toml`'s
+`baseUrl`/`agentName`/`agentVersion` to match.
 
 See
 [`examples/harness/hosted-agent`](https://github.com/sujit-kamireddy/rle-samples/tree/main/examples/harness/hosted-agent)
 and
 [`examples/harness/byoh`](https://github.com/sujit-kamireddy/rle-samples/tree/main/examples/harness/byoh)
 in the [`rle-samples`](https://github.com/sujit-kamireddy/rle-samples) repository
-for the sample source `--harness-source sample` copies.
+for the samples `init` copies.
 
 ## Manifest contract
 
@@ -319,47 +312,19 @@ azd ai rle init code_rl --no-prompt
 
 With `AZD_AI_RLE_ENABLE_ALL=true`, `init` also offers
 `Harness: HostedAgent` and `Harness: BYOH`. Supply control-plane type/subtype
-values explicitly when scripting. `--no-prompt` defaults to
-`--harness-source sample` (a full working sample) unless you pass
-`--harness-source existing` (the placeholder scaffold below):
+values explicitly when scripting. `--agent-name`, `--agent-version` and
+`--base-url` are optional overrides applied on top of the sample's own
+manifest:
 
 ```powershell
 azd ai rle init support_rle `
   --type Harness --subtype HostedAgent `
-  --harness-source existing `
-  --rle-version 1.0.0 `
   --agent-name support-agent --agent-version 12 `
   --no-prompt
 
 azd ai rle init customer_rle `
   --type Harness --subtype BYOH `
-  --harness-source existing `
-  --rle-version 1.0.0 `
   --base-url https://harness.example.com/rle/ `
-  --no-prompt
-```
-
-`--harness-source existing` scaffolds contain:
-
-```text
-<environment-name>/
-|-- rle.toml
-|-- Dockerfile
-`-- server/
-    |-- __init__.py
-    `-- env.py
-```
-
-`server/env.py` uses OpenEnv's supported app factory and exposes `/health`,
-`/schema`, `/metadata`, `/ws`, `/web`, `/reset`, `/step`, `/grade`, and a
-starter mock-tool route. Update its task setup, mocks, and grader before
-publishing.
-
-`--harness-source sample` (the default) instead copies a fully working sample:
-
-```powershell
-azd ai rle init customer_rle `
-  --type Harness --subtype BYOH `
   --no-prompt
 ```
 

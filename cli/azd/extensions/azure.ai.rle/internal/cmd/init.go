@@ -19,15 +19,14 @@ import (
 )
 
 type rleInitFlags struct {
-	force         bool
-	rleType       string
-	rleSubtype    string
-	rleVersion    string
-	agentName     string
-	agentVersion  string
-	baseURL       string
-	harnessSource string
-	sample        string
+	force        bool
+	rleType      string
+	rleSubtype   string
+	rleVersion   string
+	agentName    string
+	agentVersion string
+	baseURL      string
+	sample       string
 }
 
 type initAction struct {
@@ -46,15 +45,6 @@ var gymOpenEnvInitTarget = rleInitTarget{
 	rleType:    project.RleTypeGym,
 	rleSubtype: project.RleSubtypeOpenEnv,
 }
-
-// Harness scaffold sources: whether azd ai rle init should generate a
-// generic, TODO-laden placeholder to wire up to a harness the caller has
-// already built and deployed, or copy a fully-working sample (agent + rle)
-// that runs end to end out of the box.
-const (
-	harnessSourceExisting = "existing"
-	harnessSourceSample   = "sample"
-)
 
 type rleInitTargetOption struct {
 	target rleInitTarget
@@ -92,18 +82,12 @@ var selectRleSampleFunc = selectRleSample
 
 var selectRleInitTargetFunc = selectRleInitTarget
 
-var selectHarnessSourceFunc = selectHarnessSource
-
-var promptRleValueFunc = promptRleValue
-
-var createRleHarnessScaffoldFunc = project.CreateRleHarnessScaffold
-
 func newInitCommand(noPrompt *bool) *cobra.Command {
 	flags := &rleInitFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "init [folder-name]",
-		Short: "Initialize a local RLE environment from a sample or harness scaffold",
+		Short: "Initialize a local RLE environment from a working sample",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			folderName := ""
@@ -121,7 +105,7 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 
 	cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		var help strings.Builder
-		help.WriteString("Initialize a local RLE environment from a sample or harness scaffold\n")
+		help.WriteString("Initialize a local RLE environment from a working sample\n")
 		help.WriteString("Usage:\n")
 		help.WriteString("  rle init [folder-name] [flags]\n")
 		help.WriteString("Flags:\n")
@@ -129,8 +113,6 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 		help.WriteString("      --agent-version string   HostedAgent version\n")
 		help.WriteString("      --base-url string        BYOH harness base URL\n")
 		help.WriteString("      --force                  Overwrite generated files in an existing non-empty session directory\n")
-		help.WriteString("      --harness-source string  Harness scaffold source: sample (copy a full working agent+rle " +
-			"sample, default) or existing (placeholder to wire up to a harness you already deployed)\n")
 		help.WriteString("      --rle-version string     RLE semantic version (defaults to 1.0.0 for a harness scaffold)\n")
 		help.WriteString("      --subtype string         RLE control-plane subtype: OpenEnv, HostedAgent, or BYOH\n")
 		help.WriteString("      --type string            RLE control-plane type: Gym or Harness\n")
@@ -148,13 +130,6 @@ func newInitCommand(noPrompt *bool) *cobra.Command {
 	cmd.Flags().StringVar(&flags.agentName, "agent-name", "", "HostedAgent name")
 	cmd.Flags().StringVar(&flags.agentVersion, "agent-version", "", "HostedAgent version")
 	cmd.Flags().StringVar(&flags.baseURL, "base-url", "", "BYOH harness base URL")
-	cmd.Flags().StringVar(
-		&flags.harnessSource,
-		"harness-source",
-		"",
-		"Harness scaffold source: sample (copy a full working agent+rle sample, default) "+
-			"or existing (placeholder to wire up to a harness you already deployed)",
-	)
 	cmd.Flags().StringVar(
 		&flags.sample,
 		"sample",
@@ -297,10 +272,6 @@ func (a *initAction) initializeGymOpenEnv(target rleInitTarget) error {
 }
 
 func (a *initAction) initializeHostedAgent(target rleInitTarget) error {
-	harnessSource, err := a.resolveHarnessSource()
-	if err != nil {
-		return err
-	}
 	if strings.TrimSpace(a.flags.baseURL) != "" {
 		return &azdext.LocalError{
 			Message:    "--base-url can only be used with --type Harness --subtype BYOH.",
@@ -309,43 +280,7 @@ func (a *initAction) initializeHostedAgent(target rleInitTarget) error {
 			Suggestion: "Remove --base-url or select --type Harness --subtype BYOH.",
 		}
 	}
-	if harnessSource == harnessSourceSample {
-		return a.createHarnessSampleScaffold(target)
-	}
-
-	agentName, err := a.resolveRequiredInput(
-		a.flags.agentName,
-		"Enter HostedAgent name",
-		"An agent name is required for a HostedAgent RLE scaffold.",
-		"rle_agent_name_required",
-		"Provide --agent-name or run the command interactively.",
-	)
-	if err != nil {
-		return err
-	}
-	agentVersion, err := a.resolveRequiredInput(
-		a.flags.agentVersion,
-		"Enter HostedAgent version",
-		"An agent version is required for a HostedAgent RLE scaffold.",
-		"rle_agent_version_required",
-		"Provide --agent-version or run the command interactively.",
-	)
-	if err != nil {
-		return err
-	}
-
-	folderName := a.folderName
-	if folderName == "" {
-		folderName = defaultRleFolderName(agentName)
-	}
-	return a.createHarnessScaffold(target, project.HarnessScaffoldOptions{
-		EnvironmentName: folderName,
-		RleVersion:      a.resolveRleVersion(),
-		Type:            target.rleType,
-		Subtype:         target.rleSubtype,
-		AgentName:       agentName,
-		AgentVersion:    agentVersion,
-	})
+	return a.createHarnessSampleScaffold(target)
 }
 
 func (a *initAction) initializeBYOH(target rleInitTarget) error {
@@ -357,74 +292,15 @@ func (a *initAction) initializeBYOH(target rleInitTarget) error {
 			Suggestion: "Remove the HostedAgent flags or select --type Harness --subtype HostedAgent.",
 		}
 	}
-	harnessSource, err := a.resolveHarnessSource()
-	if err != nil {
-		return err
-	}
-	if harnessSource == harnessSourceSample {
-		return a.createHarnessSampleScaffold(target)
-	}
-
-	folderName := a.folderName
-	if folderName == "" {
-		var err error
-		folderName, err = a.resolveRequiredInput(
-			"",
-			"Enter RLE environment name",
-			"An RLE environment name is required for a BYOH scaffold.",
-			"rle_environment_name_required",
-			"Provide a folder name or run the command interactively.",
-		)
-		if err != nil {
-			return err
-		}
-	}
-	baseURL, err := a.resolveRequiredInput(
-		a.flags.baseURL,
-		"Enter BYOH harness base URL",
-		"A BYOH harness base URL is required for a BYOH RLE scaffold.",
-		"rle_harness_base_url_required",
-		"Provide --base-url or run the command interactively.",
-	)
-	if err != nil {
-		return err
-	}
-	return a.createHarnessScaffold(target, project.HarnessScaffoldOptions{
-		EnvironmentName: folderName,
-		RleVersion:      a.resolveRleVersion(),
-		Type:            target.rleType,
-		Subtype:         target.rleSubtype,
-		BaseURL:         baseURL,
-	})
-}
-
-func (a *initAction) createHarnessScaffold(target rleInitTarget, options project.HarnessScaffoldOptions) error {
-	if _, err := normalizeInitRleVersion(options.RleVersion); err != nil {
-		return err
-	}
-	sessionDir, err := createRleHarnessScaffoldFunc(options, ".", a.flags.force)
-	if err != nil {
-		return err
-	}
-
-	displayDir := "." + string(os.PathSeparator) + sessionDir
-	if _, err := fmt.Fprintf(
-		a.cmd.OutOrStdout(),
-		"Created %s RLE scaffold.\n",
-		rleInitTargetLabel(target),
-	); err != nil {
-		return err
-	}
-	_, err = fmt.Fprint(a.cmd.OutOrStdout(), initNextSteps(displayDir, runtime.GOOS, os.Getenv("SHELL")))
-	return err
+	return a.createHarnessSampleScaffold(target)
 }
 
 // createHarnessSampleScaffold copies the fully-working harness sample (agent
-// + rle) for target.rleSubtype, instead of the generic placeholder
-// createHarnessScaffold writes. --agent-name/--agent-version/--base-url are
-// optional overrides here (the sample already ships working defaults for
-// whichever of them apply to its subtype), unlike the existing-harness path,
-// which requires them.
+// + rle) for target.rleSubtype. It is the only harness scaffold: every Harness
+// init lands on something that runs end to end.
+// --agent-name/--agent-version/--base-url are optional overrides here, since
+// the sample already ships working defaults for whichever of them apply to its
+// subtype.
 func (a *initAction) createHarnessSampleScaffold(target rleInitTarget) error {
 	if strings.TrimSpace(a.flags.rleVersion) != "" {
 		if _, err := normalizeInitRleVersion(a.flags.rleVersion); err != nil {
@@ -509,38 +385,6 @@ func (a *initAction) createHarnessSampleScaffold(target rleInitTarget) error {
 	return err
 }
 
-// resolveHarnessSource decides whether a Harness init should copy a fully
-// working sample, or scaffold a placeholder for an existing/already-deployed
-// harness. A full working sample is the default for both BYOH and HostedAgent,
-// including under --no-prompt, so an unqualified init lands on something that
-// runs end to end. The sample scaffold still honors --agent-name,
-// --agent-version and --base-url, so those flags are never dropped by the
-// default; pass --harness-source existing for the placeholder scaffold.
-func (a *initAction) resolveHarnessSource() (string, error) {
-	value := strings.TrimSpace(a.flags.harnessSource)
-	if value != "" {
-		switch value {
-		case harnessSourceExisting, harnessSourceSample:
-			return value, nil
-		default:
-			return "", &azdext.LocalError{
-				Message:  fmt.Sprintf("Unsupported --harness-source %q.", value),
-				Code:     "rle_harness_source_invalid",
-				Category: azdext.LocalErrorCategoryUser,
-				Suggestion: fmt.Sprintf(
-					"Use --harness-source %s or --harness-source %s.",
-					harnessSourceExisting,
-					harnessSourceSample,
-				),
-			}
-		}
-	}
-	if a.noPrompt {
-		return harnessSourceSample, nil
-	}
-	return selectHarnessSourceFunc(a.cmd.Context())
-}
-
 func (a *initAction) resolveHarnessSampleName(sampleNames []string) (string, error) {
 	requested := strings.TrimSpace(a.flags.sample)
 	if len(sampleNames) == 0 {
@@ -573,74 +417,8 @@ func defaultRleHarnessSampleFolderName(subtype project.RleSubtype) string {
 	}
 }
 
-func selectHarnessSource(ctx context.Context) (string, error) {
-	// A full working sample leads so the default lands on something that runs
-	// end to end; SelectedIndex preselects it for a bare Enter.
-	choices := []*azdext.SelectChoice{
-		{Label: "Start from a full working sample (agent + rle)", Value: harnessSourceSample},
-		{Label: "Point at an existing, already-deployed harness (placeholder scaffold)", Value: harnessSourceExisting},
-	}
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return "", fmt.Errorf("create azd client for harness source selection: %w", err)
-	}
-	defer azdClient.Close()
-	response, err := azdClient.Prompt().Select(azdext.WithAccessToken(ctx), &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message:         "Select a harness starting point",
-			Choices:         choices,
-			SelectedIndex:   new(int32(0)),
-			DisplayNumbers:  new(true),
-			EnableFiltering: new(true),
-		},
-	})
-	if err != nil {
-		return "", fmt.Errorf("select harness source: %w", err)
-	}
-	selectedIndex := int(response.GetValue())
-	if selectedIndex < 0 || selectedIndex >= len(choices) {
-		return "", fmt.Errorf("invalid harness source selection index: %d", selectedIndex)
-	}
-	return choices[selectedIndex].Value, nil
-}
-
-func (a *initAction) resolveRleVersion() string {
-	value := strings.TrimSpace(a.flags.rleVersion)
-	if value == "" {
-		return project.DefaultRleVersion
-	}
-	return value
-}
-
 func normalizeInitRleVersion(value string) (string, error) {
 	return project.NormalizeRleVersion(value)
-}
-
-func (a *initAction) resolveRequiredInput(
-	value string,
-	message string,
-	errorMessage string,
-	errorCode string,
-	suggestion string,
-) (string, error) {
-	value = strings.TrimSpace(value)
-	if value == "" && !a.noPrompt {
-		var err error
-		value, err = promptRleValueFunc(a.cmd.Context(), message)
-		if err != nil {
-			return "", err
-		}
-		value = strings.TrimSpace(value)
-	}
-	if value == "" {
-		return "", &azdext.LocalError{
-			Message:    errorMessage,
-			Code:       errorCode,
-			Category:   azdext.LocalErrorCategoryUser,
-			Suggestion: suggestion,
-		}
-	}
-	return value, nil
 }
 
 func (a *initAction) hasHarnessInputFlags() bool {
@@ -776,17 +554,6 @@ func isHarnessRleInitTarget(target rleInitTarget) bool {
 	return target.rleType == project.RleTypeHarness
 }
 
-func defaultRleFolderName(agentName string) string {
-	folderName := strings.ReplaceAll(project.Slug(agentName), "-", "_")
-	if folderName == "" {
-		return "agent_rle"
-	}
-	if folderName[0] >= '0' && folderName[0] <= '9' {
-		return "agent_" + folderName
-	}
-	return folderName
-}
-
 func rleInitTargetLabel(target rleInitTarget) string {
 	switch target {
 	case rleInitTarget{rleType: project.RleTypeHarness, rleSubtype: project.RleSubtypeHostedAgent}:
@@ -796,27 +563,6 @@ func rleInitTargetLabel(target rleInitTarget) string {
 	default:
 		return string(target.rleSubtype)
 	}
-}
-
-func promptRleValue(ctx context.Context, message string) (string, error) {
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return "", fmt.Errorf("create azd client for RLE input: %w", err)
-	}
-	defer azdClient.Close()
-	response, err := azdClient.Prompt().Prompt(azdext.WithAccessToken(ctx), &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:        message,
-			IgnoreHintKeys: true,
-		},
-	})
-	if err != nil {
-		return "", fmt.Errorf("prompt for RLE input: %w", err)
-	}
-	if response == nil {
-		return "", fmt.Errorf("prompt for RLE input returned no response")
-	}
-	return response.GetValue(), nil
 }
 
 func validateRleFolderName(folderName string) (string, error) {

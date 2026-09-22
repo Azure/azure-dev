@@ -16,7 +16,7 @@ defaults:
   runs: 2
   timeout: 8m
   executor: copilot-sdk
-  model: gpt-5.6-sol
+  model: gpt-5.6-terra
   judge_model: gpt-5.5
 
 scoring:

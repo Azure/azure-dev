@@ -94,7 +94,7 @@ const (
 type RaiInvocationContentType string
 
 const (
-	// RaiInvocationContentTypeJSON extracts text from a JSON body using JSONPath expressions.
+	// RaiInvocationContentTypeJSON extracts text from a JSON body using selector expressions.
 	RaiInvocationContentTypeJSON RaiInvocationContentType = "json"
 	// RaiInvocationContentTypeText treats the whole body as the text to moderate.
 	RaiInvocationContentTypeText RaiInvocationContentType = "text"
@@ -116,9 +116,13 @@ const (
 
 // SseTextSelector locates the text to moderate inside a single server-sent event frame.
 type SseTextSelector struct {
-	// EventType is the SSE event name the selector applies to.
+	// EventType is matched against the value of the "type" field inside the frame's `data:`
+	// payload, not against the SSE `event:` line.
 	EventType string `json:"event_type"`
-	// TextField is the JSONPath expression, relative to the frame payload, holding the text.
+	// TextField is the name of a field on the frame payload that holds the text, for example
+	// "delta". It is a field name, not a selector expression: a "$."-prefixed value matches no
+	// field, so the frame contributes no text and moderation is silently skipped for it.
+	// Defaults to "delta" when omitted.
 	TextField string `json:"text_field,omitempty"`
 }
 

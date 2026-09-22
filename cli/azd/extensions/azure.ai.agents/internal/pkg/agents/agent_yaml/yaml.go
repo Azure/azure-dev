@@ -381,9 +381,13 @@ const InvocationsProtocol = "invocations"
 
 // SseTextSelector locates the text to moderate inside a single server-sent event frame.
 type SseTextSelector struct {
-	// EventType is the SSE event name this selector applies to. Required.
+	// EventType is matched against the value of the "type" field inside the frame's `data:`
+	// payload, not against the SSE `event:` line. Required.
 	EventType string `json:"eventType" yaml:"event_type"`
-	// TextField is the JSONPath expression, relative to the frame payload, holding the text.
+	// TextField is the name of a field on the frame payload that holds the text, for example
+	// "delta". It is a field name, not a selector expression: a "$."-prefixed value matches no
+	// field, so the frame contributes no text and moderation is silently skipped for it.
+	// Defaults to "delta" when omitted.
 	TextField string `json:"textField,omitempty" yaml:"text_field,omitempty"`
 }
 
@@ -401,10 +405,10 @@ type InvocationsModeration struct {
 	OutputContentType string `json:"outputContentType,omitempty" yaml:"output_content_type,omitempty"`
 	// ResponseMode is "non_streaming", "streaming" or "both". Required.
 	ResponseMode string `json:"responseMode,omitempty" yaml:"response_mode,omitempty"`
-	// InputPaths are JSONPath expressions selecting request text. Required when the input
-	// content type resolves to "json".
+	// InputPaths are selector expressions locating the request text: "$" root, dotted members,
+	// array indexes, and "[*]" wildcards. Required when the input content type resolves to "json".
 	InputPaths []string `json:"inputPaths,omitempty" yaml:"input_paths,omitempty"`
-	// OutputPaths are JSONPath expressions selecting buffered response text. Required when
+	// OutputPaths are selector expressions locating the buffered response text. Required when
 	// ResponseMode includes non-streaming and the output content type resolves to "json".
 	OutputPaths []string `json:"outputPaths,omitempty" yaml:"output_paths,omitempty"`
 	// StreamSelectors locate text within SSE frames. Required when ResponseMode includes

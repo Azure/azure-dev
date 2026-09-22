@@ -340,6 +340,24 @@ func TestAgentPoliciesInvocationsModerationInlineValidation(t *testing.T) {
 			},
 			wantErrSubst: "streamSelectors is required",
 		},
+		{
+			// The camelCase inline shape is the one users actually author in azure.yaml, and it
+			// reaches the validator through a different decode path than the snake_case
+			// agent.yaml file. Cover the textField guard here too so the two can't regress apart.
+			name:      "stream selector textField rejects a selector expression",
+			protocols: []any{map[string]any{"protocol": "invocations", "version": "1.0.0"}},
+			moderation: map[string]any{
+				"responseMode": "streaming",
+				"inputPaths":   []any{"$.input"},
+				"streamSelectors": []any{
+					map[string]any{
+						"eventType": "response.output_text.delta",
+						"textField": "$.delta",
+					},
+				},
+			},
+			wantErrSubst: "policies[0] invocationsModeration.streamSelectors[0].textField must be a field name",
+		},
 	}
 
 	for _, test := range tests {

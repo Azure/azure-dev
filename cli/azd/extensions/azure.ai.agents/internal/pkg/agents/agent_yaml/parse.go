@@ -711,7 +711,7 @@ func hasInvocationsModeration(policy map[string]any) bool {
 // same structural rules the Agents service applies at create time, so a misconfiguration is
 // caught locally instead of surfacing later as an opaque 'invalid_payload' response.
 //
-// It deliberately does not compile the JSONPath expressions; malformed paths are still
+// It deliberately does not compile the selector expressions; malformed paths are still
 // reported by the service.
 func validateInvocationsModeration(
 	index int,

@@ -459,13 +459,13 @@
         },
         "inputPaths": {
           "type": "array",
-          "description": "JSONPath expressions selecting request text. Required when inputContentType is 'json' or omitted.",
+          "description": "Selector expressions locating the request text: $ root, dotted members, array indexes, and [*] wildcards. Required when inputContentType is 'json' or omitted.",
           "minItems": 1,
           "items": { "type": "string" }
         },
         "outputPaths": {
           "type": "array",
-          "description": "JSONPath expressions selecting buffered response text. Required when responseMode includes non-streaming and outputContentType is 'json' or omitted.",
+          "description": "Selector expressions locating the buffered response text: $ root, dotted members, array indexes, and [*] wildcards. Required when responseMode includes non-streaming and outputContentType is 'json' or omitted.",
           "minItems": 1,
           "items": { "type": "string" }
         },

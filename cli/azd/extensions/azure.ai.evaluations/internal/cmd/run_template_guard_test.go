@@ -26,9 +26,9 @@ const seedRows = `{"id":1,"test_case_description":"A customer asks about a delay
 // worth refusing rather than warning. ADO 5631335.
 func TestBuildRunDataSource_RefusesAnAgentTargetOverRowsWithoutQuery(t *testing.T) {
 	configPath := writeDataset(t, seedRows)
-	ec := &evalContext{}
+	ec := unregisteredRunContext(t)
 
-	_, err := ec.buildRunDataSource(context.Background(), &project.Eval{
+	_, _, err := ec.buildRunDataSource(context.Background(), &project.Eval{
 		Name:            "retail-multiturn",
 		Dataset:         "d",
 		EvaluationLevel: project.EvaluationLevelConversation,
@@ -54,9 +54,9 @@ func TestBuildRunDataSource_RefusesAnAgentTargetOverRowsWithoutQuery(t *testing.
 // A model target reads the same column and fails the same way.
 func TestBuildRunDataSource_RefusesAModelTargetOverRowsWithoutQuery(t *testing.T) {
 	configPath := writeDataset(t, seedRows)
-	ec := &evalContext{}
+	ec := unregisteredRunContext(t)
 
-	_, err := ec.buildRunDataSource(context.Background(), &project.Eval{
+	_, _, err := ec.buildRunDataSource(context.Background(), &project.Eval{
 		Name:    "retail-multiturn",
 		Dataset: "d",
 		Target:  &project.Target{Type: project.TargetTypeModel, Name: "gpt-4o-mini"},
@@ -70,9 +70,9 @@ func TestBuildRunDataSource_RefusesAModelTargetOverRowsWithoutQuery(t *testing.T
 // static shape. Refusing these too would block a legitimate eval.
 func TestBuildRunDataSource_ScoresRowsWithoutQueryWhenThereIsNoTarget(t *testing.T) {
 	configPath := writeDataset(t, seedRows)
-	ec := &evalContext{}
+	ec := unregisteredRunContext(t)
 
-	ds, err := ec.buildRunDataSource(context.Background(), &project.Eval{
+	ds, _, err := ec.buildRunDataSource(context.Background(), &project.Eval{
 		Name:            "retail-static",
 		Dataset:         "d",
 		EvaluationLevel: project.EvaluationLevelConversation,
@@ -86,9 +86,9 @@ func TestBuildRunDataSource_ScoresRowsWithoutQueryWhenThereIsNoTarget(t *testing
 // The turn path is what every existing eval runs, and it must be untouched.
 func TestBuildRunDataSource_TurnRowsWithAnAgentTargetStillRun(t *testing.T) {
 	configPath := writeDataset(t, oneRow)
-	ec := &evalContext{}
+	ec := unregisteredRunContext(t)
 
-	ds, err := ec.buildRunDataSource(context.Background(), &project.Eval{
+	ds, _, err := ec.buildRunDataSource(context.Background(), &project.Eval{
 		Name:    "nightly",
 		Dataset: "d",
 		Target:  &project.Target{Type: project.TargetTypeAgent, Name: "hero-agent"},

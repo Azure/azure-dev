@@ -48,7 +48,7 @@ func TestBuildRunDataSource_Traces(t *testing.T) {
 		},
 	}
 
-	ds, err := ec.buildRunDataSource(context.Background(), group, "", 0)
+	ds, _, err := ec.buildRunDataSource(context.Background(), group, "", 0)
 
 	require.NoError(t, err)
 	// The legacy azure_ai_traces shape discarded agent_version and start_time
@@ -81,7 +81,7 @@ func TestBuildRunDataSource_TracesPinsTheAgentVersion(t *testing.T) {
 		},
 	}
 
-	ds, err := ec.buildRunDataSource(context.Background(), group, "", 0)
+	ds, _, err := ec.buildRunDataSource(context.Background(), group, "", 0)
 
 	require.NoError(t, err)
 	require.NotNil(t, ds.TraceSource)
@@ -103,7 +103,7 @@ func TestBuildRunDataSource_TracesCarriesAnExplicitWindow(t *testing.T) {
 		},
 	}
 
-	ds, err := ec.buildRunDataSource(context.Background(), group, "", 0)
+	ds, _, err := ec.buildRunDataSource(context.Background(), group, "", 0)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(1785542400), ds.TraceSource.StartTime)
@@ -119,7 +119,7 @@ func TestBuildRunDataSource_TracesRefusesEverySourceTheConfigWould(t *testing.T)
 	build := func(source *project.SourceDecl) error {
 		source.Type = project.SourceTypeTraces
 		source.AgentName = "a"
-		_, err := ec.buildRunDataSource(context.Background(),
+		_, _, err := ec.buildRunDataSource(context.Background(),
 			&project.Eval{Name: "trace-eval", Source: source}, "", 0)
 		return err
 	}
@@ -172,7 +172,7 @@ func TestBuildRunDataSource_TracesRefusesEverySourceTheConfigWould(t *testing.T)
 func TestBuildRunDataSource_ResponsesRefusesFieldsItDoesNotRead(t *testing.T) {
 	ec := &evalContext{}
 
-	_, err := ec.buildRunDataSource(context.Background(), &project.Eval{
+	_, _, err := ec.buildRunDataSource(context.Background(), &project.Eval{
 		Name: "responses-eval",
 		Source: &project.SourceDecl{
 			Type:        project.SourceTypeResponses,
@@ -208,7 +208,7 @@ func TestBuildRunDataSource_TracesFallsBackToTargetName(t *testing.T) {
 			Target: target,
 		}
 
-		ds, err := ec.buildRunDataSource(context.Background(), group, "", 0)
+		ds, _, err := ec.buildRunDataSource(context.Background(), group, "", 0)
 
 		require.NoError(t, err)
 		require.NotNil(t, ds.TraceSource)
@@ -227,7 +227,7 @@ func TestBuildRunDataSource_TracesWillNotReadAModelTarget(t *testing.T) {
 		Target: &project.Target{Type: project.TargetTypeModel, Name: "gpt-4o-mini"},
 	}
 
-	_, err := ec.buildRunDataSource(context.Background(), group, "", 0)
+	_, _, err := ec.buildRunDataSource(context.Background(), group, "", 0)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "agent_name")
@@ -242,7 +242,7 @@ func TestBuildRunDataSource_TracesWithoutAnAgentIsRefused(t *testing.T) {
 		Source: &project.SourceDecl{Type: project.SourceTypeTraces},
 	}
 
-	_, err := ec.buildRunDataSource(context.Background(), group, "", 0)
+	_, _, err := ec.buildRunDataSource(context.Background(), group, "", 0)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "source.agent_name")
@@ -261,7 +261,7 @@ func TestBuildRunDataSource_Responses(t *testing.T) {
 		},
 	}
 
-	ds, err := ec.buildRunDataSource(context.Background(), group, "", 0)
+	ds, _, err := ec.buildRunDataSource(context.Background(), group, "", 0)
 
 	require.NoError(t, err)
 	assert.Equal(t, eval_api.EvalRunDataSourceTypeResponses, ds.Type)
@@ -281,7 +281,7 @@ func TestBuildRunDataSource_ResponsesWithoutIDsIsRefused(t *testing.T) {
 		Source: &project.SourceDecl{Type: project.SourceTypeResponses},
 	}
 
-	_, err := ec.buildRunDataSource(context.Background(), group, "", 0)
+	_, _, err := ec.buildRunDataSource(context.Background(), group, "", 0)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "source.response_ids")
@@ -290,11 +290,11 @@ func TestBuildRunDataSource_ResponsesWithoutIDsIsRefused(t *testing.T) {
 // No target means the rows already hold both sides of the exchange, so the run
 // scores them as they stand rather than invoking anything.
 func TestBuildRunDataSource_NoTargetScoresTheDatasetAsItStands(t *testing.T) {
-	ec := &evalContext{}
+	ec := unregisteredRunContext(t)
 	configPath := writeDataset(t, oneRow)
 	group := &project.Eval{Name: "recorded", Dataset: "d"}
 
-	ds, err := ec.buildRunDataSource(context.Background(), group, configPath, 0)
+	ds, _, err := ec.buildRunDataSource(context.Background(), group, configPath, 0)
 
 	require.NoError(t, err)
 	assert.Equal(t, eval_api.EvalRunDataSourceTypeJSONL, ds.Type)
@@ -306,7 +306,7 @@ func TestBuildRunDataSource_NoTargetScoresTheDatasetAsItStands(t *testing.T) {
 // A model target was accepted by config validation and then sent as
 // azure_ai_agent, so the run failed against a resource that does not exist.
 func TestBuildRunDataSource_ModelTargetIsSentAsAModel(t *testing.T) {
-	ec := &evalContext{}
+	ec := unregisteredRunContext(t)
 	configPath := writeDataset(t, oneRow)
 	group := &project.Eval{
 		Name:    "model-eval",
@@ -314,7 +314,7 @@ func TestBuildRunDataSource_ModelTargetIsSentAsAModel(t *testing.T) {
 		Target:  &project.Target{Type: project.TargetTypeModel, Name: "gpt-4o-mini"},
 	}
 
-	ds, err := ec.buildRunDataSource(context.Background(), group, configPath, 0)
+	ds, _, err := ec.buildRunDataSource(context.Background(), group, configPath, 0)
 
 	require.NoError(t, err)
 	require.NotNil(t, ds.Target)
@@ -324,7 +324,7 @@ func TestBuildRunDataSource_ModelTargetIsSentAsAModel(t *testing.T) {
 }
 
 func TestBuildRunDataSource_AgentTarget(t *testing.T) {
-	ec := &evalContext{}
+	ec := unregisteredRunContext(t)
 	configPath := writeDataset(t, oneRow)
 	group := &project.Eval{
 		Name:    "agent-eval",
@@ -332,7 +332,7 @@ func TestBuildRunDataSource_AgentTarget(t *testing.T) {
 		Target:  &project.Target{Type: project.TargetTypeAgent, Name: "support-agent"},
 	}
 
-	ds, err := ec.buildRunDataSource(context.Background(), group, configPath, 0)
+	ds, _, err := ec.buildRunDataSource(context.Background(), group, configPath, 0)
 
 	require.NoError(t, err)
 	assert.Equal(t, eval_api.EvalRunDataSourceTypeAgentTarget, ds.Type)
@@ -346,7 +346,7 @@ func TestBuildRunDataSource_AgentTarget(t *testing.T) {
 func TestBuildRunDataSource_NoRowsFromAnywhere(t *testing.T) {
 	ec := &evalContext{}
 
-	_, err := ec.buildRunDataSource(context.Background(), &project.Eval{Name: "empty"}, "", 0)
+	_, _, err := ec.buildRunDataSource(context.Background(), &project.Eval{Name: "empty"}, "", 0)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "dataset:")
@@ -365,7 +365,7 @@ func TestBuildRunDataSource_UnknownSourceTypeIsRefused(t *testing.T) {
 		Source: &project.SourceDecl{Type: "trace"},
 	}
 
-	_, err := ec.buildRunDataSource(context.Background(), group, "", 0)
+	_, _, err := ec.buildRunDataSource(context.Background(), group, "", 0)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `source.type "trace" is not supported`)
@@ -427,7 +427,7 @@ func TestBuildRunDataSource_RefusesADeclarationNoRunCouldCarryOut(t *testing.T) 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.eval.Name = "e"
-			_, err := ec.buildRunDataSource(context.Background(), &tc.eval, "", 0)
+			_, _, err := ec.buildRunDataSource(context.Background(), &tc.eval, "", 0)
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), `eval "e"`)
@@ -436,9 +436,9 @@ func TestBuildRunDataSource_RefusesADeclarationNoRunCouldCarryOut(t *testing.T) 
 	}
 }
 
-// --max-samples has to mean the same thing wherever the rows come from.
+// --max-samples still caps genuinely unregistered local rows.
 func TestBuildRunDataSource_MaxSamplesCapsLocalRows(t *testing.T) {
-	ec := &evalContext{}
+	ec := unregisteredRunContext(t)
 	configPath := writeDataset(t, oneRow+oneRow+oneRow)
 	group := &project.Eval{
 		Name:    "capped",
@@ -446,7 +446,7 @@ func TestBuildRunDataSource_MaxSamplesCapsLocalRows(t *testing.T) {
 		Target:  &project.Target{Type: project.TargetTypeAgent, Name: "a"},
 	}
 
-	ds, err := ec.buildRunDataSource(context.Background(), group, configPath, 2)
+	ds, _, err := ec.buildRunDataSource(context.Background(), group, configPath, 2)
 
 	require.NoError(t, err)
 	require.NotNil(t, ds.Source)

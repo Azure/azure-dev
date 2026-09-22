@@ -165,6 +165,34 @@ Eval groups are immutable, so a change to a group's evaluators, target or
   shows only what you put there.
 ## Commands
 
+### Dataset identity and row caps
+
+Runs over registered datasets send the service-issued version ID, not inline
+copies of the rows. This applies to static scoring, agent and model targets,
+and datasets whose declaration still has `file:` after publication. A declared
+`version:` wins over the version recorded by deployment; otherwise the recorded
+version is used, or the latest service version when none is recorded. Lookup,
+authorization, and missing-ID errors stop the run rather than switching to inline
+data. Registered rows are downloaded only to validate their shape before submission.
+
+The current run API exposes no supported row-subset option on a registered
+`file_id` source. A positive `--max-samples` or `max_samples:` therefore fails
+explicitly for registered datasets. Remove the cap, pass `--max-samples 0` to
+override a configured cap, or deliberately publish and select a smaller dataset.
+The CLI does not publish temporary subset datasets automatically.
+
+Inline rows and row caps remain available for genuinely unregistered local files,
+after the service confirms the dataset is absent. An empty version listing alone
+does not establish absence. `--max-samples` is also rejected for source-backed runs
+and reruns selected by eval ID, where it cannot change the repeated source.
+Source-backed runs reject configured `max_samples:` too; use `source.max_traces`
+for trace limits or select `source.response_ids` explicitly.
+
+Reruns retain a previous registered `file_id` unchanged. A legacy run with inline
+rows attributed to a registered version must instead be started from its declared
+eval by name: replacing those possibly capped rows with a whole version would
+silently change what gets scored.
+
 | Group | Commands |
 |---|---|
 | `azd ai eval` | `init` · `generate` · `create [name]` · `list` · `show <eval>` · `delete <eval>` |

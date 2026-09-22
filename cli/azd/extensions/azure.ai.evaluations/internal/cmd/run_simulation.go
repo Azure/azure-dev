@@ -30,44 +30,41 @@ const (
 func (ec *evalContext) simulationDataSource(
 	ctx context.Context,
 	group *project.Eval,
-	configPath string,
+	pinnedVersion string,
 	maxSamples int,
-) (*eval_api.EvalRunDataSource, error) {
+) (*eval_api.EvalRunDataSource, string, error) {
 	// The declaration rules are project.ValidateRunnable's, so `azd up` refuses
 	// the same shapes this does; the caller has already applied them. What is
 	// left here is the resolved cap, which --max-samples can introduce for a
 	// declaration that carries none.
 	if maxSamples > 0 {
-		return nil, messages.InEval(group.Name, messages.SimulationCannotBeSampled(maxSamples))
+		return nil, "", messages.InEval(group.Name, messages.SimulationCannotBeSampled(maxSamples))
 	}
 
 	// The azure.yaml service key is a local label; the agent answers to what its
 	// service declares. The turn path resolves the same way.
 	agent, err := ec.remoteAgentName(ctx, group.Target.Name)
 	if err != nil {
-		return nil, simulationError(group, err.Error(), "")
+		return nil, "", simulationError(group, err.Error(), "")
 	}
 
 	// Read whole: the run is bound to the registered version, so a cap here
 	// would validate a prefix of what the service is about to simulate from.
 	items, version, err := ec.readRegisteredDataset(
-		ctx, group.Dataset, declaredDatasetVersion(configPath, group), 0)
+		ctx, group.Dataset, pinnedVersion)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if err := refuseUnusableSeedRows(group, items); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	// A seed dataset is referenced, never copied. The spec is explicit that
 	// inline rows are not equivalent for a registered dataset, and a version the
 	// service will not describe is not one a run can be pinned to.
-	id := ec.datasetResourceID(ctx, group.Dataset, version)
-	if id == "" {
-		return nil, simulationError(group,
-			fmt.Sprintf("dataset %q version %q could not be resolved to a registered id", group.Dataset, version),
-			"A simulation run is bound to the registered dataset version. Publish the dataset with "+
-				"`azd ai eval create` or `azd up` before running it.")
+	id, err := ec.datasetResourceID(ctx, group.Dataset, version)
+	if err != nil {
+		return nil, "", err
 	}
 
 	ds := eval_api.NewSimulationDataSource(
@@ -77,7 +74,7 @@ func (ec *evalContext) simulationDataSource(
 		group.Simulation.MaxTurns,
 	)
 	ds.SetFileID(id)
-	return ds, nil
+	return ds, version, nil
 }
 
 // refuseUnusableSeedRows checks every row before anything is created.

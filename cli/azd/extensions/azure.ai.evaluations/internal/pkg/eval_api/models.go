@@ -568,7 +568,7 @@ type EvalRunDataContent struct {
 }
 
 // NewAgentTargetDataSource builds an EvalRunDataSource configured for agent target completions.
-// The rows must be supplied separately via SetFileContent.
+// Supply a registered version via SetFileID, or unregistered rows via SetFileContent.
 func NewAgentTargetDataSource(agentName string, agentVersion *string) *EvalRunDataSource {
 	return &EvalRunDataSource{
 		Type: EvalRunDataSourceTypeAgentTarget,
@@ -699,10 +699,8 @@ func NewResponsesDataSource(responseIDs []string, maxTurns int) *EvalRunDataSour
 
 // SetFileContent sets the data source to use inline file content.
 //
-// There is no by-reference counterpart. A run's `file_id` means an uploaded
-// file, and a dataset name is not one — sending it is rejected with "invalid
-// data source file ids" — so registered datasets are fetched and sent inline
-// too. See readRegisteredDataset.
+// Only unregistered local rows use this shape. Registered datasets use SetFileID
+// to preserve the service-issued version identity.
 func (ds *EvalRunDataSource) SetFileContent(items []map[string]any) {
 	ds.Source = &EvalRunDataContent{
 		Type:    EvalRunDataContentTypeFileContent,

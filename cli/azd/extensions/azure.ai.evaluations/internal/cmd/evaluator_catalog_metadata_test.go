@@ -188,6 +188,39 @@ func TestWithCatalogMetadata_RefusesABodyItCannotRead(t *testing.T) {
 
 // `[]` and `"str"` parse; they are just not objects. Reporting them as
 // unparseable sends the author looking for a syntax error that is not there.
+//
+// Driven through normalizeRubricBody, which is what an authored evaluator
+// actually reaches: both EnsureEvaluator paths call it before anything else,
+// so a distinction made only further in never reaches a reader.
+func TestNormalizeRubricBody_SeparatesBadSyntaxFromTheWrongShape(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "an array", raw: `["an","array"]`, want: "not a JSON object"},
+		{name: "a bare string", raw: `"just a string"`, want: "not a JSON object"},
+		{name: "a number", raw: `7`, want: "not a JSON object"},
+		{name: "a boolean", raw: `true`, want: "not a JSON object"},
+		{name: "genuinely unparseable", raw: `{"definition":`, want: "not valid JSON"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := normalizeRubricBody("quality", []byte(tt.raw))
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
+}
+
+// The same distinction at the merge step, which a document arriving from the
+// service can also reach.
 func TestWithCatalogMetadata_SeparatesBadSyntaxFromTheWrongShape(t *testing.T) {
 	t.Parallel()
 

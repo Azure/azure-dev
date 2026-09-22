@@ -350,7 +350,7 @@ func TestHeroScenario1WritesTheDocumentedConfig(t *testing.T) {
 //
 // The `builtin.` reference matters: it is what makes `init` try the evaluator
 // catalogue, so this covers the one lookup it has as well as the rest.
-func TestHeroInitMakesNoServiceCalls(t *testing.T) {
+func TestHeroInitWorksWithNoNetwork(t *testing.T) {
 	dir := project(t, "support-agent")
 
 	cmd := exec.Command("azd", "ai", "eval", "init",

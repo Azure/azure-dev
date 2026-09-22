@@ -15,7 +15,9 @@
   declaration carries -- `display_name`, `categories` and
   `supported_evaluation_levels` -- rather than dropping them.
 - Closing the eval picker is reported as the answer it is at every command that
-  offers it, rather than exiting non-zero at six of them.
+  offers it, rather than exiting non-zero at seven of them. Interrupting the
+  command while the picker is open is still an interrupt, and still exits
+  non-zero.
 - `eval create` closes with a link to the eval in the Portal.
 
 ## 1.0.0-beta.1 (2026-09-17)

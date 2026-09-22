@@ -3,12 +3,11 @@
 ## 0.8.13-preview
 
 - In development mode (`AZD_AI_RLE_ENABLE_ALL=true`), `azd ai rle rollout`
-  now opens the local rollout dashboard automatically when execution finishes,
-  without `--monitor`. Pass `--monitor=false` to exit as soon as the rollout
-  completes. The default dashboard is skipped, rather than failing the
-  rollout, when `--output` is set or when the Loom session cannot be closed or
-  the artifacts cannot be saved; an explicit `--monitor` still treats those
-  cases as errors. `azd ai rle monitor` is unchanged.
+  now always opens the local rollout dashboard when execution finishes, and the
+  `rollout --monitor` flag is removed. The dashboard is skipped, with a
+  warning rather than a failed rollout, when the Loom session cannot be closed
+  or the artifacts cannot be saved, and silently when `--output` is set.
+  `azd ai rle monitor` is unchanged.
 - `azd ai rle run` now fails immediately with an explanation when `rle.toml`
   declares anything other than `Gym`/`OpenEnv`. The command drives the
   container over the OpenEnv WebSocket session, which a harness container does

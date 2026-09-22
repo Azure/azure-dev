@@ -37,17 +37,15 @@ type rolloutFlags struct {
 	sequenceID     int
 	timeout        int
 	outputDir      string
-	monitor        bool
 }
 
 type rolloutAction struct {
 	cmd             *cobra.Command
 	flags           *rolloutFlags
 	environmentName string
-	// monitorRequired is set when --monitor was passed explicitly, so a monitor that cannot
-	// open is an error. When the monitor is only on by default, the rollout degrades to a
-	// warning and skips the dashboard instead.
-	monitorRequired bool
+	// monitor opens the local dashboard after a development-mode rollout. It is cleared when
+	// the dashboard cannot open safely, so the rollout warns instead of failing.
+	monitor bool
 }
 
 // rolloutTarget identifies the exact published environment version to run, and the
@@ -136,41 +134,22 @@ rle.toml. To run an environment without local source, provide both its name and
 			"The Execute Rollout response carries the full capture graph — token ids, logprobs "+
 			"and loss masks — which is too large to print and is not retrievable afterwards.",
 	)
-	cmd.Flags().BoolVar(
-		&flags.monitor,
-		"monitor",
-		rolloutMonitorEnabled(),
-		"Open the saved rollout in a local browser dashboard. On by default in development mode; "+
-			"pass --monitor=false to skip it.",
-	)
-	cmd.Flags().Lookup("monitor").Hidden = !rolloutMonitorEnabled()
 	if rolloutMonitorEnabled() {
 		cmd.Long += `
 
 In development mode, rollout opens a local dashboard from the rollout artifacts after
-execution resources are released; it stays running until Ctrl+C. Pass --monitor=false to
-exit as soon as the rollout completes. The dashboard is skipped when --output is set.
+execution resources are released; it stays running until Ctrl+C. The dashboard is skipped
+when --output is set.
 Reopen a saved result with azd ai rle monitor --rollout-id <id> [--output-dir <directory>].`
 	}
 	return cmd
 }
 
 func (a *rolloutAction) Run() error {
-	if a.cmd.Flags().Changed("monitor") {
-		if err := requireRolloutMonitorEnabled(); err != nil {
-			return err
-		}
-		a.monitorRequired = a.flags.monitor
-	} else if a.flags.monitor {
-		// The default-on monitor yields to machine-readable output rather than rejecting it.
-		if flag := a.cmd.Flag("output"); flag != nil && flag.Changed {
-			a.flags.monitor = false
-		}
-	}
-	if a.monitorRequired {
-		if err := validateMonitorOutput(a.cmd); err != nil {
-			return err
-		}
+	a.monitor = rolloutMonitorEnabled()
+	// The monitor yields to machine-readable output rather than rejecting it.
+	if flag := a.cmd.Flag("output"); flag != nil && flag.Changed {
+		a.monitor = false
 	}
 	outputDir, err := resolveRolloutOutputDir(a.flags.outputDir)
 	if err != nil {
@@ -224,7 +203,7 @@ func (a *rolloutAction) Run() error {
 	if err := a.executeAndSave(ctx, target, rle, model, task, agentInput, rolloutID); err != nil {
 		return err
 	}
-	if a.flags.monitor {
+	if a.monitor {
 		reader := &rollouts.ArtifactReader{OutputDir: outputDir}
 		return runRolloutMonitor(ctx, reader, rolloutID, false, a.cmd.OutOrStdout(), a.cmd.ErrOrStderr())
 	}
@@ -259,12 +238,8 @@ func (a *rolloutAction) executeAndSave(
 		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		if cerr := loom.closeSession(cctx, sessionID); cerr != nil {
-			if a.monitorRequired {
-				err = errors.Join(err, fmt.Errorf("failed to close Loom session; it may remain allocated: %w", cerr))
-			} else {
-				_, writeErr := fmt.Fprintf(errOut, "Warning: failed to close Loom session; it may remain allocated: %v\n", cerr)
-				err = errors.Join(err, writeErr, a.skipMonitor(errOut))
-			}
+			_, writeErr := fmt.Fprintf(errOut, "Warning: failed to close Loom session; it may remain allocated: %v\n", cerr)
+			err = errors.Join(err, writeErr, a.skipMonitor(errOut))
 			return
 		}
 		_, writeErr := fmt.Fprintln(errOut, "Loom session closed.")
@@ -327,22 +302,19 @@ func (a *rolloutAction) executeAndSave(
 		Environment: &rollouts.Environment{Name: target.environmentName, Version: target.version},
 	})
 	if err != nil {
-		if a.monitorRequired {
-			return fmt.Errorf("rollout completed, but its artifacts could not be saved; monitor cannot open: %w", err)
-		}
 		_, writeErr := fmt.Fprintf(errOut, "\nWarning: could not write rollout artifacts: %v\n", err)
 		return errors.Join(writeErr, a.skipMonitor(errOut))
 	}
 	return printRolloutArtifacts(out, artifacts)
 }
 
-// skipMonitor turns off a default-on monitor that can no longer open safely, and tells the
-// user why no dashboard appears. It is a no-op when the monitor is off.
+// skipMonitor turns off a monitor that can no longer open safely, and tells the user why no
+// dashboard appears. It is a no-op when the monitor is off.
 func (a *rolloutAction) skipMonitor(errOut io.Writer) error {
-	if !a.flags.monitor {
+	if !a.monitor {
 		return nil
 	}
-	a.flags.monitor = false
+	a.monitor = false
 	_, err := fmt.Fprintln(errOut, "The rollout monitor was not opened.")
 	return err
 }

@@ -247,6 +247,29 @@ func TestStateStorePagedPicker(t *testing.T) {
 	prompt.AssertExpectations(t)
 }
 
+func TestStateStorePickerEscapesDisplayOnly(t *testing.T) {
+	const rawName = "alpha\n\x1b[31mred\\suffix"
+	a, api, server, _ := newStateStoreTestAction(t)
+	prompt := &stateStorePromptMock{}
+	a.prompt = prompt
+	api.On("ListStateStores", mock.Anything, "worker", a.flags.page).
+		Return(&agent_api.StateStorePage[agent_api.StateStore]{
+			Data: []agent_api.StateStore{{Name: rawName}},
+		}, nil).Once()
+	prompt.On("Select", mock.Anything, mock.MatchedBy(func(req *azdext.SelectRequest) bool {
+		return len(req.Options.Choices) == 1 &&
+			req.Options.Choices[0].Label == `alpha\n\x1b[31mred\\suffix` &&
+			req.Options.Choices[0].Value == rawName
+	})).Return(&azdext.SelectResponse{Value: new(int32(0))}, nil).Once()
+	api.On("GetStateStore", mock.Anything, "worker", rawName).
+		Return(&agent_api.StateStore{Name: rawName}, nil).Once()
+	require.NoError(t, a.run(t.Context(), "select", nil))
+	var selection map[string]string
+	server.getJSON(t, configPath(stateStoreConfigField), &selection)
+	require.Equal(t, rawName, selection[a.target.agentKey])
+	prompt.AssertExpectations(t)
+}
+
 func TestStateStorePickerFailures(t *testing.T) {
 	for _, tt := range []struct {
 		name      string

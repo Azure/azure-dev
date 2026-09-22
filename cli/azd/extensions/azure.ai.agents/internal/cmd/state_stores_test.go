@@ -309,6 +309,8 @@ func TestStateStoreItemActions(t *testing.T) {
 			require.True(t, json.Valid(writer.Bytes()), "stdout must contain only JSON")
 			if operation == "items show" || operation == "items set" {
 				require.Contains(t, writer.String(), "9007199254740993")
+				require.NotContains(t, writer.String(), `"tags"`,
+					"unavailable response tags must remain omitted rather than becoming null")
 			}
 			var selection map[string]string
 			server.getJSON(t, configPath(stateStoreConfigField), &selection)
@@ -431,6 +433,46 @@ func TestStateStoreWriteServerErrorGuidance(t *testing.T) {
 	}
 }
 
+func TestStateStoreUncertainWriteGuidance(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		operation string
+		err       error
+		wantCode  string
+	}{
+		{"set transport", "items set", io.ErrUnexpectedEOF, exterrors.CodeStateStoreOperation},
+		{"delete transport", "items delete", io.ErrUnexpectedEOF, exterrors.CodeStateStoreOperation},
+		{"set invalid response", "items set", errors.New("invalid state store response JSON"),
+			exterrors.CodeStateStoreOperation},
+		{"delete cancelled", "items delete", context.Canceled, exterrors.CodeCancelled},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			a, api, _, writer := newStateStoreTestAction(t)
+			a.flags.store, a.flags.yes, a.flags.ifMatch = "store", true, `"etag"`
+			a.request.Value = json.RawMessage(`{}`)
+			unknown := &agent_api.StateStoreWriteOutcomeUnknownError{Err: tt.err}
+			if tt.operation == "items set" {
+				api.On("SetStateStoreItem", mock.Anything, "worker", "store", "key", a.request, `"etag"`).
+					Return(nil, unknown).Once()
+			} else {
+				api.On("DeleteStateStoreItem", mock.Anything, "worker", "store", "key", `"etag"`).
+					Return(nil, unknown).Once()
+			}
+			err := a.run(t.Context(), tt.operation, []string{"key"})
+			local, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected a structured local error, got %v", err)
+			require.Equal(t, tt.wantCode, local.Code)
+			if tt.wantCode == exterrors.CodeCancelled {
+				require.Empty(t, local.Suggestion)
+			} else {
+				require.Contains(t, local.Suggestion, "write outcome could not be confirmed")
+				require.Contains(t, local.Suggestion, "check the item's current state")
+			}
+			require.Empty(t, writer.String())
+		})
+	}
+}
+
 func TestStateStoreTableOutput(t *testing.T) {
 	for _, result := range []any{
 		&agent_api.StateStore{Name: "store", ItemTTLSeconds: -1},
@@ -459,6 +501,48 @@ func TestStateStoreTableOutput(t *testing.T) {
 	}
 	// Output failures are surfaced, not swallowed after a successful API request.
 	require.Error(t, writeStateStoreTable(failingStateStoreWriter{}, &agent_api.StateStore{Name: "store"}))
+}
+
+func TestStateStoreHumanOutputEscapesIdentifiers(t *testing.T) {
+	const raw = "first\n\x1b[31mred\\suffix"
+	const escaped = `first\n\x1b[31mred\\suffix`
+	for _, result := range []any{
+		&agent_api.StateStore{Name: raw},
+		&agent_api.StateStoreItem{Key: raw, ETag: `"etag"`, Tags: map[string]string{"kind": "checkpoint"}},
+		&agent_api.DeletedStateStoreItem{Key: raw, Deleted: true},
+	} {
+		var writer bytes.Buffer
+		require.NoError(t, writeStateStoreTable(&writer, result))
+		require.NotContains(t, writer.String(), raw)
+		require.NotContains(t, writer.String(), "\n\x1b[31m")
+		require.Contains(t, writer.String(), escaped)
+	}
+	store := agent_api.StateStore{Name: raw}
+	encoded, err := json.Marshal(store)
+	require.NoError(t, err)
+	var roundTrip agent_api.StateStore
+	require.NoError(t, json.Unmarshal(encoded, &roundTrip))
+	require.Equal(t, raw, roundTrip.Name, "JSON and API values retain the original identifier")
+}
+
+func TestStateStoreOmittedTagsRemainOmittedInOutput(t *testing.T) {
+	item := &agent_api.StateStoreItem{Key: "key", ETag: `"etag"`}
+	encoded, err := json.Marshal(item)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), `"tags"`)
+
+	var writer bytes.Buffer
+	require.NoError(t, writeStateStoreTable(&writer, item))
+	require.NotContains(t, writer.String(), "Tags:")
+	require.Contains(t, writer.String(), `ETag: "etag"`)
+
+	item.Tags = map[string]string{"kind": "checkpoint"}
+	encoded, err = json.Marshal(item)
+	require.NoError(t, err)
+	require.Contains(t, string(encoded), `"tags":{"kind":"checkpoint"}`)
+	writer.Reset()
+	require.NoError(t, writeStateStoreTable(&writer, item))
+	require.Contains(t, writer.String(), `Tags: {"kind":"checkpoint"}`)
 }
 
 type failingStateStoreWriter struct{}

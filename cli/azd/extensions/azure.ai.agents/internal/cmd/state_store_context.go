@@ -153,7 +153,9 @@ func (a *stateStoreAction) pickStore(ctx context.Context) (string, error) {
 		}
 		choices := make([]*azdext.SelectChoice, 0, len(page.Data)+1)
 		for _, store := range page.Data {
-			choices = append(choices, &azdext.SelectChoice{Label: store.Name, Value: store.Name})
+			choices = append(choices, &azdext.SelectChoice{
+				Label: stateStoreDisplayText(store.Name), Value: store.Name,
+			})
 		}
 		if page.HasMore {
 			if page.LastID == nil || *page.LastID == "" || seen[*page.LastID] {

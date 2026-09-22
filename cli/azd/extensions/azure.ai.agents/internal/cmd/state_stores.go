@@ -281,7 +281,17 @@ func (a *stateStoreAction) run(ctx context.Context, operation string, args []str
 				StatusCode: respErr.StatusCode, ServiceName: "foundry", Suggestion: suggestion,
 			}
 		}
-		return exterrors.ServiceFromAzure(err, exterrors.CodeStateStoreOperation)
+		classified := exterrors.ServiceFromAzure(err, exterrors.CodeStateStoreOperation)
+		if operation == "items set" || operation == "items delete" {
+			if _, ok := errors.AsType[*agent_api.StateStoreWriteOutcomeUnknownError](err); ok {
+				if local, ok := errors.AsType[*azdext.LocalError](classified); ok &&
+					local.Category == azdext.LocalErrorCategoryInternal {
+					local.Suggestion = "the write outcome could not be confirmed; check the item's current state " +
+						"and reconcile your changes before retrying the write"
+				}
+			}
+		}
+		return classified
 	}
 	if a.flags.output == "table" {
 		return writeStateStoreTable(a.writer, result)

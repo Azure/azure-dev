@@ -68,7 +68,7 @@ Prefer `--value-file <path>` or `--value-file -` for sensitive values, and avoid
 
 ## Output and pagination
 
-JSON is the default; use `--output table` for readable output. Item lists return metadata, not values. Item `show` includes the value, tags, and ETag. Write responses contain service metadata and may omit the value; azd does not fetch it again.
+JSON is the default; use `--output table` for readable output. Item lists return metadata, not values. Item `show` includes the value, tags, and ETag. Write responses contain service metadata and may omit the value or tags; azd preserves those omissions and does not fetch the item again.
 
 List commands return at most `--limit` results per page. The default is **20**, with the service-supported range **1–100**. `--order` defaults to **desc**, following service ordering rather than alphabetical names.
 

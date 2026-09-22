@@ -31,7 +31,7 @@ type StateStoreItem struct {
 	Object    string            `json:"object,omitempty"`
 	Key       string            `json:"key"`
 	Value     json.RawMessage   `json:"value,omitempty"`
-	Tags      map[string]string `json:"tags"`
+	Tags      map[string]string `json:"tags,omitempty"`
 	ETag      string            `json:"etag"`
 	CreatedAt int64             `json:"created_at"`
 	UpdatedAt int64             `json:"updated_at"`

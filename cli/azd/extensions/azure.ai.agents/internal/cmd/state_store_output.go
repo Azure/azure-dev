@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -65,7 +66,7 @@ func writeStateStoreTable(writer io.Writer, result any) error {
 			{Column: output.Column{Heading: "KEY", ValueTemplate: "{{.Name}}"}, CardTitle: true, Wrappable: true},
 			{Column: output.Column{Heading: "DELETED", ValueTemplate: "{{.Deleted}}"}},
 		}
-		rows = []stateStoreTableRow{{Name: v.Key, Deleted: v.Deleted}}
+		rows = []stateStoreTableRow{{Name: stateStoreDisplayText(v.Key), Deleted: v.Deleted}}
 	default:
 		return fmt.Errorf("unsupported State Store table result")
 	}
@@ -82,13 +83,18 @@ func writeStateStoreTable(writer io.Writer, result any) error {
 		}
 	}
 	if itemDetail != nil {
-		tags, err := json.Marshal(itemDetail.Tags)
-		if err != nil {
+		// Detail output must retain the complete concurrency token, even on narrow terminals.
+		if _, err := fmt.Fprintf(writer, "\nETag: %s\n", itemDetail.ETag); err != nil {
 			return err
 		}
-		// Detail output must retain the complete concurrency token, even on narrow terminals.
-		if _, err := fmt.Fprintf(writer, "\nETag: %s\nTags: %s\n", itemDetail.ETag, tags); err != nil {
-			return err
+		if len(itemDetail.Tags) > 0 {
+			tags, err := json.Marshal(itemDetail.Tags)
+			if err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintf(writer, "Tags: %s\n", tags); err != nil {
+				return err
+			}
 		}
 		value := itemDetail.Value
 		if len(value) > 0 && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
@@ -114,15 +120,23 @@ func writeStateStoreTable(writer io.Writer, result any) error {
 	return nil
 }
 
+func stateStoreDisplayText(value string) string {
+	quoted := strconv.Quote(value)
+	return quoted[1 : len(quoted)-1]
+}
+
 func stateStoreRow(store agent_api.StateStore) stateStoreTableRow {
 	return stateStoreTableRow{
-		Name: store.Name, Isolated: store.UserIsolation, TTL: store.ItemTTLSeconds,
+		Name: stateStoreDisplayText(store.Name), Isolated: store.UserIsolation, TTL: store.ItemTTLSeconds,
 		Updated: stateStoreTimestamp(store.UpdatedAt),
 	}
 }
 
 func stateStoreItemRow(item agent_api.StateStoreItem) stateStoreTableRow {
-	return stateStoreTableRow{Name: item.Key, ETag: item.ETag, Updated: stateStoreTimestamp(item.UpdatedAt)}
+	return stateStoreTableRow{
+		Name: stateStoreDisplayText(item.Key), ETag: item.ETag,
+		Updated: stateStoreTimestamp(item.UpdatedAt),
+	}
 }
 
 func stateStoreTimestamp(seconds int64) string {

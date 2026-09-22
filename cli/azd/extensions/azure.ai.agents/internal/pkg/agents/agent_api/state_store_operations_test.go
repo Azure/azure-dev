@@ -17,6 +17,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type stateStoreErrorTransport struct {
+	err      error
+	requests []*http.Request
+}
+
+func (t *stateStoreErrorTransport) Do(req *http.Request) (*http.Response, error) {
+	t.requests = append(t.requests, req)
+	return nil, t.err
+}
+
 func TestStateStoreRequests(t *testing.T) {
 	store, key := "checkpoints/作業 %?#", "task/one ?#%"
 	base := "/api/projects/proj/agents/worker/endpoint/state_stores"
@@ -173,6 +183,50 @@ func TestStateStoreValidation(t *testing.T) {
 			require.False(t, query.Has("before"))
 		})
 	}
+}
+
+func TestStateStoreWriteOutcomeUnknown(t *testing.T) {
+	for _, operation := range []string{"set", "delete"} {
+		t.Run(operation+"/transport", func(t *testing.T) {
+			transport := &stateStoreErrorTransport{err: io.ErrUnexpectedEOF}
+			client := newTestClient("https://test.example.com/api/projects/proj", transport)
+			var err error
+			if operation == "set" {
+				_, err = client.SetStateStoreItem(t.Context(), "agent", "store", "key",
+					SetStateStoreItemRequest{Value: json.RawMessage(`{}`)}, `"etag"`)
+			} else {
+				_, err = client.DeleteStateStoreItem(t.Context(), "agent", "store", "key", `"etag"`)
+			}
+			unknown, ok := errors.AsType[*StateStoreWriteOutcomeUnknownError](err)
+			require.True(t, ok)
+			require.ErrorIs(t, unknown, io.ErrUnexpectedEOF)
+			require.Len(t, transport.requests, 1, "writes are never retried after an uncertain outcome")
+			require.Equal(t, `"etag"`, transport.requests[0].Header.Get("If-Match"))
+		})
+		t.Run(operation+"/invalid response", func(t *testing.T) {
+			client, transport := newCaptureClient(http.StatusOK, `not-json-containing-secret-value`)
+			var err error
+			if operation == "set" {
+				_, err = client.SetStateStoreItem(t.Context(), "agent", "store", "key",
+					SetStateStoreItemRequest{Value: json.RawMessage(`{}`)}, "")
+			} else {
+				_, err = client.DeleteStateStoreItem(t.Context(), "agent", "store", "key", "")
+			}
+			_, ok := errors.AsType[*StateStoreWriteOutcomeUnknownError](err)
+			require.True(t, ok)
+			require.EqualError(t, err, "invalid state store response JSON")
+			require.NotContains(t, err.Error(), "secret-value")
+			require.Len(t, transport.requests, 1)
+		})
+	}
+	t.Run("read transport remains ordinary", func(t *testing.T) {
+		transport := &stateStoreErrorTransport{err: io.ErrUnexpectedEOF}
+		client := newTestClient("https://test.example.com/api/projects/proj", transport)
+		_, err := client.GetStateStoreItem(t.Context(), "agent", "store", "key")
+		_, ok := errors.AsType[*StateStoreWriteOutcomeUnknownError](err)
+		require.False(t, ok)
+		require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	})
 }
 
 func TestStateStoreErrorsDoNotExposeBodies(t *testing.T) {

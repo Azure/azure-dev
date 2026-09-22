@@ -22,6 +22,23 @@ import (
 
 const stateStoresPreviewFeature = "StateStores=V1Preview"
 
+// StateStoreWriteOutcomeUnknownError indicates that a write request did not
+// produce a trustworthy service result. The service might have committed it.
+type StateStoreWriteOutcomeUnknownError struct {
+	Err error
+}
+
+func (e *StateStoreWriteOutcomeUnknownError) Error() string {
+	if e == nil || e.Err == nil {
+		return "State Store write outcome could not be confirmed"
+	}
+	return e.Err.Error()
+}
+
+func (e *StateStoreWriteOutcomeUnknownError) Unwrap() error {
+	return e.Err
+}
+
 // ErrStateStoreValueTooLarge indicates that a value exceeds the documented preview size limit.
 var ErrStateStoreValueTooLarge = fmt.Errorf(
 	"item value exceeds the serialized JSON limit of %d bytes (1 MiB)", MaxStateStoreValueBytes,
@@ -204,7 +221,11 @@ func (c *AgentClient) stateStoreRequest(
 	}
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return fmt.Errorf("sending state store request: %w", err)
+		err = fmt.Errorf("sending state store request: %w", err)
+		if method != http.MethodGet {
+			return &StateStoreWriteOutcomeUnknownError{Err: err}
+		}
+		return err
 	}
 	defer resp.Body.Close()
 
@@ -226,7 +247,11 @@ func (c *AgentClient) stateStoreRequest(
 			return ctx.Err()
 		}
 		// A JSON decoding error can include customer-authored property names.
-		return fmt.Errorf("invalid state store response JSON")
+		err = fmt.Errorf("invalid state store response JSON")
+		if method != http.MethodGet {
+			return &StateStoreWriteOutcomeUnknownError{Err: err}
+		}
+		return err
 	}
 	return nil
 }

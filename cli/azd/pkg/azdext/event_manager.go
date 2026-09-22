@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorchain"
@@ -39,6 +40,8 @@ type previewEventManager struct {
 	mu             sync.Mutex
 	registrationMu sync.Mutex
 }
+
+var previewEventRegistrationTimeout = 5 * time.Second
 
 func newPreviewEventManager(
 	extensionId string,
@@ -146,7 +149,12 @@ func (em *previewEventManager) AddProjectEventHandler(
 			},
 		},
 	}
-	resp, err := broker.SendAndWait(ctx, msg)
+	registrationCtx, cancel := context.WithTimeout(
+		ctx,
+		previewEventRegistrationTimeout,
+	)
+	defer cancel()
+	resp, err := broker.SendAndWait(registrationCtx, msg)
 	if err == nil && resp.GetSubscribeProjectEventResponse() == nil {
 		err = fmt.Errorf(
 			"expected SubscribeProjectEventResponse, got %T",
@@ -161,6 +169,11 @@ func (em *previewEventManager) AddProjectEventHandler(
 			delete(em.handlers, eventName)
 		}
 		em.mu.Unlock()
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			return fmt.Errorf(
+				"preview event subscription is not supported by this azd host",
+			)
+		}
 		return fmt.Errorf("preview event subscription failed: %w", err)
 	}
 

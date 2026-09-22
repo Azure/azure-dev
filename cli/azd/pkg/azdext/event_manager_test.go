@@ -10,6 +10,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
@@ -359,6 +360,44 @@ func TestPreviewEventManager_RegistrationFailureRollsBackHandler(t *testing.T) {
 			stream.AssertExpectations(t)
 		})
 	}
+}
+
+func TestPreviewEventManager_RegistrationTimeoutReportsUnsupportedHost(t *testing.T) {
+	oldTimeout := previewEventRegistrationTimeout
+	previewEventRegistrationTimeout = time.Millisecond
+	t.Cleanup(func() {
+		previewEventRegistrationTimeout = oldTimeout
+	})
+
+	stream := &MockBidiStreamingClient[
+		*v1beta.EventMessage,
+		*v1beta.EventMessage,
+	]{}
+	stream.On("Send", mock.Anything).Return(nil).Once()
+
+	manager := newPreviewEventManager("test-ext", &AzdClient{}, nil)
+	manager.broker = grpcbroker.NewMessageBroker(
+		stream,
+		newBetaEventMessageEnvelope(),
+		"test-ext",
+		nil,
+	)
+
+	err := manager.AddProjectEventHandler(
+		t.Context(),
+		"postdeploy",
+		func(context.Context, *PreviewProjectEventArgs) error {
+			return nil
+		},
+	)
+	require.EqualError(
+		t,
+		err,
+		"preview event subscription is not supported by this azd host",
+	)
+	_, exists := manager.handlers["postdeploy"]
+	require.False(t, exists)
+	stream.AssertExpectations(t)
 }
 
 func TestFollowUpContributionSetAndClear(t *testing.T) {

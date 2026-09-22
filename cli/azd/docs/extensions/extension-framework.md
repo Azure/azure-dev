@@ -226,7 +226,9 @@ the beta `FollowUpService` and invocation IDs. Published extensions should set
 `requiredAzdVersion` to the first released azd version containing this service;
 for the current release line, use `>=1.35.0`. This filters versions during
 install and update, but does not prevent already-installed or non-registry
-extensions from running on older hosts, where `Set` returns an error.
+extensions from running on older hosts. Preview event registration requires a
+host acknowledgement, so an older host that does not support this protocol
+fails registration before the extension becomes ready.
 
 azd appends committed text to the parent command's human-readable completion
 message. It combines contributions from multiple extensions and does not

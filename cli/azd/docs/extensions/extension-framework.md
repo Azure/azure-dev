@@ -37,7 +37,7 @@ Table of Contents
 
 ## Getting Started
 
-The `azd` extension framework is generally available. Individual extensions or capabilities might have their own preview status.
+The `azd` extension framework is generally available (GA). See the [Azure Developer CLI extension framework is GA](https://devblogs.microsoft.com/azure-sdk/azd-extension-framework-ga/) announcement for release context. Individual extensions or capabilities might have their own preview status.
 
 - Official extensions must be developed in a fork of the [azure/azure-dev](https://github.com/azure/azure-dev) github repo.
 - Extension binaries are shipped as Github releases to the same repo through our official pipelines.

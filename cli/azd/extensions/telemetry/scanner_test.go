@@ -663,6 +663,122 @@ func decorate(key string) {
 	require.Empty(t, diagnostics)
 }
 
+func TestScanRejectsCrossFilePackageScopePayloadMutation(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+var sharedRequest = &azdext.ReportUsageRequest{
+	EventName:  "example.reported",
+	Attributes: map[string]string{},
+}
+`)
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/report.go", `package cmd
+
+func report(dynamicKey string) {
+	sharedRequest.Attributes[dynamicKey] = "value"
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "after construction hides keys")
+}
+
+func TestScanIgnoresCrossFilePackageScopeNonPayloadMutation(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/model.go", `package cmd
+
+type inspectorModel struct {
+	Attributes map[string]string
+}
+
+var sharedModel = &inspectorModel{Attributes: map[string]string{}}
+`)
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/decorate.go", `package cmd
+
+func decorate(key string) {
+	sharedModel.Attributes[key] = "value"
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Empty(t, diagnostics)
+}
+
+func TestScanRejectsCrossPackageCallReturnedPayload(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/go.mod", "module github.com/contoso/agent\n\ngo 1.24\n")
+	writeExtensionSource(t, root, "contoso.agent/internal/shared/factory.go", `package shared
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+func NewRequest() *azdext.ReportUsageRequest {
+	return &azdext.ReportUsageRequest{
+		EventName:  "example.reported",
+		Attributes: map[string]string{},
+	}
+}
+`)
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/report.go", `package cmd
+
+import "github.com/contoso/agent/internal/shared"
+
+func report(dynamicKey string) {
+	req := shared.NewRequest()
+	req.Attributes[dynamicKey] = "value"
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "after construction hides keys")
+}
+
+func TestScanIgnoresCrossPackageNonPayloadCall(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/go.mod", "module github.com/contoso/agent\n\ngo 1.24\n")
+	writeExtensionSource(t, root, "contoso.agent/internal/shared/factory.go", `package shared
+
+type Model struct {
+	Attributes map[string]string
+}
+
+func LoadModel() *Model {
+	return &Model{Attributes: map[string]string{}}
+}
+`)
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/report.go", `package cmd
+
+import "github.com/contoso/agent/internal/shared"
+
+func decorate(key string) {
+	model := shared.LoadModel()
+	model.Attributes[key] = "value"
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Empty(t, diagnostics)
+}
+
 func writeExtensionSource(t *testing.T, root, relativePath, content string) {
 	t.Helper()
 

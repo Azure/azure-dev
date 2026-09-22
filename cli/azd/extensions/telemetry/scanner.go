@@ -67,6 +67,7 @@ type sourcePackage struct {
 	namedTypes            map[string]typeDefinition
 	payloadReturningFuncs map[string]bool
 	packagePayloadObjects map[*parserObject]bool
+	packagePayloadNames   map[string]bool
 }
 
 // scanExtensionTelemetry parses first-party extension source and returns every
@@ -166,7 +167,8 @@ func scanExtensionTelemetry(extensionRoot string) ([]telemetryUsage, []string) {
 					}
 				case *ast.FuncDecl:
 					diagnostics = append(diagnostics, scanAttributeMutations(
-						fset, extensionRoot, source, pkg, value.Recv, value.Type, value.Body)...)
+						fset, extensionRoot, source, pkg, packagesByImportPath,
+						value.Recv, value.Type, value.Body)...)
 				}
 				return true
 			})
@@ -491,14 +493,16 @@ func collectPayloadReturningFuncs(pkg *sourcePackage) {
 	}
 }
 
-// collectPackagePayloadObjects records the binding identity of package-scope
-// variables bound to a telemetry payload (var req = &azdext.ReportUsageRequest{}),
-// so a mutation of their Attributes inside any function of the same file is
-// rejected like a local payload instead of slipping past the empty-literal scan.
-// The parser resolves references only within a file, so a payload variable read
-// from another file of the package stays outside this guard.
+// collectPackagePayloadObjects records the binding identity and name of
+// package-scope variables bound to a telemetry payload
+// (var req = &azdext.ReportUsageRequest{}). The binding identity rejects a
+// mutation of their Attributes inside any function of the same file; the name
+// additionally rejects a mutation from another file of the package, where the
+// parser leaves the reference unresolved (package-level names are unique, so an
+// unresolved identifier that matches one can only be that variable).
 func collectPackagePayloadObjects(pkg *sourcePackage) {
 	pkg.packagePayloadObjects = map[*parserObject]bool{}
+	pkg.packagePayloadNames = map[string]bool{}
 	for _, source := range pkg.files {
 		for _, declaration := range source.file.Decls {
 			gen, ok := declaration.(*ast.GenDecl)
@@ -507,10 +511,13 @@ func collectPackagePayloadObjects(pkg *sourcePackage) {
 			}
 			for _, spec := range gen.Specs {
 				if valueSpec, ok := spec.(*ast.ValueSpec); ok {
-					addPayloadValueSpecObjects(valueSpec, source, pkg, pkg.packagePayloadObjects)
+					addPayloadValueSpecObjects(valueSpec, source, pkg, nil, pkg.packagePayloadObjects)
 				}
 			}
 		}
+	}
+	for object := range pkg.packagePayloadObjects {
+		pkg.packagePayloadNames[object.Name] = true
 	}
 }
 
@@ -545,21 +552,24 @@ func collectPayloadAliases(pkg *sourcePackage) {
 // itself (alias := req). It first resolves which bindings in the function hold a
 // telemetry payload -- payload-typed parameters, results, and receivers, locals
 // constructed from a payload literal or new(...), copies of those bindings,
-// results of package-level functions that return a payload (req := newRequest()),
-// and package-scope payload variables declared in the same file -- so unrelated
-// Attributes fields on other types are left alone while a payload handed to a
-// helper is still checked. Bindings are tracked by parser object identity, not by
-// name, so a shadowing loop or closure variable that reuses a payload's name is
-// not mistaken for the payload. Payloads whose provenance cannot be seen
-// syntactically (for example a method result, a cross-package call, an interface
-// value, or a package-scope variable referenced from another file) are outside
-// this best-effort guard; the primary gate remains the inline payload-literal
-// scan.
+// results of a same-package or cross-package function that returns a payload
+// (req := newRequest(), req := shared.NewRequest()), and package-scope payload
+// variables -- so unrelated Attributes fields on other types are left alone while
+// a payload handed to a helper is still checked. Local bindings are tracked by
+// parser object identity, not by name, so a shadowing loop or closure variable
+// that reuses a payload's name is not mistaken for the payload; a package-scope
+// payload variable read from another file, where the parser leaves the reference
+// unresolved, is matched by its unique package-level name instead. Payloads whose
+// provenance still cannot be seen syntactically -- a method result on a receiver
+// value, an interface value, or an alias re-exported across modules -- need type
+// inference and stay outside this best-effort guard; the primary gate remains the
+// inline payload-literal scan.
 func scanAttributeMutations(
 	fset *token.FileSet,
 	extensionRoot string,
 	source *sourceFile,
 	pkg *sourcePackage,
+	packagesByImportPath map[string]*sourcePackage,
 	receiver *ast.FieldList,
 	signature *ast.FuncType,
 	body *ast.BlockStmt,
@@ -582,9 +592,9 @@ func scanAttributeMutations(
 	ast.Inspect(body, func(node ast.Node) bool {
 		switch value := node.(type) {
 		case *ast.AssignStmt:
-			addPayloadAssignmentObjects(value, source, pkg, payloadObjects)
+			addPayloadAssignmentObjects(value, source, pkg, packagesByImportPath, payloadObjects)
 		case *ast.ValueSpec:
-			addPayloadValueSpecObjects(value, source, pkg, payloadObjects)
+			addPayloadValueSpecObjects(value, source, pkg, packagesByImportPath, payloadObjects)
 		case *ast.FuncLit:
 			if value.Type != nil {
 				addPayloadFieldObjects(value.Type.Params, source, payloadObjects)
@@ -604,7 +614,10 @@ func scanAttributeMutations(
 			return true
 		}
 		identifier, ok := selector.X.(*ast.Ident)
-		if !ok || identifier.Obj == nil || !payloadObjects[identifier.Obj] {
+		if !ok {
+			return true
+		}
+		if !isPayloadBinding(identifier, pkg, payloadObjects) {
 			return true
 		}
 		diagnostics = append(diagnostics, fmt.Sprintf(
@@ -615,6 +628,20 @@ func scanAttributeMutations(
 		return true
 	})
 	return diagnostics
+}
+
+// isPayloadBinding reports whether an identifier that qualifies an Attributes
+// access refers to a telemetry payload. A resolved identifier is matched by
+// object identity against the payload bindings collected for the function. An
+// unresolved identifier (Obj == nil) is a reference to a package-level name from
+// another file -- package-level names are unique, so matching it against the
+// package's payload variable names catches a cross-file mutation without
+// mistaking a local for the payload.
+func isPayloadBinding(identifier *ast.Ident, pkg *sourcePackage, payloadObjects map[*parserObject]bool) bool {
+	if identifier.Obj != nil {
+		return payloadObjects[identifier.Obj]
+	}
+	return pkg != nil && pkg.packagePayloadNames[identifier.Name]
 }
 
 // addPayloadFieldObjects records the binding identity of parameters, results, or
@@ -637,13 +664,15 @@ func addPayloadFieldObjects(fields *ast.FieldList, source *sourceFile, objects m
 
 // addPayloadAssignmentObjects records identifiers assigned a telemetry payload:
 // a payload literal or new(...) (req := azdext.ReportUsageRequest{...}), the
-// result of a package-level function that returns a payload (req := newRequest()),
-// or a copy of a binding already known to be a payload (alias := req). Following
-// the copy keeps a later alias.Attributes write from escaping the check.
+// result of a same-package or cross-package function that returns a payload
+// (req := newRequest(), req := shared.NewRequest()), or a copy of a binding
+// already known to be a payload (alias := req). Following the copy keeps a later
+// alias.Attributes write from escaping the check.
 func addPayloadAssignmentObjects(
 	assignment *ast.AssignStmt,
 	source *sourceFile,
 	pkg *sourcePackage,
+	packagesByImportPath map[string]*sourcePackage,
 	objects map[*parserObject]bool,
 ) {
 	for index, value := range assignment.Rhs {
@@ -652,7 +681,7 @@ func addPayloadAssignmentObjects(
 		}
 		if !isPayloadExpression(value, source) &&
 			!isKnownPayloadIdent(value, objects) &&
-			!isPayloadReturningCall(value, pkg) {
+			!isPayloadReturningCall(value, source, pkg, packagesByImportPath) {
 			continue
 		}
 		if identifier, ok := assignment.Lhs[index].(*ast.Ident); ok && identifier.Obj != nil {
@@ -667,6 +696,7 @@ func addPayloadValueSpecObjects(
 	spec *ast.ValueSpec,
 	source *sourceFile,
 	pkg *sourcePackage,
+	packagesByImportPath map[string]*sourcePackage,
 	objects map[*parserObject]bool,
 ) {
 	if spec.Type != nil && isPayloadTypeExpression(spec.Type, source) {
@@ -683,7 +713,7 @@ func addPayloadValueSpecObjects(
 		}
 		if !isPayloadExpression(value, source) &&
 			!isKnownPayloadIdent(value, objects) &&
-			!isPayloadReturningCall(value, pkg) {
+			!isPayloadReturningCall(value, source, pkg, packagesByImportPath) {
 			continue
 		}
 		if spec.Names[index].Obj != nil {
@@ -699,14 +729,22 @@ func isKnownPayloadIdent(expression ast.Expr, objects map[*parserObject]bool) bo
 	return ok && identifier.Obj != nil && objects[identifier.Obj]
 }
 
-// isPayloadReturningCall reports whether an expression is a call to a
-// package-level function whose first result is a telemetry payload
-// (req := newRequest()), so the local it initializes is tracked and a later
-// req.Attributes write is still rejected. Only a bare function identifier is
-// resolved: if it resolves to a non-function binding (a func-typed local that
-// shadows the name) it is ignored, and method or cross-package calls stay
-// outside this best-effort guard.
-func isPayloadReturningCall(expression ast.Expr, pkg *sourcePackage) bool {
+// isPayloadReturningCall reports whether an expression is a call to a function
+// whose first result is a telemetry payload, so the local it initializes is
+// tracked and a later Attributes write is still rejected. A bare identifier
+// (req := newRequest()) is resolved against the current package; a package
+// selector (req := shared.NewRequest()) is resolved to the imported package
+// through its go.mod import path and checked there. A bare identifier that
+// resolves to a non-function binding (a func-typed local that shadows the name)
+// is ignored, and a method call on a receiver value stays outside this
+// best-effort guard because its result type needs type inference. Only the first
+// result is considered, matching the assignment's Rhs[0] -> Lhs[0] binding.
+func isPayloadReturningCall(
+	expression ast.Expr,
+	source *sourceFile,
+	pkg *sourcePackage,
+	packagesByImportPath map[string]*sourcePackage,
+) bool {
 	if pkg == nil {
 		return false
 	}
@@ -714,14 +752,45 @@ func isPayloadReturningCall(expression ast.Expr, pkg *sourcePackage) bool {
 	if !ok {
 		return false
 	}
-	identifier, ok := call.Fun.(*ast.Ident)
+	switch fun := call.Fun.(type) {
+	case *ast.Ident:
+		if fun.Obj != nil && fun.Obj.Kind != ast.Fun {
+			return false
+		}
+		return pkg.payloadReturningFuncs[fun.Name]
+	case *ast.SelectorExpr:
+		return isCrossPackagePayloadReturningCall(fun, source, packagesByImportPath)
+	}
+	return false
+}
+
+// isCrossPackagePayloadReturningCall reports whether a selector call
+// (shared.NewRequest()) targets a function in another package of the same module
+// whose first result is a telemetry payload. The package identifier is resolved
+// to an import path and matched against the parsed packages, so only an exact
+// import-path match counts; a method call on a receiver value (its X is not an
+// imported package) does not match.
+func isCrossPackagePayloadReturningCall(
+	selector *ast.SelectorExpr,
+	source *sourceFile,
+	packagesByImportPath map[string]*sourcePackage,
+) bool {
+	if source == nil || packagesByImportPath == nil {
+		return false
+	}
+	packageIdentifier, ok := selector.X.(*ast.Ident)
+	if !ok || (packageIdentifier.Obj != nil && packageIdentifier.Obj.Kind != ast.Pkg) {
+		return false
+	}
+	importPath, ok := source.imports[packageIdentifier.Name]
 	if !ok {
 		return false
 	}
-	if identifier.Obj != nil && identifier.Obj.Kind != ast.Fun {
+	declaringPackage, ok := packagesByImportPath[importPath]
+	if !ok {
 		return false
 	}
-	return pkg.payloadReturningFuncs[identifier.Name]
+	return declaringPackage.payloadReturningFuncs[selector.Sel.Name]
 }
 
 // isPayloadTypeExpression reports whether a type expression names a telemetry

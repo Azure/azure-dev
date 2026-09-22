@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+
+	"azure.ai.rle/internal/rollouts"
 )
 
 // executeRolloutHeader is the classic AzureML "forwarded user token" header. RLE's
@@ -52,31 +54,7 @@ type executeRolloutRequest struct {
 	Model      *rolloutModelSelection `json:"model,omitempty"`
 }
 
-// executeRolloutGymStep is one Gym/OpenEnv action and its environment reward.
-type executeRolloutGymStep struct {
-	CaptureNodeID string  `json:"capture_node_id"`
-	Reward        float64 `json:"reward"`
-	EpisodeDone   bool    `json:"episode_done"`
-}
-
-// executeRolloutGymEpisode is Gym/OpenEnv-only episode metadata; omitted for
-// Harness/BYOH targets.
-type executeRolloutGymEpisode struct {
-	Kind              string                  `json:"kind"`
-	TerminationReason string                  `json:"termination_reason"`
-	Steps             []executeRolloutGymStep `json:"steps"`
-}
-
-// executeRolloutResponse mirrors vienna's ExecuteRolloutResponse. Reward is the sandbox
-// grader's reward for Harness/BYOH, or the accumulated environment reward for Gym/OpenEnv.
-type executeRolloutResponse struct {
-	RolloutID string                    `json:"rollout_id"`
-	Rollout   json.RawMessage           `json:"rollout"`
-	Reward    float64                   `json:"reward"`
-	Success   bool                      `json:"success"`
-	Result    json.RawMessage           `json:"result,omitempty"`
-	Episode   *executeRolloutGymEpisode `json:"episode,omitempty"`
-}
+type executeRolloutResponse = rollouts.Response
 
 // executeRollout runs one isolated rollout of an exact, published environment version.
 // loomBearerToken is forwarded unchanged via the aml-user-token header.

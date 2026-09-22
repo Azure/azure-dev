@@ -4,33 +4,25 @@
 package cmd
 
 import (
+	"bytes"
 	"cmp"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
+
+	"azure.ai.rle/internal/rollouts"
 )
 
-// defaultRolloutOutputDir is where a rollout's artifacts land unless --output-dir says
-// otherwise. Relative to the working directory, so consecutive rollouts accumulate under
-// one folder keyed by rollout id.
+// defaultRolloutOutputDir groups rollout artifacts by rollout ID.
 const defaultRolloutOutputDir = ".output"
 
-// rolloutArtifacts is the on-disk form of one Execute Rollout response.
-//
-// The service returns the whole Capture Proxy graph — token ids, logprobs, loss masks and
-// per-turn metadata — but a terminal cannot show it: a single-turn math rollout is already
-// ~78 KB, dominated by three parallel token-aligned arrays. Printing it is useless and
-// discarding it loses the only copy, since the capture session is closed and deleted as
-// soon as the rollout returns.
-//
-// So it is written out, split by how it gets read. `summary.json` is the part a human
-// checks; `rollout.json` is the verbatim record to diff or replay; the token arrays go to
-// one file per sequence, because that is the unit a trainer consumes and the unit whose
-// size makes the rest unreadable.
+// rolloutArtifacts records the files written for one Execute Rollout response.
 type rolloutArtifacts struct {
 	// Dir is the absolute directory the files were written to.
 	Dir string
@@ -38,11 +30,7 @@ type rolloutArtifacts struct {
 	Files []rolloutArtifactFile
 }
 
-// rolloutArtifactFile is one written file and what it is for.
-//
-// The description is carried rather than looked up at print time because two of the four
-// are only knowable here: a sequence's shape comes from the sequence itself, and "which
-// of these do I feed a trainer" is the question the tree exists to answer.
+// rolloutArtifactFile is one written file and its terminal description.
 type rolloutArtifactFile struct {
 	// Path is relative to the artifact directory, slash-separated.
 	Path string
@@ -50,18 +38,16 @@ type rolloutArtifactFile struct {
 	Description string
 }
 
-// rolloutSummary is the small, human-readable half: the outcome and the shape of the
-// capture, without the arrays.
+// rolloutSummary contains the outcome and capture shape without token arrays.
 type rolloutSummary struct {
 	RolloutID string          `json:"rollout_id"`
 	Reward    float64         `json:"reward"`
-	Success   bool            `json:"success"`
+	Success   *bool           `json:"success,omitempty"`
 	Result    json.RawMessage `json:"result,omitempty"`
 
-	Episode *executeRolloutGymEpisode `json:"episode,omitempty"`
+	Episode  *rollouts.Episode          `json:"episode,omitempty"`
+	Artifact *rollouts.ArtifactMetadata `json:"artifact,omitempty"`
 
-	// Copied off the graph so the outcome and the capture's own verdict on itself can be
-	// read together. `validation` is where a rollout explains why it cannot be trained on.
 	CaptureLevel string          `json:"capture_level,omitempty"`
 	RolloutType  string          `json:"rollout_type,omitempty"`
 	Trainable    *bool           `json:"trainable,omitempty"`
@@ -69,12 +55,10 @@ type rolloutSummary struct {
 	Validation   json.RawMessage `json:"validation,omitempty"`
 	Metadata     json.RawMessage `json:"metadata,omitempty"`
 
-	// Sequences describes each captured sequence without reproducing its arrays, and
-	// names the file that holds them.
 	Sequences []rolloutSequenceSummary `json:"sequences,omitempty"`
 }
 
-// rolloutSequenceSummary is one sequence's shape plus a pointer to its full arrays.
+// rolloutSequenceSummary describes one sequence and points to its array file.
 type rolloutSequenceSummary struct {
 	Index       int    `json:"index"`
 	Role        string `json:"role,omitempty"`
@@ -89,8 +73,7 @@ type rolloutSequenceSummary struct {
 	File        string `json:"file"`
 }
 
-// capturedGraph is the subset of the Capture Proxy graph this command reads. Everything
-// it does not name is still preserved verbatim in rollout.json.
+// capturedGraph is the graph subset needed for derived artifact files.
 type capturedGraph struct {
 	Metadata   json.RawMessage    `json:"metadata,omitempty"`
 	Turns      json.RawMessage    `json:"turns,omitempty"`
@@ -103,8 +86,7 @@ type capturedGraph struct {
 	RolloutType  string `json:"rollout_type,omitempty"`
 }
 
-// capturedSequence is one root-to-leaf path: the token-aligned arrays a trainer consumes,
-// plus the metadata that says what they are.
+// capturedSequence is one root-to-leaf path and its token-aligned arrays.
 type capturedSequence struct {
 	Role        string          `json:"role,omitempty"`
 	RootID      string          `json:"root_id,omitempty"`
@@ -121,40 +103,57 @@ type capturedSequence struct {
 }
 
 // writeRolloutArtifacts writes one rollout's response under outputDir/<rollout id>/.
-//
-// A malformed or absent graph is not fatal. The response still carries the reward and the
-// result, and losing those to a parse error on a field this function only reshapes would
-// be a worse outcome than an artifact set with fewer files in it.
 func writeRolloutArtifacts(
 	outputDir string,
 	response *executeRolloutResponse,
-) (*rolloutArtifacts, error) {
+	metadata *rollouts.ArtifactMetadata,
+) (artifacts *rolloutArtifacts, err error) {
 	if response == nil {
 		return nil, fmt.Errorf("no rollout response to write")
 	}
 
-	// The rollout id names the directory, so it has to be safe as a single path segment.
-	// The service echoes back the caller-generated id, and this command generates a hex
-	// GUID, but a caller may pass --rollout-id by hand.
-	id := strings.TrimSpace(response.RolloutID)
-	if id == "" || id != filepath.Base(id) || id == "." || id == ".." {
-		return nil, fmt.Errorf("rollout id %q cannot be used as a folder name", response.RolloutID)
+	id := response.RolloutID
+	if err := rollouts.ValidateID(id); err != nil {
+		return nil, err
 	}
-
+	if metadata == nil {
+		metadata = &rollouts.ArtifactMetadata{Version: rollouts.ArtifactVersion, SavedAt: time.Now().UTC()}
+	}
+	export := *metadata
+	if err := export.Validate(); err != nil {
+		return nil, err
+	}
+	if export.ProjectEndpoint != "" {
+		endpoint, err := normalizeFoundryProjectEndpoint(export.ProjectEndpoint)
+		if err != nil {
+			return nil, err
+		}
+		export.ProjectEndpoint = endpoint
+	}
+	export.HasGraph = len(response.Rollout) > 0 && string(response.Rollout) != "null"
 	root, err := filepath.Abs(filepath.Join(outputDir, id))
 	if err != nil {
 		return nil, fmt.Errorf("resolve rollout output directory: %w", err)
 	}
-	if err := os.MkdirAll(root, 0o750); err != nil {
+	if err := os.MkdirAll(filepath.Dir(root), 0o750); err != nil {
 		return nil, fmt.Errorf("create rollout output directory: %w", err)
 	}
-
-	artifacts := &rolloutArtifacts{Dir: root}
+	if err := os.Mkdir(root, 0o750); err != nil {
+		return nil, fmt.Errorf("create rollout directory (existing artifacts are never overwritten): %w", err)
+	}
+	published := false
+	defer func() {
+		if !published {
+			if cleanupErr := os.RemoveAll(root); cleanupErr != nil {
+				err = errors.Join(err, fmt.Errorf("remove incomplete rollout artifacts: %w", cleanupErr))
+			}
+		}
+	}()
+	artifacts = &rolloutArtifacts{Dir: root}
 
 	var graph capturedGraph
 	if len(response.Rollout) > 0 {
-		// A graph that does not parse is still written verbatim below; only the derived
-		// views are skipped.
+		// Preserve malformed graphs verbatim; only derived views are skipped.
 		_ = json.Unmarshal(response.Rollout, &graph)
 	}
 
@@ -170,6 +169,7 @@ func writeRolloutArtifacts(
 		Stats:        graph.Stats,
 		Validation:   graph.Validation,
 		Metadata:     graph.Metadata,
+		Artifact:     &export,
 	}
 
 	for i, sequence := range graph.Sequences {
@@ -192,15 +192,6 @@ func writeRolloutArtifacts(
 		}
 	}
 
-	if err := writeJSONFile(
-		artifacts,
-		root,
-		"summary.json",
-		"outcome, capture stats and the sequence index — start here",
-		summary,
-	); err != nil {
-		return nil, err
-	}
 	if len(graph.Turns) > 0 {
 		if err := writeRawFile(
 			artifacts,
@@ -212,7 +203,7 @@ func writeRolloutArtifacts(
 			return nil, err
 		}
 	}
-	if len(response.Rollout) > 0 {
+	if export.HasGraph {
 		if err := writeRawFile(
 			artifacts,
 			root,
@@ -224,19 +215,42 @@ func writeRolloutArtifacts(
 		}
 	}
 
+	// Preserve optional fields and precise numbers from the response, not the typed projection.
+	encoded, err := json.Marshal(summary)
+	if err != nil {
+		return nil, fmt.Errorf("encode rollout summary: %w", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		return nil, fmt.Errorf("decode rollout summary: %w", err)
+	}
+	if len(response.Raw) > 0 {
+		var original map[string]json.RawMessage
+		if err := json.Unmarshal(response.Raw, &original); err != nil {
+			return nil, fmt.Errorf("decode original rollout response: %w", err)
+		}
+		for _, key := range []string{"rollout_id", "reward", "success", "result", "episode"} {
+			delete(fields, key)
+			if value, ok := original[key]; ok {
+				fields[key] = value
+			}
+		}
+	}
+	// Publishing the summary last marks the artifact set ready for readers.
+	if err := writeJSONFile(artifacts, root, "summary.json",
+		"outcome, capture stats and the sequence index — start here", fields); err != nil {
+		return nil, err
+	}
+	published = true
 	return artifacts, nil
 }
 
-// describeSequence says what one sequence file is in the terms a trainer decides on:
-// whether it is trainable at all, and how much of it carries loss.
 func describeSequence(sequence capturedSequence) string {
 	role := sequence.Role
 	if role == "" {
 		role = "sequence"
 	}
 	if len(sequence.InputIDs) == 0 {
-		// An eval rollout. The path and its structure are real; the token arrays are
-		// empty by construction, not by accident, so say which of the two it is.
 		return fmt.Sprintf("%s, %d turn(s) — no token arrays (eval capture)", role, sequence.NTurns)
 	}
 	trainable := "not trainable"
@@ -259,7 +273,7 @@ func writeJSONFile(
 	description string,
 	value any,
 ) error {
-	encoded, err := json.MarshalIndent(value, "", "  ")
+	encoded, err := json.Marshal(value)
 	if err != nil {
 		return fmt.Errorf("encode %s: %w", relative, err)
 	}
@@ -272,21 +286,32 @@ func writeRawFile(
 	relative string,
 	description string,
 	content []byte,
-) error {
+) (err error) {
 	path := filepath.Join(root, relative)
 	if directory := filepath.Dir(path); directory != root {
 		if err := os.MkdirAll(directory, 0o750); err != nil {
 			return fmt.Errorf("create %s: %w", filepath.Dir(relative), err)
 		}
 	}
-	// Indented so the file can be read and diffed directly. The service emits compact
-	// JSON, which for a token array is a single unreadable line.
-	var indented strings.Builder
-	if err := indentJSON(&indented, content); err == nil {
-		content = []byte(indented.String())
+	var indented bytes.Buffer
+	if err := json.Indent(&indented, content, "", "  "); err == nil {
+		content = indented.Bytes()
 	}
-	if err := os.WriteFile(path, content, 0o600); err != nil {
+	file, err := os.CreateTemp(filepath.Dir(path), ".rollout-*")
+	if err != nil {
+		return fmt.Errorf("create temporary %s: %w", relative, err)
+	}
+	defer func() {
+		if removeErr := os.Remove(file.Name()); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			err = errors.Join(err, fmt.Errorf("remove temporary artifact: %w", removeErr))
+		}
+	}()
+	_, writeErr := file.Write(content)
+	if err := errors.Join(writeErr, file.Close()); err != nil {
 		return fmt.Errorf("write %s: %w", relative, err)
+	}
+	if err := os.Rename(file.Name(), path); err != nil {
+		return fmt.Errorf("publish %s: %w", relative, err)
 	}
 	artifacts.Files = append(artifacts.Files, rolloutArtifactFile{
 		Path:        filepath.ToSlash(relative),
@@ -295,25 +320,7 @@ func writeRawFile(
 	return nil
 }
 
-func indentJSON(out *strings.Builder, content []byte) error {
-	var value any
-	if err := json.Unmarshal(content, &value); err != nil {
-		return err
-	}
-	encoded, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return err
-	}
-	_, err = out.Write(encoded)
-	return err
-}
-
-// printRolloutArtifacts renders the written files as a tree with their sizes.
-//
-// The path alone is not enough to act on: the point of writing four files instead of one
-// is that they are read differently, and a caller cannot tell which to open without
-// seeing the sizes. The tree makes "the tokens are in sequences/0.json, and they are 77
-// KB" visible without a second command.
+// printRolloutArtifacts renders the written files as a tree with sizes and descriptions.
 func printRolloutArtifacts(
 	out interface{ Write([]byte) (int, error) },
 	artifacts *rolloutArtifacts,
@@ -338,9 +345,7 @@ func printRolloutArtifacts(
 	return nil
 }
 
-// renderArtifactTree lays the written files out as a one-level-deep tree, each row
-// carrying its size and what it is for. Files sort before directories so the entry point
-// is the first thing read.
+// renderArtifactTree lays files out as a one-level-deep tree.
 func renderArtifactTree(artifacts *rolloutArtifacts) []string {
 	files := make([]rolloutArtifactFile, 0, len(artifacts.Files))
 	directories := make([]string, 0)
@@ -361,10 +366,6 @@ func renderArtifactTree(artifacts *rolloutArtifacts) []string {
 	slices.SortFunc(files, func(a, b rolloutArtifactFile) int { return cmp.Compare(a.Path, b.Path) })
 	slices.Sort(directories)
 
-	// Rows are built whole — tree prefix and name together — so one padding pass aligns
-	// every size and description regardless of how deep the row sits. Padding a name
-	// alone cannot: a nested row's prefix is wider, and the columns drift by exactly that
-	// difference.
 	type row struct {
 		label       string
 		size        string
@@ -413,8 +414,6 @@ func renderArtifactTree(artifacts *rolloutArtifacts) []string {
 		}
 	}
 
-	// Width is counted in runes, not bytes: the box-drawing prefixes are multi-byte, and
-	// fmt pads strings by rune count.
 	labelWidth := 0
 	for _, item := range rows {
 		labelWidth = max(labelWidth, utf8.RuneCountInString(item.label))
@@ -431,8 +430,6 @@ func renderArtifactTree(artifacts *rolloutArtifacts) []string {
 	return lines
 }
 
-// artifactDirectoryDescription names what a directory groups. Only `sequences` exists
-// today; an unknown one still gets a row rather than a blank.
 func artifactDirectoryDescription(directory string) string {
 	if directory == "sequences" {
 		return "one root-to-leaf path each — the unit a trainer consumes"
@@ -455,8 +452,6 @@ func artifactSize(root string, relative string) int64 {
 	return info.Size()
 }
 
-// formatBytes renders a size the way a reader compares two of them: at most one
-// decimal, so 77.5 KB and 1.2 MB line up.
 func formatBytes(size int64) string {
 	const unit = 1024
 	if size < unit {
@@ -473,7 +468,6 @@ func formatBytes(size int64) string {
 	return fmt.Sprintf("%.1f TB", value/unit)
 }
 
-// relativeToWorkingDir prefers a path the reader can paste straight back into a shell.
 func relativeToWorkingDir(path string) (string, error) {
 	workingDir, err := os.Getwd()
 	if err != nil {

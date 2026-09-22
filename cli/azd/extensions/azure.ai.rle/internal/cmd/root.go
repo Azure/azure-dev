@@ -107,6 +107,7 @@ func newRootCommand(updateChecker extensionUpdateChecker) *cobra.Command {
 	// team's own iteration, in addition to the top-level preview gate above.
 	internalCommands := []*cobra.Command{
 		newTrainCommand(),
+		newMonitorCommand(),
 	}
 	for _, command := range internalCommands {
 		command.Hidden = !rleCommandsEnabled() || !rleEnableAllEnabled()

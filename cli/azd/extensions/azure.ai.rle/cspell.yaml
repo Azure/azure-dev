@@ -25,6 +25,7 @@ words:
   # Go and Python identifiers appearing in code and payloads.
   - cctx
   - cerr
+  - nosniff
   - kwargs
   - noninteractive
   - idxprobe

@@ -99,6 +99,7 @@ func TestRolloutRequiresModel(t *testing.T) {
 }
 
 func TestRolloutFallsBackToRleConfigModelDefault(t *testing.T) {
+	isolateRolloutArtifacts(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
 	modelName := "Qwen/Qwen3-32B"
@@ -172,6 +173,7 @@ func TestRolloutFallsBackToRleConfigModelDefault(t *testing.T) {
 }
 
 func TestRolloutRunExecutesRolloutAndClosesLoomSession(t *testing.T) {
+	isolateRolloutArtifacts(t)
 	rleServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost ||
 			r.URL.Path != testFoundryProjectPath+environmentCollectionPath+"/code_rl/versions/1.0.0:executeRollout" {

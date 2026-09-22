@@ -491,14 +491,73 @@ Artifacts: .output/c4c8a1a410d7968f8c0d8d0aed89a5fb
   join key against a harness trace. This is what a trainer consumes.
 - **`turns.json`** — one entry per model call in arrival order, including calls
   excluded from training, so an external trace can be reconciled against it.
-- **`rollout.json`** — the response verbatim, for diffing or replay.
+- **`rollout.json`** — the full capture graph (`response.rollout`), not the entire
+  execute response. Original JSON numbers and unknown graph fields are retained.
+
+New summaries preserve optional `success` and `episode.ungraded`. An `artifact`
+metadata block records the export version, local save time, project endpoint
+without credentials, and the environment name/version used in the request.
+It is local context, not an API outcome field.
 
 On an eval capture the token arrays are empty by construction rather than by
 failure; the tree says so rather than showing an unexplained small file.
 
 Use `--output-dir` to write somewhere other than `.output`. A rollout that
 succeeds but cannot write its artifacts still reports its reward and exits
-successfully, with a warning — the compute is already spent.
+successfully, with a warning — the compute is already spent. With `--monitor`,
+an artifact-write failure instead returns an error because the dashboard cannot
+open. Existing rollout directories are never overwritten; use a new rollout ID
+or a different output root. The summary is published last, after the other files.
+
+## Monitor a completed rollout (development only)
+
+Open a local, read-only dashboard to explore a saved rollout's reward,
+environment, model-call graph, and token metrics. Enable development mode:
+
+```powershell
+$env:AZD_AI_RLE_ENABLE = "true"
+$env:AZD_AI_RLE_ENABLE_ALL = "true"
+```
+
+Run a rollout and open its dashboard when execution finishes:
+
+```powershell
+azd ai rle rollout --task-file task.json --monitor
+```
+
+Or reopen a saved rollout from the folder where it was executed:
+
+```powershell
+azd ai rle monitor --rollout-id 3c27c30f5fba261c3a7a3e856b4e1388
+```
+
+The dashboard includes **Rollout graph**, **Tokens and Metrics**, and **Rollout Stats**
+tabs, with a light/dark mode toggle. Viewing saved results needs no Azure sign-in
+and does not execute another rollout.
+
+Keep the terminal running while using the dashboard. **Ctrl+C** stops the local
+monitor without deleting saved artifacts.
+
+| Option | When to use it |
+| --- | --- |
+| `--output-dir <path>` | Read from an artifact root other than `.output` in the current folder. Pass the parent of the rollout-ID directories, not an individual rollout folder. |
+| `--no-browser` | On standalone `monitor`, print a link instead of opening the browser. Open the link and enter the local access code printed in the terminal. |
+
+The automatically opened browser handles the local access code for you.
+`--no-prompt` does not disable browser launching or stop the monitor;
+`--output` is not supported.
+
+Monitoring reads the existing [rollout artifacts](#rollout-artifacts), not remote
+results. If the rollout directory is missing, it warns and exits without opening
+a dashboard; check the ID and `--output-dir`. Incomplete or corrupt files return
+an error.
+
+**Current limits:** completed local snapshots only—no live updates, job monitoring,
+or conversation text. Metrics appear only when included in the saved data.
+Execution completion does not imply task success.
+
+**Treat saved artifacts as sensitive:** they may contain customer content.
+Keep `.output` out of source control and delete artifacts when no longer needed.
 
 ## Submit an RLE-backed fine-tuning job (experimental)
 

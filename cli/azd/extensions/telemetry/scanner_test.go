@@ -779,6 +779,110 @@ func decorate(key string) {
 	require.Empty(t, diagnostics)
 }
 
+func TestScanRejectsChainedPayloadAlias(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+type Usage = azdext.ReportUsageRequest
+type Report = Usage
+
+func report(dynamicKey string) {
+	_ = Report{Attributes: map[string]string{dynamicKey: "value"}}
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "not a local type alias")
+}
+
+func TestScanRejectsCrossPackageChainedPayloadAlias(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/go.mod", "module github.com/contoso/agent\n\ngo 1.24\n")
+	writeExtensionSource(t, root, "contoso.agent/internal/shared/telemetry.go", `package shared
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+type Usage = azdext.ReportUsageRequest
+type Report = Usage
+`)
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/report.go", `package cmd
+
+import "github.com/contoso/agent/internal/shared"
+
+func report(dynamicKey string) {
+	_ = shared.Report{Attributes: map[string]string{dynamicKey: "value"}}
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "re-exported payload alias from another package")
+}
+
+func TestScanRejectsLocalAliasToCrossPackagePayloadAlias(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/go.mod", "module github.com/contoso/agent\n\ngo 1.24\n")
+	writeExtensionSource(t, root, "contoso.agent/internal/shared/telemetry.go", `package shared
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+type Usage = azdext.ReportUsageRequest
+`)
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/report.go", `package cmd
+
+import "github.com/contoso/agent/internal/shared"
+
+type Report = shared.Usage
+
+func report(dynamicKey string) {
+	_ = Report{Attributes: map[string]string{dynamicKey: "value"}}
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "not a local type alias")
+}
+
+func TestScanIgnoresChainedNonPayloadAlias(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+type config struct {
+	Attributes map[string]string
+}
+
+type settings = config
+type profile = settings
+
+func decorate(key string) {
+	_ = profile{Attributes: map[string]string{key: "value"}}
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Empty(t, diagnostics)
+}
+
 func writeExtensionSource(t *testing.T, root, relativePath, content string) {
 	t.Helper()
 

@@ -64,6 +64,7 @@ type sourcePackage struct {
 	objectConstants       map[*parserObject]constDefinition
 	packageDeclarations   map[string]bool
 	payloadAliases        map[string]bool
+	typeAliases           map[string]typeDefinition
 	namedTypes            map[string]typeDefinition
 	payloadReturningFuncs map[string]bool
 	packagePayloadObjects map[*parserObject]bool
@@ -131,6 +132,7 @@ func scanExtensionTelemetry(extensionRoot string) ([]telemetryUsage, []string) {
 	}
 
 	packagesByImportPath := indexPackagesByImportPath(packages)
+	expandChainedPayloadAliases(packages, packagesByImportPath)
 
 	var usages []telemetryUsage
 	for _, pkg := range packages {
@@ -521,11 +523,15 @@ func collectPackagePayloadObjects(pkg *sourcePackage) {
 	}
 }
 
-// collectPayloadAliases records local type aliases whose right-hand side is a
-// telemetry payload type, so payload literals written through the alias name are
-// rejected instead of silently skipped.
+// collectPayloadAliases records local type aliases whose right-hand side is
+// directly a telemetry payload type, so payload literals written through the
+// alias name are rejected instead of silently skipped. It also records every
+// local type alias with its right-hand side so a chain of aliases
+// (type B = A; type A = azdext.ReportUsageRequest) can be resolved once all
+// packages are indexed; see expandChainedPayloadAliases.
 func collectPayloadAliases(pkg *sourcePackage) {
 	pkg.payloadAliases = map[string]bool{}
+	pkg.typeAliases = map[string]typeDefinition{}
 	for _, source := range pkg.files {
 		for _, declaration := range source.file.Decls {
 			gen, ok := declaration.(*ast.GenDecl)
@@ -537,6 +543,7 @@ func collectPayloadAliases(pkg *sourcePackage) {
 				if !ok || typeSpec.Assign == token.NoPos {
 					continue
 				}
+				pkg.typeAliases[typeSpec.Name.Name] = typeDefinition{expression: typeSpec.Type, source: source}
 				if isTelemetryPayloadType(typeSpec.Type, source) {
 					pkg.payloadAliases[typeSpec.Name.Name] = true
 				}
@@ -545,8 +552,82 @@ func collectPayloadAliases(pkg *sourcePackage) {
 	}
 }
 
-// scanAttributeMutations rejects post-construction access to a telemetry
-// payload's Attributes, whether a write (req.Attributes[key] = ...,
+// expandChainedPayloadAliases marks a type alias as a payload alias when its
+// right-hand side resolves to a telemetry payload through one or more further
+// aliases, whether local (type B = A) or re-exported by another package in the
+// same module (type Report = shared.Usage). It runs once every package is indexed
+// so cross-package hops can be followed, closing the gap where a chained alias
+// would otherwise construct a payload while escaping the direct-alias check.
+func expandChainedPayloadAliases(packages, packagesByImportPath map[string]*sourcePackage) {
+	for _, pkg := range packages {
+		for name, definition := range pkg.typeAliases {
+			if pkg.payloadAliases[name] {
+				continue
+			}
+			seen := map[string]bool{}
+			if aliasResolvesToPayload(definition.expression, definition.source, pkg, packagesByImportPath, seen) {
+				pkg.payloadAliases[name] = true
+			}
+		}
+	}
+}
+
+// aliasResolvesToPayload reports whether an alias right-hand side resolves to a
+// telemetry payload through any chain of local or cross-package type aliases. A
+// local identifier is followed through the package's own aliases and a package
+// selector through the imported package's aliases, matched on the exact go.mod
+// import path. The visited set, keyed by package directory or import path plus
+// name, stops an alias cycle from recursing forever.
+func aliasResolvesToPayload(
+	expression ast.Expr,
+	source *sourceFile,
+	pkg *sourcePackage,
+	packagesByImportPath map[string]*sourcePackage,
+	seen map[string]bool,
+) bool {
+	if isTelemetryPayloadType(expression, source) {
+		return true
+	}
+	switch value := expression.(type) {
+	case *ast.Ident:
+		key := pkg.directory + "\x00" + value.Name
+		if seen[key] {
+			return false
+		}
+		seen[key] = true
+		definition, ok := pkg.typeAliases[value.Name]
+		if !ok {
+			return false
+		}
+		return aliasResolvesToPayload(definition.expression, definition.source, pkg, packagesByImportPath, seen)
+	case *ast.SelectorExpr:
+		packageIdentifier, ok := value.X.(*ast.Ident)
+		if !ok || (packageIdentifier.Obj != nil && packageIdentifier.Obj.Kind != ast.Pkg) {
+			return false
+		}
+		importPath, ok := source.imports[packageIdentifier.Name]
+		if !ok {
+			return false
+		}
+		declaringPackage, ok := packagesByImportPath[importPath]
+		if !ok {
+			return false
+		}
+		key := importPath + "\x00" + value.Sel.Name
+		if seen[key] {
+			return false
+		}
+		seen[key] = true
+		definition, ok := declaringPackage.typeAliases[value.Sel.Name]
+		if !ok {
+			return false
+		}
+		return aliasResolvesToPayload(
+			definition.expression, definition.source, declaringPackage, packagesByImportPath, seen)
+	}
+	return false
+}
+
 // req.Attributes = ...), a getter mutation (req.GetAttributes()[key] = ...), a
 // read that aliases the map (attrs := req.Attributes), or a copy of the payload
 // itself (alias := req). It first resolves which bindings in the function hold a

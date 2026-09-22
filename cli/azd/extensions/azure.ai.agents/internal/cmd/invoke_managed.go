@@ -139,7 +139,7 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 		}
 		conversationID, err = client.CreateConversationAt(ctx, conversationEndpoint, headers)
 		if err != nil {
-			return exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
+			return exterrors.ServiceFromAzure(err, exterrors.OpCreateConversation)
 		}
 		if azdClient != nil {
 			saveContextValue(ctx, azdClient, agentKey, conversationID, "conversations")

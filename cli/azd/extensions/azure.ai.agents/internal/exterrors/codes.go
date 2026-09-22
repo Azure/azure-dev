@@ -204,6 +204,7 @@ const (
 	OpContainerPackage       = "container_package"
 	OpContainerPublish       = "container_publish"
 	OpCreateAgent            = "create_agent"
+	OpCreateConversation     = "create_conversation"
 	OpCreateTelephonyBinding = "create_telephony_binding"
 	OpGetAgent               = "get_agent"
 	OpGetTelephonyBinding    = "get_telephony_binding"

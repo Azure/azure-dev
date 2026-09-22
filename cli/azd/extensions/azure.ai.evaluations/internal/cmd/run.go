@@ -153,7 +153,6 @@ func buildRunCommand(use, short string) *cobra.Command {
 
 func (a *runStartAction) Run() error {
 	ctx := a.cmd.Context()
-	out := a.cmd.OutOrStdout()
 
 	// Parsed before any network work, so a malformed threshold costs
 	// nothing to find out about.
@@ -180,6 +179,11 @@ func (a *runStartAction) Run() error {
 	}
 	defer ec.Close()
 
+	return a.start(ctx, ec, threshold)
+}
+
+func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold gate) error {
+	out := a.cmd.OutOrStdout()
 	// One flag takes a name or an id. A declared name also brings the
 	// declaration, which is what says where rows come from; a bare id
 	// has none, so the pairing comes from the eval's previous run.
@@ -277,6 +281,7 @@ func (a *runStartAction) Run() error {
 		}
 	}
 
+	recordSimulationMetadata(metadata, dataSource)
 	run, err := ec.evalClient.CreateOpenAIEvalRun(ctx, evalID, &eval_api.CreateOpenAIEvalRunRequest{
 		Name: runName,
 		// Also sent under metadata, where it stays readable to anything listing
@@ -1251,6 +1256,7 @@ func renderRun(
 ) error {
 	fmt.Fprintln(out)
 	renderRunHeader(out, run)
+	renderSimulationSettings(out, run)
 
 	// A run that failed carries why, and it is usually the only actionable
 	// thing in the response — dropping it leaves the caller with just the word
@@ -1264,7 +1270,9 @@ func renderRun(
 	// overstates how much is wrong. The per-evaluator table below counts the
 	// verdicts, and the two are labelled so they cannot be read as the same
 	// number disagreeing with itself.
-	if c := run.ResultCounts; c != nil && c.Total > 0 {
+	if isSimulationRun(run) {
+		renderConversationResults(out, run)
+	} else if c := run.ResultCounts; c != nil && c.Total > 0 {
 		errored, skipped := unscoredSplit(c, c.Passed+c.Failed)
 		rate, _, scored := scoredPassRate(c)
 		fmt.Fprint(out, messages.TestCaseResults(
@@ -1326,7 +1334,17 @@ func renderRunHeader(out interface{ Write([]byte) (int, error) }, run *eval_api.
 	if ds := runDatasetLine(run.Metadata); ds != "" {
 		fmt.Fprintf(out, "%-10s %s\n", "Dataset", ds)
 	}
-	fmt.Fprintf(out, "%-10s %s\n", "Status", run.Status)
+	if isSimulationRun(run) {
+		fmt.Fprintf(out, "%-10s %s\n", "Mode", "conversation simulation")
+		if run.Name != "" {
+			fmt.Fprintf(out, "%-10s %s\n", "Name", run.Name)
+		}
+	}
+	status := run.Status
+	if isSimulationRun(run) {
+		status = reportedStatus(status)
+	}
+	fmt.Fprintf(out, "%-10s %s\n", "Status", status)
 	if d := runDuration(run); d != "" {
 		fmt.Fprintf(out, "%-10s %s\n", "Duration", d)
 	}

@@ -526,6 +526,9 @@ type EvalRunDataSource struct {
 	// from the parameters that generated the seeds.
 	ModelConfiguration             *ModelConfiguration      `json:"model_configuration,omitempty"`
 	DefaultSimulationConfiguration *SimulationConfiguration `json:"default_simulation_configuration,omitempty"`
+	// SimulationSeedCount is captured from the validated dataset at submission,
+	// not sent as an unsupported service data-source field.
+	SimulationSeedCount *int `json:"-"`
 }
 
 // ItemGenerationParams says how the service should turn a source into the items
@@ -750,6 +753,8 @@ type OpenAIEvalRun struct {
 	ResultCounts       *EvalRunResultCounts    `json:"result_counts,omitempty"`
 	PerTestingCriteria []EvalRunCriteriaResult `json:"per_testing_criteria_results,omitempty"`
 	Error              *JobError               `json:"error,omitempty"`
+	raw                json.RawMessage
+	reportedCounts     map[string]bool
 }
 
 // Failure returns why the run failed, or "" when it did not.

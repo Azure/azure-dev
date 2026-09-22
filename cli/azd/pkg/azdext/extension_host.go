@@ -528,6 +528,7 @@ func (er *ExtensionHost) validateEventRegistrations() error {
 	for _, registration := range er.projectHandlers {
 		stable[registration.EventName] = struct{}{}
 	}
+	preview := make(map[string]struct{}, len(er.previewProjectHandlers))
 	for _, registration := range er.previewProjectHandlers {
 		if _, exists := stable[registration.EventName]; exists {
 			return fmt.Errorf(
@@ -535,6 +536,13 @@ func (er *ExtensionHost) validateEventRegistrations() error {
 				registration.EventName,
 			)
 		}
+		if _, exists := preview[registration.EventName]; exists {
+			return fmt.Errorf(
+				"project event %q cannot be registered more than once in preview channel",
+				registration.EventName,
+			)
+		}
+		preview[registration.EventName] = struct{}{}
 	}
 	return nil
 }

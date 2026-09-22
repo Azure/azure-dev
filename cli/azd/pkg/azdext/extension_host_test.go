@@ -346,15 +346,31 @@ func TestExtensionHost_AllowsSameChannelProjectEventDuplicates(t *testing.T) {
 			*PreviewProjectEventArgs,
 		) error {
 			return nil
+		})
+
+	require.NoError(t, host.validateEventRegistrations())
+}
+
+func TestExtensionHost_RejectsPreviewProjectEventDuplicate(t *testing.T) {
+	t.Parallel()
+
+	host := NewExtensionHost(nil).
+		WithPreviewProjectEventHandler("postdeploy", func(
+			context.Context,
+			*PreviewProjectEventArgs,
+		) error {
+			return nil
 		}).
-		WithPreviewProjectEventHandler("predeploy", func(
+		WithPreviewProjectEventHandler("postdeploy", func(
 			context.Context,
 			*PreviewProjectEventArgs,
 		) error {
 			return nil
 		})
 
-	require.NoError(t, host.validateEventRegistrations())
+	err := host.validateEventRegistrations()
+	require.EqualError(t, err,
+		`project event "postdeploy" cannot be registered more than once in preview channel`)
 }
 
 func TestCallReady(t *testing.T) {

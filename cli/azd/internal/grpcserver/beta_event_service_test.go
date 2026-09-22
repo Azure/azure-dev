@@ -191,6 +191,7 @@ func TestBetaEventServiceProjectHandlerCommitsFollowUp(t *testing.T) {
 			followUpErr <- errors.New("expected project invocation")
 			return nil
 		}
+		require.Equal(t, invoke.InvocationId, msg.RequestId)
 		_, err := NewFollowUpService(service.followUps).SetFollowUp(
 			streamCtx,
 			&v1beta.SetFollowUpRequest{
@@ -200,6 +201,7 @@ func TestBetaEventServiceProjectHandlerCommitsFollowUp(t *testing.T) {
 		)
 		followUpErr <- err
 		stream.recvCh <- &v1beta.EventMessage{
+			RequestId: msg.RequestId,
 			MessageType: &v1beta.EventMessage_ProjectHandlerStatus{
 				ProjectHandlerStatus: &v1beta.ProjectHandlerStatus{
 					EventName: invoke.EventName,
@@ -311,6 +313,7 @@ func TestBetaEventServiceProjectHandlerDiscardsFollowUp(t *testing.T) {
 					return tt.sendErr
 				}
 				stream.recvCh <- &v1beta.EventMessage{
+					RequestId: msg.RequestId,
 					MessageType: &v1beta.EventMessage_ProjectHandlerStatus{
 						ProjectHandlerStatus: &v1beta.ProjectHandlerStatus{
 							EventName: invoke.EventName,

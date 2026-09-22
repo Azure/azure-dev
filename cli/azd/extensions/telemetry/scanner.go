@@ -435,7 +435,7 @@ func moduleForDir(dir string, cache map[string]moduleDefinition) (moduleDefiniti
 // module-file dependency: the first module directive wins and any quoting is
 // trimmed.
 func modulePathFromGoMod(data []byte) string {
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) >= 2 && fields[0] == "module" {
 			return strings.Trim(fields[1], "\"")

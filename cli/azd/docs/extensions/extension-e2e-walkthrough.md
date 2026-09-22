@@ -346,7 +346,8 @@ func newSetTagHandler(builder *azdext.MCPServerBuilder) azdext.MCPToolHandler {
             }
             req.Header.Set("Content-Type", "application/json")
 
-            resp, err := http.DefaultClient.Do(req)
+            client := &http.Client{CheckRedirect: azdext.SSRFSafeRedirect}
+            resp, err := client.Do(req)
             if err != nil {
                 return azdext.MCPErrorResult("sending audit webhook: %v", err), nil
             }

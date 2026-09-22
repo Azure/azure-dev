@@ -421,6 +421,66 @@ func TestValidateStagedAzureYamlReturnsRefErrors(t *testing.T) {
 	require.ErrorContains(t, err, "missing.yaml")
 }
 
+func TestValidateStagedAzureYamlAllowsConfigOnNonAgentServices(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		azureYaml string
+		fileName  string
+		fileBody  string
+	}{
+		{
+			name: "direct non-agent service",
+			azureYaml: `services:
+  agent:
+    host: azure.ai.agent
+    kind: prompt
+    name: prompt-agent
+  web:
+    host: containerapp
+    config:
+      exposed: true
+`,
+		},
+		{
+			name: "root-ref non-agent service",
+			azureYaml: `services:
+  agent:
+    host: azure.ai.agent
+    kind: prompt
+    name: prompt-agent
+  web:
+    $ref: ./web.yaml
+`,
+			fileName: "web.yaml",
+			fileBody: `host: containerapp
+config:
+  exposed: true
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			manifestPath := filepath.Join(root, "azure.yaml")
+			require.NoError(t, os.WriteFile(manifestPath, []byte(tt.azureYaml), 0o600))
+			if tt.fileName != "" {
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, tt.fileName), []byte(tt.fileBody), 0o600,
+				))
+			}
+
+			require.NoError(t, validateStagedAzureYaml(root, manifestPath))
+			manifestAfter, err := os.ReadFile(manifestPath)
+			require.NoError(t, err)
+			require.Equal(t, tt.azureYaml, string(manifestAfter))
+		})
+	}
+}
+
 func TestValidateStagedAzureYamlRejectsLegacyDefinitionShapes(t *testing.T) {
 	t.Parallel()
 
@@ -439,6 +499,20 @@ func TestValidateStagedAzureYamlRejectsLegacyDefinitionShapes(t *testing.T) {
     config:
       kind: hosted
       name: legacy-agent
+`,
+			want: "unsupported nested config block",
+		},
+		{
+			name: "root-ref nested config",
+			azureYaml: `services:
+  agent:
+    $ref: ./agent.yaml
+`,
+			fileName: "agent.yaml",
+			fileBody: `host: azure.ai.agent
+config:
+  kind: prompt
+  name: legacy-agent
 `,
 			want: "unsupported nested config block",
 		},

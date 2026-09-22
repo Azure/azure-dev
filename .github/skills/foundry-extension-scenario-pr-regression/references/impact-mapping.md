@@ -18,7 +18,6 @@ Files under `internal/cmd/` map to the command they implement:
 | `internal/cmd/run.go` | `cmd:run` | |
 | `internal/cmd/session.go` | `cmd:sessions` | |
 | `internal/cmd/files.go` | `cmd:files` | |
-| `internal/cmd/state_store*.go` | `cmd:state-stores` | Tier 0 help and input validation only; no live State Store operations. |
 | `internal/cmd/monitor*.go` | `cmd:monitor` | `monitor.go`, `monitor_format.go`. |
 | `internal/cmd/update.go` | `cmd:endpoint` | `update.go` defines `endpoint update`. |
 | `internal/cmd/doctor*.go` | `cmd:doctor` | `doctor.go`, `doctor_format.go`. |

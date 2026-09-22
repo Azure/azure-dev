@@ -118,6 +118,14 @@ discards a record of finished work, not the artifact the job produced.
 Every command supports `-o json` and `--no-prompt`, so the whole surface is
 usable from CI.
 
+A command that needs an eval and was not told which one offers a picker.
+Closing that picker is an answer, not a failure: the command says the selection
+was cancelled and exits 0, at every command that offers it. Under `-o json`
+nothing is written, so stdout still parses.
+
+`azd ai eval create` closes with a link to the eval in the Portal, for a
+newly created eval and for one that already existed unchanged.
+
 ## Evaluators
 
 Built-ins need no declaration — reference them as `builtin.<name>` and list
@@ -174,7 +182,7 @@ the variable exported in this shell. `--debug` prints which level answered.
 
 | Variable | Description |
 | --- | --- |
-| `AZURE_AI_PROJECT_ID` | The Microsoft Foundry project resource ID, used to build portal links for an eval run. |
+| `AZURE_AI_PROJECT_ID` | The Microsoft Foundry project resource ID, used to build portal links for an eval and its runs. |
 | `AZURE_AI_MODEL_DEPLOYMENT_NAME` | The model deployment `azd ai eval init` offers as the judge when one is not named on the command line. |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | A detection signal, not a credential this extension consumes: `azd ai eval init` and `generate` check only whether it is set, and default to a trace-backed source when it is. The value is never read or transmitted by the extension — Foundry reads the traces server-side. |
 

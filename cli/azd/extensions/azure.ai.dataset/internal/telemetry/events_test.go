@@ -13,19 +13,26 @@ func TestDatasetPublishedWireContract(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		operation Operation
+		given     string
 		wantValue string
 	}{
-		{name: "create", operation: OperationCreate, wantValue: "create"},
-		{name: "update", operation: OperationUpdate, wantValue: "update"},
-		{name: "unknown", operation: OperationUnknown, wantValue: "unknown"},
+		{name: "create", given: string(OperationCreate), wantValue: "create"},
+		{name: "update", given: string(OperationUpdate), wantValue: "update"},
+		{name: "unknown", given: string(OperationUnknown), wantValue: "unknown"},
+
+		// Values that never went through NewOperation. The builder is the
+		// boundary the attribute's closed set is guaranteed at, so reaching it
+		// directly must still leave one of the three reviewed values.
+		{name: "a verb nobody reviewed", given: "publish", wantValue: "unknown"},
+		{name: "nothing at all", given: "", wantValue: "unknown"},
+		{name: "content a caller could pass by mistake", given: "my-customer-dataset", wantValue: "unknown"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			event := DatasetPublished(tt.operation)
+			event := DatasetPublished(tt.given)
 			if event.Name != "dataset.published" {
 				t.Fatalf("event name = %q, want %q", event.Name, "dataset.published")
 			}

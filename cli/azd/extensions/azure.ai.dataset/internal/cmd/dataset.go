@@ -250,7 +250,7 @@ func (a *datasetWriteAction) publishAndReport(
 		return messages.RegisteringDataset(a.name, err)
 	}
 
-	reportUsage(ctx, telemetry.DatasetPublished(telemetry.NewOperation(a.verb)))
+	reportUsage(ctx, telemetry.DatasetPublished(a.verb))
 
 	if err := ec.setEnvValue(ctx, envKeyDatasetVersion, ds.Version); err != nil {
 		// Persisting is a convenience, so this never fails the command. It goes

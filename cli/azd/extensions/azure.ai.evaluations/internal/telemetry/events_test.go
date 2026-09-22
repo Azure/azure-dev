@@ -13,19 +13,26 @@ func TestInitCompletedWireContract(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		source    InitSource
+		given     string
 		wantValue string
 	}{
-		{name: "traces", source: InitSourceTraces, wantValue: "traces"},
-		{name: "dataset", source: InitSourceDataset, wantValue: "dataset"},
-		{name: "unknown", source: InitSourceUnknown, wantValue: "unknown"},
+		{name: "traces", given: string(InitSourceTraces), wantValue: "traces"},
+		{name: "dataset", given: string(InitSourceDataset), wantValue: "dataset"},
+		{name: "unknown", given: string(InitSourceUnknown), wantValue: "unknown"},
+
+		// Values that never went through NewInitSource. The builder is the
+		// boundary the attribute's closed set is guaranteed at, so reaching it
+		// directly must still leave one of the three reviewed values.
+		{name: "a source nobody reviewed", given: "conversations", wantValue: "unknown"},
+		{name: "nothing at all", given: "", wantValue: "unknown"},
+		{name: "content a caller could pass by mistake", given: "./evals/my-customer.jsonl", wantValue: "unknown"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			event := InitCompleted(tt.source)
+			event := InitCompleted(tt.given)
 			if event.Name != "init.completed" {
 				t.Fatalf("event name = %q, want %q", event.Name, "init.completed")
 			}

@@ -104,8 +104,8 @@ Examples
     azd ai agent init --no-prompt --kind prompt --agent-name my-agent \
       --project-id "<resource-id>" --model-deployment gpt-4.1-mini
 
-  Non-interactive prompt agent from a prompt agent template
-    azd ai agent init --no-prompt -m ./agent.yaml --project-id "<resource-id>"
+  Non-interactive unified project adoption
+    azd ai agent init --no-prompt -m ./azure.yaml --project-id "<resource-id>"
 
   Bring your own pre-built image (no template/language selection, Dockerfile, or ACR setup)
     azd ai agent init --no-prompt --agent-name my-agent \

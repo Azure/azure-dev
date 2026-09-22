@@ -83,7 +83,16 @@ func (a *evalCreateAction) Run() error {
 		return err
 	}
 
-	eval, err := cfg.Eval(chooseEval(a.cmd, cfg, a.name))
+	chosen, err := chooseEval(a.cmd, cfg, a.name)
+	if err != nil {
+		// Closing the picker is an answer, not a failure to name something.
+		if isEvalSelectionCancelled(err) {
+			reportCancelledSelection(a.cmd)
+			return nil
+		}
+		return err
+	}
+	eval, err := cfg.Eval(chosen)
 	if err != nil {
 		return err
 	}
@@ -163,20 +172,40 @@ func (a *evalCreateAction) Run() error {
 		return err
 	}
 
-	if isJSON(a.cmd) {
-		return emitJSON(a.cmd.OutOrStdout(), map[string]string{
-			"id": id, "name": eval.Name,
+	return reportEvalCreated(a.cmd, eval.Name, id, created, ec.portalPrefix(ctx))
+}
+
+// reportEvalCreated says what `eval create` settled on, and where to look at it.
+//
+// Split out of Run because the Portal link is the whole of ADO 5571804 and Run
+// cannot be driven from a test without a project behind it: reporting is the
+// part with behavior worth pinning, and it now has none of Run's prerequisites.
+//
+// A nil prefix is a project whose resource id could not be read. The link is an
+// extra, so it is dropped rather than guessed or reported as a failure.
+func reportEvalCreated(
+	cmd *cobra.Command, name, id string, created bool, prefix *eval_api.PortalPrefix,
+) error {
+	if isJSON(cmd) {
+		return emitJSON(cmd.OutOrStdout(), map[string]string{
+			"id": id, "name": name,
 		})
 	}
+	out := cmd.OutOrStdout()
 	if created {
-		fmt.Fprint(out, messages.EvalCreated(eval.Name, id))
+		fmt.Fprint(out, messages.EvalCreated(name, id))
 	} else {
-		fmt.Fprint(out, messages.EvalUnchanged(eval.Name, id))
+		fmt.Fprint(out, messages.EvalUnchanged(name, id))
 	}
 	// An eval that exists has nothing to show until something runs it, and the
 	// scaffold's own next-step block is two commands back by now.
 	fmt.Fprint(out, messages.FirstNextStep(
-		"azd ai eval run start --eval "+messages.ShellArg(eval.Name)))
+		"azd ai eval run start --eval "+messages.ShellArg(name)))
+	// Shown for unchanged as well as created: the reader wants to look at the
+	// eval either way, and an idempotent create is where they most often are.
+	if prefix != nil {
+		writePortalLink(out, prefix.EvalURL(id))
+	}
 	return nil
 }
 

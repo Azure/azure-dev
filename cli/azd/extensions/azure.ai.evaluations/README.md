@@ -151,6 +151,9 @@ of its dependencies. Validation does not write private reconciliation state.
 This is not a transaction across Foundry resources. If a later service operation
 fails, successfully published shared versions are retained, not deleted. Fix the
 reported error and repeat the same command to reuse unchanged artifacts.
+For a partial `create -o json` failure, the single output document includes
+`status: "failed"`, the resolved `artifacts` with their versions and `published`
+flags, the error, and a `recovery_command`. The command still exits nonzero.
 
 Datasets are fingerprinted locally, because the dataset API exposes no content
 hash and comparing against the service would mean downloading the blob on every
@@ -163,6 +166,35 @@ Eval groups are immutable, so a change to a group's evaluators, target or
   own private state (`eval.state`) so repeat runs stay comparable. That is not
   an azd environment value: it does not appear in `azd env get-values`, which
   shows only what you put there.
+
+### Recovering partial generation
+
+Dataset and evaluator generation are independent. If one fails, a successful
+artifact remains registered, downloaded, and declared in the catalog. A failed
+catalog update is reported separately from a failed generation or download;
+it does not discard the downloaded artifact.
+
+Use the printed `azd ai eval job show <job-id> --dataset` or `--evaluator`
+command to inspect or collect the existing job without starting another one.
+The recovery command preserves the configuration path, output directory,
+project endpoint, and environment. If submission returned no job ID, inspect
+the printed `job list` command first: a lost response does not prove that the
+service never accepted the job. If a new generation is needed, repeat the
+original command with **only the failed artifact selector**, keeping that
+artifact's original input flags. Do not regenerate the successful artifact.
+
+With `-o json`, generation emits one document keyed by `dataset` and `evaluator`,
+including each outcome's `status`, `job_id`, and, on failure, `error`,
+`recovery_command`, and `retry_guidance`. Status is `submitted`, `succeeded`,
+`failed`, or `catalog_failed`. Any failed outcome makes the command exit nonzero.
+
+Generation changes catalog declarations, not an existing eval's references.
+When an existing eval does not reference a generated artifact, the command
+explains that it remains declaration-only. Use `init` to create a new eval or
+deliberately edit a compatible eval's references. A trace-backed eval cannot
+also consume a dataset; keep it unchanged and create a separate dataset-backed
+eval instead.
+
 ## Commands
 
 ### Dataset identity and row caps

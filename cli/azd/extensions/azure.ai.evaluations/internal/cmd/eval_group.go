@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -138,6 +139,14 @@ func (a *evalCreateAction) create(ec *evalContext, cfg *project.EvalConfig, eval
 	reconciler.ReserveDeclared(ctx, cfg.Evals)
 	out := a.cmd.OutOrStdout()
 
+	var artifacts []reconciledArtifact
+	failed := func(err error) error {
+		if len(artifacts) == 0 {
+			return err
+		}
+		return errors.Join(err, reportCreatePartial(a.cmd, ec, eval.Name, path, artifacts, err))
+	}
+
 	// Reported per artifact, because "publishes nothing when nothing
 	// changed" is the contract a reader is checking here and a single
 	// closing line cannot show it. Silent under -o json.
@@ -160,8 +169,9 @@ func (a *evalCreateAction) create(ec *evalContext, cfg *project.EvalConfig, eval
 	if decl, ok := cfg.DatasetDeclaration(eval.Dataset); ok {
 		version, changed, err := reconciler.EnsureDataset(ctx, *decl, datasetPath)
 		if err != nil {
-			return messages.DatasetProblem(decl.Name, err)
+			return failed(messages.DatasetProblem(decl.Name, err))
 		}
+		artifacts = append(artifacts, reconciledArtifact{"dataset", decl.Name, version, changed})
 		say("dataset", decl.Name, version, changed)
 	}
 	for _, ref := range eval.Evaluators {
@@ -177,14 +187,15 @@ func (a *evalCreateAction) create(ec *evalContext, cfg *project.EvalConfig, eval
 		}
 		version, changed, err := reconciler.EnsureEvaluator(ctx, *decl, local)
 		if err != nil {
-			return messages.EvaluatorProblem(decl.Name, err)
+			return failed(messages.EvaluatorProblem(decl.Name, err))
 		}
+		artifacts = append(artifacts, reconciledArtifact{"evaluator", decl.Name, version, changed})
 		say("evaluator", decl.Name, version, changed)
 	}
 
 	id, created, err := reconciler.EnsureEval(ctx, *eval, datasetPath)
 	if err != nil {
-		return err
+		return failed(err)
 	}
 
 	return reportEvalCreated(a.cmd, eval.Name, id, created, ec.portalPrefix(ctx))

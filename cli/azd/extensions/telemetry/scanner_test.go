@@ -394,6 +394,112 @@ func build(dynamicKey string) {
 	require.Contains(t, diagnostics[0], "after construction hides keys")
 }
 
+// A named wrapper type whose underlying type is a payload slice elides its
+// element type, hiding keys, so the scanner resolves the wrapper and rejects it.
+func TestScanRejectsNamedPayloadContainer(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/telemetry/events.go", `package telemetry
+
+import foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
+
+type Events []foundryTelemetry.Event
+
+func build() Events {
+	return Events{{
+		Name:       "example.reported",
+		Attributes: map[string]string{"undeclared": "value"},
+	}}
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "single keyed literal")
+}
+
+// A loop variable that reuses a payload parameter's name has its own binding, so
+// its Attributes access is not mistaken for the payload's.
+func TestScanIgnoresShadowedLoopVariable(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+type inspectorModel struct{ Attributes map[string]string }
+
+func decorate(req *azdext.ReportUsageRequest, models []inspectorModel) {
+	for _, req := range models {
+		req.Attributes["status"] = "ready"
+	}
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Empty(t, diagnostics)
+}
+
+// A closure parameter that reuses a payload parameter's name has its own binding,
+// so its Attributes access is not mistaken for the outer payload.
+func TestScanIgnoresShadowedClosureParameter(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+type inspectorModel struct{ Attributes map[string]string }
+
+func decorate(req *azdext.ReportUsageRequest) {
+	inspect := func(req inspectorModel) {
+		req.Attributes["status"] = "ready"
+	}
+	_ = inspect
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Empty(t, diagnostics)
+}
+
+// Copying the payload pointer keeps the alias tracked, so a write through the
+// alias is rejected even though the original request is what gets reported.
+func TestScanRejectsRequestPointerAlias(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+func build(dynamicKey string) *azdext.ReportUsageRequest {
+	req := &azdext.ReportUsageRequest{
+		EventName:  "example.reported",
+		Attributes: map[string]string{},
+	}
+	alias := req
+	alias.Attributes[dynamicKey] = "value"
+	return req
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "after construction hides keys")
+}
+
 func writeExtensionSource(t *testing.T, root, relativePath, content string) {
 	t.Helper()
 

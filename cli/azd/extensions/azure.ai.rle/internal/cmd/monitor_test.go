@@ -34,6 +34,17 @@ func isolateRolloutArtifacts(t *testing.T) string {
 	return filepath.Join(root, defaultRolloutOutputDir)
 }
 
+// stubRolloutMonitor keeps development-mode rollouts, where the monitor is on by default,
+// from opening a real browser and blocking until Ctrl+C.
+func stubRolloutMonitor(t *testing.T) {
+	t.Helper()
+	oldRun := runRolloutMonitor
+	t.Cleanup(func() { runRolloutMonitor = oldRun })
+	runRolloutMonitor = func(context.Context, rollouts.Reader, string, bool, io.Writer, io.Writer) error {
+		return nil
+	}
+}
+
 func TestMonitorLoadsLocalResponseWithoutCredentials(t *testing.T) {
 	outputDir := isolateRolloutArtifacts(t)
 	t.Setenv(foundryProjectEndpointEnvVar, "")
@@ -135,21 +146,31 @@ func TestMonitorRolloutIDValidation(t *testing.T) {
 func TestRolloutMonitorLifecycle(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
-		monitor     bool
+		monitorFlag string
 		failSave    bool
 		failExecute bool
 		failCleanup bool
 		disabled    bool
+		wantMonitor bool
+		wantSkipped bool
+		jsonOutput  bool
 		wantError   string
 	}{
-		{name: "save without monitor"},
+		{name: "save without monitor", monitorFlag: "--monitor=false"},
 		{name: "non-development rollout still writes training artifacts", disabled: true},
-		{name: "monitor after cleanup", monitor: true},
-		{name: "save failure still cleans up", monitor: true, failSave: true, wantError: "could not be saved"},
-		{name: "execution failure", monitor: true, failExecute: true, wantError: "RLE service"},
-		{name: "cleanup failure prevents monitor", monitor: true, failCleanup: true, wantError: "failed to close"},
-		{name: "ordinary save failure warns", failSave: true},
-		{name: "ordinary cleanup failure warns", failCleanup: true},
+		{name: "monitor opens by default in development mode", wantMonitor: true},
+		{name: "monitor after cleanup", monitorFlag: "--monitor", wantMonitor: true},
+		{name: "save failure still cleans up", monitorFlag: "--monitor", failSave: true, wantError: "could not be saved"},
+		{name: "execution failure", monitorFlag: "--monitor", failExecute: true, wantError: "RLE service"},
+		{name: "default execution failure", failExecute: true, wantError: "RLE service"},
+		{name: "cleanup failure prevents monitor", monitorFlag: "--monitor", failCleanup: true, wantError: "failed to close"},
+		{name: "ordinary save failure warns", monitorFlag: "--monitor=false", failSave: true},
+		{name: "ordinary cleanup failure warns", monitorFlag: "--monitor=false", failCleanup: true},
+		{name: "default save failure warns and skips monitor", failSave: true, wantSkipped: true},
+		{name: "default cleanup failure warns and skips monitor", failCleanup: true, wantSkipped: true},
+		{name: "default monitor yields to --output", jsonOutput: true},
+		{name: "explicit monitor rejects --output", monitorFlag: "--monitor", jsonOutput: true,
+			wantError: "--output cannot be used"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			outputDir := isolateRolloutArtifacts(t)
@@ -214,8 +235,12 @@ func TestRolloutMonitorLifecycle(t *testing.T) {
 			}
 			command := newRolloutCommand()
 			args := []string{"code_rl", "--version", "1.0.0", "--model", "model", "--rollout-id", monitorTestID}
-			if tc.monitor {
-				args = append(args, "--monitor")
+			if tc.monitorFlag != "" {
+				args = append(args, tc.monitorFlag)
+			}
+			if tc.jsonOutput {
+				command.Flags().String("output", "", "")
+				args = append(args, "--output", "json")
 			}
 			command.SetArgs(args)
 			var output bytes.Buffer
@@ -228,11 +253,17 @@ func TestRolloutMonitorLifecycle(t *testing.T) {
 			if tc.wantError != "" && (err == nil || !strings.Contains(err.Error(), tc.wantError)) {
 				t.Fatalf("expected %q, got %v", tc.wantError, err)
 			}
+			if tc.jsonOutput && tc.wantError != "" {
+				return
+			}
 			if !closed.Load() {
 				t.Fatal("Loom cleanup was skipped")
 			}
-			if monitorCalled != (tc.monitor && tc.wantError == "") {
+			if monitorCalled != tc.wantMonitor {
 				t.Fatalf("unexpected monitor invocation: %t", monitorCalled)
+			}
+			if skipped := strings.Contains(output.String(), "The rollout monitor was not opened."); skipped != tc.wantSkipped {
+				t.Fatalf("unexpected monitor skip notice (%t): %s", skipped, output.String())
 			}
 			if strings.Contains(output.String(), "success: false") {
 				t.Fatal("missing success was reported as false")
@@ -251,7 +282,7 @@ func TestRolloutMonitorLifecycle(t *testing.T) {
 					t.Fatal("artifact location was not printed")
 				}
 			}
-			if !tc.monitor && (tc.failSave || tc.failCleanup) && !strings.Contains(output.String(), "Warning:") {
+			if tc.wantError == "" && (tc.failSave || tc.failCleanup) && !strings.Contains(output.String(), "Warning:") {
 				t.Fatal("ordinary rollout must report persistence/cleanup failures")
 			}
 		})

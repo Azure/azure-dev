@@ -480,9 +480,11 @@ failure; the tree says so rather than showing an unexplained small file.
 
 Use `--output-dir` to write somewhere other than `.output`. A rollout that
 succeeds but cannot write its artifacts still reports its reward and exits
-successfully, with a warning — the compute is already spent. With `--monitor`,
-an artifact-write failure instead returns an error because the dashboard cannot
-open. Existing rollout directories are never overwritten; use a new rollout ID
+successfully, with a warning — the compute is already spent. In development
+mode, where the monitor opens by default, the warning also notes that the
+dashboard was skipped. With an explicit `--monitor`, an artifact-write failure
+instead returns an error because the dashboard cannot open. Existing rollout
+directories are never overwritten; use a new rollout ID
 or a different output root. The summary is published last, after the other files.
 
 ## Monitor a completed rollout (development only)
@@ -495,11 +497,16 @@ $env:AZD_AI_RLE_ENABLE = "true"
 $env:AZD_AI_RLE_ENABLE_ALL = "true"
 ```
 
-Run a rollout and open its dashboard when execution finishes:
+In development mode, every rollout opens its dashboard when execution finishes:
 
 ```powershell
-azd ai rle rollout --task-file task.json --monitor
+azd ai rle rollout --task-file task.json
 ```
+
+Pass `--monitor=false` to exit as soon as the rollout completes, for example in
+scripts. The dashboard is also skipped when `--output` is set, or when the Loom
+session cannot be closed or the artifacts cannot be saved (the rollout warns
+instead). Passing `--monitor` explicitly makes those cases errors.
 
 Or reopen a saved rollout from the folder where it was executed:
 
@@ -520,8 +527,9 @@ monitor without deleting saved artifacts.
 | `--no-browser` | On standalone `monitor`, print a link instead of opening the browser. Open the link and enter the local access code printed in the terminal. |
 
 The automatically opened browser handles the local access code for you.
-`--no-prompt` does not disable browser launching or stop the monitor;
-`--output` is not supported.
+`--no-prompt` does not disable browser launching or stop the monitor; use
+`--monitor=false` on `rollout` instead. `--output` is not supported on
+standalone `monitor`.
 
 Monitoring reads the existing [rollout artifacts](#rollout-artifacts), not remote
 results. If the rollout directory is missing, it warns and exits without opening

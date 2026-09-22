@@ -228,11 +228,12 @@ class Proof:
 
         project = self.root / "synthetic-project"
         project.mkdir()
-        (project / "azure.yaml").write_text(
+        project_definition = (
             "name: offline-proof\nservices:\n"
             "  ci-project:\n    host: azure.ai.project\n"
-            "  ci-agent:\n    host: azure.ai.agent\n", encoding="utf-8",
+            "  ci-agent:\n    host: azure.ai.agent\n"
         )
+        (project / "azure.yaml").write_text(project_definition, encoding="utf-8")
         data = project / "golden.jsonl"
         data.write_text('{"query":"What is two plus two?","response":"4","ground_truth":"4"}\n',
                         encoding="utf-8")
@@ -247,6 +248,16 @@ class Proof:
         empty.write_text("", encoding="utf-8")
 
         base = ["ai", "eval", "init", "--target", "ci-agent", "--judge-model", "ci-judge"]
+        missing_inputs = self.root / "missing-inputs"
+        missing_inputs.mkdir()
+        (missing_inputs / "azure.yaml").write_text(project_definition, encoding="utf-8")
+        self.run("unattended init requires dataset", base + [
+            "--source", "dataset", "--evaluator", "builtin.task_adherence", "--output", "json",
+        ], missing_inputs, failure="dataset", json_output=True)
+        require(not (missing_inputs / "evals").exists(), "Missing inputs created a partial scaffold")
+        require((missing_inputs / "azure.yaml").read_text(encoding="utf-8") == project_definition,
+                "Missing inputs changed the root project")
+
         turn = base + [
             "--name", "ci-turn", "--source", "dataset", "--dataset", str(data),
             "--evaluator", "builtin.task_adherence", "--output", "json",
@@ -318,6 +329,23 @@ class Proof:
         for name, args, error in invalid_dataset:
             self.run(name, ["ai", "dataset", *args, "--output", "json"], project,
                      failure=error, json_output=True)
+
+        invalid_generate = [
+            ("dataset-only flag on evaluator generation",
+             ["--evaluator", "--evaluation-level", "conversation"], "evaluation-level"),
+            ("no-wait generation with output directory",
+             ["--no-wait", "--output-dir", "unused-output"], "output-dir"),
+            ("no-wait generation with force", ["--no-wait", "--force"], "force"),
+            ("negative generation trace window", ["--trace-days", "-1"], "trace-days"),
+            ("invalid generation source", ["--dataset", "--from", "invalid"], "invalid"),
+            ("negative generation sample cap", ["--dataset", "--max-samples", "-1"], "sample"),
+        ]
+        for name, args, error in invalid_generate:
+            self.run(name, ["ai", "eval", "generate", *args, "--output", "json"], project,
+                     failure=error, json_output=True)
+            require(before == (config.read_bytes(), (project / "azure.yaml").read_bytes()),
+                    f"{name} mutated authored configuration")
+
         self.output.joinpath("authored-azure.eval.yaml").write_text(
             sanitize(final_yaml, self.root), encoding="utf-8")
         self.output.joinpath("authored-azure.yaml").write_text(

@@ -303,7 +303,7 @@ func (r *evalReconciler) EnsureDataset(
 	// A malformed row is only noticed once the service tries to evaluate it,
 	// by which point a version has been published and the eval points at
 	// it. Reading the file here costs nothing and names the offending line.
-	if _, err := inspectJSONL(ctx, localPath); err != nil {
+	if _, err := inspectJSONL(ctx, localPath, nil); err != nil {
 		return "", false, messages.DatasetProblem(decl.Name, err)
 	}
 
@@ -468,12 +468,14 @@ func tagsAlreadyApplied(have, want map[string]string) bool {
 // registered version, an eval bound to it, and a run that fails on a row
 // nobody has looked at. Blank lines are skipped: they are not rows.
 func validateJSONL(path string) error {
-	_, err := inspectJSONL(context.Background(), path)
+	_, err := inspectJSONL(context.Background(), path, nil)
 	return err
 }
 
 // inspectJSONL validates every row and returns the columns every row supplies.
-func inspectJSONL(ctx context.Context, path string) (map[string]bool, error) {
+func inspectJSONL(
+	ctx context.Context, path string, validateRow func(map[string]any, int) error,
+) (map[string]bool, error) {
 	// #nosec G304 -- path is the dataset file the eval config declares.
 	f, err := os.Open(path)
 	if err != nil {
@@ -510,6 +512,11 @@ func inspectJSONL(ctx context.Context, path string) (map[string]bool, error) {
 		}
 		if len(row) == 0 {
 			return nil, messages.JSONLRowEmpty(path, line)
+		}
+		if validateRow != nil {
+			if err := validateRow(row, rows); err != nil {
+				return nil, err
+			}
 		}
 		if columns == nil {
 			columns = make(map[string]bool, len(row))

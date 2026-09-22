@@ -239,11 +239,15 @@ func ensureDefinitionType(definition json.RawMessage) (json.RawMessage, error) {
 	if doc == nil {
 		return nil, messages.DefinitionIsNull()
 	}
-	if _, ok := doc["type"]; ok {
-		return definition, nil
+	if _, ok := doc["type"]; !ok {
+		doc["type"] = json.RawMessage(fmt.Sprintf("%q", rubricDefinitionType))
+		definition, err := json.Marshal(doc)
+		if err != nil {
+			return nil, err
+		}
+		return validateRubricDefinition(definition)
 	}
-	doc["type"] = json.RawMessage(fmt.Sprintf("%q", rubricDefinitionType))
-	return json.Marshal(doc)
+	return validateRubricDefinition(definition)
 }
 
 // withCatalogMetadata adds the declaration's catalog fields to a publish body.

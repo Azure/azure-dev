@@ -126,10 +126,13 @@ to have:
 {"test_case_description": "A customer disputes a charge and wants it reversed."}
 ```
 
-Only `test_case_description` is required; it is the scenario the simulator opens
-with. `desired_num_turns` is optional and per row. It is a request, not an
-override: asking for more turns than `max_turns` allows is refused before the
-run starts rather than quietly truncated.
+Only `test_case_description` is required; it must contain non-whitespace text
+describing the scenario the simulator opens with. `desired_num_turns` is optional
+and must be a positive whole number when supplied. It is a request, not an
+override: asking for more turns than `max_turns` allows is refused rather than
+quietly truncated. Local seed files are checked row by row before `create` or
+`azd up` publishes dependencies; the run checks registered seed rows as well.
+Completed `messages` cannot be mixed with simulation seeds.
 
 Seed rows carry no `query` or `response`, because nobody has asked anything yet.
 That is why the evaluators bind `messages` — the transcript the run produces —
@@ -147,6 +150,11 @@ including version pins. An unavailable reference lookup is an error, not a reaso
 to publish optimistically. Unrelated invalid evals do not block this targeted
 command; `azd up` validates the entire evaluation service before publishing any
 of its dependencies. Validation does not write private reconciliation state.
+Local rows used to invoke an agent or model must carry the `query` field the
+target reads. Static dataset-only evaluations do not impose this target
+requirement. Rubric dimension weights, when supplied, must be whole numbers
+from 1 to 10; `pass_threshold`, when supplied, must be a number from 0 to 1.
+These authored parameters are validated before any dependency is published.
 
 This is not a transaction across Foundry resources. If a later service operation
 fails, successfully published shared versions are retained, not deleted. Fix the

@@ -7,10 +7,12 @@ on:
     paths:
       - ".github/skills/azd-grpc-contracts/**"
       - "cli/azd/docs/extensions/contract-versioning.md"
+      - "cli/azd/grpc/README.md"
       - "cli/azd/grpc/proto/azd/extensions/v1/**"
       - "cli/azd/grpc/proto/azd/extensions/v1beta/**"
       - "cli/azd/internal/grpcserver/versioned_services.go"
       - "cli/azd/internal/grpcserver/versioned_services_generated.go"
+      - "cli/azd/Makefile"
       - "cli/azd/pkg/azdext/contracts/versioning_test.go"
       - "cli/azd/test/evals/eval-azd-grpc-contracts.yaml"
       - "cli/azd/test/evals/package.json"

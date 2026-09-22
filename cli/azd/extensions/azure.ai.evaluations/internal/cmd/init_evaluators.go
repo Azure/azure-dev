@@ -40,6 +40,20 @@ var builtinEvaluators = []string{
 // costs more than the check is worth.
 const builtinCatalogueTimeout = 5 * time.Second
 
+// catalogueContext puts the bound on the one listing init asks for.
+//
+// Named rather than inlined so the bound is something a test can observe. A
+// test that stands up an unreachable endpoint proves only that the endpoint is
+// unreachable: it returns before the bound either way, and deleting the bound
+// leaves it green. The deadline this derives is the behavior itself.
+//
+// Derived from the caller's context, not from Background: the listing is best
+// effort, but a reader interrupting the command is not, and a detached context
+// would go on waiting after they had already answered.
+func catalogueContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, builtinCatalogueTimeout)
+}
+
 // hasBuiltinRef reports whether any reference names a built-in.
 //
 // The catalogue can only answer for those, so a run with none -- or with only
@@ -71,7 +85,7 @@ var knownBuiltinEvaluators = readBuiltinEvaluatorCatalogue
 // reference is left as written. Only a catalogue that was actually read is
 // allowed to refuse a name.
 func readBuiltinEvaluatorCatalogue(ctx context.Context) []string {
-	ctx, cancel := context.WithTimeout(ctx, builtinCatalogueTimeout)
+	ctx, cancel := catalogueContext(ctx)
 	defer cancel()
 
 	ec, err := newEvalContext(ctx, "")

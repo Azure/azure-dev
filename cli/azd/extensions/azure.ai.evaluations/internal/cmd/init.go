@@ -142,9 +142,15 @@ func (a *initAction) Run() error {
 	// projects answer nothing and leave the reference as written, so this adds a
 	// check offline rather than a requirement.
 	if hasBuiltinRef(a.flags.evaluators) {
-		if err := refuseUnknownBuiltins(
-			a.flags.evaluators, knownBuiltinEvaluators(a.cmd.Context()),
-		); err != nil {
+		known := knownBuiltinEvaluators(a.cmd.Context())
+		// The lookup's own five-second bound is best effort, but the command's
+		// context being done is the reader interrupting, and that is not the
+		// catalogue being quiet. Collapsing the two carried on to fail several
+		// steps later on something unrelated -- "no azd project" for a Ctrl-C.
+		if err := a.cmd.Context().Err(); err != nil {
+			return err
+		}
+		if err := refuseUnknownBuiltins(a.flags.evaluators, known); err != nil {
 			return err
 		}
 	}

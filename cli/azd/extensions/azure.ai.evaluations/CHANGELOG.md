@@ -8,7 +8,10 @@ First release of the Foundry evaluations extension.
 
 - `azd ai eval` defines and runs Foundry evaluations from the terminal.
 - `init` scaffolds `evals/azure.eval.yaml` next to an agent and adds the service
-  entry that `$ref`s it into `azure.yaml`. It makes no service calls.
+  entry that `$ref`s it into `azure.yaml`. It works offline. Its one lookup --
+  checking a `builtin.` reference against the project's catalogue -- is best
+  effort, is asked only when such a reference is given, and leaves the reference
+  as written when the project cannot be reached.
 - `generate` synthesizes a rubric and a dataset from the agent's context, writes
   them under `evals/`, and merges the references into the deployment spec while
   preserving comments, ordering and the entries beside them.

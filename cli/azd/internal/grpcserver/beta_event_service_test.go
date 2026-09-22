@@ -471,6 +471,108 @@ func TestBetaEventServiceServiceHandlerUsesBetaMessages(t *testing.T) {
 	require.NoError(t, <-sendErr)
 }
 
+func TestBetaEventServiceProjectHandlerUsesInvocationCancellation(t *testing.T) {
+	service, _ := createTestEventService()
+	extension := createTestExtension()
+	streamCtx := extensionClaimsContext(t.Context(), extension.Id)
+	projectConfig, err := service.lazyProject.GetValue()
+	require.NoError(t, err)
+
+	requireBetaHandlerStopsOnCancel(t, streamCtx, extension.Id, func(
+		ctx context.Context,
+		broker *grpcbroker.MessageBroker[v1beta.EventMessage],
+	) error {
+		handler := (&betaEventService{service: service}).createProjectHandler(
+			streamCtx,
+			extension,
+			"postdeploy",
+			broker,
+		)
+		return handler(ctx, project.ProjectLifecycleEventArgs{Project: projectConfig})
+	})
+}
+
+func TestBetaEventServiceServiceHandlerUsesInvocationCancellation(t *testing.T) {
+	service, _ := createTestEventService()
+	extension := createTestExtension()
+	streamCtx := extensionClaimsContext(t.Context(), extension.Id)
+	projectConfig, err := service.lazyProject.GetValue()
+	require.NoError(t, err)
+	serviceConfig := projectConfig.Services["api"]
+
+	requireBetaHandlerStopsOnCancel(t, streamCtx, extension.Id, func(
+		ctx context.Context,
+		broker *grpcbroker.MessageBroker[v1beta.EventMessage],
+	) error {
+		handler := (&betaEventService{service: service}).createServiceHandler(
+			streamCtx,
+			serviceConfig,
+			extension,
+			"prepackage",
+			broker,
+		)
+		return handler(ctx, project.ServiceLifecycleEventArgs{
+			Project:        projectConfig,
+			Service:        serviceConfig,
+			ServiceContext: project.NewServiceContext(),
+		})
+	})
+}
+
+func requireBetaHandlerStopsOnCancel(
+	t *testing.T,
+	streamCtx context.Context,
+	extensionID string,
+	run func(context.Context, *grpcbroker.MessageBroker[v1beta.EventMessage]) error,
+) {
+	t.Helper()
+
+	invoked := make(chan struct{})
+	stream := &scriptedBetaEventStream{
+		ctx:    streamCtx,
+		recvCh: make(chan *v1beta.EventMessage),
+		sendFn: func(*v1beta.EventMessage) error {
+			close(invoked)
+			return nil
+		},
+	}
+	brokerCtx, stopBroker := context.WithCancel(streamCtx)
+	broker := grpcbroker.NewMessageBroker(
+		stream,
+		azdext.NewBetaEventMessageEnvelope(),
+		extensionID,
+		nil,
+	)
+	go func() {
+		_ = broker.Run(brokerCtx)
+	}()
+	require.NoError(t, broker.Ready(t.Context()))
+	t.Cleanup(func() {
+		close(stream.recvCh)
+		stopBroker()
+	})
+
+	invocationCtx, cancelInvocation := context.WithCancel(t.Context())
+	handlerDone := make(chan error, 1)
+	go func() {
+		handlerDone <- run(invocationCtx, broker)
+	}()
+
+	select {
+	case <-invoked:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not send its invocation")
+	}
+	cancelInvocation()
+
+	select {
+	case err := <-handlerDone:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("handler did not stop after its invocation was canceled")
+	}
+}
+
 func TestUnwrapBetaErrorPreservesStructuredDetails(t *testing.T) {
 	t.Parallel()
 

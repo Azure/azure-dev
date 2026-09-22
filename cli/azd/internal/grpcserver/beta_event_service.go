@@ -114,6 +114,12 @@ func (s *betaEventService) createProjectHandler(
 		defer s.service.followUps.Discard(invocationID)
 
 		err := func() error {
+			claims, err := extensions.GetClaimsFromContext(streamCtx)
+			if err != nil {
+				return fmt.Errorf("failed to get extension claims: %w", err)
+			}
+			invocationCtx := extensions.WithClaimsContext(ctx, claims)
+
 			defer s.service.syncExtensionOutput(
 				ctx,
 				extension,
@@ -143,7 +149,7 @@ func (s *betaEventService) createProjectHandler(
 				},
 			}
 			return s.service.runWithEnvReload(ctx, func() error {
-				response, err := broker.SendAndWait(streamCtx, invoke)
+				response, err := broker.SendAndWait(invocationCtx, invoke)
 				if err != nil {
 					return fmt.Errorf("failed to send invoke message for event %s: %w", eventName, err)
 				}
@@ -227,6 +233,12 @@ func (s *betaEventService) createServiceHandler(
 ) ext.EventHandlerFn[project.ServiceLifecycleEventArgs] {
 	return func(ctx context.Context, args project.ServiceLifecycleEventArgs) error {
 		err := func() error {
+			claims, err := extensions.GetClaimsFromContext(streamCtx)
+			if err != nil {
+				return fmt.Errorf("failed to get extension claims: %w", err)
+			}
+			invocationCtx := extensions.WithClaimsContext(ctx, claims)
+
 			defer s.service.syncExtensionOutput(
 				ctx,
 				extension,
@@ -273,7 +285,7 @@ func (s *betaEventService) createServiceHandler(
 				},
 			}
 			return s.service.runWithEnvReload(ctx, func() error {
-				response, err := broker.SendAndWait(streamCtx, invoke)
+				response, err := broker.SendAndWait(invocationCtx, invoke)
 				if err != nil {
 					return fmt.Errorf("failed to send invoke message for service event %s: %w", eventName, err)
 				}

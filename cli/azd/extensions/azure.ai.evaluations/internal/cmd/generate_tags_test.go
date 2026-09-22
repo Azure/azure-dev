@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"maps"
 	"testing"
 
 	"azureaieval/internal/pkg/dataset_api"
@@ -124,12 +125,8 @@ func TestGeneratedTagsMergeRatherThanReplace(t *testing.T) {
 	ours := seedDatasetTags(project.EvaluationLevelConversation)
 
 	merged := map[string]string{}
-	for k, v := range serviceWrote {
-		merged[k] = v
-	}
-	for k, v := range ours {
-		merged[k] = v
-	}
+	maps.Copy(merged, serviceWrote)
+	maps.Copy(merged, ours)
 
 	assert.Equal(t, "job_abc123", merged["generation_job_id"],
 		"the job id is how a dataset says where it came from")

@@ -509,6 +509,9 @@ func (ec *evalContext) generateDataset(
 		return nil, messages.SubmittingDataJob(err)
 	}
 	report.record(job.ID)
+	// Before the --no-wait return below: that path ends here, and the dataset
+	// it will produce is tagged by whatever reattaches to the job.
+	ec.rememberGenerationLevel(ctx, job.ID, plan.EvaluationLevel)
 	if noWait {
 		reportSubmitted(out, "dataset", job.ID)
 		return nil, nil
@@ -544,6 +547,7 @@ func (ec *evalContext) generateDataset(
 			// has to move with it. Leaving it on the abandoned first job points
 			// every resume and every `job show` at the wrong one.
 			report.record(job.ID)
+			ec.rememberGenerationLevel(ctx, job.ID, plan.EvaluationLevel)
 			completed, err = ec.pollGeneration(ctx, job.ID, DataGenerationAPIVersion,
 				ec.evalClient.GetDataGenerationJob)
 		}

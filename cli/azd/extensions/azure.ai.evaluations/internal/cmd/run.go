@@ -217,9 +217,12 @@ func (a *runStartAction) Run() error {
 	}
 
 	var dataSource *eval_api.EvalRunDataSource
+	// The level a bare id runs at comes from its previous run, for the same
+	// reason the data source does: there is no declaration to read it from.
+	var reusedLevel string
 	switch {
 	case group == nil:
-		dataSource, err = ec.reuseDataSourceFromLastRun(ctx, evalID)
+		dataSource, reusedLevel, err = ec.reuseDataSourceFromLastRun(ctx, evalID)
 	default:
 		dataSource, err = ec.buildRunDataSource(
 			ctx, group, configPath, resolveMaxSamples(a.flags.maxSamples, group))
@@ -240,8 +243,14 @@ func (a *runStartAction) Run() error {
 	}
 
 	metadata := map[string]string{}
-	if lvl := resolveLevel(group); lvl != "" {
-		metadata["evaluation_level"] = lvl
+	// The declaration says it when there is one; a bare id repeats what its
+	// previous run recorded.
+	level := resolveLevel(group)
+	if level == "" {
+		level = reusedLevel
+	}
+	if level != "" {
+		metadata[metaEvaluationLevel] = level
 	}
 	// The eval carries its name in its own metadata, but a run is read
 	// on its own, and an id is not what the author called it.
@@ -263,7 +272,7 @@ func (a *runStartAction) Run() error {
 		Name: runName,
 		// Also sent under metadata, where it stays readable to anything listing
 		// runs. Only the top-level field is what the service builds rows from.
-		EvaluationLevel: resolveLevel(group),
+		EvaluationLevel: level,
 		DataSource:      dataSource,
 		Metadata:        metadata,
 	})
@@ -380,10 +389,16 @@ func (ec *evalContext) checkDatasetRegistered(
 // testing criteria, and the dataset travels on the run. The previous run is the
 // only place that pairing survives, so re-running a group means repeating what
 // it last ran.
+//
+// The evaluation level travels with it. It decides how the service builds rows
+// out of the data source, so repeating the source without it grades a
+// conversation eval turn-shaped -- which reports scores rather than an error,
+// and so is not otherwise noticed. Empty when the previous run recorded none,
+// which leaves the service's own default as before.
 func (ec *evalContext) reuseDataSourceFromLastRun(
 	ctx context.Context,
 	evalID string,
-) (*eval_api.EvalRunDataSource, error) {
+) (*eval_api.EvalRunDataSource, string, error) {
 	// The service promises no order, so one row is not the most recent run --
 	// it is whichever the listing happened to put first. Restarting from it
 	// scored a stale dataset or target on any eval with more than one run.
@@ -397,18 +412,18 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 		if eval_api.IsNotFound(err) {
 			// The eval itself is missing, which is worth saying plainly rather
 			// than as forty lines of the 404 that discovered it.
-			return nil, messages.EvalNotFound(evalID)
+			return nil, "", messages.EvalNotFound(evalID)
 		}
-		return nil, messages.ReadingPreviousRuns(evalID, err)
+		return nil, "", messages.ReadingPreviousRuns(evalID, err)
 	}
 	if list == nil || len(list.Data) == 0 {
-		return nil, messages.EvalHasNoPreviousRun(evalID)
+		return nil, "", messages.EvalHasNoPreviousRun(evalID)
 	}
 	newest := newestRunIn(list.Data)
 	if newest.DataSource == nil {
-		return nil, messages.EvalHasNoPreviousRun(evalID)
+		return nil, "", messages.EvalHasNoPreviousRun(evalID)
 	}
-	return pinReusedTraceWindow(newest.DataSource), nil
+	return pinReusedTraceWindow(newest.DataSource), newest.Metadata[metaEvaluationLevel], nil
 }
 
 // legacyTraceLookbackHours is the window a legacy source with no lookback ran
@@ -563,6 +578,16 @@ func (ec *evalContext) buildRunDataSource(
 		return nil, messages.InEval(group.Name, messages.DatasetNotDeclared(group.Dataset))
 	}
 
+	// A simulation creates its conversations instead of reading rows that
+	// already hold them, so it is settled before every shape that reads a
+	// column: a source has none to read, and a scenario seed has no question
+	// on it to bind. ValidateRunnable has already refused a declaration that
+	// asks for both, so this order decides nothing on its own -- it is here so
+	// that adding a shape below cannot quietly claim a simulation.
+	if group.Simulation != nil {
+		return ec.simulationDataSource(ctx, group, configPath, maxSamples)
+	}
+
 	if group.Source != nil {
 		switch group.Source.Type {
 		case project.SourceTypeTraces:
@@ -570,13 +595,6 @@ func (ec *evalContext) buildRunDataSource(
 		default:
 			return responsesDataSource(group)
 		}
-	}
-
-	// A simulation creates its conversations instead of invoking a target once
-	// per row, so it is settled before the shapes that bind a question out of
-	// the dataset. A scenario seed has no question on it to bind.
-	if group.Simulation != nil {
-		return ec.simulationDataSource(ctx, group, configPath, maxSamples)
 	}
 
 	var ds *eval_api.EvalRunDataSource
@@ -615,13 +633,19 @@ func (ec *evalContext) buildRunDataSource(
 		if err := refuseUnboundTemplate(group, ds, items); err != nil {
 			return nil, err
 		}
-		// The rows were read to check the binding above, but they are not what
-		// the run is pointed at: a registered dataset is referenced by the id the
-		// service issued for that version, so the run keeps the dataset's
-		// identity, version binding and lineage instead of scoring a copy.
-		if id := ec.datasetResourceID(ctx, group.Dataset, version); id != "" {
-			ds.SetFileID(id)
-			return ds, nil
+		// A registered dataset is referenced by the id the service issued for
+		// that version, so the run keeps the dataset's identity, version
+		// binding and lineage instead of scoring a copy.
+		//
+		// Only when nothing asked for fewer rows. A file_id names the whole
+		// version and carries no row count, so referencing a capped run would
+		// grade every row and still report the cap as honoured. A capped run
+		// sends the bounded rows it read, which is what the cap means.
+		if maxSamples <= 0 {
+			if id := ec.datasetResourceID(ctx, group.Dataset, version); id != "" {
+				ds.SetFileID(id)
+				return ds, nil
+			}
 		}
 		ds.SetFileContent(items)
 		return ds, nil

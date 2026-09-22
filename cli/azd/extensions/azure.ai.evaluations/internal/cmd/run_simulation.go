@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"azureaieval/internal/exterrors"
+	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
 )
@@ -32,8 +33,12 @@ func (ec *evalContext) simulationDataSource(
 	configPath string,
 	maxSamples int,
 ) (*eval_api.EvalRunDataSource, error) {
-	if err := refuseUnrunnableSimulation(group); err != nil {
-		return nil, err
+	// The declaration rules are project.ValidateRunnable's, so `azd up` refuses
+	// the same shapes this does; the caller has already applied them. What is
+	// left here is the resolved cap, which --max-samples can introduce for a
+	// declaration that carries none.
+	if maxSamples > 0 {
+		return nil, messages.InEval(group.Name, messages.SimulationCannotBeSampled(maxSamples))
 	}
 
 	// The azure.yaml service key is a local label; the agent answers to what its
@@ -43,8 +48,10 @@ func (ec *evalContext) simulationDataSource(
 		return nil, simulationError(group, err.Error(), "")
 	}
 
+	// Read whole: the run is bound to the registered version, so a cap here
+	// would validate a prefix of what the service is about to simulate from.
 	items, version, err := ec.readRegisteredDataset(
-		ctx, group.Dataset, declaredDatasetVersion(configPath, group), maxSamples)
+		ctx, group.Dataset, declaredDatasetVersion(configPath, group), 0)
 	if err != nil {
 		return nil, err
 	}
@@ -71,53 +78,6 @@ func (ec *evalContext) simulationDataSource(
 	)
 	ds.SetFileID(id)
 	return ds, nil
-}
-
-// refuseUnrunnableSimulation applies the combination rules from the spec. Each
-// message names the field, what was declared, and what is required instead.
-func refuseUnrunnableSimulation(group *project.Eval) error {
-	if err := group.Simulation.Validate(); err != nil {
-		return simulationError(group, err.Error(),
-			"Correct the simulation block in the eval declaration.")
-	}
-
-	if group.EvaluationLevel != project.EvaluationLevelConversation {
-		declared := group.EvaluationLevel
-		if declared == "" {
-			declared = "unset"
-		}
-		return simulationError(group,
-			fmt.Sprintf("evaluation_level is %q, but a simulation produces conversations", declared),
-			fmt.Sprintf("Set evaluation_level: %s, or remove the simulation block to score rows as they stand.",
-				project.EvaluationLevelConversation))
-	}
-
-	if group.Source != nil {
-		return simulationError(group,
-			"the eval declares both source: and simulation:",
-			"A simulation reads scenario seeds from a dataset. Remove source:, or remove simulation: "+
-				"to score what source: already collected.")
-	}
-
-	if group.Target == nil || group.Target.Name == "" {
-		return simulationError(group,
-			"no target is declared, and a simulated conversation needs an agent to talk to",
-			"Add target: with type: agent and the agent's name.")
-	}
-
-	if group.Target.Type == project.TargetTypeModel {
-		return simulationError(group,
-			"target.type is model, but a simulated conversation is held with an agent",
-			"Set target.type: agent, or remove the simulation block.")
-	}
-
-	if group.Dataset == "" {
-		return simulationError(group,
-			"no dataset is declared, and a simulation needs scenario seeds to create conversations from",
-			"Add dataset: naming a registered conversation-simulation seed dataset.")
-	}
-
-	return nil
 }
 
 // refuseUnusableSeedRows checks every row before anything is created.

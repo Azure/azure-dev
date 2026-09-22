@@ -168,6 +168,10 @@
         "target": {
           "oneOf": [{ "$ref": "#/definitions/Target" }, { "$ref": "#/definitions/FileRef" }],
           "description": "What the run invokes to produce the responses being graded. Omit to grade the responses already present in the rows."
+        },
+        "simulation": {
+          "$ref": "#/definitions/Simulation",
+          "description": "Present when the eval creates its conversations instead of scoring ones it was handed. dataset then names registered scenario seeds rather than rows to grade, evaluation_level must be conversation, and target must be an agent. Mutually exclusive with source and with max_samples."
         }
       },
       "allOf": [
@@ -175,8 +179,40 @@
           "$comment": "Rows come from a catalog dataset or from a source, never both.",
           "if": { "required": ["dataset"] },
           "then": { "properties": { "source": false } }
+        },
+        {
+          "$comment": "A simulation creates conversations from seeds; a source collects ones that already happened. Declaring both runs one and silently ignores the other.",
+          "if": { "required": ["simulation"] },
+          "then": {
+            "properties": { "source": false, "max_samples": false },
+            "required": ["dataset", "target", "evaluation_level"]
+          }
         }
       ]
+    },
+    "Simulation": {
+      "type": "object",
+      "required": ["model"],
+      "additionalProperties": false,
+      "description": "How a simulated user holds the conversations an eval grades.",
+      "properties": {
+        "model": {
+          "type": "string",
+          "description": "Deployment the simulated user speaks with. Not the judge model an evaluator initializes, and not the model that generated the seeds."
+        },
+        "num_conversations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "description": "Conversations to create per scenario seed. Defaults to 1."
+        },
+        "max_turns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Cap on the turns in each conversation. Omit to leave the service's own default rather than truncating at a number nobody chose."
+        }
+      }
     },
     "SourceDecl": {
       "type": "object",

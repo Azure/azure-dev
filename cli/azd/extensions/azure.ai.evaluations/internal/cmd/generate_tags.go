@@ -50,6 +50,41 @@ func registeredEvaluationLevel(registered *dataset_api.Dataset) string {
 	return registered.Tags[tagEvaluationLevel]
 }
 
+// generationLevelKey records what level a generation job was asked for, against
+// the job's own id.
+//
+// Written at submission rather than on completion, because `--no-wait` returns
+// as soon as the job is accepted and there is no dataset to tag yet. `job show`
+// is what finishes such a generation, and it arrives with a job id and nothing
+// else: without this the level is gone, the version is tagged with nothing, and
+// the reattached declaration is written at whatever a reader assumes.
+//
+// Local state rather than the job resource, so it does not depend on the
+// service echoing back a field it is not contracted to return.
+func generationLevelKey(jobID string) string {
+	return project.FingerprintKey("data_job", jobID) + "_LEVEL"
+}
+
+// rememberGenerationLevel records the level a submitted job was asked for.
+//
+// Best effort, like every other write to this state: a job that was accepted is
+// not un-submitted by an environment that could not be written, and the only
+// cost of losing it is the untagged version this exists to prevent.
+func (ec *evalContext) rememberGenerationLevel(ctx context.Context, jobID, evaluationLevel string) {
+	if jobID == "" || evaluationLevel == "" {
+		return
+	}
+	ec.remember(ctx, generationLevelKey(jobID), evaluationLevel)
+}
+
+// generationLevelFor is what a reattach knows about a job it did not wait for.
+func (ec *evalContext) generationLevelFor(ctx context.Context, jobID string) string {
+	if jobID == "" {
+		return ""
+	}
+	return ec.privateValue(ctx, generationLevelKey(jobID))
+}
+
 // applyGeneratedDatasetTags records on the registered version what was
 // generated, so a later reattach or run does not have to infer it.
 //
@@ -70,7 +105,7 @@ func (ec *evalContext) applyGeneratedDatasetTags(
 		return
 	}
 
-	logger := azdext.NewLogger("eval.datasettags")
+	logger := azdext.NewLogger("eval.dataset_tags")
 
 	current, err := ec.datasetClient.GetDataset(ctx, ref.Name, ref.Version, ProjectEndpointAPIVersion)
 	if err != nil {

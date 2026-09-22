@@ -29,119 +29,27 @@ func runnableSimulation() *project.Eval {
 	}
 }
 
-// Spec §4: the combinations a simulation eval must and must not have. Each is
-// refused before a run is created, because a run is billed whether or not the
-// declaration made sense.
-func TestRefuseUnrunnableSimulation_CombinationRules(t *testing.T) {
+// The combination and bounds rules themselves live with every other rule an
+// eval has to satisfy, in project.ValidateRunnable, so that `azd up` refuses
+// what `eval run` refuses. They are exercised in project/runnable_test.go.
+//
+// What is checked here is the part only the run door can promise: that the
+// refusal names the declaration to edit. ValidateRunnable carries no prefix on
+// purpose -- the caller says whether it has an index to name -- so losing the
+// name is a silent possibility rather than a compile error.
+func TestSimulationRefusalNamesTheEval(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name    string
-		mutate  func(*project.Eval)
-		wantErr string
-	}{
-		{
-			name:   "the documented shape is accepted",
-			mutate: func(*project.Eval) {},
-		},
-		{
-			name:    "turn level cannot produce conversations",
-			mutate:  func(e *project.Eval) { e.EvaluationLevel = project.EvaluationLevelTurn },
-			wantErr: "evaluation_level is \"turn\"",
-		},
-		{
-			name:    "an unstated level is named as unset rather than blank",
-			mutate:  func(e *project.Eval) { e.EvaluationLevel = "" },
-			wantErr: "evaluation_level is \"unset\"",
-		},
-		{
-			name:    "source and simulation are two different origins for rows",
-			mutate:  func(e *project.Eval) { e.Source = &project.SourceDecl{Type: project.SourceTypeTraces} },
-			wantErr: "both source: and simulation:",
-		},
-		{
-			name:    "a conversation needs someone to talk to",
-			mutate:  func(e *project.Eval) { e.Target = nil },
-			wantErr: "no target is declared",
-		},
-		{
-			name:    "a named but empty target is still no target",
-			mutate:  func(e *project.Eval) { e.Target = &project.Target{Type: project.TargetTypeAgent} },
-			wantErr: "no target is declared",
-		},
-		{
-			name:    "a model is not an agent",
-			mutate:  func(e *project.Eval) { e.Target.Type = project.TargetTypeModel },
-			wantErr: "target.type is model",
-		},
-		{
-			name:    "seeds have to come from somewhere",
-			mutate:  func(e *project.Eval) { e.Dataset = "" },
-			wantErr: "no dataset is declared",
-		},
-		{
-			name:    "the simulated user needs a model",
-			mutate:  func(e *project.Eval) { e.Simulation.Model = "" },
-			wantErr: "simulation.model is required",
-		},
-	}
+	group := runnableSimulation()
+	group.Dataset = ""
+	group.Source = &project.SourceDecl{Type: project.SourceTypeTraces, AgentName: "a"}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+	err := runnableEval(group)
 
-			group := runnableSimulation()
-			tt.mutate(group)
-
-			err := refuseUnrunnableSimulation(group)
-			if tt.wantErr == "" {
-				require.NoError(t, err)
-				return
-			}
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.wantErr)
-			assert.Contains(t, err.Error(), `eval "retail-multiturn"`,
-				"the reader has to know which declaration to edit")
-		})
-	}
-}
-
-// Spec §13, acceptance tests 7 and 8: the bounds accept their ends and reject
-// one past them.
-func TestRefuseUnrunnableSimulation_NumericBounds(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name          string
-		conversations int
-		maxTurns      int
-		wantErr       string
-	}{
-		{name: "one conversation, one turn", conversations: 1, maxTurns: 1},
-		{name: "five conversations, twenty turns", conversations: 5, maxTurns: 20},
-		{name: "no conversations", conversations: 0 - 1, wantErr: "num_conversations is -1"},
-		{name: "six conversations", conversations: 6, wantErr: "num_conversations is 6"},
-		{name: "zero turns is one below the floor", maxTurns: 0 - 1, wantErr: "max_turns is -1"},
-		{name: "twenty-one turns", maxTurns: 21, wantErr: "max_turns is 21"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			group := runnableSimulation()
-			group.Simulation.NumConversations = tt.conversations
-			group.Simulation.MaxTurns = tt.maxTurns
-
-			err := refuseUnrunnableSimulation(group)
-			if tt.wantErr == "" {
-				require.NoError(t, err)
-				return
-			}
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.wantErr)
-		})
-	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `eval "retail-multiturn"`,
+		"the reader has to know which declaration to edit")
+	assert.Contains(t, err.Error(), "describe different runs")
 }
 
 // Spec §5: every row is validated before any service mutation, and mixed seed
@@ -157,7 +65,12 @@ func TestRefuseUnusableSeedRows(t *testing.T) {
 		{
 			name: "the documented seed row",
 			rows: []map[string]any{
-				{"id": 1.0, "category": "Order Status", "test_case_description": "A delayed order.", "desired_num_turns": 4.0},
+				{
+					"id":                    1.0,
+					"category":              "Order Status",
+					"test_case_description": "A delayed order.",
+					"desired_num_turns":     4.0,
+				},
 			},
 		},
 		{

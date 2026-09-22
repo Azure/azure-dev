@@ -21,10 +21,13 @@ import (
 func TestNewRootCommandIncludesExpectedCommands(t *testing.T) {
 	rootCmd := NewRootCommand()
 
-	for _, commandName := range []string{"list", "show", "init", "rollout", "publish", "run", "version", "metadata"} {
+	for _, commandName := range []string{"list", "show", "init", "skill", "rollout", "publish", "run", "version", "metadata"} {
 		if command, _, err := rootCmd.Find([]string{commandName}); err != nil || command.Name() != commandName {
 			t.Fatalf("expected command %q to be registered", commandName)
 		}
+	}
+	if command, _, err := rootCmd.Find([]string{"skill", "install"}); err != nil || command.Name() != "install" {
+		t.Fatal("expected skill install command to be registered")
 	}
 	if command, _, err := rootCmd.Find([]string{"environments"}); err == nil && command.Name() == "environments" {
 		t.Fatal("expected no environments alias")
@@ -37,7 +40,7 @@ func TestNewRootCommandIncludesExpectedCommands(t *testing.T) {
 func TestRleUserCommandsHiddenUnlessEnabled(t *testing.T) {
 	t.Setenv(rleEnableEnvVar, "")
 	rootCmd := NewRootCommand()
-	for _, commandName := range []string{"list", "show", "init", "rollout", "publish", "run"} {
+	for _, commandName := range []string{"list", "show", "init", "skill", "rollout", "publish", "run"} {
 		command, _, err := rootCmd.Find([]string{commandName})
 		if err != nil {
 			t.Fatalf("expected command %q to be registered: %v", commandName, err)
@@ -63,7 +66,7 @@ func TestRleUserCommandsHiddenUnlessEnabled(t *testing.T) {
 
 	t.Setenv(rleEnableEnvVar, "true")
 	rootCmd = NewRootCommand()
-	for _, commandName := range []string{"list", "show", "init", "rollout", "publish", "run", "version"} {
+	for _, commandName := range []string{"list", "show", "init", "skill", "rollout", "publish", "run", "version"} {
 		command, _, err := rootCmd.Find([]string{commandName})
 		if err != nil {
 			t.Fatalf("expected command %q to be registered: %v", commandName, err)

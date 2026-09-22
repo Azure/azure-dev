@@ -3,6 +3,7 @@
 package project
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -22,9 +23,9 @@ const (
 	// Gym/OpenEnv sample directories, one per sample name.
 	rleGymSamplesPath = "examples/gym/openenv"
 
-	// rleSkillsPath contains the project skills copied into every initialized
+	// RleSkillsPath contains the project skills copied into every initialized
 	// Gym/OpenEnv project so compatible agents can assist with authoring.
-	rleSkillsPath        = ".github/skills"
+	RleSkillsPath        = ".agents/skills"
 	rleGymSkillDirectory = "rle-gym-openenv"
 
 	// rleSampleCatalogFile is the name of the catalog file, relative to a
@@ -53,6 +54,7 @@ var rleHarnessSubtypeDirs = map[RleSubtype]string{
 // only sample. The samples repo ref this CLI clones floats, so it can be
 // either layout at any time and both have to keep working.
 var rleHarnessSampleContentDirs = []string{"agent", "rle"}
+var renameRleSkillPath = os.Rename
 
 // RleSampleCatalogOptions controls how the Gym/OpenEnv sample catalog is loaded.
 type RleSampleCatalogOptions struct {
@@ -105,21 +107,8 @@ func LoadRleSampleCatalog(options RleSampleCatalogOptions) (*RleSampleCatalog, e
 }
 
 func loadRleSampleCatalog(repoURL string, repoRef string, options RleSampleCatalogOptions) (*RleSampleCatalog, error) {
-	tempDir, err := os.MkdirTemp("", "azd-rle-samples-*")
+	tempDir, err := cloneRleSamplesRepository(repoURL, repoRef)
 	if err != nil {
-		return nil, err
-	}
-	if _, err := runGitCommand(
-		"clone",
-		"--depth", "1",
-		"--filter=blob:none",
-		"--sparse",
-		"--branch", repoRef,
-		"--single-branch",
-		repoURL,
-		tempDir,
-	); err != nil {
-		_ = os.RemoveAll(tempDir)
 		return nil, err
 	}
 
@@ -157,6 +146,47 @@ func loadRleSampleCatalog(repoURL string, repoRef string, options RleSampleCatal
 	}, nil
 }
 
+func cloneRleSamplesRepository(repoURL string, repoRef string) (string, error) {
+	tempDir, err := os.MkdirTemp("", "azd-rle-samples-*")
+	if err != nil {
+		return "", err
+	}
+	if _, err := runGitCommand(
+		"clone",
+		"--depth", "1",
+		"--filter=blob:none",
+		"--sparse",
+		"--branch", repoRef,
+		"--single-branch",
+		repoURL,
+		tempDir,
+	); err != nil {
+		_ = os.RemoveAll(tempDir)
+		return "", err
+	}
+	return tempDir, nil
+}
+
+// InstallRleSkills adds or updates the canonical RLE project skills under dest.
+func InstallRleSkills(dest string) ([]string, error) {
+	return installRleSkills(rleSamplesRepoURL, rleSamplesRepoRef, dest)
+}
+
+func installRleSkills(repoURL string, repoRef string, dest string) ([]string, error) {
+	tempDir, err := cloneRleSamplesRepository(repoURL, repoRef)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
+	if _, err := runGitCommand("-C", tempDir, "sparse-checkout", "set", RleSkillsPath); err != nil {
+		return nil, err
+	}
+	skillsSourceDir := filepath.Join(tempDir, filepath.FromSlash(RleSkillsPath))
+	return installRleSkillsFromDirectory(skillsSourceDir, dest)
+}
+
 func (c *RleSampleCatalog) SampleNames() []string {
 	return slices.Clone(c.sampleNames)
 }
@@ -173,12 +203,12 @@ func (c *RleSampleCatalog) Copy(sampleName string, folderName string, dest strin
 		"sparse-checkout",
 		"set",
 		sourcePath,
-		rleSkillsPath,
+		RleSkillsPath,
 	); err != nil {
 		return "", err
 	}
 	sourceDir := filepath.Join(c.repoDir, filepath.FromSlash(sourcePath))
-	skillsSourceDir := filepath.Join(c.repoDir, filepath.FromSlash(rleSkillsPath))
+	skillsSourceDir := filepath.Join(c.repoDir, filepath.FromSlash(RleSkillsPath))
 	return copyRleGymSample(sourceDir, skillsSourceDir, folderName, dest, force)
 }
 
@@ -437,11 +467,7 @@ func copyRleGymSample(
 	if err != nil {
 		return "", err
 	}
-	skillsDestDir := filepath.Join(sessionDir, filepath.FromSlash(rleSkillsPath))
-	if err := os.MkdirAll(skillsDestDir, 0750); err != nil {
-		return "", err
-	}
-	if err := copyDirectory(skillsSourceDir, skillsDestDir); err != nil {
+	if _, err := installRleSkillsFromDirectory(skillsSourceDir, sessionDir); err != nil {
 		return "", err
 	}
 	return sessionDir, nil
@@ -471,7 +497,7 @@ func validateRleSkillsSource(sourceDir string) error {
 			Message:    fmt.Sprintf("RLE project skills source %q was not found.", sourceDir),
 			Code:       "rle_skills_source_not_found",
 			Category:   azdext.LocalErrorCategoryInternal,
-			Suggestion: "Run azd ai rle init again after the RLE samples repository is repaired.",
+			Suggestion: "Ensure the RLE samples repository contains .agents/skills, then retry.",
 		}
 	} else if err != nil {
 		return err
@@ -485,7 +511,7 @@ func validateRleSkillsSource(sourceDir string) error {
 			Message:    fmt.Sprintf("RLE Gym/OpenEnv authoring skill file %q was not found.", skillFile),
 			Code:       "rle_gym_skill_file_not_found",
 			Category:   azdext.LocalErrorCategoryInternal,
-			Suggestion: "Run azd ai rle init again after the RLE samples repository is repaired.",
+			Suggestion: "Ensure the RLE samples repository contains the rle-gym-openenv skill, then retry.",
 		}
 	} else if err != nil {
 		return err
@@ -493,6 +519,119 @@ func validateRleSkillsSource(sourceDir string) error {
 		return fmt.Errorf("RLE Gym/OpenEnv authoring skill file %q is not a regular file", skillFile)
 	}
 	return nil
+}
+
+func installRleSkillsFromDirectory(sourceDir string, dest string) ([]string, error) {
+	if err := validateRleSkillsSource(sourceDir); err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(sourceDir)
+	if err != nil {
+		return nil, err
+	}
+	skillNames := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		skillFile := filepath.Join(sourceDir, entry.Name(), "SKILL.md")
+		if info, err := os.Stat(skillFile); err != nil {
+			return nil, fmt.Errorf("validate RLE project skill %q: %w", entry.Name(), err)
+		} else if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("RLE project skill file %q is not a regular file", skillFile)
+		}
+		skillNames = append(skillNames, entry.Name())
+	}
+	slices.Sort(skillNames)
+
+	skillsDestDir := filepath.Join(dest, filepath.FromSlash(RleSkillsPath))
+	if err := os.MkdirAll(skillsDestDir, 0750); err != nil {
+		return nil, err
+	}
+	stagingDir, err := os.MkdirTemp(skillsDestDir, ".rle-install-*")
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = os.RemoveAll(stagingDir)
+	}()
+
+	stagedSkillsDir := filepath.Join(stagingDir, "skills")
+	if err := os.MkdirAll(stagedSkillsDir, 0750); err != nil {
+		return nil, err
+	}
+	for _, skillName := range skillNames {
+		stagedSkillDir := filepath.Join(stagedSkillsDir, skillName)
+		if err := os.MkdirAll(stagedSkillDir, 0750); err != nil {
+			return nil, err
+		}
+		if err := copyDirectory(filepath.Join(sourceDir, skillName), stagedSkillDir); err != nil {
+			return nil, err
+		}
+	}
+
+	backupDir := filepath.Join(stagingDir, "backup")
+	existingSkills := make(map[string]bool, len(skillNames))
+	for _, skillName := range skillNames {
+		skillDestDir := filepath.Join(skillsDestDir, skillName)
+		skillBackupDir := filepath.Join(backupDir, skillName)
+		if _, err := os.Stat(skillDestDir); err == nil {
+			if err := os.MkdirAll(backupDir, 0750); err != nil {
+				return nil, err
+			}
+			if err := renameRleSkillPath(skillDestDir, skillBackupDir); err != nil {
+				return nil, errors.Join(err, restoreRleSkillBackups(skillsDestDir, backupDir, existingSkills))
+			}
+			existingSkills[skillName] = true
+		} else if !os.IsNotExist(err) {
+			return nil, errors.Join(err, restoreRleSkillBackups(skillsDestDir, backupDir, existingSkills))
+		}
+	}
+
+	installedSkills := make([]string, 0, len(skillNames))
+	for _, skillName := range skillNames {
+		skillDestDir := filepath.Join(skillsDestDir, skillName)
+		stagedSkillDir := filepath.Join(stagedSkillsDir, skillName)
+		if err := renameRleSkillPath(stagedSkillDir, skillDestDir); err != nil {
+			rollbackErr := rollbackRleSkillInstall(skillsDestDir, backupDir, existingSkills, installedSkills)
+			return nil, errors.Join(err, rollbackErr)
+		}
+		installedSkills = append(installedSkills, skillName)
+	}
+	return skillNames, nil
+}
+
+func rollbackRleSkillInstall(
+	skillsDestDir string,
+	backupDir string,
+	existingSkills map[string]bool,
+	installedSkills []string,
+) error {
+	var rollbackErrors []error
+	for _, skillName := range installedSkills {
+		if err := os.RemoveAll(filepath.Join(skillsDestDir, skillName)); err != nil {
+			rollbackErrors = append(rollbackErrors, err)
+		}
+	}
+	if err := restoreRleSkillBackups(skillsDestDir, backupDir, existingSkills); err != nil {
+		rollbackErrors = append(rollbackErrors, err)
+	}
+	return errors.Join(rollbackErrors...)
+}
+
+func restoreRleSkillBackups(skillsDestDir string, backupDir string, existingSkills map[string]bool) error {
+	var restoreErrors []error
+	for skillName := range existingSkills {
+		skillDestDir := filepath.Join(skillsDestDir, skillName)
+		if err := os.RemoveAll(skillDestDir); err != nil {
+			restoreErrors = append(restoreErrors, err)
+			continue
+		}
+		if err := renameRleSkillPath(filepath.Join(backupDir, skillName), skillDestDir); err != nil {
+			restoreErrors = append(restoreErrors, err)
+		}
+	}
+	return errors.Join(restoreErrors...)
 }
 
 func runGitCommand(args ...string) ([]byte, error) {

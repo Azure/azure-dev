@@ -16,6 +16,9 @@ examples:
   - name: init
     description: "Select a Gym: OpenEnv sample or, with the harness preview flag, scaffold a Harness: HostedAgent or Harness: BYOH RLE."
     usage: azd ai rle init [folder-name]
+  - name: skill install
+    description: Install or update RLE project skills from the RLE samples repository.
+    usage: azd ai rle skill install
   - name: publish
     description: Build, push, and publish the RLE release declared in rle.toml.
     usage: azd ai rle publish
@@ -31,4 +34,3 @@ examples:
   - name: show
     description: Show the details and version history for an RLE environment.
     usage: azd ai rle show [environment-name]
-

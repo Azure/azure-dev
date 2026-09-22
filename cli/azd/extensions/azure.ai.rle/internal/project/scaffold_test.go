@@ -4,12 +4,14 @@
 package project
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -90,7 +92,7 @@ func TestRleSampleCatalogUsesSparseCheckout(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	skillDir := filepath.Join(sourceRepo, filepath.FromSlash(rleSkillsPath), rleGymSkillDirectory)
+	skillDir := filepath.Join(sourceRepo, filepath.FromSlash(RleSkillsPath), rleGymSkillDirectory)
 	if err := os.MkdirAll(filepath.Join(skillDir, "references"), 0750); err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +106,7 @@ func TestRleSampleCatalogUsesSparseCheckout(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	otherSkillDir := filepath.Join(sourceRepo, filepath.FromSlash(rleSkillsPath), "rle-testing")
+	otherSkillDir := filepath.Join(sourceRepo, filepath.FromSlash(RleSkillsPath), "rle-testing")
 	if err := os.MkdirAll(otherSkillDir, 0750); err != nil {
 		t.Fatal(err)
 	}
@@ -147,14 +149,14 @@ func TestRleSampleCatalogUsesSparseCheckout(t *testing.T) {
 		t.Fatalf("expected selected sample to be copied: %v", err)
 	}
 	if _, err := os.Stat(
-		filepath.Join(sessionDir, filepath.FromSlash(rleSkillsPath), rleGymSkillDirectory, "SKILL.md"),
+		filepath.Join(sessionDir, filepath.FromSlash(RleSkillsPath), rleGymSkillDirectory, "SKILL.md"),
 	); err != nil {
 		t.Fatalf("expected RLE authoring skill to be copied: %v", err)
 	}
 	if _, err := os.Stat(
 		filepath.Join(
 			sessionDir,
-			filepath.FromSlash(rleSkillsPath),
+			filepath.FromSlash(RleSkillsPath),
 			rleGymSkillDirectory,
 			"references",
 			"workflow.md",
@@ -163,7 +165,7 @@ func TestRleSampleCatalogUsesSparseCheckout(t *testing.T) {
 		t.Fatalf("expected RLE authoring skill references to be copied: %v", err)
 	}
 	if _, err := os.Stat(
-		filepath.Join(sessionDir, filepath.FromSlash(rleSkillsPath), "rle-testing", "SKILL.md"),
+		filepath.Join(sessionDir, filepath.FromSlash(RleSkillsPath), "rle-testing", "SKILL.md"),
 	); err != nil {
 		t.Fatalf("expected additional RLE project skills to be copied: %v", err)
 	}
@@ -410,7 +412,7 @@ func TestRleSampleCatalogFiltersHiddenSamples(t *testing.T) {
 	if err := os.WriteFile(catalogPath, []byte(catalogContents), 0600); err != nil {
 		t.Fatal(err)
 	}
-	skillDir := filepath.Join(sourceRepo, filepath.FromSlash(rleSkillsPath), rleGymSkillDirectory)
+	skillDir := filepath.Join(sourceRepo, filepath.FromSlash(RleSkillsPath), rleGymSkillDirectory)
 	if err := os.MkdirAll(skillDir, 0750); err != nil {
 		t.Fatal(err)
 	}
@@ -528,5 +530,124 @@ func TestCopyRleGymSampleValidatesSkillsBeforeReplacingDestination(t *testing.T)
 	}
 	if _, statErr := os.Stat(sentinel); statErr != nil {
 		t.Fatalf("expected destination to remain unchanged after skill lookup failure: %v", statErr)
+	}
+}
+
+func TestInstallRleSkillsAddsUpdatesAndPreservesUnrelatedSkills(t *testing.T) {
+	sourceRepo := t.TempDir()
+	runTestGit(t, sourceRepo, "init", "--initial-branch=main")
+	for skillName, content := range map[string]string{
+		rleGymSkillDirectory: "new authoring skill",
+		"rle-testing":        "new testing skill",
+	} {
+		skillDir := filepath.Join(sourceRepo, filepath.FromSlash(RleSkillsPath), skillName)
+		if err := os.MkdirAll(skillDir, 0750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runTestGit(t, sourceRepo, "add", ".")
+	runTestGit(
+		t,
+		sourceRepo,
+		"-c", "user.name=RLE Tests",
+		"-c", "user.email=rle-tests@example.com",
+		"commit", "-m", "Add RLE skills",
+	)
+
+	dest := t.TempDir()
+	currentSkillDir := filepath.Join(dest, filepath.FromSlash(RleSkillsPath), rleGymSkillDirectory)
+	if err := os.MkdirAll(currentSkillDir, 0750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(currentSkillDir, "SKILL.md"), []byte("old skill"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(currentSkillDir, "stale.md"), []byte("stale"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	unrelatedSkill := filepath.Join(dest, filepath.FromSlash(RleSkillsPath), "team-skill", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(unrelatedSkill), 0750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(unrelatedSkill, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	skillNames, err := installRleSkills(sourceRepo, "main", dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(skillNames, []string{"rle-gym-openenv", "rle-testing"}) {
+		t.Fatalf("expected sorted installed skill names, got %v", skillNames)
+	}
+	assertFileContent(t, filepath.Join(currentSkillDir, "SKILL.md"), "new authoring skill")
+	if _, err := os.Stat(filepath.Join(currentSkillDir, "stale.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected stale managed skill file to be removed, got err=%v", err)
+	}
+	assertFileContent(
+		t,
+		filepath.Join(dest, filepath.FromSlash(RleSkillsPath), "rle-testing", "SKILL.md"),
+		"new testing skill",
+	)
+	assertFileContent(t, unrelatedSkill, "keep")
+}
+
+func TestInstallRleSkillsRollsBackAllSkillsWhenReplacementFails(t *testing.T) {
+	sourceDir := t.TempDir()
+	dest := t.TempDir()
+	for _, skillName := range []string{rleGymSkillDirectory, "rle-testing"} {
+		sourceSkillDir := filepath.Join(sourceDir, skillName)
+		if err := os.MkdirAll(sourceSkillDir, 0750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(sourceSkillDir, "SKILL.md"), []byte("new "+skillName), 0600); err != nil {
+			t.Fatal(err)
+		}
+		destSkillDir := filepath.Join(dest, filepath.FromSlash(RleSkillsPath), skillName)
+		if err := os.MkdirAll(destSkillDir, 0750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(destSkillDir, "SKILL.md"), []byte("old "+skillName), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	originalRename := renameRleSkillPath
+	t.Cleanup(func() {
+		renameRleSkillPath = originalRename
+	})
+	injectedFailure := false
+	renameRleSkillPath = func(oldPath string, newPath string) error {
+		if !injectedFailure &&
+			filepath.Base(oldPath) == "rle-testing" &&
+			strings.Contains(oldPath, ".rle-install-") {
+			injectedFailure = true
+			return errors.New("injected replacement failure")
+		}
+		return os.Rename(oldPath, newPath)
+	}
+
+	if _, err := installRleSkillsFromDirectory(sourceDir, dest); err == nil {
+		t.Fatal("expected injected replacement failure")
+	}
+	for _, skillName := range []string{rleGymSkillDirectory, "rle-testing"} {
+		assertFileContent(
+			t,
+			filepath.Join(dest, filepath.FromSlash(RleSkillsPath), skillName, "SKILL.md"),
+			"old "+skillName,
+		)
+	}
+}
+
+func assertFileContent(t *testing.T, path string, expected string) {
+	t.Helper()
+	content, err := os.ReadFile(path) // #nosec G304 -- test-owned temporary path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != expected {
+		t.Fatalf("expected %q to contain %q, got %q", path, expected, content)
 	}
 }

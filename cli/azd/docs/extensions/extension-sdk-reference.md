@@ -34,6 +34,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
   - [NewMCPSecurityPolicy](#newmcpsecuritypolicy)
   - [DefaultMCPSecurityPolicy](#defaultmcpsecuritypolicy)
   - [MCPSecurityPolicy Methods](#mcpsecuritypolicy-methods)
+  - [SSRFSafeRedirect](#ssrfsaferedirect)
 - [Service Target Providers](#service-target-providers)
   - [ServiceTargetProvider Interface](#servicetargetprovider-interface)
   - [BaseServiceTargetProvider](#baseservicetargetprovider)
@@ -247,7 +248,7 @@ policies, and instructions.
 | Method | Signature | Description |
 |--------|-----------|-------------|
 | `WithRateLimit` | `(burst int, refillRate float64) *MCPServerBuilder` | Configure a token-bucket rate limiter. `burst` = max concurrent requests; `refillRate` = tokens/second. |
-| `WithSecurityPolicy` | `(policy *MCPSecurityPolicy) *MCPServerBuilder` | Attach a security policy for URL/path validation on tool calls. |
+| `WithSecurityPolicy` | `(policy *MCPSecurityPolicy) *MCPServerBuilder` | Attach a security policy and expose it through `SecurityPolicy`. Handlers must explicitly validate relevant arguments. |
 | `WithInstructions` | `(instructions string) *MCPServerBuilder` | Set system instructions that guide AI clients on how to use the server's tools. |
 | `WithResourceCapabilities` | `(subscribe, listChanged bool) *MCPServerBuilder` | Enable resource support. |
 | `WithPromptCapabilities` | `(listChanged bool) *MCPServerBuilder` | Enable prompt support. |
@@ -256,6 +257,11 @@ policies, and instructions.
 | `AddResources` | `(resources ...server.ServerResource) *MCPServerBuilder` | Register static resources. |
 | `Build` | `() *server.MCPServer` | Create the configured MCP server. |
 | `SecurityPolicy` | `() *MCPSecurityPolicy` | Return the configured security policy, or `nil`. |
+
+`WithSecurityPolicy` does not automatically validate tool arguments. The
+builder cannot identify which arguments contain URLs or file paths, so each
+handler must retrieve the policy through `SecurityPolicy()` and explicitly call
+`CheckURL` or `CheckPath` for every relevant argument.
 
 **Usage:**
 
@@ -286,9 +292,21 @@ tool arguments (see [ToolArgs](#toolargs)).
 
 ```go
 type MCPToolOptions struct {
-    Description string // Human-readable tool description
+    Description string
+    Title       string
+    ReadOnly    bool
+    Idempotent  bool
+    Destructive bool
 }
 ```
+
+| Field | Description |
+|-------|-------------|
+| `Description` | Human-readable description of what the tool does. |
+| `Title` | Display title exposed through the MCP title annotation. |
+| `ReadOnly` | Sets the MCP read-only hint, indicating that the tool does not modify its environment. |
+| `Idempotent` | Sets the MCP idempotent hint, indicating that repeated calls with the same arguments have no additional effect. |
+| `Destructive` | Sets the MCP destructive hint, indicating that the tool may perform destructive updates. |
 
 ---
 
@@ -402,6 +420,7 @@ Returns a policy with recommended defaults:
 | `RequireHTTPS` | `() *MCPSecurityPolicy` | Require HTTPS for all URLs except `localhost`/`127.0.0.1`. |
 | `RedactHeaders` | `(headers ...string) *MCPSecurityPolicy` | Mark headers that should be blocked/redacted in outgoing requests. |
 | `ValidatePathsWithinBase` | `(basePaths ...string) *MCPSecurityPolicy` | Restrict file paths to the given base directories. Resolves symlinks and blocks `../` traversal. |
+| `OnBlocked` | `(fn func(violation string)) *MCPSecurityPolicy` | Register a callback for blocked URL or path checks. The callback receives a human-readable violation for audit logging and must not block. |
 | `CheckURL` | `(rawURL string) error` | Validate a URL against the policy. Returns `nil` if allowed. |
 | `CheckPath` | `(path string) error` | Validate a file path against the policy. |
 | `IsHeaderBlocked` | `(header string) bool` | Check if a header name is in the redacted set. |
@@ -418,6 +437,24 @@ policy := azdext.NewMCPSecurityPolicy().
 
 if err := policy.CheckURL(userProvidedURL); err != nil {
     return azdext.MCPErrorResult("blocked URL: %v", err), nil
+}
+```
+
+### SSRFSafeRedirect
+
+```go
+func SSRFSafeRedirect(req *http.Request, via []*http.Request) error
+```
+
+An `http.Client.CheckRedirect` helper that blocks redirect-based SSRF. It
+rejects redirects to cloud metadata endpoints, localhost, private or loopback
+IP addresses, and hostnames that resolve to blocked addresses. It also rejects
+HTTPS-to-HTTP downgrades, DNS resolution failures, and redirect chains of 10 or
+more requests.
+
+```go
+client := &http.Client{
+    CheckRedirect: azdext.SSRFSafeRedirect,
 }
 ```
 
@@ -502,7 +539,7 @@ func NewAzdClient(opts ...AzdClientOption) (*AzdClient, error)
 ```
 
 gRPC client connecting to the azd framework. Auto-discovers the socket via
-`AZD_RPC_SERVER_ENDPOINT`. Provides typed accessors for all framework services:
+`AZD_SERVER`. Provides typed accessors for all framework services:
 
 | Accessor | Returns |
 |----------|---------|

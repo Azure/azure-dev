@@ -148,26 +148,28 @@ func TestRleSampleCatalogUsesSparseCheckout(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(sessionDir, "sample.txt")); err != nil {
 		t.Fatalf("expected selected sample to be copied: %v", err)
 	}
-	if _, err := os.Stat(
-		filepath.Join(sessionDir, filepath.FromSlash(RleSkillsPath), rleGymSkillDirectory, "SKILL.md"),
-	); err != nil {
-		t.Fatalf("expected RLE authoring skill to be copied: %v", err)
-	}
-	if _, err := os.Stat(
-		filepath.Join(
-			sessionDir,
-			filepath.FromSlash(RleSkillsPath),
-			rleGymSkillDirectory,
-			"references",
-			"workflow.md",
-		),
-	); err != nil {
-		t.Fatalf("expected RLE authoring skill references to be copied: %v", err)
-	}
-	if _, err := os.Stat(
-		filepath.Join(sessionDir, filepath.FromSlash(RleSkillsPath), "rle-testing", "SKILL.md"),
-	); err != nil {
-		t.Fatalf("expected additional RLE project skills to be copied: %v", err)
+	for _, skillsPath := range RleSkillsPaths {
+		if _, err := os.Stat(
+			filepath.Join(sessionDir, filepath.FromSlash(skillsPath), rleGymSkillDirectory, "SKILL.md"),
+		); err != nil {
+			t.Fatalf("expected RLE authoring skill to be copied into %s: %v", skillsPath, err)
+		}
+		if _, err := os.Stat(
+			filepath.Join(
+				sessionDir,
+				filepath.FromSlash(skillsPath),
+				rleGymSkillDirectory,
+				"references",
+				"workflow.md",
+			),
+		); err != nil {
+			t.Fatalf("expected RLE authoring skill references to be copied into %s: %v", skillsPath, err)
+		}
+		if _, err := os.Stat(
+			filepath.Join(sessionDir, filepath.FromSlash(skillsPath), "rle-testing", "SKILL.md"),
+		); err != nil {
+			t.Fatalf("expected additional RLE project skills to be copied into %s: %v", skillsPath, err)
+		}
 	}
 	if _, err := os.Stat(filepath.Join(catalog.repoDir, filepath.FromSlash(rleGymSamplesPath), "code_rl")); !os.IsNotExist(err) {
 		t.Fatalf("expected unselected sample not to be checked out, got err=%v", err)
@@ -586,11 +588,18 @@ func TestInstallRleSkillsAddsUpdatesAndPreservesUnrelatedSkills(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(currentSkillDir, "stale.md")); !os.IsNotExist(err) {
 		t.Fatalf("expected stale managed skill file to be removed, got err=%v", err)
 	}
-	assertFileContent(
-		t,
-		filepath.Join(dest, filepath.FromSlash(RleSkillsPath), "rle-testing", "SKILL.md"),
-		"new testing skill",
-	)
+	for _, skillsPath := range RleSkillsPaths {
+		assertFileContent(
+			t,
+			filepath.Join(dest, filepath.FromSlash(skillsPath), rleGymSkillDirectory, "SKILL.md"),
+			"new authoring skill",
+		)
+		assertFileContent(
+			t,
+			filepath.Join(dest, filepath.FromSlash(skillsPath), "rle-testing", "SKILL.md"),
+			"new testing skill",
+		)
+	}
 	assertFileContent(t, unrelatedSkill, "keep")
 }
 
@@ -638,6 +647,64 @@ func TestInstallRleSkillsRollsBackAllSkillsWhenReplacementFails(t *testing.T) {
 			filepath.Join(dest, filepath.FromSlash(RleSkillsPath), skillName, "SKILL.md"),
 			"old "+skillName,
 		)
+	}
+}
+
+func TestInstallRleSkillsRollsBackEarlierTreesWhenALaterTreeFails(t *testing.T) {
+	if len(RleSkillsPaths) < 2 {
+		t.Skip("skills are installed into a single tree")
+	}
+	sourceDir := t.TempDir()
+	dest := t.TempDir()
+	for _, skillName := range []string{rleGymSkillDirectory, "rle-testing"} {
+		sourceSkillDir := filepath.Join(sourceDir, skillName)
+		if err := os.MkdirAll(sourceSkillDir, 0750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(sourceSkillDir, "SKILL.md"), []byte("new "+skillName), 0600); err != nil {
+			t.Fatal(err)
+		}
+		for _, skillsPath := range RleSkillsPaths {
+			destSkillDir := filepath.Join(dest, filepath.FromSlash(skillsPath), skillName)
+			if err := os.MkdirAll(destSkillDir, 0750); err != nil {
+				t.Fatal(err)
+			}
+			destSkillFile := filepath.Join(destSkillDir, "SKILL.md")
+			if err := os.WriteFile(destSkillFile, []byte("old "+skillName), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	originalRename := renameRleSkillPath
+	t.Cleanup(func() {
+		renameRleSkillPath = originalRename
+	})
+	// The second tree is staged under stage-1, so failing a rename out of it
+	// leaves the first tree already swapped and needing to be unwound.
+	injectedFailure := false
+	renameRleSkillPath = func(oldPath string, newPath string) error {
+		if !injectedFailure && strings.Contains(oldPath, string(filepath.Separator)+"stage-1"+string(filepath.Separator)) {
+			injectedFailure = true
+			return errors.New("injected second-tree failure")
+		}
+		return os.Rename(oldPath, newPath)
+	}
+
+	if _, err := installRleSkillsFromDirectory(sourceDir, dest); err == nil {
+		t.Fatal("expected injected second-tree failure")
+	}
+	if !injectedFailure {
+		t.Fatal("expected the injected failure to be reached")
+	}
+	for _, skillsPath := range RleSkillsPaths {
+		for _, skillName := range []string{rleGymSkillDirectory, "rle-testing"} {
+			assertFileContent(
+				t,
+				filepath.Join(dest, filepath.FromSlash(skillsPath), skillName, "SKILL.md"),
+				"old "+skillName,
+			)
+		}
 	}
 }
 

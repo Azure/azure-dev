@@ -1,5 +1,14 @@
 # Release History
 
+## 0.8.13-preview
+
+- `azd ai rle init` and `azd ai rle skill install` now install the RLE project
+  skills into `.claude/skills` as well as `.agents/skills`. Claude Code
+  discovers project skills only under `.claude/skills`, so the skills reached
+  OpenAI Codex and GitHub Copilot but not Claude. Both directories are written
+  from the same source and are kept identical, and a failure part way through
+  restores every directory to what it was.
+
 ## 0.8.12-preview
 
 - `azd ai rle init --type Harness` now defaults to copying a full working

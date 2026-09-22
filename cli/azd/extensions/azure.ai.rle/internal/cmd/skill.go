@@ -45,7 +45,7 @@ func newSkillInstallCommand() *cobra.Command {
 			_, err = fmt.Fprintf(
 				command.OutOrStdout(),
 				"Installed or updated RLE project skills in %s: %s\n",
-				project.RleSkillsPath,
+				strings.Join(project.RleSkillsPaths, " and "),
 				strings.Join(skillNames, ", "),
 			)
 			return err

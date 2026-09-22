@@ -270,10 +270,13 @@ azd ai rle init
 
 The Gym: OpenEnv path reads the available environments from
 [rle-samples](https://github.com/sujit-kamireddy/rle-samples). It downloads
-only the selected sample, including its manifest, plus all project skills under
-`.agents/skills`, including the canonical `rle-gym-openenv` authoring skill.
-Compatible agents such as GitHub Copilot and OpenAI Codex discover
-these project skills automatically and load their guidance when relevant.
+only the selected sample, including its manifest, plus all project skills,
+including the canonical `rle-gym-openenv` authoring skill.
+The skills are installed twice, into `.agents/skills` and `.claude/skills`,
+because no single directory reaches every agent: Claude Code discovers project
+skills only under `.claude/skills`, OpenAI Codex only under `.agents/skills`,
+and GitHub Copilot under either. Compatible agents discover these project
+skills automatically and load their guidance when relevant.
 Each initialization copies the skills currently available on the sample
 repository's `main` branch. Existing projects keep that snapshot and are not
 updated automatically by `init`.
@@ -291,8 +294,10 @@ versions from `rle-samples/main`, run this command from the project root:
 azd ai rle skill install
 ```
 
-The command adds or replaces the skills supplied by `rle-samples` under
-`.agents/skills` and preserves unrelated project skills.
+The command adds or replaces the skills supplied by `rle-samples` in both
+`.agents/skills` and `.claude/skills`, and preserves unrelated project skills.
+Either every skill in every directory is updated or none of them are: a failure
+part way through restores what was there before.
 
 The samples repository's `examples/gym/openenv/catalog.toml` controls which
 samples are offered; entries with `visible = false` are hidden from both the

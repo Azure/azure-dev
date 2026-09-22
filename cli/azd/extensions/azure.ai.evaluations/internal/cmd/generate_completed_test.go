@@ -38,7 +38,7 @@ func bothGenerated() []generationOutcome {
 func TestGenerationClosesWithItsJobsAndTheNextCommand(t *testing.T) {
 	var out bytes.Buffer
 
-	writeGenerationCompleted(&out, bothGenerated())
+	writeGenerationCompleted(&out, bothGenerated(), "")
 
 	text := out.String()
 	assert.Contains(t, text, "Generation completed")
@@ -49,7 +49,7 @@ func TestGenerationClosesWithItsJobsAndTheNextCommand(t *testing.T) {
 
 // The handoff runs exactly as printed, so every value it needs is in it.
 func TestTheInitHandoffCarriesEveryValueItNeeds(t *testing.T) {
-	got := initHandoff(bothGenerated())
+	got := initHandoff(bothGenerated(), "")
 
 	assert.Contains(t, got, "--target hero-agent",
 		"init can detect this, but the printed line has to run as printed")
@@ -67,11 +67,11 @@ func TestTheHandoffNamesOnlyWhatWasGenerated(t *testing.T) {
 	dataset := bothGenerated()[:1]
 	evaluator := bothGenerated()[1:]
 
-	datasetOnly := initHandoff(dataset)
+	datasetOnly := initHandoff(dataset, "")
 	assert.Contains(t, datasetOnly, "--dataset hero-agent-turn-tests")
 	assert.NotContains(t, datasetOnly, "--evaluator")
 
-	evaluatorOnly := initHandoff(evaluator)
+	evaluatorOnly := initHandoff(evaluator, "")
 	assert.Contains(t, evaluatorOnly, "--evaluator hero-agent-evaluator")
 	assert.NotContains(t, evaluatorOnly, "--dataset")
 	assert.NotContains(t, evaluatorOnly, "--source")
@@ -85,10 +85,42 @@ func TestNothingProducedPrintsNoHandoff(t *testing.T) {
 		report: generationReport{jobID: "datagen-1"},
 	}}
 
-	require.Empty(t, initHandoff(outcomes))
+	require.Empty(t, initHandoff(outcomes, ""))
 
 	var out bytes.Buffer
-	writeGenerationCompleted(&out, outcomes)
+	writeGenerationCompleted(&out, outcomes, "")
 	assert.Contains(t, out.String(), "datagen-1", "the job id is still worth having")
 	assert.NotContains(t, out.String(), "Next:")
+}
+
+func TestConversationHandoffOnlyIncludesCompatibleGeneratedEvaluators(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		levels []string
+		keep   bool
+	}{
+		{"conversation", []string{"conversation"}, true},
+		{"both", []string{"turn", "conversation"}, true},
+		{"unknown", nil, true},
+		{"future metadata", []string{"future"}, true},
+		{"turn only", []string{"turn"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			outcomes := bothGenerated()
+			outcomes[0].plan.EvaluationLevel = project.EvaluationLevelConversation
+			outcomes[1].ref.SupportedEvaluationLevels = tc.levels
+			command := initHandoff(outcomes, "")
+			assert.Contains(t, command, "--conversation-mode simulation")
+			var out bytes.Buffer
+			writeGenerationCompleted(&out, outcomes, "")
+			if tc.keep {
+				assert.Contains(t, command, "--evaluator hero-agent-evaluator")
+				assert.NotContains(t, out.String(), "does not support")
+			} else {
+				assert.NotContains(t, command, "--evaluator hero-agent-evaluator")
+				assert.Contains(t, out.String(), "does not support")
+				assert.Contains(t, out.String(), "remains in the catalogue")
+			}
+		})
+	}
 }

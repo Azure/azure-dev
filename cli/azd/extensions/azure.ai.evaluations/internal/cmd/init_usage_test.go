@@ -124,7 +124,7 @@ type initHarness struct {
 // AZD_SERVER is what azdext.NewAzdClient reads, so the command under test
 // opens its own connection exactly as it does in production rather than being
 // handed one the test built.
-func newInitHarness(t *testing.T, addServiceErr error) *initHarness {
+func newInitHarness(t *testing.T, addServiceErr error, prompts ...azdext.PromptServiceServer) *initHarness {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -145,6 +145,9 @@ func newInitHarness(t *testing.T, addServiceErr error) *initHarness {
 	server := grpc.NewServer()
 	azdext.RegisterProjectServiceServer(server, harness.project)
 	azdext.RegisterTelemetryServiceServer(server, harness.usage)
+	if len(prompts) > 0 {
+		azdext.RegisterPromptServiceServer(server, prompts[0])
+	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

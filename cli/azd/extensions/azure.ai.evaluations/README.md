@@ -87,6 +87,42 @@ directive. Edit the referenced file, or generate under a different name.
 
 ### Simulating multi-turn conversations
 
+Choose how conversation datasets are used during `init`:
+
+```bash
+# Score completed message transcripts, without invoking an agent.
+azd ai eval init --conversation-mode static --dataset completed-transcripts --judge-model judge-deployment
+
+# Create conversations from scenario seeds, then grade the resulting messages.
+azd ai eval init --conversation-mode simulation --target support-agent --dataset retail-seeds --simulation-model simulator-deployment --judge-model judge-deployment --num-conversations 1 --max-turns 5 --no-prompt
+```
+
+`--conversation-mode` implies `--source dataset` and
+`--evaluation-level conversation` when they are omitted. Without this flag,
+interactive init offers **Static** or **Simulation** for a conversation dataset;
+`--no-prompt` and `--output json` default to static. Static mode writes neither
+`target:` nor `simulation:` and rejects `--target`, because completed transcripts
+are scored as they stand. Trace-backed conversations continue to use
+`--source traces --evaluation-level conversation` and filter by the selected agent.
+
+| Init flag | Applies to | Meaning |
+|---|---|---|
+| `--conversation-mode static\|simulation` | Conversation datasets | Completed messages or scenario-seed simulation. |
+| `--simulation-model` | Simulation only | Deployment that plays the simulated user; required, or prompted interactively. |
+| `--num-conversations` | Simulation only | Conversations per seed, 1 to 5; default 1. |
+| `--max-turns` | Simulation only | Maximum turns, 1 to 20; omission preserves the service default. |
+
+Explicit zero is invalid for both numeric flags. Simulation flags with static,
+turn, or trace evaluation are rejected rather than ignored. Simulation needs an
+agent target, seed dataset, simulation model, and judge model. Non-interactive
+init reports all unresolved required inputs together, naming the flags to supply.
+Init is add-only, preserves existing YAML and unknown fields, and makes no new
+live lookups beyond the bounded built-in evaluator catalogue check.
+The evaluator picker excludes custom evaluators whose local
+`supported_evaluation_levels` explicitly excludes the selected level; an explicit
+incompatible `--evaluator` is rejected. Missing or unfamiliar metadata remains
+unknown, with authoritative compatibility checked when the eval is created.
+
 The example above grades rows that already hold an exchange. A `simulation:`
 block instead has the service hold the conversation first — a simulator model
 plays the user against your deployed agent — and grades the transcript it
@@ -98,7 +134,7 @@ evals:
     dataset: retail-seeds
     evaluation_level: conversation
     simulation:
-      model: gpt-4.1-nano       # plays the user, not the agent under test
+      model: gpt-4o-mini        # plays the user, not the judge or generation model
       num_conversations: 3      # per seed row, 1–5
       max_turns: 8              # 1–20; omit to leave it to the service
     evaluators:
@@ -138,6 +174,16 @@ is refused instead of scored against the seeded text.
 
 `azd ai eval generate --evaluation-level conversation` writes seeds in this
 shape and tags the registered dataset so a later run knows what it holds.
+Its printed init command selects `--conversation-mode simulation`. Run that
+command interactively to enter the simulation model, or add
+`--simulation-model <deployment> --judge-model <deployment> --no-prompt` for
+automation (also supply `--target` if generation had no agent).
+The generation, simulation, and judge deployments are independent choices.
+Init never copies the generation or judge model into the simulation model.
+Generation declares artifacts only; it does not attach them to an existing eval
+or replace its configuration. If a generated rubric declares an incompatible
+evaluation level, the handoff warns and uses the built-in default instead; the
+rubric remains in the catalogue.
 
 ### Repeated deploys do not create redundant versions
 

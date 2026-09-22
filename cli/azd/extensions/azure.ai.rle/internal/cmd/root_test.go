@@ -21,7 +21,7 @@ import (
 func TestNewRootCommandIncludesExpectedCommands(t *testing.T) {
 	rootCmd := NewRootCommand()
 
-	for _, commandName := range []string{"list", "show", "init", "rollout", "publish", "run", "version", "metadata"} {
+	for _, commandName := range []string{"list", "show", "init", "rollout", "monitor", "publish", "run", "version", "metadata"} {
 		if command, _, err := rootCmd.Find([]string{commandName}); err != nil || command.Name() != commandName {
 			t.Fatalf("expected command %q to be registered", commandName)
 		}
@@ -55,7 +55,7 @@ func TestRleUserCommandsVisibleByDefault(t *testing.T) {
 }
 
 func TestInternalCommandsHiddenUnlessEnableAll(t *testing.T) {
-	for _, commandName := range []string{"jobs", "train"} {
+	for _, commandName := range []string{"jobs", "train", "monitor"} {
 		t.Run(commandName, func(t *testing.T) {
 			t.Setenv(rleEnableAllEnvVar, "")
 			rootCmd := NewRootCommand()

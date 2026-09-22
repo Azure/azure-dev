@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
+  <title>RLE</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23203d64'/%3E%3Cpath d='M8 21h4V11H8zm6 0h4v-6h-4zm6 0h4V7h-4z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to snapshot</a>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="RLE rollout monitor home"><span class="brand-mark">[RLE]</span> <span>Rollout monitor</span></a>
+    <div class="header-controls">
+      <span class="local-label">LOCAL SNAPSHOT</span>
+      <button id="theme-toggle" type="button" aria-label="Switch to dark mode">Dark mode</button>
+    </div>
+  </header>
+  <main id="main" tabindex="-1">
+    <h1 class="sr-only">Rollout summary</h1>
+    <p id="load-status" class="notice" role="status">Loading saved snapshot…</p>
+    <section id="access-panel" class="panel access-panel" aria-labelledby="access-title" hidden>
+      <h2 id="access-title">Unlock this snapshot</h2>
+      <p id="access-description" class="muted">Enter the local access code printed in the terminal where you started the monitor.</p>
+      <form id="access-form" method="post" action="/session">
+        <label for="access-code">Local access code</label>
+        <div class="access-controls">
+          <input id="access-code" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"
+            aria-describedby="access-description access-error" required>
+          <button id="unlock" type="submit">Unlock snapshot</button>
+        </div>
+        <p id="access-error" class="access-error" role="alert"></p>
+      </form>
+    </section>
+    <section id="load-error" class="error-panel" aria-labelledby="error-title" hidden>
+      <h2 id="error-title">Snapshot unavailable</h2>
+      <p id="error-message" role="alert"></p>
+      <button id="retry" type="button">Try again</button>
+    </section>
+    <div id="snapshot" hidden>
+      <section class="snapshot-meta" aria-label="Rollout summary">
+        <div class="summary-main">
+          <div class="compact-heading">
+            <div id="environment-context" class="environment-context" title="Environment recorded from the execution request." hidden>
+              <strong id="environment-name"></strong><span id="environment-version" class="version-chip"></span>
+            </div>
+            <div class="identity">
+              <span id="completion" class="badge neutral" title="A final execute-rollout response was saved. Completion does not imply task success.">Execution completed</span>
+              <span id="outcome" class="badge" title="Task verdict from the response's success field." hidden></span>
+            </div>
+          </div>
+          <p class="run-identity"><span class="muted">ROLLOUT</span> <code id="rollout-id"></code></p>
+          <section id="metrics" class="metrics" aria-label="Captured activity"></section>
+        </div>
+        <div class="reward-hero"><p class="eyebrow">FINAL REWARD</p><p id="final-reward"></p><p class="reward-caption">Reported reward<br>No normalization applied</p></div>
+        <div class="snapshot-provenance">
+          <span><span id="source"></span><span id="saved-at-separator" class="separator" aria-hidden="true" hidden>·</span><time id="saved-at" hidden></time></span>
+          <p id="episode-description" class="muted" hidden></p>
+        </div>
+      </section>
+      <div id="snapshot-notices" class="notice section-block" role="status" hidden></div>
+      <section class="explorer" aria-label="Rollout explorer">
+        <div class="tab-bar" role="tablist" aria-label="Rollout detail views">
+          <button id="tab-graph" role="tab" type="button" aria-selected="true" aria-controls="panel-graph" tabindex="0">Rollout graph</button>
+          <button id="tab-tokens" role="tab" type="button" aria-selected="false" aria-controls="panel-tokens" tabindex="-1">Tokens and Metrics</button>
+          <button id="tab-details" role="tab" type="button" aria-selected="false" aria-controls="panel-details" tabindex="-1">Rollout Stats</button>
+        </div>
+        <section id="panel-graph" role="tabpanel" aria-labelledby="tab-graph" tabindex="0">
+          <div class="explorer-heading"><div><h2>Captured call paths</h2><p class="section-note">Connections come only from sequence paths. Select a call to inspect its captured details.</p></div>
+            <div class="graph-legend" aria-label="Graph legend"><span class="legend-root">Root</span><span class="legend-call">Model call</span><span class="legend-discarded">Discarded</span></div>
+          </div>
+          <div class="graph-toolbar">
+            <label for="graph-sequence-select">Path scope</label><select id="graph-sequence-select"><option value="">All sequences &amp; calls</option></select>
+            <div class="graph-controls"><button id="graph-prev" type="button" aria-label="Previous graph node page">←</button><span id="graph-page-status" role="status"></span><button id="graph-next" type="button" aria-label="Next graph node page">→</button></div>
+          </div>
+          <div id="graph-notices" class="inline-notices" role="status" hidden></div>
+          <div class="graph-layout">
+            <div class="graph-canvas" tabindex="0" role="region" aria-label="Scrollable rollout graph">
+              <p id="graph-empty" class="empty-state" hidden>No captured model calls or sequence paths were included.</p>
+              <svg id="rollout-graph" role="group" aria-label="Captured rollout graph"></svg>
+            </div>
+            <aside id="graph-inspector" aria-label="Selected model call details"></aside>
+          </div>
+          <p class="graph-footer"><span id="graph-count"></span><span>Click or focus a call and press Enter · Scroll to explore</span></p>
+        </section>
+        <section id="panel-tokens" role="tabpanel" aria-labelledby="tab-tokens" tabindex="0" hidden>
+          <div class="explorer-heading"><div><h2>Sequence overview</h2><p class="section-note">Counts computed from the saved arrays. Positions are zero-based within the selected sequence, not time or billing usage.</p></div></div>
+          <div class="sequence-toolbar"><label for="sequence-select">Captured sequence</label><select id="sequence-select"></select></div>
+          <div id="sequence-meta" class="sequence-meta"></div>
+          <div id="sequence-notices" class="inline-notices" role="status" hidden></div>
+          <p id="sequence-empty" class="empty-state" hidden>No captured sequences were included in this export.</p>
+          <div id="sequence-counts" class="sequence-meta"></div>
+          <div id="token-visual" class="token-visual"></div>
+          <details id="token-raw">
+            <summary>Raw values</summary>
+            <div class="sequence-toolbar">
+              <label for="token-filter">Positions</label>
+              <select id="token-filter"><option value="target">Target (mask 1)</option><option value="all">All</option><option value="excluded">Excluded (mask 0)</option><option value="unknown">Missing / invalid mask</option></select>
+              <button id="token-first-target" type="button">First target position</button>
+              <form id="token-jump-form"><label for="token-position">Go to position</label><input id="token-position" type="number" min="0" step="1" required><button type="submit">Go</button></form>
+            </div>
+            <p class="raw-note section-note">Token IDs are numeric vocabulary identifiers; no decoded text is available here. Hover over an unscored entry for its stored value.</p>
+            <div id="token-table-wrap" class="table-scroll" tabindex="0" role="region" aria-label="Sequence token data">
+              <table id="token-table"><caption id="token-caption"></caption><thead><tr>
+                <th scope="col">Position <span class="muted">(0-based)</span></th><th scope="col">Token ID</th>
+                <th scope="col">Loss mask</th><th scope="col">Log probability</th><th scope="col">Mask / score status</th>
+              </tr></thead><tbody></tbody></table>
+            </div>
+            <div id="token-pagination" class="pagination"><span id="token-page-status" role="status"></span><div><button id="token-prev" type="button">← Previous</button><button id="token-next" type="button">Next →</button></div></div>
+          </details>
+        </section>
+        <section id="panel-details" role="tabpanel" aria-labelledby="tab-details" tabindex="0" hidden>
+          <div class="explorer-heading"><div><h2>Export details</h2><p class="section-note">Captured metadata and diagnostics. These are not a task-success verdict.</p></div></div>
+          <div id="charts" class="charts" hidden>
+            <section id="steps-panel" class="panel chart-panel" aria-labelledby="steps-title" hidden>
+              <div class="section-heading"><h2 id="steps-title">Reward per step</h2></div>
+              <p class="section-note">Select a step for details. Signed rewards share a zero-centered scale across all steps.</p>
+              <div class="reward-axis" aria-hidden="true">
+                <span></span><div class="axis-labels"><span id="reward-min"></span><span>0</span><span id="reward-max"></span></div><span>Reward</span>
+              </div>
+              <div id="steps"></div><div id="steps-pagination" class="chart-pagination"></div>
+            </section>
+            <section id="tokens-panel" class="panel chart-panel" aria-labelledby="tokens-title" hidden>
+              <div class="section-heading"><h2 id="tokens-title">Tokens per model call</h2></div>
+              <p class="section-note">Captured prompt and sampled tokens share one scale across all calls. Select a call to inspect it in the graph.</p>
+              <div id="token-chart"></div><div id="calls-pagination" class="chart-pagination"></div>
+            </section>
+          </div>
+          <div id="capture-details"></div>
+          <details id="validation-panel" class="detail-section" hidden><summary>Capture diagnostics <span id="validation-count"></span></summary><div id="validation"></div></details>
+          <details id="raw" class="detail-section"><summary>Response JSON</summary><p class="section-note">Assembled from the saved summary and capture graph.</p><div id="raw-content"></div></details>
+        </section>
+      </section>
+    </div>
+    <noscript><p class="error-panel">JavaScript is required to inspect the saved rollout. Enable it and reload this page.</p></noscript>
+  </main>
+</body>
+</html>

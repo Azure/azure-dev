@@ -25,7 +25,7 @@ func resolveFoundryProjectEndpoint() (string, error) {
 func normalizeFoundryProjectEndpoint(raw string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
-		return "", invalidProjectEndpointError(fmt.Sprintf("invalid Foundry project endpoint: %v", err))
+		return "", invalidProjectEndpointError("invalid Foundry project endpoint URL")
 	}
 	if !strings.EqualFold(u.Scheme, "https") {
 		return "", invalidProjectEndpointError("Foundry project endpoint must use https")
@@ -38,9 +38,11 @@ func normalizeFoundryProjectEndpoint(raw string) (string, error) {
 	}
 
 	u.Scheme = "https"
+	u.User = nil
 	u.Host = strings.ToLower(u.Host)
 	u.Path = strings.TrimRight(u.Path, "/")
 	u.RawQuery = ""
+	u.ForceQuery = false
 	u.Fragment = ""
 	return u.String(), nil
 }

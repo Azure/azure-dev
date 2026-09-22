@@ -106,6 +106,7 @@ func newRootCommand(updateChecker extensionUpdateChecker) *cobra.Command {
 	internalCommands := []*cobra.Command{
 		newJobsCommand(&extCtx.OutputFormat),
 		newTrainCommand(),
+		newMonitorCommand(),
 	}
 	for _, command := range internalCommands {
 		command.Hidden = !rleEnableAllEnabled()

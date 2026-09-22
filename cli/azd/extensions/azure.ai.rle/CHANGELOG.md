@@ -1,5 +1,16 @@
 # Release History
 
+## 0.8.11-preview
+
+- `azd ai rle rollout` now saves completed rollout artifacts under
+  `.output/<rollout-id>/`, including a readable summary, the capture graph,
+  model-call records, and per-sequence token arrays.
+- Added a development-only local rollout dashboard. Use `rollout --monitor` to
+  open it after execution or `monitor --rollout-id <id>` to reopen saved
+  artifacts and inspect the rollout graph, sequence-aligned token metrics,
+  rewards, capture statistics, diagnostics, and response JSON without another
+  execution or Azure sign-in.
+
 ## 0.8.10-preview
 
 - Fixed `azd ai rle init` failing with

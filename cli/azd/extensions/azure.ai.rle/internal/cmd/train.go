@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"azure.ai.rle/internal/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -57,8 +58,10 @@ FOUNDRY_PROJECT_ENDPOINT.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&flags.rleName, "rle-name", "", "Name of the published RLE environment to train against.")
-	cmd.Flags().StringVar(&flags.rleVersion, "rle-version", "", "Version of the published RLE environment.")
+	cmd.Flags().StringVar(&flags.rleName, "rle-name", "",
+		"Name of the published RLE environment to train against. Defaults to rle.name in ./rle.toml.")
+	cmd.Flags().StringVar(&flags.rleVersion, "rle-version", "",
+		"Version of the published RLE environment. Defaults to rle.version in ./rle.toml.")
 	cmd.Flags().StringVar(&flags.model, "model", "", "Base model id to fine-tune.")
 	cmd.Flags().StringVar(&flags.trainingFile, "training-file", "",
 		"Path to the local training dataset uploaded as the Loom job input.")
@@ -70,14 +73,45 @@ FOUNDRY_PROJECT_ENDPOINT.`,
 	cmd.Flags().StringVar(&flags.endpoint, "endpoint", "",
 		fmt.Sprintf("Fine-tuning API endpoint. Defaults to the account in %s.", foundryProjectEndpointEnvVar))
 
-	for _, name := range []string{"rle-name", "rle-version", "model", "training-file"} {
+	for _, name := range []string{"model", "training-file"} {
 		_ = cmd.MarkFlagRequired(name)
 	}
 
 	return cmd
 }
 
+// resolveTrainTarget fills in the RLE name and version from rle.toml in the current
+// folder whenever either is omitted, so train can be run from an environment folder
+// the same way rollout can.
+func (a *trainAction) resolveTrainTarget() error {
+	name := strings.TrimSpace(a.flags.rleName)
+	version := strings.TrimSpace(a.flags.rleVersion)
+	if name == "" || version == "" {
+		config, err := project.LoadRleConfig(".")
+		if err != nil {
+			return err
+		}
+		if name == "" {
+			name = config.Rle.Name
+		}
+		if version == "" {
+			version = config.Rle.Version
+		}
+	}
+	normalized, err := project.NormalizeRleVersion(version)
+	if err != nil {
+		return err
+	}
+	a.flags.rleName = name
+	a.flags.rleVersion = normalized
+	return nil
+}
+
 func (a *trainAction) Run() error {
+	if err := a.resolveTrainTarget(); err != nil {
+		return err
+	}
+
 	trainingFilePath, err := resolveLocalFilePath(a.flags.trainingFile, "training", true)
 	if err != nil {
 		return err

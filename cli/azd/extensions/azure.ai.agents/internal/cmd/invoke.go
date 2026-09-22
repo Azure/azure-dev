@@ -135,13 +135,13 @@ session automatically. Pass --new-session to force a reset.
 Use --version to invoke a specific deployed agent version. When provided,
 azd creates or reuses a hosted agent session backed by that version.
 
-Use --version-override to route a test request through the x-agent-version-override
-header for manual testing of a candidate version.
-Each call uses a fresh, isolated session and, for Responses, a new conversation.
-Session/conversation and operation IDs are not saved as the current selection.
+Use --version-override to test a specific hosted agent version
+without reusing or changing saved CLI state.
+Each call starts a fresh session and, for Responses, a new conversation.
+Saved session, conversation, and operation IDs are neither reused nor replaced.
 It cannot be combined with --version, --session-id, or --conversation-id.
 Only remote hosted responses and invocations are supported.
-Version headers are optional: missing or unusable version information produces
+Version information is optional: missing or unusable version information produces
 a warning, not a failure. Inspect the agent's response to confirm the candidate's
 behavior before increasing traffic. An explicit service-reported fallback or a
 different concrete version still returns an error, as do HTTP and agent errors.
@@ -226,7 +226,7 @@ This option does not provide crash recovery or automatic reconnection.`,
   # Invoke a specific deployed agent version
   azd ai agent invoke --version 3 "Hello!"
 
-	# Test a candidate version using an isolated invocation
+	# Test a candidate version without reusing or changing saved session state
   azd ai agent invoke --version-override 4 "Reply with a short health confirmation."
 
   # Dump the raw server response (status line, headers, body) for debugging
@@ -442,7 +442,7 @@ This option does not provide crash recovery or automatic reconnection.`,
 		&flags.versionOverride,
 		"version-override",
 		"",
-		"Test a hosted version (or latest) with an isolated invocation; version headers are optional",
+		"Test a specific hosted agent version without reusing or changing saved session state",
 	)
 	cmd.Flags().BoolVar(
 		&flags.longRunning,

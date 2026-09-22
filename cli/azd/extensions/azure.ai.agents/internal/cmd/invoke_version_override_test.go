@@ -77,13 +77,13 @@ func TestInvokeVersionOverrideRegistration(t *testing.T) {
 	assert.Empty(t, flag.DefValue)
 	assert.Empty(t, flag.Shorthand)
 	assert.Equal(t,
-		"Test a hosted version (or latest) with an isolated invocation; version headers are optional", flag.Usage)
+		"Test a specific hosted agent version without reusing or changing saved session state", flag.Usage)
 	help := strings.Join(strings.Fields(cmd.Long), " ")
 	for _, text := range []string{
-		"through the x-agent-version-override header for manual testing of a candidate version",
-		"fresh, isolated session and, for Responses, a new conversation",
-		"Session/conversation and operation IDs are not saved as the current selection",
-		"Version headers are optional: missing or unusable version information produces a warning, not a failure",
+		"Use --version-override to test a specific hosted agent version without reusing or changing saved CLI state",
+		"Each call starts a fresh session and, for Responses, a new conversation",
+		"Saved session, conversation, and operation IDs are neither reused nor replaced",
+		"Version information is optional: missing or unusable version information produces a warning, not a failure",
 		"Inspect the agent's response to confirm the candidate's behavior before increasing traffic",
 		"An explicit service-reported fallback or a different concrete version still returns an error",
 		"as do HTTP and agent errors",
@@ -97,7 +97,11 @@ func TestInvokeVersionOverrideRegistration(t *testing.T) {
 	assert.NotContains(t, strings.ToLower(cmd.Flags().FlagUsages()), "strict")
 	assert.NotContains(t, help, "resolved the requested version without fallback")
 	assert.NotContains(t, help, "the original verification error is still returned")
-	assert.Contains(t, cmd.Example, "Test a candidate version using an isolated invocation")
+	assert.NotContains(t, flag.Usage, "header")
+	assert.NotContains(t, help, "x-agent-version-override")
+	assert.NotContains(t, help, "isolated session")
+	assert.NotContains(t, cmd.Example, "isolated invocation")
+	assert.Contains(t, cmd.Example, "Test a candidate version without reusing or changing saved session state")
 	assert.NotContains(t, cmd.Long, "without changing its traffic split")
 	assert.NotContains(t, cmd.Example, "without changing the endpoint traffic split")
 	assert.Contains(t, cmd.Flags().Lookup("version").Usage, "session backed by that version")

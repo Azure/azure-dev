@@ -93,21 +93,26 @@ func writeEvaluatorFile(t *testing.T, body string) string {
 
 // authoredRubric is what `generate` writes and a human edits: type, dimensions
 // and pass_threshold, and none of the catalog fields.
+//
+// pass_threshold is normalized 0.0-1.0; the service answers 400 outside it.
 const authoredRubric = `{
   "type": "rubric",
   "dimensions": [ { "id": "helpfulness", "description": "Did it help?" } ],
-  "pass_threshold": 3
+  "pass_threshold": 0.6
 }`
 
 // declaredEvaluator records the catalog fields the service returned when the
 // evaluator was generated, which is exactly what publishing has to carry
 // forward.
+//
+// categories is a closed enum -- quality, safety, agents, business -- so a
+// fixture outside it would record a request the service answers 400 to.
 func declaredEvaluator() project.EvaluatorDecl {
 	return project.EvaluatorDecl{
 		Name:                      "support-quality",
 		Source:                    "./evaluators/support-quality.json",
 		DisplayName:               "Support quality",
-		Categories:                []string{"quality", "custom"},
+		Categories:                []string{"quality", "safety"},
 		SupportedEvaluationLevels: []string{"turn", "conversation"},
 	}
 }
@@ -135,7 +140,7 @@ func TestEnsureEvaluatorPublishesTheDeclarationsCatalogMetadata(t *testing.T) {
 
 	assert.Equal(t, "Support quality", seen.body["display_name"],
 		"the published version arrived with a blank catalog name")
-	assert.ElementsMatch(t, []any{"quality", "custom"}, seen.body["categories"])
+	assert.ElementsMatch(t, []any{"quality", "safety"}, seen.body["categories"])
 	assert.ElementsMatch(t, []any{"turn", "conversation"}, seen.body["supported_evaluation_levels"],
 		"narrowing this is the damaging half: it changes what the evaluator can grade")
 
@@ -146,7 +151,7 @@ func TestEnsureEvaluatorPublishesTheDeclarationsCatalogMetadata(t *testing.T) {
 	definition, ok := seen.body["definition"].(map[string]any)
 	require.True(t, ok, "the authored rubric is sent as the definition")
 	assert.Equal(t, "rubric", definition["type"])
-	assert.Equal(t, float64(3), definition["pass_threshold"])
+	assert.Equal(t, 0.6, definition["pass_threshold"])
 	assert.Contains(t, definition, "dimensions")
 }
 
@@ -180,7 +185,7 @@ func TestEnsureEvaluatorDoesNotOverrideCatalogFieldsTheDocumentStates(t *testing
 
 	// And a field the document does not state is still filled from the
 	// declaration, so this is selective rather than a blanket skip.
-	assert.ElementsMatch(t, []any{"quality", "custom"}, seen.body["categories"])
+	assert.ElementsMatch(t, []any{"quality", "safety"}, seen.body["categories"])
 }
 
 // A declaration recording no catalog metadata blanks nothing: publishing an

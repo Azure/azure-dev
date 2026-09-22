@@ -303,6 +303,31 @@ func TestUpPreservesPublishedDependenciesAfterServiceFailure(t *testing.T) {
 	assert.Equal(t, 2, service.createCount, "one failed create and one successful create")
 }
 
+func TestCreateReportsRetainedDependenciesOnServiceFailure(t *testing.T) {
+	ec, env, service, cfg, dir := validationFixture(t)
+	service.failCreate = true
+	cmd := jsonCmd(t, "json")
+	cmd.SetContext(t.Context())
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	err := (&evalCreateAction{cmd: cmd}).create(ec, cfg, &cfg.Evals[0], filepath.Join(dir, "azure.yaml"))
+	require.Error(t, err)
+	var result struct {
+		Status    string               `json:"status"`
+		Artifacts []reconciledArtifact `json:"artifacts"`
+		Error     jsonErrorBody        `json:"error"`
+		Recovery  string               `json:"recovery_command"`
+	}
+	require.NoError(t, json.Unmarshal(out.Bytes(), &result))
+	assert.Equal(t, "failed", result.Status)
+	require.Len(t, result.Artifacts, 1)
+	assert.Equal(t, reconciledArtifact{"dataset", "turn-tests", "1.0", true}, result.Artifacts[0])
+	assert.NotEmpty(t, result.Error.Message)
+	assert.Contains(t, result.Recovery, "azd ai eval create confirm-unknown-evaluator --from-file")
+	assert.Equal(t, "1.0", env.stored(t, versionKey("dataset", "turn-tests")))
+	assert.Empty(t, env.stored(t, idKey("eval", cfg.Evals[0].Name)))
+}
+
 func TestReconciliationValidationHonorsCancellation(t *testing.T) {
 	ec, env, service, cfg, dir := validationFixture(t)
 	ctx, cancel := context.WithCancel(t.Context())

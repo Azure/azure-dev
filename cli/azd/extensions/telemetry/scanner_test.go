@@ -500,6 +500,91 @@ func build(dynamicKey string) *azdext.ReportUsageRequest {
 	require.Contains(t, diagnostics[0], "after construction hides keys")
 }
 
+func TestScanRejectsAttributesMutationOnCallReturnedPayload(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+func newRequest() *azdext.ReportUsageRequest {
+	return &azdext.ReportUsageRequest{
+		EventName:  "example.reported",
+		Attributes: map[string]string{},
+	}
+}
+
+func report(dynamicKey string) *azdext.ReportUsageRequest {
+	req := newRequest()
+	req.Attributes[dynamicKey] = "value"
+	return req
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "after construction hides keys")
+}
+
+func TestScanRejectsAttributesMutationOnCrossFileCallReturnedPayload(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/factory.go", `package cmd
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+func newRequest() *azdext.ReportUsageRequest {
+	return &azdext.ReportUsageRequest{
+		EventName:  "example.reported",
+		Attributes: map[string]string{},
+	}
+}
+`)
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/report.go", `package cmd
+
+func report(dynamicKey string) {
+	req := newRequest()
+	req.Attributes[dynamicKey] = "value"
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "after construction hides keys")
+}
+
+func TestScanIgnoresAttributesMutationOnNonPayloadCall(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+type inspectorModel struct {
+	Attributes map[string]string
+}
+
+func loadModel() inspectorModel {
+	return inspectorModel{Attributes: map[string]string{}}
+}
+
+func decorate(key string) {
+	model := loadModel()
+	model.Attributes[key] = "value"
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Empty(t, diagnostics)
+}
+
 func writeExtensionSource(t *testing.T, root, relativePath, content string) {
 	t.Helper()
 

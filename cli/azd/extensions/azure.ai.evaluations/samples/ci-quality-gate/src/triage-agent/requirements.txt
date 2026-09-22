@@ -1,0 +1,6 @@
+# Pinned for the same reason the workflow pins azd and the extensions: a
+# quality gate whose dependencies move underneath it cannot attribute a result
+# to the change under review.
+agent-framework-foundry
+agent-framework-foundry-hosting>=1.0.0a260630
+azure-identity

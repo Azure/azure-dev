@@ -24,7 +24,10 @@ on:
       fail_on:
         description: "Gate: any-failure, or pass-rate=<0..1>"
         required: false
-        default: "pass-rate=0.8"
+        # any-failure, matching the README: this dataset is 10 curated rows, and
+        # a pass rate measured only over rows that scored can read high while
+        # most of the run errored. Raise the bar deliberately, not by default.
+        default: "any-failure"
 
 # id-token is what lets azd authenticate with a federated credential. No client
 # secret is involved, and none should ever be added here.
@@ -38,22 +41,30 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # Repository variables, not secrets: none of these three are credentials.
-      # The trust relationship lives in the app registration's federated
+      # Repository variables, not secrets: none of these is a credential. The
+      # trust relationship lives in the app registration's federated
       # credential, which is what makes a stored secret unnecessary.
       AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
       MAX_SAMPLES: ${{ inputs.max_samples || '20' }}
-      FAIL_ON: ${{ inputs.fail_on || 'pass-rate=0.8' }}
+      # The fallback matters as much as the input default: a pull request
+      # carries no dispatch input, so this is what the actual gate runs with.
+      FAIL_ON: ${{ inputs.fail_on || 'any-failure' }}
+      # Pinned for the same reason the extensions are. A gate whose tool moves
+      # underneath it cannot attribute a result to the change under review.
+      AZD_VERSION: "1.34.1"
 
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Pinned to an exact version. The installer floats to latest by default,
+      # which is the one thing a quality gate must not do.
       - name: Install azd
-        run: curl -fsSL https://aka.ms/install-azd.sh | bash
+        run: curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version "$AZD_VERSION"
 
       - name: Sign in with a federated credential
         run: |
@@ -62,17 +73,40 @@ jobs:
             --tenant-id "$AZURE_TENANT_ID" \
             --federated-credential-provider github
 
-      # Pinned to exact versions. A quality gate that silently changes the tool
-      # it runs is not a gate: a result you cannot attribute to your own change
-      # is not evidence about your own change.
+      # Pinned to exact versions, for the same reason azd is.
       - name: Install the eval extensions
         run: |
           azd extension install azure.ai.evaluations --version 1.0.0-beta.1
           azd extension install azure.ai.dataset --version 1.0.0-beta.1
           azd extension list --installed
 
-      - name: Select the environment
-        run: azd env select "$AZURE_ENV_NAME"
+      # A fresh runner has no .azure/ directory, so there is no environment to
+      # select -- `azd env select` fails on a name it has never seen. The
+      # environment is created here and pointed at the already-provisioned
+      # project, which is also why this workflow never provisions: a pull
+      # request must not create or change infrastructure.
+      - name: Recreate the environment on this runner
+        run: |
+          azd env new "$AZURE_ENV_NAME" \
+            --subscription "$AZURE_SUBSCRIPTION_ID" \
+            --location "$AZURE_LOCATION" \
+            --no-prompt
+          # Hydrates the environment from the already-provisioned project, which
+          # is what `azd deploy` reads to find where the agent goes.
+          azd env refresh --no-prompt
+          # Set last, so a partial refresh cannot leave the eval commands
+          # without the endpoint they resolve the project through.
+          azd env set AZURE_AI_PROJECT_ENDPOINT "${{ vars.AZURE_AI_PROJECT_ENDPOINT }}"
+
+      # Without this the gate scores whatever agent was deployed last, so a
+      # pull request that changes src/ passes or fails on somebody else's code.
+      #
+      # It deploys into the shared environment, which is a real trade-off: two
+      # pull requests running at once will overwrite each other's agent. Give
+      # the gate its own environment, or serialize it with a concurrency group,
+      # before pointing this at anything that matters.
+      - name: Deploy this pull request's agent
+        run: azd deploy triage-agent --no-prompt
 
       # Reconciles datasets, evaluators and the eval group. Idempotent: an
       # unchanged declaration publishes no new versions.
@@ -81,23 +115,35 @@ jobs:
 
       # continue-on-error so the outcome can be classified below rather than
       # ending the job here. The run itself is still what decides the result.
+      #
+      # -o json is what makes the run addressable afterwards. Without the id,
+      # the export below would fall back to the latest run, which is a
+      # different run whenever start failed before creating one.
       - name: Run the evaluation
         id: evaluate
         continue-on-error: true
         run: |
+          set -o pipefail
           azd ai eval run start \
             --fail-on "$FAIL_ON" \
-            --max-samples "$MAX_SAMPLES"
+            --max-samples "$MAX_SAMPLES" \
+            -o json | tee run-start.json
+          echo "run_id=$(jq -r '.run_id // empty' run-start.json)" >> "$GITHUB_OUTPUT"
 
       # Always exported, including on failure: a failed gate is exactly when
       # someone needs the per-row detail.
+      #
+      # --output-file is required by the command; redirecting stdout does not
+      # satisfy it. Pass - to write to stdout instead of a path.
       - name: Export results
         id: export
+        if: steps.evaluate.outputs.run_id != ''
         continue-on-error: true
         run: |
           mkdir -p eval-results
-          azd ai eval run output export --format json > eval-results/run.json
-          echo "bytes=$(wc -c < eval-results/run.json)" >> "$GITHUB_OUTPUT"
+          azd ai eval run output export "${{ steps.evaluate.outputs.run_id }}" \
+            --output-file eval-results/run.json
+          echo "status=$(jq -r '.run.status // empty' eval-results/run.json)" >> "$GITHUB_OUTPUT"
 
       - name: Upload results
         if: always()
@@ -109,15 +155,21 @@ jobs:
 
       # The classification step. azd collapses an extension's exit code, so the
       # run exits 1 both when quality regressed and when the evaluation could
-      # not run -- the code alone cannot tell them apart. Whether results came
-      # back is what separates them.
+      # not run -- the code alone cannot tell them apart.
+      #
+      # The run's own status is what separates them. A completed run that
+      # missed the gate is a regression; anything else is an operational
+      # failure and says nothing about quality. Export success is not the
+      # signal: the exporter succeeds for a failed run with zero items.
       - name: Classify the outcome
         if: steps.evaluate.outcome == 'failure'
+        env:
+          RUN_STATUS: ${{ steps.export.outputs.status }}
         run: |
-          if [ "${{ steps.export.outcome }}" = "success" ] && [ "${{ steps.export.outputs.bytes }}" -gt 2 ]; then
+          if [ "$RUN_STATUS" = "completed" ]; then
             echo "::error title=Quality gate breached::The evaluation completed and missed ${FAIL_ON}. Download the evaluation-results artifact for per-row detail."
           else
-            echo "::error title=Evaluation could not run::The run did not complete, so no quality conclusion can be drawn. This is an infrastructure or configuration failure, not a regression."
+            echo "::error title=Evaluation could not run::The run ended as '${RUN_STATUS:-unknown}', so no quality conclusion can be drawn. This is an infrastructure or configuration failure, not a regression."
           fi
           exit 1
 

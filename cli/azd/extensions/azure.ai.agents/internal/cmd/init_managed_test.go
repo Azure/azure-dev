@@ -7,10 +7,8 @@ import "testing"
 
 func TestPromptManagedAgentInstructionsFlagWins(t *testing.T) {
 	flags := &initFlags{instructions: " flag instructions "}
-	manifest := &promptAgentManifest{}
-	manifest.definition.Instructions = "manifest instructions"
 
-	got, err := promptManagedAgentInstructions(t.Context(), nil, flags, manifest)
+	got, err := promptManagedAgentInstructions(t.Context(), nil, flags)
 	if err != nil {
 		t.Fatalf("promptManagedAgentInstructions: %v", err)
 	}

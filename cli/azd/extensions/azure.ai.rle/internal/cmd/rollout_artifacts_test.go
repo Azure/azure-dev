@@ -10,7 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
+
+	"azure.ai.rle/internal/rollouts"
 )
 
 // realGymRolloutGraph is the shape the service actually returns, trimmed to three tokens
@@ -42,12 +45,12 @@ func testGymResponse() *executeRolloutResponse {
 		RolloutID: "4f53e172018b9d7f74825dc348e42386",
 		Rollout:   json.RawMessage(realGymRolloutGraph),
 		Reward:    1,
-		Success:   false,
+		Success:   new(false),
 		Result:    json.RawMessage(`{"correct":true,"format":true}`),
-		Episode: &executeRolloutGymEpisode{
+		Episode: &rollouts.Episode{
 			Kind:              "gym_openenv",
 			TerminationReason: "done",
-			Steps: []executeRolloutGymStep{
+			Steps: []rollouts.Step{
 				{CaptureNodeID: "d3078af988d4", Reward: 1, EpisodeDone: true},
 			},
 		},
@@ -56,7 +59,7 @@ func testGymResponse() *executeRolloutResponse {
 
 func TestWriteRolloutArtifactsWritesEveryFile(t *testing.T) {
 	root := t.TempDir()
-	artifacts, err := writeRolloutArtifacts(root, testGymResponse())
+	artifacts, err := writeRolloutArtifacts(root, testGymResponse(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +98,7 @@ func TestWriteRolloutArtifactsWritesEveryFile(t *testing.T) {
 // trip.
 func TestWriteRolloutArtifactsPreservesTheGraphVerbatim(t *testing.T) {
 	root := t.TempDir()
-	artifacts, err := writeRolloutArtifacts(root, testGymResponse())
+	artifacts, err := writeRolloutArtifacts(root, testGymResponse(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +123,7 @@ func TestWriteRolloutArtifactsPreservesTheGraphVerbatim(t *testing.T) {
 
 func TestWriteRolloutArtifactsSummaryIndexesSequencesWithoutTheirArrays(t *testing.T) {
 	root := t.TempDir()
-	artifacts, err := writeRolloutArtifacts(root, testGymResponse())
+	artifacts, err := writeRolloutArtifacts(root, testGymResponse(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +137,7 @@ func TestWriteRolloutArtifactsSummaryIndexesSequencesWithoutTheirArrays(t *testi
 		t.Fatal(err)
 	}
 
-	if summary.Reward != 1 || summary.Success {
+	if summary.Reward != 1 || summary.Success == nil || *summary.Success {
 		t.Fatalf("expected the outcome to be carried, got reward=%v success=%v", summary.Reward, summary.Success)
 	}
 	if summary.CaptureLevel != "tokens" || summary.RolloutType != "train" {
@@ -158,7 +161,7 @@ func TestWriteRolloutArtifactsSummaryIndexesSequencesWithoutTheirArrays(t *testi
 
 func TestWriteRolloutArtifactsKeepsTheTokenArraysIntact(t *testing.T) {
 	root := t.TempDir()
-	artifacts, err := writeRolloutArtifacts(root, testGymResponse())
+	artifacts, err := writeRolloutArtifacts(root, testGymResponse(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +198,7 @@ func TestWriteRolloutArtifactsToleratesAnUnusableGraph(t *testing.T) {
 			response := testGymResponse()
 			response.Rollout = rollout
 
-			artifacts, err := writeRolloutArtifacts(t.TempDir(), response)
+			artifacts, err := writeRolloutArtifacts(t.TempDir(), response, nil)
 			if err != nil {
 				t.Fatalf("expected a usable artifact set, got %v", err)
 			}
@@ -219,14 +222,14 @@ func TestWriteRolloutArtifactsRejectsARolloutIdThatIsNotOnePathSegment(t *testin
 	for _, id := range []string{"", "..", ".", "a/b", "../escape", "/absolute"} {
 		response := testGymResponse()
 		response.RolloutID = id
-		if _, err := writeRolloutArtifacts(t.TempDir(), response); err == nil {
+		if _, err := writeRolloutArtifacts(t.TempDir(), response, nil); err == nil {
 			t.Fatalf("expected rollout id %q to be rejected", id)
 		}
 	}
 }
 
 func TestPrintRolloutArtifactsRendersATreeWithSizesAndPurposes(t *testing.T) {
-	artifacts, err := writeRolloutArtifacts(t.TempDir(), testGymResponse())
+	artifacts, err := writeRolloutArtifacts(t.TempDir(), testGymResponse(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +280,7 @@ func TestPrintRolloutArtifactsDistinguishesAnEvalCapture(t *testing.T) {
 	  "capture_level": "text", "rollout_type": "eval", "trainable": false
 	}`)
 
-	artifacts, err := writeRolloutArtifacts(t.TempDir(), response)
+	artifacts, err := writeRolloutArtifacts(t.TempDir(), response, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +297,7 @@ func TestPrintRolloutArtifactsDistinguishesAnEvalCapture(t *testing.T) {
 // drifts the size and description columns by exactly that difference. This is the defect
 // the first live run showed.
 func TestRenderArtifactTreeAlignsEveryRow(t *testing.T) {
-	artifacts, err := writeRolloutArtifacts(t.TempDir(), testGymResponse())
+	artifacts, err := writeRolloutArtifacts(t.TempDir(), testGymResponse(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,5 +352,104 @@ func TestFormatBytes(t *testing.T) {
 		if got := formatBytes(size); got != want {
 			t.Fatalf("formatBytes(%d) = %q, want %q", size, got, want)
 		}
+	}
+}
+
+func TestArtifactsPreserveOptionalFieldsAndPrecision(t *testing.T) {
+	for _, verdict := range []string{"", `,"success":false`, `,"success":true`} {
+		t.Run(verdict, func(t *testing.T) {
+			raw := []byte(`{"rollout_id":"` + monitorTestID + `","reward":0.12345678901234567890` + verdict + `,
+						"episode":{"kind":"gym_openenv","steps":[],"ungraded":true,"future_annotation":9007199254740993},
+						"result":{"exact":9007199254740993},
+						"rollout":{"turns":[],"unknown":9007199254740993,"precise":0.12345678901234567890}}`)
+			var response executeRolloutResponse
+			if err := json.Unmarshal(raw, &response); err != nil {
+				t.Fatal(err)
+			}
+			root := t.TempDir()
+			artifacts, err := writeRolloutArtifacts(root, &response, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if artifacts.Files[len(artifacts.Files)-1].Path != "summary.json" {
+				t.Fatal("summary must be published last")
+			}
+			reader := &rollouts.ArtifactReader{OutputDir: root}
+			snapshot, err := reader.Get(t.Context(), monitorTestID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var expected, actual map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &expected); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(snapshot.Response, &actual); err != nil {
+				t.Fatal(err)
+			}
+			if len(expected) != len(actual) {
+				t.Fatal("optional response fields changed")
+			}
+			for key, value := range expected {
+				var want, got bytes.Buffer
+				if err := json.Compact(&want, value); err != nil {
+					t.Fatal(err)
+				}
+				if err := json.Compact(&got, actual[key]); err != nil {
+					t.Fatal(err)
+				}
+				if want.String() != got.String() {
+					t.Fatalf("field %s changed: %s != %s", key, want.String(), got.String())
+				}
+			}
+		})
+	}
+}
+
+func TestArtifactsMetadataAndExistingDirectoryProtection(t *testing.T) {
+	root := t.TempDir()
+	response := testGymResponse()
+	metadata := &rollouts.ArtifactMetadata{
+		Version: rollouts.ArtifactVersion, SavedAt: time.Now().UTC(),
+		ProjectEndpoint: "https://user:private-password@account.services.ai.azure.com/api/projects/test" +
+			"?sig=private-sas#private-fragment",
+		Environment: &rollouts.Environment{Name: "math_rl", Version: "1.2.3"},
+	}
+	artifacts, err := writeRolloutArtifacts(root, response, metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.ReadFile(filepath.Join(artifacts.Dir, "summary.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"user:", "private-password", "private-sas", "private-fragment"} {
+		if bytes.Contains(original, []byte(secret)) {
+			t.Fatal("endpoint credential leaked into artifacts")
+		}
+	}
+	reader := &rollouts.ArtifactReader{OutputDir: root}
+	snapshot, err := reader.Get(t.Context(), response.RolloutID)
+	if err != nil || snapshot.Environment == nil || *snapshot.Environment != *metadata.Environment {
+		t.Fatalf("execution context was lost: %+v, %v", snapshot, err)
+	}
+	response.Reward = -99
+	if _, err := writeRolloutArtifacts(root, response, nil); err == nil {
+		t.Fatal("must not overwrite an existing rollout, including one from another project")
+	}
+	after, err := os.ReadFile(filepath.Join(artifacts.Dir, "summary.json"))
+	if err != nil || !bytes.Equal(original, after) {
+		t.Fatal("existing artifacts were changed")
+	}
+}
+
+func TestArtifactsFailureRemovesIncompleteDirectory(t *testing.T) {
+	root := t.TempDir()
+	response := testGymResponse()
+	response.Raw = json.RawMessage(`{`)
+	if _, err := writeRolloutArtifacts(root, response, nil); err == nil {
+		t.Fatal("expected invalid response error")
+	}
+	if _, err := os.Stat(filepath.Join(root, response.RolloutID)); !os.IsNotExist(err) {
+		t.Fatalf("incomplete artifact directory must be removed: %v", err)
 	}
 }

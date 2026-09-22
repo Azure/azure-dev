@@ -5,8 +5,6 @@ package cmd
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -39,7 +37,7 @@ func playgroundURLWithAuthorizationProvider(
 	if err != nil {
 		return "", func() {}, err
 	}
-	sessionToken, err := newPlaygroundSessionToken()
+	sessionToken, err := ui.NewSessionToken()
 	if err != nil {
 		_ = listener.Close()
 		return "", func() {}, err
@@ -85,7 +83,7 @@ func remotePlaygroundHandler(
 ) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if !validateLoopbackPlaygroundRequest(w, r, expectedHost) {
+		if !ui.ValidateLoopbackRequest(w, r, expectedHost) {
 			return
 		}
 		if !authorizeLoopbackPlaygroundRequest(w, r, sessionToken) {
@@ -178,23 +176,6 @@ func proxySandboxWeb(
 	proxy.ServeHTTP(w, r)
 }
 
-func validateLoopbackPlaygroundRequest(w http.ResponseWriter, r *http.Request, expectedHost string) bool {
-	if !strings.EqualFold(r.Host, expectedHost) {
-		http.Error(w, "invalid host", http.StatusForbidden)
-		return false
-	}
-	origin := strings.TrimSpace(r.Header.Get("Origin"))
-	if origin == "" {
-		return true
-	}
-	originUrl, err := url.Parse(origin)
-	if err != nil || !strings.EqualFold(originUrl.Scheme, "http") || !strings.EqualFold(originUrl.Host, expectedHost) {
-		http.Error(w, "invalid origin", http.StatusForbidden)
-		return false
-	}
-	return true
-}
-
 func authorizeLoopbackPlaygroundRequest(w http.ResponseWriter, r *http.Request, sessionToken string) bool {
 	if r.Method == http.MethodGet && (r.URL.Path == "/" || r.URL.Path == "/web") {
 		if token := strings.TrimSpace(r.URL.Query().Get("token")); token != "" {
@@ -231,14 +212,6 @@ func authorizeLoopbackPlaygroundRequest(w http.ResponseWriter, r *http.Request, 
 		return false
 	}
 	return true
-}
-
-func newPlaygroundSessionToken() (string, error) {
-	token := make([]byte, 32)
-	if _, err := rand.Read(token); err != nil {
-		return "", fmt.Errorf("create playground session token: %w", err)
-	}
-	return hex.EncodeToString(token), nil
 }
 
 func proxyOpenEnvToSandbox(

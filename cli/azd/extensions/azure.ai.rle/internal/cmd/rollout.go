@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"azure.ai.rle/internal/project"
+	"azure.ai.rle/internal/rollouts"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -34,6 +36,7 @@ type rolloutFlags struct {
 	sequenceID     int
 	timeout        int
 	outputDir      string
+	monitor        bool
 }
 
 type rolloutAction struct {
@@ -128,10 +131,34 @@ rle.toml. To run an environment without local source, provide both its name and
 			"The Execute Rollout response carries the full capture graph — token ids, logprobs "+
 			"and loss masks — which is too large to print and is not retrievable afterwards.",
 	)
+	cmd.Flags().BoolVar(&flags.monitor, "monitor", false, "Open the saved rollout in a local browser dashboard.")
+	cmd.Flags().Lookup("monitor").Hidden = !rolloutMonitorEnabled()
+	if rolloutMonitorEnabled() {
+		cmd.Long += `
+
+In development mode, use --monitor to open a local dashboard from the rollout artifacts
+after execution resources are released; it stays running until Ctrl+C.
+Reopen a saved result with azd ai rle monitor --rollout-id <id> [--output-dir <directory>].`
+	}
 	return cmd
 }
 
 func (a *rolloutAction) Run() error {
+	if a.cmd.Flags().Changed("monitor") {
+		if err := requireRolloutMonitorEnabled(); err != nil {
+			return err
+		}
+	}
+	if a.flags.monitor {
+		if err := validateMonitorOutput(a.cmd); err != nil {
+			return err
+		}
+	}
+	outputDir, err := resolveRolloutOutputDir(a.flags.outputDir)
+	if err != nil {
+		return err
+	}
+	a.flags.outputDir = outputDir
 	target, rle, err := a.resolveTarget()
 	if err != nil {
 		return err
@@ -161,16 +188,39 @@ func (a *rolloutAction) Run() error {
 	}
 
 	rolloutID := strings.TrimSpace(a.flags.rolloutID)
+	if a.cmd.Flags().Changed("rollout-id") && rolloutID == "" {
+		return invalidMonitorIDError(fmt.Errorf("--rollout-id requires a non-empty rollout ID"))
+	}
 	if rolloutID == "" {
 		rolloutID, err = newRolloutID()
 		if err != nil {
 			return err
 		}
 	}
-
+	if err := rollouts.ValidateID(rolloutID); err != nil {
+		return invalidMonitorIDError(err)
+	}
 	ctx, stopSignals := signal.NotifyContext(a.cmd.Context(), os.Interrupt)
 	defer stopSignals()
 
+	if err := a.executeAndSave(ctx, target, rle, model, task, agentInput, rolloutID); err != nil {
+		return err
+	}
+	if a.flags.monitor {
+		reader := &rollouts.ArtifactReader{OutputDir: outputDir}
+		return runRolloutMonitor(ctx, reader, rolloutID, false, a.cmd.OutOrStdout(), a.cmd.ErrOrStderr())
+	}
+	return nil
+}
+
+func (a *rolloutAction) executeAndSave(
+	ctx context.Context,
+	target rolloutTarget,
+	rle *rleClient,
+	model string,
+	task, agentInput json.RawMessage,
+	rolloutID string,
+) (err error) {
 	loom, err := createLoomSessionClient(target.projectEndpoint)
 	if err != nil {
 		return err
@@ -191,10 +241,16 @@ func (a *rolloutAction) Run() error {
 		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		if cerr := loom.closeSession(cctx, sessionID); cerr != nil {
-			_, _ = fmt.Fprintln(errOut, "Warning: failed to close Loom session; it may remain allocated.")
+			if a.flags.monitor {
+				err = errors.Join(err, fmt.Errorf("failed to close Loom session; it may remain allocated: %w", cerr))
+			} else {
+				_, writeErr := fmt.Fprintf(errOut, "Warning: failed to close Loom session; it may remain allocated: %v\n", cerr)
+				err = errors.Join(err, writeErr)
+			}
 			return
 		}
-		_, _ = fmt.Fprintln(errOut, "Loom session closed.")
+		_, writeErr := fmt.Fprintln(errOut, "Loom session closed.")
+		err = errors.Join(err, writeErr)
 	}()
 
 	checkpointName := fmt.Sprintf("azd-rollout-%s", rolloutID[:8])
@@ -225,12 +281,13 @@ func (a *rolloutAction) Run() error {
 		RolloutID:  rolloutID,
 		Task:       task,
 		AgentInput: agentInput,
-		Model: &rolloutModelSelection{
+		Policy: &rolloutPolicy{
+			Type:            loomPolicyType,
 			ModelName:       model,
-			LoomSessionID:   sessionID,
+			ProjectEndpoint: target.projectEndpoint,
+			SessionID:       sessionID,
 			CheckpointID:    checkpointID,
 			SequenceID:      &sequenceID,
-			ProjectEndpoint: target.projectEndpoint,
 		},
 	})
 	if err != nil {
@@ -240,17 +297,23 @@ func (a *rolloutAction) Run() error {
 		return serviceError(err)
 	}
 
+	if response.RolloutID != rolloutID {
+		return fmt.Errorf("execute response rollout ID does not match the requested ID")
+	}
 	if err := printRolloutResult(out, response); err != nil {
 		return err
 	}
 
-	// The rollout itself has already succeeded and its reward is printed. A failure to
-	// persist the artifacts is worth saying out loud, but not worth failing a run whose
-	// compute is already spent and whose outcome the caller now has.
-	artifacts, err := writeRolloutArtifacts(a.flags.outputDir, response)
+	artifacts, err := writeRolloutArtifacts(a.flags.outputDir, response, &rollouts.ArtifactMetadata{
+		Version: rollouts.ArtifactVersion, SavedAt: time.Now().UTC(), ProjectEndpoint: target.projectEndpoint,
+		Environment: &rollouts.Environment{Name: target.environmentName, Version: target.version},
+	})
 	if err != nil {
-		_, _ = fmt.Fprintf(out, "\nWarning: could not write rollout artifacts: %v\n", err)
-		return nil
+		if a.flags.monitor {
+			return fmt.Errorf("rollout completed, but its artifacts could not be saved; monitor cannot open: %w", err)
+		}
+		_, writeErr := fmt.Fprintf(errOut, "\nWarning: could not write rollout artifacts: %v\n", err)
+		return writeErr
 	}
 	return printRolloutArtifacts(out, artifacts)
 }
@@ -367,11 +430,15 @@ func printRolloutResult(out interface{ Write([]byte) (int, error) }, response *e
 	}
 	if _, err := fmt.Fprintf(
 		out,
-		"  reward:  %s\n  success: %t\n",
+		"  reward:  %s\n",
 		strconv.FormatFloat(response.Reward, 'g', -1, 64),
-		response.Success,
 	); err != nil {
 		return err
+	}
+	if response.Success != nil {
+		if _, err := fmt.Fprintf(out, "  success: %t\n", *response.Success); err != nil {
+			return err
+		}
 	}
 	if response.Episode != nil {
 		if _, err := fmt.Fprintf(
@@ -382,6 +449,11 @@ func printRolloutResult(out interface{ Write([]byte) (int, error) }, response *e
 			len(response.Episode.Steps),
 		); err != nil {
 			return err
+		}
+		if response.Episode.Ungraded != nil && *response.Episode.Ungraded {
+			if _, err := fmt.Fprintln(out, "  ungraded: true"); err != nil {
+				return err
+			}
 		}
 	}
 	if len(response.Result) > 0 {

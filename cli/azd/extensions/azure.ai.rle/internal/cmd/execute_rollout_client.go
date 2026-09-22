@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+
+	"azure.ai.rle/internal/rollouts"
 )
 
 // executeRolloutHeader is the classic AzureML "forwarded user token" header. RLE's
@@ -21,24 +23,37 @@ import (
 // (src/azureml-api/src/RLE/README.md "Run a local Gym Execute Rollout").
 const executeRolloutHeader = "aml-user-token" //nolint:gosec // header name, not a credential
 
-// rolloutModelSelection binds one rollout to a real, currently active Loom training
-// session and sampler checkpoint. loom_session_id/checkpoint_id must never be
-// fabricated; the CLI provisions them by calling Loom itself (see loom_session_client.go)
-// so callers of `azd ai rle rollout` never handle Loom identifiers directly.
+// loomPolicyType is the only policy type RLE implements. It is sent explicitly rather than
+// left for the service to assume: the discriminator is what lets a second backend be added
+// without overloading these same fields, so a request that omits it is rejected.
+const loomPolicyType = "loom"
+
+// rolloutPolicy names where a rollout's weights come from. `type` selects the backend and the
+// remaining fields are read according to it; for "loom" that is a real, currently active
+// training session and sampler checkpoint. SessionID/CheckpointID must never be fabricated;
+// the CLI provisions them by calling Loom itself (see loom_session_client.go) so callers of
+// `azd ai rle rollout` never handle those identifiers directly.
 //
 // ProjectEndpoint names the Foundry project this rollout samples through. Vienna PR
 // !2310739 ("Let each rollout name the Foundry project it samples through") moved this
 // off a single deployment-wide `rleCaptureProxyLoomProjectEndpoint` spec parameter and
-// onto RolloutModelSelection, forwarded per rollout exactly like CheckpointID. The Loom
-// Capture Proxy backend now rejects a rollout with HTTP 400
-// ("project_endpoint is required for the Loom Capture Proxy backend.") if this is empty.
-type rolloutModelSelection struct {
+// onto the per-rollout policy, forwarded exactly like CheckpointID. The service rejects a
+// rollout with HTTP 400 ("policy.project_endpoint is required ...") if this is empty.
+type rolloutPolicy struct {
+	Type            string `json:"type"`
 	ModelName       string `json:"model_name,omitempty"`
-	RendererName    string `json:"renderer_name,omitempty"`
-	LoomSessionID   string `json:"loom_session_id,omitempty"`
+	ProjectEndpoint string `json:"project_endpoint,omitempty"`
+	SessionID       string `json:"session_id,omitempty"`
 	CheckpointID    string `json:"checkpoint_id,omitempty"`
 	SequenceID      *int64 `json:"sequence_id,omitempty"`
-	ProjectEndpoint string `json:"project_endpoint,omitempty"`
+}
+
+// rolloutSamplingOptions carries how completions are rendered, which is a Capture Proxy
+// concern common to every policy type rather than a property of one. The CLI names no
+// renderer today, so this is omitted entirely and the service selects a compatible default;
+// sending an empty renderer_name instead would be rejected.
+type rolloutSamplingOptions struct {
+	RendererName string `json:"renderer_name,omitempty"`
 }
 
 // executeRolloutRequest mirrors vienna's ExecuteRolloutRequest
@@ -46,37 +61,14 @@ type rolloutModelSelection struct {
 // unchanged to the sandbox reset operation (Gym/OpenEnv); AgentInput is the agent-visible
 // input required only by Harness targets.
 type executeRolloutRequest struct {
-	RolloutID  string                 `json:"rollout_id"`
-	Task       json.RawMessage        `json:"task,omitempty"`
-	AgentInput json.RawMessage        `json:"agent_input,omitempty"`
-	Model      *rolloutModelSelection `json:"model,omitempty"`
+	RolloutID  string                  `json:"rollout_id"`
+	Task       json.RawMessage         `json:"task,omitempty"`
+	AgentInput json.RawMessage         `json:"agent_input,omitempty"`
+	Policy     *rolloutPolicy          `json:"policy,omitempty"`
+	Sampling   *rolloutSamplingOptions `json:"sampling,omitempty"`
 }
 
-// executeRolloutGymStep is one Gym/OpenEnv action and its environment reward.
-type executeRolloutGymStep struct {
-	CaptureNodeID string  `json:"capture_node_id"`
-	Reward        float64 `json:"reward"`
-	EpisodeDone   bool    `json:"episode_done"`
-}
-
-// executeRolloutGymEpisode is Gym/OpenEnv-only episode metadata; omitted for
-// Harness/BYOH targets.
-type executeRolloutGymEpisode struct {
-	Kind              string                  `json:"kind"`
-	TerminationReason string                  `json:"termination_reason"`
-	Steps             []executeRolloutGymStep `json:"steps"`
-}
-
-// executeRolloutResponse mirrors vienna's ExecuteRolloutResponse. Reward is the sandbox
-// grader's reward for Harness/BYOH, or the accumulated environment reward for Gym/OpenEnv.
-type executeRolloutResponse struct {
-	RolloutID string                    `json:"rollout_id"`
-	Rollout   json.RawMessage           `json:"rollout"`
-	Reward    float64                   `json:"reward"`
-	Success   bool                      `json:"success"`
-	Result    json.RawMessage           `json:"result,omitempty"`
-	Episode   *executeRolloutGymEpisode `json:"episode,omitempty"`
-}
+type executeRolloutResponse = rollouts.Response
 
 // executeRollout runs one isolated rollout of an exact, published environment version.
 // loomBearerToken is forwarded unchanged via the aml-user-token header.

@@ -95,12 +95,6 @@ azd extension update azure.ai.rle
 azd ai rle version
 ```
 
-The lifecycle commands are preview-gated:
-
-```powershell
-$env:AZD_AI_RLE_ENABLE = "true"
-```
-
 Harness scaffolds, samples hidden from the default catalog, and other
 internal-only surfaces are gated by a single flag for the RLE team's own
 iteration:
@@ -501,14 +495,73 @@ Artifacts: .output/c4c8a1a410d7968f8c0d8d0aed89a5fb
   join key against a harness trace. This is what a trainer consumes.
 - **`turns.json`** — one entry per model call in arrival order, including calls
   excluded from training, so an external trace can be reconciled against it.
-- **`rollout.json`** — the response verbatim, for diffing or replay.
+- **`rollout.json`** — the full capture graph (`response.rollout`), not the entire
+  execute response. Original JSON numbers and unknown graph fields are retained.
+
+New summaries preserve optional `success` and `episode.ungraded`. An `artifact`
+metadata block records the export version, local save time, project endpoint
+without credentials, and the environment name/version used in the request.
+It is local context, not an API outcome field.
 
 On an eval capture the token arrays are empty by construction rather than by
 failure; the tree says so rather than showing an unexplained small file.
 
 Use `--output-dir` to write somewhere other than `.output`. A rollout that
 succeeds but cannot write its artifacts still reports its reward and exits
-successfully, with a warning — the compute is already spent.
+successfully, with a warning — the compute is already spent. With `--monitor`,
+an artifact-write failure instead returns an error because the dashboard cannot
+open. Existing rollout directories are never overwritten; use a new rollout ID
+or a different output root. The summary is published last, after the other files.
+
+## Monitor a completed rollout (development only)
+
+Open a local, read-only dashboard to explore a saved rollout's reward,
+environment, model-call graph, and token metrics. Enable development mode:
+
+```powershell
+$env:AZD_AI_RLE_ENABLE = "true"
+$env:AZD_AI_RLE_ENABLE_ALL = "true"
+```
+
+Run a rollout and open its dashboard when execution finishes:
+
+```powershell
+azd ai rle rollout --task-file task.json --monitor
+```
+
+Or reopen a saved rollout from the folder where it was executed:
+
+```powershell
+azd ai rle monitor --rollout-id 3c27c30f5fba261c3a7a3e856b4e1388
+```
+
+The dashboard includes **Rollout graph**, **Tokens and Metrics**, and **Rollout Stats**
+tabs, with a light/dark mode toggle. Viewing saved results needs no Azure sign-in
+and does not execute another rollout.
+
+Keep the terminal running while using the dashboard. **Ctrl+C** stops the local
+monitor without deleting saved artifacts.
+
+| Option | When to use it |
+| --- | --- |
+| `--output-dir <path>` | Read from an artifact root other than `.output` in the current folder. Pass the parent of the rollout-ID directories, not an individual rollout folder. |
+| `--no-browser` | On standalone `monitor`, print a link instead of opening the browser. Open the link and enter the local access code printed in the terminal. |
+
+The automatically opened browser handles the local access code for you.
+`--no-prompt` does not disable browser launching or stop the monitor;
+`--output` is not supported.
+
+Monitoring reads the existing [rollout artifacts](#rollout-artifacts), not remote
+results. If the rollout directory is missing, it warns and exits without opening
+a dashboard; check the ID and `--output-dir`. Incomplete or corrupt files return
+an error.
+
+**Current limits:** completed local snapshots only—no live updates, job monitoring,
+or conversation text. Metrics appear only when included in the saved data.
+Execution completion does not imply task success.
+
+**Treat saved artifacts as sensitive:** they may contain customer content.
+Keep `.output` out of source control and delete artifacts when no longer needed.
 
 ## Submit an RLE-backed fine-tuning job (experimental)
 
@@ -522,12 +575,10 @@ RL-environment training; job creation fails for other models, or if the named RL
 version is not published and ready in the Foundry project set by
 `FOUNDRY_PROJECT_ENDPOINT`.
 
-This command is gated behind `AZD_AI_RLE_ENABLE_ALL` in addition to
-`AZD_AI_RLE_ENABLE`, since it targets an unreleased method and the CLI shape
-is still subject to change:
+This command is gated behind `AZD_AI_RLE_ENABLE_ALL`, since it targets an
+unreleased method and the CLI shape is still subject to change:
 
 ```powershell
-$env:AZD_AI_RLE_ENABLE = "true"
 $env:AZD_AI_RLE_ENABLE_ALL = "true"
 $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
 
@@ -546,6 +597,25 @@ file. The extension uploads it to the selected fine-tuning resource with the
 `--validation-file` is optional and follows the same local-file upload flow.
 Use `--endpoint` to target a different fine-tuning resource for a single
 invocation.
+
+## List RLE-backed fine-tuning jobs (experimental)
+
+`azd ai rle jobs` lists fine-tuning jobs that use the `rl_environment` method.
+It is gated by the same preview variables as `train` and derives the fine-tuning
+resource from `FOUNDRY_PROJECT_ENDPOINT`:
+
+```powershell
+$env:AZD_AI_RLE_ENABLE = "true"
+$env:AZD_AI_RLE_ENABLE_ALL = "true"
+$env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
+
+azd ai rle jobs
+azd ai rle jobs --output json
+```
+
+The command requests only `rl_environment` jobs from the fine-tuning API and
+verifies that filter before it renders results. Use `--endpoint` to query a
+different fine-tuning resource for a single invocation.
 
 ## Build and install from source
 
@@ -575,9 +645,12 @@ increment:
 
 The script preserves the existing prerelease suffix. For example,
 `0.8.8-preview` becomes `0.8.9-preview` with `-VersionBump patch`. It updates
-`version.txt` and `extension.yaml`, builds and packages the extension, writes the
-artifact under `artifacts\rle-dev\<version>`, and updates
-`registry.rle-dev.json` with its checksum and GitHub URL.
+`version.txt` and `extension.yaml`, cross-compiles the extension for every
+supported platform (`windows`, `darwin`, and `linux` on both `amd64` and
+`arm64`), writes those artifacts under `artifacts\rle-dev\<version>`, and
+updates `registry.rle-dev.json` with each artifact's checksum and GitHub URL.
+`azd x pack` archives linux artifacts as `.tar.gz` and every other platform as
+`.zip`. The script runs on any host Go can cross-compile from.
 
 Mark a release as breaking only when users must update before continuing:
 
@@ -586,6 +659,6 @@ Mark a release as breaking only when users must update before continuing:
 ```
 
 Non-breaking is the default; do not pass `-BreakingChanges` for a normal release.
-Review and commit the two version files, generated artifact, and registry change
+Review and commit the two version files, generated artifacts, and registry change
 together. The registry URLs target `main`, so the release becomes installable
 after those files are merged.

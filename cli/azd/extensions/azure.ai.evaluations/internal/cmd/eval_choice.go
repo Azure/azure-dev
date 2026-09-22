@@ -42,8 +42,11 @@ func isEvalSelectionCancelled(err error) bool {
 // One place, because the words are the whole point: closing the picker on
 // `eval create` and on `run show` is the same answer, and saying it differently
 // at each door reads as different outcomes.
+//
+// Through humanOut, because these commands exit 0 afterwards: under -o json a
+// direct write leaves successful output that does not parse as JSON.
 func reportCancelledSelection(cmd *cobra.Command) {
-	fmt.Fprint(cmd.OutOrStdout(), messages.EvalSelectionCancelled())
+	fmt.Fprint(humanOut(cmd, cmd.OutOrStdout()), messages.EvalSelectionCancelled())
 }
 
 // chooseEvalIn is chooseEval for the run commands, which hold a directory

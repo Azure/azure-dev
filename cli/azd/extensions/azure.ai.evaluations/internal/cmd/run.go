@@ -188,8 +188,8 @@ func (a *runStartAction) Run() error {
 	chosen, err := chooseEvalIn(a.cmd, evalDir, a.flags.groupName)
 	if err != nil {
 		// Closing the picker is an answer, not a failure to name something.
-		if errors.Is(err, errEvalSelectionCancelled) {
-			fmt.Fprint(a.cmd.OutOrStdout(), messages.EvalSelectionCancelled())
+		if isEvalSelectionCancelled(err) {
+			reportCancelledSelection(a.cmd)
 			return nil
 		}
 		return err

@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"bytes"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -41,6 +42,57 @@ func TestEvalIDForRunCommandReportsAClosedPickerAsAnAnswer(t *testing.T) {
 	reportCancelledSelection(cmd)
 	assert.Equal(t, messages.EvalSelectionCancelled(), out.String(),
 		"the reader is told the selection was cancelled, in the same words create uses")
+}
+
+// These commands exit 0 after reporting a cancelled picker, so under -o json a
+// direct write leaves successful output that does not parse. The extension
+// already has humanOut for exactly this; both cancellation sites bypassed it.
+func TestACancelledPickerWritesNoProseUnderJSON(t *testing.T) {
+	t.Parallel()
+
+	out := &bytes.Buffer{}
+	cmd := &cobra.Command{Use: "list"}
+	cmd.SetOut(out)
+	cmd.Flags().StringP("output", "o", "", "")
+	require.NoError(t, cmd.Flags().Set("output", "json"))
+
+	reportCancelledSelection(cmd)
+
+	assert.Empty(t, out.String(),
+		"a caller parsing stdout got prose in front of the document")
+}
+
+// The property is per call site, like the resolution one above: a new door that
+// writes the message itself would reintroduce the unparseable output silently.
+// The reporter is the only place allowed to write it.
+func TestNoCommandWritesTheCancellationMessageItself(t *testing.T) {
+	t.Parallel()
+
+	entries, err := os.ReadDir(".")
+	require.NoError(t, err)
+
+	var offenders []string
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(name)
+		require.NoError(t, err)
+		for i, line := range strings.Split(string(src), "\n") {
+			if !strings.Contains(line, "EvalSelectionCancelled()") {
+				continue
+			}
+			// The reporter itself, and the message's own declaration.
+			if strings.Contains(line, "humanOut(") {
+				continue
+			}
+			offenders = append(offenders, fmt.Sprintf("%s:%d", name, i+1))
+		}
+	}
+
+	assert.Empty(t, offenders,
+		"write the message through reportCancelledSelection, which routes it past -o json")
 }
 
 // The consistency the fix is about cannot be asserted by calling one function:

@@ -177,6 +177,7 @@ func TestSimulationSubmissionPersistsSettingsAndPreservesHandoff(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var submitted eval_api.CreateOpenAIEvalRunRequest
 			var response []byte
+			outputRequests := 0
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				switch {
@@ -192,7 +193,10 @@ func TestSimulationSubmissionPersistsSettingsAndPreservesHandoff(t *testing.T) {
 					})
 					_, _ = w.Write(response)
 				case strings.HasSuffix(r.URL.Path, "/output_items"):
-					_, _ = io.WriteString(w, `{"data":[]}`)
+					outputRequests++
+					assert.NoError(t, json.NewEncoder(w).Encode(eval_api.OutputItemList{
+						Data: []eval_api.OutputItem{conversationItem("1", "conv_observed", "completed")},
+					}))
 				case strings.HasSuffix(r.URL.Path, "/run_new"):
 					_, _ = w.Write(response)
 				default:
@@ -221,6 +225,7 @@ func TestSimulationSubmissionPersistsSettingsAndPreservesHandoff(t *testing.T) {
 			assert.NotContains(t, submitted.Metadata, metaSimulationSeeds,
 				"a reused file id was not downloaded, so its seed count is unknown")
 			if tc.json {
+				assert.Zero(t, outputRequests, "JSON and async handoffs do not fetch output rows")
 				var result map[string]any
 				require.NoError(t, json.Unmarshal(out.Bytes(), &result))
 				if tc.wait {
@@ -233,9 +238,13 @@ func TestSimulationSubmissionPersistsSettingsAndPreservesHandoff(t *testing.T) {
 					assert.NotContains(t, result, "data_source")
 				}
 			} else {
+				assert.Equal(t, 1, outputRequests, "observations reuse the existing mean-score fetch")
 				assert.Contains(t, out.String(), "CONVERSATION EVALUATION RESULTS")
 				assert.Contains(t, out.String(), "Conversations completed  not reported")
 				assert.Contains(t, out.String(), "Failed        1")
+				assert.Contains(t, out.String(), "IDs with completed output      1",
+					"completed output processing is separate from its failed evaluation")
+				assert.Contains(t, out.String(), "IDs with failed output         0")
 			}
 		})
 	}

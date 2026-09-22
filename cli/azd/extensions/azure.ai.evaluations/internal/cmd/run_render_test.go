@@ -214,7 +214,7 @@ func TestRenderRunHeaderNamesTheEval(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	require.NoError(t, renderRun(&out, run, map[string]float64{"relevance": 4.1}))
+	require.NoError(t, renderRun(&out, run, &runOutputSummary{means: map[string]float64{"relevance": 4.1}}))
 	text := out.String()
 
 	assert.Contains(t, text, "Run        evalrun_9")
@@ -248,7 +248,7 @@ func TestRenderRunOmitsTheScoreColumnWithoutMeans(t *testing.T) {
 	assert.NotContains(t, without.String(), "MEAN SCORE")
 
 	var with bytes.Buffer
-	require.NoError(t, renderRun(&with, run, map[string]float64{"relevance": 4.15}))
+	require.NoError(t, renderRun(&with, run, &runOutputSummary{means: map[string]float64{"relevance": 4.15}}))
 	assert.Contains(t, with.String(), "MEAN SCORE")
 	assert.Contains(t, with.String(), "4.2", "the mean is shown to one decimal")
 }

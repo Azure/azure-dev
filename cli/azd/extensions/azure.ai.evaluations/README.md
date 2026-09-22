@@ -206,6 +206,17 @@ evaluation totals as successful generation. Older runs without recorded
 settings also show **not reported** for those settings. Static conversation
 and turn-level runs keep their existing output.
 
+When a waited `run start` successfully reads all output rows for its mean-score
+summary, it also shows **observed conversation output**. This block counts
+unique `datasource_item.id` values and the associated output-item lifecycle
+statuses, not generated or completed conversations. A completed output item can
+still have failed evaluation verdicts. Duplicate conversation IDs count once;
+conflicting or unknown statuses and rows without conversation IDs are reported
+separately. These observations describe all rows returned by that listing, not
+a guarantee that every requested conversation produced output. Paged or filtered
+listings, and detail views that have not fetched all rows, do not supply this
+block. No additional output fetch or transcript-based turn inference is used.
+
 JSON retains the service's run fields, including unrecognized nested fields;
 it does not add estimated conversation or turn counts. Newly submitted
 simulation runs record configuration under `metadata.azd_simulation_*`, with

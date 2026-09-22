@@ -44,8 +44,10 @@ safe-outputs:
       - automation
       - bug
       - copilot-instructions
+      - engineering item
       - enhancement
       - engsys
+      - epic
       - flaky test
       - question
       - registry
@@ -95,6 +97,8 @@ Objective: Reduce maintainer effort spent classifying new issues without mislabe
    - add `bug` for a `Bug`
    - add `enhancement` for a `Feature`
    - add `question` for a usage or support question
+   - add `engineering item` for internal implementation, maintenance, testing, documentation, or process work
+   - add `epic` only when the issue coordinates a large initiative made up of multiple related issues
    - add relevant `area/*` and `ext-*` labels based on their descriptions
    - add another allowed label only when the issue directly matches its description
    - add no more than four labels unless a cross-cutting issue clearly needs a fifth

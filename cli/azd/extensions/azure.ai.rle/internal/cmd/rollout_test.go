@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -123,8 +124,8 @@ func TestRolloutFallsBackToRleConfigModelDefault(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Fatal(err)
 		}
-		if request.Model == nil || request.Model.ModelName != modelName {
-			t.Fatalf("expected model default from rle.toml to be forwarded, got %#v", request.Model)
+		if request.Policy == nil || request.Policy.ModelName != modelName {
+			t.Fatalf("expected model default from rle.toml to be forwarded, got %#v", request.Policy)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"rollout_id": "` + request.RolloutID + `", "reward": 1, "success": true}`))
@@ -180,17 +181,47 @@ func TestRolloutRunExecutesRolloutAndClosesLoomSession(t *testing.T) {
 		if got := r.Header.Get("aml-user-token"); got == "" {
 			t.Fatal("expected aml-user-token header to be forwarded")
 		}
-		var request executeRolloutRequest
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		rawBody, err := io.ReadAll(r.Body)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if request.Model == nil || request.Model.ModelName != "Qwen/Qwen3-32B" {
-			t.Fatalf("expected model name to be forwarded, got %#v", request.Model)
+		// Decoding into executeRolloutRequest cannot catch a wire-shape regression, because it
+		// would deserialize the same struct that produced it. The raw body is what the service
+		// actually parses, so the discriminator and the retired names are asserted on the JSON.
+		var wire map[string]any
+		if err := json.Unmarshal(rawBody, &wire); err != nil {
+			t.Fatal(err)
 		}
-		if request.Model.LoomSessionID != "session_abc" {
-			t.Fatalf("expected canonical loom session id, got %q", request.Model.LoomSessionID)
+		policy, ok := wire["policy"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected a policy object on the wire, got %v", wire)
 		}
-		if request.Model.CheckpointID == "" {
+		if policy["type"] != "loom" {
+			t.Fatalf("expected policy.type to be sent explicitly, got %v", policy["type"])
+		}
+		if _, retired := wire["model"]; retired {
+			t.Fatal("the retired model object must not be sent")
+		}
+		if _, retired := policy["loom_session_id"]; retired {
+			t.Fatal("the retired loom_session_id field must not be sent")
+		}
+		// The CLI names no renderer, and a blank one is rejected rather than defaulted, so the
+		// whole object has to be absent rather than present and empty.
+		if _, present := wire["sampling"]; present {
+			t.Fatalf("expected sampling to be omitted when no renderer is named, got %v", wire["sampling"])
+		}
+
+		var request executeRolloutRequest
+		if err := json.Unmarshal(rawBody, &request); err != nil {
+			t.Fatal(err)
+		}
+		if request.Policy == nil || request.Policy.ModelName != "Qwen/Qwen3-32B" {
+			t.Fatalf("expected model name to be forwarded, got %#v", request.Policy)
+		}
+		if request.Policy.SessionID != "session_abc" {
+			t.Fatalf("expected canonical loom session id, got %q", request.Policy.SessionID)
+		}
+		if request.Policy.CheckpointID == "" {
 			t.Fatal("expected a checkpoint id to be forwarded")
 		}
 		w.Header().Set("Content-Type", "application/json")

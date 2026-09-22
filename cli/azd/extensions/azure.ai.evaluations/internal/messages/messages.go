@@ -1253,7 +1253,9 @@ func GenerationJobLine(kind, jobID string) string {
 }
 
 // InitHandoffCommand is the `eval init` that turns generated artifacts into an
-// eval, with every value already filled in.
+// eval, carrying the known artifact choices. Conversation generation produces
+// seeds, so its handoff selects simulation. The simulation model is deliberately
+// omitted: generation does not establish which deployment should play the user.
 //
 // Printed resolved rather than as a shape. A reader who has just watched the
 // command choose a name, a level and an evaluator should not have to retype
@@ -1267,7 +1269,10 @@ func InitHandoffCommand(agent, dataset, level, evaluator string) string {
 	if dataset != "" {
 		cmd += " --source dataset --dataset " + ShellArg(dataset)
 		if level != "" {
-			cmd += " --evaluation-level " + level
+			cmd += " --evaluation-level " + ShellArg(level)
+		}
+		if level == "conversation" {
+			cmd += " --conversation-mode simulation"
 		}
 	}
 	if evaluator != "" {
@@ -2628,7 +2633,7 @@ func SourceNotADataSource(source, dataset, traces string) error {
 
 // TracesTakesNoDataset reports --dataset paired with a trace-backed eval.
 func TracesTakesNoDataset() error {
-	return errors.New("--source traces reads production traces, so it takes no --dataset")
+	return InitFlagConflict("dataset", "cannot be used with --source traces, which reads production traces")
 }
 
 // MaxTracesNeedsTraceSource reports --max-traces without a trace-backed eval.

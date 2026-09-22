@@ -17,7 +17,8 @@ const (
 
 // Error codes for validation failures (user input, manifests, flags).
 const (
-	CodeInvalidParameter = "invalid_parameter"
+	CodeInvalidParameter     = "invalid_parameter"
+	CodeConflictingArguments = "conflicting_arguments"
 )
 
 // Error codes for dependency failures (missing resources, services, env values).

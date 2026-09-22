@@ -25,6 +25,9 @@ type AuthoredEntry struct {
 	HasDefinition bool
 	// Version pins an already-registered version.
 	Version string
+	// SupportedEvaluationLevels is local evaluator metadata, not a resolved
+	// service schema. Absence or an unfamiliar shape leaves compatibility unknown.
+	SupportedEvaluationLevels []string
 }
 
 // AuthoredConfig answers what a configuration already declares, as written.
@@ -73,14 +76,30 @@ func authoredFromDocument(doc *yaml.Node) *AuthoredConfig {
 				continue
 			}
 			out.sections[section] = append(out.sections[section], AuthoredEntry{
-				Name:          scalarUnder(item, "name"),
-				Ref:           scalarUnder(item, refDirective),
-				HasDefinition: nodeUnder(item, "definition") != nil,
-				Version:       scalarUnder(item, "version"),
+				Name:                      scalarUnder(item, "name"),
+				Ref:                       scalarUnder(item, refDirective),
+				HasDefinition:             nodeUnder(item, "definition") != nil,
+				Version:                   scalarUnder(item, "version"),
+				SupportedEvaluationLevels: authoredEvaluationLevels(item),
 			})
 		}
 	}
 	return out
+}
+
+func authoredEvaluationLevels(item *yaml.Node) []string {
+	node := nodeUnder(item, "supported_evaluation_levels")
+	if node == nil || node.Kind != yaml.SequenceNode {
+		return nil
+	}
+	var levels []string
+	for _, value := range node.Content {
+		if value.Kind != yaml.ScalarNode || value.Tag != "!!str" {
+			return nil
+		}
+		levels = append(levels, value.Value)
+	}
+	return levels
 }
 
 // Entry reports how the named entry of a section was written.

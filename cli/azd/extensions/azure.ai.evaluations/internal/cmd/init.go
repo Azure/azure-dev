@@ -43,16 +43,20 @@ const (
 // reproduce them. Editing an eval is a file edit.
 // initFlags carries what `init` was asked for.
 type initFlags struct {
-	evalName        string
-	target          string
-	source          string
-	dataset         string
-	maxTraces       int
-	traceDays       int
-	evaluationLevel string
-	evaluators      []string
-	judgeModel      string
-	path            string
+	evalName         string
+	target           string
+	source           string
+	dataset          string
+	maxTraces        int
+	traceDays        int
+	evaluationLevel  string
+	conversationMode string
+	simulationModel  string
+	numConversations int
+	maxTurns         int
+	evaluators       []string
+	judgeModel       string
+	path             string
 }
 
 // initAction scaffolds the eval configuration.
@@ -83,7 +87,14 @@ func newInitCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Scaffold evaluation config for an agent. Works offline.",
+		Short: "Scaffold evaluation config for an agent or completed conversations. Works offline.",
+		Long: "Scaffold evaluation config without invoking an agent. Existing entries are never replaced.\n\n" +
+			"Turn datasets invoke an agent when run. Conversation datasets can score completed " +
+			"messages (static), or simulate a user against an agent from scenario seeds (simulation).\n" +
+			"--conversation-mode implies --source dataset and --evaluation-level conversation when omitted. " +
+			"Simulation requires an independent --simulation-model; interactive init prompts for it. " +
+			"Under --no-prompt or --output json, supply all unresolved inputs explicitly.\n\n" +
+			"Init works offline except for a bounded, best-effort lookup of explicitly named built-in evaluators.",
 		// Everything init takes is a flag; a positional would be ignored.
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -110,6 +121,17 @@ func newInitCommand() *cobra.Command {
 	cmd.Flags().StringVar(&flags.evaluationLevel, "evaluation-level", "",
 		"What one evaluated sample is: turn for a single request and response, "+
 			"conversation for the whole multi-turn interaction. Defaults to turn.")
+	cmd.Flags().StringVar(&flags.conversationMode, "conversation-mode", "",
+		"Conversation dataset mode: static scores completed messages without a target; simulation uses scenario "+
+			"seeds and an agent target. Prompts for conversation datasets; defaults to static without prompts.")
+	cmd.Flags().StringVar(&flags.simulationModel, "simulation-model", "",
+		"Model deployment for the simulated user. Required with simulation; independent of the generation and judge models.")
+	cmd.Flags().IntVar(&flags.numConversations, "num-conversations", project.DefaultNumConversations,
+		fmt.Sprintf("Conversations per seed in simulation mode (%d-%d).",
+			project.MinNumConversations, project.MaxNumConversations))
+	cmd.Flags().IntVar(&flags.maxTurns, "max-turns", 0,
+		fmt.Sprintf("Maximum turns per simulated conversation (%d-%d). Omit for the service default.",
+			project.MinSimulationTurns, project.MaxSimulationTurns))
 	cmd.Flags().StringSliceVar(&flags.evaluators, "evaluator", nil,
 		"Evaluator reference, repeatable and comma-separated. Use builtin.<name> for a "+
 			"built-in. Passing this replaces the defaults, so it also opts out of rubric generation.")
@@ -125,6 +147,9 @@ func newInitCommand() *cobra.Command {
 
 func (a *initAction) Run() error {
 	out := a.cmd.OutOrStdout()
+	if err := a.validateConversationFlags(a.flags.source, a.flags.evaluationLevel, a.flags.conversationMode); err != nil {
+		return err
+	}
 
 	source := a.flags.source
 	switch source {
@@ -133,7 +158,7 @@ func (a *initAction) Run() error {
 		return messages.SourceNotADataSource(
 			source, initSourceDataset, initSourceTraces)
 	}
-	if source == initSourceTraces && a.flags.dataset != "" {
+	if source == initSourceTraces && (a.flags.dataset != "" || a.cmd.Flags().Changed("dataset")) {
 		return messages.TracesTakesNoDataset()
 	}
 	// Zero is not a smaller window, it is an eval with nothing to read. It used
@@ -228,7 +253,7 @@ func (a *initAction) Run() error {
 	if err != nil {
 		return err
 	}
-	serviceName := answers.target + "-evals"
+	serviceName := cmp.Or(answers.target, "conversation") + "-evals"
 	wiring, serviceName, err := planRootEvalService(a.cmd.Context(), serviceName, configPath)
 	if err != nil {
 		return err
@@ -256,7 +281,7 @@ func (a *initAction) Run() error {
 		if answers, err = a.ask(ctx); err != nil {
 			return err
 		}
-		serviceName = answers.target + "-evals"
+		serviceName = cmp.Or(answers.target, "conversation") + "-evals"
 		// Replanned with the name, not carried over. The wiring describes an
 		// edit to azure.yaml for one service, so a Change that picks a different
 		// agent made the next confirmation describe the previous one's edit --
@@ -333,6 +358,7 @@ func (a *initAction) Run() error {
 		maxTraces:       a.flags.maxTraces,
 		lookbackHours:   lookbackHours,
 		evaluationLevel: evaluationLevel,
+		simulation:      answers.simulation,
 		evaluators:      evaluators,
 		judgeModel:      judgeModel,
 		evalDir:         evalDir,
@@ -369,20 +395,25 @@ func (a *initAction) Run() error {
 
 	if isJSON(a.cmd) {
 		return emitJSON(out, map[string]any{
-			"eval":          evalName,
-			"evalConfig":    configPath,
-			"service":       serviceName,
-			"datasetsDir":   filepath.Join(evalDir, project.DefaultDatasetsDir),
-			"evaluatorsDir": filepath.Join(evalDir, project.DefaultEvaluatorsDir),
-			"rootConfig":    rootWiring,
-			"target":        target,
-			"source":        source,
-			"judgeModel":    judgeModel,
-			"evaluators":    plan.evaluatorNames(),
+			"eval":             evalName,
+			"evalConfig":       configPath,
+			"service":          serviceName,
+			"datasetsDir":      filepath.Join(evalDir, project.DefaultDatasetsDir),
+			"evaluatorsDir":    filepath.Join(evalDir, project.DefaultEvaluatorsDir),
+			"rootConfig":       rootWiring,
+			"target":           target,
+			"source":           source,
+			"evaluationLevel":  evaluationLevel,
+			"conversationMode": answers.conversationMode,
+			"simulation":       answers.simulation,
+			"judgeModel":       judgeModel,
+			"evaluators":       plan.evaluatorNames(),
 		})
 	}
 
-	fmt.Fprint(out, messages.DetectedTarget(target))
+	if target != "" {
+		fmt.Fprint(out, messages.DetectedTarget(target))
+	}
 	if source == initSourceTraces {
 		// Claiming the connection is only honest when it was found. init never
 		// asks the service about one, so it cannot verify one it did not see.
@@ -657,6 +688,7 @@ type scaffoldInput struct {
 	maxTraces       int
 	lookbackHours   int
 	evaluationLevel string
+	simulation      *project.Simulation
 	evaluators      []string
 	judgeModel      string
 	evalDir         string
@@ -694,6 +726,7 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 		Name:            in.evalName,
 		Description:     fmt.Sprintf("Basic quality evaluation for %s", in.target),
 		EvaluationLevel: cmp.Or(in.evaluationLevel, project.EvaluationLevelTurn),
+		Simulation:      in.simulation,
 		Target: &project.Target{
 			Type: project.TargetTypeAgent,
 			// The published name, not the service key: this is what the run
@@ -701,6 +734,17 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 			// is what the author typed and recognizes.
 			Name: cmp.Or(in.remoteTarget, in.target),
 		},
+	}
+	if eval.EvaluationLevel == project.EvaluationLevelConversation && in.simulation == nil {
+		eval.Target = nil
+		if in.source != initSourceTraces {
+			eval.Description = "Quality evaluation for completed conversations"
+		}
+	}
+	if in.simulation != nil {
+		if err := in.simulation.Validate(); err != nil {
+			return scaffold{}, err
+		}
 	}
 
 	if in.source == initSourceTraces {
@@ -780,6 +824,9 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 	}
 
 	refs := evalcore.EvaluatorList{}
+	if err := validateInitEvaluatorLevels(cfg, in.evaluators, eval.EvaluationLevel); err != nil {
+		return scaffold{}, err
+	}
 	if len(in.evaluators) == 0 {
 		for _, ref := range defaultEvaluators() {
 			refs = append(refs, withModel(evalcore.EvaluatorRef{Evaluator: ref}))
@@ -884,17 +931,18 @@ func refuseDuplicateEval(location string, planned *project.Eval) error {
 // declaredSoFar seeds the accumulator with the names the configuration already
 // declares, so planScaffold can tell an addition from a duplicate.
 //
-// Names only. The write below appends to the document rather than saving this
-// value, so nothing else about the existing entries is needed -- and reading
-// more would mean decoding a configuration whose includes are deliberately left
-// unresolved.
+// Names and local evaluator compatibility only. The write appends to the
+// document rather than saving this value; includes stay unresolved.
 func declaredSoFar(authored *project.AuthoredConfig) *project.EvalConfig {
 	cfg := &project.EvalConfig{}
 	for _, name := range authored.Names(project.SectionDatasets) {
 		cfg.Datasets = append(cfg.Datasets, project.DatasetDecl{Name: name})
 	}
 	for _, name := range authored.Names(project.SectionEvaluators) {
-		cfg.Evaluators = append(cfg.Evaluators, project.EvaluatorDecl{Name: name})
+		entry, _ := authored.Entry(project.SectionEvaluators, name)
+		cfg.Evaluators = append(cfg.Evaluators, project.EvaluatorDecl{
+			Name: name, SupportedEvaluationLevels: slices.Clone(entry.SupportedEvaluationLevels),
+		})
 	}
 	for _, name := range authored.Names(project.SectionEvals) {
 		cfg.Evals = append(cfg.Evals, project.Eval{Name: name})
@@ -1110,8 +1158,6 @@ const aiModelHost = "azure.ai.model"
 //
 // `init` asks the service nothing about deployments, so detection is limited
 // to the project file.
-// Coming back empty leaves it to resolveJudgeModel, which reads the Foundry
-// project's deployments: and then asks or names --judge-model.
 //
 // Every match is returned rather than the first, because two declared model
 // services is a choice for the author to make, not something to settle here.

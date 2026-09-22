@@ -102,7 +102,8 @@ stages:
 
                 - template: /eng/pipelines/templates/steps/publish-cli-choco.yml
 
-      - job: Publish_WinGet
+      - job: Prepare_WinGet
+        displayName: Prepare WinGet manifest
         dependsOn: Publish_Release
         condition: >-
           and(
@@ -123,6 +124,38 @@ stages:
 
         steps:
           - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
+
+      - deployment: Publish_WinGet
+        displayName: Publish WinGet manifest through ESRP
+        dependsOn: Prepare_WinGet
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.Publish'])
+          )
+        environment: package-publish
+        timeoutInMinutes: 720
+
+        pool:
+          name: azsdk-pool
+          image: windows-2022
+          os: windows
+
+        templateContext:
+          type: releaseJob
+          isProduction: true
+          inputs:
+            - input: pipelineArtifact
+              artifactName: winget-manifest
+              targetPath: winget
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
+                  parameters:
+                    Operation: Publish
 
       - job: Publish_Brew
         dependsOn: Publish_Release

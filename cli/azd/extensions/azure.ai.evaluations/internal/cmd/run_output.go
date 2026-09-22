@@ -928,14 +928,10 @@ func renderResults(
 			return err
 		}
 		if failedOnly {
-			// Against the run's own item total, not the rows on screen. The slice
-			// arriving here is already filtered, so counting it both ways printed
-			// "6 of 6" for a run of fifteen.
-			total := len(items)
-			if c := run.ResultCounts; c != nil && c.Total > 0 {
-				total = c.Total
+			fmt.Fprint(w, messages.FilteredItemCount(shown, itemFailed))
+			if c := run.ResultCounts; c != nil {
+				fmt.Fprint(w, messages.FilteredRunTotal(c.Failed, c.Total, itemFailed))
 			}
-			fmt.Fprint(w, messages.FilteredItemCount(shown, total, itemFailed))
 		}
 		if firstItem != "" {
 			// Printed resolved, down to an item that is actually in the table

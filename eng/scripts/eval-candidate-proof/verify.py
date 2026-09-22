@@ -1,0 +1,381 @@
+#!/usr/bin/env python3
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
+
+"""Fork-only candidate proof, using release binaries through the real azd host.
+
+No Azure login, deployment, dataset registration, evaluation run, or quality gate
+is performed. Only synthetic local authoring and pre-network errors are tested.
+Update candidate.json from the publisher's immutable release, never from latest.
+The output directory contains only explicitly selected, sanitized evidence.
+"""
+
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import platform
+import re
+import subprocess
+import tarfile
+import tempfile
+import urllib.parse
+import urllib.request
+import zipfile
+
+
+def require(condition, message):
+    if not condition:
+        raise AssertionError(message)
+
+
+def sha256(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def sanitize(text, root):
+    text = text.replace(str(root), "<isolated-work>")
+    text = text.replace(str(root).replace("\\", "/"), "<isolated-work>")
+
+    def clean_url(match):
+        url = urllib.parse.urlsplit(match.group(0))
+        host = url.netloc.rsplit("@", 1)[-1]
+        return urllib.parse.urlunsplit((url.scheme, host, url.path, "", ""))
+
+    return re.sub(r"https?://[^\s<>\"']+", clean_url, text)
+
+
+def write_json(path, value):
+    path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+
+
+def download(url, digest, directory):
+    parsed = urllib.parse.urlsplit(url)
+    require(
+        parsed.scheme == "https" and parsed.hostname == "github.com"
+        and not parsed.username and not parsed.query and not parsed.fragment,
+        "Artifacts must use credential-free GitHub release URLs",
+    )
+    with urllib.request.urlopen(url, timeout=120) as response:
+        data = response.read()
+    require(sha256(data) == digest, f"SHA-256 mismatch for {parsed.path}")
+    path = directory / Path(parsed.path).name
+    path.write_bytes(data)
+    return path
+
+
+def binary_from_archive(path, name):
+    if path.suffix == ".zip":
+        with zipfile.ZipFile(path) as archive:
+            matches = [entry for entry in archive.namelist() if Path(entry).name == name]
+            require(len(matches) == 1, f"Expected exactly one {name} in {path.name}")
+            return archive.read(matches[0])
+    with tarfile.open(path, "r:gz") as archive:
+        matches = [entry for entry in archive.getmembers() if Path(entry.name).name == name]
+        require(len(matches) == 1 and matches[0].isfile(), f"Expected one binary {name}")
+        with archive.extractfile(matches[0]) as entry:
+            return entry.read()
+
+
+class Proof:
+    def __init__(self, root, output, pin):
+        self.root, self.output, self.pin = root, output, pin
+        self.commands = []
+        self.checks = []
+        self.platform = "windows/amd64" if os.name == "nt" else "linux/amd64"
+        require(platform.machine().lower() in ("amd64", "x86_64"), "Requires an x64 host")
+        self.azd = root / ("azd.exe" if os.name == "nt" else "azd")
+        # Do not inherit user tokens, az/azd caches, endpoints, or GitHub credentials.
+        self.env = {
+            key: value for key, value in os.environ.items()
+            if key.upper() in ("PATH", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "LANG")
+        }
+        for name in ("home", "config", "azure", "temp", "downloads"):
+            (root / name).mkdir()
+        self.env.update({
+            "HOME": str(root / "home"),
+            "USERPROFILE": str(root / "home"),
+            "AZD_CONFIG_DIR": str(root / "config"),
+            "AZURE_CONFIG_DIR": str(root / "azure"),
+            "TMP": str(root / "temp"),
+            "TEMP": str(root / "temp"),
+            "TMPDIR": str(root / "temp"),
+            "AZURE_DEV_COLLECT_TELEMETRY": "no",
+            "AZD_FORCE_TTY": "false",
+            "NO_COLOR": "1",
+            "CI": "true",
+            "PATH": str(root) + os.pathsep + self.env.get("PATH", ""),
+        })
+
+    def run(self, name, args, cwd=None, failure=None, json_output=False, timeout=60):
+        argv = [str(self.azd), *args, "--no-prompt"]
+        result = subprocess.run(
+            argv, cwd=cwd or self.root, env=self.env, stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, encoding="utf-8", timeout=timeout,
+        )
+        self.commands.append({
+            "name": name,
+            "command": ["azd", *[sanitize(arg, self.root) for arg in argv[1:]]],
+            "exitCode": result.returncode,
+            "expectedFailure": failure is not None,
+            "stdout": sanitize(result.stdout, self.root),
+            "stderr": sanitize(result.stderr, self.root),
+        })
+        require(
+            result.returncode != 0 if failure else result.returncode == 0,
+            f"{name}: unexpected exit code {result.returncode}: "
+            + sanitize(result.stdout + result.stderr, self.root),
+        )
+        value = json.loads(result.stdout) if json_output else result.stdout
+        if failure:
+            require(isinstance(value, dict), f"{name}: missing JSON error document")
+            message = value.get("error", {}).get("message", "")
+            require(message and re.search(failure, message, re.I), f"{name}: wrong error: {message}")
+        self.checks.append(name)
+        print(f"PASS: {name}", flush=True)
+        return value
+
+    def install(self):
+        downloads = self.root / "downloads"
+        azd_pin = self.pin["azd"]
+        artifact = azd_pin["artifacts"][self.platform]
+        url = (
+            "https://github.com/Azure/azure-dev/releases/download/"
+            f"azure-dev-cli_{azd_pin['version']}/{artifact['file']}"
+        )
+        archive = download(url, artifact["sha256"], downloads)
+        binary_name = "azd-windows-amd64.exe" if os.name == "nt" else "azd-linux-amd64"
+        binary = binary_from_archive(archive, binary_name)
+        self.azd.write_bytes(binary)
+        self.azd.chmod(0o700)
+        version = self.run("azd version", ["version"])
+        require(
+            re.search(rf"azd version {re.escape(azd_pin['version'])}(?:\s|$)", version),
+            "The azd binary version does not match the pin",
+        )
+        base = (
+            f"https://github.com/{self.pin['releaseRepository']}/releases/download/"
+            f"{self.pin['releaseTag']}/"
+        )
+        registry_path = download(base + "registry.json", self.pin["registrySha256"], downloads)
+        registry = json.loads(registry_path.read_text(encoding="utf-8-sig"))
+        require(
+            {ext["id"] for ext in registry["extensions"]} == set(self.pin["extensions"]),
+            "The release registry must contain exactly the two candidate extensions",
+        )
+        expected_binaries = {}
+        for extension in registry["extensions"]:
+            extension_pin = self.pin["extensions"][extension["id"]]
+            versions = [
+                version for version in extension["versions"]
+                if version["version"] == extension_pin["version"]
+            ]
+            require(len(versions) == 1, "Pinned extension version must occur exactly once")
+            version = versions[0]
+            artifact = version["artifacts"][self.platform]
+            digest = extension_pin["artifacts"][self.platform]
+            require(artifact["checksum"] == {"algorithm": "sha256", "value": digest},
+                    "Registry checksum differs from the independent candidate pin")
+            require(artifact["url"].startswith(base), "Artifact is not from the pinned release")
+            archive = download(artifact["url"], digest, downloads)
+            expected_binaries[extension["id"]] = (
+                artifact["entryPoint"],
+                sha256(binary_from_archive(archive, artifact["entryPoint"])),
+            )
+            # Only the URL changes. azd independently verifies the original archive digest.
+            artifact["url"] = str(archive)
+            version["artifacts"] = {self.platform: artifact}
+            extension["versions"] = versions
+        local_registry = self.root / "verified-registry.json"
+        write_json(local_registry, registry)
+        self.run("register verified feed", [
+            "extension", "source", "add", "--name", "candidate-proof",
+            "--type", "file", "--location", str(local_registry),
+        ])
+        for extension_id, pin in self.pin["extensions"].items():
+            self.run(f"install {extension_id}", [
+                "extension", "install", extension_id, "--source", "candidate-proof",
+                "--version", pin["version"],
+            ], timeout=120)
+            entry, digest = expected_binaries[extension_id]
+            installed = self.root / "config" / "extensions" / extension_id / entry
+            require(sha256(installed.read_bytes()) == digest, "Installed binary differs from release")
+            info = self.run(
+                f"{extension_id} version JSON",
+                ["ai", pin["command"], "version", "--output", "json"], json_output=True,
+            )
+            require(info == {"name": extension_id, "version": pin["version"]},
+                    "Installed binary reports an unexpected version")
+
+    def exercise(self):
+        # Only host-local gRPC is needed after installation. Block remote HTTP(S),
+        # including accidental catalogue/auth lookups, without a service mock.
+        self.env.update({
+            "HTTP_PROXY": "http://127.0.0.1:9",
+            "HTTPS_PROXY": "http://127.0.0.1:9",
+            "NO_PROXY": "localhost,127.0.0.1,::1",
+        })
+        for command in (
+            ["eval"], ["eval", "init"], ["eval", "generate"], ["eval", "create"],
+            ["eval", "run", "start"], ["eval", "run", "output", "export"],
+            ["eval", "evaluator", "create"], ["dataset"], ["dataset", "create"],
+            ["dataset", "update"], ["dataset", "download"], ["dataset", "delete"],
+            ["dataset", "versions", "list"],
+        ):
+            text = self.run("help " + " ".join(command), ["ai", *command, "--help"])
+            require("Usage" in text, "Help did not render")
+
+        project = self.root / "synthetic-project"
+        project.mkdir()
+        (project / "azure.yaml").write_text(
+            "name: offline-proof\nservices:\n"
+            "  ci-project:\n    host: azure.ai.project\n"
+            "  ci-agent:\n    host: azure.ai.agent\n", encoding="utf-8",
+        )
+        data = project / "golden.jsonl"
+        data.write_text('{"query":"What is two plus two?","response":"4","ground_truth":"4"}\n',
+                        encoding="utf-8")
+        conversation = project / "conversation.jsonl"
+        conversation.write_text(
+            '{"messages":[{"role":"user","content":"Hello"},'
+            '{"role":"assistant","content":"Hello! How can I help?"}]}\n', encoding="utf-8",
+        )
+        malformed = project / "malformed.jsonl"
+        malformed.write_text('{"query":"valid first row"}\nnot-json\n', encoding="utf-8")
+        empty = project / "empty.jsonl"
+        empty.write_text("", encoding="utf-8")
+
+        base = ["ai", "eval", "init", "--target", "ci-agent", "--judge-model", "ci-judge"]
+        turn = base + [
+            "--name", "ci-turn", "--source", "dataset", "--dataset", str(data),
+            "--evaluator", "builtin.task_adherence", "--output", "json",
+        ]
+        info = self.run("author turn eval JSON", turn, project, json_output=True)
+        require(
+            info["eval"] == "ci-turn" and info["source"] == "dataset"
+            and info["target"] == "ci-agent" and info["judgeModel"] == "ci-judge"
+            and info["evaluators"] == ["builtin.task_adherence"],
+            "Scaffold JSON does not preserve explicit inputs",
+        )
+        config = Path(info["evalConfig"])
+        if not config.is_absolute():
+            config = project / config
+        require(config.is_file(), "Scaffold did not write its declared config")
+        turn_yaml = config.read_text(encoding="utf-8")
+        require("ci-turn" in turn_yaml and "evaluation_level: turn" in turn_yaml,
+                "Turn evaluation was not written to disk")
+        require("azure.ai.eval" in (project / "azure.yaml").read_text(encoding="utf-8"),
+                "Root project was not wired to the evaluation service")
+
+        before = (config.read_bytes(), (project / "azure.yaml").read_bytes())
+        self.run("duplicate init refuses overwrite", turn, project,
+                 failure="already", json_output=True)
+        require(before == (config.read_bytes(), (project / "azure.yaml").read_bytes()),
+                "Duplicate init changed authored configuration")
+
+        self.run("author conversation eval JSON", base + [
+            "--name", "ci-conversation", "--source", "dataset", "--dataset", str(conversation),
+            "--evaluation-level", "conversation", "--evaluator", "builtin.task_completion",
+            "--output", "json",
+        ], project, json_output=True)
+        self.run("author trace eval JSON", base + [
+            "--name", "ci-trace", "--source", "traces", "--trace-days", "7",
+            "--max-traces", "2", "--evaluator", "builtin.task_adherence", "--output", "json",
+        ], project, json_output=True)
+        final_yaml = config.read_text(encoding="utf-8")
+        for expected in ("ci-turn", "ci-conversation", "ci-trace",
+                         "evaluation_level: conversation", "max_traces: 2", "lookback_hours: 168"):
+            require(expected in final_yaml, f"Authored configuration is missing {expected}")
+
+        invalid_init = [
+            ("invalid source", ["--source", "invalid"], "source"),
+            ("traces with dataset", ["--source", "traces", "--dataset", str(data)], "dataset"),
+            ("zero trace limit", ["--source", "traces", "--max-traces", "0"], "max-traces"),
+            ("ignored trace flag", ["--source", "dataset", "--dataset", str(data),
+                                    "--max-traces", "2"], "max-traces"),
+            ("invalid evaluation level", ["--source", "dataset", "--dataset", str(data),
+                                          "--evaluation-level", "invalid"], "evaluation.level"),
+            ("unknown init flag", ["--not-a-real-flag"], "unknown flag"),
+        ]
+        before = (config.read_bytes(), (project / "azure.yaml").read_bytes())
+        for name, flags, error in invalid_init:
+            self.run(name, base + flags + ["--output", "json"], project,
+                     failure=error, json_output=True)
+            require(before == (config.read_bytes(), (project / "azure.yaml").read_bytes()),
+                    f"{name} mutated authored configuration")
+
+        invalid_dataset = [
+            ("missing file flag", ["create", "ci-data"], "from-file"),
+            ("invalid dataset name", ["create", "bad name"], "name"),
+            ("missing dataset file", ["create", "ci-data", "--from-file", "absent.jsonl"],
+             "absent.jsonl"),
+            ("malformed dataset row", ["create", "ci-data", "--from-file", str(malformed)], "line 2"),
+            ("empty dataset", ["update", "ci-data", "--from-file", str(empty)], "empty"),
+            ("missing dataset argument", ["show"], "arg"),
+            ("unknown dataset flag", ["list", "--not-a-real-flag"], "unknown flag"),
+        ]
+        for name, args, error in invalid_dataset:
+            self.run(name, ["ai", "dataset", *args, "--output", "json"], project,
+                     failure=error, json_output=True)
+        self.output.joinpath("authored-azure.eval.yaml").write_text(
+            sanitize(final_yaml, self.root), encoding="utf-8")
+        self.output.joinpath("authored-azure.yaml").write_text(
+            sanitize((project / "azure.yaml").read_text(encoding="utf-8"), self.root),
+            encoding="utf-8",
+        )
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", required=True, type=Path)
+    args = parser.parse_args()
+    args.output.mkdir(parents=True, exist_ok=False)
+    pin = json.loads(Path(__file__).with_name("candidate.json").read_text(encoding="utf-8"))
+    write_json(args.output / "candidate.json", pin)
+    with tempfile.TemporaryDirectory(prefix="eval-cli-proof-") as directory:
+        proof = Proof(Path(directory), args.output, pin)
+        report = {
+            "coverage": "offline CLI only",
+            "liveCloudEvaluation": "NOT RUN",
+            "cloudQualityGate": "NOT RUN",
+            "authRequired": (
+                "An existing Azure service identity with an authorized GitHub OIDC trust "
+                "for this fork/ref, tenant/client identifiers, and least-privilege access "
+                "to an isolated Foundry project and its existing model/agent resources. "
+                "Devbox user credentials must not be copied into CI."
+            ),
+            "platform": proof.platform,
+            "workflowCommit": os.environ.get("GITHUB_SHA"),
+            "runUrl": (
+                f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/"
+                f"{os.environ['GITHUB_RUN_ID']}"
+            ) if "GITHUB_RUN_ID" in os.environ else None,
+            "status": "failed",
+        }
+        try:
+            proof.install()
+            proof.exercise()
+            report["status"] = "passed"
+        finally:
+            report["checks"] = proof.checks
+            write_json(args.output / "results.json", report)
+            write_json(args.output / "commands.json", proof.commands)
+            summary = (
+                f"## Offline evaluation CLI: {report['status']}\n\n"
+                f"- Release: `{pin['releaseTag']}`\n"
+                f"- Source: `{pin['sourceCommit'] or 'unattested baseline'}`\n"
+                f"- Platform: `{proof.platform}`\n"
+                f"- CLI command checks passed: {len(proof.checks)}\n"
+                "- Live cloud evaluation and quality gate: **NOT RUN** (no CI identity).\n"
+                "- Evidence contains only synthetic authoring, sanitized command output, "
+                "versions and checksum pins. No auth/config caches are uploaded.\n"
+            )
+            args.output.joinpath("summary.md").write_text(summary, encoding="utf-8")
+            if "GITHUB_STEP_SUMMARY" in os.environ:
+                with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as stream:
+                    stream.write(summary)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,39 @@
+{
+  "releaseRepository": "m7md7sien/azd-foundry-feed",
+  "releaseTag": "extensions-2026-09-22-37",
+  "sourceCommit": null,
+  "sourceNote": "Build37 baseline; publisher lists PRs 10116, 10113 and 10102 but does not attest an exact build commit.",
+  "validationBaseline": "0361f347eb28c5f2e756225115318393b1dad28a",
+  "registrySha256": "f65d4a209f665076a5f927b6fdd791bd431c8d5bcb09cf68d3ff20a5668c57b1",
+  "azd": {
+    "version": "1.33.0",
+    "artifacts": {
+      "linux/amd64": {
+        "file": "azd-linux-amd64.tar.gz",
+        "sha256": "8e3abba664ff414b90bff4fcf885ab53e0d8909856d9bd96b6aee8ba9598b82c"
+      },
+      "windows/amd64": {
+        "file": "azd-windows-amd64.zip",
+        "sha256": "ea5f9808e01c365d0c9463e8701fed0b171f4b7476b15323149bbeae8e26790d"
+      }
+    }
+  },
+  "extensions": {
+    "azure.ai.evaluations": {
+      "command": "eval",
+      "version": "1.0.37-beta",
+      "artifacts": {
+        "linux/amd64": "7afd73b7f7c324f56f31560dba6a1b9b2945321ea62b786bb22ea90aeef9cde7",
+        "windows/amd64": "f8ec8aad161be5950ea6bc806f0fc2249d47290ad7a9c1cfcbed02069e4cc546"
+      }
+    },
+    "azure.ai.dataset": {
+      "command": "dataset",
+      "version": "1.0.0-beta.25",
+      "artifacts": {
+        "linux/amd64": "bb50aa861722a1f259101ab2bf9e664d69c85dc83030f8dd75390ae346f92e9c",
+        "windows/amd64": "286ae068789adbd7b979674d7d241d72b9cbb58b5203396fc8688c018cdc29af"
+      }
+    }
+  }
+}

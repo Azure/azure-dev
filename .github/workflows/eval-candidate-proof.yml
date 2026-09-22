@@ -1,0 +1,44 @@
+name: Evaluation candidate CLI proof (offline)
+
+on:
+  push:
+    branches:
+      - m7md7sien-evaluation-github-actions-proof
+    paths:
+      - .github/workflows/eval-candidate-proof.yml
+      - eng/scripts/eval-candidate-proof/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-cli:
+    if: github.repository == 'm7md7sien/azure-dev'
+    name: Offline CLI / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - name: Checkout validation branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned artifacts and exercise actual azd commands
+        shell: pwsh
+        run: |
+          python eng/scripts/eval-candidate-proof/verify.py --output "$env:RUNNER_TEMP/eval-proof-evidence"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Publish sanitized offline evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: offline-cli-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/eval-proof-evidence/
+          if-no-files-found: error
+          retention-days: 14

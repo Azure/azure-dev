@@ -91,14 +91,25 @@ type publishStub struct {
 	failPublish bool
 
 	published []string
+	// faults are anything that went wrong inside the handler. They are kept
+	// rather than asserted here, because this runs on the server's goroutine
+	// and FailNow is only meaningful on the test's own.
+	faults []error
 }
 
-func (s *publishStub) handler(t *testing.T, base func() string) http.HandlerFunc {
-	t.Helper()
+func (s *publishStub) handler(base func() string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
+
+		// write answers with a JSON body, recording rather than failing on an
+		// encoder error.
+		write := func(body map[string]any) {
+			if err := json.NewEncoder(w).Encode(body); err != nil {
+				s.faults = append(s.faults, err)
+			}
+		}
 
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/startPendingUpload"):
@@ -107,13 +118,13 @@ func (s *publishStub) handler(t *testing.T, base func() string) http.HandlerFunc
 				_, _ = w.Write([]byte(`{"error":{"code":"InternalServerError"}}`))
 				return
 			}
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			write(map[string]any{
 				"blobReference": map[string]any{
 					"blobUri":             base() + "/c",
 					"storageAccountArmId": "id",
 					"credential":          map[string]any{"sasUri": base() + "/c?sig=x"},
 				},
-			}))
+			})
 
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/versions"):
 			if s.listingStatus != 0 {
@@ -125,7 +136,7 @@ func (s *publishStub) handler(t *testing.T, base func() string) http.HandlerFunc
 			for _, v := range s.listing {
 				values = append(values, map[string]any{"name": "ds", "version": v})
 			}
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"value": values}))
+			write(map[string]any{"value": values})
 
 		// The presence probe reads one version directly, which is how a listing
 		// that has not caught up is checked. Answering it from anything but the
@@ -133,9 +144,7 @@ func (s *publishStub) handler(t *testing.T, base func() string) http.HandlerFunc
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/versions/"):
 			version := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
 			if slices.Contains(s.listing, version) {
-				require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
-					"name": "ds", "version": version,
-				}))
+				write(map[string]any{"name": "ds", "version": version})
 				return
 			}
 			w.WriteHeader(http.StatusNotFound)
@@ -144,16 +153,17 @@ func (s *publishStub) handler(t *testing.T, base func() string) http.HandlerFunc
 		// The blob write is a PUT as well, and has to be matched before the
 		// finalize branch or the blob name is recorded as a published version.
 		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/c/"):
-			_, err := io.ReadAll(r.Body)
-			require.NoError(t, err)
+			if _, err := io.ReadAll(r.Body); err != nil {
+				s.faults = append(s.faults, err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
 			w.WriteHeader(http.StatusCreated)
 
 		case r.Method == http.MethodPut:
 			version := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
 			s.published = append(s.published, version)
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
-				"name": "ds", "version": version,
-			}))
+			write(map[string]any{"name": "ds", "version": version})
 
 		default:
 			w.WriteHeader(http.StatusCreated)
@@ -165,6 +175,12 @@ func (s *publishStub) publishedVersions() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]string(nil), s.published...)
+}
+
+func (s *publishStub) handlerFaults() []error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]error(nil), s.faults...)
 }
 
 // writeHarness is a stand-in service plus the action that writes against it.
@@ -181,10 +197,16 @@ func newWriteHarness(t *testing.T, stub *publishStub) *writeHarness {
 
 	httpServer := func() *httptest.Server {
 		var s *httptest.Server
-		s = httptest.NewServer(stub.handler(t, func() string { return s.URL }))
+		s = httptest.NewServer(stub.handler(func() string { return s.URL }))
 		return s
 	}()
 	t.Cleanup(httpServer.Close)
+
+	// Anything the handler could not do is reported here, on the test's own
+	// goroutine, rather than from the server's.
+	t.Cleanup(func() {
+		assert.Empty(t, stub.handlerFaults(), "the stand-in service failed to answer")
+	})
 
 	client := dataset_api.NewDatasetClientFromPipeline(
 		httpServer.URL, runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, nil))

@@ -31,6 +31,7 @@ type usageRecorder struct {
 	azdext.UnimplementedTelemetryServiceServer
 
 	mu       sync.Mutex
+	accepted bool
 	requests []*azdext.ReportUsageRequest
 }
 
@@ -40,7 +41,15 @@ func (r *usageRecorder) ReportUsage(
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.requests = append(r.requests, request)
-	return &azdext.ReportUsageResponse{Accepted: true}, nil
+	return &azdext.ReportUsageResponse{Accepted: r.accepted}, nil
+}
+
+// refuseEvents records nothing the extension sends, which is the answer an
+// install the host will not admit actually gets.
+func (r *usageRecorder) refuseEvents() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.accepted = false
 }
 
 func (r *usageRecorder) reported() []*azdext.ReportUsageRequest {
@@ -128,7 +137,7 @@ func newInitHarness(t *testing.T, addServiceErr error) *initHarness {
 
 	harness := &initHarness{
 		dir:      dir,
-		usage:    &usageRecorder{},
+		usage:    &usageRecorder{accepted: true},
 		project:  &initProjectServer{dir: dir, addServiceErr: addServiceErr},
 		seedRows: seed,
 	}
@@ -146,11 +155,7 @@ func newInitHarness(t *testing.T, addServiceErr error) *initHarness {
 	})
 
 	t.Setenv("AZD_SERVER", listener.Addr().String())
-
-	wd, err := os.Getwd()
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = os.Chdir(wd) })
-	require.NoError(t, os.Chdir(dir))
+	t.Chdir(dir)
 
 	return harness
 }
@@ -268,16 +273,17 @@ func TestInitReportsNothingWhenItRefusesEarly(t *testing.T) {
 	}
 }
 
-// Reporting is best effort, so a telemetry service that refuses the event must
+// Reporting is best effort, so a host that refuses to record the event must
 // not turn a written scaffold into a failed command.
 func TestInitSucceedsWhenTheEventIsRefused(t *testing.T) {
 	h := newInitHarness(t, nil)
-	h.usage.mu.Lock()
-	h.usage.requests = nil
-	h.usage.mu.Unlock()
+	h.usage.refuseEvents()
 
 	require.NoError(t, h.runInit(t,
 		"--name", "besteffort", "--target", "agent", "--source", "traces",
 		"--judge-model", "gpt-4.1-nano"),
-		"the scaffold is on disk; what telemetry thinks of it is not the caller's problem")
+		"the scaffold is on disk; what the host does with the event is not the caller's problem")
+
+	require.Len(t, h.usage.reported(), 1,
+		"the event was still sent -- being refused is the host's answer, not a reason not to ask")
 }

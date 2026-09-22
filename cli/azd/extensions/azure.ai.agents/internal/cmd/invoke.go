@@ -55,6 +55,10 @@ type invokeFlags struct {
 	debugLatency    bool
 }
 
+func (f *invokeFlags) forceNewConversation() bool {
+	return f.newConversation || f.newSession
+}
+
 // outputRaw is the sentinel value of the inherited --output flag that selects
 // raw mode. In raw mode the full HTTP response (status line, headers, and body)
 // is dumped to stdout without any parsing or formatting, mirroring `curl -i`.
@@ -281,6 +285,14 @@ This option does not provide crash recovery or automatic reconnection.`,
 
 			if err := validateInvokeVersionFlags(cmd, flags); err != nil {
 				return err
+			}
+
+			if flags.newSession && flags.conversation != "" {
+				return exterrors.Validation(
+					exterrors.CodeConflictingArguments,
+					"cannot use --new-session with --conversation-id; a new session requires a new conversation",
+					"remove --conversation-id to start a new session, or remove --new-session to reuse the conversation",
+				)
 			}
 
 			if flags.protocol != "" {
@@ -1074,7 +1086,7 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 			log.Printf("invoke local: failed to resolve session ID: %v", err)
 		}
 		convID, err = resolveStoredID(
-			ctx, azdClient, agentKey, a.flags.conversation, a.flags.newConversation, "conversations", true,
+			ctx, azdClient, agentKey, a.flags.conversation, a.flags.forceNewConversation(), "conversations", true,
 		)
 		if err != nil {
 			log.Printf("invoke local: failed to resolve conversation ID: %v", err)
@@ -1558,7 +1570,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 			rc.azdClient,
 			agentKey,
 			a.flags.conversation,
-			a.flags.newConversation,
+			a.flags.forceNewConversation(),
 			rc.projectEndpoint,
 			rc.bearerToken,
 			rc.name,

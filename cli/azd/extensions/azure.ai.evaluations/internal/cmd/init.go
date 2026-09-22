@@ -104,9 +104,11 @@ func newInitCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&flags.evalName, "name", "",
 		"Name of the eval. Defaults to <target>-dataset-eval, or <target>-trace-eval "+
-			"under --source traces, numbered when that name is taken.")
+			"under --source traces. Static conversations default to conversation-dataset-eval. "+
+			"Numbered when that name is taken.")
 	cmd.Flags().StringVar(&flags.target, "target", "",
-		"Name of the agent to evaluate. Detected when the project has one agent; prompts when it has several.")
+		"Agent to invoke for turn datasets or simulation, or filter for traces. Not allowed in static mode. "+
+			"Detected when the project has one agent; prompts when it has several.")
 	cmd.Flags().StringVar(&flags.source, "source", "",
 		"Where rows come from: dataset or traces. Defaults to traces when the azd "+
 			"environment records an Application Insights connection, otherwise dataset.")
@@ -134,13 +136,13 @@ func newInitCommand() *cobra.Command {
 			project.MinSimulationTurns, project.MaxSimulationTurns))
 	cmd.Flags().StringSliceVar(&flags.evaluators, "evaluator", nil,
 		"Evaluator reference, repeatable and comma-separated. Use builtin.<name> for a "+
-			"built-in. Passing this replaces the defaults, so it also opts out of rubric generation.")
+			"built-in, or a declared custom evaluator compatible with the selected level. Replaces the defaults.")
 	cmd.Flags().StringVar(&flags.judgeModel, "judge-model", "",
-		"Model deployment the graders judge with. Detected from the project when omitted.")
+		"Model deployment the graders judge with. Detected locally when omitted; prompts if unavailable.")
 	// No backticks around init: pflag reads the first back-quoted word in a
 	// usage string as the value placeholder, which rendered this "--path init".
 	cmd.Flags().StringVar(&flags.path, "path", "",
-		"Directory to write the configuration into. Used verbatim, never re-rooted. "+
+		"Configuration file or directory to write into. Used verbatim, never re-rooted. "+
 			"Defaults to the directory an earlier init scaffolded, otherwise ./evals.")
 	return cmd
 }

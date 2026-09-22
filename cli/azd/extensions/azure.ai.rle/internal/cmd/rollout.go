@@ -281,12 +281,13 @@ func (a *rolloutAction) executeAndSave(
 		RolloutID:  rolloutID,
 		Task:       task,
 		AgentInput: agentInput,
-		Model: &rolloutModelSelection{
+		Policy: &rolloutPolicy{
+			Type:            loomPolicyType,
 			ModelName:       model,
-			LoomSessionID:   sessionID,
+			ProjectEndpoint: target.projectEndpoint,
+			SessionID:       sessionID,
 			CheckpointID:    checkpointID,
 			SequenceID:      &sequenceID,
-			ProjectEndpoint: target.projectEndpoint,
 		},
 	})
 	if err != nil {

@@ -98,7 +98,7 @@ func resolveRolloutOutputDir(directory string) (string, error) {
 }
 
 func rolloutMonitorEnabled() bool {
-	return rleCommandsEnabled() && rleEnableAllEnabled()
+	return rleEnableAllEnabled()
 }
 
 func requireRolloutMonitorEnabled() error {
@@ -109,7 +109,7 @@ func requireRolloutMonitorEnabled() error {
 		Message:    "The rollout monitor is available only in RLE development mode.",
 		Code:       "rle_monitor_disabled",
 		Category:   azdext.LocalErrorCategoryUser,
-		Suggestion: "Set AZD_AI_RLE_ENABLE=true and AZD_AI_RLE_ENABLE_ALL=true to enable local rollout monitoring.",
+		Suggestion: "Set AZD_AI_RLE_ENABLE_ALL=true to enable local rollout monitoring.",
 	}
 }
 

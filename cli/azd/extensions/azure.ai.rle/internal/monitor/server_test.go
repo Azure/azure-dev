@@ -158,7 +158,7 @@ func TestRunServesAndStops(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			response.Body.Close()
+			_ = response.Body.Close()
 			if response.StatusCode != 200 {
 				t.Fatalf("monitor not responsive: %d", response.StatusCode)
 			}

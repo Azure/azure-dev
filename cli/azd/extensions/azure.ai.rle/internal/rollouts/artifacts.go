@@ -78,6 +78,7 @@ func (r ArtifactReader) Get(ctx context.Context, rolloutID string) (Snapshot, er
 		return Snapshot{}, err
 	}
 	directory := filepath.Join(r.OutputDir, rolloutID)
+	// #nosec G304 -- directory is OutputDir joined with a rolloutID already accepted by ValidateID, and the file name is fixed.
 	data, err := os.ReadFile(filepath.Join(directory, "summary.json"))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -117,6 +118,7 @@ func (r ArtifactReader) Get(ctx context.Context, rolloutID string) (Snapshot, er
 			"Task verdict unavailable: this older export may have defaulted missing success to false. "+
 				"The original value is retained in summary.json.")
 	}
+	// #nosec G304 -- directory is OutputDir joined with a rolloutID already accepted by ValidateID, and the file name is fixed.
 	graph, err := os.ReadFile(filepath.Join(directory, "rollout.json"))
 	switch {
 	case err == nil:

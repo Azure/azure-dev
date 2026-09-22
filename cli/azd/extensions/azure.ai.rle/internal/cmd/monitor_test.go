@@ -28,7 +28,6 @@ const monitorTestID = "3c27c30f5fba261c3a7a3e856b4e1388"
 
 func isolateRolloutArtifacts(t *testing.T) string {
 	t.Helper()
-	t.Setenv(rleEnableEnvVar, "true")
 	t.Setenv(rleEnableAllEnvVar, "true")
 	root := t.TempDir()
 	t.Chdir(root)
@@ -69,7 +68,6 @@ func TestMonitorLoadsLocalResponseWithoutCredentials(t *testing.T) {
 }
 
 func TestMonitorValidation(t *testing.T) {
-	t.Setenv(rleEnableEnvVar, "true")
 	t.Setenv(rleEnableAllEnvVar, "true")
 	for _, args := range [][]string{
 		{"--rollout-id", monitorTestID, "extra"},
@@ -91,7 +89,6 @@ func TestMonitorValidation(t *testing.T) {
 }
 
 func TestMonitorRolloutIDValidation(t *testing.T) {
-	t.Setenv(rleEnableEnvVar, "true")
 	t.Setenv(rleEnableAllEnvVar, "true")
 	oldRun := runRolloutMonitor
 	t.Cleanup(func() { runRolloutMonitor = oldRun })
@@ -361,14 +358,12 @@ func TestMonitorEndpointRedactsCredentials(t *testing.T) {
 
 func TestMonitorDevelopmentGate(t *testing.T) {
 	for _, tc := range []struct {
-		preview, development string
-		enabled              bool
+		development string
+		enabled     bool
 	}{
-		{"", "", false}, {"true", "", false}, {"", "true", false},
-		{"true", "false", false}, {"true", "true", true},
+		{"", false}, {"false", false}, {"true", true},
 	} {
-		t.Run(tc.preview+"/"+tc.development, func(t *testing.T) {
-			t.Setenv(rleEnableEnvVar, tc.preview)
+		t.Run(tc.development, func(t *testing.T) {
 			t.Setenv(rleEnableAllEnvVar, tc.development)
 			root := NewRootCommand()
 			command, _, err := root.Find([]string{"monitor"})

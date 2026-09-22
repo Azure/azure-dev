@@ -1271,11 +1271,27 @@ func renderRun(
 	if c := run.ResultCounts; c != nil && c.Total > 0 {
 		errored, _ := unscoredSplit(c, c.Passed+c.Failed)
 		fmt.Fprint(out, messages.RunFollowUp(
-			run.Metadata[metaEvalName], run.ID, c.Failed > 0, errored > 0))
+			followUpEvalRef(run), run.ID, c.Failed > 0, errored > 0))
 	}
 
 	writePortalLink(out, runLink(run.ReportURL, run.PortalURL))
 	return nil
+}
+
+// followUpEvalRef names the eval in the commands a finished run suggests.
+//
+// The declared name first, because that is what a reader has in their
+// configuration. A run made by the portal or an SDK carries none of this
+// extension's metadata, and printing `--run <id>` with no `--eval` leaves a
+// command that has to re-resolve the eval from the configuration -- prompting,
+// or picking a declaration that is not the one the run belongs to. The service
+// states the id on the run, so it stands in, exactly as the header already
+// does.
+func followUpEvalRef(run *eval_api.OpenAIEvalRun) string {
+	if name := run.Metadata[metaEvalName]; name != "" {
+		return name
+	}
+	return run.EvalID
 }
 
 // passRateText is the rate, or a dash where nothing was scored. A rate over no

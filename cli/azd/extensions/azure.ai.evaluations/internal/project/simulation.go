@@ -3,7 +3,11 @@
 
 package project
 
-import "fmt"
+import (
+	"fmt"
+
+	"gopkg.in/yaml.v3"
+)
 
 // Simulation declares that an eval creates its conversations rather than
 // scoring ones it was given.
@@ -40,6 +44,56 @@ const (
 	// local default: omitted means the service decides.
 	DefaultNumConversations = 1
 )
+
+// UnmarshalYAML refuses an explicitly written zero.
+//
+// Both counts use 0 as the "unstated" sentinel, which the rest of this config
+// model does too, so Validate cannot tell `num_conversations: 0` from a key
+// that was never there -- and the zero was quietly replaced with the default
+// while the schema declares a minimum of 1. The editor refused it and the CLI
+// accepted it, which is the disagreement worth closing.
+//
+// Presence is read here, where it still exists, rather than by making the
+// fields pointers: 0-means-unset is the convention every other optional number
+// in this package follows, and one struct disagreeing is its own trap.
+func (s *Simulation) UnmarshalYAML(value *yaml.Node) error {
+	type plain Simulation
+	var decoded plain
+	if err := value.Decode(&decoded); err != nil {
+		return err
+	}
+
+	for _, stated := range []struct {
+		key   string
+		value int
+		min   int
+	}{
+		{"num_conversations", decoded.NumConversations, MinNumConversations},
+		{"max_turns", decoded.MaxTurns, MinSimulationTurns},
+	} {
+		if stated.value == 0 && mappingHasKey(value, stated.key) {
+			return fmt.Errorf(
+				"simulation.%s is 0; omit it for the default, or give it at least %d",
+				stated.key, stated.min)
+		}
+	}
+
+	*s = Simulation(decoded)
+	return nil
+}
+
+// mappingHasKey reports whether a mapping node states this key at all.
+func mappingHasKey(node *yaml.Node, key string) bool {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return false
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			return true
+		}
+	}
+	return false
+}
 
 // Validate refuses a simulation block that cannot produce a run.
 //

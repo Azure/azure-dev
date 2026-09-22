@@ -73,13 +73,24 @@ type finetuneJobCreationRequest struct {
 	Method         *finetuneMethodRequest `json:"method,omitempty"`
 }
 
+type finetuneJobMethod struct {
+	Type           string                        `json:"type"`
+	RleEnvironment *finetuneRleEnvironmentConfig `json:"rl_environment,omitempty"`
+}
+
 type finetuneJobResource struct {
-	Id             string `json:"id"`
-	Status         string `json:"status,omitempty"`
-	Model          string `json:"model,omitempty"`
-	FineTunedModel string `json:"fine_tuned_model,omitempty"`
-	TrainingFile   string `json:"training_file,omitempty"`
-	ValidationFile string `json:"validation_file,omitempty"`
+	Id             string              `json:"id"`
+	Status         string              `json:"status,omitempty"`
+	Model          string              `json:"model,omitempty"`
+	FineTunedModel string              `json:"fine_tuned_model,omitempty"`
+	TrainingFile   string              `json:"training_file,omitempty"`
+	ValidationFile string              `json:"validation_file,omitempty"`
+	Method         *finetuneJobMethod `json:"method,omitempty"`
+}
+
+type finetuneJobListResponse struct {
+	Data    []finetuneJobResource `json:"data"`
+	HasMore bool                  `json:"has_more"`
 }
 
 type finetuneHTTPError struct {
@@ -169,6 +180,30 @@ func (c *finetuneClient) createJob(
 		"azureai-project-is-default": "true",
 	}
 	if err := c.do(ctx, http.MethodPost, finetuneJobsPath, headers, request, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *finetuneClient) listRleJobs(
+	ctx context.Context,
+	after string,
+	limit int,
+	azureAIProject string,
+) (*finetuneJobListResponse, error) {
+	query := url.Values{}
+	query.Set("limit", fmt.Sprintf("%d", limit))
+	query.Set("metadata[method]", finetuneMethodTypeRleEnvironment)
+	if strings.TrimSpace(after) != "" {
+		query.Set("after", after)
+	}
+
+	var result finetuneJobListResponse
+	headers := map[string]string{
+		"azureai-project":            azureAIProject,
+		"azureai-project-is-default": "true",
+	}
+	if err := c.do(ctx, http.MethodGet, finetuneJobsPath+"?"+query.Encode(), headers, nil, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

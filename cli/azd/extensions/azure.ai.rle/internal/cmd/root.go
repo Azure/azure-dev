@@ -106,6 +106,7 @@ func newRootCommand(updateChecker extensionUpdateChecker) *cobra.Command {
 	// internalCommands are staged for a future release and are only shown to the RLE
 	// team's own iteration, in addition to the top-level preview gate above.
 	internalCommands := []*cobra.Command{
+		newJobsCommand(&extCtx.OutputFormat),
 		newTrainCommand(),
 	}
 	for _, command := range internalCommands {

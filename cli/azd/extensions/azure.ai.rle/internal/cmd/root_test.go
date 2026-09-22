@@ -74,36 +74,40 @@ func TestRleUserCommandsHiddenUnlessEnabled(t *testing.T) {
 	}
 }
 
-func TestTrainCommandHiddenUnlessEnableAll(t *testing.T) {
-	t.Setenv(rleEnableEnvVar, "true")
-	t.Setenv(rleEnableAllEnvVar, "")
-	rootCmd := NewRootCommand()
-	command, _, err := rootCmd.Find([]string{"train"})
-	if err != nil {
-		t.Fatalf("expected train command to be registered: %v", err)
-	}
-	if !command.Hidden {
-		t.Fatalf("expected train to be hidden unless %s=true", rleEnableAllEnvVar)
-	}
+func TestInternalCommandsHiddenUnlessEnableAll(t *testing.T) {
+	for _, commandName := range []string{"jobs", "train"} {
+		t.Run(commandName, func(t *testing.T) {
+			t.Setenv(rleEnableEnvVar, "true")
+			t.Setenv(rleEnableAllEnvVar, "")
+			rootCmd := NewRootCommand()
+			command, _, err := rootCmd.Find([]string{commandName})
+			if err != nil {
+				t.Fatalf("expected %s command to be registered: %v", commandName, err)
+			}
+			if !command.Hidden {
+				t.Fatalf("expected %s to be hidden unless %s=true", commandName, rleEnableAllEnvVar)
+			}
 
-	t.Setenv(rleEnableAllEnvVar, "true")
-	rootCmd = NewRootCommand()
-	command, _, err = rootCmd.Find([]string{"train"})
-	if err != nil {
-		t.Fatalf("expected train command to be registered: %v", err)
-	}
-	if command.Hidden {
-		t.Fatal("expected train to be visible when both preview flags are enabled")
-	}
+			t.Setenv(rleEnableAllEnvVar, "true")
+			rootCmd = NewRootCommand()
+			command, _, err = rootCmd.Find([]string{commandName})
+			if err != nil {
+				t.Fatalf("expected %s command to be registered: %v", commandName, err)
+			}
+			if command.Hidden {
+				t.Fatalf("expected %s to be visible when both preview flags are enabled", commandName)
+			}
 
-	t.Setenv(rleEnableEnvVar, "")
-	rootCmd = NewRootCommand()
-	command, _, err = rootCmd.Find([]string{"train"})
-	if err != nil {
-		t.Fatalf("expected train command to be registered: %v", err)
-	}
-	if !command.Hidden {
-		t.Fatal("expected train to remain hidden when the top-level preview flag is disabled")
+			t.Setenv(rleEnableEnvVar, "")
+			rootCmd = NewRootCommand()
+			command, _, err = rootCmd.Find([]string{commandName})
+			if err != nil {
+				t.Fatalf("expected %s command to be registered: %v", commandName, err)
+			}
+			if !command.Hidden {
+				t.Fatalf("expected %s to remain hidden when the top-level preview flag is disabled", commandName)
+			}
+		})
 	}
 }
 

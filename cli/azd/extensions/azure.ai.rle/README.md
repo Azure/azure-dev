@@ -537,6 +537,25 @@ file. The extension uploads it to the selected fine-tuning resource with the
 Use `--endpoint` to target a different fine-tuning resource for a single
 invocation.
 
+## List RLE-backed fine-tuning jobs (experimental)
+
+`azd ai rle jobs` lists fine-tuning jobs that use the `rl_environment` method.
+It is gated by the same preview variables as `train` and derives the fine-tuning
+resource from `FOUNDRY_PROJECT_ENDPOINT`:
+
+```powershell
+$env:AZD_AI_RLE_ENABLE = "true"
+$env:AZD_AI_RLE_ENABLE_ALL = "true"
+$env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
+
+azd ai rle jobs
+azd ai rle jobs --output json
+```
+
+The command requests only `rl_environment` jobs from the fine-tuning API and
+verifies that filter before it renders results. Use `--endpoint` to query a
+different fine-tuning resource for a single invocation.
+
 ## Build and install from source
 
 From `cli\azd\extensions\azure.ai.rle`:

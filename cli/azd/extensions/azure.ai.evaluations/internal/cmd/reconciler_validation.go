@@ -49,9 +49,32 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 			}
 			continue
 		}
-		fields, err := inspectJSONL(ctx, path)
+		available := map[string]any{}
+		fields, err := inspectJSONL(ctx, path, func(row map[string]any, index int) error {
+			for field := range row {
+				available[field] = nil
+			}
+			for i := range cfg.Evals {
+				group := &cfg.Evals[i]
+				if group.Dataset != decl.Name || group.Simulation == nil {
+					continue
+				}
+				if err := refuseUnusableSeedRow(group, row, index); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
 		if err != nil {
 			return messages.DatasetProblem(decl.Name, err)
+		}
+		for i := range cfg.Evals {
+			group := &cfg.Evals[i]
+			if group.Dataset == decl.Name {
+				if err := validateDatasetTarget(group, available); err != nil {
+					return messages.DatasetProblem(decl.Name, err)
+				}
+			}
 		}
 		columns[decl.Name] = fields
 	}
@@ -152,6 +175,23 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 	}
 	r.prepared = prepared
 	return nil
+}
+
+func validateDatasetTarget(group *project.Eval, available map[string]any) error {
+	if group.Simulation != nil || group.Target == nil {
+		return nil
+	}
+	// These constructors describe the same template used by the run path.
+	// Resolving the remote agent name is unnecessary for checking its inputs.
+	var source *eval_api.EvalRunDataSource
+	if group.Target.Type == project.TargetTypeModel {
+		source = eval_api.NewModelTargetDataSource(group.Target.Name)
+	} else {
+		source = eval_api.NewAgentTargetDataSource(group.Target.Name, nil)
+	}
+	// The run allows sparse target inputs. Keep the union of available columns,
+	// separately from the intersection used for required evaluator bindings.
+	return refuseUnboundTemplate(group, source, []map[string]any{available})
 }
 
 func evaluatorSchemaKey(name, version string) string {

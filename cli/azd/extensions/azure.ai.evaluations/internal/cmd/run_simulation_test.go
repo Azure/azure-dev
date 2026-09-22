@@ -104,6 +104,11 @@ func TestRefuseUnusableSeedRows(t *testing.T) {
 			wantErr: "row 1 has an empty or non-text",
 		},
 		{
+			name:    "whitespace describes nothing",
+			rows:    []map[string]any{{"test_case_description": " \t\r\n "}},
+			wantErr: "row 1 has an empty or non-text",
+		},
+		{
 			name:    "a description that is not text",
 			rows:    []map[string]any{{"test_case_description": 42.0}},
 			wantErr: "row 1 has an empty or non-text",

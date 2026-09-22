@@ -95,12 +95,6 @@ azd extension update azure.ai.rle
 azd ai rle version
 ```
 
-The lifecycle commands are preview-gated:
-
-```powershell
-$env:AZD_AI_RLE_ENABLE = "true"
-```
-
 Harness scaffolds, samples hidden from the default catalog, and other
 internal-only surfaces are gated by a single flag for the RLE team's own
 iteration:
@@ -512,12 +506,10 @@ RL-environment training; job creation fails for other models, or if the named RL
 version is not published and ready in the Foundry project set by
 `FOUNDRY_PROJECT_ENDPOINT`.
 
-This command is gated behind `AZD_AI_RLE_ENABLE_ALL` in addition to
-`AZD_AI_RLE_ENABLE`, since it targets an unreleased method and the CLI shape
-is still subject to change:
+This command is gated behind `AZD_AI_RLE_ENABLE_ALL`, since it targets an
+unreleased method and the CLI shape is still subject to change:
 
 ```powershell
-$env:AZD_AI_RLE_ENABLE = "true"
 $env:AZD_AI_RLE_ENABLE_ALL = "true"
 $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
 
@@ -565,9 +557,12 @@ increment:
 
 The script preserves the existing prerelease suffix. For example,
 `0.8.8-preview` becomes `0.8.9-preview` with `-VersionBump patch`. It updates
-`version.txt` and `extension.yaml`, builds and packages the extension, writes the
-artifact under `artifacts\rle-dev\<version>`, and updates
-`registry.rle-dev.json` with its checksum and GitHub URL.
+`version.txt` and `extension.yaml`, cross-compiles the extension for every
+supported platform (`windows`, `darwin`, and `linux` on both `amd64` and
+`arm64`), writes those artifacts under `artifacts\rle-dev\<version>`, and
+updates `registry.rle-dev.json` with each artifact's checksum and GitHub URL.
+`azd x pack` archives linux artifacts as `.tar.gz` and every other platform as
+`.zip`. The script runs on any host Go can cross-compile from.
 
 Mark a release as breaking only when users must update before continuing:
 
@@ -576,6 +571,6 @@ Mark a release as breaking only when users must update before continuing:
 ```
 
 Non-breaking is the default; do not pass `-BreakingChanges` for a normal release.
-Review and commit the two version files, generated artifact, and registry change
+Review and commit the two version files, generated artifacts, and registry change
 together. The registry URLs target `main`, so the release becomes installable
 after those files are merged.

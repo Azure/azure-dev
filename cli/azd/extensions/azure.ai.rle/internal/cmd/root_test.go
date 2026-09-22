@@ -34,24 +34,16 @@ func TestNewRootCommandIncludesExpectedCommands(t *testing.T) {
 	}
 }
 
-func TestRleUserCommandsHiddenUnlessEnabled(t *testing.T) {
-	t.Setenv(rleEnableEnvVar, "")
+func TestRleUserCommandsVisibleByDefault(t *testing.T) {
 	rootCmd := NewRootCommand()
-	for _, commandName := range []string{"list", "show", "init", "rollout", "publish", "run"} {
+	for _, commandName := range []string{"list", "show", "init", "rollout", "publish", "run", "version"} {
 		command, _, err := rootCmd.Find([]string{commandName})
 		if err != nil {
 			t.Fatalf("expected command %q to be registered: %v", commandName, err)
 		}
-		if !command.Hidden {
-			t.Fatalf("expected command %q to be hidden when %s is not true", commandName, rleEnableEnvVar)
+		if command.Hidden {
+			t.Fatalf("expected command %q to be visible without any opt-in flag", commandName)
 		}
-	}
-	versionCommand, _, err := rootCmd.Find([]string{"version"})
-	if err != nil {
-		t.Fatalf("expected version command to be registered: %v", err)
-	}
-	if versionCommand.Hidden {
-		t.Fatal("expected version command to remain visible when preview lifecycle commands are hidden")
 	}
 	metadataCommand, _, err := rootCmd.Find([]string{"metadata"})
 	if err != nil {
@@ -60,22 +52,9 @@ func TestRleUserCommandsHiddenUnlessEnabled(t *testing.T) {
 	if !metadataCommand.Hidden {
 		t.Fatal("expected metadata command to remain hidden")
 	}
-
-	t.Setenv(rleEnableEnvVar, "true")
-	rootCmd = NewRootCommand()
-	for _, commandName := range []string{"list", "show", "init", "rollout", "publish", "run", "version"} {
-		command, _, err := rootCmd.Find([]string{commandName})
-		if err != nil {
-			t.Fatalf("expected command %q to be registered: %v", commandName, err)
-		}
-		if command.Hidden {
-			t.Fatalf("expected command %q to be visible when %s=true", commandName, rleEnableEnvVar)
-		}
-	}
 }
 
 func TestTrainCommandHiddenUnlessEnableAll(t *testing.T) {
-	t.Setenv(rleEnableEnvVar, "true")
 	t.Setenv(rleEnableAllEnvVar, "")
 	rootCmd := NewRootCommand()
 	command, _, err := rootCmd.Find([]string{"train"})
@@ -93,17 +72,7 @@ func TestTrainCommandHiddenUnlessEnableAll(t *testing.T) {
 		t.Fatalf("expected train command to be registered: %v", err)
 	}
 	if command.Hidden {
-		t.Fatal("expected train to be visible when both preview flags are enabled")
-	}
-
-	t.Setenv(rleEnableEnvVar, "")
-	rootCmd = NewRootCommand()
-	command, _, err = rootCmd.Find([]string{"train"})
-	if err != nil {
-		t.Fatalf("expected train command to be registered: %v", err)
-	}
-	if !command.Hidden {
-		t.Fatal("expected train to remain hidden when the top-level preview flag is disabled")
+		t.Fatalf("expected train to be visible when %s=true", rleEnableAllEnvVar)
 	}
 }
 
@@ -355,7 +324,6 @@ func TestInitWithoutFolderUsesSelectedSampleName(t *testing.T) {
 func TestInitNoPromptUsesPositionalNameAsSampleAndFolder(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	t.Setenv(rleEnableEnvVar, "true")
 
 	oldLoad := loadRleSampleCatalogFunc
 	oldSelect := selectRleSampleFunc
@@ -384,7 +352,6 @@ func TestInitNoPromptUsesPositionalNameAsSampleAndFolder(t *testing.T) {
 }
 
 func TestInitNoPromptRequiresPositionalSampleName(t *testing.T) {
-	t.Setenv(rleEnableEnvVar, "true")
 	command := NewRootCommand()
 	command.SetArgs([]string{"init", "--no-prompt"})
 	err := command.Execute()

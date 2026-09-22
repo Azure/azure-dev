@@ -171,13 +171,13 @@ const (
 	// that means conversations.
 	DataGenerationTypeSimulationSeed = "simulation_seed"
 
-	// DataGenerationTypeConversationSimulation is the spelling the CLI used
-	// before the contract was published, and the one the portal writes into a
-	// dataset version's tags.
+	// DataGenerationTypeConversationSimulation is what the service records on
+	// a generated dataset version, and what the portal writes there too.
 	//
-	// Never sent. It is recognized on the way back so a dataset tagged by the
-	// portal, or by a build of this CLI that predates the fix, is still read
-	// as holding seeds.
+	// It is NOT a DataGenerationJobType and must never go out on a request.
+	// The two vocabularies genuinely differ: a live job submitted with
+	// `options.type: simulation_seed` came back with
+	// `data_generation_type: conversation_simulation` on its output version.
 	DataGenerationTypeConversationSimulation = "conversation_simulation"
 )
 

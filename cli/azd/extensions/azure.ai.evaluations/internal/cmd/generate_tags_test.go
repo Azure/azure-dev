@@ -18,15 +18,16 @@ import (
 // Spec §5: a generated seed dataset records what it holds, so a later reattach
 // or run does not have to infer it from row shape.
 //
-// The tag records the type that was requested, so it tracks the discriminator
-// rather than being spelled separately -- the service writes the same value
-// into its own copy of the tag.
+// The tag is not the request discriminator. Verified against a live job: a
+// request carrying `options.type: simulation_seed` produced a version tagged
+// `data_generation_type: conversation_simulation`. Writing the request spelling
+// here would put the CLI's tag at odds with the service's own on one version.
 func TestSeedDatasetTags(t *testing.T) {
 	t.Parallel()
 
 	conversation := seedDatasetTags(project.EvaluationLevelConversation)
 	assert.Equal(t, map[string]string{
-		"data_generation_type": "simulation_seed",
+		"data_generation_type": "conversation_simulation",
 		"evaluation_level":     "conversation",
 		"scenario":             "evaluation",
 	}, conversation)
@@ -38,6 +39,36 @@ func TestSeedDatasetTags(t *testing.T) {
 
 	assert.Nil(t, seedDatasetTags(""),
 		"an unstated level tags nothing rather than asserting a default nobody asked for")
+}
+
+// The request and the tag are two vocabularies for the same thing, and the
+// service uses a different word in each. Asserting them together is what stops
+// one being "corrected" to match the other.
+//
+// Live evidence, job datagen-774f6c7f31b449689898f01376f31932:
+//
+//	request  inputs.options.type      = "simulation_seed"
+//	response result.outputs[0].tags   = { "data_generation_type": "conversation_simulation", ... }
+func TestTheRequestTypeAndTheDatasetTagAreDifferentVocabularies(t *testing.T) {
+	t.Parallel()
+
+	const level = project.EvaluationLevelConversation
+
+	assert.Equal(t, "simulation_seed", dataGenerationType(level),
+		"the request carries the contract's DataGenerationJobType")
+	assert.Equal(t, "conversation_simulation", datasetGenerationTag(level),
+		"the tag carries what the service writes on the produced version")
+	assert.NotEqual(t, dataGenerationType(level), datasetGenerationTag(level),
+		"these are deliberately different; coupling them broke agreement with the service")
+
+	// Turn level is the case where they do coincide, which is exactly why the
+	// difference above is easy to miss.
+	assert.Equal(t, "simple_qna", dataGenerationType(project.EvaluationLevelTurn))
+	assert.Equal(t, "simple_qna", datasetGenerationTag(project.EvaluationLevelTurn))
+
+	// Either spelling still reads as seeds, whichever side wrote it.
+	assert.True(t, eval_api.SimulationSeedGenerationType(dataGenerationType(level)))
+	assert.True(t, eval_api.SimulationSeedGenerationType(datasetGenerationTag(level)))
 }
 
 // The level a reattach recovers comes from the version's own tags, which is the

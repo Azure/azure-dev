@@ -31,15 +31,31 @@ const (
 // seedDatasetTags is what a generated dataset should carry for the level it was
 // generated at. An unstated level tags nothing rather than asserting a default
 // the caller never asked for.
+//
+// The tag is NOT the request discriminator. The service takes
+// `options.type: simulation_seed` and then writes
+// `data_generation_type: conversation_simulation` onto the version it produces
+// -- verified against a live job. Writing the request spelling here would
+// disagree with the service's own tag on the same version, and a reader has no
+// way to tell which one is authoritative.
 func seedDatasetTags(evaluationLevel string) map[string]string {
 	if evaluationLevel == "" {
 		return nil
 	}
 	return map[string]string{
-		tagDataGenerationType: dataGenerationType(evaluationLevel),
+		tagDataGenerationType: datasetGenerationTag(evaluationLevel),
 		tagEvaluationLevel:    evaluationLevel,
 		tagScenario:           scenarioEvaluation,
 	}
+}
+
+// datasetGenerationTag is the value the service records on a generated version
+// for this level, which is the value the CLI has to write to agree with it.
+func datasetGenerationTag(evaluationLevel string) string {
+	if evaluationLevel == project.EvaluationLevelConversation {
+		return eval_api.DataGenerationTypeConversationSimulation
+	}
+	return eval_api.DataGenerationTypeSimpleQnA
 }
 
 // registeredEvaluationLevel reads the level a dataset version records.

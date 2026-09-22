@@ -60,8 +60,42 @@ func TestManagedConversationState(t *testing.T) {
 		t.Fatalf("new conversation should not reuse %q", got)
 	}
 	action.flags.conversation = " conv_explicit "
-	if got := action.storedManagedConversationID(t.Context(), nil, agentKey); got != "conv_explicit" {
+	if got := action.storedManagedConversationID(t.Context(), azdClient, agentKey); got != "conv_explicit" {
 		t.Fatalf("explicit conversation id: got %q", got)
+	}
+	var conversations map[string]string
+	userConfig.getJSON(t, configPath("conversations"), &conversations)
+	if got := conversations[agentKey]; got != "conv_explicit" {
+		t.Fatalf("stored explicit conversation id: got %q", got)
+	}
+}
+
+func TestPromptConversationEndpoint(t *testing.T) {
+	tests := []struct {
+		name      string
+		harnessed bool
+		want      string
+	}{
+		{
+			name: "prompt agent",
+			want: "https://test.example.com/api/projects/proj/openai/v1/conversations",
+		},
+		{
+			name:      "harness agent",
+			harnessed: true,
+			want: "https://test.example.com/api/projects/proj/agents/agent/endpoint/protocols/openai/" +
+				"conversations?api-version=v1",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := promptConversationEndpoint(
+				"https://test.example.com/api/projects/proj/", "agent", tt.harnessed,
+			)
+			if got != tt.want {
+				t.Errorf("endpoint: got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -85,7 +119,7 @@ func TestStreamManagedSSE_TextDeltas(t *testing.T) {
 	}, "\n")
 
 	var out strings.Builder
-	if _, err := streamManagedSSE(strings.NewReader(sse), &out); err != nil {
+	if err := streamManagedSSE(strings.NewReader(sse), &out); err != nil {
 		t.Fatalf("streamManagedSSE: %v", err)
 	}
 	got := out.String()
@@ -108,7 +142,7 @@ func TestStreamManagedSSE_NoText(t *testing.T) {
 	}, "\n")
 
 	var out strings.Builder
-	if _, err := streamManagedSSE(strings.NewReader(sse), &out); err != nil {
+	if err := streamManagedSSE(strings.NewReader(sse), &out); err != nil {
 		t.Fatalf("streamManagedSSE: %v", err)
 	}
 	if out.String() != "" {
@@ -132,38 +166,10 @@ func TestStreamManagedSSE_IgnoresMalformedData(t *testing.T) {
 	}, "\n")
 
 	var out strings.Builder
-	if _, err := streamManagedSSE(strings.NewReader(sse), &out); err != nil {
+	if err := streamManagedSSE(strings.NewReader(sse), &out); err != nil {
 		t.Fatalf("streamManagedSSE: %v", err)
 	}
 	if out.String() != "ok\n" {
 		t.Errorf("got %q, want %q", out.String(), "ok\n")
-	}
-}
-
-// TestStreamManagedSSE_CapturesResponseID asserts the response id is parsed
-// from lifecycle events. The last id seen (from response.completed) wins.
-func TestStreamManagedSSE_CapturesResponseID(t *testing.T) {
-	sse := strings.Join([]string{
-		"event: response.created",
-		`data: {"type":"response.created","response":{"id":"resp_created"}}`,
-		"",
-		"event: response.output_text.delta",
-		`data: {"type":"response.output_text.delta","delta":"hi"}`,
-		"",
-		"event: response.completed",
-		`data: {"type":"response.completed","response":{"id":"resp_done"}}`,
-		"",
-	}, "\n")
-
-	var out strings.Builder
-	id, err := streamManagedSSE(strings.NewReader(sse), &out)
-	if err != nil {
-		t.Fatalf("streamManagedSSE: %v", err)
-	}
-	if id != "resp_done" {
-		t.Errorf("got response id %q, want %q", id, "resp_done")
-	}
-	if out.String() != "hi\n" {
-		t.Errorf("got %q, want %q", out.String(), "hi\n")
 	}
 }

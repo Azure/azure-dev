@@ -417,15 +417,20 @@ func TestInvokeFlagsForceNewConversation(t *testing.T) {
 	}
 }
 
-func TestInvokeNewSessionConversationConflict(t *testing.T) {
+func TestInvokeConversationResetConflict(t *testing.T) {
 	tests := []struct {
 		name         string
 		args         []string
 		wantConflict bool
 	}{
 		{
-			name:         "remote",
+			name:         "new session remote",
 			args:         []string{"--new-session", "--conversation-id", "conv_existing"},
+			wantConflict: true,
+		},
+		{
+			name:         "new conversation remote",
+			args:         []string{"--new-conversation", "--conversation-id", "conv_existing"},
 			wantConflict: true,
 		},
 		{
@@ -448,9 +453,14 @@ func TestInvokeNewSessionConversationConflict(t *testing.T) {
 			wantConflict: true,
 		},
 		{name: "new session alone", args: []string{"--new-session"}},
+		{name: "new conversation alone", args: []string{"--new-conversation"}},
 		{name: "both reset flags", args: []string{"--new-session", "--new-conversation"}},
 		{name: "explicit conversation alone", args: []string{"--conversation-id", "conv_existing"}},
 		{name: "reset disabled", args: []string{"--new-session=false", "--conversation-id", "conv_existing"}},
+		{
+			name: "new conversation disabled",
+			args: []string{"--new-conversation=false", "--conversation-id", "conv_existing"},
+		},
 		{name: "empty conversation", args: []string{"--new-session", "--conversation-id="}},
 	}
 
@@ -480,7 +490,7 @@ func TestInvokeNewSessionConversationConflict(t *testing.T) {
 			if localErr.Category != azdext.LocalErrorCategoryValidation {
 				t.Errorf("category = %q, want validation", localErr.Category)
 			}
-			if !strings.Contains(localErr.Message, "cannot use --new-session with --conversation-id") {
+			if !strings.Contains(localErr.Message, "cannot use conversation reset flags with --conversation-id") {
 				t.Errorf("unexpected conflict message: %q", localErr.Message)
 			}
 			if !strings.Contains(localErr.Suggestion, "remove --conversation-id") {

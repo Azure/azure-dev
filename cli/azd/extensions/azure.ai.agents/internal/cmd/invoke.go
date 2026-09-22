@@ -287,11 +287,11 @@ This option does not provide crash recovery or automatic reconnection.`,
 				return err
 			}
 
-			if flags.newSession && flags.conversation != "" {
+			if flags.forceNewConversation() && flags.conversation != "" {
 				return exterrors.Validation(
 					exterrors.CodeConflictingArguments,
-					"cannot use --new-session with --conversation-id; a new session requires a new conversation",
-					"remove --conversation-id to start a new session, or remove --new-session to reuse the conversation",
+					"cannot use conversation reset flags with --conversation-id",
+					"remove --conversation-id to start a new conversation, or remove the reset flag to reuse it",
 				)
 			}
 

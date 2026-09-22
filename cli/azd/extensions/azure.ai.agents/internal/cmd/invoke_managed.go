@@ -47,6 +47,9 @@ func (a *InvokeAction) storedManagedConversationID(
 	agentKey string,
 ) string {
 	if explicit := strings.TrimSpace(a.flags.conversation); explicit != "" {
+		if azdClient != nil {
+			saveContextValue(ctx, azdClient, agentKey, explicit, "conversations")
+		}
 		return explicit
 	}
 	if azdClient == nil || a.flags.forceNewConversation() {
@@ -57,6 +60,17 @@ func (a *InvokeAction) storedManagedConversationID(
 		return ""
 	}
 	return value
+}
+
+func promptConversationEndpoint(projectEndpoint, agentName string, harnessed bool) string {
+	projectEndpoint = strings.TrimRight(projectEndpoint, "/")
+	if !harnessed {
+		return projectEndpoint + "/openai/v1/conversations"
+	}
+	return fmt.Sprintf(
+		"%s/agents/%s/endpoint/protocols/openai/conversations?api-version=v1",
+		projectEndpoint, agentName,
+	)
 }
 
 // runPromptInvoke sends a message to a prompt (kind=managed) agent via the
@@ -118,12 +132,9 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 	}
 	conversationID := a.storedManagedConversationID(ctx, azdClient, agentKey)
 	if conversationID == "" {
-		conversationEndpoint := strings.TrimRight(pctx.Settings.ProjectEndpoint, "/") + "/openai/v1/conversations"
-		if pctx.Agent.HarnessType() != "" {
-			conversationEndpoint = fmt.Sprintf(
-				"%s/agents/%s/endpoint/protocols/openai/conversations?api-version=v1",
-				strings.TrimRight(pctx.Settings.ProjectEndpoint, "/"), agentName,
-			)
+		harnessed := pctx.Agent.HarnessType() != ""
+		conversationEndpoint := promptConversationEndpoint(pctx.Settings.ProjectEndpoint, agentName, harnessed)
+		if harnessed {
 			headers["Foundry-Features"] = "GitHubCopilot=V1Preview"
 		}
 		conversationID, err = client.CreateConversationAt(ctx, conversationEndpoint, headers)
@@ -156,8 +167,7 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 	}
 	defer stream.Close()
 
-	_, err = streamManagedSSE(stream, os.Stdout)
-	if err != nil {
+	if err := streamManagedSSE(stream, os.Stdout); err != nil {
 		return fmt.Errorf("reading prompt agent response stream: %w", err)
 	}
 	return nil
@@ -171,20 +181,16 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 // silently. A trailing newline is emitted after the stream ends so the shell
 // prompt returns on its own line.
 //
-// The returned string is the response id parsed from the stream's lifecycle
-// events (when present).
-//
 // Terminal failure events (`error`, `response.failed`, `response.incomplete`)
 // return an error. Reporting success with no output would make a failed
 // invocation indistinguishable from an empty answer and exit 0 in CI.
-func streamManagedSSE(r io.Reader, w io.Writer) (string, error) {
+func streamManagedSSE(r io.Reader, w io.Writer) error {
 	scanner := bufio.NewScanner(r)
 	// SSE data lines can be large (full JSON payloads); raise the buffer cap
 	// well above the 64 KiB default so a single event never overflows it.
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 
 	var event string
-	var responseID string
 	var streamErr error
 	completed := false
 	wroteText := false
@@ -212,17 +218,6 @@ func streamManagedSSE(r io.Reader, w io.Writer) (string, error) {
 				if event == "response.completed" {
 					completed = true
 				}
-				// Capture the response id from any lifecycle event that carries
-				// it (e.g. response.created, response.completed). The last one
-				// seen wins so the persisted id reflects the completed turn.
-				var payload struct {
-					Response struct {
-						ID string `json:"id"`
-					} `json:"response"`
-				}
-				if err := json.Unmarshal([]byte(data), &payload); err == nil && payload.Response.ID != "" {
-					responseID = payload.Response.ID
-				}
 			}
 		case line == "":
 			// Blank line terminates an SSE event block.
@@ -233,12 +228,12 @@ func streamManagedSSE(r io.Reader, w io.Writer) (string, error) {
 		fmt.Fprintln(w)
 	}
 	if err := scanner.Err(); err != nil {
-		return responseID, err
+		return err
 	}
 	if streamErr == nil && !completed {
-		return responseID, fmt.Errorf("managed response stream ended before response.completed")
+		return fmt.Errorf("managed response stream ended before response.completed")
 	}
-	return responseID, streamErr
+	return streamErr
 }
 
 // managedStreamFailure builds an error from a terminal SSE event, preferring

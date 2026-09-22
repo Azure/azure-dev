@@ -294,6 +294,28 @@ Request tracing is off by default. `--debug`, or `AZD_EXT_DEBUG=true`, writes it
 to a dated log file in the temporary directory rather than the terminal, and
 prints that path on stderr.
 
+## Telemetry
+
+When installed from the official registry, the extension reports the
+`init.completed` usage event once `azd ai eval init` has written a scaffold and
+wired the eval service into `azure.yaml`. Its `ext.source` attribute is exactly
+one of:
+
+- `traces` when the eval will grade rows read from project telemetry;
+- `dataset` when it will grade rows from a declared dataset; or
+- `unknown` for a source this extension does not recognize.
+
+The event is reported after the scaffold is committed, not while the prompts
+run, because a confirmation can send the reader back through the questions and
+only the last pass describes what was written.
+
+Event names, attribute keys, and their finite value sets live in
+`internal/telemetry/events.go`. Do not call `ReportUsage` directly from command
+code, and never include eval, dataset, evaluator, or agent names, file paths,
+project endpoints, model deployments, or anything else a user typed. Failures
+and their structured error codes are already reported separately by the
+extension SDK; this event records usage only.
+
 ## TODO before release
 
 The first two are files the azd extensions team owns, so they are not changed

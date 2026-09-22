@@ -31,25 +31,37 @@ func TestManagedResponsesRequestAgentReference(t *testing.T) {
 	if strings.Contains(string(harnessed), `"agent_reference"`) {
 		t.Errorf("harnessed request must omit agent_reference: %s", harnessed)
 	}
+	withConversation, err := json.Marshal(managedResponsesRequest{
+		Model:        "model",
+		Conversation: &managedConversation{ID: "conv_123"},
+	})
+	if err != nil {
+		t.Fatalf("marshal conversation request: %v", err)
+	}
+	if !strings.Contains(string(withConversation), `"conversation":{"id":"conv_123"}`) {
+		t.Errorf("request must carry conversation id: %s", withConversation)
+	}
+	if strings.Contains(string(withConversation), `"previous_response_id"`) {
+		t.Errorf("request must not carry previous_response_id: %s", withConversation)
+	}
 }
 
-func TestManagedResponsesRequestOmitsPreviousResponseForNewSession(t *testing.T) {
+func TestManagedConversationState(t *testing.T) {
 	userConfig := newInvokeUserConfigServer()
 	azdClient := newInvokeTestAzdClient(t, userConfig)
 	agentKey := "managed-agent-key"
-	userConfig.setJSON(t, configPath("conversations"), map[string]string{agentKey: "resp_previous"})
-	action := &InvokeAction{flags: &invokeFlags{newSession: true}}
-
-	payload, err := json.Marshal(managedResponsesRequest{
-		Model:              "model",
-		Input:              "hello",
-		PreviousResponseID: action.managedPreviousResponseID(t.Context(), azdClient, agentKey),
-	})
-	if err != nil {
-		t.Fatalf("marshal request: %v", err)
+	userConfig.setJSON(t, configPath("conversations"), map[string]string{agentKey: "conv_previous"})
+	action := &InvokeAction{flags: &invokeFlags{}}
+	if got := action.storedManagedConversationID(t.Context(), azdClient, agentKey); got != "conv_previous" {
+		t.Fatalf("conversation id: got %q", got)
 	}
-	if strings.Contains(string(payload), `"previous_response_id"`) {
-		t.Errorf("new session request must omit previous_response_id: %s", payload)
+	action.flags.newConversation = true
+	if got := action.storedManagedConversationID(t.Context(), azdClient, agentKey); got != "" {
+		t.Fatalf("new conversation should not reuse %q", got)
+	}
+	action.flags.conversation = " conv_explicit "
+	if got := action.storedManagedConversationID(t.Context(), nil, agentKey); got != "conv_explicit" {
+		t.Fatalf("explicit conversation id: got %q", got)
 	}
 }
 
@@ -129,8 +141,7 @@ func TestStreamManagedSSE_IgnoresMalformedData(t *testing.T) {
 }
 
 // TestStreamManagedSSE_CapturesResponseID asserts the response id is parsed
-// from lifecycle events so the caller can chain the next turn via
-// previous_response_id. The last id seen (from response.completed) wins.
+// from lifecycle events. The last id seen (from response.completed) wins.
 func TestStreamManagedSSE_CapturesResponseID(t *testing.T) {
 	sse := strings.Join([]string{
 		"event: response.created",

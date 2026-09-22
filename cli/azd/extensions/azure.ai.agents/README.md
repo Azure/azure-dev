@@ -50,6 +50,25 @@ See the shared [AI extension non-interactive input reference](../ai-non-interact
 for every prompt's flag, environment/configuration input, or deterministic
 no-prompt behavior.
 
+## Project storage diagnostics
+
+Run `azd ai agent doctor` to check the current project's Storage connections and
+project managed identity permissions. The `Project storage permissions` check
+reads project connections and account connections shared with that project,
+using their Storage resource IDs rather than probing arbitrary endpoints.
+It recognizes Storage Blob Data Contributor and Storage Blob Data Owner,
+including applicable inherited assignments.
+
+Connections using account keys, SAS, or a separate service principal are skipped.
+Missing metadata, unsupported identity selection, unreadable assignments, and
+unresolved custom, conditional, or group permissions produce a warning instead
+of a missing-permission claim. The check never reads connection secrets, accesses
+blob data, or creates role assignments. A pass does not verify network access.
+
+Use `--debug` for per-connection findings and `--unredacted` to include identity
+and resource identifiers when sharing them is safe. `--local-only` skips this
+remote check along with the other remote diagnostics.
+
 ## Choosing a Foundry project name
 
 During interactive `azd ai agent init`, azd prompts for the name of a new

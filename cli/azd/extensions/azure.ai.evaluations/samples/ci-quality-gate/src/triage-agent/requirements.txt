@@ -1,6 +1,10 @@
-# Pinned for the same reason the workflow pins azd and the extensions: a
-# quality gate whose dependencies move underneath it cannot attribute a result
-# to the change under review.
-agent-framework-foundry
-agent-framework-foundry-hosting>=1.0.0a260630
-azure-identity
+# Exact pins, not floors. A `>=` bound and a bare name both let a future
+# publish change the deployed agent -- and therefore its scores -- with no pull
+# request, which is the reproducibility this gate exists to provide.
+#
+# Re-pin deliberately after validating the new versions. For a stricter
+# guarantee generate a lock file with hashes (`pip-compile --generate-hashes`)
+# and install with `--require-hashes`.
+agent-framework-foundry==1.0.0b251201
+agent-framework-foundry-hosting==1.0.0a260630
+azure-identity==1.19.0

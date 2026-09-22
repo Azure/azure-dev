@@ -74,8 +74,17 @@ jobs:
             --federated-credential-provider github
 
       # Pinned to exact versions, for the same reason azd is.
-      - name: Install the eval extensions
+      #
+      # The agents extension is here because `azure.yaml` declares
+      # `azure.ai.agent` and `azure.ai.project` hosts, and both `env refresh`
+      # and `deploy` resolve those providers from it. azd will not fetch them
+      # on its own: project extension auto-install is refused outright in CI
+      # (`IsRunningOnCI` in `cmd/auto_install_ux.go`), so an unlisted provider
+      # stops the job rather than prompting. The agents extension pulls its
+      # projects dependency with it.
+      - name: Install the extensions this project needs
         run: |
+          azd extension install azure.ai.agents --version 1.0.0-beta.16
           azd extension install azure.ai.evaluations --version 1.0.0-beta.1
           azd extension install azure.ai.dataset --version 1.0.0-beta.1
           azd extension list --installed
@@ -119,16 +128,31 @@ jobs:
       # -o json is what makes the run addressable afterwards. Without the id,
       # the export below would fall back to the latest run, which is a
       # different run whenever start failed before creating one.
+      #
+      # Two shell details decide whether a breached gate is reported correctly:
+      #
+      #   * `run start` waits by default and then emits the finished run, whose
+      #     id is `.id`. Only `--no-wait` (or a spent wait budget) emits the
+      #     handoff, whose id is `.run_id`. Reading one shape would leave the
+      #     other empty.
+      #   * GitHub runs bash with `errexit`, so a breached gate would exit this
+      #     step before the id was captured -- skipping the export and turning
+      #     every real regression into "could not run". `set +e` around the
+      #     command, then re-raise the status after capturing.
       - name: Run the evaluation
         id: evaluate
         continue-on-error: true
         run: |
-          set -o pipefail
+          set +e
           azd ai eval run start \
             --fail-on "$FAIL_ON" \
             --max-samples "$MAX_SAMPLES" \
-            -o json | tee run-start.json
-          echo "run_id=$(jq -r '.run_id // empty' run-start.json)" >> "$GITHUB_OUTPUT"
+            -o json > run-start.json
+          gate_status=$?
+          set -e
+          cat run-start.json
+          echo "run_id=$(jq -r '.id // .run_id // empty' run-start.json)" >> "$GITHUB_OUTPUT"
+          exit "$gate_status"
 
       # Always exported, including on failure: a failed gate is exactly when
       # someone needs the per-row detail.

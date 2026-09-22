@@ -60,6 +60,22 @@ workflow's trigger. For pull requests from the same repository that is
 `refs/heads/main` will not match a pull-request run, which is the usual reason
 a first attempt fails with an authentication error rather than a quality one.
 
+> **Read this before using that subject.** `repo:<owner>/<repo>:pull_request`
+> grants the identity's Azure permissions to *every* pull-request run in the
+> repository — and a pull request can also change the workflow that consumes
+> the identity. Anyone who can push a branch and open a pull request can
+> therefore run arbitrary steps as that identity, not merely run this gate as
+> written. The permissions involved are not read-only: the gate publishes
+> datasets, evaluators and evaluation runs, and deploys the agent.
+>
+> On a repository where contributors are not already trusted with those
+> permissions, bind the credential to a **GitHub environment** instead
+> (`repo:<owner>/<repo>:environment:<name>`), add `environment: <name>` to the
+> job, and put required reviewers on that environment. Approval then gates the
+> identity rather than the branch. Restricting the trigger to
+> `pull_request_target` is *not* a substitute — it would run the base branch's
+> workflow against untrusted code, which is worse.
+
 ### 2. Permissions
 
 The identity needs to create datasets, evaluators and evaluation runs on the
@@ -201,12 +217,20 @@ often it runs.
   `--output-file`, the `-o json` handoff that carries `run_id`, the
   `{ "run": …, "items": […] }` export shape — but no one has executed the
   workflow against a live project. Treat the first run as a bring-up.
-- Pinned to `azd` 1.34.1 and to `azure.ai.evaluations` / `azure.ai.dataset`
-  `1.0.0-beta.1`. All three are pinned for the same reason: a result you cannot
-  attribute to your own change is not evidence about your own change. The
-  extensions are beta; re-pin deliberately rather than floating.
+- Pinned to `azd` 1.34.1, to `azure.ai.agents` `1.0.0-beta.16`, to
+  `azure.ai.evaluations` / `azure.ai.dataset` `1.0.0-beta.1`, and to exact
+  Python package versions in `requirements.txt`. All of them are pinned for the
+  same reason: a result you cannot attribute to your own change is not evidence
+  about your own change, and a `>=` bound is not a pin. The extensions are beta;
+  re-pin deliberately rather than floating.
+- The agents extension is installed explicitly because `azure.yaml` declares
+  `azure.ai.agent` and `azure.ai.project` hosts, and azd refuses to
+  auto-install project extensions in CI. Adding a host to `azure.yaml` means
+  adding its provider here.
 - `azd deploy` writes to the shared environment. See *The agent under review is
   the one that gets scored* above before enabling this on a busy repository.
+- The federated credential's subject is a trust boundary. See *Federated
+  credential* above.
 - The `evaluation-results` artifact contains model outputs for the rows you
   evaluated. If your dataset contains anything sensitive, the artifact does
   too — set a retention policy accordingly.

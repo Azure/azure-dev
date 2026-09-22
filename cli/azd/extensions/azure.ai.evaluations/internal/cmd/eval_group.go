@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"cmp"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -87,8 +86,8 @@ func (a *evalCreateAction) Run() error {
 	chosen, err := chooseEval(a.cmd, cfg, a.name)
 	if err != nil {
 		// Closing the picker is an answer, not a failure to name something.
-		if errors.Is(err, errEvalSelectionCancelled) {
-			fmt.Fprint(a.cmd.OutOrStdout(), messages.EvalSelectionCancelled())
+		if isEvalSelectionCancelled(err) {
+			reportCancelledSelection(a.cmd)
 			return nil
 		}
 		return err

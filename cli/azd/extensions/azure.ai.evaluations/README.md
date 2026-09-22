@@ -123,6 +123,16 @@ usable from CI.
 Built-ins need no declaration — reference them as `builtin.<name>` and list
 them with `azd ai eval evaluator list --builtin`.
 
+`init` offers a few common built-ins in its picker; that is a shortlist, not
+the catalogue. Any built-in the project publishes works with
+`--evaluator builtin.<name>`, including ones the picker never shows.
+
+`init` checks that reference against the project's catalogue when it can reach
+one, so a name that does not exist is refused there rather than at `create`.
+When no project is reachable — offline, unauthenticated, or outside an azd
+environment — the reference is left as written and `init` behaves as it always
+has. The check never turns a working offline `init` into a failure.
+
 Evaluators do not share an input contract, so the CLI reads each one's
 published contract and shapes the request to match. An evaluator needing an
 input your dataset does not carry is reported before the request is sent, with

@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
@@ -26,6 +27,23 @@ var errEvalSelectionCancelled = errors.New("eval selection cancelled")
 // cancelled reports whether a prompt failed because the reader closed it.
 func cancelled(err error) bool {
 	return status.Code(err) == codes.Canceled || errors.Is(err, context.Canceled)
+}
+
+// isEvalSelectionCancelled reports a closed eval picker.
+//
+// A predicate rather than a bare errors.Is at each site, so every command that
+// has to recognize the answer recognizes it the same way.
+func isEvalSelectionCancelled(err error) bool {
+	return errors.Is(err, errEvalSelectionCancelled)
+}
+
+// reportCancelledSelection tells the reader the picker was closed.
+//
+// One place, because the words are the whole point: closing the picker on
+// `eval create` and on `run show` is the same answer, and saying it differently
+// at each door reads as different outcomes.
+func reportCancelledSelection(cmd *cobra.Command) {
+	fmt.Fprint(cmd.OutOrStdout(), messages.EvalSelectionCancelled())
 }
 
 // chooseEvalIn is chooseEval for the run commands, which hold a directory

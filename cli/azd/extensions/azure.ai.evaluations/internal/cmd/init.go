@@ -136,15 +136,17 @@ func (a *initAction) Run() error {
 	if err := validateEvaluatorRefs(a.flags.evaluators); err != nil {
 		return err
 	}
-	// Asked once, and only about what the shape check already accepted. A
-	// builtin. reference names something only the project can confirm, so it
-	// used to scaffold cleanly and fail at create. Unreachable projects answer
-	// nothing and leave the reference as written, so this adds a check offline
-	// rather than a requirement.
-	if err := refuseUnknownBuiltins(
-		a.flags.evaluators, knownBuiltinEvaluators(a.cmd.Context()),
-	); err != nil {
-		return err
+	// Asked once, and only when there is a builtin. reference for the catalogue
+	// to answer about. A builtin. reference names something only the project can
+	// confirm, so it used to scaffold cleanly and fail at create. Unreachable
+	// projects answer nothing and leave the reference as written, so this adds a
+	// check offline rather than a requirement.
+	if hasBuiltinRef(a.flags.evaluators) {
+		if err := refuseUnknownBuiltins(
+			a.flags.evaluators, knownBuiltinEvaluators(a.cmd.Context()),
+		); err != nil {
+			return err
+		}
 	}
 	// The same cascade every other command reads the configuration
 	// through. init merges into the configuration it finds, so a second

@@ -77,8 +77,8 @@ func (a *runListAction) Run() error {
 	}
 	defer ec.Close()
 
-	evalID, err := resolveEvalID(a.cmd, ec, a.flags.groupName)
-	if err != nil {
+	evalID, ok, err := evalIDForRunCommand(a.cmd, ec, a.flags.groupName)
+	if err != nil || !ok {
 		return err
 	}
 
@@ -198,8 +198,8 @@ func (a *runShowAction) Run() error {
 	}
 	defer ec.Close()
 
-	evalID, err := resolveEvalID(a.cmd, ec, a.flags.groupName)
-	if err != nil {
+	evalID, ok, err := evalIDForRunCommand(a.cmd, ec, a.flags.groupName)
+	if err != nil || !ok {
 		return err
 	}
 
@@ -359,8 +359,8 @@ func (a *runCancelAction) Run() error {
 	}
 	defer ec.Close()
 
-	evalID, err := resolveEvalID(a.cmd, ec, a.flags.groupName)
-	if err != nil {
+	evalID, ok, err := evalIDForRunCommand(a.cmd, ec, a.flags.groupName)
+	if err != nil || !ok {
 		return err
 	}
 
@@ -443,8 +443,8 @@ func (a *runDeleteAction) Run() error {
 	}
 	defer ec.Close()
 
-	evalID, err := resolveEvalID(a.cmd, ec, a.flags.groupName)
-	if err != nil {
+	evalID, ok, err := evalIDForRunCommand(a.cmd, ec, a.flags.groupName)
+	if err != nil || !ok {
 		return err
 	}
 

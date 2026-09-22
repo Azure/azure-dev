@@ -108,8 +108,8 @@ func (a *runOutputListAction) Run() error {
 	}
 	defer ec.Close()
 
-	evalID, err := resolveEvalID(a.cmd, ec, a.flags.groupName)
-	if err != nil {
+	evalID, ok, err := evalIDForRunCommand(a.cmd, ec, a.flags.groupName)
+	if err != nil || !ok {
 		return err
 	}
 
@@ -237,8 +237,8 @@ func (a *runOutputShowAction) Run() error {
 	}
 	defer ec.Close()
 
-	evalID, err := resolveEvalID(a.cmd, ec, a.flags.groupName)
-	if err != nil {
+	evalID, ok, err := evalIDForRunCommand(a.cmd, ec, a.flags.groupName)
+	if err != nil || !ok {
 		return err
 	}
 
@@ -373,8 +373,8 @@ func (a *runOutputExportAction) Run() error {
 	}
 	defer ec.Close()
 
-	evalID, err := resolveEvalID(a.cmd, ec, a.flags.groupName)
-	if err != nil {
+	evalID, ok, err := evalIDForRunCommand(a.cmd, ec, a.flags.groupName)
+	if err != nil || !ok {
 		return err
 	}
 
@@ -465,6 +465,29 @@ func resolveEvalID(cmd *cobra.Command, ec *evalContext, groupName string) (strin
 		return "", err
 	}
 	return ref.ID, nil
+}
+
+// evalIDForRunCommand resolves the eval a run command acts on and reports a
+// closed picker as the answer it is.
+//
+// Every run subcommand reaches the same picker `eval create` and `run start`
+// do, so closing it means the same thing at all of them: no eval was selected,
+// and there is nothing to list, show, cancel or export. Returning the sentinel
+// as a command error made those six exit non-zero on a deliberate answer,
+// which reads as the closing itself having failed.
+//
+// The bool reports whether to carry on. A cancelled selection has already been
+// reported to the reader and leaves the command nothing to do.
+func evalIDForRunCommand(cmd *cobra.Command, ec *evalContext, groupName string) (string, bool, error) {
+	evalID, err := resolveEvalID(cmd, ec, groupName)
+	if err != nil {
+		if isEvalSelectionCancelled(err) {
+			reportCancelledSelection(cmd)
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return evalID, true, nil
 }
 
 // addEvalFlag registers the flag that says which eval a command acts on. It

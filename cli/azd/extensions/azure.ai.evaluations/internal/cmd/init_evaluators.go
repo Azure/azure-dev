@@ -40,6 +40,20 @@ var builtinEvaluators = []string{
 // costs more than the check is worth.
 const builtinCatalogueTimeout = 5 * time.Second
 
+// hasBuiltinRef reports whether any reference names a built-in.
+//
+// The catalogue can only answer for those, so a run with none -- or with only
+// custom references -- has nothing to ask about, and opening a connection to
+// learn that costs the offline path a wait it need not take.
+func hasBuiltinRef(refs []string) bool {
+	for _, ref := range refs {
+		if strings.HasPrefix(ref, evalcore.BuiltinPrefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // knownBuiltinEvaluators asks the project which built-in evaluators it offers.
 //
 // Best effort, and deliberately so. init's value is that it works with nothing

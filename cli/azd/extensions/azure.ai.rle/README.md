@@ -95,12 +95,6 @@ azd extension update azure.ai.rle
 azd ai rle version
 ```
 
-The lifecycle commands are preview-gated:
-
-```powershell
-$env:AZD_AI_RLE_ENABLE = "true"
-```
-
 Harness scaffolds, samples hidden from the default catalog, and other
 internal-only surfaces are gated by a single flag for the RLE team's own
 iteration:
@@ -512,12 +506,10 @@ RL-environment training; job creation fails for other models, or if the named RL
 version is not published and ready in the Foundry project set by
 `FOUNDRY_PROJECT_ENDPOINT`.
 
-This command is gated behind `AZD_AI_RLE_ENABLE_ALL` in addition to
-`AZD_AI_RLE_ENABLE`, since it targets an unreleased method and the CLI shape
-is still subject to change:
+This command is gated behind `AZD_AI_RLE_ENABLE_ALL`, since it targets an
+unreleased method and the CLI shape is still subject to change:
 
 ```powershell
-$env:AZD_AI_RLE_ENABLE = "true"
 $env:AZD_AI_RLE_ENABLE_ALL = "true"
 $env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
 

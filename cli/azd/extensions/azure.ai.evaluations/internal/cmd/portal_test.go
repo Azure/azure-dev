@@ -6,6 +6,8 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -43,6 +45,18 @@ func TestWritePortalLink_SilentWithoutAURL(t *testing.T) {
 // to wrap the URL and nothing else: one leaking into the label, or past the
 // newline, follows the link into whatever a reader pastes it in.
 func TestWritePortalLink_WrapsOnlyTheURL(t *testing.T) {
+	// fatih/color caches NO_COLOR on each color's first use. A fresh process
+	// keeps this assertion independent of earlier tests and the caller's env.
+	const helper = "AZD_TEST_PORTAL_COLOR"
+	if os.Getenv(helper) != "1" {
+		binary, err := os.Executable()
+		require.NoError(t, err)
+		child := exec.CommandContext(t.Context(), binary, "-test.run=^TestWritePortalLink_WrapsOnlyTheURL$")
+		child.Env = append(os.Environ(), "NO_COLOR=", helper+"=1")
+		output, err := child.CombinedOutput()
+		require.NoError(t, err, "%s", output)
+		return
+	}
 	restore := color.NoColor
 	color.NoColor = false
 	t.Cleanup(func() { color.NoColor = restore })

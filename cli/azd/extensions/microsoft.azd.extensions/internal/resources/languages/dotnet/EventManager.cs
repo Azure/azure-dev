@@ -10,52 +10,9 @@ namespace Microsoft.Azd
     public class ProjectEventArgs
     {
         public ProjectConfig Project { get; set; } = default!;
-        public FollowUpContribution FollowUp { get; }
-
-        public ProjectEventArgs(
-            ProjectConfig project,
-            FollowUpContribution followUp)
+        public ProjectEventArgs(ProjectConfig project)
         {
             Project = project;
-            FollowUp = followUp;
-        }
-    }
-
-    public sealed class FollowUpContribution
-    {
-        private readonly FollowUpService.FollowUpServiceClient _client;
-        private readonly string _invocationId;
-
-        public FollowUpContribution(
-            FollowUpService.FollowUpServiceClient client,
-            string invocationId)
-        {
-            _client = client;
-            _invocationId = invocationId;
-        }
-
-        public async Task SetAsync(
-            string text,
-            CancellationToken cancellationToken = default)
-        {
-            if (string.IsNullOrEmpty(_invocationId))
-            {
-                throw new InvalidOperationException(
-                    "Follow-up invocation is unavailable.");
-            }
-
-            await _client.SetFollowUpAsync(
-                new SetFollowUpRequest
-                {
-                    InvocationId = _invocationId,
-                    Text = text
-                },
-                cancellationToken: cancellationToken);
-        }
-
-        public Task ClearAsync(CancellationToken cancellationToken = default)
-        {
-            return SetAsync("", cancellationToken);
         }
     }
 
@@ -214,11 +171,7 @@ namespace Microsoft.Azd
             {
                 var status = "completed";
                 var message = "";
-                var eventArgs = new ProjectEventArgs(
-                    invokeMsg.Project,
-                    new FollowUpContribution(
-                        _azdClient.FollowUp,
-                        invokeMsg.InvocationId));
+                var eventArgs = new ProjectEventArgs(invokeMsg.Project);
 
                 try
                 {

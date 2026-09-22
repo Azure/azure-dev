@@ -49,18 +49,20 @@ The gRPC broker (`pkg/grpcbroker`) manages bidirectional communication. Extensio
 
 ### Lifecycle follow-up contributions
 
-Project lifecycle handlers can use the handler-scoped `FollowUp` contribution
-on `ProjectEventArgs` to provide command-level guidance:
+Beta project lifecycle handlers can use the handler-scoped `FollowUp`
+contribution on `PreviewProjectEventArgs` to provide command-level guidance:
 
 ```go
-host.WithProjectEventHandler("postdeploy",
-    func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+host.WithPreviewProjectEventHandler("postdeploy",
+    func(ctx context.Context, args *azdext.PreviewProjectEventArgs) error {
         return args.FollowUp.Set("Next:\n  azd ai agent show my-agent")
     })
 ```
 
-The contribution is sent through the independent `FollowUpService` using the
-invocation ID supplied by azd. Only project `post*` handlers may contribute.
+The contribution is sent through the beta `FollowUpService` over gRPC using
+the invocation ID supplied by azd. The beta event stream and native service
+share the host-owned invocation store; the SDK accesses it only through gRPC.
+Only project `post*` handlers may contribute.
 The host stages the latest text and commits it only after the handler
 completes successfully; failed, cancelled, disconnected, or otherwise
 incomplete invocations are discarded. Calling `Clear` or `Set("")` retracts

@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal/guidance"
@@ -438,13 +437,12 @@ func TestEventService_createProjectEventHandler(t *testing.T) {
 	assert.NotNil(t, handler)
 }
 
-func TestEventService_createProjectEventHandler_CollectsFollowUp(t *testing.T) {
+func TestEventService_createProjectEventHandler_DoesNotCollectFollowUp(t *testing.T) {
 	tests := []struct {
 		name      string
 		eventName string
 		status    string
 		message   string
-		followUp  *string
 		initial   string
 		want      string
 		wantError bool
@@ -453,21 +451,12 @@ func TestEventService_createProjectEventHandler_CollectsFollowUp(t *testing.T) {
 			name:      "completed post event",
 			eventName: "postdeploy",
 			status:    "completed",
-			followUp:  new("Run azd show"),
-			initial:   "old guidance",
-			want:      "Run azd show",
-		},
-		{
-			name:      "completed pre event",
-			eventName: "predeploy",
-			status:    "completed",
-			followUp:  new("Run azd show"),
 			initial:   "old guidance",
 			want:      "old guidance",
 		},
 		{
-			name:      "completed post event without follow-up",
-			eventName: "postdeploy",
+			name:      "completed pre event",
+			eventName: "predeploy",
 			status:    "completed",
 			initial:   "old guidance",
 			want:      "old guidance",
@@ -481,25 +470,10 @@ func TestEventService_createProjectEventHandler_CollectsFollowUp(t *testing.T) {
 			want:      "old guidance",
 		},
 		{
-			name:      "completed post event with empty follow-up",
-			eventName: "postdeploy",
-			status:    "completed",
-			followUp:  new(""),
-			initial:   "old guidance",
-		},
-		{
-			name:      "completed post event with whitespace follow-up",
-			eventName: "postdeploy",
-			status:    "completed",
-			followUp:  new(" \n\t "),
-			initial:   "old guidance",
-		},
-		{
 			name:      "failed post event",
 			eventName: "postdeploy",
 			status:    "failed",
 			message:   "hook failed",
-			followUp:  new("Run azd show"),
 			initial:   "old guidance",
 			want:      "old guidance",
 			wantError: true,
@@ -508,7 +482,6 @@ func TestEventService_createProjectEventHandler_CollectsFollowUp(t *testing.T) {
 			name:      "incomplete post event",
 			eventName: "postdeploy",
 			status:    "running",
-			followUp:  new("not complete"),
 			initial:   "old guidance",
 			want:      "old guidance",
 		},
@@ -527,15 +500,6 @@ func TestEventService_createProjectEventHandler_CollectsFollowUp(t *testing.T) {
 				func(msg *azdext.EventMessage) *azdext.EventMessage {
 					invoke := msg.GetInvokeProjectHandler()
 					require.NotNil(t, invoke)
-					if tt.followUp != nil &&
-						strings.HasPrefix(tt.eventName, "post") {
-						require.NoError(t, service.followUps.Set(
-							invoke.InvocationId,
-							extension.Id,
-							*tt.followUp,
-						))
-					}
-
 					return &azdext.EventMessage{
 						MessageType: &azdext.EventMessage_ProjectHandlerStatus{
 							ProjectHandlerStatus: &azdext.ProjectHandlerStatus{
@@ -572,112 +536,6 @@ func TestEventService_createProjectEventHandler_CollectsFollowUp(t *testing.T) {
 			require.Equal(t, tt.want, collector.Text())
 		})
 	}
-}
-
-func TestEventService_createProjectEventHandler_CollectsLayerFollowUp(t *testing.T) {
-	service, _ := createTestEventService()
-	extension := createTestExtension()
-	projectConfig, err := service.lazyProject.GetValue()
-	require.NoError(t, err)
-
-	broker, streamCtx, cleanup := createBrokerForEventHandler(
-		t,
-		extension.Id,
-		func(msg *azdext.EventMessage) *azdext.EventMessage {
-			invoke := msg.GetInvokeProjectHandler()
-			require.NotNil(t, invoke)
-			require.NoError(t, service.followUps.Set(
-				invoke.InvocationId,
-				extension.Id,
-				"from-app",
-			))
-
-			return &azdext.EventMessage{
-				MessageType: &azdext.EventMessage_ProjectHandlerStatus{
-					ProjectHandlerStatus: &azdext.ProjectHandlerStatus{
-						EventName: invoke.EventName,
-						Status:    "completed",
-					},
-				},
-			}
-		},
-	)
-	defer cleanup()
-
-	handler := service.createProjectEventHandler(
-		streamCtx,
-		extension,
-		"postprovision",
-		broker,
-	)
-	collector := guidance.NewFollowUpCollector()
-	collector.Add(guidance.FollowUp{
-		ExtensionID: extension.Id,
-		EventName:   "postprovision",
-		Layer:       "data",
-		Text:        "from-data",
-	})
-	ctx := guidance.WithFollowUpCollector(t.Context(), collector)
-
-	err = handler(ctx, project.ProjectLifecycleEventArgs{
-		Project: projectConfig,
-		Args: map[string]any{
-			"layer": "app",
-		},
-	})
-	require.NoError(t, err)
-	require.Equal(t, "from-data", collector.Text())
-}
-
-func TestEventService_createProjectEventHandler_UsesCommandOrder(t *testing.T) {
-	service, _ := createTestEventService()
-	extension := createTestExtension()
-	projectConfig, err := service.lazyProject.GetValue()
-	require.NoError(t, err)
-
-	broker, streamCtx, cleanup := createBrokerForEventHandler(
-		t,
-		extension.Id,
-		func(msg *azdext.EventMessage) *azdext.EventMessage {
-			invoke := msg.GetInvokeProjectHandler()
-			require.NotNil(t, invoke)
-			require.NoError(t, service.followUps.Set(
-				invoke.InvocationId,
-				extension.Id,
-				"new",
-			))
-
-			return &azdext.EventMessage{
-				MessageType: &azdext.EventMessage_ProjectHandlerStatus{
-					ProjectHandlerStatus: &azdext.ProjectHandlerStatus{
-						EventName: invoke.EventName,
-						Status:    "completed",
-					},
-				},
-			}
-		},
-	)
-	defer cleanup()
-
-	handler := service.createProjectEventHandler(
-		streamCtx,
-		extension,
-		"postpackage",
-		broker,
-	)
-	collector := guidance.NewFollowUpCollector()
-	collector.Add(guidance.FollowUp{
-		ExtensionID:  extension.Id,
-		CommandOrder: 1,
-		EventName:    "postprovision",
-		Text:         "old",
-	})
-	ctx := guidance.WithFollowUpCollector(t.Context(), collector)
-	ctx = guidance.WithFollowUpCommandOrder(ctx, 2)
-
-	err = handler(ctx, project.ProjectLifecycleEventArgs{Project: projectConfig})
-	require.NoError(t, err)
-	require.Equal(t, "new", collector.Text())
 }
 
 func TestEventService_createServiceEventHandler(t *testing.T) {

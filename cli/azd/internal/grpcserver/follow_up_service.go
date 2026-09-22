@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -113,19 +113,19 @@ func (m *followUpManager) finish(invocationID string, commit bool) (string, bool
 }
 
 type followUpService struct {
-	azdext.UnimplementedFollowUpServiceServer
+	v1beta.UnimplementedFollowUpServiceServer
 	manager *followUpManager
 }
 
 // NewFollowUpService creates the host follow-up contribution service.
-func NewFollowUpService(manager *followUpManager) azdext.FollowUpServiceServer {
+func NewFollowUpService(manager *followUpManager) v1beta.FollowUpServiceServer {
 	return &followUpService{manager: manager}
 }
 
 func (s *followUpService) SetFollowUp(
 	ctx context.Context,
-	req *azdext.SetFollowUpRequest,
-) (*azdext.SetFollowUpResponse, error) {
+	req *v1beta.SetFollowUpRequest,
+) (*v1beta.SetFollowUpResponse, error) {
 	if req == nil || req.InvocationId == "" {
 		return nil, status.Error(codes.InvalidArgument, "invocation_id is required")
 	}
@@ -152,5 +152,5 @@ func (s *followUpService) SetFollowUp(
 		}
 	}
 
-	return &azdext.SetFollowUpResponse{}, nil
+	return &v1beta.SetFollowUpResponse{}, nil
 }

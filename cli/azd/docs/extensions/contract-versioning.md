@@ -14,10 +14,13 @@ stable v1 channel. It forwards its generated contract types, clients, and
 server interfaces from `pkg/azdext/contracts/v1`; protobuf-generated files do
 not share the facade package with handwritten SDK functionality. Go clients
 that intentionally target beta import `pkg/azdext/contracts/v1beta` directly.
-`ComposeService`, `CopilotService`, and `TelemetryService` are beta-only and
-therefore do not have stable `v1` generated types or facade aliases. The
-corresponding `AzdClient` convenience accessors return generated `v1beta`
-clients, and their request and response types come from `contracts/v1beta`.
+`ComposeService`, `CopilotService`, `FollowUpService`, and
+`TelemetryService` are beta-only and therefore do not have stable `v1`
+generated types or facade aliases. The corresponding `AzdClient` convenience
+accessors return generated `v1beta` clients, and their request and response
+types come from `contracts/v1beta`. Follow-up contributions use the explicit
+`WithPreviewProjectEventHandler` and `PreviewProjectEventArgs` APIs. Stable
+event handlers and default language scaffolds do not expose follow-up APIs.
 
 ## Channel policy
 

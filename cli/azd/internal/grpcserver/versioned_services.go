@@ -79,7 +79,6 @@ func (s *Server) registerServices() error {
 	azdext.RegisterUserConfigServiceServer(s.grpcServer, s.userConfigService)
 	azdext.RegisterDeploymentServiceServer(s.grpcServer, s.deploymentService)
 	azdext.RegisterEventServiceServer(s.grpcServer, s.eventService)
-	azdext.RegisterFollowUpServiceServer(s.grpcServer, s.followUpService)
 	azdext.RegisterWorkflowServiceServer(s.grpcServer, s.workflowService)
 	azdext.RegisterExtensionServiceServer(s.grpcServer, s.extensionService)
 	azdext.RegisterServiceTargetServiceServer(s.grpcServer, s.serviceTargetService)
@@ -91,6 +90,11 @@ func (s *Server) registerServices() error {
 	azdext.RegisterValidationServiceServer(s.grpcServer, s.validationService)
 
 	betaServiceOverrides := maps.Clone(s.betaServiceOverrides)
+	if _, exists := betaServiceOverrides[BetaEventService]; !exists {
+		if eventService, ok := s.eventService.(*eventService); ok {
+			betaServiceOverrides[BetaEventService] = &betaEventService{service: eventService}
+		}
+	}
 	if extensionService, ok := s.extensionService.(*ExtensionService); ok {
 		betaServiceOverrides[BetaExtensionService] = &betaExtensionServiceOverride{
 			service:  extensionService,

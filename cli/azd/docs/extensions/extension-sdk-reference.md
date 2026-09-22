@@ -210,8 +210,8 @@ rootCmd.AddCommand(azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
 ### Project lifecycle follow-up
 
 ```go
-type ProjectEventArgs struct {
-    Project  *ProjectConfig
+type PreviewProjectEventArgs struct {
+    Project  *v1beta.ProjectConfig
     FollowUp *FollowUpContribution
 }
 
@@ -230,21 +230,22 @@ Use `FollowUp.Set` from a successful project `post*` handler when the parent
 azd command needs a text-only next step:
 
 ```go
-host.WithProjectEventHandler("postdeploy",
-    func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+host.WithPreviewProjectEventHandler("postdeploy",
+    func(ctx context.Context, args *azdext.PreviewProjectEventArgs) error {
         return args.FollowUp.Set("Next:\n  azd ai agent show my-agent")
     })
 ```
 
-The contribution uses the independent `FollowUpService` and the invocation ID
-provided by azd. The host stages text and commits it only after the handler
-completes successfully; failed, cancelled, disconnected, or incomplete
-handlers are discarded. `Clear` and `Set("")` retract the current
+The contribution uses the beta `FollowUpService` and the invocation ID
+provided by azd. The host stages text and commits it only after the preview
+handler completes successfully; failed, cancelled, disconnected, or
+incomplete handlers are discarded. `Clear` and `Set("")` retract the current
 contribution. Calls outside a project `post*` handler return an error.
 
-This API requires an azd host that provides `FollowUpService` and invocation
-IDs. For a published extension that uses it, set `requiredAzdVersion` to the
-first released azd version containing `FollowUpService`. For the current
+This preview API requires an azd host that provides beta `FollowUpService` and
+invocation IDs. For a published extension that uses it, set
+`requiredAzdVersion` to the first released azd version containing
+`FollowUpService`. For the current
 release line, use:
 
 ```yaml
@@ -572,6 +573,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Prompt()` | `PromptServiceClient` |
 | `Deployment()` | `DeploymentServiceClient` |
 | `Events()` | `EventServiceClient` |
+| `FollowUp()` | `v1beta.FollowUpServiceClient` (preview) |
 | `Compose()` | `v1beta.ComposeServiceClient` (preview) |
 | `Workflow()` | `WorkflowServiceClient` |
 | `ServiceTarget()` | `ServiceTargetServiceClient` |
@@ -585,7 +587,8 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 
 Always call `defer client.Close()` after creation.
 
-`Compose()`, `Copilot()`, and `Telemetry()` are preview accessors. Import
+`FollowUp()`, `Compose()`, `Copilot()`, and `Telemetry()` are preview
+accessors. Import
 `github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for their
 request, response, and enum types. They are intentionally excluded from the
 stable `azdext` contract facade until those services graduate to `v1`.

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/metadata"
@@ -158,7 +159,7 @@ func Test_AzdClient_FollowUp_ReturnsSameClient(t *testing.T) {
 
 func Test_AzdClient_FollowUp_IsStableAcrossConcurrentCalls(t *testing.T) {
 	client := &AzdClient{}
-	clients := make([]FollowUpServiceClient, 100)
+	clients := make([]v1beta.FollowUpServiceClient, 100)
 	var wg sync.WaitGroup
 
 	for i := range clients {

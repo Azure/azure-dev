@@ -37,7 +37,7 @@ type Server struct {
 	userConfigService    azdext.UserConfigServiceServer
 	deploymentService    azdext.DeploymentServiceServer
 	eventService         azdext.EventServiceServer
-	followUpService      azdext.FollowUpServiceServer
+	followUpService      v1beta.FollowUpServiceServer
 	composeService       v1beta.ComposeServiceServer
 	workflowService      azdext.WorkflowServiceServer
 	extensionService     azdext.ExtensionServiceServer
@@ -72,7 +72,7 @@ func NewServer(
 	provisioningService azdext.ProvisioningServiceServer,
 	validationService azdext.ValidationServiceServer,
 	telemetryService v1beta.TelemetryServiceServer,
-	followUpService azdext.FollowUpServiceServer,
+	followUpService v1beta.FollowUpServiceServer,
 ) *Server {
 	return &Server{
 		projectService:       projectService,

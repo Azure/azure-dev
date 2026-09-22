@@ -12,7 +12,6 @@ namespace Microsoft.Azd{
         public DeploymentService.DeploymentServiceClient Deployment { get; }
         public EnvironmentService.EnvironmentServiceClient Environment { get; }
         public EventService.EventServiceClient Events { get; }
-        public FollowUpService.FollowUpServiceClient FollowUp { get; }
         public ProjectService.ProjectServiceClient Project { get; }
         public PromptService.PromptServiceClient Prompt { get; }
         public UserConfigService.UserConfigServiceClient UserConfig { get; }
@@ -48,7 +47,6 @@ namespace Microsoft.Azd{
             Deployment = new DeploymentService.DeploymentServiceClient(callInvoker);
             Environment = new EnvironmentService.EnvironmentServiceClient(callInvoker);
             Events = new EventService.EventServiceClient(callInvoker);
-            FollowUp = new FollowUpService.FollowUpServiceClient(callInvoker);
             Project = new ProjectService.ProjectServiceClient(callInvoker);
             Prompt = new PromptService.PromptServiceClient(callInvoker);
             UserConfig = new UserConfigService.UserConfigServiceClient(callInvoker);

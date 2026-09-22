@@ -8,9 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal/guidance"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -34,7 +32,7 @@ var noEnvResolver = func(name string) string {
 // eventService implements azdext.EventServiceServer.
 type eventService struct {
 	azdext.UnimplementedEventServiceServer
-	extensionManager *extensions.Manager
+	extensionManager ExtensionLookup
 	followUps        *followUpManager
 	console          input.Console
 
@@ -43,8 +41,13 @@ type eventService struct {
 	lazyEnv        *lazy.Lazy[*environment.Environment]
 }
 
+// ExtensionLookup resolves an installed extension.
+type ExtensionLookup interface {
+	GetInstalled(extensions.FilterOptions) (*extensions.Extension, error)
+}
+
 func NewEventService(
-	extensionManager *extensions.Manager,
+	extensionManager ExtensionLookup,
 	lazyEnvManager *lazy.Lazy[environment.Manager],
 	lazyProject *lazy.Lazy[*project.ProjectConfig],
 	lazyEnv *lazy.Lazy[*environment.Environment],
@@ -146,9 +149,6 @@ func (s *eventService) createProjectEventHandler(
 	broker *grpcbroker.MessageBroker[azdext.EventMessage],
 ) ext.EventHandlerFn[project.ProjectLifecycleEventArgs] {
 	return func(ctx context.Context, args project.ProjectLifecycleEventArgs) error {
-		var handlerCompleted bool
-		invocationID := s.followUps.Begin(extension.Id, eventName)
-		defer s.followUps.Discard(invocationID)
 		err := func() error {
 			previewTitle := fmt.Sprintf("%s (%s)", extension.DisplayName, eventName)
 			defer s.syncExtensionOutput(ctx, extension, previewTitle)()
@@ -168,9 +168,8 @@ func (s *eventService) createProjectEventHandler(
 			invokeMsg := &azdext.EventMessage{
 				MessageType: &azdext.EventMessage_InvokeProjectHandler{
 					InvokeProjectHandler: &azdext.InvokeProjectHandler{
-						EventName:    eventName,
-						Project:      protoProjectConfig,
-						InvocationId: invocationID,
+						EventName: eventName,
+						Project:   protoProjectConfig,
 					},
 				},
 			}
@@ -206,43 +205,12 @@ func (s *eventService) createProjectEventHandler(
 					)
 				}
 
-				if statusMsg.ProjectHandlerStatus.Status == "completed" {
-					handlerCompleted = true
-				}
-
 				return nil
 			})
 		}()
-		if err == nil && handlerCompleted {
-			handlerFollowUp, hasFollowUp := s.followUps.Commit(invocationID)
-			if strings.HasPrefix(eventName, "post") && hasFollowUp {
-				if collector := guidance.FollowUpCollectorFromContext(ctx); collector != nil {
-					collector.Add(guidance.FollowUp{
-						ExtensionID:  extension.Id,
-						CommandOrder: guidance.FollowUpCommandOrderFromContext(ctx),
-						EventName:    eventName,
-						Layer:        followUpLayer(args),
-						Text:         handlerFollowUp,
-					})
-				}
-			}
-		}
 
 		return extensions.WrapInvocationError(err, extension.Id, extension.Version, eventName)
 	}
-}
-
-func followUpLayer(args project.ProjectLifecycleEventArgs) string {
-	if args.Args == nil {
-		return ""
-	}
-	if layer, ok := args.Args["layer"].(string); ok && layer != "" {
-		return layer
-	}
-	if path, ok := args.Args["path"].(string); ok {
-		return path
-	}
-	return ""
 }
 
 // ----- Service Event Handlers -----

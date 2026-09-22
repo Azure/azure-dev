@@ -27,7 +27,7 @@ func TestStableContractIsSubsetOfBeta(t *testing.T) {
 	stable := contractFiles(t, "azd.extensions.v1")
 	beta := contractFiles(t, "azd.extensions.v1beta")
 
-	require.Len(t, stable, 18)
+	require.Len(t, stable, 17)
 	require.GreaterOrEqual(t, len(beta), len(stable))
 	require.NoError(t, validateStableSubset(stable, beta))
 }
@@ -38,11 +38,38 @@ func TestPreviewOnlyServicesAreExcludedFromStable(t *testing.T) {
 	stable := contractFiles(t, "azd.extensions.v1")
 	beta := contractFiles(t, "azd.extensions.v1beta")
 
-	for _, fileName := range []string{"compose.proto", "copilot.proto", "telemetry.proto"} {
+	for _, fileName := range []string{
+		"compose.proto",
+		"copilot.proto",
+		"follow_up.proto",
+		"telemetry.proto",
+	} {
 		require.NotContains(t, stable, fileName)
 		require.Contains(t, beta, fileName)
 		require.NotEmpty(t, beta[fileName].Services())
 	}
+}
+
+func TestFollowUpContractIsBetaOnly(t *testing.T) {
+	t.Parallel()
+
+	stable := contractFiles(t, "azd.extensions.v1")
+	beta := contractFiles(t, "azd.extensions.v1beta")
+
+	require.NotContains(t, stable, "follow_up.proto")
+	followUp := beta["follow_up.proto"].Services().ByName("FollowUpService")
+	require.NotNil(t, followUp)
+	require.NotNil(t, followUp.Methods().ByName("SetFollowUp"))
+
+	stableInvocation := stable["event.proto"].
+		Messages().ByName("InvokeProjectHandler").
+		Fields().ByName("invocation_id")
+	betaInvocation := beta["event.proto"].
+		Messages().ByName("InvokeProjectHandler").
+		Fields().ByName("invocation_id")
+	require.Nil(t, stableInvocation)
+	require.NotNil(t, betaInvocation)
+	require.Equal(t, protoreflect.FieldNumber(3), betaInvocation.Number())
 }
 
 func TestStableSubsetAllowsAdditiveBetaFieldsAndMethods(t *testing.T) {

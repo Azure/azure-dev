@@ -48,8 +48,6 @@ message InvokeProjectHandler {
   string event_name = 1;
   // Current project configuration.
   ProjectConfig project = 2;
-  // Opaque identifier for the current project handler invocation.
-  string invocation_id = 3;
 }
 
 // Server invokes the service event handler

@@ -191,7 +191,7 @@ func Test_Server_Start(t *testing.T) {
 		azdext.UnimplementedProvisioningServiceServer{},
 		echoValidationService{},
 		newTelemetryService(stubExtensionLookup{extension: reportingExtension}),
-		azdext.UnimplementedFollowUpServiceServer{},
+		v1beta.UnimplementedFollowUpServiceServer{},
 	)
 
 	serverInfo, err := server.Start()
@@ -230,7 +230,7 @@ func Test_Server_Start(t *testing.T) {
 		}
 
 		services := server.grpcServer.GetServiceInfo()
-		require.Len(t, services, 3*len(serviceNames)+8)
+		require.Len(t, services, 3*len(serviceNames)+7)
 		for _, serviceName := range serviceNames {
 			require.Contains(t, services, "azd.extensions.v1."+serviceName)
 			require.Contains(t, services, "azd.extensions.v1beta."+serviceName)
@@ -241,7 +241,7 @@ func Test_Server_Start(t *testing.T) {
 			require.Contains(t, services, "azd.extensions.v1beta."+serviceName)
 			require.Contains(t, services, "azdext."+serviceName)
 		}
-		require.Contains(t, services, "azd.extensions.v1.FollowUpService")
+		require.NotContains(t, services, "azd.extensions.v1.FollowUpService")
 		require.Contains(t, services, "azd.extensions.v1beta.FollowUpService")
 		require.NotContains(t, services, "azdext.FollowUpService")
 	})
@@ -491,7 +491,7 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 		azdext.UnimplementedProvisioningServiceServer{},
 		azdext.UnimplementedValidationServiceServer{},
 		v1beta.UnimplementedTelemetryServiceServer{},
-		azdext.UnimplementedFollowUpServiceServer{},
+		v1beta.UnimplementedFollowUpServiceServer{},
 	)
 
 	serverInfo, err := server.Start()
@@ -621,7 +621,7 @@ func TestServer_RelaysExtensionErrorOverGRPC(t *testing.T) {
 		azdext.UnimplementedProvisioningServiceServer{},
 		azdext.UnimplementedValidationServiceServer{},
 		newTelemetryService(stubExtensionLookup{}),
-		azdext.UnimplementedFollowUpServiceServer{},
+		v1beta.UnimplementedFollowUpServiceServer{},
 	)
 	serverInfo, err := server.Start()
 	require.NoError(t, err)
@@ -972,7 +972,7 @@ func newTestServer(
 		azdext.UnimplementedProvisioningServiceServer{},
 		azdext.UnimplementedValidationServiceServer{},
 		v1beta.UnimplementedTelemetryServiceServer{},
-		azdext.UnimplementedFollowUpServiceServer{},
+		v1beta.UnimplementedFollowUpServiceServer{},
 	).WithOptions(options...)
 }
 

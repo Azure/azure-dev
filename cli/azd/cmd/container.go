@@ -945,6 +945,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Extensions
 	container.MustRegisterSingleton(extensions.NewManager)
+	container.MustRegisterSingleton(func(manager *extensions.Manager) grpcserver.ExtensionLookup {
+		return manager
+	})
 	container.MustRegisterSingleton(extensions.NewSourceManager)
 	container.MustRegisterSingleton(extensions.NewRunner)
 	container.MustRegisterScoped(middleware.NewExtensionActivator)

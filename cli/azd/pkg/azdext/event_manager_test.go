@@ -5,10 +5,15 @@ package azdext
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
+	"sync"
 	"testing"
 
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -175,49 +180,182 @@ func TestEventManager_onInvokeProjectHandler_Success(t *testing.T) {
 	assert.Equal(t, "", status.Message)
 }
 
-func TestEventManager_onInvokeProjectHandler_ProvidesFollowUp(t *testing.T) {
-	ctx := t.Context()
-	eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
-	eventManager.projectEvents["postprovision"] = func(
-		ctx context.Context,
-		args *ProjectEventArgs,
-	) error {
-		require.NotNil(t, args.FollowUp)
-		require.Equal(t, "invocation-id", args.FollowUp.invocationID)
-		return nil
-	}
-
-	resp, err := eventManager.onInvokeProjectHandler(ctx, &InvokeProjectHandler{
-		EventName:    "postprovision",
-		Project:      createTestProjectConfigForEvents(),
-		InvocationId: "invocation-id",
-	})
-
-	require.NoError(t, err)
-	status := resp.GetProjectHandlerStatus()
-	require.Empty(t, status.Message)
-}
-
 type followUpRecorder struct {
-	UnimplementedFollowUpServiceServer
+	v1beta.UnimplementedFollowUpServiceServer
 	invocationID string
 	text         string
 }
 
 func (r *followUpRecorder) SetFollowUp(
 	ctx context.Context,
-	req *SetFollowUpRequest,
-) (*SetFollowUpResponse, error) {
+	req *v1beta.SetFollowUpRequest,
+) (*v1beta.SetFollowUpResponse, error) {
 	r.invocationID = req.InvocationId
 	r.text = req.Text
-	return &SetFollowUpResponse{}, nil
+	return &v1beta.SetFollowUpResponse{}, nil
+}
+
+type betaEventStreamRecorder struct {
+	v1beta.UnimplementedEventServiceServer
+	started       chan struct{}
+	subscriptions chan *v1beta.EventMessage
+}
+
+func (r *betaEventStreamRecorder) EventStream(
+	stream grpc.BidiStreamingServer[v1beta.EventMessage, v1beta.EventMessage],
+) error {
+	close(r.started)
+	for {
+		message, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		r.subscriptions <- message
+	}
+}
+
+func TestPreviewEventManager_ConcurrentRegistration(t *testing.T) {
+	listener := bufconn.Listen(1024 * 1024)
+	server := grpc.NewServer()
+	recorder := &betaEventStreamRecorder{
+		started:       make(chan struct{}),
+		subscriptions: make(chan *v1beta.EventMessage, 32),
+	}
+	v1beta.RegisterEventServiceServer(server, recorder)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+
+	connection, err := grpc.NewClient(
+		"passthrough:///bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return listener.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = connection.Close()
+	})
+
+	manager := newPreviewEventManager("test-ext", &AzdClient{connection: connection}, nil)
+	ctx, cancel := context.WithCancel(t.Context())
+	receiveDone := make(chan error, 1)
+	go func() {
+		receiveDone <- manager.Receive(ctx)
+	}()
+	<-recorder.started
+
+	const handlerCount = 16
+	var wg sync.WaitGroup
+	errs := make(chan error, handlerCount)
+	for i := range handlerCount {
+		eventName := fmt.Sprintf("event-%d", i)
+		wg.Go(func() {
+			errs <- manager.AddProjectEventHandler(ctx, eventName, func(
+				context.Context,
+				*PreviewProjectEventArgs,
+			) error {
+				return nil
+			})
+		})
+	}
+	wg.Wait()
+	close(errs)
+	for registrationErr := range errs {
+		require.NoError(t, registrationErr)
+	}
+
+	for range handlerCount {
+		select {
+		case message := <-recorder.subscriptions:
+			require.NotNil(t, message.GetSubscribeProjectEvent())
+		case <-ctx.Done():
+			t.Fatal("context canceled before all subscriptions were received")
+		}
+	}
+
+	require.NoError(t, manager.Close())
+	cancel()
+	<-receiveDone
+}
+
+func TestPreviewEventManager_RegistrationFailureRollsBackHandler(t *testing.T) {
+	expectedErr := errors.New("send failed")
+
+	tests := []struct {
+		name        string
+		withCurrent bool
+	}{
+		{name: "new handler"},
+		{name: "replacement handler", withCurrent: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stream := &MockBidiStreamingClient[
+				*v1beta.EventMessage,
+				*v1beta.EventMessage,
+			]{}
+			stream.On("Send", mock.Anything).Return(expectedErr).Once()
+
+			manager := newPreviewEventManager("test-ext", &AzdClient{}, nil)
+			manager.broker = grpcbroker.NewMessageBroker(
+				stream,
+				newBetaEventMessageEnvelope(),
+				"test-ext",
+				nil,
+			)
+
+			currentCalled := false
+			if tt.withCurrent {
+				manager.handlers["postdeploy"] = func(
+					context.Context,
+					*PreviewProjectEventArgs,
+				) error {
+					currentCalled = true
+					return nil
+				}
+			}
+
+			replacementCalled := false
+			err := manager.AddProjectEventHandler(
+				t.Context(),
+				"postdeploy",
+				func(context.Context, *PreviewProjectEventArgs) error {
+					replacementCalled = true
+					return nil
+				},
+			)
+			require.ErrorIs(t, err, expectedErr)
+
+			response, err := manager.onInvokeProjectHandler(
+				t.Context(),
+				&v1beta.InvokeProjectHandler{EventName: "postdeploy"},
+			)
+			require.NoError(t, err)
+			require.False(t, replacementCalled)
+			if tt.withCurrent {
+				require.True(t, currentCalled)
+				require.NotNil(t, response.GetProjectHandlerStatus())
+			} else {
+				require.False(t, currentCalled)
+				require.Nil(t, response.MessageType)
+			}
+			stream.AssertExpectations(t)
+		})
+	}
 }
 
 func TestFollowUpContributionSetAndClear(t *testing.T) {
 	listener := bufconn.Listen(1024 * 1024)
 	server := grpc.NewServer()
 	recorder := &followUpRecorder{}
-	RegisterFollowUpServiceServer(server, recorder)
+	v1beta.RegisterFollowUpServiceServer(server, recorder)
 	go func() {
 		_ = server.Serve(listener)
 	}()
@@ -300,6 +438,73 @@ func TestEventManager_onInvokeProjectHandler_HandlerError(t *testing.T) {
 	require.NotNil(t, status.Error.GetLocalError())
 	assert.Equal(t, "handler_failed", status.Error.GetLocalError().GetCode())
 	assert.Equal(t, string(LocalErrorCategoryUser), status.Error.GetLocalError().GetCategory())
+}
+
+func TestPreviewEventManager_onInvokeProjectHandler_StructuredError(t *testing.T) {
+	tests := []struct {
+		name       string
+		handlerErr error
+		assertErr  func(*testing.T, *v1beta.ExtensionError)
+	}{
+		{
+			name: "local",
+			handlerErr: &LocalError{
+				Message:    "preview handler failed",
+				Code:       "preview_failed",
+				Category:   LocalErrorCategoryUser,
+				CauseTypes: []string{"*example.Cause"},
+				Suggestion: "Try again",
+			},
+			assertErr: func(t *testing.T, err *v1beta.ExtensionError) {
+				require.Equal(t, "Try again", err.GetSuggestion())
+				require.NotNil(t, err.GetLocalError())
+				require.Equal(t, "preview_failed", err.GetLocalError().GetCode())
+				require.Equal(t, []string{"*example.Cause"}, err.GetLocalError().GetCauseTypes())
+			},
+		},
+		{
+			name: "tool",
+			handlerErr: &ToolError{
+				Message:    "tool failed",
+				ToolName:   "az",
+				Kind:       ToolErrorKindMissing,
+				ExitCode:   new(127),
+				Suggestion: "Install az",
+			},
+			assertErr: func(t *testing.T, err *v1beta.ExtensionError) {
+				require.Equal(t, "Install az", err.GetSuggestion())
+				require.NotNil(t, err.GetToolError())
+				require.Equal(t, "az", err.GetToolError().GetToolName())
+				require.Equal(t, string(ToolErrorKindMissing), err.GetToolError().GetFailureKind())
+				require.Equal(t, int64(127), err.GetToolError().GetExitCode())
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := newPreviewEventManager("test-ext", &AzdClient{}, nil)
+			manager.handlers["postdeploy"] = func(
+				context.Context,
+				*PreviewProjectEventArgs,
+			) error {
+				return tt.handlerErr
+			}
+
+			resp, err := manager.onInvokeProjectHandler(t.Context(), &v1beta.InvokeProjectHandler{
+				EventName: "postdeploy",
+				Project:   &v1beta.ProjectConfig{Name: "test-project"},
+			})
+
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+			status := resp.GetProjectHandlerStatus()
+			require.NotNil(t, status)
+			require.Equal(t, "failed", status.GetStatus())
+			require.NotNil(t, status.GetError())
+			tt.assertErr(t, status.GetError())
+		})
+	}
 }
 
 // Test onInvokeProjectHandler with no registered handler

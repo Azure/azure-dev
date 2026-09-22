@@ -10,35 +10,13 @@ import queue
 import grpc
 from azd_client import AzdClient
 import event_pb2
-from generated_proto.follow_up_pb2 import SetFollowUpRequest
 
 # Get logger - the actual configuration is done in main.py
 logger = logging.getLogger(__name__)
 
 class ProjectEventArgs:
-    def __init__(self, project, follow_up):
+    def __init__(self, project):
         self.project = project
-        self.follow_up = follow_up
-
-
-class FollowUpContribution:
-    def __init__(self, azd_client: AzdClient, invocation_id: str):
-        self._azd_client = azd_client
-        self._invocation_id = invocation_id
-
-    async def set(self, text: str):
-        """Set the contribution for the current project handler invocation."""
-        if not self._invocation_id:
-            raise RuntimeError("follow-up invocation is unavailable")
-        request = SetFollowUpRequest(
-            invocation_id=self._invocation_id,
-            text=text,
-        )
-        await asyncio.to_thread(self._azd_client.follow_up.SetFollowUp, request)
-
-    async def clear(self):
-        """Clear the contribution for the current project handler invocation."""
-        await self.set("")
 
 class ServiceEventArgs:
     def __init__(self, project, service):
@@ -267,10 +245,7 @@ class EventManager:
         status, message = "completed", ""
 
         if handler:
-            event_args = ProjectEventArgs(
-                invoke_msg.project,
-                FollowUpContribution(self._azd_client, invoke_msg.invocation_id),
-            )
+            event_args = ProjectEventArgs(invoke_msg.project)
             try:
                 await handler(event_args)
             except Exception as ex:

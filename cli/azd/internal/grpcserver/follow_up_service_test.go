@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
@@ -113,7 +113,7 @@ func TestFollowUpServiceSetFollowUp(t *testing.T) {
 	ctx := extensions.WithClaimsContext(t.Context(), &extensions.ExtensionClaims{
 		RegisteredClaims: jwt.RegisteredClaims{Subject: "test.extension"},
 	})
-	_, err := service.SetFollowUp(ctx, &azdext.SetFollowUpRequest{
+	_, err := service.SetFollowUp(ctx, &v1beta.SetFollowUpRequest{
 		InvocationId: invocationID,
 		Text:         "next",
 	})
@@ -131,7 +131,7 @@ func TestFollowUpServiceSetFollowUpRejectsInvalidRequests(t *testing.T) {
 	_, err := service.SetFollowUp(t.Context(), nil)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 
-	_, err = service.SetFollowUp(t.Context(), &azdext.SetFollowUpRequest{
+	_, err = service.SetFollowUp(t.Context(), &v1beta.SetFollowUpRequest{
 		InvocationId: "missing",
 	})
 	require.Equal(t, codes.Unauthenticated, status.Code(err))
@@ -140,7 +140,7 @@ func TestFollowUpServiceSetFollowUpRejectsInvalidRequests(t *testing.T) {
 	otherCtx := extensions.WithClaimsContext(t.Context(), &extensions.ExtensionClaims{
 		RegisteredClaims: jwt.RegisteredClaims{Subject: "other.extension"},
 	})
-	_, err = service.SetFollowUp(otherCtx, &azdext.SetFollowUpRequest{
+	_, err = service.SetFollowUp(otherCtx, &v1beta.SetFollowUpRequest{
 		InvocationId: invocationID,
 		Text:         "next",
 	})
@@ -150,7 +150,7 @@ func TestFollowUpServiceSetFollowUpRejectsInvalidRequests(t *testing.T) {
 	ctx := extensions.WithClaimsContext(t.Context(), &extensions.ExtensionClaims{
 		RegisteredClaims: jwt.RegisteredClaims{Subject: "test.extension"},
 	})
-	_, err = service.SetFollowUp(ctx, &azdext.SetFollowUpRequest{
+	_, err = service.SetFollowUp(ctx, &v1beta.SetFollowUpRequest{
 		InvocationId: nonPostID,
 		Text:         "next",
 	})
@@ -169,7 +169,7 @@ func TestFollowUpServiceSetFollowUpRejectsClosedInvocation(t *testing.T) {
 	ctx := extensions.WithClaimsContext(t.Context(), &extensions.ExtensionClaims{
 		RegisteredClaims: jwt.RegisteredClaims{Subject: "test.extension"},
 	})
-	_, err := service.SetFollowUp(ctx, &azdext.SetFollowUpRequest{
+	_, err := service.SetFollowUp(ctx, &v1beta.SetFollowUpRequest{
 		InvocationId: invocationID,
 		Text:         "late",
 	})

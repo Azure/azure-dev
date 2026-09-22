@@ -43,6 +43,12 @@ type extensionEventManager interface {
 	Close() error
 }
 
+type previewEventRegistrar interface {
+	serviceReceiver
+	AddProjectEventHandler(ctx context.Context, eventName string, handler PreviewProjectEventHandler) error
+	Close() error
+}
+
 type provisioningRegistrar interface {
 	Register(ctx context.Context, factory ProvisioningProviderFactory, providerName string) error
 	Receive(ctx context.Context) error
@@ -66,6 +72,12 @@ type FrameworkServiceRegistration struct {
 type ProjectEventRegistration struct {
 	EventName string
 	Handler   ProjectEventHandler
+}
+
+// PreviewProjectEventRegistration describes a beta event handler.
+type PreviewProjectEventRegistration struct {
+	EventName string
+	Handler   PreviewProjectEventHandler
 }
 
 // ServiceEventRegistration describes a service-level event handler to register.
@@ -94,16 +106,18 @@ type FrameworkServiceFactory ProviderFactory[FrameworkServiceProvider]
 type ExtensionHost struct {
 	client *AzdClient
 
-	serviceTargets        []ServiceTargetRegistration
-	frameworkServices     []FrameworkServiceRegistration
-	projectHandlers       []ProjectEventRegistration
-	serviceHandlers       []ServiceEventRegistration
-	provisioningProviders []ProvisioningProviderRegistration
-	validationChecks      []ValidationCheckRegistration
+	serviceTargets         []ServiceTargetRegistration
+	frameworkServices      []FrameworkServiceRegistration
+	projectHandlers        []ProjectEventRegistration
+	previewProjectHandlers []PreviewProjectEventRegistration
+	serviceHandlers        []ServiceEventRegistration
+	provisioningProviders  []ProvisioningProviderRegistration
+	validationChecks       []ValidationCheckRegistration
 
 	serviceTargetManager    serviceTargetRegistrar
 	frameworkServiceManager frameworkServiceRegistrar
 	eventManager            extensionEventManager
+	previewEventManager     previewEventRegistrar
 	provisioningManager     provisioningRegistrar
 	validationManager       *ValidationManager
 }
@@ -150,6 +164,9 @@ func (er *ExtensionHost) initManagers(extensionId string, brokerLogger *log.Logg
 	if er.eventManager == nil {
 		er.eventManager = NewEventManager(extensionId, er.client, brokerLogger)
 	}
+	if er.previewEventManager == nil {
+		er.previewEventManager = newPreviewEventManager(extensionId, er.client, brokerLogger)
+	}
 	if er.provisioningManager == nil {
 		er.provisioningManager = NewProvisioningManager(extensionId, er.client, brokerLogger)
 	}
@@ -173,6 +190,18 @@ func (er *ExtensionHost) WithFrameworkService(language string, factory Framework
 // WithProjectEventHandler registers a project-level event handler to be wired when Run is invoked.
 func (er *ExtensionHost) WithProjectEventHandler(eventName string, handler ProjectEventHandler) *ExtensionHost {
 	er.projectHandlers = append(er.projectHandlers, ProjectEventRegistration{EventName: eventName, Handler: handler})
+	return er
+}
+
+// WithPreviewProjectEventHandler registers a beta event handler.
+func (er *ExtensionHost) WithPreviewProjectEventHandler(
+	eventName string,
+	handler PreviewProjectEventHandler,
+) *ExtensionHost {
+	er.previewProjectHandlers = append(er.previewProjectHandlers, PreviewProjectEventRegistration{
+		EventName: eventName,
+		Handler:   handler,
+	})
 	return er
 }
 
@@ -215,6 +244,9 @@ func (er *ExtensionHost) WithValidationCheck(
 // Run wires the configured service targets and event handlers, signals readiness, and blocks until shutdown.
 func (er *ExtensionHost) Run(ctx context.Context) error {
 	extensionId := getExtensionId(ctx)
+	if err := er.validateEventRegistrations(); err != nil {
+		return err
+	}
 
 	// Wait for debugger if AZD_EXT_DEBUG is set
 	// When user declines or cancels, continue so extension doesn't exit while azd continues
@@ -234,12 +266,14 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	} else if isDebug, err := strconv.ParseBool(os.Getenv("AZD_DEBUG")); err == nil && isDebug {
 		brokerLogger = log.New(os.Stderr, "", log.LstdFlags)
 	}
+
 	er.initManagers(extensionId, brokerLogger)
 
 	// Determine which managers will be active
 	hasServiceTargets := len(er.serviceTargets) > 0
 	hasFrameworkServices := len(er.frameworkServices) > 0
 	hasEventHandlers := len(er.projectHandlers) > 0 || len(er.serviceHandlers) > 0
+	hasPreviewEventHandlers := len(er.previewProjectHandlers) > 0
 	hasProvisioningProviders := len(er.provisioningProviders) > 0
 	hasValidationChecks := len(er.validationChecks) > 0
 
@@ -253,6 +287,9 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		}
 		if hasEventHandlers {
 			_ = er.eventManager.Close()
+		}
+		if hasPreviewEventHandlers {
+			_ = er.previewEventManager.Close()
 		}
 		if hasProvisioningProviders {
 			_ = er.provisioningManager.Close()
@@ -273,6 +310,9 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	}
 	if hasEventHandlers {
 		receivers = append(receivers, er.eventManager)
+	}
+	if hasPreviewEventHandlers {
+		receivers = append(receivers, er.previewEventManager)
 	}
 	if hasProvisioningProviders {
 		receivers = append(receivers, er.provisioningManager)
@@ -315,6 +355,7 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	var registrationsWaitGroup sync.WaitGroup
 	totalCount := len(er.serviceTargets) + len(er.frameworkServices) +
 		len(er.projectHandlers) + len(er.serviceHandlers) +
+		len(er.previewProjectHandlers) +
 		len(er.provisioningProviders) + len(er.validationChecks)
 	registrationErrChan := make(chan error, totalCount)
 
@@ -356,6 +397,23 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		registrationsWaitGroup.Go(func() {
 			if err := er.eventManager.AddProjectEventHandler(ctx, r.EventName, r.Handler); err != nil {
 				registrationErrChan <- fmt.Errorf("failed to add project event handler '%s': %w", r.EventName, err)
+			}
+		})
+	}
+
+	// Register preview project event handlers in parallel.
+	for _, reg := range er.previewProjectHandlers {
+		if reg.Handler == nil {
+			return fmt.Errorf("preview project event handler for '%s' is nil", reg.EventName)
+		}
+
+		r := reg
+		registrationsWaitGroup.Go(func() {
+			if err := er.previewEventManager.AddProjectEventHandler(ctx, r.EventName, r.Handler); err != nil {
+				registrationErrChan <- fmt.Errorf(
+					"failed to add preview project event handler '%s': %w",
+					r.EventName, err,
+				)
 			}
 		})
 	}
@@ -463,6 +521,22 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		// All receivers completed normally
 		return nil
 	}
+}
+
+func (er *ExtensionHost) validateEventRegistrations() error {
+	stable := make(map[string]struct{}, len(er.projectHandlers))
+	for _, registration := range er.projectHandlers {
+		stable[registration.EventName] = struct{}{}
+	}
+	for _, registration := range er.previewProjectHandlers {
+		if _, exists := stable[registration.EventName]; exists {
+			return fmt.Errorf(
+				"project event %q cannot be registered in both stable and preview channels",
+				registration.EventName,
+			)
+		}
+	}
+	return nil
 }
 
 func callReady(ctx context.Context, client *AzdClient) error {

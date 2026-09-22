@@ -275,20 +275,6 @@ func validateBetaExtensionServiceOverride(override any) error {
 	)
 }
 
-// BetaFollowUpServiceSetFollowUpOverride overrides the beta FollowUpService.SetFollowUp method before stable adaptation.
-type BetaFollowUpServiceSetFollowUpOverride interface {
-	SetFollowUp(context.Context, *v1beta.SetFollowUpRequest) (*v1beta.SetFollowUpResponse, error)
-}
-
-func validateBetaFollowUpServiceOverride(override any) error {
-	return validateBetaServiceOverride(
-		"FollowUpService",
-		override,
-		reflect.TypeFor[v1beta.FollowUpServiceServer](),
-		reflect.TypeFor[BetaFollowUpServiceSetFollowUpOverride](),
-	)
-}
-
 // BetaFrameworkServiceStreamOverride overrides the beta FrameworkService.Stream method before stable adaptation.
 type BetaFrameworkServiceStreamOverride interface {
 	Stream(grpc.BidiStreamingServer[v1beta.FrameworkServiceMessage, v1beta.FrameworkServiceMessage]) error
@@ -715,17 +701,14 @@ func registerBetaServices(
 		override: overrideExtensionService,
 	})
 	overrideFollowUpService := overrides[BetaFollowUpService]
-	if err := validateBetaFollowUpServiceOverride(overrideFollowUpService); err != nil {
-		return err
+	if overrideFollowUpService != nil {
+		return fmt.Errorf("beta-only service FollowUpService uses its native implementation and does not accept an override")
 	}
-	stableFollowUpService, ok := serviceImplementations[BetaFollowUpService].(v1.FollowUpServiceServer)
+	betaFollowUpService, ok := serviceImplementations[BetaFollowUpService].(v1beta.FollowUpServiceServer)
 	if !ok {
-		return fmt.Errorf("stable implementation for FollowUpService does not satisfy v1.FollowUpServiceServer")
+		return fmt.Errorf("implementation for beta-only service FollowUpService does not satisfy v1beta.FollowUpServiceServer")
 	}
-	v1beta.RegisterFollowUpServiceServer(registrar, &betaFollowUpServiceAdapter{
-		stable:   stableFollowUpService,
-		override: overrideFollowUpService,
-	})
+	v1beta.RegisterFollowUpServiceServer(registrar, betaFollowUpService)
 	overrideFrameworkService := overrides[BetaFrameworkService]
 	if err := validateBetaFrameworkServiceOverride(overrideFrameworkService); err != nil {
 		return err
@@ -1361,31 +1344,6 @@ func (a *betaExtensionServiceAdapter) ReportError(
 		a.stable.ReportError,
 		new(v1beta.ReportErrorResponse),
 		"ExtensionService.ReportError",
-	)
-}
-
-type betaFollowUpServiceAdapter struct {
-	v1beta.UnimplementedFollowUpServiceServer
-	stable   v1.FollowUpServiceServer
-	override any
-}
-
-var _ v1beta.FollowUpServiceServer = (*betaFollowUpServiceAdapter)(nil)
-
-func (a *betaFollowUpServiceAdapter) SetFollowUp(
-	ctx context.Context,
-	req *v1beta.SetFollowUpRequest,
-) (*v1beta.SetFollowUpResponse, error) {
-	if override, ok := a.override.(BetaFollowUpServiceSetFollowUpOverride); ok {
-		return override.SetFollowUp(ctx, req)
-	}
-	return adaptBetaUnary(
-		ctx,
-		req,
-		new(v1.SetFollowUpRequest),
-		a.stable.SetFollowUp,
-		new(v1beta.SetFollowUpResponse),
-		"FollowUpService.SetFollowUp",
 	)
 }
 

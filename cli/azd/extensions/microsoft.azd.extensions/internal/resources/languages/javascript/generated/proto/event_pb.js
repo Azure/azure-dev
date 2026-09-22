@@ -1021,8 +1021,7 @@ proto.azd.extensions.v1.InvokeProjectHandler.prototype.toObject = function(opt_i
 proto.azd.extensions.v1.InvokeProjectHandler.toObject = function(includeInstance, msg) {
   var f, obj = {
 eventName: jspb.Message.getFieldWithDefault(msg, 1, ""),
-project: (f = msg.getProject()) && models_pb.ProjectConfig.toObject(includeInstance, f),
-invocationId: jspb.Message.getFieldWithDefault(msg, 3, "")
+project: (f = msg.getProject()) && models_pb.ProjectConfig.toObject(includeInstance, f)
   };
 
   if (includeInstance) {
@@ -1180,14 +1179,6 @@ proto.azd.extensions.v1.InvokeProjectHandler.prototype.hasProject = function() {
   return jspb.Message.getField(this, 2) != null;
 };
 
-
-/**
- * optional string invocation_id = 3;
- * @return {string}
- */
-proto.azd.extensions.v1.InvokeProjectHandler.prototype.getInvocationId = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 3, ""));
-};
 
 
 /**

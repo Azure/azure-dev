@@ -83,26 +83,26 @@ For extensions that are still in development or preview, consider publishing to 
 
 ## Command-level lifecycle follow-up
 
-Project lifecycle handlers can provide command-level guidance through the
+Beta project lifecycle handlers can provide command-level guidance through the
 handler-scoped `FollowUp` contribution during a successful `post*` event:
 
 ```go
-host.WithProjectEventHandler("postdeploy",
-    func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+host.WithPreviewProjectEventHandler("postdeploy",
+    func(ctx context.Context, args *azdext.PreviewProjectEventArgs) error {
         return args.FollowUp.Set("Next:\n  azd ai agent show my-agent")
     })
 ```
 
-The contribution uses the independent `FollowUpService` and the invocation ID
+The contribution uses the beta `FollowUpService` and the invocation ID
 provided by azd. The host stages the latest text and commits it only after the
-handler completes successfully. Contributions from failed, cancelled,
+preview handler completes successfully. Contributions from failed, cancelled,
 disconnected, or incomplete handlers are discarded. Use `args.FollowUp.Clear()`
 or `args.FollowUp.Set("")` to retract the current contribution. The RPC
 returns an error if the invocation is no longer active or is not a project
 `post*` handler.
 
 Extensions using this API require an azd host that provides
-`FollowUpService` and invocation IDs. In a published extension, set
+the beta `FollowUpService` and invocation IDs. In a published extension, set
 `requiredAzdVersion` to the first released azd version containing this service;
 for the current release line, use `>=1.35.0`. This filters versions during
 install and update, but does not prevent already-installed or non-registry

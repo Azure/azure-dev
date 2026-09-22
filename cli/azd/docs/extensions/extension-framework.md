@@ -204,25 +204,25 @@ if err := host.Run(ctx); err != nil {
 
 ##### Command-level follow-up text
 
-Successful project `post*` handlers may use the handler-scoped `FollowUp`
+Successful beta project `post*` handlers may use the handler-scoped `FollowUp`
 contribution to provide command-level guidance:
 
 ```go
-host.WithProjectEventHandler("postprovision",
-  func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+host.WithPreviewProjectEventHandler("postprovision",
+  func(ctx context.Context, args *azdext.PreviewProjectEventArgs) error {
     return args.FollowUp.Set("Next:\n  azd deploy")
   })
 ```
 
-The contribution uses the independent `FollowUpService` and the invocation ID
+The contribution uses the beta `FollowUpService` and the invocation ID
 provided by azd. azd stages the latest text and commits it only after the
-handler completes successfully; failed, cancelled, disconnected, or
+preview handler completes successfully; failed, cancelled, disconnected, or
 incomplete handlers are discarded. Use `args.FollowUp.Clear()` or
 `args.FollowUp.Set("")` to retract the current contribution. Calls outside a
 project `post*` handler return an error.
 
 Extensions using this API require an azd host that provides
-`FollowUpService` and invocation IDs. Published extensions should set
+the beta `FollowUpService` and invocation IDs. Published extensions should set
 `requiredAzdVersion` to the first released azd version containing this service;
 for the current release line, use `>=1.35.0`. This filters versions during
 install and update, but does not prevent already-installed or non-registry

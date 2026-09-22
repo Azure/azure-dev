@@ -30,6 +30,9 @@ const (
 // Reconciler applies the eval configuration to the service. It is satisfied by
 // the command layer, which owns the data-plane clients.
 type Reconciler interface {
+	// Validate checks local artifacts and service references without publishing
+	// dependencies or changing reconciliation state.
+	Validate(ctx context.Context, cfg *EvalConfig, baseDir string) error
 	// EnsureDataset registers a new dataset version when the local content
 	// changed, returning the resolved version and whether anything was written.
 	EnsureDataset(ctx context.Context, decl DatasetDecl, localPath string) (version string, changed bool, err error)
@@ -172,6 +175,10 @@ func (p *EvalServiceTargetProvider) Deploy(
 	// `evals/datasets/rows.jsonl` under `<root>/evals`, and every scaffolded
 	// dataset read as missing.
 	baseDir := projectRoot
+
+	if err := reconciler.Validate(ctx, cfg, baseDir); err != nil {
+		return nil, messages.EvalConfigInvalid(err)
+	}
 
 	// 1. Datasets the configuration owns. Paths are kept so an eval that names
 	// one can derive its columns without reading the blob back.

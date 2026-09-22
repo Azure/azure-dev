@@ -79,7 +79,7 @@ func (a *evalCreateAction) Run() error {
 	if err != nil {
 		return err
 	}
-	if err := cfg.Validate(); err != nil {
+	if err := cfg.ValidateForLookup(); err != nil {
 		return err
 	}
 
@@ -103,6 +103,24 @@ func (a *evalCreateAction) Run() error {
 	}
 	defer ec.Close()
 
+	return a.create(ec, cfg, eval, path)
+}
+
+func (a *evalCreateAction) create(ec *evalContext, cfg *project.EvalConfig, eval *project.Eval, path string) error {
+	ctx := a.cmd.Context()
+	selected := &project.EvalConfig{Evals: []project.Eval{*eval}}
+	if decl, ok := cfg.DatasetDeclaration(eval.Dataset); ok {
+		selected.Datasets = append(selected.Datasets, *decl)
+	}
+	for _, decl := range cfg.Evaluators {
+		for _, ref := range eval.Evaluators {
+			if ref.Evaluator == decl.Name {
+				selected.Evaluators = append(selected.Evaluators, decl)
+				break
+			}
+		}
+	}
+
 	// Local sources resolve against the file, not the working directory,
 	// so the columns are read from where the declaration points.
 	baseDir := filepath.Dir(path)
@@ -112,17 +130,14 @@ func (a *evalCreateAction) Run() error {
 	}
 
 	reconciler := &evalReconciler{ec: ec}
+	if err := reconciler.Validate(ctx, selected, baseDir); err != nil {
+		return err
+	}
 	// Every eval the file declares, not only the one being created: an
 	// eval another declaration already owns must not be adopted here.
 	reconciler.ReserveDeclared(ctx, cfg.Evals)
 	out := a.cmd.OutOrStdout()
 
-	// Before anything is pushed. Publishing is not free -- a dataset
-	// version is immutable and the number climbs on every attempt -- so
-	// a declaration the evaluators cannot satisfy is refused first.
-	if err := checkEvaluatorRequirements(eval, ec.evaluatorSchemas(ctx)); err != nil {
-		return err
-	}
 	// Reported per artifact, because "publishes nothing when nothing
 	// changed" is the contract a reader is checking here and a single
 	// closing line cannot show it. Silent under -o json.

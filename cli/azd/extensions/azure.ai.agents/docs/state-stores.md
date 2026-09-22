@@ -1,6 +1,6 @@
 # Inspect and edit agent State Stores
 
-Foundry State Stores hold application JSON data such as checkpoints. Use `azd ai agent state-stores` to inspect **existing stores** and manage their items. Create stores in agent code or other tooling first; see the [AgentServer State Store guide](https://github.com/Azure/azure-sdk-for-python/blob/main/sdk/agentserver/azure-ai-agentserver-core/docs/state-store-guide.md).
+Foundry State Stores hold application JSON data such as checkpoints. Use `azd ai agent state-stores` to inspect **existing stores** and manage their items. Create stores in agent code or other tooling first; see the public [Foundry State Store documentation](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/agent-state-store?tabs=python).
 
 Editing state does not stop, resume, or steer agent work. Coordinate changes with the application, especially when modifying active checkpoints.
 
@@ -56,7 +56,8 @@ azd ai agent state-stores items delete "test-checkpoint" --yes
 ```
 
 - Supply exactly one value source. `--value-file -` reads stdin. The top-level value must be a JSON **object**; nested arrays, scalars, and null are allowed. JSON numbers retain their precision.
-- Raw input is limited to **16 MiB**, including whitespace, for inline, file, and stdin values. This is a local memory-safety budget, not the service's serialized-value limit, which may be smaller. Oversized input is rejected without sending a State Store request; it is never truncated into a write.
+- The [public preview service limit](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/agent-state-store?tabs=python#service-limits) is **1 MB of serialized JSON per value**. The CLI uses the service's byte ceiling of **1,048,576 bytes (1 MiB)** and checks the value as it will be serialized, including JSON escaping but excluding the request envelope and tags. Undocumented larger-value support is not assumed.
+- The CLI derives its raw-input guard from that same byte ceiling instead of applying an arbitrary multiplier. This conservative bound includes whitespace in inline, file, and stdin input: a formatted file larger than 1 MiB must be compacted externally first, even if its compact value would fit. If the compact value is still too large, reduce it or store large content elsewhere and save a reference. Oversized input is rejected before a State Store request, never truncated into a write.
 - `set` replaces the **complete value and tag map**, without an existence probe. **Omitting `--tag` clears existing tags.** Tags are strings, split at the first `=`; empty values are allowed, but empty or duplicate keys are rejected.
 - `--if-match` on set/delete passes the quoted ETag unchanged. A stale ETag fails with HTTP 412. azd never removes the condition or automatically retries writes after a lost response.
 - Deletion confirms the target unless `--yes` is supplied. `--no-prompt` requires `--yes`. An already absent item can return a successful deletion tombstone; a missing store or other service error still fails.

@@ -61,10 +61,9 @@ func TestStateStoreInputAlreadyCancelled(t *testing.T) {
 }
 
 func TestStateStoreValueInputBudget(t *testing.T) {
-	for _, size := range []int{2 * 1024 * 1024, maxStateStoreInputBytes + 1} {
+	for _, size := range []int{maxStateStoreInputBytes - 1, maxStateStoreInputBytes, maxStateStoreInputBytes + 1} {
 		t.Run(fmt.Sprint(size), func(t *testing.T) {
-			// A valid object above 1 MiB must not be rejected as though the inline service
-			// limit applied universally. The service performs its own serialized-size check.
+			// ASCII JSON without extra whitespace has the same raw and serialized size.
 			value := `{"payload":"` + strings.Repeat("a", size-len(`{"payload":""}`)) + `"}`
 			file := filepath.Join(t.TempDir(), "value.json")
 			require.NoError(t, os.WriteFile(file, []byte(value), 0600))
@@ -84,8 +83,8 @@ func TestStateStoreValueInputBudget(t *testing.T) {
 						local, ok := errors.AsType[*azdext.LocalError](err)
 						require.True(t, ok, "expected validation error, got %v", err)
 						require.Equal(t, exterrors.CodeInvalidParameter, local.Code)
-						require.Contains(t, local.Message, "CLI safety limit of 16 MiB")
-						require.Contains(t, local.Suggestion, "reduce the raw input size")
+						require.Contains(t, local.Message, "raw JSON input limit of 1048576 bytes (1 MiB)")
+						require.Contains(t, local.Suggestion, "compact the JSON")
 						require.Nil(t, request.Value)
 					} else {
 						require.NoError(t, err)
@@ -98,26 +97,38 @@ func TestStateStoreValueInputBudget(t *testing.T) {
 }
 
 func TestStateStoreOversizedInputNeverResolvesTarget(t *testing.T) {
-	for _, source := range []string{"file", "stdin"} {
-		t.Run(source, func(t *testing.T) {
-			factoryCalled := false
-			cmd := newStateStoreCommandWithFactory(&azdext.ExtensionContext{}, "items set",
-				func(context.Context, *stateStoreFlags) (*stateStoreAction, func(), error) {
-					factoryCalled = true
-					return nil, nil, errors.New("unexpected target resolution")
-				})
-			input := strings.Repeat(" ", maxStateStoreInputBytes+1)
-			path := "-"
-			if source == "file" {
-				path = filepath.Join(t.TempDir(), "oversized.json")
-				require.NoError(t, os.WriteFile(path, []byte(input), 0600))
-			}
-			cmd.SetIn(strings.NewReader(input))
-			cmd.SetOut(io.Discard)
-			cmd.SetErr(io.Discard)
-			cmd.SetArgs([]string{"size-probe", "--value-file", path})
-			require.ErrorContains(t, cmd.ExecuteContext(t.Context()), "CLI safety limit of 16 MiB")
-			require.False(t, factoryCalled, "oversized input must fail before configuration, auth, or API calls")
-		})
+	for _, tt := range []struct {
+		name, input, message string
+	}{
+		{"raw", strings.Repeat(" ", maxStateStoreInputBytes+1), "raw JSON input limit"},
+		{"serialized", `{"text":"` + strings.Repeat("<", maxStateStoreInputBytes/6+1) + `"}`, "serialized JSON limit"},
+	} {
+		for _, source := range []string{"file", "stdin"} {
+			t.Run(tt.name+"/"+source, func(t *testing.T) {
+				factoryCalled := false
+				cmd := newStateStoreCommandWithFactory(&azdext.ExtensionContext{}, "items set",
+					func(context.Context, *stateStoreFlags) (*stateStoreAction, func(), error) {
+						factoryCalled = true
+						return nil, nil, errors.New("unexpected target resolution")
+					})
+				path := "-"
+				if source == "file" {
+					path = filepath.Join(t.TempDir(), "oversized.json")
+					require.NoError(t, os.WriteFile(path, []byte(tt.input), 0600))
+				}
+				cmd.SetIn(strings.NewReader(tt.input))
+				cmd.SetOut(io.Discard)
+				cmd.SetErr(io.Discard)
+				cmd.SetArgs([]string{"size-probe", "--value-file", path})
+				err := cmd.ExecuteContext(t.Context())
+				require.ErrorContains(t, err, tt.message)
+				if tt.name == "serialized" {
+					local, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok)
+					require.Contains(t, local.Suggestion, "JSON escaping")
+				}
+				require.False(t, factoryCalled, "oversized input must fail before configuration, auth, or API calls")
+			})
+		}
 	}
 }

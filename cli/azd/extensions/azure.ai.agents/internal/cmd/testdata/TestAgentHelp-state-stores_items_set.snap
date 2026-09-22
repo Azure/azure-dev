@@ -1,7 +1,8 @@
 Create or replace a JSON object item in an existing store.
 
 Creates a missing item or replaces its entire value and tags. Omitting --tag clears existing tags.
-Raw input is limited to 16 MiB, including whitespace; service limits may be smaller.
+The preview value limit is 1048576 bytes (1 MiB) of serialized JSON.
+Raw input uses the same limit, including whitespace; compact larger formatted input first.
 
 Usage
   azd ai agent state-stores items set <key> [flags]

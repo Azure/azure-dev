@@ -22,11 +22,26 @@ import (
 
 const stateStoresPreviewFeature = "StateStores=V1Preview"
 
-// ValidateStateStoreValue validates an opaque JSON object without converting its numbers.
+// ErrStateStoreValueTooLarge indicates that a value exceeds the documented preview size limit.
+var ErrStateStoreValueTooLarge = fmt.Errorf(
+	"item value exceeds the serialized JSON limit of %d bytes (1 MiB)", MaxStateStoreValueBytes,
+)
+
+// ValidateStateStoreValue validates an opaque JSON object's type and serialized size
+// without converting its numbers.
 func ValidateStateStoreValue(value json.RawMessage) error {
 	trimmed := bytes.TrimSpace(value)
 	if !json.Valid(trimmed) || len(trimmed) == 0 || trimmed[0] != '{' {
 		return fmt.Errorf("item value must be a JSON object")
+	}
+	// Match the compaction and HTML escaping used by json.Marshal in stateStoreRequest.
+	// The service limit applies to the value, not the surrounding request or tags.
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("encoding item value: %w", err)
+	}
+	if len(encoded) > MaxStateStoreValueBytes {
+		return ErrStateStoreValueTooLarge
 	}
 	return nil
 }

@@ -5,6 +5,11 @@ package agent_api
 
 import "encoding/json"
 
+// MaxStateStoreValueBytes is the preview service's 1 MiB serialized-value ceiling,
+// documented as "1 MB" at:
+// https://learn.microsoft.com/azure/foundry/agents/concepts/agent-state-store#service-limits
+const MaxStateStoreValueBytes = 1024 * 1024
+
 // StateStore describes an existing agent-scoped store. Timestamps are Unix seconds.
 type StateStore struct {
 	ID             string            `json:"id"`

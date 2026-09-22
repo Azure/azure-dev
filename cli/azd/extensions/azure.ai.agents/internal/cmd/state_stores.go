@@ -165,8 +165,9 @@ Pass the returned cursor unchanged; do not use an entry's id or base64url-encode
 	}
 	if operation == "items set" {
 		cmd.Long += "\n\nCreates a missing item or replaces its entire value and tags. Omitting --tag clears existing tags."
-		cmd.Long += fmt.Sprintf("\nRaw input is limited to %d MiB, including whitespace; service limits may be smaller.",
-			maxStateStoreInputBytes/(1024*1024))
+		cmd.Long += fmt.Sprintf("\nThe preview value limit is %d bytes (1 MiB) of serialized JSON.",
+			agent_api.MaxStateStoreValueBytes)
+		cmd.Long += "\nRaw input uses the same limit, including whitespace; compact larger formatted input first."
 		cmd.Flags().StringVar(&flags.value, "value", "", "JSON object value (not a REST request envelope)")
 		cmd.Flags().StringVar(&flags.valueFile, "value-file", "", "Read the JSON object from a file; - reads stdin")
 		cmd.Flags().StringArrayVar(&flags.tags, "tag", nil,

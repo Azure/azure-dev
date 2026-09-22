@@ -18,12 +18,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// maxStateStoreInputBytes bounds local buffering, not the service's serialized-value size.
-// Leave headroom for formatted JSON; service limits can vary with value offloading.
-const maxStateStoreInputBytes = 16 * 1024 * 1024
+// maxStateStoreInputBytes uses the documented value ceiling to bound local buffering
+// without an arbitrary multiplier. This conservatively counts raw whitespace too:
+// callers must compact larger formatted inputs before passing them to the CLI.
+const maxStateStoreInputBytes = agent_api.MaxStateStoreValueBytes
 
 var errStateStoreInputTooLarge = fmt.Errorf(
-	"item input exceeds the CLI safety limit of %d MiB", maxStateStoreInputBytes/(1024*1024),
+	"item input exceeds the raw JSON input limit of %d bytes (1 MiB)", maxStateStoreInputBytes,
 )
 
 func readStateStoreValue(
@@ -53,14 +54,17 @@ func readStateStoreValue(
 		}
 		if errors.Is(err, errStateStoreInputTooLarge) {
 			return request, exterrors.Validation(exterrors.CodeInvalidParameter, err.Error(),
-				"reduce the raw input size, including whitespace; the service may enforce a smaller serialized-value limit")
+				"compact the JSON if whitespace makes it too large; otherwise reduce the item value")
 		}
 		return request, exterrors.Validation(exterrors.CodeInvalidParameter,
 			fmt.Sprintf("could not read --value-file: %v", err), "check the input path or stdin and retry")
 	}
 	if err := agent_api.ValidateStateStoreValue(request.Value); err != nil {
-		return request, exterrors.Validation(exterrors.CodeInvalidParameter, err.Error(),
-			"provide a JSON object as the value, not a REST request envelope")
+		suggestion := "provide a JSON object as the value, not a REST request envelope"
+		if errors.Is(err, agent_api.ErrStateStoreValueTooLarge) {
+			suggestion = "reduce the item value; JSON escaping can increase its serialized size"
+		}
+		return request, exterrors.Validation(exterrors.CodeInvalidParameter, err.Error(), suggestion)
 	}
 	if len(flags.tags) > 0 {
 		request.Tags = make(map[string]string, len(flags.tags))

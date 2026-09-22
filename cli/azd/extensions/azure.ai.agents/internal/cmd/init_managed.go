@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,124 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/fatih/color"
-	"go.yaml.in/yaml/v3"
 )
-
-// promptAgentManifest is a prompt-agent definition supplied through
-// `--manifest` (or a positional template pointer), pre-loaded so runInitManaged
-// can seed the scaffold from it instead of prompting for each field.
-//
-// sourceDir is the directory the manifest was read from. When the manifest is
-// local, a sibling instructions file is used as the agent's instructions, which
-// keeps a template's authoring layout intact instead of collapsing it to the
-// default stub.
-type promptAgentManifest struct {
-	definition agent_yaml.PromptAgent
-	sourceDir  string
-}
-
-// agentName returns the manifest's agent name, trimmed. Empty when unset.
-func (m *promptAgentManifest) agentName() string {
-	if m == nil {
-		return ""
-	}
-	return strings.TrimSpace(m.definition.Name)
-}
-
-// model returns the manifest's model deployment name, trimmed. Empty when unset.
-func (m *promptAgentManifest) model() string {
-	if m == nil {
-		return ""
-	}
-	return strings.TrimSpace(m.definition.Model)
-}
-
-// description returns the manifest's description, trimmed. Empty when unset.
-func (m *promptAgentManifest) description() string {
-	if m == nil || m.definition.Description == nil {
-		return ""
-	}
-	return strings.TrimSpace(*m.definition.Description)
-}
-
-// instructions returns the manifest's inline instructions.
-func (m *promptAgentManifest) instructions() string {
-	if m == nil {
-		return ""
-	}
-	return strings.TrimSpace(m.definition.Instructions)
-}
-
-type explicitInitManifest struct {
-	content []byte
-	prompt  *promptAgentManifest
-	unified bool
-}
-
-// classifyExplicitInitManifest reads an explicitly supplied manifest once and
-// identifies the flows that must dispatch before --kind: unified azure.yaml
-// adoption and bare prompt/managed definitions. Other agent manifests continue
-// through the existing manifest loader.
-func classifyExplicitInitManifest(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	flags *initFlags,
-	httpClient *http.Client,
-) (*explicitInitManifest, error) {
-	pointer := strings.TrimSpace(flags.manifestPointer)
-	if pointer == "" {
-		return nil, nil
-	}
-
-	content, ok := readManifestContentForInitDetection(ctx, azdClient, pointer, httpClient)
-	if !ok {
-		return nil, nil
-	}
-	classified := &explicitInitManifest{content: content}
-	projectRoot := ""
-	if isLocalFilePath(pointer) {
-		projectRoot = filepath.Dir(pointer)
-	}
-	info, err := inspectAzureYaml(content, projectRoot)
-	if err != nil {
-		return nil, err
-	}
-	if info.hasServices {
-		classified.unified = true
-		return classified, nil
-	}
-
-	// A sibling instructions.md is only reachable for a local pointer; for a
-	// remote one the manifest must carry its instructions inline.
-	sourceDir := ""
-	if isLocalFilePath(pointer) {
-		if abs, err := filepath.Abs(pointer); err == nil {
-			sourceDir = filepath.Dir(abs)
-		}
-	}
-
-	var document map[string]any
-	if err := yaml.Unmarshal(content, &document); err == nil &&
-		strings.EqualFold(fmt.Sprint(document["kind"]), string(agent_yaml.AgentKindPrompt)) {
-		content, err = yaml.Marshal(map[string]any{"template": document})
-		if err != nil {
-			return nil, fmt.Errorf("encoding prompt agent manifest: %w", err)
-		}
-	}
-
-	manifest, parseErr := agent_yaml.LoadAndValidateAgentManifest(content)
-	if parseErr != nil {
-		// The existing hosted manifest path owns validation and its established
-		// error messages. Classification only needs to intercept prompt manifests.
-		return classified, nil
-	}
-	prompt, ok := manifest.Template.(agent_yaml.PromptAgent)
-	if !ok {
-		return classified, nil
-	}
-	classified.prompt = &promptAgentManifest{definition: prompt, sourceDir: sourceDir}
-	return classified, nil
-}
 
 // runInitManaged is the entry point for `azd ai agent init` when the user has
 // selected the prompt agent kind. It produces a first-class azd project
@@ -155,16 +37,11 @@ func classifyExplicitInitManifest(
 // prompt agent that Foundry runs directly; a non-empty harness
 // ("github_copilot_preview")
 // scaffolds a managed agent whose Brain+Hand sandbox the platform provisions.
-//
-// manifest, when non-nil, seeds the agent name, description, model, and
-// instructions from a supplied template so `--manifest` works for both prompt
-// flavors. Explicit flags always win over manifest values.
 func runInitManaged(
 	ctx context.Context,
 	flags *initFlags,
 	azdClient *azdext.AzdClient,
 	harness string,
-	manifest *promptAgentManifest,
 ) error {
 	// Every prompt-agent init converges here — interactive picker, --kind prompt,
 	// and manifest adoption alike — so this is the one place the preview notice
@@ -176,25 +53,19 @@ func runInitManaged(
 	// input that has no deterministic fallback. ensureProject below creates a
 	// project folder and azd environment, so a late failure would strand a
 	// half-scaffolded project with no services: entry.
-	if err := validateManagedNoPromptInputs(flags, manifest); err != nil {
+	if err := validateManagedNoPromptInputs(flags); err != nil {
 		return err
 	}
 
 	// Prompt for the conceptual agent details first: name and description.
-	agentName, err := promptManagedAgentName(ctx, azdClient, flags, manifest, harness)
+	agentName, err := promptManagedAgentName(ctx, azdClient, flags, harness)
 	if err != nil {
 		return err
 	}
 
-	description, err := promptManagedAgentDescription(ctx, azdClient, flags, manifest)
+	description, err := promptManagedAgentDescription(ctx, azdClient, flags)
 	if err != nil {
 		return err
-	}
-
-	// A prompt manifest's model is a deployment name. Preserve that distinction
-	// from --model, which selects a catalog model to provision.
-	if strings.TrimSpace(flags.model) == "" && strings.TrimSpace(flags.modelDeployment) == "" {
-		flags.modelDeployment = manifest.model()
 	}
 
 	// The prompt-agent init experience mirrors hosted:
@@ -231,7 +102,7 @@ func runInitManaged(
 	// Resolve the instructions before ensureProject changes the working
 	// directory: a manifest-supplied instructions.md is read relative to the
 	// manifest, which may be a path relative to the original cwd.
-	instructions, err := promptManagedAgentInstructions(ctx, azdClient, flags, manifest)
+	instructions, err := promptManagedAgentInstructions(ctx, azdClient, flags)
 	if err != nil {
 		return err
 	}
@@ -272,7 +143,7 @@ func runInitManaged(
 		model = deployment.Name
 	}
 	if strings.TrimSpace(model) == "" {
-		model, err = promptManagedAgentModel(ctx, azdClient, flags, manifest)
+		model, err = promptManagedAgentModel(ctx, azdClient, flags)
 		if err != nil {
 			return err
 		}
@@ -282,7 +153,7 @@ func runInitManaged(
 	// resolved on, while its credential is still in hand. Nothing is written
 	// yet: the selection is applied after the manifest carry-over below so an
 	// authored policy set is never silently replaced.
-	raiPolicy, err := resolvePromptRaiPolicy(ctx, azdClient, flags, manifest, foundryProject, credential)
+	raiPolicy, err := resolvePromptRaiPolicy(ctx, azdClient, flags, foundryProject, credential)
 	if err != nil {
 		return err
 	}
@@ -294,9 +165,7 @@ func runInitManaged(
 		}
 	}
 
-	promptAgent := promptAgentForScaffold(
-		manifest, agentName, description, model, instructions, harness,
-	)
+	promptAgent := promptAgentForScaffold(agentName, description, model, instructions, harness)
 	// Applied after the manifest carry-over so a manifest that declares its own
 	// policies keeps them; resolvePromptRaiPolicy returns "not attached" in that
 	// case, making this a no-op.
@@ -393,21 +262,14 @@ func promptProjectLayout(
 }
 
 func promptAgentForScaffold(
-	manifest *promptAgentManifest,
 	agentName, description, model, instructions, harness string,
 ) agent_yaml.PromptAgent {
-	// Start from the complete authored definition so fields added to the prompt
-	// contract are not silently dropped by init. Resolved flags and prompts are
-	// applied afterward and remain authoritative.
 	promptAgent := agent_yaml.PromptAgent{}
-	if manifest != nil {
-		promptAgent = manifest.definition
-	}
 	promptAgent.Kind = agent_yaml.AgentKindPrompt
 	promptAgent.Name = agentName
 	promptAgent.Model = model
 	promptAgent.Instructions = promptScaffoldInstructions(instructions)
-	promptAgent.Harness = promptScaffoldHarness(harness, manifest)
+	promptAgent.Harness = promptScaffoldHarness(harness)
 	promptAgent.Description = nil
 	if description = strings.TrimSpace(description); description != "" {
 		promptAgent.Description = new(description)
@@ -464,36 +326,32 @@ func addPromptAgentService(
 // after ensureProject has already created a project folder and azd environment.
 // Checking everything up front keeps a failed --no-prompt init from leaving a
 // partially scaffolded project behind.
-func validateManagedNoPromptInputs(flags *initFlags, manifest *promptAgentManifest) error {
+func validateManagedNoPromptInputs(flags *initFlags) error {
 	if !flags.noPrompt {
 		return nil
 	}
-	if strings.TrimSpace(flags.agentName) == "" && manifest.agentName() == "" {
+	if strings.TrimSpace(flags.agentName) == "" {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"--agent-name is required in non-interactive mode for prompt agents",
-			"pass --agent-name <name>, or supply a manifest with --manifest that declares name:",
+			"pass --agent-name <name>",
 		)
 	}
 	deploymentName := strings.TrimSpace(flags.modelDeployment)
-	if deploymentName == "" {
-		deploymentName = manifest.model()
-	}
 	if deploymentName != "" && strings.TrimSpace(flags.projectResourceId) == "" {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			"--model-deployment and manifest model references require an existing Foundry project",
+			"--model-deployment requires an existing Foundry project",
 			"pass --project-id for the project containing that deployment, or use --model to deploy a new model",
 		)
 	}
 	if strings.TrimSpace(flags.model) == "" &&
-		strings.TrimSpace(flags.modelDeployment) == "" &&
-		manifest.model() == "" {
+		strings.TrimSpace(flags.modelDeployment) == "" {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"--model or --model-deployment is required in non-interactive mode for prompt agents",
 			"pass --model <model-name> to deploy a new model, --model-deployment <name> to reuse an "+
-				"existing deployment, or supply a manifest with --manifest that declares model:",
+				"existing deployment",
 		)
 	}
 	return nil
@@ -520,26 +378,19 @@ func promptManagedAgentName(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	flags *initFlags,
-	manifest *promptAgentManifest,
 	harness string,
 ) (string, error) {
 	if strings.TrimSpace(flags.agentName) != "" {
 		return validateInitAgentName(flags.agentName)
 	}
-	defaultName := manifest.agentName()
 	if flags.noPrompt {
-		if defaultName != "" {
-			return validateInitAgentName(defaultName)
-		}
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"--agent-name is required in non-interactive mode for prompt agents",
-			"pass --agent-name <name>, or supply a manifest with --manifest that declares name:",
+			"pass --agent-name <name>",
 		)
 	}
-	if defaultName == "" {
-		defaultName = defaultPromptAgentName(harness)
-	}
+	defaultName := defaultPromptAgentName(harness)
 
 	resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
@@ -569,20 +420,18 @@ func promptManagedAgentDescription(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	flags *initFlags,
-	manifest *promptAgentManifest,
 ) (string, error) {
 	if strings.TrimSpace(flags.description) != "" {
 		return strings.TrimSpace(flags.description), nil
 	}
-	defaultDescription := manifest.description()
 	if flags.noPrompt {
-		return defaultDescription, nil
+		return "", nil
 	}
 
 	resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
 			Message:        "Enter a description for your agent (optional)",
-			DefaultValue:   defaultDescription,
+			DefaultValue:   "",
 			Required:       false,
 			IgnoreHintKeys: true,
 			HelpMessage:    "A short summary of what this agent does. Written to agent.yaml and shown in Foundry.",
@@ -622,16 +471,12 @@ func promptManagedAgentModel(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	flags *initFlags,
-	manifest *promptAgentManifest,
 ) (string, error) {
 	if strings.TrimSpace(flags.modelDeployment) != "" {
 		return strings.TrimSpace(flags.modelDeployment), nil
 	}
 	if strings.TrimSpace(flags.model) != "" {
 		return strings.TrimSpace(flags.model), nil
-	}
-	if manifestModel := manifest.model(); manifestModel != "" {
-		return manifestModel, nil
 	}
 	if flags.noPrompt {
 		return "", exterrors.Validation(
@@ -703,13 +548,9 @@ func promptManagedAgentInstructions(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	flags *initFlags,
-	manifest *promptAgentManifest,
 ) (string, error) {
 	if instructions := strings.TrimSpace(flags.instructions); instructions != "" {
 		return instructions, nil
-	}
-	if manifestInstructions := manifest.instructions(); manifestInstructions != "" {
-		return manifestInstructions, nil
 	}
 	if flags.noPrompt {
 		return "You are a helpful AI assistant. Replace these instructions before deploying.", nil
@@ -754,7 +595,7 @@ func promptScaffoldInstructions(instructions string) string {
 //
 // harnessType is already resolved from --harness and --kind, so it wins over
 // the manifest's own type.
-func promptScaffoldHarness(harnessType string, _ *promptAgentManifest) *agent_yaml.PromptHarness {
+func promptScaffoldHarness(harnessType string) *agent_yaml.PromptHarness {
 	return agent_yaml.NewPromptHarness(harnessType)
 }
 

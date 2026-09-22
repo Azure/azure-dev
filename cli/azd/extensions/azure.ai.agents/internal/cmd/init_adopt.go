@@ -136,6 +136,77 @@ func missingAgentServiceError(manifestPointer string) error {
 	)
 }
 
+func loadExplicitAzureYaml(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	flags *initFlags,
+	httpClient *http.Client,
+) ([]byte, error) {
+	if err := checkNotDirectory(flags.manifestPointer); err != nil {
+		return nil, err
+	}
+
+	content, ok := readManifestContentForInitDetection(
+		ctx,
+		azdClient,
+		flags.manifestPointer,
+		httpClient,
+	)
+	if !ok {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidManifestPointer,
+			fmt.Sprintf("could not read unified azure.yaml from %q", flags.manifestPointer),
+			"Provide an existing local azure.yaml path or a supported public/private GitHub azure.yaml URL.",
+		)
+	}
+
+	projectRoot := ""
+	if isLocalFilePath(flags.manifestPointer) {
+		projectRoot = filepath.Dir(flags.manifestPointer)
+	}
+	info, err := inspectAzureYaml(content, projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	if info.hasServices {
+		if !info.hasAgentService && !info.hasUnresolvedRefs {
+			return nil, missingAgentServiceError(flags.manifestPointer)
+		}
+		return content, nil
+	}
+
+	var document map[string]any
+	if err := yaml.Unmarshal(content, &document); err != nil {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("parsing unified azure.yaml from %q: %s", flags.manifestPointer, err),
+			"Provide a valid azure.yaml project document with an azure.ai.agent service.",
+		)
+	}
+	if _, hasTemplate := document["template"]; hasTemplate {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"AgentManifest documents with a top-level 'template:' field are no longer accepted by init",
+			"Extract the template into an azure.ai.agent service in azure.yaml, "+
+				"or reference the direct definition from that service with $ref.",
+		)
+	}
+	if kind := strings.TrimSpace(fmt.Sprint(document["kind"])); kind != "" && kind != "<nil>" {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("standalone agent definition with kind %q is no longer accepted by init", kind),
+			"Create an azure.yaml project document and place the definition on an azure.ai.agent service, "+
+				"or reference the direct definition from that service with $ref.",
+		)
+	}
+
+	return nil, exterrors.Validation(
+		exterrors.CodeInvalidAgentManifest,
+		fmt.Sprintf("%q is not a unified azure.yaml project document", flags.manifestPointer),
+		"Provide an azure.yaml document with a services mapping and at least one azure.ai.agent service.",
+	)
+}
+
 func validateStagedAzureYaml(stagingDir, manifestPointer string) error {
 	manifestPath := filepath.Join(stagingDir, "azure.yaml")
 	//nolint:gosec // stagingDir is created or selected by the init flow
@@ -148,8 +219,51 @@ func validateStagedAzureYaml(stagingDir, manifestPointer string) error {
 	if err != nil {
 		return err
 	}
-	if !info.hasServices || !info.hasAgentService {
+	if !info.hasServices || (!info.hasAgentService && !info.hasUnresolvedRefs) {
 		return missingAgentServiceError(manifestPointer)
+	}
+
+	var document struct {
+		Services map[string]map[string]any `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(content, &document); err != nil {
+		return fmt.Errorf("parsing staged azure.yaml: %w", err)
+	}
+	for name, service := range document.Services {
+		host, _ := service["host"].(string)
+		if config, hasConfig := service["config"]; hasConfig && config != nil {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("agent service %q uses the unsupported nested config block", name),
+				"Move the direct agent definition to the azure.ai.agent service properties.",
+			)
+		}
+		_, hasRef := service["$ref"]
+		if strings.TrimSpace(host) == AiAgentHost || hasRef {
+			// Let the runtime-compatible resolver validate every candidate
+			// service so nested config and implicit disk definitions cannot
+			// pass staging validation.
+			props, err := structpb.NewStruct(service)
+			if err != nil {
+				return fmt.Errorf("encoding agent service %q: %w", name, err)
+			}
+			svc := &azdext.ServiceConfig{
+				Name:                 name,
+				Host:                 host,
+				AdditionalProperties: props,
+			}
+			probe, err := probeAgentDefinitionForInit(svc, stagingDir)
+			if err != nil {
+				return fmt.Errorf("validating agent service %q: %w", name, err)
+			}
+			if strings.TrimSpace(host) == AiAgentHost && !probe.found {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					fmt.Sprintf("agent service %q does not contain a direct or root-$ref definition", name),
+					"Put the agent definition directly on the azure.ai.agent service or use a root $ref.",
+				)
+			}
+		}
 	}
 
 	return nil
@@ -480,6 +594,88 @@ func runInitFromAzureYaml(
 		return err
 	}
 
+	return finalizeAdoptedProject(
+		ctx,
+		flags,
+		azdClient,
+		envName,
+		folderDisplay,
+		promptOnly,
+		agentNameOverride,
+	)
+}
+
+func runInitFromAzdTemplate(
+	ctx context.Context,
+	flags *initFlags,
+	azdClient *azdext.AzdClient,
+	selectedTemplate *AgentTemplate,
+) error {
+	targetDir := strings.TrimSpace(flags.src)
+	if targetDir == "" {
+		targetDir = folderNameStrippingParenSuffix(selectedTemplate.Title)
+	}
+	if targetDir == "" {
+		targetDir = "."
+	}
+	if projectManifestExists(targetDir) {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			fmt.Sprintf("a project azure.yaml already exists in %q", targetDir),
+			"Choose an empty target directory for the repository template.",
+		)
+	}
+
+	folderDisplay := ""
+	if _, statErr := os.Stat(targetDir); errors.Is(statErr, fs.ErrNotExist) {
+		folderDisplay = filepath.ToSlash(targetDir)
+	}
+	envName := deriveEnvName(flags, targetDir)
+	if err := scaffoldProject(ctx, azdClient, targetDir, selectedTemplate.Source, envName); err != nil {
+		return err
+	}
+	if err := validateStagedAzureYaml(".", selectedTemplate.Source); err != nil {
+		return err
+	}
+	content, err := os.ReadFile("azure.yaml")
+	if err != nil {
+		return fmt.Errorf("reading scaffolded azure.yaml: %w", err)
+	}
+	info, err := inspectAzureYaml(content, ".")
+	if err != nil {
+		return err
+	}
+
+	agentNameOverride, err := adoptedAgentNameOverride(flags)
+	if err != nil {
+		return err
+	}
+	if agentNameOverride != "" {
+		if err := validateAdoptedAgentNameOverride(content, "."); err != nil {
+			return err
+		}
+	}
+
+	return finalizeAdoptedProject(
+		ctx,
+		flags,
+		azdClient,
+		envName,
+		folderDisplay,
+		info.promptOnly(),
+		agentNameOverride,
+	)
+}
+
+func finalizeAdoptedProject(
+	ctx context.Context,
+	flags *initFlags,
+	azdClient *azdext.AzdClient,
+	envName string,
+	folderDisplay string,
+	promptOnly bool,
+	agentNameOverride string,
+) error {
 	// Defensive: the sample should already declare `infra.provider:
 	// microsoft.foundry`, but stamp it if missing so provisioning stays
 	// bicep-less by default.
@@ -499,6 +695,7 @@ func runInitFromAzureYaml(
 	env := getExistingEnvironment(ctx, envName, azdClient)
 	if env == nil {
 		// Environment should exist after scaffoldProject; if not, create one.
+		var err error
 		env, err = createNewEnvironment(ctx, azdClient, envName)
 		if err != nil {
 			return err
@@ -1411,9 +1608,10 @@ func adoptedExternalRegistryConnections(
 			if err != nil {
 				return nil, fmt.Errorf("reading adopted agent service %q: %w", serviceName, err)
 			}
-			if probe.found {
-				connectionRef = strings.TrimSpace(probe.definition.RegistryConnectionID)
+			if !probe.found {
+				return nil, fmt.Errorf("reading adopted agent service %q: agent definition not found", serviceName)
 			}
+			connectionRef = strings.TrimSpace(probe.definition.RegistryConnectionID)
 		}
 		if connectionRef == "" {
 			continue

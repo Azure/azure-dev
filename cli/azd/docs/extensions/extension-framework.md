@@ -3173,8 +3173,9 @@ Returns cumulative usage metrics cached for a session.
     - `input_tokens` (double): Total input tokens consumed
     - `output_tokens` (double): Total output tokens consumed
     - `total_tokens` (double): Sum of input + output tokens
-    - `billing_rate` (double): Per-request cost multiplier (e.g., 1.0x, 2.0x)
-    - `premium_requests` (double): Number of premium requests used
+    - `billing_rate` (double, deprecated): Legacy per-request cost multiplier; use `ai_credits` instead
+    - `premium_requests` (double, deprecated): Legacy premium request count; use `ai_credits` instead
+    - `ai_credits` (double): Total AI credits consumed
     - `duration_ms` (double): Total API duration in milliseconds
 
 #### GetFileChanges
@@ -3268,8 +3269,8 @@ metricsResp, err := copilot.GetUsageMetrics(ctx, &v1beta.GetCopilotUsageMetricsR
 if err != nil {
     return fmt.Errorf("failed to get metrics: %w", err)
 }
-fmt.Printf("Total tokens: %.0f, Premium requests: %.0f\n",
-    metricsResp.Usage.TotalTokens, metricsResp.Usage.PremiumRequests)
+fmt.Printf("Total tokens: %.0f, AI credits: %.2f AIC\n",
+  metricsResp.Usage.TotalTokens, metricsResp.Usage.AiCredits)
 
 // Retrieve file changes
 changesResp, err := copilot.GetFileChanges(ctx, &v1beta.GetCopilotFileChangesRequest{

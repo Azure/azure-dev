@@ -2,6 +2,22 @@
 
 ## 0.8.13-preview
 
+- `azd ai rle run` now fails immediately with an explanation when `rle.toml`
+  declares anything other than `Gym`/`OpenEnv`. The command drives the
+  container over the OpenEnv WebSocket session, which a harness container does
+  not serve, so it previously built the image, started the container, and only
+  then failed at the WebSocket handshake with a connection error that said
+  nothing about the real problem. The error names the declared type and points
+  at the publish-then-rollout loop that does exercise a harness RLE. The check
+  also covers the `--watch` restart path, which reloads the manifest.
+- `azd ai rle init --type Harness` no longer tells you to run `azd ai rle run`.
+  That command drives the container over the Gym/OpenEnv WebSocket session,
+  which a harness container does not serve, so it could only ever fail at the
+  connection. The harness next steps now cover the loop that does apply: deploy
+  the agent, point `rle.toml` at it, publish, and execute one rollout.
+- Added `install-local.sh`, which builds the extension for the current platform
+  and installs it straight into the azd extensions directory. Local iteration no
+  longer needs a registry entry with published artifacts.
 - `azd ai rle init` and `azd ai rle skill install` now install the RLE project
   skills into `.claude/skills` as well as `.agents/skills`. Claude Code
   discovers project skills only under `.claude/skills`, so the skills reached

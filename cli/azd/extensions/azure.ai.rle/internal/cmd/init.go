@@ -647,9 +647,15 @@ func initNextSteps(displayDir string, goos string, shell string) string {
 
 // initHarnessSampleNextSteps is initNextSteps' counterpart for
 // createHarnessSampleScaffold: the copied sample's RLE side lives in a rle/
-// subfolder (what azd ai rle run/publish need to be run from), and its agent
+// subfolder (what azd ai rle publish needs to be run from), and its agent
 // side lives in a sibling agent/ folder that must be built and deployed
-// separately -- there's no rle.toml for run/publish to act on there.
+// separately -- there's no rle.toml for publish to act on there.
+//
+// It deliberately does not offer `azd ai rle run`, which initNextSteps does.
+// That command drives the container over the Gym/OpenEnv WebSocket session,
+// and a harness container serves no such endpoint: RLE calls the harness,
+// and the harness calls the container's tools. Publishing a version and
+// running a rollout is the only loop that exercises a harness RLE.
 func initHarnessSampleNextSteps(displayDir string, goos string, shell string) string {
 	rleDir := filepath.Join(displayDir, "rle")
 	agentDir := filepath.Join(displayDir, "agent")
@@ -658,21 +664,21 @@ func initHarnessSampleNextSteps(displayDir string, goos string, shell string) st
 		"Copied a working sample to: %s\n"+
 			"  %s  (the harness/agent implementation -- build and deploy this yourself)\n"+
 			"  %s  (the RLE wrapper -- this is what azd ai rle acts on)\n"+
-			"\nRun the RLE side locally:\n"+
-			"  cd \"%s\"\n"+
-			"  azd ai rle run\n"+
+			"\nDeploy %s, then update %s/rle.toml's baseUrl/agentName/agentVersion "+
+			"to point at it.\n"+
 			"\nPublish to RLE when ready:\n"+
+			"  cd \"%s\"\n"+
 			"%s"+
 			"  azd ai rle publish\n"+
-			"\nBefore publishing, update %s/rle.toml's baseUrl/agentName/agentVersion "+
-			"to point at your own deployment of %s, once it is live.\n",
+			"\nThen exercise it end to end with a single rollout:\n"+
+			"  azd ai rle rollout --model <loom-base-model> --task {}\n",
 		displayDir,
+		agentDir,
+		rleDir,
 		agentDir,
 		rleDir,
 		rleDir,
 		setEnvironment,
-		rleDir,
-		agentDir,
 	)
 }
 

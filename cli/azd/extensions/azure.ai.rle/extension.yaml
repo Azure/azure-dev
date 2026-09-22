@@ -23,7 +23,7 @@ examples:
     description: Build, push, and publish the RLE release declared in rle.toml.
     usage: azd ai rle publish
   - name: run
-    description: Build and run the local RLE environment container.
+    description: "Build and run the local RLE environment container (Gym: OpenEnv only)."
     usage: azd ai rle run
   - name: rollout
     description: Execute one Loom-backed rollout of a published RLE environment (provisions and tears down the Loom session for you; --model falls back to rle.toml's defaults.model.name).

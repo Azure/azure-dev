@@ -43,7 +43,7 @@ func newRunCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "run",
-		Short: "Build and run the local RLE environment container",
+		Short: "Build and run the local RLE environment container (Gym: OpenEnv only)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&localRunAction{cmd: cmd, flags: flags}).Run()
@@ -277,7 +277,50 @@ func loadLocalRunConfig(flags *localRunFlags) (project.RleConfig, error) {
 	if source == "" {
 		source = "."
 	}
-	return project.LoadRleConfig(source)
+	config, err := project.LoadRleConfig(source)
+	if err != nil {
+		return project.RleConfig{}, err
+	}
+	if err := ensureLocalRunSupported(config); err != nil {
+		return project.RleConfig{}, err
+	}
+	return config, nil
+}
+
+// ensureLocalRunSupported rejects a manifest this command cannot drive.
+//
+// run starts the container and then talks to it over the Gym/OpenEnv
+// WebSocket session, which only a Gym: OpenEnv container serves. A harness
+// container exposes plain HTTP routes that RLE itself calls, and the harness
+// that would drive them is a separate deployment this command knows nothing
+// about, so there is no local loop for run to run. Without this check the
+// command builds the image, starts the container, and only then fails at the
+// WebSocket handshake, reporting a connection error that says nothing about
+// the real problem.
+//
+// The check is here rather than in the action so that the watch/restart path,
+// which reloads the manifest through this same function, cannot bypass it.
+func ensureLocalRunSupported(config project.RleConfig) error {
+	if config.Rle.Type == project.RleTypeGym && config.Rle.Subtype == project.RleSubtypeOpenEnv {
+		return nil
+	}
+	declared := string(config.Rle.Type)
+	if config.Rle.Subtype != "" {
+		declared = fmt.Sprintf("%s: %s", config.Rle.Type, config.Rle.Subtype)
+	}
+	return &azdext.LocalError{
+		Message: fmt.Sprintf(
+			"azd ai rle run supports only %s: %s environments, and rle.toml declares %s.",
+			project.RleTypeGym,
+			project.RleSubtypeOpenEnv,
+			declared,
+		),
+		Code:     "rle_run_unsupported_type",
+		Category: azdext.LocalErrorCategoryUser,
+		Suggestion: "run drives the container over the OpenEnv WebSocket session, which a harness " +
+			"container does not serve. To exercise a harness RLE, deploy the agent, point rle.toml's " +
+			"baseUrl/agentName/agentVersion at it, run azd ai rle publish, then azd ai rle rollout.",
+	}
 }
 
 func localRuntimeImageForRun(environmentName string) string {

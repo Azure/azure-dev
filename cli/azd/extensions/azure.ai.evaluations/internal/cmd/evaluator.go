@@ -261,7 +261,7 @@ func ensureDefinitionType(definition json.RawMessage) (json.RawMessage, error) {
 func withCatalogMetadata(body json.RawMessage, decl project.EvaluatorDecl) (json.RawMessage, error) {
 	var doc map[string]json.RawMessage
 	if err := json.Unmarshal(body, &doc); err != nil {
-		return nil, notAJSONObject(body, err)
+		return nil, notAnObject(body, err)
 	}
 	if doc == nil {
 		return nil, messages.DefinitionIsNull()
@@ -305,11 +305,11 @@ func withCatalogMetadata(body json.RawMessage, decl project.EvaluatorDecl) (json
 	return json.Marshal(doc)
 }
 
-// notAJSONObject reports a body that will not decode into an object.
+// notAnObject reports a body that will not decode into an object.
 //
 // `[]`, `"str"` and `7` parse; only the shape is wrong. Reporting them as
 // unparseable sent the author looking for a syntax error that is not there.
-func notAJSONObject(raw []byte, err error) error {
+func notAnObject(raw []byte, err error) error {
 	if json.Valid(raw) {
 		return messages.DefinitionNotJSONObject(err)
 	}
@@ -321,7 +321,7 @@ func notAJSONObject(raw []byte, err error) error {
 func normalizeRubricBody(name string, raw []byte) (json.RawMessage, error) {
 	var probe map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &probe); err != nil {
-		return nil, notAJSONObject(raw, err)
+		return nil, notAnObject(raw, err)
 	}
 	// A whole document of null decodes the same way, and reporting it as a
 	// rubric missing its dimensions sends the author looking for the wrong thing.

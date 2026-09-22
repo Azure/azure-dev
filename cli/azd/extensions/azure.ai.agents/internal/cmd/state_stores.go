@@ -165,6 +165,8 @@ Pass the returned cursor unchanged; do not use an entry's id or base64url-encode
 	}
 	if operation == "items set" {
 		cmd.Long += "\n\nCreates a missing item or replaces its entire value and tags. Omitting --tag clears existing tags."
+		cmd.Long += fmt.Sprintf("\nRaw input is limited to %d MiB, including whitespace; service limits may be smaller.",
+			maxStateStoreInputBytes/(1024*1024))
 		cmd.Flags().StringVar(&flags.value, "value", "", "JSON object value (not a REST request envelope)")
 		cmd.Flags().StringVar(&flags.valueFile, "value-file", "", "Read the JSON object from a file; - reads stdin")
 		cmd.Flags().StringArrayVar(&flags.tags, "tag", nil,
@@ -254,9 +256,23 @@ func (a *stateStoreAction) run(ctx context.Context, operation string, args []str
 	result, err := a.execute(ctx, operation, args)
 	if err != nil {
 		if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
-			suggestion := "check the selected agent, store, and your access permissions"
-			if respErr.StatusCode == http.StatusPreconditionFailed {
+			suggestion := ""
+			switch respErr.StatusCode {
+			case http.StatusBadRequest:
+				suggestion = "check the JSON value, tag constraints, and command arguments"
+			case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
+				suggestion = "check the selected agent, store, and your access permissions"
+			case http.StatusPreconditionFailed:
 				suggestion = "read the item again and reconcile your changes before retrying with its current ETag"
+			case http.StatusTooManyRequests:
+				suggestion = "wait before retrying and reduce the request rate"
+			default:
+				if respErr.StatusCode >= 500 && respErr.StatusCode < 600 {
+					suggestion = "the service encountered an error; retry later"
+					if operation == "items set" || operation == "items delete" {
+						suggestion = "the service encountered an error; check the item's current state before retrying the write"
+					}
+				}
 			}
 			return &azdext.ServiceError{
 				Message: fmt.Sprintf("State Store %s failed: HTTP %d (%s)",

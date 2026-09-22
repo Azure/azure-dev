@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,32 +18,45 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
+// maxStateStoreInputBytes bounds local buffering, not the service's serialized-value size.
+// Leave headroom for formatted JSON; service limits can vary with value offloading.
+const maxStateStoreInputBytes = 16 * 1024 * 1024
+
+var errStateStoreInputTooLarge = fmt.Errorf(
+	"item input exceeds the CLI safety limit of %d MiB", maxStateStoreInputBytes/(1024*1024),
+)
+
 func readStateStoreValue(
 	ctx context.Context, flags *stateStoreFlags, stdin io.Reader,
 ) (agent_api.SetStateStoreItemRequest, error) {
-	request := agent_api.SetStateStoreItemRequest{Value: json.RawMessage(flags.value)}
-	if flags.valueFile != "" {
-		var data []byte
-		var err error
-		if flags.valueFile == "-" {
-			data, err = readStateStoreInput(ctx, stdin)
-		} else {
-			// The caller explicitly selected this input file; it is not a derived path.
-			var file *os.File
-			file, err = os.Open(flags.valueFile)
-			if err == nil {
-				defer file.Close()
-				data, err = readStateStoreInput(ctx, file)
-			}
+	var request agent_api.SetStateStoreItemRequest
+	var err error
+	switch {
+	case flags.valueFile == "-":
+		request.Value, err = readStateStoreInput(ctx, stdin)
+	case flags.valueFile != "":
+		// The caller explicitly selected this input file; it is not a derived path.
+		var file *os.File
+		file, err = os.Open(flags.valueFile)
+		if err == nil {
+			defer file.Close()
+			request.Value, err = readStateStoreInput(ctx, file)
 		}
-		if err != nil {
-			if exterrors.IsCancellation(err) {
-				return request, exterrors.Cancelled("reading item value cancelled")
-			}
-			return request, exterrors.Validation(exterrors.CodeInvalidParameter,
-				fmt.Sprintf("could not read --value-file: %v", err), "check the input path or stdin and retry")
+	case len(flags.value) > maxStateStoreInputBytes:
+		err = errStateStoreInputTooLarge
+	default:
+		request.Value = json.RawMessage(flags.value)
+	}
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return request, exterrors.Cancelled("reading item value cancelled")
 		}
-		request.Value = data
+		if errors.Is(err, errStateStoreInputTooLarge) {
+			return request, exterrors.Validation(exterrors.CodeInvalidParameter, err.Error(),
+				"reduce the raw input size, including whitespace; the service may enforce a smaller serialized-value limit")
+		}
+		return request, exterrors.Validation(exterrors.CodeInvalidParameter,
+			fmt.Sprintf("could not read --value-file: %v", err), "check the input path or stdin and retry")
 	}
 	if err := agent_api.ValidateStateStoreValue(request.Value); err != nil {
 		return request, exterrors.Validation(exterrors.CodeInvalidParameter, err.Error(),
@@ -84,9 +98,13 @@ func readStateStoreInput(ctx context.Context, reader io.Reader) ([]byte, error) 
 			}
 		}()
 	}
-	data, err := io.ReadAll(reader)
+	// Read one extra byte to distinguish an exact-limit input from a truncated one.
+	data, err := io.ReadAll(io.LimitReader(reader, maxStateStoreInputBytes+1))
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
+	}
+	if len(data) > maxStateStoreInputBytes {
+		return nil, errStateStoreInputTooLarge
 	}
 	return data, err
 }

@@ -374,18 +374,59 @@ func TestStateStoreDeleteConfirmation(t *testing.T) {
 }
 
 func TestStateStoreActionErrors(t *testing.T) {
-	for _, code := range []int{403, 404, 412, 500} {
-		a, api, _, writer := newStateStoreTestAction(t)
-		a.flags.store = "store"
-		api.On("GetStateStoreItem", mock.Anything, "worker", "store", "key").
-			Return(nil, &azcore.ResponseError{StatusCode: code}).Once()
-		err := a.run(t.Context(), "items show", []string{"key"})
-		serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
-		require.True(t, ok)
-		require.Equal(t, code, serviceErr.StatusCode)
-		require.Empty(t, writer.String())
-		if code == 412 {
-			require.Contains(t, serviceErr.Suggestion, "reconcile")
+	for _, tt := range []struct {
+		status     int
+		suggestion string
+	}{
+		{400, "check the JSON value, tag constraints, and command arguments"},
+		{401, "check the selected agent, store, and your access permissions"},
+		{403, "check the selected agent, store, and your access permissions"},
+		{404, "check the selected agent, store, and your access permissions"},
+		{409, ""},
+		{412, "read the item again and reconcile your changes before retrying with its current ETag"},
+		{429, "wait before retrying and reduce the request rate"},
+		{500, "the service encountered an error; retry later"},
+		{503, "the service encountered an error; retry later"},
+	} {
+		t.Run(fmt.Sprint(tt.status), func(t *testing.T) {
+			a, api, _, writer := newStateStoreTestAction(t)
+			a.flags.store = "store"
+			api.On("GetStateStoreItem", mock.Anything, "worker", "store", "key").
+				Return(nil, &azcore.ResponseError{StatusCode: tt.status}).Once()
+			err := a.run(t.Context(), "items show", []string{"key"})
+			serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+			require.True(t, ok)
+			require.Equal(t, tt.status, serviceErr.StatusCode)
+			require.Equal(t, tt.suggestion, serviceErr.Suggestion)
+			require.Empty(t, writer.String())
+		})
+	}
+}
+
+func TestStateStoreWriteServerErrorGuidance(t *testing.T) {
+	for _, operation := range []string{"items set", "items delete"} {
+		for _, code := range []int{500, 503} {
+			t.Run(operation+"/"+fmt.Sprint(code), func(t *testing.T) {
+				a, api, _, writer := newStateStoreTestAction(t)
+				a.flags.store, a.flags.yes, a.flags.ifMatch = "store", true, `"etag"`
+				a.request.Value = json.RawMessage(`{}`)
+				responseErr := &azcore.ResponseError{StatusCode: code}
+				if operation == "items set" {
+					api.On("SetStateStoreItem", mock.Anything, "worker", "store", "key", a.request, `"etag"`).
+						Return(nil, responseErr).Once()
+				} else {
+					api.On("DeleteStateStoreItem", mock.Anything, "worker", "store", "key", `"etag"`).
+						Return(nil, responseErr).Once()
+				}
+				err := a.run(t.Context(), operation, []string{"key"})
+				serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+				require.True(t, ok)
+				require.Equal(t, code, serviceErr.StatusCode)
+				require.Equal(t,
+					"the service encountered an error; check the item's current state before retrying the write",
+					serviceErr.Suggestion)
+				require.Empty(t, writer.String())
+			})
 		}
 	}
 }

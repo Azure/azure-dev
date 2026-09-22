@@ -56,6 +56,7 @@ azd ai agent state-stores items delete "test-checkpoint" --yes
 ```
 
 - Supply exactly one value source. `--value-file -` reads stdin. The top-level value must be a JSON **object**; nested arrays, scalars, and null are allowed. JSON numbers retain their precision.
+- Raw input is limited to **16 MiB**, including whitespace, for inline, file, and stdin values. This is a local memory-safety budget, not the service's serialized-value limit, which may be smaller. Oversized input is rejected without sending a State Store request; it is never truncated into a write.
 - `set` replaces the **complete value and tag map**, without an existence probe. **Omitting `--tag` clears existing tags.** Tags are strings, split at the first `=`; empty values are allowed, but empty or duplicate keys are rejected.
 - `--if-match` on set/delete passes the quoted ETag unchanged. A stale ETag fails with HTTP 412. azd never removes the condition or automatically retries writes after a lost response.
 - Deletion confirms the target unless `--yes` is supplied. `--no-prompt` requires `--yes`. An already absent item can return a successful deletion tombstone; a missing store or other service error still fails.

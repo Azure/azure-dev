@@ -225,9 +225,9 @@ func fencedBlockAfter(t *testing.T, readme, heading, language string) string {
 // An eval with no simulation block must not be sent down this path at all.
 func TestBuildRunDataSource_NoSimulationBlockKeepsTheTurnPath(t *testing.T) {
 	configPath := writeDataset(t, oneRow)
-	ec := &evalContext{}
+	ec := unregisteredRunContext(t)
 
-	ds, err := ec.buildRunDataSource(context.Background(), &project.Eval{
+	ds, _, err := ec.buildRunDataSource(context.Background(), &project.Eval{
 		Name:    "nightly",
 		Dataset: "d",
 		Target:  &project.Target{Type: project.TargetTypeAgent, Name: "hero-agent"},

@@ -82,7 +82,17 @@ var datasetJobs = jobKind{
 	) (*project.ArtifactRef, error) {
 		// No declared name: reattaching has only the job, so the service's own
 		// name is what the file is called.
-		return ec.collectDataset(ctx, job, "", baseDir, outputDir, out, replaceExisting)
+		ref, err := ec.collectDataset(ctx, job, "", baseDir, outputDir, out, replaceExisting)
+		if err != nil || ref == nil {
+			return ref, err
+		}
+		// A generation started with --no-wait ended at submission, so this is
+		// the first chance to tag the version it produced. The job states the
+		// type it was submitted with; the level recorded locally stands in when
+		// it does not. A version that was already tagged keeps what it carries.
+		ref.EvaluationLevel = evaluationLevelForRef(ec.generationLevelFor(ctx, job), ref)
+		ec.applyGeneratedDatasetTags(ctx, ref, ref.EvaluationLevel)
+		return ref, nil
 	},
 	outputDir:    project.DefaultDatasetsDir,
 	addToCatalog: addDatasetToCatalog,

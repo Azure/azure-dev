@@ -366,6 +366,22 @@ func buildEvalRequest(
 		}
 	}
 	targetBindings := sampleBindingsFor(targetType)
+
+	// A simulation is graded on the conversations the run creates, not on the
+	// seed rows it creates them from. The seeds carry test_case_description and
+	// desired_num_turns; the graded item carries `messages`. Binding the seed
+	// columns here is how a conversation evaluator ended up either refused at
+	// deploy for a column the seeds do not have, or created with no binding for
+	// the conversation it was meant to score.
+	//
+	// The sample namespace goes with it: the service holds the conversation
+	// itself, so there is no per-row target invocation to produce `sample`.
+	simulated := group.Simulation != nil
+	if simulated {
+		datasetColumns = map[string]bool{conversationField: true}
+		targetBindings = nil
+	}
+
 	metadata[metaEvalName] = group.Name
 	// The create request has no description field, so the group's own
 	// description rides in metadata rather than being dropped.
@@ -414,9 +430,16 @@ func buildEvalRequest(
 		req.TestingCriteria = append(req.TestingCriteria, criterion)
 	}
 
+	// Declared whether or not a criterion bound it: the conversations a
+	// simulation creates are what its rows hold, and a schema that omits the
+	// column they arrive in describes a different dataset.
+	if simulated {
+		itemFields[conversationField] = true
+	}
+
 	req.DataSourceConfig = &eval_api.DataSourceConfig{
 		Type:                "custom",
-		IncludeSampleSchema: hasTarget,
+		IncludeSampleSchema: hasTarget && !simulated,
 		ItemSchema:          itemSchema(itemFields),
 	}
 

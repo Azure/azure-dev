@@ -51,6 +51,10 @@ func ValidateRunnable(eval *Eval) error {
 		}
 	}
 
+	if err := validateSimulation(eval); err != nil {
+		return err
+	}
+
 	if eval.Source != nil {
 		switch eval.Source.Type {
 		case SourceTypeTraces:
@@ -88,5 +92,56 @@ func ValidateRunnable(eval *Eval) error {
 		return messages.EvaluationLevelNotSupported(
 			eval.EvaluationLevel, EvaluationLevelTurn, EvaluationLevelConversation)
 	}
+	return nil
+}
+
+// validateSimulation refuses a simulation declaration no run could carry out.
+//
+// It lives here rather than at the run door so that `azd up` and `eval run`
+// answer alike. Held as a separate function only because the combinations are
+// worth reading together, not because there is a second rule set: this is
+// called from ValidateRunnable and from nowhere else.
+//
+// The rules are ordered so the first refusal is the one the reader can act on:
+// the block's own fields before the eval's, and the eval's before the target it
+// names.
+func validateSimulation(eval *Eval) error {
+	if eval.Simulation == nil {
+		return nil
+	}
+
+	if err := eval.Simulation.Validate(); err != nil {
+		return err
+	}
+
+	if eval.EvaluationLevel != EvaluationLevelConversation {
+		return messages.SimulationNeedsConversationLevel(
+			eval.EvaluationLevel, EvaluationLevelConversation)
+	}
+
+	// Before the source rules below, which would otherwise ask a simulation to
+	// name the agent whose traces to read.
+	if eval.Source != nil {
+		return messages.SimulationAndSourceDescribeDifferentRuns()
+	}
+
+	if eval.Target == nil {
+		return messages.SimulationNeedsATarget()
+	}
+	if eval.Target.Type == TargetTypeModel {
+		return messages.SimulationCannotTalkToAModelTarget(TargetTypeAgent)
+	}
+
+	if eval.Dataset == "" {
+		return messages.SimulationNeedsSeedDataset()
+	}
+
+	// Refused rather than ignored. The run references the registered seed
+	// dataset by id, so a cap cannot be applied to it, and a run that reported
+	// itself capped would still create a conversation per seed.
+	if eval.MaxSamples > 0 {
+		return messages.SimulationCannotBeSampled(eval.MaxSamples)
+	}
+
 	return nil
 }

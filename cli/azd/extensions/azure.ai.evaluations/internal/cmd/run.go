@@ -13,9 +13,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"azureaieval/internal/exterrors"
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/dataset_api"
 	"azureaieval/internal/pkg/eval_api"
@@ -215,9 +217,12 @@ func (a *runStartAction) Run() error {
 	}
 
 	var dataSource *eval_api.EvalRunDataSource
+	// The level a bare id runs at comes from its previous run, for the same
+	// reason the data source does: there is no declaration to read it from.
+	var reusedLevel string
 	switch {
 	case group == nil:
-		dataSource, err = ec.reuseDataSourceFromLastRun(ctx, evalID)
+		dataSource, reusedLevel, err = ec.reuseDataSourceFromLastRun(ctx, evalID)
 	default:
 		dataSource, err = ec.buildRunDataSource(
 			ctx, group, configPath, resolveMaxSamples(a.flags.maxSamples, group))
@@ -238,8 +243,14 @@ func (a *runStartAction) Run() error {
 	}
 
 	metadata := map[string]string{}
-	if lvl := resolveLevel(group); lvl != "" {
-		metadata["evaluation_level"] = lvl
+	// The declaration says it when there is one; a bare id repeats what its
+	// previous run recorded.
+	level := resolveLevel(group)
+	if level == "" {
+		level = reusedLevel
+	}
+	if level != "" {
+		metadata[metaEvaluationLevel] = level
 	}
 	// The eval carries its name in its own metadata, but a run is read
 	// on its own, and an id is not what the author called it.
@@ -258,9 +269,12 @@ func (a *runStartAction) Run() error {
 	}
 
 	run, err := ec.evalClient.CreateOpenAIEvalRun(ctx, evalID, &eval_api.CreateOpenAIEvalRunRequest{
-		Name:       runName,
-		DataSource: dataSource,
-		Metadata:   metadata,
+		Name: runName,
+		// Also sent under metadata, where it stays readable to anything listing
+		// runs. Only the top-level field is what the service builds rows from.
+		EvaluationLevel: level,
+		DataSource:      dataSource,
+		Metadata:        metadata,
 	})
 	if err != nil {
 		return messages.StartingRun(err)
@@ -375,10 +389,16 @@ func (ec *evalContext) checkDatasetRegistered(
 // testing criteria, and the dataset travels on the run. The previous run is the
 // only place that pairing survives, so re-running a group means repeating what
 // it last ran.
+//
+// The evaluation level travels with it. It decides how the service builds rows
+// out of the data source, so repeating the source without it grades a
+// conversation eval turn-shaped -- which reports scores rather than an error,
+// and so is not otherwise noticed. Empty when the previous run recorded none,
+// which leaves the service's own default as before.
 func (ec *evalContext) reuseDataSourceFromLastRun(
 	ctx context.Context,
 	evalID string,
-) (*eval_api.EvalRunDataSource, error) {
+) (*eval_api.EvalRunDataSource, string, error) {
 	// The service promises no order, so one row is not the most recent run --
 	// it is whichever the listing happened to put first. Restarting from it
 	// scored a stale dataset or target on any eval with more than one run.
@@ -392,18 +412,35 @@ func (ec *evalContext) reuseDataSourceFromLastRun(
 		if eval_api.IsNotFound(err) {
 			// The eval itself is missing, which is worth saying plainly rather
 			// than as forty lines of the 404 that discovered it.
-			return nil, messages.EvalNotFound(evalID)
+			return nil, "", messages.EvalNotFound(evalID)
 		}
-		return nil, messages.ReadingPreviousRuns(evalID, err)
+		return nil, "", messages.ReadingPreviousRuns(evalID, err)
 	}
 	if list == nil || len(list.Data) == 0 {
-		return nil, messages.EvalHasNoPreviousRun(evalID)
+		return nil, "", messages.EvalHasNoPreviousRun(evalID)
 	}
 	newest := newestRunIn(list.Data)
 	if newest.DataSource == nil {
-		return nil, messages.EvalHasNoPreviousRun(evalID)
+		return nil, "", messages.EvalHasNoPreviousRun(evalID)
 	}
-	return pinReusedTraceWindow(newest.DataSource), nil
+	return pinReusedTraceWindow(newest.DataSource), reusedEvaluationLevel(newest), nil
+}
+
+// reusedEvaluationLevel is the level a rerun repeats.
+//
+// The service's own field wins. A run created by the portal or an SDK carries
+// it and carries none of the metadata this extension writes, so reading only
+// the metadata reran such a run turn-shaped whatever it had been. The metadata
+// remains the fallback, because runs this extension made before the field was
+// read carry the level only there.
+func reusedEvaluationLevel(run *eval_api.OpenAIEvalRun) string {
+	if run == nil {
+		return ""
+	}
+	if run.EvaluationLevel != "" {
+		return run.EvaluationLevel
+	}
+	return run.Metadata[metaEvaluationLevel]
 }
 
 // legacyTraceLookbackHours is the window a legacy source with no lookback ran
@@ -558,6 +595,16 @@ func (ec *evalContext) buildRunDataSource(
 		return nil, messages.InEval(group.Name, messages.DatasetNotDeclared(group.Dataset))
 	}
 
+	// A simulation creates its conversations instead of reading rows that
+	// already hold them, so it is settled before every shape that reads a
+	// column: a source has none to read, and a scenario seed has no question
+	// on it to bind. ValidateRunnable has already refused a declaration that
+	// asks for both, so this order decides nothing on its own -- it is here so
+	// that adding a shape below cannot quietly claim a simulation.
+	if group.Simulation != nil {
+		return ec.simulationDataSource(ctx, group, configPath, maxSamples)
+	}
+
 	if group.Source != nil {
 		switch group.Source.Type {
 		case project.SourceTypeTraces:
@@ -595,10 +642,27 @@ func (ec *evalContext) buildRunDataSource(
 	// name is rejected with "invalid data source file ids".
 	localPath := localDatasetPath(configPath, group)
 	if localPath == "" {
-		items, err := ec.readRegisteredDataset(
+		items, version, err := ec.readRegisteredDataset(
 			ctx, group.Dataset, declaredDatasetVersion(configPath, group), maxSamples)
 		if err != nil {
 			return nil, err
+		}
+		if err := refuseUnboundTemplate(group, ds, items); err != nil {
+			return nil, err
+		}
+		// A registered dataset is referenced by the id the service issued for
+		// that version, so the run keeps the dataset's identity, version
+		// binding and lineage instead of scoring a copy.
+		//
+		// Only when nothing asked for fewer rows. A file_id names the whole
+		// version and carries no row count, so referencing a capped run would
+		// grade every row and still report the cap as honoured. A capped run
+		// sends the bounded rows it read, which is what the cap means.
+		if maxSamples <= 0 {
+			if id := ec.datasetResourceID(ctx, group.Dataset, version); id != "" {
+				ds.SetFileID(id)
+				return ds, nil
+			}
 		}
 		ds.SetFileContent(items)
 		return ds, nil
@@ -611,8 +675,67 @@ func (ec *evalContext) buildRunDataSource(
 	if len(items) == 0 {
 		return nil, messages.DatasetFileEmpty(localPath)
 	}
+	if err := refuseUnboundTemplate(group, ds, items); err != nil {
+		return nil, err
+	}
 	ds.SetFileContent(items)
 	return ds, nil
+}
+
+// refuseUnboundTemplate refuses a run whose target invocation reads a column no
+// row carries.
+//
+// The service does not report this. It invokes the target with an empty value
+// and scores whatever comes back, so a conversation dataset run against an
+// agent target produced confident scores for a question nobody asked -- and
+// the seeded content, not the target's answer, is what got graded.
+func refuseUnboundTemplate(
+	group *project.Eval, ds *eval_api.EvalRunDataSource, items []map[string]any,
+) error {
+	missing := ds.MissingTemplateFields(items)
+	if len(missing) == 0 {
+		return nil
+	}
+
+	// Named inside the structured message rather than wrapped with InEval: azd
+	// serializes a structured error's own message, so an outer %w prefix is not
+	// what the reader is shown.
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		fmt.Sprintf("eval %q: dataset %q carries no %s column, which invoking the target reads from every row",
+			group.Name, group.Dataset, quotedList(missing)),
+		fmt.Sprintf("Rows carry %s. Score these rows as they stand by removing the target from the eval, "+
+			"or point the eval at a dataset whose rows carry %s.",
+			quotedList(datasetColumns(items)), quotedList(missing)),
+	)
+}
+
+// datasetColumns is every key the rows carry, sorted so two runs of the same
+// dataset report it the same way.
+func datasetColumns(items []map[string]any) []string {
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		for key := range item {
+			seen[key] = struct{}{}
+		}
+	}
+	columns := make([]string, 0, len(seen))
+	for key := range seen {
+		columns = append(columns, key)
+	}
+	sort.Strings(columns)
+	return columns
+}
+
+func quotedList(values []string) string {
+	if len(values) == 0 {
+		return "no columns"
+	}
+	quoted := make([]string, 0, len(values))
+	for _, v := range values {
+		quoted = append(quoted, strconv.Quote(v))
+	}
+	return strings.Join(quoted, ", ")
 }
 
 // tracesDataSource evaluates conversations the agent already had.
@@ -675,7 +798,7 @@ func (ec *evalContext) readRegisteredDataset(
 	name string,
 	pinned string,
 	maxSamples int,
-) ([]map[string]any, error) {
+) ([]map[string]any, string, error) {
 	// The declaration wins: it is the author saying which rows to score, and it
 	// is right whether or not there is an azd environment to have recorded one.
 	version := pinned
@@ -685,20 +808,20 @@ func (ec *evalContext) readRegisteredDataset(
 	if version == "" {
 		versions, err := ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
 		if err != nil {
-			return nil, messages.ReadingDataset(name, err)
+			return nil, "", messages.ReadingDataset(name, err)
 		}
 		if versions != nil {
 			version = dataset_api.LatestVersion(versions.Value)
 		}
 	}
 	if version == "" {
-		return nil, messages.DatasetHasNoVersionsToRead(name)
+		return nil, "", messages.DatasetHasNoVersionsToRead(name)
 	}
 
 	body, err := ec.datasetClient.OpenDatasetContent(
 		ctx, name, version, ProjectEndpointAPIVersion)
 	if err != nil {
-		return nil, messages.ReadingDatasetVersion(name, version, err)
+		return nil, "", messages.ReadingDatasetVersion(name, version, err)
 	}
 	// Closed before the end when a cap is in force, which is what stops the
 	// transfer: reading the blob into memory first made --max-samples bound the
@@ -707,12 +830,29 @@ func (ec *evalContext) readRegisteredDataset(
 
 	items, err := scanJSONL(body, maxSamples)
 	if err != nil {
-		return nil, messages.ReadingDatasetVersion(name, version, err)
+		return nil, "", messages.ReadingDatasetVersion(name, version, err)
 	}
 	if len(items) == 0 {
-		return nil, messages.DatasetVersionEmpty(name, version)
+		return nil, "", messages.DatasetVersionEmpty(name, version)
 	}
-	return items, nil
+	return items, version, nil
+}
+
+// datasetResourceID is the id the service issued for a registered dataset
+// version, or "" when it cannot be read.
+//
+// A version the service will not describe is not a reason to fail a run that
+// would otherwise work, so the caller falls back to sending the rows. That is
+// the old behavior rather than a new failure mode.
+func (ec *evalContext) datasetResourceID(ctx context.Context, name, version string) string {
+	if name == "" || version == "" || ec.datasetClient == nil {
+		return ""
+	}
+	registered, err := ec.datasetClient.GetDataset(ctx, name, version, ProjectEndpointAPIVersion)
+	if err != nil || registered == nil {
+		return ""
+	}
+	return registered.ID
 }
 
 // datasetColumnsFromPath reads one row to learn the dataset's shape. An empty
@@ -1125,12 +1265,33 @@ func renderRun(
 
 	renderCriteriaTable(out, run.PerTestingCriteria, means)
 
-	if c := run.ResultCounts; c != nil && c.Failed > 0 {
-		fmt.Fprint(out, messages.ViewFailingSamples())
+	// Offered whenever there is something to read, not only when rows failed:
+	// a run whose rows all errored closed with the word "failed" and a count,
+	// and nothing saying where to look next.
+	if c := run.ResultCounts; c != nil && c.Total > 0 {
+		errored, _ := unscoredSplit(c, c.Passed+c.Failed)
+		fmt.Fprint(out, messages.RunFollowUp(
+			followUpEvalRef(run), run.ID, c.Failed > 0, errored > 0))
 	}
 
 	writePortalLink(out, runLink(run.ReportURL, run.PortalURL))
 	return nil
+}
+
+// followUpEvalRef names the eval in the commands a finished run suggests.
+//
+// The declared name first, because that is what a reader has in their
+// configuration. A run made by the portal or an SDK carries none of this
+// extension's metadata, and printing `--run <id>` with no `--eval` leaves a
+// command that has to re-resolve the eval from the configuration -- prompting,
+// or picking a declaration that is not the one the run belongs to. The service
+// states the id on the run, so it stands in, exactly as the header already
+// does.
+func followUpEvalRef(run *eval_api.OpenAIEvalRun) string {
+	if name := run.Metadata[metaEvalName]; name != "" {
+		return name
+	}
+	return run.EvalID
 }
 
 // passRateText is the rate, or a dash where nothing was scored. A rate over no

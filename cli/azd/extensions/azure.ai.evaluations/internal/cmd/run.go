@@ -337,7 +337,7 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 		if err := emitJSON(out, final); err != nil {
 			return err
 		}
-	} else if err := renderRun(out, final, ec.runMeans(ctx, evalID, final)); err != nil {
+	} else if err := renderRun(out, final, ec.runOutputSummary(ctx, evalID, final)); err != nil {
 		return err
 	}
 
@@ -1210,23 +1210,36 @@ func timestampString(value any) string {
 	}
 }
 
-// runMeans reads the run's rows to average each evaluator's score.
+type runOutputSummary struct {
+	means         map[string]float64
+	conversations *conversationOutputSummary
+}
+
+// runOutputSummary uses a complete row listing for mean scores and observed
+// conversation output. Neither is a projection of a single page.
 //
 // Best effort: the summary is worth printing without the column, and a run
 // that scored nothing has no rows to read.
-func (ec *evalContext) runMeans(
+func (ec *evalContext) runOutputSummary(
 	ctx context.Context,
 	evalID string,
 	run *eval_api.OpenAIEvalRun,
-) map[string]float64 {
+) *runOutputSummary {
 	if run == nil || run.ResultCounts == nil || run.ResultCounts.Total == 0 {
 		return nil
 	}
 	items, err := ec.evalClient.ListOutputItems(ctx, evalID, run.ID, 0)
 	if err != nil || items == nil {
+		if isSimulationRun(run) {
+			return &runOutputSummary{conversations: &conversationOutputSummary{}}
+		}
 		return nil
 	}
-	return criteriaMeans(items.Data)
+	summary := &runOutputSummary{means: criteriaMeans(items.Data)}
+	if isSimulationRun(run) {
+		summary.conversations = summarizeConversationOutput(items.Data)
+	}
+	return summary
 }
 
 // timestampTime reads a service timestamp, which arrives as epoch seconds on a
@@ -1247,16 +1260,19 @@ func timestampTime(value any) time.Time {
 
 // renderRun prints what a person needs after waiting for a run.
 //
-// means carries each criterion's average score, which the run summary does not
-// return; it is nil when the rows were not fetched, and the column is dropped.
+// rows carries statistics from the complete output listing; it is nil when the
+// rows were not fetched. Service generation counters remain separate.
 func renderRun(
 	out interface{ Write([]byte) (int, error) },
 	run *eval_api.OpenAIEvalRun,
-	means map[string]float64,
+	rows *runOutputSummary,
 ) error {
 	fmt.Fprintln(out)
 	renderRunHeader(out, run)
 	renderSimulationSettings(out, run)
+	if isSimulationRun(run) && rows != nil && rows.conversations != nil {
+		renderConversationOutput(out, rows.conversations)
+	}
 
 	// A run that failed carries why, and it is usually the only actionable
 	// thing in the response — dropping it leaves the caller with just the word
@@ -1280,6 +1296,10 @@ func renderRun(
 			passRateText(rate, scored)))
 	}
 
+	var means map[string]float64
+	if rows != nil {
+		means = rows.means
+	}
 	renderCriteriaTable(out, run.PerTestingCriteria, means)
 
 	// Offered whenever there is something to read, not only when rows failed:

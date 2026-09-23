@@ -47,6 +47,7 @@ type identityRequest struct {
 type identityService struct {
 	versions    []dataset_api.Dataset
 	listStatus  int
+	listBody    *string
 	getStatus   int
 	id          string
 	version     string
@@ -78,7 +79,15 @@ func identityRunContext(t *testing.T, service identityService) (*evalContext, <-
 				w.WriteHeader(service.listStatus)
 				return
 			}
-			assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"value": service.versions}))
+			if service.listBody != nil {
+				_, _ = io.WriteString(w, *service.listBody)
+				return
+			}
+			versions := service.versions
+			if versions == nil {
+				versions = []dataset_api.Dataset{}
+			}
+			assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"value": versions}))
 		case strings.HasSuffix(r.URL.Path, "/credentials"):
 			if service.wantVersion != "" {
 				assert.True(t, strings.HasSuffix(r.URL.Path, "/versions/"+service.wantVersion+"/credentials"))
@@ -314,10 +323,11 @@ func TestRunRegistryLookupMustEstablishAbsence(t *testing.T) {
 		wantVersion string
 	}{
 		{name: "confirmed absent", listStatus: 404, getStatus: 404},
-		{name: "empty listing is uncertain", getStatus: 404, wantErr: true},
+		{name: "successful empty listing with absent probes", getStatus: 404},
 		{name: "listing forbidden", listStatus: 403, getStatus: 404, wantErr: true},
 		{name: "probe forbidden", listStatus: 404, getStatus: 403, wantErr: true},
 		{name: "publication ahead of listing", listStatus: 404, wantVersion: "1.0"},
+		{name: "publication ahead of successful empty listing", wantVersion: "1.0"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ec, requests := identityRunContext(t, identityService{

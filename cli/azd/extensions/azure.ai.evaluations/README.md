@@ -118,6 +118,22 @@ discards a record of finished work, not the artifact the job produced.
 Every command supports `-o json` and `--no-prompt`, so the whole surface is
 usable from CI.
 
+### Downloading a dataset
+
+`azd ai eval dataset download <name> --version <version> --output-file <path>`
+supports single-file datasets even when their download credentials grant access
+to the parent container. Container-backed downloads require a complete listing
+with exactly one file and dataset metadata reporting `isSingleFile: true`.
+Folders (including one-file folders) and multi-file datasets require
+`--output-dir` and retain their relative layout.
+
+Single-file container downloads without `--output-file` land as
+`<name>-<version><extension>` under `--output-dir` (the current directory by
+default), while folders land under `<name>-<version>/`. Omitting `--version`
+selects the latest version. Existing destinations require `--force` to replace,
+including with `--no-prompt`. JSON output reports the resolved version, path,
+file count, and single-file status.
+
 ## Evaluators
 
 Built-ins need no declaration — reference them as `builtin.<name>` and list

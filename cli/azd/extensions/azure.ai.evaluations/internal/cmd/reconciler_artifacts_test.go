@@ -66,6 +66,22 @@ func TestReconciliationRejectsUnusableLocalDatasetRows(t *testing.T) {
 			project.TargetTypeAgent, true, `carries "messages"`,
 		},
 		{
+			"seed and query", `{"test_case_description":"valid","query":"hello"}`,
+			project.TargetTypeAgent, true, `row 1 carries "query"`,
+		},
+		{
+			"seed and response", `{"test_case_description":"valid","response":"answer"}`,
+			project.TargetTypeAgent, true, `row 1 carries "response"`,
+		},
+		{
+			"seed and null query", `{"test_case_description":"valid","query":null}`,
+			project.TargetTypeAgent, true, `row 1 carries "query"`,
+		},
+		{
+			"later turn row", "{\"test_case_description\":\"valid\"}\n{\"query\":\"hello\",\"response\":\"answer\"}",
+			project.TargetTypeAgent, true, `row 2 carries "query"`,
+		},
+		{
 			"fractional turns", `{"test_case_description":"valid","desired_num_turns":1.5}`,
 			project.TargetTypeAgent, true, "not a positive whole number",
 		},
@@ -217,4 +233,21 @@ func TestCreateDoesNotValidateUnselectedDatasetModes(t *testing.T) {
 	assert.Equal(t, 1, service.createCount)
 	assert.Empty(t, env.stored(t, versionKey("dataset", unrelated.Dataset)))
 	assert.Empty(t, env.stored(t, idKey("eval", unrelated.Name)))
+}
+
+func TestReconciliationDoesNotInventASeedTurnCap(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		t.Run(caller, func(t *testing.T) {
+			ec, _, service, cfg, dir := validationFixture(t)
+			service.definition = `{"definition":{"data_schema":{"properties":{}}}}`
+			group := &cfg.Evals[0]
+			group.EvaluationLevel = project.EvaluationLevelConversation
+			group.Target = &project.Target{Type: project.TargetTypeAgent, Name: "target"}
+			group.Simulation = &project.Simulation{Model: "simulator"}
+			rows := `{"test_case_description":"A longer scenario.","desired_num_turns":21}`
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"), []byte(rows), 0o600))
+			require.NoError(t, reconcileArtifactConfig(t, caller, ec, cfg, dir))
+			assert.Equal(t, 1, service.createCount)
+		})
+	}
 }

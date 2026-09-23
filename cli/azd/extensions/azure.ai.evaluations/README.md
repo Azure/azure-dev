@@ -132,7 +132,10 @@ and must be a positive whole number when supplied. It is a request, not an
 override: asking for more turns than `max_turns` allows is refused rather than
 quietly truncated. Local seed files are checked row by row before `create` or
 `azd up` publishes dependencies; the run checks registered seed rows as well.
-Completed `messages` cannot be mixed with simulation seeds.
+Completed `messages` and turn-level `query`/`response` fields cannot be mixed
+with simulation seeds, even when those fields are empty or null. Keep these
+dataset modes in separate evaluations. Omitting `max_turns` leaves the bound to
+the service; the CLI does not impose a per-row ceiling in its place.
 
 Seed rows carry no `query` or `response`, because nobody has asked anything yet.
 That is why the evaluators bind `messages` — the transcript the run produces —

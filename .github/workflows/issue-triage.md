@@ -24,7 +24,7 @@ tools:
     toolsets: [repos, issues, pull_requests, labels, search]
   bash: [jq, rg]
 safe-outputs:
-  group-reports: true
+  group-reports: false
   report-failed-jobs: false
   # Keep transient runtime failures and empty agent runs in workflow logs instead of opening issues.
   report-failure-as-issue:

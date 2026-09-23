@@ -23,10 +23,9 @@ network:
   allowed: [defaults, github]
 tools:
   github:
-    mode: gh-proxy
-    toolsets: [default, pull_requests]
+    toolsets: [default, pull_requests, labels]
 safe-outputs:
-  group-reports: true
+  group-reports: false
   report-failed-jobs: false
   # Fork filtering and short-lived runtime failures can skip this best-effort labeler without creating tracking noise.
   report-failure-as-issue:
@@ -35,8 +34,6 @@ safe-outputs:
     - "!report_incomplete"
     - "!inference_access_error"
     - "!ai_credits_rate_limit_error"
-  missing-data:
-    create-issue: false
   report-incomplete:
     create-issue: false
   add-labels:

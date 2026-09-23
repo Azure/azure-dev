@@ -698,7 +698,10 @@ func (c *DatasetClient) readBlobPage(req *http.Request) ([]string, string, error
 	if err != nil {
 		return nil, "", messages.ReadingListResponse(err)
 	}
-	names, next := parseBlobPage(string(body))
+	names, next, err := parseBlobPage(string(body))
+	if err != nil {
+		return nil, "", messages.ParsingResponse(err)
+	}
 	return names, next, nil
 }
 
@@ -751,13 +754,16 @@ func (c *DatasetClient) openBlob(ctx context.Context, containerSASUri, blobName 
 // parseBlobNames extracts blob names from the Azure Blob Storage XML list response
 // using proper XML parsing against the EnumerationResults schema.
 func parseBlobNames(xmlBody string) []string {
-	names, _ := parseBlobPage(xmlBody)
+	names, _, _ := parseBlobPage(xmlBody)
 	return names
 }
 
 // parseBlobPage extracts one page of blob names and the marker that continues
 // the listing. An empty marker means this was the last page.
-func parseBlobPage(xmlBody string) ([]string, string) {
+//
+// A malformed page is not the end of a listing: treating it as empty could
+// classify a partial multi-file download as a single file.
+func parseBlobPage(xmlBody string) ([]string, string, error) {
 	type blob struct {
 		Name string `xml:"Name"`
 	}
@@ -771,7 +777,7 @@ func parseBlobPage(xmlBody string) ([]string, string) {
 
 	var result enumerationResults
 	if err := xml.Unmarshal([]byte(xmlBody), &result); err != nil {
-		return nil, ""
+		return nil, "", err
 	}
 
 	names := make([]string, 0, len(result.Blobs.Blob))
@@ -780,7 +786,7 @@ func parseBlobPage(xmlBody string) ([]string, string) {
 			names = append(names, b.Name)
 		}
 	}
-	return names, result.NextMarker
+	return names, result.NextMarker, nil
 }
 
 // doRequest performs an HTTP request against the dataset API and returns the raw response body.

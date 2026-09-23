@@ -1,13 +1,14 @@
 {
   "releaseRepository": "m7md7sien/azd-foundry-feed",
-  "releaseTag": "extensions-2026-09-23-40",
-  "sourceCommit": "361ca3c338069452a0bc1da6aa5a7b7c4e8bcf6a",
+  "releaseTag": "extensions-2026-09-23-41",
+  "sourceCommit": "8ef8b6df77336950c60506ab2966037f579d92cd",
   "sourceNote": "Publisher-confirmed source; all 12 packaged binaries had their VCS revision and platform verified before publication.",
-  "sourceVerificationCommit": "361ca3c338069452a0bc1da6aa5a7b7c4e8bcf6a",
+  "sourceVerificationCommit": "8ef8b6df77336950c60506ab2966037f579d92cd",
   "validationBaseline": "0361f347eb28c5f2e756225115318393b1dad28a",
   "conversationModes": true,
   "initSeedValidation": true,
-  "registrySha256": "648c9632fcf5a4e1f993cb0cb4c5bc37691e5821df8ec8422c36a2b30f548d9f",
+  "initDatasetBinding": true,
+  "registrySha256": "aff0d6f456e3fb08773b1c888136eed12ec8a06bd2eba0addda0383142ae7d79",
   "azd": {
     "version": "1.33.0",
     "artifacts": {
@@ -24,18 +25,18 @@
   "extensions": {
     "azure.ai.evaluations": {
       "command": "eval",
-      "version": "1.0.40-beta",
+      "version": "1.0.41-beta",
       "artifacts": {
-        "linux/amd64": "f306012636d4316b431760fb1c4a12d3ff2e881824c81624bb58240faad80373",
-        "windows/amd64": "946c49c3640c92f05fc3c6c71f4409d616bccd127db72553080151bb0e67a677"
+        "linux/amd64": "d2c3cc5c90adb7b3ef86caa0e27abecb61fe102e2dcff4a86b909eefc954385c",
+        "windows/amd64": "4a262433ffb7558d19dd6138fb4c24e1ca93b6c647c452b23ef1b0d3605d7d75"
       }
     },
     "azure.ai.dataset": {
       "command": "dataset",
-      "version": "1.0.0-beta.28",
+      "version": "1.0.0-beta.29",
       "artifacts": {
-        "linux/amd64": "c49b2ba38bdf70f8874b7acbb14e587f7a7cb7d389ff257b62b0aacd6c6ccb18",
-        "windows/amd64": "69974f1ef8608d9405c9b4913601a980ac93f57286a5d97d7a14da41e75eac12"
+        "linux/amd64": "4429b2b36c99392cde2a167fff27a5bbdde76bdecb5165121eb820bc86b32f5e",
+        "windows/amd64": "66f39a27db5203da73d3c82b7d736cafa2593c9ae41940b9817bceb205f3d8c8"
       }
     }
   }

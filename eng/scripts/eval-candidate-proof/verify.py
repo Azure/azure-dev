@@ -506,7 +506,13 @@ class Proof:
                     require(actual_config.resolve() == config.resolve(),
                             f"{label} selected a different config file")
                     text = config.read_text(encoding="utf-8")
-                    require(config_before in text, f"{label} rewrote existing pins, metadata or evaluations")
+                    preserved = text
+                    for added_name in ([dataset, name] if dataset == "corrected" else [name]):
+                        preserved, count = re.subn(
+                            rf"(?ms)^  - name: {added_name}\n.*?(?=^  - |^\S|\Z)", "", preserved, count=1)
+                        require(count == 1, f"{label} did not append the expected {added_name} entry")
+                    require(preserved == config_before,
+                            f"{label} changed existing content beyond the new catalog/eval entries")
                     new_eval = re.search(
                         rf"(?ms)^([ \t]*)- name: {name}[ \t]*\n(.*?)(?=^\1- name:|\Z)", text)
                     require(new_eval and re.search(rf"(?m)^\s*dataset: {dataset}\s*$", new_eval.group(2)),
@@ -518,8 +524,13 @@ class Proof:
                     if dataset == "corrected":
                         require(len(re.findall(r"(?m)^\s*-\s*name: corrected\s*$", text)) == 1,
                                 f"{label} failed to add the distinct dataset exactly once")
-                        require("../replacement/corrected.jsonl" in text,
-                                f"{label} lost the distinct dataset's local file")
+                        file_entry = re.search(r"(?m)^  - name: corrected\n    file: (.+)$", text)
+                        require(file_entry is not None, f"{label} lost the distinct dataset's local file")
+                        file_path = Path(file_entry.group(1))
+                        if not file_path.is_absolute():
+                            file_path = config_dir / file_path
+                        require(file_path.resolve() == requested.resolve(),
+                                f"{label} bound the new dataset to a different local file")
                     after = snapshot_tree(project)
                     for path, contents in before.items():
                         if path not in (str(config.relative_to(project)), "azure.yaml"):

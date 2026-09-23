@@ -73,7 +73,10 @@ func TestMissingTemplateFields_CatchesRowsWithoutTheBoundColumn(t *testing.T) {
 	t.Parallel()
 
 	seeds := []map[string]any{
-		{"id": 1, "test_case_description": "A customer asks about a delayed order.", "desired_num_turns": 4},
+		{
+			"test_case_description":    "A customer asks about a delayed order.",
+			"simulation_configuration": map[string]any{"desired_num_turns": 4},
+		},
 		{"id": 2, "test_case_description": "A customer disputes a charge."},
 	}
 

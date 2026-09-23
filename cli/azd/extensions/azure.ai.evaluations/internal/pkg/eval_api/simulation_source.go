@@ -6,9 +6,7 @@ package eval_api
 // EvalRunDataSourceTypeUserConversationSimulation runs a simulated user against
 // the target agent, one conversation per scenario seed.
 //
-// This value is provisional. The portal uses it today and the GA TypeSpec has
-// not landed, so it is declared alone here: confirming the discriminator is a
-// one-line change rather than a search. Nothing may fall back to
+// This is the published Foundry preview discriminator. Nothing may fall back to
 // azure_ai_target_completions when this is the intended shape -- that is the
 // turn-level data source, and it would invoke the agent once with an empty
 // question instead of holding a conversation.
@@ -55,6 +53,10 @@ func NewSimulationDataSource(
 ) *EvalRunDataSource {
 	return &EvalRunDataSource{
 		Type: EvalRunDataSourceTypeUserConversationSimulation,
+		DataMapping: map[string]string{
+			"test_case_description":    "test_case_description",
+			"simulation_configuration": "simulation_configuration",
+		},
 		Target: &EvalRunTarget{
 			Type: "azure_ai_agent",
 			Name: agentName,

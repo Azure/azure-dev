@@ -48,11 +48,15 @@ func TestNewSimulationDataSource_WireShape(t *testing.T) {
 	assert.EqualValues(t, 5, sim["max_num_turns"])
 	assert.Equal(t, false, sim["enable_conversation_dataset_generation"],
 		"azd's workflow is staged: a run consumes seeds, it does not generate them")
+	assert.Equal(t, map[string]any{
+		"test_case_description":    "test_case_description",
+		"simulation_configuration": "simulation_configuration",
+	}, decoded["data_mapping"], "simulation mappings name columns, not item templates")
 }
 
 // Binding a question is what made an agent answer an empty one. A simulation
 // data source must never carry a template.
-func TestNewSimulationDataSource_BindsNoItemFields(t *testing.T) {
+func TestNewSimulationDataSource_BindsNoQuestionTemplate(t *testing.T) {
 	t.Parallel()
 
 	ds := NewSimulationDataSource("hero-agent", "gpt-4o-mini", 1, 5)
@@ -94,4 +98,26 @@ func TestSimulationDiscriminatorIsDistinctFromTargetCompletions(t *testing.T) {
 		NewAgentTargetDataSource("hero-agent", nil).Type)
 	assert.Equal(t, EvalRunDataSourceTypeUserConversationSimulation,
 		NewSimulationDataSource("hero-agent", "gpt-4o-mini", 1, 5).Type)
+	assert.Nil(t, NewAgentTargetDataSource("hero-agent", nil).DataMapping)
+	assert.Nil(t, NewDatasetOnlyDataSource().DataMapping)
+}
+
+func TestSimulationDataMappingSurvivesReadback(t *testing.T) {
+	const body = `{
+		"type":"azure_ai_user_conversation_simulation_preview",
+		"source":{"type":"file_id","id":"issued-id"},
+		"data_mapping":{"test_case_description":"scenario","simulation_configuration":"settings"}
+	}`
+	var source EvalRunDataSource
+	require.NoError(t, json.Unmarshal([]byte(body), &source))
+	require.Equal(t, map[string]string{
+		"test_case_description": "scenario", "simulation_configuration": "settings",
+	}, source.DataMapping)
+	encoded, err := json.Marshal(source)
+	require.NoError(t, err)
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	assert.Equal(t, map[string]any{
+		"test_case_description": "scenario", "simulation_configuration": "settings",
+	}, decoded["data_mapping"], "reusing a run must retain non-default column mappings")
 }

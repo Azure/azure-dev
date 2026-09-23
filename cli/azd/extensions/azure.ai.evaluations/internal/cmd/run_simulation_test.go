@@ -70,10 +70,10 @@ func TestRefuseUnusableSeedRows(t *testing.T) {
 			name: "the documented seed row",
 			rows: []map[string]any{
 				{
-					"id":                    1.0,
-					"category":              "Order Status",
-					"test_case_description": "A delayed order.",
-					"desired_num_turns":     4.0,
+					"id":                       1.0,
+					"category":                 "Order Status",
+					"test_case_description":    "A delayed order.",
+					"simulation_configuration": map[string]any{"desired_num_turns": 4.0},
 				},
 			},
 		},
@@ -113,19 +113,56 @@ func TestRefuseUnusableSeedRows(t *testing.T) {
 			rows: []map[string]any{
 				{"test_case_description": "fine"},
 				{"test_case_description": "also fine"},
-				{"test_case_description": "fine too", "desired_num_turns": 0.0},
+				{"test_case_description": "fine too", "simulation_configuration": map[string]any{"desired_num_turns": 0.0}},
 			},
 			wantErr: "row 3",
 		},
 		{
-			name:    "a fractional turn count is not a number of turns",
-			rows:    []map[string]any{{"test_case_description": "A delayed order.", "desired_num_turns": 2.5}},
+			name: "a fractional turn count is not a number of turns",
+			rows: []map[string]any{{
+				"test_case_description":    "A delayed order.",
+				"simulation_configuration": map[string]any{"desired_num_turns": 2.5},
+			}},
 			wantErr: "not a positive whole number",
 		},
 		{
-			name:    "a negative turn count",
-			rows:    []map[string]any{{"test_case_description": "A delayed order.", "desired_num_turns": 0 - 1.0}},
+			name: "a negative turn count",
+			rows: []map[string]any{{
+				"test_case_description":    "A delayed order.",
+				"simulation_configuration": map[string]any{"desired_num_turns": -1.0},
+			}},
 			wantErr: "not a positive whole number",
+		},
+		{
+			name:    "legacy flat turn count is not silently ignored",
+			rows:    []map[string]any{{"test_case_description": "A delayed order.", "desired_num_turns": 4.0}},
+			wantErr: "outside simulation_configuration",
+		},
+		{
+			name: "configuration must be an object",
+			rows: []map[string]any{{
+				"test_case_description": "A delayed order.", "simulation_configuration": "four turns",
+			}},
+			wantErr: "non-object simulation_configuration",
+		},
+		{
+			name:    "null configuration is not an object",
+			rows:    []map[string]any{{"test_case_description": "A delayed order.", "simulation_configuration": nil}},
+			wantErr: "non-object simulation_configuration",
+		},
+		{
+			name: "invalid per-case maximum",
+			rows: []map[string]any{{
+				"test_case_description":    "A delayed order.",
+				"simulation_configuration": map[string]any{"max_num_turns": 2.5},
+			}},
+			wantErr: "simulation_configuration.max_num_turns",
+		},
+		{
+			name: "empty per-case settings retain defaults",
+			rows: []map[string]any{{
+				"test_case_description": "A delayed order.", "simulation_configuration": map[string]any{},
+			}},
 		},
 	}
 
@@ -144,29 +181,58 @@ func TestRefuseUnusableSeedRows(t *testing.T) {
 	}
 }
 
-// Spec §3 and §13 acceptance test 9: a per-row count is honored but stays
-// bounded by the eval's own ceiling. Saying so beats a conversation that
-// silently ends early.
+// Per-case configuration overrides run defaults. The requested length must fit
+// the effective maximum, including the service default when neither sets one.
 func TestRefuseUnusableSeedRows_PerRowTurnsRespectTheCeiling(t *testing.T) {
 	t.Parallel()
 
 	group := runnableSimulation()
 	group.Simulation.MaxTurns = 5
 
-	withinBound := []map[string]any{{"test_case_description": "A delayed order.", "desired_num_turns": 5.0}}
+	withinBound := []map[string]any{{
+		"test_case_description": "A delayed order.", "simulation_configuration": map[string]any{"desired_num_turns": 5.0},
+	}}
 	require.NoError(t, refuseUnusableSeedRows(group, withinBound),
 		"a row asking for exactly the ceiling is satisfiable")
 
-	pastBound := []map[string]any{{"test_case_description": "A delayed order.", "desired_num_turns": 6.0}}
+	pastBound := []map[string]any{{
+		"test_case_description": "A delayed order.", "simulation_configuration": map[string]any{"desired_num_turns": 6.0},
+	}}
 	err := refuseUnusableSeedRows(group, pastBound)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "asks for 6 turns")
 	assert.Contains(t, err.Error(), "max_turns is 5")
 
-	// With no ceiling declared the service decides, so a per-row count is not
-	// measured against a bound this eval never set.
 	group.Simulation.MaxTurns = 0
 	assert.NoError(t, refuseUnusableSeedRows(group, pastBound))
+	pastDefault := []map[string]any{{
+		"test_case_description": "A delayed order.", "simulation_configuration": map[string]any{"desired_num_turns": 21.0},
+	}}
+	require.ErrorContains(t, refuseUnusableSeedRows(group, pastDefault), "max_turns is 20")
+
+	group.Simulation.MaxTurns = 5
+	overridden := []map[string]any{{
+		"test_case_description":    "A delayed order.",
+		"simulation_configuration": map[string]any{"desired_num_turns": 6.0, "max_num_turns": 6.0},
+	}}
+	require.NoError(t, refuseUnusableSeedRows(group, overridden))
+	overridden[0]["simulation_configuration"] = map[string]any{"desired_num_turns": 6.0, "max_num_turns": 4.0}
+	require.ErrorContains(t, refuseUnusableSeedRows(group, overridden), "simulation_configuration.max_num_turns is 4")
+}
+
+func TestSimulationRefusesUnmappedLegacyTurnsBeforeRunCreation(t *testing.T) {
+	ec, requests := identityRunContext(t, identityService{
+		id: "issued-id", rows: `{"test_case_description":"A delayed order.","desired_num_turns":4}`,
+	})
+	group := runnableSimulation()
+	group.Dataset = "golden"
+	source, version, err := ec.buildRunDataSource(t.Context(), group, writeCatalog(t, "", "1"), 0)
+	require.ErrorContains(t, err, "outside simulation_configuration")
+	assert.Nil(t, source)
+	assert.Empty(t, version)
+	for _, req := range recordedIdentityRequests(requests) {
+		assert.False(t, strings.HasSuffix(req.path, "/runs"), "invalid rows must not create a billed run")
+	}
 }
 
 // The README prints seed rows for a reader to copy. Rows that the CLI would

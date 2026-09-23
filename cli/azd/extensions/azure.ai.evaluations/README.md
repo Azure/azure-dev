@@ -108,6 +108,8 @@ does not download content when preserving the file, and does not record a new
 deployed fingerprint for those unverified local bytes. Job inputs and recorded
 generation state keep precedence over the registered tag. A metadata lookup
 failure is reported as a collection error; an untagged version stays unspecified.
+Echoed generation inputs remain internal to level recovery and are omitted from
+job JSON output, including source prompts and instructions.
 
 ### Simulating multi-turn conversations
 
@@ -150,14 +152,23 @@ The dataset holds **seeds**, not exchanges. One row describes one conversation
 to have:
 
 ```jsonl
-{"test_case_description": "A customer asks why a delivered order never arrived.", "desired_num_turns": 4}
+{"test_case_description": "A customer asks why a delivered order never arrived.", "simulation_configuration": {"desired_num_turns": 4}}
 {"test_case_description": "A customer disputes a charge and wants it reversed."}
 ```
 
 Only `test_case_description` is required; it is the scenario the simulator opens
-with. `desired_num_turns` is optional and per row. It is a request, not an
-override: asking for more turns than `max_turns` allows is refused before the
-run starts rather than quietly truncated.
+with. Per-row turn settings belong inside `simulation_configuration`, matching
+the [published Foundry contract](https://github.com/Azure/azure-rest-api-specs/blob/main/specification/ai-foundry/data-plane/Foundry/src/openai/evaluations/user_conversation_simulation.tsp).
+The optional `desired_num_turns` must not exceed the effective `max_num_turns`:
+the per-row maximum overrides `simulation.max_turns`, and the service default is
+20 when neither is set. A flat top-level `desired_num_turns` is rejected because
+the service would ignore it; move it into `simulation_configuration` and publish
+a new dataset version.
+
+Runs send `data_mapping` for `test_case_description` and
+`simulation_configuration` as column names, not `{{item...}}` templates. Registered
+seed content stays bound by version ID rather than being rewritten inline.
+The eval's graded `messages` column is an array of message objects, not a string.
 
 Seed rows carry no `query` or `response`, because nobody has asked anything yet.
 That is why the evaluators bind `messages` — the transcript the run produces —

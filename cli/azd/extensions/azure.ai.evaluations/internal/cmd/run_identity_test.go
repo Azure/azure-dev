@@ -184,6 +184,14 @@ func TestRegisteredRunIdentityAndVersion(t *testing.T) {
 				source, ok := posted["data_source"].(map[string]any)
 				require.True(t, ok)
 				assert.Equal(t, map[string]any{"type": "file_id", "id": issuedID}, source["source"])
+				if target == "simulation" {
+					assert.Equal(t, map[string]any{
+						"test_case_description":    "test_case_description",
+						"simulation_configuration": "simulation_configuration",
+					}, source["data_mapping"])
+				} else {
+					assert.NotContains(t, source, "data_mapping")
+				}
 				assert.Equal(t, 1, versionReads)
 				wantLists := 0
 				if tc.pin == "" && tc.recorded == "" {

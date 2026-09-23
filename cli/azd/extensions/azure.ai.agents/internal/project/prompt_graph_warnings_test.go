@@ -4,12 +4,15 @@
 package project
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/azure"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 )
 
@@ -167,6 +170,68 @@ func TestAgentNode_RejectsMalformedTools(t *testing.T) {
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "missing a 'type' key")
+}
+
+func TestAgentNodeToolValidationSuggestions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		harness    *agent_yaml.PromptHarness
+		tools      []any
+		message    string
+		suggestion string
+	}{
+		{
+			name:    "copilot toolset without harness",
+			tools:   []any{map[string]any{"type": "github_copilot_toolset_preview"}},
+			message: `tools[0] uses "github_copilot_toolset_preview", which requires harness.type "github_copilot_preview"`,
+			suggestion: "set harness.type to github_copilot_preview, or remove the " +
+				"github_copilot_toolset_preview toolset to keep a plain prompt agent",
+		},
+		{
+			name:    "duplicate built-in after another tool",
+			harness: agent_yaml.NewPromptHarness("github_copilot_preview"),
+			tools: []any{
+				map[string]any{"type": "file_search"},
+				map[string]any{
+					"type": "github_copilot_toolset_preview",
+					"configs": []any{
+						map[string]any{"name": "web", "enabled": true},
+						map[string]any{"name": "web", "enabled": false},
+					},
+				},
+			},
+			message: `tools[1]: configs[1].name "web" is duplicated`,
+			suggestion: `remove or merge duplicate configs entries for "web" in the ` +
+				"github_copilot_toolset_preview toolset so each name appears once",
+		},
+		{
+			name:    "malformed entry retains shape guidance",
+			tools:   []any{map[string]any{"server_label": "toolbox"}},
+			message: "tools[0]: tool entry is missing a 'type' key",
+			suggestion: "each entry under 'tools:' must be a mapping with a string 'type', " +
+				"for example '- type: file_search'",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			managed := &agent_yaml.PromptAgent{
+				Model: "gpt-4.1-mini", Instructions: "Be helpful.", Harness: tt.harness, Tools: tt.tools,
+			}
+			managed.Name = "agent-1"
+			g := &promptGraph{managed: managed}
+			g.nodes = append(g.nodes, g.agentNode())
+			err := g.resolve(t.Context(), nil)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected validation error, got %v", err)
+			require.Equal(t, exterrors.CodeInvalidAgentManifest, localErr.Code)
+			require.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+			require.Equal(t, tt.message, localErr.Message)
+			require.Equal(t, tt.suggestion, localErr.Suggestion)
+		})
+	}
 }
 
 func TestAgentNodeRejectsHarnessWithoutType(t *testing.T) {

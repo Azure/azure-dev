@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -224,11 +225,15 @@ func (g *promptGraph) agentNode() promptNode {
 			// agent that is missing a capability its manifest claims. Catch the
 			// unambiguous cases before anything is provisioned.
 			if err := g.managed.ValidateTools(); err != nil {
+				suggestion := "each entry under 'tools:' must be a mapping with a string 'type', " +
+					"for example '- type: file_search'"
+				if toolErr, ok := errors.AsType[*agent_yaml.ToolValidationError](err); ok {
+					suggestion = toolErr.Suggestion
+				}
 				return exterrors.Validation(
 					exterrors.CodeInvalidAgentManifest,
 					err.Error(),
-					"each entry under 'tools:' must be a mapping with a string 'type', "+
-						"for example '- type: file_search'",
+					suggestion,
 				)
 			}
 			// A bare RAI policy name reaches the service as "invalid or does not

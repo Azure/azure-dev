@@ -15,6 +15,16 @@ import (
 
 const githubCopilotToolsetPreview = "github_copilot_toolset_preview"
 
+// ToolValidationError carries remediation for a specific tool configuration error.
+type ToolValidationError struct {
+	Message    string
+	Suggestion string
+}
+
+func (e *ToolValidationError) Error() string {
+	return e.Message
+}
+
 var githubCopilotBuiltInTools = map[string]struct{}{
 	"filesystem_read":  {},
 	"filesystem_write": {},
@@ -106,9 +116,12 @@ func (p *PromptAgent) ValidateTools() error {
 		}
 		if toolType == githubCopilotToolsetPreview {
 			if p.HarnessType() != agent_api.ManagedAgentHarnessGitHubCopilot {
-				return fmt.Errorf(
-					"tools[%d] uses %q, which requires harness.type %q",
-					i, toolType, agent_api.ManagedAgentHarnessGitHubCopilot)
+				return &ToolValidationError{
+					Message: fmt.Sprintf("tools[%d] uses %q, which requires harness.type %q",
+						i, toolType, agent_api.ManagedAgentHarnessGitHubCopilot),
+					Suggestion: "set harness.type to " + agent_api.ManagedAgentHarnessGitHubCopilot +
+						", or remove the " + githubCopilotToolsetPreview + " toolset to keep a plain prompt agent",
+				}
 			}
 			if err := validateGitHubCopilotToolset(tool); err != nil {
 				return fmt.Errorf("tools[%d]: %w", i, err)
@@ -165,7 +178,12 @@ func validateGitHubCopilotToolset(tool map[string]any) error {
 				i, name, strings.Join(slices.Sorted(maps.Keys(githubCopilotBuiltInTools)), ", "))
 		}
 		if _, duplicate := seen[name]; duplicate {
-			return fmt.Errorf("configs[%d].name %q is duplicated", i, name)
+			return &ToolValidationError{
+				Message: fmt.Sprintf("configs[%d].name %q is duplicated", i, name),
+				Suggestion: fmt.Sprintf(
+					"remove or merge duplicate configs entries for %q in the %s toolset so each name appears once",
+					name, githubCopilotToolsetPreview),
+			}
 		}
 		seen[name] = struct{}{}
 		if enabled, ok := config["enabled"]; ok {

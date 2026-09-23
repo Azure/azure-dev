@@ -1578,47 +1578,49 @@ if err := host.Run(ctx); err != nil {
 
 ```
 
-## Deployment Preview SDK Contract
+## Deployment Preview
 
-The SDK provides an experimental, **v1beta-only** service-target preview contract. These APIs are
-prerequisites for deployment preview; CLI command integration and first-party
-provider implementations are separate work. Registering this capability alone
-does not enable `azd deploy --preview`.
+`azd deploy --preview` asks each selected service's target to describe the
+changes a deployment would make. Nothing is packaged, published, or deployed,
+service targets are not initialized, and deploy hooks do not run. Services whose
+host does not support preview are reported and skipped. The flag cannot be
+combined with `--from-package` or `--timeout`.
 
-Register with `ExtensionHost.WithBetaServiceTargetPreview` and implement
-`preview.ServiceTargetPreviewProvider` alongside `azdext.ServiceTargetProvider`.
-Import the experimental interface from `pkg/azdext/preview` and its messages from
-`pkg/azdext/contracts/v1beta`:
+Extension service targets opt in through the experimental, **v1beta-only**
+contract. Register the host with `ExtensionHost.WithBetaServiceTargetPreview`
+instead of `WithServiceTarget`, and implement `preview.ServiceTargetPreviewProvider`
+from `pkg/azdext/preview` alongside `azdext.ServiceTargetProvider`:
 
 ```go
-Preview(ctx context.Context, serviceConfig *v1beta.ServiceConfig) (*v1beta.ServiceDeployPreviewResult, error)
+host.WithBetaServiceTargetPreview("my.host", func() azdext.ServiceTargetProvider {
+    return &MyProvider{}
+})
+
+func (p *MyProvider) Preview(
+    ctx context.Context,
+    serviceConfig *v1beta.ServiceConfig,
+) (*v1beta.ServiceDeployPreviewResult, error)
 ```
 
-`v1beta.ServiceDeployPreviewResult` carries a human-readable `Message` and a `Data`
-protobuf struct for structured results. The protocol has dedicated preview
-request and response messages; a preview request is never routed to `Deploy`.
+`WithBetaServiceTargetPreview` registers the host on the stable service target
+stream exactly like `WithServiceTarget`, so normal deployments are unchanged.
+It also registers the host on a dedicated v1beta stream that carries only
+`RegisterServiceTargetRequest` (with `supports_preview`) and the preview
+request and response messages. Registration does not invoke the factory.
+The preview registration is sent after the stable registration succeeds and is
+best effort: azd versions without deployment preview reject it, and the service
+target keeps working with preview reported as unsupported.
 
-The beta registration advertises `supports_preview` without invoking the provider
-factory. `BetaServiceTargetManager` uses `AzdClient.BetaServiceTarget()` and handles
-normal deployment requests on the same beta stream by reusing stable lifecycle
-handlers. Register each host once, using either the stable or beta channel.
-Existing `WithServiceTarget` registrations, the three-argument
-`ServiceTargetManager.Register` method, stable protobuf contracts, and stable
-facade aliases remain unchanged. No preview types are aliased into the stable facade.
+For each preview request the SDK creates a fresh provider from the factory and
+calls only `Preview`; `Initialize` and the deployment instance cache are not used.
+`Preview` must not build, package, publish, deploy, or persist deployment state.
+`ServiceDeployPreviewResult` carries a human-readable `Message`, shown in text
+output, and a `Data` struct, returned under `services.<name>.data` with
+`--output json`. Redact secrets from both. Provider errors, missing `Preview`
+implementations, and nil results fail the command.
 
-These APIs may change during incubation. The CLI follow-up must supply a focused
-`BetaServiceTargetServiceStreamOverride` through `WithBetaServiceOverride` to
-consume typed beta capability and preview messages; adapting them to stable messages
-cannot implement preview. Until that follow-up, the host explicitly rejects beta
-preview registrations with `Unimplemented` rather than silently dropping the capability.
-CLI routing and command output formatting remain separate work.
-
-For each preview request, the SDK invokes the factory to create a fresh provider
-without reading or updating cached deployment instances or calling `Initialize`.
-The factory must return a fresh instance, and `Preview` must be self-contained:
-do not build, package, publish, deploy dependencies, or persist deployment state.
-Provider failures, missing preview implementations, and nil results return errors
-rather than successful empty previews.
+These APIs may change during incubation. The stable `v1` contracts and the
+root `azdext` facade do not include preview types.
 
 ## Developer Artifacts
 

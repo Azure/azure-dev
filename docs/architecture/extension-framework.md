@@ -84,25 +84,18 @@ Extensions use two structured error types:
 
 Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC auth → fallback
 
-## Deployment Preview SDK Contract
+## Deployment Preview
 
-The SDK defines experimental preview support through `WithBetaServiceTargetPreview`
-and `preview.ServiceTargetPreviewProvider` from the experimental SDK package.
-Only `v1beta` contains preview messages and the registration capability.
-Registration advertises the capability without constructing providers. The stable
-`v1` contracts, facade aliases, and registration signatures remain unchanged.
+`azd deploy --preview` calls an optional `Preview` on each selected service target
+instead of packaging, publishing, and deploying. Service targets are not initialized
+and deploy hooks do not run; hosts without preview support are reported and skipped.
 
-Dedicated protocol messages carry a service configuration and return a
-human-readable message plus structured data. The SDK handles each preview on a
-fresh provider without invoking deployment initialization or using its instance
-cache; preview is not dispatched as a deployment.
-
-This is the SDK prerequisite only. CLI command integration and first-party preview
-implementations are separate work. The host uses a focused beta stream override to
-reject unsupported preview registration explicitly. The CLI follow-up must replace
-that guard with typed beta dispatch through `WithBetaServiceOverride`; forwarding
-preview messages to stable handlers would lose the capability.
-See the [SDK contract](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview-sdk-contract)
+Extensions opt in with `WithBetaServiceTargetPreview` and
+`preview.ServiceTargetPreviewProvider`. The contract is **v1beta-only**: the host
+stays on the stable service target stream for normal deployments and also registers
+on a dedicated v1beta stream that carries only preview registration and preview
+messages. Each preview runs on a fresh provider without `Initialize`.
+See [Deployment Preview](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview)
 for registration and provider requirements.
 
 ## First-Party Extensions

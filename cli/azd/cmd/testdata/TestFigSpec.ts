@@ -8218,6 +8218,10 @@ const completionSpec: Fig.Spec = {
 					],
 				},
 				{
+					name: ['--preview'],
+					description: 'Preview changes to services without deploying them.',
+				},
+				{
 					name: ['--timeout'],
 					description: 'Maximum time in seconds for azd to wait for each service deployment. This stops azd from waiting but does not cancel the Azure-side deployment. (default: 1200)',
 					args: [

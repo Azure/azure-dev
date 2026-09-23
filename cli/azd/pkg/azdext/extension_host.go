@@ -95,19 +95,19 @@ type ExtensionHost struct {
 	client *AzdClient
 
 	serviceTargets        []ServiceTargetRegistration
-	betaServiceTargets    []ServiceTargetRegistration
+	previewHosts          map[string]bool
 	frameworkServices     []FrameworkServiceRegistration
 	projectHandlers       []ProjectEventRegistration
 	serviceHandlers       []ServiceEventRegistration
 	provisioningProviders []ProvisioningProviderRegistration
 	validationChecks      []ValidationCheckRegistration
 
-	serviceTargetManager     serviceTargetRegistrar
-	betaServiceTargetManager serviceTargetRegistrar
-	frameworkServiceManager  frameworkServiceRegistrar
-	eventManager             extensionEventManager
-	provisioningManager      provisioningRegistrar
-	validationManager        *ValidationManager
+	serviceTargetManager        serviceTargetRegistrar
+	serviceTargetPreviewManager serviceTargetRegistrar
+	frameworkServiceManager     frameworkServiceRegistrar
+	eventManager                extensionEventManager
+	provisioningManager         provisioningRegistrar
+	validationManager           *ValidationManager
 }
 
 // NewExtensionHost creates a new ExtensionHost for the supplied azd client.
@@ -146,6 +146,9 @@ func (er *ExtensionHost) initManagers(extensionId string, brokerLogger *log.Logg
 	if er.serviceTargetManager == nil {
 		er.serviceTargetManager = NewServiceTargetManager(extensionId, er.client, brokerLogger)
 	}
+	if er.serviceTargetPreviewManager == nil {
+		er.serviceTargetPreviewManager = newServiceTargetPreviewManager(extensionId, er.client, brokerLogger)
+	}
 	if er.frameworkServiceManager == nil {
 		er.frameworkServiceManager = NewFrameworkServiceManager(extensionId, er.client, brokerLogger)
 	}
@@ -166,18 +169,18 @@ func (er *ExtensionHost) WithServiceTarget(host string, factory ServiceTargetFac
 	return er
 }
 
-// WithBetaServiceTargetPreview opts a target into experimental v1beta deployment preview.
-// The factory must create fresh providers implementing preview.ServiceTargetPreviewProvider
-// from pkg/azdext/preview, in addition to ServiceTargetProvider. It is not called during registration.
-// Register a host on only one channel: this registration handles its normal deployment requests too.
+// WithBetaServiceTargetPreview registers a service target like [ExtensionHost.WithServiceTarget] and also
+// opts it into the experimental v1beta deployment preview used by `azd deploy --preview`.
+// Providers created by the factory must implement preview.ServiceTargetPreviewProvider from pkg/azdext/preview.
+// Preview runs on a fresh provider without Initialize; the factory is not called during registration.
+// Preview registration is best effort: when azd does not support it, the service target still works normally.
 func (er *ExtensionHost) WithBetaServiceTargetPreview(host string, factory ServiceTargetFactory) *ExtensionHost {
-	er.betaServiceTargets = append(er.betaServiceTargets, ServiceTargetRegistration{Host: host, Factory: factory})
+	er.serviceTargets = append(er.serviceTargets, ServiceTargetRegistration{Host: host, Factory: factory})
+	if er.previewHosts == nil {
+		er.previewHosts = map[string]bool{}
+	}
+	er.previewHosts[host] = true
 	return er
-}
-
-// BetaServiceTargets returns a copy of the experimental preview-enabled target registrations.
-func (er *ExtensionHost) BetaServiceTargets() []ServiceTargetRegistration {
-	return slices.Clone(er.betaServiceTargets)
 }
 
 // WithFrameworkService registers a framework service provider to be wired when Run is invoked.
@@ -230,16 +233,6 @@ func (er *ExtensionHost) WithValidationCheck(
 
 // Run wires the configured service targets and event handlers, signals readiness, and blocks until shutdown.
 func (er *ExtensionHost) Run(ctx context.Context) error {
-	for _, beta := range er.betaServiceTargets {
-		if beta.Factory == nil {
-			return fmt.Errorf("beta service target provider for host '%s' is nil", beta.Host)
-		}
-		if slices.ContainsFunc(er.serviceTargets, func(stable ServiceTargetRegistration) bool {
-			return stable.Host == beta.Host
-		}) {
-			return fmt.Errorf("service target '%s' cannot be registered on both stable and beta channels", beta.Host)
-		}
-	}
 	extensionId := getExtensionId(ctx)
 
 	// Wait for debugger if AZD_EXT_DEBUG is set
@@ -261,13 +254,10 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		brokerLogger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 	er.initManagers(extensionId, brokerLogger)
-	if len(er.betaServiceTargets) > 0 && er.betaServiceTargetManager == nil {
-		er.betaServiceTargetManager = NewBetaServiceTargetManager(extensionId, er.client, brokerLogger)
-	}
 
 	// Determine which managers will be active
 	hasServiceTargets := len(er.serviceTargets) > 0
-	hasBetaServiceTargets := len(er.betaServiceTargets) > 0
+	hasPreviewServiceTargets := len(er.previewHosts) > 0
 	hasFrameworkServices := len(er.frameworkServices) > 0
 	hasEventHandlers := len(er.projectHandlers) > 0 || len(er.serviceHandlers) > 0
 	hasProvisioningProviders := len(er.provisioningProviders) > 0
@@ -275,11 +265,11 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 
 	// Set up defer for cleanup
 	defer func() {
-		if hasBetaServiceTargets {
-			_ = er.betaServiceTargetManager.Close()
-		}
 		if hasServiceTargets {
 			_ = er.serviceTargetManager.Close()
+		}
+		if hasPreviewServiceTargets {
+			_ = er.serviceTargetPreviewManager.Close()
 		}
 		if hasFrameworkServices {
 			_ = er.frameworkServiceManager.Close()
@@ -298,11 +288,11 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	// Collect active receivers and start them BEFORE registration
 	// This ensures broker.Run() is active to receive registration responses
 	receivers := []serviceReceiver{}
-	if hasBetaServiceTargets {
-		receivers = append(receivers, er.betaServiceTargetManager)
-	}
 	if hasServiceTargets {
 		receivers = append(receivers, er.serviceTargetManager)
+	}
+	if hasPreviewServiceTargets {
+		receivers = append(receivers, er.serviceTargetPreviewManager)
 	}
 	if hasFrameworkServices {
 		receivers = append(receivers, er.frameworkServiceManager)
@@ -349,18 +339,10 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 
 	// Register all registrations in parallel - service targets, framework services, event handlers, and provisioning
 	var registrationsWaitGroup sync.WaitGroup
-	totalCount := len(er.serviceTargets) + len(er.betaServiceTargets) + len(er.frameworkServices) +
+	totalCount := len(er.serviceTargets) + len(er.frameworkServices) +
 		len(er.projectHandlers) + len(er.serviceHandlers) +
 		len(er.provisioningProviders) + len(er.validationChecks)
 	registrationErrChan := make(chan error, totalCount)
-
-	for _, reg := range er.betaServiceTargets {
-		registrationsWaitGroup.Go(func() {
-			if err := er.betaServiceTargetManager.Register(ctx, reg.Factory, reg.Host); err != nil {
-				registrationErrChan <- fmt.Errorf("failed to register beta service target '%s': %w", reg.Host, err)
-			}
-		})
-	}
 
 	// Register service targets in parallel
 	for _, reg := range er.serviceTargets {
@@ -372,6 +354,16 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		registrationsWaitGroup.Go(func() {
 			if err := er.serviceTargetManager.Register(ctx, r.Factory, r.Host); err != nil {
 				registrationErrChan <- fmt.Errorf("failed to register service target '%s': %w", r.Host, err)
+				return
+			}
+
+			// Preview is optional and registered only after the stable host is owned by this extension.
+			// azd versions without the preview override reject it as a duplicate registration,
+			// and normal deployment must keep working there.
+			if er.previewHosts[r.Host] {
+				if err := er.serviceTargetPreviewManager.Register(ctx, r.Factory, r.Host); err != nil {
+					log.Printf("deployment preview is unavailable for service target '%s': %v", r.Host, err)
+				}
 			}
 		})
 	}

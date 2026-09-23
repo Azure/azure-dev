@@ -101,6 +101,15 @@ func refuseUnusableSeedRow(group *project.Eval, item map[string]any, index int) 
 			"A dataset holds either conversations to score or scenarios to simulate, not both. "+
 				"Remove the simulation block to score these conversations as they stand.")
 	}
+	for _, field := range []string{"query", "response"} {
+		if _, present := item[field]; present {
+			return simulationError(group,
+				fmt.Sprintf("row %d carries %q, which is a turn-level field rather than a scenario to simulate",
+					index+1, field),
+				"Simulation seeds cannot mix with query/response rows. Remove the query and response fields "+
+					"to simulate scenarios, or use a separate non-simulation eval for turn-level rows.")
+		}
+	}
 
 	description, present := item[seedDescriptionField]
 	if !present {

@@ -386,8 +386,21 @@ type Dataset struct {
 // DataSourceConfig describes the data source for an OpenAI eval.
 type DataSourceConfig struct {
 	Type                string         `json:"type"`
+	Scenario            string         `json:"scenario,omitempty"`
 	ItemSchema          map[string]any `json:"item_schema"`
 	IncludeSampleSchema bool           `json:"include_sample_schema"`
+}
+
+// MarshalJSON keeps custom-schema fields out of the service-defined scenario.
+func (c DataSourceConfig) MarshalJSON() ([]byte, error) {
+	if c.Type == "azure_ai_source" {
+		return json.Marshal(struct {
+			Type     string `json:"type"`
+			Scenario string `json:"scenario"`
+		}{c.Type, c.Scenario})
+	}
+	type plain DataSourceConfig
+	return json.Marshal(plain(c))
 }
 
 // DataSourceSchema defines the item and sample schemas for an eval data source.
@@ -672,18 +685,13 @@ func NewModelTargetDataSource(model string) *EvalRunDataSource {
 
 // NewResponsesDataSource evaluates responses the project already stored.
 //
-// The ids travel as ordinary JSONL rows and a data_mapping points the service
-// at the field holding each one, which is how it retrieves the chat history
-// behind the response.
-//
-// The id sits at the row root. `{{item.response_id}}` already means "the
-// response_id of this item", so a row that wrapped it in another `item` was
-// asking the service for `item.item.response_id` and resolved to nothing --
-// the same shape every other file_content source here uses.
+// Response retrieval uses EvalJsonlFileContentSourceContent: each source entry
+// wraps its fields in the required item object. The mapping remains nested in
+// item_generation_params and addresses that item's response_id.
 func NewResponsesDataSource(responseIDs []string, maxTurns int) *EvalRunDataSource {
 	rows := make([]map[string]any, 0, len(responseIDs))
 	for _, id := range responseIDs {
-		rows = append(rows, map[string]any{"response_id": id})
+		rows = append(rows, map[string]any{"item": map[string]any{"response_id": id}})
 	}
 
 	return &EvalRunDataSource{

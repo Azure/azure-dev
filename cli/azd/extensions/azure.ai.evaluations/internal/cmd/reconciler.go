@@ -813,11 +813,15 @@ func (r *evalReconciler) EnsureEval(
 		// reported success and the first run against it answered 404. One point
 		// read settles it, and it is the same confirmation an external dataset
 		// or evaluator reference gets.
-		if _, err := r.ec.evalClient.GetOpenAIEval(ctx, group.ID); err != nil {
+		remote, err := r.ec.evalClient.GetOpenAIEval(ctx, group.ID)
+		if err != nil {
 			if eval_api.IsNotFound(err) {
 				return "", false, messages.EvalNotFound(group.ID)
 			}
 			return "", false, messages.ReadingEval(group.ID, err)
+		}
+		if !responseSchemaMatches(&group, remote) {
+			return "", false, incompatibleResponsesSchema(group.ID, isResponsesEval(&group))
 		}
 		r.claim(group.ID, group.Name)
 		return group.ID, false, nil
@@ -897,7 +901,7 @@ func (r *evalReconciler) EnsureEval(
 			// this lookup exists to keep.
 			return "", false, err
 		}
-		if err == nil {
+		if err == nil && responseSchemaMatches(&group, remote) {
 			// Reusing the eval is not the same as leaving it alone: name and
 			// description are excluded from the digest because they must not
 			// split a history, which makes this the only place an edit to
@@ -955,6 +959,9 @@ func (r *evalReconciler) adoptRenamed(
 			return "", nil
 		}
 		return "", err
+	}
+	if !responseSchemaMatches(&group, remote) {
+		return "", nil
 	}
 	r.pushMutable(ctx, id, group, remote)
 	return id, nil

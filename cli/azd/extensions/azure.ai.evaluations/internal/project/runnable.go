@@ -3,7 +3,11 @@
 
 package project
 
-import "azureaieval/internal/messages"
+import (
+	"strings"
+
+	"azureaieval/internal/messages"
+)
 
 // ValidateRunnable refuses a declaration no run could carry out.
 //
@@ -71,6 +75,11 @@ func ValidateRunnable(eval *Eval) error {
 		case SourceTypeResponses:
 			if len(eval.Source.ResponseIDs) == 0 {
 				return messages.ResponsesSourceNeedsResponseIDs()
+			}
+			for _, id := range eval.Source.ResponseIDs {
+				if strings.TrimSpace(id) == "" {
+					return messages.ResponsesSourceNeedsResponseIDs()
+				}
 			}
 		case "":
 			return messages.SourceTypeMissing()

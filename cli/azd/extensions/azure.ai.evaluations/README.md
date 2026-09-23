@@ -276,6 +276,21 @@ Eval groups are immutable, so a change to a group's evaluators, target or
   an azd environment value: it does not appear in `azd env get-values`, which
   shows only what you put there.
 
+Stored-response evaluations (`source.type: responses`) use Foundry's
+`azure_ai_source` schema with `scenario: responses`. A deployment replaces an
+older custom-schema response eval with a compatible eval once, even when the
+declaration is unchanged. The old eval and its runs are retained; subsequent
+unchanged deployments reuse the new ID. Other evaluation modes keep their
+custom schemas and are not migrated. Switching a declaration from stored
+responses to another source also creates an eval with the required custom schema.
+
+An explicit `id:` or a rerun by eval ID cannot change an immutable eval's
+schema. An incompatible response eval fails before starting a run. Remove the
+explicit `id:`, deploy the response-source declaration, then run it by name.
+Legacy rerun sources with bare response-ID rows are also rejected; running the
+declaration by name builds the required `item` envelopes without invoking an
+agent or changing the selected response IDs.
+
 ### Recovering partial generation
 
 Dataset and evaluator generation are independent. If one fails, a successful

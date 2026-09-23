@@ -131,8 +131,12 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 			return err
 		}
 		if group.ID != "" {
-			if _, err := r.ec.evalClient.GetOpenAIEval(ctx, group.ID); err != nil {
+			remote, err := r.ec.evalClient.GetOpenAIEval(ctx, group.ID)
+			if err != nil {
 				return messages.ReadingEval(group.ID, err)
+			}
+			if !responseSchemaMatches(&group, remote) {
+				return incompatibleResponsesSchema(group.ID, isResponsesEval(&group))
 			}
 		}
 		group.Evaluators = slices.Clone(group.Evaluators)

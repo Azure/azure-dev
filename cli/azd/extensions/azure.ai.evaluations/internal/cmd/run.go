@@ -239,6 +239,10 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 		return err
 	}
 
+	if err := ec.validateResponsesRun(ctx, evalID, dataSource); err != nil {
+		return err
+	}
+
 	// Local, so a default name is derived per invocation rather than
 	// written back over the flag the command was built with.
 	runName := a.flags.name

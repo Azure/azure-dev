@@ -450,6 +450,11 @@ func buildEvalRequest(
 		IncludeSampleSchema: hasTarget && !simulated,
 		ItemSchema:          itemSchema(itemFields),
 	}
+	if isResponsesEval(group) {
+		req.DataSourceConfig = &eval_api.DataSourceConfig{
+			Type: "azure_ai_source", Scenario: "responses",
+		}
+	}
 
 	return req, nil
 }

@@ -59,7 +59,7 @@ func NewServer(
 	promptService azdext.PromptServiceServer,
 	userConfigService azdext.UserConfigServiceServer,
 	deploymentService azdext.DeploymentServiceServer,
-	eventService azdext.EventServiceServer,
+	eventServiceImpl azdext.EventServiceServer,
 	composeService v1beta.ComposeServiceServer,
 	workflowService azdext.WorkflowServiceServer,
 	extensionService azdext.ExtensionServiceServer,
@@ -80,7 +80,7 @@ func NewServer(
 		promptService:        promptService,
 		userConfigService:    userConfigService,
 		deploymentService:    deploymentService,
-		eventService:         eventService,
+		eventService:         eventServiceImpl,
 		followUpService:      followUpService,
 		composeService:       composeService,
 		workflowService:      workflowService,
@@ -98,6 +98,11 @@ func NewServer(
 	}
 	if principalService, ok := accountService.(BetaAccountServiceGetCurrentPrincipalOverride); ok {
 		server.WithOptions(WithBetaServiceOverride(BetaAccountService, principalService))
+	}
+	if events, ok := eventServiceImpl.(*eventService); ok {
+		server.WithOptions(WithBetaServiceOverride(
+			BetaEventService, &betaEventService{service: events},
+		))
 	}
 	return server
 }

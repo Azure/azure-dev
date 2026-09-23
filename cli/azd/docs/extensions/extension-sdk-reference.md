@@ -209,44 +209,37 @@ rootCmd.AddCommand(azdext.NewListenCommand(func(host *azdext.ExtensionHost) {
 
 ### Project lifecycle follow-up
 
-```go
-type PreviewProjectEventArgs struct {
-    Project  *v1beta.ProjectConfig
-    FollowUp *FollowUpContribution
-}
-
-type FollowUpContribution struct {
-    // Internal fields are omitted.
-}
-
-// Set replaces the text for this handler invocation.
-func (f *FollowUpContribution) Set(text string) error
-
-// Clear removes the text for this handler invocation.
-func (f *FollowUpContribution) Clear() error
-```
-
-Use `FollowUp.Set` from a successful project `post*` handler when the parent
-azd command needs a text-only next step:
+The preview API exposes generated clients rather than a project handler
+wrapper. Use `client.EventsBeta().EventStream(ctx)` to open the beta
+bidirectional stream, send a `SubscribeProjectEvent` message for a project
+`post*` event, and wait for a matching `SubscribeProjectEventResponse`
+before signaling `Extension().Ready`. A subscription error must prevent the
+extension from becoming ready. Process each `InvokeProjectHandler` with its
+`invocation_id`; while the handler is active, call:
 
 ```go
-host.WithPreviewProjectEventHandler("postdeploy",
-    func(ctx context.Context, args *azdext.PreviewProjectEventArgs) error {
-        return args.FollowUp.Set("Next:\n  azd ai agent show my-agent")
-    })
+_, err := client.FollowUp().SetFollowUp(ctx, &v1beta.SetFollowUpRequest{
+    InvocationId: invocation.GetInvocationId(),
+    Text:         "Next: azd show",
+})
 ```
 
-The contribution uses the beta `FollowUpService` and the invocation ID
-provided by azd. The host stages text and commits it only after the preview
-handler completes successfully; failed, cancelled, disconnected, or
-incomplete handlers are discarded. `Clear` and `Set("")` retract the current
-contribution. Calls outside a project `post*` handler return an error.
+Use an authenticated context for both RPCs. Handle the returned error before
+replying with `ProjectHandlerStatus` on the stream, using the invocation
+message's `request_id` for correlation. Handle stream errors and cancellation;
+send status `completed` only when processing succeeds.
+
+The host stages the latest contribution for that invocation and commits it
+only after a successful handler status. Failed, cancelled, disconnected, or
+incomplete invocations are discarded. Call `SetFollowUp` with empty `Text`
+to clear a contribution. Calls outside a project `post*` invocation return
+an error. Stable `Events()` handlers and default language scaffolds do not
+expose this preview capability.
 
 This preview API requires an azd host that provides beta `FollowUpService` and
 invocation IDs. For a published extension that uses it, set
 `requiredAzdVersion` to the first released azd version containing
-`FollowUpService`. For the current
-release line, use:
+`FollowUpService`. For the current release line, use:
 
 ```yaml
 requiredAzdVersion: ">=1.35.0"
@@ -254,10 +247,11 @@ requiredAzdVersion: ">=1.35.0"
 
 This filters extension versions during install and update. It does not prevent
 already-installed extensions or extensions from non-registry sources from
-running on an older host. Preview event registration requires an acknowledgement
-from the host before the extension becomes ready. A registration timeout can
-also indicate a slow host or connection; it does not by itself prove that the
-host lacks support. See [Extension Resolution and
+running on an older host. The beta subscription response confirms that the
+host installed the handler; extensions using the raw beta client must wait
+for that response before signaling `Ready`. A missing acknowledgement can
+also indicate a slow host or connection; it does not by itself prove that
+the host lacks support. See [Extension Resolution and
 Versioning](./extension-resolution-and-versioning.md#azd-version-compatibility)
 for the compatibility behavior.
 
@@ -268,12 +262,6 @@ workflow, a later command step replaces an earlier result from that extension.
 Within one command, lifecycle events use the stable order restore, build,
 package, provision, publish, deploy. Concurrent layers of the same event
 resolve by stable layer identity, not completion time.
-
-Preview event registrations are acknowledged by the host only after the
-corresponding lifecycle handlers are installed. `ExtensionHost.Run` does not
-call `Ready` until all registrations have been acknowledged; registration
-errors are returned instead of allowing the extension to start partially
-initialized.
 
 ### NewMetadataCommand
 
@@ -581,6 +569,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Prompt()` | `PromptServiceClient` |
 | `Deployment()` | `DeploymentServiceClient` |
 | `Events()` | `EventServiceClient` |
+| `EventsBeta()` | `v1beta.EventServiceClient` (preview) |
 | `FollowUp()` | `v1beta.FollowUpServiceClient` (preview) |
 | `Compose()` | `v1beta.ComposeServiceClient` (preview) |
 | `Workflow()` | `WorkflowServiceClient` |
@@ -596,13 +585,12 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 
 Always call `defer client.Close()` after creation.
 
-`AccountBeta()`, `Compose()`, `Copilot()`, and `Telemetry()` are preview accessors. Import `github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for their request, response, and enum types. Beta-only methods and types are not exposed through the stable `azdext` contract facade. `Account()` still provides the existing stable account methods.
-
-`FollowUp()` is also a preview accessor and returns
-`v1beta.FollowUpServiceClient`. Import
-`github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for its
-request and response types. It remains excluded from the stable `azdext`
-contract facade.
+`AccountBeta()`, `Compose()`, `Copilot()`, `EventsBeta()`, `FollowUp()`, and `Telemetry()` are
+preview accessors. Import
+`github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for their
+request, response, and enum types. Beta-only methods and types are not
+exposed through the stable `azdext` contract facade. `Account()` still
+provides the existing stable account methods.
 
 #### AccountService
 

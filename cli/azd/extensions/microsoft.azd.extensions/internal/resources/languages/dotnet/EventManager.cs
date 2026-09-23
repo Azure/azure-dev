@@ -130,20 +130,16 @@ namespace Microsoft.Azd
         public void RemoveProjectEventHandler(string eventName) => _projectHandlers.Remove(eventName);
         public void RemoveServiceEventHandler(string eventName) => _serviceHandlers.Remove(eventName);
 
-        private async Task SendProjectHandlerStatusAsync(
-            string eventName,
-            string status,
-            string message)
+        private async Task SendProjectHandlerStatusAsync(string eventName, string status, string message)
         {
-            var statusMessage = new ProjectHandlerStatus
-            {
-                EventName = eventName,
-                Status = status,
-                Message = message
-            };
             await _stream!.RequestStream.WriteAsync(new EventMessage
             {
-                ProjectHandlerStatus = statusMessage
+                ProjectHandlerStatus = new ProjectHandlerStatus
+                {
+                    EventName = eventName,
+                    Status = status,
+                    Message = message
+                }
             });
         }
 
@@ -167,14 +163,13 @@ namespace Microsoft.Azd
             {
                 var status = "completed";
                 var message = "";
-                var eventArgs = new ProjectEventArgs
-                {
-                    Project = invokeMsg.Project
-                };
 
                 try
                 {
-                    await handler(eventArgs);
+                    await handler(new ProjectEventArgs
+                    {
+                        Project = invokeMsg.Project
+                    });
                 }
                 catch (Exception ex)
                 {
@@ -183,10 +178,7 @@ namespace Microsoft.Azd
                     Console.WriteLine($"[ProjectHandler] Error: {ex}");
                 }
 
-                await SendProjectHandlerStatusAsync(
-                    invokeMsg.EventName,
-                    status,
-                    message);
+                await SendProjectHandlerStatusAsync(invokeMsg.EventName, status, message);
             }
         }
 

@@ -1,13 +1,16 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package azdext
+package grpcserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorchain"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"google.golang.org/protobuf/proto"
@@ -19,11 +22,6 @@ var _ grpcbroker.MessageEnvelope[v1beta.EventMessage] = (*betaEventMessageEnvelo
 
 func newBetaEventMessageEnvelope() *betaEventMessageEnvelope {
 	return &betaEventMessageEnvelope{}
-}
-
-// NewBetaEventMessageEnvelope creates a beta event message envelope.
-func NewBetaEventMessageEnvelope() grpcbroker.MessageEnvelope[v1beta.EventMessage] {
-	return newBetaEventMessageEnvelope()
 }
 
 func (e *betaEventMessageEnvelope) GetRequestId(
@@ -77,12 +75,49 @@ func (*betaEventMessageEnvelope) GetError(msg *v1beta.EventMessage) error {
 
 	wire, marshalErr := proto.Marshal(msg.Error)
 	if marshalErr == nil {
-		stableError := new(ExtensionError)
+		stableError := new(azdext.ExtensionError)
 		if unmarshalErr := proto.Unmarshal(wire, stableError); unmarshalErr == nil {
-			return UnwrapError(stableError)
+			return azdext.UnwrapError(stableError)
 		}
 	}
 	return fmt.Errorf("%s", msg.Error.GetMessage())
+}
+
+func wrapBetaError(err error) *v1beta.ExtensionError {
+	if err == nil {
+		return nil
+	}
+
+	stableError := azdext.WrapError(err)
+	wire, marshalErr := proto.Marshal(stableError)
+	if marshalErr == nil {
+		betaError := new(v1beta.ExtensionError)
+		if unmarshalErr := proto.Unmarshal(wire, betaError); unmarshalErr == nil {
+			if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
+				if betaLocalErr := betaError.GetLocalError(); betaLocalErr != nil {
+					betaLocalErr.CauseTypes = errorchain.NormalizeCauseTypes(localErr.CauseTypes)
+				}
+			}
+			if stableError.GetOrigin() == azdext.ErrorOrigin_ERROR_ORIGIN_TOOL {
+				if toolErr, ok := errors.AsType[*azdext.ToolError](err); ok {
+					var exitCode *int64
+					if toolErr.ExitCode != nil {
+						exitCode = new(int64(*toolErr.ExitCode))
+					}
+					betaError.Source = &v1beta.ExtensionError_ToolError{
+						ToolError: &v1beta.ToolErrorDetail{
+							ToolName:    toolErr.ToolName,
+							FailureKind: string(toolErr.Kind),
+							ExitCode:    exitCode,
+						},
+					}
+				}
+			}
+			return betaError
+		}
+	}
+
+	return &v1beta.ExtensionError{Message: err.Error()}
 }
 
 func (*betaEventMessageEnvelope) SetError(

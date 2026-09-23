@@ -49,32 +49,16 @@ The gRPC broker (`pkg/grpcbroker`) manages bidirectional communication. Extensio
 
 ### Lifecycle follow-up contributions
 
-Beta project lifecycle handlers can use the handler-scoped `FollowUp`
-contribution on `PreviewProjectEventArgs` to provide command-level guidance:
+The beta event stream supplies an invocation ID to each subscribed project
+handler. The extension calls the beta `FollowUpService` with that ID over
+gRPC; both services use a host-owned invocation store. Only successful
+project `post*` invocations are committed to the command's follow-up
+collector. The UX middleware appends the resolved text to human-readable
+completion output without changing JSON output. Within a custom workflow,
+later command steps take precedence over earlier steps.
 
-```go
-host.WithPreviewProjectEventHandler("postdeploy",
-    func(ctx context.Context, args *azdext.PreviewProjectEventArgs) error {
-        return args.FollowUp.Set("Next:\n  azd ai agent show my-agent")
-    })
-```
-
-The contribution is sent through the beta `FollowUpService` over gRPC using
-the invocation ID supplied by azd. The beta event stream and native service
-share the host-owned invocation store; the SDK accesses it only through gRPC.
-Only project `post*` handlers may contribute.
-The host stages the latest text and commits it only after the handler
-completes successfully; failed, cancelled, disconnected, or otherwise
-incomplete invocations are discarded. Calling `Clear` or `Set("")` retracts
-the current contribution.
-
-The host appends committed text to the parent command's human-readable
-completion message. It combines contributions from multiple extensions
-deterministically, preserves existing core follow-up text, and leaves JSON
-output unchanged. Within one top-level command, a later lifecycle event from
-an extension replaces its earlier result. Concurrent layers of the same event
-resolve by stable layer identity, not completion time. Service handlers cannot
-contribute follow-up text.
+See the [SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#project-lifecycle-follow-up)
+for the API, host compatibility, and contribution ordering rules.
 
 ## Capabilities
 
@@ -102,6 +86,7 @@ Extensions can access these azd services via gRPC:
 - **Prompt** — Display prompts and collect user input
 - **AI Model** — Query AI model availability and quotas
 - **Event** — Subscribe to and emit events
+- **Follow-up (beta)** — Contribute command-level guidance from project lifecycle handlers; see the [SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#project-lifecycle-follow-up)
 - **Container** — Container registry operations
 - **Framework** — Framework service operations
 - **Service Target** — Deployment target operations

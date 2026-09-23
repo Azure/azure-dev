@@ -7,6 +7,7 @@ const {
   ProjectHandlerStatus,
   ServiceHandlerStatus,
 } = require("./generated/proto/event_pb");
+
 class EventManager {
   constructor(client) {
     this._client = client;
@@ -94,9 +95,7 @@ class EventManager {
       return;
     }
 
-    const args = {
-      project: invokeMsg.getProject()?.toObject(),
-    };
+    const args = { project: invokeMsg.getProject()?.toObject() };
 
     let status = "completed";
     let message = "";
@@ -112,11 +111,7 @@ class EventManager {
       });
     }
 
-    return this._sendProjectHandlerStatus(
-      eventName,
-      status,
-      message
-    );
+    return this._sendProjectHandlerStatus(eventName, status, message);
   }
 
   async _invokeServiceHandler(invokeMsg) {
@@ -164,6 +159,7 @@ class EventManager {
     statusMsg.setEventName(eventName);
     statusMsg.setStatus(status);
     statusMsg.setMessage(message);
+
     event.setProjectHandlerStatus(statusMsg);
     this._logEvent("SEND", event.toObject());
 

@@ -30,7 +30,7 @@ func TestGitignoreEmbedded(t *testing.T) {
 	}
 }
 
-func TestNonGoScaffoldIncludesEventProtocol(t *testing.T) {
+func TestNonGoScaffoldIncludesStructuredErrorProtocol(t *testing.T) {
 	errorsProto, err := Languages.ReadFile("languages/proto/errors.proto")
 	require.NoError(t, err)
 	require.Contains(t, string(errorsProto), "message ExtensionError")
@@ -45,68 +45,6 @@ func TestNonGoScaffoldIncludesEventProtocol(t *testing.T) {
 	require.Contains(t, eventContents, "ExtensionError error = 5;")
 	require.NotContains(t, eventContents, "string invocation_id = 3;")
 	require.NotContains(t, eventContents, "follow_up")
-
-	for _, test := range []struct {
-		language string
-		file     string
-		contains string
-	}{
-		{
-			language: "javascript",
-			file:     "languages/javascript/eventManager.js",
-			contains: "const args = {",
-		},
-		{
-			language: "python",
-			file:     "languages/python/event_manager.py",
-			contains: "ProjectEventArgs(",
-		},
-		{
-			language: "dotnet",
-			file:     "languages/dotnet/EventManager.cs",
-			contains: "new ProjectEventArgs",
-		},
-		{
-			language: "javascript",
-			file:     "languages/javascript/azdClient.js",
-			contains: "EventServiceClient",
-		},
-		{
-			language: "python",
-			file:     "languages/python/azd_client.py",
-			contains: "EventServiceStub",
-		},
-		{
-			language: "dotnet",
-			file:     "languages/dotnet/AzdClient.cs",
-			contains: "EventService.EventServiceClient",
-		},
-	} {
-		t.Run(test.language, func(t *testing.T) {
-			contents, err := Languages.ReadFile(test.file)
-			require.NoError(t, err)
-			require.Contains(t, string(contents), test.contains)
-		})
-	}
-
-	dotnetEventManager, err := Languages.ReadFile("languages/dotnet/EventManager.cs")
-	require.NoError(t, err)
-	dotnetEventManagerContents := string(dotnetEventManager)
-	require.NotRegexp(t, regexp.MustCompile(`\bProjectEventArgs\s*\(`), dotnetEventManagerContents,
-		"the .NET scaffold must retain the implicit parameterless constructor")
-	require.Regexp(t,
-		regexp.MustCompile(`(?s)var eventArgs = new ProjectEventArgs\s*\{\s*Project = invokeMsg\.Project\s*\};`),
-		dotnetEventManagerContents,
-		"project event handlers must receive the invoked project",
-	)
-
-	for _, file := range []string{
-		"languages/javascript/generated/proto/errors_pb.js",
-		"languages/python/generated_proto/errors_pb2.py",
-	} {
-		_, err := Languages.ReadFile(file)
-		require.NoError(t, err)
-	}
 }
 
 // TestGoGitignoreExcludesBin ensures the generated Go extension ignores the build

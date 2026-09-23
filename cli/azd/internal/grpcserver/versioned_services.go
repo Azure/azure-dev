@@ -90,11 +90,6 @@ func (s *Server) registerServices() error {
 	azdext.RegisterValidationServiceServer(s.grpcServer, s.validationService)
 
 	betaServiceOverrides := maps.Clone(s.betaServiceOverrides)
-	if _, exists := betaServiceOverrides[BetaEventService]; !exists {
-		if eventService, ok := s.eventService.(*eventService); ok {
-			betaServiceOverrides[BetaEventService] = &betaEventService{service: eventService}
-		}
-	}
 	if extensionService, ok := s.extensionService.(*ExtensionService); ok {
 		betaServiceOverrides[BetaExtensionService] = &betaExtensionServiceOverride{
 			service:  extensionService,

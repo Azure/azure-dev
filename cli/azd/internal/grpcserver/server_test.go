@@ -1700,6 +1700,21 @@ func TestNewServer(t *testing.T) {
 	assert.Nil(t, s.grpcServer, "grpcServer should be nil before Start")
 }
 
+func TestNewServerRegistersBetaEventOverride(t *testing.T) {
+	events, _ := createTestEventService()
+	server := NewServer(
+		nil, nil, nil, nil, nil, events, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	override, ok := server.betaServiceOverrides[BetaEventService].(*betaEventService)
+	require.True(t, ok)
+	require.Same(t, events, override.service)
+
+	replacement := &betaEventService{}
+	server.WithOptions(WithBetaServiceOverride(BetaEventService, replacement))
+	require.Same(t, replacement, server.betaServiceOverrides[BetaEventService])
+}
+
 func TestServerInfo(t *testing.T) {
 	t.Parallel()
 	info := ServerInfo{

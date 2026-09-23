@@ -217,7 +217,8 @@ func (c *AzdClient) Events() EventServiceClient {
 	return c.eventsClient
 }
 
-func (c *AzdClient) betaEvents() v1beta.EventServiceClient {
+// EventsBeta returns the preview event service client.
+func (c *AzdClient) EventsBeta() v1beta.EventServiceClient {
 	if c.betaEventsClient == nil {
 		c.betaEventsClient = v1beta.NewEventServiceClient(c.connection)
 	}

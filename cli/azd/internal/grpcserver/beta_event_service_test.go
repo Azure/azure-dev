@@ -215,7 +215,7 @@ func TestBetaEventServiceProjectHandlerCommitsFollowUp(t *testing.T) {
 	brokerCtx, cancel := context.WithCancel(streamCtx)
 	broker := grpcbroker.NewMessageBroker(
 		stream,
-		azdext.NewBetaEventMessageEnvelope(),
+		newBetaEventMessageEnvelope(),
 		extension.Id,
 		nil,
 	)
@@ -328,7 +328,7 @@ func TestBetaEventServiceProjectHandlerDiscardsFollowUp(t *testing.T) {
 			brokerCtx, cancel := context.WithCancel(streamCtx)
 			broker := grpcbroker.NewMessageBroker(
 				stream,
-				azdext.NewBetaEventMessageEnvelope(),
+				newBetaEventMessageEnvelope(),
 				extension.Id,
 				nil,
 			)
@@ -398,7 +398,7 @@ func (s *readyExtensionService) Ready(
 	return &azdext.ReadyResponse{}, nil
 }
 
-func TestBetaEventServicePreviewSDKFollowUpEndToEnd(t *testing.T) {
+func TestBetaEventServiceBetaClientFollowUpEndToEnd(t *testing.T) {
 	service, _ := createTestEventService()
 	extension := createTestExtension()
 	extension.Capabilities = []extensions.CapabilityType{
@@ -461,40 +461,67 @@ func TestBetaEventServicePreviewSDKFollowUpEndToEnd(t *testing.T) {
 		client.Close()
 	})
 
-	t.Setenv("AZD_ACCESS_TOKEN", "test-token")
-	host := azdext.NewExtensionHost(client)
-	host.WithPreviewProjectEventHandler(
-		"postdeploy",
-		func(_ context.Context, args *azdext.PreviewProjectEventArgs) error {
-			if args.FollowUp == nil {
-				return errors.New("follow-up contribution is unavailable")
-			}
-			return args.FollowUp.Set("Run azd show")
-		},
-	)
-
-	hostCtx, cancel := context.WithCancel(
+	streamCtx, cancel := context.WithTimeout(
 		azdext.WithAccessToken(t.Context(), "test-token"),
+		10*time.Second,
 	)
-	hostDone := make(chan error, 1)
-	go func() {
-		hostDone <- host.Run(hostCtx)
-	}()
+	defer cancel()
+	stream, err := client.EventsBeta().EventStream(streamCtx)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(&v1beta.EventMessage{
+		RequestId: "subscribe-1",
+		MessageType: &v1beta.EventMessage_SubscribeProjectEvent{
+			SubscribeProjectEvent: &v1beta.SubscribeProjectEvent{
+				EventNames: []string{"postdeploy"},
+			},
+		},
+	}))
+	ack, err := stream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, "subscribe-1", ack.GetRequestId())
+	require.NotNil(t, ack.GetSubscribeProjectEventResponse())
+
+	_, err = client.Extension().Ready(streamCtx, &azdext.ReadyRequest{})
+	require.NoError(t, err)
 	<-readyService.ready
 
 	projectConfig, err := service.lazyProject.GetValue()
 	require.NoError(t, err)
 	collector := guidance.NewFollowUpCollector()
 	eventCtx := guidance.WithFollowUpCollector(t.Context(), collector)
-	require.NoError(t, projectConfig.RaiseEvent(
-		eventCtx,
-		ext.Event("postdeploy"),
-		project.ProjectLifecycleEventArgs{Project: projectConfig},
-	))
+	eventDone := make(chan error, 1)
+	go func() {
+		eventDone <- projectConfig.RaiseEvent(
+			eventCtx,
+			ext.Event("postdeploy"),
+			project.ProjectLifecycleEventArgs{Project: projectConfig},
+		)
+	}()
+	invocation, err := stream.Recv()
+	require.NoError(t, err)
+	handler := invocation.GetInvokeProjectHandler()
+	require.NotNil(t, handler)
+	require.Equal(t, "postdeploy", handler.GetEventName())
+	require.NotEmpty(t, handler.GetInvocationId())
+	_, err = client.FollowUp().SetFollowUp(
+		streamCtx,
+		&v1beta.SetFollowUpRequest{
+			InvocationId: handler.GetInvocationId(),
+			Text:         "Run azd show",
+		},
+	)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(&v1beta.EventMessage{
+		RequestId: invocation.GetRequestId(),
+		MessageType: &v1beta.EventMessage_ProjectHandlerStatus{
+			ProjectHandlerStatus: &v1beta.ProjectHandlerStatus{
+				EventName: "postdeploy",
+				Status:    "completed",
+			},
+		},
+	}))
+	require.NoError(t, <-eventDone)
 	require.Equal(t, "Run azd show", collector.Text())
-
-	cancel()
-	require.NoError(t, <-hostDone)
 }
 
 func TestBetaEventServiceServiceHandlerUsesBetaMessages(t *testing.T) {
@@ -537,7 +564,7 @@ func TestBetaEventServiceServiceHandlerUsesBetaMessages(t *testing.T) {
 	brokerCtx, cancel := context.WithCancel(streamCtx)
 	broker := grpcbroker.NewMessageBroker(
 		stream,
-		azdext.NewBetaEventMessageEnvelope(),
+		newBetaEventMessageEnvelope(),
 		extension.Id,
 		nil,
 	)
@@ -634,7 +661,7 @@ func requireBetaHandlerStopsOnCancel(
 	brokerCtx, stopBroker := context.WithCancel(streamCtx)
 	broker := grpcbroker.NewMessageBroker(
 		stream,
-		azdext.NewBetaEventMessageEnvelope(),
+		newBetaEventMessageEnvelope(),
 		extensionID,
 		nil,
 	)

@@ -51,7 +51,7 @@ func (s *betaEventService) EventStream(
 
 	broker := grpcbroker.NewMessageBroker(
 		stream,
-		azdext.NewBetaEventMessageEnvelope(),
+		newBetaEventMessageEnvelope(),
 		extension.Id,
 		log.Default(),
 	)

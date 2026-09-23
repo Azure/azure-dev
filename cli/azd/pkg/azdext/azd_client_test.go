@@ -157,6 +157,16 @@ func Test_AzdClient_FollowUp_ReturnsSameClient(t *testing.T) {
 	require.Same(t, first, second)
 }
 
+func Test_AzdClient_EventsBeta_ReturnsSameClient(t *testing.T) {
+	client := &AzdClient{}
+
+	first := client.EventsBeta()
+	second := client.EventsBeta()
+
+	require.NotNil(t, first)
+	require.Same(t, first, second)
+}
+
 func Test_AzdClient_FollowUp_IsStableAcrossConcurrentCalls(t *testing.T) {
 	client := &AzdClient{}
 	clients := make([]v1beta.FollowUpServiceClient, 100)

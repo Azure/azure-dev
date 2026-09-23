@@ -85,41 +85,16 @@ For extensions that are still in development or preview, consider publishing to 
 
 ## Command-level lifecycle follow-up
 
-Beta project lifecycle handlers can provide command-level guidance through the
-handler-scoped `FollowUp` contribution during a successful `post*` event:
+Beta project `post*` handlers can contribute next-step guidance to the
+parent command's human-readable completion message. Use the preview
+`EventsBeta()` client to subscribe and receive an invocation ID, then call
+`FollowUp().SetFollowUp` while processing that invocation.
 
-```go
-host.WithPreviewProjectEventHandler("postdeploy",
-    func(ctx context.Context, args *azdext.PreviewProjectEventArgs) error {
-        return args.FollowUp.Set("Next:\n  azd ai agent show my-agent")
-    })
-```
-
-The contribution uses the beta `FollowUpService` and the invocation ID
-provided by azd. The host stages the latest text and commits it only after the
-preview handler completes successfully. Contributions from failed, cancelled,
-disconnected, or incomplete handlers are discarded. Use `args.FollowUp.Clear()`
-or `args.FollowUp.Set("")` to retract the current contribution. The RPC
-returns an error if the invocation is no longer active or is not a project
-`post*` handler.
-
-Extensions using this API require an azd host that provides
-the beta `FollowUpService` and invocation IDs. In a published extension, set
-`requiredAzdVersion` to the first released azd version containing this service;
-for the current release line, use `>=1.35.0`. This filters versions during
-install and update, but does not prevent already-installed or non-registry
-extensions from running on older hosts. Preview event registration fails
-before the extension becomes ready when the host does not support the
-acknowledgement protocol.
-
-The host appends committed text to the parent command's human-readable
-completion message and leaves JSON output unchanged. Within one command, a
-later lifecycle event replaces the earlier result from that extension; a later
-custom workflow command step also wins. Lifecycle events use the stable order
-restore, build, package, provision, publish, deploy. Concurrent layers of the
-same event resolve by stable layer identity, not completion time. Other
-extensions and existing core follow-up text are preserved. Service-level
-events cannot contribute follow-up text.
+For published extensions using this preview API, set `requiredAzdVersion`
+to `>=1.35.0` for the current release line. See the
+[SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#project-lifecycle-follow-up)
+for host compatibility, subscription errors, and how contributions from
+multiple handlers and workflow steps are resolved.
 
 ## Extension Design Guidelines
 

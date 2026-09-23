@@ -5,17 +5,11 @@ package azdext
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"sync"
-	"time"
 
-	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
-	"github.com/azure/azure-dev/cli/azd/pkg/errorchain"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
-	"github.com/google/uuid"
-	"google.golang.org/protobuf/proto"
 )
 
 type EventManager struct {
@@ -31,305 +25,8 @@ type EventManager struct {
 	mu sync.RWMutex
 }
 
-type previewEventManager struct {
-	extensionId         string
-	client              *AzdClient
-	broker              *grpcbroker.MessageBroker[v1beta.EventMessage]
-	handlers            map[string]PreviewProjectEventHandler
-	brokerLogger        *log.Logger
-	mu                  sync.Mutex
-	registrationLocksMu sync.Mutex
-	registrationLocks   map[string]*sync.Mutex
-}
-
-var previewEventRegistrationTimeout = 5 * time.Second
-
-func newPreviewEventManager(
-	extensionId string,
-	client *AzdClient,
-	brokerLogger *log.Logger,
-) *previewEventManager {
-	return &previewEventManager{
-		extensionId:       extensionId,
-		client:            client,
-		handlers:          make(map[string]PreviewProjectEventHandler),
-		brokerLogger:      brokerLogger,
-		registrationLocks: make(map[string]*sync.Mutex),
-	}
-}
-
-func (em *previewEventManager) Close() error {
-	em.mu.Lock()
-	defer em.mu.Unlock()
-	if em.broker != nil {
-		em.broker.Close()
-		em.broker = nil
-	}
-	clear(em.handlers)
-	return nil
-}
-
-func (em *previewEventManager) ensureStream(ctx context.Context) error {
-	em.mu.Lock()
-	defer em.mu.Unlock()
-	if em.broker != nil {
-		return nil
-	}
-	stream, err := em.client.betaEvents().EventStream(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to create preview event stream: %w", err)
-	}
-	broker := grpcbroker.NewMessageBroker(
-		stream,
-		newBetaEventMessageEnvelope(),
-		em.extensionId,
-		em.brokerLogger,
-	)
-	if err := broker.On(em.onInvokeProjectHandler); err != nil {
-		broker.Close()
-		return fmt.Errorf("failed to register preview project handler: %w", err)
-	}
-	em.broker = broker
-	return nil
-}
-
-func (em *previewEventManager) Receive(ctx context.Context) error {
-	if err := em.ensureStream(ctx); err != nil {
-		return err
-	}
-	em.mu.Lock()
-	broker := em.broker
-	em.mu.Unlock()
-	if broker == nil {
-		return fmt.Errorf("preview event manager is closed")
-	}
-	return broker.Run(ctx)
-}
-
-func (em *previewEventManager) Ready(ctx context.Context) error {
-	if err := em.ensureStream(ctx); err != nil {
-		return err
-	}
-	em.mu.Lock()
-	broker := em.broker
-	em.mu.Unlock()
-	if broker == nil {
-		return fmt.Errorf("preview event manager is closed")
-	}
-	return broker.Ready(ctx)
-}
-
-func (em *previewEventManager) eventRegistrationLock(eventName string) *sync.Mutex {
-	em.registrationLocksMu.Lock()
-	defer em.registrationLocksMu.Unlock()
-	if em.registrationLocks == nil {
-		em.registrationLocks = make(map[string]*sync.Mutex)
-	}
-	lock := em.registrationLocks[eventName]
-	if lock == nil {
-		lock = &sync.Mutex{}
-		em.registrationLocks[eventName] = lock
-	}
-	return lock
-}
-
-func (em *previewEventManager) AddProjectEventHandler(
-	ctx context.Context,
-	eventName string,
-	handler PreviewProjectEventHandler,
-) error {
-	registrationLock := em.eventRegistrationLock(eventName)
-	registrationLock.Lock()
-	defer registrationLock.Unlock()
-
-	if err := em.ensureStream(ctx); err != nil {
-		return err
-	}
-
-	em.mu.Lock()
-	broker := em.broker
-	if broker == nil {
-		em.mu.Unlock()
-		return fmt.Errorf("preview event manager is closed")
-	}
-
-	// Register before sending so the broker sees the handler first.
-	previousHandler, hadPreviousHandler := em.handlers[eventName]
-	em.handlers[eventName] = handler
-	em.mu.Unlock()
-
-	msg := &v1beta.EventMessage{
-		RequestId: uuid.NewString(),
-		MessageType: &v1beta.EventMessage_SubscribeProjectEvent{
-			SubscribeProjectEvent: &v1beta.SubscribeProjectEvent{
-				EventNames: []string{eventName},
-			},
-		},
-	}
-	registrationCtx, cancel := context.WithTimeout(
-		ctx,
-		previewEventRegistrationTimeout,
-	)
-	defer cancel()
-	resp, err := broker.SendAndWait(registrationCtx, msg)
-	if err == nil && resp.GetSubscribeProjectEventResponse() == nil {
-		err = fmt.Errorf(
-			"expected SubscribeProjectEventResponse, got %T",
-			resp.GetMessageType(),
-		)
-	}
-	if err != nil {
-		em.mu.Lock()
-		if hadPreviousHandler {
-			em.handlers[eventName] = previousHandler
-		} else {
-			delete(em.handlers, eventName)
-		}
-		em.mu.Unlock()
-		if errors.Is(err, context.DeadlineExceeded) &&
-			errors.Is(registrationCtx.Err(), context.DeadlineExceeded) &&
-			ctx.Err() == nil {
-			return fmt.Errorf(
-				"preview event subscription acknowledgement timed out for %q: %w",
-				eventName,
-				err,
-			)
-		}
-		return fmt.Errorf("preview event subscription failed: %w", err)
-	}
-
-	return nil
-}
-
-func (em *previewEventManager) onInvokeProjectHandler(
-	ctx context.Context,
-	req *v1beta.InvokeProjectHandler,
-) (*v1beta.EventMessage, error) {
-	if req == nil {
-		return &v1beta.EventMessage{}, nil
-	}
-	em.mu.Lock()
-	handler, exists := em.handlers[req.EventName]
-	em.mu.Unlock()
-	if !exists {
-		return &v1beta.EventMessage{}, nil
-	}
-	args := &PreviewProjectEventArgs{
-		Project: req.Project,
-		FollowUp: &FollowUpContribution{
-			client:       em.client,
-			ctx:          ctx,
-			invocationID: req.InvocationId,
-		},
-	}
-	handlerStatus := "completed"
-	var handlerError *v1beta.ExtensionError
-	if err := handler(ctx, args); err != nil {
-		handlerStatus = "failed"
-		handlerError = wrapBetaError(err)
-	}
-	return &v1beta.EventMessage{
-		MessageType: &v1beta.EventMessage_ProjectHandlerStatus{
-			ProjectHandlerStatus: &v1beta.ProjectHandlerStatus{
-				EventName: eventNameOrEmpty(req),
-				Status:    handlerStatus,
-				Message:   errorMessage(handlerError),
-				Error:     handlerError,
-			},
-		},
-	}, nil
-}
-
-func eventNameOrEmpty(req *v1beta.InvokeProjectHandler) string {
-	if req == nil {
-		return ""
-	}
-	return req.EventName
-}
-
-func wrapBetaError(err error) *v1beta.ExtensionError {
-	if err == nil {
-		return nil
-	}
-
-	stableError := WrapError(err)
-	wire, marshalErr := proto.Marshal(stableError)
-	if marshalErr == nil {
-		betaError := new(v1beta.ExtensionError)
-		if unmarshalErr := proto.Unmarshal(wire, betaError); unmarshalErr == nil {
-			if localErr, ok := errors.AsType[*LocalError](err); ok {
-				if betaLocalErr := betaError.GetLocalError(); betaLocalErr != nil {
-					betaLocalErr.CauseTypes = errorchain.NormalizeCauseTypes(localErr.CauseTypes)
-				}
-			}
-			if stableError.GetOrigin() == ErrorOrigin_ERROR_ORIGIN_TOOL {
-				if toolErr, ok := errors.AsType[*ToolError](err); ok {
-					var exitCode *int64
-					if toolErr.ExitCode != nil {
-						exitCode = new(int64(*toolErr.ExitCode))
-					}
-					betaError.Source = &v1beta.ExtensionError_ToolError{
-						ToolError: &v1beta.ToolErrorDetail{
-							ToolName:    toolErr.ToolName,
-							FailureKind: string(toolErr.Kind),
-							ExitCode:    exitCode,
-						},
-					}
-				}
-			}
-			return betaError
-		}
-	}
-
-	return &v1beta.ExtensionError{Message: err.Error()}
-}
-
-func errorMessage(err *v1beta.ExtensionError) string {
-	if err == nil {
-		return ""
-	}
-	return err.Message
-}
-
 type ProjectEventArgs struct {
 	Project *ProjectConfig
-}
-
-// PreviewProjectEventArgs holds beta event data and preview services.
-type PreviewProjectEventArgs struct {
-	Project  *v1beta.ProjectConfig
-	FollowUp *FollowUpContribution
-}
-
-// FollowUpContribution contributes text for one handler invocation.
-type FollowUpContribution struct {
-	client       *AzdClient
-	ctx          context.Context
-	invocationID string
-}
-
-// Set replaces the contribution for the current invocation.
-func (f *FollowUpContribution) Set(text string) error {
-	if f == nil {
-		return fmt.Errorf("follow-up contribution is unavailable")
-	}
-	if f.invocationID == "" {
-		return fmt.Errorf("follow-up invocation is unavailable")
-	}
-
-	_, err := f.client.FollowUp().SetFollowUp(
-		WithAccessToken(f.ctx),
-		&v1beta.SetFollowUpRequest{
-			InvocationId: f.invocationID,
-			Text:         text,
-		},
-	)
-	return err
-}
-
-// Clear removes the contribution for the current invocation.
-func (f *FollowUpContribution) Clear() error {
-	return f.Set("")
 }
 
 type ServiceEventArgs struct {
@@ -339,9 +36,6 @@ type ServiceEventArgs struct {
 }
 
 type ProjectEventHandler func(ctx context.Context, args *ProjectEventArgs) error
-
-// PreviewProjectEventHandler handles a beta project lifecycle event.
-type PreviewProjectEventHandler func(ctx context.Context, args *PreviewProjectEventArgs) error
 
 type ServiceEventHandler func(ctx context.Context, args *ServiceEventArgs) error
 
@@ -529,7 +223,9 @@ func (em *EventManager) onInvokeProjectHandler(
 		return &EventMessage{}, nil
 	}
 
-	args := &ProjectEventArgs{Project: req.Project}
+	args := &ProjectEventArgs{
+		Project: req.Project,
+	}
 
 	handlerStatus := "completed"
 	handlerMessage := ""

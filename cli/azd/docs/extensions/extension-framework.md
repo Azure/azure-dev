@@ -212,40 +212,16 @@ if err := host.Run(ctx); err != nil {
 
 ##### Command-level follow-up text
 
-Successful beta project `post*` handlers may use the handler-scoped `FollowUp`
-contribution to provide command-level guidance:
-
-```go
-host.WithPreviewProjectEventHandler("postprovision",
-  func(ctx context.Context, args *azdext.PreviewProjectEventArgs) error {
-    return args.FollowUp.Set("Next:\n  azd deploy")
-  })
-```
-
-The contribution uses the beta `FollowUpService` and the invocation ID
-provided by azd. azd stages the latest text and commits it only after the
-preview handler completes successfully; failed, cancelled, disconnected, or
-incomplete handlers are discarded. Use `args.FollowUp.Clear()` or
-`args.FollowUp.Set("")` to retract the current contribution. Calls outside a
-project `post*` handler return an error.
-
-Extensions using this API require an azd host that provides
-the beta `FollowUpService` and invocation IDs. Published extensions should set
-`requiredAzdVersion` to the first released azd version containing this service;
-for the current release line, use `>=1.35.0`. This filters versions during
-install and update, but does not prevent already-installed or non-registry
-extensions from running on older hosts. Preview event registration requires a
-host acknowledgement before the extension becomes ready. A registration
-timeout can also indicate a slow host or connection; it does not by itself
-prove that the host lacks support.
+Successful beta project `post*` handlers may provide command-level guidance
+by calling `FollowUp().SetFollowUp` with the invocation ID from
+`EventsBeta()` before sending a completed project handler status.
 
 azd appends committed text to the parent command's human-readable completion
-message. It combines contributions from multiple extensions and does not
-include the text in JSON output. In a custom workflow, a later command step
-replaces an earlier result from that extension. Within one command, lifecycle
-events use the stable order restore, build, package, provision, publish,
-deploy. Concurrent layers of the same event resolve by stable layer identity,
-not completion time. Service handlers do not contribute to this field.
+message; JSON output is unchanged. Published extensions using this preview
+API should set `requiredAzdVersion` to `>=1.35.0` for the current release
+line. See [Project lifecycle follow-up](extension-sdk-reference.md#project-lifecycle-follow-up)
+for beta stream subscription and host compatibility requirements, clearing contributions,
+and how multiple handlers and workflow steps are resolved.
 
 #### Service Target Providers
 
@@ -2424,7 +2400,13 @@ Clients can subscribe to events and receive notifications via a bidirectional st
   - Invoke event handlers.
   - Send status updates regarding event processing.
 
-> See [event.proto](../../grpc/proto/azd/extensions/v1/event.proto) for more details.
+The message types below describe the stable
+[v1 event contract](../../grpc/proto/azd/extensions/v1/event.proto). The
+[v1beta event contract](../../grpc/proto/azd/extensions/v1beta/event.proto)
+also adds `request_id` for correlating stream requests and responses,
+structured `error` details, and project and service subscription
+acknowledgements. Its `InvokeProjectHandler` includes an `invocation_id`
+used with the beta [FollowUpService](../../grpc/proto/azd/extensions/v1beta/follow_up.proto).
 
 #### Message Types
 

@@ -165,6 +165,9 @@ func (a *initAction) ask(ctx initContext) (initAnswers, error) {
 	if err != nil {
 		return initAnswers{}, err
 	}
+	if err := validateInitSimulationDataset(commandContext(a.cmd), ctx.configPath, answers, ctx.cfg); err != nil {
+		return initAnswers{}, err
+	}
 
 	// Asked, not detected: an eval grades on a set, so there is no "the only
 	// one" to settle on, and which criteria define quality is the substantive

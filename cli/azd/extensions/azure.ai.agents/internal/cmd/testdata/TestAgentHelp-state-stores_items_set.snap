@@ -8,11 +8,11 @@ Usage
   azd ai agent state-stores items set <key> [flags]
 
 Flags
-      --agent-endpoint string : Full protocol endpoint URL of a deployed agent
+      --agent-endpoint string : HTTPS protocol endpoint URL of a deployed agent (not wss; cannot combine with --environment)
   -n, --agent-name string     : Agent service name in azure.yaml
       --if-match string       : Only write if the current ETag matches (preserve its quotes)
       --store string          : Store name (defaults to the active store; does not change selection)
-      --tag stringArray       : Replacement tag as key=value (repeatable; omission clears tags)
+      --tag stringArray       : Replacement key=value tag (up to 16; keys <=64, values <=256 characters; omission clears tags)
       --value string          : JSON object value (not a REST request envelope)
       --value-file string     : Read the JSON object from a file; - reads stdin
 

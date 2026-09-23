@@ -11,7 +11,7 @@ Usage
 
 Flags
       --after string          : Continue after last_id from the previous JSON response
-      --agent-endpoint string : Full protocol endpoint URL of a deployed agent
+      --agent-endpoint string : HTTPS protocol endpoint URL of a deployed agent (not wss; cannot combine with --environment)
   -n, --agent-name string     : Agent service name in azure.yaml
       --limit int             : Maximum results per page (1-100) (default 20)
       --order string          : Service-defined order: asc or desc (default "desc")

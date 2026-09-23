@@ -145,7 +145,8 @@ func newStateStoreCommandWithFactory(
 		cmd.Args = cobra.ExactArgs(1)
 	}
 	cmd.Flags().StringVarP(&flags.agentName, "agent-name", "n", "", "Agent service name in azure.yaml")
-	cmd.Flags().StringVar(&flags.agentEndpoint, "agent-endpoint", "", "Full protocol endpoint URL of a deployed agent")
+	cmd.Flags().StringVar(&flags.agentEndpoint, "agent-endpoint", "",
+		"HTTPS protocol endpoint URL of a deployed agent (not wss; cannot combine with --environment)")
 	cmd.MarkFlagsMutuallyExclusive("agent-name", "agent-endpoint")
 	if strings.HasPrefix(operation, "items ") {
 		cmd.Flags().StringVar(&flags.store, "store", "",
@@ -171,7 +172,7 @@ Pass the returned cursor unchanged; do not use an entry's id or base64url-encode
 		cmd.Flags().StringVar(&flags.value, "value", "", "JSON object value (not a REST request envelope)")
 		cmd.Flags().StringVar(&flags.valueFile, "value-file", "", "Read the JSON object from a file; - reads stdin")
 		cmd.Flags().StringArrayVar(&flags.tags, "tag", nil,
-			"Replacement tag as key=value (repeatable; omission clears tags)")
+			"Replacement key=value tag (up to 16; keys <=64, values <=256 characters; omission clears tags)")
 		cmd.MarkFlagsMutuallyExclusive("value", "value-file")
 		cmd.MarkFlagsOneRequired("value", "value-file")
 	}
@@ -228,6 +229,9 @@ func validateStateStoreFlags(cmd *cobra.Command, flags *stateStoreFlags, operati
 	}
 	if flags.agentName != "" && flags.agentEndpoint != "" {
 		return invalid("--agent-name and --agent-endpoint cannot be combined")
+	}
+	if cmd.Flags().Changed("agent-endpoint") && cmd.Flags().Changed("environment") {
+		return invalid("--agent-endpoint and --environment cannot be combined")
 	}
 	if slices.Contains(args, "") {
 		return invalid("store names and item keys must not be empty")

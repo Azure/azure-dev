@@ -4,7 +4,7 @@ Usage
   azd ai agent state-stores items show <key> [flags]
 
 Flags
-      --agent-endpoint string : Full protocol endpoint URL of a deployed agent
+      --agent-endpoint string : HTTPS protocol endpoint URL of a deployed agent (not wss; cannot combine with --environment)
   -n, --agent-name string     : Agent service name in azure.yaml
       --store string          : Store name (defaults to the active store; does not change selection)
 

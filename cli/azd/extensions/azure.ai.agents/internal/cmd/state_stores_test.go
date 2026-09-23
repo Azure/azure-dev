@@ -21,6 +21,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -204,6 +205,40 @@ func TestStateStoreCommandValidation(t *testing.T) {
 	}
 }
 
+func TestStateStoreExplicitEnvironmentConflictsWithEndpoint(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project/agents/worker/endpoint/protocols/invocations"
+	for _, tt := range []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{"environment after endpoint", []string{"--agent-endpoint", endpoint, "--environment", "prod"},
+			"--agent-endpoint and --environment cannot be combined"},
+		{"environment before endpoint", []string{"--environment", "prod", "--agent-endpoint", endpoint},
+			"--agent-endpoint and --environment cannot be combined"},
+		{"explicit empty environment", []string{"--agent-endpoint", endpoint, "--environment="},
+			"--agent-endpoint and --environment cannot be combined"},
+		{"implicit environment", []string{"--agent-endpoint", endpoint}, "reached target resolution"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_ENVIRONMENT", "prod")
+			root, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{Name: "ai"})
+			group := &cobra.Command{Use: "state-stores"}
+			group.AddCommand(newStateStoreCommandWithFactory(extCtx, "list",
+				func(_ context.Context, flags *stateStoreFlags) (*stateStoreAction, func(), error) {
+					require.Equal(t, "prod", flags.environment)
+					return nil, nil, errors.New("reached target resolution")
+				}))
+			root.AddCommand(group)
+			root.SetArgs(append([]string{"state-stores", "list"}, tt.args...))
+			root.SetOut(io.Discard)
+			root.SetErr(io.Discard)
+			err := root.ExecuteContext(t.Context())
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
 func TestStateStoreReadValue(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "checkpoint with spaces.json")
 	value := `{"large":9007199254740993,"nested":[null,true]}`
@@ -240,6 +275,34 @@ func TestStateStoreReadValue(t *testing.T) {
 		&stateStoreFlags{value: "{}", tags: []string{"key=a=b,c", "empty="}}, nil)
 	require.NoError(t, err)
 	require.Equal(t, map[string]string{"key": "a=b,c", "empty": ""}, request.Tags)
+}
+
+func TestStateStoreTagLimits(t *testing.T) {
+	tags := make([]string, 16)
+	for i := range tags {
+		tags[i] = fmt.Sprintf("key%d=value", i)
+	}
+	for _, tt := range []struct {
+		name    string
+		tags    []string
+		wantErr string
+	}{
+		{"maximum count", tags, ""},
+		{"too many", append(append([]string(nil), tags...), "extra=value"), "maximum 16"},
+		{"maximum key", []string{strings.Repeat("k", 64) + "=v"}, ""},
+		{"key too long", []string{strings.Repeat("k", 65) + "=v"}, "key exceeds 64 characters"},
+		{"maximum value", []string{"k=" + strings.Repeat("v", 256)}, ""},
+		{"value too long", []string{"k=" + strings.Repeat("v", 257)}, "value exceeds 256 characters"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := readStateStoreValue(t.Context(), &stateStoreFlags{value: "{}", tags: tt.tags}, nil)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+			}
+		})
+	}
 }
 
 func requireStateStoreCancelled(t *testing.T, err error) {

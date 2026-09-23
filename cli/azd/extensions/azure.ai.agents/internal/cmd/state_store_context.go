@@ -26,6 +26,11 @@ type stateStoreTarget struct {
 // project-based and explicit-endpoint commands share selection. Protocol and version
 // are intentionally excluded, unlike session/conversation context keys.
 func stateStoreTargetFromEndpoint(endpoint string) (*stateStoreTarget, error) {
+	if u, err := url.Parse(endpoint); err == nil && strings.EqualFold(u.Scheme, "wss") {
+		return nil, exterrors.Validation(exterrors.CodeInvalidParameter,
+			"--agent-endpoint does not accept WebSocket (wss) invocation URLs for State Stores",
+			"State Stores use HTTPS; run from an azd project with --agent-name instead")
+	}
 	parsed, err := parseAgentEndpoint(endpoint)
 	if err != nil {
 		return nil, err

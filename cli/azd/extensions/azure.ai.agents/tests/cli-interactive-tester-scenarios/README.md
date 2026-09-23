@@ -341,8 +341,9 @@ They do not require a deployed long-running agent or add Tier 2 provisioning dep
 lifecycle behavior is covered by the extension's Go tests with scripted local servers; no successful
 cloud create/follow/cancel flow is claimed by these scenarios.
 
-The State Store scenario is also limited to offline help and invalid-input checks. It does not
-read or mutate stores, exercise a live store picker, or provision a hosted agent.
+The Tier 0 State Store scenario is limited to offline help and invalid-input checks. It does not
+read or mutate stores, exercise a live store picker, or provision a hosted agent. A separate opt-in
+Tier 2 scenario checks the item lifecycle against an externally seeded store (see below).
 
 ### Tier 1 — Auth, scaffold only (`tier1/`)
 Requires Azure login (reads subscriptions/Foundry projects) but **does not
@@ -426,6 +427,7 @@ as their `cwd`.
 | `tier2/2.11-endpoint-update.yaml` | `endpoint update` |
 | `tier2/2.12-run-local-and-invoke-local.yaml` | `run` + `invoke --local` (two sessions) |
 | `tier2/2.13-invoke-latency.yaml` | Default-on platform latency, `--debug-latency=false`, and raw output against the shared Responses agent |
+| `tier2/2.14-state-stores-items.yaml` | Opt-in: State Store list/show, conditional item set, show, and repeat delete (requires external store seed) |
 | `tier2/2.15-doctor-provisioned-all-pass.yaml` | `doctor` (all checks pass) |
 | `tier2/2.16-endpoint-show.yaml` | `endpoint show` (agent endpoint details) |
 | `tier2/2.17-code-download.yaml` | `code download` (positive-path: downloads agent source code) |
@@ -435,6 +437,17 @@ as their `cwd`.
 The shared Tier 2 agent supports the Responses protocol only. The suite does not yet cover
 successful Invocations calls or their session-bound memory semantics; that requires a separate
 Invocations-capable setup and lifecycle.
+
+**Opt-in State Store prerequisite:** After `2.00` deploys the shared agent, create a disposable,
+non-user-isolated store named `azd-state-stores-{run_id}` **for that agent** with the Foundry SDK
+or other store-creation tooling; `azd ai agent state-stores` cannot create a store. Run `2.14`
+only after this step and before `2.18` deletes the agent. Its pre-hook verifies the store exists
+and fails if absent; a missing store is never counted as a passed live test. The scenario uses
+only a run-unique item (`azd-probe-{run_id}`), which its post-hook removes even if a goal fails.
+Remove the disposable store using the seeding tool after the scenario, then run `2.99` teardown.
+A full Tier 2 sweep must arrange this seed between `2.00` and `2.14`; otherwise `2.14` fails
+its prerequisite rather than silently skipping the live check. Do not seed a user-isolated
+store: the CLI does not supply an end-user call ID for item operations.
 
 ## Tags
 

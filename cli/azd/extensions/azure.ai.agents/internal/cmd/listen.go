@@ -571,7 +571,7 @@ func warnLegacySimpleTeamsArtifacts(proj *azdext.ProjectConfig, svc *azdext.Serv
 	))
 }
 
-// postdownHandler cleans up saved session, conversation, Response, and Invocation state for agent services
+// postdownHandler cleans up saved session, conversation, Response, Invocation, and State Store selection for agent services
 // that were torn down. This is best-effort — failures are logged but do not block azd down.
 func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
 	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
@@ -588,7 +588,8 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 		}
 
 		if cleanupAgentState(ctx, azdClient, envName, svc.Name) {
-			fmt.Printf("Cleaned up saved session, conversation, Response, and Invocation state for agent %q\n", svc.Name)
+			fmt.Printf("Cleaned up saved session, conversation, Response, Invocation, and State Store selection "+
+				"for agent %q\n", svc.Name)
 		}
 	}
 
@@ -701,8 +702,8 @@ func cleanupPromptAgentState(
 	return cleanupAgentStateForKey(ctx, azdClient, agentKey)
 }
 
-// cleanupAgentState removes saved session, conversation, Response, and Invocation state for a
-// single agent service. Returns true if cleanup succeeded, false otherwise.
+// cleanupAgentState removes saved session, conversation, Response, Invocation, and State Store selection
+// for a single agent service. Returns true if cleanup succeeded, false otherwise.
 // Shared by postdownHandler and delete command.
 func cleanupAgentState(ctx context.Context, azdClient *azdext.AzdClient, envName, serviceName string) bool {
 	serviceKey := toServiceKey(serviceName)
@@ -736,6 +737,16 @@ func cleanupAgentStateForKey(ctx context.Context, azdClient *azdext.AzdClient, a
 	if err := newInvocationStateStore(azdClient).Delete(ctx, agentKey); err != nil {
 		log.Printf("cleanupAgentState: failed to clean current Invocation for %s: %v", agentKey, err)
 		failed = true
+	}
+	// Session keys include the version and /remote suffix. Store selection is
+	// keyed only by project and agent; deleting the versioned key would miss it.
+	if versionIndex := strings.LastIndex(agentKey, "/versions/"); versionIndex >= 0 &&
+		strings.HasSuffix(agentKey, "/remote") {
+		selectionKey := agentKey[:versionIndex]
+		if err := deleteContextValue(ctx, azdClient, stateStoreConfigField, selectionKey); err != nil {
+			log.Printf("cleanupAgentState: failed to clean State Store selection for %s: %v", selectionKey, err)
+			failed = true
+		}
 	}
 
 	return !failed

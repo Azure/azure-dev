@@ -24,7 +24,7 @@ func TestStateStoreTargetCanonicalKey(t *testing.T) {
 			"protocols/openai/responses?api-version=v1",
 		"https://account.services.ai.azure.com/api/projects/%70roject/agents/worker/endpoint/protocols/a2a/",
 	} {
-		target, err := resolveStateStoreTarget(t.Context(), nil, &stateStoreFlags{agentEndpoint: endpoint, environment: "ignored-for-explicit-endpoint"})
+		target, err := resolveStateStoreTarget(t.Context(), nil, &stateStoreFlags{agentEndpoint: endpoint})
 		require.NoError(t, err, "explicit endpoint must work without project or host configuration")
 		require.Equal(t, want, target.agentKey)
 		require.Equal(t, "worker", target.Name)
@@ -38,6 +38,12 @@ func TestStateStoreTargetCanonicalKey(t *testing.T) {
 		_, err := stateStoreTargetFromEndpoint(endpoint)
 		require.Error(t, err)
 	}
+	_, err := stateStoreTargetFromEndpoint(
+		"wss://account.services.ai.azure.com/api/projects/project/agents/worker/endpoint/protocols/invocations_ws")
+	require.ErrorContains(t, err, "does not accept WebSocket (wss)")
+	local, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Contains(t, local.Suggestion, "--agent-name")
 }
 
 func TestStateStoreTargetUsesDeployedAgentAndProject(t *testing.T) {

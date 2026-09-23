@@ -14,6 +14,8 @@ goals:
   - "Confirm both list help screens show a default page limit of 20, descending order by default, and json as the default output with table also supported."
   - "Run 'azd ai agent state-stores items set --help'. Confirm it exits with code 0 and documents --value, --value-file, --tag, and --if-match, requires a JSON object value, and explains that omitted tags are cleared. Confirm it states a preview value limit of 1048576 bytes (1 MiB) of serialized JSON and uses the same limit for raw input including whitespace, with guidance to compact larger formatted input first."
   - "Run 'azd ai agent state-stores list --limit 0'. Confirm it exits non-zero with '--limit must be between 1 and 100'."
+  - "Run 'azd ai agent state-stores list --agent-endpoint https://example.services.ai.azure.com/api/projects/example/agents/worker/endpoint/protocols/invocations --environment prod'. Confirm it exits non-zero with '--agent-endpoint and --environment cannot be combined' before targeting Azure."
+  - "Run 'azd ai agent state-stores list --agent-endpoint wss://example.services.ai.azure.com/api/projects/example/agents/worker/endpoint/protocols/invocations_ws'. Confirm it exits non-zero and explains that WebSocket invocation URLs cannot target State Stores; it must not silently switch to HTTPS."
   - "Run 'azd ai agent state-stores list --before cursor' and 'azd ai agent state-stores items list --before cursor'. Each must exit non-zero and reject --before as an unknown flag."
   - "Run 'azd ai agent state-stores items set probe --value null'. Confirm it exits non-zero with 'item value must be a JSON object'."
   - "Run 'azd ai agent state-stores select --no-prompt'. Confirm it exits non-zero with 'provide a store name when using --no-prompt'."

@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -66,6 +67,11 @@ func readStateStoreValue(
 		}
 		return request, exterrors.Validation(exterrors.CodeInvalidParameter, err.Error(), suggestion)
 	}
+	const maxTags = 16
+	if len(flags.tags) > maxTags {
+		return request, exterrors.Validation(exterrors.CodeInvalidParameter,
+			"too many --tag values (maximum 16)", "remove tags before retrying")
+	}
 	if len(flags.tags) > 0 {
 		request.Tags = make(map[string]string, len(flags.tags))
 	}
@@ -78,6 +84,14 @@ func readStateStoreValue(
 		if _, exists := request.Tags[key]; exists {
 			return request, exterrors.Validation(exterrors.CodeInvalidParameter,
 				"duplicate --tag key", "provide each tag key only once")
+		}
+		if utf8.RuneCountInString(key) > 64 {
+			return request, exterrors.Validation(exterrors.CodeInvalidParameter,
+				"--tag key exceeds 64 characters", "shorten the tag key")
+		}
+		if utf8.RuneCountInString(value) > 256 {
+			return request, exterrors.Validation(exterrors.CodeInvalidParameter,
+				"--tag value exceeds 256 characters", "shorten the tag value")
 		}
 		request.Tags[key] = value
 	}

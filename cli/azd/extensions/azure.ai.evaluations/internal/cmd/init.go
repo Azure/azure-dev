@@ -97,6 +97,8 @@ func newInitCommand() *cobra.Command {
 			"Simulation init validates all locally available seed rows before writing configuration. " +
 			"Interactive init asks for a corrected or different dataset when local rows are invalid; " +
 			"--no-prompt and --output json fail without writing configuration. " +
+			"A local file cannot replace a different dataset already declared under its filename stem; " +
+			"use a unique filename to add it, or select the existing dataset by name. " +
 			"Registered datasets without local files are checked later, not fetched by init.\n\n" +
 			"Init works offline except for a bounded, best-effort lookup of explicitly named built-in evaluators.",
 		// Everything init takes is a flag; a positional would be ignored.
@@ -330,7 +332,7 @@ func (a *initAction) Run() error {
 		return messages.EvalAlreadyDeclared(evalName, filepath.ToSlash(configPath))
 	}
 	// Recheck the local rows and declaration after the confirmation pause.
-	if err := validateInitSimulationDataset(commandContext(a.cmd), configPath, answers, cfg); err != nil {
+	if err := validateInitDataset(commandContext(a.cmd), configPath, answers, cfg); err != nil {
 		return err
 	}
 
@@ -780,8 +782,9 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 				// A path that names nothing is the same broken reference a
 				// generated declaration used to leave behind: the config passes
 				// validation and the deploy fails on a file that never existed.
-				if _, err := os.Stat(in.dataset); err != nil {
-					return scaffold{}, messages.DatasetFileNotFound(in.dataset, err)
+				decl, err := resolveInitLocalDataset(in.evalDir, in.dataset, cfg)
+				if err != nil {
+					return scaffold{}, err
 				}
 				// Deploy already refuses a file whose rows are not JSON objects.
 				// init is holding the file and needs nothing from the service to
@@ -793,9 +796,8 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 				// --dataset is given relative to where the user is standing,
 				// but source: resolves relative to the config, so the path has
 				// to be rebased or the deploy looks for it inside evals/.
-				datasetSource = relativeToConfig(in.dataset, in.evalDir)
-				datasetName = strings.TrimSuffix(
-					filepath.Base(in.dataset), filepath.Ext(in.dataset))
+				datasetSource = decl.File
+				datasetName = decl.Name
 			} else {
 				// A bare name references an already-registered dataset.
 				datasetName = in.dataset

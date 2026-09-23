@@ -655,9 +655,9 @@ func DatasetIsRequired() string {
 	return "A dataset-backed evaluation needs a dataset to grade."
 }
 
-// InitDatasetRejected explains how to correct an unusable local simulation dataset.
+// InitDatasetRejected explains how to correct an unusable local dataset.
 func InitDatasetRejected(why error) string {
-	return fmt.Sprintf("\n  %v\n  Correct the seed file and enter its path or dataset name again, "+
+	return fmt.Sprintf("\n  %v\n  Correct the dataset file and enter its path or dataset name again, "+
 		"or choose another dataset. Press Ctrl+C to cancel.\n", why)
 }
 

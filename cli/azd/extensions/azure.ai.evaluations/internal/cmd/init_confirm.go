@@ -165,7 +165,7 @@ func (a *initAction) ask(ctx initContext) (initAnswers, error) {
 	if err != nil {
 		return initAnswers{}, err
 	}
-	if err := resolveInitSimulationDataset(a.cmd, ctx.configPath, &answers, ctx.cfg); err != nil {
+	if err := resolveInitDataset(a.cmd, ctx.configPath, &answers, ctx.cfg); err != nil {
 		return initAnswers{}, err
 	}
 

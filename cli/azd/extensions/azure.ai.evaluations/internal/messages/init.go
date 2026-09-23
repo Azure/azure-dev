@@ -16,6 +16,14 @@ func InitFlagConflict(flag, requirement string) error {
 		"Remove the conflicting flag, or select a compatible source and conversation mode.")
 }
 
+// InitDatasetFileConflict refuses a file that would be ignored by add-only authoring.
+func InitDatasetFileConflict(name, path string) error {
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		fmt.Sprintf("Dataset %q is already declared with a different file or no local file; "+
+			"%q would reuse that name. Choose a file with a different filename stem to add this dataset.", name, path),
+		"Init never replaces dataset declarations. To reuse the existing dataset, supply its name or its current file path.")
+}
+
 // InitFlagRange names both the input and its supported bounds.
 func InitFlagRange(flag string, value, minimum, maximum int) error {
 	return exterrors.Validation(exterrors.CodeInvalidParameter,

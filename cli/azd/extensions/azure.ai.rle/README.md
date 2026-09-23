@@ -441,6 +441,16 @@ specific training step in a real training loop), and `--timeout` (default
 `600` seconds) all have sensible defaults and rarely need to be set for ad hoc
 testing.
 
+The rollout itself travels over RLE's Execute Rollout WebSocket rather than the
+HTTP API. The Foundry data-plane gateway ends an Execute Rollout HTTP request
+after roughly 120 seconds, which is shorter than a real Harness rollout, so a
+rollout that actually succeeded comes back over HTTP as a 408 carrying no
+result; the upgraded socket is not subject to that cut. There is nothing to
+configure. Where the WebSocket route is not published the upgrade is refused
+before any rollout is requested, so the CLI reports it and falls back to the
+HTTP API unchanged — and a failure *after* the upgrade is never retried on
+HTTP, because by then the rollout may already have run.
+
 ### Rollout artifacts
 
 The Execute Rollout response carries the whole Capture Proxy graph — token ids,

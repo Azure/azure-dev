@@ -6,7 +6,9 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 
@@ -72,7 +74,43 @@ type executeRolloutResponse = rollouts.Response
 
 // executeRollout runs one isolated rollout of an exact, published environment version.
 // loomBearerToken is forwarded unchanged via the aml-user-token header.
+//
+// The rollout travels over the WebSocket transport, which the Foundry data-plane gateway
+// does not terminate at roughly 120 seconds the way it terminates the HTTP request. A
+// Harness rollout regularly runs longer than that, so on HTTP it returns a 408 with no
+// result even though the rollout itself succeeded. Where the upgrade is unavailable -- the
+// gateway rejects it, or the service predates the route -- the handshake fails before any
+// rollout is requested, so the HTTP path still runs and behavior is unchanged. A failure
+// after the upgrade is never retried on HTTP: the rollout may already have executed.
 func (c *rleClient) executeRollout(
+	ctx context.Context,
+	environmentName string,
+	environmentVersion string,
+	loomBearerToken string,
+	request executeRolloutRequest,
+	errOut io.Writer,
+) (*executeRolloutResponse, error) {
+	response, err := c.executeRolloutOverWebSocket(
+		ctx, environmentName, environmentVersion, loomBearerToken, request)
+	if err == nil {
+		return response, nil
+	}
+	handshakeErr, ok := errors.AsType[*executeRolloutHandshakeError](err)
+	if !ok {
+		return nil, err
+	}
+	if errOut != nil {
+		fmt.Fprintf(
+			errOut,
+			"Warning: %v\n"+
+				"Falling back to the HTTP transport, which the gateway ends after about 120 seconds.\n",
+			handshakeErr,
+		)
+	}
+	return c.executeRolloutOverHTTP(ctx, environmentName, environmentVersion, loomBearerToken, request)
+}
+
+func (c *rleClient) executeRolloutOverHTTP(
 	ctx context.Context,
 	environmentName string,
 	environmentVersion string,

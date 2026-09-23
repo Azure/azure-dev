@@ -1,5 +1,19 @@
 # Release History
 
+## 0.8.14-preview
+
+- `azd ai rle rollout` now sends the rollout over RLE's Execute Rollout
+  WebSocket instead of the HTTP API. The Foundry data-plane gateway ends an
+  Execute Rollout HTTP request after roughly 120 seconds, which is shorter than
+  a real Harness rollout, so a rollout that actually succeeded came back as a
+  408 carrying no result and no artifacts; the upgraded socket is not subject
+  to that cut. The upgrade travels on the gateway-forwarded OpenEnv instance
+  route, because the gateway does not route the rollout path. Where that route
+  is not published the upgrade is refused before any rollout is requested, so
+  the CLI reports it and falls back to the HTTP API unchanged. A failure after
+  the upgrade is never retried on HTTP, because by then the rollout may already
+  have run.
+
 ## 0.8.13-preview
 
 - `azd ai rle init` and `azd ai rle skill install` now install the RLE project

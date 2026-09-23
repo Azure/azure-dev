@@ -333,16 +333,43 @@ func TestCreatePromptAgentAPIRequest_AuthoredVersionedSkill(t *testing.T) {
 		Skills: []HarnessSkillRef{
 			{Name: "microsoft-foundry", Version: "1"},
 		},
+		ResolvedSkills: []HarnessSkillRef{{Name: "MICROSOFT-FOUNDRY", Version: "3"}},
 	}
 
 	req, err := CreatePromptAgentAPIRequest(promptDef, nil)
 	if err != nil {
 		t.Fatalf("CreatePromptAgentAPIRequest: %v", err)
 	}
-	def := req.Definition.(agent_api.ManagedAgentDefinition)
+	def, ok := req.Definition.(agent_api.ManagedAgentDefinition)
+	if !ok {
+		t.Fatalf("definition: got %T, want agent_api.ManagedAgentDefinition", req.Definition)
+	}
 	want := []agent_api.SkillReference{{Name: "microsoft-foundry", Version: "1"}}
 	if len(def.Skills) != len(want) || def.Skills[0] != want[0] {
 		t.Fatalf("definition skills: got %+v, want %+v", def.Skills, want)
+	}
+}
+
+func TestPromptAgentRejectsMalformedSkillYAML(t *testing.T) {
+	tests := []struct {
+		name  string
+		skill string
+		want  string
+	}{
+		{"misspelled name", `{nam: foo, version: "1"}`, "field nam not found"},
+		{"unknown field", `{name: foo, version: "1", extra: true}`, "field extra not found"},
+		{"missing name", `{version: "1"}`, "requires a non-empty name"},
+		{"empty name", `{name: "", version: "1"}`, "requires a non-empty name"},
+		{"blank name", `{name: "   ", version: "1"}`, "requires a non-empty name"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ExtractAgentDefinition([]byte("template:\n  kind: prompt\n  name: agent\n" +
+				"  model: test-model\n  instructions: Be helpful.\n  skills:\n    - " + tt.skill + "\n"))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q, got %v", tt.want, err)
+			}
+		})
 	}
 }
 

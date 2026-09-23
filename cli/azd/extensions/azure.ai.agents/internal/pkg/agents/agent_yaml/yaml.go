@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -518,12 +519,8 @@ type ContainerAgent struct {
 	SessionConfiguration *SessionConfiguration   `json:"sessionConfiguration,omitempty" yaml:"session_configuration,omitempty"`
 }
 
-// HarnessSkillRef is a skill pinned onto a harnessed agent by name and,
-// optionally, version.
-//
-// The deploy graph fills the version in from the publish it just performed,
-// because the service rejects a reference that omits it. An author writing the
-// reference by hand may leave it out and take the skill's current default.
+// HarnessSkillRef references a prompt agent's skill by name and optional version.
+// An omitted version must be supplied by local skill deployment resolution.
 type HarnessSkillRef struct {
 	Name    string `json:"name" yaml:"name"`
 	Version string `json:"version,omitempty" yaml:"version,omitempty"`
@@ -531,20 +528,42 @@ type HarnessSkillRef struct {
 
 // UnmarshalYAML accepts both the legacy skill-name shorthand and a versioned reference.
 func (r *HarnessSkillRef) UnmarshalYAML(node *yaml.Node) error {
-	if node.Kind == yaml.ScalarNode {
-		return node.Decode(&r.Name)
-	}
 	type skillRef HarnessSkillRef
-	return node.Decode((*skillRef)(r))
+	var decoded skillRef
+	if node.Kind == yaml.ScalarNode {
+		if err := node.Decode(&decoded.Name); err != nil {
+			return err
+		}
+	} else if err := decodeStrict(node, &decoded); err != nil {
+		return fmt.Errorf("skill reference: %w", err)
+	}
+	if strings.TrimSpace(decoded.Name) == "" {
+		return fmt.Errorf("skill reference requires a non-empty name")
+	}
+	*r = HarnessSkillRef(decoded)
+	return nil
 }
 
 // UnmarshalJSON preserves skill-name shorthand in inline azure.yaml service properties.
 func (r *HarnessSkillRef) UnmarshalJSON(data []byte) error {
-	if data = bytes.TrimSpace(data); len(data) > 0 && data[0] == '"' {
-		return json.Unmarshal(data, &r.Name)
-	}
 	type skillRef HarnessSkillRef
-	return json.Unmarshal(data, (*skillRef)(r))
+	var decoded skillRef
+	if data = bytes.TrimSpace(data); len(data) > 0 && data[0] == '"' {
+		if err := json.Unmarshal(data, &decoded.Name); err != nil {
+			return err
+		}
+	} else {
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&decoded); err != nil {
+			return fmt.Errorf("skill reference: %w", err)
+		}
+	}
+	if strings.TrimSpace(decoded.Name) == "" {
+		return fmt.Errorf("skill reference requires a non-empty name")
+	}
+	*r = HarnessSkillRef(decoded)
+	return nil
 }
 
 // PromptHarness selects the managed runtime for a prompt agent. Harness

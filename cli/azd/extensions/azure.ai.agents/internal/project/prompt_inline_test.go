@@ -132,6 +132,28 @@ func TestPromptAgentFromResolvedServiceIgnoresOtherKinds(t *testing.T) {
 	}
 }
 
+func TestPromptAgentFromResolvedServiceSkillReferences(t *testing.T) {
+	svc := &azdext.ServiceConfig{
+		Name: "skill-agent",
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind":         "prompt",
+			"model":        "gpt-4.1-mini",
+			"instructions": "Be helpful.",
+			"skills": []any{
+				"local-skill",
+				map[string]any{"name": "microsoft-foundry", "version": "1"},
+			},
+		}),
+	}
+	got, found, err := PromptAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, []agent_yaml.HarnessSkillRef{
+		{Name: "local-skill"},
+		{Name: "microsoft-foundry", Version: "1"},
+	}, got.Skills)
+}
+
 // TestPromptAgentFromResolvedServiceNoDefinition confirms an entry carrying no
 // definition at all falls through quietly, which is what lets projects that
 // still keep their definition in a file reach the file-based path.

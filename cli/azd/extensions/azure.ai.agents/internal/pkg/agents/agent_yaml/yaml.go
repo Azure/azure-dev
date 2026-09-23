@@ -5,6 +5,7 @@ package agent_yaml
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -535,6 +536,15 @@ func (r *HarnessSkillRef) UnmarshalYAML(node *yaml.Node) error {
 	}
 	type skillRef HarnessSkillRef
 	return node.Decode((*skillRef)(r))
+}
+
+// UnmarshalJSON preserves skill-name shorthand in inline azure.yaml service properties.
+func (r *HarnessSkillRef) UnmarshalJSON(data []byte) error {
+	if data = bytes.TrimSpace(data); len(data) > 0 && data[0] == '"' {
+		return json.Unmarshal(data, &r.Name)
+	}
+	type skillRef HarnessSkillRef
+	return json.Unmarshal(data, (*skillRef)(r))
 }
 
 // PromptHarness selects the managed runtime for a prompt agent. Harness

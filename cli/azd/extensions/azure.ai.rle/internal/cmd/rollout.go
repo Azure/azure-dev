@@ -282,7 +282,7 @@ func (a *rolloutAction) executeAndSave(
 			CheckpointID:    checkpointID,
 			SequenceID:      &sequenceID,
 		},
-	})
+	}, errOut)
 	if err != nil {
 		if isRleNotFound(err) {
 			return environmentVersionNotFoundError(target.environmentName, target.version)

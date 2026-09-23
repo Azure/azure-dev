@@ -138,7 +138,7 @@ func scanSkillsDir(agentDir string) ([]skillBundle, error) {
 	}
 	dir := filepath.Join(agentDir, promptSkillsDirName)
 
-	f, err := os.Open(dir) //nolint:gosec // agentDir derives from the resolved agent.yaml path
+	f, err := os.Open(dir) //nolint:gosec // agentDir derives from the resolved service definition
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -346,8 +346,8 @@ func skillsShellNode(
 					exterrors.CodeInvalidAgentManifest,
 					"toolbox: is only available to an agent that names a harness",
 					"add a 'harness:' block with type "+agent_api.ManagedAgentHarnessGitHubCopilot+
-						" to agent.yaml, or remove 'toolbox:' and put the "+
-						"skills in a skills/ folder next to agent.yaml",
+						" to the agent definition, or remove 'toolbox:' and put the "+
+						"skills in the agent project's skills/ folder",
 				)
 			}
 			return validateSkillBundleInstructions(skills)
@@ -478,7 +478,7 @@ func validateSkillBundleInstructions(skills []skillBundle) error {
 
 // toolboxNode attaches an existing shared toolbox by reference, as an mcp tool.
 //
-// It is reachable only from an explicit `toolbox:` block in agent.yaml. Skills
+// It is reachable only from an explicit `toolbox:` block in the agent definition. Skills
 // no longer travel this path: every harnessed agent already gets a system
 // toolbox whose name, version, endpoint and lifecycle the service owns, so azd
 // creating a second toolbox of its own to carry skills both duplicated that and
@@ -499,7 +499,7 @@ func toolboxNode(
 				return exterrors.Validation(
 					exterrors.CodeInvalidAgentManifest,
 					"toolbox reference is missing a name",
-					"set toolbox.name in agent.yaml",
+					"set toolbox.name in the agent definition",
 				)
 			}
 			return nil
@@ -641,7 +641,7 @@ func newFoundryToolboxBuilder(
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
 			"a Foundry project endpoint is required to resolve a toolbox",
-			"run `azd up` to provision a Foundry project, or remove the 'toolbox:' block from agent.yaml",
+			"run `azd up` to provision a Foundry project, or remove the 'toolbox:' block from the agent definition",
 		)
 	}
 	return &foundryToolboxBuilder{}, nil

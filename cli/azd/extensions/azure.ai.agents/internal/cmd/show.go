@@ -379,7 +379,7 @@ func promptAgentEndpoint(settings *projectpkg.PromptAgentSettings) string {
 // printPromptToolboxTools lists the mcp/toolbox tools attached to the deployed
 // prompt agent, including the backing project connection that authenticates the
 // agent to each toolbox. This surfaces the toolbox created during deploy without
-// mutating the authored agent.yaml.
+// mutating the authored agent definition.
 func printPromptToolboxTools(w io.Writer, def map[string]any) {
 	if def == nil {
 		return

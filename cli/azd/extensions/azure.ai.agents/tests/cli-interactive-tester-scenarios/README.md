@@ -179,10 +179,10 @@ Tier 0 (`tier0/`) scenarios need no auth. Run this `az login` step once per WSL
 session **before** asking the agent to drive any Tier 1/Tier 2 scenario; all of
 them reuse that session credential.
 
-### GitHub login (manifest scenarios)
+### GitHub login (remote azure.yaml scenarios)
 
-The manifest scenarios (`1.03-init-from-azure-yaml-url`,
-`1.05-init-flag-agent-name`) download an agent manifest — and its sibling
+The remote project scenarios (`1.03-init-from-azure-yaml-url`,
+`1.05-init-flag-agent-name`) download a unified azure.yaml — and its sibling
 files — from a public GitHub repo. The CLI first tries the anonymous GitHub API,
 but when that's rate-limited (60 req/hr) it falls back to the `gh` CLI, which
 would otherwise drop into an **interactive GitHub login** mid-run. Like

@@ -815,22 +815,6 @@ func localProjectEndpoint(
 	return fallback
 }
 
-// findAgentYaml locates the agent definition file in the given directory.
-// After `azd ai agent init`, agent.yaml (and azure.yaml) are the sources of
-// truth for the agent configuration. We intentionally do not look at
-// agent.manifest.yaml here — that file is an import artifact used only during
-// init and is not referenced at runtime.
-func findAgentYaml(dir string) string {
-	candidates := []string{"agent.yaml", "agent.yml"}
-	for _, name := range candidates {
-		path := filepath.Join(dir, name)
-		if _, err := os.Stat(path); err == nil {
-			return path
-		}
-	}
-	return ""
-}
-
 // appendPortEnvVars appends PORT and, for .NET projects, ASPNETCORE_URLS to the
 // environment slice so the agent listens on the correct port.
 // ASP.NET Core ignores PORT — it uses ASPNETCORE_URLS to configure Kestrel.

@@ -199,7 +199,9 @@ type AgentServiceTargetProvider struct {
 
 const (
 	preBuiltImageArtifactSourceKey = "azure.ai.agents.imageSource"
-	preBuiltImageArtifactSource    = "agent.yaml"
+	// Keep the legacy metadata value for consumers that identify this artifact
+	// source; definitions now come from direct/root-$ref azure.yaml services.
+	preBuiltImageArtifactSource = "agent.yaml"
 )
 
 // NewAgentServiceTargetProvider creates a new AgentServiceTargetProvider instance
@@ -210,8 +212,9 @@ func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTa
 }
 
 // Initialize stores and validates the service config. Heavy work such as
-// resolving agent.yaml, tenant lookup, and credential creation remains deferred
-// to deploy-time entrypoints; an explicit $ref is resolved here for validation.
+// resolving the agent definition, tenant lookup, and credential creation
+// remains deferred to deploy-time entrypoints; an explicit $ref is resolved
+// here for validation.
 func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
 	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
 		return err
@@ -371,7 +374,7 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	}
 
 	// Recorded before the prompt-agent branch below returns: with the definition
-	// carried inline there is no agent.yaml to anchor the skills/ and
+	// carried inline there is no referenced definition file to anchor the skills/ and
 	// vector-assets/ convention folders, so the service directory is what locates
 	// them.
 	p.servicePath = fullPath
@@ -476,7 +479,7 @@ func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
 	}
 
 	// Unified shape: the agent definition is carried inline on the service entry,
-	// so no on-disk agent.yaml is required.
+	// so no referenced definition file is required.
 	if _, _, found, _, defErr := AgentDefinitionFromResolvedService(
 		p.serviceConfig,
 		projectPath,
@@ -514,8 +517,7 @@ func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
 const AgentDefinitionRefKey = "$ref"
 
 // declaredAgentDefinitionRef returns the root `$ref` declared on the service
-// entry in azure.yaml, or "" when the service relies on the agent.yaml
-// convention or carries its definition inline.
+// entry in azure.yaml, or "" when the service carries its definition inline.
 //
 // It must be called before [ResolveServiceConfigInPlace], which expands the
 // directive and removes the key.
@@ -1176,7 +1178,8 @@ func acrPermissionSuggestionFor(err error) string {
 		"  Supported runtimes: python_3_13, python_3_14, dotnet_10\n\n" +
 		"  Learn more: https://learn.microsoft.com/azure/foundry/agents/how-to/deploy-hosted-agent-code\n\n" +
 		"  To switch (no need to re-run `azd ai agent init`):\n" +
-		"  1. Open the service's agent.yaml and add a `code_configuration:` block under\n" +
+		"  1. Open the service's agent definition in azure.yaml (or its root $ref target)\n" +
+		"     and add a `code_configuration:` block under\n" +
 		"     the hosted agent, for example:\n" +
 		"        code_configuration:\n" +
 		"          runtime: python_3_13          # or dotnet_10\n" +
@@ -1508,7 +1511,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	// Prompt agents are created on the managed harness, not the Foundry
 	// service. Dispatch to the dedicated harness deploy path before any
 	// ARM/Foundry resolution the hosted path requires. The deploy context still
-	// has to be resolved first: deployPromptAgent loads agent.yaml through
+	// has to be resolved first: deployPromptAgent loads the direct/root-$ref definition through
 	// p.agentDefinitionPath, which is empty until ensureDeployContext runs.
 	if p.isPromptAgentService() {
 		if err := p.ensureDeployContext(ctx); err != nil {
@@ -1538,7 +1541,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		if !isContainerAgent {
 			return nil, exterrors.Validation(
 				exterrors.CodeUnsupportedAgentKind,
-				"unsupported agent kind in agent.yaml",
+				"unsupported agent kind in the agent service definition",
 				"use a supported kind: 'hosted'",
 			)
 		}
@@ -2073,8 +2076,7 @@ func validateRegistryConnectionDefinition(agentDef agent_yaml.ContainerAgent) er
 // Behavior:
 //   - A registry connection requires an image and always selects that pre-built image.
 //   - If no image is configured in the loaded agent definition, always build from Dockerfile.
-//     The image usually comes from the azure.yaml service image field, but can come from
-//     a legacy agent.yaml fallback.
+//     The image comes from the direct/root-$ref service definition.
 //   - In non-interactive mode (--no-prompt), the prompt returns the default
 //     selection (index 0 = build from Dockerfile) automatically.
 //   - In interactive mode, prompt the user. The default is to build, so users
@@ -2260,7 +2262,7 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentRequest,
 			fmt.Sprintf("failed to create agent request from definition: %s", err),
-			"verify the agent.yaml definition is correct",
+			"verify the agent service definition in azure.yaml or its root $ref target",
 		)
 	}
 
@@ -2279,7 +2281,7 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		)
 	}
 
-	// Default to "responses" protocol when none specified in agent.yaml.
+	// Default to "responses" when the direct/root-$ref definition omits protocols.
 	protocols := agentDef.Protocols
 	if len(protocols) == 0 {
 		protocols = []agent_yaml.ProtocolVersionRecord{

@@ -3,7 +3,7 @@
 # Requires Azure login (see README "Authentication"). Does NOT run `azd provision`;
 # no cost incurred.
 # Precondition: the cwd should already contain agent source code (and ideally an
-# agent manifest). The pre hooks seed a committed Python fixture so this is
+# source files). The pre hooks seed a committed Python fixture so this is
 # guaranteed and the run is idempotent.
 name: "init-from-code"
 command: "azd ai agent init"
@@ -27,7 +27,6 @@ goals:
   - "When prompted for the AGENT NAME, set it to EXACTLY '{prefix}-t1-from-code-{instance}' (clear any pre-filled default first, then type it). The from-code flow updates the current project directory; it does not create an agent-name subdirectory."
   - "At the first 'How do you want to initialize your agent?' prompt, select 'Use the code in the current directory' (this is the from-code flow; there is no --from-code flag)."
   - "Wait for the tool to inspect the current directory and treat its code as the agent source."
-  - "If an existing agent manifest is detected, confirm that you want to reuse it (answer yes / confirm)."
   - "At the 'How would you like to deploy your agent?' prompt, select 'Source Code (ZIP upload)'."
   - "At the 'Select the runtime for your agent' prompt, select 'Python 3.13'."
   - "At the entry-point prompt, provide 'app.py'."
@@ -41,4 +40,4 @@ goals:
   - "Wait for initialization to complete — look for 'Next:' in the output."
   - "Verify the scaffold: confirm azure.yaml was created in the current working directory to reference the local code as an azure.ai.agent service, and that a .agentignore file was generated."
   - "Take a screenshot of the completed init output."
-  - "STOP here — do NOT run 'azd provision'. Report a finding if code-detection misbehaves or if the manifest-reuse prompt is confusing."
+  - "STOP here — do NOT run 'azd provision'. Report a finding if code detection misbehaves or if init attempts to discover a standalone agent manifest."

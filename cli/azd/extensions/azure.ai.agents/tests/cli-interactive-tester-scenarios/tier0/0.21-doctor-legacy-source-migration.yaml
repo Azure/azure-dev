@@ -1,0 +1,25 @@
+# Tier 0 (offline) — doctor reports unsupported implicit legacy agent files.
+name: "doctor-legacy-source-migration"
+command: "azd ai agent doctor --local-only"
+cwd: "~/working/azd-agents-doctor-legacy-{instance}"
+tags: ["tier:0", "cmd:doctor", "migration", "negative-path", "parallel-safe"]
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+
+pre:
+  - run: "rm -rf ~/working/azd-agents-doctor-legacy-{instance}"
+    cwd: "~/working"
+    name: "reset to an empty working dir"
+  - run: "mkdir -p ~/working/azd-agents-doctor-legacy-{instance} && printf 'name: doctor-legacy\\nservices:\\n  legacy-agent:\\n    host: azure.ai.agent\\n    project: .\\n' > ~/working/azd-agents-doctor-legacy-{instance}/azure.yaml && printf 'kind: hosted\\nname: legacy-agent\\nprotocols:\\n  - protocol: responses\\n    version: 1.0.0\\n' > ~/working/azd-agents-doctor-legacy-{instance}/agent.yaml"
+    cwd: "~/working"
+    name: "seed unified project with unsupported implicit agent.yaml"
+
+goals:
+  - "Run doctor with --local-only and wait for the report to render."
+  - "Confirm local.agent-yaml-valid fails and reports the unsupported implicit agent.yaml file."
+  - "Confirm remediation says to move the direct definition onto the azure.ai.agent service in azure.yaml or reference it with an explicit root $ref."
+  - "Confirm no check describes agent.yaml, nested agent config, or AGENT_DEFINITION_PATH as a supported runtime source."
+  - "Confirm the failed report has no trailing Next: block and the command exits with code 1."
+  - "Take a screenshot of the report."
+  - "Report a finding if doctor parses agent.yaml as supported configuration, skips migration guidance, or changes unrelated local checks."

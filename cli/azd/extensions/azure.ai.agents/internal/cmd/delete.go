@@ -458,7 +458,7 @@ func (a *DeleteAction) runPromptDelete(
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentName,
 			"agent name is required but could not be resolved",
-			"set 'name' in agent.yaml or pass the agent name as a positional argument",
+			"set 'name' on the agent service in azure.yaml or pass the agent name as a positional argument",
 		)
 	}
 

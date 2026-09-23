@@ -586,8 +586,6 @@ func TestDependencyConditionLookupPrefersAzdEnvironment(t *testing.T) {
 	require.Equal(t, "true", provider.dependencyEnvValue("DEPLOY_TOOLS"))
 }
 
-// --- helpers for Package tests ---
-
 // stubContainerServer is a minimal ContainerServiceServer that returns
 // success responses for Build, Package, and Publish.
 type stubContainerServer struct {

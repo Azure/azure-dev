@@ -28,7 +28,6 @@ goals:
   - "When prompted for the AGENT NAME, set it to EXACTLY '{prefix}-t1-code-deploy-{instance}' (clear any pre-filled default first, then type it). The from-code flow updates the current project directory; it does not create an agent-name subdirectory."
   - "At the first 'How do you want to initialize your agent?' prompt, select 'Use the code in the current directory'."
   - "Wait for the tool to inspect the current directory's code with code-deploy (ZIP upload) mode selected."
-  - "If an existing agent manifest is detected, confirm reuse."
   - "When prompted for an entry point, provide the main entry file (e.g. 'app.py')."
   - "When prompted for a runtime, select an appropriate runtime (e.g. 'python_3_13')."
   - "At the 'How should dependencies be resolved?' prompt, select 'Remote build (dependencies installed on server during deployment)'."
@@ -41,4 +40,4 @@ goals:
   - "Wait for initialization to complete — look for 'Next:' or a success message."
   - "Verify the scaffold: confirm azure.yaml in the current working directory reflects code-deploy mode — the azure.ai.agent service entry should have codeConfiguration with the chosen entry point and runtime embedded in its properties, and a .agentignore file should control ZIP packaging."
   - "Take a screenshot of the completed init output."
-  - "STOP here — do NOT run 'azd provision'. Report a finding if the entry-point or runtime prompts are missing, confusing, or not persisted."
+  - "STOP here — do NOT run 'azd provision'. Report a finding if the entry-point or runtime prompts are missing, confusing, or not persisted, or if init attempts to discover a standalone agent manifest."

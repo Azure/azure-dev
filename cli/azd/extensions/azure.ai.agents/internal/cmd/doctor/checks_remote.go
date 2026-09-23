@@ -60,17 +60,14 @@ func NewRemoteChecks(deps Dependencies) []Check {
 	//     (`remote.rbac`)
 	//   - C17 (landed): per-service agent version status
 	//     (`remote.agent-status`)
-	//   - C15 (landed): manifest connections exist on the
+	//   - C15 (landed): configured connections exist on the
 	//     Foundry project (`remote.connections`)
 	//
 	// Note: a `remote.model-deployments` check (C13) was removed
 	// after release because its comparison was incorrect — the
-	// manifest's `resources[].name` is a logical alias used to bind
-	// `{{token}}` placeholders in `agent.yaml`, not a Foundry
-	// deployment name. The redesign needs to read the resolved
-	// deployment name from `agent.yaml`'s `environment_variables`
-	// (or the azd env) instead. See manifest.go's walker for the
-	// populated `state.ModelRefs` slice that the new check can reuse.
+	// configuration's model name can be a logical alias rather than a
+	// Foundry deployment name. A redesign needs to read the resolved
+	// deployment name from the supported service definition or azd env.
 	//
 	// Note: a `remote.agent-identity-roles` check (C12) was removed
 	// because the Foundry service now grants the per-agent identity

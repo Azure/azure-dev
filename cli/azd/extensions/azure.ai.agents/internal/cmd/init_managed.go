@@ -26,8 +26,7 @@ import (
 //
 //  1. Scaffolds (or reuses) an azd project + infra via ensureProject — the
 //     same azd-ai-starter-basic template the hosted flow uses.
-//  2. Writes an agent.yaml (kind: prompt) into the service directory.
-//  3. Adds an inline azure.yaml service entry (Host=azure.ai.agent).
+//  2. Writes a direct prompt definition on an azure.yaml service entry.
 //
 // The create/invoke/delete then happen through the service-target provider
 // during `azd deploy` / `azd up`, exactly like hosted agents — no bespoke
@@ -434,7 +433,7 @@ func promptManagedAgentDescription(
 			DefaultValue:   "",
 			Required:       false,
 			IgnoreHintKeys: true,
-			HelpMessage:    "A short summary of what this agent does. Written to agent.yaml and shown in Foundry.",
+			HelpMessage:    "A short summary of what this agent does. Written to azure.yaml and shown in Foundry.",
 		},
 	})
 	if err != nil {
@@ -590,11 +589,11 @@ func promptScaffoldInstructions(instructions string) string {
 	return "You are a helpful AI assistant."
 }
 
-// promptScaffoldHarness builds the `harness:` block for a scaffolded agent.yaml,
+// promptScaffoldHarness builds the `harness:` block for a scaffolded definition,
 // or nil for a plain prompt agent so the key is omitted entirely.
 //
 // harnessType is already resolved from --harness and --kind, so it wins over
-// the manifest's own type.
+// any implied harness.
 func promptScaffoldHarness(harnessType string) *agent_yaml.PromptHarness {
 	return agent_yaml.NewPromptHarness(harnessType)
 }

@@ -29,7 +29,6 @@ goals:
   - "When prompted for the AGENT NAME, set it to EXACTLY '{prefix}-t1-container-{instance}' (clear any pre-filled default first, then type it). The from-code flow updates the current project directory; it does not create an agent-name subdirectory."
   - "At the first 'How do you want to initialize your agent?' prompt, select 'Use the code in the current directory'."
   - "Wait for the tool to inspect the current directory's code with container-deploy mode selected. Container mode may prompt for a startup command (the Dockerfile CMD, e.g. 'python main.py') — that is expected. However, it should NOT prompt for the separate entry-point or runtime prompts that code-deploy uses (those are distinct, code-deploy-only prompts)."
-  - "If an existing agent manifest is detected, confirm reuse."
   - "At the 'Which protocols does your agent support?' prompt, verify 'responses' is selected by default and every other protocol is unselected. Leave that selection unchanged and continue."
   - "If asked to select an Azure AI Foundry project, choose to create a new one and name it with the '{prefix}-' prefix."
   - "A 'Select a tenant' prompt may not appear when the signed-in user has access to only one tenant. If it appears, select the tenant provided with this scenario run. If no tenant was provided, report a failure and do not answer the prompt."
@@ -39,4 +38,4 @@ goals:
   - "Wait for initialization to complete — look for 'Next:' or a success message."
   - "Verify the scaffold: confirm azure.yaml in the current working directory reflects container-deploy mode — the azure.ai.agent service entry should have docker/Dockerfile configuration in its properties rather than codeConfiguration with entry-point/runtime fields."
   - "Take a screenshot of the completed init output."
-  - "STOP here — do NOT run 'azd provision'. Report a finding if container mode incorrectly prompts for entry-point/runtime (the separate code-deploy prompts), fails to produce container build config, or the deploy mode is not persisted."
+  - "STOP here — do NOT run 'azd provision'. Report a finding if container mode incorrectly prompts for entry-point/runtime (the separate code-deploy prompts), fails to produce container build config, the deploy mode is not persisted, or init attempts to discover a standalone agent manifest."

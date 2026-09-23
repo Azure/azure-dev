@@ -12,17 +12,20 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// NewAddAgentTool creates a tool for adding Microsoft Foundry agents to a project
+// NewAddAgentTool creates a non-mutating guide for adding Microsoft Foundry
+// agents from a unified azure.yaml.
 func NewAddAgentTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
 			"add_agent",
-			mcp.WithDescription("Add a Microsoft Foundry agent to the current azd project using an agent manifest"),
+			mcp.WithDescription(
+				"Guide initialization of a Microsoft Foundry agent from a unified azure.yaml; this tool does not modify files",
+			),
 			mcp.WithReadOnlyHintAnnotation(false),
 			mcp.WithIdempotentHintAnnotation(false),
 			mcp.WithDestructiveHintAnnotation(false),
-			mcp.WithString("manifest_location",
-				mcp.Description("The file path or URL to the agent manifest (JSON or YAML format)"),
+			mcp.WithString("azure_yaml_location",
+				mcp.Description("The file path or URL to a unified azure.yaml project document"),
 				mcp.Required(),
 			),
 		),
@@ -33,9 +36,11 @@ func NewAddAgentTool() server.ServerTool {
 				return mcp.NewToolResultError("Invalid arguments format"), nil
 			}
 
-			manifestLocation, ok := args["manifest_location"].(string)
-			if !ok || manifestLocation == "" {
-				return mcp.NewToolResultError("manifest_location parameter is required and must be a string"), nil
+			azureYamlLocation, ok := args["azure_yaml_location"].(string)
+			if !ok || azureYamlLocation == "" {
+				return mcp.NewToolResultError(
+					"azure_yaml_location parameter is required and must be a string",
+				), nil
 			}
 
 			// Create a new context that includes the azd access token
@@ -54,33 +59,17 @@ func NewAddAgentTool() server.ServerTool {
 				return mcp.NewToolResultError("No azd project found in current directory. Please run 'azd init' first."), nil
 			}
 
-			// Process the manifest and add the agent
-			result := processAgentManifest(manifestLocation)
+			result := unifiedInitGuidance(azureYamlLocation)
 
 			return mcp.NewToolResultText(result), nil
 		},
 	}
 }
 
-// processAgentManifest processes the agent manifest and adds it to the project
-func processAgentManifest(manifestLocation string) string {
-	// For now, return a placeholder implementation
-	// In a real implementation, this would:
-	// 1. Download/read the manifest from the location
-	// 2. Parse the manifest (JSON/YAML)
-	// 3. Validate the agent configuration
-	// 4. Add the agent to the azd project configuration
-	// 5. Update azure.yaml with the new agent service
-	// 6. Create necessary infrastructure files
-
-	return fmt.Sprintf(`✅ Successfully processed agent manifest from: %s
-
-📋 Next steps:
-1. The agent configuration has been added to your azd project
-2. Run 'azd provision' to create the necessary Azure resources
-3. Run 'azd deploy' to deploy your Microsoft Foundry agent
-
-🔗 Agent manifest location: %s
-🎯 Agent will be configured for Microsoft Foundry deployment`,
-		manifestLocation, manifestLocation)
+func unifiedInitGuidance(azureYamlLocation string) string {
+	return fmt.Sprintf(
+		"No files or resources were changed. To initialize this project from the unified azure.yaml, run:\n\n"+
+			"azd ai agent init -m %q",
+		azureYamlLocation,
+	)
 }

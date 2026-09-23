@@ -128,7 +128,7 @@ still implements Agent deployment as a service target invoked by core azd;
 there is no separate definition-file deployment or sibling-Toolbox orchestration
 path in the Agent command tree.
 
-For an existing standalone agent, declare an `azure.ai.agent` service in
+For an existing agent source project, declare an `azure.ai.agent` service in
 `azure.yaml` with its source directory and deployment settings. The definition
 can be inline or referenced using `$ref`, following the service schema; declare
 core-owned fields such as `host`, `project`, `language`, and `uses` in
@@ -448,11 +448,6 @@ Details:
   managed agents, `azd ai agent init` lists the policies on the selected account
   and can bind one for you; see `--rai-policy`.
 
-> **Note:** In the deprecated on-disk `agent.yaml` shape the key is snake_case
-> (`rai_policy_name`). In `azure.yaml` it is camelCase (`raiPolicyName`), like
-> the other inline agent properties such as `codeConfiguration` and
-> `environmentVariables`.
-
 ## Voice agents (public preview)
 
 Voice initialization is available without a private-preview environment switch.
@@ -664,11 +659,6 @@ proxy — fails validation rather than silently deploying a policy that never ru
 Set `inputContentType`/`outputContentType` to `text` when the body is plain text;
 the whole body is then moderated and no paths are needed for that direction.
 
-As with `raiPolicyName`, the deprecated on-disk `agent.yaml` shape uses snake_case
-keys throughout this block (`invocations_moderation`, `response_mode`,
-`input_paths`, `stream_selectors`, `event_type`, and so on). The **values**
-(`non_streaming`, `streaming`, `both`, `json`, `text`) are the same in both.
-
 ### Hosted voice wrapper (preview)
 
 A hosted voice wrapper keeps Voice Live responsible for VAD, speech-to-text,
@@ -769,10 +759,6 @@ Details:
 - `idleTimeoutSeconds` must be between **120 and 3600** seconds (inclusive).
   Values outside that range are rejected at deploy time and by schema
   validation.
-- In the deprecated on-disk `agent.yaml` shape the keys are snake_case
-  (`session_configuration.idle_timeout_seconds`). In `azure.yaml` they are
-  camelCase, like the other inline agent properties.
-
 ## Session carry-over across deploys
 
 When a hosted agent is redeployed, Foundry assigns the agent a **new version** and

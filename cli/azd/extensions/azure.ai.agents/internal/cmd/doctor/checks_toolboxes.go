@@ -220,30 +220,16 @@ func classifyToolboxResults(
 	}
 	hasSplit := false
 	hasBundled := false
-	hasLegacy := false
 	for _, toolbox := range missing {
 		hasSplit = hasSplit || toolbox.ToolboxSource == nextstep.ToolboxSourceSplit
 		hasBundled = hasBundled || toolbox.ToolboxSource == nextstep.ToolboxSourceBundled
-		hasLegacy = hasLegacy ||
-			toolbox.ToolboxSource == nextstep.ToolboxSourceLegacyManifest ||
-			toolbox.ToolboxSource == nextstep.ToolboxSourceUnknown
 	}
-	legacyMigration := "Migrate legacy toolboxes to azure.ai.toolbox services and add them to agent uses; " +
-		"set endpoint on the toolbox service to reuse an existing toolbox, then run `azd deploy --all`."
-	suggestion := legacyMigration
+	suggestion := "Configure the toolbox in azure.yaml, then run `azd deploy`."
 	switch {
-	case hasBundled && hasSplit && hasLegacy:
-		suggestion = bundledToolboxMigrationSuggestion(missing) +
-			" " + legacyMigration
 	case hasBundled && hasSplit:
 		suggestion = bundledToolboxMigrationSuggestion(missing)
-	case hasBundled && hasLegacy:
-		suggestion = bundledToolboxMigrationSuggestion(missing) +
-			" " + legacyMigration
 	case hasBundled:
 		suggestion = bundledToolboxMigrationSuggestion(missing)
-	case hasSplit && hasLegacy:
-		suggestion = legacyMigration
 	case hasSplit:
 		suggestion = "Run `azd deploy` to materialize split toolbox services."
 	}
@@ -338,7 +324,7 @@ func toolboxLookupDetails(toolboxes []nextstep.ResourceRef) []toolboxLookup {
 // surface instead of a quiet pass-through.
 //
 // Dedup is on the canonical env key, not the toolbox name: the
-// manifest walker keeps one ref per (ServiceName, Name), so the same
+// supported-source collector keeps one ref per (ServiceName, Name), so the same
 // toolbox used by two services surfaces twice in state.Toolboxes.
 // Env reads stay unique; missing owners are kept for attach guidance.
 func classifyToolboxEndpoints(

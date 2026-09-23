@@ -1609,53 +1609,6 @@ func TestEmitNextAfterBind_ReturnsSilentlyOnContextCancellation(t *testing.T) {
 	}
 }
 
-func TestFindAgentYaml(t *testing.T) {
-	t.Parallel()
-
-	t.Run("finds agent.yaml", func(t *testing.T) {
-		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("name: test"), 0600); err != nil {
-			t.Fatal(err)
-		}
-		got := findAgentYaml(dir)
-		if got != filepath.Join(dir, "agent.yaml") {
-			t.Errorf("expected agent.yaml path, got %q", got)
-		}
-	})
-
-	t.Run("finds agent.yml", func(t *testing.T) {
-		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "agent.yml"), []byte("name: test"), 0600); err != nil {
-			t.Fatal(err)
-		}
-		got := findAgentYaml(dir)
-		if got != filepath.Join(dir, "agent.yml") {
-			t.Errorf("expected agent.yml path, got %q", got)
-		}
-	})
-
-	t.Run("prefers agent.yaml over agent.yml", func(t *testing.T) {
-		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("name: yaml"), 0600); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, "agent.yml"), []byte("name: yml"), 0600); err != nil {
-			t.Fatal(err)
-		}
-		got := findAgentYaml(dir)
-		if got != filepath.Join(dir, "agent.yaml") {
-			t.Errorf("expected agent.yaml (preferred), got %q", got)
-		}
-	})
-
-	t.Run("returns empty for missing directory", func(t *testing.T) {
-		got := findAgentYaml(filepath.Join(t.TempDir(), "nonexistent"))
-		if got != "" {
-			t.Errorf("expected empty, got %q", got)
-		}
-	})
-}
-
 func TestResolveAgentDefinitionEnvVars(t *testing.T) {
 	t.Parallel()
 

@@ -165,7 +165,7 @@ func postprovisionHandler(
 	// `azd provision`. Once provision returns success the signal is
 	// stale: subsequent runs of doctor/init/run/show/deploy should rely
 	// on the canonical post-provision env vars (FOUNDRY_PROJECT_ENDPOINT
-	// and friends) and the agent.yaml-vs-env diff. The clear is gated on
+	// and friends) and the agent-definition-vs-env diff. The clear is gated on
 	// the presence of at least one azure.ai.agent service so toolbox-only
 	// or non-agent provisions don't write to a variable they don't own.
 	// Best-effort: a transport failure here is logged but not returned —
@@ -326,8 +326,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 }
 
 // isHostedAgentService checks if a service is a hosted (container) agent by
-// resolving its agent definition from the service entry (the unified inline
-// shape, or a legacy agent.yaml on disk).
+// resolving its direct/root-$ref definition from the service entry.
 func isHostedAgentService(svc *azdext.ServiceConfig, proj *azdext.ProjectConfig) bool {
 	_, isHosted, _, err := project.LoadAgentDefinition(svc, proj.Path)
 	return err == nil && isHosted
@@ -822,15 +821,12 @@ func envUpdate(
 	return nil
 }
 
-// kindEnvUpdate inspects the service's on-disk agent.yaml (when present) and
-// stamps env vars that signal the agent kind -- today ENABLE_HOSTED_AGENTS=true
+// kindEnvUpdate inspects the service's agent definition and stamps env vars
+// that signal the agent kind -- today ENABLE_HOSTED_AGENTS=true
 // and ENABLE_CAPABILITY_HOST=false for `kind: hosted`; every other kind is a
 // no-op past the parse.
 //
-// Tolerates a missing agent.yaml: the bicepless flow lets users declare prompt
-// agents inline in azure.yaml, so a missing file short-circuits cleanly here.
-// Service-targets that truly need agent.yaml still surface the error where they
-// read its contents.
+// A missing definition short-circuits cleanly for non-hosted agent kinds.
 func kindEnvUpdate(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -838,9 +834,7 @@ func kindEnvUpdate(
 	svc *azdext.ServiceConfig,
 	envName string,
 ) error {
-	// The agent definition is carried inline on the service entry (unified shape)
-	// or, for older projects, in a legacy agent.yaml on disk. A missing or
-	// unreadable definition is tolerated here: the bicepless inline path lets
+	// A missing definition is tolerated here: the bicepless inline path lets
 	// users declare prompt agents that carry no hosted definition, and service
 	// targets that truly need the definition surface the error where they read it.
 	_, isHosted, source, err := project.LoadAgentDefinition(svc, azdProject.Path)

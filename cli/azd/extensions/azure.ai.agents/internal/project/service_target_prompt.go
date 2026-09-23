@@ -125,7 +125,7 @@ func expandPromptAgentPolicies(managed *agent_yaml.PromptAgent, env map[string]s
 			return exterrors.Validation(
 				exterrors.CodeInvalidAgentManifest,
 				fmt.Sprintf("failed to expand policies[%d].raiPolicyName: %s", i, err),
-				"check the ${VAR} references in the policies block in agent.yaml",
+				"check the ${VAR} references in the agent definition's policies block",
 			)
 		}
 		expanded = strings.TrimSpace(expanded)
@@ -222,7 +222,7 @@ func promptCreateError(err error, managed *agent_yaml.PromptAgent) error {
 
 	suggestion := "This agent declares a Responsible AI policy. Verify the policy ID is correct and " +
 		"reachable from this account, then re-run. If the policy is valid, the harness may not accept " +
-		"policies yet — remove the policies block from agent.yaml to confirm, and deploy without " +
+		"policies yet — remove the policies block from the agent definition to confirm, and deploy without " +
 		"'harness:' to apply the policy as a plain prompt agent."
 	if managed.HarnessType() == "" {
 		suggestion = "This agent declares a Responsible AI policy. Verify the policy ID is correct and " +
@@ -307,7 +307,7 @@ func (p *AgentServiceTargetProvider) loadPromptAgentDefinition() (agent_yaml.Pro
 	if err != nil {
 		return agent_yaml.PromptAgent{}, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("failed to read agent manifest file: %s", err),
+			fmt.Sprintf("failed to read referenced agent definition file: %s", err),
 			"verify the agent definition file exists and is readable",
 		)
 	}
@@ -318,14 +318,14 @@ func (p *AgentServiceTargetProvider) loadPromptAgentDefinition() (agent_yaml.Pro
 	if err := yaml.Unmarshal(data, &promptDef); err != nil {
 		return agent_yaml.PromptAgent{}, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("agent.yaml is not a valid prompt agent: %s", err),
-			"fix the agent.yaml to match the prompt agent schema",
+			fmt.Sprintf("the referenced definition is not a valid prompt agent: %s", err),
+			"fix the referenced definition to match the prompt agent schema",
 		)
 	}
 	if !strings.EqualFold(string(promptDef.Kind), string(agent_yaml.AgentKindPrompt)) {
 		return agent_yaml.PromptAgent{}, exterrors.Validation(
 			exterrors.CodeUnsupportedAgentKind,
-			fmt.Sprintf("agent.yaml declares kind %q, expected prompt", promptDef.Kind),
+			fmt.Sprintf("the referenced definition declares kind %q, expected prompt", promptDef.Kind),
 			"use kind: prompt for prompt agents",
 		)
 	}
@@ -333,7 +333,7 @@ func (p *AgentServiceTargetProvider) loadPromptAgentDefinition() (agent_yaml.Pro
 	return promptDef, nil
 }
 
-// containerOnlyPromptFields lists agent.yaml keys that are only meaningful for
+// containerOnlyPromptFields lists definition keys that are only meaningful for
 // hosted (container) agents and are therefore rejected for kind: prompt.
 var containerOnlyPromptFields = []string{
 	"image",
@@ -373,7 +373,7 @@ func validatePromptAgentRawFields(data []byte) error {
 	if _, ok := probe["harness"].(string); ok {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
-			"agent.yaml harness must be a block with a type key",
+			"the agent definition harness must be a block with a type key",
 			"use:\n  harness:\n    type: github_copilot_preview",
 		)
 	}
@@ -463,8 +463,8 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
-			fmt.Sprintf("agent.yaml is not a valid prompt agent: %s", err),
-			"ensure agent.yaml declares a non-empty model and instructions",
+			fmt.Sprintf("the agent definition is not a valid prompt agent: %s", err),
+			"ensure the agent definition declares a non-empty model and instructions",
 		)
 	}
 

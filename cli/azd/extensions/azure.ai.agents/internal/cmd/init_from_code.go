@@ -148,13 +148,12 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 			"in the agent service entry in azure.yaml.")
 
 		// Delegate the trailing Next: block to the shared nextstep
-		// resolver — the same path used by the manifest-driven init
-		// flow (see InitAction.addToProject). The resolver inspects
+		// resolver. The resolver inspects
 		// the current azd environment, the pending-provision signal,
-		// each agent.yaml's references to user-supplied variables,
+		// each agent definition's references to user-supplied variables,
 		// and emits context-aware guidance (`azd provision` when infra
 		// outputs are unset or pending, `azd env set <KEY>` lines when
-		// agent.yaml references unset user-supplied variables, or
+		// the definition references unset user-supplied variables, or
 		// `azd ai agent run` when everything is configured). All paths
 		// terminate with the deploy hint. State-assembly errors are
 		// intentionally ignored: the resolver degrades gracefully on
@@ -596,7 +595,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 	// Create a minimal Agent Definition
 	// Note: FOUNDRY_PROJECT_ENDPOINT and other FOUNDRY_* env vars are automatically
 	// injected into hosted agent containers by the platform, so we don't need to
-	// add them to agent.yaml. For local development, `azd ai agent run` translates
+	// add them to the service definition. For local development, `azd ai agent run` translates
 	// azd environment values to FOUNDRY_* env vars.
 	definition := &agent_yaml.ContainerAgent{
 		AgentDefinition: agent_yaml.AgentDefinition{
@@ -1026,7 +1025,7 @@ func (a *InitFromCodeAction) promptCodeConfiguration(ctx context.Context, srcDir
 	}, false)
 }
 
-// protocolInfo pairs a protocol name with the default version used when generating agent.yaml.
+// protocolInfo pairs a protocol name with the default generated version.
 type protocolInfo struct {
 	Name    string
 	Version string

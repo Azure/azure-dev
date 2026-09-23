@@ -22,6 +22,7 @@ import (
 	"azureaieval/internal/pkg/dataset_api"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
+	"azureaieval/internal/urlsafe"
 
 	"github.com/spf13/cobra"
 )
@@ -1399,7 +1400,7 @@ func runFailureMessage(run *eval_api.OpenAIEvalRun) string {
 
 func renderRunFailure(out io.Writer, run *eval_api.OpenAIEvalRun) {
 	if why := runFailureMessage(run); why != "" {
-		fmt.Fprintf(out, "\n%s\n", why)
+		fmt.Fprintf(out, "\n%s\n", urlsafe.Text(why))
 	}
 }
 
@@ -1421,7 +1422,7 @@ func renderRunFollowUp(out io.Writer, run *eval_api.OpenAIEvalRun) {
 		return
 	}
 	if operationalFailure {
-		fmt.Fprint(out, messages.FailedRunFollowUp(eval, run.ID, failed))
+		fmt.Fprint(out, messages.FailedRunFollowUp(eval, run.ID, failed, errored))
 		return
 	}
 	fmt.Fprint(out, messages.RunFollowUp(eval, run.ID, failed, errored))

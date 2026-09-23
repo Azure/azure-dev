@@ -103,3 +103,70 @@ func TestErrorLeavesOtherErrorsAlone(t *testing.T) {
 	assert.Same(t, plain, Error(plain))
 	assert.Nil(t, Error(nil))
 }
+
+func TestTextRedactsEmbeddedURLCredentials(t *testing.T) {
+	for _, tc := range []struct {
+		name, message, expected string
+	}{
+		{
+			"userinfo query and fragment",
+			`Download "https://user-secret:password-secret@storage.example/rows.jsonl` +
+				`?sig=signature-secret#fragment-secret" failed.`,
+			`Download "https://storage.example/rows.jsonl" failed.`,
+		},
+		{
+			"username token",
+			"Request to https://username-secret@service.example/run failed.",
+			"Request to https://service.example/run failed.",
+		},
+		{
+			"multiple URLs",
+			"Read https://first.example/rows?sig=first-secret then https://second.example/error#second-secret",
+			"Read https://first.example/rows then https://second.example/error",
+		},
+		{
+			"quote inside credentials",
+			"Failed 'https://user-secret:pass'word-secret@host/file?sig=signature-secret'.",
+			"Failed 'https://host/file'.",
+		},
+		{
+			"quote inside query",
+			"Failed https://host/file?sig='signature-secret'.",
+			"Failed https://host/file'.",
+		},
+		{
+			"parenthesized URL",
+			"Failed (https://user-secret:password-secret@host/file?sig=signature-secret).",
+			"Failed (https://host/file).",
+		},
+		{
+			"malformed escape",
+			"Could not read https://user-secret:password-secret@host/%invalid?sig=signature-secret",
+			"Could not read <redacted-url>",
+		},
+		{
+			"IPv6",
+			"Failed: https://user-secret:password-secret@[::1]:443/file?sig=signature-secret#fragment-secret",
+			"Failed: https://[::1]:443/file",
+		},
+		{
+			"protocol relative",
+			"Failed: //user-secret:password-secret@host/file?sig=signature-secret#fragment-secret",
+			"Failed: //host/file",
+		},
+		{
+			"service URI",
+			"Result azureai://user-secret:password-secret@accounts/example?sig=signature-secret#fragment-secret",
+			"Result azureai://accounts/example",
+		},
+		{"without URLs", "The evaluator could not initialize.", "The evaluator could not initialize."},
+		{"safe URL", "Request https://service.example/run failed.", "Request https://service.example/run failed."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			safe := Text(tc.message)
+			assert.Equal(t, tc.expected, safe)
+			assert.NotContains(t, safe, "-secret")
+			assert.NotContains(t, safe, "sig=")
+		})
+	}
+}

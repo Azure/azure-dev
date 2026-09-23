@@ -6,6 +6,8 @@
 
 No Azure login, deployment, dataset registration, evaluation run, or quality gate
 is performed. Only synthetic local authoring and pre-network errors are tested.
+Seed validation compares authored project files and private configuration before
+and after failures. Piped stdin is not evidence of interactive correction.
 Update candidate.json from the publisher's immutable release, never from latest.
 The output directory contains only explicitly selected, sanitized evidence.
 """
@@ -48,6 +50,15 @@ def sanitize(text, root):
 
 def write_json(path, value):
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+
+
+def snapshot_tree(directory):
+    return {
+        str(path.relative_to(directory)): (
+            {"directory": True} if path.is_dir() else {"sha256": sha256(path.read_bytes())}
+        )
+        for path in directory.rglob("*")
+    }
 
 
 def download(url, digest, directory):
@@ -369,6 +380,170 @@ class Proof:
         if self.pin["conversationModes"]:
             self.exercise_conversation_modes(project_definition)
             self.exercise_unattended_model_inputs(project_definition)
+        if self.pin.get("initSeedValidation", False):
+            self.exercise_init_seed_validation(project_definition)
+
+    def exercise_init_seed_validation(self, project_definition):
+        valid_row = {"test_case_description": "Ask for help finding an order."}
+        cases = [
+            ("blank description", [{**valid_row, "test_case_description": ""}], "empty or non-text"),
+            ("whitespace description", [{"test_case_description": " \t\r\n "}], "empty or non-text"),
+            ("missing description", [{"desired_num_turns": 1}], 'no "test_case_description"'),
+            ("null description", [{"test_case_description": None}], "empty or non-text"),
+            ("numeric description", [{"test_case_description": 42}], "empty or non-text"),
+            ("boolean description", [{"test_case_description": True}], "empty or non-text"),
+            ("zero desired turns", [{**valid_row, "desired_num_turns": 0}], "positive whole number"),
+            ("negative desired turns", [{**valid_row, "desired_num_turns": -1}], "positive whole number"),
+            ("fractional desired turns", [{**valid_row, "desired_num_turns": 1.5}], "positive whole number"),
+            ("string desired turns", [{**valid_row, "desired_num_turns": "1"}], "positive whole number"),
+            ("null desired turns", [{**valid_row, "desired_num_turns": None}], "positive whole number"),
+            ("boolean desired turns", [{**valid_row, "desired_num_turns": True}], "positive whole number"),
+            ("desired turns exceed explicit cap", [{**valid_row, "desired_num_turns": 21}], "max_turns is 20"),
+            ("seed with messages", [{**valid_row, "messages": []}], 'carries "messages"'),
+            ("seed with null messages", [{**valid_row, "messages": None}], 'carries "messages"'),
+            ("seed with query", [{**valid_row, "query": "Hello"}], 'carries "query"'),
+            ("seed with empty query", [{**valid_row, "query": ""}], 'carries "query"'),
+            ("seed with null query", [{**valid_row, "query": None}], 'carries "query"'),
+            ("seed with response", [{**valid_row, "response": "Hello"}], 'carries "response"'),
+            ("seed with empty response", [{**valid_row, "response": ""}], 'carries "response"'),
+            ("seed with null response", [{**valid_row, "response": None}], 'carries "response"'),
+            ("late invalid seed", [valid_row] * 20 + [{"test_case_description": ""}], "row 21"),
+            ("mixed late completed row", [valid_row, {"messages": []}], 'row 2 carries "messages"'),
+            ("mixed late turn row", [valid_row, {"query": "Hello"}], 'row 2 carries "query"'),
+        ]
+        global_config = self.root / "config" / "config.json"
+        require(global_config.is_file(), "Installed extensions must have an isolated azd configuration")
+        evidence = []
+
+        def refuse_without_writes(label, args, project, error):
+            before = snapshot_tree(project)
+            private_before = global_config.read_bytes()
+            info = self.run(label, args, project, failure=error, json_output=True)
+            require(set(info) == {"error"}, f"{label} must emit only one error document")
+            after = snapshot_tree(project)
+            require(after == before, f"{label} changed authored files, private state or directory layout")
+            require(global_config.read_bytes() == private_before,
+                    f"{label} changed the isolated azd configuration")
+            evidence.append({
+                "case": label, "singleJSONError": True,
+                "projectUnchanged": True, "privateConfigurationUnchanged": True,
+                "projectDigestBefore": sha256(json.dumps(before, sort_keys=True).encode()),
+                "projectDigestAfter": sha256(json.dumps(after, sort_keys=True).encode()),
+            })
+
+        for layout in ("fresh", "existing"):
+            project = self.root / f"seed-refusal-{layout}"
+            project.mkdir()
+            root_config = project / "azure.yaml"
+            root_config.write_text(project_definition, encoding="utf-8")
+            private = project / ".azure" / "dev"
+            private.mkdir(parents=True)
+            private.joinpath(".env").write_text("KEEP=unchanged\n", encoding="utf-8")
+            write_json(private / "config.json", {"sentinel": "unchanged"})
+            private.joinpath("eval.state").write_text("owned-test-state\n", encoding="utf-8")
+            if layout == "existing":
+                eval_dir = project / "evals"
+                eval_dir.mkdir()
+                eval_dir.joinpath("azure.eval.yaml").write_text(
+                    "# Preserve authored content and unknown fields\n"
+                    "future_metadata: keep\ndatasets: []\nevaluators: []\nevals: []\n",
+                    encoding="utf-8",
+                )
+            rows_path = project / "seed.jsonl"
+            args = [
+                "ai", "eval", "init", "--name", "ci-seed", "--conversation-mode", "simulation",
+                "--target", "ci-agent", "--simulation-model", "ci-simulator", "--judge-model", "ci-judge",
+                "--evaluator", "builtin.task_completion", "--max-turns", "20",
+                "--dataset", str(rows_path), "--output", "json",
+            ]
+            for name, rows, error in cases:
+                rows_path.write_text(
+                    "\n" + "\n\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+                label = f"init seed {layout}: {name}"
+                refuse_without_writes(label, args, project, error)
+
+        for layout in ("declared-file", "nested-ref"):
+            project = self.root / f"seed-refusal-{layout}"
+            project.mkdir()
+            project.joinpath("azure.yaml").write_text(project_definition, encoding="utf-8")
+            eval_dir = project / "nested" / "quality"
+            parts = eval_dir / "parts"
+            inner = parts / "inner"
+            inner.mkdir(parents=True)
+            parts.joinpath("rows.jsonl").write_text('{"test_case_description":""}\n', encoding="utf-8")
+            parts.joinpath("dataset.yaml").write_text("$ref: ./inner/dataset.yaml\n", encoding="utf-8")
+            inner.joinpath("dataset.yaml").write_text(
+                "file: ../rows.jsonl\nfuture_metadata: keep\n", encoding="utf-8")
+            declaration = (
+                "    file: ./parts/rows.jsonl\n" if layout == "declared-file"
+                else "    $ref: ./parts/dataset.yaml\n"
+            )
+            eval_dir.joinpath("azure.eval.yaml").write_text(
+                "# Preserve selected and unrelated declarations\nfuture_metadata: keep\n"
+                "datasets:\n  - name: seeds\n" + declaration
+                + "  - name: unrelated\n    $ref: ./absent.yaml\n",
+                encoding="utf-8",
+            )
+            private = project / ".azure" / "dev"
+            private.mkdir(parents=True)
+            write_json(private / "config.json", {"sentinel": "unchanged"})
+            refuse_without_writes(f"init seed validates {layout} without rewriting references", [
+                "ai", "eval", "init", "--name", "ci-seed", "--conversation-mode", "simulation",
+                "--target", "ci-agent", "--simulation-model", "ci-simulator", "--judge-model", "ci-judge",
+                "--evaluator", "builtin.task_completion", "--path", str(eval_dir), "--dataset", "seeds",
+                "--output", "json",
+            ], project, "empty or non-text")
+
+        for name, desired, max_turns in (
+            ("omitted", None, None), ("minimum", 1, 1), ("maximum", 20, 20),
+            ("no invented ceiling", 21, None),
+        ):
+            project = self.root / ("seed-valid-" + name.replace(" ", "-"))
+            project.mkdir()
+            project.joinpath("azure.yaml").write_text(project_definition, encoding="utf-8")
+            rows_path = project / "seed.jsonl"
+            row = dict(valid_row)
+            if desired is not None:
+                row["desired_num_turns"] = desired
+            rows_path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+            flags = [] if max_turns is None else ["--max-turns", str(max_turns)]
+            info = self.run(f"init valid seed {name}", [
+                "ai", "eval", "init", "--name", "ci-valid-seed", "--conversation-mode", "simulation",
+                "--target", "ci-agent", "--simulation-model", "ci-simulator", "--judge-model", "ci-judge",
+                "--evaluator", "builtin.task_completion", "--dataset", str(rows_path), *flags,
+                "--output", "json",
+            ], project, json_output=True)
+            require(info["simulation"].get("max_turns") == max_turns,
+                    f"Valid seed {name} changed the caller's optional turn limit")
+            config = project / "evals" / "azure.eval.yaml"
+            authored = config.read_text(encoding="utf-8")
+            require(("max_turns:" in authored) == (max_turns is not None),
+                    f"Valid seed {name} wrote an unintended turn limit")
+            self.output.joinpath(f"authored-seed-{name.replace(' ', '-')}.yaml").write_text(
+                sanitize(authored, self.root), encoding="utf-8")
+        for mode, row, flags in (
+            ("static", {"messages": [{"role": "user", "content": "Hello"},
+                                     {"role": "assistant", "content": "Hello!"}]},
+             ["--conversation-mode", "static"]),
+            ("turn", {"query": "Hello", "response": "Hello!"},
+             ["--source", "dataset", "--evaluation-level", "turn", "--target", "ci-agent"]),
+        ):
+            project = self.root / f"seed-control-{mode}"
+            project.mkdir()
+            project.joinpath("azure.yaml").write_text(project_definition, encoding="utf-8")
+            rows_path = project / "data.jsonl"
+            rows_path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+            info = self.run(f"seed validation leaves {mode} mode unchanged", [
+                "ai", "eval", "init", "--name", f"ci-{mode}", "--dataset", str(rows_path),
+                "--judge-model", "ci-judge", "--evaluator", "builtin.task_completion",
+                *flags, "--output", "json",
+            ], project, json_output=True)
+            require(info["simulation"] is None, f"Non-simulation {mode} control created a simulator")
+            require(info["evaluationLevel"] == ("conversation" if mode == "static" else "turn"),
+                    f"{mode} control changed evaluation level")
+            config = project / "evals" / "azure.eval.yaml"
+            require(config.is_file(), f"{mode} control did not author configuration")
+        write_json(self.output / "seed-validation.json", evidence)
 
     def exercise_unattended_model_inputs(self, project_definition):
         project = self.root / "unattended-handoff-inputs"
@@ -545,6 +720,9 @@ def main():
             "coverage": "offline CLI only",
             "liveCloudEvaluation": "NOT RUN",
             "cloudQualityGate": "NOT RUN",
+            "interactiveCorrection": "NOT RUN",
+            "failedCloudRunVerification": "NOT RUN",
+            "initSeedValidationEnabled": pin.get("initSeedValidation", False),
             "authRequired": (
                 "An existing Azure service identity with an authorized GitHub OIDC trust "
                 "for this fork/ref, tenant/client identifiers, and least-privilege access "

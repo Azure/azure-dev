@@ -8,6 +8,7 @@ No Azure login, deployment, dataset registration, evaluation run, or quality gat
 is performed. Only synthetic local authoring and pre-network errors are tested.
 Seed validation compares authored project files and private configuration before
 and after failures. Piped stdin is not evidence of interactive correction.
+Dataset binding checks cover local add-only authoring, not backend pin migration.
 Update candidate.json from the publisher's immutable release, never from latest.
 The output directory contains only explicitly selected, sanitized evidence.
 """
@@ -146,6 +147,36 @@ class Proof:
         self.checks.append(name)
         print(f"PASS: {name}", flush=True)
         return value
+
+    def refuse_without_writes(self, label, args, project, error):
+        global_config = self.root / "config" / "config.json"
+        before = snapshot_tree(project)
+        private_before = global_config.read_bytes()
+        info = self.run(label, args, project, failure=error, json_output=True)
+        require(set(info) == {"error"}, f"{label} must emit only one error document")
+        after = snapshot_tree(project)
+        # azd 1.33's first environment read retains this empty flock file.
+        # Prove that precise cold-entry effect, rather than ignoring any paths.
+        core_lock = str(Path(".azure") / ".env.lock")
+        lock_created = core_lock not in before and core_lock in after
+        expected = dict(before)
+        if lock_created:
+            expected[core_lock] = {"sha256": sha256(b"")}
+        changed = sorted(path for path in before.keys() | after.keys()
+                         if expected.get(path) != after.get(path))
+        require(not changed, f"{label} changed authored/private paths: {changed}")
+        require(global_config.read_bytes() == private_before,
+                f"{label} changed the isolated azd configuration")
+        return {
+            "case": label, "singleJSONError": True,
+            "authoredAndPrivateStateUnchanged": True,
+            "privateConfigurationUnchanged": True,
+            "onlyPermittedFilesystemChange": "New zero-byte .azure/.env.lock on the first core environment read",
+            "coreReadLockCreated": lock_created,
+            "projectDigestExpected": sha256(json.dumps(expected, sort_keys=True).encode()),
+            "projectDigestBefore": sha256(json.dumps(before, sort_keys=True).encode()),
+            "projectDigestAfter": sha256(json.dumps(after, sort_keys=True).encode()),
+        }
 
     def install(self):
         downloads = self.root / "downloads"
@@ -382,6 +413,134 @@ class Proof:
             self.exercise_unattended_model_inputs(project_definition)
         if self.pin.get("initSeedValidation", False):
             self.exercise_init_seed_validation(project_definition)
+        if self.pin.get("initDatasetBinding", False):
+            self.exercise_init_dataset_binding(project_definition)
+
+    def exercise_init_dataset_binding(self, project_definition):
+        evidence = []
+        for layout, filename, nested, sidecar in (
+            ("default", "azure.eval.yaml", False, False),
+            ("nightly-yaml", "nightly.yaml", False, False),
+            ("nightly-yml", "nightly.yml", True, False),
+            ("nightly-sidecar", "nightly.yaml", False, True),
+        ):
+            for mode in ("simulation", "static", "turn"):
+                label = f"binding {layout} {mode}"
+                project = self.root / f"binding-{layout}-{mode}"
+                project.mkdir()
+                root_config = project / "azure.yaml"
+                root_config.write_text(project_definition, encoding="utf-8")
+                config_dir = project / ("evals" if layout == "default" else "config")
+                config_dir.mkdir()
+                config = config_dir / filename
+                private = project / ".azure" / "dev"
+                private.mkdir(parents=True)
+                private.joinpath(".env").write_text("KEEP=unchanged\n", encoding="utf-8")
+                write_json(private / "config.json", {"sentinel": "unchanged"})
+                private.joinpath("eval.state").write_text("owned-test-state\n", encoding="utf-8")
+                if mode == "simulation":
+                    row = {"test_case_description": "Ask for help finding an order."}
+                    mode_flags = ["--conversation-mode", "simulation", "--target", "ci-agent",
+                                  "--simulation-model", "ci-simulator"]
+                elif mode == "static":
+                    row = {"messages": [{"role": "user", "content": "Hello"},
+                                        {"role": "assistant", "content": "Hello!"}]}
+                    mode_flags = ["--conversation-mode", "static"]
+                else:
+                    row = {"query": "Hello", "response": "Hello!"}
+                    mode_flags = ["--source", "dataset", "--evaluation-level", "turn", "--target", "ci-agent"]
+                for folder in ("original", "replacement"):
+                    project.joinpath(folder).mkdir()
+                    project.joinpath(folder, "seeds.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+                project.joinpath("replacement", "corrected.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+                declaration = "    file: ../original/seeds.jsonl\n"
+                if nested:
+                    parts = config_dir / "parts" / "inner"
+                    parts.mkdir(parents=True)
+                    config_dir.joinpath("parts", "dataset.yaml").write_text(
+                        "$ref: ./inner/dataset.yaml\n", encoding="utf-8")
+                    parts.joinpath("dataset.yaml").write_text(
+                        "name: seeds\nfile: ../../../original/seeds.jsonl\n"
+                        "version: '7'\nfuture_metadata: keep\n", encoding="utf-8")
+                    declaration = "    $ref: ./parts/dataset.yaml\n"
+                authored = (
+                    "# Keep the original catalog and evaluation\nfuture_metadata: keep\n"
+                    "datasets:\n  - name: seeds\n" + declaration
+                    + "    version: '7'\n    future_dataset_metadata: keep\n"
+                    "evaluators:\n  - name: quality\n    version: '13'\n    future_evaluator_metadata: keep\n"
+                    "evals:\n  - name: ci-existing\n    dataset: seeds\n    evaluation_level: turn\n"
+                    "    evaluators:\n      - evaluator: builtin.task_adherence\n"
+                    "        initialization_parameters:\n          model: ci-existing-judge\n"
+                    "    target:\n      type: agent\n      name: ci-agent\n"
+                )
+                config.write_text(authored, encoding="utf-8")
+                conventional = config_dir / "azure.eval.yaml"
+                if sidecar:
+                    conventional.write_text(
+                        "# Unselected sidecar must never control binding\n"
+                        "datasets:\n  - name: seeds\n    file: ../replacement/seeds.jsonl\n",
+                        encoding="utf-8",
+                    )
+                selected_path = str(config_dir if layout == "default" else config)
+                base = ["ai", "eval", "init", "--path", selected_path,
+                        "--judge-model", "ci-judge", "--evaluator", "builtin.task_completion",
+                        *mode_flags, "--output", "json"]
+                evidence.append(self.refuse_without_writes(
+                    f"{label}: refuse same-basename different file",
+                    base + ["--name", "ci-collision", "--dataset", str(project / "replacement" / "seeds.jsonl")],
+                    project, 'Dataset "seeds" is already declared',
+                ))
+                before = snapshot_tree(project)
+                config_before = config.read_text(encoding="utf-8")
+                global_before = (self.root / "config" / "config.json").read_bytes()
+                for name, requested, dataset in (
+                    ("ci-same-file", project / "original" / ".." / "original" / "seeds.jsonl", "seeds"),
+                    ("ci-distinct-file", project / "replacement" / "corrected.jsonl", "corrected"),
+                ):
+                    info = self.run(f"{label}: {name}", base + [
+                        "--name", name, "--dataset", str(requested),
+                    ], project, json_output=True)
+                    actual_config = Path(info["evalConfig"])
+                    if not actual_config.is_absolute():
+                        actual_config = project / actual_config
+                    require(actual_config.resolve() == config.resolve(),
+                            f"{label} selected a different config file")
+                    text = config.read_text(encoding="utf-8")
+                    require(config_before in text, f"{label} rewrote existing pins, metadata or evaluations")
+                    new_eval = re.search(
+                        rf"(?ms)^([ \t]*)- name: {name}[ \t]*\n(.*?)(?=^\1- name:|\Z)", text)
+                    require(new_eval and re.search(rf"(?m)^\s*dataset: {dataset}\s*$", new_eval.group(2)),
+                            f"{label} did not bind the intended dataset")
+                    require(len(re.findall(r"(?m)^\s*-\s*name: seeds\s*$", text)) == 1,
+                            f"{label} duplicated the original dataset declaration")
+                    require(len(re.findall(rf"(?m)^\s*-\s*name: {name}\s*$", text)) == 1,
+                            f"{label} did not append exactly one requested evaluation")
+                    if dataset == "corrected":
+                        require(len(re.findall(r"(?m)^\s*-\s*name: corrected\s*$", text)) == 1,
+                                f"{label} failed to add the distinct dataset exactly once")
+                        require("../replacement/corrected.jsonl" in text,
+                                f"{label} lost the distinct dataset's local file")
+                    after = snapshot_tree(project)
+                    for path, contents in before.items():
+                        if path not in (str(config.relative_to(project)), "azure.yaml"):
+                            require(after.get(path) == contents, f"{label} changed existing path {path}")
+                    require((self.root / "config" / "config.json").read_bytes() == global_before,
+                            f"{label} changed global configuration")
+                    if layout != "default":
+                        require(not (project / "evals").exists(), f"{label} created an unintended default eval directory")
+                        require(conventional.exists() == sidecar, f"{label} created an unintended default sidecar")
+                    require(config.relative_to(project).as_posix() in root_config.read_text(encoding="utf-8"),
+                            f"{label} root project does not reference the selected config")
+                    evidence.append({
+                        "case": f"{label}: {name}", "selectedConfig": config.relative_to(project).as_posix(),
+                        "boundDataset": dataset, "originalAuthoredContentPreserved": True,
+                        "existingPrivateAndReferenceFilesUnchanged": True,
+                        "noUnintendedDefaultSidecar": True,
+                    })
+                    config_before = text
+                self.output.joinpath(f"authored-{layout}-{mode}.yaml").write_text(
+                    sanitize(config.read_text(encoding="utf-8"), self.root), encoding="utf-8")
+        write_json(self.output / "dataset-binding.json", evidence)
 
     def exercise_init_seed_validation(self, project_definition):
         valid_row = {"test_case_description": "Ask for help finding an order."}
@@ -415,35 +574,6 @@ class Proof:
         require(global_config.is_file(), "Installed extensions must have an isolated azd configuration")
         evidence = []
 
-        def refuse_without_writes(label, args, project, error):
-            before = snapshot_tree(project)
-            private_before = global_config.read_bytes()
-            info = self.run(label, args, project, failure=error, json_output=True)
-            require(set(info) == {"error"}, f"{label} must emit only one error document")
-            after = snapshot_tree(project)
-            # azd 1.33's first environment read retains this empty flock file.
-            # Prove that precise cold-entry effect, rather than ignoring any paths.
-            core_lock = str(Path(".azure") / ".env.lock")
-            lock_created = core_lock not in before and core_lock in after
-            expected = dict(before)
-            if lock_created:
-                expected[core_lock] = {"sha256": sha256(b"")}
-            changed = sorted(path for path in before.keys() | after.keys()
-                             if expected.get(path) != after.get(path))
-            require(not changed, f"{label} changed authored/private paths: {changed}")
-            require(global_config.read_bytes() == private_before,
-                    f"{label} changed the isolated azd configuration")
-            evidence.append({
-                "case": label, "singleJSONError": True,
-                "authoredAndPrivateStateUnchanged": True,
-                "privateConfigurationUnchanged": True,
-                "onlyPermittedFilesystemChange": "New zero-byte .azure/.env.lock on the first core environment read",
-                "coreReadLockCreated": lock_created,
-                "projectDigestExpected": sha256(json.dumps(expected, sort_keys=True).encode()),
-                "projectDigestBefore": sha256(json.dumps(before, sort_keys=True).encode()),
-                "projectDigestAfter": sha256(json.dumps(after, sort_keys=True).encode()),
-            })
-
         for layout in ("fresh", "existing"):
             project = self.root / f"seed-refusal-{layout}"
             project.mkdir()
@@ -473,7 +603,7 @@ class Proof:
                 rows_path.write_text(
                     "\n" + "\n\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
                 label = f"init seed {layout}: {name}"
-                refuse_without_writes(label, args, project, error)
+                evidence.append(self.refuse_without_writes(label, args, project, error))
 
         for layout in ("declared-file", "nested-ref"):
             project = self.root / f"seed-refusal-{layout}"
@@ -500,12 +630,12 @@ class Proof:
             private = project / ".azure" / "dev"
             private.mkdir(parents=True)
             write_json(private / "config.json", {"sentinel": "unchanged"})
-            refuse_without_writes(f"init seed validates {layout} without rewriting references", [
+            evidence.append(self.refuse_without_writes(f"init seed validates {layout} without rewriting references", [
                 "ai", "eval", "init", "--name", "ci-seed", "--conversation-mode", "simulation",
                 "--target", "ci-agent", "--simulation-model", "ci-simulator", "--judge-model", "ci-judge",
                 "--evaluator", "builtin.task_completion", "--path", str(eval_dir), "--dataset", "seeds",
                 "--output", "json",
-            ], project, "empty or non-text")
+            ], project, "empty or non-text"))
 
         for name, desired, max_turns in (
             ("omitted", None, None), ("minimum", 1, 1), ("maximum", 20, 20),
@@ -736,6 +866,7 @@ def main():
             "interactiveCorrection": "NOT RUN",
             "failedCloudRunVerification": "NOT RUN",
             "initSeedValidationEnabled": pin.get("initSeedValidation", False),
+            "initDatasetBindingEnabled": pin.get("initDatasetBinding", False),
             "authRequired": (
                 "An existing Azure service identity with an authorized GitHub OIDC trust "
                 "for this fork/ref, tenant/client identifiers, and least-privilege access "

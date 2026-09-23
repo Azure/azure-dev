@@ -4,11 +4,13 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -145,6 +147,66 @@ func TestOptimizeDeployAgentHeaders(t *testing.T) {
 			require.Equal(t, tt.expected, optimizeDeployAgentHeaders(tt.definition, projectEndpoint))
 		})
 	}
+}
+
+func TestOptimizationPromotionHeaders(t *testing.T) {
+	require.Nil(t, optimizationPromotionHeaders(false))
+	require.Equal(t, map[string]string{
+		optimize_api.PromotionReportOnlyHeader: "true",
+	}, optimizationPromotionHeaders(true))
+}
+
+func TestBuildPromptDeployDefinition(t *testing.T) {
+	current := map[string]any{
+		"kind":         "prompt",
+		"model":        "old-model",
+		"instructions": "old instructions",
+		"harness":      map[string]any{"type": agent_api.ManagedAgentHarnessGitHubCopilot},
+		"skills":       []any{map[string]any{"name": "existing-skill", "version": "1"}},
+		"tools": []any{
+			map[string]any{
+				"type":        "function",
+				"name":        "lookup",
+				"description": "old description",
+				"parameters": map[string]any{
+					"type": "object",
+				},
+			},
+			map[string]any{"type": "code_interpreter"},
+		},
+	}
+	candidate := json.RawMessage(`{
+		"model": "new-model",
+		"system_prompt": "new instructions",
+		"tools": [{
+			"type": "function",
+			"name": "lookup",
+			"description": "new description",
+			"parameters": {
+				"properties": {
+					"query": {"type": "string"}
+				}
+			}
+		}]
+	}`)
+
+	got, err := buildPromptDeployDefinition(current, candidate)
+	require.NoError(t, err)
+	require.Equal(t, "new-model", got["model"])
+	require.Equal(t, "new instructions", got["instructions"])
+	require.Equal(t, current["harness"], got["harness"])
+	require.Equal(t, current["skills"], got["skills"])
+
+	tools, ok := got["tools"].([]any)
+	require.True(t, ok)
+	functionTool, ok := tools[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "new description", functionTool["description"])
+	parameters, ok := functionTool["parameters"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "object", parameters["type"])
+	require.Contains(t, parameters, "properties")
+	require.Equal(t, map[string]any{"type": "code_interpreter"}, tools[1])
 }
 
 func TestExtractEnvVars_EmptyDef(t *testing.T) {

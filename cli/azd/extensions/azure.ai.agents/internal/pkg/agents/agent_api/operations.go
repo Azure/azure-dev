@@ -656,17 +656,6 @@ func (c *AgentClient) CreateAgentVersion(
 	request *CreateAgentVersionRequest,
 	apiVersion string,
 ) (*AgentVersionObject, error) {
-	return c.CreateAgentVersionWithHeaders(ctx, agentName, request, apiVersion, nil)
-}
-
-// CreateAgentVersionWithHeaders creates a new version of an agent and applies additional service headers.
-func (c *AgentClient) CreateAgentVersionWithHeaders(
-	ctx context.Context,
-	agentName string,
-	request *CreateAgentVersionRequest,
-	apiVersion string,
-	headers map[string]string,
-) (*AgentVersionObject, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions?api-version=%s", c.endpoint, agentName, apiVersion)
 
 	payload, err := json.Marshal(request)
@@ -677,9 +666,6 @@ func (c *AgentClient) CreateAgentVersionWithHeaders(
 	req, err := runtime.NewRequest(ctx, http.MethodPost, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	for key, value := range headers {
-		req.Raw().Header.Set(key, value)
 	}
 	if hasDigitalWorkerType(request) {
 		setDigitalWorkerPreviewFeature(req)

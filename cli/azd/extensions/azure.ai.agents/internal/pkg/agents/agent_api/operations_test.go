@@ -839,29 +839,6 @@ func TestCreateAgentVersion_SimpleContractOmitsDigitalWorkerPreview(t *testing.T
 	require.NotContains(t, string(transport.lastBody), "digital_worker_type")
 }
 
-func TestCreateAgentVersionWithHeaders_AppliesGitHubCopilotPreview(t *testing.T) {
-	transport := &capturingTransport{
-		statusCode: http.StatusCreated,
-		respBody:   `{"name":"managed-agent","version":"2"}`,
-	}
-	client := newTestClient("https://test.example.com/api/projects/proj", transport)
-
-	_, err := client.CreateAgentVersionWithHeaders(
-		t.Context(),
-		"managed-agent",
-		&CreateAgentVersionRequest{
-			Definition: map[string]any{
-				"kind":    "prompt",
-				"harness": map[string]any{"type": ManagedAgentHarnessGitHubCopilot},
-			},
-		},
-		"v1",
-		map[string]string{"Foundry-Features": GitHubCopilotPreviewFeature},
-	)
-	require.NoError(t, err)
-	require.Equal(t, GitHubCopilotPreviewFeature, transport.lastReq.Header.Get("Foundry-Features"))
-}
-
 func TestGetAgent_StandardContractOmitsDigitalWorkerPreview(t *testing.T) {
 	transport := &capturingTransport{
 		statusCode: http.StatusOK,

@@ -600,14 +600,21 @@ func (x *GetCopilotUsageMetricsResponse) GetUsage() *CopilotUsageMetrics {
 
 // CopilotUsageMetrics tracks resource consumption for a Copilot session.
 type CopilotUsageMetrics struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Model           string                 `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`                                              // Model used.
-	InputTokens     float64                `protobuf:"fixed64,2,opt,name=input_tokens,json=inputTokens,proto3" json:"input_tokens,omitempty"`             // Total input tokens consumed.
-	OutputTokens    float64                `protobuf:"fixed64,3,opt,name=output_tokens,json=outputTokens,proto3" json:"output_tokens,omitempty"`          // Total output tokens consumed.
-	TotalTokens     float64                `protobuf:"fixed64,4,opt,name=total_tokens,json=totalTokens,proto3" json:"total_tokens,omitempty"`             // Sum of input + output tokens.
-	BillingRate     float64                `protobuf:"fixed64,5,opt,name=billing_rate,json=billingRate,proto3" json:"billing_rate,omitempty"`             // Per-request cost multiplier (e.g., 1.0x, 2.0x).
-	PremiumRequests float64                `protobuf:"fixed64,6,opt,name=premium_requests,json=premiumRequests,proto3" json:"premium_requests,omitempty"` // Number of premium requests used.
-	DurationMs      float64                `protobuf:"fixed64,7,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`                // Total API duration in milliseconds.
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Model        string                 `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`                                     // Model used.
+	InputTokens  float64                `protobuf:"fixed64,2,opt,name=input_tokens,json=inputTokens,proto3" json:"input_tokens,omitempty"`    // Total input tokens consumed.
+	OutputTokens float64                `protobuf:"fixed64,3,opt,name=output_tokens,json=outputTokens,proto3" json:"output_tokens,omitempty"` // Total output tokens consumed.
+	TotalTokens  float64                `protobuf:"fixed64,4,opt,name=total_tokens,json=totalTokens,proto3" json:"total_tokens,omitempty"`    // Sum of input + output tokens.
+	// Legacy per-request cost multiplier. Use ai_credits instead.
+	//
+	// Deprecated: Marked as deprecated in azd/extensions/v1beta/copilot.proto.
+	BillingRate float64 `protobuf:"fixed64,5,opt,name=billing_rate,json=billingRate,proto3" json:"billing_rate,omitempty"`
+	// Legacy premium request count. Use ai_credits instead.
+	//
+	// Deprecated: Marked as deprecated in azd/extensions/v1beta/copilot.proto.
+	PremiumRequests float64 `protobuf:"fixed64,6,opt,name=premium_requests,json=premiumRequests,proto3" json:"premium_requests,omitempty"`
+	DurationMs      float64 `protobuf:"fixed64,7,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"` // Total API duration in milliseconds.
+	AiCredits       float64 `protobuf:"fixed64,8,opt,name=ai_credits,json=aiCredits,proto3" json:"ai_credits,omitempty"`    // Total AI credits consumed.
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -670,6 +677,7 @@ func (x *CopilotUsageMetrics) GetTotalTokens() float64 {
 	return 0
 }
 
+// Deprecated: Marked as deprecated in azd/extensions/v1beta/copilot.proto.
 func (x *CopilotUsageMetrics) GetBillingRate() float64 {
 	if x != nil {
 		return x.BillingRate
@@ -677,6 +685,7 @@ func (x *CopilotUsageMetrics) GetBillingRate() float64 {
 	return 0
 }
 
+// Deprecated: Marked as deprecated in azd/extensions/v1beta/copilot.proto.
 func (x *CopilotUsageMetrics) GetPremiumRequests() float64 {
 	if x != nil {
 		return x.PremiumRequests
@@ -687,6 +696,13 @@ func (x *CopilotUsageMetrics) GetPremiumRequests() float64 {
 func (x *CopilotUsageMetrics) GetDurationMs() float64 {
 	if x != nil {
 		return x.DurationMs
+	}
+	return 0
+}
+
+func (x *CopilotUsageMetrics) GetAiCredits() float64 {
+	if x != nil {
+		return x.AiCredits
 	}
 	return 0
 }
@@ -1073,16 +1089,18 @@ const file_azd_extensions_v1beta_copilot_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\"b\n" +
 	"\x1eGetCopilotUsageMetricsResponse\x12@\n" +
-	"\x05usage\x18\x01 \x01(\v2*.azd.extensions.v1beta.CopilotUsageMetricsR\x05usage\"\x85\x02\n" +
+	"\x05usage\x18\x01 \x01(\v2*.azd.extensions.v1beta.CopilotUsageMetricsR\x05usage\"\xac\x02\n" +
 	"\x13CopilotUsageMetrics\x12\x14\n" +
 	"\x05model\x18\x01 \x01(\tR\x05model\x12!\n" +
 	"\finput_tokens\x18\x02 \x01(\x01R\vinputTokens\x12#\n" +
 	"\routput_tokens\x18\x03 \x01(\x01R\foutputTokens\x12!\n" +
-	"\ftotal_tokens\x18\x04 \x01(\x01R\vtotalTokens\x12!\n" +
-	"\fbilling_rate\x18\x05 \x01(\x01R\vbillingRate\x12)\n" +
-	"\x10premium_requests\x18\x06 \x01(\x01R\x0fpremiumRequests\x12\x1f\n" +
+	"\ftotal_tokens\x18\x04 \x01(\x01R\vtotalTokens\x12%\n" +
+	"\fbilling_rate\x18\x05 \x01(\x01B\x02\x18\x01R\vbillingRate\x12-\n" +
+	"\x10premium_requests\x18\x06 \x01(\x01B\x02\x18\x01R\x0fpremiumRequests\x12\x1f\n" +
 	"\vduration_ms\x18\a \x01(\x01R\n" +
-	"durationMs\"=\n" +
+	"durationMs\x12\x1d\n" +
+	"\n" +
+	"ai_credits\x18\b \x01(\x01R\taiCredits\"=\n" +
 	"\x1cGetCopilotFileChangesRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\"l\n" +

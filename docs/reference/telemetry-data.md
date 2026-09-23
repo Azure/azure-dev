@@ -477,8 +477,7 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `copilot.message.model` | string | Model for specific message |
 | `copilot.message.inputTokens` | measurement | Input token count |
 | `copilot.message.outputTokens` | measurement | Output token count |
-| `copilot.message.billingRate` | measurement | Billing rate |
-| `copilot.message.premiumRequests` | measurement | Premium request count |
+| `copilot.message.aiCredits` | measurement | AI credits consumed during the session |
 | `copilot.message.durationMs` | measurement | Message duration |
 | `copilot.consent.approvedCount` | measurement | Approved consent actions |
 | `copilot.consent.deniedCount` | measurement | Denied consent actions |

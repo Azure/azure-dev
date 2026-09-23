@@ -168,7 +168,7 @@ func (p *promptServiceContext) AgentName() string {
 }
 
 // agentKey returns the config-store key used to persist per-agent multi-turn
-// state (the last response id) for this prompt service. It mirrors the hosted
+// conversation state for this prompt service. It mirrors the hosted
 // key scheme (buildAgentKey) so lookups and cleanup share one code path.
 func (p *promptServiceContext) agentKey(agentName string) string {
 	return buildAgentKey(strings.TrimSpace(p.Settings.ProjectEndpoint), agentName, "", false)

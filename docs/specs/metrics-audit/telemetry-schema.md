@@ -374,8 +374,7 @@ rather than assuming the client enforced the reviewed set on its own.
 | Model | `copilot.message.model` | SystemMetadata | FeatureInsight | |
 | Input tokens | `copilot.message.inputTokens` | SystemMetadata | PerformanceAndHealth | **Measurement** |
 | Output tokens | `copilot.message.outputTokens` | SystemMetadata | PerformanceAndHealth | **Measurement** |
-| Billing rate | `copilot.message.billingRate` | SystemMetadata | BusinessInsight | **Measurement** |
-| Premium requests | `copilot.message.premiumRequests` | SystemMetadata | BusinessInsight | **Measurement** |
+| AI credits | `copilot.message.aiCredits` | SystemMetadata | BusinessInsight | **Measurement** |
 | Duration (ms) | `copilot.message.durationMs` | SystemMetadata | PerformanceAndHealth | **Measurement** |
 
 ### Copilot Consent

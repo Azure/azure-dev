@@ -36,7 +36,7 @@ jobs:
         continue-on-error: true
 
       - name: Install gh-aw extension
-        uses: github/gh-aw-actions/setup-cli@069305b523ecd7fbd05c5681a049b570b1fe6136 # v0.74.4
+        uses: github/gh-aw-actions/setup-cli@f3b81cdb3070066a47faa9bdf440f4f1dc78b1f0 # v0.74.4
         with:
           version: v0.74.4
 

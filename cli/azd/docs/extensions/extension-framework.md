@@ -37,7 +37,7 @@ Table of Contents
 
 ## Getting Started
 
-`azd` extensions are currently a beta feature (Public Preview) within `azd`.
+The `azd` extension framework is generally available. Individual extensions or capabilities might have their own preview status.
 
 - Official extensions must be developed in a fork of the [azure/azure-dev](https://github.com/azure/azure-dev) github repo.
 - Extension binaries are shipped as Github releases to the same repo through our official pipelines.
@@ -656,7 +656,7 @@ Once installed the extension registers a suite of commands under the `x` namespa
 
 Usage: `azd x init`
 
-- Collects information for the extension and scaffolds and extension in a specified language of choice.
+- Collects information for the extension and scaffolds an extension in a specified language of choice.
 - Go is the recommended language and is preselected in the language prompt; it has the most complete and actively maintained template.
 - Creates local extension source if it doesn't already exist
 - Builds initial binaries for extension
@@ -3070,6 +3070,41 @@ func getSubscriptionDetails(ctx context.Context, azdClient *azdext.AzdClient, su
 - Validate subscription access before performing operations
 - Set up proper authentication context for Azure SDK calls
 
+#### GetCurrentPrincipal
+
+This preview method resolves the current identity for role assignments in a specified subscription. The host returns the object ID in the subscription's resource tenant, which can differ from a guest user's home-tenant object ID. Unlike `LookupTenant`, this method uses the resource tenant rather than the user access tenant.
+
+| Field | Description |
+|---|---|
+| Request `subscription_id` | Required subscription ID. No active environment or default subscription is used. |
+| Response `object_id` | Object ID of the signed-in identity in the resource tenant, not an application client ID. |
+| Response `principal_type` | `PRINCIPAL_TYPE_USER` or `PRINCIPAL_TYPE_SERVICE_PRINCIPAL`, determined from azd's login details. |
+
+The host reuses its principal lookup, including the ARM token `oid` claim and Graph fallback. Service-principal logins and both system-assigned and user-assigned managed identities return `PRINCIPAL_TYPE_SERVICE_PRINCIPAL`. Access tokens are neither accepted nor returned by this RPC. An empty subscription ID returns `InvalidArgument`; authentication, subscription, and principal lookup failures return errors rather than an empty identity.
+
+```go
+// Import v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta".
+principal, err := azdClient.AccountBeta().GetCurrentPrincipal(ctx, &v1beta.GetCurrentPrincipalRequest{
+    SubscriptionId: subscriptionId,
+})
+if err != nil {
+    return fmt.Errorf("resolving current principal: %w", err)
+}
+
+var principalType string
+switch principal.PrincipalType {
+case v1beta.PrincipalType_PRINCIPAL_TYPE_USER:
+    principalType = "User"
+case v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL:
+    principalType = "ServicePrincipal"
+default:
+    return fmt.Errorf("unsupported principal type: %v", principal.PrincipalType)
+}
+// Pass principal.ObjectId and principalType to the role assignment.
+```
+
+This method and its request, response, and enum types are available only in [`v1beta`](../../grpc/proto/azd/extensions/v1beta/account.proto). `Account()` remains the unchanged stable client; use `AccountBeta()` for principal lookup. Older azd hosts return `Unimplemented`. Extensions must consume an SDK release containing the method and require a host release that supports it before removing their existing principal lookup.
+
 ---
 
 ### Copilot Service
@@ -3138,8 +3173,9 @@ Returns cumulative usage metrics cached for a session.
     - `input_tokens` (double): Total input tokens consumed
     - `output_tokens` (double): Total output tokens consumed
     - `total_tokens` (double): Sum of input + output tokens
-    - `billing_rate` (double): Per-request cost multiplier (e.g., 1.0x, 2.0x)
-    - `premium_requests` (double): Number of premium requests used
+    - `billing_rate` (double, deprecated): Legacy per-request cost multiplier; use `ai_credits` instead
+    - `premium_requests` (double, deprecated): Legacy premium request count; use `ai_credits` instead
+    - `ai_credits` (double): Total AI credits consumed
     - `duration_ms` (double): Total API duration in milliseconds
 
 #### GetFileChanges
@@ -3233,8 +3269,8 @@ metricsResp, err := copilot.GetUsageMetrics(ctx, &v1beta.GetCopilotUsageMetricsR
 if err != nil {
     return fmt.Errorf("failed to get metrics: %w", err)
 }
-fmt.Printf("Total tokens: %.0f, Premium requests: %.0f\n",
-    metricsResp.Usage.TotalTokens, metricsResp.Usage.PremiumRequests)
+fmt.Printf("Total tokens: %.0f, AI credits: %.2f AIC\n",
+  metricsResp.Usage.TotalTokens, metricsResp.Usage.AiCredits)
 
 // Retrieve file changes
 changesResp, err := copilot.GetFileChanges(ctx, &v1beta.GetCopilotFileChangesRequest{

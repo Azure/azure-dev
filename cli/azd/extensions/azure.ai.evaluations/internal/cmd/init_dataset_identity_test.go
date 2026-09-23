@@ -223,3 +223,82 @@ func TestScaffoldDatasetFileIdentity(t *testing.T) {
 		})
 	}
 }
+
+func TestInitDatasetIdentityUsesExactConfigPath(t *testing.T) {
+	for _, location := range []struct {
+		name      string
+		filename  string
+		directory bool
+		sidecar   bool
+	}{
+		{name: "custom yaml", filename: "nightly.yaml"},
+		{name: "custom yml", filename: "nightly.yml"},
+		{name: "custom with default beside it", filename: "nightly.yaml", sidecar: true},
+		{name: "default directory", filename: project.EvalConfigBase, directory: true},
+		{name: "default file", filename: project.EvalConfigBase},
+		{name: "legacy directory", filename: project.LegacyEvalConfigBase, directory: true},
+		{name: "legacy file", filename: project.LegacyEvalConfigBase},
+	} {
+		for _, declaration := range []string{"local", "nested ref", "ref only"} {
+			for _, collision := range []bool{false, true} {
+				t.Run(location.name+"/"+declaration+"/"+map[bool]string{false: "same file", true: "collision"}[collision],
+					func(t *testing.T) {
+						h := initIdentityFixture(t, initIdentityDeclarations[declaration], &seedCorrectionPromptServer{})
+						require.NoError(t, os.WriteFile(filepath.Join("original", "seeds.jsonl"),
+							[]byte(`{"test_case_description":"help","desired_num_turns":21}`), 0o600))
+						require.NoError(t, os.Rename("evals", "config"))
+						config := filepath.Join("config", location.filename)
+						if location.filename != project.EvalConfigBase {
+							require.NoError(t, os.Rename(filepath.Join("config", project.EvalConfigBase), config))
+						}
+						if location.sidecar {
+							require.NoError(t, os.WriteFile(filepath.Join("config", project.EvalConfigBase),
+								[]byte("datasets:\n  - name: seeds\n    file: ../replacement/seeds.jsonl\n"), 0o600))
+						}
+						path := config
+						if location.directory {
+							path = "config"
+						}
+						dataset := "./original/../original/seeds.jsonl"
+						if collision {
+							dataset = "./replacement/seeds.jsonl"
+						}
+						before := initFileSnapshot(t, h.dir)
+						text, err := executeConversationInit(t, append(simulationInitArgs(dataset),
+							"--path", path, "--output", "json")...)
+						if collision {
+							require.ErrorContains(t, err, "already declared")
+							assert.Empty(t, text)
+							assert.Zero(t, h.project.wiringAttempts())
+							assert.Empty(t, h.usage.reported())
+							assert.Equal(t, before, initFileSnapshot(t, h.dir))
+							return
+						}
+						require.NoError(t, err)
+						var output map[string]any
+						require.NoError(t, json.Unmarshal([]byte(text), &output))
+						assert.Equal(t, config, output["evalConfig"])
+						assert.Equal(t, filepath.Join("config", project.DefaultDatasetsDir), output["datasetsDir"])
+						assert.Equal(t, filepath.Join("config", project.DefaultEvaluatorsDir), output["evaluatorsDir"])
+						after := initFileSnapshot(t, h.dir)
+						for file, content := range before {
+							if file == config {
+								assert.Contains(t, after[file], content, "append without rewriting declarations")
+							} else {
+								assert.Equal(t, content, after[file], file)
+							}
+						}
+						if location.filename != project.EvalConfigBase && !location.sidecar {
+							assert.NoFileExists(t, filepath.Join("config", project.EvalConfigBase))
+						}
+						var cfg project.EvalConfig
+						require.NoError(t, yaml.Unmarshal([]byte(after[config]), &cfg))
+						require.Len(t, cfg.Evals, 1)
+						assert.Equal(t, "seeds", cfg.Evals[0].Dataset)
+						assert.Len(t, cfg.Datasets, 2, "reuse must not duplicate the declaration")
+						assert.Equal(t, 1, h.project.wiringAttempts())
+					})
+			}
+		}
+	}
+}

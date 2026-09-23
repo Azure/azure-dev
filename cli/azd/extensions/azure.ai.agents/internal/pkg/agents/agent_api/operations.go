@@ -94,6 +94,10 @@ func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 // preview Digital Worker contract.
 const DigitalWorkerPreviewFeature = "DigitalWorker=V1Preview"
 
+// GitHubCopilotPreviewFeature opts managed prompt agent operations into the
+// preview GitHub Copilot harness contract.
+const GitHubCopilotPreviewFeature = "GitHubCopilot=V1Preview"
+
 func setDigitalWorkerPreviewFeature(req *policy.Request) {
 	req.Raw().Header.Set("Foundry-Features", DigitalWorkerPreviewFeature)
 }
@@ -643,7 +647,23 @@ func (c *AgentClient) ListAgents(ctx context.Context, params *ListAgentQueryPara
 }
 
 // CreateAgentVersion creates a new version of an agent
-func (c *AgentClient) CreateAgentVersion(ctx context.Context, agentName string, request *CreateAgentVersionRequest, apiVersion string) (*AgentVersionObject, error) {
+func (c *AgentClient) CreateAgentVersion(
+	ctx context.Context,
+	agentName string,
+	request *CreateAgentVersionRequest,
+	apiVersion string,
+) (*AgentVersionObject, error) {
+	return c.CreateAgentVersionWithHeaders(ctx, agentName, request, apiVersion, nil)
+}
+
+// CreateAgentVersionWithHeaders creates a new version of an agent and applies additional service headers.
+func (c *AgentClient) CreateAgentVersionWithHeaders(
+	ctx context.Context,
+	agentName string,
+	request *CreateAgentVersionRequest,
+	apiVersion string,
+	headers map[string]string,
+) (*AgentVersionObject, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions?api-version=%s", c.endpoint, agentName, apiVersion)
 
 	payload, err := json.Marshal(request)
@@ -654,6 +674,9 @@ func (c *AgentClient) CreateAgentVersion(ctx context.Context, agentName string, 
 	req, err := runtime.NewRequest(ctx, http.MethodPost, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	for key, value := range headers {
+		req.Raw().Header.Set(key, value)
 	}
 	if hasDigitalWorkerType(request) {
 		setDigitalWorkerPreviewFeature(req)

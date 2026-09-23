@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -67,6 +69,42 @@ func TestOptimizeCommand_HasDeploySubCommand(t *testing.T) {
 	}
 
 	assert.Contains(t, actual, "deploy", "optimize should have 'deploy' sub-command")
+}
+
+func TestOptimizeDeployAgentHeaders(t *testing.T) {
+	tests := []struct {
+		name       string
+		definition map[string]any
+		expected   map[string]string
+	}{
+		{
+			name: "GitHub Copilot managed harness",
+			definition: map[string]any{
+				"kind":    "prompt",
+				"harness": map[string]any{"type": agent_api.ManagedAgentHarnessGitHubCopilot},
+			},
+			expected: map[string]string{
+				"Foundry-Features": agent_api.GitHubCopilotPreviewFeature,
+			},
+		},
+		{
+			name:       "plain prompt agent",
+			definition: map[string]any{"kind": "prompt"},
+		},
+		{
+			name: "other harness",
+			definition: map[string]any{
+				"kind":    "prompt",
+				"harness": map[string]any{"type": "future_harness"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.expected, optimizeDeployAgentHeaders(tt.definition))
+		})
+	}
 }
 
 func TestExtractEnvVars_EmptyDef(t *testing.T) {

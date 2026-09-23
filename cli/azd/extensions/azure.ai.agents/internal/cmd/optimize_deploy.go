@@ -167,7 +167,13 @@ func (a *OptimizeDeployAction) runDirect(
 	}
 
 	fmt.Fprintf(out, "  Creating new agent version...\n")
-	versionObj, err := agentClient.CreateAgentVersion(ctx, agentName, createReq, DefaultAgentAPIVersion)
+	versionObj, err := agentClient.CreateAgentVersionWithHeaders(
+		ctx,
+		agentName,
+		createReq,
+		DefaultAgentAPIVersion,
+		optimizeDeployAgentHeaders(latestDef),
+	)
 	if err != nil {
 		// Check for reserved env var error (AGENT_* and FOUNDRY_* are platform-reserved).
 		if isReservedEnvVarError(err) {
@@ -204,6 +210,15 @@ func (a *OptimizeDeployAction) runDirect(
 	fmt.Fprintf(out, "  Version: %s\n", versionObj.Version)
 
 	return nil
+}
+
+func optimizeDeployAgentHeaders(def map[string]any) map[string]string {
+	if harnessTypeFromMap(def) != agent_api.ManagedAgentHarnessGitHubCopilot {
+		return nil
+	}
+	return map[string]string{
+		"Foundry-Features": agent_api.GitHubCopilotPreviewFeature,
+	}
 }
 
 // upsertAgentYamlEnvVar reads the agent.yaml file, adds or updates the specified

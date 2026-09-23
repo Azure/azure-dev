@@ -20,6 +20,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const runFailureWithCredentials = "Synthetic initialization failure. " +
+	"Download https://fixture-user:fixture-password@storage.example/rows.jsonl?sig=fixture-signature#fixture-fragment"
+
 func TestOperationalRunFailureOffersAvailableResultsWithoutClaimingRows(t *testing.T) {
 	for _, render := range []struct {
 		name string
@@ -39,6 +42,7 @@ func TestOperationalRunFailureOffersAvailableResultsWithoutClaimingRows(t *testi
 			{"error without counts", "error", nil, &eval_api.JobError{Message: "Unable to initialize evaluation."}},
 			{"service error without status", "", nil, &eval_api.JobError{Code: "InitializationFailed"}},
 			{"failure after partial scoring", "failed", &eval_api.EvalRunResultCounts{Total: 2, Passed: 1, Failed: 1}, nil},
+			{"failure with errored rows", "failed", &eval_api.EvalRunResultCounts{Total: 1, Errored: 1}, nil},
 		} {
 			t.Run(render.name+"/"+tc.name, func(t *testing.T) {
 				run := &eval_api.OpenAIEvalRun{
@@ -55,6 +59,8 @@ func TestOperationalRunFailureOffersAvailableResultsWithoutClaimingRows(t *testi
 				assert.Contains(t, text, "diagnostics")
 				assert.Equal(t, tc.counts != nil && tc.counts.Failed > 0, strings.Contains(text, "--failed-only"),
 					"only reported failed verdicts justify a failed-only listing")
+				assert.Equal(t, tc.counts != nil && tc.counts.Errored > 0, strings.Contains(text, "--status errored"),
+					"a run-level error alone does not establish errored output rows")
 				assert.NotContains(t, text, "Rows that errored were never scored",
 					"the run-level error does not establish that output rows exist")
 				if tc.err != nil && tc.err.Message != "" {
@@ -110,6 +116,8 @@ func TestRunDetailFollowUpDistinguishesQualityAndExecutionFailures(t *testing.T)
 			require.NoError(t, renderRunDetail(&out, tc.run))
 			text := out.String()
 			assert.Equal(t, tc.failed, strings.Contains(text, "--failed-only"))
+			assert.Equal(t, tc.run.ResultCounts != nil && tc.run.ResultCounts.Errored > 0,
+				strings.Contains(text, "--status errored"))
 			assert.Equal(t, tc.all, strings.Contains(text,
 				"azd ai eval run output list --eval eval_rows --run run_rows\n"))
 			assert.Equal(t, tc.failed || tc.all, strings.Contains(text, "azd ai eval run output export"))
@@ -125,7 +133,7 @@ func TestFailedRunCallersPreserveJSONAndPrintResolvedHumanCommands(t *testing.T)
 					payload := map[string]any{
 						"id": "", "status": "failed",
 						"error": map[string]string{
-							"code": "RunInitializationFailed", "message": "Synthetic initialization failure.",
+							"code": "RunInitializationFailed", "message": runFailureWithCredentials,
 						},
 						"diagnostic_field": map[string]any{"preserved": true},
 					}
@@ -191,6 +199,7 @@ func TestFailedRunCallersPreserveJSONAndPrintResolvedHumanCommands(t *testing.T)
 						assert.NotContains(t, err.Error(), "gate breached")
 					}
 					assert.Zero(t, outputRequests)
+					assert.NotContains(t, stderr.String(), "fixture-password")
 					if format == "json" {
 						assert.JSONEq(t, string(response), out.String(),
 							"emit exactly one unchanged service document, without injected identities or command prose")
@@ -201,6 +210,12 @@ func TestFailedRunCallersPreserveJSONAndPrintResolvedHumanCommands(t *testing.T)
 					} else {
 						text := out.String()
 						assert.Contains(t, text, "Synthetic initialization failure.")
+						assert.Contains(t, text, "https://storage.example/rows.jsonl")
+						for _, secret := range []string{
+							"fixture-user", "fixture-password", "fixture-signature", "fixture-fragment",
+						} {
+							assert.NotContains(t, text, secret)
+						}
 						assert.Contains(t, text,
 							"azd ai eval run output list --eval eval_resolved --run run_resolved\n")
 						assert.Contains(t, text, "azd ai eval run output export --eval eval_resolved --run run_resolved "+
@@ -242,4 +257,109 @@ func TestRunDisplayIdentityFallbackDoesNotMutateServiceResponse(t *testing.T) {
 	require.NoError(t, renderRunDetail(&out, display))
 	assert.Contains(t, out.String(), `--eval "declared evaluation" --run service_run`)
 	assert.NotContains(t, out.String(), "fallback")
+}
+
+func TestCompletedConversationWithErroredRowOffersExplicitFilterAtCallSites(t *testing.T) {
+	const response = `{
+		"id":"run_completed","status":"completed","evaluation_level":"conversation",
+		"data_source":{"type":"jsonl"},"error":null,
+		"result_counts":{"total":1,"passed":0,"failed":0,"errored":1,"skipped":0}
+	}`
+	for _, caller := range []string{"start", "show", "show waited"} {
+		for _, format := range []string{"table", "json"} {
+			t.Run(caller+"/"+format, func(t *testing.T) {
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					switch {
+					case strings.HasSuffix(r.URL.Path, "/output_items"):
+						_, _ = io.WriteString(w, `{"data":[{"id":"1","run_id":"run_completed","status":"completed",
+							"results":[{"name":"quality","status":"errored","score":null,"passed":null}]}]}`)
+					case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/runs"):
+						_, _ = io.WriteString(w, `{"id":"run_completed","status":"queued"}`)
+					case strings.HasSuffix(r.URL.Path, "/runs/run_completed"):
+						_, _ = io.WriteString(w, response)
+					case strings.HasSuffix(r.URL.Path, "/runs"):
+						_, _ = io.WriteString(w, `{"data":[{"id":"previous","data_source":{"type":"jsonl"}}]}`)
+					default:
+						t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+						w.WriteHeader(http.StatusNotFound)
+					}
+				}))
+				t.Cleanup(srv.Close)
+				var out bytes.Buffer
+				command := &cobra.Command{}
+				command.SetContext(t.Context())
+				command.SetOut(&out)
+				command.Flags().String("output", format, "")
+				ec := evalContextFor(srv)
+				if caller == "start" {
+					action := &runStartAction{cmd: command, flags: &runStartFlags{
+						groupName: "eval_resolved", evalPath: t.TempDir(), wait: true,
+					}}
+					require.NoError(t, action.start(t.Context(), ec, gate{}))
+				} else {
+					action := &runShowAction{cmd: command, runID: "run_completed", flags: &runShowFlags{
+						wait: caller == "show waited",
+					}}
+					require.NoError(t, action.show(t.Context(), ec, "eval_resolved", gate{}))
+				}
+				if format == "json" {
+					assert.JSONEq(t, response, out.String())
+				} else {
+					assert.Contains(t, out.String(),
+						"azd ai eval run output list --eval eval_resolved --run run_completed\n")
+					assert.Contains(t, out.String(),
+						"azd ai eval run output list --eval eval_resolved --run run_completed --status errored\n")
+					assert.Contains(t, out.String(), "azd ai eval run output export --eval eval_resolved "+
+						"--run run_completed --output-file ./run_completed.json")
+					assert.NotContains(t, out.String(), "--failed-only",
+						"an errored conversation has no failed verdict to filter")
+				}
+			})
+		}
+	}
+}
+
+func TestRunFailureHumanOutputRedactsURLsWithoutMutatingJSON(t *testing.T) {
+	for _, render := range []struct {
+		name string
+		call func(io.Writer, *eval_api.OpenAIEvalRun) error
+	}{
+		{"summary", func(w io.Writer, run *eval_api.OpenAIEvalRun) error { return renderRun(w, run, nil) }},
+		{"detail", renderRunDetail},
+	} {
+		for _, errorField := range []string{"message", "code"} {
+			for _, simulation := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/simulation=%t", render.name, errorField, simulation), func(t *testing.T) {
+					run := &eval_api.OpenAIEvalRun{
+						ID: "run_failed", EvalID: "eval_failed", Status: "failed", Error: &eval_api.JobError{},
+					}
+					if simulation {
+						run.DataSource = eval_api.NewSimulationDataSource("agent", "model", 1, 0)
+					}
+					if errorField == "code" {
+						run.Error.Code = runFailureWithCredentials
+					} else {
+						run.Error.Message = runFailureWithCredentials
+					}
+					before, err := json.Marshal(run)
+					require.NoError(t, err)
+					var out bytes.Buffer
+					require.NoError(t, render.call(&out, run))
+					text := out.String()
+					assert.Contains(t, text, "Synthetic initialization failure.")
+					assert.Contains(t, text, "https://storage.example/rows.jsonl")
+					for _, secret := range []string{
+						"fixture-user", "fixture-password", "fixture-signature", "fixture-fragment", "sig=",
+					} {
+						assert.NotContains(t, text, secret)
+					}
+					after, err := json.Marshal(run)
+					require.NoError(t, err)
+					assert.JSONEq(t, string(before), string(after),
+						"redaction is a human presentation concern, not a rewrite of service JSON")
+				})
+			}
+		}
+	}
 }

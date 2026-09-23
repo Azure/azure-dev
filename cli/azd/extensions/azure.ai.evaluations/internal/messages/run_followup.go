@@ -27,6 +27,9 @@ func RunFollowUp(eval, runID string, failed, errored bool) string {
 	if failed {
 		out += failingRowsCommand(eval, runID)
 	}
+	if errored {
+		out += erroredRowsCommand(eval, runID)
+	}
 	if failed && errored {
 		out += "\nRows that errored were never scored, so the failing-row listing does not hold them.\n"
 	}
@@ -34,11 +37,14 @@ func RunFollowUp(eval, runID string, failed, errored bool) string {
 }
 
 // FailedRunFollowUp offers diagnostics even when execution produced no rows.
-func FailedRunFollowUp(eval, runID string, failedRows bool) string {
+func FailedRunFollowUp(eval, runID string, failedRows, erroredRows bool) string {
 	out := "\nInspect available output (the run may have failed before producing rows):\n" +
 		allRowsCommand(eval, runID)
 	if failedRows {
 		out += "\nView failed verdicts:\n" + failingRowsCommand(eval, runID)
+	}
+	if erroredRows {
+		out += "\nView errored results:\n" + erroredRowsCommand(eval, runID)
 	}
 	return out + "\nExport run diagnostics and any available results:\n" + exportRunCommand(eval, runID)
 }
@@ -59,6 +65,14 @@ func failingRowsCommand(eval, runID string) string {
 		return fmt.Sprintf("  azd ai eval run output list --run %s --failed-only\n", shellArg(runID))
 	}
 	return fmt.Sprintf("  azd ai eval run output list --eval %s --run %s --failed-only\n",
+		shellArg(eval), shellArg(runID))
+}
+
+func erroredRowsCommand(eval, runID string) string {
+	if eval == "" {
+		return fmt.Sprintf("  azd ai eval run output list --run %s --status errored\n", shellArg(runID))
+	}
+	return fmt.Sprintf("  azd ai eval run output list --eval %s --run %s --status errored\n",
 		shellArg(eval), shellArg(runID))
 }
 

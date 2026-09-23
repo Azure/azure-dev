@@ -13,7 +13,7 @@ metadata:
   # tool list moved to the body below.
 description: >-
   **WORKFLOW SKILL** — Runs the azure.ai.agents extension's cli-interactive-tester scenarios as
-  a full or tag/tier-filtered sweep NOT tied to a PR diff (gates and incurs Azure cost).
+  a full or tag/tier-filtered sweep NOT tied to a PR diff (Tier 0 free; Tier 1b/2 cost-gated).
   Discovers scenarios via list_scenarios, drives them concurrently via
   foundry-extension-scenario-worker agents, then writes an aggregate report. Dispatched by
   foundry-extension-scenario-orchestrator, or triggered directly.

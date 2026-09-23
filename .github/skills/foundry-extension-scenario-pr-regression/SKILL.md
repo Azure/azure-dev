@@ -10,8 +10,9 @@ metadata:
   # tool list moved to the body below.
 description: >-
   **WORKFLOW SKILL** — Runs the azure.ai.agents extension's cli-interactive-tester scenarios
-  locally as a PR-scoped regression check (incurs Azure cost). Resolves the current branch's
-  PR, maps changed files to impacted scenario tags, drives matching scenarios via
+  locally as a PR-scoped regression check (Tier 0 is free/offline; Tier 1b/Tier 2 incur Azure
+  cost). Resolves the current branch's PR, maps changed files to impacted scenario tags, drives
+  matching scenarios via
   foundry-extension-scenario-worker agents, and posts a results comment on the PR. Typically
   dispatched by foundry-extension-scenario-orchestrator, but can trigger directly.
 

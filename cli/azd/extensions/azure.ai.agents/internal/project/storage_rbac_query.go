@@ -34,6 +34,7 @@ const (
 	storagePermissionGranted storagePermission = "granted"
 	storagePermissionMissing storagePermission = "missing"
 	storagePermissionUnknown storagePermission = "unknown"
+	storagePermissionScoped  storagePermission = "scoped"
 )
 
 // StorageRBACFinding describes the role assessment for one project storage connection.
@@ -278,23 +279,50 @@ func queryStorageRoles(
 		}
 		assignments = append(assignments, page.Value...)
 	}
-	assessment := assessStorageRoles(assignments, principalID, scope)
+	definitions, err := armauthorization.NewRoleDefinitionsClient(credential, options)
+	if err != nil {
+		return "unknown", "could not initialize the role definition query"
+	}
+	definitionCache := map[string]*armauthorization.RoleDefinition{}
+	lookupDefinition := func(roleID string) *armauthorization.RoleDefinition {
+		key := strings.ToLower(roleID)
+		if definition, found := definitionCache[key]; found {
+			return definition
+		}
+		definitionCache[key] = nil
+		roleResource, parseErr := arm.ParseResourceID(roleID)
+		if parseErr != nil || !strings.EqualFold(roleResource.ResourceType.String(), "Microsoft.Authorization/roleDefinitions") {
+			return nil
+		}
+		response, lookupErr := definitions.GetByID(ctx, roleID, nil)
+		if lookupErr == nil {
+			definitionCache[key] = &response.RoleDefinition
+		}
+		return definitionCache[key]
+	}
+	assessment := assessStorageRoles(assignments, principalID, scope, lookupDefinition)
 	switch assessment {
 	case storagePermissionGranted:
 		return string(assessment), "required Blob data role assignment found"
 	case storagePermissionMissing:
 		return string(assessment), "required Blob data role assignment is missing"
+	case storagePermissionScoped:
+		return "unknown", "container-scoped Blob data grants exist; access to the project's containers has not been verified"
 	default:
-		return string(assessment), "custom, conditional, or group-based permissions could not be verified"
+		return string(assessment), "role definitions, conditional grants, or effective permissions could not be verified"
 	}
 }
 
 // assessStorageRoles consumes assignedTo-filtered results, including groups resolved for the project principal.
 func assessStorageRoles(
 	assignments []*armauthorization.RoleAssignment, principalID, storageScope string,
+	lookupDefinition func(string) *armauthorization.RoleDefinition,
 ) storagePermission {
 	result := storagePermissionMissing
+	containerGrant := false
 	managementGroupPrefix := strings.ToLower("/providers/Microsoft.Management/managementGroups/")
+	target := strings.ToLower(strings.TrimRight(storageScope, "/"))
+	containerPrefix := target + strings.ToLower("/blobServices/default/containers/")
 	for _, assignment := range assignments {
 		if assignment == nil || assignment.Properties == nil {
 			result = storagePermissionUnknown
@@ -307,13 +335,13 @@ func assessStorageRoles(
 		}
 		principal := *properties.PrincipalID
 		scope := strings.ToLower(strings.TrimRight(*properties.Scope, "/"))
-		target := strings.ToLower(strings.TrimRight(storageScope, "/"))
 		if principal == "" || scope == "" {
 			result = storagePermissionUnknown
 			continue
 		}
 		inheritedManagementGroup := strings.HasPrefix(scope, managementGroupPrefix)
-		if scope != target && !strings.HasPrefix(target, scope+"/") && !inheritedManagementGroup {
+		containerScope := strings.HasPrefix(scope, containerPrefix)
+		if scope != target && !strings.HasPrefix(target, scope+"/") && !inheritedManagementGroup && !containerScope {
 			continue
 		}
 		roleID := strings.ToLower(*properties.RoleDefinitionID)
@@ -334,13 +362,50 @@ func assessStorageRoles(
 		}
 		switch roleID {
 		case storageBlobContributorRole, storageBlobOwnerRole:
+			if containerScope {
+				containerGrant = true
+				continue
+			}
 			if properties.Condition == nil || strings.TrimSpace(*properties.Condition) == "" {
 				return storagePermissionGranted
 			}
 			result = storagePermissionUnknown
 		default:
+			if lookupDefinition != nil && storageRoleExcludesBlobData(lookupDefinition(*properties.RoleDefinitionID)) {
+				continue
+			}
 			result = storagePermissionUnknown
 		}
 	}
+	if containerGrant {
+		return storagePermissionScoped
+	}
 	return result
+}
+
+func storageRoleExcludesBlobData(definition *armauthorization.RoleDefinition) bool {
+	if definition == nil || definition.Properties == nil {
+		return false
+	}
+	properties := definition.Properties
+	if properties.RoleType == nil || !strings.EqualFold(*properties.RoleType, "BuiltInRole") ||
+		len(properties.Permissions) == 0 {
+		return false
+	}
+	blobPrefix := strings.ToLower("Microsoft.Storage/storageAccounts/blobServices/containers/blobs/")
+	for _, permission := range properties.Permissions {
+		if permission == nil {
+			return false
+		}
+		for _, action := range permission.DataActions {
+			if action == nil {
+				return false
+			}
+			prefix, _, _ := strings.Cut(strings.ToLower(*action), "*")
+			if strings.HasPrefix(blobPrefix, prefix) || strings.HasPrefix(prefix, blobPrefix) {
+				return false
+			}
+		}
+	}
+	return true
 }

@@ -64,7 +64,13 @@ ProjectManagedIdentity connections.
 Connections using account keys, SAS, or a separate service principal are skipped.
 Missing metadata, unsupported identity selection, unreadable assignments, and
 unresolved custom or conditional permissions produce a warning instead
-of a missing-permission claim. The check never reads connection secrets, accesses
+of a missing-permission claim. Container-scoped Blob grants also produce a warning
+when the project's exact container access cannot be verified; the check does not
+recommend expanding those grants to the entire account. Unrecognized role
+definitions are read as needed, so unrelated built-in roles such as Monitoring
+Reader do not prevent a missing-permission finding.
+
+The check never reads connection secrets, accesses
 blob data, or creates role assignments. A pass does not verify network access.
 
 Use `--debug` for per-connection findings and `--unredacted` to include identity

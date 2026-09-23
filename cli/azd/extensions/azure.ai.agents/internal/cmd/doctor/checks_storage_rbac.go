@@ -80,6 +80,7 @@ func classifyProjectStorageRBAC(result *project.ProjectStorageRBACResult, unreda
 	var findings []map[string]any
 	var passed, failed, warned, skipped int
 	missingRole := false
+	invalidConfiguration := false
 	for _, finding := range result.Findings {
 		connectionName := redactDisplay(finding.ConnectionName, unredacted)
 		scope := redactScope(finding.StorageScope, unredacted)
@@ -91,6 +92,7 @@ func classifyProjectStorageRBAC(result *project.ProjectStorageRBACResult, unreda
 			missingRole = true
 		case "invalid":
 			failed++
+			invalidConfiguration = true
 		case "skip":
 			skipped++
 		default:
@@ -109,9 +111,7 @@ func classifyProjectStorageRBAC(result *project.ProjectStorageRBACResult, unreda
 		Details: map[string]any{"principalId": principal, "findings": findings},
 	}
 	if len(result.Findings) == 1 {
-		finding := result.Findings[0]
-		response.Message = fmt.Sprintf("Project identity %s, Storage %q: %s.",
-			principal, redactScope(finding.StorageScope, unredacted), finding.Message)
+		response.Message = fmt.Sprintf("Project identity %s, %s", principal, lines[0])
 	}
 	switch {
 	case failed > 0:
@@ -127,11 +127,14 @@ func classifyProjectStorageRBAC(result *project.ProjectStorageRBACResult, unreda
 						"to grant Storage Blob Data Contributor to project identity %s.",
 					redactScope(result.Findings[0].StorageScope, unredacted), principal)
 			}
+			if invalidConfiguration {
+				response.Suggestion += " Also correct the invalid project identity or Storage connection configuration."
+			}
 		}
 	case warned > 0:
 		response.Status = StatusWarn
 		response.Suggestion = "Verify the Storage connection authentication and role-assignment read access; " +
-			"have an administrator review any unresolved custom, conditional, or group grants."
+			"have an administrator verify any unresolved permissions on the project's containers or accounts."
 	case passed == 0:
 		response.Status = StatusSkip
 		response.Message = "skipped: the configured Storage connections do not use the project managed identity."

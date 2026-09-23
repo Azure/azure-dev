@@ -154,3 +154,39 @@ func TestProjectStorageRBACRemediation(t *testing.T) {
 	require.Contains(t, result.Suggestion, "project-principal")
 	require.Contains(t, result.Suggestion, "storage-scope")
 }
+
+func TestProjectStorageRBACIncompleteConnectionName(t *testing.T) {
+	t.Parallel()
+	for _, status := range []string{"invalid", "unknown"} {
+		for _, unredacted := range []bool{false, true} {
+			result := classifyProjectStorageRBAC(&project.ProjectStorageRBACResult{
+				PrincipalID: "private-principal",
+				Findings: []project.StorageRBACFinding{{
+					ConnectionName: "private-connection", Status: status, Message: "storage metadata is incomplete",
+				}},
+			}, unredacted)
+			require.Contains(t, result.Message, "Connection")
+			if unredacted {
+				require.Contains(t, result.Message, "private-connection")
+			} else {
+				encoded, err := json.Marshal(result)
+				require.NoError(t, err)
+				require.NotContains(t, string(encoded), "private-")
+			}
+		}
+	}
+}
+
+func TestProjectStorageRBACMixedFailureRemediation(t *testing.T) {
+	t.Parallel()
+	result := classifyProjectStorageRBAC(&project.ProjectStorageRBACResult{
+		Findings: []project.StorageRBACFinding{
+			{ConnectionName: "missing-role", Status: "missing"},
+			{ConnectionName: "invalid-connection", Status: "invalid"},
+		},
+	}, false)
+	require.Equal(t, StatusFail, result.Status)
+	suggestion := firstLine(result.Suggestion)
+	require.Contains(t, suggestion, "grant Storage Blob Data Contributor")
+	require.Contains(t, suggestion, "correct the invalid project identity or Storage connection")
+}

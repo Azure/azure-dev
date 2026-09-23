@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"azureaieval/internal/exterrors"
 	"azureaieval/internal/messages"
@@ -87,34 +88,37 @@ func (ec *evalContext) simulationDataSource(
 // run had been billed for the ones before it.
 func refuseUnusableSeedRows(group *project.Eval, items []map[string]any) error {
 	for i, item := range items {
-		if _, isCompleted := item[completedRowsField]; isCompleted {
-			return simulationError(group,
-				fmt.Sprintf("row %d carries %q, which is a completed conversation rather than a scenario to simulate",
-					i+1, completedRowsField),
-				"A dataset holds either conversations to score or scenarios to simulate, not both. "+
-					"Remove the simulation block to score these conversations as they stand.")
-		}
-
-		description, present := item[seedDescriptionField]
-		if !present {
-			return simulationError(group,
-				fmt.Sprintf("row %d has no %q, so there is no scenario to simulate", i+1, seedDescriptionField),
-				fmt.Sprintf("Every seed row needs a %q. Generate seeds with "+
-					"`azd ai eval generate --evaluation-level conversation`.", seedDescriptionField))
-		}
-		text, isString := description.(string)
-		if !isString || text == "" {
-			return simulationError(group,
-				fmt.Sprintf("row %d has an empty or non-text %q", i+1, seedDescriptionField),
-				fmt.Sprintf("%q describes the conversation to create, so it has to be a non-empty string.",
-					seedDescriptionField))
-		}
-
-		if err := checkDesiredTurns(group, item, i); err != nil {
+		if err := refuseUnusableSeedRow(group, item, i); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func refuseUnusableSeedRow(group *project.Eval, item map[string]any, index int) error {
+	if _, isCompleted := item[completedRowsField]; isCompleted {
+		return simulationError(group,
+			fmt.Sprintf("row %d carries %q, which is a completed conversation rather than a scenario to simulate",
+				index+1, completedRowsField),
+			"A dataset holds either conversations to score or scenarios to simulate, not both. "+
+				"Remove the simulation block to score these conversations as they stand.")
+	}
+
+	description, present := item[seedDescriptionField]
+	if !present {
+		return simulationError(group,
+			fmt.Sprintf("row %d has no %q, so there is no scenario to simulate", index+1, seedDescriptionField),
+			fmt.Sprintf("Every seed row needs a %q. Generate seeds with "+
+				"`azd ai eval generate --evaluation-level conversation`.", seedDescriptionField))
+	}
+	text, isString := description.(string)
+	if !isString || strings.TrimSpace(text) == "" {
+		return simulationError(group,
+			fmt.Sprintf("row %d has an empty or non-text %q", index+1, seedDescriptionField),
+			fmt.Sprintf("%q describes the conversation to create, so it has to be a non-empty string.",
+				seedDescriptionField))
+	}
+	return checkDesiredTurns(group, item, index)
 }
 
 // checkDesiredTurns refuses a per-row turn count that is not a positive whole

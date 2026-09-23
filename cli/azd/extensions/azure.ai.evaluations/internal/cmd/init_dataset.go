@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"strings"
 
 	"azureaieval/internal/messages"
@@ -12,6 +13,38 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
+
+func validateInitSimulationDataset(
+	ctx context.Context, location string, answers initAnswers, cfg *project.EvalConfig,
+) error {
+	if answers.simulation == nil {
+		return nil
+	}
+	path := answers.datasetRef
+	if !looksLikeLocalDataset(path) {
+		decl, err := project.ReadAuthoredDataset(location, answers.datasetRef)
+		if err != nil {
+			return err
+		}
+		if decl == nil {
+			return nil // Registered names have no local rows for init to inspect.
+		}
+		// A ref-only declaration takes its name from the included file. Keep
+		// the name in the add-only accumulator without inlining its content.
+		if !declaresDataset(cfg, decl.Name) {
+			cfg.Datasets = append(cfg.Datasets, project.DatasetDecl{Name: decl.Name})
+		}
+		path = decl.File
+	}
+	if path == "" {
+		return nil
+	}
+	group := &project.Eval{Name: answers.evalName, Simulation: answers.simulation}
+	_, err := inspectJSONL(ctx, path, func(row map[string]any, index int) error {
+		return refuseUnusableSeedRow(group, row, index)
+	})
+	return err
+}
 
 // resolveDataset settles which dataset a dataset-backed evaluation grades.
 //

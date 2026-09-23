@@ -94,6 +94,8 @@ func newInitCommand() *cobra.Command {
 			"--conversation-mode implies --source dataset and --evaluation-level conversation when omitted. " +
 			"Simulation requires an independent --simulation-model; interactive init prompts for it. " +
 			"Under --no-prompt or --output json, supply all unresolved inputs explicitly.\n\n" +
+			"Simulation init validates all locally available seed rows before writing configuration. " +
+			"Registered datasets without local files are checked later, not fetched by init.\n\n" +
 			"Init works offline except for a bounded, best-effort lookup of explicitly named built-in evaluators.",
 		// Everything init takes is a flag; a positional would be ignored.
 		Args: cobra.NoArgs,
@@ -324,6 +326,10 @@ func (a *initAction) Run() error {
 	// taken before the prompts and a `generate` may have written since.
 	if cfg.HasEval(evalName) {
 		return messages.EvalAlreadyDeclared(evalName, filepath.ToSlash(configPath))
+	}
+	// Recheck the local rows and declaration after the confirmation pause.
+	if err := validateInitSimulationDataset(commandContext(a.cmd), configPath, answers, cfg); err != nil {
+		return err
 	}
 
 	// What the file already declares, so the write can be limited to what

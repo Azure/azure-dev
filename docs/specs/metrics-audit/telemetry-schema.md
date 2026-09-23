@@ -18,6 +18,7 @@ OpenTelemetry span name or event name.
 | `ExtensionRunEvent` | `ext.run` | Extension execution event |
 | `ExtensionInstallEvent` | `ext.install` | Extension install/upgrade event |
 | `ExtensionUpdateEvent` | `ext.update` | Single extension update attempt |
+| `ExtensionUninstallEvent` | `ext.uninstall` | Single extension uninstall attempt, by name or as a no-longer-required dependency |
 | `ExtensionPromoteEvent` | `ext.promote` | Extension registry promotion (e.g., dev → main) |
 | `ExtensionUsageEvent` | `ext.usage` | One usage event reported by an extension through the telemetry service |
 | `CopilotInitializeEvent` | `copilot.initialize` | Copilot initialization event |
@@ -356,8 +357,7 @@ set on its own.
 | Model | `copilot.message.model` | SystemMetadata | FeatureInsight | |
 | Input tokens | `copilot.message.inputTokens` | SystemMetadata | PerformanceAndHealth | **Measurement** |
 | Output tokens | `copilot.message.outputTokens` | SystemMetadata | PerformanceAndHealth | **Measurement** |
-| Billing rate | `copilot.message.billingRate` | SystemMetadata | BusinessInsight | **Measurement** |
-| Premium requests | `copilot.message.premiumRequests` | SystemMetadata | BusinessInsight | **Measurement** |
+| AI credits | `copilot.message.aiCredits` | SystemMetadata | BusinessInsight | **Measurement** |
 | Duration (ms) | `copilot.message.durationMs` | SystemMetadata | PerformanceAndHealth | **Measurement** |
 
 ### Copilot Consent

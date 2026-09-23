@@ -28,9 +28,11 @@ type AiModel struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Name   string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`     // e.g. "gpt-4o"
 	Format string                 `protobuf:"bytes,2,opt,name=format,proto3" json:"format,omitempty"` // e.g. "OpenAI"
+	// Always empty. Use AiModelVersion.lifecycle_status instead.
+	//
 	// Deprecated: Marked as deprecated in azd/extensions/v1/ai_model.proto.
-	LifecycleStatus string            `protobuf:"bytes,3,opt,name=lifecycle_status,json=lifecycleStatus,proto3" json:"lifecycle_status,omitempty"` // deprecated; always empty; use AiModelVersion.lifecycle_status
-	Capabilities    []string          `protobuf:"bytes,4,rep,name=capabilities,proto3" json:"capabilities,omitempty"`                              // e.g. ["chat", "embeddings"]
+	LifecycleStatus string            `protobuf:"bytes,3,opt,name=lifecycle_status,json=lifecycleStatus,proto3" json:"lifecycle_status,omitempty"`
+	Capabilities    []string          `protobuf:"bytes,4,rep,name=capabilities,proto3" json:"capabilities,omitempty"` // e.g. ["chat", "embeddings"]
 	Versions        []*AiModelVersion `protobuf:"bytes,5,rep,name=versions,proto3" json:"versions,omitempty"`
 	Locations       []string          `protobuf:"bytes,6,rep,name=locations,proto3" json:"locations,omitempty"` // canonical locations where available
 	unknownFields   protoimpl.UnknownFields

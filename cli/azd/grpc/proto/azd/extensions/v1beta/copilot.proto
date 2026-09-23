@@ -118,9 +118,12 @@ message CopilotUsageMetrics {
   double input_tokens = 2;      // Total input tokens consumed.
   double output_tokens = 3;     // Total output tokens consumed.
   double total_tokens = 4;      // Sum of input + output tokens.
-  double billing_rate = 5;      // Per-request cost multiplier (e.g., 1.0x, 2.0x).
-  double premium_requests = 6;  // Number of premium requests used.
+  // Legacy per-request cost multiplier. Use ai_credits instead.
+  double billing_rate = 5 [deprecated = true];
+  // Legacy premium request count. Use ai_credits instead.
+  double premium_requests = 6 [deprecated = true];
   double duration_ms = 7;       // Total API duration in milliseconds.
+  double ai_credits = 8;        // Total AI credits consumed.
 }
 
 // --- File change messages ---

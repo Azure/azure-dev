@@ -175,10 +175,10 @@ is rejected too and must be renamed. Payload literals must use keyed fields.
 Attribute keys must be string literals or same-package compile-time string
 constants so repository validation can resolve them.
 Generic container literals, type-elided literals that carry an `Attributes`
-entry, and telemetry payload type aliases (including cross-package re-exports)
-are not supported in packages that define extension telemetry; a payload alias
-is rejected at its declaration. Use a concrete keyed telemetry payload literal
-instead. Run the validation from `cli/azd`:
+entry, and telemetry payload type names — aliases or defined types, including
+cross-package re-exports — are not supported in packages that define extension
+telemetry; a payload type name is rejected at its declaration. Use a concrete
+keyed telemetry payload literal instead. Run the validation from `cli/azd`:
 
 ```bash
 go test ./extensions/telemetry

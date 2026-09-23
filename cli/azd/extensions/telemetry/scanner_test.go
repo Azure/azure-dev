@@ -350,7 +350,56 @@ var _ = Usage{Attributes: map[string]string{"undeclared": "value"}}
 
 	require.Empty(t, usages)
 	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "do not alias telemetry payload types")
+	require.Contains(t, diagnostics[0], "do not alias or redefine telemetry payload types")
+}
+
+// A defined type (not an alias) whose underlying type is a telemetry payload can
+// be converted back to the payload, so its declaration is rejected and the
+// undeclared key it would smuggle through the conversion is never accepted.
+func TestScanRejectsDefinedPayloadType(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+type Usage azdext.ReportUsageRequest
+
+var _ = azdext.ReportUsageRequest(Usage{Attributes: map[string]string{"undeclared": "value"}})
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "do not alias or redefine telemetry payload types")
+	require.Contains(t, diagnostics[0], "type Usage)")
+}
+
+// A chain of defined types reaches the payload through its base type, so every
+// declaration in the chain is rejected just like a chain of aliases.
+func TestScanRejectsChainedDefinedPayloadType(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+type Usage azdext.ReportUsageRequest
+type Report Usage
+
+var _ = azdext.ReportUsageRequest(Report{Attributes: map[string]string{"undeclared": "value"}})
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 2)
+	joined := strings.Join(diagnostics, "\n")
+	require.Contains(t, joined, "type Usage)")
+	require.Contains(t, joined, "type Report)")
 }
 
 // A chain of aliases resolves to a payload, so each alias declaration is rejected.
@@ -373,8 +422,8 @@ var _ = Report{Attributes: map[string]string{"undeclared": "value"}}
 	require.Empty(t, usages)
 	require.Len(t, diagnostics, 2)
 	joined := strings.Join(diagnostics, "\n")
-	require.Contains(t, joined, "type Usage = ...")
-	require.Contains(t, joined, "type Report = ...")
+	require.Contains(t, joined, "type Usage)")
+	require.Contains(t, joined, "type Report)")
 }
 
 // A local alias to a payload alias re-exported from another package resolves
@@ -404,8 +453,8 @@ var _ = Report{Attributes: map[string]string{"undeclared": "value"}}
 	require.Empty(t, usages)
 	require.Len(t, diagnostics, 2)
 	joined := strings.Join(diagnostics, "\n")
-	require.Contains(t, joined, "type Usage = ...")
-	require.Contains(t, joined, "type Report = ...")
+	require.Contains(t, joined, "type Usage)")
+	require.Contains(t, joined, "type Report)")
 }
 
 // --- Non-telemetry constructs are ignored ---

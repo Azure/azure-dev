@@ -138,15 +138,17 @@ evals:
 
 `simulation:` requires `evaluation_level: conversation` and an agent target:
 there is no turn to score before the conversation exists, and nothing to hold it
-with if the target is a model. It is also exclusive with `source:` and
-`max_samples:` — the run creates its conversations rather than collecting or
-sampling ones that already happened. Every evaluator listed has to support
+with if the target is a model. It is also exclusive with `source:` and positive
+`max_samples:` caps; `max_samples: 0` means uncapped. The run creates its
+conversations rather than collecting or sampling ones that already happened.
+Every evaluator listed has to support
 conversation level; one that does not is refused at deploy rather than bound to
 a column the graded rows do not have.
 
 Omit `num_conversations` to use one conversation per seed, and omit `max_turns`
-to use the service default. Explicit zero or null values are rejected by both
-file-based and inline service configuration loaders.
+to use the service default. Explicit zero or null values for either of these
+simulation counts are rejected by both file-based and inline service configuration
+loaders.
 
 The dataset holds **seeds**, not exchanges. One row describes one conversation
 to have:
@@ -157,7 +159,8 @@ to have:
 ```
 
 Only `test_case_description` is required; it is the scenario the simulator opens
-with. Per-row turn settings belong inside `simulation_configuration`, matching
+with and must contain 1 to 2,500 Unicode characters. Per-row turn settings belong
+inside `simulation_configuration`, matching
 the [published Foundry contract](https://github.com/Azure/azure-rest-api-specs/blob/main/specification/ai-foundry/data-plane/Foundry/src/openai/evaluations/user_conversation_simulation.tsp).
 The optional `desired_num_turns` must not exceed the effective `max_num_turns`:
 the per-row maximum overrides `simulation.max_turns`, and the service default is

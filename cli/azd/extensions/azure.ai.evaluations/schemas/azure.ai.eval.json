@@ -171,7 +171,7 @@
         },
         "simulation": {
           "$ref": "#/definitions/Simulation",
-          "description": "Present when the eval creates its conversations instead of scoring ones it was handed. dataset then names registered scenario seeds rather than rows to grade, evaluation_level must be conversation, and target must be an agent. Mutually exclusive with source and with max_samples."
+          "description": "Present when the eval creates its conversations instead of scoring ones it was handed. dataset then names registered scenario seeds rather than rows to grade, evaluation_level must be conversation, and target must be an agent. Mutually exclusive with source and positive max_samples caps; max_samples: 0 means uncapped."
         }
       },
       "allOf": [
@@ -186,7 +186,7 @@
           "then": {
             "properties": {
               "source": false,
-              "max_samples": false,
+              "max_samples": { "const": 0 },
               "evaluation_level": { "const": "conversation" },
               "target": {
                 "properties": { "type": { "const": "agent" } }

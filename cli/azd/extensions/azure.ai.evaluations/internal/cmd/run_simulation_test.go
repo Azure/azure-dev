@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -218,6 +219,43 @@ func TestRefuseUnusableSeedRows_PerRowTurnsRespectTheCeiling(t *testing.T) {
 	require.NoError(t, refuseUnusableSeedRows(group, overridden))
 	overridden[0]["simulation_configuration"] = map[string]any{"desired_num_turns": 6.0, "max_num_turns": 4.0}
 	require.ErrorContains(t, refuseUnusableSeedRows(group, overridden), "simulation_configuration.max_num_turns is 4")
+}
+
+func TestSimulationSeedDescriptionLength(t *testing.T) {
+	t.Parallel()
+
+	for _, character := range []string{"x", "\u00e9", "\U0001f600"} {
+		for _, length := range []int{2499, 2500, 2501} {
+			t.Run(strconv.QuoteToASCII(character)+"/"+strconv.Itoa(length), func(t *testing.T) {
+				description := strings.Repeat(character, length)
+				err := refuseUnusableSeedRows(runnableSimulation(), []map[string]any{
+					{seedDescriptionField: description},
+				})
+				if length > 2500 {
+					require.ErrorContains(t, err, "2501 characters; the maximum is 2500")
+					assert.Contains(t, err.Error(), "row 1")
+					assert.NotContains(t, err.Error(), description)
+				} else {
+					require.NoError(t, err, "count Unicode characters rather than UTF-8 bytes")
+				}
+			})
+		}
+	}
+}
+
+func TestSimulationRefusesOversizedDescriptionBeforeRunCreation(t *testing.T) {
+	row, err := json.Marshal(map[string]any{seedDescriptionField: strings.Repeat("x", 2501)})
+	require.NoError(t, err)
+	ec, requests := identityRunContext(t, identityService{id: "issued-id", rows: string(row)})
+	group := runnableSimulation()
+	group.Dataset = "golden"
+	source, version, err := ec.buildRunDataSource(t.Context(), group, writeCatalog(t, "", "1"), 0)
+	require.ErrorContains(t, err, "the maximum is 2500")
+	assert.Nil(t, source)
+	assert.Empty(t, version)
+	for _, req := range recordedIdentityRequests(requests) {
+		assert.False(t, strings.HasSuffix(req.path, "/runs"), "oversized seeds must not create a billed run")
+	}
 }
 
 func TestSimulationRefusesUnmappedLegacyTurnsBeforeRunCreation(t *testing.T) {

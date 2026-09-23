@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"unicode/utf8"
 
 	"azureaieval/internal/exterrors"
 	"azureaieval/internal/messages"
@@ -16,11 +17,12 @@ import (
 // Seed-row fields. A scenario describes a conversation to create; it carries no
 // question, because nobody has asked one yet.
 const (
-	seedDescriptionField   = "test_case_description"
-	seedConfigField        = "simulation_configuration"
-	seedTurnsField         = "desired_num_turns"
-	completedRowsField     = "messages"
-	defaultSimulationTurns = 20
+	seedDescriptionField     = "test_case_description"
+	seedConfigField          = "simulation_configuration"
+	seedTurnsField           = "desired_num_turns"
+	completedRowsField       = "messages"
+	defaultSimulationTurns   = 20
+	maxSeedDescriptionLength = 2500
 )
 
 // simulationDataSource builds the run for an eval that creates its
@@ -106,6 +108,13 @@ func refuseUnusableSeedRows(group *project.Eval, items []map[string]any) error {
 				fmt.Sprintf("row %d has an empty or non-text %q", i+1, seedDescriptionField),
 				fmt.Sprintf("%q describes the conversation to create, so it has to be a non-empty string.",
 					seedDescriptionField))
+		}
+		if length := utf8.RuneCountInString(text); length > maxSeedDescriptionLength {
+			return simulationError(group,
+				fmt.Sprintf("row %d has %s with %d characters; the maximum is %d",
+					i+1, seedDescriptionField, length, maxSeedDescriptionLength),
+				fmt.Sprintf("Shorten %s to at most %d characters and publish a new dataset version.",
+					seedDescriptionField, maxSeedDescriptionLength))
 		}
 
 		if err := checkDesiredTurns(group, item, i); err != nil {

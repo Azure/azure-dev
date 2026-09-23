@@ -7,15 +7,27 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-// The scanner discovers attribute keys by recognizing telemetry payload literals
+// The scanner discovers telemetry attribute keys by recognizing payload literals
 // (foundry telemetry.Event and azdext ReportUsageRequest) wherever they appear in
-// extension source, then reading their inline Attributes map. These tests pin the
-// supported grammar and the fail-closed rejections.
+// extension source and reading their inline Attributes map. Keys that cannot be
+// read statically are rejected. To keep every key discoverable, the scanner also
+// enforces three strict rules on extension code:
+//
+//   - Attributes and GetAttributes may not be read or assigned through a selector
+//     outside a payload literal (rule 1).
+//   - A type-elided composite literal may not carry an Attributes entry (rule 2).
+//   - A telemetry payload type may not be aliased; the alias is rejected at its
+//     declaration (rule 3).
+//
+// These tests pin the supported grammar and each rejection.
+
+// --- Extraction of declared keys from payload literals ---
 
 func TestScanExtractsReportUsageLiteralKeys(t *testing.T) {
 	t.Parallel()
@@ -101,6 +113,8 @@ var _ = &azdext.ReportUsageRequest{Attributes: map[string]string{"agent.kind": "
 	require.Equal(t, []string{"agent.kind"}, usageKeys(usages))
 }
 
+// --- The Attributes map must be a static inline literal ---
+
 func TestScanRejectsNonStaticAttributeKey(t *testing.T) {
 	t.Parallel()
 
@@ -141,28 +155,6 @@ func report(attributes map[string]string) *azdext.ReportUsageRequest {
 	require.Contains(t, diagnostics[0], "must be an inline map literal")
 }
 
-func TestScanRejectsPostConstructionMutation(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/internal/telemetry/events.go", `package telemetry
-
-import foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
-
-func build() foundryTelemetry.Event {
-	event := foundryTelemetry.Event{Attributes: map[string]string{}}
-	event.Attributes["route"] = "inspector"
-	return event
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "after construction hides keys")
-}
-
 func TestScanRejectsUnkeyedPayload(t *testing.T) {
 	t.Parallel()
 
@@ -180,6 +172,8 @@ var _ = foundryTelemetry.Event{"reported", map[string]string{"route": "inspector
 	require.Len(t, diagnostics, 1)
 	require.Contains(t, diagnostics[0], "keyed fields")
 }
+
+// --- Payloads must be built as a single concrete keyed literal ---
 
 func TestScanRejectsPayloadContainer(t *testing.T) {
 	t.Parallel()
@@ -199,8 +193,225 @@ var _ = []foundryTelemetry.Event{{Attributes: map[string]string{"route": "inspec
 	require.Contains(t, diagnostics[0], "single keyed literal")
 }
 
+// A named wrapper type whose underlying type is a payload slice elides its
+// element type, hiding keys, so the scanner resolves the wrapper and rejects it.
+func TestScanRejectsNamedPayloadContainer(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/telemetry/events.go", `package telemetry
+
+import foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
+
+type Events []foundryTelemetry.Event
+
+func build() Events {
+	return Events{{
+		Name:       "example.reported",
+		Attributes: map[string]string{"undeclared": "value"},
+	}}
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "single keyed literal")
+}
+
+// Rule 2: a type-elided composite literal that carries an Attributes entry hides
+// which concrete type is built, so it is rejected regardless of its outer type.
+func TestScanRejectsTypeElidedAttributesLiteral(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/telemetry/events.go", `package telemetry
+
+type inspectorModel struct{ Attributes map[string]string }
+
+var _ = []inspectorModel{{Attributes: map[string]string{"undeclared": "value"}}}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "not a type-elided literal")
+}
+
+// --- Rule 1: Attributes/GetAttributes may not be accessed through a selector ---
+
+// Writing to Attributes after construction hides the key from the inline scan.
+func TestScanRejectsPostConstructionMutation(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/telemetry/events.go", `package telemetry
+
+import foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
+
+func build() foundryTelemetry.Event {
+	event := foundryTelemetry.Event{Attributes: map[string]string{}}
+	event.Attributes["route"] = "inspector"
+	return event
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "hides keys from governance")
+}
+
+// A getter that returns the Attributes map is rejected like a direct field read.
+func TestScanRejectsGetAttributesAccess(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+
+func report(req *v1beta.ReportUsageRequest, dynamicKey string) {
+	req.GetAttributes()[dynamicKey] = "value"
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], ".GetAttributes")
+}
+
+// Reading Attributes into a local aliases the map so later writes escape the
+// inline scan; the aliasing read itself is therefore rejected.
+func TestScanRejectsAttributesMapAliasing(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+func decorate(req *azdext.ReportUsageRequest, dynamicKey string) {
+	attrs := req.Attributes
+	attrs[dynamicKey] = "value"
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "hides keys from governance")
+}
+
+// The strict rule rejects any Attributes selector, even on an unrelated struct.
+// This is the accepted tradeoff: such a field must be renamed or exempted.
+func TestScanRejectsUnrelatedAttributesAccess(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+type inspectorModel struct{ Attributes map[string]string }
+
+func decorate(model inspectorModel, key string) {
+	model.Attributes[key] = "value"
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "rename unrelated fields")
+}
+
+// --- Rule 3: telemetry payload types may not be aliased ---
+
+func TestScanRejectsLocalPayloadTypeAlias(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+type Usage = azdext.ReportUsageRequest
+
+var _ = Usage{Attributes: map[string]string{"undeclared": "value"}}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "do not alias telemetry payload types")
+}
+
+// A chain of aliases resolves to a payload, so each alias declaration is rejected.
+func TestScanRejectsChainedPayloadAlias(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+type Usage = azdext.ReportUsageRequest
+type Report = Usage
+
+var _ = Report{Attributes: map[string]string{"undeclared": "value"}}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 2)
+	joined := strings.Join(diagnostics, "\n")
+	require.Contains(t, joined, "type Usage = ...")
+	require.Contains(t, joined, "type Report = ...")
+}
+
+// A local alias to a payload alias re-exported from another package resolves
+// across the module, so both alias declarations are rejected.
+func TestScanRejectsLocalAliasToCrossPackagePayloadAlias(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/go.mod", "module github.com/contoso/agent\n\ngo 1.24\n")
+	writeExtensionSource(t, root, "contoso.agent/internal/shared/telemetry.go", `package shared
+
+import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+type Usage = azdext.ReportUsageRequest
+`)
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/report.go", `package cmd
+
+import "github.com/contoso/agent/internal/shared"
+
+type Report = shared.Usage
+
+var _ = Report{Attributes: map[string]string{"undeclared": "value"}}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 2)
+	joined := strings.Join(diagnostics, "\n")
+	require.Contains(t, joined, "type Usage = ...")
+	require.Contains(t, joined, "type Report = ...")
+}
+
+// --- Non-telemetry constructs are ignored ---
+
 // A struct that merely has an Attributes field is not a telemetry payload, so its
-// keys are ignored even in a file that imports a telemetry package.
+// keyed construction is ignored even in a file that imports a telemetry package.
 func TestScanIgnoresUnrelatedStructs(t *testing.T) {
 	t.Parallel()
 
@@ -238,405 +449,8 @@ var _ = foundryTelemetry.Event{Attributes: map[string]string{"route": "inspector
 	require.Empty(t, diagnostics)
 }
 
-func TestScanRejectsLocalPayloadTypeAlias(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
-
-import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-
-type Usage = azdext.ReportUsageRequest
-
-var _ = Usage{Attributes: map[string]string{"undeclared": "value"}}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "not a local type alias")
-}
-
-func TestScanRejectsGetAttributesMutation(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
-
-import v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
-
-func report(req *v1beta.ReportUsageRequest, dynamicKey string) {
-	req.GetAttributes()[dynamicKey] = "value"
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "after construction hides keys")
-}
-
-// A struct that merely exposes an Attributes map is not a telemetry payload, so
-// mutating it is ignored even when the file also builds real telemetry.
-func TestScanIgnoresUnrelatedAttributesMutation(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
-
-import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-
-type inspectorModel struct{ Attributes map[string]string }
-
-func build(model inspectorModel, key string) {
-	model.Attributes[key] = "value"
-	_ = azdext.ReportUsageRequest{Attributes: map[string]string{"agent.kind": "hosted"}}
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, diagnostics)
-	require.Equal(t, []string{"agent.kind"}, usageKeys(usages))
-}
-
-// Payload provenance follows the value into a helper: a payload-typed parameter
-// mutated after construction is still rejected.
-func TestScanRejectsAttributesMutationOnPayloadParameter(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
-
-import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-
-func decorate(req *azdext.ReportUsageRequest, key string) {
-	req.Attributes[key] = "value"
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "after construction hides keys")
-}
-
-// Reading Attributes into a local aliases the map so later writes escape the
-// inline scan; the aliasing read itself is therefore rejected.
-func TestScanRejectsAttributesMapAliasing(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
-
-import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-
-func decorate(req *azdext.ReportUsageRequest, dynamicKey string) {
-	attrs := req.Attributes
-	attrs[dynamicKey] = "value"
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "after construction hides keys")
-}
-
-// new(payload) yields a payload pointer, so a later Attributes assignment on it
-// is still rejected.
-func TestScanRejectsAttributesMutationOnNewPayload(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
-
-import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-
-func build(dynamicKey string) *azdext.ReportUsageRequest {
-	req := new(azdext.ReportUsageRequest)
-	req.Attributes = map[string]string{dynamicKey: "value"}
-	return req
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "after construction hides keys")
-}
-
-// new(payload{}) is the Go 1.26 spelling; provenance still recognizes req as a
-// payload so the Attributes write is rejected.
-func TestScanRejectsAttributesMutationOnNewPayloadLiteral(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
-
-import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-
-func build(dynamicKey string) {
-	req := new(azdext.ReportUsageRequest{})
-	req.Attributes[dynamicKey] = "value"
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "after construction hides keys")
-}
-
-// A named wrapper type whose underlying type is a payload slice elides its
-// element type, hiding keys, so the scanner resolves the wrapper and rejects it.
-func TestScanRejectsNamedPayloadContainer(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/internal/telemetry/events.go", `package telemetry
-
-import foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
-
-type Events []foundryTelemetry.Event
-
-func build() Events {
-	return Events{{
-		Name:       "example.reported",
-		Attributes: map[string]string{"undeclared": "value"},
-	}}
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "single keyed literal")
-}
-
-// A loop variable that reuses a payload parameter's name has its own binding, so
-// its Attributes access is not mistaken for the payload's.
-func TestScanIgnoresShadowedLoopVariable(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
-
-import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-
-type inspectorModel struct{ Attributes map[string]string }
-
-func decorate(req *azdext.ReportUsageRequest, models []inspectorModel) {
-	for _, req := range models {
-		req.Attributes["status"] = "ready"
-	}
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Empty(t, diagnostics)
-}
-
-// A closure parameter that reuses a payload parameter's name has its own binding,
-// so its Attributes access is not mistaken for the outer payload.
-func TestScanIgnoresShadowedClosureParameter(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
-
-import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-
-type inspectorModel struct{ Attributes map[string]string }
-
-func decorate(req *azdext.ReportUsageRequest) {
-	inspect := func(req inspectorModel) {
-		req.Attributes["status"] = "ready"
-	}
-	_ = inspect
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Empty(t, diagnostics)
-}
-
-// Copying the payload pointer keeps the alias tracked, so a write through the
-// alias is rejected even though the original request is what gets reported.
-func TestScanRejectsRequestPointerAlias(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
-
-import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-
-func build(dynamicKey string) *azdext.ReportUsageRequest {
-	req := &azdext.ReportUsageRequest{
-		EventName:  "example.reported",
-		Attributes: map[string]string{},
-	}
-	alias := req
-	alias.Attributes[dynamicKey] = "value"
-	return req
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "after construction hides keys")
-}
-
-func TestScanRejectsAttributesMutationOnCallReturnedPayload(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
-
-import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-
-func newRequest() *azdext.ReportUsageRequest {
-	return &azdext.ReportUsageRequest{
-		EventName:  "example.reported",
-		Attributes: map[string]string{},
-	}
-}
-
-func report(dynamicKey string) *azdext.ReportUsageRequest {
-	req := newRequest()
-	req.Attributes[dynamicKey] = "value"
-	return req
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "after construction hides keys")
-}
-
-func TestScanRejectsAttributesMutationOnCrossFileCallReturnedPayload(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/factory.go", `package cmd
-
-import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-
-func newRequest() *azdext.ReportUsageRequest {
-	return &azdext.ReportUsageRequest{
-		EventName:  "example.reported",
-		Attributes: map[string]string{},
-	}
-}
-`)
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/report.go", `package cmd
-
-func report(dynamicKey string) {
-	req := newRequest()
-	req.Attributes[dynamicKey] = "value"
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "after construction hides keys")
-}
-
-func TestScanIgnoresAttributesMutationOnNonPayloadCall(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
-
-type inspectorModel struct {
-	Attributes map[string]string
-}
-
-func loadModel() inspectorModel {
-	return inspectorModel{Attributes: map[string]string{}}
-}
-
-func decorate(key string) {
-	model := loadModel()
-	model.Attributes[key] = "value"
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Empty(t, diagnostics)
-}
-
-func TestScanRejectsAttributesMutationOnPackageScopePayload(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
-
-import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-
-var sharedRequest = &azdext.ReportUsageRequest{
-	EventName:  "example.reported",
-	Attributes: map[string]string{},
-}
-
-func report(dynamicKey string) {
-	sharedRequest.Attributes[dynamicKey] = "value"
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "after construction hides keys")
-}
-
-func TestScanRejectsCrossPackagePayloadReExport(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/go.mod", "module github.com/contoso/agent\n\ngo 1.24\n")
-	writeExtensionSource(t, root, "contoso.agent/internal/shared/telemetry.go", `package shared
-
-import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-
-type Usage = azdext.ReportUsageRequest
-`)
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/report.go", `package cmd
-
-import "github.com/contoso/agent/internal/shared"
-
-func report(dynamicKey string) {
-	_ = shared.Usage{Attributes: map[string]string{dynamicKey: "value"}}
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "re-exported payload alias from another package")
-}
-
+// A same-named type in another package is a plain struct, not a payload alias, so
+// its keyed construction is ignored.
 func TestScanIgnoresCrossPackageNonPayloadType(t *testing.T) {
 	t.Parallel()
 
@@ -663,202 +477,7 @@ func decorate(key string) {
 	require.Empty(t, diagnostics)
 }
 
-func TestScanRejectsCrossFilePackageScopePayloadMutation(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
-
-import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-
-var sharedRequest = &azdext.ReportUsageRequest{
-	EventName:  "example.reported",
-	Attributes: map[string]string{},
-}
-`)
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/report.go", `package cmd
-
-func report(dynamicKey string) {
-	sharedRequest.Attributes[dynamicKey] = "value"
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "after construction hides keys")
-}
-
-func TestScanIgnoresCrossFilePackageScopeNonPayloadMutation(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/model.go", `package cmd
-
-type inspectorModel struct {
-	Attributes map[string]string
-}
-
-var sharedModel = &inspectorModel{Attributes: map[string]string{}}
-`)
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/decorate.go", `package cmd
-
-func decorate(key string) {
-	sharedModel.Attributes[key] = "value"
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Empty(t, diagnostics)
-}
-
-func TestScanRejectsCrossPackageCallReturnedPayload(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/go.mod", "module github.com/contoso/agent\n\ngo 1.24\n")
-	writeExtensionSource(t, root, "contoso.agent/internal/shared/factory.go", `package shared
-
-import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-
-func NewRequest() *azdext.ReportUsageRequest {
-	return &azdext.ReportUsageRequest{
-		EventName:  "example.reported",
-		Attributes: map[string]string{},
-	}
-}
-`)
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/report.go", `package cmd
-
-import "github.com/contoso/agent/internal/shared"
-
-func report(dynamicKey string) {
-	req := shared.NewRequest()
-	req.Attributes[dynamicKey] = "value"
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "after construction hides keys")
-}
-
-func TestScanIgnoresCrossPackageNonPayloadCall(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/go.mod", "module github.com/contoso/agent\n\ngo 1.24\n")
-	writeExtensionSource(t, root, "contoso.agent/internal/shared/factory.go", `package shared
-
-type Model struct {
-	Attributes map[string]string
-}
-
-func LoadModel() *Model {
-	return &Model{Attributes: map[string]string{}}
-}
-`)
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/report.go", `package cmd
-
-import "github.com/contoso/agent/internal/shared"
-
-func decorate(key string) {
-	model := shared.LoadModel()
-	model.Attributes[key] = "value"
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Empty(t, diagnostics)
-}
-
-func TestScanRejectsChainedPayloadAlias(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
-
-import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-
-type Usage = azdext.ReportUsageRequest
-type Report = Usage
-
-func report(dynamicKey string) {
-	_ = Report{Attributes: map[string]string{dynamicKey: "value"}}
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "not a local type alias")
-}
-
-func TestScanRejectsCrossPackageChainedPayloadAlias(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/go.mod", "module github.com/contoso/agent\n\ngo 1.24\n")
-	writeExtensionSource(t, root, "contoso.agent/internal/shared/telemetry.go", `package shared
-
-import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-
-type Usage = azdext.ReportUsageRequest
-type Report = Usage
-`)
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/report.go", `package cmd
-
-import "github.com/contoso/agent/internal/shared"
-
-func report(dynamicKey string) {
-	_ = shared.Report{Attributes: map[string]string{dynamicKey: "value"}}
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "re-exported payload alias from another package")
-}
-
-func TestScanRejectsLocalAliasToCrossPackagePayloadAlias(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	writeExtensionSource(t, root, "contoso.agent/go.mod", "module github.com/contoso/agent\n\ngo 1.24\n")
-	writeExtensionSource(t, root, "contoso.agent/internal/shared/telemetry.go", `package shared
-
-import "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-
-type Usage = azdext.ReportUsageRequest
-`)
-	writeExtensionSource(t, root, "contoso.agent/internal/cmd/report.go", `package cmd
-
-import "github.com/contoso/agent/internal/shared"
-
-type Report = shared.Usage
-
-func report(dynamicKey string) {
-	_ = Report{Attributes: map[string]string{dynamicKey: "value"}}
-}
-`)
-
-	usages, diagnostics := scanExtensionTelemetry(root)
-
-	require.Empty(t, usages)
-	require.Len(t, diagnostics, 1)
-	require.Contains(t, diagnostics[0], "not a local type alias")
-}
-
+// A chain of aliases whose base type is not a payload is ignored at every hop.
 func TestScanIgnoresChainedNonPayloadAlias(t *testing.T) {
 	t.Parallel()
 

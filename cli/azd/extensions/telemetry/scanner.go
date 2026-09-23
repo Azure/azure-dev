@@ -58,17 +58,14 @@ type typeDefinition struct {
 type parserObject = ast.Object //nolint:staticcheck // go/types would require loading extension dependencies.
 
 type sourcePackage struct {
-	directory             string
-	files                 []*sourceFile
-	constants             map[string][]constDefinition
-	objectConstants       map[*parserObject]constDefinition
-	packageDeclarations   map[string]bool
-	payloadAliases        map[string]bool
-	typeAliases           map[string]typeDefinition
-	namedTypes            map[string]typeDefinition
-	payloadReturningFuncs map[string]bool
-	packagePayloadObjects map[*parserObject]bool
-	packagePayloadNames   map[string]bool
+	directory           string
+	files               []*sourceFile
+	constants           map[string][]constDefinition
+	objectConstants     map[*parserObject]constDefinition
+	packageDeclarations map[string]bool
+	payloadAliases      map[string]bool
+	typeAliases         map[string]typeDefinition
+	namedTypes          map[string]typeDefinition
 }
 
 // scanExtensionTelemetry parses first-party extension source and returns every
@@ -126,8 +123,6 @@ func scanExtensionTelemetry(extensionRoot string) ([]telemetryUsage, []string) {
 		collectPackageDeclarations(pkg)
 		collectConstants(pkg)
 		collectNamedTypes(pkg)
-		collectPayloadReturningFuncs(pkg)
-		collectPackagePayloadObjects(pkg)
 		collectPayloadAliases(pkg)
 	}
 
@@ -153,24 +148,30 @@ func scanExtensionTelemetry(extensionRoot string) ([]telemetryUsage, []string) {
 								"not inside a slice, array, or map",
 							displayPath(extensionRoot, source.path),
 							fset.Position(value.Pos()).Line))
-					case isTelemetryPayloadAlias(value.Type, pkg):
+						// The container's entries elide their type; they are already
+						// reported here, so stop before the type-elided rule below.
+						return false
+					case value.Type == nil && compositeLiteralHasAttributesKey(value):
 						diagnostics = append(diagnostics, fmt.Sprintf(
-							"%s:%d: construct telemetry payloads with the concrete payload type, "+
-								"not a local type alias, so attribute keys stay discoverable",
-							displayPath(extensionRoot, source.path),
-							fset.Position(value.Pos()).Line))
-					case isCrossPackagePayloadAlias(value.Type, source, packagesByImportPath):
-						diagnostics = append(diagnostics, fmt.Sprintf(
-							"%s:%d: construct telemetry payloads with the concrete payload type, "+
-								"not a re-exported payload alias from another package, so attribute "+
+							"%s:%d: build each telemetry payload as a single keyed literal of the "+
+								"concrete payload type, not a type-elided literal, so attribute "+
 								"keys stay discoverable",
 							displayPath(extensionRoot, source.path),
 							fset.Position(value.Pos()).Line))
 					}
-				case *ast.FuncDecl:
-					diagnostics = append(diagnostics, scanAttributeMutations(
-						fset, extensionRoot, source, pkg, packagesByImportPath,
-						value.Recv, value.Type, value.Body)...)
+				case *ast.GenDecl:
+					diagnostics = append(diagnostics, scanPayloadAliasDeclarations(
+						fset, extensionRoot, source, pkg, value)...)
+				case *ast.SelectorExpr:
+					if value.Sel.Name == "Attributes" || value.Sel.Name == "GetAttributes" {
+						diagnostics = append(diagnostics, fmt.Sprintf(
+							"%s:%d: set telemetry attribute keys only inside the payload literal; "+
+								"reading or assigning .%s in extension code hides keys from "+
+								"governance (rename unrelated fields)",
+							displayPath(extensionRoot, source.path),
+							fset.Position(value.Pos()).Line,
+							value.Sel.Name))
+					}
 				}
 				return true
 			})
@@ -269,6 +270,23 @@ func compositeLiteralHasUnkeyedElements(literal *ast.CompositeLit) bool {
 	return false
 }
 
+// compositeLiteralHasAttributesKey reports whether a composite literal has an
+// Attributes entry. A type-elided literal with such an entry (for example
+// []Usage{{Attributes: ...}}) hides its element type, so the scanner rejects it
+// rather than guessing which concrete type is being built.
+func compositeLiteralHasAttributesKey(literal *ast.CompositeLit) bool {
+	for _, element := range literal.Elts {
+		keyValue, ok := element.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		if name, ok := keyValue.Key.(*ast.Ident); ok && name.Name == "Attributes" {
+			return true
+		}
+	}
+	return false
+}
+
 // isTelemetryPayloadType reports whether a composite literal type is a telemetry
 // payload: a foundry telemetry Event or an azdext ReportUsageRequest.
 func isTelemetryPayloadType(expression ast.Expr, source *sourceFile) bool {
@@ -341,46 +359,6 @@ func isNamedPayloadContainer(expression ast.Expr, pkg *sourcePackage) bool {
 		}
 		expression = definition.expression
 	}
-}
-
-// isTelemetryPayloadAlias reports whether a composite literal type is a local
-// type alias (type X = telemetry.Event) that resolves to a telemetry payload.
-// Such aliases would otherwise hide attribute keys from the type-based recognizer.
-func isTelemetryPayloadAlias(expression ast.Expr, pkg *sourcePackage) bool {
-	identifier, ok := expression.(*ast.Ident)
-	return ok && pkg.payloadAliases[identifier.Name]
-}
-
-// isCrossPackagePayloadAlias reports whether a composite literal type is a
-// payload alias re-exported by another package in the same module (shared.Usage
-// where package shared declares type Usage = azdext.ReportUsageRequest). The
-// selector's package identifier is resolved to an import path and matched against
-// the parsed packages, so the re-exported alias is rejected like a local one
-// instead of silently hiding attribute keys. Only packages parsed under the
-// scanned root and reachable through a go.mod are resolved; the exact import-path
-// match avoids flagging an unrelated same-named type in another module.
-func isCrossPackagePayloadAlias(
-	expression ast.Expr,
-	source *sourceFile,
-	packagesByImportPath map[string]*sourcePackage,
-) bool {
-	selector, ok := expression.(*ast.SelectorExpr)
-	if !ok {
-		return false
-	}
-	packageIdentifier, ok := selector.X.(*ast.Ident)
-	if !ok || (packageIdentifier.Obj != nil && packageIdentifier.Obj.Kind != ast.Pkg) {
-		return false
-	}
-	importPath, ok := source.imports[packageIdentifier.Name]
-	if !ok {
-		return false
-	}
-	declaringPackage, ok := packagesByImportPath[importPath]
-	if !ok {
-		return false
-	}
-	return declaringPackage.payloadAliases[selector.Sel.Name]
 }
 
 // moduleDefinition is a Go module's path and the directory that holds its go.mod.
@@ -469,60 +447,6 @@ func collectNamedTypes(pkg *sourcePackage) {
 	}
 }
 
-// collectPayloadReturningFuncs records package-level functions (without a
-// receiver) whose first result is a telemetry payload, so a local initialized
-// from such a call -- req := newRequest() -- is tracked and a later
-// req.Attributes write is still rejected. The result type is resolved with the
-// import aliases of the file that declared the function, because callers may
-// live in another file of the same package. Only the first result is considered,
-// matching the assignment's Rhs[0] -> Lhs[0] binding.
-func collectPayloadReturningFuncs(pkg *sourcePackage) {
-	pkg.payloadReturningFuncs = map[string]bool{}
-	for _, source := range pkg.files {
-		for _, declaration := range source.file.Decls {
-			function, ok := declaration.(*ast.FuncDecl)
-			if !ok || function.Recv != nil || function.Type.Results == nil {
-				continue
-			}
-			results := function.Type.Results.List
-			if len(results) == 0 {
-				continue
-			}
-			if isPayloadTypeExpression(results[0].Type, source) {
-				pkg.payloadReturningFuncs[function.Name.Name] = true
-			}
-		}
-	}
-}
-
-// collectPackagePayloadObjects records the binding identity and name of
-// package-scope variables bound to a telemetry payload
-// (var req = &azdext.ReportUsageRequest{}). The binding identity rejects a
-// mutation of their Attributes inside any function of the same file; the name
-// additionally rejects a mutation from another file of the package, where the
-// parser leaves the reference unresolved (package-level names are unique, so an
-// unresolved identifier that matches one can only be that variable).
-func collectPackagePayloadObjects(pkg *sourcePackage) {
-	pkg.packagePayloadObjects = map[*parserObject]bool{}
-	pkg.packagePayloadNames = map[string]bool{}
-	for _, source := range pkg.files {
-		for _, declaration := range source.file.Decls {
-			gen, ok := declaration.(*ast.GenDecl)
-			if !ok || gen.Tok != token.VAR {
-				continue
-			}
-			for _, spec := range gen.Specs {
-				if valueSpec, ok := spec.(*ast.ValueSpec); ok {
-					addPayloadValueSpecObjects(valueSpec, source, pkg, nil, pkg.packagePayloadObjects)
-				}
-			}
-		}
-	}
-	for object := range pkg.packagePayloadObjects {
-		pkg.packagePayloadNames[object.Name] = true
-	}
-}
-
 // collectPayloadAliases records local type aliases whose right-hand side is
 // directly a telemetry payload type, so payload literals written through the
 // alias name are rejected instead of silently skipped. It also records every
@@ -550,6 +474,43 @@ func collectPayloadAliases(pkg *sourcePackage) {
 			}
 		}
 	}
+}
+
+// scanPayloadAliasDeclarations rejects type aliases whose right-hand side
+// resolves to a telemetry payload (type Usage = azdext.ReportUsageRequest). The
+// alias is rejected at its declaration so payloads can only be constructed with
+// the concrete payload type, keeping attribute keys discoverable no matter how
+// the alias would otherwise be used. pkg.payloadAliases already includes chained
+// and cross-package re-exported aliases (see expandChainedPayloadAliases); a
+// direct right-hand side is checked as well so a local alias is caught without
+// pre-collection.
+func scanPayloadAliasDeclarations(
+	fset *token.FileSet,
+	extensionRoot string,
+	source *sourceFile,
+	pkg *sourcePackage,
+	declaration *ast.GenDecl,
+) []string {
+	if declaration.Tok != token.TYPE {
+		return nil
+	}
+	var diagnostics []string
+	for _, spec := range declaration.Specs {
+		typeSpec, ok := spec.(*ast.TypeSpec)
+		if !ok || typeSpec.Assign == token.NoPos {
+			continue
+		}
+		if !pkg.payloadAliases[typeSpec.Name.Name] && !isTelemetryPayloadType(typeSpec.Type, source) {
+			continue
+		}
+		diagnostics = append(diagnostics, fmt.Sprintf(
+			"%s:%d: do not alias telemetry payload types (type %s = ...); construct payloads "+
+				"with the concrete payload type so attribute keys stay discoverable",
+			displayPath(extensionRoot, source.path),
+			fset.Position(typeSpec.Pos()).Line,
+			typeSpec.Name.Name))
+	}
+	return diagnostics
 }
 
 // expandChainedPayloadAliases marks a type alias as a payload alias when its
@@ -624,283 +585,6 @@ func aliasResolvesToPayload(
 		}
 		return aliasResolvesToPayload(
 			definition.expression, definition.source, declaringPackage, packagesByImportPath, seen)
-	}
-	return false
-}
-
-// req.Attributes = ...), a getter mutation (req.GetAttributes()[key] = ...), a
-// read that aliases the map (attrs := req.Attributes), or a copy of the payload
-// itself (alias := req). It first resolves which bindings in the function hold a
-// telemetry payload -- payload-typed parameters, results, and receivers, locals
-// constructed from a payload literal or new(...), copies of those bindings,
-// results of a same-package or cross-package function that returns a payload
-// (req := newRequest(), req := shared.NewRequest()), and package-scope payload
-// variables -- so unrelated Attributes fields on other types are left alone while
-// a payload handed to a helper is still checked. Local bindings are tracked by
-// parser object identity, not by name, so a shadowing loop or closure variable
-// that reuses a payload's name is not mistaken for the payload; a package-scope
-// payload variable read from another file, where the parser leaves the reference
-// unresolved, is matched by its unique package-level name instead. Payloads whose
-// provenance still cannot be seen syntactically -- a method result on a receiver
-// value, an interface value, or an alias re-exported across modules -- need type
-// inference and stay outside this best-effort guard; the primary gate remains the
-// inline payload-literal scan.
-func scanAttributeMutations(
-	fset *token.FileSet,
-	extensionRoot string,
-	source *sourceFile,
-	pkg *sourcePackage,
-	packagesByImportPath map[string]*sourcePackage,
-	receiver *ast.FieldList,
-	signature *ast.FuncType,
-	body *ast.BlockStmt,
-) []string {
-	if body == nil {
-		return nil
-	}
-
-	payloadObjects := map[*parserObject]bool{}
-	if pkg != nil {
-		for object := range pkg.packagePayloadObjects {
-			payloadObjects[object] = true
-		}
-	}
-	addPayloadFieldObjects(receiver, source, payloadObjects)
-	if signature != nil {
-		addPayloadFieldObjects(signature.Params, source, payloadObjects)
-		addPayloadFieldObjects(signature.Results, source, payloadObjects)
-	}
-	ast.Inspect(body, func(node ast.Node) bool {
-		switch value := node.(type) {
-		case *ast.AssignStmt:
-			addPayloadAssignmentObjects(value, source, pkg, packagesByImportPath, payloadObjects)
-		case *ast.ValueSpec:
-			addPayloadValueSpecObjects(value, source, pkg, packagesByImportPath, payloadObjects)
-		case *ast.FuncLit:
-			if value.Type != nil {
-				addPayloadFieldObjects(value.Type.Params, source, payloadObjects)
-				addPayloadFieldObjects(value.Type.Results, source, payloadObjects)
-			}
-		}
-		return true
-	})
-
-	var diagnostics []string
-	ast.Inspect(body, func(node ast.Node) bool {
-		selector, ok := node.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		if selector.Sel.Name != "Attributes" && selector.Sel.Name != "GetAttributes" {
-			return true
-		}
-		identifier, ok := selector.X.(*ast.Ident)
-		if !ok {
-			return true
-		}
-		if !isPayloadBinding(identifier, pkg, payloadObjects) {
-			return true
-		}
-		diagnostics = append(diagnostics, fmt.Sprintf(
-			"%s:%d: set telemetry Attributes only inside the payload literal; "+
-				"reading or assigning them after construction hides keys from governance",
-			displayPath(extensionRoot, source.path),
-			fset.Position(selector.Pos()).Line))
-		return true
-	})
-	return diagnostics
-}
-
-// isPayloadBinding reports whether an identifier that qualifies an Attributes
-// access refers to a telemetry payload. A resolved identifier is matched by
-// object identity against the payload bindings collected for the function. An
-// unresolved identifier (Obj == nil) is a reference to a package-level name from
-// another file -- package-level names are unique, so matching it against the
-// package's payload variable names catches a cross-file mutation without
-// mistaking a local for the payload.
-func isPayloadBinding(identifier *ast.Ident, pkg *sourcePackage, payloadObjects map[*parserObject]bool) bool {
-	if identifier.Obj != nil {
-		return payloadObjects[identifier.Obj]
-	}
-	return pkg != nil && pkg.packagePayloadNames[identifier.Name]
-}
-
-// addPayloadFieldObjects records the binding identity of parameters, results, or
-// receivers whose type is a telemetry payload (optionally a pointer to one).
-func addPayloadFieldObjects(fields *ast.FieldList, source *sourceFile, objects map[*parserObject]bool) {
-	if fields == nil {
-		return
-	}
-	for _, field := range fields.List {
-		if !isPayloadTypeExpression(field.Type, source) {
-			continue
-		}
-		for _, name := range field.Names {
-			if name.Obj != nil {
-				objects[name.Obj] = true
-			}
-		}
-	}
-}
-
-// addPayloadAssignmentObjects records identifiers assigned a telemetry payload:
-// a payload literal or new(...) (req := azdext.ReportUsageRequest{...}), the
-// result of a same-package or cross-package function that returns a payload
-// (req := newRequest(), req := shared.NewRequest()), or a copy of a binding
-// already known to be a payload (alias := req). Following the copy keeps a later
-// alias.Attributes write from escaping the check.
-func addPayloadAssignmentObjects(
-	assignment *ast.AssignStmt,
-	source *sourceFile,
-	pkg *sourcePackage,
-	packagesByImportPath map[string]*sourcePackage,
-	objects map[*parserObject]bool,
-) {
-	for index, value := range assignment.Rhs {
-		if index >= len(assignment.Lhs) {
-			break
-		}
-		if !isPayloadExpression(value, source) &&
-			!isKnownPayloadIdent(value, objects) &&
-			!isPayloadReturningCall(value, source, pkg, packagesByImportPath) {
-			continue
-		}
-		if identifier, ok := assignment.Lhs[index].(*ast.Ident); ok && identifier.Obj != nil {
-			objects[identifier.Obj] = true
-		}
-	}
-}
-
-// addPayloadValueSpecObjects records identifiers from var declarations that are
-// typed as, initialized from, or a copy of a telemetry payload.
-func addPayloadValueSpecObjects(
-	spec *ast.ValueSpec,
-	source *sourceFile,
-	pkg *sourcePackage,
-	packagesByImportPath map[string]*sourcePackage,
-	objects map[*parserObject]bool,
-) {
-	if spec.Type != nil && isPayloadTypeExpression(spec.Type, source) {
-		for _, name := range spec.Names {
-			if name.Obj != nil {
-				objects[name.Obj] = true
-			}
-		}
-		return
-	}
-	for index, value := range spec.Values {
-		if index >= len(spec.Names) {
-			break
-		}
-		if !isPayloadExpression(value, source) &&
-			!isKnownPayloadIdent(value, objects) &&
-			!isPayloadReturningCall(value, source, pkg, packagesByImportPath) {
-			continue
-		}
-		if spec.Names[index].Obj != nil {
-			objects[spec.Names[index].Obj] = true
-		}
-	}
-}
-
-// isKnownPayloadIdent reports whether an expression is an identifier already
-// bound to a telemetry payload, so copies (alias := req) stay tracked.
-func isKnownPayloadIdent(expression ast.Expr, objects map[*parserObject]bool) bool {
-	identifier, ok := expression.(*ast.Ident)
-	return ok && identifier.Obj != nil && objects[identifier.Obj]
-}
-
-// isPayloadReturningCall reports whether an expression is a call to a function
-// whose first result is a telemetry payload, so the local it initializes is
-// tracked and a later Attributes write is still rejected. A bare identifier
-// (req := newRequest()) is resolved against the current package; a package
-// selector (req := shared.NewRequest()) is resolved to the imported package
-// through its go.mod import path and checked there. A bare identifier that
-// resolves to a non-function binding (a func-typed local that shadows the name)
-// is ignored, and a method call on a receiver value stays outside this
-// best-effort guard because its result type needs type inference. Only the first
-// result is considered, matching the assignment's Rhs[0] -> Lhs[0] binding.
-func isPayloadReturningCall(
-	expression ast.Expr,
-	source *sourceFile,
-	pkg *sourcePackage,
-	packagesByImportPath map[string]*sourcePackage,
-) bool {
-	if pkg == nil {
-		return false
-	}
-	call, ok := expression.(*ast.CallExpr)
-	if !ok {
-		return false
-	}
-	switch fun := call.Fun.(type) {
-	case *ast.Ident:
-		if fun.Obj != nil && fun.Obj.Kind != ast.Fun {
-			return false
-		}
-		return pkg.payloadReturningFuncs[fun.Name]
-	case *ast.SelectorExpr:
-		return isCrossPackagePayloadReturningCall(fun, source, packagesByImportPath)
-	}
-	return false
-}
-
-// isCrossPackagePayloadReturningCall reports whether a selector call
-// (shared.NewRequest()) targets a function in another package of the same module
-// whose first result is a telemetry payload. The package identifier is resolved
-// to an import path and matched against the parsed packages, so only an exact
-// import-path match counts; a method call on a receiver value (its X is not an
-// imported package) does not match.
-func isCrossPackagePayloadReturningCall(
-	selector *ast.SelectorExpr,
-	source *sourceFile,
-	packagesByImportPath map[string]*sourcePackage,
-) bool {
-	if source == nil || packagesByImportPath == nil {
-		return false
-	}
-	packageIdentifier, ok := selector.X.(*ast.Ident)
-	if !ok || (packageIdentifier.Obj != nil && packageIdentifier.Obj.Kind != ast.Pkg) {
-		return false
-	}
-	importPath, ok := source.imports[packageIdentifier.Name]
-	if !ok {
-		return false
-	}
-	declaringPackage, ok := packagesByImportPath[importPath]
-	if !ok {
-		return false
-	}
-	return declaringPackage.payloadReturningFuncs[selector.Sel.Name]
-}
-
-// isPayloadTypeExpression reports whether a type expression names a telemetry
-// payload, unwrapping a single pointer (for example *azdext.ReportUsageRequest).
-func isPayloadTypeExpression(expression ast.Expr, source *sourceFile) bool {
-	if pointer, ok := expression.(*ast.StarExpr); ok {
-		expression = pointer.X
-	}
-	return isTelemetryPayloadType(expression, source)
-}
-
-// isPayloadExpression reports whether an expression evaluates to a telemetry
-// payload whose provenance we can follow: a payload composite literal, a leading
-// address-of (&Event{...}), or new(...) applied to a payload type
-// (new(azdext.ReportUsageRequest)) or a payload literal (new(Event{})).
-func isPayloadExpression(expression ast.Expr, source *sourceFile) bool {
-	switch value := expression.(type) {
-	case *ast.UnaryExpr:
-		if value.Op == token.AND {
-			return isPayloadExpression(value.X, source)
-		}
-	case *ast.CompositeLit:
-		return isTelemetryPayloadType(value.Type, source)
-	case *ast.CallExpr:
-		identifier, ok := value.Fun.(*ast.Ident)
-		if ok && identifier.Name == "new" && len(value.Args) == 1 {
-			return isPayloadTypeExpression(value.Args[0], source) ||
-				isPayloadExpression(value.Args[0], source)
-		}
 	}
 	return false
 }

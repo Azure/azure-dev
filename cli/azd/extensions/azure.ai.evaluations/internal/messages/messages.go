@@ -2919,6 +2919,14 @@ func SelectEvalPrompt() string {
 	return "Select the eval to use:"
 }
 
+// CancelEvalChoice leaves the eval unselected without interrupting the command.
+func CancelEvalChoice() string { return "Cancel" }
+
+// SelectingEval reports a failed or interrupted eval prompt.
+func SelectingEval(err error) error {
+	return fmt.Errorf("selecting eval: %w", err)
+}
+
 // SelectingJudgeModel reports a failed judge model prompt.
 func SelectingJudgeModel(err error) error {
 	return fmt.Errorf("selecting a judge model deployment: %w", err)
@@ -3050,7 +3058,7 @@ func SeveralEvalsDeclared(count int, names []string) error {
 		count, strings.Join(names, ", "))
 }
 
-// EvalSelectionCancelled confirms a picker the reader closed.
+// EvalSelectionCancelled confirms the reader's explicit Cancel choice.
 //
 // Cancelling is an answer, so it is reported as one. It used to fall through to
 // SeveralEvalsDeclared, which told a reader who had just declined to choose

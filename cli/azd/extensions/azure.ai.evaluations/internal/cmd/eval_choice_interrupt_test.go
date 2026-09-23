@@ -25,17 +25,14 @@ func promptingIn(ctx context.Context) *cobra.Command {
 	return cmd
 }
 
-// Interrupting the command is not closing the picker. Both cancel the prompt,
-// so the picker's error looks the same either way -- but reporting an
-// interrupt as an answer exits 0, and a script that was killed mid-run then
-// reads as one that succeeded.
+// Interrupting the command is not an explicit Cancel answer.
 func TestSelectionOutcome_AnInterruptedCommandIsNotAClosedPicker(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	got, err := selectionOutcome(promptingIn(ctx), "declared", context.Canceled)
+	got, err := selectionOutcome(promptingIn(ctx), context.Canceled)
 
 	require.Error(t, err, "an interrupt must not exit 0")
 	assert.ErrorIs(t, err, context.Canceled)
@@ -53,38 +50,38 @@ func TestSelectionOutcome_AnInterruptWinsOverThePromptsOwnError(t *testing.T) {
 	cancel()
 
 	for _, promptErr := range []error{
+		nil,
 		status.Error(codes.Canceled, "user cancelled"),
 		status.Error(codes.Unavailable, "no server"),
 		errors.New("something else"),
 	} {
-		_, err := selectionOutcome(promptingIn(ctx), "declared", promptErr)
+		_, err := selectionOutcome(promptingIn(ctx), promptErr)
 		assert.ErrorIs(t, err, context.Canceled)
 	}
 }
 
-// With the command still running, a closed prompt is the answer it always was.
-func TestSelectionOutcome_AClosedPickerIsStillAnAnswer(t *testing.T) {
+// A host-side interrupt does not have to cancel the extension's context.
+func TestSelectionOutcome_AHostInterruptIsNotAnAnswer(t *testing.T) {
 	t.Parallel()
 
 	got, err := selectionOutcome(
-		promptingIn(t.Context()), "declared", status.Error(codes.Canceled, "user cancelled"))
+		promptingIn(t.Context()), status.Error(codes.Canceled, "user cancelled"))
 
-	assert.ErrorIs(t, err, errEvalSelectionCancelled)
+	assert.Equal(t, codes.Canceled, status.Code(err))
+	assert.NotErrorIs(t, err, errEvalSelectionCancelled)
 	assert.Empty(t, got, "nothing was selected")
 }
 
-// Every other reason the prompt could not run still leaves the name alone, so
-// the caller's own error keeps describing what is missing.
-func TestSelectionOutcome_APromptThatCouldNotRunChangesNothing(t *testing.T) {
+func TestSelectionOutcome_APromptFailureIsPreserved(t *testing.T) {
 	t.Parallel()
 
 	for _, promptErr := range []error{
 		status.Error(codes.Unavailable, "no server"),
 		errors.New("something else"),
 	} {
-		got, err := selectionOutcome(promptingIn(t.Context()), "declared", promptErr)
-		require.NoError(t, err)
-		assert.Equal(t, "declared", got)
+		got, err := selectionOutcome(promptingIn(t.Context()), promptErr)
+		require.ErrorIs(t, err, promptErr)
+		assert.Empty(t, got)
 	}
 }
 
@@ -93,15 +90,14 @@ func TestSelectionOutcome_APromptThatCouldNotRunChangesNothing(t *testing.T) {
 func TestSelectionOutcome_SurvivesACommandWithNoContext(t *testing.T) {
 	t.Parallel()
 
-	got, err := selectionOutcome(&cobra.Command{Use: "create"}, "declared", errors.New("x"))
+	failure := errors.New("x")
+	got, err := selectionOutcome(&cobra.Command{Use: "create"}, failure)
 
-	require.NoError(t, err)
-	assert.Equal(t, "declared", got)
+	require.ErrorIs(t, err, failure)
+	assert.Empty(t, got)
 }
 
-// The picker has to keep reading its failure through the function above. An
-// interrupt and a close arrive as the same error, so a call site that inspects
-// the error alone cannot tell them apart.
+// The picker must propagate its prompt failure, not reinterpret it as an answer.
 func TestChooseEvalReadsItsPromptFailureThroughSelectionOutcome(t *testing.T) {
 	t.Parallel()
 

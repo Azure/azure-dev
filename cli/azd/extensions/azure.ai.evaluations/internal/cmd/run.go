@@ -187,7 +187,7 @@ func (a *runStartAction) Run() error {
 	}
 	chosen, err := chooseEvalIn(a.cmd, evalDir, a.flags.groupName)
 	if err != nil {
-		// Closing the picker is an answer, not a failure to name something.
+		// An explicit Cancel choice is an answer; prompt errors remain errors.
 		if isEvalSelectionCancelled(err) {
 			reportCancelledSelection(a.cmd)
 			return nil

@@ -119,9 +119,11 @@ Every command supports `-o json` and `--no-prompt`, so the whole surface is
 usable from CI.
 
 A command that needs an eval and was not told which one offers a picker.
-Closing that picker is an answer, not a failure: the command says the selection
-was cancelled and exits 0, at every command that offers it. Under `-o json`
-nothing is written, so stdout still parses.
+Selecting **Cancel** is an answer, not a failure: the command says the selection
+was cancelled and exits 0, at every command that offers it. Pressing Ctrl+C
+interrupts the prompt and exits nonzero, without reporting a successful
+cancellation. Under `--no-prompt` or `-o json`, no picker is shown; an ambiguous
+eval still produces an error, and no cancellation prose is written to stdout.
 
 `azd ai eval create` closes with a link to the eval in the Portal, for a
 newly created eval and for one that already existed unchanged.

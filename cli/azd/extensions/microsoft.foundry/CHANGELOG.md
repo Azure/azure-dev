@@ -1,11 +1,5 @@
 # Release History
 
-## 1.0.0-beta.4 (2026-09-17)
-
-### Features Added
-
-- Bundle `azure.ai.evaluations` and `azure.ai.dataset`, so installing the meta-package brings the evaluation authoring and dataset versioning commands along with the rest of the Foundry surface.
-
 ## 1.0.0-beta.3 (2026-09-17)
 
 ### Features Added

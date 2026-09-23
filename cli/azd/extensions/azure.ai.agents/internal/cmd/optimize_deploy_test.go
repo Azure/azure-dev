@@ -98,6 +98,13 @@ func TestOptimizeDeployAgentHeaders(t *testing.T) {
 				"harness": map[string]any{"type": "future_harness"},
 			},
 		},
+		{
+			name: "non-prompt agent with managed harness field",
+			definition: map[string]any{
+				"kind":    "hosted",
+				"harness": map[string]any{"type": agent_api.ManagedAgentHarnessGitHubCopilot},
+			},
+		},
 	}
 
 	for _, tt := range tests {

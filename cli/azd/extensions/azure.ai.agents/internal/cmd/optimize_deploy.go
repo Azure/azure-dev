@@ -213,7 +213,8 @@ func (a *OptimizeDeployAction) runDirect(
 }
 
 func optimizeDeployAgentHeaders(def map[string]any) map[string]string {
-	if harnessTypeFromMap(def) != agent_api.ManagedAgentHarnessGitHubCopilot {
+	if stringFromMap(def, "kind") != string(agent_api.AgentKindPrompt) ||
+		harnessTypeFromMap(def) != agent_api.ManagedAgentHarnessGitHubCopilot {
 		return nil
 	}
 	return map[string]string{

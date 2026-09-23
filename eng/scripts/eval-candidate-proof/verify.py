@@ -416,17 +416,24 @@ class Proof:
         evidence = []
 
         def refuse_without_writes(label, args, project, error):
+            # azd 1.33 retains empty flock files even when merely reading an
+            # environment. Include these host locks in the baseline; ignore no paths.
+            for lock in (project / ".azure" / ".env.lock", project / ".azure" / "dev" / ".env.lock"):
+                lock.touch(exist_ok=True)
             before = snapshot_tree(project)
             private_before = global_config.read_bytes()
             info = self.run(label, args, project, failure=error, json_output=True)
             require(set(info) == {"error"}, f"{label} must emit only one error document")
             after = snapshot_tree(project)
-            require(after == before, f"{label} changed authored files, private state or directory layout")
+            changed = sorted(path for path in before.keys() | after.keys()
+                             if before.get(path) != after.get(path))
+            require(not changed, f"{label} changed authored/private paths: {changed}")
             require(global_config.read_bytes() == private_before,
                     f"{label} changed the isolated azd configuration")
             evidence.append({
                 "case": label, "singleJSONError": True,
                 "projectUnchanged": True, "privateConfigurationUnchanged": True,
+                "hostReadLocksPrecreated": [".azure/.env.lock", ".azure/dev/.env.lock"],
                 "projectDigestBefore": sha256(json.dumps(before, sort_keys=True).encode()),
                 "projectDigestAfter": sha256(json.dumps(after, sort_keys=True).encode()),
             })

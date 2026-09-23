@@ -1,12 +1,13 @@
 {
   "releaseRepository": "m7md7sien/azd-foundry-feed",
-  "releaseTag": "extensions-2026-09-23-39",
-  "sourceCommit": "9a549449c2d5c2b4c6661f0ee8f8da7e3036c898",
+  "releaseTag": "extensions-2026-09-23-40",
+  "sourceCommit": "361ca3c338069452a0bc1da6aa5a7b7c4e8bcf6a",
   "sourceNote": "Publisher-confirmed source; all 12 packaged binaries had their VCS revision and platform verified before publication.",
-  "sourceVerificationCommit": "9a549449c2d5c2b4c6661f0ee8f8da7e3036c898",
+  "sourceVerificationCommit": "361ca3c338069452a0bc1da6aa5a7b7c4e8bcf6a",
   "validationBaseline": "0361f347eb28c5f2e756225115318393b1dad28a",
   "conversationModes": true,
-  "registrySha256": "5fc9456319ad0f6408e36cb693e0a8007d750c5721011aea0badf88d68fb0c44",
+  "initSeedValidation": true,
+  "registrySha256": "648c9632fcf5a4e1f993cb0cb4c5bc37691e5821df8ec8422c36a2b30f548d9f",
   "azd": {
     "version": "1.33.0",
     "artifacts": {
@@ -23,18 +24,18 @@
   "extensions": {
     "azure.ai.evaluations": {
       "command": "eval",
-      "version": "1.0.39-beta",
+      "version": "1.0.40-beta",
       "artifacts": {
-        "linux/amd64": "c350a158728a806d371dfaa42a043587869dc36393bcc109a6b844b935a5404b",
-        "windows/amd64": "d4fdabeb3887045867734cb9e8062fdf04ca24d9727f81125e4a768d719fb759"
+        "linux/amd64": "f306012636d4316b431760fb1c4a12d3ff2e881824c81624bb58240faad80373",
+        "windows/amd64": "946c49c3640c92f05fc3c6c71f4409d616bccd127db72553080151bb0e67a677"
       }
     },
     "azure.ai.dataset": {
       "command": "dataset",
-      "version": "1.0.0-beta.27",
+      "version": "1.0.0-beta.28",
       "artifacts": {
-        "linux/amd64": "08356471c6c2ef4307065f4e59ae0885ef0d141e116dada19b0c427152d9c0c2",
-        "windows/amd64": "80a7423104da3f537c1abfa31b57cb67c05aee3ba24f52cf1e100b6d98535957"
+        "linux/amd64": "c49b2ba38bdf70f8874b7acbb14e587f7a7cb7d389ff257b62b0aacd6c6ccb18",
+        "windows/amd64": "69974f1ef8608d9405c9b4913601a980ac93f57286a5d97d7a14da41e75eac12"
       }
     }
   }

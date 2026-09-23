@@ -127,6 +127,10 @@ func stubExecuteRolloutWebSocketServer(
 		}
 		if err := connection.WriteMessage(websocket.BinaryMessage, frame); err != nil {
 			t.Errorf("write: %v", err)
+			return
+		}
+		if _, _, err := connection.ReadMessage(); !websocket.IsCloseError(err, websocket.CloseNormalClosure) {
+			t.Errorf("expected a normal client close after the rollout response, got %v", err)
 		}
 	}))
 	t.Cleanup(server.Close)

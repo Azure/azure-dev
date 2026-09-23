@@ -40,6 +40,7 @@ const (
 	// deadline that applies here is the caller's context.
 	executeRolloutHandshakeTimeout = 30 * time.Second
 	executeRolloutWriteTimeout     = 30 * time.Second
+	executeRolloutCloseTimeout     = 2 * time.Second
 
 	// A rollout response carries the full captured trajectory, so the frame is large.
 	maxExecuteRolloutFrameBytes  = 64 * 1024 * 1024
@@ -165,7 +166,11 @@ func (c *rleClient) executeRolloutOverWebSocket(
 	if err != nil {
 		return nil, newExecuteRolloutHandshakeError(err, response)
 	}
-	defer connection.Close()
+	closeCode := websocket.CloseGoingAway
+	closeReason := "RLE CLI ended the rollout connection."
+	defer func() {
+		closeExecuteRolloutWebSocket(connection, closeCode, closeReason)
+	}()
 
 	// A 101 alone does not prove RLE answered: the upgrade path is shared with the OpenEnv
 	// instance template, and a server that ignores the offered subprotocol still completes
@@ -234,13 +239,37 @@ func (c *rleClient) executeRolloutOverWebSocket(
 			if err := json.Unmarshal(payload, &result); err != nil {
 				return nil, fmt.Errorf("decode RLE response: %w", err)
 			}
+			closeCode = websocket.CloseNormalClosure
+			closeReason = "RLE rollout complete."
 			return &result, nil
 		case executeRolloutFrameError:
+			closeCode = websocket.CloseNormalClosure
+			closeReason = "RLE rollout completed with an error."
 			return nil, newExecuteRolloutFrameError(payload)
 		default:
 			continue
 		}
 	}
+}
+
+// closeExecuteRolloutWebSocket completes the WebSocket close handshake when possible.
+// Conn.Close alone closes the network connection without sending a close frame, which
+// causes the peer to observe an abnormal closure even after a completed rollout.
+func closeExecuteRolloutWebSocket(connection *websocket.Conn, code int, reason string) {
+	deadline := time.Now().Add(executeRolloutCloseTimeout)
+	if err := connection.WriteControl(
+		websocket.CloseMessage,
+		websocket.FormatCloseMessage(code, reason),
+		deadline,
+	); err == nil {
+		_ = connection.SetReadDeadline(deadline)
+		for {
+			if _, _, err := connection.ReadMessage(); err != nil {
+				break
+			}
+		}
+	}
+	_ = connection.Close()
 }
 
 // newExecuteRolloutFrameError converts an error frame into the same error type the HTTP

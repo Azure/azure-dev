@@ -10,6 +10,12 @@ azd up                    # register datasets and evaluators, create the eval gr
 azd ai eval run start     # run the evaluation and summarize the results
 ```
 
+Generation prints an interactive `init` next step, followed by guidance for
+unattended use. When using `--no-prompt`, supply an independently selected
+`--judge-model <deployment>`; conversation simulation also needs
+`--simulation-model <deployment>`. The printed command never assumes that the
+generation model should fill either role.
+
 ## What gets deployed
 
 Eval resources are one service entry in `azure.yaml`, normally a `$ref` to a

@@ -583,9 +583,14 @@ func (ec *evalContext) runGenerations(
 // writeGenerationCompleted closes a successful generation.
 func writeGenerationCompleted(out io.Writer, outcomes []generationOutcome, configPath string) {
 	fmt.Fprint(out, messages.GenerationCompleted())
+	simulation := false
 	for i := range outcomes {
 		if id := outcomes[i].report.jobID; id != "" {
 			fmt.Fprint(out, messages.GenerationJobLine(string(outcomes[i].plan.Kind), id))
+		}
+		if outcomes[i].ref != nil && outcomes[i].plan.Kind == generateKindDataset &&
+			outcomes[i].plan.EvaluationLevel == project.EvaluationLevelConversation {
+			simulation = true
 		}
 	}
 	if incompatible := incompatibleHandoffEvaluator(outcomes); incompatible != nil {
@@ -593,6 +598,7 @@ func writeGenerationCompleted(out io.Writer, outcomes []generationOutcome, confi
 	}
 	if next := initHandoff(outcomes, configPath); next != "" {
 		fmt.Fprint(out, messages.FirstNextStep(next))
+		fmt.Fprint(out, messages.InitHandoffGuidance(simulation))
 	}
 }
 

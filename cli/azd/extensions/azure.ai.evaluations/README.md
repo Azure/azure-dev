@@ -134,6 +134,13 @@ Interactive init reports invalid rows and asks for a corrected or different
 dataset before confirmation; press Ctrl+C at that prompt to cancel without
 authored changes. Under `--no-prompt` or `--output json`, invalid local rows
 fail immediately without writing configuration.
+Local files derive their dataset name from the filename without its extension.
+If that name is already declared for a different file (or has no local file),
+init refuses the collision rather than replacing the declaration or ignoring
+the supplied path. Interactive init asks for another dataset; use a unique
+filename to add the new file, or the existing dataset's name or file path to
+reuse it. Equivalent paths to the same file are accepted, preserving references,
+version pins, and other authored metadata.
 Registered datasets with no local file are not fetched or checked by init.
 The evaluator picker excludes custom evaluators whose local
 `supported_evaluation_levels` explicitly excludes the selected level; an explicit

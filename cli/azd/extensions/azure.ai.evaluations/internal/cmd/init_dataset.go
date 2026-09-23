@@ -5,7 +5,10 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"azureaieval/internal/messages"
@@ -15,11 +18,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func resolveInitSimulationDataset(
+func resolveInitDataset(
 	cmd *cobra.Command, location string, answers *initAnswers, cfg *project.EvalConfig,
 ) error {
 	ctx := commandContext(cmd)
-	problem := validateInitSimulationDataset(ctx, location, *answers, cfg)
+	problem := validateInitDataset(ctx, location, *answers, cfg)
 	// Bound retries like the eval-name prompt, without losing the last row error.
 	for range 8 {
 		if problem == nil || noPrompt(cmd) {
@@ -34,19 +37,23 @@ func resolveInitSimulationDataset(
 			return err
 		}
 		answers.datasetRef = dataset
-		problem = validateInitSimulationDataset(ctx, location, *answers, cfg)
+		problem = validateInitDataset(ctx, location, *answers, cfg)
 	}
 	return problem
 }
 
-func validateInitSimulationDataset(
+func validateInitDataset(
 	ctx context.Context, location string, answers initAnswers, cfg *project.EvalConfig,
 ) error {
-	if answers.simulation == nil {
+	if answers.source == initSourceTraces {
 		return nil
 	}
 	path := answers.datasetRef
-	if !looksLikeLocalDataset(path) {
+	if looksLikeLocalDataset(path) {
+		if _, err := resolveInitLocalDataset(location, path, cfg); err != nil {
+			return err
+		}
+	} else if answers.simulation != nil {
 		decl, err := project.ReadAuthoredDataset(location, answers.datasetRef)
 		if err != nil {
 			return err
@@ -61,7 +68,7 @@ func validateInitSimulationDataset(
 		}
 		path = decl.File
 	}
-	if path == "" {
+	if answers.simulation == nil || path == "" {
 		return nil
 	}
 	group := &project.Eval{Name: answers.evalName, Simulation: answers.simulation}
@@ -69,6 +76,47 @@ func validateInitSimulationDataset(
 		return refuseUnusableSeedRow(group, row, index)
 	})
 	return err
+}
+
+// resolveInitLocalDataset binds the file to its eventual catalog name before
+// validation or planning can accept a file that add-only authoring would ignore.
+func resolveInitLocalDataset(location, path string, cfg *project.EvalConfig) (project.DatasetDecl, error) {
+	requested := project.DatasetDecl{
+		Name: strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)),
+		File: relativeToConfig(path, location),
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return project.DatasetDecl{}, messages.DatasetFileNotFound(path, err)
+	}
+	existing, err := project.ReadAuthoredDataset(location, requested.Name)
+	if err != nil {
+		return project.DatasetDecl{}, err
+	}
+	if existing == nil {
+		if decl, ok := cfg.DatasetDeclaration(requested.Name); ok {
+			existing = &project.DatasetDecl{
+				Name: decl.Name, File: project.ResolveSource(project.EvalDirOf(location), decl.File),
+			}
+		}
+	}
+	if existing == nil {
+		return requested, nil
+	}
+	if existing.File != "" {
+		other, err := os.Stat(existing.File)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return project.DatasetDecl{}, messages.DatasetFileNotFound(existing.File, err)
+		}
+		if err == nil && os.SameFile(info, other) {
+			// A ref-only entry must also be counted as existing by add-only planning.
+			if !declaresDataset(cfg, existing.Name) {
+				cfg.Datasets = append(cfg.Datasets, project.DatasetDecl{Name: existing.Name})
+			}
+			return requested, nil
+		}
+	}
+	return project.DatasetDecl{}, messages.InitDatasetFileConflict(requested.Name, path)
 }
 
 // resolveDataset settles which dataset a dataset-backed evaluation grades.
@@ -142,7 +190,7 @@ func promptDeclaredDataset(cmd *cobra.Command, declared []string) (string, error
 }
 
 // promptDatasetReference asks what to grade when the configuration declares
-// nothing to offer or a local simulation dataset needs correction.
+// nothing to offer or a local dataset needs correction.
 //
 // It takes a path or a registered name rather than a list, because the two
 // things it could list are both service calls init does not make: the datasets

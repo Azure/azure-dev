@@ -26,7 +26,8 @@ template:
   instructions: You are a careful assistant.
   skills:
     - websearch
-    - code_interpreter
+    - name: microsoft-foundry
+      version: "1"
 `)
 	agent, err := ExtractAgentDefinition(yamlContent)
 	if err != nil {
@@ -50,6 +51,12 @@ template:
 	}
 	if len(promptDef.Skills) != 2 {
 		t.Fatalf("skills: got %d entries, want 2", len(promptDef.Skills))
+	}
+	if promptDef.Skills[0] != (HarnessSkillRef{Name: "websearch"}) {
+		t.Errorf("shorthand skill: got %+v", promptDef.Skills[0])
+	}
+	if promptDef.Skills[1] != (HarnessSkillRef{Name: "microsoft-foundry", Version: "1"}) {
+		t.Errorf("versioned skill: got %+v", promptDef.Skills[1])
 	}
 }
 
@@ -270,7 +277,7 @@ func TestCreatePromptAgentAPIRequest_HarnessSkills(t *testing.T) {
 		Model:           "gpt-4.1-mini",
 		Instructions:    "Be helpful.",
 		Harness:         NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot),
-		Skills:          []string{"duplicate-check"},
+		Skills:          []HarnessSkillRef{{Name: "duplicate-check"}},
 		ResolvedSkills: []HarnessSkillRef{
 			{Name: "duplicate-check", Version: "3"},
 			{Name: "severity-triage", Version: "1"},
@@ -317,6 +324,28 @@ func TestCreatePromptAgentAPIRequest_HarnessSkills(t *testing.T) {
 	}
 }
 
+func TestCreatePromptAgentAPIRequest_AuthoredVersionedSkill(t *testing.T) {
+	promptDef := PromptAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindPrompt, Name: "my-agent"},
+		Model:           "gpt-4.1-mini",
+		Instructions:    "Be helpful.",
+		Harness:         NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot),
+		Skills: []HarnessSkillRef{
+			{Name: "microsoft-foundry", Version: "1"},
+		},
+	}
+
+	req, err := CreatePromptAgentAPIRequest(promptDef, nil)
+	if err != nil {
+		t.Fatalf("CreatePromptAgentAPIRequest: %v", err)
+	}
+	def := req.Definition.(agent_api.ManagedAgentDefinition)
+	want := []agent_api.SkillReference{{Name: "microsoft-foundry", Version: "1"}}
+	if len(def.Skills) != len(want) || def.Skills[0] != want[0] {
+		t.Fatalf("definition skills: got %+v, want %+v", def.Skills, want)
+	}
+}
+
 // TestCreatePromptAgentAPIRequest_HarnessLessSkills rejects an authored skill
 // that was not resolved to a published version.
 func TestCreatePromptAgentAPIRequest_HarnessLessSkills(t *testing.T) {
@@ -324,12 +353,22 @@ func TestCreatePromptAgentAPIRequest_HarnessLessSkills(t *testing.T) {
 		AgentDefinition: AgentDefinition{Kind: AgentKindPrompt, Name: "my-agent"},
 		Model:           "gpt-4.1-mini",
 		Instructions:    "Be helpful.",
-		Skills:          []string{"severity-triage"},
+		Skills:          []HarnessSkillRef{{Name: "severity-triage"}},
 	}
 
 	_, err := CreatePromptAgentAPIRequest(promptDef, nil)
-	if err == nil || !strings.Contains(err.Error(), "has no published version") {
+	if err == nil {
 		t.Fatalf("expected unresolved skill error, got %v", err)
+	}
+	for _, want := range []string{
+		`prompt skill "severity-triage" requires a version`,
+		`skills: [{name: "severity-triage", version: "<published-version>"}]`,
+		"deploy the matching local skill dependency with 'azd deploy --all'",
+		"azd does not automatically resolve the default version of an existing Foundry skill",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q missing guidance %q", err.Error(), want)
+		}
 	}
 }
 

@@ -564,7 +564,7 @@ func PromptAgentSkillReferences(promptAgent PromptAgent) []agent_api.SkillRefere
 		add(skill.Name, skill.Version)
 	}
 	for _, skill := range promptAgent.Skills {
-		add(skill, "")
+		add(skill.Name, skill.Version)
 	}
 	return skills
 }
@@ -606,7 +606,12 @@ func CreatePromptAgentAPIRequest(
 	}
 	for _, skill := range PromptAgentSkillReferences(promptAgent) {
 		if strings.TrimSpace(skill.Version) == "" {
-			return nil, fmt.Errorf("prompt skill %q has no published version", skill.Name)
+			return nil, fmt.Errorf(
+				"prompt skill %q requires a version; specify skills: [{name: %q, version: \"<published-version>\"}], "+
+					"or deploy the matching local skill dependency with 'azd deploy --all'. "+
+					"azd does not automatically resolve the default version of an existing Foundry skill",
+				skill.Name, skill.Name,
+			)
 		}
 	}
 

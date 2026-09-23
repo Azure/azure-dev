@@ -528,6 +528,15 @@ type HarnessSkillRef struct {
 	Version string `json:"version,omitempty" yaml:"version,omitempty"`
 }
 
+// UnmarshalYAML accepts both the legacy skill-name shorthand and a versioned reference.
+func (r *HarnessSkillRef) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode {
+		return node.Decode(&r.Name)
+	}
+	type skillRef HarnessSkillRef
+	return node.Decode((*skillRef)(r))
+}
+
 // PromptHarness selects the managed runtime for a prompt agent. Harness
 // capabilities are configured through top-level skills and tools.
 type PromptHarness struct {
@@ -640,8 +649,8 @@ type PromptAgent struct {
 	// context. It is declared inline, matching the prompt-agent API schema.
 	Instructions string `json:"instructions,omitempty" yaml:"instructions,omitempty"`
 
-	// Skills is an optional list of Foundry skill names attached to the agent.
-	Skills []string `json:"skills,omitempty" yaml:"skills,omitempty"`
+	// Skills is an optional list of Foundry skill references attached to the agent.
+	Skills []HarnessSkillRef `json:"skills,omitempty" yaml:"skills,omitempty"`
 
 	// ResolvedSkills contains versioned references resolved by the deploy graph.
 	// It is internal deployment state and is never authored directly.

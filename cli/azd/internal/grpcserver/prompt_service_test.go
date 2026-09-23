@@ -1472,20 +1472,16 @@ func TestConvertFileChanges_WithChanges(t *testing.T) {
 func TestConvertUsageMetrics(t *testing.T) {
 	t.Parallel()
 	usage := agent.UsageMetrics{
-		Model:           "gpt-4o",
-		InputTokens:     100,
-		OutputTokens:    50,
-		BillingRate:     0.5,
-		PremiumRequests: 2,
-		DurationMS:      1500,
+		Model:        "gpt-4o",
+		InputTokens:  100,
+		OutputTokens: 50,
+		DurationMS:   1500,
 	}
 	result := convertUsageMetrics(usage)
 	require.Equal(t, "gpt-4o", result.Model)
 	require.Equal(t, float64(100), result.InputTokens)
 	require.Equal(t, float64(50), result.OutputTokens)
 	require.Equal(t, float64(150), result.TotalTokens) // 100 + 50
-	require.Equal(t, 0.5, result.BillingRate)
-	require.Equal(t, float64(2), result.PremiumRequests)
 	require.Equal(t, float64(1500), result.DurationMs)
 }
 

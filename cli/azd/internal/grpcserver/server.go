@@ -74,7 +74,7 @@ func NewServer(
 	telemetryService v1beta.TelemetryServiceServer,
 	followUpService v1beta.FollowUpServiceServer,
 ) *Server {
-	return &Server{
+	server := &Server{
 		projectService:       projectService,
 		environmentService:   environmentService,
 		promptService:        promptService,
@@ -96,6 +96,10 @@ func NewServer(
 		telemetryService:     telemetryService,
 		betaServiceOverrides: map[BetaService]any{},
 	}
+	if principalService, ok := accountService.(BetaAccountServiceGetCurrentPrincipalOverride); ok {
+		server.WithOptions(WithBetaServiceOverride(BetaAccountService, principalService))
+	}
+	return server
 }
 
 // WithOptions applies optional beta service configuration before the server starts.

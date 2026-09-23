@@ -72,6 +72,21 @@ func TestFollowUpContractIsBetaOnly(t *testing.T) {
 	require.Equal(t, protoreflect.FieldNumber(3), betaInvocation.Number())
 }
 
+func TestCurrentPrincipalIsBetaOnly(t *testing.T) {
+	t.Parallel()
+
+	stable := v1.File_azd_extensions_v1_account_proto
+	beta := v1beta.File_azd_extensions_v1beta_account_proto
+	require.Nil(t, stable.Services().ByName("AccountService").Methods().ByName("GetCurrentPrincipal"))
+	require.NotNil(t, beta.Services().ByName("AccountService").Methods().ByName("GetCurrentPrincipal"))
+	for _, name := range []protoreflect.Name{"GetCurrentPrincipalRequest", "GetCurrentPrincipalResponse"} {
+		require.Nil(t, stable.Messages().ByName(name))
+		require.NotNil(t, beta.Messages().ByName(name))
+	}
+	require.Nil(t, stable.Enums().ByName("PrincipalType"))
+	require.NotNil(t, beta.Enums().ByName("PrincipalType"))
+}
+
 func TestStableSubsetAllowsAdditiveBetaFieldsAndMethods(t *testing.T) {
 	t.Parallel()
 

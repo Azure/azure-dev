@@ -293,6 +293,11 @@ func (c *AzdClient) Account() AccountServiceClient {
 	return c.accountClient
 }
 
+// AccountBeta returns the preview account service client, including current principal lookup.
+func (c *AzdClient) AccountBeta() v1beta.AccountServiceClient {
+	return v1beta.NewAccountServiceClient(c.connection)
+}
+
 // Ai returns the AI model service client.
 func (c *AzdClient) Ai() AiModelServiceClient {
 	if c.aiClient == nil {

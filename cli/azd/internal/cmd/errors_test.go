@@ -1095,6 +1095,34 @@ func Test_MapError_InvocationMetadata(t *testing.T) {
 	require.NotContains(t, attributes, attribute.Key("error.extension.event"))
 }
 
+func Test_MapError_ServiceTargetResponseInvocation(t *testing.T) {
+	t.Parallel()
+
+	err := extensions.WrapInvocationError(
+		&project.ExternalServiceTargetResponseError{
+			Operation: "deploy",
+			Detail:    "missing deploy result",
+		},
+		"test.extension",
+		"1.2.3",
+		"service_target.deploy",
+	)
+	span := &mocktracing.Span{}
+
+	MapError(err, span)
+
+	require.Equal(t, "internal.extension_invalid_response", span.Status.Description)
+
+	attributes := make(map[attribute.Key]attribute.Value, len(span.Attributes))
+	for _, attr := range span.Attributes {
+		attributes[attr.Key] = attr.Value
+	}
+
+	require.Equal(t, attribute.StringValue("test.extension"), attributes[fields.ExtensionId.Key])
+	require.Equal(t, attribute.StringValue("1.2.3"), attributes[fields.ExtensionVersion.Key])
+	require.Equal(t, attribute.StringValue("service_target.deploy"), attributes[fields.ExtensionEvent.Key])
+}
+
 func Test_MapError_RemoteCauseTypes(t *testing.T) {
 	t.Parallel()
 

@@ -300,3 +300,134 @@ func TestStoredLatestPolicyIsNotAResolvedVersionChange(t *testing.T) {
 	assert.Equal(t, first, reconcileCatalogPin(t, "create", ec, cfg, dir))
 	assert.Len(t, service.created, 1)
 }
+
+func seedLegacyCatalogPinState(t *testing.T, env *testEnvServer, group project.Eval, id string) {
+	t.Helper()
+	digest, err := project.FingerprintGroup(group)
+	require.NoError(t, err)
+	definition, err := project.FingerprintDefinition(group)
+	require.NoError(t, err)
+	env.config[privateStatePath], err = json.Marshal(map[string]string{
+		project.FingerprintKey("eval", group.Name): fingerprintEra + definition,
+		idKey("eval", group.Name):                  id,
+		digestIDKey(digest):                        id,
+	})
+	require.NoError(t, err)
+}
+
+func TestLegacyCatalogPinRenameBeforeMigration(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		for _, pin := range []string{"1", "2", ""} {
+			t.Run(caller+"/pin="+pin, func(t *testing.T) {
+				ec, env, service, cfg, dir := newCatalogPinFixture(t)
+				first := reconcileCatalogPin(t, caller, ec, cfg, dir)
+				seedLegacyCatalogPinState(t, env, cfg.Evals[0], first)
+				cfg.Evals[0].Name = "renamed-before-migration"
+				cfg.Evaluators[0].Version = pin
+				id := reconcileCatalogPin(t, caller, ec, cfg, dir)
+				if pin == "1" {
+					assert.Equal(t, first, id, "a rename with the same inherited pin must keep its pre-fix history")
+					assert.Len(t, service.created, 1)
+				} else {
+					assert.NotEqual(t, first, id, "a legacy digest does not prove the stored pin is still requested")
+					assert.Len(t, service.created, 2)
+					assert.Equal(t, "quality", service.evals[first].Name, "do not rename a rejected legacy candidate")
+				}
+				assert.Equal(t, pin, service.evals[id].TestingCriteria[0].EvaluatorVersion)
+				assert.Equal(t, id, reconcileCatalogPin(t, caller, ec, cfg, dir), "the new digest must be idempotent")
+			})
+		}
+	}
+}
+
+func TestLegacyCatalogPinFallbackDoesNotStealSibling(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		t.Run(caller, func(t *testing.T) {
+			ec, env, service, cfg, dir := newCatalogPinFixture(t)
+			first := reconcileCatalogPin(t, caller, ec, cfg, dir)
+			owner := cfg.Evals[0]
+			// An explicit pin spelling makes the authored declarations distinct,
+			// but both requested criterion pin 1 before the fingerprint fix.
+			cfg.Evals[0].Evaluators = evalcore.EvaluatorList{{Evaluator: "custom", Version: "1"}}
+			newcomer := owner
+			newcomer.Name = "second"
+			cfg.Evals = append([]project.Eval{newcomer}, cfg.Evals...)
+			seedLegacyCatalogPinState(t, env, cfg.Evals[1], first)
+			legacyDigest, err := project.FingerprintGroup(owner)
+			require.NoError(t, err)
+			var state map[string]string
+			require.NoError(t, json.Unmarshal(env.config[privateStatePath], &state))
+			state[digestIDKey(legacyDigest)] = first
+			env.config[privateStatePath], err = json.Marshal(state)
+			require.NoError(t, err)
+			id := reconcileCatalogPin(t, caller, ec, cfg, dir)
+			assert.NotEqual(t, first, id)
+			assert.Equal(t, "quality", service.evals[first].Name)
+			assert.Equal(t, "1", service.evals[first].TestingCriteria[0].EvaluatorVersion)
+			assert.Equal(t, id, reconcileCatalogPin(t, caller, ec, cfg, dir))
+			assert.Len(t, service.created, 2, "the existing owner must keep its own history")
+		})
+	}
+}
+
+func TestLegacyCatalogPinFallbackDoesNotStealUnselectedInheritedSibling(t *testing.T) {
+	ec, env, service, cfg, dir := newCatalogPinFixture(t)
+	first := reconcileCatalogPin(t, "create", ec, cfg, dir)
+	owner := cfg.Evals[0]
+	seedLegacyCatalogPinState(t, env, owner, first)
+	newcomer := owner
+	newcomer.Name = "second"
+	cfg.Evals = []project.Eval{newcomer, owner}
+	id := reconcileCatalogPin(t, "create", ec, cfg, dir)
+	assert.NotEqual(t, first, id)
+	assert.Equal(t, "quality", service.evals[first].Name)
+	assert.Len(t, service.created, 2)
+}
+
+func TestLegacyCatalogPinFallbackRequiresCompleteStoredPinEvidence(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		for _, unavailable := range []string{"criteria", "evaluator", "version"} {
+			t.Run(caller+"/"+unavailable, func(t *testing.T) {
+				ec, env, service, cfg, dir := newCatalogPinFixture(t)
+				first := reconcileCatalogPin(t, caller, ec, cfg, dir)
+				seedLegacyCatalogPinState(t, env, cfg.Evals[0], first)
+				switch unavailable {
+				case "criteria":
+					service.evals[first].TestingCriteria = nil
+				case "evaluator":
+					service.evals[first].TestingCriteria[0].EvaluatorName = "different"
+				case "version":
+					service.evals[first].TestingCriteria[0].EvaluatorVersion = ""
+				}
+				cfg.Evals[0].Name = "renamed-before-migration"
+				id := reconcileCatalogPin(t, caller, ec, cfg, dir)
+				assert.NotEqual(t, first, id, "an incomplete old definition cannot prove that its pin matches")
+				assert.Equal(t, "quality", service.evals[first].Name, "rejected candidates must not be renamed")
+				assert.Equal(t, "1", service.evals[id].TestingCriteria[0].EvaluatorVersion)
+			})
+		}
+	}
+}
+
+func TestLegacyCatalogPinFallbackOnlyWhenEffectiveIndexIsMissing(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		t.Run(caller, func(t *testing.T) {
+			ec, env, service, cfg, dir := newCatalogPinFixture(t)
+			first := reconcileCatalogPin(t, caller, ec, cfg, dir)
+			seedLegacyCatalogPinState(t, env, cfg.Evals[0], first)
+			cfg.Evals[0].Name = "renamed-before-migration"
+			effective, err := project.FingerprintGroup(withCatalogEvaluatorPins(cfg.Evals[0], cfg))
+			require.NoError(t, err)
+			var state map[string]string
+			require.NoError(t, json.Unmarshal(env.config[privateStatePath], &state))
+			// A newer index whose resource disappeared must not resurrect a
+			// different history through the still-live older index.
+			state[digestIDKey(effective)] = "eval_deleted"
+			env.config[privateStatePath], err = json.Marshal(state)
+			require.NoError(t, err)
+			id := reconcileCatalogPin(t, caller, ec, cfg, dir)
+			assert.NotEqual(t, first, id)
+			assert.Equal(t, "quality", service.evals[first].Name)
+		})
+	}
+}

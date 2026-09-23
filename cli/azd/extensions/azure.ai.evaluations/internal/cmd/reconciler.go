@@ -110,13 +110,20 @@ func (r *evalReconciler) ownedByAnother(id, name string) bool {
 func (r *evalReconciler) ReserveDeclared(ctx context.Context, groups []project.Eval) {
 	r.reserveExplicitIDs(groups)
 	for i := range groups {
-		decision, err := r.decide(ctx, groups[i])
-		if err != nil {
-			// Nothing decided, so nothing skipped. The error surfaces from
-			// EnsureEval, where it can fail the deploy.
+		id := r.ec.scopedValue(ctx, idKey("eval", groups[i].Name), r.scope)
+		if _, selected := r.prepared[groups[i].Name]; len(r.prepared) > 0 && !selected {
+			// Targeted create cannot release an unselected sibling's history:
+			// that sibling will not be reconciled, even if its pin changed.
+			r.claim(id, groups[i].Name)
 			continue
 		}
-		id := r.ec.scopedValue(ctx, idKey("eval", groups[i].Name), r.scope)
+		decision, err := r.decide(ctx, groups[i])
+		if err != nil {
+			// An unreadable decision is not evidence that an owner abandoned
+			// its eval. EnsureEval still reports the error for this declaration.
+			r.claim(id, groups[i].Name)
+			continue
+		}
 		if id == "" || decision.recreate {
 			continue
 		}
@@ -979,6 +986,23 @@ func conflictingEvaluatorPins(have, want []eval_api.TestingCriterion) bool {
 	return false
 }
 
+// matchingEvaluatorPins requires positive evidence before a legacy digest can
+// adopt an eval: that index did not distinguish inherited catalog versions.
+func matchingEvaluatorPins(have, want []eval_api.TestingCriterion) bool {
+	if len(want) == 0 || len(have) != len(want) || conflictingEvaluatorPins(have, want) {
+		return false
+	}
+	for _, desired := range want {
+		if !slices.ContainsFunc(have, func(stored eval_api.TestingCriterion) bool {
+			return stored.Type == desired.Type && stored.Name == desired.Name &&
+				stored.EvaluatorName == desired.EvaluatorName
+		}) {
+			return false
+		}
+	}
+	return true
+}
+
 // adoptRenamed reclaims the eval this declaration used to be called, so a
 // rename keeps the id and every run under it rather than forking the history.
 //
@@ -991,6 +1015,19 @@ func (r *evalReconciler) adoptRenamed(
 	criteria []eval_api.TestingCriterion,
 ) (string, error) {
 	id := r.ec.scopedValue(ctx, digestIDKey(digest), r.scope)
+	legacy := false
+	if id == "" {
+		if prepared, ok := r.prepared[group.Name]; ok {
+			legacyDigest, err := project.FingerprintGroup(prepared.declared)
+			if err != nil {
+				return "", err
+			}
+			if legacyDigest != digest {
+				id = r.ec.scopedValue(ctx, digestIDKey(legacyDigest), r.scope)
+				legacy = id != ""
+			}
+		}
+	}
 	if id == "" {
 		return "", nil
 	}
@@ -1009,7 +1046,8 @@ func (r *evalReconciler) adoptRenamed(
 		}
 		return "", err
 	}
-	if conflictingEvaluatorPins(remote.TestingCriteria, criteria) {
+	if conflictingEvaluatorPins(remote.TestingCriteria, criteria) ||
+		(legacy && !matchingEvaluatorPins(remote.TestingCriteria, criteria)) {
 		return "", nil
 	}
 	r.pushMutable(ctx, id, group, remote)

@@ -279,6 +279,8 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 | `ext.dependency.*` | Extension dependency error | `ext.dependency.missing` |
 | `internal.grpc.<status>` | Host-originated gRPC status without a more specific mapping | `internal.grpc.unavailable` |
 | `internal.mapper_conversion` | Conversion between registered Go mapper types failed | — |
+| `internal.extension_invalid_response` | Extension service target omitted a required deploy result or target resource | — |
+| `internal.timeout` | Operation timed out, including service publish or deploy | — |
 | `internal.unclassified` | Catch-all for unclassified errors | — |
 | `internal.errors_errorString` | Legacy catch-all (being replaced by `internal.unclassified`) | — |
 

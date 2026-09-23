@@ -1280,8 +1280,8 @@ var (
 		Purpose:        FeatureInsight,
 		IsMeasurement:  true,
 	}
-	// ExtensionEvent identifies a usage report or failed invocation event.
-	// Extensions own this value, which lets queries filter their events.
+	// ExtensionEvent identifies usage and failed-invocation events.
+	// Extensions own usage values; the host owns failure labels.
 	ExtensionEvent = AttributeKey{
 		Key:            attribute.Key("extension.event"),
 		Classification: SystemMetadata,

@@ -136,7 +136,11 @@ func (a *evalCreateAction) create(ec *evalContext, cfg *project.EvalConfig, eval
 	}
 	// Every eval the file declares, not only the one being created: an
 	// eval another declaration already owns must not be adopted here.
-	reconciler.ReserveDeclared(ctx, cfg.Evals)
+	declared := make([]project.Eval, len(cfg.Evals))
+	for i, group := range cfg.Evals {
+		declared[i] = withCatalogEvaluatorPins(group, cfg)
+	}
+	reconciler.ReserveDeclared(ctx, declared)
 	out := a.cmd.OutOrStdout()
 
 	var artifacts []reconciledArtifact

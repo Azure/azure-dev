@@ -270,6 +270,13 @@ deploy. Evaluator definitions are compared against the service, but only on the
 keys you authored — the service adds `data_schema`, `init_parameters` and
 `metrics` of its own.
 
+An evaluator reference inherits an explicit `version` from its catalog entry
+unless the reference sets its own version. Changing or removing that inherited
+pin changes the immutable eval criteria and creates a new eval. An unchanged
+effective pin keeps the same eval, including when the pin moves between the
+catalog and reference. With neither pin set, the evaluator continues tracking
+the service's latest version without recreating the eval on each new version.
+
 Eval groups are immutable, so a change to a group's evaluators, target or
   sampling creates a new group and a new id. The id is cached in the extension's
   own private state (`eval.state`) so repeat runs stay comparable. That is not

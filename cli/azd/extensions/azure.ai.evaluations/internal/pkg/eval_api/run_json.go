@@ -54,17 +54,17 @@ func (r OpenAIEvalRun) MarshalJSON() ([]byte, error) {
 	if err != nil || len(r.raw) == 0 {
 		return typed, err
 	}
-	return mergeRunJSON(r.raw, typed)
+	return mergeServiceJSON(r.raw, typed)
 }
 
 // Merge at every object and array level without decoding numbers into float64.
-func mergeRunJSON(original, updated json.RawMessage) (json.RawMessage, error) {
+func mergeServiceJSON(original, updated json.RawMessage) (json.RawMessage, error) {
 	var oldObject, newObject map[string]json.RawMessage
 	if json.Unmarshal(original, &oldObject) == nil && oldObject != nil &&
 		json.Unmarshal(updated, &newObject) == nil && newObject != nil {
 		for key, value := range newObject {
 			if previous, ok := oldObject[key]; ok {
-				merged, err := mergeRunJSON(previous, value)
+				merged, err := mergeServiceJSON(previous, value)
 				if err != nil {
 					return nil, err
 				}
@@ -78,7 +78,7 @@ func mergeRunJSON(original, updated json.RawMessage) (json.RawMessage, error) {
 	if json.Unmarshal(original, &oldArray) == nil && oldArray != nil &&
 		json.Unmarshal(updated, &newArray) == nil && newArray != nil {
 		for i := range min(len(oldArray), len(newArray)) {
-			merged, err := mergeRunJSON(oldArray[i], newArray[i])
+			merged, err := mergeServiceJSON(oldArray[i], newArray[i])
 			if err != nil {
 				return nil, err
 			}

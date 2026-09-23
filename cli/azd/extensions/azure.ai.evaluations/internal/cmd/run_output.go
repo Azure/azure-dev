@@ -247,17 +247,29 @@ func (a *runOutputShowAction) Run() error {
 		return err
 	}
 
-	item, err := ec.evalClient.GetOutputItem(ctx, evalID, run.ID, a.itemID)
+	return a.show(ctx, ec, evalID, run.ID)
+}
+
+func (a *runOutputShowAction) show(ctx context.Context, ec *evalContext, evalID, runID string) error {
+	item, err := ec.evalClient.GetOutputItem(ctx, evalID, runID, a.itemID)
 	if err != nil {
 		if eval_api.IsNotFound(err) {
-			return messages.OutputItemNotFound(a.itemID, run.ID)
+			return messages.OutputItemNotFound(a.itemID, runID)
 		}
 		return messages.ReadingOutputItem(a.itemID, err)
 	}
 	if isJSON(a.cmd) {
 		return emitJSON(a.cmd.OutOrStdout(), item)
 	}
-	return renderOutputItem(a.cmd.OutOrStdout(), item)
+	if item == nil {
+		return messages.OutputItemEmpty()
+	}
+	// The detail endpoint can return a result-version URI as id even though
+	// the list and lookup use a numeric item id. Keep that service value in
+	// JSON, but show the successful lookup identity in the human detail.
+	display := *item
+	display.ID = a.itemID
+	return renderOutputItem(a.cmd.OutOrStdout(), &display)
 }
 
 // writeExport writes the complete result document for a run.
@@ -644,9 +656,8 @@ func (ec *evalContext) sayWhichRun(cmd *cobra.Command, explicit bool, runID stri
 // to read. The listing truncates the reason to a cell; this is where the whole
 // of it lives, so the reasons are printed in full rather than wrapped or cut.
 //
-// Results are grouped by evaluator: a rubric reports one result per dimension,
-// all carrying the evaluator's name, and printing them flat would read as
-// several evaluators that happen to share a name.
+// Results are grouped by evaluator. Rubric dimensions can arrive as separate
+// metrics or under the evaluator's properties.dimension_scores.
 func renderOutputItem(w io.Writer, item *eval_api.OutputItem) error {
 	if item == nil {
 		return messages.OutputItemEmpty()
@@ -703,7 +714,13 @@ func renderEvaluatorResult(w io.Writer, name string, results []eval_api.OutputRe
 	// The service repeats the evaluator's name in `metric` for a single-score
 	// evaluator, so a result only names a dimension when it says something else.
 	dimensions := make([]eval_api.OutputResult, 0, len(results))
+	var rubricScores []eval_api.RubricDimensionScore
 	for _, r := range results {
+		scores, err := r.RubricDimensions()
+		if err != nil {
+			return err
+		}
+		rubricScores = append(rubricScores, scores...)
 		if r.Metric != "" && r.Metric != name {
 			dimensions = append(dimensions, r)
 		}
@@ -725,11 +742,16 @@ func renderEvaluatorResult(w io.Writer, name string, results []eval_api.OutputRe
 		fmt.Fprint(w, messages.EvaluatorSectionReason(lead.Outcome(), why))
 	}
 
+	if len(rubricScores) > 0 {
+		if err := renderRubricScores(w, rubricScores); err != nil {
+			return err
+		}
+	}
 	if len(dimensions) == 0 {
 		// Said rather than left blank, and never invented: a reader who cannot
 		// see dimensions needs to know whether this rubric has none or the
 		// service did not return them.
-		if isRubricName(name) {
+		if len(rubricScores) == 0 && isRubricName(name) {
 			fmt.Fprint(w, messages.RubricDimensionsNotReturned())
 		}
 		return nil
@@ -746,6 +768,44 @@ func renderEvaluatorResult(w io.Writer, name string, results []eval_api.OutputRe
 	}
 	fmt.Fprint(w, messages.RubricDimensionsHeading())
 	return emitTable(w, []string{"DIMENSION", "SCORE", "RESULT", "REASON"}, rows)
+}
+
+func renderRubricScores(w io.Writer, dimensions []eval_api.RubricDimensionScore) error {
+	fmt.Fprint(w, messages.RubricDimensionsHeading())
+	rows := make([][]string, 0, len(dimensions))
+	for _, dimension := range dimensions {
+		applicable := "not reported"
+		if dimension.Applicable != nil {
+			applicable = strconv.FormatBool(*dimension.Applicable)
+		}
+		rows = append(rows, []string{
+			reportedDimensionID(dimension.ID), dimensionNumber(dimension.Score),
+			applicable, dimensionNumber(dimension.Weight),
+		})
+	}
+	if err := emitTable(w, []string{"DIMENSION", "SCORE", "APPLICABLE", "WEIGHT"}, rows); err != nil {
+		return err
+	}
+	for _, dimension := range dimensions {
+		if dimension.Reason != "" {
+			fmt.Fprintf(w, "\n%s:\n%s\n", reportedDimensionID(dimension.ID), dimension.Reason)
+		}
+	}
+	return nil
+}
+
+func reportedDimensionID(id string) string {
+	if id == "" {
+		return "not reported"
+	}
+	return id
+}
+
+func dimensionNumber(value *eval_api.LenientFloat) string {
+	if value == nil {
+		return "not reported"
+	}
+	return formatScore(*value)
 }
 
 // isRubricName reports whether a missing dimension list is worth remarking on.

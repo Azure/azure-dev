@@ -215,6 +215,26 @@ failures among 18 test cases. Follow the printed page token to read the rest,
 or use `run output export` to save the complete results. Errored rows remain
 separate from failed verdicts and can be selected with `--status errored`.
 
+`run output show <item>` uses the lookup ID from the listing in its human
+header. The service may return a result-version URI as the detail object's
+`id`; JSON keeps that returned identity rather than replacing it with the
+lookup ID.
+
+For rubric results, the detail view displays returned
+`properties.dimension_scores` alongside the overall evaluator score. Each
+dimension can include its score, applicability, weight, and full reason.
+Applicability is not a pass/fail verdict, and missing values are not treated
+as zero or false. Separate dimension metrics in `results` remain supported.
+The CLI does not derive dimension results from the rubric definition when
+they are absent from the response.
+
+Output-item JSON preserves unrecognized nested service fields, including
+evaluator `properties` and `sample` details; modeled scores keep their existing
+numeric normalization. These fields can contain prompts, answers, and other
+sensitive evaluation content. Prefer a private destination with
+`run output list --output-file` or `run output export --output-file` over
+writing JSON into shared terminal or CI logs.
+
 A command that needs an eval and was not told which one offers a picker.
 Closing that picker is an answer, not a failure: the command says the selection
 was cancelled and exits 0, at every command that offers it. Under `-o json`

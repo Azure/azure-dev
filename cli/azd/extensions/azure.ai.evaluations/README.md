@@ -171,8 +171,11 @@ override a configured cap, or deliberately publish and select a smaller dataset.
 The CLI does not publish temporary subset datasets automatically.
 
 Inline rows and row caps remain available for genuinely unregistered local files,
-after the service confirms the dataset is absent. An empty version listing alone
-does not establish absence. `--max-samples` is also rejected for source-backed runs
+after the service confirms the dataset is absent. A complete, valid empty version
+listing (or a not-found response) is checked with first-version lookups. Only
+not-found responses to those lookups permit inline rows; malformed listings,
+incomplete pagination, and authorization or service failures stop the run.
+`--max-samples` is also rejected for source-backed runs
 and reruns selected by eval ID, where it cannot change the repeated source.
 Source-backed runs reject configured `max_samples:` too; use `source.max_traces`
 for trace limits or select `source.response_ids` explicitly.

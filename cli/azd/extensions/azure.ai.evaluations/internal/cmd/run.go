@@ -202,22 +202,11 @@ func (a *runStartAction) Run() error {
 		return err
 	}
 	evalID := ref.ID
-	group := ref.Eval
 	configPath := ref.ConfigPath
 
-	if a.flags.datasetName != "" {
-		if !ref.Declared() {
-			return messages.DatasetOverrideNeedsDeclaredEval()
-		}
-		if _, ok := ref.Config.DatasetDeclaration(a.flags.datasetName); !ok {
-			return messages.DatasetNotInCatalog(
-				a.flags.datasetName, filepath.ToSlash(configPath))
-		}
-		// The eval keeps its own declaration; only this run reads elsewhere.
-		overridden := *group
-		overridden.Dataset = a.flags.datasetName
-		overridden.Source = nil
-		group = &overridden
+	group, err := withRunDatasetOverride(ref, a.flags.datasetName)
+	if err != nil {
+		return err
 	}
 
 	if ref.Declared() {
@@ -349,6 +338,23 @@ func (a *runStartAction) Run() error {
 	}
 	applyGate(a.cmd, threshold, final)
 	return nil
+}
+
+func withRunDatasetOverride(ref evalRef, override string) (*project.Eval, error) {
+	if override == "" {
+		return ref.Eval, nil
+	}
+	if !ref.Declared() {
+		return nil, messages.DatasetOverrideNeedsDeclaredEval()
+	}
+	if _, ok := ref.Config.DatasetDeclaration(override); !ok {
+		return nil, messages.DatasetNotInCatalog(override, filepath.ToSlash(ref.ConfigPath))
+	}
+	// The eval keeps its own declaration; only this run reads elsewhere.
+	overridden := *ref.Eval
+	overridden.Dataset = override
+	overridden.Source = nil
+	return &overridden, nil
 }
 
 // checkDatasetRegistered fails when the group's local dataset has edits that
@@ -861,36 +867,44 @@ func (ec *evalContext) resolveRunDatasetVersion(
 	if version != "" {
 		return version, nil
 	}
+	version, err := ec.lookupRunDatasetVersion(ctx, name)
+	if _, absent := errors.AsType[*unregisteredDatasetError](err); absent && allowLocal {
+		return "", nil
+	}
+	return version, err
+}
+
+// unregisteredDatasetError distinguishes verified absence from an unreadable
+// registry. It does not manufacture an HTTP error for a successful empty listing.
+type unregisteredDatasetError struct{ name string }
+
+func (e *unregisteredDatasetError) Error() string {
+	return messages.DatasetHasNoVersionsToRead(e.name).Error()
+}
+
+func (ec *evalContext) lookupRunDatasetVersion(ctx context.Context, name string) (string, error) {
 	if ec.datasetClient == nil {
 		return "", messages.ReadingDataset(name, errors.New("dataset client is unavailable"))
 	}
 	versions, err := ec.datasetClient.ListDatasetVersions(ctx, name, ProjectEndpointAPIVersion)
-	if err != nil && !(allowLocal && dataset_api.IsNotFound(err)) {
+	if err != nil && !dataset_api.IsNotFound(err) {
 		return "", messages.ReadingDataset(name, err)
 	}
-	if versions != nil {
-		version = dataset_api.LatestVersion(versions.Value)
+	if versions != nil && len(versions.Value) > 0 {
+		return dataset_api.LatestVersion(versions.Value), nil
 	}
-	if version == "" && allowLocal {
-		// The listing can lag publication. As with datasetPresence, an empty
-		// successful listing alone does not prove this name is unregistered.
-		for _, first := range firstDatasetVersions {
-			_, getErr := ec.datasetClient.GetDataset(ctx, name, first, ProjectEndpointAPIVersion)
-			if getErr == nil {
-				return first, nil
-			}
-			if !dataset_api.IsNotFound(getErr) {
-				return "", messages.ReadingDatasetVersion(name, first, getErr)
-			}
+	// Foundry returns a successful empty list for unknown datasets. Probe the
+	// first publish versions as well, because the listing can lag publication.
+	for _, first := range firstDatasetVersions {
+		_, getErr := ec.datasetClient.GetDataset(ctx, name, first, ProjectEndpointAPIVersion)
+		if getErr == nil {
+			return first, nil
 		}
-		if dataset_api.IsNotFound(err) {
-			return "", nil
+		if !dataset_api.IsNotFound(getErr) {
+			return "", messages.ReadingDatasetVersion(name, first, getErr)
 		}
 	}
-	if version == "" {
-		return "", messages.DatasetHasNoVersionsToRead(name)
-	}
-	return version, nil
+	return "", &unregisteredDatasetError{name: name}
 }
 
 func (ec *evalContext) readDatasetVersion(

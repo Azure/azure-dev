@@ -39,6 +39,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
@@ -72,6 +73,14 @@ func Test_MapError(t *testing.T) {
 			wantErrDetails: []attribute.KeyValue{
 				fields.ErrType.String("*errors.errorString"),
 			},
+		},
+		{
+			name: "WithExternalServiceTargetResponseError",
+			err: &project.ExternalServiceTargetResponseError{
+				Operation: "deploy",
+				Detail:    "missing deploy result",
+			},
+			wantErrReason: "internal.extension_invalid_response",
 		},
 		{
 			name: "WithToolExitError",

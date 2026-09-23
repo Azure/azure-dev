@@ -4,12 +4,14 @@
 package project
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 )
 
 // Test the edge case of empty kind
@@ -86,6 +88,23 @@ func Test_CheckResourceType(t *testing.T) {
 func Test_NewExternalServiceTarget(t *testing.T) {
 	target := NewExternalServiceTarget("test-target", ContainerAppTarget, nil, nil, nil, nil, nil)
 	require.NotNil(t, target)
+}
+
+func TestExternalServiceTargetWrapInvocationError(t *testing.T) {
+	t.Parallel()
+
+	inner := errors.New("extension failed")
+	target := &ExternalServiceTarget{
+		extension: &extensions.Extension{Id: "test.extension", Version: "1.2.3"},
+	}
+
+	err := target.wrapInvocationError(inner, "deploy")
+	require.ErrorIs(t, err, inner)
+	metadata, ok := errors.AsType[extensions.InvocationMetadataProvider](err)
+	require.True(t, ok)
+	require.Equal(t, "test.extension", metadata.InvocationExtensionId())
+	require.Equal(t, "1.2.3", metadata.InvocationExtensionVersion())
+	require.Equal(t, "service_target.deploy", metadata.InvocationEvent())
 }
 
 // ---------- IgnoreFile method coverage for different targets ----------

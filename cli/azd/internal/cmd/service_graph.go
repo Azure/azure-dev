@@ -486,12 +486,15 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 				); pubErr != nil {
 					if errors.Is(pubCtx.Err(),
 						context.DeadlineExceeded) {
-						return fmt.Errorf(
-							"publishing service '%s' timed out"+
-								" after %d seconds",
-							pubSvc.Name,
-							int(opts.deployTimeout.Seconds()),
-						)
+						return &serviceOperationTimeoutError{
+							message: fmt.Sprintf(
+								"publishing service '%s' timed out"+
+									" after %d seconds",
+								pubSvc.Name,
+								int(opts.deployTimeout.Seconds()),
+							),
+							cause: pubErr,
+						}
 					}
 					return fmt.Errorf(
 						"publishing service %s: %w",
@@ -600,14 +603,17 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 						if opts.onDeployTimeout != nil {
 							opts.onDeployTimeout(stepCtx, depSvc)
 						}
-						return fmt.Errorf(
-							"deployment of service '%s' timed out after %d seconds."+
-								" To increase, use --timeout flag or AZD_DEPLOY_TIMEOUT env var."+
-								" Note: azd has stopped waiting, but the deployment may still be"+
-								" running in Azure. Check the Azure Portal for current deployment status.",
-							depSvc.Name,
-							int(opts.deployTimeout.Seconds()),
-						)
+						return &serviceOperationTimeoutError{
+							message: fmt.Sprintf(
+								"deployment of service '%s' timed out after %d seconds."+
+									" To increase, use --timeout flag or AZD_DEPLOY_TIMEOUT env var."+
+									" Note: azd has stopped waiting, but the deployment may still be"+
+									" running in Azure. Check the Azure Portal for current deployment status.",
+								depSvc.Name,
+								int(opts.deployTimeout.Seconds()),
+							),
+							cause: depErr,
+						}
 					}
 					return fmt.Errorf("deploying service %s: %w", depSvc.Name, depErr)
 				}
@@ -622,6 +628,42 @@ func addServiceStepsToGraph(g *exegraph.Graph, opts serviceGraphOptions) (*servi
 	}
 
 	return handles, nil
+}
+
+type serviceOperationTimeoutError struct {
+	message string
+	cause   error
+}
+
+func isServiceOperationTimeoutError(err error) bool {
+	_, ok := errors.AsType[*serviceOperationTimeoutError](err)
+	return ok
+}
+
+func serviceStepCompletionProgress(err error) (deployPhase, string) {
+	if err == nil {
+		return phaseDone, ""
+	}
+	if exegraph.IsStepSkipped(err) {
+		return phaseSkipped, ""
+	}
+	if errors.Is(err, context.Canceled) && !isServiceOperationTimeoutError(err) {
+		return phaseSkipped, "canceled"
+	}
+
+	return phaseFailed, err.Error()
+}
+
+func (e *serviceOperationTimeoutError) Error() string {
+	return e.message
+}
+
+func (e *serviceOperationTimeoutError) Unwrap() []error {
+	if e == nil {
+		return nil
+	}
+
+	return []error{e.cause, context.DeadlineExceeded}
 }
 
 // deployTimeoutWarning is the UX element emitted when a deploy step exceeds

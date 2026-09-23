@@ -491,7 +491,7 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `extension.id` | string | Extension identifier |
 | `extension.version` | string | Extension version |
 | `extension.grpc.legacy_call_count` | measurement | Number of RPCs made through the temporary legacy `/azdext.*` compatibility bridge during the command |
-| `extension.event` | string | Extension-chosen usage event on `ext.usage`, or the host-defined lifecycle event on a failed lifecycle-hook `cmd.*` span |
+| `extension.event` | string | Extension-chosen usage event on `ext.usage`, or the host-defined lifecycle operation on a failed extension `cmd.*` span |
 | `ext.<key>` | string | One extension-supplied attribute on an `ext.usage` span. The key after the `ext.` prefix and the value are chosen by the extension |
 | `ext.route` | string | Local-client route selected by `azure.ai.agents`: `inspector`, `playground`, or `suppressed` (`local_client.route.selected`) |
 | `ext.agent.kind` | string | Agent kind resolved by `azure.ai.agents`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown` (`agent.context.resolved`) |
@@ -519,9 +519,12 @@ fields. The host writes the identity fields and applies the `ext.` prefix; the
 extension chooses the event name, the key suffixes, and the values. Failed
 extension commands instead carry `extension.id` and `extension.version` on
 the failed `ext.run` span and do not set `extension.event`. Failed lifecycle
-hooks carry `extension.id`, `extension.version`, and the lifecycle event on the
-enclosing `cmd.*` span. The whole class is classified as `SystemMetadata` for
-`FeatureInsight`. Extension authors are responsible
+hooks and service-target operations carry `extension.id`, `extension.version`,
+and the host-defined lifecycle operation on the enclosing `cmd.*` span.
+Service-target values are `service_target.initialize`, `service_target.package`,
+`service_target.publish`, `service_target.deploy`, `service_target.endpoints`,
+and `service_target.get_target_resource`. The whole class is classified as
+`SystemMetadata` for `FeatureInsight`. Extension authors are responsible
 for keeping usage values low cardinality and free of customer content, and for
 having them privacy reviewed with their extension.
 

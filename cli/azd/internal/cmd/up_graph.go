@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -607,16 +606,7 @@ func (u *UpGraphAction) Run(
 		}
 		// Update deploy progress tracker on step completion.
 		if err != nil {
-			phase := phaseFailed
-			detail := err.Error()
-			switch {
-			case exegraph.IsStepSkipped(err):
-				phase = phaseSkipped
-				detail = ""
-			case errors.Is(err, context.Canceled):
-				phase = phaseSkipped
-				detail = "canceled"
-			}
+			phase, detail := serviceStepCompletionProgress(err)
 			for _, prefix := range []string{"deploy-", "publish-", "package-"} {
 				if svc, ok := strings.CutPrefix(stepName, prefix); ok {
 					updateDeployProgress(svc, phase, detail)

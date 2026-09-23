@@ -40,12 +40,13 @@
 # ── Infra / CI / Engineering ─────────────────────────────────────────────────
 /.github/                                   @danieljurek @vhvb1989 @tg-msft @RickWinter @richardpark-msft
 /.github/agents/foundry-extension-scenario-*.agent.md @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
+/.github/skills/                            @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft
 /.github/skills/foundry-extension-scenario-*/         @JeffreyCA @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212
 /eng/                                       @danieljurek @vhvb1989 @tg-msft @RickWinter @richardpark-msft
 /.config/1espt/                             @Azure/azure-sdk-eng
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
-/schemas/                                   @vhvb1989 @tg-msft @RickWinter
+/schemas/                                   @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft
 
 # ── Stable extension protobuf contract ────────────────────────────────────────
 /cli/azd/grpc/proto/azd/extensions/v1/      @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft

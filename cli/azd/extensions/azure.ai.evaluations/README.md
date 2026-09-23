@@ -365,7 +365,10 @@ separate from failed verdicts and can be selected with `--status errored`.
 
 After a terminal run, waited `run start` summaries and `run show` details
 include an unfiltered output-list command and a JSON export command, both with
-the resolved eval and run identities. A failed-only listing is additional
+the resolved eval and run identities. Suggested commands use the immutable eval
+ID when known, rather than a friendly name that might point to a different
+eval after a later deployment. Friendly labels remain in the human run header;
+service JSON is not rewritten. A failed-only listing is additional
 guidance when the service reports failed verdicts, not a replacement for the
 unfiltered listing. Errored rows get a separate `--status errored` command;
 they are not included by `--failed-only`.

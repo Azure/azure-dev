@@ -363,6 +363,19 @@ failures among 18 test cases. Follow the printed page token to read the rest,
 or use `run output export` to save the complete results. Errored rows remain
 separate from failed verdicts and can be selected with `--status errored`.
 
+After a terminal run, waited `run start` summaries and `run show` details
+include an unfiltered output-list command and a JSON export command, both with
+the resolved eval and run identities. A failed-only listing is additional
+guidance when the service reports failed verdicts, not a replacement for the
+unfiltered listing.
+
+An operationally failed run can have no result counts or output rows. Its
+follow-up commands inspect **available** output and export the run's diagnostics
+plus any available results; they do not imply that grading succeeded or that
+failing rows exist. `run show` also prints the service's run-level failure
+message when one was returned. `--output json` keeps its existing run document
+and exit behavior without appending human guidance.
+
 `run output show <item>` uses the lookup ID from the listing in its human
 header. The service may return a result-version URI as the detail object's
 `id`; JSON keeps that returned identity rather than replacing it with the

@@ -331,8 +331,11 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 		if err := emitJSON(out, final); err != nil {
 			return err
 		}
-	} else if err := renderRun(out, final, ec.runOutputSummary(ctx, evalID, final)); err != nil {
-		return err
+	} else {
+		display := runForDisplay(final, evalID, run.ID)
+		if err := renderRun(out, display, ec.runOutputSummary(ctx, evalID, display)); err != nil {
+			return err
+		}
 	}
 
 	// Last, so that the results are reported whether or not the gate
@@ -1342,9 +1345,7 @@ func renderRun(
 	// A run that failed carries why, and it is usually the only actionable
 	// thing in the response — dropping it leaves the caller with just the word
 	// "failed".
-	if why := run.Failure(); why != "" {
-		fmt.Fprintf(out, "\n%s\n", why)
-	}
+	renderRunFailure(out, run)
 
 	// Counted over test cases, not over verdicts: a sample that failed two
 	// evaluators is one sample to go and look at, and reporting it as two
@@ -1367,17 +1368,63 @@ func renderRun(
 	}
 	renderCriteriaTable(out, run.PerTestingCriteria, means)
 
-	// Offered whenever there is something to read, not only when rows failed:
-	// a run whose rows all errored closed with the word "failed" and a count,
-	// and nothing saying where to look next.
-	if c := run.ResultCounts; c != nil && c.Total > 0 {
-		errored, _ := unscoredSplit(c, c.Passed+c.Failed)
-		fmt.Fprint(out, messages.RunFollowUp(
-			followUpEvalRef(run), run.ID, c.Failed > 0, errored > 0))
-	}
+	renderRunFollowUp(out, run)
 
 	writePortalLink(out, runLink(run.ReportURL, run.PortalURL))
 	return nil
+}
+
+// runForDisplay fills identities from the successful lookup without changing
+// the service object emitted under --output json.
+func runForDisplay(run *eval_api.OpenAIEvalRun, evalID, runID string) *eval_api.OpenAIEvalRun {
+	display := *run
+	if display.EvalID == "" {
+		display.EvalID = evalID
+	}
+	if display.ID == "" {
+		display.ID = runID
+	}
+	return &display
+}
+
+func runFailureMessage(run *eval_api.OpenAIEvalRun) string {
+	if why := run.Failure(); why != "" {
+		return why
+	}
+	if run.Error != nil {
+		return strings.TrimSpace(run.Error.Code)
+	}
+	return ""
+}
+
+func renderRunFailure(out io.Writer, run *eval_api.OpenAIEvalRun) {
+	if why := runFailureMessage(run); why != "" {
+		fmt.Fprintf(out, "\n%s\n", why)
+	}
+}
+
+func renderRunFollowUp(out io.Writer, run *eval_api.OpenAIEvalRun) {
+	status := strings.ToLower(run.Status)
+	operationalFailure := status == "failed" || status == "error" || runFailureMessage(run) != ""
+	failed, errored := false, false
+	if counts := run.ResultCounts; counts != nil {
+		failed = counts.Failed > 0
+		unscored, _ := unscoredSplit(counts, counts.Passed+counts.Failed)
+		errored = counts.Errored > 0 || unscored > 0
+	}
+	if !terminalRunStates[status] && !operationalFailure && !failed && !errored {
+		return
+	}
+	eval := followUpEvalRef(run)
+	if eval == "" || run.ID == "" {
+		fmt.Fprint(out, messages.RunFollowUpMissingIDs())
+		return
+	}
+	if operationalFailure {
+		fmt.Fprint(out, messages.FailedRunFollowUp(eval, run.ID, failed))
+		return
+	}
+	fmt.Fprint(out, messages.RunFollowUp(eval, run.ID, failed, errored))
 }
 
 // followUpEvalRef names the eval in the commands a finished run suggests.

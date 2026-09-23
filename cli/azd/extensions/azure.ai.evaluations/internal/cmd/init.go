@@ -95,6 +95,8 @@ func newInitCommand() *cobra.Command {
 			"Simulation requires an independent --simulation-model; interactive init prompts for it. " +
 			"Under --no-prompt or --output json, supply all unresolved inputs explicitly.\n\n" +
 			"Simulation init validates all locally available seed rows before writing configuration. " +
+			"Interactive init asks for a corrected or different dataset when local rows are invalid; " +
+			"--no-prompt and --output json fail without writing configuration. " +
 			"Registered datasets without local files are checked later, not fetched by init.\n\n" +
 			"Init works offline except for a bounded, best-effort lookup of explicitly named built-in evaluators.",
 		// Everything init takes is a flag; a positional would be ignored.

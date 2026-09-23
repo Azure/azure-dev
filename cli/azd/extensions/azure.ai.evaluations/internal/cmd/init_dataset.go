@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"azureaieval/internal/messages"
@@ -13,6 +14,30 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
+
+func resolveInitSimulationDataset(
+	cmd *cobra.Command, location string, answers *initAnswers, cfg *project.EvalConfig,
+) error {
+	ctx := commandContext(cmd)
+	problem := validateInitSimulationDataset(ctx, location, *answers, cfg)
+	// Bound retries like the eval-name prompt, without losing the last row error.
+	for range 8 {
+		if problem == nil || noPrompt(cmd) {
+			return problem
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		fmt.Fprint(cmd.OutOrStdout(), messages.InitDatasetRejected(problem))
+		dataset, err := promptDatasetReference(cmd)
+		if err != nil {
+			return err
+		}
+		answers.datasetRef = dataset
+		problem = validateInitSimulationDataset(ctx, location, *answers, cfg)
+	}
+	return problem
+}
 
 func validateInitSimulationDataset(
 	ctx context.Context, location string, answers initAnswers, cfg *project.EvalConfig,
@@ -117,7 +142,7 @@ func promptDeclaredDataset(cmd *cobra.Command, declared []string) (string, error
 }
 
 // promptDatasetReference asks what to grade when the configuration declares
-// nothing to offer.
+// nothing to offer or a local simulation dataset needs correction.
 //
 // It takes a path or a registered name rather than a list, because the two
 // things it could list are both service calls init does not make: the datasets

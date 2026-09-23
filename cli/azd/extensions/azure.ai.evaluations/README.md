@@ -127,8 +127,13 @@ live lookups beyond the bounded built-in evaluator catalogue check.
 For simulation, init checks every locally available seed row before writing
 configuration, including files in declared datasets and local nested `$ref`
 entries. Each row needs a text `test_case_description` containing more than
-whitespace, cannot carry completed `messages`, and may specify a positive whole `desired_num_turns` no
-greater than an explicit `--max-turns`. Omitted turn counts remain valid.
+whitespace, cannot carry `messages`, `query`, or `response` fields (even empty
+or null), and may specify a positive whole `desired_num_turns` no greater than
+an explicit `--max-turns`. Omitted turn counts remain valid.
+Interactive init reports invalid rows and asks for a corrected or different
+dataset before confirmation; press Ctrl+C at that prompt to cancel without
+authored changes. Under `--no-prompt` or `--output json`, invalid local rows
+fail immediately without writing configuration.
 Registered datasets with no local file are not fetched or checked by init.
 The evaluator picker excludes custom evaluators whose local
 `supported_evaluation_levels` explicitly excludes the selected level; an explicit

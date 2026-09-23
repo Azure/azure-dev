@@ -177,8 +177,7 @@ func TestRunningTwiceDoesNotStackWriters(t *testing.T) {
 // arguments. That fails argument validation, which runs instead of RunE rather
 // than before it, so it reached a script as an empty stream and no reason.
 func TestTooManyArgumentsStillAnswersTheJSONCaller(t *testing.T) {
-	t.Parallel()
-
+	// Sequential: SDK root construction writes process-global cobra.EnableTraverseRunHooks.
 	root := NewRootCommand()
 	var out bytes.Buffer
 	root.SetOut(&out)
@@ -194,8 +193,7 @@ func TestTooManyArgumentsStillAnswersTheJSONCaller(t *testing.T) {
 
 // The same mistake without -o json is unchanged: azd prints the line.
 func TestTooManyArgumentsWritesNothingToStdoutForAHuman(t *testing.T) {
-	t.Parallel()
-
+	// Sequential: SDK root construction writes process-global cobra.EnableTraverseRunHooks.
 	root := NewRootCommand()
 	var out bytes.Buffer
 	root.SetOut(&out)

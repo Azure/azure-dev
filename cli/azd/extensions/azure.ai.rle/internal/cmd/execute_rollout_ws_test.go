@@ -309,3 +309,51 @@ func TestExecuteRolloutDoesNotFallBackAfterTheUpgradeSucceeds(t *testing.T) {
 		t.Fatalf("expected no HTTP retry after a successful upgrade, got %d calls", httpCalls)
 	}
 }
+
+// gorilla completes the handshake even when the server ignores the offered subprotocol, so
+// a 101 from a handler that is not RLE would otherwise look like a healthy rollout socket.
+// Nothing has been written at that point, so falling back is still safe.
+func TestExecuteRolloutFallsBackWhenTheServerDoesNotSelectTheSubprotocol(t *testing.T) {
+	var httpCalls int
+	rleServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		httpCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"rollout_id":"abc123","reward":1,"success":true}`))
+	}))
+	defer rleServer.Close()
+
+	framed := make(chan bool, 1)
+	upgrader := websocket.Upgrader{} // Configured with no Subprotocols, so it selects none.
+	gateway := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		connection, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade: %v", err)
+			framed <- false
+			return
+		}
+		defer connection.Close()
+		_, _, err = connection.ReadMessage()
+		framed <- err == nil
+	}))
+	defer gateway.Close()
+	stubExecuteRolloutDialer(t, gateway.URL, nil)
+
+	client := testRleClientForServer(t, rleServer.URL)
+	var errOut bytes.Buffer
+	if _, err := client.executeRollout(
+		context.Background(), "code_rl", "1.0.0", "loom-token",
+		executeRolloutRequest{RolloutID: "abc123"},
+		&errOut,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if <-framed {
+		t.Fatal("expected no execute frame on a socket that skipped the subprotocol")
+	}
+	if httpCalls != 1 {
+		t.Fatalf("expected exactly one HTTP fallback call, got %d", httpCalls)
+	}
+	if !strings.Contains(errOut.String(), "Falling back to the HTTP transport") {
+		t.Fatalf("expected the fallback to be reported, got %q", errOut.String())
+	}
+}

@@ -166,6 +166,19 @@ func (c *rleClient) executeRolloutOverWebSocket(
 		return nil, newExecuteRolloutHandshakeError(err, response)
 	}
 	defer connection.Close()
+
+	// A 101 alone does not prove RLE answered: the upgrade path is shared with the OpenEnv
+	// instance template, and a server that ignores the offered subprotocol still completes
+	// the handshake. Require the negotiated value before writing, so a wrong handler is a
+	// handshake failure rather than a rollout submitted into the void. Nothing has been
+	// sent yet, so this stays safe to retry on HTTP.
+	if negotiated := connection.Subprotocol(); negotiated != executeRolloutSubprotocol {
+		return nil, newExecuteRolloutHandshakeError(fmt.Errorf(
+			"server did not select the %q subprotocol (got %q)",
+			executeRolloutSubprotocol, negotiated,
+		), nil)
+	}
+
 	connection.SetReadLimit(maxExecuteRolloutFrameBytes)
 
 	// gorilla honors the context during the handshake only. Tripping the read deadline is

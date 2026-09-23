@@ -87,7 +87,7 @@ reporter.Report(ctx, telemetry.Event{
 ```
 
 `Report` is best effort and has no return value. It applies a one-second
-timeout, does not retry, treats `Accepted: false` as a normal result, and writes
+timeout by default, does not retry, treats `Accepted: false` as a normal result, and writes
 only the event name and gRPC status code to the debug log when reporting fails.
 It never logs attribute values or raw transport error details. Each Foundry
 extension should keep its approved event builders and bounded value types in

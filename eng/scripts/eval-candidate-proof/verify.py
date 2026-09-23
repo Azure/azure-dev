@@ -225,6 +225,13 @@ class Proof:
         ):
             text = self.run("help " + " ".join(command), ["ai", *command, "--help"])
             require("Usage" in text, "Help did not render")
+            if command == ["eval", "init"] and self.pin["conversationModes"]:
+                for flag in ("--conversation-mode", "--simulation-model", "--num-conversations",
+                             "--max-turns", "--judge-model", "--no-prompt"):
+                    require(flag in text, f"Init help lost the documented {flag} flag")
+                normalized = " ".join(text.split())
+                require("independent of the generation and judge models" in normalized,
+                        "Init help must distinguish simulator, generation and judge models")
 
         project = self.root / "synthetic-project"
         project.mkdir()
@@ -361,6 +368,50 @@ class Proof:
         )
         if self.pin["conversationModes"]:
             self.exercise_conversation_modes(project_definition)
+            self.exercise_unattended_model_inputs(project_definition)
+
+    def exercise_unattended_model_inputs(self, project_definition):
+        project = self.root / "unattended-handoff-inputs"
+        project.mkdir()
+        root_config = project / "azure.yaml"
+        root_config.write_text(project_definition, encoding="utf-8")
+        common = [
+            "ai", "eval", "init", "--name", "ci-handoff", "--target", "ci-agent",
+            "--dataset", "handoff-seeds", "--evaluator", "builtin.task_completion",
+        ]
+        # Generation itself needs Azure. Exercise only the documented local init
+        # inputs, without pretending this fixture came from a generation service.
+        for name, flags, required_flags in (
+            ("unattended simulation requires both models", ["--conversation-mode", "simulation"],
+             ("--simulation-model", "--judge-model")),
+            ("unattended simulation does not use simulator as judge",
+             ["--conversation-mode", "simulation", "--simulation-model", "ci-simulator"],
+             ("--judge-model",)),
+            ("unattended turn requires judge", ["--source", "dataset"], ("--judge-model",)),
+        ):
+            info = self.run(name, common + flags + ["--output", "json"], project,
+                            failure="judge-model", json_output=True)
+            for flag in required_flags:
+                require(flag in info["error"]["message"],
+                        f"{name} must identify the unresolved {flag} input")
+            require(root_config.read_text(encoding="utf-8") == project_definition
+                    and not (project / "evals").exists(),
+                    f"{name} wrote a partial scaffold")
+
+        text = self.run("unattended human init consumes explicit models", common + [
+            "--conversation-mode", "simulation", "--simulation-model", "ci-simulator",
+            "--judge-model", "ci-judge",
+        ], project)
+        require(re.search(r"Next:\s+azd ai eval create", text),
+                "Human init must identify create as the next step, not run it")
+        config = project / "evals" / "azure.eval.yaml"
+        authored = config.read_text(encoding="utf-8")
+        for expected in ("name: ci-handoff", "evaluation_level: conversation", "simulation:",
+                         "model: ci-simulator", "model: ci-judge", "name: ci-agent"):
+            require(expected in authored, f"Explicit model authoring lost {expected}")
+        require("max_turns:" not in authored, "Unspecified turn limit must remain unspecified")
+        self.output.joinpath("authored-handoff-inputs.yaml").write_text(
+            sanitize(authored, self.root), encoding="utf-8")
 
     def exercise_conversation_modes(self, project_definition):
         for name, flags, expected in (

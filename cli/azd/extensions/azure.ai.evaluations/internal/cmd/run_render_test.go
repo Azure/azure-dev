@@ -155,9 +155,9 @@ func TestListingPrintsItsFollowUpCommandsResolved(t *testing.T) {
 	text := out.String()
 
 	assert.Contains(t, text,
-		"azd ai eval run output show oi_first --eval support-agent-dataset-eval --run evalrun_1",
+		"azd ai eval run output show oi_first --eval an-eval --run evalrun_1",
 		"the detail command names a row from the table above it:\n%s", text)
-	assert.Contains(t, text, "azd ai eval run output export --eval support-agent-dataset-eval --run evalrun_1")
+	assert.Contains(t, text, "azd ai eval run output export --eval an-eval --run evalrun_1")
 	assert.NotContains(t, text, "<item>",
 		"a line with a placeholder in it reads like a command and is not one")
 }

@@ -1365,18 +1365,14 @@ func renderRunFollowUp(out io.Writer, run *eval_api.OpenAIEvalRun) {
 
 // followUpEvalRef names the eval in the commands a finished run suggests.
 //
-// The declared name first, because that is what a reader has in their
-// configuration. A run made by the portal or an SDK carries none of this
-// extension's metadata, and printing `--run <id>` with no `--eval` leaves a
-// command that has to re-resolve the eval from the configuration -- prompting,
-// or picking a declaration that is not the one the run belongs to. The service
-// states the id on the run, so it stands in, exactly as the header already
-// does.
+// The immutable ID wins because a declared name can resolve to another eval
+// after a redeploy. Friendly names remain in the header, and are a fallback
+// only when neither the service nor the successful lookup provided an ID.
 func followUpEvalRef(run *eval_api.OpenAIEvalRun) string {
-	if name := run.Metadata[metaEvalName]; name != "" {
-		return name
+	if run.EvalID != "" {
+		return run.EvalID
 	}
-	return run.EvalID
+	return run.Metadata[metaEvalName]
 }
 
 // passRateText is the rate, or a dash where nothing was scored. A rate over no

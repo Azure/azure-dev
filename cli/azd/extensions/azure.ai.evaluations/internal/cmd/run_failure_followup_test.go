@@ -132,6 +132,7 @@ func TestFailedRunCallersPreserveJSONAndPrintResolvedHumanCommands(t *testing.T)
 				t.Run(caller+"/"+format+"/"+counts, func(t *testing.T) {
 					payload := map[string]any{
 						"id": "", "status": "failed",
+						"metadata": map[string]string{metaEvalName: "mutable-friendly-name"},
 						"error": map[string]string{
 							"code": "RunInitializationFailed", "message": runFailureWithCredentials,
 						},
@@ -221,6 +222,7 @@ func TestFailedRunCallersPreserveJSONAndPrintResolvedHumanCommands(t *testing.T)
 						assert.Contains(t, text, "azd ai eval run output export --eval eval_resolved --run run_resolved "+
 							"--output-file ./run_resolved.json")
 						assert.NotContains(t, text, "--failed-only")
+						assert.NotContains(t, text, "--eval mutable-friendly-name")
 						assert.Equal(t, 1, strings.Count(text, "azd ai eval run output export"))
 					}
 				})
@@ -255,13 +257,15 @@ func TestRunDisplayIdentityFallbackDoesNotMutateServiceResponse(t *testing.T) {
 	display = runForDisplay(serviceRun, "fallback_eval", "fallback_run")
 	var out bytes.Buffer
 	require.NoError(t, renderRunDetail(&out, display))
-	assert.Contains(t, out.String(), `--eval "declared evaluation" --run service_run`)
+	assert.Contains(t, out.String(), "--eval service_eval --run service_run")
+	assert.NotContains(t, out.String(), `--eval "declared evaluation"`)
 	assert.NotContains(t, out.String(), "fallback")
 }
 
 func TestCompletedConversationWithErroredRowOffersExplicitFilterAtCallSites(t *testing.T) {
 	const response = `{
 		"id":"run_completed","status":"completed","evaluation_level":"conversation",
+		"metadata":{"azd_eval":"mutable-friendly-name"},
 		"data_source":{"type":"jsonl"},"error":null,
 		"result_counts":{"total":1,"passed":0,"failed":0,"errored":1,"skipped":0}
 	}`
@@ -314,6 +318,7 @@ func TestCompletedConversationWithErroredRowOffersExplicitFilterAtCallSites(t *t
 						"--run run_completed --output-file ./run_completed.json")
 					assert.NotContains(t, out.String(), "--failed-only",
 						"an errored conversation has no failed verdict to filter")
+					assert.NotContains(t, out.String(), "--eval mutable-friendly-name")
 				}
 			})
 		}

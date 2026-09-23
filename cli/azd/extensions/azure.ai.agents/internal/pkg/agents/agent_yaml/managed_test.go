@@ -297,8 +297,8 @@ func TestCreatePromptAgentAPIRequest_HarnessSkills(t *testing.T) {
 		t.Fatal("expected a harness block")
 	}
 	want := []agent_api.SkillReference{
-		{Name: "duplicate-check", Version: "3"},
-		{Name: "severity-triage", Version: "1"},
+		{Type: "skill_reference", Name: "duplicate-check", Version: "3"},
+		{Type: "skill_reference", Name: "severity-triage", Version: "1"},
 	}
 	if len(def.Skills) != len(want) {
 		t.Fatalf("definition skills: got %+v, want %+v", def.Skills, want)
@@ -316,7 +316,9 @@ func TestCreatePromptAgentAPIRequest_HarnessSkills(t *testing.T) {
 		t.Fatalf("marshal request: %v", err)
 	}
 	body := string(data)
-	if !strings.Contains(body, `"skills":[{"name":"duplicate-check","version":"3"}`) {
+	if !strings.Contains(body,
+		`"skills":[{"type":"skill_reference","name":"duplicate-check","version":"3"},`+
+			`{"type":"skill_reference","name":"severity-triage","version":"1"}]`) {
 		t.Errorf("versioned top-level skills missing from request: %s", body)
 	}
 	if strings.Contains(body, `"harness":{"type":"github_copilot_preview","skills"`) {
@@ -344,9 +346,16 @@ func TestCreatePromptAgentAPIRequest_AuthoredVersionedSkill(t *testing.T) {
 	if !ok {
 		t.Fatalf("definition: got %T, want agent_api.ManagedAgentDefinition", req.Definition)
 	}
-	want := []agent_api.SkillReference{{Name: "microsoft-foundry", Version: "1"}}
+	want := []agent_api.SkillReference{{Type: "skill_reference", Name: "microsoft-foundry", Version: "1"}}
 	if len(def.Skills) != len(want) || def.Skills[0] != want[0] {
 		t.Fatalf("definition skills: got %+v, want %+v", def.Skills, want)
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	if !strings.Contains(string(data), `"skills":[{"type":"skill_reference","name":"microsoft-foundry","version":"1"}]`) {
+		t.Errorf("authored skill reference missing discriminator or version: %s", data)
 	}
 }
 

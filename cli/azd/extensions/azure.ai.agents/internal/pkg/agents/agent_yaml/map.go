@@ -561,7 +561,11 @@ func PromptAgentSkillReferences(promptAgent PromptAgent) []agent_api.SkillRefere
 			return
 		}
 		seen[key] = len(skills)
-		skills = append(skills, agent_api.SkillReference{Name: name, Version: strings.TrimSpace(version)})
+		skills = append(skills, agent_api.SkillReference{
+			Type:    "skill_reference",
+			Name:    name,
+			Version: strings.TrimSpace(version),
+		})
 	}
 	// Authored pins take precedence; local resolution only fills missing versions.
 	for _, skill := range promptAgent.Skills {

@@ -19,6 +19,7 @@ import (
 )
 
 type preparedEval struct {
+	declared        project.Eval
 	group           project.Eval
 	request         *eval_api.CreateOpenAIEvalRequest
 	schemas         map[string]*eval_api.EvaluatorSummary
@@ -135,13 +136,13 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 				return messages.ReadingEval(group.ID, err)
 			}
 		}
-		group.Evaluators = slices.Clone(group.Evaluators)
+		declared := group
+		group = withCatalogEvaluatorPins(group, cfg)
 		var localEvaluators []string
 		for i := range group.Evaluators {
 			ref := &group.Evaluators[i]
 			if decl, ok := cfg.EvaluatorDeclaration(ref.Evaluator); ok {
 				if ref.Version == "" {
-					ref.Version = decl.Version
 					if decl.CarriesItsRubric() {
 						localEvaluators = append(localEvaluators, decl.Name)
 					}
@@ -166,7 +167,7 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 			return messages.EvalProblem(group.Name, err)
 		}
 		prepared[group.Name] = preparedEval{
-			group: group, request: request, schemas: schemas,
+			declared: declared, group: group, request: request, schemas: schemas,
 			columns: columns[group.Dataset], localEvaluators: localEvaluators,
 		}
 	}
@@ -175,6 +176,21 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 	}
 	r.prepared = prepared
 	return nil
+}
+
+// withCatalogEvaluatorPins resolves only authored pins. A service-resolved
+// latest version is not an edit and must never change an eval's identity.
+func withCatalogEvaluatorPins(group project.Eval, cfg *project.EvalConfig) project.Eval {
+	group.Evaluators = slices.Clone(group.Evaluators)
+	for i := range group.Evaluators {
+		ref := &group.Evaluators[i]
+		if ref.Version == "" {
+			if decl, ok := cfg.EvaluatorDeclaration(ref.Evaluator); ok {
+				ref.Version = decl.Version
+			}
+		}
+	}
+	return group
 }
 
 func validateDatasetTarget(group *project.Eval, available map[string]any) error {

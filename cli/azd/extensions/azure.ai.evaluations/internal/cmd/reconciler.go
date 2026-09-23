@@ -170,6 +170,10 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 	if decided, ok := r.decided[group.Name]; ok {
 		return decided, nil
 	}
+	prepared, validated := r.prepared[group.Name]
+	if validated {
+		group = prepared.group
+	}
 
 	digest, err := project.FingerprintGroup(group)
 	if err != nil {
@@ -186,10 +190,37 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 	definition = fingerprintEra + definition
 	prior := r.ec.privateValue(ctx, project.FingerprintKey("eval", group.Name))
 
+	recreate := substanceChanged(prior, definition, digest)
+	if recreate && validated {
+		legacyDigest, err := project.FingerprintGroup(prepared.declared)
+		if err != nil {
+			return evalDecision{}, err
+		}
+		legacyDefinition, err := project.FingerprintDefinition(prepared.declared)
+		if err != nil {
+			return evalDecision{}, err
+		}
+		if digest != legacyDigest && !substanceChanged(prior, fingerprintEra+legacyDefinition, legacyDigest) {
+			// Earlier builds fingerprinted the reference before inheriting its
+			// catalog pin. Re-baseline an unchanged stored pin without forking
+			// history, but do not mistake a real catalog edit for migration.
+			id := r.ec.scopedValue(ctx, idKey("eval", group.Name), r.scope)
+			if id != "" {
+				remote, err := r.ec.evalClient.GetOpenAIEval(ctx, id)
+				if err != nil && !eval_api.IsNotFound(err) {
+					return evalDecision{}, err
+				}
+				if err == nil {
+					recreate = conflictingEvaluatorPins(remote.TestingCriteria, prepared.request.TestingCriteria)
+				}
+			}
+		}
+	}
+
 	decided := evalDecision{
 		digest:     digest,
 		definition: definition,
-		recreate:   substanceChanged(prior, definition, digest),
+		recreate:   recreate,
 	}
 	if r.decided == nil {
 		r.decided = map[string]evalDecision{}
@@ -880,7 +911,7 @@ func (r *evalReconciler) EnsureEval(
 		// deployed under the name it had before. The environment records the id
 		// against the digest as well, which is what recognizes a rename rather
 		// than reading it as a delete plus an add.
-		adopted, err := r.adoptRenamed(ctx, group, digest)
+		adopted, err := r.adoptRenamed(ctx, group, digest, req.TestingCriteria)
 		if err != nil {
 			return "", false, err
 		}
@@ -897,7 +928,7 @@ func (r *evalReconciler) EnsureEval(
 			// this lookup exists to keep.
 			return "", false, err
 		}
-		if err == nil {
+		if err == nil && (!validated || !conflictingEvaluatorPins(remote.TestingCriteria, req.TestingCriteria)) {
 			// Reusing the eval is not the same as leaving it alone: name and
 			// description are excluded from the digest because they must not
 			// split a history, which makes this the only place an edit to
@@ -927,6 +958,27 @@ func (r *evalReconciler) EnsureEval(
 	return created.ID, true, nil
 }
 
+// conflictingEvaluatorPins repairs state from builds that sent inherited pins
+// but omitted them from fingerprints. Only an actual stored pin disagreement
+// is evidence to recreate; unrelated server enrichment is not compared.
+func conflictingEvaluatorPins(have, want []eval_api.TestingCriterion) bool {
+	pin := func(version string) string {
+		if version == "latest" {
+			return ""
+		}
+		return version
+	}
+	for _, desired := range want {
+		for _, stored := range have {
+			if stored.Name == desired.Name && stored.EvaluatorName == desired.EvaluatorName &&
+				pin(stored.EvaluatorVersion) != pin(desired.EvaluatorVersion) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // adoptRenamed reclaims the eval this declaration used to be called, so a
 // rename keeps the id and every run under it rather than forking the history.
 //
@@ -936,6 +988,7 @@ func (r *evalReconciler) adoptRenamed(
 	ctx context.Context,
 	group project.Eval,
 	digest string,
+	criteria []eval_api.TestingCriterion,
 ) (string, error) {
 	id := r.ec.scopedValue(ctx, digestIDKey(digest), r.scope)
 	if id == "" {
@@ -955,6 +1008,9 @@ func (r *evalReconciler) adoptRenamed(
 			return "", nil
 		}
 		return "", err
+	}
+	if conflictingEvaluatorPins(remote.TestingCriteria, criteria) {
+		return "", nil
 	}
 	r.pushMutable(ctx, id, group, remote)
 	return id, nil

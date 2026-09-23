@@ -83,6 +83,16 @@ func FollowUpCommandOrderFromContext(ctx context.Context) uint64 {
 	return order
 }
 
+// EnsureFollowUpCommandOrder assigns an order when the context has none.
+func EnsureFollowUpCommandOrder(ctx context.Context) context.Context {
+	collector := FollowUpCollectorFromContext(ctx)
+	if collector == nil || FollowUpCommandOrderFromContext(ctx) != 0 {
+		return ctx
+	}
+
+	return WithFollowUpCommandOrder(ctx, collector.NextCommandOrder())
+}
+
 // Add records an explicit follow-up. Empty text retracts that
 // extension's value for this event and layer. Callers must
 // invoke Add only when follow_up was set.

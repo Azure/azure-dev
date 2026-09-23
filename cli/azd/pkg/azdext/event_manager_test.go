@@ -202,6 +202,93 @@ type betaEventStreamRecorder struct {
 	subscriptions chan *v1beta.EventMessage
 }
 
+type controlledBetaEventStream struct {
+	ctx       context.Context
+	requests  chan *v1beta.EventMessage
+	responses chan *v1beta.EventMessage
+}
+
+func (s *controlledBetaEventStream) Send(msg *v1beta.EventMessage) error {
+	select {
+	case s.requests <- msg:
+		return nil
+	case <-s.ctx.Done():
+		return s.ctx.Err()
+	}
+}
+
+func (s *controlledBetaEventStream) Recv() (*v1beta.EventMessage, error) {
+	select {
+	case response := <-s.responses:
+		return response, nil
+	case <-s.ctx.Done():
+		return nil, s.ctx.Err()
+	}
+}
+
+func newControlledPreviewEventManager(
+	t *testing.T,
+) (*previewEventManager, *controlledBetaEventStream) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	stream := &controlledBetaEventStream{
+		ctx:       ctx,
+		requests:  make(chan *v1beta.EventMessage, 8),
+		responses: make(chan *v1beta.EventMessage, 8),
+	}
+	manager := newPreviewEventManager("test-ext", &AzdClient{}, nil)
+	manager.broker = grpcbroker.NewMessageBroker(
+		stream,
+		newBetaEventMessageEnvelope(),
+		"test-ext",
+		nil,
+	)
+
+	receiveDone := make(chan error, 1)
+	go func() {
+		receiveDone <- manager.Receive(ctx)
+	}()
+	require.NoError(t, manager.Ready(ctx))
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-receiveDone:
+		case <-time.After(time.Second):
+			t.Error("preview event manager receive loop did not stop")
+		}
+	})
+
+	return manager, stream
+}
+
+func receiveControlledSubscription(
+	t *testing.T,
+	stream *controlledBetaEventStream,
+) *v1beta.EventMessage {
+	t.Helper()
+	select {
+	case message := <-stream.requests:
+		require.NotNil(t, message.GetSubscribeProjectEvent())
+		require.NotEmpty(t, message.GetRequestId())
+		return message
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for preview event subscription")
+		return nil
+	}
+}
+
+func sendControlledSubscriptionResponse(
+	stream *controlledBetaEventStream,
+	request *v1beta.EventMessage,
+) {
+	stream.responses <- &v1beta.EventMessage{
+		RequestId: request.GetRequestId(),
+		MessageType: &v1beta.EventMessage_SubscribeProjectEventResponse{
+			SubscribeProjectEventResponse: &v1beta.SubscribeProjectEventResponse{},
+		},
+	}
+}
+
 func (r *betaEventStreamRecorder) EventStream(
 	stream grpc.BidiStreamingServer[v1beta.EventMessage, v1beta.EventMessage],
 ) error {
@@ -295,6 +382,76 @@ func TestPreviewEventManager_ConcurrentRegistration(t *testing.T) {
 	<-receiveDone
 }
 
+func TestPreviewEventManager_DistinctRegistrationsAwaitAcknowledgementsIndependently(t *testing.T) {
+	oldTimeout := previewEventRegistrationTimeout
+	previewEventRegistrationTimeout = 10 * time.Second
+	t.Cleanup(func() {
+		previewEventRegistrationTimeout = oldTimeout
+	})
+
+	manager, stream := newControlledPreviewEventManager(t)
+
+	firstCtx, cancelFirst := context.WithCancel(t.Context())
+	defer cancelFirst()
+	firstResult := make(chan error, 1)
+	go func() {
+		firstResult <- manager.AddProjectEventHandler(
+			firstCtx,
+			"postrestore",
+			func(context.Context, *PreviewProjectEventArgs) error {
+				return nil
+			},
+		)
+	}()
+	firstRequest := receiveControlledSubscription(t, stream)
+
+	secondCtx, cancelSecond := context.WithCancel(t.Context())
+	defer cancelSecond()
+	secondResult := make(chan error, 1)
+	go func() {
+		secondResult <- manager.AddProjectEventHandler(
+			secondCtx,
+			"postbuild",
+			func(context.Context, *PreviewProjectEventArgs) error {
+				return nil
+			},
+		)
+	}()
+
+	var secondRequest *v1beta.EventMessage
+	select {
+	case secondRequest = <-stream.requests:
+		require.NotNil(t, secondRequest.GetSubscribeProjectEvent())
+	case <-time.After(2 * time.Second):
+		t.Fatal("second subscription was blocked by the first acknowledgement")
+	}
+	require.NotEqual(t, firstRequest.GetRequestId(), secondRequest.GetRequestId())
+
+	sendControlledSubscriptionResponse(stream, secondRequest)
+	select {
+	case err := <-secondResult:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("second subscription did not complete after its acknowledgement")
+	}
+
+	sendControlledSubscriptionResponse(stream, firstRequest)
+	select {
+	case err := <-firstResult:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("first subscription did not complete after its acknowledgement")
+	}
+}
+
+func TestPreviewEventManager_RegistrationLocksArePerEvent(t *testing.T) {
+	manager := newPreviewEventManager("test-ext", &AzdClient{}, nil)
+
+	first := manager.eventRegistrationLock("postdeploy")
+	require.Same(t, first, manager.eventRegistrationLock("postdeploy"))
+	require.NotSame(t, first, manager.eventRegistrationLock("postbuild"))
+}
+
 func TestPreviewEventManager_RegistrationFailureRollsBackHandler(t *testing.T) {
 	expectedErr := errors.New("send failed")
 
@@ -362,18 +519,21 @@ func TestPreviewEventManager_RegistrationFailureRollsBackHandler(t *testing.T) {
 	}
 }
 
-func TestPreviewEventManager_RegistrationTimeoutReportsUnsupportedHost(t *testing.T) {
+func TestPreviewEventManager_RegistrationTimeoutPreservesReason(t *testing.T) {
 	oldTimeout := previewEventRegistrationTimeout
-	previewEventRegistrationTimeout = time.Millisecond
+	previewEventRegistrationTimeout = 100 * time.Millisecond
 	t.Cleanup(func() {
 		previewEventRegistrationTimeout = oldTimeout
 	})
 
+	sendStarted := make(chan struct{})
 	stream := &MockBidiStreamingClient[
 		*v1beta.EventMessage,
 		*v1beta.EventMessage,
 	]{}
-	stream.On("Send", mock.Anything).Return(nil).Once()
+	stream.On("Send", mock.Anything).Run(func(mock.Arguments) {
+		close(sendStarted)
+	}).Return(nil).Once()
 
 	manager := newPreviewEventManager("test-ext", &AzdClient{}, nil)
 	manager.broker = grpcbroker.NewMessageBroker(
@@ -383,18 +543,78 @@ func TestPreviewEventManager_RegistrationTimeoutReportsUnsupportedHost(t *testin
 		nil,
 	)
 
-	err := manager.AddProjectEventHandler(
-		t.Context(),
-		"postdeploy",
-		func(context.Context, *PreviewProjectEventArgs) error {
-			return nil
-		},
+	result := make(chan error, 1)
+	go func() {
+		result <- manager.AddProjectEventHandler(
+			t.Context(),
+			"postdeploy",
+			func(context.Context, *PreviewProjectEventArgs) error {
+				return nil
+			},
+		)
+	}()
+	select {
+	case <-sendStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("preview event subscription was not sent")
+	}
+	var err error
+	select {
+	case err = <-result:
+	case <-time.After(5 * time.Second):
+		t.Fatal("preview event subscription did not time out")
+	}
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.ErrorContains(t, err, "acknowledgement timed out")
+	require.NotContains(t, err.Error(), "not supported")
+	_, exists := manager.handlers["postdeploy"]
+	require.False(t, exists)
+	stream.AssertExpectations(t)
+}
+
+func TestPreviewEventManager_RegistrationCancellationPreservesReason(t *testing.T) {
+	sendStarted := make(chan struct{})
+	stream := &MockBidiStreamingClient[
+		*v1beta.EventMessage,
+		*v1beta.EventMessage,
+	]{}
+	stream.On("Send", mock.Anything).Run(func(mock.Arguments) {
+		close(sendStarted)
+	}).Return(nil).Once()
+
+	manager := newPreviewEventManager("test-ext", &AzdClient{}, nil)
+	manager.broker = grpcbroker.NewMessageBroker(
+		stream,
+		newBetaEventMessageEnvelope(),
+		"test-ext",
+		nil,
 	)
-	require.EqualError(
-		t,
-		err,
-		"preview event subscription is not supported by this azd host",
-	)
+	ctx, cancel := context.WithCancel(t.Context())
+	result := make(chan error, 1)
+	go func() {
+		result <- manager.AddProjectEventHandler(
+			ctx,
+			"postdeploy",
+			func(context.Context, *PreviewProjectEventArgs) error {
+				return nil
+			},
+		)
+	}()
+
+	select {
+	case <-sendStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("preview event subscription was not sent")
+	}
+	cancel()
+	select {
+	case err := <-result:
+		require.ErrorIs(t, err, context.Canceled)
+		require.NotContains(t, err.Error(), "not supported")
+	case <-time.After(5 * time.Second):
+		t.Fatal("preview event subscription did not return after cancellation")
+	}
+
 	_, exists := manager.handlers["postdeploy"]
 	require.False(t, exists)
 	stream.AssertExpectations(t)
@@ -526,6 +746,48 @@ func TestPreviewEventManager_onInvokeProjectHandler_StructuredError(t *testing.T
 				require.Equal(t, "az", err.GetToolError().GetToolName())
 				require.Equal(t, string(ToolErrorKindMissing), err.GetToolError().GetFailureKind())
 				require.Equal(t, int64(127), err.GetToolError().GetExitCode())
+			},
+		},
+		{
+			name: "service takes precedence over wrapped tool",
+			handlerErr: &ToolError{
+				Message:  "tool wrapper failed",
+				ToolName: "az",
+				Err: &ServiceError{
+					Message:     "service request failed",
+					ErrorCode:   "Unavailable",
+					StatusCode:  503,
+					ServiceName: "example.test",
+				},
+			},
+			assertErr: func(t *testing.T, err *v1beta.ExtensionError) {
+				require.Equal(t, v1beta.ErrorOrigin_ERROR_ORIGIN_SERVICE, err.GetOrigin())
+				require.Equal(t, "service request failed", err.GetMessage())
+				require.NotNil(t, err.GetServiceError())
+				require.Equal(t, "Unavailable", err.GetServiceError().GetErrorCode())
+				require.Equal(t, int32(503), err.GetServiceError().GetStatusCode())
+				require.Nil(t, err.GetToolError())
+			},
+		},
+		{
+			name: "local takes precedence over wrapped tool",
+			handlerErr: &ToolError{
+				Message:  "tool wrapper failed",
+				ToolName: "az",
+				Err: &LocalError{
+					Message:    "local validation failed",
+					Code:       "invalid_setting",
+					Category:   LocalErrorCategoryValidation,
+					CauseTypes: []string{"*example.Cause"},
+				},
+			},
+			assertErr: func(t *testing.T, err *v1beta.ExtensionError) {
+				require.Equal(t, v1beta.ErrorOrigin_ERROR_ORIGIN_LOCAL, err.GetOrigin())
+				require.Equal(t, "local validation failed", err.GetMessage())
+				require.NotNil(t, err.GetLocalError())
+				require.Equal(t, "invalid_setting", err.GetLocalError().GetCode())
+				require.Equal(t, []string{"*example.Cause"}, err.GetLocalError().GetCauseTypes())
+				require.Nil(t, err.GetToolError())
 			},
 		},
 	}

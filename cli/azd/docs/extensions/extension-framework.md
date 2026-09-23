@@ -235,8 +235,9 @@ the beta `FollowUpService` and invocation IDs. Published extensions should set
 for the current release line, use `>=1.35.0`. This filters versions during
 install and update, but does not prevent already-installed or non-registry
 extensions from running on older hosts. Preview event registration requires a
-host acknowledgement, so an older host that does not support this protocol
-fails registration before the extension becomes ready.
+host acknowledgement before the extension becomes ready. A registration
+timeout can also indicate a slow host or connection; it does not by itself
+prove that the host lacks support.
 
 azd appends committed text to the parent command's human-readable completion
 message. It combines contributions from multiple extensions and does not

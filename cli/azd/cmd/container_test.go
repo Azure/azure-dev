@@ -518,11 +518,26 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 				&cobra.Command{
 					Use: "build",
 					RunE: func(cmd *cobra.Command, args []string) error {
+						ctx := guidance.EnsureFollowUpCommandOrder(cmd.Context())
+						order := guidance.FollowUpCommandOrderFromContext(ctx)
 						commandOrders = append(
 							commandOrders,
-							guidance.FollowUpCommandOrderFromContext(cmd.Context()),
+							order,
 						)
-						return adapter.ExecuteContext(cmd.Context(), []string{"restore"})
+						collector := guidance.FollowUpCollectorFromContext(ctx)
+						collector.Add(guidance.FollowUp{
+							ExtensionID:  "test.extension",
+							CommandOrder: order,
+							EventName:    "postrestore",
+							Text:         "restore",
+						})
+						collector.Add(guidance.FollowUp{
+							ExtensionID:  "test.extension",
+							CommandOrder: order,
+							EventName:    "postbuild",
+							Text:         "build",
+						})
+						return adapter.ExecuteContext(ctx, []string{"restore"})
 					},
 				},
 				&cobra.Command{
@@ -535,18 +550,39 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 						return nil
 					},
 				},
+				&cobra.Command{
+					Use: "deploy",
+					RunE: func(cmd *cobra.Command, args []string) error {
+						order := guidance.FollowUpCommandOrderFromContext(cmd.Context())
+						commandOrders = append(commandOrders, order)
+						guidance.FollowUpCollectorFromContext(cmd.Context()).Add(
+							guidance.FollowUp{
+								ExtensionID:  "test.extension",
+								CommandOrder: order,
+								EventName:    "postdeploy",
+								Text:         "deploy",
+							},
+						)
+						return nil
+					},
+				},
 			)
 			return rootCmd
 		}
 
 		adapter = &workflowCmdAdapter{newCommand: newCommand}
+		collector := guidance.NewFollowUpCollector()
 		ctx := guidance.WithFollowUpCollector(
 			context.WithoutCancel(t.Context()),
-			guidance.NewFollowUpCollector(),
+			collector,
 		)
 
 		require.NoError(t, adapter.ExecuteContext(ctx, []string{"build"}))
-		require.Equal(t, []uint64{1, 1}, commandOrders)
+		require.Equal(t, "build", collector.Text())
+
+		require.NoError(t, adapter.ExecuteContext(ctx, []string{"deploy"}))
+		require.Equal(t, []uint64{1, 1, 2}, commandOrders)
+		require.Equal(t, "deploy", collector.Text())
 	})
 }
 

@@ -255,8 +255,9 @@ requiredAzdVersion: ">=1.35.0"
 This filters extension versions during install and update. It does not prevent
 already-installed extensions or extensions from non-registry sources from
 running on an older host. Preview event registration requires an acknowledgement
-from the host; an older host that does not support this protocol fails
-registration before the extension becomes ready. See [Extension Resolution and
+from the host before the extension becomes ready. A registration timeout can
+also indicate a slow host or connection; it does not by itself prove that the
+host lacks support. See [Extension Resolution and
 Versioning](./extension-resolution-and-versioning.md#azd-version-compatibility)
 for the compatibility behavior.
 

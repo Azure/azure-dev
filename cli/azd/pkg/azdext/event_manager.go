@@ -32,13 +32,14 @@ type EventManager struct {
 }
 
 type previewEventManager struct {
-	extensionId    string
-	client         *AzdClient
-	broker         *grpcbroker.MessageBroker[v1beta.EventMessage]
-	handlers       map[string]PreviewProjectEventHandler
-	brokerLogger   *log.Logger
-	mu             sync.Mutex
-	registrationMu sync.Mutex
+	extensionId         string
+	client              *AzdClient
+	broker              *grpcbroker.MessageBroker[v1beta.EventMessage]
+	handlers            map[string]PreviewProjectEventHandler
+	brokerLogger        *log.Logger
+	mu                  sync.Mutex
+	registrationLocksMu sync.Mutex
+	registrationLocks   map[string]*sync.Mutex
 }
 
 var previewEventRegistrationTimeout = 5 * time.Second
@@ -49,10 +50,11 @@ func newPreviewEventManager(
 	brokerLogger *log.Logger,
 ) *previewEventManager {
 	return &previewEventManager{
-		extensionId:  extensionId,
-		client:       client,
-		handlers:     make(map[string]PreviewProjectEventHandler),
-		brokerLogger: brokerLogger,
+		extensionId:       extensionId,
+		client:            client,
+		handlers:          make(map[string]PreviewProjectEventHandler),
+		brokerLogger:      brokerLogger,
+		registrationLocks: make(map[string]*sync.Mutex),
 	}
 }
 
@@ -117,13 +119,28 @@ func (em *previewEventManager) Ready(ctx context.Context) error {
 	return broker.Ready(ctx)
 }
 
+func (em *previewEventManager) eventRegistrationLock(eventName string) *sync.Mutex {
+	em.registrationLocksMu.Lock()
+	defer em.registrationLocksMu.Unlock()
+	if em.registrationLocks == nil {
+		em.registrationLocks = make(map[string]*sync.Mutex)
+	}
+	lock := em.registrationLocks[eventName]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		em.registrationLocks[eventName] = lock
+	}
+	return lock
+}
+
 func (em *previewEventManager) AddProjectEventHandler(
 	ctx context.Context,
 	eventName string,
 	handler PreviewProjectEventHandler,
 ) error {
-	em.registrationMu.Lock()
-	defer em.registrationMu.Unlock()
+	registrationLock := em.eventRegistrationLock(eventName)
+	registrationLock.Lock()
+	defer registrationLock.Unlock()
 
 	if err := em.ensureStream(ctx); err != nil {
 		return err
@@ -169,9 +186,13 @@ func (em *previewEventManager) AddProjectEventHandler(
 			delete(em.handlers, eventName)
 		}
 		em.mu.Unlock()
-		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+		if errors.Is(err, context.DeadlineExceeded) &&
+			errors.Is(registrationCtx.Err(), context.DeadlineExceeded) &&
+			ctx.Err() == nil {
 			return fmt.Errorf(
-				"preview event subscription is not supported by this azd host",
+				"preview event subscription acknowledgement timed out for %q: %w",
+				eventName,
+				err,
 			)
 		}
 		return fmt.Errorf("preview event subscription failed: %w", err)
@@ -241,17 +262,19 @@ func wrapBetaError(err error) *v1beta.ExtensionError {
 					betaLocalErr.CauseTypes = errorchain.NormalizeCauseTypes(localErr.CauseTypes)
 				}
 			}
-			if toolErr, ok := errors.AsType[*ToolError](err); ok {
-				var exitCode *int64
-				if toolErr.ExitCode != nil {
-					exitCode = new(int64(*toolErr.ExitCode))
-				}
-				betaError.Source = &v1beta.ExtensionError_ToolError{
-					ToolError: &v1beta.ToolErrorDetail{
-						ToolName:    toolErr.ToolName,
-						FailureKind: string(toolErr.Kind),
-						ExitCode:    exitCode,
-					},
+			if stableError.GetOrigin() == ErrorOrigin_ERROR_ORIGIN_TOOL {
+				if toolErr, ok := errors.AsType[*ToolError](err); ok {
+					var exitCode *int64
+					if toolErr.ExitCode != nil {
+						exitCode = new(int64(*toolErr.ExitCode))
+					}
+					betaError.Source = &v1beta.ExtensionError_ToolError{
+						ToolError: &v1beta.ToolErrorDetail{
+							ToolName:    toolErr.ToolName,
+							FailureKind: string(toolErr.Kind),
+							ExitCode:    exitCode,
+						},
+					}
 				}
 			}
 			return betaError

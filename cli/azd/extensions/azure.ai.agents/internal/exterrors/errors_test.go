@@ -49,6 +49,15 @@ func TestServiceFromAzure(t *testing.T) {
 	assert.Equal(t, "sample.services.ai.azure.com", serviceErr.ServiceName)
 }
 
+func TestServiceFromAzureCreateConversation(t *testing.T) {
+	responseErr := &azcore.ResponseError{StatusCode: http.StatusBadRequest, ErrorCode: "InvalidRequest"}
+	result := ServiceFromAzure(responseErr, OpCreateConversation)
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](result)
+	require.True(t, ok)
+	assert.Equal(t, "create_conversation.InvalidRequest", serviceErr.ErrorCode)
+}
+
 func TestServiceFromAzurePreservesStructuredError(t *testing.T) {
 	expected := &azdext.LocalError{
 		Message:  "invalid input",

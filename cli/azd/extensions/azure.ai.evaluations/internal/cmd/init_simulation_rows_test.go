@@ -4,16 +4,21 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func simulationInitArgs(dataset string) []string {
@@ -69,8 +74,15 @@ func TestInitSimulationRefusesLocalRowsBeforeAnyWrites(t *testing.T) {
 		{"boolean turns", `{"test_case_description":"help","desired_num_turns":true}`, "positive whole number"},
 		{"over explicit cap", `{"test_case_description":"help","desired_num_turns":21}`, "max_turns is 20"},
 		{"completed messages", `{"test_case_description":"help","messages":[]}`, `carries "messages"`},
+		{"query field", `{"test_case_description":"help","query":"hello"}`, `carries "query"`},
+		{"empty query", `{"test_case_description":"help","query":""}`, `carries "query"`},
+		{"null query", `{"test_case_description":"help","query":null}`, `carries "query"`},
+		{"response field", `{"test_case_description":"help","response":"hi"}`, `carries "response"`},
+		{"empty response", `{"test_case_description":"help","response":""}`, `carries "response"`},
+		{"null response", `{"test_case_description":"help","response":null}`, `carries "response"`},
 		{"late bad row", "\n{\"test_case_description\":\"help\"}\n\n{\"test_case_description\":\"\"}\n", "row 2"},
 		{"mixed shapes", "{\"test_case_description\":\"help\"}\n{\"messages\":[]}\n", `row 2 carries "messages"`},
+		{"mixed turn rows", "{\"test_case_description\":\"help\"}\n{\"query\":\"hi\"}\n", `row 2 carries "query"`},
 		{"malformed", `{"test_case_description":`, "not valid JSON"},
 		{"empty", "\n \n", "no rows"},
 		{"empty object", `{}`, "empty object"},
@@ -169,17 +181,168 @@ func TestInitSimulationLocalRowsPreserveValidBounds(t *testing.T) {
 
 func TestInitSimulationValidatesAfterInteractiveModeAndModel(t *testing.T) {
 	t.Setenv("AZD_NO_PROMPT", "false")
-	prompts := &conversationPromptServer{mode: 1}
+	prompts := &seedCorrectionPromptServer{conversationPromptServer: conversationPromptServer{mode: 1}}
 	h := newInitHarness(t, nil, prompts)
 	require.NoError(t, os.WriteFile(h.seedRows, []byte(`{"test_case_description":""}`), 0o600))
 	before := initFileSnapshot(t, h.dir)
-	_, err := executeConversationInit(t, "--name", "simulation", "--source", "dataset",
+	text, err := executeConversationInit(t, "--name", "simulation", "--source", "dataset",
 		"--evaluation-level", "conversation", "--target", "agent", "--dataset", h.seedRows, "--judge-model", "judge")
-	require.ErrorContains(t, err, "empty or non-text")
+	require.Error(t, err)
+	assert.True(t, cancelled(err))
+	assert.Contains(t, text, "empty or non-text")
 	prompts.mu.Lock()
 	defer prompts.mu.Unlock()
 	require.Len(t, prompts.models, 1, "the simulator was chosen before validating the seed rows")
 	assert.Len(t, prompts.messages, 1, "the mode picker ran, but no Add confirmation")
+	assert.Len(t, prompts.selectCounts, 1, "invalid rows offered correction before cancellation")
+	assert.Equal(t, before, initFileSnapshot(t, h.dir))
+}
+
+type seedCorrectionPromptServer struct {
+	conversationPromptServer
+	datasets     []string
+	selectCounts []int
+}
+
+func (s *seedCorrectionPromptServer) Prompt(
+	ctx context.Context, req *azdext.PromptRequest,
+) (*azdext.PromptResponse, error) {
+	if req.GetOptions().GetMessage() != messages.EnterDatasetPrompt() {
+		return s.conversationPromptServer.Prompt(ctx, req)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.selectCounts = append(s.selectCounts, len(s.messages))
+	if len(s.datasets) == 0 {
+		return nil, status.Error(codes.Canceled, "cancelled by reader")
+	}
+	answer := s.datasets[0]
+	s.datasets = s.datasets[1:]
+	return &azdext.PromptResponse{Value: answer}, nil
+}
+
+func TestInitSimulationCorrectsInvalidDatasetBeforeConfirmation(t *testing.T) {
+	for _, input := range []string{"explicit path", "prompted path", "declared alias", "default declaration"} {
+		t.Run(input, func(t *testing.T) {
+			t.Setenv("AZD_NO_PROMPT", "false")
+			prompts := &seedCorrectionPromptServer{}
+			h := newInitHarness(t, nil, prompts)
+			require.NoError(t, os.WriteFile(h.seedRows, []byte(`{"test_case_description":" "}`), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(h.dir, "zero.jsonl"),
+				[]byte(`{"test_case_description":"help","desired_num_turns":0}`), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(h.dir, "mixed.jsonl"),
+				[]byte(`{"test_case_description":"help","query":null}`), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(h.dir, "corrected.jsonl"),
+				[]byte(`{"test_case_description":"help","desired_num_turns":1}`), 0o600))
+
+			dir := filepath.Join(h.dir, "evals")
+			require.NoError(t, os.MkdirAll(dir, 0o700))
+			body := "# Keep my catalogue\nevaluators: []\n"
+			dataset := "./seed.jsonl"
+			if input == "declared alias" || input == "default declaration" {
+				dataset = "seeds"
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "parts"), 0o700))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "parts", "dataset.yaml"),
+					[]byte("file: ../../seed.jsonl\n"), 0o600))
+				body += "datasets:\n  - name: seeds\n    $ref: ./parts/dataset.yaml\n"
+			}
+			path := filepath.Join(dir, project.EvalConfigBase)
+			require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+			prompts.datasets = []string{"./zero.jsonl", "./mixed.jsonl", "./corrected.jsonl"}
+			args := []string{"--name", "simulation", "--conversation-mode", "simulation",
+				"--target", "agent", "--simulation-model", "simulator", "--judge-model", "judge"}
+			if input == "prompted path" || input == "default declaration" {
+				if input == "prompted path" {
+					prompts.datasets = append([]string{"./seed.jsonl"}, prompts.datasets...)
+				}
+			} else {
+				args = append(args, "--dataset", dataset)
+			}
+			args = append(args, "--num-conversations", "3", "--max-turns", "5")
+			text, err := executeConversationInit(t, args...)
+			require.NoError(t, err)
+			assert.Contains(t, text, "empty or non-text")
+			assert.Contains(t, text, "positive whole number")
+			assert.Contains(t, text, `carries "query"`)
+			assert.Contains(t, text, "Press Ctrl+C to cancel")
+			cfg, err := project.OpenEvalConfig(dir)
+			require.NoError(t, err)
+			require.Len(t, cfg.Evals, 1)
+			group := cfg.Evals[0]
+			assert.Equal(t, "simulation", group.Name)
+			assert.Equal(t, "corrected", group.Dataset)
+			require.NotNil(t, group.Simulation)
+			assert.Equal(t, &project.Simulation{Model: "simulator", NumConversations: 3, MaxTurns: 5},
+				group.Simulation)
+			assert.Equal(t, "judge", group.Evaluators[0].InitializationParameters["model"])
+			after, err := os.ReadFile(path)
+			require.NoError(t, err)
+			assert.Contains(t, string(after), body, "correction must not replace the original declaration")
+			prompts.mu.Lock()
+			defer prompts.mu.Unlock()
+			assert.Empty(t, prompts.models, "correction must retain independent model choices")
+			assert.Empty(t, prompts.datasets)
+			for _, count := range prompts.selectCounts {
+				assert.Zero(t, count, "no confirmation before every correction was validated")
+			}
+			assert.Len(t, prompts.messages, 1, "only the final valid scaffold reaches confirmation")
+		})
+	}
+}
+
+func TestInitSimulationCorrectionCancellationPreservesFiles(t *testing.T) {
+	for _, cancelAt := range []string{"correction", "confirmation"} {
+		t.Run(cancelAt, func(t *testing.T) {
+			t.Setenv("AZD_NO_PROMPT", "false")
+			prompts := &seedCorrectionPromptServer{conversationPromptServer: conversationPromptServer{decision: 2}}
+			h := newInitHarness(t, nil, prompts)
+			require.NoError(t, os.WriteFile(h.seedRows, []byte(`{"test_case_description":" "}`), 0o600))
+			private := filepath.Join(h.dir, ".azure", "dev")
+			require.NoError(t, os.MkdirAll(private, 0o700))
+			require.NoError(t, os.WriteFile(filepath.Join(private, ".env"), []byte("KEEP=unchanged\n"), 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(private, "config.json"), []byte(`{"keep":true}`), 0o600))
+			if cancelAt == "confirmation" {
+				require.NoError(t, os.WriteFile(filepath.Join(h.dir, "valid.jsonl"),
+					[]byte(`{"test_case_description":"help"}`), 0o600))
+				prompts.datasets = []string{"./valid.jsonl"}
+			}
+			before := initFileSnapshot(t, h.dir)
+			text, err := executeConversationInit(t, simulationInitArgs("./seed.jsonl")...)
+			prompts.mu.Lock()
+			defer prompts.mu.Unlock()
+			if cancelAt == "correction" {
+				require.Error(t, err)
+				assert.True(t, cancelled(err))
+				assert.Empty(t, prompts.messages)
+			} else {
+				require.NoError(t, err)
+				assert.Contains(t, text, messages.ScaffoldCancelled())
+				assert.Len(t, prompts.messages, 1)
+			}
+			assert.Contains(t, text, "empty or non-text")
+			assert.Zero(t, h.project.wiringAttempts())
+			assert.Empty(t, h.usage.reported())
+			assert.Equal(t, before, initFileSnapshot(t, h.dir))
+		})
+	}
+}
+
+func TestInitSimulationCorrectionRetriesAreBounded(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "false")
+	prompts := &seedCorrectionPromptServer{}
+	h := newInitHarness(t, nil, prompts)
+	require.NoError(t, os.WriteFile(h.seedRows, []byte(`{"test_case_description":"help","desired_num_turns":0}`), 0o600))
+	for range 8 {
+		prompts.datasets = append(prompts.datasets, "./seed.jsonl")
+	}
+	before := initFileSnapshot(t, h.dir)
+	_, err := executeConversationInit(t, simulationInitArgs("./seed.jsonl")...)
+	require.ErrorContains(t, err, "positive whole number")
+	prompts.mu.Lock()
+	defer prompts.mu.Unlock()
+	assert.Len(t, prompts.selectCounts, 8)
+	assert.Empty(t, prompts.messages, "never confirm invalid rows")
+	assert.Zero(t, h.project.wiringAttempts())
 	assert.Equal(t, before, initFileSnapshot(t, h.dir))
 }
 

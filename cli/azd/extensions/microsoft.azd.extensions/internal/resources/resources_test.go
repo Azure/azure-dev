@@ -64,7 +64,7 @@ func TestNonGoScaffoldIncludesEventProtocol(t *testing.T) {
 		{
 			language: "dotnet",
 			file:     "languages/dotnet/EventManager.cs",
-			contains: "new ProjectEventArgs(",
+			contains: "new ProjectEventArgs",
 		},
 		{
 			language: "javascript",
@@ -88,6 +88,17 @@ func TestNonGoScaffoldIncludesEventProtocol(t *testing.T) {
 			require.Contains(t, string(contents), test.contains)
 		})
 	}
+
+	dotnetEventManager, err := Languages.ReadFile("languages/dotnet/EventManager.cs")
+	require.NoError(t, err)
+	dotnetEventManagerContents := string(dotnetEventManager)
+	require.NotRegexp(t, regexp.MustCompile(`\bProjectEventArgs\s*\(`), dotnetEventManagerContents,
+		"the .NET scaffold must retain the implicit parameterless constructor")
+	require.Regexp(t,
+		regexp.MustCompile(`(?s)var eventArgs = new ProjectEventArgs\s*\{\s*Project = invokeMsg\.Project\s*\};`),
+		dotnetEventManagerContents,
+		"project event handlers must receive the invoked project",
+	)
 
 	for _, file := range []string{
 		"languages/javascript/generated/proto/errors_pb.js",

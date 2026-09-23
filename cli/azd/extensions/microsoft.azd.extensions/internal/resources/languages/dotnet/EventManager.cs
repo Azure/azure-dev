@@ -10,10 +10,6 @@ namespace Microsoft.Azd
     public class ProjectEventArgs
     {
         public ProjectConfig Project { get; set; } = default!;
-        public ProjectEventArgs(ProjectConfig project)
-        {
-            Project = project;
-        }
     }
 
     public class ServiceEventArgs
@@ -171,7 +167,10 @@ namespace Microsoft.Azd
             {
                 var status = "completed";
                 var message = "";
-                var eventArgs = new ProjectEventArgs(invokeMsg.Project);
+                var eventArgs = new ProjectEventArgs
+                {
+                    Project = invokeMsg.Project
+                };
 
                 try
                 {

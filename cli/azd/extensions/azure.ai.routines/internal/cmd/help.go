@@ -5,8 +5,10 @@ package cmd
 
 const routineHelpFooter = `Environments & Environment Variables:
   An azd environment stores deployment values in .azure/<environment>/.env.
-  Use 'azd env select <name>' to select one, or --environment <name> (-e)
-  for a command. Values may contain secrets; do not share the output of
+  Use 'azd env select <name>' to select the environment for endpoint lookup.
+  --environment (-e) does not override that persisted selection; use
+  --project-endpoint <endpoint> to override endpoint discovery for a command.
+  Values may contain secrets; do not share the output of
   'azd env get-values' or commit .azure to source control.
 
   --project-endpoint overrides endpoint discovery. Otherwise, routine

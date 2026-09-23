@@ -7,7 +7,9 @@ const projectHelpFooter = `Environments & Environment Variables:
   An azd environment is a named deployment configuration, such as dev or prod.
   Its values are stored locally in .azure/<environment>/.env.
   Use 'azd env new <name>' to create one and 'azd env select <name>' to select it.
-  Use --environment <name> (-e) to select an environment for a command.
+  --environment <name> (-e) selects the environment for project add and
+  deployment add. Project show instead reads the persisted selection from
+  'azd env select <name>'; --environment does not override its endpoint lookup.
 
   'azd ai project show' resolves FOUNDRY_PROJECT_ENDPOINT in the active
   azd environment, then the default saved by 'azd ai project set <endpoint>'

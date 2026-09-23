@@ -26,4 +26,4 @@ Examples
     azd ai project add --project-id "<project-resource-id>"
 
   Eject the configured infrastructure as Bicep
-    azd ai project add --infra bicep
+    azd ai project add --infra=bicep

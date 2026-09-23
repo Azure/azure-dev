@@ -91,7 +91,7 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
   azd ai project add --project-id "<project-resource-id>"
 
   # Eject the configured infrastructure as Bicep
-  azd ai project add --infra bicep`,
+  azd ai project add --infra=bicep`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			flags.output = extCtx.OutputFormat

@@ -3,7 +3,7 @@
   "releaseTag": "extensions-2026-09-22-37",
   "sourceCommit": null,
   "sourceNote": "Build37 baseline; publisher lists PRs 10116, 10113 and 10102 but does not attest an exact build commit.",
-  "sourceVerificationCommit": "e6f86f9605511c8448bff8114275ac1a160cf479",
+  "sourceVerificationCommit": "c5be500196d66bb4326bb62700a1dde83c1f92a5",
   "validationBaseline": "0361f347eb28c5f2e756225115318393b1dad28a",
   "conversationModes": false,
   "registrySha256": "f65d4a209f665076a5f927b6fdd791bd431c8d5bcb09cf68d3ff20a5668c57b1",

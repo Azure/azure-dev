@@ -374,6 +374,7 @@ func (a *initAction) Run() error {
 		evaluators:      evaluators,
 		judgeModel:      judgeModel,
 		evalDir:         evalDir,
+		configPath:      configPath,
 		cfg:             cfg,
 	})
 	if err != nil {
@@ -704,7 +705,9 @@ type scaffoldInput struct {
 	evaluators      []string
 	judgeModel      string
 	evalDir         string
-	cfg             *project.EvalConfig
+	// configPath retains an explicit filename separately from the artifact directory.
+	configPath string
+	cfg        *project.EvalConfig
 }
 
 // scaffold is what `init` added, and what it should suggest doing next.
@@ -782,7 +785,7 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 				// A path that names nothing is the same broken reference a
 				// generated declaration used to leave behind: the config passes
 				// validation and the deploy fails on a file that never existed.
-				decl, err := resolveInitLocalDataset(in.evalDir, in.dataset, cfg)
+				decl, err := resolveInitLocalDataset(cmp.Or(in.configPath, in.evalDir), in.dataset, cfg)
 				if err != nil {
 					return scaffold{}, err
 				}

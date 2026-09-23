@@ -141,6 +141,8 @@ the supplied path. Interactive init asks for another dataset; use a unique
 filename to add the new file, or the existing dataset's name or file path to
 reuse it. Equivalent paths to the same file are accepted, preserving references,
 version pins, and other authored metadata.
+When `--path` names a configuration file, dataset lookup uses that exact file,
+while artifact paths remain relative to its directory.
 Registered datasets with no local file are not fetched or checked by init.
 The evaluator picker excludes custom evaluators whose local
 `supported_evaluation_levels` explicitly excludes the selected level; an explicit

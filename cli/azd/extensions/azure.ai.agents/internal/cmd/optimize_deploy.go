@@ -20,6 +20,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/optimize_api"
+	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -172,7 +173,7 @@ func (a *OptimizeDeployAction) runDirect(
 		agentName,
 		createReq,
 		DefaultAgentAPIVersion,
-		optimizeDeployAgentHeaders(latestDef),
+		optimizeDeployAgentHeaders(latestDef, projectEndpoint),
 	)
 	if err != nil {
 		// Check for reserved env var error (AGENT_* and FOUNDRY_* are platform-reserved).
@@ -212,14 +213,27 @@ func (a *OptimizeDeployAction) runDirect(
 	return nil
 }
 
-func optimizeDeployAgentHeaders(def map[string]any) map[string]string {
-	if stringFromMap(def, "kind") != string(agent_api.AgentKindPrompt) ||
-		harnessTypeFromMap(def) != agent_api.ManagedAgentHarnessGitHubCopilot {
+func optimizeDeployAgentHeaders(def map[string]any, projectEndpoint string) map[string]string {
+	if stringFromMap(def, "kind") != string(agent_api.AgentKindPrompt) {
 		return nil
 	}
-	return map[string]string{
-		"Foundry-Features": agent_api.GitHubCopilotPreviewFeature,
+
+	settings := &projectpkg.PromptAgentSettings{ProjectEndpoint: projectEndpoint}
+	headers := map[string]string{
+		"x-model-endpoint": settings.EffectiveModelEndpoint(),
 	}
+
+	var features []string
+	if harnessTypeFromMap(def) == agent_api.ManagedAgentHarnessGitHubCopilot {
+		features = append(features, agent_api.GitHubCopilotPreviewFeature)
+	}
+	if skills, ok := def["skills"].([]any); ok && len(skills) > 0 {
+		features = append(features, agent_api.SkillsPreviewFeature)
+	}
+	if len(features) > 0 {
+		headers["Foundry-Features"] = strings.Join(features, ",")
+	}
+	return headers
 }
 
 // upsertAgentYamlEnvVar reads the agent.yaml file, adds or updates the specified

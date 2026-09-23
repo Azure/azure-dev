@@ -98,6 +98,9 @@ const DigitalWorkerPreviewFeature = "DigitalWorker=V1Preview"
 // preview GitHub Copilot harness contract.
 const GitHubCopilotPreviewFeature = "GitHubCopilot=V1Preview"
 
+// SkillsPreviewFeature opts prompt agent operations into the preview skills contract.
+const SkillsPreviewFeature = "Skills=V1Preview"
+
 func setDigitalWorkerPreviewFeature(req *policy.Request) {
 	req.Raw().Header.Set("Foundry-Features", DigitalWorkerPreviewFeature)
 }

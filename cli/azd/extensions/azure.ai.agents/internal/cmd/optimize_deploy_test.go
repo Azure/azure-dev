@@ -72,6 +72,9 @@ func TestOptimizeCommand_HasDeploySubCommand(t *testing.T) {
 }
 
 func TestOptimizeDeployAgentHeaders(t *testing.T) {
+	const projectEndpoint = "https://account.services.ai.azure.com/api/projects/test-project"
+	const modelEndpoint = "https://account.services.ai.azure.com"
+
 	tests := []struct {
 		name       string
 		definition map[string]any
@@ -85,17 +88,47 @@ func TestOptimizeDeployAgentHeaders(t *testing.T) {
 			},
 			expected: map[string]string{
 				"Foundry-Features": agent_api.GitHubCopilotPreviewFeature,
+				"x-model-endpoint": modelEndpoint,
 			},
 		},
 		{
 			name:       "plain prompt agent",
 			definition: map[string]any{"kind": "prompt"},
+			expected: map[string]string{
+				"x-model-endpoint": modelEndpoint,
+			},
+		},
+		{
+			name: "plain prompt agent with skills",
+			definition: map[string]any{
+				"kind":   "prompt",
+				"skills": []any{map[string]any{"name": "skill", "version": "1"}},
+			},
+			expected: map[string]string{
+				"Foundry-Features": agent_api.SkillsPreviewFeature,
+				"x-model-endpoint": modelEndpoint,
+			},
+		},
+		{
+			name: "managed prompt agent with skills",
+			definition: map[string]any{
+				"kind":    "prompt",
+				"harness": map[string]any{"type": agent_api.ManagedAgentHarnessGitHubCopilot},
+				"skills":  []any{map[string]any{"name": "skill", "version": "1"}},
+			},
+			expected: map[string]string{
+				"Foundry-Features": agent_api.GitHubCopilotPreviewFeature + "," + agent_api.SkillsPreviewFeature,
+				"x-model-endpoint": modelEndpoint,
+			},
 		},
 		{
 			name: "other harness",
 			definition: map[string]any{
 				"kind":    "prompt",
 				"harness": map[string]any{"type": "future_harness"},
+			},
+			expected: map[string]string{
+				"x-model-endpoint": modelEndpoint,
 			},
 		},
 		{
@@ -109,7 +142,7 @@ func TestOptimizeDeployAgentHeaders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.expected, optimizeDeployAgentHeaders(tt.definition))
+			require.Equal(t, tt.expected, optimizeDeployAgentHeaders(tt.definition, projectEndpoint))
 		})
 	}
 }

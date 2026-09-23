@@ -457,6 +457,92 @@ var _ = Report{Attributes: map[string]string{"undeclared": "value"}}
 	require.Contains(t, joined, "type Report)")
 }
 
+// --- Telemetry sink calls must pass an inline payload literal ---
+
+// The canonical emission passes an inline payload literal to ReportUsage, so its
+// keys are scanned and no diagnostic is produced.
+func TestScanAcceptsInlineSinkPayload(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import (
+	"context"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+)
+
+func emit(ctx context.Context, telemetry azdext.TelemetryServiceClient) {
+	_, _ = telemetry.ReportUsage(ctx, &azdext.ReportUsageRequest{
+		EventName:  "agent.context.resolved",
+		Attributes: map[string]string{"agent.kind": "hosted"},
+	})
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, diagnostics)
+	require.Equal(t, []string{"agent.kind"}, usageKeys(usages))
+}
+
+// A payload reaching ReportUsage as a parameter carries no scanned literal, so the
+// host would emit keys that governance never saw; the sink call is rejected.
+func TestScanRejectsParameterSinkPayload(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import (
+	"context"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+)
+
+func emit(ctx context.Context, telemetry azdext.TelemetryServiceClient, req *azdext.ReportUsageRequest) {
+	_, _ = telemetry.ReportUsage(ctx, req)
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "inline keyed")
+}
+
+// A payload decoded into an empty request smuggles dynamic keys the scanner cannot
+// see, so the ReportUsage call that emits it is rejected even though the empty
+// literal itself declares nothing.
+func TestScanRejectsDecodedSinkPayload(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeExtensionSource(t, root, "contoso.agent/internal/cmd/telemetry.go", `package cmd
+
+import (
+	"context"
+	"encoding/json"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+)
+
+func emit(ctx context.Context, telemetry azdext.TelemetryServiceClient, data []byte) {
+	req := &azdext.ReportUsageRequest{}
+	_ = json.Unmarshal(data, req)
+	_, _ = telemetry.ReportUsage(ctx, req)
+}
+`)
+
+	usages, diagnostics := scanExtensionTelemetry(root)
+
+	require.Empty(t, usages)
+	require.Len(t, diagnostics, 1)
+	require.Contains(t, diagnostics[0], "inline keyed")
+}
+
 // --- Non-telemetry constructs are ignored ---
 
 // A struct that merely has an Attributes field is not a telemetry payload, so its

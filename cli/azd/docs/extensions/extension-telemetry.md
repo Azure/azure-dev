@@ -178,7 +178,12 @@ Generic container literals, type-elided literals that carry an `Attributes`
 entry, and telemetry payload type names — aliases or defined types, including
 cross-package re-exports — are not supported in packages that define extension
 telemetry; a payload type name is rejected at its declaration. Use a concrete
-keyed telemetry payload literal instead. Run the validation from `cli/azd`:
+keyed telemetry payload literal instead. Pass the payload to `ReportUsage` as an
+inline literal built at the call, for example
+`telemetry.ReportUsage(ctx, &azdext.ReportUsageRequest{Attributes: ...})`. A
+payload reaching the sink as a variable, parameter, or decoded value is rejected,
+because the host emits every entry in its `Attributes` map and only an inline
+literal has its keys scanned. Run the validation from `cli/azd`:
 
 ```bash
 go test ./extensions/telemetry

@@ -161,6 +161,15 @@ func scanExtensionTelemetry(extensionRoot string) ([]telemetryUsage, []string) {
 				case *ast.GenDecl:
 					diagnostics = append(diagnostics, scanPayloadTypeDeclarations(
 						fset, extensionRoot, source, pkg, value)...)
+				case *ast.CallExpr:
+					if isTelemetrySinkCall(value, source) && !sinkPayloadIsInlineLiteral(value, source) {
+						diagnostics = append(diagnostics, fmt.Sprintf(
+							"%s:%d: pass the telemetry payload to ReportUsage as an inline keyed "+
+								"literal so its attribute keys are scanned; a variable, parameter, or "+
+								"decoded payload emits keys that governance cannot see",
+							displayPath(extensionRoot, source.path),
+							fset.Position(value.Pos()).Line))
+					}
 				case *ast.SelectorExpr:
 					if value.Sel.Name == "Attributes" || value.Sel.Name == "GetAttributes" {
 						diagnostics = append(diagnostics, fmt.Sprintf(
@@ -314,6 +323,54 @@ func telemetryPayloadName(importPath, typeName string) bool {
 		return importPath == azdextPackagePath || importPath == azdextV1BetaPackagePath
 	}
 	return false
+}
+
+// isTelemetrySinkCall reports whether a call is the azd telemetry sink,
+// TelemetryServiceClient.ReportUsage. The receiver type is not resolved (the
+// scanner avoids go/types), so the distinctive method name is matched in a file
+// that imports an azdext package, which every real sink call does.
+func isTelemetrySinkCall(call *ast.CallExpr, source *sourceFile) bool {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "ReportUsage" {
+		return false
+	}
+	return fileImportsAzdext(source)
+}
+
+// fileImportsAzdext reports whether the file imports an azdext package, including
+// through a dot import, so a ReportUsage call can be recognized as the sink.
+func fileImportsAzdext(source *sourceFile) bool {
+	for _, importPath := range source.imports {
+		if importPath == azdextPackagePath || importPath == azdextV1BetaPackagePath {
+			return true
+		}
+	}
+	for importPath := range source.dotImports {
+		if importPath == azdextPackagePath || importPath == azdextV1BetaPackagePath {
+			return true
+		}
+	}
+	return false
+}
+
+// sinkPayloadIsInlineLiteral reports whether the payload argument of a telemetry
+// sink call is an inline telemetry payload literal, optionally address-of. That
+// literal is the only construction the scanner reads keys from; any other form,
+// such as a variable, parameter, conversion, or decoded value, hides its keys, so
+// the sink call is rejected instead.
+func sinkPayloadIsInlineLiteral(call *ast.CallExpr, source *sourceFile) bool {
+	if len(call.Args) < 2 {
+		return false
+	}
+	expression := call.Args[1]
+	if unary, ok := expression.(*ast.UnaryExpr); ok && unary.Op == token.AND {
+		expression = unary.X
+	}
+	literal, ok := expression.(*ast.CompositeLit)
+	if !ok {
+		return false
+	}
+	return isTelemetryPayloadType(literal.Type, source)
 }
 
 // isTelemetryPayloadContainer reports whether a composite literal type is a

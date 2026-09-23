@@ -67,3 +67,14 @@ func HandoffEvaluatorIncompatible(name string) string {
 	return fmt.Sprintf("  warning: evaluator %q does not support the generated dataset's evaluation level. "+
 		"It remains in the catalogue; the init command uses builtin.task_completion instead.\n", name)
 }
+
+// InitHandoffGuidance distinguishes the interactive next command from unattended use.
+func InitHandoffGuidance(simulation bool) string {
+	modelFlags := "--judge-model <judge-deployment>"
+	if simulation {
+		modelFlags += " --simulation-model <simulation-deployment>"
+	}
+	return "  Run this init command interactively to resolve missing inputs.\n" +
+		"  For unattended use, add --no-prompt " + modelFlags +
+		". Choose these deployments independently of --generation-model.\n"
+}

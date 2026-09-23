@@ -560,16 +560,7 @@ func (ec *evalContext) generateDataset(
 	if err := refuseArtifactThatAppeared(plan, ".jsonl", report.jobID); err != nil {
 		return nil, err
 	}
-	ref, err := ec.collectDataset(ctx, completed, plan.Name, plan.BaseDir, plan.OutputDir, out, true)
-	if err != nil || ref == nil {
-		return ref, err
-	}
-	// The level this run asked for wins; a reattach has no plan and keeps what
-	// the registered version recorded. Tagging the version is what makes that
-	// fallback possible at all.
-	ref.EvaluationLevel = evaluationLevelForRef(plan.EvaluationLevel, ref)
-	ec.applyGeneratedDatasetTags(ctx, ref, ref.EvaluationLevel)
-	return ref, nil
+	return ec.collectDataset(ctx, completed, plan.Name, plan.BaseDir, plan.OutputDir, plan.EvaluationLevel, out, true)
 }
 
 // collectDataset downloads a finished data job's dataset and records what a
@@ -581,7 +572,7 @@ func (ec *evalContext) generateDataset(
 func (ec *evalContext) collectDataset(
 	ctx context.Context,
 	completed *eval_api.GenerationJob,
-	declaredName, baseDir, outputDir string,
+	declaredName, baseDir, outputDir, preferredLevel string,
 	out io.Writer,
 	replaceExisting bool,
 ) (*project.ArtifactRef, error) {
@@ -603,61 +594,43 @@ func (ec *evalContext) collectDataset(
 		return nil, messages.ServiceNameNotAFileName("dataset", localName)
 	}
 
-	// Before the download, not after: re-running `job show` while polling should
-	// cost nothing and must not write over rows somebody has since edited.
-	if !replaceExisting {
-		if path := project.ArtifactPath(baseDir, outputDir, localName, ".jsonl"); artifactAlreadyCollected(path) {
-			fmt.Fprint(out, messages.ArtifactLeftAlone(path))
-			return &project.ArtifactRef{
-				Name:    localName,
-				Source:  relativeSource(baseDir, path),
-				Version: version,
-			}, nil
-		}
-	}
-
-	// Confirm the version exists before reading it, so a missing dataset is
-	// reported as such rather than as a download failure.
+	// Metadata is needed even when an edited local file must stay untouched.
+	// Failure to read it is the same collection error as on a first download.
 	registered, err := ec.datasetClient.GetDataset(
 		ctx, name, version, ProjectEndpointAPIVersion,
 	)
 	if err != nil {
 		return nil, messages.ReadingGeneratedDataset(name, err)
 	}
-	content, err := ec.datasetClient.DownloadDatasetContent(ctx, name, version, ProjectEndpointAPIVersion)
-	if err != nil {
-		return nil, messages.DownloadingGeneratedDataset(name, err)
-	}
-
 	path := project.ArtifactPath(baseDir, outputDir, localName, ".jsonl")
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return nil, messages.Creating(filepath.Dir(path), err)
-	}
-	// Atomic, because regenerating writes over the dataset already sitting
-	// there: os.WriteFile truncates first, so a failure mid-write destroys the
-	// copy the caller had while still reporting the generation as failed.
-	if err := writeFileAtomic(path, content); err != nil {
-		return nil, err
-	}
-	fmt.Fprint(out, messages.WroteArtifact(path))
-	writeJobWarnings(out, "dataset", completed, path)
-
-	// The job registered the version and this file is a copy of it, so the
-	// state a deploy would have left behind is recorded now. Without it the
-	// next `azd up` finds no fingerprint for this dataset, reads the file as
-	// new, and publishes a second version identical to the one just generated.
-	ec.recordDeployedDataset(ctx, localName, path, version)
-
-	return &project.ArtifactRef{
-		Name:    localName,
-		Source:  relativeSource(baseDir, path),
-		Version: version,
-		// Read back from the version's own tags, because reattaching through
-		// `job show` has no plan to carry it. A dataset generated as
-		// conversation was otherwise recorded with no level at all, and the
-		// declaration then read as the turn-shaped default.
+	ref := &project.ArtifactRef{
+		Name:            localName,
+		Source:          relativeSource(baseDir, path),
+		Version:         version,
 		EvaluationLevel: registeredEvaluationLevel(registered),
-	}, nil
+	}
+	ref.EvaluationLevel = evaluationLevelForRef(preferredLevel, ref)
+	if !replaceExisting && artifactAlreadyCollected(path) {
+		fmt.Fprint(out, messages.ArtifactLeftAlone(path))
+	} else {
+		content, err := ec.datasetClient.DownloadDatasetContent(ctx, name, version, ProjectEndpointAPIVersion)
+		if err != nil {
+			return nil, messages.DownloadingGeneratedDataset(name, err)
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			return nil, messages.Creating(filepath.Dir(path), err)
+		}
+		if err := writeFileAtomic(path, content); err != nil {
+			return nil, err
+		}
+		fmt.Fprint(out, messages.WroteArtifact(path))
+		writeJobWarnings(out, "dataset", completed, path)
+
+		// Only downloaded bytes are known to match the registered version.
+		ec.recordDeployedDataset(ctx, localName, path, version)
+	}
+	ec.applyGeneratedDatasetTags(ctx, registered, ref.EvaluationLevel)
+	return ref, nil
 }
 
 // artifactAlreadyCollected reports a destination a previous collection filled.

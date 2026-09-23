@@ -156,7 +156,7 @@
         "max_samples": {
           "type": "integer",
           "minimum": 0,
-          "description": "Cap on rows graded per run."
+          "description": "Cap on local, unregistered dataset rows graded per run. Positive caps are unsupported for registered dataset versions."
         },
         "evaluators": {
           "type": "array",

@@ -85,6 +85,30 @@ in the referenced file, so `azd ai eval generate` will not update it in place an
 says so rather than writing a second declaration of the same rubric beside the
 directive. Edit the referenced file, or generate under a different name.
 
+### Registered dataset identity
+
+Runs bind registered datasets using the service-issued version ID, including
+datasets whose catalog entry still has a local `file:` after publication.
+An explicit `version:` takes precedence over the recorded publication version;
+without either, the latest registered version is resolved from the service.
+Run metadata records that same resolved version.
+
+Registered versions cannot be sampled by this run API. A positive `max_samples:`
+or `--max-samples` is refused rather than ignored or sent as anonymous inline
+rows. Remove the cap, or publish and select a smaller dataset.
+
+Genuinely unregistered local files still run inline and support a cap, but only
+after a complete empty version listing (or a not-found response) and not-found
+first-version probes confirm absence. Permissions, transient failures, and
+malformed listings fail the run instead of silently selecting local data.
+
+`job show --dataset` recovers the registered evaluation level even when the local
+artifact already exists. It preserves edited bytes unless `--force` is given,
+does not download content when preserving the file, and does not record a new
+deployed fingerprint for those unverified local bytes. Job inputs and recorded
+generation state keep precedence over the registered tag. A metadata lookup
+failure is reported as a collection error; an untagged version stays unspecified.
+
 ### Simulating multi-turn conversations
 
 The example above grades rows that already hold an exchange. A `simulation:`
@@ -117,6 +141,10 @@ with if the target is a model. It is also exclusive with `source:` and
 sampling ones that already happened. Every evaluator listed has to support
 conversation level; one that does not is refused at deploy rather than bound to
 a column the graded rows do not have.
+
+Omit `num_conversations` to use one conversation per seed, and omit `max_turns`
+to use the service default. Explicit zero or null values are rejected by both
+file-based and inline service configuration loaders.
 
 The dataset holds **seeds**, not exchanges. One row describes one conversation
 to have:

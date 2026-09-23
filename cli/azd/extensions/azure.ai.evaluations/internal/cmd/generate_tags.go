@@ -146,21 +146,15 @@ func evaluationLevelOfGeneration(generationType string) string {
 // so passing only these three would erase the provenance the service wrote.
 func (ec *evalContext) applyGeneratedDatasetTags(
 	ctx context.Context,
-	ref *project.ArtifactRef,
+	current *dataset_api.Dataset,
 	evaluationLevel string,
 ) {
 	tags := seedDatasetTags(evaluationLevel)
-	if len(tags) == 0 || ref == nil || ref.Name == "" || ref.Version == "" || ec.datasetClient == nil {
+	if len(tags) == 0 || current == nil || current.Name == "" || current.Version == "" || ec.datasetClient == nil {
 		return
 	}
 
 	logger := azdext.NewLogger("eval.dataset_tags")
-
-	current, err := ec.datasetClient.GetDataset(ctx, ref.Name, ref.Version, ProjectEndpointAPIVersion)
-	if err != nil {
-		logger.Debug("could not read the version's current tags", "dataset", ref.Name)
-		return
-	}
 
 	merged := map[string]string{}
 	maps.Copy(merged, current.Tags)
@@ -168,11 +162,15 @@ func (ec *evalContext) applyGeneratedDatasetTags(
 	if tagsAlreadyApplied(current.Tags, tags) {
 		return
 	}
-
-	if _, err := ec.datasetClient.UpdateVersionTags(
-		ctx, ref.Name, ref.Version, merged, ProjectEndpointAPIVersion,
+	dataURI := current.ResolvedBlobURI()
+	if dataURI == "" {
+		logger.Debug("could not record generation tags: version has no blob URI", "dataset", current.Name)
+		return
+	}
+	if _, err := ec.datasetClient.FinalizeDatasetVersionTagged(
+		ctx, current.Name, current.Version, dataURI, merged, ProjectEndpointAPIVersion,
 	); err != nil {
-		logger.Debug("could not record generation tags", "dataset", ref.Name)
+		logger.Debug("could not record generation tags", "dataset", current.Name)
 	}
 }
 

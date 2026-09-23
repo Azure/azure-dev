@@ -3,11 +3,7 @@
 
 package project
 
-import (
-	"fmt"
-
-	"gopkg.in/yaml.v3"
-)
+import "fmt"
 
 // Simulation declares that an eval creates its conversations rather than
 // scoring ones it was given.
@@ -56,10 +52,16 @@ const (
 // Presence is read here, where it still exists, rather than by making the
 // fields pointers: 0-means-unset is the convention every other optional number
 // in this package follows, and one struct disagreeing is its own trap.
-func (s *Simulation) UnmarshalYAML(value *yaml.Node) error {
-	type plain Simulation
-	var decoded plain
-	if err := value.Decode(&decoded); err != nil {
+// The callback works with both YAML packages and preserves the calling decoder's
+// strict-field checks.
+func (s *Simulation) UnmarshalYAML(unmarshal func(any) error) error {
+	type simulationYAML Simulation
+	var decoded simulationYAML
+	if err := unmarshal(&decoded); err != nil {
+		return err
+	}
+	var declared map[string]any
+	if err := unmarshal(&declared); err != nil {
 		return err
 	}
 
@@ -71,7 +73,7 @@ func (s *Simulation) UnmarshalYAML(value *yaml.Node) error {
 		{"num_conversations", decoded.NumConversations, MinNumConversations},
 		{"max_turns", decoded.MaxTurns, MinSimulationTurns},
 	} {
-		if stated.value == 0 && mappingHasKey(value, stated.key) {
+		if _, present := declared[stated.key]; present && stated.value == 0 {
 			return fmt.Errorf(
 				"simulation.%s is 0; omit it for the default, or give it at least %d",
 				stated.key, stated.min)
@@ -80,19 +82,6 @@ func (s *Simulation) UnmarshalYAML(value *yaml.Node) error {
 
 	*s = Simulation(decoded)
 	return nil
-}
-
-// mappingHasKey reports whether a mapping node states this key at all.
-func mappingHasKey(node *yaml.Node, key string) bool {
-	if node == nil || node.Kind != yaml.MappingNode {
-		return false
-	}
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		if node.Content[i].Value == key {
-			return true
-		}
-	}
-	return false
 }
 
 // Validate refuses a simulation block that cannot produce a run.

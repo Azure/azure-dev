@@ -699,10 +699,8 @@ func NewResponsesDataSource(responseIDs []string, maxTurns int) *EvalRunDataSour
 
 // SetFileContent sets the data source to use inline file content.
 //
-// There is no by-reference counterpart. A run's `file_id` means an uploaded
-// file, and a dataset name is not one — sending it is rejected with "invalid
-// data source file ids" — so registered datasets are fetched and sent inline
-// too. See readRegisteredDataset.
+// Unregistered local rows use this shape. Registered dataset versions use
+// SetFileID to preserve identity rather than submitting a copy of their rows.
 func (ds *EvalRunDataSource) SetFileContent(items []map[string]any) {
 	ds.Source = &EvalRunDataContent{
 		Type:    EvalRunDataContentTypeFileContent,

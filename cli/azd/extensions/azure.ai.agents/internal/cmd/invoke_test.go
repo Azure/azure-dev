@@ -422,6 +422,7 @@ func TestInvokeConversationResetConflict(t *testing.T) {
 		name         string
 		args         []string
 		wantConflict bool
+		wantInvalid  bool
 	}{
 		{
 			name:         "new session remote",
@@ -461,7 +462,16 @@ func TestInvokeConversationResetConflict(t *testing.T) {
 			name: "new conversation disabled",
 			args: []string{"--new-conversation=false", "--conversation-id", "conv_existing"},
 		},
-		{name: "empty conversation", args: []string{"--new-session", "--conversation-id="}},
+		{
+			name:        "empty conversation",
+			args:        []string{"--new-session", "--conversation-id="},
+			wantInvalid: true,
+		},
+		{
+			name:        "whitespace conversation",
+			args:        []string{"--conversation-id", "   "},
+			wantInvalid: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -473,7 +483,7 @@ func TestInvokeConversationResetConflict(t *testing.T) {
 			cmd.SetOut(io.Discard)
 			cmd.SetErr(io.Discard)
 			err := cmd.ExecuteContext(t.Context())
-			if !tt.wantConflict {
+			if !tt.wantConflict && !tt.wantInvalid {
 				if !errors.Is(err, os.ErrNotExist) {
 					t.Fatalf("expected input file error after flag validation, got %v", err)
 				}
@@ -484,11 +494,21 @@ func TestInvokeConversationResetConflict(t *testing.T) {
 			if !ok {
 				t.Fatalf("expected structured validation error, got %v", err)
 			}
-			if localErr.Code != exterrors.CodeConflictingArguments {
-				t.Errorf("code = %q, want %q", localErr.Code, exterrors.CodeConflictingArguments)
+			wantCode := exterrors.CodeConflictingArguments
+			if tt.wantInvalid {
+				wantCode = exterrors.CodeInvalidParameter
+			}
+			if localErr.Code != wantCode {
+				t.Errorf("code = %q, want %q", localErr.Code, wantCode)
 			}
 			if localErr.Category != azdext.LocalErrorCategoryValidation {
 				t.Errorf("category = %q, want validation", localErr.Category)
+			}
+			if tt.wantInvalid {
+				if !strings.Contains(localErr.Message, "--conversation-id cannot be empty") {
+					t.Errorf("unexpected invalid value message: %q", localErr.Message)
+				}
+				return
 			}
 			if !strings.Contains(localErr.Message, "cannot use conversation reset flags with --conversation-id") {
 				t.Errorf("unexpected conflict message: %q", localErr.Message)

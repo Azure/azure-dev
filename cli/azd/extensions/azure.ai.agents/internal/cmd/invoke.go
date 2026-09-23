@@ -287,6 +287,14 @@ This option does not provide crash recovery or automatic reconnection.`,
 				return err
 			}
 
+			if cmd.Flags().Changed("conversation-id") && strings.TrimSpace(flags.conversation) == "" {
+				return exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					"--conversation-id cannot be empty",
+					"provide a valid conversation ID or omit --conversation-id",
+				)
+			}
+
 			if flags.forceNewConversation() && flags.conversation != "" {
 				return exterrors.Validation(
 					exterrors.CodeConflictingArguments,

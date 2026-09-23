@@ -276,6 +276,9 @@ pin changes the immutable eval criteria and creates a new eval. An unchanged
 effective pin keeps the same eval, including when the pin moves between the
 catalog and reference. With neither pin set, the evaluator continues tracking
 the service's latest version without recreating the eval on each new version.
+Renaming before older pin fingerprints have been migrated can reuse the prior
+eval only when its stored criteria confirm the same effective pins and no other
+declared eval owns it.
 
 Eval groups are immutable, so a change to a group's evaluators, target or
   sampling creates a new group and a new id. The id is cached in the extension's

@@ -5735,6 +5735,10 @@ const completionSpec: Fig.Spec = {
 									],
 								},
 								{
+									name: ['--new-project'],
+									description: 'Create a new Foundry project',
+								},
+								{
 									name: ['--output', '-o'],
 									description: 'The output format',
 									args: [

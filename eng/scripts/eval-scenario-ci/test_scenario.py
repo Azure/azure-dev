@@ -125,7 +125,7 @@ class ResolutionTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 scenario.parse_sums(text.encode())
 
-    def test_resolve_reads_latest_once_and_refuses_overwrite(self):
+    def resolution_urls(self):
         blobs = {"registry.json": json.dumps(self.registry).encode(),
                  "source-provenance.json": json.dumps(self.provenance).encode()}
         for name, data in blobs.items():
@@ -142,6 +142,10 @@ class ResolutionTests(unittest.TestCase):
         latest = f"https://api.github.com/repos/{scenario.FEED}/releases/latest"
         urls = {latest: json.dumps(self.release).encode(),
                 **{self.base + name: data for name, data in blobs.items()}}
+        return latest, urls
+
+    def test_resolve_reads_latest_once_and_refuses_overwrite(self):
+        latest, urls = self.resolution_urls()
         with tempfile.TemporaryDirectory() as root, \
              mock.patch.object(scenario, "reviewed_candidate", return_value=(self.baseline, self.authority)), \
              mock.patch.object(scenario, "fetch", side_effect=urls.__getitem__) as get:
@@ -152,6 +156,47 @@ class ResolutionTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 scenario.resolve(path)
             self.assertEqual(get.call_count, 4)
+
+    def test_metadata_byte_mismatch_persists_approval_block(self):
+        _, urls = self.resolution_urls()
+        for name in ("registry.json", "source-provenance.json", "SHA256SUMS"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as root, \
+                 mock.patch.object(scenario, "reviewed_candidate", return_value=(self.baseline, self.authority)), \
+                 mock.patch.object(scenario, "fetch",
+                                   side_effect={**urls, self.base + name: b"substituted-bytes"}.__getitem__):
+                output = Path(root) / "pin" / "candidate.json"
+                with self.assertRaisesRegex(scenario.ApprovalBlocked, "Metadata differs"):
+                    scenario.resolve(output)
+                self.assertFalse(output.exists())
+                report = json.loads((output.parent / "approval-status.json").read_text())
+                self.assertEqual(report["status"], "BLOCKED")
+                self.assertEqual(report["execution"], "NOT RUN")
+
+    def test_duplicate_approval_keys_block_before_shape_validation_or_binary_work(self):
+        env = {"AZD_SCENARIO_APPROVAL_REPOSITORY": "trusted/repository",
+               "AZD_SCENARIO_APPROVED_COMMIT": "e" * 40}
+        for raw in (b'{"registrySha256":"first","registrySha256":"second"}',
+                    b'{"azd":{"version":"1.33.0","\\u0076ersion":"9.0.0"}}',
+                    b'{"extensions":{"entry":{"artifacts":{"linux/amd64":"first","linux/amd64":"second"}}}}'):
+            with self.subTest(raw=raw), tempfile.TemporaryDirectory() as root, \
+                 mock.patch.dict(scenario.os.environ, env), \
+                 mock.patch.object(scenario, "fetch", return_value=raw) as get, \
+                 mock.patch.object(scenario, "validate_approval_manifest") as validate, \
+                 mock.patch.object(scenario.proof_module, "Proof") as proof:
+                root = Path(root)
+                with self.assertRaisesRegex(scenario.ApprovalBlocked, "duplicate object keys"):
+                    scenario.resolve(root / "producer" / "candidate.json")
+                scenario.write_json(root / "pin.json", self.build())
+                with self.assertRaisesRegex(scenario.ApprovalBlocked, "duplicate object keys"):
+                    scenario.execute(root / "pin.json", root / "consumer")
+                validate.assert_not_called()
+                proof.assert_not_called()
+                self.assertEqual(get.call_count, 2)
+                self.assertTrue(all("/raw/" in call.args[0] for call in get.call_args_list))
+                for folder in ("producer", "consumer"):
+                    report = json.loads((root / folder / "approval-status.json").read_text())
+                    self.assertEqual(report["status"], "BLOCKED")
+                    self.assertEqual(report["execution"], "NOT RUN")
 
     def test_consistent_publisher_substitution_cannot_approve_new_bytes(self):
         approved_registry_digest = scenario.sha256(json.dumps(self.registry).encode())
@@ -301,6 +346,23 @@ class SafetyTests(unittest.TestCase):
             get.assert_not_called()
             self.assertFalse(output.exists())
             self.assertEqual(json.loads((output.parent / "approval-status.json").read_text())["status"], "BLOCKED")
+
+    def test_missing_or_corrupt_producer_manifest_persists_block_before_any_work(self):
+        for raw in (None, b"{broken", b"\xff", b'{"azd":{},"azd":{}}'):
+            with self.subTest(raw=raw), tempfile.TemporaryDirectory() as root:
+                manifest, output = Path(root) / "candidate.json", Path(root) / "evidence"
+                if raw is not None:
+                    manifest.write_bytes(raw)
+                with mock.patch.object(scenario, "reviewed_candidate") as approval, \
+                     mock.patch.object(scenario.proof_module, "Proof") as proof:
+                    with self.assertRaises(scenario.ApprovalBlocked):
+                        scenario.execute(manifest, output)
+                    approval.assert_not_called()
+                    proof.assert_not_called()
+                report = json.loads((output / "approval-status.json").read_text())
+                self.assertEqual(report["status"], "BLOCKED")
+                self.assertEqual(report["execution"], "NOT RUN")
+                self.assertFalse((output / "candidate.json").exists())
 
     def test_workflow_tracks_the_shared_candidate_manifest_dependency(self):
         workflow = scenario.HERE.parents[2] / ".github" / "workflows" / "eval-scenario-ci.yml"

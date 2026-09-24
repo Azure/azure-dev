@@ -90,6 +90,10 @@ or a conflicting producer approval claim fails closed with nonzero status and
 `approval-status.json` showing `BLOCKED / NOT RUN`. A future publisher release
 cannot become executable just by supplying a self-consistent registry, checksum
 list and provenance. It requires a newly reviewed immutable approval revision.
+Independently fetched approvals and producer manifests reject duplicate JSON
+keys recursively. Missing/corrupt producer files and metadata-byte substitutions
+also preserve that blocked receipt before release lookup or binary work, as
+applicable, rather than failing outside the evidence boundary.
 The native publication handoff and repository dispatch event do not constitute
 that approval. A non-Latest candidate-pin commit can therefore leave the separate
 Latest scenario blocked until approved configuration and the promoted release

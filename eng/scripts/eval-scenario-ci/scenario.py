@@ -47,6 +47,21 @@ def require_approval(condition, message):
         raise ApprovalBlocked(message)
 
 
+def approval_object(pairs):
+    value = {}
+    for key, item in pairs:
+        require_approval(key not in value, "Approval JSON must not contain duplicate object keys")
+        value[key] = item
+    return value
+
+
+def parse_approval_json(raw, description):
+    try:
+        return json.loads(raw, object_pairs_hook=approval_object)
+    except ValueError as error:
+        raise ApprovalBlocked(f"{description} is not valid JSON") from error
+
+
 def validate_approval_manifest(approved):
     fields = {"releaseRepository", "releaseTag", "sourceCommit", "sourceVerificationCommit", "validationBaseline",
               "conversationModes", "initSeedValidation", "initDatasetBinding", "registrySha256", "azd", "extensions"}
@@ -100,7 +115,7 @@ def reviewed_candidate(env=None):
     path = "eng/scripts/eval-candidate-proof/candidate.json"
     try:
         raw = fetch(f"https://github.com/{repository}/raw/{revision}/{path}")
-        approved = json.loads(raw.decode("utf-8-sig"))
+        approved = parse_approval_json(raw, "Configured immutable approval")
     except (ValueError, RuntimeError) as error:
         raise ApprovalBlocked("Configured immutable approval could not be retrieved or parsed") from error
     validate_approval_manifest(approved)
@@ -261,7 +276,7 @@ def resolve(output):
         documents = {}
         for name in ("registry.json", "source-provenance.json", "SHA256SUMS"):
             data = fetch(assets[name]["url"])
-            require(sha256(data) == assets[name]["sha256"], "Metadata differs from release API digest")
+            require_approval(sha256(data) == assets[name]["sha256"], "Metadata differs from release API digest")
             documents[name] = data
         pin = build_manifest(release, assets, json.loads(documents["registry.json"].decode("utf-8-sig")),
                              json.loads(documents["source-provenance.json"].decode("utf-8-sig")),
@@ -429,17 +444,20 @@ def extra_scenarios(proof):
 
 def execute(manifest, output):
     require(not output.exists(), "Evidence directory must be new")
-    pin_bytes = manifest.read_bytes()
-    pin = json.loads(pin_bytes)
     try:
+        try:
+            pin_bytes = manifest.read_bytes()
+        except OSError as error:
+            raise ApprovalBlocked("Producer manifest is unavailable") from error
+        pin = parse_approval_json(pin_bytes, "Producer manifest")
         approved, authority = reviewed_candidate()
         require_reviewed_candidate(pin, approved, authority)
+        require_approval(pin["scenarioResolution"].get("fixtureContract") == "build41-offline-160",
+                         "Unsupported offline fixture contract")
+        require_approval(pin["sourceCommit"] == pin["sourceVerificationCommit"], "Source pins disagree")
     except ApprovalBlocked as error:
         record_approval_block(output, error)
         raise
-    require(pin["scenarioResolution"]["fixtureContract"] == "build41-offline-160",
-            "Unsupported offline fixture contract")
-    require(pin["sourceCommit"] == pin["sourceVerificationCommit"], "Source pins disagree")
     output.mkdir(parents=True)
     (output / "candidate.json").write_bytes(pin_bytes)
     report = {

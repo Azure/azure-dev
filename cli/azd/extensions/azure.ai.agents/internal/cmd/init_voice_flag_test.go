@@ -5,11 +5,13 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -74,6 +76,13 @@ func TestVoiceDefinitionForInit(t *testing.T) {
 	require.Equal(t, "configured-voice", configured.Name)
 	require.Equal(t, "gpt-realtime-preview", configured.Model.Id)
 	require.Equal(t, "en-US-AvaNeural", *configured.Voice)
+}
+
+func TestVoiceAgentAddedMessageUsesServiceKey(t *testing.T) {
+	t.Parallel()
+	message := voiceAgentAddedMessage("voice-agent-2")
+	require.Contains(t, message, "'voice-agent-2'")
+	require.NotContains(t, message, "'foundry-agent'")
 }
 
 func TestInitVoiceFlagInteractiveSelection(t *testing.T) {
@@ -193,4 +202,86 @@ func TestNewVoiceAllowsEffectiveOptions(t *testing.T) {
 	require.NoError(t, validateVoiceInitOptions(command, false))
 	// Defaults alone must never trigger the new check.
 	require.NoError(t, validateVoiceInitOptions(newInitCommand(nil), false))
+}
+
+func TestFastPathNamesFailBeforeHostAccess(t *testing.T) {
+	t.Setenv("AZD_SERVER", "")
+	for _, args := range [][]string{
+		{"--image", "example.azurecr.io/agent:v1", "--agent-name", "../escape"},
+		{"--kind", "prompt-voice", "--agent-name", `..\escape`},
+	} {
+		t.Run(fmt.Sprint(args), func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			command := newInitCommand(&azdext.ExtensionContext{NoPrompt: true})
+			command.SetArgs(args)
+			require.ErrorContains(t, command.Execute(), "invalid agent name")
+			entries, err := os.ReadDir(root)
+			require.NoError(t, err)
+			require.Empty(t, entries)
+		})
+	}
+}
+
+func TestValidateFastPathAgentNamePinsNormalizedValue(t *testing.T) {
+	t.Parallel()
+	flags := &initFlags{image: "example.azurecr.io/agent:v1", agentName: "  image-agent  "}
+	require.NoError(t, validateFastPathAgentName(flags, false))
+	require.Equal(t, "image-agent", flags.agentName)
+	require.NoError(t, validateFastPathAgentName(flags, false))
+	require.Equal(t, "image-agent", flags.agentName)
+}
+
+func TestVoiceServiceLayoutAnchorsUnderProjectRoot(t *testing.T) {
+	t.Parallel()
+	projectRoot := t.TempDir()
+	cwd := filepath.Join(projectRoot, "nested", "work")
+	require.NoError(t, os.MkdirAll(cwd, 0o700))
+
+	sourceDir, relativePath, err := voiceServiceLayout(projectRoot, cwd, "voice-agent")
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(cwd, "src", "voice-agent"), sourceDir)
+	require.Equal(t, "nested/work/src/voice-agent", relativePath)
+
+	_, _, err = voiceServiceLayout(projectRoot, t.TempDir(), "voice-agent")
+	require.ErrorContains(t, err, "outside the resolved azd project")
+}
+
+func TestResolveVoiceProjectResourceID(t *testing.T) {
+	t.Parallel()
+	const configured = "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.CognitiveServices/accounts/account/projects/project"
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{"dev": {"AZURE_AI_PROJECT_ID": configured}},
+	}
+	client := newHelpersTestAzdClient(
+		t, &helpersProjectServer{}, &helpersPromptServer{}, envServer,
+	)
+
+	got, err := resolveVoiceProjectResourceID(t.Context(), client, "dev", "/explicit/project")
+	require.NoError(t, err)
+	require.Equal(t, "/explicit/project", got)
+
+	got, err = resolveVoiceProjectResourceID(t.Context(), client, "dev", "")
+	require.NoError(t, err)
+	require.Equal(t, configured, got)
+
+	got, err = resolveVoiceProjectResourceID(t.Context(), client, "missing", "")
+	require.NoError(t, err)
+	require.Empty(t, got)
+}
+
+func TestResolveVoiceProjectResourceIDRejectsInvalidEnvironmentValue(t *testing.T) {
+	t.Parallel()
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{"dev": {"AZURE_AI_PROJECT_ID": "not-an-arm-id"}},
+	}
+	client := newHelpersTestAzdClient(
+		t, &helpersProjectServer{}, &helpersPromptServer{}, envServer,
+	)
+	_, err := resolveVoiceProjectResourceID(t.Context(), client, "dev", "")
+	require.ErrorContains(t, err, "invalid AZURE_AI_PROJECT_ID")
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeInvalidProjectResourceId, localErr.Code)
 }

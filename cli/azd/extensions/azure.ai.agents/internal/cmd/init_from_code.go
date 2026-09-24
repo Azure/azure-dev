@@ -25,17 +25,18 @@ import (
 )
 
 type InitFromCodeAction struct {
-	azdClient         *azdext.AzdClient
-	flags             *initFlags
-	projectConfig     *azdext.ProjectConfig
-	azureContext      *azdext.AzureContext
-	environment       *azdext.Environment
-	credential        azcore.TokenCredential
-	deploymentDetails []project.Deployment
-	needsProvision    bool
-	httpClient        *http.Client
-	projectTargetDir  string
-	createdFolderPath string
+	azdClient           *azdext.AzdClient
+	flags               *initFlags
+	projectConfig       *azdext.ProjectConfig
+	azureContext        *azdext.AzureContext
+	environment         *azdext.Environment
+	credential          azcore.TokenCredential
+	deploymentDetails   []project.Deployment
+	needsProvision      bool
+	httpClient          *http.Client
+	projectTargetDir    string
+	createdFolderPath   string
+	serviceNameOverride string
 
 	// selectedFoundryProject holds the existing Foundry project resolved during
 	// init (nil when creating a new project). It carries NetworkInjected so
@@ -109,6 +110,22 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 	}
 
 	if localDefinition != nil {
+		if strings.TrimSpace(localDefinition.Image) != "" {
+			resolver := &InitAction{
+				azdClient:     a.azdClient,
+				projectConfig: a.projectConfig,
+				flags:         a.flags,
+			}
+			serviceName, err := resolver.resolveServiceNameCollision(
+				ctx,
+				localDefinition.Name,
+				strings.ReplaceAll(localDefinition.Name, " ", ""),
+			)
+			if err != nil {
+				return err
+			}
+			a.serviceNameOverride = serviceName
+		}
 
 		// Generate .agentignore. The agent definition is written into the
 		// azure.yaml service entry below, not to an on-disk agent.yaml.
@@ -854,6 +871,9 @@ func (a *InitFromCodeAction) addToProject(
 ) error {
 	agentName := definition.Name
 	agentServiceName := strings.ReplaceAll(agentName, " ", "")
+	if a.serviceNameOverride != "" {
+		agentServiceName = a.serviceNameOverride
+	}
 	// If targetDir is ".", resolve the actual relative path from the project root to cwd.
 	// This ensures azure.yaml gets the correct "project:" value when init is run from a subdirectory.
 	if targetDir == "." {

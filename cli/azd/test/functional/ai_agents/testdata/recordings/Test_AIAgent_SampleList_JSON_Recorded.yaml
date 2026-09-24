@@ -40,9 +40,9 @@ interactions:
             Content-Length:
                 - "0"
             Date:
-                - Wed, 24 Jun 2026 05:31:20 GMT
+                - Thu, 24 Sep 2026 22:36:17 GMT
             Expires:
-                - Wed, 24 Jun 2026 05:31:20 GMT
+                - Thu, 24 Sep 2026 22:36:17 GMT
             Location:
                 - https://raw.githubusercontent.com/Azure/awesome-azd/refs/heads/main/website/static/templates.json
             Pragma:
@@ -57,7 +57,7 @@ interactions:
                 - "True"
         status: 301 Moved Permanently
         code: 301
-        duration: 452.0787ms
+        duration: 331.788ms
     - id: 1
       request:
         proto: HTTP/1.1
@@ -88,7 +88,7 @@ interactions:
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 308072
+        content_length: 282578
         uncompressed: false
         body: |
             [
@@ -149,36 +149,6 @@ interactions:
                 "id": "729d2ab2-7326-4cdd-81be-540e4bc7c8c7"
               },
               {
-                "title": "React Web App with C# API and MongoDB",
-                "description": "A blueprint for getting a React web app with a C# API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly.",
-                "preview": "./templates/images/todo-csharp.png",
-                "authorUrl": "https://github.com/Azure/azure-dev",
-                "author": "Azure Dev",
-                "source": "https://github.com/Azure-Samples/todo-csharp-cosmos-sql",
-                "tags": [
-                  "mongodb",
-                  "msft"
-                ],
-                "languages": [
-                  "dotnetCsharp",
-                  "typescript",
-                  "javascript"
-                ],
-                "frameworks": [
-                  "reactjs"
-                ],
-                "azureServices": [
-                  "appservice",
-                  "cosmosdb",
-                  "monitor",
-                  "keyvault"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "406a5813-bd0b-4b4f-81c4-37e726edce4a"
-              },
-              {
                 "title": "Rock, Paper, Orleans (RPO) - Distributed .NET",
                 "description": "Rock, Paper, Orleans (RPO) is a game built using dotnet, Orleans, and runs in Azure.The idea behind RPO is that you write a \"player bot\" in which you implement your player logic.",
                 "preview": "./templates/images/rock-paper-orleans.png",
@@ -227,371 +197,6 @@ interactions:
                 "id": "d4f1b8d9-98b3-4f72-8f97-11a365ea11b0"
               },
               {
-                "title": "React Web App with Node.js API and MongoDB",
-                "description": "A blueprint for getting a React web app with a Node.js API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting web apps and APIs without worrying about the infrastructure.",
-                "preview": "./templates/images/todo-nodejs-mongo.png",
-                "authorUrl": "https://github.com/Azure/azure-dev",
-                "author": "Azure Dev",
-                "source": "https://github.com/Azure-Samples/todo-nodejs-mongo",
-                "tags": [
-                  "mongodb",
-                  "msft"
-                ],
-                "languages": [
-                  "nodejs",
-                  "typescript",
-                  "javascript"
-                ],
-                "frameworks": [
-                  "reactjs"
-                ],
-                "azureServices": [
-                  "appservice",
-                  "cosmosdb",
-                  "monitor",
-                  "keyvault"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "d2fbf0ef-693e-48f2-be36-05053201807f"
-              },
-              {
-                "title": "Static React Web App + Functions with Node.js API and MongoDB",
-                "description": "A blueprint for getting a React web app with a Node.js API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting static web apps with serverless logic and functionality.",
-                "preview": "./templates/images/todo-nodejs-mongo-swa-func.png",
-                "authorUrl": "https://github.com/Azure/azure-dev",
-                "author": "Azure Dev",
-                "source": "https://github.com/Azure-Samples/todo-nodejs-mongo-swa-func",
-                "tags": [
-                  "mongodb",
-                  "msft"
-                ],
-                "languages": [
-                  "nodejs",
-                  "typescript",
-                  "javascript"
-                ],
-                "frameworks": [
-                  "reactjs"
-                ],
-                "azureServices": [
-                  "swa",
-                  "functions",
-                  "cosmosdb",
-                  "monitor",
-                  "keyvault",
-                  "appservice"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "ada236c1-2d00-440e-9730-5042a283a409"
-              },
-              {
-                "title": "Static React Web App + Functions with Python API and MongoDB",
-                "description": "A blueprint for getting a React.js web app with Python (FastAPI) API and a MongoDB API in Cosmos database onto Azure. The frontend, currently a ToDo application, is designed as a placeholder that can easily be removed and replaced with your own frontend code. This architecture is for hosting static web apps with serverless logic and functionality.",
-                "preview": "./templates/images/todo-python-mongo-swa-func.png",
-                "authorUrl": "https://github.com/Azure/azure-dev",
-                "author": "Azure Dev",
-                "source": "https://github.com/Azure-Samples/todo-python-mongo-swa-func",
-                "tags": [
-                  "mongodb",
-                  "msft"
-                ],
-                "languages": [
-                  "python",
-                  "typescript",
-                  "javascript"
-                ],
-                "frameworks": [
-                  "reactjs",
-                  "fastapi"
-                ],
-                "azureServices": [
-                  "swa",
-                  "functions",
-                  "cosmosdb",
-                  "monitor",
-                  "keyvault",
-                  "appservice"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "deb89dec-3275-48e5-b5c0-830fb59743e6"
-              },
-              {
-                "title": "React Web App with Python API and MongoDB",
-                "description": "A blueprint for getting a React.js web app with Python (FastAPI) API and a MongoDB API in Cosmos database onto Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting web apps and APIs without worrying about the infrastructure.",
-                "preview": "./templates/images/todo-python.png",
-                "authorUrl": "https://github.com/Azure/azure-dev",
-                "author": "Azure Dev",
-                "source": "https://github.com/Azure-Samples/todo-python-mongo",
-                "tags": [
-                  "mongodb",
-                  "msft"
-                ],
-                "languages": [
-                  "python",
-                  "typescript",
-                  "javascript"
-                ],
-                "frameworks": [
-                  "reactjs",
-                  "fastapi"
-                ],
-                "azureServices": [
-                  "appservice",
-                  "cosmosdb",
-                  "monitor",
-                  "keyvault"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "75e7c4ea-205e-4480-a7e2-ddf7d64b4c60"
-              },
-              {
-                "title": "Containerized React Web App with Node.js API and MongoDB",
-                "description": "A blueprint for getting a React web app with a Node.js API and a MongoDB database onto Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for running containerized apps or microservices on a serverless platform   This architecture is for running containerized microservices without managing the servers.",
-                "preview": "./templates/images/todo-node-aca.png",
-                "authorUrl": "https://github.com/Azure/azure-dev",
-                "author": "Azure Dev",
-                "source": "https://github.com/Azure-Samples/todo-nodejs-mongo-aca",
-                "tags": [
-                  "mongodb",
-                  "msft"
-                ],
-                "languages": [
-                  "nodejs",
-                  "typescript",
-                  "javascript"
-                ],
-                "frameworks": [
-                  "reactjs"
-                ],
-                "azureServices": [
-                  "appservice",
-                  "cosmosdb",
-                  "monitor",
-                  "keyvault",
-                  "aca"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "3ae2b74c-3d7c-45d3-abae-7b43b7ada8f8"
-              },
-              {
-                "title": "Containerized React Web App with Python API and MongoDB",
-                "description": "A blueprint for getting a React.js web app with Python (FastAPI) API and a MongoDB API in Cosmos database onto Azure. The frontend, currently a ToDo application, is designed as a placeholder that can easily be removed and replaced with your own frontend code. This architecture is for running containerized apps or microservices on a serverless platform.",
-                "preview": "./templates/images/todo-python-aca.png",
-                "authorUrl": "https://github.com/Azure/azure-dev",
-                "author": "Azure Dev",
-                "source": "https://github.com/Azure-Samples/todo-python-mongo-aca",
-                "tags": [
-                  "mongodb",
-                  "msft"
-                ],
-                "languages": [
-                  "python",
-                  "typescript",
-                  "javascript"
-                ],
-                "frameworks": [
-                  "reactjs",
-                  "fastapi"
-                ],
-                "azureServices": [
-                  "aca",
-                  "cosmosdb",
-                  "monitor",
-                  "keyvault"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "855fbaa1-e251-469e-8d9d-c4eb0a1ef9bd"
-              },
-              {
-                "title": "React Web App with C# API and SQL Database ",
-                "description": "A blueprint for getting a React web app with a C# API and a SQL database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly.",
-                "preview": "./templates/images/todo-csharp-sql.png",
-                "authorUrl": "https://github.com/Azure/azure-dev",
-                "author": "Azure Dev",
-                "source": "https://github.com/Azure-Samples/todo-csharp-sql",
-                "tags": [
-                  "mongodb",
-                  "msft"
-                ],
-                "languages": [
-                  "dotnetCsharp",
-                  "typescript",
-                  "javascript"
-                ],
-                "frameworks": [
-                  "reactjs"
-                ],
-                "azureServices": [
-                  "appservice",
-                  "azuresql",
-                  "monitor",
-                  "keyvault"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "29fda7be-7cb8-4871-8186-91b140afe497"
-              },
-              {
-                "title": "React Web App with Java API and MongoDB ",
-                "description": "A blueprint for getting a React.js web app with a Java API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting web apps and APIs without worrying about the infrastructure.",
-                "preview": "./templates/images/todo-java-mongo.png",
-                "authorUrl": "https://github.com/Azure/azure-dev",
-                "author": "Azure Dev",
-                "source": "https://github.com/Azure-Samples/todo-java-mongo",
-                "tags": [
-                  "mongodb",
-                  "msft"
-                ],
-                "languages": [
-                  "java",
-                  "typescript"
-                ],
-                "frameworks": [
-                  "reactjs"
-                ],
-                "azureServices": [
-                  "appservice",
-                  "cosmosdb",
-                  "keyvault",
-                  "monitor"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "d0aa5618-2e2a-4a1c-af41-29218ab7c1db"
-              },
-              {
-                "title": "Containerized React Web App with Java API and MongoDB",
-                "description": "A blueprint for getting a React web app with a Java API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for running containerized apps or microservices on a serverless platform.",
-                "preview": "./templates/images/todo-java-mongo-aca.png",
-                "authorUrl": "https://github.com/Azure/azure-dev",
-                "author": "Azure Dev",
-                "source": "https://github.com/Azure-Samples/todo-java-mongo-aca",
-                "tags": [
-                  "mongodb",
-                  "msft"
-                ],
-                "languages": [
-                  "java",
-                  "typescript"
-                ],
-                "frameworks": [
-                  "reactjs"
-                ],
-                "azureServices": [
-                  "aca",
-                  "cosmosdb",
-                  "keyvault",
-                  "monitor"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "3ffcef92-73e6-49ec-9c35-22a5cfc6ee98"
-              },
-              {
-                "title": "Static React Web App + Functions with C# API and SQL Database",
-                "description": "A blueprint for getting a React web app with a C# API and a SQL database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting static web apps with serverless logic and functionality.",
-                "preview": "./templates/images/todo-csharp-sql-swa-func.png",
-                "authorUrl": "https://github.com/Azure/azure-dev",
-                "author": "Azure Dev",
-                "source": "https://github.com/Azure-Samples/todo-csharp-sql-swa-func",
-                "tags": [
-                  "msft"
-                ],
-                "languages": [
-                  "dotnetCsharp",
-                  "typescript",
-                  "javascript"
-                ],
-                "frameworks": [
-                  "reactjs"
-                ],
-                "azureServices": [
-                  "swa",
-                  "functions",
-                  "monitor",
-                  "keyvault",
-                  "appservice",
-                  "azuresql"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "5ea70efc-3ac9-4ce5-87c9-d68200336a89"
-              },
-              {
-                "title": "Kubernetes React Web App with Node.js API and MongoDB",
-                "description": "A blueprint for getting a React.js web app with a Node.js API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for running Kubernetes clusters without setting up the control plane.",
-                "preview": "./templates/images/todo-nodejs-mongo-aks.png",
-                "authorUrl": "https://github.com/Azure/azure-dev",
-                "author": "Azure Dev",
-                "source": "https://github.com/Azure-Samples/todo-nodejs-mongo-aks",
-                "tags": [
-                  "mongodb",
-                  "msft"
-                ],
-                "languages": [
-                  "nodejs",
-                  "typescript",
-                  "javascript"
-                ],
-                "frameworks": [
-                  "reactjs"
-                ],
-                "azureServices": [
-                  "monitor",
-                  "keyvault",
-                  "appservice",
-                  "cosmosdb",
-                  "aks"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "f9936700-5a9a-4bf9-bfe7-e1e10477ba76"
-              },
-              {
-                "title": "Static React Web App with Java API and PostgreSQL",
-                "description": "A blueprint for getting a React web app with a Java API and a Azure Database for PostgreSQL - Flexible Server on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting web apps and APIs without worrying about the infrastructure.",
-                "preview": "./templates/images/todo-java-postgres-asa.png",
-                "authorUrl": "https://github.com/Azure-Samples/",
-                "author": "Yi Liu",
-                "source": "https://github.com/Azure-Samples/ASA-Samples-Web-Application",
-                "tags": [
-                  "webapps",
-                  "msft"
-                ],
-                "languages": [
-                  "java",
-                  "nodejs"
-                ],
-                "frameworks": [
-                  "spring"
-                ],
-                "azureServices": [
-                  "azurespringapps",
-                  "azuredb-postgreSQL"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "0c5072fa-a12c-4a5f-a821-ead605c1d10c"
-              },
-              {
                 "title": "ChatGPT + Enterprise Data with Azure OpenAI and AI Search",
                 "description": "A sample app for the Retrieval-Augmented Generation pattern running in Azure, using Azure AI Search for retrieval and Azure OpenAI large language models to power ChatGPT-style and Q&A experiences.",
                 "preview": "./templates/images/chatgpt-enterprise-dotnet.png",
@@ -621,58 +226,6 @@ interactions:
                 "id": "75989eb4-f7e0-4dab-be54-262775942d4e"
               },
               {
-                "title": "Simple Chat Application using Azure OpenAI",
-                "description": "A sample chat app that uses Python and the Flask framework to stream ChatGPT completions as server-sent events to a simple frontend.",
-                "preview": "./templates/images/simplechat-azureopenai.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Azure Content Team",
-                "source": "https://github.com/Azure-Samples/chatgpt-quickstart",
-                "tags": [
-                  "gpt",
-                  "ai",
-                  "msft"
-                ],
-                "languages": [
-                  "python"
-                ],
-                "frameworks": [
-                  "flask"
-                ],
-                "azureServices": [
-                  "openai",
-                  "aca"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "b9dc8b04-ecb2-4484-9241-0ec5dcacbdb4"
-              },
-              {
-                "title": "Spring ChatGPT Application using Azure OpenAI on Azure Spring Apps",
-                "description": "A sample that uses Java Spring framework to build ChatGPT-style application running in Azure Spring Apps.",
-                "preview": "./templates/images/asa-chatgpt.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Yi Liu",
-                "source": "https://github.com/Azure-Samples/spring-chatgpt-sample",
-                "tags": [
-                  "gpt",
-                  "ai",
-                  "msft"
-                ],
-                "languages": [
-                  "java"
-                ],
-                "azureServices": [
-                  "openai",
-                  "blobstorage",
-                  "azurespringapps"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "609fce57-2f3e-44d7-9fec-162f91fd1f42"
-              },
-              {
                 "title": "Python (Django) Web App with PostgreSQL in VNet",
                 "description": "A restaurants review web app that uses whitenoise for static assets and PostgreSQL for the database. Ready for deployment on App Service with a PostgreSQL Flexible Server inside a VNet.",
                 "preview": "./templates/images/msdocs-django-postgresql-sample-app.png",
@@ -695,31 +248,6 @@ interactions:
                   "vnets"
                 ],
                 "id": "aca56c78-0e01-4525-b678-c3d5c28be1be"
-              },
-              {
-                "title": "Python (Django) Web App with PostgreSQL via Azure Container Apps",
-                "description": "A space tourism web app that uses PostgreSQL for the database. The web app is containerize and deploy with Azure Container Apps with secrets managed by Azure Key Vault",
-                "preview": "./templates/images/azure-django-postgres-aca.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Azure Content Team",
-                "source": "https://github.com/Azure-Samples/azure-django-postgres-aca",
-                "tags": [
-                  "msft"
-                ],
-                "languages": [
-                  "python"
-                ],
-                "frameworks": [
-                  "django"
-                ],
-                "azureServices": [
-                  "aca",
-                  "azuredb-postgreSQL"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "0b2fbaad-df80-4f21-a10c-a2739e0fd35b"
               },
               {
                 "title": "Python (Flask) Web App with PostgreSQL in VNet",
@@ -1022,27 +550,6 @@ interactions:
                 "id": "35fede2d-4da6-43e2-b679-c593c6fd40da"
               },
               {
-                "title": "FastAPI on Azure Functions",
-                "description": "A simple FastAPI app deployed to Azure Functions. Can also be run and debugged locally with the Azure Functions Core Tool emulator.",
-                "preview": "./templates/images/fastapi-on-azure-functions.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Azure Content Team",
-                "source": "https://github.com/Azure-Samples/fastapi-on-azure-functions",
-                "tags": [
-                  "msft"
-                ],
-                "languages": [
-                  "python"
-                ],
-                "frameworks": [
-                  "fastapi"
-                ],
-                "azureServices": [
-                  "functions"
-                ],
-                "id": "fcfd9b78-5e57-467e-a6e0-46cb54d1e246"
-              },
-              {
                 "title": "Spring PetClinic - Java Spring MySQL",
                 "description": "Spring PetClinic application using a set of Azure solutions. Azure App Service for app hosting, Azure Database for MySQL for storage, Azure Key Vault for securing secret and Azure Application Insights for monitoring and logging.",
                 "preview": "./templates/images/spring-petclinic-java-mysql.png",
@@ -1070,33 +577,6 @@ interactions:
                   "bicep"
                 ],
                 "id": "fc267cdd-831c-4e2d-b86f-2b5af58f1876"
-              },
-              {
-                "title": "Event Driven Java Application with Azure Service Bus on Azure Spring Apps",
-                "description": "A complete event-driven application that includes everything you need to build, deploy, and monitor an Azure solution. ",
-                "preview": "./templates/images/event-driven-spring-apps.png",
-                "authorUrl": "https://github.com/Azure-Samples/",
-                "author": "Azure Content Team",
-                "source": "https://github.com/Azure-Samples/ASA-Samples-Event-Driven-Application",
-                "tags": [
-                  "msft"
-                ],
-                "languages": [
-                  "java"
-                ],
-                "frameworks": [
-                  "spring"
-                ],
-                "azureServices": [
-                  "servicebus",
-                  "monitor",
-                  "keyvault",
-                  "azurespringapps"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "6631fe19-f77a-4f1e-8b06-759bc7648b60"
               },
               {
                 "title": "SAP Cloud SDK on Azure App Service Quickstart (TypeScript)",
@@ -1148,48 +628,6 @@ interactions:
                   "appservice"
                 ],
                 "id": "147a3984-3705-4972-8c24-159495676ccc"
-              },
-              {
-                "title": "Azure Functions - Text Summarization using AI Cognitive Language Service (C#-Isolated)",
-                "description": "This sample shows how to take text documents as a input via BlobTrigger, does Text Summarization processing using the AI Congnitive Language service, and then outputs to another text document using BlobOutput binding.",
-                "preview": "./templates/images/test.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Paul Yuknewicz",
-                "source": "https://github.com/Azure-Samples/function-csharp-ai-textsummarize",
-                "tags": [
-                  "ai",
-                  "msft"
-                ],
-                "languages": [
-                  "dotnetCsharp"
-                ],
-                "azureServices": [
-                  "functions",
-                  "aisearch",
-                  "azureai"
-                ],
-                "id": "3dae246d-17c8-4af7-a74d-cc6ece82921b"
-              },
-              {
-                "title": "Azure Functions - Text Summarization using AI Cognitive Language Service (Python v2 Function)",
-                "description": "This sample shows how to take text documents as a input via BlobTrigger, does Text Summarization processing using the AI Congnitive Language service, and then outputs to another text document using BlobOutput binding.",
-                "preview": "./templates/images/test.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Paul Yuknewicz",
-                "source": "https://github.com/Azure-Samples/function-python-ai-textsummarize",
-                "tags": [
-                  "ai",
-                  "msft"
-                ],
-                "languages": [
-                  "python"
-                ],
-                "azureServices": [
-                  "functions",
-                  "aisearch",
-                  "azureai"
-                ],
-                "id": "8d50865f-60f3-4a78-b00c-c185a984cc9a"
               },
               {
                 "title": "Flask Container with CDN",
@@ -1428,34 +866,6 @@ interactions:
                 "id": "9dffb7ca-0b35-4d13-bd50-899a904fdac3"
               },
               {
-                "title": "React Component Toolkit with ChatGPT and OpenAI ",
-                "description": "A sample demo for building and testing react components and includes a set of unique features including AI component generation and automatic conversion to Azure APIM Widgets",
-                "preview": "./templates/images/react-component-toolkit-openai.png",
-                "authorUrl": "https://github.com/jenny0322",
-                "author": "Jenny Chen",
-                "source": "https://github.com/Azure-Samples/react-component-toolkit-openai-demo",
-                "tags": [
-                  "gpt",
-                  "ai",
-                  "msft"
-                ],
-                "languages": [
-                  "typescript",
-                  "javascript"
-                ],
-                "frameworks": [
-                  "reactjs"
-                ],
-                "azureServices": [
-                  "openai",
-                  "apim"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "2bda5e52-9786-4900-af96-601ff76218e3"
-              },
-              {
                 "title": "Python (Flask) Web App with PostgreSQL",
                 "description": "A Python Flask app on App Service with a PostgreSQL flexible server database. Database access is restricted to Azure IPs, and admin password is generated randomly",
                 "preview": "./templates/images/flask-db-quiz-example.png",
@@ -1570,36 +980,6 @@ interactions:
                   "bicep"
                 ],
                 "id": "11812855-671c-469b-8e31-bf81a9edbb75"
-              },
-              {
-                "title": "Java Spring Apps with Azure OpenAI",
-                "description": "AI Shopping Cart is a sample app template that supercharges your shopping experience with the power of AI. It leverages Azure OpenAI and Azure Spring Apps to build a recommendation engine that is not only scalable, resilient, and secure, but also personalized to your needs.",
-                "preview": "./templates/images/java-springapps-openai.png",
-                "authorUrl": "https://github.com/pmalarme",
-                "author": "Pierre Malarme",
-                "source": "https://github.com/Azure-Samples/app-templates-java-openai-springapps",
-                "tags": [
-                  "ai",
-                  "msft"
-                ],
-                "languages": [
-                  "java"
-                ],
-                "frameworks": [
-                  "spring",
-                  "reactjs"
-                ],
-                "azureServices": [
-                  "openai",
-                  "aca",
-                  "azurespringapps",
-                  "azuredb-postgreSQL",
-                  "monitor"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "f3d3346b-d621-4ced-9e2c-1b891da214ad"
               },
               {
                 "title": "React Web App with Azure API Management exposing SAP OData APIs",
@@ -1732,38 +1112,6 @@ interactions:
                 "id": "e8b16cf8-d0c6-4548-a337-1c1ade5b7a0b"
               },
               {
-                "title": "ChatGPT and RAG with Azure OpenAI and AI Search for JavaScript",
-                "description": "A reference sample to build Retrieval Augmented Generation applications using Azure AI Search and Azure OpenAI.",
-                "preview": "./templates/images/azure-search-openai-javascript.png",
-                "authorUrl": "https://github.com/Azure-Samples, https://github.com/anfibiacreativa, https://github.com/shibbas",
-                "author": "JavaScript Advocacy Team, Natalia Venditto, Shibani Basava",
-                "source": "https://github.com/Azure-Samples/azure-search-openai-javascript",
-                "tags": [
-                  "ai",
-                  "gpt",
-                  "webcomponents",
-                  "msft",
-                  "aicollection"
-                ],
-                "languages": [
-                  "javascript",
-                  "nodejs",
-                  "typescript"
-                ],
-                "frameworks": [
-                  "microfrontend",
-                  "rag"
-                ],
-                "azureServices": [
-                  "aisearch",
-                  "openai"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "9b2cfe95-02be-4c62-8733-1dab7434b65b"
-              },
-              {
                 "title": "Bicep template to bootstrap Azure Deployment Environments",
                 "description": "A template to deploy Azure DevCenter with the minimun configuration to start using Azure Deployment Environments and supercharge your platform engineering story. Infrastructure as Code (written in Bicep) will get you started quickly to enable developers to self-serve environments via the Developer Portal, Azure CLI or CI/CD pipelines.",
                 "preview": "./templates/images/azure-deployment-environments.png",
@@ -1843,32 +1191,6 @@ interactions:
                 "id": "4dba6803-d1c7-4c75-b250-7a679c38a85c"
               },
               {
-                "title": "Azure OpenAI Conference Session Recommender",
-                "description": "Build a recommender using OpenAI, Azure Functions, Azure Static Web Apps, Azure SQL DB, Data API builder and Text Embeddings",
-                "preview": "./templates/images/session-recommender-architecture.png",
-                "authorUrl": "https://sessionfinder.dotnetconf.net/",
-                "author": "Davide Mauri",
-                "source": "https://github.com/Azure-Samples/azure-sql-db-session-recommender",
-                "tags": [
-                  "msft",
-                  "enterprisepatterns",
-                  "ai"
-                ],
-                "frameworks": [
-                  "reactjs"
-                ],
-                "azureServices": [
-                  "appservice",
-                  "functions",
-                  "azuresql",
-                  "swa",
-                  "appinsights",
-                  "openai",
-                  "azureai"
-                ],
-                "id": "95b95166-4183-4f4b-94de-15039a7ba3d5"
-              },
-              {
                 "title": "Microservices App - Dapr PubSub Java AKS",
                 "description": "Demonstrate event-driven communication between microservices by leveraging the pub/sub messaging architecture using Dapr for a Java application running in an AKS cluster.",
                 "preview": "./templates/images/dapr-pubsub-java-aks-diagram.png",
@@ -1886,67 +1208,6 @@ interactions:
                   "aks"
                 ],
                 "id": "8b4c552b-5538-4929-924f-3dffbc6ce0df"
-              },
-              {
-                "title": "Azure Functions - Chat using ChatGPT (Node.js JavaScript Function)",
-                "description": "This sample shows how to take a ChatGPT prompt as HTTP Get or Post input, calculates the completions using OpenAI ChatGPT service, and then returns the output plus caches in a Blob state store.",
-                "preview": "./templates/images/test.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Paul Yuknewicz",
-                "source": "https://github.com/Azure-Samples/function-javascript-ai-openai-chatgpt",
-                "tags": [
-                  "ai",
-                  "gpt",
-                  "msft"
-                ],
-                "languages": [
-                  "javascript"
-                ],
-                "azureServices": [
-                  "functions",
-                  "openai"
-                ],
-                "id": "c8353be4-6a27-4141-8f37-e01268ae3a26"
-              },
-              {
-                "title": "Azure Functions - Chat using ChatGPT (Python v2 Function)",
-                "description": "This sample shows how to take a ChatGPT prompt as HTTP Get or Post input, calculates the completions using OpenAI ChatGPT service, and then returns the output plus caches in a Blob state store.",
-                "preview": "./templates/images/test.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Paul Yuknewicz",
-                "source": "https://github.com/Azure-Samples/function-python-ai-openai-chatgpt",
-                "tags": [
-                  "ai",
-                  "gpt",
-                  "msft"
-                ],
-                "languages": [
-                  "python"
-                ],
-                "azureServices": [
-                  "functions",
-                  "openai"
-                ],
-                "id": "2e8d1ced-9837-4c06-92c8-36c3cb91ff86"
-              },
-              {
-                "title": "Azure Functions - LangChain with Azure OpenAI and ChatGPT (Python v2 Function)",
-                "description": "This sample shows how to take a human prompt as HTTP Get or Post input, calculates the completions using chains of human input and templates. This is a starting point that can be used for more sophisticated chains.",
-                "preview": "./templates/images/test.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Paul Yuknewicz",
-                "source": "https://github.com/Azure-Samples/function-python-ai-langchain",
-                "tags": [
-                  "ai",
-                  "msft"
-                ],
-                "languages": [
-                  "python"
-                ],
-                "azureServices": [
-                  "functions"
-                ],
-                "id": "56c75a9b-82e2-403f-8bcb-f612ecfb03fd"
               },
               {
                 "title": "GPT-RAG: Enterprise GenAI Chat Accelerator",
@@ -2053,77 +1314,6 @@ interactions:
                 "id": "eef2b875-b618-4978-98a6-d186c4c6113b"
               },
               {
-                "title": "Azure Function with Event Hub with optional virtual network capabilities",
-                "description": "An Azure Function app which sends events to and consumes from an Event Hub. The Function app can optionally be configured to integrate with a virtual network, and dependent resources configured with virtual network private endpoints. Managed identity is used for authentication to dependent resources.",
-                "preview": "./templates/images/function-eventhub-vnet.png",
-                "authorUrl": "https://github.com/Azure-Samples/",
-                "author": "Michael S. Collier",
-                "source": "https://github.com/Azure-Samples/function-eventhub-vnet",
-                "tags": [
-                  "msft"
-                ],
-                "languages": [
-                  "dotnetCsharp"
-                ],
-                "azureServices": [
-                  "functions",
-                  "appinsights",
-                  "keyvault",
-                  "eventhub",
-                  "azurestorage",
-                  "vnets"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "dd8e6d7a-f915-407d-91cf-8543698a2092"
-              },
-              {
-                "title": "URL Shortener using Microsoft Orleans and Azure for hosting and data",
-                "description": "An ASP.NET Core 8.0 web application to illustrate basic Microsoft Orleans concepts; such as working with Grains, Silos, and persistent state. Uses Azure Developer CLI (azd) to build, deploy, and monitor.",
-                "preview": "./templates/images/test.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Azure Cosmos DB Content Team",
-                "source": "https://github.com/azure-samples/orleans-url-shortener",
-                "tags": [
-                  "msft"
-                ],
-                "languages": [
-                  "dotnetCsharp"
-                ],
-                "azureServices": [
-                  "cosmosdb",
-                  "aca"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "0372fd41-52fb-49b2-9c13-55d1f8ea3182"
-              },
-              {
-                "title": "Azure OpenAI priority-based load balancer with Azure Container Apps",
-                "description": "A load balancer crafted specifically for Azure OpenAI, which is aware of 'retry-after' headers and intelligently pause traffic when certain OpenAI endpoints reach maximum capacity.",
-                "preview": "./templates/images/openai-aca-loadbalancer.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Andre Dewes",
-                "source": "https://github.com/Azure-Samples/openai-aca-lb",
-                "tags": [
-                  "ai",
-                  "msft"
-                ],
-                "languages": [
-                  "dotnetCsharp"
-                ],
-                "azureServices": [
-                  "aca",
-                  "openai"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "0f690ca4-e013-43c7-8848-b4172f321646"
-              },
-              {
                 "title": "Azure Kubernetes Service Store Demo",
                 "description": "Sample microservices app for AKS demos, tutorials, and experiments.",
                 "preview": "./templates/images/aks-store-demo.png",
@@ -2144,36 +1334,6 @@ interactions:
                   "terraform"
                 ],
                 "id": "737e54ad-b7e4-4a27-909b-cc0234f2ebd5"
-              },
-              {
-                "title": "SAP Cloud SDK on Azure Functions Quickstart (TypeScript)",
-                "description": "This repos serves as quick-start project showcasing SAP Cloud SDK for JavaScript OData consumption running on Azure Functions. Its primary purpose is to set you up for success for your SAP extension project on Azure and reduce the lead time to your first successful deployment as much as possible with developer friendly commands.",
-                "preview": "./templates/images/functions-javascript-sap-cloud-sdk-quickstart.png",
-                "authorUrl": "https://github.com/MartinPankraz, https://github.com/lechnerc77",
-                "author": "Martin Pankraz, Christian Lechner",
-                "source": "https://github.com/Azure-Samples/functions-javascript-sap-cloud-sdk-quickstart",
-                "tags": [
-                  "webapps",
-                  "sap",
-                  "sapcap",
-                  "msft"
-                ],
-                "languages": [
-                  "typescript",
-                  "nodejs"
-                ],
-                "frameworks": [
-                  "nestjs"
-                ],
-                "azureServices": [
-                  "apim",
-                  "keyvault",
-                  "appinsights"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "160b1ab0-defa-481a-9092-26938a447bb2"
               },
               {
                 "title": "SAP CAP on Azure App Service Quickstart",
@@ -2205,26 +1365,6 @@ interactions:
                   "bicep"
                 ],
                 "id": "591868f7-222c-49f8-b2df-bd08d235e40f"
-              },
-              {
-                "title": "Azure API Management policy for priority-based routing to Azure OpenAI",
-                "description": "A load balancer policy crafted specifically for Azure OpenAI, which is aware of 'retry-after' headers and intelligently pause traffic when certain OpenAI endpoints reach maximum capacity.",
-                "preview": "./templates/images/openai-apim-loadbalancer.png",
-                "authorUrl": "https://github.com/Azure-Samples, https://github.com/codebytes",
-                "author": "Andre Dewes, Chris Ayers",
-                "source": "https://github.com/Azure-Samples/openai-apim-lb",
-                "tags": [
-                  "ai",
-                  "msft"
-                ],
-                "azureServices": [
-                  "apim",
-                  "openai"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "087c35ef-edc0-4794-8bf5-51bc265269b0"
               },
               {
                 "title": "PostgreSQL + Pgvector",
@@ -2298,34 +1438,6 @@ interactions:
                   "bicep"
                 ],
                 "id": "4fc85597-77f8-46ca-b035-3cddf6795f4f"
-              },
-              {
-                "title": ".NET AI samples with Azure OpenAI",
-                "description": ".NET samples demonstrating how to use AI in your .NET applications. Each sample demonstrate a specific AI scenario with only a few lines of code. It consists of a console application, running locally, that will send request(s) to an Azure OpenAI Service deployed in your Azure subscription",
-                "preview": "./templates/images/dotnet-ai-samples.png",
-                "authorUrl": "https://github.com/fboucher",
-                "author": "Frank Boucher",
-                "source": "https://github.com/dotnet/ai-samples",
-                "tags": [
-                  "ai",
-                  "msft",
-                  "gpt",
-                  "dall-e"
-                ],
-                "languages": [
-                  "dotnetCsharp"
-                ],
-                "frameworks": [
-                  "semantickernel"
-                ],
-                "azureServices": [
-                  "openai",
-                  "azureai"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "6e970d12-ce54-4982-bdd0-051925b0acb8"
               },
               {
                 "title": "Azure OpenAI Conference Session Assistant",
@@ -2642,83 +1754,6 @@ interactions:
                 "id": "952bd229-f367-4875-b95c-5c0c430abe45"
               },
               {
-                "title": "Creative Writing Assistant: Working with Agents using Promptflow (Python Implementation)",
-                "description": "A creative writing multi-agent solution to help users write articles.",
-                "preview": "./templates/images/agent-openai-python-prompty-creative_writing.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Azure Content Team",
-                "source": "https://github.com/Azure-Samples/agent-openai-python-prompty",
-                "tags": [
-                  "msft",
-                  "ai"
-                ],
-                "languages": [
-                  "python"
-                ],
-                "azureServices": [
-                  "openai",
-                  "aks",
-                  "aisearch"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "4d1aa700-6936-420a-b853-a3b00124011f"
-              },
-              {
-                "title": "Process Automation: Speech to Text and Summarization with AI Studio",
-                "description": "This solution converts speech to text and then processes and summarizes the text based on the prompt scenario.",
-                "preview": "./templates/images/summarization-openai-python-promptflow-architecture-diagram.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Azure Content Team",
-                "source": "https://github.com/Azure-Samples/summarization-openai-python-promptflow",
-                "tags": [
-                  "msft",
-                  "ai"
-                ],
-                "languages": [
-                  "python"
-                ],
-                "azureServices": [
-                  "openai",
-                  "aca",
-                  "speechservice"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "45d0acf6-4d69-49bd-9b26-5e5e6689a35b"
-              },
-              {
-                "title": "Contoso Chat Retail with Azure AI Studio and Promptflow",
-                "description": "This sample has the full End2End process of creating RAG application with Prompt Flow and AI Studio. It includes GPT 3.5 Turbo LLM application code, evaluations, deployment automation with AZD CLI, GitHub actions for evaluation and deployment and intent mapping for multiple LLM task mapping.",
-                "preview": "./templates/images/contoso-chat-architecture-diagram.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Azure Content Team",
-                "source": "https://github.com/Azure-Samples/contoso-chat",
-                "tags": [
-                  "msft",
-                  "aicollection",
-                  "ai"
-                ],
-                "languages": [
-                  "python"
-                ],
-                "frameworks": [
-                  "rag"
-                ],
-                "azureServices": [
-                  "openai",
-                  "aifoundry",
-                  "cosmosdb",
-                  "aisearch"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "05d97dde-491b-40fe-959f-c8ff19b42e6b"
-              },
-              {
                 "title": "API Center Analyzer",
                 "description": "This sample provides an Azure API Center along with Azure Functions and Azure Event Grid to analyze API specs when registering or updating API specs to Azure API Center.",
                 "preview": "./templates/images/apic-analyzer.png",
@@ -2767,39 +1802,6 @@ interactions:
                   "bicep"
                 ],
                 "id": "289b66c8-939c-4a10-9a63-266f196d65fd"
-              },
-              {
-                "title": "API Center Reference Sample",
-                "description": "This sample provides an Azure API Center along with Azure App Service, Static Web Apps and Azure Functions that governs, analyzes and performs service discovery of API specs registered on Azure API Center.",
-                "preview": "./templates/images/apic-reference.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Justin Yoo",
-                "source": "https://github.com/Azure-Samples/APICenter-Reference",
-                "tags": [
-                  "msft"
-                ],
-                "languages": [
-                  "dotnetCsharp",
-                  "typescript"
-                ],
-                "azureServices": [
-                  "apicenter",
-                  "appservice",
-                  "functions",
-                  "eventgrid",
-                  "managedidentity",
-                  "appinsights",
-                  "loganalytics",
-                  "diagnosticsettings",
-                  "swa",
-                  "serviceprincipal",
-                  "logicapps",
-                  "apim"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "9f4c434a-72a5-4577-ab69-04d808d389c2"
               },
               {
                 "title": "GPT Video Analysis-In-A-Box",
@@ -2930,34 +1932,6 @@ interactions:
                   "cosmosdb"
                 ],
                 "id": "ef87ec3c-3b34-43c3-920f-16d32130420a"
-              },
-              {
-                "title": "Pinecone RAG Demo",
-                "description": "This example application sets up an Azure container app with Next.js, linking to a Pinecone index and an OpenAI embedding model for storing and retrieving context for a RAG model.",
-                "preview": "./templates/images/pinecone-rag-demo-azd.png",
-                "authorUrl": "https://pinecone.io",
-                "author": "Pinecone Team",
-                "source": "https://github.com/pinecone-io/pinecone-rag-demo-azd",
-                "tags": [
-                  "community",
-                  "pinecone",
-                  "ai",
-                  "aicollection"
-                ],
-                "languages": [
-                  "typescript"
-                ],
-                "frameworks": [
-                  "nextjs",
-                  "rag"
-                ],
-                "azureServices": [
-                  "aca"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "85bacd39-d643-4dda-b670-6f4ea771cc93"
               },
               {
                 "title": "Serverless Azure OpenAI Quick Start with LlamaIndex (JavaScript)",
@@ -3105,31 +2079,6 @@ interactions:
                   "bicep"
                 ],
                 "id": "6d9166fa-5793-485d-a918-19b461ca0260"
-              },
-              {
-                "title": "Pinecone Assistant sample app",
-                "description": "This sample app is designed to get you up and running using Pinecone Assistant quickly. It was developed by engineers at Pinecone to help you deploy your first Assistant-based application in minutes.",
-                "preview": "./templates/images/pinecone-assistant-architecture.png",
-                "authorUrl": "https://docs.pinecone.io/guides/assistant/understanding-assistant",
-                "author": "Pinecone Team",
-                "source": "https://github.com/pinecone-io/pinecone-assistant-azd",
-                "tags": [
-                  "community",
-                  "pinecone",
-                  "ai",
-                  "aicollection"
-                ],
-                "languages": [
-                  "typescript",
-                  "python"
-                ],
-                "frameworks": [
-                  "rag"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "205ad993-e5bf-4262-a6a5-17dc8749d7db"
               },
               {
                 "title": "Azure OpenAI Chat Frontend",
@@ -3306,121 +2255,6 @@ interactions:
                   "bicep"
                 ],
                 "id": "179f354d-814a-4e5a-b445-244bb227e3be"
-              },
-              {
-                "title": "Azure Cosmos DB for NoSQL Quickstart - .NET",
-                "description": "A quick application to get started using Azure Cosmos DB for NoSQL with the Azure SDK for .NET.",
-                "preview": "./templates/images/cosmos-db-nosql-dotnet-quickstart.png",
-                "authorUrl": "https://learn.microsoft.com/azure/cosmos-db/nosql/quickstart-dotnet",
-                "author": "Azure Cosmos DB Content Team",
-                "source": "https://github.com/azure-samples/cosmos-db-nosql-dotnet-quickstart",
-                "tags": [
-                  "msft"
-                ],
-                "languages": [
-                  "dotnetCsharp"
-                ],
-                "azureServices": [
-                  "cosmosdb",
-                  "aca",
-                  "managedidentity"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "783418ac-262e-417d-9f7e-0193eec408d2"
-              },
-              {
-                "title": "Azure Cosmos DB for NoSQL Quickstart - Python",
-                "description": "A quick application to get started using Azure Cosmos DB for NoSQL with the Azure SDK for Python.",
-                "preview": "./templates/images/cosmos-db-nosql-python-quickstart.png",
-                "authorUrl": "https://learn.microsoft.com/azure/cosmos-db/nosql/quickstart-python",
-                "author": "Azure Cosmos DB Content Team",
-                "source": "https://github.com/azure-samples/cosmos-db-nosql-python-quickstart",
-                "tags": [
-                  "msft"
-                ],
-                "languages": [
-                  "python"
-                ],
-                "azureServices": [
-                  "cosmosdb",
-                  "aca",
-                  "managedidentity"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "e0298977-96b5-4f41-a57c-f3238c5bff43"
-              },
-              {
-                "title": "Azure Cosmos DB for NoSQL Quickstart - Node.js",
-                "description": "A quick application to get started using Azure Cosmos DB for NoSQL with the Azure SDK for Node.js.",
-                "preview": "./templates/images/cosmos-db-nosql-nodejs-typescript-quickstart.png",
-                "authorUrl": "https://learn.microsoft.com/azure/cosmos-db/nosql/quickstart-nodejs",
-                "author": "Azure Cosmos DB Content Team",
-                "source": "https://github.com/azure-samples/cosmos-db-nosql-nodejs-quickstart",
-                "tags": [
-                  "msft"
-                ],
-                "languages": [
-                  "nodejs"
-                ],
-                "azureServices": [
-                  "cosmosdb",
-                  "aca",
-                  "managedidentity"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "a134f36d-440e-4300-9359-11945e33bba3"
-              },
-              {
-                "title": "Azure Cosmos DB for NoSQL Quickstart - Java",
-                "description": "A quick application to get started using Azure Cosmos DB for NoSQL with the Azure SDK for Java.",
-                "preview": "./templates/images/cosmos-db-nosql-java-quickstart.png",
-                "authorUrl": "https://learn.microsoft.com/azure/cosmos-db/nosql/quickstart-java",
-                "author": "Azure Cosmos DB Content Team",
-                "source": "https://github.com/azure-samples/cosmos-db-nosql-java-quickstart",
-                "tags": [
-                  "msft"
-                ],
-                "languages": [
-                  "java"
-                ],
-                "azureServices": [
-                  "cosmosdb",
-                  "aca",
-                  "managedidentity"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "67254a85-3724-441c-96b5-a4e82f1b575d"
-              },
-              {
-                "title": "Azure Cosmos DB for NoSQL Quickstart - Go",
-                "description": "A quick application to get started using Azure Cosmos DB for NoSQL with the Azure SDK for Go.",
-                "preview": "./templates/images/cosmos-db-nosql-go-quickstart.png",
-                "authorUrl": "https://learn.microsoft.com/azure/cosmos-db/nosql/quickstart-go",
-                "author": "Azure Cosmos DB Content Team",
-                "source": "https://github.com/azure-samples/cosmos-db-nosql-go-quickstart",
-                "tags": [
-                  "msft"
-                ],
-                "languages": [
-                  "go"
-                ],
-                "azureServices": [
-                  "cosmosdb",
-                  "aca",
-                  "managedidentity"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "af305758-e11a-44fd-a666-8500d0c3f4af"
               },
               {
                 "title": "Azure Functions C# HTTP Trigger using Azure Developer CLI",
@@ -3641,52 +2475,6 @@ interactions:
                 "id": "48ce5d64-df9b-4546-9ba1-69955e608b98"
               },
               {
-                "title": "Azure Cosmos DB for Table Quickstart - .NET",
-                "description": "A quick application to get started using Azure Cosmos DB for Table with the Azure SDK for .NET.",
-                "preview": "./templates/images/cosmos-db-table-dotnet-quickstart.png",
-                "authorUrl": "https://learn.microsoft.com/azure/cosmos-db/table/quickstart-dotnet",
-                "author": "Azure Cosmos DB Content Team",
-                "source": "https://github.com/azure-samples/cosmos-db-table-dotnet-quickstart",
-                "tags": [
-                  "msft"
-                ],
-                "languages": [
-                  "dotnetCsharp"
-                ],
-                "azureServices": [
-                  "cosmosdb",
-                  "aca",
-                  "managedidentity"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "a03287e5-bc90-4062-8c6b-3b65045d5310"
-              },
-              {
-                "title": "Azure Cosmos DB for Table Quickstart - Node.js",
-                "description": "A quick application to get started using Azure Cosmos DB for Table with the Azure SDK for Node.js.",
-                "preview": "./templates/images/cosmos-db-table-nodejs-typescript-quickstart.png",
-                "authorUrl": "https://learn.microsoft.com/azure/cosmos-db/table/quickstart-nodejs",
-                "author": "Azure Cosmos DB Content Team",
-                "source": "https://github.com/azure-samples/cosmos-db-table-nodejs-quickstart",
-                "tags": [
-                  "msft"
-                ],
-                "languages": [
-                  "nodejs"
-                ],
-                "azureServices": [
-                  "cosmosdb",
-                  "aca",
-                  "managedidentity"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "43cd8998-653c-4c97-8ca5-ac463ca88900"
-              },
-              {
                 "title": "Integration Hub with Logic App Standard",
                 "description": "Template to deploy shared components like Logic App Standard Plan, Service Bus and Azure Artifacts for an integration platform.",
                 "preview": "./templates/images/integration-hub.png",
@@ -3821,7 +2609,7 @@ interactions:
                 "preview": "./templates/images/aca-githubmodel-marketingwriter.png",
                 "authorUrl": "https://github.com/xuhaoruins",
                 "author": "Hao Xu",
-                "source": "https://github.com/xuhaoruins/marketingwriter",
+                "source": "https://github.com/haxudev/marketingwriter",
                 "tags": [
                   "community"
                 ],
@@ -3838,52 +2626,6 @@ interactions:
                   "bicep"
                 ],
                 "id": "10541f55-54fd-4382-9e2e-88b70e9a7087"
-              },
-              {
-                "title": "Sprint Petclinic AI application on Azure Container Apps",
-                "description": "A chat bot using Generative AI to the Spring Petclinic application, running on Azure Container Apps",
-                "preview": "./templates/images/spring-petclinic-ai.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Songbo Wang",
-                "source": "https://github.com/Azure-Samples/spring-petclinic-ai",
-                "tags": [
-                  "msft"
-                ],
-                "languages": [
-                  "java"
-                ],
-                "azureServices": [
-                  "aca",
-                  "managedidentity",
-                  "openai"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "9cb76b7b-c6f2-4742-829f-34765f335457"
-              },
-              {
-                "title": "Simple Chat App using API Management Gateway and Azure OpenAI",
-                "description": "A chat interface that sends messages through API Management Azure OpenAI endpoints implementing load-balancing, circuit breaking and semantic caching, showcasing enterprise-grade API management for AI workloads.",
-                "preview": "./templates/images/genai-apim-sample.jpg",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Chris Noring",
-                "source": "https://github.com/Azure-Samples/genai-gateway-apim",
-                "tags": [
-                  "msft"
-                ],
-                "languages": [
-                  "javascript"
-                ],
-                "azureServices": [
-                  "apim",
-                  "managedidentity",
-                  "openai"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "edb77f4f-ddcc-4ecc-a025-70e3397bea31"
               },
               {
                 "title": "Multi-tier App with React.js Dashboard Front-End SPA and Backend Node.js API",
@@ -3997,60 +2739,6 @@ interactions:
                   "bicep"
                 ],
                 "id": "5fa2b466-8e1f-48ca-91e0-2e259d89985f"
-              },
-              {
-                "title": "Data API builder Quickstart - Azure Cosmos DB for NoSQL",
-                "description": "A quick application to get started using Data API builder to create a GraphQL API for Azure Cosmos DB for NoSQL.",
-                "preview": "./templates/images/dab-azure-cosmos-db-nosql-quickstart.png",
-                "authorUrl": "https://github.com/azure-samples",
-                "author": "Azure Cosmos DB Content Team",
-                "source": "https://github.com/azure-samples/dab-azure-cosmos-db-nosql-quickstart",
-                "tags": [
-                  "dab",
-                  "msft"
-                ],
-                "languages": [
-                  "dotnetCsharp"
-                ],
-                "frameworks": [
-                  "blazor"
-                ],
-                "azureServices": [
-                  "cosmosdb",
-                  "aca",
-                  "managedidentity"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "85c20504-7cd8-4550-bdea-5c300f52c70b"
-              },
-              {
-                "title": "Data API builder Quickstart - Azure SQL",
-                "description": "A quick application to get started using Data API builder to create a REST API for Azure SQL.",
-                "preview": "./templates/images/dab-azure-sql-quickstart.png",
-                "authorUrl": "https://learn.microsoft.com/azure/data-api-builder/quickstart-azure-sql",
-                "author": "Azure SQL Content Team",
-                "source": "https://github.com/azure-samples/dab-azure-sql-quickstart",
-                "tags": [
-                  "dab",
-                  "msft"
-                ],
-                "languages": [
-                  "dotnetCsharp"
-                ],
-                "frameworks": [
-                  "blazor"
-                ],
-                "azureServices": [
-                  "azuresql",
-                  "aca",
-                  "managedidentity"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "d8e9bdd8-2874-4e4a-8cf7-3d32b72f9a69"
               },
               {
                 "title": "LlamaIndex RAG chat app with Azure OpenAI and Azure AI Search (JavaScript)",
@@ -4309,75 +2997,6 @@ interactions:
                   "monitor"
                 ],
                 "id": "b88a6ad2-2084-4fe4-b441-3e8b71dcf292"
-              },
-              {
-                "title": "Azure Cosmos DB for Table Quickstart - Python",
-                "description": "A quick application to get started using Azure Cosmos DB for Table with the Azure SDK for Python.",
-                "preview": "./templates/images/cosmos-db-table-python-quickstart.png",
-                "authorUrl": "https://learn.microsoft.com/azure/cosmos-db/table/quickstart-python",
-                "author": "Azure Cosmos DB Content Team",
-                "source": "https://github.com/azure-samples/cosmos-db-table-python-quickstart",
-                "tags": [
-                  "msft"
-                ],
-                "languages": [
-                  "python"
-                ],
-                "azureServices": [
-                  "cosmosdb",
-                  "aca",
-                  "managedidentity"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "b9091b21-1948-4912-ad51-466a12201758"
-              },
-              {
-                "title": "Azure Cosmos DB for Table Quickstart - Go",
-                "description": "A quick application to get started using Azure Cosmos DB for Table with the Azure SDK for Go.",
-                "preview": "./templates/images/cosmos-db-table-go-quickstart.png",
-                "authorUrl": "https://learn.microsoft.com/azure/cosmos-db/table/quickstart-go",
-                "author": "Azure Cosmos DB Content Team",
-                "source": "https://github.com/azure-samples/cosmos-db-table-go-quickstart",
-                "tags": [
-                  "msft"
-                ],
-                "languages": [
-                  "go"
-                ],
-                "azureServices": [
-                  "cosmosdb",
-                  "aca",
-                  "managedidentity"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "c7d0d95e-5a3c-43f3-9af1-9a2752f5a68e"
-              },
-              {
-                "title": "Azure Cosmos DB for Table Quickstart - Java",
-                "description": "A quick application to get started using Azure Cosmos DB for Table with the Azure SDK for Java.",
-                "preview": "./templates/images/cosmos-db-table-java-quickstart.png",
-                "authorUrl": "https://learn.microsoft.com/azure/cosmos-db/table/quickstart-java",
-                "author": "Azure Cosmos DB Content Team",
-                "source": "https://github.com/azure-samples/cosmos-db-table-java-quickstart",
-                "tags": [
-                  "msft"
-                ],
-                "languages": [
-                  "java"
-                ],
-                "azureServices": [
-                  "cosmosdb",
-                  "aca",
-                  "managedidentity"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "e6b9ab59-b166-456b-a72b-14acc89ce210"
               },
               {
                 "title": "Azure FrontDoor CDN with sample HTML webapp",
@@ -4879,22 +3498,6 @@ interactions:
                 "id": "701855fd-df76-45ce-82c9-8ef5185b11dc"
               },
               {
-                "title": "Azure Storage Account",
-                "description": "This scenario is used to demonstrate Azure Storage Account with Blobs and File Share sample data.",
-                "preview": "./templates/images/test.png",
-                "authorUrl": "https://github.com/petender",
-                "author": "Peter De Tender",
-                "source": "https://github.com/petender/azd-storaccnt/",
-                "tags": [
-                  "community"
-                ],
-                "azureServices": [
-                  "blobstorage",
-                  "azurestorage"
-                ],
-                "id": "3469bc1d-af3a-4512-86b0-ccb4c0ab8c49"
-              },
-              {
                 "title": "Azure Secured Data Solutions",
                 "description": "This scenario is used to demonstrate different Azure Data Solutions, using secured connectivity.",
                 "preview": "./templates/images/test.png",
@@ -4983,66 +3586,12 @@ interactions:
                 "id": "e11bb59e-5df9-4fa7-8839-7bc5c384a6ff"
               },
               {
-                "title": ".NET + Semantic Search - eShopLite",
-                "description": "eShopLite - Semantic Search is a reference .NET application implementing an eCommerce site with Search features using Keyword Search and Semantic Search.",
-                "preview": "./templates/images/eshop-semanticsearch.png",
-                "authorUrl": "https://twitter.com/elbruno",
-                "author": "Bruno Capuano",
-                "source": "https://github.com/Azure-Samples/eShopLite-SemanticSearch",
-                "tags": [
-                  "ai",
-                  "msft"
-                ],
-                "languages": [
-                  "dotnetCsharp",
-                  "typescript",
-                  "javascript"
-                ],
-                "azureServices": [
-                  "managedidentity",
-                  "openai",
-                  "loganalytics"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "f9dd77f7-0a8d-4025-9785-fb3d8fdb7198"
-              },
-              {
-                "title": ".NET + Semantic Search + AI Search - eShopLite",
-                "description": "eShopLite - Semantic Search - Azure AI Search is a reference .NET application implementing an eCommerce site with Search features using Keyword Search with SQL queries, and Semantic Search with Vector Database and Azure AI Search.",
-                "preview": "./templates/images/eshop-semanticsearch-aisearch.png",
-                "authorUrl": "https://twitter.com/elbruno",
-                "author": "Bruno Capuano",
-                "source": "https://github.com/Azure-Samples/eShopLite-SemanticSearch-AzureAISearch",
-                "tags": [
-                  "ai",
-                  "msft"
-                ],
-                "languages": [
-                  "dotnetCsharp",
-                  "typescript",
-                  "javascript"
-                ],
-                "azureServices": [
-                  "managedidentity",
-                  "aisearch",
-                  "azuresql",
-                  "openai",
-                  "loganalytics"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "92a49f6d-772c-4d40-ac4e-6dbbb29a7320"
-              },
-              {
                 "title": "RAG on Neon Serverless Postgres",
                 "description": "This project creates a web-based chat application with an API backend that leverages Azure OpenAI chat models to answer questions using Neon Serverless Postgres. The frontend is built with React and FluentUI, while the backend is written in Python (FastAPI).",
                 "preview": "./templates/images/rag-neon-azure-architecture-diagram-v1.png",
                 "authorUrl": "https://neon.tech/demos",
                 "author": "Bobur Umurzokov",
-                "source": "https://github.com/neondatabase-labs/rag-neon-postgres-openai-azure-python",
+                "source": "https://github.com/neondatabase/rag-neon-postgres-openai-azure-python",
                 "tags": [
                   "gpt",
                   "neondb",
@@ -5071,7 +3620,7 @@ interactions:
                 "preview": "./templates/images/rag-neon-vector-store-per-user.png",
                 "authorUrl": "https://neon.tech/demos",
                 "author": "Bobur Umurzokov",
-                "source": "https://github.com/neondatabase-labs/azure-tenant-ai-chat",
+                "source": "https://github.com/neondatabase/azure-tenant-ai-chat",
                 "tags": [
                   "gpt",
                   "neondb",
@@ -5360,38 +3909,6 @@ interactions:
                   "avset"
                 ],
                 "id": "e4909150-dce8-4854-a2bf-b0e051893413"
-              },
-              {
-                "title": ".NET OpenAI MCP Agent",
-                "description": "This is an MCP agent app written in .NET, using Azure OpenAI, with a remote MCP server written in TypeScript.",
-                "preview": "./templates/images/openai-mcp-agent-dotnet.png",
-                "authorUrl": "https://github.com/justinyoo",
-                "author": "Justin Yoo",
-                "source": "https://github.com/Azure-Samples/openai-mcp-agent-dotnet",
-                "tags": [
-                  "msft",
-                  "ai",
-                  "mcp"
-                ],
-                "languages": [
-                  "dotnetCsharp"
-                ],
-                "frameworks": [
-                  "blazor"
-                ],
-                "azureServices": [
-                  "aca",
-                  "azureai",
-                  "openai",
-                  "loganalytics",
-                  "managedidentity",
-                  "appinsights",
-                  "diagnosticsettings"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "7157a845-772d-4f21-a071-cb118fd09354"
               },
               {
                 "title": "Aspire with Key Vault + App Config + Service Bus/RabbitMQ",
@@ -5803,25 +4320,6 @@ interactions:
                   "bicep"
                 ],
                 "id": "F5B15030-D351-462E-8F5F-A054EEBEFCA3"
-              },
-              {
-                "title": "Azure Monitor custom logs and external telemetry",
-                "description": "This scenario deploys an Log Analytics workspace with a custom table to ingest logs and external telemetry.",
-                "preview": "./templates/images/monitor-diagram.png",
-                "author": "Karel De Winter",
-                "source": "https://github.com/kareldewinter/tdd-azd-monitor",
-                "tags": [
-                  "community"
-                ],
-                "azureServices": [
-                  "monitor",
-                  "appinsights",
-                  "loganalytics"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "5a9ce880-cba7-4aaf-84f2-dd8e01d8102f"
               },
               {
                 "title": "API Management with ConferenceAPI and OAuth",
@@ -6323,36 +4821,6 @@ interactions:
                   "bicep"
                 ],
                 "id": "178c3fdb-04b5-4423-b451-5f7dc7d097fff"
-              },
-              {
-                "title": "MCP Container TS - Model Context Protocol in TypeScript",
-                "description": "A reference implementation of a Model Context Protocol (MCP) server using Node.js and TypeScript. Demonstrates tool orchestration, authorization and authentication, in-memory SQLite state, OpenTelemetry tracing, and deployment to Azure Container Apps. Integrates with OpenAI, VS Code MCP client, and supports local and cloud workflows.",
-                "preview": "./templates/images/mcp-container-typescript-diagram.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Microsoft DevRel",
-                "source": "https://github.com/Azure-Samples/mcp-container-ts",
-                "tags": [
-                  "msft",
-                  "ai",
-                  "mcp"
-                ],
-                "languages": [
-                  "nodejs",
-                  "typescript",
-                  "javascript"
-                ],
-                "azureServices": [
-                  "aca",
-                  "azureai",
-                  "aifoundry",
-                  "openai",
-                  "monitor",
-                  "managedidentity"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "b7e2c1a2-1f2b-4e3a-9c7d-2e8f7c9d1234"
               },
               {
                 "title": "Remote self-hosted Azure MCP Server with managed identity for Microsoft Foundry integration",
@@ -7041,36 +5509,6 @@ interactions:
                 ]
               },
               {
-                "title": "Copilot SDK Service — Chat API with React UI on Azure Container Apps",
-                "description": "A full-stack TypeScript template using the GitHub Copilot SDK with SSE streaming chat and summarize endpoints, deployed to Azure Container Apps. Supports GitHub models and Azure Bring Your Own Model (BYOM).",
-                "preview": "./templates/images/copilot-sdk-service.png",
-                "authorUrl": "https://github.com/jongio",
-                "author": "Jon Gallant",
-                "source": "https://github.com/Azure-Samples/copilot-sdk-service",
-                "tags": [
-                  "msft",
-                  "ai"
-                ],
-                "languages": [
-                  "typescript",
-                  "javascript",
-                  "nodejs"
-                ],
-                "frameworks": [
-                  "reactjs"
-                ],
-                "azureServices": [
-                  "aca",
-                  "keyvault",
-                  "monitor",
-                  "openai"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "13f1caf6-0609-48ca-88ed-10f1c76d63af"
-              },
-              {
                 "title": "Track Availability in Application Insights using Standard Test, Azure Function and Logic App Workflow",
                 "description": "A demo that shows three different ways to track availability in Application Insights using a standard test (webtest), an Azure Function (.NET) and a Logic App workflow",
                 "preview": "https://raw.githubusercontent.com/ronaldbosma/track-availability-in-app-insights/main/images/diagrams-overview.png",
@@ -7152,122 +5590,6 @@ interactions:
                 "id": "4218b822-4eca-451e-8b9b-c89a9be0dec5"
               },
               {
-                "title": "Host MCP SDK Server on Azure Functions - Python",
-                "description": "Host remote MCP servers built with the official Python MCP SDK on Azure Functions as custom handlers. Demonstrates weather tools and On-Behalf-Of (OBO) flow for Microsoft Graph API access.",
-                "preview": "./templates/images/test.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Azure Samples",
-                "source": "https://github.com/Azure-Samples/mcp-sdk-functions-hosting-python",
-                "tags": [
-                  "msft",
-                  "ai",
-                  "mcp"
-                ],
-                "languages": [
-                  "python"
-                ],
-                "azureServices": [
-                  "functions",
-                  "keyvault",
-                  "monitor",
-                  "appinsights",
-                  "vnets",
-                  "privateEndpoints"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "51895539-40d7-4113-92bc-9c4c32f6cab4"
-              },
-              {
-                "title": "Host MCP SDK Server on Azure Functions - TypeScript",
-                "description": "Host remote MCP servers built with the official Node MCP SDK on Azure Functions as custom handlers. Demonstrates weather tools and On-Behalf-Of (OBO) flow for Microsoft Graph API access.",
-                "preview": "./templates/images/test.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Azure Samples",
-                "source": "https://github.com/Azure-Samples/mcp-sdk-functions-hosting-node",
-                "tags": [
-                  "msft",
-                  "ai",
-                  "mcp"
-                ],
-                "languages": [
-                  "typescript",
-                  "nodejs"
-                ],
-                "azureServices": [
-                  "functions",
-                  "keyvault",
-                  "monitor",
-                  "appinsights",
-                  "vnets",
-                  "privateEndpoints"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "2685af36-bbad-4276-9cd5-b7a2c09febd7"
-              },
-              {
-                "title": "Host MCP SDK Server on Azure Functions - .NET/C#",
-                "description": "Host remote MCP servers built with the official C# (.NET) MCP SDK on Azure Functions as custom handlers. Demonstrates weather tools and On-Behalf-Of (OBO) flow for Microsoft Graph API access.",
-                "preview": "./templates/images/test.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Azure Samples",
-                "source": "https://github.com/Azure-Samples/mcp-sdk-functions-hosting-dotnet",
-                "tags": [
-                  "msft",
-                  "ai",
-                  "mcp"
-                ],
-                "languages": [
-                  "dotnetCsharp"
-                ],
-                "azureServices": [
-                  "functions",
-                  "keyvault",
-                  "monitor",
-                  "appinsights",
-                  "vnets",
-                  "privateEndpoints"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "d97bbc7d-d118-4f2d-98cf-5f56c9601d9a"
-              },
-              {
-                "title": "Host MCP SDK Server on Azure Functions - Java/Quarkus",
-                "description": "Host remote MCP servers built with Java/Quarkus on Azure Functions as custom handlers. Demonstrates weather tools and built-in server authentication and authorization.",
-                "preview": "./templates/images/test.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Azure Samples",
-                "source": "https://github.com/Azure-Samples/mcp-sdk-functions-hosting-java",
-                "tags": [
-                  "msft",
-                  "ai",
-                  "mcp"
-                ],
-                "languages": [
-                  "java"
-                ],
-                "frameworks": [
-                  "quarkus"
-                ],
-                "azureServices": [
-                  "functions",
-                  "keyvault",
-                  "monitor",
-                  "appinsights",
-                  "vnets",
-                  "privateEndpoints"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "c7bdb456-e76e-4645-9b5d-26b1df04a339"
-              },
-              {
                 "title": "ToDo list - Razor Pages + Azure Functions + Storage Table (Managed Identity access)",
                 "description": "A complete ToDo app with front-end in Razor pages hosted in App Service, backend in Azure Functions hosted in function app and data in Azure Table Storage. Uses Managed Identity to access data (no connection strings or keys). Uses Azure Developer CLI (azd) to build, deploy, and monitor.",
                 "preview": "./templates/images/todo-razorpages-azurefunctions-table.png",
@@ -7347,15 +5669,45 @@ interactions:
                 "id": "9fa7012a-4961-46d0-abc9-db9a8ea49f06"
               },
               {
+                "title": "Serverless Repo Digest Agent",
+                "description": "A daily GitHub repository digest agent running on the Azure Functions serverless agents runtime with Azure AI Gateway and GitHub MCP tools.",
+                "preview": "./templates/images/test.png",
+                "authorUrl": "https://github.com/paulyuk",
+                "author": "paulyuk",
+                "source": "https://github.com/paulyuk/serverless-repo-digest-agent",
+                "tags": [
+                  "community",
+                  "ai",
+                  "mcp"
+                ],
+                "languages": [
+                  "python"
+                ],
+                "azureServices": [
+                  "functions",
+                  "azureai",
+                  "aifoundry",
+                  "aca",
+                  "azurestorage",
+                  "appinsights",
+                  "loganalytics",
+                  "managedidentity"
+                ],
+                "IaC": [
+                  "bicep"
+                ],
+                "id": "fd6f9d70-eb69-4c47-b899-b6cd300fe752"
+              },
+              {
                 "title": "Hello World agent (Responses, Agent Framework, C#)",
                 "description": "Minimal Hello World agent using the Responses protocol with the Agent Framework approach in C#. Uses Microsoft.Agents.AI to create an AIAgent backed by a Foundry model.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/agent-framework/hello-world/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/agent-framework/hello-world/azure.yaml",
                 "languages": [
                   "dotnetCsharp"
                 ],
-                "id": "9db1dc5d-772e-50cd-8e29-2a70bef8c872",
+                "id": "5f0850f8-f6ef-576b-a8ae-c5b6d78eb78f",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Agent Framework",
                 "extensionTags": [
@@ -7370,11 +5722,11 @@ interactions:
                 "description": "A minimal echo agent hosted as a Foundry Hosted Agent using the Invocations protocol and the Agent Framework. No LLM or Azure credentials required.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/agent-framework/invocations-echo-agent/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/agent-framework/invocations-echo-agent/azure.yaml",
                 "languages": [
                   "dotnetCsharp"
                 ],
-                "id": "c948c0bd-8b9e-56f3-b4fb-86ef1d4096fd",
+                "id": "7aa2bad6-bc53-5e57-9610-ccf0aa8cf0fb",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Agent Framework",
                 "extensionTags": [
@@ -7387,11 +5739,11 @@ interactions:
                 "description": "A travel assistant agent with local C# function tools for hotel search in Seattle.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/agent-framework/local-tools/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/agent-framework/local-tools/azure.yaml",
                 "languages": [
                   "dotnetCsharp"
                 ],
-                "id": "06917df3-c1b5-5f96-a2ed-206883a31c84",
+                "id": "455b66ab-1c3d-53fa-89f3-5e4555a1cc70",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Agent Framework",
                 "extensionTags": [
@@ -7405,11 +5757,11 @@ interactions:
                 "description": "A developer assistant with remote MCP tools connecting to GitHub and Microsoft Learn documentation servers.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/agent-framework/mcp-tools/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/agent-framework/mcp-tools/azure.yaml",
                 "languages": [
                   "dotnetCsharp"
                 ],
-                "id": "a634f96e-a6fa-5305-a6e6-8e243f86039c",
+                "id": "49dd2e87-7d2e-59b5-bcf2-7015b621da84",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Agent Framework",
                 "extensionTags": [
@@ -7423,11 +5775,11 @@ interactions:
                 "description": "A simple general-purpose AI assistant hosted as a Foundry Hosted Agent using the Agent Framework.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/agent-framework/simple-agent/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/agent-framework/simple-agent/azure.yaml",
                 "languages": [
                   "dotnetCsharp"
                 ],
-                "id": "d27ec121-fc2e-5607-8e40-998cb0268c35",
+                "id": "2e947be9-4044-5f88-91b0-ce298825f454",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Agent Framework",
                 "extensionTags": [
@@ -7440,11 +5792,11 @@ interactions:
                 "description": "A support specialist agent with RAG capabilities using TextSearchProvider to ground answers in product documentation.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/agent-framework/text-search-rag/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/agent-framework/text-search-rag/azure.yaml",
                 "languages": [
                   "dotnetCsharp"
                 ],
-                "id": "89bd6444-b880-5e9c-a6e9-dd22effd4eb2",
+                "id": "aabeaf2b-7e2e-5274-99ac-acea701ec34d",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Agent Framework",
                 "extensionTags": [
@@ -7458,11 +5810,11 @@ interactions:
                 "description": "A workflow agent that performs sequential translation through multiple languages (English to French to Spanish to English).",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/agent-framework/workflows/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/agent-framework/workflows/azure.yaml",
                 "languages": [
                   "dotnetCsharp"
                 ],
-                "id": "575f8351-192b-5c74-8803-b816090e806a",
+                "id": "ebab1899-6f93-5a12-93db-9b3d688c1a8e",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Agent Framework",
                 "extensionTags": [
@@ -7472,15 +5824,269 @@ interactions:
                 ]
               },
               {
+                "title": "Basic Chat (Responses, LangGraph, Python)",
+                "description": "A multi-turn LangGraph chat agent with local time and calculator tools, hosted on Foundry over the Responses protocol with server-side conversation state.",
+                "authorUrl": "https://github.com/microsoft-foundry",
+                "author": "Microsoft Foundry Team",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/langgraph/responses/01-langgraph-chat/azure.yaml",
+                "languages": [
+                  "python"
+                ],
+                "id": "3a4c2dfd-9ae1-5bb2-9140-78e30a04a63e",
+                "templateType": "extension.ai.agent",
+                "extensionFramework": "LangGraph",
+                "extensionTags": [
+                  "LangGraph",
+                  "local tools",
+                  "multi-turn",
+                  "Responses Protocol"
+                ]
+              },
+              {
+                "title": "Deep Agents (Responses, LangGraph, Python)",
+                "description": "A LangGraph deep research agent that plans work, delegates focused research, uses managed web search, consolidates citations, and persists durable checkpoints on Foundry.",
+                "authorUrl": "https://github.com/microsoft-foundry",
+                "author": "Microsoft Foundry Team",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/langgraph/responses/11-deep-agents/azure.yaml",
+                "languages": [
+                  "python"
+                ],
+                "id": "ea507f3e-fdf2-5267-a25d-b3472264b417",
+                "templateType": "extension.ai.agent",
+                "extensionFramework": "LangGraph",
+                "extensionTags": [
+                  "LangGraph",
+                  "deep research",
+                  "Foundry Toolbox",
+                  "web search",
+                  "Responses Protocol"
+                ]
+              },
+              {
+                "title": "Foundry Toolbox (Responses, LangGraph, Python)",
+                "description": "A LangGraph ReAct agent using a Foundry Toolbox for managed web search and Microsoft Learn MCP tools, including OAuth consent handling and schema sanitization.",
+                "authorUrl": "https://github.com/microsoft-foundry",
+                "author": "Microsoft Foundry Team",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/langgraph/responses/02-langgraph-toolbox/azure.yaml",
+                "languages": [
+                  "python"
+                ],
+                "id": "1750adf0-ef7d-5901-8c5a-54ea5731f3ea",
+                "templateType": "extension.ai.agent",
+                "extensionFramework": "LangGraph",
+                "extensionTags": [
+                  "LangGraph",
+                  "Foundry Toolbox",
+                  "MCP",
+                  "Responses Protocol"
+                ]
+              },
+              {
+                "title": "Foundry Toolbox with User Identity (Responses, LangGraph, Python)",
+                "description": "A LangGraph ReAct agent with a Foundry Toolbox that provisions WorkIQ Mail, WorkIQ Calendar, and GitHub MCP integrations using user identity and managed OAuth.",
+                "authorUrl": "https://github.com/microsoft-foundry",
+                "author": "Microsoft Foundry Team",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/langgraph/responses/03-langgraph-toolbox-user-identity/azure.yaml",
+                "languages": [
+                  "python"
+                ],
+                "id": "609fe4fe-b853-564f-8321-0e8dc837859e",
+                "templateType": "extension.ai.agent",
+                "extensionFramework": "LangGraph",
+                "extensionTags": [
+                  "LangGraph",
+                  "Foundry Toolbox",
+                  "MCP",
+                  "user identity",
+                  "Responses Protocol"
+                ]
+              },
+              {
+                "title": "Multi-Agent Workflows (Responses, LangGraph, Python)",
+                "description": "A LangGraph StateGraph workflow that sequentially chains specialized slogan writer, legal reviewer, and formatter LLM nodes while returning only the final formatted result.",
+                "authorUrl": "https://github.com/microsoft-foundry",
+                "author": "Microsoft Foundry Team",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/langgraph/responses/05-workflows/azure.yaml",
+                "languages": [
+                  "python"
+                ],
+                "id": "abe65c6d-9591-5822-b4b9-d68b7fb5f3e4",
+                "templateType": "extension.ai.agent",
+                "extensionFramework": "LangGraph",
+                "extensionTags": [
+                  "LangGraph",
+                  "multi-agent",
+                  "workflows",
+                  "Responses Protocol"
+                ]
+              },
+              {
+                "title": "File Handling (Responses, LangGraph, Python)",
+                "description": "A LangGraph agent that works with uploaded and bundled files using local filesystem tools plus a Foundry Toolbox code interpreter for managed calculations and data analysis.",
+                "authorUrl": "https://github.com/microsoft-foundry",
+                "author": "Microsoft Foundry Team",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/langgraph/responses/06-files/azure.yaml",
+                "languages": [
+                  "python"
+                ],
+                "id": "fed2b627-69eb-52cd-9d31-945038b5062b",
+                "templateType": "extension.ai.agent",
+                "extensionFramework": "LangGraph",
+                "extensionTags": [
+                  "LangGraph",
+                  "Foundry Toolbox",
+                  "code interpreter",
+                  "file handling",
+                  "Responses Protocol"
+                ]
+              },
+              {
+                "title": "Human-in-the-Loop (Responses, LangGraph, Python)",
+                "description": "A LangGraph proposal workflow that pauses for human review and supports approval, revision with feedback, or rejection through Responses protocol approval and function-call channels.",
+                "authorUrl": "https://github.com/microsoft-foundry",
+                "author": "Microsoft Foundry Team",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/langgraph/responses/07-human-in-the-loop/azure.yaml",
+                "languages": [
+                  "python"
+                ],
+                "id": "c8d6cc87-192c-575a-8c24-311cfa0791b1",
+                "templateType": "extension.ai.agent",
+                "extensionFramework": "LangGraph",
+                "extensionTags": [
+                  "LangGraph",
+                  "human-in-the-loop",
+                  "approval workflow",
+                  "Responses Protocol"
+                ]
+              },
+              {
+                "title": "Observability (Responses, LangGraph, Python)",
+                "description": "An instrumented LangGraph agent that uses automatic GenAI OpenTelemetry tracing to emit node, model, and tool spans, metrics, and logs to Application Insights.",
+                "authorUrl": "https://github.com/microsoft-foundry",
+                "author": "Microsoft Foundry Team",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/langgraph/responses/08-observability/azure.yaml",
+                "languages": [
+                  "python"
+                ],
+                "id": "15a492cd-f5d1-57e7-aac1-401382163d10",
+                "templateType": "extension.ai.agent",
+                "extensionFramework": "LangGraph",
+                "extensionTags": [
+                  "LangGraph",
+                  "observability",
+                  "OpenTelemetry",
+                  "Application Insights",
+                  "Responses Protocol"
+                ]
+              },
+              {
+                "title": "Resilient Long Running Agent (Responses, LangGraph, Python)",
+                "description": "A crash-resilient LangGraph trip-planning agent with durable checkpoints, background responses, replayable streaming, human approval, steering, recovery, and cancellation.",
+                "authorUrl": "https://github.com/microsoft-foundry",
+                "author": "Microsoft Foundry Team",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/langgraph/responses/09-resilient/azure.yaml",
+                "languages": [
+                  "python"
+                ],
+                "id": "6a8995c5-d8ad-593e-8a27-f187aea77d37",
+                "templateType": "extension.ai.agent",
+                "extensionFramework": "LangGraph",
+                "extensionTags": [
+                  "LangGraph",
+                  "background mode",
+                  "human-in-the-loop",
+                  "resilient tasks",
+                  "steering",
+                  "Responses Protocol"
+                ]
+              },
+              {
+                "title": "Custom Host (Responses, LangGraph, Python)",
+                "description": "A location-aware LangGraph chat agent that uses a custom ResponsesHostServer to support locale headers and custom location messages while retaining standard Responses behavior.",
+                "authorUrl": "https://github.com/microsoft-foundry",
+                "author": "Microsoft Foundry Team",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/langgraph/responses/12-custom-host/azure.yaml",
+                "languages": [
+                  "python"
+                ],
+                "id": "3025deda-7320-5caf-a3c6-a356257ff6ba",
+                "templateType": "extension.ai.agent",
+                "extensionFramework": "LangGraph",
+                "extensionTags": [
+                  "LangGraph",
+                  "custom host",
+                  "custom input",
+                  "Responses Protocol"
+                ]
+              },
+              {
+                "title": "Basic Chat (Invocations, LangGraph, Python)",
+                "description": "A multi-turn LangGraph chat agent with local time and calculator tools, hosted on Foundry over the Invocations protocol with session state backed by a LangGraph checkpointer.",
+                "authorUrl": "https://github.com/microsoft-foundry",
+                "author": "Microsoft Foundry Team",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/langgraph/invocations/01-langgraph-chat/azure.yaml",
+                "languages": [
+                  "python"
+                ],
+                "id": "16d0923e-10f9-5ff2-8d5f-d81b002c0549",
+                "templateType": "extension.ai.agent",
+                "extensionFramework": "LangGraph",
+                "extensionTags": [
+                  "LangGraph",
+                  "local tools",
+                  "multi-turn",
+                  "Invocations Protocol"
+                ]
+              },
+              {
+                "title": "Resilient Long Running Agent (Invocations, LangGraph, Python)",
+                "description": "A crash-resilient LangGraph trip-planning agent with durable checkpoints, background invocations, multi-turn sessions, human approval, recovery, and cancellation.",
+                "authorUrl": "https://github.com/microsoft-foundry",
+                "author": "Microsoft Foundry Team",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/langgraph/invocations/02-resilient/azure.yaml",
+                "languages": [
+                  "python"
+                ],
+                "id": "45b11999-e7d9-54b9-ac0d-07e3a34d0c27",
+                "templateType": "extension.ai.agent",
+                "extensionFramework": "LangGraph",
+                "extensionTags": [
+                  "LangGraph",
+                  "background mode",
+                  "human-in-the-loop",
+                  "resilient tasks",
+                  "Invocations Protocol"
+                ]
+              },
+              {
+                "title": "Custom Host (Invocations, LangGraph, Python)",
+                "description": "A location-aware LangGraph chat agent that uses a custom InvocationsHostServer to support locale headers and custom location messages while retaining standard Invocations behavior.",
+                "authorUrl": "https://github.com/microsoft-foundry",
+                "author": "Microsoft Foundry Team",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/langgraph/invocations/04-custom-host/azure.yaml",
+                "languages": [
+                  "python"
+                ],
+                "id": "d0d721f5-1749-5df4-b939-57eff29d3d48",
+                "templateType": "extension.ai.agent",
+                "extensionFramework": "LangGraph",
+                "extensionTags": [
+                  "LangGraph",
+                  "custom host",
+                  "custom input",
+                  "Invocations Protocol"
+                ]
+              },
+              {
                 "title": "Hello World agent (Invocations, without a framework, C#)",
                 "description": "Minimal Hello World agent using the Invocations protocol with a bring-your-own approach in C#. Calls a Foundry model via the Responses API and returns the response as a streaming SSE event stream.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/bring-your-own/invocations/HelloWorld/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/bring-your-own/invocations/HelloWorld/azure.yaml",
                 "languages": [
                   "dotnetCsharp"
                 ],
-                "id": "1dc4e8fd-8a01-537a-b52a-d67211171a18",
+                "id": "a35cd56b-cad5-506e-beec-718f6fa80d87",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Bring Your Own",
                 "extensionTags": [
@@ -7494,11 +6100,11 @@ interactions:
                 "description": "A human-in-the-loop agent that demonstrates the approval-gate pattern using the Azure.AI.AgentServer.Invocations SDK with Azure OpenAI.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/bring-your-own/invocations/human-in-the-loop/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/bring-your-own/invocations/human-in-the-loop/azure.yaml",
                 "languages": [
                   "dotnetCsharp"
                 ],
-                "id": "eb392fb4-dedb-536f-8bca-b0b556985769",
+                "id": "4f46ddca-048c-56c3-9e56-f21498e7ca37",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Bring Your Own",
                 "extensionTags": [
@@ -7512,11 +6118,11 @@ interactions:
                 "description": "A note-taking agent using the Invocations protocol with Azure OpenAI function calling in C#. Demonstrates tool use with per-session JSONL persistence and SSE streaming.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/bring-your-own/invocations/notetaking-agent/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/bring-your-own/invocations/notetaking-agent/azure.yaml",
                 "languages": [
                   "dotnetCsharp"
                 ],
-                "id": "0546df51-07d7-55bd-9b01-5ba0443640f6",
+                "id": "4ca8e775-1741-5793-9806-4f3fd3ce73d9",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Bring Your Own",
                 "extensionTags": [
@@ -7529,11 +6135,11 @@ interactions:
                 "description": "Minimal Hello World agent using the Responses protocol with a bring-your-own approach in C#. Calls a Foundry model via the Responses API and returns the response.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/bring-your-own/responses/HelloWorld/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/bring-your-own/responses/HelloWorld/azure.yaml",
                 "languages": [
                   "dotnetCsharp"
                 ],
-                "id": "0b764050-5812-56df-a206-202e6bc725a1",
+                "id": "80b9c6eb-63ba-53a9-84eb-ac7292519e2b",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Bring Your Own",
                 "extensionTags": [
@@ -7546,11 +6152,11 @@ interactions:
                 "description": "A long-running research agent that demonstrates the background execution pattern using the Azure.AI.AgentServer.Responses SDK with Azure OpenAI.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/bring-your-own/responses/background-agent/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/bring-your-own/responses/background-agent/azure.yaml",
                 "languages": [
                   "dotnetCsharp"
                 ],
-                "id": "acc8f372-c6be-5959-950e-3473443ac55d",
+                "id": "ddecab76-394e-5aac-a9c7-ce2d15f1e482",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Bring Your Own",
                 "extensionTags": [
@@ -7563,11 +6169,11 @@ interactions:
                 "description": "A note-taking agent using the Responses protocol with Azure OpenAI function calling in C#. Demonstrates tool use with per-session JSONL persistence.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/bring-your-own/responses/notetaking-agent/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/csharp/hosted-agents/bring-your-own/responses/notetaking-agent/azure.yaml",
                 "languages": [
                   "dotnetCsharp"
                 ],
-                "id": "025b0c06-1709-5298-8b96-3e98eb4fc34b",
+                "id": "29b65cdf-5a18-5369-95fe-81a1692b2efb",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Bring Your Own",
                 "extensionTags": [
@@ -7581,11 +6187,11 @@ interactions:
                 "description": "A basic Agent Framework agent hosted by Foundry using the Invocations protocol.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/invocations/01-basic/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/invocations/01-basic/azure.yaml",
                 "languages": [
                   "python"
                 ],
-                "id": "1b161baf-a3f7-5327-b68c-0f68c22adcab",
+                "id": "ccb2c95a-9d89-51ce-b078-48a04c61cbb4",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Agent Framework",
                 "extensionTags": [
@@ -7599,11 +6205,11 @@ interactions:
                 "description": "A basic Agent Framework agent hosted by Foundry using the Responses protocol.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/01-basic/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/01-basic/azure.yaml",
                 "languages": [
                   "python"
                 ],
-                "id": "8436aaad-67c3-57ae-8864-71ca0705214b",
+                "id": "ecf556ea-2c78-575f-afe1-84ab7ebfe147",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Agent Framework",
                 "extensionTags": [
@@ -7618,11 +6224,11 @@ interactions:
                 "description": "An Agent Framework agent with local tools hosted by Foundry.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/02-tools/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/02-tools/azure.yaml",
                 "languages": [
                   "python"
                 ],
-                "id": "4d6e5316-2914-5387-9b96-ec7bbb0fa58b",
+                "id": "b8c79360-034d-5fb8-ae7d-1417b72d0163",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Agent Framework",
                 "extensionTags": [
@@ -7636,11 +6242,11 @@ interactions:
                 "description": "An Agent Framework agent with remote MCP tools hosted by Foundry.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/03-mcp/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/03-mcp/azure.yaml",
                 "languages": [
                   "python"
                 ],
-                "id": "d708512c-2cf7-5515-be29-a2569f684f5f",
+                "id": "2e60319a-a2b8-5e44-a328-4dee879a974b",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Agent Framework",
                 "extensionTags": [
@@ -7654,11 +6260,11 @@ interactions:
                 "description": "An Agent Framework agent with Foundry Toolbox integration.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/04-foundry-toolbox/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/04-foundry-toolbox/azure.yaml",
                 "languages": [
                   "python"
                 ],
-                "id": "b6fde495-8f29-5dd5-b36a-a9ed68910eae",
+                "id": "7bc55faa-e690-5098-8ff7-ce98034263de",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Agent Framework",
                 "extensionTags": [
@@ -7672,11 +6278,11 @@ interactions:
                 "description": "An Agent Framework workflow hosted by Foundry.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/05-workflows/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/agent-framework/responses/05-workflows/azure.yaml",
                 "languages": [
                   "python"
                 ],
-                "id": "0b59af9c-5080-5bdb-8d42-acc7b261f355",
+                "id": "448329aa-7d14-59ef-887e-d6c2fd2e33f5",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Agent Framework",
                 "extensionTags": [
@@ -7685,15 +6291,33 @@ interactions:
                 ]
               },
               {
+                "title": "Echo agent (Activity, without a framework, Python)",
+                "description": "Minimal echo agent using the Activity protocol with a bring-your-own approach. Echoes the user's message back and uses the M365 Agents SDK for activity processing and outbound channel delivery.",
+                "authorUrl": "https://github.com/microsoft-foundry",
+                "author": "Microsoft Foundry Team",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/activity/echo/azure.yaml",
+                "languages": [
+                  "python"
+                ],
+                "id": "981cbc6b-2977-561e-8ee4-7fec8c9f8f7c",
+                "templateType": "extension.ai.agent",
+                "extensionFramework": "Bring Your Own",
+                "extensionTags": [
+                  "example",
+                  "M365 Agents SDK",
+                  "Activity Protocol"
+                ]
+              },
+              {
                 "title": "Agent with AG-UI (Invocations, Pydantic AI, AG-UI, Python)",
                 "description": "AG-UI protocol over Foundry invocations using Pydantic AI with Azure OpenAI. Streams standard AG-UI events with zero manual event translation.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/invocations/ag-ui/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/invocations/ag-ui/azure.yaml",
                 "languages": [
                   "python"
                 ],
-                "id": "177b6f18-27b8-51ea-81c0-a6baf184e15d",
+                "id": "9eb2c7ee-fe7f-5cbb-b26e-26f7e7d98c73",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Bring Your Own",
                 "extensionTags": [
@@ -7703,15 +6327,33 @@ interactions:
                 ]
               },
               {
+                "title": "Agent with Claude Agent SDK (Invocations, Claude Agent SDK, Python)",
+                "description": "A getting-started agent that uses the Claude Agent SDK with Microsoft Foundry authentication and the azure-ai-agentserver-invocations protocol, streaming assistant deltas as Server-Sent Events (SSE).",
+                "authorUrl": "https://github.com/microsoft-foundry",
+                "author": "Microsoft Foundry Team",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/invocations/claude-agent-sdk/azure.yaml",
+                "languages": [
+                  "python"
+                ],
+                "id": "40b886cf-8b95-5b0b-9055-9aa13bbc3554",
+                "templateType": "extension.ai.agent",
+                "extensionFramework": "Bring Your Own",
+                "extensionTags": [
+                  "Claude Agent SDK",
+                  "Anthropic",
+                  "Invocations Protocol"
+                ]
+              },
+              {
                 "title": "Agent with Copilot SDK (Invocations, GitHub Copilot SDK, Python)",
                 "description": "A getting-started agent that uses the GitHub Copilot SDK with the azure-ai-agentserver-invocations protocol, streaming raw session events as SSE.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/invocations/github-copilot/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/invocations/github-copilot/azure.yaml",
                 "languages": [
                   "python"
                 ],
-                "id": "743d84fc-98b4-5cf0-b542-38d534239fb6",
+                "id": "09d191c5-54fd-5cd6-a950-f22d81fbae1f",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Bring Your Own",
                 "extensionTags": [
@@ -7724,11 +6366,11 @@ interactions:
                 "description": "Minimal Hello World agent using the Invocations protocol with a bring-your-own approach. Calls a Foundry model via the Responses API and returns the response as a streaming SSE event stream.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/invocations/hello-world/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/invocations/hello-world/azure.yaml",
                 "languages": [
                   "python"
                 ],
-                "id": "f2460948-3484-5840-bc8c-6d392c99e3c4",
+                "id": "f0b264f9-d3eb-5c43-aa5d-eaae7d400eac",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Bring Your Own",
                 "extensionTags": [
@@ -7741,11 +6383,11 @@ interactions:
                 "description": "A human-in-the-loop agent that demonstrates the approval-gate pattern using the azure-ai-agentserver-invocations SDK.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/invocations/human-in-the-loop/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/invocations/human-in-the-loop/azure.yaml",
                 "languages": [
                   "python"
                 ],
-                "id": "ba3e0cf8-bcdf-5747-9019-740723a72752",
+                "id": "71a5ba2b-e2e6-5a37-bff6-7d60e2c15a5e",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Bring Your Own",
                 "extensionTags": [
@@ -7755,33 +6397,15 @@ interactions:
                 ]
               },
               {
-                "title": "LangGraph Chat agent (Invocations, LangGraph, Python)",
-                "description": "Multi-turn chat agent built with LangGraph and the Invocations protocol. Demonstrates a tool-calling agent graph with get_current_time and calculator tools.",
-                "authorUrl": "https://github.com/microsoft-foundry",
-                "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/invocations/langgraph-chat/agent.manifest.yaml",
-                "languages": [
-                  "python"
-                ],
-                "id": "938dfe3d-bbd8-56ef-9698-c60cb1274c90",
-                "templateType": "extension.ai.agent",
-                "extensionFramework": "LangGraph",
-                "extensionTags": [
-                  "LangGraph",
-                  "tool calling",
-                  "Invocations Protocol"
-                ]
-              },
-              {
                 "title": "Note-taking agent (Invocations, without a framework, Python)",
                 "description": "Note-taking agent using the Invocations protocol. Demonstrates function calling (save_note/get_notes tools) with per-session JSONL persistence and SSE streaming.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/invocations/notetaking-agent/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/invocations/notetaking-agent/azure.yaml",
                 "languages": [
                   "python"
                 ],
-                "id": "de52823b-f7de-543f-9003-07741562e819",
+                "id": "d473dc6c-d439-502a-8821-8659b063ec90",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Bring Your Own",
                 "extensionTags": [
@@ -7790,15 +6414,54 @@ interactions:
                 ]
               },
               {
+                "title": "Resilient Approval Gate agent (Invocations, without a framework, Python)",
+                "description": "A long-running, crash-resilient human-in-the-loop agent that plans a goal, gates the plan on human approval, checkpoints each step, and requires confirmation before performing irreversible actions exactly once.",
+                "authorUrl": "https://github.com/microsoft-foundry",
+                "author": "Microsoft Foundry Team",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/invocations/resilient-approval-gate/azure.yaml",
+                "languages": [
+                  "python"
+                ],
+                "id": "8af98e42-c253-5af4-9ff6-e6d18b6d567a",
+                "templateType": "extension.ai.agent",
+                "extensionFramework": "Bring Your Own",
+                "extensionTags": [
+                  "human-in-the-loop",
+                  "long-running",
+                  "resilient tasks",
+                  "Invocations Protocol"
+                ]
+              },
+              {
+                "title": "Resilient Research agent (Invocations, without a framework, Python)",
+                "description": "A long-running, crash-resilient deep-research agent that streams multi-phase LLM work over SSE, checkpoints each sub-call for mid-phase recovery, and supports resumable reconnects, cancellation, and steering.",
+                "authorUrl": "https://github.com/microsoft-foundry",
+                "author": "Microsoft Foundry Team",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/invocations/resilient-research/azure.yaml",
+                "languages": [
+                  "python"
+                ],
+                "id": "aae3ddc7-c993-5d15-b821-fc41be8c7ea2",
+                "templateType": "extension.ai.agent",
+                "extensionFramework": "Bring Your Own",
+                "extensionTags": [
+                  "long-running",
+                  "resilient tasks",
+                  "streaming",
+                  "steering",
+                  "Invocations Protocol"
+                ]
+              },
+              {
                 "title": "Agent with Foundry Toolbox (Invocations, without a framework, Python)",
                 "description": "Bring-your-own agent using the Invocations protocol with Foundry Toolbox MCP integration. Connects to a toolbox at startup, discovers tools, and lets the model call them during conversation.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/invocations/toolbox/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/invocations/toolbox/azure.yaml",
                 "languages": [
                   "python"
                 ],
-                "id": "65cc0e89-15a5-593c-8e7e-ddb7997c5ce3",
+                "id": "79b115d8-360a-5ef1-8d2e-35d98ea151b8",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Bring Your Own",
                 "extensionTags": [
@@ -7811,11 +6474,11 @@ interactions:
                 "description": "A long-running agent that demonstrates the background execution pattern using the azure-ai-agentserver-responses SDK. Supports polling and cancellation.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/responses/background-agent/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/responses/background-agent/azure.yaml",
                 "languages": [
                   "python"
                 ],
-                "id": "daf8e726-611f-51e4-9a2b-6b849143d5ac",
+                "id": "63fc9f3f-b286-592b-9e8d-be86d7594d28",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Bring Your Own",
                 "extensionTags": [
@@ -7828,11 +6491,11 @@ interactions:
                 "description": "Minimal Hello World agent using the Responses protocol with a bring-your-own approach. Calls a Foundry model via the Responses API and returns the response.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/responses/hello-world/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/responses/hello-world/azure.yaml",
                 "languages": [
                   "python"
                 ],
-                "id": "009ce7d3-656e-50bd-9963-9986d3b15263",
+                "id": "8db2305f-f78d-5ba8-b013-e12cd3a7ca89",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Bring Your Own",
                 "extensionTags": [
@@ -7841,33 +6504,15 @@ interactions:
                 ]
               },
               {
-                "title": "LangGraph Chat agent (Responses, LangGraph, Python)",
-                "description": "Multi-turn chat agent built with LangGraph using the Responses protocol. Demonstrates a tool-calling agent graph with server-side conversation state.",
-                "authorUrl": "https://github.com/microsoft-foundry",
-                "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/responses/langgraph-chat/agent.manifest.yaml",
-                "languages": [
-                  "python"
-                ],
-                "id": "9cc2f69d-137c-5bca-90f2-ada236513caf",
-                "templateType": "extension.ai.agent",
-                "extensionFramework": "LangGraph",
-                "extensionTags": [
-                  "LangGraph",
-                  "tool calling",
-                  "Responses Protocol"
-                ]
-              },
-              {
                 "title": "Note-taking agent (Responses, without a framework, Python)",
                 "description": "Note-taking agent using the Responses protocol. Demonstrates function calling (save_note/get_notes tools) with per-session JSONL persistence and streaming responses.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/responses/notetaking-agent/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/responses/notetaking-agent/azure.yaml",
                 "languages": [
                   "python"
                 ],
-                "id": "881c2f3d-c182-589a-b456-b08411cbd807",
+                "id": "de8603d7-60fd-53f4-b67d-1dbcffadbbf1",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Bring Your Own",
                 "extensionTags": [
@@ -7877,15 +6522,52 @@ interactions:
                 ]
               },
               {
+                "title": "Agent with OpenAI Agents SDK (Responses, OpenAI Agents SDK, Python)",
+                "description": "A getting-started agent that uses the OpenAI Agents SDK with Foundry Azure credential flow. The SDK's Agent and Runner drive the agent loop through the Responses protocol, with multi-turn conversation history managed by the platform.",
+                "authorUrl": "https://github.com/microsoft-foundry",
+                "author": "Microsoft Foundry Team",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/responses/openai-agents-sdk/azure.yaml",
+                "languages": [
+                  "python"
+                ],
+                "id": "236caa68-f333-5aa8-919c-56acd20edf78",
+                "templateType": "extension.ai.agent",
+                "extensionFramework": "Bring Your Own",
+                "extensionTags": [
+                  "OpenAI Agents SDK",
+                  "Responses Protocol"
+                ]
+              },
+              {
+                "title": "Resilient Steering agent (Responses, without a framework, Python)",
+                "description": "A crash-resilient, steerable long-running agent that demonstrates how background responses survive process restarts and how cancellation, shutdown, steering, and recovery work together.",
+                "authorUrl": "https://github.com/microsoft-foundry",
+                "author": "Microsoft Foundry Team",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/responses/resilient-steering/azure.yaml",
+                "languages": [
+                  "python"
+                ],
+                "id": "7d12714c-c23d-586d-aa29-b302e1c82195",
+                "templateType": "extension.ai.agent",
+                "extensionFramework": "Bring Your Own",
+                "extensionTags": [
+                  "background mode",
+                  "long-running",
+                  "resilient tasks",
+                  "steering",
+                  "Responses Protocol"
+                ]
+              },
+              {
                 "title": "Agent with Foundry Toolbox (Responses, without a framework, Python)",
                 "description": "Bring-your-own agent using the Responses protocol with Foundry Toolbox MCP integration. Connects to a toolbox at startup, discovers tools, and lets the model call them during conversation.",
                 "authorUrl": "https://github.com/microsoft-foundry",
                 "author": "Microsoft Foundry Team",
-                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/responses/bring-your-own-toolbox/agent.manifest.yaml",
+                "source": "https://github.com/microsoft-foundry/foundry-samples/blob/main/samples/python/hosted-agents/bring-your-own/responses/bring-your-own-toolbox/azure.yaml",
                 "languages": [
                   "python"
                 ],
-                "id": "6c5e110d-fd0f-5c81-8f7d-9b188257e115",
+                "id": "0b72368d-0fe7-500e-8f5d-cf8345e00c50",
                 "templateType": "extension.ai.agent",
                 "extensionFramework": "Bring Your Own",
                 "extensionTags": [
@@ -7999,31 +6681,6 @@ interactions:
                   "bicep"
                 ],
                 "id": "28cc2769-656b-40c3-9585-a26955adb6b3"
-              },
-              {
-                "title": "Azure Functions Flex Consumption - FFmpeg Image Processing with Azure Files OS Mount",
-                "description": "Event-driven image processing using FFmpeg from an Azure Files OS mount. Images uploaded to Blob Storage trigger the function via EventGrid, which processes them using FFmpeg from the mount and saves results to an output container.",
-                "preview": "./templates/images/test.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Azure Samples",
-                "source": "https://github.com/Azure-Samples/Azure-Functions-Flex-Consumption-with-Azure-Files-OS-Mount-Samples",
-                "tags": [
-                  "msft"
-                ],
-                "languages": [
-                  "python"
-                ],
-                "azureServices": [
-                  "functions",
-                  "blobstorage",
-                  "azurestorage",
-                  "eventgrid",
-                  "managedidentity"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "983a69db-309f-45ae-82ec-214e7dcc25f8"
               },
               {
                 "title": "Azure Functions Flex Consumption - Durable Text Analysis with Azure Files OS Mount",
@@ -8267,36 +6924,6 @@ interactions:
                 "id": "b89c8c75-848a-4c4c-b208-38876b419088"
               },
               {
-                "title": "Azure AI Basic App Sample | Python",
-                "description": "This project creates an Azure AI Foundry hub, project and connected resources including Azure AI Services, AI Search and more. It also deploys a simple chat application to Azure Container Apps.",
-                "preview": "./templates/images/azureai-basic-python.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Dan Taylor",
-                "source": "https://github.com/Azure-Samples/azureai-basic-python",
-                "tags": [
-                  "msft",
-                  "aicollection",
-                  "ai",
-                  "gpt"
-                ],
-                "languages": [
-                  "python"
-                ],
-                "azureServices": [
-                  "aca",
-                  "managedidentity",
-                  "openai",
-                  "aisearch",
-                  "aifoundry",
-                  "keyvault",
-                  "azureai"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "7846d3e7-d85b-4d52-a544-8238fa19feef"
-              },
-              {
                 "title": "Creative Writing Assistant Python: Working with Agents using Prompty",
                 "description": "Contoso-Creative-Writer: a creative writing assistant that shows how to orchestrate multiple models together using Prompty and Azure OpenAI. Includes the full GenAIOps: CI/CD, evaluation, tracing, monitoring, and experimentation!",
                 "preview": "./templates/images/contoso-creative-writer.png",
@@ -8328,39 +6955,6 @@ interactions:
                 "id": "eb6c5562-f142-4b3c-9e7a-c0ee4096f3c3"
               },
               {
-                "title": "Creative Writing Assistant Aspire: Working with Agents using Semantic Kernel",
-                "description": "A creative writing assistant that shows how to orchestrate multiple models together using Semantic Kernel and Azure OpenAI. Includes the full GenAIOps: CI/CD, evaluation, tracing, monitoring, and experimentation!",
-                "preview": "./templates/images/aspire-semantic-kernel-creative-writer.png",
-                "authorUrl": "https://github.com/Azure-Samples",
-                "author": "Ricardo Niepel",
-                "source": "https://github.com/Azure-Samples/aspire-semantic-kernel-creative-writer",
-                "tags": [
-                  "msft",
-                  "aicollection",
-                  "ai",
-                  "gpt",
-                  "aspire"
-                ],
-                "languages": [
-                  "dotnetCsharp",
-                  "javascript",
-                  "typescript"
-                ],
-                "frameworks": [
-                  "semantickernel"
-                ],
-                "azureServices": [
-                  "managedidentity",
-                  "keyvault",
-                  "aisearch",
-                  "openai"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "b3abdd34-87fd-4b04-8e44-3cb04dff76a3"
-              },
-              {
                 "title": "Semantic caching with Azure Redis and Dall-E 3",
                 "description": "This template demonstrates Dall-E text to image generation with Azure Redis semantic caching, which enables the same picture to be reused for text inputs that are similar in meaning but different in syntax. Azure Redis semantic cache improves the consistency and performance of the content generation.",
                 "preview": "./templates/images/azure-redis-dalle-semantic-caching-arch.png",
@@ -8387,33 +6981,6 @@ interactions:
                   "bicep"
                 ],
                 "id": "46da3763-3935-4c26-b6f1-ba175f5d48b3"
-              },
-              {
-                "title": "Azure Function using OpenAI TextCompletion input binding with Java",
-                "description": "This sample highlights how to use the Azure Functions OpenAI TextCompletion input binding to send content to Azure OpenAI and get a result using Java.",
-                "preview": "./templates/images/test.png",
-                "authorUrl": "https://github.com/nzthiago",
-                "author": "Thiago Almeida",
-                "source": "https://github.com/Azure-Samples/azure-functions-completion-openai-java",
-                "tags": [
-                  "msft",
-                  "aicollection",
-                  "ai",
-                  "gpt"
-                ],
-                "languages": [
-                  "java"
-                ],
-                "azureServices": [
-                  "functions",
-                  "openai",
-                  "azurestorage",
-                  "appinsights"
-                ],
-                "IaC": [
-                  "bicep"
-                ],
-                "id": "9c9a4eff-c2ea-493e-b50e-1502c93ec3d7"
               },
               {
                 "title": "Conversation Knowledge Mining",
@@ -8587,7 +7154,7 @@ interactions:
                 "preview": "./templates/images/document-generation-solution-accelerator-arch.png",
                 "authorUrl": "https://github.com/microsoft",
                 "author": "Blessing Sanusi",
-                "source": "https://github.com/microsoft/document-generation-solution-accelerator",
+                "source": "https://github.com/microsoft/content-generation-solution-accelerator",
                 "tags": [
                   "msft",
                   "aicollection",
@@ -9248,6 +7815,499 @@ interactions:
                   "bicep"
                 ],
                 "id": "7061e7cc-bdf1-4e77-83b0-6ca3d78a6c1a"
+              },
+              {
+                "title": "Azure Functions Python Timer Trigger using Azure Developer CLI",
+                "description": "This repository contains an Azure Functions Timer trigger quickstart written in Python and deployed to Azure Functions Flex Consumption using the Azure Developer CLI (AZD). This sample uses managed identity and a virtual network to ensure it's secure by default.",
+                "preview": "./templates/images/test.png",
+                "authorUrl": "https://github.com/Azure-Samples",
+                "author": "Azure Functions Team",
+                "source": "https://github.com/Azure-Samples/functions-quickstart-python-azd-timer",
+                "tags": [
+                  "msft"
+                ],
+                "languages": [
+                  "python"
+                ],
+                "azureServices": [
+                  "functions",
+                  "managedidentity",
+                  "vnets",
+                  "appinsights"
+                ],
+                "IaC": [
+                  "bicep"
+                ],
+                "id": "f7da4cb3-8113-41a2-9ada-9ad3814479b2"
+              },
+              {
+                "title": "Azure Functions JavaScript Timer Trigger using Azure Developer CLI",
+                "description": "This repository contains an Azure Functions Timer trigger quickstart written in JavaScript and deployed to Azure Functions Flex Consumption using the Azure Developer CLI (AZD). This sample uses managed identity and a virtual network to ensure it's secure by default.",
+                "preview": "./templates/images/test.png",
+                "authorUrl": "https://github.com/Azure-Samples",
+                "author": "Azure Functions Team",
+                "source": "https://github.com/Azure-Samples/functions-quickstart-javascript-azd-timer",
+                "tags": [
+                  "msft"
+                ],
+                "languages": [
+                  "javascript"
+                ],
+                "azureServices": [
+                  "functions",
+                  "managedidentity",
+                  "vnets",
+                  "appinsights"
+                ],
+                "IaC": [
+                  "bicep"
+                ],
+                "id": "1bbbfef4-14e8-44de-952f-5300ed58c977"
+              },
+              {
+                "title": "Azure Functions TypeScript Timer Trigger using Azure Developer CLI",
+                "description": "This repository contains an Azure Functions Timer trigger quickstart written in TypeScript and deployed to Azure Functions Flex Consumption using the Azure Developer CLI (AZD). This sample uses managed identity and a virtual network to ensure it's secure by default.",
+                "preview": "./templates/images/test.png",
+                "authorUrl": "https://github.com/Azure-Samples",
+                "author": "Azure Functions Team",
+                "source": "https://github.com/Azure-Samples/functions-quickstart-typescript-azd-timer",
+                "tags": [
+                  "msft"
+                ],
+                "languages": [
+                  "typescript"
+                ],
+                "azureServices": [
+                  "functions",
+                  "managedidentity",
+                  "vnets",
+                  "appinsights"
+                ],
+                "IaC": [
+                  "bicep"
+                ],
+                "id": "4bc9474d-2b13-4bf4-b662-ad8cfc479bb5"
+              },
+              {
+                "title": "Durable Functions Fan-Out/Fan-In using Azure Developer CLI (Java)",
+                "description": "A Durable Functions quickstart written in Java demonstrating the fan-out/fan-in pattern. It's deployed to Azure Functions Flex Consumption plan using the Azure Developer CLI (azd). The sample uses managed identity and a virtual network to make sure deployment is secure by default.",
+                "preview": "./templates/images/test.png",
+                "authorUrl": "https://github.com/Azure-Samples",
+                "author": "Azure Functions Team",
+                "source": "https://github.com/Azure-Samples/durable-functions-quickstart-java-azd",
+                "tags": [
+                  "msft"
+                ],
+                "languages": [
+                  "java"
+                ],
+                "azureServices": [
+                  "functions",
+                  "azurestorage",
+                  "managedidentity",
+                  "vnets",
+                  "appinsights"
+                ],
+                "IaC": [
+                  "bicep"
+                ],
+                "id": "d7c28fd1-531b-41ec-9a8f-7a3f7bb3d69f"
+              },
+              {
+                "title": "Durable Functions Fan-Out/Fan-In using Azure Developer CLI (JavaScript)",
+                "description": "A Durable Functions quickstart written in JavaScript demonstrating the fan-out/fan-in pattern. It's deployed to Azure Functions Flex Consumption plan using the Azure Developer CLI (azd). The sample uses managed identity and a virtual network to make sure deployment is secure by default.",
+                "preview": "./templates/images/test.png",
+                "authorUrl": "https://github.com/Azure-Samples",
+                "author": "Azure Functions Team",
+                "source": "https://github.com/Azure-Samples/durable-functions-quickstart-javascript-azd",
+                "tags": [
+                  "msft"
+                ],
+                "languages": [
+                  "javascript",
+                  "nodejs"
+                ],
+                "azureServices": [
+                  "functions",
+                  "azurestorage",
+                  "managedidentity",
+                  "vnets",
+                  "appinsights"
+                ],
+                "IaC": [
+                  "bicep"
+                ],
+                "id": "9ecf7695-b6ef-4f90-aa15-e7ebac78d5a7"
+              },
+              {
+                "title": "Durable Functions Fan-Out/Fan-In using Azure Developer CLI (PowerShell)",
+                "description": "A Durable Functions quickstart written in PowerShell demonstrating the fan-out/fan-in pattern. It's deployed to Azure Functions Flex Consumption plan using the Azure Developer CLI (azd). The sample uses managed identity and a virtual network to make sure deployment is secure by default.",
+                "preview": "./templates/images/test.png",
+                "authorUrl": "https://github.com/Azure-Samples",
+                "author": "Azure Functions Team",
+                "source": "https://github.com/Azure-Samples/durable-functions-quickstart-powershell-azd",
+                "tags": [
+                  "msft",
+                  "powershell"
+                ],
+                "azureServices": [
+                  "functions",
+                  "azurestorage",
+                  "managedidentity",
+                  "vnets",
+                  "appinsights"
+                ],
+                "IaC": [
+                  "bicep"
+                ],
+                "id": "f47c517f-2b8d-4db4-80b3-2ca5d3661d3c"
+              },
+              {
+                "title": "Durable Functions Fan-Out/Fan-In using Azure Developer CLI (Python)",
+                "description": "A Durable Functions quickstart written in Python demonstrating the fan-out/fan-in pattern. It's deployed to Azure Functions Flex Consumption plan using the Azure Developer CLI (azd). The sample uses managed identity and a virtual network to make sure deployment is secure by default.",
+                "preview": "./templates/images/test.png",
+                "authorUrl": "https://github.com/Azure-Samples",
+                "author": "Azure Functions Team",
+                "source": "https://github.com/Azure-Samples/durable-functions-quickstart-python-azd",
+                "tags": [
+                  "msft"
+                ],
+                "languages": [
+                  "python"
+                ],
+                "azureServices": [
+                  "functions",
+                  "azurestorage",
+                  "managedidentity",
+                  "vnets",
+                  "appinsights"
+                ],
+                "IaC": [
+                  "bicep"
+                ],
+                "id": "4f49a0af-f832-409a-9aab-7c74c59fd849"
+              },
+              {
+                "title": "Durable Functions Fan-Out/Fan-In using Azure Developer CLI (TypeScript)",
+                "description": "A Durable Functions quickstart written in TypeScript demonstrating the fan-out/fan-in pattern. It's deployed to Azure Functions Flex Consumption plan using the Azure Developer CLI (azd). The sample uses managed identity and a virtual network to make sure deployment is secure by default.",
+                "preview": "./templates/images/test.png",
+                "authorUrl": "https://github.com/Azure-Samples",
+                "author": "Azure Functions Team",
+                "source": "https://github.com/Azure-Samples/durable-functions-quickstart-typescript-azd",
+                "tags": [
+                  "msft"
+                ],
+                "languages": [
+                  "typescript",
+                  "nodejs"
+                ],
+                "azureServices": [
+                  "functions",
+                  "azurestorage",
+                  "managedidentity",
+                  "vnets",
+                  "appinsights"
+                ],
+                "IaC": [
+                  "bicep"
+                ],
+                "id": "6dc88f32-c97d-447d-b2e1-2f57485293a5"
+              },
+              {
+                "title": "Remote MCP Functions with JavaScript",
+                "description": "This scenario demonstrates how to easily build and deploy a custom remote MCP (Model Context Protocol) server to the cloud using Azure Functions and JavaScript. The MCP server is configured with built-in authentication using Microsoft Entra as the identity provider.",
+                "preview": "./templates/images/test.png",
+                "authorUrl": "https://github.com/Azure-Samples",
+                "author": "Azure Functions Team",
+                "source": "https://github.com/Azure-Samples/remote-mcp-functions-javascript",
+                "tags": [
+                  "msft",
+                  "ai",
+                  "mcp"
+                ],
+                "languages": [
+                  "javascript",
+                  "nodejs"
+                ],
+                "azureServices": [
+                  "functions"
+                ],
+                "IaC": [
+                  "bicep"
+                ],
+                "id": "f14a75e4-d293-4990-bb5c-59149e9ee1a3"
+              },
+              {
+                "title": "Long-running MCP tools using Durable Functions (.NET/C#)",
+                "description": "A sample Azure Functions MCP server (.NET isolated) that shows how to run long-running MCP tools by backing them with Durable Functions and a budgeted start and poll pattern. It's deployed using the Azure Developer CLI (azd) and uses the Durable Task Scheduler backend with managed identity in Azure.",
+                "preview": "./templates/images/test.png",
+                "authorUrl": "https://github.com/Azure-Samples",
+                "author": "Azure Functions Team",
+                "source": "https://github.com/Azure-Samples/mcp-functions-long-running-tools",
+                "tags": [
+                  "msft",
+                  "ai",
+                  "mcp"
+                ],
+                "languages": [
+                  "dotnetCsharp"
+                ],
+                "azureServices": [
+                  "functions",
+                  "azurestorage",
+                  "managedidentity"
+                ],
+                "IaC": [
+                  "bicep"
+                ],
+                "id": "1e89afe2-59d7-481f-ae63-749888d6de48"
+              },
+              {
+                "title": "Azure Functions Java Timer Trigger using Azure Developer CLI",
+                "description": "This repository contains an Azure Functions Timer trigger quickstart written in Java and deployed to Azure Functions Flex Consumption using the Azure Developer CLI (AZD). This sample uses managed identity and a virtual network to ensure it's secure by default.",
+                "preview": "./templates/images/test.png",
+                "authorUrl": "https://github.com/Azure-Samples",
+                "author": "Azure Functions Team",
+                "source": "https://github.com/Azure-Samples/functions-quickstart-java-azd-timer",
+                "tags": [
+                  "msft"
+                ],
+                "languages": [
+                  "java"
+                ],
+                "azureServices": [
+                  "functions",
+                  "managedidentity",
+                  "vnets",
+                  "appinsights"
+                ],
+                "IaC": [
+                  "bicep"
+                ],
+                "id": "b2f795d2-9e27-4232-be88-e2ef71518dae"
+              },
+              {
+                "title": "Azure Functions PowerShell Timer Trigger using Azure Developer CLI",
+                "description": "This repository contains an Azure Functions Timer trigger quickstart written in PowerShell and deployed to Azure Functions Flex Consumption using the Azure Developer CLI (AZD). This sample uses managed identity and a virtual network to ensure it's secure by default.",
+                "preview": "./templates/images/test.png",
+                "authorUrl": "https://github.com/Azure-Samples",
+                "author": "Azure Functions Team",
+                "source": "https://github.com/Azure-Samples/functions-quickstart-powershell-azd-timer",
+                "tags": [
+                  "msft",
+                  "powershell"
+                ],
+                "azureServices": [
+                  "functions",
+                  "managedidentity",
+                  "vnets",
+                  "appinsights"
+                ],
+                "IaC": [
+                  "bicep"
+                ],
+                "id": "8b91b751-45bf-4e9a-9a51-f072018ecee2"
+              },
+              {
+                "title": "Azure Functions C# HTTP Trigger using Azure Developer CLI (Terraform)",
+                "description": "This repository contains an Azure Functions HTTP trigger quickstart written in C# (isolated process mode) and deployed to Azure Functions Flex Consumption using the Azure Developer CLI (azd) with Terraform as the IaC provider. The sample uses managed identity and a virtual network to make sure deployment is secure by default.",
+                "preview": "./templates/images/test.png",
+                "authorUrl": "https://github.com/Azure-Samples",
+                "author": "Azure Functions Team",
+                "source": "https://github.com/Azure-Samples/functions-quickstart-dotnet-azd-tf",
+                "tags": [
+                  "msft",
+                  "terraform"
+                ],
+                "azureServices": [
+                  "functions",
+                  "managedidentity",
+                  "vnets",
+                  "appinsights"
+                ],
+                "id": "cff3f8db-2d8c-425e-b377-67f434df2187",
+                "languages": [
+                  "dotnetCsharp"
+                ]
+              },
+              {
+                "title": "mTLS with Azure API Management and Application Gateway",
+                "description": "A demo that shows how to use mutual TLS (mTLS) with Azure API Management and Application Gateway. It shows how to validate client certificates when calling API Management directly and when API Management is behind an Application Gateway. It also demonstrates how to secure connections from API Management to backend systems using mTLS.",
+                "preview": "./templates/images/mtls-with-apim-and-agw.png",
+                "authorUrl": "https://github.com/ronaldbosma",
+                "author": "Ronald Bosma",
+                "source": "https://github.com/ronaldbosma/mtls-with-apim-and-agw",
+                "tags": [
+                  "community"
+                ],
+                "languages": [
+                  "dotnetCsharp"
+                ],
+                "azureServices": [
+                  "apim",
+                  "appinsights",
+                  "agw",
+                  "keyvault",
+                  "loganalytics"
+                ],
+                "IaC": [
+                  "bicep"
+                ],
+                "id": "a4f1db9e-ae2d-41db-8f49-33bc702d4653"
+              },
+              {
+                "title": "Daily Repo Digest with AI Gateway",
+                "description": "A Python Foundry Hosted Agent sample that runs a Microsoft Agent Framework repo-digest agent. Model requests and read-only GitHub MCP calls are routed through Azure AI Gateway, and the template deploys end to end with azd up using Bicep infrastructure. This is the sample used by the AI Gateway quickstart.",
+                "preview": "./templates/images/test.png",
+                "authorUrl": "https://github.com/Azure-Samples",
+                "author": "Microsoft",
+                "source": "https://github.com/Azure-Samples/simple-foundry-hosted-agent-python-aigateway",
+                "tags": [
+                  "msft",
+                  "mcp",
+                  "ai"
+                ],
+                "languages": [
+                  "python"
+                ],
+                "azureServices": [
+                  "aifoundry",
+                  "apim",
+                  "managedidentity",
+                  "azurestorage",
+                  "appinsights",
+                  "loganalytics"
+                ],
+                "IaC": [
+                  "bicep"
+                ],
+                "id": "7c1b3708-a2ba-4000-ba61-df0bc8d7d5ef"
+              },
+              {
+                "title": "Serverless Expense Processor Agent",
+                "description": "A markdown-first Azure Functions serverless agent for queue-driven expense processing. It reads expense requests from Azure Queue Storage in any format, selects and applies the matching policy document from Blob Storage, and routes the decision to an approved, review, or flagged output queue.",
+                "preview": "./templates/images/test.png",
+                "authorUrl": "https://github.com/Azure-Samples",
+                "author": "Microsoft",
+                "source": "https://github.com/Azure-Samples/expense-processor",
+                "tags": [
+                  "msft",
+                  "new",
+                  "ai"
+                ],
+                "languages": [
+                  "python"
+                ],
+                "azureServices": [
+                  "functions",
+                  "aifoundry",
+                  "azurestorage",
+                  "managedidentity",
+                  "appinsights",
+                  "loganalytics"
+                ],
+                "IaC": [
+                  "bicep"
+                ],
+                "id": "db15a733-f47f-4bdf-bfa6-372d94effb9b"
+              },
+              {
+                "title": "M365 Inbox Agent for Azure Functions (Python)",
+                "description": "An AI agent that triages a Microsoft 365 inbox, escalating urgent mail to Teams, drafting replies, and sending daily briefings based on rules written in Markdown.",
+                "preview": "./templates/images/test.png",
+                "authorUrl": "https://github.com/Azure-Samples",
+                "author": "Azure Functions Team",
+                "source": "https://github.com/Azure-Samples/m365-inbox-serverless-agent-python",
+                "tags": [
+                  "msft",
+                  "new",
+                  "ai"
+                ],
+                "languages": [
+                  "python"
+                ],
+                "azureServices": [
+                  "functions",
+                  "blobstorage",
+                  "appinsights",
+                  "aifoundry",
+                  "managedidentity"
+                ],
+                "IaC": [
+                  "bicep"
+                ],
+                "id": "1806f865-9fa7-4760-9010-aee951d74870"
+              },
+              {
+                "title": "Document Reviewer",
+                "description": "A markdown-first Azure Functions serverless agent that reviews new SharePoint PDF and DOCX files and posts an evidence-backed brief to one Microsoft Teams channel.",
+                "preview": "./templates/images/test.png",
+                "authorUrl": "https://github.com/Azure-Samples",
+                "author": "Azure Samples",
+                "source": "https://github.com/Azure-Samples/document-reviewer",
+                "tags": [
+                  "msft",
+                  "new",
+                  "sharepoint",
+                  "ai"
+                ],
+                "languages": [
+                  "python"
+                ],
+                "azureServices": [
+                  "functions",
+                  "aifoundry",
+                  "azureai"
+                ],
+                "IaC": [
+                  "bicep"
+                ],
+                "id": "63d6be2c-d7f6-4d14-83f2-f0f2d68566e5"
+              },
+              {
+                "title": "Flexible Azure Landing Zone (Bicep-Based)",
+                "description": "A modular Azure landing zone with hub-spoke networking, optional security controls, monitoring, and a scalable architecture.",
+                "preview": "./templates/images/test.png",
+                "authorUrl": "https://github.com/durga533",
+                "author": "Durga Prasad Katrapally",
+                "source": "https://github.com/durga533/azure-landingzone-setup",
+                "tags": [
+                  "community",
+                  "new"
+                ],
+                "azureServices": [
+                  "vnets"
+                ],
+                "IaC": [
+                  "bicep"
+                ],
+                "id": "1d91c0bd-a0aa-436d-818e-08457f9f7323"
+              },
+              {
+                "title": "Microhack - Ask, Analyze, Act - Talk to Your Data in the Era of AI",
+                "description": "This MicroHack scenario walks through the use of modernizing SQL Server workloads and building an analytics- and AI-ready data foundation using Fabric and SQL Managed Instance. The scenario demonstrates the end-to-end journey from database mirroring and analytics enablement to Data Agent configuration and real user interaction via Copilot.",
+                "preview": "./templates/images/Microhack-Talktoyourdata.png",
+                "authorUrl": "https://github.com/henrikmotzkus",
+                "author": "Henrik Motzkus",
+                "source": "https://github.com/Azure-Samples/Microhack-Ask-Analyze-Act",
+                "tags": [
+                  "ai",
+                  "msft",
+                  "new"
+                ],
+                "languages": [
+                  "nodejs"
+                ],
+                "azureServices": [
+                  "fabric",
+                  "azuresql",
+                  "azurestorage",
+                  "appservice"
+                ],
+                "IaC": [
+                  "terraform"
+                ],
+                "id": "64577715-e9a4-4a65-a514-4233763474c2"
               }
             ]
         headers:
@@ -9258,7 +8318,7 @@ interactions:
             Cache-Control:
                 - max-age=300
             Content-Length:
-                - "308072"
+                - "282578"
             Content-Security-Policy:
                 - default-src 'none'; style-src 'unsafe-inline'; sandbox
             Content-Type:
@@ -9266,13 +8326,13 @@ interactions:
             Cross-Origin-Resource-Policy:
                 - cross-origin
             Date:
-                - Wed, 24 Jun 2026 05:31:20 GMT
+                - Thu, 24 Sep 2026 22:36:17 GMT
             Etag:
-                - W/"0907ed30936852bc4f51f25a77636d9a865bea0a1858f7f5702235c5f1639058"
+                - W/"2f081d978eef3b1e1f6ec0b59611d94449328d9ef44ad5c83950e9972d71efbf"
             Expires:
-                - Wed, 24 Jun 2026 05:36:20 GMT
+                - Thu, 24 Sep 2026 22:41:17 GMT
             Source-Age:
-                - "118"
+                - "257"
             Strict-Transport-Security:
                 - max-age=31536000
             Vary:
@@ -9286,19 +8346,21 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Fastly-Request-Id:
-                - 3d561c0859a6bb0ea2927ab4bb984c0b2e6b18f8
+                - fc9e7892c23fbb8791f1ca134fa7d1ec23280684
             X-Frame-Options:
                 - deny
+            X-Github-Edge-Region:
+                - westus2
             X-Github-Request-Id:
-                - B20E:2E9C13:2F1A26:59CDF7:6A3B6B31
+                - 4550:16AA70:31D0E:69603:6AB5A4E0
             X-Served-By:
-                - cache-sin-wsss1830020-SIN
+                - cache-bfi-krnt7300103-BFI
             X-Timer:
-                - S1782279081.711153,VS0,VE1
+                - S1790289378.843936,VS0,VE1
             X-Xss-Protection:
                 - 1; mode=block
         status: 200 OK
         code: 200
-        duration: 316.955ms
+        duration: 42.8257ms
 ---
-time: "1782279069"
+time: "1790289367"

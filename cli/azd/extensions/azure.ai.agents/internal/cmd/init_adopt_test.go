@@ -122,6 +122,62 @@ func TestLoadExplicitAzureYamlRemote(t *testing.T) {
 	require.Equal(t, content, string(got))
 }
 
+func TestExplicitManifestErrorsRedactCredentials(t *testing.T) {
+	t.Parallel()
+
+	const source = "https://user:password@github.com/example/repo/blob/main/azure.yaml?sig=secret#fragment" //nolint:gosec // Test credential redaction.
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(bytes.NewBufferString("not found")),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	_, err := readExplicitManifestContent(
+		t.Context(),
+		source,
+		client,
+		func(context.Context, string) ([]byte, error) {
+			return nil, errors.New("private repository access denied")
+		},
+	)
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeGitHubDownloadFailed, localErr.Code)
+	require.Contains(t, localErr.Message, "private repository access denied")
+	for _, sensitive := range []string{"user", "password", "sig", "secret", "fragment"} {
+		require.NotContains(t, localErr.Message, sensitive)
+		require.NotContains(t, localErr.Suggestion, sensitive)
+		require.NotContains(t, err.Error(), sensitive)
+	}
+	require.Contains(t, localErr.Message, "https://github.com/example/repo/blob/main/azure.yaml")
+}
+
+func TestExplicitManifestCancellationIsPreserved(t *testing.T) {
+	t.Parallel()
+
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(bytes.NewBufferString("not found")),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	_, err := readExplicitManifestContent(
+		t.Context(),
+		"https://github.com/example/private/blob/main/azure.yaml",
+		client,
+		func(context.Context, string) ([]byte, error) {
+			return nil, context.Canceled
+		},
+	)
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeCancelled, localErr.Code)
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -517,6 +573,28 @@ config:
 			want: "unsupported nested config block",
 		},
 		{
+			name: "scalar nested config",
+			azureYaml: `services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: agent
+    config: invalid
+`,
+			want: "malformed nested config value",
+		},
+		{
+			name: "list nested config",
+			azureYaml: `services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: agent
+    config: []
+`,
+			want: "malformed nested config value",
+		},
+		{
 			name: "implicit disk definition",
 			azureYaml: `services:
   agent:
@@ -544,6 +622,104 @@ config:
 
 			err := validateStagedAzureYaml(root, filepath.Join(root, "azure.yaml"))
 			require.ErrorContains(t, err, tt.want)
+		})
+	}
+}
+
+func TestValidateStagedAzureYamlAllowsEmptyAgentConfig(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name      string
+		azureYaml string
+		refBody   string
+	}{
+		{
+			name: "direct",
+			azureYaml: `services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: agent
+    config: {}
+`,
+		},
+		{
+			name: "root ref",
+			azureYaml: `services:
+  agent:
+    $ref: ./agent.yaml
+`,
+			refBody: `host: azure.ai.agent
+kind: hosted
+name: agent
+config: {}
+`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(
+				filepath.Join(root, "azure.yaml"), []byte(tt.azureYaml), 0o600,
+			))
+			if tt.refBody != "" {
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, "agent.yaml"), []byte(tt.refBody), 0o600,
+				))
+			}
+			require.NoError(t, validateStagedAzureYaml(root, filepath.Join(root, "azure.yaml")))
+		})
+	}
+}
+
+func TestPreflightAzdTemplateDoesNotMutateCallerDirectory(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		content string
+		wantErr string
+	}{
+		{
+			name: "valid",
+			content: `services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: agent
+`,
+		},
+		{
+			name:    "missing agent",
+			content: "services:\n  web:\n    host: containerapp\n",
+			wantErr: "does not declare an agent service",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			callerDir := t.TempDir()
+			t.Chdir(callerDir)
+			sentinel := filepath.Join(callerDir, "sentinel.txt")
+			require.NoError(t, os.WriteFile(sentinel, []byte("unchanged"), 0o600))
+
+			workflow := &testWorkflowServiceServer{runHook: func() {
+				require.NoError(t, os.MkdirAll("project", 0o700))
+				require.NoError(t, os.WriteFile(
+					filepath.Join("project", "azure.yaml"), []byte(tt.content), 0o600,
+				))
+			}}
+			client := newTestAzdClient(t, &testEnvironmentServiceServer{}, workflow)
+			err := preflightAzdTemplate(t.Context(), client, "https://github.com/example/template")
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+			}
+			require.Equal(t, 1, workflow.runCalls)
+			content, readErr := os.ReadFile(sentinel)
+			require.NoError(t, readErr)
+			require.Equal(t, "unchanged", string(content))
+			entries, readErr := os.ReadDir(callerDir)
+			require.NoError(t, readErr)
+			require.Len(t, entries, 1)
 		})
 	}
 }

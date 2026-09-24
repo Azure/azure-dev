@@ -29,7 +29,7 @@ const (
 		"projects/test-proj0"
 )
 
-// manifestPath returns the absolute path to the local test manifest file.
+// manifestPath returns the absolute path to the local unified azure.yaml fixture.
 func manifestPath(t *testing.T) string {
 	t.Helper()
 	_, thisFile, _, _ := runtime.Caller(0)
@@ -105,20 +105,15 @@ func Test_AIAgent_Init_NoPrompt_Defer(t *testing.T) {
 		"--runtime", "python_3_13",
 		"--entry-point", "app:app",
 		"--agent-name", "test-defer-agent",
-		"--force",
+		"--src", "test-defer-agent",
 	)
 	require.NoError(t, err, "ai agent init failed: stdout=%s, stderr=%s", result.Stdout, result.Stderr)
-	require.Contains(t, result.Stdout, "AI agent definition added to your azd project successfully!")
+	require.Contains(t, result.Stdout, "Adopted the sample's azure.yaml")
 
-	// Verify generated files exist under agent source dir.
-	// The agent definition is now inline in azure.yaml (no agent.yaml on disk).
-	// Init creates: <dir>/test-defer-agent/azure.yaml (project root)
-	//               <dir>/test-defer-agent/src/test-defer-agent/.agentignore
+	// Unified adoption creates a project with the agent definition inline.
 	projectDir := filepath.Join(dir, "test-defer-agent")
 	require.FileExists(t, filepath.Join(projectDir, "azure.yaml"))
-	agentDir := filepath.Join(projectDir, "src", "test-defer-agent")
-	require.DirExists(t, agentDir)
-	require.FileExists(t, filepath.Join(agentDir, ".agentignore"))
+	require.NoFileExists(t, filepath.Join(projectDir, "agent.yaml"))
 }
 
 // Test_AIAgent_Init_NoPrompt_WithProject verifies init with --project-id resolves the project,
@@ -150,49 +145,31 @@ func Test_AIAgent_Init_NoPrompt_WithProject(t *testing.T) {
 	}
 	session.Variables["project_id"] = projectId
 
-	// --model-deployment's existence routes no-prompt to the "existing" branch
-	// (see modelConfigChoice logic in init_from_code.go). The project deployment
-	// list in the cassette is empty, so it falls back to selectNewModel, which
-	// resolves manifest resources[0].id ("gpt-4.1") as a new deployment.
-	// The flag VALUE is not used or asserted.
-	modelDeployment := os.Getenv("TEST_MODEL_DEPLOYMENT")
-	if modelDeployment == "" {
-		modelDeployment = "gpt-4o"
-	}
-
 	result, err := cli.RunCommand(ctx,
 		"ai", "agent", "init", "--no-prompt",
 		"-m", manifestPath(t),
 		"--project-id", projectId,
-		"--model-deployment", modelDeployment,
+		"--model", "gpt-4.1",
 		"--deploy-mode", "code",
 		"--runtime", "python_3_13",
 		"--entry-point", "app:app",
 		"--agent-name", "pr-gate-test-agent",
-		"--force",
+		"--src", "pr-gate-test-agent",
 	)
 	require.NoError(t, err, "ai agent init failed: stdout=%s, stderr=%s", result.Stdout, result.Stderr)
 
 	// Verify success
-	require.Contains(t, result.Stdout, "AI agent definition added to your azd project successfully!")
+	require.Contains(t, result.Stdout, "Adopted the sample's azure.yaml")
 
 	// Init creates a project directory named after the agent inside the working dir.
 	// Layout: <dir>/pr-gate-test-agent/azure.yaml (project root, agent definition inline)
-	//         <dir>/pr-gate-test-agent/src/pr-gate-test-agent/.agentignore
 	projectDir := filepath.Join(dir, "pr-gate-test-agent")
-	agentDir := filepath.Join(projectDir, "src", "pr-gate-test-agent")
 
 	// Verify project structure
 	require.FileExists(t, filepath.Join(projectDir, "azure.yaml"))
-	require.DirExists(t, agentDir)
-	require.FileExists(t, filepath.Join(agentDir, ".agentignore"))
+	require.NoFileExists(t, filepath.Join(projectDir, "agent.yaml"))
 
-	// Verify ARM resolution: the model deployment name is written to the azd environment
-	// .env file. The --model-deployment flag's existence routes no-prompt to the "existing"
-	// branch (see modelConfigChoice logic in init_from_code.go); the cassette's deployment
-	// list is empty, so it falls back to selectNewModel which resolves manifest
-	// resources[0].id ("gpt-4.1") as a new deployment. This proves ARM calls in the
-	// cassette were consumed.
+	// Verify the selected existing project was recorded in the azd environment.
 	envFiles, err := filepath.Glob(filepath.Join(projectDir, ".azure", "*", ".env"))
 	require.NoError(t, err)
 	require.Len(t, envFiles, 1, "expected exactly one azd environment .env file")
@@ -200,16 +177,13 @@ func Test_AIAgent_Init_NoPrompt_WithProject(t *testing.T) {
 	envContent, err := os.ReadFile(envFile)
 	require.NoError(t, err)
 	envStr := string(envContent)
-	// Pin to the exact value produced by manifest resources[0].id resolution.
-	require.Contains(t, envStr, `AZURE_AI_MODEL_DEPLOYMENT_NAME="gpt-4.1"`,
-		"model deployment should be resolved from manifest resource id via ARM catalog")
+	require.Contains(t, envStr, `USE_EXISTING_AI_PROJECT="true"`)
 
-	// Cross-check: azure.yaml should have the resolved model value inline, not ${...} placeholder.
+	// Cross-check: unified adoption authored the requested managed deployment.
 	azureYamlContent, err := os.ReadFile(filepath.Join(projectDir, "azure.yaml"))
 	require.NoError(t, err)
 	azureYamlStr := string(azureYamlContent)
-	require.NotContains(t, azureYamlStr, "${AZURE_AI_MODEL_DEPLOYMENT_NAME}",
-		"azure.yaml should have resolved model name, not azd env placeholder")
+	require.Contains(t, azureYamlStr, "gpt-4.1")
 }
 
 // Test_AIAgent_Init_NegativeControl_BadCassette verifies that the recording cassette is actually
@@ -247,7 +221,6 @@ func Test_AIAgent_Init_NegativeControl_BadCassette(t *testing.T) {
 		"--runtime", "python_3_13",
 		"--entry-point", "app:app",
 		"--agent-name", "neg-control-agent",
-		"--force",
 	)
 	// The first outbound call (extension registry or ARM) finds no matching recorded
 	// interaction → recording proxy returns a 400 with "requested interaction not found".

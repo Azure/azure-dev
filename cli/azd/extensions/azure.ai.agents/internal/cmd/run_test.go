@@ -2065,16 +2065,42 @@ func TestPythonVersion(t *testing.T) {
 	_ = minor
 }
 
-func TestPlaygroundMessagesURLUsesIPv4Loopback(t *testing.T) {
+func TestPlaygroundMessagesURL(t *testing.T) {
 	t.Parallel()
 
-	got := playgroundMessagesURL(8088)
-	want := "http://127.0.0.1:8088/api/messages"
-	if got != want {
-		t.Fatalf("playgroundMessagesURL = %q, want %q", got, want)
+	tests := []struct {
+		name         string
+		messagesPath string
+		want         string
+	}{
+		{
+			name:         "activity 2.0",
+			messagesPath: activityMessagesPath,
+			want:         "http://127.0.0.1:8088/activity/messages",
+		},
+		{
+			name:         "activity v1",
+			messagesPath: legacyActivityMessagesPath,
+			want:         "http://127.0.0.1:8088/api/messages",
+		},
+		{
+			name: "empty path defaults to activity 2.0",
+			want: "http://127.0.0.1:8088/activity/messages",
+		},
 	}
-	if strings.Contains(got, "localhost") {
-		t.Fatalf("playground URL must use 127.0.0.1, not localhost: %q", got)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := playgroundMessagesURL(8088, tt.messagesPath)
+			if got != tt.want {
+				t.Fatalf("playgroundMessagesURL = %q, want %q", got, tt.want)
+			}
+			if strings.Contains(got, "localhost") {
+				t.Fatalf("playground URL must use 127.0.0.1, not localhost: %q", got)
+			}
+		})
 	}
 }
 
@@ -2084,8 +2110,8 @@ func TestPlaygroundCommandArgs(t *testing.T) {
 	t.Run("explicit channel", func(t *testing.T) {
 		t.Parallel()
 
-		got := playgroundCommandArgs(9090, "emulator")
-		want := []string{"agentsplayground", "-e", "http://127.0.0.1:9090/api/messages", "-c", "emulator"}
+		got := playgroundCommandArgs(9090, "emulator", activityMessagesPath)
+		want := []string{"agentsplayground", "-e", "http://127.0.0.1:9090/activity/messages", "-c", "emulator"}
 		if !slices.Equal(got, want) {
 			t.Fatalf("playgroundCommandArgs = %v, want %v", got, want)
 		}
@@ -2094,7 +2120,17 @@ func TestPlaygroundCommandArgs(t *testing.T) {
 	t.Run("empty channel falls back to default", func(t *testing.T) {
 		t.Parallel()
 
-		got := playgroundCommandArgs(8088, "")
+		got := playgroundCommandArgs(8088, "", activityMessagesPath)
+		want := []string{"agentsplayground", "-e", "http://127.0.0.1:8088/activity/messages", "-c", "emulator"}
+		if !slices.Equal(got, want) {
+			t.Fatalf("playgroundCommandArgs = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("legacy path is preserved", func(t *testing.T) {
+		t.Parallel()
+
+		got := playgroundCommandArgs(8088, "emulator", legacyActivityMessagesPath)
 		want := []string{"agentsplayground", "-e", "http://127.0.0.1:8088/api/messages", "-c", "emulator"}
 		if !slices.Equal(got, want) {
 			t.Fatalf("playgroundCommandArgs = %v, want %v", got, want)
@@ -2119,8 +2155,12 @@ func TestResolveActivityRunProfile(t *testing.T) {
 		def := &agent_yaml.ContainerAgent{
 			AgentEndpoint: &agent_yaml.AgentEndpoint{Protocols: []string{"activity"}},
 		}
-		if !resolveActivityRunProfile(def).IsActivity {
+		got := resolveActivityRunProfile(def)
+		if !got.IsActivity {
 			t.Fatal("activity endpoint should resolve as activity")
+		}
+		if got.MessagesPath != activityMessagesPath {
+			t.Fatalf("MessagesPath = %q, want %q", got.MessagesPath, activityMessagesPath)
 		}
 	})
 
@@ -2129,10 +2169,68 @@ func TestResolveActivityRunProfile(t *testing.T) {
 
 		for _, name := range []string{"activity", "activity_protocol"} {
 			def := &agent_yaml.ContainerAgent{
-				Protocols: []agent_yaml.ProtocolVersionRecord{{Protocol: name}},
+				Protocols: []agent_yaml.ProtocolVersionRecord{{Protocol: name, Version: "2.0.0"}},
 			}
-			if !resolveActivityRunProfile(def).IsActivity {
+			got := resolveActivityRunProfile(def)
+			if !got.IsActivity {
 				t.Fatalf("protocol %q should resolve as activity", name)
+			}
+			if got.MessagesPath != activityMessagesPath {
+				t.Fatalf("protocol %q MessagesPath = %q, want %q", name, got.MessagesPath, activityMessagesPath)
+			}
+		}
+	})
+
+	t.Run("legacy activity versions use api messages", func(t *testing.T) {
+		t.Parallel()
+
+		for _, protocol := range []string{"activity", "activity_protocol"} {
+			for _, version := range []string{"v1", "1.0", "1.0.0", " V1 "} {
+				def := &agent_yaml.ContainerAgent{
+					Protocols: []agent_yaml.ProtocolVersionRecord{{Protocol: protocol, Version: version}},
+				}
+				got := resolveActivityRunProfile(def)
+				if !got.IsActivity {
+					t.Fatalf("protocol %q version %q should resolve as activity", protocol, version)
+				}
+				if got.MessagesPath != legacyActivityMessagesPath {
+					t.Fatalf(
+						"protocol %q version %q MessagesPath = %q, want %q",
+						protocol,
+						version,
+						got.MessagesPath,
+						legacyActivityMessagesPath,
+					)
+				}
+			}
+		}
+	})
+
+	t.Run("activity route resolves when protocols coexist", func(t *testing.T) {
+		t.Parallel()
+
+		def := &agent_yaml.ContainerAgent{
+			Protocols: []agent_yaml.ProtocolVersionRecord{
+				{Protocol: "responses", Version: "2.0.0"},
+				{Protocol: "activity", Version: "2.0.0"},
+			},
+		}
+		got := resolveActivityRunProfile(def)
+		if !got.IsActivity || got.MessagesPath != activityMessagesPath {
+			t.Fatalf("profile = %+v, want Activity with %q", got, activityMessagesPath)
+		}
+	})
+
+	t.Run("missing and future versions use activity messages", func(t *testing.T) {
+		t.Parallel()
+
+		for _, version := range []string{"", "2.0.0", "3.0.0"} {
+			def := &agent_yaml.ContainerAgent{
+				Protocols: []agent_yaml.ProtocolVersionRecord{{Protocol: "activity", Version: version}},
+			}
+			got := resolveActivityRunProfile(def)
+			if got.MessagesPath != activityMessagesPath {
+				t.Fatalf("version %q MessagesPath = %q, want %q", version, got.MessagesPath, activityMessagesPath)
 			}
 		}
 	})
@@ -2142,6 +2240,9 @@ func TestResolveActivityRunProfile(t *testing.T) {
 
 		if resolveActivityRunProfile(&agent_yaml.ContainerAgent{}).IsActivity {
 			t.Fatal("empty definition should not resolve as activity")
+		}
+		if got := resolveActivityRunProfile(&agent_yaml.ContainerAgent{}).MessagesPath; got != "" {
+			t.Fatalf("non-activity MessagesPath = %q, want empty", got)
 		}
 	})
 }
@@ -2177,7 +2278,7 @@ func TestHandlePlaygroundAutoLaunchSuppressed(t *testing.T) {
 
 	var buf lockedBuffer
 	// Suppressed: must not warn or attempt anything even if the CLI is missing.
-	handlePlaygroundAutoLaunch(t.Context(), 8088, "emulator", true, &buf)
+	handlePlaygroundAutoLaunch(t.Context(), 8088, "emulator", activityMessagesPath, true, &buf)
 	if buf.String() != "" {
 		t.Fatalf("suppressed auto-launch should be silent, got: %q", buf.String())
 	}
@@ -2186,10 +2287,10 @@ func TestHandlePlaygroundAutoLaunchSuppressed(t *testing.T) {
 func TestMissingPlaygroundWarning(t *testing.T) {
 	t.Parallel()
 
-	warning := missingPlaygroundWarning(9090, "emulator")
+	warning := missingPlaygroundWarning(9090, "emulator", activityMessagesPath)
 	for _, want := range []string{
 		"winget install agentsplayground",
-		"agentsplayground -e http://127.0.0.1:9090/api/messages -c emulator",
+		"agentsplayground -e http://127.0.0.1:9090/activity/messages -c emulator",
 	} {
 		if !strings.Contains(warning, want) {
 			t.Fatalf("warning missing %q:\n%s", want, warning)

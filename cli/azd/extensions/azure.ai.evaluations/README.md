@@ -97,6 +97,13 @@ Registered versions cannot be sampled by this run API. A positive `max_samples:`
 or `--max-samples` is refused rather than ignored or sent as anonymous inline
 rows. Remove the cap, or publish and select a smaller dataset.
 
+For an ordinary dataset eval selected by name, an explicit `--max-samples 0`
+clears its configured cap. Trace/response sources and reruns selected by a bare
+eval ID reject every explicit `--max-samples` value, including zero, rather than
+silently ignoring it. Omit the flag to repeat a previous run's source; use
+`source.max_traces` to limit a declared trace source. Simulation declarations
+with a positive configured cap remain invalid even when the flag is zero.
+
 Genuinely unregistered local files still run inline and support a cap, but only
 after a complete empty version listing (or a not-found response) and not-found
 first-version probes confirm absence. Permissions, transient failures, and

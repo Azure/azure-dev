@@ -209,11 +209,14 @@ func resolveEvaluators(
 }
 
 func initEvaluatorSupportsLevel(decl *project.EvaluatorDecl, level string) bool {
-	if len(decl.SupportedEvaluationLevels) == 0 || slices.Contains(decl.SupportedEvaluationLevels, level) {
+	if len(decl.SupportedEvaluationLevels) == 0 {
 		return true
 	}
 	for _, supported := range decl.SupportedEvaluationLevels {
-		if !slices.Contains(evaluationLevels, supported) {
+		if strings.EqualFold(supported, level) {
+			return true
+		}
+		if !slices.ContainsFunc(evaluationLevels, func(known string) bool { return strings.EqualFold(known, supported) }) {
 			// Future or unfamiliar metadata is not proof of incompatibility.
 			return true
 		}

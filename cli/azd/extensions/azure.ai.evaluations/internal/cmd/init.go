@@ -376,20 +376,21 @@ func (a *initAction) Run() error {
 	}
 
 	plan, err := planScaffold(scaffoldInput{
-		evalName:        evalName,
-		target:          target,
-		remoteTarget:    remoteTarget,
-		source:          source,
-		dataset:         datasetRef,
-		maxTraces:       a.flags.maxTraces,
-		lookbackHours:   lookbackHours,
-		evaluationLevel: evaluationLevel,
-		simulation:      answers.simulation,
-		evaluators:      evaluators,
-		judgeModel:      judgeModel,
-		evalDir:         evalDir,
-		configPath:      configPath,
-		cfg:             cfg,
+		evalName:                evalName,
+		target:                  target,
+		remoteTarget:            remoteTarget,
+		source:                  source,
+		dataset:                 datasetRef,
+		maxTraces:               a.flags.maxTraces,
+		lookbackHours:           lookbackHours,
+		evaluationLevel:         evaluationLevel,
+		simulation:              answers.simulation,
+		simulationRowsValidated: answers.simulation != nil,
+		evaluators:              evaluators,
+		judgeModel:              judgeModel,
+		evalDir:                 evalDir,
+		configPath:              configPath,
+		cfg:                     cfg,
 	})
 	if err != nil {
 		return err
@@ -716,9 +717,11 @@ type scaffoldInput struct {
 	lookbackHours   int
 	evaluationLevel string
 	simulation      *project.Simulation
-	evaluators      []string
-	judgeModel      string
-	evalDir         string
+	// simulationRowsValidated reuses only the fresh seed scan under the config lock.
+	simulationRowsValidated bool
+	evaluators              []string
+	judgeModel              string
+	evalDir                 string
 	// configPath retains an explicit filename separately from the artifact directory.
 	configPath string
 	cfg        *project.EvalConfig
@@ -807,8 +810,10 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 				// init is holding the file and needs nothing from the service to
 				// judge it, so accepting it here only moves the failure to a
 				// deploy, after a declaration nobody can use has been written.
-				if err := validateJSONL(in.dataset); err != nil {
-					return scaffold{}, err
+				if in.simulation == nil || !in.simulationRowsValidated {
+					if err := validateJSONL(in.dataset); err != nil {
+						return scaffold{}, err
+					}
 				}
 				// --dataset is given relative to where the user is standing,
 				// but source: resolves relative to the config, so the path has

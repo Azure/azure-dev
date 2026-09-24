@@ -55,6 +55,53 @@ func initFileSnapshot(t *testing.T, dir string) map[string]string {
 	return files
 }
 
+func TestInitSimulationRevalidatesAfterConfirmation(t *testing.T) {
+	for _, change := range []string{"rows", "named declaration", "local declaration"} {
+		t.Run(change, func(t *testing.T) {
+			t.Setenv("AZD_NO_PROMPT", "false")
+			prompts := &conversationPromptServer{}
+			h := newInitHarness(t, nil, prompts)
+			require.NoError(t, os.WriteFile(h.seedRows, []byte(`{"test_case_description":"help"}`), 0o600))
+			configPath := filepath.Join(h.dir, "evals", "azure.eval.yaml")
+			unlock, err := project.LockEvalConfig(t.Context(), configPath)
+			require.NoError(t, err)
+			unlock()
+			config := "datasets:\n  - name: seed\n    file: ../seed.jsonl\n    version: '7'\n"
+			require.NoError(t, os.WriteFile(configPath, []byte(config), 0o600))
+			changedRows := `{"test_case_description":"help","response":"already completed"}`
+			require.NoError(t, os.WriteFile(filepath.Join(h.dir, "changed.jsonl"), []byte(changedRows), 0o600))
+			want := initFileSnapshot(t, h.dir)
+			dataset, changedPath, changedBody := h.seedRows, h.seedRows, changedRows
+			if change != "rows" {
+				changedPath = configPath
+				changedBody = strings.Replace(config, "../seed.jsonl", "../changed.jsonl", 1)
+				if change == "named declaration" {
+					dataset = "seed"
+				}
+			}
+			relative, err := filepath.Rel(h.dir, changedPath)
+			require.NoError(t, err)
+			want[relative] = changedBody
+			prompts.onConfirm = func() error {
+				return os.WriteFile(changedPath, []byte(changedBody), 0o600)
+			}
+			_, err = executeConversationInit(t, simulationInitArgs(dataset)...)
+			if change == "local declaration" {
+				require.ErrorContains(t, err, "already declared with a different file")
+			} else {
+				require.ErrorContains(t, err, `carries "response"`)
+			}
+			assert.Equal(t, want, initFileSnapshot(t, h.dir), "only the concurrent author's change survives")
+			assert.Zero(t, h.project.wiringAttempts())
+			assert.Empty(t, h.usage.reported())
+			prompts.mu.Lock()
+			defer prompts.mu.Unlock()
+			require.Len(t, prompts.messages, 1, "the file changes at the actual confirmation prompt")
+			assert.Equal(t, messages.ConfirmScaffoldPrompt(filepath.ToSlash(configPath)), prompts.messages[0])
+		})
+	}
+}
+
 func TestInitSimulationRefusesLocalRowsBeforeAnyWrites(t *testing.T) {
 	for _, tc := range []struct {
 		name string

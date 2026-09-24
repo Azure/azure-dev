@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaieval/internal/pkg/evalcore"
@@ -31,23 +32,32 @@ func TestInitEvaluatorChoicesRespectKnownLocalCompatibility(t *testing.T) {
 	cfg := &project.EvalConfig{Evaluators: []project.EvaluatorDecl{
 		{Name: "turn-only", SupportedEvaluationLevels: []string{"turn"}},
 		{Name: "conversation-only", SupportedEvaluationLevels: []string{"conversation"}},
+		{Name: "turn-mixed-case", SupportedEvaluationLevels: []string{"TuRn"}},
+		{Name: "conversation-mixed-case", SupportedEvaluationLevels: []string{"Conversation"}},
 		{Name: "unknown"},
 		{Name: "future", SupportedEvaluationLevels: []string{"future-level"}},
+		{Name: "mixed-future", SupportedEvaluationLevels: []string{"TURN", "Future-Level"}},
 	}}
-	for _, level := range evaluationLevels {
+	for _, level := range []string{"turn", "conversation", "Turn", "CONVERSATION"} {
 		t.Run(level, func(t *testing.T) {
 			choices := evaluatorChoices(cfg, level)
-			assert.Contains(t, choices, level+"-only")
+			assert.Contains(t, choices, strings.ToLower(level)+"-only")
+			assert.Contains(t, choices, strings.ToLower(level)+"-mixed-case")
 			assert.Contains(t, choices, "unknown")
 			assert.Contains(t, choices, "future")
+			assert.Contains(t, choices, "mixed-future")
 			for _, other := range evaluationLevels {
-				if other != level {
+				if !strings.EqualFold(other, level) {
 					assert.NotContains(t, choices, other+"-only")
+					assert.NotContains(t, choices, other+"-mixed-case")
 					require.ErrorContains(t, validateInitEvaluatorLevels(cfg, []string{other + "-only"}, level),
+						"--evaluation-level "+level)
+					require.ErrorContains(t, validateInitEvaluatorLevels(cfg, []string{other + "-mixed-case"}, level),
 						"--evaluation-level "+level)
 				}
 			}
-			assert.NoError(t, validateInitEvaluatorLevels(cfg, []string{"unknown", "future"}, level))
+			assert.NoError(t, validateInitEvaluatorLevels(cfg,
+				[]string{"unknown", "future", "mixed-future", strings.ToLower(level) + "-mixed-case"}, level))
 		})
 	}
 }

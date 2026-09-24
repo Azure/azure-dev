@@ -256,10 +256,14 @@ func TestConversationHandoffOnlyIncludesCompatibleGeneratedEvaluators(t *testing
 		keep   bool
 	}{
 		{"conversation", []string{"conversation"}, true},
+		{"mixed-case conversation", []string{"Conversation"}, true},
 		{"both", []string{"turn", "conversation"}, true},
+		{"mixed-case both", []string{"TURN", "Conversation"}, true},
 		{"unknown", nil, true},
 		{"future metadata", []string{"future"}, true},
+		{"known and future metadata", []string{"Turn", "Future-Level"}, true},
 		{"turn only", []string{"turn"}, false},
+		{"mixed-case turn only", []string{"Turn"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			outcomes := bothGenerated()

@@ -24,6 +24,14 @@ func InitDatasetFileConflict(name, path string) error {
 		"Init never replaces dataset declarations. To reuse the existing dataset, supply its name or its current file path.")
 }
 
+// InitDatasetNameInvalid refuses a filename that cannot name a catalog entry.
+func InitDatasetNameInvalid(path, name string) error {
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("Dataset file %q derives invalid catalog name %q", path, name),
+		"Rename the file to give it a non-empty stem other than . or .., "+
+			"at most 255 bytes long and without path separators or control characters.")
+}
+
 // InitFlagRange names both the input and its supported bounds.
 func InitFlagRange(flag string, value, minimum, maximum int) error {
 	return exterrors.Validation(exterrors.CodeInvalidParameter,

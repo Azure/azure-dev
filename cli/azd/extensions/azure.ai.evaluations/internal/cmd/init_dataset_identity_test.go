@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaieval/internal/exterrors"
@@ -89,6 +90,86 @@ func TestInitDatasetFileCollisionPreservesState(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+func TestInitDatasetRefusesInvalidFilenameDerivedNames(t *testing.T) {
+	for _, filename := range []string{".jsonl", "..jsonl", "...jsonl"} {
+		for _, mode := range []string{"simulation", "static", "turn"} {
+			for _, output := range []string{"human", "json"} {
+				t.Run(filename+"/"+mode+"/"+output, func(t *testing.T) {
+					h := newInitHarness(t, nil)
+					require.NoError(t, os.WriteFile(filename, []byte(`{"test_case_description":"help"}`), 0o600))
+					dataset := "./" + filename
+					args := simulationInitArgs(dataset)
+					switch mode {
+					case "static":
+						args = []string{"--name", "quality", "--dataset", dataset,
+							"--judge-model", "judge", "--conversation-mode", "static"}
+					case "turn":
+						args = []string{"--name", "quality", "--dataset", dataset,
+							"--judge-model", "judge", "--target", "agent"}
+					}
+					if output == "human" {
+						args = append(args, "--no-prompt")
+					} else {
+						args = append(args, "--output", "json")
+					}
+					before := initFileSnapshot(t, h.dir)
+					text, err := executeConversationInit(t, args...)
+					require.ErrorContains(t, err, "invalid catalog name")
+					assert.Contains(t, err.Error(), filename)
+					validation, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok)
+					assert.Equal(t, exterrors.CodeInvalidParameter, validation.Code)
+					assert.Contains(t, validation.Suggestion, "Rename")
+					assert.Empty(t, text)
+					assert.Zero(t, h.project.wiringAttempts())
+					assert.Empty(t, h.usage.reported())
+					assert.Equal(t, before, initFileSnapshot(t, h.dir))
+				})
+			}
+		}
+	}
+}
+
+func TestInitDatasetCorrectsInvalidFilenameDerivedName(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "false")
+	prompts := &seedCorrectionPromptServer{datasets: []string{"./seed.jsonl"}}
+	h := newInitHarness(t, nil, prompts)
+	for _, filename := range []string{".jsonl", h.seedRows} {
+		require.NoError(t, os.WriteFile(filename, []byte(`{"test_case_description":"help"}`), 0o600))
+	}
+	text, err := executeConversationInit(t, simulationInitArgs("./.jsonl")...)
+	require.NoError(t, err)
+	assert.Contains(t, text, "invalid catalog name")
+	cfg, err := project.OpenEvalConfig(filepath.Join(h.dir, "evals"))
+	require.NoError(t, err)
+	require.Len(t, cfg.Datasets, 1)
+	require.Len(t, cfg.Evals, 1)
+	assert.Equal(t, "seed", cfg.Evals[0].Dataset)
+	assert.Equal(t, "seed", cfg.Datasets[0].Name)
+	prompts.mu.Lock()
+	defer prompts.mu.Unlock()
+	assert.Equal(t, []int{0}, prompts.selectCounts, "correct the name before confirmation")
+}
+
+func TestInitDatasetDerivedNameUsesLookupRules(t *testing.T) {
+	for _, name := range []string{"", ".", "..", "control\n", strings.Repeat("a", assetNameMaxLength+1)} {
+		t.Run("invalid/"+name, func(t *testing.T) {
+			_, err := resolveInitLocalDataset(t.TempDir(), name+".jsonl", &project.EvalConfig{})
+			require.ErrorContains(t, err, "invalid catalog name")
+		})
+	}
+	for _, name := range []string{"seeds", ".seeds", "seed data", "seeds.v2", "caf\u00e9"} {
+		t.Run("valid/"+name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), name+".jsonl")
+			require.NoError(t, os.WriteFile(path, []byte(`{"query":"help"}`), 0o600))
+			in := localDatasetScaffold(t, path)
+			plan, err := planScaffold(in)
+			require.NoError(t, err)
+			assert.Equal(t, name, plan.datasetName)
+		})
 	}
 }
 

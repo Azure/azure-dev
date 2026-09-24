@@ -217,11 +217,12 @@ func TestInitConversationAggregatesNoninteractiveRequiredInputs(t *testing.T) {
 
 type conversationPromptServer struct {
 	azdext.UnimplementedPromptServiceServer
-	mu       sync.Mutex
-	mode     int32
-	decision int32
-	messages []string
-	models   []*azdext.PromptOptions
+	mu        sync.Mutex
+	mode      int32
+	decision  int32
+	messages  []string
+	models    []*azdext.PromptOptions
+	onConfirm func() error
 }
 
 func (s *conversationPromptServer) Select(
@@ -232,6 +233,11 @@ func (s *conversationPromptServer) Select(
 	s.messages = append(s.messages, req.GetOptions().GetMessage())
 	if req.GetOptions().GetMessage() == messages.SelectConversationModePrompt() {
 		return &azdext.SelectResponse{Value: new(s.mode)}, nil
+	}
+	if s.onConfirm != nil {
+		if err := s.onConfirm(); err != nil {
+			return nil, err
+		}
 	}
 	return &azdext.SelectResponse{Value: new(s.decision)}, nil
 }
@@ -413,20 +419,23 @@ func TestInitHandoffPreservesCustomConfigFile(t *testing.T) {
 }
 
 func TestInitSimulationRefusesKnownIncompatibleEvaluatorBeforeWriting(t *testing.T) {
-	h := newInitHarness(t, nil)
-	path := filepath.Join(h.dir, "evals", "azure.eval.yaml")
-	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
-	body := "evaluators:\n  - name: turn-only\n    supported_evaluation_levels: [turn]\n"
-	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
-	err := h.runInit(t, "--conversation-mode", "simulation", "--target", "agent",
-		"--dataset", "seeds", "--simulation-model", "connection/simulator", "--judge-model", "judge",
-		"--evaluator", "turn-only")
-	require.ErrorContains(t, err, "--evaluator turn-only")
-	require.ErrorContains(t, err, "--evaluation-level conversation")
-	after, err := os.ReadFile(path)
-	require.NoError(t, err)
-	assert.Equal(t, body, string(after))
-	assert.Zero(t, h.project.wiringAttempts())
+	for _, level := range []string{"turn", "Turn", "TURN", "tUrN"} {
+		t.Run(level, func(t *testing.T) {
+			h := newInitHarness(t, nil)
+			path := filepath.Join(h.dir, "evals", "azure.eval.yaml")
+			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+			body := "evaluators:\n  - name: turn-only\n    supported_evaluation_levels: [" + level + "]\n"
+			require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+			before := initFileSnapshot(t, h.dir)
+			text, err := executeConversationInit(t, append(simulationInitArgs("seeds"),
+				"--evaluator", "turn-only", "--output", "json")...)
+			require.ErrorContains(t, err, "--evaluator turn-only")
+			require.ErrorContains(t, err, "--evaluation-level conversation")
+			assert.Empty(t, text)
+			assert.Equal(t, before, initFileSnapshot(t, h.dir))
+			assert.Zero(t, h.project.wiringAttempts())
+		})
+	}
 }
 
 func TestInitSimulationRejectsUnqualifiedModelBeforeWrites(t *testing.T) {

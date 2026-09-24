@@ -85,6 +85,9 @@ func resolveInitLocalDataset(location, path string, cfg *project.EvalConfig) (pr
 		Name: strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)),
 		File: relativeToConfig(path, location),
 	}
+	if !validLookupName(requested.Name) {
+		return project.DatasetDecl{}, messages.InitDatasetNameInvalid(filepath.ToSlash(path), requested.Name)
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return project.DatasetDecl{}, messages.DatasetFileNotFound(path, err)

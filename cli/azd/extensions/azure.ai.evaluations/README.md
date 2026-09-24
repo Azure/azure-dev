@@ -136,6 +136,9 @@ dataset before confirmation; press Ctrl+C at that prompt to cancel without
 authored changes. Under `--no-prompt` or `--output json`, invalid local rows
 fail immediately without writing configuration.
 Local files derive their dataset name from the filename without its extension.
+That name must be non-empty, cannot be `.` or `..`, and must satisfy the existing
+dataset lookup-name rules: at most 255 bytes, with no path separators or
+control characters.
 If that name is already declared for a different file (or has no local file),
 init refuses the collision rather than replacing the declaration or ignoring
 the supplied path. Interactive init asks for another dataset; use a unique
@@ -151,8 +154,9 @@ Init supports `--output default` for human-readable output and `--output json`
 for structured output. Unsupported formats are rejected before any authored writes.
 Registered datasets with no local file are not fetched or checked by init.
 The evaluator picker excludes custom evaluators whose local
-`supported_evaluation_levels` explicitly excludes the selected level; an explicit
-incompatible `--evaluator` is rejected. Missing or unfamiliar metadata remains
+`supported_evaluation_levels` explicitly excludes the selected level (compared
+case-insensitively); an explicit incompatible `--evaluator` is rejected.
+Missing or unfamiliar metadata remains
 unknown, with authoritative compatibility checked when the eval is created.
 Omitting `--evaluator` keeps the default selection or opens the interactive
 picker. An explicitly empty `--evaluator` is rejected rather than silently

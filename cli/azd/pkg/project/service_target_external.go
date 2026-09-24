@@ -71,6 +71,19 @@ func (est *ExternalServiceTarget) toProtoServiceConfig(serviceConfig *ServiceCon
 	return serviceConfigToProto(est.lazyEnv, serviceConfig)
 }
 
+func (est *ExternalServiceTarget) wrapInvocationError(err error, operation string) error {
+	if err == nil || est.extension == nil {
+		return err
+	}
+
+	return extensions.WrapInvocationError(
+		err,
+		est.extension.Id,
+		est.extension.Version,
+		"service_target."+operation,
+	)
+}
+
 // Publish implements ServiceTarget.
 func (est *ExternalServiceTarget) Publish(
 	ctx context.Context,
@@ -112,7 +125,7 @@ func (est *ExternalServiceTarget) Publish(
 
 	resp, err := est.broker.SendAndWaitWithProgress(ctx, req, createProgressFunc(progress))
 	if err != nil {
-		return nil, err
+		return nil, est.wrapInvocationError(err, "publish")
 	}
 
 	publishResp := resp.GetPublishResponse()
@@ -122,7 +135,10 @@ func (est *ExternalServiceTarget) Publish(
 
 	var result *ServicePublishResult
 	if err := mapper.Convert(publishResp.Result, &result); err != nil {
-		return nil, fmt.Errorf("failed to convert publish result: %w", err)
+		return nil, est.wrapInvocationError(
+			fmt.Errorf("failed to convert publish result: %w", err),
+			"publish",
+		)
 	}
 
 	return result, nil
@@ -150,7 +166,7 @@ func (est *ExternalServiceTarget) Initialize(ctx context.Context, serviceConfig 
 	}
 
 	_, err = est.broker.SendAndWait(ctx, req)
-	return err
+	return est.wrapInvocationError(err, "initialize")
 }
 
 // RequiredExternalTools returns the tools needed to run the deploy operation for this target.
@@ -190,7 +206,7 @@ func (est *ExternalServiceTarget) Package(
 
 	resp, err := est.broker.SendAndWaitWithProgress(ctx, req, createProgressFunc(progress))
 	if err != nil {
-		return nil, err
+		return nil, est.wrapInvocationError(err, "package")
 	}
 
 	packageResp := resp.GetPackageResponse()
@@ -201,7 +217,10 @@ func (est *ExternalServiceTarget) Package(
 	// Convert proto result using mapper
 	var convertedResult *ServicePackageResult
 	if err := mapper.Convert(packageResp.Result, &convertedResult); err != nil {
-		return nil, err
+		return nil, est.wrapInvocationError(
+			fmt.Errorf("failed to convert package result: %w", err),
+			"package",
+		)
 	}
 
 	return convertedResult, nil
@@ -246,18 +265,27 @@ func (est *ExternalServiceTarget) Deploy(
 	// Send request and wait for response, handling progress messages
 	resp, err := est.broker.SendAndWaitWithProgress(ctx, req, createProgressFunc(progress))
 	if err != nil {
-		return nil, err
+		return nil, est.wrapInvocationError(err, "deploy")
 	}
 
 	deployResponse := resp.GetDeployResponse()
 	if deployResponse == nil || deployResponse.Result == nil {
-		return nil, errors.New("invalid deploy response: missing deploy result")
+		return nil, est.wrapInvocationError(
+			&ExternalServiceTargetResponseError{
+				Operation: "deploy",
+				Detail:    "missing deploy result",
+			},
+			"deploy",
+		)
 	}
 
 	// Convert protobuf result back to project types using mapper
 	var result *ServiceDeployResult
 	if err := mapper.Convert(deployResponse.Result, &result); err != nil {
-		return nil, fmt.Errorf("failed to convert deploy result: %w", err)
+		return nil, est.wrapInvocationError(
+			fmt.Errorf("failed to convert deploy result: %w", err),
+			"deploy",
+		)
 	}
 
 	return result, nil
@@ -290,7 +318,7 @@ func (est *ExternalServiceTarget) Endpoints(
 
 	resp, err := est.broker.SendAndWait(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, est.wrapInvocationError(err, "endpoints")
 	}
 
 	endpointsResp := resp.GetEndpointsResponse()
@@ -343,12 +371,18 @@ func (est *ExternalServiceTarget) ResolveTargetResource(
 
 	resp, err := est.broker.SendAndWait(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, est.wrapInvocationError(err, "get_target_resource")
 	}
 
 	result := resp.GetGetTargetResourceResponse()
 	if result == nil || result.TargetResource == nil {
-		return nil, errors.New("invalid get target resource response: missing target resource")
+		return nil, est.wrapInvocationError(
+			&ExternalServiceTargetResponseError{
+				Operation: "get target resource",
+				Detail:    "missing target resource",
+			},
+			"get_target_resource",
+		)
 	}
 
 	target := environment.NewTargetResource(
@@ -360,6 +394,16 @@ func (est *ExternalServiceTarget) ResolveTargetResource(
 	target.SetMetadata(result.TargetResource.GetMetadata())
 
 	return target, nil
+}
+
+// ExternalServiceTargetResponseError reports a malformed response from an extension service-target provider.
+type ExternalServiceTargetResponseError struct {
+	Operation string
+	Detail    string
+}
+
+func (e *ExternalServiceTargetResponseError) Error() string {
+	return fmt.Sprintf("invalid %s response: %s", e.Operation, e.Detail)
 }
 
 func envResolver(env *environment.Environment) mapper.Resolver {

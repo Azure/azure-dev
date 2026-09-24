@@ -278,8 +278,11 @@ an `ext.usage` span alongside `extension.id`, `extension.version`,
 `extension.source`, and `extension.event`. Failed extension commands use
 `extension.id` and `extension.version` on the failed `ext.run` span, but do
 not set `extension.event` or create an `ext.usage` span. Failed lifecycle
-hooks use the enclosing `cmd.*` span and include the extension ID, version,
-and lifecycle event.
+hooks and service-target operations use the enclosing `cmd.*` span and include
+the extension ID, version, and host-defined lifecycle operation. Service-target
+values are `service_target.initialize`, `service_target.package`,
+`service_target.publish`, `service_target.deploy`, `service_target.endpoints`,
+and `service_target.get_target_resource`.
 
 `azd` core carries no product-specific telemetry semantics for these fields.
 The following rules are enforced by the host and are what this schema

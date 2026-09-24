@@ -100,6 +100,8 @@ func TestDeployActionResolveDeployTimeout(t *testing.T) {
 			timeout, err := action.resolveDeployTimeout()
 			if tt.wantErr {
 				require.Error(t, err)
+				code, _ := classify(err)
+				require.Equal(t, "internal.invalid_args", code)
 				return
 			}
 			require.NoError(t, err)
@@ -152,6 +154,8 @@ func TestDeployActionResolveDeployTimeoutEnvVar(t *testing.T) {
 			timeout, err := action.resolveDeployTimeout()
 			if tt.wantErr {
 				require.Error(t, err)
+				code, _ := classify(err)
+				require.Equal(t, "internal.invalid_args", code)
 				return
 			}
 			require.NoError(t, err)
@@ -200,6 +204,9 @@ func TestDeployActionRunTimeoutWarningAndErrorMessage(t *testing.T) {
 	action, serviceManager := newDeployActionForTimeoutTest(t, new(1), nil, true)
 
 	_, err := action.Run(t.Context())
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	code, _ := classify(err)
+	require.Equal(t, "internal.timeout", code)
 	require.EqualError(
 		t,
 		err,

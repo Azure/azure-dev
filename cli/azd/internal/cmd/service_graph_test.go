@@ -5,19 +5,26 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/update"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,9 +32,11 @@ import (
 // operations. It is purpose-built for graph-topology tests where we only
 // care about which steps get wired, not what they do.
 type stubServiceManager struct {
-	packageFn func(context.Context, *project.ServiceConfig)
-	publishFn func(context.Context, *project.ServiceConfig)
-	deployFn  func(context.Context, *project.ServiceConfig)
+	packageFn  func(context.Context, *project.ServiceConfig)
+	publishFn  func(context.Context, *project.ServiceConfig)
+	publishErr error
+	deployFn   func(context.Context, *project.ServiceConfig)
+	deployErr  error
 }
 
 func (s *stubServiceManager) GetRequiredTools(
@@ -70,7 +79,7 @@ func (s *stubServiceManager) Publish(
 	if s.publishFn != nil {
 		s.publishFn(ctx, svc)
 	}
-	return &project.ServicePublishResult{}, nil
+	return &project.ServicePublishResult{}, s.publishErr
 }
 func (s *stubServiceManager) Deploy(
 	ctx context.Context, svc *project.ServiceConfig, _ *project.ServiceContext,
@@ -79,7 +88,7 @@ func (s *stubServiceManager) Deploy(
 	if s.deployFn != nil {
 		s.deployFn(ctx, svc)
 	}
-	return &project.ServiceDeployResult{}, nil
+	return &project.ServiceDeployResult{}, s.deployErr
 }
 func (s *stubServiceManager) GetTargetResource(
 	_ context.Context, _ *project.ServiceConfig, _ project.ServiceTarget,
@@ -219,6 +228,196 @@ func TestSequentialFallbackNotAppliedWithUses(t *testing.T) {
 	// graph-determined, not forced sequential.
 	err = exegraph.Run(t.Context(), g, exegraph.RunOptions{})
 	require.NoError(t, err)
+}
+
+func TestServiceGraphPublishTimeoutPreservesDeadline(t *testing.T) {
+	t.Parallel()
+
+	services := []*project.ServiceConfig{{Name: "api"}}
+	opts, graph := newGraphOpts(services)
+	opts.deployTimeout = time.Millisecond
+	manager := opts.serviceManager.(*stubServiceManager)
+	manager.publishFn = func(ctx context.Context, _ *project.ServiceConfig) {
+		<-ctx.Done()
+	}
+	manager.publishErr = extensions.WrapInvocationError(
+		context.DeadlineExceeded,
+		"test.extension",
+		"1.2.3",
+		"service_target.publish",
+	)
+
+	_, err := addServiceStepsToGraph(graph, opts)
+	require.NoError(t, err)
+	require.NoError(t, graph.Validate())
+
+	err = exegraph.Run(t.Context(), graph, exegraph.RunOptions{})
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	code, _ := classify(err)
+	require.Equal(t, "internal.timeout", code)
+	require.Contains(t, err.Error(), "publishing service 'api' timed out")
+
+	metadata, ok := errors.AsType[extensions.InvocationMetadataProvider](err)
+	require.True(t, ok)
+	require.Equal(t, "test.extension", metadata.InvocationExtensionId())
+	require.Equal(t, "1.2.3", metadata.InvocationExtensionVersion())
+	require.Equal(t, "service_target.publish", metadata.InvocationEvent())
+
+	span := &mocktracing.Span{}
+	MapError(err, span)
+	require.Equal(t, "internal.timeout", span.Status.Description)
+	attributes := make(map[string]string, 3)
+	for _, attr := range span.Attributes {
+		switch attr.Key {
+		case fields.ExtensionId.Key, fields.ExtensionVersion.Key, fields.ExtensionEvent.Key:
+			attributes[string(attr.Key)] = attr.Value.AsString()
+		}
+	}
+	require.Equal(t, "test.extension", attributes[string(fields.ExtensionId.Key)])
+	require.Equal(t, "1.2.3", attributes[string(fields.ExtensionVersion.Key)])
+	require.Equal(t, "service_target.publish", attributes[string(fields.ExtensionEvent.Key)])
+}
+
+func TestServiceGraphDeployTimeoutPreservesDeadline(t *testing.T) {
+	t.Parallel()
+
+	services := []*project.ServiceConfig{{Name: "api"}}
+	opts, graph := newGraphOpts(services)
+	opts.deployTimeout = time.Millisecond
+	manager := opts.serviceManager.(*stubServiceManager)
+	manager.deployFn = func(ctx context.Context, _ *project.ServiceConfig) {
+		<-ctx.Done()
+	}
+	manager.deployErr = extensions.WrapInvocationError(
+		context.DeadlineExceeded,
+		"test.extension",
+		"1.2.3",
+		"service_target.deploy",
+	)
+
+	_, err := addServiceStepsToGraph(graph, opts)
+	require.NoError(t, err)
+	require.NoError(t, graph.Validate())
+
+	err = exegraph.Run(t.Context(), graph, exegraph.RunOptions{})
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	code, _ := classify(err)
+	require.Equal(t, "internal.timeout", code)
+	require.Contains(t, err.Error(), "deployment of service 'api' timed out")
+
+	metadata, ok := errors.AsType[extensions.InvocationMetadataProvider](err)
+	require.True(t, ok)
+	require.Equal(t, "test.extension", metadata.InvocationExtensionId())
+	require.Equal(t, "1.2.3", metadata.InvocationExtensionVersion())
+	require.Equal(t, "service_target.deploy", metadata.InvocationEvent())
+}
+
+func TestServiceOperationTimeoutClassificationTakesPrecedence(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		cause error
+	}{
+		{
+			name: "typed cause",
+			cause: &project.ExternalServiceTargetResponseError{
+				Operation: "deploy",
+				Detail:    "missing deploy result",
+			},
+		},
+		{
+			name:  "canceled cause",
+			cause: context.Canceled,
+		},
+		{
+			name: "suggestion cause",
+			cause: &internal.ErrorWithSuggestion{
+				Err: errors.New("suggested fix"),
+			},
+		},
+		{
+			name: "update cause",
+			cause: &update.UpdateError{
+				Code: "update.failed",
+				Err:  errors.New("update failed"),
+			},
+		},
+		{
+			name:  "re-login cause",
+			cause: &auth.ReLoginRequiredError{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := &serviceOperationTimeoutError{
+				message: "service operation timed out",
+				cause:   tt.cause,
+			}
+
+			code, _ := classify(err)
+			require.Equal(t, "internal.timeout", code)
+			require.True(t, errors.Is(err, context.DeadlineExceeded))
+			require.True(t, isServiceOperationTimeoutError(err))
+			marker, ok := errors.AsType[interface {
+				error
+				IsServiceOperationTimeoutError() bool
+			}](err)
+			require.True(t, ok)
+			require.True(t, marker.IsServiceOperationTimeoutError())
+		})
+	}
+}
+
+func TestServiceStepCompletionProgress(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		err        error
+		wantPhase  deployPhase
+		wantDetail string
+	}{
+		{
+			name:       "success",
+			wantPhase:  phaseDone,
+			wantDetail: "",
+		},
+		{
+			name:       "canceled",
+			err:        context.Canceled,
+			wantPhase:  phaseSkipped,
+			wantDetail: "canceled",
+		},
+		{
+			name: "timeout with canceled cause",
+			err: &serviceOperationTimeoutError{
+				message: "service operation timed out",
+				cause:   context.Canceled,
+			},
+			wantPhase:  phaseFailed,
+			wantDetail: "service operation timed out",
+		},
+		{
+			name:       "dependency skipped",
+			err:        &exegraph.StepSkippedError{StepName: "deploy-api"},
+			wantPhase:  phaseSkipped,
+			wantDetail: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			phase, detail := serviceStepCompletionProgress(tt.err)
+			require.Equal(t, tt.wantPhase, phase)
+			require.Equal(t, tt.wantDetail, detail)
+		})
+	}
 }
 
 // TestSuggestServiceDeps verifies that the advisory scanner detects

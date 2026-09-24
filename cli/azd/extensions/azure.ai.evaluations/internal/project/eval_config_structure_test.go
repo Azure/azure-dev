@@ -23,6 +23,9 @@ func TestAuthoredConfigRejectsAmbiguousDocumentsWithoutMutation(t *testing.T) {
 		"&key evals: []\n*key : [{name: owned}]\n",
 		"x-key: &key evals\n*key : [{name: owned}]\n",
 		"? [complex, key]\n: value\nevals: []\n",
+		"x-defaults: &defaults {evals: [{name: owned}]}\n<<: *defaults\n",
+		"<<: {datasets: [{name: golden}], evals: [{name: owned}]}\n",
+		"<<: [{evals: [{name: owned}]}, {datasets: [{name: golden}]}]\n",
 	} {
 		t.Run("", func(t *testing.T) {
 			dir := t.TempDir()
@@ -46,6 +49,7 @@ func TestAuthoredConfigSingleDocumentSyntaxRemainsValid(t *testing.T) {
 		"x-notes: |\n  ---\n  ...\nevals: []\n",
 		"x-template: &template {custom: true}\nx-copy: *template\nevals: []\n",
 		"datasets:\n  - name: unrelated\n    $ref: ./not-present.yaml\nevals: []\n",
+		"\"<<\": {metadata: retained}\nevals: []\n",
 	} {
 		t.Run("", func(t *testing.T) {
 			dir := t.TempDir()

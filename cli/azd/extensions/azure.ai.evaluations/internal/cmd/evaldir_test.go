@@ -380,8 +380,8 @@ func TestNextStepQuotesADirectoryThatNeedsIt(t *testing.T) {
 		},
 		{
 			name:    "a windows path with a space",
-			evalDir: `C:\Users\Me\My Evals`,
-			want:    `--path "C:\Users\Me\My Evals"`,
+			evalDir: filepath.FromSlash("C:/Users/Me/My Evals"),
+			want:    `--path "C:/Users/Me/My Evals"`,
 		},
 		{
 			name:    "a plain relative path is left alone",
@@ -389,9 +389,9 @@ func TestNextStepQuotesADirectoryThatNeedsIt(t *testing.T) {
 			want:    "--path ./quality",
 		},
 		{
-			name:    "a plain windows path is left alone",
-			evalDir: `C:\Users\Me\quality`,
-			want:    `--path C:\Users\Me\quality`,
+			name:    "a native path uses shell-safe separators",
+			evalDir: filepath.FromSlash("C:/Users/Me/quality"),
+			want:    "--path C:/Users/Me/quality",
 		},
 		{
 			// Double quotes do not stop $ expanding in POSIX shells or
@@ -420,9 +420,7 @@ func TestNextStepQuotesADirectoryThatNeedsIt(t *testing.T) {
 	}
 }
 
-// Backslashes must survive: doubling them is right for bash and wrong for the
-// two shells most likely to be reading a path that looks like this.
-func TestQuoteForShellLeavesBackslashesAlone(t *testing.T) {
-	assert.Equal(t, `"C:\Users\Me\My Evals"`, quoteForShell(`C:\Users\Me\My Evals`))
-	assert.Equal(t, `C:\Users\Me\Evals`, quoteForShell(`C:\Users\Me\Evals`))
+func TestQuoteForShellNormalizesNativePathSeparators(t *testing.T) {
+	assert.Equal(t, `"C:/Users/Me/My Evals"`, quoteForShell(filepath.FromSlash("C:/Users/Me/My Evals")))
+	assert.Equal(t, "C:/Users/Me/Evals", quoteForShell(filepath.FromSlash("C:/Users/Me/Evals")))
 }

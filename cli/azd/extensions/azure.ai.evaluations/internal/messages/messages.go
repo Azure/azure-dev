@@ -4408,7 +4408,7 @@ func CouldNotReadAgentForModel(agent string, err error) string {
 // carried one of those characters would run it when pasted. They are named
 // rather than inlined: the command stops being copy-and-run for that argument,
 // which is the honest outcome, because it cannot be made both runnable and
-// safe here. Backslashes are left alone, so a Windows path comes back as itself.
+// safe here. Native path separators should be normalized by path-aware callers.
 func shellArg(v string) string {
 	if v == "" {
 		return `""`
@@ -4417,7 +4417,7 @@ func shellArg(v string) string {
 	if !CanInlineShellArg(v) {
 		return shellArgNeedsQuoting
 	}
-	if !strings.ContainsAny(v, " \t\n'&|;<>()*?[]#~!") {
+	if !strings.ContainsAny(v, " \t\n'&|;<>()*?[]{}#~!@") {
 		return v
 	}
 	return `"` + v + `"`
@@ -4438,7 +4438,7 @@ func ShellArg(v string) string {
 
 // CanInlineShellArg reports whether ShellArg can preserve v across the supported shells.
 func CanInlineShellArg(v string) bool {
-	return !strings.ContainsAny(v, "$`\"%!\r\n\x00")
+	return !strings.ContainsAny(v, "$`\"%!\\^\r\n\x00")
 }
 
 // ConfirmDelete asks before removing something published.

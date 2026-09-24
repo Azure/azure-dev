@@ -107,7 +107,7 @@ func TestNothingProducedPrintsNoHandoff(t *testing.T) {
 
 func TestGenerationHandoffDoesNotSubstituteSpecialConfigPaths(t *testing.T) {
 	for _, path := range []string{"$quality/custom.yaml", "quality`/custom.yaml", `quality"/custom.yaml`,
-		"$(unexpected)/custom.yaml", "%TEMP%/custom.yaml", "!TEMP!/custom.yaml"} {
+		"$(unexpected)/custom.yaml", "%TEMP%/custom.yaml", "!TEMP!/custom.yaml", "quality^/custom.yaml"} {
 		t.Run(path, func(t *testing.T) {
 			outcomes := bothGenerated()
 			outcomes[0].plan.EvaluationLevel = project.EvaluationLevelConversation
@@ -131,7 +131,7 @@ func TestGenerationHandoffDoesNotSubstituteSpecialConfigPaths(t *testing.T) {
 
 func TestGenerationHandoffChecksEveryInlinedValue(t *testing.T) {
 	for _, field := range []string{"target", "dataset", "evaluator", "evaluation-level"} {
-		for _, value := range []string{"$value", "value`", `value"`, "%TEMP%", "!TEMP!"} {
+		for _, value := range []string{"$value", "value`", `value"`, "%TEMP%", "!TEMP!", `a\b`, "a^b"} {
 			t.Run(field+"/"+value, func(t *testing.T) {
 				outcomes := bothGenerated()
 				switch field {
@@ -144,6 +144,7 @@ func TestGenerationHandoffChecksEveryInlinedValue(t *testing.T) {
 				case "evaluation-level":
 					outcomes[0].plan.EvaluationLevel = value
 				}
+
 				require.Empty(t, initHandoff(outcomes, ""))
 				var out bytes.Buffer
 				writeGenerationCompleted(&out, outcomes, "")
@@ -155,6 +156,12 @@ func TestGenerationHandoffChecksEveryInlinedValue(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestGenerationHandoffQuotesPowerShellSplattingPath(t *testing.T) {
+	command := initHandoff(bothGenerated(), "@quality")
+	assert.Contains(t, command, `--path "@quality"`)
+	assert.NotContains(t, command, "--path @quality")
 }
 
 func TestSpecialPathManualHandoffRetainsRemoteTargetWithoutLocalAgent(t *testing.T) {

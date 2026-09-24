@@ -417,7 +417,7 @@ func TestInitSimulationCancelledConfirmationWritesNothing(t *testing.T) {
 func TestInitHandoffPreservesCustomConfigFile(t *testing.T) {
 	path := filepath.Join("team evals", "custom.yaml")
 	command := initHandoff(bothGenerated(), path)
-	assert.Contains(t, command, "--path "+quoteForShell(path))
+	assert.Contains(t, command, "--path "+quoteForShell(filepath.ToSlash(path)))
 	assert.NotContains(t, command, "custom.yaml/azure.eval.yaml")
 }
 

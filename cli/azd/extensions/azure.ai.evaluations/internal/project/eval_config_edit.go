@@ -224,9 +224,9 @@ func parseConfigDocument(path string, body []byte) (*yaml.Node, error) {
 		keys := make(map[string]bool, len(root.Content)/2)
 		for i := 0; i+1 < len(root.Content); i += 2 {
 			key := root.Content[i]
-			if key.Kind != yaml.ScalarNode {
+			if key.Kind != yaml.ScalarNode || key.Tag != "!!str" {
 				return nil, messages.ParsingEvalConfig(path,
-					errors.New("top-level keys must be literal scalars, not aliases or complex keys"))
+					errors.New("top-level keys must be literal strings, not merges, aliases or complex keys"))
 			}
 			if keys[key.Value] {
 				return nil, messages.ParsingEvalConfig(path, fmt.Errorf("duplicate top-level key %q", key.Value))

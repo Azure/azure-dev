@@ -605,6 +605,7 @@ func writeGenerationCompleted(out io.Writer, outcomes []generationOutcome, confi
 // Known targets are included even though init can detect local services.
 // Guidance names unresolved target and dataset inputs without inventing them.
 func initHandoff(outcomes []generationOutcome, configPath string) string {
+	configPath = filepath.ToSlash(printablePath(configPath))
 	agent, dataset, level, evaluator := initHandoffInputs(outcomes)
 	for _, value := range []string{configPath, agent, dataset, level, evaluator} {
 		if !messages.CanInlineShellArg(value) {
@@ -616,7 +617,7 @@ func initHandoff(outcomes []generationOutcome, configPath string) string {
 	}
 	next := messages.InitHandoffCommand(agent, dataset, level, evaluator)
 	if configPath != "" {
-		next += " --path " + quoteForShell(printablePath(configPath))
+		next += " --path " + quoteForShell(configPath)
 	}
 	return next
 }

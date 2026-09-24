@@ -65,7 +65,7 @@ func TestAnAbsolutePathOutsideTheWorkingDirectoryStaysAbsolute(t *testing.T) {
 	steps := s.nextSteps()
 
 	require.Len(t, steps, 1)
-	assert.Contains(t, steps[0], elsewhere)
+	assert.Contains(t, steps[0], filepath.ToSlash(elsewhere))
 	assert.NotContains(t, steps[0], "..", "a path that climbs out is not an improvement")
 }
 

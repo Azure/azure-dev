@@ -1109,7 +1109,7 @@ func printablePath(dir string) string {
 // and one that resolves ./team and reports the configuration missing. The rule
 // lives in messages, beside the suggested commands that need the same thing.
 func quoteForShell(v string) string {
-	return messages.ShellArg(v)
+	return messages.ShellArg(filepath.ToSlash(v))
 }
 
 // relativeToConfig rewrites a path given relative to the working directory so

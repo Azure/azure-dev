@@ -16,7 +16,9 @@ import (
 )
 
 func TestInitRefusesAmbiguousAuthoredDocumentsBeforeWriting(t *testing.T) {
-	for _, shape := range []string{"single document", "second document", "explicit end then second", "duplicate datasets"} {
+	for _, shape := range []string{
+		"single document", "second document", "explicit end then second", "duplicate datasets", "merged catalogs",
+	} {
 		t.Run(shape, func(t *testing.T) {
 			h := newInitHarness(t, nil)
 			dir := filepath.Join(h.dir, project.DefaultEvalDir)
@@ -34,6 +36,10 @@ func TestInitRefusesAmbiguousAuthoredDocumentsBeforeWriting(t *testing.T) {
 				body += "...\n---\n" + second
 			case "duplicate datasets":
 				body += "datasets:\n  - name: other-owned\n    file: ./other.jsonl\n"
+			case "merged catalogs":
+				body = fmt.Sprintf("x-defaults: &defaults\n  datasets:\n    - name: golden\n      file: %q\n"+
+					"  evals:\n    - name: other-eval\n      dataset: golden\n<<: *defaults\n",
+					filepath.ToSlash(h.seedRows))
 			}
 			require.NoError(t, os.WriteFile(configPath, []byte(body), 0o600))
 			before := initFileSnapshot(t, h.dir)

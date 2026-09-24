@@ -125,8 +125,8 @@ init reports all unresolved required inputs together, naming the flags to supply
 Init is add-only, preserves existing YAML and unknown fields, and makes no new
 live lookups beyond the bounded built-in evaluator catalogue check.
 Authored evaluation configuration must contain one YAML document with unique,
-literal scalar top-level keys. Init and catalog edits reject multiple documents,
-duplicate keys, and alias or complex top-level keys rather than silently dropping
+literal string top-level keys. Init and catalog edits reject multiple documents,
+duplicate keys, and merge, alias or complex top-level keys rather than silently dropping
 or ambiguously updating content. Aliases in values remain supported.
 If saving the root `azure.yaml` service fails and the host acknowledges that
 the save finished unsuccessfully, init rolls back its eval-config edit so the
@@ -322,7 +322,8 @@ or replace its configuration. If a generated rubric declares an incompatible
 evaluation level, the handoff warns and uses the built-in default instead; the
 rubric remains in the catalogue.
 If any handoff value contains shell expansion syntax or cannot be portably quoted,
-including a dollar sign, backtick, double quote, percent sign, or exclamation mark,
+including a dollar sign, backtick, double quote, percent sign, exclamation mark,
+backslash, or caret,
 generation displays the exact escaped values and manual initialization guidance
 instead of a copyable command. Quote that path for your shell when supplying
 `--path`; generation never substitutes a different path into a runnable handoff.

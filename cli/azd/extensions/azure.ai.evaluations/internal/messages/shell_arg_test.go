@@ -24,6 +24,9 @@ func TestShellArgRefusesToInlineWhatItCannotMakeLiteral(t *testing.T) {
 		"%TEMP%/custom.yaml",
 		"!TEMP!/custom.yaml",
 		"a\nb",
+		`a\b`,
+		"a^b",
+		`C:\Users\Me\quality`,
 	} {
 		assert.Equal(t, "VALUE_NEEDS_QUOTING", ShellArg(v),
 			"%q expands or breaks the quoting, so it must not be inlined", v)
@@ -39,7 +42,9 @@ func TestShellArgStillQuotesWhatQuotingFixes(t *testing.T) {
 		"a|b":                  `"a|b"`,
 		"a&b":                  `"a&b"`,
 		"a(b)":                 `"a(b)"`,
-		`C:\Users\Me\My Evals`: `"C:\Users\Me\My Evals"`,
+		"C:/Users/Me/My Evals": `"C:/Users/Me/My Evals"`,
+		"a{b,c}":               `"a{b,c}"`,
+		"@quality":             `"@quality"`,
 	}
 	for in, want := range cases {
 		assert.Equal(t, want, ShellArg(in), "%q is made safe by wrapping", in)
@@ -50,7 +55,7 @@ func TestShellArgStillQuotesWhatQuotingFixes(t *testing.T) {
 // readable.
 func TestShellArgLeavesAPlainValueAlone(t *testing.T) {
 	assert.Equal(t, "./quality", ShellArg("./quality"))
-	assert.Equal(t, `C:\Users\Me\quality`, ShellArg(`C:\Users\Me\quality`))
+	assert.Equal(t, "C:/Users/Me/quality", ShellArg("C:/Users/Me/quality"))
 	assert.Equal(t, "an-eval", ShellArg("an-eval"))
 	assert.Equal(t, `""`, ShellArg(""))
 	assert.True(t, CanInlineShellArg(shellArgNeedsQuoting), "a literal filename matching the placeholder is still safe")

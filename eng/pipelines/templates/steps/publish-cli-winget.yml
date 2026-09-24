@@ -1,26 +1,104 @@
 parameters:
-  - name: GitHubToken
+  - name: Operation
     type: string
-    default: $(azuresdk-github-pat)
-    displayName: GitHub token
+    default: Prepare
+    values:
+      - Prepare
+      - Publish
 
 steps:
   - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+    parameters:
+      Use1ESArtifactTask: ${{ eq(parameters.Operation, 'Publish') }}
 
-  - pwsh: |
-      $PSNativeCommandArgumentPassing = 'Legacy'
-      Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+  - ${{ if eq(parameters.Operation, 'Prepare') }}:
+    - pwsh: |
+        $ErrorActionPreference = 'Stop'
+        $PSNativeCommandArgumentPassing = 'Legacy'
+        Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+        ./wingetcreate.exe --version
 
-      $AdditionalArgs = ""
-      if ($$(SubmitWinGetPackage)) {
-          $AdditionalArgs = "--submit"
-      }
+        $outputRoot = "winget"
+        $manifestPath = "winget/manifests/m/Microsoft/Azd/$(MSI_VERSION)"
 
-      ./wingetcreate.exe update `
+        ./wingetcreate.exe update `
           Microsoft.Azd `
           --version '$(MSI_VERSION)' `
           --urls "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_$(CLI_VERSION)/azd-windows-amd64.msi" `
-          --token ${{ parameters.GitHubToken }} `
-          --out winget `
-          $AdditionalArgs
-    displayName: Submit to WinGet
+          --out $outputRoot
+        if ($LASTEXITCODE -ne 0) {
+          throw "Failed to generate the WinGet manifest."
+        }
+
+        if (!(Test-Path -Path $manifestPath -PathType Container)) {
+          throw "WingetCreate did not generate the expected manifest directory: $manifestPath"
+        }
+
+        ./wingetcreate.exe validate $manifestPath
+        if ($LASTEXITCODE -ne 0) {
+          throw "The generated WinGet manifest failed validation."
+        }
+      displayName: Generate and validate WinGet manifest
+
+  - ${{ if eq(parameters.Operation, 'Publish') }}:
+    - task: EsrpRelease@12
+      displayName: Generate WinGet CDN download link
+      condition: >-
+        and(
+          succeeded(),
+          eq(variables['SubmitWingetPackage'], 'true')
+        )
+      inputs:
+        connectedservicename: Azure SDK PME Managed Identity
+        usemanagedidentity: true
+        keyvaultname: kv-azuresdk-codesign
+        signcertname: azure-sdk-esrp-release-certificate
+        clientid: 5f81938c-2544-4f1f-9251-dd9de5b8a81b
+        intent: filedownloadlinkgeneration
+        contenttype: WingetExternal
+        contentsource: Folder
+        folderlocation: $(Pipeline.Workspace)/winget
+        waitforreleasecompletion: true
+        owners: chononiw@microsoft.com
+        approvers: chononiw@microsoft.com
+        serviceendpointurl: https://api.esrp.microsoft.com
+        mainpublisher: ESRPRELPACMAN
+        domaintenantid: 975f013f-7f24-47e8-a7d3-abc4752bf346
+
+    - pwsh: |
+        $ErrorActionPreference = 'Stop'
+        Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+        ./wingetcreate.exe validate "$(Pipeline.Workspace)/winget/manifests/m/Microsoft/Azd/$(MSI_VERSION)"
+        if ($LASTEXITCODE -ne 0) {
+          throw "The ESRP-generated WinGet manifest failed validation."
+        }
+      displayName: Validate ESRP WinGet manifest
+      condition: >-
+        and(
+          succeeded(),
+          eq(variables['SubmitWingetPackage'], 'true')
+        )
+
+    - task: EsrpRelease@12
+      displayName: Publish WinGet manifest
+      condition: >-
+        and(
+          succeeded(),
+          eq(variables['SubmitWingetPackage'], 'true')
+        )
+      inputs:
+        connectedservicename: Azure SDK PME Managed Identity
+        usemanagedidentity: true
+        keyvaultname: kv-azuresdk-codesign
+        signcertname: azure-sdk-esrp-release-certificate
+        clientid: 5f81938c-2544-4f1f-9251-dd9de5b8a81b
+        intent: Winget
+        contenttype: manifest
+        contentsource: Folder
+        folderlocation: $(Pipeline.Workspace)/winget
+        waitforreleasecompletion: true
+        owners: chononiw@microsoft.com
+        approvers: chononiw@microsoft.com
+        serviceendpointurl: https://api.esrp.microsoft.com
+        mainpublisher: ESRPRELPACMAN
+        domaintenantid: 975f013f-7f24-47e8-a7d3-abc4752bf346

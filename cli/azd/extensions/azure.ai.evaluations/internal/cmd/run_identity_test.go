@@ -20,8 +20,6 @@ import (
 	"azureaieval/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -33,9 +31,7 @@ func unregisteredRunContext(t *testing.T) *evalContext {
 	t.Helper()
 	srv := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(srv.Close)
-	pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{},
-		&policy.ClientOptions{Retry: policy.RetryOptions{MaxRetries: -1}})
-	return &evalContext{datasetClient: dataset_api.NewDatasetClientFromPipeline(srv.URL, pipeline)}
+	return evalContextFor(srv)
 }
 
 type identityRequest struct {
@@ -120,12 +116,7 @@ func identityRunContext(t *testing.T, service identityService) (*evalContext, <-
 		}
 	}))
 	t.Cleanup(srv.Close)
-	pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{},
-		&policy.ClientOptions{Retry: policy.RetryOptions{MaxRetries: -1}})
-	return &evalContext{
-		datasetClient: dataset_api.NewDatasetClientFromPipeline(srv.URL, pipeline),
-		evalClient:    eval_api.NewEvalClientFromPipeline(srv.URL, pipeline),
-	}, requests
+	return evalContextFor(srv), requests
 }
 
 func recordedIdentityRequests(requests <-chan identityRequest) []identityRequest {
@@ -169,8 +160,8 @@ func identityPostedSource(t *testing.T, requests <-chan identityRequest) map[str
 	return nil
 }
 
-func TestRegisteredRunIdentityOnTheWire(t *testing.T) {
-	for _, target := range []string{"static", "agent", "model"} {
+func TestRegisteredRunIdentityAndVersion(t *testing.T) {
+	for _, target := range []string{"static", "agent", "model", "simulation"} {
 		for _, tc := range []struct {
 			name     string
 			file     string
@@ -191,6 +182,14 @@ func TestRegisteredRunIdentityOnTheWire(t *testing.T) {
 				if target == "static" {
 					rows = `{"messages":[{"role":"user","content":"hi"},{"role":"assistant","content":"hello"}]}` + "\n"
 				}
+				group := &project.Eval{Name: "quality", Dataset: "golden"}
+				if target == "simulation" {
+					group = runnableSimulation()
+					group.Dataset = "golden"
+					rows = seedRows
+				} else if target != "static" {
+					group.Target = &project.Target{Type: target, Name: "target"}
+				}
 				ec, requests := identityRunContext(t, identityService{
 					versions:    []dataset_api.Dataset{{Version: "1"}, {Version: "3"}, {Version: "2"}},
 					id:          issuedID,
@@ -198,10 +197,6 @@ func TestRegisteredRunIdentityOnTheWire(t *testing.T) {
 					wantVersion: tc.want,
 				})
 				ec.state = map[string]string{versionKey("dataset", "golden"): tc.recorded}
-				group := &project.Eval{Name: "quality", Dataset: "golden"}
-				if target != "static" {
-					group.Target = &project.Target{Type: target, Name: "target"}
-				}
 				config := writeCatalog(t, tc.file, tc.pin)
 				if tc.file != "" {
 					require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(config), tc.file), []byte("not JSON"), 0o600))
@@ -209,18 +204,50 @@ func TestRegisteredRunIdentityOnTheWire(t *testing.T) {
 				ds, version, err := ec.buildRunDataSource(t.Context(), group, config, 0)
 				require.NoError(t, err, "published rows, not the retained local file, must be read")
 				assert.Equal(t, tc.want, version)
-				submitIdentitySource(t, ec, ds, version, "")
-				posted := identityPostedSource(t, requests)
+				submitIdentitySource(t, ec, ds, version, group.EvaluationLevel)
+				var body map[string]any
+				listReads, versionReads := 0, 0
+				for _, req := range recordedIdentityRequests(requests) {
+					if strings.HasSuffix(req.path, "/runs") {
+						require.NoError(t, json.Unmarshal(req.body, &body))
+					}
+					if strings.HasSuffix(req.path, "/versions") {
+						listReads++
+					}
+					if strings.HasSuffix(req.path, "/versions/"+tc.want) {
+						versionReads++
+					}
+				}
+				require.NotNil(t, body)
+				assert.Equal(t, map[string]any{metaDatasetVersion: tc.want}, body["metadata"])
+				assert.Equal(t, 1, versionReads)
+				wantLists := 0
+				if tc.pin == "" && tc.recorded == "" {
+					wantLists = 1
+				}
+				assert.Equal(t, wantLists, listReads, "no independent metadata resolution")
+				posted, ok := body["data_source"].(map[string]any)
+				require.True(t, ok)
 				source, ok := posted["source"].(map[string]any)
 				require.True(t, ok)
 				assert.Equal(t, map[string]any{"type": "file_id", "id": issuedID}, source)
-				if target == "static" {
+				switch target {
+				case "simulation":
+					assert.Equal(t, string(eval_api.EvalRunDataSourceTypeUserConversationSimulation), posted["type"])
+					assert.Equal(t, map[string]any{
+						"test_case_description":    "test_case_description",
+						"simulation_configuration": "simulation_configuration",
+					}, posted["data_mapping"])
+				case "static":
 					assert.Equal(t, "jsonl", posted["type"])
 					assert.NotContains(t, posted, "target")
 					assert.NotContains(t, posted, "input_messages")
-				} else {
+				default:
 					assert.Equal(t, "azure_ai_target_completions", posted["type"])
 					assert.Contains(t, posted, "target")
+				}
+				if target != "simulation" {
+					assert.NotContains(t, posted, "data_mapping")
 				}
 			})
 		}
@@ -465,12 +492,17 @@ func TestRunRerunPreservesRegisteredIdentity(t *testing.T) {
 			}
 			ds.SetFileID("previous-service-issued-id")
 			ec, requests := identityRunContext(t, identityService{previous: []*eval_api.OpenAIEvalRun{
-				{ID: "evalrun_old", DataSource: ds, EvaluationLevel: "conversation"},
+				{
+					ID: "evalrun_old", DataSource: ds, EvaluationLevel: "conversation",
+					Metadata: map[string]string{metaDataset: "golden", metaDatasetVersion: "1"},
+				},
 			}})
-			reused, level, err := ec.reuseDataSourceFromLastRun(t.Context(), "eval_1")
+			reused, metadata, err := ec.reuseDataSourceFromLastRun(t.Context(), "eval_1")
 			require.NoError(t, err)
-			assert.Equal(t, "conversation", level)
-			submitIdentitySource(t, ec, reused, "", level)
+			assert.Equal(t, map[string]string{
+				metaDataset: "golden", metaDatasetVersion: "1", metaEvaluationLevel: "conversation",
+			}, metadata)
+			submitIdentitySource(t, ec, reused, metadata[metaDatasetVersion], metadata[metaEvaluationLevel])
 			source := identityPostedSource(t, requests)
 			assert.Equal(t, map[string]any{"type": "file_id", "id": "previous-service-issued-id"}, source["source"])
 			if target {
@@ -494,8 +526,59 @@ func TestRunRerunRefusesLegacyRegisteredInlineRows(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, source)
 	assert.Contains(t, err.Error(), "inline data")
+	assert.Contains(t, err.Error(), `"eval_1"`)
+	assert.Contains(t, err.Error(), `"golden"`)
+	local, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Contains(t, local.Suggestion, "--max-samples 0")
 	for _, request := range recordedIdentityRequests(requests) {
 		assert.True(t, request.method == http.MethodGet || strings.HasSuffix(request.path, "/credentials"))
+	}
+}
+
+func TestRunRerunAttributionSurvivesUntilDatasetPublication(t *testing.T) {
+	ds := eval_api.NewDatasetOnlyDataSource()
+	ds.SetFileContent([]map[string]any{{"query": "a local row"}})
+	firstContext, requests := identityRunContext(t, identityService{
+		listStatus: http.StatusNotFound, getStatus: http.StatusNotFound,
+		previous: []*eval_api.OpenAIEvalRun{{
+			ID: "declared-local-run", DataSource: ds, EvaluationLevel: "conversation",
+			Metadata: map[string]string{metaDataset: "golden", metaEvaluationLevel: "turn"},
+		}},
+	})
+	start := func(ec *evalContext) error {
+		cmd := buildRunCommand("start", "")
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+		action := &runStartAction{cmd: cmd, flags: &runStartFlags{
+			groupName: "eval_1", evalPath: t.TempDir(), wait: false,
+		}}
+		return action.start(t.Context(), ec, gate{})
+	}
+
+	require.NoError(t, start(firstContext))
+	var submitted *eval_api.CreateOpenAIEvalRunRequest
+	for _, req := range recordedIdentityRequests(requests) {
+		if req.method == http.MethodPost && strings.HasSuffix(req.path, "/runs") {
+			require.NoError(t, json.Unmarshal(req.body, &submitted))
+		}
+	}
+	require.NotNil(t, submitted, "the first bare-ID rerun must be submitted")
+	assert.Equal(t, map[string]string{metaDataset: "golden", metaEvaluationLevel: "conversation"}, submitted.Metadata)
+	assert.Equal(t, "conversation", submitted.EvaluationLevel)
+	assert.Equal(t, ds, submitted.DataSource)
+	assert.NotContains(t, submitted.Metadata, metaDatasetVersion, "unregistered rows have no version to invent")
+
+	secondContext, nextRequests := identityRunContext(t, identityService{
+		versions: []dataset_api.Dataset{{Version: "1"}},
+		previous: []*eval_api.OpenAIEvalRun{{
+			ID: "first-id-rerun", DataSource: submitted.DataSource,
+			EvaluationLevel: submitted.EvaluationLevel, Metadata: submitted.Metadata,
+		}},
+	})
+	require.ErrorContains(t, start(secondContext), "inline data attributed to a registered dataset")
+	for _, req := range recordedIdentityRequests(nextRequests) {
+		assert.Equal(t, http.MethodGet, req.method, "publication must block the second ID rerun before submission")
 	}
 }
 
@@ -538,13 +621,48 @@ func TestRunRejectsIgnoredCapFlags(t *testing.T) {
 		for _, cap := range []string{"0", "1"} {
 			cmd := buildRunCommand("start", "")
 			require.NoError(t, cmd.Flags().Set("max-samples", cap))
-			_, err := runMaxSamples(cmd, 1, group)
+			value, err := cmd.Flags().GetInt("max-samples")
+			require.NoError(t, err)
+			_, err = runMaxSamples(cmd, value, group)
 			require.Error(t, err)
 			local, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
 			assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
 		}
 	}
+}
+
+func TestRunRerunRejectsUnreadableDatasetAttributionState(t *testing.T) {
+	ds := eval_api.NewDatasetOnlyDataSource()
+	ds.SetFileContent([]map[string]any{{"query": "local"}})
+	ec, requests := identityRunContext(t, identityService{previous: []*eval_api.OpenAIEvalRun{{
+		ID: "local-run", DataSource: ds, Metadata: map[string]string{metaDataset: "golden"},
+	}}})
+	ec.state = map[string]string{}
+	ec.stateErr = errors.New("cannot read recorded dataset version")
+	source, _, err := ec.reuseDataSourceFromLastRun(t.Context(), "eval_1")
+	require.ErrorIs(t, err, ec.stateErr)
+	assert.Nil(t, source)
+	recorded := recordedIdentityRequests(requests)
+	require.Len(t, recorded, 1, "an unreadable binding must not fall back to latest, local rows, or submission")
+	assert.Equal(t, http.MethodGet, recorded[0].method)
+	assert.True(t, strings.HasSuffix(recorded[0].path, "/runs"))
+}
+
+func TestSimulationConfiguredCapCannotBeOverriddenByZero(t *testing.T) {
+	cmd := buildRunCommand("start", "")
+	require.NoError(t, cmd.Flags().Set("max-samples", "0"))
+	group := runnableSimulation()
+	group.Dataset = "golden"
+	group.MaxSamples = 5
+	cap, err := runMaxSamples(cmd, 0, group)
+	require.NoError(t, err)
+	assert.Zero(t, cap)
+	ec, requests := identityRunContext(t, identityService{id: "issued", rows: seedRows})
+	ds, _, err := ec.buildRunDataSource(t.Context(), group, writeCatalog(t, "", "1"), cap)
+	require.ErrorContains(t, err, "max_samples")
+	assert.Nil(t, ds)
+	assert.Empty(t, recordedIdentityRequests(requests), "invalid simulation declarations fail before service calls")
 }
 
 func TestRunRejectsConfiguredSourceCaps(t *testing.T) {
@@ -586,7 +704,7 @@ func TestSimulationRegisteredIdentityRemainsStrict(t *testing.T) {
 			require.NoError(t, err)
 			submitIdentitySource(t, ec, ds, version, group.EvaluationLevel)
 			posted := identityPostedSource(t, requests)
-			assert.Equal(t, "azure_ai_user_conversation_simulation_preview", posted["type"])
+			assert.Equal(t, string(eval_api.EvalRunDataSourceTypeUserConversationSimulation), posted["type"])
 			assert.Equal(t, map[string]any{"type": "file_id", "id": tc.id}, posted["source"])
 			assert.NotContains(t, posted, "input_messages")
 			assert.Contains(t, posted, "model_configuration")

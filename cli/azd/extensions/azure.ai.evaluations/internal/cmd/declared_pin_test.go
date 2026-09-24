@@ -152,7 +152,9 @@ func TestTheDownloadedRowsAreThePinnedVersion(t *testing.T) {
 
 	// The download itself cannot succeed against this fake; what is under test
 	// is the version it asked the service for.
-	_, _, _ = ec.readRegisteredDataset(context.Background(), "golden", "1")
+	version, err := ec.resolveRunDatasetVersion(t.Context(), "golden", "1", false)
+	require.NoError(t, err)
+	_, _ = ec.readDatasetVersion(t.Context(), "golden", version)
 
 	require.NotEmpty(t, asked)
 	assert.Contains(t, strings.Join(asked, " "), "/versions/1",

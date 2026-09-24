@@ -9,6 +9,9 @@ import (
 	"os"
 	"testing"
 
+	"azureaieval/internal/project"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -57,12 +60,87 @@ func TestTheSchemaRefusesWhatValidateSimulationRefuses(t *testing.T) {
 
 	// The run references the registered seed dataset by id, so a cap cannot be
 	// applied to it.
-	assert.Equal(t, false, properties["max_samples"], "max_samples: has to be refused alongside simulation:")
+	assert.Equal(t, map[string]any{"const": float64(0)}, properties["max_samples"],
+		"positive caps are refused, but zero means uncapped")
 
 	required, ok := then["required"].([]any)
 	require.True(t, ok, "the simulation conditional requires nothing")
 	for _, key := range []string{"dataset", "target", "evaluation_level"} {
 		assert.Contains(t, required, key, "a simulation cannot run without %s:", key)
+	}
+}
+
+func TestSimulationSchemaAndRuntimeAgree(t *testing.T) {
+	t.Parallel()
+
+	const resourceURI = "https://example.test/eval.schema.json"
+	compiler := jsonschema.NewCompiler()
+	require.NoError(t, compiler.AddResource(resourceURI, evalSchemaDocument(t)))
+	schema, err := compiler.Compile(resourceURI)
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name       string
+		cap        int
+		omit       bool
+		simulation map[string]any
+		wantErr    bool
+		modelError string
+	}{
+		{name: "omitted", omit: true},
+		{name: "explicit zero"},
+		{name: "positive cap", cap: 1, wantErr: true},
+		{name: "negative cap", cap: -1, wantErr: true},
+		{name: "missing model", simulation: map[string]any{}, wantErr: true, modelError: "is required"},
+		{name: "empty model", simulation: map[string]any{"model": ""}, wantErr: true, modelError: "is required"},
+		{name: "null model", simulation: map[string]any{"model": nil}, wantErr: true, modelError: "is required"},
+		{name: "bare model", simulation: map[string]any{"model": "deployment"}, wantErr: true, modelError: "format"},
+		{name: "missing connection", simulation: map[string]any{"model": "/deployment"},
+			wantErr: true, modelError: "format"},
+		{name: "missing deployment", simulation: map[string]any{"model": "connection/"},
+			wantErr: true, modelError: "format"},
+		{name: "extra slash", simulation: map[string]any{"model": "c/d/extra"}, wantErr: true, modelError: "format"},
+		{name: "whitespace", simulation: map[string]any{"model": "c/ "}, wantErr: true, modelError: "format"},
+		{name: "single character names", simulation: map[string]any{"model": "c/m"}},
+		{name: "named deployment", simulation: map[string]any{"model": "connection/simulator-deployment"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			simulation := tc.simulation
+			if simulation == nil {
+				simulation = map[string]any{"model": "connection/simulator"}
+			}
+			eval := map[string]any{
+				"name": "simulated", "dataset": "seeds", "evaluation_level": "conversation",
+				"target":     map[string]any{"type": "agent", "name": "agent"},
+				"simulation": simulation,
+				"evaluators": []any{map[string]any{"evaluator": "builtin.task_completion"}},
+			}
+			if !tc.omit {
+				eval["max_samples"] = tc.cap
+			}
+			body, err := json.Marshal(map[string]any{
+				"datasets": []any{map[string]any{"name": "seeds"}},
+				"evals":    []any{eval},
+			})
+			require.NoError(t, err)
+			var instance any
+			require.NoError(t, json.Unmarshal(body, &instance))
+			schemaErr := schema.Validate(instance)
+			cfg, err := project.DecodeEvalConfig(body, "azure.eval.yaml")
+			require.NoError(t, err)
+			runtimeErr := cfg.Validate()
+			if tc.wantErr {
+				assert.Error(t, schemaErr)
+				assert.Error(t, runtimeErr)
+				if tc.modelError != "" {
+					assert.ErrorContains(t, runtimeErr, "simulation.model")
+					assert.ErrorContains(t, runtimeErr, tc.modelError)
+				}
+			} else {
+				assert.NoError(t, schemaErr)
+				assert.NoError(t, runtimeErr)
+			}
+		})
 	}
 }
 
@@ -94,18 +172,7 @@ func refusesAModelTarget(target map[string]any) bool {
 func simulationConditional(t *testing.T) map[string]any {
 	t.Helper()
 
-	root, err := os.OpenRoot("../..")
-	require.NoError(t, err)
-	defer func() { _ = root.Close() }()
-
-	f, err := root.Open("schemas/azure.ai.eval.json")
-	require.NoError(t, err)
-	body, err := io.ReadAll(f)
-	_ = f.Close()
-	require.NoError(t, err)
-
-	var schema map[string]any
-	require.NoError(t, json.Unmarshal(body, &schema))
+	schema := evalSchemaDocument(t)
 
 	definitions, ok := schema["definitions"].(map[string]any)
 	require.True(t, ok, "the schema has no definitions")
@@ -133,4 +200,20 @@ func simulationConditional(t *testing.T) map[string]any {
 
 	t.Fatal("no conditional fires on a declared simulation")
 	return nil
+}
+
+func evalSchemaDocument(t *testing.T) map[string]any {
+	t.Helper()
+
+	root, err := os.OpenRoot("../..")
+	require.NoError(t, err)
+	defer func() { _ = root.Close() }()
+	f, err := root.Open("schemas/azure.ai.eval.json")
+	require.NoError(t, err)
+	body, err := io.ReadAll(f)
+	_ = f.Close()
+	require.NoError(t, err)
+	var schema map[string]any
+	require.NoError(t, json.Unmarshal(body, &schema))
+	return schema
 }

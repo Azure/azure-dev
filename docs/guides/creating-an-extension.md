@@ -92,6 +92,11 @@ For extensions that are still in development or preview, consider publishing to 
 - **Telemetry** — Follow the [extension telemetry guide](../../cli/azd/docs/extensions/extension-telemetry.md);
   first-party `ReportUsage` attributes must be declared and classified in
   `cli/azd/extensions/telemetry/fields.go`
+- **Deployment preview** — To support `azd deploy --preview`, register the host with
+  `WithBetaServiceTargetPreview` and implement `preview.ServiceTargetPreviewProvider`
+  from `pkg/azdext/preview`. This [v1beta-only contract](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview)
+  is experimental. A preview runs on a fresh provider without `Initialize` and must not
+  build, deploy, or persist deployment state.
 
 ## Detailed Reference
 

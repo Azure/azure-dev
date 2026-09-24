@@ -220,7 +220,7 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 					return evalDecision{}, err
 				}
 				if err == nil {
-					recreate = conflictingEvaluatorPins(remote.TestingCriteria, prepared.request.TestingCriteria)
+					recreate = !matchingEvaluatorPins(remote.TestingCriteria, prepared.request.TestingCriteria)
 				}
 			}
 		}

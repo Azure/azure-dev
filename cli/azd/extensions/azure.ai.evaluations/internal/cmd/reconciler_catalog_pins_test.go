@@ -114,8 +114,13 @@ func (s *catalogPinService) serve(t *testing.T) http.HandlerFunc {
 			}
 			s.created = append(s.created, request)
 			id := fmt.Sprintf("eval_%d", len(s.created))
+			configJSON, err := json.Marshal(request.DataSourceConfig)
+			assert.NoError(t, err)
+			var dataSourceConfig map[string]any
+			assert.NoError(t, json.Unmarshal(configJSON, &dataSourceConfig))
 			eval := &eval_api.OpenAIEval{
 				ID: id, Name: request.Name, Metadata: request.Metadata, TestingCriteria: request.TestingCriteria,
+				DataSourceConfig: dataSourceConfig,
 			}
 			s.evals[id] = eval
 			assert.NoError(t, json.NewEncoder(w).Encode(eval))
@@ -512,5 +517,34 @@ func TestLegacyCatalogPinFallbackOnlyWhenEffectiveIndexIsMissing(t *testing.T) {
 			assert.NotEqual(t, first, id)
 			assert.Equal(t, "quality", service.evals[first].Name)
 		})
+	}
+}
+
+func TestLegacyCatalogPinRepairRequiresPositiveCriterionEvidence(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		for _, missing := range []string{"criteria", "name", "evaluator", "type", "version"} {
+			t.Run(caller+"/"+missing, func(t *testing.T) {
+				ec, env, service, cfg, dir := newCatalogPinFixture(t)
+				first := reconcileCatalogPin(t, caller, ec, cfg, dir)
+				seedLegacyCatalogPinState(t, env, cfg.Evals[0], first)
+				switch missing {
+				case "criteria":
+					service.evals[first].TestingCriteria = nil
+				case "name":
+					service.evals[first].TestingCriteria[0].Name = "different"
+				case "evaluator":
+					service.evals[first].TestingCriteria[0].EvaluatorName = "different"
+				case "type":
+					service.evals[first].TestingCriteria[0].Type = "different"
+				case "version":
+					service.evals[first].TestingCriteria[0].EvaluatorVersion = ""
+				}
+				next := reconcileCatalogPin(t, caller, ec, cfg, dir)
+				require.NotEqual(t, first, next, "incomplete or mismatched legacy evidence must not be re-baselined")
+				require.Len(t, service.evals[next].TestingCriteria, 1)
+				assert.Equal(t, "1", service.evals[next].TestingCriteria[0].EvaluatorVersion)
+				assert.Equal(t, next, reconcileCatalogPin(t, caller, ec, cfg, dir))
+			})
+		}
 	}
 }

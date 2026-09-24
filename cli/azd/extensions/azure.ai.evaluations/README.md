@@ -264,9 +264,10 @@ the service's latest version without recreating the eval on each new version.
 Whole-service deployment rejects identical effective eval definitions, including
 when equivalent pins are spelled in different places. Targeted create still
 validates only its selected declaration and reserves the other evals' IDs.
-Renaming before older pin fingerprints have been migrated can reuse the prior
-eval only when its stored criteria confirm the same effective pins and no other
-declared eval owns it.
+Migrating older pin fingerprints, including during a rename, can reuse the prior
+eval only when its complete stored criterion identities and effective pins match
+and no other declared eval owns it. Missing or conflicting evidence creates a new
+eval rather than associating the old history with a different policy.
 
 After a local rubric is reconciled, its evaluator contract is read from that
 exact service version rather than a potentially stale discovery listing.

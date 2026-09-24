@@ -1,5 +1,20 @@
 # Release History
 
+## 1.0.0-beta.12 (2026-09-24)
+
+### Features Added
+
+- [[#10030]](https://github.com/Azure/azure-dev/pull/10030) Add project and model deployment reconciliation so the Agents extension can delegate ownership of `azure.ai.project` authoring.
+
+### Bugs Fixed
+
+- [[#10008]](https://github.com/Azure/azure-dev/pull/10008) Fix cross-tenant Foundry provisioning to grant the deploying identity access to the target project.
+
+### Other Changes
+
+- [[#10114]](https://github.com/Azure/azure-dev/pull/10114) Update gRPC to v1.83.2 to address the GHSA-2v4p-qf9q-27wj security advisory.
+- [[#10128]](https://github.com/Azure/azure-dev/pull/10128) Update OpenTelemetry Go to v1.45.0 to address the GHSA-8wmf-6v46-5gfg security advisory.
+
 ## 1.0.0-beta.11 (2026-09-17)
 
 ### Breaking Changes

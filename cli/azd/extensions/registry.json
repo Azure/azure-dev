@@ -10944,6 +10944,74 @@
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_1.0.0-beta.6/azure-ai-routines-windows-arm64.zip"
             }
           }
+        },
+        {
+          "version": "1.0.0-beta.7",
+          "requiredAzdVersion": ">=1.29.0",
+          "capabilities": [
+            "custom-commands",
+            "service-target-provider",
+            "metadata"
+          ],
+          "providers": [
+            {
+              "name": "azure.ai.routine",
+              "type": "service-target",
+              "description": "Upserts Foundry routines declared as azure.ai.routine services in azure.yaml"
+            }
+          ],
+          "usage": "azd ai routine <command> [options]",
+          "examples": null,
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "f034cbdc9404c33eaa4bc168463d410554bbec3d3b89b38efdde5e3156fd96f8"
+              },
+              "entryPoint": "azure-ai-routines-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_1.0.0-beta.7/azure-ai-routines-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "626c41741411d8dd4e66e7ce05e106e48145e41779988b715ed4d6d294123f28"
+              },
+              "entryPoint": "azure-ai-routines-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_1.0.0-beta.7/azure-ai-routines-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "789f49a051e9d4c8ebb2ddd88f6e33fe246bd94ed9e07c4d6c943370a8ba7b42"
+              },
+              "entryPoint": "azure-ai-routines-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_1.0.0-beta.7/azure-ai-routines-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "fd2e7529a3ba0f579960e424b8a1a65b2694562b5b1c54e1dffbae9ad3692255"
+              },
+              "entryPoint": "azure-ai-routines-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_1.0.0-beta.7/azure-ai-routines-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "ff2a3718f6a01782783425edfbce5f3c66aa69128935d5de30511924b100561d"
+              },
+              "entryPoint": "azure-ai-routines-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_1.0.0-beta.7/azure-ai-routines-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "31edd573d7acb4e0e1cf1d1cf48ee2c9f2cf934ef576adb78ad9aaa7d8618b36"
+              },
+              "entryPoint": "azure-ai-routines-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-routines_1.0.0-beta.7/azure-ai-routines-windows-arm64.zip"
+            }
+          }
         }
       ],
       "tags": [

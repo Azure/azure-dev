@@ -55,6 +55,26 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(report["status"], "BLOCKED")
             self.assertEqual(report["execution"], "NOT RUN")
             self.assertIn("approval digest", report["error"]["message"])
+            self.assertEqual(report["remoteCleanup"]["status"], "NOT RUN")
+
+    def test_duplicate_authorization_fields_are_rejected_before_validation_or_commands(self):
+        for raw in ('{"approvedBudget":1,"approvedBudget":1000}',
+                    '{"versions":{"azure.ai.evaluations":"approved","azure.ai.evaluations":"other"}}',
+                    '{"tenantId":"first","\\u0074enantId":"second"}'):
+            with self.subTest(raw=raw), tempfile.TemporaryDirectory() as root:
+                root = Path(root)
+                plan_path = root / "plan.json"
+                plan_path.write_text(raw)
+                with mock.patch.object(service, "validate_plan") as validate, \
+                     mock.patch.object(service, "Driver") as driver:
+                    with self.assertRaisesRegex(service.Blocked, "duplicate JSON"):
+                        service.execute(plan_path, root / "evidence", env={})
+                    validate.assert_not_called()
+                    driver.assert_not_called()
+                report = json.loads((root / "evidence" / "service-status.json").read_text())
+                self.assertEqual(report["status"], "BLOCKED")
+                self.assertEqual(report["execution"], "NOT RUN")
+                self.assertEqual(report["remoteCleanup"]["status"], "NOT RUN")
 
     def test_gate_binds_approval_provider_run_revision_and_bounds(self):
         plan = self.plan()
@@ -414,6 +434,26 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(report["status"], "FAIL")
             self.assertEqual(report["failure"]["message"], "primary service failure")
             self.assertEqual(report["remoteCleanup"]["message"], "remote cleanup failure")
+            self.assertEqual(report["cleanup"]["status"], "PASS")
+
+    def test_started_preflight_failure_retains_remote_cleanup_not_run(self):
+        plan = self.plan()
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            plan_path = root / "plan.json"
+            plan_path.write_text(json.dumps(plan))
+            config = root / "auth"
+            config.mkdir()
+            output = root / "evidence"
+            with mock.patch.object(service, "validate_plan", return_value={}), \
+                 mock.patch.object(service, "verify_install", return_value=Path("azd")), \
+                 mock.patch.object(service, "lifecycle", side_effect=RuntimeError("identity verification failed")):
+                with self.assertRaises(RuntimeError):
+                    service.execute(plan_path, output, env={"AZD_SCENARIO_LIVE_AUTH_CONFIG": str(config)})
+            report = json.loads((output / "service-status.json").read_text())
+            self.assertEqual(report["status"], "FAIL")
+            self.assertEqual(report["execution"], "STARTED")
+            self.assertEqual(report["remoteCleanup"]["status"], "NOT RUN")
             self.assertEqual(report["cleanup"]["status"], "PASS")
 
     def test_runtime_cleanup_block_is_a_failed_execution_not_a_prerequisite_block(self):

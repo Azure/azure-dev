@@ -160,7 +160,8 @@ existing project endpoint, approved binary digests and extension versions,
 registered dataset name/version/content digest, built-in evaluator/judge,
 owned `ci-` prefix, one-run/one-row bounds, command/observation timeouts, and
 explicit authorization for download/create/run/export/delete. Unknown fields
-are rejected. `AZD_SCENARIO_LIVE_APPROVAL_SHA256` and
+and duplicate JSON keys at any nesting level are rejected before commands run.
+`AZD_SCENARIO_LIVE_APPROVAL_SHA256` and
 `AZD_SCENARIO_LIVE_AUTH_CONFIG` must come from an already-authorized provider
 configuration; they are not populated by this contribution. Azure DevOps maps
 the corresponding `ScenarioLiveApprovalSha256` and `ScenarioLiveAuthConfig`

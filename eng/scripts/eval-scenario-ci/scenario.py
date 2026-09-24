@@ -311,6 +311,9 @@ def execute(manifest, output):
         require(manifest.read_bytes() == pin_bytes, "Frozen manifest changed during execution")
         report["status"] = "PASS"
     finally:
+        error = sys.exception()
+        if report["status"] != "PASS" and error is not None and "failure" not in report:
+            report["failure"] = {"type": type(error).__name__, "message": safe_text(error)}
         report["checks"] = proof.checks if proof else []
         write_json(output / "commands.json", proof.commands if proof else [])
         write_json(output / "results.json", report)

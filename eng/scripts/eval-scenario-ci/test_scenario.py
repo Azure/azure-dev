@@ -344,6 +344,32 @@ class SafetyTests(unittest.TestCase):
             self.assertEqual(report["status"], "PASS")
             self.assertEqual(report["cleanup"]["status"], "PASS")
 
+    def test_manifest_integrity_failure_is_persisted_after_workspace_cleanup(self):
+        pin = json.loads((scenario.BASELINE / "candidate.json").read_text())
+        pin["scenarioResolution"] = {"fixtureContract": "build41-offline-160"}
+        with tempfile.TemporaryDirectory() as root:
+            manifest = Path(root) / "manifest.json"
+            scenario.write_json(manifest, pin)
+            output = Path(root) / "evidence"
+            fake = mock.Mock()
+            fake.env, fake.platform, fake.commands = {}, "windows/amd64", []
+            fake.checks = scenario.proof_module.expected_baseline_checks()
+
+            def mutate(proof):
+                proof.checks.extend(["extra"] * 8)
+                manifest.write_text('{"changed":true}')
+
+            with mock.patch.object(scenario.proof_module, "Proof", return_value=fake), \
+                 mock.patch.object(scenario, "installed_evidence", return_value={}), \
+                 mock.patch.object(scenario, "extra_scenarios", side_effect=mutate):
+                with self.assertRaisesRegex(AssertionError, "Frozen manifest changed"):
+                    scenario.execute(manifest, output)
+            report = json.loads((output / "results.json").read_text())
+            self.assertEqual(report["status"], "FAIL")
+            self.assertEqual(report["cleanup"]["status"], "PASS")
+            self.assertIn("Frozen manifest changed", report["failure"]["message"])
+            self.assertIn("Frozen manifest changed", (output / "summary.md").read_text())
+
     def test_ado_run_link_retains_only_known_build_id(self):
         report = scenario.run_identity({
             "BUILD_BUILDID": "42", "BUILD_SOURCEVERSION": "a" * 40,

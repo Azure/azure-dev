@@ -263,8 +263,10 @@ recorded below, not the unpublished build 42 package.
 
 | Work item | Required per-release regression | Current disposition |
 | --- | --- | --- |
-| [5645048][bug-5645048], new custom YAML path becomes a directory | With a previously nonexistent filename passed to init `--path`, verify the promised file/directory interpretation, actual file type, selected configuration, and reattachment. File existence or a matching substring alone is not sufficient. | Independent public-build-41 reports observed `quality/custom.eval.yaml` becoming a directory containing `azure.eval.yaml`. Source changes are reported under [#10149](https://github.com/Azure/azure-dev/pull/10149), not included in smaller build 42. Repaired installed-package retest is pending. |
-| [5645047][bug-5645047], unsupported init output format is ignored | Explicit unsupported output formats must fail clearly, with correct exit/output and no unintended authored changes. Do not equate an unsupported-format observation with an unproven file-mutation claim. | Confirmed on the same public build 41 identity; source work is reported under [#10149](https://github.com/Azure/azure-dev/pull/10149), not a published repair or smaller-build-42 inclusion. Repaired installed-package retest is pending. |
+| [5645048][bug-5645048], new custom YAML path becomes a directory | With a previously nonexistent filename passed to init `--path`, verify the promised file/directory interpretation, actual file type, selected configuration, and reattachment. File existence or a matching substring alone is not sufficient. | Independent public-build-41 reports observed `quality/custom.eval.yaml` becoming a directory containing `azure.eval.yaml`. The selected local43 repair has scoped installed acceptance below; public repaired-release acceptance remains pending. It was not included in build42. |
+| [5645047][bug-5645047], unsupported init output format is ignored | Explicit unsupported output formats must fail clearly, with correct exit/output and no unintended authored changes. Do not equate an unsupported-format observation with an unproven file-mutation claim. | Confirmed on the same public build41 identity. The selected local43 repair has scoped installed acceptance below, not yet public repaired-release proof; build42 did not include it. Source work remains linked through [#10149](https://github.com/Azure/azure-dev/pull/10149). |
+| [5645220][bug-5645220], multiple YAML documents lose content | Reject unsupported multi-document input clearly rather than silently discarding a document; preserve the original file on refusal. | Reported filed; outside the current43 inclusion map. No repair or closure claim. |
+| [5645284][bug-5645284], trailing JSON reference content | Refuse extra trailing JSON content at a reference boundary rather than accepting only a valid prefix. | Reported filed; outside current43. Independent repaired-package acceptance remains pending. |
 
 The separate initial mutation claim was disproved by its snapshots and was not
 filed. Keep that correction with the original observation; do not coach blind
@@ -299,8 +301,9 @@ Two API requests and three loopback connections were observed, with no external
 connection and all owned servers stopped. Negative TLS/proxy/RPC controls passed.
 The first unknown-RPC guard failure was retained; the second attempt used the
 source-verified SDK namespace. This is actual published-extension local-mock
-runtime evidence, not live Azure or full-core authentication. Typed list/file,
-raw/error controls and the fixed43 package still need their own receipts.
+runtime evidence, not live Azure or full-core authentication. At that detail
+checkpoint, typed list/file, raw/error controls and fixed43 were not yet run;
+the subsequent scoped local43 receipt is recorded in the release index below.
 The published binary was not instrumented or replaced with a repair build, and
 no blanket fixed-package or issue-closure claim follows.
 
@@ -323,6 +326,22 @@ The current fresh Windows checks do not replace the historical broader matrices.
 | 40 | [Build 40 receipt][build40], evaluations `1.0.40-beta`, dataset `1.0.0-beta.28` | Historical scoped local/terminal/live results, including the responses-backed execution `FAIL`. Do not relabel as 41. |
 | 41 | [Frozen build 41 receipt][build41], evaluations `1.0.41-beta`, dataset `1.0.0-beta.29`, source `8ef8b6df77336950c60506ab2966037f579d92cd`, azd `>=1.33.0` | Historical release, previously Latest. Targeted package acceptance and four hosted jobs `PASS`; separately, the new scenario run resolved this release before promotion and passed 168 checks per OS. Broad live reruns, all platforms, and all seven regressions are not claimed. |
 | 42 | Public [release `extensions-2026-09-24-42`][release42], evaluations `1.0.42-beta`, dataset `1.0.0-beta.30`, core `1.33.0`, frozen source [`d40a3b5a1e7c5944b1b43decd14c96096a99e5b6`][source42]. Registry SHA256 `83026575746f7db5c5cc7a3035f9e75b776f709875d2f0768bd9c215aaaca635`. | Latest promotion approved at **2026-09-24T03:17:39Z**. Publisher verified all 15 anonymous assets, a fresh unversioned Latest install, stable registry/docs contents, and preservation of historical asset identities at [feed revision `967b631`][feed42]. Both local Windows acceptance scopes and all four [hosted jobs][hosted42] are `PASS`; both OS artifact sets were downloaded and verified. No new live/cloud-contract acceptance claim. |
+| 43 local candidate | Source [`2d4ea18150b06cd6ecc7a31998069f712bf874f9`][source43], proposed evaluations `1.0.43-beta` and dataset `1.0.0-beta.31`; local registry SHA256 `21c176596c731c025bc8124e36e00831348188e22109856358904c2aa0c0c7fb`. | **Local bytes only, not a public tuple or aggregate release PASS.** Per-fix acceptance below is separate from pending phase-C cases and future exact-public hosted validation. No pin or dispatch is authorized from this local proposal. |
+
+For the exact local43 candidate, the original path/format/empty-flag Windows
+scope passed three cases, 38 assertions and ten commands with owned cleanup;
+the coordinator independently checked both installed executable hashes. A
+six-assertion/two-command literal-empty supplement is recorded separately.
+The Linux precision scope passed seven candidate paths/controls against the
+measured public42 typed-decoder failures using the authorized SDK/auth-subprocess
+local mocks and normally verified TLS. Coordinator corroboration adds no cases.
+This is not live Azure or full-core authentication.
+
+Phase-C rubric metadata, first-publication, and delete-cleanup acceptance
+([5530209][bug-5530209], [5645184][bug-5645184], [5572011][bug-5572011])
+remain `NOT RUN` until their own exact-package receipts arrive. The current
+inclusion map is authoritative; superseded source preparations are not evidence
+for the selected bytes. No broad new model/simulation contract is inferred.
 
 The local build 42 practical receipt covers six cases and 25 assertions: three
 init/reattachment journeys and three help-only cases. Its 16 records include
@@ -554,6 +573,7 @@ optional recommendations.
 [candidate-repair42]: https://github.com/m7md7sien/azure-dev/actions/runs/35951992376
 [scenario-guide]: evaluation-scenario-ci.md
 [source42]: https://github.com/m7md7sien/azure-dev/commit/d40a3b5a1e7c5944b1b43decd14c96096a99e5b6
+[source43]: https://github.com/m7md7sien/azure-dev/commit/2d4ea18150b06cd6ecc7a31998069f712bf874f9
 [init-source-repairs]: https://github.com/m7md7sien/azure-dev/commit/32ff9bc772e7500b37ba99709401709e9bda1165
 [agent-rules]: ../../cli/azd/AGENTS.md#testing-best-practices
 [extension-style]: ../../cli/azd/docs/extensions/extensions-style-guide.md
@@ -570,3 +590,6 @@ optional recommendations.
 [bug-5645048]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5645048
 [bug-5645047]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5645047
 [bug-5571358]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5571358
+[bug-5645220]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5645220
+[bug-5645284]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5645284
+[bug-5645184]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5645184

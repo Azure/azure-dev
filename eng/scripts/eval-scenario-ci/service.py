@@ -43,6 +43,14 @@ def expect(condition, message):
         raise RuntimeError(message)
 
 
+def unique_plan_object(pairs):
+    value = {}
+    for key, item in pairs:
+        require(key not in value, "Approved plans must not contain duplicate JSON object keys")
+        value[key] = item
+    return value
+
+
 def verify_native_identity_token(value, plan):
     require(isinstance(value, dict) and isinstance(value.get("token"), str),
             "Native CI identity did not provide a token for identity verification")
@@ -378,13 +386,14 @@ def execute(plan_path, output, env=None):
     env = os.environ if env is None else env
     require(not output.exists(), "Output directory must be new")
     output.mkdir(parents=True)
-    report = {"status": "BLOCKED", "execution": "NOT RUN", "implemented": "static evaluation lifecycle",
+    report = {"status": "BLOCKED", "execution": "NOT RUN", "remoteCleanup": {"status": "NOT RUN"},
+              "implemented": "static evaluation lifecycle",
               "notImplemented": ["agent-create", "agent-deploy", "dataset-create", "generation",
                                  "provider authentication/bootstrap", "service-side budget enforcement"]}
     workspace_state = {}
     try:
         raw = plan_path.read_bytes()
-        plan = json.loads(raw)
+        plan = json.loads(raw, object_pairs_hook=unique_plan_object)
         report["planSha256"] = scenario.sha256(raw)
         report.update(validate_plan(plan, report["planSha256"], env))
         config = Path(env.get("AZD_SCENARIO_LIVE_AUTH_CONFIG", "")).resolve()

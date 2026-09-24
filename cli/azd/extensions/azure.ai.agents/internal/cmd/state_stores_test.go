@@ -189,6 +189,15 @@ func TestStateStoreCommandValidation(t *testing.T) {
 		{"list", []string{"--agent-endpoint", ""}, false, "non-empty"},
 		{"items show", []string{"key", "--store", ""}, false, "non-empty"},
 		{"items show", []string{""}, false, "must not be empty"},
+		{"show", []string{strings.Repeat("s", 129)}, false, "store name exceeds 128 characters"},
+		{"select", []string{strings.Repeat("s", 129)}, false, "store name exceeds 128 characters"},
+		{"items list", []string{"--store", strings.Repeat("s", 129)}, false,
+			"store name exceeds 128 characters"},
+		{"items show", []string{strings.Repeat("k", 129)}, false, "item key exceeds 128 characters"},
+		{"items set", []string{strings.Repeat("k", 129), "--value", "{}"}, false,
+			"item key exceeds 128 characters"},
+		{"items delete", []string{strings.Repeat("k", 129), "--store", "store", "--yes"}, false,
+			"item key exceeds 128 characters"},
 		{"items set", []string{"key"}, false, "exactly one"},
 		{"items set", []string{"key", "--value", "{}", "--value-file", "x"}, false, "exactly one"},
 		{"items set", []string{"key", "--value", "null"}, false, "JSON object"},
@@ -201,6 +210,30 @@ func TestStateStoreCommandValidation(t *testing.T) {
 			// Invalid input is rejected by the real command handler before host/auth/API resolution.
 			err := cmd.RunE(cmd, cmd.Flags().Args())
 			require.ErrorContains(t, err, tt.message)
+		})
+	}
+}
+
+func TestStateStoreIdentifierLimits(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		value   string
+		wantErr bool
+	}{
+		{"store at limit", strings.Repeat("s", 128), false},
+		{"item at limit", strings.Repeat("k", 128), false},
+		{"unicode at limit", strings.Repeat("é", 128), false},
+		{"store too long", strings.Repeat("s", 129), true},
+		{"item too long", strings.Repeat("k", 129), true},
+		{"unicode too long", strings.Repeat("é", 129), true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateStateStoreIdentifier("store name", tt.value)
+			if tt.wantErr {
+				require.ErrorContains(t, err, "exceeds 128 characters")
+			} else {
+				require.NoError(t, err)
+			}
 		})
 	}
 }

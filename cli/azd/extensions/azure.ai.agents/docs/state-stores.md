@@ -1,6 +1,6 @@
 # Inspect and edit agent State Stores
 
-Foundry State Stores hold application JSON data such as checkpoints. Use `azd ai agent state-stores` to inspect **existing stores** and manage their items. Create stores in agent code or other tooling first; see the public [Foundry State Store documentation](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/agent-state-store?tabs=python).
+Foundry State Stores hold application JSON data such as checkpoints. During preview, they are available **only for hosted agents**, not prompt agents or voice wrappers. Use `azd ai agent state-stores` to inspect **existing stores** and manage their items. For a voice wrapper backed by a hosted agent, target the hosted agent service instead. Create stores in agent code or other tooling first; see the public [Foundry State Store documentation](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/agent-state-store?tabs=python).
 
 Editing state does not stop, resume, or steer agent work. Coordinate changes with the application, especially when modifying active checkpoints.
 
@@ -16,9 +16,11 @@ azd ai agent state-stores items set <key> [--store <name>] (--value <json-object
 azd ai agent state-stores items delete <key> [--store <name>] [--if-match <etag>] [--yes]
 ```
 
-Every command supports `--agent-name <service-name>` or `--agent-endpoint <https-protocol-endpoint-url>`, but not both. The agent is otherwise resolved from the azd project/environment. `--environment <name>` reads deployment metadata from that environment without changing the project's default environment; missing metadata never falls back to another environment. Do not combine an explicitly supplied `--environment` with `--agent-endpoint`: the URL determines the target and does not use environment metadata. Explicit HTTPS endpoint targeting also works outside a project. WebSocket (`wss://.../invocations_ws`) invocation URLs are not accepted as State Store targets; State Store traffic uses HTTPS, not WebSockets. For a WebSocket agent, target it from an azd project by service name. State Stores are independent of invocation protocol and agent version; no protocol or version flag is needed.
+Every command supports `--agent-name <service-name>` or `--agent-endpoint <https-protocol-endpoint-url>`, but not both. The agent is otherwise resolved from the azd project/environment. `--environment <name>` reads deployment metadata from that environment without changing the project's default environment; missing project metadata never falls back to a global endpoint, a process-level endpoint, or another environment. Do not combine an explicitly supplied `--environment` with `--agent-endpoint`: the URL determines the target and does not use environment metadata. Explicit HTTPS endpoint targeting also works outside a project. WebSocket (`wss://.../invocations_ws`) invocation URLs are not accepted as State Store targets; State Store traffic uses HTTPS, not WebSockets. For a WebSocket agent, target it from an azd project by service name. State Stores are independent of invocation protocol and agent version; no protocol or version flag is needed.
 
-Pass logical store names and keys, including embedded `/`, without encoding them. azd handles the API's base64url encoding. Commands use normal azd authentication and the external agent-scoped State Store API; they do not supply delegated identity or hosted-only call headers.
+Pass logical store names and item keys of **1–128 characters**, including embedded `/`, without encoding them. azd handles the API's base64url encoding. Commands use normal azd authentication and the external agent-scoped State Store API.
+
+**User-isolated stores:** `list`, `show`, and `select` can inspect or select a store with `user_isolation: true`, but `items list/show/set/delete` **cannot access its items**. Item operations on that store require a platform-issued `x-agent-foundry-call-id` to identify the acting user. azd runs outside the hosted request and does not have or supply that call ID. Run these item operations inside the deployed hosted agent with the Foundry SDK instead; do not substitute an arbitrary user ID or an invocation `--user-identity` flag.
 
 ## Select a store and inspect items
 

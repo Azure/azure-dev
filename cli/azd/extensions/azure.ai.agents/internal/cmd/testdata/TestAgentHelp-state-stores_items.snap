@@ -1,4 +1,4 @@
-Read, replace, and delete items in an existing State Store.
+Read, replace, and delete items in an existing State Store. Items in user-isolated stores require a hosted call ID and cannot be accessed by azd.
 
 Usage
   azd ai agent state-stores items [command]

@@ -1,7 +1,8 @@
-Inspect existing Foundry State Stores and manage JSON object items.
+Inspect existing hosted-agent State Stores and manage JSON object items.
 
 Select a store once, or pass --store on individual item commands. Store selection
 is saved per project endpoint and agent, independently of protocol and version.
+Items in user-isolated stores require a hosted call ID and cannot be accessed by azd.
 
 Usage
   azd ai agent state-stores [command]

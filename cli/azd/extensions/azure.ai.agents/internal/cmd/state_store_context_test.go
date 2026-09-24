@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -14,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestStateStoreTargetCanonicalKey(t *testing.T) {
@@ -121,6 +123,74 @@ func TestStateStoreExplicitEnvironment(t *testing.T) {
 	}
 }
 
+func TestStateStoreDefaultEnvironmentDoesNotUseUnrelatedEndpoint(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/current"
+	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "https://other.services.ai.azure.com/api/projects/wrong")
+	for _, source := range []string{"service", "resource", "environment", "missing"} {
+		t.Run(source, func(t *testing.T) {
+			values := map[string]string{"AGENT_WORKER_NAME": "worker"}
+			switch source {
+			case "service":
+				values["AGENT_WORKER_PROJECT_ENDPOINT"] = endpoint
+			case "resource":
+				values["AGENT_WORKER_ENDPOINT"] = endpoint + "/agents/worker/versions/1"
+			case "environment":
+				values["FOUNDRY_PROJECT_ENDPOINT"] = endpoint
+			}
+			project := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
+					"worker": {Name: "worker", Host: AiAgentHost},
+				},
+			}}
+			env := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "dev"}, values: map[string]map[string]string{"dev": values},
+			}
+			host := newHelpersTestAzdClient(t, project, &helpersPromptServer{}, env)
+			target, err := resolveStateStoreTarget(t.Context(), host,
+				&stateStoreFlags{agentName: "worker", noPrompt: true})
+			if source == "missing" {
+				require.ErrorContains(t, err, `no Foundry project endpoint in environment "dev"`)
+				require.Nil(t, target)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, endpoint, target.ProjectEndpoint)
+			}
+			require.Equal(t, 1, env.getCurrentCalls, "endpoint must come from the name's environment")
+		})
+	}
+}
+
+func TestStateStoreRequiresHostedService(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+	for _, kind := range []string{"hosted", "prompt", "voice", "prompt-voice"} {
+		t.Run(kind, func(t *testing.T) {
+			properties, err := structpb.NewStruct(map[string]any{"kind": kind})
+			require.NoError(t, err)
+			project := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
+					"agent": {Name: "agent", Host: AiAgentHost, AdditionalProperties: properties},
+				},
+			}}
+			env := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "dev"}, values: map[string]map[string]string{"dev": {
+					"AGENT_AGENT_NAME": "deployed-agent", "AGENT_AGENT_PROJECT_ENDPOINT": endpoint,
+				}},
+			}
+			host := newHelpersTestAzdClient(t, project, &helpersPromptServer{}, env)
+			target, err := resolveStateStoreTarget(t.Context(), host,
+				&stateStoreFlags{agentName: "agent", noPrompt: true})
+			if kind == "hosted" {
+				require.NoError(t, err)
+				require.Equal(t, "deployed-agent", target.Name)
+			} else {
+				require.ErrorContains(t, err, "State Stores require a hosted agent")
+				require.Nil(t, target)
+				require.Zero(t, env.getCurrentCalls, "reject non-hosted services before reading deployment metadata")
+			}
+		})
+	}
+}
+
 func TestStateStoreTargetMultipleServices(t *testing.T) {
 	project := &helpersProjectServer{project: &azdext.ProjectConfig{
 		Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
@@ -159,6 +229,17 @@ func TestStateStoreSelectionCancellation(t *testing.T) {
 	api.On("GetStateStore", mock.Anything, "worker", "store").Return(&agent_api.StateStore{Name: "store"}, nil)
 	requireStateStoreCancelled(t, a.run(ctx, "select", []string{"store"}))
 	require.Empty(t, writer.String())
+}
+
+func TestStateStoreRejectsOversizedSavedSelection(t *testing.T) {
+	a, _, server, _ := newStateStoreTestAction(t)
+	server.setJSON(t, configPath(stateStoreConfigField), map[string]string{
+		a.target.agentKey: strings.Repeat("s", 129),
+	})
+	require.ErrorContains(t, a.run(t.Context(), "items show", []string{"key"}),
+		"store name exceeds 128 characters")
+	require.ErrorContains(t, a.run(t.Context(), "select", []string{strings.Repeat("s", 129)}),
+		"store name exceeds 128 characters")
 }
 
 func TestStateStoreSelectionPersistence(t *testing.T) {

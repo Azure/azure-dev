@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -61,11 +62,12 @@ type stateStoreAction struct {
 func newStateStoresCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	extCtx = ensureExtensionContext(extCtx)
 	cmd := &cobra.Command{
-		Use: "state-stores", Short: "Inspect existing agent State Stores and manage their items.",
-		Long: `Inspect existing Foundry State Stores and manage JSON object items.
+		Use: "state-stores", Short: "Inspect hosted-agent State Stores and manage their items.",
+		Long: `Inspect existing hosted-agent State Stores and manage JSON object items.
 
 Select a store once, or pass --store on individual item commands. Store selection
-is saved per project endpoint and agent, independently of protocol and version.`,
+is saved per project endpoint and agent, independently of protocol and version.
+Items in user-isolated stores require a hosted call ID and cannot be accessed by azd.`,
 		Example: "  azd ai agent state-stores list\n  azd ai agent state-stores select checkpoints/run-42",
 	}
 	for _, operation := range []string{"list", "select", "show"} {
@@ -73,6 +75,8 @@ is saved per project endpoint and agent, independently of protocol and version.`
 	}
 	items := &cobra.Command{
 		Use: "items", Short: "Read, replace, and delete items in an existing State Store.",
+		Long: "Read, replace, and delete items in an existing State Store. " +
+			"Items in user-isolated stores require a hosted call ID and cannot be accessed by azd.",
 		Example: "  azd ai agent state-stores items list\n  azd ai agent state-stores items show task-123",
 	}
 	for _, operation := range []string{"list", "show", "set", "delete"} {
@@ -112,8 +116,12 @@ func newStateStoreCommandWithFactory(
 ) *cobra.Command {
 	flags := &stateStoreFlags{page: agent_api.StateStoreListOptions{Limit: 20, Order: "desc"}}
 	use, short, example := stateStoreCommandHelp(operation)
+	long := short
+	if strings.HasPrefix(operation, "items ") {
+		long += " User-isolated items require a hosted call ID and cannot be accessed by azd."
+	}
 	cmd := &cobra.Command{
-		Use: use, Short: short, Long: short, Example: example,
+		Use: use, Short: short, Long: long, Example: example,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.noPrompt, flags.output = extCtx.NoPrompt, extCtx.OutputFormat
@@ -236,6 +244,18 @@ func validateStateStoreFlags(cmd *cobra.Command, flags *stateStoreFlags, operati
 	if slices.Contains(args, "") {
 		return invalid("store names and item keys must not be empty")
 	}
+	if err := validateStateStoreIdentifier("store name", flags.store); err != nil {
+		return err
+	}
+	if len(args) > 0 {
+		kind := "store name"
+		if strings.HasPrefix(operation, "items ") {
+			kind = "item key"
+		}
+		if err := validateStateStoreIdentifier(kind, args[0]); err != nil {
+			return err
+		}
+	}
 	if flags.page.Limit < 1 || flags.page.Limit > 100 {
 		return invalid("--limit must be between 1 and 100")
 	}
@@ -253,6 +273,14 @@ func validateStateStoreFlags(cmd *cobra.Command, flags *stateStoreFlags, operati
 	}
 	if operation == "items delete" && flags.noPrompt && !flags.yes {
 		return invalid("--yes is required to delete an item with --no-prompt")
+	}
+	return nil
+}
+
+func validateStateStoreIdentifier(kind, value string) error {
+	if utf8.RuneCountInString(value) > 128 {
+		return exterrors.Validation(exterrors.CodeInvalidParameter,
+			kind+" exceeds 128 characters", "use a shorter "+kind)
 	}
 	return nil
 }

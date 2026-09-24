@@ -1,4 +1,4 @@
-Create or replace a JSON object item in an existing store.
+Create or replace a JSON object item in an existing store. User-isolated items require a hosted call ID and cannot be accessed by azd.
 
 Creates a missing item or replaces its entire value and tags. Omitting --tag clears existing tags.
 The preview value limit is 1048576 bytes (1 MiB) of serialized JSON.

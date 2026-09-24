@@ -1,4 +1,4 @@
-Show an item's JSON value, tags, and ETag.
+Show an item's JSON value, tags, and ETag. User-isolated items require a hosted call ID and cannot be accessed by azd.
 
 Usage
   azd ai agent state-stores items show <key> [flags]

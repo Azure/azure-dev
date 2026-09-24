@@ -1,4 +1,4 @@
-Delete an item from an existing store.
+Delete an item from an existing store. User-isolated items require a hosted call ID and cannot be accessed by azd.
 
 Usage
   azd ai agent state-stores items delete <key> [flags]

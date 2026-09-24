@@ -625,6 +625,7 @@ func fileExists(path string) bool {
 type AgentServiceInfo struct {
 	IsVoice                     bool                               // populated only when voice classification is requested
 	ServiceName                 string                             // azure.yaml service key
+	EnvironmentName             string                             // environment used for deployed metadata, when available
 	AgentName                   string                             // deployed name; may use brownfield fallback
 	Version                     string                             // deployed agent version from env
 	AgentEndpoint               string                             // full AGENT_{SVC}_ENDPOINT URL (includes name + version)
@@ -1112,6 +1113,7 @@ type agentServiceResolutionOptions struct {
 	includeProtocolEndpoints       bool
 	matchDeployedAgentName         bool
 	rejectVoiceInvocation          bool
+	requireHostedKind              bool
 	allowMissingDefaultEnvironment bool
 	includeVoiceKind               bool
 }
@@ -1123,6 +1125,12 @@ type agentServiceResolutionOption func(*agentServiceResolutionOptions)
 func withAgentEnvironment(name string) agentServiceResolutionOption {
 	return func(options *agentServiceResolutionOptions) {
 		options.environmentName = name
+	}
+}
+
+func withHostedAgentKind() agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.requireHostedKind = true
 	}
 }
 
@@ -1228,6 +1236,19 @@ func resolveAgentServiceFromProject(
 			return nil, err
 		}
 	}
+	if resolutionOptions.requireHostedKind {
+		kind, err := agentkind.Kind(svc, projectConfig.Path, os.Getenv("AGENT_DEFINITION_PATH"))
+		if err != nil {
+			return nil, fmt.Errorf("determining agent kind for State Stores: %w", err)
+		}
+		// Older service definitions may not declare a kind. Let the service
+		// determine support rather than treating an unknown kind as non-hosted.
+		if kind != "" && kind != string(agent_yaml.AgentKindHosted) {
+			return nil, exterrors.Validation(exterrors.CodeUnsupportedAgentKind,
+				fmt.Sprintf("State Stores require a hosted agent; service %q has kind %q", svc.Name, kind),
+				"select the hosted agent service (not a prompt or voice wrapper)")
+		}
+	}
 
 	info := &AgentServiceInfo{ServiceName: svc.Name}
 	if resolutionOptions.includeVoiceKind {
@@ -1275,10 +1296,11 @@ func resolveAgentServiceFromProject(
 			return info, nil
 		}
 
+		info.EnvironmentName = envResponse.Environment.Name
 		values, err := getAgentEnvironmentValues(
 			ctx,
 			azdClient,
-			envResponse.Environment.Name,
+			info.EnvironmentName,
 		)
 		if err != nil {
 			if resolutionOptions.includeProtocolEndpoints {

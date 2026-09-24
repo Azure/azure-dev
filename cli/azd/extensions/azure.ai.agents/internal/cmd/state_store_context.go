@@ -54,7 +54,7 @@ func resolveStateStoreTarget(
 		return stateStoreTargetFromEndpoint(flags.agentEndpoint)
 	}
 	info, err := resolveAgentServiceFromProject(ctx, host, flags.agentName, flags.noPrompt,
-		withAgentEnvironment(flags.environment))
+		withAgentEnvironment(flags.environment), withHostedAgentKind())
 	if err != nil {
 		if ambiguous, ok := errors.AsType[*ambiguousAgentServicesError](err); ok {
 			return nil, exterrors.Validation(exterrors.CodeInvalidAgentName,
@@ -74,9 +74,11 @@ func resolveStateStoreTarget(
 			endpoint = project
 		}
 	}
-	if endpoint == "" && flags.environment != "" {
+	if endpoint == "" {
+		// The agent name came from this azd environment. Never combine it with a
+		// global or process-level project endpoint from a different project.
 		value, err := host.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: flags.environment, Key: "FOUNDRY_PROJECT_ENDPOINT",
+			EnvName: info.EnvironmentName, Key: "FOUNDRY_PROJECT_ENDPOINT",
 		})
 		if err != nil {
 			return nil, exterrors.FromHost(err, exterrors.CodeEnvironmentValuesFailed,
@@ -84,16 +86,10 @@ func resolveStateStoreTarget(
 		}
 		if value == nil || strings.TrimSpace(value.Value) == "" {
 			return nil, exterrors.Dependency(exterrors.CodeMissingProjectEndpoint,
-				fmt.Sprintf("no Foundry project endpoint in environment %q", flags.environment),
+				fmt.Sprintf("no Foundry project endpoint in environment %q", info.EnvironmentName),
 				"set FOUNDRY_PROJECT_ENDPOINT in that environment or supply --agent-endpoint")
 		}
 		endpoint = value.Value
-	}
-	if endpoint == "" {
-		endpoint, err = resolveAgentEndpoint(ctx, "", "")
-		if err != nil {
-			return nil, err
-		}
 	}
 	// Only reuse the endpoint parser, not invocation/protocol resolution. A multi-protocol
 	// agent has one State Store collection and needs no protocol selection or API call.
@@ -103,7 +99,7 @@ func resolveStateStoreTarget(
 
 func (a *stateStoreAction) resolveStore(ctx context.Context, explicit string) (string, error) {
 	if explicit != "" {
-		return explicit, nil
+		return explicit, validateStateStoreIdentifier("store name", explicit)
 	}
 	name, err := getAgentSpecificContextValue(ctx, a.host, stateStoreConfigField, a.target.agentKey)
 	if err != nil {
@@ -119,7 +115,7 @@ func (a *stateStoreAction) resolveStore(ctx context.Context, explicit string) (s
 			"no active State Store for this agent",
 			"run `azd ai agent state-stores select <store-name>` or supply an explicit store")
 	}
-	return name, nil
+	return name, validateStateStoreIdentifier("store name", name)
 }
 
 func (a *stateStoreAction) selectStore(ctx context.Context, name string) (any, error) {
@@ -133,6 +129,9 @@ func (a *stateStoreAction) selectStore(ctx context.Context, name string) (any, e
 		if err != nil {
 			return nil, err
 		}
+	}
+	if err := validateStateStoreIdentifier("store name", name); err != nil {
+		return nil, err
 	}
 	store, err := a.api.GetStateStore(ctx, a.target.Name, name)
 	if err != nil {

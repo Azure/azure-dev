@@ -33,7 +33,7 @@ Available Commands
   sample       : Browse the curated catalog of agent samples and azd templates.
   sessions     : Manage sessions for a hosted agent endpoint.
   show         : Show the status of a prompt, hosted, or voice agent.
-  state-stores : Inspect existing agent State Stores and manage their items.
+  state-stores : Inspect hosted-agent State Stores and manage their items.
   toolbox      : Manage toolbox service dependencies for an agent.
   version      : Prints the version of the application
 

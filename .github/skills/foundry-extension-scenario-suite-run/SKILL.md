@@ -78,8 +78,9 @@ PR-regression flow and are single-sourced there. Follow
 [`../foundry-extension-scenario-pr-regression/references/prerequisites.md`](../foundry-extension-scenario-pr-regression/references/prerequisites.md)
 (repo path `.github/skills/foundry-extension-scenario-pr-regression/references/prerequisites.md`) before doing
 anything else. In particular: verify the tester MCP server and `profile.local.yaml`, and derive
-the base `session_vars` (profile merge + `run_id` + `shared_agent_name` + `fixtures_dir`) and
-per-scenario `instance` values that must be threaded consistently through every scenario.
+the base `session_vars` (profile merge, including `model_sku`, plus `run_id` +
+`shared_agent_name` + `fixtures_dir`) and per-scenario `instance` and applicable bounded
+`foundry_project_name` values that must be threaded consistently through every scenario.
 
 The mandatory **`azd` binary build/verify gate** and **recipe validation** are shared gates the
 **foundry-extension-scenario-orchestrator** owns (see the `foundry-extension-scenario-orchestrator` agent and

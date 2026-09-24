@@ -29,12 +29,13 @@ and tell it what you want; it routes to a run skill and fans the work out to
 
 The orchestrator (or the run skill) **loads both profile files, merges them (local overrides
 shared), generates one run ID with seconds plus a short random suffix, derives
-`shared_agent_name = {prefix}-{shared_agent_suffix}-{run_id}`, and passes a per-scenario map as
+`shared_agent_name = {prefix}-{shared_agent_suffix}-{run_id}`, derives a bounded
+`foundry_project_name`, and passes a per-scenario map as
 `session_vars` on every `load_scenario`, `run_pre_hooks`, `start_session`, and
 `run_post_hooks` call**. For parallel-safe scenarios that map also includes the assigned
 `instance`, matching the `instance_id` passed to hooks and sessions. The scenario YAMLs
 reference those values via `{prefix}`, `{subscription}`, `{region}`, `{model}`, `{model_sku}`, `{tenant}`
-(optional), `{shared_agent_name}`, and `{instance}` placeholders. The step-by-step driving
+(optional), `{shared_agent_name}`, `{foundry_project_name}`, and `{instance}` placeholders. The step-by-step driving
 rules those agents follow live in
 [`driving-mechanics.md`](./driving-mechanics.md).
 
@@ -541,6 +542,7 @@ Variables exposed to scenarios via `session_vars`:
 | `{shared_agent_suffix}` | `profile.yaml` | `basic-responses` | |
 | `{run_id}` | derived by orchestrator | 10-digit month/day/hour/minute/second timestamp plus 6 lowercase hexadecimal characters | Generated once per sweep and reused for artifacts, sessions, and resource identity. |
 | `{shared_agent_name}` | derived by orchestrator | `{prefix}-{shared_agent_suffix}-{run_id}` | Tier 2 subdirectory and agent name. Seconds plus the random suffix isolate concurrent runs. |
+| `{foundry_project_name}` | derived per scenario | bounded prefix plus the complete `{instance}` (Tier 1/1b) or `{run_id}` (Tier 2) | Foundry project name, deterministically truncated to at most 32 characters while preserving the run-unique suffix. Tier 1b reuses its prerequisite's exact value. |
 | `{instance}` | derived per scenario | `<scenario-key>-{run_id}` | Tier 0/Tier 1 parallel-safe identity; Tier 1b reuses its prerequisite's exact value. |
 | `{fixtures_dir}` | derived by orchestrator | `<scenarios-dir>/fixtures` | Tester-side absolute path to the `fixtures/` subdirectory (WSL-translated on Windows, native on Linux/macOS); used by pre-hooks to seed test fixture files |
 | `{prerequisite_scaffold_dir}` | returned by Tier 1 worker | verified absolute `produces:` path | Tier 1b only; exact scaffold directory from its declared prerequisite. |
@@ -553,11 +555,12 @@ cp profile.local.yaml.example profile.local.yaml
 ```
 
 The orchestrator must load both files, merge local overrides over shared defaults, generate
-one `run_id`, and derive `shared_agent_name` and `fixtures_dir` (the tester-side absolute path
+one `run_id`, and derive `shared_agent_name`, each applicable bounded
+`foundry_project_name`, and `fixtures_dir` (the tester-side absolute path
 of the `fixtures/` subdirectory — WSL-translated on Windows, native on Linux/macOS). For each
 parallel-safe scenario it adds the assigned `instance` to a per-scenario copy of that map.
-For Tier 1b it also adds the exact `scaffold_dir` returned by the prerequisite as
-`prerequisite_scaffold_dir`.
+For Tier 1b it also reuses the prerequisite's exact `foundry_project_name` and adds the exact
+`scaffold_dir` returned by the prerequisite as `prerequisite_scaffold_dir`.
 It passes the map as `session_vars=` on every `load_scenario` / `run_pre_hooks` /
 `start_session` / `run_post_hooks` call and passes the matching `instance_id` to every hook or
 session tool that accepts it. Failing to thread either value can render and execute different
@@ -577,7 +580,9 @@ profile/session variable.
   project/account, azd environment, agent, model deployment, resource group) is
   named with the `{prefix}-` value from your profile plus a run-unique component: `-{instance}`
   in parallel-ready Tier 1 scenarios and the exact `{run_id}` in Tier 2. This keeps test
-  resources distinct across scenarios and concurrent runs and makes cleanup unambiguous. Note
+  resources distinct across scenarios and concurrent runs and makes cleanup unambiguous.
+  Foundry projects use `{foundry_project_name}`, which truncates only the prefix as needed to
+  preserve that complete unique component within the 32-character service limit. Note
   that some fields lowercase the value and replace invalid characters with hyphens — that
   normalization is expected (see `sanitizeAgentName` in the extension).
 - `command:` invokes the installed extension as `azd ai agent …`.

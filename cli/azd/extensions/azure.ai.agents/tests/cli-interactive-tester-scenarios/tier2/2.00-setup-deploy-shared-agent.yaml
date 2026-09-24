@@ -43,12 +43,12 @@ pre:
     timeout: 900
 
 goals:
-  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry account, azd environment, agent, model deployment, or resource group), give it a name that includes the exact run-unique suffix '{run_id}' (for example, '{shared_agent_name}'). The Foundry project is an exception: because Foundry project names are limited to 32 characters, name it exactly '{prefix}-{run_id}'. A '{prefix}-' prefix alone is not sufficient because concurrent sweeps can share it. Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected. If a name prompt comes pre-filled with a default value, CLEAR it first (select-all then delete, or backspaces) before typing so your name replaces the default instead of appending to it."
+  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry account, azd environment, agent, model deployment, or resource group), give it a name that includes the exact run-unique suffix '{run_id}' (for example, '{shared_agent_name}'). The Foundry project is an exception: name it exactly '{foundry_project_name}', the orchestrator-derived value that preserves the complete run ID within the 32-character limit. A '{prefix}-' prefix alone is not sufficient because concurrent sweeps can share it. Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected. If a name prompt comes pre-filled with a default value, CLEAR it first (select-all then delete, or backspaces) before typing so your name replaces the default instead of appending to it."
   - "When asked how to initialize, select 'Start new from a template'."
   - "Select Python as the language."
   - "Select the 'Basic Responses' template from the list."
   - "No agent-name prompt should appear because --agent-name was supplied explicitly. The resulting agent identity and project subdirectory must both be exactly '{shared_agent_name}'. Report a finding if the wizard asks for the agent name."
-  - "If asked to select an Azure AI Foundry project, create a new one and name it exactly '{prefix}-{run_id}'; clear any default first, and do not add descriptive text between the prefix and run ID."
+  - "If asked to select an Azure AI Foundry project, create a new one and name it exactly '{foundry_project_name}'; clear any default first."
   - "A 'Select a tenant' prompt may not appear when the signed-in user has access to only one tenant. If it appears, select the tenant provided with this scenario run. If no tenant was provided, report a failure and do not answer the prompt."
   - "If asked to select a subscription, search for and select the '{subscription}' subscription."
   - "If asked for a location/region, search for and select '{region}'."

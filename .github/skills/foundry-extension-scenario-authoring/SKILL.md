@@ -118,7 +118,8 @@ Field references (do not restate these — link to them):
 - **`produces:`** — the verified Tier 1 scaffold handed to Tier 1b:
   [README § Producer/consumer scaffold handoff](../../../cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/README.md#producerconsumer-scaffold-handoff).
 - **Profile/session placeholders** (`{prefix}`, `{subscription}`, `{region}`, `{model}`,
-  `{tenant}`, `{run_id}`, `{shared_agent_name}`, `{fixtures_dir}`, `{instance}`):
+  `{model_sku}`, `{tenant}`, `{run_id}`, `{shared_agent_name}`, `{foundry_project_name}`,
+  `{fixtures_dir}`, `{instance}`):
   [README § Profile / overrides](../../../cli/azd/extensions/azure.ai.agents/tests/cli-interactive-tester-scenarios/README.md#profile--overrides).
 - **Pre/post hooks** — semantics (host-side, sequential, fail-fast), fields, and the reset /
   fixture-seed / auth-guard patterns:
@@ -191,7 +192,9 @@ Field references (do not restate these — link to them):
    An already-correct selection advances without changing any choice. Keep action names, indices,
    payloads, and keystrokes out of scenario goals; the worker owns those mechanics.
    For resource-creating flows, include the RESOURCE NAMING and AGENT NAME goals (prefix
-   `{prefix}-`, suffix `-{instance}`) so parallel runs don't collide.
+   `{prefix}-`, suffix `-{instance}`) so parallel runs don't collide. Foundry project prompts
+   must use the orchestrator-derived `{foundry_project_name}` because the service limits those
+   names to 32 characters.
 
 ## Validation loop (no execution)
 
@@ -210,8 +213,9 @@ Validate **statically** — never `start_session`, never drive the scenario, nev
 4. **Fixture / hook paths resolve.** If a `pre` hook seeds a fixture, confirm the referenced
    `fixtures/<name>/` tree exists and the hook uses `{fixtures_dir}` (not a hardcoded path).
 5. **Placeholders only reference known variables.** Every `{name}`-shaped token in `command` /
-   `cwd` / hooks / goals is processed as a placeholder and must be a profile placeholder or
-   `{instance}` or, for Tier 1b, `{prerequisite_scaffold_dir}`. This includes embedded shell
+   `cwd` / hooks / goals is processed as a placeholder and must be a documented
+   profile/session placeholder (including `{model_sku}` and `{foundry_project_name}`) or, for
+   Tier 1b, `{prerequisite_scaffold_dir}`. This includes embedded shell
    syntax: format an awk action as `{ print }`, not `{print}`, so it cannot be mistaken for an
    unknown placeholder. Reject every unknown brace-delimited token during static validation.
 6. **Invoke input is explicit.** For every goal or `command` that executes

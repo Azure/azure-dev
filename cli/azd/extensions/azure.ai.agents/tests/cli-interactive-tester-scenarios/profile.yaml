@@ -19,6 +19,10 @@ region: "East US 2"
 # gpt-5.4-mini is cheap and fast — appropriate for tests.
 model: "gpt-5.4-mini"
 
+# Optional. When both model and model_sku are set, Tier 1b deploy verification
+# and Tier 2 setup replace the adopted model deployment before provisioning.
+model_sku: ""
+
 # Suffix appended to {prefix} to form the Tier 2 shared agent's name (and
 # therefore the subdir name that `azd ai agent init` scaffolds into under
 # ~/working/azd-agents-shared/). The shared name is exposed to scenarios

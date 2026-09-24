@@ -33,7 +33,7 @@ shared), generates one run ID with seconds plus a short random suffix, derives
 `session_vars` on every `load_scenario`, `run_pre_hooks`, `start_session`, and
 `run_post_hooks` call**. For parallel-safe scenarios that map also includes the assigned
 `instance`, matching the `instance_id` passed to hooks and sessions. The scenario YAMLs
-reference those values via `{prefix}`, `{subscription}`, `{region}`, `{model}`, `{tenant}`
+reference those values via `{prefix}`, `{subscription}`, `{region}`, `{model}`, `{model_sku}`, `{tenant}`
 (optional), `{shared_agent_name}`, and `{instance}` placeholders. The step-by-step driving
 rules those agents follow live in
 [`driving-mechanics.md`](./driving-mechanics.md).
@@ -369,6 +369,10 @@ post-hook cleanup serially.
 Each scenario declares a `requires:` field pointing to the Tier 1 scenario
 whose scaffold it deploys. The orchestrator **must** check this: if the
 prerequisite didn't PASS in the current run, the Tier 1b scenario is SKIPPED.
+When both `{model}` and `{model_sku}` are non-empty, each verifier replaces the
+scaffold's existing/default managed deployment with that model and SKU before
+provisioning, while preserving its deployment name. The replacement is skipped
+when either value is empty.
 
 ### Producer/consumer scaffold handoff
 
@@ -520,7 +524,7 @@ Two files in this directory drive the values:
 
 | File | Tracked? | Contents | Notes |
 |---|---|---|---|
-| `profile.yaml` | ✅ checked in | repo-shared defaults | `region`, `model`, `shared_agent_suffix` |
+| `profile.yaml` | ✅ checked in | repo-shared defaults | `region`, `model`, `model_sku`, `shared_agent_suffix` |
 | `profile.local.yaml` | ❌ gitignored | per-developer / per-CI overrides | required: `prefix`, `subscription`. optional: `tenant` (no default) |
 | `profile.local.yaml.example` | ✅ checked in | starter template | copy to `profile.local.yaml` and edit |
 
@@ -533,6 +537,7 @@ Variables exposed to scenarios via `session_vars`:
 | `{tenant}` | `profile.local.yaml` | optional, no default | scopes `az login` when provided and supplies product tenant pickers; when unset, omit `--tenant`, but fail without answering if a picker appears |
 | `{region}` | `profile.yaml` | `East US 2` | |
 | `{model}` | `profile.yaml` | `gpt-5.4-mini` | cheap/fast for tests |
+| `{model_sku}` | `profile.yaml` | empty | optional Tier 1b/Tier 2 deployment SKU override |
 | `{shared_agent_suffix}` | `profile.yaml` | `basic-responses` | |
 | `{run_id}` | derived by orchestrator | 10-digit month/day/hour/minute/second timestamp plus 6 lowercase hexadecimal characters | Generated once per sweep and reused for artifacts, sessions, and resource identity. |
 | `{shared_agent_name}` | derived by orchestrator | `{prefix}-{shared_agent_suffix}-{run_id}` | Tier 2 subdirectory and agent name. Seconds plus the random suffix isolate concurrent runs. |
@@ -566,7 +571,7 @@ profile/session variable.
 
 ## Conventions
 
-- **Tunable values** (subscription, region, model, prefix, tenant) come from
+- **Tunable values** (subscription, region, model, model SKU, prefix, tenant) come from
   the profile pair above — see [Profile / overrides](#profile--overrides).
 - **Resource naming**: every newly created Azure resource (Foundry
   project/account, azd environment, agent, model deployment, resource group) is

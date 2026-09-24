@@ -43,12 +43,12 @@ pre:
     timeout: 900
 
 goals:
-  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry project/account, azd environment, agent, model deployment, or resource group), give it a name that includes the exact run-unique suffix '{run_id}' (for example, '{shared_agent_name}'). A '{prefix}-' prefix alone is not sufficient because concurrent sweeps can share it. Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected. If a name prompt comes pre-filled with a default value, CLEAR it first (select-all then delete, or backspaces) before typing so your name replaces the default instead of appending to it."
+  - "RESOURCE NAMING: whenever you are prompted to NAME a new Azure resource you are creating (Foundry account, azd environment, agent, model deployment, or resource group), give it a name that includes the exact run-unique suffix '{run_id}' (for example, '{shared_agent_name}'). The Foundry project is an exception: because Foundry project names are limited to 32 characters, name it exactly '{prefix}-{run_id}'. A '{prefix}-' prefix alone is not sufficient because concurrent sweeps can share it. Some fields lowercase the value and replace invalid characters with hyphens; that normalization is expected. If a name prompt comes pre-filled with a default value, CLEAR it first (select-all then delete, or backspaces) before typing so your name replaces the default instead of appending to it."
   - "When asked how to initialize, select 'Start new from a template'."
   - "Select Python as the language."
   - "Select the 'Basic Responses' template from the list."
   - "No agent-name prompt should appear because --agent-name was supplied explicitly. The resulting agent identity and project subdirectory must both be exactly '{shared_agent_name}'. Report a finding if the wizard asks for the agent name."
-  - "If asked to select an Azure AI Foundry project, create a new one and give it a name containing the exact '{run_id}' suffix."
+  - "If asked to select an Azure AI Foundry project, create a new one and name it exactly '{prefix}-{run_id}'; clear any default first, and do not add descriptive text between the prefix and run ID."
   - "A 'Select a tenant' prompt may not appear when the signed-in user has access to only one tenant. If it appears, select the tenant provided with this scenario run. If no tenant was provided, report a failure and do not answer the prompt."
   - "If asked to select a subscription, search for and select the '{subscription}' subscription."
   - "If asked for a location/region, search for and select '{region}'."
@@ -56,8 +56,10 @@ goals:
   - "Accept the defaults for model version, SKU, capacity. If prompted for a model deployment name, give it a name containing the exact '{run_id}' suffix."
   - "Wait for initialization to complete — look for 'Next:' or a success message."
   - "Change directory into the new '{shared_agent_name}' subdirectory (run 'cd {shared_agent_name}') — init scaffolds the project into a subdirectory named after the agent, so azure.yaml lives there, not in the current directory."
+  - "Before provisioning, run this automated conditional step from inside the '{shared_agent_name}' subdirectory: `if [ -n \"{model}\" ] && [ -n \"{model_sku}\" ]; then DEPLOYMENT_NAME=\"$(azd env get-value AZURE_AI_MODEL_DEPLOYMENT_NAME)\" && test -n \"$DEPLOYMENT_NAME\" && azd ai project deployment add --model \"{model}\" --name \"$DEPLOYMENT_NAME\" --sku \"{model_sku}\" --force --no-prompt --output none; fi`. This resolves the adopted/default deployment name rather than assuming it matches a particular model. If the lookup, empty-name check, or replacement command fails, report a failure and do not continue to provision."
+  - "When both '{model}' and '{model_sku}' are non-empty, inspect azure.yaml after the replacement command and verify before provisioning that the resolved deployment still has its existing name, its model is '{model}', and its SKU is '{model_sku}'. Report a failure and do not provision if the override is absent or incorrect. When either value is empty, verify that the replacement command was skipped."
   - "Run 'azd provision' (from inside the '{shared_agent_name}' subdirectory) and wait for it to succeed. This provisions the Azure infrastructure (Foundry project/account, model deployment, etc.) but does NOT yet deploy the agent."
   - "After provision succeeds, run 'azd deploy' (from the same subdirectory) and wait for it to succeed. This deploys the agent to the provisioned infrastructure — it is a required, separate step from provision before the agent can be shown or invoked."
   - "After deploy, run 'azd ai agent show' and note the agent name and endpoint URL — record these for the targeted scenarios."
   - "Take a screenshot of the successful provision, deploy, and 'show' output."
-  - "Report a finding if init, provision, or deploy fails, hangs, or produces a confusing error. Do NOT run 'azd down' here — teardown is a separate scenario."
+  - "Report a finding if init, the model SKU replacement, provision, or deploy fails, hangs, or produces a confusing error. Do NOT run 'azd down' here — teardown is a separate scenario."

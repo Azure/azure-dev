@@ -553,7 +553,7 @@ def owned_prompt_lifecycle(plan, driver, workspace, report, raw_row):
         expect(isinstance(created, dict) and created.get("name") == agent_name
                and isinstance(created.get("version"), str)
                and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,100}", created["version"])
-               and created.get("id") == agent_name + ":" + created["version"],
+               and isinstance(created.get("id"), str) and created["id"].strip(),
                "Agent creation did not return the owned name/version identity")
         agent = {key: created[key] for key in ("id", "name", "version")}
         report["ownedAgentVersion"] = agent

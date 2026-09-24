@@ -17,6 +17,13 @@ class ResolutionTests(unittest.TestCase):
         self.tag = "extensions-2026-09-23-41"
         self.base = f"https://github.com/{scenario.FEED}/releases/download/{self.tag}/"
         self.baseline = json.loads((scenario.BASELINE / "candidate.json").read_text())
+        self.baseline.update(releaseTag=self.tag, sourceCommit="a" * 40,
+                             sourceVerificationCommit="a" * 40, registrySha256="b" * 64)
+        self.authority = {"repository": "trusted/repository", "commit": "e" * 40,
+                          "path": "eng/scripts/eval-candidate-proof/candidate.json", "sha256": "f" * 64}
+        for extension in scenario.EXTENSIONS:
+            self.baseline["extensions"][extension]["artifacts"] = {platform: "b" * 64
+                                                                  for platform in scenario.PLATFORMS}
         self.release = {"id": 123, "tag_name": self.tag, "draft": False, "prerelease": False,
                         "published_at": "2026-09-23T00:00:00Z", "assets": []}
         self.registry = {"extensions": []}
@@ -56,7 +63,7 @@ class ResolutionTests(unittest.TestCase):
 
     def build(self):
         return scenario.build_manifest(self.release, self.assets, self.registry,
-                                       self.provenance, self.sums, self.baseline)
+                                       self.provenance, self.sums, self.baseline, self.authority)
 
     def test_frozen_manifest_preserves_core_and_contract(self):
         original = copy.deepcopy(self.baseline)
@@ -124,6 +131,8 @@ class ResolutionTests(unittest.TestCase):
         for name, data in blobs.items():
             digest = scenario.sha256(data)
             self.sums[name] = digest
+            if name == "registry.json":
+                self.baseline["registrySha256"] = digest
             next(item for item in self.release["assets"] if item["name"] == name)["digest"] = "sha256:" + digest
         blobs["SHA256SUMS"] = "".join(
             f"{digest}  {name}\n" for name, digest in self.sums.items() if name != "SHA256SUMS"
@@ -133,7 +142,9 @@ class ResolutionTests(unittest.TestCase):
         latest = f"https://api.github.com/repos/{scenario.FEED}/releases/latest"
         urls = {latest: json.dumps(self.release).encode(),
                 **{self.base + name: data for name, data in blobs.items()}}
-        with tempfile.TemporaryDirectory() as root, mock.patch.object(scenario, "fetch", side_effect=urls.__getitem__) as get:
+        with tempfile.TemporaryDirectory() as root, \
+             mock.patch.object(scenario, "reviewed_candidate", return_value=(self.baseline, self.authority)), \
+             mock.patch.object(scenario, "fetch", side_effect=urls.__getitem__) as get:
             path = Path(root) / "frozen.json"
             scenario.resolve(path)
             self.assertEqual(get.call_args_list.count(mock.call(latest)), 1)
@@ -141,6 +152,105 @@ class ResolutionTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 scenario.resolve(path)
             self.assertEqual(get.call_count, 4)
+
+    def test_consistent_publisher_substitution_cannot_approve_new_bytes(self):
+        approved_registry_digest = scenario.sha256(json.dumps(self.registry).encode())
+        self.baseline["registrySha256"] = approved_registry_digest
+        extension = self.registry["extensions"][0]
+        extension["versions"][0]["version"] = "9.0.0-beta"
+        for platform in scenario.PLATFORMS:
+            artifact = extension["versions"][0]["artifacts"][platform]
+            name = artifact["url"].rsplit("/", 1)[-1]
+            artifact["checksum"]["value"] = "c" * 64
+            self.assets[name]["sha256"] = self.sums[name] = "c" * 64
+            next(asset for asset in self.release["assets"] if asset["name"] == name)["digest"] = "sha256:" + "c" * 64
+            record = next(record for record in self.provenance["archives"]
+                          if record["extension"] == extension["id"] and record["platform"] == platform)
+            record.update(version="9.0.0-beta", sha256="c" * 64)
+        self.provenance["sourceCommit"] = "d" * 40
+        self.assets["registry.json"]["sha256"] = self.sums["registry.json"] = "c" * 64
+        with self.assertRaisesRegex(scenario.ApprovalBlocked, "repository-reviewed"):
+            self.build()
+        blobs = {"registry.json": json.dumps(self.registry).encode(),
+                 "source-provenance.json": json.dumps(self.provenance).encode()}
+        for name, data in blobs.items():
+            self.sums[name] = scenario.sha256(data)
+            next(item for item in self.release["assets"] if item["name"] == name)["digest"] = (
+                "sha256:" + self.sums[name])
+        blobs["SHA256SUMS"] = "".join(
+            f"{digest}  {name}\n" for name, digest in self.sums.items() if name != "SHA256SUMS"
+        ).encode()
+        next(item for item in self.release["assets"] if item["name"] == "SHA256SUMS")["digest"] = (
+            "sha256:" + scenario.sha256(blobs["SHA256SUMS"]))
+        latest = f"https://api.github.com/repos/{scenario.FEED}/releases/latest"
+        urls = {latest: json.dumps(self.release).encode(),
+                **{self.base + name: data for name, data in blobs.items()}}
+        with tempfile.TemporaryDirectory() as root, \
+             mock.patch.object(scenario, "reviewed_candidate", return_value=(self.baseline, self.authority)), \
+             mock.patch.object(scenario, "fetch", side_effect=urls.__getitem__):
+            output = Path(root) / "pin" / "candidate.json"
+            with self.assertRaisesRegex(scenario.ApprovalBlocked, "registry digest"):
+                scenario.resolve(output)
+            self.assertFalse(output.exists())
+            self.assertEqual(json.loads((output.parent / "approval-status.json").read_text())["status"], "BLOCKED")
+
+    def test_approval_fetch_uses_only_configured_immutable_repository_revision(self):
+        raw = json.dumps(self.baseline).encode()
+        env = {"AZD_SCENARIO_APPROVAL_REPOSITORY": "trusted/repository",
+               "AZD_SCENARIO_APPROVED_COMMIT": "e" * 40}
+        with mock.patch.object(scenario, "fetch", return_value=raw) as get:
+            approved, authority = scenario.reviewed_candidate(env)
+        get.assert_called_once_with(
+            "https://github.com/trusted/repository/raw/" + "e" * 40
+            + "/eng/scripts/eval-candidate-proof/candidate.json")
+        self.assertEqual(approved, self.baseline)
+        self.assertEqual(authority["commit"], "e" * 40)
+        self.assertEqual(authority["sha256"], scenario.sha256(raw))
+        for revision in ("", "main", "latest"):
+            with mock.patch.object(scenario, "fetch") as get:
+                with self.assertRaises(scenario.ApprovalBlocked):
+                    scenario.reviewed_candidate({**env, "AZD_SCENARIO_APPROVED_COMMIT": revision})
+                get.assert_not_called()
+
+    def test_malformed_approval_execution_fields_block_both_paths_with_receipts(self):
+        malformed = []
+        missing_core = copy.deepcopy(self.baseline)
+        del missing_core["azd"]
+        malformed.append(missing_core)
+        wrong_core = copy.deepcopy(self.baseline)
+        wrong_core["azd"]["artifacts"]["linux/amd64"] = None
+        malformed.append(wrong_core)
+        wrong_extension = copy.deepcopy(self.baseline)
+        del wrong_extension["extensions"]["azure.ai.evaluations"]["command"]
+        malformed.append(wrong_extension)
+        wrong_hash = copy.deepcopy(self.baseline)
+        wrong_hash["extensions"]["azure.ai.dataset"]["artifacts"]["windows/amd64"] = 123
+        malformed.append(wrong_hash)
+        wrong_flags = copy.deepcopy(self.baseline)
+        wrong_flags["initSeedValidation"] = False
+        malformed.append(wrong_flags)
+        env = {"AZD_SCENARIO_APPROVAL_REPOSITORY": "trusted/repository",
+               "AZD_SCENARIO_APPROVED_COMMIT": "e" * 40}
+        for approval in malformed:
+            with self.subTest(approval=approval), tempfile.TemporaryDirectory() as root, \
+                 mock.patch.dict(scenario.os.environ, env), \
+                 mock.patch.object(scenario, "fetch", return_value=json.dumps(approval).encode()) as get, \
+                 mock.patch.object(scenario.proof_module, "Proof") as proof:
+                root = Path(root)
+                with self.assertRaises(scenario.ApprovalBlocked):
+                    scenario.resolve(root / "producer" / "candidate.json")
+                producer = json.loads((root / "producer" / "approval-status.json").read_text())
+                self.assertEqual(producer["status"], "BLOCKED")
+                candidate = self.build()
+                scenario.write_json(root / "pin.json", candidate)
+                with self.assertRaises(scenario.ApprovalBlocked):
+                    scenario.execute(root / "pin.json", root / "consumer")
+                consumer = json.loads((root / "consumer" / "approval-status.json").read_text())
+                self.assertEqual(consumer["status"], "BLOCKED")
+                self.assertEqual(consumer["execution"], "NOT RUN")
+                proof.assert_not_called()
+                self.assertEqual(get.call_count, 2)
+                self.assertTrue(all("/raw/" + "e" * 40 + "/" in call.args[0] for call in get.call_args_list))
 
 
 class SafetyTests(unittest.TestCase):
@@ -150,6 +260,47 @@ class SafetyTests(unittest.TestCase):
         self.addCleanup(environment.stop)
         for key in ("GITHUB_STEP_SUMMARY", "GITHUB_RUN_ID", "BUILD_BUILDID"):
             scenario.os.environ.pop(key, None)
+        approved = json.loads((scenario.BASELINE / "candidate.json").read_text())
+        authority = {"repository": "trusted/repository", "commit": "e" * 40,
+                     "path": "eng/scripts/eval-candidate-proof/candidate.json", "sha256": "f" * 64}
+        self.authority = authority
+        approval = mock.patch.object(scenario, "reviewed_candidate", return_value=(approved, authority))
+        approval.start()
+        self.addCleanup(approval.stop)
+
+    def test_consumer_rejects_tampered_pins_and_producer_approval_before_install(self):
+        for kind in ("pins", "approval", "missing-approval"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as root:
+                pin, authority = scenario.reviewed_candidate()
+                pin = copy.deepcopy(pin)
+                pin["scenarioResolution"] = {"fixtureContract": "build41-offline-160", "approval": authority}
+                if kind == "pins":
+                    pin["extensions"]["azure.ai.evaluations"]["artifacts"]["linux/amd64"] = "c" * 64
+                elif kind == "approval":
+                    pin["scenarioResolution"]["approval"] = {**authority, "commit": "d" * 40}
+                else:
+                    del pin["scenarioResolution"]["approval"]
+                path, output = Path(root) / "pin.json", Path(root) / "evidence"
+                scenario.write_json(path, pin)
+                with mock.patch.object(scenario.proof_module, "Proof") as proof:
+                    with self.assertRaises(scenario.ApprovalBlocked):
+                        scenario.execute(path, output)
+                    proof.assert_not_called()
+                report = json.loads((output / "approval-status.json").read_text())
+                self.assertEqual(report["status"], "BLOCKED")
+                self.assertEqual(report["execution"], "NOT RUN")
+
+    def test_missing_approval_never_fetches_latest_or_starts_proof(self):
+        with tempfile.TemporaryDirectory() as root, \
+             mock.patch.object(scenario, "reviewed_candidate",
+                               side_effect=scenario.ApprovalBlocked("Approval missing")), \
+             mock.patch.object(scenario, "fetch") as get:
+            output = Path(root) / "frozen" / "candidate.json"
+            with self.assertRaises(scenario.ApprovalBlocked):
+                scenario.resolve(output)
+            get.assert_not_called()
+            self.assertFalse(output.exists())
+            self.assertEqual(json.loads((output.parent / "approval-status.json").read_text())["status"], "BLOCKED")
 
     def test_workflow_tracks_the_shared_candidate_manifest_dependency(self):
         workflow = scenario.HERE.parents[2] / ".github" / "workflows" / "eval-scenario-ci.yml"
@@ -165,6 +316,10 @@ class SafetyTests(unittest.TestCase):
         self.assertNotIn("AZD_SCENARIO_LIVE_ENVIRONMENT", resolve)
         self.assertIn("branches: [main, m7md7sien-evaluation-github-actions-proof]", workflow)
         self.assertIn("name: ${{ needs.live-prerequisites.outputs.environment_name }}", workflow)
+        dispatch_inputs = workflow.split("  workflow_dispatch:", 1)[1].split("  repository_dispatch:", 1)[0]
+        self.assertNotIn("AZD_SCENARIO_APPROVED_COMMIT", dispatch_inputs)
+        self.assertIn("AZD_SCENARIO_APPROVED_COMMIT: ${{ vars.AZD_SCENARIO_APPROVED_COMMIT }}", workflow)
+        self.assertIn("AZD_SCENARIO_APPROVAL_REPOSITORY: ${{ github.repository }}", workflow)
 
     def test_archive_errors_are_recorded_without_suppressing_them(self):
         legacy = scenario.proof_module
@@ -271,7 +426,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_cleanup_failure_cannot_produce_pass_receipt(self):
         pin = json.loads((scenario.BASELINE / "candidate.json").read_text())
-        pin["scenarioResolution"] = {"fixtureContract": "build41-offline-160"}
+        pin["scenarioResolution"] = {"fixtureContract": "build41-offline-160", "approval": self.authority}
         with tempfile.TemporaryDirectory() as root:
             manifest = Path(root) / "manifest.json"
             scenario.write_json(manifest, pin)
@@ -303,7 +458,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_primary_failure_survives_a_second_cleanup_failure(self):
         pin = json.loads((scenario.BASELINE / "candidate.json").read_text())
-        pin["scenarioResolution"] = {"fixtureContract": "build41-offline-160"}
+        pin["scenarioResolution"] = {"fixtureContract": "build41-offline-160", "approval": self.authority}
         with tempfile.TemporaryDirectory() as root:
             manifest = Path(root) / "manifest.json"
             scenario.write_json(manifest, pin)
@@ -333,7 +488,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_success_receipt_keeps_frozen_manifest_bytes_and_waits_for_cleanup(self):
         pin = json.loads((scenario.BASELINE / "candidate.json").read_text())
-        pin["scenarioResolution"] = {"fixtureContract": "build41-offline-160"}
+        pin["scenarioResolution"] = {"fixtureContract": "build41-offline-160", "approval": self.authority}
         frozen = (json.dumps(pin, indent=2) + "\n").encode("utf-8")
         with tempfile.TemporaryDirectory() as root:
             manifest = Path(root) / "manifest.json"
@@ -355,7 +510,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_manifest_integrity_failure_is_persisted_after_workspace_cleanup(self):
         pin = json.loads((scenario.BASELINE / "candidate.json").read_text())
-        pin["scenarioResolution"] = {"fixtureContract": "build41-offline-160"}
+        pin["scenarioResolution"] = {"fixtureContract": "build41-offline-160", "approval": self.authority}
         with tempfile.TemporaryDirectory() as root:
             manifest = Path(root) / "manifest.json"
             scenario.write_json(manifest, pin)

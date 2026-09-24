@@ -29,6 +29,10 @@ on:
 permissions:
   contents: read
 
+env:
+  AZD_SCENARIO_APPROVAL_REPOSITORY: ${{ github.repository }}
+  AZD_SCENARIO_APPROVED_COMMIT: ${{ vars.AZD_SCENARIO_APPROVED_COMMIT }}
+
 jobs:
   resolve:
     if: inputs.mode != 'live'
@@ -61,9 +65,10 @@ jobs:
           python eng/scripts/eval-scenario-ci/scenario.py resolve --output "${{ runner.temp }}/scenario-pin/candidate.json"
           echo "artifact_name=$PIN_ARTIFACT" >> "$GITHUB_OUTPUT"
       - name: Share the single frozen manifest with both OS jobs
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ steps.freeze.outputs.artifact_name }}
+          name: scenario-pin-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/scenario-pin/
           if-no-files-found: error
           retention-days: 14

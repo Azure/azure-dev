@@ -38,6 +38,98 @@ cleanup_owned_workspace = proof_module.cleanup_owned_workspace
 owned_workspace = proof_module.owned_workspace
 
 
+class ApprovalBlocked(AssertionError):
+    pass
+
+
+def require_approval(condition, message):
+    if not condition:
+        raise ApprovalBlocked(message)
+
+
+def validate_approval_manifest(approved):
+    fields = {"releaseRepository", "releaseTag", "sourceCommit", "sourceVerificationCommit", "validationBaseline",
+              "conversationModes", "initSeedValidation", "initDatasetBinding", "registrySha256", "azd", "extensions"}
+    require_approval(isinstance(approved, dict) and fields <= set(approved)
+                     and set(approved) <= fields | {"sourceNote"}, "Approval manifest has missing or unsupported fields")
+    require_approval(approved["releaseRepository"] == FEED
+                     and isinstance(approved["releaseTag"], str) and TAG.fullmatch(approved["releaseTag"])
+                     and isinstance(approved["registrySha256"], str) and HEX.fullmatch(approved["registrySha256"]),
+                     "Approval release identity is malformed")
+    require_approval(all(isinstance(approved[key], str) and re.fullmatch(r"[0-9a-f]{40}", approved[key])
+                         for key in ("sourceCommit", "sourceVerificationCommit", "validationBaseline"))
+                     and approved["sourceCommit"] == approved["sourceVerificationCommit"],
+                     "Approval source identities are malformed")
+    require_approval(all(approved[key] is True
+                         for key in ("conversationModes", "initSeedValidation", "initDatasetBinding")),
+                     "Approval does not retain the canonical160 fixture contract")
+    core = approved["azd"]
+    require_approval(isinstance(core, dict) and set(core) == {"version", "artifacts"}
+                     and isinstance(core["version"], str) and re.fullmatch(r"\d+\.\d+\.\d+", core["version"])
+                     and isinstance(core["artifacts"], dict) and set(core["artifacts"]) == set(PLATFORMS),
+                     "Approval core execution fields are malformed")
+    for artifact in core["artifacts"].values():
+        require_approval(isinstance(artifact, dict) and set(artifact) == {"file", "sha256"}
+                         and isinstance(artifact["file"], str) and artifact["file"] not in (".", "..")
+                         and re.fullmatch(r"[A-Za-z0-9._-]+", artifact["file"])
+                         and isinstance(artifact["sha256"], str) and HEX.fullmatch(artifact["sha256"]),
+                         "Approval core artifact is malformed")
+    entries = approved["extensions"]
+    require_approval(isinstance(entries, dict) and set(entries) == set(EXTENSIONS),
+                     "Approval extension identities are malformed")
+    for extension, command in EXTENSIONS.items():
+        entry = entries[extension]
+        require_approval(isinstance(entry, dict) and set(entry) == {"command", "version", "artifacts"}
+                         and entry["command"] == command and isinstance(entry["version"], str)
+                         and re.fullmatch(r"\d+\.\d+\.\d+-beta(?:\.\d+)?", entry["version"])
+                         and isinstance(entry["artifacts"], dict) and set(entry["artifacts"]) == set(PLATFORMS)
+                         and all(isinstance(value, str) and HEX.fullmatch(value)
+                                 for value in entry["artifacts"].values()),
+                         "Approval extension execution fields are malformed")
+
+
+def reviewed_candidate(env=None):
+    env = os.environ if env is None else env
+    repository = env.get("AZD_SCENARIO_APPROVAL_REPOSITORY", "")
+    revision = env.get("AZD_SCENARIO_APPROVED_COMMIT", "")
+    parts = repository.split("/")
+    require_approval(len(parts) == 2
+                     and all(part not in (".", "..") and re.fullmatch(r"[A-Za-z0-9_.-]+", part) for part in parts)
+                     and re.fullmatch(r"[0-9a-f]{40}", revision),
+                     "An independently configured immutable repository approval revision is required")
+    path = "eng/scripts/eval-candidate-proof/candidate.json"
+    try:
+        raw = fetch(f"https://github.com/{repository}/raw/{revision}/{path}")
+        approved = json.loads(raw.decode("utf-8-sig"))
+    except (ValueError, RuntimeError) as error:
+        raise ApprovalBlocked("Configured immutable approval could not be retrieved or parsed") from error
+    validate_approval_manifest(approved)
+    return approved, {"repository": repository, "commit": revision, "path": path, "sha256": sha256(raw)}
+
+
+def require_reviewed_candidate(pin, approved, authority):
+    # Publisher hashes prove consistency, not authorization to execute new bytes.
+    require_approval(isinstance(pin, dict) and isinstance(approved, dict)
+                     and set(pin) <= set(approved) | {"scenarioResolution"},
+                     "Manifest is outside the repository-reviewed candidate contract")
+    for key, value in approved.items():
+        if key != "sourceNote":
+            require_approval(pin.get(key) == value,
+                             f"Candidate {key} differs from repository-reviewed immutable pins; no binary may execute")
+    resolution = pin.get("scenarioResolution", {})
+    require_approval(isinstance(resolution, dict), "Producer resolution metadata must be an object")
+    claimed = resolution.get("approval")
+    require_approval(claimed == authority,
+                     "Producer approval claim differs from independent configuration")
+
+
+def record_approval_block(directory, error):
+    directory.mkdir(parents=True, exist_ok=True)
+    status = directory / "approval-status.json"
+    require(not status.exists(), "Refusing to overwrite approval evidence")
+    write_json(status, {"status": "BLOCKED", "execution": "NOT RUN", "reason": safe_text(error)})
+
+
 def safe_text(value):
     return proof_module.sanitize(str(value), HERE)
 
@@ -85,7 +177,7 @@ def parse_sums(data):
     return result
 
 
-def build_manifest(release, assets, registry, provenance, sums, baseline):
+def build_manifest(release, assets, registry, provenance, sums, baseline, authority):
     tag = release["tag_name"]
     require(TAG.fullmatch(tag), "Unexpected bug-bash release tag")
     require(not release["draft"] and not release["prerelease"], "Latest must be a published release")
@@ -101,7 +193,7 @@ def build_manifest(release, assets, registry, provenance, sums, baseline):
     pin.update({
         "releaseRepository": FEED, "releaseTag": tag,
         "sourceCommit": source, "sourceVerificationCommit": source,
-        "sourceNote": "Publisher-declared source from checksum-verified release provenance.",
+        "sourceNote": "Publisher provenance checked against repository-reviewed immutable candidate pins.",
         "registrySha256": assets["registry.json"]["sha256"],
     })
     entries = registry["extensions"]
@@ -146,27 +238,37 @@ def build_manifest(release, assets, registry, provenance, sums, baseline):
         "metadata": {name: assets[name] for name in
                      ("registry.json", "source-provenance.json", "SHA256SUMS")},
         "artifacts": frozen,
-        "sourceEvidence": "Publisher provenance; installed bytes verified against these archives.",
+        "sourceEvidence": "Repository-reviewed immutable pins; publisher provenance is corroborating evidence only.",
         "fixtureContract": "build41-offline-160",
+        "approval": authority,
     }
+    require_reviewed_candidate(pin, baseline, authority)
     return pin
 
 
 def resolve(output):
     require(not output.exists(), "Refusing to overwrite a frozen manifest")
-    release = json.loads(fetch(f"https://api.github.com/repos/{FEED}/releases/latest"))
-    tag = release["tag_name"]
-    require(TAG.fullmatch(tag), "Unexpected bug-bash release tag")
-    assets = asset_map(release, tag)
-    documents = {}
-    for name in ("registry.json", "source-provenance.json", "SHA256SUMS"):
-        data = fetch(assets[name]["url"])
-        require(sha256(data) == assets[name]["sha256"], "Metadata differs from release API digest")
-        documents[name] = data
-    pin = build_manifest(release, assets, json.loads(documents["registry.json"].decode("utf-8-sig")),
-                         json.loads(documents["source-provenance.json"].decode("utf-8-sig")),
-                         parse_sums(documents["SHA256SUMS"]),
-                         json.loads((BASELINE / "candidate.json").read_text(encoding="utf-8")))
+    try:
+        approved, authority = reviewed_candidate()
+        release = json.loads(fetch(f"https://api.github.com/repos/{FEED}/releases/latest"))
+        tag = release["tag_name"]
+        require(TAG.fullmatch(tag), "Unexpected bug-bash release tag")
+        require_approval(tag == approved["releaseTag"],
+                         "Latest is not the repository-reviewed release; review immutable pins before execution")
+        assets = asset_map(release, tag)
+        require_approval(assets["registry.json"]["sha256"] == approved["registrySha256"],
+                         "Latest registry digest differs from repository-reviewed pins")
+        documents = {}
+        for name in ("registry.json", "source-provenance.json", "SHA256SUMS"):
+            data = fetch(assets[name]["url"])
+            require(sha256(data) == assets[name]["sha256"], "Metadata differs from release API digest")
+            documents[name] = data
+        pin = build_manifest(release, assets, json.loads(documents["registry.json"].decode("utf-8-sig")),
+                             json.loads(documents["source-provenance.json"].decode("utf-8-sig")),
+                             parse_sums(documents["SHA256SUMS"]), approved, authority)
+    except ApprovalBlocked as error:
+        record_approval_block(output.parent, error)
+        raise
     output.parent.mkdir(parents=True, exist_ok=True)
     write_json(output, pin)
     print(f"Resolved Latest once: {tag}, source {pin['sourceCommit']}", flush=True)
@@ -329,6 +431,12 @@ def execute(manifest, output):
     require(not output.exists(), "Evidence directory must be new")
     pin_bytes = manifest.read_bytes()
     pin = json.loads(pin_bytes)
+    try:
+        approved, authority = reviewed_candidate()
+        require_reviewed_candidate(pin, approved, authority)
+    except ApprovalBlocked as error:
+        record_approval_block(output, error)
+        raise
     require(pin["scenarioResolution"]["fixtureContract"] == "build41-offline-160",
             "Unsupported offline fixture contract")
     require(pin["sourceCommit"] == pin["sourceVerificationCommit"], "Source pins disagree")
@@ -340,6 +448,7 @@ def execute(manifest, output):
         "sourceCommit": pin["sourceCommit"], "live": live_status(),
         "baselineCheckCount": 0, "scenarioCheckCount": 0,
         "cleanup": {"status": "NOT RUN"},
+        "approval": authority,
     }
     proof = None
     try:
@@ -414,6 +523,9 @@ def main():
             write_json(args.output / "live-status.json", live_status())
             print("BLOCKED / NOT RUN: live execution requires approved identity, resources and budget.", file=sys.stderr)
             return 3
+    except ApprovalBlocked as error:
+        print(f"BLOCKED / NOT RUN: {safe_text(error)}", file=sys.stderr)
+        return 3
     except (AssertionError, KeyError, ValueError, OSError, RuntimeError, subprocess.SubprocessError) as error:
         print(f"Scenario CI failed: {safe_text(error)}", file=sys.stderr)
         return 1

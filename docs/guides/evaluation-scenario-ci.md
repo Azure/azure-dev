@@ -33,15 +33,22 @@ below. Its tests use mocked commands only; no service execution is claimed.
 
 ## Resolve Latest once, then freeze
 
-[The shared runner](../../eng/scripts/eval-scenario-ci/scenario.py) reads the
-feed's public GitHub `releases/latest` endpoint once in a producer job. It
+[The shared runner](../../eng/scripts/eval-scenario-ci/scenario.py) first fetches
+the approval manifest from an independently configured, immutable repository
+revision. It then reads the feed's public GitHub `releases/latest` endpoint once
+in a producer job. It
 records the release ID, immutable tag, publication/resolution timestamps,
 source commit, versions and metadata digests. It cross-checks GitHub asset
-digests, `SHA256SUMS`, registry entries and publisher provenance before writing
-`candidate.json`. Core 1.33.0 and its reviewed archive hashes remain pinned.
+digests, `SHA256SUMS`, registry entries and publisher provenance, then requires
+the whole execution tuple to match that independent approval before writing
+`candidate.json`. Publisher-controlled hashes prove consistency, not trust.
+Core 1.33.0 and its approved archive hashes remain pinned.
 A changed core requirement fails explicitly rather than silently upgrading.
 
-Both OS jobs consume the same frozen manifest artifact. They never query Latest.
+Both OS jobs consume the same frozen manifest artifact. They never query Latest,
+but independently refetch the configured immutable approval and check the tuple
+before constructing the installer or executing any downloaded binary. A producer
+artifact's approval claim is not an authority and cannot replace this lookup.
 The original publisher's source declaration is retained as provenance, not
 inferred from a filename. Each job verifies archive bytes, computes extracted
 and installed executable digests, and checks actual version output. A changed
@@ -49,6 +56,44 @@ future CLI contract fails the retained baseline; it is not silently waived.
 The baseline command IDs are checked against the ordered, unique
 [`checks.json`](../../eng/scripts/eval-candidate-proof/checks.json) contract,
 not merely counted.
+
+### Independent repository approval
+
+Repository/pipeline maintainers must review the immutable tag, source, versions,
+registry and archive hashes and select a full40-character commit containing
+`eng/scripts/eval-candidate-proof/candidate.json`. The approval is fetched from
+that exact revision, **not** from the PR checkout, a moving branch, the producer
+artifact, dispatch input or Latest publisher.
+
+GitHub uses its native repository identity plus the repository configuration
+variable `AZD_SCENARIO_APPROVED_COMMIT`. Azure DevOps uses separately controlled
+`ScenarioApprovalRepository` and `ScenarioApprovedCommit` variables. They map to
+`AZD_SCENARIO_APPROVAL_REPOSITORY` and `AZD_SCENARIO_APPROVED_COMMIT` in both
+producer and consumer processes. These are maintainer-controlled trust settings,
+not queue-time user inputs. This contribution does not configure an upstream
+approval or grant permission to set one.
+The workflow and verifier themselves must run from a trusted reviewed ref.
+Configuration variables are not protection against a malicious workflow that
+changes its own verification code or overrides its environment.
+
+For the explicitly authorized fork-only43 enrollment, the owner created
+`m7md7sien/azure-dev`'s variable with revision
+`e8d07ded9163562976a14b9eb9b61952829bd36e` after independent Main/Track1 approval.
+Fresh verification at2026-09-24T10:28:58Z matched that exact value; the approval
+manifest SHA256 was
+`33e8fcb7ede80b36c8f3f3eb2615344e21dd8799eed6c5751871c63cbdd16a7a`.
+This enrolls only the accepted43 tuple. It does not configure Azure/azure-dev,
+Azure DevOps, future releases, service execution or a monetary/security grant.
+
+Missing/invalid approval configuration, a different Latest tag, changed hashes,
+or a conflicting producer approval claim fails closed with nonzero status and
+`approval-status.json` showing `BLOCKED / NOT RUN`. A future publisher release
+cannot become executable just by supplying a self-consistent registry, checksum
+list and provenance. It requires a newly reviewed immutable approval revision.
+The native publication handoff and repository dispatch event do not constitute
+that approval. A non-Latest candidate-pin commit can therefore leave the separate
+Latest scenario blocked until approved configuration and the promoted release
+match; the fixed-candidate release gate is independent and unchanged.
 
 The subprocess environment is allowlisted, with fresh home, Azure and azd
 configuration directories. User tokens, caches, GitHub tokens and pipeline
@@ -61,6 +106,7 @@ This is not represented as a general-purpose network sandbox.
 [Workflow](../../.github/workflows/eval-scenario-ci.yml):
 
 ```powershell
+# Requires the maintainer-selected immutable approval revision in repository settings.
 gh workflow run eval-scenario-ci.yml --repo m7md7sien/azure-dev `
   --ref m7md7sien-evaluation-github-actions-proof -f mode=offline
 ```
@@ -95,6 +141,8 @@ does not establish an automatic webhook or schedule.
 runner, a single frozen manifest, and Linux/Windows Microsoft-hosted images.
 It has no PR/continuous trigger and creates no service connection or secret
 variables; the optional service path references values supplied by its operator.
+The producer and consumers also require the independent approval variables
+described above; missing values do not fall back to the checked-out manifest.
 Register/queue it only in a user-authorized target with existing approved
 repository access and capacity. The documented `azure-sdk/internal` pipeline
 location is not an execution grant, and this standalone YAML is not a request
@@ -182,8 +230,9 @@ placeholder. It uses the same protected entry and validation above, then:
    A present agent is never adopted or edited. Submit one minimal prompt-version
    POST using the existing approved model deployment and instructions, with
    `draft: false` and no tools, hosted, voice or A2A configuration.
-3. Preserve the actual returned `name`, string `version` and `id` (`name:version`).
-   No version1/latest value is invented. An ambiguous POST or missing identity
+3. Preserve the actual returned `name`, string `version` and nonempty opaque
+   `id` independently. An observed `name:version` ID is not a contractual format;
+   GUID-style IDs are valid. No version1/latest value is invented. An ambiguous POST or missing identity
    is not retried and triggers manual reconciliation rather than guessed deletion.
 4. Create a unique owned dataset using
    `azd ai dataset create <name> --from-file <copied-row.jsonl> --version <version>`.
@@ -315,6 +364,9 @@ Use a new output directory for every attempt:
 
 ```powershell
 python -m unittest discover -s eng\scripts\eval-scenario-ci -p "test_*.py" -v
+# Set these only to an independently reviewed repository and immutable revision.
+$env:AZD_SCENARIO_APPROVAL_REPOSITORY = "<reviewed-owner/repository>"
+$env:AZD_SCENARIO_APPROVED_COMMIT = "<reviewed-full-commit-sha>"
 python eng\scripts\eval-scenario-ci\scenario.py resolve --output evidence\candidate.json
 python eng\scripts\eval-scenario-ci\scenario.py offline `
   --manifest evidence\candidate.json --output evidence\windows

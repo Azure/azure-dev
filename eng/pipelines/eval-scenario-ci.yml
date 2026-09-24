@@ -40,8 +40,12 @@ jobs:
               Write-Host "##vso[task.setvariable variable=manifestArtifact;isOutput=true]scenario-pin-$env:SYSTEM_JOBATTEMPT"
             name: freeze
             displayName: Resolve the public Latest release into immutable pins
+            env:
+              AZD_SCENARIO_APPROVAL_REPOSITORY: $(ScenarioApprovalRepository)
+              AZD_SCENARIO_APPROVED_COMMIT: $(ScenarioApprovedCommit)
           - publish: $(Build.ArtifactStagingDirectory)/scenario-pin
             artifact: scenario-pin-$(System.JobAttempt)
+            condition: always()
             displayName: Publish the single frozen manifest
 
       - job: Offline
@@ -71,6 +75,9 @@ jobs:
               python eng/scripts/eval-scenario-ci/scenario.py offline --manifest "$(Pipeline.Workspace)/$(pinArtifact)/candidate.json" --output "$(Build.ArtifactStagingDirectory)/scenario-evidence"
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             displayName: Exercise actual installed bytes without Azure credentials
+            env:
+              AZD_SCENARIO_APPROVAL_REPOSITORY: $(ScenarioApprovalRepository)
+              AZD_SCENARIO_APPROVED_COMMIT: $(ScenarioApprovedCommit)
           - publish: $(Build.ArtifactStagingDirectory)/scenario-evidence
             artifact: scenario-offline-$(imageName)-$(System.JobAttempt)
             condition: always()

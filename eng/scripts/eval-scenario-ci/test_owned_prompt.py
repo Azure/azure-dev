@@ -30,11 +30,15 @@ def plan_for(row_path="not-executed"):
 
 class FakeOwnedDriver:
     def __init__(self, case, plan, workspace, *, failure=None, cleanup_fails=False, agent_exists=False,
-                 malformed_agent=False, wrong_row=False, bad_agent_delete=False):
+                 malformed_agent=False, wrong_row=False, bad_agent_delete=False,
+                 returned_agent_id="921f5b9b-5e6c-4b4c-b3c3-938108378786", wrong_agent_name=False,
+                 returned_agent_version="9"):
         self.case, self.plan, self.workspace = case, plan, workspace
         self.failure, self.cleanup_fails = failure, cleanup_fails
         self.agent_exists, self.malformed_agent, self.wrong_row = agent_exists, malformed_agent, wrong_row
         self.bad_agent_delete = bad_agent_delete
+        self.returned_agent_id, self.wrong_agent_name = returned_agent_id, wrong_agent_name
+        self.returned_agent_version = returned_agent_version
         self.calls, self.cleanup_deadlines = [], []
         self.agent = self.dataset = None
         self.eval_id, self.run_id = "eval-owned", "evalrun-owned"
@@ -105,7 +109,8 @@ class FakeOwnedDriver:
             if self.malformed_agent:
                 return 200, None
             name = path.split("/")[2]
-            self.agent = {"name": name, "version": "9", "id": name + ":9"}
+            self.agent = {"name": "unowned-name" if self.wrong_agent_name else name,
+                          "version": self.returned_agent_version, "id": self.returned_agent_id}
             return 200, {**self.agent, "definition": definition, "draft": False}
         if label == "delete only owned prompt-agent version":
             self.case.assertEqual(method, "DELETE")
@@ -147,6 +152,7 @@ class OwnedPromptTests(unittest.TestCase):
         self.assertNotIn("testException", report)
         self.assertEqual(report["quality"], "PASS")
         self.assertEqual(report["ownedAgentVersion"]["version"], "9")
+        self.assertEqual(report["ownedAgentVersion"]["id"], "921f5b9b-5e6c-4b4c-b3c3-938108378786")
         self.assertEqual(report["remoteCleanup"]["status"], "PASS")
         self.assertEqual(report["datasetCleanup"]["status"], "PASS")
         self.assertEqual(report["agentCleanup"]["status"], "PASS")
@@ -170,6 +176,18 @@ class OwnedPromptTests(unittest.TestCase):
                 self.assertEqual(sum(label == "create owned prompt-agent version" for label, _ in driver.calls), 1)
                 self.assertEqual(report["agentCleanup"]["status"], "BLOCKED")
                 self.assertTrue(report["agentCleanup"]["manualReconciliationRequired"])
+                self.assertFalse(any(label.startswith("delete") for label, _ in driver.calls))
+
+    def test_opaque_id_does_not_relax_name_ownership_or_missing_identity_guards(self):
+        cases = [{"returned_agent_id": value} for value in ("", " ", None, 17)]
+        cases += [{"returned_agent_version": value} for value in ("", None, 17, "../other")]
+        cases.append({"wrong_agent_name": True})
+        for args in cases:
+            with self.subTest(args=args):
+                driver, report = self.drive(**args)
+                self.assertEqual(report["agentCleanup"]["status"], "BLOCKED")
+                self.assertTrue(report["agentCleanup"]["manualReconciliationRequired"])
+                self.assertNotIn("ownedAgentVersion", report)
                 self.assertFalse(any(label.startswith("delete") for label, _ in driver.calls))
 
     def test_ambiguous_dataset_write_preserves_receipt_and_cleans_only_confirmed_agent(self):

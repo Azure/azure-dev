@@ -280,7 +280,10 @@ inside `simulation_configuration`, matching
 the [published Foundry contract](https://github.com/Azure/azure-rest-api-specs/blob/main/specification/ai-foundry/data-plane/Foundry/src/openai/evaluations/user_conversation_simulation.tsp).
 The optional `desired_num_turns` must not exceed the effective `max_num_turns`:
 the per-row maximum overrides `simulation.max_turns`, and the service default is
-20 when neither is set. Generation can return a flat top-level `desired_num_turns`.
+20 when neither is set. When correcting a row that exceeds `simulation.max_turns`,
+keep that authored cap within 1 to 20; if raising it cannot satisfy the row within
+those bounds, lower the row's desired turns to fit the current cap.
+Generation can return a flat top-level `desired_num_turns`.
 When collecting generated conversation seeds, the CLI moves that value into
 `simulation_configuration` in the downloaded local file. Canonical rows remain
 byte-identical, and unrelated fields are preserved without rounding numeric IDs.

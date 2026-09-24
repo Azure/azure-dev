@@ -6,12 +6,16 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
+	"azureaieval/internal/exterrors"
 	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
 
@@ -168,6 +172,59 @@ func TestInitSimulationRefusesLocalRowsBeforeAnyWrites(t *testing.T) {
 				assert.Empty(t, h.usage.reported())
 				assert.Equal(t, before, initFileSnapshot(t, h.dir),
 					"refusal must precede config locks, directories, scaffolds and azure.yaml wiring")
+			})
+		}
+	}
+}
+
+func TestInitSimulationTurnLimitGuidance(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		maxTurns       int
+		desiredTurns   int
+		correctedMax   int
+		correctedTurns int
+		wantSuggestion string
+	}{
+		{"lower row at maximum", 20, 21, 20, 20,
+			"Lower simulation_configuration.desired_num_turns to at most 20 on that row. " +
+				"simulation.max_turns accepts 1 to 20."},
+		{"raise cap within bounds", 5, 6, 6, 6,
+			"Raise simulation.max_turns to at least 6, or lower simulation_configuration.desired_num_turns on that row."},
+	} {
+		for _, output := range []string{"default", "json"} {
+			t.Run(tc.name+"/"+output, func(t *testing.T) {
+				h := newInitHarness(t, nil)
+				row := func(turns int) []byte {
+					return fmt.Appendf(nil,
+						`{"test_case_description":"help","simulation_configuration":{"desired_num_turns":%d}}`, turns)
+				}
+				args := func(maxTurns int) []string {
+					return append(simulationInitArgs(h.seedRows),
+						"--max-turns", strconv.Itoa(maxTurns), "--no-prompt", "--output", output)
+				}
+				require.NoError(t, os.WriteFile(h.seedRows, row(tc.desiredTurns), 0o600))
+				before := initFileSnapshot(t, h.dir)
+
+				text, err := executeConversationInit(t, args(tc.maxTurns)...)
+				require.ErrorContains(t, err, fmt.Sprintf("asks for %d turns", tc.desiredTurns))
+				local, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				assert.Equal(t, exterrors.CodeInvalidParameter, local.Code)
+				assert.Equal(t, tc.wantSuggestion, local.Suggestion)
+				assert.Empty(t, text)
+				assert.Zero(t, h.project.wiringAttempts())
+				assert.Empty(t, h.usage.reported())
+				assert.Equal(t, before, initFileSnapshot(t, h.dir))
+
+				require.NoError(t, os.WriteFile(h.seedRows, row(tc.correctedTurns), 0o600))
+				_, err = executeConversationInit(t, args(tc.correctedMax)...)
+				require.NoError(t, err, "the suggested correction must be actionable")
+				cfg, err := project.LoadEvalConfig(filepath.Join(h.dir, "evals", "azure.eval.yaml"))
+				require.NoError(t, err)
+				require.Len(t, cfg.Evals, 1)
+				require.NotNil(t, cfg.Evals[0].Simulation)
+				assert.Equal(t, tc.correctedMax, cfg.Evals[0].Simulation.MaxTurns)
 			})
 		}
 	}

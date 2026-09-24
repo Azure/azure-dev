@@ -186,11 +186,16 @@ func checkDesiredTurns(group *project.Eval, item map[string]any, index int) erro
 		}
 	}
 	if turns > maxTurns {
+		suggestion := fmt.Sprintf("Raise %s to at least %d, or lower %s.%s on that row.",
+			maxField, turns, seedConfigField, seedTurnsField)
+		if maxField == "simulation.max_turns" && turns > project.MaxSimulationTurns {
+			suggestion = fmt.Sprintf("Lower %s.%s to at most %d on that row. simulation.max_turns accepts %d to %d.",
+				seedConfigField, seedTurnsField, maxTurns, project.MinSimulationTurns, project.MaxSimulationTurns)
+		}
 		return simulationError(group,
 			fmt.Sprintf("row %d asks for %d turns, but effective %s is %d",
 				index+1, turns, maxField, maxTurns),
-			fmt.Sprintf("Raise %s to at least %d, or lower %s.%s on that row.",
-				maxField, turns, seedConfigField, seedTurnsField))
+			suggestion)
 	}
 
 	return nil

@@ -333,11 +333,11 @@ func readPublicGitHubManifest(
 		return nil, true, errors.New("HTTP client is unavailable")
 	}
 
-	fileAPIURL := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
+	contentsURL := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
 	if urlInfo.Branch != "" {
-		fileAPIURL += "?ref=" + url.QueryEscape(urlInfo.Branch)
+		contentsURL += "?ref=" + url.QueryEscape(urlInfo.Branch)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileAPIURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, contentsURL, nil)
 	if err != nil {
 		return nil, true, err
 	}

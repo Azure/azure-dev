@@ -251,9 +251,17 @@ pin changes the immutable eval criteria and creates a new eval. An unchanged
 effective pin keeps the same eval, including when the pin moves between the
 catalog and reference. With neither pin set, the evaluator continues tracking
 the service's latest version without recreating the eval on each new version.
+Whole-service deployment rejects identical effective eval definitions, including
+when equivalent pins are spelled in different places. Targeted create still
+validates only its selected declaration and reserves the other evals' IDs.
 Renaming before older pin fingerprints have been migrated can reuse the prior
 eval only when its stored criteria confirm the same effective pins and no other
 declared eval owns it.
+
+After a local rubric is reconciled, its evaluator contract is read from that
+exact service version rather than a potentially stale discovery listing.
+This contract read does not add an authored version pin. An unavailable or
+malformed contract is an error, not permission to reuse an older schema.
 
 Eval groups are immutable, so a change to a group's evaluators, target or
   sampling creates a new group and a new id. The id is cached in the extension's

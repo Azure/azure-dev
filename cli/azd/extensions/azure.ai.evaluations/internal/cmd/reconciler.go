@@ -34,12 +34,14 @@ type evalReconciler struct {
 	// contract is resolved per reference, including explicit version pins.
 	prepared map[string]preparedEval
 
+	// Reconciled service versions identify contracts, not authored identity pins.
+	evaluatorVersions map[string]string
+
 	// claimedBy maps each eval this deploy has settled on to the declaration
 	// that settled it, so a second declaration cannot take the same one.
-	// Substance keys are never removed from the environment, so one left behind
-	// by an earlier edit still points at a live eval -- and adopting it renames
-	// that eval and leaves the declaration that asked for it sharing the other
-	// one's runs.
+	// A substance key left behind by an edit can still point at a live eval.
+	// Adopting it without ownership checks would rename that eval and leave
+	// both declarations sharing its runs.
 	//
 	// The owner is recorded rather than a bare flag because every declaration
 	// reserves its own id up front: "already claimed" is the normal case, and
@@ -643,6 +645,9 @@ func (r *evalReconciler) EnsureEvaluator(
 	if err := ctx.Err(); err != nil {
 		return "", false, err
 	}
+	if r.evaluatorVersions == nil {
+		r.evaluatorVersions = map[string]string{}
+	}
 	if !decl.CarriesItsRubric() && localPath == "" {
 		raw, err := r.ec.evalClient.GetEvaluatorRaw(
 			ctx, decl.Name, decl.Version, ProjectEndpointAPIVersion,
@@ -650,7 +655,9 @@ func (r *evalReconciler) EnsureEvaluator(
 		if err != nil {
 			return "", false, messages.EvaluatorNotLocalNorFound(decl.Name, err)
 		}
-		return versionFromRaw(raw, decl.Version), false, nil
+		version := versionFromRaw(raw, decl.Version)
+		r.evaluatorVersions[decl.Name] = version
+		return version, false, nil
 	}
 	body, digest, err := localEvaluator(decl, localPath)
 	if err != nil {
@@ -687,7 +694,9 @@ func (r *evalReconciler) EnsureEvaluator(
 				r.ec.remember(ctx, versionKey("evaluator", decl.Name), remote)
 			}
 			r.ec.remember(ctx, digestKey, digest)
-			return versionFromRaw(existing, decl.Version), false, nil
+			version := versionFromRaw(existing, decl.Version)
+			r.evaluatorVersions[decl.Name] = version
+			return version, false, nil
 		}
 
 		// The definitions differ, which means either the local file changed
@@ -724,6 +733,7 @@ func (r *evalReconciler) EnsureEvaluator(
 	r.awaitEvaluatorReadable(ctx, decl.Name, created.Version)
 	r.ec.remember(ctx, versionKey("evaluator", decl.Name), created.Version)
 	r.ec.remember(ctx, digestKey, digest)
+	r.evaluatorVersions[decl.Name] = created.Version
 	return created.Version, true, nil
 }
 
@@ -882,11 +892,20 @@ func (r *evalReconciler) EnsureEval(
 		// carry. Refresh only these local, unpinned references; every other
 		// contract, including version pins, stays the one validated earlier.
 		schemas := maps.Clone(prepared.schemas)
-		published := r.ec.evaluatorSchemas(ctx)
 		for _, name := range prepared.localEvaluators {
-			if schema := published[name]; schema != nil {
-				schemas[name] = schema
+			version := r.evaluatorVersions[name]
+			if version == "" {
+				return "", false, fmt.Errorf("evaluator %q has no reconciled version to read", name)
 			}
+			raw, err := r.ec.evalClient.GetEvaluatorRaw(ctx, name, version, ProjectEndpointAPIVersion)
+			if err != nil {
+				return "", false, messages.ReadingEvaluator(name, err)
+			}
+			schema, err := evaluatorContract(raw)
+			if err != nil {
+				return "", false, messages.EvaluatorProblem(name, err)
+			}
+			schemas[name] = schema
 		}
 		req, err = buildEvalRequest(&prepared.group, schemas, prepared.columns)
 		if err != nil {

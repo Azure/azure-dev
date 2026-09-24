@@ -34,7 +34,12 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := cfg.Validate(); err != nil {
+	effective := *cfg
+	effective.Evals = make([]project.Eval, len(cfg.Evals))
+	for i, group := range cfg.Evals {
+		effective.Evals[i] = withCatalogEvaluatorPins(group, cfg)
+	}
+	if err := effective.Validate(); err != nil {
 		return err
 	}
 
@@ -255,11 +260,11 @@ func localEvaluator(decl project.EvaluatorDecl, path string) (json.RawMessage, s
 	if decl.Definition != nil {
 		raw, err := json.Marshal(decl.Definition)
 		if err != nil {
-			return nil, "", messages.EvaluatorProblem(decl.Name, err)
+			return nil, "", err
 		}
 		body, err := normalizeRubricBody(decl.Name, raw)
 		if err != nil {
-			return nil, "", messages.EvaluatorProblem(decl.Name, err)
+			return nil, "", err
 		}
 		return body, project.FingerprintBytes(body), nil
 	}
@@ -275,7 +280,7 @@ func localEvaluator(decl project.EvaluatorDecl, path string) (json.RawMessage, s
 	}
 	body, err := normalizeRubricBody(decl.Name, raw)
 	if err != nil {
-		return nil, "", messages.EvaluatorProblem(decl.Name, err)
+		return nil, "", err
 	}
 	digest, err := project.Fingerprint(path)
 	if err != nil {

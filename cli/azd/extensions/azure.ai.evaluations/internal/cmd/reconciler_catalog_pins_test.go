@@ -392,6 +392,16 @@ func TestLegacyCatalogPinFallbackDoesNotStealSibling(t *testing.T) {
 			state[digestIDKey(legacyDigest)] = first
 			env.config[privateStatePath], err = json.Marshal(state)
 			require.NoError(t, err)
+			if caller == "up" {
+				before := bytes.Clone(env.config[privateStatePath])
+				reads := len(service.reads)
+				_, err := deployValidationFixture(t, t.Context(), ec, cfg, dir)
+				require.ErrorContains(t, err, "identical to")
+				assert.Equal(t, before, env.config[privateStatePath])
+				assert.Len(t, service.reads, reads)
+				assert.Len(t, service.created, 1, "effective duplicates must not change the owner's history")
+				return
+			}
 			id := reconcileCatalogPin(t, caller, ec, cfg, dir)
 			assert.NotEqual(t, first, id)
 			assert.Equal(t, "quality", service.evals[first].Name)

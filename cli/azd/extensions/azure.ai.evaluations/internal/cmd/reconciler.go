@@ -671,7 +671,6 @@ func (r *evalReconciler) EnsureEvaluator(
 	// still there to be found, and the deletion never publishes.
 	digestKey := project.FingerprintKey("evaluator", decl.Name)
 	prior := r.ec.privateValue(ctx, digestKey)
-	authorEdited := prior != "" && prior != digest
 
 	// Compare against the definition already on the service.
 	var known json.RawMessage
@@ -686,7 +685,7 @@ func (r *evalReconciler) EnsureEvaluator(
 	}
 	if err == nil {
 		remote := versionFromRaw(existing, "")
-		if !authorEdited && sameDefinition(existing, body) {
+		if canReuseEvaluator(prior, digest, existing, body) {
 			// Nothing to publish, but the version is still worth recording:
 			// it is what a later deploy compares against to notice that
 			// someone moved the evaluator on from here.
@@ -1120,6 +1119,12 @@ func withDescription(held map[string]string, description string) map[string]stri
 		merged[metaDescription] = description
 	}
 	return merged
+}
+
+// canReuseEvaluator is shared with preflight so authored metadata cannot mask
+// the published contract of a version that reconciliation will leave unchanged.
+func canReuseEvaluator(prior, digest string, existing, body []byte) bool {
+	return (prior == "" || prior == digest) && sameDefinition(existing, body)
 }
 
 // sameDefinition reports whether the locally authored definition already

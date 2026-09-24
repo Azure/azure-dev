@@ -265,6 +265,10 @@ After a local rubric is reconciled, its evaluator contract is read from that
 exact service version rather than a potentially stale discovery listing.
 This contract read does not add an authored version pin. An unavailable or
 malformed contract is an error, not permission to reuse an older schema.
+Preflight uses the same digest-aware reuse decision: when the rubric will not
+be republished, its existing service contract wins over authored metadata
+overrides. A genuine edit that will publish a new version keeps authored
+metadata precedence.
 
 Eval groups are immutable, so a change to a group's evaluators, target or
   sampling creates a new group and a new id. The id is cached in the extension's
@@ -278,6 +282,10 @@ Dataset and evaluator generation are independent. If one fails, a successful
 artifact remains registered, downloaded, and declared in the catalog. A failed
 catalog update is reported separately from a failed generation or download;
 it does not discard the downloaded artifact.
+Recollecting an existing evaluator artifact without `--force` preserves its
+authored catalog metadata, including explicit empty values, while filling
+missing metadata from the job. `--force` replaces the artifact and refreshes
+those catalog fields.
 
 Use the printed `azd ai eval job show <job-id> --dataset` or `--evaluator`
 command to inspect or collect the existing job without starting another one.

@@ -235,3 +235,67 @@ func TestGenerationExplainsAnUnreferencedDatasetWithoutChangingTraceEval(t *test
 	assert.Equal(t, before, after)
 	assert.Empty(t, generationCatalogGuidance(dir, generateKindEvaluator, "builtin.task_completion"))
 }
+
+func TestEvaluatorRecollectionPreservesAuthoredCatalogMetadata(t *testing.T) {
+	for _, existing := range []string{"authored values", "explicit empty", "missing fields"} {
+		t.Run(existing, func(t *testing.T) {
+			ec, _, dir, requests := generationRecoveryFixture(t)
+			cmd := jsonCmd(t, "json")
+			cmd.SetContext(t.Context())
+			cmd.SetOut(io.Discard)
+			action := &jobShowAction{cmd: cmd, flags: &jobFlags{path: dir}}
+			_, err := action.collect(t.Context(), ec, evaluatorJobs, recoveryRubricJob(), io.Discard)
+			require.NoError(t, err)
+			path := filepath.Join(dir, "azure.eval.yaml")
+			catalog := "evaluators:\n  - name: quality\n    source: ./evaluators/quality.json\n" +
+				"    display_name: Authored name # keep this comment\n"
+			switch existing {
+			case "authored values":
+				catalog += "    categories: [safety]\n    supported_evaluation_levels: [conversation]\n"
+			case "explicit empty":
+				catalog += "    categories: []\n    supported_evaluation_levels: []\n"
+			}
+			require.NoError(t, os.WriteFile(path, []byte(catalog), 0o600))
+			artifact := filepath.Join(dir, "evaluators", "quality.json")
+			edited := []byte(`{"type":"rubric","dimensions":[{"id":"local-edit","weight":2}]}`)
+			require.NoError(t, os.WriteFile(artifact, edited, 0o600))
+			for range 2 {
+				_, err = action.collect(t.Context(), ec, evaluatorJobs, recoveryRubricJob(), io.Discard)
+				require.NoError(t, err)
+			}
+			cfg, err := project.OpenEvalConfig(dir)
+			require.NoError(t, err)
+			require.Len(t, cfg.Evaluators, 1)
+			assert.Equal(t, "Authored name", cfg.Evaluators[0].DisplayName)
+			switch existing {
+			case "authored values":
+				assert.Equal(t, []string{"safety"}, cfg.Evaluators[0].Categories)
+				assert.Equal(t, []string{"conversation"}, cfg.Evaluators[0].SupportedEvaluationLevels)
+			case "explicit empty":
+				assert.Empty(t, cfg.Evaluators[0].Categories)
+				assert.Empty(t, cfg.Evaluators[0].SupportedEvaluationLevels)
+			case "missing fields":
+				assert.Equal(t, []string{"quality", "agents"}, cfg.Evaluators[0].Categories)
+				assert.Equal(t, []string{"turn", "conversation"}, cfg.Evaluators[0].SupportedEvaluationLevels)
+			}
+			content, err := os.ReadFile(artifact)
+			require.NoError(t, err)
+			assert.Equal(t, edited, content)
+			written, err := os.ReadFile(path)
+			require.NoError(t, err)
+			assert.Contains(t, string(written), "# keep this comment")
+			if existing != "missing fields" {
+				assert.Equal(t, catalog, string(written))
+			}
+			action.flags.force = true
+			_, err = action.collect(t.Context(), ec, evaluatorJobs, recoveryRubricJob(), io.Discard)
+			require.NoError(t, err)
+			cfg, err = project.OpenEvalConfig(dir)
+			require.NoError(t, err)
+			assert.Equal(t, "Support quality", cfg.Evaluators[0].DisplayName)
+			assert.Equal(t, []string{"quality", "agents"}, cfg.Evaluators[0].Categories)
+			assert.Equal(t, []string{"turn", "conversation"}, cfg.Evaluators[0].SupportedEvaluationLevels)
+			assert.Empty(t, *requests, "recollection must not submit a generation or publication request")
+		})
+	}
+}

@@ -361,3 +361,62 @@ func TestReconciliationValidationHonorsCancellation(t *testing.T) {
 	assert.Empty(t, service.requests)
 	assert.Empty(t, env.config)
 }
+
+func TestLocalRubricOverrideCannotHideReusedContract(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		for _, metadata := range []string{"catalog", "document"} {
+			for _, baseline := range []string{"absent", "recorded"} {
+				t.Run(caller+"/"+metadata+"/"+baseline, func(t *testing.T) {
+					ec, env, service, cfg, dir := validationFixture(t)
+					definition := `{"type":"rubric","dimensions":[{"id":"clarity","weight":5}]}`
+					body := definition
+					decl := project.EvaluatorDecl{Name: "quality", Source: "quality.json"}
+					if metadata == "catalog" {
+						decl.SupportedEvaluationLevels = []string{"conversation"}
+					} else {
+						body = `{"supported_evaluation_levels":["conversation"],"definition":` + definition + `}`
+					}
+					path := filepath.Join(dir, decl.Source)
+					require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+					if baseline == "recorded" {
+						_, digest, err := localEvaluator(decl, path)
+						require.NoError(t, err)
+						env.state[project.FingerprintKey("evaluator", decl.Name)] = digest
+					}
+					service.definition = `{"name":"quality","version":"1","supported_evaluation_levels":["turn"],` +
+						`"definition":` + definition + `}`
+					cfg.Evaluators = []project.EvaluatorDecl{decl}
+					cfg.Evals[0].Evaluators = evalcore.EvaluatorList{{Evaluator: decl.Name}}
+					cfg.Evals[0].EvaluationLevel = project.EvaluationLevelConversation
+					err := reconcileArtifactConfig(t, caller, ec, cfg, dir)
+					require.ErrorContains(t, err, "conversation")
+					for _, request := range service.requests {
+						assert.True(t, strings.HasPrefix(request, "GET "), "unexpected mutation: %s", request)
+					}
+					assert.Empty(t, env.config, "the reused contract must be rejected before private-state writes")
+					assert.Empty(t, env.values)
+				})
+			}
+		}
+	}
+}
+
+func TestLocalRubricPreflightAllowsDigestDetectedEdit(t *testing.T) {
+	ec, env, service, cfg, dir := validationFixture(t)
+	before := `{"type":"rubric","dimensions":[{"id":"clarity","weight":5}],"pass_threshold":0.6}`
+	after := `{"type":"rubric","dimensions":[{"id":"clarity","weight":5}]}`
+	decl := project.EvaluatorDecl{
+		Name: "quality", Source: "quality.json", SupportedEvaluationLevels: []string{"conversation"},
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, decl.Source), []byte(after), 0o600))
+	env.state[project.FingerprintKey("evaluator", decl.Name)] = project.FingerprintBytes([]byte(before))
+	service.definition = `{"name":"quality","version":"1","supported_evaluation_levels":["turn"],` +
+		`"definition":` + before + `}`
+	cfg.Evaluators = []project.EvaluatorDecl{decl}
+	cfg.Evals[0].Evaluators = evalcore.EvaluatorList{{Evaluator: decl.Name}}
+	cfg.Evals[0].EvaluationLevel = project.EvaluationLevelConversation
+	assert.True(t, sameDefinition([]byte(service.definition), []byte(`{"definition":`+after+`}`)))
+	require.NoError(t, (&evalReconciler{ec: ec}).Validate(t.Context(), cfg, dir),
+		"the recorded digest proves a deletion edit that will publish the authored levels")
+	assert.Empty(t, env.config)
+}

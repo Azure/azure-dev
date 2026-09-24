@@ -491,6 +491,8 @@ func TestRunFailureRedactsMalformedURLs(t *testing.T) {
 	for _, message := range []string{
 		"Failed " + malformed,
 		"Failed url_" + malformed,
+		"Failed url=" + malformed,
+		"Failed (url:" + malformed + ").",
 		`{"primary":"https://safe.example/a","secondary":"` + malformed + `"}`,
 	} {
 		for _, render := range []func(io.Writer, *eval_api.OpenAIEvalRun) error{

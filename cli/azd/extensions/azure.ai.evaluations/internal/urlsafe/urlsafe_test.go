@@ -159,6 +159,26 @@ func TestTextRedactsEmbeddedURLCredentials(t *testing.T) {
 			"Result azureai://user-secret:password-secret@accounts/example?sig=signature-secret#fragment-secret",
 			"Result azureai://accounts/example",
 		},
+		{
+			"identifier prefix",
+			"Failed url_https:/user-secret:password-secret@host/file?sig=signature-secret#fragment-secret",
+			"Failed url_<redacted-url>",
+		},
+		{
+			"assignment prefix",
+			"Failed url=https://user-secret:password-secret@host/file?sig=signature-secret#fragment-secret",
+			"Failed url=https://host/file",
+		},
+		{
+			"malformed assignment prefix",
+			"Failed url=https:/user-secret:password-secret@host/file?sig=signature-secret#fragment-secret",
+			"Failed url=<redacted-url>",
+		},
+		{
+			"punctuation prefix",
+			"Failed (url:https:/user-secret:password-secret@host/file?sig=signature-secret#fragment-secret).",
+			"Failed (url:<redacted-url>).",
+		},
 		{"without URLs", "The evaluator could not initialize.", "The evaluator could not initialize."},
 		{"safe URL", "Request https://service.example/run failed.", "Request https://service.example/run failed."},
 	} {
@@ -219,7 +239,7 @@ func TestTextRedactsMalformedSchemeURLs(t *testing.T) {
 }
 
 func TestTextRedactsHTTPURLsAfterIdentifiers(t *testing.T) {
-	for _, prefix := range []string{"url_", "value7", "field", "caf\u00e9"} {
+	for _, prefix := range []string{"url_", "value7", "field", "caf\u00e9", "url=", "url:", "url,", "url("} {
 		for _, scheme := range []string{"https:", "http:/", "HtTpS:/", `https:\`, "https://", "https:///"} {
 			raw := prefix + scheme + "fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment"
 			for _, message := range []string{

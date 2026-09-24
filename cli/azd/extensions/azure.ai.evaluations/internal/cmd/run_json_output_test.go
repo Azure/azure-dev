@@ -27,6 +27,8 @@ func TestRunShowJSONRedactsKnownErrorDiagnosticsOnly(t *testing.T) {
 		"url_https:/fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment",
 		"url_HtTpS:fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment",
 		`url_https:\fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment`,
+		"url=https:/fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment",
+		"(url:https:/fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment).",
 	} {
 		t.Run(diagnosticURL, func(t *testing.T) {
 			errorText, err := json.Marshal("Failed " + diagnosticURL)
@@ -84,7 +86,7 @@ func TestExportRedactsOnlyKnownRunErrorFields(t *testing.T) {
 		"code":null,"unknown":9007199254740993},
 		"result_counts":{"failed":null},"user_data":{"url":"https://user.example/?sig=keep","number":9007199254740993}}`
 	const item = `{"id":"1","datasource_item":{"url":"https://data.example/?sig=keep","number":9007199254740993}}`
-	for _, prefix := range []string{"", "url_"} {
+	for _, prefix := range []string{"", "url_", "url=", "(url:"} {
 		t.Run("prefix="+prefix, func(t *testing.T) {
 			original := strings.Replace(response, "Failed https:", "Failed "+prefix+"https:", 1)
 			doc := exportDocument{Run: json.RawMessage(original), Items: []json.RawMessage{json.RawMessage(item)}}

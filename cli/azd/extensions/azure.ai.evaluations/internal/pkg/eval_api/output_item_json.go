@@ -3,15 +3,29 @@
 
 package eval_api
 
-import "encoding/json"
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"io"
+)
 
 // UnmarshalJSON retains service output fields not modeled by the CLI, including
 // evaluator properties and sample details, for JSON listings and detail views.
 func (o *OutputItem) UnmarshalJSON(data []byte) error {
 	type wire OutputItem
 	var decoded wire
-	if err := json.Unmarshal(data, &decoded); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&decoded); err != nil {
 		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err != nil {
+			return err
+		}
+		return errors.New("unexpected JSON after output item")
 	}
 	*o = OutputItem(decoded)
 	o.raw = append(json.RawMessage(nil), data...)

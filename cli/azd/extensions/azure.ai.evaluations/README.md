@@ -322,8 +322,9 @@ they are absent from the response.
 
 Output-item JSON preserves unrecognized nested service fields, including
 evaluator `properties` and `sample` details; modeled scores keep their existing
-numeric normalization. These fields can contain prompts, answers, and other
-sensitive evaluation content. Prefer a private destination with
+numeric normalization. Numeric dataset values retain their precision rather
+than being rounded through floating-point decoding. These fields can contain
+prompts, answers, and other sensitive evaluation content. Prefer a private destination with
 `run output list --output-file` or `run output export --output-file` over
 writing JSON into shared terminal or CI logs.
 

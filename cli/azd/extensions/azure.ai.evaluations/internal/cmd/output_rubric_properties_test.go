@@ -183,3 +183,51 @@ func TestFilteredOutputJSONPreservesRubricPropertiesAndSample(t *testing.T) {
 	assert.JSONEq(t, "["+rubricPropertiesResponse+"]", out.String(),
 		"the output-file path retains the same service details as JSON stdout")
 }
+
+func TestOutputJSONCallersPreserveExactDatasetNumbers(t *testing.T) {
+	const item = `{"id":"1","run_id":"run_numbers","status":"completed",
+		"datasource_item":{"large_integer":9007199254740993,"nested":[
+			0.12345678901234567890123456789,{"negative":-9007199254740993,"empty":null,"zero":0}]},
+		"future_field":{"large_integer":9007199254740993,"nested":[-9007199254740993]},
+		"results":[{"name":"quality","score":0.5,"passed":true}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/output_items/1") {
+			_, _ = w.Write([]byte(item))
+		} else {
+			assert.True(t, strings.HasSuffix(r.URL.Path, "/output_items"))
+			_, _ = fmt.Fprintf(w, `{"data":[%s],"has_more":false}`, item)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	ec := evalContextFor(srv)
+	for _, shape := range []string{"detail", "page", "file"} {
+		t.Run(shape, func(t *testing.T) {
+			var out bytes.Buffer
+			if shape == "detail" {
+				command := jsonCmd(t, "json")
+				command.SetContext(t.Context())
+				command.SetOut(&out)
+				action := &runOutputShowAction{cmd: command, itemID: "1"}
+				require.NoError(t, action.show(t.Context(), ec, "eval_numbers", "run_numbers"))
+			} else {
+				page, err := ec.evalClient.ListOutputItemsPage(t.Context(), "eval_numbers", "run_numbers", 10, "")
+				require.NoError(t, err)
+				rows := filterItems(page.Data, map[string]bool{itemPassed: true})
+				require.Len(t, rows, 1)
+				if shape == "page" {
+					require.NoError(t, emitJSONPage(&out, rows, nil, ""))
+				} else {
+					require.NoError(t, emitJSONList(&out, rows))
+				}
+			}
+			assert.Contains(t, out.String(), `"large_integer": 9007199254740993`)
+			assert.Contains(t, out.String(), "0.12345678901234567890123456789")
+			assert.Contains(t, out.String(), `"negative": -9007199254740993`)
+			assert.Contains(t, out.String(), `"empty": null`)
+			assert.Contains(t, out.String(), `"zero": 0`)
+			assert.Contains(t, out.String(), `"future_field":`)
+			assert.NotContains(t, out.String(), "9007199254740992")
+		})
+	}
+}

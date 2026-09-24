@@ -53,7 +53,7 @@ func validateInitDataset(
 		if _, err := resolveInitLocalDataset(location, path, cfg); err != nil {
 			return err
 		}
-	} else if answers.simulation != nil {
+	} else {
 		decl, err := project.ReadAuthoredDataset(location, answers.datasetRef)
 		if err != nil {
 			return err

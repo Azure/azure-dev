@@ -359,6 +359,74 @@ func TestCreatePromptAgentAPIRequest_AuthoredVersionedSkill(t *testing.T) {
 	}
 }
 
+func TestCreatePromptAgentAPIRequest_DuplicateAuthoredSkills(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		skills  []HarnessSkillRef
+		wantErr bool
+	}{
+		{
+			name:    "conflicting pins",
+			skills:  []HarnessSkillRef{{Name: "foo", Version: "1"}, {Name: "foo", Version: "2"}},
+			wantErr: true,
+		},
+		{
+			name:    "normalized names conflict",
+			skills:  []HarnessSkillRef{{Name: " Foo ", Version: "1"}, {Name: "foo", Version: "2"}},
+			wantErr: true,
+		},
+		{
+			name: "shorthand between conflicting pins",
+			skills: []HarnessSkillRef{
+				{Name: "foo", Version: "1"}, {Name: "foo"}, {Name: "foo", Version: "2"},
+			},
+			wantErr: true,
+		},
+		{
+			name:   "identical pins",
+			skills: []HarnessSkillRef{{Name: "foo", Version: "1"}, {Name: "foo", Version: " 1 "}},
+		},
+		{
+			name:   "shorthand before pin",
+			skills: []HarnessSkillRef{{Name: "foo"}, {Name: "foo", Version: "1"}},
+		},
+		{
+			name:   "shorthand after pin",
+			skills: []HarnessSkillRef{{Name: "foo", Version: "1"}, {Name: "foo"}},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			request, err := CreatePromptAgentAPIRequest(PromptAgent{
+				AgentDefinition: AgentDefinition{Kind: AgentKindPrompt, Name: "my-agent"},
+				Model:           "gpt-4.1-mini",
+				Instructions:    "Be helpful.",
+				Skills:          tt.skills,
+				ResolvedSkills:  []HarnessSkillRef{{Name: "foo", Version: "3"}},
+			}, nil)
+			if tt.wantErr {
+				if err == nil || !strings.Contains(err.Error(), `conflicting authored versions "1" and "2"`) {
+					t.Fatalf("expected conflicting pin error, got %v", err)
+				}
+				if request != nil {
+					t.Fatal("conflicting pins must not produce a request")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("CreatePromptAgentAPIRequest: %v", err)
+			}
+			definition, ok := request.Definition.(agent_api.ManagedAgentDefinition)
+			if !ok {
+				t.Fatalf("unexpected definition type %T", request.Definition)
+			}
+			want := agent_api.SkillReference{Type: "skill_reference", Name: "foo", Version: "1"}
+			if len(definition.Skills) != 1 || definition.Skills[0] != want {
+				t.Fatalf("expected authored pin %+v, got %+v", want, definition.Skills)
+			}
+		})
+	}
+}
+
 func TestPromptAgentRejectsMalformedSkillYAML(t *testing.T) {
 	tests := []struct {
 		name  string

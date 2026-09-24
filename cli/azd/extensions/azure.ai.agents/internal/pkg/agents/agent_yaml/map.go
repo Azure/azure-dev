@@ -612,6 +612,21 @@ func CreatePromptAgentAPIRequest(
 	if err := promptAgent.ValidatePolicies(); err != nil {
 		return nil, err
 	}
+	authoredVersions := map[string]string{}
+	for _, skill := range promptAgent.Skills {
+		name := strings.ToLower(strings.TrimSpace(skill.Name))
+		version := strings.TrimSpace(skill.Version)
+		if version == "" {
+			continue
+		}
+		if previous, ok := authoredVersions[name]; ok && previous != version {
+			return nil, fmt.Errorf(
+				"prompt skill %q has conflicting authored versions %q and %q; specify only one version per skill",
+				name, previous, version,
+			)
+		}
+		authoredVersions[name] = version
+	}
 	for _, skill := range PromptAgentSkillReferences(promptAgent) {
 		if strings.TrimSpace(skill.Version) == "" {
 			return nil, fmt.Errorf(

@@ -91,7 +91,7 @@ After selecting the version, create or update the release header and write the d
 
    Choices:
    - **Approve** — accept and proceed to spell check
-   - **Edit** — provide feedback for revisions (loop back). If the revisions change the included entries, repeat Step 4 before presenting again.
+   - **Edit** — provide feedback for revisions (loop back). If the revisions change the included entries, reassess the version and update the release header and version files in place before presenting again.
    - **Abort** — cancel the entire workflow
 
 ### Step 6 — Spell Check

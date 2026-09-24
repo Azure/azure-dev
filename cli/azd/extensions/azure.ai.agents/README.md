@@ -308,9 +308,11 @@ services:
 ```
 
 Alternatively, keep a direct definition in a separate file and reference it
-explicitly from the service with a root `$ref`. The referenced filename can be
-anything, but the file content must be a direct agent definition. An
-`agent.manifest.yaml` template wrapper must first be converted or extracted.
+explicitly from the service with a root `$ref`. The basename can be anything,
+including a legacy-looking name such as `agent.yaml`, but prompt-agent references
+must use a `.yaml` or `.yml` extension. The file content must be a supported
+direct agent definition. An `agent.manifest.yaml` template wrapper must first be
+converted or extracted.
 
 ### Environment variables under `config:`
 

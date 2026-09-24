@@ -33,7 +33,7 @@ func Kind(svc *azdext.ServiceConfig, projectRoot string) (string, error) {
 		return "", exterrors.Validation(
 			exterrors.CodeUnsupportedAgentDefinitionPath,
 			"AGENT_DEFINITION_PATH is no longer supported for agent runtime configuration",
-			"move the agent definition to the azure.ai.agent service in azure.yaml, "+
+			"unset AGENT_DEFINITION_PATH, then move the agent definition to the azure.ai.agent service in azure.yaml, "+
 				"or add a service-level $ref to a direct agent definition",
 		)
 	}

@@ -68,6 +68,10 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	if err := validateRuntimeAgentServices(args.Project); err != nil {
+		return err
+	}
+
 	// Prompt for Activity bot names at the start of preprovision so the input
 	// appears before longer setup/update steps in this handler.
 	if err := provisionActivityBotNames(ctx, azdClient, args); err != nil {
@@ -89,9 +93,6 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args 
 		switch svc.Host {
 		case AiAgentHost:
 			agentServiceCount++
-			if err := project.ValidateRuntimeAgentSources(svc); err != nil {
-				return err
-			}
 			if isHostedAgentService(svc, args.Project) {
 				hostedAgentCount++
 			}
@@ -617,6 +618,25 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 	return nil
 }
 
+func validateRuntimeAgentServices(proj *azdext.ProjectConfig) error {
+	serviceNames := make([]string, 0, len(proj.GetServices()))
+	for name := range proj.GetServices() {
+		serviceNames = append(serviceNames, name)
+	}
+	sort.Strings(serviceNames)
+
+	for _, name := range serviceNames {
+		svc := proj.GetServices()[name]
+		if svc.GetHost() != AiAgentHost {
+			continue
+		}
+		if _, _, _, err := project.LoadAgentDefinition(svc, proj.GetPath()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // predownHandler removes prompt (kind=managed) agents from the harness before
 // `azd down` tears the infrastructure away. It deliberately runs at predown
 // rather than postdown: the Foundry project/workspace that provides the harness
@@ -625,6 +645,10 @@ func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azd
 //
 // Best-effort throughout — a harness failure is logged but never blocks down.
 func predownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	if err := validateRuntimeAgentServices(args.Project); err != nil {
+		return err
+	}
+
 	envValues, envErr := promptEnvValues(ctx, azdClient)
 	if envErr != nil {
 		log.Printf("predown: failed to read the azd environment: %v", envErr)

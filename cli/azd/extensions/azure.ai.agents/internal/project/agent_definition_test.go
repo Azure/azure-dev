@@ -207,6 +207,12 @@ func TestLoadAgentDefinitionRejectsNonEmptyDefinitionPath(t *testing.T) {
 			localErr, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
 			require.Equal(t, exterrors.CodeUnsupportedAgentDefinitionPath, localErr.Code)
+			require.Equal(t,
+				"unset AGENT_DEFINITION_PATH, then move the agent definition to "+
+					"the azure.ai.agent service in azure.yaml, "+
+					"or add a service-level $ref to a direct agent definition",
+				localErr.Suggestion,
+			)
 		})
 	}
 }
@@ -665,10 +671,28 @@ func TestLoadAgentDefinitionLegacyFilenameGuidance(t *testing.T) {
 		name       string
 		suggestion string
 	}{
-		{name: "agent.yaml", suggestion: "move the direct agent definition"},
-		{name: "agent.yml", suggestion: "move the direct agent definition"},
-		{name: "agent.manifest.yaml", suggestion: "extract the AgentManifest template"},
-		{name: "agent.manifest.yml", suggestion: "extract the AgentManifest template"},
+		{
+			name: "agent.yaml",
+			suggestion: "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
+				"or move any env, project, language, image, or docker fields onto the service before adding " +
+				"a service-level $ref to the remaining direct definition",
+		},
+		{
+			name: "agent.yml",
+			suggestion: "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
+				"or move any env, project, language, image, or docker fields onto the service before adding " +
+				"a service-level $ref to the remaining direct definition",
+		},
+		{
+			name: "agent.manifest.yaml",
+			suggestion: "extract the AgentManifest template into a direct agent definition, then move it into " +
+				"the azure.ai.agent service in azure.yaml or reference it with a service-level $ref",
+		},
+		{
+			name: "agent.manifest.yml",
+			suggestion: "extract the AgentManifest template into a direct agent definition, then move it into " +
+				"the azure.ai.agent service in azure.yaml or reference it with a service-level $ref",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -683,7 +707,7 @@ func TestLoadAgentDefinitionLegacyFilenameGuidance(t *testing.T) {
 			localErr, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
 			require.Equal(t, exterrors.CodeAgentDefinitionNotFound, localErr.Code)
-			require.Contains(t, localErr.Suggestion, tt.suggestion)
+			require.Equal(t, tt.suggestion, localErr.Suggestion)
 		})
 	}
 }

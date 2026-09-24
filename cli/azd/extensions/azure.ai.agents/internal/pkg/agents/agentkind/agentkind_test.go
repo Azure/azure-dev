@@ -77,6 +77,11 @@ func TestKind_RejectsAgentDefinitionPath(t *testing.T) {
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
 	assert.Equal(t, exterrors.CodeUnsupportedAgentDefinitionPath, localErr.Code)
+	assert.Equal(t,
+		"unset AGENT_DEFINITION_PATH, then move the agent definition to the azure.ai.agent service in azure.yaml, "+
+			"or add a service-level $ref to a direct agent definition",
+		localErr.Suggestion,
+	)
 }
 
 func TestKind_ExplicitRootRef(t *testing.T) {

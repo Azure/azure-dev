@@ -67,8 +67,8 @@ new tools are not added. Missing, null, or empty candidate tools leave tools
 unchanged. Malformed candidate tools are rejected before writing configuration.
 Optimized prompt-agent skills are not supported.
 Referenced definitions ($ref) must be inlined or updated manually.
-Prompt apply also requires AGENT_DEFINITION_PATH to be unset or empty and a
-service name without dots.
+Optimize apply requires AGENT_DEFINITION_PATH to be unset or empty for every
+agent kind. Prompt apply also requires a service name without dots.
 
 After applying, run 'azd deploy' to deploy the optimized agent version.`,
 		Example: `  # Apply candidate config locally, then deploy

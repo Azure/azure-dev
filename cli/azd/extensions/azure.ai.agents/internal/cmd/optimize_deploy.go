@@ -291,6 +291,7 @@ func buildPromptDeployDefinition(
 	}
 	return newDef, nil
 }
+
 // resolveProjectEndpointForDeploy resolves the Foundry project endpoint using
 // the same resolution chain as other agent commands.
 func resolveProjectEndpointForDeploy(ctx context.Context, connFlags *optimizeConnectionFlags, envName string) (string, error) {

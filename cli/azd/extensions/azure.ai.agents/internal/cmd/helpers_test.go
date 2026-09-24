@@ -601,7 +601,8 @@ func TestResolveServiceRunContext_RejectsMissingRuntimeDefinitions(t *testing.T)
 			name:       "unreferenced legacy definition",
 			legacyFile: "agent.yaml",
 			wantSuggestion: "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
-				"or add a service-level $ref to this file",
+				"or move any env, project, language, image, or docker fields onto the service before adding " +
+				"a service-level $ref to the remaining direct definition",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

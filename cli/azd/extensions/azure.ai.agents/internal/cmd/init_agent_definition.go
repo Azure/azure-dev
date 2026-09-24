@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"go.yaml.in/yaml/v3"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -51,11 +52,11 @@ func probeAgentDefinitionForInit(
 		// Present each candidate as the supported service-level shape. This
 		// keeps parsing, validation, and $ref behavior on the shared loader
 		// without making runtime commands accept config-nested definitions.
-		candidate := *svc
-		candidate.AdditionalProperties = props
+		candidate := proto.Clone(svc).(*azdext.ServiceConfig)
+		candidate.AdditionalProperties = proto.Clone(props).(*structpb.Struct)
 		candidate.Config = nil
-		definition, isHosted, found, _, err := projectpkg.AgentDefinitionFromResolvedService(
-			&candidate,
+		definition, isHosted, found, _, err := projectpkg.AgentDefinitionFromResolvedServiceForInit(
+			candidate,
 			projectRoot,
 		)
 		return initAgentDefinitionProbe{

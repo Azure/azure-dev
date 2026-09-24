@@ -201,7 +201,8 @@ func TestResolveEvalContext_PropagatesRuntimeDefinitionErrors(t *testing.T) {
 			name:           "unsupported definition path",
 			definitionPath: " ",
 			wantCode:       exterrors.CodeUnsupportedAgentDefinitionPath,
-			wantSuggestion: "move the agent definition to the azure.ai.agent service in azure.yaml, " +
+			wantSuggestion: "unset AGENT_DEFINITION_PATH, then move the agent definition to " +
+				"the azure.ai.agent service in azure.yaml, " +
 				"or add a service-level $ref to a direct agent definition",
 		},
 		{
@@ -222,7 +223,8 @@ func TestResolveEvalContext_PropagatesRuntimeDefinitionErrors(t *testing.T) {
 			legacyFile: "agent.yaml",
 			wantCode:   exterrors.CodeAgentDefinitionNotFound,
 			wantSuggestion: "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
-				"or add a service-level $ref to this file",
+				"or move any env, project, language, image, or docker fields onto the service before adding " +
+				"a service-level $ref to the remaining direct definition",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

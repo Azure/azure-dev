@@ -389,7 +389,7 @@ func validateRuntimeAgentSources(svc *azdext.ServiceConfig) error {
 		return exterrors.Validation(
 			exterrors.CodeUnsupportedAgentDefinitionPath,
 			"AGENT_DEFINITION_PATH is no longer supported for agent runtime configuration",
-			"move the agent definition to the azure.ai.agent service in azure.yaml, "+
+			"unset AGENT_DEFINITION_PATH, then move the agent definition to the azure.ai.agent service in azure.yaml, "+
 				"or add a service-level $ref to a direct agent definition",
 		)
 	}
@@ -451,6 +451,34 @@ func AgentDefinitionFromResolvedService(
 	if err := validateRuntimeAgentSources(svc); err != nil {
 		return agent_yaml.ContainerAgent{}, false, false, AgentDefinitionSourceInline, err
 	}
+	return agentDefinitionFromResolvedService(svc, projectRoot)
+}
+
+// AgentDefinitionFromResolvedServiceForInit preserves init-only compatibility
+// with legacy service shapes while runtime commands enforce unified sources.
+func AgentDefinitionFromResolvedServiceForInit(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (
+	agent_yaml.ContainerAgent,
+	bool,
+	bool,
+	AgentDefinitionSource,
+	error,
+) {
+	return agentDefinitionFromResolvedService(svc, projectRoot)
+}
+
+func agentDefinitionFromResolvedService(
+	svc *azdext.ServiceConfig,
+	projectRoot string,
+) (
+	agent_yaml.ContainerAgent,
+	bool,
+	bool,
+	AgentDefinitionSource,
+	error,
+) {
 	props := svc.GetAdditionalProperties()
 	if props == nil || len(props.GetFields()) == 0 {
 		return agent_yaml.ContainerAgent{}, false, false, AgentDefinitionSourceInline, nil
@@ -1035,12 +1063,14 @@ func agentDefinitionFromDisk(
 		{
 			name: "agent.yaml",
 			suggestion: "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
-				"or add a service-level $ref to this file",
+				"or move any env, project, language, image, or docker fields onto the service before adding " +
+				"a service-level $ref to the remaining direct definition",
 		},
 		{
 			name: "agent.yml",
 			suggestion: "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
-				"or add a service-level $ref to this file",
+				"or move any env, project, language, image, or docker fields onto the service before adding " +
+				"a service-level $ref to the remaining direct definition",
 		},
 		{
 			name: "agent.manifest.yaml",

@@ -588,14 +588,6 @@ func TestDependencyConditionLookupPrefersAzdEnvironment(t *testing.T) {
 
 // --- helpers for Package tests ---
 
-// writeHostedAgentYAML creates a minimal hosted-kind agent.yaml in dir.
-func writeHostedAgentYAML(t *testing.T, dir string) string {
-	t.Helper()
-	p := filepath.Join(dir, "agent.yaml")
-	require.NoError(t, os.WriteFile(p, []byte("kind: hosted\nname: test-agent\n"), 0o600))
-	return p
-}
-
 // stubContainerServer is a minimal ContainerServiceServer that returns
 // success responses for Build, Package, and Publish.
 type stubContainerServer struct {
@@ -2305,18 +2297,6 @@ func TestAgentPlaygroundURL_AccountLevelID(t *testing.T) {
 	_, err := AgentPlaygroundURL(resourceID, "agent", "1")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "missing parent account")
-}
-
-// writeHostedAgentYAMLWithImage creates a hosted agent.yaml with a pre-built image field.
-func writeHostedAgentYAMLWithImage(t *testing.T, dir, image string) string {
-	t.Helper()
-	p := filepath.Join(dir, "agent.yaml")
-	content := fmt.Sprintf(
-		"kind: hosted\nname: test-agent\nimage: %s\nprotocols:\n  - protocol: invocations\n    version: 1.0.0\n",
-		image,
-	)
-	require.NoError(t, os.WriteFile(p, []byte(content), 0o600))
-	return p
 }
 
 func hostedTestService(t *testing.T, name, image string) *azdext.ServiceConfig {

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -43,6 +44,64 @@ func TestNonGoScaffoldIncludesStructuredErrorProtocol(t *testing.T) {
 	require.Contains(t, eventContents, `import "errors.proto";`)
 	require.Contains(t, eventContents, "ExtensionError error = 4;")
 	require.Contains(t, eventContents, "ExtensionError error = 5;")
+}
+
+func TestNonGoScaffoldGeneratedErrorsLoadWithEvents(t *testing.T) {
+	for _, path := range []string{
+		"languages/javascript/generated/proto/errors_pb.js",
+		"languages/python/generated_proto/errors_pb2.py",
+	} {
+		_, err := Languages.ReadFile(path)
+		require.NoError(t, err)
+	}
+
+	t.Run("javascript", func(t *testing.T) {
+		node, err := exec.LookPath("node")
+		if err != nil {
+			t.Skip("Node.js is not installed")
+		}
+		if err := exec.Command(node, "-e", "require('google-protobuf')").Run(); err != nil {
+			t.Skip("google-protobuf is not installed")
+		}
+
+		script := `
+const errors = require('./languages/javascript/generated/proto/errors_pb.js');
+const events = require('./languages/javascript/generated/proto/event_pb.js');
+const status = new events.ProjectHandlerStatus();
+status.setError(new errors.ExtensionError().setMessage('failed'));
+const decoded = events.ProjectHandlerStatus.deserializeBinary(status.serializeBinary());
+if (decoded.getError().getMessage() !== 'failed') process.exit(1);
+`
+		output, err := exec.Command(node, "-e", script).CombinedOutput()
+		require.NoError(t, err, string(output))
+	})
+
+	t.Run("python", func(t *testing.T) {
+		var python string
+		for _, name := range []string{"python3", "python"} {
+			path, err := exec.LookPath(name)
+			if err == nil && exec.Command(path, "-c", "import google.protobuf").Run() == nil {
+				python = path
+				break
+			}
+		}
+		if python == "" {
+			t.Skip("protobuf is not installed")
+		}
+
+		script := `
+import sys
+sys.path.insert(0, 'languages/python/generated_proto')
+import errors_pb2
+import event_pb2
+status = event_pb2.ProjectHandlerStatus(
+    error=errors_pb2.ExtensionError(message='failed'))
+decoded = event_pb2.ProjectHandlerStatus.FromString(status.SerializeToString())
+assert decoded.error.message == 'failed'
+`
+		output, err := exec.Command(python, "-c", script).CombinedOutput()
+		require.NoError(t, err, string(output))
+	})
 }
 
 // TestGoGitignoreExcludesBin ensures the generated Go extension ignores the build

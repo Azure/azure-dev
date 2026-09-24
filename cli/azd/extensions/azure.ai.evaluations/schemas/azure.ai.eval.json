@@ -156,7 +156,7 @@
         "max_samples": {
           "type": "integer",
           "minimum": 0,
-          "description": "Cap on rows graded per run."
+          "description": "Cap on local, unregistered dataset rows graded per run. Positive caps are unsupported for registered dataset versions."
         },
         "evaluators": {
           "type": "array",
@@ -171,7 +171,7 @@
         },
         "simulation": {
           "$ref": "#/definitions/Simulation",
-          "description": "Present when the eval creates its conversations instead of scoring ones it was handed. dataset then names registered scenario seeds rather than rows to grade, evaluation_level must be conversation, and target must be an agent. Mutually exclusive with source and with max_samples."
+          "description": "Present when the eval creates its conversations instead of scoring ones it was handed. dataset then names registered scenario seeds rather than rows to grade, evaluation_level must be conversation, and target must be an agent. Mutually exclusive with source and positive max_samples caps; max_samples: 0 means uncapped."
         }
       },
       "allOf": [
@@ -186,7 +186,7 @@
           "then": {
             "properties": {
               "source": false,
-              "max_samples": false,
+              "max_samples": { "const": 0 },
               "evaluation_level": { "const": "conversation" },
               "target": {
                 "properties": { "type": { "const": "agent" } }
@@ -205,7 +205,9 @@
       "properties": {
         "model": {
           "type": "string",
-          "description": "Deployment the simulated user speaks with. Not the judge model an evaluator initializes, and not the model that generated the seeds."
+          "minLength": 1,
+          "pattern": "^[^/\\s]+/[^/\\s]+$",
+          "description": "Connection-qualified deployment (connection-name/model-deployment) the simulated user speaks with. Not the judge model an evaluator initializes, and not the model that generated the seeds."
         },
         "num_conversations": {
           "type": "integer",

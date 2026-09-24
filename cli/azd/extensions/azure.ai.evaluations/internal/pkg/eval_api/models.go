@@ -102,13 +102,29 @@ type GenerationJob struct {
 	// Recovering the type from here rather than from local state is what makes
 	// a reattach work with no azd environment to have recorded it in, and it is
 	// authoritative -- it is the request, not a guess from row shape.
-	Inputs *DataGenerationInputs `json:"inputs,omitempty"`
+	// Decode-only: job output must not expose echoed prompts and instructions.
+	Inputs *DataGenerationInputs `json:"-"`
 	// Warnings is what the service said about a job it nonetheless completed --
 	// most often that the input it was given was too thin to generate from. It
 	// was decoded nowhere, so a job that came back qualified was reported as an
 	// unqualified success and the artifact went into a configuration with
 	// nothing saying to look at it first.
 	Warnings []JobWarning `json:"warnings,omitempty"`
+}
+
+// UnmarshalJSON recovers the submitted type without adding inputs to job output.
+func (j *GenerationJob) UnmarshalJSON(data []byte) error {
+	type plain GenerationJob
+	var decoded struct {
+		plain
+		Inputs *DataGenerationInputs `json:"inputs"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*j = GenerationJob(decoded.plain)
+	j.Inputs = decoded.Inputs
+	return nil
 }
 
 // GenerationType is the kind of data a job was submitted to produce, or empty
@@ -526,6 +542,7 @@ type EvalRunDataSource struct {
 	// from the parameters that generated the seeds.
 	ModelConfiguration             *ModelConfiguration      `json:"model_configuration,omitempty"`
 	DefaultSimulationConfiguration *SimulationConfiguration `json:"default_simulation_configuration,omitempty"`
+	DataMapping                    map[string]string        `json:"data_mapping,omitempty"`
 	// SimulationSeedCount is captured from the validated dataset at submission,
 	// not sent as an unsupported service data-source field.
 	SimulationSeedCount *int `json:"-"`
@@ -702,10 +719,8 @@ func NewResponsesDataSource(responseIDs []string, maxTurns int) *EvalRunDataSour
 
 // SetFileContent sets the data source to use inline file content.
 //
-// There is no by-reference counterpart. A run's `file_id` means an uploaded
-// file, and a dataset name is not one — sending it is rejected with "invalid
-// data source file ids" — so registered datasets are fetched and sent inline
-// too. See readRegisteredDataset.
+// Unregistered local rows use this shape. Registered dataset versions use
+// SetFileID to preserve identity rather than submitting a copy of their rows.
 func (ds *EvalRunDataSource) SetFileContent(items []map[string]any) {
 	ds.Source = &EvalRunDataContent{
 		Type:    EvalRunDataContentTypeFileContent,

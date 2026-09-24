@@ -288,7 +288,7 @@ func TestSimulationSeedCountComesFromValidatedDatasetRows(t *testing.T) {
 	t.Cleanup(srv.Close)
 	group := runnableSimulation()
 	group.Simulation.NumConversations = 5
-	source, err := evalContextFor(srv).simulationDataSource(t.Context(), group, "", 0)
+	source, _, err := evalContextFor(srv).simulationDataSource(t.Context(), group, "", 0)
 	require.NoError(t, err)
 	require.NotNil(t, source.SimulationSeedCount)
 	assert.Equal(t, 2, *source.SimulationSeedCount)

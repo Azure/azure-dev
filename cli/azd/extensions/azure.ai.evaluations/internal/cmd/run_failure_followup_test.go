@@ -366,5 +366,25 @@ func TestRunFailureHumanOutputRedactsURLsWithoutMutatingJSON(t *testing.T) {
 				})
 			}
 		}
+
+	}
+}
+
+func TestRunFailureRedactsAdjacentURLs(t *testing.T) {
+	//nolint:gosec // Synthetic URL credentials verify non-disclosure; this fixture contains no real secret.
+	const message = `{"primary":"https://safe.example/a","secondary":"https://fixture-user:fixture-password@host/b"}`
+	run := &eval_api.OpenAIEvalRun{
+		ID: "run_failed", EvalID: "eval_failed", Status: "failed", Error: &eval_api.JobError{Message: message},
+	}
+	for _, render := range []func(io.Writer, *eval_api.OpenAIEvalRun) error{
+		renderRunDetail,
+		func(out io.Writer, run *eval_api.OpenAIEvalRun) error { return renderRun(out, run, nil) },
+	} {
+		var out bytes.Buffer
+		require.NoError(t, render(&out, run))
+		assert.Contains(t, out.String(), "<redacted-url>")
+		assert.NotContains(t, out.String(), "fixture-user")
+		assert.NotContains(t, out.String(), "fixture-password")
+		assert.Equal(t, message, run.Error.Message, "human redaction must not rewrite the service response")
 	}
 }

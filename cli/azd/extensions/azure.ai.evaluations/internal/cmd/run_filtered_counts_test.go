@@ -5,7 +5,9 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"azureaieval/internal/pkg/eval_api"
@@ -66,5 +68,35 @@ func TestFilteredResultCountsDoNotInventMissingServiceTotals(t *testing.T) {
 		} else {
 			assert.Contains(t, out.String(), "Full run: 0 failed of 0 total test cases (service-reported).")
 		}
+	}
+
+}
+
+func TestFilteredResultFooterRequiresReportedCounters(t *testing.T) {
+	for _, tc := range []struct {
+		name, counts string
+		wantTotal    bool
+	}{
+		{"missing failed", `{"total":2}`, false},
+		{"null failed", `{"total":2,"failed":null}`, false},
+		{"missing total", `{"failed":1}`, false},
+		{"null total", `{"total":null,"failed":1}`, false},
+		{"no counters", `{}`, false},
+		{"negative counter", `{"total":2,"failed":-1}`, false},
+		{"explicit zeros", `{"total":0,"failed":0}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var run eval_api.OpenAIEvalRun
+			require.NoError(t, json.Unmarshal([]byte(`{
+					"id":"run_partial","metadata":{"azd_run_mode":"conversation_simulation"},
+					"result_counts":`+tc.counts+`}`), &run))
+			var out bytes.Buffer
+			require.NoError(t, renderResults(&out, "eval_partial", &run, []eval_api.OutputItem{failingItem("1")}, true))
+			assert.Contains(t, out.String(), "Showing 1 failed test cases on this page.")
+			assert.Equal(t, tc.wantTotal, strings.Contains(out.String(), "Full run:"))
+			if tc.wantTotal {
+				assert.Contains(t, out.String(), "Full run: 0 failed of 0 total test cases (service-reported).")
+			}
+		})
 	}
 }

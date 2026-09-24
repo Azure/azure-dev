@@ -170,3 +170,16 @@ func TestTextRedactsEmbeddedURLCredentials(t *testing.T) {
 		})
 	}
 }
+
+func TestTextRedactsAdjacentURLs(t *testing.T) {
+	for _, text := range []string{
+		`{"primary":"https://safe.example/a","secondary":"https://fixture-user:fixture-password@private.example/b"}`,
+		"https://safe.example/a,https://fixture-user:fixture-password@private.example/b",
+		"https://safe.example/a,//fixture-user:fixture-password@private.example/b",
+	} {
+		safe := Text(text)
+		assert.Contains(t, safe, "<redacted-url>")
+		assert.NotContains(t, safe, "fixture-user")
+		assert.NotContains(t, safe, "fixture-password")
+	}
+}

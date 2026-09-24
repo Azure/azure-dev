@@ -153,7 +153,7 @@ func TestValidateRunnable_Accepts(t *testing.T) {
 			Dataset:         "d",
 			EvaluationLevel: EvaluationLevelConversation,
 			Target:          &Target{Type: TargetTypeAgent, Name: "a"},
-			Simulation:      &Simulation{Model: "gpt-4o-mini", NumConversations: 1, MaxTurns: 5},
+			Simulation:      &Simulation{Model: "connection/gpt-4o-mini", NumConversations: 1, MaxTurns: 5},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -170,7 +170,7 @@ func runnableSimulation() Eval {
 		Dataset:         "d",
 		EvaluationLevel: EvaluationLevelConversation,
 		Target:          &Target{Type: TargetTypeAgent, Name: "hero-agent"},
-		Simulation:      &Simulation{Model: "gpt-4o-mini", NumConversations: 1, MaxTurns: 5},
+		Simulation:      &Simulation{Model: "connection/gpt-4o-mini", NumConversations: 1, MaxTurns: 5},
 	}
 }
 

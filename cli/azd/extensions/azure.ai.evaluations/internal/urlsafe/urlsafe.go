@@ -23,6 +23,11 @@ var embeddedURL = regexp.MustCompile(`(?i)(?:\b[a-z][a-z0-9+.-]*:)?//[^\s]+`)
 // A malformed URL is hidden entirely rather than risking a partial redaction.
 func Text(text string) string {
 	return embeddedURL.ReplaceAllStringFunc(text, func(raw string) string {
+		// Adjacent URLs can be parsed as one URL whose path contains another
+		// authority. Hide the ambiguous token instead of leaking its userinfo.
+		if strings.Count(raw, "//") > 1 {
+			return "<redacted-url>"
+		}
 		// Quotes can be valid inside userinfo or a query. Only peel trailing
 		// prose punctuation, never split a credential-bearing URL at a quote.
 		candidate := strings.TrimRight(raw, `"'.,;)}>`)

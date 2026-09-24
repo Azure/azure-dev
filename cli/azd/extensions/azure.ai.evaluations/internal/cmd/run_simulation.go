@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"unicode/utf8"
 
 	"azureaieval/internal/exterrors"
 	"azureaieval/internal/messages"
@@ -16,9 +17,12 @@ import (
 // Seed-row fields. A scenario describes a conversation to create; it carries no
 // question, because nobody has asked one yet.
 const (
-	seedDescriptionField = "test_case_description"
-	seedTurnsField       = "desired_num_turns"
-	completedRowsField   = "messages"
+	seedDescriptionField     = "test_case_description"
+	seedConfigField          = "simulation_configuration"
+	seedTurnsField           = "desired_num_turns"
+	completedRowsField       = "messages"
+	defaultSimulationTurns   = 20
+	maxSeedDescriptionLength = 2500
 )
 
 // simulationDataSource builds the run for an eval that creates its
@@ -30,44 +34,40 @@ const (
 func (ec *evalContext) simulationDataSource(
 	ctx context.Context,
 	group *project.Eval,
-	configPath string,
+	pinnedVersion string,
 	maxSamples int,
-) (*eval_api.EvalRunDataSource, error) {
+) (*eval_api.EvalRunDataSource, string, error) {
 	// The declaration rules are project.ValidateRunnable's, so `azd up` refuses
 	// the same shapes this does; the caller has already applied them. What is
 	// left here is the resolved cap, which --max-samples can introduce for a
 	// declaration that carries none.
 	if maxSamples > 0 {
-		return nil, messages.InEval(group.Name, messages.SimulationCannotBeSampled(maxSamples))
+		return nil, "", messages.InEval(group.Name, messages.SimulationCannotBeSampled(maxSamples))
 	}
 
 	// The azure.yaml service key is a local label; the agent answers to what its
 	// service declares. The turn path resolves the same way.
 	agent, err := ec.remoteAgentName(ctx, group.Target.Name)
 	if err != nil {
-		return nil, simulationError(group, err.Error(), "")
+		return nil, "", simulationError(group, err.Error(), "")
 	}
 
 	// Read whole: the run is bound to the registered version, so a cap here
 	// would validate a prefix of what the service is about to simulate from.
-	items, version, err := ec.readRegisteredDataset(
-		ctx, group.Dataset, declaredDatasetVersion(configPath, group), 0)
+	version, err := ec.resolveRunDatasetVersion(ctx, group.Dataset, pinnedVersion, false)
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+	id, err := ec.datasetResourceID(ctx, group.Dataset, version)
+	if err != nil {
+		return nil, "", err
+	}
+	items, err := ec.readDatasetVersion(ctx, group.Dataset, version)
+	if err != nil {
+		return nil, "", err
 	}
 	if err := refuseUnusableSeedRows(group, items); err != nil {
-		return nil, err
-	}
-
-	// A seed dataset is referenced, never copied. The spec is explicit that
-	// inline rows are not equivalent for a registered dataset, and a version the
-	// service will not describe is not one a run can be pinned to.
-	id := ec.datasetResourceID(ctx, group.Dataset, version)
-	if id == "" {
-		return nil, simulationError(group,
-			fmt.Sprintf("dataset %q version %q could not be resolved to a registered id", group.Dataset, version),
-			"A simulation run is bound to the registered dataset version. Publish the dataset with "+
-				"`azd ai eval create` or `azd up` before running it.")
+		return nil, "", err
 	}
 
 	ds := eval_api.NewSimulationDataSource(
@@ -78,7 +78,7 @@ func (ec *evalContext) simulationDataSource(
 	)
 	ds.SetFileID(id)
 	ds.SimulationSeedCount = new(len(items))
-	return ds, nil
+	return ds, version, nil
 }
 
 // refuseUnusableSeedRows checks every row before anything is created.
@@ -110,6 +110,13 @@ func refuseUnusableSeedRows(group *project.Eval, items []map[string]any) error {
 				fmt.Sprintf("%q describes the conversation to create, so it has to be a non-empty string.",
 					seedDescriptionField))
 		}
+		if length := utf8.RuneCountInString(text); length > maxSeedDescriptionLength {
+			return simulationError(group,
+				fmt.Sprintf("row %d has %s with %d characters; the maximum is %d",
+					i+1, seedDescriptionField, length, maxSeedDescriptionLength),
+				fmt.Sprintf("Shorten %s to at most %d characters and publish a new dataset version.",
+					seedDescriptionField, maxSeedDescriptionLength))
+		}
 
 		if err := checkDesiredTurns(group, item, i); err != nil {
 			return err
@@ -122,27 +129,56 @@ func refuseUnusableSeedRows(group *project.Eval, items []map[string]any) error {
 // number. JSON numbers decode as float64, so a fractional value is a real
 // possibility rather than a theoretical one.
 func checkDesiredTurns(group *project.Eval, item map[string]any, index int) error {
-	raw, present := item[seedTurnsField]
+	if _, flat := item[seedTurnsField]; flat {
+		return simulationError(group,
+			fmt.Sprintf("row %d has %s outside %s; the service does not read this flat field",
+				index+1, seedTurnsField, seedConfigField),
+			fmt.Sprintf("Move %s into %s.%s and publish a new dataset version before running.",
+				seedTurnsField, seedConfigField, seedTurnsField))
+	}
+	raw, present := item[seedConfigField]
 	if !present {
 		return nil
 	}
-
-	turns, ok := wholeNumber(raw)
-	if !ok || turns < 1 {
+	config, ok := raw.(map[string]any)
+	if !ok {
 		return simulationError(group,
-			fmt.Sprintf("row %d has %s = %v, which is not a positive whole number of turns",
-				index+1, seedTurnsField, raw),
-			fmt.Sprintf("%q is how many turns that one conversation should run for.", seedTurnsField))
+			fmt.Sprintf("row %d has a non-object %s", index+1, seedConfigField),
+			fmt.Sprintf("%s must be an object containing optional turn settings, or be omitted.", seedConfigField))
 	}
 
-	// The per-row count is a request, and the eval's own bound is the ceiling.
-	// Saying so here beats a conversation silently ending early.
-	if group.Simulation.MaxTurns > 0 && turns > group.Simulation.MaxTurns {
+	maxTurns := group.Simulation.MaxTurns
+	if maxTurns == 0 {
+		maxTurns = defaultSimulationTurns
+	}
+	maxField := "simulation.max_turns"
+	turns := 0
+	for _, field := range []string{"max_num_turns", seedTurnsField} {
+		value, present := config[field]
+		if !present {
+			continue
+		}
+		n, ok := wholeNumber(value)
+		if !ok || n < 1 {
+			return simulationError(group,
+				fmt.Sprintf("row %d has %s.%s = %v, which is not a positive whole number of turns",
+					index+1, seedConfigField, field, value),
+				"Use a positive whole number, or omit the setting to keep the default.")
+		}
+		if field == "max_num_turns" {
+			// Per-case settings override the run defaults in the service contract.
+			maxTurns = n
+			maxField = seedConfigField + "." + field
+		} else {
+			turns = n
+		}
+	}
+	if turns > maxTurns {
 		return simulationError(group,
-			fmt.Sprintf("row %d asks for %d turns, but simulation.max_turns is %d",
-				index+1, turns, group.Simulation.MaxTurns),
-			fmt.Sprintf("Raise simulation.max_turns to at least %d, or lower %s on that row.",
-				turns, seedTurnsField))
+			fmt.Sprintf("row %d asks for %d turns, but effective %s is %d",
+				index+1, turns, maxField, maxTurns),
+			fmt.Sprintf("Raise %s to at least %d, or lower %s.%s on that row.",
+				maxField, turns, seedConfigField, seedTurnsField))
 	}
 
 	return nil

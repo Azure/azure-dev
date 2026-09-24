@@ -466,7 +466,7 @@ func resolveEvalID(cmd *cobra.Command, ec *evalContext, groupName string) (strin
 	// evals could start a run by answering a question, and then not list,
 	// show or cancel it without repeating the answer as a flag.
 	//
-	// A closed picker is returned as itself so the command can report it as an
+	// An explicit Cancel choice is returned so the command can report it as an
 	// answer; resolving an id is not where that gets decided.
 	chosen, err := chooseEvalIn(cmd, evalDir, groupName)
 	if err != nil {
@@ -480,13 +480,13 @@ func resolveEvalID(cmd *cobra.Command, ec *evalContext, groupName string) (strin
 }
 
 // evalIDForRunCommand resolves the eval a run command acts on and reports a
-// closed picker as the answer it is.
+// explicit Cancel choice as the answer it is.
 //
 // Every run subcommand reaches the same picker `eval create` and `run start`
-// do, so closing it means the same thing at all of them: no eval was selected,
+// do, so choosing Cancel means the same thing at all of them: no eval was selected,
 // and there is nothing to list, show, cancel or export. Returning the sentinel
-// as a command error made those six exit non-zero on a deliberate answer,
-// which reads as the closing itself having failed.
+// as a command error made those seven exit non-zero on a deliberate answer,
+// which reads as the choice itself having failed.
 //
 // The bool reports whether to carry on. A cancelled selection has already been
 // reported to the reader and leaves the command nothing to do.
@@ -496,9 +496,9 @@ func evalIDForRunCommand(cmd *cobra.Command, ec *evalContext, groupName string) 
 }
 
 // answeredEvalID turns a resolution into what a run command needs, and is where
-// the closed picker stops being an error.
+// the explicit Cancel choice stops being an error.
 //
-// Separate from the resolution because reaching a closed picker for real needs
+// Separate from the resolution because reaching the picker for real needs
 // a project, a configuration and a terminal; this half needs none of them, so
 // it is the half a test can drive.
 func answeredEvalID(cmd *cobra.Command, evalID string, err error) (string, bool, error) {
@@ -995,8 +995,11 @@ func renderResults(
 		}
 		if failedOnly {
 			fmt.Fprint(w, messages.FilteredItemCount(shown, itemFailed))
-			if c := run.ResultCounts; c != nil {
-				fmt.Fprint(w, messages.FilteredRunTotal(c.Failed, c.Total, itemFailed))
+			counts := run.ReportedResultCounts()
+			failed, failedKnown := counts["failed"]
+			total, totalKnown := counts["total"]
+			if failedKnown && totalKnown {
+				fmt.Fprint(w, messages.FilteredRunTotal(failed, total, itemFailed))
 			}
 		}
 		if firstItem != "" {

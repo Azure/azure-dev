@@ -86,8 +86,8 @@ func TestAssessStorageRoles(t *testing.T) {
 		{"custom role", []*armauthorization.RoleAssignment{
 			storageTestAssignment("project", storageTestScope, "custom-role")}, storagePermissionUnknown},
 		{"conditional", []*armauthorization.RoleAssignment{conditional}, storagePermissionUnknown},
-		{"group returned by assignedTo", []*armauthorization.RoleAssignment{group}, storagePermissionGranted},
-		{"conditional group grant", []*armauthorization.RoleAssignment{conditionalGroup}, storagePermissionUnknown},
+		{"unverified group is not a direct grant", []*armauthorization.RoleAssignment{group}, storagePermissionMissing},
+		{"conditional group is not a direct grant", []*armauthorization.RoleAssignment{conditionalGroup}, storagePermissionMissing},
 		{"reader group cannot grant writes", []*armauthorization.RoleAssignment{readerGroup}, storagePermissionMissing},
 		{"group and direct grant", []*armauthorization.RoleAssignment{group, grant}, storagePermissionGranted},
 		{"management group inherited", []*armauthorization.RoleAssignment{
@@ -153,38 +153,75 @@ func TestQueryProjectStorageRBAC(t *testing.T) {
 		empty             bool
 		want              string
 		wantError         bool
-		groupGrant        bool
 		conditionalGrant  bool
 		assignmentScope   string
 		definitionType    string
 		definitionStatus  int
 		dataActions       []string
+		notDataActions    []string
 		repeatAssignment  bool
 		standardSetup     bool
+		noHost            bool
+		hostStatus        int
+		hostState         string
+		hostResponse      any
+		pagedHosts        bool
+		unbound           bool
+		missingBinding    bool
 	}{
 		{name: "contributor", want: "granted"},
 		{name: "project managed identity auth", auth: "ProjectManagedIdentity", want: "granted"},
 		{name: "owner", role: storageBlobOwnerRole, want: "granted"},
-		{name: "effective group grant", groupGrant: true, want: "granted"},
-		{name: "conditional group grant", groupGrant: true, conditionalGrant: true, want: "unknown"},
+		{name: "conditional direct grant", conditionalGrant: true, want: "unknown"},
 		{name: "direct account grant", assignmentScope: storageTestScope, want: "granted"},
 		{name: "resource group inherited grant", assignmentScope: "/subscriptions/sub/resourceGroups/rg", want: "granted"},
 		{name: "container grant needs verification", assignmentScope: storageTestScope + "/blobServices/default/containers/data",
 			want: "unknown"},
-		{name: "missing grant", role: "none", want: "missing"},
+		{name: "service principal without direct grants leaves groups unverified", role: "none", want: "unknown"},
 		{name: "standard setup container roles", standardSetup: true, want: "unknown"},
-		{name: "unrelated inherited builtin", role: monitoringReaderRole, definitionType: "BuiltInRole", want: "missing"},
+		{name: "unrelated inherited builtin leaves groups unverified", role: monitoringReaderRole,
+			definitionType: "BuiltInRole", want: "unknown"},
 		{name: "role definition cached", role: monitoringReaderRole, definitionType: "BuiltInRole",
-			repeatAssignment: true, want: "missing"},
+			repeatAssignment: true, want: "unknown"},
 		{name: "definition forbidden", role: monitoringReaderRole, definitionStatus: 403, want: "unknown"},
 		{name: "custom role unresolved", role: "custom-role", definitionType: "CustomRole", want: "unknown"},
 		{name: "other service data builtin", role: "other-builtin", definitionType: "BuiltInRole",
-			dataActions: []string{"Microsoft.KeyVault/vaults/secrets/*"}, want: "missing"},
-		{name: "potential blob builtin", role: "other-blob-builtin", definitionType: "BuiltInRole",
-			dataActions: []string{"Microsoft.Storage/*"}, want: "unknown"},
+			dataActions: []string{"Microsoft.KeyVault/vaults/secrets/*"}, want: "unknown"},
+		{name: "equivalent blob builtin", role: "equivalent-builtin", definitionType: "BuiltInRole",
+			dataActions: []string{
+				"Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read",
+				"Microsoft.Storage/storageAccounts/blobServices/containers/blobs/write",
+				"Microsoft.Storage/storageAccounts/blobServices/containers/blobs/delete",
+			}, want: "granted"},
+		{name: "blob wildcard builtin", role: "other-blob-builtin", definitionType: "BuiltInRole",
+			dataActions: []string{"Microsoft.Storage/*"}, want: "granted"},
+		{name: "builtin excludes delete", role: "restricted-builtin", definitionType: "BuiltInRole",
+			dataActions: []string{"Microsoft.Storage/*"}, notDataActions: []string{"*/delete"}, want: "unknown"},
+		{name: "conditional equivalent builtin", role: "equivalent-builtin", definitionType: "BuiltInRole",
+			dataActions: []string{"Microsoft.Storage/*"}, conditionalGrant: true, want: "unknown"},
+		{name: "container equivalent builtin", role: "equivalent-builtin", definitionType: "BuiltInRole",
+			dataActions:     []string{"Microsoft.Storage/*"},
+			assignmentScope: storageTestScope + "/blobServices/default/containers/data", want: "unknown"},
 		{name: "account key", auth: "AccountKey", want: "skip"},
 		{name: "unknown auth", auth: "None", want: "unknown"},
 		{name: "managed storage", empty: true},
+		{name: "no capability host", noHost: true, role: "none"},
+		{name: "unbound shared and project storage", unbound: true, want: "granted"},
+		{name: "missing bound connection", missingBinding: true, want: "invalid"},
+		{name: "capability host unreadable", hostStatus: 403, wantError: true},
+		{name: "capability host not ready", hostState: "Creating", wantError: true},
+		{name: "capability host list incomplete", hostResponse: map[string]any{}, wantError: true},
+		{name: "capability host metadata incomplete",
+			hostResponse: map[string]any{"value": []any{nil}}, wantError: true},
+		{name: "capability host binding incomplete", hostResponse: map[string]any{"value": []any{
+			map[string]any{"properties": map[string]any{
+				"capabilityHostKind": "Agents", "provisioningState": "Succeeded", "storageConnections": []any{nil},
+			}},
+		}}, wantError: true},
+		{name: "capability host continuation rejected", hostResponse: map[string]any{
+			"value": []any{}, "nextLink": "https://untrusted.invalid/capabilityHosts",
+		}, wantError: true},
+		{name: "paged capability hosts", pagedHosts: true, want: "granted"},
 		{name: "shared connection", shared: true, want: "granted"},
 		{name: "explicitly shared connection", shared: true, explicitShare: true, want: "granted"},
 		{name: "duplicate target", duplicate: true, want: "granted"},
@@ -218,6 +255,7 @@ func TestQueryProjectStorageRBAC(t *testing.T) {
 			}
 			roleQueries := 0
 			definitionQueries := 0
+			hostPages := 0
 			accountPages, projectPages := 0, 0
 			transport := storageTestTransport(func(request *http.Request) (*http.Response, error) {
 				require.Equal(t, http.MethodGet, request.Method)
@@ -240,9 +278,47 @@ func TestQueryProjectStorageRBAC(t *testing.T) {
 					if testCase.projectStatus != 0 {
 						status = testCase.projectStatus
 					}
+				case projectID + "/capabilityHosts":
+					hostPages++
+					names := []string{"store"}
+					if testCase.duplicate {
+						names = append(names, "store-copy")
+					}
+					if testCase.missingBinding {
+						names = []string{"missing"}
+					}
+					if testCase.empty {
+						names = []string{}
+					}
+					state := testCase.hostState
+					if state == "" {
+						state = "Succeeded"
+					}
+					items := []any{map[string]any{"name": "custom-host", "properties": map[string]any{
+						"capabilityHostKind": "Agents", "provisioningState": state, "storageConnections": names,
+					}}}
+					if testCase.noHost {
+						items = []any{}
+					}
+					body = map[string]any{"value": items}
+					if testCase.pagedHosts && hostPages == 1 {
+						body = map[string]any{"value": []any{}, "nextLink": request.URL.String() + "&page=2"}
+					}
+					if testCase.hostStatus != 0 {
+						status = testCase.hostStatus
+					}
+					if testCase.hostResponse != nil {
+						body = testCase.hostResponse
+					}
 				case strings.TrimSuffix(projectID, "/projects/project") + "/connections":
 					accountPages++
 					items := []any{connection("unshared", "AAD", false), connection("store", "AccountKey", true)}
+					if testCase.unbound {
+						items = append(items, map[string]any{"name": "unbound-shared", "properties": map[string]any{
+							"category": "AzureStorageAccount", "authType": "AAD", "isSharedToAll": true,
+							"metadata": map[string]string{"ResourceId": "invalid"},
+						}})
+					}
 					if testCase.shared {
 						items = []any{connection("store", "AAD", true)}
 					}
@@ -266,6 +342,11 @@ func TestQueryProjectStorageRBAC(t *testing.T) {
 				case projectID + "/connections":
 					projectPages++
 					items := []any{connection("store", auth, false)}
+					if testCase.unbound {
+						items = append(items, map[string]any{"name": "unbound-project", "properties": map[string]any{
+							"category": "AzureStorageAccount", "authType": "AAD", "metadata": map[string]string{"ResourceId": "invalid"},
+						}})
+					}
 					if testCase.duplicate {
 						items = append(items, connection("store-copy", auth, false))
 					}
@@ -286,17 +367,13 @@ func TestQueryProjectStorageRBAC(t *testing.T) {
 					}
 				case storageTestScope + "/providers/Microsoft.Authorization/roleAssignments":
 					roleQueries++
-					require.Equal(t, "assignedTo('"+principalID+"')", request.URL.Query().Get("$filter"))
+					require.Equal(t, "principalId eq '"+principalID+"'", request.URL.Query().Get("$filter"))
 					assignmentScope := testCase.assignmentScope
 					if assignmentScope == "" {
 						assignmentScope = "/subscriptions/sub"
 					}
 					items := []*armauthorization.RoleAssignment{
 						storageTestAssignment(principalID, assignmentScope, role),
-					}
-					if testCase.groupGrant {
-						items[0].Properties.PrincipalID = new("resolved-group")
-						items[0].Properties.PrincipalType = new(armauthorization.PrincipalTypeGroup)
 					}
 					if testCase.conditionalGrant {
 						items[0].Properties.Condition = new("restricted")
@@ -325,8 +402,10 @@ func TestQueryProjectStorageRBAC(t *testing.T) {
 				case "/providers/Microsoft.Authorization/roleDefinitions/" + role:
 					definitionQueries++
 					body = map[string]any{"properties": map[string]any{
-						"type":        testCase.definitionType,
-						"permissions": []any{map[string]any{"actions": []string{"*/read"}, "dataActions": testCase.dataActions}},
+						"type": testCase.definitionType,
+						"permissions": []any{map[string]any{
+							"actions": []string{"*/read"}, "dataActions": testCase.dataActions, "notDataActions": testCase.notDataActions,
+						}},
 					}}
 					if testCase.definitionStatus != 0 {
 						status = testCase.definitionStatus
@@ -350,11 +429,15 @@ func TestQueryProjectStorageRBAC(t *testing.T) {
 			result, err := queryProjectStorageRBAC(t.Context(), projectID, storageTestCredential{}, options)
 			if testCase.wantError {
 				require.Error(t, err)
+				require.Zero(t, roleQueries)
 				return
 			}
 			require.NoError(t, err)
-			if testCase.empty {
+			if testCase.empty || testCase.noHost {
 				require.Empty(t, result.Findings)
+				require.Zero(t, roleQueries)
+				require.Zero(t, accountPages)
+				require.Zero(t, projectPages)
 				return
 			}
 			if testCase.duplicate {
@@ -366,6 +449,10 @@ func TestQueryProjectStorageRBAC(t *testing.T) {
 			require.Equal(t, testCase.want, result.Findings[0].Status)
 			if testCase.standardSetup {
 				require.Contains(t, result.Findings[0].Message, "container-scoped")
+			}
+			if role == "none" || testCase.repeatAssignment ||
+				(testCase.role == monitoringReaderRole && testCase.definitionStatus == 0) {
+				require.Contains(t, result.Findings[0].Message, "group permissions have not been verified")
 			}
 			if testCase.definitionType != "" || testCase.definitionStatus != 0 {
 				require.Equal(t, 1, definitionQueries)
@@ -382,6 +469,9 @@ func TestQueryProjectStorageRBAC(t *testing.T) {
 			if testCase.pagedConnections {
 				require.Equal(t, 2, accountPages)
 				require.Equal(t, 2, projectPages)
+			}
+			if testCase.pagedHosts {
+				require.Equal(t, 2, hostPages)
 			}
 		})
 	}
@@ -518,4 +608,41 @@ func TestStorageRoleExcludesBlobData(t *testing.T) {
 	}
 	require.False(t, storageRoleExcludesBlobData(nil))
 	require.False(t, storageRoleExcludesBlobData(&armauthorization.RoleDefinition{}))
+}
+
+func TestStorageRoleGrantsBlobData(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name        string
+		roleType    string
+		permissions []*armauthorization.Permission
+		want        bool
+	}{
+		{"wildcard", "BuiltInRole", []*armauthorization.Permission{{DataActions: []*string{new("*")}}}, true},
+		{"case insensitive", "BuiltInRole", []*armauthorization.Permission{{
+			DataActions: []*string{new("MICROSOFT.STORAGE/*/BLOBS/*")},
+		}}, true},
+		{"read only", "BuiltInRole", []*armauthorization.Permission{{DataActions: []*string{new("*/read")}}}, false},
+		{"excluded write", "BuiltInRole", []*armauthorization.Permission{{
+			DataActions: []*string{new("*")}, NotDataActions: []*string{new("*/write")},
+		}}, false},
+		{"independent permission restores write", "BuiltInRole", []*armauthorization.Permission{
+			{DataActions: []*string{new("*")}, NotDataActions: []*string{new("*/write")}},
+			{DataActions: []*string{new("*/write")}},
+		}, true},
+		{"custom remains unresolved", "CustomRole", []*armauthorization.Permission{{DataActions: []*string{new("*")}}}, false},
+		{"missing permission", "BuiltInRole", []*armauthorization.Permission{nil}, false},
+		{"missing exclusion", "BuiltInRole", []*armauthorization.Permission{{
+			DataActions: []*string{new("*")}, NotDataActions: []*string{nil},
+		}}, false},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			definition := &armauthorization.RoleDefinition{Properties: &armauthorization.RoleDefinitionProperties{
+				RoleType: new(testCase.roleType), Permissions: testCase.permissions,
+			}}
+			require.Equal(t, testCase.want, storageRoleGrantsBlobData(definition))
+		})
+	}
+	require.False(t, storageRoleGrantsBlobData(nil))
+	require.False(t, storageRoleGrantsBlobData(&armauthorization.RoleDefinition{}))
 }

@@ -52,14 +52,21 @@ no-prompt behavior.
 
 ## Project storage diagnostics
 
-Run `azd ai agent doctor` to check the current project's Storage connections and
-project managed identity permissions. The `Project storage permissions` check
-reads project connections and account connections shared with that project,
-using their Storage resource IDs rather than probing arbitrary endpoints.
-It recognizes Storage Blob Data Contributor and Storage Blob Data Owner,
-including applicable inherited assignments and group grants returned for the
-project identity. Supported project-identity authentication includes AAD and
-ProjectManagedIdentity connections.
+Run `azd ai agent doctor` to check project managed identity permissions for the
+Storage connections named in the project capability host's `storageConnections`.
+The `Project storage permissions` check resolves those names from project
+connections or account connections shared with the project, using Storage
+resource IDs rather than probing arbitrary endpoints. Unbound connections are
+ignored. Projects without a capability host or Storage bindings are skipped.
+Unreadable or incomplete capability host metadata produces a warning. See
+[capability hosts](https://learn.microsoft.com/azure/foundry/agents/concepts/capability-hosts)
+for the project storage binding model.
+
+The check recognizes direct assignments of Storage Blob Data Contributor,
+Storage Blob Data Owner, and equivalent built-in roles with Blob read, write,
+and delete data permissions, accounting for `NotDataActions`. Assignments can
+be inherited from an ancestor scope. Supported project-identity authentication
+includes AAD and ProjectManagedIdentity connections.
 
 Connections using account keys, SAS, or a separate service principal are skipped.
 Missing metadata, unsupported identity selection, unreadable assignments, and
@@ -67,8 +74,10 @@ unresolved custom or conditional permissions produce a warning instead
 of a missing-permission claim. Container-scoped Blob grants also produce a warning
 when the project's exact container access cannot be verified; the check does not
 recommend expanding those grants to the entire account. Unrecognized role
-definitions are read as needed, so unrelated built-in roles such as Monitoring
-Reader do not prevent a missing-permission finding.
+definitions are read as needed. Managed identity group memberships are not
+resolved by this check: when sufficient direct permissions are absent, it warns
+that group access remains unverified instead of claiming permissions are missing.
+Invalid bound connection or identity configuration still fails the check.
 
 The check never reads connection secrets, accesses
 blob data, or creates role assignments. A pass does not verify network access.

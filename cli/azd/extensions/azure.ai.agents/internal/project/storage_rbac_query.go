@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -15,6 +17,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
@@ -107,6 +110,13 @@ func queryProjectStorageRBAC(
 	if identity := projectResponse.Identity; identity != nil && identity.PrincipalID != nil {
 		result.PrincipalID = *identity.PrincipalID
 	}
+	boundConnections, err := projectStorageBindings(ctx, credential, options, info.ProjectScope)
+	if err != nil {
+		return nil, fmt.Errorf("read project storage bindings: %w", err)
+	}
+	if len(boundConnections) == 0 {
+		return result, nil
+	}
 	connections := map[string]*armcognitiveservices.ConnectionPropertiesV2BasicResource{}
 	accountPager := factory.NewAccountConnectionsClient().NewListPager(info.ResourceGroup, info.AccountName, nil)
 	for accountPager.More() {
@@ -115,8 +125,14 @@ func queryProjectStorageRBAC(
 			return nil, fmt.Errorf("list shared storage connections: %w", pageErr)
 		}
 		for _, connection := range page.Value {
-			if connection == nil || connection.Properties == nil || connection.Name == nil {
+			if connection == nil || connection.Name == nil {
 				return nil, errors.New("incomplete shared connection metadata")
+			}
+			if _, bound := boundConnections[strings.ToLower(*connection.Name)]; !bound {
+				continue
+			}
+			if connection.Properties == nil {
+				return nil, errors.New("incomplete shared connection properties")
 			}
 			properties := connection.Properties.GetConnectionPropertiesV2()
 			if properties == nil {
@@ -141,20 +157,29 @@ func queryProjectStorageRBAC(
 			return nil, fmt.Errorf("list project storage connections: %w", pageErr)
 		}
 		for _, connection := range page.Value {
-			if connection == nil || connection.Properties == nil || connection.Name == nil {
+			if connection == nil || connection.Name == nil {
 				return nil, errors.New("incomplete project connection metadata")
 			}
-			connections[strings.ToLower(*connection.Name)] = connection
+			if _, bound := boundConnections[strings.ToLower(*connection.Name)]; bound {
+				connections[strings.ToLower(*connection.Name)] = connection
+			}
 		}
 	}
 	seen := map[string]StorageRBACFinding{}
-	for _, connection := range connections {
+	for key, name := range boundConnections {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		connection, exists := connections[key]
+		if !exists {
+			result.Findings = append(result.Findings, StorageRBACFinding{
+				ConnectionName: name, Status: "invalid", Message: "the capability host's Storage connection was not found",
+			})
+			continue
+		}
 		finding, relevant := storageConnectionFinding(connection)
 		if !relevant {
-			continue
+			finding.Status, finding.Message = "invalid", "the capability host's connection does not identify Storage"
 		}
 		if finding.Status != "" {
 			result.Findings = append(result.Findings, finding)
@@ -183,6 +208,84 @@ func queryProjectStorageRBAC(
 		return nil, err
 	}
 	return result, nil
+}
+
+func projectStorageBindings(
+	ctx context.Context, credential azcore.TokenCredential, options *arm.ClientOptions, projectScope string,
+) (map[string]string, error) {
+	client, err := arm.NewClient("azure.ai.agents.storage-diagnostics", "v1.0.0", credential, options)
+	if err != nil {
+		return nil, err
+	}
+	type capabilityHostPage struct {
+		Value    []*armcognitiveservices.CapabilityHost `json:"value"`
+		NextLink string                                 `json:"nextLink"`
+	}
+	endpoint, err := url.Parse(client.Endpoint())
+	if err != nil {
+		return nil, err
+	}
+	pager := runtime.NewPager(runtime.PagingHandler[capabilityHostPage]{
+		More: func(page capabilityHostPage) bool { return page.NextLink != "" },
+		Fetcher: func(ctx context.Context, previous *capabilityHostPage) (capabilityHostPage, error) {
+			requestURL := client.Endpoint() + projectScope + "/capabilityHosts?api-version=2025-06-01"
+			if previous != nil {
+				next, err := url.Parse(previous.NextLink)
+				if err != nil {
+					return capabilityHostPage{}, errors.New("invalid capability host continuation URL")
+				}
+				next = endpoint.ResolveReference(next)
+				if next.Scheme != endpoint.Scheme || !strings.EqualFold(next.Host, endpoint.Host) ||
+					next.User != nil || next.Fragment != "" {
+					return capabilityHostPage{}, errors.New("invalid capability host continuation endpoint")
+				}
+				requestURL = next.String()
+			}
+			request, err := runtime.NewRequest(ctx, http.MethodGet, requestURL)
+			if err != nil {
+				return capabilityHostPage{}, err
+			}
+			response, err := client.Pipeline().Do(request)
+			if err != nil {
+				return capabilityHostPage{}, err
+			}
+			if response.StatusCode != http.StatusOK {
+				return capabilityHostPage{}, runtime.NewResponseError(response)
+			}
+			var page capabilityHostPage
+			err = runtime.UnmarshalAsJSON(response, &page)
+			return page, err
+		},
+	})
+	bindings := map[string]string{}
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if page.Value == nil {
+			return nil, errors.New("incomplete capability host list")
+		}
+		for _, host := range page.Value {
+			if host == nil || host.Properties == nil || host.Properties.CapabilityHostKind == nil {
+				return nil, errors.New("incomplete capability host metadata")
+			}
+			properties := host.Properties
+			if !strings.EqualFold(string(*properties.CapabilityHostKind), "Agents") {
+				continue
+			}
+			if properties.ProvisioningState == nil || string(*properties.ProvisioningState) != "Succeeded" {
+				return nil, errors.New("project capability host is not ready")
+			}
+			for _, name := range properties.StorageConnections {
+				if name == nil || strings.TrimSpace(*name) == "" {
+					return nil, errors.New("incomplete capability host storage binding")
+				}
+				bindings[strings.ToLower(*name)] = *name
+			}
+		}
+	}
+	return bindings, nil
 }
 
 func storageConnectionFinding(
@@ -269,7 +372,7 @@ func queryStorageRoles(
 		return "unknown", "could not initialize the role assignment query"
 	}
 	pager := roles.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
-		Filter: new(fmt.Sprintf("assignedTo('%s')", principalID)),
+		Filter: new(fmt.Sprintf("principalId eq '%s'", principalID)),
 	})
 	var assignments []*armauthorization.RoleAssignment
 	for pager.More() {
@@ -305,7 +408,7 @@ func queryStorageRoles(
 	case storagePermissionGranted:
 		return string(assessment), "required Blob data role assignment found"
 	case storagePermissionMissing:
-		return string(assessment), "required Blob data role assignment is missing"
+		return "unknown", "no sufficient direct Blob data grant was found; managed identity group permissions have not been verified"
 	case storagePermissionScoped:
 		return "unknown", "container-scoped Blob data grants exist; access to the project's containers has not been verified"
 	default:
@@ -313,7 +416,7 @@ func queryStorageRoles(
 	}
 }
 
-// assessStorageRoles consumes assignedTo-filtered results, including groups resolved for the project principal.
+// assessStorageRoles checks assignments to the project principal, not unresolved group memberships.
 func assessStorageRoles(
 	assignments []*armauthorization.RoleAssignment, principalID, storageScope string,
 	lookupDefinition func(string) *armauthorization.RoleDefinition,
@@ -339,6 +442,9 @@ func assessStorageRoles(
 			result = storagePermissionUnknown
 			continue
 		}
+		if !strings.EqualFold(principal, principalID) {
+			continue
+		}
 		inheritedManagementGroup := strings.HasPrefix(scope, managementGroupPrefix)
 		containerScope := strings.HasPrefix(scope, containerPrefix)
 		if scope != target && !strings.HasPrefix(target, scope+"/") && !inheritedManagementGroup && !containerScope {
@@ -349,15 +455,6 @@ func assessStorageRoles(
 		switch roleID {
 		case "acdd72a7-3385-48ef-bd42-f606fba81ae7", roleContributor, roleOwner,
 			"17d1049b-9a84-46fb-8f53-869881c3d3ab", "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1":
-			continue
-		}
-		groupAssignment := properties.PrincipalType != nil &&
-			(*properties.PrincipalType == armauthorization.PrincipalTypeGroup ||
-				*properties.PrincipalType == armauthorization.PrincipalTypeForeignGroup)
-		if !strings.EqualFold(principal, principalID) && !groupAssignment {
-			if properties.PrincipalType == nil {
-				result = storagePermissionUnknown
-			}
 			continue
 		}
 		switch roleID {
@@ -371,8 +468,20 @@ func assessStorageRoles(
 			}
 			result = storagePermissionUnknown
 		default:
-			if lookupDefinition != nil && storageRoleExcludesBlobData(lookupDefinition(*properties.RoleDefinitionID)) {
-				continue
+			if lookupDefinition != nil {
+				definition := lookupDefinition(*properties.RoleDefinitionID)
+				if storageRoleExcludesBlobData(definition) {
+					continue
+				}
+				if storageRoleGrantsBlobData(definition) {
+					if containerScope {
+						containerGrant = true
+						continue
+					}
+					if properties.Condition == nil || strings.TrimSpace(*properties.Condition) == "" {
+						return storagePermissionGranted
+					}
+				}
 			}
 			result = storagePermissionUnknown
 		}
@@ -408,4 +517,40 @@ func storageRoleExcludesBlobData(definition *armauthorization.RoleDefinition) bo
 		}
 	}
 	return true
+}
+
+func storageRoleGrantsBlobData(definition *armauthorization.RoleDefinition) bool {
+	if definition == nil || definition.Properties == nil || definition.Properties.RoleType == nil ||
+		!strings.EqualFold(*definition.Properties.RoleType, "BuiltInRole") {
+		return false
+	}
+	for _, operation := range []string{"read", "write", "delete"} {
+		action := "Microsoft.Storage/storageAccounts/blobServices/containers/blobs/" + operation
+		granted := false
+		for _, permission := range definition.Properties.Permissions {
+			if permission == nil {
+				continue
+			}
+			allowed := slices.ContainsFunc(permission.DataActions, func(pattern *string) bool {
+				return pattern != nil && storageActionMatches(*pattern, action)
+			})
+			excluded := slices.ContainsFunc(permission.NotDataActions, func(pattern *string) bool {
+				return pattern == nil || storageActionMatches(*pattern, action)
+			})
+			if allowed && !excluded {
+				granted = true
+				break
+			}
+		}
+		if !granted {
+			return false
+		}
+	}
+	return true
+}
+
+func storageActionMatches(pattern, action string) bool {
+	expression := "(?i)^" + strings.ReplaceAll(regexp.QuoteMeta(pattern), `\*`, ".*") + "$"
+	matched, _ := regexp.MatchString(expression, action)
+	return matched
 }

@@ -63,7 +63,7 @@ func storageRBACQueryError(err error) Result {
 	}
 	return Result{
 		Status: StatusWarn, Message: "Could not verify project storage permissions.",
-		Suggestion: "Verify access to project metadata, shared connections, and role assignments, then retry.",
+		Suggestion: "Verify access to project metadata, capability hosts, connections, and role assignments, then retry.",
 		Links:      []string{storageRBACLearnLink},
 	}
 }
@@ -73,7 +73,9 @@ func classifyProjectStorageRBAC(result *project.ProjectStorageRBACResult, unreda
 		return storageRBACQueryError(errors.New("empty storage query result"))
 	}
 	if len(result.Findings) == 0 {
-		return Result{Status: StatusSkip, Message: "skipped: no applicable customer-owned Storage connections were found."}
+		return Result{
+			Status: StatusSkip, Message: "skipped: no customer-owned Storage connections are bound to the project capability host.",
+		}
 	}
 	principal := redactID(result.PrincipalID, unredacted)
 	var lines []string
@@ -134,7 +136,7 @@ func classifyProjectStorageRBAC(result *project.ProjectStorageRBACResult, unreda
 	case warned > 0:
 		response.Status = StatusWarn
 		response.Suggestion = "Verify the Storage connection authentication and role-assignment read access; " +
-			"have an administrator verify any unresolved permissions on the project's containers or accounts."
+			"have an administrator verify any unresolved direct or group permissions on the project's containers or accounts."
 	case passed == 0:
 		response.Status = StatusSkip
 		response.Message = "skipped: the configured Storage connections do not use the project managed identity."

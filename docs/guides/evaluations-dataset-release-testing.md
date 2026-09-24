@@ -1,0 +1,310 @@
+# Evaluations and dataset release testing
+
+Use this contributor checklist for every release bug bash of `azure.ai.evaluations`
+and `azure.ai.dataset`. One testing coordinator owns this document, the regression
+inventory, and the evidence index. Individual testers supply receipts rather than
+maintaining competing release plans.
+
+The [bug-bash instructions][recipes] remain the command recipes and user journeys.
+The [feed release index][release-index] identifies published packages. This guide
+defines coverage, prerequisites, acceptance criteria, and evidence boundaries; it
+does not replace either document or authorize publication, Azure spending, or
+changes to shared resources. The feed is an unofficial prerelease feed, not the
+official extension registry.
+
+## Evidence contract
+
+Use exactly `PASS`, `FAIL`, `BLOCKED`, or `NOT RUN` for each scenario on each tested
+artifact. `PASS` requires measured assertions, not just command completion.
+`FAIL` requires an observed mismatch; an unavailable prerequisite is `BLOCKED`.
+`NOT RUN` means no execution is claimed. Record individual cases separately.
+
+Every release receipt must contain:
+
+| Field | Required evidence |
+| --- | --- |
+| Identity | Release tag, both extension versions, immutable source SHA, registry URL and SHA256, platform archive SHA256, installed executable SHA256, and `azd version` |
+| Environment | OS and architecture, isolated configuration/work directory, native authentication method if used, and tester-owned resource prefix |
+| Scenario | Stable case ID, prerequisites, exact sanitized commands, start/end time, timeout, expected assertions, and observed exit codes/stdout/stderr |
+| State | Before/after authored and private file digests for mutation-sensitive cases; exact owned service identities and versions for live cases |
+| Result | Evidence status, assertion results, redacted log/report links, relevant bug IDs, and limitations |
+| Cleanup | Owned processes stopped, local state retained or removed intentionally, and owned service cleanup outcome; report cleanup failures separately |
+
+Keep raw prompts, responses, tokens, and infrastructure identifiers in appropriately
+restricted evidence, not public receipts. Remove URL user information, query
+strings, and fragments before printing or publishing diagnostics. An installed
+binary must match its verified archive member. Source tests, HTTP/gRPC fixtures,
+hosted CLI checks, interactive terminal checks, and live service results are
+different evidence types and must never substitute for one another.
+
+## Isolation, cadence, and spending
+
+Each of the two ongoing testers owns a separate `AZD_CONFIG_DIR`, scenario
+directory, artifact/coverage ledger, and resource prefix. Never mutate the normal
+global registry/configuration or another tester's agents, runs, files, or sessions.
+Follow the [repository testing rules][agent-rules] for `NO_COLOR=1`,
+`AZD_FORCE_TTY=false`, and `AZURE_DEV_COLLECT_TELEMETRY=no`. Set these variables in
+the same process environment as the tested commands.
+
+The practical tester covers realistic user journeys. The edge-case tester covers
+negative inputs, recovery, automation contracts, and confusing UX. Each maintains
+its own native 30-minute session automation, with immediate bounded cycles allowed
+when a package-ready message arrives. Verify the saved schedule by reading it back.
+A configured schedule proves neither that a scheduled invocation occurred nor
+that any test passed.
+
+At each cycle, resolve Latest afresh, persist its immutable identity, compare
+previous artifact/coverage, and select one bounded useful scenario or regression.
+If there is no new artifact or uncovered useful case, return idle. Do not poll
+other inboxes, run an infinite loop, create duplicate workers, or repeatedly run
+costly cloud cases against unchanged bytes. Pause the cadence when requested or
+when execution becomes unsafe.
+
+Scheduled cycles are **local/offline by default**. Before a live case, obtain an
+explicit authorization record covering the existing project, resource owner,
+native authentication/access, existing deployments, unique owned assets, maximum
+generation jobs/rows/conversations/turns/runs, spending limit, timeout, and cleanup
+scope. Historical grants do not transfer to a new tester or release. Do not copy
+tokens, create infrastructure/IAM grants, mutate a shared agent, broaden trace
+queries, or retry known generation-count/deletion failures to rediscover them.
+Mark missing live authorization `BLOCKED` and continue useful local coverage.
+
+## Release gate sequence
+
+1. Freeze one coherent source SHA and approved package/version tuple. Individual
+   PR heads are inputs, not a combined candidate.
+2. Build immutable local packages with provenance and checksums. Verify all
+   archive layouts/manifests/entrypoints and required core version.
+3. Independently install those exact bytes and run the changed-area Windows
+   acceptance cases. Require measured results and explicit cleanup evidence for
+   the agreed local/live gate. Unrelated optional coverage does not silently
+   become a release blocker.
+4. After explicit publication approval, publish non-Latest assets and verify
+   anonymous downloads. The existing hosted-proof owner then consumes the
+   actual public immutable registry and archives.
+5. Require the agreed exact-candidate hosted CLI and source-race results, including
+   independently downloaded reports and installed-byte identity checks. Only then
+   approve Latest promotion and verify the rolling URL with a fresh installation.
+6. Update this inventory, the version-specific receipt, and installation pins
+   together. Retain old receipts without relabeling them as new executions.
+
+For the current candidate, retain the existing four offline hosted jobs: actual
+installed CLI on `ubuntu-24.04` and `windows-2025`, plus the evaluations and dataset
+full internal race suites on Linux with Go 1.26.4:
+
+```console
+go test -race -count=1 -timeout 15m ./internal/...
+```
+
+The baseline is **160 unique actual CLI commands per OS**: 124 existing checks
+plus 36 dataset-binding checks. Preserve their assertions when an intentional
+contract change requires updating input fixtures; a count alone is not coverage.
+The binding matrix is four configuration layouts by three modes by three
+behaviors: collision refusal, same-file reuse, and distinct-file addition.
+
+The 50 seed-refusal checks include four cold-entry cases that may create only
+the normal zero-byte `.azure/.env.lock`; the other 46 must remain unchanged.
+The same exact lock allowance applies to 12 cold-entry binding refusals. Do not
+replace digest comparisons with broad ignored directories. Packaging six
+platforms does not establish macOS/ARM runtime coverage. Offline hosted checks
+do not establish terminal interaction, live Azure evaluation, or cloud quality
+gates. Real authenticated GitHub Actions/ADO scenario CI remains deferred.
+
+The bounded build 42 **plan**, conditional on the integrated contract and frozen
+manifest approval, preserves those 160 case intents and adds at most 16 checks per
+OS in the same four jobs. It is not an executed result:
+
+| Planned delta | Cases per OS | Expected contract |
+| --- | --- | --- |
+| Bare simulator model, fresh/existing state | 2 | Reject a model without `connection-name/model-deployment` qualification. |
+| Top-level `desired_num_turns`, fresh/existing state | 2 | Reject; numeric seed settings belong inside `simulation_configuration`. |
+| Nested desired turns 21 with omitted global limit, fresh/existing state | 2 | Reject against the effective default ceiling of 20. |
+| Description length 2499/2500/2501 in ASCII, accented text, and emoji | 9 | Accept 2499/2500 Unicode code points and reject 2501; do not count UTF-8 bytes. |
+| Non-object `simulation_configuration` | 1 | Reject clearly before authored writes. |
+
+Keep valid nested references in the existing positive matrix. The former valid
+21-turn control must explicitly provide a nested per-row `max_num_turns: 21`;
+an omitted global `max_turns` must stay absent in authored YAML. Confirm this
+against the combined init and run paths, not a PR tree that lacks integration
+files. No broad exclusions or replacement of existing whitespace/mixed-row
+guards are acceptable. The plan is at most 176 CLI cases per OS, not a new
+platform matrix.
+
+Wire payload/mapping, canonical dataset identity, generated-row normalization,
+metadata fallback, and pre-worker SDK initialization have separate source-test
+obligations. Mapping retrieval does **not** establish full configured-model/default
+preservation on simulation rerun. Job reattachment metadata proof is also not
+that proof. Full live model/default rerun preservation remains `NOT RUN` until
+directly measured; it is not silently added to an approved paid test envelope.
+
+## Scenario inventory
+
+Execute commands from the pinned [bug-bash recipes][recipes] using the installed
+package's `--help`. Supply observed names/versions instead of guessing identities.
+Record the exact expanded command in the receipt. These are coverage obligations,
+not a claim that every combination is implemented or tested.
+
+| ID / owner | Prerequisites and commands | Required assertions |
+| --- | --- | --- |
+| PKG-01 / both | Fresh isolated configuration; `azd extension source add`, exact-version `extension install`, `extension list --installed`, `ai eval version -o json`, `ai dataset version -o json`; repeat through rolling Latest | Registry/source/version/core/platform/archive/executable identities agree. Adding a source alone must not be mistaken for upgrading installed bytes. JSON parses without console noise. |
+| UX-01 / practical | `azd ai --help`; evaluation init/create/run/output help; dataset/evaluator create/update/version help | User can discover the installed commands and follow next steps. Agent management is a separate official extension, not implicitly supplied by this feed. Help-only checks do not prove a workflow. |
+| INIT-01 / practical | Valid static, turn, and simulation fixtures; `azd ai eval init ... --no-prompt`; custom configuration and nested references | Correct mode/model/dataset mapping, add-only edits, existing metadata/pins/references retained, and no unexpected default sidecar. Init is not generation, publication, or a run. |
+| INIT-02 / edge | Invalid, empty, mixed-shape, or malformed seed files; custom paths containing spaces; `init` with JSON/no-prompt and real terminal correction/cancel | Reject invalid local inputs before authored/private writes; preserve exact declared-file resolution. Validate blank descriptions, zero/fractional/negative desired turns, explicit limits, and conflicting flags. Allow only the documented core lock exception. |
+| LIFE-01 / practical | Authorized owned assets; `dataset create/update/versions list`, `eval create`, repeat unchanged, edit file and repeat | Service-issued versions match authored intent; unchanged repeats are idempotent; dataset changes select the new canonical version without losing earlier run history. No invented dataset identity or silent inline fallback. |
+| RUBRIC-01 / practical | Owned custom rubric; evaluator download/edit/create/versions list, then unchanged repeat and remote-ahead conflict | Download is editable in the documented shape; dimensions/metadata survive round trip; only intended versions change; remote edits are not overwritten silently. Distinguish rubric changes from immutable eval-contract changes. |
+| RUN-01 / practical | Approved one-row static or bounded conversation case; `eval run start`, `run show`, `output list/show/export` | Inspect actual terminal execution status, output rows, returned evaluator results and raw field preservation. A completed quality failure is not an execution failure. Missing values are not inferred as zero or false. |
+| RUN-02 / edge | Existing owned failed run or bounded approved failure; follow printed inspection/export commands | Immutable eval/run IDs resolve; unfiltered output remains available for inspection even with zero rows; error diagnostics and exit codes remain actionable. Do not create paid failures solely for coverage without approval. |
+| AUTO-01 / edge | No-prompt/JSON combinations; accepted run with `--no-wait`; later `run show --wait`; `--fail-on`; JSON export | No prompts or dropped explicit flags; valid single JSON output where promised; usable returned IDs; breached gates exit nonzero. Export file extension does not change the JSON format. |
+| CANCEL-01 / edge | Actual Windows terminal picker plus in-progress owned command with bounded cleanup | Distinguish explicit picker Cancel from Ctrl+C and record the delivery method and exit code. Redirected stdin or a timeout is not interactive terminal proof. Test service cancellation separately from local picker cancellation. |
+| DATA-01 / practical | Owned versioned single-file and multi-file datasets; downloads in both namespaces with file/directory output | Bytes match source; overwrite requires explicit consent; forced replacement works; relative layout preserved; a one-file folder is not automatically a single-file dataset. |
+| EDGE-01 / edge | Bounded local fixtures or authorized service cases for empty pages, pagination, malformed data, missing identity, retry/timeouts, partial failure | No cross-project/version mix-ups, duplicate/missing page results, silent success, dropped errors, runaway retries, or secret disclosure. Label fixture proof separately from live behavior. |
+| RECOVER-01 / both | Owned partial publication/generation state; rerun/reattach and explicit cleanup | Persisted identity is reusable, retry is idempotent, partial success is reported, cancellation stops owned work, and cleanup matches actual service delete scope and response contract. |
+| TRACE-01 / practical | Explicitly authorized owned agent/version, trace access, and narrow request window | Returned traces belong to the intended owned agent/version/window. Do not widen to shared traffic when ingestion or permissions block the case. |
+
+For qualified simulation acceptance, use an **existing connection and model
+deployment pair**, a separately selected judge, and the recorded target
+agent/version. Do not infer the qualified simulator from a bare deployment name.
+The approved workflow is generate/collect, init with nested seed configuration,
+explicit create/publish, run, and reattach. Require a new canonical dataset version
+identity, the configured qualified model, terminal results, and preserved metadata.
+Local HTTP/gRPC fixtures cannot satisfy that live acceptance case.
+
+The proposed producer check is **not** a one-sample generation request:
+the inspected source accepts `generate --max-samples` only from 15 through 1000
+(zero selects the default 15). Conversation generation uses `simulation_seed`,
+not `simple_qna`, on the same API collection; shared backend implementation is
+not established. If explicitly approved, select dataset-only, prompt-only
+generation so the test does not also submit a rubric job or agent fallback.
+After collection, explicitly publish one reviewed canonical seed row with
+per-row maximum turns at most 2 and repetitions 1 before the one-run check.
+
+Neither the requested generation count nor two simulation turns is a hard
+token/currency ceiling. The inspected CLI exposes no such ceiling; timeout,
+Ctrl+C, polling deadlines, and best-effort cancellation do not prove that remote
+billed work stopped. Do not label an observation deadline or an alert as spending
+enforcement, blindly resubmit an ambiguous POST, or equate deletion of a job
+record with deletion of generated artifacts. A hard monetary budget remains
+blocked until an authorized owner supplies a verified service-side control.
+
+## Required bug regressions
+
+Carry all seven entries into **every** release receipt, plus every subsequently
+accepted defect. A closed work item does not remove its regression case. The
+existing ADO owner read these seven records using native authentication at
+**2026-09-24T01:54:56Z**. Priority and severity are distinct service fields. Refresh
+them before filing, reopening, or closure; this is a timestamped receipt, not
+continuously refreshed state. All seven had no human assignee, which does not mean
+there is no agent working on a linked fix.
+
+| Work item | State | Priority | Severity | Revision |
+| --- | --- | --- | --- | --- |
+| [5640927][bug-5640927] | Done | 1 | 2 - High | 2 |
+| [5631330][bug-5631330] | New | 1 | 3 - Medium | 1555 |
+| [5595070][bug-5595070] | Done | 2 | 3 - Medium | 5 |
+| [5595119][bug-5595119] | New | 2 | 4 - Low | 2 |
+| [5571322][bug-5571322] | Done | 3 | 4 - Low | 4 |
+| [5572139][bug-5572139] | New | 2 | 3 - Medium | 9 |
+| [5530209][bug-5530209] | New | 2 | 3 - Medium | 16 |
+
+`Done` is the project's completed-category terminal state. The [closure
+receipt][closure40] applies to the original issues, not every later behavior
+change on the same commands.
+
+| Work item | Expected regression / acceptance | Evidence boundary and next release disposition |
+| --- | --- | --- |
+| [5640927][bug-5640927], invalid simulation init | Invalid local/nested seeds fail before authored/private writes; valid controls and interactive correction still work. | Reported Done. Build 40 local/terminal proof and build 41 hosted seed checks exist. Repeat on each new package; do not equate source validation with installed behavior. |
+| [5631330][bug-5631330], generation sample/cost cap, P1 | The actual service generation path honors the requested bound and billed work; client truncation is not a fix. | Reported New, backend ownership unresolved. Historical request 15 produced 16 on the reported path. New live reproduction is `BLOCKED` without explicit budget and a relevant service change. Client repackaging does not close it. |
+| [5595070][bug-5595070], failed-run follow-ups | Failed/errored runs print usable immutable-ID inspection/export guidance; zero output rows remain diagnosable. | Reported Done. Build 40 has a naturally failed responses-backed run and executed follow-ups, beyond earlier synthetic HTTP proof. No blanket real errored-row or build 41 rerun claim. |
+| [5595119][bug-5595119], agent guidance | The separately delivered agent artifact gives correct current evaluation/dataset guidance and usable commands. | Distinct artifact from these two packages; original source work is [#10042](https://github.com/Azure/azure-dev/pull/10042). Delivery must be checked with its owner. Two-package success is not its acceptance. |
+| [5571322][bug-5571322], cancellation | For the corrected picker contract, Ctrl+C exits 1 and explicit Cancel exits 0, with no unintended mutation; ambiguity in no-prompt/JSON exits nonzero. | Original item reported Done. The later [#10113](https://github.com/Azure/azure-dev/pull/10113) development artifact has separate terminal proof and is not build 41. Repeat against the combined new package; true Windows console-signal delivery is a separate unverified case. |
+| [5572139][bug-5572139], terminal generation-job deletion, P2 | Supported deletion of an owned terminal job succeeds with correct empty-response handling and local cleanup. | Reported New, backend HTTP 409 remains unresolved. No verified retention TTL or client-package fix. Do not loop DELETE against known failures. |
+| [5530209][bug-5530209], editable rubric shape, P2 | Download/edit/republish preserves `type`, `dimensions`, `pass_threshold`, declaration metadata and version behavior; unchanged repetition remains stable. | New residual tracked with [#10148](https://github.com/Azure/azure-dev/pull/10148). Earlier metadata/version passes through create/reconcile do not establish the complete editable round trip or live `azd up`. |
+
+For new defects, first deduplicate in the relevant project against these records
+and known linked fixes. File through the authorized [evaluation bug channel][bug-channel]
+with impact-based severity, exact identity, reproducible commands, expected/actual
+behavior, redacted evidence, and ownership boundaries. Confusing or misleading UX
+is a valid finding even without a crash. Do not assign arbitrary people. If filing
+is unavailable, retain a filing-ready receipt marked blocked rather than inventing
+a bug ID. Route it to the fixes owner immediately and independently verify the
+repaired **installed package** before recommending closure.
+
+## Release evidence index
+
+Snapshot: **2026-09-24**. These links describe their named immutable release only.
+The current fresh Windows checks do not replace the historical broader matrices.
+
+| Release | Identity and receipt | Status and limitations |
+| --- | --- | --- |
+| 40 | [Build 40 receipt][build40], evaluations `1.0.40-beta`, dataset `1.0.0-beta.28` | Historical scoped local/terminal/live results, including the responses-backed execution `FAIL`. Do not relabel as 41. |
+| 41 | [Frozen build 41 receipt][build41], evaluations `1.0.41-beta`, dataset `1.0.0-beta.29`, source `8ef8b6df77336950c60506ab2966037f579d92cd`, azd `>=1.33.0` | Published Latest. Historical targeted package acceptance and four hosted jobs `PASS`; newly installed Windows identity/help checks also `PASS`. Broad live reruns, all platforms, and all seven regressions are not claimed. |
+| 42 candidate | No combined frozen source, archive tuple, or version-specific receipt supplied at this snapshot | `NOT RUN` for new package acceptance; live cases `BLOCKED` pending exact bytes and explicit current resource/budget authorization. Source PR CI success is not package proof. |
+
+Build 41 registry SHA256 is
+`aff0d6f456e3fb08773b1c888136eed12ec8a06bd2eba0addda0383142ae7d79`.
+Its Windows amd64 installed executable SHA256 values are evaluations
+`ce8b8906a52f9879470ace66daab4edf71795d0566bd45243271eed9c54d0255`
+and dataset
+`43b6223ecb3d2702f3d00c0731e1ad8f758800b940971a5fe9050b18d419cbf5`.
+Use the release's linked checksum/provenance assets for all archives. The
+[frozen hosted run][hosted41] passed 160 actual CLI checks on each tested OS and
+both full source-race suites; it is not evidence of build 42 execution.
+
+The new practical tester's first build 41 cycle passed 14 local assertions:
+valid static and simulation init, custom paths containing spaces, distinct-judge
+reattachment without `--path`, original configuration-prefix/root/dataset byte
+preservation, duplicate-eval refusal, and reporting/export help interpretation.
+Model and agent names were offline fixture identifiers. This proves local
+authoring and help, not deployed model validity, remote reattachment, actual
+grading, quality-gate exit behavior, or exported run results.
+
+The new edge tester's first build 41 cycle independently passed one malformed
+local-seed case under `INIT-02`: actual installed `init` with simulation mode,
+custom paths containing spaces, `--no-prompt`, and `--output json` returned exit
+1 and one `error.message` JSON object with empty stderr. Every existing file
+remained byte-identical, no evaluation configuration/sidecar was created, and
+only the documented zero-byte `.azure/.env.lock` appeared. The original harness
+incorrectly expected empty stdout and no lock; the retained observation was
+assessed against the documented contract without a command rerun. This is not
+a newly discovered product defect or a reason to reopen 5640927.
+
+## Peer-extension parity
+
+Maintain one bounded, evidence-linked inventory of **all** repository peer
+extensions at a named source SHA. Compare applicable requirements from the
+[extension style guide][extension-style], not unrelated domain features.
+For each area, record both extensions' implementation/test evidence, relevant
+peer examples, applicability, defect/recommendation distinction, and a regression:
+
+| Area | Required questions |
+| --- | --- |
+| Authentication | Correct user-access tenant for credentials, native identity flow, explicit endpoint precedence? |
+| Telemetry/privacy | Existing telemetry recognized, opt-out respected, classification/redaction proven, no raw customer content? |
+| CLI/UX | Explicit flags honored or rejected, deterministic no-prompt/JSON, output kept on the injected writer, current help? |
+| Errors/lifecycle | Actionable structured errors, cancellation exits, bounded retries/timeouts, partial recovery and cleanup? |
+| Data/configuration | Complete pagination, empty-data behavior, immutable version identity, nested paths and schema migration? |
+| Distribution/diagnostics | Core compatibility, package provenance, safe diagnostics, install/upgrade docs and actual-byte tests? |
+
+Telemetry is already included in build 41; an older or separate PR tree must not
+be used to report it missing. Compare separate source ancestries carefully.
+Record high-confidence correctness defects in ADO after scoped deduplication;
+track optional parity recommendations separately. The audit and any proposed
+coverage are `NOT RUN` tests until executed. Do not hold a release for unrelated
+optional recommendations.
+
+[recipes]: https://github.com/m7md7sien/azd-foundry-feed/blob/6e33b893f1ba4e5f96c84a55f9cad21a26efdf32/Bugbash-Instructions.md
+[release-index]: https://github.com/m7md7sien/azd-foundry-feed/blob/main/README.md
+[build40]: https://github.com/m7md7sien/azd-foundry-feed/blob/6e33b893f1ba4e5f96c84a55f9cad21a26efdf32/Build-40-Verification.md
+[build41]: https://github.com/m7md7sien/azd-foundry-feed/blob/6e33b893f1ba4e5f96c84a55f9cad21a26efdf32/Build-41-Verification.md
+[closure40]: https://github.com/m7md7sien/azd-foundry-feed/blob/cd28caf02ec54c5354d2157f75d3602b88fb622b/Build-40-Verification.md
+[hosted41]: https://github.com/m7md7sien/azure-dev/actions/runs/35851410814
+[agent-rules]: ../../cli/azd/AGENTS.md#testing-best-practices
+[extension-style]: ../../cli/azd/docs/extensions/extensions-style-guide.md
+[bug-channel]: https://aka.ms/evalsbug
+[bug-5640927]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5640927
+[bug-5631330]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5631330
+[bug-5595070]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5595070
+[bug-5595119]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5595119
+[bug-5571322]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5571322
+[bug-5572139]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5572139
+[bug-5530209]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5530209

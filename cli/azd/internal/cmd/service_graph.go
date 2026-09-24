@@ -658,6 +658,11 @@ func (e *serviceOperationTimeoutError) Error() string {
 	return e.message
 }
 
+// IsServiceOperationTimeoutError marks this error for CLI UX handling.
+func (*serviceOperationTimeoutError) IsServiceOperationTimeoutError() bool {
+	return true
+}
+
 func (e *serviceOperationTimeoutError) Unwrap() []error {
 	if e == nil {
 		return nil

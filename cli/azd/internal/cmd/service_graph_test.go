@@ -362,6 +362,12 @@ func TestServiceOperationTimeoutClassificationTakesPrecedence(t *testing.T) {
 			require.Equal(t, "internal.timeout", code)
 			require.True(t, errors.Is(err, context.DeadlineExceeded))
 			require.True(t, isServiceOperationTimeoutError(err))
+			marker, ok := errors.AsType[interface {
+				error
+				IsServiceOperationTimeoutError() bool
+			}](err)
+			require.True(t, ok)
+			require.True(t, marker.IsServiceOperationTimeoutError())
 		})
 	}
 }

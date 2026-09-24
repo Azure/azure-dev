@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -1372,6 +1373,86 @@ func TestErrorMiddleware_Run_SkippableError_CancelledInNonPrompt(t *testing.T) {
 // UxMiddleware.Run — ErrorWithSuggestion path
 // ---------------------------------------------------------------------------
 
+type testServiceTimeoutError struct {
+	message string
+	cause   error
+}
+
+func (e *testServiceTimeoutError) Error() string {
+	return e.message
+}
+
+func (e *testServiceTimeoutError) Unwrap() []error {
+	return []error{e.cause, context.DeadlineExceeded}
+}
+
+func (*testServiceTimeoutError) IsServiceOperationTimeoutError() bool {
+	return true
+}
+
+func TestUxMiddleware_Run_ServiceTimeoutTakesPrecedenceOverSuggestion(t *testing.T) {
+	t.Parallel()
+
+	pushFailure := errors.New("docker push was stopped after the timeout")
+	suggestionErr := &internal.ErrorWithSuggestion{
+		Err:        fmt.Errorf("pushing image: %w", pushFailure),
+		Suggestion: "Run docker login and retry the deployment.",
+	}
+	timeoutErr := &testServiceTimeoutError{
+		message: "publishing service 'web' timed out after 1 seconds",
+		cause:   fmt.Errorf("failed publishing service 'web': %w", suggestionErr),
+	}
+	otherFailure := errors.New("another service failed")
+
+	tests := []struct {
+		name       string
+		err        error
+		wantOutput []string
+	}{
+		{
+			name:       "service timeout",
+			err:        timeoutErr,
+			wantOutput: []string{"ERROR: publishing service 'web' timed out after 1 seconds"},
+		},
+		{
+			name: "joined service failures",
+			err:  errors.Join(timeoutErr, otherFailure),
+			wantOutput: []string{
+				"ERROR: publishing service 'web' timed out after 1 seconds",
+				otherFailure.Error(),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			console := mockinput.NewMockConsole()
+			m := &UxMiddleware{
+				options:         &Options{},
+				console:         console,
+				featuresManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+			}
+
+			result, err := m.Run(t.Context(), func(_ context.Context) (*actions.ActionResult, error) {
+				return nil, tt.err
+			})
+
+			require.Error(t, err)
+			require.Nil(t, result)
+			require.ErrorIs(t, err, context.DeadlineExceeded)
+			require.ErrorIs(t, err, pushFailure)
+
+			output := strings.Join(console.Output(), "\n")
+			for _, want := range tt.wantOutput {
+				require.Contains(t, output, want)
+			}
+			require.NotContains(t, output, "docker login")
+		})
+	}
+}
+
 func TestUxMiddleware_Run_ErrorWithSuggestion(t *testing.T) {
 	t.Parallel()
 	console := mockinput.NewMockConsole()
@@ -1393,6 +1474,9 @@ func TestUxMiddleware_Run_ErrorWithSuggestion(t *testing.T) {
 
 	require.Error(t, err)
 	require.Nil(t, result)
+	output := strings.Join(console.Output(), "\n")
+	require.Contains(t, output, "Something went wrong")
+	require.Contains(t, output, "Try running azd auth login")
 }
 
 // ---------------------------------------------------------------------------

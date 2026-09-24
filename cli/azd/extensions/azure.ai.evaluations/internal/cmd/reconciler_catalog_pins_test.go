@@ -80,6 +80,11 @@ func (s *catalogPinService) serve(t *testing.T) http.HandlerFunc {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
+			if r.Method == http.MethodDelete {
+				delete(s.evals, id)
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
 			if r.Method == http.MethodPost {
 				var update eval_api.UpdateOpenAIEvalRequest
 				assert.NoError(t, json.NewDecoder(r.Body).Decode(&update))

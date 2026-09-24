@@ -306,6 +306,12 @@ auto-increments and nothing mutates in place.
 question, which is what a pipeline passes. `job delete` is the exception: it
 discards a record of finished work, not the artifact the job produced.
 
+After a successful eval deletion, the command removes its local named aliases,
+fingerprints, and scoped identity references, including when given a service ID.
+Unrelated eval scopes and shared dataset/evaluator versions are preserved.
+Failed or ambiguous deletes do not clear state. If local cleanup fails after
+the service has deleted the eval, a warning reports that failure separately.
+
 Every command supports `-o json` and `--no-prompt`, so the whole surface is
 usable from CI.
 

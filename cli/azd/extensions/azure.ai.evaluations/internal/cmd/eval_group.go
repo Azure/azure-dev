@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -476,6 +477,7 @@ func newEvalDeleteCommand() *cobra.Command {
 		Short: "Delete an eval and everything under it.",
 		Long: "Delete an eval and everything under it.\n\n" +
 			"An eval owns its runs, so deleting one discards their results too.\n\n" +
+			"Successful deletion removes local references to that eval, not shared datasets or evaluators.\n\n" +
 			"Asks before removing it. With --no-prompt, or with JSON output, " +
 			"--force is required.",
 		Args: requiredArgs(1),
@@ -497,6 +499,10 @@ func (a *evalDeleteAction) Run() error {
 	}
 	defer ec.Close()
 
+	return a.delete(ctx, ec)
+}
+
+func (a *evalDeleteAction) delete(ctx context.Context, ec *evalContext) error {
 	// Asked on what the author typed, before the name is resolved to an
 	// id: the question is about the runs they are discarding, and that
 	// answer does not change with which id it turns out to be.
@@ -540,13 +546,9 @@ func (a *evalDeleteAction) Run() error {
 		return messages.DeletingEval(evalID, err)
 	}
 
-	// The eval is gone, so the mappings that pointed at it are wrong rather
-	// than merely stale: left behind, the next deploy binds a new eval of the
-	// same name to an id the service no longer has.
-	ec.forget(ctx,
-		idKey("eval", a.evalID),
-		project.FingerprintKey("eval", a.evalID),
-		idKey("evalrun", evalID))
+	if err := ec.deleteEvalState(ctx, evalID); err != nil && !errors.Is(err, errNoAzdEnvironment) {
+		fmt.Fprint(a.cmd.ErrOrStderr(), messages.Warning(err))
+	}
 
 	if isJSON(a.cmd) {
 		return emitJSON(a.cmd.OutOrStdout(), map[string]string{

@@ -286,24 +286,22 @@ func (ec *evalContext) forgetDeletedVersion(ctx context.Context, kind, name, ver
 // sibling service's write would otherwise drop whatever that one had just
 // recorded.
 func (ec *evalContext) deletePrivate(ctx context.Context, keys ...string) error {
+	return ec.deletePrivateSelected(ctx, strings.Join(keys, ", "), func(map[string]string) []string {
+		return keys
+	})
+}
+
+// deletePrivateSelected chooses keys from the locked, current store so a
+// concurrently replaced reference cannot be removed using a stale cached id.
+func (ec *evalContext) deletePrivateSelected(
+	ctx context.Context, subject string, selectKeys func(map[string]string) []string,
+) error {
 	if ec.azdClient == nil {
-		return messages.NoAzdEnvironmentToWrite(strings.Join(keys, ", "))
+		return messages.NoAzdEnvironmentToWrite(subject)
 	}
-	state := ec.loadPrivateState(ctx)
+	ec.loadPrivateState(ctx)
 	if ec.stateErr != nil {
-		return messages.PrivateStateUnreadable(strings.Join(keys, ", "), ec.stateErr)
-	}
-	// Nothing recorded is nothing to drop, and taking the lock to rewrite an
-	// identical section is a round trip for no change.
-	present := false
-	for _, key := range keys {
-		if _, ok := state[key]; ok {
-			present = true
-			break
-		}
-	}
-	if !present {
-		return nil
+		return messages.PrivateStateUnreadable(subject, ec.stateErr)
 	}
 
 	unlock, err := ec.lockPrivateState(ctx)
@@ -314,13 +312,20 @@ func (ec *evalContext) deletePrivate(ctx context.Context, keys ...string) error 
 
 	merged, err := ec.readPrivateState(ctx)
 	if err != nil {
-		return messages.PrivateStateUnreadable(strings.Join(keys, ", "), err)
+		return messages.PrivateStateUnreadable(subject, err)
 	}
-	for _, key := range keys {
-		delete(merged, key)
+	changed := false
+	for _, key := range selectKeys(merged) {
+		if _, present := merged[key]; present {
+			delete(merged, key)
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
 	}
 	if err := ec.setEnvConfig(ctx, privateStatePath, merged); err != nil {
-		return messages.WritingEnvValue(strings.Join(keys, ", "), err)
+		return messages.WritingEnvValue(subject, err)
 	}
 	ec.state = merged
 	return nil

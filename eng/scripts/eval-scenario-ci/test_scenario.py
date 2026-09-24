@@ -151,6 +151,12 @@ class SafetyTests(unittest.TestCase):
         for key in ("GITHUB_STEP_SUMMARY", "GITHUB_RUN_ID", "BUILD_BUILDID"):
             scenario.os.environ.pop(key, None)
 
+    def test_workflow_tracks_the_shared_candidate_manifest_dependency(self):
+        workflow = scenario.HERE.parents[2] / ".github" / "workflows" / "eval-scenario-ci.yml"
+        push_paths = workflow.read_text(encoding="utf-8").split("    paths:\n", 1)[1].split(
+            "  workflow_dispatch:", 1)[0]
+        self.assertIn("      - eng/scripts/eval-candidate-proof/candidate.json\n", push_paths)
+
     def test_archive_errors_are_recorded_without_suppressing_them(self):
         legacy = scenario.proof_module
         for filename, expected in (("broken.zip", legacy.zipfile.BadZipFile),

@@ -8,6 +8,7 @@ on:
       - eng/scripts/eval-scenario-ci/**
       - eng/scripts/eval-candidate-proof/verify.py
       - eng/scripts/eval-candidate-proof/checks.json
+      - eng/scripts/eval-candidate-proof/candidate.json
       - eng/pipelines/eval-scenario-ci.yml
   workflow_dispatch:
     inputs:

@@ -61,7 +61,7 @@ class ServiceTests(unittest.TestCase):
         env = {"AZD_SCENARIO_LIVE_APPROVAL_SHA256": "b" * 64,
                "GITHUB_REPOSITORY": "fixture/repo", "GITHUB_RUN_ID": "42", "GITHUB_SHA": "a" * 40}
         service.validate_plan(plan, "b" * 64, env)
-        for key, value in (("runId", "wrong"), ("workflowCommit", "c" * 40),
+        for key, value in (("schemaVersion", True), ("runId", "wrong"), ("workflowCommit", "c" * 40),
                            ("budgetControlExternallyVerified", False), ("approvedBudget", "NaN"),
                            ("maxRuns", 2), ("maxRows", True), ("mode", "agent-deploy"),
                            ("expiresAt", "2000-01-01T00:00:00Z"),
@@ -94,7 +94,7 @@ class ServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(service.Blocked, "Core executable"):
                 service.verify_install(plan, Path(root))
 
-    def drive(self, *, failure=None, bad_rows=False, cleanup_fails=False):
+    def drive(self, *, failure=None, bad_rows=False, cleanup_fails=False, counts=None):
         plan = self.plan()
         calls, report = [], {}
         with tempfile.TemporaryDirectory() as root:
@@ -128,7 +128,7 @@ class ServiceTests(unittest.TestCase):
                     return {"eval_id": "eval_owned", "run_id": "evalrun_owned"}
                 if label.startswith("wait"):
                     return {"id": "evalrun_owned", "status": "completed",
-                            "result_counts": {"total": 1, "passed": 1}}
+                            "result_counts": {"total": 1, "passed": 1} if counts is None else counts}
                 if label.startswith("export"):
                     return {"run": {"id": "evalrun_owned"}, "items": [{"private": "not persisted"}]}
                 if label.startswith("delete"):
@@ -183,6 +183,17 @@ class ServiceTests(unittest.TestCase):
         self.assertIn("wait for owned run", report["failure"]["message"])
         self.assertEqual(report["remoteCleanup"]["status"], "FAIL")
         self.assertNotIn("quality", report)
+
+    def test_boolean_or_coerced_quality_counts_never_pass(self):
+        for counts in ({"total": True, "passed": True, "failed": False},
+                       {"total": 1, "passed": 1, "errored": False},
+                       {"total": "1", "passed": 1},
+                       {"total": 1, "passed": service.Decimal("1.0")}):
+            with self.subTest(counts=counts):
+                _, report = self.drive(counts=counts)
+                self.assertNotIn("quality", report)
+                self.assertIn("JSON integers", report["failure"]["message"])
+                self.assertEqual(report["remoteCleanup"]["status"], "PASS")
 
     def test_real_driver_keeps_service_payload_out_of_receipt(self):
         with tempfile.TemporaryDirectory() as root:
@@ -267,6 +278,31 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(report["failure"]["message"], "primary service failure")
             self.assertEqual(report["remoteCleanup"]["message"], "remote cleanup failure")
             self.assertEqual(report["cleanup"]["status"], "PASS")
+
+    def test_runtime_cleanup_block_is_a_failed_execution_not_a_prerequisite_block(self):
+        plan = self.plan()
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            plan_path = root / "plan.json"
+            plan_path.write_text(json.dumps(plan))
+            config = root / "auth"
+            config.mkdir()
+            output = root / "evidence"
+
+            def failed_cleanup(plan, driver, workspace, report):
+                report["remoteCleanup"] = {"status": "FAIL", "message": "cleanup token unavailable"}
+                raise service.Blocked("cleanup token unavailable")
+
+            with mock.patch.object(service, "validate_plan", return_value={}), \
+                 mock.patch.object(service, "verify_install", return_value=Path("azd")), \
+                 mock.patch.object(service, "lifecycle", side_effect=failed_cleanup):
+                with self.assertRaises(RuntimeError) as raised:
+                    service.execute(plan_path, output, env={"AZD_SCENARIO_LIVE_AUTH_CONFIG": str(config)})
+                self.assertNotIsInstance(raised.exception, service.Blocked)
+            report = json.loads((output / "service-status.json").read_text())
+            self.assertEqual(report["status"], "FAIL")
+            self.assertEqual(report["execution"], "STARTED")
+            self.assertEqual(report["remoteCleanup"]["status"], "FAIL")
 
 
 if __name__ == "__main__":

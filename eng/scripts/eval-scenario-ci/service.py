@@ -77,7 +77,8 @@ def validate_plan(plan, digest, env):
         require(isinstance(plan[key], str) and plan[key], f"Invalid {key}")
     require(env.get("AZD_SCENARIO_LIVE_APPROVAL_SHA256") == digest,
             "The exact plan lacks an externally supplied approval digest")
-    require(plan.get("schemaVersion") == 1 and plan.get("mode") == "static-evaluation",
+    require(type(plan.get("schemaVersion")) is int and plan["schemaVersion"] == 1
+            and plan.get("mode") == "static-evaluation",
             "Only the reviewed static-evaluation lifecycle is implemented")
     provider = scenario.run_identity(env)
     require(provider["provider"] in ("github", "azure-devops"), "Live execution is CI-only")
@@ -319,6 +320,9 @@ def lifecycle(plan, driver, workspace, report, name=None):
                 and isinstance(exported.get("items"), list) and len(exported["items"]) == 1,
                 "Export did not contain the one approved run and row")
         counts = final.get("result_counts", {})
+        expect(isinstance(counts, dict)
+               and all(type(counts.get(key, 0)) is int for key in ("total", "passed", "failed", "errored", "skipped")),
+               "Service result counts must be JSON integers, not booleans or coerced values")
         expect(counts.get("total") == 1 and counts.get("passed") == 1
                 and counts.get("failed", 0) == 0 and counts.get("errored", 0) == 0
                 and counts.get("skipped", 0) == 0, "The completed run did not pass the one-row quality assertion")
@@ -373,9 +377,11 @@ def execute(plan_path, output, env=None):
             lifecycle(plan, driver, workspace, report)
         report["status"], report["execution"] = "PASS", "COMPLETED"
     except (Blocked, RuntimeError, KeyError, ValueError, OSError, InvalidOperation) as error:
-        if isinstance(error, Blocked):
-            report["status"] = "BLOCKED"
+        before_execution = report["execution"] == "NOT RUN"
+        report["status"] = "BLOCKED" if isinstance(error, Blocked) and before_execution else "FAIL"
         report["error"] = {"type": type(error).__name__, "message": scenario.safe_text(error)}
+        if isinstance(error, Blocked) and not before_execution:
+            raise RuntimeError(str(error)) from error
         raise
     finally:
         report["cleanup"] = workspace_state.get("cleanup", {"status": "NOT RUN"})

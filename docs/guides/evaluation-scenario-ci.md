@@ -65,7 +65,10 @@ gh workflow run eval-scenario-ci.yml --repo m7md7sien/azure-dev `
   --ref m7md7sien-evaluation-github-actions-proof -f mode=offline
 ```
 
-The dedicated branch's scenario-file pushes also run it. A release publisher
+The dedicated branch's scenario files and shared harness/manifest dependency
+changes also run it. A candidate-pin change is a configuration-validation round,
+not proof of a newly promoted Latest release; the receipt must still identify
+the release actually selected. A release publisher
 can invoke the same dispatch after publishing/promoting a new package. The
 `azd-bugbash-published` repository event is declared for future adoption on the
 fork's default branch; GitHub does not deliver it to a workflow present only on

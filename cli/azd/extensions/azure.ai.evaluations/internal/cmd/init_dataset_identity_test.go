@@ -157,6 +157,61 @@ func TestInitDatasetCollisionCorrection(t *testing.T) {
 	}
 }
 
+func TestInitDatasetNameReusesRefOnlyDeclaration(t *testing.T) {
+	for _, mode := range []string{"static", "turn"} {
+		for _, correction := range []bool{false, true} {
+			t.Run(mode+"/"+map[bool]string{false: "explicit name", true: "corrected name"}[correction], func(t *testing.T) {
+				t.Setenv("AZD_NO_PROMPT", "false")
+				prompts := &seedCorrectionPromptServer{}
+				h := initIdentityFixture(t, initIdentityDeclarations["ref only"], prompts)
+				dataset := "seeds"
+				if correction {
+					dataset = "./replacement/seeds.jsonl"
+					prompts.datasets = []string{"seeds"}
+				}
+				args := []string{"--name", "quality", "--source", "dataset", "--dataset", dataset, "--judge-model", "judge"}
+				if mode == "static" {
+					args = append(args, "--conversation-mode", "static")
+				} else {
+					args = append(args, "--target", "agent")
+				}
+				if !correction {
+					args = append(args, "--output", "json")
+				}
+				before := initFileSnapshot(t, h.dir)
+				text, err := executeConversationInit(t, args...)
+				require.NoError(t, err)
+				if correction {
+					assert.Contains(t, text, "already declared")
+				} else {
+					assert.True(t, json.Valid([]byte(text)))
+				}
+				after := initFileSnapshot(t, h.dir)
+				config := filepath.Join("evals", project.EvalConfigBase)
+				var cfg project.EvalConfig
+				require.NoError(t, yaml.Unmarshal([]byte(after[config]), &cfg))
+				require.Len(t, cfg.Datasets, 2, "existing ref-only and unrelated declarations must not be duplicated")
+				require.Len(t, cfg.Evals, 1)
+				assert.Equal(t, "seeds", cfg.Evals[0].Dataset)
+				assert.Contains(t, after[config], before[config])
+				for path, content := range before {
+					if path != config {
+						assert.Equal(t, content, after[path], path)
+					}
+				}
+				decl, err := project.ReadAuthoredDataset(filepath.Join(h.dir, config), "seeds")
+				require.NoError(t, err)
+				require.NotNil(t, decl)
+				assert.Equal(t, filepath.Join(h.dir, "original", "seeds.jsonl"), decl.File)
+				var retained project.DatasetDecl
+				require.NoError(t, yaml.Unmarshal(
+					[]byte(after[filepath.Join("evals", "parts", "inner", "dataset.yaml")]), &retained))
+				assert.Equal(t, "7", retained.Version)
+			})
+		}
+	}
+}
+
 func TestInitDatasetReusesEquivalentFiles(t *testing.T) {
 	for _, declaration := range []string{"local", "nested ref", "ref only"} {
 		for _, spelling := range []string{"relative", "canonical", "absolute", "hard link"} {

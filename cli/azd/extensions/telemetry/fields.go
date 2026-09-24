@@ -83,4 +83,20 @@ var (
 		Purpose:        fields.FeatureInsight,
 		Endpoint:       "N/A",
 	}
+
+	// DatasetOperation records the bounded publish operation reported by azure.ai.dataset.
+	DatasetOperation = fields.AttributeKey{
+		Key:            attribute.Key("ext.operation"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.FeatureInsight,
+		Endpoint:       "N/A",
+	}
+
+	// EvaluationsInitSource records the bounded init source reported by azure.ai.evaluations.
+	EvaluationsInitSource = fields.AttributeKey{
+		Key:            attribute.Key("ext.source"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.FeatureInsight,
+		Endpoint:       "N/A",
+	}
 )

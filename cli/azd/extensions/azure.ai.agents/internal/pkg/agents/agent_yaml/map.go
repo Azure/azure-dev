@@ -546,7 +546,7 @@ func mapHarness(promptAgent PromptAgent) *agent_api.ManagedAgentHarness {
 // PromptAgentSkillReferences returns the top-level versioned skill references
 // sent in a prompt-agent definition.
 func PromptAgentSkillReferences(promptAgent PromptAgent) []agent_api.SkillReference {
-	seen := map[string]struct{}{}
+	seen := map[string]int{}
 	var skills []agent_api.SkillReference
 	add := func(name, version string) {
 		name = strings.TrimSpace(name)
@@ -554,17 +554,25 @@ func PromptAgentSkillReferences(promptAgent PromptAgent) []agent_api.SkillRefere
 			return
 		}
 		key := strings.ToLower(name)
-		if _, ok := seen[key]; ok {
+		if index, ok := seen[key]; ok {
+			if skills[index].Version == "" {
+				skills[index].Version = strings.TrimSpace(version)
+			}
 			return
 		}
-		seen[key] = struct{}{}
-		skills = append(skills, agent_api.SkillReference{Name: name, Version: strings.TrimSpace(version)})
+		seen[key] = len(skills)
+		skills = append(skills, agent_api.SkillReference{
+			Type:    "skill_reference",
+			Name:    name,
+			Version: strings.TrimSpace(version),
+		})
+	}
+	// Authored pins take precedence; local resolution only fills missing versions.
+	for _, skill := range promptAgent.Skills {
+		add(skill.Name, skill.Version)
 	}
 	for _, skill := range promptAgent.ResolvedSkills {
 		add(skill.Name, skill.Version)
-	}
-	for _, skill := range promptAgent.Skills {
-		add(skill, "")
 	}
 	return skills
 }
@@ -604,9 +612,29 @@ func CreatePromptAgentAPIRequest(
 	if err := promptAgent.ValidatePolicies(); err != nil {
 		return nil, err
 	}
+	authoredVersions := map[string]string{}
+	for _, skill := range promptAgent.Skills {
+		name := strings.ToLower(strings.TrimSpace(skill.Name))
+		version := strings.TrimSpace(skill.Version)
+		if version == "" {
+			continue
+		}
+		if previous, ok := authoredVersions[name]; ok && previous != version {
+			return nil, fmt.Errorf(
+				"prompt skill %q has conflicting authored versions %q and %q; specify only one version per skill",
+				name, previous, version,
+			)
+		}
+		authoredVersions[name] = version
+	}
 	for _, skill := range PromptAgentSkillReferences(promptAgent) {
 		if strings.TrimSpace(skill.Version) == "" {
-			return nil, fmt.Errorf("prompt skill %q has no published version", skill.Name)
+			return nil, fmt.Errorf(
+				"prompt skill %q requires a version; specify skills: [{name: %q, version: \"<published-version>\"}], "+
+					"or deploy the matching local skill dependency with 'azd deploy --all'. "+
+					"azd does not automatically resolve the default version of an existing Foundry skill",
+				skill.Name, skill.Name,
+			)
 		}
 	}
 

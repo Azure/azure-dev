@@ -366,6 +366,10 @@ services:
     instructions: Use web research when requested.
     harness:
       type: github_copilot_preview
+    skills:
+      - local-review
+      - name: published-review
+        version: "2"
     tools:
       - type: github_copilot_toolset_preview
         default_config:
@@ -379,6 +383,14 @@ Built-in tool names are `filesystem_read`, `filesystem_write`, `shell`, `web`,
 and `subagents`. `default_config.enabled` applies to every built-in; entries in
 `configs` override individual tools. Skills are declared in the top-level
 `skills` list. Harness compute and idle settings are service-managed.
+
+The string form (`local-review`) requires a matching locally deployed skill;
+deploy the local skill dependency with `azd deploy --all` to supply its version.
+The object form (`published-review`) pins an existing Foundry skill to the
+specified published version. Authored pins take precedence over locally resolved
+versions. azd does not automatically resolve remote default versions, and rejects
+conflicting authored versions for the same skill. You do not need to specify a
+`type` field: azd adds the API discriminator automatically.
 
 Prompt-agent controls use camelCase in `azure.yaml` and are translated to the
 Foundry API's snake_case fields during deployment:

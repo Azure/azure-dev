@@ -132,6 +132,57 @@ func TestPromptAgentFromResolvedServiceIgnoresOtherKinds(t *testing.T) {
 	}
 }
 
+func TestPromptAgentFromResolvedServiceSkillReferences(t *testing.T) {
+	svc := &azdext.ServiceConfig{
+		Name: "skill-agent",
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind":         "prompt",
+			"model":        "gpt-4.1-mini",
+			"instructions": "Be helpful.",
+			"skills": []any{
+				"local-skill",
+				map[string]any{"name": "microsoft-foundry", "version": "1"},
+			},
+		}),
+	}
+	got, found, err := PromptAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, []agent_yaml.HarnessSkillRef{
+		{Name: "local-skill"},
+		{Name: "microsoft-foundry", Version: "1"},
+	}, got.Skills)
+}
+
+func TestPromptAgentFromResolvedServiceRejectsMalformedSkills(t *testing.T) {
+	tests := []struct {
+		name  string
+		skill map[string]any
+		want  string
+	}{
+		{"misspelled name", map[string]any{"nam": "foo", "version": "1"}, `unknown field "nam"`},
+		{"unknown field", map[string]any{"name": "foo", "extra": true}, `unknown field "extra"`},
+		{"missing name", map[string]any{"version": "1"}, "requires a non-empty name"},
+		{"empty name", map[string]any{"name": "", "version": "1"}, "requires a non-empty name"},
+		{"blank name", map[string]any{"name": "   ", "version": "1"}, "requires a non-empty name"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &azdext.ServiceConfig{
+				Name: "skill-agent",
+				AdditionalProperties: mustStruct(t, map[string]any{
+					"kind":         "prompt",
+					"model":        "test-model",
+					"instructions": "Be helpful.",
+					"skills":       []any{tt.skill},
+				}),
+			}
+			_, _, err := PromptAgentFromResolvedService(svc, t.TempDir())
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
+}
+
 // TestPromptAgentFromResolvedServiceNoDefinition confirms an entry carrying no
 // definition at all falls through quietly, which is what lets projects that
 // still keep their definition in a file reach the file-based path.

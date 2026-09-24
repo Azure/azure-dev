@@ -59,9 +59,17 @@ func TestEvalKeys(t *testing.T) {
 	assert.ElementsMatch(t,
 		[]string{
 			"name", "id", "description", "dataset", "source",
-			"evaluation_level", "max_samples", "evaluators", "target",
+			"evaluation_level", "max_samples", "evaluators", "target", "simulation",
 		},
 		yamlKeys(t, Eval{}))
+}
+
+// The simulation block is what selects the simulation run type, so its surface
+// is pinned the same way. Its presence is the signal; there is no mode field.
+func TestSimulationKeys(t *testing.T) {
+	assert.ElementsMatch(t,
+		[]string{"model", "num_conversations", "max_turns"},
+		yamlKeys(t, Simulation{}))
 }
 
 // Every entry in an eval's evaluators: list is a map keyed evaluator:.

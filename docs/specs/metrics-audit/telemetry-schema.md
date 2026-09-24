@@ -329,6 +329,8 @@ Reviewed first-party event contracts:
 | `azure.ai.inspector` | `inspector.funnel.stage` | The Inspector SPA sends `setViewReady` after mounting | `ext.stage`: fixed enum `ui_ready`; `ext.outcome`: fixed enum `succeeded`; this does not indicate agent connection |
 | `azure.ai.dataset` | `dataset.published` | `azure.ai.dataset` writes a dataset version (a `create` or `update` publish); reported once after the write succeeds | `ext.operation`: fixed enum `create`, `update`, or `unknown`; the publish verb normalized to the closed set |
 | `azure.ai.evaluations` | `init.completed` | `azure.ai.evaluations` `init` scaffolds an evaluation config; reported once after the scaffold is written to disk | `ext.source`: fixed enum `traces`, `dataset`, or `unknown`; the source of rows the scaffolded eval will grade |
+| `azure.ai.evaluations` | `init.completed` | `azd ai eval init` has written an eval scaffold to disk; one event per successful init | `ext.source`: fixed enum `traces`, `dataset`, or `unknown`, where `unknown` absorbs an unrecognized source so the attribute cannot widen into an open set; carries no eval names, dataset identifiers, paths, or trace content |
+| `azure.ai.dataset` | `dataset.published` | `azd ai dataset create` or `azd ai dataset update` has registered a dataset version; one event per successful publish | `ext.operation`: fixed enum `create`, `update`, or `unknown`, where `unknown` absorbs an unrecognized verb so the attribute cannot widen into an open set; carries no dataset names, versions, row content, or file paths |
 
 Because `ext.usage` spans share the command's trace, they join the originating
 command in Kusto on `operation_Id`. See

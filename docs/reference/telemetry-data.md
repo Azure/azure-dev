@@ -501,8 +501,8 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `ext.agent.operation` | string | Fixed extension command path associated with the resolved agent context, such as `deploy` or `files.upload` (`agent.context.resolved`) |
 | `ext.stage` | string | Agent Inspector funnel stage: currently `ui_ready` (`inspector.funnel.stage`) |
 | `ext.outcome` | string | Agent Inspector funnel-stage outcome: currently `succeeded` (`inspector.funnel.stage`) |
-| `ext.operation` | string | Dataset publish operation reported by `azure.ai.dataset`: `create`, `update`, or `unknown` (`dataset.published`) |
-| `ext.source` | string | Evaluation `init` source reported by `azure.ai.evaluations`: `traces`, `dataset`, or `unknown` (`init.completed`) |
+| `ext.source` | string | Rows a scaffolded eval will grade, reported by `azure.ai.evaluations`: `traces`, `dataset`, or `unknown` (`init.completed`). Extension-chosen, and unrelated to the host-owned `extension.source` below |
+| `ext.operation` | string | Write that published a dataset version, reported by `azure.ai.dataset`: `create`, `update`, or `unknown` (`dataset.published`) |
 | `extension.installed` | string[] | List of installed extensions (`id@version`) |
 | `extension.installed.source.category` | string[] | Installed extension source categories (`id@category`) |
 | `extension.version.from` | string | Version before an update or promotion (`ext.update`, `ext.promote`) |

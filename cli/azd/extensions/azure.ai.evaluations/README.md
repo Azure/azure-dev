@@ -223,7 +223,10 @@ shape and tags the registered dataset so a later run knows what it holds.
 Before publishing dependencies, `azd ai eval create <name>` validates the selected
 eval, its local JSONL/rubric files, and its registered dataset/evaluator references,
 including version pins. An unavailable reference lookup is an error, not a reason
-to publish optimistically. Unrelated invalid evals do not block this targeted
+to publish optimistically. A valid, complete empty evaluator-version listing
+allows the first publication of a local rubric; it does not create an evaluator
+for an existing-only reference. Missing or malformed list data and failed
+continuation pages remain errors. Unrelated invalid evals do not block this targeted
 command; `azd up` validates the entire evaluation service before publishing any
 of its dependencies. Validation does not write private reconciliation state.
 Local rows used to invoke an agent or model must carry the `query` field the

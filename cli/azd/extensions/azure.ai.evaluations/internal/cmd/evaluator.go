@@ -124,7 +124,7 @@ func (a *evaluatorWriteAction) write(ctx context.Context, ec *evalContext, body 
 	// listing lags a publish. A 404 moments after a create therefore means "not
 	// caught up", not "no such evaluator".
 	existing, readErr := ec.evalClient.GetEvaluatorRaw(ctx, a.name, "", ProjectEndpointAPIVersion)
-	if readErr != nil && !eval_api.IsNotFound(readErr) {
+	if readErr != nil && !eval_api.IsEvaluatorAbsent(readErr) {
 		return messages.CheckingEvaluatorExists(a.name, readErr)
 	}
 	// Only update acts on absence, so only update pays to establish it. Making
@@ -132,12 +132,12 @@ func (a *evaluatorWriteAction) write(ctx context.Context, ec *evalContext, body 
 	// absent evaluator is the expected answer and not a suspicious one.
 	if readErr != nil && a.verb == "update" {
 		existing, readErr = settledEvaluatorRead(ctx, ec, a.name)
-		if readErr != nil && !eval_api.IsNotFound(readErr) {
+		if readErr != nil && !eval_api.IsEvaluatorAbsent(readErr) {
 			return messages.CheckingEvaluatorExists(a.name, readErr)
 		}
 	}
-	// A non-404 already returned above, so reaching here means the read either
-	// found the evaluator or the service said it is unknown.
+	// Other read failures returned above; only a 404 or a valid empty listing
+	// counts as absence here.
 	if err := checkAssetExistence(a.verb, "evaluator", a.name, readErr == nil, true); err != nil {
 		return err
 	}
@@ -207,7 +207,7 @@ func settledEvaluatorRead(
 			}
 		}
 		raw, err = ec.evalClient.GetEvaluatorRaw(ctx, name, "", ProjectEndpointAPIVersion)
-		if err == nil || !eval_api.IsNotFound(err) {
+		if err == nil || !eval_api.IsEvaluatorAbsent(err) {
 			return raw, err
 		}
 	}

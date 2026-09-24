@@ -44,19 +44,14 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 	}
 
 	columns := map[string]map[string]bool{}
+	datasetVersions := map[string]string{}
 	for _, decl := range cfg.Datasets {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		path := project.ResolveSource(baseDir, decl.File)
-		if path == "" {
-			if _, err := r.datasetReference(ctx, decl); err != nil {
-				return messages.DatasetProblem(decl.Name, err)
-			}
-			continue
-		}
 		available := map[string]any{}
-		fields, err := inspectJSONL(ctx, path, func(row map[string]any, index int) error {
+		validateRow := func(row map[string]any, index int) error {
 			for field := range row {
 				available[field] = nil
 			}
@@ -70,7 +65,19 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 				}
 			}
 			return nil
-		})
+		}
+		var fields map[string]bool
+		var err error
+		if path == "" {
+			var version string
+			version, err = r.datasetReference(ctx, decl)
+			if err == nil {
+				fields, err = r.inspectRegisteredDataset(ctx, decl.Name, version, validateRow)
+				datasetVersions[decl.Name] = version
+			}
+		} else {
+			fields, err = inspectJSONL(ctx, path, validateRow)
+		}
 		if err != nil {
 			return messages.DatasetProblem(decl.Name, err)
 		}
@@ -185,7 +192,19 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 		return err
 	}
 	r.prepared = prepared
+	r.datasetVersions = datasetVersions
 	return nil
+}
+
+func (r *evalReconciler) inspectRegisteredDataset(
+	ctx context.Context, name, version string, validateRow func(map[string]any, int) error,
+) (map[string]bool, error) {
+	content, err := r.ec.datasetClient.OpenDatasetContent(ctx, name, version, ProjectEndpointAPIVersion)
+	if err != nil {
+		return nil, messages.ReadingDatasetVersion(name, version, err)
+	}
+	defer content.Close()
+	return inspectJSONLContent(ctx, fmt.Sprintf("dataset %q version %q", name, version), content, validateRow)
 }
 
 // withCatalogEvaluatorPins resolves only authored pins. A service-resolved

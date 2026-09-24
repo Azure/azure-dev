@@ -270,6 +270,13 @@ be republished, its existing service contract wins over authored metadata
 overrides. A genuine edit that will publish a new version keeps authored
 metadata precedence.
 
+Registered dataset references are checked against the JSONL rows of the settled
+version before publication. This uses the existing read-credential/content
+path and requires permission to read those rows; unavailable or malformed
+content is not treated as an unknown schema that accepts every binding.
+Required evaluator columns must be present in every row. Reconciliation keeps
+the inspected version even if a newer version appears during the command.
+
 Eval groups are immutable, so a change to a group's evaluators, target or
   sampling creates a new group and a new id. The id is cached in the extension's
   own private state (`eval.state`) so repeat runs stay comparable. That is not

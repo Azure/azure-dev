@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"maps"
@@ -36,6 +37,9 @@ type evalReconciler struct {
 
 	// Reconciled service versions identify contracts, not authored identity pins.
 	evaluatorVersions map[string]string
+
+	// Registered dataset versions whose content was inspected by preflight.
+	datasetVersions map[string]string
 
 	// claimedBy maps each eval this deploy has settled on to the declaration
 	// that settled it, so a second declaration cannot take the same one.
@@ -220,7 +224,7 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 					return evalDecision{}, err
 				}
 				if err == nil {
-					recreate = conflictingEvaluatorPins(remote.TestingCriteria, prepared.request.TestingCriteria)
+					recreate = !matchingEvaluatorPins(remote.TestingCriteria, prepared.request.TestingCriteria)
 				}
 			}
 		}
@@ -321,9 +325,13 @@ func (r *evalReconciler) EnsureDataset(
 	}
 	// No local source means the dataset is already registered; just confirm it.
 	if localPath == "" {
-		version, err := r.datasetReference(ctx, decl)
-		if err != nil {
-			return "", false, err
+		version := r.datasetVersions[decl.Name]
+		if version == "" || (decl.Version != "" && version != decl.Version) {
+			var err error
+			version, err = r.datasetReference(ctx, decl)
+			if err != nil {
+				return "", false, err
+			}
 		}
 
 		// Recorded so a run reads the version reconciliation settled on. Without
@@ -523,7 +531,13 @@ func inspectJSONL(
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
+	return inspectJSONLContent(ctx, path, f, validateRow)
+}
+
+func inspectJSONLContent(
+	ctx context.Context, source string, content io.Reader, validateRow func(map[string]any, int) error,
+) (map[string]bool, error) {
+	scanner := bufio.NewScanner(content)
 	// A row carrying a whole conversation runs well past the 64KB default.
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 
@@ -548,10 +562,10 @@ func inspectJSONL(
 		}
 		var row map[string]any
 		if err := json.Unmarshal([]byte(text), &row); err != nil {
-			return nil, messages.JSONLRowInvalid(path, line, err)
+			return nil, messages.JSONLRowInvalid(source, line, err)
 		}
 		if len(row) == 0 {
-			return nil, messages.JSONLRowEmpty(path, line)
+			return nil, messages.JSONLRowEmpty(source, line)
 		}
 		if validateRow != nil {
 			if err := validateRow(row, rows); err != nil {
@@ -573,10 +587,10 @@ func inspectJSONL(
 		rows++
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, messages.ReadingPath(path, err)
+		return nil, messages.ReadingPath(source, err)
 	}
 	if rows == 0 {
-		return nil, messages.JSONLNoRows(path)
+		return nil, messages.JSONLNoRows(source)
 	}
 	return columns, ctx.Err()
 }

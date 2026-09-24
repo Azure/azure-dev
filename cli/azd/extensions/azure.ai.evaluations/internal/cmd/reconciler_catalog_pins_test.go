@@ -518,4 +518,34 @@ func TestLegacyCatalogPinFallbackOnlyWhenEffectiveIndexIsMissing(t *testing.T) {
 			assert.Equal(t, "quality", service.evals[first].Name)
 		})
 	}
+
+}
+
+func TestLegacyCatalogPinRepairRequiresPositiveCriterionEvidence(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		for _, missing := range []string{"criteria", "name", "evaluator", "type", "version"} {
+			t.Run(caller+"/"+missing, func(t *testing.T) {
+				ec, env, service, cfg, dir := newCatalogPinFixture(t)
+				first := reconcileCatalogPin(t, caller, ec, cfg, dir)
+				seedLegacyCatalogPinState(t, env, cfg.Evals[0], first)
+				switch missing {
+				case "criteria":
+					service.evals[first].TestingCriteria = nil
+				case "name":
+					service.evals[first].TestingCriteria[0].Name = "different"
+				case "evaluator":
+					service.evals[first].TestingCriteria[0].EvaluatorName = "different"
+				case "type":
+					service.evals[first].TestingCriteria[0].Type = "different"
+				case "version":
+					service.evals[first].TestingCriteria[0].EvaluatorVersion = ""
+				}
+				next := reconcileCatalogPin(t, caller, ec, cfg, dir)
+				require.NotEqual(t, first, next, "incomplete or mismatched legacy evidence must not be re-baselined")
+				require.Len(t, service.evals[next].TestingCriteria, 1)
+				assert.Equal(t, "1", service.evals[next].TestingCriteria[0].EvaluatorVersion)
+				assert.Equal(t, next, reconcileCatalogPin(t, caller, ec, cfg, dir))
+			})
+		}
+	}
 }

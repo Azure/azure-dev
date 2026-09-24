@@ -29,14 +29,19 @@ import (
 )
 
 type validationService struct {
-	mu          sync.Mutex
-	requests    []string
-	status      int
-	dataset     bool
-	eval        bool
-	failCreate  bool
-	definition  string
-	createCount int
+	mu               sync.Mutex
+	requests         []string
+	status           int
+	dataset          bool
+	eval             bool
+	failCreate       bool
+	definition       string
+	createCount      int
+	registeredRows   string
+	credentialStatus int
+	contentStatus    int
+	listedVersion    string
+	afterContentRead func()
 }
 
 func (s *validationService) serve(t *testing.T, base func() string) http.HandlerFunc {
@@ -47,6 +52,26 @@ func (s *validationService) serve(t *testing.T, base func() string) http.Handler
 		s.requests = append(s.requests, r.Method+" "+r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case strings.HasSuffix(r.URL.Path, "/credentials"):
+			if s.credentialStatus != 0 {
+				w.WriteHeader(s.credentialStatus)
+				return
+			}
+			assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"blobReferenceForConsumption": map[string]any{
+					"credential": map[string]any{"sasUri": base() + "/registered.jsonl"},
+				},
+			}))
+		case r.URL.Path == "/registered.jsonl":
+			if s.contentStatus != 0 {
+				w.WriteHeader(s.contentStatus)
+				return
+			}
+			_, err := w.Write([]byte(s.registeredRows))
+			assert.NoError(t, err)
+			if s.afterContentRead != nil {
+				s.afterContentRead()
+			}
 		case strings.Contains(r.URL.Path, "/evaluators/"):
 			if s.status != http.StatusOK {
 				w.WriteHeader(s.status)
@@ -73,12 +98,19 @@ func (s *validationService) serve(t *testing.T, base func() string) http.Handler
 			}
 			if strings.HasSuffix(r.URL.Path, "/versions") {
 				if s.dataset {
-					_, _ = w.Write([]byte(`{"value":[{"name":"turn-tests","version":"1.0"}]}`))
+					version := s.listedVersion
+					if version == "" {
+						version = "1.0"
+					}
+					assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+						"value": []map[string]string{{"name": "turn-tests", "version": version}},
+					}))
 				} else {
 					_, _ = w.Write([]byte(`{"value":[]}`))
 				}
 			} else if s.dataset {
-				_, _ = w.Write([]byte(`{"name":"turn-tests","version":"1.0"}`))
+				version := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+				assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{"name": "turn-tests", "version": version}))
 			} else {
 				w.WriteHeader(http.StatusNotFound)
 			}

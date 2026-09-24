@@ -281,6 +281,11 @@ discards a record of finished work, not the artifact the job produced.
 Every command supports `-o json` and `--no-prompt`, so the whole surface is
 usable from CI.
 
+Known-command flag-validation failures also return one JSON error document
+under `-o json`, including mutually exclusive flags such as `--wait --no-wait`
+and missing required flag groups. They still fail without running command hooks
+or writing evaluation artifacts.
+
 `azd ai eval run output list --failed-only` displays a page of failing test
 cases, not the full run's failure count. Its footer separates the number shown
 on that page from the service-reported failures and total test cases for the

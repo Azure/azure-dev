@@ -1,14 +1,14 @@
 {
   "releaseRepository": "m7md7sien/azd-foundry-feed",
-  "releaseTag": "extensions-2026-09-23-41",
-  "sourceCommit": "8ef8b6df77336950c60506ab2966037f579d92cd",
+  "releaseTag": "extensions-2026-09-24-42",
+  "sourceCommit": "d40a3b5a1e7c5944b1b43decd14c96096a99e5b6",
   "sourceNote": "Publisher-confirmed source; all 12 packaged binaries had their VCS revision and platform verified before publication.",
-  "sourceVerificationCommit": "8ef8b6df77336950c60506ab2966037f579d92cd",
+  "sourceVerificationCommit": "d40a3b5a1e7c5944b1b43decd14c96096a99e5b6",
   "validationBaseline": "0361f347eb28c5f2e756225115318393b1dad28a",
   "conversationModes": true,
   "initSeedValidation": true,
   "initDatasetBinding": true,
-  "registrySha256": "aff0d6f456e3fb08773b1c888136eed12ec8a06bd2eba0addda0383142ae7d79",
+  "registrySha256": "83026575746f7db5c5cc7a3035f9e75b776f709875d2f0768bd9c215aaaca635",
   "azd": {
     "version": "1.33.0",
     "artifacts": {
@@ -25,18 +25,18 @@
   "extensions": {
     "azure.ai.evaluations": {
       "command": "eval",
-      "version": "1.0.41-beta",
+      "version": "1.0.42-beta",
       "artifacts": {
-        "linux/amd64": "d2c3cc5c90adb7b3ef86caa0e27abecb61fe102e2dcff4a86b909eefc954385c",
-        "windows/amd64": "4a262433ffb7558d19dd6138fb4c24e1ca93b6c647c452b23ef1b0d3605d7d75"
+        "linux/amd64": "498f0a228a0525c654a6afc726a1cb9bc04c038b6015ef06fe32292430059978",
+        "windows/amd64": "8fa3324c273efe401ccdfed0403ff86d887aba8565191889439046eeadd0c341"
       }
     },
     "azure.ai.dataset": {
       "command": "dataset",
-      "version": "1.0.0-beta.29",
+      "version": "1.0.0-beta.30",
       "artifacts": {
-        "linux/amd64": "4429b2b36c99392cde2a167fff27a5bbdde76bdecb5165121eb820bc86b32f5e",
-        "windows/amd64": "66f39a27db5203da73d3c82b7d736cafa2593c9ae41940b9817bceb205f3d8c8"
+        "linux/amd64": "461260c6498970d1c5b97b621ab77042dd4d304a0c8511c993f04c3c9c5bb56c",
+        "windows/amd64": "c993844959836b2c31e20f409c94d47ca706044e1b5d43c4bb85373a1a62ff81"
       }
     }
   }

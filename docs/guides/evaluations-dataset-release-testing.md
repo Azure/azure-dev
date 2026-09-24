@@ -88,7 +88,16 @@ Mark missing live authorization `BLOCKED` and continue useful local coverage.
 6. Update this inventory, the version-specific receipt, and installation pins
    together. Retain old receipts without relabeling them as new executions.
 
-For the current candidate, retain the existing four offline hosted jobs: actual
+**Current build 42 scope decision:** prioritize a smaller package of independently
+validated fixes and defer changes needing live proof. The intended baseline is
+build 41 plus the proven cancellation correction, with an isolated race fix only
+if independently validated and explicitly included by the integration owner.
+The immutable inclusion map is authoritative. New simulation-contract,
+qualified-model, and nested-seed changes are deferred, not implicitly accepted
+because their source tests pass. This decision authorizes no live generation or
+spending and closes no bug by deferral.
+
+For the smaller candidate, retain the existing four offline hosted jobs: actual
 installed CLI on `ubuntu-24.04` and `windows-2025`, plus the evaluations and dataset
 full internal race suites on Linux with Go 1.26.4:
 
@@ -110,9 +119,13 @@ platforms does not establish macOS/ARM runtime coverage. Offline hosted checks
 do not establish terminal interaction, live Azure evaluation, or cloud quality
 gates. Real authenticated GitHub Actions/ADO scenario CI remains deferred.
 
-The bounded build 42 **plan**, conditional on the integrated contract and frozen
-manifest approval, preserves those 160 case intents and adds at most 16 checks per
-OS in the same four jobs. It is not an executed result:
+### Deferred contract-expansion plan
+
+The earlier conditional 176-case proposal is **deferred, not a build 42 gate**
+when the new contract is excluded. Retain these proposed expectations for a
+future explicitly scoped candidate; do not change build 41-compatible fixtures
+merely because the release number becomes 42. The proposal preserves 160 case
+intents and adds at most 16 checks per OS in the same four jobs:
 
 | Planned delta | Cases per OS | Expected contract |
 | --- | --- | --- |
@@ -161,7 +174,7 @@ not a claim that every combination is implemented or tested.
 | RECOVER-01 / both | Owned partial publication/generation state; rerun/reattach and explicit cleanup | Persisted identity is reusable, retry is idempotent, partial success is reported, cancellation stops owned work, and cleanup matches actual service delete scope and response contract. |
 | TRACE-01 / practical | Explicitly authorized owned agent/version, trace access, and narrow request window | Returned traces belong to the intended owned agent/version/window. Do not widen to shared traffic when ingestion or permissions block the case. |
 
-For qualified simulation acceptance, use an **existing connection and model
+For a future approved qualified-simulation acceptance case, use an **existing connection and model
 deployment pair**, a separately selected judge, and the recorded target
 agent/version. Do not infer the qualified simulator from a bare deployment name.
 The approved workflow is generate/collect, init with nested seed configuration,
@@ -185,6 +198,8 @@ billed work stopped. Do not label an observation deadline or an alert as spendin
 enforcement, blindly resubmit an ambiguous POST, or equate deletion of a job
 record with deletion of generated artifacts. A hard monetary budget remains
 blocked until an authorized owner supplies a verified service-side control.
+This live producer/contract expansion is deferred from the smaller build 42
+scope, not a prerequisite that may silently delay that package.
 
 ## Required bug regressions
 
@@ -220,6 +235,14 @@ change on the same commands.
 | [5572139][bug-5572139], terminal generation-job deletion, P2 | Supported deletion of an owned terminal job succeeds with correct empty-response handling and local cleanup. | Reported New, backend HTTP 409 remains unresolved. No verified retention TTL or client-package fix. Do not loop DELETE against known failures. |
 | [5530209][bug-5530209], editable rubric shape, P2 | Download/edit/republish preserves `type`, `dimensions`, `pass_threshold`, declaration metadata and version behavior; unchanged repetition remains stable. | New residual tracked with [#10148](https://github.com/Azure/azure-dev/pull/10148). Earlier metadata/version passes through create/reconcile do not establish the complete editable round trip or live `azd up`. |
 
+Additional linked checks discovered during coordination remain separate from new
+bug filings:
+
+| Existing item | Evidence and required follow-up |
+| --- | --- |
+| [5572011][bug-5572011], stale local evaluation state after remote deletion | Scoped deduplication matched the peer-audit observation to this existing Done item, revision 13, priority 2, severity 3 - Medium, and comment 8226717. This is not a new P3 bug or the terminal-job HTTP 409 issue. Confirm a current recurrence with a bounded regression before reopening; reconciliation already recovers after service 404. |
+| [5631310][bug-5631310], built-in evaluator validation | Existing best-effort catalog behavior is already in build 41. Exact-package init checks for invalid explicit IDs, a valid ID outside the initial offered choices, and offline preservation remain queued. Network/auth/empty-catalog fallback is not authoritative offline ID validation. Do not substitute create/up or source CI for the init cases. |
+
 For new defects, first deduplicate in the relevant project against these records
 and known linked fixes. File through the authorized [evaluation bug channel][bug-channel]
 with impact-based severity, exact identity, reproducible commands, expected/actual
@@ -238,7 +261,7 @@ The current fresh Windows checks do not replace the historical broader matrices.
 | --- | --- | --- |
 | 40 | [Build 40 receipt][build40], evaluations `1.0.40-beta`, dataset `1.0.0-beta.28` | Historical scoped local/terminal/live results, including the responses-backed execution `FAIL`. Do not relabel as 41. |
 | 41 | [Frozen build 41 receipt][build41], evaluations `1.0.41-beta`, dataset `1.0.0-beta.29`, source `8ef8b6df77336950c60506ab2966037f579d92cd`, azd `>=1.33.0` | Published Latest. Historical targeted package acceptance and four hosted jobs `PASS`; newly installed Windows identity/help checks also `PASS`. Broad live reruns, all platforms, and all seven regressions are not claimed. |
-| 42 candidate | No combined frozen source, archive tuple, or version-specific receipt supplied at this snapshot | `NOT RUN` for new package acceptance; live cases `BLOCKED` pending exact bytes and explicit current resource/budget authorization. Source PR CI success is not package proof. |
+| 42 candidate | Smaller independently validated scope; no combined frozen source, archive tuple, or version-specific receipt supplied at this snapshot | `NOT RUN` for new package acceptance. Preserve baseline checks and target included fixes. Live/new-contract expansion is deferred by explicit user decision, not an active 42 gate. Source PR CI success is not package proof. |
 
 Build 41 registry SHA256 is
 `aff0d6f456e3fb08773b1c888136eed12ec8a06bd2eba0addda0383142ae7d79`.
@@ -308,3 +331,5 @@ optional recommendations.
 [bug-5571322]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5571322
 [bug-5572139]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5572139
 [bug-5530209]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5530209
+[bug-5572011]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5572011
+[bug-5631310]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5631310

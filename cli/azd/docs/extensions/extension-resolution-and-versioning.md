@@ -33,6 +33,8 @@ azd extension source add -n local-dev -t file -l "/path/to/registry.json"
 azd extension source remove my-source
 ```
 
+File sources are saved with an absolute location so the registered name works from other directories. When adding a relative file location, `azd` first looks in the current working directory, then in the user configuration directory. Relative paths must stay within a searched directory; use an absolute path for a registry in a parent directory. Absolute file locations and URLs are kept as supplied. Existing relative entries are not automatically migrated because their original working directory is unknown. To repair one, remove and re-add the source from the directory where the relative path works, or use the registry's absolute path.
+
 ### Default Source
 
 When no sources are configured, `azd` automatically creates a default source:

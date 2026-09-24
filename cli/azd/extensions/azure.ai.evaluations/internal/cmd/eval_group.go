@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -363,9 +364,10 @@ func filterEvalsByName(evals []eval_api.OpenAIEval, name string) []eval_api.Open
 
 // evalShowAction reports one eval definition.
 type evalShowAction struct {
-	cmd      *cobra.Command
-	endpoint string
-	evalID   string
+	cmd        *cobra.Command
+	endpoint   string
+	evalID     string
+	newContext func(context.Context, string) (*evalContext, error)
 }
 
 func newEvalShowCommand() *cobra.Command {
@@ -386,7 +388,11 @@ func newEvalShowCommand() *cobra.Command {
 
 func (a *evalShowAction) Run() error {
 	ctx := a.cmd.Context()
-	ec, err := newEvalContext(ctx, a.endpoint)
+	newContext := a.newContext
+	if newContext == nil {
+		newContext = newEvalContext
+	}
+	ec, err := newContext(ctx, a.endpoint)
 	if err != nil {
 		return err
 	}
@@ -424,16 +430,18 @@ func (a *evalShowAction) Run() error {
 	if graders := evalGraders(group); graders != "" {
 		detail = append(detail, field{"Evaluators", graders})
 	}
+	// A custom schema does not identify a row source; non-custom scenarios do.
+	if source, _ := group.DataSourceConfig["type"].(string); source != "" && source != "custom" {
+		detail = append(detail, field{"Data Source", source})
+		if scenario, _ := group.DataSourceConfig["scenario"].(string); scenario != "" {
+			detail = append(detail, field{"Scenario", scenario})
+		}
+	}
 	return emitDetail(a.cmd.OutOrStdout(), detail)
 }
 
 // evalGraders lists the evaluators the eval grades with, preferring the
 // reference a caller would recognize over the criterion label.
-//
-// data_source_config is deliberately not shown beside it: every eval this
-// extension creates carries type "custom", which describes the item schema
-// rather than where the rows come from, so a "Source" row would read as an
-// answer while always saying the same thing.
 func evalGraders(group *eval_api.OpenAIEval) string {
 	if group == nil {
 		return ""

@@ -284,7 +284,11 @@ Eval groups are immutable, so a change to a group's evaluators, target or
   shows only what you put there.
 
 Stored-response evaluations (`source.type: responses`) use Foundry's
-`azure_ai_source` schema with `scenario: responses`. A deployment replaces an
+`azure_ai_source` schema with `scenario: responses`. Human `azd ai eval show <eval>`
+output displays `Data Source` and `Scenario` for non-custom definitions so a
+response eval can be distinguished from a legacy custom-schema eval. JSON output
+retains the complete `data_source_config`.
+A deployment replaces an
 older custom-schema response eval with a compatible eval once, even when the
 declaration is unchanged. The old eval and its runs are retained; subsequent
 unchanged deployments reuse the new ID. Other evaluation modes retain compatible

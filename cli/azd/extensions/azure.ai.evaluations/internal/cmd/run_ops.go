@@ -105,7 +105,10 @@ func (a *runListAction) Run() error {
 		var runs []eval_api.OpenAIEvalRun
 		cursor := ""
 		if list != nil {
-			runs = list.Data
+			runs = make([]eval_api.OpenAIEvalRun, len(list.Data))
+			for i := range list.Data {
+				runs[i] = *runForJSON(&list.Data[i])
+			}
 			if list.HasMore {
 				cursor = list.LastID
 			}
@@ -243,7 +246,7 @@ func (a *runShowAction) show(ctx context.Context, ec *evalContext, evalID string
 				return messages.GateOutlivedTheWait(run.ID, waitBudget)
 			}
 			if isJSON(a.cmd) {
-				return emitJSON(a.cmd.OutOrStdout(), run)
+				return emitJSON(a.cmd.OutOrStdout(), runForJSON(run))
 			}
 			fmt.Fprint(a.cmd.OutOrStdout(), messages.WaitBudgetSpent(run.ID, waitBudget))
 			return nil
@@ -266,7 +269,7 @@ func (a *runShowAction) show(ctx context.Context, ec *evalContext, evalID string
 	}
 
 	if isJSON(a.cmd) {
-		if err := emitJSON(a.cmd.OutOrStdout(), run); err != nil {
+		if err := emitJSON(a.cmd.OutOrStdout(), runForJSON(run)); err != nil {
 			return err
 		}
 		if gateOnStatus {
@@ -404,7 +407,7 @@ func (a *runCancelAction) Run() error {
 		return messages.CancellingRun(target.ID, err)
 	}
 	if isJSON(a.cmd) {
-		return emitJSON(a.cmd.OutOrStdout(), canceled)
+		return emitJSON(a.cmd.OutOrStdout(), runForJSON(canceled))
 	}
 	status := canceled.Status
 	if status == "" {

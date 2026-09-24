@@ -183,3 +183,50 @@ func TestTextRedactsAdjacentURLs(t *testing.T) {
 		assert.NotContains(t, safe, "fixture-password")
 	}
 }
+
+func TestTextRedactsMalformedSchemeURLs(t *testing.T) {
+	for _, malformed := range []string{
+		"https:fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment",
+		"http:fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment",
+		"https:/fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment",
+		"http:/fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment",
+		"HtTpS:/fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment",
+		"azureai:/fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment",
+		`https:\fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment`,
+		"https:///fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment",
+		`\\fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment`,
+		`/\fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment`,
+		`C:\fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment`,
+	} {
+		for _, message := range []string{
+			"Failed " + malformed,
+			"https://safe.example/a," + malformed,
+			malformed + ",https://safe.example/a",
+			`{"primary":"https://safe.example/a","secondary":"` + malformed + `"}`,
+		} {
+			t.Run(message, func(t *testing.T) {
+				safe := Text(message)
+				assert.Contains(t, safe, "<redacted-url>")
+				for _, secret := range []string{
+					"fixture-user", "fixture-password", "fixture-signature", "fixture-fragment",
+				} {
+					assert.NotContains(t, safe, secret)
+				}
+			})
+		}
+	}
+
+}
+
+func TestTextPreservesCredentialFreeDiagnosticContext(t *testing.T) {
+	for _, message := range []string{
+		`Cannot open C:\data\rows.jsonl`,
+		`Cannot open c:/data/rows.jsonl`,
+		`Cannot open \\server\share\rows.jsonl`,
+		"Evaluation failed: retry after checking the dataset.",
+		"Could not initialize https://service.example/evals/run",
+		"Could not read //storage.example/data/rows.jsonl",
+	} {
+		assert.Equal(t, message, Text(message))
+	}
+}

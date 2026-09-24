@@ -16,6 +16,7 @@ import (
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
+	"azureaieval/internal/urlsafe"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -184,8 +185,8 @@ func failAs(cmd *cobra.Command, err error) error {
 		return err
 	}
 	_ = emitJSON(cmd.OutOrStdout(), jsonError{Error: jsonErrorBody{
-		Message:    err.Error(),
-		Suggestion: azdext.ErrorSuggestion(err),
+		Message:    urlsafe.Text(err.Error()),
+		Suggestion: urlsafe.Text(azdext.ErrorSuggestion(err)),
 	}})
 	exitProcess(1)
 	return err
@@ -285,7 +286,7 @@ func reportFailuresAsJSON(root *cobra.Command) {
 					// where azd would put it. `run --gate-on-status` reaches
 					// here: the run it reported is the answer, and why that run
 					// is a failure belongs beside it rather than inside it.
-					fmt.Fprintln(cmd.ErrOrStderr(), "Error: "+err.Error())
+					fmt.Fprintln(cmd.ErrOrStderr(), "Error: "+urlsafe.Text(err.Error()))
 					exitProcess(1)
 					return err
 				}

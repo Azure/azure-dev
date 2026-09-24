@@ -12,6 +12,7 @@ import (
 
 	"azureaieval/internal/pkg/dataset_api"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,6 +35,54 @@ func failingTree(err error) (*cobra.Command, *bytes.Buffer) {
 	root.SetOut(out)
 	root.SetErr(&bytes.Buffer{})
 	return root, out
+}
+
+func TestCLIJSONErrorRedactsCredentialURLs(t *testing.T) {
+	for _, raw := range []string{
+		"https:/fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment",
+		"https:fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment",
+		`https:\fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment`,
+		`{"a":"https://safe.example/path","b":"https:/fixture-user:fixture-password@host?sig=fixture-signature"}`,
+	} {
+		for _, answered := range []bool{false, true} {
+			t.Run(raw, func(t *testing.T) {
+				original := &azdext.LocalError{
+					Code: "synthetic_failure", Message: "Failed " + raw, Suggestion: "Inspect " + raw,
+				}
+				var out, stderr bytes.Buffer
+				root := &cobra.Command{Use: "eval", SilenceUsage: true, SilenceErrors: true}
+				root.Flags().String("output", "json", "")
+				root.SetArgs([]string{})
+				root.SetOut(&out)
+				root.SetErr(&stderr)
+				root.RunE = func(cmd *cobra.Command, _ []string) error {
+					if answered {
+						if err := emitJSON(cmd.OutOrStdout(), map[string]string{"status": "failed"}); err != nil {
+							return err
+						}
+					}
+					return original
+				}
+				reportFailuresAsJSON(root)
+				require.ErrorIs(t, root.ExecuteContext(t.Context()), original)
+				for _, secret := range []string{
+					"fixture-user", "fixture-password", "fixture-signature", "fixture-fragment",
+				} {
+					assert.NotContains(t, out.String()+stderr.String(), secret)
+				}
+				if answered {
+					assert.JSONEq(t, `{"status":"failed"}`, out.String())
+					assert.Contains(t, stderr.String(), "<redacted-url>")
+				} else {
+					var document jsonError
+					require.NoError(t, json.Unmarshal(out.Bytes(), &document))
+					assert.Contains(t, document.Error.Message, "<redacted-url>")
+					assert.Contains(t, document.Error.Suggestion, "<redacted-url>")
+				}
+				assert.Equal(t, "Failed "+raw, original.Message, "presentation must not replace the underlying error")
+			})
+		}
+	}
 }
 
 // A failing command under `-o json` used to write nothing to stdout, so a

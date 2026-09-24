@@ -202,8 +202,10 @@ func TestFailedRunCallersPreserveJSONAndPrintResolvedHumanCommands(t *testing.T)
 					assert.Zero(t, outputRequests)
 					assert.NotContains(t, stderr.String(), "fixture-password")
 					if format == "json" {
-						assert.JSONEq(t, string(response), out.String(),
-							"emit exactly one unchanged service document, without injected identities or command prose")
+						expected := strings.Replace(string(response), runFailureWithCredentials,
+							"Synthetic initialization failure. Download https://storage.example/rows.jsonl", 1)
+						assert.JSONEq(t, expected, out.String(),
+							"emit one service document with only known error diagnostics redacted")
 						assert.NotContains(t, out.String(), "azd ai eval")
 						if actionErr != nil {
 							assert.Contains(t, stderr.String(), "command wrapper:")
@@ -456,6 +458,37 @@ func TestRunShowPreservesPartialServiceCounts(t *testing.T) {
 					assert.Contains(t, out.String(), "run output export")
 				}
 			})
+		}
+	}
+
+}
+
+func TestRunFailureRedactsMalformedURLs(t *testing.T) {
+	const malformed = "https:/fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment"
+	for _, message := range []string{
+		"Failed " + malformed,
+		`{"primary":"https://safe.example/a","secondary":"` + malformed + `"}`,
+	} {
+		for _, render := range []func(io.Writer, *eval_api.OpenAIEvalRun) error{
+			renderRunDetail,
+			func(out io.Writer, run *eval_api.OpenAIEvalRun) error { return renderRun(out, run, nil) },
+		} {
+			run := &eval_api.OpenAIEvalRun{
+				ID: "run_failed", EvalID: "eval_failed", Status: "failed", Error: &eval_api.JobError{Message: message},
+			}
+			before, err := json.Marshal(run)
+			require.NoError(t, err)
+			var out bytes.Buffer
+			require.NoError(t, render(&out, run))
+			assert.Contains(t, out.String(), "<redacted-url>")
+			for _, secret := range []string{
+				"fixture-user", "fixture-password", "fixture-signature", "fixture-fragment",
+			} {
+				assert.NotContains(t, out.String(), secret)
+			}
+			after, err := json.Marshal(run)
+			require.NoError(t, err)
+			assert.Equal(t, string(before), string(after), "human redaction must not mutate raw service JSON")
 		}
 	}
 }

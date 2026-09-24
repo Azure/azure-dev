@@ -285,6 +285,11 @@ func (a *runOutputShowAction) show(ctx context.Context, ec *evalContext, evalID,
 // rows at all. A projection is a `jq` away from this file; the data it needs is
 // not recoverable from a summary.
 func writeExport(w io.Writer, doc exportDocument) error {
+	run, err := redactExportRunError(doc.Run)
+	if err != nil {
+		return err
+	}
+	doc.Run = run
 	return emitJSON(w, doc)
 }
 
@@ -324,9 +329,11 @@ func newRunOutputExportCommand() *cobra.Command {
 		Short: "Export the complete run results as JSON.",
 		Long: `Export the complete results of a run as one JSON document.
 
-The document holds the run exactly as the service described it, and every
+The document holds the run as the service described it, and every
 evaluated row beneath it: the item that was evaluated, what the target
 answered, and each evaluator's score, verdict and reason.
+URL credentials in the run's error diagnostics are redacted; source rows and
+other service fields are retained.
 
 This is the machine-readable path. ` + "`run output list`" + ` is the readable one.
 Derive any other shape from this file, for example:

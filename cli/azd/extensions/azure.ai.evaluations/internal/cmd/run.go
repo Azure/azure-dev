@@ -336,7 +336,7 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 	final = ec.withPortalLink(ctx, evalID, final)
 
 	if isJSON(a.cmd) {
-		if err := emitJSON(out, final); err != nil {
+		if err := emitJSON(out, runForJSON(final)); err != nil {
 			return err
 		}
 	} else {

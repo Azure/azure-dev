@@ -127,7 +127,10 @@ tracing.SetUsageAttributes(
 > with a literal key is invisible to that scan, so the property still flows to App Insights but its
 > data-catalog row stays **Unclassified / `Complete=false`**. The `TestNoRawTelemetryAttributes` guard
 > (`cli/azd/cmd/telemetry_test.go`) fails the build on raw string-literal keys in
-> product code. Dynamic, non-fixed keys (e.g. the `ext.*` extension path) are the only exception.
+> product code. Dynamic, non-fixed keys chosen at runtime (the open-ended `ext.*` extension path)
+> are the only exception to this core scan. First-party extension `ext.*` keys with fixed values are
+> still governed: they are declared in a separate inventory, `cli/azd/extensions/telemetry/fields.go`,
+> and verified by `go test ./extensions/telemetry` rather than by `TestNoRawTelemetryAttributes`.
 
 ### For Command Actions
 

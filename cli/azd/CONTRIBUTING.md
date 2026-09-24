@@ -174,12 +174,20 @@ Launch `azd` separately, then attach:
 
 ## Submitting a change
 
-Keep related fixes that deliver one coherent behavior in a single pull request.
-When combining parallel work, designate one integration writer to preserve each
-contributor's changes and attribution without competing edits. Link the original
-pull requests and carry forward their review feedback. Before closing a superseded
-draft, verify that its replacement includes the intended fixes and regression
-coverage, and account for any remaining feedback.
+Prefer small, cohesive pull requests that can be reviewed and landed independently.
+Group closely related fixes for one behavior rather than creating a pull request
+for every minor bug or combining unrelated work to minimize the number of pull
+requests. State dependencies explicitly. When integration is needed, designate one
+writer to preserve each contributor's changes and attribution without competing
+edits. Link the original pull requests and carry forward their review feedback.
+Before closing a superseded draft, verify that its replacement includes the intended
+fixes and regression coverage, and account for any remaining feedback.
+
+Use multiple complementary, bounded reviews for substantive changes. Address valid,
+actionable feedback, including minor clarity, naming, documentation, help, error,
+test, style, and correctness improvements; explain any rejected or deferred
+suggestions. Record actual GitHub Copilot review evidence separately from local
+agent reviews rather than treating one as proof of the other.
 
 1. Create a new branch: `git checkout -b my-branch-name`
 1. Make your change, add tests, and ensure tests pass

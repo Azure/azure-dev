@@ -1322,6 +1322,9 @@ func renderRunFailure(out io.Writer, run *eval_api.OpenAIEvalRun) {
 }
 
 func renderRunFollowUp(out io.Writer, run *eval_api.OpenAIEvalRun) {
+	if !runIsTerminal(run) {
+		return
+	}
 	status := strings.ToLower(run.Status)
 	operationalFailure := status == "failed" || status == "error" || runFailureMessage(run) != ""
 	counts := run.ReportedResultCounts()

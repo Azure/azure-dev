@@ -57,6 +57,26 @@ func TestFilteredResultPageDoesNotReportPageSizeAsRunFailures(t *testing.T) {
 	}
 }
 
+func TestFilteredResultPageDoesNotLabelMovingCountsAsFullRun(t *testing.T) {
+	run := &eval_api.OpenAIEvalRun{
+		ID: "run_moving", EvalID: "eval_moving", Status: "in_progress",
+		ResultCounts: &eval_api.EvalRunResultCounts{Total: 18, Passed: 6, Failed: 12},
+	}
+	var out bytes.Buffer
+	require.NoError(t, renderResults(&out, run.EvalID, run, []eval_api.OutputItem{failingItem("1")}, true))
+	assert.Contains(t, out.String(), "Showing 1 failed test case on this page.")
+	assert.NotContains(t, out.String(), "Full run:")
+	assert.NotContains(t, out.String(), "Export complete results:")
+	assert.Contains(t, out.String(), "Export available results:")
+	assert.Contains(t, out.String(), "run output show 1 --eval eval_moving --run run_moving")
+
+	run.Status = "completed"
+	out.Reset()
+	require.NoError(t, renderResults(&out, run.EvalID, run, []eval_api.OutputItem{failingItem("1")}, true))
+	assert.Contains(t, out.String(), "Full run: 12 failed of 18 total test cases")
+	assert.Contains(t, out.String(), "Export complete results:")
+}
+
 func TestFilteredResultCountsDoNotInventMissingServiceTotals(t *testing.T) {
 	for _, counts := range []*eval_api.EvalRunResultCounts{nil, {}} {
 		run := &eval_api.OpenAIEvalRun{ID: "evalrun_counts", ResultCounts: counts}

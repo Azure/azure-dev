@@ -899,6 +899,10 @@ func renderResults(
 	failedOnly bool,
 ) error {
 	evalRef := followUpEvalRef(runForDisplay(run, resolvedEval, ""))
+	exportHint := messages.ExportCompleteResults(evalRef, run.ID)
+	if !runIsTerminal(run) {
+		exportHint = messages.ExportAvailableResults(evalRef, run.ID)
+	}
 	if isSimulationRun(run) {
 		renderRunHeader(w, run)
 		renderSimulationSettings(w, run)
@@ -958,7 +962,7 @@ func renderResults(
 		// The export is the whole run, so it is the answer to "nothing here
 		// matched, where is the rest of it" -- which is exactly the case that
 		// used to be answered with a full stop.
-		fmt.Fprint(w, messages.ExportCompleteResults(evalRef, run.ID))
+		fmt.Fprint(w, exportHint)
 	} else {
 		fmt.Fprintln(w)
 		rows := make([][]string, 0, len(items))
@@ -1005,7 +1009,7 @@ func renderResults(
 			counts := run.ReportedResultCounts()
 			failed, failedKnown := counts["failed"]
 			total, totalKnown := counts["total"]
-			if failedKnown && totalKnown {
+			if runIsTerminal(run) && failedKnown && totalKnown {
 				fmt.Fprint(w, messages.FilteredRunTotal(failed, total, itemFailed))
 			}
 		}
@@ -1020,7 +1024,7 @@ func renderResults(
 		// Offered whether or not a row survived the filter. The export is the
 		// whole run, so it is the answer to "nothing here matched, where is the
 		// rest of it" -- which is exactly when it used to be withheld.
-		fmt.Fprint(w, messages.ExportCompleteResults(evalRef, run.ID))
+		fmt.Fprint(w, exportHint)
 	}
 
 	if url := runLink(run.ReportURL, run.PortalURL); url != "" {

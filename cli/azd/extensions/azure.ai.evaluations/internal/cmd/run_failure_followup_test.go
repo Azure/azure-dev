@@ -425,6 +425,27 @@ func TestPartialServiceCountsDoNotInventErroredFollowUps(t *testing.T) {
 	}
 }
 
+func TestMovingRunDoesNotOfferTerminalFollowUps(t *testing.T) {
+	for _, status := range []string{"queued", "in_progress", "running", "cancelling", "unrecognized"} {
+		t.Run(status, func(t *testing.T) {
+			run := &eval_api.OpenAIEvalRun{
+				ID: "run_moving", EvalID: "eval_moving", Status: status,
+				ResultCounts: &eval_api.EvalRunResultCounts{Total: 3, Failed: 1, Errored: 1},
+			}
+			for _, render := range []func(io.Writer, *eval_api.OpenAIEvalRun) error{
+				renderRunDetail,
+				func(out io.Writer, run *eval_api.OpenAIEvalRun) error { return renderRun(out, run, nil) },
+			} {
+				var out bytes.Buffer
+				require.NoError(t, render(&out, run))
+				assert.Contains(t, out.String(), status)
+				assert.NotContains(t, out.String(), "run output export")
+				assert.NotContains(t, out.String(), "run output list")
+			}
+		})
+	}
+}
+
 func TestRunShowPreservesPartialServiceCounts(t *testing.T) {
 	for _, counts := range []string{
 		`"result_counts":null`,

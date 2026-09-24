@@ -283,6 +283,11 @@ func ExportCompleteResults(eval, runID string) string {
 		shellArg(eval), shellArg(runID), shellArg(runID))
 }
 
+// ExportAvailableResults offers a snapshot without claiming a moving run is complete.
+func ExportAvailableResults(eval, runID string) string {
+	return "\nExport available results:\n" + exportRunCommand(eval, runID)
+}
+
 // EvalNotDeployed reports an eval id the project does not hold.
 func EvalNotDeployed(evalID, deployCmd string) error {
 	return fmt.Errorf(

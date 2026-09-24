@@ -289,8 +289,10 @@ or writing evaluation artifacts.
 `azd ai eval run output list --failed-only` displays a page of failing test
 cases, not the full run's failure count. Its footer separates the number shown
 on that page from the service-reported failures and total test cases for the
-whole run. For example, a page of 10 failures can belong to a run with 12
-failures among 18 test cases. Follow the printed page token to read the rest,
+whole run once it reaches a terminal state. While a run is still moving, partial
+counters are not labeled as full-run totals and export guidance describes the
+available results, not a completed run. For example, a page of 10 failures can
+belong to a run with 12 failures among 18 test cases. Follow the printed page token to read the rest,
 or use `run output export` to save the complete results. Errored rows remain
 separate from failed verdicts and can be selected with `--status errored`.
 

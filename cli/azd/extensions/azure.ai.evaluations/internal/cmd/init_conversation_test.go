@@ -28,7 +28,7 @@ func executeConversationInit(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	cmd := newInitCommand()
 	cmd.Flags().Bool("no-prompt", false, "")
-	cmd.Flags().String("output", "", "")
+	cmd.Flags().StringP("output", "o", "", "")
 	cmd.SetContext(t.Context())
 	cmd.SilenceErrors, cmd.SilenceUsage = true, true
 	var out bytes.Buffer
@@ -446,4 +446,60 @@ func TestInitSimulationRejectsUnqualifiedModelBeforeWrites(t *testing.T) {
 			assert.Equal(t, before, initFileSnapshot(t, h.dir))
 		})
 	}
+
+}
+
+func TestInitRejectsUnsupportedOutputBeforeWrites(t *testing.T) {
+	for _, format := range []string{"yaml", "xml", "table", "none"} {
+		for _, flag := range []string{"--output", "-o"} {
+			t.Run(format+"/"+flag, func(t *testing.T) {
+				h := newInitHarness(t, nil)
+				before := initFileSnapshot(t, h.dir)
+				text, err := executeConversationInit(t, "--name", "quality", "--conversation-mode", "static",
+					"--dataset", h.seedRows, "--judge-model", "judge", "--no-prompt", flag, format)
+				require.ErrorContains(t, err, "--output")
+				require.ErrorContains(t, err, format)
+				local, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				assert.Equal(t, exterrors.CodeInvalidParameter, local.Code)
+				assert.Contains(t, local.Suggestion, "json")
+				assert.Empty(t, text)
+				assert.Zero(t, h.project.wiringAttempts())
+				assert.Empty(t, h.usage.reported())
+				assert.Equal(t, before, initFileSnapshot(t, h.dir))
+			})
+		}
+	}
+}
+
+func TestInitSupportedOutputFormats(t *testing.T) {
+	for _, format := range []string{"", "default", "DEFAULT", "json", "JSON"} {
+		t.Run(format, func(t *testing.T) {
+			h := newInitHarness(t, nil)
+			text, err := executeConversationInit(t, "--name", "quality", "--conversation-mode", "static",
+				"--dataset", h.seedRows, "--judge-model", "judge", "--no-prompt", "--output", format)
+			require.NoError(t, err)
+			assert.Equal(t, 1, h.project.wiringAttempts())
+			assert.NotEmpty(t, text)
+			assert.Equal(t, strings.EqualFold(format, "json"), json.Valid([]byte(text)))
+		})
+	}
+}
+
+func TestInitRootOutputValidationAndHelp(t *testing.T) {
+	h := newInitHarness(t, nil)
+	before := initFileSnapshot(t, h.dir)
+	root := NewRootCommand()
+	root.SetContext(t.Context())
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"init", "--name", "quality", "--conversation-mode", "static",
+		"--dataset", h.seedRows, "--judge-model", "judge", "--no-prompt", "-o", "yaml"})
+	require.ErrorContains(t, root.Execute(), "--output")
+	assert.Empty(t, out.String())
+	assert.Equal(t, before, initFileSnapshot(t, h.dir))
+	root.SetArgs([]string{"init", "--help"})
+	require.NoError(t, root.Execute())
+	assert.Contains(t, out.String(), "Output format: default (human-readable) or json")
 }

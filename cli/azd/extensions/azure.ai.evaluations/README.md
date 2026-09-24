@@ -144,6 +144,11 @@ reuse it. Equivalent paths to the same file are accepted, preserving references,
 version pins, and other authored metadata.
 When `--path` names a configuration file, dataset lookup uses that exact file,
 while artifact paths remain relative to its directory.
+New paths ending in `.yaml` or `.yml` are treated as configuration files,
+including absolute paths and paths containing spaces. Existing directories
+remain directories, even if their names end in `.yaml`.
+Init supports `--output default` for human-readable output and `--output json`
+for structured output. Unsupported formats are rejected before any authored writes.
 Registered datasets with no local file are not fetched or checked by init.
 The evaluator picker excludes custom evaluators whose local
 `supported_evaluation_levels` explicitly excludes the selected level; an explicit

@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 
+	"azureaieval/internal/exterrors"
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
@@ -100,7 +101,8 @@ func newInitCommand() *cobra.Command {
 			"A local file cannot replace a different dataset already declared under its filename stem; " +
 			"use a unique filename to add it, or select the existing dataset by name. " +
 			"Registered datasets without local files are checked later, not fetched by init.\n\n" +
-			"Init works offline except for a bounded, best-effort lookup of explicitly named built-in evaluators.",
+			"Init works offline except for a bounded, best-effort lookup of explicitly named built-in evaluators.\n\n" +
+			"Output formats are default (human-readable) and json. Other formats are rejected before initialization.",
 		// Everything init takes is a flag; a positional would be ignored.
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -150,11 +152,18 @@ func newInitCommand() *cobra.Command {
 	// usage string as the value placeholder, which rendered this "--path init".
 	cmd.Flags().StringVar(&flags.path, "path", "",
 		"Configuration file or directory to write into. Used verbatim, never re-rooted. "+
+			"New .yaml or .yml paths are files; existing directories remain directories. "+
 			"Defaults to the directory an earlier init scaffolded, otherwise ./evals.")
-	return cmd
+	return azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name: "output", Usage: "Output format: default (human-readable) or json.",
+	})
 }
 
 func (a *initAction) Run() error {
+	if _, err := azdext.ParseOutputFormat(outputFormat(a.cmd)); err != nil {
+		return exterrors.Validation(exterrors.CodeInvalidParameter, fmt.Sprintf("--output: %v", err),
+			"Use --output default for human-readable output or --output json for structured output.")
+	}
 	out := a.cmd.OutOrStdout()
 	if err := a.validateConversationFlags(a.flags.source, a.flags.evaluationLevel, a.flags.conversationMode); err != nil {
 		return err

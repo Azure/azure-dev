@@ -59,17 +59,59 @@ const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 // PlatformTypeEnvVarName is the name of the key used to store the current azd platform type
 const PlatformTypeEnvVarName = "AZD_PLATFORM_TYPE"
 
+// Env provides access to an environment's variables, configuration, and raw state.
+// Views may map variable access, but must delegate identity, configuration, and
+// state operations unchanged to the underlying environment.
+type Env interface {
+	// Name returns the environment identity, resolving and caching a fallback if needed.
+	Name() string
+	Getenv(key string) string
+	LookupEnv(key string) (string, bool)
+	Dotenv() map[string]string
+	DotenvSet(key, value string)
+	DotenvDelete(key string)
+	Environ() []string
+	GetSubscriptionId() string
+	SetSubscriptionId(id string)
+	GetTenantId() string
+	GetLocation() string
+	SetLocation(location string)
+	GetServiceProperty(serviceName, propertyName string) string
+	SetServiceProperty(serviceName, propertyName, value string)
+
+	// Config returns a live, synchronized view of the unmapped configuration.
+	Config() config.Config
+	// SnapshotState returns detached raw values, without filtering or process fallback.
+	SnapshotState() (EnvironmentState, error)
+	// ReplaceState discards pending changes and installs loaded state in place.
+	ReplaceState(state EnvironmentState) error
+	// MergeAndSave overlays current raw values and pending deletions on storedDotenv.
+	// It holds the environment lock through write and commits only on success.
+	// The writer must not call back into the environment or manager/store Save/Reload.
+	// It may save the detached state.Config through config.FileConfigManager.
+	MergeAndSave(
+		ctx context.Context,
+		storedDotenv map[string]string,
+		write func(ctx context.Context, state EnvironmentState) error,
+	) error
+}
+
+var _ Env = (*Environment)(nil)
+
 // The zero value of an Environment is not valid. Use [New] to create one. When writing tests,
 // [Ephemeral] and [EphemeralWithValues] are useful to create environments which are not persisted to disk.
 //
-// Environment is safe for concurrent use: dotenv and deletedKeys map access is
-// guarded by an internal RWMutex. This protects against `concurrent map writes`
+// Environment is safe for concurrent use: identity, dotenv, deletedKeys and config
+// access is guarded by an internal RWMutex. This protects against `concurrent map writes`
 // panics when multiple services run hooks or write SERVICE_<name>_* keys in
 // parallel under `azd up` / `azd deploy`. Note: callers that perform a
 // read-modify-write-and-Save sequence and require atomicity across the whole
 // sequence still need their own coordination (the manager package serializes
 // Save/Reload via its own mutex, but that does not extend to surrounding logic).
 type Environment struct {
+	// mu guards identity, dotenv, deletion tracking, and configuration.
+	mu sync.RWMutex
+
 	name string
 
 	// dotenv is a map of keys to values, persisted to the `.env` file stored in this environment's [Root].
@@ -79,12 +121,7 @@ type Environment struct {
 	// happens in Save
 	deletedKeys map[string]struct{}
 
-	// mu guards dotenv and deletedKeys against concurrent access from multiple
-	// goroutines (parallel service hooks, parallel deploy/publish, etc.).
-	mu sync.RWMutex
-
-	// Config is environment specific config
-	Config config.Config
+	config config.Config
 }
 
 // AzdInitialEnvironmentConfigName is part of a strategy to re-construct AZD environment in CI/CD from an initial state.
@@ -104,7 +141,7 @@ func New(name string) *Environment {
 		name:        name,
 		dotenv:      make(map[string]string),
 		deletedKeys: make(map[string]struct{}),
-		Config:      getInitialConfig(),
+		config:      getInitialConfig(),
 	}
 
 	env.DotenvSet(EnvNameEnvVarName, name)
@@ -128,14 +165,14 @@ func getInitialConfig() config.Config {
 }
 
 // NewWithValues returns an ephemeral environment (i.e. not backed by a data store) with a set
-// of values. Useful for testing. The name parameter is added to the environment with the
-// AZURE_ENV_NAME key, replacing an existing value in the provided values map. A nil values is
-// treated the same way as an empty map.
+// of values. Useful for testing. Non-nil values are copied and replace the initial dotenv,
+// including AZURE_ENV_NAME; the stored environment name remains the name parameter.
+// Nil values retain the initial AZURE_ENV_NAME entry.
 func NewWithValues(name string, values map[string]string) *Environment {
 	env := New(name)
 
 	if values != nil {
-		env.dotenv = values
+		env.dotenv = maps.Clone(values)
 	}
 
 	return env
@@ -151,7 +188,18 @@ var EnvironmentNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9-\(\)_\.]{1,64}$`)
 var EnvironmentNameMaxLength = 64
 
 func IsValidEnvironmentName(name string) bool {
-	return EnvironmentNameRegexp.MatchString(name)
+	return name != "." && name != ".." && EnvironmentNameRegexp.MatchString(name)
+}
+
+// ValidateEnvironmentName checks that name is nonempty and valid for environment storage.
+func ValidateEnvironmentName(name string) error {
+	if name == "" {
+		return ErrNameNotSpecified
+	}
+	if !IsValidEnvironmentName(name) {
+		return InvalidEnvironmentNameError(name)
+	}
+	return nil
 }
 
 // InvalidEnvironmentNameError returns a standardized error for an invalid environment name.
@@ -251,21 +299,20 @@ func (e *Environment) DotenvSet(key string, value string) {
 	delete(e.deletedKeys, key)
 }
 
-// replaceState atomically replaces the dotenv and deletedKeys maps. Used by
-// data stores during Reload so that concurrent readers (Getenv, Dotenv) never
-// observe a partially-loaded state and never race with the assignment itself.
-func (e *Environment) replaceState(dotenv map[string]string, deletedKeys map[string]struct{}) {
+// Name returns the environment identity. If it is empty, Name resolves AZURE_ENV_NAME
+// from the environment's values, or from the process when the key is absent.
+// A nonempty result is cached and is not changed by later variable updates or reloads.
+func (e *Environment) Name() string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.dotenv = dotenv
-	e.deletedKeys = deletedKeys
-}
-
-// Name gets the name of the environment
-// If empty will fallback to the value of the AZURE_ENV_NAME environment variable
-func (e *Environment) Name() string {
 	if e.name == "" {
-		e.name = e.Getenv(EnvNameEnvVarName)
+		name, found := e.dotenv[EnvNameEnvVarName]
+
+		if found {
+			e.name = name
+		} else {
+			e.name = os.Getenv(EnvNameEnvVarName)
+		}
 	}
 
 	return e.name
@@ -375,17 +422,11 @@ func fixupUnquotedDotenv(values map[string]string, dotenv string) string {
 // Prepare dotenv for saving and returns a marshalled string that can be save to the underlying data store
 // Instead of calling `godotenv.Write` directly, we need to save the file ourselves, so we can fixup any numeric values
 // that were incorrectly unquoted.
-func marshallDotEnv(env *Environment) (string, error) {
-	// Snapshot under read lock so a concurrent DotenvSet/Delete can't tear the
-	// map mid-iteration inside godotenv.Marshal (which range-iterates).
-	env.mu.RLock()
-	snapshot := maps.Clone(env.dotenv)
-	env.mu.RUnlock()
-
-	marshalled, err := godotenv.Marshal(snapshot)
+func marshallDotEnv(values map[string]string) (string, error) {
+	marshalled, err := godotenv.Marshal(values)
 	if err != nil {
 		return "", fmt.Errorf("marshalling .env: %w", err)
 	}
 
-	return fixupUnquotedDotenv(snapshot, marshalled), nil
+	return fixupUnquotedDotenv(values, marshalled), nil
 }

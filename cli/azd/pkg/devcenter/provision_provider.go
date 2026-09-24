@@ -152,7 +152,7 @@ func (p *ProvisionProvider) Deploy(ctx context.Context) (*provisioning.DeployRes
 
 	for key, value := range paramValues {
 		path := fmt.Sprintf("%s.%s", ProvisionParametersConfigPath, key)
-		if err := p.env.Config.Set(path, value); err != nil {
+		if err := p.env.Config().Set(path, value); err != nil {
 			return nil, fmt.Errorf("failed setting config value %s: %w", path, err)
 		}
 	}
@@ -367,37 +367,37 @@ func (p *ProvisionProvider) EnsureEnv(ctx context.Context) error {
 	// Set any missing config values in environment configuration for future use
 	// Some values are set at the global / project level so we only want to set missing values in the environment config
 	if currentConfig.Name == "" {
-		if err := p.env.Config.Set(DevCenterNamePath, p.config.Name); err != nil {
+		if err := p.env.Config().Set(DevCenterNamePath, p.config.Name); err != nil {
 			return err
 		}
 	}
 
 	if currentConfig.Project == "" {
-		if err := p.env.Config.Set(DevCenterProjectPath, p.config.Project); err != nil {
+		if err := p.env.Config().Set(DevCenterProjectPath, p.config.Project); err != nil {
 			return err
 		}
 	}
 
 	if currentConfig.Catalog == "" {
-		if err := p.env.Config.Set(DevCenterCatalogPath, p.config.Catalog); err != nil {
+		if err := p.env.Config().Set(DevCenterCatalogPath, p.config.Catalog); err != nil {
 			return err
 		}
 	}
 
 	if currentConfig.EnvironmentType == "" {
-		if err := p.env.Config.Set(DevCenterEnvTypePath, p.config.EnvironmentType); err != nil {
+		if err := p.env.Config().Set(DevCenterEnvTypePath, p.config.EnvironmentType); err != nil {
 			return err
 		}
 	}
 
 	if currentConfig.EnvironmentDefinition == "" {
-		if err := p.env.Config.Set(DevCenterEnvDefinitionPath, p.config.EnvironmentDefinition); err != nil {
+		if err := p.env.Config().Set(DevCenterEnvDefinitionPath, p.config.EnvironmentDefinition); err != nil {
 			return err
 		}
 	}
 
 	if currentConfig.User == "" {
-		if err := p.env.Config.Set(DevCenterUserPath, p.config.User); err != nil {
+		if err := p.env.Config().Set(DevCenterUserPath, p.config.User); err != nil {
 			return err
 		}
 	}

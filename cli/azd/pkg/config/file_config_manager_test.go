@@ -48,15 +48,18 @@ func Test_FileConfigManager_SaveAndLoadEmptyConfig(t *testing.T) {
 	require.NotNil(t, existingConfig)
 }
 
-func TestFileConfigManagerRejectsUnsupportedConfigWithoutTruncating(t *testing.T) {
-	type wrappedConfig struct{ Config }
+func TestFileConfigManagerSaveCloneErrorPreservesFile(t *testing.T) {
+	type rawConfig struct{ Config }
+	wrapped := rawConfig{NewEmptyConfig()}
+	require.NoError(t, wrapped.SetSecret("password", "unsaved-secret"))
+
 	path := filepath.Join(t.TempDir(), "config.json")
 	manager := NewFileConfigManager(NewManager())
-	require.NoError(t, manager.Save(NewConfig(map[string]any{"original": true}), path))
+	require.NoError(t, manager.Save(NewConfig(map[string]any{"existing": true}), path))
 	before, err := os.ReadFile(path)
 	require.NoError(t, err)
 
-	require.ErrorContains(t, manager.Save(wrappedConfig{NewEmptyConfig()}, path), "failed casting")
+	require.ErrorContains(t, manager.Save(wrapped, path), "preserve vault state")
 	after, err := os.ReadFile(path)
 	require.NoError(t, err)
 	require.Equal(t, before, after)

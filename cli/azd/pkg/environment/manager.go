@@ -75,15 +75,15 @@ type Manager interface {
 	// If the environment specified by the given name does not exist, ErrNotFound is returned.
 	Get(ctx context.Context, name string) (*Environment, error)
 
-	Save(ctx context.Context, env *Environment) error
-	SaveWithOptions(ctx context.Context, env *Environment, options *SaveOptions) error
-	Reload(ctx context.Context, env *Environment) error
+	Save(ctx context.Context, env Env) error
+	SaveWithOptions(ctx context.Context, env Env, options *SaveOptions) error
+	Reload(ctx context.Context, env Env) error
 
 	// Delete deletes the environment from local storage.
 	Delete(ctx context.Context, name string) error
 
-	EnvPath(env *Environment) string
-	ConfigPath(env *Environment) string
+	EnvPath(env Env) string
+	ConfigPath(env Env) string
 
 	// InvalidateEnvCache invalidates the state cache for the given environment
 	InvalidateEnvCache(ctx context.Context, envName string) error
@@ -108,21 +108,25 @@ type manager struct {
 	// *Environment cannot corrupt the on-disk .env file or interleave a
 	// partial Reload with another goroutine's writes.
 	//
-	// Lock acquisition order (MUST be consistent across all call sites):
+	// Nested lock acquisition order for local file persistence (MUST be
+	// consistent across call sites):
 	//
-	//   1. manager.saveMu       (in-process sync.Mutex, serializes goroutines)
-	//   2. local flock           (cross-process OS file lock via gofrs/flock)
-	//   3. env.mu               (per-Environment sync.RWMutex, protects in-memory map)
+	//   1. manager.saveMu        (in-process sync.Mutex, serializes goroutines)
+	//   2. local flock            (cross-process OS file lock via gofrs/flock)
+	//   3. env.mu                 (per-Environment sync.RWMutex)
+	//   4. fileConfigManager.mu   (config save lock, acquired under env.mu)
+	//
+	// A Manager-mediated local Save takes all four locks. Reload takes the first
+	// three; config loading does not acquire fileConfigManager.mu.
 	//
 	// Subprocess hooks (`azd env set`) spawn a separate azd process with
 	// its own saveMu instance (in-process mutexes are not shared across
-	// process boundaries). Within the subprocess, the same acquisition
-	// order applies: saveMu → flock → env.mu. The in-process saveMu
-	// prevents concurrent Save/Reload within the SAME process; the
-	// cross-process flock prevents concurrent file I/O across DIFFERENT
-	// processes (e.g., parallel hook subprocesses). No deadlock is
-	// possible because saveMu is never shared cross-process and flock
-	// handles inter-process serialization.
+	// process boundaries). A subprocess Save follows the same four-lock order;
+	// Reload takes the first three. The in-process saveMu prevents concurrent
+	// Save/Reload within the SAME process; the cross-process flock prevents
+	// concurrent file I/O across DIFFERENT processes (e.g., parallel hook
+	// subprocesses). No deadlock is possible because saveMu is never shared
+	// cross-process and flock handles inter-process serialization.
 	//
 	// See also: docs/concurrency-model.md "Lock Acquisition Order" section.
 	saveMu sync.Mutex
@@ -369,12 +373,12 @@ func (m *manager) loadOrInitEnvironment(ctx context.Context, environmentName str
 }
 
 // ConfigPath returns the path to the environment config file
-func (m *manager) ConfigPath(env *Environment) string {
+func (m *manager) ConfigPath(env Env) string {
 	return m.local.ConfigPath(env)
 }
 
 // EnvPath returns the path to the environment .env file
-func (m *manager) EnvPath(env *Environment) string {
+func (m *manager) EnvPath(env Env) string {
 	return m.local.EnvPath(env)
 }
 
@@ -513,12 +517,12 @@ func (m *manager) getFromCache(ctx context.Context, name string) (*Environment, 
 }
 
 // Save saves the environment to the persistent data store
-func (m *manager) Save(ctx context.Context, env *Environment) error {
+func (m *manager) Save(ctx context.Context, env Env) error {
 	return m.SaveWithOptions(ctx, env, nil)
 }
 
 // Save saves the environment to the persistent data store with the specified options
-func (m *manager) SaveWithOptions(ctx context.Context, env *Environment, options *SaveOptions) error {
+func (m *manager) SaveWithOptions(ctx context.Context, env Env, options *SaveOptions) error {
 	if options == nil {
 		options = &SaveOptions{}
 	}
@@ -546,7 +550,7 @@ func (m *manager) SaveWithOptions(ctx context.Context, env *Environment, options
 }
 
 // Reload reloads the environment from the persistent data store
-func (m *manager) Reload(ctx context.Context, env *Environment) error {
+func (m *manager) Reload(ctx context.Context, env Env) error {
 	// Reload swaps the in-memory dotenv map; serialize against Save so that
 	// a Reload triggered by a hook in service A doesn't observe a half-written
 	// .env file produced by service B's concurrent Save.

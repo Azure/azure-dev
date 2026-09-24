@@ -31,7 +31,10 @@ func setupTestEnvironment(t *testing.T, envName string, configData map[string]an
 
 	azdCtx := azdcontext.NewAzdContextWithDirectory(envDir)
 	env := environment.New(envName)
-	env.Config = config.NewConfig(configData)
+	require.NoError(t, env.ReplaceState(environment.EnvironmentState{
+		Dotenv: env.Dotenv(),
+		Config: config.NewConfig(configData),
+	}))
 
 	// Create config manager
 	configManager := config.NewFileConfigManager(config.NewManager())
@@ -385,7 +388,7 @@ func TestEnvConfigSet(t *testing.T) {
 				reloadedEnv, err := envManager.Get(t.Context(), envName)
 				require.NoError(t, err)
 
-				require.Equal(t, tt.expectedConfig, reloadedEnv.Config.Raw())
+				require.Equal(t, tt.expectedConfig, reloadedEnv.Config().Raw())
 			}
 		})
 	}
@@ -503,7 +506,7 @@ func TestEnvConfigUnset(t *testing.T) {
 				reloadedEnv, err := envManager.Get(t.Context(), envName)
 				require.NoError(t, err)
 
-				require.Equal(t, tt.expectedConfig, reloadedEnv.Config.Raw())
+				require.Equal(t, tt.expectedConfig, reloadedEnv.Config().Raw())
 			}
 		})
 	}

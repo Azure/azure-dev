@@ -77,6 +77,16 @@ func (m *fileConfigManager) Load(filePath string) (Config, error) {
 }
 
 func (m *fileConfigManager) Save(c Config, filePath string) error {
+	if _, ok := c.(*config); !ok {
+		// Views may take an environment lock. Snapshot them before taking the
+		// file-manager lock, since environment saves acquire those locks in that order.
+		snapshot, err := Clone(c)
+		if err != nil {
+			return fmt.Errorf("snapshotting configuration: %w", err)
+		}
+		c = snapshot
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

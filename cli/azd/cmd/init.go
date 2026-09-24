@@ -859,11 +859,11 @@ func (i *initAction) initializeEnv(
 
 	for key, value := range templateMetadata.Config {
 		if outcome.reused {
-			if _, ok := env.Config.Get(key); ok {
+			if _, ok := env.Config().Get(key); ok {
 				continue
 			}
 		}
-		if err := env.Config.Set(key, value); err != nil {
+		if err := env.Config().Set(key, value); err != nil {
 			return nil, fmt.Errorf("setting environment config: %w", err)
 		}
 	}

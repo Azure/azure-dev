@@ -1632,7 +1632,7 @@ func (a *envConfigGetAction) Run(ctx context.Context) (*actions.ActionResult, er
 	}
 
 	key := a.args[0]
-	value, ok := env.Config.Get(key)
+	value, ok := env.Config().Get(key)
 
 	if !ok {
 		return nil, &internal.ErrorWithSuggestion{
@@ -1732,7 +1732,7 @@ func (a *envConfigSetAction) Run(ctx context.Context) (*actions.ActionResult, er
 	path := a.args[0]
 	value := a.args[1]
 
-	err = env.Config.Set(path, parseConfigValue(value))
+	err = env.Config().Set(path, parseConfigValue(value))
 	if err != nil {
 		return nil, fmt.Errorf("failed setting configuration value '%s' to '%s'. %w", path, value, err)
 	}
@@ -1831,7 +1831,7 @@ func (a *envConfigUnsetAction) Run(ctx context.Context) (*actions.ActionResult, 
 
 	path := a.args[0]
 
-	err = env.Config.Unset(path)
+	err = env.Config().Unset(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed removing configuration with path '%s'. %w", path, err)
 	}

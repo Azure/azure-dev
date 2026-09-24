@@ -68,6 +68,29 @@ def verify_native_identity_token(value, plan):
             "Native service identity client/tenant does not match the approved plan")
 
 
+def validate_ci_identity(plan, env):
+    variables = {
+        "github": {
+            "repository": "GITHUB_REPOSITORY", "repositoryId": "GITHUB_REPOSITORY_ID",
+            "workflowRef": "GITHUB_WORKFLOW_REF", "workflowSha": "GITHUB_WORKFLOW_SHA",
+            "job": "GITHUB_JOB", "attempt": "GITHUB_RUN_ATTEMPT",
+        },
+        "azure-devops": {
+            "collectionUri": "SYSTEM_COLLECTIONURI", "collectionId": "SYSTEM_COLLECTIONID",
+            "projectId": "SYSTEM_TEAMPROJECTID", "repositoryId": "BUILD_REPOSITORY_ID",
+            "repositoryProvider": "BUILD_REPOSITORY_PROVIDER", "definitionId": "SYSTEM_DEFINITIONID",
+            "jobId": "SYSTEM_JOBID", "attempt": "SYSTEM_JOBATTEMPT",
+        },
+    }
+    require(plan["provider"] in variables, "Live execution requires a supported CI provider")
+    trusted = {name: env.get(variable) for name, variable in variables[plan["provider"]].items()}
+    require(all(isinstance(value, str) and value for value in trusted.values()),
+            "Required native CI repository/workflow identity variables are unavailable")
+    identity = plan["ciIdentity"]
+    require(isinstance(identity, dict) and identity == trusted,
+            "Approved CI identity does not match this repository, workflow, job and attempt")
+
+
 def validate_plan(plan, digest, env):
     allowed = {
         "schemaVersion", "mode", "provider", "workflowCommit", "runId", "expiresAt", "authorizedOperations",
@@ -75,7 +98,7 @@ def validate_plan(plan, digest, env):
         "approvedBudget", "maxRuns", "maxRows", "timeoutSeconds", "clientId", "tenantId", "datasetName",
         "datasetVersion", "datasetSha256", "evaluator", "judgeModel", "ownerPrefix", "projectEndpoint",
         "azdExecutable", "binarySha256", "versions",
-        "durationSeconds",
+        "durationSeconds", "ciIdentity",
     }
     require(isinstance(plan, dict) and set(plan) == allowed,
             "Plan contains unknown fields or omits required fields")
@@ -88,6 +111,7 @@ def validate_plan(plan, digest, env):
     require(type(plan.get("schemaVersion")) is int and plan["schemaVersion"] == 1
             and plan.get("mode") == "static-evaluation",
             "Only the reviewed static-evaluation lifecycle is implemented")
+    validate_ci_identity(plan, env)
     provider = scenario.run_identity(env)
     require(provider["provider"] in ("github", "azure-devops"), "Live execution is CI-only")
     require(plan["provider"] == provider["provider"] and plan["workflowCommit"] == provider["workflowCommit"],

@@ -107,6 +107,12 @@ selects the restricted executor. Empty input still invokes the blocked reporter.
 Nonempty input is not authorization: the executor refuses before any command
 unless its exact plan SHA256 matches an externally supplied approved digest,
 the provider/run/revision match, and approval expires within 24 hours.
+The plan's `ciIdentity` must also exactly match native execution identity:
+GitHub repository name/ID, workflow ref/SHA, job and run attempt; Azure DevOps
+collection URI/ID, project ID, repository ID/provider, definition ID, job ID
+and attempt. Missing or mismatched platform variables block execution before
+binary verification or command-driver creation. These are native CI context
+values, not caller-supplied workflow inputs.
 
 The implemented sequence is:
 

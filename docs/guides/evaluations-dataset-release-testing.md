@@ -326,9 +326,9 @@ The current fresh Windows checks do not replace the historical broader matrices.
 | 40 | [Build 40 receipt][build40], evaluations `1.0.40-beta`, dataset `1.0.0-beta.28` | Historical scoped local/terminal/live results, including the responses-backed execution `FAIL`. Do not relabel as 41. |
 | 41 | [Frozen build 41 receipt][build41], evaluations `1.0.41-beta`, dataset `1.0.0-beta.29`, source `8ef8b6df77336950c60506ab2966037f579d92cd`, azd `>=1.33.0` | Historical release, previously Latest. Targeted package acceptance and four hosted jobs `PASS`; separately, the new scenario run resolved this release before promotion and passed 168 checks per OS. Broad live reruns, all platforms, and all seven regressions are not claimed. |
 | 42 | Public [release `extensions-2026-09-24-42`][release42], evaluations `1.0.42-beta`, dataset `1.0.0-beta.30`, core `1.33.0`, frozen source [`d40a3b5a1e7c5944b1b43decd14c96096a99e5b6`][source42]. Registry SHA256 `83026575746f7db5c5cc7a3035f9e75b776f709875d2f0768bd9c215aaaca635`. | Latest promotion approved at **2026-09-24T03:17:39Z**. Publisher verified all 15 anonymous assets, a fresh unversioned Latest install, stable registry/docs contents, and preservation of historical asset identities at [feed revision `967b631`][feed42]. Both local Windows acceptance scopes and all four [hosted jobs][hosted42] are `PASS`; both OS artifact sets were downloaded and verified. No new live/cloud-contract acceptance claim. |
-| 43 local candidate | Source [`2d4ea18150b06cd6ecc7a31998069f712bf874f9`][source43], proposed evaluations `1.0.43-beta` and dataset `1.0.0-beta.31`; local registry SHA256 `21c176596c731c025bc8124e36e00831348188e22109856358904c2aa0c0c7fb`. | **Local bytes only, not a public tuple or aggregate release PASS.** Per-fix acceptance below is separate from pending phase-C cases and future exact-public hosted validation. No pin or dispatch is authorized from this local proposal. |
+| 43 superseded local proposal | Historical source [`2d4ea18150b06cd6ecc7a31998069f712bf874f9`][source43], proposed evaluations `1.0.43-beta` and dataset `1.0.0-beta.31`; local registry SHA256 `21c176596c731c025bc8124e36e00831348188e22109856358904c2aa0c0c7fb`. | **Superseded, partial local evidence only; never a public tuple or aggregate PASS.** Do not pin, dispatch or transfer its per-fix PASS results to the required-only successor. New exact source, hashes, acceptance and public metadata are required. |
 
-For the exact local43 candidate, the original path/format/empty-flag Windows
+For those superseded local bytes, the original path/format/empty-flag Windows
 scope passed three cases, 38 assertions and ten commands with owned cleanup;
 the coordinator independently checked both installed executable hashes. A
 six-assertion/two-command literal-empty supplement is recorded separately.
@@ -342,6 +342,11 @@ Phase-C rubric metadata, first-publication, and delete-cleanup acceptance
 remain `NOT RUN` until their own exact-package receipts arrive. The current
 inclusion map is authoritative; superseded source preparations are not evidence
 for the selected bytes. No broad new model/simulation contract is inferred.
+After the phase-C deadline, Track1 selected a required-only successor based on
+build42 plus precision, path/format and explicit-empty-flag fixes. Rubric and
+delete-lifecycle changes are excluded from that fallback. The historical
+local2d4/reg21c receipts remain available, but no prior acceptance carries over
+to the new bytes and no successor publication or hosted run is claimed here.
 
 The local build 42 practical receipt covers six cases and 25 assertions: three
 init/reattachment journeys and three help-only cases. Its 16 records include

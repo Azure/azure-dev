@@ -18,6 +18,15 @@ ROW = b'{"query":"two plus two","response":"4","ground_truth":"4"}\n'
 
 
 class ServiceTests(unittest.TestCase):
+    def github_env(self):
+        return {
+            "AZD_SCENARIO_LIVE_APPROVAL_SHA256": "b" * 64,
+            "GITHUB_REPOSITORY": "fixture/repo", "GITHUB_REPOSITORY_ID": "123",
+            "GITHUB_RUN_ID": "42", "GITHUB_SHA": "a" * 40,
+            "GITHUB_WORKFLOW_REF": "fixture/repo/.github/workflows/eval-scenario-ci.yml@refs/heads/ci",
+            "GITHUB_WORKFLOW_SHA": "a" * 40, "GITHUB_JOB": "live-prerequisites", "GITHUB_RUN_ATTEMPT": "1",
+        }
+
     def identity(self, plan):
         claims = json.dumps({"appid": plan["clientId"], "tid": plan["tenantId"]}).encode()
         return {"token": "e30." + base64.urlsafe_b64encode(claims).decode().rstrip("=") + ".mock"}
@@ -40,6 +49,11 @@ class ServiceTests(unittest.TestCase):
             "azdExecutable": "not-executed-in-mock-tests",
             "binarySha256": {"azd": "a" * 64, "azure.ai.evaluations": "b" * 64, "azure.ai.dataset": "c" * 64},
             "versions": {"azure.ai.evaluations": "1.0.42-beta", "azure.ai.dataset": "1.0.0-beta.30"},
+            "ciIdentity": {
+                "repository": "fixture/repo", "repositoryId": "123",
+                "workflowRef": "fixture/repo/.github/workflows/eval-scenario-ci.yml@refs/heads/ci",
+                "workflowSha": "a" * 40, "job": "live-prerequisites", "attempt": "1",
+            },
         }
 
     def test_default_gate_calls_no_command_and_saves_blocked_reason(self):
@@ -78,8 +92,7 @@ class ServiceTests(unittest.TestCase):
 
     def test_gate_binds_approval_provider_run_revision_and_bounds(self):
         plan = self.plan()
-        env = {"AZD_SCENARIO_LIVE_APPROVAL_SHA256": "b" * 64,
-               "GITHUB_REPOSITORY": "fixture/repo", "GITHUB_RUN_ID": "42", "GITHUB_SHA": "a" * 40}
+        env = self.github_env()
         service.validate_plan(plan, "b" * 64, env)
         for key, value in (("schemaVersion", True), ("runId", "wrong"), ("workflowCommit", "c" * 40),
                            ("budgetControlExternallyVerified", False), ("approvedBudget", "NaN"),
@@ -94,6 +107,57 @@ class ServiceTests(unittest.TestCase):
             service.validate_plan(plan, "different-digest", env)
         with self.assertRaises(service.Blocked):
             service.validate_plan({**plan, "deploy": True}, "b" * 64, env)
+
+    def test_github_approval_cannot_cross_repository_workflow_job_or_attempt(self):
+        plan = self.plan()
+        env = self.github_env()
+        for variable in ("GITHUB_REPOSITORY", "GITHUB_REPOSITORY_ID", "GITHUB_WORKFLOW_REF",
+                         "GITHUB_WORKFLOW_SHA", "GITHUB_JOB", "GITHUB_RUN_ATTEMPT"):
+            with self.subTest(variable=variable):
+                with self.assertRaisesRegex(service.Blocked, "CI identity"):
+                    service.validate_plan(plan, "b" * 64, {**env, variable: "different"})
+
+    def test_ado_approval_cannot_cross_collection_project_repository_or_definition(self):
+        env = {
+            "AZD_SCENARIO_LIVE_APPROVAL_SHA256": "b" * 64,
+            "BUILD_BUILDID": "42", "BUILD_SOURCEVERSION": "a" * 40,
+            "SYSTEM_COLLECTIONURI": "https://dev.azure.com/fixture/", "SYSTEM_COLLECTIONID": "collection-id",
+            "SYSTEM_TEAMPROJECT": "Fixture", "SYSTEM_TEAMPROJECTID": "project-id",
+            "BUILD_REPOSITORY_ID": "fixture/repo", "BUILD_REPOSITORY_PROVIDER": "GitHub",
+            "SYSTEM_DEFINITIONID": "7", "SYSTEM_JOBID": "job-id", "SYSTEM_JOBATTEMPT": "1",
+        }
+        identity = {
+            "collectionUri": env["SYSTEM_COLLECTIONURI"], "collectionId": env["SYSTEM_COLLECTIONID"],
+            "projectId": env["SYSTEM_TEAMPROJECTID"], "repositoryId": env["BUILD_REPOSITORY_ID"],
+            "repositoryProvider": env["BUILD_REPOSITORY_PROVIDER"], "definitionId": env["SYSTEM_DEFINITIONID"],
+            "jobId": env["SYSTEM_JOBID"], "attempt": env["SYSTEM_JOBATTEMPT"],
+        }
+        plan = {**self.plan(), "provider": "azure-devops", "ciIdentity": identity}
+        service.validate_plan(plan, "b" * 64, env)
+        for variable in ("SYSTEM_COLLECTIONURI", "SYSTEM_COLLECTIONID", "SYSTEM_TEAMPROJECTID",
+                         "BUILD_REPOSITORY_ID", "BUILD_REPOSITORY_PROVIDER", "SYSTEM_DEFINITIONID",
+                         "SYSTEM_JOBID", "SYSTEM_JOBATTEMPT"):
+            with self.subTest(variable=variable):
+                with self.assertRaisesRegex(service.Blocked, "CI identity"):
+                    service.validate_plan(plan, "b" * 64, {**env, variable: "different"})
+
+    def test_wrong_repository_stops_before_install_verification_or_driver(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            raw = json.dumps(self.plan()).encode()
+            plan = root / "plan.json"
+            plan.write_bytes(raw)
+            env = {**self.github_env(), "AZD_SCENARIO_LIVE_APPROVAL_SHA256": service.scenario.sha256(raw),
+                   "GITHUB_REPOSITORY": "other/repository"}
+            with mock.patch.object(service, "verify_install") as verify, \
+                 mock.patch.object(service, "Driver") as driver:
+                with self.assertRaisesRegex(service.Blocked, "CI identity"):
+                    service.execute(plan, root / "evidence", env=env)
+                verify.assert_not_called()
+                driver.assert_not_called()
+            report = json.loads((root / "evidence" / "service-status.json").read_text())
+            self.assertEqual(report["status"], "BLOCKED")
+            self.assertEqual(report["execution"], "NOT RUN")
 
     def test_user_identity_is_rejected_before_service_commands(self):
         calls = []

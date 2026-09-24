@@ -119,6 +119,14 @@ func InitHandoffGuidance(simulation, hasTarget, hasDataset bool) string {
 		". Choose these deployments independently of --generation-model.\n"
 }
 
+// InitCreateManualInputs names exact create inputs when no portable command can be printed.
+func InitCreateManualInputs(evalName, configPath string) string {
+	return fmt.Sprintf("  Next step: create the authored evaluation with azd ai eval create.\n"+
+		"  Evaluation name: %q\n  --path value: %q\n"+
+		"  These are escaped values, not shell arguments. Quote them for your shell; "+
+		"no copyable command is shown because portable quoting cannot preserve the path.\n", evalName, configPath)
+}
+
 // InitHandoffManualInputs preserves values that cannot be safely quoted for every shell.
 func InitHandoffManualInputs(configPath, agent, dataset, level, evaluator string) string {
 	text := "  Next step: initialize an evaluation from the generated artifacts with azd ai eval init.\n" +

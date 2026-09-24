@@ -399,7 +399,7 @@ func TestNextStepQuotesADirectoryThatNeedsIt(t *testing.T) {
 			// the directory name says. Named instead of inlined.
 			name:    "a character the shell would expand",
 			evalDir: "./eval$dir",
-			want:    "--path VALUE_NEEDS_QUOTING",
+			want:    "",
 		},
 		{
 			name:    "a character that would end the command",
@@ -412,6 +412,10 @@ func TestNextStepQuotesADirectoryThatNeedsIt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := scaffold{eval: &project.Eval{Name: "an-eval"}, evalDir: tc.evalDir}
 			steps := s.nextSteps()
+			if tc.want == "" {
+				assert.Empty(t, steps, "unsafe paths require manual guidance, not a placeholder command")
+				return
+			}
 			require.NotEmpty(t, steps)
 			for _, step := range steps {
 				assert.Contains(t, step, tc.want, "step %q", step)

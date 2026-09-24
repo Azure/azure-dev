@@ -404,6 +404,7 @@ func (a *initAction) Run() error {
 	if err := refuseDuplicateEval(path, plan.eval); err != nil {
 		return err
 	}
+	plan.configLocation = path
 
 	rootPath := filepath.Join(azdProject.GetPath(), rootConfigName)
 	// #nosec G304 -- snapshot the current azd project's root before wiring it.
@@ -504,7 +505,11 @@ func (a *initAction) Run() error {
 	// has, and printing the two together under one heading read as a single
 	// two-line command; `eval create` prints it once it has something to run.
 	deployCmd := deployCommandName(azdProject)
-	fmt.Fprint(out, messages.FirstNextStep(plan.targetedCreate()))
+	if next := plan.targetedCreate(); next != "" {
+		fmt.Fprint(out, messages.FirstNextStep(next))
+	} else {
+		fmt.Fprint(out, messages.InitCreateManualInputs(plan.evalName(), plan.nextStepConfigLocation()))
+	}
 	if deployCmd == azdUpCommand {
 		fmt.Fprint(out, messages.WholeProjectAlternative(deployCmd))
 	}
@@ -772,6 +777,8 @@ type scaffold struct {
 	// evalDir is where the configuration was written, so the next steps can
 	// name it when it is not the default.
 	evalDir string
+	// configLocation preserves the resolved file-or-directory selection for next steps.
+	configLocation string
 }
 
 // planScaffold appends one eval to the configuration, adding any catalog
@@ -1036,7 +1043,10 @@ func (s scaffold) evaluatorNames() []string {
 // not run as shown -- the create has to succeed first. `eval create` prints it
 // when there is something to run.
 func (s scaffold) nextSteps() []string {
-	return []string{s.targetedCreate()}
+	if next := s.targetedCreate(); next != "" {
+		return []string{next}
+	}
+	return nil
 }
 
 // targetedCreate reconciles only the eval init just added.
@@ -1063,13 +1073,20 @@ func (s scaffold) evalName() string {
 // without one. Naming the directory makes the printed step run as printed
 // either way, which is the claim these lines make.
 func (s scaffold) withPath(step string) string {
-	dir := printablePath(s.evalDir)
+	dir := s.nextStepConfigLocation()
+	if !messages.CanInlineShellArg(dir) {
+		return ""
+	}
 	// `evals`, `./evals` and the absolute path to it are one directory, and it is
 	// the one every command already falls back to.
 	if dir == "" || strings.TrimPrefix(dir, "./") == project.DefaultEvalDir {
 		return step
 	}
 	return step + " --path " + quoteForShell(dir)
+}
+
+func (s scaffold) nextStepConfigLocation() string {
+	return filepath.ToSlash(printablePath(cmp.Or(s.configLocation, s.evalDir)))
 }
 
 // printablePath is how a directory should be spelled in a step the reader is

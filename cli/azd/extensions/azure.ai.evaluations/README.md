@@ -165,6 +165,10 @@ reuse it. Equivalent paths to the same file are accepted, preserving references,
 version pins, and other authored metadata.
 When `--path` names a configuration file, dataset lookup uses that exact file,
 while artifact paths remain relative to its directory.
+The successful human `eval create` next step retains that filename rather than
+selecting the default config in the artifact directory.
+If that path cannot be portably quoted, init displays escaped exact-name/path
+values and manual create guidance instead of a runnable placeholder command.
 New paths ending in `.yaml` or `.yml` are treated as configuration files,
 including absolute paths and paths containing spaces. Existing directories
 remain directories, even if their names end in `.yaml`.

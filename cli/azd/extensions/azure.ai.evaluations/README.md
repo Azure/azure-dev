@@ -159,6 +159,10 @@ the override rules below.
 `simulation.model` must name an existing connection and deployment as
 `connection-name/model-deployment`. Bare deployment names are rejected before a
 run is submitted; the CLI does not guess a connection or reuse the judge model.
+This follows the published Foundry preview contract. Earlier live checks that
+accepted bare deployment names used the older service behavior; they do not
+establish live compatibility for this qualified-reference validation. The current
+request shape is covered by local contract fixtures, not a new live run.
 
 The dataset holds **seeds**, not exchanges. One row describes one conversation
 to have:

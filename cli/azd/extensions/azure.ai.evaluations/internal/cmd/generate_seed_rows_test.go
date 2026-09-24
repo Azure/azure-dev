@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"azureaieval/internal/pkg/eval_api"
@@ -69,9 +70,28 @@ func TestNormalizeGeneratedSeedRows(t *testing.T) {
 }
 
 func TestGeneratedSeedsPublishCanonicalRowsBeforeSimulation(t *testing.T) {
+	for _, tc := range []struct {
+		name, outputDir string
+		force           bool
+	}{
+		{name: "default path"},
+		{name: "custom directory", outputDir: "custom seeds"},
+		{name: "custom file", outputDir: "custom seeds/selected.jsonl"},
+		{name: "replace existing file", outputDir: "custom seeds/selected.jsonl", force: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			generatedSeedsPublishCanonicalRowsBeforeSimulation(t, tc.outputDir, tc.force)
+		})
+	}
+}
+
+func generatedSeedsPublishCanonicalRowsBeforeSimulation(t *testing.T, outputDir string, force bool) {
+	t.Helper()
+
 	const generated = `{"id":9007199254740993,"test_case_description":"A delayed order.","desired_num_turns":4}` + "\n"
 	var uploaded []byte
 	var submitted eval_api.CreateOpenAIEvalRunRequest
+	var generatedDownloads atomic.Int64
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -83,8 +103,10 @@ func TestGeneratedSeedsPublishCanonicalRowsBeforeSimulation(t *testing.T) {
 				"name": "golden", "version": "1", "id": "generated-id", "tags": seedDatasetTags("conversation"),
 			}))
 		case "/datasets/golden/versions/1/credentials":
+			generatedDownloads.Add(1)
 			assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{"sas_uri": server.URL + "/generated.jsonl"}))
 		case "/generated.jsonl":
+			generatedDownloads.Add(1)
 			_, _ = io.WriteString(w, generated)
 		case "/datasets/golden/versions/2.0/startPendingUpload":
 			assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"blobReference": map[string]any{
@@ -122,8 +144,15 @@ func TestGeneratedSeedsPublishCanonicalRowsBeforeSimulation(t *testing.T) {
 	}}
 	ec.azdClient, ec.envName = newTestAzdClient(t, env), "test"
 	dir := t.TempDir()
+	expectedPath := project.ArtifactPath(dir, firstNonEmpty(outputDir, project.DefaultDatasetsDir), "golden", ".jsonl")
+	if force {
+		require.NoError(t, os.MkdirAll(filepath.Dir(expectedPath), 0o750))
+		require.NoError(t, os.WriteFile(expectedPath, []byte("existing edited content\n"), 0o600))
+	}
 	var output bytes.Buffer
-	action := &jobShowAction{cmd: catalogCommand(t, &output), flags: &jobFlags{path: dir}}
+	action := &jobShowAction{
+		cmd: catalogCommand(t, &output), flags: &jobFlags{path: dir, outputDir: outputDir, force: force},
+	}
 	job := datasetJobResult("golden", "1")
 	job.Inputs = &eval_api.DataGenerationInputs{Options: eval_api.DataGenerationOptions{Type: "simulation_seed"}}
 	ref, err := action.collect(t.Context(), ec, datasetJobs, job, &output)
@@ -138,14 +167,20 @@ func TestGeneratedSeedsPublishCanonicalRowsBeforeSimulation(t *testing.T) {
 	decl, ok := cfg.DatasetDeclaration("golden")
 	require.True(t, ok)
 	path := filepath.Join(dir, filepath.FromSlash(ref.Source))
+	assert.Equal(t, filepath.Clean(expectedPath), filepath.Clean(path))
+	assert.Equal(t, ref.Source, decl.File, "the catalog must point to the requested output")
+	assert.Empty(t, decl.Version, "the generation version must not pin normalized content")
 	content, err := os.ReadFile(path)
 	require.NoError(t, err)
 	assert.Contains(t, string(content), `"simulation_configuration":{"desired_num_turns":4}`)
 	assert.Contains(t, string(content), `"id":9007199254740993`)
+	action.flags.force = false
+	downloads := generatedDownloads.Load()
 	again, err := action.collect(t.Context(), ec, datasetJobs, job, &output)
 	require.NoError(t, err)
 	assert.Equal(t, ref, again, "reattaching preserves the same artifact provenance")
 	assert.Empty(t, env.stored(t, project.FingerprintKey("dataset", "golden")))
+	assert.Equal(t, downloads, generatedDownloads.Load(), "reattaching must not download the old generated version")
 
 	version, changed, err := (&evalReconciler{ec: ec}).EnsureDataset(t.Context(), *decl, path)
 	require.NoError(t, err)
@@ -168,6 +203,27 @@ func TestGeneratedSeedsPublishCanonicalRowsBeforeSimulation(t *testing.T) {
 	assert.Equal(t, "2.0", submitted.Metadata[metaDatasetVersion])
 	assert.Equal(t, seedConfigField, submitted.DataSource.DataMapping[seedConfigField])
 	assert.Equal(t, group.Simulation.Model, submitted.DataSource.ModelConfiguration.Model)
+
+	publishedDigest, err := project.Fingerprint(path)
+	require.NoError(t, err)
+	for _, local := range [][]byte{content, []byte("{\"test_case_description\":\"A locally edited scenario.\"}\r\n")} {
+		require.NoError(t, os.WriteFile(path, local, 0o600))
+		collected, err := action.collect(t.Context(), ec, datasetJobs, job, &output)
+		require.NoError(t, err)
+		assert.Equal(t, ref, collected, "the original generation provenance must remain stable after publication")
+		assert.Equal(t, downloads, generatedDownloads.Load(), "do not fetch the old version over local content")
+		preserved, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, local, preserved)
+		assert.Equal(t, "2.0", env.stored(t, versionKey("dataset", "golden")))
+		assert.Equal(t, publishedDigest, env.stored(t, project.FingerprintKey("dataset", "golden")))
+		current, err := project.OpenEvalConfig(dir)
+		require.NoError(t, err)
+		catalog, ok := current.DatasetDeclaration("golden")
+		require.True(t, ok)
+		assert.Equal(t, "conversation", catalog.Tags[tagEvaluationLevel])
+		assert.Empty(t, catalog.Version)
+	}
 }
 
 func TestSeedNormalizationFailurePreservesExistingFile(t *testing.T) {

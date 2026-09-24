@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 
 	"github.com/stretchr/testify/assert"
@@ -63,11 +64,80 @@ func TestHumanRunViewsKeepExplicitZeroCounts(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(`{"id":"run_zero","status":"completed",
 		"result_counts":{"total":0,"passed":0,"failed":0,"errored":0,"skipped":0}}`), &run))
 	var out bytes.Buffer
+	require.NoError(t, renderRun(&out, &run, nil))
+	assert.Contains(t, out.String(), messages.TestCaseResults(0, 0, 0, 0, 0, "-"))
+	out.Reset()
 	require.NoError(t, renderRunDetail(&out, &run))
 	assert.Contains(t, out.String(), "0 passed, 0 failed, 0 errored")
 	out.Reset()
 	require.NoError(t, renderResults(&out, "eval_zero", &run, nil, false))
 	assert.Contains(t, out.String(), "0 test cases: 0 passed, 0 failed, 0 errored, 0 skipped")
+}
+
+func TestWaitedRunStartDistinguishesZeroAndUnreportedCounts(t *testing.T) {
+	for _, counts := range []struct {
+		name string
+		json string
+	}{
+		{"zero", `,"result_counts":{"total":0,"passed":0,"failed":0,"errored":0,"skipped":0}`},
+		{"partial", `,"result_counts":{"total":0}`},
+		{"null", `,"result_counts":null`},
+		{"absent", ""},
+	} {
+		for _, status := range []string{"completed", "failed"} {
+			for _, format := range []string{"table", "json"} {
+				t.Run(counts.name+"/"+status+"/"+format, func(t *testing.T) {
+					response := `{"id":"run_zero","status":"` + status + `"` + counts.json + `}`
+					srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						w.Header().Set("Content-Type", "application/json")
+						switch {
+						case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/runs"):
+							_, _ = io.WriteString(w, `{"id":"run_zero","status":"queued"}`)
+						case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/runs/run_zero"):
+							_, _ = io.WriteString(w, response)
+						case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/runs"):
+							_, _ = io.WriteString(w, `{"data":[{"id":"previous","data_source":{"type":"jsonl"}}]}`)
+						default:
+							t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+							w.WriteHeader(http.StatusNotFound)
+						}
+					}))
+					t.Cleanup(srv.Close)
+					var out bytes.Buffer
+					command := jsonCmd(t, format)
+					command.SetContext(t.Context())
+					command.SetOut(&out)
+					action := &runStartAction{cmd: command, flags: &runStartFlags{
+						groupName: "eval_zero", evalPath: t.TempDir(), wait: true,
+					}}
+					err := action.start(t.Context(), evalContextFor(srv), gate{})
+					if status == "failed" {
+						require.ErrorContains(t, err, "run_zero finished with status failed")
+					} else {
+						require.NoError(t, err)
+					}
+					if format == "json" {
+						assert.JSONEq(t, response, out.String())
+						return
+					}
+					text := out.String()
+					switch counts.name {
+					case "zero":
+						assert.Contains(t, text, messages.TestCaseResults(0, 0, 0, 0, 0, "-"))
+					case "partial":
+						assert.Contains(t, text, "TEST CASE RESULTS")
+						assert.Contains(t, text, "Total         0")
+						assert.Contains(t, text, "not reported")
+						assert.NotContains(t, text, "Failed        0")
+					default:
+						assert.NotContains(t, text, "TEST CASE RESULTS")
+					}
+					assert.NotContains(t, text, "--failed-only")
+					assert.NotContains(t, text, "--status errored")
+				})
+			}
+		}
+	}
 }
 
 func TestRunCallersRenderMissingCountMembersAsUnreported(t *testing.T) {

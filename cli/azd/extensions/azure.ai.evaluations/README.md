@@ -315,6 +315,8 @@ JSON and exports preserve the original service fields.
 Human summaries, run details, and listings also distinguish unreported counters
 from explicit zeros. Partial counters are marked `not reported` rather than
 inventing a failure/error split or a pass rate without known operands.
+Waited summaries also show a complete set of explicitly reported zero counters;
+their pass rate is `-` because no rows were scored.
 
 An operationally failed run can have no result counts or output rows. Its
 follow-up commands inspect **available** output and export the run's diagnostics

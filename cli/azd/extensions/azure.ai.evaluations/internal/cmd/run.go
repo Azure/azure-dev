@@ -1274,7 +1274,7 @@ func renderRun(
 		renderConversationResults(out, run)
 	} else if c := run.ResultCounts; c != nil && len(run.ReportedResultCounts()) < 5 {
 		renderReportedRunCounts(out, "TEST CASE RESULTS", run.ReportedResultCounts())
-	} else if c := run.ResultCounts; c != nil && c.Total > 0 {
+	} else if c := run.ResultCounts; c != nil {
 		rate, _, scored := scoredPassRate(c)
 		fmt.Fprint(out, messages.TestCaseResults(
 			c.Total, c.Passed, c.Failed, c.Errored, c.Skipped,

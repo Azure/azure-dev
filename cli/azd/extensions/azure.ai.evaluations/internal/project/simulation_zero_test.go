@@ -56,7 +56,7 @@ func TestAnOmittedCountStillMeansTheDefault(t *testing.T) {
 	t.Parallel()
 
 	var sim Simulation
-	require.NoError(t, yaml.Unmarshal([]byte("model: gpt-4o\n"), &sim))
+	require.NoError(t, yaml.Unmarshal([]byte("model: connection/gpt-4o\n"), &sim))
 
 	assert.Zero(t, sim.NumConversations, "unstated stays unstated on the struct")
 	assert.Zero(t, sim.MaxTurns)
@@ -71,9 +71,9 @@ func TestStatedCountsInRangeStillDecode(t *testing.T) {
 
 	var sim Simulation
 	require.NoError(t, yaml.Unmarshal(
-		[]byte("model: gpt-4o\nnum_conversations: 3\nmax_turns: 8\n"), &sim))
+		[]byte("model: connection/gpt-4o\nnum_conversations: 3\nmax_turns: 8\n"), &sim))
 
-	assert.Equal(t, "gpt-4o", sim.Model)
+	assert.Equal(t, "connection/gpt-4o", sim.Model)
 	assert.Equal(t, 3, sim.NumConversations)
 	assert.Equal(t, 8, sim.MaxTurns)
 	assert.NoError(t, sim.Validate())
@@ -82,7 +82,7 @@ func TestStatedCountsInRangeStillDecode(t *testing.T) {
 	// decoder's -- the two checks answer different questions.
 	var wide Simulation
 	require.NoError(t, yaml.Unmarshal(
-		[]byte("model: gpt-4o\nnum_conversations: 9\n"), &wide))
+		[]byte("model: connection/gpt-4o\nnum_conversations: 9\n"), &wide))
 	assert.Error(t, wide.Validate())
 }
 

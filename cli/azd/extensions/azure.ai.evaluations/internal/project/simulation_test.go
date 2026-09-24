@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The bounds come from the REST contract. They are checked locally so an
+// The authored-default bounds come from the CLI feature specification, so an
 // out-of-range value is refused before a run is created rather than after one
 // is billed. ADO 5631478.
 func TestSimulationValidate_Bounds(t *testing.T) {
@@ -23,19 +23,19 @@ func TestSimulationValidate_Bounds(t *testing.T) {
 	}{
 		{
 			name: "the documented shape",
-			sim:  Simulation{Model: "gpt-4o-mini", NumConversations: 1, MaxTurns: 5},
+			sim:  Simulation{Model: "connection/gpt-4o-mini", NumConversations: 1, MaxTurns: 5},
 		},
 		{
 			name: "counts at the low bound",
-			sim:  Simulation{Model: "gpt-4o-mini", NumConversations: 1, MaxTurns: 1},
+			sim:  Simulation{Model: "connection/gpt-4o-mini", NumConversations: 1, MaxTurns: 1},
 		},
 		{
 			name: "counts at the high bound",
-			sim:  Simulation{Model: "gpt-4o-mini", NumConversations: 5, MaxTurns: 20},
+			sim:  Simulation{Model: "connection/gpt-4o-mini", NumConversations: 5, MaxTurns: 20},
 		},
 		{
 			name: "both counts unstated",
-			sim:  Simulation{Model: "gpt-4o-mini"},
+			sim:  Simulation{Model: "connection/gpt-4o-mini"},
 		},
 		{
 			name:    "no model to speak with",
@@ -44,22 +44,22 @@ func TestSimulationValidate_Bounds(t *testing.T) {
 		},
 		{
 			name:    "no conversations at all",
-			sim:     Simulation{Model: "gpt-4o-mini", NumConversations: 0 - 1},
+			sim:     Simulation{Model: "connection/gpt-4o-mini", NumConversations: 0 - 1},
 			wantErr: "num_conversations is -1",
 		},
 		{
 			name:    "one conversation past the cap",
-			sim:     Simulation{Model: "gpt-4o-mini", NumConversations: 6},
+			sim:     Simulation{Model: "connection/gpt-4o-mini", NumConversations: 6},
 			wantErr: "num_conversations is 6",
 		},
 		{
 			name:    "a conversation of no turns",
-			sim:     Simulation{Model: "gpt-4o-mini", MaxTurns: 0 - 1},
+			sim:     Simulation{Model: "connection/gpt-4o-mini", MaxTurns: 0 - 1},
 			wantErr: "max_turns is -1",
 		},
 		{
 			name:    "one turn past the cap",
-			sim:     Simulation{Model: "gpt-4o-mini", MaxTurns: 21},
+			sim:     Simulation{Model: "connection/gpt-4o-mini", MaxTurns: 21},
 			wantErr: "max_turns is 21",
 		},
 	}
@@ -104,12 +104,12 @@ func TestSimulationConversations_AppliesTheDefault(t *testing.T) {
 func TestSimulationValidate_ErrorsNameValueAndRange(t *testing.T) {
 	t.Parallel()
 
-	err := (&Simulation{Model: "gpt-4o-mini", NumConversations: 9}).Validate()
+	err := (&Simulation{Model: "connection/gpt-4o-mini", NumConversations: 9}).Validate()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "9")
 	assert.Contains(t, err.Error(), "1 to 5")
 
-	err = (&Simulation{Model: "gpt-4o-mini", MaxTurns: 99}).Validate()
+	err = (&Simulation{Model: "connection/gpt-4o-mini", MaxTurns: 99}).Validate()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "99")
 	assert.Contains(t, err.Error(), "1 to 20")

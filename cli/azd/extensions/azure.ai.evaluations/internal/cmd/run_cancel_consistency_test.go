@@ -24,7 +24,7 @@ import (
 // Closing the eval picker is an answer: there is no eval to list, show, cancel
 // or export, and nothing went wrong. `eval create` already reported it that
 // way; the run subcommands returned the sentinel as a command error, so the
-// same keystroke printed "Cancelled." at one door and exited non-zero at six
+// same keystroke printed "Cancelled." at one door and exited non-zero at seven
 // others.
 func TestEvalIDForRunCommandReportsAClosedPickerAsAnAnswer(t *testing.T) {
 	t.Parallel()

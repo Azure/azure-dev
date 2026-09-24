@@ -76,9 +76,28 @@ func TestTheRequestTypeAndTheDatasetTagAreDifferentVocabularies(t *testing.T) {
 func TestRegisteredEvaluationLevel(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "conversation", registeredEvaluationLevel(&dataset_api.Dataset{
-		Tags: map[string]string{"evaluation_level": "conversation"},
-	}))
+	for _, tc := range []struct {
+		name string
+		tags map[string]string
+		want string
+	}{
+		{"explicit", map[string]string{"evaluation_level": "conversation"}, "conversation"},
+		{"service seeds", map[string]string{"data_generation_type": "conversation_simulation"}, "conversation"},
+		{"request spelling", map[string]string{"data_generation_type": "simulation_seed"}, "conversation"},
+		{"portal", map[string]string{"scenario": "conversation_simulation"}, "conversation"},
+		{"simple QnA", map[string]string{"data_generation_type": "simple_qna"}, "turn"},
+		{"explicit wins", map[string]string{
+			"evaluation_level": "turn", "data_generation_type": "conversation_simulation",
+		}, "turn"},
+		{"generation type wins", map[string]string{
+			"data_generation_type": "simple_qna", "scenario": "conversation_simulation",
+		}, "turn"},
+		{"unknown tags", map[string]string{"data_generation_type": "future_type", "scenario": "evaluation"}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, registeredEvaluationLevel(&dataset_api.Dataset{Tags: tc.tags}))
+		})
+	}
 	assert.Empty(t, registeredEvaluationLevel(&dataset_api.Dataset{}))
 	assert.Empty(t, registeredEvaluationLevel(nil))
 }

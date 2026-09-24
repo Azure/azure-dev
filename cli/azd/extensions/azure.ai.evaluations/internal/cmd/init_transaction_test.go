@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"azureaieval/internal/project"
 
@@ -19,6 +21,8 @@ import (
 	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestInitRootSaveFailureRestoresConfigAndAllowsExactRetry(t *testing.T) {
@@ -130,7 +134,8 @@ func TestInitRootSaveFailureRestoresConfigAndAllowsExactRetry(t *testing.T) {
 }
 
 func TestInitRootSaveFailurePreservesConcurrentChanges(t *testing.T) {
-	for _, change := range []string{"eval", "root", "eval replaced by directory", "root removed", "cancelled"} {
+	for _, change := range []string{"eval", "root", "eval replaced by directory", "root removed",
+		"cancelled", "deadline", "unavailable"} {
 		t.Run(change, func(t *testing.T) {
 			h := newInitHarness(t, nil)
 			configPath := filepath.Join(h.dir, "quality.yml")
@@ -166,7 +171,11 @@ func TestInitRootSaveFailurePreservesConcurrentChanges(t *testing.T) {
 						return err
 					}
 				case "cancelled":
-					return context.Canceled
+					return status.Error(codes.Canceled, "request cancelled")
+				case "deadline":
+					return status.Error(codes.DeadlineExceeded, "request timed out")
+				case "unavailable":
+					return status.Error(codes.Unavailable, "connection lost")
 				}
 				return os.ErrPermission
 			})
@@ -175,10 +184,10 @@ func TestInitRootSaveFailurePreservesConcurrentChanges(t *testing.T) {
 			require.Error(t, err)
 			assert.Empty(t, text)
 			assert.Empty(t, h.usage.reported())
-			if change == "cancelled" {
-				assert.ErrorContains(t, err, "canceled")
-				assert.ErrorContains(t, err, "was rolled back")
-				assert.NoFileExists(t, configPath)
+			if change == "cancelled" || change == "deadline" || change == "unavailable" {
+				assert.ErrorContains(t, err, "host may still finish")
+				assert.ErrorContains(t, err, "could not safely roll back")
+				assert.FileExists(t, configPath)
 				return
 			}
 			assert.ErrorContains(t, err, "permission denied")
@@ -204,4 +213,66 @@ func TestInitRootSaveFailurePreservesConcurrentChanges(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestInitCancelledRootSaveCanFinishWithoutLosingScaffold(t *testing.T) {
+	h := newInitHarness(t, nil)
+	configPath := filepath.Join(h.dir, "quality.yml")
+	rootPath := filepath.Join(h.dir, "azure.yaml")
+	started, finish := make(chan struct{}), make(chan struct{})
+	saved := make(chan error, 1)
+	var finishOnce sync.Once
+	release := func() { finishOnce.Do(func() { close(finish) }) }
+	t.Cleanup(release)
+	h.project.setAddServiceHandler(func(request *azdext.AddServiceRequest) error {
+		close(started)
+		<-finish
+		body := []byte(usageAzureYaml + "  " + request.Service.Name + ":\n    host: " + project.EvalHost +
+			"\n    $ref: ./quality.yml\n")
+		err := os.WriteFile(rootPath, body, 0o600)
+		saved <- err
+		return err
+	})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	cmd := newInitCommand()
+	cmd.Flags().Bool("no-prompt", false, "")
+	cmd.Flags().String("output", "", "")
+	cmd.SetContext(ctx)
+	cmd.SilenceErrors, cmd.SilenceUsage = true, true
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--path", configPath, "--name", "quality", "--source", "traces",
+		"--target", "agent", "--judge-model", "judge", "--no-prompt", "--output", "json"})
+	done := make(chan error, 1)
+	go func() { done <- cmd.Execute() }()
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("init never reached the root save")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "host may still finish")
+	case <-time.After(10 * time.Second):
+		t.Fatal("init did not return after cancellation")
+	}
+	assert.Empty(t, out.String())
+	assert.Empty(t, h.usage.reported())
+	assert.FileExists(t, configPath, "a still-running host save must not lose its referenced configuration")
+	release()
+	select {
+	case err := <-saved:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the delayed root save did not finish")
+	}
+	root, err := os.ReadFile(rootPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(root), "$ref: ./quality.yml")
+	assert.FileExists(t, configPath)
 }

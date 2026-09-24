@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -26,6 +27,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -421,6 +424,10 @@ func (a *initAction) Run() error {
 	// `azd up`, `azd deploy` or `azd ai eval run` will act on it.
 	rootWiring, serviceName, err := ensureRootEvalService(a.cmd.Context(), serviceName, target, configPath)
 	if err != nil {
+		if initWiringOutcomeUnknown(err) {
+			return messages.InitWiringRollbackFailed(configPath, err,
+				errors.New("the host may still finish saving azure.yaml; the scaffold was retained"))
+		}
 		// A lost RPC response can follow a successful root save. Do not remove
 		// a scaffold the root may already reference, or overwrite another edit.
 		// #nosec G304 -- re-read the same project root to determine whether rollback is safe.
@@ -501,6 +508,18 @@ func (a *initAction) Run() error {
 		fmt.Fprint(out, messages.WholeProjectAlternative(deployCmd))
 	}
 	return nil
+}
+
+func initWiringOutcomeUnknown(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	switch status.Code(err) {
+	case codes.Canceled, codes.DeadlineExceeded, codes.Unavailable:
+		return true
+	default:
+		return false
+	}
 }
 
 // initSourceInput is what settling the data source depends on.

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"syscall"
 	"time"
 
@@ -102,21 +103,18 @@ func ensureEvalDir(location string) (string, error) {
 	return dir, nil
 }
 
-// namesAFile reports whether a location is the configuration file rather than
-// the directory holding it. A path that does not exist is read as a directory,
-// which is what `init` is given before it writes anything.
-//
-// Except when the name itself settles it. Stat can only answer for a path that
-// exists, so a recorded or $ref-declared configuration that had since been
-// deleted read as a directory: `init` then wrote <path>/azure.eval.yaml while
-// the wiring still pointed at <path>, and `azd up` deployed neither.
+// namesAFile keeps existing directories as directories and recognizes YAML
+// filenames before they exist. Otherwise init would create a directory named
+// custom.yaml and write a different configuration inside it.
 func namesAFile(location string) bool {
-	switch filepath.Base(location) {
-	case EvalConfigBase, LegacyEvalConfigBase:
+	if info, err := os.Stat(location); err == nil {
+		return !info.IsDir()
+	}
+	switch strings.ToLower(filepath.Ext(location)) {
+	case ".yaml", ".yml":
 		return true
 	}
-	info, err := os.Stat(location)
-	return err == nil && !info.IsDir()
+	return false
 }
 
 // ResolveEvalConfigPath is the configuration this location actually holds:

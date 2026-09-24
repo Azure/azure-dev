@@ -4,10 +4,14 @@
 package cmd
 
 import (
+	"cmp"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 
+	"azureaieval/internal/exterrors"
 	"azureaieval/internal/messages"
 	"azureaieval/internal/project"
 
@@ -31,13 +35,15 @@ type initContext struct {
 
 // initAnswers is everything the prompt sequence settles.
 type initAnswers struct {
-	source          string
-	target          string
-	judgeModel      string
-	evalName        string
-	datasetRef      string
-	evaluationLevel string
-	evaluators      []string
+	source           string
+	target           string
+	judgeModel       string
+	evalName         string
+	datasetRef       string
+	evaluationLevel  string
+	conversationMode string
+	simulation       *project.Simulation
+	evaluators       []string
 	// evaluatorsChosen distinguishes a list someone picked from one that was
 	// defaulted, so the summary does not read a selection back to whoever
 	// just made it.
@@ -54,8 +60,14 @@ type initAnswers struct {
 func (a *initAction) ask(ctx initContext) (initAnswers, error) {
 	answers := initAnswers{}
 
+	explicitSource := a.flags.source
+	explicitLevel := a.flags.evaluationLevel
+	if a.flags.conversationMode != "" {
+		explicitSource = cmp.Or(explicitSource, initSourceDataset)
+		explicitLevel = cmp.Or(explicitLevel, project.EvaluationLevelConversation)
+	}
 	source, err := settleInitSource(a.cmd, initSourceInput{
-		explicit:       a.flags.source,
+		explicit:       explicitSource,
 		maxTracesGiven: a.cmd.Flags().Changed("max-traces"),
 		traceDaysGiven: a.cmd.Flags().Changed("trace-days"),
 		usableDatasets: usableDatasetCount(ctx.cfg, ctx.evalDir),
@@ -65,27 +77,81 @@ func (a *initAction) ask(ctx initContext) (initAnswers, error) {
 		return initAnswers{}, err
 	}
 	answers.source = source
+	if source == initSourceTraces && a.cmd.Flags().Changed("dataset") {
+		return initAnswers{}, messages.TracesTakesNoDataset()
+	}
 
+	answers.evaluationLevel, err = resolveEvaluationLevel(a.cmd, explicitLevel)
+	if err != nil {
+		return initAnswers{}, err
+	}
+	if source == initSourceDataset && answers.evaluationLevel == project.EvaluationLevelConversation {
+		answers.conversationMode, err = resolveConversationMode(a.cmd, a.flags.conversationMode)
+		if err != nil {
+			return initAnswers{}, err
+		}
+	}
+	if err := a.validateConversationFlags(source, answers.evaluationLevel, answers.conversationMode); err != nil {
+		return initAnswers{}, err
+	}
+
+	var unresolved []error
+	// Non-interactive authoring reports all unresolved inputs in one pass.
+	// Interactive failures still stop immediately, including cancellation.
+	collect := func(err error) error {
+		if err == nil {
+			return nil
+		}
+		if !noPrompt(a.cmd) {
+			return err
+		}
+		unresolved = append(unresolved, err)
+		return nil
+	}
 	// The target is what the whole scaffold is named and shaped around, so it
 	// is settled before anything derived from it.
-	answers.target = a.flags.target
-	if answers.target == "" {
-		if answers.target, err = resolveAgentTarget(a.cmd, ctx.azdProject); err != nil {
-			return initAnswers{}, err
+	if answers.conversationMode != conversationModeStatic {
+		answers.target = strings.TrimSpace(a.flags.target)
+		if answers.target == "" {
+			answers.target, err = resolveAgentTarget(a.cmd, ctx.azdProject)
+			if err := collect(err); err != nil {
+				return initAnswers{}, err
+			}
 		}
 	}
-	answers.judgeModel = a.flags.judgeModel
+	if answers.conversationMode == conversationModeSimulation {
+		if svc := ctx.azdProject.GetServices()[answers.target]; svc != nil && svc.GetHost() == aiModelHost {
+			return initAnswers{}, messages.InitFlagConflict("target",
+				"must name an agent for simulation, not a model service")
+		}
+		model, err := resolveSimulationModel(a.cmd, a.flags.simulationModel)
+		if err := collect(err); err != nil {
+			return initAnswers{}, err
+		}
+		answers.simulation = &project.Simulation{
+			Model: model, NumConversations: a.flags.numConversations, MaxTurns: a.flags.maxTurns,
+		}
+	}
+	answers.judgeModel = strings.TrimSpace(a.flags.judgeModel)
 	if answers.judgeModel == "" {
-		if answers.judgeModel, err = resolveJudgeModel(a.cmd, ctx.azdProject); err != nil {
+		answers.judgeModel, err = resolveJudgeModel(a.cmd, ctx.azdProject)
+		if err := collect(err); err != nil {
 			return initAnswers{}, err
 		}
 	}
-
-	// Reported here, after the values it names are settled and before the
-	// questions derived from them. A reader answering "which dataset" needs to
-	// know which project and which file they are answering about.
-	if !noPrompt(a.cmd) && !isJSON(a.cmd) {
+	if !noPrompt(a.cmd) {
 		writeLocalContext(a.cmd.OutOrStdout(), ctx, answers.target, answers.judgeModel)
+	}
+	if source != initSourceTraces {
+		answers.datasetRef, err = resolveDataset(a.cmd, ctx.cfg, a.flags.dataset)
+		if err := collect(err); err != nil {
+			return initAnswers{}, err
+		}
+	}
+	if len(unresolved) > 0 {
+		return initAnswers{}, exterrors.Validation(exterrors.CodeInvalidParameter,
+			"Cannot initialize evaluation:\n"+errors.Join(unresolved...).Error(),
+			"Supply the named flags, or run interactively to select the unresolved inputs.")
 	}
 
 	// A name init suggested is init's problem: suggesting one already taken and
@@ -95,20 +161,11 @@ func (a *initAction) ask(ctx initContext) (initAnswers, error) {
 	// given.
 	answers.evalName, err = resolveEvalName(
 		a.cmd, ctx.cfg, ctx.configPath, a.flags.evalName,
-		uniqueEvalName(ctx.cfg, defaultEvalName(answers.target, source)))
+		uniqueEvalName(ctx.cfg, defaultEvalName(cmp.Or(answers.target, "conversation"), source)))
 	if err != nil {
 		return initAnswers{}, err
 	}
-
-	if source != initSourceTraces {
-		answers.datasetRef, err = resolveDataset(a.cmd, ctx.cfg, a.flags.dataset)
-		if err != nil {
-			return initAnswers{}, err
-		}
-	}
-
-	answers.evaluationLevel, err = resolveEvaluationLevel(a.cmd, a.flags.evaluationLevel)
-	if err != nil {
+	if err := resolveInitDataset(a.cmd, ctx.configPath, &answers, ctx.cfg); err != nil {
 		return initAnswers{}, err
 	}
 
@@ -118,10 +175,13 @@ func (a *initAction) ask(ctx initContext) (initAnswers, error) {
 	answers.evaluators = a.flags.evaluators
 	answers.evaluatorsChosen = len(answers.evaluators) > 0
 	if len(answers.evaluators) == 0 {
-		answers.evaluators, answers.evaluatorsChosen, err = resolveEvaluators(a.cmd, ctx.cfg)
+		answers.evaluators, answers.evaluatorsChosen, err = resolveEvaluators(a.cmd, ctx.cfg, answers.evaluationLevel)
 		if err != nil {
 			return initAnswers{}, err
 		}
+	}
+	if err := validateInitEvaluatorLevels(ctx.cfg, answers.evaluators, answers.evaluationLevel); err != nil {
+		return initAnswers{}, err
 	}
 
 	// Only meaningful for a trace-backed eval, and only asked for one: a
@@ -149,7 +209,9 @@ func (a *initAction) ask(ctx initContext) (initAnswers, error) {
 // a tick beside a name init merely read out of a file claims more than it knows.
 func writeLocalContext(out io.Writer, ctx initContext, target, judgeModel string) {
 	fmt.Fprint(out, messages.LocalContextHeading())
-	fmt.Fprint(out, messages.LocalContextLine("Agent", target))
+	if target != "" {
+		fmt.Fprint(out, messages.LocalContextLine("Agent", target))
+	}
 	fmt.Fprint(out, messages.LocalContextLine("Judge model", judgeModel))
 	fmt.Fprint(out, messages.LocalContextLine("Config file",
 		messages.ConfigFileState(filepath.ToSlash(ctx.configPath), ctx.configExisted, len(ctx.cfg.Evals))))
@@ -228,7 +290,9 @@ func writeScaffoldSummary(out io.Writer, s scaffoldSummary) {
 	a := s.answers
 	fmt.Fprint(out, messages.ScaffoldSummaryHeading())
 	fmt.Fprint(out, messages.ScaffoldSummaryLine("Name", a.evalName))
-	fmt.Fprint(out, messages.ScaffoldSummaryLine("Agent", a.target))
+	if a.target != "" {
+		fmt.Fprint(out, messages.ScaffoldSummaryLine("Agent", a.target))
+	}
 	fmt.Fprint(out, messages.ScaffoldSummaryLine("Source", a.source))
 	if a.source == initSourceTraces {
 		fmt.Fprint(out, messages.ScaffoldSummaryLine(
@@ -239,6 +303,21 @@ func writeScaffoldSummary(out io.Writer, s scaffoldSummary) {
 		fmt.Fprint(out, messages.ScaffoldSummaryLine("Dataset", a.datasetRef))
 	}
 	fmt.Fprint(out, messages.ScaffoldSummaryLine("Evaluation level", a.evaluationLevel))
+	if a.conversationMode != "" {
+		fmt.Fprint(out, messages.ScaffoldSummaryLine("Conversation mode", a.conversationMode))
+	}
+	if a.conversationMode == conversationModeStatic {
+		fmt.Fprint(out, messages.ScaffoldSummaryLine("Target invocation", "none (score completed messages)"))
+	}
+	if a.simulation != nil {
+		fmt.Fprint(out, messages.ScaffoldSummaryLine("Simulation model", a.simulation.Model))
+		fmt.Fprint(out, messages.ScaffoldSummaryLine("Conversations per seed", fmt.Sprint(a.simulation.Conversations())))
+		turns := "service default"
+		if a.simulation.MaxTurns > 0 {
+			turns = fmt.Sprint(a.simulation.MaxTurns)
+		}
+		fmt.Fprint(out, messages.ScaffoldSummaryLine("Maximum turns", turns))
+	}
 	if a.judgeModel != "" {
 		fmt.Fprint(out, messages.ScaffoldSummaryLine("Judge model", a.judgeModel))
 	}

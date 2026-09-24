@@ -663,6 +663,12 @@ func DatasetIsRequired() string {
 	return "A dataset-backed evaluation needs a dataset to grade."
 }
 
+// InitDatasetRejected explains how to correct an unusable local dataset.
+func InitDatasetRejected(why error) string {
+	return fmt.Sprintf("\n  %v\n  Correct the dataset file and enter its path or dataset name again, "+
+		"or choose another dataset. Press Ctrl+C to cancel.\n", why)
+}
+
 // SelectingDataset reports a failed dataset prompt.
 func SelectingDataset(err error) error {
 	return fmt.Errorf("selecting a dataset to evaluate against: %w", err)
@@ -1253,7 +1259,9 @@ func GenerationJobLine(kind, jobID string) string {
 }
 
 // InitHandoffCommand is the `eval init` that turns generated artifacts into an
-// eval, with every value already filled in.
+// eval, carrying the known artifact choices. Conversation generation produces
+// seeds, so its handoff selects simulation. The simulation model is deliberately
+// omitted: generation does not establish which deployment should play the user.
 //
 // Printed resolved rather than as a shape. A reader who has just watched the
 // command choose a name, a level and an evaluator should not have to retype
@@ -1267,7 +1275,10 @@ func InitHandoffCommand(agent, dataset, level, evaluator string) string {
 	if dataset != "" {
 		cmd += " --source dataset --dataset " + ShellArg(dataset)
 		if level != "" {
-			cmd += " --evaluation-level " + level
+			cmd += " --evaluation-level " + ShellArg(level)
+		}
+		if level == "conversation" {
+			cmd += " --conversation-mode simulation"
 		}
 	}
 	if evaluator != "" {
@@ -2634,7 +2645,7 @@ func SourceNotADataSource(source, dataset, traces string) error {
 
 // TracesTakesNoDataset reports --dataset paired with a trace-backed eval.
 func TracesTakesNoDataset() error {
-	return errors.New("--source traces reads production traces, so it takes no --dataset")
+	return InitFlagConflict("dataset", "cannot be used with --source traces, which reads production traces")
 }
 
 // MaxTracesNeedsTraceSource reports --max-traces without a trace-backed eval.
@@ -4397,17 +4408,16 @@ func CouldNotReadAgentForModel(agent string, err error) string {
 // carried one of those characters would run it when pasted. They are named
 // rather than inlined: the command stops being copy-and-run for that argument,
 // which is the honest outcome, because it cannot be made both runnable and
-// safe here. Backslashes are left alone, so a Windows path comes back as itself.
+// safe here. Native path separators should be normalized by path-aware callers.
 func shellArg(v string) string {
 	if v == "" {
 		return `""`
 	}
-	// The three that cannot survive being wrapped: two expand, one breaks the
-	// quoting itself.
-	if strings.ContainsAny(v, "$`\"") {
+	// Expansion syntax and embedded quotes are not literal across the supported shells.
+	if !CanInlineShellArg(v) {
 		return shellArgNeedsQuoting
 	}
-	if !strings.ContainsAny(v, " \t\n'&|;<>()*?[]#~!") {
+	if !strings.ContainsAny(v, " \t\n'&|;<>()*?[]{}#~!@") {
 		return v
 	}
 	return `"` + v + `"`
@@ -4424,6 +4434,11 @@ const shellArgNeedsQuoting = "VALUE_NEEDS_QUOTING"
 // rule decides how every printed command quotes what it carries.
 func ShellArg(v string) string {
 	return shellArg(v)
+}
+
+// CanInlineShellArg reports whether ShellArg can preserve v across the supported shells.
+func CanInlineShellArg(v string) bool {
+	return !strings.ContainsAny(v, "$`\"%!\\^\r\n\x00")
 }
 
 // ConfirmDelete asks before removing something published.

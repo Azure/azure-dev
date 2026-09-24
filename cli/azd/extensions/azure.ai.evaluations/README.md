@@ -10,6 +10,12 @@ azd up                    # register datasets and evaluators, create the eval gr
 azd ai eval run start     # run the evaluation and summarize the results
 ```
 
+Generation prints an interactive `init` next step, followed by guidance for
+unattended use. When using `--no-prompt`, supply an independently selected
+`--judge-model <deployment>`; conversation simulation also needs
+`--simulation-model <connection-name/model-deployment>`. The printed command never assumes that the
+generation model should fill either role.
+
 ## What gets deployed
 
 Eval resources are one service entry in `azure.yaml`, normally a `$ref` to a
@@ -85,6 +91,99 @@ in the referenced file, so `azd ai eval generate` will not update it in place an
 says so rather than writing a second declaration of the same rubric beside the
 directive. Edit the referenced file, or generate under a different name.
 
+### Authoring conversation evaluations
+
+Choose how conversation datasets are used during `init`:
+
+```bash
+# Score completed message transcripts, without invoking an agent.
+azd ai eval init --conversation-mode static --dataset completed-transcripts --judge-model judge-deployment
+
+# Create conversations from scenario seeds, then grade the resulting messages.
+azd ai eval init --conversation-mode simulation --target support-agent --dataset retail-seeds --simulation-model model-connection/simulator-deployment --judge-model judge-deployment --num-conversations 1 --max-turns 5 --no-prompt
+```
+
+`--conversation-mode` implies `--source dataset` and
+`--evaluation-level conversation` when they are omitted. Without this flag,
+interactive init offers **Static** or **Simulation** for a conversation dataset;
+`--no-prompt` and `--output json` default to static. Static mode writes neither
+`target:` nor `simulation:` and rejects `--target`, because completed transcripts
+are scored as they stand. Trace-backed conversations continue to use
+`--source traces --evaluation-level conversation` and filter by the selected agent.
+
+| Init flag | Applies to | Meaning |
+|---|---|---|
+| `--conversation-mode static\|simulation` | Conversation datasets | Completed messages or scenario-seed simulation. |
+| `--simulation-model` | Simulation only | `connection-name/model-deployment` for the simulated user; required, or prompted interactively. |
+| `--num-conversations` | Simulation only | Conversations per seed, 1 to 5; default 1. |
+| `--max-turns` | Simulation only | Maximum turns, 1 to 20; omission preserves the service default. |
+
+Explicit zero is invalid for both numeric flags. Simulation flags with static,
+turn, or trace evaluation are rejected rather than ignored. Simulation needs an
+agent target, seed dataset, simulation model, and judge model. Non-interactive
+init reports all unresolved required inputs together, naming the flags to supply.
+Init is add-only, preserves existing YAML and unknown fields, and makes no new
+live lookups beyond the bounded built-in evaluator catalogue check.
+Authored evaluation configuration must contain one YAML document with unique,
+literal string top-level keys. Init and catalog edits reject multiple documents,
+duplicate keys, and merge, alias or complex top-level keys rather than silently dropping
+or ambiguously updating content. Aliases in values remain supported.
+If saving the root `azure.yaml` service fails and the host acknowledges that
+the save finished unsuccessfully, init rolls back its eval-config edit so the
+same command can be retried after restoring root write access.
+Existing config bytes are restored; only a new config written by that attempt
+is removed. Dataset files, artifact directories, lock files, and existing
+`.gitignore` rules are retained. If either configuration changes during wiring,
+the host's save outcome is uncertain after cancellation or a connection failure,
+or rollback fails, init reports that recovery is incomplete and leaves an
+explicit inspection instruction rather than overwriting concurrent edits.
+Older azd hosts do not send this optional acknowledgment. On those hosts, init
+retains the scaffold and reports manual recovery instead of promising an
+automatic retry. Inspect the retained eval and its root service reference;
+do not delete preexisting evaluations. This does not require a newer SDK or
+change the minimum supported host version.
+For simulation, init checks every locally available seed row before writing
+configuration, including files in declared datasets and local nested `$ref`
+entries. Each row needs a non-whitespace text `test_case_description` of at most
+2,500 Unicode characters and cannot carry `messages`, `query`, or `response`
+fields (even empty or null). Per-row turn settings use the nested
+`simulation_configuration` contract described below, including its effective
+maximum and service default. Omitted turn settings remain valid.
+Interactive init reports invalid rows and asks for a corrected or different
+dataset before confirmation; press Ctrl+C at that prompt to cancel without
+authored changes. Under `--no-prompt` or `--output json`, invalid local rows
+fail immediately without writing configuration.
+Local files derive their dataset name from the filename without its extension.
+That name must be non-empty, cannot be `.` or `..`, and must satisfy the existing
+dataset lookup-name rules: at most 255 bytes, with no path separators or
+control characters.
+If that name is already declared for a different file (or has no local file),
+init refuses the collision rather than replacing the declaration or ignoring
+the supplied path. Interactive init asks for another dataset; use a unique
+filename to add the new file, or the existing dataset's name or file path to
+reuse it. Equivalent paths to the same file are accepted, preserving references,
+version pins, and other authored metadata.
+When `--path` names a configuration file, dataset lookup uses that exact file,
+while artifact paths remain relative to its directory.
+The successful human `eval create` next step retains that filename rather than
+selecting the default config in the artifact directory.
+If that path cannot be portably quoted, init displays escaped exact-name/path
+values and manual create guidance instead of a runnable placeholder command.
+New paths ending in `.yaml` or `.yml` are treated as configuration files,
+including absolute paths and paths containing spaces. Existing directories
+remain directories, even if their names end in `.yaml`.
+Init supports `--output default` for human-readable output and `--output json`
+for structured output. Unsupported formats are rejected before any authored writes.
+Registered datasets with no local file are not fetched or checked by init.
+The evaluator picker excludes custom evaluators whose local
+`supported_evaluation_levels` explicitly excludes the selected level (compared
+case-insensitively); an explicit incompatible `--evaluator` is rejected.
+Missing or unfamiliar metadata remains
+unknown, with authoritative compatibility checked when the eval is created.
+Omitting `--evaluator` keeps the default selection or opens the interactive
+picker. An explicitly empty `--evaluator` is rejected rather than silently
+restoring the default.
+
 ### Registered dataset identity
 
 Runs bind registered datasets using the service-issued version ID, including
@@ -127,7 +226,7 @@ evals:
     dataset: retail-seeds
     evaluation_level: conversation
     simulation:
-      model: model-connection/gpt-4.1-nano # plays the user, not the agent under test
+      model: model-connection/gpt-4.1-nano # plays the user, not the judge or generation model
       num_conversations: 3      # per seed row, 1–5
       max_turns: 8              # 1–20; omit to leave it to the service
     evaluators:
@@ -181,7 +280,10 @@ inside `simulation_configuration`, matching
 the [published Foundry contract](https://github.com/Azure/azure-rest-api-specs/blob/main/specification/ai-foundry/data-plane/Foundry/src/openai/evaluations/user_conversation_simulation.tsp).
 The optional `desired_num_turns` must not exceed the effective `max_num_turns`:
 the per-row maximum overrides `simulation.max_turns`, and the service default is
-20 when neither is set. Generation can return a flat top-level `desired_num_turns`.
+20 when neither is set. When correcting a row that exceeds `simulation.max_turns`,
+keep that authored cap within 1 to 20; if raising it cannot satisfy the row within
+those bounds, lower the row's desired turns to fit the current cap.
+Generation can return a flat top-level `desired_num_turns`.
 When collecting generated conversation seeds, the CLI moves that value into
 `simulation_configuration` in the downloaded local file. Canonical rows remain
 byte-identical, and unrelated fields are preserved without rounding numeric IDs.
@@ -211,6 +313,27 @@ is refused instead of scored against the seeded text.
 
 `azd ai eval generate --evaluation-level conversation` writes seeds in this
 shape and tags the registered dataset so a later run knows what it holds.
+Its printed init command selects `--conversation-mode simulation`. Run that
+command interactively to enter the simulation model, or add
+`--simulation-model <connection-name/model-deployment> --judge-model <deployment> --no-prompt` for
+automation (also supply `--target` if generation had no agent).
+If generation had no agent and none is declared locally, supply `--target` before
+running the command interactively too. Rubric-only generation does not supply a
+dataset: select existing data with `--source dataset --dataset <name-or-path>`,
+or choose `--source traces` with a configured trace connection. The printed
+unattended guidance includes the missing target and dataset flags.
+The generation, simulation, and judge deployments are independent choices.
+Init never copies the generation or judge model into the simulation model.
+Generation declares artifacts only; it does not attach them to an existing eval
+or replace its configuration. If a generated rubric declares an incompatible
+evaluation level, the handoff warns and uses the built-in default instead; the
+rubric remains in the catalogue.
+If any handoff value contains shell expansion syntax or cannot be portably quoted,
+including a dollar sign, backtick, double quote, percent sign, exclamation mark,
+backslash, or caret,
+generation displays the exact escaped values and manual initialization guidance
+instead of a copyable command. Quote that path for your shell when supplying
+`--path`; generation never substitutes a different path into a runnable handoff.
 
 ### Repeated deploys do not create redundant versions
 

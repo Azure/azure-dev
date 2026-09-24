@@ -6,14 +6,17 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
+	"azureaieval/internal/exterrors"
 	"azureaieval/internal/project"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -113,6 +116,11 @@ func TestRefuseUnusableSeedRows(t *testing.T) {
 		{
 			name:    "an empty description describes nothing",
 			rows:    []map[string]any{{"test_case_description": ""}},
+			wantErr: "row 1 has an empty or non-text",
+		},
+		{
+			name:    "whitespace describes nothing",
+			rows:    []map[string]any{{"test_case_description": " \t\r\n "}},
 			wantErr: "row 1 has an empty or non-text",
 		},
 		{
@@ -230,6 +238,51 @@ func TestRefuseUnusableSeedRows_PerRowTurnsRespectTheCeiling(t *testing.T) {
 	require.NoError(t, refuseUnusableSeedRows(group, overridden))
 	overridden[0]["simulation_configuration"] = map[string]any{"desired_num_turns": 6.0, "max_num_turns": 4.0}
 	require.ErrorContains(t, refuseUnusableSeedRows(group, overridden), "simulation_configuration.max_num_turns is 4")
+}
+
+func TestSimulationTurnLimitGuidance(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name           string
+		maxTurns       int
+		perCaseMaximum int
+		desiredTurns   int
+		wantSuggestion string
+	}{
+		{"above authored maximum", 20, 0, 21,
+			"Lower simulation_configuration.desired_num_turns to at most 20 on that row. " +
+				"simulation.max_turns accepts 1 to 20."},
+		{"above authored maximum with lower cap", 5, 0, 21,
+			"Lower simulation_configuration.desired_num_turns to at most 5 on that row. " +
+				"simulation.max_turns accepts 1 to 20."},
+		{"above effective default", 0, 0, 21,
+			"Lower simulation_configuration.desired_num_turns to at most 20 on that row. " +
+				"simulation.max_turns accepts 1 to 20."},
+		{"within authored bounds", 5, 0, 6,
+			"Raise simulation.max_turns to at least 6, or lower simulation_configuration.desired_num_turns on that row."},
+		{"at authored maximum", 19, 0, 20,
+			"Raise simulation.max_turns to at least 20, or lower simulation_configuration.desired_num_turns on that row."},
+		{"per-case bounds remain independent", 20, 21, 22,
+			"Raise simulation_configuration.max_num_turns to at least 22, " +
+				"or lower simulation_configuration.desired_num_turns on that row."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			group := runnableSimulation()
+			group.Simulation.MaxTurns = tc.maxTurns
+			config := map[string]any{seedTurnsField: tc.desiredTurns}
+			if tc.perCaseMaximum > 0 {
+				config["max_num_turns"] = tc.perCaseMaximum
+			}
+
+			err := checkDesiredTurns(group, map[string]any{seedConfigField: config}, 0)
+			local, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "turn-limit errors must remain structured: %v", err)
+			assert.Equal(t, exterrors.CodeInvalidParameter, local.Code)
+			assert.Equal(t, tc.wantSuggestion, local.Suggestion)
+		})
+	}
 }
 
 func TestSimulationSeedDescriptionLength(t *testing.T) {

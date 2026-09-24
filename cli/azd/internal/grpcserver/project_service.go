@@ -21,7 +21,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -36,6 +38,7 @@ type projectService struct {
 	lazyProjectConfig   *lazy.Lazy[*project.ProjectConfig]
 	ghCli               *github.Cli
 	configMutationMu    sync.Mutex
+	saveProject         func(context.Context, *project.ProjectConfig, string) error
 }
 
 // NewProjectService creates a new project service instance with lazy-loaded dependencies.
@@ -64,6 +67,7 @@ func NewProjectService(
 		lazyProjectConfig:   lazyProjectConfig,
 		importManager:       importManager,
 		ghCli:               ghCli,
+		saveProject:         project.Save,
 	}
 }
 
@@ -284,8 +288,24 @@ func (s *projectService) AddService(ctx context.Context, req *azdext.AddServiceR
 	serviceConfig.Project = projectConfig
 	serviceConfig.Name = req.Service.Name
 
+	previous, existed := projectConfig.Services[req.Service.Name]
 	projectConfig.Services[req.Service.Name] = serviceConfig
-	if err := project.Save(ctx, projectConfig, azdContext.ProjectPath()); err != nil {
+	if err := s.saveProject(ctx, projectConfig, azdContext.ProjectPath()); err != nil {
+		if existed {
+			projectConfig.Services[req.Service.Name] = previous
+		} else {
+			delete(projectConfig.Services, req.Service.Name)
+		}
+		// Save, including atomic-file retries and cleanup, is synchronous.
+		// Restore the cache before acknowledging that this attempt cannot write later.
+		incoming, _ := metadata.FromIncomingContext(ctx)
+		if tokens := incoming.Get("azd-project-add-service-operation"); len(tokens) == 1 &&
+			len(tokens[0]) > 0 && len(tokens[0]) <= 64 {
+			if trailerErr := grpc.SetTrailer(ctx,
+				metadata.Pairs("azd-project-add-service-save-failed", tokens[0])); trailerErr != nil {
+				return nil, fmt.Errorf("%w; acknowledging completed save failure: %w", err, trailerErr)
+			}
+		}
 		return nil, err
 	}
 

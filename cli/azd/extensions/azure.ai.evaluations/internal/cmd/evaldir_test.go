@@ -380,8 +380,8 @@ func TestNextStepQuotesADirectoryThatNeedsIt(t *testing.T) {
 		},
 		{
 			name:    "a windows path with a space",
-			evalDir: `C:\Users\Me\My Evals`,
-			want:    `--path "C:\Users\Me\My Evals"`,
+			evalDir: filepath.FromSlash("C:/Users/Me/My Evals"),
+			want:    `--path "C:/Users/Me/My Evals"`,
 		},
 		{
 			name:    "a plain relative path is left alone",
@@ -389,9 +389,9 @@ func TestNextStepQuotesADirectoryThatNeedsIt(t *testing.T) {
 			want:    "--path ./quality",
 		},
 		{
-			name:    "a plain windows path is left alone",
-			evalDir: `C:\Users\Me\quality`,
-			want:    `--path C:\Users\Me\quality`,
+			name:    "a native path uses shell-safe separators",
+			evalDir: filepath.FromSlash("C:/Users/Me/quality"),
+			want:    "--path C:/Users/Me/quality",
 		},
 		{
 			// Double quotes do not stop $ expanding in POSIX shells or
@@ -399,7 +399,7 @@ func TestNextStepQuotesADirectoryThatNeedsIt(t *testing.T) {
 			// the directory name says. Named instead of inlined.
 			name:    "a character the shell would expand",
 			evalDir: "./eval$dir",
-			want:    "--path VALUE_NEEDS_QUOTING",
+			want:    "",
 		},
 		{
 			name:    "a character that would end the command",
@@ -412,6 +412,10 @@ func TestNextStepQuotesADirectoryThatNeedsIt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := scaffold{eval: &project.Eval{Name: "an-eval"}, evalDir: tc.evalDir}
 			steps := s.nextSteps()
+			if tc.want == "" {
+				assert.Empty(t, steps, "unsafe paths require manual guidance, not a placeholder command")
+				return
+			}
 			require.NotEmpty(t, steps)
 			for _, step := range steps {
 				assert.Contains(t, step, tc.want, "step %q", step)
@@ -420,9 +424,7 @@ func TestNextStepQuotesADirectoryThatNeedsIt(t *testing.T) {
 	}
 }
 
-// Backslashes must survive: doubling them is right for bash and wrong for the
-// two shells most likely to be reading a path that looks like this.
-func TestQuoteForShellLeavesBackslashesAlone(t *testing.T) {
-	assert.Equal(t, `"C:\Users\Me\My Evals"`, quoteForShell(`C:\Users\Me\My Evals`))
-	assert.Equal(t, `C:\Users\Me\Evals`, quoteForShell(`C:\Users\Me\Evals`))
+func TestQuoteForShellNormalizesNativePathSeparators(t *testing.T) {
+	assert.Equal(t, `"C:/Users/Me/My Evals"`, quoteForShell(filepath.FromSlash("C:/Users/Me/My Evals")))
+	assert.Equal(t, "C:/Users/Me/Evals", quoteForShell(filepath.FromSlash("C:/Users/Me/Evals")))
 }

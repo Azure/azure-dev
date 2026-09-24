@@ -1,0 +1,154 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package messages
+
+import (
+	"fmt"
+
+	"azureaieval/internal/exterrors"
+)
+
+// InitWiringRolledBack reports a failed root edit whose scaffold was undone.
+func InitWiringRolledBack(configPath string, err error) error {
+	return fmt.Errorf("%w; the initialization edit to %q was rolled back. "+
+		"Fix the root configuration write error, then retry the same init command", err, configPath)
+}
+
+// InitWiringRollbackFailed preserves both errors and calls for manual recovery.
+func InitWiringRollbackFailed(configPath string, err, rollbackErr error) error {
+	return fmt.Errorf("%w; could not safely roll back %q: %w. "+
+		"Inspect the eval configuration and its azure.yaml service reference before retrying; "+
+		"do not delete existing evaluations", err, configPath, rollbackErr)
+}
+
+// InitFlagConflict reports explicit inputs that cannot be honored together.
+func InitFlagConflict(flag, requirement string) error {
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		fmt.Sprintf("--%s %s", flag, requirement),
+		"Remove the conflicting flag, or select a compatible source and conversation mode.")
+}
+
+// InitDatasetFileConflict refuses a file that would be ignored by add-only authoring.
+func InitDatasetFileConflict(name, path string) error {
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		fmt.Sprintf("Dataset %q is already declared with a different file or no local file; "+
+			"%q would reuse that name. Choose a file with a different filename stem to add this dataset.", name, path),
+		"Init never replaces dataset declarations. To reuse the existing dataset, supply its name or its current file path.")
+}
+
+// InitDatasetNameInvalid refuses a filename that cannot name a catalog entry.
+func InitDatasetNameInvalid(path, name string) error {
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("Dataset file %q derives invalid catalog name %q", path, name),
+		"Rename the file to give it a non-empty stem other than . or .., "+
+			"at most 255 bytes long and without path separators or control characters.")
+}
+
+// InitFlagRange names both the input and its supported bounds.
+func InitFlagRange(flag string, value, minimum, maximum int) error {
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--%s is %d; it accepts %d to %d", flag, value, minimum, maximum),
+		"Choose a value in the supported range, or omit the flag for the default.")
+}
+
+// ConversationModeNotAChoice reports an unsupported authoring mode.
+func ConversationModeNotAChoice(value string) error {
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		fmt.Sprintf("--conversation-mode %q is not supported; choose static or simulation", value),
+		"Use static for completed messages, or simulation for scenario seeds and an agent target.")
+}
+
+// SelectConversationModePrompt asks whether the conversations already exist.
+func SelectConversationModePrompt() string { return "How should the conversations be evaluated?" }
+
+// ConversationModeChoices explains the difference before any files are written.
+func ConversationModeChoices() []string {
+	return []string{
+		"Static      Score completed messages without invoking an agent",
+		"Simulation  Generate conversations from scenario seeds against an agent",
+	}
+}
+
+// SimulationModelRequired names the independent model choice needed for simulation.
+func SimulationModelRequired() error {
+	return exterrors.Validation(exterrors.CodeInvalidParameter,
+		"--simulation-model is required for --conversation-mode simulation",
+		"Supply connection-name/model-deployment for the simulated user, independently of the judge and generation models.")
+}
+
+// SimulationModelPrompt asks for the simulated user's deployment, without guessing.
+func SimulationModelPrompt() string { return "Simulation model (connection-name/model-deployment)" }
+
+// SimulationModelHelp explains why the generation or judge model is not a default.
+func SimulationModelHelp() string {
+	return "Use connection-name/model-deployment for the simulated user, such as model-connection/gpt-4.1-nano. " +
+		"This is separate from the generation model and --judge-model."
+}
+
+// JudgeModelPrompt asks for a deployment when local configuration has none.
+func JudgeModelPrompt() string { return "Judge model deployment" }
+
+// JudgeModelHelp distinguishes grading from conversation generation.
+func JudgeModelHelp() string { return "Name a deployed model for the evaluators to judge with." }
+
+// HandoffEvaluatorIncompatible explains why a generated rubric is not in the next command.
+func HandoffEvaluatorIncompatible(name string) string {
+	return fmt.Sprintf("  warning: evaluator %q does not support the generated dataset's evaluation level. "+
+		"It remains in the catalogue; the init command uses builtin.task_completion instead.\n", name)
+}
+
+// InitHandoffGuidance names missing resource and model inputs for the next command.
+func InitHandoffGuidance(simulation, hasTarget, hasDataset bool) string {
+	flags := "--judge-model <judge-deployment>"
+	if simulation {
+		flags += " --simulation-model <connection-name/model-deployment>"
+	}
+	var prerequisites string
+	if !hasTarget {
+		prerequisites += "  Before running init, add --target <agent-name> if no agent service is declared locally.\n"
+		flags += " --target <agent-name>"
+	}
+	if !hasDataset {
+		prerequisites += "  No dataset was generated. Select existing data with --source dataset " +
+			"--dataset <dataset-name-or-jsonl-path>, or choose --source traces with a configured trace connection.\n"
+		flags += " --source dataset --dataset <dataset-name-or-jsonl-path>"
+	}
+	return prerequisites + "  Run this init command interactively to resolve missing inputs.\n" +
+		"  For unattended use, add --no-prompt " + flags +
+		". Choose these deployments independently of --generation-model.\n"
+}
+
+// InitCreateManualInputs names exact create inputs when no portable command can be printed.
+func InitCreateManualInputs(evalName, configPath string) string {
+	return fmt.Sprintf("  Next step: create the authored evaluation with azd ai eval create.\n"+
+		"  Evaluation name: %q\n  --path value: %q\n"+
+		"  These are escaped values, not shell arguments. Quote them for your shell; "+
+		"no copyable command is shown because portable quoting cannot preserve the path.\n", evalName, configPath)
+}
+
+// InitHandoffManualInputs preserves values that cannot be safely quoted for every shell.
+func InitHandoffManualInputs(configPath, agent, dataset, level, evaluator string) string {
+	text := "  Next step: initialize an evaluation from the generated artifacts with azd ai eval init.\n" +
+		"  Each value below is an escaped string, not a shell argument. Quote each value for your shell.\n" +
+		"  No copyable command is shown because portable quoting cannot preserve every value.\n"
+	if configPath != "" {
+		text += fmt.Sprintf("  --path value: %q\n", configPath)
+	}
+	if agent != "" {
+		text += fmt.Sprintf("  --target value: %q\n", agent)
+	}
+	if dataset != "" {
+		text += fmt.Sprintf("  --source value: \"dataset\"; --dataset value: %q\n", dataset)
+	}
+	if level != "" {
+		text += fmt.Sprintf("  --evaluation-level value: %q\n", level)
+	}
+	if level == "conversation" {
+		text += "  Select --conversation-mode simulation for the generated conversation seeds.\n"
+	}
+	if evaluator != "" {
+		text += fmt.Sprintf("  --evaluator values: \"builtin.task_completion\" and %q\n", evaluator)
+	}
+	return text
+}

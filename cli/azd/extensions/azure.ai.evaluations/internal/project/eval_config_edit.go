@@ -6,7 +6,10 @@ package project
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"azureaieval/internal/messages"
@@ -37,59 +40,134 @@ func (w ScaffoldWrite) Empty() bool {
 // decisions are made from the decoded configuration, but only the new entries
 // are written, so comments and any key these structs do not model survive.
 func ApplyScaffold(evalDir string, write ScaffoldWrite) error {
+	_, err := ApplyScaffoldWithRollback(evalDir, write)
+	return err
+}
+
+// ApplyScaffoldWithRollback applies an add-only edit and returns its compensating
+// rollback. The caller must hold LockEvalConfig through both application and
+// rollback. Rollback refuses to replace a file changed after this edit.
+func ApplyScaffoldWithRollback(evalDir string, write ScaffoldWrite) (func() error, error) {
 	if write.Empty() {
-		return nil
+		return func() error { return nil }, nil
 	}
 	if err := checkOneConfig(evalDir); err != nil {
-		return err
+		return nil, err
 	}
 	if _, err := ensureEvalDir(evalDir); err != nil {
-		return err
+		return nil, err
 	}
 	path := resolvedConfigPath(evalDir)
 
-	doc, err := readConfigDocument(path)
+	info, err := os.Lstat(path)
+	existed := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, messages.ReadingEvalConfig(path, err)
+	}
+	var mode os.FileMode
+	var linkTarget string
+	if existed {
+		mode = info.Mode().Perm()
+		if info.Mode()&os.ModeSymlink != 0 {
+			linkTarget, err = os.Readlink(path)
+			if err != nil {
+				return nil, messages.ReadingEvalConfig(path, err)
+			}
+		}
+	}
+	// #nosec G304 -- preserve the exact configuration the caller selected.
+	before, err := os.ReadFile(path)
+	if err != nil && (!errors.Is(err, os.ErrNotExist) || (existed && linkTarget == "")) {
+		return nil, messages.ReadingEvalConfig(path, err)
+	}
+	doc, err := parseConfigDocument(path, before)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	root, err := documentMapping(doc)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	for _, decl := range write.Datasets {
 		seq, err := mappingSequence(root, "datasets")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if err := appendEncoded(seq, decl); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	for _, decl := range write.Evaluators {
 		seq, err := mappingSequence(root, "evaluators")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if err := appendEncoded(seq, decl); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	for _, eval := range write.Evals {
 		seq, err := mappingSequence(root, "evals")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if err := appendEncoded(seq, eval); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	out, err := marshalConfigDocument(doc)
 	if err != nil {
-		return messages.SerializingEvalConfig(err)
+		return nil, messages.SerializingEvalConfig(err)
 	}
-	return writeConfigBytes(path, out)
+	if err := writeConfigBytes(path, out); err != nil {
+		return nil, err
+	}
+	return func() error {
+		info, err := os.Lstat(path)
+		if !existed && errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return messages.ReadingEvalConfig(path, err)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("configuration %q is no longer a regular file; leaving it unchanged", path)
+		}
+		// #nosec G304 -- compare this edit's destination before rolling it back.
+		current, err := os.ReadFile(path)
+		if err != nil {
+			return messages.ReadingEvalConfig(path, err)
+		}
+		if !bytes.Equal(current, out) {
+			return fmt.Errorf("configuration %q changed after initialization; leaving it unchanged", path)
+		}
+		if !existed {
+			return os.Remove(path)
+		}
+		if linkTarget != "" {
+			return restoreScaffoldSymlink(path, linkTarget)
+		}
+		if err := writeConfigBytes(path, before); err != nil {
+			return err
+		}
+		return os.Chmod(path, mode)
+	}, nil
+}
+
+func restoreScaffoldSymlink(path, target string) error {
+	dir, err := os.MkdirTemp(filepath.Dir(path), ".azd-eval-rollback-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(dir)
+	link := filepath.Join(dir, "config")
+	if err := os.Symlink(target, link); err != nil {
+		return err
+	}
+	defer os.Remove(link)
+	return ReplaceFile(link, path)
 }
 
 // appendEncoded renders one entry and appends it to a sequence.
@@ -125,10 +203,35 @@ func readConfigDocument(path string) (*yaml.Node, error) {
 		return nil, messages.ReadingEvalConfig(path, err)
 	}
 
+	return parseConfigDocument(path, body)
+}
+
+func parseConfigDocument(path string, body []byte) (*yaml.Node, error) {
 	doc := &yaml.Node{}
-	if len(body) > 0 {
-		if err := yaml.Unmarshal(body, doc); err != nil {
-			return nil, messages.ParsingEvalConfig(path, err)
+	decoder := yaml.NewDecoder(bytes.NewReader(body))
+	if err := decoder.Decode(doc); err != nil && !errors.Is(err, io.EOF) {
+		return nil, messages.ParsingEvalConfig(path, err)
+	}
+	var extra yaml.Node
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			err = errors.New("multiple YAML documents are not supported; use one configuration document")
+		}
+		return nil, messages.ParsingEvalConfig(path, err)
+	}
+	if len(doc.Content) > 0 && doc.Content[0].Kind == yaml.MappingNode {
+		root := doc.Content[0]
+		keys := make(map[string]bool, len(root.Content)/2)
+		for i := 0; i+1 < len(root.Content); i += 2 {
+			key := root.Content[i]
+			if key.Kind != yaml.ScalarNode || key.Tag != "!!str" {
+				return nil, messages.ParsingEvalConfig(path,
+					errors.New("top-level keys must be literal strings, not merges, aliases or complex keys"))
+			}
+			if keys[key.Value] {
+				return nil, messages.ParsingEvalConfig(path, fmt.Errorf("duplicate top-level key %q", key.Value))
+			}
+			keys[key.Value] = true
 		}
 	}
 	return doc, nil

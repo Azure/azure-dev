@@ -17,7 +17,7 @@ import (
 	"strings"
 )
 
-const urlStartPattern = `(?i)(?:\bhttps?:[/\\]*|\b[a-z][a-z0-9+.-]*:[/\\]{1,2}|[/\\]{2})`
+const urlStartPattern = `(?i)(?:https?:[/\\]*|\b[a-z][a-z0-9+.-]*:[/\\]{1,2}|[/\\]{2})`
 
 var (
 	embeddedURL = regexp.MustCompile(urlStartPattern + `[^\s]+`)

@@ -218,6 +218,27 @@ func TestTextRedactsMalformedSchemeURLs(t *testing.T) {
 
 }
 
+func TestTextRedactsHTTPURLsAfterIdentifiers(t *testing.T) {
+	for _, prefix := range []string{"url_", "value7", "field", "caf\u00e9"} {
+		for _, scheme := range []string{"https:", "http:/", "HtTpS:/", `https:\`, "https://", "https:///"} {
+			raw := prefix + scheme + "fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment"
+			for _, message := range []string{
+				"Failed " + raw,
+				"https://safe.example/path," + raw,
+			} {
+				t.Run(message, func(t *testing.T) {
+					safe := Text(message)
+					for _, secret := range []string{
+						"fixture-user", "fixture-password", "fixture-signature", "fixture-fragment", "sig=",
+					} {
+						assert.NotContains(t, safe, secret)
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestTextPreservesCredentialFreeDiagnosticContext(t *testing.T) {
 	for _, message := range []string{
 		`Cannot open C:\data\rows.jsonl`,
@@ -226,6 +247,8 @@ func TestTextPreservesCredentialFreeDiagnosticContext(t *testing.T) {
 		"Evaluation failed: retry after checking the dataset.",
 		"Could not initialize https://service.example/evals/run",
 		"Could not read //storage.example/data/rows.jsonl",
+		"Check url_https and fieldhttp settings.",
+		"Failed url_https://service.example/run",
 	} {
 		assert.Equal(t, message, Text(message))
 	}

@@ -490,6 +490,7 @@ func TestRunFailureRedactsMalformedURLs(t *testing.T) {
 	const malformed = "https:/fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment"
 	for _, message := range []string{
 		"Failed " + malformed,
+		"Failed url_" + malformed,
 		`{"primary":"https://safe.example/a","secondary":"` + malformed + `"}`,
 	} {
 		for _, render := range []func(io.Writer, *eval_api.OpenAIEvalRun) error{

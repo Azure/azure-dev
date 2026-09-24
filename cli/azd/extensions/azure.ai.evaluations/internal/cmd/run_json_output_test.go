@@ -24,6 +24,9 @@ func TestRunShowJSONRedactsKnownErrorDiagnosticsOnly(t *testing.T) {
 		`https:\fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment`,
 		"HtTpS://fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment",
 		"//fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment",
+		"url_https:/fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment",
+		"url_HtTpS:fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment",
+		`url_https:\fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment`,
 	} {
 		t.Run(diagnosticURL, func(t *testing.T) {
 			errorText, err := json.Marshal("Failed " + diagnosticURL)
@@ -76,31 +79,37 @@ func TestRunShowJSONRedactsKnownErrorDiagnosticsOnly(t *testing.T) {
 }
 
 func TestExportRedactsOnlyKnownRunErrorFields(t *testing.T) {
-	const original = `{"id":"run_failed","error":{
+	const response = `{"id":"run_failed","error":{
 		"message":"Failed https:/fixture-user:fixture-password@host/file?sig=fixture-signature#fixture-fragment",
 		"code":null,"unknown":9007199254740993},
 		"result_counts":{"failed":null},"user_data":{"url":"https://user.example/?sig=keep","number":9007199254740993}}`
 	const item = `{"id":"1","datasource_item":{"url":"https://data.example/?sig=keep","number":9007199254740993}}`
-	doc := exportDocument{Run: json.RawMessage(original), Items: []json.RawMessage{json.RawMessage(item)}}
-	var out bytes.Buffer
-	require.NoError(t, writeExport(&out, doc))
-	var decoded exportDocument
-	require.NoError(t, json.Unmarshal(out.Bytes(), &decoded))
-	assert.NotContains(t, string(decoded.Run), "fixture-user")
-	assert.NotContains(t, string(decoded.Run), "fixture-password")
-	assert.NotContains(t, string(decoded.Run), "fixture-signature")
-	assert.NotContains(t, string(decoded.Run), "fixture-fragment")
-	var compact bytes.Buffer
-	require.NoError(t, json.Compact(&compact, decoded.Run))
-	assert.Contains(t, compact.String(), `"code":null`)
-	assert.Contains(t, compact.String(), `"unknown":9007199254740993`)
-	assert.Contains(t, compact.String(), `"result_counts":{"failed":null}`)
-	assert.Contains(t, compact.String(), `"user_data":{"url":"https://user.example/?sig=keep","number":9007199254740993}`)
-	require.Len(t, decoded.Items, 1)
-	compact.Reset()
-	require.NoError(t, json.Compact(&compact, decoded.Items[0]))
-	assert.Equal(t, item, compact.String())
-	assert.Equal(t, original, string(doc.Run), "copy-on-output must not mutate stored raw export data")
+	for _, prefix := range []string{"", "url_"} {
+		t.Run("prefix="+prefix, func(t *testing.T) {
+			original := strings.Replace(response, "Failed https:", "Failed "+prefix+"https:", 1)
+			doc := exportDocument{Run: json.RawMessage(original), Items: []json.RawMessage{json.RawMessage(item)}}
+			var out bytes.Buffer
+			require.NoError(t, writeExport(&out, doc))
+			var decoded exportDocument
+			require.NoError(t, json.Unmarshal(out.Bytes(), &decoded))
+			assert.NotContains(t, string(decoded.Run), "fixture-user")
+			assert.NotContains(t, string(decoded.Run), "fixture-password")
+			assert.NotContains(t, string(decoded.Run), "fixture-signature")
+			assert.NotContains(t, string(decoded.Run), "fixture-fragment")
+			var compact bytes.Buffer
+			require.NoError(t, json.Compact(&compact, decoded.Run))
+			assert.Contains(t, compact.String(), `"code":null`)
+			assert.Contains(t, compact.String(), `"unknown":9007199254740993`)
+			assert.Contains(t, compact.String(), `"result_counts":{"failed":null}`)
+			assert.Contains(t, compact.String(),
+				`"user_data":{"url":"https://user.example/?sig=keep","number":9007199254740993}`)
+			require.Len(t, decoded.Items, 1)
+			compact.Reset()
+			require.NoError(t, json.Compact(&compact, decoded.Items[0]))
+			assert.Equal(t, item, compact.String())
+			assert.Equal(t, original, string(doc.Run), "copy-on-output must not mutate stored raw export data")
+		})
+	}
 }
 
 func TestExportErrorProjectionPreservesAbsentAndNullAndRejectsMalformed(t *testing.T) {

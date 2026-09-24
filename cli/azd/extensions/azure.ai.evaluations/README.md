@@ -328,7 +328,8 @@ shape and exit behavior without appending human guidance.
 
 CLI-generated JSON error envelopes, accompanying stderr diagnostics, and the
 run's known `error.code`/`error.message` fields in JSON and exports also redact
-embedded URL credentials. This projection does not mutate the service response
+embedded URL credentials, including malformed HTTP(S) URLs concatenated to
+identifiers without a separator. This projection does not mutate the service response
 or rewrite dataset/output content and unknown fields. Those other fields can
 still contain sensitive source data; keep exported files private.
 

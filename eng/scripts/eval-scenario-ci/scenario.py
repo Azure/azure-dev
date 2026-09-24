@@ -6,18 +6,14 @@
 
 import argparse
 import copy
-from contextlib import contextmanager
 from datetime import datetime, timezone
 import importlib.util
 import json
 import os
 from pathlib import Path
 import re
-import shutil
 import subprocess
 import sys
-import tempfile
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -38,6 +34,8 @@ spec.loader.exec_module(proof_module)
 require = proof_module.require
 sha256 = proof_module.sha256
 write_json = proof_module.write_json
+cleanup_owned_workspace = proof_module.cleanup_owned_workspace
+owned_workspace = proof_module.owned_workspace
 
 
 def safe_text(value):
@@ -203,38 +201,6 @@ def live_status():
         "paidGeneration": "NOT AUTHORIZED", "deployment": "NOT AUTHORIZED",
         "interactiveCancellation": "NOT RUN; offline argument refusals are not PTY proof.",
     }
-
-
-def cleanup_owned_workspace(root):
-    for attempt in range(40):
-        try:
-            shutil.rmtree(root)
-            return
-        except PermissionError as error:
-            if getattr(error, "winerror", None) not in (5, 32) or attempt == 39:
-                raise
-            time.sleep(0.25)
-
-
-@contextmanager
-def owned_workspace(report):
-    root = Path(tempfile.mkdtemp(prefix="azd-scenarios-"))
-    try:
-        yield root
-    except (AssertionError, KeyError, ValueError, OSError, RuntimeError, subprocess.SubprocessError) as error:
-        report["failure"] = {
-            "type": type(error).__name__, "message": proof_module.sanitize(str(error), root),
-        }
-        raise
-    finally:
-        try:
-            cleanup_owned_workspace(root)
-        except OSError as error:
-            report["cleanup"] = {
-                "status": "FAIL", "error": proof_module.sanitize(str(error), root),
-            }
-            raise
-        report["cleanup"] = {"status": "PASS"}
 
 
 def installed_evidence(proof, pin):

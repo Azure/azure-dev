@@ -14,18 +14,24 @@ The output directory contains only explicitly selected, sanitized evidence.
 """
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import os
 from pathlib import Path
 import platform
 import re
+import shutil
 import subprocess
 import tarfile
 import tempfile
+import time
 import urllib.parse
 import urllib.request
 import zipfile
+
+
+DATASET_ARITY_ERROR = r"^accepts 1 arg\(s\), received 0$"
 
 
 def require(condition, message):
@@ -60,6 +66,36 @@ def snapshot_tree(directory):
         )
         for path in directory.rglob("*")
     }
+
+
+def cleanup_owned_workspace(root):
+    for attempt in range(40):
+        try:
+            shutil.rmtree(root)
+            return
+        except PermissionError as error:
+            if getattr(error, "winerror", None) not in (5, 32) or attempt == 39:
+                raise
+            time.sleep(0.25)
+
+
+@contextmanager
+def owned_workspace(report):
+    root = Path(tempfile.mkdtemp(prefix="eval-cli-proof-"))
+    try:
+        yield root
+    except (AssertionError, KeyError, ValueError, OSError, RuntimeError, subprocess.SubprocessError) as error:
+        report["failure"] = {
+            "type": type(error).__name__, "message": sanitize(str(error), root),
+        }
+        raise
+    finally:
+        try:
+            cleanup_owned_workspace(root)
+        except OSError as error:
+            report["cleanup"] = {"status": "FAIL", "error": sanitize(str(error), root)}
+            raise
+        report["cleanup"] = {"status": "PASS"}
 
 
 def download(url, digest, directory):
@@ -379,7 +415,7 @@ class Proof:
              "absent.jsonl"),
             ("malformed dataset row", ["create", "ci-data", "--from-file", str(malformed)], "line 2"),
             ("empty dataset", ["update", "ci-data", "--from-file", str(empty)], "empty"),
-            ("missing dataset argument", ["show"], "arg"),
+            ("missing dataset argument", ["show"], DATASET_ARITY_ERROR),
             ("unknown dataset flag", ["list", "--not-a-real-flag"], "unknown flag"),
         ]
         for name, args, error in invalid_dataset:
@@ -868,52 +904,59 @@ def main():
     args.output.mkdir(parents=True, exist_ok=False)
     pin = json.loads(Path(__file__).with_name("candidate.json").read_text(encoding="utf-8"))
     write_json(args.output / "candidate.json", pin)
-    with tempfile.TemporaryDirectory(prefix="eval-cli-proof-") as directory:
-        proof = Proof(Path(directory), args.output, pin)
-        report = {
-            "coverage": "offline CLI only",
-            "liveCloudEvaluation": "NOT RUN",
-            "cloudQualityGate": "NOT RUN",
-            "interactiveCorrection": "NOT RUN",
-            "failedCloudRunVerification": "NOT RUN",
-            "initSeedValidationEnabled": pin.get("initSeedValidation", False),
-            "initDatasetBindingEnabled": pin.get("initDatasetBinding", False),
-            "authRequired": (
-                "An existing Azure service identity with an authorized GitHub OIDC trust "
-                "for this fork/ref, tenant/client identifiers, and least-privilege access "
-                "to an isolated Foundry project and its existing model/agent resources. "
-                "Devbox user credentials must not be copied into CI."
-            ),
-            "platform": proof.platform,
-            "workflowCommit": os.environ.get("GITHUB_SHA"),
-            "runUrl": (
-                f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/"
-                f"{os.environ['GITHUB_RUN_ID']}"
-            ) if "GITHUB_RUN_ID" in os.environ else None,
-            "status": "failed",
-        }
-        try:
+    report = {
+        "coverage": "offline CLI only",
+        "liveCloudEvaluation": "NOT RUN",
+        "cloudQualityGate": "NOT RUN",
+        "interactiveCorrection": "NOT RUN",
+        "failedCloudRunVerification": "NOT RUN",
+        "initSeedValidationEnabled": pin.get("initSeedValidation", False),
+        "initDatasetBindingEnabled": pin.get("initDatasetBinding", False),
+        "authRequired": (
+            "An existing Azure service identity with an authorized GitHub OIDC trust "
+            "for this fork/ref, tenant/client identifiers, and least-privilege access "
+            "to an isolated Foundry project and its existing model/agent resources. "
+            "Devbox user credentials must not be copied into CI."
+        ),
+        "workflowCommit": os.environ.get("GITHUB_SHA"),
+        "runUrl": (
+            f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/"
+            f"{os.environ['GITHUB_RUN_ID']}"
+        ) if "GITHUB_RUN_ID" in os.environ else None,
+        "status": "failed",
+        "cleanup": {"status": "NOT RUN"},
+    }
+    proof = None
+    try:
+        with owned_workspace(report) as directory:
+            proof = Proof(directory, args.output, pin)
+            report["platform"] = proof.platform
             proof.install()
             proof.exercise()
-            report["status"] = "passed"
-        finally:
-            report["checks"] = proof.checks
-            write_json(args.output / "results.json", report)
-            write_json(args.output / "commands.json", proof.commands)
-            summary = (
-                f"## Offline evaluation CLI: {report['status']}\n\n"
-                f"- Release: `{pin['releaseTag']}`\n"
-                f"- Source: `{pin['sourceCommit'] or 'unattested baseline'}`\n"
-                f"- Platform: `{proof.platform}`\n"
-                f"- CLI command checks passed: {len(proof.checks)}\n"
-                "- Live cloud evaluation and quality gate: **NOT RUN** (no CI identity).\n"
-                "- Evidence contains only synthetic authoring, sanitized command output, "
-                "versions and checksum pins. No auth/config caches are uploaded.\n"
-            )
-            args.output.joinpath("summary.md").write_text(summary, encoding="utf-8")
-            if "GITHUB_STEP_SUMMARY" in os.environ:
-                with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as stream:
-                    stream.write(summary)
+        report["status"] = "passed"
+    finally:
+        report["checks"] = proof.checks if proof else []
+        write_json(args.output / "results.json", report)
+        write_json(args.output / "commands.json", proof.commands if proof else [])
+        summary = (
+            f"## Offline evaluation CLI: {report['status']}\n\n"
+            f"- Release: `{pin['releaseTag']}`\n"
+            f"- Source: `{pin['sourceCommit'] or 'unattested baseline'}`\n"
+            f"- Platform: `{report.get('platform', 'not initialized')}`\n"
+            f"- CLI command checks passed: {len(report['checks'])}\n"
+            f"- Cleanup: **{report['cleanup']['status']}**\n"
+            "- Live cloud evaluation and quality gate: **NOT RUN** (no CI identity).\n"
+            "- Evidence contains only synthetic authoring, sanitized command output, "
+            "versions and checksum pins. No auth/config caches are uploaded.\n"
+        )
+        if report.get("failure"):
+            summary += f"- Scenario failure: {report['failure']['message']}\n"
+        if report["cleanup"].get("error"):
+            summary += f"- Cleanup failure: {report['cleanup']['error']}\n"
+        args.output.joinpath("summary.md").write_text(summary, encoding="utf-8")
+        if os.environ.get("GITHUB_STEP_SUMMARY"):
+            with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as stream:
+                stream.write(summary)
 
 
 if __name__ == "__main__":

@@ -291,8 +291,8 @@ The current fresh Windows checks do not replace the historical broader matrices.
 | Release | Identity and receipt | Status and limitations |
 | --- | --- | --- |
 | 40 | [Build 40 receipt][build40], evaluations `1.0.40-beta`, dataset `1.0.0-beta.28` | Historical scoped local/terminal/live results, including the responses-backed execution `FAIL`. Do not relabel as 41. |
-| 41 | [Frozen build 41 receipt][build41], evaluations `1.0.41-beta`, dataset `1.0.0-beta.29`, source `8ef8b6df77336950c60506ab2966037f579d92cd`, azd `>=1.33.0` | Published Latest. Historical targeted package acceptance and four hosted jobs `PASS`; newly installed Windows identity/help checks also `PASS`. Broad live reruns, all platforms, and all seven regressions are not claimed. |
-| 42 | Public [release `extensions-2026-09-24-42`][release42], evaluations `1.0.42-beta`, dataset `1.0.0-beta.30`, core `1.33.0`, frozen source [`d40a3b5a1e7c5944b1b43decd14c96096a99e5b6`][source42]. Registry SHA256 `83026575746f7db5c5cc7a3035f9e75b776f709875d2f0768bd9c215aaaca635`. | Published non-Latest prerelease. Both local Windows acceptance scopes and all four [hosted jobs][hosted42] are `PASS`; both hosted OS artifact sets were downloaded and verified. Latest promotion is a separate decision, not implied by this receipt. No new live/cloud-contract acceptance claim. |
+| 41 | [Frozen build 41 receipt][build41], evaluations `1.0.41-beta`, dataset `1.0.0-beta.29`, source `8ef8b6df77336950c60506ab2966037f579d92cd`, azd `>=1.33.0` | Historical release, previously Latest. Targeted package acceptance and four hosted jobs `PASS`; separately, the new scenario run resolved this release before promotion and passed 168 checks per OS. Broad live reruns, all platforms, and all seven regressions are not claimed. |
+| 42 | Public [release `extensions-2026-09-24-42`][release42], evaluations `1.0.42-beta`, dataset `1.0.0-beta.30`, core `1.33.0`, frozen source [`d40a3b5a1e7c5944b1b43decd14c96096a99e5b6`][source42]. Registry SHA256 `83026575746f7db5c5cc7a3035f9e75b776f709875d2f0768bd9c215aaaca635`. | Latest promotion approved at **2026-09-24T03:17:39Z**. Publisher verified all 15 anonymous assets, a fresh unversioned Latest install, stable registry/docs contents, and preservation of historical asset identities at [feed revision `967b631`][feed42]. Both local Windows acceptance scopes and all four [hosted jobs][hosted42] are `PASS`; both OS artifact sets were downloaded and verified. No new live/cloud-contract acceptance claim. |
 
 The local build 42 practical receipt covers six cases and 25 assertions: three
 init/reattachment journeys and three help-only cases. Its 16 records include
@@ -364,12 +364,21 @@ work. Do not create a different runner or owner for each CI provider.
 
 | ID | Required behavior and evidence | Current execution status |
 | --- | --- | --- |
-| CI-01 | Resolve Latest once, freeze a job manifest with exact release/source/versions/registry/archive/executable digests, and install those bytes in an isolated configuration. Parallel jobs use that same resolved identity, not a moving Latest URL. | `NOT RUN` for the new scenario pipelines |
-| CI-02 | Execute actual no-prompt CLI authoring and recovery cases, checking commands, JSON, exit codes, errors, cancellation semantics, reproducible environment/configuration, and state preservation. Record limits of non-terminal cancellation checks. | `NOT RUN` for the new scenario pipelines |
-| CI-03 | Publish sanitized command/assertion reports and artifact manifests with actual workflow/build/job links. Download and inspect the artifacts independently; successful YAML validation alone is not a CI execution result. | `NOT RUN` |
-| CI-04 | Run the shared offline scenario suite through the new GitHub Actions entry point with least-privilege permissions and bounded timeouts. Keep cloud-service scenarios separate. | `NOT RUN` |
-| CI-05 | Run the same offline suite through Azure DevOps using an explicitly authorized existing organization/project/pipeline/repository connection and available capacity. Do not guess or mutate a shared pipeline to manufacture a run. | `BLOCKED` until that execution tuple is verified; YAML/local validation may proceed |
-| CI-06 | Wire real create/evaluate/run/export jobs behind explicit identity, existing owned resource, budget, duration, and cleanup parameters. Missing prerequisites produce a clear `BLOCKED` or `NOT RUN` report, never a live-test success. | `BLOCKED`; no approved live identity/resource/cost tuple |
+| CI-01 | Resolve Latest once, freeze a job manifest with exact release/source/versions/registry/archive/executable digests, and install those bytes in an isolated configuration. Parallel jobs use that same resolved identity, not a moving Latest URL. | `PASS` in [scenario run 35950594406][scenario41]: resolved build 41 once; producer/Linux/Windows manifest bytes match |
+| CI-02 | Execute actual no-prompt CLI authoring and recovery cases, checking commands, JSON, exit codes, errors, cancellation semantics, reproducible environment/configuration, and state preservation. Record limits of non-terminal cancellation checks. | `PASS` for 168 offline checks per OS: 160 retained plus six configuration-isolation commands and two cancellation-argument refusals; interactive/service cancellation remains `NOT RUN` |
+| CI-03 | Publish sanitized command/assertion reports and artifact manifests with actual workflow/build/job links. Download and inspect the artifacts independently; successful YAML validation alone is not a CI execution result. | `PASS`: resolver pin and both OS artifact sets downloaded; commands, state, cleanup, runtime versions, archive/binary digests and blocked-live receipts verified |
+| CI-04 | Run the shared offline scenario suite through the new GitHub Actions entry point with least-privilege permissions and bounded timeouts. Keep cloud-service scenarios separate. | `PASS` at `d6818868d81ee59b5782c0a0a12413d008cbb9ff`; live branch was not requested and is not counted as a pass |
+| CI-05 | Run the same offline suite through Azure DevOps using an explicitly authorized existing organization/project/pipeline/repository connection and available capacity. Do not guess or mutate a shared pipeline to manufacture a run. | `BLOCKED`: YAML/local validation passed, but scoped native metadata discovery found no matching authorized scenario-pipeline tuple; no Azure DevOps execution claimed |
+| CI-06 | Wire real create/evaluate/run/export jobs behind explicit identity, existing owned resource, budget, duration, and cleanup parameters. Missing prerequisites produce a clear `BLOCKED` or `NOT RUN` report, never a live-test success. | `BLOCKED`: fail-closed prerequisite reporting is implemented, but no authenticated service executor or live identity/resource/budget tuple is activated |
+
+The first new scenario producer resolved build 41 at
+**2026-09-24T03:14:18.582604Z**, before build 42's Latest promotion. Its manifest
+SHA256 is `1912ef0f221f0ce6f517dcd972d2cb7783ead701f89eff1a3c2a3841d3d9957b`.
+Both OS consumers used those exact bytes and finished all 168 checks with
+successful owned-workspace cleanup. This is not a build 42 scenario run merely
+because Latest changed afterwards. See the [runner guide][scenario-guide] for
+reproduction, artifact layout, authorization boundaries, and the distinct
+fixed-candidate workflow.
 
 No exported developer credentials, new IAM grants, shared public-runner
 registration, unapproved Azure spending, or generation jobs are authorized by
@@ -488,6 +497,9 @@ optional recommendations.
 [hosted41]: https://github.com/m7md7sien/azure-dev/actions/runs/35851410814
 [hosted42]: https://github.com/m7md7sien/azure-dev/actions/runs/35949654046
 [release42]: https://github.com/m7md7sien/azd-foundry-feed/releases/tag/extensions-2026-09-24-42
+[feed42]: https://github.com/m7md7sien/azd-foundry-feed/tree/967b631b97cad2d05ca165a985d5010d51bc1f64
+[scenario41]: https://github.com/m7md7sien/azure-dev/actions/runs/35950594406
+[scenario-guide]: evaluation-scenario-ci.md
 [source42]: https://github.com/m7md7sien/azure-dev/commit/d40a3b5a1e7c5944b1b43decd14c96096a99e5b6
 [init-source-repairs]: https://github.com/m7md7sien/azure-dev/commit/32ff9bc772e7500b37ba99709401709e9bda1165
 [agent-rules]: ../../cli/azd/AGENTS.md#testing-best-practices

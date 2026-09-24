@@ -143,6 +143,13 @@ class ResolutionTests(unittest.TestCase):
 
 
 class SafetyTests(unittest.TestCase):
+    def setUp(self):
+        environment = mock.patch.dict(scenario.os.environ, {})
+        environment.start()
+        self.addCleanup(environment.stop)
+        for key in ("GITHUB_STEP_SUMMARY", "GITHUB_RUN_ID", "BUILD_BUILDID"):
+            scenario.os.environ.pop(key, None)
+
     def test_cancel_arity_diagnostic_does_not_match_unrelated_errors(self):
         self.assertRegex("accepts at most 1 arg(s), received 2", scenario.CANCEL_ARITY_ERROR)
         for message in ("target not found", "invalid argument", "accepts at most 1 arg(s), received 3"):
@@ -151,12 +158,12 @@ class SafetyTests(unittest.TestCase):
     def test_cleanup_retries_only_transient_windows_sharing_failures(self):
         sharing = PermissionError("owned executable still closing")
         sharing.winerror = 32
-        with mock.patch.object(scenario.shutil, "rmtree", side_effect=[sharing, None]) as remove:
-            with mock.patch.object(scenario.time, "sleep") as wait:
+        with mock.patch.object(scenario.proof_module.shutil, "rmtree", side_effect=[sharing, None]) as remove:
+            with mock.patch.object(scenario.proof_module.time, "sleep") as wait:
                 scenario.cleanup_owned_workspace(Path("owned-only"))
                 self.assertEqual(remove.call_count, 2)
                 wait.assert_called_once_with(0.25)
-        with mock.patch.object(scenario.shutil, "rmtree", side_effect=PermissionError("denied")) as remove:
+        with mock.patch.object(scenario.proof_module.shutil, "rmtree", side_effect=PermissionError("denied")) as remove:
             with self.assertRaises(PermissionError):
                 scenario.cleanup_owned_workspace(Path("owned-only"))
             self.assertEqual(remove.call_count, 1)
@@ -183,8 +190,8 @@ class SafetyTests(unittest.TestCase):
             with mock.patch.object(scenario.proof_module, "Proof", return_value=fake), \
                  mock.patch.object(scenario, "installed_evidence", return_value={}), \
                  mock.patch.object(scenario, "extra_scenarios", side_effect=extras), \
-                 mock.patch.object(scenario.tempfile, "mkdtemp", return_value=str(owned)), \
-                 mock.patch.object(scenario, "cleanup_owned_workspace", side_effect=failure):
+                 mock.patch.object(scenario.proof_module.tempfile, "mkdtemp", return_value=str(owned)), \
+                 mock.patch.object(scenario.proof_module, "cleanup_owned_workspace", side_effect=failure):
                 with self.assertRaises(PermissionError):
                     scenario.execute(manifest, output)
             report = json.loads((output / "results.json").read_text())
@@ -207,8 +214,8 @@ class SafetyTests(unittest.TestCase):
             fake.exercise.side_effect = AssertionError(f"primary failure in {owned}")
             with mock.patch.object(scenario.proof_module, "Proof", return_value=fake), \
                  mock.patch.object(scenario, "installed_evidence", return_value={}), \
-                 mock.patch.object(scenario.tempfile, "mkdtemp", return_value=str(owned)), \
-                 mock.patch.object(scenario, "cleanup_owned_workspace",
+                 mock.patch.object(scenario.proof_module.tempfile, "mkdtemp", return_value=str(owned)), \
+                 mock.patch.object(scenario.proof_module, "cleanup_owned_workspace",
                                    side_effect=PermissionError("cleanup locked")):
                 with self.assertRaises(PermissionError):
                     scenario.execute(manifest, output)
@@ -253,6 +260,47 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(report["runUrl"],
                          "https://dev.azure.com/example/Offline%20proof/_build/results?buildId=42")
         self.assertNotIn("secret", json.dumps(report))
+
+    def test_legacy_receipt_requires_both_scenario_and_cleanup_success(self):
+        legacy = scenario.proof_module
+        for scenario_fails, cleanup_fails in ((False, False), (True, False), (False, True), (True, True)):
+            with self.subTest(scenario_fails=scenario_fails, cleanup_fails=cleanup_fails):
+                with tempfile.TemporaryDirectory() as root:
+                    output = Path(root) / "evidence"
+                    owned = Path(root) / "owned"
+                    owned.mkdir()
+                    fake = mock.Mock()
+                    fake.platform, fake.commands, fake.checks = "windows/amd64", [], ["fixture"]
+                    if scenario_fails:
+                        fake.exercise.side_effect = AssertionError("original scenario failure")
+                    remove = legacy.cleanup_owned_workspace
+                    cleanup = PermissionError("cleanup failure") if cleanup_fails else remove
+                    with mock.patch.object(legacy, "Proof", return_value=fake), \
+                         mock.patch.object(legacy.tempfile, "mkdtemp", return_value=str(owned)), \
+                         mock.patch.object(legacy, "cleanup_owned_workspace", side_effect=cleanup), \
+                         mock.patch.object(legacy.argparse.ArgumentParser, "parse_args",
+                                           return_value=mock.Mock(output=output)):
+                        if scenario_fails or cleanup_fails:
+                            with self.assertRaises((AssertionError, PermissionError)):
+                                legacy.main()
+                        else:
+                            legacy.main()
+                    report = json.loads((output / "results.json").read_text())
+                    self.assertEqual(report["status"], "failed" if scenario_fails or cleanup_fails else "passed")
+                    self.assertEqual(report["cleanup"]["status"], "FAIL" if cleanup_fails else "PASS")
+                    summary = (output / "summary.md").read_text()
+                    if scenario_fails:
+                        self.assertEqual(report["failure"]["message"], "original scenario failure")
+                        self.assertIn("original scenario failure", summary)
+                    if cleanup_fails:
+                        self.assertEqual(report["cleanup"]["error"], "cleanup failure")
+                        self.assertIn("cleanup failure", summary)
+
+    def test_legacy_dataset_arity_refuses_target_error(self):
+        expected = scenario.proof_module.DATASET_ARITY_ERROR
+        self.assertRegex("accepts 1 arg(s), received 0", expected)
+        self.assertNotRegex("target not found", expected)
+        self.assertNotRegex("accepts 1 arg(s), received 2", expected)
 
     def test_redacts_url_credentials_query_and_fragment(self):
         text = scenario.safe_text("failed https://username:password@host.invalid/a?sig=sas-secret#fragment-secret")

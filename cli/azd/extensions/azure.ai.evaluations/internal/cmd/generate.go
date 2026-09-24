@@ -617,6 +617,13 @@ func (ec *evalContext) collectDataset(
 		if err != nil {
 			return nil, messages.DownloadingGeneratedDataset(name, err)
 		}
+		normalized := false
+		if ref.EvaluationLevel == project.EvaluationLevelConversation {
+			content, normalized, err = normalizeGeneratedSeedRows(content)
+			if err != nil {
+				return nil, messages.DatasetProblem(name, err)
+			}
+		}
 		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 			return nil, messages.Creating(filepath.Dir(path), err)
 		}
@@ -626,8 +633,14 @@ func (ec *evalContext) collectDataset(
 		fmt.Fprint(out, messages.WroteArtifact(path))
 		writeJobWarnings(out, "dataset", completed, path)
 
-		// Only downloaded bytes are known to match the registered version.
-		ec.recordDeployedDataset(ctx, localName, path, version)
+		// Transformed bytes must be published by the explicit create/deploy step,
+		// not fingerprinted as though the original generated version held them.
+		if normalized {
+			ec.forget(ctx, project.FingerprintKey("dataset", localName), versionKey("dataset", localName))
+			fmt.Fprint(out, messages.NormalizedSimulationSeeds())
+		} else {
+			ec.recordDeployedDataset(ctx, localName, path, version)
+		}
 	}
 	ec.applyGeneratedDatasetTags(ctx, registered, ref.EvaluationLevel)
 	return ref, nil

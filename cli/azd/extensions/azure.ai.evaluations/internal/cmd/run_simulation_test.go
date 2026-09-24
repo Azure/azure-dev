@@ -27,7 +27,7 @@ func runnableSimulation() *project.Eval {
 		EvaluationLevel: project.EvaluationLevelConversation,
 		Target:          &project.Target{Type: project.TargetTypeAgent, Name: "hero-agent"},
 		Simulation: &project.Simulation{
-			Model:            "gpt-4o-mini",
+			Model:            "model-connection/gpt-4o-mini",
 			NumConversations: 1,
 			MaxTurns:         5,
 		},
@@ -55,6 +55,17 @@ func TestSimulationRefusalNamesTheEval(t *testing.T) {
 	assert.Contains(t, err.Error(), `eval "retail-multiturn"`,
 		"the reader has to know which declaration to edit")
 	assert.Contains(t, err.Error(), "describe different runs")
+}
+
+func TestSimulationRejectsUnqualifiedModelBeforeNetwork(t *testing.T) {
+	ec, requests := identityRunContext(t, identityService{})
+	group := runnableSimulation()
+	group.Simulation.Model = "bare-deployment"
+	source, version, err := ec.buildRunDataSource(t.Context(), group, "", 0)
+	require.ErrorContains(t, err, "connection-name/model-deployment")
+	assert.Nil(t, source)
+	assert.Empty(t, version)
+	assert.Empty(t, recordedIdentityRequests(requests))
 }
 
 // Spec §5: every row is validated before any service mutation, and mixed seed

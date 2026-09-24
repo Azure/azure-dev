@@ -3,7 +3,12 @@
 
 package project
 
-import "fmt"
+import (
+	"fmt"
+	"regexp"
+)
+
+var simulationModelReference = regexp.MustCompile(`^[^/\s]+/[^/\s]+$`)
 
 // Simulation declares that an eval creates its conversations rather than
 // scoring ones it was given.
@@ -15,7 +20,7 @@ import "fmt"
 type Simulation struct {
 	// Model is the deployment the simulated user speaks with. It is not the
 	// judge model an evaluator initializes, and not the model that generated
-	// the seeds -- three separate choices that happen to be models.
+	// the seeds. It uses the connection-name/model-deployment reference format.
 	Model string `yaml:"model,omitempty"             json:"model,omitempty"`
 
 	// NumConversations is how many conversations to create per scenario.
@@ -96,6 +101,9 @@ func (s *Simulation) Validate() error {
 
 	if s.Model == "" {
 		return fmt.Errorf("simulation.model is required: it names the deployment the simulated user speaks with")
+	}
+	if !simulationModelReference.MatchString(s.Model) {
+		return fmt.Errorf("simulation.model must use connection-name/model-deployment format")
 	}
 
 	if s.NumConversations != 0 &&

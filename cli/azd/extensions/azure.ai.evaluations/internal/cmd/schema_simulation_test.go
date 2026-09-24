@@ -85,21 +85,29 @@ func TestSimulationSchemaAndRuntimeAgree(t *testing.T) {
 		omit       bool
 		simulation map[string]any
 		wantErr    bool
+		modelError string
 	}{
 		{name: "omitted", omit: true},
 		{name: "explicit zero"},
 		{name: "positive cap", cap: 1, wantErr: true},
 		{name: "negative cap", cap: -1, wantErr: true},
-		{name: "missing model", simulation: map[string]any{}, wantErr: true},
-		{name: "empty model", simulation: map[string]any{"model": ""}, wantErr: true},
-		{name: "null model", simulation: map[string]any{"model": nil}, wantErr: true},
-		{name: "single character model", simulation: map[string]any{"model": "m"}},
-		{name: "named deployment", simulation: map[string]any{"model": "simulator-deployment"}},
+		{name: "missing model", simulation: map[string]any{}, wantErr: true, modelError: "is required"},
+		{name: "empty model", simulation: map[string]any{"model": ""}, wantErr: true, modelError: "is required"},
+		{name: "null model", simulation: map[string]any{"model": nil}, wantErr: true, modelError: "is required"},
+		{name: "bare model", simulation: map[string]any{"model": "deployment"}, wantErr: true, modelError: "format"},
+		{name: "missing connection", simulation: map[string]any{"model": "/deployment"},
+			wantErr: true, modelError: "format"},
+		{name: "missing deployment", simulation: map[string]any{"model": "connection/"},
+			wantErr: true, modelError: "format"},
+		{name: "extra slash", simulation: map[string]any{"model": "c/d/extra"}, wantErr: true, modelError: "format"},
+		{name: "whitespace", simulation: map[string]any{"model": "c/ "}, wantErr: true, modelError: "format"},
+		{name: "single character names", simulation: map[string]any{"model": "c/m"}},
+		{name: "named deployment", simulation: map[string]any{"model": "connection/simulator-deployment"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			simulation := tc.simulation
 			if simulation == nil {
-				simulation = map[string]any{"model": "simulator"}
+				simulation = map[string]any{"model": "connection/simulator"}
 			}
 			eval := map[string]any{
 				"name": "simulated", "dataset": "seeds", "evaluation_level": "conversation",
@@ -124,8 +132,9 @@ func TestSimulationSchemaAndRuntimeAgree(t *testing.T) {
 			if tc.wantErr {
 				assert.Error(t, schemaErr)
 				assert.Error(t, runtimeErr)
-				if tc.simulation != nil {
-					assert.ErrorContains(t, runtimeErr, "simulation.model is required")
+				if tc.modelError != "" {
+					assert.ErrorContains(t, runtimeErr, "simulation.model")
+					assert.ErrorContains(t, runtimeErr, tc.modelError)
 				}
 			} else {
 				assert.NoError(t, schemaErr)

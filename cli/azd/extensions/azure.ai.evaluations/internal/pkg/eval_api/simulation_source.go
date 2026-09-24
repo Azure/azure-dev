@@ -14,7 +14,8 @@ const EvalRunDataSourceTypeUserConversationSimulation EvalRunDataSourceType = //
 "azure_ai_user_conversation_simulation_preview"
 
 // ModelConfiguration names the deployment the simulated user speaks with. It is
-// not the judge model an evaluator initializes.
+// not the judge model an evaluator initializes. Model references use
+// connection-name/model-deployment, as required by EvaluationModelConfiguration.
 type ModelConfiguration struct {
 	Model string `json:"model,omitempty"`
 }

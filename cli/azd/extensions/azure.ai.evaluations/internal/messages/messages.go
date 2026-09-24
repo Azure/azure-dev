@@ -1448,6 +1448,12 @@ func WroteArtifact(path string) string {
 	return fmt.Sprintf("%s Downloaded %s\n", doneMark, filepath.ToSlash(path))
 }
 
+// NormalizedSimulationSeeds explains why transformed local rows need publication.
+func NormalizedSimulationSeeds() string {
+	return "Normalized generated turn settings into simulation_configuration. " +
+		"Publish the local dataset with `azd ai eval create` or `azd up` before running it.\n"
+}
+
 // ArtifactExists reports a generation that would overwrite a checked-in file.
 func ArtifactExists(path string) error {
 	return fmt.Errorf(

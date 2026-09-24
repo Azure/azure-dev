@@ -17,7 +17,7 @@ import (
 func TestNewSimulationDataSource_WireShape(t *testing.T) {
 	t.Parallel()
 
-	ds := NewSimulationDataSource("hero-agent", "gpt-4o-mini", 1, 5)
+	ds := NewSimulationDataSource("hero-agent", "connection/gpt-4o-mini", 1, 5)
 	ds.SetFileID("azureai://accounts/acct/data/seeds/versions/1.0")
 
 	body, err := json.Marshal(ds)
@@ -40,7 +40,7 @@ func TestNewSimulationDataSource_WireShape(t *testing.T) {
 
 	model, ok := decoded["model_configuration"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "gpt-4o-mini", model["model"])
+	assert.Equal(t, "connection/gpt-4o-mini", model["model"])
 
 	sim, ok := decoded["default_simulation_configuration"].(map[string]any)
 	require.True(t, ok)
@@ -59,7 +59,7 @@ func TestNewSimulationDataSource_WireShape(t *testing.T) {
 func TestNewSimulationDataSource_BindsNoQuestionTemplate(t *testing.T) {
 	t.Parallel()
 
-	ds := NewSimulationDataSource("hero-agent", "gpt-4o-mini", 1, 5)
+	ds := NewSimulationDataSource("hero-agent", "connection/gpt-4o-mini", 1, 5)
 
 	assert.Nil(t, ds.InputMessages, "a seed row has no question on it to bind")
 	assert.Empty(t, ds.TemplateItemFields())
@@ -73,7 +73,7 @@ func TestNewSimulationDataSource_BindsNoQuestionTemplate(t *testing.T) {
 func TestNewSimulationDataSource_OmitsAnUnstatedTurnBound(t *testing.T) {
 	t.Parallel()
 
-	body, err := json.Marshal(NewSimulationDataSource("hero-agent", "gpt-4o-mini", 1, 0))
+	body, err := json.Marshal(NewSimulationDataSource("hero-agent", "connection/gpt-4o-mini", 1, 0))
 	require.NoError(t, err)
 
 	var decoded map[string]any
@@ -97,7 +97,7 @@ func TestSimulationDiscriminatorIsDistinctFromTargetCompletions(t *testing.T) {
 	assert.Equal(t, EvalRunDataSourceTypeAgentTarget,
 		NewAgentTargetDataSource("hero-agent", nil).Type)
 	assert.Equal(t, EvalRunDataSourceTypeUserConversationSimulation,
-		NewSimulationDataSource("hero-agent", "gpt-4o-mini", 1, 5).Type)
+		NewSimulationDataSource("hero-agent", "connection/gpt-4o-mini", 1, 5).Type)
 	assert.Nil(t, NewAgentTargetDataSource("hero-agent", nil).DataMapping)
 	assert.Nil(t, NewDatasetOnlyDataSource().DataMapping)
 }

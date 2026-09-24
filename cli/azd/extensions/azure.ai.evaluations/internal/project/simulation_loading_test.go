@@ -32,7 +32,7 @@ func TestSimulationProductionLoadersRejectExplicitZero(t *testing.T) {
 		for _, value := range []any{0, nil} {
 			t.Run(fmt.Sprintf("%s/%v", field, value), func(t *testing.T) {
 				want := "simulation." + field + " is 0"
-				config := simulationLoaderConfig(map[string]any{"model": "simulator", field: value})
+				config := simulationLoaderConfig(map[string]any{"model": "connection/simulator", field: value})
 				flow, err := json.Marshal(config)
 				require.NoError(t, err)
 				scalar, err := json.Marshal(value)
@@ -65,9 +65,9 @@ func TestSimulationProductionLoadersPreserveOmissionsAndBounds(t *testing.T) {
 		count      int
 		turns      int
 	}{
-		{"omitted", map[string]any{"model": "simulator"}, 0, 0},
-		{"minimum", map[string]any{"model": "simulator", "num_conversations": 1, "max_turns": 1}, 1, 1},
-		{"maximum", map[string]any{"model": "simulator", "num_conversations": 5, "max_turns": 20}, 5, 20},
+		{"omitted", map[string]any{"model": "connection/simulator"}, 0, 0},
+		{"minimum", map[string]any{"model": "connection/simulator", "num_conversations": 1, "max_turns": 1}, 1, 1},
+		{"maximum", map[string]any{"model": "connection/simulator", "num_conversations": 5, "max_turns": 20}, 5, 20},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			config := simulationLoaderConfig(tc.simulation)

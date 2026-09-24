@@ -124,7 +124,7 @@ evals:
     dataset: retail-seeds
     evaluation_level: conversation
     simulation:
-      model: gpt-4.1-nano       # plays the user, not the agent under test
+      model: model-connection/gpt-4.1-nano # plays the user, not the agent under test
       num_conversations: 3      # per seed row, 1–5
       max_turns: 8              # 1–20; omit to leave it to the service
     evaluators:
@@ -156,6 +156,10 @@ authoring limits from the CLI feature specification, not maxima imposed by the
 Foundry preview service. They remain unchanged here; per-case settings follow
 the override rules below.
 
+`simulation.model` must name an existing connection and deployment as
+`connection-name/model-deployment`. Bare deployment names are rejected before a
+run is submitted; the CLI does not guess a connection or reuse the judge model.
+
 The dataset holds **seeds**, not exchanges. One row describes one conversation
 to have:
 
@@ -170,9 +174,21 @@ inside `simulation_configuration`, matching
 the [published Foundry contract](https://github.com/Azure/azure-rest-api-specs/blob/main/specification/ai-foundry/data-plane/Foundry/src/openai/evaluations/user_conversation_simulation.tsp).
 The optional `desired_num_turns` must not exceed the effective `max_num_turns`:
 the per-row maximum overrides `simulation.max_turns`, and the service default is
-20 when neither is set. A flat top-level `desired_num_turns` is rejected because
-the service would ignore it; move it into `simulation_configuration` and publish
-a new dataset version.
+20 when neither is set. Generation can return a flat top-level `desired_num_turns`.
+When collecting generated conversation seeds, the CLI moves that value into
+`simulation_configuration` in the downloaded local file. Canonical rows remain
+byte-identical, and unrelated fields are preserved without rounding numeric IDs.
+The returned artifact version identifies the original generation job's output,
+not the normalized local bytes. The CLI clears stale local publication state
+instead of recording a deployed fingerprint for those transformed bytes:
+`azd ai eval create` or `azd up` publishes the file explicitly before a simulation run
+binds the resulting service-issued version ID. Collection never silently publishes
+a replacement version, and an existing edited file is still preserved unless
+`--force` is supplied.
+
+An independently registered dataset still carrying a flat turn field is rejected
+at run time because the simulator would ignore it. Move the field into
+`simulation_configuration` and explicitly publish a new version before running.
 
 Runs send `data_mapping` for `test_case_description` and
 `simulation_configuration` as column names, not `{{item...}}` templates. Registered

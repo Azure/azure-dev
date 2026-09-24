@@ -23,7 +23,11 @@ identifiers, credentials, prompts or configuration payloads are emitted.
 ## Coverage and behavior
 
 - Extension init collects explicit kind intent, refining it at existing selection,
-  definition/adoption and reuse points. Failed RunE returns attempt to report the
+  definition/adoption and reuse points. Kind intent is recorded after the existing
+  positional-input parser: a source directory and its equivalent `--src` input
+  retain the same kind; explicit manifest input suppresses kind intent until the
+  definition is parsed. Positional-input errors retain `unknown` and their original
+  error behavior. Failed RunE returns attempt to report the
   last classification; successful init reports after the existing post-run context
   event so the original event has priority in the shared budget. Unknown intent is not inferred from
   later success. Failure before RunE, process termination or unavailable telemetry

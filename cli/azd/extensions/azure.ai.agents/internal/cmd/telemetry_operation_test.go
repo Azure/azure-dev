@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -300,6 +302,79 @@ func TestOperationReporterHonorsCancellation(t *testing.T) {
 	start := time.Now()
 	reportInitOperation(ctx) // no state: no connection or wait
 	require.Less(t, time.Since(start), time.Second)
+}
+
+func TestInitOperationPositionalIntentOnFailure(t *testing.T) {
+	for _, tt := range []struct {
+		name, category, message string
+		args                    []string
+	}{
+		{"directory", "hosted", "--voice is only supported",
+			[]string{"./app", "--kind", "hosted", "--voice", "Ava"}},
+		{"source-flag", "hosted", "--voice is only supported",
+			[]string{"--src", "./app", "--kind", "hosted", "--voice", "Ava"}},
+		{"new-directory", "hosted", "--voice is only supported",
+			[]string{"./new-app", "--kind", "hosted", "--voice", "Ava"}},
+		{"new-source-flag", "hosted", "--voice is only supported",
+			[]string{"--src", "./new-app", "--kind", "hosted", "--voice", "Ava"}},
+		{"manifest-file", "unknown", "--voice is only supported",
+			[]string{"./azure.yaml", "--kind", "hosted", "--voice", "Ava"}},
+		{"manifest-flag", "unknown", "--voice is only supported",
+			[]string{"-m", "./azure.yaml", "--kind", "hosted", "--voice", "Ava"}},
+		{"manifest-url", "unknown", "--voice is only supported",
+			[]string{"https://example.invalid/azure.yaml", "--kind", "hosted", "--voice", "Ava"}},
+		{"manifest-plus-directory", "unknown", "--voice is only supported",
+			[]string{"./app", "-m", "./azure.yaml", "--kind", "hosted", "--voice", "Ava"}},
+		{"no-kind", "unknown", "--voice is only supported",
+			[]string{"./app", "--voice", "Ava"}},
+		{"conflicting-sources", "unknown", "cannot pass both a positional directory argument and --src",
+			[]string{"./app", "--src", "./app", "--kind", "hosted"}},
+		{"conflicting-manifests", "unknown", "cannot pass both a positional argument and --manifest",
+			[]string{"./azure.yaml", "-m", "./azure.yaml", "--kind", "hosted"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			require.NoError(t, os.Mkdir("app", 0700))
+			const code = "# unchanged customer source\n"
+			const manifest = "services: {}\n"
+			require.NoError(t, os.WriteFile(filepath.Join("app", "main.py"), []byte(code), 0600))
+			require.NoError(t, os.WriteFile("azure.yaml", []byte(manifest), 0600))
+			server := grpc.NewServer()
+			capture := &operationTelemetryServer{}
+			azdext.RegisterTelemetryServiceServer(server, capture)
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			go func() { _ = server.Serve(listener) }()
+			t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+			t.Setenv("AZD_SERVER", listener.Addr().String())
+			// Only telemetry is registered: original early validation must still stop
+			// before project, authentication or template/download requests.
+			cmd := newInitCommand(&azdext.ExtensionContext{NoPrompt: true})
+			var output bytes.Buffer
+			cmd.SetOut(&output)
+			cmd.SetErr(&output)
+			cmd.SetArgs(tt.args)
+			require.ErrorContains(t, cmd.Execute(), tt.message)
+			phone := "none"
+			if tt.category == "unknown" {
+				phone = "unknown"
+			}
+			capture.mu.Lock()
+			defer capture.mu.Unlock()
+			require.Len(t, capture.events, 1)
+			require.Equal(t, "agent.operation.v1.init."+tt.category+"."+phone, capture.events[0].EventName)
+			require.Empty(t, capture.events[0].Attributes)
+			content, err := os.ReadFile(filepath.Join("app", "main.py"))
+			require.NoError(t, err)
+			require.Equal(t, code, string(content))
+			content, err = os.ReadFile("azure.yaml")
+			require.NoError(t, err)
+			require.Equal(t, manifest, string(content))
+			entries, err := os.ReadDir(".")
+			require.NoError(t, err)
+			require.Len(t, entries, 2, "telemetry must not scaffold or create the missing source directory")
+		})
+	}
 }
 
 func TestInitOperationReportsAfterCancellationWithoutChangingResult(t *testing.T) {

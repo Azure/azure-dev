@@ -1336,9 +1336,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
     --image registry.example.com/agents/my-agent:v1 --registry-connection production-registry`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
-			// Record bounded intent before validation so failures are not a success-only sample.
-			ctx := withInitOperationContext(azdext.WithAccessToken(cmd.Context()), flags.kind,
-				flags.manifestPointer != "" || len(args) > 0)
+			// Capture failures as unknown until existing positional parsing resolves the input.
+			ctx := withInitOperationContext(azdext.WithAccessToken(cmd.Context()), "", false)
 			cmd.SetContext(ctx)
 			defer func() {
 				if runErr != nil {
@@ -1355,6 +1354,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if err := applyPositionalArg(args[0], flags, cmd); err != nil {
 					return err
 				}
+			}
+			// A source directory is equivalent to --src, not an explicit manifest.
+			// Record kind intent before later validation can fail, without extra reads.
+			if flags.manifestPointer == "" && flags.kind != "" {
+				recordInitProperties(ctx, map[string]any{"kind": flags.kind})
 			}
 
 			// Capture whether the user explicitly provided a manifest (via -m flag

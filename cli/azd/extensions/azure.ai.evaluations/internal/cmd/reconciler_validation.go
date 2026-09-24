@@ -85,13 +85,12 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		var body json.RawMessage
-		var err error
-		if decl.CarriesItsRubric() {
-			body, _, err = localEvaluator(decl, project.ResolveSource(baseDir, decl.Source))
-		} else {
-			body, err = r.ec.evalClient.GetEvaluatorRaw(ctx, decl.Name, decl.Version, ProjectEndpointAPIVersion)
+		// Registered-only entries are resolved below using each reference's
+		// effective pin, which may override an unused catalog default.
+		if !decl.CarriesItsRubric() {
+			continue
 		}
+		body, _, err := localEvaluator(decl, project.ResolveSource(baseDir, decl.Source))
 		if err != nil {
 			return messages.EvaluatorProblem(decl.Name, err)
 		}
@@ -99,28 +98,29 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 		if err != nil {
 			return messages.EvaluatorProblem(decl.Name, err)
 		}
-		if decl.CarriesItsRubric() && schema.SupportedEvaluationLevels == nil {
+		if schema.SupportedEvaluationLevels == nil {
 			schema.SupportedEvaluationLevels = slices.Clone(decl.SupportedEvaluationLevels)
 		}
-		if decl.CarriesItsRubric() {
-			// Authored rubrics omit the schemas Foundry adds on publication.
-			// Reuse that contract when present, without replacing authored
-			// fields or treating a failed read as a missing evaluator.
-			remote, err := r.ec.evalClient.GetEvaluatorRaw(ctx, decl.Name, "", ProjectEndpointAPIVersion)
-			if err != nil && !eval_api.IsNotFound(err) {
-				return messages.CheckingEvaluatorExists(decl.Name, err)
+		// Authored rubrics omit the schemas Foundry adds on publication.
+		// Reuse that contract when present, without replacing authored
+		// fields or treating a failed read as a missing evaluator.
+		remote, err := r.ec.evalClient.GetEvaluatorRaw(ctx, decl.Name, "", ProjectEndpointAPIVersion)
+		if err != nil && !eval_api.IsNotFound(err) {
+			return messages.CheckingEvaluatorExists(decl.Name, err)
+		}
+		if err == nil {
+			published, err := evaluatorContract(remote)
+			if err != nil {
+				return messages.EvaluatorProblem(decl.Name, err)
 			}
-			if err == nil {
-				published, err := evaluatorContract(remote)
-				if err != nil {
-					return messages.EvaluatorProblem(decl.Name, err)
-				}
-				if schema.Definition.DataSchema == nil {
-					schema.Definition.DataSchema = published.DataSchema()
-				}
-				if schema.Definition.InitParameters == nil {
-					schema.Definition.InitParameters = published.InitSchema()
-				}
+			if schema.Definition.DataSchema == nil {
+				schema.Definition.DataSchema = published.DataSchema()
+			}
+			if schema.Definition.InitParameters == nil {
+				schema.Definition.InitParameters = published.InitSchema()
+			}
+			if schema.SupportedEvaluationLevels == nil {
+				schema.SupportedEvaluationLevels = slices.Clone(published.SupportedEvaluationLevels)
 			}
 		}
 		schemas[evaluatorSchemaKey(decl.Name, decl.Version)] = schema

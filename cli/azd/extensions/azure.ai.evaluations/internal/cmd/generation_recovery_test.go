@@ -85,7 +85,8 @@ func generationRecoveryFixture(t *testing.T) (*evalContext, []generationPlan, st
 func recoveryRubricJob() *eval_api.GenerationJob {
 	return &eval_api.GenerationJob{
 		ID: "evaluator-job", Status: "succeeded",
-		Result: json.RawMessage(`{"name":"quality","version":"1","definition":` +
+		Result: json.RawMessage(`{"name":"quality","version":"1","display_name":"Support quality",` +
+			`"categories":["quality","agents"],"supported_evaluation_levels":["turn","conversation"],"definition":` +
 			`{"type":"rubric","dimensions":[{"id":"helpfulness","description":"Helpful"}]}}`),
 	}
 }
@@ -173,11 +174,23 @@ func TestGenerationCatalogFailureCanRecoverWithoutRegeneration(t *testing.T) {
 	assert.Contains(t, doc["evaluator"].Recovery, "job show evaluator-job --evaluator")
 	require.FileExists(t, filepath.Join(dir, "evaluators", "quality.json"))
 
+	artifactPath := filepath.Join(dir, "evaluators", "quality.json")
+	edited := []byte(`{"type":"rubric","dimensions":[{"id":"helpfulness","description":"Locally edited"}]}`)
+	require.NoError(t, os.WriteFile(artifactPath, edited, 0o600))
 	require.NoError(t, os.WriteFile(path, []byte(recoveryEvalConfig), 0o600))
 	action := &jobShowAction{cmd: cmd, flags: &jobFlags{path: dir}}
 	for range 2 {
 		_, err = action.collect(t.Context(), ec, evaluatorJobs, recoveryRubricJob(), io.Discard)
 		require.NoError(t, err)
+		cfg, err := project.OpenEvalConfig(dir)
+		require.NoError(t, err)
+		require.Len(t, cfg.Evaluators, 1)
+		assert.Equal(t, "Support quality", cfg.Evaluators[0].DisplayName)
+		assert.Equal(t, []string{"quality", "agents"}, cfg.Evaluators[0].Categories)
+		assert.Equal(t, []string{"turn", "conversation"}, cfg.Evaluators[0].SupportedEvaluationLevels)
+		actual, err := os.ReadFile(artifactPath)
+		require.NoError(t, err)
+		assert.Equal(t, edited, actual, "recovering catalog metadata must preserve local rubric edits")
 	}
 	cfg, err := project.OpenEvalConfig(dir)
 	require.NoError(t, err)

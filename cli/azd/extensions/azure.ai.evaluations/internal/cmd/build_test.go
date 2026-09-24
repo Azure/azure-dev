@@ -4,12 +4,14 @@
 package cmd
 
 import (
+	"encoding/json"
 	"testing"
 
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
 
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 )
 
@@ -255,6 +257,9 @@ func TestBuildResolvesConversationTurnExclusivity(t *testing.T) {
 	mapping := req.TestingCriteria[0].DataMapping
 	require.Contains(t, mapping, "query")
 	require.NotContains(t, mapping, "messages")
+	turnProperties, ok := req.DataSourceConfig.ItemSchema["properties"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, map[string]any{"type": "string"}, turnProperties["query"])
 
 	// Conversation level keeps messages and drops query/response.
 	conv := groupWith(withJudge("m", evalcore.EvaluatorRef{Evaluator: "builtin.task_completion"}),
@@ -265,6 +270,11 @@ func TestBuildResolvesConversationTurnExclusivity(t *testing.T) {
 	require.Contains(t, mapping, "messages")
 	require.NotContains(t, mapping, "query")
 	require.NotContains(t, mapping, "response")
+	conversationProperties, ok := req.DataSourceConfig.ItemSchema["properties"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, map[string]any{
+		"type": "array", "items": map[string]any{"type": "object"},
+	}, conversationProperties["messages"])
 
 	// An unset level behaves as turn, matching the service default.
 	dflt := groupWith(withJudge("m", evalcore.EvaluatorRef{Evaluator: "builtin.task_completion"}), "")
@@ -294,8 +304,8 @@ func TestBuildSimulationGradesConversationsNotSeeds(t *testing.T) {
 	// The seed columns are what the registered dataset actually holds. None of
 	// them may be bound, and none of them may reach the item schema.
 	req, err := buildEvalRequest(group, schemas, map[string]bool{
-		"test_case_description": true,
-		"desired_num_turns":     true,
+		"test_case_description":    true,
+		"simulation_configuration": true,
 	})
 	require.NoError(t, err)
 
@@ -303,12 +313,13 @@ func TestBuildSimulationGradesConversationsNotSeeds(t *testing.T) {
 	require.Equal(t, "{{item.messages}}", mapping["messages"],
 		"the graded conversation arrives in item.messages")
 	require.NotContains(t, mapping, "test_case_description")
-	require.NotContains(t, mapping, "desired_num_turns")
+	require.NotContains(t, mapping, "simulation_configuration")
 
 	properties, ok := req.DataSourceConfig.ItemSchema["properties"].(map[string]any)
 	require.True(t, ok, "item schema declares properties")
-	require.Contains(t, properties, "messages",
-		"the schema declares the column the conversations arrive in")
+	require.Equal(t, map[string]any{
+		"type": "array", "items": map[string]any{"type": "object"},
+	}, properties["messages"], "the schema must accept arrays of conversation messages")
 	require.NotContains(t, properties, "test_case_description")
 
 	// The service holds the conversation itself, so there is no per-row target
@@ -341,9 +352,54 @@ func TestBuildSimulationDeclaresMessagesWithoutABinding(t *testing.T) {
 
 	properties, ok := req.DataSourceConfig.ItemSchema["properties"].(map[string]any)
 	require.True(t, ok, "item schema declares properties")
-	require.Contains(t, properties, "messages")
+	require.Equal(t, map[string]any{
+		"type": "array", "items": map[string]any{"type": "object"},
+	}, properties["messages"])
 	require.NotContains(t, properties, "test_case_description")
 	require.False(t, req.DataSourceConfig.IncludeSampleSchema)
+	require.Equal(t, []string{"messages"}, req.DataSourceConfig.ItemSchema["required"])
+}
+
+func TestBuildSimulationRequiresGeneratedTranscript(t *testing.T) {
+	for _, simulated := range []bool{false, true} {
+		name := "static conversation"
+		if simulated {
+			name = "simulated conversation"
+		}
+		t.Run(name, func(t *testing.T) {
+			schemas := map[string]*eval_api.EvaluatorSummary{
+				"builtin.task_completion": schema("builtin.task_completion", nil, []string{"messages"},
+					nil, nil, "conversation"),
+			}
+			group := groupWith([]evalcore.EvaluatorRef{{Evaluator: "builtin.task_completion"}}, "conversation")
+			if simulated {
+				group.Simulation = &project.Simulation{Model: "simulator"}
+			} else {
+				group.Target = nil
+			}
+			req, err := buildEvalRequest(group, schemas, map[string]bool{"messages": true})
+			require.NoError(t, err)
+			raw, err := json.Marshal(req.DataSourceConfig.ItemSchema)
+			require.NoError(t, err)
+			var document any
+			require.NoError(t, json.Unmarshal(raw, &document))
+			const uri = "https://example.test/generated-item.schema.json"
+			compiler := jsonschema.NewCompiler()
+			require.NoError(t, compiler.AddResource(uri, document))
+			itemSchema, err := compiler.Compile(uri)
+			require.NoError(t, err)
+			require.NoError(t, itemSchema.Validate(map[string]any{
+				"messages": []any{map[string]any{"role": "assistant", "content": "A fixture response."}},
+			}))
+			require.Error(t, itemSchema.Validate(map[string]any{"messages": "not an array"}))
+			err = itemSchema.Validate(map[string]any{})
+			if simulated {
+				require.Error(t, err, "generated conversations must include their transcript")
+			} else {
+				require.NoError(t, err, "do not tighten the existing sparse static-dataset schema")
+			}
+		})
+	}
 }
 
 // Evaluators disagree on what the judge model is called. Built-ins declare

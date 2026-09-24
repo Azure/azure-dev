@@ -79,7 +79,7 @@ func TestSimulationRunRejectsMixedTurnSeedRows(t *testing.T) {
 						index = 2
 					}
 					ec := simulationRowClient(t, rows)
-					source, err := ec.buildRunDataSource(t.Context(), runnableSimulation(), "", 0)
+					source, _, err := ec.buildRunDataSource(t.Context(), runnableSimulation(), "", 0)
 					require.ErrorContains(t, err, fmt.Sprintf("row %d carries %q", index, field))
 					assert.Nil(t, source, "invalid rows must not produce a run data source")
 					assert.Empty(t, ec.state, "validation must not record private state")
@@ -89,11 +89,12 @@ func TestSimulationRunRejectsMixedTurnSeedRows(t *testing.T) {
 	}
 }
 
-func TestSimulationRunLeavesUnspecifiedTurnCapToService(t *testing.T) {
-	ec := simulationRowClient(t, `{"test_case_description":"A longer scenario.","desired_num_turns":21}`)
+func TestSimulationRunHonorsPerRowTurnOverride(t *testing.T) {
+	ec := simulationRowClient(t, `{"test_case_description":"A longer scenario.",`+
+		`"simulation_configuration":{"desired_num_turns":21,"max_num_turns":21}}`)
 	group := runnableSimulation()
 	group.Simulation.MaxTurns = 0
-	source, err := ec.buildRunDataSource(t.Context(), group, "", 0)
+	source, _, err := ec.buildRunDataSource(t.Context(), group, "", 0)
 	require.NoError(t, err)
 	require.NotNil(t, source)
 	raw, err := json.Marshal(source)

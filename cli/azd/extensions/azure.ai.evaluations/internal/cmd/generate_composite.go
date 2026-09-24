@@ -463,7 +463,10 @@ type generationOutcome struct {
 	guidance string
 }
 
-// runGenerations submits every plan at once and settles them together.
+// runGenerations submits the plans from buildGeneratePlans concurrently.
+// There is at most one dataset plan and one rubric plan. Only the dataset
+// worker accesses private state; the rubric worker does not read or write that
+// cache. Catalog updates and reporting wait for both workers to finish.
 func (ec *evalContext) runGenerations(
 	cmd *cobra.Command,
 	plans []generationPlan,
@@ -471,6 +474,12 @@ func (ec *evalContext) runGenerations(
 ) error {
 	outcomes := make([]generationOutcome, len(plans))
 	var wg sync.WaitGroup
+
+	// Both workers resolve agent names. The pinned SDK's Project accessor
+	// initializes lazily, so construct that shared client before the fan-out.
+	if len(plans) > 1 && ec.azdClient != nil {
+		ec.azdClient.Project()
+	}
 
 	// The announcements go out before the goroutines start, so a long
 	// generation is not silent while it runs. Only the per-job progress is

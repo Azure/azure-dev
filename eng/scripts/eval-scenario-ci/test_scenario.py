@@ -2,6 +2,7 @@
 # Licensed under the MIT License.
 
 import copy
+from datetime import datetime
 import json
 from pathlib import Path
 import tempfile
@@ -150,6 +151,91 @@ class SafetyTests(unittest.TestCase):
         for key in ("GITHUB_STEP_SUMMARY", "GITHUB_RUN_ID", "BUILD_BUILDID"):
             scenario.os.environ.pop(key, None)
 
+    def test_archive_errors_are_recorded_without_suppressing_them(self):
+        legacy = scenario.proof_module
+        for filename, expected in (("broken.zip", legacy.zipfile.BadZipFile),
+                                   ("broken.tar.gz", legacy.tarfile.ReadError)):
+            with self.subTest(filename=filename):
+                report = {}
+                with self.assertRaises(expected):
+                    with legacy.owned_workspace(report) as root:
+                        archive = root / filename
+                        archive.write_bytes(b"checksum-pinned but invalid archive")
+                        legacy.binary_from_archive(archive, "fixture")
+                self.assertEqual(report["failure"]["type"], expected.__name__)
+                self.assertTrue(report["failure"]["message"])
+                self.assertEqual(report["cleanup"]["status"], "PASS")
+
+    def test_success_does_not_record_an_ambient_handled_exception(self):
+        report = {}
+        try:
+            raise ValueError("already handled outside the workspace")
+        except ValueError:
+            with scenario.owned_workspace(report):
+                pass
+        self.assertNotIn("failure", report)
+        self.assertEqual(report["cleanup"]["status"], "PASS")
+
+    def test_command_receipt_records_timing_and_actual_timeout(self):
+        legacy = scenario.proof_module
+        with tempfile.TemporaryDirectory() as root:
+            proof = legacy.Proof(Path(root), Path(root), {})
+            completed = legacy.subprocess.CompletedProcess([], 0, '{"ok":true}\n', "")
+            with mock.patch.object(legacy.subprocess, "run", return_value=completed) as run, \
+                 mock.patch.object(legacy.time, "monotonic", side_effect=[100.0, 100.125]):
+                self.assertEqual(proof.run("fixture", ["version"], timeout=23, json_output=True), {"ok": True})
+            record = proof.commands[0]
+            self.assertEqual(record["timeoutSeconds"], run.call_args.kwargs["timeout"])
+            self.assertEqual(record["timeoutSeconds"], 23)
+            self.assertEqual(record["durationSeconds"], 0.125)
+            started = datetime.fromisoformat(record["startedAt"])
+            finished = datetime.fromisoformat(record["finishedAt"])
+            self.assertIsNotNone(started.tzinfo)
+            self.assertGreaterEqual(finished, started)
+
+    def test_timeout_keeps_bounded_redacted_command_receipt(self):
+        legacy = scenario.proof_module
+        with tempfile.TemporaryDirectory() as root:
+            proof = legacy.Proof(Path(root), Path(root), {})
+            expired = legacy.subprocess.TimeoutExpired(
+                "azd", 7, output=b"https://user:password@host.invalid/a?sig=secret#fragment", stderr=b"timed out")
+            with mock.patch.object(legacy.subprocess, "run", side_effect=expired):
+                with self.assertRaises(legacy.subprocess.TimeoutExpired):
+                    proof.run("timeout fixture", ["version"], timeout=7)
+            record = proof.commands[0]
+            self.assertTrue(record["timedOut"])
+            self.assertIsNone(record["exitCode"])
+            self.assertEqual(record["timeoutSeconds"], 7)
+            self.assertGreaterEqual(record["durationSeconds"], 0)
+            self.assertIn("finishedAt", record)
+            self.assertEqual(record["stdout"], "https://host.invalid/a")
+            self.assertEqual(proof.checks, [])
+
+    def test_legacy_install_rejects_duplicate_extension_entries(self):
+        legacy = scenario.proof_module
+        pin = json.loads((scenario.BASELINE / "candidate.json").read_text())
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            proof = legacy.Proof(root, root, pin)
+            registry = root / "registry.json"
+            legacy.write_json(registry, {"extensions": [
+                {"id": "azure.ai.evaluations"}, {"id": "azure.ai.evaluations"}, {"id": "azure.ai.dataset"},
+            ]})
+            with mock.patch.object(legacy, "download", side_effect=[root / "core.zip", registry]), \
+                 mock.patch.object(legacy, "binary_from_archive", return_value=b"not executed"), \
+                 mock.patch.object(proof, "run", return_value=f"azd version {pin['azd']['version']}"):
+                with self.assertRaisesRegex(AssertionError, "exactly the two"):
+                    proof.install()
+
+    def test_canonical_baseline_rejects_missing_duplicate_changed_or_reordered_ids(self):
+        legacy = scenario.proof_module
+        expected = legacy.expected_baseline_checks()
+        legacy.validate_baseline_checks(expected)
+        for actual in (expected[:-1], expected[:-1] + [expected[0]],
+                       expected[:-1] + ["different check"], list(reversed(expected))):
+            with self.assertRaisesRegex(AssertionError, "Baseline check IDs differ"):
+                legacy.validate_baseline_checks(actual)
+
     def test_cancel_arity_diagnostic_does_not_match_unrelated_errors(self):
         self.assertRegex("accepts at most 1 arg(s), received 2", scenario.CANCEL_ARITY_ERROR)
         for message in ("target not found", "invalid argument", "accepts at most 1 arg(s), received 3"):
@@ -179,7 +265,7 @@ class SafetyTests(unittest.TestCase):
             fake.env = {}
             fake.platform = "windows/amd64"
             fake.commands = []
-            fake.checks = ["baseline"] * 160
+            fake.checks = scenario.proof_module.expected_baseline_checks()
 
             def extras(proof):
                 proof.checks.extend(["extra"] * 8)
@@ -239,7 +325,8 @@ class SafetyTests(unittest.TestCase):
             manifest.write_bytes(frozen)
             output = Path(root) / "evidence"
             fake = mock.Mock()
-            fake.env, fake.platform, fake.commands, fake.checks = {}, "windows/amd64", [], ["baseline"] * 160
+            fake.env, fake.platform, fake.commands = {}, "windows/amd64", []
+            fake.checks = scenario.proof_module.expected_baseline_checks()
             with mock.patch.object(scenario.proof_module, "Proof", return_value=fake), \
                  mock.patch.object(scenario, "installed_evidence", return_value={}), \
                  mock.patch.object(scenario, "extra_scenarios",
@@ -270,7 +357,8 @@ class SafetyTests(unittest.TestCase):
                     owned = Path(root) / "owned"
                     owned.mkdir()
                     fake = mock.Mock()
-                    fake.platform, fake.commands, fake.checks = "windows/amd64", [], ["fixture"]
+                    fake.platform, fake.commands = "windows/amd64", []
+                    fake.checks = legacy.expected_baseline_checks()
                     if scenario_fails:
                         fake.exercise.side_effect = AssertionError("original scenario failure")
                     remove = legacy.cleanup_owned_workspace
@@ -286,7 +374,7 @@ class SafetyTests(unittest.TestCase):
                         else:
                             legacy.main()
                     report = json.loads((output / "results.json").read_text())
-                    self.assertEqual(report["status"], "failed" if scenario_fails or cleanup_fails else "passed")
+                    self.assertEqual(report["status"], "FAIL" if scenario_fails or cleanup_fails else "PASS")
                     self.assertEqual(report["cleanup"]["status"], "FAIL" if cleanup_fails else "PASS")
                     summary = (output / "summary.md").read_text()
                     if scenario_fails:

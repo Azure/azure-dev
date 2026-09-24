@@ -182,6 +182,7 @@ not a claim that every combination is implemented or tested.
 | CANCEL-01 / edge | Actual Windows terminal picker plus in-progress owned command with bounded cleanup | Distinguish explicit picker Cancel from Ctrl+C and record the delivery method and exit code. Redirected stdin or a timeout is not interactive terminal proof. Test service cancellation separately from local picker cancellation. |
 | DATA-01 / practical | Owned versioned single-file and multi-file datasets; downloads in both namespaces with file/directory output | Bytes match source; overwrite requires explicit consent; forced replacement works; relative layout preserved; a one-file folder is not automatically a single-file dataset. |
 | EDGE-01 / edge | Bounded local fixtures or authorized service cases for empty pages, pagination, malformed data, missing identity, retry/timeouts, partial failure | No cross-project/version mix-ups, duplicate/missing page results, silent success, dropped errors, runaway retries, or secret disclosure. Label fixture proof separately from live behavior. |
+| PRECISION-01 / edge | Owned loopback fixture through the actual installed package's detail/list/export paths where supported; baseline and repaired artifacts identified separately | Preserve integer `9007199254740993` and decimal `0.123456789012345678901234567890` as numbers, not strings, with an exact integer/decimal or raw-token oracle that cannot round away a failure. Include ordinary numeric and error controls. Installed coverage is `NOT RUN` until its own receipt; source HTTP tests are not shipped proof. |
 | RECOVER-01 / both | Owned partial publication/generation state; rerun/reattach and explicit cleanup | Persisted identity is reusable, retry is idempotent, partial success is reported, cancellation stops owned work, and cleanup matches actual service delete scope and response contract. |
 | TRACE-01 / practical | Explicitly authorized owned agent/version, trace access, and narrow request window | Returned traces belong to the intended owned agent/version/window. Do not widen to shared traffic when ingestion or permissions block the case. |
 
@@ -273,6 +274,14 @@ explicit-empty-evaluator correction whose issue deduplication is still pending.
 That main-based development artifact includes deferred simulation contracts;
 it is neither repaired feed 41/42 proof nor an automatically approved next
 feed candidate.
+
+The high-impact numeric-precision regression is required for every relevant
+future package matrix. Its existing source owner is associated with
+[#10147](https://github.com/Azure/azure-dev/pull/10147); final source linkage and
+the authorized work-item identifier remain pending. `PRECISION-01` is assigned
+to the existing edge lane, not a new investigator. Baseline public42 and any
+future repaired package need independent installed-byte receipts. No live cost,
+TLS bypass, or global trust changes are authorized for the loopback fixture.
 
 For new defects, first deduplicate in the relevant project against these records
 and known linked fixes. File through the authorized [evaluation bug channel][bug-channel]
@@ -369,7 +378,7 @@ work. Do not create a different runner or owner for each CI provider.
 | CI-03 | Publish sanitized command/assertion reports and artifact manifests with actual workflow/build/job links. Download and inspect the artifacts independently; successful YAML validation alone is not a CI execution result. | `PASS`: resolver pin and both OS artifact sets downloaded; commands, state, cleanup, runtime versions, archive/binary digests and blocked-live receipts verified |
 | CI-04 | Run the shared offline scenario suite through the new GitHub Actions entry point with least-privilege permissions and bounded timeouts. Keep cloud-service scenarios separate. | `PASS` at `d6818868d81ee59b5782c0a0a12413d008cbb9ff`; live branch was not requested and is not counted as a pass |
 | CI-05 | Run the same offline suite through Azure DevOps using an explicitly authorized existing organization/project/pipeline/repository connection and available capacity. Do not guess or mutate a shared pipeline to manufacture a run. | `BLOCKED`: YAML/local validation passed, but scoped native metadata discovery found no matching authorized scenario-pipeline tuple; no Azure DevOps execution claimed |
-| CI-06 | Wire real create/evaluate/run/export jobs behind explicit identity, existing owned resource, budget, duration, and cleanup parameters. Missing prerequisites produce a clear `BLOCKED` or `NOT RUN` report, never a live-test success. | `BLOCKED`: fail-closed prerequisite reporting is implemented, but no authenticated service executor or live identity/resource/budget tuple is activated |
+| CI-06 | Wire real create/evaluate/run/export jobs behind explicit identity, existing owned resource, budget, duration, and cleanup parameters. Missing prerequisites produce a clear `BLOCKED` or `NOT RUN` report, never a live-test success. | `BLOCKED / NOT IMPLEMENTED`: only status-reporting guards exist. No executable service-command workflow is wired; no approved identity/resource/budget tuple is available. Offline implementation does not complete this remaining item. |
 
 The first new scenario producer resolved build 41 at
 **2026-09-24T03:14:18.582604Z**, before build 42's Latest promotion. Its manifest
@@ -379,6 +388,18 @@ successful owned-workspace cleanup. This is not a build 42 scenario run merely
 because Latest changed afterwards. See the [runner guide][scenario-guide] for
 reproduction, artifact layout, authorization boundaries, and the distinct
 fixed-candidate workflow.
+
+The subsequent approved cleanup/arity quality round used
+[scenario run 35951992378][scenario42] at
+`bca776eecd1f3d697b524d3d2ed321999425aae7`. It resolved public Latest42 at
+**2026-09-24T03:34:18.707908Z**, with manifest SHA256
+`0fc0e1fe7f9c1d92c6a7859c198dc7a4fd10fdaf53e6e17ef62475082e561a22`.
+Both downloaded OS receipts verify 168 checks and clean owned-workspace cleanup.
+The paired [candidate-harness repair run][candidate-repair42] also passed;
+neither replaces immutable release acceptance `35949654046`.
+The publisher's later native Latest42 input event was deduplicated against this
+already-completed matching identity/quality round, with no extra dispatch.
+This proves native handoff accounting, not an operational GitHub release hook.
 
 No exported developer credentials, new IAM grants, shared public-runner
 registration, unapproved Azure spending, or generation jobs are authorized by
@@ -499,6 +520,8 @@ optional recommendations.
 [release42]: https://github.com/m7md7sien/azd-foundry-feed/releases/tag/extensions-2026-09-24-42
 [feed42]: https://github.com/m7md7sien/azd-foundry-feed/tree/967b631b97cad2d05ca165a985d5010d51bc1f64
 [scenario41]: https://github.com/m7md7sien/azure-dev/actions/runs/35950594406
+[scenario42]: https://github.com/m7md7sien/azure-dev/actions/runs/35951992378
+[candidate-repair42]: https://github.com/m7md7sien/azure-dev/actions/runs/35951992376
 [scenario-guide]: evaluation-scenario-ci.md
 [source42]: https://github.com/m7md7sien/azure-dev/commit/d40a3b5a1e7c5944b1b43decd14c96096a99e5b6
 [init-source-repairs]: https://github.com/m7md7sien/azure-dev/commit/32ff9bc772e7500b37ba99709401709e9bda1165

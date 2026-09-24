@@ -192,6 +192,7 @@ def run_identity(env):
 def live_status():
     return {
         "status": "BLOCKED", "execution": "NOT RUN",
+        "executorImplemented": False,
         "operations": ["agent-create", "agent-deploy", "dataset-create",
                        "eval-create", "eval-run", "eval-export"],
         "blockers": [
@@ -300,7 +301,7 @@ def execute(manifest, output):
             proof.install()
             report["installed"] = installed_evidence(proof, pin)
             proof.exercise()
-            require(len(proof.checks) == 160, "The full 160-check baseline was not retained")
+            proof_module.validate_baseline_checks(proof.checks)
             report["baselineCheckCount"] = len(proof.checks)
             extra_scenarios(proof)
             report["scenarioCheckCount"] = len(proof.checks) - 160

@@ -25,6 +25,14 @@ identity/resource/budget wiring and bounded cleanup before activation.
 This contribution does not implement or claim an authenticated service run.
 It creates no identities, grants, runners, infrastructure, or paid generation.
 
+The current live path is **status reporting only**: `live_status()` builds a
+blocked receipt and the `live` subcommand writes it, then exits 3. The GitHub
+`live-prerequisites` and Azure DevOps `LivePrerequisites` jobs invoke only that
+subcommand. No executable agent-create/deploy, dataset-create, evaluation-create,
+run, or export service-command wiring is implemented. The receipt records
+`executorImplemented: false`; the listed operations describe remaining scope,
+not coverage or an executable workflow awaiting a switch.
+
 ## Resolve Latest once, then freeze
 
 [The shared runner](../../eng/scripts/eval-scenario-ci/scenario.py) reads the
@@ -40,6 +48,9 @@ The original publisher's source declaration is retained as provenance, not
 inferred from a filename. Each job verifies archive bytes, computes extracted
 and installed executable digests, and checks actual version output. A changed
 future CLI contract fails the retained baseline; it is not silently waived.
+The baseline command IDs are checked against the ordered, unique
+[`checks.json`](../../eng/scripts/eval-candidate-proof/checks.json) contract,
+not merely counted.
 
 The subprocess environment is allowlisted, with fresh home, Azure and azd
 configuration directories. User tokens, caches, GitHub tokens and pipeline
@@ -63,6 +74,17 @@ fork's default branch; GitHub does not deliver it to a workflow present only on
 this validation branch.
 **Automatic release-event delivery is not activated or proven by this YAML.**
 There is no idle release watcher or scheduled repeat-run loop.
+
+Publication continuation currently uses a **native handoff**, not a GitHub
+release trigger. The publisher sends the verified public Latest tag, source,
+registry digest and provenance to the sole CI owner. The owner deduplicates by
+that immutable identity plus the authorized quality round, reuses an already
+queued/completed matching run, and dispatches only when a meaningful new round
+is needed. The Latest42 handoff was covered by
+[run 35951992378](https://github.com/m7md7sien/azure-dev/actions/runs/35951992378)
+at `bca776eecd1f3d697b524d3d2ed321999425aae7`, which resolved public 42 once;
+the later handoff did not create a second dispatch. This operational receipt
+does not establish an automatic webhook or schedule.
 
 ## Azure DevOps
 
@@ -100,6 +122,11 @@ the shared manifest digest, baseline/additional check counts, exact source,
 runtime versions, archive/installed byte comparisons, and cleanup status.
 The overall receipt is not marked `PASS` until owned temporary cleanup finishes;
 Windows sharing violations receive bounded filesystem retries, not ignored errors.
+Command receipts include UTC `startedAt`/`finishedAt`, monotonic
+`durationSeconds`, the actual `timeoutSeconds`, and partial sanitized output
+when a subprocess times out. Current candidate and scenario receipts use
+`PASS`/`FAIL`; archived earlier candidate receipts retain their original
+lowercase status values and are not rewritten.
 GitHub artifacts
 are retained for 14 days; preserve approved immutable receipts in the release
 ledger rather than assuming artifacts last forever.

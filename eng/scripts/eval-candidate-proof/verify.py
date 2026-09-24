@@ -15,6 +15,7 @@ The output directory contains only explicitly selected, sanitized evidence.
 
 import argparse
 from contextlib import contextmanager
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -23,6 +24,7 @@ import platform
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time
@@ -59,6 +61,20 @@ def write_json(path, value):
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
 
+def expected_baseline_checks():
+    contract = json.loads(Path(__file__).with_name("checks.json").read_text(encoding="utf-8"))
+    require(contract["contract"] == "build41-offline-160", "Unknown baseline check contract")
+    checks = contract["checks"]
+    require(isinstance(checks, list) and all(isinstance(name, str) for name in checks)
+            and len(checks) == len(set(checks)) == 160, "Invalid canonical baseline check IDs")
+    return checks
+
+
+def validate_baseline_checks(checks):
+    require(checks == expected_baseline_checks(),
+            "Baseline check IDs differ from checks.json: missing, duplicated, reordered or changed checks")
+
+
 def snapshot_tree(directory):
     return {
         str(path.relative_to(directory)): (
@@ -82,14 +98,17 @@ def cleanup_owned_workspace(root):
 @contextmanager
 def owned_workspace(report):
     root = Path(tempfile.mkdtemp(prefix="eval-cli-proof-"))
+    body_completed = False
     try:
         yield root
-    except (AssertionError, KeyError, ValueError, OSError, RuntimeError, subprocess.SubprocessError) as error:
-        report["failure"] = {
-            "type": type(error).__name__, "message": sanitize(str(error), root),
-        }
-        raise
+        body_completed = True
     finally:
+        # Observe the in-flight failure without catching or suppressing it.
+        error = None if body_completed else sys.exception()
+        if error is not None:
+            report["failure"] = {
+                "type": type(error).__name__, "message": sanitize(str(error) or type(error).__name__, root),
+            }
         try:
             cleanup_owned_workspace(root)
         except OSError as error:
@@ -158,18 +177,36 @@ class Proof:
 
     def run(self, name, args, cwd=None, failure=None, json_output=False, timeout=60):
         argv = [str(self.azd), *args, "--no-prompt"]
-        result = subprocess.run(
-            argv, cwd=cwd or self.root, env=self.env, stdin=subprocess.DEVNULL,
-            capture_output=True, text=True, encoding="utf-8", timeout=timeout,
-        )
-        self.commands.append({
+        started = time.monotonic()
+        record = {
             "name": name,
             "command": ["azd", *[sanitize(arg, self.root) for arg in argv[1:]]],
-            "exitCode": result.returncode,
+            "startedAt": datetime.now(timezone.utc).isoformat(),
+            "timeoutSeconds": timeout,
+            "exitCode": None,
             "expectedFailure": failure is not None,
-            "stdout": sanitize(result.stdout, self.root),
-            "stderr": sanitize(result.stderr, self.root),
-        })
+            "stdout": "",
+            "stderr": "",
+        }
+        self.commands.append(record)
+        try:
+            result = subprocess.run(
+                argv, cwd=cwd or self.root, env=self.env, stdin=subprocess.DEVNULL,
+                capture_output=True, text=True, encoding="utf-8", timeout=timeout,
+            )
+            record.update(exitCode=result.returncode, stdout=sanitize(result.stdout, self.root),
+                          stderr=sanitize(result.stderr, self.root))
+        except subprocess.TimeoutExpired as error:
+            record["timedOut"] = True
+            for stream in ("stdout", "stderr"):
+                value = getattr(error, stream)
+                if isinstance(value, bytes):
+                    value = value.decode("utf-8", errors="replace")
+                record[stream] = sanitize(value or "", self.root)
+            raise
+        finally:
+            record["finishedAt"] = datetime.now(timezone.utc).isoformat()
+            record["durationSeconds"] = round(time.monotonic() - started, 6)
         require(
             result.returncode != 0 if failure else result.returncode == 0,
             f"{name}: unexpected exit code {result.returncode}: "
@@ -239,7 +276,8 @@ class Proof:
         registry_path = download(base + "registry.json", self.pin["registrySha256"], downloads)
         registry = json.loads(registry_path.read_text(encoding="utf-8-sig"))
         require(
-            {ext["id"] for ext in registry["extensions"]} == set(self.pin["extensions"]),
+            len(registry["extensions"]) == len(self.pin["extensions"])
+            and {ext["id"] for ext in registry["extensions"]} == set(self.pin["extensions"]),
             "The release registry must contain exactly the two candidate extensions",
         )
         expected_binaries = {}
@@ -923,7 +961,7 @@ def main():
             f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/"
             f"{os.environ['GITHUB_RUN_ID']}"
         ) if "GITHUB_RUN_ID" in os.environ else None,
-        "status": "failed",
+        "status": "FAIL",
         "cleanup": {"status": "NOT RUN"},
     }
     proof = None
@@ -933,7 +971,8 @@ def main():
             report["platform"] = proof.platform
             proof.install()
             proof.exercise()
-        report["status"] = "passed"
+            validate_baseline_checks(proof.checks)
+        report["status"] = "PASS"
     finally:
         report["checks"] = proof.checks if proof else []
         write_json(args.output / "results.json", report)

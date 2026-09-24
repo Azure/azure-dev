@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"fmt"
@@ -400,11 +401,18 @@ func (a *initAction) Run() error {
 		return err
 	}
 
-	if err := project.ApplyScaffold(path, project.ScaffoldWrite{
+	rootPath := filepath.Join(azdProject.GetPath(), rootConfigName)
+	// #nosec G304 -- snapshot the current azd project's root before wiring it.
+	rootBefore, err := os.ReadFile(rootPath)
+	if err != nil {
+		return messages.ReadingPath(rootPath, err)
+	}
+	rollback, err := project.ApplyScaffoldWithRollback(path, project.ScaffoldWrite{
 		Datasets:   cfg.Datasets[declaredDatasets:],
 		Evaluators: cfg.Evaluators[declaredEvaluators:],
 		Evals:      cfg.Evals[declaredEvals:],
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 
@@ -413,7 +421,21 @@ func (a *initAction) Run() error {
 	// `azd up`, `azd deploy` or `azd ai eval run` will act on it.
 	rootWiring, serviceName, err := ensureRootEvalService(a.cmd.Context(), serviceName, target, configPath)
 	if err != nil {
-		return err
+		// A lost RPC response can follow a successful root save. Do not remove
+		// a scaffold the root may already reference, or overwrite another edit.
+		// #nosec G304 -- re-read the same project root to determine whether rollback is safe.
+		rootAfter, readErr := os.ReadFile(rootPath)
+		if readErr != nil {
+			return messages.InitWiringRollbackFailed(configPath, err, readErr)
+		}
+		if !bytes.Equal(rootBefore, rootAfter) {
+			return messages.InitWiringRollbackFailed(configPath, err,
+				fmt.Errorf("%s changed during wiring; the scaffold was retained", rootConfigName))
+		}
+		if rollbackErr := rollback(); rollbackErr != nil {
+			return messages.InitWiringRollbackFailed(configPath, err, rollbackErr)
+		}
+		return messages.InitWiringRolledBack(configPath, err)
 	}
 
 	// Reported here rather than from the prompt sequence, which a confirmation

@@ -65,6 +65,7 @@ type initProjectServer struct {
 
 	dir           string
 	addServiceErr error
+	onAddService  func(*azdext.AddServiceRequest) error
 
 	mu         sync.Mutex
 	addCalls   int
@@ -89,12 +90,22 @@ func (s *initProjectServer) AddService(
 	if request.GetService() != nil {
 		s.addService = append(s.addService, request.GetService().GetName())
 	}
+	onAddService := s.onAddService
 	s.mu.Unlock()
 
+	if onAddService != nil {
+		return &azdext.EmptyResponse{}, onAddService(request)
+	}
 	if s.addServiceErr != nil {
 		return nil, s.addServiceErr
 	}
 	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *initProjectServer) setAddServiceHandler(handler func(*azdext.AddServiceRequest) error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onAddService = handler
 }
 
 func (s *initProjectServer) wiringAttempts() int {

@@ -124,6 +124,13 @@ agent target, seed dataset, simulation model, and judge model. Non-interactive
 init reports all unresolved required inputs together, naming the flags to supply.
 Init is add-only, preserves existing YAML and unknown fields, and makes no new
 live lookups beyond the bounded built-in evaluator catalogue check.
+If saving the root `azure.yaml` service fails, init rolls back its eval-config
+edit so the same command can be retried after restoring root write access.
+Existing config bytes are restored; only a new config written by that attempt
+is removed. Dataset files, artifact directories, lock files, and existing
+`.gitignore` rules are retained. If either configuration changes during wiring,
+or rollback fails, init reports that recovery is incomplete and leaves an
+explicit inspection instruction rather than overwriting concurrent edits.
 For simulation, init checks every locally available seed row before writing
 configuration, including files in declared datasets and local nested `$ref`
 entries. Each row needs a non-whitespace text `test_case_description` of at most

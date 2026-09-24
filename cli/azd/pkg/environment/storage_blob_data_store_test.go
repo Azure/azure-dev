@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
@@ -16,6 +17,35 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+func TestStorageBlobReloadFailurePreservesState(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		dotenv string
+		config string
+		want   string
+	}{
+		{name: "malformed dotenv", dotenv: "invalid='", want: "loading .env"},
+		{name: "invalid config", dotenv: "VALUE=on-disk", config: "{invalid", want: "loading config"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &MockBlobClient{}
+			store := NewStorageBlobDataStore(config.NewManager(), client)
+			env := New("test")
+			env.DotenvSet("VALUE", "in-memory")
+			env.DotenvDelete("PENDING")
+			client.On("Download", t.Context(), "test/.env").
+				Return(io.NopCloser(strings.NewReader(tt.dotenv)), nil).Once()
+			client.On("Download", t.Context(), "test/config.json").
+				Return(io.NopCloser(strings.NewReader(tt.config)), nil).Maybe()
+
+			require.ErrorContains(t, store.Reload(t.Context(), env), tt.want)
+			require.Equal(t, "in-memory", env.Getenv("VALUE"))
+			require.Contains(t, env.deletedKeys, "PENDING")
+			client.AssertExpectations(t)
+		})
+	}
+}
 
 var validBlobItems []*storage.Blob = []*storage.Blob{
 	{

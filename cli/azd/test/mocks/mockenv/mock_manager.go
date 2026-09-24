@@ -35,31 +35,31 @@ func (m *MockEnvManager) Get(ctx context.Context, name string) (*environment.Env
 	return args.Get(0).(*environment.Environment), args.Error(1)
 }
 
-func (m *MockEnvManager) Save(ctx context.Context, env *environment.Environment) error {
+func (m *MockEnvManager) Save(ctx context.Context, env environment.Env) error {
 	args := m.Called(ctx, env)
 	return args.Error(0)
 }
 
 func (m *MockEnvManager) SaveWithOptions(
 	ctx context.Context,
-	env *environment.Environment,
+	env environment.Env,
 	options *environment.SaveOptions,
 ) error {
 	args := m.Called(ctx, env, options)
 	return args.Error(0)
 }
 
-func (m *MockEnvManager) Reload(ctx context.Context, env *environment.Environment) error {
+func (m *MockEnvManager) Reload(ctx context.Context, env environment.Env) error {
 	args := m.Called(ctx, env)
 	return args.Error(0)
 }
 
-func (m *MockEnvManager) EnvPath(env *environment.Environment) string {
+func (m *MockEnvManager) EnvPath(env environment.Env) string {
 	args := m.Called(env)
 	return args.String(0)
 }
 
-func (m *MockEnvManager) ConfigPath(env *environment.Environment) string {
+func (m *MockEnvManager) ConfigPath(env environment.Env) string {
 	args := m.Called(env)
 	return args.String(0)
 }

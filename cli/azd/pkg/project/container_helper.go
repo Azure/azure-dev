@@ -575,7 +575,7 @@ func resolveDockerParameters(source []string, env *environment.Environment) ([]s
 	for i, arg := range source {
 		evaluatedString, err := apphost.EvalString(arg, func(match string) (string, error) {
 			path := match
-			value, has := env.Config.GetString(path)
+			value, has := env.Config().GetString(path)
 			if !has {
 				return "", fmt.Errorf("parameter %s not found", path)
 			}

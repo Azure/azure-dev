@@ -230,7 +230,7 @@ func (p *Prompter) PromptParameters(
 
 	for _, param := range envDef.Parameters {
 		paramPath := fmt.Sprintf("%s.%s", ProvisionParametersConfigPath, param.Id)
-		paramValue, exists := env.Config.Get(paramPath)
+		paramValue, exists := env.Config().Get(paramPath)
 
 		if exists {
 			paramValues[param.Id] = paramValue

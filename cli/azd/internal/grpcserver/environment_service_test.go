@@ -399,7 +399,7 @@ type mockEnvManager struct {
 	environment.Manager // embed for unimplemented methods
 	getFunc             func(ctx context.Context, name string) (*environment.Environment, error)
 	listFunc            func(ctx context.Context) ([]*environment.Description, error)
-	saveFunc            func(ctx context.Context, env *environment.Environment) error
+	saveFunc            func(ctx context.Context, env environment.Env) error
 }
 
 func (m *mockEnvManager) Get(ctx context.Context, name string) (*environment.Environment, error) {
@@ -416,7 +416,7 @@ func (m *mockEnvManager) List(ctx context.Context) ([]*environment.Description, 
 	return nil, errors.New("not implemented")
 }
 
-func (m *mockEnvManager) Save(ctx context.Context, env *environment.Environment) error {
+func (m *mockEnvManager) Save(ctx context.Context, env environment.Env) error {
 	if m.saveFunc != nil {
 		return m.saveFunc(ctx, env)
 	}
@@ -726,7 +726,7 @@ func TestEnvironmentService_SetValue_Success(t *testing.T) {
 		getFunc: func(_ context.Context, name string) (*environment.Environment, error) {
 			return environment.NewWithValues(name, map[string]string{}), nil
 		},
-		saveFunc: func(_ context.Context, env *environment.Environment) error {
+		saveFunc: func(_ context.Context, env environment.Env) error {
 			return nil
 		},
 	}
@@ -746,7 +746,7 @@ func TestEnvironmentService_SetValue_SaveError(t *testing.T) {
 		getFunc: func(_ context.Context, name string) (*environment.Environment, error) {
 			return environment.NewWithValues(name, map[string]string{}), nil
 		},
-		saveFunc: func(_ context.Context, env *environment.Environment) error {
+		saveFunc: func(_ context.Context, env environment.Env) error {
 			return errors.New("save failed")
 		},
 	}
@@ -802,7 +802,7 @@ func TestEnvironmentService_GetConfig_ResolveError(t *testing.T) {
 func TestEnvironmentService_GetConfig_Success(t *testing.T) {
 	t.Parallel()
 	env := environment.NewWithValues("dev", nil)
-	_ = env.Config.Set("test.key", "test_value")
+	_ = env.Config().Set("test.key", "test_value")
 	mockMgr := &mockEnvManager{
 		getFunc: func(_ context.Context, name string) (*environment.Environment, error) {
 			return env, nil
@@ -850,7 +850,7 @@ func TestEnvironmentService_GetConfigString_ResolveError(t *testing.T) {
 func TestEnvironmentService_GetConfigString_Found(t *testing.T) {
 	t.Parallel()
 	env := environment.NewWithValues("dev", nil)
-	_ = env.Config.Set("str.key", "hello")
+	_ = env.Config().Set("str.key", "hello")
 	mockMgr := &mockEnvManager{
 		getFunc: func(_ context.Context, name string) (*environment.Environment, error) {
 			return env, nil
@@ -888,7 +888,7 @@ func TestEnvironmentService_GetConfigString_NotFound(t *testing.T) {
 func TestEnvironmentService_GetConfigSection_Success(t *testing.T) {
 	t.Parallel()
 	env := environment.NewWithValues("dev", nil)
-	_ = env.Config.Set("section.key1", "val1")
+	_ = env.Config().Set("section.key1", "val1")
 	mockMgr := &mockEnvManager{
 		getFunc: func(_ context.Context, name string) (*environment.Environment, error) {
 			return env, nil
@@ -977,7 +977,7 @@ func TestEnvironmentService_UnsetConfig_EnvManagerError(t *testing.T) {
 func TestEnvironmentService_UnsetConfig_Success(t *testing.T) {
 	t.Parallel()
 	env := environment.NewWithValues("dev", nil)
-	_ = env.Config.Set("to.remove", "value")
+	_ = env.Config().Set("to.remove", "value")
 	mockMgr := &mockEnvManager{
 		getFunc: func(_ context.Context, name string) (*environment.Environment, error) {
 			return env, nil
@@ -1000,7 +1000,7 @@ func TestEnvironmentService_SetConfig_SaveError(t *testing.T) {
 		getFunc: func(_ context.Context, name string) (*environment.Environment, error) {
 			return env, nil
 		},
-		saveFunc: func(_ context.Context, _ *environment.Environment) error {
+		saveFunc: func(_ context.Context, _ environment.Env) error {
 			return errors.New("save failed")
 		},
 	}
@@ -1019,12 +1019,12 @@ func TestEnvironmentService_SetConfig_SaveError(t *testing.T) {
 func TestEnvironmentService_UnsetConfig_SaveError(t *testing.T) {
 	t.Parallel()
 	env := environment.NewWithValues("dev", nil)
-	_ = env.Config.Set("to.remove", "value")
+	_ = env.Config().Set("to.remove", "value")
 	mockMgr := &mockEnvManager{
 		getFunc: func(_ context.Context, name string) (*environment.Environment, error) {
 			return env, nil
 		},
-		saveFunc: func(_ context.Context, _ *environment.Environment) error {
+		saveFunc: func(_ context.Context, _ environment.Env) error {
 			return errors.New("save failed")
 		},
 	}
@@ -1084,7 +1084,7 @@ func TestEnvironmentService_SetValue_WithSaveError(t *testing.T) {
 		getFunc: func(_ context.Context, name string) (*environment.Environment, error) {
 			return env, nil
 		},
-		saveFunc: func(_ context.Context, _ *environment.Environment) error {
+		saveFunc: func(_ context.Context, _ environment.Env) error {
 			return errors.New("save failed")
 		},
 	}
@@ -1242,7 +1242,7 @@ func TestEnvironmentService_SetConfig_ConfigSetError(t *testing.T) {
 	t.Parallel()
 	env := environment.NewWithValues("dev", nil)
 	// Set "a" to a plain string, then try to set "a.b.c" which requires "a" to be a map
-	_ = env.Config.Set("a", "plain-string")
+	_ = env.Config().Set("a", "plain-string")
 	mockMgr := &mockEnvManager{
 		getFunc: func(_ context.Context, name string) (*environment.Environment, error) {
 			return env, nil
@@ -1267,8 +1267,8 @@ func TestEnvironmentService_SetConfig_ConfigSetError(t *testing.T) {
 func TestEnvironmentService_GetConfigSection_WithData(t *testing.T) {
 	t.Parallel()
 	env := environment.NewWithValues("dev", nil)
-	_ = env.Config.Set("section.key1", "value1")
-	_ = env.Config.Set("section.key2", "value2")
+	_ = env.Config().Set("section.key1", "value1")
+	_ = env.Config().Set("section.key2", "value2")
 	mockMgr := &mockEnvManager{
 		getFunc: func(_ context.Context, name string) (*environment.Environment, error) {
 			return env, nil

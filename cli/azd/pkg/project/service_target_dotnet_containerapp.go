@@ -301,7 +301,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 	var inputs map[string]any
 	// inputs are auto-gen during provision and saved to env-config
-	if has, err := at.env.Config.GetSection("inputs", &inputs); err != nil {
+	if has, err := at.env.Config().GetSection("inputs", &inputs); err != nil {
 		return nil, fmt.Errorf("failed to get inputs section: %w", err)
 	} else if !has {
 		inputs = make(map[string]any)
@@ -1075,7 +1075,7 @@ func (fns *containerAppTemplateManifestFuncs) Parameter(name string) (string, er
 	}
 
 	key := infraParametersKey + name
-	val, found := fns.env.Config.Get(key)
+	val, found := fns.env.Config().Get(key)
 	if !found {
 		return "", fmt.Errorf("parameter %s not found", name)
 	}

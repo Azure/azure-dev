@@ -14,12 +14,9 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
-	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 )
 
@@ -41,13 +38,13 @@ func NewStorageBlobDataStore(configManager config.Manager, blobClient storage.Bl
 }
 
 // EnvPath returns the path to the .env file for the given environment
-func (fs *StorageBlobDataStore) EnvPath(env *Environment) string {
-	return fmt.Sprintf("%s/%s", env.name, DotEnvFileName)
+func (fs *StorageBlobDataStore) EnvPath(env Env) string {
+	return fmt.Sprintf("%s/%s", env.Name(), DotEnvFileName)
 }
 
 // ConfigPath returns the path to the config.json file for the given environment
-func (fs *StorageBlobDataStore) ConfigPath(env *Environment) string {
-	return fmt.Sprintf("%s/%s", env.name, ConfigFileName)
+func (fs *StorageBlobDataStore) ConfigPath(env Env) string {
+	return fmt.Sprintf("%s/%s", env.Name(), ConfigFileName)
 }
 
 func (sbd *StorageBlobDataStore) List(ctx context.Context) ([]*contracts.EnvListEnvironment, error) {
@@ -109,9 +106,7 @@ func (sbd *StorageBlobDataStore) Get(ctx context.Context, name string) (*Environ
 	}
 
 	matchingEnv := envs[matchingIndex]
-	env := &Environment{
-		name: matchingEnv.Name,
-	}
+	env := New(matchingEnv.Name)
 
 	if err := sbd.Reload(ctx, env); err != nil {
 		return nil, err
@@ -120,11 +115,18 @@ func (sbd *StorageBlobDataStore) Get(ctx context.Context, name string) (*Environ
 	return env, nil
 }
 
-func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment, options *SaveOptions) error {
+func (sbd *StorageBlobDataStore) Save(ctx context.Context, env Env, options *SaveOptions) error {
+	if err := ValidateEnvironmentName(env.Name()); err != nil {
+		return err
+	}
+	state, err := env.SnapshotState()
+	if err != nil {
+		return err
+	}
 	// Update configuration
 	cfgWriter := new(bytes.Buffer)
 
-	if err := sbd.configManager.Save(env.Config, cfgWriter); err != nil {
+	if err := sbd.configManager.Save(state.Config, cfgWriter); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
 
@@ -132,7 +134,7 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment, opt
 		return fmt.Errorf("uploading config: %w", describeError(err))
 	}
 
-	marshalled, err := marshallDotEnv(env)
+	marshalled, err := marshallDotEnv(state.Dotenv)
 	if err != nil {
 		return fmt.Errorf("marshalling .env: %w", err)
 	}
@@ -143,11 +145,14 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment, opt
 		return fmt.Errorf("uploading .env: %w", describeError(err))
 	}
 
-	tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.Name()))
+	traceSavedName(env.Name())
 	return nil
 }
 
-func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) error {
+func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env Env) error {
+	if err := ValidateEnvironmentName(env.Name()); err != nil {
+		return err
+	}
 	// Reload .env file
 	dotEnvBuffer, err := sbd.blobClient.Download(ctx, sbd.EnvPath(env))
 	if err != nil {
@@ -175,19 +180,11 @@ func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) e
 	} else if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
-	env.replaceState(envMap, make(map[string]struct{}))
-	env.Config = cfg
-
-	if env.Name() != "" {
-		tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.Name()))
+	state := EnvironmentState{Dotenv: envMap, Config: cfg}
+	if err := env.ReplaceState(state); err != nil {
+		return err
 	}
-
-	if _, err := uuid.Parse(env.GetSubscriptionId()); err == nil {
-		tracing.SetGlobalAttributes(fields.SubscriptionIdKey.String(env.GetSubscriptionId()))
-	} else {
-		tracing.SetGlobalAttributes(fields.StringHashed(fields.SubscriptionIdKey, env.GetSubscriptionId()))
-	}
-
+	traceLoadedState(env.Name(), state)
 	return nil
 }
 

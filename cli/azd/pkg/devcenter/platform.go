@@ -85,7 +85,7 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 				// Attempt to load any devcenter configuration from local environment
 				env, err := localEnvStore.Get(ctx, defaultEnvName)
 				if err == nil {
-					devCenterNode, exists := env.Config.Get(ConfigPath)
+					devCenterNode, exists := env.Config().Get(ConfigPath)
 					if exists {
 						value, err := ParseConfig(devCenterNode)
 						if err != nil {

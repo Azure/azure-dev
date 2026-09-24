@@ -166,12 +166,12 @@ func Test_EnvironmentStore_Get(t *testing.T) {
 		require.Equal(t, "value1", env.Getenv("KEY1"))
 		require.Equal(t, "value2", env.Getenv("KEY2"))
 
-		devCenterNode, ok := env.Config.Get("platform.config")
+		devCenterNode, ok := env.Config().Get("platform.config")
 		require.True(t, ok)
 
 		for key, expected := range mockEnvironments[0].Parameters {
 			paramPath := fmt.Sprintf("%s.%s", ProvisionParametersConfigPath, key)
-			actual, ok := env.Config.Get(paramPath)
+			actual, ok := env.Config().Get(paramPath)
 			require.True(t, ok)
 			require.Equal(t, fmt.Sprint(expected), fmt.Sprint(actual))
 		}
@@ -218,37 +218,130 @@ func Test_EnvironmentStore_GetEnvPath(t *testing.T) {
 	require.Equal(t, fmt.Sprintf("projects/%s/users/me/environments/%s", config.Project, env.Name()), path)
 }
 
-func TestEnvironmentStoreReloadFailurePreservesSharedSettings(t *testing.T) {
-	mockContext := mocks.NewMockContext(t.Context())
-	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
-	mockdevcentersdk.MockListEnvironmentsByProject(mockContext, "Project1", mockEnvironments)
-	remoteEnv := mockEnvironments[0]
-	mockdevcentersdk.MockGetEnvironment(mockContext, "Project1", "me", remoteEnv.Name, remoteEnv)
+func TestEnvironmentStoreReloadRetry(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		failFirst    bool
+		cachedConfig *Config
+		fallbackName bool
+	}{
+		{name: "success"},
+		{name: "name from dotenv", fallbackName: true},
+		{name: "output failure then retry", failFirst: true},
+		{
+			name:      "prompted output failure then retry",
+			failFirst: true,
+			cachedConfig: &Config{
+				Name:    "DEV_CENTER_01",
+				Catalog: "SampleCatalog",
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
+			mockdevcentersdk.MockListEnvironmentsByProject(mockContext, "Project1", mockEnvironments)
+			remoteEnv := mockEnvironments[0]
+			mockdevcentersdk.MockGetEnvironment(mockContext, "Project1", "me", remoteEnv.Name, remoteEnv)
+			cfg := &Config{
+				Name:                  "DEV_CENTER_01",
+				Project:               "Project1",
+				EnvironmentDefinition: "WebApp",
+				Catalog:               "SampleCatalog",
+			}
+			originalConfig := *cfg
+			manager := &mockDevCenterManager{}
+			outputErr := errors.New("outputs unavailable")
+			if tt.failFirst {
+				manager.On("Outputs", mock.Anything, mock.Anything, mock.Anything).
+					Return(map[string]provisioning.OutputParameter(nil), outputErr).Once()
+			}
+			manager.On("Outputs", mock.Anything, mock.Anything, mock.Anything).
+				Return(map[string]provisioning.OutputParameter{
+					"OUTPUT": {Type: "string", Value: "loaded"},
+				}, nil).Once()
+			store, ok := newEnvironmentStoreForTest(t, mockContext, cfg, manager).(*EnvironmentStore)
+			require.True(t, ok)
+			if tt.cachedConfig != nil {
+				store.cachedConfig = new(*tt.cachedConfig)
+			}
+			name, dotenvName := remoteEnv.Name, "not-the-stored-name"
+			if tt.fallbackName {
+				name, dotenvName = "", remoteEnv.Name
+			}
+			env := environment.NewWithValues(name, map[string]string{
+				"OUTPUT":                      "before",
+				"LD_PRELOAD":                  "preserved",
+				environment.EnvNameEnvVarName: dotenvName,
+			})
+			view := env.Config()
+			require.NoError(t, view.SetSecret("password", "unsaved-secret"))
+			before, err := env.SnapshotState()
+			require.NoError(t, err)
 
-	settings := &Config{
-		Name:                  "DEV_CENTER_01",
-		Project:               "Project1",
-		EnvironmentDefinition: "WebApp",
-		Catalog:               "SampleCatalog",
+			wrappedEnv := struct{ environment.Env }{env}
+			if tt.failFirst {
+				require.ErrorIs(t, store.Reload(t.Context(), wrappedEnv), outputErr)
+				require.Equal(t, originalConfig, *cfg)
+				require.Equal(t, tt.cachedConfig, store.cachedConfig)
+				after, err := env.SnapshotState()
+				require.NoError(t, err)
+				require.Equal(t, before.Dotenv, after.Dotenv)
+				require.Equal(t, before.Config.Raw(), after.Config.Raw())
+				require.Equal(t, before.Config.ResolvedRaw(), after.Config.ResolvedRaw())
+			}
+			require.NoError(t, store.Reload(t.Context(), wrappedEnv))
+			require.Nil(t, store.cachedConfig)
+			require.Equal(t, remoteEnv.EnvironmentType, cfg.EnvironmentType)
+			require.Equal(t, remoteEnv.User, cfg.User)
+			require.Equal(t, "loaded", env.Getenv("OUTPUT"))
+			expectedValues := map[string]string{
+				DevCenterEnvTypePath: remoteEnv.EnvironmentType,
+				DevCenterUserPath:    remoteEnv.User,
+				"password":           "unsaved-secret",
+			}
+			if tt.cachedConfig != nil {
+				expectedValues[DevCenterProjectPath] = originalConfig.Project
+				expectedValues[DevCenterEnvDefinitionPath] = originalConfig.EnvironmentDefinition
+			}
+			for path, expected := range expectedValues {
+				value, exists := view.GetString(path)
+				require.True(t, exists, path)
+				require.Equal(t, expected, value, path)
+			}
+			for _, path := range []string{DevCenterNamePath, DevCenterCatalogPath} {
+				_, exists := view.Get(path)
+				require.False(t, exists, path)
+			}
+			state, err := env.SnapshotState()
+			require.NoError(t, err)
+			require.Equal(t, "preserved", state.Dotenv["LD_PRELOAD"])
+			require.Equal(t, remoteEnv.Name, env.Name())
+			require.NotContains(t, env.Dotenv(), "LD_PRELOAD")
+			manager.AssertExpectations(t)
+		})
 	}
-	original := *settings
-	outputErr := errors.New("outputs unavailable")
-	manager := &mockDevCenterManager{}
-	manager.On("Outputs", mock.Anything, mock.Anything, mock.Anything).
-		Return(map[string]provisioning.OutputParameter(nil), outputErr).Once()
-	manager.On("Outputs", mock.Anything, mock.Anything, mock.Anything).
-		Return(map[string]provisioning.OutputParameter{"OUTPUT": {Type: "string", Value: "loaded"}}, nil).Once()
-	store, ok := newEnvironmentStoreForTest(t, mockContext, settings, manager).(*EnvironmentStore)
-	require.True(t, ok)
-	env := environment.New(remoteEnv.Name)
+}
 
-	require.ErrorIs(t, store.Reload(t.Context(), env), outputErr)
-	require.Equal(t, original, *settings)
-	require.NoError(t, store.Reload(t.Context(), env))
-	require.Equal(t, remoteEnv.EnvironmentType, settings.EnvironmentType)
-	require.Equal(t, remoteEnv.User, settings.User)
-	require.Equal(t, "loaded", env.Getenv("OUTPUT"))
-	manager.AssertExpectations(t)
+func TestEnvironmentStoreRejectsInvalidNames(t *testing.T) {
+	for _, name := range []string{"", ".", "..", "../outside", "bad name"} {
+		t.Run(fmt.Sprintf("%q", name), func(t *testing.T) {
+			t.Setenv(environment.EnvNameEnvVarName, "must-not-override-dotenv")
+			env := environment.NewWithValues("", map[string]string{environment.EnvNameEnvVarName: name})
+			// Invalid identity must fail before any dependency is accessed.
+			store := &EnvironmentStore{}
+			for _, err := range []error{
+				store.Save(t.Context(), env, &environment.SaveOptions{}),
+				store.Reload(t.Context(), env),
+			} {
+				if name == "" {
+					require.ErrorIs(t, err, environment.ErrNameNotSpecified)
+				} else {
+					require.EqualError(t, err, environment.InvalidEnvironmentNameError(name).Error())
+				}
+			}
+		})
+	}
 }
 
 func Test_EnvironmentStore_Save(t *testing.T) {
@@ -277,8 +370,8 @@ func Test_EnvironmentStore_Save(t *testing.T) {
 			validate: func(t *testing.T, env *environment.Environment) {
 				// Before provisioning we do know know the subscription id or resource group name
 				// At this point we should not persist any addidtional project information in the azd config.
-				_, hasProject := env.Config.Get(DevCenterProjectPath)
-				_, hasEnvType := env.Config.Get(DevCenterEnvTypePath)
+				_, hasProject := env.Config().Get(DevCenterProjectPath)
+				_, hasEnvType := env.Config().Get(DevCenterEnvTypePath)
 
 				require.False(t, hasProject)
 				require.False(t, hasEnvType)
@@ -302,8 +395,8 @@ func Test_EnvironmentStore_Save(t *testing.T) {
 			validate: func(t *testing.T, env *environment.Environment) {
 				// After provisioning completes the subscription id and resource group name are stored in the azd environment
 				// At this point azd should also persist the devcenter project and environment type in the config
-				project, projectOk := env.Config.Get(DevCenterProjectPath)
-				envType, envTypeOk := env.Config.Get(DevCenterEnvTypePath)
+				project, projectOk := env.Config().Get(DevCenterProjectPath)
+				envType, envTypeOk := env.Config().Get(DevCenterEnvTypePath)
 
 				require.True(t, projectOk)
 				require.Equal(t, "Project1", project)

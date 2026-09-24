@@ -10,9 +10,11 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -90,19 +92,106 @@ func Test_LocalFileDataStore_ConfigPath(t *testing.T) {
 	require.Equal(t, expected, actual)
 }
 
-func TestLocalReloadInvalidConfigPreservesDotenv(t *testing.T) {
-	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
-	store := NewLocalFileDataStore(azdContext, config.NewFileConfigManager(config.NewManager()))
-	env := New("test")
-	require.NoError(t, os.MkdirAll(azdContext.EnvironmentRoot("test"), 0700))
-	require.NoError(t, os.WriteFile(store.EnvPath(env), []byte("VALUE=on-disk\n"), 0600))
-	require.NoError(t, os.WriteFile(store.ConfigPath(env), []byte("{invalid"), 0600))
-	env.DotenvSet("VALUE", "in-memory")
-	env.DotenvDelete("PENDING")
+func TestLocalFileDataStoreNameResolution(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		explicit string
+		values   map[string]string
+		want     string
+	}{
+		{"explicit", "explicit", map[string]string{EnvNameEnvVarName: "different"}, "explicit"},
+		{"dotenv", "", map[string]string{EnvNameEnvVarName: "from-dotenv"}, "from-dotenv"},
+		{"process", "", map[string]string{}, "from-process"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(EnvNameEnvVarName, "from-process")
+			azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+			store := NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+			env := NewWithValues(tt.explicit, tt.values)
+			require.NoError(t, store.Save(t.Context(), env, nil))
+			require.Equal(t, tt.want, env.Name())
 
-	require.ErrorContains(t, store.Reload(t.Context(), env), "loading config")
-	require.Equal(t, "in-memory", env.Getenv("VALUE"))
-	require.Contains(t, env.deletedKeys, "PENDING")
+			root := azdCtx.EnvironmentRoot(tt.want)
+			require.FileExists(t, filepath.Join(root, DotEnvFileName+".lock"))
+			require.FileExists(t, filepath.Join(root, ConfigFileName))
+			require.NoFileExists(t, filepath.Join(azdCtx.EnvironmentDirectory(), ConfigFileName))
+			require.NoError(t, os.WriteFile(
+				filepath.Join(root, DotEnvFileName), []byte("AZURE_ENV_NAME=loaded\nVALUE=loaded\n"), 0600))
+
+			reloaded := NewWithValues(tt.explicit, tt.values)
+			require.NoError(t, store.Reload(t.Context(), reloaded))
+			require.Equal(t, tt.want, reloaded.Name())
+			require.Equal(t, "loaded", reloaded.Getenv("VALUE"))
+			require.Equal(t, "loaded", reloaded.Getenv(EnvNameEnvVarName))
+			require.Equal(t, filepath.Join(root, DotEnvFileName), store.EnvPath(reloaded))
+		})
+	}
+}
+
+func TestLocalFileDataStoreRejectsInvalidNames(t *testing.T) {
+	for _, name := range []string{"", ".", "..", "../outside", `..\outside`, "/absolute", "bad name"} {
+		t.Run(fmt.Sprintf("%q", name), func(t *testing.T) {
+			t.Setenv(EnvNameEnvVarName, "must-not-override-dotenv")
+			azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+			store := NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+			env := NewWithValues("", map[string]string{EnvNameEnvVarName: name})
+
+			for _, err := range []error{store.Save(t.Context(), env, nil), store.Reload(t.Context(), env)} {
+				if name == "" {
+					require.ErrorIs(t, err, ErrNameNotSpecified)
+				} else {
+					require.EqualError(t, err, InvalidEnvironmentNameError(name).Error())
+				}
+			}
+			require.NoDirExists(t, azdCtx.EnvironmentDirectory())
+			require.Equal(t, map[string]string{EnvNameEnvVarName: name}, env.Dotenv())
+		})
+	}
+}
+
+func TestWriteDotenv(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		replace bool
+	}{
+		{name: "create"},
+		{name: "replace", replace: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, DotEnvFileName)
+			if tt.replace {
+				require.NoError(t, os.WriteFile(path, []byte("VALUE=original\n"), osutil.PermissionFile))
+			}
+
+			require.NoError(t, writeDotenv(t.Context(), path, "VALUE=replacement"))
+			contents, err := os.ReadFile(path)
+			require.NoError(t, err)
+			require.Equal(t, "VALUE=replacement\n", string(contents))
+			matches, err := filepath.Glob(filepath.Join(dir, DotEnvFileName+".tmp-*"))
+			require.NoError(t, err)
+			require.Empty(t, matches)
+		})
+	}
+}
+
+func TestWriteDotenvRenameFailure(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, DotEnvFileName)
+	require.NoError(t, os.Mkdir(path, osutil.PermissionDirectory))
+	originalPath := filepath.Join(path, "original")
+	require.NoError(t, os.WriteFile(originalPath, []byte("original contents"), osutil.PermissionFile))
+
+	// Windows may retry access-denied rename errors; bound the retry wait.
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	require.ErrorContains(t, writeDotenv(ctx, path, "VALUE=replacement"), "renaming temp .env:")
+	contents, err := os.ReadFile(originalPath)
+	require.NoError(t, err)
+	require.Equal(t, "original contents", string(contents))
+	matches, err := filepath.Glob(filepath.Join(dir, DotEnvFileName+".tmp-*"))
+	require.NoError(t, err)
+	require.Empty(t, matches)
 }
 
 // Test_LocalFileDataStore_ConcurrentSave_NoLostUpdate is a regression test

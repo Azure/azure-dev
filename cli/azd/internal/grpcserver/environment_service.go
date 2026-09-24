@@ -247,7 +247,7 @@ func (s *environmentService) GetConfig(
 		return nil, err
 	}
 
-	value, exists := env.Config.Get(req.Path)
+	value, exists := env.Config().Get(req.Path)
 
 	var valueBytes []byte
 	if exists {
@@ -275,7 +275,7 @@ func (s *environmentService) GetConfigString(
 		return nil, err
 	}
 
-	value, exists := env.Config.GetString(req.Path)
+	value, exists := env.Config().GetString(req.Path)
 
 	return &azdext.GetConfigStringResponse{
 		Value: value,
@@ -295,7 +295,7 @@ func (s *environmentService) GetConfigSection(
 
 	var section map[string]any
 
-	exists, err := env.Config.GetSection(req.Path, &section)
+	exists, err := env.Config().GetSection(req.Path, &section)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get section: %w", err)
 	}
@@ -333,7 +333,7 @@ func (s *environmentService) SetConfig(ctx context.Context, req *azdext.SetConfi
 		return nil, fmt.Errorf("failed to unmarshal value: %w", err)
 	}
 
-	if err := env.Config.Set(req.Path, value); err != nil {
+	if err := env.Config().Set(req.Path, value); err != nil {
 		return nil, fmt.Errorf("failed to set value: %w", err)
 	}
 
@@ -359,7 +359,7 @@ func (s *environmentService) UnsetConfig(
 		return nil, err
 	}
 
-	if err := env.Config.Unset(req.Path); err != nil {
+	if err := env.Config().Unset(req.Path); err != nil {
 		return nil, fmt.Errorf("failed to unset value: %w", err)
 	}
 

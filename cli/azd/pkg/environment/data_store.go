@@ -29,10 +29,10 @@ type SaveOptions struct {
 
 type DataStore interface {
 	// Gets the path to the environment .env file
-	EnvPath(env *Environment) string
+	EnvPath(env Env) string
 
 	// Gets the path to the environment JSON config file
-	ConfigPath(env *Environment) string
+	ConfigPath(env Env) string
 
 	// Gets a list of all environments within the stat store
 	List(ctx context.Context) ([]*contracts.EnvListEnvironment, error)
@@ -41,10 +41,10 @@ type DataStore interface {
 	Get(ctx context.Context, name string) (*Environment, error)
 
 	// Reloads the environment from the persistent data store
-	Reload(ctx context.Context, env *Environment) error
+	Reload(ctx context.Context, env Env) error
 
 	// Saves the environment to the persistent data store
-	Save(ctx context.Context, env *Environment, options *SaveOptions) error
+	Save(ctx context.Context, env Env, options *SaveOptions) error
 
 	// Deletes the environment from the persistent data store
 	Delete(ctx context.Context, name string) error

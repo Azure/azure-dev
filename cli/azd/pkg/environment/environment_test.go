@@ -30,6 +30,8 @@ func TestIsValidEnvironmentName(t *testing.T) {
 	assert.True(t, IsValidEnvironmentName("C()mPl3x_ExAmPl3-ThatIsVeryLong"))
 
 	assert.False(t, IsValidEnvironmentName(""))
+	assert.False(t, IsValidEnvironmentName("."))
+	assert.False(t, IsValidEnvironmentName(".."))
 	assert.False(t, IsValidEnvironmentName("no*allowed"))
 	assert.False(t, IsValidEnvironmentName("no spaces"))
 	assert.False(t, IsValidEnvironmentName("12345678901234567890123456789012345678901234567890123456789012345"))
@@ -47,10 +49,10 @@ func TestConfigRoundTrips(t *testing.T) {
 	env := New("test")
 
 	// There should be no configuration since this is an empty environment.
-	require.True(t, env.Config.IsEmpty())
+	require.True(t, env.Config().IsEmpty())
 
 	// Set a config value.
-	err := env.Config.Set("is.this.a.test", true)
+	err := env.Config().Set("is.this.a.test", true)
 	require.NoError(t, err)
 
 	// Save the environment
@@ -60,7 +62,7 @@ func TestConfigRoundTrips(t *testing.T) {
 	// Load the environment back up, we expect no error and for the config value we wrote to still exist.
 	env, err = envManager.Get(*mockContext.Context, "test")
 	require.NoError(t, err)
-	v, has := env.Config.Get("is.this.a.test")
+	v, has := env.Config().Get("is.this.a.test")
 	require.True(t, has)
 	require.Equal(t, true, v)
 }
@@ -76,10 +78,10 @@ func TestFromRoot(t *testing.T) {
 		env := New("test")
 		require.NotNil(t, env)
 
-		require.NotNil(t, env.Config)
+		require.NotNil(t, env.Config())
 		require.NotNil(t, env.dotenv)
 
-		require.NotNil(t, env.Config.IsEmpty())
+		require.NotNil(t, env.Config().IsEmpty())
 		require.Equal(t, 1, len(env.dotenv))
 	})
 
@@ -111,7 +113,7 @@ func TestFromRoot(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, "yes", env.dotenv["TEST"])
-		require.True(t, env.Config.IsEmpty())
+		require.True(t, env.Config().IsEmpty())
 	})
 }
 
@@ -186,6 +188,42 @@ func TestCleanName(t *testing.T) {
 	require.Equal(t, "was-CLEANED-with--bad--things-(123)", CleanName("was CLEANED with *bad* things (123)"))
 }
 
+func TestEnvironment_Name_FallsBackToOSEnvVar(t *testing.T) {
+	t.Run("ExplicitNameWins", func(t *testing.T) {
+		t.Setenv(EnvNameEnvVarName, "from-process")
+		env := NewWithValues("explicit", map[string]string{EnvNameEnvVarName: "from-dotenv"})
+		require.Equal(t, "explicit", env.Name())
+	})
+
+	t.Run("EmptyDotenvValueDoesNotFallBackToProcess", func(t *testing.T) {
+		t.Setenv(EnvNameEnvVarName, "from-process")
+		env := New("")
+		require.Empty(t, env.Name())
+	})
+
+	t.Run("PrefersDotenvOverOSEnvVar", func(t *testing.T) {
+		ostest.Setenv(t, EnvNameEnvVarName, "from-os-env")
+
+		// name is empty so Name() must consult dotenv before falling back to the OS env var.
+		env := NewWithValues("", map[string]string{EnvNameEnvVarName: "from-dotenv"})
+		require.Equal(t, "from-dotenv", env.Name())
+	})
+
+	t.Run("FallsBackToOSEnvVarWhenNameAndDotenvAreEmpty", func(t *testing.T) {
+		ostest.Setenv(t, EnvNameEnvVarName, "from-os-env")
+
+		env := &Environment{}
+		require.Equal(t, "from-os-env", env.Name())
+	})
+
+	t.Run("EmptyWhenNameDotenvAndOSEnvVarAreAllUnset", func(t *testing.T) {
+		ostest.Unsetenv(t, EnvNameEnvVarName)
+
+		env := &Environment{}
+		require.Equal(t, "", env.Name())
+	})
+}
+
 func TestRoundTripNumberWithLeadingZeros(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	envManager, _ := createEnvManager(mockContext, t.TempDir())
@@ -223,7 +261,7 @@ func TestInitialEnvState(t *testing.T) {
 	env := New("test")
 
 	// pull config back and compare against expected
-	config := env.Config.Raw()
+	config := env.Config().Raw()
 	require.Equal(t, configEncode, config)
 }
 
@@ -236,7 +274,7 @@ func TestInitialEnvStateWithError(t *testing.T) {
 	env := New("test")
 
 	// pull unexpectedConfig back and compare
-	unexpectedConfig := env.Config.Raw()
+	unexpectedConfig := env.Config().Raw()
 	expected := config.NewEmptyConfig().Raw()
 	require.Equal(t, expected, unexpectedConfig)
 }
@@ -250,7 +288,7 @@ func TestInitialEnvStateEmpty(t *testing.T) {
 	env := New("test")
 
 	// pull config back and compare against expected
-	config := env.Config.Raw()
+	config := env.Config().Raw()
 	require.Equal(t, expected, config)
 }
 

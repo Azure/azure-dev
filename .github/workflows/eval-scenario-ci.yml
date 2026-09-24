@@ -2,7 +2,7 @@ name: Installed evaluation scenarios (offline)
 
 on:
   push:
-    branches: [m7md7sien-evaluation-github-actions-proof]
+    branches: [main, m7md7sien-evaluation-github-actions-proof]
     paths:
       - .github/workflows/eval-scenario-ci.yml
       - eng/scripts/eval-scenario-ci/**
@@ -31,7 +31,7 @@ permissions:
 
 jobs:
   resolve:
-    if: github.repository == 'm7md7sien/azure-dev' && inputs.mode != 'live'
+    if: inputs.mode != 'live'
     name: Freeze Latest once
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -103,8 +103,41 @@ jobs:
           retention-days: 14
 
   live-prerequisites:
-    if: github.repository == 'm7md7sien/azure-dev' && inputs.mode == 'live'
+    if: inputs.mode == 'live'
+    name: Verify existing protected environment
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      environment_name: ${{ steps.gate.outputs.environment_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Fail closed unless an existing reviewer-protected environment is confirmed
+        id: gate
+        env:
+          SERVICE_PLAN: ${{ inputs.service_plan }}
+          AZD_SCENARIO_LIVE_ENVIRONMENT: ${{ vars.AZD_SCENARIO_LIVE_ENVIRONMENT }}
+          GH_TOKEN: ${{ github.token }}
+        run: python eng/scripts/eval-scenario-ci/scenario.py github-live-gate --output "${{ runner.temp }}/scenario-environment-gate"
+      - name: Publish environment metadata gate outcome
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scenario-environment-gate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scenario-environment-gate/
+          if-no-files-found: error
+          retention-days: 14
+
+  live-service:
+    if: inputs.mode == 'live' && needs.live-prerequisites.outputs.environment_name != ''
+    needs: live-prerequisites
     name: Optional gated static service lifecycle
+    environment:
+      name: ${{ needs.live-prerequisites.outputs.environment_name }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -117,11 +150,7 @@ jobs:
           AZD_SCENARIO_LIVE_APPROVAL_SHA256: ${{ secrets.AZD_SCENARIO_LIVE_APPROVAL_SHA256 }}
           AZD_SCENARIO_LIVE_AUTH_CONFIG: ${{ vars.AZD_SCENARIO_LIVE_AUTH_CONFIG }}
         run: |
-          if [ -z "$SERVICE_PLAN" ]; then
-            python eng/scripts/eval-scenario-ci/scenario.py live --output "${{ runner.temp }}/scenario-service-evidence"
-          else
-            python eng/scripts/eval-scenario-ci/service.py --plan "$SERVICE_PLAN" --output "${{ runner.temp }}/scenario-service-evidence"
-          fi
+          python eng/scripts/eval-scenario-ci/service.py --plan "$SERVICE_PLAN" --output "${{ runner.temp }}/scenario-service-evidence"
       - name: Publish service lifecycle or blocked evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

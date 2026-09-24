@@ -24,7 +24,7 @@ class ServiceTests(unittest.TestCase):
             "GITHUB_REPOSITORY": "fixture/repo", "GITHUB_REPOSITORY_ID": "123",
             "GITHUB_RUN_ID": "42", "GITHUB_SHA": "a" * 40,
             "GITHUB_WORKFLOW_REF": "fixture/repo/.github/workflows/eval-scenario-ci.yml@refs/heads/ci",
-            "GITHUB_WORKFLOW_SHA": "a" * 40, "GITHUB_JOB": "live-prerequisites", "GITHUB_RUN_ATTEMPT": "1",
+            "GITHUB_WORKFLOW_SHA": "a" * 40, "GITHUB_JOB": "live-service", "GITHUB_RUN_ATTEMPT": "1",
         }
 
     def identity(self, plan):
@@ -52,7 +52,7 @@ class ServiceTests(unittest.TestCase):
             "ciIdentity": {
                 "repository": "fixture/repo", "repositoryId": "123",
                 "workflowRef": "fixture/repo/.github/workflows/eval-scenario-ci.yml@refs/heads/ci",
-                "workflowSha": "a" * 40, "job": "live-prerequisites", "attempt": "1",
+                "workflowSha": "a" * 40, "job": "live-service", "attempt": "1",
             },
         }
 

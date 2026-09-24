@@ -1,8 +1,8 @@
 # Installed evaluation scenario CI
 
-This fork-validation workflow exercises the published evaluation and dataset
+This shared scenario workflow exercises the published evaluation and dataset
 extensions through the actual `azd` host. It is separate from the immutable
-[candidate gate](../../.github/workflows/eval-candidate-proof.yml): it does not
+[fork-only candidate gate](../../.github/workflows/eval-candidate-proof.yml): it does not
 modify that gate's 160 checks, fixture contract, source pins, or four jobs.
 
 ## Coverage and limits
@@ -65,14 +65,16 @@ gh workflow run eval-scenario-ci.yml --repo m7md7sien/azure-dev `
   --ref m7md7sien-evaluation-github-actions-proof -f mode=offline
 ```
 
-The dedicated branch's scenario files and shared harness/manifest dependency
+The main and dedicated validation branches' scenario files and shared harness/manifest dependency
 changes also run it. A candidate-pin change is a configuration-validation round,
 not proof of a newly promoted Latest release; the receipt must still identify
 the release actually selected. A release publisher
 can invoke the same dispatch after publishing/promoting a new package. The
-`azd-bugbash-published` repository event is declared for future adoption on the
-fork's default branch; GitHub does not deliver it to a workflow present only on
-this validation branch.
+The shared offline jobs do not restrict execution to the validation fork.
+After adoption on `Azure/azure-dev` main, manual or repository dispatch uses
+the same offline entry point there. The `azd-bugbash-published` event requires
+the workflow on the selected repository's default branch; GitHub does not
+deliver it to a workflow present only on a validation branch.
 **Automatic release-event delivery is not activated or proven by this YAML.**
 There is no idle release watcher or scheduled repeat-run loop.
 
@@ -103,7 +105,7 @@ an actual run finishes. Local YAML checks are not an Azure DevOps execution.
 ## Implemented service sequence, not activated
 
 The optional `service_plan` GitHub input or `servicePlan` Azure DevOps parameter
-selects the restricted executor. Empty input still invokes the blocked reporter.
+selects the restricted executor. Empty input still produces blocked evidence.
 Nonempty input is not authorization: the executor refuses before any command
 unless its exact plan SHA256 matches an externally supplied approved digest,
 the provider/run/revision match, and approval expires within 24 hours.
@@ -116,6 +118,18 @@ values, not caller-supplied workflow inputs.
 This is input/context validation, not cryptographic CI attestation, OIDC
 bootstrap, or native approval enforcement; protected provider configuration and
 explicit activation approval are still required.
+
+On GitHub, the live request first performs a read-only metadata check for the
+**already existing** environment named by repository variable
+`AZD_SCENARIO_LIVE_ENVIRONMENT`. A missing plan/name, unavailable or denied API,
+unknown environment, or absent required-reviewer protection returns nonzero
+with a durable `BLOCKED` receipt. Only the API-confirmed name is passed to the
+service job's native `environment` binding. No environment is created or
+configured by this workflow. The preflight receives only a read-only GitHub
+workflow token; Azure identity/plan secrets are referenced only in the protected
+service job after the native gate. Offline jobs do not need live configuration.
+Mock/schema checks prove the wiring, not actual deployment approval or live
+activation.
 
 The implemented sequence is:
 

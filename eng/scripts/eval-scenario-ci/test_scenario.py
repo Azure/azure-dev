@@ -157,6 +157,15 @@ class SafetyTests(unittest.TestCase):
             "  workflow_dispatch:", 1)[0]
         self.assertIn("      - eng/scripts/eval-candidate-proof/candidate.json\n", push_paths)
 
+    def test_upstream_offline_entry_does_not_depend_on_fork_or_live_configuration(self):
+        workflow = (scenario.HERE.parents[2] / ".github" / "workflows" / "eval-scenario-ci.yml").read_text()
+        resolve = workflow.split("  resolve:\n", 1)[1].split("  offline:\n", 1)[0]
+        self.assertIn("if: inputs.mode != 'live'", resolve)
+        self.assertNotIn("github.repository ==", resolve)
+        self.assertNotIn("AZD_SCENARIO_LIVE_ENVIRONMENT", resolve)
+        self.assertIn("branches: [main, m7md7sien-evaluation-github-actions-proof]", workflow)
+        self.assertIn("name: ${{ needs.live-prerequisites.outputs.environment_name }}", workflow)
+
     def test_archive_errors_are_recorded_without_suppressing_them(self):
         legacy = scenario.proof_module
         for filename, expected in (("broken.zip", legacy.zipfile.BadZipFile),

@@ -256,29 +256,32 @@ bug filings:
 | [5631310][bug-5631310], built-in evaluator validation | Existing best-effort catalog behavior is already in build 41. Exact-package init checks for invalid explicit IDs, a valid ID outside the initial offered choices, and offline preservation remain queued. Network/auth/empty-catalog fallback is not authoritative offline ID validation. Do not substitute create/up or source CI for the init cases. |
 
 New installed-package regressions were subsequently filed and read back by the
-authorized issue owner. Both are New, priority 2, severity 3 - Medium, revision 2,
-classified as internal testing, and human-unassigned. Their artifact identity is
+authorized issue owner. At initial filing both were New, priority 2, severity
+3 - Medium, revision 2, classified as internal testing and human-unassigned.
+The later exact43 closure receipt below supersedes that state snapshot, not the
+original reproduction. Their original artifact identity is
 the exact public [build 41 package][build41] and registry/executable hashes
 recorded below, not the unpublished build 42 package.
 
 | Work item | Required per-release regression | Current disposition |
 | --- | --- | --- |
-| [5645048][bug-5645048], new custom YAML path becomes a directory | With a previously nonexistent filename passed to init `--path`, verify the promised file/directory interpretation, actual file type, selected configuration, and reattachment. File existence or a matching substring alone is not sufficient. | Independent public-build-41 reports observed `quality/custom.eval.yaml` becoming a directory containing `azure.eval.yaml`. The selected local43 repair has scoped installed acceptance below; public repaired-release acceptance remains pending. It was not included in build42. |
-| [5645047][bug-5645047], unsupported init output format is ignored | Explicit unsupported output formats must fail clearly, with correct exit/output and no unintended authored changes. Do not equate an unsupported-format observation with an unproven file-mutation claim. | Confirmed on the same public build41 identity. The selected local43 repair has scoped installed acceptance below, not yet public repaired-release proof; build42 did not include it. Source work remains linked through [#10149](https://github.com/Azure/azure-dev/pull/10149). |
+| [5645048][bug-5645048], new custom YAML path becomes a directory | With a previously nonexistent filename passed to init `--path`, verify the promised file/directory interpretation, actual file type, selected configuration, and reattachment. File existence or a matching substring alone is not sufficient. | Original public41 defect retained. Exact required-only public43 acceptance completed; authorized owner reports Done/revision3/comment8298473. Not a build42 repair. |
+| [5645047][bug-5645047], unsupported init output format is ignored | Explicit unsupported output formats must fail clearly, with correct exit/output and no unintended authored changes. Do not equate an unsupported-format observation with an unproven file-mutation claim. | Exact required-only public43 acceptance completed; authorized owner reports Done/revision3/comment8298470. Source work remains linked through [#10149](https://github.com/Azure/azure-dev/pull/10149); build42 did not include it. |
+| [5645136][bug-5645136], explicit empty required flags | Explicit empty required authoring values must be rejected rather than treated as omitted defaults. | Exact required-only public43 acceptance completed; authorized owner reports Done/revision2/comment8298472. Keep the regression in future matrices. |
 | [5645220][bug-5645220], multiple YAML documents lose content | Reject unsupported multi-document input clearly rather than silently discarding a document; preserve the original file on refusal. | Reported filed; outside the current43 inclusion map. No repair or closure claim. |
 | [5645284][bug-5645284], trailing JSON reference content | Refuse extra trailing JSON content at a reference boundary rather than accepting only a valid prefix. | Reported filed; outside current43. Independent repaired-package acceptance remains pending. |
 
 The separate initial mutation claim was disproved by its snapshots and was not
 filed. Keep that correction with the original observation; do not coach blind
 testers with the source diagnosis or treat source fixes as closed regressions.
-The reported [source repair head][init-source-repairs] also contains an
-explicit-empty-evaluator correction whose issue deduplication is still pending.
+The reported [source repair head][init-source-repairs] also contains the
+explicit-empty-evaluator correction tracked in5645136.
 That main-based development artifact includes deferred simulation contracts;
 it is neither repaired feed 41/42 proof nor an automatically approved next
 feed candidate.
 
 The high-impact numeric-precision regression is required for every relevant
-future package matrix. Existing [5571358][bug-5571358] is reopened as Active,
+future package matrix. Existing [5571358][bug-5571358] was reopened as Active,
 priority 2, severity 2 - High, with source work associated with
 [#10147](https://github.com/Azure/azure-dev/pull/10147). The exact42 source fixture
 failed before the precision fix and passed afterwards; that is not public-EXE
@@ -316,6 +319,24 @@ is unavailable, retain a filing-ready receipt marked blocked rather than inventi
 a bug ID. Route it to the fixes owner immediately and independently verify the
 repaired **installed package** before recommending closure.
 
+### Required-only43 closure snapshot
+
+The authorized work-item owner completed closures and an independent read
+confirmed them at **2026-09-24T07:45:29Z** after exact public067/reg4027
+acceptance and release/CI evidence. Only these four items are covered:
+
+| Work item | Observed final state | Revision | Comment |
+| --- | --- | --- | --- |
+| [5571358][bug-5571358] | Done | 12 | 8298471 |
+| [5645048][bug-5645048] | Done | 3 | 8298473 |
+| [5645047][bug-5645047] | Done | 3 | 8298470 |
+| [5645136][bug-5645136] | Done | 2 | 8298472 |
+
+Actual assignee, priority and severity were preserved. Supplementary blind
+replays add no release gate or automatic reopening/closure action. The separate
+5572140 concern, excluded lifecycle work, and backend retention remain outside
+these closures. Keep all regression cases in future matrices.
+
 ## Release evidence index
 
 Snapshot: **2026-09-24**. These links describe their named immutable release only.
@@ -325,8 +346,9 @@ The current fresh Windows checks do not replace the historical broader matrices.
 | --- | --- | --- |
 | 40 | [Build 40 receipt][build40], evaluations `1.0.40-beta`, dataset `1.0.0-beta.28` | Historical scoped local/terminal/live results, including the responses-backed execution `FAIL`. Do not relabel as 41. |
 | 41 | [Frozen build 41 receipt][build41], evaluations `1.0.41-beta`, dataset `1.0.0-beta.29`, source `8ef8b6df77336950c60506ab2966037f579d92cd`, azd `>=1.33.0` | Historical release, previously Latest. Targeted package acceptance and four hosted jobs `PASS`; separately, the new scenario run resolved this release before promotion and passed 168 checks per OS. Broad live reruns, all platforms, and all seven regressions are not claimed. |
-| 42 | Public [release `extensions-2026-09-24-42`][release42], evaluations `1.0.42-beta`, dataset `1.0.0-beta.30`, core `1.33.0`, frozen source [`d40a3b5a1e7c5944b1b43decd14c96096a99e5b6`][source42]. Registry SHA256 `83026575746f7db5c5cc7a3035f9e75b776f709875d2f0768bd9c215aaaca635`. | Latest promotion approved at **2026-09-24T03:17:39Z**. Publisher verified all 15 anonymous assets, a fresh unversioned Latest install, stable registry/docs contents, and preservation of historical asset identities at [feed revision `967b631`][feed42]. Both local Windows acceptance scopes and all four [hosted jobs][hosted42] are `PASS`; both OS artifact sets were downloaded and verified. No new live/cloud-contract acceptance claim. |
+| 42 | Public [release `extensions-2026-09-24-42`][release42], evaluations `1.0.42-beta`, dataset `1.0.0-beta.30`, core `1.33.0`, frozen source [`d40a3b5a1e7c5944b1b43decd14c96096a99e5b6`][source42]. Registry SHA256 `83026575746f7db5c5cc7a3035f9e75b776f709875d2f0768bd9c215aaaca635`. | Previously Latest following approval at **2026-09-24T03:17:39Z**. Publisher verified all 15 anonymous assets, a fresh unversioned install and stable registry/docs at [feed revision `967b631`][feed42]. Both local Windows scopes and all four [hosted jobs][hosted42] remain `PASS`; both OS artifact sets were downloaded/verified. Historical proof is unchanged by43 promotion. |
 | 43 superseded local proposal | Historical source [`2d4ea18150b06cd6ecc7a31998069f712bf874f9`][source43], proposed evaluations `1.0.43-beta` and dataset `1.0.0-beta.31`; local registry SHA256 `21c176596c731c025bc8124e36e00831348188e22109856358904c2aa0c0c7fb`. | **Superseded, partial local evidence only; never a public tuple or aggregate PASS.** Do not pin, dispatch or transfer its per-fix PASS results to the required-only successor. New exact source, hashes, acceptance and public metadata are required. |
+| 43 required-only public release | [Release `extensions-2026-09-24-43`][release43], evaluations `1.0.43-beta`, dataset `1.0.0-beta.31`, core `1.33.0`, source [`067b2fd5622494db2dc6ac3a2e9bc19e871ed9e7`][source43-required]. Registry SHA256 `4027cd85bf2a5853db90b4bed12c225eb125197e758e3015a88f9e9aca7a3215`. | Latest promotion approved at **2026-09-24T07:31:22Z**. Publisher verified all15 stable/pinned assets, fresh unversioned Windows installation, root registry and docs at [feed revision `0f49946`][feed43], with all90 historical asset identities preserved. Fresh required-only local acceptance and all four [hosted jobs][hosted43] are `PASS`; both OS artifacts downloaded/verified. Excluded lifecycle fixes remain unaccepted. |
 
 For those superseded local bytes, the original path/format/empty-flag Windows
 scope passed three cases, 38 assertions and ten commands with owned cleanup;
@@ -346,7 +368,19 @@ After the phase-C deadline, Track1 selected a required-only successor based on
 build42 plus precision, path/format and explicit-empty-flag fixes. Rubric and
 delete-lifecycle changes are excluded from that fallback. The historical
 local2d4/reg21c receipts remain available, but no prior acceptance carries over
-to the new bytes and no successor publication or hosted run is claimed here.
+to the new bytes. The required-only public receipt above follows fresh
+acceptance, not a relabeling of that proposal.
+
+The exact required-only43 hosted run is **35969288265**, head
+`e8d07ded9163562976a14b9eb9b61952829bd36e`. Both manifest source fields pin067b;
+the workflow, harness and ordered check-ID blobs were frozen at dispatch.
+Both downloaded OS sets verify160 canonical commands/outcomes, 50 seed refusals
+(four exact new zero-byte locks and46 unchanged snapshots), 36 binding checks
+(12 strict refusals and24 preservation cases), runtime versions, all public
+archive pins and successful cleanup. Both source-race logs verify Go1.26.4 and
+the unreduced command on exact067b. This is not live Azure, interactive CI,
+excluded lifecycle acceptance, or the separately triggered Latest-configuration
+scenario run.
 
 The local build 42 practical receipt covers six cases and 25 assertions: three
 init/reattachment journeys and three help-only cases. Its 16 records include
@@ -572,13 +606,17 @@ optional recommendations.
 [hosted41]: https://github.com/m7md7sien/azure-dev/actions/runs/35851410814
 [hosted42]: https://github.com/m7md7sien/azure-dev/actions/runs/35949654046
 [release42]: https://github.com/m7md7sien/azd-foundry-feed/releases/tag/extensions-2026-09-24-42
+[release43]: https://github.com/m7md7sien/azd-foundry-feed/releases/tag/extensions-2026-09-24-43
+[hosted43]: https://github.com/m7md7sien/azure-dev/actions/runs/35969288265
 [feed42]: https://github.com/m7md7sien/azd-foundry-feed/tree/967b631b97cad2d05ca165a985d5010d51bc1f64
+[feed43]: https://github.com/m7md7sien/azd-foundry-feed/tree/0f49946b48dab8d2d09c01f380d7e1d3e2c05e07
 [scenario41]: https://github.com/m7md7sien/azure-dev/actions/runs/35950594406
 [scenario42]: https://github.com/m7md7sien/azure-dev/actions/runs/35951992378
 [candidate-repair42]: https://github.com/m7md7sien/azure-dev/actions/runs/35951992376
 [scenario-guide]: evaluation-scenario-ci.md
 [source42]: https://github.com/m7md7sien/azure-dev/commit/d40a3b5a1e7c5944b1b43decd14c96096a99e5b6
 [source43]: https://github.com/m7md7sien/azure-dev/commit/2d4ea18150b06cd6ecc7a31998069f712bf874f9
+[source43-required]: https://github.com/m7md7sien/azure-dev/commit/067b2fd5622494db2dc6ac3a2e9bc19e871ed9e7
 [init-source-repairs]: https://github.com/m7md7sien/azure-dev/commit/32ff9bc772e7500b37ba99709401709e9bda1165
 [agent-rules]: ../../cli/azd/AGENTS.md#testing-best-practices
 [extension-style]: ../../cli/azd/docs/extensions/extensions-style-guide.md
@@ -598,3 +636,4 @@ optional recommendations.
 [bug-5645220]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5645220
 [bug-5645284]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5645284
 [bug-5645184]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5645184
+[bug-5645136]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5645136

@@ -206,6 +206,54 @@ def live_status():
     }
 
 
+def github_live_gate(output, env=None):
+    env = os.environ if env is None else env
+    output.mkdir(parents=True, exist_ok=False)
+    report = {"status": "BLOCKED", "execution": "NOT RUN",
+              "scope": "Existing GitHub environment metadata only; not deployment approval"}
+    try:
+        plan = env.get("SERVICE_PLAN", "")
+        name = env.get("AZD_SCENARIO_LIVE_ENVIRONMENT", "")
+        repository = env.get("GITHUB_REPOSITORY", "")
+        if not plan or not Path(plan).is_file():
+            report["reason"] = "An available reviewed service plan is required"
+            return 3
+        if not name or any(char in name for char in "\r\n\x00"):
+            report["reason"] = "An existing protected environment must be configured"
+            return 3
+        if (env.get("GITHUB_SERVER_URL") != "https://github.com"
+                or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository)
+                or not env.get("GITHUB_OUTPUT") or not env.get("GH_TOKEN")):
+            report["reason"] = "Supported native GitHub context and output binding are required"
+            return 3
+        result = subprocess.run([
+            "gh", "api", "--hostname", "github.com", "--method", "GET",
+            f"repos/{repository}/environments/{urllib.parse.quote(name, safe='')}",
+            "--jq", "{name,requiredReviewers:([.protection_rules[]?"
+            " | select(.type==\"required_reviewers\") | .reviewers | length] | add // 0)}",
+        ], env=env, capture_output=True, text=True, timeout=60, check=False)
+        if result.returncode != 0:
+            report["reason"] = "Existing environment metadata was unavailable or access was denied"
+            return 3
+        metadata = json.loads(result.stdout)
+        if (not isinstance(metadata, dict) or metadata.get("name") != name
+                or type(metadata.get("requiredReviewers")) is not int
+                or metadata["requiredReviewers"] <= 0):
+            report["reason"] = "The existing environment must have required-reviewer protection"
+            return 3
+        with open(env["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
+            stream.write(f"environment_name={name}\n")
+        report["status"] = "PASS"
+        report["reason"] = "Existing reviewer-protected environment verified; native approval is still required"
+        return 0
+    except (OSError, ValueError, subprocess.SubprocessError):
+        report["reason"] = "Protected environment metadata could not be verified"
+        return 3
+    finally:
+        write_json(output / "environment-gate.json", report)
+        print(f"{report['status']}: {report['reason']}", flush=True)
+
+
 def installed_evidence(proof, pin):
     platform = proof.platform
     core = pin["azd"]["artifacts"][platform]
@@ -351,12 +399,16 @@ def main():
     runner.add_argument("--output", required=True, type=Path)
     live = commands.add_parser("live")
     live.add_argument("--output", required=True, type=Path)
+    environment_gate = commands.add_parser("github-live-gate")
+    environment_gate.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     try:
         if args.operation == "resolve":
             resolve(args.output)
         elif args.operation == "offline":
             execute(args.manifest, args.output)
+        elif args.operation == "github-live-gate":
+            return github_live_gate(args.output)
         else:
             args.output.mkdir(parents=True, exist_ok=False)
             write_json(args.output / "live-status.json", live_status())

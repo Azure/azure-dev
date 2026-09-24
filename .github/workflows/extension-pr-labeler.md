@@ -8,6 +8,7 @@ on:
     paths:
       - "cli/azd/extensions/**"
       - "cli/azd/docs/**"
+  roles: [admin, maintainer, write, triage]
 permissions:
   contents: read
   copilot-requests: write

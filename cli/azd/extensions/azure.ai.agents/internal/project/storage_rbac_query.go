@@ -267,13 +267,10 @@ func projectStorageBindings(
 			return nil, errors.New("incomplete capability host list")
 		}
 		for _, host := range page.Value {
-			if host == nil || host.Properties == nil || host.Properties.CapabilityHostKind == nil {
+			if host == nil || host.Properties == nil {
 				return nil, errors.New("incomplete capability host metadata")
 			}
 			properties := host.Properties
-			if !strings.EqualFold(string(*properties.CapabilityHostKind), "Agents") {
-				continue
-			}
 			if properties.ProvisioningState == nil || string(*properties.ProvisioningState) != "Succeeded" {
 				return nil, errors.New("project capability host is not ready")
 			}

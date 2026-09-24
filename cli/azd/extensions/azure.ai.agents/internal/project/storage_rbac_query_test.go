@@ -215,7 +215,7 @@ func TestQueryProjectStorageRBAC(t *testing.T) {
 			hostResponse: map[string]any{"value": []any{nil}}, wantError: true},
 		{name: "capability host binding incomplete", hostResponse: map[string]any{"value": []any{
 			map[string]any{"properties": map[string]any{
-				"capabilityHostKind": "Agents", "provisioningState": "Succeeded", "storageConnections": []any{nil},
+				"provisioningState": "Succeeded", "storageConnections": []any{nil},
 			}},
 		}}, wantError: true},
 		{name: "capability host continuation rejected", hostResponse: map[string]any{
@@ -295,7 +295,7 @@ func TestQueryProjectStorageRBAC(t *testing.T) {
 						state = "Succeeded"
 					}
 					items := []any{map[string]any{"name": "custom-host", "properties": map[string]any{
-						"capabilityHostKind": "Agents", "provisioningState": state, "storageConnections": names,
+						"provisioningState": state, "storageConnections": names,
 					}}}
 					if testCase.noHost {
 						items = []any{}

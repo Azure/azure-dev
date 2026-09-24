@@ -70,7 +70,7 @@ func TestTheSchemaRefusesWhatValidateSimulationRefuses(t *testing.T) {
 	}
 }
 
-func TestSimulationSchemaAndRuntimeAgreeOnSampleCaps(t *testing.T) {
+func TestSimulationSchemaAndRuntimeAgree(t *testing.T) {
 	t.Parallel()
 
 	const resourceURI = "https://example.test/eval.schema.json"
@@ -80,21 +80,31 @@ func TestSimulationSchemaAndRuntimeAgreeOnSampleCaps(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, tc := range []struct {
-		name    string
-		cap     int
-		omit    bool
-		wantErr bool
+		name       string
+		cap        int
+		omit       bool
+		simulation map[string]any
+		wantErr    bool
 	}{
 		{name: "omitted", omit: true},
 		{name: "explicit zero"},
 		{name: "positive cap", cap: 1, wantErr: true},
 		{name: "negative cap", cap: -1, wantErr: true},
+		{name: "missing model", simulation: map[string]any{}, wantErr: true},
+		{name: "empty model", simulation: map[string]any{"model": ""}, wantErr: true},
+		{name: "null model", simulation: map[string]any{"model": nil}, wantErr: true},
+		{name: "single character model", simulation: map[string]any{"model": "m"}},
+		{name: "named deployment", simulation: map[string]any{"model": "simulator-deployment"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			simulation := tc.simulation
+			if simulation == nil {
+				simulation = map[string]any{"model": "simulator"}
+			}
 			eval := map[string]any{
 				"name": "simulated", "dataset": "seeds", "evaluation_level": "conversation",
 				"target":     map[string]any{"type": "agent", "name": "agent"},
-				"simulation": map[string]any{"model": "simulator"},
+				"simulation": simulation,
 				"evaluators": []any{map[string]any{"evaluator": "builtin.task_completion"}},
 			}
 			if !tc.omit {
@@ -114,6 +124,9 @@ func TestSimulationSchemaAndRuntimeAgreeOnSampleCaps(t *testing.T) {
 			if tc.wantErr {
 				assert.Error(t, schemaErr)
 				assert.Error(t, runtimeErr)
+				if tc.simulation != nil {
+					assert.ErrorContains(t, runtimeErr, "simulation.model is required")
+				}
 			} else {
 				assert.NoError(t, schemaErr)
 				assert.NoError(t, runtimeErr)

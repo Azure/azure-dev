@@ -1586,6 +1586,10 @@ service targets are not initialized, and deploy hooks do not run. Services whose
 host does not support preview are reported and skipped. The flag cannot be
 combined with `--from-package` or `--timeout`.
 
+Core built-in service targets resolve their Azure resource before generating the
+preview. Extension service targets receive the effective service configuration
+through the contract below and can perform their own read-only lookups as needed.
+
 Extension service targets opt in through the experimental, **v1beta-only**
 contract. Register the host with `ExtensionHost.WithBetaServiceTargetPreview`
 instead of `WithServiceTarget`, and implement `preview.ServiceTargetPreviewProvider`

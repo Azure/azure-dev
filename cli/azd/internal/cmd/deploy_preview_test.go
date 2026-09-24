@@ -37,7 +37,8 @@ func (t *previewServiceTarget) Preview(
 
 type previewServiceManager struct {
 	mockDeployServiceManager
-	targets map[string]project.ServiceTarget
+	targets   map[string]project.ServiceTarget
+	resources map[string]*environment.TargetResource
 }
 
 func (m *previewServiceManager) GetServiceTarget(
@@ -45,6 +46,14 @@ func (m *previewServiceManager) GetServiceTarget(
 	serviceConfig *project.ServiceConfig,
 ) (project.ServiceTarget, error) {
 	return m.targets[serviceConfig.Name], nil
+}
+
+func (m *previewServiceManager) GetTargetResource(
+	ctx context.Context,
+	serviceConfig *project.ServiceConfig,
+	serviceTarget project.ServiceTarget,
+) (*environment.TargetResource, error) {
+	return m.resources[serviceConfig.Name], nil
 }
 
 func newDeployPreviewAction(
@@ -81,6 +90,7 @@ func newDeployPreviewAction(
 				"agent": agentTarget,
 				"api":   &mockServiceTargetWithoutPreview{},
 			},
+			resources: map[string]*environment.TargetResource{},
 		},
 		console:             mockinput.NewMockConsole(),
 		formatter:           formatter,
@@ -91,6 +101,24 @@ func newDeployPreviewAction(
 
 type mockServiceTargetWithoutPreview struct {
 	project.ServiceTarget
+}
+
+type resourcePreviewServiceTarget struct {
+	project.ServiceTarget
+	targetResource *environment.TargetResource
+	err            error
+}
+
+func (t *resourcePreviewServiceTarget) PreviewWithTarget(
+	ctx context.Context,
+	serviceConfig *project.ServiceConfig,
+	targetResource *environment.TargetResource,
+) (*project.ServiceDeployPreviewResult, error) {
+	t.targetResource = targetResource
+	if t.err != nil {
+		return nil, t.err
+	}
+	return &project.ServiceDeployPreviewResult{Message: "resource preview"}, nil
 }
 
 func TestDeployActionPreview(t *testing.T) {
@@ -126,6 +154,43 @@ func TestDeployActionPreviewJson(t *testing.T) {
 	require.Equal(t, map[string]*project.ServiceDeployPreviewResult{
 		"agent": {Message: "agent: 1 change", Data: map[string]any{"action": "update"}},
 	}, parsed.Services)
+}
+
+func TestDeployActionPreviewResolvesTargetForBuiltInPreview(t *testing.T) {
+	t.Parallel()
+
+	action, _ := newDeployPreviewAction(t, &output.NoneFormatter{}, &previewServiceTarget{}, "api")
+	previewTarget := &resourcePreviewServiceTarget{}
+	targetResource := environment.NewTargetResource(
+		"subscription-id",
+		"resource-group",
+		"container-app",
+		"Microsoft.App/containerApps",
+	)
+	serviceManager := action.serviceManager.(*previewServiceManager)
+	serviceManager.targets["api"] = previewTarget
+	serviceManager.resources["api"] = targetResource
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+	require.Same(t, targetResource, previewTarget.targetResource)
+}
+
+func TestDeployActionPreviewReturnsBuiltInPreviewError(t *testing.T) {
+	t.Parallel()
+
+	action, _ := newDeployPreviewAction(t, &output.NoneFormatter{}, &previewServiceTarget{}, "api")
+	serviceManager := action.serviceManager.(*previewServiceManager)
+	serviceManager.targets["api"] = &resourcePreviewServiceTarget{err: errors.New("preview failed")}
+	serviceManager.resources["api"] = environment.NewTargetResource(
+		"subscription-id",
+		"resource-group",
+		"container-app",
+		"Microsoft.App/containerApps",
+	)
+
+	_, err := action.Run(t.Context())
+	require.EqualError(t, err, "previewing service 'api': preview failed")
 }
 
 func TestDeployActionPreviewErrors(t *testing.T) {

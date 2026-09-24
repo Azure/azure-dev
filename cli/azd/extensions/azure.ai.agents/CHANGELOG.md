@@ -18,8 +18,8 @@
 ### Other Changes
 
 - [[#10057]](https://github.com/Azure/azure-dev/pull/10057) Improve `azd ai agent` help formatting, examples, and environment guidance. Thanks @Siglud for the contribution!
-- [[#10114]](https://github.com/Azure/azure-dev/pull/10114) Update gRPC to v1.83.2 to address the GHSA-2v4p-qf9q-27wj security advisory.
-- [[#10128]](https://github.com/Azure/azure-dev/pull/10128) Update OpenTelemetry Go to v1.45.0 to address the GHSA-8wmf-6v46-5gfg security advisory.
+- [[#10114]](https://github.com/Azure/azure-dev/pull/10114) Update gRPC to v1.83.2
+- [[#10128]](https://github.com/Azure/azure-dev/pull/10128) Update OpenTelemetry Go to v1.45.0
 
 ## 1.0.0-beta.16 (2026-09-17)
 

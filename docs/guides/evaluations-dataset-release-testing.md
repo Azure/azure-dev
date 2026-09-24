@@ -182,7 +182,7 @@ not a claim that every combination is implemented or tested.
 | CANCEL-01 / edge | Actual Windows terminal picker plus in-progress owned command with bounded cleanup | Distinguish explicit picker Cancel from Ctrl+C and record the delivery method and exit code. Redirected stdin or a timeout is not interactive terminal proof. Test service cancellation separately from local picker cancellation. |
 | DATA-01 / practical | Owned versioned single-file and multi-file datasets; downloads in both namespaces with file/directory output | Bytes match source; overwrite requires explicit consent; forced replacement works; relative layout preserved; a one-file folder is not automatically a single-file dataset. |
 | EDGE-01 / edge | Bounded local fixtures or authorized service cases for empty pages, pagination, malformed data, missing identity, retry/timeouts, partial failure | No cross-project/version mix-ups, duplicate/missing page results, silent success, dropped errors, runaway retries, or secret disclosure. Label fixture proof separately from live behavior. |
-| PRECISION-01 / edge | Owned loopback fixture through affected typed detail/list-page/file-JSON paths, with raw service export as a separate unaffected control; baseline and repaired artifacts identified separately | Preserve integer `9007199254740993` and decimal `0.123456789012345678901234567890` as numbers, not strings, with an exact integer/decimal or raw-token oracle that cannot round away a failure. Include ordinary numeric and error controls. Installed coverage is `NOT RUN` until its own receipt; source HTTP tests are not shipped proof. |
+| PRECISION-01 / edge | Owned loopback fixture through affected typed detail/list-page/file-JSON paths, with raw service export as a separate unaffected control; baseline and repaired artifacts identified separately | Preserve integer `9007199254740993` and decimal `0.123456789012345678901234567890` as numbers, not strings, with an exact oracle. Public42 Linux extension detail is now measured `FAIL` under the explicitly authorized local SDK/auth mocks described below. Remaining typed paths and repaired-package coverage are `NOT RUN`; this is not live/full-core authentication proof. |
 | RECOVER-01 / both | Owned partial publication/generation state; rerun/reattach and explicit cleanup | Persisted identity is reusable, retry is idempotent, partial success is reported, cancellation stops owned work, and cleanup matches actual service delete scope and response contract. |
 | TRACE-01 / practical | Explicitly authorized owned agent/version, trace access, and narrow request window | Returned traces belong to the intended owned agent/version/window. Do not widen to shared traffic when ingestion or permissions block the case. |
 
@@ -286,10 +286,23 @@ to the existing edge lane, not a new investigator. Baseline public42 and any
 future repaired package need independent installed-byte receipts. No live cost,
 TLS bypass, or global trust changes are authorized for the loopback fixture.
 The edge lane's exact integer/decimal/raw-token oracle and ordinary, rounded,
-quoted and malformed controls passed **oracle-only** checks. Installed typed
-detail/list-page/file-JSON execution remains `BLOCKED / NOT RUN`: the existing
-source fixture uses an in-process transport, not a supported published CLI hook.
-No DNS, host validation, trust, identity, or instrumented-build bypass is allowed.
+quoted and malformed controls passed **oracle-only** checks. Subsequently, the
+real public42 Linux extension ELF reproduced the detail-path defect through an
+explicitly authorized local SDK gRPC/auth-subprocess mock with normally verified
+TLS. The served unrounded payload SHA256 was
+`384f75320a9993ebef99c600e523602961e5fc58fbc0290f66c22665e316daa6`.
+Both signs of `9007199254740993` rounded to `9007199254740992`; the long decimal
+became `0.12345678901234568`, while an unknown raw integer field was preserved.
+The unchanged ELF SHA256 was
+`bf13bab80679aa1da842906ade4bf86b1ec5e8c12a363d755bbd2b88384e51d7`.
+Two API requests and three loopback connections were observed, with no external
+connection and all owned servers stopped. Negative TLS/proxy/RPC controls passed.
+The first unknown-RPC guard failure was retained; the second attempt used the
+source-verified SDK namespace. This is actual published-extension local-mock
+runtime evidence, not live Azure or full-core authentication. Typed list/file,
+raw/error controls and the fixed43 package still need their own receipts.
+The published binary was not instrumented or replaced with a repair build, and
+no blanket fixed-package or issue-closure claim follows.
 
 For new defects, first deduplicate in the relevant project against these records
 and known linked fixes. File through the authorized [evaluation bug channel][bug-channel]

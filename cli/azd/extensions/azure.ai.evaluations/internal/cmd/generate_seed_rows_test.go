@@ -71,21 +71,25 @@ func TestNormalizeGeneratedSeedRows(t *testing.T) {
 
 func TestGeneratedSeedsPublishCanonicalRowsBeforeSimulation(t *testing.T) {
 	for _, tc := range []struct {
-		name, outputDir string
-		force           bool
+		name, outputDir, registryTag string
+		force                        bool
 	}{
 		{name: "default path"},
 		{name: "custom directory", outputDir: "custom seeds"},
 		{name: "custom file", outputDir: "custom seeds/selected.jsonl"},
 		{name: "replace existing file", outputDir: "custom seeds/selected.jsonl", force: true},
+		{name: "service tags without job inputs", registryTag: tagDataGenerationType},
+		{name: "portal tags without job inputs", registryTag: tagScenario},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			generatedSeedsPublishCanonicalRowsBeforeSimulation(t, tc.outputDir, tc.force)
+			generatedSeedsPublishCanonicalRowsBeforeSimulation(t, tc.outputDir, tc.force, tc.registryTag)
 		})
 	}
 }
 
-func generatedSeedsPublishCanonicalRowsBeforeSimulation(t *testing.T, outputDir string, force bool) {
+func generatedSeedsPublishCanonicalRowsBeforeSimulation(
+	t *testing.T, outputDir string, force bool, registryTag string,
+) {
 	t.Helper()
 
 	const generated = `{"id":9007199254740993,"test_case_description":"A delayed order.","desired_num_turns":4}` + "\n"
@@ -99,8 +103,12 @@ func generatedSeedsPublishCanonicalRowsBeforeSimulation(t *testing.T, outputDir 
 		case "/datasets/golden/versions":
 			_, _ = io.WriteString(w, `{"value":[{"version":"1"}]}`)
 		case "/datasets/golden/versions/1":
+			tags := seedDatasetTags("conversation")
+			if registryTag != "" {
+				tags = map[string]string{registryTag: "conversation_simulation"}
+			}
 			assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
-				"name": "golden", "version": "1", "id": "generated-id", "tags": seedDatasetTags("conversation"),
+				"name": "golden", "version": "1", "id": "generated-id", "tags": tags,
 			}))
 		case "/datasets/golden/versions/1/credentials":
 			generatedDownloads.Add(1)
@@ -154,7 +162,9 @@ func generatedSeedsPublishCanonicalRowsBeforeSimulation(t *testing.T, outputDir 
 		cmd: catalogCommand(t, &output), flags: &jobFlags{path: dir, outputDir: outputDir, force: force},
 	}
 	job := datasetJobResult("golden", "1")
-	job.Inputs = &eval_api.DataGenerationInputs{Options: eval_api.DataGenerationOptions{Type: "simulation_seed"}}
+	if registryTag == "" {
+		job.Inputs = &eval_api.DataGenerationInputs{Options: eval_api.DataGenerationOptions{Type: "simulation_seed"}}
+	}
 	ref, err := action.collect(t.Context(), ec, datasetJobs, job, &output)
 	require.NoError(t, err)
 	assert.Equal(t, "1", ref.Version, "retain the generation job's version as provenance")

@@ -27,6 +27,7 @@ func TestJobShowRecoversMetadataWhilePreservingEditedFile(t *testing.T) {
 	for _, tc := range []struct {
 		name, jobType, localLevel, tagLevel, wantLevel string
 		force                                          bool
+		tags                                           map[string]string
 	}{
 		{name: "missing inputs", tagLevel: "conversation", wantLevel: "conversation"},
 		{name: "unknown inputs", jobType: "future_type", tagLevel: "conversation", wantLevel: "conversation"},
@@ -36,6 +37,17 @@ func TestJobShowRecoversMetadataWhilePreservingEditedFile(t *testing.T) {
 			tagLevel: "conversation", wantLevel: "turn"},
 		{name: "untagged stays unknown"},
 		{name: "force restores bytes", tagLevel: "conversation", wantLevel: "conversation", force: true},
+		{name: "service generation tag", tags: map[string]string{"data_generation_type": "conversation_simulation"},
+			wantLevel: "conversation"},
+		{name: "portal scenario tag", tags: map[string]string{"scenario": "conversation_simulation"},
+			wantLevel: "conversation"},
+		{name: "unknown inputs use service tag", jobType: "future_type",
+			tags: map[string]string{"data_generation_type": "simulation_seed"}, wantLevel: "conversation"},
+		{name: "job type beats service tag", jobType: "simple_qna",
+			tags: map[string]string{"data_generation_type": "conversation_simulation"}, wantLevel: "turn"},
+		{name: "local state beats portal tag", localLevel: "turn",
+			tags: map[string]string{"scenario": "conversation_simulation"}, wantLevel: "turn"},
+		{name: "unknown service tag stays unknown", tags: map[string]string{"data_generation_type": "future_type"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			requests := make(chan identityRequest, 30)
@@ -55,6 +67,9 @@ func TestJobShowRecoversMetadataWhilePreservingEditedFile(t *testing.T) {
 				default:
 					assert.Equal(t, "/datasets/golden/versions/3", r.URL.Path)
 					tags := seedDatasetTags(tc.tagLevel)
+					if tc.tags != nil {
+						tags = tc.tags
+					}
 					if r.Method == http.MethodPut {
 						var payload struct {
 							Tags map[string]string `json:"tags"`

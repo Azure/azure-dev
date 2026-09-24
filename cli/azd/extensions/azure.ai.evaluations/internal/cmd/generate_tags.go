@@ -58,12 +58,22 @@ func datasetGenerationTag(evaluationLevel string) string {
 	return eval_api.DataGenerationTypeSimpleQnA
 }
 
-// registeredEvaluationLevel reads the level a dataset version records.
+// registeredEvaluationLevel prefers an explicit level, then the service's
+// generation type, then the portal's scenario tag. Unknown tags imply no level.
 func registeredEvaluationLevel(registered *dataset_api.Dataset) string {
 	if registered == nil {
 		return ""
 	}
-	return registered.Tags[tagEvaluationLevel]
+	if level := registered.Tags[tagEvaluationLevel]; level != "" {
+		return level
+	}
+	if level := evaluationLevelOfGeneration(registered.Tags[tagDataGenerationType]); level != "" {
+		return level
+	}
+	if conversationSeedDataset(registered) {
+		return project.EvaluationLevelConversation
+	}
+	return ""
 }
 
 // generationLevelKey records what level a generation job was asked for, against

@@ -108,6 +108,9 @@ does not download content when preserving the file, and does not record a new
 deployed fingerprint for those unverified local bytes. Job inputs and recorded
 generation state keep precedence over the registered tag. A metadata lookup
 failure is reported as a collection error; an untagged version stays unspecified.
+Within registered metadata, an explicit `evaluation_level` wins over a recognized
+`data_generation_type`, followed by the portal's `scenario: conversation_simulation`.
+This recovers older service/portal seed datasets without guessing from unknown tags.
 Echoed generation inputs remain internal to level recovery and are omitted from
 job JSON output, including source prompts and instructions.
 

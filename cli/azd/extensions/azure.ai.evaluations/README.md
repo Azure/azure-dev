@@ -265,6 +265,9 @@ After a local rubric is reconciled, its evaluator contract is read from that
 exact service version rather than a potentially stale discovery listing.
 This contract read does not add an authored version pin. An unavailable or
 malformed contract is an error, not permission to reuse an older schema.
+When an unchanged rubric will be reused, preflight checks its published contract,
+not local metadata overrides, before writing reconciliation state or publishing
+dependencies. Authored metadata still applies when a rubric edit creates a new version.
 
 Eval groups are immutable, so a change to a group's evaluators, target or
   sampling creates a new group and a new id. The id is cached in the extension's

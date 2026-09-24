@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -99,6 +101,85 @@ func TestResponseFirstLocalEvaluatorPublicationWithEmptyVersions(t *testing.T) {
 			assert.Equal(t, "judge", created.TestingCriteria[0].InitializationParameters["model"])
 			assert.Empty(t, created.TestingCriteria[0].EvaluatorVersion)
 			assert.Equal(t, "1", env.stored(t, versionKey("evaluator", "custom")))
+		})
+	}
+}
+
+func TestResponseReusedContractRejectsBeforeStateMutation(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		for _, metadata := range []string{"catalog", "document"} {
+			for _, baseline := range []string{"absent", "recorded"} {
+				t.Run(caller+"/"+metadata+"/"+baseline, func(t *testing.T) {
+					ec, env, service, cfg, dir := validationFixture(t)
+					definition := `{"type":"rubric","dimensions":[{"id":"clarity","weight":5}]}`
+					body := definition
+					decl := project.EvaluatorDecl{Name: "quality", Source: "quality.json"}
+					if metadata == "catalog" {
+						decl.SupportedEvaluationLevels = []string{"conversation"}
+					} else {
+						body = `{"supported_evaluation_levels":["conversation"],"definition":` + definition + `}`
+					}
+					path := filepath.Join(dir, decl.Source)
+					require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+					if baseline == "recorded" {
+						_, digest, err := localEvaluator(decl, path)
+						require.NoError(t, err)
+						env.state[project.FingerprintKey("evaluator", decl.Name)] = digest
+					}
+					service.definition = `{"name":"quality","version":"1","supported_evaluation_levels":["turn"],` +
+						`"definition":` + definition + `}`
+					cfg.Datasets = nil
+					cfg.Evaluators = []project.EvaluatorDecl{decl}
+					cfg.Evals[0].Dataset = ""
+					cfg.Evals[0].Source = &project.SourceDecl{
+						Type: project.SourceTypeResponses, ResponseIDs: []string{"resp_fixed"}, MaxTurns: 1,
+					}
+					cfg.Evals[0].Evaluators = evalcore.EvaluatorList{{Evaluator: decl.Name}}
+					cfg.Evals[0].EvaluationLevel = project.EvaluationLevelConversation
+
+					err := reconcileArtifactConfig(t, caller, ec, cfg, dir)
+					require.ErrorContains(t, err, "conversation")
+					assert.Equal(t, []string{
+						"GET /evaluators/quality/versions", "GET /evaluators/quality/versions/1",
+					}, service.requests)
+					assert.Empty(t, env.config, "incompatible reused contracts must fail before private-state writes")
+					assert.Empty(t, env.values)
+					assert.Zero(t, service.createCount)
+					assert.Equal(t, "preserve", env.stored(t, "unrelated"))
+				})
+			}
+		}
+	}
+}
+
+func TestResponseReusedContractAcceptsPublishedLevel(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		t.Run(caller, func(t *testing.T) {
+			ec, env, service, cfg, dir := validationFixture(t)
+			service.definition = `{"name":"quality","version":"1","supported_evaluation_levels":["conversation"],` +
+				`"definition":{"type":"rubric","dimensions":[{"id":"clarity","weight":5}]}}`
+			cfg.Datasets = nil
+			cfg.Evaluators = []project.EvaluatorDecl{{
+				Name: "quality", SupportedEvaluationLevels: []string{"turn"},
+				Definition: map[string]any{
+					"type":       "rubric",
+					"dimensions": []any{map[string]any{"id": "clarity", "weight": 5}},
+				},
+			}}
+			cfg.Evals[0].Dataset = ""
+			cfg.Evals[0].Source = &project.SourceDecl{
+				Type: project.SourceTypeResponses, ResponseIDs: []string{"resp_fixed"}, MaxTurns: 1,
+			}
+			cfg.Evals[0].Evaluators = evalcore.EvaluatorList{{Evaluator: "quality"}}
+			cfg.Evals[0].EvaluationLevel = project.EvaluationLevelConversation
+
+			require.NoError(t, reconcileArtifactConfig(t, caller, ec, cfg, dir))
+			for _, request := range service.requests {
+				assert.NotEqual(t, "POST /evaluators/quality/versions", request, "the evaluator must be reused")
+			}
+			assert.Equal(t, 1, service.createCount)
+			assert.Equal(t, "1", env.stored(t, versionKey("evaluator", "quality")))
+			assert.Equal(t, "preserve", env.stored(t, "unrelated"))
 		})
 	}
 }

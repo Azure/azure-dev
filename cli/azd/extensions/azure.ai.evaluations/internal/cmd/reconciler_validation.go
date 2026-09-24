@@ -95,7 +95,7 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 		if !decl.CarriesItsRubric() {
 			continue
 		}
-		body, _, err := localEvaluator(decl, project.ResolveSource(baseDir, decl.Source))
+		body, digest, err := localEvaluator(decl, project.ResolveSource(baseDir, decl.Source))
 		if err != nil {
 			return messages.EvaluatorProblem(decl.Name, err)
 		}
@@ -107,8 +107,8 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 			schema.SupportedEvaluationLevels = slices.Clone(decl.SupportedEvaluationLevels)
 		}
 		// Authored rubrics omit the schemas Foundry adds on publication.
-		// Reuse that contract when present, without replacing authored
-		// fields or treating a failed read as a missing evaluator.
+		// Validate reused versions against their published contract. Preserve
+		// authored fields when an edit will publish a new version.
 		remote, err := r.ec.evalClient.GetEvaluatorRaw(ctx, decl.Name, "", ProjectEndpointAPIVersion)
 		if err != nil && !eval_api.IsEvaluatorAbsent(err) {
 			return messages.CheckingEvaluatorExists(decl.Name, err)
@@ -118,14 +118,19 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 			if err != nil {
 				return messages.EvaluatorProblem(decl.Name, err)
 			}
-			if schema.Definition.DataSchema == nil {
-				schema.Definition.DataSchema = published.DataSchema()
-			}
-			if schema.Definition.InitParameters == nil {
-				schema.Definition.InitParameters = published.InitSchema()
-			}
-			if schema.SupportedEvaluationLevels == nil {
-				schema.SupportedEvaluationLevels = slices.Clone(published.SupportedEvaluationLevels)
+			prior := r.ec.privateValue(ctx, project.FingerprintKey("evaluator", decl.Name))
+			if canReuseEvaluator(prior, digest, remote, body) {
+				schema = published
+			} else {
+				if schema.Definition.DataSchema == nil {
+					schema.Definition.DataSchema = published.DataSchema()
+				}
+				if schema.Definition.InitParameters == nil {
+					schema.Definition.InitParameters = published.InitSchema()
+				}
+				if schema.SupportedEvaluationLevels == nil {
+					schema.SupportedEvaluationLevels = slices.Clone(published.SupportedEvaluationLevels)
+				}
 			}
 		}
 		schemas[evaluatorSchemaKey(decl.Name, decl.Version)] = schema

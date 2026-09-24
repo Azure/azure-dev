@@ -94,6 +94,64 @@ class ServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(service.Blocked, "Core executable"):
                 service.verify_install(plan, Path(root))
 
+    def installed_fixture(self, root):
+        plan = self.plan()
+        core = root / "azd"
+        core.write_bytes(b"approved core")
+        plan["azdExecutable"] = str(core)
+        plan["binarySha256"]["azd"] = service.scenario.sha256(core.read_bytes())
+        installed = {}
+        for extension, command in service.scenario.EXTENSIONS.items():
+            platform = "windows-amd64" if service.os.name == "nt" else "linux-amd64"
+            entry = extension.replace(".", "-") + "-" + platform + (".exe" if service.os.name == "nt" else "")
+            binary = root / "extensions" / extension / entry
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(extension.encode())
+            plan["binarySha256"][extension] = service.scenario.sha256(binary.read_bytes())
+            installed[extension] = {
+                "id": extension, "namespace": "ai." + command, "version": plan["versions"][extension],
+                "path": str(binary.relative_to(root)),
+            }
+        settings = {"extension": {"installed": installed}}
+        (root / "config.json").write_text(json.dumps(settings))
+        return plan, settings
+
+    def test_install_verifies_the_persisted_execution_paths(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            plan, _ = self.installed_fixture(root)
+            self.assertEqual(service.verify_install(plan, root), (root / "azd").resolve())
+
+    def test_redirected_metadata_cannot_hide_behind_an_approved_conventional_binary(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            plan, settings = self.installed_fixture(root)
+            redirected = root / "other-binary"
+            redirected.write_bytes(b"unapproved binary, even if it reports an approved version")
+            settings["extension"]["installed"]["azure.ai.evaluations"]["path"] = str(redirected.relative_to(root))
+            (root / "config.json").write_text(json.dumps(settings))
+            with self.assertRaisesRegex(service.Blocked, "execution path"):
+                service.verify_install(plan, root)
+
+    def test_install_rejects_unapproved_routes_and_escaping_paths(self):
+        for field, value in (("namespace", "ai.other"), ("version", "not-approved"),
+                             ("path", "../outside"), ("path", "C:\\outside.exe"),
+                             ("path", "/outside")):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as root:
+                root = Path(root)
+                plan, settings = self.installed_fixture(root)
+                settings["extension"]["installed"]["azure.ai.evaluations"][field] = value
+                (root / "config.json").write_text(json.dumps(settings))
+                with self.assertRaises(service.Blocked):
+                    service.verify_install(plan, root)
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            plan, settings = self.installed_fixture(root)
+            settings["extension"]["installed"]["another-extension"] = {"namespace": "ai.eval"}
+            (root / "config.json").write_text(json.dumps(settings))
+            with self.assertRaisesRegex(service.Blocked, "exactly the two"):
+                service.verify_install(plan, root)
+
     def drive(self, *, failure=None, bad_rows=False, cleanup_fails=False, counts=None):
         plan = self.plan()
         calls, report = [], {}

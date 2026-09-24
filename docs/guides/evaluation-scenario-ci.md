@@ -111,7 +111,12 @@ the provider/run/revision match, and approval expires within 24 hours.
 The implemented sequence is:
 
 1. Verify approved core/extension executable digests in the supplied isolated
-   **CI service-auth** configuration, then require `auth status` to report the
+   **CI service-auth** configuration. The profile must contain exactly the two
+   approved extensions; each persisted ID/namespace/version and relative
+   execution path must match the approved package entry point, and the actual
+   resolved file that azd will execute is hashed. An approved conventional
+   filename elsewhere is not sufficient.
+   Then require `auth status` to report the
    exact approved service-principal client ID. A native AI-scoped token is
    obtained privately to compare its client/tenant claims with the plan; this
    is identity matching of the trusted broker response, not independent JWT

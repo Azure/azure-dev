@@ -16,7 +16,7 @@ from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
 import subprocess
 import sys
@@ -132,6 +132,7 @@ def validate_plan(plan, digest, env):
 
 
 def verify_install(plan, config):
+    config = config.resolve()
     executable = Path(plan["azdExecutable"]).resolve()
     expected = plan["binarySha256"]
     require(isinstance(expected, dict) and set(expected) == {"azd", *scenario.EXTENSIONS}
@@ -139,11 +140,28 @@ def verify_install(plan, config):
             "All three installed binary digests are required")
     require(executable.is_file() and scenario.sha256(executable.read_bytes()) == expected["azd"],
             "Core executable does not match the approved bytes")
-    suffix = ".exe" if os.name == "nt" else ""
-    for extension in scenario.EXTENSIONS:
+    settings = json.loads((config / "config.json").read_text(encoding="utf-8-sig"))
+    extension_settings = settings.get("extension", {}) if isinstance(settings, dict) else {}
+    installed = extension_settings.get("installed", {}) if isinstance(extension_settings, dict) else {}
+    require(isinstance(installed, dict) and set(installed) == set(scenario.EXTENSIONS),
+            "The isolated profile must contain exactly the two approved extensions")
+    for extension, command in scenario.EXTENSIONS.items():
+        record = installed[extension]
+        require(isinstance(record, dict) and record.get("id") == extension
+                and record.get("namespace") == "ai." + command
+                and record.get("version") == plan["versions"][extension],
+                "Installed extension routing or version metadata differs from the approved plan")
+        raw_path = record.get("path")
+        require(isinstance(raw_path, str) and raw_path
+                and not Path(raw_path).is_absolute() and not PureWindowsPath(raw_path).drive
+                and not PureWindowsPath(raw_path).root,
+                "Installed extension path must be relative to the isolated profile")
         platform = "windows-amd64" if os.name == "nt" else "linux-amd64"
-        entry = extension.replace(".", "-") + "-" + platform + suffix
-        binary = config / "extensions" / extension / entry
+        entry = extension.replace(".", "-") + "-" + platform + (".exe" if os.name == "nt" else "")
+        require(Path(raw_path) == Path("extensions") / extension / entry,
+                "Installed extension execution path differs from the approved package entry point")
+        binary = (config / raw_path).resolve()
+        require(binary.is_relative_to(config), "Installed extension path escapes the isolated profile")
         require(binary.is_file() and scenario.sha256(binary.read_bytes()) == expected[extension],
                 "Installed extension does not match the approved bytes")
     return executable

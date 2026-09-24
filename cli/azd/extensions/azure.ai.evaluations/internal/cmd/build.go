@@ -442,6 +442,9 @@ func buildEvalRequest(
 		IncludeSampleSchema: hasTarget && !simulated,
 		ItemSchema:          itemSchema(itemFields),
 	}
+	if simulated {
+		req.DataSourceConfig.ItemSchema["required"] = []string{conversationField}
+	}
 
 	return req, nil
 }

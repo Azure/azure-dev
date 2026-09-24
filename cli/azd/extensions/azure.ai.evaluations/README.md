@@ -150,6 +150,12 @@ to use the service default. Explicit zero or null values for either of these
 simulation counts are rejected by both file-based and inline service configuration
 loaders.
 
+The authored `simulation:` block accepts 1 to 5 conversations per seed and
+1 to 20 turns when those defaults are explicitly set. These are azd's current
+authoring limits from the CLI feature specification, not maxima imposed by the
+Foundry preview service. They remain unchanged here; per-case settings follow
+the override rules below.
+
 The dataset holds **seeds**, not exchanges. One row describes one conversation
 to have:
 
@@ -171,7 +177,9 @@ a new dataset version.
 Runs send `data_mapping` for `test_case_description` and
 `simulation_configuration` as column names, not `{{item...}}` templates. Registered
 seed content stays bound by version ID rather than being rewritten inline.
-The eval's graded `messages` column is an array of message objects, not a string.
+The simulated eval's graded `messages` column is a required array of message
+objects, not a string. Ordinary static dataset schemas keep their existing
+optional-column behavior.
 
 Seed rows carry no `query` or `response`, because nobody has asked anything yet.
 That is why the evaluators bind `messages` — the transcript the run produces —

@@ -27,9 +27,10 @@ type Simulation struct {
 	MaxTurns int `yaml:"max_turns,omitempty"         json:"max_turns,omitempty"`
 }
 
-// Bounds on the simulation parameters, from ConversationGenerationParams in
-// the REST contract. They are checked locally so an out-of-range value is
-// refused before anything is created rather than after a run is billed.
+// Bounds for authored simulation defaults, retained from the CLI feature
+// specification. These are local authoring limits, not service maxima: the
+// published preview contract permits larger values. Per-case settings follow
+// that contract separately.
 const (
 	MinNumConversations = 1
 	MaxNumConversations = 5

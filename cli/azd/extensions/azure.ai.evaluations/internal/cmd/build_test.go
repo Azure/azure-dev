@@ -4,12 +4,14 @@
 package cmd
 
 import (
+	"encoding/json"
 	"testing"
 
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
 
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 )
 
@@ -355,6 +357,49 @@ func TestBuildSimulationDeclaresMessagesWithoutABinding(t *testing.T) {
 	}, properties["messages"])
 	require.NotContains(t, properties, "test_case_description")
 	require.False(t, req.DataSourceConfig.IncludeSampleSchema)
+	require.Equal(t, []string{"messages"}, req.DataSourceConfig.ItemSchema["required"])
+}
+
+func TestBuildSimulationRequiresGeneratedTranscript(t *testing.T) {
+	for _, simulated := range []bool{false, true} {
+		name := "static conversation"
+		if simulated {
+			name = "simulated conversation"
+		}
+		t.Run(name, func(t *testing.T) {
+			schemas := map[string]*eval_api.EvaluatorSummary{
+				"builtin.task_completion": schema("builtin.task_completion", nil, []string{"messages"},
+					nil, nil, "conversation"),
+			}
+			group := groupWith([]evalcore.EvaluatorRef{{Evaluator: "builtin.task_completion"}}, "conversation")
+			if simulated {
+				group.Simulation = &project.Simulation{Model: "simulator"}
+			} else {
+				group.Target = nil
+			}
+			req, err := buildEvalRequest(group, schemas, map[string]bool{"messages": true})
+			require.NoError(t, err)
+			raw, err := json.Marshal(req.DataSourceConfig.ItemSchema)
+			require.NoError(t, err)
+			var document any
+			require.NoError(t, json.Unmarshal(raw, &document))
+			const uri = "https://example.test/generated-item.schema.json"
+			compiler := jsonschema.NewCompiler()
+			require.NoError(t, compiler.AddResource(uri, document))
+			itemSchema, err := compiler.Compile(uri)
+			require.NoError(t, err)
+			require.NoError(t, itemSchema.Validate(map[string]any{
+				"messages": []any{map[string]any{"role": "assistant", "content": "A fixture response."}},
+			}))
+			require.Error(t, itemSchema.Validate(map[string]any{"messages": "not an array"}))
+			err = itemSchema.Validate(map[string]any{})
+			if simulated {
+				require.Error(t, err, "generated conversations must include their transcript")
+			} else {
+				require.NoError(t, err, "do not tighten the existing sparse static-dataset schema")
+			}
+		})
+	}
 }
 
 // Evaluators disagree on what the judge model is called. Built-ins declare

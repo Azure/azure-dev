@@ -143,7 +143,9 @@ HTTP delete share it. Provider job limits are 30 minutes, covering the maximum
 15-minute observation plus 10-minute cleanup and setup overhead. These are
 observation/time bounds, not monetary enforcement. Service payloads are parsed
 in memory but not uploaded: receipts contain command timing, output digests,
-owned IDs and known assertions, with the project endpoint redacted.
+owned IDs and known assertions. The project endpoint and pre-existing dataset
+name/version are redacted from public command receipts without changing the
+actual command arguments.
 
 The plan must contain all fields checked by `validate_plan`: provider, run ID,
 workflow revision, expiry, approval reference, resource owner, client/tenant IDs,

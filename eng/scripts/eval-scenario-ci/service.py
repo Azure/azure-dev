@@ -172,6 +172,10 @@ class Driver:
         if timeout <= 0:
             raise RuntimeError("Observation deadline elapsed; remote completion and billing are unknown")
         safe_args = [scenario.proof_module.sanitize(arg, self.workspace) for arg in ["azd", *argv[1:]]]
+        if safe_args[1:4] == ["ai", "dataset", "download"]:
+            safe_args[4] = "<approved-dataset>"
+            if "--version" in safe_args:
+                safe_args[safe_args.index("--version") + 1] = "<approved-dataset-version>"
         if "--project-endpoint" in safe_args:
             safe_args[safe_args.index("--project-endpoint") + 1] = "<approved-project>"
         if "--tenant-id" in safe_args:

@@ -210,6 +210,24 @@ class ServiceTests(unittest.TestCase):
             for secret in ("AZURE_CLIENT_SECRET", "GITHUB_TOKEN", "SYSTEM_ACCESSTOKEN"):
                 self.assertNotIn(secret, execute.call_args.kwargs["env"])
 
+    def test_dataset_identity_is_used_but_not_published(self):
+        with tempfile.TemporaryDirectory() as root:
+            report = {}
+            driver = service.Driver(Path("azd"), Path(root) / "auth", Path(root), 17, 60, report)
+            completed = subprocess.CompletedProcess([], 0, b"{}", b"")
+            with mock.patch.object(service.subprocess, "run", return_value=completed) as run:
+                driver("download approved registered version", [
+                    "ai", "dataset", "download", "private-existing-dataset",
+                    "--version", "private-version-42", "--output-file", str(Path(root) / "row.jsonl"),
+                ])
+            self.assertIn("private-existing-dataset", run.call_args.args[0])
+            self.assertIn("private-version-42", run.call_args.args[0])
+            public = json.dumps(report)
+            self.assertNotIn("private-existing-dataset", public)
+            self.assertNotIn("private-version-42", public)
+            self.assertIn("<approved-dataset>", public)
+            self.assertIn("<approved-dataset-version>", public)
+
     def test_observation_deadline_does_not_prevent_owned_cleanup(self):
         with tempfile.TemporaryDirectory() as root:
             report = {}

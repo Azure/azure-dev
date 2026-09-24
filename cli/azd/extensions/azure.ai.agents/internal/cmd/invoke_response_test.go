@@ -747,11 +747,17 @@ func TestCleanupPromptAgentStateUsesInvocationKey(t *testing.T) {
 
 	const projectEndpoint = "https://acct.services.ai.azure.com/api/projects/project"
 	agentKey := buildAgentKey(projectEndpoint, "prompt-agent", "", false)
+	versionKey := buildAgentKey(projectEndpoint, "prompt-agent", "7", false)
+	otherAgentKey := buildAgentKey(projectEndpoint, "prompt-agent-other", "7", false)
+	localKey := buildAgentKey(projectEndpoint, "prompt-agent", "7", true)
 	wrongKey := buildRemoteAgentKeyFromEndpoint(projectEndpoint + "/openai/v1/responses")
 	server := newInvokeUserConfigServer()
 	server.setJSON(t, configPath("conversations"), map[string]string{
-		agentKey: "resp_prompt",
-		wrongKey: "resp_other",
+		agentKey:      "resp_prompt",
+		versionKey:    "resp_pinned",
+		otherAgentKey: "resp_other_agent",
+		localKey:      "resp_local",
+		wrongKey:      "resp_other",
 	})
 	client := newInvokeTestAzdClient(t, server)
 
@@ -762,5 +768,8 @@ func TestCleanupPromptAgentStateUsesInvocationKey(t *testing.T) {
 	var conversations map[string]string
 	server.getJSON(t, configPath("conversations"), &conversations)
 	assert.NotContains(t, conversations, agentKey)
+	assert.NotContains(t, conversations, versionKey)
+	assert.Equal(t, "resp_other_agent", conversations[otherAgentKey])
+	assert.Equal(t, "resp_local", conversations[localKey])
 	assert.Equal(t, "resp_other", conversations[wrongKey])
 }

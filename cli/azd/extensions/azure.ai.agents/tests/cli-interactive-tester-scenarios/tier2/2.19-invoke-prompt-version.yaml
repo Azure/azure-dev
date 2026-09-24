@@ -1,0 +1,166 @@
+# Tier 2: prompt/harness invoke --version; agent deployments and inference incur cost.
+# Reuses 2.00's project/model, not its hosted agent. 2.99 owns shared infra teardown.
+# Desired behavior, not an expected-failure test: main lacks conversation fix #10134.
+name: "invoke-prompt-version"
+command: "bash"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:deploy", "cmd:show", "cmd:invoke", "cmd:delete", "serial-only"]
+requires: "tier2/2.00-setup-deploy-shared-agent.yaml"
+env:
+  NO_COLOR: "1"
+
+pre:
+  - name: "guard shared project and reserve source backup"
+    run: |
+      set -eu
+      test -f azure.yaml && test -d .azure || {
+        echo 'BLOCKED: run 2.00-setup-deploy-shared-agent.yaml first.'
+        exit 1
+      }
+      mkdir .2.19-invoke-prompt-version || {
+        echo 'BLOCKED: previous 2.19 backup exists; recover its cleanup before rerunning.'
+        exit 1
+      }
+      cp -p azure.yaml .2.19-invoke-prompt-version/azure.yaml
+
+# Always run after finish_session, including failed product goals. Mark each deploy
+# attempt BEFORE calling deploy so partial cloud creation is also cleaned up.
+# One hook attempts both deletes and restores source even if either delete fails.
+post:
+  - name: "delete only scenario agents and restore shared source"
+    timeout: 600
+    run: |
+      backup=.2.19-invoke-prompt-version
+      test -f "$backup/azure.yaml" || exit 1
+      trap 'cp -p "$backup/azure.yaml" azure.yaml' EXIT
+      trap 'exit 1' HUP INT TERM
+      failed=0
+      for flavor in h p; do
+        service="{prefix}-pv-$flavor-{run_id}"
+        agent="{prefix}-pv-$flavor-agent-{run_id}"
+        if [ -f "$backup/$flavor.attempted" ]; then
+          if result=$(azd ai agent delete "$service" --force --no-prompt 2>&1); then
+            printf '%s\n' "$result"
+          elif printf '%s\n' "$result" | grep -Fq "agent \"$agent\" not found"; then
+            printf 'Cleanup: %s is already absent.\n' "$agent"
+          else
+            printf 'CLEANUP FAILED for %s:\n%s\n' "$service" "$result"
+            failed=1
+          fi
+        fi
+      done
+      if [ "$failed" -ne 0 ]; then
+        cp -p azure.yaml "$backup/cleanup.azure.yaml" || exit 1
+      fi
+      cp -p "$backup/azure.yaml" azure.yaml || exit 1
+      trap - EXIT HUP INT TERM
+      if [ "$failed" -eq 0 ]; then
+        rm -f "$backup/h.attempted" "$backup/p.attempted" "$backup/azure.yaml"
+        rmdir "$backup" || exit 1
+      else
+        echo 'Source restored; cleanup.azure.yaml and attempt markers retained for recovery. Report cleanup failure; still run 2.99.'
+      fi
+      exit "$failed"
+
+goals:
+  - >-
+    PREREQUISITES: 2.00 must have passed in this run, with cost consent, a deployed
+    Foundry project/model, and permission to create/delete prompt agents. The project
+    must be entitled to github_copilot_preview with that model. Missing entitlement,
+    unsupported model/region, authentication failure, or capacity failure is a blocker
+    with a failed/not-passed verdict, never a skipped harness leg counted as success.
+    Do not log in, provision, change model, or remove the harness to get a pass.
+    Run serially before 2.99; this does not require the hosted agent to survive 2.18.
+    All commands below must run without product prompts; fail on any prompt.
+  - >-
+    Read the existing azure.yaml and current azd environment. Resolve the actual
+    deployed model name from AZURE_AI_MODEL_DEPLOYMENT_NAME (not the profile's model
+    family), and confirm FOUNDRY_PROJECT_ENDPOINT targets 2.00's project. If either
+    cannot be established, stop as blocked before editing. Confirm neither of the
+    two service keys or agent names below already exists in this project or its
+    saved deployment state; never overwrite/reuse an existing identity. Add exactly
+    the following two entries under the EXISTING services mapping in azure.yaml,
+    replacing MODEL_DEPLOYMENT with the resolved literal deployment name. Keep all
+    existing services, hooks, infrastructure, source files and unrelated environment
+    values unchanged (deploy may write the two new services' own state). In particular,
+    do not replace or redeploy the hosted service.
+  - |
+    New service definitions (merge these entries, do not replace azure.yaml):
+      {prefix}-pv-h-{run_id}:
+        host: azure.ai.agent
+        project: .
+        kind: prompt
+        name: {prefix}-pv-h-agent-{run_id}
+        model: MODEL_DEPLOYMENT
+        instructions: "For every user message, reply with exactly HARNESS_VERSION_A and nothing else. Do not use tools."
+        harness:
+          type: github_copilot_preview
+      {prefix}-pv-p-{run_id}:
+        host: azure.ai.agent
+        project: .
+        kind: prompt
+        name: {prefix}-pv-p-agent-{run_id}
+        model: MODEL_DEPLOYMENT
+        instructions: "For every user message, reply with exactly PROMPT_VERSION_A and nothing else. Do not use tools."
+  - >-
+    Before the first harness deploy, run 'touch .2.19-invoke-prompt-version/h.attempted'.
+    Run 'azd deploy {prefix}-pv-h-{run_id} --no-prompt', then
+    'azd ai agent show {prefix}-pv-h-{run_id} --output json --no-prompt'. Require both
+    to exit 0. Record versions.latest.version as H_A (a nonempty string), verify name
+    is '{prefix}-pv-h-agent-{run_id}', and verify versions.latest.definition has kind
+    prompt, harness.type github_copilot_preview, and the exact A instructions above.
+    Change ONLY that service's instructions to 'For every user message, reply with
+    exactly HARNESS_VERSION_B and nothing else. Do not use tools.' Repeat the same
+    deploy and show commands, require success and the B definition, and record H_B.
+    H_B must differ from H_A. Do not assume version numbers are 1 and 2.
+  - >-
+    Before the first ordinary prompt deploy, run 'touch .2.19-invoke-prompt-version/p.attempted'.
+    Run 'azd deploy {prefix}-pv-p-{run_id} --no-prompt', then
+    'azd ai agent show {prefix}-pv-p-{run_id} --output json --no-prompt'. Require both
+    to exit 0. Record versions.latest.version as P_A (a nonempty string), verify name
+    is '{prefix}-pv-p-agent-{run_id}', and verify versions.latest.definition has kind
+    prompt, no harness, and the exact A instructions above. Change ONLY that service's
+    instructions to 'For every user message, reply with exactly PROMPT_VERSION_B and
+    nothing else. Do not use tools.' Repeat the same deploy and show commands, require
+    success and the B definition, and record P_B. P_B must differ from P_A.
+  - >-
+    Save the four recorded version strings in shell variables H_A, H_B, P_A, P_B.
+    Leave both local service definitions and latest deployments at B for every invoke.
+    Inspect the azd user-config extensions.ai-agents.sessions and conversations maps
+    read-only before and after each invoke if accessible; do not clear or seed state.
+    Record only entries for these two new agent names, not unrelated user data.
+  - |
+    Run these literal commands in order, requiring exit 0 and assistant text exactly
+    HARNESS_VERSION_A, HARNESS_VERSION_B, HARNESS_VERSION_A respectively (ignore only
+    surrounding CLI diagnostics/whitespace, never count command echoes as responses):
+      azd ai agent invoke {prefix}-pv-h-{run_id} "Return your configured marker." --version "$H_A" --new-conversation --no-prompt
+      azd ai agent invoke {prefix}-pv-h-{run_id} "Return your configured marker." --version "$H_B" --new-conversation --no-prompt
+      azd ai agent invoke {prefix}-pv-h-{run_id} "Return your configured marker." --version "$H_A" --new-conversation --no-prompt
+  - |
+    Run these literal commands in order, requiring exit 0 and assistant text exactly
+    PROMPT_VERSION_A, PROMPT_VERSION_B, PROMPT_VERSION_A respectively:
+      azd ai agent invoke {prefix}-pv-p-{run_id} "Return your configured marker." --version "$P_A" --new-conversation --no-prompt
+      azd ai agent invoke {prefix}-pv-p-{run_id} "Return your configured marker." --version "$P_B" --new-conversation --no-prompt
+      azd ai agent invoke {prefix}-pv-p-{run_id} "Return your configured marker." --version "$P_A" --new-conversation --no-prompt
+  - >-
+    VERSION ISOLATION: A must still return A after B is latest and after B was invoked;
+    neither service may return the other service's marker. Where config is inspectable,
+    require separate nonempty turn-state values under each agent's
+    /versions/<recorded-version>/remote key, not a shared /versions/latest/remote key.
+    Invoking B must leave A's value unchanged; repeating A must replace only A's
+    turn state and leave B's unchanged. Require no session entries for either prompt
+    agent and no hosted-session creation/reuse diagnostics. If request traces are
+    available, require agent_reference.name and agent_reference.version to match
+    the deployed agent and selected version, no previous_response_id with
+    --new-conversation, and no hosted session request or version-override header.
+    Unavailable config/trace evidence is an explicit observation, not proof of absence;
+    the six exact response assertions remain mandatory.
+  - >-
+    Main currently lacks conversation fix #10134: stale previous-response state,
+    incompatible Responses conversation behavior, or wrong/empty output is a product
+    failure, not an expected pass. Do not substitute raw HTTP, switch to the hosted
+    agent, clear config, redeploy A, or drop --version/--new-conversation as a workaround.
+    Take a best-effort screenshot of the version records and invoke results. Report a
+    finding for any unmet assertion, entitlement blocker, or cleanup failure. Always
+    finish the session and run the post hook, even on failure; verify azure.yaml is
+    restored byte-for-byte. Do not run azd down here: 2.99 owns the shared teardown.

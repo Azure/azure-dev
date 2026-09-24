@@ -698,7 +698,27 @@ func cleanupPromptAgentState(
 	agentName string,
 ) bool {
 	agentKey := buildAgentKey(strings.TrimSpace(projectEndpoint), agentName, "", false)
-	return cleanupAgentStateForKey(ctx, azdClient, agentKey)
+	cleaned := cleanupAgentStateForKey(ctx, azdClient, agentKey)
+	config, err := azdext.NewConfigHelper(azdClient)
+	if err != nil {
+		log.Printf("cleanupPromptAgentState: failed to access config: %v", err)
+		return false
+	}
+	var conversations map[string]string
+	if _, err := config.GetUserJSON(ctx, configPath("conversations"), &conversations); err != nil {
+		log.Printf("cleanupPromptAgentState: failed to read conversations: %v", err)
+		return false
+	}
+	// Explicit prompt versions keep independent turn state under the same agent.
+	prefix := strings.TrimSuffix(agentKey, "latest/remote")
+	for key := range conversations {
+		if strings.HasPrefix(key, prefix) && strings.HasSuffix(key, "/remote") {
+			if !cleanupAgentStateForKey(ctx, azdClient, key) {
+				cleaned = false
+			}
+		}
+	}
+	return cleaned
 }
 
 // cleanupAgentState removes saved session, conversation, Response, and Invocation state for a

@@ -131,8 +131,9 @@ Sessions & Identity:
 Sessions are persisted per-agent — consecutive invokes reuse the same
 session automatically. Pass --new-session to force a reset.
 
-Use --version to invoke a specific deployed agent version. When provided,
-azd creates or reuses a hosted agent session backed by that version.
+Use --version to invoke a specific deployed agent version. For hosted agents,
+azd creates or reuses a session backed by that version. For prompt agents,
+including managed-harness agents, azd sends the version in the agent reference.
 
 For agents configured with header-based isolation, pass --user-identity
 on each invoke. Locally it is sent as the x-agent-user-id header; for
@@ -413,7 +414,7 @@ This option does not provide crash recovery or automatic reconnection.`,
 		&flags.version,
 		"version",
 		"",
-		"Agent version to invoke (creates or reuses a session backed by that version)",
+		"Deployed agent version to invoke",
 	)
 	cmd.Flags().BoolVar(
 		&flags.longRunning,

@@ -18,12 +18,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// managedAgentReference is the body fragment that binds a Responses call to a
-// specific managed agent. It mirrors the shape the managed harness expects
-// (see test-e2e-foundry-tools.sh): `agent_reference: {type, name}`.
+// managedAgentReference binds a Responses call to a prompt agent and optional version.
 type managedAgentReference struct {
-	Type string `json:"type"`
-	Name string `json:"name"`
+	Type    string `json:"type"`
+	Name    string `json:"name"`
+	Version string `json:"version,omitempty"`
 }
 
 // managedResponsesRequest is the OpenAI-shape Responses request body sent to
@@ -38,6 +37,28 @@ type managedResponsesRequest struct {
 	// restores prior conversation context (multi-turn memory). Empty on the
 	// first turn of a conversation; omitted from the payload when empty.
 	PreviousResponseID string `json:"previous_response_id,omitempty"`
+}
+
+func (a *InvokeAction) buildPromptResponsesRequest(
+	pctx *promptServiceContext, message, previousResponseID string,
+) managedResponsesRequest {
+	request := managedResponsesRequest{
+		Model:              pctx.Agent.Model,
+		Input:              message,
+		Stream:             true,
+		Tools:              []any{},
+		PreviousResponseID: previousResponseID,
+	}
+	// An unpinned harness uses its serving endpoint. An explicit prompt version
+	// belongs in the agent reference, not a hosted-agent session or override header.
+	if pctx.Agent.HarnessType() == "" || a.flags.version != "" {
+		request.AgentReference = &managedAgentReference{
+			Type:    "agent_reference",
+			Name:    pctx.AgentName(),
+			Version: a.flags.version,
+		}
+	}
+	return request
 }
 
 func (a *InvokeAction) managedPreviousResponseID(
@@ -81,7 +102,7 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 	// agent and sends it on the next invoke so the harness restores prior
 	// conversation context. Best-effort — a config-store failure degrades to a
 	// stateless (single-turn) invoke rather than blocking the call.
-	agentKey := pctx.agentKey(agentName)
+	agentKey := pctx.agentKey(agentName, a.flags.version)
 	azdClient, err := azdext.NewAzdClient()
 	if err != nil {
 		log.Printf("invoke prompt: config store unavailable, multi-turn memory disabled: %v", err)
@@ -93,16 +114,7 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 
 	previousResponseID := a.managedPreviousResponseID(ctx, azdClient, agentKey)
 
-	request := managedResponsesRequest{
-		Model:              pctx.Agent.Model,
-		Input:              string(body),
-		Stream:             true,
-		Tools:              []any{},
-		PreviousResponseID: previousResponseID,
-	}
-	if pctx.Agent.HarnessType() == "" {
-		request.AgentReference = &managedAgentReference{Type: "agent_reference", Name: agentName}
-	}
+	request := a.buildPromptResponsesRequest(pctx, string(body), previousResponseID)
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return fmt.Errorf("building prompt invoke request: %w", err)

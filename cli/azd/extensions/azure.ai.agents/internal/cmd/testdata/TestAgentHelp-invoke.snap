@@ -34,8 +34,9 @@ Sessions & Identity
 Sessions are persisted per-agent — consecutive invokes reuse the same
 session automatically. Pass --new-session to force a reset.
 
-Use --version to invoke a specific deployed agent version. When provided,
-azd creates or reuses a hosted agent session backed by that version.
+Use --version to invoke a specific deployed agent version. For hosted agents,
+azd creates or reuses a session backed by that version. For prompt agents,
+including managed-harness agents, azd sends the version in the agent reference.
 
 For agents configured with header-based isolation, pass --user-identity
 on each invoke. Locally it is sent as the x-agent-user-id header; for
@@ -94,7 +95,7 @@ Flags
   -s, --session-id string         : Explicit session ID override
   -t, --timeout int               : Request timeout in seconds (0 for no timeout) (default 1800)
       --user-identity string      : User identity header value (sent as x-agent-user-id for local invocations and x-ms-user-identity for remote requests)
-      --version string            : Agent version to invoke (creates or reuses a session backed by that version)
+      --version string            : Deployed agent version to invoke
 
 Global Flags
   -C, --cwd string         : Sets the current working directory

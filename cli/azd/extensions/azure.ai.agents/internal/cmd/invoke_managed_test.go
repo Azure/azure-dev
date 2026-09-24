@@ -7,30 +7,83 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/project"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestManagedResponsesRequestAgentReference(t *testing.T) {
-	plain, err := json.Marshal(managedResponsesRequest{
-		Model: "model",
-		AgentReference: &managedAgentReference{
-			Type: "agent_reference",
-			Name: "plain",
-		},
-	})
-	if err != nil {
-		t.Fatalf("marshal plain request: %v", err)
+	for _, harness := range []string{"", "github_copilot_preview"} {
+		for _, version := range []string{"", "7"} {
+			t.Run("harness="+harness+"/version="+version, func(t *testing.T) {
+				pctx := &promptServiceContext{
+					ServiceName: "service-name",
+					Agent: agent_yaml.PromptAgent{
+						AgentDefinition: agent_yaml.AgentDefinition{Name: "deployed-name"},
+						Model:           "model",
+						Harness:         agent_yaml.NewPromptHarness(harness),
+					},
+				}
+				action := &InvokeAction{flags: &invokeFlags{version: version}}
+				request := action.buildPromptResponsesRequest(pctx, "hello", "resp_previous")
+				payload, err := json.Marshal(request)
+				require.NoError(t, err)
+				var body map[string]any
+				require.NoError(t, json.Unmarshal(payload, &body))
+				require.Equal(t, "hello", body["input"])
+				require.Equal(t, "resp_previous", body["previous_response_id"])
+				require.Equal(t, true, body["stream"])
+				require.NotContains(t, body, "agent_session_id")
+				if harness != "" && version == "" {
+					require.NotContains(t, body, "agent_reference")
+					return
+				}
+				want := map[string]any{"type": "agent_reference", "name": "deployed-name"}
+				if version != "" {
+					want["version"] = version
+				}
+				require.Equal(t, want, body["agent_reference"])
+			})
+		}
 	}
-	if !strings.Contains(string(plain), `"agent_reference"`) {
-		t.Errorf("plain request must carry agent_reference: %s", plain)
-	}
+}
 
-	harnessed, err := json.Marshal(managedResponsesRequest{Model: "model"})
-	if err != nil {
-		t.Fatalf("marshal harnessed request: %v", err)
+func TestPromptInvokeVersionState(t *testing.T) {
+	userConfig := newInvokeUserConfigServer()
+	azdClient := newInvokeTestAzdClient(t, userConfig)
+	pctx := &promptServiceContext{
+		Settings: &project.PromptAgentSettings{ProjectEndpoint: "https://test.services.ai.azure.com/api/projects/proj"},
 	}
-	if strings.Contains(string(harnessed), `"agent_reference"`) {
-		t.Errorf("harnessed request must omit agent_reference: %s", harnessed)
+	latestKey := pctx.agentKey("agent", "")
+	versionKey := pctx.agentKey("agent", "7")
+	require.NotEqual(t, latestKey, versionKey)
+	userConfig.setJSON(t, configPath("conversations"), map[string]string{
+		latestKey:  "resp_latest",
+		versionKey: "resp_v7",
+	})
+	for _, tt := range []struct {
+		name  string
+		flags invokeFlags
+		want  string
+	}{
+		{name: "default", want: "resp_latest"},
+		{name: "pinned", flags: invokeFlags{version: "7"}, want: "resp_v7"},
+		{name: "different version", flags: invokeFlags{version: "8"}},
+		{name: "reset conversation", flags: invokeFlags{version: "7", newConversation: true}},
+		{name: "reset session", flags: invokeFlags{version: "7", newSession: true}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			action := &InvokeAction{flags: &tt.flags}
+			key := pctx.agentKey("agent", tt.flags.version)
+			require.Equal(t, tt.want, action.managedPreviousResponseID(t.Context(), azdClient, key))
+		})
 	}
+	saveContextValue(t.Context(), azdClient, versionKey, "resp_v7_next", "conversations")
+	var stored map[string]string
+	userConfig.getJSON(t, configPath("conversations"), &stored)
+	require.Equal(t, map[string]string{latestKey: "resp_latest", versionKey: "resp_v7_next"}, stored)
 }
 
 func TestManagedResponsesRequestOmitsPreviousResponseForNewSession(t *testing.T) {

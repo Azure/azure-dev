@@ -44,8 +44,10 @@ OpenTelemetry span name or event name.
 
 ## Fields
 
-Fields are defined in `cli/azd/internal/tracing/fields/fields.go`. Each field has a classification
-and purpose that governs how it may be stored, queried, and retained.
+Core fields are defined in `cli/azd/internal/tracing/fields/fields.go`. Each field has a classification
+and purpose that governs how it may be stored, queried, and retained. First-party extension usage
+fields are declared separately in `cli/azd/extensions/telemetry/fields.go` and are documented under
+[Extension-contributed usage attributes](#extension-contributed-usage-attributes).
 
 ### Application-Level (Resource Attributes)
 

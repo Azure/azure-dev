@@ -66,7 +66,7 @@ Per [references/pr-processing.md](references/pr-processing.md):
 4. Fetch linked issues from the PR body when relevant to understanding user impact.
 5. Apply exclusion rules per [references/pr-processing.md](references/pr-processing.md) § Exclusion Rules.
 6. **Cross-release deduplication**: before writing an entry, search all existing sections in CHANGELOG.md for the PR number **and** any linked issue numbers from the PR body. If a match is found in a prior release, skip the entry and log a note. Entries must always use PR numbers (`pull/NNNN`), not issue numbers (`issues/NNNN`), to maintain consistency with the `[[#PR]]` format convention.
-7. Categorize and write the entry per [references/pr-processing.md](references/pr-processing.md) § Category Classification and § Entry Format.
+7. Categorize and draft the entry per [references/pr-processing.md](references/pr-processing.md) § Category Classification and § Entry Format.
 
 ### Step 4 — Determine Version & Update Files
 
@@ -77,6 +77,8 @@ For version derivation rules, see [references/scope-rules.md](references/scope-r
 
 - **Core**: use the version specified in the triggering issue or user request when explicit. Otherwise, assess the included changes and select an appropriate patch or minor version. Replace the top unreleased header with the selected version and today's date, without adding a new unreleased placeholder above it. Update `cli/version.txt` and `cli/azd/pkg/azdext/version.go` (`Version` constant) to the released version.
 - **Extension**: use the version specified in the triggering issue or user request when explicit. Otherwise, select the next version by following the extension's own versioning convention from its changelog history and assessing the included changes. Update both `version.txt` and `extension.yaml` — they must match exactly.
+
+After selecting the version, create or update the release header and write the drafted entries under it.
 
 ### Step 5 — Assemble & Review
 

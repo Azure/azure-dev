@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -207,9 +208,30 @@ func readConfigDocument(path string) (*yaml.Node, error) {
 
 func parseConfigDocument(path string, body []byte) (*yaml.Node, error) {
 	doc := &yaml.Node{}
-	if len(body) > 0 {
-		if err := yaml.Unmarshal(body, doc); err != nil {
-			return nil, messages.ParsingEvalConfig(path, err)
+	decoder := yaml.NewDecoder(bytes.NewReader(body))
+	if err := decoder.Decode(doc); err != nil && !errors.Is(err, io.EOF) {
+		return nil, messages.ParsingEvalConfig(path, err)
+	}
+	var extra yaml.Node
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			err = errors.New("multiple YAML documents are not supported; use one configuration document")
+		}
+		return nil, messages.ParsingEvalConfig(path, err)
+	}
+	if len(doc.Content) > 0 && doc.Content[0].Kind == yaml.MappingNode {
+		root := doc.Content[0]
+		keys := make(map[string]bool, len(root.Content)/2)
+		for i := 0; i+1 < len(root.Content); i += 2 {
+			key := root.Content[i]
+			if key.Kind != yaml.ScalarNode {
+				return nil, messages.ParsingEvalConfig(path,
+					errors.New("top-level keys must be literal scalars, not aliases or complex keys"))
+			}
+			if keys[key.Value] {
+				return nil, messages.ParsingEvalConfig(path, fmt.Errorf("duplicate top-level key %q", key.Value))
+			}
+			keys[key.Value] = true
 		}
 	}
 	return doc, nil

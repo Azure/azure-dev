@@ -124,6 +124,10 @@ agent target, seed dataset, simulation model, and judge model. Non-interactive
 init reports all unresolved required inputs together, naming the flags to supply.
 Init is add-only, preserves existing YAML and unknown fields, and makes no new
 live lookups beyond the bounded built-in evaluator catalogue check.
+Authored evaluation configuration must contain one YAML document with unique,
+literal scalar top-level keys. Init and catalog edits reject multiple documents,
+duplicate keys, and alias or complex top-level keys rather than silently dropping
+or ambiguously updating content. Aliases in values remain supported.
 If saving the root `azure.yaml` service fails and the host acknowledges that
 the save finished unsuccessfully, init rolls back its eval-config edit so the
 same command can be retried after restoring root write access.

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,8 +22,11 @@ import (
 	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestInitRootSaveFailureRestoresConfigAndAllowsExactRetry(t *testing.T) {
@@ -56,7 +60,7 @@ func TestInitRootSaveFailureRestoresConfigAndAllowsExactRetry(t *testing.T) {
 					var denySave atomic.Bool
 					denySave.Store(true)
 					var sawScaffold atomic.Bool
-					h.project.setAddServiceHandler(func(request *azdext.AddServiceRequest) error {
+					h.project.setAddServiceHandler(func(_ context.Context, request *azdext.AddServiceRequest) error {
 						body, err := os.ReadFile(configPath)
 						if err != nil {
 							return err
@@ -138,11 +142,14 @@ func TestInitRootSaveFailurePreservesConcurrentChanges(t *testing.T) {
 		"cancelled", "deadline", "unavailable"} {
 		t.Run(change, func(t *testing.T) {
 			h := newInitHarness(t, nil)
+			if change == "cancelled" || change == "deadline" || change == "unavailable" {
+				h.project.setSaveFailureAcknowledgement(false)
+			}
 			configPath := filepath.Join(h.dir, "quality.yml")
 			rootPath := filepath.Join(h.dir, "azure.yaml")
 			var mu sync.Mutex
 			var changedBody []byte
-			h.project.setAddServiceHandler(func(_ *azdext.AddServiceRequest) error {
+			h.project.setAddServiceHandler(func(_ context.Context, _ *azdext.AddServiceRequest) error {
 				mu.Lock()
 				defer mu.Unlock()
 				switch change {
@@ -224,7 +231,7 @@ func TestInitCancelledRootSaveCanFinishWithoutLosingScaffold(t *testing.T) {
 	var finishOnce sync.Once
 	release := func() { finishOnce.Do(func() { close(finish) }) }
 	t.Cleanup(release)
-	h.project.setAddServiceHandler(func(request *azdext.AddServiceRequest) error {
+	h.project.setAddServiceHandler(func(_ context.Context, request *azdext.AddServiceRequest) error {
 		close(started)
 		<-finish
 		body := []byte(usageAzureYaml + "  " + request.Service.Name + ":\n    host: " + project.EvalHost +
@@ -275,4 +282,122 @@ func TestInitCancelledRootSaveCanFinishWithoutLosingScaffold(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(root), "$ref: ./quality.yml")
 	assert.FileExists(t, configPath)
+}
+
+func TestInitRootSaveRequiresMatchingCompletionAcknowledgement(t *testing.T) {
+	for _, ack := range []string{"missing", "wrong", "duplicate", "content-type only"} {
+		for _, code := range []codes.Code{codes.Unknown, codes.Internal, codes.PermissionDenied} {
+			t.Run(ack+"/"+code.String(), func(t *testing.T) {
+				h := newInitHarness(t, nil)
+				h.project.setSaveFailureAcknowledgement(false)
+				configPath := filepath.Join(h.dir, "quality.yml")
+				h.project.setAddServiceHandler(func(ctx context.Context, _ *azdext.AddServiceRequest) error {
+					incoming, _ := metadata.FromIncomingContext(ctx)
+					tokens := incoming.Get("azd-project-add-service-operation")
+					if len(tokens) != 1 || tokens[0] == "" {
+						return status.Error(codes.Internal, "missing operation token")
+					}
+					var trailer metadata.MD
+					switch ack {
+					case "wrong":
+						trailer = metadata.Pairs("azd-project-add-service-save-failed", "another-operation")
+					case "duplicate":
+						trailer = metadata.Pairs("azd-project-add-service-save-failed", tokens[0],
+							"azd-project-add-service-save-failed", tokens[0])
+					case "content-type only":
+						trailer = metadata.Pairs("content-type", "application/grpc")
+					}
+					if err := grpc.SetTrailer(ctx, trailer); err != nil {
+						return err
+					}
+					return status.Error(code, "save outcome unavailable")
+				})
+				text, err := executeConversationInit(t, "--path", configPath, "--name", "quality",
+					"--source", "traces", "--target", "agent", "--judge-model", "judge", "--no-prompt", "-o", "json")
+				require.ErrorContains(t, err, "could not safely roll back")
+				assert.ErrorContains(t, err, "host may still finish")
+				assert.Empty(t, text)
+				assert.FileExists(t, configPath)
+				assert.Empty(t, h.usage.reported())
+			})
+		}
+	}
+}
+
+func TestInitRootSaveDoesNotReuseAcknowledgementAcrossRetries(t *testing.T) {
+	h := newInitHarness(t, nil)
+	h.project.setSaveFailureAcknowledgement(false)
+	configPath := filepath.Join(h.dir, "quality.yml")
+	var mu sync.Mutex
+	var tokens []string
+	h.project.setAddServiceHandler(func(ctx context.Context, _ *azdext.AddServiceRequest) error {
+		incoming, _ := metadata.FromIncomingContext(ctx)
+		current := incoming.Get("azd-project-add-service-operation")
+		if len(current) != 1 {
+			return status.Error(codes.Internal, "missing operation token")
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		tokens = append(tokens, current[0])
+		if err := grpc.SetTrailer(ctx, metadata.Pairs("azd-project-add-service-save-failed", tokens[0])); err != nil {
+			return err
+		}
+		return os.ErrPermission
+	})
+	args := []string{"--path", configPath, "--name", "quality", "--source", "traces",
+		"--target", "agent", "--judge-model", "judge", "--no-prompt", "-o", "json"}
+	_, err := executeConversationInit(t, args...)
+	require.ErrorContains(t, err, "was rolled back")
+	assert.NoFileExists(t, configPath)
+	_, err = executeConversationInit(t, args...)
+	require.ErrorContains(t, err, "could not safely roll back")
+	assert.FileExists(t, configPath)
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, tokens, 2)
+	assert.NotEqual(t, tokens[0], tokens[1], "every invocation must use a fresh operation token")
+}
+
+type malformedSaveResponseCodec struct{}
+
+func (malformedSaveResponseCodec) Name() string { return "proto" }
+
+func (malformedSaveResponseCodec) Marshal(value any) ([]byte, error) {
+	if _, ok := value.(*azdext.EmptyResponse); ok {
+		return []byte{0x0e}, nil // Invalid protobuf wire type after the handler has completed.
+	}
+	message, ok := value.(proto.Message)
+	if !ok {
+		return nil, fmt.Errorf("not a protobuf message: %T", value)
+	}
+	return proto.Marshal(message)
+}
+
+func (malformedSaveResponseCodec) Unmarshal(body []byte, value any) error {
+	message, ok := value.(proto.Message)
+	if !ok {
+		return fmt.Errorf("not a protobuf message: %T", value)
+	}
+	return proto.Unmarshal(body, message)
+}
+
+func TestInitMalformedRootSaveResponseRetainsScaffold(t *testing.T) {
+	h := newInitHarnessWithOptions(t, nil, []grpc.ServerOption{grpc.ForceServerCodec(malformedSaveResponseCodec{})})
+	configPath := filepath.Join(h.dir, "quality.yml")
+	rootPath := filepath.Join(h.dir, "azure.yaml")
+	h.project.setAddServiceHandler(func(_ context.Context, request *azdext.AddServiceRequest) error {
+		body := []byte(usageAzureYaml + "  " + request.Service.Name +
+			":\n    host: azure.ai.eval\n    $ref: ./quality.yml\n")
+		return os.WriteFile(rootPath, body, 0o600)
+	})
+	text, err := executeConversationInit(t, "--path", configPath, "--name", "quality", "--source", "traces",
+		"--target", "agent", "--judge-model", "judge", "--no-prompt", "-o", "json")
+	require.ErrorContains(t, err, "could not safely roll back")
+	assert.ErrorContains(t, err, "Internal")
+	assert.Empty(t, text)
+	assert.FileExists(t, configPath)
+	root, err := os.ReadFile(rootPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(root), "$ref: ./quality.yml")
+	assert.Empty(t, h.usage.reported())
 }

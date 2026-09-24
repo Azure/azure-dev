@@ -84,6 +84,30 @@ Extensions use two structured error types:
 
 Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC auth → fallback
 
+### Project service save acknowledgment
+
+`Project.AddService` supports an optional completion acknowledgment for callers
+that compensate their own local edits after a failed root save. The caller sends
+one fresh `azd-project-add-service-operation` metadata value (at most 64 bytes).
+Only after synchronous `project.Save` returns an error, including all file-write
+retries and cleanup, the host restores the previous service entry in its cache
+and echoes that value in the `azd-project-add-service-save-failed` trailer.
+Success and failures before the save attempt do not carry this acknowledgment.
+
+A caller must capture fresh trailers for this invocation and require exactly one
+matching value before considering compensation. Status codes or trailer presence
+alone are not proof: cancellation, transport failures and malformed responses
+can be observed before a host write finishes. The acknowledgment is not a
+cross-file transaction; callers must still protect their own edits with locks
+and ownership checks. Missing, mismatched or duplicate values are uncertain
+outcomes, including when running on an older host, and require safe retention
+and explicit recovery guidance.
+
+This optional metadata contract adds no RPC or protobuf field and requires no
+SDK-version bump. An extension using an older released SDK can use ordinary
+gRPC metadata and trailer call options. The wire names are intentionally
+duplicated across the host and such extensions; keep them aligned.
+
 ## First-Party Extensions
 
 First-party extensions live in `cli/azd/extensions/` and are registered in `cli/azd/extensions/registry.json`.

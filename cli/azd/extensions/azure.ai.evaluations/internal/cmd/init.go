@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"maps"
@@ -27,8 +28,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -424,7 +425,7 @@ func (a *initAction) Run() error {
 	// `azd up`, `azd deploy` or `azd ai eval run` will act on it.
 	rootWiring, serviceName, err := ensureRootEvalService(a.cmd.Context(), serviceName, target, configPath)
 	if err != nil {
-		if initWiringOutcomeUnknown(err) {
+		if _, uncertain := errors.AsType[*initWiringUncertainError](err); uncertain {
 			return messages.InitWiringRollbackFailed(configPath, err,
 				errors.New("the host may still finish saving azure.yaml; the scaffold was retained"))
 		}
@@ -510,16 +511,10 @@ func (a *initAction) Run() error {
 	return nil
 }
 
-func initWiringOutcomeUnknown(err error) bool {
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	switch status.Code(err) {
-	case codes.Canceled, codes.DeadlineExceeded, codes.Unavailable:
-		return true
-	default:
-		return false
-	}
+type initWiringUncertainError struct{ error }
+
+func (e *initWiringUncertainError) Unwrap() error {
+	return e.error
 }
 
 // initSourceInput is what settling the data source depends on.
@@ -1404,15 +1399,24 @@ func ensureRootEvalService(
 		return "", "", messages.BuildingServiceEntry(err)
 	}
 
-	_, err = azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{
+	// Optional host capability; literals are shared with the core handler so
+	// extensions using the released SDK do not need a new protocol dependency.
+	token := rand.Text()
+	callCtx := metadata.AppendToOutgoingContext(ctx, "azd-project-add-service-operation", token)
+	var trailers metadata.MD
+	_, err = azdClient.Project().AddService(callCtx, &azdext.AddServiceRequest{
 		Service: &azdext.ServiceConfig{
 			Name:                 name,
 			Host:                 project.EvalHost,
 			Uses:                 evalServiceUses(resp.GetProject(), target),
 			AdditionalProperties: props,
 		},
-	})
+	}, grpc.Trailer(&trailers), grpc.MaxRetryRPCBufferSize(0))
 	if err != nil {
+		ack := trailers.Get("azd-project-add-service-save-failed")
+		if len(ack) != 1 || ack[0] != token {
+			err = &initWiringUncertainError{error: err}
+		}
 		return "", "", messages.AddingServiceTo(rootConfigName, err)
 	}
 	return wiringAdded, name, nil

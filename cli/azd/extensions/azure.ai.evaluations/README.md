@@ -280,6 +280,11 @@ Its printed init command selects `--conversation-mode simulation`. Run that
 command interactively to enter the simulation model, or add
 `--simulation-model <connection-name/model-deployment> --judge-model <deployment> --no-prompt` for
 automation (also supply `--target` if generation had no agent).
+If generation had no agent and none is declared locally, supply `--target` before
+running the command interactively too. Rubric-only generation does not supply a
+dataset: select existing data with `--source dataset --dataset <name-or-path>`,
+or choose `--source traces` with a configured trace connection. The printed
+unattended guidance includes the missing target and dataset flags.
 The generation, simulation, and judge deployments are independent choices.
 Init never copies the generation or judge model into the simulation model.
 Generation declares artifacts only; it does not attach them to an existing eval

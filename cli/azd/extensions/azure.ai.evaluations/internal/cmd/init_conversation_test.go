@@ -430,7 +430,9 @@ func TestInitSimulationRefusesKnownIncompatibleEvaluatorBeforeWriting(t *testing
 }
 
 func TestInitSimulationRejectsUnqualifiedModelBeforeWrites(t *testing.T) {
-	for _, model := range []string{"simulator", "/simulator", "connection/", "connection/model/extra", "connection/my model"} {
+	for _, model := range []string{
+		"simulator", "/simulator", "connection/", "connection/model/extra", "connection/my model",
+	} {
 		t.Run(model, func(t *testing.T) {
 			h := newInitHarness(t, nil)
 			before := initFileSnapshot(t, h.dir)

@@ -571,13 +571,18 @@ func (ec *evalContext) runGenerations(
 func writeGenerationCompleted(out io.Writer, outcomes []generationOutcome, configPath string) {
 	fmt.Fprint(out, messages.GenerationCompleted())
 	simulation := false
+	hasTarget, hasDataset := false, false
 	for i := range outcomes {
 		if id := outcomes[i].report.jobID; id != "" {
 			fmt.Fprint(out, messages.GenerationJobLine(string(outcomes[i].plan.Kind), id))
 		}
-		if outcomes[i].ref != nil && outcomes[i].plan.Kind == generateKindDataset &&
-			outcomes[i].plan.EvaluationLevel == project.EvaluationLevelConversation {
-			simulation = true
+		if outcomes[i].ref == nil {
+			continue
+		}
+		hasTarget = hasTarget || outcomes[i].plan.Agent != ""
+		if outcomes[i].plan.Kind == generateKindDataset {
+			hasDataset = true
+			simulation = outcomes[i].plan.EvaluationLevel == project.EvaluationLevelConversation
 		}
 	}
 	if incompatible := incompatibleHandoffEvaluator(outcomes); incompatible != nil {
@@ -585,7 +590,7 @@ func writeGenerationCompleted(out io.Writer, outcomes []generationOutcome, confi
 	}
 	if next := initHandoff(outcomes, configPath); next != "" {
 		fmt.Fprint(out, messages.FirstNextStep(next))
-		fmt.Fprint(out, messages.InitHandoffGuidance(simulation))
+		fmt.Fprint(out, messages.InitHandoffGuidance(simulation, hasTarget, hasDataset))
 	}
 }
 
@@ -593,10 +598,8 @@ func writeGenerationCompleted(out io.Writer, outcomes []generationOutcome, confi
 // eval. Conversation seeds select simulation; init asks for the independent
 // simulation model rather than reusing the generation model.
 //
-// --target is included even though `init` can detect it: the handoff is
-// documented to run exactly as printed, and the detection depends on the
-// project being readable at the time it is run rather than at the time it was
-// printed.
+// Known targets are included even though init can detect local services.
+// Guidance names unresolved target and dataset inputs without inventing them.
 func initHandoff(outcomes []generationOutcome, configPath string) string {
 	var agent, dataset, level, evaluator string
 	incompatible := incompatibleHandoffEvaluator(outcomes)

@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaieval/internal/pkg/eval_api"
@@ -54,8 +56,8 @@ func TestGenerationClosesWithItsJobsAndTheNextCommand(t *testing.T) {
 	assert.Contains(t, text, "Next: azd ai eval init")
 }
 
-// The handoff runs exactly as printed, so every value it needs is in it.
-func TestTheInitHandoffCarriesEveryValueItNeeds(t *testing.T) {
+// Known resource choices are retained; model deployments remain independent inputs.
+func TestTheInitHandoffCarriesKnownArtifactAndTargetInputs(t *testing.T) {
 	got := initHandoff(bothGenerated(), "")
 
 	assert.Contains(t, got, "--target hero-agent",
@@ -192,6 +194,56 @@ func TestGenerationHandoffGuidanceOnlyReachesCompletedHumanOutput(t *testing.T) 
 			} else {
 				assert.Contains(t, out.String(), "Run this init command interactively")
 				assert.Contains(t, out.String(), "--judge-model <judge-deployment>")
+			}
+		})
+	}
+}
+
+func TestUnattendedHandoffGuidanceCompletesMissingResources(t *testing.T) {
+	for _, kind := range []string{"rubric only", "instruction-only conversation"} {
+		t.Run(kind, func(t *testing.T) {
+			h := newInitHarness(t, nil)
+			outcomes := bothGenerated()[1:]
+			if kind == "instruction-only conversation" {
+				outcomes = bothGenerated()[:1]
+				outcomes[0].plan.Agent = ""
+				outcomes[0].plan.EvaluationLevel = project.EvaluationLevelConversation
+			}
+			var out bytes.Buffer
+			if kind == "rubric only" {
+				catalogCommand := &cobra.Command{}
+				catalogCommand.SetContext(t.Context())
+				catalogCommand.SetOut(&out)
+				require.NoError(t, addEvaluatorToCatalog(
+					catalogCommand, filepath.Join(h.dir, project.DefaultEvalDir), outcomes[0].ref))
+				out.Reset()
+			}
+			writeGenerationCompleted(&out, outcomes, "")
+			_, guidance, found := strings.Cut(out.String(), "For unattended use, add ")
+			require.True(t, found)
+			flags, _, found := strings.Cut(guidance, ". Choose these deployments")
+			require.True(t, found)
+			flags = strings.NewReplacer(
+				"<judge-deployment>", "judge",
+				"<connection-name/model-deployment>", "connection/simulator",
+				"<agent-name>", "existing-agent",
+				"<dataset-name-or-jsonl-path>", "registered-data",
+			).Replace(flags)
+			command := strings.TrimPrefix(initHandoff(outcomes, ""), "azd ai eval init ")
+			_, err := executeConversationInit(t, strings.Fields(command+" "+flags)...)
+			require.NoError(t, err, "the completed guidance must work without configured local agents or datasets")
+			cfg, err := project.OpenEvalConfig(filepath.Join(h.dir, "evals"))
+			require.NoError(t, err)
+			require.Len(t, cfg.Evals, 1)
+			require.NotNil(t, cfg.Evals[0].Target)
+			if kind == "instruction-only conversation" {
+				assert.Equal(t, "existing-agent", cfg.Evals[0].Target.Name)
+				require.NotNil(t, cfg.Evals[0].Simulation)
+				assert.Equal(t, "connection/simulator", cfg.Evals[0].Simulation.Model)
+				assert.Contains(t, out.String(), "Before running init, add --target")
+			} else {
+				assert.Equal(t, "registered-data", cfg.Evals[0].Dataset)
+				assert.Contains(t, out.String(), "No dataset was generated")
 			}
 		})
 	}

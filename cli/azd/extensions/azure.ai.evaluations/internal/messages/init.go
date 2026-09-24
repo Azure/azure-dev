@@ -77,13 +77,23 @@ func HandoffEvaluatorIncompatible(name string) string {
 		"It remains in the catalogue; the init command uses builtin.task_completion instead.\n", name)
 }
 
-// InitHandoffGuidance distinguishes the interactive next command from unattended use.
-func InitHandoffGuidance(simulation bool) string {
-	modelFlags := "--judge-model <judge-deployment>"
+// InitHandoffGuidance names missing resource and model inputs for the next command.
+func InitHandoffGuidance(simulation, hasTarget, hasDataset bool) string {
+	flags := "--judge-model <judge-deployment>"
 	if simulation {
-		modelFlags += " --simulation-model <connection-name/model-deployment>"
+		flags += " --simulation-model <connection-name/model-deployment>"
 	}
-	return "  Run this init command interactively to resolve missing inputs.\n" +
-		"  For unattended use, add --no-prompt " + modelFlags +
+	var prerequisites string
+	if !hasTarget {
+		prerequisites += "  Before running init, add --target <agent-name> if no agent service is declared locally.\n"
+		flags += " --target <agent-name>"
+	}
+	if !hasDataset {
+		prerequisites += "  No dataset was generated. Select existing data with --source dataset " +
+			"--dataset <dataset-name-or-jsonl-path>, or choose --source traces with a configured trace connection.\n"
+		flags += " --source dataset --dataset <dataset-name-or-jsonl-path>"
+	}
+	return prerequisites + "  Run this init command interactively to resolve missing inputs.\n" +
+		"  For unattended use, add --no-prompt " + flags +
 		". Choose these deployments independently of --generation-model.\n"
 }

@@ -2768,6 +2768,20 @@ func EvaluatorRefNotAPath(ref string) error {
 		"configuration instead", ref)
 }
 
+// EvaluatorBuiltinUnknown reports a builtin.<name> the project's catalogue does
+// not offer.
+//
+// Only raised when the catalogue was actually read: a reference this build
+// cannot check is left as written, so the name is reported as absent from the
+// project rather than as one that does not exist.
+func EvaluatorBuiltinUnknown(ref string, known []string) error {
+	if len(known) == 0 {
+		return fmt.Errorf("this project offers no built-in evaluator named %q", ref)
+	}
+	return fmt.Errorf("this project offers no built-in evaluator named %q; it offers %s",
+		ref, strings.Join(known, ", "))
+}
+
 // GateNeedsATerminalRun refuses to gate a run that is still moving.
 //
 // The counts are partial until the run stops, so a threshold read from them
@@ -2906,6 +2920,14 @@ func SelectEvalPrompt() string {
 	return "Select the eval to use:"
 }
 
+// CancelEvalChoice leaves the eval unselected without interrupting the command.
+func CancelEvalChoice() string { return "Cancel" }
+
+// SelectingEval reports a failed or interrupted eval prompt.
+func SelectingEval(err error) error {
+	return fmt.Errorf("selecting eval: %w", err)
+}
+
 // SelectingJudgeModel reports a failed judge model prompt.
 func SelectingJudgeModel(err error) error {
 	return fmt.Errorf("selecting a judge model deployment: %w", err)
@@ -2914,8 +2936,8 @@ func SelectingJudgeModel(err error) error {
 // UsingTraceSource reports a scaffold that reads production traces.
 //
 // Naming Application Insights is a claim about the project, so it is only made
-// when a connection was actually found. `init` makes no service calls and
-// cannot verify one it did not see.
+// when a connection was actually found. `init` never asks the service about
+// one and cannot verify one it did not see.
 func UsingTraceSource(connected bool) string {
 	if connected {
 		return fmt.Sprintf("%s Using data source: traces (Application Insights)\n", doneMark)
@@ -3035,6 +3057,15 @@ func SeveralEvalsDeclared(count int, names []string) error {
 		"this configuration declares %d evals (%s); name the one you mean, "+
 			"as an argument to `create` or with --eval on the run commands",
 		count, strings.Join(names, ", "))
+}
+
+// EvalSelectionCancelled confirms the reader's explicit Cancel choice.
+//
+// Cancelling is an answer, so it is reported as one. It used to fall through to
+// SeveralEvalsDeclared, which told a reader who had just declined to choose
+// that they had failed to name something.
+func EvalSelectionCancelled() string {
+	return "Cancelled. No eval was selected.\n"
 }
 
 // EvalNotDeclared reports a name the configuration does not carry.

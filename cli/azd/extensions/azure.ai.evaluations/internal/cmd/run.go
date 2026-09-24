@@ -187,7 +187,16 @@ func (a *runStartAction) Run() error {
 	if err != nil {
 		return err
 	}
-	ref, err := ec.resolveEvalRef(ctx, evalDir, chooseEvalIn(a.cmd, evalDir, a.flags.groupName))
+	chosen, err := chooseEvalIn(a.cmd, evalDir, a.flags.groupName)
+	if err != nil {
+		// An explicit Cancel choice is an answer; prompt errors remain errors.
+		if isEvalSelectionCancelled(err) {
+			reportCancelledSelection(a.cmd)
+			return nil
+		}
+		return err
+	}
+	ref, err := ec.resolveEvalRef(ctx, evalDir, chosen)
 	if err != nil {
 		return err
 	}

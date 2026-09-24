@@ -110,7 +110,7 @@ func chooseJudgeModel(cmd *cobra.Command, candidates []string) (string, error) {
 // tracesConnected reports whether the azd environment records an Application
 // Insights connection, which is what `generate --from` already defaults on.
 //
-// A local read, so `init` keeps its promise to make no service calls. Absence
+// A local read, so choosing a source stays offline. Absence
 // is ordinary: init runs outside an azd project too.
 func tracesConnected(ctx context.Context) bool {
 	return azdEnvValue(ctx, appInsightsEnvKey) != ""
@@ -148,9 +148,10 @@ func azdEnvValue(ctx context.Context, key string) string {
 
 // validateEvaluatorRefs rejects references that cannot name an evaluator.
 //
-// This needs no service call, so it keeps `init`'s promise to make none. The
-// alternative is a config that scaffolds cleanly and fails at `create`, naming
-// a value the user passed to a different command.
+// Shape only, and offline: whether a builtin. name exists is a question only
+// the project's catalogue answers, and refuseUnknownBuiltins asks it when one
+// can be reached. The alternative is a config that scaffolds cleanly and fails
+// at `create`, naming a value the user passed to a different command.
 //
 // A reference becomes `./evaluators/<ref>.json`, so anything that can climb out
 // of that directory is refused here: `--evaluator ../../id_rsa` would otherwise

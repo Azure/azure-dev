@@ -51,6 +51,20 @@ def unique_plan_object(pairs):
     return value
 
 
+def same_json_value(actual, expected):
+    if type(actual) in (int, Decimal) and type(expected) in (int, Decimal):
+        return actual == expected
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return actual.keys() == expected.keys() and all(
+            same_json_value(actual[key], value) for key, value in expected.items())
+    if isinstance(expected, list):
+        return len(actual) == len(expected) and all(
+            same_json_value(left, right) for left, right in zip(actual, expected))
+    return actual == expected
+
+
 def verify_native_identity_token(value, plan):
     require(isinstance(value, dict) and isinstance(value.get("token"), str),
             "Native CI identity did not provide a token for identity verification")
@@ -373,6 +387,10 @@ def lifecycle(plan, driver, workspace, report, name=None):
         expect(isinstance(exported, dict) and exported.get("run", {}).get("id") == run_id
                 and isinstance(exported.get("items"), list) and len(exported["items"]) == 1,
                 "Export did not contain the one approved run and row")
+        item = exported["items"][0]
+        expect(isinstance(item, dict) and item.get("run_id") == run_id
+               and same_json_value(item.get("datasource_item"), documents[0]),
+               "Exported item does not match the owned run and approved dataset row")
         counts = final.get("result_counts", {})
         expect(isinstance(counts, dict)
                and all(type(counts.get(key, 0)) is int for key in ("total", "passed", "failed", "errored", "skipped")),

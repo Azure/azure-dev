@@ -141,8 +141,10 @@ The implemented sequence is:
    agent target, trace source, or simulation block.
 4. Invoke run start once, wait for the returned run ID under the returned eval
    ID, and require terminal completion. Export that exact run through the real
-   `run output export` command and require one row plus a successful one-row
-   result-count assertion.
+   `run output export` command and require its sole item's `run_id` and
+   `datasource_item` to match the owned run and the approved downloaded row,
+   without boolean/numeric coercion, plus a successful one-row result-count
+   assertion.
 5. Delete only the returned owned evaluation and its runs. Cleanup uses the
    existing client's exact `DELETE /openai/v1/evals/{id}` contract rather than
    the CLI's ID-to-name fallback. It obtains an AI-scoped token from the already

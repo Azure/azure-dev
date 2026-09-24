@@ -297,7 +297,7 @@ class ServiceTests(unittest.TestCase):
                 with self.assertRaisesRegex(service.Blocked, "escapes"):
                     service.verify_install(plan, profile)
 
-    def drive(self, *, failure=None, bad_rows=False, cleanup_fails=False, counts=None):
+    def drive(self, *, failure=None, bad_rows=False, cleanup_fails=False, counts=None, exported_item=None):
         plan = self.plan()
         calls, report = [], {}
         with tempfile.TemporaryDirectory() as root:
@@ -333,7 +333,11 @@ class ServiceTests(unittest.TestCase):
                     return {"id": "evalrun_owned", "status": "completed",
                             "result_counts": {"total": 1, "passed": 1} if counts is None else counts}
                 if label.startswith("export"):
-                    return {"run": {"id": "evalrun_owned"}, "items": [{"private": "not persisted"}]}
+                    item = exported_item if exported_item is not None else {
+                        "run_id": "evalrun_owned", "datasource_item": json.loads(ROW),
+                        "private": "not persisted",
+                    }
+                    return {"run": {"id": "evalrun_owned"}, "items": [item]}
                 if label.startswith("delete"):
                     self.assertEqual(args, ["ID-only DELETE", "eval_owned"])
                     return {"id": "eval_owned", "status": "deleted"}
@@ -397,6 +401,25 @@ class ServiceTests(unittest.TestCase):
                 self.assertNotIn("quality", report)
                 self.assertIn("JSON integers", report["failure"]["message"])
                 self.assertEqual(report["remoteCleanup"]["status"], "PASS")
+
+    def test_export_must_bind_the_item_to_the_owned_run_and_approved_row(self):
+        approved = json.loads(ROW)
+        for item in ({}, {"run_id": "other-run", "datasource_item": approved},
+                     {"run_id": "evalrun_owned", "datasource_item": {**approved, "response": "different"}},
+                     {"run_id": "evalrun_owned", "datasource_item": {**approved, "extra": "unapproved"}}):
+            with self.subTest(item=item):
+                _, report = self.drive(exported_item=item)
+                self.assertNotIn("quality", report)
+                self.assertIn("approved dataset row", report["failure"]["message"])
+                self.assertEqual(report["remoteCleanup"]["status"], "PASS")
+
+    def test_row_comparison_preserves_json_types_and_exact_numeric_values(self):
+        self.assertFalse(service.same_json_value({"nested": [True]}, {"nested": [1]}))
+        self.assertFalse(service.same_json_value({"n": "1"}, {"n": 1}))
+        self.assertFalse(service.same_json_value({"n": 9007199254740992}, {"n": 9007199254740993}))
+        self.assertTrue(service.same_json_value({"n": service.Decimal("1.0")}, {"n": 1}))
+        value = service.Decimal("0.123456789012345678901234567890")
+        self.assertTrue(service.same_json_value({"n": value}, {"n": value}))
 
     def test_real_driver_keeps_service_payload_out_of_receipt(self):
         with tempfile.TemporaryDirectory() as root:

@@ -4,6 +4,7 @@
 package pipeline
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -83,7 +85,7 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 	})
 }
 
-func createGitHubCiProvider(t *testing.T, mockContext *mocks.MockContext) CiProvider {
+func createGitHubCiProvider(t *testing.T, mockContext *mocks.MockContext) *GitHubCiProvider {
 	env := environment.New("test")
 	ghCli := github.NewGitHubCli(
 		mockContext.Console,
@@ -101,7 +103,7 @@ func createGitHubCiProvider(t *testing.T, mockContext *mocks.MockContext) CiProv
 		ghCli,
 		git.NewCli(mockContext.CommandRunner),
 		mockContext.Console,
-	)
+	).(*GitHubCiProvider)
 }
 
 func setupGithubCliMocks(mockContext *mocks.MockContext) {
@@ -115,6 +117,185 @@ func setupGithubCliMocks(mockContext *mocks.MockContext) {
 		return strings.Contains(command, "--version")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0, fmt.Sprintf("gh version %s", github.Version), ""), nil
+	})
+}
+
+func TestGitHubEnvironmentCredentialOptions(t *testing.T) {
+	t.Parallel()
+
+	mockContext := mocks.NewMockContext(t.Context())
+	mockContext.Console.SetNoPromptMode(true)
+	mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+		return strings.Contains(cmd, "/repos/Azure-Samples/my-repo/actions/oidc/customization/sub")
+	}).Respond(exec.NewRunResult(
+		0,
+		`{"use_default": true, "include_claim_keys": []}`,
+		"",
+	))
+
+	provider := createGitHubCiProvider(t, mockContext)
+	provider.gitHubEnvironment = "prod:west"
+	options, err := provider.credentialOptions(
+		t.Context(),
+		&gitRepositoryDetails{
+			owner:    "Azure-Samples",
+			repoName: "my-repo",
+			branch:   "main",
+		},
+		provisioning.Options{},
+		AuthTypeFederated,
+		&entraid.AzureCredentials{},
+	)
+	require.NoError(t, err)
+	require.True(t, options.EnableFederatedCredentials)
+	require.Len(t, options.FederatedCredentialOptions, 1)
+	require.Equal(
+		t,
+		"repo:Azure-Samples/my-repo:environment:prod%3Awest",
+		options.FederatedCredentialOptions[0].Subject,
+	)
+}
+
+func TestGitHubEnvironmentResolution(t *testing.T) {
+	t.Parallel()
+
+	t.Run("uses persisted mapping", func(t *testing.T) {
+		t.Parallel()
+
+		mockContext := mocks.NewMockContext(t.Context())
+		provider := createGitHubCiProvider(t, mockContext)
+		provider.env.DotenvSet(gitHubEnvironmentPersistedKey, "production")
+
+		environmentName, err := provider.resolveEnvironment(
+			t.Context(),
+			&gitRepositoryDetails{owner: "o", repoName: "r"},
+		)
+		require.NoError(t, err)
+		require.Equal(t, "production", environmentName)
+	})
+
+	t.Run("migrates matching repository configuration", func(t *testing.T) {
+		t.Parallel()
+
+		mockContext := mocks.NewMockContext(t.Context())
+		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "variable list")
+		}).Respond(exec.NewRunResult(0, "AZURE_ENV_NAME\ttest\n", ""))
+		provider := createGitHubCiProvider(t, mockContext)
+
+		environmentName, err := provider.resolveEnvironment(
+			t.Context(),
+			&gitRepositoryDetails{owner: "o", repoName: "r"},
+		)
+		require.NoError(t, err)
+		require.Empty(t, environmentName)
+	})
+
+	t.Run("selects existing environment", func(t *testing.T) {
+		t.Parallel()
+
+		mockContext := mocks.NewMockContext(t.Context())
+		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "variable list")
+		}).Respond(exec.NewRunResult(0, "", ""))
+		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "/repos/o/r/environments?per_page=100")
+		}).Respond(exec.NewRunResult(0, "development\nproduction\n", ""))
+		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Select where GitHub Actions configuration")
+		}).Respond(3)
+		provider := createGitHubCiProvider(t, mockContext)
+
+		environmentName, err := provider.resolveEnvironment(
+			t.Context(),
+			&gitRepositoryDetails{owner: "o", repoName: "r"},
+		)
+		require.NoError(t, err)
+		require.Equal(t, "production", environmentName)
+	})
+
+	t.Run("creates environment after workflow validation", func(t *testing.T) {
+		t.Parallel()
+
+		mockContext := mocks.NewMockContext(t.Context())
+		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "variable list")
+		}).Respond(exec.NewRunResult(0, "", ""))
+		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "/repos/o/r/environments?per_page=100")
+		}).Respond(exec.NewRunResult(0, "", ""))
+		created := false
+		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "-X PUT") &&
+				strings.Contains(cmd, "/repos/o/r/environments/development")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			created = true
+			return exec.NewRunResult(0, "", ""), nil
+		})
+		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Select where GitHub Actions configuration")
+		}).Respond(1)
+		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Enter a name for the new GitHub environment")
+		}).Respond("development")
+		provider := createGitHubCiProvider(t, mockContext)
+
+		repoDetails := &gitRepositoryDetails{owner: "o", repoName: "r"}
+		environmentName, err := provider.resolveEnvironment(t.Context(), repoDetails)
+		require.NoError(t, err)
+		require.Equal(t, "development", environmentName)
+		require.False(t, created)
+
+		require.NoError(t, provider.ensureEnvironment(t.Context(), repoDetails))
+		require.True(t, created)
+	})
+
+	t.Run("no prompt defaults to repository scope", func(t *testing.T) {
+		t.Parallel()
+
+		mockContext := mocks.NewMockContext(t.Context())
+		mockContext.Console.SetNoPromptMode(true)
+		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "variable list")
+		}).Respond(exec.NewRunResult(0, "", ""))
+		provider := createGitHubCiProvider(t, mockContext)
+
+		environmentName, err := provider.resolveEnvironment(
+			t.Context(),
+			&gitRepositoryDetails{owner: "o", repoName: "r"},
+		)
+		require.NoError(t, err)
+		require.Empty(t, environmentName)
+	})
+
+	t.Run("list failure still allows repository scope", func(t *testing.T) {
+		t.Parallel()
+
+		mockContext := mocks.NewMockContext(t.Context())
+		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "variable list")
+		}).Respond(exec.NewRunResult(0, "", ""))
+		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "/repos/o/r/environments?per_page=100")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			return exec.NewRunResult(1, "", "forbidden"), errors.New("exit 1")
+		})
+		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Select where GitHub Actions configuration")
+		}).Respond(0)
+		provider := createGitHubCiProvider(t, mockContext)
+
+		environmentName, err := provider.resolveEnvironment(
+			t.Context(),
+			&gitRepositoryDetails{owner: "o", repoName: "r"},
+		)
+		require.NoError(t, err)
+		require.Empty(t, environmentName)
+		require.Contains(
+			t,
+			strings.Join(mockContext.Console.Output(), "\n"),
+			"GitHub environments could not be listed",
+		)
 	})
 }
 
@@ -145,6 +326,7 @@ func Test_credentialOptions_withOIDCCustomSubject(t *testing.T) {
 		repoName: "my-repo",
 		branch:   "main",
 	}
+
 	repoSlug := "Azure-Samples/my-repo"
 
 	// Helper to set up mock context with no-prompt mode
@@ -169,7 +351,7 @@ func Test_credentialOptions_withOIDCCustomSubject(t *testing.T) {
 			"",
 		))
 
-		provider := createGitHubCiProvider(t, mockContext).(*GitHubCiProvider)
+		provider := createGitHubCiProvider(t, mockContext)
 		opts, err := provider.credentialOptions(
 			t.Context(),
 			repoDetails,
@@ -208,7 +390,7 @@ func Test_credentialOptions_withOIDCCustomSubject(t *testing.T) {
 			"",
 		))
 
-		provider := createGitHubCiProvider(t, mockContext).(*GitHubCiProvider)
+		provider := createGitHubCiProvider(t, mockContext)
 		opts, err := provider.credentialOptions(
 			t.Context(),
 			repoDetails,
@@ -246,7 +428,7 @@ func Test_credentialOptions_withOIDCCustomSubject(t *testing.T) {
 			"",
 		))
 
-		provider := createGitHubCiProvider(t, mockContext).(*GitHubCiProvider)
+		provider := createGitHubCiProvider(t, mockContext)
 		opts, err := provider.credentialOptions(
 			t.Context(),
 			repoDetails,
@@ -291,7 +473,7 @@ func Test_credentialOptions_withOIDCCustomSubject(t *testing.T) {
 			"",
 		))
 
-		provider := createGitHubCiProvider(t, mockContext).(*GitHubCiProvider)
+		provider := createGitHubCiProvider(t, mockContext)
 		opts, err := provider.credentialOptions(
 			t.Context(),
 			repoDetails,
@@ -324,7 +506,7 @@ func Test_credentialOptions_withOIDCCustomSubject(t *testing.T) {
 				fmt.Errorf("HTTP 403: Forbidden")
 		})
 
-		provider := createGitHubCiProvider(t, mockContext).(*GitHubCiProvider)
+		provider := createGitHubCiProvider(t, mockContext)
 		_, err := provider.credentialOptions(
 			t.Context(),
 			repoDetails,
@@ -364,7 +546,7 @@ func Test_credentialOptions_withOIDCCustomSubject(t *testing.T) {
 			branch:   "develop",
 		}
 
-		provider := createGitHubCiProvider(t, mockContext).(*GitHubCiProvider)
+		provider := createGitHubCiProvider(t, mockContext)
 		opts, err := provider.credentialOptions(
 			t.Context(),
 			devDetails,

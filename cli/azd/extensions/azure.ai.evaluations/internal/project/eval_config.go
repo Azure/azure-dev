@@ -93,6 +93,9 @@ type Eval struct {
 	MaxSamples      int                    `yaml:"max_samples,omitempty"       json:"max_samples,omitempty"`
 	Evaluators      evalcore.EvaluatorList `yaml:"evaluators,omitempty"        json:"evaluators,omitempty"`
 	Target          *Target                `yaml:"target,omitempty"            json:"target,omitempty"`
+	// Simulation, when present, says the eval creates its conversations from
+	// scenario seeds instead of scoring conversations it was handed.
+	Simulation *Simulation `yaml:"simulation,omitempty" json:"simulation,omitempty"`
 }
 
 // SourceDecl says where an eval's rows come from when they are not a dataset.

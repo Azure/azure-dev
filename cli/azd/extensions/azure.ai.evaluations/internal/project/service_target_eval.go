@@ -456,6 +456,13 @@ func FingerprintGroup(group Eval) (string, error) {
 func FingerprintDefinition(group Eval) (string, error) {
 	group.MaxSamples = 0
 	group.Source = nil
+	// Simulation settings are sent in the run's data source, not stored on the
+	// eval, so changing a model or a turn count would otherwise recreate an
+	// immutable eval and leave its earlier runs reachable only through the old
+	// id. Presence still counts, because it decides the stored item schema.
+	if group.Simulation != nil {
+		group.Simulation = &Simulation{}
+	}
 	return FingerprintGroup(group)
 }
 

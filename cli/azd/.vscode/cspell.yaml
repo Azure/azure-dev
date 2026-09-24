@@ -291,6 +291,7 @@ overrides:
       - Chdir
       - creds
       - Moby
+      - postflight
       - upsert
   - filename: docs/proxy-configuration.md
     words:

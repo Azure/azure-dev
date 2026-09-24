@@ -20,6 +20,7 @@ import (
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
+	"azureaieval/internal/telemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -32,8 +33,9 @@ const (
 	initSourceTraces  = "traces"
 )
 
-// newInitCommand scaffolds the eval configuration. It makes no service calls at
-// all, so it works offline and unauthenticated.
+// newInitCommand scaffolds the eval configuration. It asks the project for one
+// thing -- the built-in evaluators it offers, to check a --evaluator reference
+// -- and works offline and unauthenticated without it.
 //
 // It only ever adds. A name already declared is refused rather than
 // overwritten, because the settings a reader tunes by hand — thresholds, judge
@@ -62,6 +64,18 @@ type initFlags struct {
 type initAction struct {
 	cmd   *cobra.Command
 	flags *initFlags
+	// knownBuiltins answers which built-in evaluators the project offers. Held
+	// per action rather than in a package variable so a test that substitutes
+	// it shares nothing with a test running beside it.
+	knownBuiltins func(context.Context) []string
+}
+
+// builtinCatalogue is the lookup a builtin. reference is checked against.
+func (a *initAction) builtinCatalogue() func(context.Context) []string {
+	if a.knownBuiltins != nil {
+		return a.knownBuiltins
+	}
+	return readBuiltinEvaluatorCatalogue
 }
 
 func newInitCommand() *cobra.Command {
@@ -69,7 +83,7 @@ func newInitCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Scaffold evaluation config for an agent. Makes no service calls.",
+		Short: "Scaffold evaluation config for an agent. Works offline.",
 		// Everything init takes is a flag; a positional would be ignored.
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -134,6 +148,24 @@ func (a *initAction) Run() error {
 	// the same defect one step removed.
 	if err := validateEvaluatorRefs(a.flags.evaluators); err != nil {
 		return err
+	}
+	// Asked once, and only when there is a builtin. reference for the catalogue
+	// to answer about. A builtin. reference names something only the project can
+	// confirm, so it used to scaffold cleanly and fail at create. Unreachable
+	// projects answer nothing and leave the reference as written, so this adds a
+	// check offline rather than a requirement.
+	if hasBuiltinRef(a.flags.evaluators) {
+		known := a.builtinCatalogue()(a.cmd.Context())
+		// The lookup's own five-second bound is best effort, but the command's
+		// context being done is the reader interrupting, and that is not the
+		// catalogue being quiet. Collapsing the two carried on to fail several
+		// steps later on something unrelated -- "no azd project" for a Ctrl-C.
+		if err := a.cmd.Context().Err(); err != nil {
+			return err
+		}
+		if err := refuseUnknownBuiltins(a.flags.evaluators, known); err != nil {
+			return err
+		}
 	}
 	// The same cascade every other command reads the configuration
 	// through. init merges into the configuration it finds, so a second
@@ -330,6 +362,11 @@ func (a *initAction) Run() error {
 		return err
 	}
 
+	// Reported here rather than from the prompt sequence, which a confirmation
+	// can send the reader back through: this is the source the scaffold on disk
+	// was actually written for, and it happens once.
+	reportUsage(a.cmd.Context(), telemetry.InitCompleted(source))
+
 	if isJSON(a.cmd) {
 		return emitJSON(out, map[string]any{
 			"eval":          evalName,
@@ -347,8 +384,8 @@ func (a *initAction) Run() error {
 
 	fmt.Fprint(out, messages.DetectedTarget(target))
 	if source == initSourceTraces {
-		// Claiming the connection is only honest when it was found. init
-		// makes no service calls, so it cannot verify one it did not see.
+		// Claiming the connection is only honest when it was found. init never
+		// asks the service about one, so it cannot verify one it did not see.
 		fmt.Fprint(out, messages.UsingTraceSource(tracesWired()))
 	}
 	// Only what was settled without asking: a reader who just picked
@@ -433,8 +470,8 @@ func settleInitSource(cmd *cobra.Command, in initSourceInput) (string, error) {
 // chooseInitSource settles an unstated source, asking where it can.
 func chooseInitSource(cmd *cobra.Command, in initSourceInput) (string, error) {
 	// The same signal `generate --from` defaults on, read from the azd
-	// environment rather than the service, so init still makes no service
-	// calls. Traces are real conversations; a project wired to collect them
+	// environment rather than the service, so choosing a source stays offline.
+	// Traces are real conversations; a project wired to collect them
 	// should not have to ask for them by flag.
 	preferred := ""
 	switch {
@@ -691,6 +728,13 @@ func planScaffold(in scaffoldInput) (scaffold, error) {
 				// validation and the deploy fails on a file that never existed.
 				if _, err := os.Stat(in.dataset); err != nil {
 					return scaffold{}, messages.DatasetFileNotFound(in.dataset, err)
+				}
+				// Deploy already refuses a file whose rows are not JSON objects.
+				// init is holding the file and needs nothing from the service to
+				// judge it, so accepting it here only moves the failure to a
+				// deploy, after a declaration nobody can use has been written.
+				if err := validateJSONL(in.dataset); err != nil {
+					return scaffold{}, err
 				}
 				// --dataset is given relative to where the user is standing,
 				// but source: resolves relative to the config, so the path has
@@ -1064,7 +1108,8 @@ const aiModelHost = "azure.ai.model"
 // detectModelDeployments finds the deployments the graders could judge with,
 // from what the project already declares.
 //
-// `init` makes no service calls, so detection is limited to the project file.
+// `init` asks the service nothing about deployments, so detection is limited
+// to the project file.
 // Coming back empty leaves it to resolveJudgeModel, which reads the Foundry
 // project's deployments: and then asks or names --judge-model.
 //

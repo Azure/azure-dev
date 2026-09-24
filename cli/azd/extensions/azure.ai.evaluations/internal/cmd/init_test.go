@@ -360,7 +360,7 @@ func TestScaffold_DatasetReferenceForms(t *testing.T) {
 		// resolved relative to the eval config, so it has to be rebased.
 		dataset := filepath.Join(t.TempDir(), "tests", "golden.jsonl")
 		require.NoError(t, os.MkdirAll(filepath.Dir(dataset), 0o750))
-		require.NoError(t, os.WriteFile(dataset, []byte("{}\n"), 0o600))
+		require.NoError(t, os.WriteFile(dataset, []byte("{\"query\":\"q\"}\n"), 0o600))
 
 		plan, cfg := scaffoldFor(t, scaffoldInput{
 			evalName: "smoke", target: "a", dataset: dataset, evalDir: "evals",

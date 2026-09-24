@@ -119,13 +119,14 @@ func InitHandoffGuidance(simulation, hasTarget, hasDataset bool) string {
 		". Choose these deployments independently of --generation-model.\n"
 }
 
-// InitHandoffManualPath preserves a path that cannot be safely quoted for every shell.
-func InitHandoffManualPath(configPath, agent, dataset, level, evaluator string) string {
-	text := fmt.Sprintf("  Next step: initialize an evaluation from the generated artifacts with azd ai eval init.\n"+
-		"  Supply --path with this exact configuration path (shown as an escaped string, not a shell argument): %q\n"+
-		"  Quote the path for your shell. "+
-		"No copyable command is shown because portable quoting cannot preserve this path.\n",
-		configPath)
+// InitHandoffManualInputs preserves values that cannot be safely quoted for every shell.
+func InitHandoffManualInputs(configPath, agent, dataset, level, evaluator string) string {
+	text := "  Next step: initialize an evaluation from the generated artifacts with azd ai eval init.\n" +
+		"  Each value below is an escaped string, not a shell argument. Quote each value for your shell.\n" +
+		"  No copyable command is shown because portable quoting cannot preserve every value.\n"
+	if configPath != "" {
+		text += fmt.Sprintf("  --path value: %q\n", configPath)
+	}
 	if agent != "" {
 		text += fmt.Sprintf("  --target value: %q\n", agent)
 	}

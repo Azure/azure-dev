@@ -107,7 +107,7 @@ func TestNothingProducedPrintsNoHandoff(t *testing.T) {
 
 func TestGenerationHandoffDoesNotSubstituteSpecialConfigPaths(t *testing.T) {
 	for _, path := range []string{"$quality/custom.yaml", "quality`/custom.yaml", `quality"/custom.yaml`,
-		"$(unexpected)/custom.yaml"} {
+		"$(unexpected)/custom.yaml", "%TEMP%/custom.yaml", "!TEMP!/custom.yaml"} {
 		t.Run(path, func(t *testing.T) {
 			outcomes := bothGenerated()
 			outcomes[0].plan.EvaluationLevel = project.EvaluationLevelConversation
@@ -126,6 +126,34 @@ func TestGenerationHandoffDoesNotSubstituteSpecialConfigPaths(t *testing.T) {
 			assert.Contains(t, text, `--evaluator values: "builtin.task_completion" and "hero-agent-evaluator"`)
 			assert.Contains(t, text, "Generation completed")
 		})
+	}
+}
+
+func TestGenerationHandoffChecksEveryInlinedValue(t *testing.T) {
+	for _, field := range []string{"target", "dataset", "evaluator", "evaluation-level"} {
+		for _, value := range []string{"$value", "value`", `value"`, "%TEMP%", "!TEMP!"} {
+			t.Run(field+"/"+value, func(t *testing.T) {
+				outcomes := bothGenerated()
+				switch field {
+				case "target":
+					outcomes[0].plan.Agent = value
+				case "dataset":
+					outcomes[0].ref.Name = value
+				case "evaluator":
+					outcomes[1].ref.Name = value
+				case "evaluation-level":
+					outcomes[0].plan.EvaluationLevel = value
+				}
+				require.Empty(t, initHandoff(outcomes, ""))
+				var out bytes.Buffer
+				writeGenerationCompleted(&out, outcomes, "")
+				assert.NotContains(t, out.String(), "Next: azd ai eval init")
+				assert.NotContains(t, out.String(), "VALUE_NEEDS_QUOTING")
+				assert.Contains(t, out.String(), "No copyable command")
+				assert.Contains(t, out.String(), fmt.Sprintf("%q", value))
+				assert.NotContains(t, out.String(), "--path value:", "an omitted config path must not be invented")
+			})
+		}
 	}
 }
 

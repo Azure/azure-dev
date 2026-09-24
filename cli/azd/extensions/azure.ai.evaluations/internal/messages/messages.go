@@ -4413,8 +4413,7 @@ func shellArg(v string) string {
 	if v == "" {
 		return `""`
 	}
-	// The three that cannot survive being wrapped: two expand, one breaks the
-	// quoting itself.
+	// Expansion syntax and embedded quotes are not literal across the supported shells.
 	if !CanInlineShellArg(v) {
 		return shellArgNeedsQuoting
 	}
@@ -4439,7 +4438,7 @@ func ShellArg(v string) string {
 
 // CanInlineShellArg reports whether ShellArg can preserve v across the supported shells.
 func CanInlineShellArg(v string) bool {
-	return !strings.ContainsAny(v, "$`\"")
+	return !strings.ContainsAny(v, "$`\"%!\r\n\x00")
 }
 
 // ConfirmDelete asks before removing something published.

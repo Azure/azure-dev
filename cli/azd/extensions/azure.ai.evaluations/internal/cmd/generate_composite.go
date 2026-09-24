@@ -588,12 +588,12 @@ func writeGenerationCompleted(out io.Writer, outcomes []generationOutcome, confi
 	if incompatible := incompatibleHandoffEvaluator(outcomes); incompatible != nil {
 		fmt.Fprint(out, messages.HandoffEvaluatorIncompatible(incompatible.Name))
 	}
+	agent, dataset, level, evaluator := initHandoffInputs(outcomes)
 	if next := initHandoff(outcomes, configPath); next != "" {
 		fmt.Fprint(out, messages.FirstNextStep(next))
 		fmt.Fprint(out, messages.InitHandoffGuidance(simulation, hasTarget, hasDataset))
-	} else if !messages.CanInlineShellArg(configPath) && initHandoff(outcomes, "") != "" {
-		agent, dataset, level, evaluator := initHandoffInputs(outcomes)
-		fmt.Fprint(out, messages.InitHandoffManualPath(printablePath(configPath), agent, dataset, level, evaluator))
+	} else if dataset != "" || evaluator != "" {
+		fmt.Fprint(out, messages.InitHandoffManualInputs(printablePath(configPath), agent, dataset, level, evaluator))
 		fmt.Fprint(out, messages.InitHandoffGuidance(simulation, hasTarget, hasDataset))
 	}
 }
@@ -605,10 +605,12 @@ func writeGenerationCompleted(out io.Writer, outcomes []generationOutcome, confi
 // Known targets are included even though init can detect local services.
 // Guidance names unresolved target and dataset inputs without inventing them.
 func initHandoff(outcomes []generationOutcome, configPath string) string {
-	if !messages.CanInlineShellArg(configPath) {
-		return ""
-	}
 	agent, dataset, level, evaluator := initHandoffInputs(outcomes)
+	for _, value := range []string{configPath, agent, dataset, level, evaluator} {
+		if !messages.CanInlineShellArg(value) {
+			return ""
+		}
+	}
 	if dataset == "" && evaluator == "" {
 		return ""
 	}

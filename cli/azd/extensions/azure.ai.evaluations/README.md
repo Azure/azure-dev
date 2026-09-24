@@ -13,7 +13,7 @@ azd ai eval run start     # run the evaluation and summarize the results
 Generation prints an interactive `init` next step, followed by guidance for
 unattended use. When using `--no-prompt`, supply an independently selected
 `--judge-model <deployment>`; conversation simulation also needs
-`--simulation-model <deployment>`. The printed command never assumes that the
+`--simulation-model <connection-name/model-deployment>`. The printed command never assumes that the
 generation model should fill either role.
 
 ## What gets deployed
@@ -317,8 +317,9 @@ Generation declares artifacts only; it does not attach them to an existing eval
 or replace its configuration. If a generated rubric declares an incompatible
 evaluation level, the handoff warns and uses the built-in default instead; the
 rubric remains in the catalogue.
-If the selected config path contains a dollar sign, backtick, or double quote,
-generation displays the exact escaped path and manual initialization guidance
+If any handoff value contains shell expansion syntax or cannot be portably quoted,
+including a dollar sign, backtick, double quote, percent sign, or exclamation mark,
+generation displays the exact escaped values and manual initialization guidance
 instead of a copyable command. Quote that path for your shell when supplying
 `--path`; generation never substitutes a different path into a runnable handoff.
 

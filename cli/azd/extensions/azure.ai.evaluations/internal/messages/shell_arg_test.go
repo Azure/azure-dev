@@ -21,6 +21,9 @@ func TestShellArgRefusesToInlineWhatItCannotMakeLiteral(t *testing.T) {
 		"a`whoami`b",
 		`say "hi"`,
 		"${HOME}",
+		"%TEMP%/custom.yaml",
+		"!TEMP!/custom.yaml",
+		"a\nb",
 	} {
 		assert.Equal(t, "VALUE_NEEDS_QUOTING", ShellArg(v),
 			"%q expands or breaks the quoting, so it must not be inlined", v)
@@ -50,6 +53,7 @@ func TestShellArgLeavesAPlainValueAlone(t *testing.T) {
 	assert.Equal(t, `C:\Users\Me\quality`, ShellArg(`C:\Users\Me\quality`))
 	assert.Equal(t, "an-eval", ShellArg("an-eval"))
 	assert.Equal(t, `""`, ShellArg(""))
+	assert.True(t, CanInlineShellArg(shellArgNeedsQuoting), "a literal filename matching the placeholder is still safe")
 }
 
 // The placeholder itself has to be inert: a reader who pastes without noticing

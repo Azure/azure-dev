@@ -75,6 +75,7 @@ func TestInitConversationModesWriteRunnableConfig(t *testing.T) {
 			require.NoError(t, err)
 			var doc struct {
 				ConversationMode string              `json:"conversationMode"`
+				EvaluationLevel  string              `json:"evaluationLevel"`
 				Target           string              `json:"target"`
 				Simulation       *project.Simulation `json:"simulation"`
 			}
@@ -85,6 +86,8 @@ func TestInitConversationModesWriteRunnableConfig(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, cfg.Evals, 1)
 			eval := cfg.Evals[0]
+			assert.Equal(t, eval.EvaluationLevel, doc.EvaluationLevel)
+			assert.NotEmpty(t, doc.EvaluationLevel, "the selected level must be present in machine-readable output")
 			require.NoError(t, project.ValidateRunnable(&eval))
 			assert.Equal(t, "judge", eval.Evaluators[0].InitializationParameters["model"])
 			assert.Equal(t, "builtin.task_completion", eval.Evaluators[0].Evaluator)

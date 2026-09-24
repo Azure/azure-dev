@@ -182,7 +182,7 @@ not a claim that every combination is implemented or tested.
 | CANCEL-01 / edge | Actual Windows terminal picker plus in-progress owned command with bounded cleanup | Distinguish explicit picker Cancel from Ctrl+C and record the delivery method and exit code. Redirected stdin or a timeout is not interactive terminal proof. Test service cancellation separately from local picker cancellation. |
 | DATA-01 / practical | Owned versioned single-file and multi-file datasets; downloads in both namespaces with file/directory output | Bytes match source; overwrite requires explicit consent; forced replacement works; relative layout preserved; a one-file folder is not automatically a single-file dataset. |
 | EDGE-01 / edge | Bounded local fixtures or authorized service cases for empty pages, pagination, malformed data, missing identity, retry/timeouts, partial failure | No cross-project/version mix-ups, duplicate/missing page results, silent success, dropped errors, runaway retries, or secret disclosure. Label fixture proof separately from live behavior. |
-| PRECISION-01 / edge | Owned loopback fixture through the actual installed package's detail/list/export paths where supported; baseline and repaired artifacts identified separately | Preserve integer `9007199254740993` and decimal `0.123456789012345678901234567890` as numbers, not strings, with an exact integer/decimal or raw-token oracle that cannot round away a failure. Include ordinary numeric and error controls. Installed coverage is `NOT RUN` until its own receipt; source HTTP tests are not shipped proof. |
+| PRECISION-01 / edge | Owned loopback fixture through affected typed detail/list-page/file-JSON paths, with raw service export as a separate unaffected control; baseline and repaired artifacts identified separately | Preserve integer `9007199254740993` and decimal `0.123456789012345678901234567890` as numbers, not strings, with an exact integer/decimal or raw-token oracle that cannot round away a failure. Include ordinary numeric and error controls. Installed coverage is `NOT RUN` until its own receipt; source HTTP tests are not shipped proof. |
 | RECOVER-01 / both | Owned partial publication/generation state; rerun/reattach and explicit cleanup | Persisted identity is reusable, retry is idempotent, partial success is reported, cancellation stops owned work, and cleanup matches actual service delete scope and response contract. |
 | TRACE-01 / practical | Explicitly authorized owned agent/version, trace access, and narrow request window | Returned traces belong to the intended owned agent/version/window. Do not widen to shared traffic when ingestion or permissions block the case. |
 
@@ -276,12 +276,20 @@ it is neither repaired feed 41/42 proof nor an automatically approved next
 feed candidate.
 
 The high-impact numeric-precision regression is required for every relevant
-future package matrix. Its existing source owner is associated with
-[#10147](https://github.com/Azure/azure-dev/pull/10147); final source linkage and
-the authorized work-item identifier remain pending. `PRECISION-01` is assigned
+future package matrix. Existing [5571358][bug-5571358] is reopened as Active,
+priority 2, severity 2 - High, with source work associated with
+[#10147](https://github.com/Azure/azure-dev/pull/10147). The exact42 source fixture
+failed before the precision fix and passed afterwards; that is not public-EXE
+runtime proof. Raw service export bypasses the affected typed decoder and is an
+unaffected control, not a blanket data-loss claim. `PRECISION-01` is assigned
 to the existing edge lane, not a new investigator. Baseline public42 and any
 future repaired package need independent installed-byte receipts. No live cost,
 TLS bypass, or global trust changes are authorized for the loopback fixture.
+The edge lane's exact integer/decimal/raw-token oracle and ordinary, rounded,
+quoted and malformed controls passed **oracle-only** checks. Installed typed
+detail/list-page/file-JSON execution remains `BLOCKED / NOT RUN`: the existing
+source fixture uses an in-process transport, not a supported published CLI hook.
+No DNS, host validation, trust, identity, or instrumented-build bypass is allowed.
 
 For new defects, first deduplicate in the relevant project against these records
 and known linked fixes. File through the authorized [evaluation bug channel][bug-channel]
@@ -378,7 +386,7 @@ work. Do not create a different runner or owner for each CI provider.
 | CI-03 | Publish sanitized command/assertion reports and artifact manifests with actual workflow/build/job links. Download and inspect the artifacts independently; successful YAML validation alone is not a CI execution result. | `PASS`: resolver pin and both OS artifact sets downloaded; commands, state, cleanup, runtime versions, archive/binary digests and blocked-live receipts verified |
 | CI-04 | Run the shared offline scenario suite through the new GitHub Actions entry point with least-privilege permissions and bounded timeouts. Keep cloud-service scenarios separate. | `PASS` at `d6818868d81ee59b5782c0a0a12413d008cbb9ff`; live branch was not requested and is not counted as a pass |
 | CI-05 | Run the same offline suite through Azure DevOps using an explicitly authorized existing organization/project/pipeline/repository connection and available capacity. Do not guess or mutate a shared pipeline to manufacture a run. | `BLOCKED`: YAML/local validation passed, but scoped native metadata discovery found no matching authorized scenario-pipeline tuple; no Azure DevOps execution claimed |
-| CI-06 | Wire real create/evaluate/run/export jobs behind explicit identity, existing owned resource, budget, duration, and cleanup parameters. Missing prerequisites produce a clear `BLOCKED` or `NOT RUN` report, never a live-test success. | `BLOCKED / NOT IMPLEMENTED`: only status-reporting guards exist. No executable service-command workflow is wired; no approved identity/resource/budget tuple is available. Offline implementation does not complete this remaining item. |
+| CI-06 | Wire real create/evaluate/run/export jobs behind explicit identity, existing owned resource, budget, duration, and cleanup parameters. Missing prerequisites produce a clear `BLOCKED` or `NOT RUN` report, never a live-test success. | `BLOCKED` execution: an opt-in static eval create/run/export/delete executor with existing registered input and service identity is implemented and tested only with mocked commands. Agent/deployment/data generation, authentication bootstrap and monetary enforcement remain `NOT IMPLEMENTED`; no approved live tuple/control exists. See the [runner guide][scenario-guide]. |
 
 The first new scenario producer resolved build 41 at
 **2026-09-24T03:14:18.582604Z**, before build 42's Latest promotion. Its manifest
@@ -450,6 +458,15 @@ new cases, nine CLI commands, and 27 assertions. Preserve that receipt separatel
 from the earlier novice sweep and schedule setup. The four fresh contexts report
 the same `gpt-6-astra` runtime model; their distinct profiles are not evidence of
 model-capability diversity.
+
+Historical novice receipts 00-98 did not enumerate hidden entries. Their captured
+authored/configuration/fixture bytes remain evidence, but they do not prove that
+the entire hidden filesystem history was unchanged. Missing historical hidden
+before-states were not reconstructed or retroactively retested. The corrected
+future snapshot helper was actually checked in receipt 101 against a hidden
+Git HEAD file; refusal 100 separately retained ordinary/hidden state. This
+qualification does not alter the independently scoped practical/edge build 42
+critical-gate snapshots.
 
 For a later artifact that actually includes the fixes, the practical tester will
 check the editable rubric shape, declaration metadata, version behavior, and
@@ -539,3 +556,4 @@ optional recommendations.
 [bug-5631310]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5631310
 [bug-5645048]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5645048
 [bug-5645047]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5645047
+[bug-5571358]: https://dev.azure.com/msdata/Vienna/_workitems/edit/5571358

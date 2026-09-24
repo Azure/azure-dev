@@ -8,6 +8,9 @@ parameters:
     type: string
     default: offline
     values: [offline, live]
+  - name: servicePlan
+    type: string
+    default: ""
 
 jobs:
   - ${{ if eq(parameters.mode, 'offline') }}:
@@ -22,8 +25,15 @@ jobs:
           - task: UsePythonVersion@0
             inputs:
               versionSpec: "3.12"
-          - script: python -m unittest discover -s eng/scripts/eval-scenario-ci -p "test_*.py" -v
+          - pwsh: |
+              if (-not [string]::IsNullOrWhiteSpace($env:SERVICE_PLAN)) {
+                throw "servicePlan requires mode=live"
+              }
+              python -m unittest discover -s eng/scripts/eval-scenario-ci -p "test_*.py" -v
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             displayName: Validate the shared scenario runner
+            env:
+              SERVICE_PLAN: ${{ parameters.servicePlan }}
           - pwsh: |
               python eng/scripts/eval-scenario-ci/scenario.py resolve --output "$(Build.ArtifactStagingDirectory)/scenario-pin/candidate.json"
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -68,16 +78,26 @@ jobs:
 
   - ${{ if eq(parameters.mode, 'live') }}:
       - job: LivePrerequisites
-        displayName: Requested live execution is BLOCKED
+        displayName: Optional gated static service lifecycle
         pool:
           vmImage: ubuntu-24.04
-        timeoutInMinutes: 5
+        timeoutInMinutes: 30
         steps:
           - checkout: self
             persistCredentials: false
-          - script: python eng/scripts/eval-scenario-ci/scenario.py live --output "$(Build.ArtifactStagingDirectory)/scenario-live-blocked"
-            displayName: Fail without an approved identity, resource and budget tuple
-          - publish: $(Build.ArtifactStagingDirectory)/scenario-live-blocked
-            artifact: scenario-live-blocked-$(System.JobAttempt)
+          - pwsh: |
+              if ([string]::IsNullOrWhiteSpace($env:SERVICE_PLAN)) {
+                python eng/scripts/eval-scenario-ci/scenario.py live --output "$(Build.ArtifactStagingDirectory)/scenario-service-evidence"
+              } else {
+                python eng/scripts/eval-scenario-ci/service.py --plan "$env:SERVICE_PLAN" --output "$(Build.ArtifactStagingDirectory)/scenario-service-evidence"
+              }
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            displayName: Validate approval or report blocked prerequisites
+            env:
+              SERVICE_PLAN: ${{ parameters.servicePlan }}
+              AZD_SCENARIO_LIVE_APPROVAL_SHA256: $(ScenarioLiveApprovalSha256)
+              AZD_SCENARIO_LIVE_AUTH_CONFIG: $(ScenarioLiveAuthConfig)
+          - publish: $(Build.ArtifactStagingDirectory)/scenario-service-evidence
+            artifact: scenario-service-$(System.JobAttempt)
             condition: always()
-            displayName: Preserve NOT RUN evidence
+            displayName: Publish service lifecycle or blocked evidence

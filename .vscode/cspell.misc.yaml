@@ -116,6 +116,7 @@ overrides:
     - filename: docs/guides/evaluation-scenario-ci.md
       words:
           - bugbash
+          - evals
           - sien
     - filename: docs/guides/**/*.md
       words:

@@ -192,7 +192,9 @@ def run_identity(env):
 def live_status():
     return {
         "status": "BLOCKED", "execution": "NOT RUN",
-        "executorImplemented": False,
+        "executorSelected": False,
+        "implementedServiceModes": ["static-evaluation"],
+        "unimplementedServiceOperations": ["agent-create", "agent-deploy", "dataset-create", "generation"],
         "operations": ["agent-create", "agent-deploy", "dataset-create",
                        "eval-create", "eval-run", "eval-export"],
         "blockers": [

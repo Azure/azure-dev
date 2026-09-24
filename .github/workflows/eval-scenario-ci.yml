@@ -16,6 +16,10 @@ on:
         type: choice
         options: [offline, live]
         default: offline
+      service_plan:
+        description: Reviewed static-service plan path; empty means BLOCKED (no live authorization)
+        type: string
+        default: ""
   # GitHub delivers repository_dispatch only to workflows on the default branch.
   # Until adopted there, a release publisher can dispatch this workflow on its ref.
   repository_dispatch:
@@ -40,7 +44,14 @@ jobs:
         with:
           python-version: "3.12"
       - name: Test resolution, redaction and fail-closed live boundary
-        run: python -m unittest discover -s eng/scripts/eval-scenario-ci -p 'test_*.py' -v
+        env:
+          SERVICE_PLAN: ${{ inputs.service_plan }}
+        run: |
+          if [ -n "$SERVICE_PLAN" ]; then
+            echo "::error::service_plan requires mode=live"
+            exit 1
+          fi
+          python -m unittest discover -s eng/scripts/eval-scenario-ci -p 'test_*.py' -v
       - name: Resolve the public Latest release into immutable pins
         id: freeze
         env:
@@ -92,20 +103,29 @@ jobs:
 
   live-prerequisites:
     if: github.repository == 'm7md7sien/azure-dev' && inputs.mode == 'live'
-    name: Requested live execution is BLOCKED
+    name: Optional gated static service lifecycle
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Fail without an approved identity, resource and budget tuple
-        run: python eng/scripts/eval-scenario-ci/scenario.py live --output "${{ runner.temp }}/scenario-live-blocked"
-      - name: Preserve NOT RUN evidence even though the request failed
+      - name: Validate approval or report blocked prerequisites
+        env:
+          SERVICE_PLAN: ${{ inputs.service_plan }}
+          AZD_SCENARIO_LIVE_APPROVAL_SHA256: ${{ secrets.AZD_SCENARIO_LIVE_APPROVAL_SHA256 }}
+          AZD_SCENARIO_LIVE_AUTH_CONFIG: ${{ vars.AZD_SCENARIO_LIVE_AUTH_CONFIG }}
+        run: |
+          if [ -z "$SERVICE_PLAN" ]; then
+            python eng/scripts/eval-scenario-ci/scenario.py live --output "${{ runner.temp }}/scenario-service-evidence"
+          else
+            python eng/scripts/eval-scenario-ci/service.py --plan "$SERVICE_PLAN" --output "${{ runner.temp }}/scenario-service-evidence"
+          fi
+      - name: Publish service lifecycle or blocked evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: scenario-live-blocked-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/scenario-live-blocked/
+          name: scenario-service-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scenario-service-evidence/
           if-no-files-found: error
           retention-days: 14

@@ -17,21 +17,19 @@ modify that gate's 160 checks, fixture contract, source pins, or four jobs.
 | Service-backed creation, deployment, evaluation, export | **BLOCKED / NOT RUN**. No approved existing CI identity, resource tuple, and operation budget are configured |
 | Azure DevOps execution | **BLOCKED** until an explicitly authorized organization, project, repository connection, pipeline, and hosted capacity are provided |
 
-A successful **offline** run is not a live Azure quality gate. The manually
-requested `live` mode deliberately exits 3 and saves a blocked receipt. It
+A successful **offline** run is not a live Azure quality gate. With no service
+plan, the manually requested `live` mode exits 3 and saves a blocked receipt. It
 does not silently skip to success or accept a caller-supplied boolean as spend
-authorization. A future live executor needs separately approved existing
-identity/resource/budget wiring and bounded cleanup before activation.
-This contribution does not implement or claim an authenticated service run.
+authorization. Activating the restricted executor needs separately approved
+existing identity/resource/budget wiring and bounded cleanup.
+This contribution does not claim an authenticated service run.
 It creates no identities, grants, runners, infrastructure, or paid generation.
 
-The current live path is **status reporting only**: `live_status()` builds a
-blocked receipt and the `live` subcommand writes it, then exits 3. The GitHub
-`live-prerequisites` and Azure DevOps `LivePrerequisites` jobs invoke only that
-subcommand. No executable agent-create/deploy, dataset-create, evaluation-create,
-run, or export service-command wiring is implemented. The receipt records
-`executorImplemented: false`; the listed operations describe remaining scope,
-not coverage or an executable workflow awaiting a switch.
+Without a service plan, the live path is **status reporting only**:
+`live_status()` builds a blocked receipt and the `live` subcommand exits 3.
+An implementation-only follow-up adds a restricted
+[`service.py`](../../eng/scripts/eval-scenario-ci/service.py) executor described
+below. Its tests use mocked commands only; no service execution is claimed.
 
 ## Resolve Latest once, then freeze
 
@@ -98,6 +96,85 @@ to use its shared pools or bypass its production pipeline policies.
 
 No Azure DevOps run URL can be reported until such a target is supplied and
 an actual run finishes. Local YAML checks are not an Azure DevOps execution.
+
+## Implemented service sequence, not activated
+
+The optional `service_plan` GitHub input or `servicePlan` Azure DevOps parameter
+selects the restricted executor. Empty input still invokes the blocked reporter.
+Nonempty input is not authorization: the executor refuses before any command
+unless its exact plan SHA256 matches an externally supplied approved digest,
+the provider/run/revision match, and approval expires within 24 hours.
+
+The implemented sequence is:
+
+1. Verify approved core/extension executable digests in the supplied isolated
+   **CI service-auth** configuration, then require `auth status` to report the
+   exact approved service-principal client ID. A native AI-scoped token is
+   obtained privately to compare its client/tenant claims with the plan; this
+   is identity matching of the trusted broker response, not independent JWT
+   signature verification. No login, credential copying, IAM, or service
+   connection is created, and token output is never logged or saved.
+2. Download one explicitly pinned, pre-existing single-file dataset version.
+   Require its approved content digest and exactly one completed query/response
+   row. No dataset/evaluator publication is allowed.
+3. Create a unique owned static evaluation using a registered dataset reference
+   and a built-in evaluator. Its generated config has no local dataset source,
+   agent target, trace source, or simulation block.
+4. Invoke run start once, wait for the returned run ID under the returned eval
+   ID, and require terminal completion. Export that exact run through the real
+   `run output export` command and require one row plus a successful one-row
+   result-count assertion.
+5. Delete only the returned owned evaluation and its runs. Cleanup uses the
+   existing client's exact `DELETE /openai/v1/evals/{id}` contract rather than
+   the CLI's ID-to-name fallback. It obtains an AI-scoped token from the already
+   verified CI service identity in memory, never logs or saves that response,
+   forbids redirects, and treats only success or ID-not-found as complete.
+   There is no name search, pre-check race, or retry. If create returned an
+   ambiguous outcome, do not retry the POST or guess an identity to delete;
+   report manual reconciliation required.
+
+The real subprocess driver uses fixed argument lists, `--no-prompt`, JSON,
+per-command timeouts and a total observation deadline. Cleanup receives its own
+bounded command budget even after that deadline; the token request and ID-only
+HTTP delete share it. Provider job limits are 30 minutes, covering the maximum
+15-minute observation plus 10-minute cleanup and setup overhead. These are
+observation/time bounds, not monetary enforcement. Service payloads are parsed
+in memory but not uploaded: receipts contain command timing, output digests,
+owned IDs and known assertions, with the project endpoint redacted.
+
+The plan must contain all fields checked by `validate_plan`: provider, run ID,
+workflow revision, expiry, approval reference, resource owner, client/tenant IDs,
+existing project endpoint, approved binary digests and extension versions,
+registered dataset name/version/content digest, built-in evaluator/judge,
+owned `ci-` prefix, one-run/one-row bounds, command/observation timeouts, and
+explicit authorization for download/create/run/export/delete. Unknown fields
+are rejected. `AZD_SCENARIO_LIVE_APPROVAL_SHA256` and
+`AZD_SCENARIO_LIVE_AUTH_CONFIG` must come from an already-authorized provider
+configuration; they are not populated by this contribution. Azure DevOps maps
+the corresponding `ScenarioLiveApprovalSha256` and `ScenarioLiveAuthConfig`
+variables. The supplied auth directory belongs to its caller and is not
+removed by the executor; its lifecycle and tenant authorization must be reviewed
+as part of provider activation.
+The provider must securely stage the per-run approved plan and existing auth
+configuration before selecting this path; that bootstrap is not implemented
+by these jobs. Supplying a service plan with offline mode is an error, not an
+ignored input.
+
+**A budget number is not enforcement.** The plan additionally requires a
+reference to an externally verified service-side budget control. This code
+cannot validate or enforce that monetary control, and its plan fields are not
+a substitute for native approval. Timeouts, one-row limits and deletion do not
+prove billing stopped. No approved tuple/control exists for this work, so
+runtime activation remains blocked.
+The wrapper bounds its own command submissions, not hidden SDK retries or
+service-side billing. Those behaviors and the monetary control must be verified
+before activation; a one-command/one-row assertion is not a spending fence.
+
+Agent creation/deployment, dataset creation, generated data, authentication
+bootstrap, and verified service-side monetary enforcement remain **NOT
+IMPLEMENTED**. They require additional pinned agent artifacts and verified
+resource/lifecycle/cost contracts. The restricted static sequence must not be
+reported as complete agent lifecycle E2E or a live test pass.
 
 ## Local reproduction
 

@@ -1336,7 +1336,7 @@ func renderRunFollowUp(out io.Writer, run *eval_api.OpenAIEvalRun) {
 	if totalKnown && passedKnown && failedKnown && skippedKnown {
 		errored = errored || total-passed-failedCount-skipped > 0
 	}
-	if !terminalRunStates[status] && !operationalFailure && !failed && !errored {
+	if status == "" && !operationalFailure && len(counts) == 0 {
 		return
 	}
 	eval := followUpEvalRef(run)
@@ -1346,6 +1346,10 @@ func renderRunFollowUp(out io.Writer, run *eval_api.OpenAIEvalRun) {
 	}
 	if operationalFailure {
 		fmt.Fprint(out, messages.FailedRunFollowUp(eval, run.ID, failed, errored))
+		return
+	}
+	if status == "" {
+		fmt.Fprint(out, messages.AvailableRunFollowUp(eval, run.ID, failed, errored))
 		return
 	}
 	fmt.Fprint(out, messages.RunFollowUp(eval, run.ID, failed, errored))

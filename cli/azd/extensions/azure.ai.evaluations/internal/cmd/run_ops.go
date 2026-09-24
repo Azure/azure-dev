@@ -212,15 +212,11 @@ func (a *runShowAction) Run() error {
 }
 
 func (a *runShowAction) show(ctx context.Context, ec *evalContext, evalID string, threshold gate) error {
-	run, err := ec.latestOrNamedRun(a.cmd, evalID, a.runID, true)
+	run, runID, err := ec.latestOrNamedRun(a.cmd, evalID, a.runID, true)
 	if err != nil {
 		return err
 	}
 	run = ec.withPortalLink(ctx, evalID, run)
-	runID := run.ID
-	if runID == "" {
-		runID = a.runID
-	}
 
 	// Reattaching to a run started asynchronously: the pipeline that
 	// gates on it is often not the one that started it.
@@ -391,7 +387,7 @@ func (a *runCancelAction) Run() error {
 
 	// Cancelling changes a run, so this settles for the one named or the
 	// one this environment started, and never the newest one listed.
-	target, err := ec.latestOrNamedRun(a.cmd, evalID, a.runID, false)
+	target, runID, err := ec.latestOrNamedRun(a.cmd, evalID, a.runID, false)
 	if err != nil {
 		return err
 	}
@@ -399,12 +395,12 @@ func (a *runCancelAction) Run() error {
 	// since the service reports success either way. Lowercased to match
 	// the polling path: the service's casing is not guaranteed.
 	if terminalRunStates[strings.ToLower(target.Status)] {
-		return messages.RunAlreadyFinished(target.ID, target.Status)
+		return messages.RunAlreadyFinished(runID, target.Status)
 	}
 
-	canceled, err := ec.evalClient.CancelOpenAIEvalRun(ctx, evalID, target.ID)
+	canceled, err := ec.evalClient.CancelOpenAIEvalRun(ctx, evalID, runID)
 	if err != nil {
-		return messages.CancellingRun(target.ID, err)
+		return messages.CancellingRun(runID, err)
 	}
 	if isJSON(a.cmd) {
 		return emitJSON(a.cmd.OutOrStdout(), runForJSON(canceled))
@@ -413,7 +409,7 @@ func (a *runCancelAction) Run() error {
 	if status == "" {
 		status = "cancelling"
 	}
-	fmt.Fprint(a.cmd.OutOrStdout(), messages.RunIsNow(target.ID, status))
+	fmt.Fprint(a.cmd.OutOrStdout(), messages.RunIsNow(runID, status))
 	return nil
 }
 

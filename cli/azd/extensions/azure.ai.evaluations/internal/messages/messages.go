@@ -355,6 +355,12 @@ func RunMustBeNamed(evalID string) error {
 		evalID, shellArg(evalID))
 }
 
+// ListedRunMissingID refuses to guess an identifier omitted by the service.
+func ListedRunMissingID(evalID string) error {
+	return fmt.Errorf("the service omitted the newest run ID for eval %q; "+
+		"supply --run with a known run ID instead of selecting the latest run", evalID)
+}
+
 // ReadingRun reports a failure to read the run the caller named.
 func ReadingRun(runID string, err error) error {
 	return fmt.Errorf("reading run %s: %w", runID, err)

@@ -113,7 +113,11 @@ func (a *runOutputListAction) Run() error {
 		return err
 	}
 
-	run, err := ec.latestOrNamedRun(a.cmd, evalID, a.runID, true)
+	return a.list(ctx, ec, evalID)
+}
+
+func (a *runOutputListAction) list(ctx context.Context, ec *evalContext, evalID string) error {
+	run, runID, err := ec.latestOrNamedRun(a.cmd, evalID, a.runID, true)
 	if err != nil {
 		return err
 	}
@@ -138,9 +142,9 @@ func (a *runOutputListAction) Run() error {
 		keep[itemFailed] = true
 	}
 	items, err := filteredItemPage(
-		ctx, ec.evalClient, evalID, run.ID, pageSize, a.flags.pageToken, keep, fetchItemPage)
+		ctx, ec.evalClient, evalID, runID, pageSize, a.flags.pageToken, keep, fetchItemPage)
 	if err != nil {
-		return messages.ReadingRunResults(run.ID, err)
+		return messages.ReadingRunResults(runID, err)
 	}
 	rows := items.Data
 
@@ -176,7 +180,8 @@ func (a *runOutputListAction) Run() error {
 		}
 		return emitJSONPage(a.cmd.OutOrStdout(), rows, nil, cursor)
 	}
-	if err := renderResults(a.cmd.OutOrStdout(), evalID, run, rows, a.flags.failedOnly); err != nil {
+	if err := renderResults(a.cmd.OutOrStdout(), evalID, runForDisplay(run, evalID, runID), rows,
+		a.flags.failedOnly); err != nil {
 		return err
 	}
 	if items.HasMore && items.LastID != "" {
@@ -242,12 +247,16 @@ func (a *runOutputShowAction) Run() error {
 		return err
 	}
 
-	run, err := ec.latestOrNamedRun(a.cmd, evalID, a.flags.run, true)
+	return a.showRun(ctx, ec, evalID)
+}
+
+func (a *runOutputShowAction) showRun(ctx context.Context, ec *evalContext, evalID string) error {
+	_, runID, err := ec.latestOrNamedRun(a.cmd, evalID, a.flags.run, true)
 	if err != nil {
 		return err
 	}
 
-	return a.show(ctx, ec, evalID, run.ID)
+	return a.show(ctx, ec, evalID, runID)
 }
 
 func (a *runOutputShowAction) show(ctx context.Context, ec *evalContext, evalID, runID string) error {
@@ -397,20 +406,24 @@ func (a *runOutputExportAction) Run() error {
 		return err
 	}
 
-	run, err := ec.latestOrNamedRun(a.cmd, evalID, a.runID, true)
+	return a.export(ctx, ec, evalID, dest)
+}
+
+func (a *runOutputExportAction) export(ctx context.Context, ec *evalContext, evalID, dest string) error {
+	_, runID, err := ec.latestOrNamedRun(a.cmd, evalID, a.runID, true)
 	if err != nil {
 		return err
 	}
 
 	// Read back raw, so the export carries the service's own fields
 	// rather than the subset these models decode.
-	rawRun, err := ec.evalClient.GetRunRaw(ctx, evalID, run.ID)
+	rawRun, err := ec.evalClient.GetRunRaw(ctx, evalID, runID)
 	if err != nil {
-		return messages.ReadingRun(run.ID, err)
+		return messages.ReadingRun(runID, err)
 	}
-	rawItems, err := ec.evalClient.ListOutputItemsRaw(ctx, evalID, run.ID)
+	rawItems, err := ec.evalClient.ListOutputItemsRaw(ctx, evalID, runID)
 	if err != nil {
-		return messages.ReadingRunResults(run.ID, err)
+		return messages.ReadingRunResults(runID, err)
 	}
 	if rawItems == nil {
 		rawItems = []json.RawMessage{}
@@ -554,7 +567,9 @@ func evalPathFlag(cmd *cobra.Command) string {
 	return ""
 }
 
-// latestOrNamedRun returns the run a command should act on.
+// latestOrNamedRun returns the service run and its resolved lookup ID separately.
+// The service may omit id from a successful GET; callers must still address
+// subsequent requests with the ID that selected it without modifying raw JSON.
 //
 // Three sources, in order: the id the caller named, the id this environment
 // recorded, and -- only when mayGuess -- the newest run the service lists.
@@ -574,7 +589,7 @@ func (ec *evalContext) latestOrNamedRun(
 	cmd *cobra.Command,
 	evalID, runID string,
 	mayGuess bool,
-) (*eval_api.OpenAIEvalRun, error) {
+) (*eval_api.OpenAIEvalRun, string, error) {
 	ctx := cmd.Context()
 	explicit := runID != ""
 
@@ -587,16 +602,16 @@ func (ec *evalContext) latestOrNamedRun(
 	if runID != "" {
 		run, err := ec.evalClient.GetOpenAIEvalRun(ctx, evalID, runID)
 		if err == nil {
-			ec.sayWhichRun(cmd, explicit, run.ID)
-			return run, nil
+			ec.sayWhichRun(cmd, explicit, runID)
+			return run, runID, nil
 		}
 		if explicit || !eval_api.IsNotFound(err) {
-			return nil, messages.ReadingRun(runID, err)
+			return nil, "", messages.ReadingRun(runID, err)
 		}
 	}
 
 	if !mayGuess {
-		return nil, messages.RunMustBeNamed(evalID)
+		return nil, "", messages.RunMustBeNamed(evalID)
 	}
 
 	// The service does not order runs, so one row is not enough to know which is
@@ -608,16 +623,19 @@ func (ec *evalContext) latestOrNamedRun(
 	list, err := ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, 0)
 	if err != nil {
 		if eval_api.IsNotFound(err) {
-			return nil, messages.EvalNotDeployed(evalID, ec.deployCommand(ctx))
+			return nil, "", messages.EvalNotDeployed(evalID, ec.deployCommand(ctx))
 		}
-		return nil, messages.ListingRuns(evalID, err)
+		return nil, "", messages.ListingRuns(evalID, err)
 	}
 	if list == nil || len(list.Data) == 0 {
-		return nil, messages.EvalHasNoRuns(evalID)
+		return nil, "", messages.EvalHasNoRuns(evalID)
 	}
 	newest := newestRunIn(list.Data)
+	if newest.ID == "" {
+		return nil, "", messages.ListedRunMissingID(evalID)
+	}
 	ec.sayWhichRun(cmd, explicit, newest.ID)
-	return newest, nil
+	return newest, newest.ID, nil
 }
 
 // newestRunIn picks the most recently created run.
@@ -899,8 +917,9 @@ func renderResults(
 	failedOnly bool,
 ) error {
 	evalRef := followUpEvalRef(runForDisplay(run, resolvedEval, ""))
+	completionKnown := run.Status != "" && runIsTerminal(run)
 	exportHint := messages.ExportCompleteResults(evalRef, run.ID)
-	if !runIsTerminal(run) {
+	if !completionKnown {
 		exportHint = messages.ExportAvailableResults(evalRef, run.ID)
 	}
 	if isSimulationRun(run) {
@@ -1009,7 +1028,7 @@ func renderResults(
 			counts := run.ReportedResultCounts()
 			failed, failedKnown := counts["failed"]
 			total, totalKnown := counts["total"]
-			if runIsTerminal(run) && failedKnown && totalKnown {
+			if completionKnown && failedKnown && totalKnown {
 				fmt.Fprint(w, messages.FilteredRunTotal(failed, total, itemFailed))
 			}
 		}

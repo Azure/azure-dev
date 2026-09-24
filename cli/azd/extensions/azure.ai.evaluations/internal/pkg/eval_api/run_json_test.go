@@ -49,6 +49,9 @@ func TestRunJSONPreservesUnknownServiceFields(t *testing.T) {
 
 func TestRunJSONLegacyAndConstructedShapes(t *testing.T) {
 	for _, response := range []string{
+		`{"status":"completed"}`,
+		`{"id":null,"status":"completed"}`,
+		`{"id":"","status":"completed"}`,
 		`{"id":"old_run","status":"completed"}`,
 		`{"id":"empty_run"}`,
 		`{"id":"static","evaluation_level":"conversation","data_source":{"type":"jsonl"}}`,

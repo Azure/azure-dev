@@ -306,6 +306,12 @@ guidance when the service reports failed verdicts, not a replacement for the
 unfiltered listing. Errored rows get a separate `--status errored` command;
 they are not included by `--failed-only`.
 
+For older responses without a status, reported counters still provide useful
+available-result guidance, including all-passed and explicit-zero counts,
+without asserting that the run has completed. If a run lookup omits its `id`,
+follow-up requests retain the explicit or remembered lookup ID separately;
+JSON and exports preserve the original service fields.
+
 An operationally failed run can have no result counts or output rows. Its
 follow-up commands inspect **available** output and export the run's diagnostics
 plus any available results; they do not imply that grading succeeded or that

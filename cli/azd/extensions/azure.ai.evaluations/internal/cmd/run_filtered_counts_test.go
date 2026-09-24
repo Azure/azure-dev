@@ -79,7 +79,7 @@ func TestFilteredResultPageDoesNotLabelMovingCountsAsFullRun(t *testing.T) {
 
 func TestFilteredResultCountsDoNotInventMissingServiceTotals(t *testing.T) {
 	for _, counts := range []*eval_api.EvalRunResultCounts{nil, {}} {
-		run := &eval_api.OpenAIEvalRun{ID: "evalrun_counts", ResultCounts: counts}
+		run := &eval_api.OpenAIEvalRun{ID: "evalrun_counts", Status: "completed", ResultCounts: counts}
 		var out bytes.Buffer
 		require.NoError(t, renderResults(&out, "eval_counts", run, []eval_api.OutputItem{failingItem("row")}, true))
 		assert.Contains(t, out.String(), "Showing 1 failed test case on this page.")
@@ -108,7 +108,7 @@ func TestFilteredResultFooterRequiresReportedCounters(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var run eval_api.OpenAIEvalRun
 			require.NoError(t, json.Unmarshal([]byte(`{
-					"id":"run_partial","metadata":{"azd_run_mode":"conversation_simulation"},
+					"id":"run_partial","status":"completed","metadata":{"azd_run_mode":"conversation_simulation"},
 					"result_counts":`+tc.counts+`}`), &run))
 			var out bytes.Buffer
 			require.NoError(t, renderResults(&out, "eval_partial", &run, []eval_api.OutputItem{failingItem("1")}, true))

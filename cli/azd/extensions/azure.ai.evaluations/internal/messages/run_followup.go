@@ -19,6 +19,15 @@ import "fmt"
 // back rows nothing scored, so it would open an empty list for the run that
 // most needs reading.
 func RunFollowUp(eval, runID string, failed, errored bool) string {
+	return runFollowUp(eval, runID, failed, errored, exportCommand(eval, runID))
+}
+
+// AvailableRunFollowUp gives legacy runs useful guidance without claiming completion.
+func AvailableRunFollowUp(eval, runID string, failed, errored bool) string {
+	return runFollowUp(eval, runID, failed, errored, ExportAvailableResults(eval, runID))
+}
+
+func runFollowUp(eval, runID string, failed, errored bool, exportHint string) string {
 	out := "\nView available results:\n"
 	if failed || errored {
 		out = "\nInvestigate:\n"
@@ -33,7 +42,7 @@ func RunFollowUp(eval, runID string, failed, errored bool) string {
 	if failed && errored {
 		out += "\nRows that errored were never scored, so the failing-row listing does not hold them.\n"
 	}
-	return out + exportCommand(eval, runID)
+	return out + exportHint
 }
 
 // FailedRunFollowUp offers diagnostics even when execution produced no rows.

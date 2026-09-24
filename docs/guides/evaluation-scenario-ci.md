@@ -113,6 +113,9 @@ collection URI/ID, project ID, repository ID/provider, definition ID, job ID
 and attempt. Missing or mismatched platform variables block execution before
 binary verification or command-driver creation. These are native CI context
 values, not caller-supplied workflow inputs.
+This is input/context validation, not cryptographic CI attestation, OIDC
+bootstrap, or native approval enforcement; protected provider configuration and
+explicit activation approval are still required.
 
 The implemented sequence is:
 

@@ -473,7 +473,7 @@ func resolveEvalID(cmd *cobra.Command, ec *evalContext, groupName string) (strin
 // Every run subcommand reaches the same picker `eval create` and `run start`
 // do, so choosing Cancel means the same thing at all of them: no eval was selected,
 // and there is nothing to list, show, cancel or export. Returning the sentinel
-// as a command error made those six exit non-zero on a deliberate answer,
+// as a command error made those seven exit non-zero on a deliberate answer,
 // which reads as the choice itself having failed.
 //
 // The bool reports whether to carry on. A cancelled selection has already been

@@ -159,6 +159,25 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(report["status"], "BLOCKED")
             self.assertEqual(report["execution"], "NOT RUN")
 
+    def test_non_string_dataset_digest_blocks_before_install_or_commands(self):
+        for value in (123, True, None, [], {}):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as root:
+                root = Path(root)
+                raw = json.dumps({**self.plan(), "datasetSha256": value}).encode()
+                plan_path = root / "plan.json"
+                plan_path.write_bytes(raw)
+                env = {**self.github_env(), "AZD_SCENARIO_LIVE_APPROVAL_SHA256": service.scenario.sha256(raw)}
+                with mock.patch.object(service, "verify_install") as verify, \
+                     mock.patch.object(service, "Driver") as driver:
+                    with self.assertRaisesRegex(service.Blocked, "dataset-content digest"):
+                        service.execute(plan_path, root / "evidence", env=env)
+                    verify.assert_not_called()
+                    driver.assert_not_called()
+                report = json.loads((root / "evidence" / "service-status.json").read_text())
+                self.assertEqual(report["status"], "BLOCKED")
+                self.assertEqual(report["execution"], "NOT RUN")
+                self.assertEqual(report["remoteCleanup"]["status"], "NOT RUN")
+
     def test_user_identity_is_rejected_before_service_commands(self):
         calls = []
         with tempfile.TemporaryDirectory() as root:
@@ -297,7 +316,8 @@ class ServiceTests(unittest.TestCase):
                 with self.assertRaisesRegex(service.Blocked, "escapes"):
                     service.verify_install(plan, profile)
 
-    def drive(self, *, failure=None, bad_rows=False, cleanup_fails=False, counts=None, exported_item=None):
+    def drive(self, *, failure=None, bad_rows=False, cleanup_fails=False, counts=None, exported_item=None,
+              export_response=None):
         plan = self.plan()
         calls, report = [], {}
         with tempfile.TemporaryDirectory() as root:
@@ -333,6 +353,8 @@ class ServiceTests(unittest.TestCase):
                     return {"id": "evalrun_owned", "status": "completed",
                             "result_counts": {"total": 1, "passed": 1} if counts is None else counts}
                 if label.startswith("export"):
+                    if export_response is not None:
+                        return export_response
                     item = exported_item if exported_item is not None else {
                         "run_id": "evalrun_owned", "datasource_item": json.loads(ROW),
                         "private": "not persisted",
@@ -412,6 +434,17 @@ class ServiceTests(unittest.TestCase):
                 self.assertNotIn("quality", report)
                 self.assertIn("approved dataset row", report["failure"]["message"])
                 self.assertEqual(report["remoteCleanup"]["status"], "PASS")
+
+    def test_null_or_malformed_export_run_is_a_controlled_failure_with_cleanup(self):
+        for run in (None, [], "not-an-object"):
+            for cleanup_fails in (False, True):
+                with self.subTest(run=run, cleanup_fails=cleanup_fails):
+                    _, report = self.drive(export_response={"run": run, "items": [{}]},
+                                           cleanup_fails=cleanup_fails)
+                    self.assertNotIn("quality", report)
+                    self.assertEqual(report["failure"]["type"], "RuntimeError")
+                    self.assertIn("Export did not contain", report["failure"]["message"])
+                    self.assertEqual(report["remoteCleanup"]["status"], "FAIL" if cleanup_fails else "PASS")
 
     def test_row_comparison_preserves_json_types_and_exact_numeric_values(self):
         self.assertFalse(service.same_json_value({"nested": [True]}, {"nested": [1]}))

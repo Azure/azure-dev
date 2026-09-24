@@ -166,7 +166,8 @@ def validate_plan(plan, digest, env):
     require(isinstance(plan["versions"], dict) and set(plan["versions"]) == set(scenario.EXTENSIONS)
             and all(isinstance(version, str) and version for version in plan["versions"].values()),
             "Both approved extension versions are required")
-    require(scenario.HEX.fullmatch(plan["datasetSha256"]), "An approved immutable dataset-content digest is required")
+    require(isinstance(plan["datasetSha256"], str) and scenario.HEX.fullmatch(plan["datasetSha256"]),
+            "An approved immutable dataset-content digest is required")
     endpoint = urllib.parse.urlsplit(plan["projectEndpoint"])
     require(endpoint.scheme == "https" and endpoint.hostname
             and endpoint.hostname.endswith(".services.ai.azure.com")
@@ -384,7 +385,8 @@ def lifecycle(plan, driver, workspace, report, name=None):
             "ai", "eval", "run", "output", "export", run_id, "--eval", eval_id,
             "--format", "json", "--output-file", "-", *endpoint,
         ])
-        expect(isinstance(exported, dict) and exported.get("run", {}).get("id") == run_id
+        exported_run = exported.get("run") if isinstance(exported, dict) else None
+        expect(isinstance(exported_run, dict) and exported_run.get("id") == run_id
                 and isinstance(exported.get("items"), list) and len(exported["items"]) == 1,
                 "Export did not contain the one approved run and row")
         item = exported["items"][0]

@@ -58,7 +58,7 @@ func TestVersionListingValidatesEveryPageBeforeReportingAbsence(t *testing.T) {
 			if tc.wantErr {
 				require.Error(t, err)
 				assert.Nil(t, list)
-				assert.False(t, IsNotFound(err), "later-page failure or malformed response is not dataset absence")
+				assert.False(t, IsNotFound(err), "a failed continuation is not confirmed absence")
 			} else {
 				require.NoError(t, err)
 				require.NotNil(t, list)

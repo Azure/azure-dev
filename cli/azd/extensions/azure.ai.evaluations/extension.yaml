@@ -18,7 +18,7 @@ providers:
     description: Deploys evaluation datasets, evaluators, and eval groups to Foundry
 examples:
   - name: init
-    description: Scaffold evaluation config for an agent or completed conversations.
+    description: Scaffold evaluation config for an agent.
     usage: azd ai eval init
   - name: run
     description: Start, list, and read the results of evaluation runs.

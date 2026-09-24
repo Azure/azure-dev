@@ -39,6 +39,12 @@ func incompatibleResponsesSchema(id string, responses bool) error {
 			"The existing eval and its run history are retained.")
 }
 
+func responseSampleConflict() error {
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		"--max-samples or max_samples cannot cap a stored-responses run",
+		"Select source.response_ids instead of a dataset row cap.")
+}
+
 func (ec *evalContext) validateResponsesRun(
 	ctx context.Context, evalID string, source *eval_api.EvalRunDataSource,
 ) error {

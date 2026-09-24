@@ -10,7 +10,6 @@ import (
 	"azureaieval/internal/project"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // What an eval grades on is a SET, so there is no "the only one" to detect the
@@ -26,31 +25,6 @@ func TestDefaultEvaluatorsProposeOnlyWhatAlreadyResolves(t *testing.T) {
 		defaultEvaluators())
 }
 
-func TestInitEvaluatorChoicesRespectKnownLocalCompatibility(t *testing.T) {
-	cfg := &project.EvalConfig{Evaluators: []project.EvaluatorDecl{
-		{Name: "turn-only", SupportedEvaluationLevels: []string{"turn"}},
-		{Name: "conversation-only", SupportedEvaluationLevels: []string{"conversation"}},
-		{Name: "unknown"},
-		{Name: "future", SupportedEvaluationLevels: []string{"future-level"}},
-	}}
-	for _, level := range evaluationLevels {
-		t.Run(level, func(t *testing.T) {
-			choices := evaluatorChoices(cfg, level)
-			assert.Contains(t, choices, level+"-only")
-			assert.Contains(t, choices, "unknown")
-			assert.Contains(t, choices, "future")
-			for _, other := range evaluationLevels {
-				if other != level {
-					assert.NotContains(t, choices, other+"-only")
-					require.ErrorContains(t, validateInitEvaluatorLevels(cfg, []string{other + "-only"}, level),
-						"--evaluation-level "+level)
-				}
-			}
-			assert.NoError(t, validateInitEvaluatorLevels(cfg, []string{"unknown", "future"}, level))
-		})
-	}
-}
-
 // Four options, one ticked. Preselecting more decided for the author what
 // quality means for their agent, which is the substantive choice in the file.
 func TestEvaluatorChoicesOfferTheFourBuiltins(t *testing.T) {
@@ -59,7 +33,7 @@ func TestEvaluatorChoicesOfferTheFourBuiltins(t *testing.T) {
 		evalcore.BuiltinPrefix + "customer_satisfaction",
 		evalcore.BuiltinPrefix + "coherence",
 		evalcore.BuiltinPrefix + "groundedness",
-	}, evaluatorChoices(nil, project.EvaluationLevelTurn))
+	}, evaluatorChoices(nil))
 }
 
 // The prompt offers what is knowable without a service call -- the picker makes
@@ -72,7 +46,7 @@ func TestEvaluatorChoicesOfferTheCatalogToo(t *testing.T) {
 		{Name: "tone-check"},
 	}}
 
-	got := evaluatorChoices(cfg, project.EvaluationLevelTurn)
+	got := evaluatorChoices(cfg)
 
 	assert.Equal(t, []string{
 		evalcore.BuiltinPrefix + "task_completion",

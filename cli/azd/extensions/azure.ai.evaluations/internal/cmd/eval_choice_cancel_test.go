@@ -14,53 +14,44 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Closing the picker printed "(Cancelled)" and then an unrelated ambiguity
-// error, which told a reader who had just declined to choose that they had
-// failed to name something. ADO 5571322.
-func TestCancelled_RecognisesAClosedPrompt(t *testing.T) {
+// A failed prompt is not an explicit Cancel answer, even if the command's
+// context remains live when the host returns its cancellation.
+func TestSelectionOutcome_PromptErrorsAreNotAnswers(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name string
 		err  error
-		want bool
 	}{
 		{
-			name: "grpc cancelled, which is what the prompt returns",
+			name: "grpc cancellation",
 			err:  status.Error(codes.Canceled, "user cancelled"),
-			want: true,
 		},
 		{
 			name: "context cancelled",
 			err:  context.Canceled,
-			want: true,
 		},
 		{
 			name: "a wrapped context cancellation",
 			err:  errors.Join(errors.New("prompting"), context.Canceled),
-			want: true,
 		},
 		{
 			name: "a transport failure is not a cancellation",
 			err:  status.Error(codes.Unavailable, "no server"),
-			want: false,
 		},
 		{
 			name: "an ordinary error is not a cancellation",
 			err:  errors.New("something else"),
-			want: false,
-		},
-		{
-			name: "no error at all",
-			err:  nil,
-			want: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tt.want, cancelled(tt.err))
+			got, err := selectionOutcome(promptingIn(t.Context()), tt.err)
+			assert.ErrorIs(t, err, tt.err)
+			assert.NotErrorIs(t, err, errEvalSelectionCancelled)
+			assert.Empty(t, got)
 		})
 	}
 }

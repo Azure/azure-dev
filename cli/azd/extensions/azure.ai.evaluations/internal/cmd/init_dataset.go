@@ -4,11 +4,6 @@
 package cmd
 
 import (
-	"context"
-	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"azureaieval/internal/messages"
@@ -17,107 +12,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
-
-func resolveInitDataset(
-	cmd *cobra.Command, location string, answers *initAnswers, cfg *project.EvalConfig,
-) error {
-	ctx := commandContext(cmd)
-	problem := validateInitDataset(ctx, location, *answers, cfg)
-	// Bound retries like the eval-name prompt, without losing the last row error.
-	for range 8 {
-		if problem == nil || noPrompt(cmd) {
-			return problem
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		fmt.Fprint(cmd.OutOrStdout(), messages.InitDatasetRejected(problem))
-		dataset, err := promptDatasetReference(cmd)
-		if err != nil {
-			return err
-		}
-		answers.datasetRef = dataset
-		problem = validateInitDataset(ctx, location, *answers, cfg)
-	}
-	return problem
-}
-
-func validateInitDataset(
-	ctx context.Context, location string, answers initAnswers, cfg *project.EvalConfig,
-) error {
-	if answers.source == initSourceTraces {
-		return nil
-	}
-	path := answers.datasetRef
-	if looksLikeLocalDataset(path) {
-		if _, err := resolveInitLocalDataset(location, path, cfg); err != nil {
-			return err
-		}
-	} else {
-		decl, err := project.ReadAuthoredDataset(location, answers.datasetRef)
-		if err != nil {
-			return err
-		}
-		if decl == nil {
-			return nil // Registered names have no local rows for init to inspect.
-		}
-		// A ref-only declaration takes its name from the included file. Keep
-		// the name in the add-only accumulator without inlining its content.
-		if !declaresDataset(cfg, decl.Name) {
-			cfg.Datasets = append(cfg.Datasets, project.DatasetDecl{Name: decl.Name})
-		}
-		path = decl.File
-	}
-	if answers.simulation == nil || path == "" {
-		return nil
-	}
-	group := &project.Eval{Name: answers.evalName, Simulation: answers.simulation}
-	_, err := inspectJSONL(ctx, path, func(row map[string]any, index int) error {
-		return refuseUnusableSeedRow(group, row, index)
-	})
-	return err
-}
-
-// resolveInitLocalDataset binds the file to its eventual catalog name before
-// validation or planning can accept a file that add-only authoring would ignore.
-func resolveInitLocalDataset(location, path string, cfg *project.EvalConfig) (project.DatasetDecl, error) {
-	requested := project.DatasetDecl{
-		Name: strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)),
-		File: relativeToConfig(path, location),
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return project.DatasetDecl{}, messages.DatasetFileNotFound(path, err)
-	}
-	existing, err := project.ReadAuthoredDataset(location, requested.Name)
-	if err != nil {
-		return project.DatasetDecl{}, err
-	}
-	if existing == nil {
-		if decl, ok := cfg.DatasetDeclaration(requested.Name); ok {
-			existing = &project.DatasetDecl{
-				Name: decl.Name, File: project.ResolveSource(project.EvalDirOf(location), decl.File),
-			}
-		}
-	}
-	if existing == nil {
-		return requested, nil
-	}
-	if existing.File != "" {
-		other, err := os.Stat(existing.File)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return project.DatasetDecl{}, messages.DatasetFileNotFound(existing.File, err)
-		}
-		if err == nil && os.SameFile(info, other) {
-			// A ref-only entry must also be counted as existing by add-only planning.
-			if !declaresDataset(cfg, existing.Name) {
-				cfg.Datasets = append(cfg.Datasets, project.DatasetDecl{Name: existing.Name})
-			}
-			return requested, nil
-		}
-	}
-	return project.DatasetDecl{}, messages.InitDatasetFileConflict(requested.Name, path)
-}
 
 // resolveDataset settles which dataset a dataset-backed evaluation grades.
 //
@@ -190,7 +84,7 @@ func promptDeclaredDataset(cmd *cobra.Command, declared []string) (string, error
 }
 
 // promptDatasetReference asks what to grade when the configuration declares
-// nothing to offer or a local dataset needs correction.
+// nothing to offer.
 //
 // It takes a path or a registered name rather than a list, because the two
 // things it could list are both service calls init does not make: the datasets

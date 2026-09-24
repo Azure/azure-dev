@@ -77,7 +77,6 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Layered Provisioning | Beta |
 | Deployment Stacks | Alpha |
 | Extensions | Alpha |
-| [Foundry evaluation conversation authoring](../../cli/azd/extensions/azure.ai.evaluations/README.md#simulating-multi-turn-conversations) | Beta |
 
 ---
 

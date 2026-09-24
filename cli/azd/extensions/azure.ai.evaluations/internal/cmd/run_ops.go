@@ -4,10 +4,8 @@
 package cmd
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"io"
 	"strconv"
 	"strings"
 
@@ -205,19 +203,11 @@ func (a *runShowAction) Run() error {
 		return err
 	}
 
-	return a.show(ctx, ec, evalID, threshold)
-}
-
-func (a *runShowAction) show(ctx context.Context, ec *evalContext, evalID string, threshold gate) error {
 	run, err := ec.latestOrNamedRun(a.cmd, evalID, a.runID, true)
 	if err != nil {
 		return err
 	}
 	run = ec.withPortalLink(ctx, evalID, run)
-	runID := run.ID
-	if runID == "" {
-		runID = a.runID
-	}
 
 	// Reattaching to a run started asynchronously: the pipeline that
 	// gates on it is often not the one that started it.
@@ -232,7 +222,7 @@ func (a *runShowAction) show(ctx context.Context, ec *evalContext, evalID string
 	if a.flags.wait {
 		// Into a second variable: pollRun answers the budget with a nil
 		// run, and the run read above is what still names it.
-		final, pollErr := ec.pollRun(ctx, evalID, runID, a.cmd.OutOrStdout(), isJSON(a.cmd))
+		final, pollErr := ec.pollRun(ctx, evalID, run.ID, a.cmd.OutOrStdout(), isJSON(a.cmd))
 		if errors.Is(pollErr, errWaitBudgetSpent) {
 			// The wait ran out; the run is still going server-side.
 			// `run start` answers this with a reattach line, and a gate
@@ -279,22 +269,6 @@ func (a *runShowAction) show(ctx context.Context, ec *evalContext, evalID string
 	}
 
 	out := a.cmd.OutOrStdout()
-	if err := renderRunDetail(out, runForDisplay(run, evalID, runID)); err != nil {
-		return err
-	}
-	if gateOnStatus {
-		if err := runCompleted(run); err != nil {
-			return err
-		}
-	}
-	applyGate(a.cmd, threshold, run)
-	return nil
-}
-
-func renderRunDetail(out io.Writer, run *eval_api.OpenAIEvalRun) error {
-	if isSimulationRun(run) {
-		return renderRun(out, run, nil)
-	}
 	if err := emitDetail(out, []field{
 		{"Run", run.ID},
 		{"Name", run.Name},
@@ -307,9 +281,13 @@ func renderRunDetail(out io.Writer, run *eval_api.OpenAIEvalRun) error {
 	}); err != nil {
 		return err
 	}
-	renderRunFailure(out, run)
-	renderRunFollowUp(out, run)
 	writePortalLink(out, runLink(run.ReportURL, run.PortalURL))
+	if gateOnStatus {
+		if err := runCompleted(run); err != nil {
+			return err
+		}
+	}
+	applyGate(a.cmd, threshold, run)
 	return nil
 }
 

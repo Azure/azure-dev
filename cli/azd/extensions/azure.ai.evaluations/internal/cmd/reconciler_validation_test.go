@@ -277,6 +277,30 @@ func TestUpValidatesAllEvalsBeforePublishing(t *testing.T) {
 	assert.Empty(t, env.config)
 }
 
+func TestLocalRubricRetainsPublishedLevelRestrictionsBeforeMutation(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		t.Run(caller, func(t *testing.T) {
+			ec, env, service, cfg, dir := validationFixture(t)
+			definition := `{"type":"rubric","dimensions":[{"id":"clarity","weight":5}]}`
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "quality.json"), []byte(definition), 0o600))
+			service.definition = `{"name":"quality","version":"1","supported_evaluation_levels":["turn"],` +
+				`"definition":` + definition + `}`
+			cfg.Evaluators = []project.EvaluatorDecl{{Name: "quality", Source: "quality.json"}}
+			cfg.Evals[0].Evaluators = evalcore.EvaluatorList{{Evaluator: "quality"}}
+			cfg.Evals[0].EvaluationLevel = project.EvaluationLevelConversation
+
+			err := reconcileArtifactConfig(t, caller, ec, cfg, dir)
+			require.ErrorContains(t, err, "conversation")
+			for _, request := range service.requests {
+				assert.True(t, strings.HasPrefix(request, "GET "), "unexpected mutation: %s", request)
+			}
+			assert.Empty(t, env.config)
+			assert.Empty(t, env.values)
+			assert.Equal(t, "preserve", env.stored(t, "unrelated"))
+		})
+	}
+}
+
 func TestUpPreservesPublishedDependenciesAfterServiceFailure(t *testing.T) {
 	ec, env, service, cfg, dir := validationFixture(t)
 	service.failCreate = true

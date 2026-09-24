@@ -551,14 +551,22 @@ func NoRowsScored() string {
 	return "\nNo rows have been scored yet.\n"
 }
 
-// FilteredItemCount names only the rows displayed, not the run's total failures.
-func FilteredItemCount(shown int, status string) string {
-	return fmt.Sprintf("\nShowing %d %s test cases on this page.\n", shown, status)
-}
-
-// FilteredRunTotal distinguishes the service's matching and full-run totals.
-func FilteredRunTotal(matching, total int, status string) string {
-	return fmt.Sprintf("Full run: %d %s of %d total test cases (service-reported).\n", matching, status, total)
+// SamplesNeedingALook closes a --failed-only listing, holding the rows that
+// failed apart from the rows nothing managed to score.
+//
+// One count covering both contradicted the totals printed two lines above it,
+// which is what a reader compares it with: a run reporting 5 failed and 8
+// errored closed with "13 sample(s) failed at least one evaluator".
+// FilteredItemCount closes a filtered listing by naming the filter it applied.
+//
+// --failed-only used to keep rows nothing had scored and then count them as
+// failures, so the footer contradicted the totals directly above it.
+//
+// Phrased as "6 of 15 test cases failed" rather than "are failed": the status
+// reads as the verb, which is what the results spec prints and what a reader
+// says out loud.
+func FilteredItemCount(shown, total int, status string) string {
+	return fmt.Sprintf("\n%d of %d test cases %s\n", shown, total, status)
 }
 
 // UnknownItemStatus reports a --status value that names no outcome.
@@ -653,12 +661,6 @@ func EnterDatasetHelp() string {
 // DatasetIsRequired refuses an empty answer to that prompt.
 func DatasetIsRequired() string {
 	return "A dataset-backed evaluation needs a dataset to grade."
-}
-
-// InitDatasetRejected explains how to correct an unusable local dataset.
-func InitDatasetRejected(why error) string {
-	return fmt.Sprintf("\n  %v\n  Correct the dataset file and enter its path or dataset name again, "+
-		"or choose another dataset. Press Ctrl+C to cancel.\n", why)
 }
 
 // SelectingDataset reports a failed dataset prompt.
@@ -1251,9 +1253,7 @@ func GenerationJobLine(kind, jobID string) string {
 }
 
 // InitHandoffCommand is the `eval init` that turns generated artifacts into an
-// eval, carrying the known artifact choices. Conversation generation produces
-// seeds, so its handoff selects simulation. The simulation model is deliberately
-// omitted: generation does not establish which deployment should play the user.
+// eval, with every value already filled in.
 //
 // Printed resolved rather than as a shape. A reader who has just watched the
 // command choose a name, a level and an evaluator should not have to retype
@@ -1267,10 +1267,7 @@ func InitHandoffCommand(agent, dataset, level, evaluator string) string {
 	if dataset != "" {
 		cmd += " --source dataset --dataset " + ShellArg(dataset)
 		if level != "" {
-			cmd += " --evaluation-level " + ShellArg(level)
-		}
-		if level == "conversation" {
-			cmd += " --conversation-mode simulation"
+			cmd += " --evaluation-level " + level
 		}
 	}
 	if evaluator != "" {
@@ -1449,6 +1446,12 @@ func ReattachToJob(selector, jobID string) string {
 // WroteArtifact reports where a generated artifact landed.
 func WroteArtifact(path string) string {
 	return fmt.Sprintf("%s Downloaded %s\n", doneMark, filepath.ToSlash(path))
+}
+
+// NormalizedSimulationSeeds explains why transformed local rows need publication.
+func NormalizedSimulationSeeds() string {
+	return "Normalized generated turn settings into simulation_configuration. " +
+		"Publish the local dataset with `azd ai eval create` or `azd up` before running it.\n"
 }
 
 // ArtifactExists reports a generation that would overwrite a checked-in file.
@@ -2631,7 +2634,7 @@ func SourceNotADataSource(source, dataset, traces string) error {
 
 // TracesTakesNoDataset reports --dataset paired with a trace-backed eval.
 func TracesTakesNoDataset() error {
-	return InitFlagConflict("dataset", "cannot be used with --source traces, which reads production traces")
+	return errors.New("--source traces reads production traces, so it takes no --dataset")
 }
 
 // MaxTracesNeedsTraceSource reports --max-traces without a trace-backed eval.
@@ -2917,6 +2920,14 @@ func SelectEvalPrompt() string {
 	return "Select the eval to use:"
 }
 
+// CancelEvalChoice leaves the eval unselected without interrupting the command.
+func CancelEvalChoice() string { return "Cancel" }
+
+// SelectingEval reports a failed or interrupted eval prompt.
+func SelectingEval(err error) error {
+	return fmt.Errorf("selecting eval: %w", err)
+}
+
 // SelectingJudgeModel reports a failed judge model prompt.
 func SelectingJudgeModel(err error) error {
 	return fmt.Errorf("selecting a judge model deployment: %w", err)
@@ -3048,7 +3059,7 @@ func SeveralEvalsDeclared(count int, names []string) error {
 		count, strings.Join(names, ", "))
 }
 
-// EvalSelectionCancelled confirms a picker the reader closed.
+// EvalSelectionCancelled confirms the reader's explicit Cancel choice.
 //
 // Cancelling is an answer, so it is reported as one. It used to fall through to
 // SeveralEvalsDeclared, which told a reader who had just declined to choose

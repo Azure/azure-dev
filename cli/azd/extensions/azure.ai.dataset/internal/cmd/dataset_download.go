@@ -73,11 +73,6 @@ func (a *datasetDownloadAction) Run() error {
 	}
 	defer ec.Close()
 
-	return a.downloadWith(ctx, ec)
-}
-
-func (a *datasetDownloadAction) downloadWith(ctx context.Context, ec *datasetContext) error {
-	var err error
 	version := a.version
 	if version == "" {
 		if version, err = latestVersionForShow(ctx, ec.datasetClient, a.name); err != nil {

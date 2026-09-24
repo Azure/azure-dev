@@ -5,10 +5,12 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -165,6 +167,42 @@ func TestResponseSchemaValidationRejectsExplicitIDBeforePublication(t *testing.T
 	require.Nil(t, seen.body)
 }
 
+func TestResponseSchemaCallersRejectExplicitIDBeforePublication(t *testing.T) {
+	for _, caller := range []string{"create", "up"} {
+		t.Run(caller, func(t *testing.T) {
+			ec, env, service, cfg, dir := validationFixture(t)
+			service.eval = true
+			service.definition = `{"name":"custom","version":"1","definition":{"data_schema":{"properties":{}}}}`
+			cfg.Evaluators = []project.EvaluatorDecl{{
+				Name: "custom", Definition: map[string]any{"type": "rubric", "dimensions": []any{}},
+			}}
+			cfg.Evals = []project.Eval{responseGroup()}
+			cfg.Evals[0].ID = "eval_valid"
+			cfg.Evals[0].Evaluators = evalcore.EvaluatorList{{Evaluator: "custom"}}
+			var err error
+			if caller == "create" {
+				command := jsonCmd(t, "json")
+				command.SetContext(t.Context())
+				var out bytes.Buffer
+				command.SetOut(&out)
+				err = (&evalCreateAction{cmd: command}).create(
+					ec, cfg, &cfg.Evals[0], filepath.Join(dir, project.EvalConfigBase))
+				assert.Empty(t, out.String())
+			} else {
+				_, err = deployValidationFixture(t, t.Context(), ec, cfg, dir)
+			}
+			require.ErrorContains(t, err, "stored-responses schema")
+			for _, request := range service.requests {
+				assert.True(t, strings.HasPrefix(request, "GET "), "unexpected mutation: %s", request)
+			}
+			assert.Empty(t, env.config)
+			assert.Empty(t, env.values)
+			assert.False(t, service.dataset)
+			assert.Zero(t, service.createCount)
+		})
+	}
+}
+
 func TestResponseMigrationFailuresPreserveOldIdentity(t *testing.T) {
 	for _, failure := range []string{"read", "create"} {
 		t.Run(failure, func(t *testing.T) {
@@ -238,7 +276,9 @@ func TestResponseMigrationDoesNotSplitOtherCustomHistories(t *testing.T) {
 }
 
 func TestResponseRunCallerPreservesFixedIDsAndRejectsLegacySources(t *testing.T) {
-	for _, mode := range []string{"valid", "custom eval", "bare rows", "missing params", "read failure"} {
+	for _, mode := range []string{
+		"valid", "custom eval", "bare rows", "missing params", "read failure", "explicit cap zero", "explicit cap one",
+	} {
 		t.Run(mode, func(t *testing.T) {
 			source := eval_api.NewResponsesDataSource([]string{"resp_fixed"}, 1)
 			if mode == "bare rows" {
@@ -281,12 +321,26 @@ func TestResponseRunCallerPreservesFixedIDsAndRejectsLegacySources(t *testing.T)
 			t.Cleanup(srv.Close)
 			var out bytes.Buffer
 			command := &cobra.Command{}
+			command.SetContext(t.Context())
 			command.SetOut(&out)
 			command.Flags().String("output", "json", "")
-			action := &runStartAction{cmd: command, flags: &runStartFlags{
+			flags := &runStartFlags{
 				groupName: "eval_fixed", evalPath: t.TempDir(),
-			}}
-			err = action.start(t.Context(), evalContextFor(srv), gate{})
+			}
+			command.Flags().IntVar(&flags.maxSamples, "max-samples", 0, "")
+			if mode == "explicit cap zero" {
+				require.NoError(t, command.Flags().Set("max-samples", "0"))
+			}
+			if mode == "explicit cap one" {
+				require.NoError(t, command.Flags().Set("max-samples", "1"))
+			}
+			action := &runStartAction{
+				cmd: command, flags: flags,
+				newContext: func(context.Context, string) (*evalContext, error) {
+					return evalContextFor(srv), nil
+				},
+			}
+			err = action.Run()
 			if mode == "valid" {
 				require.NoError(t, err)
 				require.Equal(t, 1, posts)
@@ -319,11 +373,4 @@ func TestResponseBuilderRejectsEmptyIDsAndCaps(t *testing.T) {
 	require.ErrorContains(t, err, "max_samples")
 	_, _, err = (&evalContext{}).buildRunDataSource(t.Context(), nil, "", 0)
 	require.Error(t, err)
-	for _, value := range []string{"0", "1"} {
-		command := &cobra.Command{}
-		command.Flags().Int("max-samples", 0, "")
-		require.NoError(t, command.Flags().Set("max-samples", value))
-		_, err := runMaxSamples(command, 0, &group)
-		require.ErrorContains(t, err, "--max-samples")
-	}
 }

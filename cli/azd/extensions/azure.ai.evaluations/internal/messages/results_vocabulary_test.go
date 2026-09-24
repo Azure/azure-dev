@@ -35,13 +35,13 @@ func TestTheReconciliationCountsSingularNouns(t *testing.T) {
 		messages.CriterionResultReconciliation(1, 1, 1))
 }
 
-func TestAFilteredListingDistinguishesPageAndRunCounts(t *testing.T) {
-	assert.Equal(t, "\nShowing 6 failed test cases on this page.\n",
-		messages.FilteredItemCount(6, "failed"))
-	assert.Equal(t, "\nShowing 2 errored test cases on this page.\n",
-		messages.FilteredItemCount(2, "errored"))
-	assert.Equal(t, "Full run: 12 failed of 18 total test cases (service-reported).\n",
-		messages.FilteredRunTotal(12, 18, "failed"))
+// "3 of 15 items are failed" made the status an adjective and needed a reader
+// to translate it. The status is the verb.
+func TestAFilteredListingReadsAsASentence(t *testing.T) {
+	assert.Equal(t, "\n6 of 15 test cases failed\n",
+		messages.FilteredItemCount(6, 15, "failed"))
+	assert.Equal(t, "\n2 of 15 test cases errored\n",
+		messages.FilteredItemCount(2, 15, "errored"))
 }
 
 // The export announced a file and never said what went into it, so a run that

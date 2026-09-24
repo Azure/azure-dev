@@ -92,6 +92,18 @@ Run tests (including end-to-end [functional][functional tests] tests)
 go test ./...
 ```
 
+### PowerShell engineering script tests
+
+PowerShell tests under `eng/scripts` use Pester. From the repository root, install the same Pester version pinned in the
+[`cli-ci` workflow](../../.github/workflows/cli-ci.yml), then run the test file:
+
+```powershell
+Install-Module -Name Pester -RequiredVersion <version-from-cli-ci.yml> -Force -Scope CurrentUser
+
+# And using ./eng/scripts/Test-CliReleaseReadiness.Tests.ps1, as an example:
+Invoke-Pester -Path ./eng/scripts/Test-CliReleaseReadiness.Tests.ps1 -Output Detailed
+```
+
 Run cspell (install [cspell](https://cspell.org/)):
 
 ```bash
@@ -173,21 +185,6 @@ Launch `azd` separately, then attach:
 > Tip: Use the VSCode terminal to perform all `azd` build and run commands.
 
 ## Submitting a change
-
-Prefer small, cohesive pull requests that can be reviewed and landed independently.
-Group closely related fixes for one behavior rather than creating a pull request
-for every minor bug or combining unrelated work to minimize the number of pull
-requests. State dependencies explicitly. When integration is needed, designate one
-writer to preserve each contributor's changes and attribution without competing
-edits. Link the original pull requests and carry forward their review feedback.
-Before closing a superseded draft, verify that its replacement includes the intended
-fixes and regression coverage, and account for any remaining feedback.
-
-Use multiple complementary, bounded reviews for substantive changes. Address valid,
-actionable feedback, including minor clarity, naming, documentation, help, error,
-test, style, and correctness improvements; explain any rejected or deferred
-suggestions. Record actual GitHub Copilot review evidence separately from local
-agent reviews rather than treating one as proof of the other.
 
 1. Create a new branch: `git checkout -b my-branch-name`
 1. Make your change, add tests, and ensure tests pass

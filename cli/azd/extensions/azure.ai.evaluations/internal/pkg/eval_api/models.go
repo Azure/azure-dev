@@ -102,13 +102,29 @@ type GenerationJob struct {
 	// Recovering the type from here rather than from local state is what makes
 	// a reattach work with no azd environment to have recorded it in, and it is
 	// authoritative -- it is the request, not a guess from row shape.
-	Inputs *DataGenerationInputs `json:"inputs,omitempty"`
+	// Decode-only: job output must not expose echoed prompts and instructions.
+	Inputs *DataGenerationInputs `json:"-"`
 	// Warnings is what the service said about a job it nonetheless completed --
 	// most often that the input it was given was too thin to generate from. It
 	// was decoded nowhere, so a job that came back qualified was reported as an
 	// unqualified success and the artifact went into a configuration with
 	// nothing saying to look at it first.
 	Warnings []JobWarning `json:"warnings,omitempty"`
+}
+
+// UnmarshalJSON recovers the submitted type without adding inputs to job output.
+func (j *GenerationJob) UnmarshalJSON(data []byte) error {
+	type plain GenerationJob
+	var decoded struct {
+		plain
+		Inputs *DataGenerationInputs `json:"inputs"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*j = GenerationJob(decoded.plain)
+	j.Inputs = decoded.Inputs
+	return nil
 }
 
 // GenerationType is the kind of data a job was submitted to produce, or empty
@@ -539,9 +555,7 @@ type EvalRunDataSource struct {
 	// from the parameters that generated the seeds.
 	ModelConfiguration             *ModelConfiguration      `json:"model_configuration,omitempty"`
 	DefaultSimulationConfiguration *SimulationConfiguration `json:"default_simulation_configuration,omitempty"`
-	// SimulationSeedCount is captured from the validated dataset at submission,
-	// not sent as an unsupported service data-source field.
-	SimulationSeedCount *int `json:"-"`
+	DataMapping                    map[string]string        `json:"data_mapping,omitempty"`
 }
 
 // ItemGenerationParams says how the service should turn a source into the items
@@ -584,7 +598,7 @@ type EvalRunDataContent struct {
 }
 
 // NewAgentTargetDataSource builds an EvalRunDataSource configured for agent target completions.
-// Supply a registered version via SetFileID, or unregistered rows via SetFileContent.
+// The rows must be supplied separately via SetFileContent.
 func NewAgentTargetDataSource(agentName string, agentVersion *string) *EvalRunDataSource {
 	return &EvalRunDataSource{
 		Type: EvalRunDataSourceTypeAgentTarget,
@@ -710,8 +724,8 @@ func NewResponsesDataSource(responseIDs []string, maxTurns int) *EvalRunDataSour
 
 // SetFileContent sets the data source to use inline file content.
 //
-// Only unregistered local rows use this shape. Registered datasets use SetFileID
-// to preserve the service-issued version identity.
+// Unregistered local rows use this shape. Registered dataset versions use
+// SetFileID to preserve identity rather than submitting a copy of their rows.
 func (ds *EvalRunDataSource) SetFileContent(items []map[string]any) {
 	ds.Source = &EvalRunDataContent{
 		Type:    EvalRunDataContentTypeFileContent,
@@ -759,8 +773,6 @@ type OpenAIEvalRun struct {
 	ResultCounts       *EvalRunResultCounts    `json:"result_counts,omitempty"`
 	PerTestingCriteria []EvalRunCriteriaResult `json:"per_testing_criteria_results,omitempty"`
 	Error              *JobError               `json:"error,omitempty"`
-	raw                json.RawMessage
-	reportedCounts     map[string]bool
 }
 
 // Failure returns why the run failed, or "" when it did not.
@@ -818,7 +830,6 @@ type OutputItem struct {
 	Status         string         `json:"status"`
 	DataSourceItem map[string]any `json:"datasource_item,omitempty"`
 	Results        []OutputResult `json:"results,omitempty"`
-	raw            json.RawMessage
 }
 
 // OutputResult is one evaluator's verdict on one row.
@@ -843,9 +854,6 @@ type OutputResult struct {
 	// Reason is the judge's explanation, which is the part a failing row is
 	// actually looked at for.
 	Reason string `json:"reason,omitempty"`
-	// Properties includes service-specific details such as rubric dimension
-	// scores. Retained verbatim; human views interpret only known fields.
-	Properties json.RawMessage `json:"properties,omitempty"`
 }
 
 // OutputSample is the evaluator's record of the call it made.

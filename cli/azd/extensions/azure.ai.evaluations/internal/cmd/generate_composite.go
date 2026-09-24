@@ -463,7 +463,10 @@ type generationOutcome struct {
 	guidance string
 }
 
-// runGenerations submits every plan at once and settles them together.
+// runGenerations submits the plans from buildGeneratePlans concurrently.
+// There is at most one dataset plan and one rubric plan. Only the dataset
+// worker accesses private state; the rubric worker does not read or write that
+// cache. Catalog updates and reporting wait for both workers to finish.
 func (ec *evalContext) runGenerations(
 	cmd *cobra.Command,
 	plans []generationPlan,
@@ -471,6 +474,12 @@ func (ec *evalContext) runGenerations(
 ) error {
 	outcomes := make([]generationOutcome, len(plans))
 	var wg sync.WaitGroup
+
+	// Both workers resolve agent names. The pinned SDK's Project accessor
+	// initializes lazily, so construct that shared client before the fan-out.
+	if len(plans) > 1 && ec.azdClient != nil {
+		ec.azdClient.Project()
+	}
 
 	// The announcements go out before the goroutines start, so a long
 	// generation is not silent while it runs. Only the per-job progress is
@@ -575,44 +584,33 @@ func (ec *evalContext) runGenerations(
 	// unlabelled, and the caller was left to work out that `init` was next and
 	// to retype every name it had just chosen for them.
 	if !isJSON(cmd) && !flags.noWait {
-		writeGenerationCompleted(out, outcomes, flags.path)
+		writeGenerationCompleted(out, outcomes)
 	}
 	return nil
 }
 
 // writeGenerationCompleted closes a successful generation.
-func writeGenerationCompleted(out io.Writer, outcomes []generationOutcome, configPath string) {
+func writeGenerationCompleted(out io.Writer, outcomes []generationOutcome) {
 	fmt.Fprint(out, messages.GenerationCompleted())
-	simulation := false
 	for i := range outcomes {
 		if id := outcomes[i].report.jobID; id != "" {
 			fmt.Fprint(out, messages.GenerationJobLine(string(outcomes[i].plan.Kind), id))
 		}
-		if outcomes[i].ref != nil && outcomes[i].plan.Kind == generateKindDataset &&
-			outcomes[i].plan.EvaluationLevel == project.EvaluationLevelConversation {
-			simulation = true
-		}
 	}
-	if incompatible := incompatibleHandoffEvaluator(outcomes); incompatible != nil {
-		fmt.Fprint(out, messages.HandoffEvaluatorIncompatible(incompatible.Name))
-	}
-	if next := initHandoff(outcomes, configPath); next != "" {
+	if next := initHandoff(outcomes); next != "" {
 		fmt.Fprint(out, messages.FirstNextStep(next))
-		fmt.Fprint(out, messages.InitHandoffGuidance(simulation))
 	}
 }
 
 // initHandoff is the `eval init` that turns what was just generated into an
-// eval. Conversation seeds select simulation; init asks for the independent
-// simulation model rather than reusing the generation model.
+// eval, with every value it needs already filled in.
 //
 // --target is included even though `init` can detect it: the handoff is
 // documented to run exactly as printed, and the detection depends on the
 // project being readable at the time it is run rather than at the time it was
 // printed.
-func initHandoff(outcomes []generationOutcome, configPath string) string {
+func initHandoff(outcomes []generationOutcome) string {
 	var agent, dataset, level, evaluator string
-	incompatible := incompatibleHandoffEvaluator(outcomes)
 	for i := range outcomes {
 		o := &outcomes[i]
 		if o.ref == nil {
@@ -624,41 +622,13 @@ func initHandoff(outcomes []generationOutcome, configPath string) string {
 			dataset = o.ref.Name
 			level = o.plan.EvaluationLevel
 		default:
-			if o.ref != incompatible {
-				evaluator = o.ref.Name
-			}
+			evaluator = o.ref.Name
 		}
 	}
 	if dataset == "" && evaluator == "" {
 		return ""
 	}
-	next := messages.InitHandoffCommand(agent, dataset, level, evaluator)
-	if configPath != "" {
-		next += " --path " + quoteForShell(printablePath(configPath))
-	}
-	return next
-}
-
-func incompatibleHandoffEvaluator(outcomes []generationOutcome) *project.ArtifactRef {
-	var level string
-	var evaluator *project.ArtifactRef
-	for _, outcome := range outcomes {
-		if outcome.ref == nil {
-			continue
-		}
-		if outcome.plan.Kind == generateKindDataset {
-			level = outcome.plan.EvaluationLevel
-		} else {
-			evaluator = outcome.ref
-		}
-	}
-	if level != "" && evaluator != nil &&
-		!initEvaluatorSupportsLevel(&project.EvaluatorDecl{
-			SupportedEvaluationLevels: evaluator.SupportedEvaluationLevels,
-		}, level) {
-		return evaluator
-	}
-	return nil
+	return messages.InitHandoffCommand(agent, dataset, level, evaluator)
 }
 
 // generationDocument keys each outcome by the artifact it was for, so a caller

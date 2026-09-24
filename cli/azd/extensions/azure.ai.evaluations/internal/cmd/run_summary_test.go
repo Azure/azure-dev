@@ -19,7 +19,6 @@ import (
 func finishedRun() *eval_api.OpenAIEvalRun {
 	return &eval_api.OpenAIEvalRun{
 		ID:     "evalrun_abc123",
-		EvalID: "eval_abc123",
 		Status: "completed",
 		ResultCounts: &eval_api.EvalRunResultCounts{
 			Total: 10, Passed: 7, Failed: 3,

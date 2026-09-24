@@ -15,16 +15,19 @@ import (
 
 // DatasetContent is what one dataset version holds, ready to be written out.
 //
-// Every file is included: selecting one blob from a folder would silently
-// download only part of the dataset.
+// A version is a container, not a file. The single-blob path this package
+// already had picks one blob and calls it the dataset, which is right for
+// reading rows and wrong for downloading: a folder dataset came back as
+// whichever file sorted first, silently short by everything else.
 type DatasetContent struct {
 	// Container is the SAS-bearing container URI every entry is read from.
 	Container string
 	// Files are the entries' paths relative to the dataset root, sorted so two
 	// downloads of one version lay out the same way.
 	Files []string
-	// SingleFile identifies a direct blob, or a fully enumerated single entry
-	// whose dataset metadata confirms it is a file rather than a folder.
+	// SingleFile is what the service says about the shape, not what the file
+	// count happens to be: a folder dataset holding one file is still a folder,
+	// and writing it as a bare file loses the name it had inside.
 	SingleFile bool
 	// blobURI records that Container already names the blob, so reading it must
 	// not append an entry name to the path.
@@ -101,22 +104,13 @@ func (c *DatasetClient) ListDatasetContent(
 	}
 	sort.Strings(files)
 
-	// A container SAS is an access scope, not the dataset's shape. Only consult
-	// metadata after enumerating every entry: generated multi-file containers
-	// can also report isSingleFile, and must never be shortened to one file.
-	singleFile := false
-	if len(files) == 1 {
-		dataset, err := c.GetDataset(ctx, name, version, apiVersion)
-		if err != nil {
-			return nil, messages.ReadingDatasetVersion(name, version, err)
-		}
-		singleFile = dataset.IsSingleFile
-	}
-
+	// Not from isSingleFile: a generated container reports it true as well, and
+	// believing it wrote whichever entry sorted first -- `_meta.json` beside the
+	// rows -- as though it were the dataset. What the credential names is the
+	// only thing that actually distinguishes the two shapes.
 	return &DatasetContent{
-		Container:  sasURI,
-		Files:      files,
-		SingleFile: singleFile,
+		Container: sasURI,
+		Files:     files,
 	}, nil
 }
 

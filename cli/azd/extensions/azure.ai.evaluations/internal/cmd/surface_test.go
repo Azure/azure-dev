@@ -125,6 +125,7 @@ func TestFlagVocabularyIsShared(t *testing.T) {
 		"--data-schema":  "deferred to M2",
 		"--metrics":      "deferred to M2",
 		"--trace-window": "deferred to M2",
+		"--max-turns":    "deferred to M2",
 	}
 
 	walk(t, NewRootCommand(), nil, func(path string, cmd *cobra.Command) {
@@ -179,7 +180,6 @@ func TestInitFlagsMatchTheSpec(t *testing.T) {
 	assert.ElementsMatch(t, []string{
 		"--name", "--target", "--source", "--dataset", "--max-traces",
 		"--trace-days", "--evaluation-level",
-		"--conversation-mode", "--simulation-model", "--num-conversations", "--max-turns",
 		"--evaluator", "--judge-model", "--path",
 	}, got, "init's flags are a table in the spec; change both together")
 }

@@ -17,7 +17,7 @@ import (
 
 // A conversation-simulation seed row describes a conversation to create. It
 // carries no query, because nobody has asked anything yet.
-const seedRows = `{"id":1,"test_case_description":"A customer asks about a delayed order.","desired_num_turns":4}` + "\n" +
+const seedRows = `{"test_case_description":"A delayed order.","simulation_configuration":{"desired_num_turns":4}}` + "\n" +
 	`{"id":2,"test_case_description":"A customer disputes a charge."}` + "\n"
 
 // Invoking an agent target over seed rows sent an empty {{item.query}}: the
@@ -47,7 +47,7 @@ func TestBuildRunDataSource_RefusesAnAgentTargetOverRowsWithoutQuery(t *testing.
 	var local *azdext.LocalError
 	require.ErrorAs(t, err, &local)
 	assert.Contains(t, local.Suggestion, "test_case_description")
-	assert.Contains(t, local.Suggestion, "desired_num_turns")
+	assert.Contains(t, local.Suggestion, "simulation_configuration")
 	assert.Equal(t, exterrors.CodeInvalidParameter, local.Code)
 }
 

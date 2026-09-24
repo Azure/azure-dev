@@ -5,14 +5,12 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	"azureaieval/internal/exterrors"
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/pkg/evalcore"
@@ -158,7 +156,7 @@ func defaultEvaluators() []string {
 // What is knowable offline is the pair init proposes and whatever this
 // configuration already declares. Anything else is reachable with --evaluator,
 // which is checked against the catalogue when the project can be reached.
-func evaluatorChoices(cfg *project.EvalConfig, level string) []string {
+func evaluatorChoices(cfg *project.EvalConfig) []string {
 	seen := map[string]bool{}
 	var out []string
 	add := func(ref string) {
@@ -174,9 +172,7 @@ func evaluatorChoices(cfg *project.EvalConfig, level string) []string {
 	}
 	if cfg != nil {
 		for _, decl := range cfg.Evaluators {
-			if initEvaluatorSupportsLevel(&decl, level) {
-				add(decl.Name)
-			}
+			add(decl.Name)
 		}
 	}
 	return out
@@ -195,43 +191,16 @@ func evaluatorChoices(cfg *project.EvalConfig, level string) []string {
 func resolveEvaluators(
 	cmd *cobra.Command,
 	cfg *project.EvalConfig,
-	level string,
 ) ([]string, bool, error) {
 	defaults := defaultEvaluators()
 	if noPrompt(cmd) {
 		return defaults, false, nil
 	}
-	chosen, err := promptEvaluators(cmd, evaluatorChoices(cfg, level), defaults)
+	chosen, err := promptEvaluators(cmd, evaluatorChoices(cfg), defaults)
 	if err != nil {
 		return nil, false, err
 	}
 	return chosen, true, nil
-}
-
-func initEvaluatorSupportsLevel(decl *project.EvaluatorDecl, level string) bool {
-	if len(decl.SupportedEvaluationLevels) == 0 || slices.Contains(decl.SupportedEvaluationLevels, level) {
-		return true
-	}
-	for _, supported := range decl.SupportedEvaluationLevels {
-		if !slices.Contains(evaluationLevels, supported) {
-			// Future or unfamiliar metadata is not proof of incompatibility.
-			return true
-		}
-	}
-	return false
-}
-
-func validateInitEvaluatorLevels(cfg *project.EvalConfig, refs []string, level string) error {
-	for _, ref := range refs {
-		decl, ok := cfg.EvaluatorDeclaration(ref)
-		if ok && !initEvaluatorSupportsLevel(decl, level) {
-			return exterrors.Validation(exterrors.CodeConflictingArguments,
-				fmt.Sprintf("--evaluator %s declares support for %s, not --evaluation-level %s",
-					ref, strings.Join(decl.SupportedEvaluationLevels, ", "), level),
-				"Choose an evaluator that supports the selected level, or change --evaluation-level.")
-		}
-	}
-	return nil
 }
 
 // promptEvaluators asks which references to grade with, defaults ticked.

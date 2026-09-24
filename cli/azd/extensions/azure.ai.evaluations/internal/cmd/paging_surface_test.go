@@ -10,9 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// These tests stay sequential: find constructs an SDK root, which writes the
-// process-global cobra.EnableTraverseRunHooks even when only inspecting flags.
-
 // Every listing whose service answers with a cursor offers --after, so a reader
 // who learns paging on one command has learned it on all of them.
 //
@@ -21,6 +18,8 @@ import (
 // others, so the flag was missing rather than inapplicable, and a caller past
 // the first page had no way to ask for the rest.
 func TestEveryResumableListingOffersTheCursor(t *testing.T) {
+	t.Parallel()
+
 	for _, path := range []string{
 		"list",
 		"run list",
@@ -39,6 +38,8 @@ func TestEveryResumableListingOffersTheCursor(t *testing.T) {
 // they have no page boundary to resume from, so --after would name a position
 // that does not exist.
 func TestListingsThatHoldEveryRowOfferNoCursor(t *testing.T) {
+	t.Parallel()
+
 	for _, path := range []string{
 		"dataset list",
 		"evaluator list",
@@ -56,6 +57,8 @@ func TestListingsThatHoldEveryRowOfferNoCursor(t *testing.T) {
 // other for the page after a position. The flags stay independent so the
 // combination is at least answerable, and --all wins by walking.
 func TestJobListPrefersTheWalkWhenBothAreGiven(t *testing.T) {
+	t.Parallel()
+
 	cmd := find(t, "job list")
 	require.NoError(t, cmd.Flags().Set("all", "true"))
 	require.NoError(t, cmd.Flags().Set("after", "job_7"))

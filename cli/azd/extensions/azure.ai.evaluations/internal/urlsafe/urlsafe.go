@@ -13,27 +13,7 @@ package urlsafe
 import (
 	"errors"
 	"net/url"
-	"regexp"
-	"strings"
 )
-
-var embeddedURL = regexp.MustCompile(`(?i)(?:\b[a-z][a-z0-9+.-]*:)?//[^\s]+`)
-
-// Text removes URL credentials from prose such as a service error message.
-// A malformed URL is hidden entirely rather than risking a partial redaction.
-func Text(text string) string {
-	return embeddedURL.ReplaceAllStringFunc(text, func(raw string) string {
-		// Quotes can be valid inside userinfo or a query. Only peel trailing
-		// prose punctuation, never split a credential-bearing URL at a quote.
-		candidate := strings.TrimRight(raw, `"'.,;)}>`)
-		suffix := strings.TrimPrefix(raw, candidate)
-		parsed, err := url.Parse(candidate)
-		if err != nil {
-			return "<redacted-url>" + suffix
-		}
-		return URL(parsed) + suffix
-	})
-}
 
 // URL renders a URL with its credentials, query and fragment removed, keeping
 // the scheme, host and path so the log still says where the request went.

@@ -4,10 +4,6 @@
 package project
 
 import (
-	"fmt"
-
-	"azureaieval/internal/messages"
-
 	"github.com/braydonk/yaml"
 )
 
@@ -29,9 +25,6 @@ type AuthoredEntry struct {
 	HasDefinition bool
 	// Version pins an already-registered version.
 	Version string
-	// SupportedEvaluationLevels is local evaluator metadata, not a resolved
-	// service schema. Absence or an unfamiliar shape leaves compatibility unknown.
-	SupportedEvaluationLevels []string
 }
 
 // AuthoredConfig answers what a configuration already declares, as written.
@@ -59,60 +52,6 @@ func ReadAuthoredConfig(evalDir string) (*AuthoredConfig, error) {
 	return authoredFromDocument(doc), nil
 }
 
-// ReadAuthoredDataset reads only the named dataset's name and local file for
-// authoring preflight. Local includes use the normal resolver, including
-// ref-only entries when the name is not written here. Unrelated named entries
-// are not resolved, and unknown fields are not strictly decoded or rewritten.
-// File is resolved against the configuration directory; nil means no match.
-func ReadAuthoredDataset(location, name string) (*DatasetDecl, error) {
-	path, err := ResolveEvalConfigPath(location)
-	if err != nil {
-		return nil, err
-	}
-	doc, err := readConfigDocument(path)
-	if err != nil {
-		return nil, err
-	}
-	root, err := documentMapping(doc)
-	if err != nil {
-		return nil, err
-	}
-	entries, err := mappingSequence(root, SectionDatasets)
-	if err != nil {
-		return nil, err
-	}
-	var candidates []*yaml.Node
-	for _, item := range entries.Content {
-		declaredName := scalarUnder(item, "name")
-		if declaredName == name {
-			candidates = []*yaml.Node{item}
-			break
-		}
-		if declaredName == "" && nodeUnder(item, refDirective) != nil {
-			candidates = append(candidates, item)
-		}
-	}
-	for _, item := range candidates {
-		var raw map[string]any
-		if err := item.Decode(&raw); err != nil {
-			return nil, messages.ParsingEvalConfig(path, err)
-		}
-		resolved, err := resolveEvalRefs(raw, EvalDirOf(path))
-		if err != nil {
-			return nil, err
-		}
-		if resolved["name"] != name {
-			continue
-		}
-		file, ok := resolved["file"].(string)
-		if value := resolved["file"]; value != nil && !ok {
-			return nil, messages.ParsingEvalConfig(path, fmt.Errorf("dataset %q file must be a string", name))
-		}
-		return &DatasetDecl{Name: name, File: ResolveSource(EvalDirOf(path), file)}, nil
-	}
-	return nil, nil
-}
-
 // authoredFromDocument reads the three catalogs in document order.
 //
 // A document this cannot read answers with nothing rather than an error: the
@@ -134,30 +73,14 @@ func authoredFromDocument(doc *yaml.Node) *AuthoredConfig {
 				continue
 			}
 			out.sections[section] = append(out.sections[section], AuthoredEntry{
-				Name:                      scalarUnder(item, "name"),
-				Ref:                       scalarUnder(item, refDirective),
-				HasDefinition:             nodeUnder(item, "definition") != nil,
-				Version:                   scalarUnder(item, "version"),
-				SupportedEvaluationLevels: authoredEvaluationLevels(item),
+				Name:          scalarUnder(item, "name"),
+				Ref:           scalarUnder(item, refDirective),
+				HasDefinition: nodeUnder(item, "definition") != nil,
+				Version:       scalarUnder(item, "version"),
 			})
 		}
 	}
 	return out
-}
-
-func authoredEvaluationLevels(item *yaml.Node) []string {
-	node := nodeUnder(item, "supported_evaluation_levels")
-	if node == nil || node.Kind != yaml.SequenceNode {
-		return nil
-	}
-	var levels []string
-	for _, value := range node.Content {
-		if value.Kind != yaml.ScalarNode || value.Tag != "!!str" {
-			return nil
-		}
-		levels = append(levels, value.Value)
-	}
-	return levels
 }
 
 // Entry reports how the named entry of a section was written.

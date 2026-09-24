@@ -374,7 +374,7 @@ func buildEvalRequest(
 
 	// A simulation is graded on the conversations the run creates, not on the
 	// seed rows it creates them from. The seeds carry test_case_description and
-	// desired_num_turns; the graded item carries `messages`. Binding the seed
+	// simulation_configuration; the graded item carries `messages`. Binding the seed
 	// columns here is how a conversation evaluator ended up either refused at
 	// deploy for a column the seeds do not have, or created with no binding for
 	// the conversation it was meant to score.
@@ -450,6 +450,9 @@ func buildEvalRequest(
 		IncludeSampleSchema: hasTarget && !simulated,
 		ItemSchema:          itemSchema(itemFields),
 	}
+	if simulated {
+		req.DataSourceConfig.ItemSchema["required"] = []string{conversationField}
+	}
 	if isResponsesEval(group) {
 		req.DataSourceConfig = &eval_api.DataSourceConfig{
 			Type: "azure_ai_source", Scenario: "responses",
@@ -467,7 +470,14 @@ func itemSchema(fields map[string]bool) map[string]any {
 	}
 	properties := map[string]any{}
 	for field := range fields {
-		properties[field] = map[string]any{"type": "string"}
+		if field == conversationField {
+			properties[field] = map[string]any{
+				"type":  "array",
+				"items": map[string]any{"type": "object"},
+			}
+		} else {
+			properties[field] = map[string]any{"type": "string"}
+		}
 	}
 	return map[string]any{
 		"type":       "object",

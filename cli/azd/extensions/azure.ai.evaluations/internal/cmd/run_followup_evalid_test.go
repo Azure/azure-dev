@@ -5,9 +5,6 @@ package cmd
 
 import (
 	"bytes"
-	"encoding/json"
-	"io"
-	"strings"
 	"testing"
 
 	"azureaieval/internal/messages"
@@ -29,16 +26,14 @@ func TestFollowUpNamesTheEvalForARunThisExtensionDidNotCreate(t *testing.T) {
 	assert.Equal(t, "evalgroup_7", followUpEvalRef(external),
 		"the run states its own eval even with no metadata")
 
-	// A declared name can resolve to a newer eval after redeploy, so commands
-	// must retain the immutable eval ID even when a friendly label is known.
+	// The declared name still wins, because that is what a reader has in
+	// their configuration.
 	declared := &eval_api.OpenAIEvalRun{
 		ID:       "evalrun_1",
 		EvalID:   "evalgroup_7",
 		Metadata: map[string]string{metaEvalName: "nightly"},
 	}
-	assert.Equal(t, "evalgroup_7", followUpEvalRef(declared))
-	declared.EvalID = ""
-	assert.Equal(t, "nightly", followUpEvalRef(declared), "use the name only when no immutable ID is available")
+	assert.Equal(t, "nightly", followUpEvalRef(declared))
 
 	// Nothing to name stays empty rather than inventing a reference.
 	assert.Empty(t, followUpEvalRef(&eval_api.OpenAIEvalRun{ID: "evalrun_1"}))
@@ -87,61 +82,4 @@ func TestTheRenderedFollowUpNamesTheEvalForAnExternalRun(t *testing.T) {
 	assert.NotContains(t, rendered, "run output list --run ",
 		"a command with no --eval would have to re-resolve the eval")
 	assert.NotContains(t, rendered, "run output export --run ")
-}
-
-func TestRunFollowUpCommandsKeepImmutableIdentityAndFriendlyLabelsSeparate(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		render func(io.Writer, *eval_api.OpenAIEvalRun) error
-	}{
-		{"summary", func(out io.Writer, run *eval_api.OpenAIEvalRun) error {
-			return renderRun(out, runForDisplay(run, "eval_immutable", run.ID), nil)
-		}},
-		{"detail", func(out io.Writer, run *eval_api.OpenAIEvalRun) error {
-			return renderRunDetail(out, runForDisplay(run, "eval_immutable", run.ID))
-		}},
-		{"output", func(out io.Writer, run *eval_api.OpenAIEvalRun) error {
-			return renderResults(out, "eval_immutable", run, []eval_api.OutputItem{failingItem("1")}, false)
-		}},
-	} {
-		for _, idSource := range []string{"service", "resolved lookup"} {
-			t.Run(tc.name+"/"+idSource, func(t *testing.T) {
-				run := simulationReportingRun()
-				run.EvalID = ""
-				if idSource == "service" {
-					run.EvalID = "eval_immutable"
-				}
-				var firstCommands []string
-				for _, label := range []string{"nightly-old-label", "nightly-new-label"} {
-					run.Metadata[metaEvalName] = label
-					before, err := json.Marshal(run)
-					require.NoError(t, err)
-					var out bytes.Buffer
-					require.NoError(t, tc.render(&out, run))
-					assert.Contains(t, out.String(), "Eval       "+label,
-						"the familiar name belongs in the label, not the command argument")
-					var commands []string
-					for line := range strings.SplitSeq(out.String(), "\n") {
-						if !strings.Contains(line, "azd ai eval run output") {
-							continue
-						}
-						assert.Contains(t, line, "--eval eval_immutable")
-						assert.Contains(t, line, "--run "+run.ID)
-						assert.NotContains(t, line, label)
-						commands = append(commands, line)
-					}
-					require.GreaterOrEqual(t, len(commands), 2)
-					if firstCommands == nil {
-						firstCommands = commands
-					} else {
-						assert.Equal(t, firstCommands, commands, "changed labels must not retarget prior run commands")
-					}
-					after, err := json.Marshal(run)
-					require.NoError(t, err)
-					assert.JSONEq(t, string(before), string(after),
-						"human rendering does not alter raw run identity or metadata")
-				}
-			})
-		}
-	}
 }

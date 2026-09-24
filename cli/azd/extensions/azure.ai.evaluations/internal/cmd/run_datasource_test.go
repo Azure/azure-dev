@@ -441,7 +441,7 @@ func TestBuildRunDataSource_RefusesADeclarationNoRunCouldCarryOut(t *testing.T) 
 	}
 }
 
-// --max-samples still caps genuinely unregistered local rows.
+// Unregistered local rows still support a cap after confirmed registry absence.
 func TestBuildRunDataSource_MaxSamplesCapsLocalRows(t *testing.T) {
 	ec := unregisteredRunContext(t)
 	configPath := writeDataset(t, oneRow+oneRow+oneRow)

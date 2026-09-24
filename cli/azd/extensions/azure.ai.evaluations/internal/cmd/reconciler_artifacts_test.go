@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaieval/internal/pkg/evalcore"
@@ -58,6 +59,10 @@ func TestReconciliationRejectsUnusableLocalDatasetRows(t *testing.T) {
 		{"nontext description", `{"test_case_description":42}`, project.TargetTypeAgent, true, "empty or non-text"},
 		{"null description", `{"test_case_description":null}`, project.TargetTypeAgent, true, "empty or non-text"},
 		{
+			"description exceeds service limit", `{"test_case_description":"` + strings.Repeat("a", 2501) + `"}`,
+			project.TargetTypeAgent, true, "maximum is 2500",
+		},
+		{
 			"mixed conversation", "{\"test_case_description\":\"valid\"}\n{\"messages\":[]}",
 			project.TargetTypeAgent, true, `row 2 carries "messages"`,
 		},
@@ -82,33 +87,52 @@ func TestReconciliationRejectsUnusableLocalDatasetRows(t *testing.T) {
 			project.TargetTypeAgent, true, `row 2 carries "query"`,
 		},
 		{
-			"fractional turns", `{"test_case_description":"valid","desired_num_turns":1.5}`,
+			"fractional turns", `{"test_case_description":"valid","simulation_configuration":{"desired_num_turns":1.5}}`,
 			project.TargetTypeAgent, true, "not a positive whole number",
 		},
 		{
-			"zero turns", `{"test_case_description":"valid","desired_num_turns":0}`,
+			"zero turns", `{"test_case_description":"valid","simulation_configuration":{"desired_num_turns":0}}`,
 			project.TargetTypeAgent, true, "not a positive whole number",
 		},
 		{
-			"negative turns", `{"test_case_description":"valid","desired_num_turns":-1}`,
+			"negative turns", `{"test_case_description":"valid","simulation_configuration":{"desired_num_turns":-1}}`,
 			project.TargetTypeAgent, true, "not a positive whole number",
 		},
 		{
-			"text turns", `{"test_case_description":"valid","desired_num_turns":"2"}`,
+			"text turns", `{"test_case_description":"valid","simulation_configuration":{"desired_num_turns":"2"}}`,
 			project.TargetTypeAgent, true, "not a positive whole number",
 		},
 		{
-			"null turns", `{"test_case_description":"valid","desired_num_turns":null}`,
+			"null turns", `{"test_case_description":"valid","simulation_configuration":{"desired_num_turns":null}}`,
 			project.TargetTypeAgent, true, "not a positive whole number",
 		},
 		{
-			"over cap", `{"test_case_description":"valid","desired_num_turns":6}`,
+			"over cap", `{"test_case_description":"valid","simulation_configuration":{"desired_num_turns":6}}`,
 			project.TargetTypeAgent, true, "simulation.max_turns is 5",
 		},
 		{
-			"later over cap", "\uFEFF{\"test_case_description\":\"valid\",\"desired_num_turns\":5}\n\n" +
-				`{"test_case_description":"invalid","desired_num_turns":6}`,
+			"later over cap",
+			"\uFEFF{\"test_case_description\":\"valid\",\"simulation_configuration\":{\"desired_num_turns\":5}}\n\n" +
+				`{"test_case_description":"invalid","simulation_configuration":{"desired_num_turns":6}}`,
 			project.TargetTypeAgent, true, "row 2 asks for 6 turns",
+		},
+		{
+			"flat turns ignored by service", `{"test_case_description":"valid","desired_num_turns":5}`,
+			project.TargetTypeAgent, true, "outside simulation_configuration",
+		},
+		{
+			"nonobject simulation configuration", `{"test_case_description":"valid","simulation_configuration":null}`,
+			project.TargetTypeAgent, true, "non-object simulation_configuration",
+		},
+		{
+			"invalid per-row maximum",
+			`{"test_case_description":"valid","simulation_configuration":{"max_num_turns":0}}`,
+			project.TargetTypeAgent, true, "not a positive whole number",
+		},
+		{
+			"exceeds per-row maximum",
+			`{"test_case_description":"valid","simulation_configuration":{"max_num_turns":6,"desired_num_turns":7}}`,
+			project.TargetTypeAgent, true, "simulation_configuration.max_num_turns is 6",
 		},
 	}
 	for _, caller := range []string{"create", "up"} {
@@ -121,7 +145,7 @@ func TestReconciliationRejectsUnusableLocalDatasetRows(t *testing.T) {
 				group.Target = &project.Target{Name: "target", Type: tt.target}
 				if tt.simulated {
 					group.EvaluationLevel = project.EvaluationLevelConversation
-					group.Simulation = &project.Simulation{Model: "simulator", MaxTurns: 5}
+					group.Simulation = &project.Simulation{Model: "connection/simulator", MaxTurns: 5}
 				}
 				require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"), []byte(tt.rows), 0o600))
 				err := reconcileArtifactConfig(t, caller, ec, cfg, dir)
@@ -149,8 +173,13 @@ func TestReconciliationAcceptsUsableLocalDatasetModes(t *testing.T) {
 		{"static completed conversation", `{"messages":[{"role":"user","content":"hello"}]}`, "", false},
 		{"seed without optional turns", `{"test_case_description":"A delayed order."}`, project.TargetTypeAgent, true},
 		{
+			"seed description at service limit", `{"test_case_description":"` + strings.Repeat("a", 2500) + `"}`,
+			project.TargetTypeAgent, true,
+		},
+		{
 			"seed at configured cap",
-			"\uFEFF{\"test_case_description\":\"A delayed order.\",\"desired_num_turns\":5}\n\n",
+			"\uFEFF{\"test_case_description\":\"A delayed order.\"," +
+				"\"simulation_configuration\":{\"desired_num_turns\":5}}\n\n",
 			project.TargetTypeAgent, true,
 		},
 	}
@@ -165,7 +194,7 @@ func TestReconciliationAcceptsUsableLocalDatasetModes(t *testing.T) {
 				}
 				if tt.simulated {
 					group.EvaluationLevel = project.EvaluationLevelConversation
-					group.Simulation = &project.Simulation{Model: "simulator", MaxTurns: 5}
+					group.Simulation = &project.Simulation{Model: "connection/simulator", MaxTurns: 5}
 				}
 				require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"), []byte(tt.rows), 0o600))
 				for range 2 {
@@ -235,7 +264,7 @@ func TestCreateDoesNotValidateUnselectedDatasetModes(t *testing.T) {
 	assert.Empty(t, env.stored(t, idKey("eval", unrelated.Name)))
 }
 
-func TestReconciliationDoesNotInventASeedTurnCap(t *testing.T) {
+func TestReconciliationHonorsPerRowTurnOverride(t *testing.T) {
 	for _, caller := range []string{"create", "up"} {
 		t.Run(caller, func(t *testing.T) {
 			ec, _, service, cfg, dir := validationFixture(t)
@@ -243,8 +272,9 @@ func TestReconciliationDoesNotInventASeedTurnCap(t *testing.T) {
 			group := &cfg.Evals[0]
 			group.EvaluationLevel = project.EvaluationLevelConversation
 			group.Target = &project.Target{Type: project.TargetTypeAgent, Name: "target"}
-			group.Simulation = &project.Simulation{Model: "simulator"}
-			rows := `{"test_case_description":"A longer scenario.","desired_num_turns":21}`
+			group.Simulation = &project.Simulation{Model: "connection/simulator"}
+			rows := `{"test_case_description":"A longer scenario.",` +
+				`"simulation_configuration":{"desired_num_turns":21,"max_num_turns":21}}`
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "rows.jsonl"), []byte(rows), 0o600))
 			require.NoError(t, reconcileArtifactConfig(t, caller, ec, cfg, dir))
 			assert.Equal(t, 1, service.createCount)

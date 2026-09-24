@@ -29,30 +29,32 @@ func simulationLoaderConfig(simulation map[string]any) map[string]any {
 
 func TestSimulationProductionLoadersRejectExplicitZero(t *testing.T) {
 	for _, field := range []string{"num_conversations", "max_turns"} {
-		t.Run(field, func(t *testing.T) {
-			want := "simulation." + field + " is 0"
-			config := simulationLoaderConfig(map[string]any{"model": "simulator", field: 0})
-			flow, err := json.Marshal(config)
-			require.NoError(t, err)
-			block := fmt.Sprintf("evals:\n  - name: quality\n    simulation:\n      model: simulator\n      %s: 0\n", field)
-			merged := fmt.Sprintf("evals:\n  - name: quality\n    simulation:\n"+
-				"      <<: &defaults {model: simulator, %s: 0}\n", field)
-			for _, tc := range []struct {
-				name string
-				body string
-			}{{"flow JSON", string(flow)}, {"block YAML", block}, {"merged YAML", merged}} {
-				t.Run(tc.name, func(t *testing.T) {
+		for _, value := range []any{0, nil} {
+			t.Run(fmt.Sprintf("%s/%v", field, value), func(t *testing.T) {
+				want := "simulation." + field + " is 0"
+				config := simulationLoaderConfig(map[string]any{"model": "connection/simulator", field: value})
+				flow, err := json.Marshal(config)
+				require.NoError(t, err)
+				scalar, err := json.Marshal(value)
+				require.NoError(t, err)
+				block := fmt.Sprintf("evals:\n  - name: quality\n    simulation:\n      model: simulator\n      %s: %s\n",
+					field, scalar)
+				merged := fmt.Sprintf("evals:\n  - name: quality\n    simulation:\n"+
+					"      <<: &defaults {model: simulator, %s: %s}\n", field, scalar)
+				for _, body := range []string{string(flow), block, merged} {
 					path := filepath.Join(t.TempDir(), "azure.eval.yaml")
-					require.NoError(t, os.WriteFile(path, []byte(tc.body), 0o600))
-					_, err := LoadEvalConfig(path)
+					require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+					_, err := DecodeEvalConfig([]byte(body), path)
+					require.ErrorContains(t, err, want)
+					_, err = LoadEvalConfig(path)
 					require.ErrorContains(t, err, want)
 					_, err = OpenEvalConfig(filepath.Dir(path))
 					require.ErrorContains(t, err, want)
-				})
-			}
-			_, err = EvalConfigFromService(serviceWith(t, config), "")
-			require.ErrorContains(t, err, want, "inline services must use the same presence checks")
-		})
+				}
+				_, err = EvalConfigFromService(serviceWith(t, config), "")
+				require.ErrorContains(t, err, want)
+			})
+		}
 	}
 }
 
@@ -63,9 +65,9 @@ func TestSimulationProductionLoadersPreserveOmissionsAndBounds(t *testing.T) {
 		count      int
 		turns      int
 	}{
-		{"omitted", map[string]any{"model": "simulator"}, 0, 0},
-		{"minimum", map[string]any{"model": "simulator", "num_conversations": 1, "max_turns": 1}, 1, 1},
-		{"maximum", map[string]any{"model": "simulator", "num_conversations": 5, "max_turns": 20}, 5, 20},
+		{"omitted", map[string]any{"model": "connection/simulator"}, 0, 0},
+		{"minimum", map[string]any{"model": "connection/simulator", "num_conversations": 1, "max_turns": 1}, 1, 1},
+		{"maximum", map[string]any{"model": "connection/simulator", "num_conversations": 5, "max_turns": 20}, 5, 20},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			config := simulationLoaderConfig(tc.simulation)
@@ -77,7 +79,11 @@ func TestSimulationProductionLoadersPreserveOmissionsAndBounds(t *testing.T) {
 			require.NoError(t, err)
 			fromService, err := EvalConfigFromService(serviceWith(t, config), "")
 			require.NoError(t, err)
-			for _, cfg := range []*EvalConfig{fromFile, fromService} {
+			fromBytes, err := DecodeEvalConfig(raw, path)
+			require.NoError(t, err)
+			opened, err := OpenEvalConfig(filepath.Dir(path))
+			require.NoError(t, err)
+			for _, cfg := range []*EvalConfig{fromFile, fromService, fromBytes, opened} {
 				require.Len(t, cfg.Evals, 1)
 				sim := cfg.Evals[0].Simulation
 				require.NotNil(t, sim)
@@ -99,9 +105,7 @@ func TestSimulationProductionDecoderRemainsStrict(t *testing.T) {
 	_, err = EvalConfigFromService(serviceWith(t, simulationLoaderConfig(
 		map[string]any{"model": "simulator", "max_turn": 2})), "")
 	require.ErrorContains(t, err, `unknown key "max_turn"`)
-
-	for _, field := range []string{"num_conversations", "max_turns"} {
-		_, err := DecodeEvalConfig([]byte(strings.ReplaceAll(body, "max_turn: 2", field+": null")), "azure.eval.yaml")
-		require.ErrorContains(t, err, "simulation."+field+" is 0")
-	}
+	_, err = DecodeEvalConfig([]byte(strings.ReplaceAll(body, "max_turn: 2",
+		"<<: &defaults {max_turn: 2}")), "azure.eval.yaml")
+	require.ErrorContains(t, err, `unknown key "max_turn"`)
 }

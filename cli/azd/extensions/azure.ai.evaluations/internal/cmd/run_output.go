@@ -247,29 +247,17 @@ func (a *runOutputShowAction) Run() error {
 		return err
 	}
 
-	return a.show(ctx, ec, evalID, run.ID)
-}
-
-func (a *runOutputShowAction) show(ctx context.Context, ec *evalContext, evalID, runID string) error {
-	item, err := ec.evalClient.GetOutputItem(ctx, evalID, runID, a.itemID)
+	item, err := ec.evalClient.GetOutputItem(ctx, evalID, run.ID, a.itemID)
 	if err != nil {
 		if eval_api.IsNotFound(err) {
-			return messages.OutputItemNotFound(a.itemID, runID)
+			return messages.OutputItemNotFound(a.itemID, run.ID)
 		}
 		return messages.ReadingOutputItem(a.itemID, err)
 	}
 	if isJSON(a.cmd) {
 		return emitJSON(a.cmd.OutOrStdout(), item)
 	}
-	if item == nil {
-		return messages.OutputItemEmpty()
-	}
-	// The detail endpoint can return a result-version URI as id even though
-	// the list and lookup use a numeric item id. Keep that service value in
-	// JSON, but show the successful lookup identity in the human detail.
-	display := *item
-	display.ID = a.itemID
-	return renderOutputItem(a.cmd.OutOrStdout(), &display)
+	return renderOutputItem(a.cmd.OutOrStdout(), item)
 }
 
 // writeExport writes the complete result document for a run.
@@ -466,7 +454,7 @@ func resolveEvalID(cmd *cobra.Command, ec *evalContext, groupName string) (strin
 	// evals could start a run by answering a question, and then not list,
 	// show or cancel it without repeating the answer as a flag.
 	//
-	// A closed picker is returned as itself so the command can report it as an
+	// An explicit Cancel choice is returned so the command can report it as an
 	// answer; resolving an id is not where that gets decided.
 	chosen, err := chooseEvalIn(cmd, evalDir, groupName)
 	if err != nil {
@@ -480,13 +468,13 @@ func resolveEvalID(cmd *cobra.Command, ec *evalContext, groupName string) (strin
 }
 
 // evalIDForRunCommand resolves the eval a run command acts on and reports a
-// closed picker as the answer it is.
+// explicit Cancel choice as the answer it is.
 //
 // Every run subcommand reaches the same picker `eval create` and `run start`
-// do, so closing it means the same thing at all of them: no eval was selected,
+// do, so choosing Cancel means the same thing at all of them: no eval was selected,
 // and there is nothing to list, show, cancel or export. Returning the sentinel
-// as a command error made those six exit non-zero on a deliberate answer,
-// which reads as the closing itself having failed.
+// as a command error made those seven exit non-zero on a deliberate answer,
+// which reads as the choice itself having failed.
 //
 // The bool reports whether to carry on. A cancelled selection has already been
 // reported to the reader and leaves the command nothing to do.
@@ -496,9 +484,9 @@ func evalIDForRunCommand(cmd *cobra.Command, ec *evalContext, groupName string) 
 }
 
 // answeredEvalID turns a resolution into what a run command needs, and is where
-// the closed picker stops being an error.
+// the explicit Cancel choice stops being an error.
 //
-// Separate from the resolution because reaching a closed picker for real needs
+// Separate from the resolution because reaching the picker for real needs
 // a project, a configuration and a terminal; this half needs none of them, so
 // it is the half a test can drive.
 func answeredEvalID(cmd *cobra.Command, evalID string, err error) (string, bool, error) {
@@ -656,8 +644,9 @@ func (ec *evalContext) sayWhichRun(cmd *cobra.Command, explicit bool, runID stri
 // to read. The listing truncates the reason to a cell; this is where the whole
 // of it lives, so the reasons are printed in full rather than wrapped or cut.
 //
-// Results are grouped by evaluator. Rubric dimensions can arrive as separate
-// metrics or under the evaluator's properties.dimension_scores.
+// Results are grouped by evaluator: a rubric reports one result per dimension,
+// all carrying the evaluator's name, and printing them flat would read as
+// several evaluators that happen to share a name.
 func renderOutputItem(w io.Writer, item *eval_api.OutputItem) error {
 	if item == nil {
 		return messages.OutputItemEmpty()
@@ -714,13 +703,7 @@ func renderEvaluatorResult(w io.Writer, name string, results []eval_api.OutputRe
 	// The service repeats the evaluator's name in `metric` for a single-score
 	// evaluator, so a result only names a dimension when it says something else.
 	dimensions := make([]eval_api.OutputResult, 0, len(results))
-	var rubricScores []eval_api.RubricDimensionScore
 	for _, r := range results {
-		scores, err := r.RubricDimensions()
-		if err != nil {
-			return err
-		}
-		rubricScores = append(rubricScores, scores...)
 		if r.Metric != "" && r.Metric != name {
 			dimensions = append(dimensions, r)
 		}
@@ -742,16 +725,11 @@ func renderEvaluatorResult(w io.Writer, name string, results []eval_api.OutputRe
 		fmt.Fprint(w, messages.EvaluatorSectionReason(lead.Outcome(), why))
 	}
 
-	if len(rubricScores) > 0 {
-		if err := renderRubricScores(w, rubricScores); err != nil {
-			return err
-		}
-	}
 	if len(dimensions) == 0 {
 		// Said rather than left blank, and never invented: a reader who cannot
 		// see dimensions needs to know whether this rubric has none or the
 		// service did not return them.
-		if len(rubricScores) == 0 && isRubricName(name) {
+		if isRubricName(name) {
 			fmt.Fprint(w, messages.RubricDimensionsNotReturned())
 		}
 		return nil
@@ -768,44 +746,6 @@ func renderEvaluatorResult(w io.Writer, name string, results []eval_api.OutputRe
 	}
 	fmt.Fprint(w, messages.RubricDimensionsHeading())
 	return emitTable(w, []string{"DIMENSION", "SCORE", "RESULT", "REASON"}, rows)
-}
-
-func renderRubricScores(w io.Writer, dimensions []eval_api.RubricDimensionScore) error {
-	fmt.Fprint(w, messages.RubricDimensionsHeading())
-	rows := make([][]string, 0, len(dimensions))
-	for _, dimension := range dimensions {
-		applicable := "not reported"
-		if dimension.Applicable != nil {
-			applicable = strconv.FormatBool(*dimension.Applicable)
-		}
-		rows = append(rows, []string{
-			reportedDimensionID(dimension.ID), dimensionNumber(dimension.Score),
-			applicable, dimensionNumber(dimension.Weight),
-		})
-	}
-	if err := emitTable(w, []string{"DIMENSION", "SCORE", "APPLICABLE", "WEIGHT"}, rows); err != nil {
-		return err
-	}
-	for _, dimension := range dimensions {
-		if dimension.Reason != "" {
-			fmt.Fprintf(w, "\n%s:\n%s\n", reportedDimensionID(dimension.ID), dimension.Reason)
-		}
-	}
-	return nil
-}
-
-func reportedDimensionID(id string) string {
-	if id == "" {
-		return "not reported"
-	}
-	return id
-}
-
-func dimensionNumber(value *eval_api.LenientFloat) string {
-	if value == nil {
-		return "not reported"
-	}
-	return formatScore(*value)
 }
 
 // isRubricName reports whether a missing dimension list is worth remarking on.
@@ -891,23 +831,17 @@ func renderResults(
 	items []eval_api.OutputItem,
 	failedOnly bool,
 ) error {
-	evalRef := followUpEvalRef(runForDisplay(run, resolvedEval, ""))
-	if isSimulationRun(run) {
-		renderRunHeader(w, run)
-		renderSimulationSettings(w, run)
-		renderConversationResults(w, run)
-		fmt.Fprintln(w)
-	} else {
-		fmt.Fprint(w, messages.RunStatusHeading(run.ID, run.Status))
-	}
-	if c := run.ResultCounts; c != nil && !isSimulationRun(run) {
+	evalName := runEvalName(run, resolvedEval)
+	fmt.Fprint(w, messages.RunStatusHeading(run.ID, run.Status))
+
+	if c := run.ResultCounts; c != nil {
 		fmt.Fprint(w, messages.ItemResultTotals(c.Total, c.Passed, c.Failed, c.Errored, c.Skipped))
 		fmt.Fprint(w, messages.ScoredPassRateLine(c.Passed, c.Passed+c.Failed))
 		fmt.Fprintln(w)
 	}
 
 	if len(run.PerTestingCriteria) > 0 {
-		if c := run.ResultCounts; c != nil && c.Total > 0 && !isSimulationRun(run) {
+		if c := run.ResultCounts; c != nil && c.Total > 0 {
 			fmt.Fprint(w, messages.CriterionResultReconciliation(
 				c.Total, len(run.PerTestingCriteria), c.Total*len(run.PerTestingCriteria)))
 		}
@@ -951,7 +885,7 @@ func renderResults(
 		// The export is the whole run, so it is the answer to "nothing here
 		// matched, where is the rest of it" -- which is exactly the case that
 		// used to be answered with a full stop.
-		fmt.Fprint(w, messages.ExportCompleteResults(evalRef, run.ID))
+		fmt.Fprint(w, messages.ExportCompleteResults(evalName, run.ID))
 	} else {
 		fmt.Fprintln(w)
 		rows := make([][]string, 0, len(items))
@@ -994,10 +928,14 @@ func renderResults(
 			return err
 		}
 		if failedOnly {
-			fmt.Fprint(w, messages.FilteredItemCount(shown, itemFailed))
-			if c := run.ResultCounts; c != nil {
-				fmt.Fprint(w, messages.FilteredRunTotal(c.Failed, c.Total, itemFailed))
+			// Against the run's own item total, not the rows on screen. The slice
+			// arriving here is already filtered, so counting it both ways printed
+			// "6 of 6" for a run of fifteen.
+			total := len(items)
+			if c := run.ResultCounts; c != nil && c.Total > 0 {
+				total = c.Total
 			}
+			fmt.Fprint(w, messages.FilteredItemCount(shown, total, itemFailed))
 		}
 		if firstItem != "" {
 			// Printed resolved, down to an item that is actually in the table
@@ -1005,12 +943,12 @@ func renderResults(
 			// and then retype a row id, is being asked to redo the lookup the
 			// listing just did -- and a line with a placeholder in it reads like
 			// a command and is not one.
-			fmt.Fprint(w, messages.ViewItemDetails(evalRef, run.ID, firstItem))
+			fmt.Fprint(w, messages.ViewItemDetails(evalName, run.ID, firstItem))
 		}
 		// Offered whether or not a row survived the filter. The export is the
 		// whole run, so it is the answer to "nothing here matched, where is the
 		// rest of it" -- which is exactly when it used to be withheld.
-		fmt.Fprint(w, messages.ExportCompleteResults(evalRef, run.ID))
+		fmt.Fprint(w, messages.ExportCompleteResults(evalName, run.ID))
 	}
 
 	if url := runLink(run.ReportURL, run.PortalURL); url != "" {
@@ -1109,6 +1047,23 @@ func filteredItemPage(
 			return nil, err
 		}
 	}
+}
+
+// runEvalName is the declared name the run belongs to, falling back to the
+// service id and then to the identifier the caller resolved to fetch it.
+//
+// The declared one is what the reader recognizes; the id is what the response
+// carries. The caller's is the backstop, because a run that carries neither
+// printed `--eval ` with nothing after it -- a suggested command that cannot
+// run, in the one place whose whole claim is that it can.
+func runEvalName(run *eval_api.OpenAIEvalRun, resolved string) string {
+	if name := run.Metadata[metaEvalName]; name != "" {
+		return name
+	}
+	if run.EvalID != "" {
+		return run.EvalID
+	}
+	return resolved
 }
 
 // truncate keeps a table readable when a reason runs to a paragraph. The full

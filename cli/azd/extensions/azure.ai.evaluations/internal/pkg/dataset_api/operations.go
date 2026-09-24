@@ -494,9 +494,11 @@ func (c *DatasetClient) DownloadDatasetContent(
 // OpenDatasetContent resolves a published dataset the same way
 // DownloadDatasetContent does and hands back the body unread.
 //
-// The caller closes the body. Callers inspecting a prefix can close before the
-// end to stop the transfer; registered evaluation runs validate the whole version
-// and submit its identity rather than a subset of these rows.
+// For a caller that stops early: `run --max-samples N` parses N rows, and
+// reading the blob into memory first made the cap bound the parse and nothing
+// else, so a large registered dataset was transferred and held in full to score
+// a handful of rows. The caller closes it, and closing before the end is how
+// the transfer is cut short.
 func (c *DatasetClient) OpenDatasetContent(
 	ctx context.Context,
 	name string,
@@ -698,10 +700,7 @@ func (c *DatasetClient) readBlobPage(req *http.Request) ([]string, string, error
 	if err != nil {
 		return nil, "", messages.ReadingListResponse(err)
 	}
-	names, next, err := parseBlobPage(string(body))
-	if err != nil {
-		return nil, "", messages.ParsingResponse(err)
-	}
+	names, next := parseBlobPage(string(body))
 	return names, next, nil
 }
 
@@ -754,16 +753,13 @@ func (c *DatasetClient) openBlob(ctx context.Context, containerSASUri, blobName 
 // parseBlobNames extracts blob names from the Azure Blob Storage XML list response
 // using proper XML parsing against the EnumerationResults schema.
 func parseBlobNames(xmlBody string) []string {
-	names, _, _ := parseBlobPage(xmlBody)
+	names, _ := parseBlobPage(xmlBody)
 	return names
 }
 
 // parseBlobPage extracts one page of blob names and the marker that continues
 // the listing. An empty marker means this was the last page.
-//
-// A malformed page is not the end of a listing: treating it as empty could
-// classify a partial multi-file download as a single file.
-func parseBlobPage(xmlBody string) ([]string, string, error) {
+func parseBlobPage(xmlBody string) ([]string, string) {
 	type blob struct {
 		Name string `xml:"Name"`
 	}
@@ -777,7 +773,7 @@ func parseBlobPage(xmlBody string) ([]string, string, error) {
 
 	var result enumerationResults
 	if err := xml.Unmarshal([]byte(xmlBody), &result); err != nil {
-		return nil, "", err
+		return nil, ""
 	}
 
 	names := make([]string, 0, len(result.Blobs.Blob))
@@ -786,7 +782,7 @@ func parseBlobPage(xmlBody string) ([]string, string, error) {
 			names = append(names, b.Name)
 		}
 	}
-	return names, result.NextMarker, nil
+	return names, result.NextMarker
 }
 
 // doRequest performs an HTTP request against the dataset API and returns the raw response body.

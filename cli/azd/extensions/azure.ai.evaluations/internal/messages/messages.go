@@ -283,11 +283,6 @@ func ExportCompleteResults(eval, runID string) string {
 		shellArg(eval), shellArg(runID), shellArg(runID))
 }
 
-// ViewFailingSamples points at the command that lists the rows that failed.
-func ViewFailingSamples() string {
-	return "\nView failing samples: azd ai eval run output list --failed-only\n"
-}
-
 // EvalNotDeployed reports an eval id the project does not hold.
 func EvalNotDeployed(evalID, deployCmd string) error {
 	return fmt.Errorf(
@@ -1451,6 +1446,12 @@ func ReattachToJob(selector, jobID string) string {
 // WroteArtifact reports where a generated artifact landed.
 func WroteArtifact(path string) string {
 	return fmt.Sprintf("%s Downloaded %s\n", doneMark, filepath.ToSlash(path))
+}
+
+// NormalizedSimulationSeeds explains why transformed local rows need publication.
+func NormalizedSimulationSeeds() string {
+	return "Normalized generated turn settings into simulation_configuration. " +
+		"Publish the local dataset with `azd ai eval create` or `azd up` before running it.\n"
 }
 
 // ArtifactExists reports a generation that would overwrite a checked-in file.
@@ -3238,6 +3239,73 @@ func TraceSourceCannotReadAModelTarget(name string) error {
 func TargetNameMissing() error {
 	return errors.New(
 		"target.name is required; remove the target: to score the dataset as it stands")
+}
+
+// SimulationNeedsConversationLevel reports a simulation graded a turn at a time.
+//
+// A simulation produces whole conversations. Scoring them turn-shaped grades
+// each exchange against a rubric written for the conversation, which returns
+// scores rather than an error and so is not otherwise noticed.
+func SimulationNeedsConversationLevel(declared, conversation string) error {
+	if declared == "" {
+		declared = "unset"
+	}
+	return fmt.Errorf(
+		"evaluation_level is %q, but a simulation produces conversations; "+
+			"set evaluation_level: %s, or remove the simulation: block to score rows as they stand",
+		declared, conversation)
+}
+
+// SimulationAndSourceDescribeDifferentRuns reports an eval declaring both.
+//
+// A simulation creates conversations from scenario seeds; a source collects
+// ones that already happened. Ranking them by which field is read first runs
+// one and silently ignores the other.
+func SimulationAndSourceDescribeDifferentRuns() error {
+	return errors.New(
+		"`source` and `simulation` describe different runs; a simulation creates conversations " +
+			"from the scenario seeds in `dataset`. Remove `source`, or remove `simulation` to " +
+			"score what `source` collected")
+}
+
+// SimulationNeedsATarget reports a simulation with nobody to talk to.
+func SimulationNeedsATarget() error {
+	return errors.New(
+		"target is required for a simulation: a simulated conversation needs an agent to hold it " +
+			"with. Add target: with type: agent and the agent's name")
+}
+
+// SimulationCannotTalkToAModelTarget reports a simulation aimed at a deployment.
+//
+// Its own sentence rather than the general target advice: a deployment answers
+// one prompt at a time and holds no conversation, so the fix is to name the
+// agent rather than to relabel the deployment.
+func SimulationCannotTalkToAModelTarget(agent string) error {
+	return fmt.Errorf(
+		"target.type is model, but a simulated conversation is held with an agent; "+
+			"set target.type: %s, or remove the simulation: block",
+		agent)
+}
+
+// SimulationNeedsSeedDataset reports a simulation with nothing to simulate from.
+func SimulationNeedsSeedDataset() error {
+	return errors.New(
+		"dataset is required for a simulation: it names the registered scenario seeds the " +
+			"conversations are created from")
+}
+
+// SimulationCannotBeSampled refuses a cap a simulation run cannot honour.
+//
+// A simulation is bound to its registered seed dataset as a whole -- the run
+// carries the dataset's id, not a copy of some of its rows -- so there is no
+// row count to cap. Accepting max_samples here would report a bounded run and
+// then create, and bill for, a conversation per seed in the whole dataset.
+func SimulationCannotBeSampled(got int) error {
+	return fmt.Errorf(
+		"max_samples is %d, but a simulation run is bound to its whole registered seed dataset "+
+			"and has no row count to cap. Remove max_samples and register a smaller seed dataset, "+
+			"or use simulation.num_conversations to bound the conversations created per seed",
+		got)
 }
 
 // AmbiguousEvalConfig reports a directory holding both configuration names.

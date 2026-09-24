@@ -246,8 +246,17 @@ func (ec *evalContext) generateRubric(
 ) (*project.ArtifactRef, error) {
 	fmt.Fprint(out, messages.GeneratingRubric(plan.Name))
 
+	// `init` writes the azure.yaml service key here, which is a local label. The
+	// agent is published under whatever the service declares, so the key has to
+	// be resolved before it is sent, or the rubric is seeded from an agent the
+	// service does not know.
+	agent, err := ec.remoteAgentName(ctx, plan.Agent)
+	if err != nil {
+		return nil, err
+	}
+
 	sources, unbuildable := eval_api.BuildGenerationSources(
-		plan.From, plan.Agent, "", plan.Instruction, plan.traceOptions(),
+		plan.From, agent, "", plan.Instruction, plan.traceOptions(),
 	)
 	if err := refuseUnusableSources(sources, unbuildable); err != nil {
 		return nil, err
@@ -440,6 +449,20 @@ func reportSubmitted(out io.Writer, group, jobID string) {
 // rather than a recovery.
 type retryConsent func(agent, jobID string, why error) (bool, error)
 
+// dataGenerationType is the seed-generation type that produces rows the given
+// evaluation level can actually grade.
+//
+// A conversation eval simulates its conversations from scenario seeds, so it
+// needs seeds; asking for simple_qna returns the query/response pairs a turn
+// eval grades, which a conversation evaluator has nothing to do with. Any other
+// level, including an unstated one, keeps the turn-shaped default.
+func dataGenerationType(evaluationLevel string) string {
+	if evaluationLevel == project.EvaluationLevelConversation {
+		return eval_api.DataGenerationTypeSimulationSeed
+	}
+	return eval_api.DataGenerationTypeSimpleQnA
+}
+
 func (ec *evalContext) generateDataset(
 	ctx context.Context,
 	plan generationPlan,
@@ -450,8 +473,17 @@ func (ec *evalContext) generateDataset(
 ) (*project.ArtifactRef, error) {
 	fmt.Fprint(out, messages.GeneratingDataset(plan.Name, plan.SampleSize))
 
+	// `init` writes the azure.yaml service key here, which is a local label. The
+	// agent is published under whatever the service declares, so the key has to
+	// be resolved before it is sent, or the generated rows are attributed to an
+	// agent the service does not know. The run path resolves the same way.
+	agent, err := ec.remoteAgentName(ctx, plan.Agent)
+	if err != nil {
+		return nil, err
+	}
+
 	sources, unbuildable := eval_api.BuildGenerationSources(
-		plan.From, plan.Agent, "", plan.Instruction, plan.traceOptions(),
+		plan.From, agent, "", plan.Instruction, plan.traceOptions(),
 	)
 	if err := refuseUnusableSources(sources, unbuildable); err != nil {
 		return nil, err
@@ -465,17 +497,21 @@ func (ec *evalContext) generateDataset(
 	if noWait {
 		if promptOnly := eval_api.WithoutAgentSource(sources); len(promptOnly) != len(sources) &&
 			eval_api.HasPromptSource(promptOnly) {
-			fmt.Fprint(out, messages.WarningAgentSeedSkippedAsync(plan.Agent))
+			fmt.Fprint(out, messages.WarningAgentSeedSkippedAsync(agent))
 			sources = promptOnly
 		}
 	}
-	req := eval_api.NewDataGenerationJobRequest(plan.Name, plan.Model, plan.SampleSize, sources)
+	req := eval_api.NewDataGenerationJobRequest(
+		plan.Name, plan.Model, plan.SampleSize, sources, dataGenerationType(plan.EvaluationLevel))
 
 	job, err := ec.evalClient.CreateDataGenerationJob(ctx, req, DataGenerationAPIVersion)
 	if err != nil {
 		return nil, messages.SubmittingDataJob(err)
 	}
 	report.record(job.ID)
+	// Before the --no-wait return below: that path ends here, and the dataset
+	// it will produce is tagged by whatever reattaches to the job.
+	ec.rememberGenerationLevel(ctx, job.ID, plan.EvaluationLevel)
 	if noWait {
 		reportSubmitted(out, "dataset", job.ID)
 		return nil, nil
@@ -501,7 +537,7 @@ func (ec *evalContext) generateDataset(
 			fmt.Fprint(out, messages.RetryingWithPromptSource())
 
 			req = eval_api.NewDataGenerationJobRequest(
-				plan.Name, plan.Model, plan.SampleSize, promptOnly)
+				plan.Name, plan.Model, plan.SampleSize, promptOnly, dataGenerationType(plan.EvaluationLevel))
 			job, err = ec.evalClient.CreateDataGenerationJob(ctx, req, DataGenerationAPIVersion)
 			if err != nil {
 				return nil, messages.SubmittingDataJob(err)
@@ -511,6 +547,7 @@ func (ec *evalContext) generateDataset(
 			// has to move with it. Leaving it on the abandoned first job points
 			// every resume and every `job show` at the wrong one.
 			report.record(job.ID)
+			ec.rememberGenerationLevel(ctx, job.ID, plan.EvaluationLevel)
 			completed, err = ec.pollGeneration(ctx, job.ID, DataGenerationAPIVersion,
 				ec.evalClient.GetDataGenerationJob)
 		}
@@ -523,15 +560,7 @@ func (ec *evalContext) generateDataset(
 	if err := refuseArtifactThatAppeared(plan, ".jsonl", report.jobID); err != nil {
 		return nil, err
 	}
-	ref, err := ec.collectDataset(ctx, completed, plan.Name, plan.BaseDir, plan.OutputDir, out, true)
-	if err != nil || ref == nil {
-		return ref, err
-	}
-	// Carried from the plan rather than read back: the level is what this run
-	// asked for, and it is what the rows are. Reattaching through `job show`
-	// has no plan, so the tag is simply omitted there rather than guessed.
-	ref.EvaluationLevel = plan.EvaluationLevel
-	return ref, nil
+	return ec.collectDataset(ctx, completed, plan.Name, plan.BaseDir, plan.OutputDir, plan.EvaluationLevel, out, true)
 }
 
 // collectDataset downloads a finished data job's dataset and records what a
@@ -543,7 +572,7 @@ func (ec *evalContext) generateDataset(
 func (ec *evalContext) collectDataset(
 	ctx context.Context,
 	completed *eval_api.GenerationJob,
-	declaredName, baseDir, outputDir string,
+	declaredName, baseDir, outputDir, preferredLevel string,
 	out io.Writer,
 	replaceExisting bool,
 ) (*project.ArtifactRef, error) {
@@ -565,55 +594,56 @@ func (ec *evalContext) collectDataset(
 		return nil, messages.ServiceNameNotAFileName("dataset", localName)
 	}
 
-	// Before the download, not after: re-running `job show` while polling should
-	// cost nothing and must not write over rows somebody has since edited.
-	if !replaceExisting {
-		if path := project.ArtifactPath(baseDir, outputDir, localName, ".jsonl"); artifactAlreadyCollected(path) {
-			fmt.Fprint(out, messages.ArtifactLeftAlone(path))
-			return &project.ArtifactRef{
-				Name:    localName,
-				Source:  relativeSource(baseDir, path),
-				Version: version,
-			}, nil
-		}
-	}
-
-	// Confirm the version exists before reading it, so a missing dataset is
-	// reported as such rather than as a download failure.
-	if _, err := ec.datasetClient.GetDataset(
+	// Metadata is needed even when an edited local file must stay untouched.
+	// Failure to read it is the same collection error as on a first download.
+	registered, err := ec.datasetClient.GetDataset(
 		ctx, name, version, ProjectEndpointAPIVersion,
-	); err != nil {
+	)
+	if err != nil {
 		return nil, messages.ReadingGeneratedDataset(name, err)
 	}
-	content, err := ec.datasetClient.DownloadDatasetContent(ctx, name, version, ProjectEndpointAPIVersion)
-	if err != nil {
-		return nil, messages.DownloadingGeneratedDataset(name, err)
-	}
-
 	path := project.ArtifactPath(baseDir, outputDir, localName, ".jsonl")
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return nil, messages.Creating(filepath.Dir(path), err)
+	ref := &project.ArtifactRef{
+		Name:            localName,
+		Source:          relativeSource(baseDir, path),
+		Version:         version,
+		EvaluationLevel: registeredEvaluationLevel(registered),
 	}
-	// Atomic, because regenerating writes over the dataset already sitting
-	// there: os.WriteFile truncates first, so a failure mid-write destroys the
-	// copy the caller had while still reporting the generation as failed.
-	if err := writeFileAtomic(path, content); err != nil {
-		return nil, err
+	ref.EvaluationLevel = evaluationLevelForRef(preferredLevel, ref)
+	if !replaceExisting && artifactAlreadyCollected(path) {
+		fmt.Fprint(out, messages.ArtifactLeftAlone(path))
+	} else {
+		content, err := ec.datasetClient.DownloadDatasetContent(ctx, name, version, ProjectEndpointAPIVersion)
+		if err != nil {
+			return nil, messages.DownloadingGeneratedDataset(name, err)
+		}
+		normalized := false
+		if ref.EvaluationLevel == project.EvaluationLevelConversation {
+			content, normalized, err = normalizeGeneratedSeedRows(content)
+			if err != nil {
+				return nil, messages.DatasetProblem(name, err)
+			}
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			return nil, messages.Creating(filepath.Dir(path), err)
+		}
+		if err := writeFileAtomic(path, content); err != nil {
+			return nil, err
+		}
+		fmt.Fprint(out, messages.WroteArtifact(path))
+		writeJobWarnings(out, "dataset", completed, path)
+
+		// Transformed bytes must be published by the explicit create/deploy step,
+		// not fingerprinted as though the original generated version held them.
+		if normalized {
+			ec.forget(ctx, project.FingerprintKey("dataset", localName), versionKey("dataset", localName))
+			fmt.Fprint(out, messages.NormalizedSimulationSeeds())
+		} else {
+			ec.recordDeployedDataset(ctx, localName, path, version)
+		}
 	}
-	fmt.Fprint(out, messages.WroteArtifact(path))
-	writeJobWarnings(out, "dataset", completed, path)
-
-	// The job registered the version and this file is a copy of it, so the
-	// state a deploy would have left behind is recorded now. Without it the
-	// next `azd up` finds no fingerprint for this dataset, reads the file as
-	// new, and publishes a second version identical to the one just generated.
-	ec.recordDeployedDataset(ctx, localName, path, version)
-
-	return &project.ArtifactRef{
-		Name:    localName,
-		Source:  relativeSource(baseDir, path),
-		Version: version,
-	}, nil
+	ec.applyGeneratedDatasetTags(ctx, registered, ref.EvaluationLevel)
+	return ref, nil
 }
 
 // artifactAlreadyCollected reports a destination a previous collection filled.

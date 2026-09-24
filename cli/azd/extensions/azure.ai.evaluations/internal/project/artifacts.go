@@ -22,7 +22,8 @@ type ArtifactRef struct {
 	Name   string `json:"name"`
 	Source string `json:"source"`
 	// Version is what the generation job published. It is reported to the
-	// author rather than written into the catalog: an evaluator cannot carry
+	// author as provenance, not proof that the editable local file is identical.
+	// It is not written into the catalog: an evaluator cannot carry
 	// both a `source:` and a `version:`, and pinning a generated dataset would
 	// freeze it against the very edit it exists to be the starting point for.
 	Version string `json:"version,omitempty"`

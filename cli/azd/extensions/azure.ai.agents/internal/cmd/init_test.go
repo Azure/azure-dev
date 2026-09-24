@@ -2172,19 +2172,27 @@ func TestCheckNotDirectory_ReturnsNilForNonexistentPath(t *testing.T) {
 }
 
 func TestValidateUnifiedInitFlags(t *testing.T) {
-	t.Parallel()
+	for _, flag := range []string{
+		"description", "force", "harness", "instructions",
+		"kind", "protocol", "rai-policy", "voice",
+	} {
+		t.Run(flag, func(t *testing.T) {
+			t.Parallel()
+			cmd := newInitCommand(&azdext.ExtensionContext{})
+			value := "value"
+			if flag == "force" {
+				value = "true"
+			}
+			require.NoError(t, cmd.Flags().Set(flag, value))
 
-	cmd := newInitCommand(&azdext.ExtensionContext{})
-	require.NoError(t, cmd.Flags().Set("kind", "hosted"))
-	require.NoError(t, cmd.Flags().Set("instructions", "Help users."))
-
-	err := validateUnifiedInitFlags(cmd)
-	require.Error(t, err)
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	require.True(t, ok)
-	require.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
-	require.Contains(t, localErr.Message, "--instructions")
-	require.Contains(t, localErr.Message, "--kind")
+			err := validateUnifiedInitFlags(cmd)
+			require.Error(t, err)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+			require.Contains(t, localErr.Message, "--"+flag)
+		})
+	}
 }
 
 func TestScaffoldProjectPassesRepositorySourceToCore(t *testing.T) {
@@ -3064,6 +3072,76 @@ func TestResolveCollisions_NoPrompt(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestResolveImageServiceNameCollision(t *testing.T) {
+	t.Run("no prompt suffix ignores source directory", func(t *testing.T) {
+		root := t.TempDir()
+		t.Chdir(root)
+		require.NoError(t, os.MkdirAll(filepath.Join("src", "image-agent-2"), 0o700))
+		action := &InitAction{
+			projectConfig: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
+				"image-agent": {Name: "image-agent"},
+			}},
+			flags: &initFlags{noPrompt: true},
+		}
+		serviceName, err := action.resolveServiceNameCollision(
+			t.Context(), "image-agent", "image-agent",
+		)
+		require.NoError(t, err)
+		require.Equal(t, "image-agent-2", serviceName)
+	})
+
+	t.Run("interactive overwrite preserves key", func(t *testing.T) {
+		prompts := &helpersPromptServer{selectIndex: 0}
+		client := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
+		action := &InitAction{
+			azdClient: client,
+			projectConfig: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
+				"image-agent": {Name: "image-agent"},
+			}},
+			flags: &initFlags{},
+		}
+		serviceName, err := action.resolveServiceNameCollision(
+			t.Context(), "image-agent", "image-agent",
+		)
+		require.NoError(t, err)
+		require.Equal(t, "image-agent", serviceName)
+		require.EqualValues(t, 1, prompts.selectCalls.Load())
+	})
+
+	t.Run("interactive rename changes only local key", func(t *testing.T) {
+		prompts := &helpersPromptServer{selectIndex: 1, promptValue: "other-service"}
+		client := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
+		action := &InitAction{
+			azdClient: client,
+			projectConfig: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
+				"image-agent": {Name: "image-agent"},
+			}},
+			flags: &initFlags{},
+		}
+		serviceName, err := action.resolveServiceNameCollision(
+			t.Context(), "image-agent", "image-agent",
+		)
+		require.NoError(t, err)
+		require.Equal(t, "other-service", serviceName)
+		require.EqualValues(t, 1, prompts.selectCalls.Load())
+		require.EqualValues(t, 1, prompts.promptCalls.Load())
+	})
+}
+
+func TestFastPathProjectTargetUsesHostDiscovery(t *testing.T) {
+	t.Parallel()
+	projectRoot := t.TempDir()
+	target, folder := fastPathProjectTarget(
+		&azdext.ProjectConfig{Path: projectRoot}, nil, "agent",
+	)
+	require.Equal(t, ".", target)
+	require.Empty(t, folder)
+
+	target, folder = fastPathProjectTarget(nil, errors.New("project not found"), "New Agent")
+	require.Equal(t, "new-agent", target)
+	require.Equal(t, "new-agent", folder)
 }
 
 func TestEnsureLoggedIn(t *testing.T) {

@@ -34,10 +34,10 @@ func clientAndServer(t *testing.T, handler http.HandlerFunc) (*EvalClient, *http
 func TestListEvaluatorVersionsFollowsARelativeNextLink(t *testing.T) {
 	c, _ := clientAndServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("page") == "" {
-			fmt.Fprint(w, `{"value":[{"name":"one"}],"nextLink":"/evaluators/e/versions?page=2"}`)
+			fmt.Fprint(w, `{"value":[{"name":"one","version":"1"}],"nextLink":"/evaluators/e/versions?page=2"}`)
 			return
 		}
-		fmt.Fprint(w, `{"value":[{"name":"two"}]}`)
+		fmt.Fprint(w, `{"value":[{"name":"two","version":"2"}]}`)
 	})
 
 	list, err := c.ListEvaluatorVersions(t.Context(), "e", "v1")
@@ -53,12 +53,12 @@ func TestListEvaluatorVersionsRefusesALinkResolvingToAnotherHost(t *testing.T) {
 	var elsewhereHits int32
 	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&elsewhereHits, 1)
-		fmt.Fprint(w, `{"value":[{"name":"leaked"}]}`)
+		fmt.Fprint(w, `{"value":[{"name":"leaked","version":"2"}]}`)
 	}))
 	t.Cleanup(elsewhere.Close)
 
 	c, _ := clientAndServer(t, func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, `{"value":[{"name":"one"}],"nextLink":"//%s/evaluators"}`,
+		fmt.Fprintf(w, `{"value":[{"name":"one","version":"1"}],"nextLink":"//%s/evaluators"}`,
 			elsewhere.Listener.Addr().String())
 	})
 
@@ -74,7 +74,7 @@ func TestListEvaluatorVersionsRefusesALinkResolvingToAnotherHost(t *testing.T) {
 // the reader to check configuration that was never wrong.
 func TestListEvaluatorVersionsBlamesTheLinkNotTheEndpoint(t *testing.T) {
 	c, _ := clientAndServer(t, func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"value":[{"name":"one"}],"nextLink":"https://host\u007f/x"}`)
+		fmt.Fprint(w, `{"value":[{"name":"one","version":"1"}],"nextLink":"https://host\u007f/x"}`)
 	})
 
 	_, err := c.ListEvaluatorVersions(t.Context(), "e", "v1")
@@ -99,10 +99,10 @@ func TestListEvaluatorVersionsStopsOnATwoPageCycle(t *testing.T) {
 		atomic.AddInt32(&hits, 1)
 		// a -> b -> a, so no link ever repeats the one immediately before it.
 		if r.URL.Query().Get("page") == "b" {
-			fmt.Fprintf(w, `{"value":[{"name":"b"}],"nextLink":%q}`, base+"/evaluators?page=a")
+			fmt.Fprintf(w, `{"value":[{"name":"b","version":"2"}],"nextLink":%q}`, base+"/evaluators?page=a")
 			return
 		}
-		fmt.Fprintf(w, `{"value":[{"name":"a"}],"nextLink":%q}`, base+"/evaluators?page=b")
+		fmt.Fprintf(w, `{"value":[{"name":"a","version":"1"}],"nextLink":%q}`, base+"/evaluators?page=b")
 	})
 	base = srv.URL
 
@@ -111,6 +111,6 @@ func TestListEvaluatorVersionsStopsOnATwoPageCycle(t *testing.T) {
 	require.Error(t, err, "an incomplete catalog must not be reported as the catalog")
 	assert.False(t, IsNotFound(err),
 		"a walk that broke is not the evaluator being absent")
-	assert.LessOrEqual(t, atomic.LoadInt32(&hits), int32(4),
+	assert.Equal(t, int32(3), atomic.LoadInt32(&hits),
 		"a two-page cycle must stop quickly, not run to maxPages")
 }

@@ -680,8 +680,8 @@ func (r *evalReconciler) EnsureEvaluator(
 	)
 	// A read that failed is not a read that found nothing: falling through
 	// publishes a new version with no drift check, over whatever is already
-	// there. Only a confirmed absence is a first publish.
-	if err != nil && !eval_api.IsNotFound(err) {
+	// there. A 404 or a complete, valid empty version list permits first publish.
+	if err != nil && !eval_api.IsEvaluatorAbsent(err) {
 		return "", false, messages.CheckingEvaluatorExists(decl.Name, err)
 	}
 	if err == nil {

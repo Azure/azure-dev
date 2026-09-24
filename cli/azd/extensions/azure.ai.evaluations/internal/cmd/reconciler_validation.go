@@ -110,7 +110,7 @@ func (r *evalReconciler) Validate(ctx context.Context, cfg *project.EvalConfig, 
 		// Reuse that contract when present, without replacing authored
 		// fields or treating a failed read as a missing evaluator.
 		remote, err := r.ec.evalClient.GetEvaluatorRaw(ctx, decl.Name, "", ProjectEndpointAPIVersion)
-		if err != nil && !eval_api.IsNotFound(err) {
+		if err != nil && !eval_api.IsEvaluatorAbsent(err) {
 			return messages.CheckingEvaluatorExists(decl.Name, err)
 		}
 		if err == nil {

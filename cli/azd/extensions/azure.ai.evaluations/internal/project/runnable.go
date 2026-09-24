@@ -60,6 +60,9 @@ func ValidateRunnable(eval *Eval) error {
 	}
 
 	if eval.Source != nil {
+		if eval.MaxSamples > 0 {
+			return messages.SourceSampleConflict(eval.Name)
+		}
 		switch eval.Source.Type {
 		case SourceTypeTraces:
 			if TraceAgentName(eval.Source, eval.Target) == "" {

@@ -7,17 +7,22 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"azureaieval/internal/exterrors"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/pkg/evalcore"
 	"azureaieval/internal/project"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -275,9 +280,84 @@ func TestResponseMigrationDoesNotSplitOtherCustomHistories(t *testing.T) {
 	}
 }
 
+func TestNonResponseSchemaMismatchIsNotReused(t *testing.T) {
+	for _, lookup := range []string{"explicit ID", "cached", "renamed"} {
+		t.Run(lookup, func(t *testing.T) {
+			group := project.Eval{Name: "quality", Dataset: "d"}
+			digest, err := project.FingerprintGroup(group)
+			require.NoError(t, err)
+			creates := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/eval_old"):
+					_, _ = io.WriteString(w, `{"id":"eval_old","name":"old-name","data_source_config":{
+						"type":"azure_ai_source","scenario":"traces_preview"}}`)
+				case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/evals"):
+					creates++
+					var request eval_api.CreateOpenAIEvalRequest
+					assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+					if assert.NotNil(t, request.DataSourceConfig) {
+						assert.Equal(t, "custom", request.DataSourceConfig.Type)
+					}
+					_, _ = io.WriteString(w, `{"id":"eval_new"}`)
+				default:
+					t.Errorf("must not mutate an incompatible eval: %s %s", r.Method, r.URL.Path)
+					w.WriteHeader(http.StatusBadRequest)
+				}
+			}))
+			t.Cleanup(srv.Close)
+			ec := evalContextFor(srv)
+			ec.schemas = map[string]*eval_api.EvaluatorSummary{}
+			ec.state = map[string]string{}
+			switch lookup {
+			case "explicit ID":
+				group.ID = "eval_old"
+			case "cached":
+				ec.state[idKey("eval", group.Name)] = "eval_old"
+			case "renamed":
+				ec.state[digestIDKey(digest)] = "eval_old"
+			}
+			id, changed, err := (&evalReconciler{ec: ec}).EnsureEval(t.Context(), group, "")
+			if lookup == "explicit ID" {
+				require.ErrorContains(t, err, "custom schema")
+				assert.Empty(t, id)
+				assert.False(t, changed)
+				assert.Zero(t, creates)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, "eval_new", id)
+				assert.True(t, changed)
+				assert.Equal(t, 1, creates)
+			}
+		})
+	}
+}
+
+func TestNonResponseSchemaCompatibilityPreservesUnknownHistory(t *testing.T) {
+	group := &project.Eval{Name: "quality", Dataset: "d"}
+	for _, tc := range []struct {
+		name   string
+		config map[string]any
+		match  bool
+	}{
+		{"legacy projection", nil, true},
+		{"custom", map[string]any{"type": "custom"}, true},
+		{"logs", map[string]any{"type": "logs"}, false},
+		{"malformed type", map[string]any{"type": false}, false},
+		{"empty type", map[string]any{"type": ""}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.match, responseSchemaMatches(group, &eval_api.OpenAIEval{DataSourceConfig: tc.config}))
+		})
+	}
+}
+
 func TestResponseRunCallerPreservesFixedIDsAndRejectsLegacySources(t *testing.T) {
 	for _, mode := range []string{
 		"valid", "custom eval", "bare rows", "missing params", "read failure", "explicit cap zero", "explicit cap one",
+		"alternate mapped key", "missing mapped key", "empty item", "empty ID", "whitespace ID", "non-string ID",
+		"invalid mapping", "invalid later item",
 	} {
 		t.Run(mode, func(t *testing.T) {
 			source := eval_api.NewResponsesDataSource([]string{"resp_fixed"}, 1)
@@ -286,6 +366,30 @@ func TestResponseRunCallerPreservesFixedIDsAndRejectsLegacySources(t *testing.T)
 			}
 			if mode == "missing params" {
 				source.ItemGenerationParams = nil
+			}
+			switch mode {
+			case "alternate mapped key":
+				source.ItemGenerationParams.DataMapping["response_id"] = "{{item.resp_id}}"
+				source.ItemGenerationParams.Source.Content = []map[string]any{
+					{"item": map[string]any{"resp_id": "resp_fixed"}},
+				}
+			case "missing mapped key":
+				source.ItemGenerationParams.DataMapping["response_id"] = "{{item.missing}}"
+			case "empty item":
+				source.ItemGenerationParams.Source.Content = []map[string]any{{"item": map[string]any{}}}
+			case "empty ID", "whitespace ID", "non-string ID":
+				var value any = ""
+				if mode == "whitespace ID" {
+					value = " \t\u2003"
+				} else if mode == "non-string ID" {
+					value = 42
+				}
+				source.ItemGenerationParams.Source.Content = []map[string]any{{"item": map[string]any{"response_id": value}}}
+			case "invalid mapping":
+				source.ItemGenerationParams.DataMapping["response_id"] = "{{sample.response_id}}"
+			case "invalid later item":
+				source.ItemGenerationParams.Source.Content = append(source.ItemGenerationParams.Source.Content,
+					map[string]any{"item": map[string]any{"response_id": ""}})
 			}
 			original, err := json.Marshal(source)
 			require.NoError(t, err)
@@ -341,7 +445,7 @@ func TestResponseRunCallerPreservesFixedIDsAndRejectsLegacySources(t *testing.T)
 				},
 			}
 			err = action.Run()
-			if mode == "valid" {
+			if mode == "valid" || mode == "alternate mapped key" {
 				require.NoError(t, err)
 				require.Equal(t, 1, posts)
 				var result map[string]any
@@ -357,6 +461,90 @@ func TestResponseRunCallerPreservesFixedIDsAndRejectsLegacySources(t *testing.T)
 			after, err := json.Marshal(source)
 			require.NoError(t, err)
 			assert.JSONEq(t, string(original), string(after), "previous run history must not be rewritten")
+		})
+	}
+}
+
+func TestResponseSourceSchemaAndRuntimeAgree(t *testing.T) {
+	const resourceURI = "https://example.test/responses.schema.json"
+	compiler := jsonschema.NewCompiler()
+	require.NoError(t, compiler.AddResource(resourceURI, evalSchemaDocument(t)))
+	schema, err := compiler.Compile(resourceURI)
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name    string
+		ids     []string
+		omitIDs bool
+		cap     *int
+		traces  bool
+		ref     bool
+		wantErr bool
+	}{
+		{name: "valid", ids: []string{"resp_fixed"}},
+		{name: "missing IDs", omitIDs: true, wantErr: true},
+		{name: "null IDs", wantErr: true},
+		{name: "empty IDs", ids: []string{}, wantErr: true},
+		{name: "empty ID", ids: []string{""}, wantErr: true},
+		{name: "blank ID", ids: []string{" \t\r\n"}, wantErr: true},
+		{name: "Unicode whitespace ID", ids: []string{"\u0085\u00a0\u2003"}, wantErr: true},
+		{name: "blank later ID", ids: []string{"resp_fixed", " "}, wantErr: true},
+		{name: "omitted cap", ids: []string{"resp_fixed"}},
+		{name: "zero cap", ids: []string{"resp_fixed"}, cap: new(0)},
+		{name: "positive cap", ids: []string{"resp_fixed"}, cap: new(1), wantErr: true},
+		{name: "negative cap", ids: []string{"resp_fixed"}, cap: new(-1), wantErr: true},
+		{name: "trace positive cap", traces: true, cap: new(1), wantErr: true},
+		{name: "referenced response omitted cap", ids: []string{"resp_fixed"}, ref: true},
+		{name: "referenced response zero cap", ids: []string{"resp_fixed"}, ref: true, cap: new(0)},
+		{name: "referenced response positive cap", ids: []string{"resp_fixed"}, ref: true, cap: new(1), wantErr: true},
+		{name: "referenced trace omitted cap", traces: true, ref: true},
+		{name: "referenced trace zero cap", traces: true, ref: true, cap: new(0)},
+		{name: "referenced trace positive cap", traces: true, ref: true, cap: new(1), wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source := map[string]any{"type": "responses"}
+			if !tc.omitIDs {
+				source["response_ids"] = tc.ids
+			}
+			if tc.traces {
+				source = map[string]any{"type": "traces", "agent_name": "agent"}
+			}
+			dir := t.TempDir()
+			if tc.ref {
+				raw, err := json.Marshal(source)
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "source.json"), raw, 0o600))
+				source = map[string]any{"$ref": "./source.json"}
+			}
+			eval := map[string]any{
+				"name": "source-eval", "source": source,
+				"evaluators": []any{map[string]any{"evaluator": "builtin.coherence"}},
+			}
+			if tc.cap != nil {
+				eval["max_samples"] = *tc.cap
+			}
+			body, err := json.Marshal(map[string]any{"evals": []any{eval}})
+			require.NoError(t, err)
+			var instance any
+			require.NoError(t, json.Unmarshal(body, &instance))
+			schemaErr := schema.Validate(instance)
+			path := filepath.Join(dir, project.EvalConfigBase)
+			require.NoError(t, os.WriteFile(path, body, 0o600))
+			cfg, err := project.LoadEvalConfig(path)
+			require.NoError(t, err)
+			runtimeErr := cfg.Validate()
+			if tc.wantErr {
+				assert.Error(t, schemaErr)
+				assert.Error(t, runtimeErr)
+				if tc.cap != nil && *tc.cap > 0 {
+					local, ok := errors.AsType[*azdext.LocalError](runtimeErr)
+					require.True(t, ok)
+					assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
+					assert.Contains(t, azdext.WrapError(runtimeErr).GetMessage(), "source-eval")
+				}
+			} else {
+				assert.NoError(t, schemaErr)
+				assert.NoError(t, runtimeErr)
+			}
 		})
 	}
 }

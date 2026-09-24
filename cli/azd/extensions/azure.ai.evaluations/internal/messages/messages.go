@@ -3220,6 +3220,13 @@ func ResponsesSourceNeedsResponseIDs() error {
 	return errors.New("source.response_ids is required for a responses source")
 }
 
+// SourceSampleConflict refuses a dataset cap on a source-backed evaluation.
+func SourceSampleConflict(evalName string) error {
+	return exterrors.Validation(exterrors.CodeConflictingArguments,
+		fmt.Sprintf("--max-samples or max_samples cannot cap source-backed eval %q", evalName),
+		"Remove the dataset cap. For traces, use source.max_traces; for responses, select source.response_ids.")
+}
+
 // AtLeastOneEvaluatorRequired reports an eval that scores nothing.
 func AtLeastOneEvaluatorRequired(index int, eval string) error {
 	return fmt.Errorf("evals[%d] (%s): at least one evaluator is required", index, eval)

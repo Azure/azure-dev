@@ -248,7 +248,7 @@ func (a *runStartAction) Run() error {
 
 	if dataSource != nil && dataSource.Type == eval_api.EvalRunDataSourceTypeResponses &&
 		(a.cmd.Flags().Changed("max-samples") || a.flags.maxSamples > 0) {
-		return responseSampleConflict()
+		return messages.SourceSampleConflict(evalID)
 	}
 	if err := ec.validateResponsesRun(ctx, evalID, dataSource); err != nil {
 		return err
@@ -642,7 +642,7 @@ func (ec *evalContext) buildRunDataSource(
 			ds, err = tracesDataSource(group)
 		default:
 			if maxSamples > 0 {
-				return nil, "", responseSampleConflict()
+				return nil, "", messages.SourceSampleConflict(group.Name)
 			}
 			ds, err = responsesDataSource(group)
 		}

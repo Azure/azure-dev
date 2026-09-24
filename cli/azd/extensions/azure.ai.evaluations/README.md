@@ -265,8 +265,9 @@ Stored-response evaluations (`source.type: responses`) use Foundry's
 `azure_ai_source` schema with `scenario: responses`. A deployment replaces an
 older custom-schema response eval with a compatible eval once, even when the
 declaration is unchanged. The old eval and its runs are retained; subsequent
-unchanged deployments reuse the new ID. Other evaluation modes keep their
-custom schemas and are not migrated. Switching a declaration from stored
+unchanged deployments reuse the new ID. Other evaluation modes retain compatible
+custom schemas without recreating their histories. Known incompatible schema
+types are rejected or replaced instead of reused. Switching a declaration from stored
 responses to another source also creates an eval with the required custom schema.
 
 An explicit `id:` or a rerun by eval ID cannot change an immutable eval's
@@ -277,6 +278,10 @@ declaration by name builds the required `item` envelopes without invoking an
 agent or changing the selected response IDs. Stored-response runs reject
 `--max-samples` (including explicit zero) and configured row caps; select
 `source.response_ids` to control which stored responses are evaluated.
+Inline reruns must map `response_id` to `{{item.<field>}}`, with a non-blank
+string ID at that field in every item. Response-source IDs must not be blank.
+Editor validation and create/deploy preflight reject positive `max_samples`
+for source-backed declarations, including sources loaded through `$ref`.
 
 ### Recovering partial generation
 

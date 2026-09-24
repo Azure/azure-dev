@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"azureaieval/internal/exterrors"
 	"azureaieval/internal/messages"
@@ -22,10 +23,17 @@ func hasResponsesSchema(remote *eval_api.OpenAIEval) bool {
 		remote.DataSourceConfig["scenario"] == "responses"
 }
 
-// Only transitions into or out of the response scenario require this migration.
-// Unrelated custom schemas and their fingerprint histories remain untouched.
+// Known schema types must match the selected source. Older projections that omit
+// the type provide no mismatch evidence for unrelated custom-schema histories.
 func responseSchemaMatches(group *project.Eval, remote *eval_api.OpenAIEval) bool {
-	return isResponsesEval(group) == hasResponsesSchema(remote)
+	if isResponsesEval(group) {
+		return hasResponsesSchema(remote)
+	}
+	if remote == nil {
+		return true
+	}
+	typ, reported := remote.DataSourceConfig["type"]
+	return !reported || typ == "custom"
 }
 
 func incompatibleResponsesSchema(id string, responses bool) error {
@@ -37,12 +45,6 @@ func incompatibleResponsesSchema(id string, responses bool) error {
 		fmt.Sprintf("eval %q does not use the %s required by the selected source", id, expected),
 		"Deploy the declaration without an explicit id to create a compatible eval, then run it by name. "+
 			"The existing eval and its run history are retained.")
-}
-
-func responseSampleConflict() error {
-	return exterrors.Validation(exterrors.CodeConflictingArguments,
-		"--max-samples or max_samples cannot cap a stored-responses run",
-		"Select source.response_ids instead of a dataset row cap.")
 }
 
 func (ec *evalContext) validateResponsesRun(
@@ -60,19 +62,25 @@ func (ec *evalContext) validateResponsesRun(
 	}
 	params := source.ItemGenerationParams
 	valid := params != nil && params.Type == "response_retrieval" &&
-		params.DataMapping["response_id"] != "" && params.Source != nil
+		strings.TrimSpace(params.DataMapping["response_id"]) != "" && params.Source != nil
 	if valid {
 		switch params.Source.Type {
 		case eval_api.EvalRunDataContentTypeFileContent:
-			valid = len(params.Source.Content) > 0
+			column, mapped := itemColumn(params.DataMapping["response_id"])
+			valid = mapped && len(params.Source.Content) > 0
 			for _, row := range params.Source.Content {
 				item, ok := row["item"].(map[string]any)
-				if !ok || item == nil {
+				if !ok {
+					valid = false
+					continue
+				}
+				id, ok := item[column].(string)
+				if !ok || strings.TrimSpace(id) == "" {
 					valid = false
 				}
 			}
 		case eval_api.EvalRunDataContentTypeFileID:
-			valid = params.Source.ID != ""
+			valid = strings.TrimSpace(params.Source.ID) != ""
 		default:
 			valid = false
 		}
@@ -81,7 +89,8 @@ func (ec *evalContext) validateResponsesRun(
 		return exterrors.Validation(exterrors.CodeConflictingArguments,
 			"the stored-responses run source is incompatible with response retrieval",
 			"Run the declared eval by name with source.response_ids. "+
-				"Reruns by eval ID require a nested response_id mapping and source rows wrapped in item objects.")
+				"Inline reruns require a nested response_id mapping to {{item.<field>}} "+
+				"and a non-empty string ID at that field in every item object.")
 	}
 	return nil
 }

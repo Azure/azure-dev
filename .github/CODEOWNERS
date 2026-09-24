@@ -10,12 +10,14 @@
 # ── CLI installer ─────────────────────────────────────────────────────────────
 /cli/installer/                                          @danieljurek @vhvb1989 @tg-msft @RickWinter
 
-# ── CLI extensions registry and test snapshots - anyone added to this can approve extension publishing, provided they pass the `ext-registry-check` workflow.
-/cli/azd/extensions/registry.json                        @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212
-/cli/azd/extensions/registry.dev.json                    @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212
-/cli/azd/cmd/testdata/TestFigSpec.ts                     @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212
-/cli/azd/cmd/testdata/TestUsage-azd-ai.snap              @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212
-/cli/azd/cmd/testdata/TestUsage-azd-ai-*.snap            @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212
+# ── CLI extension publishing and shared metadata ──────────────────────────────
+# Anyone listed here can approve extension publishing after the `ext-registry-check` workflow passes.
+/cli/azd/extensions/registry.json                        @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212 @ksujit @omkarm
+/cli/azd/extensions/registry.dev.json                    @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212 @ksujit @omkarm
+/cli/azd/cmd/testdata/TestFigSpec.ts                     @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212 @ksujit @omkarm
+/cli/azd/cmd/testdata/TestUsage-azd-ai.snap              @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212 @ksujit @omkarm
+/cli/azd/cmd/testdata/TestUsage-azd-ai-*.snap            @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212 @ksujit @omkarm
+/.vscode/cspell-github-user-aliases.txt                  @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212 @ksujit @omkarm
 
 # ── CLI extensions (AI) ──────────────────────────────────────────────────────
 /cli/azd/extensions/azure.ai.agents/                     @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212

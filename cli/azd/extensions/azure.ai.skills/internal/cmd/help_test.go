@@ -38,6 +38,10 @@ func TestAIHelp(t *testing.T) {
 			require.Contains(t, text, "\nEnvironments & Environment Variables\n")
 			require.Contains(t, text, ".azure/<environment>/.env")
 			require.Contains(t, text, "FOUNDRY_PROJECT_ENDPOINT")
+			require.Contains(t, text, "if the key is absent from .env")
+			require.Contains(t, text, "explicitly empty persisted value")
+			require.Contains(t, text, "including when no environment is")
+			require.Contains(t, text, "canonical shell value can win before a persisted legacy key")
 		} else {
 			require.NotContains(t, text, "\nEnvironments & Environment Variables\n")
 		}

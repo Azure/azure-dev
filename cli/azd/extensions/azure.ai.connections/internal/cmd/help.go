@@ -9,14 +9,20 @@ const connectionHelpFooter = `Environments & Environment Variables:
   Connection list, show, create, and update read that persisted selection;
   --environment (-e) does not override their endpoint lookup. Connection
   delete honors --environment. Use --project-endpoint <endpoint> to override
-  endpoint discovery for a command.
+  endpoint discovery for connection operations (not context or version).
   Values may contain secrets; do not share the output of
   'azd env get-values' or commit .azure to source control.
 
-  --project-endpoint overrides endpoint discovery. Otherwise, commands
-  resolve FOUNDRY_PROJECT_ENDPOINT (or legacy AZURE_AI_PROJECT_ENDPOINT)
-  from the active azd environment, then the global default saved by
-  'azd ai project set <endpoint>', then the same shell variables.
+  --project-endpoint overrides endpoint discovery. Otherwise, with an
+  available azd environment, lookup checks FOUNDRY_PROJECT_ENDPOINT and
+  then legacy AZURE_AI_PROJECT_ENDPOINT. Each key uses its persisted value,
+  or the azd host's shell value if the key is absent from .env.
+  An explicitly empty persisted value skips that key without a shell fallback
+  at this stage. A non-empty shell value can therefore win before global
+  config, and a canonical shell value can win before a persisted legacy key.
+  If this lookup yields no endpoint (including when no environment is
+  available), commands try the global default saved by
+  'azd ai project set <endpoint>', then the same shell keys in that order.
 
   Connections also need the project's ARM resource ID. Save
   AZURE_AI_PROJECT_ID in the selected azd environment with

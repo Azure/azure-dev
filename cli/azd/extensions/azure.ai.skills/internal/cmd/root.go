@@ -7,6 +7,7 @@ package cmd
 import (
 	"fmt"
 
+	"azureaiskills/internal/exterrors"
 	"azureaiskills/internal/helpformat"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -33,6 +34,9 @@ a Foundry project.`,
 
 	sdkPreRun := rootCmd.PersistentPreRunE
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if err := validateRemoteFlags(cmd); err != nil {
+			return err
+		}
 		if sdkPreRun != nil {
 			if err := sdkPreRun(cmd, args); err != nil {
 				return err
@@ -45,7 +49,7 @@ a Foundry project.`,
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 
 	rootCmd.PersistentFlags().StringP("project-endpoint", "p", "",
-		"Foundry project endpoint URL (overrides env vars and global config)")
+		"Foundry project endpoint URL for skill operations only (not context or version)")
 
 	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
 	rootCmd.AddCommand(newVersionCommand())
@@ -67,6 +71,25 @@ a Foundry project.`,
 	helpformat.Install(rootCmd, "azd ai", skillHelpFooter)
 
 	return rootCmd
+}
+
+func validateRemoteFlags(cmd *cobra.Command) error {
+	command := cmd
+	for command.Parent() != nil && command.Parent().Parent() != nil {
+		command = command.Parent()
+	}
+	switch command.Name() {
+	case "create", "update", "show", "list", "download", "delete":
+		return nil
+	}
+	if cmd.Flags().Changed("project-endpoint") {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			fmt.Sprintf("--project-endpoint is not supported by 'azd ai %s'", cmd.CommandPath()),
+			"remove --project-endpoint; this command does not use a project endpoint",
+		)
+	}
+	return nil
 }
 
 // configureExtensionHost is the listen callback. It registers the

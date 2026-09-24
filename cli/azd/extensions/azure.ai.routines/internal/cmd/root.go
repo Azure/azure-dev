@@ -7,6 +7,7 @@ package cmd
 import (
 	"fmt"
 
+	"azure.ai.routines/internal/exterrors"
 	"azure.ai.routines/internal/helpformat"
 	"azure.ai.routines/internal/pkg/routines"
 
@@ -29,12 +30,23 @@ func NewRootCommand() *cobra.Command {
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 
+	sdkPreRun := rootCmd.PersistentPreRunE
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if err := validateRemoteFlags(cmd); err != nil {
+			return err
+		}
+		if sdkPreRun != nil {
+			return sdkPreRun(cmd, args)
+		}
+		return nil
+	}
+
 	// -p / --project-endpoint is inherited by all subcommands.
 	rootCmd.PersistentFlags().StringP("project-endpoint", "p", "",
-		"Foundry project endpoint URL (overrides env var and config)")
+		"Foundry project endpoint URL for remote operations only (not add, context, or version)")
 	rootCmd.PersistentFlags().String(routineHTTPTimeoutFlag, "",
 		fmt.Sprintf("HTTP request timeout override (for example, 2m or 90s). "+
-			"Defaults to %s for reads and %s for writes.",
+			"Defaults to %s for reads and %s for writes. Not supported by add, context, or version.",
 			routines.DefaultReadRequestTimeout, routines.DefaultWriteRequestTimeout))
 
 	rootCmd.AddCommand(azdext.NewListenCommand(configureExtensionHost))
@@ -61,6 +73,27 @@ func NewRootCommand() *cobra.Command {
 	helpformat.Install(rootCmd, "azd ai", routineHelpFooter)
 
 	return rootCmd
+}
+
+func validateRemoteFlags(cmd *cobra.Command) error {
+	command := cmd
+	for command.Parent() != nil && command.Parent().Parent() != nil {
+		command = command.Parent()
+	}
+	switch command.Name() {
+	case "create", "update", "show", "list", "delete", "enable", "disable", "dispatch", "run":
+		return nil
+	}
+	for _, name := range []string{"project-endpoint", routineHTTPTimeoutFlag} {
+		if cmd.Flags().Changed(name) {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				fmt.Sprintf("--%s is not supported by 'azd ai %s'", name, cmd.CommandPath()),
+				fmt.Sprintf("remove --%s; this command does not make routine HTTP requests", name),
+			)
+		}
+	}
+	return nil
 }
 
 // configureExtensionHost is the listen callback. It registers the

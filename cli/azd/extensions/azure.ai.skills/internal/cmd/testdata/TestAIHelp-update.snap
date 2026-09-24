@@ -31,7 +31,7 @@ Global Flags
   -h, --help                    : help for update
       --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
   -o, --output string           : The output format (supported: json, table) (default "json")
-  -p, --project-endpoint string : Foundry project endpoint URL (overrides env vars and global config)
+  -p, --project-endpoint string : Foundry project endpoint URL for skill operations only (not context or version)
 
 Examples
   Upload new inline instructions as the default version

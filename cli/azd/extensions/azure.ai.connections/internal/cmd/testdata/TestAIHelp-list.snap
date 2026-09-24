@@ -13,7 +13,7 @@ Global Flags
   -h, --help                    : help for list
       --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
   -o, --output string           : The output format (supported: json, table) (default "table")
-  -p, --project-endpoint string : Foundry project endpoint URL (overrides env var and config)
+  -p, --project-endpoint string : Foundry project endpoint URL for connection operations only (not context or version)
 
 Examples
   List all project connections

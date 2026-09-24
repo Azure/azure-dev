@@ -19,7 +19,7 @@ Global Flags
   -h, --help                    : help for update
       --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
   -o, --output string           : The output format (default "default")
-  -p, --project-endpoint string : Foundry project endpoint URL (overrides env var and config)
+  -p, --project-endpoint string : Foundry project endpoint URL for connection operations only (not context or version)
 
 Examples
   Rotate an API key (shell variable syntax)

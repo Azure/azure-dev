@@ -7,15 +7,23 @@ const routineHelpFooter = `Environments & Environment Variables:
   An azd environment stores deployment values in .azure/<environment>/.env.
   Use 'azd env select <name>' to select the environment for endpoint lookup.
   --environment (-e) does not override that persisted selection; use
-  --project-endpoint <endpoint> to override endpoint discovery for a command.
+  --project-endpoint <endpoint> to override endpoint discovery for remote
+  routine operations. --project-endpoint and --timeout are not supported by
+  local add, context, or version commands.
   Values may contain secrets; do not share the output of
   'azd env get-values' or commit .azure to source control.
 
-  --project-endpoint overrides endpoint discovery. Otherwise, routine
-  commands resolve AZURE_AI_PROJECT_ENDPOINT from the active azd
-  environment, then the global default saved by
-  'azd ai project set <endpoint>', then the FOUNDRY_PROJECT_ENDPOINT
-  shell variable. Legacy agent global context remains a fallback.
+  --project-endpoint overrides endpoint discovery. Otherwise, with an
+  available azd environment, commands look up AZURE_AI_PROJECT_ENDPOINT:
+  its persisted value wins, or the azd host's shell value is used if the key
+  is absent from .env. An explicitly empty persisted value prevents this
+  shell fallback at this stage.
+  If this lookup yields no endpoint (including when no environment is
+  available), commands try the global default saved by
+  'azd ai project set <endpoint>', then legacy agent global context, then
+  the FOUNDRY_PROJECT_ENDPOINT shell variable. A shell
+  AZURE_AI_PROJECT_ENDPOINT can therefore win before global config and
+  FOUNDRY_PROJECT_ENDPOINT when the persisted key is absent.
   Use 'azd env set AZURE_AI_PROJECT_ENDPOINT <endpoint>' to persist the
   endpoint this extension reads from the active environment.
 

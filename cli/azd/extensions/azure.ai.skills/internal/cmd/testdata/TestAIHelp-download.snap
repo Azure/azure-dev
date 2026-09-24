@@ -23,7 +23,7 @@ Global Flags
   -h, --help                    : help for download
       --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
   -o, --output string           : The output format (supported: json, table) (default "table")
-  -p, --project-endpoint string : Foundry project endpoint URL (overrides env vars and global config)
+  -p, --project-endpoint string : Foundry project endpoint URL for skill operations only (not context or version)
 
 Examples
   Extract the default version for local editing

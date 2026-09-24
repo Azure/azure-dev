@@ -19,7 +19,7 @@ Global Flags
   -h, --help                    : help for remove
       --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
   -o, --output string           : The output format (supported: table, json) (default "table")
-      --project-endpoint string : Foundry project endpoint URL. When unset, falls back to the active azd environment, azd user config, then FOUNDRY_PROJECT_ENDPOINT.
+      --project-endpoint string : Foundry project endpoint URL for remote operations only (not local add or extension version).
 
 Examples
   Remove a skill reference in a new toolbox version

@@ -5,6 +5,9 @@
 package cmd
 
 import (
+	"fmt"
+
+	"azure.ai.connections/internal/exterrors"
 	"azure.ai.connections/internal/helpformat"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -26,6 +29,17 @@ func NewRootCommand() *cobra.Command {
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 
+	sdkPreRun := rootCmd.PersistentPreRunE
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if err := validateRemoteFlags(cmd); err != nil {
+			return err
+		}
+		if sdkPreRun != nil {
+			return sdkPreRun(cmd, args)
+		}
+		return nil
+	}
+
 	rootCmd.AddCommand(newContextCommand())
 	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
@@ -36,7 +50,7 @@ func NewRootCommand() *cobra.Command {
 	// Register -p / --project-endpoint as a persistent flag inherited by
 	// connection CRUD subcommands (list, show, create, update, delete).
 	rootCmd.PersistentFlags().StringP("project-endpoint", "p", "",
-		"Foundry project endpoint URL (overrides env var and config)")
+		"Foundry project endpoint URL for connection operations only (not context or version)")
 
 	// Connection CRUD subcommands (migrated from the azure.ai.agents extension).
 	rootCmd.AddCommand(newConnectionListCommand(extCtx))
@@ -53,6 +67,25 @@ func NewRootCommand() *cobra.Command {
 	helpformat.Install(rootCmd, "azd ai", connectionHelpFooter)
 
 	return rootCmd
+}
+
+func validateRemoteFlags(cmd *cobra.Command) error {
+	command := cmd
+	for command.Parent() != nil && command.Parent().Parent() != nil {
+		command = command.Parent()
+	}
+	switch command.Name() {
+	case "list", "show", "create", "update", "delete":
+		return nil
+	}
+	if cmd.Flags().Changed("project-endpoint") {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			fmt.Sprintf("--project-endpoint is not supported by 'azd ai %s'", cmd.CommandPath()),
+			"remove --project-endpoint; this command does not use a project endpoint",
+		)
+	}
+	return nil
 }
 
 // configureExtensionHostForEnvironment registers the azure.ai.connection target

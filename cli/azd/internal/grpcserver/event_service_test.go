@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
@@ -238,6 +240,7 @@ func createBrokerForEventHandler(
 	t *testing.T,
 	extensionID string,
 	responseFn func(*azdext.EventMessage) *azdext.EventMessage,
+	progressFns ...func(*azdext.EventMessage) *azdext.EventMessage,
 ) (*grpcbroker.MessageBroker[azdext.EventMessage], context.Context, func()) {
 	t.Helper()
 
@@ -252,6 +255,11 @@ func createBrokerForEventHandler(
 		recvCh: make(chan *azdext.EventMessage, 1),
 	}
 	stream.sendFn = func(msg *azdext.EventMessage) error {
+		if len(progressFns) > 0 && progressFns[0] != nil {
+			if progress := progressFns[0](msg); progress != nil {
+				stream.recvCh <- progress
+			}
+		}
 		if response := responseFn(msg); response != nil {
 			stream.recvCh <- response
 		}
@@ -456,6 +464,193 @@ func TestEventService_createServiceEventHandler(t *testing.T) {
 
 	// Test that the handler function is created correctly
 	assert.NotNil(t, handler)
+}
+
+func TestEventService_syncExtensionOutput_PersistsDeployOutput(t *testing.T) {
+	service, _ := createTestEventService()
+	console := service.console.(*mockinput.MockConsole)
+	extension := createTestExtension()
+
+	cleanup, output := service.syncExtensionOutput(
+		t.Context(),
+		extension,
+		"Test Extension (predeploy)",
+		shouldPersistLifecycleOutput("predeploy"),
+	)
+	_, err := output.Write([]byte("RBAC warning\n"))
+	require.NoError(t, err)
+
+	cleanup()
+
+	require.Contains(t, console.Output(), "RBAC warning")
+}
+
+func TestEventService_syncExtensionOutput_PersistsConcurrentOutputOnce(t *testing.T) {
+	service, _ := createTestEventService()
+	console := service.console.(*mockinput.MockConsole)
+	extension := createTestExtension()
+
+	outputsReady := make(chan struct{}, 2)
+	cleanupStart := make(chan struct{})
+	var cleanupWg sync.WaitGroup
+	type lifecycleOutputTestCase struct {
+		output *boundedLifecycleOutput
+		text   string
+	}
+	outputs := make(chan lifecycleOutputTestCase, 2)
+
+	for _, title := range []string{
+		"Test Extension (predeploy.api)",
+		"Test Extension (predeploy.web)",
+	} {
+		cleanupWg.Go(func() {
+			cleanup, output := service.syncExtensionOutput(
+				t.Context(),
+				extension,
+				title,
+				true,
+			)
+			outputs <- lifecycleOutputTestCase{
+				output: output,
+				text:   title,
+			}
+			outputsReady <- struct{}{}
+			<-cleanupStart
+			cleanup()
+		})
+	}
+
+	<-outputsReady
+	<-outputsReady
+
+	apiOutput := <-outputs
+	webOutput := <-outputs
+	writeStart := make(chan struct{})
+	writeErrors := make(chan error, 2)
+	var writeWg sync.WaitGroup
+	for _, testCase := range []lifecycleOutputTestCase{apiOutput, webOutput} {
+		writeWg.Go(func() {
+			<-writeStart
+			_, err := testCase.output.Write([]byte(testCase.text + "\n"))
+			writeErrors <- err
+		})
+	}
+
+	close(writeStart)
+	writeWg.Wait()
+	require.NoError(t, <-writeErrors)
+	require.NoError(t, <-writeErrors)
+
+	close(cleanupStart)
+	cleanupWg.Wait()
+
+	require.ElementsMatch(t,
+		[]string{
+			apiOutput.text,
+			webOutput.text,
+		},
+		console.Output(),
+	)
+
+	_, err := extension.StdOut().Write([]byte("unrelated service output\n"))
+	require.NoError(t, err)
+	require.NotContains(t, strings.Join(console.Output(), "\n"), "unrelated")
+}
+
+func TestEventService_syncExtensionOutput_BoundsPersistedOutput(t *testing.T) {
+	service, _ := createTestEventService()
+	console := service.console.(*mockinput.MockConsole)
+	extension := createTestExtension()
+
+	cleanup, output := service.syncExtensionOutput(
+		t.Context(),
+		extension,
+		"Test Extension (predeploy)",
+		true,
+	)
+	_, err := output.Write([]byte("warning\n" + strings.Repeat("x", maxLifecycleOutputBytes)))
+	require.NoError(t, err)
+
+	cleanup()
+
+	retainedOutput := strings.Join(console.Output(), "\n")
+	require.Contains(t, retainedOutput, "warning")
+	require.Contains(t, retainedOutput, "lifecycle output truncated")
+	require.LessOrEqual(t, len(retainedOutput), maxLifecycleOutputBytes+64)
+}
+
+func TestEventService_syncExtensionOutput_DoesNotPersistNonDeployOutput(t *testing.T) {
+	service, _ := createTestEventService()
+	console := service.console.(*mockinput.MockConsole)
+	extension := createTestExtension()
+
+	cleanup, output := service.syncExtensionOutput(
+		t.Context(),
+		extension,
+		"Test Extension (prepackage)",
+		shouldPersistLifecycleOutput("prepackage"),
+	)
+	_, err := extension.StdOut().Write([]byte("package output\n"))
+	require.NoError(t, err)
+	require.Nil(t, output)
+
+	cleanup()
+
+	require.Empty(t, console.Output())
+}
+
+func TestEventService_createProjectEventHandler_PersistsCorrelatedOutput(t *testing.T) {
+	service, _ := createTestEventService()
+	console := service.console.(*mockinput.MockConsole)
+	extension := createTestExtension()
+	projectConfig, err := service.lazyProject.GetValue()
+	require.NoError(t, err)
+
+	var streamCtx context.Context
+	var broker *grpcbroker.MessageBroker[azdext.EventMessage]
+	var cleanup func()
+	broker, streamCtx, cleanup = createBrokerForEventHandler(
+		t,
+		extension.Id,
+		func(msg *azdext.EventMessage) *azdext.EventMessage {
+			invoke := msg.GetInvokeProjectHandler()
+			require.NotNil(t, invoke)
+
+			return &azdext.EventMessage{
+				MessageType: &azdext.EventMessage_ProjectHandlerStatus{
+					ProjectHandlerStatus: &azdext.ProjectHandlerStatus{
+						EventName: invoke.EventName,
+						Status:    "completed",
+					},
+				},
+			}
+		},
+		func(msg *azdext.EventMessage) *azdext.EventMessage {
+			if msg.GetInvokeProjectHandler() == nil {
+				return nil
+			}
+
+			requestID := azdext.NewEventMessageEnvelope().GetRequestId(streamCtx, msg)
+			return azdext.NewEventMessageEnvelope().CreateProgressMessage(
+				requestID,
+				"RBAC warning\n",
+			)
+		},
+	)
+	defer cleanup()
+
+	handler := service.createProjectEventHandler(
+		streamCtx,
+		extension,
+		"predeploy",
+		broker,
+	)
+	err = handler(t.Context(), project.ProjectLifecycleEventArgs{
+		Project: projectConfig,
+	})
+
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(console.Output(), "\n"), "RBAC warning")
 }
 
 func TestEventService_createProjectEventHandler_RoundTripsStructuredError(t *testing.T) {

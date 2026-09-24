@@ -554,6 +554,7 @@ func (u *UpGraphAction) Run(
 	var (
 		tickerOnce              sync.Once
 		stopTicker              func()
+		resumePreviewer         func()
 		deployProgressFinalized bool
 	)
 	if deployTracker != nil {
@@ -561,7 +562,12 @@ func (u *UpGraphAction) Run(
 	}
 
 	finalizeDeployProgress := func() {
-		finalizeUpDeployProgress(deployTracker, stopTicker, &deployProgressFinalized)
+		finalizeUpDeployProgress(
+			deployTracker,
+			stopTicker,
+			resumePreviewer,
+			&deployProgressFinalized,
+		)
 	}
 
 	// startDeployTicker is called once when the first publish or deploy step
@@ -574,10 +580,8 @@ func (u *UpGraphAction) Run(
 		if ps, ok := u.console.(input.PreviewerPauser); ok {
 			ps.PausePreviewer()
 			stop := deployTracker.StartTicker(ctx)
-			stopTicker = func() {
-				stop()
-				ps.ResumePreviewer()
-			}
+			stopTicker = stop
+			resumePreviewer = ps.ResumePreviewer
 		} else {
 			stopTicker = deployTracker.StartTicker(ctx)
 		}
@@ -778,6 +782,7 @@ func phaseDurations(steps []exegraph.StepTiming) (provision, deploy time.Duratio
 func finalizeUpDeployProgress(
 	tracker *deployProgressTracker,
 	stopTicker func(),
+	resumePreviewer func(),
 	finalized *bool,
 ) {
 	if *finalized {
@@ -790,6 +795,9 @@ func finalizeUpDeployProgress(
 	}
 	if tracker != nil && tracker.HasActivity() {
 		tracker.RenderFinal()
+	}
+	if resumePreviewer != nil {
+		resumePreviewer()
 	}
 }
 

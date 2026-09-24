@@ -60,17 +60,18 @@ func TestExtensionTelemetryDeclarationRules(t *testing.T) {
 }`,
 		},
 		{
-			name: "customer content classification is supported",
+			name: "customer content classification is rejected",
 			declaration: `var TestField = fields.AttributeKey{
 	Key: attribute.Key("ext.test"),
 	Classification: fields.CustomerContent,
 	Purpose: fields.FeatureInsight,
 	Endpoint: "ReviewedEndpoint",
 }`,
+			expectedMessage: "Classification must use a supported fields.Classification constant",
 		},
 		{
 			name: "classification alias resolves to the underlying classification",
-			declaration: `const SystemMetadata = fields.CustomerContent
+			declaration: `const SystemMetadata = fields.PublicPersonalData
 var TestField = fields.AttributeKey{
 	Key: attribute.Key("ext.test"),
 	Classification: SystemMetadata,

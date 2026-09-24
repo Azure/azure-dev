@@ -147,8 +147,6 @@ func parseFieldDeclaration(
 		field.classification = fields.EndUserPseudonymizedInformation
 	case "OrganizationalIdentifiableInformation":
 		field.classification = fields.OrganizationalIdentifiableInformation
-	case "CustomerContent":
-		field.classification = fields.CustomerContent
 	default:
 		classificationResolved = false
 		diagnostics = append(diagnostics, declarationDiagnostic(

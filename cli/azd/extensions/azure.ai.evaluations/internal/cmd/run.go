@@ -664,7 +664,7 @@ func (ec *evalContext) buildRunDataSource(
 
 	if group.Source != nil {
 		if maxSamples > 0 {
-			return nil, "", sourceSampleConflict()
+			return nil, "", messages.SourceSampleConflict(group.Name)
 		}
 		var ds *eval_api.EvalRunDataSource
 		var err error
@@ -1098,17 +1098,11 @@ func runMaxSamples(cmd *cobra.Command, flag int, group *project.Eval) (int, erro
 					"or omit --max-samples to repeat the previous source.")
 		}
 		if group.Source != nil {
-			return 0, sourceSampleConflict()
+			return 0, messages.SourceSampleConflict(group.Name)
 		}
 		return flag, nil
 	}
 	return resolveMaxSamples(flag, group), nil
-}
-
-func sourceSampleConflict() error {
-	return exterrors.Validation(exterrors.CodeConflictingArguments,
-		"--max-samples or max_samples cannot cap a source-backed run",
-		"Remove the dataset cap. For traces, use source.max_traces; for responses, select source.response_ids.")
 }
 
 // errWaitBudgetSpent says the run outlived the wait, not that anything failed.

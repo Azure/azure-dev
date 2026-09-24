@@ -678,6 +678,107 @@ func TestRunRejectsConfiguredSourceCaps(t *testing.T) {
 	}
 }
 
+func TestRunStartSampleCapContracts(t *testing.T) {
+	for _, mode := range []string{"traces", "responses", "dataset", "simulation"} {
+		for _, tc := range []struct {
+			name string
+			cap  int
+			flag string
+		}{
+			{name: "configured zero"},
+			{name: "configured cap", cap: 1},
+			{name: "explicit zero", flag: "0"},
+			{name: "zero overrides configured cap", cap: 1, flag: "0"},
+			{name: "explicit positive", flag: "1"},
+		} {
+			t.Run(mode+"/"+tc.name, func(t *testing.T) {
+				group := project.Eval{Name: "quality", MaxSamples: tc.cap}
+				service := identityService{id: "issued", rows: oneRow, wantVersion: "1"}
+				switch mode {
+				case "traces":
+					group.Source = &project.SourceDecl{Type: project.SourceTypeTraces, AgentName: "agent", MaxTraces: 2}
+				case "responses":
+					group.Source = &project.SourceDecl{Type: project.SourceTypeResponses, ResponseIDs: []string{"response"}}
+				case "dataset":
+					group.Dataset = "golden"
+				case "simulation":
+					group = *runnableSimulation()
+					group.Name, group.Dataset, group.MaxSamples = "quality", "golden", tc.cap
+					service.rows = seedRows
+				}
+				eval := struct {
+					project.Eval
+					MaxSamples int `json:"max_samples"`
+				}{group, tc.cap}
+				body, err := json.Marshal(map[string]any{
+					"datasets": []project.DatasetDecl{{Name: "golden", Version: "1"}},
+					"evals":    []any{eval},
+				})
+				require.NoError(t, err)
+				dir := t.TempDir()
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.eval.yaml"), body, 0o600))
+				ec, requests := identityRunContext(t, service)
+				ec.state = map[string]string{idKey("eval", "quality"): "eval_1"}
+				cmd := buildRunCommand("start", "")
+				cmd.SetOut(io.Discard)
+				cmd.SetErr(io.Discard)
+				if tc.flag != "" {
+					require.NoError(t, cmd.Flags().Set("max-samples", tc.flag))
+				}
+				flag, err := cmd.Flags().GetInt("max-samples")
+				require.NoError(t, err)
+				action := &runStartAction{cmd: cmd, flags: &runStartFlags{
+					groupName: "quality", evalPath: dir, maxSamples: flag, wait: false,
+				}}
+				err = action.start(t.Context(), ec, gate{})
+				wantErr := tc.cap > 0 || flag > 0
+				switch mode {
+				case "traces", "responses":
+					wantErr = tc.cap > 0 || tc.flag != ""
+				case "dataset":
+					wantErr = flag > 0 || (tc.cap > 0 && tc.flag == "")
+				}
+				if wantErr {
+					require.Error(t, err)
+					assert.Contains(t, err.Error(), "max")
+					if mode != "simulation" {
+						local, ok := errors.AsType[*azdext.LocalError](err)
+						require.True(t, ok)
+						assert.Equal(t, exterrors.CodeConflictingArguments, local.Code)
+					}
+					assert.Empty(t, recordedIdentityRequests(requests), "reject caps before any service call")
+					return
+				}
+				require.NoError(t, err)
+				posted := identityPostedSource(t, requests)
+				switch mode {
+				case "traces":
+					assert.Equal(t, "azure_ai_trace_data_source_preview", posted["type"])
+					traceSource, ok := posted["trace_source"].(map[string]any)
+					require.True(t, ok)
+					assert.Equal(t, float64(2), traceSource["max_traces"])
+				case "responses":
+					assert.Equal(t, "azure_ai_responses", posted["type"])
+					params, ok := posted["item_generation_params"].(map[string]any)
+					require.True(t, ok)
+					assert.Equal(t, map[string]any{
+						"type": "file_content", "content": []any{map[string]any{"response_id": "response"}},
+					}, params["source"])
+				default:
+					assert.Equal(t, map[string]any{"type": "file_id", "id": "issued"}, posted["source"])
+					if mode == "simulation" {
+						assert.Equal(t, "azure_ai_user_conversation_simulation_preview", posted["type"])
+						simulation, ok := posted["default_simulation_configuration"].(map[string]any)
+						require.True(t, ok)
+						assert.Equal(t, float64(group.Simulation.MaxTurns), simulation["max_num_turns"])
+						assert.Equal(t, float64(group.Simulation.Conversations()), simulation["conversation_repetitions"])
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestSimulationRegisteredIdentityRemainsStrict(t *testing.T) {
 	for _, tc := range []struct {
 		name string

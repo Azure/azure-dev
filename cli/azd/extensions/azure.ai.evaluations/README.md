@@ -105,7 +105,7 @@ after a complete empty version listing (or a not-found response) and not-found
 first-version probes confirm absence. Permissions, transient failures, and
 malformed listings fail the run instead of silently selecting local data.
 
-Source-backed runs reject configured `max_samples:` and explicitly supplied
+Source-backed runs reject positive configured `max_samples:` and explicitly supplied
 `--max-samples` flags; use `source.max_traces` for trace limits or select
 `source.response_ids` explicitly. Reruns selected by eval ID also reject an
 explicit `--max-samples`, including zero, because they repeat the previous source.

@@ -14,6 +14,8 @@
 /cli/azd/extensions/registry.json                        @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212
 /cli/azd/extensions/registry.dev.json                    @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212
 /cli/azd/cmd/testdata/TestFigSpec.ts                     @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212
+/cli/azd/cmd/testdata/TestUsage-azd-ai.snap              @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212
+/cli/azd/cmd/testdata/TestUsage-azd-ai-*.snap            @Azure/azure-dev-core @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212
 
 # ── CLI extensions (AI) ──────────────────────────────────────────────────────
 /cli/azd/extensions/azure.ai.agents/                     @Azure/azure-dev-core @glharper @trangevi @therealjohn @huimiu @hund030 @m5i-work @v1212

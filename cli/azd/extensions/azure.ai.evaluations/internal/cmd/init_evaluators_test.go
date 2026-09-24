@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"path/filepath"
 	"testing"
 
 	"azureaieval/internal/pkg/evalcore"
@@ -82,4 +83,37 @@ func TestEvaluatorChoicesOfferTheCatalogToo(t *testing.T) {
 		"support-agent-quality",
 		"tone-check",
 	}, got)
+}
+
+func TestInitDistinguishesOmittedAndEmptyEvaluators(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"omitted", nil},
+		{"empty argv", []string{"--evaluator", ""}},
+		{"empty assignment", []string{"--evaluator="}},
+		{"empty CSV entries", []string{"--evaluator", ","}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newInitHarness(t, nil)
+			before := initFileSnapshot(t, h.dir)
+			args := append([]string{"--source", "traces", "--name", "quality", "--target", "agent",
+				"--judge-model", "judge", "--no-prompt", "--output", "json"}, tc.args...)
+			text, err := executeConversationInit(t, args...)
+			if tc.args != nil {
+				require.ErrorContains(t, err, "--evaluator")
+				assert.Empty(t, text)
+				assert.Zero(t, h.project.wiringAttempts())
+				assert.Equal(t, before, initFileSnapshot(t, h.dir))
+				return
+			}
+			require.NoError(t, err)
+			cfg, err := project.OpenEvalConfig(filepath.Join(h.dir, project.DefaultEvalDir))
+			require.NoError(t, err)
+			require.Len(t, cfg.Evals, 1)
+			require.Len(t, cfg.Evals[0].Evaluators, 1)
+			assert.Equal(t, "builtin.task_completion", cfg.Evals[0].Evaluators[0].Evaluator)
+		})
+	}
 }

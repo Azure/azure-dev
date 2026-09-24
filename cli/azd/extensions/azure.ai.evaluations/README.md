@@ -154,6 +154,9 @@ The evaluator picker excludes custom evaluators whose local
 `supported_evaluation_levels` explicitly excludes the selected level; an explicit
 incompatible `--evaluator` is rejected. Missing or unfamiliar metadata remains
 unknown, with authoritative compatibility checked when the eval is created.
+Omitting `--evaluator` keeps the default selection or opens the interactive
+picker. An explicitly empty `--evaluator` is rejected rather than silently
+restoring the default.
 
 ### Registered dataset identity
 

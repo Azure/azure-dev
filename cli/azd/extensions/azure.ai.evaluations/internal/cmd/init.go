@@ -145,7 +145,8 @@ func newInitCommand() *cobra.Command {
 			project.MinSimulationTurns, project.MaxSimulationTurns))
 	cmd.Flags().StringSliceVar(&flags.evaluators, "evaluator", nil,
 		"Evaluator reference, repeatable and comma-separated. Use builtin.<name> for a "+
-			"built-in, or a declared custom evaluator compatible with the selected level. Replaces the defaults.")
+			"built-in, or a declared custom evaluator compatible with the selected level. "+
+			"Replaces the defaults; an explicitly empty selection is invalid.")
 	cmd.Flags().StringVar(&flags.judgeModel, "judge-model", "",
 		"Model deployment the graders judge with. Detected locally when omitted; prompts if unavailable.")
 	// No backticks around init: pflag reads the first back-quoted word in a
@@ -189,6 +190,9 @@ func (a *initAction) Run() error {
 	// written by a command that exits 0, and only fails two commands
 	// later. Answering two prompts first to be told a flag was wrong is
 	// the same defect one step removed.
+	if a.cmd.Flags().Changed("evaluator") && len(a.flags.evaluators) == 0 {
+		return messages.EvaluatorRefEmpty()
+	}
 	if err := validateEvaluatorRefs(a.flags.evaluators); err != nil {
 		return err
 	}

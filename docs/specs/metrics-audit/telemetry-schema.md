@@ -297,6 +297,8 @@ declarations are:
 | `azure.ai.agents` | `ext.route` | SystemMetadata | FeatureInsight | `N/A` | No | No | `inspector`, `playground`, or `suppressed` on `local_client.route.selected` |
 | `azure.ai.inspector` | `ext.stage` | SystemMetadata | FeatureInsight | `N/A` | No | No | `ui_ready` on `inspector.funnel.stage` |
 | `azure.ai.inspector` | `ext.outcome` | SystemMetadata | FeatureInsight | `N/A` | No | No | `succeeded` on `inspector.funnel.stage` |
+| `azure.ai.dataset` | `ext.operation` | SystemMetadata | FeatureInsight | `N/A` | No | No | `create`, `update`, or `unknown` on `dataset.published` |
+| `azure.ai.evaluations` | `ext.source` | SystemMetadata | FeatureInsight | `N/A` | No | No | `traces`, `dataset`, or `unknown` on `init.completed` |
 
 These fields share a classification because their reviewed values are bounded
 product enums. `SystemMetadata` and `FeatureInsight` are not defaults for an
@@ -325,6 +327,8 @@ Reviewed first-party event contracts:
 | `microsoft.azd.demo` | `demo.telemetry.reported` | The user runs `azd demo telemetry` | `ext.demo.mode`: fixed enum `sample`; `ext.demo.outcome`: fixed enum `completed` |
 | `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; this precedes client availability, agent startup, and client launch | `ext.route`: fixed enum `inspector`, `playground`, or `suppressed`; suppression takes precedence |
 | `azure.ai.inspector` | `inspector.funnel.stage` | The Inspector SPA sends `setViewReady` after mounting | `ext.stage`: fixed enum `ui_ready`; `ext.outcome`: fixed enum `succeeded`; this does not indicate agent connection |
+| `azure.ai.dataset` | `dataset.published` | `azure.ai.dataset` writes a dataset version (a `create` or `update` publish); reported once after the write succeeds | `ext.operation`: fixed enum `create`, `update`, or `unknown`; the publish verb normalized to the closed set |
+| `azure.ai.evaluations` | `init.completed` | `azure.ai.evaluations` `init` scaffolds an evaluation config; reported once after the scaffold is written to disk | `ext.source`: fixed enum `traces`, `dataset`, or `unknown`; the source of rows the scaffolded eval will grade |
 
 Because `ext.usage` spans share the command's trace, they join the originating
 command in Kusto on `operation_Id`. See

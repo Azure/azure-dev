@@ -501,6 +501,8 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `ext.agent.operation` | string | Fixed extension command path associated with the resolved agent context, such as `deploy` or `files.upload` (`agent.context.resolved`) |
 | `ext.stage` | string | Agent Inspector funnel stage: currently `ui_ready` (`inspector.funnel.stage`) |
 | `ext.outcome` | string | Agent Inspector funnel-stage outcome: currently `succeeded` (`inspector.funnel.stage`) |
+| `ext.operation` | string | Dataset publish operation reported by `azure.ai.dataset`: `create`, `update`, or `unknown` (`dataset.published`) |
+| `ext.source` | string | Evaluation `init` source reported by `azure.ai.evaluations`: `traces`, `dataset`, or `unknown` (`init.completed`) |
 | `extension.installed` | string[] | List of installed extensions (`id@version`) |
 | `extension.installed.source.category` | string[] | Installed extension source categories (`id@category`) |
 | `extension.version.from` | string | Version before an update or promotion (`ext.update`, `ext.promote`) |
@@ -545,6 +547,8 @@ Reviewed first-party extension usage events currently include:
 | `microsoft.azd.demo` | `demo.telemetry.reported` | The user runs `azd demo telemetry` | `ext.demo.mode=sample`; `ext.demo.outcome=completed` |
 | `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; emitted before client availability, agent startup, and client launch | `ext.route`: `inspector`, `playground`, or `suppressed`; suppression takes precedence |
 | `azure.ai.inspector` | `inspector.funnel.stage` | The Inspector SPA sends `setViewReady` after mounting | `ext.stage=ui_ready`; `ext.outcome=succeeded`; this does not indicate agent connection |
+| `azure.ai.dataset` | `dataset.published` | `azure.ai.dataset` writes a dataset version (a `create` or `update` publish) | `ext.operation`: `create`, `update`, or `unknown` |
+| `azure.ai.evaluations` | `init.completed` | `azure.ai.evaluations` `init` scaffolds an evaluation config; emitted once after it is written | `ext.source`: `traces`, `dataset`, or `unknown` |
 
 Source-category fields are classified from the configured source type and location, not the user-defined source name.
 Raw source names, URLs, paths, and hosts are not emitted in those fields.

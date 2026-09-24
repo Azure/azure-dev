@@ -312,6 +312,10 @@ without asserting that the run has completed. If a run lookup omits its `id`,
 follow-up requests retain the explicit or remembered lookup ID separately;
 JSON and exports preserve the original service fields.
 
+Human summaries, run details, and listings also distinguish unreported counters
+from explicit zeros. Partial counters are marked `not reported` rather than
+inventing a failure/error split or a pass rate without known operands.
+
 An operationally failed run can have no result counts or output rows. Its
 follow-up commands inspect **available** output and export the run's diagnostics
 plus any available results; they do not imply that grading succeeded or that

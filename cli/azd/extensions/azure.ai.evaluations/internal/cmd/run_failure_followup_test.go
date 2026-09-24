@@ -197,6 +197,8 @@ func TestFailedRunCallersPreserveJSONAndPrintResolvedHumanCommands(t *testing.T)
 						require.Error(t, actionErr)
 						require.ErrorIs(t, err, actionErr, "operational errors remain errors through the command wrapper")
 						assert.Contains(t, err.Error(), "finished with status failed")
+						assert.Contains(t, err.Error(), "run_resolved",
+							"returned diagnostics retain the successful lookup ID")
 						assert.NotContains(t, err.Error(), "gate breached")
 					}
 					assert.Zero(t, outputRequests)

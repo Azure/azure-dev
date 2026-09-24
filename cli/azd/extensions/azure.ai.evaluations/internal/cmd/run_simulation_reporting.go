@@ -91,28 +91,5 @@ func renderSimulationSettings(out io.Writer, run *eval_api.OpenAIEvalRun) {
 }
 
 func renderConversationResults(out io.Writer, run *eval_api.OpenAIEvalRun) {
-	counts := run.ReportedResultCounts()
-	if len(counts) == 0 {
-		fmt.Fprint(out, "\nCONVERSATION EVALUATION RESULTS\nNot reported by the service.\n")
-		return
-	}
-	fmt.Fprint(out, "\nCONVERSATION EVALUATION RESULTS\n")
-	for _, row := range []field{
-		{"Total", "total"}, {"Passed", "passed"}, {"Failed", "failed"},
-		{"Errored", "errored"}, {"Skipped", "skipped"},
-	} {
-		if count, ok := counts[row.Value]; ok {
-			fmt.Fprintf(out, "%-10s %4d\n", row.Key, count)
-		} else {
-			fmt.Fprintf(out, "%-10s not reported\n", row.Key)
-		}
-	}
-	passed, passedKnown := counts["passed"]
-	failed, failedKnown := counts["failed"]
-	if passedKnown && failedKnown {
-		fmt.Fprintf(out, "%-10s %s (%d passed / (%d passed + %d failed))\n",
-			"Pass rate", formatRate(passed, passed+failed), passed, passed, failed)
-	} else {
-		fmt.Fprint(out, "Pass rate  not reported\n")
-	}
+	renderReportedRunCounts(out, "CONVERSATION EVALUATION RESULTS", run.ReportedResultCounts())
 }

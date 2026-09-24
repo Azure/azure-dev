@@ -42,6 +42,8 @@ func TestRunShowKeepsTheRunThePollDidNotReturn(t *testing.T) {
 		"poll's result belongs in its own variable")
 	assert.Contains(t, branch, "isJSON(a.cmd)",
 		"a human sentence in the JSON stream breaks every parser downstream")
+	assert.NotContains(t, branch, "run.ID", "diagnostics cannot depend on an ID the service may omit")
+	assert.Contains(t, branch, "display.ID", "timeout and gate messages keep the resolved lookup identity")
 }
 
 // The gate is the one place a pipeline is guaranteed to read, so a budget that

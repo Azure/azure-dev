@@ -931,8 +931,13 @@ func renderResults(
 		fmt.Fprint(w, messages.RunStatusHeading(run.ID, run.Status))
 	}
 	if c := run.ResultCounts; c != nil && !isSimulationRun(run) {
-		fmt.Fprint(w, messages.ItemResultTotals(c.Total, c.Passed, c.Failed, c.Errored, c.Skipped))
-		fmt.Fprint(w, messages.ScoredPassRateLine(c.Passed, c.Passed+c.Failed))
+		counts := run.ReportedResultCounts()
+		if len(counts) == 5 {
+			fmt.Fprint(w, messages.ItemResultTotals(c.Total, c.Passed, c.Failed, c.Errored, c.Skipped))
+			fmt.Fprint(w, messages.ScoredPassRateLine(c.Passed, c.Passed+c.Failed))
+		} else {
+			renderReportedRunCounts(w, "TEST CASE RESULTS", counts)
+		}
 		fmt.Fprintln(w)
 	}
 

@@ -334,13 +334,13 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 		return err
 	}
 	final = ec.withPortalLink(ctx, evalID, final)
+	display := runForDisplay(final, evalID, run.ID)
 
 	if isJSON(a.cmd) {
 		if err := emitJSON(out, runForJSON(final)); err != nil {
 			return err
 		}
 	} else {
-		display := runForDisplay(final, evalID, run.ID)
 		if err := renderRun(out, display, ec.runOutputSummary(ctx, evalID, display)); err != nil {
 			return err
 		}
@@ -349,10 +349,10 @@ func (a *runStartAction) start(ctx context.Context, ec *evalContext, threshold g
 	// Last, so that the results are reported whether or not the gate
 	// holds: a pipeline that only learns it failed is worse off than
 	// one that can see by how much.
-	if err := runCompleted(final); err != nil {
+	if err := runCompleted(display); err != nil {
 		return err
 	}
-	applyGate(a.cmd, threshold, final)
+	applyGate(a.cmd, threshold, display)
 	return nil
 }
 
@@ -1272,11 +1272,12 @@ func renderRun(
 	// number disagreeing with itself.
 	if isSimulationRun(run) {
 		renderConversationResults(out, run)
+	} else if c := run.ResultCounts; c != nil && len(run.ReportedResultCounts()) < 5 {
+		renderReportedRunCounts(out, "TEST CASE RESULTS", run.ReportedResultCounts())
 	} else if c := run.ResultCounts; c != nil && c.Total > 0 {
-		errored, skipped := unscoredSplit(c, c.Passed+c.Failed)
 		rate, _, scored := scoredPassRate(c)
 		fmt.Fprint(out, messages.TestCaseResults(
-			c.Total, c.Passed, c.Failed, errored, skipped,
+			c.Total, c.Passed, c.Failed, c.Errored, c.Skipped,
 			passRateText(rate, scored)))
 	}
 
@@ -1333,7 +1334,8 @@ func renderRunFollowUp(out io.Writer, run *eval_api.OpenAIEvalRun) {
 	passed, passedKnown := counts["passed"]
 	failedCount, failedKnown := counts["failed"]
 	skipped, skippedKnown := counts["skipped"]
-	if totalKnown && passedKnown && failedKnown && skippedKnown {
+	_, erroredKnown := counts["errored"]
+	if !erroredKnown && totalKnown && passedKnown && failedKnown && skippedKnown {
 		errored = errored || total-passed-failedCount-skipped > 0
 	}
 	if status == "" && !operationalFailure && len(counts) == 0 {

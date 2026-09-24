@@ -127,8 +127,8 @@ func (a *runListAction) Run() error {
 			runDataset(run.Metadata),
 			timestampString(run.CreatedAt),
 			run.Status,
-			sampleCount(run.ResultCounts),
-			runPassRate(run.ResultCounts),
+			reportedSampleCount(&run),
+			reportedRunPassRate(&run),
 		})
 	}
 	if err := emitTable(a.cmd.OutOrStdout(),
@@ -217,6 +217,7 @@ func (a *runShowAction) show(ctx context.Context, ec *evalContext, evalID string
 		return err
 	}
 	run = ec.withPortalLink(ctx, evalID, run)
+	display := runForDisplay(run, evalID, runID)
 
 	// Reattaching to a run started asynchronously: the pipeline that
 	// gates on it is often not the one that started it.
@@ -239,12 +240,12 @@ func (a *runShowAction) show(ctx context.Context, ec *evalContext, evalID string
 			// what this command is, so it says the same things rather
 			// than surfacing the sentinel's own text.
 			if threshold.set {
-				return messages.GateOutlivedTheWait(run.ID, waitBudget)
+				return messages.GateOutlivedTheWait(display.ID, waitBudget)
 			}
 			if isJSON(a.cmd) {
 				return emitJSON(a.cmd.OutOrStdout(), runForJSON(run))
 			}
-			fmt.Fprint(a.cmd.OutOrStdout(), messages.WaitBudgetSpent(run.ID, waitBudget))
+			fmt.Fprint(a.cmd.OutOrStdout(), messages.WaitBudgetSpent(display.ID, waitBudget))
 			return nil
 		}
 		if pollErr != nil {
@@ -255,13 +256,14 @@ func (a *runShowAction) show(ctx context.Context, ec *evalContext, evalID string
 		// waited path lost it. `run start` decorates after its poll for the
 		// same reason.
 		run = ec.withPortalLink(ctx, evalID, final)
+		display = runForDisplay(run, evalID, runID)
 	}
 
 	// The spec puts --fail-on on the commands that wait. Gating a run
 	// that is still moving would read partial counts; ignoring the flag
 	// would leave a pipeline believing it is gated when it is not.
 	if threshold.set && !runIsTerminal(run) {
-		return messages.GateNeedsATerminalRun(run.ID, run.Status)
+		return messages.GateNeedsATerminalRun(display.ID, display.Status)
 	}
 
 	if isJSON(a.cmd) {
@@ -269,24 +271,24 @@ func (a *runShowAction) show(ctx context.Context, ec *evalContext, evalID string
 			return err
 		}
 		if gateOnStatus {
-			if err := runCompleted(run); err != nil {
+			if err := runCompleted(display); err != nil {
 				return err
 			}
 		}
-		applyGate(a.cmd, threshold, run)
+		applyGate(a.cmd, threshold, display)
 		return nil
 	}
 
 	out := a.cmd.OutOrStdout()
-	if err := renderRunDetail(out, runForDisplay(run, evalID, runID)); err != nil {
+	if err := renderRunDetail(out, display); err != nil {
 		return err
 	}
 	if gateOnStatus {
-		if err := runCompleted(run); err != nil {
+		if err := runCompleted(display); err != nil {
 			return err
 		}
 	}
-	applyGate(a.cmd, threshold, run)
+	applyGate(a.cmd, threshold, display)
 	return nil
 }
 
@@ -302,7 +304,7 @@ func renderRunDetail(out io.Writer, run *eval_api.OpenAIEvalRun) error {
 		// a run the service sent none for says that rather than losing
 		// the row and reading as a renderer that forgot it.
 		{"Status", reportedStatus(run.Status)},
-		{"Results", summarizeCounts(run.ResultCounts)},
+		{"Results", summarizeCounts(run)},
 	}); err != nil {
 		return err
 	}
@@ -494,11 +496,26 @@ func (a *runDeleteAction) Run() error {
 	return nil
 }
 
-func summarizeCounts(counts *eval_api.EvalRunResultCounts) string {
-	if counts == nil {
+func summarizeCounts(run *eval_api.OpenAIEvalRun) string {
+	if run == nil || run.ResultCounts == nil {
 		return ""
 	}
-	return messages.CountsSummary(counts.Passed, counts.Failed, counts.Errored)
+	counts := run.ReportedResultCounts()
+	passed, passedKnown := counts["passed"]
+	failed, failedKnown := counts["failed"]
+	errored, erroredKnown := counts["errored"]
+	if passedKnown && failedKnown && erroredKnown {
+		return messages.CountsSummary(passed, failed, errored)
+	}
+	parts := make([]string, 0, 3)
+	for _, name := range []string{"passed", "failed", "errored"} {
+		if count, ok := counts[name]; ok {
+			parts = append(parts, fmt.Sprintf("%d %s", count, name))
+		} else {
+			parts = append(parts, name+" not reported")
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 // metaDataset and metaDatasetVersion record which rows a run scored. The run's
